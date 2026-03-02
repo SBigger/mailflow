@@ -1,0 +1,803 @@
+/* ============================================================
+   LIGHT THEME — [data-theme="light"]
+   Vollständiges Konzept für Mail- und Taskverwaltung
+   Dunkle Texte auf hellem Hintergrund, konsistente Palette
+   ============================================================
+   
+   Farbpalette Light:
+   - Seite/Main BG:       #f0f0f6
+   - Sidebar (Icon):      #e4e4ee
+   - Panel/Card BG:       #ffffff
+   - Card hover:          #f7f7fc
+   - Sekundär BG:         #ebebf4
+   - Border:              #d4d4e8
+   - Border subtle:       #e0e0f0
+   - Text Primär:         #1a1a2e
+   - Text Sekundär:       #4a4a6a
+   - Text Tertiär:        #7070a0
+   - Text Deaktiviert:    #a0a0c0
+   ============================================================ */
+
+/* ── RESET: Body & Root ── */
+[data-theme="light"] body {
+  background-color: #f0f0f6 !important;
+  color: #1a1a2e !important;
+}
+
+/* ── MAIN LAYOUT BACKGROUNDS ── */
+[data-theme="light"] .h-screen,
+[data-theme="light"] .flex.h-screen {
+  background-color: #f0f0f6 !important;
+}
+
+/* ── INLINE STYLE OVERRIDES (für backgroundColor prop) ── */
+[data-theme="light"] [style*="backgroundColor: '#2a2a2f'"],
+[data-theme="light"] [style*="backgroundColor:'#2a2a2f'"] {
+  background-color: #f0f0f6 !important;
+}
+
+/* ── SIDEBAR (Icon-only, w-14) ── */
+[data-theme="light"] .flex.h-screen > div:first-child {
+  background-color: #e4e4ee !important;
+  border-color: #c8c8dc !important;
+}
+
+/* ── SETTINGS LEFT SIDEBAR (w-64) ── */
+[data-theme="light"] .w-64.flex-shrink-0 {
+  background-color: #eaeaf4 !important;
+  border-color: #c8c8dc !important;
+}
+
+/* ── CARDS / PANELS / KANBAN COLUMNS ── */
+[data-theme="light"] .bg-zinc-900\/40,
+[data-theme="light"] .bg-zinc-900\/60,
+[data-theme="light"] .bg-zinc-950,
+[data-theme="light"] .bg-zinc-900\/30,
+[data-theme="light"] .bg-zinc-900\/50,
+[data-theme="light"] .bg-zinc-900\/80 {
+  background-color: #ffffff !important;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+
+/* ── SECONDARY BG (inputs, inner panels) ── */
+[data-theme="light"] .bg-zinc-900,
+[data-theme="light"] .bg-zinc-800 {
+  background-color: #ebebf4 !important;
+  color: #1a1a2e !important;
+}
+
+[data-theme="light"] .bg-zinc-800\/60,
+[data-theme="light"] .bg-zinc-800\/40,
+[data-theme="light"] .bg-zinc-800\/30 {
+  background-color: rgba(100, 100, 180, 0.08) !important;
+}
+
+/* ── MAIL CARD ── */
+[data-theme="light"] .bg-zinc-900\/80 {
+  background-color: #ffffff !important;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08) !important;
+}
+
+/* ── TASK CARD ── */
+[data-theme="light"] .bg-black {
+  background-color: #ffffff !important;
+}
+
+[data-theme="light"] .bg-violet-950\/60 {
+  background-color: #ede9fe !important;
+}
+
+/* ── TOP BAR ── */
+[data-theme="light"] .border-b.border-zinc-700\/60,
+[data-theme="light"] .border-b {
+  border-color: #d4d4e8 !important;
+}
+
+/* ── BORDERS ── */
+[data-theme="light"] .border-zinc-800,
+[data-theme="light"] .border-zinc-800\/60,
+[data-theme="light"] .border-zinc-800\/50,
+[data-theme="light"] .border-zinc-800\/40,
+[data-theme="light"] .border-zinc-700,
+[data-theme="light"] .border-zinc-700\/60,
+[data-theme="light"] .border-zinc-600 {
+  border-color: #d4d4e8 !important;
+}
+
+[data-theme="light"] .border-zinc-500 {
+  border-color: #b8b8d0 !important;
+}
+
+/* ── TEXT: primär ── */
+[data-theme="light"] .text-zinc-100,
+[data-theme="light"] .text-zinc-200 {
+  color: #1a1a2e !important;
+}
+
+/* ── TEXT: sekundär ── */
+[data-theme="light"] .text-zinc-300 {
+  color: #3a3a5a !important;
+}
+
+/* ── TEXT: tertiär ── */
+[data-theme="light"] .text-zinc-400 {
+  color: #5a5a7a !important;
+}
+
+/* ── TEXT: subtil ── */
+[data-theme="light"] .text-zinc-500,
+[data-theme="light"] .text-zinc-600 {
+  color: #7a7a9a !important;
+}
+
+/* ── TEXT: sehr subtil ── */
+[data-theme="light"] .text-white\/70 {
+  color: #6a6a8a !important;
+}
+
+/* ── WEISSE SCHRIFT auf hellen Hintergründen FIX ── */
+[data-theme="light"] .text-white:not(.bg-violet-600):not(.bg-violet-500):not(.bg-indigo-600):not(.bg-green-600):not(.bg-red-600):not(.bg-blue-600) {
+  color: #1a1a2e !important;
+}
+
+/* ── INPUTS, TEXTAREAS, SELECTS ── */
+[data-theme="light"] input:not([type="color"]),
+[data-theme="light"] textarea,
+[data-theme="light"] select {
+  background-color: #ffffff !important;
+  color: #1a1a2e !important;
+  border-color: #c8c8dc !important;
+}
+
+[data-theme="light"] input::placeholder,
+[data-theme="light"] textarea::placeholder {
+  color: #9090b8 !important;
+}
+
+/* ── SEARCH INPUT ── */
+[data-theme="light"] input[type="text"].pl-9 {
+  background-color: #ffffff !important;
+  border-color: #c8c8dc !important;
+  color: #1a1a2e !important;
+}
+
+/* ── BUTTONS: Outline ── */
+[data-theme="light"] .border-zinc-700.bg-zinc-900\/60 {
+  background-color: #ffffff !important;
+  border-color: #c8c8dc !important;
+  color: #3a3a5a !important;
+}
+
+/* ── HOVER STATES ── */
+[data-theme="light"] .hover\:bg-zinc-800\/60:hover,
+[data-theme="light"] .hover\:bg-zinc-800\/40:hover,
+[data-theme="light"] .hover\:bg-zinc-800\/30:hover,
+[data-theme="light"] .hover\:bg-zinc-800\/50:hover {
+  background-color: rgba(100, 100, 180, 0.1) !important;
+}
+
+[data-theme="light"] .hover\:bg-white\/5:hover {
+  background-color: rgba(100, 100, 180, 0.08) !important;
+}
+
+[data-theme="light"] .hover\:border-zinc-700\/60:hover,
+[data-theme="light"] .hover\:border-zinc-500:hover {
+  border-color: #b0b0d0 !important;
+}
+
+/* ── VIEW MODE BUTTON GROUP ── */
+[data-theme="light"] .bg-zinc-800\/60 {
+  background-color: #e4e4f0 !important;
+}
+
+/* ── INACTIVE VIEW MODE BUTTONS ── */
+[data-theme="light"] .text-zinc-400.hover\:text-zinc-200 {
+  color: #5a5a7a !important;
+}
+
+/* ── DROPDOWNS / POPOVERS ── */
+[data-theme="light"] .bg-zinc-900.border-zinc-700,
+[data-theme="light"] .bg-zinc-900.border-zinc-800 {
+  background-color: #ffffff !important;
+  border-color: #d4d4e8 !important;
+}
+
+[data-theme="light"] [data-radix-popper-content-wrapper] * {
+  background-color: transparent;
+}
+
+[data-theme="light"] [role="menu"],
+[data-theme="light"] [role="listbox"] {
+  background-color: #ffffff !important;
+  border-color: #d4d4e8 !important;
+}
+
+/* ── DROPDOWN ITEMS ── */
+[data-theme="light"] [role="menuitem"],
+[data-theme="light"] [role="option"] {
+  color: #1a1a2e !important;
+}
+
+[data-theme="light"] [role="menuitem"]:hover,
+[data-theme="light"] [role="option"]:hover {
+  background-color: #ebebf4 !important;
+}
+
+/* ── TASK CARD SPEZIFISCH ── */
+[data-theme="light"] .border-zinc-600 {
+  border-color: #d4d4e8 !important;
+}
+
+/* ── TASK CARD: New/Unread ── */
+[data-theme="light"] .border-violet-600\/60 {
+  border-color: rgba(124, 58, 237, 0.4) !important;
+}
+
+/* ── MAIL CARD: Avatar ── */
+[data-theme="light"] .bg-zinc-800.text-zinc-500 {
+  background-color: #e4e4f0 !important;
+  color: #7a7a9a !important;
+}
+
+/* ── MAIL CARD: Sender Name (grüne Farbe behalten) ── */
+/* Senderfarbe bleibt wie sie ist (inline style) */
+
+/* ── KANBAN COLUMN HEADER: uppercase text ── */
+[data-theme="light"] .text-sm.font-semibold.text-zinc-200.tracking-wide.uppercase {
+  color: #1a1a2e !important;
+}
+
+/* ── COLLAPSED COLUMN ── */
+[data-theme="light"] .bg-zinc-900\/40.backdrop-blur-sm.rounded-2xl {
+  background-color: #ffffff !important;
+}
+
+[data-theme="light"] .bg-zinc-900\/50.border.border-zinc-800\/40.rounded-2xl {
+  background-color: #ffffff !important;
+}
+
+/* ── COLUMN DRAG HANDLE BG ── */
+[data-theme="light"] .bg-zinc-900\/50 {
+  background-color: #ffffff !important;
+}
+
+/* ── SCROLLBAR ── */
+[data-theme="light"] ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+[data-theme="light"] ::-webkit-scrollbar-track {
+  background: #e8e8f2;
+}
+[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background: #c0c0d8;
+  border-radius: 3px;
+}
+[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+  background: #a0a0c0;
+}
+
+/* ── TABLE ROWS ── */
+[data-theme="light"] .hover\:bg-zinc-800\/30:hover {
+  background-color: rgba(100, 100, 180, 0.07) !important;
+}
+
+/* ── BADGE: dark variants ── */
+[data-theme="light"] .bg-zinc-800\/50 {
+  background-color: #ebebf4 !important;
+}
+
+[data-theme="light"] .text-zinc-400.text-xs {
+  color: #5a5a7a !important;
+}
+
+/* ── COMPLETED SECTION DIVIDER ── */
+[data-theme="light"] .border-zinc-800\/50 {
+  border-color: #d4d4e8 !important;
+}
+
+/* ── DRAG HANDLE RESIZER ── */
+[data-theme="light"] .bg-zinc-800.hover\:bg-violet-600 {
+  background-color: #d4d4e8 !important;
+}
+
+/* ── REMINDER VIEW ── */
+[data-theme="light"] .bg-zinc-900\/60.border.border-zinc-800\/60.rounded-xl {
+  background-color: #ffffff !important;
+  border-color: #d4d4e8 !important;
+}
+
+/* ── LOADING STATE ── */
+[data-theme="light"] .text-zinc-400 {
+  color: #5a5a7a !important;
+}
+
+/* ── EMPTY STATE TEXT ── */
+[data-theme="light"] .text-zinc-600 {
+  color: #7a7a9a !important;
+}
+
+/* ── KANBAN COLUMN BACKGROUNDS (inline style override via attribute) ── */
+[data-theme="light"] [style*="#1e1e23"],
+[data-theme="light"] [style*="#18181b"],
+[data-theme="light"] [style*="2a2a2f"] {
+  background-color: #f0f0f6 !important;
+}
+
+/* ── KUNDEN PAGE BACKGROUND ── */
+[data-theme="light"] .flex.h-screen.overflow-hidden {
+  background-color: #f0f0f6 !important;
+}
+
+/* ── CUSTOMER LIST PANEL ── */
+[data-theme="light"] .bg-zinc-900\/40.border-r {
+  background-color: #ffffff !important;
+  border-color: #d4d4e8 !important;
+}
+
+/* ── CUSTOMER LIST ITEMS ── */
+[data-theme="light"] .hover\:bg-zinc-800\/60.border.border-transparent {
+  color: #1a1a2e !important;
+}
+
+/* ── TASK TITLE COLOR IN CARDS ── */
+[data-theme="light"] h4 {
+  color: #1a1a2e !important;
+}
+
+/* ── TASK BOARD BACKGROUND ── */
+[data-theme="light"] .overflow-x-auto {
+  background-color: transparent !important;
+}
+
+/* ── CUSTOMER COMPONENTS: panels, cards, list items ── */
+[data-theme="light"] .bg-zinc-900\/40.rounded-lg,
+[data-theme="light"] .bg-zinc-900\/60.rounded-lg,
+[data-theme="light"] .bg-zinc-900\/40.border.border-zinc-800\/60,
+[data-theme="light"] .bg-zinc-900\/60.border.border-zinc-700\/50 {
+  background-color: #ffffff !important;
+  border-color: #d4d4e8 !important;
+}
+
+/* ── HOVER ITEMS IN CUSTOMER MAILS / TASKS ── */
+[data-theme="light"] .hover\:bg-zinc-800\/40 {
+  background-color: transparent !important;
+}
+[data-theme="light"] .hover\:bg-zinc-800\/40:hover {
+  background-color: rgba(100,100,180,0.07) !important;
+}
+[data-theme="light"] .hover\:border-zinc-800\/60:hover {
+  border-color: #d4d4e8 !important;
+}
+
+/* ── CUSTOMER ACTIVITY BUTTONS (non-completed) ── */
+[data-theme="light"] .bg-zinc-800\/60.border-zinc-700.text-zinc-300 {
+  background-color: #ebebf4 !important;
+  border-color: #c8c8dc !important;
+  color: #3a3a5a !important;
+}
+
+/* ── CUSTOMER HEADER INPUTS ── */
+[data-theme="light"] .bg-zinc-900\/40.border-zinc-700 {
+  background-color: #f5f5fa !important;
+  border-color: #c8c8dc !important;
+  color: #1a1a2e !important;
+}
+
+/* ── RESIZE HANDLE ── */
+[data-theme="light"] .bg-zinc-800\/60.cursor-col-resize {
+  background-color: #d4d4e8 !important;
+}
+
+/* ── TABS (Kunden detail) ── */
+[data-theme="light"] .bg-zinc-900\/60.border.border-zinc-800 {
+  background-color: #e8e8f0 !important;
+  border-color: #d0d0e0 !important;
+}
+[data-theme="light"] [data-state="active"].data-\[state\=active\]\:bg-zinc-700 {
+  background-color: #ffffff !important;
+  color: #1a1a2e !important;
+}
+
+/* ── TASK TITLE GREEN COLOR FIX ── */
+[data-theme="light"] [style*="color: rgb(122, 155, 127)"],
+[data-theme="light"] [style*="#2d6a3f"],
+[data-theme="light"] [style*="2d6a3f"] {
+  color: #1a1a2e !important;
+}
+
+/* ── MAIL PAGE BACKGROUND ── */
+[data-theme="light"] .min-h-screen {
+  background-color: #f0f0f6 !important;
+}
+
+/* ── TASK BOARD PAGE BACKGROUND ── */
+[data-theme="light"] .h-full.flex.flex-col {
+  background-color: transparent !important;
+}
+
+/* ── PANELS / DETAIL PANELS ── */
+[data-theme="light"] .bg-zinc-900\/60.border-l {
+  background-color: #ffffff !important;
+  border-color: #d4d4e8 !important;
+}
+
+/* ── BORDER-B GENERAL ── */
+[data-theme="light"] .border-b.border-zinc-800\/60 {
+  border-color: #d4d4e8 !important;
+}
+
+/* ── SELECT TRIGGER ── */
+[data-theme="light"] .bg-zinc-900\/60.border-zinc-700 {
+  background-color: #f5f5fa !important;
+  border-color: #c8c8dc !important;
+  color: #1a1a2e !important;
+}
+
+/* ── DASHBOARD CARDS ── */
+[data-theme="light"] .rounded-xl.border {
+  border-color: #d4d4e8 !important;
+}
+
+/* ── TEXT OVERRIDES: zinc-200 used as card text ── */
+[data-theme="light"] .text-zinc-200.font-medium,
+[data-theme="light"] .text-zinc-200.font-semibold,
+[data-theme="light"] .text-zinc-200.text-sm {
+  color: #1a1a2e !important;
+}
+
+/* ── TASK TITLE in TaskCard: force dark on light ── */
+[data-theme="light"] .text-sm.font-medium.line-clamp-2 {
+  color: #1a1a2e !important;
+}
+
+/* ── MAIL TOPBAR / TASKBOARD TOPBAR ── */
+[data-theme="light"] .border-b {
+  border-color: #d4d4e8 !important;
+  background-color: transparent !important;
+}
+
+/* ── NOTES TEXTAREA ── */
+[data-theme="light"] .bg-zinc-900\/40.border-zinc-700.text-zinc-200.resize-none {
+  background-color: #ffffff !important;
+  border-color: #c8c8dc !important;
+  color: #1a1a2e !important;
+}
+
+/* ── NOTE ITEMS ── */
+[data-theme="light"] .bg-zinc-900\/60.border.border-zinc-700\/50.rounded-lg {
+  background-color: #ffffff !important;
+  border-color: #d4d4e8 !important;
+}
+[data-theme="light"] .text-zinc-200.text-sm.whitespace-pre-wrap {
+  color: #1a1a2e !important;
+}
+
+/* ── CUSTOMER NOTES EDIT TEXTAREA ── */
+[data-theme="light"] .bg-zinc-800.border-zinc-600.text-zinc-200.resize-none {
+  background-color: #f5f5fa !important;
+  border-color: #c8c8dc !important;
+  color: #1a1a2e !important;
+}
+
+/* ── QUILL EDITOR ── */
+[data-theme="light"] .ql-toolbar {
+  background-color: #f0f0f8 !important;
+  border-color: #d4d4e8 !important;
+}
+[data-theme="light"] .ql-container {
+  background-color: #ffffff !important;
+  border-color: #d4d4e8 !important;
+  color: #1a1a2e !important;
+}
+
+/* ── SETTINGS: page bg override ── */
+[data-theme="light"] .h-screen.flex.overflow-hidden {
+  background-color: #f0f0f6 !important;
+}
+
+/* ── SETTINGS NAV INACTIVE TEXT ── */
+[data-theme="light"] .text-zinc-300 {
+  color: #3a3a5a !important;
+}
+
+/* ── BADGE OVERRIDES: dunkle Badges auf hellem BG ── */
+[data-theme="light"] .bg-zinc-800 {
+  background-color: #e8e8f4 !important;
+}
+
+/* ── SPECIAL: violet/indigo badges behalten ihre Farben ── */
+/* (violet-500/10, indigo-500/10, red-500/10 etc. sind transparent und funktionieren) */
+
+
+/* ============================================================
+   ARTIS THEME — [data-theme="artis"]
+   Helles Grün-Design basierend auf Artis Treuhand Corporate Colors
+   Salbei-Grün Akzente, cremiger Hintergrund, Anthrazit-Text
+   ============================================================
+   
+   Farbpalette Artis:
+   - Seite/Main BG:       #f2f5f2  (kremiges Weiss-Grün)
+   - Sidebar:             #e6ede6  (zartes Salbei)
+   - Panel/Card BG:       #ffffff
+   - Sekundär BG:         #edf2ed
+   - Border:              #ccd8cc
+   - Akzent (Artis-Grün): #7a9b7f
+   - Akzent dunkel:       #5f7d64
+   - Text Primär:         #2d3a2d  (Anthrazit-Grün)
+   - Text Sekundär:       #4a5e4a
+   - Text Tertiär:        #6b826b
+   ============================================================ */
+
+[data-theme="artis"] body {
+  background-color: #f2f5f2 !important;
+  color: #2d3a2d !important;
+}
+
+[data-theme="artis"] .h-screen,
+[data-theme="artis"] .flex.h-screen,
+[data-theme="artis"] .flex.h-screen.overflow-hidden,
+[data-theme="artis"] .h-screen.flex.overflow-hidden {
+  background-color: #f2f5f2 !important;
+}
+
+/* ── SIDEBAR ── */
+[data-theme="artis"] .flex.h-screen > div:first-child {
+  background-color: #e6ede6 !important;
+  border-color: #bfcfbf !important;
+}
+
+[data-theme="artis"] .w-64.flex-shrink-0 {
+  background-color: #eaf0ea !important;
+  border-color: #bfcfbf !important;
+}
+
+/* ── CARDS / PANELS ── */
+[data-theme="artis"] .bg-zinc-900\/40,
+[data-theme="artis"] .bg-zinc-900\/60,
+[data-theme="artis"] .bg-zinc-950,
+[data-theme="artis"] .bg-zinc-900\/30,
+[data-theme="artis"] .bg-zinc-900\/50,
+[data-theme="artis"] .bg-zinc-900\/80,
+[data-theme="artis"] .bg-black {
+  background-color: #ffffff !important;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.07);
+}
+
+[data-theme="artis"] .bg-zinc-900,
+[data-theme="artis"] .bg-zinc-800 {
+  background-color: #edf2ed !important;
+  color: #2d3a2d !important;
+}
+
+[data-theme="artis"] .bg-zinc-800\/60,
+[data-theme="artis"] .bg-zinc-800\/40,
+[data-theme="artis"] .bg-zinc-800\/30 {
+  background-color: rgba(122, 155, 127, 0.08) !important;
+}
+
+[data-theme="artis"] .bg-zinc-800\/50 {
+  background-color: #edf2ed !important;
+}
+
+[data-theme="artis"] .bg-violet-950\/60 {
+  background-color: #e6ede6 !important;
+}
+
+/* ── BORDERS ── */
+[data-theme="artis"] .border-zinc-800,
+[data-theme="artis"] .border-zinc-800\/60,
+[data-theme="artis"] .border-zinc-800\/50,
+[data-theme="artis"] .border-zinc-800\/40,
+[data-theme="artis"] .border-zinc-700,
+[data-theme="artis"] .border-zinc-700\/60,
+[data-theme="artis"] .border-zinc-600 {
+  border-color: #ccd8cc !important;
+}
+
+[data-theme="artis"] .border-zinc-500 {
+  border-color: #aac0aa !important;
+}
+
+[data-theme="artis"] .border-b,
+[data-theme="artis"] .border-b.border-zinc-700\/60 {
+  border-color: #ccd8cc !important;
+}
+
+[data-theme="artis"] .border-zinc-800\/50 {
+  border-color: #ccd8cc !important;
+}
+
+/* ── TEXT ── */
+[data-theme="artis"] .text-zinc-100,
+[data-theme="artis"] .text-zinc-200 {
+  color: #2d3a2d !important;
+}
+
+[data-theme="artis"] .text-zinc-300 {
+  color: #3d503d !important;
+}
+
+[data-theme="artis"] .text-zinc-400 {
+  color: #5a7a5f !important;
+}
+
+[data-theme="artis"] .text-zinc-500,
+[data-theme="artis"] .text-zinc-600 {
+  color: #6b826b !important;
+}
+
+[data-theme="artis"] .text-white\/70 {
+  color: #5a7a5f !important;
+}
+
+[data-theme="artis"] .text-white:not(.bg-violet-600):not(.bg-violet-500):not(.bg-indigo-600):not(.bg-green-600):not(.bg-red-600):not(.bg-blue-600) {
+  color: #2d3a2d !important;
+}
+
+[data-theme="artis"] .text-zinc-200.font-medium,
+[data-theme="artis"] .text-zinc-200.font-semibold,
+[data-theme="artis"] .text-zinc-200.text-sm {
+  color: #2d3a2d !important;
+}
+
+[data-theme="artis"] .text-sm.font-medium.line-clamp-2 {
+  color: #2d3a2d !important;
+}
+
+/* ── INPUTS ── */
+[data-theme="artis"] input:not([type="color"]),
+[data-theme="artis"] textarea,
+[data-theme="artis"] select {
+  background-color: #ffffff !important;
+  color: #2d3a2d !important;
+  border-color: #bfcfbf !important;
+}
+
+[data-theme="artis"] input::placeholder,
+[data-theme="artis"] textarea::placeholder {
+  color: #8aaa8f !important;
+}
+
+/* ── BUTTONS OUTLINE ── */
+[data-theme="artis"] .border-zinc-700.bg-zinc-900\/60 {
+  background-color: #ffffff !important;
+  border-color: #bfcfbf !important;
+  color: #3d503d !important;
+}
+
+/* ── HOVER ── */
+[data-theme="artis"] .hover\:bg-zinc-800\/60:hover,
+[data-theme="artis"] .hover\:bg-zinc-800\/40:hover,
+[data-theme="artis"] .hover\:bg-zinc-800\/30:hover,
+[data-theme="artis"] .hover\:bg-zinc-800\/50:hover {
+  background-color: rgba(122, 155, 127, 0.1) !important;
+}
+
+[data-theme="artis"] .hover\:bg-white\/5:hover {
+  background-color: rgba(122, 155, 127, 0.08) !important;
+}
+
+[data-theme="artis"] .hover\:border-zinc-700\/60:hover,
+[data-theme="artis"] .hover\:border-zinc-500:hover {
+  border-color: #aac0aa !important;
+}
+
+/* ── VIEW MODE BUTTON GROUP ── */
+[data-theme="artis"] .bg-zinc-800\/60 {
+  background-color: #e6ede6 !important;
+}
+
+/* ── DROPDOWNS ── */
+[data-theme="artis"] [role="menu"],
+[data-theme="artis"] [role="listbox"],
+[data-theme="artis"] .bg-zinc-900.border-zinc-700,
+[data-theme="artis"] .bg-zinc-900.border-zinc-800 {
+  background-color: #ffffff !important;
+  border-color: #ccd8cc !important;
+}
+
+[data-theme="artis"] [role="menuitem"],
+[data-theme="artis"] [role="option"] {
+  color: #2d3a2d !important;
+}
+
+[data-theme="artis"] [role="menuitem"]:hover,
+[data-theme="artis"] [role="option"]:hover {
+  background-color: #edf2ed !important;
+}
+
+/* ── SCROLLBAR ── */
+[data-theme="artis"] ::-webkit-scrollbar { width: 6px; height: 6px; }
+[data-theme="artis"] ::-webkit-scrollbar-track { background: #e6ede6; }
+[data-theme="artis"] ::-webkit-scrollbar-thumb { background: #bfcfbf; border-radius: 3px; }
+[data-theme="artis"] ::-webkit-scrollbar-thumb:hover { background: #9ab59a; }
+
+/* ── DETAIL PANELS ── */
+[data-theme="artis"] .bg-zinc-900\/60.border-l {
+  background-color: #ffffff !important;
+  border-color: #ccd8cc !important;
+}
+
+/* ── QUILL ── */
+[data-theme="artis"] .ql-toolbar {
+  background-color: #edf2ed !important;
+  border-color: #ccd8cc !important;
+}
+[data-theme="artis"] .ql-container {
+  background-color: #ffffff !important;
+  border-color: #ccd8cc !important;
+  color: #2d3a2d !important;
+}
+
+/* ── DRAG HANDLE ── */
+[data-theme="artis"] .bg-zinc-800.hover\:bg-violet-600 {
+  background-color: #ccd8cc !important;
+}
+
+/* ── NOTES ── */
+[data-theme="artis"] .bg-zinc-900\/60.border.border-zinc-700\/50.rounded-lg {
+  background-color: #ffffff !important;
+  border-color: #ccd8cc !important;
+}
+
+/* ── TABLES ── */
+[data-theme="artis"] .hover\:bg-zinc-800\/30:hover {
+  background-color: rgba(122, 155, 127, 0.07) !important;
+}
+
+/* ── MIN-H-SCREEN ── */
+[data-theme="artis"] .min-h-screen {
+  background-color: #f2f5f2 !important;
+}
+
+/* ── CUSTOMER LIST PANEL ── */
+[data-theme="artis"] .bg-zinc-900\/40.border-r {
+  background-color: #ffffff !important;
+  border-color: #ccd8cc !important;
+}
+
+/* ── TABS ── */
+[data-theme="artis"] .bg-zinc-900\/60.border.border-zinc-800 {
+  background-color: #e6ede6 !important;
+  border-color: #ccd8cc !important;
+}
+
+[data-theme="artis"] [data-state="active"].data-\[state\=active\]\:bg-zinc-700 {
+  background-color: #ffffff !important;
+  color: #2d3a2d !important;
+}
+
+/* ── RESIZE HANDLE ── */
+[data-theme="artis"] .bg-zinc-800\/60.cursor-col-resize {
+  background-color: #ccd8cc !important;
+}
+
+/* ── BADGE ── */
+[data-theme="artis"] .bg-zinc-800 {
+  background-color: #e6ede6 !important;
+}
+
+/* ── INLINE STYLE OVERRIDES ── */
+[data-theme="artis"] [style*="#1e1e23"],
+[data-theme="artis"] [style*="#18181b"],
+[data-theme="artis"] [style*="2a2a2f"] {
+  background-color: #f2f5f2 !important;
+}
+
+[data-theme="artis"] h4 {
+  color: #2d3a2d !important;
+}
+
+/* ── COLUMN HEADERS: Text white für colored backgrounds ── */
+[data-theme="artis"] [style*="backgroundColor: rgb(220, 38, 38)"],
+[data-theme="artis"] [style*="backgroundColor: rgb(239, 68, 68)"],
+[data-theme="artis"] [style*="backgroundColor: rgb(248, 113, 113)"],
+[data-theme="artis"] [style*="backgroundColor: rgb(59, 130, 246)"],
+[data-theme="artis"] [style*="backgroundColor: rgb(96, 165, 250)"],
+[data-theme="artis"] [style*="backgroundColor: rgb(251, 146, 60)"],
+[data-theme="artis"] [style*="backgroundColor: rgb(253, 162, 87)"],
+[data-theme="artis"] [style*="backgroundColor: rgb(168, 85, 247)"],
+[data-theme="artis"] [style*="backgroundColor: rgb(196, 114, 255)"] {
+  color: #ffffff !important;
+}
