@@ -309,8 +309,10 @@ export default function Settings() {
 
   const handleOutlookConnect = async () => {
     try {
-      const { data } = await functions.invoke('microsoftAuth');
-      window.location.href = data.authUrl;
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) { toast.error('Nicht eingeloggt'); return; }
+      const fnUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/microsoft-auth?state=${session.access_token}`;
+      window.location.href = fnUrl;
     } catch (error) {
       toast.error('Fehler: ' + error.message);
     }
