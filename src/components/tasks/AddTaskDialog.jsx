@@ -199,7 +199,7 @@ export default function AddTaskDialog({ open, onClose, onAdd, columns }) {
             <div className="space-y-2">
               <Label>Fällig am</Label>
               <Input
-                type="datetime-local"
+                type="date"
                 value={dueDate}
                 onChange={(e) => setDueDate(e.target.value)}
                 className="bg-zinc-900/60 border-zinc-700 text-zinc-200"

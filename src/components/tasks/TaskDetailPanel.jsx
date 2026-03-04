@@ -20,7 +20,7 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }) {
   const [description, setDescription] = useState(task.description || '');
   const [assignee, setAssignee] = useState(task.assignee || '');
   const [priorityId, setPriorityId] = useState(task.priority_id || '');
-  const [dueDate, setDueDate] = useState(task.due_date || '');
+  const [dueDate, setDueDate] = useState(task.due_date ? task.due_date.split('T')[0] : '');
   const [tags, setTags] = useState(task.tags || []);
   const [columnId, setColumnId] = useState(task.column_id || '');
   const [attachments, setAttachments] = useState(task.attachments || []);
@@ -252,7 +252,7 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }) {
         <div className="space-y-2">
           <Label className="text-zinc-400">Fällig am</Label>
           <Input
-            type="datetime-local"
+            type="date"
             value={dueDate}
             onChange={(e) => setDueDate(e.target.value)}
             className="bg-zinc-900/60 border-zinc-700 text-zinc-200"

@@ -112,14 +112,16 @@ export default function TaskBoard() {
         t.created_by === currentUser.id || t.assignee === currentUser.email
       );
     } else if (userFilter === 'me') {
-      // Nur eigene Tasks (für Admin/User)
+      // Nur eigene Tasks: zugewiesen an mich, oder von mir erstellt ohne Zuweisung
       result = result.filter(t =>
-        t.created_by === currentUser?.id || t.assignee === currentUser?.email
+        t.assignee === currentUser?.email ||
+        (!t.assignee && t.created_by === currentUser?.id)
       );
     } else if (userFilter !== 'all') {
       // Filter nach spezifischem User (Email)
-      result = result.filter(t => 
-        t.created_by === userFilter || t.assignee === userFilter
+      result = result.filter(t =>
+        t.assignee === userFilter ||
+        (!t.assignee && t.created_by === userFilter)
       );
     }
     // Wenn userFilter === 'all', keine weitere Filterung - alle Tasks anzeigen
