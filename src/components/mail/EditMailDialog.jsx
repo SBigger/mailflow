@@ -30,7 +30,7 @@ export default function EditMailDialog({ open, onClose, mail, onSave }) {
     queryKey: ["tags"],
     queryFn: async () => {
       if (!currentUser) return [];
-      return entities.Tag.filter({ created_by: currentUser.email });
+      return entities.Tag.filter({ created_by: currentUser.id });
     },
     enabled: !!currentUser,
   });

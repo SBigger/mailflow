@@ -89,9 +89,9 @@ export default function MailKanban() {
 
   // Helper: Update/Create Mapping for Mail
   const updateMailMapping = async (mail, updates) => {
-    if (!mail.outlook_id || !currentUser?.email) return;
-    
-    const mappings = await entities.MailKanbanMapping.filter({ created_by: currentUser.email });
+    if (!mail.outlook_id || !currentUser?.id) return;
+
+    const mappings = await entities.MailKanbanMapping.filter({ created_by: currentUser.id });
     const mappingsArray = Array.isArray(mappings) ? mappings : (mappings ? [mappings] : []);
     const existingMapping = mappingsArray.find(m => m.outlook_id === mail.outlook_id);
     
@@ -117,7 +117,7 @@ export default function MailKanban() {
     setSelectedMail(mail);
     if (!mail.is_read) {
       // Optimistic local update
-      queryClient.setQueryData(["mailItems", currentUser?.email], (old) =>
+      queryClient.setQueryData(["mailItems", currentUser?.id], (old) =>
         old ? old.map(m => m.id === mail.id ? { ...m, is_read: true } : m) : old
       );
       // Fire-and-forget to Outlook
@@ -137,14 +137,12 @@ export default function MailKanban() {
 
   // Fetch columns - nur für aktuellen Benutzer
   const { data: columns = [], isLoading: colLoading } = useQuery({
-    queryKey: ["kanbanColumns", currentUser?.email],
+    queryKey: ["kanbanColumns", currentUser?.id],
     queryFn: async () => {
       if (!currentUser) return [];
-      const allCols = await entities.KanbanColumn.list("order");
-      // Zeige Spalten die vom aktuellen User erstellt wurden
-      // (entweder mit user.email oder microsoft_outlook_email, da der Sync-Worker beides verwenden kann)
-      const myEmails = [currentUser.email, currentUser.microsoft_outlook_email].filter(Boolean);
-      let filtered = allCols.filter(col => myEmails.includes(col.created_by));
+      const allCols = await entities.KanbanColumn.filter({}, "order");
+      // Zeige nur Spalten des aktuellen Users (created_by = UUID)
+      let filtered = allCols.filter(col => col.created_by === currentUser.id);
       
       // Falls noch keine Spalten existieren, automatisch eine "Outlook" Standardspalte erstellen
       if (filtered.length === 0 && currentUser.microsoft_access_token) {
@@ -159,38 +157,23 @@ export default function MailKanban() {
     enabled: !!currentUser,
   });
 
-  // Fetch mails - nur für aktuellen Benutzer
+  // Fetch mails - strikt nur für aktuellen Benutzer (created_by = user UUID)
   const { data: mails = [], isLoading: mailLoading } = useQuery({
-    queryKey: ["mailItems", currentUser?.email],
+    queryKey: ["mailItems", currentUser?.id],
     queryFn: async () => {
       if (!currentUser?.microsoft_access_token) return [];
-      const outlookEmail = currentUser.microsoft_outlook_email;
       let allMails = [];
       let skip = 0;
       const BATCH = 500;
       while (true) {
         const batch = await entities.MailItem.filter(
-          { created_by: currentUser.email }, "-received_date", BATCH, skip
+          { created_by: currentUser.id }, "-received_date", BATCH, skip
         );
         const arr = Array.isArray(batch) ? batch : (batch ? [batch] : []);
         allMails = allMails.concat(arr);
         if (arr.length < BATCH) break;
         skip += BATCH;
         if (skip >= 5000) break;
-      }
-      // Auch Mails mit outlook_email laden
-      if (outlookEmail) {
-        skip = 0;
-        while (true) {
-          const batch = await entities.MailItem.filter(
-            { created_by: outlookEmail }, "-received_date", BATCH, skip
-          );
-          const arr = Array.isArray(batch) ? batch : (batch ? [batch] : []);
-          allMails = allMails.concat(arr);
-          if (arr.length < BATCH) break;
-          skip += BATCH;
-          if (skip >= 5000) break;
-        }
       }
       return allMails;
     },
@@ -201,26 +184,18 @@ export default function MailKanban() {
 
   // Fetch task columns for ConvertToTaskDialog
   const { data: taskColumns = [] } = useQuery({
-    queryKey: ["taskColumns"],
-    queryFn: () => entities.TaskColumn.list("order"),
+    queryKey: ["taskColumns", currentUser?.id],
+    queryFn: () => entities.TaskColumn.filter({ created_by: currentUser?.id }, "order"),
     enabled: !!currentUser,
   });
 
-  // Fetch tasks for tags view
+  // Fetch tasks for tags view - strikt nur für aktuellen Benutzer
   const { data: allTasks = [] } = useQuery({
-    queryKey: ["allTasks", currentUser?.email],
+    queryKey: ["allTasks", currentUser?.id],
     queryFn: async () => {
       if (!currentUser?.microsoft_access_token) return [];
-      const outlookEmail = currentUser.microsoft_outlook_email;
-      const tasks1 = await entities.Task.filter({ created_by: currentUser.email });
-      const arr1 = Array.isArray(tasks1) ? tasks1 : (tasks1 ? [tasks1] : []);
-      let allTasks = arr1;
-      if (outlookEmail) {
-        const tasks2 = await entities.Task.filter({ created_by: outlookEmail });
-        const arr2 = Array.isArray(tasks2) ? tasks2 : (tasks2 ? [tasks2] : []);
-        allTasks = allTasks.concat(arr2);
-      }
-      return allTasks;
+      const tasks = await entities.Task.filter({ created_by: currentUser.id });
+      return Array.isArray(tasks) ? tasks : (tasks ? [tasks] : []);
     },
     enabled: !!currentUser?.microsoft_access_token,
   });
@@ -302,6 +277,9 @@ export default function MailKanban() {
       result = result.filter(m => !m.is_completed);
     }
 
+    // Archivierte Mails (aus Outlook gelöscht) ausblenden
+    result = result.filter(m => !m.is_archived);
+
     return result;
   }, [mails, searchQuery, activeFilters, advancedSearch, showCompleted]);
 
@@ -312,8 +290,8 @@ export default function MailKanban() {
       return entities.KanbanColumn.create({ ...data, order: maxOrder, mailbox: 'personal' });
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["kanbanColumns", currentUser?.email] });
-      await queryClient.refetchQueries({ queryKey: ["kanbanColumns", currentUser?.email] });
+      await queryClient.invalidateQueries({ queryKey: ["kanbanColumns", currentUser?.id] });
+      await queryClient.refetchQueries({ queryKey: ["kanbanColumns", currentUser?.id] });
       toast.success('Spalte hinzugefügt');
       setShowAddColumn(false);
     },
@@ -325,7 +303,7 @@ export default function MailKanban() {
       return entities.KanbanColumn.update(id, data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["kanbanColumns", currentUser?.email] });
+      queryClient.invalidateQueries({ queryKey: ["kanbanColumns", currentUser?.id] });
     },
     onError: (error) => toast.error('Fehler: ' + error.message),
   });
@@ -350,7 +328,7 @@ export default function MailKanban() {
       return entities.KanbanColumn.delete(columnId);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["kanbanColumns", currentUser?.email] });
+      queryClient.invalidateQueries({ queryKey: ["kanbanColumns", currentUser?.id] });
       toast.success('Spalte gelöscht');
     },
     onError: (error) => toast.error('Fehler: ' + error.message),

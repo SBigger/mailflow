@@ -68,7 +68,7 @@ serve(async (req) => {
     const syncDays = profile.sync_days || 80
     const fromDate = new Date()
     fromDate.setDate(fromDate.getDate() - syncDays)
-    currentUrl = `https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages/delta?$select=id,receivedDateTime,subject,from,sender,hasAttachments,isRead,importance,bodyPreview&$filter=receivedDateTime+ge+${fromDate.toISOString()}&$top=100`
+    currentUrl = `https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages/delta?$select=id,receivedDateTime,subject,from,sender,hasAttachments,isRead,importance,bodyPreview&$filter=receivedDateTime+ge+${fromDate.toISOString()}&$top=999`
     console.log(`[SYNC] INITIAL ${syncDays} Tage für ${profile.email}`)
   }
 
@@ -90,8 +90,41 @@ serve(async (req) => {
     outlookCol = newCol
   }
 
-  // Domain-Regeln
+  // Domain-Regeln + Kunden laden
   const { data: domainRules } = await supabase.from('domain_tag_rules').select('*').eq('created_by', authUser.id)
+  const { data: customers } = await supabase.from('customers').select('id, company_name')
+  const customerMap = new Map<string, string>()
+  for (const c of (customers || [])) customerMap.set(c.id, c.company_name)
+
+  // Cache: customer_id → kanban column_id (wird bei Bedarf erstellt)
+  const customerColumnCache = new Map<string, string>()
+
+  async function getOrCreateCustomerColumn(customerId: string): Promise<string> {
+    if (customerColumnCache.has(customerId)) return customerColumnCache.get(customerId)!
+    const customerName = customerMap.get(customerId)
+    if (!customerName) return outlookCol.id
+
+    // Existierende Spalte mit gleichem Namen suchen
+    const { data: existingCol } = await supabase.from('kanban_columns')
+      .select('id').eq('created_by', authUser.id).eq('name', customerName).maybeSingle()
+    if (existingCol) {
+      customerColumnCache.set(customerId, existingCol.id)
+      return existingCol.id
+    }
+
+    // Neue Kunden-Spalte erstellen
+    const { data: lastCol } = await supabase.from('kanban_columns')
+      .select('order').eq('created_by', authUser.id).order('order', { ascending: false }).limit(1)
+    const nextOrder = ((lastCol?.[0] as any)?.order ?? 0) + 1
+    const { data: newCol } = await supabase.from('kanban_columns')
+      .insert({ name: customerName, order: nextOrder, color: '#6366f1', mailbox: 'personal', created_by: authUser.id })
+      .select().single()
+    if (newCol) {
+      customerColumnCache.set(customerId, newCol.id)
+      return newCol.id
+    }
+    return outlookCol.id
+  }
 
   // Batch von Microsoft holen
   const response = await fetch(currentUrl, { headers: { Authorization: `Bearer ${accessToken}` } })
@@ -116,10 +149,10 @@ serve(async (req) => {
 
   for (const msg of messages) {
     if (msg['@odata.removed']) {
+      // Mail aus Outlook gelöscht → in Supabase behalten, nur als archiviert markieren
       const existing = existingMap.get(msg.id)
       if (existing?.id) {
-        await supabase.from('mail_items').update({ skip_outlook_delete: true }).eq('id', existing.id)
-        await supabase.from('mail_items').delete().eq('id', existing.id)
+        await supabase.from('mail_items').update({ is_archived: true }).eq('id', existing.id)
       }
       continue
     }
@@ -132,9 +165,13 @@ serve(async (req) => {
 
     const subject = (msg.subject || '').trim() || '(Kein Betreff)'
     const autoTags: string[] = []
+    let matchedCustomerId: string | null = null
     for (const rule of (domainRules || [])) {
       const domain = rule.domain.toLowerCase().replace(/^@/, '')
-      if (senderEmail.endsWith('@' + domain)) autoTags.push(rule.tag)
+      if (senderEmail.endsWith('@' + domain)) {
+        autoTags.push(rule.tag)
+        if (rule.customer_id && !matchedCustomerId) matchedCustomerId = rule.customer_id
+      }
     }
 
     const existing = existingMap.get(msg.id)
@@ -144,13 +181,19 @@ serve(async (req) => {
         toUpdate.push({ id: existing.id, is_read: newIsRead, subject, body_preview: msg.bodyPreview || '' })
       }
     } else {
+      // Kunden-Spalte zuweisen wenn Domain-Regel mit customer_id gefunden
+      let targetColumnId = outlookCol.id
+      if (matchedCustomerId) {
+        targetColumnId = await getOrCreateCustomerColumn(matchedCustomerId)
+      }
       toInsert.push({
         outlook_id: msg.id, subject, sender_name: senderName, sender_email: senderEmail,
         received_date: msg.receivedDateTime || new Date().toISOString(),
         is_read: msg.isRead || false, has_attachments: msg.hasAttachments || false,
         body_preview: msg.bodyPreview || '', mailbox: 'personal',
         priority: msg.importance === 'high' ? 'high' : msg.importance === 'low' ? 'low' : 'normal',
-        tags: autoTags, column_id: outlookCol.id, created_by: authUser.id
+        tags: autoTags, column_id: targetColumnId, created_by: authUser.id,
+        customer_id: matchedCustomerId || null
       })
     }
   }

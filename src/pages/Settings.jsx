@@ -76,7 +76,7 @@ export default function Settings() {
     queryKey: ['tags'],
     queryFn: async () => {
       if (!user) return [];
-      return entities.Tag.filter({ created_by: user.email });
+      return entities.Tag.filter({ created_by: user.id });
     },
     enabled: !!user
   });
@@ -90,7 +90,7 @@ export default function Settings() {
     queryKey: ['domainRules'],
     queryFn: async () => {
       if (!user) return [];
-      return entities.DomainTagRule.filter({ created_by: user.email });
+      return entities.DomainTagRule.filter({ created_by: user.id });
     },
     enabled: !!user
   });
@@ -349,6 +349,8 @@ export default function Settings() {
       toast.success(`Fertig! ${deleted} gelöscht, ${totalInserted} Mails synchronisiert.`);
       setSyncProgress('');
       queryClient.invalidateQueries({ queryKey: ['currentUser'] });
+      queryClient.invalidateQueries({ queryKey: ['mailItems'] });
+      queryClient.invalidateQueries({ queryKey: ['kanbanColumns'] });
     } catch (error) {
       toast.error('Fehler: ' + (error.response?.data?.error || error.message));
       setSyncProgress('');
@@ -634,9 +636,9 @@ export default function Settings() {
                          <Input
                            type="number"
                            min="1"
-                           max="365"
+                           max="3650"
                            value={syncDays}
-                           onChange={(e) => setSyncDays(Math.max(1, Math.min(365, parseInt(e.target.value) || 60)))}
+                           onChange={(e) => setSyncDays(Math.max(1, parseInt(e.target.value) || 60))}
                            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: inputColor }}
                            className="w-32"
                          />

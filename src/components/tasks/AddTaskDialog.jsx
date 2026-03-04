@@ -53,7 +53,7 @@ export default function AddTaskDialog({ open, onClose, onAdd, columns }) {
     queryKey: ["tags"],
     queryFn: async () => {
       if (!currentUser) return [];
-      return entities.Tag.filter({ created_by: currentUser.email });
+      return entities.Tag.filter({ created_by: currentUser.id });
     },
     enabled: !!currentUser,
   });

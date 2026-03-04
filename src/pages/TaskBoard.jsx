@@ -108,13 +108,13 @@ export default function TaskBoard() {
 
     // Task-User sehen nur ihre eigenen Tasks
     if (currentUser?.role === 'task_user') {
-      result = result.filter(t => 
-        t.created_by === currentUser.email || t.assignee === currentUser.email
+      result = result.filter(t =>
+        t.created_by === currentUser.id || t.assignee === currentUser.email
       );
     } else if (userFilter === 'me') {
       // Nur eigene Tasks (für Admin/User)
-      result = result.filter(t => 
-        t.created_by === currentUser?.email || t.assignee === currentUser?.email
+      result = result.filter(t =>
+        t.created_by === currentUser?.id || t.assignee === currentUser?.email
       );
     } else if (userFilter !== 'all') {
       // Filter nach spezifischem User (Email)

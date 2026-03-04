@@ -23,12 +23,21 @@ function makeEntity(tableName) {
       return () => supabase.removeChannel(channel);
     },
 
+    async list(orderBy = 'created_at', limit = 1000) {
+      let query = supabase.from(tableName).select('*');
+      if (orderBy) query = query.order(orderBy.replace(/^-/, ''), { ascending: !orderBy.startsWith('-') });
+      if (limit) query = query.limit(limit);
+      const { data, error } = await query;
+      if (error) throw new Error(error.message);
+      return data || [];
+    },
+
     async filter(filters = {}, orderBy = 'created_at', limit = 1000, offset = 0) {
       let query = supabase.from(tableName).select('*');
       for (const [key, val] of Object.entries(filters)) {
         if (val !== undefined && val !== null) query = query.eq(key, val);
       }
-      if (orderBy) query = query.order(orderBy, { ascending: false });
+      if (orderBy) query = query.order(orderBy.replace(/^-/, ''), { ascending: !orderBy.startsWith('-') });
       if (limit) query = query.limit(limit);
       if (offset) query = query.range(offset, offset + limit - 1);
       const { data, error } = await query;

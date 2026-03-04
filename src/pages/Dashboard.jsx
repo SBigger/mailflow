@@ -46,21 +46,19 @@ export default function Dashboard() {
   });
 
   const { data: tasks = [] } = useQuery({
-    queryKey: ["tasks", currentUser?.email],
+    queryKey: ["tasks", currentUser?.id],
     queryFn: async () => {
       if (!currentUser) return [];
-      const allTasks = await entities.Task.list();
-      return allTasks.filter(task => task.created_by === currentUser.email);
+      return entities.Task.filter({ created_by: currentUser.id });
     },
     enabled: !!currentUser,
   });
 
   const { data: mails = [] } = useQuery({
-    queryKey: ["mailItems", currentUser?.email],
+    queryKey: ["mailItems", currentUser?.id],
     queryFn: async () => {
       if (!currentUser) return [];
-      const allMails = await entities.MailItem.list();
-      return allMails.filter(mail => mail.created_by === currentUser.email);
+      return entities.MailItem.filter({ created_by: currentUser.id }, "-received_date");
     },
     enabled: !!currentUser,
   });

@@ -17,11 +17,10 @@ export default function ReminderBoard() {
   });
 
   const { data: mails = [] } = useQuery({
-    queryKey: ["mailItems", currentUser?.email],
+    queryKey: ["mailItems", currentUser?.id],
     queryFn: async () => {
       if (!currentUser) return [];
-      const allMails = await entities.MailItem.list("-received_date");
-      return allMails.filter(mail => mail.created_by === currentUser.email);
+      return entities.MailItem.filter({ created_by: currentUser.id }, "-received_date");
     },
     enabled: !!currentUser,
   });
