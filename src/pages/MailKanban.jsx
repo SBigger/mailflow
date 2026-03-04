@@ -135,6 +135,22 @@ export default function MailKanban() {
     }
   }, []);
 
+  // Auto-Sync alle 30 Minuten im Hintergrund (solange App offen)
+  useEffect(() => {
+    if (!currentUser) return;
+    const SYNC_INTERVAL = 30 * 60 * 1000; // 30 Minuten
+    const interval = setInterval(async () => {
+      try {
+        await functions.invoke('sync-outlook-mails', {});
+        queryClient.invalidateQueries({ queryKey: ["mailItems"] });
+        queryClient.invalidateQueries({ queryKey: ["kanbanColumns"] });
+      } catch (e) {
+        console.warn('[AUTO-SYNC] Fehler:', e.message);
+      }
+    }, SYNC_INTERVAL);
+    return () => clearInterval(interval);
+  }, [currentUser?.id]);
+
   // Fetch columns - nur für aktuellen Benutzer
   const { data: columns = [], isLoading: colLoading } = useQuery({
     queryKey: ["kanbanColumns", currentUser?.id],

@@ -87,8 +87,8 @@ export default function CustomerHeader({ customer, staff, onUpdate }) {
               </SelectTrigger>
               <SelectContent style={{ backgroundColor: '#ffffff', borderColor: isArtis ? '#ccd8cc' : '#e5e7eb' }}>
                 <SelectItem value="none" className="text-xs text-gray-400">Niemand</SelectItem>
-                {staff.map(s => (
-                  <SelectItem key={s.id} value={s.id} className="text-xs text-gray-800">{s.name}</SelectItem>
+                {staff.map(u => (
+                  <SelectItem key={u.id} value={u.id} className="text-xs text-gray-800">{u.full_name || u.email}</SelectItem>
                 ))}
               </SelectContent>
             </Select>

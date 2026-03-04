@@ -25,7 +25,7 @@ function escapeCsv(val) {
   return str;
 }
 
-function exportCustomers(customers, staff, activityTemplates) {
+function exportCustomers(customers, appUsers, activityTemplates) {
   // Collect all unique activity names (from templates, then any extra from customers)
   const templateNames = activityTemplates.map(t => t.name);
   const allNames = [...templateNames];
@@ -39,8 +39,8 @@ function exportCustomers(customers, staff, activityTemplates) {
   const header = [...fixedHeaders, ...allNames];
 
   const rows = customers.map(c => {
-    const ml = staff.find(s => s.id === c.mandatsleiter_id);
-    const sb = staff.find(s => s.id === c.sachbearbeiter_id);
+    const ml = appUsers.find(u => u.id === c.mandatsleiter_id);
+    const sb = appUsers.find(u => u.id === c.sachbearbeiter_id);
     const actMap = {};
     (c.activities || []).forEach(a => { actMap[a.name] = a.completed ? "1" : "0"; });
     const actCols = allNames.map(name => actMap[name] !== undefined ? actMap[name] : "");
@@ -51,8 +51,8 @@ function exportCustomers(customers, staff, activityTemplates) {
       c.ort || "",
       c.phone || "",
       c.budget !== null && c.budget !== undefined ? c.budget : "",
-      ml ? ml.name : "",
-      sb ? sb.name : "",
+      ml ? (ml.full_name || ml.email) : "",
+      sb ? (sb.full_name || sb.email) : "",
       ...actCols
     ].map(escapeCsv).join(",");
   });
@@ -102,9 +102,12 @@ export default function Kunden() {
     queryFn: () => entities.Customer.list("company_name"),
   });
 
-  const { data: staff = [] } = useQuery({
-    queryKey: ["staff"],
-    queryFn: () => entities.Staff.list("order"),
+  const { data: appUsers = [] } = useQuery({
+    queryKey: ["appUsers"],
+    queryFn: async () => {
+      const res = await functions.invoke('getAllUsers', {});
+      return res?.data?.users || [];
+    },
   });
 
   const { data: activityTemplates = [] } = useQuery({
@@ -158,7 +161,7 @@ export default function Kunden() {
       <div className="h-screen overflow-hidden" style={{ backgroundColor: isArtis ? '#f2f5f2' : isLight ? '#f0f0f6' : '#2a2a2f' }}>
         <MobileCustomerView
           customers={customers}
-          staff={staff}
+          staff={appUsers}
           selectedCustomer={selectedCustomer}
           onNew={handleNew}
           onSelect={setSelectedCustomer}
@@ -168,7 +171,7 @@ export default function Kunden() {
         <CustomerImportDialog
           open={showImport}
           onClose={() => setShowImport(false)}
-          staff={staff}
+          staff={appUsers}
           activityTemplates={activityTemplates}
           onImported={() => { refetch(); setShowImport(false); }}
         />
@@ -186,7 +189,7 @@ export default function Kunden() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => exportCustomers(customers, staff, activityTemplates)}
+              onClick={() => exportCustomers(customers, appUsers, activityTemplates)}
               className="h-7 px-2"
               style={{ color: isArtis ? '#6b826b' : isLight ? '#5a5a7a' : '#71717a' }}
               title="CSV exportieren"
@@ -236,7 +239,7 @@ export default function Kunden() {
           <>
             <div className="flex items-start gap-2 pr-4">
               <div className="flex-1">
-                <CustomerHeader customer={currentCustomer} staff={staff} onUpdate={handleUpdate} />
+                <CustomerHeader customer={currentCustomer} staff={appUsers} onUpdate={handleUpdate} />
               </div>
               <button
                 onClick={() => { if (confirm(`Kunden "${currentCustomer.company_name}" wirklich löschen?`)) deleteMutation.mutate(currentCustomer.id); }}
@@ -290,7 +293,7 @@ export default function Kunden() {
       <CustomerImportDialog
         open={showImport}
         onClose={() => setShowImport(false)}
-        staff={staff}
+        staff={appUsers}
         activityTemplates={activityTemplates}
         onImported={() => { refetch(); setShowImport(false); }}
       />

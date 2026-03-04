@@ -481,12 +481,6 @@ export default function Settings() {
           >
             {theme === 'light' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />} Darstellung
           </button>
-          <button
-            onClick={() => setActiveTab('staff')}
-            className={`w-full justify-start flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'staff' ? navActiveStyle : navInactiveStyle}`}
-          >
-            <Users className="h-4 w-4" /> Mitarbeiter (CRM)
-          </button>
           {user?.role === 'admin' && (
             <>
               <button
@@ -1075,66 +1069,6 @@ export default function Settings() {
           </div>
         )}
 
-        {/* Mitarbeiter (CRM) Tab */}
-        {activeTab === 'staff' && (
-         <div className="space-y-6">
-           <div className="rounded-xl p-6 border" style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
-             <h3 className="text-lg font-semibold mb-1 flex items-center gap-2" style={{ color: headingColor }}>
-               <Users className="h-5 w-5" /> CRM-Mitarbeiter
-             </h3>
-             <p className="text-xs mb-5" style={{ color: textMuted }}>Mandatsleiter und Sachbearbeiter für das CRM. Können später mit einem Login-User verknüpft werden.</p>
-
-             <div className="flex gap-2 mb-6">
-               <Input value={newStaff.name} onChange={e => setNewStaff(s => ({ ...s, name: e.target.value }))} placeholder="Name (z.B. Max Muster)" className="flex-1" style={{ backgroundColor: inputBg, borderColor: inputBorder, color: inputColor }} onKeyDown={e => { if (e.key === 'Enter' && newStaff.name.trim()) createStaffMutation.mutate({ name: newStaff.name.trim(), email: newStaff.email.trim() }); }} />
-               <Input value={newStaff.email} onChange={e => setNewStaff(s => ({ ...s, email: e.target.value }))} placeholder="E-Mail (optional)" className="flex-1" style={{ backgroundColor: inputBg, borderColor: inputBorder, color: inputColor }} />
-                <Button
-                  onClick={() => { if (newStaff.name.trim()) createStaffMutation.mutate({ name: newStaff.name.trim(), email: newStaff.email.trim() }); }}
-                  className="bg-indigo-600 hover:bg-indigo-500"
-                >
-                  <Plus className="h-4 w-4 mr-1" /> Hinzufügen
-                </Button>
-              </div>
-
-              <div className="space-y-2">
-                {staffList.length === 0 && (
-                  <p className="text-sm py-4" style={{ color: textMuted }}>Noch keine Mitarbeiter erfasst.</p>
-                )}
-                {staffList.map(s => {
-                  const linkedUser = users.find(u => u.id === s.user_id);
-                  return (
-                    <div key={s.id} className="flex items-center justify-between p-3 rounded-lg border" style={{ backgroundColor: rowBg, borderColor: rowBorder }}>
-                      <div>
-                        <div className="font-medium" style={{ color: headingColor }}>{s.name}</div>
-                        {s.email && <div className="text-xs" style={{ color: textMuted }}>{s.email}</div>}
-                        {linkedUser ? (
-                          <div className="text-xs text-violet-400 mt-0.5">↔ {linkedUser.full_name || linkedUser.email}</div>
-                        ) : (
-                          <div className="text-xs mt-0.5" style={{ color: textMuted }}>Kein Login-User verknüpft</div>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <select value={s.user_id || ""} onChange={e => updateStaffUserMutation.mutate({ id: s.id, user_id: e.target.value || null })} className="rounded-md px-2 py-1 text-xs" style={{ backgroundColor: inputBg, borderColor: inputBorder, color: inputColor, border: `1px solid ${inputBorder}` }}>
-                          <option value="">Login-User verknüpfen...</option>
-                          {users.map(u => (
-                            <option key={u.id} value={u.id}>{u.full_name || u.email}</option>
-                          ))}
-                        </select>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => { if (confirm(`"${s.name}" wirklich löschen?`)) deleteStaffMutation.mutate(s.id); }}
-                          className="h-7 w-7 text-red-400 hover:text-red-300 hover:bg-red-500/10"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Benutzer Tab */}
         {activeTab === 'users' && user?.role === 'admin' && (
