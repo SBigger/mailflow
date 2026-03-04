@@ -12,6 +12,17 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 function makeEntity(tableName) {
   return {
+    // Real-time subscription to table changes
+    subscribe(callback) {
+      const channel = supabase
+        .channel(`realtime-${tableName}-${Date.now()}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: tableName }, (payload) => {
+          callback({ type: payload.eventType, data: payload.new || payload.old });
+        })
+        .subscribe();
+      return () => supabase.removeChannel(channel);
+    },
+
     async filter(filters = {}, orderBy = 'created_at', limit = 1000, offset = 0) {
       let query = supabase.from(tableName).select('*');
       for (const [key, val] of Object.entries(filters)) {
@@ -74,6 +85,7 @@ export const entities = {
   DomainTagRule:    makeEntity('domain_tag_rules'),
   Priority:         makeEntity('priorities'),
   User:             makeEntity('profiles'),
+  TaskReadStatus:   makeEntity('task_read_statuses'),
 };
 
 // Auth helpers
@@ -82,6 +94,14 @@ export const auth = {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return null;
     const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+    return data;
+  },
+
+  async updateMe(payload) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+    const { data, error } = await supabase.from('profiles').update(payload).eq('id', user.id).select().single();
+    if (error) throw new Error(error.message);
     return data;
   },
 

@@ -360,7 +360,7 @@ export default function MailKanban() {
   const handleSync = async () => {
     setIsSyncing(true);
     try {
-      await functions.invoke('syncOutlookMailsWorker', {});
+      await functions.invoke('sync-outlook-mails', {});
       queryClient.invalidateQueries({ queryKey: ["mailItems"] });
       toast.success('Sync abgeschlossen');
     } catch (error) {
@@ -374,7 +374,7 @@ export default function MailKanban() {
     if (!confirm('Alle Mails löschen und neu synchronisieren?')) return;
     setIsSyncing(true);
     try {
-      await functions.invoke('resetAndSyncOutlook', {});
+      await functions.invoke('reset-and-sync', {});
       queryClient.invalidateQueries({ queryKey: ["mailItems"] });
       toast.success('Reset und Sync abgeschlossen');
     } catch (error) {

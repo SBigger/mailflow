@@ -228,13 +228,13 @@ export default function UserManagement() {
         </div>
       </div>
 
-      {userToDelete && (
-        <DeleteUserDialog
-          user={userToDelete}
-          onClose={() => setUserToDelete(null)}
-          onSuccess={handleDeleteSuccess}
-        />
-      )}
+      <DeleteUserDialog
+        open={!!userToDelete}
+        userToDelete={userToDelete}
+        allUsers={users}
+        onClose={() => setUserToDelete(null)}
+        onDeleted={handleDeleteSuccess}
+      />
     </div>
   );
 }

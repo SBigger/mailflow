@@ -4,8 +4,8 @@ port = 54321
 
 [auth]
 enabled = true
-site_url = "http://localhost:3000"
-additional_redirect_urls = ["https://mailflow.vercel.app"]
+site_url = "https://smartis.me"
+additional_redirect_urls = ["https://smartis.me", "https://mailflow-eosin.vercel.app", "http://localhost:3000", "http://localhost:3001"]
 
 [auth.email]
 enable_signup = true

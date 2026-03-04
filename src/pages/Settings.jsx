@@ -328,18 +328,18 @@ export default function Settings() {
     try {
       // Schritt 1: Reset (löschen + deltaLink zurücksetzen)
       setSyncProgress('Lösche bestehende Mails...');
-      const resetRes = await functions.invoke('resetAndSyncOutlook', {});
+      const resetRes = await functions.invoke('reset-and-sync', {});
       const deleted = resetRes.data?.deleted || 0;
       setSyncProgress(`${deleted} Mails gelöscht. Starte Sync...`);
 
-      // Schritt 2: Sync in Schleife über syncOutlookMailsWorker
+      // Schritt 2: Sync in Schleife über sync-outlook-mails
       let totalInserted = 0;
       let hasMore = true;
       let batch = 0;
       const MAX_BATCHES = 200;
       while (hasMore && batch < MAX_BATCHES) {
         batch++;
-        const { data } = await functions.invoke('syncOutlookMailsWorker', {});
+        const { data } = await functions.invoke('sync-outlook-mails', { sync_days: syncDays });
         totalInserted += data.inserted || 0;
         hasMore = data.hasMore === true;
         setSyncProgress(`Synchronisiert: ${totalInserted} Mails (Batch ${batch})...`);
