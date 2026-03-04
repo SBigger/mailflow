@@ -49,6 +49,8 @@ export default function Settings() {
   const [userToDelete, setUserToDelete] = useState(null);
   const [editingUserId, setEditingUserId] = useState(null);
   const [editingUserRole, setEditingUserRole] = useState('');
+  const [editingUserNameId, setEditingUserNameId] = useState(null);
+  const [editingUserNameValue, setEditingUserNameValue] = useState('');
   const [invitingEmail, setInvitingEmail] = useState('');
   const [invitedUsers, setInvitedUsers] = useState(() => {
     const stored = localStorage.getItem('invitedUsers');
@@ -305,6 +307,19 @@ export default function Settings() {
       toast.success('Rolle aktualisiert');
     },
     onError: () => toast.error('Fehler beim Aktualisieren der Rolle')
+  });
+
+  const updateUserNameMutation = useMutation({
+    mutationFn: async ({ id, full_name }) => {
+      const { error } = await supabase.from('profiles').update({ full_name }).eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      setEditingUserNameId(null);
+      toast.success('Name aktualisiert');
+    },
+    onError: (e) => toast.error('Fehler: ' + e.message),
   });
 
   const handleOutlookConnect = async () => {
@@ -1133,72 +1148,113 @@ export default function Settings() {
                   ) : (
                     <>
                       {users.map((u) => (
-                        <div key={u.id} className="flex items-center justify-between p-3 rounded-lg border" style={{ backgroundColor: rowBg, borderColor: rowBorder }}>
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400 text-sm font-medium">
-                              {u.full_name?.charAt(0) || u.email?.charAt(0) || '?'}
+                        <div key={u.id} className="rounded-lg border" style={{ backgroundColor: rowBg, borderColor: rowBorder }}>
+                          <div className="flex items-center justify-between p-3 gap-3">
+                            {/* Avatar */}
+                            <div className="w-9 h-9 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400 text-sm font-semibold flex-shrink-0">
+                              {(u.full_name || u.email || '?').charAt(0).toUpperCase()}
                             </div>
-                            <div>
-                              <div className="font-medium" style={{ color: headingColor }}>{u.full_name || u.email}</div>
-                              <div className="text-xs" style={{ color: textMuted }}>{u.email}</div>
+
+                            {/* Name / Email area */}
+                            <div className="flex-1 min-w-0">
+                              {editingUserNameId === u.id ? (
+                                <div className="flex items-center gap-2">
+                                  <Input
+                                    autoFocus
+                                    value={editingUserNameValue}
+                                    onChange={(e) => setEditingUserNameValue(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') updateUserNameMutation.mutate({ id: u.id, full_name: editingUserNameValue.trim() });
+                                      if (e.key === 'Escape') setEditingUserNameId(null);
+                                    }}
+                                    placeholder="Vollständiger Name"
+                                    className="h-7 text-sm flex-1"
+                                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: inputColor }}
+                                  />
+                                  <Button
+                                    variant="ghost" size="icon"
+                                    onClick={() => updateUserNameMutation.mutate({ id: u.id, full_name: editingUserNameValue.trim() })}
+                                    disabled={updateUserNameMutation.isPending}
+                                    className="h-7 w-7 text-green-500 hover:text-green-400 hover:bg-green-500/10 flex-shrink-0"
+                                  >
+                                    <Check className="h-3.5 w-3.5" />
+                                  </Button>
+                                  <Button variant="ghost" size="icon" onClick={() => setEditingUserNameId(null)} className="h-7 w-7 flex-shrink-0" style={{ color: textMuted }}>
+                                    <X className="h-3.5 w-3.5" />
+                                  </Button>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-1.5">
+                                  <div className="font-semibold truncate" style={{ color: headingColor }}>{u.full_name || u.email}</div>
+                                  <button
+                                    onClick={() => { setEditingUserNameId(u.id); setEditingUserNameValue(u.full_name || ''); }}
+                                    className="opacity-40 hover:opacity-100 transition-opacity flex-shrink-0"
+                                    title="Name bearbeiten"
+                                  >
+                                    <Pencil className="h-3 w-3" style={{ color: textMuted }} />
+                                  </button>
+                                </div>
+                              )}
+                              {editingUserNameId !== u.id && (
+                                <div className="text-xs truncate" style={{ color: textMuted }}>{u.email}</div>
+                              )}
                             </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {editingUserId === u.id ? (
-                              <>
-                                <select value={editingUserRole} onChange={(e) => setEditingUserRole(e.target.value)} className="rounded-md px-2 py-1 text-xs h-7" style={{ backgroundColor: inputBg, borderColor: inputBorder, color: inputColor, border: `1px solid ${inputBorder}` }}>
-                                  <option value="admin">Admin</option>
-                                  <option value="user">Benutzer</option>
-                                  <option value="task_user">Task Benutzer</option>
-                                </select>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => updateUserRoleMutation.mutate({ id: u.id, role: editingUserRole })}
-                                  disabled={updateUserRoleMutation.isPending}
-                                  className="h-7 w-7 text-green-400 hover:text-green-300 hover:bg-green-500/10"
-                                >
-                                  <Check className="h-3.5 w-3.5" />
-                                </Button>
-                                <Button variant="ghost" size="icon" onClick={() => setEditingUserId(null)} className="h-7 w-7" style={{ color: textMuted }}>
-                                  <X className="h-3.5 w-3.5" />
-                                </Button>
-                              </>
-                            ) : (
-                              <>
-                                <span className={`text-xs px-2 py-1 rounded-full ${
-                                  u.role === 'admin' 
-                                    ? 'bg-purple-500/10 text-purple-400 border border-purple-500/30' 
-                                    : u.role === 'task_user'
-                                    ? 'bg-green-500/10 text-green-400 border border-green-500/30'
-                                    : 'bg-blue-500/10 text-blue-400 border border-blue-500/30'
-                                }`}>
-                                  {u.role === 'admin' ? 'Admin' : u.role === 'task_user' ? 'Task Benutzer' : 'Benutzer'}
-                                </span>
-                                {u.id !== user?.id && (
-                                  <>
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      title="Rolle bearbeiten"
-                                      onClick={() => { setEditingUserId(u.id); setEditingUserRole(u.role || 'user'); }}
-                                      className="h-7 w-7 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800"
-                                    >
-                                      <Pencil className="h-3.5 w-3.5" />
-                                    </Button>
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      title="Benutzer entfernen & Daten übertragen"
-                                      onClick={() => { setUserToDelete(u); setDeleteUserDialogOpen(true); }}
-                                      className="h-7 w-7 text-red-400 hover:text-red-300 hover:bg-red-500/10"
-                                    >
-                                      <UserMinus className="h-4 w-4" />
-                                    </Button>
-                                  </>
-                                )}
-                              </>
-                            )}
+
+                            {/* Role + Actions */}
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                              {editingUserId === u.id ? (
+                                <>
+                                  <select value={editingUserRole} onChange={(e) => setEditingUserRole(e.target.value)} className="rounded-md px-2 py-1 text-xs h-7" style={{ backgroundColor: inputBg, borderColor: inputBorder, color: inputColor, border: `1px solid ${inputBorder}` }}>
+                                    <option value="admin">Admin</option>
+                                    <option value="user">Benutzer</option>
+                                    <option value="task_user">Task Benutzer</option>
+                                  </select>
+                                  <Button
+                                    variant="ghost" size="icon"
+                                    onClick={() => updateUserRoleMutation.mutate({ id: u.id, role: editingUserRole })}
+                                    disabled={updateUserRoleMutation.isPending}
+                                    className="h-7 w-7 text-green-400 hover:text-green-300 hover:bg-green-500/10"
+                                  >
+                                    <Check className="h-3.5 w-3.5" />
+                                  </Button>
+                                  <Button variant="ghost" size="icon" onClick={() => setEditingUserId(null)} className="h-7 w-7" style={{ color: textMuted }}>
+                                    <X className="h-3.5 w-3.5" />
+                                  </Button>
+                                </>
+                              ) : (
+                                <>
+                                  <span className={`text-xs px-2 py-1 rounded-full ${
+                                    u.role === 'admin'
+                                      ? 'bg-purple-500/10 text-purple-400 border border-purple-500/30'
+                                      : u.role === 'task_user'
+                                      ? 'bg-green-500/10 text-green-400 border border-green-500/30'
+                                      : 'bg-blue-500/10 text-blue-400 border border-blue-500/30'
+                                  }`}>
+                                    {u.role === 'admin' ? 'Admin' : u.role === 'task_user' ? 'Task Benutzer' : 'Benutzer'}
+                                  </span>
+                                  {u.id !== user?.id && (
+                                    <>
+                                      <Button
+                                        variant="ghost" size="icon"
+                                        title="Rolle bearbeiten"
+                                        onClick={() => { setEditingUserId(u.id); setEditingUserRole(u.role || 'user'); }}
+                                        className="h-7 w-7" style={{ color: textMuted }}
+                                      >
+                                        <Pencil className="h-3.5 w-3.5" />
+                                      </Button>
+                                      <Button
+                                        variant="ghost" size="icon"
+                                        title="Benutzer entfernen & Daten übertragen"
+                                        onClick={() => { setUserToDelete(u); setDeleteUserDialogOpen(true); }}
+                                        className="h-7 w-7 text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                                      >
+                                        <UserMinus className="h-4 w-4" />
+                                      </Button>
+                                    </>
+                                  )}
+                                </>
+                              )}
+                            </div>
                           </div>
                         </div>
                       ))}
