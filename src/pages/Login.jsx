@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAuth } from '../lib/AuthContext';
 import { Mail, Lock, Loader2 } from 'lucide-react';
+import artisLogo from '/artis-logo.png';
 
 export default function Login() {
   const { login } = useAuth();
@@ -27,9 +28,7 @@ export default function Login() {
       <div className="w-full max-w-sm">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-4" style={{ backgroundColor: '#7a9b7f' }}>
-            <Mail className="w-8 h-8 text-white" />
-          </div>
+          <img src={artisLogo} alt="Artis Treuhand" className="w-24 h-24 mb-4 mx-auto object-contain" />
           <h1 className="text-2xl font-bold" style={{ color: '#2d3a2d' }}>Artis MailFlow</h1>
           <p className="text-sm mt-1" style={{ color: '#6b826b' }}>Intelligentes E-Mail & Task Management</p>
         </div>
