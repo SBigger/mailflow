@@ -1235,47 +1235,169 @@ export default function Settings() {
         {activeTab === 'appearance' && (
           <div className="space-y-6">
             <div className="rounded-xl p-6 border" style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
-              <h3 className="text-lg font-semibold mb-2 flex items-center gap-2" style={{ color: headingColor }}>
+              <h3 className="text-lg font-semibold mb-1 flex items-center gap-2" style={{ color: headingColor }}>
                 <Sun className="h-5 w-5" /> Darstellung
               </h3>
-              <p className="text-sm mb-6" style={{ color: textMuted }}>Wähle dein bevorzugtes Design.</p>
-              <div className="grid grid-cols-3 gap-4 max-w-xl">
-                {/* Dark */}
+              <p className="text-sm mb-6" style={{ color: textMuted }}>Wähle dein bevorzugtes Design für die Anwendung.</p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 max-w-2xl">
+
+                {/* ── Dark Theme Card ── */}
                 <button
                   onClick={async () => { setTheme('dark'); await auth.updateMe({ theme: 'dark' }); }}
-                  className="flex flex-col items-center gap-3 p-5 rounded-xl border-2 transition-all"
-                  style={{ borderColor: theme === 'dark' ? '#7c3aed' : cardBorder, backgroundColor: theme === 'dark' ? 'rgba(124,58,237,0.1)' : 'transparent' }}
+                  className="group relative text-left rounded-2xl border-2 overflow-hidden transition-all duration-200 hover:scale-[1.02] hover:shadow-xl"
+                  style={{
+                    borderColor: theme === 'dark' ? '#7c3aed' : cardBorder,
+                    boxShadow: theme === 'dark' ? '0 0 0 3px rgba(124,58,237,0.18)' : 'none',
+                  }}
                 >
-                  <div className="w-full h-20 rounded-lg bg-zinc-900 border border-zinc-700 flex items-center justify-center">
-                    <Moon className="h-8 w-8 text-violet-400" />
+                  {/* Mini UI Preview */}
+                  <div className="w-full h-36 bg-zinc-950 flex overflow-hidden">
+                    <div className="w-9 bg-zinc-900 border-r border-zinc-800 flex flex-col items-center py-2.5 gap-2 flex-shrink-0">
+                      <div className="w-4 h-4 rounded-md bg-violet-600/70" />
+                      <div className="w-4 h-4 rounded-md bg-zinc-700" />
+                      <div className="w-4 h-4 rounded-md bg-zinc-700" />
+                      <div className="w-4 h-4 rounded-md bg-zinc-700" />
+                    </div>
+                    <div className="flex-1 p-2 flex flex-col gap-2">
+                      <div className="h-4 w-20 rounded bg-zinc-800" />
+                      <div className="flex gap-1.5 flex-1">
+                        <div className="flex-1 rounded-lg bg-zinc-800/80 p-2 flex flex-col gap-1.5">
+                          <div className="h-1.5 w-10 rounded-full bg-zinc-600" />
+                          <div className="h-1.5 w-14 rounded-full bg-zinc-600" />
+                          <div className="h-1.5 w-8 rounded-full bg-violet-500/60" />
+                        </div>
+                        <div className="flex-1 rounded-lg bg-zinc-800/80 p-2 flex flex-col gap-1.5">
+                          <div className="h-1.5 w-12 rounded-full bg-zinc-600" />
+                          <div className="h-1.5 w-8 rounded-full bg-zinc-600" />
+                          <div className="h-1.5 w-10 rounded-full bg-zinc-600" />
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                  <span className="text-sm font-medium" style={{ color: headingColor }}>Dunkel</span>
-                  {theme === 'dark' && <span className="text-xs text-violet-400">✓ Aktiv</span>}
+                  {/* Card Footer */}
+                  <div className="p-4 flex items-center justify-between" style={{ backgroundColor: theme === 'dark' ? 'rgba(124,58,237,0.08)' : cardBg }}>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <Moon className="h-4 w-4 text-violet-400" />
+                        <span className="font-semibold text-sm" style={{ color: headingColor }}>Dunkel</span>
+                      </div>
+                      <p className="text-xs mt-0.5" style={{ color: textMuted }}>Augenschonend bei Nacht</p>
+                    </div>
+                    {theme === 'dark' ? (
+                      <div className="w-5 h-5 rounded-full bg-violet-600 flex items-center justify-center flex-shrink-0">
+                        <span className="text-white text-[10px] font-bold">✓</span>
+                      </div>
+                    ) : (
+                      <div className="w-5 h-5 rounded-full border-2 flex-shrink-0" style={{ borderColor: cardBorder }} />
+                    )}
+                  </div>
                 </button>
-                {/* Light */}
+
+                {/* ── Light Theme Card ── */}
                 <button
                   onClick={async () => { setTheme('light'); await auth.updateMe({ theme: 'light' }); }}
-                  className="flex flex-col items-center gap-3 p-5 rounded-xl border-2 transition-all"
-                  style={{ borderColor: theme === 'light' ? '#7c3aed' : cardBorder, backgroundColor: theme === 'light' ? 'rgba(124,58,237,0.1)' : 'transparent' }}
+                  className="group relative text-left rounded-2xl border-2 overflow-hidden transition-all duration-200 hover:scale-[1.02] hover:shadow-xl"
+                  style={{
+                    borderColor: theme === 'light' ? '#7c3aed' : cardBorder,
+                    boxShadow: theme === 'light' ? '0 0 0 3px rgba(124,58,237,0.18)' : 'none',
+                  }}
                 >
-                  <div className="w-full h-20 rounded-lg bg-slate-100 border border-slate-300 flex items-center justify-center">
-                    <Sun className="h-8 w-8 text-amber-500" />
+                  {/* Mini UI Preview */}
+                  <div className="w-full h-36 bg-slate-100 flex overflow-hidden">
+                    <div className="w-9 bg-slate-200 border-r border-slate-300 flex flex-col items-center py-2.5 gap-2 flex-shrink-0">
+                      <div className="w-4 h-4 rounded-md bg-violet-500/80" />
+                      <div className="w-4 h-4 rounded-md bg-slate-300" />
+                      <div className="w-4 h-4 rounded-md bg-slate-300" />
+                      <div className="w-4 h-4 rounded-md bg-slate-300" />
+                    </div>
+                    <div className="flex-1 p-2 flex flex-col gap-2">
+                      <div className="h-4 w-20 rounded bg-slate-200" />
+                      <div className="flex gap-1.5 flex-1">
+                        <div className="flex-1 rounded-lg bg-white border border-slate-200 p-2 flex flex-col gap-1.5">
+                          <div className="h-1.5 w-10 rounded-full bg-slate-300" />
+                          <div className="h-1.5 w-14 rounded-full bg-slate-300" />
+                          <div className="h-1.5 w-8 rounded-full bg-violet-400/50" />
+                        </div>
+                        <div className="flex-1 rounded-lg bg-white border border-slate-200 p-2 flex flex-col gap-1.5">
+                          <div className="h-1.5 w-12 rounded-full bg-slate-300" />
+                          <div className="h-1.5 w-8 rounded-full bg-slate-300" />
+                          <div className="h-1.5 w-10 rounded-full bg-slate-300" />
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                  <span className="text-sm font-medium" style={{ color: headingColor }}>Hell</span>
-                  {theme === 'light' && <span className="text-xs text-violet-400">✓ Aktiv</span>}
+                  {/* Card Footer */}
+                  <div className="p-4 flex items-center justify-between" style={{ backgroundColor: theme === 'light' ? 'rgba(124,58,237,0.06)' : cardBg }}>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <Sun className="h-4 w-4 text-amber-500" />
+                        <span className="font-semibold text-sm" style={{ color: headingColor }}>Hell</span>
+                      </div>
+                      <p className="text-xs mt-0.5" style={{ color: textMuted }}>Klassisch & klar</p>
+                    </div>
+                    {theme === 'light' ? (
+                      <div className="w-5 h-5 rounded-full bg-violet-600 flex items-center justify-center flex-shrink-0">
+                        <span className="text-white text-[10px] font-bold">✓</span>
+                      </div>
+                    ) : (
+                      <div className="w-5 h-5 rounded-full border-2 flex-shrink-0" style={{ borderColor: cardBorder }} />
+                    )}
+                  </div>
                 </button>
-                {/* Artis */}
+
+                {/* ── Artis Theme Card ── */}
                 <button
                   onClick={async () => { setTheme('artis'); await auth.updateMe({ theme: 'artis' }); }}
-                  className="flex flex-col items-center gap-3 p-5 rounded-xl border-2 transition-all"
-                  style={{ borderColor: theme === 'artis' ? '#7a9b7f' : cardBorder, backgroundColor: theme === 'artis' ? 'rgba(122,155,127,0.1)' : 'transparent' }}
+                  className="group relative text-left rounded-2xl border-2 overflow-hidden transition-all duration-200 hover:scale-[1.02] hover:shadow-xl"
+                  style={{
+                    borderColor: theme === 'artis' ? '#7a9b7f' : cardBorder,
+                    boxShadow: theme === 'artis' ? '0 0 0 3px rgba(122,155,127,0.22)' : 'none',
+                  }}
                 >
-                  <div className="w-full h-20 rounded-lg border flex items-center justify-center" style={{ backgroundColor: '#f2f5f2', borderColor: '#ccd8cc' }}>
-                    <span className="text-3xl font-bold" style={{ color: '#7a9b7f', fontFamily: 'serif' }}>A</span>
+                  {/* Mini UI Preview */}
+                  <div className="w-full h-36 flex overflow-hidden" style={{ backgroundColor: '#f2f5f2' }}>
+                    <div className="w-9 flex flex-col items-center py-2.5 gap-2 flex-shrink-0 border-r" style={{ backgroundColor: '#e6ede6', borderColor: '#bfcfbf' }}>
+                      <div className="w-4 h-4 rounded-md" style={{ backgroundColor: '#7a9b7f' }} />
+                      <div className="w-4 h-4 rounded-md" style={{ backgroundColor: '#ccd8cc' }} />
+                      <div className="w-4 h-4 rounded-md" style={{ backgroundColor: '#ccd8cc' }} />
+                      <div className="w-4 h-4 rounded-md" style={{ backgroundColor: '#ccd8cc' }} />
+                    </div>
+                    <div className="flex-1 p-2 flex flex-col gap-2">
+                      <div className="h-4 w-20 rounded" style={{ backgroundColor: '#dde8dd' }} />
+                      <div className="flex gap-1.5 flex-1">
+                        <div className="flex-1 rounded-lg p-2 flex flex-col gap-1.5 border" style={{ backgroundColor: 'rgba(255,255,255,0.75)', borderColor: '#ccd8cc' }}>
+                          <div className="h-1.5 w-10 rounded-full" style={{ backgroundColor: '#bfcfbf' }} />
+                          <div className="h-1.5 w-14 rounded-full" style={{ backgroundColor: '#bfcfbf' }} />
+                          <div className="h-1.5 w-8 rounded-full" style={{ backgroundColor: '#7a9b7f80' }} />
+                        </div>
+                        <div className="flex-1 rounded-lg p-2 flex flex-col gap-1.5 border" style={{ backgroundColor: 'rgba(255,255,255,0.75)', borderColor: '#ccd8cc' }}>
+                          <div className="h-1.5 w-12 rounded-full" style={{ backgroundColor: '#bfcfbf' }} />
+                          <div className="h-1.5 w-8 rounded-full" style={{ backgroundColor: '#bfcfbf' }} />
+                          <div className="h-1.5 w-10 rounded-full" style={{ backgroundColor: '#bfcfbf' }} />
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                  <span className="text-sm font-medium" style={{ color: headingColor }}>Artis</span>
-                  {theme === 'artis' && <span className="text-xs" style={{ color: '#7a9b7f' }}>✓ Aktiv</span>}
+                  {/* Card Footer */}
+                  <div className="p-4 flex items-center justify-between" style={{ backgroundColor: theme === 'artis' ? 'rgba(122,155,127,0.1)' : cardBg }}>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-base font-bold leading-none" style={{ color: '#7a9b7f', fontFamily: 'serif' }}>A</span>
+                        <span className="font-semibold text-sm" style={{ color: headingColor }}>Artis</span>
+                      </div>
+                      <p className="text-xs mt-0.5" style={{ color: textMuted }}>Grün & natürlich</p>
+                    </div>
+                    {theme === 'artis' ? (
+                      <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#7a9b7f' }}>
+                        <span className="text-white text-[10px] font-bold">✓</span>
+                      </div>
+                    ) : (
+                      <div className="w-5 h-5 rounded-full border-2 flex-shrink-0" style={{ borderColor: cardBorder }} />
+                    )}
+                  </div>
                 </button>
+
               </div>
             </div>
           </div>

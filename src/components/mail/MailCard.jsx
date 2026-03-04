@@ -55,7 +55,7 @@ export default function MailCard({ mail, isDragging, onClick, onDelete }) {
           : isLight
           ? "hover:shadow-md"
           : "hover:bg-zinc-800/60 hover:border-zinc-700/60 hover:shadow-lg hover:shadow-black/20"
-      } ${!mail.is_read ? "" : "opacity-70"} ${mail.is_completed ? "opacity-40" : ""}`}
+      } ${!mail.is_read ? "" : "opacity-80"} ${mail.is_completed ? "opacity-40" : ""}`}
       style={{
         backgroundColor: isArtis ? '#ffffff' : isLight ? '#ffffff' : 'rgba(24,24,27,0.8)',
         borderColor: isArtis ? '#ccd8cc' : isLight ? '#d4d4e8' : 'rgba(63,63,70,0.6)',
@@ -93,9 +93,13 @@ export default function MailCard({ mail, isDragging, onClick, onDelete }) {
           <div className="flex items-center justify-between gap-2 mb-1">
             <span
               className={`text-sm truncate ${
-                !mail.is_read ? "font-bold" : "font-medium"
+                !mail.is_read ? "font-bold" : "font-semibold"
               }`}
-              style={{ color: isArtis ? '#3d7a4e' : isLight ? '#3d7a4e' : '#7a9b7f' }}
+              style={{
+                color: !mail.is_read
+                  ? (isArtis ? '#1e5030' : isLight ? '#1a3a7a' : '#c4d4ff')
+                  : (isArtis ? '#4a7a5a' : isLight ? '#4a4a8a' : '#a1a1aa'),
+              }}
             >
               {mail.sender_name}
             </span>
@@ -107,8 +111,8 @@ export default function MailCard({ mail, isDragging, onClick, onDelete }) {
 
           {/* Subject */}
           <p
-            className={`text-sm truncate mb-1 font-medium`}
-            style={{ color: !mail.is_read ? (isArtis ? '#2d3a2d' : isLight ? '#1a1a2e' : '#f4f4f5') : (isArtis ? '#6b826b' : isLight ? '#7a7a9a' : '#a1a1aa') }}
+            className={`text-sm truncate mb-1 ${!mail.is_read ? 'font-semibold' : 'font-medium'}`}
+            style={{ color: !mail.is_read ? (isArtis ? '#1a2e1a' : isLight ? '#1a1a2e' : '#f4f4f5') : (isArtis ? '#4a5e4a' : isLight ? '#5a5a7a' : '#c4c4cc') }}
           >
             {mail.subject}
           </p>

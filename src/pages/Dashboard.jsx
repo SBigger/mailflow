@@ -1,11 +1,11 @@
 import React, { useState, useMemo } from "react";
 import { entities, functions, auth } from "@/api/supabaseClient";
 import { useQuery } from "@tanstack/react-query";
-import { 
-  Mail, 
-  CheckSquare, 
-  User, 
-  AlertCircle, 
+import {
+  Mail,
+  CheckSquare,
+  User,
+  AlertCircle,
   Clock,
   TrendingUp,
   Filter,
@@ -28,12 +28,45 @@ import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { format, isToday, isPast } from "date-fns";
 import { de } from "date-fns/locale";
+import { useTheme } from "@/components/useTheme";
 
 export default function Dashboard() {
   const [selectedUser, setSelectedUser] = useState("all");
   const [taskSortBy, setTaskSortBy] = useState("due_date");
   const [mailSortBy, setMailSortBy] = useState("received_date");
   const [priorityFilter, setPriorityFilter] = useState("all");
+
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
+  const isArtis = theme === 'artis';
+  const isLight = theme === 'light';
+
+  // Theme-aware color tokens
+  const cardBg = isDark ? 'rgba(39,39,42,0.5)' : isArtis ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.85)';
+  const cardBorder = isDark ? '#3f3f46' : isArtis ? '#bfcfbf' : '#d0d0dc';
+  const headingColor = isDark ? '#e4e4e7' : isArtis ? '#1a3a1a' : '#1e293b';
+  const textBody = isDark ? '#d4d4d8' : isArtis ? '#2d4a2d' : '#374151';
+  const textMuted = isDark ? '#71717a' : isArtis ? '#5a7a5a' : '#6b7280';
+  const accentColor = isDark ? '#818cf8' : isArtis ? '#7a9b7f' : '#7c3aed';
+  const mailColor = isDark ? '#60a5fa' : isArtis ? '#5a8a6a' : '#3b82f6';
+  const itemBg = isDark ? 'rgba(24,24,27,0.6)' : isArtis ? 'rgba(255,255,255,0.55)' : 'rgba(248,250,252,0.9)';
+  const itemBorder = isDark ? 'rgba(63,63,70,0.5)' : isArtis ? 'rgba(191,207,191,0.6)' : 'rgba(203,213,225,0.6)';
+  const dropdownBg = isDark ? '#18181b' : isArtis ? '#eaf0ea' : '#ffffff';
+  const dropdownBorder = isDark ? '#27272a' : isArtis ? '#bfcfbf' : '#e2e8f0';
+  const dropdownText = isDark ? '#d4d4d8' : isArtis ? '#1a3a1a' : '#374151';
+  const avatarBg = isDark ? 'rgba(129,140,248,0.15)' : isArtis ? 'rgba(122,155,127,0.18)' : 'rgba(124,58,237,0.1)';
+  const avatarText = isDark ? '#a5b4fc' : isArtis ? '#3a6640' : '#7c3aed';
+  const itemHoverClass = isDark ? 'hover:bg-zinc-800/50' : isArtis ? 'hover:bg-green-50' : 'hover:bg-slate-50';
+  const filterBtnStyle = {
+    borderColor: cardBorder,
+    color: textBody,
+    backgroundColor: 'transparent',
+  };
+  const navBtnStyle = {
+    borderColor: isDark ? 'rgba(99,102,241,0.5)' : isArtis ? 'rgba(122,155,127,0.5)' : 'rgba(124,58,237,0.4)',
+    backgroundColor: isDark ? 'rgba(99,102,241,0.1)' : isArtis ? 'rgba(122,155,127,0.08)' : 'rgba(124,58,237,0.07)',
+    color: headingColor,
+  };
 
   const { data: users = [] } = useQuery({
     queryKey: ["users"],
@@ -135,12 +168,22 @@ export default function Dashboard() {
   }, [tasks]);
 
   const getPriorityColor = (priority) => {
-    switch (priority) {
-      case 'urgent': return 'bg-red-500/20 text-red-300 border-red-500/30';
-      case 'high': return 'bg-orange-500/20 text-orange-300 border-orange-500/30';
-      case 'medium': return 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30';
-      case 'low': return 'bg-blue-500/20 text-blue-300 border-blue-500/30';
-      default: return 'bg-zinc-500/20 text-zinc-300 border-zinc-500/30';
+    if (isDark) {
+      switch (priority) {
+        case 'urgent': return 'bg-red-500/20 text-red-300 border-red-500/30';
+        case 'high': return 'bg-orange-500/20 text-orange-300 border-orange-500/30';
+        case 'medium': return 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30';
+        case 'low': return 'bg-blue-500/20 text-blue-300 border-blue-500/30';
+        default: return 'bg-zinc-500/20 text-zinc-300 border-zinc-500/30';
+      }
+    } else {
+      switch (priority) {
+        case 'urgent': return 'bg-red-50 text-red-700 border-red-200';
+        case 'high': return 'bg-orange-50 text-orange-700 border-orange-200';
+        case 'medium': return 'bg-yellow-50 text-yellow-700 border-yellow-200';
+        case 'low': return 'bg-blue-50 text-blue-700 border-blue-200';
+        default: return 'bg-gray-100 text-gray-600 border-gray-200';
+      }
     }
   };
 
@@ -151,38 +194,42 @@ export default function Dashboard() {
         <div className="mb-6">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button 
-                variant="outline" 
-                className="border-indigo-600/50 bg-indigo-600/10 hover:bg-indigo-600/20 text-zinc-100 gap-2"
+              <Button
+                variant="outline"
+                className="gap-2"
+                style={navBtnStyle}
               >
                 <Menu className="h-4 w-4" />
                 Dashboard
                 <ChevronDown className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent className="bg-zinc-900 border-zinc-800">
+            <DropdownMenuContent style={{ backgroundColor: dropdownBg, borderColor: dropdownBorder }}>
               <DropdownMenuItem asChild>
-                <Link 
-                  to={createPageUrl('MailKanban')} 
-                  className="text-zinc-300 cursor-pointer flex items-center gap-2"
+                <Link
+                  to={createPageUrl('MailKanban')}
+                  className="cursor-pointer flex items-center gap-2"
+                  style={{ color: dropdownText }}
                 >
                   <Mail className="h-4 w-4" />
                   Mailverwaltung
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <Link 
-                  to={createPageUrl('TaskBoard')} 
-                  className="text-zinc-300 cursor-pointer flex items-center gap-2"
+                <Link
+                  to={createPageUrl('TaskBoard')}
+                  className="cursor-pointer flex items-center gap-2"
+                  style={{ color: dropdownText }}
                 >
                   <CheckSquare className="h-4 w-4" />
                   Task-Verwaltung
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <Link 
-                  to={createPageUrl('Settings')} 
-                  className="text-zinc-300 cursor-pointer flex items-center gap-2"
+                <Link
+                  to={createPageUrl('Settings')}
+                  className="cursor-pointer flex items-center gap-2"
+                  style={{ color: dropdownText }}
                 >
                   <SettingsIcon className="h-4 w-4" />
                   Einstellungen
@@ -194,86 +241,90 @@ export default function Dashboard() {
 
         {/* Header */}
         <div className="flex items-center gap-3 mb-8">
-          <LayoutDashboard className="h-8 w-8 text-indigo-400" />
+          <LayoutDashboard className="h-8 w-8" style={{ color: accentColor }} />
           <div>
-            <h1 className="text-3xl font-bold text-zinc-100">Dashboard</h1>
-            <p className="text-sm text-zinc-500">Übersicht über alle Tasks und E-Mails</p>
+            <h1 className="text-3xl font-bold" style={{ color: headingColor }}>Dashboard</h1>
+            <p className="text-sm" style={{ color: textMuted }}>Übersicht über alle Tasks und E-Mails</p>
           </div>
         </div>
 
         {/* Statistics Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
-          <Card className="bg-zinc-900/50 border-zinc-800 p-6">
+          <div className="rounded-xl border p-6" style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-zinc-500">Offene Tasks</p>
-                <p className="text-3xl font-bold text-zinc-100 mt-2">{stats.totalOpenTasks}</p>
+                <p className="text-sm" style={{ color: textMuted }}>Offene Tasks</p>
+                <p className="text-3xl font-bold mt-2" style={{ color: headingColor }}>{stats.totalOpenTasks}</p>
               </div>
-              <CheckSquare className="h-12 w-12 text-indigo-400 opacity-20" />
+              <CheckSquare className="h-12 w-12 opacity-20" style={{ color: accentColor }} />
             </div>
-            <div className="mt-4 flex gap-4 text-xs text-zinc-500">
-              <span className="text-red-400">{stats.overdueTasks} überfällig</span>
-              <span className="text-amber-400">{stats.todayTasks} heute</span>
+            <div className="mt-4 flex gap-4 text-xs">
+              <span className="text-red-500 font-medium">{stats.overdueTasks} überfällig</span>
+              <span className="text-amber-500 font-medium">{stats.todayTasks} heute</span>
             </div>
-          </Card>
+          </div>
 
-          <Card className="bg-zinc-900/50 border-zinc-800 p-6">
+          <div className="rounded-xl border p-6" style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-zinc-500">Ungelesene E-Mails</p>
-                <p className="text-3xl font-bold text-zinc-100 mt-2">{stats.totalUnreadMails}</p>
+                <p className="text-sm" style={{ color: textMuted }}>Ungelesene E-Mails</p>
+                <p className="text-3xl font-bold mt-2" style={{ color: headingColor }}>{stats.totalUnreadMails}</p>
               </div>
-              <Mail className="h-12 w-12 text-blue-400 opacity-20" />
+              <Mail className="h-12 w-12 opacity-20" style={{ color: mailColor }} />
             </div>
-            <div className="mt-4 flex gap-4 text-xs text-zinc-500">
-              <span className="text-orange-400">{stats.highPriorityMails} hohe Priorität</span>
+            <div className="mt-4 flex gap-4 text-xs">
+              <span className="text-orange-500 font-medium">{stats.highPriorityMails} hohe Priorität</span>
             </div>
-          </Card>
+          </div>
 
-          <Card className="bg-zinc-900/50 border-zinc-800 p-6">
+          <div className="rounded-xl border p-6" style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-zinc-500">Hohe Priorität</p>
-                <p className="text-3xl font-bold text-zinc-100 mt-2">{stats.highPriorityTasks}</p>
+                <p className="text-sm" style={{ color: textMuted }}>Hohe Priorität</p>
+                <p className="text-3xl font-bold mt-2" style={{ color: headingColor }}>{stats.highPriorityTasks}</p>
               </div>
-              <AlertCircle className="h-12 w-12 text-orange-400 opacity-20" />
+              <AlertCircle className="h-12 w-12 opacity-20 text-orange-500" />
             </div>
-            <div className="mt-4 flex gap-4 text-xs text-zinc-500">
-              <span>Tasks mit hoher/dringender Priorität</span>
+            <div className="mt-4 flex gap-4 text-xs">
+              <span style={{ color: textMuted }}>Tasks mit hoher/dringender Priorität</span>
             </div>
-          </Card>
+          </div>
         </div>
 
         {/* Tasks by User Overview */}
-        <Card className="bg-zinc-900/50 border-zinc-800 p-6 mb-8">
-          <h2 className="text-lg font-semibold text-zinc-200 mb-4 flex items-center gap-2">
-            <User className="h-5 w-5 text-indigo-400" />
+        <div className="rounded-xl border p-6 mb-8" style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
+          <h2 className="text-lg font-semibold mb-4 flex items-center gap-2" style={{ color: headingColor }}>
+            <User className="h-5 w-5" style={{ color: accentColor }} />
             Tasks pro Mitarbeiter
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {Object.entries(tasksByUser).map(([assignee, userTasks]) => {
               const user = users.find(u => u.email === assignee);
               const userName = user?.full_name || assignee;
-              
+
               return (
                 <div
                   key={assignee}
-                  className="bg-zinc-900/60 border border-zinc-800/50 rounded-lg p-4"
+                  className="rounded-lg p-4 border"
+                  style={{ backgroundColor: itemBg, borderColor: itemBorder }}
                 >
                   <div className="flex items-center gap-2 mb-2">
-                    <div className="w-8 h-8 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-300 font-semibold text-sm">
+                    <div
+                      className="w-8 h-8 rounded-full flex items-center justify-center font-semibold text-sm"
+                      style={{ backgroundColor: avatarBg, color: avatarText }}
+                    >
                       {userName.charAt(0).toUpperCase()}
                     </div>
                     <div className="flex-1">
-                      <div className="text-sm font-medium text-zinc-200">{userName}</div>
-                      <div className="text-xs text-zinc-500">{userTasks.length} offene Tasks</div>
+                      <div className="text-sm font-medium" style={{ color: headingColor }}>{userName}</div>
+                      <div className="text-xs" style={{ color: textMuted }}>{userTasks.length} offene Tasks</div>
                     </div>
                   </div>
                   <div className="flex gap-2 text-xs">
-                    <span className="text-red-400">
+                    <span className="text-red-500 font-medium">
                       {userTasks.filter(t => t.priority === 'urgent' || t.priority === 'high').length} dringend
                     </span>
-                    <span className="text-amber-400">
+                    <span className="text-amber-500 font-medium">
                       {userTasks.filter(t => t.due_date && isPast(new Date(t.due_date))).length} überfällig
                     </span>
                   </div>
@@ -281,23 +332,23 @@ export default function Dashboard() {
               );
             })}
           </div>
-        </Card>
+        </div>
 
         {/* Filters */}
         <div className="flex items-center gap-3 mb-6">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" className="border-zinc-700 text-zinc-300 gap-2">
+              <Button variant="outline" className="gap-2" style={filterBtnStyle}>
                 <User className="h-4 w-4" />
                 {selectedUser === "all" ? "Alle Mitarbeiter" : users.find(u => u.email === selectedUser)?.full_name || selectedUser}
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent className="bg-zinc-900 border-zinc-800">
-              <DropdownMenuItem onClick={() => setSelectedUser("all")} className="text-zinc-300">
+            <DropdownMenuContent style={{ backgroundColor: dropdownBg, borderColor: dropdownBorder }}>
+              <DropdownMenuItem onClick={() => setSelectedUser("all")} style={{ color: dropdownText }}>
                 Alle Mitarbeiter
               </DropdownMenuItem>
               {users.map((user) => (
-                <DropdownMenuItem key={user.id} onClick={() => setSelectedUser(user.email)} className="text-zinc-300">
+                <DropdownMenuItem key={user.id} onClick={() => setSelectedUser(user.email)} style={{ color: dropdownText }}>
                   {user.full_name || user.email}
                 </DropdownMenuItem>
               ))}
@@ -306,25 +357,25 @@ export default function Dashboard() {
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" className="border-zinc-700 text-zinc-300 gap-2">
+              <Button variant="outline" className="gap-2" style={filterBtnStyle}>
                 <Filter className="h-4 w-4" />
                 {priorityFilter === "all" ? "Alle Prioritäten" : priorityFilter}
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent className="bg-zinc-900 border-zinc-800">
-              <DropdownMenuItem onClick={() => setPriorityFilter("all")} className="text-zinc-300">
+            <DropdownMenuContent style={{ backgroundColor: dropdownBg, borderColor: dropdownBorder }}>
+              <DropdownMenuItem onClick={() => setPriorityFilter("all")} style={{ color: dropdownText }}>
                 Alle Prioritäten
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setPriorityFilter("urgent")} className="text-red-400">
+              <DropdownMenuItem onClick={() => setPriorityFilter("urgent")} className="text-red-500">
                 Dringend
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setPriorityFilter("high")} className="text-orange-400">
+              <DropdownMenuItem onClick={() => setPriorityFilter("high")} className="text-orange-500">
                 Hoch
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setPriorityFilter("medium")} className="text-yellow-400">
+              <DropdownMenuItem onClick={() => setPriorityFilter("medium")} className="text-yellow-500">
                 Mittel
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setPriorityFilter("low")} className="text-blue-400">
+              <DropdownMenuItem onClick={() => setPriorityFilter("low")} className="text-blue-500">
                 Niedrig
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -333,27 +384,27 @@ export default function Dashboard() {
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Tasks Section */}
-          <Card className="bg-zinc-900/50 border-zinc-800 p-6">
+          <div className="rounded-xl border p-6" style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-zinc-200 flex items-center gap-2">
-                <CheckSquare className="h-5 w-5 text-indigo-400" />
+              <h2 className="text-lg font-semibold flex items-center gap-2" style={{ color: headingColor }}>
+                <CheckSquare className="h-5 w-5" style={{ color: accentColor }} />
                 Offene Tasks ({filteredTasks.length})
               </h2>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="sm" className="gap-2 text-zinc-400">
+                  <Button variant="ghost" size="sm" className="gap-2" style={{ color: textMuted }}>
                     <ArrowUpDown className="h-4 w-4" />
                     {taskSortBy === "due_date" ? "Fälligkeit" : taskSortBy === "priority" ? "Priorität" : "Erstellt"}
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent className="bg-zinc-900 border-zinc-800">
-                  <DropdownMenuItem onClick={() => setTaskSortBy("due_date")} className="text-zinc-300">
+                <DropdownMenuContent style={{ backgroundColor: dropdownBg, borderColor: dropdownBorder }}>
+                  <DropdownMenuItem onClick={() => setTaskSortBy("due_date")} style={{ color: dropdownText }}>
                     Nach Fälligkeit
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setTaskSortBy("priority")} className="text-zinc-300">
+                  <DropdownMenuItem onClick={() => setTaskSortBy("priority")} style={{ color: dropdownText }}>
                     Nach Priorität
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setTaskSortBy("created_date")} className="text-zinc-300">
+                  <DropdownMenuItem onClick={() => setTaskSortBy("created_date")} style={{ color: dropdownText }}>
                     Nach Erstelldatum
                   </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -362,7 +413,7 @@ export default function Dashboard() {
 
             <div className="space-y-2 max-h-[600px] overflow-y-auto">
               {filteredTasks.length === 0 ? (
-                <div className="text-center py-8 text-zinc-500">
+                <div className="text-center py-8" style={{ color: textMuted }}>
                   Keine offenen Tasks
                 </div>
               ) : (
@@ -371,30 +422,32 @@ export default function Dashboard() {
                   const isOverdue = task.due_date && isPast(new Date(task.due_date));
 
                   return (
-                    <Link 
-                      key={task.id} 
+                    <Link
+                      key={task.id}
                       to={createPageUrl('TaskBoard')}
-                      className="block p-3 bg-zinc-900/60 border border-zinc-800/50 rounded-lg hover:bg-zinc-800/50 transition-colors"
+                      className={`block p-3 rounded-lg border transition-colors ${itemHoverClass}`}
+                      style={{ backgroundColor: itemBg, borderColor: itemBorder }}
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex-1">
-                          <div className="text-sm font-medium text-zinc-200 mb-1">
+                          <div className="text-sm font-semibold mb-1" style={{ color: headingColor }}>
                             {task.title}
                           </div>
                           {task.description && (
-                            <div className="text-xs text-zinc-500 line-clamp-1">
+                            <div className="text-xs line-clamp-1" style={{ color: textMuted }}>
                               {task.description}
                             </div>
                           )}
                           <div className="flex items-center gap-2 mt-2">
                             {task.assignee && (
-                              <div className="flex items-center gap-1 text-xs text-zinc-500">
+                              <div className="flex items-center gap-1 text-xs" style={{ color: textMuted }}>
                                 <User className="h-3 w-3" />
                                 {user?.full_name || task.assignee}
                               </div>
                             )}
                             {task.due_date && (
-                              <div className={`flex items-center gap-1 text-xs ${isOverdue ? 'text-red-400' : 'text-zinc-500'}`}>
+                              <div className={`flex items-center gap-1 text-xs ${isOverdue ? 'text-red-500' : ''}`}
+                                style={!isOverdue ? { color: textMuted } : {}}>
                                 <Clock className="h-3 w-3" />
                                 {format(new Date(task.due_date), 'dd.MM.yyyy', { locale: de })}
                               </div>
@@ -410,27 +463,27 @@ export default function Dashboard() {
                 })
               )}
             </div>
-          </Card>
+          </div>
 
           {/* Mails Section */}
-          <Card className="bg-zinc-900/50 border-zinc-800 p-6">
+          <div className="rounded-xl border p-6" style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-zinc-200 flex items-center gap-2">
-                <Mail className="h-5 w-5 text-blue-400" />
+              <h2 className="text-lg font-semibold flex items-center gap-2" style={{ color: headingColor }}>
+                <Mail className="h-5 w-5" style={{ color: mailColor }} />
                 Ungelesene E-Mails ({filteredMails.length})
               </h2>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="sm" className="gap-2 text-zinc-400">
+                  <Button variant="ghost" size="sm" className="gap-2" style={{ color: textMuted }}>
                     <ArrowUpDown className="h-4 w-4" />
                     {mailSortBy === "received_date" ? "Datum" : "Priorität"}
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent className="bg-zinc-900 border-zinc-800">
-                  <DropdownMenuItem onClick={() => setMailSortBy("received_date")} className="text-zinc-300">
+                <DropdownMenuContent style={{ backgroundColor: dropdownBg, borderColor: dropdownBorder }}>
+                  <DropdownMenuItem onClick={() => setMailSortBy("received_date")} style={{ color: dropdownText }}>
                     Nach Datum
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setMailSortBy("priority")} className="text-zinc-300">
+                  <DropdownMenuItem onClick={() => setMailSortBy("priority")} style={{ color: dropdownText }}>
                     Nach Priorität
                   </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -439,38 +492,39 @@ export default function Dashboard() {
 
             <div className="space-y-2 max-h-[600px] overflow-y-auto">
               {filteredMails.length === 0 ? (
-                <div className="text-center py-8 text-zinc-500">
+                <div className="text-center py-8" style={{ color: textMuted }}>
                   Keine ungelesenen E-Mails
                 </div>
               ) : (
                 filteredMails.map((mail) => (
-                  <Link 
-                    key={mail.id} 
+                  <Link
+                    key={mail.id}
                     to={createPageUrl('MailKanban')}
-                    className="block p-3 bg-zinc-900/60 border border-zinc-800/50 rounded-lg hover:bg-zinc-800/50 transition-colors"
+                    className={`block p-3 rounded-lg border transition-colors ${itemHoverClass}`}
+                    style={{ backgroundColor: itemBg, borderColor: itemBorder }}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex-1">
-                        <div className="text-sm font-medium text-zinc-200 mb-1">
+                        <div className="text-sm font-semibold mb-1" style={{ color: headingColor }}>
                           {mail.subject}
                         </div>
-                        <div className="text-xs text-zinc-500 mb-2">
+                        <div className="text-xs mb-2 font-medium" style={{ color: textMuted }}>
                           Von: {mail.sender_name}
                         </div>
                         {mail.body_preview && (
-                          <div className="text-xs text-zinc-600 line-clamp-2">
+                          <div className="text-xs line-clamp-2" style={{ color: textMuted }}>
                             {mail.body_preview}
                           </div>
                         )}
                         <div className="flex items-center gap-2 mt-2">
-                          <div className="flex items-center gap-1 text-xs text-zinc-500">
+                          <div className="flex items-center gap-1 text-xs" style={{ color: textMuted }}>
                             <Clock className="h-3 w-3" />
                             {format(new Date(mail.received_date), 'dd.MM.yyyy HH:mm', { locale: de })}
                           </div>
                         </div>
                       </div>
                       {mail.priority === 'high' && (
-                        <Badge variant="outline" className="text-xs bg-orange-500/20 text-orange-300 border-orange-500/30">
+                        <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700 border-orange-200">
                           Hoch
                         </Badge>
                       )}
@@ -479,7 +533,7 @@ export default function Dashboard() {
                 ))
               )}
             </div>
-          </Card>
+          </div>
         </div>
       </div>
     </div>
