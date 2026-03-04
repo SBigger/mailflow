@@ -32,9 +32,13 @@ export default function Layout({ children, currentPageName, onMailFilterAction, 
         if (!authUser) return;
         const { data: user } = await supabase.from("profiles").select("*").eq("id", authUser.id).single();
         setCurrentUser(user);
-        // Only apply profile theme if no local preference saved
-        if (user?.theme && !localStorage.getItem("app_theme")) {
-          setTheme(user.theme);
+        // Apply profile theme from DB (DB wins unless user explicitly changed it this session)
+        if (user?.theme) {
+          const localTheme = localStorage.getItem("app_theme");
+          // Only override if local theme matches default or is same as DB — DB is the source of truth
+          if (!localTheme || localTheme === user.theme) {
+            setTheme(user.theme);
+          }
         }
         // Task-User automatisch zum TaskBoard weiterleiten
         if (user?.role === 'task_user' && currentPageName !== 'TaskBoard') {

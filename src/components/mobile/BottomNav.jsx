@@ -21,7 +21,7 @@ export default function BottomNav() {
   const bg = isArtis ? '#eaf0ea' : isLight ? '#e8e8ef' : '#1c1c21';
   const border = isArtis ? '#bfcfbf' : isLight ? '#d0d0dc' : 'rgba(63,63,70,0.6)';
   const activeColor = isArtis ? '#7a9b7f' : '#7c3aed';
-  const inactiveColor = isArtis ? '#6b826b' : isLight ? '#7a7a9a' : '#71717a';
+  const inactiveColor = isArtis ? '#4a5e4a' : isLight ? '#5a5a7a' : '#71717a';
 
   return (
     <div
