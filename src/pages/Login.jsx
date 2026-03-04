@@ -23,67 +23,82 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-4">
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ backgroundColor: '#f2f5f2' }}>
       <div className="w-full max-w-sm">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-blue-600 mb-4">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-4" style={{ backgroundColor: '#7a9b7f' }}>
             <Mail className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-white">MailFlow</h1>
-          <p className="text-zinc-400 text-sm mt-1">Intelligentes E-Mail Management</p>
+          <h1 className="text-2xl font-bold" style={{ color: '#2d3a2d' }}>Artis MailFlow</h1>
+          <p className="text-sm mt-1" style={{ color: '#6b826b' }}>Intelligentes E-Mail & Task Management</p>
         </div>
 
         {/* Form */}
-        <form onSubmit={handleLogin} className="space-y-4">
-          <div>
-            <label className="block text-sm text-zinc-400 mb-1.5">E-Mail</label>
-            <div className="relative">
-              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
-              <input
-                type="email"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                placeholder="name@firma.ch"
-                required
-                className="w-full bg-zinc-900 border border-zinc-800 rounded-lg py-2.5 pl-10 pr-4 text-white placeholder-zinc-600 focus:outline-none focus:border-blue-500 transition-colors"
-              />
+        <div className="rounded-2xl p-6 shadow-sm border" style={{ backgroundColor: '#ffffff', borderColor: '#ccd8cc' }}>
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <label className="block text-sm mb-1.5 font-medium" style={{ color: '#4a5e4a' }}>E-Mail</label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: '#8aaa8f' }} />
+                <input
+                  type="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  placeholder="name@artis-treuhand.ch"
+                  required
+                  className="w-full rounded-lg py-2.5 pl-10 pr-4 focus:outline-none transition-colors"
+                  style={{
+                    backgroundColor: '#f2f5f2',
+                    border: '1px solid #bfcfbf',
+                    color: '#2d3a2d',
+                  }}
+                />
+              </div>
             </div>
-          </div>
 
-          <div>
-            <label className="block text-sm text-zinc-400 mb-1.5">Passwort</label>
-            <div className="relative">
-              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
-              <input
-                type="password"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                placeholder="••••••••"
-                required
-                className="w-full bg-zinc-900 border border-zinc-800 rounded-lg py-2.5 pl-10 pr-4 text-white placeholder-zinc-600 focus:outline-none focus:border-blue-500 transition-colors"
-              />
+            <div>
+              <label className="block text-sm mb-1.5 font-medium" style={{ color: '#4a5e4a' }}>Passwort</label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: '#8aaa8f' }} />
+                <input
+                  type="password"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  required
+                  className="w-full rounded-lg py-2.5 pl-10 pr-4 focus:outline-none transition-colors"
+                  style={{
+                    backgroundColor: '#f2f5f2',
+                    border: '1px solid #bfcfbf',
+                    color: '#2d3a2d',
+                  }}
+                />
+              </div>
             </div>
-          </div>
 
-          {error && (
-            <div className="bg-red-900/30 border border-red-800 rounded-lg p-3 text-red-400 text-sm">
-              {error}
-            </div>
-          )}
+            {error && (
+              <div className="rounded-lg p-3 text-sm" style={{ backgroundColor: '#fee2e2', border: '1px solid #fca5a5', color: '#b91c1c' }}>
+                {error}
+              </div>
+            )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2"
-          >
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-            {loading ? 'Einloggen...' : 'Einloggen'}
-          </button>
-        </form>
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2 text-white disabled:opacity-50"
+              style={{ backgroundColor: '#7a9b7f' }}
+              onMouseOver={e => e.currentTarget.style.backgroundColor = '#5f7d64'}
+              onMouseOut={e => e.currentTarget.style.backgroundColor = '#7a9b7f'}
+            >
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              {loading ? 'Einloggen...' : 'Einloggen'}
+            </button>
+          </form>
+        </div>
 
-        <p className="text-center text-zinc-600 text-xs mt-6">
-          © 2026 MailFlow · Powered by Supabase
+        <p className="text-center text-xs mt-6" style={{ color: '#8aaa8f' }}>
+          © 2026 Artis Treuhand GmbH · MailFlow
         </p>
       </div>
     </div>

@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/api/supabaseClient";
 
 let listeners = [];
-let currentTheme = localStorage.getItem("app_theme") || "dark";
+let currentTheme = localStorage.getItem("app_theme") || "artis";
 
 export function setGlobalTheme(theme) {
   currentTheme = theme;

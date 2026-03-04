@@ -12,7 +12,7 @@ export const ThemeContext = createContext({ theme: 'dark', setTheme: () => {} })
 export default function Layout({ children, currentPageName, onMailFilterAction, onShowCompletedToggle, onRefresh, isSyncing }) {
   const location = useLocation();
   const [currentUser, setCurrentUser] = React.useState(null);
-  const [theme, setThemeState] = React.useState(() => localStorage.getItem("app_theme") || "dark");
+  const [theme, setThemeState] = React.useState(() => localStorage.getItem("app_theme") || "artis");
 
   // Apply theme to <html> element
   React.useEffect(() => {
@@ -32,8 +32,8 @@ export default function Layout({ children, currentPageName, onMailFilterAction, 
         if (!authUser) return;
         const { data: user } = await supabase.from("profiles").select("*").eq("id", authUser.id).single();
         setCurrentUser(user);
-        // Apply saved theme from user profile
-        if (user?.theme) {
+        // Only apply profile theme if no local preference saved
+        if (user?.theme && !localStorage.getItem("app_theme")) {
           setTheme(user.theme);
         }
         // Task-User automatisch zum TaskBoard weiterleiten
