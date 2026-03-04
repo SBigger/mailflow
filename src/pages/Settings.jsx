@@ -97,9 +97,13 @@ export default function Settings() {
     enabled: !!user
   });
 
+  // Use getAllUsers edge function (bypasses RLS with service_role key)
   const { data: users = [] } = useQuery({
     queryKey: ['users'],
-    queryFn: () => entities.User.list(),
+    queryFn: async () => {
+      const { data } = await functions.invoke('getAllUsers', {});
+      return data?.users || [];
+    },
     enabled: user?.role === 'admin'
   });
 
@@ -283,9 +287,11 @@ export default function Settings() {
     mutationFn: (data) => entities.DomainTagRule.create(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['domainRules'] });
-      setNewDomainRule({ domain: '', tag: '' });
+      setNewDomainRule({ domain: '', tag: '', customer_id: '' });
+      setCustomerSearch('');
       toast.success('Domain-Regel erstellt');
-    }
+    },
+    onError: (e) => toast.error('Fehler beim Erstellen: ' + e.message),
   });
 
   const deleteDomainRuleMutation = useMutation({
@@ -1132,11 +1138,11 @@ export default function Settings() {
                           setInvitingEmail('');
                         }
                       }}
-                      disabled={invitingEmail === inviteEmail.trim()}
+                      disabled={!!invitingEmail}
                       className="bg-green-600 hover:bg-green-500 disabled:opacity-50"
                     >
-                      <Send className="h-4 w-4 mr-2" /> 
-                      {invitingEmail === inviteEmail.trim() ? 'Lädt...' : 'Einladen'}
+                      <Send className="h-4 w-4 mr-2" />
+                      {invitingEmail ? 'Lädt...' : 'Einladen'}
                     </Button>
                   </div>
                 </div>
