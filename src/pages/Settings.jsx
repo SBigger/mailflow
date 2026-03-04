@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Mail, MessageSquare, Link2, Tag as TagIcon, FolderOpen, Plus, Trash2, Save, Users, Send, Calendar, Menu, ChevronDown, LayoutDashboard, CheckSquare, RefreshCw, ClipboardList, GripVertical, UserMinus, Pencil, Check, X, Sun, Moon } from "lucide-react";
+import { Mail, MessageSquare, Link2, Tag as TagIcon, FolderOpen, Plus, Trash2, Save, Users, Send, Calendar, Menu, ChevronDown, LayoutDashboard, CheckSquare, RefreshCw, ClipboardList, GripVertical, UserMinus, Pencil, Check, X, Sun, Moon, KeyRound } from "lucide-react";
 import { ThemeContext } from "@/Layout";
 import DeleteUserDialog from "@/components/settings/DeleteUserDialog";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
@@ -327,6 +327,18 @@ export default function Settings() {
     },
     onError: (e) => toast.error('Fehler: ' + e.message),
   });
+
+  const handleResetPassword = async (email) => {
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: window.location.origin + '/reset-password',
+      });
+      if (error) throw error;
+      toast.success(`Passwort-Reset E-Mail an ${email} gesendet`);
+    } catch (e) {
+      toast.error('Fehler: ' + e.message);
+    }
+  };
 
   const handleOutlookConnect = async () => {
     try {
@@ -1173,7 +1185,7 @@ export default function Settings() {
                                       if (e.key === 'Enter') updateUserNameMutation.mutate({ id: u.id, full_name: editingUserNameValue.trim() });
                                       if (e.key === 'Escape') setEditingUserNameId(null);
                                     }}
-                                    placeholder="Vollständiger Name"
+                                    placeholder="Vorname Nachname"
                                     className="h-7 text-sm flex-1"
                                     style={{ backgroundColor: inputBg, borderColor: inputBorder, color: inputColor }}
                                   />
@@ -1247,6 +1259,14 @@ export default function Settings() {
                                         className="h-7 w-7" style={{ color: textMuted }}
                                       >
                                         <Pencil className="h-3.5 w-3.5" />
+                                      </Button>
+                                      <Button
+                                        variant="ghost" size="icon"
+                                        title="Passwort zurücksetzen"
+                                        onClick={() => handleResetPassword(u.email)}
+                                        className="h-7 w-7 text-amber-400 hover:text-amber-300 hover:bg-amber-500/10"
+                                      >
+                                        <KeyRound className="h-3.5 w-3.5" />
                                       </Button>
                                       <Button
                                         variant="ghost" size="icon"
