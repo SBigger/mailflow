@@ -209,12 +209,12 @@ export default function AddTaskDialog({ open, onClose, onAdd, columns }) {
 
             <div className="space-y-2">
                <Label>Zugewiesen an</Label>
-               <Select value={assignee || ''} onValueChange={(v) => setAssignee(v === '' ? '' : v)}>
+               <Select value={assignee || 'none'} onValueChange={(v) => setAssignee(v === 'none' ? '' : v)}>
                  <SelectTrigger className="bg-zinc-900/60 border-zinc-700 text-zinc-200" tabIndex={6}>
                    <SelectValue placeholder="Benutzer wählen..." />
                  </SelectTrigger>
                  <SelectContent className="bg-zinc-900 border-zinc-800 text-zinc-200">
-                    <SelectItem value={null} className="text-zinc-400">Niemand</SelectItem>
+                    <SelectItem value="none" className="text-zinc-400">Niemand</SelectItem>
                     {users.map((user) => (
                       <SelectItem key={user.id} value={user.email} className="text-zinc-200">
                         {user.full_name || user.email}
