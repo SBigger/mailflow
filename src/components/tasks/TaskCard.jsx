@@ -99,7 +99,7 @@ export default function TaskCard({ task, index, onClick, onToggleComplete, curre
           onClick={handleClick}
           className={`
             rounded-xl mb-2 border cursor-grab active:cursor-grabbing transition-colors duration-150
-            ${snapshot.isDragging ? "shadow-xl opacity-90" : "shadow-sm hover:shadow-md"}
+            ${snapshot.isDragging ? "shadow-2xl ring-2 ring-indigo-400/40 scale-[1.02] rotate-1" : "shadow-sm hover:shadow-md"}
             ${task.completed ? "opacity-50" : ""}
           `}
           style={{
