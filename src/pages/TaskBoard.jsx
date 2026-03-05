@@ -70,7 +70,7 @@ export default function TaskBoard() {
       try {
         const res = await functions.invoke('getAllUsers');
         const users = res.data?.users || [];
-        return users.filter(u => u.role !== 'task_user' && u.email !== currentUser?.email);
+        return users.filter(u => u.email !== currentUser?.email);
       } catch (e) {
         console.error('Failed to load users:', e);
         return [];

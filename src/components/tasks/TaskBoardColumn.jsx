@@ -24,7 +24,8 @@ export default function TaskBoardColumn({ column, index, tasks, onRename, onDele
     queryKey: ["allUsers"],
     queryFn: async () => {
       try {
-        return await entities.User.list();
+        const res = await functions.invoke('getAllUsers');
+        return res.data?.users || [];
       } catch (e) {
         return [];
       }

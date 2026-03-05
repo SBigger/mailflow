@@ -317,8 +317,8 @@ export default function Settings() {
 
   const updateUserNameMutation = useMutation({
     mutationFn: async ({ id, full_name }) => {
-      const { error } = await supabase.from('profiles').update({ full_name }).eq('id', id);
-      if (error) throw error;
+      // Direkt supabase schlägt wegen RLS fehl – Edge Function mit service_role nutzen
+      await functions.invoke('updateUserProfile', { user_id: id, full_name });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });

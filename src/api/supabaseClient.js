@@ -105,6 +105,13 @@ export const auth = {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return null;
     const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+    if (!data) return null;
+    // Ensure email is always set – some profiles created via DB trigger may have null email
+    if (!data.email && user.email) {
+      // Patch the profile silently so future calls and task filters work
+      await supabase.from('profiles').update({ email: user.email }).eq('id', user.id);
+      return { ...data, email: user.email };
+    }
     return data;
   },
 
