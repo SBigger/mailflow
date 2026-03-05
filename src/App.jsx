@@ -13,6 +13,7 @@ import Kunden from './pages/Kunden';
 import ReminderBoard from './pages/ReminderBoard';
 import UserManagement from './pages/UserManagement';
 import Login from './pages/Login';
+import ResetPassword from './pages/ResetPassword';
 import Layout from './Layout';
 
 const queryClient = new QueryClient({
@@ -56,7 +57,12 @@ function App() {
     <AuthProvider>
       <QueryClientProvider client={queryClient}>
         <Router>
-          <AuthenticatedApp />
+          <Routes>
+            {/* Passwort-Reset: zugänglich ohne Login */}
+            <Route path="/reset-password" element={<ResetPassword />} />
+            {/* Alle anderen Routen: benötigen Auth */}
+            <Route path="*" element={<AuthenticatedApp />} />
+          </Routes>
         </Router>
         <Toaster />
       </QueryClientProvider>
