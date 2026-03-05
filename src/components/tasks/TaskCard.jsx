@@ -105,8 +105,7 @@ export default function TaskCard({ task, index, onClick, onToggleComplete, curre
             ${task.completed ? "opacity-50" : ""}
           `}
           style={{
-            // DnD-Transform MUSS zuerst kommen – sonst bewegt sich die Kachel nicht
-            ...provided.draggableProps.style,
+            // Eigene Styles zuerst – DnD-Style kommt ZULETZT (überschreibt transform nicht)
             backgroundColor: isNewUnread
               ? isArtis ? '#eef5ee' : isLight ? '#ede9fe' : 'rgba(46,16,101,0.6)'
               : '#ffffff',
@@ -124,10 +123,9 @@ export default function TaskCard({ task, index, onClick, onToggleComplete, curre
                 : '0 1px 3px rgba(0,0,0,0.05)',
             outline: snapshot.isDragging ? '2px solid rgba(99,102,241,0.35)' : 'none',
             opacity: snapshot.isDragging ? 0.97 : 1,
-            // Beim Ziehen DnD-Transition nutzen (für Drop-Animation), sonst Hover-Transition
-            transition: snapshot.isDragging
-              ? provided.draggableProps.style?.transition
-              : 'box-shadow 0.15s ease, border-color 0.15s ease',
+            transition: 'box-shadow 0.15s ease, border-color 0.15s ease',
+            // DnD-Style ZULETZT: enthält transform + transition und darf nie überschrieben werden
+            ...provided.draggableProps.style,
           }}
         >
           <div className="flex items-stretch">
