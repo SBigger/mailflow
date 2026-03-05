@@ -95,10 +95,11 @@ export default function TaskCard({ task, index, onClick, onToggleComplete, curre
         <div
           ref={provided.innerRef}
           {...provided.draggableProps}
+          {...provided.dragHandleProps}
           onClick={handleClick}
           className={`
-            rounded-xl mb-2 border cursor-pointer transition-all duration-200
-            ${snapshot.isDragging ? "shadow-xl rotate-1 scale-[1.02]" : "shadow-sm hover:shadow-md"}
+            rounded-xl mb-2 border cursor-grab active:cursor-grabbing transition-colors duration-150
+            ${snapshot.isDragging ? "shadow-xl opacity-90" : "shadow-sm hover:shadow-md"}
             ${task.completed ? "opacity-50" : ""}
           `}
           style={{
@@ -111,14 +112,12 @@ export default function TaskCard({ task, index, onClick, onToggleComplete, curre
           }}
         >
           <div className="flex items-stretch">
-            {/* Drag Handle – links, klar abgegrenzt */}
+            {/* Grip-Icon – nur visueller Hinweis, ganze Karte ist ziehbar */}
             <div
-              {...provided.dragHandleProps}
-              onClick={e => e.stopPropagation()}
-              className="flex items-center justify-center w-7 flex-shrink-0 rounded-l-xl cursor-grab active:cursor-grabbing"
-              style={{ borderRight: `1px solid ${isNewUnread ? (isArtis ? 'rgba(122,155,127,0.3)' : 'rgba(124,58,237,0.2)') : (isArtis ? '#f0f0f0' : isLight ? '#e8e8f4' : '#3a3a40')}` }}
+              className="flex items-center justify-center w-6 flex-shrink-0 rounded-l-xl"
+              style={{ borderRight: `1px solid ${isNewUnread ? (isArtis ? 'rgba(122,155,127,0.2)' : 'rgba(124,58,237,0.15)') : (isArtis ? '#f0f0f0' : isLight ? '#e8e8f4' : '#3a3a40')}` }}
             >
-              <GripVertical className="h-4 w-4" style={{ color: gripColor }} />
+              <GripVertical className="h-3.5 w-3.5" style={{ color: gripColor }} />
             </div>
 
             {/* Karteninhalt */}
