@@ -14,6 +14,7 @@ export default function TaskCard({ task, index, onClick, onToggleComplete, curre
   const isArtis = theme === 'artis';
   const [isRead, setIsRead] = useState(false);
   const [isChecking, setIsChecking] = useState(true); // Start true → kein grüner Flash beim Laden
+  const [isHovered, setIsHovered] = useState(false);
 
   // Lesestatus beim Mounten prüfen + Realtime-Abo
   useEffect(() => {
@@ -97,6 +98,8 @@ export default function TaskCard({ task, index, onClick, onToggleComplete, curre
           {...provided.draggableProps}
           {...provided.dragHandleProps}
           onClick={handleClick}
+          onMouseEnter={() => setIsHovered(true)}
+          onMouseLeave={() => setIsHovered(false)}
           className={`
             rounded-xl mb-2 border cursor-grab active:cursor-grabbing
             ${task.completed ? "opacity-50" : ""}
@@ -107,14 +110,19 @@ export default function TaskCard({ task, index, onClick, onToggleComplete, curre
               : '#ffffff',
             borderColor: snapshot.isDragging
               ? 'rgba(99,102,241,0.5)'
-              : isNewUnread
-                ? isArtis ? 'rgba(122,155,127,0.6)' : isLight ? 'rgba(124,58,237,0.5)' : 'rgba(124,58,237,0.6)'
-                : isArtis ? '#e8e8e8' : isLight ? '#d4d4e8' : '#52525b',
+              : isHovered
+                ? isArtis ? '#b0c8b0' : isLight ? '#a0a0cc' : '#6b6b7e'
+                : isNewUnread
+                  ? isArtis ? 'rgba(122,155,127,0.6)' : isLight ? 'rgba(124,58,237,0.5)' : 'rgba(124,58,237,0.6)'
+                  : isArtis ? '#e8e8e8' : isLight ? '#d4d4e8' : '#52525b',
             boxShadow: snapshot.isDragging
               ? '0 20px 40px rgba(0,0,0,0.18), 0 8px 16px rgba(99,102,241,0.15)'
-              : '0 1px 3px rgba(0,0,0,0.06)',
+              : isHovered
+                ? '0 6px 18px rgba(0,0,0,0.1), 0 2px 6px rgba(0,0,0,0.06)'
+                : '0 1px 3px rgba(0,0,0,0.05)',
             outline: snapshot.isDragging ? '2px solid rgba(99,102,241,0.35)' : 'none',
             opacity: snapshot.isDragging ? 0.97 : 1,
+            transition: 'box-shadow 0.15s ease, border-color 0.15s ease',
           }}
         >
           <div className="flex items-stretch">
