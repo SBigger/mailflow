@@ -98,17 +98,23 @@ export default function TaskCard({ task, index, onClick, onToggleComplete, curre
           {...provided.dragHandleProps}
           onClick={handleClick}
           className={`
-            rounded-xl mb-2 border cursor-grab active:cursor-grabbing transition-colors duration-150
-            ${snapshot.isDragging ? "shadow-2xl ring-2 ring-indigo-400/40 scale-[1.02] rotate-1" : "shadow-sm hover:shadow-md"}
+            rounded-xl mb-2 border cursor-grab active:cursor-grabbing
             ${task.completed ? "opacity-50" : ""}
           `}
           style={{
             backgroundColor: isNewUnread
               ? isArtis ? '#eef5ee' : isLight ? '#ede9fe' : 'rgba(46,16,101,0.6)'
               : '#ffffff',
-            borderColor: isNewUnread
-              ? isArtis ? 'rgba(122,155,127,0.6)' : isLight ? 'rgba(124,58,237,0.5)' : 'rgba(124,58,237,0.6)'
-              : isArtis ? '#e8e8e8' : isLight ? '#d4d4e8' : '#52525b',
+            borderColor: snapshot.isDragging
+              ? 'rgba(99,102,241,0.5)'
+              : isNewUnread
+                ? isArtis ? 'rgba(122,155,127,0.6)' : isLight ? 'rgba(124,58,237,0.5)' : 'rgba(124,58,237,0.6)'
+                : isArtis ? '#e8e8e8' : isLight ? '#d4d4e8' : '#52525b',
+            boxShadow: snapshot.isDragging
+              ? '0 20px 40px rgba(0,0,0,0.18), 0 8px 16px rgba(99,102,241,0.15)'
+              : '0 1px 3px rgba(0,0,0,0.06)',
+            outline: snapshot.isDragging ? '2px solid rgba(99,102,241,0.35)' : 'none',
+            opacity: snapshot.isDragging ? 0.97 : 1,
           }}
         >
           <div className="flex items-stretch">
