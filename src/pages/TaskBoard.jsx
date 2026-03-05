@@ -2,7 +2,7 @@ import React, { useState, useMemo, useContext } from "react";
 import { entities, functions, auth } from "@/api/supabaseClient";
 import { ThemeContext } from "@/Layout";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
+import { DragDropContext, Droppable } from "@hello-pangea/dnd";
 import { Plus, RefreshCw, Palette, Users, Search, X, ChevronsLeftRight, Mic, LayoutList, LayoutDashboard, MoreHorizontal } from "lucide-react";
 import { useIsMobile } from "@/components/mobile/useIsMobile";
 import MobileColumnNav from "@/components/mobile/MobileColumnNav";
@@ -118,10 +118,11 @@ export default function TaskBoard() {
         (!t.assignee && t.created_by === currentUser?.id)
       );
     } else if (userFilter !== 'all') {
-      // Filter nach spezifischem User (Email)
+      // Filter nach spezifischem User (Email) — created_by ist eine UUID, nicht Email
+      const selectedUser = allUsers.find(u => u.email === userFilter);
       result = result.filter(t =>
         t.assignee === userFilter ||
-        (!t.assignee && t.created_by === userFilter)
+        (!t.assignee && selectedUser && t.created_by === selectedUser.id)
       );
     }
     // Wenn userFilter === 'all', keine weitere Filterung - alle Tasks anzeigen
@@ -155,7 +156,7 @@ export default function TaskBoard() {
     }
 
     return result;
-  }, [tasks, filterPriorityIds, sortByPriority, priorities, currentUser, userFilter, searchQuery]);
+  }, [tasks, filterPriorityIds, sortByPriority, priorities, currentUser, userFilter, searchQuery, allUsers]);
 
   const createTaskMutation = useMutation({
     mutationFn: (data) => entities.Task.create(data),
@@ -455,24 +456,15 @@ export default function TaskBoard() {
                      {(provided) => (
                        <div ref={provided.innerRef} {...provided.droppableProps} className="space-y-2">
                          {filteredAndSortedTasks.filter(t => t.column_id === columns[mobileColumnIndex].id && !t.completed).map((task, idx) => (
-                           <Draggable key={task.id} draggableId={task.id} index={idx}>
-                             {(provided) => (
-                               <div
-                                 ref={provided.innerRef}
-                                 {...provided.draggableProps}
-                                 {...provided.dragHandleProps}
-                               >
-                                 <TaskCard
-                                   task={task}
-                                   index={idx}
-                                   onClick={setSelectedTask}
-                                   onToggleComplete={(task) => updateTaskMutation.mutate({ id: task.id, data: { completed: !task.completed } })}
-                                   currentUser={currentUser}
-                                   priorities={priorities}
-                                 />
-                               </div>
-                             )}
-                           </Draggable>
+                           <TaskCard
+                             key={task.id}
+                             task={task}
+                             index={idx}
+                             onClick={setSelectedTask}
+                             onToggleComplete={(task) => updateTaskMutation.mutate({ id: task.id, data: { completed: !task.completed } })}
+                             currentUser={currentUser}
+                             priorities={priorities}
+                           />
                          ))}
                          {provided.placeholder}
                        </div>

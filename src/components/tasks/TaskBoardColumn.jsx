@@ -172,8 +172,8 @@ export default function TaskBoardColumn({ column, index, tasks, onRename, onDele
                 ref={provided.innerRef}
                 {...provided.droppableProps}
                 className={`
-                  flex-1 overflow-y-auto px-1 rounded-xl transition-all duration-200
-                  ${snapshot.isDraggingOver ? "bg-indigo-500/5 ring-2 ring-indigo-500/30" : ""}
+                  flex-1 overflow-y-auto px-1 transition-all duration-200
+                  ${snapshot.isDraggingOver ? "bg-indigo-500/5" : ""}
                 `}
               >
                 {activeTasks.map((task, idx) => {

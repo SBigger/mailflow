@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { motion } from "framer-motion";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
-import { entities, functions, auth } from "@/api/supabaseClient";
+import { entities, functions, auth, supabase } from "@/api/supabaseClient";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -63,15 +63,14 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }) {
     const markAsRead = async () => {
       if (!currentUser) return;
       try {
-        const existing = await entities.TaskReadStatus.filter({
+        // Direkt supabase verwenden – task_read_statuses hat kein created_by
+        const { error } = await supabase.from('task_read_statuses').insert({
           task_id: task.id,
           user_email: currentUser.email
         });
-        if (!existing || existing.length === 0) {
-          await entities.TaskReadStatus.create({
-            task_id: task.id,
-            user_email: currentUser.email
-          });
+        // Duplicate-Fehler ignorieren (Eintrag existiert bereits → bereits gelesen)
+        if (error && !error.code?.includes('23505') && !error.message?.includes('duplicate')) {
+          console.error('Failed to mark task as read:', error);
         }
       } catch (error) {
         console.error('Failed to mark task as read:', error);
