@@ -1,5 +1,5 @@
 import React, { useState, useContext, useMemo } from "react";
-import { entities, functions, auth, supabase } from "@/api/supabaseClient";
+import { entities, supabase } from "@/api/supabaseClient";
 import { ThemeContext } from "@/Layout";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -124,21 +124,16 @@ export default function Fristen() {
   const isLight = theme === "light";
   const queryClient = useQueryClient();
 
-  const [activeTab,      setActiveTab]      = useState("offen");
-  const [search,         setSearch]         = useState("");
-  const [filterCategory, setFilterCategory] = useState("alle");
-  const [filterAssignee, setFilterAssignee] = useState("alle");
-  const [filterJahr,     setFilterJahr]     = useState("alle");
-  const [showAdd,        setShowAdd]        = useState(false);
-  const [editFrist,      setEditFrist]      = useState(null);
-  const [showGenerate,   setShowGenerate]   = useState(false);
+  const [activeTab,       setActiveTab]       = useState("offen");
+  const [search,          setSearch]          = useState("");
+  const [filterCategory,  setFilterCategory]  = useState("alle");
+  const [filterKundenTyp, setFilterKundenTyp] = useState("alle"); // 'alle' | 'privatperson' | 'unternehmen'
+  const [filterJahr,      setFilterJahr]      = useState("alle");
+  const [showAdd,         setShowAdd]         = useState(false);
+  const [editFrist,       setEditFrist]       = useState(null);
+  const [showGenerate,    setShowGenerate]    = useState(false);
 
   // ── Data ──────────────────────────────────────────────────
-  const { data: currentUser } = useQuery({
-    queryKey: ["currentUser"],
-    queryFn: () => auth.me(),
-  });
-
   const { data: fristen = [], isLoading } = useQuery({
     queryKey: ["fristen"],
     queryFn: () => entities.Frist.list("due_date"),
@@ -147,14 +142,6 @@ export default function Fristen() {
   const { data: customers = [] } = useQuery({
     queryKey: ["customers"],
     queryFn: () => entities.Customer.list("company_name"),
-  });
-
-  const { data: users = [] } = useQuery({
-    queryKey: ["allUsers-fristen"],
-    queryFn: async () => {
-      const res = await functions.invoke("getAllUsers");
-      return res.data?.users || [];
-    },
   });
 
   // ── Mutations ─────────────────────────────────────────────
@@ -218,11 +205,14 @@ export default function Fristen() {
     // Jahr filter
     if (filterJahr !== "alle") list = list.filter(f => f.jahr === parseInt(filterJahr, 10));
 
-    // Assignee filter
-    if (filterAssignee === "me") {
-      list = list.filter(f => f.assignee === currentUser?.email || f.created_by === currentUser?.id);
-    } else if (filterAssignee !== "alle") {
-      list = list.filter(f => f.assignee === filterAssignee);
+    // Kunden-Typ filter
+    if (filterKundenTyp !== "alle") {
+      list = list.filter(f => {
+        const cust = customers.find(c => c.id === f.customer_id);
+        if (filterKundenTyp === "privatperson") return cust?.person_type === "privatperson";
+        if (filterKundenTyp === "unternehmen")  return !cust || cust.person_type !== "privatperson";
+        return true;
+      });
     }
 
     // Search
@@ -237,7 +227,7 @@ export default function Fristen() {
     }
 
     return list;
-  }, [fristen, activeTab, filterCategory, filterJahr, filterAssignee, search, currentUser, customers]);
+  }, [fristen, activeTab, filterCategory, filterJahr, filterKundenTyp, search, customers]);
 
   const groups = useMemo(() => groupFristen(filtered.filter(f => f.status === "offen")), [filtered]);
 
@@ -354,24 +344,26 @@ export default function Fristen() {
               </DropdownMenuContent>
             </DropdownMenu>
 
-            {/* Assignee filter */}
+            {/* Kunden-Typ filter */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" className="h-8 gap-1 text-xs"
-                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textMain }}>
+                  style={{
+                    backgroundColor: filterKundenTyp !== "alle" ? (isArtis ? "#e6ede6" : "rgba(99,102,241,0.15)") : inputBg,
+                    borderColor:     filterKundenTyp !== "alle" ? (isArtis ? "#7a9b7f" : "#7c3aed") : inputBorder,
+                    color:           filterKundenTyp !== "alle" ? (isArtis ? "#4a5e4a" : "#7c3aed") : textMain,
+                  }}>
                   <Users className="h-3.5 w-3.5" />
-                  {filterAssignee === "alle" ? "Person" : filterAssignee === "me" ? "Meine" : users.find(u => u.email === filterAssignee)?.full_name?.split(" ")[0] || "Person"}
+                  {filterKundenTyp === "alle"         ? "Kunden"
+                   : filterKundenTyp === "privatperson" ? "Natürl. Personen"
+                   :                                      "Jurist. Personen"}
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent style={{ backgroundColor: isLight ? "#fff" : "#18181b", borderColor }}>
-                <DropdownMenuItem onClick={() => setFilterAssignee("alle")} style={{ color: textMain }}>Alle</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setFilterAssignee("me")}   style={{ color: textMain }}>Meine Fristen</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setFilterKundenTyp("alle")}          style={{ color: textMain }}>Alle Kunden</DropdownMenuItem>
                 <DropdownMenuSeparator />
-                {users.map(u => (
-                  <DropdownMenuItem key={u.id} onClick={() => setFilterAssignee(u.email)} style={{ color: textMain }}>
-                    {u.full_name || u.email}
-                  </DropdownMenuItem>
-                ))}
+                <DropdownMenuItem onClick={() => setFilterKundenTyp("privatperson")}  style={{ color: textMain }}>👤 Natürliche Personen</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setFilterKundenTyp("unternehmen")}   style={{ color: textMain }}>🏢 Juristische Personen</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
 
