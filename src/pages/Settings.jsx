@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Mail, MessageSquare, Link2, Tag as TagIcon, FolderOpen, Plus, Trash2, Save, Users, Send, Calendar, Menu, ChevronDown, LayoutDashboard, CheckSquare, RefreshCw, ClipboardList, GripVertical, UserMinus, Pencil, Check, X, Sun, Moon, KeyRound } from "lucide-react";
+import { Mail, MessageSquare, Link2, Tag as TagIcon, FolderOpen, Plus, Trash2, Save, Users, Send, Calendar, Menu, ChevronDown, LayoutDashboard, CheckSquare, RefreshCw, ClipboardList, GripVertical, UserMinus, Pencil, Check, X, Sun, Moon, KeyRound, HardDrive, Download, Database } from "lucide-react";
 import { ThemeContext } from "@/Layout";
 import DeleteUserDialog from "@/components/settings/DeleteUserDialog";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
@@ -57,6 +57,7 @@ export default function Settings() {
     return stored ? JSON.parse(stored) : [];
   });
   const [assigningTagToAll, setAssigningTagToAll] = useState({});
+  const [backupLoading, setBackupLoading] = useState(false);
 
   const { data: user } = useQuery({
     queryKey: ['currentUser'],
@@ -435,6 +436,66 @@ export default function Settings() {
     ]
   };
 
+  // ── Backup ────────────────────────────────────────
+  const handleBackup = async () => {
+    setBackupLoading(true);
+    try {
+      const backupTables = [
+        'customers', 'fristen', 'tasks', 'task_columns',
+        'kanban_columns', 'mail_kanban_mappings', 'activity_templates',
+        'tags', 'domain_tag_rules', 'priorities', 'projects', 'staff',
+        'task_read_statuses',
+      ];
+
+      const backup = {
+        version: '1.0',
+        created_at: new Date().toISOString(),
+        created_by: user?.email,
+        description: 'Artis MailFlow – vollständige Datensicherung (ohne Mail-Inhalte)',
+        tables: {},
+      };
+
+      for (const table of backupTables) {
+        const { data, error } = await supabase.from(table).select('*');
+        if (!error) backup.tables[table] = data || [];
+        else console.warn(`Backup: Tabelle ${table} nicht lesbar:`, error.message);
+      }
+
+      // Profiles ohne sensible OAuth-Token
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, email, full_name, role, created_at, theme, sync_days, email_signature, chat_signature, current_mailbox');
+      backup.tables.profiles = profiles || [];
+
+      // Kanban-Snapshot: outlook_id → column_id für Restore nach Reset
+      const { data: kanbanSnapshot } = await supabase
+        .from('mail_items')
+        .select('outlook_id, column_id, subject, sender_email, received_date')
+        .not('outlook_id', 'is', null)
+        .not('column_id', 'is', null);
+      backup.kanban_snapshot = kanbanSnapshot || [];
+      backup.kanban_snapshot_info = 'Enthält Outlook-ID → Kanban-Spalte Zuweisungen für Restore nach Mail-Reset';
+
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const dateStr = new Date().toISOString().split('T')[0];
+      a.download = `artis-mailflow-backup-${dateStr}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      toast.success('Backup erfolgreich erstellt und heruntergeladen');
+    } catch (e) {
+      toast.error('Backup-Fehler: ' + e.message);
+    } finally {
+      setBackupLoading(false);
+    }
+  };
+  // ──────────────────────────────────────────────────
+
   const isLight = theme === 'light';
   const isArtis = theme === 'artis';
   const isDark = !isLight && !isArtis;
@@ -523,7 +584,12 @@ export default function Settings() {
               >
                 <Users className="h-4 w-4" /> Benutzer
               </button>
-
+              <button
+                onClick={() => setActiveTab('backup')}
+                className={`w-full justify-start flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'backup' ? navActiveStyle : navInactiveStyle}`}
+              >
+                <HardDrive className="h-4 w-4" /> Backup
+              </button>
             </>
           )}
         </div>
@@ -1481,6 +1547,107 @@ export default function Settings() {
                   </div>
                 </button>
 
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Backup Tab */}
+        {activeTab === 'backup' && (
+          <div className="space-y-6 max-w-2xl">
+            {/* Header */}
+            <div className="rounded-xl p-6 border" style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
+              <h3 className="text-lg font-semibold mb-1 flex items-center gap-2" style={{ color: headingColor }}>
+                <HardDrive className="h-5 w-5" /> Datensicherung
+              </h3>
+              <p className="text-sm mb-6" style={{ color: textMuted }}>
+                Erstellt eine vollständige JSON-Datei aller Daten. Mails werden nicht gesichert
+                – sie können jederzeit über Outlook neu synchronisiert werden.
+              </p>
+
+              {/* Was wird gesichert */}
+              <div className="rounded-lg border p-4 mb-6 space-y-2" style={{ backgroundColor: rowBg, borderColor: rowBorder }}>
+                <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: textMuted }}>
+                  Enthaltene Daten
+                </p>
+                {[
+                  { icon: '👥', label: 'Kunden & Steuerdomizile', desc: 'customers' },
+                  { icon: '📅', label: 'Fristen', desc: 'fristen' },
+                  { icon: '✅', label: 'Aufgaben & Task-Spalten', desc: 'tasks, task_columns' },
+                  { icon: '📬', label: 'Kanban-Spalten & Zuweisungen', desc: 'kanban_columns, mail_kanban_mappings' },
+                  { icon: '🗂️', label: 'Aktivitätsvorlagen', desc: 'activity_templates' },
+                  { icon: '🏷️', label: 'Tags, Domain-Regeln, Prioritäten', desc: 'tags, domain_tag_rules, priorities' },
+                  { icon: '📁', label: 'Projekte & Mitarbeiter', desc: 'projects, staff' },
+                  { icon: '👤', label: 'Benutzerprofile', desc: 'profiles (ohne OAuth-Token)' },
+                  { icon: '📌', label: 'Kanban-Snapshot (outlook_id → Spalte)', desc: 'Ermöglicht Restore nach Mail-Reset' },
+                ].map(item => (
+                  <div key={item.label} className="flex items-center gap-3">
+                    <span className="text-base flex-shrink-0">{item.icon}</span>
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm font-medium" style={{ color: headingColor }}>{item.label}</span>
+                      <span className="text-xs ml-2" style={{ color: textMuted }}>({item.desc})</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Nicht enthalten */}
+              <div className="rounded-lg border border-amber-500/30 p-3 mb-6 flex items-start gap-2" style={{ backgroundColor: 'rgba(245,158,11,0.06)' }}>
+                <span className="text-amber-500 text-base flex-shrink-0">⚠️</span>
+                <p className="text-xs" style={{ color: textMuted }}>
+                  <strong style={{ color: headingColor }}>Mail-Inhalte werden nicht gesichert.</strong>{' '}
+                  Diese können jederzeit über Outlook neu synchronisiert werden. Der Kanban-Snapshot
+                  sichert jedoch die Spaltenzuweisungen (outlook_id → Spalte), damit diese nach
+                  einem Mail-Reset wiederhergestellt werden können.
+                </p>
+              </div>
+
+              <button
+                onClick={handleBackup}
+                disabled={backupLoading}
+                className="flex items-center gap-2 px-6 py-3 rounded-xl text-white font-medium transition-opacity hover:opacity-90 disabled:opacity-60"
+                style={{ backgroundColor: isArtis ? '#7a9b7f' : '#6366f1' }}
+              >
+                {backupLoading ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                    Backup wird erstellt…
+                  </>
+                ) : (
+                  <>
+                    <Download className="h-4 w-4" />
+                    Backup jetzt herunterladen
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* Kanban Re-Sync Info */}
+            <div className="rounded-xl p-6 border" style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
+              <h3 className="text-base font-semibold mb-3 flex items-center gap-2" style={{ color: headingColor }}>
+                <Database className="h-4 w-4" /> Kanban-Zuweisung bei Mail-Sync
+              </h3>
+              <div className="space-y-3 text-sm" style={{ color: textMuted }}>
+                <div className="flex items-start gap-2">
+                  <span className="text-green-500 font-bold flex-shrink-0">✓</span>
+                  <p>
+                    <strong style={{ color: headingColor }}>Regulärer Sync (Delta):</strong>{' '}
+                    Kanban-Zuweisungen bleiben erhalten. Bestehende Mails werden via{' '}
+                    <code className="text-xs bg-zinc-100 dark:bg-zinc-800 px-1 rounded">outlook_id</code>{' '}
+                    erkannt – die Spalte bleibt unverändert.
+                  </p>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="text-amber-500 font-bold flex-shrink-0">⚠</span>
+                  <p>
+                    <strong style={{ color: headingColor }}>Reset-und-Sync:</strong>{' '}
+                    Alle Mails werden gelöscht und neu geladen. Kanban-Zuweisungen gehen verloren,
+                    sofern kein Backup mit Kanban-Snapshot vorhanden ist.
+                  </p>
+                </div>
+                <p className="text-xs pt-1" style={{ color: textMuted }}>
+                  Empfehlung: Vor einem Mail-Reset immer ein Backup erstellen.
+                </p>
               </div>
             </div>
           </div>
