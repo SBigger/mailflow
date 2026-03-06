@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import AddFristDialog from "@/components/fristen/AddFristDialog";
 import GenerateFristenDialog from "@/components/fristen/GenerateFristenDialog";
+import { FristInlineRow } from "@/components/fristen/FristInlineRow";
 import { format, differenceInDays, isToday, isTomorrow, isPast, isThisWeek, addDays, parseISO } from "date-fns";
 import { de } from "date-fns/locale";
 
@@ -77,122 +78,9 @@ function groupFristen(list) {
 }
 
 // ──────────────────────────────────────────────────────────────
-// Frist Row Component
+// Group Section – nutzt FristInlineRow
 // ──────────────────────────────────────────────────────────────
-function FristRow({ frist, customers, users, onToggle, onEdit, onDelete, isArtis, isLight }) {
-  const customer = customers.find(c => c.id === frist.customer_id);
-  const user     = users.find(u => u.email === frist.assignee);
-  const catColor = CATEGORY_COLORS[frist.category] || CATEGORY_COLORS["Verschiedenes"];
-  const daysInfo = frist.status === "erledigt" ? null : getDaysLabel(frist.due_date);
-
-  const cardBg     = isArtis ? "#ffffff" : isLight ? "#ffffff" : "rgba(39,39,42,0.6)";
-  const cardBorder = isArtis ? "#d4e0d4" : isLight ? "#d4d4e8" : "#3f3f46";
-  const textMain   = isArtis ? "#2d3a2d" : isLight ? "#1a1a2e" : "#e4e4e7";
-  const textMuted  = isArtis ? "#6b826b" : isLight ? "#7a7a9a" : "#71717a";
-
-  return (
-    <div
-      className="flex items-center gap-3 px-4 py-3 rounded-xl border transition-all hover:shadow-sm group"
-      style={{ backgroundColor: cardBg, borderColor: cardBorder }}
-    >
-      {/* Done toggle */}
-      <button
-        onClick={() => onToggle(frist)}
-        className={`flex-shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
-          frist.status === "erledigt"
-            ? "bg-green-500 border-green-500 text-white"
-            : "border-zinc-400 hover:border-green-500 hover:bg-green-500/10"
-        }`}
-      >
-        {frist.status === "erledigt" && <Check className="h-3 w-3" />}
-      </button>
-
-      {/* Category badge */}
-      <span
-        className="flex-shrink-0 text-xs font-medium px-2 py-0.5 rounded-full border hidden sm:inline"
-        style={{ backgroundColor: catColor.bg, color: catColor.text, borderColor: catColor.border }}
-      >
-        {frist.category}
-      </span>
-
-      {/* Jahr badge */}
-      {frist.jahr && (
-        <span
-          className="flex-shrink-0 text-xs font-medium px-1.5 py-0.5 rounded border hidden sm:inline"
-          style={{ backgroundColor: isArtis ? "#e6ede6" : isLight ? "#ede9fe" : "rgba(99,102,241,0.12)", color: isArtis ? "#4a5e4a" : isLight ? "#4c1d95" : "#818cf8", borderColor: isArtis ? "#bfcfbf" : isLight ? "#c4b5fd" : "rgba(99,102,241,0.3)" }}
-        >
-          {frist.jahr}
-        </span>
-      )}
-
-      {/* Title + customer */}
-      <div className="flex-1 min-w-0">
-        <span
-          className={`text-sm font-medium ${frist.status === "erledigt" ? "line-through opacity-50" : ""}`}
-          style={{ color: textMain }}
-        >
-          {frist.title}
-        </span>
-        {(customer || frist.description) && (
-          <div className="flex items-center gap-2 mt-0.5">
-            {customer && (
-              <span className="text-xs truncate" style={{ color: textMuted }}>
-                {customer.company_name}
-              </span>
-            )}
-            {frist.description && (
-              <span className="text-xs italic truncate" style={{ color: textMuted }}>
-                {frist.description}
-              </span>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Recurring indicator */}
-      {frist.is_recurring && (
-        <RefreshCw className="h-3.5 w-3.5 flex-shrink-0" style={{ color: textMuted }} title="Wiederkehrend" />
-      )}
-
-      {/* Assignee */}
-      {user && (
-        <span
-          className="flex-shrink-0 text-xs px-2 py-0.5 rounded-full hidden md:inline"
-          style={{ backgroundColor: isArtis ? "#e6ede6" : isLight ? "#ede9fe" : "rgba(124,58,237,0.15)", color: isArtis ? "#4a5e4a" : "#7c3aed" }}
-        >
-          {user.full_name?.split(" ")[0] || user.email.split("@")[0]}
-        </span>
-      )}
-
-      {/* Due date */}
-      {frist.status !== "erledigt" && daysInfo && (
-        <span className="flex-shrink-0 text-xs font-medium whitespace-nowrap" style={{ color: daysInfo.color }}>
-          {daysInfo.label}
-        </span>
-      )}
-      {frist.status === "erledigt" && (
-        <span className="flex-shrink-0 text-xs" style={{ color: textMuted }}>
-          {format(parseISO(frist.due_date), "dd.MM.yyyy")}
-        </span>
-      )}
-
-      {/* Actions */}
-      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-        <button onClick={() => onEdit(frist)} className="p-1 rounded hover:bg-zinc-500/10" style={{ color: textMuted }}>
-          <Pencil className="h-3.5 w-3.5" />
-        </button>
-        <button onClick={() => onDelete(frist.id)} className="p-1 rounded hover:bg-red-500/10 text-red-400">
-          <Trash2 className="h-3.5 w-3.5" />
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ──────────────────────────────────────────────────────────────
-// Group Section
-// ──────────────────────────────────────────────────────────────
-function FristenGroup({ label, color, items, customers, users, onToggle, onEdit, onDelete, isArtis, isLight, defaultOpen = true }) {
+function FristenGroup({ label, color, items, customers, onToggle, onUpdate, onDelete, defaultOpen = true }) {
   const [open, setOpen] = useState(defaultOpen);
   if (items.length === 0) return null;
   return (
@@ -208,19 +96,19 @@ function FristenGroup({ label, color, items, customers, users, onToggle, onEdit,
       </button>
       {open && (
         <div className="space-y-1.5 pl-1">
-          {items.map(f => (
-            <FristRow
-              key={f.id}
-              frist={f}
-              customers={customers}
-              users={users}
-              onToggle={onToggle}
-              onEdit={onEdit}
-              onDelete={onDelete}
-              isArtis={isArtis}
-              isLight={isLight}
-            />
-          ))}
+          {items.map(f => {
+            const customer = customers.find(c => c.id === f.customer_id);
+            return (
+              <FristInlineRow
+                key={f.id}
+                frist={f}
+                onToggle={onToggle}
+                onUpdate={onUpdate}
+                onDelete={onDelete}
+                customerName={customer?.company_name}
+              />
+            );
+          })}
         </div>
       )}
     </div>
@@ -302,6 +190,10 @@ export default function Fristen() {
       createMutation.mutate(data);
     }
     setEditFrist(null);
+  };
+
+  const handleUpdate = (id, patch) => {
+    updateMutation.mutate({ id, data: patch });
   };
 
   const handleDelete = (id) => {
@@ -535,35 +427,35 @@ export default function Fristen() {
               style={{ backgroundColor: activeTabBg, color: "#fff" }}>
               <Plus className="h-4 w-4 mr-1" /> Erste Frist erstellen
             </Button>
+
           </div>
         ) : activeTab === "erledigt" ? (
           /* Erledigt view – flat list */
           <div className="space-y-1.5 max-w-3xl">
-            {filtered.map(f => (
-              <FristRow key={f.id} frist={f} customers={customers} users={users}
-                onToggle={handleToggle} onEdit={f => { setEditFrist(f); setShowAdd(true); }}
-                onDelete={handleDelete} isArtis={isArtis} isLight={isLight} />
-            ))}
+            {filtered.map(f => {
+              const cust = customers.find(c => c.id === f.customer_id);
+              return (
+                <FristInlineRow key={f.id} frist={f}
+                  onToggle={handleToggle} onUpdate={handleUpdate} onDelete={handleDelete}
+                  customerName={cust?.company_name} />
+              );
+            })}
           </div>
         ) : activeTab === "alle" ? (
-          /* Alle – show both open (grouped) + done */
+          /* Alle – grouped open + done */
           <div className="max-w-3xl space-y-1">
-            {/* Open grouped */}
             {Object.values(groups).map(group => (
-              <FristenGroup key={group.label} {...group} customers={customers} users={users}
-                onToggle={handleToggle}
-                onEdit={f => { setEditFrist(f); setShowAdd(true); }}
-                onDelete={handleDelete} isArtis={isArtis} isLight={isLight} defaultOpen={true} />
+              <FristenGroup key={group.label} {...group} customers={customers}
+                onToggle={handleToggle} onUpdate={handleUpdate} onDelete={handleDelete}
+                defaultOpen={true} />
             ))}
-            {/* Done section */}
             {fristen.filter(f => f.status === "erledigt").length > 0 && (
               <FristenGroup
                 label="✓ Erledigt" color={textMuted}
                 items={fristen.filter(f => f.status === "erledigt").slice(0, 20)}
-                customers={customers} users={users}
-                onToggle={handleToggle}
-                onEdit={f => { setEditFrist(f); setShowAdd(true); }}
-                onDelete={handleDelete} isArtis={isArtis} isLight={isLight} defaultOpen={false}
+                customers={customers}
+                onToggle={handleToggle} onUpdate={handleUpdate} onDelete={handleDelete}
+                defaultOpen={false}
               />
             )}
           </div>
@@ -577,10 +469,8 @@ export default function Fristen() {
               </div>
             ) : (
               Object.values(groups).map(group => (
-                <FristenGroup key={group.label} {...group} customers={customers} users={users}
-                  onToggle={handleToggle}
-                  onEdit={f => { setEditFrist(f); setShowAdd(true); }}
-                  onDelete={handleDelete} isArtis={isArtis} isLight={isLight}
+                <FristenGroup key={group.label} {...group} customers={customers}
+                  onToggle={handleToggle} onUpdate={handleUpdate} onDelete={handleDelete}
                   defaultOpen={group.label.includes("Überfällig") || group.label.includes("Heute") || group.label.includes("Woche")}
                 />
               ))

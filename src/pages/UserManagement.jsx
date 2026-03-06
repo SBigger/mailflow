@@ -3,7 +3,7 @@ import { functions, auth, supabase } from "@/api/supabaseClient";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Users, Mail, UserPlus, Trash2, Shield, User as UserIcon, CheckSquare, Pencil, Check, X } from "lucide-react";
+import { Users, Mail, UserPlus, Trash2, Shield, User as UserIcon, CheckSquare, Pencil, Check, X, KeyRound, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import { ThemeContext } from "@/Layout";
 import {
@@ -53,6 +53,12 @@ export default function UserManagement() {
   const [editingUserId, setEditingUserId] = useState(null);
   const [editingName,   setEditingName]   = useState("");
   const [savingName,    setSavingName]    = useState(false);
+
+  // Inline password state
+  const [pwEditUserId, setPwEditUserId] = useState(null);
+  const [pwEditValue,  setPwEditValue]  = useState("");
+  const [pwShowValue,  setPwShowValue]  = useState(false);
+  const [pwSaving,     setPwSaving]     = useState(false);
 
   const queryClient = useQueryClient();
 
@@ -127,6 +133,27 @@ export default function UserManagement() {
       toast.error("Fehler: " + e.message);
     } finally {
       setSavingName(false);
+    }
+  };
+
+  const handleSetPassword = async (userId) => {
+    if (!pwEditValue.trim()) { toast.error("Bitte Passwort eingeben"); return; }
+    if (pwEditValue.trim().length < 8) { toast.error("Passwort muss mindestens 8 Zeichen haben"); return; }
+    setPwSaving(true);
+    try {
+      const res = await functions.invoke('setUserPassword', {
+        body: { user_id: userId, password: pwEditValue.trim() }
+      });
+      if (res.error) throw new Error(res.error.message || 'Fehler beim Speichern');
+      const data = res.data;
+      if (data?.error) throw new Error(data.error);
+      toast.success("Passwort erfolgreich gesetzt");
+      setPwEditUserId(null);
+      setPwEditValue("");
+    } catch (e) {
+      toast.error("Fehler: " + e.message);
+    } finally {
+      setPwSaving(false);
     }
   };
 
@@ -216,7 +243,8 @@ export default function UserManagement() {
           ) : (
             <div>
               {users.map((user, i) => (
-                <div key={user.id} className="flex items-center justify-between p-4" style={{ borderBottom: i < users.length - 1 ? `1px solid ${cardBorder}` : 'none' }}>
+                <div key={user.id} style={{ borderBottom: i < users.length - 1 ? `1px solid ${cardBorder}` : 'none' }}>
+                <div className="flex items-center justify-between p-4">
                   <div className="flex items-center gap-3 flex-1 min-w-0">
                     <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-semibold text-white flex-shrink-0" style={{ backgroundColor: accentBg }}>
                       {(editingUserId === user.id ? editingName : user.full_name)?.charAt(0)?.toUpperCase() || user.email?.charAt(0)?.toUpperCase()}
@@ -290,6 +318,13 @@ export default function UserManagement() {
                               Zum Admin machen
                             </DropdownMenuItem>
                           )}
+                          <DropdownMenuItem
+                            onClick={() => { setPwEditUserId(user.id); setPwEditValue(""); setPwShowValue(false); }}
+                            style={{ color: textPrimary }}
+                          >
+                            <KeyRound className="h-4 w-4 mr-2" />
+                            Passwort setzen
+                          </DropdownMenuItem>
                           <DropdownMenuSeparator style={{ backgroundColor: cardBorder }} />
                           <DropdownMenuItem onClick={() => setUserToDelete(user)} style={{ color: '#ef4444' }}>
                             <Trash2 className="h-4 w-4 mr-2" />
@@ -299,6 +334,56 @@ export default function UserManagement() {
                       </DropdownMenu>
                     )}
                   </div>
+                </div>
+
+                {/* ── Passwort-Panel (inline) ── */}
+                {pwEditUserId === user.id && (
+                  <div
+                    className="flex items-center gap-2 px-4 pb-3 pt-0"
+                    style={{ backgroundColor: isArtis ? '#f5f8f5' : isLight ? '#f7f7fc' : 'rgba(24,24,27,0.9)' }}
+                  >
+                    <KeyRound className="h-3.5 w-3.5 flex-shrink-0" style={{ color: textSecondary }} />
+                    <div className="relative flex-1">
+                      <Input
+                        type={pwShowValue ? "text" : "password"}
+                        placeholder="Neues Passwort (min. 8 Zeichen)"
+                        value={pwEditValue}
+                        onChange={e => setPwEditValue(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') handleSetPassword(user.id);
+                          if (e.key === 'Escape') { setPwEditUserId(null); setPwEditValue(""); }
+                        }}
+                        autoFocus
+                        className="h-8 text-sm pr-8"
+                        style={{ backgroundColor: isArtis ? '#fff' : isLight ? '#fff' : '#18181b', borderColor: accentBg, color: textPrimary }}
+                        autoComplete="new-password"
+                      />
+                      <button
+                        onClick={() => setPwShowValue(v => !v)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2"
+                        style={{ color: textSecondary }}
+                        tabIndex={-1}
+                      >
+                        {pwShowValue ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                      </button>
+                    </div>
+                    <button
+                      onClick={() => handleSetPassword(user.id)}
+                      disabled={pwSaving || !pwEditValue}
+                      className="p-1.5 rounded bg-green-500/20 text-green-600 hover:bg-green-500/30 disabled:opacity-40 transition-colors flex-shrink-0"
+                      title="Speichern"
+                    >
+                      <Check className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => { setPwEditUserId(null); setPwEditValue(""); }}
+                      className="p-1.5 rounded hover:bg-red-500/10 text-red-400 flex-shrink-0"
+                      title="Abbrechen"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                )}
                 </div>
               ))}
             </div>
