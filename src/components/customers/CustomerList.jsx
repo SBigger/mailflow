@@ -26,8 +26,9 @@ export default function CustomerList({
 
   const textMuted = isArtis ? '#8aaa8f' : isLight ? '#8080a0' : '#71717a';
 
-  // Filter by type first
+  // Filter by type first — always hide Nebendomizile from main list
   const typeFiltered = customers.filter(c => {
+    if (c.ist_nebensteuerdomizil === true) return false; // Nebendomizile nie in Hauptliste
     const matchType =
       personTypeFilter === "alle" ? true :
       personTypeFilter === "privatperson" ? c.person_type === "privatperson" :

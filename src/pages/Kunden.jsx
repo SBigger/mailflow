@@ -4,7 +4,7 @@ import { entities, functions, auth } from "@/api/supabaseClient";
 import { ThemeContext } from "@/Layout";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Upload, Trash2, Download, Building2, UserRound, ChevronDown, PowerOff } from "lucide-react";
+import { Upload, Trash2, Download, Building2, UserRound, ChevronDown, PowerOff, ArrowLeft } from "lucide-react";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuTrigger, DropdownMenuSeparator,
@@ -21,6 +21,7 @@ import CustomerImportDialog from "../components/customers/CustomerImportDialog";
 import PrivatpersonImportDialog from "../components/customers/PrivatpersonImportDialog";
 import CustomerFristenTab from "../components/customers/CustomerFristenTab";
 import CustomerSteuerZugaengeTab from "../components/customers/CustomerSteuerZugaengeTab";
+import CustomerNebensteuerdomizileTab from "../components/customers/CustomerNebensteuerdomizileTab";
 import MobileCustomerView from "../components/customers/MobileCustomerView";
 
 function escapeCsv(val) {
@@ -177,7 +178,11 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
     setSelectedCustomer(prev => ({ ...prev, ...data }));
   };
 
-  const isPrivatperson = currentCustomer?.person_type === 'privatperson';
+  const isPrivatperson  = currentCustomer?.person_type === 'privatperson';
+  const isNebendomizil  = currentCustomer?.ist_nebensteuerdomizil === true;
+  const hauptdomizil    = isNebendomizil
+    ? customers.find(c => c.id === currentCustomer?.hauptdomizil_id) || null
+    : null;
 
   // ── Theme colors ─────────────────────────────────────────────
   const textMuted   = isArtis ? '#6b826b' : isLight ? '#5a5a7a' : '#71717a';
@@ -306,6 +311,20 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
           </div>
         ) : (
           <>
+            {/* ── Back-Button für Nebendomizile ─────────────── */}
+            {isNebendomizil && (
+              <div className="px-6 py-2 border-b" style={{ borderColor }}>
+                <button
+                  onClick={() => setSelectedCustomer(hauptdomizil)}
+                  className="flex items-center gap-1.5 text-xs font-medium hover:underline transition-colors"
+                  style={{ color: accentBg }}
+                >
+                  <ArrowLeft className="h-3.5 w-3.5" />
+                  {hauptdomizil ? `Zurück zu ${hauptdomizil.company_name}` : 'Zum Hauptdomizil'}
+                </button>
+              </div>
+            )}
+
             <div className="flex items-start gap-2 pr-4">
               <div className="flex-1">
                 <CustomerHeader customer={currentCustomer} staff={appUsers} onUpdate={handleUpdate} />
@@ -327,7 +346,9 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
                 {/* Löschen */}
                 <button
                   onClick={() => {
-                    const label = isPrivatperson
+                    const label = isNebendomizil
+                      ? `Nebendomizil "${currentCustomer.company_name}" wirklich löschen?`
+                      : isPrivatperson
                       ? `"${currentCustomer.company_name}" wirklich löschen?`
                       : `Firma "${currentCustomer.company_name}" wirklich löschen?`;
                     if (confirm(label)) deleteMutation.mutate(currentCustomer.id);
@@ -342,50 +363,83 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
             </div>
 
             <div className="flex-1 overflow-y-auto">
-              <Tabs defaultValue="activities" className="h-full flex flex-col">
+              <Tabs key={currentCustomer.id} defaultValue={isNebendomizil ? "fristen" : "activities"} className="h-full flex flex-col">
                 <div className="px-6 pt-4 border-b" style={{ borderColor }}>
                   <TabsList
                     style={{ backgroundColor: isArtis ? '#edf2ed' : isLight ? '#e8e8f0' : 'rgba(24,24,27,0.6)', borderColor: isArtis ? '#ccd8cc' : isLight ? '#d0d0e0' : '#3f3f46' }}
                     className="border flex-wrap"
                   >
-                    <TabsTrigger value="mails"      className="text-xs">📧 Mails</TabsTrigger>
-                    <TabsTrigger value="tasks"      className="text-xs">✅ Tasks</TabsTrigger>
-                    <TabsTrigger value="fristen"    className="text-xs">📅 Fristen</TabsTrigger>
-                    <TabsTrigger value="activities" className="text-xs">📋 Tätigkeiten</TabsTrigger>
-                    <TabsTrigger value="contacts"   className="text-xs">👤 Kontakte</TabsTrigger>
-                    <TabsTrigger value="notes"      className="text-xs">📝 Notizen</TabsTrigger>
-                    {isPrivatperson && (
-                      <TabsTrigger value="zugaenge" className="text-xs">🔑 Zugänge</TabsTrigger>
+                    {isNebendomizil ? (
+                      /* Nebendomizil: nur Fristen + Zugänge */
+                      <>
+                        <TabsTrigger value="fristen"  className="text-xs">📅 Fristen</TabsTrigger>
+                        <TabsTrigger value="zugaenge" className="text-xs">🔑 Zugänge</TabsTrigger>
+                      </>
+                    ) : (
+                      /* Normales Haupt-Domizil: alle Tabs */
+                      <>
+                        <TabsTrigger value="mails"               className="text-xs">📧 Mails</TabsTrigger>
+                        <TabsTrigger value="tasks"               className="text-xs">✅ Tasks</TabsTrigger>
+                        <TabsTrigger value="fristen"             className="text-xs">📅 Fristen</TabsTrigger>
+                        <TabsTrigger value="activities"          className="text-xs">📋 Tätigkeiten</TabsTrigger>
+                        <TabsTrigger value="contacts"            className="text-xs">👤 Kontakte</TabsTrigger>
+                        <TabsTrigger value="notes"               className="text-xs">📝 Notizen</TabsTrigger>
+                        {isPrivatperson && (
+                          <TabsTrigger value="zugaenge"          className="text-xs">🔑 Zugänge</TabsTrigger>
+                        )}
+                        <TabsTrigger value="nebensteuerdomizile" className="text-xs">🗺️ Nebendomizile</TabsTrigger>
+                      </>
                     )}
                   </TabsList>
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-6">
-                  <TabsContent value="mails" className="mt-0">
-                    <CustomerMailsTab customer={currentCustomer} />
-                  </TabsContent>
+                  {/* Tabs für alle Kunden (nicht Nebendomizil) */}
+                  {!isNebendomizil && (
+                    <>
+                      <TabsContent value="mails" className="mt-0">
+                        <CustomerMailsTab customer={currentCustomer} />
+                      </TabsContent>
 
-                  <TabsContent value="tasks" className="mt-0">
-                    <CustomerTasksTab customer={currentCustomer} />
-                  </TabsContent>
+                      <TabsContent value="tasks" className="mt-0">
+                        <CustomerTasksTab customer={currentCustomer} />
+                      </TabsContent>
 
+                      <TabsContent value="activities" className="mt-0">
+                        <CustomerActivities customer={currentCustomer} onUpdate={handleUpdate} />
+                      </TabsContent>
+
+                      <TabsContent value="contacts" className="mt-0">
+                        <CustomerContactPersons customer={currentCustomer} onUpdate={handleUpdate} />
+                      </TabsContent>
+
+                      <TabsContent value="notes" className="mt-0 h-full">
+                        <CustomerNotesTab customer={currentCustomer} onUpdate={handleUpdate} />
+                      </TabsContent>
+
+                      {isPrivatperson && (
+                        <TabsContent value="zugaenge" className="mt-0">
+                          <CustomerSteuerZugaengeTab customer={currentCustomer} onUpdate={handleUpdate} />
+                        </TabsContent>
+                      )}
+
+                      <TabsContent value="nebensteuerdomizile" className="mt-0">
+                        <CustomerNebensteuerdomizileTab
+                          customer={currentCustomer}
+                          allCustomers={customers}
+                          onSelect={setSelectedCustomer}
+                        />
+                      </TabsContent>
+                    </>
+                  )}
+
+                  {/* Fristen: für alle (Haupt- und Nebendomizile) */}
                   <TabsContent value="fristen" className="mt-0">
                     <CustomerFristenTab customer={currentCustomer} />
                   </TabsContent>
 
-                  <TabsContent value="activities" className="mt-0">
-                    <CustomerActivities customer={currentCustomer} onUpdate={handleUpdate} />
-                  </TabsContent>
-
-                  <TabsContent value="contacts" className="mt-0">
-                    <CustomerContactPersons customer={currentCustomer} onUpdate={handleUpdate} />
-                  </TabsContent>
-
-                  <TabsContent value="notes" className="mt-0 h-full">
-                    <CustomerNotesTab customer={currentCustomer} onUpdate={handleUpdate} />
-                  </TabsContent>
-
-                  {isPrivatperson && (
+                  {/* Zugänge: für Nebendomizile (alle Typen) + Privatpersonen */}
+                  {isNebendomizil && (
                     <TabsContent value="zugaenge" className="mt-0">
                       <CustomerSteuerZugaengeTab customer={currentCustomer} onUpdate={handleUpdate} />
                     </TabsContent>

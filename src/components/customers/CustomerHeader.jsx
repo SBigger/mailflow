@@ -190,7 +190,7 @@ export default function CustomerHeader({ customer, staff, onUpdate }) {
               onUpdate({ kanton: val || null });
             }}
           >
-            <SelectTrigger className={`h-8 text-xs w-36 flex-shrink-0 ${inputClass}`}>
+            <SelectTrigger className={`h-8 text-xs w-48 flex-shrink-0 ${inputClass}`}>
               <SelectValue placeholder="KT" />
             </SelectTrigger>
             <SelectContent>
