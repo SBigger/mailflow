@@ -190,7 +190,7 @@ export default function CustomerHeader({ customer, staff, onUpdate }) {
               onUpdate({ kanton: val || null });
             }}
           >
-            <SelectTrigger className={`h-8 text-xs w-48 flex-shrink-0 ${inputClass}`}>
+            <SelectTrigger className={`h-8 text-xs w-52 flex-shrink-0 ${inputClass}`}>
               <SelectValue placeholder="KT" />
             </SelectTrigger>
             <SelectContent>
@@ -215,7 +215,7 @@ export default function CustomerHeader({ customer, staff, onUpdate }) {
             </a>
           )}
         </div>
-        <div className="flex items-center w-40 rounded-md h-8 overflow-hidden border" style={{ backgroundColor: '#ffffff', borderColor: isArtis ? '#bfcfbf' : isLight ? '#c8c8dc' : '#d1d5db' }}>
+        <div className="flex items-center w-52 flex-shrink-0 rounded-md h-8 overflow-hidden border" style={{ backgroundColor: '#ffffff', borderColor: isArtis ? '#bfcfbf' : isLight ? '#c8c8dc' : '#d1d5db' }}>
           <span className="text-xs flex-shrink-0 pl-2 pr-1" style={{ color: isLight ? '#8080a0' : '#71717a' }}>CHF</span>
           <input value={budget} onChange={e => setBudget(e.target.value)} onFocus={() => { if (budget) setBudget(budget.replace(/[^0-9.-]/g, "")); }} onBlur={handleBudgetBlur} placeholder="0.00" className="flex-1 bg-transparent text-emerald-500 text-sm font-medium focus:outline-none min-w-0 pr-2 text-right" style={{ caretColor: isLight ? '#1a1a2e' : 'white' }} />
         </div>
