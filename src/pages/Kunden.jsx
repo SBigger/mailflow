@@ -20,8 +20,6 @@ import CustomerContactPersons from "../components/customers/CustomerContactPerso
 import CustomerImportDialog from "../components/customers/CustomerImportDialog";
 import PrivatpersonImportDialog from "../components/customers/PrivatpersonImportDialog";
 import CustomerFristenTab from "../components/customers/CustomerFristenTab";
-import CustomerSteuerZugaengeTab from "../components/customers/CustomerSteuerZugaengeTab";
-import CustomerNebensteuerdomizileTab from "../components/customers/CustomerNebensteuerdomizileTab";
 import MobileCustomerView from "../components/customers/MobileCustomerView";
 
 function escapeCsv(val) {
@@ -164,7 +162,7 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
       company_name: "Neue Person",
       person_type: 'privatperson',
       vorname: '', nachname: '',
-      activities: [], contact_persons: [], tags: [], steuer_zugaenge: [],
+      activities: [], contact_persons: [], tags: [],
     });
   };
 
@@ -370,22 +368,17 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
                     className="border flex-wrap"
                   >
                     {isNebendomizil ? (
-                      /* Nebendomizil: nur Fristen + Zugänge */
-                      <>
-                        <TabsTrigger value="fristen"  className="text-xs">📅 Fristen</TabsTrigger>
-                        <TabsTrigger value="zugaenge" className="text-xs">🔑 Zugänge</TabsTrigger>
-                      </>
+                      /* Nebendomizil: nur Fristen */
+                      <TabsTrigger value="fristen" className="text-xs">📅 Fristen</TabsTrigger>
                     ) : (
-                      /* Normales Haupt-Domizil: alle Tabs */
+                      /* Normales Haupt-Domizil */
                       <>
-                        <TabsTrigger value="mails"               className="text-xs">📧 Mails</TabsTrigger>
-                        <TabsTrigger value="tasks"               className="text-xs">✅ Tasks</TabsTrigger>
-                        <TabsTrigger value="fristen"             className="text-xs">📅 Fristen</TabsTrigger>
-                        <TabsTrigger value="activities"          className="text-xs">📋 Tätigkeiten</TabsTrigger>
-                        <TabsTrigger value="contacts"            className="text-xs">👤 Kontakte</TabsTrigger>
-                        <TabsTrigger value="notes"               className="text-xs">📝 Notizen</TabsTrigger>
-                        <TabsTrigger value="zugaenge"            className="text-xs">🔑 Zugänge</TabsTrigger>
-                        <TabsTrigger value="steuerdomizile"      className="text-xs">🗺️ Steuerdomizile</TabsTrigger>
+                        <TabsTrigger value="mails"      className="text-xs">📧 Mails</TabsTrigger>
+                        <TabsTrigger value="tasks"      className="text-xs">✅ Tasks</TabsTrigger>
+                        <TabsTrigger value="fristen"    className="text-xs">📅 Fristen</TabsTrigger>
+                        <TabsTrigger value="activities" className="text-xs">📋 Tätigkeiten</TabsTrigger>
+                        <TabsTrigger value="contacts"   className="text-xs">👤 Kontakte</TabsTrigger>
+                        <TabsTrigger value="notes"      className="text-xs">📝 Notizen</TabsTrigger>
                       </>
                     )}
                   </TabsList>
@@ -415,17 +408,6 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
                         <CustomerNotesTab customer={currentCustomer} onUpdate={handleUpdate} />
                       </TabsContent>
 
-                      <TabsContent value="zugaenge" className="mt-0">
-                        <CustomerSteuerZugaengeTab customer={currentCustomer} onUpdate={handleUpdate} />
-                      </TabsContent>
-
-                      <TabsContent value="steuerdomizile" className="mt-0">
-                        <CustomerNebensteuerdomizileTab
-                          customer={currentCustomer}
-                          allCustomers={customers}
-                          onSelect={setSelectedCustomer}
-                        />
-                      </TabsContent>
                     </>
                   )}
 
@@ -434,12 +416,6 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
                     <CustomerFristenTab customer={currentCustomer} />
                   </TabsContent>
 
-                  {/* Zugänge: für Nebendomizile (alle Typen) + Privatpersonen */}
-                  {isNebendomizil && (
-                    <TabsContent value="zugaenge" className="mt-0">
-                      <CustomerSteuerZugaengeTab customer={currentCustomer} onUpdate={handleUpdate} />
-                    </TabsContent>
-                  )}
                 </div>
               </Tabs>
             </div>

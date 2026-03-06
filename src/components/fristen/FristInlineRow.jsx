@@ -35,7 +35,8 @@ function useRowStyles(isArtis, isLight) {
   const textMain   = isArtis ? "#2d3a2d"              : isLight ? "#1a1a2e"              : "#e4e4e7";
   const textMuted  = isArtis ? "#6b826b"              : isLight ? "#7a7a9a"              : "#71717a";
   const accentBg   = isArtis ? "#7a9b7f"              : "#6366f1";
-  return { cardBg, cardBorder, expandBg, inputBg, inputBorder, textMain, textMuted, accentBg };
+  const divider    = isArtis ? "#d4e0d4"              : isLight ? "#d4d4e8"              : "#3f3f46";
+  return { cardBg, cardBorder, expandBg, inputBg, inputBorder, textMain, textMuted, accentBg, divider };
 }
 
 const selectCls = "rounded border px-1 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 cursor-pointer";
@@ -87,7 +88,7 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
 
       {/* ── Main row ── */}
       <div
-        className="flex items-center gap-1.5 px-2 py-2 group"
+        className="flex items-center gap-2 px-3 py-2 group"
         style={{ backgroundColor: s.cardBg, opacity: isDone ? 0.65 : 1 }}
       >
         {/* Done toggle */}
@@ -100,86 +101,95 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
           {isDone && <Check className="h-3 w-3" />}
         </button>
 
-        {/* Kanton */}
-        <select
-          value={kanton}
-          onChange={e => { setKanton(e.target.value); save({ kanton: e.target.value }); }}
-          className={selectCls}
-          style={{ ...inStyle, width: "54px" }}
-          disabled={isDone}
-          title="Kanton"
-        >
-          <option value="">KT</option>
-          {CH_KANTONE.map(k => <option key={k} value={k}>{k}</option>)}
-        </select>
-
-        {/* Jahr */}
-        <select
-          value={String(jahr)}
-          onChange={e => { const y = parseInt(e.target.value); setJahr(y); save({ jahr: y }); }}
-          className={selectCls}
-          style={{ ...inStyle, width: "62px" }}
-          disabled={isDone}
-          title="Jahr"
-        >
-          {YEARS.map(y => <option key={y} value={String(y)}>{y}</option>)}
-        </select>
-
-        {/* Frist erhalten bis (due_date) */}
-        <input
-          type="date"
-          value={dueDate}
-          onChange={e => setDueDate(e.target.value)}
-          onBlur={e => { if (e.target.value) save({ due_date: e.target.value }); }}
-          className={inputCls}
-          style={{ ...inStyle, width: "132px" }}
-          disabled={isDone}
-          title="Frist erhalten bis"
-        />
-
-        {/* Art / Kategorie */}
-        <select
-          value={category}
-          onChange={e => { setCategory(e.target.value); save({ category: e.target.value }); }}
-          className={selectCls}
-          style={{ ...inStyle, flex: 1, minWidth: "100px" }}
-          disabled={isDone}
-          title="Art der Frist"
-        >
-          {INLINE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
-
-        {/* Kundenname (nur globale Ansicht) */}
-        {customerName && (
-          <span
-            className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded border hidden md:inline truncate max-w-[120px]"
-            style={{ backgroundColor: s.expandBg, borderColor: s.cardBorder, color: s.textMuted }}
-            title={customerName}
+        {/* ── Datenfelder (nehmen verfügbaren Platz) ── */}
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          {/* Kanton */}
+          <select
+            value={kanton}
+            onChange={e => { setKanton(e.target.value); save({ kanton: e.target.value }); }}
+            className={selectCls}
+            style={{ ...inStyle, width: "58px", flexShrink: 0 }}
+            disabled={isDone}
+            title="Kanton"
           >
-            {customerName}
-          </span>
-        )}
+            <option value="">KT</option>
+            {CH_KANTONE.map(k => <option key={k} value={k}>{k}</option>)}
+          </select>
 
-        {/* Expand Login/PW */}
-        <button
-          onClick={() => setExpanded(v => !v)}
-          className="flex-shrink-0 p-1 rounded hover:bg-black/5 transition-colors"
-          style={{ color: expanded ? s.accentBg : s.textMuted }}
-          title={expanded ? "Login/Passwort ausblenden" : "Login/Passwort anzeigen"}
-        >
-          {expanded
-            ? <ChevronUp className="h-3.5 w-3.5" />
-            : <ChevronDown className="h-3.5 w-3.5" />}
-        </button>
+          {/* Jahr */}
+          <select
+            value={String(jahr)}
+            onChange={e => { const y = parseInt(e.target.value); setJahr(y); save({ jahr: y }); }}
+            className={selectCls}
+            style={{ ...inStyle, width: "66px", flexShrink: 0 }}
+            disabled={isDone}
+            title="Jahr"
+          >
+            {YEARS.map(y => <option key={y} value={String(y)}>{y}</option>)}
+          </select>
 
-        {/* Delete (on hover) */}
-        <button
-          onClick={() => onDelete(frist.id)}
-          className="flex-shrink-0 p-1 rounded hover:bg-red-500/10 text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
-          title="Löschen"
+          {/* Frist erhalten bis (due_date) */}
+          <input
+            type="date"
+            value={dueDate}
+            onChange={e => setDueDate(e.target.value)}
+            onBlur={e => { if (e.target.value) save({ due_date: e.target.value }); }}
+            className={inputCls}
+            style={{ ...inStyle, width: "130px", flexShrink: 0 }}
+            disabled={isDone}
+            title="Frist erhalten bis"
+          />
+
+          {/* Art / Kategorie – füllt restlichen Platz */}
+          <select
+            value={category}
+            onChange={e => { setCategory(e.target.value); save({ category: e.target.value }); }}
+            className={selectCls}
+            style={{ ...inStyle, flex: 1, minWidth: "110px" }}
+            disabled={isDone}
+            title="Art der Frist"
+          >
+            {INLINE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
+
+        {/* ── Aktions-Bereich (rechts, mit Trennlinie) ── */}
+        <div
+          className="flex-shrink-0 flex items-center gap-1 pl-2 ml-1"
+          style={{ borderLeft: `1px solid ${s.divider}` }}
         >
-          <Trash2 className="h-3.5 w-3.5" />
-        </button>
+          {/* Kundenname (nur globale Ansicht) */}
+          {customerName && (
+            <span
+              className="text-xs px-1.5 py-0.5 rounded border hidden md:inline truncate max-w-[110px]"
+              style={{ backgroundColor: s.expandBg, borderColor: s.cardBorder, color: s.textMuted }}
+              title={customerName}
+            >
+              {customerName}
+            </span>
+          )}
+
+          {/* Expand Login/PW */}
+          <button
+            onClick={() => setExpanded(v => !v)}
+            className="p-1.5 rounded hover:bg-black/5 transition-colors"
+            style={{ color: expanded ? s.accentBg : s.textMuted }}
+            title={expanded ? "Login/Passwort ausblenden" : "Login/Passwort anzeigen"}
+          >
+            {expanded
+              ? <ChevronUp className="h-3.5 w-3.5" />
+              : <ChevronDown className="h-3.5 w-3.5" />}
+          </button>
+
+          {/* Delete */}
+          <button
+            onClick={() => onDelete(frist.id)}
+            className="p-1.5 rounded hover:bg-red-500/10 text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+            title="Löschen"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
 
       {/* ── Expanded: Login + Passwort ── */}
@@ -264,73 +274,82 @@ export function NewFristRow({ onSave, onCancel, customerId }) {
       style={{ borderColor: s.accentBg }}
     >
       {/* Main row */}
-      <div className="flex items-center gap-1.5 px-2 py-2" style={{ backgroundColor: s.cardBg }}>
+      <div className="flex items-center gap-2 px-3 py-2" style={{ backgroundColor: s.cardBg }}>
         {/* Placeholder circle */}
         <div
           className="flex-shrink-0 w-5 h-5 rounded-full border-2 border-dashed"
           style={{ borderColor: s.textMuted }}
         />
 
-        {/* Kanton */}
-        <select
-          value={kanton}
-          onChange={e => setKanton(e.target.value)}
-          className={selectCls}
-          style={{ ...inStyle, width: "54px" }}
-          autoFocus
-        >
-          <option value="">KT</option>
-          {CH_KANTONE.map(k => <option key={k} value={k}>{k}</option>)}
-        </select>
+        {/* ── Datenfelder ── */}
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          {/* Kanton */}
+          <select
+            value={kanton}
+            onChange={e => setKanton(e.target.value)}
+            className={selectCls}
+            style={{ ...inStyle, width: "58px", flexShrink: 0 }}
+            autoFocus
+          >
+            <option value="">KT</option>
+            {CH_KANTONE.map(k => <option key={k} value={k}>{k}</option>)}
+          </select>
 
-        {/* Jahr */}
-        <select
-          value={String(jahr)}
-          onChange={e => setJahr(parseInt(e.target.value))}
-          className={selectCls}
-          style={{ ...inStyle, width: "62px" }}
-        >
-          {YEARS.map(y => <option key={y} value={String(y)}>{y}</option>)}
-        </select>
+          {/* Jahr */}
+          <select
+            value={String(jahr)}
+            onChange={e => setJahr(parseInt(e.target.value))}
+            className={selectCls}
+            style={{ ...inStyle, width: "66px", flexShrink: 0 }}
+          >
+            {YEARS.map(y => <option key={y} value={String(y)}>{y}</option>)}
+          </select>
 
-        {/* Frist erhalten bis */}
-        <input
-          type="date"
-          value={dueDate}
-          onChange={e => setDueDate(e.target.value)}
-          onKeyDown={e => e.key === "Enter" && handleSave()}
-          className={inputCls}
-          style={{ ...inStyle, width: "132px" }}
-          placeholder="Datum *"
-        />
+          {/* Frist erhalten bis */}
+          <input
+            type="date"
+            value={dueDate}
+            onChange={e => setDueDate(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && handleSave()}
+            className={inputCls}
+            style={{ ...inStyle, width: "130px", flexShrink: 0 }}
+            placeholder="Datum *"
+          />
 
-        {/* Art */}
-        <select
-          value={category}
-          onChange={e => setCategory(e.target.value)}
-          className={selectCls}
-          style={{ ...inStyle, flex: 1, minWidth: "100px" }}
-        >
-          {INLINE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
+          {/* Art */}
+          <select
+            value={category}
+            onChange={e => setCategory(e.target.value)}
+            className={selectCls}
+            style={{ ...inStyle, flex: 1, minWidth: "110px" }}
+          >
+            {INLINE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
 
-        {/* Save */}
-        <button
-          onClick={handleSave}
-          disabled={!dueDate}
-          className="flex-shrink-0 p-1.5 rounded bg-green-500/20 text-green-600 hover:bg-green-500/30 disabled:opacity-30 transition-colors"
-          title="Speichern"
+        {/* ── Aktions-Buttons (rechts, mit Trennlinie) ── */}
+        <div
+          className="flex-shrink-0 flex items-center gap-1 pl-2 ml-1"
+          style={{ borderLeft: `1px solid ${s.divider}` }}
         >
-          <Check className="h-3.5 w-3.5" />
-        </button>
-        {/* Cancel */}
-        <button
-          onClick={onCancel}
-          className="flex-shrink-0 p-1.5 rounded hover:bg-red-500/10 text-red-400 transition-colors"
-          title="Abbrechen"
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
+          {/* Save */}
+          <button
+            onClick={handleSave}
+            disabled={!dueDate}
+            className="p-1.5 rounded bg-green-500/20 text-green-600 hover:bg-green-500/30 disabled:opacity-30 transition-colors"
+            title="Speichern"
+          >
+            <Check className="h-3.5 w-3.5" />
+          </button>
+          {/* Cancel */}
+          <button
+            onClick={onCancel}
+            className="p-1.5 rounded hover:bg-red-500/10 text-red-400 transition-colors"
+            title="Abbrechen"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
 
       {/* Login / Passwort – immer sichtbar bei neuer Frist */}
