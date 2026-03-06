@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useContext, useRef } from "react";
+import { createPortal } from "react-dom";
 import { Check, Trash2, Eye, EyeOff, ChevronDown, ChevronUp, KeyRound, X } from "lucide-react";
 import { ThemeContext } from "@/Layout";
 
@@ -46,21 +47,35 @@ const inputCls  = "rounded border px-2 py-1 text-xs focus:outline-none focus:rin
 // ── Multi-Kanton-Select ───────────────────────────────────────
 // value: kommagetrennte Kantone z.B. "ZH,TI,BE"
 // onChange: (newValue: string) => void
+// Dropdown via Portal → escapes overflow:hidden auf Parent-Containern
 function KantonMultiSelect({ value, onChange, disabled, inStyle, s }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef(null);
+  const btnRef = useRef(null);
+  const dropRef = useRef(null);
+  const [dropPos, setDropPos] = useState({ top: 0, left: 0 });
 
   const selected = value ? value.split(",").filter(Boolean) : [];
 
-  // Schliessen bei Klick ausserhalb
+  // Schliessen bei Klick ausserhalb (Button UND Portal-Dropdown prüfen)
   useEffect(() => {
     if (!open) return;
     const handler = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+      const inBtn  = btnRef.current  && btnRef.current.contains(e.target);
+      const inDrop = dropRef.current && dropRef.current.contains(e.target);
+      if (!inBtn && !inDrop) setOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
+
+  const handleToggle = () => {
+    if (disabled) return;
+    if (!open && btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      setDropPos({ top: rect.bottom + 4, left: rect.left });
+    }
+    setOpen(v => !v);
+  };
 
   const toggle = (kt) => {
     const next = selected.includes(kt)
@@ -76,10 +91,11 @@ function KantonMultiSelect({ value, onChange, disabled, inStyle, s }) {
     : `${selected[0]} +${selected.length - 1}`;
 
   return (
-    <div ref={ref} style={{ position: "relative", flexShrink: 0 }}>
+    <div style={{ flexShrink: 0 }}>
       <button
+        ref={btnRef}
         type="button"
-        onClick={() => !disabled && setOpen(v => !v)}
+        onClick={handleToggle}
         disabled={disabled}
         className="rounded border px-1.5 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 flex items-center gap-1"
         style={{ ...inStyle, minWidth: "72px", maxWidth: "100px" }}
@@ -89,20 +105,21 @@ function KantonMultiSelect({ value, onChange, disabled, inStyle, s }) {
         <ChevronDown className="h-3 w-3 flex-shrink-0 opacity-60" />
       </button>
 
-      {open && (
+      {open && createPortal(
         <div
+          ref={dropRef}
           style={{
-            position: "absolute",
-            top: "calc(100% + 4px)",
-            left: 0,
-            zIndex: 100,
+            position: "fixed",
+            top: dropPos.top,
+            left: dropPos.left,
+            zIndex: 9999,
             backgroundColor: inStyle.backgroundColor,
             border: `1px solid ${inStyle.borderColor}`,
             borderRadius: 6,
-            boxShadow: "0 4px 16px rgba(0,0,0,0.18)",
-            maxHeight: 240,
+            boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
+            maxHeight: 260,
             overflowY: "auto",
-            minWidth: 90,
+            minWidth: 100,
           }}
         >
           {CH_KANTONE.map(kt => (
@@ -112,7 +129,7 @@ function KantonMultiSelect({ value, onChange, disabled, inStyle, s }) {
                 display: "flex",
                 alignItems: "center",
                 gap: 8,
-                padding: "5px 10px",
+                padding: "5px 12px",
                 cursor: "pointer",
                 fontSize: 12,
                 color: inStyle.color,
@@ -129,7 +146,8 @@ function KantonMultiSelect({ value, onChange, disabled, inStyle, s }) {
               <span style={{ fontWeight: selected.includes(kt) ? 600 : 400 }}>{kt}</span>
             </label>
           ))}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
