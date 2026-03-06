@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from "react";
+import React, { useState, useEffect, useContext, useRef } from "react";
 import { Check, Trash2, Eye, EyeOff, ChevronDown, ChevronUp, KeyRound, X } from "lucide-react";
 import { ThemeContext } from "@/Layout";
 
@@ -27,24 +27,116 @@ export const YEARS = Array.from({ length: 8 }, (_, i) => currentYear - 3 + i);
 
 // ── Shared style helpers ──────────────────────────────────────
 function useRowStyles(isArtis, isLight) {
-  const cardBg     = isArtis ? "#ffffff"              : isLight ? "#ffffff"              : "rgba(39,39,42,0.7)";
-  const cardBorder = isArtis ? "#d4e0d4"              : isLight ? "#d4d4e8"              : "#3f3f46";
-  const expandBg   = isArtis ? "#f5f8f5"              : isLight ? "#f7f7fc"              : "rgba(24,24,27,0.9)";
-  const inputBg    = isArtis ? "#ffffff"              : isLight ? "#ffffff"              : "rgba(24,24,27,0.8)";
-  const inputBorder= isArtis ? "#bfcfbf"              : isLight ? "#c8c8dc"              : "#3f3f46";
-  const textMain   = isArtis ? "#2d3a2d"              : isLight ? "#1a1a2e"              : "#e4e4e7";
-  const textMuted  = isArtis ? "#6b826b"              : isLight ? "#7a7a9a"              : "#71717a";
-  const accentBg   = isArtis ? "#7a9b7f"              : "#6366f1";
-  const divider    = isArtis ? "#d4e0d4"              : isLight ? "#d4d4e8"              : "#3f3f46";
-  return { cardBg, cardBorder, expandBg, inputBg, inputBorder, textMain, textMuted, accentBg, divider };
+  const cardBg     = isArtis ? "#ffffff"           : isLight ? "#ffffff"           : "rgba(39,39,42,0.7)";
+  const cardBorder = isArtis ? "#d4e0d4"           : isLight ? "#d4d4e8"           : "#3f3f46";
+  const expandBg   = isArtis ? "#f5f8f5"           : isLight ? "#f7f7fc"           : "rgba(24,24,27,0.9)";
+  const inputBg    = isArtis ? "#ffffff"           : isLight ? "#ffffff"           : "rgba(24,24,27,0.8)";
+  const inputBorder= isArtis ? "#bfcfbf"           : isLight ? "#c8c8dc"           : "#3f3f46";
+  const textMain   = isArtis ? "#2d3a2d"           : isLight ? "#1a1a2e"           : "#e4e4e7";
+  const textMuted  = isArtis ? "#6b826b"           : isLight ? "#7a7a9a"           : "#71717a";
+  const accentBg   = isArtis ? "#7a9b7f"           : "#6366f1";
+  const divider    = isArtis ? "#d4e0d4"           : isLight ? "#d4d4e8"           : "#3f3f46";
+  const checkBg    = isArtis ? "rgba(122,155,127,0.15)" : isLight ? "rgba(99,102,241,0.1)" : "rgba(99,102,241,0.15)";
+  return { cardBg, cardBorder, expandBg, inputBg, inputBorder, textMain, textMuted, accentBg, divider, checkBg };
 }
 
 const selectCls = "rounded border px-1 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 cursor-pointer";
 const inputCls  = "rounded border px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400";
 
+// ── Multi-Kanton-Select ───────────────────────────────────────
+// value: kommagetrennte Kantone z.B. "ZH,TI,BE"
+// onChange: (newValue: string) => void
+function KantonMultiSelect({ value, onChange, disabled, inStyle, s }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  const selected = value ? value.split(",").filter(Boolean) : [];
+
+  // Schliessen bei Klick ausserhalb
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const toggle = (kt) => {
+    const next = selected.includes(kt)
+      ? selected.filter(k => k !== kt)
+      : [...selected, kt];
+    onChange(next.join(","));
+  };
+
+  const label =
+    selected.length === 0 ? "KT"
+    : selected.length === 1 ? selected[0]
+    : selected.length === 2 ? selected.join(", ")
+    : `${selected[0]} +${selected.length - 1}`;
+
+  return (
+    <div ref={ref} style={{ position: "relative", flexShrink: 0 }}>
+      <button
+        type="button"
+        onClick={() => !disabled && setOpen(v => !v)}
+        disabled={disabled}
+        className="rounded border px-1.5 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 flex items-center gap-1"
+        style={{ ...inStyle, minWidth: "72px", maxWidth: "100px" }}
+        title={selected.length > 0 ? selected.join(", ") : "Kanton(e) wählen"}
+      >
+        <span className="truncate flex-1 text-left">{label}</span>
+        <ChevronDown className="h-3 w-3 flex-shrink-0 opacity-60" />
+      </button>
+
+      {open && (
+        <div
+          style={{
+            position: "absolute",
+            top: "calc(100% + 4px)",
+            left: 0,
+            zIndex: 100,
+            backgroundColor: inStyle.backgroundColor,
+            border: `1px solid ${inStyle.borderColor}`,
+            borderRadius: 6,
+            boxShadow: "0 4px 16px rgba(0,0,0,0.18)",
+            maxHeight: 240,
+            overflowY: "auto",
+            minWidth: 90,
+          }}
+        >
+          {CH_KANTONE.map(kt => (
+            <label
+              key={kt}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "5px 10px",
+                cursor: "pointer",
+                fontSize: 12,
+                color: inStyle.color,
+                backgroundColor: selected.includes(kt) ? s.checkBg : "transparent",
+                userSelect: "none",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={selected.includes(kt)}
+                onChange={() => toggle(kt)}
+                style={{ accentColor: s.accentBg, cursor: "pointer" }}
+              />
+              <span style={{ fontWeight: selected.includes(kt) ? 600 : 400 }}>{kt}</span>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────
 // FristInlineRow – bestehende Frist direkt inline bearbeiten
-// Optionales `customerName` prop zeigt Kundenbadge (für globale Ansicht)
 // ─────────────────────────────────────────────────────────────
 export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerName }) {
   const { theme } = useContext(ThemeContext);
@@ -52,7 +144,7 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
   const isLight = theme === "light";
   const s = useRowStyles(isArtis, isLight);
 
-  const [expanded, setExpanded] = useState(false);
+  const [expanded,      setExpanded]      = useState(false);
   const [kanton,        setKanton]        = useState(frist.kanton        || "");
   const [jahr,          setJahr]          = useState(frist.jahr          || currentYear);
   const [dueDate,       setDueDate]       = useState(frist.due_date      || "");
@@ -62,16 +154,16 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
   const [showPw,        setShowPw]        = useState(false);
 
   useEffect(() => {
-    setKanton(frist.kanton         || "");
-    setJahr(frist.jahr             || currentYear);
-    setDueDate(frist.due_date      || "");
-    setCategory(frist.category     || "Steuererklärung");
-    setPortalLogin(frist.portal_login   || "");
+    setKanton(frist.kanton          || "");
+    setJahr(frist.jahr              || currentYear);
+    setDueDate(frist.due_date       || "");
+    setCategory(frist.category      || "Steuererklärung");
+    setPortalLogin(frist.portal_login    || "");
     setPortalPassword(frist.portal_password || "");
   }, [frist.id]);
 
   const buildTitle = (cat, kt, yr) =>
-    [cat, kt, yr].filter(Boolean).join(" ");
+    [cat, kt ? kt.replace(/,/g, "/") : "", yr].filter(Boolean).join(" ");
 
   const save = (patch) => {
     const cat = patch.category ?? category;
@@ -101,20 +193,16 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
           {isDone && <Check className="h-3 w-3" />}
         </button>
 
-        {/* ── Datenfelder (nehmen verfügbaren Platz) ── */}
+        {/* ── Datenfelder ── */}
         <div className="flex items-center gap-2 flex-1 min-w-0">
-          {/* Kanton */}
-          <select
+          {/* Kanton(e) – Multi-Select */}
+          <KantonMultiSelect
             value={kanton}
-            onChange={e => { setKanton(e.target.value); save({ kanton: e.target.value }); }}
-            className={selectCls}
-            style={{ ...inStyle, width: "58px", flexShrink: 0 }}
+            onChange={v => { setKanton(v); save({ kanton: v }); }}
             disabled={isDone}
-            title="Kanton"
-          >
-            <option value="">KT</option>
-            {CH_KANTONE.map(k => <option key={k} value={k}>{k}</option>)}
-          </select>
+            inStyle={inStyle}
+            s={s}
+          />
 
           {/* Jahr */}
           <select
@@ -128,19 +216,19 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
             {YEARS.map(y => <option key={y} value={String(y)}>{y}</option>)}
           </select>
 
-          {/* Frist erhalten bis (due_date) */}
+          {/* Frist erhalten bis */}
           <input
             type="date"
             value={dueDate}
             onChange={e => setDueDate(e.target.value)}
-            onBlur={e => { if (e.target.value) save({ due_date: e.target.value }); }}
+            onBlur={e => save({ due_date: e.target.value || null })}
             className={inputCls}
             style={{ ...inStyle, width: "130px", flexShrink: 0 }}
             disabled={isDone}
             title="Frist erhalten bis"
           />
 
-          {/* Art / Kategorie – füllt restlichen Platz */}
+          {/* Art / Kategorie */}
           <select
             value={category}
             onChange={e => { setCategory(e.target.value); save({ category: e.target.value }); }}
@@ -153,7 +241,7 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
           </select>
         </div>
 
-        {/* ── Aktions-Bereich (rechts, mit Trennlinie) ── */}
+        {/* ── Aktions-Bereich ── */}
         <div
           className="flex-shrink-0 flex items-center gap-1 pl-2 ml-1"
           style={{ borderLeft: `1px solid ${s.divider}` }}
@@ -234,7 +322,7 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
 }
 
 // ─────────────────────────────────────────────────────────────
-// NewFristRow – neue Frist inline anlegen (kein Dialog)
+// NewFristRow – neue Frist inline anlegen
 // ─────────────────────────────────────────────────────────────
 export function NewFristRow({ onSave, onCancel, customerId }) {
   const { theme } = useContext(ThemeContext);
@@ -253,15 +341,15 @@ export function NewFristRow({ onSave, onCancel, customerId }) {
   const inStyle = { backgroundColor: s.inputBg, borderColor: s.inputBorder, color: s.textMain };
 
   const handleSave = () => {
-    if (!dueDate) return;
-    const title = [category, kanton, String(jahr)].filter(Boolean).join(" ");
+    const title = [category, kanton ? kanton.replace(/,/g, "/") : "", String(jahr)]
+      .filter(Boolean).join(" ");
     onSave({
       title,
-      kanton:          kanton || null,
+      kanton:          kanton  || null,
       jahr,
-      due_date:        dueDate,
+      due_date:        dueDate || null,
       category,
-      portal_login:    portalLogin  || null,
+      portal_login:    portalLogin    || null,
       portal_password: portalPassword || null,
       customer_id:     customerId,
       status:          "offen",
@@ -283,17 +371,13 @@ export function NewFristRow({ onSave, onCancel, customerId }) {
 
         {/* ── Datenfelder ── */}
         <div className="flex items-center gap-2 flex-1 min-w-0">
-          {/* Kanton */}
-          <select
+          {/* Kanton(e) – Multi-Select */}
+          <KantonMultiSelect
             value={kanton}
-            onChange={e => setKanton(e.target.value)}
-            className={selectCls}
-            style={{ ...inStyle, width: "58px", flexShrink: 0 }}
-            autoFocus
-          >
-            <option value="">KT</option>
-            {CH_KANTONE.map(k => <option key={k} value={k}>{k}</option>)}
-          </select>
+            onChange={setKanton}
+            inStyle={inStyle}
+            s={s}
+          />
 
           {/* Jahr */}
           <select
@@ -305,7 +389,7 @@ export function NewFristRow({ onSave, onCancel, customerId }) {
             {YEARS.map(y => <option key={y} value={String(y)}>{y}</option>)}
           </select>
 
-          {/* Frist erhalten bis */}
+          {/* Frist erhalten bis (optional) */}
           <input
             type="date"
             value={dueDate}
@@ -313,7 +397,7 @@ export function NewFristRow({ onSave, onCancel, customerId }) {
             onKeyDown={e => e.key === "Enter" && handleSave()}
             className={inputCls}
             style={{ ...inStyle, width: "130px", flexShrink: 0 }}
-            placeholder="Datum *"
+            title="Frist erhalten bis (optional)"
           />
 
           {/* Art */}
@@ -322,21 +406,21 @@ export function NewFristRow({ onSave, onCancel, customerId }) {
             onChange={e => setCategory(e.target.value)}
             className={selectCls}
             style={{ ...inStyle, flex: 1, minWidth: "110px" }}
+            autoFocus
           >
             {INLINE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
         </div>
 
-        {/* ── Aktions-Buttons (rechts, mit Trennlinie) ── */}
+        {/* ── Aktions-Buttons ── */}
         <div
           className="flex-shrink-0 flex items-center gap-1 pl-2 ml-1"
           style={{ borderLeft: `1px solid ${s.divider}` }}
         >
-          {/* Save */}
+          {/* Save – immer aktiv */}
           <button
             onClick={handleSave}
-            disabled={!dueDate}
-            className="p-1.5 rounded bg-green-500/20 text-green-600 hover:bg-green-500/30 disabled:opacity-30 transition-colors"
+            className="p-1.5 rounded bg-green-500/20 text-green-600 hover:bg-green-500/30 transition-colors"
             title="Speichern"
           >
             <Check className="h-3.5 w-3.5" />
