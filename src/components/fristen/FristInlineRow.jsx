@@ -144,21 +144,23 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
   const isLight = theme === "light";
   const s = useRowStyles(isArtis, isLight);
 
-  const [expanded,      setExpanded]      = useState(false);
-  const [kanton,        setKanton]        = useState(frist.kanton        || "");
-  const [jahr,          setJahr]          = useState(frist.jahr          || currentYear);
-  const [dueDate,       setDueDate]       = useState(frist.due_date      || "");
-  const [category,      setCategory]      = useState(frist.category      || "Steuererklärung");
-  const [portalLogin,   setPortalLogin]   = useState(frist.portal_login  || "");
-  const [portalPassword,setPortalPassword]= useState(frist.portal_password || "");
-  const [showPw,        setShowPw]        = useState(false);
+  const [expanded,        setExpanded]        = useState(false);
+  const [kanton,          setKanton]          = useState(frist.kanton             || "");
+  const [jahr,            setJahr]            = useState(frist.jahr               || currentYear);
+  const [dueDate,         setDueDate]         = useState(frist.due_date           || "");
+  const [category,        setCategory]        = useState(frist.category           || "Steuererklärung");
+  const [hauptdomizil,    setHauptdomizil]    = useState(frist.ist_hauptsteuerdomizil !== false);
+  const [portalLogin,     setPortalLogin]     = useState(frist.portal_login       || "");
+  const [portalPassword,  setPortalPassword]  = useState(frist.portal_password    || "");
+  const [showPw,          setShowPw]          = useState(false);
 
   useEffect(() => {
-    setKanton(frist.kanton          || "");
-    setJahr(frist.jahr              || currentYear);
-    setDueDate(frist.due_date       || "");
-    setCategory(frist.category      || "Steuererklärung");
-    setPortalLogin(frist.portal_login    || "");
+    setKanton(frist.kanton             || "");
+    setJahr(frist.jahr                 || currentYear);
+    setDueDate(frist.due_date          || "");
+    setCategory(frist.category         || "Steuererklärung");
+    setHauptdomizil(frist.ist_hauptsteuerdomizil !== false);
+    setPortalLogin(frist.portal_login  || "");
     setPortalPassword(frist.portal_password || "");
   }, [frist.id]);
 
@@ -239,6 +241,25 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
           >
             {INLINE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
+
+          {/* Hauptsteuerdomizil */}
+          <label
+            className="flex-shrink-0 flex items-center gap-1 cursor-pointer select-none"
+            title="Hauptsteuerdomizil"
+            style={{ color: hauptdomizil ? s.accentBg : s.textMuted }}
+          >
+            <input
+              type="checkbox"
+              checked={hauptdomizil}
+              onChange={e => {
+                setHauptdomizil(e.target.checked);
+                save({ ist_hauptsteuerdomizil: e.target.checked });
+              }}
+              disabled={isDone}
+              style={{ accentColor: s.accentBg, cursor: "pointer" }}
+            />
+            <span className="text-xs font-medium">HKT</span>
+          </label>
         </div>
 
         {/* ── Aktions-Bereich ── */}
@@ -334,6 +355,7 @@ export function NewFristRow({ onSave, onCancel, customerId }) {
   const [jahr,          setJahr]          = useState(currentYear);
   const [dueDate,       setDueDate]       = useState("");
   const [category,      setCategory]      = useState("Steuererklärung");
+  const [hauptdomizil,  setHauptdomizil]  = useState(true);
   const [portalLogin,   setPortalLogin]   = useState("");
   const [portalPassword,setPortalPassword]= useState("");
   const [showPw,        setShowPw]        = useState(false);
@@ -345,14 +367,16 @@ export function NewFristRow({ onSave, onCancel, customerId }) {
       .filter(Boolean).join(" ");
     onSave({
       title,
-      kanton:          kanton  || null,
+      kanton:                  kanton  || null,
       jahr,
-      due_date:        dueDate || null,
+      due_date:                dueDate || null,
       category,
-      portal_login:    portalLogin    || null,
-      portal_password: portalPassword || null,
-      customer_id:     customerId,
-      status:          "offen",
+      is_recurring:            false,
+      ist_hauptsteuerdomizil:  hauptdomizil,
+      portal_login:            portalLogin    || null,
+      portal_password:         portalPassword || null,
+      customer_id:             customerId,
+      status:                  "offen",
     });
   };
 
@@ -410,6 +434,21 @@ export function NewFristRow({ onSave, onCancel, customerId }) {
           >
             {INLINE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
+
+          {/* Hauptsteuerdomizil */}
+          <label
+            className="flex-shrink-0 flex items-center gap-1 cursor-pointer select-none"
+            title="Hauptsteuerdomizil"
+            style={{ color: hauptdomizil ? s.accentBg : s.textMuted }}
+          >
+            <input
+              type="checkbox"
+              checked={hauptdomizil}
+              onChange={e => setHauptdomizil(e.target.checked)}
+              style={{ accentColor: s.accentBg, cursor: "pointer" }}
+            />
+            <span className="text-xs font-medium">HKT</span>
+          </label>
         </div>
 
         {/* ── Aktions-Buttons ── */}
