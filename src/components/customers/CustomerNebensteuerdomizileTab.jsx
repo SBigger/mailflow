@@ -42,7 +42,7 @@ export default function CustomerNebensteuerdomizileTab({ customer, allCustomers,
     mutationFn: (data) => entities.Customer.create(data),
     onSuccess: (newCustomer) => {
       queryClient.invalidateQueries({ queryKey: ["customers"] });
-      toast.success("Nebendomizil erstellt");
+      toast.success("Steuerdomizil erstellt");
       onSelect(newCustomer);
     },
     onError: e => toast.error("Fehler: " + e.message),
@@ -52,7 +52,7 @@ export default function CustomerNebensteuerdomizileTab({ customer, allCustomers,
     mutationFn: (id) => entities.Customer.delete(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["customers"] });
-      toast.success("Nebendomizil gelöscht");
+      toast.success("Steuerdomizil gelöscht");
     },
     onError: e => toast.error("Fehler: " + e.message),
   });
@@ -69,7 +69,7 @@ export default function CustomerNebensteuerdomizileTab({ customer, allCustomers,
 
   const handleDelete = (e, id) => {
     e.stopPropagation();
-    if (!window.confirm("Nebendomizil wirklich löschen? Alle Fristen und Zugänge dieses Domizils gehen verloren.")) return;
+    if (!window.confirm("Steuerdomizil wirklich löschen? Alle Fristen und Zugänge dieses Domizils gehen verloren.")) return;
     deleteMutation.mutate(id);
   };
 
@@ -78,11 +78,11 @@ export default function CustomerNebensteuerdomizileTab({ customer, allCustomers,
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm font-medium" style={{ color: textMain }}>Nebensteuerdomizile</p>
+          <p className="text-sm font-medium" style={{ color: textMain }}>Steuerdomizile</p>
           <p className="text-xs" style={{ color: textMuted }}>
             {nebendomizile.length === 0
-              ? "Noch keine Nebendomizile erfasst"
-              : `${nebendomizile.length} Domizil${nebendomizile.length !== 1 ? 'e' : ''}`}
+              ? "Noch keine weiteren Steuerdomizile erfasst"
+              : `${nebendomizile.length} Steuerdomizil${nebendomizile.length !== 1 ? 'e' : ''}`}
           </p>
         </div>
         <Button
@@ -92,16 +92,16 @@ export default function CustomerNebensteuerdomizileTab({ customer, allCustomers,
           className="h-7 gap-1.5 text-xs"
           style={{ backgroundColor: accentBg, color: "#fff" }}
         >
-          <Plus className="h-3.5 w-3.5" /> Neues Domizil
+          <Plus className="h-3.5 w-3.5" /> Weiteres Domizil
         </Button>
       </div>
 
       {nebendomizile.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12 gap-3" style={{ color: textMuted }}>
           <Globe className="h-10 w-10 opacity-30" />
-          <p className="text-sm">Noch keine Nebensteuerdomizile.</p>
+          <p className="text-sm">Noch keine weiteren Steuerdomizile.</p>
           <p className="text-xs text-center max-w-xs" style={{ color: textMuted }}>
-            Nebendomizile haben eigene Fristen und Steuer-Zugänge, aber keine Mails, Tasks oder Aktivitäten.
+            Weitere Steuerdomizile haben eigene Fristen und Zugänge, aber keine Mails, Tasks oder Aktivitäten.
           </p>
           <Button
             size="sm"
@@ -109,7 +109,7 @@ export default function CustomerNebensteuerdomizileTab({ customer, allCustomers,
             disabled={createMutation.isPending}
             style={{ backgroundColor: accentBg, color: "#fff" }}
           >
-            <Plus className="h-4 w-4 mr-1" /> Erstes Domizil hinzufügen
+            <Plus className="h-4 w-4 mr-1" /> Erstes Steuerdomizil hinzufügen
           </Button>
         </div>
       ) : (

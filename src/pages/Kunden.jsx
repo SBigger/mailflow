@@ -384,10 +384,8 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
                         <TabsTrigger value="activities"          className="text-xs">📋 Tätigkeiten</TabsTrigger>
                         <TabsTrigger value="contacts"            className="text-xs">👤 Kontakte</TabsTrigger>
                         <TabsTrigger value="notes"               className="text-xs">📝 Notizen</TabsTrigger>
-                        {isPrivatperson && (
-                          <TabsTrigger value="zugaenge"          className="text-xs">🔑 Zugänge</TabsTrigger>
-                        )}
-                        <TabsTrigger value="nebensteuerdomizile" className="text-xs">🗺️ Nebendomizile</TabsTrigger>
+                        <TabsTrigger value="zugaenge"            className="text-xs">🔑 Zugänge</TabsTrigger>
+                        <TabsTrigger value="steuerdomizile"      className="text-xs">🗺️ Steuerdomizile</TabsTrigger>
                       </>
                     )}
                   </TabsList>
@@ -417,13 +415,11 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
                         <CustomerNotesTab customer={currentCustomer} onUpdate={handleUpdate} />
                       </TabsContent>
 
-                      {isPrivatperson && (
-                        <TabsContent value="zugaenge" className="mt-0">
-                          <CustomerSteuerZugaengeTab customer={currentCustomer} onUpdate={handleUpdate} />
-                        </TabsContent>
-                      )}
+                      <TabsContent value="zugaenge" className="mt-0">
+                        <CustomerSteuerZugaengeTab customer={currentCustomer} onUpdate={handleUpdate} />
+                      </TabsContent>
 
-                      <TabsContent value="nebensteuerdomizile" className="mt-0">
+                      <TabsContent value="steuerdomizile" className="mt-0">
                         <CustomerNebensteuerdomizileTab
                           customer={currentCustomer}
                           allCustomers={customers}
