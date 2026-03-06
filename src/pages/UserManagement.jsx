@@ -1,9 +1,9 @@
 import React, { useState, useContext } from "react";
-import { functions, auth } from "@/api/supabaseClient";
+import { functions, auth, supabase } from "@/api/supabaseClient";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Users, Mail, UserPlus, Trash2, Shield, User as UserIcon, CheckSquare } from "lucide-react";
+import { Users, Mail, UserPlus, Trash2, Shield, User as UserIcon, CheckSquare, Pencil, Check, X } from "lucide-react";
 import { toast } from "sonner";
 import { ThemeContext } from "@/Layout";
 import {
@@ -49,6 +49,11 @@ export default function UserManagement() {
   const [inviting, setInviting] = useState(false);
   const [userToDelete, setUserToDelete] = useState(null);
 
+  // Inline rename state
+  const [editingUserId, setEditingUserId] = useState(null);
+  const [editingName,   setEditingName]   = useState("");
+  const [savingName,    setSavingName]    = useState(false);
+
   const queryClient = useQueryClient();
 
   const { data: currentUser } = useQuery({
@@ -92,6 +97,37 @@ export default function UserManagement() {
   const handleDeleteSuccess = () => {
     setUserToDelete(null);
     queryClient.invalidateQueries({ queryKey: ["allUsers"] });
+  };
+
+  const startEdit = (user) => {
+    setEditingUserId(user.id);
+    setEditingName(user.full_name || "");
+  };
+
+  const cancelEdit = () => {
+    setEditingUserId(null);
+    setEditingName("");
+  };
+
+  const saveEdit = async (userId) => {
+    if (!editingName.trim()) { toast.error("Name darf nicht leer sein"); return; }
+    setSavingName(true);
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ full_name: editingName.trim() })
+        .eq('id', userId);
+      if (error) throw error;
+      toast.success("Name gespeichert");
+      setEditingUserId(null);
+      queryClient.invalidateQueries({ queryKey: ["allUsers"] });
+      // Refresh current user if editing self
+      queryClient.invalidateQueries({ queryKey: ["currentUser"] });
+    } catch (e) {
+      toast.error("Fehler: " + e.message);
+    } finally {
+      setSavingName(false);
+    }
   };
 
   const bg = isArtis ? '#f2f5f2' : isLight ? '#f4f4f8' : '#09090b';
@@ -181,16 +217,58 @@ export default function UserManagement() {
             <div>
               {users.map((user, i) => (
                 <div key={user.id} className="flex items-center justify-between p-4" style={{ borderBottom: i < users.length - 1 ? `1px solid ${cardBorder}` : 'none' }}>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
                     <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-semibold text-white flex-shrink-0" style={{ backgroundColor: accentBg }}>
-                      {user.full_name?.charAt(0)?.toUpperCase() || user.email?.charAt(0)?.toUpperCase()}
+                      {(editingUserId === user.id ? editingName : user.full_name)?.charAt(0)?.toUpperCase() || user.email?.charAt(0)?.toUpperCase()}
                     </div>
-                    <div>
-                      <div className="text-sm font-medium" style={{ color: textPrimary }}>
-                        {user.full_name || 'Kein Name'}
-                        {user.id === currentUser?.id && <span className="ml-2 text-xs" style={{ color: textSecondary }}>(Sie)</span>}
-                      </div>
-                      <div className="text-xs flex items-center gap-1" style={{ color: textSecondary }}>
+                    <div className="flex-1 min-w-0">
+                      {editingUserId === user.id ? (
+                        /* ── Inline Edit Mode ── */
+                        <div className="flex items-center gap-1.5">
+                          <Input
+                            value={editingName}
+                            onChange={e => setEditingName(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') saveEdit(user.id); if (e.key === 'Escape') cancelEdit(); }}
+                            autoFocus
+                            className="h-7 text-sm py-0 px-2"
+                            style={{ backgroundColor: isArtis ? '#f2f5f2' : isLight ? '#f4f4f8' : '#18181b', borderColor: accentBg, color: textPrimary, width: '180px' }}
+                          />
+                          <button
+                            onClick={() => saveEdit(user.id)}
+                            disabled={savingName}
+                            className="p-1 rounded hover:bg-green-500/10 text-green-500 flex-shrink-0"
+                            title="Speichern"
+                          >
+                            <Check className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={cancelEdit}
+                            className="p-1 rounded hover:bg-red-500/10 text-red-400 flex-shrink-0"
+                            title="Abbrechen"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ) : (
+                        /* ── Display Mode ── */
+                        <div className="flex items-center gap-1.5 group/name">
+                          <span className="text-sm font-medium" style={{ color: textPrimary }}>
+                            {user.full_name || 'Kein Name'}
+                          </span>
+                          {user.id === currentUser?.id && (
+                            <span className="text-xs" style={{ color: textSecondary }}>(Sie)</span>
+                          )}
+                          <button
+                            onClick={() => startEdit(user)}
+                            className="p-0.5 rounded opacity-0 group/name:opacity-0 hover:opacity-100 group-hover/name:opacity-100 transition-opacity"
+                            style={{ color: textSecondary }}
+                            title="Namen bearbeiten"
+                          >
+                            <Pencil className="h-3 w-3" />
+                          </button>
+                        </div>
+                      )}
+                      <div className="text-xs flex items-center gap-1 mt-0.5" style={{ color: textSecondary }}>
                         <Mail className="h-3 w-3" />
                         {user.email}
                       </div>
