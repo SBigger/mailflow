@@ -38,10 +38,12 @@ export default function CustomerHeader({ customer, staff, onUpdate }) {
   const [companyName, setCompanyName] = useState(customer.company_name || "");
 
   // Privatperson
-  const [nachname,    setNachname]    = useState(customer.nachname || "");
-  const [vorname,     setVorname]     = useState(customer.vorname || "");
-  const [ahvNummer,   setAhvNummer]   = useState(customer.ahv_nummer || "");
-  const [geburtsdatum,setGeburtsdatum]= useState(customer.geburtsdatum || "");
+  const [nachname,       setNachname]       = useState(customer.nachname || "");
+  const [vorname,        setVorname]        = useState(customer.vorname || "");
+  const [ahvNummer,      setAhvNummer]      = useState(customer.ahv_nummer || "");
+  const [geburtsdatum,   setGeburtsdatum]   = useState(customer.geburtsdatum || "");
+  const [partnerName,    setPartnerName]    = useState(customer.partner_name || "");
+  const [partnerVorname, setPartnerVorname] = useState(customer.partner_vorname || "");
 
   // Kanton (beide Typen)
   const [kanton,      setKanton]      = useState(customer.kanton || "");
@@ -63,6 +65,8 @@ export default function CustomerHeader({ customer, staff, onUpdate }) {
     setVorname(customer.vorname || "");
     setAhvNummer(customer.ahv_nummer || "");
     setGeburtsdatum(customer.geburtsdatum || "");
+    setPartnerName(customer.partner_name || "");
+    setPartnerVorname(customer.partner_vorname || "");
     setKanton(customer.kanton || "");
   }, [customer.id]);
 
@@ -146,6 +150,32 @@ export default function CustomerHeader({ customer, staff, onUpdate }) {
         </div>
       )}
 
+      {/* ── Partner (nur Privatperson) ── */}
+      {isPrivatperson && (
+        <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-1">
+            <label className="text-xs" style={{ color: labelColor }}>Partner Nachname</label>
+            <Input
+              value={partnerName}
+              onChange={e => setPartnerName(e.target.value)}
+              onBlur={() => { if (partnerName !== (customer.partner_name || "")) onUpdate({ partner_name: partnerName || null }); }}
+              placeholder="Partner Nachname"
+              className={`text-sm h-8 ${inputClass}`}
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs" style={{ color: labelColor }}>Partner Vorname</label>
+            <Input
+              value={partnerVorname}
+              onChange={e => setPartnerVorname(e.target.value)}
+              onBlur={() => { if (partnerVorname !== (customer.partner_vorname || "")) onUpdate({ partner_vorname: partnerVorname || null }); }}
+              placeholder="Partner Vorname"
+              className={`text-sm h-8 ${inputClass}`}
+            />
+          </div>
+        </div>
+      )}
+
       {/* ── Adresse ── */}
       <div className="space-y-2">
         <Input value={strasse} onChange={e => setStrasse(e.target.value)} onBlur={() => { if (strasse !== customer.strasse) onUpdate({ strasse }); }} placeholder="Strasse" className={`text-sm h-8 ${inputClass}`} />
@@ -160,7 +190,7 @@ export default function CustomerHeader({ customer, staff, onUpdate }) {
               onUpdate({ kanton: val || null });
             }}
           >
-            <SelectTrigger className={`h-8 text-xs w-20 flex-shrink-0 ${inputClass}`}>
+            <SelectTrigger className={`h-8 text-xs w-36 flex-shrink-0 ${inputClass}`}>
               <SelectValue placeholder="KT" />
             </SelectTrigger>
             <SelectContent>
