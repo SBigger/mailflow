@@ -2,7 +2,7 @@ import React, { useState, useEffect, createContext, useContext } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { entities, functions, auth, supabase } from "@/api/supabaseClient";
-import { LayoutDashboard, Mail, CheckSquare, Settings as SettingsIcon, Building2 } from "lucide-react";
+import { LayoutDashboard, Mail, CheckSquare, Settings as SettingsIcon, Building2, CalendarClock } from "lucide-react";
 import BottomNav from "@/components/mobile/BottomNav";
 import { useIsMobile } from "@/components/mobile/useIsMobile";
 
@@ -66,11 +66,12 @@ export default function Layout({ children, currentPageName, onMailFilterAction, 
   const isTaskUser = currentUser?.role === 'task_user';
 
   const navItems = isTaskUser ? [] : [
-    { name: 'Dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-    { name: 'MailKanban', icon: Mail, label: 'Mails' },
-    { name: 'TaskBoard', icon: CheckSquare, label: 'Tasks' },
-    { name: 'Kunden', icon: Building2, label: 'Kunden' },
-    { name: 'Settings', icon: SettingsIcon, label: 'Einstellungen' },
+    { name: 'Dashboard',   icon: LayoutDashboard, label: 'Dashboard' },
+    { name: 'MailKanban',  icon: Mail,            label: 'Mails' },
+    { name: 'TaskBoard',   icon: CheckSquare,      label: 'Tasks' },
+    { name: 'Fristen',     icon: CalendarClock,    label: 'Fristen' },
+    { name: 'Kunden',      icon: Building2,        label: 'Kunden' },
+    { name: 'Settings',    icon: SettingsIcon,     label: 'Einstellungen' },
   ];
 
   const isMobile = useIsMobile();

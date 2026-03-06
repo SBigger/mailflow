@@ -97,6 +97,7 @@ export const entities = {
   TaskReadStatus:   makeEntity('task_read_statuses'),
   Staff:            makeEntity('staff'),
   ActivityTemplate: makeEntity('activity_templates'),
+  Frist:            makeEntity('fristen'),
 };
 
 // Auth helpers

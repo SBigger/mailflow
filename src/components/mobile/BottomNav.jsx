@@ -1,15 +1,16 @@
 import React from "react";
 import { Link, useLocation } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { LayoutDashboard, Mail, CheckSquare, Building2 } from "lucide-react";
+import { LayoutDashboard, Mail, CheckSquare, Building2, CalendarClock } from "lucide-react";
 import { useContext } from "react";
 import { ThemeContext } from "@/Layout";
 
 const navItems = [
-  { name: "Dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { name: "MailKanban", label: "Mails", icon: Mail },
-  { name: "TaskBoard", label: "Tasks", icon: CheckSquare },
-  { name: "Kunden", label: "Kunden", icon: Building2 },
+  { name: "Dashboard",  label: "Dashboard", icon: LayoutDashboard },
+  { name: "MailKanban", label: "Mails",     icon: Mail },
+  { name: "TaskBoard",  label: "Tasks",     icon: CheckSquare },
+  { name: "Fristen",    label: "Fristen",   icon: CalendarClock },
+  { name: "Kunden",     label: "Kunden",    icon: Building2 },
 ];
 
 export default function BottomNav() {

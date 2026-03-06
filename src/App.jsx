@@ -10,6 +10,8 @@ import MailKanban from './pages/MailKanban';
 import TaskBoard from './pages/TaskBoard';
 import Settings from './pages/Settings';
 import Kunden from './pages/Kunden';
+import Personen from './pages/Personen';
+import Fristen from './pages/Fristen';
 import ReminderBoard from './pages/ReminderBoard';
 import UserManagement from './pages/UserManagement';
 import Login from './pages/Login';
@@ -44,6 +46,8 @@ function AuthenticatedApp() {
         <Route path="/TaskBoard" element={<TaskBoard />} />
         <Route path="/Settings" element={<Settings />} />
         <Route path="/Kunden" element={<Kunden />} />
+        <Route path="/Personen" element={<Personen />} />
+        <Route path="/Fristen" element={<Fristen />} />
         <Route path="/ReminderBoard" element={<ReminderBoard />} />
         <Route path="/UserManagement" element={<UserManagement />} />
         <Route path="*" element={<Navigate to="/Dashboard" replace />} />

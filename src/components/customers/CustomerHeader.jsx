@@ -4,16 +4,47 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { User, Phone } from "lucide-react";
 import { ThemeContext } from "@/Layout";
 
+const CH_KANTONE = [
+  { code: 'AG', name: 'Aargau' },         { code: 'AI', name: 'Appenzell Innerrhoden' },
+  { code: 'AR', name: 'Appenzell Ausserrhoden' }, { code: 'BE', name: 'Bern' },
+  { code: 'BL', name: 'Basel-Landschaft' }, { code: 'BS', name: 'Basel-Stadt' },
+  { code: 'FR', name: 'Freiburg' },        { code: 'GE', name: 'Genf' },
+  { code: 'GL', name: 'Glarus' },          { code: 'GR', name: 'Graubünden' },
+  { code: 'JU', name: 'Jura' },            { code: 'LU', name: 'Luzern' },
+  { code: 'NE', name: 'Neuenburg' },       { code: 'NW', name: 'Nidwalden' },
+  { code: 'OW', name: 'Obwalden' },        { code: 'SG', name: 'St. Gallen' },
+  { code: 'SH', name: 'Schaffhausen' },    { code: 'SO', name: 'Solothurn' },
+  { code: 'SZ', name: 'Schwyz' },          { code: 'TG', name: 'Thurgau' },
+  { code: 'TI', name: 'Tessin' },          { code: 'UR', name: 'Uri' },
+  { code: 'VD', name: 'Waadt' },           { code: 'VS', name: 'Wallis' },
+  { code: 'ZG', name: 'Zug' },             { code: 'ZH', name: 'Zürich' },
+];
+
 export default function CustomerHeader({ customer, staff, onUpdate }) {
   const { theme } = useContext(ThemeContext);
   const isLight = theme === 'light';
   const isArtis = theme === 'artis';
+
+  const isPrivatperson = customer.person_type === 'privatperson';
+
+  // Shared fields
+  const [strasse,  setStrasse]  = useState(customer.strasse || "");
+  const [plz,      setPlz]      = useState(customer.plz || "");
+  const [ort,      setOrt]      = useState(customer.ort || "");
+  const [phone,    setPhone]    = useState(customer.phone || "");
+  const [budget,   setBudget]   = useState(customer.budget !== undefined && customer.budget !== null ? formatBudgetStatic(customer.budget) : "");
+
+  // Unternehmen
   const [companyName, setCompanyName] = useState(customer.company_name || "");
-  const [strasse, setStrasse] = useState(customer.strasse || "");
-  const [plz, setPlz] = useState(customer.plz || "");
-  const [ort, setOrt] = useState(customer.ort || "");
-  const [phone, setPhone] = useState(customer.phone || "");
-  const [budget, setBudget] = useState(customer.budget !== undefined && customer.budget !== null ? formatBudgetStatic(customer.budget) : "");
+
+  // Privatperson
+  const [nachname,    setNachname]    = useState(customer.nachname || "");
+  const [vorname,     setVorname]     = useState(customer.vorname || "");
+  const [ahvNummer,   setAhvNummer]   = useState(customer.ahv_nummer || "");
+  const [geburtsdatum,setGeburtsdatum]= useState(customer.geburtsdatum || "");
+
+  // Kanton (beide Typen)
+  const [kanton,      setKanton]      = useState(customer.kanton || "");
 
   function formatBudgetStatic(val) {
     const num = parseFloat(val);
@@ -28,6 +59,11 @@ export default function CustomerHeader({ customer, staff, onUpdate }) {
     setOrt(customer.ort || "");
     setPhone(customer.phone || "");
     setBudget(customer.budget !== undefined && customer.budget !== null ? formatBudgetStatic(customer.budget) : "");
+    setNachname(customer.nachname || "");
+    setVorname(customer.vorname || "");
+    setAhvNummer(customer.ahv_nummer || "");
+    setGeburtsdatum(customer.geburtsdatum || "");
+    setKanton(customer.kanton || "");
   }, [customer.id]);
 
   const handleBudgetBlur = () => {
@@ -37,28 +73,109 @@ export default function CustomerHeader({ customer, staff, onUpdate }) {
     setBudget(isNaN(num) ? "" : num.toLocaleString("de-CH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
   };
 
-  const inputClass = isArtis ? 'bg-white border-[#bfcfbf] text-[#2d3a2d] placeholder:text-[#8aaa8f]' : isLight ? 'bg-white border-[#c8c8dc] text-[#1a1a2e] placeholder:text-[#9090b8]' : 'bg-white border-gray-300 text-gray-800 placeholder:text-gray-400';
+  const handleNameBlur = () => {
+    const trimmed = `${nachname} ${vorname}`.trim();
+    const changed = nachname !== (customer.nachname || "") || vorname !== (customer.vorname || "");
+    if (changed) {
+      onUpdate({ nachname, vorname, company_name: trimmed || "Neue Person" });
+    }
+  };
+
+  const inputClass = isArtis
+    ? 'bg-white border-[#bfcfbf] text-[#2d3a2d] placeholder:text-[#8aaa8f]'
+    : isLight
+    ? 'bg-white border-[#c8c8dc] text-[#1a1a2e] placeholder:text-[#9090b8]'
+    : 'bg-white border-gray-300 text-gray-800 placeholder:text-gray-400';
+
+  const labelColor = isArtis ? '#6b826b' : isLight ? '#8080a0' : '#71717a';
 
   return (
     <div className="p-6 space-y-4 border-b" style={{ borderColor: isLight ? '#d4d4e8' : 'rgba(63,63,70,0.6)' }}>
-      <Input
-        value={companyName}
-        onChange={e => setCompanyName(e.target.value)}
-        onBlur={() => { if (companyName !== customer.company_name) onUpdate({ company_name: companyName }); }}
-        className={`text-2xl font-bold focus-visible:ring-violet-500 h-auto py-2 ${inputClass}`}
-        placeholder="Firmenname..."
-      />
 
-      {/* Adresse */}
+      {/* ── Title: Firmenname OR Nachname + Vorname ── */}
+      {isPrivatperson ? (
+        <div className="flex gap-2">
+          <Input
+            value={nachname}
+            onChange={e => setNachname(e.target.value)}
+            onBlur={handleNameBlur}
+            className={`text-2xl font-bold focus-visible:ring-violet-500 h-auto py-2 flex-1 ${inputClass}`}
+            placeholder="Nachname..."
+          />
+          <Input
+            value={vorname}
+            onChange={e => setVorname(e.target.value)}
+            onBlur={handleNameBlur}
+            className={`text-2xl font-bold focus-visible:ring-violet-500 h-auto py-2 flex-1 ${inputClass}`}
+            placeholder="Vorname..."
+          />
+        </div>
+      ) : (
+        <Input
+          value={companyName}
+          onChange={e => setCompanyName(e.target.value)}
+          onBlur={() => { if (companyName !== customer.company_name) onUpdate({ company_name: companyName }); }}
+          className={`text-2xl font-bold focus-visible:ring-violet-500 h-auto py-2 ${inputClass}`}
+          placeholder="Firmenname..."
+        />
+      )}
+
+      {/* ── Privatperson extra fields: AHV + Geburtsdatum ── */}
+      {isPrivatperson && (
+        <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-1">
+            <label className="text-xs" style={{ color: labelColor }}>AHV-Nummer</label>
+            <Input
+              value={ahvNummer}
+              onChange={e => setAhvNummer(e.target.value)}
+              onBlur={() => { if (ahvNummer !== (customer.ahv_nummer || "")) onUpdate({ ahv_nummer: ahvNummer }); }}
+              placeholder="756.XXXX.XXXX.XX"
+              className={`text-sm h-8 ${inputClass}`}
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs" style={{ color: labelColor }}>Geburtsdatum</label>
+            <Input
+              type="date"
+              value={geburtsdatum}
+              onChange={e => setGeburtsdatum(e.target.value)}
+              onBlur={() => { if (geburtsdatum !== (customer.geburtsdatum || "")) onUpdate({ geburtsdatum: geburtsdatum || null }); }}
+              className={`text-sm h-8 ${inputClass}`}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* ── Adresse ── */}
       <div className="space-y-2">
         <Input value={strasse} onChange={e => setStrasse(e.target.value)} onBlur={() => { if (strasse !== customer.strasse) onUpdate({ strasse }); }} placeholder="Strasse" className={`text-sm h-8 ${inputClass}`} />
         <div className="flex gap-2">
-          <Input value={plz} onChange={e => setPlz(e.target.value)} onBlur={() => { if (plz !== customer.plz) onUpdate({ plz }); }} placeholder="PLZ" className={`text-sm h-8 w-24 ${inputClass}`} />
+          <Input value={plz} onChange={e => setPlz(e.target.value)} onBlur={() => { if (plz !== customer.plz) onUpdate({ plz }); }} placeholder="PLZ" className={`text-sm h-8 w-20 ${inputClass}`} />
           <Input value={ort} onChange={e => setOrt(e.target.value)} onBlur={() => { if (ort !== customer.ort) onUpdate({ ort }); }} placeholder="Ort" className={`text-sm h-8 flex-1 ${inputClass}`} />
+          <Select
+            value={kanton || "__none__"}
+            onValueChange={v => {
+              const val = v === "__none__" ? "" : v;
+              setKanton(val);
+              onUpdate({ kanton: val || null });
+            }}
+          >
+            <SelectTrigger className={`h-8 text-xs w-20 flex-shrink-0 ${inputClass}`}>
+              <SelectValue placeholder="KT" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__" className="text-xs text-gray-400">— KT</SelectItem>
+              {CH_KANTONE.map(k => (
+                <SelectItem key={k.code} value={k.code} className="text-xs text-gray-800">
+                  {k.code} – {k.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
-      {/* Telefon & Budget */}
+      {/* ── Telefon & Budget ── */}
       <div className="flex gap-2">
         <div className="flex items-center flex-1 gap-2">
           <Input value={phone} onChange={e => setPhone(e.target.value)} onBlur={() => { if (phone !== (customer.phone || "")) onUpdate({ phone }); }} placeholder="Telefon" autoComplete="new-password" name="customer-phone-field" className={`text-sm h-8 flex-1 ${inputClass}`} />
@@ -74,11 +191,11 @@ export default function CustomerHeader({ customer, staff, onUpdate }) {
         </div>
       </div>
 
-      {/* Mandatsleiter & Sachbearbeiter */}
+      {/* ── Mandatsleiter & Sachbearbeiter ── */}
       <div className="grid grid-cols-2 gap-4">
         {[{ label: 'Mandatsleiter', field: 'mandatsleiter_id' }, { label: 'Sachbearbeiter', field: 'sachbearbeiter_id' }].map(({ label, field }) => (
           <div key={field} className="space-y-1">
-            <label className="text-xs flex items-center gap-1" style={{ color: isLight ? '#8080a0' : '#71717a' }}>
+            <label className="text-xs flex items-center gap-1" style={{ color: labelColor }}>
               <User className="h-3 w-3" /> {label}
             </label>
             <Select value={customer[field] || "none"} onValueChange={v => onUpdate({ [field]: v === "none" ? null : v })}>

@@ -4,7 +4,11 @@ import { entities, functions, auth } from "@/api/supabaseClient";
 import { ThemeContext } from "@/Layout";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Upload, Trash2, Download } from "lucide-react";
+import { Upload, Trash2, Download, Building2, UserRound, ChevronDown, PowerOff } from "lucide-react";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem,
+  DropdownMenuTrigger, DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 import { useIsMobile } from "@/components/mobile/useIsMobile";
 import CustomerList from "../components/customers/CustomerList";
 import CustomerHeader from "../components/customers/CustomerHeader";
@@ -14,6 +18,9 @@ import CustomerTasksTab from "../components/customers/CustomerTasksTab";
 import CustomerNotesTab from "../components/customers/CustomerNotesTab";
 import CustomerContactPersons from "../components/customers/CustomerContactPersons";
 import CustomerImportDialog from "../components/customers/CustomerImportDialog";
+import PrivatpersonImportDialog from "../components/customers/PrivatpersonImportDialog";
+import CustomerFristenTab from "../components/customers/CustomerFristenTab";
+import CustomerSteuerZugaengeTab from "../components/customers/CustomerSteuerZugaengeTab";
 import MobileCustomerView from "../components/customers/MobileCustomerView";
 
 function escapeCsv(val) {
@@ -26,7 +33,6 @@ function escapeCsv(val) {
 }
 
 function exportCustomers(customers, appUsers, activityTemplates) {
-  // Collect all unique activity names (from templates, then any extra from customers)
   const templateNames = activityTemplates.map(t => t.name);
   const allNames = [...templateNames];
   customers.forEach(c => {
@@ -69,14 +75,16 @@ function exportCustomers(customers, appUsers, activityTemplates) {
   a.remove();
 }
 
-export default function Kunden() {
+export default function Kunden({ initialPersonTypeFilter = "alle" }) {
   const { theme } = useContext(ThemeContext);
   const isLight = theme === 'light';
   const isArtis = theme === 'artis';
   const isMobile = useIsMobile();
-  const [selectedCustomer, setSelectedCustomer] = useState(null);
-  const [showImport, setShowImport] = useState(false);
-  const [leftWidth, setLeftWidth] = useState(288); // 72 * 4 = 288px
+  const [selectedCustomer,  setSelectedCustomer]  = useState(null);
+  const [showImport,        setShowImport]         = useState(false);
+  const [showPersonImport,  setShowPersonImport]   = useState(false);
+  const [personTypeFilter,  setPersonTypeFilter]   = useState(initialPersonTypeFilter); // 'alle' | 'unternehmen' | 'privatperson'
+  const [leftWidth,         setLeftWidth]          = useState(288);
   const isResizing = React.useRef(false);
 
   const handleMouseDown = (e) => {
@@ -84,7 +92,7 @@ export default function Kunden() {
     e.preventDefault();
     const onMouseMove = (e) => {
       if (!isResizing.current) return;
-      const newWidth = Math.max(180, Math.min(600, e.clientX - 56)); // 56 = sidebar width
+      const newWidth = Math.max(180, Math.min(600, e.clientX - 56));
       setLeftWidth(newWidth);
     };
     const onMouseUp = () => {
@@ -95,6 +103,7 @@ export default function Kunden() {
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
   };
+
   const queryClient = useQueryClient();
 
   const { data: customers = [], refetch } = useQuery({
@@ -142,10 +151,22 @@ export default function Kunden() {
   };
 
   const handleNew = () => {
-    createMutation.mutate({ company_name: "Neuer Kunde", activities: [], contact_persons: [], tags: [] });
+    createMutation.mutate({
+      company_name: "Neuer Kunde",
+      person_type: 'unternehmen',
+      activities: [], contact_persons: [], tags: [],
+    });
   };
 
-  // Keep selected customer in sync with fresh data
+  const handleNewPrivatperson = () => {
+    createMutation.mutate({
+      company_name: "Neue Person",
+      person_type: 'privatperson',
+      vorname: '', nachname: '',
+      activities: [], contact_persons: [], tags: [], steuer_zugaenge: [],
+    });
+  };
+
   const currentCustomer = selectedCustomer
     ? (customers.find(c => c.id === selectedCustomer.id) || selectedCustomer)
     : null;
@@ -155,6 +176,28 @@ export default function Kunden() {
     updateMutation.mutate({ id: selectedCustomer.id, data });
     setSelectedCustomer(prev => ({ ...prev, ...data }));
   };
+
+  const isPrivatperson = currentCustomer?.person_type === 'privatperson';
+
+  // ── Theme colors ─────────────────────────────────────────────
+  const textMuted   = isArtis ? '#6b826b' : isLight ? '#5a5a7a' : '#71717a';
+  const borderColor = isArtis ? '#ccd8cc' : isLight ? '#d4d4e8' : 'rgba(63,63,70,0.6)';
+  const accentBg    = isArtis ? '#7a9b7f' : '#7c3aed';
+
+  // Type filter tab style helper
+  const tabStyle = (key) => ({
+    backgroundColor: personTypeFilter === key
+      ? (isArtis ? '#7a9b7f' : '#7c3aed')
+      : 'transparent',
+    color: personTypeFilter === key ? '#fff' : textMuted,
+    fontSize: '11px',
+    padding: '3px 8px',
+    borderRadius: '6px',
+    border: 'none',
+    cursor: 'pointer',
+    fontWeight: '500',
+    transition: 'all 0.15s',
+  });
 
   if (isMobile) {
     return (
@@ -181,58 +224,84 @@ export default function Kunden() {
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ backgroundColor: isArtis ? '#f2f5f2' : isLight ? '#f0f0f6' : '#f2f5f2' }}>
-      {/* Left Panel - Customer List */}
+
+      {/* ── Left Panel ─────────────────────────────────────── */}
       <div className="flex-shrink-0 flex flex-col" style={{ width: leftWidth }}>
-        <div className="px-4 pt-4 pb-2 flex items-center justify-between">
-          <h1 className="text-lg font-semibold" style={{ color: isArtis ? '#2d3a2d' : isLight ? '#1a1a2e' : '#e4e4e7' }}>Kunden</h1>
-          <div className="flex gap-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => exportCustomers(customers, appUsers, activityTemplates)}
-              className="h-7 px-2"
-              style={{ color: isArtis ? '#6b826b' : isLight ? '#5a5a7a' : '#71717a' }}
-              title="CSV exportieren"
-            >
-              <Download className="h-3.5 w-3.5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowImport(true)}
-              className="h-7 px-2"
-              style={{ color: isArtis ? '#6b826b' : isLight ? '#5a5a7a' : '#71717a' }}
-              title="CSV importieren"
-            >
-              <Upload className="h-3.5 w-3.5" />
-            </Button>
+
+        {/* Header with title + type filter + import button */}
+        <div className="px-4 pt-3 pb-2 space-y-2">
+          <div className="flex items-center justify-between">
+            <h1 className="text-lg font-semibold" style={{ color: isArtis ? '#2d3a2d' : isLight ? '#1a1a2e' : '#e4e4e7' }}>Kunden</h1>
+            <div className="flex gap-1">
+              <Button
+                variant="ghost" size="sm" onClick={() => exportCustomers(customers, appUsers, activityTemplates)}
+                className="h-7 px-2" style={{ color: textMuted }} title="CSV exportieren"
+              >
+                <Download className="h-3.5 w-3.5" />
+              </Button>
+
+              {/* Import dropdown */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="sm" className="h-7 px-2" style={{ color: textMuted }} title="Importieren">
+                    <Upload className="h-3.5 w-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => setShowImport(true)} className="gap-2 text-xs">
+                    <Building2 className="h-3.5 w-3.5" /> Unternehmen importieren
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setShowPersonImport(true)} className="gap-2 text-xs">
+                    <UserRound className="h-3.5 w-3.5" /> Privatpersonen importieren
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </div>
+
+          {/* Type filter: Alle | Unternehmen | Personen */}
+          <div className="flex gap-1 p-1 rounded-lg" style={{ backgroundColor: isArtis ? 'rgba(0,0,0,0.04)' : isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.05)' }}>
+            {[
+              { key: "alle",        label: "Alle" },
+              { key: "unternehmen", label: "Kunden" },
+              { key: "privatperson",label: "Personen" },
+            ].map(({ key, label }) => (
+              <button key={key} style={tabStyle(key)} onClick={() => setPersonTypeFilter(key)}>
+                {label}
+              </button>
+            ))}
           </div>
         </div>
+
         <div className="flex-1 overflow-hidden">
           <CustomerList
             customers={customers}
             selectedId={currentCustomer?.id}
             onSelect={setSelectedCustomer}
             onNew={handleNew}
+            onNewPrivatperson={handleNewPrivatperson}
+            personTypeFilter={personTypeFilter}
           />
         </div>
       </div>
 
-      {/* Resize Handle */}
-       <div
-         onMouseDown={handleMouseDown}
-         className="w-1.5 flex-shrink-0 cursor-col-resize transition-colors"
-         style={{ backgroundColor: isArtis ? '#ccd8cc' : isLight ? '#d4d4e8' : 'rgba(63,63,70,0.6)' }}
-         title="Ziehen zum Anpassen"
-       />
+      {/* ── Resize Handle ───────────────────────────────────── */}
+      <div
+        onMouseDown={handleMouseDown}
+        className="w-1.5 flex-shrink-0 cursor-col-resize transition-colors"
+        style={{ backgroundColor: borderColor }}
+        title="Ziehen zum Anpassen"
+      />
 
-      {/* Right Panel - Customer Detail */}
+      {/* ── Right Panel ─────────────────────────────────────── */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {!currentCustomer ? (
           <div className="flex-1 flex items-center justify-center">
             <div className="text-center">
-              <div className="text-4xl mb-3">🏢</div>
-              <div className="text-sm" style={{ color: isArtis ? '#8aaa8f' : isLight ? '#9090b8' : '#52525b' }}>Kunden auswählen oder neu erstellen</div>
+              <div className="text-4xl mb-3">{personTypeFilter === 'privatperson' ? '👤' : '🏢'}</div>
+              <div className="text-sm" style={{ color: isArtis ? '#8aaa8f' : isLight ? '#9090b8' : '#52525b' }}>
+                Eintrag auswählen oder neu erstellen
+              </div>
             </div>
           </div>
         ) : (
@@ -241,25 +310,53 @@ export default function Kunden() {
               <div className="flex-1">
                 <CustomerHeader customer={currentCustomer} staff={appUsers} onUpdate={handleUpdate} />
               </div>
-              <button
-                onClick={() => { if (confirm(`Kunden "${currentCustomer.company_name}" wirklich löschen?`)) deleteMutation.mutate(currentCustomer.id); }}
-                className="mt-6 transition-colors flex-shrink-0 hover:text-red-400"
-                style={{ color: isArtis ? '#8aaa8f' : isLight ? '#b0b0cc' : '#52525b' }}
-                title="Kunde löschen"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
+              <div className="flex flex-col gap-2 mt-6">
+                {/* Inaktiv-Toggle */}
+                <button
+                  onClick={() => handleUpdate({ aktiv: currentCustomer.aktiv === false ? true : false })}
+                  title={currentCustomer.aktiv === false ? "Reaktivieren (aktuell inaktiv)" : "Als inaktiv markieren"}
+                  className={`flex-shrink-0 transition-colors rounded p-0.5 ${
+                    currentCustomer.aktiv === false
+                      ? 'text-red-400 hover:text-red-500'
+                      : 'hover:text-red-400'
+                  }`}
+                  style={{ color: currentCustomer.aktiv === false ? undefined : (isArtis ? '#8aaa8f' : isLight ? '#b0b0cc' : '#52525b') }}
+                >
+                  <PowerOff className="h-4 w-4" />
+                </button>
+                {/* Löschen */}
+                <button
+                  onClick={() => {
+                    const label = isPrivatperson
+                      ? `"${currentCustomer.company_name}" wirklich löschen?`
+                      : `Firma "${currentCustomer.company_name}" wirklich löschen?`;
+                    if (confirm(label)) deleteMutation.mutate(currentCustomer.id);
+                  }}
+                  className="flex-shrink-0 transition-colors hover:text-red-400"
+                  style={{ color: isArtis ? '#8aaa8f' : isLight ? '#b0b0cc' : '#52525b' }}
+                  title="Löschen"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
             </div>
 
             <div className="flex-1 overflow-y-auto">
               <Tabs defaultValue="activities" className="h-full flex flex-col">
-                <div className="px-6 pt-4 border-b" style={{ borderColor: isArtis ? '#ccd8cc' : isLight ? '#d4d4e8' : 'rgba(63,63,70,0.6)' }}>
-                   <TabsList style={{ backgroundColor: isArtis ? '#edf2ed' : isLight ? '#e8e8f0' : 'rgba(24,24,27,0.6)', borderColor: isArtis ? '#ccd8cc' : isLight ? '#d0d0e0' : '#3f3f46' }} className="border">
-                    <TabsTrigger value="mails" className="text-xs" style={{}} >📧 Mails</TabsTrigger>
-                    <TabsTrigger value="tasks" className="text-xs">✅ Tasks</TabsTrigger>
+                <div className="px-6 pt-4 border-b" style={{ borderColor }}>
+                  <TabsList
+                    style={{ backgroundColor: isArtis ? '#edf2ed' : isLight ? '#e8e8f0' : 'rgba(24,24,27,0.6)', borderColor: isArtis ? '#ccd8cc' : isLight ? '#d0d0e0' : '#3f3f46' }}
+                    className="border flex-wrap"
+                  >
+                    <TabsTrigger value="mails"      className="text-xs">📧 Mails</TabsTrigger>
+                    <TabsTrigger value="tasks"      className="text-xs">✅ Tasks</TabsTrigger>
+                    <TabsTrigger value="fristen"    className="text-xs">📅 Fristen</TabsTrigger>
                     <TabsTrigger value="activities" className="text-xs">📋 Tätigkeiten</TabsTrigger>
-                    <TabsTrigger value="contacts" className="text-xs">👤 Kontakte</TabsTrigger>
-                    <TabsTrigger value="notes" className="text-xs">📝 Notizen</TabsTrigger>
+                    <TabsTrigger value="contacts"   className="text-xs">👤 Kontakte</TabsTrigger>
+                    <TabsTrigger value="notes"      className="text-xs">📝 Notizen</TabsTrigger>
+                    {isPrivatperson && (
+                      <TabsTrigger value="zugaenge" className="text-xs">🔑 Zugänge</TabsTrigger>
+                    )}
                   </TabsList>
                 </div>
 
@@ -270,6 +367,10 @@ export default function Kunden() {
 
                   <TabsContent value="tasks" className="mt-0">
                     <CustomerTasksTab customer={currentCustomer} />
+                  </TabsContent>
+
+                  <TabsContent value="fristen" className="mt-0">
+                    <CustomerFristenTab customer={currentCustomer} />
                   </TabsContent>
 
                   <TabsContent value="activities" className="mt-0">
@@ -283,6 +384,12 @@ export default function Kunden() {
                   <TabsContent value="notes" className="mt-0 h-full">
                     <CustomerNotesTab customer={currentCustomer} onUpdate={handleUpdate} />
                   </TabsContent>
+
+                  {isPrivatperson && (
+                    <TabsContent value="zugaenge" className="mt-0">
+                      <CustomerSteuerZugaengeTab customer={currentCustomer} onUpdate={handleUpdate} />
+                    </TabsContent>
+                  )}
                 </div>
               </Tabs>
             </div>
@@ -290,12 +397,19 @@ export default function Kunden() {
         )}
       </div>
 
+      {/* ── Import Dialogs ──────────────────────────────────── */}
       <CustomerImportDialog
         open={showImport}
         onClose={() => setShowImport(false)}
         staff={appUsers}
         activityTemplates={activityTemplates}
         onImported={() => { refetch(); setShowImport(false); }}
+      />
+      <PrivatpersonImportDialog
+        open={showPersonImport}
+        onClose={() => setShowPersonImport(false)}
+        staff={appUsers}
+        onImported={() => { refetch(); setShowPersonImport(false); }}
       />
     </div>
   );
