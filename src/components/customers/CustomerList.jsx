@@ -69,14 +69,23 @@ export default function CustomerList({
             <button
               key={customer.id}
               onClick={() => onSelect(customer)}
-              className={`w-full text-left px-3 py-3 rounded-lg transition-colors border ${
-                selectedId === customer.id
-                  ? "bg-violet-600/20 border-violet-500/30"
-                  : "border-transparent"
-              } ${isInaktiv ? 'opacity-50' : ''}`}
-              style={selectedId !== customer.id ? { color: isArtis ? '#2d3a2d' : isLight ? '#1a1a2e' : '#e4e4e7' } : {}}
-              onMouseEnter={e => { if (selectedId !== customer.id) e.currentTarget.style.backgroundColor = isArtis ? '#edf2ed' : isLight ? '#ebebf4' : 'rgba(63,63,70,0.4)'; }}
-              onMouseLeave={e => { if (selectedId !== customer.id) e.currentTarget.style.backgroundColor = ''; }}
+              className={`w-full text-left px-3 py-3 rounded-lg transition-colors border-l-4 border-t border-r border-b ${isInaktiv ? 'opacity-50' : ''}`}
+              style={selectedId === customer.id ? {
+                backgroundColor: isArtis ? 'rgba(122,155,127,0.18)' : isLight ? 'rgba(124,58,237,0.1)' : 'rgba(124,58,237,0.18)',
+                borderLeftColor:  isArtis ? '#7a9b7f' : '#7c3aed',
+                borderTopColor:   isArtis ? 'rgba(122,155,127,0.3)' : 'rgba(124,58,237,0.25)',
+                borderRightColor: isArtis ? 'rgba(122,155,127,0.3)' : 'rgba(124,58,237,0.25)',
+                borderBottomColor:isArtis ? 'rgba(122,155,127,0.3)' : 'rgba(124,58,237,0.25)',
+                color: isArtis ? '#2d3a2d' : isLight ? '#1a1a2e' : '#e4e4e7',
+              } : {
+                borderLeftColor:  'transparent',
+                borderTopColor:   'transparent',
+                borderRightColor: 'transparent',
+                borderBottomColor:'transparent',
+                color: isArtis ? '#2d3a2d' : isLight ? '#1a1a2e' : '#e4e4e7',
+              }}
+              onMouseEnter={e => { if (selectedId !== customer.id) { e.currentTarget.style.backgroundColor = isArtis ? '#edf2ed' : isLight ? '#ebebf4' : 'rgba(63,63,70,0.4)'; } }}
+              onMouseLeave={e => { if (selectedId !== customer.id) { e.currentTarget.style.backgroundColor = 'transparent'; } }}
             >
               <div className="flex items-center gap-2 mb-1">
                 {isPrivat
