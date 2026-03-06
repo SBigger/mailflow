@@ -224,19 +224,21 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
             s={s}
           />
 
-          {/* Jahr */}
-          <select
-            value={String(jahr)}
-            onChange={e => { const y = parseInt(e.target.value); setJahr(y); save({ jahr: y }); }}
-            className={selectCls}
-            style={{ ...inStyle, width: "66px", flexShrink: 0 }}
-            disabled={isDone}
-            title="Jahr"
-          >
-            {YEARS.map(y => <option key={y} value={String(y)}>{y}</option>)}
-          </select>
+          {/* Steuerperiode (Jahr) */}
+          <div className="flex items-center gap-1 flex-shrink-0" title="Steuerperiode">
+            <span className="text-xs font-semibold" style={{ color: s.textMuted }}>SP</span>
+            <select
+              value={String(jahr)}
+              onChange={e => { const y = parseInt(e.target.value); setJahr(y); save({ jahr: y }); }}
+              className={selectCls}
+              style={{ ...inStyle, width: "60px" }}
+              disabled={isDone}
+            >
+              {YEARS.map(y => <option key={y} value={String(y)}>{y}</option>)}
+            </select>
+          </div>
 
-          {/* Frist erhalten bis */}
+          {/* Frist bis (optional) */}
           <input
             type="date"
             value={dueDate}
@@ -245,7 +247,7 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
             className={inputCls}
             style={{ ...inStyle, width: "130px", flexShrink: 0 }}
             disabled={isDone}
-            title="Frist erhalten bis"
+            title="Frist bis (optional)"
           />
 
           {/* Art / Kategorie */}
@@ -421,17 +423,20 @@ export function NewFristRow({ onSave, onCancel, customerId }) {
             s={s}
           />
 
-          {/* Jahr */}
-          <select
-            value={String(jahr)}
-            onChange={e => setJahr(parseInt(e.target.value))}
-            className={selectCls}
-            style={{ ...inStyle, width: "66px", flexShrink: 0 }}
-          >
-            {YEARS.map(y => <option key={y} value={String(y)}>{y}</option>)}
-          </select>
+          {/* Steuerperiode (Jahr) */}
+          <div className="flex items-center gap-1 flex-shrink-0" title="Steuerperiode">
+            <span className="text-xs font-semibold" style={{ color: s.textMuted }}>SP</span>
+            <select
+              value={String(jahr)}
+              onChange={e => setJahr(parseInt(e.target.value))}
+              className={selectCls}
+              style={{ ...inStyle, width: "60px" }}
+            >
+              {YEARS.map(y => <option key={y} value={String(y)}>{y}</option>)}
+            </select>
+          </div>
 
-          {/* Frist erhalten bis (optional) */}
+          {/* Frist bis (optional) */}
           <input
             type="date"
             value={dueDate}
@@ -439,7 +444,7 @@ export function NewFristRow({ onSave, onCancel, customerId }) {
             onKeyDown={e => e.key === "Enter" && handleSave()}
             className={inputCls}
             style={{ ...inStyle, width: "130px", flexShrink: 0 }}
-            title="Frist erhalten bis (optional)"
+            title="Frist bis (optional)"
           />
 
           {/* Art */}
