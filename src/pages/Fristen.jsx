@@ -30,24 +30,24 @@ const TABS = [
 ];
 
 
-function groupByPersonType(list, customers) {
+function groupByPersonType(list, customers, preserveOrder = false) {
   const sortByName = (a, b) => {
     const ca = customers.find(c => c.id === a.customer_id);
     const cb = customers.find(c => c.id === b.customer_id);
     return (ca?.company_name || "").localeCompare(cb?.company_name || "", "de");
   };
-  const jur = list
-    .filter(f => {
-      const c = customers.find(c => c.id === f.customer_id);
-      return !c || c.person_type !== "privatperson";
-    })
-    .sort(sortByName);
-  const nat = list
-    .filter(f => {
-      const c = customers.find(c => c.id === f.customer_id);
-      return c?.person_type === "privatperson";
-    })
-    .sort(sortByName);
+  const jur = list.filter(f => {
+    const c = customers.find(c => c.id === f.customer_id);
+    return !c || c.person_type !== "privatperson";
+  });
+  const nat = list.filter(f => {
+    const c = customers.find(c => c.id === f.customer_id);
+    return c?.person_type === "privatperson";
+  });
+  if (!preserveOrder) {
+    jur.sort(sortByName);
+    nat.sort(sortByName);
+  }
   return {
     juristische: { label: "🏢 Juristische Personen", items: jur, color: "#7c3aed", personType: "unternehmen" },
     natuerliche:  { label: "👤 Natürliche Personen",  items: nat, color: "#0ea5e9", personType: "privatperson" },
@@ -57,7 +57,7 @@ function groupByPersonType(list, customers) {
 // ──────────────────────────────────────────────────────────────
 // Group Section – nutzt FristInlineRow
 // ──────────────────────────────────────────────────────────────
-function FristenGroup({ label, color, items, customers, onToggle, onUpdate, onDelete, defaultOpen = true, personType = "unternehmen" }) {
+function FristenGroup({ label, color, items, customers, onToggle, onUpdate, onDelete, defaultOpen = true, personType = "unternehmen", sortCol, sortDir, onSort }) {
   const [open, setOpen] = useState(defaultOpen);
   if (items.length === 0) return null;
   return (
@@ -75,7 +75,7 @@ function FristenGroup({ label, color, items, customers, onToggle, onUpdate, onDe
         /* Horizontaler Scroll wenn Spaltenbreiten den Container überschreiten */
         <div style={{ overflowX: "auto" }}>
           <div style={{ minWidth: "max-content", paddingLeft: "4px" }}>
-            <FristenColumnHeader personType={personType} />
+            <FristenColumnHeader personType={personType} sortCol={sortCol} sortDir={sortDir} onSort={onSort} />
             <div className="space-y-1.5">
               {items.map(f => {
                 const customer = customers.find(c => c.id === f.customer_id);
@@ -119,6 +119,8 @@ export default function Fristen() {
   const [editFrist,        setEditFrist]        = useState(null);
   const [showFristenlauf,  setShowFristenlauf]  = useState(false);
   const [showFristenlaufLoeschen, setShowFristenlaufLoeschen] = useState(false);
+  const [sortCol,          setSortCol]          = useState(null);   // null = Standardsortierung
+  const [sortDir,          setSortDir]          = useState("asc");
 
   // ── Data ──────────────────────────────────────────────────
   const { data: fristen = [], isLoading } = useQuery({
@@ -230,7 +232,70 @@ export default function Fristen() {
     return list;
   }, [fristen, activeTab, filterCategory, filterJahr, filterKundenTyp, filterKanton, filterUnterlagen, search, customers]);
 
-  const groups = useMemo(() => groupByPersonType(filtered, customers), [filtered, customers]);
+  // ── Sortierung ────────────────────────────────────────────────
+  const handleSort = (col) => {
+    if (sortCol === col) {
+      if (sortDir === "asc") {
+        setSortDir("desc");
+      } else {
+        setSortCol(null);
+        setSortDir("asc");
+      }
+    } else {
+      setSortCol(col);
+      setSortDir("asc");
+    }
+  };
+
+  const sortedFiltered = useMemo(() => {
+    if (!sortCol) return filtered;
+    return [...filtered].sort((a, b) => {
+      let aVal = "", bVal = "";
+      const custA = customers.find(c => c.id === a.customer_id);
+      const custB = customers.find(c => c.id === b.customer_id);
+      switch (sortCol) {
+        case "name":
+          aVal = custA?.company_name || "";
+          bVal = custB?.company_name || "";
+          break;
+        case "kanton":
+          aVal = a.kanton || "";
+          bVal = b.kanton || "";
+          break;
+        case "spJahr": {
+          const diff = (a.jahr || 0) - (b.jahr || 0);
+          return sortDir === "asc" ? diff : -diff;
+        }
+        case "fristBis":
+          aVal = a.due_date || "";
+          bVal = b.due_date || "";
+          break;
+        case "unterlagen":
+          // Privatperson: unterlagen_datum; Juristisch: abschluss_vorbereitet
+          aVal = a.unterlagen_datum || (a.abschluss_vorbereitet ? "z" : "");
+          bVal = b.unterlagen_datum || (b.abschluss_vorbereitet ? "z" : "");
+          break;
+        case "hDom":
+          aVal = a.ist_hauptsteuerdomizil ? "z" : "";
+          bVal = b.ist_hauptsteuerdomizil ? "z" : "";
+          break;
+        case "portalLogin":
+          aVal = a.portal_login || "";
+          bVal = b.portal_login || "";
+          break;
+        case "portalPw":
+          aVal = a.portal_password ? "z" : "";
+          bVal = b.portal_password ? "z" : "";
+          break;
+        default:
+          return 0;
+      }
+      const cmp = String(aVal).localeCompare(String(bVal), "de", { sensitivity: "base" });
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+  }, [filtered, sortCol, sortDir, customers]);
+
+  const groups = useMemo(() => groupByPersonType(sortedFiltered, customers, !!sortCol), [sortedFiltered, customers, sortCol]);
 
   // ── Stats (top bar badges) ────────────────────────────────
   const overdueCount = fristen.filter(f => f.status === "offen" && f.due_date && isPast(parseISO(f.due_date)) && !isToday(parseISO(f.due_date))).length;
@@ -501,7 +566,7 @@ export default function Fristen() {
             {Object.values(groups).map(group => (
               <FristenGroup key={group.label} {...group} customers={customers}
                 onToggle={handleToggle} onUpdate={handleUpdate} onDelete={handleDelete}
-                defaultOpen={true} />
+                defaultOpen={true} sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
             ))}
           </div>
         ) : (

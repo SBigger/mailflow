@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useContext, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { Check, Trash2, Eye, EyeOff, ChevronDown, X } from "lucide-react";
+import { Check, Trash2, Eye, EyeOff, ChevronDown, X, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import { ThemeContext } from "@/Layout";
 import { supabase } from "@/api/supabaseClient";
 
@@ -679,7 +679,7 @@ export function NewFristRow({ onSave, onCancel, customerId }) {
 // ─────────────────────────────────────────────────────────────
 // FristenColumnHeader – Spaltentitel mit Drag-Resize-Handles
 // ─────────────────────────────────────────────────────────────
-export function FristenColumnHeader({ personType = "unternehmen" }) {
+export function FristenColumnHeader({ personType = "unternehmen", sortCol, sortDir, onSort }) {
   const { theme } = useContext(ThemeContext);
   const isArtis = theme === "artis";
   const isLight = theme === "light";
@@ -708,6 +708,13 @@ export function FristenColumnHeader({ personType = "unternehmen" }) {
 
   const handleColor = isArtis ? "#b0c8b0" : isLight ? "#c0c0d8" : "#52525b";
 
+  const SortIcon = ({ colKey }) => {
+    if (sortCol !== colKey) return <ArrowUpDown className="h-3 w-3 opacity-25 group-hover:opacity-60 transition-opacity" />;
+    return sortDir === "asc"
+      ? <ArrowUp   className="h-3 w-3" style={{ color: s.accentBg }} />
+      : <ArrowDown className="h-3 w-3" style={{ color: s.accentBg }} />;
+  };
+
   return (
     <div
       className="flex items-center gap-2 px-3 pt-2 pb-1.5 mb-1 select-none"
@@ -726,17 +733,24 @@ export function FristenColumnHeader({ personType = "unternehmen" }) {
       >
         {cols.map((col, i) => (
           <div key={col.key} style={{ position: "relative", overflow: "visible" }}>
-            <span
-              className="text-xs font-semibold uppercase tracking-wide"
-              style={{ color: s.textMuted }}
+            {/* Klickbarer Sort-Button */}
+            <button
+              type="button"
+              onClick={() => onSort && onSort(col.key)}
+              className="flex items-center gap-1 group text-left w-full"
+              title={`Nach ${col.label} sortieren`}
+              style={{ color: sortCol === col.key ? s.accentBg : s.textMuted }}
             >
-              {col.label}
-            </span>
+              <span className="text-xs font-semibold uppercase tracking-wide">
+                {col.label}
+              </span>
+              <SortIcon colKey={col.key} />
+            </button>
 
             {/* Resize-Handle (nicht beim letzten) */}
             {i < cols.length - 1 && (
               <div
-                onMouseDown={(e) => startResize(e, col.key)}
+                onMouseDown={(e) => { e.stopPropagation(); startResize(e, col.key); }}
                 style={{
                   position: "absolute",
                   right: -7,
@@ -765,7 +779,7 @@ export function FristenColumnHeader({ personType = "unternehmen" }) {
       </div>
 
       {/* Spacer: Aktions-Bereich */}
-      <div style={{ width: 60, flexShrink: 0 }} />
+      <div style={{ width: 32, flexShrink: 0 }} />
     </div>
   );
 }
