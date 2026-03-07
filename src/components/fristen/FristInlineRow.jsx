@@ -2,6 +2,7 @@ import React, { useState, useEffect, useContext, useRef, useCallback } from "rea
 import { createPortal } from "react-dom";
 import { Check, Trash2, Eye, EyeOff, ChevronDown, ChevronUp, KeyRound, X } from "lucide-react";
 import { ThemeContext } from "@/Layout";
+import { supabase } from "@/api/supabaseClient";
 
 // ── CH Kantone ────────────────────────────────────────────────
 const CH_KANTONE = [
@@ -83,13 +84,57 @@ export function ColWidthProvider({ children }) {
     }
   });
 
+  // Debounce-Timer für Supabase-Save
+  const saveTimerRef = useRef(null);
+
+  // Beim Mount: Spaltenbreiten aus Supabase laden (geräteübergreifend)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user || cancelled) return;
+        const { data } = await supabase
+          .from("user_preferences")
+          .select("col_widths")
+          .eq("user_id", user.id)
+          .maybeSingle();
+        if (cancelled || !data?.col_widths) return;
+        const merged = { ...DEFAULT_COL_WIDTHS, ...data.col_widths };
+        setWidths(merged);
+        try { localStorage.setItem(LS_KEY, JSON.stringify(merged)); } catch {}
+      } catch {
+        // Kein Problem – localStorage-Wert bleibt
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Hilfsfunktion: Spaltenbreiten in Supabase speichern (upsert)
+  const saveToSupabase = useCallback(async (newWidths) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      await supabase.from("user_preferences").upsert(
+        { user_id: user.id, col_widths: newWidths, updated_at: new Date().toISOString() },
+        { onConflict: "user_id" }
+      );
+    } catch {
+      // Fehler ignorieren – localStorage-Version bleibt erhalten
+    }
+  }, []);
+
   const updateWidth = useCallback((col, newWidth) => {
     setWidths(prev => {
       const next = { ...prev, [col]: Math.max(40, Math.round(newWidth)) };
+      // Sofort in localStorage speichern (kein Flicker)
       try { localStorage.setItem(LS_KEY, JSON.stringify(next)); } catch {}
+      // Debounced in Supabase speichern (800ms nach letzter Änderung)
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = setTimeout(() => saveToSupabase(next), 800);
       return next;
     });
-  }, []);
+  }, [saveToSupabase]);
 
   return (
     <ColWidthContext.Provider value={{ widths, updateWidth }}>
