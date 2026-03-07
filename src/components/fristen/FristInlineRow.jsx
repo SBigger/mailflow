@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useContext, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { Check, Trash2, Eye, EyeOff, ChevronDown, ChevronUp, KeyRound, X } from "lucide-react";
+import { Check, Trash2, Eye, EyeOff, ChevronDown, X } from "lucide-react";
 import { ThemeContext } from "@/Layout";
 import { supabase } from "@/api/supabaseClient";
 
@@ -49,29 +49,37 @@ const inputCls  = "rounded border px-2 py-1 text-xs focus:outline-none focus:rin
 const LS_KEY = "artis_fristen_col_widths";
 
 export const DEFAULT_COL_WIDTHS = {
-  name:       165,
-  kanton:      92,
-  spJahr:      84,
-  fristBis:   130,
-  unterlagen: 132,
-  kategorie:  150,
-  hDom:        74,
+  name:        165,
+  kanton:       92,
+  spJahr:       84,
+  fristBis:    130,
+  unterlagen:  132,
+  kategorie:   150,
+  hDom:         74,
+  portalLogin: 120,
+  portalPw:     90,
 };
 
 export const COLS = [
-  { key: "name",       label: "Kunde" },
-  { key: "kanton",     label: "Kanton" },
-  { key: "spJahr",     label: "SP Jahr" },
-  { key: "fristBis",   label: "Frist bis" },
-  { key: "unterlagen", label: "Unterlagen erhalten" },
-  { key: "kategorie",  label: "Kategorie" },
-  { key: "hDom",       label: "H-Dom" },
+  { key: "name",        label: "Kunde" },
+  { key: "kanton",      label: "Kanton" },
+  { key: "spJahr",      label: "SP Jahr" },
+  { key: "fristBis",    label: "Frist bis" },
+  { key: "unterlagen",  label: "Unterlagen erhalten" },
+  { key: "kategorie",   label: "Kategorie" },
+  { key: "hDom",        label: "H-Dom" },
+  { key: "portalLogin", label: "Portal Login" },
+  { key: "portalPw",    label: "Passwort" },
 ];
 
 function toGridCols(w, showName = true) {
   const cols = [];
   if (showName) cols.push(`${w.name}px`);
-  cols.push(`${w.kanton}px`, `${w.spJahr}px`, `${w.fristBis}px`, `${w.unterlagen}px`, `${w.kategorie}px`, `${w.hDom}px`);
+  cols.push(
+    `${w.kanton}px`, `${w.spJahr}px`, `${w.fristBis}px`,
+    `${w.unterlagen}px`, `${w.kategorie}px`, `${w.hDom}px`,
+    `${w.portalLogin}px`, `${w.portalPw}px`,
+  );
   return cols.join(" ");
 }
 
@@ -266,7 +274,6 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
 
   const isPrivat = personType === "privatperson";
 
-  const [expanded,        setExpanded]        = useState(false);
   const [kanton,          setKanton]          = useState(frist.kanton             || "");
   const [jahr,            setJahr]            = useState(frist.jahr               || currentYear);
   const [dueDate,         setDueDate]         = useState(frist.due_date           || "");
@@ -451,6 +458,46 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
             />
             <span className="text-xs font-medium">H-Dom</span>
           </label>
+
+          {/* Portal Login */}
+          <input
+            type="text"
+            value={portalLogin}
+            onChange={e => setPortalLogin(e.target.value)}
+            onBlur={e => save({ portal_login: e.target.value || null })}
+            placeholder="—"
+            className={inputCls}
+            style={{ ...inStyle, width: "100%" }}
+            disabled={isDone}
+            title="Portal-Login"
+          />
+
+          {/* Passwort */}
+          <div className="relative flex items-center w-full">
+            <input
+              type={showPw ? "text" : "password"}
+              value={portalPassword}
+              onChange={e => setPortalPassword(e.target.value)}
+              onBlur={e => save({ portal_password: e.target.value || null })}
+              placeholder="—"
+              className={inputCls}
+              style={{ ...inStyle, width: "100%", paddingRight: portalPassword ? "20px" : undefined }}
+              disabled={isDone}
+              autoComplete="new-password"
+              title="Passwort"
+            />
+            {portalPassword && (
+              <button
+                type="button"
+                onClick={() => setShowPw(v => !v)}
+                className="absolute right-1 rounded hover:bg-black/5"
+                style={{ color: s.textMuted }}
+                title={showPw ? "Verbergen" : "Anzeigen"}
+              >
+                {showPw ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+              </button>
+            )}
+          </div>
         </div>
 
         {/* ── Aktions-Bereich ── */}
@@ -458,18 +505,6 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
           className="flex-shrink-0 flex items-center gap-1 pl-2 ml-1"
           style={{ borderLeft: `1px solid ${s.divider}` }}
         >
-          {/* Expand Login/PW */}
-          <button
-            onClick={() => setExpanded(v => !v)}
-            className="p-1.5 rounded hover:bg-black/5 transition-colors"
-            style={{ color: expanded ? s.accentBg : s.textMuted }}
-            title={expanded ? "Login/Passwort ausblenden" : "Login/Passwort anzeigen"}
-          >
-            {expanded
-              ? <ChevronUp className="h-3.5 w-3.5" />
-              : <ChevronDown className="h-3.5 w-3.5" />}
-          </button>
-
           {/* Delete */}
           <button
             onClick={() => onDelete(frist.id)}
@@ -481,43 +516,6 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
         </div>
       </div>
 
-      {/* ── Expanded: Login + Passwort ── */}
-      {expanded && (
-        <div
-          className="flex items-center gap-2 px-3 py-2 border-t"
-          style={{ backgroundColor: s.expandBg, borderColor: s.cardBorder }}
-        >
-          <KeyRound className="h-3.5 w-3.5 flex-shrink-0" style={{ color: s.textMuted }} />
-          <input
-            placeholder="Portal-Login"
-            value={portalLogin}
-            onChange={e => setPortalLogin(e.target.value)}
-            onBlur={e => save({ portal_login: e.target.value || null })}
-            className={inputCls}
-            style={{ ...inStyle, flex: 1 }}
-            disabled={isDone}
-          />
-          <input
-            type={showPw ? "text" : "password"}
-            placeholder="Passwort"
-            value={portalPassword}
-            onChange={e => setPortalPassword(e.target.value)}
-            onBlur={e => save({ portal_password: e.target.value || null })}
-            className={inputCls}
-            style={{ ...inStyle, flex: 1 }}
-            disabled={isDone}
-            autoComplete="new-password"
-          />
-          <button
-            onClick={() => setShowPw(v => !v)}
-            className="flex-shrink-0 p-1 rounded hover:bg-black/5"
-            style={{ color: s.textMuted }}
-            title={showPw ? "Verbergen" : "Anzeigen"}
-          >
-            {showPw ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-          </button>
-        </div>
-      )}
     </div>
   );
 }
