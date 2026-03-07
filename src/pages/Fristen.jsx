@@ -6,6 +6,7 @@ import {
   CalendarClock, Plus, Trash2, Search, X,
   RefreshCw, ChevronDown, ChevronRight, AlertTriangle,
   Calendar, Clock, CheckCircle2, Filter, Users, PlayCircle,
+  MapPin, FileCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -105,9 +106,11 @@ export default function Fristen() {
 
   const [activeTab,       setActiveTab]       = useState("offen");
   const [search,          setSearch]          = useState("");
-  const [filterCategory,  setFilterCategory]  = useState("alle");
-  const [filterKundenTyp, setFilterKundenTyp] = useState("alle"); // 'alle' | 'privatperson' | 'unternehmen'
-  const [filterJahr,      setFilterJahr]      = useState("alle");
+  const [filterCategory,   setFilterCategory]   = useState("alle");
+  const [filterKundenTyp,  setFilterKundenTyp]  = useState("alle"); // 'alle' | 'privatperson' | 'unternehmen'
+  const [filterJahr,       setFilterJahr]       = useState("alle");
+  const [filterKanton,     setFilterKanton]     = useState("alle");
+  const [filterUnterlagen, setFilterUnterlagen] = useState("alle"); // 'alle' | 'erhalten' | 'ausstehend'
   const [showAdd,          setShowAdd]          = useState(false);
   const [editFrist,        setEditFrist]        = useState(null);
   const [showFristenlauf,  setShowFristenlauf]  = useState(false);
@@ -170,6 +173,11 @@ export default function Fristen() {
   // ── Filtering ─────────────────────────────────────────────
   const categories = useMemo(() => [...new Set(fristen.map(f => f.category).filter(Boolean))], [fristen]);
   const years      = useMemo(() => [...new Set(fristen.map(f => f.jahr).filter(Boolean))].sort(), [fristen]);
+  const kantons    = useMemo(() => {
+    const set = new Set();
+    fristen.forEach(f => { if (f.kanton) f.kanton.split(",").forEach(k => k.trim() && set.add(k.trim())); });
+    return [...set].sort();
+  }, [fristen]);
 
   const filtered = useMemo(() => {
     let list = fristen;
@@ -195,6 +203,15 @@ export default function Fristen() {
       });
     }
 
+    // Kanton filter (Feld kann kommagetrennte Werte enthalten, z.B. "ZH,TI")
+    if (filterKanton !== "alle") {
+      list = list.filter(f => f.kanton && f.kanton.split(",").map(k => k.trim()).includes(filterKanton));
+    }
+
+    // Unterlagen erhalten filter
+    if (filterUnterlagen === "erhalten")   list = list.filter(f =>  f.unterlagen_datum);
+    if (filterUnterlagen === "ausstehend") list = list.filter(f => !f.unterlagen_datum);
+
     // Search
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -207,7 +224,7 @@ export default function Fristen() {
     }
 
     return list;
-  }, [fristen, activeTab, filterCategory, filterJahr, filterKundenTyp, search, customers]);
+  }, [fristen, activeTab, filterCategory, filterJahr, filterKundenTyp, filterKanton, filterUnterlagen, search, customers]);
 
   const groups = useMemo(() => groupByPersonType(filtered, customers), [filtered, customers]);
 
@@ -345,6 +362,61 @@ export default function Fristen() {
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => setFilterKundenTyp("privatperson")}  style={{ color: textMain }}>👤 Natürliche Personen</DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setFilterKundenTyp("unternehmen")}   style={{ color: textMain }}>🏢 Juristische Personen</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* Kanton filter */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="h-8 gap-1 text-xs"
+                  style={{
+                    backgroundColor: filterKanton !== "alle" ? (isArtis ? "#e6ede6" : "rgba(99,102,241,0.15)") : inputBg,
+                    borderColor:     filterKanton !== "alle" ? (isArtis ? "#7a9b7f" : "#7c3aed") : inputBorder,
+                    color:           filterKanton !== "alle" ? (isArtis ? "#4a5e4a" : "#7c3aed") : textMain,
+                  }}>
+                  <MapPin className="h-3.5 w-3.5" />
+                  {filterKanton === "alle" ? "Kanton" : filterKanton}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent style={{ backgroundColor: isLight ? "#fff" : "#18181b", borderColor, maxHeight: 260, overflowY: "auto" }}>
+                <DropdownMenuItem onClick={() => setFilterKanton("alle")} style={{ color: textMain }}>
+                  Alle Kantone
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                {kantons.map(kt => (
+                  <DropdownMenuItem key={kt} onClick={() => setFilterKanton(kt)} style={{ color: textMain }}>
+                    {kt}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* Unterlagen erhalten filter */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="h-8 gap-1 text-xs"
+                  style={{
+                    backgroundColor: filterUnterlagen !== "alle" ? (isArtis ? "#e6ede6" : "rgba(99,102,241,0.15)") : inputBg,
+                    borderColor:     filterUnterlagen !== "alle" ? (isArtis ? "#7a9b7f" : "#7c3aed") : inputBorder,
+                    color:           filterUnterlagen !== "alle" ? (isArtis ? "#4a5e4a" : "#7c3aed") : textMain,
+                  }}>
+                  <FileCheck className="h-3.5 w-3.5" />
+                  {filterUnterlagen === "alle" ? "Unterlagen"
+                   : filterUnterlagen === "erhalten"   ? "Erhalten ✓"
+                   :                                     "Ausstehend"}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent style={{ backgroundColor: isLight ? "#fff" : "#18181b", borderColor }}>
+                <DropdownMenuItem onClick={() => setFilterUnterlagen("alle")} style={{ color: textMain }}>
+                  Alle
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setFilterUnterlagen("erhalten")} style={{ color: textMain }}>
+                  ✓ Unterlagen erhalten
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setFilterUnterlagen("ausstehend")} style={{ color: textMain }}>
+                  ○ Unterlagen ausstehend
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
 
