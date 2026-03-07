@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   CalendarClock, Plus, Check, Pencil, Trash2, Search, X,
   RefreshCw, ChevronDown, ChevronRight, AlertTriangle,
-  Calendar, Clock, CheckCircle2, Filter, Users, Wand2,
+  Calendar, Clock, CheckCircle2, Filter, Users, Wand2, PlayCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import AddFristDialog from "@/components/fristen/AddFristDialog";
 import GenerateFristenDialog from "@/components/fristen/GenerateFristenDialog";
+import FristenlaufDialog from "@/components/fristen/FristenlaufDialog";
 import { FristInlineRow } from "@/components/fristen/FristInlineRow";
 import { format, differenceInDays, isToday, isTomorrow, isPast, isThisWeek, addDays, parseISO } from "date-fns";
 import { de } from "date-fns/locale";
@@ -129,9 +130,10 @@ export default function Fristen() {
   const [filterCategory,  setFilterCategory]  = useState("alle");
   const [filterKundenTyp, setFilterKundenTyp] = useState("alle"); // 'alle' | 'privatperson' | 'unternehmen'
   const [filterJahr,      setFilterJahr]      = useState("alle");
-  const [showAdd,         setShowAdd]         = useState(false);
-  const [editFrist,       setEditFrist]       = useState(null);
-  const [showGenerate,    setShowGenerate]    = useState(false);
+  const [showAdd,          setShowAdd]          = useState(false);
+  const [editFrist,        setEditFrist]        = useState(null);
+  const [showGenerate,     setShowGenerate]     = useState(false);
+  const [showFristenlauf,  setShowFristenlauf]  = useState(false);
 
   // ── Data ──────────────────────────────────────────────────
   const { data: fristen = [], isLoading } = useQuery({
@@ -374,6 +376,19 @@ export default function Fristen() {
               <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
             </Button>
 
+            {/* Fristenlauf */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowFristenlauf(true)}
+              className="h-8 gap-1.5 text-xs"
+              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: isArtis ? "#4a5e4a" : "#7c3aed" }}
+              title="Fristenlauf – Fristen für alle Kunden erstellen"
+            >
+              <PlayCircle className="h-3.5 w-3.5" />
+              Fristenlauf
+            </Button>
+
             {/* Generate */}
             <Button
               variant="outline"
@@ -486,6 +501,16 @@ export default function Fristen() {
         onGenerated={() => {
           queryClient.invalidateQueries({ queryKey: ["fristen"] });
           setShowGenerate(false);
+        }}
+      />
+
+      <FristenlaufDialog
+        open={showFristenlauf}
+        onClose={() => setShowFristenlauf(false)}
+        customers={customers}
+        existingFristen={fristen}
+        onGenerated={() => {
+          queryClient.invalidateQueries({ queryKey: ["fristen"] });
         }}
       />
     </div>
