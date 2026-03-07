@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, useRef } from "react";
+import React, { useState, useEffect, useContext, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { Check, Trash2, Eye, EyeOff, ChevronDown, ChevronUp, KeyRound, X } from "lucide-react";
 import { ThemeContext } from "@/Layout";
@@ -43,6 +43,60 @@ function useRowStyles(isArtis, isLight) {
 
 const selectCls = "rounded border px-1 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 cursor-pointer";
 const inputCls  = "rounded border px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400";
+
+// ── Spaltenbreiten (persistent via localStorage) ──────────────
+const LS_KEY = "artis_fristen_col_widths";
+
+export const DEFAULT_COL_WIDTHS = {
+  name:       165,
+  kanton:      92,
+  spJahr:      84,
+  fristBis:   130,
+  unterlagen: 132,
+  kategorie:  150,
+  hDom:        74,
+};
+
+export const COLS = [
+  { key: "name",       label: "Kunde" },
+  { key: "kanton",     label: "Kanton" },
+  { key: "spJahr",     label: "SP Jahr" },
+  { key: "fristBis",   label: "Frist bis" },
+  { key: "unterlagen", label: "Unterlagen erhalten" },
+  { key: "kategorie",  label: "Kategorie" },
+  { key: "hDom",       label: "H-Dom" },
+];
+
+function toGridCols(w) {
+  return `${w.name}px ${w.kanton}px ${w.spJahr}px ${w.fristBis}px ${w.unterlagen}px ${w.kategorie}px ${w.hDom}px`;
+}
+
+export const ColWidthContext = React.createContext(null);
+
+export function ColWidthProvider({ children }) {
+  const [widths, setWidths] = useState(() => {
+    try {
+      const saved = localStorage.getItem(LS_KEY);
+      return saved ? { ...DEFAULT_COL_WIDTHS, ...JSON.parse(saved) } : { ...DEFAULT_COL_WIDTHS };
+    } catch {
+      return { ...DEFAULT_COL_WIDTHS };
+    }
+  });
+
+  const updateWidth = useCallback((col, newWidth) => {
+    setWidths(prev => {
+      const next = { ...prev, [col]: Math.max(40, Math.round(newWidth)) };
+      try { localStorage.setItem(LS_KEY, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, []);
+
+  return (
+    <ColWidthContext.Provider value={{ widths, updateWidth }}>
+      {children}
+    </ColWidthContext.Provider>
+  );
+}
 
 // ── Multi-Kanton-Select ───────────────────────────────────────
 // value: kommagetrennte Kantone z.B. "ZH,TI,BE"
@@ -196,6 +250,7 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
 
   const isDone = frist.status === "erledigt";
   const inStyle = { backgroundColor: s.inputBg, borderColor: s.inputBorder, color: s.textMain };
+  const { widths = DEFAULT_COL_WIDTHS } = useContext(ColWidthContext) ?? {};
 
   return (
     <div className="rounded-lg border overflow-hidden" style={{ borderColor: s.cardBorder }}>
@@ -220,7 +275,7 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
           className="flex-1 min-w-0"
           style={{
             display: "grid",
-            gridTemplateColumns: "165px 92px 84px 130px 132px 1fr 74px",
+            gridTemplateColumns: toGridCols(widths),
             alignItems: "center",
             gap: "10px",
           }}
@@ -553,53 +608,89 @@ export function NewFristRow({ onSave, onCancel, customerId }) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// FristenColumnHeader – Spaltentitel passend zum Grid
+// FristenColumnHeader – Spaltentitel mit Drag-Resize-Handles
 // ─────────────────────────────────────────────────────────────
 export function FristenColumnHeader() {
   const { theme } = useContext(ThemeContext);
   const isArtis = theme === "artis";
   const isLight = theme === "light";
   const s = useRowStyles(isArtis, isLight);
+  const { widths = DEFAULT_COL_WIDTHS, updateWidth = () => {} } =
+    useContext(ColWidthContext) ?? {};
 
-  const cols = [
-    "Kunde",
-    "Kanton",
-    "SP Jahr",
-    "Frist bis",
-    "Unterlagen erhalten",
-    "Kategorie",
-    "H-Dom",
-  ];
+  const startResize = (e, colKey) => {
+    e.preventDefault();
+    const startX   = e.clientX;
+    const startW   = widths[colKey];
+    const onMove   = (mv) => updateWidth(colKey, startW + mv.clientX - startX);
+    const onUp     = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup",   onUp);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup",   onUp);
+  };
+
+  const handleColor = isArtis ? "#b0c8b0" : isLight ? "#c0c0d8" : "#52525b";
 
   return (
     <div
-      className="flex items-center gap-2 px-3 pt-2 pb-1.5 mb-1"
+      className="flex items-center gap-2 px-3 pt-2 pb-1.5 mb-1 select-none"
       style={{ borderBottom: `1px solid ${s.divider}` }}
     >
-      {/* Spacer: Done-Toggle (w-5 = 20px) */}
+      {/* Spacer: Done-Toggle */}
       <div style={{ width: 20, flexShrink: 0 }} />
 
-      {/* Gleiche Grid-Spalten wie FristInlineRow */}
+      {/* Grid – gleiche Spalten wie FristInlineRow */}
       <div
         className="flex-1 min-w-0"
         style={{
           display: "grid",
-          gridTemplateColumns: "165px 92px 84px 130px 132px 1fr 74px",
+          gridTemplateColumns: toGridCols(widths),
           gap: "10px",
         }}
       >
-        {cols.map(col => (
-          <span
-            key={col}
-            className="text-xs font-semibold uppercase tracking-wide"
-            style={{ color: s.textMuted }}
-          >
-            {col}
-          </span>
+        {COLS.map((col, i) => (
+          <div key={col.key} style={{ position: "relative", overflow: "visible" }}>
+            <span
+              className="text-xs font-semibold uppercase tracking-wide"
+              style={{ color: s.textMuted }}
+            >
+              {col.label}
+            </span>
+
+            {/* Resize-Handle (nicht beim letzten) */}
+            {i < COLS.length - 1 && (
+              <div
+                onMouseDown={(e) => startResize(e, col.key)}
+                style={{
+                  position: "absolute",
+                  right: -7,
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  width: 12,
+                  height: 20,
+                  cursor: "col-resize",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  zIndex: 10,
+                }}
+                title="Spalte ziehen zum Vergrössern"
+              >
+                <div style={{
+                  width: 2,
+                  height: 14,
+                  backgroundColor: handleColor,
+                  borderRadius: 1,
+                }} />
+              </div>
+            )}
+          </div>
         ))}
       </div>
 
-      {/* Spacer: Aktions-Bereich (Expand + Delete Buttons ≈ 60px) */}
+      {/* Spacer: Aktions-Bereich */}
       <div style={{ width: 60, flexShrink: 0 }} />
     </div>
   );

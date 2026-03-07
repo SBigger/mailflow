@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import AddFristDialog from "@/components/fristen/AddFristDialog";
 import FristenlaufDialog from "@/components/fristen/FristenlaufDialog";
-import { FristInlineRow, FristenColumnHeader } from "@/components/fristen/FristInlineRow";
+import { FristInlineRow, FristenColumnHeader, ColWidthProvider } from "@/components/fristen/FristInlineRow";
 import { isToday, isPast, parseISO } from "date-fns";
 
 // ──────────────────────────────────────────────────────────────
@@ -227,6 +227,7 @@ export default function Fristen() {
   const contentBg  = isArtis ? "#f8faf8" : isLight ? "#f4f4f8" : "#18181b";
 
   return (
+    <ColWidthProvider>
     <div className="h-screen flex flex-col overflow-hidden" style={{ backgroundColor: pageBg }}>
 
       {/* ── Top Bar ─────────────────────────────────────── */}
@@ -472,5 +473,6 @@ export default function Fristen() {
         }}
       />
     </div>
+    </ColWidthProvider>
   );
 }
