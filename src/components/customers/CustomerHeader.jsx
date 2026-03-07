@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useContext } from "react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
 import { User, Phone } from "lucide-react";
 import { ThemeContext } from "@/Layout";
 
@@ -27,8 +26,6 @@ export default function CustomerHeader({ customer, staff, onUpdate }) {
   const isArtis = theme === 'artis';
 
   const isPrivatperson   = customer.person_type === 'privatperson';
-  const isNebendomizilRecord = customer.ist_nebensteuerdomizil === true;
-
   // Shared fields
   const [strasse,  setStrasse]  = useState(customer.strasse || "");
   const [plz,      setPlz]      = useState(customer.plz || "");
@@ -48,8 +45,7 @@ export default function CustomerHeader({ customer, staff, onUpdate }) {
   const [partnerVorname, setPartnerVorname] = useState(customer.partner_vorname || "");
 
   // Kanton (beide Typen)
-  const [kanton,               setKanton]               = useState(customer.kanton || "");
-  const [istHauptsteuerdomizil, setIstHauptsteuerdomizil] = useState(customer.ist_hauptsteuerdomizil === true);
+  const [kanton, setKanton] = useState(customer.kanton || "");
 
   function formatBudgetStatic(val) {
     const num = parseFloat(val);
@@ -71,7 +67,6 @@ export default function CustomerHeader({ customer, staff, onUpdate }) {
     setPartnerName(customer.partner_name || "");
     setPartnerVorname(customer.partner_vorname || "");
     setKanton(customer.kanton || "");
-    setIstHauptsteuerdomizil(customer.ist_hauptsteuerdomizil === true);
   }, [customer.id]);
 
   const handleBudgetBlur = () => {
@@ -208,30 +203,6 @@ export default function CustomerHeader({ customer, staff, onUpdate }) {
           </Select>
         </div>
       </div>
-
-      {/* ── Hauptsteuerdomizil Checkbox (nur für nicht-Nebendomizile) ── */}
-      {!isNebendomizilRecord && (
-        <div className="flex items-center gap-2">
-          <Checkbox
-            id="hauptsteuerdomizil-cb"
-            checked={istHauptsteuerdomizil}
-            onCheckedChange={checked => {
-              setIstHauptsteuerdomizil(!!checked);
-              onUpdate({ ist_hauptsteuerdomizil: !!checked });
-            }}
-            style={{
-              borderColor: isArtis ? '#bfcfbf' : isLight ? '#c8c8dc' : '#d1d5db',
-            }}
-          />
-          <label
-            htmlFor="hauptsteuerdomizil-cb"
-            className="text-xs cursor-pointer select-none"
-            style={{ color: labelColor }}
-          >
-            Hauptsteuerdomizil
-          </label>
-        </div>
-      )}
 
       {/* ── Telefon & Budget ── */}
       <div className="flex gap-2">

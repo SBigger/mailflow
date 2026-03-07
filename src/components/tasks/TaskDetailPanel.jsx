@@ -25,6 +25,9 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }) {
   const [columnId, setColumnId] = useState(task.column_id || '');
   const [attachments, setAttachments] = useState(task.attachments || []);
   const [uploading, setUploading] = useState(false);
+  const [customerId, setCustomerId] = useState(task.customer_id || '');
+  const [customerSearch, setCustomerSearch] = useState('');
+  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
 
   const { data: priorities = [] } = useQuery({
     queryKey: ["priorities"],
@@ -58,6 +61,19 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }) {
     enabled: !!currentUser,
   });
 
+  const { data: customers = [] } = useQuery({
+    queryKey: ["customers"],
+    queryFn: () => entities.Customer.list("company_name"),
+  });
+
+  // Kundennamen aus customer_id beim Laden befüllen
+  React.useEffect(() => {
+    if (task.customer_id && customers.length > 0) {
+      const found = customers.find(c => c.id === task.customer_id);
+      if (found) setCustomerSearch(found.company_name);
+    }
+  }, [task.customer_id, customers]);
+
   // Mark as read for current user on first open
   React.useEffect(() => {
     const markAsRead = async () => {
@@ -88,7 +104,8 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }) {
       due_date: dueDate || null,
       column_id: columnId,
       tags,
-      attachments
+      attachments,
+      customer_id: customerId || null,
     });
     onClose();
   };
@@ -256,6 +273,46 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }) {
             onChange={(e) => setDueDate(e.target.value)}
             className="bg-zinc-900/60 border-zinc-700 text-zinc-200"
           />
+        </div>
+
+        <div className="space-y-2">
+          <Label className="text-zinc-400">Kunde</Label>
+          <div className="relative">
+            <Input
+              value={customerSearch}
+              onChange={(e) => {
+                setCustomerSearch(e.target.value);
+                setShowCustomerDropdown(true);
+                if (!e.target.value) setCustomerId('');
+              }}
+              onFocus={() => setShowCustomerDropdown(true)}
+              onBlur={() => setTimeout(() => setShowCustomerDropdown(false), 150)}
+              placeholder="Kunde suchen..."
+              className="bg-zinc-900/60 border-zinc-700 text-zinc-200"
+              autoComplete="off"
+            />
+            {showCustomerDropdown && (
+              <div className="absolute z-50 top-full left-0 mt-1 w-full bg-zinc-900 border border-zinc-700 rounded-md shadow-lg max-h-48 overflow-y-auto">
+                <div
+                  className="px-3 py-2 text-zinc-400 text-sm cursor-pointer hover:bg-zinc-800"
+                  onMouseDown={() => { setCustomerId(''); setCustomerSearch(''); setShowCustomerDropdown(false); }}
+                >
+                  Kein Kunde
+                </div>
+                {customers
+                  .filter(c => c.company_name.toLowerCase().includes(customerSearch.toLowerCase()))
+                  .map(c => (
+                    <div
+                      key={c.id}
+                      className="px-3 py-2 text-zinc-200 text-sm cursor-pointer hover:bg-zinc-800"
+                      onMouseDown={() => { setCustomerId(c.id); setCustomerSearch(c.company_name); setShowCustomerDropdown(false); }}
+                    >
+                      {c.company_name}
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="space-y-2">
