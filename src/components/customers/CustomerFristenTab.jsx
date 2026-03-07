@@ -149,6 +149,8 @@ export default function CustomerFristenTab({ customer }) {
                   onUpdate={handleUpdate}
                   onDelete={handleDelete}
                   onToggle={handleToggle}
+                  showName={false}
+                  personType={customer.person_type === "privatperson" ? "privatperson" : "unternehmen"}
                 />
               ))}
             </div>
@@ -167,6 +169,8 @@ export default function CustomerFristenTab({ customer }) {
                   onUpdate={handleUpdate}
                   onDelete={handleDelete}
                   onToggle={handleToggle}
+                  showName={false}
+                  personType={customer.person_type === "privatperson" ? "privatperson" : "unternehmen"}
                 />
               ))}
             </div>

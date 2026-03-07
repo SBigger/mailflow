@@ -49,15 +49,15 @@ function groupByPersonType(list, customers) {
     })
     .sort(sortByName);
   return {
-    juristische: { label: "🏢 Juristische Personen", items: jur, color: "#7c3aed" },
-    natuerliche:  { label: "👤 Natürliche Personen",  items: nat, color: "#0ea5e9" },
+    juristische: { label: "🏢 Juristische Personen", items: jur, color: "#7c3aed", personType: "unternehmen" },
+    natuerliche:  { label: "👤 Natürliche Personen",  items: nat, color: "#0ea5e9", personType: "privatperson" },
   };
 }
 
 // ──────────────────────────────────────────────────────────────
 // Group Section – nutzt FristInlineRow
 // ──────────────────────────────────────────────────────────────
-function FristenGroup({ label, color, items, customers, onToggle, onUpdate, onDelete, defaultOpen = true }) {
+function FristenGroup({ label, color, items, customers, onToggle, onUpdate, onDelete, defaultOpen = true, personType = "unternehmen" }) {
   const [open, setOpen] = useState(defaultOpen);
   if (items.length === 0) return null;
   return (
@@ -72,22 +72,26 @@ function FristenGroup({ label, color, items, customers, onToggle, onUpdate, onDe
         <span className="ml-1 text-xs font-normal opacity-70">({items.length})</span>
       </button>
       {open && (
-        <div className="pl-1">
-          <FristenColumnHeader />
-          <div className="space-y-1.5">
-            {items.map(f => {
-              const customer = customers.find(c => c.id === f.customer_id);
-              return (
-                <FristInlineRow
-                  key={f.id}
-                  frist={f}
-                  onToggle={onToggle}
-                  onUpdate={onUpdate}
-                  onDelete={onDelete}
-                  customerName={customer?.company_name}
-                />
-              );
-            })}
+        /* Horizontaler Scroll wenn Spaltenbreiten den Container überschreiten */
+        <div style={{ overflowX: "auto" }}>
+          <div style={{ minWidth: "max-content", paddingLeft: "4px" }}>
+            <FristenColumnHeader personType={personType} />
+            <div className="space-y-1.5">
+              {items.map(f => {
+                const customer = customers.find(c => c.id === f.customer_id);
+                return (
+                  <FristInlineRow
+                    key={f.id}
+                    frist={f}
+                    onToggle={onToggle}
+                    onUpdate={onUpdate}
+                    onDelete={onDelete}
+                    customerName={customer?.company_name}
+                    personType={personType}
+                  />
+                );
+              })}
+            </div>
           </div>
         </div>
       )}

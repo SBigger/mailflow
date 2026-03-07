@@ -68,8 +68,11 @@ export const COLS = [
   { key: "hDom",       label: "H-Dom" },
 ];
 
-function toGridCols(w) {
-  return `${w.name}px ${w.kanton}px ${w.spJahr}px ${w.fristBis}px ${w.unterlagen}px ${w.kategorie}px ${w.hDom}px`;
+function toGridCols(w, showName = true) {
+  const cols = [];
+  if (showName) cols.push(`${w.name}px`);
+  cols.push(`${w.kanton}px`, `${w.spJahr}px`, `${w.fristBis}px`, `${w.unterlagen}px`, `${w.kategorie}px`, `${w.hDom}px`);
+  return cols.join(" ");
 }
 
 export const ColWidthContext = React.createContext(null);
@@ -255,17 +258,20 @@ function KantonMultiSelect({ value, onChange, disabled, inStyle, s }) {
 // ─────────────────────────────────────────────────────────────
 // FristInlineRow – bestehende Frist direkt inline bearbeiten
 // ─────────────────────────────────────────────────────────────
-export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerName }) {
+export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerName, personType = "unternehmen", showName = true }) {
   const { theme } = useContext(ThemeContext);
   const isArtis = theme === "artis";
   const isLight = theme === "light";
   const s = useRowStyles(isArtis, isLight);
+
+  const isPrivat = personType === "privatperson";
 
   const [expanded,        setExpanded]        = useState(false);
   const [kanton,          setKanton]          = useState(frist.kanton             || "");
   const [jahr,            setJahr]            = useState(frist.jahr               || currentYear);
   const [dueDate,         setDueDate]         = useState(frist.due_date           || "");
   const [unterlagenDatum, setUnterlagenDatum] = useState(frist.unterlagen_datum   || "");
+  const [abschlussVorb,   setAbschlussVorb]   = useState(frist.abschluss_vorbereitet ?? false);
   const [category,        setCategory]        = useState(frist.category           || "Steuererklärung");
   const [hauptdomizil,    setHauptdomizil]    = useState(frist.ist_hauptsteuerdomizil !== false);
   const [portalLogin,     setPortalLogin]     = useState(frist.portal_login       || "");
@@ -277,6 +283,7 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
     setJahr(frist.jahr                 || currentYear);
     setDueDate(frist.due_date          || "");
     setUnterlagenDatum(frist.unterlagen_datum || "");
+    setAbschlussVorb(frist.abschluss_vorbereitet ?? false);
     setCategory(frist.category         || "Steuererklärung");
     setHauptdomizil(frist.ist_hauptsteuerdomizil !== false);
     setPortalLogin(frist.portal_login  || "");
@@ -297,13 +304,24 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
   const inStyle = { backgroundColor: s.inputBg, borderColor: s.inputBorder, color: s.textMain };
   const { widths = DEFAULT_COL_WIDTHS } = useContext(ColWidthContext) ?? {};
 
+  // ── Abschluss-Hervorhebung (nur juristische Personen) ──────
+  const isHighlighted = !isPrivat && abschlussVorb;
+  const highlightBg     = isArtis ? "rgba(122,155,127,0.14)" : isLight ? "rgba(99,102,241,0.08)" : "rgba(16,185,129,0.13)";
+  const highlightBorder = isArtis ? "#9ab89f"                : isLight ? "#a5b4fc"               : "#34d399";
+
   return (
-    <div className="rounded-lg border overflow-hidden" style={{ borderColor: s.cardBorder }}>
+    <div
+      className="rounded-lg border overflow-hidden"
+      style={{
+        borderColor: isHighlighted ? highlightBorder : s.cardBorder,
+        borderWidth: isHighlighted ? 2 : 1,
+      }}
+    >
 
       {/* ── Main row ── */}
       <div
         className="flex items-center gap-2 px-3 py-2 group"
-        style={{ backgroundColor: s.cardBg, opacity: isDone ? 0.65 : 1 }}
+        style={{ backgroundColor: isHighlighted ? highlightBg : s.cardBg, opacity: isDone ? 0.65 : 1 }}
       >
         {/* Done toggle */}
         <button
@@ -320,19 +338,21 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
           className="flex-1 min-w-0"
           style={{
             display: "grid",
-            gridTemplateColumns: toGridCols(widths),
+            gridTemplateColumns: toGridCols(widths, showName),
             alignItems: "center",
             gap: "10px",
           }}
         >
-          {/* Kundenname – immer erste Spalte (leer wenn nicht gesetzt) */}
-          <span
-            className="text-xs font-semibold truncate"
-            style={{ color: s.textMain }}
-            title={customerName || ""}
-          >
-            {customerName || ""}
-          </span>
+          {/* Kundenname – nur wenn showName=true */}
+          {showName && (
+            <span
+              className="text-xs font-semibold truncate"
+              style={{ color: s.textMain }}
+              title={customerName || ""}
+            >
+              {customerName || ""}
+            </span>
+          )}
 
           {/* Kanton(e) – Multi-Select */}
           <KantonMultiSelect
@@ -369,17 +389,37 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
             title="Frist bis"
           />
 
-          {/* Unterlagen erhalten */}
-          <input
-            type="date"
-            value={unterlagenDatum}
-            onChange={e => setUnterlagenDatum(e.target.value)}
-            onBlur={e => save({ unterlagen_datum: e.target.value || null })}
-            className={inputCls}
-            style={{ ...inStyle, width: "100%" }}
-            disabled={isDone}
-            title="Unterlagen erhalten"
-          />
+          {/* 5. Spalte: Unterlagen erhalten (Privatperson) ODER Abschluss vorbereitet (Juristisch) */}
+          {isPrivat ? (
+            <input
+              type="date"
+              value={unterlagenDatum}
+              onChange={e => setUnterlagenDatum(e.target.value)}
+              onBlur={e => save({ unterlagen_datum: e.target.value || null })}
+              className={inputCls}
+              style={{ ...inStyle, width: "100%" }}
+              disabled={isDone}
+              title="Unterlagen erhalten"
+            />
+          ) : (
+            <label
+              className="flex items-center gap-1.5 cursor-pointer select-none"
+              title="Abschluss vorbereitet"
+              style={{ color: abschlussVorb ? s.accentBg : s.textMuted }}
+            >
+              <input
+                type="checkbox"
+                checked={abschlussVorb}
+                onChange={e => {
+                  setAbschlussVorb(e.target.checked);
+                  save({ abschluss_vorbereitet: e.target.checked });
+                }}
+                disabled={isDone}
+                style={{ accentColor: s.accentBg, cursor: "pointer", width: 14, height: 14 }}
+              />
+              <span className="text-xs font-medium">Abschluss</span>
+            </label>
+          )}
 
           {/* Art / Kategorie */}
           <select
@@ -655,13 +695,19 @@ export function NewFristRow({ onSave, onCancel, customerId }) {
 // ─────────────────────────────────────────────────────────────
 // FristenColumnHeader – Spaltentitel mit Drag-Resize-Handles
 // ─────────────────────────────────────────────────────────────
-export function FristenColumnHeader() {
+export function FristenColumnHeader({ personType = "unternehmen" }) {
   const { theme } = useContext(ThemeContext);
   const isArtis = theme === "artis";
   const isLight = theme === "light";
   const s = useRowStyles(isArtis, isLight);
   const { widths = DEFAULT_COL_WIDTHS, updateWidth = () => {} } =
     useContext(ColWidthContext) ?? {};
+
+  // 5. Spalte: Label je nach Personentyp
+  const isPrivat = personType === "privatperson";
+  const cols = COLS.map((col, i) =>
+    i === 4 ? { ...col, label: isPrivat ? "Unterlagen erhalten" : "Abschluss vorb." } : col
+  );
 
   const startResize = (e, colKey) => {
     e.preventDefault();
@@ -695,7 +741,7 @@ export function FristenColumnHeader() {
           gap: "10px",
         }}
       >
-        {COLS.map((col, i) => (
+        {cols.map((col, i) => (
           <div key={col.key} style={{ position: "relative", overflow: "visible" }}>
             <span
               className="text-xs font-semibold uppercase tracking-wide"
@@ -705,7 +751,7 @@ export function FristenColumnHeader() {
             </span>
 
             {/* Resize-Handle (nicht beim letzten) */}
-            {i < COLS.length - 1 && (
+            {i < cols.length - 1 && (
               <div
                 onMouseDown={(e) => startResize(e, col.key)}
                 style={{
