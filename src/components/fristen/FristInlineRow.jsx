@@ -215,6 +215,18 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
 
         {/* ── Datenfelder ── */}
         <div className="flex items-center gap-2 flex-1 min-w-0">
+
+          {/* Kundenname – zuerst */}
+          {customerName && (
+            <span
+              className="flex-shrink-0 text-xs font-semibold truncate"
+              style={{ color: s.textMain, minWidth: "120px", maxWidth: "180px" }}
+              title={customerName}
+            >
+              {customerName}
+            </span>
+          )}
+
           {/* Kanton(e) – Multi-Select */}
           <KantonMultiSelect
             value={kanton}
@@ -287,17 +299,6 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
           className="flex-shrink-0 flex items-center gap-1 pl-2 ml-1"
           style={{ borderLeft: `1px solid ${s.divider}` }}
         >
-          {/* Kundenname (nur globale Ansicht) */}
-          {customerName && (
-            <span
-              className="text-xs px-1.5 py-0.5 rounded border hidden md:inline truncate max-w-[110px]"
-              style={{ backgroundColor: s.expandBg, borderColor: s.cardBorder, color: s.textMuted }}
-              title={customerName}
-            >
-              {customerName}
-            </span>
-          )}
-
           {/* Expand Login/PW */}
           <button
             onClick={() => setExpanded(v => !v)}

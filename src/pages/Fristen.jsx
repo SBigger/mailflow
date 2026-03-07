@@ -16,7 +16,7 @@ import {
 import AddFristDialog from "@/components/fristen/AddFristDialog";
 import FristenlaufDialog from "@/components/fristen/FristenlaufDialog";
 import { FristInlineRow } from "@/components/fristen/FristInlineRow";
-import { differenceInDays, isToday, isPast, parseISO } from "date-fns";
+import { isToday, isPast, parseISO } from "date-fns";
 
 // ──────────────────────────────────────────────────────────────
 // Helpers
@@ -29,29 +29,28 @@ const TABS = [
 ];
 
 
-function groupFristen(list) {
-  const now = new Date();
-  now.setHours(0, 0, 0, 0);
-  const groups = {
-    overdue:   { label: "⚠ Überfällig",     items: [], color: "#ef4444" },
-    today:     { label: "📅 Heute fällig",   items: [], color: "#f97316" },
-    thisWeek:  { label: "📆 Diese Woche",    items: [], color: "#eab308" },
-    thisMonth: { label: "📋 Nächste 30 Tage",items: [], color: "#6366f1" },
-    later:     { label: "🗓 Später",          items: [], color: "#71717a" },
+function groupByPersonType(list, customers) {
+  const sortByName = (a, b) => {
+    const ca = customers.find(c => c.id === a.customer_id);
+    const cb = customers.find(c => c.id === b.customer_id);
+    return (ca?.company_name || "").localeCompare(cb?.company_name || "", "de");
   };
-
-  for (const f of list) {
-    if (!f.due_date) { groups.later.items.push(f); continue; }
-    const due = parseISO(f.due_date);
-    due.setHours(0, 0, 0, 0);
-    const diff = differenceInDays(due, now);
-    if (diff < 0)        groups.overdue.items.push(f);
-    else if (diff === 0) groups.today.items.push(f);
-    else if (diff <= 7)  groups.thisWeek.items.push(f);
-    else if (diff <= 30) groups.thisMonth.items.push(f);
-    else                 groups.later.items.push(f);
-  }
-  return groups;
+  const jur = list
+    .filter(f => {
+      const c = customers.find(c => c.id === f.customer_id);
+      return !c || c.person_type !== "privatperson";
+    })
+    .sort(sortByName);
+  const nat = list
+    .filter(f => {
+      const c = customers.find(c => c.id === f.customer_id);
+      return c?.person_type === "privatperson";
+    })
+    .sort(sortByName);
+  return {
+    juristische: { label: "🏢 Juristische Personen", items: jur, color: "#7c3aed" },
+    natuerliche:  { label: "👤 Natürliche Personen",  items: nat, color: "#0ea5e9" },
+  };
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -207,7 +206,7 @@ export default function Fristen() {
     return list;
   }, [fristen, activeTab, filterCategory, filterJahr, filterKundenTyp, search, customers]);
 
-  const groups = useMemo(() => groupFristen(filtered.filter(f => f.status === "offen")), [filtered]);
+  const groups = useMemo(() => groupByPersonType(filtered, customers), [filtered, customers]);
 
   // ── Stats (top bar badges) ────────────────────────────────
   const overdueCount = fristen.filter(f => f.status === "offen" && f.due_date && isPast(parseISO(f.due_date)) && !isToday(parseISO(f.due_date))).length;
@@ -413,49 +412,29 @@ export default function Fristen() {
 
           </div>
         ) : activeTab === "erledigt" ? (
-          /* Erledigt view – flat list */
-          <div className="space-y-1.5 max-w-3xl">
-            {filtered.map(f => {
-              const cust = customers.find(c => c.id === f.customer_id);
-              return (
-                <FristInlineRow key={f.id} frist={f}
-                  onToggle={handleToggle} onUpdate={handleUpdate} onDelete={handleDelete}
-                  customerName={cust?.company_name} />
-              );
-            })}
-          </div>
-        ) : activeTab === "alle" ? (
-          /* Alle – grouped open + done */
-          <div className="max-w-3xl space-y-1">
+          /* Erledigt – nach Personentyp gruppiert */
+          <div className="max-w-3xl">
             {Object.values(groups).map(group => (
               <FristenGroup key={group.label} {...group} customers={customers}
                 onToggle={handleToggle} onUpdate={handleUpdate} onDelete={handleDelete}
                 defaultOpen={true} />
             ))}
-            {fristen.filter(f => f.status === "erledigt").length > 0 && (
-              <FristenGroup
-                label="✓ Erledigt" color={textMuted}
-                items={fristen.filter(f => f.status === "erledigt").slice(0, 20)}
-                customers={customers}
-                onToggle={handleToggle} onUpdate={handleUpdate} onDelete={handleDelete}
-                defaultOpen={false}
-              />
-            )}
           </div>
         ) : (
-          /* Offen / Fällig – grouped */
+          /* Offen / Fällig / Alle – nach Personentyp gruppiert */
           <div className="max-w-3xl">
             {Object.values(groups).every(g => g.items.length === 0) ? (
               <div className="flex flex-col items-center justify-center h-48 gap-3" style={{ color: textMuted }}>
                 <CheckCircle2 className="h-12 w-12 opacity-30" />
-                <p className="text-sm">Keine offenen Fristen in diesem Bereich.</p>
+                <p className="text-sm">
+                  {activeTab === "faellig" ? "Keine fälligen Fristen – alles im Griff! 🎉" : "Keine Fristen in diesem Bereich."}
+                </p>
               </div>
             ) : (
               Object.values(groups).map(group => (
                 <FristenGroup key={group.label} {...group} customers={customers}
                   onToggle={handleToggle} onUpdate={handleUpdate} onDelete={handleDelete}
-                  defaultOpen={group.label.includes("Überfällig") || group.label.includes("Heute") || group.label.includes("Woche")}
-                />
+                  defaultOpen={true} />
               ))
             )}
           </div>
