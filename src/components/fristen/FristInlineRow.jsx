@@ -54,7 +54,6 @@ export const DEFAULT_COL_WIDTHS = {
   spJahr:       84,
   fristBis:    130,
   unterlagen:  132,
-  kategorie:   150,
   hDom:         74,
   portalLogin: 120,
   portalPw:     90,
@@ -66,7 +65,6 @@ export const COLS = [
   { key: "spJahr",      label: "SP Jahr" },
   { key: "fristBis",    label: "Frist bis" },
   { key: "unterlagen",  label: "Unterlagen erhalten" },
-  { key: "kategorie",   label: "Kategorie" },
   { key: "hDom",        label: "H-Dom" },
   { key: "portalLogin", label: "Portal Login" },
   { key: "portalPw",    label: "Passwort" },
@@ -77,7 +75,7 @@ function toGridCols(w, showName = true) {
   if (showName) cols.push(`${w.name}px`);
   cols.push(
     `${w.kanton}px`, `${w.spJahr}px`, `${w.fristBis}px`,
-    `${w.unterlagen}px`, `${w.kategorie}px`, `${w.hDom}px`,
+    `${w.unterlagen}px`, `${w.hDom}px`,
     `${w.portalLogin}px`, `${w.portalPw}px`,
   );
   return cols.join(" ");
@@ -322,6 +320,7 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
       style={{
         borderColor: isHighlighted ? highlightBorder : s.cardBorder,
         borderWidth: isHighlighted ? 2 : 1,
+        minWidth: "max-content",
       }}
     >
 
@@ -342,7 +341,6 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
 
         {/* ── Datenfelder – CSS-Grid für bündige Spalten ── */}
         <div
-          className="flex-1 min-w-0"
           style={{
             display: "grid",
             gridTemplateColumns: toGridCols(widths, showName),
@@ -427,18 +425,6 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
               <span className="text-xs font-medium">Abschluss</span>
             </label>
           )}
-
-          {/* Art / Kategorie */}
-          <select
-            value={category}
-            onChange={e => { setCategory(e.target.value); save({ category: e.target.value }); }}
-            className={selectCls}
-            style={{ ...inStyle, width: "100%" }}
-            disabled={isDone}
-            title="Art der Frist"
-          >
-            {INLINE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
 
           {/* Hauptsteuerdomizil */}
           <label
@@ -725,14 +711,13 @@ export function FristenColumnHeader({ personType = "unternehmen" }) {
   return (
     <div
       className="flex items-center gap-2 px-3 pt-2 pb-1.5 mb-1 select-none"
-      style={{ borderBottom: `1px solid ${s.divider}` }}
+      style={{ borderBottom: `1px solid ${s.divider}`, minWidth: "max-content" }}
     >
       {/* Spacer: Done-Toggle */}
       <div style={{ width: 20, flexShrink: 0 }} />
 
       {/* Grid – gleiche Spalten wie FristInlineRow */}
       <div
-        className="flex-1 min-w-0"
         style={{
           display: "grid",
           gridTemplateColumns: toGridCols(widths),
