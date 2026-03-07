@@ -91,14 +91,14 @@ function KantonMultiSelect({ value, onChange, disabled, inStyle, s }) {
     : `${selected[0]} +${selected.length - 1}`;
 
   return (
-    <div style={{ flexShrink: 0 }}>
+    <div style={{ width: "100%" }}>
       <button
         ref={btnRef}
         type="button"
         onClick={handleToggle}
         disabled={disabled}
-        className="rounded border px-1.5 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 flex items-center gap-1"
-        style={{ ...inStyle, minWidth: "72px", maxWidth: "100px" }}
+        className="rounded border px-1.5 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 flex items-center gap-1 w-full"
+        style={{ ...inStyle }}
         title={selected.length > 0 ? selected.join(", ") : "Kanton(e) wählen"}
       >
         <span className="truncate flex-1 text-left">{label}</span>
@@ -213,19 +213,24 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
           {isDone && <Check className="h-3 w-3" />}
         </button>
 
-        {/* ── Datenfelder ── */}
-        <div className="flex items-center gap-2 flex-1 min-w-0">
-
-          {/* Kundenname – zuerst */}
-          {customerName && (
-            <span
-              className="flex-shrink-0 text-xs font-semibold truncate"
-              style={{ color: s.textMain, minWidth: "120px", maxWidth: "180px" }}
-              title={customerName}
-            >
-              {customerName}
-            </span>
-          )}
+        {/* ── Datenfelder – CSS-Grid für bündige Spalten ── */}
+        <div
+          className="flex-1 min-w-0"
+          style={{
+            display: "grid",
+            gridTemplateColumns: "150px 90px 82px 128px 1fr 68px",
+            alignItems: "center",
+            gap: "6px",
+          }}
+        >
+          {/* Kundenname – immer erste Spalte (leer wenn nicht gesetzt) */}
+          <span
+            className="text-xs font-semibold truncate"
+            style={{ color: s.textMain }}
+            title={customerName || ""}
+          >
+            {customerName || ""}
+          </span>
 
           {/* Kanton(e) – Multi-Select */}
           <KantonMultiSelect
@@ -237,13 +242,13 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
           />
 
           {/* Steuerperiode (Jahr) */}
-          <div className="flex items-center gap-1 flex-shrink-0" title="Steuerperiode">
-            <span className="text-xs font-semibold" style={{ color: s.textMuted }}>SP</span>
+          <div className="flex items-center gap-1" title="Steuerperiode">
+            <span className="text-xs font-semibold flex-shrink-0" style={{ color: s.textMuted }}>SP</span>
             <select
               value={String(jahr)}
               onChange={e => { const y = parseInt(e.target.value); setJahr(y); save({ jahr: y }); }}
               className={selectCls}
-              style={{ ...inStyle, width: "60px" }}
+              style={{ ...inStyle, flex: 1, minWidth: 0 }}
               disabled={isDone}
             >
               {YEARS.map(y => <option key={y} value={String(y)}>{y}</option>)}
@@ -257,7 +262,7 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
             onChange={e => setDueDate(e.target.value)}
             onBlur={e => save({ due_date: e.target.value || null })}
             className={inputCls}
-            style={{ ...inStyle, width: "130px", flexShrink: 0 }}
+            style={{ ...inStyle, width: "100%" }}
             disabled={isDone}
             title="Frist bis (optional)"
           />
@@ -267,7 +272,7 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
             value={category}
             onChange={e => { setCategory(e.target.value); save({ category: e.target.value }); }}
             className={selectCls}
-            style={{ ...inStyle, flex: 1, minWidth: "110px" }}
+            style={{ ...inStyle, width: "100%" }}
             disabled={isDone}
             title="Art der Frist"
           >
@@ -276,7 +281,7 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
 
           {/* Hauptsteuerdomizil */}
           <label
-            className="flex-shrink-0 flex items-center gap-1 cursor-pointer select-none"
+            className="flex items-center gap-1 cursor-pointer select-none"
             title="Hauptsteuerdomizil"
             style={{ color: hauptdomizil ? s.accentBg : s.textMuted }}
           >
