@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   CalendarClock, Plus, Check, Pencil, Trash2, Search, X,
   RefreshCw, ChevronDown, ChevronRight, AlertTriangle,
-  Calendar, Clock, CheckCircle2, Filter, Users, Wand2, PlayCircle,
+  Calendar, Clock, CheckCircle2, Filter, Users, PlayCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -15,7 +15,6 @@ import {
   DropdownMenuTrigger, DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import AddFristDialog from "@/components/fristen/AddFristDialog";
-import GenerateFristenDialog from "@/components/fristen/GenerateFristenDialog";
 import FristenlaufDialog from "@/components/fristen/FristenlaufDialog";
 import { FristInlineRow } from "@/components/fristen/FristInlineRow";
 import { format, differenceInDays, isToday, isTomorrow, isPast, isThisWeek, addDays, parseISO } from "date-fns";
@@ -132,7 +131,6 @@ export default function Fristen() {
   const [filterJahr,      setFilterJahr]      = useState("alle");
   const [showAdd,          setShowAdd]          = useState(false);
   const [editFrist,        setEditFrist]        = useState(null);
-  const [showGenerate,     setShowGenerate]     = useState(false);
   const [showFristenlauf,  setShowFristenlauf]  = useState(false);
   const [showFristenlaufLoeschen, setShowFristenlaufLoeschen] = useState(false);
 
@@ -403,19 +401,6 @@ export default function Fristen() {
               Löschen
             </Button>
 
-            {/* Generate */}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowGenerate(true)}
-              className="h-8 gap-1.5 text-xs"
-              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: isArtis ? "#4a5e4a" : "#7c3aed" }}
-              title="Fristen automatisch generieren"
-            >
-              <Wand2 className="h-3.5 w-3.5" />
-              Generieren
-            </Button>
-
             {/* New */}
             <Button
               onClick={() => { setEditFrist(null); setShowAdd(true); }}
@@ -507,17 +492,6 @@ export default function Fristen() {
         onSave={handleSave}
         initial={editFrist}
       />
-      <GenerateFristenDialog
-        open={showGenerate}
-        onClose={() => setShowGenerate(false)}
-        customers={customers}
-        existingFristen={fristen}
-        onGenerated={() => {
-          queryClient.invalidateQueries({ queryKey: ["fristen"] });
-          setShowGenerate(false);
-        }}
-      />
-
       <FristenlaufDialog
         open={showFristenlauf}
         onClose={() => setShowFristenlauf(false)}
