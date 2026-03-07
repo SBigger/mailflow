@@ -302,12 +302,16 @@ export default function Fristen() {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" className="h-8 gap-1 text-xs"
-                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textMain }}>
+                  style={{
+                    backgroundColor: filterCategory !== "alle" ? (isArtis ? "#e6ede6" : "rgba(99,102,241,0.15)") : inputBg,
+                    borderColor:     filterCategory !== "alle" ? (isArtis ? "#7a9b7f" : "#7c3aed") : inputBorder,
+                    color:           filterCategory !== "alle" ? (isArtis ? "#4a5e4a" : "#7c3aed") : textMain,
+                  }}>
                   <Filter className="h-3.5 w-3.5" />
                   {filterCategory === "alle" ? "Kategorie" : filterCategory}
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent style={{ backgroundColor: isLight ? "#fff" : "#18181b", borderColor }}>
+              <DropdownMenuContent style={{ backgroundColor: isArtis ? "#f8faf8" : isLight ? "#fff" : "#18181b", borderColor }}>
                 <DropdownMenuItem onClick={() => setFilterCategory("alle")} style={{ color: textMain }}>
                   Alle Kategorien
                 </DropdownMenuItem>
@@ -329,7 +333,7 @@ export default function Fristen() {
                   {filterJahr === "alle" ? "Jahr" : filterJahr}
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent style={{ backgroundColor: isLight ? "#fff" : isArtis ? "#f8faf8" : "#18181b", borderColor }}>
+              <DropdownMenuContent style={{ backgroundColor: isArtis ? "#f8faf8" : isLight ? "#fff" : "#18181b", borderColor }}>
                 <DropdownMenuItem onClick={() => setFilterJahr("alle")} style={{ color: textMain }}>
                   Alle Jahre
                 </DropdownMenuItem>
@@ -357,7 +361,7 @@ export default function Fristen() {
                    :                                      "Jurist. Personen"}
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent style={{ backgroundColor: isLight ? "#fff" : "#18181b", borderColor }}>
+              <DropdownMenuContent style={{ backgroundColor: isArtis ? "#f8faf8" : isLight ? "#fff" : "#18181b", borderColor }}>
                 <DropdownMenuItem onClick={() => setFilterKundenTyp("alle")}          style={{ color: textMain }}>Alle Kunden</DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => setFilterKundenTyp("privatperson")}  style={{ color: textMain }}>👤 Natürliche Personen</DropdownMenuItem>
@@ -378,7 +382,7 @@ export default function Fristen() {
                   {filterKanton === "alle" ? "Kanton" : filterKanton}
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent style={{ backgroundColor: isLight ? "#fff" : "#18181b", borderColor, maxHeight: 260, overflowY: "auto" }}>
+              <DropdownMenuContent style={{ backgroundColor: isArtis ? "#f8faf8" : isLight ? "#fff" : "#18181b", borderColor, maxHeight: 260, overflowY: "auto" }}>
                 <DropdownMenuItem onClick={() => setFilterKanton("alle")} style={{ color: textMain }}>
                   Alle Kantone
                 </DropdownMenuItem>
@@ -406,7 +410,7 @@ export default function Fristen() {
                    :                                     "Ausstehend"}
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent style={{ backgroundColor: isLight ? "#fff" : "#18181b", borderColor }}>
+              <DropdownMenuContent style={{ backgroundColor: isArtis ? "#f8faf8" : isLight ? "#fff" : "#18181b", borderColor }}>
                 <DropdownMenuItem onClick={() => setFilterUnterlagen("alle")} style={{ color: textMain }}>
                   Alle
                 </DropdownMenuItem>
