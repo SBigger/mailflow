@@ -166,6 +166,7 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
   const [kanton,          setKanton]          = useState(frist.kanton             || "");
   const [jahr,            setJahr]            = useState(frist.jahr               || currentYear);
   const [dueDate,         setDueDate]         = useState(frist.due_date           || "");
+  const [unterlagenDatum, setUnterlagenDatum] = useState(frist.unterlagen_datum   || "");
   const [category,        setCategory]        = useState(frist.category           || "Steuererklärung");
   const [hauptdomizil,    setHauptdomizil]    = useState(frist.ist_hauptsteuerdomizil !== false);
   const [portalLogin,     setPortalLogin]     = useState(frist.portal_login       || "");
@@ -176,6 +177,7 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
     setKanton(frist.kanton             || "");
     setJahr(frist.jahr                 || currentYear);
     setDueDate(frist.due_date          || "");
+    setUnterlagenDatum(frist.unterlagen_datum || "");
     setCategory(frist.category         || "Steuererklärung");
     setHauptdomizil(frist.ist_hauptsteuerdomizil !== false);
     setPortalLogin(frist.portal_login  || "");
@@ -218,9 +220,9 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
           className="flex-1 min-w-0"
           style={{
             display: "grid",
-            gridTemplateColumns: "150px 90px 82px 128px 1fr 68px",
+            gridTemplateColumns: "165px 92px 84px 130px 132px 1fr 74px",
             alignItems: "center",
-            gap: "6px",
+            gap: "10px",
           }}
         >
           {/* Kundenname – immer erste Spalte (leer wenn nicht gesetzt) */}
@@ -255,7 +257,7 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
             </select>
           </div>
 
-          {/* Frist bis (optional) */}
+          {/* Frist bis */}
           <input
             type="date"
             value={dueDate}
@@ -264,7 +266,19 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
             className={inputCls}
             style={{ ...inStyle, width: "100%" }}
             disabled={isDone}
-            title="Frist bis (optional)"
+            title="Frist bis"
+          />
+
+          {/* Unterlagen erhalten */}
+          <input
+            type="date"
+            value={unterlagenDatum}
+            onChange={e => setUnterlagenDatum(e.target.value)}
+            onBlur={e => save({ unterlagen_datum: e.target.value || null })}
+            className={inputCls}
+            style={{ ...inStyle, width: "100%" }}
+            disabled={isDone}
+            title="Unterlagen erhalten"
           />
 
           {/* Art / Kategorie */}
@@ -534,6 +548,59 @@ export function NewFristRow({ onSave, onCancel, customerId }) {
           {showPw ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
         </button>
       </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// FristenColumnHeader – Spaltentitel passend zum Grid
+// ─────────────────────────────────────────────────────────────
+export function FristenColumnHeader() {
+  const { theme } = useContext(ThemeContext);
+  const isArtis = theme === "artis";
+  const isLight = theme === "light";
+  const s = useRowStyles(isArtis, isLight);
+
+  const cols = [
+    "Kunde",
+    "Kanton",
+    "SP Jahr",
+    "Frist bis",
+    "Unterlagen erhalten",
+    "Kategorie",
+    "H-Dom",
+  ];
+
+  return (
+    <div
+      className="flex items-center gap-2 px-3 pt-2 pb-1.5 mb-1"
+      style={{ borderBottom: `1px solid ${s.divider}` }}
+    >
+      {/* Spacer: Done-Toggle (w-5 = 20px) */}
+      <div style={{ width: 20, flexShrink: 0 }} />
+
+      {/* Gleiche Grid-Spalten wie FristInlineRow */}
+      <div
+        className="flex-1 min-w-0"
+        style={{
+          display: "grid",
+          gridTemplateColumns: "165px 92px 84px 130px 132px 1fr 74px",
+          gap: "10px",
+        }}
+      >
+        {cols.map(col => (
+          <span
+            key={col}
+            className="text-xs font-semibold uppercase tracking-wide"
+            style={{ color: s.textMuted }}
+          >
+            {col}
+          </span>
+        ))}
+      </div>
+
+      {/* Spacer: Aktions-Bereich (Expand + Delete Buttons ≈ 60px) */}
+      <div style={{ width: 60, flexShrink: 0 }} />
     </div>
   );
 }

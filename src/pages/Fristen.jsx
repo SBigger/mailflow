@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import AddFristDialog from "@/components/fristen/AddFristDialog";
 import FristenlaufDialog from "@/components/fristen/FristenlaufDialog";
-import { FristInlineRow } from "@/components/fristen/FristInlineRow";
+import { FristInlineRow, FristenColumnHeader } from "@/components/fristen/FristInlineRow";
 import { isToday, isPast, parseISO } from "date-fns";
 
 // ──────────────────────────────────────────────────────────────
@@ -71,20 +71,23 @@ function FristenGroup({ label, color, items, customers, onToggle, onUpdate, onDe
         <span className="ml-1 text-xs font-normal opacity-70">({items.length})</span>
       </button>
       {open && (
-        <div className="space-y-1.5 pl-1">
-          {items.map(f => {
-            const customer = customers.find(c => c.id === f.customer_id);
-            return (
-              <FristInlineRow
-                key={f.id}
-                frist={f}
-                onToggle={onToggle}
-                onUpdate={onUpdate}
-                onDelete={onDelete}
-                customerName={customer?.company_name}
-              />
-            );
-          })}
+        <div className="pl-1">
+          <FristenColumnHeader />
+          <div className="space-y-1.5">
+            {items.map(f => {
+              const customer = customers.find(c => c.id === f.customer_id);
+              return (
+                <FristInlineRow
+                  key={f.id}
+                  frist={f}
+                  onToggle={onToggle}
+                  onUpdate={onUpdate}
+                  onDelete={onDelete}
+                  customerName={customer?.company_name}
+                />
+              );
+            })}
+          </div>
         </div>
       )}
     </div>
@@ -413,7 +416,7 @@ export default function Fristen() {
           </div>
         ) : activeTab === "erledigt" ? (
           /* Erledigt – nach Personentyp gruppiert */
-          <div className="max-w-3xl">
+          <div className="max-w-5xl">
             {Object.values(groups).map(group => (
               <FristenGroup key={group.label} {...group} customers={customers}
                 onToggle={handleToggle} onUpdate={handleUpdate} onDelete={handleDelete}
@@ -422,7 +425,7 @@ export default function Fristen() {
           </div>
         ) : (
           /* Offen / Fällig / Alle – nach Personentyp gruppiert */
-          <div className="max-w-3xl">
+          <div className="max-w-5xl">
             {Object.values(groups).every(g => g.items.length === 0) ? (
               <div className="flex flex-col items-center justify-center h-48 gap-3" style={{ color: textMuted }}>
                 <CheckCircle2 className="h-12 w-12 opacity-30" />
