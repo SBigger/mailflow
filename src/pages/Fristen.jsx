@@ -1,14 +1,13 @@
 import React, { useState, useContext, useMemo } from "react";
-import { entities, supabase } from "@/api/supabaseClient";
+import { entities } from "@/api/supabaseClient";
 import { ThemeContext } from "@/Layout";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  CalendarClock, Plus, Check, Pencil, Trash2, Search, X,
+  CalendarClock, Plus, Trash2, Search, X,
   RefreshCw, ChevronDown, ChevronRight, AlertTriangle,
   Calendar, Clock, CheckCircle2, Filter, Users, PlayCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
@@ -17,8 +16,7 @@ import {
 import AddFristDialog from "@/components/fristen/AddFristDialog";
 import FristenlaufDialog from "@/components/fristen/FristenlaufDialog";
 import { FristInlineRow } from "@/components/fristen/FristInlineRow";
-import { format, differenceInDays, isToday, isTomorrow, isPast, isThisWeek, addDays, parseISO } from "date-fns";
-import { de } from "date-fns/locale";
+import { differenceInDays, isToday, isPast, parseISO } from "date-fns";
 
 // ──────────────────────────────────────────────────────────────
 // Helpers
@@ -30,28 +28,6 @@ const TABS = [
   { key: "erledigt",label: "Erledigt",icon: CheckCircle2 },
 ];
 
-const CATEGORY_COLORS = {
-  "MWST":              { bg: "#fef3c7", text: "#92400e", border: "#fcd34d" },
-  "Steuererklärung":   { bg: "#ede9fe", text: "#5b21b6", border: "#c4b5fd" },
-  "Lohnabrechnung":    { bg: "#d1fae5", text: "#065f46", border: "#6ee7b7" },
-  "AHV / IV / ALV":   { bg: "#dbeafe", text: "#1e40af", border: "#93c5fd" },
-  "Jahresabschluss":   { bg: "#fce7f3", text: "#9d174d", border: "#f9a8d4" },
-  "Pensionskasse":     { bg: "#e0e7ff", text: "#3730a3", border: "#a5b4fc" },
-  "Unfallversicherung":{ bg: "#ffedd5", text: "#9a3412", border: "#fdba74" },
-  "Behörden":          { bg: "#f0fdf4", text: "#14532d", border: "#86efac" },
-  "Verschiedenes":     { bg: "#f4f4f5", text: "#52525b", border: "#d4d4d8" },
-};
-
-function getDaysLabel(dueDateStr) {
-  const due = parseISO(dueDateStr);
-  const diff = differenceInDays(due, new Date());
-  if (isToday(due))    return { label: "Heute",     color: "#f97316" };
-  if (isTomorrow(due)) return { label: "Morgen",    color: "#eab308" };
-  if (diff < 0)        return { label: `${Math.abs(diff)} Tage überfällig`, color: "#ef4444" };
-  if (diff <= 7)       return { label: `in ${diff} Tagen`, color: "#eab308" };
-  if (diff <= 30)      return { label: `in ${diff} Tagen`, color: "#6366f1" };
-  return               { label: `in ${diff} Tagen`, color: "#71717a" };
-}
 
 function groupFristen(list) {
   const now = new Date();
