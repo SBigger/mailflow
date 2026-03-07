@@ -41,10 +41,11 @@ function groupFristen(list) {
   };
 
   for (const f of list) {
+    if (!f.due_date) { groups.later.items.push(f); continue; }
     const due = parseISO(f.due_date);
     due.setHours(0, 0, 0, 0);
     const diff = differenceInDays(due, now);
-    if (diff < 0)       groups.overdue.items.push(f);
+    if (diff < 0)        groups.overdue.items.push(f);
     else if (diff === 0) groups.today.items.push(f);
     else if (diff <= 7)  groups.thisWeek.items.push(f);
     else if (diff <= 30) groups.thisMonth.items.push(f);
@@ -174,7 +175,7 @@ export default function Fristen() {
     // Tab filter
     if (activeTab === "offen")    list = list.filter(f => f.status === "offen");
     if (activeTab === "erledigt") list = list.filter(f => f.status === "erledigt");
-    if (activeTab === "faellig")  list = list.filter(f => f.status === "offen" && (isPast(parseISO(f.due_date)) || isToday(parseISO(f.due_date))));
+    if (activeTab === "faellig")  list = list.filter(f => f.status === "offen" && f.due_date && (isPast(parseISO(f.due_date)) || isToday(parseISO(f.due_date))));
 
     // Category filter
     if (filterCategory !== "alle") list = list.filter(f => f.category === filterCategory);
@@ -209,8 +210,8 @@ export default function Fristen() {
   const groups = useMemo(() => groupFristen(filtered.filter(f => f.status === "offen")), [filtered]);
 
   // ── Stats (top bar badges) ────────────────────────────────
-  const overdueCount = fristen.filter(f => f.status === "offen" && isPast(parseISO(f.due_date)) && !isToday(parseISO(f.due_date))).length;
-  const todayCount   = fristen.filter(f => f.status === "offen" && isToday(parseISO(f.due_date))).length;
+  const overdueCount = fristen.filter(f => f.status === "offen" && f.due_date && isPast(parseISO(f.due_date)) && !isToday(parseISO(f.due_date))).length;
+  const todayCount   = fristen.filter(f => f.status === "offen" && f.due_date && isToday(parseISO(f.due_date))).length;
 
   // ── Theme colors ──────────────────────────────────────────
   const pageBg     = isArtis ? "#f2f5f2" : isLight ? "#f0f0f6" : "#1a1a1f";
