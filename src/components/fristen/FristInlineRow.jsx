@@ -278,7 +278,7 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
               disabled={isDone}
               style={{ accentColor: s.accentBg, cursor: "pointer" }}
             />
-            <span className="text-xs font-medium">HKT</span>
+            <span className="text-xs font-medium">H-Dom</span>
           </label>
         </div>
 
@@ -470,7 +470,7 @@ export function NewFristRow({ onSave, onCancel, customerId }) {
               onChange={e => setHauptdomizil(e.target.checked)}
               style={{ accentColor: s.accentBg, cursor: "pointer" }}
             />
-            <span className="text-xs font-medium">HKT</span>
+            <span className="text-xs font-medium">H-Dom</span>
           </label>
         </div>
 

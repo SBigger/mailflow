@@ -134,6 +134,7 @@ export default function Fristen() {
   const [editFrist,        setEditFrist]        = useState(null);
   const [showGenerate,     setShowGenerate]     = useState(false);
   const [showFristenlauf,  setShowFristenlauf]  = useState(false);
+  const [showFristenlaufLoeschen, setShowFristenlaufLoeschen] = useState(false);
 
   // ── Data ──────────────────────────────────────────────────
   const { data: fristen = [], isLoading } = useQuery({
@@ -389,6 +390,19 @@ export default function Fristen() {
               Fristenlauf
             </Button>
 
+            {/* Fristenlauf Löschen */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowFristenlaufLoeschen(true)}
+              className="h-8 gap-1.5 text-xs"
+              style={{ backgroundColor: inputBg, borderColor: "#fca5a5", color: "#dc2626" }}
+              title="Fristen löschen – Fristen für alle Kunden entfernen"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Löschen
+            </Button>
+
             {/* Generate */}
             <Button
               variant="outline"
@@ -507,6 +521,17 @@ export default function Fristen() {
       <FristenlaufDialog
         open={showFristenlauf}
         onClose={() => setShowFristenlauf(false)}
+        customers={customers}
+        existingFristen={fristen}
+        onGenerated={() => {
+          queryClient.invalidateQueries({ queryKey: ["fristen"] });
+        }}
+      />
+
+      <FristenlaufDialog
+        mode="delete"
+        open={showFristenlaufLoeschen}
+        onClose={() => setShowFristenlaufLoeschen(false)}
         customers={customers}
         existingFristen={fristen}
         onGenerated={() => {
