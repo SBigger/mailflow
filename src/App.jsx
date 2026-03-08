@@ -13,6 +13,7 @@ import Kunden from './pages/Kunden';
 import Personen from './pages/Personen';
 import Fristen from './pages/Fristen';
 import ReminderBoard from './pages/ReminderBoard';
+import TicketBoard from './pages/TicketBoard';
 import UserManagement from './pages/UserManagement';
 import Login from './pages/Login';
 import ResetPassword from './pages/ResetPassword';
@@ -49,6 +50,7 @@ function AuthenticatedApp() {
         <Route path="/Personen" element={<Personen />} />
         <Route path="/Fristen" element={<Fristen />} />
         <Route path="/ReminderBoard" element={<ReminderBoard />} />
+        <Route path="/TicketBoard" element={<TicketBoard />} />
         <Route path="/UserManagement" element={<UserManagement />} />
         <Route path="*" element={<Navigate to="/Dashboard" replace />} />
       </Routes>
