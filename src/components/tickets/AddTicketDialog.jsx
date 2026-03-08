@@ -51,7 +51,7 @@ export default function AddTicketDialog({ open, onClose, defaultColumnId }) {
         body: body.trim() || null,
         ticket_type: ticketType,
         column_id: targetColumn,
-        customer_id: customerId || null,
+        customer_id: (customerId && customerId !== "__none__") ? customerId : null,
         is_read: true,
       });
       qc.invalidateQueries({ queryKey: ["tickets"] });
@@ -189,7 +189,7 @@ export default function AddTicketDialog({ open, onClose, defaultColumnId }) {
                   <SelectValue placeholder="Kunden zuordnen" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">— Kein Kunde —</SelectItem>
+                  <SelectItem value="__none__">— Kein Kunde —</SelectItem>
                   {customers.map(c => (
                     <SelectItem key={c.id} value={c.id}>
                       {c.company_name || `${c.vorname || ""} ${c.nachname || ""}`.trim()}
