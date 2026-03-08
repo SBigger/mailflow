@@ -26,6 +26,31 @@ export default function TicketBoard() {
   const [addColumnId, setAddColumnId]       = useState(null);
   const [searchQuery, setSearchQuery]       = useState("");
   const [filterMode, setFilterMode]         = useState("all"); // all | mine | unread
+  const [panelWidth, setPanelWidth]         = useState(520);
+  const isResizing = React.useRef(false);
+  const startX     = React.useRef(0);
+  const startWidth = React.useRef(520);
+
+  // Drag-to-resize Handler
+  const handleResizeStart = (e) => {
+    isResizing.current = true;
+    startX.current     = e.clientX;
+    startWidth.current = panelWidth;
+    document.addEventListener("mousemove", handleResizeMove);
+    document.addEventListener("mouseup",   handleResizeEnd);
+    e.preventDefault();
+  };
+  const handleResizeMove = React.useCallback((e) => {
+    if (!isResizing.current) return;
+    const delta   = startX.current - e.clientX; // nach links = breiter
+    const newWidth = Math.min(900, Math.max(320, startWidth.current + delta));
+    setPanelWidth(newWidth);
+  }, []);
+  const handleResizeEnd = React.useCallback(() => {
+    isResizing.current = false;
+    document.removeEventListener("mousemove", handleResizeMove);
+    document.removeEventListener("mouseup",   handleResizeEnd);
+  }, [handleResizeMove]);
 
   // Theme Colors
   const pageBg    = isArtis ? "#f2f5f2" : isLight ? "#f4f4f8" : "#18181b";
@@ -224,19 +249,37 @@ export default function TicketBoard() {
       {/* ── Detail Panel (rechts) ── */}
       {selectedTicket && (
         <div
-          className="flex-shrink-0 border-l overflow-hidden flex flex-col"
+          className="flex-shrink-0 overflow-hidden flex flex-row"
           style={{
-            width: "520px",
+            width: `${panelWidth}px`,
             borderColor: border,
             backgroundColor: isArtis ? "#f8faf8" : isLight ? "#f8f8fc" : "#18181b",
           }}
         >
-          <TicketDetailPanel
-            ticket={selectedTicket}
-            onClose={() => setSelectedTicket(null)}
-            currentUser={currentUser}
-            users={users}
+          {/* Drag Handle */}
+          <div
+            onMouseDown={handleResizeStart}
+            style={{
+              width: "5px",
+              flexShrink: 0,
+              cursor: "col-resize",
+              backgroundColor: "transparent",
+              borderLeft: `1px solid ${border}`,
+              transition: "background-color 0.15s",
+            }}
+            onMouseEnter={e => e.currentTarget.style.backgroundColor = border}
+            onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}
+            title="Panel-Breite anpassen"
           />
+          {/* Panel Inhalt */}
+          <div className="flex-1 overflow-hidden flex flex-col">
+            <TicketDetailPanel
+              ticket={selectedTicket}
+              onClose={() => setSelectedTicket(null)}
+              currentUser={currentUser}
+              users={users}
+            />
+          </div>
         </div>
       )}
 
