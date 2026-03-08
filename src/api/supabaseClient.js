@@ -101,6 +101,7 @@ export const entities = {
   Ticket:           makeEntity('support_tickets'),
   TicketMessage:    makeEntity('ticket_messages'),
   TicketColumn:     makeEntity('ticket_columns'),
+  KnowledgeBase:    makeEntity('knowledge_base'),
 };
 
 // Auth helpers

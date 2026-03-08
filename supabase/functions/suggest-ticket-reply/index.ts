@@ -65,6 +65,22 @@ serve(async (req) => {
       .eq("ticket_id", ticket_id)
       .order("created_at", { ascending: true });
 
+    // Wissensdatenbank laden (aktive Einträge)
+    const { data: knowledgeEntries = [] } = await supabaseClient
+      .from("knowledge_base")
+      .select("title, content, category")
+      .eq("is_active", true)
+      .order("category", { ascending: true });
+
+    // KB-Kontext für System-Prompt aufbauen
+    let kbContext = "";
+    if (knowledgeEntries.length > 0) {
+      kbContext = "\n\n## Interne Wissensdatenbank\nNutze folgende Informationen wenn relevant:\n\n";
+      for (const kb of knowledgeEntries) {
+        kbContext += `### ${kb.category}: ${kb.title}\n${kb.content}\n\n`;
+      }
+    }
+
     // Konversations-History für Claude aufbauen
     const conversationHistory: Array<{ role: string; content: string }> = [];
 
@@ -119,7 +135,7 @@ serve(async (req) => {
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-3-5-haiku-20241022",
+        model: "claude-haiku-4-5-20251001",
         max_tokens: 1024,
         system: `Du bist ein hilfreicher Assistent von Artis Treuhand GmbH, einer Schweizer Treuhand- und Steuerberatungsfirma.
 Du hilfst Mitarbeitern dabei, professionelle, freundliche und präzise Antworten auf Kundenanfragen zu formulieren.
@@ -131,7 +147,8 @@ Wichtige Richtlinien:
 - Beginne NICHT mit "Sehr geehrte/r" – das ergänzt der Mitarbeiter selbst
 - Schliesse NICHT mit Unterschrift – das ergänzt der Mitarbeiter selbst
 - Beziehe dich direkt auf die Anfrage des Kunden
-- Bei Unterlageneingängen: bestätige den Eingang kurz und freundlich`,
+- Bei Unterlageneingängen: bestätige den Eingang kurz und freundlich
+- Nutze die interne Wissensdatenbank wenn vorhanden${kbContext}`,
         messages: conversationHistory,
       }),
     });
