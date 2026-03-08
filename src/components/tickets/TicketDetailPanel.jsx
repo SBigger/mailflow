@@ -293,8 +293,8 @@ export default function TicketDetailPanel({ ticket, onClose, currentUser, users 
             backgroundColor: inputBg,
             borderColor: border,
             color: textMain,
-            minHeight: "80px",
-            maxHeight: "160px",
+            minHeight: "120px",
+            maxHeight: "240px",
           }}
           placeholder="Antwort schreiben…"
           value={replyText}

@@ -226,7 +226,7 @@ export default function TicketBoard() {
         <div
           className="flex-shrink-0 border-l overflow-hidden flex flex-col"
           style={{
-            width: "420px",
+            width: "520px",
             borderColor: border,
             backgroundColor: isArtis ? "#f8faf8" : isLight ? "#f8f8fc" : "#18181b",
           }}
