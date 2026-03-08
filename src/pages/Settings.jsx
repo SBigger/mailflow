@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Mail, MessageSquare, Link2, Tag as TagIcon, FolderOpen, Plus, Trash2, Save, Users, Send, Calendar, Menu, ChevronDown, LayoutDashboard, CheckSquare, RefreshCw, ClipboardList, GripVertical, UserMinus, Pencil, Check, X, Sun, Moon, KeyRound, HardDrive, Download, Database } from "lucide-react";
+import { Mail, MessageSquare, Link2, Tag as TagIcon, FolderOpen, Plus, Trash2, Save, Users, Send, Calendar, Menu, ChevronDown, LayoutDashboard, CheckSquare, RefreshCw, ClipboardList, GripVertical, UserMinus, Pencil, Check, X, Sun, Moon, KeyRound, HardDrive, Download, Database, Inbox } from "lucide-react";
 import { ThemeContext } from "@/Layout";
 import DeleteUserDialog from "@/components/settings/DeleteUserDialog";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
@@ -58,6 +58,8 @@ export default function Settings() {
   });
   const [assigningTagToAll, setAssigningTagToAll] = useState({});
   const [backupLoading, setBackupLoading] = useState(false);
+  const [supportSyncing, setSupportSyncing] = useState(false);
+  const [supportSyncStatus, setSupportSyncStatus] = useState('');
 
   const { data: user } = useQuery({
     queryKey: ['currentUser'],
@@ -122,6 +124,16 @@ export default function Settings() {
   const { data: staffList = [], refetch: refetchStaff } = useQuery({
     queryKey: ['staff'],
     queryFn: () => entities.Staff.list("order"),
+  });
+
+  const { data: supportSettings = [] } = useQuery({
+    queryKey: ['systemSettings'],
+    queryFn: async () => {
+      const { data } = await supabase.from('system_settings').select('*');
+      return data || [];
+    },
+    enabled: user?.role === 'admin',
+    refetchInterval: 30000,
   });
 
   const createStaffMutation = useMutation({
@@ -448,7 +460,7 @@ export default function Settings() {
       ];
 
       const backup = {
-        version: '1.0',
+        version: '1.1',
         created_at: new Date().toISOString(),
         created_by: user?.email,
         description: 'Artis MailFlow – vollständige Datensicherung (ohne Mail-Inhalte)',
@@ -476,6 +488,30 @@ export default function Settings() {
       backup.kanban_snapshot = kanbanSnapshot || [];
       backup.kanban_snapshot_info = 'Enthält Outlook-ID → Kanban-Spalte Zuweisungen für Restore nach Mail-Reset';
 
+      // ── Ticketing-Backup ───────────────────────────
+      // Ticket-Spalten
+      const { data: ticketColumns } = await supabase.from('ticket_columns').select('*').order('order');
+      backup.tables.ticket_columns = ticketColumns || [];
+
+      // Support-Tickets (ohne Mail-Rohdaten, nur Metadaten + Verlinkungen)
+      const { data: tickets } = await supabase
+        .from('support_tickets')
+        .select('id, column_id, title, from_email, from_name, ticket_type, assigned_to, customer_id, is_read, outlook_message_id, created_by, created_at, updated_at');
+      backup.tables.support_tickets = tickets || [];
+
+      // Ticket-Nachrichten (vollständig für Verlaufswiederherstellung)
+      const { data: ticketMessages } = await supabase
+        .from('ticket_messages')
+        .select('id, ticket_id, body, sender_type, sender_id, is_ai_suggestion, created_at');
+      backup.tables.ticket_messages = ticketMessages || [];
+
+      // Knowledge Base
+      const { data: knowledgeBase } = await supabase.from('knowledge_base').select('*');
+      if (knowledgeBase) backup.tables.knowledge_base = knowledgeBase;
+
+      backup.ticketing_info = `${(tickets || []).length} Tickets, ${(ticketMessages || []).length} Nachrichten gesichert`;
+      // ──────────────────────────────────────────────
+
       const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -487,11 +523,47 @@ export default function Settings() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
-      toast.success('Backup erfolgreich erstellt und heruntergeladen');
+      toast.success(`Backup erstellt: ${(tickets || []).length} Tickets, ${(ticketMessages || []).length} Nachrichten gesichert`);
     } catch (e) {
       toast.error('Backup-Fehler: ' + e.message);
     } finally {
       setBackupLoading(false);
+    }
+  };
+  // ──────────────────────────────────────────────────
+
+  // ── Support-Mailbox Sync ───────────────────────────
+  const handleSupportSync = async (reset = false) => {
+    setSupportSyncing(true);
+    setSupportSyncStatus(reset ? 'Delta-Link wird zurückgesetzt...' : 'Synchronisiere support@artis-gmbh.ch...');
+    try {
+      if (reset) {
+        await functions.invoke('sync-support-mailbox', { reset: true });
+        toast.success('Delta-Link zurückgesetzt. Nächster Sync lädt 90 Tage neu.');
+        setSupportSyncStatus('');
+        queryClient.invalidateQueries({ queryKey: ['systemSettings'] });
+        return;
+      }
+      let totalCreated = 0;
+      let hasMore = true;
+      let batch = 0;
+      while (hasMore && batch < 20) {
+        batch++;
+        const { data } = await functions.invoke('sync-support-mailbox', {});
+        totalCreated += data?.created || 0;
+        hasMore = data?.hasMore === true;
+        if (hasMore) setSupportSyncStatus(`${totalCreated} neue Tickets (Batch ${batch})...`);
+        if (hasMore) await new Promise(r => setTimeout(r, 300));
+      }
+      toast.success(`Fertig! ${totalCreated} neue Ticket(s) aus support@artis-gmbh.ch`);
+      setSupportSyncStatus('');
+      queryClient.invalidateQueries({ queryKey: ['tickets'] });
+      queryClient.invalidateQueries({ queryKey: ['systemSettings'] });
+    } catch (e) {
+      toast.error('Fehler: ' + e.message);
+      setSupportSyncStatus('');
+    } finally {
+      setSupportSyncing(false);
     }
   };
   // ──────────────────────────────────────────────────
@@ -589,6 +661,12 @@ export default function Settings() {
                 className={`w-full justify-start flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'backup' ? navActiveStyle : navInactiveStyle}`}
               >
                 <HardDrive className="h-4 w-4" /> Backup
+              </button>
+              <button
+                onClick={() => setActiveTab('support-mailbox')}
+                className={`w-full justify-start flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'support-mailbox' ? navActiveStyle : navInactiveStyle}`}
+              >
+                <Inbox className="h-4 w-4" /> Support-Postfach
               </button>
             </>
           )}
@@ -1580,6 +1658,8 @@ export default function Settings() {
                   { icon: '📁', label: 'Projekte & Mitarbeiter', desc: 'projects, staff' },
                   { icon: '👤', label: 'Benutzerprofile', desc: 'profiles (ohne OAuth-Token)' },
                   { icon: '📌', label: 'Kanban-Snapshot (outlook_id → Spalte)', desc: 'Ermöglicht Restore nach Mail-Reset' },
+                  { icon: '🎫', label: 'Support-Tickets & Nachrichten', desc: 'support_tickets, ticket_messages, ticket_columns' },
+                  { icon: '📚', label: 'Wissensdatenbank', desc: 'knowledge_base' },
                 ].map(item => (
                   <div key={item.label} className="flex items-center gap-3">
                     <span className="text-base flex-shrink-0">{item.icon}</span>
@@ -1649,6 +1729,110 @@ export default function Settings() {
                   Empfehlung: Vor einem Mail-Reset immer ein Backup erstellen.
                 </p>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Support-Postfach Tab */}
+        {activeTab === 'support-mailbox' && (
+          <div className="space-y-6">
+            <div className="rounded-xl p-6 border" style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
+              <h3 className="text-lg font-semibold mb-2 flex items-center gap-2" style={{ color: headingColor }}>
+                <Inbox className="h-5 w-5" /> Support-Postfach Sync
+              </h3>
+              <p className="text-sm mb-5" style={{ color: textMuted }}>
+                Synchronisiert eingehende E-Mails von{' '}
+                <strong style={{ color: headingColor }}>support@artis-gmbh.ch</strong>{' '}
+                und erstellt automatisch Tickets im TicketBoard.
+              </p>
+
+              {/* Sync-Status */}
+              <div className="space-y-2 mb-6">
+                {(() => {
+                  const lastSync = supportSettings.find(s => s.key === 'support_mailbox_last_sync');
+                  const hasDelta = supportSettings.find(s => s.key === 'support_mailbox_delta_link')?.value;
+                  return (
+                    <>
+                      {lastSync ? (
+                        <div className="p-3 rounded-lg border flex items-center gap-2" style={{ backgroundColor: rowBg, borderColor: rowBorder }}>
+                          <Check className="h-4 w-4 text-green-500 flex-shrink-0" />
+                          <p className="text-sm" style={{ color: textMuted }}>
+                            Letzter Sync:{' '}
+                            <strong style={{ color: headingColor }}>
+                              {new Date(lastSync.value).toLocaleString('de-CH')}
+                            </strong>
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="p-3 rounded-lg border border-amber-500/30 flex items-center gap-2" style={{ backgroundColor: 'rgba(245,158,11,0.06)' }}>
+                          <span className="text-amber-500 flex-shrink-0">⚠</span>
+                          <p className="text-sm" style={{ color: textMuted }}>Noch kein Sync durchgeführt</p>
+                        </div>
+                      )}
+                      <div className="p-3 rounded-lg border" style={{ backgroundColor: rowBg, borderColor: rowBorder }}>
+                        <p className="text-xs" style={{ color: textMuted }}>
+                          Sync-Modus:{' '}
+                          <strong style={{ color: headingColor }}>
+                            {hasDelta ? 'Delta (inkrementell – nur neue Mails)' : 'Initial (nächster Sync: 90 Tage)'}
+                          </strong>
+                        </p>
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+
+              {/* Aktionen */}
+              <div className="flex gap-2 flex-wrap">
+                <Button
+                  onClick={() => handleSupportSync(false)}
+                  disabled={supportSyncing}
+                  className="bg-indigo-600 hover:bg-indigo-500"
+                >
+                  <RefreshCw className={`h-4 w-4 mr-2 ${supportSyncing ? 'animate-spin' : ''}`} />
+                  {supportSyncing ? 'Synchronisiere...' : 'Jetzt synchronisieren'}
+                </Button>
+                <Button
+                  onClick={() => {
+                    if (confirm('Delta-Link zurücksetzen? Der nächste Sync lädt die letzten 90 Tage neu (keine Duplikate dank outlook_message_id).')) {
+                      handleSupportSync(true);
+                    }
+                  }}
+                  disabled={supportSyncing}
+                  variant="outline"
+                  className="border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
+                >
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Delta zurücksetzen
+                </Button>
+              </div>
+              {supportSyncStatus && (
+                <p className="text-sm mt-3" style={{ color: textMuted }}>{supportSyncStatus}</p>
+              )}
+            </div>
+
+            <div className="rounded-xl p-6 border" style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
+              <h3 className="text-base font-semibold mb-3 flex items-center gap-2" style={{ color: headingColor }}>
+                Funktionsweise
+              </h3>
+              <ul className="space-y-2 text-sm" style={{ color: textMuted }}>
+                <li className="flex items-start gap-2">
+                  <span className="text-green-500 font-bold flex-shrink-0">✓</span>
+                  Neue E-Mails an support@artis-gmbh.ch werden automatisch als Tickets in der Spalte "Neu" angelegt
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-green-500 font-bold flex-shrink-0">✓</span>
+                  Delta-Sync verhindert Duplikate – jede E-Mail wird nur einmal verarbeitet
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-green-500 font-bold flex-shrink-0">✓</span>
+                  Antworten können direkt im TicketBoard via KI-Assistent gesendet werden
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-amber-500 font-bold flex-shrink-0">ℹ</span>
+                  Nutzt dieselbe Microsoft App wie das bestehende Ticket-Reply-System (Client Credentials)
+                </li>
+              </ul>
             </div>
           </div>
         )}
