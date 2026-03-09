@@ -180,6 +180,66 @@ serve(async (req) => {
     }
   }
 
-  console.log('[AUTO-SYNC]', JSON.stringify(results))
-  return new Response(JSON.stringify({ success: true, results }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+
+  // Support-Mailbox separat synchronisieren (client_credentials)
+  let supportResult: any = null
+  try {
+    const SUPPORT_MAILBOX = 'support@artis-gmbh.ch'
+    const DELTA_KEY = 'support_mailbox_delta_link'
+    const tokenResponse = await fetch(
+      `https://login.microsoftonline.com/${Deno.env.get('MICROSOFT_TENANT_ID')}/oauth2/v2.0/token`,
+      { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ grant_type: 'client_credentials', client_id: Deno.env.get('MICROSOFT_CLIENT_ID')!, client_secret: Deno.env.get('MICROSOFT_CLIENT_SECRET')!, scope: 'https://graph.microsoft.com/.default' }) }
+    )
+    const tokenData = await tokenResponse.json()
+    if (!tokenData.access_token) throw new Error('Support Token-Fehler: ' + tokenData.error_description)
+    const { data: settingRow } = await supabase.from('system_settings').select('value').eq('key', DELTA_KEY).maybeSingle()
+    const supportDeltaLink = settingRow?.value || null
+    const isSupportDelta = !!(supportDeltaLink && supportDeltaLink.trim() !== '')
+    let supportSyncUrl: string
+    if (isSupportDelta) {
+      supportSyncUrl = supportDeltaLink!
+    } else {
+      const fromDate = new Date(); fromDate.setDate(fromDate.getDate() - 90)
+      supportSyncUrl = `https://graph.microsoft.com/v1.0/users/${SUPPORT_MAILBOX}/mailFolders/inbox/messages/delta?$select=id,subject,from,receivedDateTime,bodyPreview,body,isRead&$filter=receivedDateTime+ge+${fromDate.toISOString()}&$top=50`
+    }
+    const supportRes = await fetch(supportSyncUrl, { headers: { Authorization: `Bearer ${tokenData.access_token}` } })
+    if (!supportRes.ok) {
+      const errText = await supportRes.text()
+      if (supportRes.status === 410 || errText.includes('syncStateNotFound')) {
+        await supabase.from('system_settings').upsert({ key: DELTA_KEY, value: '', updated_at: new Date().toISOString() }, { onConflict: 'key' })
+        supportResult = { reset: true }
+      } else {
+        throw new Error(`Graph ${supportRes.status}: ${errText.substring(0, 200)}`)
+      }
+    } else {
+      const supportData = await supportRes.json()
+      const supportMsgs: any[] = supportData.value || []
+      const supportNextLink: string | null = supportData['@odata.nextLink'] || null
+      const supportNewDeltaLink: string | null = supportData['@odata.deltaLink'] || null
+      const { data: existingTickets } = await supabase.from('support_tickets').select('outlook_message_id').not('outlook_message_id', 'is', null)
+      const existingIds = new Set((existingTickets || []).map((t: any) => t.outlook_message_id))
+      const { data: firstColumn } = await supabase.from('ticket_columns').select('id').order('order', { ascending: true }).limit(1).maybeSingle()
+      if (!firstColumn) throw new Error('Keine Ticket-Spalten')
+      let supportCreated = 0
+      for (const msg of supportMsgs) {
+        if (msg['@odata.removed'] || existingIds.has(msg.id)) continue
+        const senderEmail = (msg.from?.emailAddress?.address || '').toLowerCase()
+        const senderName = msg.from?.emailAddress?.name || senderEmail || 'Unbekannt'
+        const subject = (msg.subject || '').trim() || '(Kein Betreff)'
+        const rawHtml = msg.body?.content || ''
+        const body = rawHtml ? rawHtml.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\s+/g, ' ').trim() : (msg.bodyPreview || '')
+        const { data: ticket, error: ticketError } = await supabase.from('support_tickets').insert({ column_id: firstColumn.id, title: subject, from_email: senderEmail, from_name: senderName, body, ticket_type: 'regular', is_read: false, outlook_message_id: msg.id }).select('id').single()
+        if (!ticketError && ticket) { supportCreated++; existingIds.add(msg.id) }
+      }
+      const linkToSave = supportNewDeltaLink || supportNextLink
+      if (linkToSave) await supabase.from('system_settings').upsert({ key: DELTA_KEY, value: linkToSave, updated_at: new Date().toISOString() }, { onConflict: 'key' })
+      supportResult = { created: supportCreated, hasMore: !!supportNextLink }
+    }
+  } catch (e: any) {
+    supportResult = { error: e.message }
+  }
+
+  console.log('[AUTO-SYNC]', JSON.stringify(results), 'support:', JSON.stringify(supportResult))
+  return new Response(JSON.stringify({ success: true, results, support: supportResult }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
 })

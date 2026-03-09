@@ -1,4 +1,4 @@
-import React, { useState, useContext, useMemo } from "react";
+import React, { useState, useContext, useMemo, useEffect, useRef } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { DragDropContext, Droppable } from "@hello-pangea/dnd";
 import { entities, supabase } from "@/api/supabaseClient";
@@ -85,6 +85,21 @@ export default function TicketBoard() {
       return user;
     },
   });
+
+  // Auto-Sync Support-Mailbox beim Öffnen (max. alle 5 Min.)
+  const [isSyncing, setIsSyncing] = React.useState(false);
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    const SYNC_KEY = 'ticketBoard_lastAutoSync';
+    const lastSync = parseInt(sessionStorage.getItem(SYNC_KEY) || '0', 10);
+    if (Date.now() - lastSync < 5 * 60 * 1000) return;
+    sessionStorage.setItem(SYNC_KEY, String(Date.now()));
+    setIsSyncing(true);
+    supabase.functions.invoke('sync-support-mailbox', {})
+      .then(() => qc.invalidateQueries({ queryKey: ['tickets'] }))
+      .catch(() => {})
+      .finally(() => setIsSyncing(false));
+  }, [currentUser?.id]);
 
   // Ticket verschieben (Drag & Drop)
   const updateTicket = useMutation({
@@ -209,12 +224,20 @@ export default function TicketBoard() {
 
           {/* Refresh */}
           <button
-            onClick={() => qc.invalidateQueries({ queryKey: ["tickets"] })}
+            onClick={() => {
+              sessionStorage.removeItem('ticketBoard_lastAutoSync');
+              setIsSyncing(true);
+              supabase.functions.invoke('sync-support-mailbox', {})
+                .then(() => qc.invalidateQueries({ queryKey: ['tickets'] }))
+                .catch(() => {})
+                .finally(() => setIsSyncing(false));
+            }}
             className="p-1.5 rounded-lg transition-colors"
-            style={{ color: textMuted }}
-            title="Aktualisieren"
+            style={{ color: isSyncing ? accent : textMuted }}
+            title="Support-Mails synchronisieren"
+            disabled={isSyncing}
           >
-            <RefreshCw className="h-4 w-4" />
+            <RefreshCw className={"h-4 w-4" + (isSyncing ? " animate-spin" : "")} />
           </button>
         </div>
 

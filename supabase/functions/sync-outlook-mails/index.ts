@@ -214,6 +214,55 @@ serve(async (req) => {
   if (newDeltaLink) await supabase.from('profiles').update({ microsoft_delta_link: newDeltaLink }).eq('id', authUser.id)
   else if (nextLink) await supabase.from('profiles').update({ microsoft_delta_link: nextLink }).eq('id', authUser.id)
 
-  console.log(`[SYNC] Fertig: ${inserted} neu, ${updated} aktualisiert, hasMore=${hasMore}`)
-  return new Response(JSON.stringify({ success: true, inserted, updated, hasMore, isDelta, syncedCount: messages.length }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+  // Direkt-Abgleich letzte 24h: fängt Mails ab, die Graph Delta auslässt
+  let catchupInserted = 0
+  if (isDelta && !hasMore) {
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+    const catchupRes = await fetch(
+      `https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$select=id,receivedDateTime,subject,from,hasAttachments,isRead,importance,bodyPreview&$filter=receivedDateTime+ge+${since}&$top=50`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    )
+    if (catchupRes.ok) {
+      const catchupData = await catchupRes.json()
+      const catchupMsgs = catchupData.value || []
+      const catchupInserts: any[] = []
+      for (const msg of catchupMsgs) {
+        if (existingMap.has(msg.id)) continue
+        let senderName = 'Unbekannt', senderEmail = ''
+        if (msg.from?.emailAddress) {
+          senderName = msg.from.emailAddress.name || msg.from.emailAddress.address || 'Unbekannt'
+          senderEmail = (msg.from.emailAddress.address || '').toLowerCase()
+        }
+        const autoTags: string[] = []
+        let matchedCustomerId: string | null = null
+        for (const rule of (domainRules || [])) {
+          const domain = rule.domain.toLowerCase().replace(/^@/, '')
+          if (senderEmail.endsWith('@' + domain)) {
+            autoTags.push(rule.tag)
+            if (rule.customer_id && !matchedCustomerId) matchedCustomerId = rule.customer_id
+          }
+        }
+        let targetColumnId = outlookCol.id
+        if (matchedCustomerId) targetColumnId = await getOrCreateCustomerColumn(matchedCustomerId)
+        catchupInserts.push({
+          outlook_id: msg.id, subject: (msg.subject || '').trim() || '(Kein Betreff)',
+          sender_name: senderName, sender_email: senderEmail,
+          received_date: msg.receivedDateTime || new Date().toISOString(),
+          is_read: msg.isRead || false, has_attachments: msg.hasAttachments || false,
+          body_preview: msg.bodyPreview || '', mailbox: 'personal',
+          priority: msg.importance === 'high' ? 'high' : msg.importance === 'low' ? 'low' : 'normal',
+          tags: autoTags, column_id: targetColumnId, created_by: authUser.id,
+          customer_id: matchedCustomerId || null
+        })
+      }
+      if (catchupInserts.length > 0) {
+        await supabase.from('mail_items').insert(catchupInserts)
+        catchupInserted = catchupInserts.length
+        console.log(`[SYNC] Catchup: ${catchupInserted} fehlende Mails nachgeholt`)
+      }
+    }
+  }
+
+  console.log(`[SYNC] Fertig: ${inserted} neu, ${updated} aktualisiert, hasMore=${hasMore}, catchup=${catchupInserted}`)
+  return new Response(JSON.stringify({ success: true, inserted: inserted + catchupInserted, updated, hasMore, isDelta, syncedCount: messages.length }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
 })
