@@ -167,8 +167,16 @@ serve(async (req) => {
     const senderEmail = (msg.from?.emailAddress?.address || '').toLowerCase()
     const senderName = msg.from?.emailAddress?.name || senderEmail || 'Unbekannt'
     const subject = (msg.subject || '').trim() || '(Kein Betreff)'
-    // Vollständiger Body bevorzugen, sonst Preview
-    const body = msg.body?.content || msg.bodyPreview || ''
+    // HTML body → plain text (HTML-Tags entfernen, &nbsp; etc. auflösen)
+    const rawHtml = msg.body?.content || ''
+    const body = rawHtml
+      ? rawHtml
+          .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+          .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+          .replace(/\s+/g, ' ').trim()
+      : (msg.bodyPreview || '')
 
     // Ticket anlegen
     const { data: ticket, error: ticketError } = await supabase
@@ -190,13 +198,6 @@ serve(async (req) => {
       console.error('[SUPPORT-SYNC] Ticket-Fehler:', ticketError?.message)
       continue
     }
-
-    // Erste Nachricht anlegen (Kundenanfrage)
-    await supabase.from('ticket_messages').insert({
-      ticket_id: ticket.id,
-      body: body,
-      sender_type: 'customer',
-    })
 
     created++
     existingIds.add(msg.id)

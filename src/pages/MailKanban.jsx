@@ -41,7 +41,7 @@ export default function MailKanban() {
   const isLight = theme === 'light';
   const isArtis = theme === 'artis';
 
-   const { data: currentUser } = useQuery({
+   const { data: currentUser, isLoading: userLoading } = useQuery({
      queryKey: ["currentUser"],
      queryFn: () => auth.me(),
    });
@@ -85,7 +85,17 @@ export default function MailKanban() {
   // Mails sind strikt pro User - kein userFilter nötig
   const queryClient = useQueryClient();
 
-
+  // Stiller Auto-Sync beim Seitenöffnen (max. alle 5 Minuten)
+  useEffect(() => {
+    if (!currentUser?.microsoft_access_token) return;
+    const SYNC_KEY = 'mailKanban_lastAutoSync';
+    const lastSync = parseInt(sessionStorage.getItem(SYNC_KEY) || '0', 10);
+    if (Date.now() - lastSync < 5 * 60 * 1000) return;
+    sessionStorage.setItem(SYNC_KEY, String(Date.now()));
+    functions.invoke('sync-outlook-mails', {})
+      .then(() => queryClient.invalidateQueries({ queryKey: ['mailItems'] }))
+      .catch(() => {});
+  }, [currentUser?.id]);
 
   // Helper: Update/Create Mapping for Mail
   const updateMailMapping = async (mail, updates) => {
@@ -420,13 +430,26 @@ export default function MailKanban() {
   const mutedText = isArtis ? '#6b826b' : isLight ? '#7a7a9a' : '#71717a';
   const titleText = isArtis ? '#2d3a2d' : isLight ? '#1a1a2e' : '#f4f4f5';
 
+  // Warte bis Profil geladen ist bevor wir "nicht verbunden" zeigen
+  if (userLoading) {
+    return (
+      <div className="flex items-center justify-center h-screen" style={{ backgroundColor: pageBg }}>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2" style={{ borderColor: mutedText }} />
+      </div>
+    );
+  }
+
   if (!currentUser?.microsoft_access_token) {
     return (
       <div className="flex items-center justify-center h-screen" style={{ backgroundColor: pageBg }}>
         <div className="text-center">
           <Mail className="h-12 w-12 mx-auto mb-4" style={{ color: mutedText }} />
           <h2 className="text-xl font-semibold mb-2" style={{ color: titleText }}>Noch nicht mit Outlook verbunden</h2>
-          <p className="text-sm" style={{ color: mutedText }}>Gehen Sie zu Einstellungen um Ihr Outlook-Konto zu verbinden</p>
+          <p className="text-sm mb-4" style={{ color: mutedText }}>Gehen Sie zu Einstellungen um Ihr Outlook-Konto zu verbinden</p>
+          <a href="/Settings" className="px-4 py-2 rounded-lg text-sm font-medium text-white"
+            style={{ backgroundColor: isArtis ? '#7a9b7f' : '#6366f1' }}>
+            Zu den Einstellungen
+          </a>
         </div>
       </div>
     );

@@ -88,8 +88,10 @@ export default function TicketCard({ ticket, index, onClick, users = [] }) {
                 className="text-xs line-clamp-2 mb-2"
                 style={{ color: textMuted }}
               >
-                {ticket.body.slice(0, 120)}
-                {ticket.body.length > 120 ? "…" : ""}
+                {(() => {
+                  const plain = ticket.body.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+                  return plain.slice(0, 120) + (plain.length > 120 ? '…' : '')
+                })()}
               </div>
             )}
 
