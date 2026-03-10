@@ -2,11 +2,11 @@ import React, { useState, useContext, useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { entities, functions } from "@/api/supabaseClient";
 import { ThemeContext } from "@/Layout";
-import { format } from "date-fns";
+import { format, differenceInDays } from "date-fns";
 import { de } from "date-fns/locale";
 import {
   X, Sparkles, Send, Mail, FileText, MessageSquare,
-  User, ChevronDown, Loader2, Trash2
+  User, ChevronDown, Loader2, Trash2, CheckCircle2
 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
@@ -21,7 +21,27 @@ export default function TicketDetailPanel({ ticket, onClose, currentUser, users 
   const [aiLoading, setAiLoading]     = useState(false);
   const [sending, setSending]         = useState(false);
   const [localTicket, setLocalTicket] = useState(ticket);
+  const [replyHeight, setReplyHeight] = useState(120);
   const messagesEndRef = useRef(null);
+  const isDraggingRef  = useRef(false);
+  const dragStartY     = useRef(0);
+  const dragStartH     = useRef(120);
+
+  // Drag-to-resize Logik
+  useEffect(() => {
+    const onMove = (e) => {
+      if (!isDraggingRef.current) return;
+      const delta = dragStartY.current - e.clientY;
+      setReplyHeight(Math.max(80, Math.min(520, dragStartH.current + delta)));
+    };
+    const onUp = () => { isDraggingRef.current = false; };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    return () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+  }, []);
 
   // Bei Ticket-Wechsel updaten
   useEffect(() => {
@@ -66,6 +86,15 @@ export default function TicketDetailPanel({ ticket, onClose, currentUser, users 
   const accent    = isArtis ? "#7a9b7f" : isLight ? "#6366f1" : "#6366f1";
 
   const isDocOnly = localTicket?.ticket_type === "documents_only";
+
+  // Erledigt-Hinweis: Ticket in "Warten auf Antwort" > 2 Tage ohne Kundenantwort
+  const currentColumn = columns.find(c => c.id === localTicket.column_id);
+  const isWaitingColumn = currentColumn?.name?.toLowerCase().includes("warten");
+  const daysSinceUpdate = localTicket.updated_at
+    ? differenceInDays(new Date(), new Date(localTicket.updated_at))
+    : 0;
+  const showErledigtHint = isWaitingColumn && daysSinceUpdate >= 2;
+  const erledigtCol = columns.find(c => c.name.toLowerCase().includes("erledigt"));
 
   // KI-Antwort generieren
   const handleAiSuggest = async () => {
@@ -113,6 +142,13 @@ export default function TicketDetailPanel({ ticket, onClose, currentUser, users 
         console.warn("E-Mail konnte nicht gesendet werden:", emailErr);
         toast.success("Antwort gespeichert (E-Mail-Versand fehlgeschlagen)");
       }
+      // Nach Senden → Ticket zu "Warten auf Antwort" verschieben
+      const wartenCol = columns.find(c => c.name.toLowerCase().includes("warten"));
+      if (wartenCol && localTicket.column_id !== wartenCol.id) {
+        setLocalTicket(prev => ({ ...prev, column_id: wartenCol.id }));
+        await entities.Ticket.update(ticket.id, { column_id: wartenCol.id });
+        qc.invalidateQueries({ queryKey: ["tickets"] });
+      }
     } catch (e) {
       console.error(e);
       toast.error("Fehler beim Senden: " + e.message);
@@ -145,8 +181,6 @@ export default function TicketDetailPanel({ ticket, onClose, currentUser, users 
   };
 
   if (!ticket) return null;
-
-  const currentColumn = columns.find(c => c.id === localTicket.column_id);
 
   return (
     <div
@@ -233,6 +267,16 @@ export default function TicketDetailPanel({ ticket, onClose, currentUser, users 
             </SelectContent>
           </Select>
 
+          {showErledigtHint && erledigtCol && (
+            <button
+              onClick={() => handleColumnChange(erledigtCol.id)}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors"
+              style={{ backgroundColor: "#dcfce7", color: "#15803d", borderColor: "#86efac" }}
+              title="2+ Tage ohne Kundenantwort – als Erledigt markieren"
+            >
+              <CheckCircle2 className="h-3 w-3" /> Erledigt?
+            </button>
+          )}
           <button
             onClick={handleDelete}
             className="ml-auto p-1.5 rounded-full transition-colors"
@@ -287,17 +331,31 @@ export default function TicketDetailPanel({ ticket, onClose, currentUser, users 
 
       {/* Reply Box */}
       <div
-        className="flex-shrink-0 border-t p-3"
+        className="flex-shrink-0 border-t"
         style={{ borderColor: border, backgroundColor: headerBg }}
       >
+        {/* Drag-Handle: nach oben ziehen zum Vergrössern */}
+        <div
+          className="flex items-center justify-center h-4 cursor-ns-resize select-none"
+          style={{ borderBottom: `1px solid ${border}` }}
+          onMouseDown={(e) => {
+            isDraggingRef.current = true;
+            dragStartY.current = e.clientY;
+            dragStartH.current = replyHeight;
+            e.preventDefault();
+          }}
+          title="Ziehen um Textfeld zu vergrössern"
+        >
+          <div className="w-10 h-1 rounded-full" style={{ backgroundColor: border, opacity: 0.8 }} />
+        </div>
+        <div className="p-3">
         <textarea
           className="w-full rounded-lg border p-2.5 text-sm resize-none outline-none transition-colors"
           style={{
             backgroundColor: inputBg,
             borderColor: border,
             color: textMain,
-            minHeight: "120px",
-            maxHeight: "240px",
+            height: `${replyHeight}px`,
           }}
           placeholder="Antwort schreiben…"
           value={replyText}
@@ -345,9 +403,40 @@ export default function TicketDetailPanel({ ticket, onClose, currentUser, users 
         <div className="text-xs mt-1.5" style={{ color: textMuted }}>
           Ctrl+Enter zum Senden – Kunde erhält E-Mail von support@artis-gmbh.ch
         </div>
+        </div>{/* end p-3 */}
       </div>
     </div>
   );
+}
+
+// Signatur aus E-Mail-Text entfernen
+function stripSignature(text) {
+  if (!text || typeof text !== "string") return text;
+  const lines = text.split("\n");
+  const sigPatterns = [
+    /^--\s*$/,
+    /^[-_]{3,}\s*$/,
+    /^Mit freundlichen Gr[üu][sz]/i,
+    /^Freundliche Gr[üu][sz]/i,
+    /^Viele Gr[üu][sz]/i,
+    /^Herzliche Gr[üu][sz]/i,
+    /^Best regards/i,
+    /^Kind regards/i,
+    /^dipl\.\s*(Treuhand|Steuer)/i,
+    /^Artis Treuhand GmbH/i,
+    /^support@artis-gmbh/i,
+    /^Von:\s+/i,
+    /^From:\s+/i,
+    /^Gesendet:\s+/i,
+    /^Sent:\s+/i,
+  ];
+  for (let i = 1; i < lines.length; i++) {
+    if (sigPatterns.some(p => p.test(lines[i].trim()))) {
+      const trimmed = lines.slice(0, i).join("\n").trim();
+      return trimmed || text;
+    }
+  }
+  return text;
 }
 
 // Chat Bubble Komponente
@@ -398,7 +487,7 @@ function ChatBubble({ text, side, senderLabel, time, theme, isAi = false }) {
             borderColor: isAi ? (isArtis ? "#b8d4bb" : "#c4b5fd") : "transparent",
           }}
         >
-          {text}
+          {stripSignature(text)}
         </div>
       </div>
     </div>

@@ -47,7 +47,7 @@ serve(async (req) => {
       { key: DELTA_KEY, value: '', updated_at: new Date().toISOString() },
       { onConflict: 'key' }
     )
-    console.log('[SUPPORT-SYNC] Delta-Link zurückgesetzt')
+    console.log('[SUPPORT-SYNC] Delta-Link zurueckgesetzt')
     return new Response(JSON.stringify({ success: true, reset: true }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })
@@ -94,15 +94,15 @@ serve(async (req) => {
   const isDelta = !!(deltaLink && deltaLink.trim() !== '')
   if (isDelta) {
     syncUrl = deltaLink!
-    console.log('[SUPPORT-SYNC] Delta-Sync für', SUPPORT_MAILBOX)
+    console.log('[SUPPORT-SYNC] Delta-Sync fuer', SUPPORT_MAILBOX)
   } else {
     const fromDate = new Date()
     fromDate.setDate(fromDate.getDate() - 90)
     syncUrl = `https://graph.microsoft.com/v1.0/users/${SUPPORT_MAILBOX}/mailFolders/inbox/messages/delta` +
-      `?$select=id,subject,from,receivedDateTime,bodyPreview,body,isRead` +
+      `?$select=id,subject,from,receivedDateTime,bodyPreview,body,isRead,conversationId` +
       `&$filter=receivedDateTime+ge+${fromDate.toISOString()}` +
       `&$top=50`
-    console.log('[SUPPORT-SYNC] Initial-Sync (90 Tage) für', SUPPORT_MAILBOX)
+    console.log('[SUPPORT-SYNC] Initial-Sync (90 Tage) fuer', SUPPORT_MAILBOX)
   }
 
   // Graph API aufrufen
@@ -118,7 +118,7 @@ serve(async (req) => {
         { onConflict: 'key' }
       )
       return new Response(
-        JSON.stringify({ error: 'Delta-Token abgelaufen, zurückgesetzt', resetDelta: true }),
+        JSON.stringify({ error: 'Delta-Token abgelaufen, zurueckgesetzt', resetDelta: true }),
         { status: 200, headers: corsHeaders }
       )
     }
@@ -135,12 +135,26 @@ serve(async (req) => {
 
   console.log(`[SUPPORT-SYNC] ${messages.length} Nachrichten, hasMore=${!!nextLink}`)
 
-  // Bereits vorhandene outlook_message_ids laden
+  // Bereits vorhandene outlook_message_ids laden (Duplikatschutz)
   const { data: existingTickets } = await supabase
     .from('support_tickets')
     .select('outlook_message_id')
     .not('outlook_message_id', 'is', null)
   const existingIds = new Set((existingTickets || []).map((t: any) => t.outlook_message_id))
+
+  // Threading: Bestehende Tickets fuer Antwort-Erkennung laden
+  // Schluessel: "senderEmail|baseSubject" -> ticket_id
+  const { data: existingTicketList } = await supabase
+    .from('support_tickets')
+    .select('id, from_email, title')
+  const ticketByThread = new Map<string, string>()
+  for (const t of (existingTicketList || [])) {
+    const baseSubj = ((t.title as string) || '').replace(/^(re:\s*)+/i, '').trim().toLowerCase()
+    const key = `${((t.from_email as string) || '').toLowerCase()}|${baseSubj}`
+    if (!ticketByThread.has(key)) {
+      ticketByThread.set(key, t.id as string)
+    }
+  }
 
   // Erste Ticket-Spalte (Neu) holen
   const { data: firstColumn } = await supabase
@@ -158,16 +172,18 @@ serve(async (req) => {
   }
 
   let created = 0
+  let threaded = 0
   for (const msg of messages) {
-    // Gelöschte Nachrichten überspringen
+    // Geloeschte Nachrichten ueberspringen
     if (msg['@odata.removed']) continue
-    // Bereits verarbeitete überspringen
+    // Bereits verarbeitete ueberspringen
     if (existingIds.has(msg.id)) continue
 
     const senderEmail = (msg.from?.emailAddress?.address || '').toLowerCase()
     const senderName = msg.from?.emailAddress?.name || senderEmail || 'Unbekannt'
     const subject = (msg.subject || '').trim() || '(Kein Betreff)'
-    // HTML body → plain text (HTML-Tags entfernen, &nbsp; etc. auflösen)
+
+    // HTML body -> plain text (HTML-Tags entfernen)
     const rawHtml = msg.body?.content || ''
     const body = rawHtml
       ? rawHtml
@@ -178,7 +194,35 @@ serve(async (req) => {
           .replace(/\s+/g, ' ').trim()
       : (msg.bodyPreview || '')
 
-    // Ticket anlegen
+    // Threading: Ist dies eine Antwort (Re:) auf ein bestehendes Ticket?
+    const isReply = /^(re:\s*)+/i.test(subject)
+    if (isReply) {
+      const baseSubject = subject.replace(/^(re:\s*)+/i, '').trim().toLowerCase()
+      const threadKey = `${senderEmail}|${baseSubject}`
+      const parentTicketId = ticketByThread.get(threadKey)
+      if (parentTicketId) {
+        // Kundennachricht zu bestehendem Ticket hinzufuegen
+        const { error: msgErr } = await supabase.from('ticket_messages').insert({
+          ticket_id: parentTicketId,
+          body: body,
+          sender_type: 'customer',
+          is_ai_suggestion: false,
+        })
+        if (msgErr) {
+          console.error('[SUPPORT-SYNC] Threading-Fehler:', msgErr.message)
+        } else {
+          // Ticket als ungelesen markieren + Timestamp aktualisieren
+          await supabase.from('support_tickets')
+            .update({ is_read: false, updated_at: new Date().toISOString() })
+            .eq('id', parentTicketId)
+          threaded++
+        }
+        existingIds.add(msg.id)
+        continue
+      }
+    }
+
+    // Neues Ticket anlegen
     const { data: ticket, error: ticketError } = await supabase
       .from('support_tickets')
       .insert({
@@ -218,9 +262,9 @@ serve(async (req) => {
     { onConflict: 'key' }
   )
 
-  console.log(`[SUPPORT-SYNC] Fertig: ${created} neue Tickets, hasMore=${!!nextLink}`)
+  console.log(`[SUPPORT-SYNC] Fertig: ${created} neue Tickets, ${threaded} gethread, hasMore=${!!nextLink}`)
   return new Response(
-    JSON.stringify({ success: true, created, hasMore: !!nextLink, total: messages.length }),
+    JSON.stringify({ success: true, created, threaded, hasMore: !!nextLink, total: messages.length }),
     { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
   )
 })

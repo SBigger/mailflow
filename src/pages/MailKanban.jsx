@@ -914,19 +914,22 @@ export default function MailKanban() {
           onDelete={async (mail) => {
             try {
               await functions.invoke('deleteOutlookMail', { mail_id: mail.id });
-              await entities.MailItem.delete(mail.id);
-              queryClient.invalidateQueries({ queryKey: ["mailItems"] });
+              await entities.MailItem.update(mail.id, { is_archived: true });
+              queryClient.setQueryData(["mailItems", currentUser?.id], (old) =>
+                old ? old.filter(m => m.id !== mail.id) : old
+              );
               setSelectedMail(null);
-              toast.success('E-Mail gelöscht');
+              toast.success('E-Mail in Outlook-Papierkorb verschoben');
             } catch (e) {
               toast.error('Fehler: ' + e.message);
             }
           }}
           onDeleteLocal={async (mail) => {
             try {
-              await entities.MailItem.update(mail.id, { skip_outlook_delete: true });
-              await entities.MailItem.delete(mail.id);
-              queryClient.invalidateQueries({ queryKey: ["mailItems"] });
+              await entities.MailItem.update(mail.id, { is_archived: true });
+              queryClient.setQueryData(["mailItems", currentUser?.id], (old) =>
+                old ? old.filter(m => m.id !== mail.id) : old
+              );
               setSelectedMail(null);
               toast.success('Aus Kanban entfernt');
             } catch (e) {
