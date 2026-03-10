@@ -48,6 +48,9 @@ const QUILL_MODULES = {
     [{ list: "ordered" }, { list: "bullet" }],
     ["clean"],
   ],
+  clipboard: {
+    matchVisual: false, // Formatierung (Fett, Kursiv etc.) beim Einfuegen beibehalten
+  },
 };
 
 const QUILL_FORMATS = ["bold", "italic", "underline", "color", "background", "list", "bullet"];
