@@ -177,10 +177,10 @@ export default function CustomerHeader({ customer, staff, onUpdate }) {
 
       {/* ── Adresse ── */}
       <div className="space-y-2">
-        <Input value={strasse} onChange={e => setStrasse(e.target.value)} onBlur={() => { if (strasse !== customer.strasse) onUpdate({ strasse }); }} placeholder="Strasse" className={`text-sm h-8 ${inputClass}`} />
+        <Input value={strasse} onChange={e => setStrasse(e.target.value)} onBlur={() => { if (strasse !== customer.strasse) onUpdate({ strasse }); }} placeholder="Strasse" autoComplete="off" className={`text-sm h-8 ${inputClass}`} />
         <div className="flex gap-2">
-          <Input value={plz} onChange={e => setPlz(e.target.value)} onBlur={() => { if (plz !== customer.plz) onUpdate({ plz }); }} placeholder="PLZ" className={`text-sm h-8 w-20 ${inputClass}`} />
-          <Input value={ort} onChange={e => setOrt(e.target.value)} onBlur={() => { if (ort !== customer.ort) onUpdate({ ort }); }} placeholder="Ort" className={`text-sm h-8 flex-1 ${inputClass}`} />
+          <Input value={plz} onChange={e => setPlz(e.target.value)} onBlur={() => { if (plz !== customer.plz) onUpdate({ plz }); }} placeholder="PLZ" autoComplete="off" className={`text-sm h-8 w-20 ${inputClass}`} />
+          <Input value={ort} onChange={e => setOrt(e.target.value)} onBlur={() => { if (ort !== customer.ort) onUpdate({ ort }); }} placeholder="Ort" autoComplete="off" className={`text-sm h-8 flex-1 ${inputClass}`} />
           <Select
             value={kanton || "__none__"}
             onValueChange={v => {
