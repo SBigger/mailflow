@@ -137,6 +137,7 @@ export default function FristenEinreichenDialog({
         targetDate,
         kanton,
         jahr,
+        maxAttempts: 2,
         onProgress: (idx, status, screenshot, note) => {
           setResults(prev => prev.map((r, i) =>
             i === idx ? { ...r, status, screenshot: screenshot || null, note: note || "" } : r
