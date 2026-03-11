@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useContext, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { Check, Trash2, Eye, EyeOff, ChevronDown, X, ArrowUp, ArrowDown, ArrowUpDown, KeyRound, MessageSquare } from "lucide-react";
+import { Check, Trash2, Eye, EyeOff, ChevronDown, X, ArrowUp, ArrowDown, ArrowUpDown, KeyRound, MessageSquare, Copy } from "lucide-react";
 import { ThemeContext } from "@/Layout";
 import { supabase } from "@/api/supabaseClient";
 
@@ -43,6 +43,18 @@ function useRowStyles(isArtis, isLight) {
 }
 
 const selectCls = "rounded border px-1 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 cursor-pointer";
+
+function useCopyFeedback() {
+  const [copied, setCopied] = React.useState(null);
+  const copy = (key, text) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(key);
+      setTimeout(() => setCopied(null), 1200);
+    }).catch(() => {});
+  };
+  return { copied, copy };
+}
 const inputCls  = "rounded border px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400";
 
 // ── Spaltenbreiten (persistent via localStorage) ──────────────
@@ -273,6 +285,7 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
   const s = useRowStyles(isArtis, isLight);
 
   const isPrivat = personType === "privatperson";
+  const { copied, copy } = useCopyFeedback();
 
   const [kanton,          setKanton]          = useState(frist.kanton             || "");
   const [jahr,            setJahr]            = useState(frist.jahr               || currentYear);
@@ -453,30 +466,54 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
           </label>
 
           {/* Portal Login */}
-          <input
-            type="text"
-            value={portalLogin}
-            onChange={e => setPortalLogin(e.target.value)}
-            onBlur={e => save({ portal_login: e.target.value || null })}
-            placeholder="—"
-            className={inputCls}
-            style={{ ...inStyle, width: "100%" }}
-            disabled={isDone}
-            title="Portal-Login"
-          />
+          <div className="relative flex items-center w-full">
+            <input
+              type="text"
+              value={portalLogin}
+              onChange={e => setPortalLogin(e.target.value)}
+              onBlur={e => save({ portal_login: e.target.value || null })}
+              placeholder="—"
+              className={inputCls}
+              style={{ ...inStyle, width: "100%", paddingRight: portalLogin ? "20px" : undefined }}
+              title="Portal-Login"
+            />
+            {portalLogin && (
+              <button
+                type="button"
+                onClick={() => copy("login", portalLogin)}
+                className="absolute right-1 rounded hover:bg-black/5"
+                style={{ color: copied === "login" ? "#22c55e" : s.textMuted }}
+                title="Kopieren"
+              >
+                {copied === "login" ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+              </button>
+            )}
+          </div>
 
           {/* UID */}
-          <input
-            type="text"
-            value={portalUid}
-            onChange={e => setPortalUid(e.target.value)}
-            onBlur={e => save({ portal_uid: e.target.value || null })}
-            placeholder="—"
-            className={inputCls}
-            style={{ ...inStyle, width: "100%" }}
-            disabled={isDone}
-            title="UID"
-          />
+          <div className="relative flex items-center w-full">
+            <input
+              type="text"
+              value={portalUid}
+              onChange={e => setPortalUid(e.target.value)}
+              onBlur={e => save({ portal_uid: e.target.value || null })}
+              placeholder="—"
+              className={inputCls}
+              style={{ ...inStyle, width: "100%", paddingRight: portalUid ? "20px" : undefined }}
+              title="UID"
+            />
+            {portalUid && (
+              <button
+                type="button"
+                onClick={() => copy("uid", portalUid)}
+                className="absolute right-1 rounded hover:bg-black/5"
+                style={{ color: copied === "uid" ? "#22c55e" : s.textMuted }}
+                title="Kopieren"
+              >
+                {copied === "uid" ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+              </button>
+            )}
+          </div>
 
           {/* Passwort */}
           <div className="relative flex items-center w-full">
@@ -487,21 +524,31 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
               onBlur={e => save({ portal_password: e.target.value || null })}
               placeholder="—"
               className={inputCls}
-              style={{ ...inStyle, width: "100%", paddingRight: portalPassword ? "20px" : undefined }}
-              disabled={isDone}
+              style={{ ...inStyle, width: "100%", paddingRight: portalPassword ? "38px" : undefined }}
               autoComplete="new-password"
               title="Passwort"
             />
             {portalPassword && (
-              <button
-                type="button"
-                onClick={() => setShowPw(v => !v)}
-                className="absolute right-1 rounded hover:bg-black/5"
-                style={{ color: s.textMuted }}
-                title={showPw ? "Verbergen" : "Anzeigen"}
-              >
-                {showPw ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
-              </button>
+              <div className="absolute right-1 flex items-center gap-0.5">
+                <button
+                  type="button"
+                  onClick={() => copy("pw", portalPassword)}
+                  className="rounded hover:bg-black/5 p-0.5"
+                  style={{ color: copied === "pw" ? "#22c55e" : s.textMuted }}
+                  title="Kopieren"
+                >
+                  {copied === "pw" ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowPw(v => !v)}
+                  className="rounded hover:bg-black/5 p-0.5"
+                  style={{ color: s.textMuted }}
+                  title={showPw ? "Verbergen" : "Anzeigen"}
+                >
+                  {showPw ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                </button>
+              </div>
             )}
           </div>
         </div>

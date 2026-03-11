@@ -55,24 +55,22 @@ function groupByPersonType(list, customers, preserveOrder = false) {
 }
 
 // ──────────────────────────────────────────────────────────────
-// Group Section – nutzt FristInlineRow
+// Jahr-Untergruppe
 // ──────────────────────────────────────────────────────────────
-function FristenGroup({ label, color, items, customers, onToggle, onUpdate, onDelete, defaultOpen = true, personType = "unternehmen", sortCol, sortDir, onSort }) {
-  const [open, setOpen] = useState(defaultOpen);
-  if (items.length === 0) return null;
+function FristenYearGroup({ year, items, customers, onToggle, onUpdate, onDelete, personType, color, sortCol, sortDir, onSort, defaultOpen }) {
+  const [open, setOpen] = useState(defaultOpen ?? false);
   return (
-    <div className="mb-4">
+    <div className="mb-2 ml-5">
       <button
-        className="flex items-center gap-2 mb-2 text-sm font-semibold w-full text-left"
+        className="flex items-center gap-2 mb-1 text-xs font-semibold w-full text-left py-0.5"
         style={{ color }}
         onClick={() => setOpen(v => !v)}
       >
-        {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-        {label}
-        <span className="ml-1 text-xs font-normal opacity-70">({items.length})</span>
+        {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+        <span>{year}</span>
+        <span className="ml-1 font-normal opacity-60">({items.length})</span>
       </button>
       {open && (
-        /* Horizontaler Scroll wenn Spaltenbreiten den Container überschreiten */
         <div style={{ overflowX: "auto" }}>
           <div style={{ minWidth: "max-content", paddingLeft: "4px" }}>
             <FristenColumnHeader personType={personType} sortCol={sortCol} sortDir={sortDir} onSort={onSort} />
@@ -93,6 +91,63 @@ function FristenGroup({ label, color, items, customers, onToggle, onUpdate, onDe
               })}
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────
+// Group Section – mit Jahr-Untergruppen
+// ──────────────────────────────────────────────────────────────
+function FristenGroup({ label, color, items, customers, onToggle, onUpdate, onDelete, defaultOpen = true, personType = "unternehmen", sortCol, sortDir, onSort }) {
+  const [open, setOpen] = useState(defaultOpen);
+  if (items.length === 0) return null;
+
+  // Nach Jahr gruppieren, absteigend sortieren (neuestes zuerst)
+  const byYear = {};
+  items.forEach(f => {
+    const y = f.jahr ? String(f.jahr) : "–";
+    if (!byYear[y]) byYear[y] = [];
+    byYear[y].push(f);
+  });
+  const sortedYears = Object.keys(byYear).sort((a, b) => {
+    if (a === "–") return 1;
+    if (b === "–") return -1;
+    return Number(b) - Number(a);
+  });
+  const currentYear = String(new Date().getFullYear());
+
+  return (
+    <div className="mb-4">
+      <button
+        className="flex items-center gap-2 mb-2 text-sm font-semibold w-full text-left"
+        style={{ color }}
+        onClick={() => setOpen(v => !v)}
+      >
+        {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+        {label}
+        <span className="ml-1 text-xs font-normal opacity-70">({items.length})</span>
+      </button>
+      {open && (
+        <div>
+          {sortedYears.map(year => (
+            <FristenYearGroup
+              key={year}
+              year={year}
+              items={byYear[year]}
+              customers={customers}
+              onToggle={onToggle}
+              onUpdate={onUpdate}
+              onDelete={onDelete}
+              personType={personType}
+              color={color}
+              sortCol={sortCol}
+              sortDir={sortDir}
+              onSort={onSort}
+              defaultOpen={year === currentYear}
+            />
+          ))}
         </div>
       )}
     </div>
