@@ -19,6 +19,15 @@ const CH_KANTONE = [
 
 const currentYear = new Date().getFullYear();
 
+// Default: 30. Juni des aktuellen Jahres (typische Steuerfrist)
+function getDefaultTargetDate() {
+  const d = new Date();
+  // Wenn wir schon nach dem 30.06 sind → nächstes Jahr
+  const candidate = new Date(d.getFullYear(), 5, 30); // 30. Juni
+  if (d > candidate) candidate.setFullYear(d.getFullYear() + 1);
+  return candidate.toISOString().split("T")[0]; // YYYY-MM-DD
+}
+
 const STATUS_COLOR = {
   pending: "#71717a",
   running: "#f59e0b",
@@ -56,7 +65,7 @@ export default function FristenEinreichenDialog({
 
   const [kanton,      setKanton]     = useState("SG");
   const [jahr,        setJahr]       = useState(currentYear - 1);
-  const [targetDate,  setTargetDate] = useState("");
+  const [targetDate,  setTargetDate] = useState(getDefaultTargetDate);  // ← Default-Datum vorausgefüllt
   const [search,      setSearch]     = useState("");
   const [excluded,    setExcluded]   = useState(new Set());
   const [phase,       setPhase]      = useState("setup");
@@ -139,6 +148,13 @@ export default function FristenEinreichenDialog({
     }
   };
 
+  // Nach "done" → nochmals starten, nur Fehler-Items zurücksetzen
+  const handleRestart = () => {
+    setResults([]);
+    setCurrentIdx(0);
+    setPhase("setup");
+  };
+
   const successCount = results.filter(r => r.status === "success").length;
   const errorCount   = results.filter(r => r.status === "error").length;
 
@@ -168,8 +184,8 @@ export default function FristenEinreichenDialog({
         {/* ── Body ── */}
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
 
-          {/* Setup / Done */}
-          {(phase === "setup" || phase === "done") && (<>
+          {/* Setup Phase */}
+          {phase === "setup" && (<>
 
             {/* Filter-Zeile */}
             <div className="flex items-center gap-3 flex-wrap">
@@ -294,37 +310,6 @@ export default function FristenEinreichenDialog({
                 {missingCreds.length} Frist(en) ohne Zugangsdaten – diese werden während der Automation übersprungen.
               </div>
             )}
-
-            {/* Done-Ergebniszusammenfassung */}
-            {phase === "done" && results.length > 0 && (
-              <div className="space-y-2 pt-2 border-t" style={{ borderColor }}>
-                <div className="flex gap-4 text-xs pt-2">
-                  <span style={{ color: STATUS_COLOR.success }}>✓ {successCount} erfolgreich</span>
-                  {errorCount > 0 && <span style={{ color: STATUS_COLOR.error }}>✗ {errorCount} Fehler</span>}
-                </div>
-                <div className="space-y-1 max-h-48 overflow-y-auto">
-                  {results.map((r, i) => (
-                    <div key={i} className="flex items-center gap-2 text-xs px-2 py-1.5 rounded"
-                      style={{ backgroundColor: headerBg }}>
-                      {r.status === "success" && <CheckCircle2 className="h-3.5 w-3.5 text-green-500 flex-shrink-0" />}
-                      {r.status === "error"   && <XCircle className="h-3.5 w-3.5 text-red-500 flex-shrink-0" />}
-                      {r.status === "skipped" && <div className="h-3.5 w-3.5 rounded-full bg-zinc-400 flex-shrink-0" />}
-                      {r.status === "pending" && <div className="h-3.5 w-3.5 rounded-full border flex-shrink-0" style={{ borderColor: textMuted }} />}
-                      <span className="flex-1 truncate" style={{ color: textMain }}>{r.customer.company_name}</span>
-                      {r.note && <span style={{ color: textMuted }}>{r.note}</span>}
-                      {r.screenshot && (
-                        <img src={r.screenshot} alt="Screenshot"
-                          className="flex-shrink-0 rounded border w-16 h-10 object-cover cursor-pointer"
-                          style={{ borderColor }}
-                          onClick={() => window.open(r.screenshot, "_blank")}
-                          title="Klicken zum Vergrössern"
-                        />
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </>)}
 
           {/* Running Phase */}
@@ -383,6 +368,59 @@ export default function FristenEinreichenDialog({
             </div>
           )}
 
+          {/* Done Phase – Ergebnisübersicht */}
+          {phase === "done" && (
+            <div className="space-y-4">
+              {/* Zusammenfassung */}
+              <div className="flex items-center gap-4 px-4 py-3 rounded-lg border"
+                style={{ borderColor, backgroundColor: headerBg }}>
+                <CheckCircle2 className="h-5 w-5 flex-shrink-0" style={{ color: STATUS_COLOR.success }} />
+                <div>
+                  <div className="text-sm font-medium" style={{ color: textMain }}>
+                    Automation abgeschlossen
+                  </div>
+                  <div className="text-xs mt-0.5" style={{ color: textMuted }}>
+                    {successCount} erfolgreich
+                    {errorCount > 0 && <span style={{ color: STATUS_COLOR.error }}> · {errorCount} Fehler</span>}
+                    {" "}· Kanton {kanton} / SP {jahr}
+                  </div>
+                </div>
+              </div>
+
+              {/* Ergebnis-Liste */}
+              <div className="space-y-1 max-h-64 overflow-y-auto">
+                {results.map((r, i) => (
+                  <div key={i} className="flex items-center gap-2 text-xs px-2 py-1.5 rounded"
+                    style={{ backgroundColor: headerBg }}>
+                    {r.status === "success" && <CheckCircle2 className="h-3.5 w-3.5 text-green-500 flex-shrink-0" />}
+                    {r.status === "error"   && <XCircle className="h-3.5 w-3.5 text-red-500 flex-shrink-0" />}
+                    {r.status === "skipped" && <div className="h-3.5 w-3.5 rounded-full bg-zinc-400 flex-shrink-0" />}
+                    {r.status === "pending" && <div className="h-3.5 w-3.5 rounded-full border flex-shrink-0" style={{ borderColor: textMuted }} />}
+                    <span className="flex-1 truncate" style={{ color: textMain }}>{r.customer.company_name}</span>
+                    {r.note && <span style={{ color: textMuted }}>{r.note}</span>}
+                    {r.screenshot && (
+                      <img src={r.screenshot} alt="Screenshot"
+                        className="flex-shrink-0 rounded border w-16 h-10 object-cover cursor-pointer"
+                        style={{ borderColor }}
+                        onClick={() => window.open(r.screenshot, "_blank")}
+                        title="Klicken zum Vergrössern"
+                      />
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* Nochmals-Hinweis bei Fehlern */}
+              {errorCount > 0 && (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs"
+                  style={{ backgroundColor: "rgba(239,68,68,0.08)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.3)" }}>
+                  <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" />
+                  {errorCount} Frist(en) konnten nicht eingereicht werden. Klicke «Nochmals einreichen» für einen weiteren Versuch.
+                </div>
+              )}
+            </div>
+          )}
+
         </div>
 
         {/* ── Footer ── */}
@@ -391,7 +429,7 @@ export default function FristenEinreichenDialog({
           <div className="text-xs" style={{ color: textMuted }}>
             {phase === "setup"   && selected.length > 0 && `${selected.length} Frist${selected.length !== 1 ? "en" : ""} ausgewählt`}
             {phase === "running" && "Browser-Automation läuft – bitte nicht schliessen..."}
-            {phase === "done"    && `Abgeschlossen: ${successCount}/${results.length} erfolgreich`}
+            {phase === "done"    && `${successCount}/${results.length} erfolgreich eingereicht`}
           </div>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={handleClose}
@@ -399,13 +437,25 @@ export default function FristenEinreichenDialog({
               style={{ borderColor, color: textMain }}>
               {phase === "done" ? "Schliessen" : "Abbrechen"}
             </Button>
-            {(phase === "setup" || phase === "done") && (
+
+            {/* Setup: Einreichen-Button */}
+            {phase === "setup" && (
               <Button size="sm" onClick={handleStart}
                 disabled={selected.length === 0 || !targetDate}
                 style={{ backgroundColor: accentBg, color: "#fff" }}
                 className="gap-1.5">
                 <Play className="h-3.5 w-3.5" />
                 Einreichen ({selected.length})
+              </Button>
+            )}
+
+            {/* Done: Nochmals einreichen */}
+            {phase === "done" && (
+              <Button size="sm" onClick={handleRestart}
+                style={{ backgroundColor: accentBg, color: "#fff" }}
+                className="gap-1.5">
+                <RefreshCw className="h-3.5 w-3.5" />
+                Nochmals einreichen
               </Button>
             )}
           </div>
