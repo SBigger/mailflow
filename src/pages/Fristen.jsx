@@ -817,6 +817,15 @@ export default function Fristen() {
             anonKey: import.meta.env.VITE_SUPABASE_ANON_KEY,
             userEmail,
           };
+
+          // Portal-Tab automatisch öffnen (wiederverwendbar via Name 'fristen_portal')
+          if (portalItems.length > 0) {
+            const portalUrl = params.kanton?.includes("SG")
+              ? "https://egate.ksta.sg.ch/"
+              : "about:blank";
+            window.open(portalUrl, "fristen_portal");
+          }
+
           toast.info(`Automation bereit – ${portalItems.length} Portal-Fristen für Claude`);
         }}
       />
