@@ -181,6 +181,18 @@ export default function FristenEinreichenDialog({
     setPhase("setup");
   };
 
+  // Manuelle Stopp-Funktion während der Automation
+  const handleStop = () => {
+    if (window.__fristenAutomation) {
+      window.__fristenAutomation._aborted = true;
+      window.__fristenAutomation._abortReason = "Manuell gestoppt";
+    }
+    setResults(prev => prev.map(r =>
+      r.status === "pending" ? { ...r, status: "skipped", note: "Manuell gestoppt" } : r
+    ));
+    setPhase("done");
+  };
+
   const successCount = results.filter(r => r.status === "success").length;
   const errorCount   = results.filter(r => r.status === "error").length;
 
@@ -458,6 +470,12 @@ export default function FristenEinreichenDialog({
             {phase === "done"    && `${successCount}/${results.length} erfolgreich eingereicht`}
           </div>
           <div className="flex gap-2">
+            {phase === "running" && (
+              <Button variant="outline" size="sm" onClick={handleStop}
+                style={{ borderColor: "#ef4444", color: "#ef4444" }}>
+                Stoppen
+              </Button>
+            )}
             <Button variant="outline" size="sm" onClick={handleClose}
               disabled={phase === "running"}
               style={{ borderColor, color: textMain }}>
