@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useContext, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { Check, Trash2, Eye, EyeOff, ChevronDown, X, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
+import { Check, Trash2, Eye, EyeOff, ChevronDown, X, ArrowUp, ArrowDown, ArrowUpDown, KeyRound, MessageSquare } from "lucide-react";
 import { ThemeContext } from "@/Layout";
 import { supabase } from "@/api/supabaseClient";
 
@@ -55,7 +55,8 @@ export const DEFAULT_COL_WIDTHS = {
   fristBis:    130,
   unterlagen:  132,
   hDom:         74,
-  portalLogin: 120,
+  portalLogin: 110,
+  portalUid:    90,
   portalPw:     90,
 };
 
@@ -67,6 +68,7 @@ export const COLS = [
   { key: "unterlagen",  label: "Unterlagen erhalten" },
   { key: "hDom",        label: "H-Dom" },
   { key: "portalLogin", label: "Portal Login" },
+  { key: "portalUid",   label: "UID" },
   { key: "portalPw",    label: "Passwort" },
 ];
 
@@ -76,7 +78,7 @@ function toGridCols(w, showName = true) {
   cols.push(
     `${w.kanton}px`, `${w.spJahr}px`, `${w.fristBis}px`,
     `${w.unterlagen}px`, `${w.hDom}px`,
-    `${w.portalLogin}px`, `${w.portalPw}px`,
+    `${w.portalLogin}px`, `${w.portalUid}px`, `${w.portalPw}px`,
   );
   return cols.join(" ");
 }
@@ -156,7 +158,7 @@ export function ColWidthProvider({ children }) {
 // value: kommagetrennte Kantone z.B. "ZH,TI,BE"
 // onChange: (newValue: string) => void
 // Dropdown via Portal → escapes overflow:hidden auf Parent-Containern
-function KantonMultiSelect({ value, onChange, disabled, inStyle, s }) {
+export function KantonMultiSelect({ value, onChange, disabled, inStyle, s }) {
   const [open, setOpen] = useState(false);
   const btnRef = useRef(null);
   const dropRef = useRef(null);
@@ -280,8 +282,11 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
   const [category,        setCategory]        = useState(frist.category           || "Steuererklärung");
   const [hauptdomizil,    setHauptdomizil]    = useState(frist.ist_hauptsteuerdomizil !== false);
   const [portalLogin,     setPortalLogin]     = useState(frist.portal_login       || "");
+  const [portalUid,       setPortalUid]       = useState(frist.portal_uid         || "");
   const [portalPassword,  setPortalPassword]  = useState(frist.portal_password    || "");
   const [showPw,          setShowPw]          = useState(false);
+  const [showDesc,        setShowDesc]        = useState(false);
+  const [description,     setDescription]     = useState(frist.description || "");
 
   useEffect(() => {
     setKanton(frist.kanton             || "");
@@ -292,7 +297,9 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
     setCategory(frist.category         || "Steuererklärung");
     setHauptdomizil(frist.ist_hauptsteuerdomizil !== false);
     setPortalLogin(frist.portal_login  || "");
+    setPortalUid(frist.portal_uid       || "");
     setPortalPassword(frist.portal_password || "");
+    setDescription(frist.description || "");
   }, [frist.id]);
 
   const buildTitle = (cat, kt, yr) =>
@@ -458,6 +465,19 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
             title="Portal-Login"
           />
 
+          {/* UID */}
+          <input
+            type="text"
+            value={portalUid}
+            onChange={e => setPortalUid(e.target.value)}
+            onBlur={e => save({ portal_uid: e.target.value || null })}
+            placeholder="—"
+            className={inputCls}
+            style={{ ...inStyle, width: "100%" }}
+            disabled={isDone}
+            title="UID"
+          />
+
           {/* Passwort */}
           <div className="relative flex items-center w-full">
             <input
@@ -491,6 +511,15 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
           className="flex-shrink-0 flex items-center gap-1 pl-2 ml-1"
           style={{ borderLeft: `1px solid ${s.divider}` }}
         >
+          {/* Bemerkung toggle */}
+          <button
+            onClick={() => setShowDesc(v => !v)}
+            className="p-1.5 rounded hover:bg-blue-500/10 transition-opacity opacity-0 group-hover:opacity-100"
+            style={{ color: description ? s.accentBg : s.textMuted }}
+            title="Bemerkung"
+          >
+            <MessageSquare className="h-3.5 w-3.5" />
+          </button>
           {/* Delete */}
           <button
             onClick={() => onDelete(frist.id)}
@@ -502,6 +531,25 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
         </div>
       </div>
 
+      {/* ── Bemerkung ── */}
+      {showDesc && (
+        <div
+          className="px-3 py-2 border-t flex items-center gap-2"
+          style={{ backgroundColor: s.expandBg, borderColor: s.divider }}
+        >
+          <MessageSquare className="h-3.5 w-3.5 flex-shrink-0" style={{ color: s.textMuted }} />
+          <input
+            type="text"
+            value={description}
+            onChange={e => setDescription(e.target.value)}
+            onBlur={e => save({ description: e.target.value || null })}
+            placeholder="Bemerkung / Notiz zur Frist..."
+            className={inputCls}
+            style={{ ...inStyle, flex: 1 }}
+            disabled={isDone}
+          />
+        </div>
+      )}
     </div>
   );
 }
