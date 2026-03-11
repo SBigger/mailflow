@@ -198,6 +198,21 @@ export default function FristenEinreichenDialog({
     setPhase("done");
   };
 
+  // Aktuelles Item manuell überspringen (falls Automation hängt)
+  const handleSkipCurrent = () => {
+    const idx = results.findIndex(r => r.status === "pending");
+    if (idx === -1) return;
+    const a = window.__fristenAutomation;
+    if (a?.onProgress) {
+      a.onProgress(idx, "skipped", null, "Manuell übersprungen");
+    } else {
+      setResults(prev => prev.map((r, i) =>
+        i === idx ? { ...r, status: "skipped", note: "Manuell übersprungen" } : r
+      ));
+      setCurrentIdx(idx + 1);
+    }
+  };
+
   const successCount = results.filter(r => r.status === "success").length;
   const errorCount   = results.filter(r => r.status === "error").length;
 
@@ -475,6 +490,12 @@ export default function FristenEinreichenDialog({
             {phase === "done"    && `${successCount}/${results.length} erfolgreich eingereicht`}
           </div>
           <div className="flex gap-2">
+            {phase === "running" && (
+              <Button variant="outline" size="sm" onClick={handleSkipCurrent}
+                style={{ borderColor: "#f59e0b", color: "#f59e0b" }}>
+                Weiter
+              </Button>
+            )}
             {phase === "running" && (
               <Button variant="outline" size="sm" onClick={handleStop}
                 style={{ borderColor: "#ef4444", color: "#ef4444" }}>
