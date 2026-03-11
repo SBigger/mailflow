@@ -761,7 +761,7 @@ export default function Fristen() {
         fristen={fristen}
         customers={customers}
         onAutomationStart={async (params) => {
-          // User-Email aus Profil holen für Ablehnungs-Benachrichtigungen
+          // User-Email aus Profil holen
           let userEmail = null;
           try {
             const { data: { user } } = await supabase.auth.getUser();
@@ -777,16 +777,47 @@ export default function Fristen() {
             console.warn("User-Email konnte nicht geladen werden:", e);
           }
 
+          // Nur Items MIT Portal-Login – Claude bearbeitet nur diese
+          const portalItems = params.items
+            .map((item, idx) => ({ idx, fristId: item.frist?.id, login: item.frist?.portal_login, uid: item.frist?.portal_uid, companyName: item.customer?.company_name || "" }))
+            .filter(item => item.login);
+
+          // onProgress-Wrapper: UI-Update + automatischer Supabase-PATCH
+          const wrappedOnProgress = async (idx, status, screenshot, note) => {
+            params.onProgress(idx, status, screenshot, note);
+            if (status === "success" || status === "error") {
+              const item = params.items[idx];
+              const fristId = item?.frist?.id;
+              if (fristId) {
+                const updateData = {};
+                if (note) updateData.einreichen_notiz = note;
+                if (status === "success") updateData.einreichen_datum = params.targetDate;
+                if (screenshot) updateData.einreichen_screenshot = screenshot;
+                try {
+                  await supabase.from("fristen").update(updateData).eq("id", fristId);
+                } catch (e) {
+                  console.error("Supabase-Update fehlgeschlagen:", e);
+                }
+              }
+            }
+          };
+
           // Callbacks global speichern – Claude greift via javascript_tool darauf zu
           window.__fristenAutomation = {
-            ...params,
+            items: params.items,
+            targetDate: params.targetDate,
+            kanton: params.kanton,
+            jahr: params.jahr,
+            maxAttempts: 2,
+            maxConsecutiveErrors: 3,
+            onProgress: wrappedOnProgress,
+            onDone: params.onDone,
+            portalItems,          // <-- nur Portal-Items, direkt für Claude
             supabaseUrl: "https://uawgpxcihixqxqxxbjak.supabase.co",
             anonKey: import.meta.env.VITE_SUPABASE_ANON_KEY,
             userEmail,
-            maxAttempts: 2,           // Automation bricht nach 2 Fehlversuchen pro Item ab
-            maxConsecutiveErrors: 3,   // Automation bricht ab wenn 3 Items nacheinander scheitern
           };
-          toast.info(`Automation bereit – Claude übernimmt jetzt die Steuerung für ${params.items.length} Fristen`);
+          toast.info(`Automation bereit – ${portalItems.length} Portal-Fristen für Claude`);
         }}
       />
     </div>

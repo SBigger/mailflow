@@ -126,10 +126,15 @@ export default function FristenEinreichenDialog({
     if (selected.length === 0) { toast.error("Keine Fristen ausgewählt"); return; }
     if (!targetDate) { toast.error("Bitte ein Zieldatum eingeben"); return; }
     const init = selected.map(({ frist, customer }) => ({
-      frist, customer, status: "pending", screenshot: null, note: "",
+      frist, customer,
+      status: frist.portal_login ? "pending" : "skipped",
+      screenshot: null,
+      note: frist.portal_login ? "" : "Keine Zugangsdaten",
     }));
     setResults(init);
-    setCurrentIdx(0);
+    // Springe direkt zum ersten Portal-Item
+    const firstPortalIdx = init.findIndex(r => r.status === "pending");
+    setCurrentIdx(firstPortalIdx >= 0 ? firstPortalIdx : init.length);
     setPhase("running");
     if (onAutomationStart) {
       let consecutiveErrors = 0;
