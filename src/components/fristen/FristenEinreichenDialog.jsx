@@ -132,17 +132,42 @@ export default function FristenEinreichenDialog({
     setCurrentIdx(0);
     setPhase("running");
     if (onAutomationStart) {
+      let consecutiveErrors = 0;
       onAutomationStart({
         items: selected,
         targetDate,
         kanton,
         jahr,
         maxAttempts: 2,
+        maxConsecutiveErrors: 3,
         onProgress: (idx, status, screenshot, note) => {
-          setResults(prev => prev.map((r, i) =>
-            i === idx ? { ...r, status, screenshot: screenshot || null, note: note || "" } : r
-          ));
+          if (status === "error") {
+            consecutiveErrors++;
+          } else {
+            consecutiveErrors = 0;
+          }
+          const shouldAbort = consecutiveErrors >= 3;
+          setResults(prev => {
+            const updated = prev.map((r, i) =>
+              i === idx ? { ...r, status, screenshot: screenshot || null, note: note || "" } : r
+            );
+            if (shouldAbort) {
+              return updated.map((r, i) =>
+                i > idx && r.status === "pending"
+                  ? { ...r, status: "skipped", note: "Abgebrochen – 3 aufeinanderfolgende Fehler" }
+                  : r
+              );
+            }
+            return updated;
+          });
           setCurrentIdx(idx + 1);
+          if (shouldAbort) {
+            if (window.__fristenAutomation) {
+              window.__fristenAutomation._aborted = true;
+              window.__fristenAutomation._abortReason = "3 aufeinanderfolgende Fehler";
+            }
+            setPhase("done");
+          }
         },
         onDone: () => setPhase("done"),
       });

@@ -783,7 +783,8 @@ export default function Fristen() {
             supabaseUrl: "https://uawgpxcihixqxqxxbjak.supabase.co",
             anonKey: import.meta.env.VITE_SUPABASE_ANON_KEY,
             userEmail,
-            maxAttempts: 2, // Automation bricht nach 2 Fehlversuchen pro Item ab
+            maxAttempts: 2,           // Automation bricht nach 2 Fehlversuchen pro Item ab
+            maxConsecutiveErrors: 3,   // Automation bricht ab wenn 3 Items nacheinander scheitern
           };
           toast.info(`Automation bereit – Claude übernimmt jetzt die Steuerung für ${params.items.length} Fristen`);
         }}
