@@ -314,7 +314,7 @@ export default function Fristen() {
 
   return (
     <ColWidthProvider>
-    <div className="h-screen flex flex-col overflow-hidden" style={{ backgroundColor: pageBg }}>
+    <div className="h-full flex flex-col overflow-hidden" style={{ backgroundColor: pageBg }}>
 
       {/* ── Top Bar ─────────────────────────────────────── */}
       <div className="flex-shrink-0 border-b px-4 md:px-6 py-3" style={{ backgroundColor: topBarBg, borderColor }}>
@@ -562,7 +562,7 @@ export default function Fristen() {
           </div>
         ) : activeTab === "erledigt" ? (
           /* Erledigt – nach Personentyp gruppiert */
-          <div className="max-w-5xl">
+          <div className="w-full">
             {Object.values(groups).map(group => (
               <FristenGroup key={group.label} {...group} customers={customers}
                 onToggle={handleToggle} onUpdate={handleUpdate} onDelete={handleDelete}
@@ -571,7 +571,7 @@ export default function Fristen() {
           </div>
         ) : (
           /* Offen / Fällig / Alle – nach Personentyp gruppiert */
-          <div className="max-w-5xl">
+          <div className="w-full">
             {Object.values(groups).every(g => g.items.length === 0) ? (
               <div className="flex flex-col items-center justify-center h-48 gap-3" style={{ color: textMuted }}>
                 <CheckCircle2 className="h-12 w-12 opacity-30" />
@@ -583,7 +583,7 @@ export default function Fristen() {
               Object.values(groups).map(group => (
                 <FristenGroup key={group.label} {...group} customers={customers}
                   onToggle={handleToggle} onUpdate={handleUpdate} onDelete={handleDelete}
-                  defaultOpen={true} />
+                  defaultOpen={true} sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
               ))
             )}
           </div>
