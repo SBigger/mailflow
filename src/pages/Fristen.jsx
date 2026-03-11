@@ -6,7 +6,7 @@ import {
   CalendarClock, Plus, Trash2, Search, X,
   RefreshCw, ChevronDown, ChevronRight, AlertTriangle,
   Calendar, Clock, CheckCircle2, Filter, Users, PlayCircle,
-  MapPin, FileCheck,
+  MapPin, FileCheck, SendHorizontal,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -15,6 +15,7 @@ import {
   DropdownMenuTrigger, DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import AddFristDialog from "@/components/fristen/AddFristDialog";
+import FristenEinreichenDialog from "@/components/fristen/FristenEinreichenDialog";
 import FristenlaufDialog from "@/components/fristen/FristenlaufDialog";
 import { FristInlineRow, FristenColumnHeader, ColWidthProvider } from "@/components/fristen/FristInlineRow";
 import { isToday, isPast, parseISO } from "date-fns";
@@ -174,6 +175,7 @@ export default function Fristen() {
   const [editFrist,        setEditFrist]        = useState(null);
   const [showFristenlauf,  setShowFristenlauf]  = useState(false);
   const [showFristenlaufLoeschen, setShowFristenlaufLoeschen] = useState(false);
+  const [showEinreichen,          setShowEinreichen]          = useState(false);
   const [sortCol,          setSortCol]          = useState(null);   // null = Standardsortierung
   const [sortDir,          setSortDir]          = useState("asc");
 
@@ -581,6 +583,19 @@ export default function Fristen() {
               Löschen
             </Button>
 
+            {/* Fristen einreichen */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowEinreichen(true)}
+              className="h-8 gap-1.5 text-xs"
+              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: isArtis ? "#4a5e4a" : "#0ea5e9" }}
+              title="Fristen online einreichen – Fristgesuche automatisch auf Kantonsportalen einreichen"
+            >
+              <SendHorizontal className="h-3.5 w-3.5" />
+              Einreichen
+            </Button>
+
             {/* New */}
             <Button
               onClick={() => { setEditFrist(null); setShowAdd(true); }}
@@ -670,6 +685,17 @@ export default function Fristen() {
         existingFristen={fristen}
         onGenerated={() => {
           queryClient.invalidateQueries({ queryKey: ["fristen"] });
+        }}
+      />
+      <FristenEinreichenDialog
+        open={showEinreichen}
+        onClose={() => setShowEinreichen(false)}
+        fristen={fristen}
+        customers={customers}
+        onAutomationStart={(params) => {
+          // Browser-Automation wird hier angestossen
+          // Wird nach Demo implementiert
+          toast.info("Automation startet gleich...");
         }}
       />
     </div>
