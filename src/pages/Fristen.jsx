@@ -425,8 +425,10 @@ export default function Fristen() {
     <div className="h-full flex flex-col overflow-hidden" style={{ backgroundColor: pageBg }}>
 
       {/* ── Top Bar ─────────────────────────────────────── */}
-      <div className="flex-shrink-0 border-b px-4 md:px-6 py-3" style={{ backgroundColor: topBarBg, borderColor }}>
-        <div className="flex items-center justify-between gap-3 flex-wrap">
+      <div className="flex-shrink-0 border-b px-4 md:px-6 pt-3 pb-2" style={{ backgroundColor: topBarBg, borderColor }}>
+
+        {/* Zeile 1: Tabs + Aktions-Buttons */}
+        <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
 
           {/* Tabs */}
           <div className="flex items-center gap-1 bg-black/5 rounded-xl p-1" style={{ backgroundColor: isArtis ? "rgba(0,0,0,0.04)" : isLight ? "rgba(0,0,0,0.04)" : "rgba(255,255,255,0.05)" }}>
@@ -455,7 +457,7 @@ export default function Fristen() {
             })}
           </div>
 
-          {/* Right side: filters + new button */}
+          {/* Aktions-Buttons (Search, Refresh, Fristenlauf, etc.) */}
           <div className="flex items-center gap-2">
             {/* Search */}
             <div className="relative">
@@ -474,132 +476,6 @@ export default function Fristen() {
                 </button>
               )}
             </div>
-
-            {/* Category filter */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="h-8 gap-1 text-xs"
-                  style={{
-                    backgroundColor: filterCategory !== "alle" ? (isArtis ? "#e6ede6" : "rgba(99,102,241,0.15)") : inputBg,
-                    borderColor:     filterCategory !== "alle" ? (isArtis ? "#7a9b7f" : "#7c3aed") : inputBorder,
-                    color:           filterCategory !== "alle" ? (isArtis ? "#4a5e4a" : "#7c3aed") : textMain,
-                  }}>
-                  <Filter className="h-3.5 w-3.5" />
-                  {filterCategory === "alle" ? "Kategorie" : filterCategory}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent style={{ backgroundColor: isArtis ? "#f8faf8" : isLight ? "#fff" : "#18181b", borderColor }}>
-                <DropdownMenuItem onClick={() => setFilterCategory("alle")} style={{ color: textMain }}>
-                  Alle Kategorien
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                {categories.map(cat => (
-                  <DropdownMenuItem key={cat} onClick={() => setFilterCategory(cat)} style={{ color: textMain }}>
-                    {cat}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-
-            {/* Jahr filter */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="h-8 gap-1 text-xs"
-                  style={{ backgroundColor: filterJahr !== "alle" ? (isArtis ? "#e6ede6" : "rgba(99,102,241,0.15)") : inputBg, borderColor: filterJahr !== "alle" ? (isArtis ? "#7a9b7f" : "#7c3aed") : inputBorder, color: filterJahr !== "alle" ? (isArtis ? "#4a5e4a" : "#7c3aed") : textMain }}>
-                  <Calendar className="h-3.5 w-3.5" />
-                  {filterJahr === "alle" ? "Jahr" : filterJahr}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent style={{ backgroundColor: isArtis ? "#f8faf8" : isLight ? "#fff" : "#18181b", borderColor }}>
-                <DropdownMenuItem onClick={() => setFilterJahr("alle")} style={{ color: textMain }}>
-                  Alle Jahre
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                {years.map(y => (
-                  <DropdownMenuItem key={y} onClick={() => setFilterJahr(String(y))} style={{ color: textMain }}>
-                    {y}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-
-            {/* Kunden-Typ filter */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="h-8 gap-1 text-xs"
-                  style={{
-                    backgroundColor: filterKundenTyp !== "alle" ? (isArtis ? "#e6ede6" : "rgba(99,102,241,0.15)") : inputBg,
-                    borderColor:     filterKundenTyp !== "alle" ? (isArtis ? "#7a9b7f" : "#7c3aed") : inputBorder,
-                    color:           filterKundenTyp !== "alle" ? (isArtis ? "#4a5e4a" : "#7c3aed") : textMain,
-                  }}>
-                  <Users className="h-3.5 w-3.5" />
-                  {filterKundenTyp === "alle"         ? "Kunden"
-                   : filterKundenTyp === "privatperson" ? "Natürl. Personen"
-                   :                                      "Jurist. Personen"}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent style={{ backgroundColor: isArtis ? "#f8faf8" : isLight ? "#fff" : "#18181b", borderColor }}>
-                <DropdownMenuItem onClick={() => setFilterKundenTyp("alle")}          style={{ color: textMain }}>Alle Kunden</DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => setFilterKundenTyp("privatperson")}  style={{ color: textMain }}>👤 Natürliche Personen</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setFilterKundenTyp("unternehmen")}   style={{ color: textMain }}>🏢 Juristische Personen</DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-
-            {/* Kanton filter */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="h-8 gap-1 text-xs"
-                  style={{
-                    backgroundColor: filterKanton !== "alle" ? (isArtis ? "#e6ede6" : "rgba(99,102,241,0.15)") : inputBg,
-                    borderColor:     filterKanton !== "alle" ? (isArtis ? "#7a9b7f" : "#7c3aed") : inputBorder,
-                    color:           filterKanton !== "alle" ? (isArtis ? "#4a5e4a" : "#7c3aed") : textMain,
-                  }}>
-                  <MapPin className="h-3.5 w-3.5" />
-                  {filterKanton === "alle" ? "Kanton" : filterKanton}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent style={{ backgroundColor: isArtis ? "#f8faf8" : isLight ? "#fff" : "#18181b", borderColor, maxHeight: 260, overflowY: "auto" }}>
-                <DropdownMenuItem onClick={() => setFilterKanton("alle")} style={{ color: textMain }}>
-                  Alle Kantone
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                {kantons.map(kt => (
-                  <DropdownMenuItem key={kt} onClick={() => setFilterKanton(kt)} style={{ color: textMain }}>
-                    {kt}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-
-            {/* Unterlagen erhalten filter */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="h-8 gap-1 text-xs"
-                  style={{
-                    backgroundColor: filterUnterlagen !== "alle" ? (isArtis ? "#e6ede6" : "rgba(99,102,241,0.15)") : inputBg,
-                    borderColor:     filterUnterlagen !== "alle" ? (isArtis ? "#7a9b7f" : "#7c3aed") : inputBorder,
-                    color:           filterUnterlagen !== "alle" ? (isArtis ? "#4a5e4a" : "#7c3aed") : textMain,
-                  }}>
-                  <FileCheck className="h-3.5 w-3.5" />
-                  {filterUnterlagen === "alle" ? "Unterlagen"
-                   : filterUnterlagen === "erhalten"   ? "Erhalten ✓"
-                   :                                     "Ausstehend"}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent style={{ backgroundColor: isArtis ? "#f8faf8" : isLight ? "#fff" : "#18181b", borderColor }}>
-                <DropdownMenuItem onClick={() => setFilterUnterlagen("alle")} style={{ color: textMain }}>
-                  Alle
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => setFilterUnterlagen("erhalten")} style={{ color: textMain }}>
-                  ✓ Unterlagen erhalten
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setFilterUnterlagen("ausstehend")} style={{ color: textMain }}>
-                  ○ Unterlagen ausstehend
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
 
             {/* Refresh */}
             <Button variant="ghost" size="icon" className="h-8 w-8"
@@ -692,6 +568,114 @@ export default function Fristen() {
             </Button>
           </div>
         </div>
+
+        {/* Zeile 2: Filter-Chips */}
+        <div className="flex items-center gap-2 flex-wrap pt-1">
+          {/* Category filter */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="h-7 gap-1 text-xs"
+                style={{
+                  backgroundColor: filterCategory !== "alle" ? (isArtis ? "#e6ede6" : "rgba(99,102,241,0.15)") : inputBg,
+                  borderColor:     filterCategory !== "alle" ? (isArtis ? "#7a9b7f" : "#7c3aed") : inputBorder,
+                  color:           filterCategory !== "alle" ? (isArtis ? "#4a5e4a" : "#7c3aed") : textMain,
+                }}>
+                <Filter className="h-3 w-3" />
+                {filterCategory === "alle" ? "Kategorie" : filterCategory}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent style={{ backgroundColor: isArtis ? "#f8faf8" : isLight ? "#fff" : "#18181b", borderColor }}>
+              <DropdownMenuItem onClick={() => setFilterCategory("alle")} style={{ color: textMain }}>Alle Kategorien</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              {categories.map(cat => (
+                <DropdownMenuItem key={cat} onClick={() => setFilterCategory(cat)} style={{ color: textMain }}>{cat}</DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Jahr filter */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="h-7 gap-1 text-xs"
+                style={{ backgroundColor: filterJahr !== "alle" ? (isArtis ? "#e6ede6" : "rgba(99,102,241,0.15)") : inputBg, borderColor: filterJahr !== "alle" ? (isArtis ? "#7a9b7f" : "#7c3aed") : inputBorder, color: filterJahr !== "alle" ? (isArtis ? "#4a5e4a" : "#7c3aed") : textMain }}>
+                <Calendar className="h-3 w-3" />
+                {filterJahr === "alle" ? "Jahr" : filterJahr}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent style={{ backgroundColor: isArtis ? "#f8faf8" : isLight ? "#fff" : "#18181b", borderColor }}>
+              <DropdownMenuItem onClick={() => setFilterJahr("alle")} style={{ color: textMain }}>Alle Jahre</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              {years.map(y => (
+                <DropdownMenuItem key={y} onClick={() => setFilterJahr(String(y))} style={{ color: textMain }}>{y}</DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Kunden-Typ filter */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="h-7 gap-1 text-xs"
+                style={{
+                  backgroundColor: filterKundenTyp !== "alle" ? (isArtis ? "#e6ede6" : "rgba(99,102,241,0.15)") : inputBg,
+                  borderColor:     filterKundenTyp !== "alle" ? (isArtis ? "#7a9b7f" : "#7c3aed") : inputBorder,
+                  color:           filterKundenTyp !== "alle" ? (isArtis ? "#4a5e4a" : "#7c3aed") : textMain,
+                }}>
+                <Users className="h-3 w-3" />
+                {filterKundenTyp === "alle" ? "Kunden" : filterKundenTyp === "privatperson" ? "Natürl. Personen" : "Jurist. Personen"}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent style={{ backgroundColor: isArtis ? "#f8faf8" : isLight ? "#fff" : "#18181b", borderColor }}>
+              <DropdownMenuItem onClick={() => setFilterKundenTyp("alle")} style={{ color: textMain }}>Alle Kunden</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => setFilterKundenTyp("privatperson")} style={{ color: textMain }}>👤 Natürliche Personen</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setFilterKundenTyp("unternehmen")} style={{ color: textMain }}>🏢 Juristische Personen</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Kanton filter */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="h-7 gap-1 text-xs"
+                style={{
+                  backgroundColor: filterKanton !== "alle" ? (isArtis ? "#e6ede6" : "rgba(99,102,241,0.15)") : inputBg,
+                  borderColor:     filterKanton !== "alle" ? (isArtis ? "#7a9b7f" : "#7c3aed") : inputBorder,
+                  color:           filterKanton !== "alle" ? (isArtis ? "#4a5e4a" : "#7c3aed") : textMain,
+                }}>
+                <MapPin className="h-3 w-3" />
+                {filterKanton === "alle" ? "Kanton" : filterKanton}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent style={{ backgroundColor: isArtis ? "#f8faf8" : isLight ? "#fff" : "#18181b", borderColor, maxHeight: 260, overflowY: "auto" }}>
+              <DropdownMenuItem onClick={() => setFilterKanton("alle")} style={{ color: textMain }}>Alle Kantone</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              {kantons.map(kt => (
+                <DropdownMenuItem key={kt} onClick={() => setFilterKanton(kt)} style={{ color: textMain }}>{kt}</DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Unterlagen filter */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="h-7 gap-1 text-xs"
+                style={{
+                  backgroundColor: filterUnterlagen !== "alle" ? (isArtis ? "#e6ede6" : "rgba(99,102,241,0.15)") : inputBg,
+                  borderColor:     filterUnterlagen !== "alle" ? (isArtis ? "#7a9b7f" : "#7c3aed") : inputBorder,
+                  color:           filterUnterlagen !== "alle" ? (isArtis ? "#4a5e4a" : "#7c3aed") : textMain,
+                }}>
+                <FileCheck className="h-3 w-3" />
+                {filterUnterlagen === "alle" ? "Unterlagen" : filterUnterlagen === "erhalten" ? "Erhalten ✓" : "Ausstehend"}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent style={{ backgroundColor: isArtis ? "#f8faf8" : isLight ? "#fff" : "#18181b", borderColor }}>
+              <DropdownMenuItem onClick={() => setFilterUnterlagen("alle")} style={{ color: textMain }}>Alle</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => setFilterUnterlagen("erhalten")} style={{ color: textMain }}>✓ Unterlagen erhalten</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setFilterUnterlagen("ausstehend")} style={{ color: textMain }}>○ Unterlagen ausstehend</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+
       </div>
 
       {/* ── Content ─────────────────────────────────────── */}
