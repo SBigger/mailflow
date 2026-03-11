@@ -1639,8 +1639,11 @@ export default function Settings() {
                 <HardDrive className="h-5 w-5" /> Datensicherung
               </h3>
               <p className="text-sm mb-6" style={{ color: textMuted }}>
-                Erstellt eine vollständige JSON-Datei aller Daten. Mails werden nicht gesichert
-                – sie können jederzeit über Outlook neu synchronisiert werden.
+                Erstellt eine vollständige JSON-Datei aller Daten – inklusive{' '}
+                <strong style={{ color: headingColor }}>Fristenverwaltung</strong>,{' '}
+                <strong style={{ color: headingColor }}>Taskverwaltung</strong> und{' '}
+                <strong style={{ color: headingColor }}>Kundenverwaltung (Unternehmen)</strong>.{' '}
+                Mails werden nicht gesichert – sie können jederzeit über Outlook neu synchronisiert werden.
               </p>
 
               {/* Was wird gesichert */}

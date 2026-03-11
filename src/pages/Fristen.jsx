@@ -1,12 +1,12 @@
-import React, { useState, useContext, useMemo } from "react";
-import { entities } from "@/api/supabaseClient";
+import React, { useState, useContext, useMemo, useRef } from "react";
+import { entities, supabase } from "@/api/supabaseClient";
 import { ThemeContext } from "@/Layout";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   CalendarClock, Plus, Trash2, Search, X,
   RefreshCw, ChevronDown, ChevronRight, AlertTriangle,
   Calendar, Clock, CheckCircle2, Filter, Users, PlayCircle,
-  MapPin, FileCheck, SendHorizontal,
+  MapPin, FileCheck, SendHorizontal, Download, Upload,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -177,6 +177,7 @@ export default function Fristen() {
   const [showFristenlaufLoeschen, setShowFristenlaufLoeschen] = useState(false);
   const [showEinreichen,          setShowEinreichen]          = useState(false);
   const [sortCol,          setSortCol]          = useState(null);   // null = Standardsortierung
+  const restoreInputRef = useRef(null);
   const [sortDir,          setSortDir]          = useState("asc");
 
   // ── Data ──────────────────────────────────────────────────
@@ -231,6 +232,56 @@ export default function Fristen() {
 
   const handleDelete = (id) => {
     if (window.confirm("Frist wirklich löschen?")) deleteMutation.mutate(id);
+  };
+
+  // ── Backup / Restore ──────────────────────────────────────
+  const handleFristenSichern = () => {
+    try {
+      const backup = {
+        version: "1.0",
+        type: "fristen-backup",
+        created_at: new Date().toISOString(),
+        fristen: fristen,
+      };
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `fristen-backup-${new Date().toISOString().split("T")[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success(`${fristen.length} Fristen gesichert`);
+    } catch (e) {
+      toast.error("Sichern fehlgeschlagen: " + e.message);
+    }
+  };
+
+  const handleFristenZurueckladen = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        const items = Array.isArray(data) ? data : (data.fristen || []);
+        if (!Array.isArray(items) || items.length === 0) {
+          toast.error("Ungültiges Backup-Format oder keine Fristen gefunden");
+          return;
+        }
+        if (!window.confirm(`${items.length} Fristen zurückladen? Bestehende Einträge mit gleicher ID werden überschrieben.`)) return;
+        const { error } = await supabase.from("fristen").upsert(items, { onConflict: "id" });
+        if (error) throw new Error(error.message);
+        queryClient.invalidateQueries({ queryKey: ["fristen"] });
+        toast.success(`${items.length} Fristen erfolgreich zurückgeladen`);
+      } catch (err) {
+        toast.error("Zurückladen fehlgeschlagen: " + err.message);
+      } finally {
+        e.target.value = "";
+      }
+    };
+    reader.readAsText(file);
   };
 
   // ── Filtering ─────────────────────────────────────────────
@@ -595,6 +646,39 @@ export default function Fristen() {
               <SendHorizontal className="h-3.5 w-3.5" />
               Einreichen
             </Button>
+
+            {/* Fristen Sichern */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleFristenSichern}
+              className="h-8 gap-1.5 text-xs"
+              style={{ backgroundColor: inputBg, borderColor: isArtis ? "#bfcfbf" : "#6ee7b7", color: isArtis ? "#4a5e4a" : "#059669" }}
+              title="Alle Fristen als JSON-Datei herunterladen"
+            >
+              <Download className="h-3.5 w-3.5" />
+              Sichern
+            </Button>
+
+            {/* Fristen Zurückladen */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => restoreInputRef.current?.click()}
+              className="h-8 gap-1.5 text-xs"
+              style={{ backgroundColor: inputBg, borderColor: isArtis ? "#bfcfbf" : "#fcd34d", color: isArtis ? "#4a5e4a" : "#d97706" }}
+              title="Fristen aus JSON-Backup wiederherstellen"
+            >
+              <Upload className="h-3.5 w-3.5" />
+              Zurückladen
+            </Button>
+            <input
+              ref={restoreInputRef}
+              type="file"
+              accept=".json"
+              className="hidden"
+              onChange={handleFristenZurueckladen}
+            />
 
             {/* New */}
             <Button
