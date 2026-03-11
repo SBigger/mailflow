@@ -777,9 +777,13 @@ export default function Fristen() {
         fristen={fristen}
         customers={customers}
         onAutomationStart={(params) => {
-          // Browser-Automation wird hier angestossen
-          // Wird nach Demo implementiert
-          toast.info("Automation startet gleich...");
+          // Callbacks global speichern – Claude greift via javascript_tool darauf zu
+          window.__fristenAutomation = {
+            ...params,
+            supabaseUrl: "https://uawgpxcihixqxqxxbjak.supabase.co",
+            anonKey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+          };
+          toast.info(`Automation bereit – Claude übernimmt jetzt die Steuerung für ${params.items.length} Fristen`);
         }}
       />
     </div>

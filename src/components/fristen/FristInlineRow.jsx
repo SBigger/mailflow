@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useContext, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { Check, Trash2, Eye, EyeOff, ChevronDown, X, ArrowUp, ArrowDown, ArrowUpDown, KeyRound, MessageSquare, Copy } from "lucide-react";
+import { Check, Trash2, Eye, EyeOff, ChevronDown, X, ArrowUp, ArrowDown, ArrowUpDown, KeyRound, MessageSquare, Copy, Globe } from "lucide-react";
 import { ThemeContext } from "@/Layout";
 import { supabase } from "@/api/supabaseClient";
 
@@ -558,6 +558,19 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
           className="flex-shrink-0 flex items-center gap-1 pl-2 ml-1"
           style={{ borderLeft: `1px solid ${s.divider}` }}
         >
+          {/* Eingereicht-Indikator */}
+          {frist.einreichen_datum && (
+            <button
+              onClick={() => frist.einreichen_screenshot
+                ? window.open(frist.einreichen_screenshot, "_blank")
+                : null}
+              className="p-1.5 rounded"
+              style={{ color: "#22c55e" }}
+              title={`Eingereicht am ${frist.einreichen_datum}${frist.einreichen_notiz ? " – " + frist.einreichen_notiz : ""}${frist.einreichen_screenshot ? "\nKlicken für Screenshot" : ""}`}
+            >
+              <Globe className="h-3.5 w-3.5" />
+            </button>
+          )}
           {/* Bemerkung toggle */}
           <button
             onClick={() => setShowDesc(v => !v)}
