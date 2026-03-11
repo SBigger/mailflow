@@ -760,12 +760,29 @@ export default function Fristen() {
         onClose={() => setShowEinreichen(false)}
         fristen={fristen}
         customers={customers}
-        onAutomationStart={(params) => {
+        onAutomationStart={async (params) => {
+          // User-Email aus Profil holen für Ablehnungs-Benachrichtigungen
+          let userEmail = null;
+          try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user?.id) {
+              const { data: profile } = await supabase
+                .from("profiles")
+                .select("email")
+                .eq("id", user.id)
+                .single();
+              userEmail = profile?.email || user.email || null;
+            }
+          } catch (e) {
+            console.warn("User-Email konnte nicht geladen werden:", e);
+          }
+
           // Callbacks global speichern – Claude greift via javascript_tool darauf zu
           window.__fristenAutomation = {
             ...params,
             supabaseUrl: "https://uawgpxcihixqxqxxbjak.supabase.co",
             anonKey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+            userEmail,
           };
           toast.info(`Automation bereit – Claude übernimmt jetzt die Steuerung für ${params.items.length} Fristen`);
         }}
