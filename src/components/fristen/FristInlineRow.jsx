@@ -61,27 +61,29 @@ const inputCls  = "rounded border px-2 py-1 text-xs focus:outline-none focus:rin
 const LS_KEY = "artis_fristen_col_widths";
 
 export const DEFAULT_COL_WIDTHS = {
-  name:        165,
-  kanton:       92,
-  spJahr:       84,
-  fristBis:    130,
-  unterlagen:  132,
-  hDom:         74,
-  portalLogin: 110,
-  portalUid:    90,
-  portalPw:     90,
+  name:             165,
+  kanton:            92,
+  spJahr:            84,
+  fristBis:         130,
+  unterlagen:       132,
+  hDom:              74,
+  formularErhalten:  90,
+  portalLogin:      110,
+  portalUid:         90,
+  portalPw:          90,
 };
 
 export const COLS = [
-  { key: "name",        label: "Kunde" },
-  { key: "kanton",      label: "Kanton" },
-  { key: "spJahr",      label: "SP Jahr" },
-  { key: "fristBis",    label: "Frist bis" },
-  { key: "unterlagen",  label: "Unterlagen erhalten" },
-  { key: "hDom",        label: "H-Dom" },
-  { key: "portalLogin", label: "Portal Login" },
-  { key: "portalUid",   label: "UID" },
-  { key: "portalPw",    label: "Passwort" },
+  { key: "name",             label: "Kunde" },
+  { key: "kanton",           label: "Kanton" },
+  { key: "spJahr",           label: "SP Jahr" },
+  { key: "fristBis",         label: "Frist bis" },
+  { key: "unterlagen",       label: "Unterlagen erhalten" },
+  { key: "hDom",             label: "H-Dom" },
+  { key: "formularErhalten", label: "Form. erhalten" },
+  { key: "portalLogin",      label: "Portal Login" },
+  { key: "portalUid",        label: "UID" },
+  { key: "portalPw",         label: "Passwort" },
 ];
 
 function toGridCols(w, showName = true) {
@@ -89,7 +91,7 @@ function toGridCols(w, showName = true) {
   if (showName) cols.push(`${w.name}px`);
   cols.push(
     `${w.kanton}px`, `${w.spJahr}px`, `${w.fristBis}px`,
-    `${w.unterlagen}px`, `${w.hDom}px`,
+    `${w.unterlagen}px`, `${w.hDom}px`, `${w.formularErhalten}px`,
     `${w.portalLogin}px`, `${w.portalUid}px`, `${w.portalPw}px`,
   );
   return cols.join(" ");
@@ -297,6 +299,7 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
   const [portalLogin,     setPortalLogin]     = useState(frist.portal_login       || "");
   const [portalUid,       setPortalUid]       = useState(frist.portal_uid         || "");
   const [portalPassword,  setPortalPassword]  = useState(frist.portal_password    || "");
+  const [formularErhalten, setFormularErhalten] = useState(frist.formular_erhalten ?? false);
   const [showPw,          setShowPw]          = useState(false);
   const [showDesc,        setShowDesc]        = useState(false);
   const [description,     setDescription]     = useState(frist.description || "");
@@ -309,6 +312,7 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
     setAbschlussVorb(frist.abschluss_vorbereitet ?? false);
     setCategory(frist.category         || "Steuererklärung");
     setHauptdomizil(frist.ist_hauptsteuerdomizil !== false);
+    setFormularErhalten(frist.formular_erhalten ?? false);
     setPortalLogin(frist.portal_login  || "");
     setPortalUid(frist.portal_uid       || "");
     setPortalPassword(frist.portal_password || "");
@@ -463,6 +467,25 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
               style={{ accentColor: s.accentBg, cursor: "pointer" }}
             />
             <span className="text-xs font-medium">H-Dom</span>
+          </label>
+
+          {/* Formular erhalten */}
+          <label
+            className="flex items-center gap-1 cursor-pointer select-none"
+            title="Formular erhalten"
+            style={{ color: formularErhalten ? s.accentBg : s.textMuted }}
+          >
+            <input
+              type="checkbox"
+              checked={formularErhalten}
+              onChange={e => {
+                setFormularErhalten(e.target.checked);
+                save({ formular_erhalten: e.target.checked });
+              }}
+              disabled={isDone}
+              style={{ accentColor: s.accentBg, cursor: "pointer" }}
+            />
+            <span className="text-xs font-medium">Form.</span>
           </label>
 
           {/* Portal Login */}

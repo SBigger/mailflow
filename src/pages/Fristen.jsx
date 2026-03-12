@@ -6,7 +6,7 @@ import {
   CalendarClock, Plus, Trash2, Search, X,
   RefreshCw, ChevronDown, ChevronRight, AlertTriangle,
   Calendar, Clock, CheckCircle2, Filter, Users, PlayCircle,
-  MapPin, FileCheck, SendHorizontal, Download, Upload,
+  MapPin, FileCheck, SendHorizontal, Download, Upload, XCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -171,6 +171,7 @@ export default function Fristen() {
   const [filterJahr,       setFilterJahr]       = useState("alle");
   const [filterKanton,     setFilterKanton]     = useState("alle");
   const [filterUnterlagen, setFilterUnterlagen] = useState("alle"); // 'alle' | 'erhalten' | 'ausstehend'
+  const [filterAbgelehnt,  setFilterAbgelehnt]  = useState(false);
   const [showAdd,          setShowAdd]          = useState(false);
   const [editFrist,        setEditFrist]        = useState(null);
   const [showFristenlauf,  setShowFristenlauf]  = useState(false);
@@ -326,6 +327,11 @@ export default function Fristen() {
     if (filterUnterlagen === "erhalten")   list = list.filter(f =>  f.unterlagen_datum);
     if (filterUnterlagen === "ausstehend") list = list.filter(f => !f.unterlagen_datum);
 
+    // Abgelehnte Fristen filter (einreichen_notiz gesetzt aber kein einreichen_datum)
+    if (filterAbgelehnt) {
+      list = list.filter(f => f.einreichen_notiz && !f.einreichen_datum);
+    }
+
     // Search
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -338,7 +344,7 @@ export default function Fristen() {
     }
 
     return list;
-  }, [fristen, activeTab, filterCategory, filterJahr, filterKundenTyp, filterKanton, filterUnterlagen, search, customers]);
+  }, [fristen, activeTab, filterCategory, filterJahr, filterKundenTyp, filterKanton, filterUnterlagen, filterAbgelehnt, search, customers]);
 
   // ── Sortierung ────────────────────────────────────────────────
   const handleSort = (col) => {
@@ -674,6 +680,23 @@ export default function Fristen() {
               <DropdownMenuItem onClick={() => setFilterUnterlagen("ausstehend")} style={{ color: textMain }}>○ Unterlagen ausstehend</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+
+          {/* Frist abgelehnt filter */}
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 gap-1 text-xs"
+            onClick={() => setFilterAbgelehnt(v => !v)}
+            style={{
+              backgroundColor: filterAbgelehnt ? (isArtis ? "#fde8e8" : "rgba(239,68,68,0.15)") : inputBg,
+              borderColor:     filterAbgelehnt ? "#ef4444" : inputBorder,
+              color:           filterAbgelehnt ? "#dc2626" : textMain,
+            }}
+            title="Nur abgelehnte Fristen anzeigen"
+          >
+            <XCircle className="h-3 w-3" />
+            {filterAbgelehnt ? "Abgelehnt ✕" : "Abgelehnt"}
+          </Button>
         </div>
 
       </div>
