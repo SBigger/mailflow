@@ -6,7 +6,7 @@ import {
   CalendarClock, Plus, Trash2, Search, X,
   RefreshCw, ChevronDown, ChevronRight, AlertTriangle,
   Calendar, Clock, CheckCircle2, Filter, Users, PlayCircle,
-  MapPin, FileCheck, SendHorizontal, Download, Upload, XCircle,
+  MapPin, FileCheck, SendHorizontal, Download, Upload, XCircle, Printer,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -17,6 +17,7 @@ import {
 import AddFristDialog from "@/components/fristen/AddFristDialog";
 import FristenEinreichenDialog from "@/components/fristen/FristenEinreichenDialog";
 import FristenlaufDialog from "@/components/fristen/FristenlaufDialog";
+import FristenBriefeDialog from "@/components/fristen/FristenBriefeDialog";
 import { FristInlineRow, FristenColumnHeader, ColWidthProvider } from "@/components/fristen/FristInlineRow";
 import { isToday, isPast, parseISO } from "date-fns";
 
@@ -177,6 +178,7 @@ export default function Fristen() {
   const [showFristenlauf,  setShowFristenlauf]  = useState(false);
   const [showFristenlaufLoeschen, setShowFristenlaufLoeschen] = useState(false);
   const [showEinreichen,          setShowEinreichen]          = useState(false);
+  const [showBriefe,             setShowBriefe]             = useState(false);
   const [sortCol,          setSortCol]          = useState(null);   // null = Standardsortierung
   const restoreInputRef = useRef(null);
   const [sortDir,          setSortDir]          = useState("asc");
@@ -529,6 +531,19 @@ export default function Fristen() {
               Einreichen
             </Button>
 
+            {/* Briefe generieren */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowBriefe(true)}
+              className="h-8 gap-1.5 text-xs"
+              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: isArtis ? "#4a5e4a" : "#7c3aed" }}
+              title="Briefe an Kunden generieren, von welchen das Formular noch fehlt"
+            >
+              <Printer className="h-3.5 w-3.5" />
+              Briefe
+            </Button>
+
             {/* Fristen Sichern */}
             <Button
               variant="outline"
@@ -778,6 +793,14 @@ export default function Fristen() {
           queryClient.invalidateQueries({ queryKey: ["fristen"] });
         }}
       />
+      {showBriefe && (
+        <FristenBriefeDialog
+          fristen={fristen}
+          customers={customers}
+          onClose={() => setShowBriefe(false)}
+        />
+      )}
+
       <FristenEinreichenDialog
         open={showEinreichen}
         onClose={() => setShowEinreichen(false)}
