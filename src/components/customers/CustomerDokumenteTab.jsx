@@ -151,8 +151,6 @@ export default function CustomerDokumenteTab({ customer }) {
     inputBorder: isArtis ? "#bfcfbf"             : isLight ? "#c8c8dc"             : "#3f3f46",
     accentBg:    isArtis ? "#7a9b7f"             : "#6366f1",
   };
-  const isArtis = theme === "artis";
-  const isLight = theme === "light";
   const queryClient = useQueryClient();
   const fileInputRef = useRef();
 
