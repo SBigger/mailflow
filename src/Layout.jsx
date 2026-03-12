@@ -2,7 +2,7 @@ import React, { useState, useEffect, createContext, useContext } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { entities, functions, auth, supabase } from "@/api/supabaseClient";
-import { LayoutDashboard, Mail, CheckSquare, Settings as SettingsIcon, Building2, CalendarClock, LifeBuoy, BookOpen, GripVertical } from "lucide-react";
+import { LayoutDashboard, Mail, CheckSquare, Settings as SettingsIcon, Building2, CalendarClock, LifeBuoy, BookOpen, GripVertical, FolderOpen } from "lucide-react";
 import BottomNav from "@/components/mobile/BottomNav";
 import { useIsMobile } from "@/components/mobile/useIsMobile";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
@@ -83,6 +83,7 @@ export default function Layout({ children, currentPageName, onMailFilterAction, 
     { name: 'KnowledgeBase',  icon: BookOpen,        label: 'Wissen' },
     { name: 'Fristen',        icon: CalendarClock,   label: 'Fristen' },
     { name: 'Kunden',         icon: Building2,       label: 'Kunden' },
+    { name: 'Dokumente',      icon: FolderOpen,      label: 'Dokumente' },
     { name: 'Settings',       icon: SettingsIcon,    label: 'Einstellungen' },
   ];
 

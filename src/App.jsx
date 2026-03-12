@@ -16,6 +16,7 @@ import Fristen from './pages/Fristen';
 import ReminderBoard from './pages/ReminderBoard';
 import TicketBoard from './pages/TicketBoard';
 import KnowledgeBase from './pages/KnowledgeBase';
+import Dokumente from './pages/Dokumente';
 import UserManagement from './pages/UserManagement';
 import Login from './pages/Login';
 import ResetPassword from './pages/ResetPassword';
@@ -54,6 +55,7 @@ function AuthenticatedApp() {
         <Route path="/ReminderBoard" element={<ReminderBoard />} />
         <Route path="/TicketBoard"   element={<TicketBoard />} />
         <Route path="/KnowledgeBase" element={<KnowledgeBase />} />
+        <Route path="/Dokumente" element={<Dokumente />} />
         <Route path="/UserManagement" element={<UserManagement />} />
         <Route path="*" element={<Navigate to="/Dashboard" replace />} />
       </Routes>
