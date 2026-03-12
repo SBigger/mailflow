@@ -69,7 +69,18 @@ function generatePrintHtml(recipients, letterDate, subject, bodyTemplate, logoUr
 }
 
 export default function FristenBriefeDialog({ fristen, customers, onClose }) {
-  const { style: s } = useContext(ThemeContext);
+  const { theme } = useContext(ThemeContext);
+  const isArtis = theme === "artis";
+  const isLight = theme === "light";
+  const s = {
+    cardBg:      isArtis ? "#ffffff"             : isLight ? "#ffffff"             : "#27272a",
+    border:      isArtis ? "#ccd8cc"             : isLight ? "#d4d4e8"             : "#3f3f46",
+    textMain:    isArtis ? "#2d3a2d"             : isLight ? "#1a1a2e"             : "#e4e4e7",
+    textMuted:   isArtis ? "#6b826b"             : isLight ? "#7a7a9a"             : "#71717a",
+    inputBg:     isArtis ? "#ffffff"             : isLight ? "#ffffff"             : "rgba(24,24,27,0.8)",
+    inputBorder: isArtis ? "#bfcfbf"             : isLight ? "#c8c8dc"             : "#3f3f46",
+    accentBg:    isArtis ? "#7a9b7f"             : "#6366f1",
+  };
 
   const candidates = useMemo(() => {
     const seen = new Set();
