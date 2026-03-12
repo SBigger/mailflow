@@ -20,6 +20,7 @@ import CustomerContactPersons from "../components/customers/CustomerContactPerso
 import CustomerImportDialog from "../components/customers/CustomerImportDialog";
 import PrivatpersonImportDialog from "../components/customers/PrivatpersonImportDialog";
 import CustomerFristenTab from "../components/customers/CustomerFristenTab";
+import CustomerDokumenteTab from "../components/customers/CustomerDokumenteTab";
 import MobileCustomerView from "../components/customers/MobileCustomerView";
 
 function escapeCsv(val) {
@@ -379,6 +380,7 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
                         <TabsTrigger value="activities" className="text-xs">📋 Tätigkeiten</TabsTrigger>
                         <TabsTrigger value="contacts"   className="text-xs">👤 Kontakte</TabsTrigger>
                         <TabsTrigger value="notes"      className="text-xs">📝 Notizen</TabsTrigger>
+          <TabsTrigger value="dokumente"  className="text-xs">📄 Dokumente</TabsTrigger>
                       </>
                     )}
                   </TabsList>
@@ -407,6 +409,10 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
                       <TabsContent value="notes" className="mt-0 h-full">
                         <CustomerNotesTab customer={currentCustomer} onUpdate={handleUpdate} />
                       </TabsContent>
+
+        <TabsContent value="dokumente" className="mt-0">
+          <CustomerDokumenteTab customer={currentCustomer} />
+        </TabsContent>
 
                     </>
                   )}
