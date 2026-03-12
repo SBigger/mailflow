@@ -486,7 +486,7 @@ export default function FristenEinreichenDialog({
           style={{ backgroundColor: headerBg, borderColor }}>
           <div className="text-xs" style={{ color: textMuted }}>
             {phase === "setup"   && selected.length > 0 && `${selected.length} Frist${selected.length !== 1 ? "en" : ""} ausgewählt`}
-            {phase === "running" && "Browser-Automation läuft – bitte nicht schliessen..."}
+            {phase === "running" && "Portal-Automation läuft..."}
             {phase === "done"    && `${successCount}/${results.length} erfolgreich eingereicht`}
           </div>
           <div className="flex gap-2">
