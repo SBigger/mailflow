@@ -802,31 +802,78 @@ export default function Fristen() {
             }
           };
 
-          // Callbacks global speichern – Claude greift via javascript_tool darauf zu
+          // Callbacks global speichern (für Debugging / manuelle Steuerung)
           window.__fristenAutomation = {
             items: params.items,
             targetDate: params.targetDate,
             kanton: params.kanton,
             jahr: params.jahr,
-            maxAttempts: 2,
-            maxConsecutiveErrors: 3,
             onProgress: wrappedOnProgress,
             onDone: params.onDone,
-            portalItems,          // <-- nur Portal-Items, direkt für Claude
+            portalItems,
             supabaseUrl: "https://uawgpxcihixqxqxxbjak.supabase.co",
             anonKey: import.meta.env.VITE_SUPABASE_ANON_KEY,
             userEmail,
           };
 
-          // Portal-Tab automatisch öffnen (wiederverwendbar via Name 'fristen_portal')
-          if (portalItems.length > 0) {
-            const portalUrl = params.kanton?.includes("SG")
-              ? "https://egate.ksta.sg.ch/"
-              : "about:blank";
-            window.open(portalUrl, "fristen_portal");
-          }
+          // Server-seitige Automation via API-Route
+          if (params.kanton?.includes("SG") && portalItems.length > 0) {
+            toast.info(`Starte Server-Automation für ${portalItems.length} Portal-Fristen…`);
 
-          toast.info(`Automation bereit – ${portalItems.length} Portal-Fristen für Claude`);
+            // Auth-Token für API-Call holen
+            const { data: { session } } = await supabase.auth.getSession();
+            const token = session?.access_token;
+
+            // targetDate von DD.MM.YYYY → YYYY-MM-DD umwandeln
+            const dateParts = (params.targetDate || "").split(".");
+            const verlaengerungsDatum = dateParts.length === 3
+              ? `${dateParts[2]}-${dateParts[1]}-${dateParts[0]}`
+              : params.targetDate;
+
+            for (const pItem of portalItems) {
+              // Prüfen ob Automation abgebrochen wurde
+              if (window.__fristenAutomation?._aborted) break;
+
+              try {
+                const apiRes = await fetch("/api/portal-sg-fristeingabe", {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${token}`,
+                  },
+                  body: JSON.stringify({
+                    registernummer: pItem.login,
+                    uid: pItem.uid,
+                    loginType: pItem.uid ? "UID" : "VEREIN",
+                    verlaengerungsDatum,
+                  }),
+                });
+
+                const data = await apiRes.json();
+
+                if (!apiRes.ok) throw new Error(data.error || "API-Fehler");
+
+                if (data.bewilligt) {
+                  const note = `Bewilligt bis ${data.verlaengerungsDatum ?? verlaengerungsDatum}`;
+                  await wrappedOnProgress(pItem.idx, "success", null, note);
+                } else {
+                  const note = `Abgelehnt: ${data.bemerkung ?? "Unbekannter Fehler"}`;
+                  await wrappedOnProgress(pItem.idx, "error", null, note);
+                }
+              } catch (e) {
+                console.error(`Portal-API Fehler für ${pItem.companyName}:`, e);
+                await wrappedOnProgress(pItem.idx, "error", null, `API-Fehler: ${e.message}`);
+              }
+            }
+
+            params.onDone?.();
+          } else if (portalItems.length > 0) {
+            // Fallback für andere Kantone: Portal-Tab öffnen
+            window.open("about:blank", "fristen_portal");
+            toast.info(`${portalItems.length} Portal-Fristen bereit`);
+          } else {
+            params.onDone?.();
+          }
         }}
       />
     </div>
