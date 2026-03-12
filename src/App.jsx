@@ -1,4 +1,5 @@
 import { Toaster } from "@/components/ui/toaster";
+import { Toaster as SonnerToaster } from "sonner";
 import { QueryClientProvider, QueryClient } from '@tanstack/react-query';
 import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
@@ -73,6 +74,7 @@ function App() {
           </Routes>
         </Router>
         <Toaster />
+        <SonnerToaster richColors position="top-right" />
       </QueryClientProvider>
     </AuthProvider>
   );

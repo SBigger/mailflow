@@ -9,11 +9,13 @@ import { toast } from "sonner";
 const BUCKET = "dokumente";
 
 const CATEGORIES = [
-  { key: "betriebswirtschaft", label: "Betriebswirtschaft", icon: "📊" },
-  { key: "steuern",            label: "Steuern",            icon: "💰" },
-  { key: "mwst",               label: "MWST",               icon: "🧾" },
-  { key: "personal",           label: "Personal",           icon: "👥" },
-  { key: "korrespondenz",      label: "Korrespondenz",      icon: "✉️" },
+  { key: "rechnungswesen",  label: "01 - Rechnungswesen",  icon: "📊" },
+  { key: "steuern",         label: "02 - Steuern",         icon: "💰" },
+  { key: "mwst",            label: "03 - Mehrwertsteuer",  icon: "🧾" },
+  { key: "revision",        label: "04 - Revision",        icon: "🔍" },
+  { key: "rechtsberatung",  label: "05 - Rechtsberatung",  icon: "⚖️" },
+  { key: "personal",        label: "06 - Personal",        icon: "👥" },
+  { key: "korrespondenz",   label: "09 - Korrespondenz",   icon: "✉️" },
 ];
 
 function getFileInfo(mimeType, filename) {
@@ -233,7 +235,7 @@ export default function CustomerDokumenteTab({ customer }) {
     setUploadDialog({
       file,
       name:     file.name.replace(/\.[^.]+$/, ""),
-      category: selCat || "korrespondenz",
+      category: selCat || "steuern",
       year:     detectedYear || (selYear && selYear !== "__none__" ? selYear : null),
       tags:     [],
       tagInput: "",
