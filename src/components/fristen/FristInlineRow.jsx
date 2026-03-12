@@ -418,18 +418,26 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
             title="Frist bis"
           />
 
-          {/* 5. Spalte: Unterlagen erhalten (Privatperson) ODER Abschluss vorbereitet (Juristisch) */}
+          {/* 5. Spalte: Unterlagen erhalten (Privatperson=Checkbox, Juristisch=Abschluss) */}
           {isPrivat ? (
-            <input
-              type="date"
-              value={unterlagenDatum}
-              onChange={e => setUnterlagenDatum(e.target.value)}
-              onBlur={e => save({ unterlagen_datum: e.target.value || null })}
-              className={inputCls}
-              style={{ ...inStyle, width: "100%" }}
-              disabled={isDone}
-              title="Unterlagen erhalten"
-            />
+            <label
+              className="flex items-center gap-1.5 cursor-pointer select-none"
+              title={unterlagenDatum ? `Unterlagen erhalten am ${unterlagenDatum}` : "Unterlagen erhalten"}
+              style={{ color: unterlagenDatum ? s.accentBg : s.textMuted }}
+            >
+              <input
+                type="checkbox"
+                checked={!!unterlagenDatum}
+                onChange={e => {
+                  const val = e.target.checked ? new Date().toISOString().split("T")[0] : "";
+                  setUnterlagenDatum(val);
+                  save({ unterlagen_datum: val || null });
+                }}
+                disabled={isDone}
+                style={{ accentColor: s.accentBg, cursor: "pointer", width: 14, height: 14 }}
+              />
+              <span className="text-xs font-medium">Unterlagen</span>
+            </label>
           ) : (
             <label
               className="flex items-center gap-1.5 cursor-pointer select-none"
