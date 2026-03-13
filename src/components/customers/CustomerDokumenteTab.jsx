@@ -575,11 +575,11 @@ export default function CustomerDokumenteTab({ customerId }) {
                   onMouseEnter={e => e.currentTarget.style.background = s.rowHover}
                   onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                   {/* Typ */}
-                  <span style={{ background: fi.color, color: "#fff", borderRadius: 3, padding: "2px 4px", fontSize: 9, fontWeight: 700, flexShrink: 0, minWidth: 30, textAlign: "center" }}>{fi.label}</span>
+                  <span onClick={() => { const u = signedUrls[doc.id]; if (u) window.open(u, '_blank'); else toast.error('URL noch nicht bereit, kurz warten.'); }} style={{ background: fi.color, color: "#fff", borderRadius: 3, padding: "2px 4px", fontSize: 9, fontWeight: 700, flexShrink: 0, minWidth: 30, textAlign: "center", cursor: "pointer" }}>{fi.label}</span>
                   {/* Name + Tags */}
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                    <div style={{ fontSize: 12, color: s.textMain, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 500, flex: 1 }}>{doc.name}</div>
+                    <div onClick={() => { const u = signedUrls[doc.id]; if (u) window.open(u, '_blank'); else toast.error('URL noch nicht bereit, kurz warten.'); }} style={{ fontSize: 12, color: s.textMain, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 500, flex: 1, cursor: "pointer" }}>{doc.name}</div>
                     {isCheckedOut && (
                       <span title={"Ausgecheckt von " + doc.checked_out_by_name}
                         style={{ fontSize: 9, color: isMyCheckout ? accent : "#f59e0b",

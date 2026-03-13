@@ -678,11 +678,11 @@ export default function Dokumente() {
                     onMouseEnter={e => e.currentTarget.style.background = s.rowHover}
                     onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                     {/* Typ */}
-                    <span style={{ background: fi.color, color: "#fff", borderRadius: 4, padding: "2px 5px", fontSize: 10, fontWeight: 700, flexShrink: 0, minWidth: 36, textAlign: "center" }}>{fi.label}</span>
+                    <span onClick={() => { const u = signedUrls[doc.id]; if (u) window.open(u, '_blank'); else toast.error('URL noch nicht bereit, kurz warten.'); }} style={{ background: fi.color, color: "#fff", borderRadius: 4, padding: "2px 5px", fontSize: 10, fontWeight: 700, flexShrink: 0, minWidth: 36, textAlign: "center", cursor: "pointer" }}>{fi.label}</span>
                     {/* Name + Tags */}
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                      <div style={{ fontSize: 13, color: s.textMain, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 500, flex: 1 }}>{doc.name}</div>
+                      <div onClick={() => { const u = signedUrls[doc.id]; if (u) window.open(u, '_blank'); else toast.error('URL noch nicht bereit, kurz warten.'); }} style={{ fontSize: 13, color: s.textMain, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 500, flex: 1, cursor: "pointer" }}>{doc.name}</div>
                       {isCheckedOut && (
                         <span title={"Ausgecheckt von " + doc.checked_out_by_name + " am " + (doc.checked_out_at ? new Date(doc.checked_out_at).toLocaleDateString("de-CH") : "")}
                           style={{ fontSize: 10, color: isMyCheckout ? accent : "#f59e0b",
