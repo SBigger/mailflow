@@ -411,7 +411,7 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
                       </TabsContent>
 
         <TabsContent value="dokumente" className="mt-0">
-          <CustomerDokumenteTab customer={currentCustomer} />
+          <CustomerDokumenteTab customerId={currentCustomer?.id} />
         </TabsContent>
 
                     </>

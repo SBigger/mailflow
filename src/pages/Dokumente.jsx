@@ -253,6 +253,7 @@ export default function Dokumente() {
   const [checkinDoc,     setCheckinDoc]     = useState(null);
   const [checkinHandle,  setCheckinHandle]  = useState(null);
   const [signedUrls,    setSignedUrls]    = useState({});
+  const [pageTab,       setPageTab]       = useState('alle');
 
   const { data: customers = [] } = useQuery({
     queryKey: ["customers"],
@@ -475,13 +476,66 @@ export default function Dokumente() {
       {/* Header */}
       <div style={{ padding: "12px 20px", borderBottom: "1px solid " + border, display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
         <span style={{ fontSize: 15, fontWeight: 700, color: s.textMain }}>Dokumente</span>
-        <span style={{ fontSize: 12, color: s.textMuted }}>({allDoks.length} Dok., {tree.length} Kunden)</span>
+        {/* Tabs */}
+        <div style={{ display: "flex", gap: 2, background: s.sidebarBg, border: "1px solid " + border, borderRadius: 8, padding: 3 }}>
+          {[['alle', 'Alle Dokumente'], ['ausgecheckt', 'Ausgecheckt']].map(([key, label]) => (
+            <button key={key} onClick={() => setPageTab(key)}
+              style={{ padding: "4px 14px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 12, fontWeight: pageTab === key ? 600 : 400,
+                background: pageTab === key ? accent : "transparent",
+                color: pageTab === key ? "#fff" : s.textMuted, transition: "all 0.15s" }}>
+              {label}{key === 'ausgecheckt' && myCheckedOutDocs.length > 0 ? ' (' + myCheckedOutDocs.length + ')' : ''}
+            </button>
+          ))}
+        </div>
         <div style={{ flex: 1 }} />
+        <span style={{ fontSize: 12, color: s.textMuted }}>{allDoks.length} Dok.</span>
         <Button onClick={() => setShowUpload(true)} style={{ background: accent, color: "#fff", fontSize: 12, height: 32, display: "flex", alignItems: "center", gap: 5 }}>
           <Upload size={13} /> Hochladen
         </Button>
       </div>
 
+      {pageTab === 'ausgecheckt' && (
+        <div style={{ flex: 1, overflowY: "auto", padding: 24 }}>
+          {myCheckedOutDocs.length === 0 ? (
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "50%", color: s.textMuted, gap: 10 }}>
+              <span style={{ fontSize: 40 }}>&#128275;</span>
+              <span style={{ fontSize: 14 }}>Keine Dokumente ausgecheckt</span>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 860 }}>
+              <div style={{ fontSize: 12, color: s.textMuted, marginBottom: 4 }}>
+                {myCheckedOutDocs.length} Dokument{myCheckedOutDocs.length !== 1 ? "e" : ""} von dir ausgecheckt
+              </div>
+              {myCheckedOutDocs.map(doc => {
+                const fi   = getFileInfo(doc.file_type, doc.filename);
+                const cat  = CATEGORIES.find(cx => cx.key === doc.category);
+                const cust = customers.find(cx => cx.id === doc.customer_id);
+                return (
+                  <div key={doc.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", background: s.cardBg,
+                    border: "1px solid " + accent + "44", borderRadius: 10, borderLeft: "3px solid " + accent }}>
+                    <span style={{ background: fi.color, color: "#fff", borderRadius: 4, padding: "2px 6px", fontSize: 10, fontWeight: 700, flexShrink: 0, minWidth: 36, textAlign: "center" }}>{fi.label}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, color: s.textMain, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{doc.name}</div>
+                      <div style={{ fontSize: 11, color: s.textMuted, marginTop: 3 }}>
+                        {cust?.company_name || "Unbekannter Kunde"}
+                        {cat ? " · " + cat.icon + " " + cat.label : ""}
+                        {doc.year ? " · " + doc.year : ""}
+                        {doc.checked_out_at ? " · seit " + new Date(doc.checked_out_at).toLocaleDateString("de-CH") : ""}
+                      </div>
+                    </div>
+                    <button onClick={() => openCheckin(doc)}
+                      style={{ background: accent, color: "#fff", border: "none", borderRadius: 7, padding: "6px 16px", fontSize: 12, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                      <Lock size={13} /> Einchecken
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {pageTab === 'alle' && (
       <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
 
         {/* ═══ LINKS: Baum ═══════════════════════════════════════════════ */}
@@ -695,6 +749,7 @@ export default function Dokumente() {
           </div>
         </div>
       </div>
+      )}
 
       {/* Dialoge */}
       {showUpload && (
