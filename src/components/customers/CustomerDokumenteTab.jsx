@@ -313,13 +313,6 @@ export default function CustomerDokumenteTab({ customerId }) {
       queryClient.invalidateQueries({ queryKey: ["dokumente", customerId] });
       queryClient.invalidateQueries({ queryKey: ["dokumente-all"] });
 
-      const { data: urlData } = await supabase.storage.from(BUCKET).createSignedUrl(doc.storage_path, 300);
-      if (!urlData?.signedUrl) { toast.error("Fehler beim Erstellen der Download-URL"); return; }
-      const resp = await fetch(urlData.signedUrl);
-      const blob = await resp.blob();
-
-      // Office URI Scheme: direkt in lokaler Office-App oeffnen (Excel/Word/PowerPoint)
-      // Benoetigt: Chrome/Edge + Microsoft Office installiert
       const _oExt   = doc.filename.split('.').pop().toLowerCase();
       const _oProto = {
         xls: 'ms-excel', xlsx: 'ms-excel', xlsm: 'ms-excel', xlsb: 'ms-excel',
@@ -327,28 +320,39 @@ export default function CustomerDokumenteTab({ customerId }) {
         ppt: 'ms-powerpoint', pptx: 'ms-powerpoint',
       }[_oExt];
 
-      if ("showSaveFilePicker" in window) {
-        try {
-          const handle = await window.showSaveFilePicker({ suggestedName: doc.filename });
-          const writable = await handle.createWritable();
-          await writable.write(blob);
-          await writable.close();
-          const initialFile = await handle.getFile();
-          await saveHandle(doc.id, handle);
-          await saveHandleMeta(doc.id, initialFile.lastModified);
-          // Office-App nach kurzer Pause oeffnen (damit Save-Dialog zuerst schliesst)
-          if (_oProto) setTimeout(() => { const _a = document.createElement('a'); _a.href = `artis-open://?url=${encodeURIComponent(urlData.signedUrl)}&filename=${encodeURIComponent(doc.filename)}`; document.body.appendChild(_a); _a.click(); document.body.removeChild(_a); }, 400);
-          toast.success("Ausgecheckt – Datei gespeichert. Wird automatisch eingecheckt wenn Excel/Word geschlossen wird.");
-        } catch (e) {
-          if (e.name !== "AbortError") throw e;
-          if (_oProto) { const _a = document.createElement('a'); _a.href = `artis-open://?url=${encodeURIComponent(urlData.signedUrl)}&filename=${encodeURIComponent(doc.filename)}`; document.body.appendChild(_a); _a.click(); document.body.removeChild(_a); }
-          else window.open(urlData.signedUrl, "_blank");
+      const { data: urlData } = await supabase.storage.from(BUCKET).createSignedUrl(doc.storage_path, 300);
+      if (!urlData?.signedUrl) { toast.error("Fehler beim Erstellen der Download-URL"); return; }
+
+      if (_oProto) {
+        // Office-Datei: direkt via artis-open:// oeffnen – kein Speichern-Dialog nötig
+        // artis_opener.exe lädt herunter und öffnet in Excel/Word
+        const _a = document.createElement('a');
+        _a.href = `artis-open://?url=${encodeURIComponent(urlData.signedUrl)}&filename=${encodeURIComponent(doc.filename)}`;
+        document.body.appendChild(_a); _a.click(); document.body.removeChild(_a);
+        toast.success("Datei öffnet in Excel/Word – nach Bearbeitung Schloss-Icon → Einchecken.");
+      } else {
+        // Nicht-Office: lokal speichern für Auto-Checkin via File-Watcher
+        const resp = await fetch(urlData.signedUrl);
+        const blob = await resp.blob();
+        if ("showSaveFilePicker" in window) {
+          try {
+            const handle = await window.showSaveFilePicker({ suggestedName: doc.filename });
+            const writable = await handle.createWritable();
+            await writable.write(blob);
+            await writable.close();
+            const initialFile = await handle.getFile();
+            await saveHandle(doc.id, handle);
+            await saveHandleMeta(doc.id, initialFile.lastModified);
+            toast.success("Ausgecheckt – Datei gespeichert. Wird automatisch eingecheckt nach Änderungen.");
+          } catch (e) {
+            if (e.name !== "AbortError") throw e;
+            window.open(urlData.signedUrl, "_blank");
+            toast.success("Ausgecheckt – Datei heruntergeladen.");
+          }
+        } else {
+          window.open(urlData.signedUrl, "_blank");
           toast.success("Ausgecheckt – Datei heruntergeladen.");
         }
-      } else {
-        if (_oProto) { const _a = document.createElement('a'); _a.href = `artis-open://?url=${encodeURIComponent(urlData.signedUrl)}&filename=${encodeURIComponent(doc.filename)}`; document.body.appendChild(_a); _a.click(); document.body.removeChild(_a); }
-        else window.open(urlData.signedUrl, "_blank");
-        toast.success("Ausgecheckt – Datei heruntergeladen.");
       }
     } catch (err) { toast.error("Fehler: " + err.message); }
   };
