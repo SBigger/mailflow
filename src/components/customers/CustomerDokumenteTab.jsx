@@ -1,138 +1,133 @@
-import React, { useState, useMemo, useEffect, useContext, useRef } from "react";
-import { Upload, Search, X, Download, Trash2, ChevronDown, ChevronRight, FolderOpen, Folder } from "lucide-react";
+import React, { useState, useMemo, useEffect, useRef, useContext } from "react";
+import { Upload, Search, X, Download, Trash2, ChevronDown, ChevronRight, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeContext } from "@/Layout";
 import { supabase, entities } from "@/api/supabaseClient";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import TagSelectWidget from "@/components/dokumente/TagSelectWidget";
 
-const BUCKET = "dokumente";
+const BUCKET   = "dokumente";
+const CUR_YEAR = new Date().getFullYear();
 
 const CATEGORIES = [
-  { key: "rechnungswesen",  label: "01 - Rechnungswesen",  icon: "📊" },
-  { key: "steuern",         label: "02 - Steuern",         icon: "💰" },
-  { key: "mwst",            label: "03 - Mehrwertsteuer",  icon: "🧾" },
-  { key: "revision",        label: "04 - Revision",        icon: "🔍" },
-  { key: "rechtsberatung",  label: "05 - Rechtsberatung",  icon: "⚖️" },
-  { key: "personal",        label: "06 - Personal",        icon: "👥" },
-  { key: "korrespondenz",   label: "09 - Korrespondenz",   icon: "✉️" },
+  { key: "rechnungswesen", label: "01 - Rechnungswesen", icon: "\uD83D\uDCCA" },
+  { key: "steuern",        label: "02 - Steuern",        icon: "\uD83D\uDCB0" },
+  { key: "mwst",           label: "03 - Mehrwertsteuer", icon: "\uD83E\uDDFE" },
+  { key: "revision",       label: "04 - Revision",       icon: "\uD83D\uDD0D" },
+  { key: "rechtsberatung", label: "05 - Rechtsberatung", icon: "\u2696\uFE0F" },
+  { key: "personal",       label: "06 - Personal",       icon: "\uD83D\uDC65" },
+  { key: "korrespondenz",  label: "09 - Korrespondenz",  icon: "\u2709\uFE0F" },
 ];
 
 function getFileInfo(mimeType, filename) {
   const ext = (filename || "").split(".").pop().toLowerCase();
-  if (mimeType === "application/pdf" || ext === "pdf")
-    return { label: "PDF", color: "#dc2626" };
-  if (mimeType?.includes("spreadsheet") || ["xls","xlsx","csv"].includes(ext))
-    return { label: "XLS", color: "#16a34a" };
-  if (mimeType?.includes("word") || ["doc","docx"].includes(ext))
-    return { label: "DOC", color: "#2563eb" };
-  if (mimeType?.startsWith("image/"))
-    return { label: "IMG", color: "#7c3aed" };
-  if (["zip","rar","7z"].includes(ext))
-    return { label: "ZIP", color: "#d97706" };
+  if (mimeType === "application/pdf" || ext === "pdf")             return { label: "PDF", color: "#dc2626" };
+  if (mimeType?.includes("spreadsheet") || ["xls","xlsx","csv"].includes(ext)) return { label: "XLS", color: "#16a34a" };
+  if (mimeType?.includes("word") || ["doc","docx"].includes(ext)) return { label: "DOC", color: "#2563eb" };
+  if (mimeType?.startsWith("image/"))                              return { label: "IMG", color: "#7c3aed" };
+  if (["zip","rar","7z"].includes(ext))                           return { label: "ZIP", color: "#d97706" };
   return { label: ext.toUpperCase() || "FILE", color: "#71717a" };
 }
-
 function detectYear(filename) {
   const m = (filename || "").match(/\b(20\d{2})\b/);
   return m ? parseInt(m[1]) : null;
 }
-
 function formatBytes(bytes) {
   if (!bytes) return "";
   if (bytes < 1024) return bytes + " B";
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + " KB";
-  return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+  if (bytes < 1048576) return (bytes / 1024).toFixed(0) + " KB";
+  return (bytes / 1048576).toFixed(1) + " MB";
 }
 
-const TAG_PALETTE = [
-  "#7c3aed","#2563eb","#0891b2","#059669","#d97706","#dc2626","#db2777","#4f46e5",
-];
-function tagColor(tag) {
-  let h = 0;
-  for (let i = 0; i < tag.length; i++) h = (h * 31 + tag.charCodeAt(i)) & 0xffff;
-  return TAG_PALETTE[h % TAG_PALETTE.length];
-}
+// ─── Upload-Dialog ────────────────────────────────────────────────────────
+function UploadDialog({ customerId, allTags, onCancel, onUploaded, s, border, accent }) {
+  const [file,      setFile]      = useState(null);
+  const [name,      setName]      = useState("");
+  const [category,  setCategory]  = useState("steuern");
+  const [year,      setYear]      = useState(String(CUR_YEAR));
+  const [tagIds,    setTagIds]    = useState([]);
+  const [notes,     setNotes]     = useState("");
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef();
 
-// ─── Upload-Dialog ────────────────────────────────────────────────────────────
-function UploadDialog({ dialog, onChange, onCancel, onUpload, uploading, s, border, accent }) {
-  const inp = {
-    background: s.inputBg || s.cardBg,
-    border: "1px solid " + (s.inputBorder || border),
-    color: s.textMain, borderRadius: 6, padding: "5px 8px",
-    fontSize: 13, width: "100%", outline: "none",
+  const inp = { background: s.inputBg, border: "1px solid " + (s.inputBorder || border), color: s.textMain, borderRadius: 6, padding: "5px 8px", fontSize: 13, width: "100%", outline: "none" };
+
+  const pickFile = (f) => {
+    setFile(f);
+    setName(f.name.replace(/\.[^.]+$/, ""));
+    const y = detectYear(f.name);
+    if (y) setYear(String(y));
   };
 
-  const addTag = () => {
-    const t = (dialog.tagInput || "").trim().replace(/,+$/, "");
-    if (t && !(dialog.tags || []).includes(t))
-      onChange({ ...dialog, tags: [...(dialog.tags || []), t], tagInput: "" });
-    else
-      onChange({ ...dialog, tagInput: "" });
+  const handleUpload = async () => {
+    if (!file || !name.trim())              { toast.error("Bitte Datei und Name ausfullen"); return; }
+    if (!year || isNaN(parseInt(year)))     { toast.error("Bitte ein gueltiges Jahr eingeben"); return; }
+    setUploading(true);
+    try {
+      const safe        = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const storagePath = `${customerId}/${category}/${year}/${Date.now()}-${safe}`;
+      const { error: upErr } = await supabase.storage.from(BUCKET).upload(storagePath, file, { upsert: false, contentType: file.type });
+      if (upErr) throw upErr;
+      await entities.Dokument.create({ customer_id: customerId, category, year: parseInt(year), name: name.trim(), filename: file.name, storage_path: storagePath, file_size: file.size, file_type: file.type, tag_ids: tagIds, notes });
+      toast.success("Dokument hochgeladen");
+      onUploaded();
+    } catch (err) {
+      console.error("Upload error:", err);
+      toast.error("Fehler: " + err.message);
+    } finally {
+      setUploading(false);
+    }
   };
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ background: s.cardBg, border: "1px solid " + border, borderRadius: 12, padding: 24, width: 480 }}>
+      <div style={{ background: s.cardBg, border: "1px solid " + border, borderRadius: 12, padding: 24, width: 500, maxHeight: "90vh", overflowY: "auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-          <h3 style={{ color: s.textMain, fontSize: 14, fontWeight: 700 }}>📂 Dokument hochladen</h3>
+          <h3 style={{ color: s.textMain, fontSize: 14, fontWeight: 700 }}>Dokument hochladen</h3>
           <button onClick={onCancel} style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted }}><X size={18} /></button>
         </div>
-
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <div>
-            <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Anzeigename</label>
-            <input value={dialog.name} onChange={e => onChange({ ...dialog, name: e.target.value })} style={inp} />
-            <div style={{ fontSize: 10, color: s.textMuted, marginTop: 2 }}>Datei: {dialog.file.name} ({formatBytes(dialog.file.size)})</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {/* Datei */}
+          <div onClick={() => fileRef.current?.click()}
+            style={{ border: "2px dashed " + (file ? accent : border), borderRadius: 8, padding: 14, textAlign: "center", cursor: "pointer", color: file ? accent : s.textMuted, fontSize: 13 }}>
+            {file ? `${file.name} (${formatBytes(file.size)})` : "Datei auswaehlen oder hierher ziehen"}
+            <input ref={fileRef} type="file" style={{ display: "none" }} onChange={e => e.target.files[0] && pickFile(e.target.files[0])} />
           </div>
-
+          {/* Name */}
+          <div>
+            <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Anzeigename *</label>
+            <input value={name} onChange={e => setName(e.target.value)} style={inp} placeholder="Dateiname (ohne Endung)" />
+          </div>
+          {/* Kategorie + Jahr */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <div>
               <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Kategorie</label>
-              <select value={dialog.category} onChange={e => onChange({ ...dialog, category: e.target.value })}
-                style={{ ...inp, cursor: "pointer" }}>
+              <select value={category} onChange={e => setCategory(e.target.value)} style={{ ...inp, cursor: "pointer" }}>
                 {CATEGORIES.map(c => <option key={c.key} value={c.key}>{c.icon} {c.label}</option>)}
               </select>
             </div>
             <div>
-              <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Jahr</label>
-              <input type="number" value={dialog.year || ""} min="2000" max="2099"
-                onChange={e => onChange({ ...dialog, year: e.target.value ? parseInt(e.target.value) : null })}
-                style={inp} placeholder="z.B. 2025" />
+              <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Jahr *</label>
+              <input type="number" value={year} min="2000" max="2099" onChange={e => setYear(e.target.value)}
+                style={{ ...inp, borderColor: !year ? "#ef4444" : (s.inputBorder || border) }} placeholder="z.B. 2025" />
             </div>
           </div>
-
+          {/* Tags */}
           <div>
-            <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Tags <small style={{ opacity: 0.6 }}>(Enter zum Hinzufügen)</small></label>
-            <input
-              value={dialog.tagInput || ""}
-              onChange={e => onChange({ ...dialog, tagInput: e.target.value })}
-              onKeyDown={e => { if (e.key === "Enter" || e.key === ",") { e.preventDefault(); addTag(); } }}
-              placeholder="Tag eingeben + Enter"
-              style={inp}
-            />
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 6 }}>
-              {(dialog.tags || []).map(t => (
-                <span key={t} style={{ background: tagColor(t), color: "#fff", borderRadius: 10, padding: "2px 8px", fontSize: 11, display: "flex", alignItems: "center", gap: 4 }}>
-                  {t}
-                  <button onClick={() => onChange({ ...dialog, tags: (dialog.tags || []).filter(x => x !== t) })}
-                    style={{ background: "none", border: "none", cursor: "pointer", color: "#fff", padding: 0, fontSize: 13, lineHeight: 1 }}>×</button>
-                </span>
-              ))}
-            </div>
+            <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Tags</label>
+            <TagSelectWidget value={tagIds} onChange={setTagIds} allTags={allTags} s={s} border={border} accent={accent} />
           </div>
-
+          {/* Notiz */}
           <div>
             <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Notiz (optional)</label>
-            <textarea value={dialog.notes || ""} onChange={e => onChange({ ...dialog, notes: e.target.value })}
-              rows={2} style={{ ...inp, resize: "none" }} placeholder="Kurze Bemerkung..." />
+            <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} style={{ ...inp, resize: "none" }} placeholder="Kurze Bemerkung..." />
           </div>
         </div>
-
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 16 }}>
           <Button variant="outline" onClick={onCancel} style={{ color: s.textMuted, borderColor: border }}>Abbrechen</Button>
-          <Button onClick={onUpload} disabled={uploading} style={{ background: accent, color: "#fff" }}>
-            {uploading ? "Lädt hoch…" : "Hochladen"}
+          <Button onClick={handleUpload} disabled={uploading || !file || !year} style={{ background: accent, color: "#fff" }}>
+            {uploading ? "Laedt hoch..." : "Hochladen"}
           </Button>
         </div>
       </div>
@@ -140,378 +135,328 @@ function UploadDialog({ dialog, onChange, onCancel, onUpload, uploading, s, bord
   );
 }
 
-// ─── Main Component ───────────────────────────────────────────────────────────
-export default function CustomerDokumenteTab({ customer }) {
+// ─── Edit-Dialog ──────────────────────────────────────────────────────────
+function EditDialog({ doc, allTags, onCancel, onSaved, s, border, accent }) {
+  const [name,     setName]     = useState(doc.name || "");
+  const [category, setCategory] = useState(doc.category || "steuern");
+  const [year,     setYear]     = useState(String(doc.year || CUR_YEAR));
+  const [tagIds,   setTagIds]   = useState(doc.tag_ids || []);
+  const [notes,    setNotes]    = useState(doc.notes || "");
+  const [saving,   setSaving]   = useState(false);
+
+  const inp = { background: s.inputBg, border: "1px solid " + (s.inputBorder || border), color: s.textMain, borderRadius: 6, padding: "5px 8px", fontSize: 13, width: "100%", outline: "none" };
+
+  const handleSave = async () => {
+    if (!name.trim() || !year || isNaN(parseInt(year))) { toast.error("Name und Jahr sind Pflicht"); return; }
+    setSaving(true);
+    try {
+      await entities.Dokument.update(doc.id, { name: name.trim(), category, year: parseInt(year), tag_ids: tagIds, notes });
+      toast.success("Gespeichert");
+      onSaved();
+    } catch (e) {
+      toast.error("Fehler: " + e.message);
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ background: s.cardBg, border: "1px solid " + border, borderRadius: 12, padding: 24, width: 460, maxHeight: "90vh", overflowY: "auto" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <h3 style={{ color: s.textMain, fontSize: 14, fontWeight: 700 }}>Dokument bearbeiten</h3>
+          <button onClick={onCancel} style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted }}><X size={18} /></button>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div>
+            <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Datei</label>
+            <div style={{ fontSize: 12, color: s.textMuted, padding: "5px 8px", background: s.sidebarBg || s.inputBg, borderRadius: 6, border: "1px solid " + border }}>{doc.filename}</div>
+          </div>
+          <div>
+            <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Anzeigename *</label>
+            <input value={name} onChange={e => setName(e.target.value)} style={inp} />
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div>
+              <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Kategorie</label>
+              <select value={category} onChange={e => setCategory(e.target.value)} style={{ ...inp, cursor: "pointer" }}>
+                {CATEGORIES.map(c => <option key={c.key} value={c.key}>{c.icon} {c.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Jahr *</label>
+              <input type="number" value={year} min="2000" max="2099" onChange={e => setYear(e.target.value)}
+                style={{ ...inp, borderColor: !year ? "#ef4444" : (s.inputBorder || border) }} />
+            </div>
+          </div>
+          <div>
+            <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Tags</label>
+            <TagSelectWidget value={tagIds} onChange={setTagIds} allTags={allTags} s={s} border={border} accent={accent} />
+          </div>
+          <div>
+            <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Notiz</label>
+            <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} style={{ ...inp, resize: "none" }} />
+          </div>
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 16 }}>
+          <Button variant="outline" onClick={onCancel} style={{ color: s.textMuted, borderColor: border }}>Abbrechen</Button>
+          <Button onClick={handleSave} disabled={saving} style={{ background: accent, color: "#fff" }}>
+            {saving ? "Speichert..." : "Speichern"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Hauptkomponente ──────────────────────────────────────────────────────
+export default function CustomerDokumenteTab({ customerId }) {
   const { theme } = useContext(ThemeContext);
   const isArtis = theme === "artis";
   const isLight = theme === "light";
   const s = {
-    cardBg:      isArtis ? "#ffffff"             : isLight ? "#ffffff"             : "#27272a",
-    border:      isArtis ? "#ccd8cc"             : isLight ? "#d4d4e8"             : "#3f3f46",
-    textMain:    isArtis ? "#2d3a2d"             : isLight ? "#1a1a2e"             : "#e4e4e7",
-    textMuted:   isArtis ? "#6b826b"             : isLight ? "#7a7a9a"             : "#71717a",
-    inputBg:     isArtis ? "#ffffff"             : isLight ? "#ffffff"             : "rgba(24,24,27,0.8)",
-    inputBorder: isArtis ? "#bfcfbf"             : isLight ? "#c8c8dc"             : "#3f3f46",
-    accentBg:    isArtis ? "#7a9b7f"             : "#6366f1",
-    sidebarBg:   isArtis ? "#f5f8f5"             : isLight ? "#f5f5fc"             : "#1f1f23",
-    rowHover:    isArtis ? "rgba(122,155,127,0.09)" : isLight ? "rgba(99,102,241,0.06)" : "rgba(255,255,255,0.04)",
-    selBg:       isArtis ? "rgba(122,155,127,0.18)" : isLight ? "rgba(99,102,241,0.13)" : "rgba(99,102,241,0.18)",
+    cardBg:     isArtis ? "#ffffff" : isLight ? "#ffffff" : "#27272a",
+    border:     isArtis ? "#ccd8cc" : isLight ? "#d4d4e8" : "#3f3f46",
+    textMain:   isArtis ? "#2d3a2d" : isLight ? "#1a1a2e" : "#e4e4e7",
+    textMuted:  isArtis ? "#6b826b" : isLight ? "#7a7a9a" : "#71717a",
+    inputBg:    isArtis ? "#ffffff" : isLight ? "#ffffff" : "rgba(24,24,27,0.8)",
+    inputBorder:isArtis ? "#bfcfbf" : isLight ? "#c8c8dc" : "#3f3f46",
+    sidebarBg:  isArtis ? "#f5f8f5" : isLight ? "#f5f5fc" : "#1f1f23",
+    selBg:      isArtis ? "rgba(122,155,127,0.18)" : isLight ? "rgba(99,102,241,0.13)" : "rgba(99,102,241,0.18)",
+    rowHover:   isArtis ? "rgba(122,155,127,0.07)" : isLight ? "rgba(99,102,241,0.05)" : "rgba(255,255,255,0.03)",
   };
-  const border  = s.border;
-  const accent  = isArtis ? "#4a7a4f" : "#7c3aed";
-
+  const border = s.border;
+  const accent = isArtis ? "#4a7a4f" : "#7c3aed";
   const queryClient = useQueryClient();
-  const fileInputRef = useRef();
 
-  // Selection state
-  const [selCat,  setSelCat]  = useState(null); // null = alle
-  const [selYear, setSelYear] = useState(null); // null = alle Jahre der Kategorie
-  const [expandedCats, setExpandedCats] = useState({});
-  const [search,  setSearch]  = useState("");
-  const [uploading,    setUploading]    = useState(false);
-  const [uploadDialog, setUploadDialog] = useState(null);
-  const [dragOver,     setDragOver]     = useState(false);
-  const [signedUrls,   setSignedUrls]   = useState({});
+  const [selCat,      setSelCat]      = useState(null);
+  const [selYear,     setSelYear]     = useState(null);
+  const [expandedCat, setExpandedCat] = useState({});
+  const [fileSearch,  setFileSearch]  = useState("");
+  const [showUpload,  setShowUpload]  = useState(false);
+  const [editDoc,     setEditDoc]     = useState(null);
+  const [signedUrls,  setSignedUrls]  = useState({});
+  const [isDragging,  setIsDragging]  = useState(false);
+  const [dragFile,    setDragFile]    = useState(null);
 
-  // ── Data ────────────────────────────────────────────────────────────────────
-  const { data: dokumente = [], isLoading } = useQuery({
-    queryKey: ["dokumente", customer?.id],
-    queryFn:  () => entities.Dokument.filter({ customer_id: customer.id }, "-created_at"),
-    enabled:  !!customer?.id,
+  const { data: docs = [], isLoading } = useQuery({
+    queryKey: ["dokumente", customerId],
+    queryFn:  () => entities.Dokument.filter({ customer_id: customerId }, "-created_at"),
+    enabled:  !!customerId,
+  });
+  const { data: allTags = [] } = useQuery({
+    queryKey: ["dok_tags"],
+    queryFn:  () => entities.DokTag.list("sort_order"),
   });
 
-  // ── Tree structure for left panel ──────────────────────────────────────────
+  // Tag-Resolver
+  const getTag   = (id) => allTags.find(t => t.id === id);
+  const tagLabel = (id) => { const t = getTag(id); if (!t) return null; const p = t.parent_id ? getTag(t.parent_id) : null; return p ? `${p.name} / ${t.name}` : t.name; };
+  const tagColor = (id) => { const t = getTag(id); if (!t) return accent; return (t.parent_id ? getTag(t.parent_id)?.color : null) || t.color || accent; };
+
+  // Baum: Kategorien mit Jahrgruppen
   const tree = useMemo(() => {
     return CATEGORIES.map(cat => {
-      const catDocs = dokumente.filter(d => d.category === cat.key);
-      const yearSet = new Set(catDocs.map(d => d.year).filter(Boolean));
-      const years = [...yearSet].sort((a, b) => b - a);
-      const noYear = catDocs.filter(d => !d.year).length;
-      return { ...cat, count: catDocs.length, years, noYear };
-    });
-  }, [dokumente]);
+      const cd    = docs.filter(d => d.category === cat.key);
+      const years = [...new Set(cd.map(d => d.year).filter(Boolean))].sort((a, b) => b - a);
+      const noYr  = cd.filter(d => !d.year).length;
+      return { ...cat, count: cd.length, years, noYr };
+    }).filter(c => c.count > 0);
+  }, [docs]);
 
-  // ── Filtered docs for right panel ──────────────────────────────────────────
+  // Rechts: gefiltert
   const filtered = useMemo(() => {
-    let list = dokumente;
-    if (selCat)  list = list.filter(d => d.category === selCat);
-    if (selYear !== null && selYear !== undefined) {
-      if (selYear === "__none__") list = list.filter(d => !d.year);
-      else list = list.filter(d => d.year === selYear);
-    }
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      list = list.filter(d =>
-        d.name.toLowerCase().includes(q) ||
-        (d.tags || []).some(t => t.toLowerCase().includes(q)) ||
-        (d.notes || "").toLowerCase().includes(q)
-      );
+    let list = docs;
+    if (selCat)                list = list.filter(d => d.category === selCat);
+    if (selYear === "__none__") list = list.filter(d => !d.year);
+    else if (selYear !== null)  list = list.filter(d => d.year === selYear);
+    if (fileSearch.trim()) {
+      const q = fileSearch.toLowerCase();
+      list = list.filter(d => d.name.toLowerCase().includes(q));
     }
     return list.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-  }, [dokumente, selCat, selYear, search]);
+  }, [docs, selCat, selYear, fileSearch]);
 
-  // ── Breadcrumb ──────────────────────────────────────────────────────────────
-  const breadcrumb = useMemo(() => {
-    if (!selCat) return { icon: "📁", label: "Alle Dokumente", count: dokumente.length };
-    const cat = CATEGORIES.find(c => c.key === selCat);
-    if (!selYear) return { icon: cat.icon, label: cat.label, count: filtered.length };
-    const yrLabel = selYear === "__none__" ? "Kein Jahr" : String(selYear);
-    return { icon: cat.icon, label: cat.label + " / " + yrLabel, count: filtered.length };
-  }, [selCat, selYear, dokumente.length, filtered.length]);
-
-  // ── Signed URLs ─────────────────────────────────────────────────────────────
+  // Signed URLs
   useEffect(() => {
-    const missing = filtered.filter(d => !signedUrls[d.id]);
-    if (missing.length === 0) return;
-    missing.forEach(async doc => {
+    const miss = filtered.filter(d => !signedUrls[d.id]);
+    if (!miss.length) return;
+    miss.forEach(async doc => {
       const { data } = await supabase.storage.from(BUCKET).createSignedUrl(doc.storage_path, 3600);
-      if (data?.signedUrl) setSignedUrls(prev => ({ ...prev, [doc.id]: data.signedUrl }));
+      if (data?.signedUrl) setSignedUrls(p => ({ ...p, [doc.id]: data.signedUrl }));
     });
   }, [filtered]);
 
-  // ── Upload ───────────────────────────────────────────────────────────────────
-  const openUploadDialog = (file) => {
-    const detectedYear = detectYear(file.name);
-    setUploadDialog({
-      file,
-      name:     file.name.replace(/\.[^.]+$/, ""),
-      category: selCat || "steuern",
-      year:     detectedYear || (selYear && selYear !== "__none__" ? selYear : null),
-      tags:     [],
-      tagInput: "",
-      notes:    "",
-    });
-  };
-
-  const handleUpload = async () => {
-    if (!uploadDialog) return;
-    setUploading(true);
-    try {
-      const { file, name, category, year, tags, notes } = uploadDialog;
-      const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const storagePath = `${customer.id}/${category}/${year || "allgemein"}/${Date.now()}-${safe}`;
-      const { error: upErr } = await supabase.storage.from(BUCKET).upload(storagePath, file, { upsert: false });
-      if (upErr) throw upErr;
-      await entities.Dokument.create({
-        customer_id: customer.id, category, year: year || null,
-        name, filename: file.name, storage_path: storagePath,
-        file_size: file.size, file_type: file.type, tags, notes,
-      });
-      queryClient.invalidateQueries({ queryKey: ["dokumente", customer.id] });
-      toast.success("Dokument hochgeladen");
-      setUploadDialog(null);
-    } catch (err) {
-      toast.error("Fehler beim Hochladen: " + err.message);
-    } finally {
-      setUploading(false);
-    }
-  };
-
   const handleDelete = async (doc) => {
-    if (!window.confirm(`"${doc.name}" wirklich löschen?`)) return;
+    if (!window.confirm(`"${doc.name}" wirklich loeschen?`)) return;
     await supabase.storage.from(BUCKET).remove([doc.storage_path]);
     await entities.Dokument.delete(doc.id);
-    queryClient.invalidateQueries({ queryKey: ["dokumente", customer.id] });
-    setSignedUrls(prev => { const n = { ...prev }; delete n[doc.id]; return n; });
-    toast.success("Dokument gelöscht");
+    queryClient.invalidateQueries({ queryKey: ["dokumente", customerId] });
+    setSignedUrls(p => { const n = { ...p }; delete n[doc.id]; return n; });
+    toast.success("Dokument geloescht");
   };
 
-  // ── Drag & Drop ──────────────────────────────────────────────────────────────
+  // Drag & Drop
   const handleDrop = (e) => {
-    e.preventDefault();
-    setDragOver(false);
-    const files = [...(e.dataTransfer.files || [])];
-    if (files.length > 0) openUploadDialog(files[0]);
+    e.preventDefault(); setIsDragging(false);
+    const f = e.dataTransfer.files[0];
+    if (f) { setDragFile(f); setShowUpload(true); }
   };
 
-  // ── Tree toggle ──────────────────────────────────────────────────────────────
-  const toggleCat = (key) => {
-    setExpandedCats(prev => ({ ...prev, [key]: !prev[key] }));
-  };
-
-  const selectCat = (key) => {
-    setSelCat(key);
-    setSelYear(null);
-    setExpandedCats(prev => ({ ...prev, [key]: true }));
-  };
-
-  const selectYear = (catKey, year) => {
-    setSelCat(catKey);
-    setSelYear(year);
-  };
-
-  // ── Styles ───────────────────────────────────────────────────────────────────
-  const treeItemBase = {
-    display: "flex", alignItems: "center", gap: 5,
-    padding: "5px 10px", cursor: "pointer", borderRadius: 5,
-    fontSize: 12, userSelect: "none", transition: "background 0.1s",
-  };
+  const treeItem = { display: "flex", alignItems: "center", gap: 5, padding: "4px 8px", cursor: "pointer", borderRadius: 5, fontSize: 12, userSelect: "none" };
 
   return (
-    <div
-      style={{ display: "flex", height: "calc(100vh - 260px)", minHeight: 420, border: "1px solid " + border, borderRadius: 10, overflow: "hidden", background: s.cardBg }}
-      onDragOver={e => { e.preventDefault(); setDragOver(true); }}
-      onDragLeave={() => setDragOver(false)}
-      onDrop={handleDrop}
-    >
-      {/* ═══ LEFT PANEL – Explorer Tree ════════════════════════════════════════ */}
-      <div style={{ width: 210, flexShrink: 0, borderRight: "1px solid " + border, background: s.sidebarBg, display: "flex", flexDirection: "column", overflowY: "auto" }}>
+    <div style={{ display: "flex", height: "100%", overflow: "hidden", background: s.cardBg, position: "relative" }}
+      onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
+      onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setIsDragging(false); }}
+      onDrop={handleDrop}>
+
+      {/* Drag-Overlay */}
+      {isDragging && (
+        <div style={{ position: "absolute", inset: 0, zIndex: 100, background: accent + "22", border: "2px dashed " + accent, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
+          <span style={{ fontSize: 16, color: accent, fontWeight: 600 }}>Datei hier ablegen...</span>
+        </div>
+      )}
+
+      {/* ═══ LINKS: Baum ════════════════════════════════════════════════ */}
+      <div style={{ width: 230, flexShrink: 0, borderRight: "1px solid " + border, background: s.sidebarBg, display: "flex", flexDirection: "column", overflow: "hidden" }}>
         {/* Header */}
-        <div style={{ padding: "10px 12px 8px", borderBottom: "1px solid " + border }}>
-          <span style={{ fontSize: 11, fontWeight: 700, color: s.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>Ordner</span>
+        <div style={{ padding: "8px 10px", borderBottom: "1px solid " + border, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: s.textMain }}>Ablage</span>
+          <button onClick={() => setShowUpload(true)}
+            style={{ background: accent, border: "none", cursor: "pointer", color: "#fff", borderRadius: 5, padding: "3px 8px", fontSize: 11, display: "flex", alignItems: "center", gap: 4 }}>
+            <Upload size={11} /> Hochladen
+          </button>
         </div>
 
-        {/* Alle Dokumente */}
-        <div
-          onClick={() => { setSelCat(null); setSelYear(null); }}
-          style={{ ...treeItemBase, margin: "4px 6px", background: !selCat ? s.selBg : "transparent", color: !selCat ? accent : s.textMain, fontWeight: !selCat ? 600 : 400 }}
-        >
-          <span style={{ fontSize: 14 }}>📁</span>
+        {/* "Alle" Root */}
+        <div onClick={() => { setSelCat(null); setSelYear(null); }}
+          style={{ ...treeItem, margin: "4px 6px", background: !selCat ? s.selBg : "transparent", color: !selCat ? accent : s.textMain, fontWeight: !selCat ? 600 : 400 }}>
+          <span style={{ fontSize: 13 }}>\uD83D\uDCC1</span>
           <span style={{ flex: 1 }}>Alle Dokumente</span>
-          <span style={{ fontSize: 10, color: s.textMuted, background: border, borderRadius: 8, padding: "1px 5px" }}>{dokumente.length}</span>
+          <span style={{ fontSize: 10, color: s.textMuted, background: border, borderRadius: 8, padding: "1px 5px" }}>{docs.length}</span>
         </div>
 
-        {/* Categories */}
-        {tree.map(cat => {
-          const isCatSel = selCat === cat.key && selYear === null;
-          const isExpanded = expandedCats[cat.key];
-          const hasYears = cat.years.length > 0 || cat.noYear > 0;
+        <div style={{ flex: 1, overflowY: "auto", paddingBottom: 8 }}>
+          {isLoading ? <div style={{ padding: 12, color: s.textMuted, fontSize: 12 }}>Laedt...</div>
+            : tree.length === 0 ? <div style={{ padding: 12, color: s.textMuted, fontSize: 12 }}>Noch keine Dokumente</div>
+            : tree.map(cat => {
+              const isCatSel = selCat === cat.key && selYear === null;
+              const isExp    = expandedCat[cat.key];
+              return (
+                <div key={cat.key} style={{ margin: "1px 6px" }}>
+                  <div onClick={() => { setSelCat(cat.key); setSelYear(null); }}
+                    style={{ ...treeItem, background: selCat === cat.key ? s.selBg + (isCatSel ? "" : "88") : "transparent", color: selCat === cat.key ? accent : s.textMain, fontWeight: selCat === cat.key ? 600 : 400 }}>
+                    <span onClick={e => { e.stopPropagation(); setExpandedCat(p => ({ ...p, [cat.key]: !p[cat.key] })); }}
+                      style={{ display: "flex", alignItems: "center", color: s.textMuted, flexShrink: 0, width: 14 }}>
+                      {cat.years.length > 0 || cat.noYr > 0
+                        ? (isExp ? <ChevronDown size={11} /> : <ChevronRight size={11} />)
+                        : <span style={{ width: 11 }} />}
+                    </span>
+                    <span style={{ fontSize: 13 }}>{cat.icon}</span>
+                    <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cat.label}</span>
+                    <span style={{ fontSize: 10, color: s.textMuted, background: border, borderRadius: 8, padding: "1px 5px", flexShrink: 0 }}>{cat.count}</span>
+                  </div>
 
-          return (
-            <div key={cat.key} style={{ margin: "1px 6px" }}>
-              {/* Category row */}
-              <div
-                style={{ ...treeItemBase, background: isCatSel ? s.selBg : "transparent", color: selCat === cat.key ? accent : s.textMain, fontWeight: selCat === cat.key ? 600 : 400 }}
-                onClick={() => selectCat(cat.key)}
-              >
-                <span
-                  onClick={e => { e.stopPropagation(); if (hasYears) toggleCat(cat.key); }}
-                  style={{ display: "flex", alignItems: "center", color: s.textMuted, flexShrink: 0, width: 14 }}
-                >
-                  {hasYears
-                    ? (isExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />)
-                    : <span style={{ width: 11 }} />
-                  }
-                </span>
-                <span style={{ fontSize: 13 }}>{cat.icon}</span>
-                <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cat.label}</span>
-                {cat.count > 0 && (
-                  <span style={{ fontSize: 10, color: s.textMuted, background: border, borderRadius: 8, padding: "1px 5px", flexShrink: 0 }}>{cat.count}</span>
-                )}
-              </div>
-
-              {/* Year sub-items */}
-              {isExpanded && (
-                <div style={{ paddingLeft: 10 }}>
-                  {cat.years.map(year => {
-                    const isYearSel = selCat === cat.key && selYear === year;
-                    const cnt = dokumente.filter(d => d.category === cat.key && d.year === year).length;
-                    return (
-                      <div
-                        key={year}
-                        onClick={() => selectYear(cat.key, year)}
-                        style={{ ...treeItemBase, background: isYearSel ? s.selBg : "transparent", color: isYearSel ? accent : s.textMain, fontWeight: isYearSel ? 600 : 400 }}
-                      >
-                        <span style={{ width: 14, flexShrink: 0 }} />
-                        <span style={{ fontSize: 12 }}>📅</span>
-                        <span style={{ flex: 1 }}>{year}</span>
-                        <span style={{ fontSize: 10, color: s.textMuted, background: border, borderRadius: 8, padding: "1px 5px", flexShrink: 0 }}>{cnt}</span>
-                      </div>
-                    );
-                  })}
-                  {cat.noYear > 0 && (
-                    <div
-                      onClick={() => selectYear(cat.key, "__none__")}
-                      style={{ ...treeItemBase, background: (selCat === cat.key && selYear === "__none__") ? s.selBg : "transparent", color: (selCat === cat.key && selYear === "__none__") ? accent : s.textMuted, fontStyle: "italic" }}
-                    >
-                      <span style={{ width: 14, flexShrink: 0 }} />
-                      <span style={{ fontSize: 12 }}>📄</span>
-                      <span style={{ flex: 1 }}>Kein Jahr</span>
-                      <span style={{ fontSize: 10, color: s.textMuted, background: border, borderRadius: 8, padding: "1px 5px", flexShrink: 0 }}>{cat.noYear}</span>
+                  {isExp && (
+                    <div style={{ paddingLeft: 18 }}>
+                      {cat.years.map(yr => {
+                        const yrSel = selCat === cat.key && selYear === yr;
+                        const cnt   = docs.filter(d => d.category === cat.key && d.year === yr).length;
+                        return (
+                          <div key={yr} onClick={() => { setSelCat(cat.key); setSelYear(yr); }}
+                            style={{ ...treeItem, background: yrSel ? s.selBg : "transparent", color: yrSel ? accent : s.textMain, fontWeight: yrSel ? 600 : 400 }}>
+                            <span style={{ width: 11, flexShrink: 0 }} />
+                            <span style={{ fontSize: 12 }}>\uD83D\uDCC5</span>
+                            <span style={{ flex: 1 }}>{yr}</span>
+                            <span style={{ fontSize: 10, color: s.textMuted, background: border, borderRadius: 8, padding: "1px 5px" }}>{cnt}</span>
+                          </div>
+                        );
+                      })}
+                      {cat.noYr > 0 && (
+                        <div onClick={() => { setSelCat(cat.key); setSelYear("__none__"); }}
+                          style={{ ...treeItem, background: (selCat === cat.key && selYear === "__none__") ? s.selBg : "transparent", color: s.textMuted, fontStyle: "italic" }}>
+                          <span style={{ width: 11, flexShrink: 0 }} />
+                          <span style={{ fontSize: 12 }}>\uD83D\uDCC4</span>
+                          <span style={{ flex: 1 }}>Kein Jahr</span>
+                          <span style={{ fontSize: 10, color: s.textMuted, background: border, borderRadius: 8, padding: "1px 5px" }}>{cat.noYr}</span>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
-              )}
-            </div>
-          );
-        })}
+              );
+            })}
+        </div>
       </div>
 
-      {/* ═══ RIGHT PANEL – File List ════════════════════════════════════════════ */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
-        {/* Top Bar */}
-        <div style={{ padding: "8px 14px", borderBottom: "1px solid " + border, display: "flex", alignItems: "center", gap: 10, background: s.cardBg }}>
-          {/* Breadcrumb */}
-          <span style={{ fontSize: 13, fontWeight: 600, color: accent }}>
-            {breadcrumb.icon} {breadcrumb.label}
+      {/* ═══ RECHTS: Dateiliste ═════════════════════════════════════════ */}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden" }}>
+        {/* Topbar */}
+        <div style={{ padding: "6px 12px", borderBottom: "1px solid " + border, display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: accent, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
+            {selCat ? (CATEGORIES.find(c => c.key === selCat)?.icon + " " + CATEGORIES.find(c => c.key === selCat)?.label) : "Alle"}
+            {selYear ? (selYear === "__none__" ? " \u203a Kein Jahr" : " \u203a " + selYear) : ""}
           </span>
-          <span style={{ fontSize: 11, color: s.textMuted }}>({breadcrumb.count} Dok.)</span>
-          <div style={{ flex: 1 }} />
-          {/* Search */}
+          <span style={{ fontSize: 11, color: s.textMuted, flexShrink: 0 }}>({filtered.length})</span>
           <div style={{ position: "relative" }}>
-            <Search size={13} style={{ position: "absolute", left: 7, top: "50%", transform: "translateY(-50%)", color: s.textMuted, pointerEvents: "none" }} />
-            <input
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Suchen…"
-              style={{ background: s.inputBg, border: "1px solid " + border, color: s.textMain, borderRadius: 6, padding: "4px 8px 4px 24px", fontSize: 12, width: 160, outline: "none" }}
-            />
+            <Search size={12} style={{ position: "absolute", left: 6, top: "50%", transform: "translateY(-50%)", color: s.textMuted, pointerEvents: "none" }} />
+            <input value={fileSearch} onChange={e => setFileSearch(e.target.value)} placeholder="Suchen..."
+              style={{ background: s.inputBg, border: "1px solid " + border, color: s.textMain, borderRadius: 5, padding: "3px 6px 3px 22px", fontSize: 12, width: 160, outline: "none" }} />
           </div>
-          {/* Upload Button */}
-          <input ref={fileInputRef} type="file" style={{ display: "none" }} onChange={e => { if (e.target.files[0]) { openUploadDialog(e.target.files[0]); e.target.value = ""; } }} />
-          <Button
-            size="sm"
-            onClick={() => fileInputRef.current?.click()}
-            style={{ background: accent, color: "#fff", fontSize: 12, height: 30, gap: 5, display: "flex", alignItems: "center" }}
-          >
-            <Upload size={12} /> Hochladen
-          </Button>
         </div>
 
-        {/* File List */}
-        <div style={{ flex: 1, overflowY: "auto", padding: "8px 0" }}>
-          {isLoading ? (
-            <div style={{ padding: 24, color: s.textMuted, fontSize: 13, textAlign: "center" }}>Lade…</div>
-          ) : filtered.length === 0 ? (
-            <div
-              style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: s.textMuted, gap: 10, padding: 32,
-                border: dragOver ? "2px dashed " + accent : "2px dashed transparent", borderRadius: 8, margin: 16, transition: "border 0.2s" }}
-            >
-              <span style={{ fontSize: 36 }}>📂</span>
-              <span style={{ fontSize: 13 }}>{dragOver ? "Datei loslassen zum Hochladen" : "Keine Dokumente"}</span>
-              <span style={{ fontSize: 11, opacity: 0.7 }}>Datei hierher ziehen oder «Hochladen» klicken</span>
+        {/* Liste */}
+        <div style={{ flex: 1, overflowY: "auto" }}>
+          {filtered.length === 0 ? (
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "80%", color: s.textMuted, gap: 8 }}>
+              <span style={{ fontSize: 32 }}>\uD83D\uDCC2</span>
+              <span style={{ fontSize: 12 }}>Keine Dokumente</span>
+              <span style={{ fontSize: 11, opacity: 0.7 }}>Datei hochladen oder hier reinziehen</span>
             </div>
           ) : (
             filtered.map(doc => {
-              const fi = getFileInfo(doc.file_type, doc.filename);
+              const fi  = getFileInfo(doc.file_type, doc.filename);
+              const cat = CATEGORIES.find(c => c.key === doc.category);
+              const ids = doc.tag_ids || [];
               return (
-                <div
-                  key={doc.id}
-                  style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 16px", borderBottom: "1px solid " + border + "55", transition: "background 0.1s" }}
+                <div key={doc.id}
+                  style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", borderBottom: "1px solid " + border + "55", transition: "background 0.1s" }}
                   onMouseEnter={e => e.currentTarget.style.background = s.rowHover}
-                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}
-                >
-                  {/* File type badge */}
-                  <span style={{ background: fi.color, color: "#fff", borderRadius: 4, padding: "2px 5px", fontSize: 10, fontWeight: 700, flexShrink: 0, minWidth: 34, textAlign: "center" }}>
-                    {fi.label}
-                  </span>
-
-                  {/* Name + Tags + Notes */}
+                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                  {/* Typ */}
+                  <span style={{ background: fi.color, color: "#fff", borderRadius: 3, padding: "2px 4px", fontSize: 9, fontWeight: 700, flexShrink: 0, minWidth: 30, textAlign: "center" }}>{fi.label}</span>
+                  {/* Name + Tags */}
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, color: s.textMain, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 500 }}>
-                      {doc.name}
-                    </div>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 3, alignItems: "center" }}>
-                      {/* Category badge (when viewing "alle") */}
-                      {!selCat && (() => {
-                        const cat = CATEGORIES.find(c => c.key === doc.category);
-                        return cat ? (
-                          <span style={{ fontSize: 10, background: s.sidebarBg, color: s.textMuted, border: "1px solid " + border, borderRadius: 8, padding: "1px 6px" }}>
-                            {cat.icon} {cat.label}
-                          </span>
-                        ) : null;
-                      })()}
-                      {(doc.tags || []).map(t => (
-                        <span key={t} style={{ background: tagColor(t), color: "#fff", borderRadius: 8, padding: "1px 7px", fontSize: 10 }}>
-                          {t}
-                        </span>
-                      ))}
-                      {doc.notes && (
-                        <span style={{ fontSize: 10, color: s.textMuted, fontStyle: "italic", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 200 }}>
-                          {doc.notes}
-                        </span>
-                      )}
+                    <div style={{ fontSize: 12, color: s.textMain, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 500 }}>{doc.name}</div>
+                    <div style={{ display: "flex", gap: 3, marginTop: 2, flexWrap: "wrap", alignItems: "center" }}>
+                      {!selCat && cat && <span style={{ fontSize: 9, background: s.sidebarBg, color: s.textMuted, border: "1px solid " + border, borderRadius: 7, padding: "1px 5px" }}>{cat.icon} {cat.label}</span>}
+                      {ids.slice(0, 3).map(id => {
+                        const lbl = tagLabel(id); const col = tagColor(id);
+                        if (!lbl) return null;
+                        return <span key={id} style={{ background: col + "22", color: col, border: "1px solid " + col + "55", borderRadius: 7, padding: "1px 6px", fontSize: 9, display: "flex", alignItems: "center", gap: 2 }}>
+                          <span style={{ width: 4, height: 4, borderRadius: "50%", background: col }} />{lbl}
+                        </span>;
+                      })}
+                      {ids.length > 3 && <span style={{ fontSize: 9, color: s.textMuted }}>+{ids.length - 3}</span>}
                     </div>
                   </div>
-
                   {/* Jahr */}
-                  {doc.year && (
-                    <span style={{ fontSize: 11, color: s.textMuted, background: s.sidebarBg, border: "1px solid " + border, borderRadius: 6, padding: "2px 7px", flexShrink: 0 }}>
-                      {doc.year}
-                    </span>
-                  )}
-
-                  {/* File size */}
-                  <span style={{ fontSize: 11, color: s.textMuted, flexShrink: 0, width: 52, textAlign: "right" }}>
-                    {formatBytes(doc.file_size)}
-                  </span>
-
-                  {/* Download */}
-                  <button
-                    onClick={() => { const url = signedUrls[doc.id]; if (url) window.open(url, "_blank"); else toast.error("URL noch nicht bereit, bitte kurz warten."); }}
-                    title="Herunterladen"
-                    style={{ background: "none", border: "none", cursor: "pointer", color: accent, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}
-                  >
-                    <Download size={15} />
+                  {doc.year && <span style={{ fontSize: 10, color: s.textMuted, background: s.sidebarBg, border: "1px solid " + border, borderRadius: 5, padding: "1px 5px", flexShrink: 0 }}>{doc.year}</span>}
+                  {/* Groesse */}
+                  <span style={{ fontSize: 10, color: s.textMuted, flexShrink: 0, width: 46, textAlign: "right" }}>{formatBytes(doc.file_size)}</span>
+                  {/* Edit */}
+                  <button onClick={() => setEditDoc(doc)} title="Bearbeiten"
+                    style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 3, borderRadius: 3, flexShrink: 0 }}>
+                    <Pencil size={13} />
                   </button>
-
-                  {/* Delete */}
-                  <button
-                    onClick={() => handleDelete(doc)}
-                    title="Löschen"
-                    style={{ background: "none", border: "none", cursor: "pointer", color: "#ef4444", display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}
-                  >
-                    <Trash2 size={15} />
+                  {/* Download */}
+                  <button onClick={() => { const u = signedUrls[doc.id]; if (u) window.open(u, "_blank"); else toast.error("URL noch nicht bereit."); }}
+                    title="Herunterladen" style={{ background: "none", border: "none", cursor: "pointer", color: accent, display: "flex", alignItems: "center", padding: 3, borderRadius: 3, flexShrink: 0 }}>
+                    <Download size={13} />
+                  </button>
+                  {/* Loeschen */}
+                  <button onClick={() => handleDelete(doc)} title="Loeschen"
+                    style={{ background: "none", border: "none", cursor: "pointer", color: "#ef4444", display: "flex", alignItems: "center", padding: 3, borderRadius: 3, flexShrink: 0 }}>
+                    <Trash2 size={13} />
                   </button>
                 </div>
               );
@@ -520,18 +465,18 @@ export default function CustomerDokumenteTab({ customer }) {
         </div>
       </div>
 
-      {/* Upload Dialog */}
-      {uploadDialog && (
-        <UploadDialog
-          dialog={uploadDialog}
-          onChange={setUploadDialog}
-          onCancel={() => setUploadDialog(null)}
-          onUpload={handleUpload}
-          uploading={uploading}
-          s={s}
-          border={border}
-          accent={accent}
-        />
+      {/* Dialoge */}
+      {showUpload && (
+        <UploadDialog customerId={customerId} allTags={allTags}
+          onCancel={() => { setShowUpload(false); setDragFile(null); }}
+          onUploaded={() => { queryClient.invalidateQueries({ queryKey: ["dokumente", customerId] }); setShowUpload(false); setDragFile(null); }}
+          s={s} border={border} accent={accent} />
+      )}
+      {editDoc && (
+        <EditDialog doc={editDoc} allTags={allTags}
+          onCancel={() => setEditDoc(null)}
+          onSaved={() => { queryClient.invalidateQueries({ queryKey: ["dokumente", customerId] }); setEditDoc(null); }}
+          s={s} border={border} accent={accent} />
       )}
     </div>
   );

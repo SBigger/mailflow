@@ -103,6 +103,7 @@ export const entities = {
   TicketColumn:     makeEntity('ticket_columns'),
   KnowledgeBase:    makeEntity('knowledge_base'),
   Dokument:         makeEntity('dokumente'),
+  DokTag:           makeEntity('dok_tags'),
 };
 
 // Auth helpers

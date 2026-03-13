@@ -7,6 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Mail, MessageSquare, Link2, Tag as TagIcon, FolderOpen, Plus, Trash2, Save, Users, Send, Calendar, Menu, ChevronDown, LayoutDashboard, CheckSquare, RefreshCw, ClipboardList, GripVertical, UserMinus, Pencil, Check, X, Sun, Moon, KeyRound, HardDrive, Download, Database, Inbox } from "lucide-react";
 import { ThemeContext } from "@/Layout";
 import DeleteUserDialog from "@/components/settings/DeleteUserDialog";
+import DokAblageSettings from "@/components/settings/DokAblageSettings";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import {
   DropdownMenu,
@@ -643,6 +644,12 @@ export default function Settings() {
             <ClipboardList className="h-4 w-4" /> Tätigkeiten
           </button>
           <button
+            onClick={() => setActiveTab('dateiablage')}
+            className={`w-full justify-start flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'dateiablage' ? navActiveStyle : navInactiveStyle}`}
+          >
+            <FolderOpen className="h-4 w-4" /> Dateiablage
+          </button>
+          <button
             onClick={() => setActiveTab('appearance')}
             className={`w-full justify-start flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'appearance' ? navActiveStyle : navInactiveStyle}`}
           >
@@ -1247,6 +1254,11 @@ export default function Settings() {
           </div>
         )}
 
+
+        {/* Dateiablage Tab */}
+        {activeTab === 'dateiablage' && (
+          <DokAblageSettings />
+        )}
 
         {/* Benutzer Tab */}
         {activeTab === 'users' && user?.role === 'admin' && (
