@@ -370,16 +370,16 @@ export default function Dokumente() {
           await saveHandle(doc.id, handle);
           await saveHandleMeta(doc.id, initialFile.lastModified);
           // Office-App nach kurzer Pause oeffnen (damit Save-Dialog zuerst schliesst)
-          if (_oProto) setTimeout(() => window.open(`${_oProto}:ofe|u|${urlData.signedUrl}`), 400);
+          if (_oProto) setTimeout(() => window.open(`artis-open://?url=${encodeURIComponent(urlData.signedUrl)}&filename=${encodeURIComponent(doc.filename)}`), 400);
           toast.success("Ausgecheckt – Datei gespeichert. Wird automatisch eingecheckt wenn Excel/Word geschlossen wird.");
         } catch (e) {
           if (e.name !== "AbortError") throw e;
-          if (_oProto) window.open(`${_oProto}:ofe|u|${urlData.signedUrl}`);
+          if (_oProto) window.open(`artis-open://?url=${encodeURIComponent(urlData.signedUrl)}&filename=${encodeURIComponent(doc.filename)}`);
           else window.open(urlData.signedUrl, "_blank");
           toast.success("Ausgecheckt – Datei heruntergeladen.");
         }
       } else {
-        if (_oProto) window.open(`${_oProto}:ofe|u|${urlData.signedUrl}`);
+        if (_oProto) window.open(`artis-open://?url=${encodeURIComponent(urlData.signedUrl)}&filename=${encodeURIComponent(doc.filename)}`);
         else window.open(urlData.signedUrl, "_blank");
         toast.success("Ausgecheckt – Datei heruntergeladen.");
       }
