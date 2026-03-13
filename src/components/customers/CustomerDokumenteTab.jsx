@@ -374,10 +374,8 @@ export default function CustomerDokumenteTab({ customerId }) {
     } catch (err) { toast.error("Fehler: " + err.message); }
   };
 
-  const openCheckin = async (doc) => {
-    const handle = await loadHandle(doc.id).catch(() => null);
-    setCheckinHandle(handle || null);
-    setCheckinDoc(doc);
+  const openCheckin = (doc) => {
+    handleCheckin(doc, null);
   };
 
   const handleCheckin = async (doc, file) => {
