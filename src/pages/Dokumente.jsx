@@ -148,21 +148,23 @@ function UploadDialog({ customers, preCustomer, allTags, onCancel, onUpload, s, 
 }
 
 // ─── Edit-Dialog ───────────────────────────────────────────────────────────
-function EditDialog({ doc, allTags, onCancel, onSave, s, border, accent }) {
-  const [name,     setName]     = useState(doc.name || "");
-  const [category, setCategory] = useState(doc.category || "steuern");
-  const [year,     setYear]     = useState(String(doc.year || CUR_YEAR));
-  const [tagIds,   setTagIds]   = useState(doc.tag_ids || []);
-  const [notes,    setNotes]    = useState(doc.notes || "");
-  const [saving,   setSaving]   = useState(false);
+function EditDialog({ doc, allTags, customers = [], onCancel, onSave, s, border, accent }) {
+  const [name,       setName]       = useState(doc.name || "");
+  const [customerId, setCustomerId] = useState(doc.customer_id || "");
+  const [category,   setCategory]   = useState(doc.category || "steuern");
+  const [year,       setYear]       = useState(String(doc.year || CUR_YEAR));
+  const [tagIds,     setTagIds]     = useState(doc.tag_ids || []);
+  const [notes,      setNotes]      = useState(doc.notes || "");
+  const [saving,     setSaving]     = useState(false);
 
   const inp = { background: s.inputBg, border: "1px solid " + (s.inputBorder || border), color: s.textMain, borderRadius: 6, padding: "5px 8px", fontSize: 13, width: "100%", outline: "none" };
 
   const handleSave = async () => {
     if (!name.trim() || !year || isNaN(parseInt(year))) { toast.error("Name und Jahr sind Pflicht"); return; }
+    if (!customerId) { toast.error("Bitte einen Kunden auswählen"); return; }
     setSaving(true);
     try {
-      await entities.Dokument.update(doc.id, { name: name.trim(), category, year: parseInt(year), tag_ids: tagIds, notes });
+      await entities.Dokument.update(doc.id, { customer_id: customerId, name: name.trim(), category, year: parseInt(year), tag_ids: tagIds, notes });
       toast.success("Gespeichert");
       onSave();
     } catch (e) {
@@ -183,6 +185,16 @@ function EditDialog({ doc, allTags, onCancel, onSave, s, border, accent }) {
           <div>
             <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Datei</label>
             <div style={{ fontSize: 12, color: s.textMuted, padding: "5px 8px", background: s.sidebarBg, borderRadius: 6, border: "1px solid " + border }}>{doc.filename}</div>
+          </div>
+          <div>
+            <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Unternehmen *</label>
+            <select value={customerId} onChange={e => setCustomerId(e.target.value)}
+              style={{ ...inp, cursor: "pointer", borderColor: !customerId ? "#ef4444" : (s.inputBorder || border) }}>
+              <option value="">-- Kunde wählen --</option>
+              {customers.slice().sort((a,b) => (a.company_name||"").localeCompare(b.company_name||"")).map(cx =>
+                <option key={cx.id} value={cx.id}>{cx.company_name}</option>
+              )}
+            </select>
           </div>
           <div>
             <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Anzeigename *</label>
@@ -759,7 +771,7 @@ export default function Dokumente() {
           s={s} border={border} accent={accent} />
       )}
       {editDoc && (
-        <EditDialog doc={editDoc} allTags={allTags}
+        <EditDialog doc={editDoc} allTags={allTags} customers={customers}
           onCancel={() => setEditDoc(null)}
           onSave={() => { queryClient.invalidateQueries({ queryKey: ["dokumente-all"] }); queryClient.invalidateQueries({ queryKey: ["dokumente"] }); setEditDoc(null); }}
           s={s} border={border} accent={accent} />
