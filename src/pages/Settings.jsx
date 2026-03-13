@@ -44,6 +44,8 @@ export default function Settings() {
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState('user');
   const [syncDays, setSyncDays] = useState(60);
+  const [spMigrating, setSpMigrating] = useState(false);
+  const [spMigrateResult, setSpMigrateResult] = useState('');
   const [newActivityName, setNewActivityName] = useState('');
   const [newStaff, setNewStaff] = useState({ name: '', email: '' });
   const [deleteUserDialogOpen, setDeleteUserDialogOpen] = useState(false);
@@ -353,6 +355,48 @@ export default function Settings() {
     } catch (e) {
       toast.error('Fehler: ' + e.message);
     }
+  };
+
+  const handleSharePointMigration = async () => {
+    if (!window.confirm('Alle Dokumente aus Supabase Storage nach SharePoint migrieren?')) return;
+    setSpMigrating(true);
+    setSpMigrateResult('Starte Migration...');
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const jwt = session?.access_token;
+      const { data: docs } = await supabase
+        .from('dokumente')
+        .select('id, storage_path, customer_id, category, year, filename')
+        .not('storage_path', 'is', null)
+        .is('sharepoint_item_id', null);
+      const legacy = (docs || []).filter(d => d.storage_path);
+      if (!legacy.length) {
+        setSpMigrateResult('Alle Dokumente sind bereits auf SharePoint.');
+        setSpMigrating(false);
+        return;
+      }
+      const SPFILES = import.meta.env.VITE_SUPABASE_URL + '/functions/v1/sharepoint-files';
+      let ok = 0, fail = 0;
+      for (const doc of legacy) {
+        try {
+          const res = await fetch(SPFILES, {
+            method: 'POST',
+            headers: { Authorization: 'Bearer ' + jwt, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'migrate', doc_id: doc.id, storage_path: doc.storage_path,
+              customer_id: doc.customer_id, category: doc.category || 'Allgemein',
+              year: String(doc.year || new Date().getFullYear()), filename: doc.filename,
+            }),
+          });
+          if (res.ok) ok++; else fail++;
+        } catch { fail++; }
+        setSpMigrateResult('Migriere ' + (ok + fail) + '/' + legacy.length + '...');
+      }
+      setSpMigrateResult('Fertig: ' + ok + ' OK, ' + fail + ' Fehler (von ' + legacy.length + ' gesamt)');
+    } catch (err) {
+      setSpMigrateResult('Fehler: ' + err.message);
+    }
+    setSpMigrating(false);
   };
 
   const handleOutlookConnect = async () => {
@@ -807,6 +851,27 @@ export default function Settings() {
                    </div>
                    </div>
                    </div>
+
+                   {user?.role === 'admin' && user?.microsoft_access_token && (
+                   <div className="rounded-xl p-6 border" style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
+                     <h3 className="text-lg font-semibold mb-4" style={{ color: headingColor }}>
+                       Dokumente zu SharePoint migrieren
+                     </h3>
+                     <p className="text-sm mb-4" style={{ color: textMuted }}>
+                       Verschiebt alle bestehenden Dokumente (ohne SharePoint-Link) aus Supabase Storage nach SharePoint.
+                     </p>
+                     <button
+                       onClick={handleSharePointMigration}
+                       disabled={spMigrating}
+                       className="px-4 py-2 rounded-lg text-sm font-medium bg-purple-600 hover:bg-purple-500 text-white disabled:opacity-50"
+                     >
+                       {spMigrating ? spMigrateResult : 'Alle Dokumente migrieren'}
+                     </button>
+                     {!spMigrating && spMigrateResult && (
+                       <p className="text-sm mt-2" style={{ color: spMigrateResult.includes('Fehler') ? '#f87171' : '#4ade80' }}>{spMigrateResult}</p>
+                     )}
+                   </div>
+                   )}
 
                    <div className="rounded-xl p-6 border" style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
                    <h3 className="text-lg font-semibold mb-4 flex items-center gap-2" style={{ color: headingColor }}>
