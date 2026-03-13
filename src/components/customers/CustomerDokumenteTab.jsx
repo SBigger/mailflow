@@ -324,12 +324,13 @@ export default function CustomerDokumenteTab({ customerId }) {
       if (!urlData?.signedUrl) { toast.error("Fehler beim Erstellen der Download-URL"); return; }
 
       if (_oProto) {
-        // Office-Datei: direkt via artis-open:// oeffnen – kein Speichern-Dialog nötig
-        // artis_opener.exe lädt herunter und öffnet in Excel/Word
+        // Office-Datei: direkt via artis-open:// oeffnen – Auto-Checkin wenn Excel schliesst
+        const { data: { session: _sess } } = await supabase.auth.getSession();
+        const _jwt = _sess?.access_token || '';
         const _a = document.createElement('a');
-        _a.href = `artis-open://?url=${encodeURIComponent(urlData.signedUrl)}&filename=${encodeURIComponent(doc.filename)}`;
+        _a.href = `artis-open://?url=${encodeURIComponent(urlData.signedUrl)}&filename=${encodeURIComponent(doc.filename)}&doc_id=${encodeURIComponent(doc.id)}&storage_path=${encodeURIComponent(doc.storage_path)}&jwt=${encodeURIComponent(_jwt)}`;
         document.body.appendChild(_a); _a.click(); document.body.removeChild(_a);
-        toast.success("Datei öffnet in Excel/Word – nach Bearbeitung Schloss-Icon → Einchecken.");
+        toast.success("Datei öffnet in Excel/Word – wird automatisch eingecheckt wenn Excel geschlossen wird.");
       } else {
         // Nicht-Office: lokal speichern für Auto-Checkin via File-Watcher
         const resp = await fetch(urlData.signedUrl);
