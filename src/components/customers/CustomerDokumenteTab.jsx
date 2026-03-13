@@ -8,7 +8,8 @@ import { toast } from "sonner";
 import TagSelectWidget from "@/components/dokumente/TagSelectWidget";
 import CheckinDialog from "@/components/dokumente/CheckinDialog";
 import { useAuth } from "@/lib/AuthContext";
-import { saveHandle, loadHandle, deleteHandle } from "@/lib/fileHandleDB";
+import { saveHandle, loadHandle, deleteHandle, saveHandleMeta, deleteHandleMeta } from "@/lib/fileHandleDB";
+import useFileWatcher from "@/lib/useFileWatcher";
 
 const BUCKET   = "dokumente";
 const CUR_YEAR = new Date().getFullYear();
@@ -323,8 +324,10 @@ export default function CustomerDokumenteTab({ customerId }) {
           const writable = await handle.createWritable();
           await writable.write(blob);
           await writable.close();
+          const initialFile = await handle.getFile();
           await saveHandle(doc.id, handle);
-          toast.success("Ausgecheckt – Datei gespeichert. Beim Einchecken automatisch hochgeladen.");
+          await saveHandleMeta(doc.id, initialFile.lastModified);
+          toast.success("Ausgecheckt – Datei gespeichert. Wird automatisch eingecheckt wenn Excel/Word geschlossen wird.");
         } catch (e) {
           if (e.name !== "AbortError") throw e;
           window.open(urlData.signedUrl, "_blank");
@@ -357,12 +360,15 @@ export default function CustomerDokumenteTab({ customerId }) {
           checked_out_by: null, checked_out_by_name: null, checked_out_at: null,
         });
         await deleteHandle(doc.id).catch(() => {});
+        await deleteHandleMeta(doc.id).catch(() => {});
         setSignedUrls(p => { const n = { ...p }; delete n[doc.id]; return n; });
         toast.success("Eingecheckt & neue Version hochgeladen");
       } else {
         await entities.Dokument.update(doc.id, {
           checked_out_by: null, checked_out_by_name: null, checked_out_at: null,
         });
+        await deleteHandle(doc.id).catch(() => {});
+        await deleteHandleMeta(doc.id).catch(() => {});
         toast.success("Entsperrt");
       }
     } catch (err) { toast.error("Fehler: " + err.message); }
@@ -371,6 +377,38 @@ export default function CustomerDokumenteTab({ customerId }) {
     queryClient.invalidateQueries({ queryKey: ["dokumente-all"] });
   };
 
+
+
+  // ─── Auto-Checkin via File-Watcher ────────────────────────────────────────
+  const myCheckedOutDocs = useMemo(
+    () => docs.filter(d => d.checked_out_by === user?.id),
+    [docs, user?.id]
+  );
+
+  const autoCheckinDoc = async (doc, file) => {
+    try {
+      await supabase.storage.from(BUCKET).remove([doc.storage_path]);
+      const safe    = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const newPath = `${doc.customer_id}/${doc.category}/${doc.year}/${Date.now()}-${safe}`;
+      const { error } = await supabase.storage.from(BUCKET).upload(newPath, file, { contentType: file.type });
+      if (error) throw error;
+      await entities.Dokument.update(doc.id, {
+        storage_path: newPath, filename: file.name,
+        file_size: file.size, file_type: file.type,
+        checked_out_by: null, checked_out_by_name: null, checked_out_at: null,
+      });
+      await deleteHandle(doc.id).catch(() => {});
+      await deleteHandleMeta(doc.id).catch(() => {});
+      setSignedUrls(p => { const n = { ...p }; delete n[doc.id]; return n; });
+      queryClient.invalidateQueries({ queryKey: ['dokumente', customerId] });
+      queryClient.invalidateQueries({ queryKey: ['dokumente-all'] });
+      toast.success(doc.name + ' wurde automatisch eingecheckt');
+    } catch (err) {
+      toast.error('Auto-Checkin fehlgeschlagen: ' + err.message);
+    }
+  };
+
+  useFileWatcher(myCheckedOutDocs, autoCheckinDoc);
 
   // Drag & Drop
   const handleDrop = (e) => {
