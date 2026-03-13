@@ -104,6 +104,7 @@ export const entities = {
   KnowledgeBase:    makeEntity('knowledge_base'),
   Dokument:         makeEntity('dokumente'),
   DokTag:           makeEntity('dok_tags'),
+  BriefVorlage:     makeEntity('brief_vorlagen'),
 };
 
 // Auth helpers
