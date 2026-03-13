@@ -31,6 +31,19 @@
 
 ## ⏳ Noch ausstehend / TODO
 
+### ArtisOpener – Lokales Öffnen von Office-Dateien
+- [ ] **Einmalige Installation auf jedem Benutzer-PC nötig:**
+  - `python C:\\Users\\SaschaBigger\\artis_opener.py` ausführen
+  - Dialog "Protokoll erfölgreich registriert" bestätigt die Installation
+  - Danach öffnen Excel/Word/PowerPoint-Dateien beim Auschecken direkt lokal
+- [ ] Für einfachere Verteilung: als `.exe` kompilieren mit PyInstaller:
+  ```
+  pip install pyinstaller
+  pyinstaller --onefile --noconsole --name ArtisOpener artis_opener.py
+  ```
+  Dann `dist\\ArtisOpener.exe` einmalig auf jedem PC ausführen
+- Datei liegt unter: `C:\\Users\\SaschaBigger\\artis_opener.py`
+
 ### Code
 - [ ] Fristen-Seite: Standard-Fristen für Privatpersonen generieren (der User macht das manuell via UI)
 - [ ] `Personen`-Seite: Noch leer (`src/pages/Personen.jsx` – nur Stub, muss ausgebaut werden)
