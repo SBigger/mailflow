@@ -323,6 +323,7 @@ export default function Dokumente() {
     await supabase.storage.from(BUCKET).remove([doc.storage_path]);
     await entities.Dokument.delete(doc.id);
     queryClient.invalidateQueries({ queryKey: ["dokumente-all"] });
+    queryClient.invalidateQueries({ queryKey: ["dokumente"] });
     setSignedUrls(prev => { const n = { ...prev }; delete n[doc.id]; return n; });
     toast.success("Dokument geloescht");
   };
@@ -358,7 +359,7 @@ export default function Dokumente() {
           {/* "Alle" Root */}
           <div onClick={() => { setSelCustomerId(null); setSelCat(null); setSelYear(null); }}
             style={{ ...treeItem, margin: "4px 6px", background: !selCustomerId ? s.selBg : "transparent", color: !selCustomerId ? accent : s.textMain, fontWeight: !selCustomerId ? 600 : 400 }}>
-            <span style={{ fontSize: 14 }}>\uD83D\uDCC1</span>
+            <span style={{ fontSize: 14 }}>{"\uD83D\uDCC1"}</span>
             <span style={{ flex: 1 }}>Alle Dokumente</span>
             <span style={{ fontSize: 10, color: s.textMuted, background: border, borderRadius: 8, padding: "1px 5px" }}>{allDoks.length}</span>
           </div>
@@ -410,7 +411,7 @@ export default function Dokumente() {
                                   <div key={yr} onClick={() => { setSelCustomerId(cust.id); setSelCat(cat.key); setSelYear(yr); }}
                                     style={{ ...treeItem, background: yrSel ? s.selBg : "transparent", color: yrSel ? accent : s.textMain, fontWeight: yrSel ? 600 : 400 }}>
                                     <span style={{ width: 14, flexShrink: 0 }} />
-                                    <span style={{ fontSize: 12 }}>\uD83D\uDCC5</span>
+                                    <span style={{ fontSize: 12 }}>{"\uD83D\uDCC5"}</span>
                                     <span style={{ flex: 1 }}>{yr}</span>
                                     <span style={{ fontSize: 10, color: s.textMuted, background: border, borderRadius: 8, padding: "1px 5px", flexShrink: 0 }}>{cnt}</span>
                                   </div>
@@ -420,7 +421,7 @@ export default function Dokumente() {
                                 <div onClick={() => { setSelCustomerId(cust.id); setSelCat(cat.key); setSelYear("__none__"); }}
                                   style={{ ...treeItem, background: (selCustomerId === cust.id && selCat === cat.key && selYear === "__none__") ? s.selBg : "transparent", color: s.textMuted, fontStyle: "italic" }}>
                                   <span style={{ width: 14, flexShrink: 0 }} />
-                                  <span style={{ fontSize: 12 }}>\uD83D\uDCC4</span>
+                                  <span style={{ fontSize: 12 }}>{"\uD83D\uDCC4"}</span>
                                   <span style={{ flex: 1 }}>Kein Jahr</span>
                                   <span style={{ fontSize: 10, color: s.textMuted, background: border, borderRadius: 8, padding: "1px 5px", flexShrink: 0 }}>{cat.noYear}</span>
                                 </div>
@@ -454,12 +455,12 @@ export default function Dokumente() {
           <div style={{ flex: 1, overflowY: "auto" }}>
             {!selCustomerId ? (
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", color: s.textMuted, gap: 10 }}>
-                <span style={{ fontSize: 48 }}>\uD83D\uDCC1</span>
+                <span style={{ fontSize: 48 }}>{"\uD83D\uDCC1"}</span>
                 <span style={{ fontSize: 14 }}>Kunden in der Ordnerstruktur auswaehlen</span>
               </div>
             ) : filtered.length === 0 ? (
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", color: s.textMuted, gap: 10 }}>
-                <span style={{ fontSize: 36 }}>\uD83D\uDCC2</span>
+                <span style={{ fontSize: 36 }}>{"\uD83D\uDCC2"}</span>
                 <span style={{ fontSize: 13 }}>Keine Dokumente in diesem Ordner</span>
               </div>
             ) : (
@@ -527,13 +528,13 @@ export default function Dokumente() {
       {showUpload && (
         <UploadDialog customers={customers} preCustomer={selCustomer} allTags={allTags}
           onCancel={() => setShowUpload(false)}
-          onUpload={() => { queryClient.invalidateQueries({ queryKey: ["dokumente-all"] }); setShowUpload(false); }}
+          onUpload={() => { queryClient.invalidateQueries({ queryKey: ["dokumente-all"] }); queryClient.invalidateQueries({ queryKey: ["dokumente"] }); setShowUpload(false); }}
           s={s} border={border} accent={accent} />
       )}
       {editDoc && (
         <EditDialog doc={editDoc} allTags={allTags}
           onCancel={() => setEditDoc(null)}
-          onSave={() => { queryClient.invalidateQueries({ queryKey: ["dokumente-all"] }); setEditDoc(null); }}
+          onSave={() => { queryClient.invalidateQueries({ queryKey: ["dokumente-all"] }); queryClient.invalidateQueries({ queryKey: ["dokumente"] }); setEditDoc(null); }}
           s={s} border={border} accent={accent} />
       )}
     </div>

@@ -290,6 +290,7 @@ export default function CustomerDokumenteTab({ customerId }) {
     await supabase.storage.from(BUCKET).remove([doc.storage_path]);
     await entities.Dokument.delete(doc.id);
     queryClient.invalidateQueries({ queryKey: ["dokumente", customerId] });
+    queryClient.invalidateQueries({ queryKey: ["dokumente-all"] });
     setSignedUrls(p => { const n = { ...p }; delete n[doc.id]; return n; });
     toast.success("Dokument geloescht");
   };
@@ -330,7 +331,7 @@ export default function CustomerDokumenteTab({ customerId }) {
         {/* "Alle" Root */}
         <div onClick={() => { setSelCat(null); setSelYear(null); }}
           style={{ ...treeItem, margin: "4px 6px", background: !selCat ? s.selBg : "transparent", color: !selCat ? accent : s.textMain, fontWeight: !selCat ? 600 : 400 }}>
-          <span style={{ fontSize: 13 }}>\uD83D\uDCC1</span>
+          <span style={{ fontSize: 13 }}>{"\uD83D\uDCC1"}</span>
           <span style={{ flex: 1 }}>Alle Dokumente</span>
           <span style={{ fontSize: 10, color: s.textMuted, background: border, borderRadius: 8, padding: "1px 5px" }}>{docs.length}</span>
         </div>
@@ -365,7 +366,7 @@ export default function CustomerDokumenteTab({ customerId }) {
                           <div key={yr} onClick={() => { setSelCat(cat.key); setSelYear(yr); }}
                             style={{ ...treeItem, background: yrSel ? s.selBg : "transparent", color: yrSel ? accent : s.textMain, fontWeight: yrSel ? 600 : 400 }}>
                             <span style={{ width: 11, flexShrink: 0 }} />
-                            <span style={{ fontSize: 12 }}>\uD83D\uDCC5</span>
+                            <span style={{ fontSize: 12 }}>{"\uD83D\uDCC5"}</span>
                             <span style={{ flex: 1 }}>{yr}</span>
                             <span style={{ fontSize: 10, color: s.textMuted, background: border, borderRadius: 8, padding: "1px 5px" }}>{cnt}</span>
                           </div>
@@ -375,7 +376,7 @@ export default function CustomerDokumenteTab({ customerId }) {
                         <div onClick={() => { setSelCat(cat.key); setSelYear("__none__"); }}
                           style={{ ...treeItem, background: (selCat === cat.key && selYear === "__none__") ? s.selBg : "transparent", color: s.textMuted, fontStyle: "italic" }}>
                           <span style={{ width: 11, flexShrink: 0 }} />
-                          <span style={{ fontSize: 12 }}>\uD83D\uDCC4</span>
+                          <span style={{ fontSize: 12 }}>{"\uD83D\uDCC4"}</span>
                           <span style={{ flex: 1 }}>Kein Jahr</span>
                           <span style={{ fontSize: 10, color: s.textMuted, background: border, borderRadius: 8, padding: "1px 5px" }}>{cat.noYr}</span>
                         </div>
@@ -408,7 +409,7 @@ export default function CustomerDokumenteTab({ customerId }) {
         <div style={{ flex: 1, overflowY: "auto" }}>
           {filtered.length === 0 ? (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "80%", color: s.textMuted, gap: 8 }}>
-              <span style={{ fontSize: 32 }}>\uD83D\uDCC2</span>
+              <span style={{ fontSize: 32 }}>{"\uD83D\uDCC2"}</span>
               <span style={{ fontSize: 12 }}>Keine Dokumente</span>
               <span style={{ fontSize: 11, opacity: 0.7 }}>Datei hochladen oder hier reinziehen</span>
             </div>
@@ -469,13 +470,13 @@ export default function CustomerDokumenteTab({ customerId }) {
       {showUpload && (
         <UploadDialog customerId={customerId} allTags={allTags}
           onCancel={() => { setShowUpload(false); setDragFile(null); }}
-          onUploaded={() => { queryClient.invalidateQueries({ queryKey: ["dokumente", customerId] }); setShowUpload(false); setDragFile(null); }}
+          onUploaded={() => { queryClient.invalidateQueries({ queryKey: ["dokumente", customerId] }); queryClient.invalidateQueries({ queryKey: ["dokumente-all"] }); setShowUpload(false); setDragFile(null); }}
           s={s} border={border} accent={accent} />
       )}
       {editDoc && (
         <EditDialog doc={editDoc} allTags={allTags}
           onCancel={() => setEditDoc(null)}
-          onSaved={() => { queryClient.invalidateQueries({ queryKey: ["dokumente", customerId] }); setEditDoc(null); }}
+          onSaved={() => { queryClient.invalidateQueries({ queryKey: ["dokumente", customerId] }); queryClient.invalidateQueries({ queryKey: ["dokumente-all"] }); setEditDoc(null); }}
           s={s} border={border} accent={accent} />
       )}
     </div>
