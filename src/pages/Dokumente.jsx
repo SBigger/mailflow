@@ -1,11 +1,14 @@
 import React, { useState, useMemo, useEffect, useRef, useContext } from "react";
-import { Search, Upload, Download, Trash2, ChevronDown, ChevronRight, X, Pencil } from "lucide-react";
+import { Search, Upload, Download, Trash2, ChevronDown, ChevronRight, X, Pencil, Lock, LockOpen, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeContext } from "@/Layout";
 import { supabase, entities } from "@/api/supabaseClient";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import TagSelectWidget from "@/components/dokumente/TagSelectWidget";
+import CheckinDialog from "@/components/dokumente/CheckinDialog";
+import { useAuth } from "@/lib/AuthContext";
+import { saveHandle, loadHandle, deleteHandle } from "@/lib/fileHandleDB";
 
 const BUCKET   = "dokumente";
 const CUR_YEAR = new Date().getFullYear();
@@ -219,6 +222,7 @@ function EditDialog({ doc, allTags, onCancel, onSave, s, border, accent }) {
 // ─── Hauptseite ────────────────────────────────────────────────────────────
 export default function Dokumente() {
   const { theme } = useContext(ThemeContext);
+  const { user }  = useAuth();
   const isArtis = theme === "artis";
   const isLight = theme === "light";
   const s = {
@@ -244,7 +248,9 @@ export default function Dokumente() {
   const [custSearch,    setCustSearch]    = useState("");
   const [fileSearch,    setFileSearch]    = useState("");
   const [showUpload,    setShowUpload]    = useState(false);
-  const [editDoc,       setEditDoc]       = useState(null);
+  const [editDoc,        setEditDoc]        = useState(null);
+  const [checkinDoc,     setCheckinDoc]     = useState(null);
+  const [checkinHandle,  setCheckinHandle]  = useState(null);
   const [signedUrls,    setSignedUrls]    = useState({});
 
   const { data: customers = [] } = useQuery({
@@ -327,6 +333,77 @@ export default function Dokumente() {
     setSignedUrls(prev => { const n = { ...prev }; delete n[doc.id]; return n; });
     toast.success("Dokument geloescht");
   };
+
+  const handleCheckout = async (doc) => {
+    try {
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      await entities.Dokument.update(doc.id, {
+        checked_out_by:      authUser.id,
+        checked_out_by_name: user?.full_name || authUser.email,
+        checked_out_at:      new Date().toISOString(),
+      });
+      queryClient.invalidateQueries({ queryKey: ["dokumente-all"] });
+      queryClient.invalidateQueries({ queryKey: ["dokumente"] });
+
+      const { data: urlData } = await supabase.storage.from(BUCKET).createSignedUrl(doc.storage_path, 300);
+      if (!urlData?.signedUrl) { toast.error("Fehler beim Erstellen der Download-URL"); return; }
+      const resp = await fetch(urlData.signedUrl);
+      const blob = await resp.blob();
+
+      if ("showSaveFilePicker" in window) {
+        try {
+          const handle = await window.showSaveFilePicker({ suggestedName: doc.filename });
+          const writable = await handle.createWritable();
+          await writable.write(blob);
+          await writable.close();
+          await saveHandle(doc.id, handle);
+          toast.success("Ausgecheckt – Datei gespeichert. Beim Einchecken automatisch hochgeladen.");
+        } catch (e) {
+          if (e.name !== "AbortError") throw e;
+          window.open(urlData.signedUrl, "_blank");
+          toast.success("Ausgecheckt – Datei heruntergeladen.");
+        }
+      } else {
+        window.open(urlData.signedUrl, "_blank");
+        toast.success("Ausgecheckt – Datei heruntergeladen.");
+      }
+    } catch (err) { toast.error("Fehler: " + err.message); }
+  };
+
+  const openCheckin = async (doc) => {
+    const handle = await loadHandle(doc.id).catch(() => null);
+    setCheckinHandle(handle || null);
+    setCheckinDoc(doc);
+  };
+
+  const handleCheckin = async (doc, file) => {
+    try {
+      if (file) {
+        await supabase.storage.from(BUCKET).remove([doc.storage_path]);
+        const safe    = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const newPath = `${doc.customer_id}/${doc.category}/${doc.year}/${Date.now()}-${safe}`;
+        const { error } = await supabase.storage.from(BUCKET).upload(newPath, file, { contentType: file.type });
+        if (error) throw error;
+        await entities.Dokument.update(doc.id, {
+          storage_path: newPath, filename: file.name,
+          file_size: file.size, file_type: file.type,
+          checked_out_by: null, checked_out_by_name: null, checked_out_at: null,
+        });
+        await deleteHandle(doc.id).catch(() => {});
+        setSignedUrls(prev => { const n = { ...prev }; delete n[doc.id]; return n; });
+        toast.success("Eingecheckt & neue Version hochgeladen");
+      } else {
+        await entities.Dokument.update(doc.id, {
+          checked_out_by: null, checked_out_by_name: null, checked_out_at: null,
+        });
+        toast.success("Entsperrt");
+      }
+    } catch (err) { toast.error("Fehler: " + err.message); }
+    setCheckinDoc(null); setCheckinHandle(null);
+    queryClient.invalidateQueries({ queryKey: ["dokumente-all"] });
+    queryClient.invalidateQueries({ queryKey: ["dokumente"] });
+  };
+
 
   const selectCustomer = (id) => { setSelCustomerId(id); setSelCat(null); setSelYear(null); setExpandedC(p => ({ ...p, [id]: true })); };
   const selectCat      = (cid, ck) => { setSelCustomerId(cid); setSelCat(ck); setSelYear(null); setExpandedCat(p => ({ ...p, [cid + "_" + ck]: true })); };
@@ -465,9 +542,13 @@ export default function Dokumente() {
               </div>
             ) : (
               filtered.map(doc => {
-                const fi  = getFileInfo(doc.file_type, doc.filename);
-                const cat = CATEGORIES.find(c => c.key === doc.category);
-                const ids = doc.tag_ids || [];
+                const fi            = getFileInfo(doc.file_type, doc.filename);
+                const cat           = CATEGORIES.find(c => c.key === doc.category);
+                const ids           = doc.tag_ids || [];
+                const isCheckedOut  = !!doc.checked_out_by;
+                const isMyCheckout  = doc.checked_out_by === user?.id;
+                const lockedByOther = isCheckedOut && !isMyCheckout;
+                const isAdmin       = user?.role === 'admin';
                 return (
                   <div key={doc.id}
                     style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 16px", borderBottom: "1px solid " + border + "55", transition: "background 0.1s" }}
@@ -477,7 +558,20 @@ export default function Dokumente() {
                     <span style={{ background: fi.color, color: "#fff", borderRadius: 4, padding: "2px 5px", fontSize: 10, fontWeight: 700, flexShrink: 0, minWidth: 36, textAlign: "center" }}>{fi.label}</span>
                     {/* Name + Tags */}
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, color: s.textMain, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 500 }}>{doc.name}</div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                      <div style={{ fontSize: 13, color: s.textMain, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 500, flex: 1 }}>{doc.name}</div>
+                      {isCheckedOut && (
+                        <span title={"Ausgecheckt von " + doc.checked_out_by_name + " am " + (doc.checked_out_at ? new Date(doc.checked_out_at).toLocaleDateString("de-CH") : "")}
+                          style={{ fontSize: 10, color: isMyCheckout ? accent : "#f59e0b",
+                            background: isMyCheckout ? accent + "18" : "#f59e0b18",
+                            border: "1px solid " + (isMyCheckout ? accent + "44" : "#f59e0b44"),
+                            borderRadius: 8, padding: "1px 6px", flexShrink: 0,
+                            display: "flex", alignItems: "center", gap: 3 }}>
+                          <Lock size={9} />
+                          {isMyCheckout ? "Ich" : doc.checked_out_by_name}
+                        </span>
+                      )}
+                    </div>
                       <div style={{ display: "flex", gap: 4, marginTop: 2, flexWrap: "wrap", alignItems: "center" }}>
                         {!selCat && cat && (
                           <span style={{ fontSize: 10, background: s.sidebarBg, color: s.textMuted, border: "1px solid " + border, borderRadius: 8, padding: "1px 6px" }}>{cat.icon} {cat.label}</span>
@@ -501,6 +595,25 @@ export default function Dokumente() {
                     {doc.year && <span style={{ fontSize: 11, color: s.textMuted, background: s.sidebarBg, border: "1px solid " + border, borderRadius: 6, padding: "2px 7px", flexShrink: 0 }}>{doc.year}</span>}
                     {/* Groesse */}
                     <span style={{ fontSize: 11, color: s.textMuted, flexShrink: 0, width: 55, textAlign: "right" }}>{formatBytes(doc.file_size)}</span>
+                    {/* Checkout / Checkin */}
+                    {!isCheckedOut && (
+                      <button onClick={() => handleCheckout(doc)} title="Auschecken"
+                        style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}>
+                        <LockOpen size={14} />
+                      </button>
+                    )}
+                    {isMyCheckout && (
+                      <button onClick={() => openCheckin(doc)} title="Einchecken"
+                        style={{ background: "none", border: "none", cursor: "pointer", color: accent, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}>
+                        <Lock size={14} />
+                      </button>
+                    )}
+                    {lockedByOther && isAdmin && (
+                      <button onClick={() => handleCheckin(doc, null)} title="Sperre aufheben (Admin)"
+                        style={{ background: "none", border: "none", cursor: "pointer", color: "#ef4444", display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}>
+                        <ShieldAlert size={14} />
+                      </button>
+                    )}
                     {/* Edit */}
                     <button onClick={() => setEditDoc(doc)} title="Bearbeiten"
                       style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}>
@@ -512,8 +625,8 @@ export default function Dokumente() {
                       <Download size={15} />
                     </button>
                     {/* Loeschen */}
-                    <button onClick={() => handleDelete(doc)} title="Loeschen"
-                      style={{ background: "none", border: "none", cursor: "pointer", color: "#ef4444", display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}>
+                    <button onClick={() => !lockedByOther && handleDelete(doc)} title={lockedByOther ? "Gesperrt – kann nicht geloescht werden" : "Loeschen"}
+                      style={{ background: "none", border: "none", cursor: lockedByOther ? "not-allowed" : "pointer", color: lockedByOther ? s.textMuted + "44" : "#ef4444", display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}>
                       <Trash2 size={15} />
                     </button>
                   </div>
@@ -535,6 +648,12 @@ export default function Dokumente() {
         <EditDialog doc={editDoc} allTags={allTags}
           onCancel={() => setEditDoc(null)}
           onSave={() => { queryClient.invalidateQueries({ queryKey: ["dokumente-all"] }); queryClient.invalidateQueries({ queryKey: ["dokumente"] }); setEditDoc(null); }}
+          s={s} border={border} accent={accent} />
+      )}
+      {checkinDoc && (
+        <CheckinDialog doc={checkinDoc} fileHandle={checkinHandle}
+          onCancel={() => { setCheckinDoc(null); setCheckinHandle(null); }}
+          onCheckin={(file) => handleCheckin(checkinDoc, file)}
           s={s} border={border} accent={accent} />
       )}
     </div>
