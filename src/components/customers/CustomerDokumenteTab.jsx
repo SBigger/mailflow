@@ -318,6 +318,15 @@ export default function CustomerDokumenteTab({ customerId }) {
       const resp = await fetch(urlData.signedUrl);
       const blob = await resp.blob();
 
+      // Office URI Scheme: direkt in lokaler Office-App oeffnen (Excel/Word/PowerPoint)
+      // Benoetigt: Chrome/Edge + Microsoft Office installiert
+      const _oExt   = doc.filename.split('.').pop().toLowerCase();
+      const _oProto = {
+        xls: 'ms-excel', xlsx: 'ms-excel', xlsm: 'ms-excel', xlsb: 'ms-excel',
+        doc: 'ms-word',  docx: 'ms-word',  dotx: 'ms-word',
+        ppt: 'ms-powerpoint', pptx: 'ms-powerpoint',
+      }[_oExt];
+
       if ("showSaveFilePicker" in window) {
         try {
           const handle = await window.showSaveFilePicker({ suggestedName: doc.filename });
@@ -327,14 +336,18 @@ export default function CustomerDokumenteTab({ customerId }) {
           const initialFile = await handle.getFile();
           await saveHandle(doc.id, handle);
           await saveHandleMeta(doc.id, initialFile.lastModified);
+          // Office-App nach kurzer Pause oeffnen (damit Save-Dialog zuerst schliesst)
+          if (_oProto) setTimeout(() => window.open(`${_oProto}:ofe|u|${urlData.signedUrl}`), 400);
           toast.success("Ausgecheckt – Datei gespeichert. Wird automatisch eingecheckt wenn Excel/Word geschlossen wird.");
         } catch (e) {
           if (e.name !== "AbortError") throw e;
-          window.open(urlData.signedUrl, "_blank");
+          if (_oProto) window.open(`${_oProto}:ofe|u|${urlData.signedUrl}`);
+          else window.open(urlData.signedUrl, "_blank");
           toast.success("Ausgecheckt – Datei heruntergeladen.");
         }
       } else {
-        window.open(urlData.signedUrl, "_blank");
+        if (_oProto) window.open(`${_oProto}:ofe|u|${urlData.signedUrl}`);
+        else window.open(urlData.signedUrl, "_blank");
         toast.success("Ausgecheckt – Datei heruntergeladen.");
       }
     } catch (err) { toast.error("Fehler: " + err.message); }
