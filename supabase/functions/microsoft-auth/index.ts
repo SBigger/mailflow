@@ -13,7 +13,7 @@ serve(async (req) => {
     client_id: clientId,
     response_type: 'code',
     redirect_uri: redirectUri,
-    scope: 'offline_access Mail.Read Mail.ReadBasic Mail.ReadWrite Mail.Send User.Read',
+    scope: 'offline_access Mail.Read Mail.ReadBasic Mail.ReadWrite Mail.Send User.Read Files.ReadWrite.All Sites.ReadWrite.All',
     response_mode: 'query',
     state: state,
   })

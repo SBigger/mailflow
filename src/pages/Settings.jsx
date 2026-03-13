@@ -774,10 +774,16 @@ export default function Settings() {
                      <p className="text-yellow-400 text-sm">Noch nicht verbunden</p>
                    </div>
                  )}
+                 {user?.microsoft_access_token && (
+                   <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg mb-2">
+                     <p className="text-blue-400 text-sm font-medium">ℹ️ SharePoint-Integration aktiv</p>
+                     <p className="text-blue-400/70 text-xs mt-1">Bitte einmal <strong>Neu verbinden</strong> klicken (neue Berechtigungen für SharePoint).</p>
+                   </div>
+                 )}
                  <div className="flex gap-2">
                    <Button onClick={handleOutlookConnect} className="bg-blue-600 hover:bg-blue-500">
                      <Link2 className="h-4 w-4 mr-2" /> 
-                     {user?.microsoft_access_token ? 'Neu verbinden' : 'Mit Outlook verbinden'}
+                     {user?.microsoft_access_token ? 'Neu verbinden (empfohlen)' : 'Mit Microsoft verbinden'}
                    </Button>
                    {user?.microsoft_access_token && (
                      <Button

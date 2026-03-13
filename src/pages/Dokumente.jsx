@@ -6,12 +6,38 @@ import { supabase, entities } from "@/api/supabaseClient";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import TagSelectWidget from "@/components/dokumente/TagSelectWidget";
-import CheckinDialog from "@/components/dokumente/CheckinDialog";
 import { useAuth } from "@/lib/AuthContext";
-import { saveHandle, loadHandle, deleteHandle, saveHandleMeta, deleteHandleMeta } from "@/lib/fileHandleDB";
-import useFileWatcher from "@/lib/useFileWatcher";
 
 const BUCKET   = "dokumente";
+
+// ─── SharePoint Helper ───────────────────────────────────────────────────────
+const SPFILES = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sharepoint-files`;
+
+async function spCall(jwt, body) {
+  const res = await fetch(SPFILES, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${jwt}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `SharePoint Fehler ${res.status}`); }
+  return res.json();
+}
+
+async function spUpload(jwt, file, customer_id, category, year) {
+  const form = new FormData();
+  form.append('action', 'upload');
+  form.append('file', file);
+  form.append('customer_id', customer_id);
+  form.append('category', category);
+  form.append('year', String(year));
+  form.append('filename', file.name);
+  const res = await fetch(SPFILES, {
+    method: 'POST', headers: { Authorization: `Bearer ${jwt}` }, body: form,
+  });
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || 'Upload fehlgeschlagen'); }
+  return res.json(); // { item_id, web_url, name, size }
+}
+
 const CUR_YEAR = new Date().getFullYear();
 
 const CATEGORIES = [
@@ -66,15 +92,21 @@ function UploadDialog({ customers, preCustomer, allTags, onCancel, onUpload, s, 
   };
 
   const handleUpload = async () => {
-    if (!file || !custId || !name.trim()) { toast.error("Bitte Datei, Kunde und Name ausfullen"); return; }
-    if (!year || isNaN(parseInt(year)))   { toast.error("Bitte ein gueltiges Jahr eingeben"); return; }
+    if (!file || !custId || !name.trim()) { toast.error("Bitte Datei, Kunde und Name ausf\u00fcllen"); return; }
+    if (!year || isNaN(parseInt(year)))   { toast.error("Bitte ein g\u00fcltiges Jahr eingeben"); return; }
     setUploading(true);
     try {
-      const safe        = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const storagePath = `${custId}/${category}/${year}/${Date.now()}-${safe}`;
-      const { error: upErr } = await supabase.storage.from(BUCKET).upload(storagePath, file, { upsert: false, contentType: file.type });
-      if (upErr) throw upErr;
-      await entities.Dokument.create({ customer_id: custId, category, year: parseInt(year), name: name.trim(), filename: file.name, storage_path: storagePath, file_size: file.size, file_type: file.type, tag_ids: tagIds, notes });
+      const { data: { session } } = await supabase.auth.getSession();
+      const jwt = session?.access_token || '';
+      const sp = await spUpload(jwt, file, custId, category, parseInt(year));
+      await entities.Dokument.create({
+        customer_id: custId, category, year: parseInt(year),
+        name: name.trim(), filename: file.name,
+        storage_path: '', file_size: file.size, file_type: file.type,
+        tag_ids: tagIds, notes,
+        sharepoint_item_id: sp.item_id,
+        sharepoint_web_url: sp.web_url,
+      });
       toast.success("Dokument hochgeladen");
       onUpload();
     } catch (err) {
@@ -260,10 +292,29 @@ export default function Dokumente() {
   const [expandedCat,   setExpandedCat]   = useState({});
   const [custSearch,    setCustSearch]    = useState("");
   const [fileSearch,    setFileSearch]    = useState("");
+  const [spSearch,    setSpSearch]    = useState("");
+  const [spResults,   setSpResults]   = useState(null);
+  const [spSearching, setSpSearching] = useState(false);
+
+  // Volltextsuche via SharePoint
+  useEffect(() => {
+    const q = spSearch.trim();
+    if (q.length < 2) { setSpResults(null); return; }
+    const timer = setTimeout(async () => {
+      setSpSearching(true);
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const data = await spCall(session?.access_token || '', { action: 'search', q });
+        setSpResults(data.items || []);
+      } catch (e) { toast.error("Suche fehlgeschlagen: " + e.message); setSpResults([]); }
+      finally { setSpSearching(false); }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [spSearch]);
+
   const [showUpload,    setShowUpload]    = useState(false);
   const [editDoc,        setEditDoc]        = useState(null);
-  const [checkinDoc,     setCheckinDoc]     = useState(null);
-  const [checkinHandle,  setCheckinHandle]  = useState(null);
+  const [checkinDoc,     setCheckinDoc]     = useState(null);  // wird nicht mehr benoetigt, bleibt fuer Compat
   const [signedUrls,    setSignedUrls]    = useState({});
   const [pageTab,       setPageTab]       = useState('alle');
 
@@ -328,24 +379,32 @@ export default function Dokumente() {
     return parts.join(" \u203a ");
   }, [selCustomer, selCat, selYear]);
 
-  // Signed URLs
+  // Signed URLs nur fuer Legacy-Dokumente (ohne SharePoint)
   useEffect(() => {
-    const missing = filtered.filter(d => !signedUrls[d.id]);
-    if (!missing.length) return;
-    missing.forEach(async doc => {
+    const legacy = filtered.filter(d => !d.sharepoint_web_url && d.storage_path && !signedUrls[d.id]);
+    if (!legacy.length) return;
+    legacy.forEach(async doc => {
       const { data } = await supabase.storage.from(BUCKET).createSignedUrl(doc.storage_path, 3600);
       if (data?.signedUrl) setSignedUrls(prev => ({ ...prev, [doc.id]: data.signedUrl }));
     });
   }, [filtered]);
 
   const handleDelete = async (doc) => {
-    if (!window.confirm(`"${doc.name}" wirklich loeschen?`)) return;
-    await supabase.storage.from(BUCKET).remove([doc.storage_path]);
-    await entities.Dokument.delete(doc.id);
-    queryClient.invalidateQueries({ queryKey: ["dokumente-all"] });
-    queryClient.invalidateQueries({ queryKey: ["dokumente"] });
-    setSignedUrls(prev => { const n = { ...prev }; delete n[doc.id]; return n; });
-    toast.success("Dokument geloescht");
+    if (!window.confirm(`"${doc.name}" wirklich l\u00f6schen?`)) return;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const jwt = session?.access_token || '';
+      if (doc.sharepoint_item_id) {
+        await spCall(jwt, { action: 'delete', item_id: doc.sharepoint_item_id }).catch(() => {});
+      } else if (doc.storage_path) {
+        await supabase.storage.from(BUCKET).remove([doc.storage_path]).catch(() => {});
+      }
+      await entities.Dokument.delete(doc.id);
+      queryClient.invalidateQueries({ queryKey: ["dokumente-all"] });
+      queryClient.invalidateQueries({ queryKey: ["dokumente"] });
+      setSignedUrls(prev => { const n = { ...prev }; delete n[doc.id]; return n; });
+      toast.success("Dokument gel\u00f6scht");
+    } catch (err) { toast.error("Fehler: " + err.message); }
   };
 
   const handleCheckout = async (doc) => {
@@ -359,43 +418,34 @@ export default function Dokumente() {
       queryClient.invalidateQueries({ queryKey: ["dokumente-all"] });
       queryClient.invalidateQueries({ queryKey: ["dokumente"] });
 
-      const _oExt   = doc.filename.split('.').pop().toLowerCase();
-      const _oProto = {
+      const _ext  = doc.filename.split('.').pop().toLowerCase();
+      const _proto = {
         xls: 'ms-excel', xlsx: 'ms-excel', xlsm: 'ms-excel', xlsb: 'ms-excel',
         doc: 'ms-word',  docx: 'ms-word',  dotx: 'ms-word',
         ppt: 'ms-powerpoint', pptx: 'ms-powerpoint',
-      }[_oExt];
+      }[_ext];
 
-      const { data: urlData } = await supabase.storage.from(BUCKET).createSignedUrl(doc.storage_path, 300);
-      if (!urlData?.signedUrl) { toast.error("Fehler beim Erstellen der Download-URL"); return; }
-
-      if (_oProto) {
-        // Office-Datei: direkt via artis-open:// oeffnen – Auto-Checkin wenn Excel schliesst
-        const { data: { session: _sess } } = await supabase.auth.getSession();
-        const _jwt = _sess?.access_token || '';
+      if (_proto && doc.sharepoint_web_url) {
+        // SharePoint: direkt in Office öffnen – speichert automatisch zurück
         const _a = document.createElement('a');
-        _a.href = `artis-open://?url=${encodeURIComponent(urlData.signedUrl)}&filename=${encodeURIComponent(doc.filename)}&doc_id=${encodeURIComponent(doc.id)}&storage_path=${encodeURIComponent(doc.storage_path)}&jwt=${encodeURIComponent(_jwt)}`;
+        _a.href = `${_proto}:ofe|u|${doc.sharepoint_web_url}`;
         document.body.appendChild(_a); _a.click(); document.body.removeChild(_a);
-        toast.success("Datei öffnet in Excel/Word – wird automatisch eingecheckt wenn Excel geschlossen wird.");
+        toast.success("\u00d6ffnet in Office – Speichern geht direkt in SharePoint.");
+      } else if (doc.sharepoint_web_url) {
+        // Nicht-Office SharePoint: öffnen
+        window.open(doc.sharepoint_web_url, '_blank');
+        toast.success("Ausgecheckt – Beim Einchecken neue Version hochladen.");
       } else {
-        // Nicht-Office: lokal speichern für Auto-Checkin via File-Watcher
-        const resp = await fetch(urlData.signedUrl);
-        const blob = await resp.blob();
-        if ("showSaveFilePicker" in window) {
-          try {
-            const handle = await window.showSaveFilePicker({ suggestedName: doc.filename });
-            const writable = await handle.createWritable();
-            await writable.write(blob);
-            await writable.close();
-            const initialFile = await handle.getFile();
-            await saveHandle(doc.id, handle);
-            await saveHandleMeta(doc.id, initialFile.lastModified);
-            toast.success("Ausgecheckt – Datei gespeichert. Wird automatisch eingecheckt nach Änderungen.");
-          } catch (e) {
-            if (e.name !== "AbortError") throw e;
-            window.open(urlData.signedUrl, "_blank");
-            toast.success("Ausgecheckt – Datei heruntergeladen.");
-          }
+        // Legacy Supabase Storage
+        const { data: urlData } = await supabase.storage.from(BUCKET).createSignedUrl(doc.storage_path, 300);
+        if (!urlData?.signedUrl) { toast.error("Fehler beim Erstellen der Download-URL"); return; }
+        if (_proto) {
+          const { data: { session: _sess } } = await supabase.auth.getSession();
+          const _jwt = _sess?.access_token || '';
+          const _a = document.createElement('a');
+          _a.href = `artis-open://?url=${encodeURIComponent(urlData.signedUrl)}&filename=${encodeURIComponent(doc.filename)}&doc_id=${encodeURIComponent(doc.id)}&storage_path=${encodeURIComponent(doc.storage_path)}&jwt=${encodeURIComponent(_jwt)}`;
+          document.body.appendChild(_a); _a.click(); document.body.removeChild(_a);
+          toast.success("Datei \u00f6ffnet in Excel/Word – wird automatisch eingecheckt wenn geschlossen.");
         } else {
           window.open(urlData.signedUrl, "_blank");
           toast.success("Ausgecheckt – Datei heruntergeladen.");
@@ -404,76 +454,40 @@ export default function Dokumente() {
     } catch (err) { toast.error("Fehler: " + err.message); }
   };
 
-  const openCheckin = (doc) => {
-    handleCheckin(doc, null);
-  };
+  const openCheckin = (doc) => { handleCheckin(doc, null); };
 
   const handleCheckin = async (doc, file) => {
     try {
       if (file) {
-        await supabase.storage.from(BUCKET).remove([doc.storage_path]);
-        const safe    = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-        const newPath = `${doc.customer_id}/${doc.category}/${doc.year}/${Date.now()}-${safe}`;
-        const { error } = await supabase.storage.from(BUCKET).upload(newPath, file, { contentType: file.type });
-        if (error) throw error;
+        // Neue Version hochladen (Nicht-Office oder manuell)
+        const { data: { session } } = await supabase.auth.getSession();
+        const jwt = session?.access_token || '';
+        const sp = await spUpload(jwt, file, doc.customer_id, doc.category, doc.year);
+        if (doc.sharepoint_item_id) {
+          await spCall(jwt, { action: 'delete', item_id: doc.sharepoint_item_id }).catch(() => {});
+        } else if (doc.storage_path) {
+          await supabase.storage.from(BUCKET).remove([doc.storage_path]).catch(() => {});
+        }
         await entities.Dokument.update(doc.id, {
-          storage_path: newPath, filename: file.name,
-          file_size: file.size, file_type: file.type,
+          sharepoint_item_id: sp.item_id, sharepoint_web_url: sp.web_url,
+          storage_path: '', filename: file.name, file_size: file.size, file_type: file.type,
           checked_out_by: null, checked_out_by_name: null, checked_out_at: null,
         });
-        await deleteHandle(doc.id).catch(() => {});
-        await deleteHandleMeta(doc.id).catch(() => {});
         setSignedUrls(prev => { const n = { ...prev }; delete n[doc.id]; return n; });
         toast.success("Eingecheckt & neue Version hochgeladen");
       } else {
+        // Office: hat direkt in SharePoint gespeichert – nur Sperre aufheben
         await entities.Dokument.update(doc.id, {
           checked_out_by: null, checked_out_by_name: null, checked_out_at: null,
         });
-        await deleteHandle(doc.id).catch(() => {});
-        await deleteHandleMeta(doc.id).catch(() => {});
-        toast.success("Entsperrt");
+        toast.success("Eingecheckt");
       }
     } catch (err) { toast.error("Fehler: " + err.message); }
-    setCheckinDoc(null); setCheckinHandle(null);
     queryClient.invalidateQueries({ queryKey: ["dokumente-all"] });
     queryClient.invalidateQueries({ queryKey: ["dokumente"] });
   };
 
 
-
-  // ─── Auto-Checkin via File-Watcher ───────────────────────────────────────────
-  // Alle Dokumente die aktuell von MIR ausgecheckt sind
-  const myCheckedOutDocs = useMemo(
-    () => allDoks.filter(d => d.checked_out_by === user?.id),
-    [allDoks, user?.id]
-  );
-
-  // Stilles Auto-Einchecken ohne Dialog (wird vom Watcher gerufen)
-  const autoCheckinDoc = async (doc, file) => {
-    try {
-      await supabase.storage.from(BUCKET).remove([doc.storage_path]);
-      const safe    = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-      const newPath = `${doc.customer_id}/${doc.category}/${doc.year}/${Date.now()}-${safe}`;
-      const { error } = await supabase.storage.from(BUCKET).upload(newPath, file, { contentType: file.type });
-      if (error) throw error;
-      await entities.Dokument.update(doc.id, {
-        storage_path: newPath, filename: file.name,
-        file_size: file.size, file_type: file.type,
-        checked_out_by: null, checked_out_by_name: null, checked_out_at: null,
-      });
-      await deleteHandle(doc.id).catch(() => {});
-      await deleteHandleMeta(doc.id).catch(() => {});
-      setSignedUrls(prev => { const n = { ...prev }; delete n[doc.id]; return n; });
-      queryClient.invalidateQueries({ queryKey: ['dokumente-all'] });
-      queryClient.invalidateQueries({ queryKey: ['dokumente'] });
-      toast.success(doc.name + ' wurde automatisch eingecheckt');
-    } catch (err) {
-      toast.error('Auto-Checkin fehlgeschlagen: ' + err.message);
-    }
-  };
-
-  // Watcher starten – ueberwacht lokale Dateien im Hintergrund
-  useFileWatcher(myCheckedOutDocs, autoCheckinDoc);
 
   const selectCustomer = (id) => { setSelCustomerId(id); setSelCat(null); setSelYear(null); setExpandedC(p => ({ ...p, [id]: true })); };
   const selectCat      = (cid, ck) => { setSelCustomerId(cid); setSelCat(ck); setSelYear(null); setExpandedCat(p => ({ ...p, [cid + "_" + ck]: true })); };
@@ -678,11 +692,11 @@ export default function Dokumente() {
                     onMouseEnter={e => e.currentTarget.style.background = s.rowHover}
                     onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                     {/* Typ */}
-                    <span onClick={() => { if (!doc.checked_out_by) { handleCheckout(doc); } else if (doc.checked_out_by === user?.id) { openCheckin(doc); } else { const u = signedUrls[doc.id]; if (u) window.open(u, '_blank'); else toast.error('URL noch nicht bereit.'); } }} style={{ background: fi.color, color: "#fff", borderRadius: 4, padding: "2px 5px", fontSize: 10, fontWeight: 700, flexShrink: 0, minWidth: 36, textAlign: "center", cursor: "pointer" }}>{fi.label}</span>
+                    <span onClick={() => { const _u = doc.sharepoint_web_url || signedUrls[doc.id]; if (!doc.checked_out_by) { handleCheckout(doc); } else if (doc.checked_out_by === user?.id) { openCheckin(doc); } else if (_u) { window.open(_u, '_blank'); } else { toast.error('URL nicht verfuegbar.'); } }} style={{ background: fi.color, color: "#fff", borderRadius: 4, padding: "2px 5px", fontSize: 10, fontWeight: 700, flexShrink: 0, minWidth: 36, textAlign: "center", cursor: "pointer" }}>{fi.label}</span>
                     {/* Name + Tags */}
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                      <div onClick={() => { if (!doc.checked_out_by) { handleCheckout(doc); } else if (doc.checked_out_by === user?.id) { openCheckin(doc); } else { const u = signedUrls[doc.id]; if (u) window.open(u, '_blank'); else toast.error('URL noch nicht bereit.'); } }} style={{ fontSize: 13, color: s.textMain, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 500, flex: 1, cursor: "pointer" }}>{doc.name}</div>
+                      <div onClick={() => { const _u = doc.sharepoint_web_url || signedUrls[doc.id]; if (!doc.checked_out_by) { handleCheckout(doc); } else if (doc.checked_out_by === user?.id) { openCheckin(doc); } else if (_u) { window.open(_u, '_blank'); } else { toast.error('URL nicht verfuegbar.'); } }} style={{ fontSize: 13, color: s.textMain, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 500, flex: 1, cursor: "pointer" }}>{doc.name}</div>
                       {isCheckedOut && (
                         <span title={"Ausgecheckt von " + doc.checked_out_by_name + " am " + (doc.checked_out_at ? new Date(doc.checked_out_at).toLocaleDateString("de-CH") : "")}
                           style={{ fontSize: 10, color: isMyCheckout ? accent : "#f59e0b",
@@ -743,7 +757,7 @@ export default function Dokumente() {
                       <Pencil size={14} />
                     </button>
                     {/* Download */}
-                    <button onClick={() => { const u = signedUrls[doc.id]; if (u) window.open(u, "_blank"); else toast.error("URL noch nicht bereit, kurz warten."); }}
+                    <button onClick={() => { const _u = doc.sharepoint_web_url || signedUrls[doc.id]; if (_u) window.open(_u, '_blank'); else toast.error('URL nicht verfuegbar.'); }}
                       title="Herunterladen" style={{ background: "none", border: "none", cursor: "pointer", color: accent, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}>
                       <Download size={15} />
                     </button>
@@ -774,12 +788,7 @@ export default function Dokumente() {
           onSave={() => { queryClient.invalidateQueries({ queryKey: ["dokumente-all"] }); queryClient.invalidateQueries({ queryKey: ["dokumente"] }); setEditDoc(null); }}
           s={s} border={border} accent={accent} />
       )}
-      {checkinDoc && (
-        <CheckinDialog doc={checkinDoc} fileHandle={checkinHandle}
-          onCancel={() => { setCheckinDoc(null); setCheckinHandle(null); }}
-          onCheckin={(file) => handleCheckin(checkinDoc, file)}
-          s={s} border={border} accent={accent} />
-      )}
+      {/* CheckinDialog ersetzt durch direktes handleCheckin */}
     </div>
   );
 }

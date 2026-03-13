@@ -39,7 +39,7 @@ serve(async (req) => {
           client_secret: Deno.env.get('MICROSOFT_CLIENT_SECRET')!,
           refresh_token: refreshToken,
           grant_type: 'refresh_token',
-          scope: 'offline_access Mail.Read Mail.ReadBasic Mail.ReadWrite Mail.Send User.Read'
+          scope: 'offline_access Mail.Read Mail.ReadBasic Mail.ReadWrite Mail.Send User.Read Files.ReadWrite.All Sites.ReadWrite.All'
         })
       }
     )
