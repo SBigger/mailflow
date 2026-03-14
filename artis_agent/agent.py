@@ -45,6 +45,7 @@ except ImportError:
 # ── Konfiguration ─────────────────────────────────────────────────────────────
 SUPABASE_URL = "https://uawgpxcihixqxqxxbjak.supabase.co"
 SPFILES      = f"{SUPABASE_URL}/functions/v1/sharepoint-files"
+SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhd2dweGNpaGl4cXhxeHhiamFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI0MzE5MzYsImV4cCI6MjA4ODAwNzkzNn0.fPbekBh1dO8byD2wxkjzFSKW4jSV0MHIGgci9nch98A"
 WORKSPACE    = os.path.join(
     os.environ.get('LOCALAPPDATA', os.path.expanduser('~')),
     'ArtisAgent', 'Workspace'
@@ -122,6 +123,21 @@ def download_file(url: str, dest: str):
 
 
 # ── Datei-Lock-Erkennung ──────────────────────────────────────────────────────
+
+
+
+# Checkout-Token aufloesen (Agent ruft mit ANON-Key, kein JWT im URI noetig)
+def resolve_token(token_id: str) -> dict:
+    """Loest ein agent_tokens UUID auf und gibt jwt, doc_id, item_id, filename zurueck."""
+    r = requests.get(
+        f"{SPFILES}?action=resolve-checkout-token&token={token_id}",
+        headers={"Authorization": f"Bearer {SUPABASE_ANON_KEY}"},
+        timeout=15
+    )
+    data = r.json() if r.content else {}
+    if not r.ok:
+        raise RuntimeError(data.get('error') or f"HTTP {r.status_code}")
+    return data
 
 def is_file_locked(path: str) -> bool:
     """Prüft ob die Datei von einem anderen Prozess gesperrt ist."""
@@ -496,16 +512,27 @@ def main():
         params = {k: v[0] for k, v in urllib.parse.parse_qs(parsed.query).items()}
 
         action   = parsed.netloc   # z.B. 'checkout'
-        doc_id   = params.get('doc_id',   '')
-        jwt      = params.get('jwt',      '')
-        item_id  = params.get('item_id',  '')
-        filename = params.get('filename', 'dokument')
+        # Neuer Weg: token=UUID im URI (kein JWT im URI, kein Windows-Corruption-Problem)
+        token = params.get('token', '')
+        if token:
+            print(f'Token-Aufloesung: {token}')
+            resolved = resolve_token(token)
+            doc_id   = resolved.get('doc_id', '')
+            jwt      = resolved.get('jwt', '')
+            item_id  = resolved.get('item_id', '')
+            filename = resolved.get('filename', 'dokument')
+        else:
+            # Fallback: alte Methode (JWT direkt im URI)
+            doc_id   = params.get('doc_id',   '')
+            jwt      = params.get('jwt',      '')
+            item_id  = params.get('item_id',  '')
+            filename = params.get('filename', 'dokument')
 
         if not doc_id or not jwt or not item_id:
             raise ValueError(
-                "URI unvollständig.\nErwartet: doc_id, jwt, item_id\n\n"
-                f"Erhalten: {uri[:200]}"
+                'URI unvollstaendig: doc_id, jwt oder item_id fehlen.'
             )
+
 
         if action == 'checkout':
             checkout_workflow(doc_id, jwt, item_id, filename)

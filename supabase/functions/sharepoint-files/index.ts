@@ -113,6 +113,45 @@ serve(async (req) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
   )
 
+  // resolve-checkout-token: VOR Auth-Check (Agent ruft mit ANON-Key)
+  {
+    const earlyUrl    = new URL(req.url)
+    const earlyAction = earlyUrl.searchParams.get('action')
+    if (earlyAction === 'resolve-checkout-token') {
+      const tokenId = earlyUrl.searchParams.get('token') || ''
+      if (!tokenId || !/^[0-9a-f-]{36}$/i.test(tokenId))
+        return new Response(JSON.stringify({ error: 'token fehlt oder ungueltig' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+
+      const { data: tok } = await supabase
+        .from('agent_tokens')
+        .select('doc_id, item_id, filename, jwt, expires_at, used_at')
+        .eq('id', tokenId)
+        .single()
+
+      if (!tok)
+        return new Response(JSON.stringify({ error: 'Token nicht gefunden' }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      if (tok.used_at)
+        return new Response(JSON.stringify({ error: 'Token bereits verwendet' }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      if (new Date(tok.expires_at) < new Date())
+        return new Response(JSON.stringify({ error: 'Token abgelaufen' }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+
+      await supabase.from('agent_tokens')
+        .update({ used_at: new Date().toISOString() })
+        .eq('id', tokenId)
+
+      return new Response(JSON.stringify({
+        jwt:      tok.jwt,
+        doc_id:   tok.doc_id,
+        item_id:  tok.item_id,
+        filename: tok.filename,
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+  }
+
   // ── Authentifizierung ──────────────────────────────────────────────────────
   const authHeader = req.headers.get('Authorization') || ''
   const jwtToken   = authHeader.replace('Bearer ', '').trim()

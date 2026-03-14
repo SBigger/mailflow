@@ -364,14 +364,13 @@ export default function CustomerDokumenteTab({ customerId }) {
       queryClient.invalidateQueries({ queryKey: ["dokumente"] });
 
       if (doc.sharepoint_item_id) {
-        // Alle SharePoint-Dateien: via Artis Agent öffnen (jede Endung)
-        const uri = [
-          'artis-open://checkout',
-          '?doc_id=',   encodeURIComponent(doc.id),
-          '&jwt=',      encodeURIComponent(jwt),
-          '&item_id=',  encodeURIComponent(doc.sharepoint_item_id),
-          '&filename=', encodeURIComponent(doc.filename),
-        ].join('');
+        // Kurzlebigen Token in DB (JWT bleibt sicher, nicht im URI)
+        const { data: tokenRow, error: tokenErr } = await supabase
+          .from('agent_tokens')
+          .insert({ doc_id: doc.id, item_id: doc.sharepoint_item_id, filename: doc.filename, jwt, user_id: authUser.id })
+          .select('id').single();
+        if (tokenErr || \!tokenRow) { toast.error('Fehler: ' + (tokenErr?.message || 'Token-Fehler')); return; }
+        const uri = 'artis-open://checkout?token=' + tokenRow.id;
         const _a = document.createElement('a');
         _a.href = uri;
         document.body.appendChild(_a); _a.click(); document.body.removeChild(_a);
