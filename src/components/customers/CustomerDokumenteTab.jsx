@@ -11,14 +11,14 @@ import { useAuth } from "@/lib/AuthContext";
 const BUCKET   = "dokumente";
 
 // SharePoint Helper
-const SPFILES = \;
+const SPFILES = import.meta.env.VITE_SUPABASE_URL + '/functions/v1/sharepoint-files';
 async function spCall(jwt, body) {
   const res = await fetch(SPFILES, {
     method: 'POST',
-    headers: { Authorization: \, 'Content-Type': 'application/json' },
+    headers: { Authorization: 'Bearer ' + jwt, 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  if (\!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || \); }
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || res.statusText); }
   return res.json();
 }
 async function spUpload(jwt, file, customer_id, category, year) {
@@ -29,8 +29,8 @@ async function spUpload(jwt, file, customer_id, category, year) {
   form.append('category', category);
   form.append('year', String(year));
   form.append('filename', file.name);
-  const res = await fetch(SPFILES, { method: 'POST', headers: { Authorization: \ }, body: form });
-  if (\!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || 'Upload fehlgeschlagen'); }
+  const res = await fetch(SPFILES, { method: 'POST', headers: { Authorization: 'Bearer ' + jwt }, body: form });
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || 'Upload fehlgeschlagen'); }
   return res.json();
 }
 
