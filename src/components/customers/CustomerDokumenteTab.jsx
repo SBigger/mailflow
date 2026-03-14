@@ -11,14 +11,15 @@ import { useAuth } from "@/lib/AuthContext";
 const BUCKET   = "dokumente";
 
 // SharePoint Helper
-const SPFILES = import.meta.env.VITE_SUPABASE_URL + '/functions/v1/sharepoint-files';
+const SPFILES  = import.meta.env.VITE_SUPABASE_URL + '/functions/v1/sharepoint-files';
+const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 async function spCall(jwt, body) {
   const res = await fetch(SPFILES, {
     method: 'POST',
-    headers: { Authorization: 'Bearer ' + jwt, 'Content-Type': 'application/json' },
+    headers: { Authorization: 'Bearer ' + jwt, apikey: ANON_KEY, 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || res.statusText); }
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || e.message || `Fehler ${res.status}`); }
   return res.json();
 }
 async function spUpload(jwt, file, customer_id, category, year) {
@@ -29,8 +30,8 @@ async function spUpload(jwt, file, customer_id, category, year) {
   form.append('category', category);
   form.append('year', String(year));
   form.append('filename', file.name);
-  const res = await fetch(SPFILES, { method: 'POST', headers: { Authorization: 'Bearer ' + jwt }, body: form });
-  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || 'Upload fehlgeschlagen'); }
+  const res = await fetch(SPFILES, { method: 'POST', headers: { Authorization: 'Bearer ' + jwt, apikey: ANON_KEY }, body: form });
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || e.message || 'Upload fehlgeschlagen'); }
   return res.json();
 }
 
@@ -405,7 +406,7 @@ export default function CustomerDokumenteTab({ customerId }) {
         form.append('doc_id',  doc.id);
         form.append('file',    file, file.name);
         const res = await fetch(SPFILES, {
-          method: 'POST', headers: { Authorization: `Bearer ${jwt}` }, body: form,
+          method: 'POST', headers: { Authorization: `Bearer ${jwt}`, apikey: ANON_KEY }, body: form,
         });
         if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || 'Upload fehlgeschlagen'); }
         setSignedUrls(prev => { const n = { ...prev }; delete n[doc.id]; return n; });
