@@ -425,8 +425,10 @@ export default function Dokumente() {
       queryClient.invalidateQueries({ queryKey: ["dokumente"] });
 
       const _ext  = doc.filename.split('.').pop().toLowerCase();
-      const _proto = {
-        xls: 'ms-excel', xlsx: 'ms-excel', xlsm: 'ms-excel', xlsb: 'ms-excel',
+      // Macro-Dateien (xlsm, xlsb, docm, pptm) unterstuetzen kein SharePoint-Coauthoring (ofe)
+      const _macroExts = ['xlsm', 'xlsb', 'docm', 'dotm', 'pptm', 'potm'];
+      const _proto = _macroExts.includes(_ext) ? null : {
+        xls: 'ms-excel', xlsx: 'ms-excel',
         doc: 'ms-word',  docx: 'ms-word',  dotx: 'ms-word',
         ppt: 'ms-powerpoint', pptx: 'ms-powerpoint',
       }[_ext];
@@ -440,7 +442,7 @@ export default function Dokumente() {
       } else if (doc.sharepoint_web_url) {
         // Nicht-Office SharePoint: öffnen
         window.open(doc.sharepoint_web_url, '_blank');
-        toast.success("Ausgecheckt – Beim Einchecken neue Version hochladen.");
+        toast.success("Ausgecheckt – Datei in SharePoint geöffnet. Klick auf 'In Desktop-App öffnen'.");
       } else {
         // Legacy Supabase Storage
         const { data: urlData } = await supabase.storage.from(BUCKET).createSignedUrl(doc.storage_path, 300);
