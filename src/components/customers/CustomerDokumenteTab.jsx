@@ -91,11 +91,11 @@ function UploadDialog({ customerId, allTags, onCancel, onUploaded, s, border, ac
     if (!year || isNaN(parseInt(year)))     { toast.error("Bitte ein gueltiges Jahr eingeben"); return; }
     setUploading(true);
     try {
-      const safe        = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const storagePath = `${customerId}/${category}/${year}/${Date.now()}-${safe}`;
-      const { error: upErr } = await supabase.storage.from(BUCKET).upload(storagePath, file, { upsert: false, contentType: file.type });
-      if (upErr) throw upErr;
-      await entities.Dokument.create({ customer_id: customerId, category, year: parseInt(year), name: name.trim(), filename: file.name, storage_path: storagePath, file_size: file.size, file_type: file.type, tag_ids: tagIds, notes });
+      const { data: { session } } = await supabase.auth.getSession();
+      const jwt = session?.access_token;
+      if (!jwt) throw new Error('Nicht angemeldet');
+      const sp = await spUpload(jwt, file, customerId, category, year);
+      await entities.Dokument.create({ customer_id: customerId, category, year: parseInt(year), name: name.trim(), filename: file.name, sharepoint_item_id: sp.item_id, sharepoint_web_url: sp.web_url, storage_path: '', file_size: file.size, file_type: file.type, tag_ids: tagIds, notes });
       toast.success("Dokument hochgeladen");
       onUploaded();
     } catch (err) {
