@@ -125,7 +125,7 @@ serve(async (req) => {
 
       const { data: tok } = await supabase
         .from('agent_tokens')
-        .select('doc_id, item_id, filename, jwt, expires_at, used_at')
+        .select('doc_id, item_id, filename, jwt, download_url, expires_at, used_at')
         .eq('id', tokenId)
         .single()
 
@@ -148,7 +148,8 @@ serve(async (req) => {
         doc_id:   tok.doc_id,
         item_id:  tok.item_id,
         filename: tok.filename,
-      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+        filename:     tok.filename,
+        download_url: tok.download_url || '',
     }
   }
 
@@ -450,6 +451,46 @@ serve(async (req) => {
       return new Response(JSON.stringify({ ok: true, draft_item_id: item.id }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
+
+    // checkin-storage: Datei direkt in Supabase Storage (kein SharePoint)
+    if (action === 'checkin-storage') {
+      const doc_id = validateUUID(body.doc_id, 'doc_id')
+      const file   = body.file as File
+      if (!file) throw new Error('Keine Datei angegeben')
+
+      const { data: doc, error: docErr } = await supabase.from('dokumente')
+        .select('id, checked_out_by, filename')
+        .eq('id', doc_id).single()
+      if (docErr || !doc) throw new Error('Dokument nicht gefunden')
+      if (doc.checked_out_by !== authUser.id) throw new Error('Dokument nicht von dir ausgecheckt')
+
+      const fileData  = new Uint8Array(await file.arrayBuffer())
+      if (fileData.length === 0)           throw new Error('Datei ist leer')
+      if (fileData.length > MAX_FILE_SIZE)  throw new Error('Datei zu gross (max. 100 MB)')
+
+      const cleanName   = safeName(file.name || doc.filename)
+      const storagePath = `dokumente/${doc_id}/${Date.now()}-${cleanName}`
+
+      const { error: storErr } = await supabase.storage
+        .from('dokumente')
+        .upload(storagePath, fileData, { upsert: true, contentType: 'application/octet-stream' })
+      if (storErr) throw new Error('Storage Upload: ' + storErr.message)
+
+      await supabase.from('dokumente').update({
+        storage_path:        storagePath,
+        filename:            cleanName,
+        file_size:           fileData.length,
+        checked_out_by:      null,
+        checked_out_by_name: null,
+        checked_out_at:      null,
+        sharepoint_item_id:  null,
+        sharepoint_web_url:  null,
+      }).eq('id', doc_id)
+
+      return new Response(JSON.stringify({ ok: true }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
 
     return new Response(JSON.stringify({ error: `Unbekannte Aktion: ${action}` }),
       { status: 400, headers: corsHeaders })

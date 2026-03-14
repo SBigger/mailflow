@@ -363,24 +363,29 @@ export default function CustomerDokumenteTab({ customerId }) {
       queryClient.invalidateQueries({ queryKey: ["dokumente-all"] });
       queryClient.invalidateQueries({ queryKey: ["dokumente"] });
 
+      // Download-URL holen (SharePoint pre-auth oder Supabase Storage signed URL)
+      let download_url = '';
       if (doc.sharepoint_item_id) {
-        // Kurzlebigen Token in DB (JWT bleibt sicher, nicht im URI)
+        const dlData = await spCall(jwt, { action: 'get-download-url', item_id: doc.sharepoint_item_id });
+        download_url = dlData.download_url || '';
+      } else if (doc.storage_path) {
+        const { data: urlData } = await supabase.storage.from(BUCKET).createSignedUrl(doc.storage_path, 4 * 3600);
+        download_url = urlData?.signedUrl || '';
+      }
+      if (!download_url) { toast.error('Download-URL nicht verfögbar'); return; }
+
+      if (doc.sharepoint_item_id || doc.storage_path) {
+        // Kurzlebigen Token in DB (JWT + Download-URL sicher, nicht im URI)
         const { data: tokenRow, error: tokenErr } = await supabase
           .from('agent_tokens')
-          .insert({ doc_id: doc.id, item_id: doc.sharepoint_item_id, filename: doc.filename, jwt, user_id: authUser.id })
+          .insert({ doc_id: doc.id, item_id: doc.sharepoint_item_id || '', filename: doc.filename, jwt, user_id: authUser.id, download_url })
           .select('id').single();
-        if (tokenErr || \!tokenRow) { toast.error('Fehler: ' + (tokenErr?.message || 'Token-Fehler')); return; }
+        if (tokenErr || !tokenRow) { toast.error('Fehler: ' + (tokenErr?.message || 'Token-Fehler')); return; }
         const uri = 'artis-open://checkout?token=' + tokenRow.id;
         const _a = document.createElement('a');
         _a.href = uri;
         document.body.appendChild(_a); _a.click(); document.body.removeChild(_a);
         toast.success('Artis Agent öffnet die Datei – wird beim Schließen automatisch eingecheckt.');
-      } else if (doc.storage_path) {
-        // Legacy Supabase Storage
-        const { data: urlData } = await supabase.storage.from(BUCKET).createSignedUrl(doc.storage_path, 300);
-        if (!urlData?.signedUrl) { toast.error('Fehler beim Erstellen der Download-URL'); return; }
-        window.open(urlData.signedUrl, '_blank');
-        toast.info('Ausgecheckt – Beim Einchecken neue Version hochladen.');
       } else {
         toast.error('Datei nicht gefunden (kein SharePoint-Item und kein Storage-Pfad).');
       }
