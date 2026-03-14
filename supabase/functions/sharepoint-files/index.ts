@@ -6,10 +6,11 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-const GRAPH = 'https://graph.microsoft.com/v1.0'
-const SCOPE = 'offline_access Mail.Read Mail.ReadBasic Mail.ReadWrite Mail.Send User.Read Files.ReadWrite.All Sites.ReadWrite.All'
+const GRAPH         = 'https://graph.microsoft.com/v1.0'
+const SCOPE         = 'offline_access Mail.Read Mail.ReadBasic Mail.ReadWrite Mail.Send User.Read Files.ReadWrite.All Sites.ReadWrite.All'
+const MAX_FILE_SIZE = 100 * 1024 * 1024 // 100 MB
 
-// ── Token-Refresh (identisch zu sync-outlook-mails) ──────────────────────────
+// ── Token-Refresh ─────────────────────────────────────────────────────────────
 async function getAccessToken(supabase: any, userId: string, profile: any): Promise<string> {
   let accessToken = profile.microsoft_access_token
   const tokenExpiry = profile.microsoft_token_expiry || 0
@@ -47,12 +48,12 @@ async function getAccessToken(supabase: any, userId: string, profile: any): Prom
   return accessToken
 }
 
-// ── SharePoint Site + Drive IDs aus Env ──────────────────────────────────────
+// ── SharePoint IDs aus Env ────────────────────────────────────────────────────
 function getSiteId()  { return Deno.env.get('SHAREPOINT_SITE_ID')  || '' }
 function getDriveId() { return Deno.env.get('SHAREPOINT_DRIVE_ID') || '' }
 
 // ── Graph-API Helper ──────────────────────────────────────────────────────────
-async function graph(method: string, path: string, token: string, body?: any, isBlob = false) {
+async function graph(method: string, path: string, token: string, body?: any) {
   const headers: Record<string, string> = { Authorization: `Bearer ${token}` }
   let fetchBody: any
   if (body instanceof Uint8Array) {
@@ -65,19 +66,45 @@ async function graph(method: string, path: string, token: string, body?: any, is
   const res = await fetch(`${GRAPH}${path}`, { method, headers, body: fetchBody })
   if (!res.ok) {
     const err = await res.text()
-    throw new Error(`Graph ${method} ${path} → ${res.status}: ${err}`)
+    throw new Error(`Graph ${method} ${path} \u2192 ${res.status}: ${err}`)
   }
   if (res.status === 204) return null
-  if (isBlob) return res.arrayBuffer()
   return res.json()
 }
 
-// ── Dateiname sicher machen ───────────────────────────────────────────────────
+// ── Input-Validierung (verhindert Path-Traversal & Injection) ─────────────────
+function validateUUID(value: string, name: string): string {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value || ''))
+    throw new Error(`${name} ist keine gültige UUID`)
+  return value.toLowerCase()
+}
+
+function validatePathComponent(value: string, name: string): string {
+  if (!value || typeof value !== 'string') throw new Error(`${name} fehlt`)
+  const cleaned = value.trim()
+  if (cleaned.length === 0 || cleaned.length > 200) throw new Error(`${name} hat ungültige Länge`)
+  if (/[/\\<>:"|?*\x00-\x1f]|\.\./.test(cleaned)) throw new Error(`${name} enthält ungültige Zeichen`)
+  return cleaned
+}
+
+function validateYear(value: string): number {
+  const y = parseInt(value, 10)
+  if (isNaN(y) || y < 2000 || y > 2100) throw new Error('Jahr ungültig (2000–2100)')
+  return y
+}
+
+function validateItemId(value: string): string {
+  if (!value || typeof value !== 'string' || value.length < 1 || value.length > 300)
+    throw new Error('item_id ungültig')
+  if (!/^[A-Za-z0-9!_.-]+$/.test(value)) throw new Error('item_id enthält ungültige Zeichen')
+  return value
+}
+
 function safeName(name: string) {
   return name.replace(/[#%*:<>?/\\|"]/g, '_')
 }
 
-// ── MAIN ─────────────────────────────────────────────────────────────────────
+// ── MAIN ──────────────────────────────────────────────────────────────────────
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
@@ -86,31 +113,34 @@ serve(async (req) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
   )
 
-  // Auth
+  // ── Authentifizierung ──────────────────────────────────────────────────────
   const authHeader = req.headers.get('Authorization') || ''
-  const token = authHeader.replace('Bearer ', '')
-  const { data: { user: authUser } } = await supabase.auth.getUser(token)
-  if (!authUser) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders })
+  const jwtToken   = authHeader.replace('Bearer ', '').trim()
+  if (!jwtToken)
+    return new Response(JSON.stringify({ error: 'Kein Token' }), { status: 401, headers: corsHeaders })
+
+  const { data: { user: authUser } } = await supabase.auth.getUser(jwtToken)
+  if (!authUser)
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders })
 
   const { data: profile } = await supabase.from('profiles').select('*').eq('id', authUser.id).single()
-  if (!profile) return new Response(JSON.stringify({ error: 'Profil nicht gefunden' }), { status: 404, headers: corsHeaders })
+  if (!profile)
+    return new Response(JSON.stringify({ error: 'Profil nicht gefunden' }), { status: 404, headers: corsHeaders })
 
   try {
     const accessToken = await getAccessToken(supabase, authUser.id, profile)
     const siteId  = getSiteId()
     const driveId = getDriveId()
+    if (!siteId || !driveId) throw new Error('SharePoint nicht konfiguriert (SITE_ID/DRIVE_ID fehlen)')
 
-    // Action aus URL-Parameter oder JSON-Body
     const url = new URL(req.url)
     let action = url.searchParams.get('action')
     let body: any = {}
 
     const contentType = req.headers.get('content-type') || ''
-
     if (contentType.includes('multipart/form-data')) {
-      // Upload: multipart
       const form = await req.formData()
-      action = action || form.get('action') as string
+      action = action || (form.get('action') as string)
       body = {
         file:        form.get('file') as File,
         customer_id: form.get('customer_id') as string,
@@ -119,58 +149,63 @@ serve(async (req) => {
         filename:    form.get('filename') as string,
       }
     } else if (contentType.includes('application/json')) {
-      body = await req.json()
+      body   = await req.json()
       action = action || body.action
     }
 
-    // ── setup: SITE_ID + DRIVE_ID ermitteln ────────────────────────────────
+    // ── setup: SITE_ID + DRIVE_ID ermitteln (nur Admins) ──────────────────
     if (action === 'setup') {
-      const tenant = 'artistreuhand.sharepoint.com'
-      const sitePath = '/sites/ArtisMailFlow'
-      const siteData = await graph('GET', `/sites/${tenant}:${sitePath}`, accessToken)
+      if (profile.role !== 'admin')
+        return new Response(JSON.stringify({ error: 'Nur für Administratoren' }), { status: 403, headers: corsHeaders })
+      const siteData   = await graph('GET', `/sites/artistreuhand.sharepoint.com:/sites/ArtisMailFlow`, accessToken)
       const drivesData = await graph('GET', `/sites/${siteData.id}/drives`, accessToken)
-      const defaultDrive = drivesData.value.find((d: any) => d.driveType === 'documentLibrary') || drivesData.value[0]
+      const drive = drivesData.value.find((d: any) => d.driveType === 'documentLibrary') || drivesData.value[0]
       return new Response(JSON.stringify({
-        site_id:  siteData.id,
-        drive_id: defaultDrive.id,
-        site_name: siteData.displayName,
-        drive_name: defaultDrive.name,
+        site_id:    siteData.id,
+        drive_id:   drive.id,
+        site_name:  siteData.displayName,
+        drive_name: drive.name,
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
     // ── upload ─────────────────────────────────────────────────────────────
     if (action === 'upload') {
       const { file, customer_id, category, year, filename } = body
-      if (!file) throw new Error('Keine Datei')
+      if (!file) throw new Error('Keine Datei angegeben')
 
-      const safe = safeName(filename || (file as File).name)
-      const ts   = Date.now()
-      const spPath = `Kunden/${customer_id}/${category}/${year}/${ts}-${safe}`
-
+      const custId   = validateUUID(customer_id, 'customer_id')
+      const cat      = validatePathComponent(category, 'category')
+      const yr       = validateYear(year)
       const fileData = new Uint8Array(await (file as File).arrayBuffer())
+      if (fileData.length === 0)       throw new Error('Datei ist leer')
+      if (fileData.length > MAX_FILE_SIZE) throw new Error('Datei zu gross (max. 100 MB)')
+
+      const safe   = safeName(filename || (file as File).name)
+      const spPath = `Kunden/${custId}/${cat}/${yr}/${Date.now()}-${safe}`
 
       let item: any
       if (fileData.length < 4 * 1024 * 1024) {
         // Kleine Datei: direkter PUT
-        item = await graph('PUT', `/sites/${siteId}/drives/${driveId}/root:/${spPath}:/content`, accessToken, fileData)
+        item = await graph('PUT',
+          `/sites/${siteId}/drives/${driveId}/root:/${spPath}:/content`,
+          accessToken, fileData)
       } else {
-        // Grosse Datei: Upload-Session
+        // Grosse Datei: Upload-Session mit Chunks
         const session = await graph('POST',
           `/sites/${siteId}/drives/${driveId}/root:/${spPath}:/createUploadSession`,
           accessToken,
           { item: { '@microsoft.graph.conflictBehavior': 'rename' } }
         )
-        const uploadUrl = session.uploadUrl
         const chunkSize = 3 * 1024 * 1024
         let offset = 0
         while (offset < fileData.length) {
           const chunk = fileData.slice(offset, offset + chunkSize)
           const end   = Math.min(offset + chunkSize - 1, fileData.length - 1)
-          const res   = await fetch(uploadUrl, {
+          const res   = await fetch(session.uploadUrl, {
             method: 'PUT',
             headers: {
               'Content-Length': chunk.length.toString(),
-              'Content-Range': `bytes ${offset}-${end}/${fileData.length}`,
+              'Content-Range':  `bytes ${offset}-${end}/${fileData.length}`,
             },
             body: chunk,
           })
@@ -189,8 +224,13 @@ serve(async (req) => {
 
     // ── get-download-url ───────────────────────────────────────────────────
     if (action === 'get-download-url') {
-      const { item_id } = body
-      if (!item_id) throw new Error('item_id fehlt')
+      const item_id = validateItemId(body.item_id)
+
+      // Sicherheit: item_id muss in unserer DB vorhanden sein
+      const { data: doc } = await supabase.from('dokumente')
+        .select('id').eq('sharepoint_item_id', item_id).single()
+      if (!doc) throw new Error('Dokument nicht in Datenbank gefunden')
+
       const item = await graph('GET',
         `/sites/${siteId}/drives/${driveId}/items/${item_id}?$select=id,name,webUrl,@microsoft.graph.downloadUrl`,
         accessToken
@@ -204,108 +244,59 @@ serve(async (req) => {
 
     // ── delete ─────────────────────────────────────────────────────────────
     if (action === 'delete') {
-      const { item_id } = body
-      if (!item_id) throw new Error('item_id fehlt')
+      const item_id = validateItemId(body.item_id)
+
+      // Sicherheit: item_id muss in unserer DB vorhanden sein
+      const { data: doc } = await supabase.from('dokumente')
+        .select('id').eq('sharepoint_item_id', item_id).single()
+      if (!doc) throw new Error('Dokument nicht in Datenbank gefunden')
+
       await graph('DELETE', `/sites/${siteId}/drives/${driveId}/items/${item_id}`, accessToken)
-      return new Response(JSON.stringify({ ok: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      return new Response(JSON.stringify({ ok: true }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
     // ── search ─────────────────────────────────────────────────────────────
     if (action === 'search') {
       const { q, customer_id } = body
-      if (!q || q.trim().length < 2) throw new Error('Suchbegriff zu kurz')
+      if (!q || typeof q !== 'string') throw new Error('Suchbegriff fehlt')
+      const trimmed = q.trim()
+      if (trimmed.length < 2)   throw new Error('Suchbegriff zu kurz (min. 2 Zeichen)')
+      if (trimmed.length > 200) throw new Error('Suchbegriff zu lang')
 
-      let queryString = q.trim()
-      // Auf ArtisMailFlow-Site einschränken
-      queryString += ` AND path:"https://artistreuhand.sharepoint.com/sites/ArtisMailFlow"`
-      if (customer_id) queryString += ` AND path:"${customer_id}"`
+      // Query-Injection verhindern
+      const safeQ = trimmed.replace(/[()[\]{}"\\]/g, ' ')
+      let queryString = `${safeQ} AND path:"https://artistreuhand.sharepoint.com/sites/ArtisMailFlow"`
+      if (customer_id) {
+        try {
+          const custId = validateUUID(customer_id, 'customer_id')
+          queryString += ` AND path:"${custId}"`
+        } catch { /* customer_id-Filter ignorieren wenn ungültig */ }
+      }
 
       const result = await graph('POST', '/search/query', accessToken, {
         requests: [{
           entityTypes: ['driveItem'],
-          query: { queryString },
-          fields: ['id', 'name', 'webUrl', 'parentReference', 'size', 'lastModifiedDateTime', 'createdDateTime'],
-          from: 0,
-          size: 25,
+          query:       { queryString },
+          fields:      ['id', 'name', 'webUrl', 'parentReference', 'size', 'lastModifiedDateTime'],
+          from:        0,
+          size:        25,
         }],
       })
 
-      const hits = result?.value?.[0]?.hitsContainers?.[0]?.hits || []
+      const hits  = result?.value?.[0]?.hitsContainers?.[0]?.hits || []
       const items = hits.map((h: any) => ({
-        item_id:    h.resource?.id,
-        name:       h.resource?.name,
-        web_url:    h.resource?.webUrl,
-        size:       h.resource?.size,
-        modified:   h.resource?.lastModifiedDateTime,
-        path:       h.resource?.parentReference?.path,
-        summary:    h.summary,
+        item_id:  h.resource?.id,
+        name:     h.resource?.name,
+        web_url:  h.resource?.webUrl,
+        size:     h.resource?.size,
+        modified: h.resource?.lastModifiedDateTime,
+        path:     h.resource?.parentReference?.path,
+        summary:  h.summary,
       }))
 
       return new Response(JSON.stringify({ items, total: hits.length }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
-    }
-
-    // ── migrate: einzelnes Dokument Supabase → SharePoint ─────────────────
-    if (action === 'migrate') {
-      const { doc_id, storage_path, customer_id, category, year, filename } = body
-      if (!doc_id || !storage_path) throw new Error('doc_id und storage_path erforderlich')
-
-      // 1. Datei von Supabase Storage holen (Service Role → direkt)
-      const supabaseUrl  = Deno.env.get('SUPABASE_URL')!
-      const serviceKey   = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-      const storageRes   = await fetch(
-        `${supabaseUrl}/storage/v1/object/dokumente/${storage_path}`,
-        { headers: { Authorization: `Bearer ${serviceKey}`, apikey: serviceKey } }
-      )
-      if (!storageRes.ok) throw new Error(`Supabase Storage: ${storageRes.status} für ${storage_path}`)
-      const fileData = new Uint8Array(await storageRes.arrayBuffer())
-
-      // Dateiname aus storage_path extrahieren falls nicht angegeben
-      const fname = filename || storage_path.split('/').pop() || 'dokument'
-      const safe  = safeName(fname)
-      const ts    = Date.now()
-      const spPath = `Kunden/${customer_id}/${category}/${year}/${ts}-${safe}`
-
-      // 2. In SharePoint hochladen
-      let item: any
-      if (fileData.length < 4 * 1024 * 1024) {
-        item = await graph('PUT', `/sites/${siteId}/drives/${driveId}/root:/${spPath}:/content`, accessToken, fileData)
-      } else {
-        const session = await graph('POST',
-          `/sites/${siteId}/drives/${driveId}/root:/${spPath}:/createUploadSession`,
-          accessToken,
-          { item: { '@microsoft.graph.conflictBehavior': 'rename' } }
-        )
-        const uploadUrl = session.uploadUrl
-        const chunkSize = 3 * 1024 * 1024
-        let offset = 0
-        while (offset < fileData.length) {
-          const chunk = fileData.slice(offset, offset + chunkSize)
-          const end   = Math.min(offset + chunkSize - 1, fileData.length - 1)
-          const res   = await fetch(uploadUrl, {
-            method: 'PUT',
-            headers: {
-              'Content-Length': chunk.length.toString(),
-              'Content-Range': `bytes ${offset}-${end}/${fileData.length}`,
-            },
-            body: chunk,
-          })
-          if (res.ok && res.status !== 202) item = await res.json()
-          offset += chunkSize
-        }
-      }
-
-      // 3. DB aktualisieren
-      await supabase.from('dokumente').update({
-        sharepoint_item_id: item.id,
-        sharepoint_web_url: item.webUrl,
-      }).eq('id', doc_id)
-
-      return new Response(JSON.stringify({
-        ok:      true,
-        item_id: item.id,
-        web_url: item.webUrl,
-      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
     return new Response(JSON.stringify({ error: `Unbekannte Aktion: ${action}` }),
