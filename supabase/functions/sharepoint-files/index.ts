@@ -273,14 +273,15 @@ serve(async (req) => {
         .select('id').eq('sharepoint_item_id', item_id).single()
       if (!doc) throw new Error('Dokument nicht in Datenbank gefunden')
 
-      const item = await graph('GET',
-        `/sites/${siteId}/drives/${driveId}/items/${item_id}?$select=id,name,webUrl,@microsoft.graph.downloadUrl`,
-        accessToken
+      // /content liefert 302-Redirect auf pre-auth Download-URL (zuverlaessiger als @microsoft.graph.downloadUrl)
+      const contentRes = await fetch(
+        `${GRAPH}/sites/${siteId}/drives/${driveId}/items/${item_id}/content`,
+        { headers: { Authorization: `Bearer ${accessToken}` }, redirect: 'manual' }
       )
+      const dlUrl = contentRes.headers.get('location') || ''
+      if (!dlUrl) throw new Error('Download-URL konnte nicht ermittelt werden')
       return new Response(JSON.stringify({
-        download_url: item['@microsoft.graph.downloadUrl'],
-        web_url:      item.webUrl,
-        name:         item.name,
+        download_url: dlUrl,
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
