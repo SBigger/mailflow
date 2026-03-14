@@ -331,6 +331,12 @@ export default function Dokumente() {
     queryFn:  () => entities.DokTag.list("sort_order"),
   });
 
+  // Von aktuellem User ausgecheckte Dokumente
+  const myCheckedOutDocs = useMemo(() =>
+    allDoks.filter(d => d.checked_out_by && d.checked_out_by === user?.id),
+    [allDoks, user]
+  );
+
   // Tag-Resolver
   const getTag   = (id) => allTags.find(t => t.id === id);
   const tagLabel = (id) => { const t = getTag(id); if (!t) return null; const p = t.parent_id ? getTag(t.parent_id) : null; return p ? `${p.name} / ${t.name}` : t.name; };
