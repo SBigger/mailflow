@@ -360,22 +360,20 @@ export default function CustomerDokumenteTab({ customerId }) {
       queryClient.invalidateQueries({ queryKey: ["dokumente-all"] });
 
       const _ext  = doc.filename.split('.').pop().toLowerCase();
-      // Macro-Dateien (xlsm, xlsb, docm, pptm) unterstuetzen kein SharePoint-Coauthoring (ofe)
-      const _macroExts = ['xlsm', 'xlsb', 'docm', 'dotm', 'pptm', 'potm'];
-      const _proto = _macroExts.includes(_ext) ? null : {
-        xls: 'ms-excel', xlsx: 'ms-excel',
+      const _proto = {
+        xls: 'ms-excel', xlsx: 'ms-excel', xlsm: 'ms-excel', xlsb: 'ms-excel',
         doc: 'ms-word',  docx: 'ms-word',  dotx: 'ms-word',
         ppt: 'ms-powerpoint', pptx: 'ms-powerpoint',
       }[_ext];
 
       if (_proto && doc.sharepoint_web_url) {
         const _a = document.createElement('a');
-        _a.href = `${_proto}:ofe|u|${doc.sharepoint_web_url}`;
+        _a.href = `${_proto}:ofe|u|${decodeURIComponent(doc.sharepoint_web_url)}`;
         document.body.appendChild(_a); _a.click(); document.body.removeChild(_a);
         toast.success("Öffnet in Office – Speichern geht direkt in SharePoint.");
       } else if (doc.sharepoint_web_url) {
         window.open(doc.sharepoint_web_url, '_blank');
-        toast.success("Ausgecheckt – Datei in SharePoint geöffnet. Klick auf 'In Desktop-App öffnen'.");
+        toast.success("Öffnet in Office – Speichern geht direkt in SharePoint.");
       } else {
         const { data: urlData } = await supabase.storage.from(BUCKET).createSignedUrl(doc.storage_path, 300);
         if (!urlData?.signedUrl) { toast.error("Fehler beim Erstellen der Download-URL"); return; }
