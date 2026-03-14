@@ -425,22 +425,37 @@ export default function Dokumente() {
       queryClient.invalidateQueries({ queryKey: ["dokumente"] });
 
       const _ext  = doc.filename.split('.').pop().toLowerCase();
-      const _proto = {
-        xls: 'ms-excel', xlsx: 'ms-excel', xlsm: 'ms-excel', xlsb: 'ms-excel',
+      // Macro-Dateien (xlsm, xlsb etc.) koennen nicht via ofe|u| geoeffnet werden
+      // Stattdessen: temporaeren Download-URL holen und direkt downloaden
+      const _macroExts = ['xlsm', 'xlsb', 'docm', 'dotm', 'pptm', 'potm', 'xlam'];
+      const _proto = _macroExts.includes(_ext) ? null : {
+        xls: 'ms-excel', xlsx: 'ms-excel',
         doc: 'ms-word',  docx: 'ms-word',  dotx: 'ms-word',
         ppt: 'ms-powerpoint', pptx: 'ms-powerpoint',
       }[_ext];
 
-      if (_proto && doc.sharepoint_web_url) {
-        // SharePoint: direkt in Office öffnen – speichert automatisch zurück
+      if (_macroExts.includes(_ext) && doc.sharepoint_item_id) {
+        // Macro-Datei: Graph-Download-URL -> direkt downloaden -> Excel oeffnet es
+        try {
+          const { data: { session: _sess2 } } = await supabase.auth.getSession();
+          const _dlData = await spCall(_sess2?.access_token || '', { action: 'get-download-url', item_id: doc.sharepoint_item_id });
+          if (_dlData.download_url) {
+            window.location.href = _dlData.download_url;
+            toast.success('Datei wird heruntergeladen – öffnet sich automatisch in Excel.');
+          } else { throw new Error('no url'); }
+        } catch (_e2) {
+          window.open(doc.sharepoint_web_url, '_blank');
+          toast.success('Ausgecheckt – In SharePoint Desktop-App öffnen klicken.');
+        }
+      } else if (_proto && doc.sharepoint_web_url) {
+        // Standard Office-Datei: direkt via Protocol Handler oeffnen
         const _a = document.createElement('a');
         _a.href = `${_proto}:ofe|u|${decodeURIComponent(doc.sharepoint_web_url)}`;
         document.body.appendChild(_a); _a.click(); document.body.removeChild(_a);
-        toast.success("\u00d6ffnet in Office – Speichern geht direkt in SharePoint.");
+        toast.success('Öffnet in Office – Speichern geht direkt in SharePoint.');
       } else if (doc.sharepoint_web_url) {
-        // Nicht-Office SharePoint: öffnen
         window.open(doc.sharepoint_web_url, '_blank');
-        toast.success("Öffnet in Office – Speichern geht direkt in SharePoint.");
+        toast.success('Ausgecheckt – Beim Einchecken neue Version hochladen.');
       } else {
         // Legacy Supabase Storage
         const { data: urlData } = await supabase.storage.from(BUCKET).createSignedUrl(doc.storage_path, 300);

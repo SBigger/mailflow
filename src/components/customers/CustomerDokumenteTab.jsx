@@ -360,20 +360,33 @@ export default function CustomerDokumenteTab({ customerId }) {
       queryClient.invalidateQueries({ queryKey: ["dokumente-all"] });
 
       const _ext  = doc.filename.split('.').pop().toLowerCase();
-      const _proto = {
-        xls: 'ms-excel', xlsx: 'ms-excel', xlsm: 'ms-excel', xlsb: 'ms-excel',
+      // Macro-Dateien koennen nicht via ofe|u| geoeffnet werden – Download-URL nutzen
+      const _macroExts = ['xlsm', 'xlsb', 'docm', 'dotm', 'pptm', 'potm', 'xlam'];
+      const _proto = _macroExts.includes(_ext) ? null : {
+        xls: 'ms-excel', xlsx: 'ms-excel',
         doc: 'ms-word',  docx: 'ms-word',  dotx: 'ms-word',
         ppt: 'ms-powerpoint', pptx: 'ms-powerpoint',
       }[_ext];
 
-      if (_proto && doc.sharepoint_web_url) {
+      if (_macroExts.includes(_ext) && doc.sharepoint_item_id) {
+        // Macro-Datei: temporaeren Download-URL holen -> direkt in Excel oeffnen
+        const { data: { session: _sess2 } } = await supabase.auth.getSession();
+        const _dlData = await spCall(_sess2?.access_token || '', { action: 'get-download-url', item_id: doc.sharepoint_item_id });
+        if (_dlData.download_url) {
+          window.location.href = _dlData.download_url;
+          toast.success('Datei wird heruntergeladen – öffnet sich in Excel.');
+        } else {
+          window.open(doc.sharepoint_web_url, '_blank');
+          toast.success("Ausgecheckt – In SharePoint 'In Desktop-App öffnen' klicken.");
+        }
+      } else if (_proto && doc.sharepoint_web_url) {
         const _a = document.createElement('a');
         _a.href = `${_proto}:ofe|u|${decodeURIComponent(doc.sharepoint_web_url)}`;
         document.body.appendChild(_a); _a.click(); document.body.removeChild(_a);
-        toast.success("Öffnet in Office – Speichern geht direkt in SharePoint.");
+        toast.success('Öffnet in Office – Speichern geht direkt in SharePoint.');
       } else if (doc.sharepoint_web_url) {
         window.open(doc.sharepoint_web_url, '_blank');
-        toast.success("Öffnet in Office – Speichern geht direkt in SharePoint.");
+        toast.success('Öffnet in Office – Speichern geht direkt in SharePoint.');
       } else {
         const { data: urlData } = await supabase.storage.from(BUCKET).createSignedUrl(doc.storage_path, 300);
         if (!urlData?.signedUrl) { toast.error("Fehler beim Erstellen der Download-URL"); return; }
