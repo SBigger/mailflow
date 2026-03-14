@@ -144,12 +144,12 @@ serve(async (req) => {
         .eq('id', tokenId)
 
       return new Response(JSON.stringify({
-        jwt:      tok.jwt,
-        doc_id:   tok.doc_id,
-        item_id:  tok.item_id,
-        filename: tok.filename,
+        jwt:          tok.jwt,
+        doc_id:       tok.doc_id,
+        item_id:      tok.item_id,
         filename:     tok.filename,
         download_url: tok.download_url || '',
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
   }
 
