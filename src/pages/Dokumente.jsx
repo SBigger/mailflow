@@ -416,6 +416,10 @@ export default function Dokumente() {
   const handleCheckout = async (doc) => {
     try {
       const { data: { user: authUser } } = await supabase.auth.getUser();
+      const { data: { session } }        = await supabase.auth.getSession();
+      const jwt = session?.access_token || '';
+
+      // Checkout-Sperre sofort in DB setzen (optimistisch)
       await entities.Dokument.update(doc.id, {
         checked_out_by:      authUser.id,
         checked_out_by_name: user?.full_name || authUser.email,
@@ -424,65 +428,55 @@ export default function Dokumente() {
       queryClient.invalidateQueries({ queryKey: ["dokumente-all"] });
       queryClient.invalidateQueries({ queryKey: ["dokumente"] });
 
-      const _ext  = doc.filename.split('.').pop().toLowerCase();
-      // Macro-Dateien (xlsm, xlsb etc.) koennen nicht via ofe|u| geoeffnet werden
-      // Stattdessen: temporaeren Download-URL holen und direkt downloaden
-      const _macroExts = ['xlsm', 'xlsb', 'docm', 'dotm', 'pptm', 'potm', 'xlam'];
-      const _proto = _macroExts.includes(_ext) ? null : {
-        xls: 'ms-excel', xlsx: 'ms-excel',
-        doc: 'ms-word',  docx: 'ms-word',  dotx: 'ms-word',
-        ppt: 'ms-powerpoint', pptx: 'ms-powerpoint',
-      }[_ext];
-
-      if (_macroExts.includes(_ext) && doc.sharepoint_item_id) {
-        // Macro-Datei: Graph-Download-URL -> direkt downloaden -> Excel oeffnet es
-        try {
-          const { data: { session: _sess2 } } = await supabase.auth.getSession();
-          const _dlData = await spCall(_sess2?.access_token || '', { action: 'get-download-url', item_id: doc.sharepoint_item_id });
-          if (_dlData.download_url) {
-            window.location.href = _dlData.download_url;
-            toast.success('Datei wird heruntergeladen – öffnet sich automatisch in Excel.');
-          } else { throw new Error('no url'); }
-        } catch (_e2) {
-          window.open(doc.sharepoint_web_url, '_blank');
-          toast.success('Ausgecheckt – In SharePoint Desktop-App öffnen klicken.');
-        }
-      } else if (_proto && doc.sharepoint_web_url) {
-        // Standard Office-Datei: direkt via Protocol Handler oeffnen
+      if (doc.sharepoint_item_id) {
+        // Alle SharePoint-Dateien: via Artis Agent öffnen (jede Endung)
+        const uri = [
+          'artis-open://checkout',
+          '?doc_id=',   encodeURIComponent(doc.id),
+          '&jwt=',      encodeURIComponent(jwt),
+          '&item_id=',  encodeURIComponent(doc.sharepoint_item_id),
+          '&filename=', encodeURIComponent(doc.filename),
+        ].join('');
         const _a = document.createElement('a');
-        _a.href = `${_proto}:ofe|u|${decodeURIComponent(doc.sharepoint_web_url)}`;
+        _a.href = uri;
         document.body.appendChild(_a); _a.click(); document.body.removeChild(_a);
-        toast.success('Öffnet in Office – Speichern geht direkt in SharePoint.');
-      } else if (doc.sharepoint_web_url) {
-        window.open(doc.sharepoint_web_url, '_blank');
-        toast.success('Ausgecheckt – Beim Einchecken neue Version hochladen.');
-      } else {
+        toast.success('Artis Agent öffnet die Datei – wird beim Schließen automatisch eingecheckt.');
+      } else if (doc.storage_path) {
         // Legacy Supabase Storage
         const { data: urlData } = await supabase.storage.from(BUCKET).createSignedUrl(doc.storage_path, 300);
-        if (!urlData?.signedUrl) { toast.error("Fehler beim Erstellen der Download-URL"); return; }
-        if (_proto) {
-          const { data: { session: _sess } } = await supabase.auth.getSession();
-          const _jwt = _sess?.access_token || '';
-          const _a = document.createElement('a');
-          _a.href = `artis-open://?url=${encodeURIComponent(urlData.signedUrl)}&filename=${encodeURIComponent(doc.filename)}&doc_id=${encodeURIComponent(doc.id)}&storage_path=${encodeURIComponent(doc.storage_path)}&jwt=${encodeURIComponent(_jwt)}`;
-          document.body.appendChild(_a); _a.click(); document.body.removeChild(_a);
-          toast.success("Datei \u00f6ffnet in Excel/Word – wird automatisch eingecheckt wenn geschlossen.");
-        } else {
-          window.open(urlData.signedUrl, "_blank");
-          toast.success("Ausgecheckt – Datei heruntergeladen.");
-        }
+        if (!urlData?.signedUrl) { toast.error('Fehler beim Erstellen der Download-URL'); return; }
+        window.open(urlData.signedUrl, '_blank');
+        toast.info('Ausgecheckt – Beim Einchecken neue Version hochladen.');
+      } else {
+        toast.error('Datei nicht gefunden (kein SharePoint-Item und kein Storage-Pfad).');
       }
-    } catch (err) { toast.error("Fehler: " + err.message); }
+    } catch (err) { toast.error('Fehler: ' + err.message); }
   };
-
   const openCheckin = (doc) => { handleCheckin(doc, null); };
 
   const handleCheckin = async (doc, file) => {
     try {
-      if (file) {
-        // Neue Version hochladen (Nicht-Office oder manuell)
-        const { data: { session } } = await supabase.auth.getSession();
-        const jwt = session?.access_token || '';
+      const { data: { session } } = await supabase.auth.getSession();
+      const jwt = session?.access_token || '';
+
+      if (file && doc.sharepoint_item_id) {
+        // SharePoint: neue Version hochladen + Sperre aufheben (checkin-save)
+        const form = new FormData();
+        form.append('action', 'checkin-save');
+        form.append('doc_id',  doc.id);
+        form.append('file',    file, file.name);
+        const res = await fetch(SPFILES, {
+          method: 'POST', headers: { Authorization: `Bearer ${jwt}` }, body: form,
+        });
+        if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || 'Upload fehlgeschlagen'); }
+        setSignedUrls(prev => { const n = { ...prev }; delete n[doc.id]; return n; });
+        toast.success('Eingecheckt – neue Version gespeichert.');
+      } else if (!file && doc.sharepoint_item_id) {
+        // Nur Sperre aufheben
+        await spCall(jwt, { action: 'checkin-discard', doc_id: doc.id });
+        toast.success('Eingecheckt.');
+      } else if (file) {
+        // Legacy: Upload zu SharePoint als neues Item
         const sp = await spUpload(jwt, file, doc.customer_id, doc.category, doc.year);
         if (doc.sharepoint_item_id) {
           await spCall(jwt, { action: 'delete', item_id: doc.sharepoint_item_id }).catch(() => {});
@@ -495,15 +489,14 @@ export default function Dokumente() {
           checked_out_by: null, checked_out_by_name: null, checked_out_at: null,
         });
         setSignedUrls(prev => { const n = { ...prev }; delete n[doc.id]; return n; });
-        toast.success("Eingecheckt & neue Version hochgeladen");
+        toast.success('Eingecheckt & neue Version hochgeladen.');
       } else {
-        // Office: hat direkt in SharePoint gespeichert – nur Sperre aufheben
         await entities.Dokument.update(doc.id, {
           checked_out_by: null, checked_out_by_name: null, checked_out_at: null,
         });
-        toast.success("Eingecheckt");
+        toast.success('Eingecheckt.');
       }
-    } catch (err) { toast.error("Fehler: " + err.message); }
+    } catch (err) { toast.error('Fehler: ' + err.message); }
     queryClient.invalidateQueries({ queryKey: ["dokumente-all"] });
     queryClient.invalidateQueries({ queryKey: ["dokumente"] });
   };

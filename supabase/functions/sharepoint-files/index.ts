@@ -142,11 +142,13 @@ serve(async (req) => {
       const form = await req.formData()
       action = action || (form.get('action') as string)
       body = {
-        file:        form.get('file') as File,
-        customer_id: form.get('customer_id') as string,
-        category:    form.get('category') as string,
-        year:        form.get('year') as string,
-        filename:    form.get('filename') as string,
+        file:               form.get('file') as File,
+        customer_id:        form.get('customer_id') as string,
+        category:           form.get('category') as string,
+        year:               form.get('year') as string,
+        filename:           form.get('filename') as string,
+        doc_id:             form.get('doc_id') as string,
+        prev_draft_item_id: form.get('prev_draft_item_id') as string,
       }
     } else if (contentType.includes('application/json')) {
       body   = await req.json()
@@ -296,6 +298,117 @@ serve(async (req) => {
       }))
 
       return new Response(JSON.stringify({ items, total: hits.length }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    // ── checkin-save ──────────────────────────────────────────────────────────
+    if (action === 'checkin-save') {
+      const doc_id = validateUUID(body.doc_id, 'doc_id')
+      const file   = body.file as File
+      if (!file) throw new Error('Keine Datei angegeben')
+
+      const { data: doc, error: docErr } = await supabase.from('dokumente')
+        .select('id, sharepoint_item_id, checked_out_by, filename')
+        .eq('id', doc_id).single()
+      if (docErr || !doc) throw new Error('Dokument nicht gefunden')
+      if (doc.checked_out_by !== authUser.id) throw new Error('Dokument nicht von dir ausgecheckt')
+      if (!doc.sharepoint_item_id) throw new Error('Kein SharePoint-Item vorhanden')
+
+      const fileData = new Uint8Array(await file.arrayBuffer())
+      if (fileData.length === 0) throw new Error('Datei ist leer')
+      if (fileData.length > MAX_FILE_SIZE) throw new Error('Datei zu gross (max. 100 MB)')
+
+      // Bestehenden SharePoint-Item-Inhalt ersetzen (Versionsverlauf bleibt erhalten)
+      let item: any
+      if (fileData.length < 4 * 1024 * 1024) {
+        item = await graph('PUT',
+          `/sites/${siteId}/drives/${driveId}/items/${doc.sharepoint_item_id}/content`,
+          accessToken, fileData)
+      } else {
+        const sess2 = await graph('POST',
+          `/sites/${siteId}/drives/${driveId}/items/${doc.sharepoint_item_id}/createUploadSession`,
+          accessToken, { item: { '@microsoft.graph.conflictBehavior': 'replace' } })
+        const chunkSize = 3 * 1024 * 1024
+        let offset = 0
+        while (offset < fileData.length) {
+          const chunk = fileData.slice(offset, offset + chunkSize)
+          const end   = Math.min(offset + chunkSize - 1, fileData.length - 1)
+          const res   = await fetch(sess2.uploadUrl, {
+            method: 'PUT',
+            headers: {
+              'Content-Length': chunk.length.toString(),
+              'Content-Range':  `bytes ${offset}-${end}/${fileData.length}`,
+            },
+            body: chunk,
+          })
+          if (res.ok && res.status !== 202) item = await res.json()
+          offset += chunkSize
+        }
+      }
+
+      const cleanName = file.name || doc.filename
+      await supabase.from('dokumente').update({
+        sharepoint_item_id:  item.id,
+        sharepoint_web_url:  item.webUrl,
+        filename:            cleanName,
+        file_size:           fileData.length,
+        checked_out_by:      null,
+        checked_out_by_name: null,
+        checked_out_at:      null,
+      }).eq('id', doc_id)
+
+      return new Response(JSON.stringify({ ok: true, item_id: item.id, web_url: item.webUrl }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    // ── checkin-discard ────────────────────────────────────────────────────────
+    if (action === 'checkin-discard') {
+      const doc_id = validateUUID(body.doc_id, 'doc_id')
+
+      const { data: doc } = await supabase.from('dokumente')
+        .select('id, checked_out_by').eq('id', doc_id).single()
+      if (!doc) throw new Error('Dokument nicht gefunden')
+      if (doc.checked_out_by !== authUser.id) throw new Error('Dokument nicht von dir ausgecheckt')
+
+      await supabase.from('dokumente').update({
+        checked_out_by:      null,
+        checked_out_by_name: null,
+        checked_out_at:      null,
+      }).eq('id', doc_id)
+
+      return new Response(JSON.stringify({ ok: true }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    // ── upload-draft ───────────────────────────────────────────────────────────
+    if (action === 'upload-draft') {
+      const doc_id          = validateUUID(body.doc_id, 'doc_id')
+      const file            = body.file as File
+      const prevDraftItemId = (body.prev_draft_item_id || '').trim()
+      if (!file) throw new Error('Keine Datei angegeben')
+
+      const { data: doc } = await supabase.from('dokumente')
+        .select('id, checked_out_by, filename')
+        .eq('id', doc_id).eq('checked_out_by', authUser.id).single()
+      if (!doc) throw new Error('Kein aktiver Checkout fuer dieses Dokument')
+
+      const fileData = new Uint8Array(await file.arrayBuffer())
+      if (fileData.length === 0) throw new Error('Datei ist leer')
+      if (fileData.length > MAX_FILE_SIZE) throw new Error('Datei zu gross')
+
+      if (prevDraftItemId) {
+        await graph('DELETE',
+          `/sites/${siteId}/drives/${driveId}/items/${prevDraftItemId}`,
+          accessToken).catch(() => {})
+      }
+
+      const safe      = safeName(file.name || doc.filename)
+      const draftPath = `Drafts/${doc_id}/${Date.now()}-${safe}`
+      const item      = await graph('PUT',
+        `/sites/${siteId}/drives/${driveId}/root:/${draftPath}:/content`,
+        accessToken, fileData)
+
+      return new Response(JSON.stringify({ ok: true, draft_item_id: item.id }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
