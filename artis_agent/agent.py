@@ -175,9 +175,15 @@ def checkout_workflow(doc_id: str, jwt: str, download_url: str, filename: str):
     try:
         os.makedirs(WORKSPACE, exist_ok=True)
 
+
         # 1. Herunterladen
-        safe       = filename.replace('/', '_').replace('\\', '_')
-        local_path = os.path.join(WORKSPACE, f"{doc_id}_{safe}")
+        safe       = filename.replace('/', '_').replace(chr(92), '_')
+        ts         = int(time.time())
+        local_path = os.path.join(WORKSPACE, f"{doc_id}_{ts}_{safe}")
+        # Alte Workspace-Dateien fuer dieses Dokument aufraumen
+        for old in [f for f in os.listdir(WORKSPACE) if f.startswith(f"{doc_id}_")]:
+            try: os.remove(os.path.join(WORKSPACE, old))
+            except Exception: pass
         log(f"Herunterladen -> {local_path}")
         download_file(download_url, local_path)
         original_mtime = os.path.getmtime(local_path)
@@ -215,32 +221,17 @@ def checkout_workflow(doc_id: str, jwt: str, download_url: str, filename: str):
             _safe_discard(doc_id, jwt)
             return
 
-        # 5. Dialog: Einchecken?
+        # 5. Automatisch einchecken (kein Dialog)
         current_mtime = os.path.getmtime(local_path)
         was_modified  = abs(current_mtime - original_mtime) > 0.5
-
-        if was_modified:
-            answer = msgbox(
-                f"'{filename}'\n\nwurde geaendert.\n\nEinchecken und neue Version speichern?",
-                style=MB_YESNOCANCEL | MB_ICONQUESTION
-            )
-        else:
-            answer = msgbox(
-                f"'{filename}'\n\nkeine Aenderungen erkannt.\n\nCheckout aufheben?",
-                style=MB_YESNO | MB_ICONQUESTION
-            )
 
         if done.is_set(): return
         done.set()
 
-        if answer == IDYES and was_modified:
+        if was_modified:
             _do_checkin(doc_id, jwt, local_path, filename)
-        elif answer == IDYES:
+        else:
             _safe_discard(doc_id, jwt)
-            msgbox(f"'{filename}'\n\nCheckout aufgehoben.", style=MB_OK | MB_ICONINFORMATION)
-        elif answer == IDNO:
-            _do_discard(doc_id, jwt, filename)
-        # IDCANCEL -> Checkout bleibt aktiv
 
     except Exception as e:
         log(f"FEHLER: {e}")
