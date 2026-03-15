@@ -160,7 +160,7 @@ serve(async (req) => {
     const agentTokenId = agentUrl.searchParams.get('agent_token') || ''
     const agentAction  = agentUrl.searchParams.get('action') || ''
 
-    if (agentTokenId && ['upload-draft', 'checkin-from-draft', 'checkin-discard'].includes(agentAction)) {
+    if (agentTokenId && ['upload-draft', 'checkin-from-draft', 'checkin-discard', 'checkin-agent'].includes(agentAction)) {
       if (!/^[0-9a-f-]{36}$/i.test(agentTokenId))
         return new Response(JSON.stringify({ error: 'Ungueltige agent_token' }),
           { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
@@ -214,10 +214,9 @@ serve(async (req) => {
           const docId       = validateUUID(body.doc_id, 'doc_id')
           const draftItemId = validateItemId(body.draft_item_id)
           const { data: doc } = await supabase.from('dokumente')
-            .select('id, sharepoint_item_id, checked_out_by, filename').eq('id', docId).single()
+            .select('id, sharepoint_item_id, checked_out_by, filename, customer_id, category, year').eq('id', docId).single()
           if (!doc) throw new Error('Dokument nicht gefunden')
           if (doc.checked_out_by !== agentUserId) throw new Error('Dokument nicht von dir ausgecheckt')
-          if (!doc.sharepoint_item_id) throw new Error('Kein SharePoint-Item vorhanden')
           const draftRes = await fetch(
             `${GRAPH}/sites/${siteId}/drives/${driveId}/items/${draftItemId}/content`,
             { headers: { Authorization: `Bearer ${msToken}` }, redirect: 'follow' })
@@ -226,7 +225,16 @@ serve(async (req) => {
           if (draftData.length === 0) throw new Error('Draft ist leer')
           if (draftData.length > MAX_FILE_SIZE) throw new Error('Draft zu gross')
           let item: any
-          if (draftData.length < 4 * 1024 * 1024) {
+          if (!doc.sharepoint_item_id) {
+            // Noch nicht in SharePoint - als neues Item anlegen
+            const custId = (doc.customer_id || 'unknown')
+            const cat    = safeName(doc.category || 'Allgemein')
+            const yr     = doc.year || new Date().getFullYear()
+            const safe   = safeName(doc.filename)
+            const spPath = `Kunden/${custId}/${cat}/${yr}/${Date.now()}-${safe}`
+            item = await graph('PUT',
+              `/sites/${siteId}/drives/${driveId}/root:/${spPath}:/content`, msToken, draftData)
+          } else if (draftData.length < 4 * 1024 * 1024) {
             item = await graph('PUT',
               `/sites/${siteId}/drives/${driveId}/items/${doc.sharepoint_item_id}/content`, msToken, draftData)
           } else {
@@ -257,19 +265,46 @@ serve(async (req) => {
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
         }
 
+        // checkin-agent: Direkt in Supabase Storage speichern (kein SharePoint)
+        if (agentAction === 'checkin-agent') {
+          const form    = await req.formData()
+          const file    = form.get('file') as File
+          const docId   = validateUUID((form.get('doc_id') as string) || '', 'doc_id')
+          if (!file) throw new Error('Keine Datei angegeben')
+          const { data: doc } = await supabase.from('dokumente')
+            .select('id, checked_out_by, filename').eq('id', docId).single()
+          if (!doc) throw new Error('Dokument nicht gefunden')
+          if (doc.checked_out_by !== agentUserId) throw new Error('Dokument nicht von dir ausgecheckt')
+          const fileData = new Uint8Array(await file.arrayBuffer())
+          if (fileData.length === 0) throw new Error('Datei ist leer')
+          if (fileData.length > MAX_FILE_SIZE) throw new Error('Datei zu gross')
+          const cleanName   = safeName((file.name as string) || doc.filename)
+          const storagePath = `dokumente/${docId}/${Date.now()}-${cleanName}`
+          const { error: storErr } = await supabase.storage
+            .from('dokumente')
+            .upload(storagePath, fileData, { upsert: true, contentType: 'application/octet-stream' })
+          if (storErr) throw new Error('Storage Upload: ' + storErr.message)
+          await supabase.from('dokumente').update({
+            storage_path:        storagePath,
+            file_size:           fileData.length,
+            checked_out_by:      null,
+            checked_out_by_name: null,
+            checked_out_at:      null,
+          }).eq('id', docId)
+          return new Response(JSON.stringify({ ok: true }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+        }
+
         if (agentAction === 'checkin-discard') {
-          const body        = await req.json()
-          const docId       = validateUUID(body.doc_id, 'doc_id')
-          const draftItemId = (body.draft_item_id || '').trim()
+          const body  = await req.json()
+          const docId = validateUUID(body.doc_id, 'doc_id')
           const { data: doc } = await supabase.from('dokumente')
             .select('id, checked_out_by').eq('id', docId).single()
           if (!doc) throw new Error('Dokument nicht gefunden')
-          if (doc.checked_out_by !== agentUserId) throw new Error('Dokument nicht von dir ausgecheckt')
-          if (draftItemId)
-            await graph('DELETE', `/sites/${siteId}/drives/${driveId}/items/${draftItemId}`, msToken).catch(() => {})
-          await supabase.from('dokumente').update({
-            checked_out_by: null, checked_out_by_name: null, checked_out_at: null,
-          }).eq('id', docId)
+          if (doc.checked_out_by === agentUserId)
+            await supabase.from('dokumente').update({
+              checked_out_by: null, checked_out_by_name: null, checked_out_at: null,
+            }).eq('id', docId)
           return new Response(JSON.stringify({ ok: true }),
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
         }
@@ -480,7 +515,7 @@ serve(async (req) => {
         .select('id, sharepoint_item_id, checked_out_by, filename')
         .eq('id', doc_id).single()
       if (docErr || !doc) throw new Error('Dokument nicht gefunden')
-      if (doc.checked_out_by !== authUser.id) throw new Error('Dokument nicht von dir ausgecheckt')
+      if (doc.checked_out_by !== null && doc.checked_out_by !== authUser.id) throw new Error('Dokument ist von jemand anderem ausgecheckt')
       if (!doc.sharepoint_item_id) throw new Error('Kein SharePoint-Item vorhanden')
 
       const fileData = new Uint8Array(await file.arrayBuffer())
