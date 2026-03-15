@@ -153,28 +153,143 @@ serve(async (req) => {
     }
   }
 
+  // ── Agent-Operationen (vor Auth-Check) ────────────────────────────────────
+  // upload-draft / checkin-from-draft / checkin-discard ohne User-JWT
+  {
+    const agentUrl     = new URL(req.url)
+    const agentTokenId = agentUrl.searchParams.get('agent_token') || ''
+    const agentAction  = agentUrl.searchParams.get('action') || ''
+
+    if (agentTokenId && ['upload-draft', 'checkin-from-draft', 'checkin-discard'].includes(agentAction)) {
+      if (!/^[0-9a-f-]{36}$/i.test(agentTokenId))
+        return new Response(JSON.stringify({ error: 'Ungueltige agent_token' }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+
+      const { data: agentTok } = await supabase
+        .from('agent_tokens')
+        .select('user_id, doc_id, used_at')
+        .eq('id', agentTokenId)
+        .single()
+
+      if (!agentTok?.used_at)
+        return new Response(JSON.stringify({ error: 'agent_token nicht gefunden oder nicht aufgeloest' }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+
+      const agentUserId = agentTok.user_id
+      const { data: agentProfile } = await supabase.from('profiles').select('*').eq('id', agentUserId).single()
+      if (!agentProfile)
+        return new Response(JSON.stringify({ error: 'Profil nicht gefunden' }),
+          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+
+      try {
+        const msToken = await getAccessToken(supabase, agentUserId, agentProfile)
+        const siteId  = getSiteId()
+        const driveId = getDriveId()
+        if (!siteId || !driveId) throw new Error('SharePoint nicht konfiguriert')
+
+        if (agentAction === 'upload-draft') {
+          const form        = await req.formData()
+          const file        = form.get('file') as File
+          const docId       = validateUUID((form.get('doc_id') as string) || '', 'doc_id')
+          const prevDraftId = ((form.get('prev_draft_item_id') as string) || '').trim()
+          if (!file) throw new Error('Keine Datei angegeben')
+          const { data: doc } = await supabase.from('dokumente')
+            .select('id, checked_out_by, filename').eq('id', docId).eq('checked_out_by', agentUserId).single()
+          if (!doc) throw new Error('Kein aktiver Checkout fuer dieses Dokument')
+          const fileData = new Uint8Array(await file.arrayBuffer())
+          if (fileData.length === 0) throw new Error('Datei ist leer')
+          if (fileData.length > MAX_FILE_SIZE) throw new Error('Datei zu gross')
+          if (prevDraftId)
+            await graph('DELETE', `/sites/${siteId}/drives/${driveId}/items/${prevDraftId}`, msToken).catch(() => {})
+          const safe      = safeName((file.name as string) || doc.filename)
+          const draftPath = `Drafts/${docId}/${Date.now()}-${safe}`
+          const item      = await graph('PUT',
+            `/sites/${siteId}/drives/${driveId}/root:/${draftPath}:/content`, msToken, fileData)
+          return new Response(JSON.stringify({ ok: true, draft_item_id: item.id }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+        }
+
+        if (agentAction === 'checkin-from-draft') {
+          const body        = await req.json()
+          const docId       = validateUUID(body.doc_id, 'doc_id')
+          const draftItemId = validateItemId(body.draft_item_id)
+          const { data: doc } = await supabase.from('dokumente')
+            .select('id, sharepoint_item_id, checked_out_by, filename').eq('id', docId).single()
+          if (!doc) throw new Error('Dokument nicht gefunden')
+          if (doc.checked_out_by !== agentUserId) throw new Error('Dokument nicht von dir ausgecheckt')
+          if (!doc.sharepoint_item_id) throw new Error('Kein SharePoint-Item vorhanden')
+          const draftRes = await fetch(
+            `${GRAPH}/sites/${siteId}/drives/${driveId}/items/${draftItemId}/content`,
+            { headers: { Authorization: `Bearer ${msToken}` }, redirect: 'follow' })
+          if (!draftRes.ok) throw new Error(`Draft nicht abrufbar: ${draftRes.status}`)
+          const draftData = new Uint8Array(await draftRes.arrayBuffer())
+          if (draftData.length === 0) throw new Error('Draft ist leer')
+          if (draftData.length > MAX_FILE_SIZE) throw new Error('Draft zu gross')
+          let item: any
+          if (draftData.length < 4 * 1024 * 1024) {
+            item = await graph('PUT',
+              `/sites/${siteId}/drives/${driveId}/items/${doc.sharepoint_item_id}/content`, msToken, draftData)
+          } else {
+            const sess = await graph('POST',
+              `/sites/${siteId}/drives/${driveId}/items/${doc.sharepoint_item_id}/createUploadSession`,
+              msToken, { item: { '@microsoft.graph.conflictBehavior': 'replace' } })
+            const chunkSize = 3 * 1024 * 1024
+            let offset = 0
+            while (offset < draftData.length) {
+              const chunk = draftData.slice(offset, offset + chunkSize)
+              const end   = Math.min(offset + chunkSize - 1, draftData.length - 1)
+              const res   = await fetch(sess.uploadUrl, {
+                method: 'PUT',
+                headers: { 'Content-Length': chunk.length.toString(),
+                           'Content-Range': `bytes ${offset}-${end}/${draftData.length}` },
+                body: chunk })
+              if (res.ok && res.status !== 202) item = await res.json()
+              offset += chunkSize
+            }
+          }
+          await graph('DELETE', `/sites/${siteId}/drives/${driveId}/items/${draftItemId}`, msToken).catch(() => {})
+          await supabase.from('dokumente').update({
+            sharepoint_item_id: item.id, sharepoint_web_url: item.webUrl,
+            file_size: draftData.length,
+            checked_out_by: null, checked_out_by_name: null, checked_out_at: null,
+          }).eq('id', docId)
+          return new Response(JSON.stringify({ ok: true, item_id: item.id, web_url: item.webUrl }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+        }
+
+        if (agentAction === 'checkin-discard') {
+          const body        = await req.json()
+          const docId       = validateUUID(body.doc_id, 'doc_id')
+          const draftItemId = (body.draft_item_id || '').trim()
+          const { data: doc } = await supabase.from('dokumente')
+            .select('id, checked_out_by').eq('id', docId).single()
+          if (!doc) throw new Error('Dokument nicht gefunden')
+          if (doc.checked_out_by !== agentUserId) throw new Error('Dokument nicht von dir ausgecheckt')
+          if (draftItemId)
+            await graph('DELETE', `/sites/${siteId}/drives/${driveId}/items/${draftItemId}`, msToken).catch(() => {})
+          await supabase.from('dokumente').update({
+            checked_out_by: null, checked_out_by_name: null, checked_out_at: null,
+          }).eq('id', docId)
+          return new Response(JSON.stringify({ ok: true }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+        }
+
+      } catch (err: any) {
+        return new Response(JSON.stringify({ error: err.message }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }
+    }
+  }
+
   // ── Authentifizierung ──────────────────────────────────────────────────────
   const authHeader = req.headers.get('Authorization') || ''
   const jwtToken   = authHeader.replace('Bearer ', '').trim()
   if (!jwtToken)
     return new Response(JSON.stringify({ error: 'Kein Token' }), { status: 401, headers: corsHeaders })
 
-  let { data: { user: authUser } } = await supabase.auth.getUser(jwtToken)
-  if (!authUser) {
-    // Fallback: token_id als Bearer (Agent sendet token_id statt ablaufende user JWT)
-    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(jwtToken)) {
-      const { data: agentTok } = await supabase
-        .from('agent_tokens')
-        .select('user_id, expires_at, used_at')
-        .eq('id', jwtToken)
-        .single()
-      if (agentTok && agentTok.used_at && new Date(agentTok.expires_at) > new Date()) {
-        authUser = { id: agentTok.user_id } as any
-      }
-    }
-    if (!authUser)
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders })
-  }
+  const { data: { user: authUser } } = await supabase.auth.getUser(jwtToken)
+  if (!authUser)
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders })
 
   const { data: profile } = await supabase.from('profiles').select('*').eq('id', authUser.id).single()
   if (!profile)

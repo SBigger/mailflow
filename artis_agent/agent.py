@@ -78,12 +78,13 @@ def upload_draft(jwt, doc_id, local_path, filename, prev_draft_item_id=""):
     with open(local_path, "rb") as f:
         file_bytes = f.read()
     log(f"  upload_draft: {len(file_bytes)} bytes, prev={prev_draft_item_id[:20] if prev_draft_item_id else '-'}")
-    data = {"action": "upload-draft", "doc_id": doc_id}
+    data = {"doc_id": doc_id}
     if prev_draft_item_id:
         data["prev_draft_item_id"] = prev_draft_item_id
+    url = f"{SPFILES}?action=upload-draft&agent_token={jwt}"
     r = requests.post(
-        SPFILES,
-        headers={"Authorization": f"Bearer {jwt}"},
+        url,
+        headers={"Authorization": f"Bearer {SUPABASE_ANON_KEY}"},
         files={"file": (filename, file_bytes, "application/octet-stream")},
         data=data,
         timeout=120
@@ -100,10 +101,11 @@ def upload_draft(jwt, doc_id, local_path, filename, prev_draft_item_id=""):
 
 def call_checkin_from_draft(jwt, doc_id, draft_item_id):
     log(f"  checkin-from-draft: draft_id={draft_item_id[:30]}")
+    url = f"{SPFILES}?action=checkin-from-draft&agent_token={jwt}"
     r = requests.post(
-        SPFILES,
-        headers={"Authorization": f"Bearer {jwt}", "Content-Type": "application/json"},
-        json={"action": "checkin-from-draft", "doc_id": doc_id, "draft_item_id": draft_item_id},
+        url,
+        headers={"Authorization": f"Bearer {SUPABASE_ANON_KEY}", "Content-Type": "application/json"},
+        json={"doc_id": doc_id, "draft_item_id": draft_item_id},
         timeout=300
     )
     data = r.json() if r.content else {}
@@ -118,12 +120,13 @@ def call_checkin_from_draft(jwt, doc_id, draft_item_id):
 def call_discard(jwt, doc_id, draft_item_id=""):
     log(f"  discard: doc_id={doc_id[:8]}, draft={draft_item_id[:20] if draft_item_id else '-'}")
     try:
-        payload = {"action": "checkin-discard", "doc_id": doc_id}
+        payload = {"doc_id": doc_id}
         if draft_item_id:
             payload["draft_item_id"] = draft_item_id
+        url = f"{SPFILES}?action=checkin-discard&agent_token={jwt}"
         requests.post(
-            SPFILES,
-            headers={"Authorization": f"Bearer {jwt}", "Content-Type": "application/json"},
+            url,
+            headers={"Authorization": f"Bearer {SUPABASE_ANON_KEY}", "Content-Type": "application/json"},
             json=payload,
             timeout=15
         )
