@@ -1,6 +1,5 @@
 """
-Artis Agent v3.0 - mtime-Poll + ~$-Lockfile + Draft-Upload
-Download -> Lokal oeffnen -> Aenderungen per Draft sichern -> Beim Schliessen einchecken.
+Artis Agent v3.1 - Mit Logging fuer Diagnose
 """
 
 import sys
@@ -18,12 +17,16 @@ WORKSPACE         = os.path.join(
     os.environ.get("LOCALAPPDATA", os.path.expanduser("~")),
     "ArtisAgent", "Workspace"
 )
+LOG_FILE          = os.path.join(
+    os.environ.get("LOCALAPPDATA", os.path.expanduser("~")),
+    "ArtisAgent", "agent.log"
+)
 APP_NAME          = "Artis Agent"
-APP_VERSION       = "3.0.0"
-POLL_INTERVAL     = 3            # Sekunden zwischen mtime-Checks
-CLOSE_TIMEOUT     = 8 * 60 * 60  # 8 Stunden max
-OPEN_WAIT         = 5            # Sekunden warten bis App geoeffnet ist
-CLOSE_GRACE       = 3            # Sekunden nach Lockfile-Verschwinden warten
+APP_VERSION       = "3.1.0"
+POLL_INTERVAL     = 3
+CLOSE_TIMEOUT     = 8 * 60 * 60
+OPEN_WAIT         = 5
+CLOSE_GRACE       = 3
 
 MB_OK       = 0x00
 MB_ICONSTOP = 0x10
@@ -34,6 +37,17 @@ OFFICE_EXTS = {
     '.xlsx', '.xls', '.xlsm', '.xlsb',
     '.pptx', '.ppt', '.pptm',
 }
+
+
+def log(msg):
+    try:
+        os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+        ts = time.strftime("%H:%M:%S")
+        line = f"{ts} {msg}\n"
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(line)
+    except Exception:
+        pass
 
 
 def msgbox(text, style=MB_OK):
@@ -63,6 +77,7 @@ def download_file(url, dest):
 def upload_draft(jwt, doc_id, local_path, filename, prev_draft_item_id=""):
     with open(local_path, "rb") as f:
         file_bytes = f.read()
+    log(f"  upload_draft: {len(file_bytes)} bytes, prev={prev_draft_item_id[:20] if prev_draft_item_id else '-'}")
     data = {"action": "upload-draft", "doc_id": doc_id}
     if prev_draft_item_id:
         data["prev_draft_item_id"] = prev_draft_item_id
@@ -75,11 +90,16 @@ def upload_draft(jwt, doc_id, local_path, filename, prev_draft_item_id=""):
     )
     result = r.json() if r.content else {}
     if not r.ok:
-        raise RuntimeError(result.get("error") or f"HTTP {r.status_code}")
-    return result.get("draft_item_id", "")
+        err = result.get("error") or f"HTTP {r.status_code}"
+        log(f"  upload_draft FEHLER: {err}")
+        raise RuntimeError(err)
+    draft_id = result.get("draft_item_id", "")
+    log(f"  upload_draft OK: draft_id={draft_id[:30] if draft_id else 'LEER!'}")
+    return draft_id
 
 
 def call_checkin_from_draft(jwt, doc_id, draft_item_id):
+    log(f"  checkin-from-draft: draft_id={draft_item_id[:30]}")
     r = requests.post(
         SPFILES,
         headers={"Authorization": f"Bearer {jwt}", "Content-Type": "application/json"},
@@ -88,11 +108,15 @@ def call_checkin_from_draft(jwt, doc_id, draft_item_id):
     )
     data = r.json() if r.content else {}
     if not r.ok:
-        raise RuntimeError(data.get("error") or f"HTTP {r.status_code}")
+        err = data.get("error") or f"HTTP {r.status_code}"
+        log(f"  checkin-from-draft FEHLER: {err}")
+        raise RuntimeError(err)
+    log(f"  checkin-from-draft OK")
     return data
 
 
 def call_discard(jwt, doc_id, draft_item_id=""):
+    log(f"  discard: doc_id={doc_id[:8]}, draft={draft_item_id[:20] if draft_item_id else '-'}")
     try:
         payload = {"action": "checkin-discard", "doc_id": doc_id}
         if draft_item_id:
@@ -108,21 +132,14 @@ def call_discard(jwt, doc_id, draft_item_id=""):
 
 
 def has_lockfile(path):
-    """Office ~$-Lockfile pruefen.
-    Office kuerzt lange Dateinamen: lockfile = ~$ + basename[2:] + ext.
-    Deshalb: Verzeichnis nach ~$*.ext scannen (robust fuer alle Namenlaengen).
-    """
     d = os.path.dirname(path)
     n = os.path.basename(path)
     ext = os.path.splitext(n)[1].lower()
-    # Exakter Name (kurze Dateinamen)
     if os.path.exists(os.path.join(d, "~$" + n)):
         return True
-    # Office-Variante: erste 2 Zeichen des Basisnamens werden ersetzt
     base = os.path.splitext(n)[0]
     if len(base) > 2 and os.path.exists(os.path.join(d, "~$" + base[2:] + ext)):
         return True
-    # Fallback: beliebige ~$*.ext Datei im Verzeichnis
     try:
         for f in os.listdir(d):
             if f.startswith("~$") and f.lower().endswith(ext):
@@ -133,7 +150,6 @@ def has_lockfile(path):
 
 
 def is_file_locked(path):
-    """Exklusiver Dateizugriff fehlgeschlagen = Datei noch geoeffnet."""
     try:
         with open(path, "r+b"):
             return False
@@ -149,79 +165,99 @@ def is_office_file(filename):
 def checkout_workflow(doc_id, jwt, download_url, filename):
     local_path = None
     draft_item_id = ""
+    log(f"=== checkout_workflow START: {filename} (doc={doc_id[:8]})")
     try:
         safe = filename.replace("/", "_").replace(chr(92), "_")
         ts = int(time.time())
         local_path = os.path.join(WORKSPACE, f"{doc_id}_{ts}_{safe}")
+        log(f"  local_path: {local_path}")
 
-        # Alte Workspace-Dateien fuer diese doc_id bereinigen
         for old in [f for f in os.listdir(WORKSPACE) if f.startswith(f"{doc_id}_")]:
             try:
                 os.remove(os.path.join(WORKSPACE, old))
+                log(f"  cleaned old: {old}")
             except Exception:
                 pass
 
         download_file(download_url, local_path)
+        log(f"  downloaded: {os.path.getsize(local_path)} bytes")
         os.startfile(local_path)
+        log(f"  startfile done, waiting {OPEN_WAIT}s")
         time.sleep(OPEN_WAIT)
 
         last_mtime = os.path.getmtime(local_path) if os.path.exists(local_path) else 0
         last_draft_mtime = last_mtime
         deadline = time.time() + CLOSE_TIMEOUT
         is_office = is_office_file(filename)
+        log(f"  is_office={is_office}, mtime0={last_mtime:.0f}")
 
+        # Welche Lockfiles existieren beim Start?
+        ws_files = os.listdir(WORKSPACE)
+        lock_files = [f for f in ws_files if f.startswith("~$")]
+        log(f"  workspace files: {ws_files}")
+        log(f"  lockfiles at start: {lock_files}")
+
+        iteration = 0
         while time.time() < deadline:
             time.sleep(POLL_INTERVAL)
+            iteration += 1
 
             if not os.path.exists(local_path):
+                log(f"  iter {iteration}: local_path gone -> break")
                 break
 
             cur_mtime = os.path.getmtime(local_path)
+            lf = has_lockfile(local_path)
+            ws_now = [f for f in os.listdir(WORKSPACE) if f.startswith("~$")]
+            log(f"  iter {iteration}: mtime={cur_mtime:.0f} (delta={cur_mtime-last_mtime:.0f}), lockfile={lf}, ~$files={ws_now}")
+
             if cur_mtime != last_mtime:
-                # Datei wurde gespeichert -> Draft hochladen
                 last_mtime = cur_mtime
                 try:
                     draft_item_id = upload_draft(
                         jwt, doc_id, local_path, filename, draft_item_id
                     )
                     last_draft_mtime = cur_mtime
-                except Exception:
-                    pass  # Draft-Upload-Fehler ist nicht fatal
+                except Exception as e:
+                    log(f"  upload_draft exception: {e}")
 
-            # Datei geschlossen?
             if is_office:
-                if not has_lockfile(local_path):
-                    # Lockfile weg = Word/Excel/PowerPoint hat geschlossen
+                if not lf:
+                    log(f"  lockfile gone -> grace {CLOSE_GRACE}s")
                     time.sleep(CLOSE_GRACE)
-                    # Noch einen letzten mtime-Check machen
                     if os.path.exists(local_path):
                         final_mtime = os.path.getmtime(local_path)
+                        log(f"  final_mtime={final_mtime:.0f}, last_draft_mtime={last_draft_mtime:.0f}")
                         if final_mtime != last_draft_mtime:
                             try:
                                 draft_item_id = upload_draft(
                                     jwt, doc_id, local_path, filename, draft_item_id
                                 )
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                log(f"  final upload_draft exception: {e}")
                     break
             else:
-                # Nicht-Office: Exklusiver Dateizugriff testen
                 if not is_file_locked(local_path):
                     time.sleep(2)
                     if not is_file_locked(local_path):
+                        log(f"  not locked -> break")
                         break
 
+        log(f"  loop ended: draft_item_id={draft_item_id[:30] if draft_item_id else 'LEER'}")
+
         if draft_item_id:
-            # Draft einchecken (Draft -> SharePoint Hauptdokument)
             try:
                 call_checkin_from_draft(jwt, doc_id, draft_item_id)
+                log(f"  === ERFOLG: eingecheckt ===")
             except Exception as e:
+                log(f"  checkin exception: {e}")
                 msgbox("Fehler beim Einchecken:\n\n" + str(e), style=MB_ICONSTOP)
         else:
-            # Keine Aenderungen -> Checkout verwerfen
+            log(f"  === DISCARD: kein Draft ===")
             call_discard(jwt, doc_id)
 
     except Exception as e:
+        log(f"  EXCEPTION: {e}")
         msgbox("Fehler:\n\n" + str(e), style=MB_ICONSTOP)
         call_discard(jwt, doc_id, draft_item_id)
     finally:
@@ -230,6 +266,7 @@ def checkout_workflow(doc_id, jwt, download_url, filename):
                 os.remove(local_path)
             except Exception:
                 pass
+        log(f"=== checkout_workflow END ===")
 
 
 def register_uri_scheme():
@@ -265,6 +302,7 @@ def main():
             )
         sys.exit(0)
 
+    log(f"--- Agent gestartet: {' '.join(sys.argv)}")
     try:
         parsed = urllib.parse.urlparse(sys.argv[1])
         params = {k: v[0] for k, v in urllib.parse.parse_qs(parsed.query).items()}
@@ -283,6 +321,8 @@ def main():
             download_url = params.get("download_url", "")
             filename     = params.get("filename", "dokument")
 
+        log(f"  action={action}, doc_id={doc_id[:8]}, filename={filename}")
+
         if not doc_id or not jwt or not download_url:
             raise ValueError("URI unvollstaendig: doc_id, jwt oder download_url fehlen.")
 
@@ -298,6 +338,7 @@ def main():
             raise ValueError(f"Unbekannte Aktion: {action!r}")
 
     except Exception as e:
+        log(f"  main EXCEPTION: {e}")
         msgbox("Fehler:\n\n" + str(e), style=MB_ICONSTOP)
 
     sys.exit(0)
