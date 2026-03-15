@@ -188,7 +188,10 @@ function EditDialog({ doc, allTags, customers = [], onCancel, onSave, s, border,
     if (!customerId) { toast.error("Bitte einen Kunden auswählen"); return; }
     setSaving(true);
     try {
-      await entities.Dokument.update(doc.id, { customer_id: customerId, name: name.trim(), category, year: parseInt(year), tag_ids: tagIds, notes });
+      const { error } = await supabase.from("dokumente").update({
+        customer_id: customerId, name: name.trim(), category, year: parseInt(year), tag_ids: tagIds, notes,
+      }).eq("id", doc.id);
+      if (error) throw new Error(error.message);
       toast.success("Gespeichert");
       onSave();
     } catch (e) {
