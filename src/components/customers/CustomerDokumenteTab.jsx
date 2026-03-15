@@ -182,11 +182,11 @@ function EditDialog({ doc, allTags, customers = [], onCancel, onSaved, s, border
     try {
       const { data: updated, error } = await supabase.from("dokumente").update({
         customer_id: customerId, name: name.trim(), category, year: parseInt(year), tag_ids: tagIds, notes,
-      }).eq("id", doc.id).select("id");
+      }).eq("id", doc.id).select("*");
       if (error) throw new Error(error.message);
       if (!updated || updated.length === 0) throw new Error("Keine Zeile aktualisiert – bitte Seite neu laden");
       toast.success("Gespeichert");
-      onSaved();
+      onSaved(updated[0]);
     } catch (e) {
       toast.error("Fehler: " + e.message);
     } finally { setSaving(false); }
@@ -631,7 +631,11 @@ export default function CustomerDokumenteTab({ customerId }) {
       {editDoc && (
         <EditDialog doc={editDoc} allTags={allTags} customers={allCustomers}
           onCancel={() => setEditDoc(null)}
-          onSaved={() => { queryClient.refetchQueries({ queryKey: ["dokumente", customerId] }); queryClient.refetchQueries({ queryKey: ["dokumente-all"] }); setEditDoc(null); }}
+          onSaved={(updatedDoc) => {
+            queryClient.setQueryData(["dokumente", customerId], (old) => (old || []).map(d => d.id === updatedDoc.id ? updatedDoc : d));
+            queryClient.setQueryData(["dokumente-all"], (old) => (old || []).map(d => d.id === updatedDoc.id ? updatedDoc : d));
+            setEditDoc(null);
+          }}
           s={s} border={border} accent={accent} />
       )}
     </div>
