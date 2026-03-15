@@ -66,7 +66,7 @@ serve(async (req) => {
     const agentToken = u.searchParams.get('agent_token') || ''
     const agentAction = u.searchParams.get('action') || ''
 
-    if (agentToken && ['checkin-agent', 'checkin-discard'].includes(agentAction)) {
+    if (agentToken && ['checkin-agent', 'checkin-discard', 'upload_draft', 'upload-draft'].includes(agentAction)) {
       if (!/^[0-9a-f-]{36}$/i.test(agentToken))
         return err('Ungueltige agent_token', 401)
 
@@ -110,6 +110,44 @@ serve(async (req) => {
             }).eq('id', docId)
           }
           return ok({ ok: true })
+        } catch (e: any) { return err(e.message) }
+      }
+
+      // upload_draft: Zwischenstand hochladen während Office-Datei noch offen
+      if (agentAction === 'upload_draft' || agentAction === 'upload-draft') {
+        try {
+          const form  = await req.formData()
+          const file  = form.get('file') as File
+          const docId = validateUUID((form.get('doc_id') as string) || '', 'doc_id')
+          if (!file) throw new Error('Keine Datei angegeben')
+
+          const { data: doc } = await supabase.from('dokumente')
+            .select('id, checked_out_by, storage_path, filename').eq('id', docId).single()
+          if (!doc) throw new Error('Dokument nicht gefunden')
+          if (doc.checked_out_by !== null && doc.checked_out_by !== agentUserId)
+            throw new Error('Dokument nicht von dir ausgecheckt')
+
+          const fileData = new Uint8Array(await file.arrayBuffer())
+          if (fileData.length === 0) throw new Error('Datei ist leer')
+          if (fileData.length > MAX_FILE_SIZE) throw new Error('Datei zu gross')
+
+          const storagePath = `dokumente/${docId}/${Date.now()}-${safeName((file.name as string) || doc.filename)}`
+          const { error: storErr } = await supabase.storage
+            .from('dokumente').upload(storagePath, fileData, { upsert: true, contentType: 'application/octet-stream' })
+          if (storErr) throw new Error('Storage Upload: ' + storErr.message)
+
+          // Alten Storage-Pfad löschen
+          if (doc.storage_path && doc.storage_path !== storagePath)
+            await supabase.storage.from('dokumente').remove([doc.storage_path]).catch(() => {})
+
+          // DB aktualisieren + Checkout freigeben
+          await supabase.from('dokumente').update({
+            storage_path: storagePath,
+            file_size: fileData.length,
+            checked_out_by: null, checked_out_by_name: null, checked_out_at: null,
+          }).eq('id', docId)
+
+          return ok({ ok: true, draft_id: docId })
         } catch (e: any) { return err(e.message) }
       }
 
