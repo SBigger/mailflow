@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { ChevronDown, Check } from "lucide-react";
+import { ChevronDown, Check, Search } from "lucide-react";
 
 /**
  * Hierarchisches Tag-Select-Widget fuer die Dokumentenablage.
@@ -12,19 +12,31 @@ import { ChevronDown, Check } from "lucide-react";
  *   accent   : string (CSS color)
  */
 export default function TagSelectWidget({ value = [], onChange, onCategoryChange, allTags = [], s = {}, border = "#ccc", accent = "#6366f1" }) {
-  const [open, setOpen] = useState(false);
-  const ref  = useRef();
+  const [open,   setOpen]   = useState(false);
+  const [search, setSearch] = useState("");
+  const ref      = useRef();
+  const inputRef = useRef();
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) { setSearch(""); return; }
     const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
     document.addEventListener("mousedown", h);
+    setTimeout(() => inputRef.current?.focus(), 50);
     return () => document.removeEventListener("mousedown", h);
   }, [open]);
 
-  const parents    = allTags.filter(t => !t.parent_id).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
-  const kidsOf     = (pid) => allTags.filter(t => t.parent_id === pid).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
-  const toggle     = (id)  => {
+  const q        = search.trim().toLowerCase();
+  const parents  = allTags.filter(t => !t.parent_id).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+  const kidsOf   = (pid) => allTags.filter(t => t.parent_id === pid).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+
+  // Filter: zeige Parent wenn Name passt ODER mind. 1 Kind passt
+  const visibleParents = parents.filter(par => {
+    if (!q) return true;
+    if (par.name.toLowerCase().includes(q)) return true;
+    return kidsOf(par.id).some(k => k.name.toLowerCase().includes(q));
+  });
+
+  const toggle  = (id) => {
     const isAdding = !value.includes(id);
     onChange(isAdding ? [...value, id] : value.filter(x => x !== id));
     if (isAdding && onCategoryChange) {
@@ -33,7 +45,7 @@ export default function TagSelectWidget({ value = [], onChange, onCategoryChange
       if (parent?.category) onCategoryChange(parent.category);
     }
   };
-  const getTag     = (id)  => allTags.find(t => t.id === id);
+  const getTag = (id) => allTags.find(t => t.id === id);
 
   const triggerStyle = {
     background: s.inputBg || "#fff",
@@ -63,50 +75,81 @@ export default function TagSelectWidget({ value = [], onChange, onCategoryChange
           border: "1px solid " + (s.inputBorder || border),
           borderRadius: 8, zIndex: 99999,
           boxShadow: "0 8px 32px rgba(0,0,0,0.18)",
-          maxHeight: 260, overflowY: "auto",
         }}>
-          {parents.length === 0 ? (
-            <div style={{ padding: "12px 14px", fontSize: 12, color: s.textMuted }}>
-              Keine Tags vorhanden. Bitte in Einstellungen &rarr; Dateiablage anlegen.
-            </div>
-          ) : parents.map(par => {
-            const kids   = kidsOf(par.id);
-            const parSel = value.includes(par.id);
-            const parCol = par.color || accent;
-            return (
-              <div key={par.id}>
-                {/* Parent */}
-                <div onClick={() => toggle(par.id)} style={{
-                  display: "flex", alignItems: "center", gap: 8,
-                  padding: "7px 12px", cursor: "pointer", fontSize: 12, fontWeight: 600,
-                  background: parSel ? parCol + "22" : "transparent",
-                  borderBottom: "1px solid " + (s.border || border) + "55",
-                  color: parSel ? parCol : (s.textMain || "#000"),
-                }}>
-                  <span style={{ width: 9, height: 9, borderRadius: "50%", background: parCol, flexShrink: 0 }} />
-                  <span style={{ flex: 1 }}>{par.name}</span>
-                  {kids.length > 0 && <span style={{ fontSize: 10, color: s.textMuted, opacity: 0.6 }}>{kids.length}</span>}
-                  {parSel && <Check size={11} style={{ color: parCol, flexShrink: 0 }} />}
-                </div>
-                {/* Subtags */}
-                {kids.map(kid => {
-                  const kidSel = value.includes(kid.id);
-                  return (
-                    <div key={kid.id} onClick={() => toggle(kid.id)} style={{
-                      display: "flex", alignItems: "center", gap: 8,
-                      padding: "5px 12px 5px 30px", cursor: "pointer", fontSize: 12,
-                      background: kidSel ? parCol + "14" : "transparent",
-                      color: kidSel ? parCol : (s.textMuted || "#666"),
-                    }}>
-                      <span style={{ fontSize: 10, opacity: 0.5, flexShrink: 0 }}>&ndash;</span>
-                      <span style={{ flex: 1 }}>{kid.name}</span>
-                      {kidSel && <Check size={11} style={{ color: parCol, flexShrink: 0 }} />}
-                    </div>
-                  );
-                })}
+          {/* Suchfeld */}
+          <div style={{
+            display: "flex", alignItems: "center", gap: 6,
+            padding: "7px 10px",
+            borderBottom: "1px solid " + (s.inputBorder || border),
+          }}>
+            <Search size={12} style={{ color: s.textMuted || "#999", flexShrink: 0 }} />
+            <input
+              ref={inputRef}
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              onKeyDown={e => e.key === "Escape" && setOpen(false)}
+              placeholder="Suchen..."
+              style={{
+                flex: 1, border: "none", outline: "none", fontSize: 12,
+                background: "transparent", color: s.textMain || "#000",
+              }}
+            />
+            {search && (
+              <button onClick={() => setSearch("")}
+                style={{ background: "none", border: "none", cursor: "pointer",
+                  color: s.textMuted, fontSize: 14, padding: 0, lineHeight: 1 }}>
+                &times;
+              </button>
+            )}
+          </div>
+
+          {/* Liste */}
+          <div style={{ maxHeight: 220, overflowY: "auto" }}>
+            {visibleParents.length === 0 ? (
+              <div style={{ padding: "12px 14px", fontSize: 12, color: s.textMuted }}>
+                {allTags.length === 0
+                  ? "Keine Tags vorhanden. Bitte in Einstellungen \u2192 Dateiablage anlegen."
+                  : "Keine Tags gefunden."}
               </div>
-            );
-          })}
+            ) : visibleParents.map(par => {
+              const kids   = kidsOf(par.id).filter(k => !q || k.name.toLowerCase().includes(q) || par.name.toLowerCase().includes(q));
+              const parSel = value.includes(par.id);
+              const parCol = par.color || accent;
+              return (
+                <div key={par.id}>
+                  {/* Parent */}
+                  <div onClick={() => toggle(par.id)} style={{
+                    display: "flex", alignItems: "center", gap: 8,
+                    padding: "7px 12px", cursor: "pointer", fontSize: 12, fontWeight: 600,
+                    background: parSel ? parCol + "22" : "transparent",
+                    borderBottom: "1px solid " + (s.border || border) + "55",
+                    color: parSel ? parCol : (s.textMain || "#000"),
+                  }}>
+                    <span style={{ width: 9, height: 9, borderRadius: "50%", background: parCol, flexShrink: 0 }} />
+                    <span style={{ flex: 1 }}>{par.name}</span>
+                    {kids.length > 0 && <span style={{ fontSize: 10, color: s.textMuted, opacity: 0.6 }}>{kids.length}</span>}
+                    {parSel && <Check size={11} style={{ color: parCol, flexShrink: 0 }} />}
+                  </div>
+                  {/* Subtags */}
+                  {kids.map(kid => {
+                    const kidSel = value.includes(kid.id);
+                    return (
+                      <div key={kid.id} onClick={() => toggle(kid.id)} style={{
+                        display: "flex", alignItems: "center", gap: 8,
+                        padding: "5px 12px 5px 30px", cursor: "pointer", fontSize: 12,
+                        background: kidSel ? parCol + "14" : "transparent",
+                        color: kidSel ? parCol : (s.textMuted || "#666"),
+                      }}>
+                        <span style={{ fontSize: 10, opacity: 0.5, flexShrink: 0 }}>&ndash;</span>
+                        <span style={{ flex: 1 }}>{kid.name}</span>
+                        {kidSel && <Check size={11} style={{ color: parCol, flexShrink: 0 }} />}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
