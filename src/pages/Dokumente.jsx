@@ -188,10 +188,11 @@ function EditDialog({ doc, allTags, customers = [], onCancel, onSave, s, border,
     if (!customerId) { toast.error("Bitte einen Kunden auswählen"); return; }
     setSaving(true);
     try {
-      const { error } = await supabase.from("dokumente").update({
+      const { data: updated, error } = await supabase.from("dokumente").update({
         customer_id: customerId, name: name.trim(), category, year: parseInt(year), tag_ids: tagIds, notes,
-      }).eq("id", doc.id);
+      }).eq("id", doc.id).select("id");
       if (error) throw new Error(error.message);
+      if (!updated || updated.length === 0) throw new Error("Keine Zeile aktualisiert – bitte Seite neu laden");
       toast.success("Gespeichert");
       onSave();
     } catch (e) {
@@ -746,7 +747,7 @@ export default function Dokumente() {
       {editDoc && (
         <EditDialog doc={editDoc} allTags={allTags} customers={customers}
           onCancel={() => setEditDoc(null)}
-          onSave={() => { queryClient.invalidateQueries({ queryKey: ["dokumente-all"] }); queryClient.invalidateQueries({ queryKey: ["dokumente"] }); setEditDoc(null); }}
+          onSave={() => { queryClient.refetchQueries({ queryKey: ["dokumente-all"] }); setEditDoc(null); }}
           s={s} border={border} accent={accent} />
       )}
     </div>
