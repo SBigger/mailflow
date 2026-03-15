@@ -12,6 +12,7 @@ import urllib.parse
 import ctypes
 import winreg
 import requests
+import psutil
 
 try:
     import pystray
@@ -102,22 +103,25 @@ def call_discard(jwt: str, doc_id: str):
         raise RuntimeError(data.get('error') or f"HTTP {r.status_code}")
 
 
-def is_file_locked(path: str) -> bool:
+def is_open_by_app(path: str) -> bool:
+    """Prueft ob irgendein Prozess die Datei geoeffnet hat (psutil, alle Dateitypen)."""
+    norm = os.path.normcase(os.path.abspath(path))
     try:
-        with open(path, 'rb+'):
-            return False
-    except (PermissionError, OSError):
-        return True
-
-
-def has_office_lockfile(path: str) -> bool:
+        for proc in psutil.process_iter():
+            try:
+                for f in proc.open_files():
+                    if os.path.normcase(f.path) == norm:
+                        return True
+            except (psutil.AccessDenied, psutil.NoSuchProcess, OSError):
+                continue
+    except Exception:
+        pass
+    # Fallback: Office Lock-Datei
     d = os.path.dirname(path)
     n = os.path.basename(path)
-    return os.path.exists(os.path.join(d, f"~${n}"))
-
-
-def is_open_by_app(path: str) -> bool:
-    return is_file_locked(path) or has_office_lockfile(path)
+    if os.path.exists(os.path.join(d, f"~${n}")):
+        return True
+    return False
 
 
 def wait_for_file_close(path: str) -> bool:
