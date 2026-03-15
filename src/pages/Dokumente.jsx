@@ -405,7 +405,7 @@ export default function Dokumente() {
       // Kurzlebigen Agent-Token erstellen
       const { data: tokenRow, error: tokenErr } = await supabase
         .from("agent_tokens")
-        .insert({ doc_id: doc.id, filename: doc.filename, jwt, user_id: authUser.id, download_url })
+        .insert({ doc_id: doc.id, item_id: '', filename: doc.filename, jwt, user_id: authUser.id, download_url })
         .select("id").single();
       if (tokenErr || !tokenRow) { toast.error("Fehler: " + (tokenErr?.message || "Token-Fehler")); return; }
 
