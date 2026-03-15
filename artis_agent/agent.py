@@ -253,7 +253,6 @@ def _do_checkin(doc_id, jwt, local_path, filename):
     try:
         print(f"[{filename}] Einchecken in Supabase Storage...")
         call_checkin(jwt, doc_id, local_path, filename)
-        msgbox(f"'{filename}'\n\nErfolgreich eingecheckt.", style=MB_OK | MB_ICONINFORMATION)
     except Exception as e:
         msgbox(
             f"Fehler beim Einchecken von '{filename}':\n\n{e}\n\n"
@@ -264,8 +263,6 @@ def _do_checkin(doc_id, jwt, local_path, filename):
 
 def _do_discard(doc_id, jwt, filename):
     _safe_discard(doc_id, jwt)
-    msgbox(f"'{filename}'\n\nAenderungen verworfen. Checkout aufgehoben.",
-           style=MB_OK | MB_ICONINFORMATION)
 
 
 def _safe_discard(doc_id, jwt):
