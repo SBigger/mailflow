@@ -50,7 +50,11 @@ serve(async (req) => {
       if (tok.used_at)    return err('Token bereits verwendet', 401)
       if (new Date(tok.expires_at) < new Date()) return err('Token abgelaufen', 401)
 
-      await supabase.from('agent_tokens').update({ used_at: new Date().toISOString() }).eq('id', tokenId)
+      const { error: updErr } = await supabase
+        .from('agent_tokens')
+        .update({ used_at: new Date().toISOString() })
+        .eq('id', tokenId)
+      if (updErr) return err('Token-Aktivierung fehlgeschlagen: ' + updErr.message, 500)
 
       return ok({ doc_id: tok.doc_id, filename: tok.filename, download_url: tok.download_url || '' })
     }
@@ -66,13 +70,13 @@ serve(async (req) => {
       if (!/^[0-9a-f-]{36}$/i.test(agentToken))
         return err('Ungueltige agent_token', 401)
 
-      const { data: tok } = await supabase
+      const { data: tok, error: tokErr } = await supabase
         .from('agent_tokens')
         .select('user_id, used_at')
         .eq('id', agentToken).single()
 
-      if (!tok?.used_at)
-        return err('agent_token nicht gefunden oder nicht aufgeloest', 401)
+      if (tokErr || !tok)
+        return err('agent_token nicht gefunden', 401)
 
       const agentUserId = tok.user_id
 
