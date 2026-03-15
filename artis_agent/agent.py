@@ -74,14 +74,14 @@ def download_file(url: str, dest: str):
 
 
 def call_checkin(jwt: str, doc_id: str, local_path: str, filename: str):
-    """Datei in Supabase Storage hochladen + Checkout-Sperre aufheben."""
+    """Datei in SharePoint hochladen (checkin-save) + Checkout-Sperre aufheben."""
     with open(local_path, 'rb') as f:
         file_bytes = f.read()
     r = requests.post(
         SPFILES,
         headers={"Authorization": f"Bearer {jwt}"},
         files={"file": (filename, file_bytes, "application/octet-stream")},
-        data={"action": "checkin-storage", "doc_id": doc_id},
+        data={"action": "checkin-save", "doc_id": doc_id},
         timeout=300
     )
     data = r.json() if r.content else {}
