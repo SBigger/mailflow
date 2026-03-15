@@ -193,8 +193,9 @@ def main():
 
         if action == "checkout":
             os.makedirs(WORKSPACE, exist_ok=True)
-            if any(f.startswith(f"{doc_id}_") for f in os.listdir(WORKSPACE)):
-                sys.exit(0)
+            for old_f in [f for f in os.listdir(WORKSPACE) if f.startswith(f"{doc_id}_")]:
+                try: os.remove(os.path.join(WORKSPACE, old_f))
+                except Exception: pass
             checkout_workflow(doc_id, jwt, download_url, filename)
         else:
             raise ValueError(f"Unbekannte Aktion: {action!r}")
