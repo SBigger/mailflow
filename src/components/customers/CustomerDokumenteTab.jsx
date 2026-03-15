@@ -22,7 +22,7 @@ const CATEGORIES = [
 ];
 
 function safeName(name) {
-  return (name || "").replace(/[#%*:<>?/\\|"]/g, "_");
+  return (name || "").replace(/[#%*:<>?/\\|"\s]/g, "_");
 }
 
 function getFileInfo(mimeType, filename) {

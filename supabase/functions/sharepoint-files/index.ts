@@ -16,7 +16,7 @@ function validateUUID(value: string, name: string): string {
 }
 
 function safeName(name: string) {
-  return name.replace(/[#%*:<>?/\\|"]/g, '_')
+  return name.replace(/[#%*:<>?/\\|"\s]/g, '_')
 }
 
 serve(async (req) => {
