@@ -108,10 +108,28 @@ def call_discard(jwt, doc_id, draft_item_id=""):
 
 
 def has_lockfile(path):
-    """Office ~$-Lockfile pruefen."""
+    """Office ~$-Lockfile pruefen.
+    Office kuerzt lange Dateinamen: lockfile = ~$ + basename[2:] + ext.
+    Deshalb: Verzeichnis nach ~$*.ext scannen (robust fuer alle Namenlaengen).
+    """
     d = os.path.dirname(path)
     n = os.path.basename(path)
-    return os.path.exists(os.path.join(d, "~$" + n))
+    ext = os.path.splitext(n)[1].lower()
+    # Exakter Name (kurze Dateinamen)
+    if os.path.exists(os.path.join(d, "~$" + n)):
+        return True
+    # Office-Variante: erste 2 Zeichen des Basisnamens werden ersetzt
+    base = os.path.splitext(n)[0]
+    if len(base) > 2 and os.path.exists(os.path.join(d, "~$" + base[2:] + ext)):
+        return True
+    # Fallback: beliebige ~$*.ext Datei im Verzeichnis
+    try:
+        for f in os.listdir(d):
+            if f.startswith("~$") and f.lower().endswith(ext):
+                return True
+    except Exception:
+        pass
+    return False
 
 
 def is_file_locked(path):
