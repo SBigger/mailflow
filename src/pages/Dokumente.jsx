@@ -90,7 +90,7 @@ function UploadDialog({ customers, preCustomer, allTags, onCancel, onUpload, s, 
       const { error: storErr } = await supabase.storage.from(BUCKET)
         .upload(storagePath, file, { upsert: true, contentType: file.type || "application/octet-stream" });
       if (storErr) {
-        await supabase.from("dokumente").delete().eq("id", newDoc.id).catch(() => {});
+        try { await supabase.from("dokumente").delete().eq("id", newDoc.id); } catch {}
         throw new Error("Storage-Upload: " + storErr.message);
       }
 
