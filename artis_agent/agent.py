@@ -190,7 +190,6 @@ def checkout_workflow(doc_id: str, jwt: str, download_url: str, filename: str):
             except Exception: pass
         log(f"Herunterladen -> {local_path}")
         download_file(download_url, local_path)
-        original_mtime = os.path.getmtime(local_path)
 
         # 2. Oeffnen
         log("Oeffnen...")
@@ -225,17 +224,10 @@ def checkout_workflow(doc_id: str, jwt: str, download_url: str, filename: str):
             _safe_discard(doc_id, jwt)
             return
 
-        # 5. Automatisch einchecken (kein Dialog)
-        current_mtime = os.path.getmtime(local_path)
-        was_modified  = abs(current_mtime - original_mtime) > 0.5
-
+        # 5. Automatisch einchecken
         if done.is_set(): return
         done.set()
-
-        if was_modified:
-            _do_checkin(doc_id, jwt, local_path, filename)
-        else:
-            _safe_discard(doc_id, jwt)
+        _do_checkin(doc_id, jwt, local_path, filename)
 
     except Exception as e:
         log(f"FEHLER: {e}")
