@@ -159,9 +159,22 @@ serve(async (req) => {
   if (!jwtToken)
     return new Response(JSON.stringify({ error: 'Kein Token' }), { status: 401, headers: corsHeaders })
 
-  const { data: { user: authUser } } = await supabase.auth.getUser(jwtToken)
-  if (!authUser)
-    return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders })
+  let { data: { user: authUser } } = await supabase.auth.getUser(jwtToken)
+  if (!authUser) {
+    // Fallback: token_id als Bearer (Agent sendet token_id statt ablaufende user JWT)
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(jwtToken)) {
+      const { data: agentTok } = await supabase
+        .from('agent_tokens')
+        .select('user_id, expires_at, used_at')
+        .eq('id', jwtToken)
+        .single()
+      if (agentTok && agentTok.used_at && new Date(agentTok.expires_at) > new Date()) {
+        authUser = { id: agentTok.user_id } as any
+      }
+    }
+    if (!authUser)
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders })
+  }
 
   const { data: profile } = await supabase.from('profiles').select('*').eq('id', authUser.id).single()
   if (!profile)

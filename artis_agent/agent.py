@@ -312,7 +312,7 @@ def main():
         if token:
             res          = resolve_token(token)
             doc_id       = res.get("doc_id", "")
-            jwt          = res.get("jwt", "")
+            jwt          = token  # token_id als Auth verwenden (user JWT laeuft nach ~1h ab)
             download_url = res.get("download_url", "")
             filename     = res.get("filename", "dokument")
         else:
