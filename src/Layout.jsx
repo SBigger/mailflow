@@ -1,11 +1,26 @@
-import React, { useState, useEffect, createContext, useContext } from "react";
+import React, { useState, useEffect, useRef, createContext, useContext } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { entities, functions, auth, supabase } from "@/api/supabaseClient";
-import { LayoutDashboard, Mail, CheckSquare, Settings as SettingsIcon, Building2, CalendarClock, LifeBuoy, BookOpen, GripVertical, FolderOpen } from "lucide-react";
+import {
+  LayoutDashboard,
+  Mail,
+  CheckSquare,
+  Settings as SettingsIcon,
+  Building2,
+  CalendarClock,
+  LifeBuoy,
+  BookOpen,
+  GripVertical,
+  FolderOpen,
+  LogOut
+} from "lucide-react";
 import BottomNav from "@/components/mobile/BottomNav";
 import { useIsMobile } from "@/components/mobile/useIsMobile";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
+import { useAuth } from '@/lib/AuthContext';
+import { useNavigate } from 'react-router-dom';
+import * as packageJson from "../package.json";
 
 // Theme context
 export const ThemeContext = createContext({ theme: 'dark', setTheme: () => {} });
@@ -14,7 +29,8 @@ export default function Layout({ children, currentPageName, onMailFilterAction, 
   const location = useLocation();
   const [currentUser, setCurrentUser] = React.useState(null);
   const [theme, setThemeState] = React.useState(() => localStorage.getItem("app_theme") || "artis");
-
+  const { signOut, profile } = useAuth(); //
+  const navigate = useNavigate();
   // Nav order state - persisted in localStorage
   const [navOrder, setNavOrder] = React.useState(() => {
     try {
@@ -116,13 +132,38 @@ export default function Layout({ children, currentPageName, onMailFilterAction, 
   const sidebarBorder = isLight ? '#d0d0dc' : isArtis ? '#bfcfbf' : 'rgba(113,113,122,0.3)';
   const pageBg = isLight ? '#f4f4f8' : isArtis ? '#f2f5f2' : '#2a2a2f';
 
+  const handleLogout = async () => {
+    try {
+      setMenuOpen(false);
+      await signOut(); // Führt das Supabase SignOut aus
+      navigate('/Login'); // Optional: Manuelle Weiterleitung
+    } catch (error) {
+      console.error("Fehler beim Abmelden:", error);
+    }
+  };
+
+
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef(null);
+
+  // Schließt das Menü, wenn man außerhalb klickt
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   return (
     <ThemeContext.Provider value={{ theme, setTheme }}>
     <div className="flex h-screen overflow-hidden" style={{ backgroundColor: pageBg }}>
       {/* Sidebar - hidden on mobile */}
       {!isTaskUser && !isMobile && (
         <div
-          className="w-14 flex-shrink-0 flex flex-col items-center py-4 gap-2 border-r"
+          className="w-14 flex-shrink-0 flex flex-col items-center justify-between py-4 gap-2 border-r"
           style={{ backgroundColor: sidebarBg, borderColor: sidebarBorder }}
         >
           <DragDropContext onDragEnd={handleNavDragEnd}>
@@ -180,11 +221,40 @@ export default function Layout({ children, currentPageName, onMailFilterAction, 
               )}
             </Droppable>
           </DragDropContext>
+
+          <div className="relative" ref={menuRef}>
+            <div
+                onClick={() => setMenuOpen(!menuOpen)}
+                className="w-9 h-9 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400 text-sm font-semibold flex-shrink-0 cursor-pointer hover:bg-indigo-500/30 transition-all border border-indigo-500/30"
+            >
+              {profile?.full_name?.charAt(0) || 'I'}
+            </div>
+
+            {/* Das Dropdown Menü */}
+            {menuOpen && (
+                <div className="absolute bottom-0 left-14 mb-2 w-48 rounded-md shadow-lg bg-zinc-900 border border-zinc-800 py-1 z-50 animate-in fade-in slide-in-from-left-2">
+                  <div className="px-4 py-2 border-b border-zinc-800">
+                    <p className="text-xs text-zinc-500">Eingeloggt als</p>
+                    <p className="text-sm font-medium text-zinc-200 truncate">{profile?.full_name || 'Benutzer'}</p>
+                    <p className="text-xs text-zinc-500">Version als</p>
+                    <p className="text-sm text-zinc-200 truncate">{packageJson.version}</p>
+                  </div>
+
+                  <button
+                      onClick={handleLogout}
+                      className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-400 hover:bg-zinc-800 transition-colors"
+                  >
+                    <LogOut size={16} />
+                    Abmelden
+                  </button>
+                </div>
+            )}
+          </div>
         </div>
       )}
 
       {/* Page Content */}
-      <div className="flex-1 overflow-hidden" style={{ paddingBottom: isMobile && !isTaskUser ? 56 : 0 }}>
+      <div className="flex-1 overflow-hidden" style={{paddingBottom: isMobile && !isTaskUser ? 56 : 0 }}>
         {children}
       </div>
 

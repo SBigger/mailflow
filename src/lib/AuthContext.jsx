@@ -35,8 +35,12 @@ export function AuthProvider({ children }) {
     if (error) throw error;
   }
 
-  async function logout() {
-    await supabase.auth.signOut();
+  async function signOut() {
+    try {
+     await supabase.auth.signOut(); // Führt die Supabase-Abmeldung aus
+    } catch (error) {
+      console.error("Logout fehlgeschlagen:", error);
+    }
   }
 
   async function updateProfile(updates) {
@@ -48,7 +52,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, login, logout, updateProfile }}>
+    <AuthContext.Provider value={{ user, profile, loading, login, signOut, updateProfile }}>
       {children}
     </AuthContext.Provider>
   );
