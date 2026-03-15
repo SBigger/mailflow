@@ -22,7 +22,9 @@ const CATEGORIES = [
 ];
 
 function safeName(name) {
-  return (name || "").replace(/[#%*:<>?/\\|"\s]/g, "_");
+  return (name || "")
+    .replace(/[äÄ]/g, "ae").replace(/[öÖ]/g, "oe").replace(/[üÜ]/g, "ue").replace(/ß/g, "ss")
+    .replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
 function getFileInfo(mimeType, filename) {
