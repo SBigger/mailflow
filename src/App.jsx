@@ -76,7 +76,7 @@ function App() {
           </Routes>
         </Router>
         <Toaster />
-        <SonnerToaster richColors position="top-right" />
+        <SonnerToaster richColors position="top-center" />
       </QueryClientProvider>
     </AuthProvider>
   );

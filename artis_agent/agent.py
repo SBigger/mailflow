@@ -251,12 +251,18 @@ def checkout_workflow(doc_id: str, jwt: str, item_id: str, filename: str):
     try:
         os.makedirs(WORKSPACE, exist_ok=True)
 
+        # ── 1. Download-URL holen ────────────────────────────────────────────
+        log("Hole Download-URL...")
+        dl = sp_call(jwt, {"action": "get-download-url", "item_id": item_id})
+        download_url = dl.get('download_url')
+        if not download_url:
+            raise RuntimeError("Kein Download-URL erhalten")
 
         # ── 2. Datei herunterladen ───────────────────────────────────────────
         safe     = filename.replace('/', '_').replace('\\', '_')
         local_path = os.path.join(WORKSPACE, f"{doc_id}_{safe}")
         log(f"Lade herunter → {local_path}")
-        download_file(item_id, local_path)
+        download_file(download_url, local_path)
         original_mtime = os.path.getmtime(local_path)
 
         # ── 3. Datei öffnen ──────────────────────────────────────────────────

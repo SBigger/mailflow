@@ -39,14 +39,16 @@ export default function DokAblageSettings() {
 
   const queryClient = useQueryClient();
   const [expanded,      setExpanded]      = useState({});
-  const [addingParent,  setAddingParent]  = useState(false);
-  const [addingSubOf,   setAddingSubOf]   = useState(null);
-  const [editingId,     setEditingId]     = useState(null);
-  const [newParentName, setNewParentName] = useState("");
-  const [newParentColor,setNewParentColor]= useState("#6366f1");
-  const [newSubName,    setNewSubName]    = useState("");
-  const [editName,      setEditName]      = useState("");
-  const [editColor,     setEditColor]     = useState("");
+  const [addingParent,     setAddingParent]     = useState(false);
+  const [addingSubOf,      setAddingSubOf]      = useState(null);
+  const [editingId,        setEditingId]        = useState(null);
+  const [newParentName,    setNewParentName]    = useState("");
+  const [newParentColor,   setNewParentColor]   = useState("#6366f1");
+  const [newParentCategory,setNewParentCategory]= useState("");
+  const [newSubName,       setNewSubName]       = useState("");
+  const [editName,         setEditName]         = useState("");
+  const [editColor,        setEditColor]        = useState("");
+  const [editCategory,     setEditCategory]     = useState("");
 
   const { data: allTags = [], isLoading } = useQuery({
     queryKey: ["dok_tags"],
@@ -74,15 +76,15 @@ export default function DokAblageSettings() {
 
   const handleAddParent = () => {
     if (!newParentName.trim()) return;
-    createMut.mutate({ name: newParentName.trim(), color: newParentColor, sort_order: parents.length });
-    setNewParentName(""); setNewParentColor("#6366f1"); setAddingParent(false);
+    createMut.mutate({ name: newParentName.trim(), color: newParentColor, category: newParentCategory || null, sort_order: parents.length });
+    setNewParentName(""); setNewParentColor("#6366f1"); setNewParentCategory(""); setAddingParent(false);
   };
   const handleAddSub = (pid) => {
     if (!newSubName.trim()) return;
     createMut.mutate({ name: newSubName.trim(), parent_id: pid, sort_order: kidsOf(pid).length });
     setNewSubName(""); setAddingSubOf(null);
   };
-  const startEdit = (tag) => { setEditingId(tag.id); setEditName(tag.name); setEditColor(tag.color || "#6366f1"); };
+  const startEdit = (tag) => { setEditingId(tag.id); setEditName(tag.name); setEditColor(tag.color || "#6366f1"); setEditCategory(tag.category || ""); };
   const doDelete  = (tag) => {
     const k = kidsOf(tag.id);
     if (!window.confirm(k.length > 0
@@ -137,14 +139,20 @@ export default function DokAblageSettings() {
                         style={{ width: 28, height: 28, border: "none", borderRadius: 4, cursor: "pointer", padding: 2, flexShrink: 0 }} />
                       <input value={editName} onChange={e => setEditName(e.target.value)}
                         autoFocus style={{ ...inp, flex: 1 }}
-                        onKeyDown={e => { if (e.key === "Enter") updateMut.mutate({ id: par.id, name: editName.trim(), color: editColor }); if (e.key === "Escape") setEditingId(null); }} />
-                      <button {...btnStyle} onClick={() => updateMut.mutate({ id: par.id, name: editName.trim(), color: editColor })} style={{ ...btnStyle, color: accent }}><Check size={14} /></button>
+                        onKeyDown={e => { if (e.key === "Enter") updateMut.mutate({ id: par.id, name: editName.trim(), color: editColor, category: editCategory || null }); if (e.key === "Escape") setEditingId(null); }} />
+                      <select value={editCategory} onChange={e => setEditCategory(e.target.value)}
+                        style={{ ...inp, width: "auto", cursor: "pointer", flexShrink: 0 }}>
+                        <option value="">— keine Kategorie —</option>
+                        {CATEGORIES.map(c => <option key={c.key} value={c.key}>{c.icon} {c.label}</option>)}
+                      </select>
+                      <button {...btnStyle} onClick={() => updateMut.mutate({ id: par.id, name: editName.trim(), color: editColor, category: editCategory || null })} style={{ ...btnStyle, color: accent }}><Check size={14} /></button>
                       <button {...btnStyle} onClick={() => setEditingId(null)} style={{ ...btnStyle, color: textMuted }}><X size={14} /></button>
                     </>
                   ) : (
                     <>
                       <span style={{ width: 12, height: 12, borderRadius: "50%", background: parCol, flexShrink: 0 }} />
                       <span style={{ flex: 1, fontWeight: 600, fontSize: 13, color: headingColor }}>{par.name}</span>
+                      {par.category && (() => { const c = CATEGORIES.find(x => x.key === par.category); return c ? <span style={{ fontSize: 11, color: textMuted, background: cardBorder + "88", borderRadius: 8, padding: "1px 6px" }}>{c.icon} {c.label}</span> : null; })()}
                       {kids.length > 0 && <span style={{ fontSize: 11, color: textMuted, background: cardBorder + "88", borderRadius: 8, padding: "1px 6px" }}>{kids.length}</span>}
                       <button {...btnStyle} title="Subtag hinzufuegen"
                         onClick={() => { setAddingSubOf(par.id); setNewSubName(""); setExpanded(p => ({ ...p, [par.id]: true })); }}
@@ -203,13 +211,18 @@ export default function DokAblageSettings() {
 
           {/* Neuen Parent-Tag hinzufuegen */}
           {addingParent && (
-            <div style={{ display: "flex", gap: 8, alignItems: "center", padding: "8px 12px", border: "1px dashed " + accent, borderRadius: 8 }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", padding: "8px 12px", border: "1px dashed " + accent, borderRadius: 8, flexWrap: "wrap" }}>
               <input type="color" value={newParentColor} onChange={e => setNewParentColor(e.target.value)}
                 style={{ width: 28, height: 28, border: "none", borderRadius: 4, cursor: "pointer", padding: 2, flexShrink: 0 }} />
               <input value={newParentName} onChange={e => setNewParentName(e.target.value)}
                 autoFocus placeholder="Tag-Name (z.B. Abschlussunterlagen)..."
-                style={{ ...inp, flex: 1 }}
+                style={{ ...inp, flex: 1, minWidth: 160 }}
                 onKeyDown={e => { if (e.key === "Enter") handleAddParent(); if (e.key === "Escape") setAddingParent(false); }} />
+              <select value={newParentCategory} onChange={e => setNewParentCategory(e.target.value)}
+                style={{ ...inp, width: "auto", cursor: "pointer", flexShrink: 0 }}>
+                <option value="">— keine Kategorie —</option>
+                {CATEGORIES.map(c => <option key={c.key} value={c.key}>{c.icon} {c.label}</option>)}
+              </select>
               <button onClick={handleAddParent} disabled={!newParentName.trim()}
                 style={{ background: accent, border: "none", cursor: "pointer", color: "#fff", padding: "5px 14px", borderRadius: 5, fontSize: 12, fontWeight: 600, opacity: newParentName.trim() ? 1 : 0.5 }}>
                 Erstellen

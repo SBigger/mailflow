@@ -96,23 +96,18 @@ function UploadDialog({ customers, preCustomer, allTags, onCancel, onUpload, s, 
     if (!year || isNaN(parseInt(year)))   { toast.error("Bitte ein g\u00fcltiges Jahr eingeben"); return; }
     setUploading(true);
     try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExt}`;
-      const path = `${custId}/${fileName}`;
-      const { data: uploadData, error: uploadError } = await supabase
-          .storage.from(BUCKET)
-          .upload(path, file);
-
-      if (uploadError) {
-        throw uploadError;
-      }
+      const { data: { session } } = await supabase.auth.getSession();
+      const jwt = session?.access_token || '';
+      const sp = await spUpload(jwt, file, custId, category, parseInt(year));
       await entities.Dokument.create({
         customer_id: custId, category, year: parseInt(year),
         name: name.trim(), filename: file.name,
-        storage_path: uploadData.path, file_size: file.size, file_type: file.type,
-        tag_ids: tagIds, notes
+        storage_path: '', file_size: file.size, file_type: file.type,
+        tag_ids: tagIds, notes,
+        sharepoint_item_id: sp.item_id,
+        sharepoint_web_url: sp.web_url,
       });
-      toast.success("Dokument hochgeladen", {closeButton: true});
+      toast.success("Dokument hochgeladen");
       onUpload();
     } catch (err) {
       console.error("Upload error:", err);
@@ -202,7 +197,7 @@ function EditDialog({ doc, allTags, customers = [], onCancel, onSave, s, border,
     setSaving(true);
     try {
       await entities.Dokument.update(doc.id, { customer_id: customerId, name: name.trim(), category, year: parseInt(year), tag_ids: tagIds, notes });
-      toast.success("Gespeichert", {closeButton: true});
+      toast.success("Gespeichert");
       onSave();
     } catch (e) {
       toast.error("Fehler: " + e.message);
@@ -400,23 +395,21 @@ export default function Dokumente() {
     });
   }, [filtered]);
 
-  const downloadDoc = async (doc) => {
-    const { data } = await supabase
-        .storage
-        .from(BUCKET)
-        .createSignedUrl(doc.storage_path, 360);
-
-    const fileUrl = data.signedUrl;
-
-    window.open(fileUrl, '_blank');
-  }
-
   const handleDelete = async (doc) => {
     if (!window.confirm(`"${doc.name}" wirklich l\u00f6schen?`)) return;
     try {
-      await supabase.storage.from(BUCKET).remove(doc.storage_path);
+      const { data: { session } } = await supabase.auth.getSession();
+      const jwt = session?.access_token || '';
+      if (doc.sharepoint_item_id) {
+        await spCall(jwt, { action: 'delete', item_id: doc.sharepoint_item_id }).catch(() => {});
+      } else if (doc.storage_path) {
+        await supabase.storage.from(BUCKET).remove([doc.storage_path]).catch(() => {});
+      }
       await entities.Dokument.delete(doc.id);
-      toast.success("Dokument gel\u00f6scht", {closeButton: true});
+      queryClient.invalidateQueries({ queryKey: ["dokumente-all"] });
+      queryClient.invalidateQueries({ queryKey: ["dokumente"] });
+      setSignedUrls(prev => { const n = { ...prev }; delete n[doc.id]; return n; });
+      toast.success("Dokument gel\u00f6scht");
     } catch (err) { toast.error("Fehler: " + err.message); }
   };
 
@@ -432,32 +425,33 @@ export default function Dokumente() {
         checked_out_by_name: user?.full_name || authUser.email,
         checked_out_at:      new Date().toISOString(),
       });
+      queryClient.invalidateQueries({ queryKey: ["dokumente-all"] });
       queryClient.invalidateQueries({ queryKey: ["dokumente"] });
 
+      if (doc.sharepoint_item_id) {
         // Alle SharePoint-Dateien: via Artis Agent öffnen (jede Endung)
-      const { data: urlData } = await supabase.storage.from(BUCKET).createSignedUrl(doc.storage_path, 3600);
-      if (!urlData?.signedUrl) {
-        toast.error('Fehler beim Erstellen der Download-URL')
-        ; return;
-      }
-
-      const uri = [
+        const uri = [
           'artis-open://checkout',
           '?doc_id=',   encodeURIComponent(doc.id),
           '&jwt=',      encodeURIComponent(jwt),
-          '&item_id=',  encodeURIComponent(urlData.signedUrl),
+          '&item_id=',  encodeURIComponent(doc.sharepoint_item_id),
           '&filename=', encodeURIComponent(doc.filename),
         ].join('');
         const _a = document.createElement('a');
         _a.href = uri;
-        document.body.appendChild(_a); _a.click();
-        document.body.removeChild(_a);
+        document.body.appendChild(_a); _a.click(); document.body.removeChild(_a);
         toast.success('Artis Agent öffnet die Datei – wird beim Schließen automatisch eingecheckt.');
-    } catch (err) {
-      toast.error('Fehler: ' + err.message);
-    }
+      } else if (doc.storage_path) {
+        // Legacy Supabase Storage
+        const { data: urlData } = await supabase.storage.from(BUCKET).createSignedUrl(doc.storage_path, 300);
+        if (!urlData?.signedUrl) { toast.error('Fehler beim Erstellen der Download-URL'); return; }
+        window.open(urlData.signedUrl, '_blank');
+        toast.info('Ausgecheckt – Beim Einchecken neue Version hochladen.');
+      } else {
+        toast.error('Datei nicht gefunden (kein SharePoint-Item und kein Storage-Pfad).');
+      }
+    } catch (err) { toast.error('Fehler: ' + err.message); }
   };
-
   const openCheckin = (doc) => { handleCheckin(doc, null); };
 
   const handleCheckin = async (doc, file) => {
@@ -777,7 +771,7 @@ export default function Dokumente() {
                       <Pencil size={14} />
                     </button>
                     {/* Download */}
-                    <button onClick={() => { downloadDoc(doc) }}
+                    <button onClick={() => { const _u = doc.sharepoint_web_url || signedUrls[doc.id]; if (_u) window.open(_u, '_blank'); else toast.error('URL nicht verfuegbar.'); }}
                       title="Herunterladen" style={{ background: "none", border: "none", cursor: "pointer", color: accent, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}>
                       <Download size={15} />
                     </button>

@@ -9,31 +9,6 @@ import TagSelectWidget from "@/components/dokumente/TagSelectWidget";
 import { useAuth } from "@/lib/AuthContext";
 
 const BUCKET   = "dokumente";
-
-// SharePoint Helper
-const SPFILES = import.meta.env.VITE_SUPABASE_URL + '/functions/v1/sharepoint-files';
-async function spCall(jwt, body) {
-  const res = await fetch(SPFILES, {
-    method: 'POST',
-    headers: { Authorization: 'Bearer ' + jwt, 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || res.statusText); }
-  return res.json();
-}
-async function spUpload(jwt, file, customer_id, category, year) {
-  const form = new FormData();
-  form.append('action', 'upload');
-  form.append('file', file);
-  form.append('customer_id', customer_id);
-  form.append('category', category);
-  form.append('year', String(year));
-  form.append('filename', file.name);
-  const res = await fetch(SPFILES, { method: 'POST', headers: { Authorization: 'Bearer ' + jwt }, body: form });
-  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || 'Upload fehlgeschlagen'); }
-  return res.json();
-}
-
 const CUR_YEAR = new Date().getFullYear();
 
 const CATEGORIES = [
@@ -45,6 +20,12 @@ const CATEGORIES = [
   { key: "personal",       label: "06 - Personal",       icon: "\uD83D\uDC65" },
   { key: "korrespondenz",  label: "09 - Korrespondenz",  icon: "\u2709\uFE0F" },
 ];
+
+function safeName(name) {
+  return (name || "")
+    .replace(/[äÄ]/g, "ae").replace(/[öÖ]/g, "oe").replace(/[üÜ]/g, "ue").replace(/ß/g, "ss")
+    .replace(/[^a-zA-Z0-9._-]/g, "_");
+}
 
 function getFileInfo(mimeType, filename) {
   const ext = (filename || "").split(".").pop().toLowerCase();
@@ -87,15 +68,36 @@ function UploadDialog({ customerId, allTags, onCancel, onUploaded, s, border, ac
   };
 
   const handleUpload = async () => {
-    if (!file || !name.trim())              { toast.error("Bitte Datei und Name ausfullen"); return; }
-    if (!year || isNaN(parseInt(year)))     { toast.error("Bitte ein gueltiges Jahr eingeben"); return; }
+    if (!file || !name.trim())          { toast.error("Bitte Datei und Name ausfüllen"); return; }
+    if (!year || isNaN(parseInt(year))) { toast.error("Bitte ein gültiges Jahr eingeben"); return; }
     setUploading(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const jwt = session?.access_token;
-      if (!jwt) throw new Error('Nicht angemeldet');
-      const sp = await spUpload(jwt, file, customerId, category, year);
-      await entities.Dokument.create({ customer_id: customerId, category, year: parseInt(year), name: name.trim(), filename: file.name, sharepoint_item_id: sp.item_id, sharepoint_web_url: sp.web_url, storage_path: '', file_size: file.size, file_type: file.type, tag_ids: tagIds, notes });
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      const cleanName = safeName(file.name);
+
+      // 1. DB-Eintrag anlegen (um die ID zu erhalten)
+      const { data: newDoc, error: dbErr } = await supabase.from("dokumente")
+        .insert({
+          customer_id: customerId, category, year: parseInt(year),
+          name: name.trim(), filename: file.name,
+          storage_path: "", file_size: file.size, file_type: file.type,
+          tag_ids: tagIds, notes, created_by: authUser?.id,
+        })
+        .select("id").single();
+      if (dbErr) throw new Error(dbErr.message);
+
+      // 2. Datei in Supabase Storage hochladen
+      const storagePath = `dokumente/${newDoc.id}/${Date.now()}-${cleanName}`;
+      const { error: storErr } = await supabase.storage.from(BUCKET)
+        .upload(storagePath, file, { upsert: true, contentType: file.type || "application/octet-stream" });
+      if (storErr) {
+        try { await supabase.from("dokumente").delete().eq("id", newDoc.id); } catch {}
+        throw new Error("Storage-Upload: " + storErr.message);
+      }
+
+      // 3. storage_path aktualisieren
+      await supabase.from("dokumente").update({ storage_path: storagePath }).eq("id", newDoc.id);
+
       toast.success("Dokument hochgeladen");
       onUploaded();
     } catch (err) {
@@ -108,7 +110,7 @@ function UploadDialog({ customerId, allTags, onCancel, onUploaded, s, border, ac
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ background: s.cardBg, border: "1px solid " + border, borderRadius: 12, padding: 24, width: 500, maxHeight: "90vh", overflowY: "auto" }}>
+      <div style={{ background: s.cardBg, border: "1px solid " + border, borderRadius: 12, padding: 24, width: 680, minWidth: 420, minHeight: 420, maxWidth: "95vw", maxHeight: "92vh", overflow: "auto", resize: "both", position: "relative" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <h3 style={{ color: s.textMain, fontSize: 14, fontWeight: 700 }}>Dokument hochladen</h3>
           <button onClick={onCancel} style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted }}><X size={18} /></button>
@@ -117,7 +119,7 @@ function UploadDialog({ customerId, allTags, onCancel, onUploaded, s, border, ac
           {/* Datei */}
           <div onClick={() => fileRef.current?.click()}
             style={{ border: "2px dashed " + (file ? accent : border), borderRadius: 8, padding: 14, textAlign: "center", cursor: "pointer", color: file ? accent : s.textMuted, fontSize: 13 }}>
-            {file ? `${file.name} (${formatBytes(file.size)})` : "Datei auswaehlen oder hierher ziehen"}
+            {file ? `${file.name} (${formatBytes(file.size)})` : "Datei auswählen oder hierher ziehen"}
             <input ref={fileRef} type="file" style={{ display: "none" }} onChange={e => e.target.files[0] && pickFile(e.target.files[0])} />
           </div>
           {/* Name */}
@@ -142,18 +144,18 @@ function UploadDialog({ customerId, allTags, onCancel, onUploaded, s, border, ac
           {/* Tags */}
           <div>
             <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Tags</label>
-            <TagSelectWidget value={tagIds} onChange={setTagIds} allTags={allTags} s={s} border={border} accent={accent} />
+            <TagSelectWidget value={tagIds} onChange={setTagIds} onCategoryChange={setCategory} allTags={allTags} s={s} border={border} accent={accent} />
           </div>
           {/* Notiz */}
           <div>
             <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Notiz (optional)</label>
-            <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} style={{ ...inp, resize: "none" }} placeholder="Kurze Bemerkung..." />
+            <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} style={{ ...inp, resize: "vertical" }} placeholder="Kurze Bemerkung..." />
           </div>
         </div>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 16 }}>
           <Button variant="outline" onClick={onCancel} style={{ color: s.textMuted, borderColor: border }}>Abbrechen</Button>
           <Button onClick={handleUpload} disabled={uploading || !file || !year} style={{ background: accent, color: "#fff" }}>
-            {uploading ? "Laedt hoch..." : "Hochladen"}
+            {uploading ? "Lädt hoch..." : "Hochladen"}
           </Button>
         </div>
       </div>
@@ -178,9 +180,13 @@ function EditDialog({ doc, allTags, customers = [], onCancel, onSaved, s, border
     if (!customerId) { toast.error("Bitte einen Kunden auswählen"); return; }
     setSaving(true);
     try {
-      await entities.Dokument.update(doc.id, { customer_id: customerId, name: name.trim(), category, year: parseInt(year), tag_ids: tagIds, notes });
-      toast.success("Gespeichert");
-      onSaved();
+      const { data: updated, error } = await supabase.from("dokumente").update({
+        customer_id: customerId, name: name.trim(), category, year: parseInt(year), tag_ids: tagIds, notes,
+      }).eq("id", doc.id).select("*");
+      if (error) throw new Error(error.message);
+      if (!updated || updated.length === 0) throw new Error("Keine Zeile aktualisiert (RLS oder ID-Problem) – bitte Seite neu laden");
+      toast.success("✓ Gespeichert: " + updated[0].name);
+      onSaved(updated[0]);
     } catch (e) {
       toast.error("Fehler: " + e.message);
     } finally { setSaving(false); }
@@ -227,11 +233,11 @@ function EditDialog({ doc, allTags, customers = [], onCancel, onSaved, s, border
           </div>
           <div>
             <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Tags</label>
-            <TagSelectWidget value={tagIds} onChange={setTagIds} allTags={allTags} s={s} border={border} accent={accent} />
+            <TagSelectWidget value={tagIds} onChange={setTagIds} onCategoryChange={setCategory} allTags={allTags} s={s} border={border} accent={accent} />
           </div>
           <div>
             <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Notiz</label>
-            <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} style={{ ...inp, resize: "none" }} />
+            <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} style={{ ...inp, resize: "vertical" }} />
           </div>
         </div>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 16 }}>
@@ -271,12 +277,9 @@ export default function CustomerDokumenteTab({ customerId }) {
   const [expandedCat, setExpandedCat] = useState({});
   const [fileSearch,  setFileSearch]  = useState("");
   const [showUpload,  setShowUpload]  = useState(false);
-  const [editDoc,        setEditDoc]        = useState(null);
-  const [checkinDoc,     setCheckinDoc]     = useState(null);
-  const [checkinHandle,  setCheckinHandle]  = useState(null);
+  const [editDoc,     setEditDoc]     = useState(null);
   const [signedUrls,  setSignedUrls]  = useState({});
   const [isDragging,  setIsDragging]  = useState(false);
-  const [dragFile,    setDragFile]    = useState(null);
 
   const { data: docs = [], isLoading } = useQuery({
     queryKey: ["dokumente", customerId],
@@ -297,7 +300,7 @@ export default function CustomerDokumenteTab({ customerId }) {
   const tagLabel = (id) => { const t = getTag(id); if (!t) return null; const p = t.parent_id ? getTag(t.parent_id) : null; return p ? `${p.name} / ${t.name}` : t.name; };
   const tagColor = (id) => { const t = getTag(id); if (!t) return accent; return (t.parent_id ? getTag(t.parent_id)?.color : null) || t.color || accent; };
 
-  // Baum: Kategorien mit Jahrgruppen
+  // Baum
   const tree = useMemo(() => {
     return CATEGORIES.map(cat => {
       const cd    = docs.filter(d => d.category === cat.key);
@@ -307,7 +310,7 @@ export default function CustomerDokumenteTab({ customerId }) {
     }).filter(c => c.count > 0);
   }, [docs]);
 
-  // Rechts: gefiltert
+  // Gefiltert
   const filtered = useMemo(() => {
     let list = docs;
     if (selCat)                list = list.filter(d => d.category === selCat);
@@ -320,9 +323,9 @@ export default function CustomerDokumenteTab({ customerId }) {
     return list.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
   }, [docs, selCat, selYear, fileSearch]);
 
-  // Signed URLs
+  // Signed URLs für Vorschau/Download
   useEffect(() => {
-    const miss = filtered.filter(d => !signedUrls[d.id]);
+    const miss = filtered.filter(d => d.storage_path && !signedUrls[d.id]);
     if (!miss.length) return;
     miss.forEach(async doc => {
       const { data } = await supabase.storage.from(BUCKET).createSignedUrl(doc.storage_path, 3600);
@@ -330,14 +333,11 @@ export default function CustomerDokumenteTab({ customerId }) {
     });
   }, [filtered]);
 
+  // ── Delete ──────────────────────────────────────────────────────────────
   const handleDelete = async (doc) => {
     if (!window.confirm(`"${doc.name}" wirklich löschen?`)) return;
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const jwt = session?.access_token || '';
-      if (doc.sharepoint_item_id) {
-        await spCall(jwt, { action: 'delete', item_id: doc.sharepoint_item_id }).catch(() => {});
-      } else if (doc.storage_path) {
+      if (doc.storage_path) {
         await supabase.storage.from(BUCKET).remove([doc.storage_path]).catch(() => {});
       }
       await entities.Dokument.delete(doc.id);
@@ -348,100 +348,93 @@ export default function CustomerDokumenteTab({ customerId }) {
     } catch (err) { toast.error("Fehler: " + err.message); }
   };
 
+  // ── Checkout (via Artis Agent) ───────────────────────────────────────────
   const handleCheckout = async (doc) => {
     try {
+      // IMMER frische Daten aus DB holen (Agent-Checkin aktualisiert storage_path!)
+      const { data: freshDoc, error: fetchErr } = await supabase
+        .from("dokumente").select("*").eq("id", doc.id).single();
+      if (fetchErr || !freshDoc) { toast.error("Dokument nicht gefunden"); return; }
+      if (!freshDoc.storage_path) {
+        toast.error("Datei nicht verfügbar (kein Storage-Pfad). Bitte erneut hochladen.");
+        return;
+      }
       const { data: { user: authUser } } = await supabase.auth.getUser();
       const { data: { session } }        = await supabase.auth.getSession();
-      const jwt = session?.access_token || '';
+      const jwt = session?.access_token || "";
 
-      // Checkout-Sperre sofort in DB setzen (optimistisch)
-      await entities.Dokument.update(doc.id, {
+      // Checkout-Sperre in DB setzen
+      await entities.Dokument.update(freshDoc.id, {
         checked_out_by:      authUser.id,
         checked_out_by_name: user?.full_name || authUser.email,
         checked_out_at:      new Date().toISOString(),
       });
+      // Cache mit frischen Daten aktualisieren
+      queryClient.setQueryData(["dokumente", customerId], (old) => (old || []).map(d => d.id === freshDoc.id ? { ...freshDoc, checked_out_by: authUser.id, checked_out_by_name: user?.full_name || authUser.email, checked_out_at: new Date().toISOString() } : d));
+      queryClient.setQueryData(["dokumente-all"], (old) => (old || []).map(d => d.id === freshDoc.id ? { ...freshDoc, checked_out_by: authUser.id } : d));
       queryClient.invalidateQueries({ queryKey: ["dokumente-all"] });
-      queryClient.invalidateQueries({ queryKey: ["dokumente"] });
+      queryClient.invalidateQueries({ queryKey: ["dokumente", customerId] });
 
-      if (doc.sharepoint_item_id) {
-        // Alle SharePoint-Dateien: via Artis Agent öffnen (jede Endung)
-        const uri = [
-          'artis-open://checkout',
-          '?doc_id=',   encodeURIComponent(doc.id),
-          '&jwt=',      encodeURIComponent(jwt),
-          '&item_id=',  encodeURIComponent(doc.sharepoint_item_id),
-          '&filename=', encodeURIComponent(doc.filename),
-        ].join('');
-        const _a = document.createElement('a');
-        _a.href = uri;
-        document.body.appendChild(_a); _a.click(); document.body.removeChild(_a);
-        toast.success('Artis Agent öffnet die Datei – wird beim Schließen automatisch eingecheckt.');
-      } else if (doc.storage_path) {
-        // Legacy Supabase Storage
-        const { data: urlData } = await supabase.storage.from(BUCKET).createSignedUrl(doc.storage_path, 300);
-        if (!urlData?.signedUrl) { toast.error('Fehler beim Erstellen der Download-URL'); return; }
-        window.open(urlData.signedUrl, '_blank');
-        toast.info('Ausgecheckt – Beim Einchecken neue Version hochladen.');
-      } else {
-        toast.error('Datei nicht gefunden (kein SharePoint-Item und kein Storage-Pfad).');
-      }
-    } catch (err) { toast.error('Fehler: ' + err.message); }
+      // Signed URL (4 Stunden) — mit FRISCHEM storage_path
+      const { data: urlData } = await supabase.storage.from(BUCKET).createSignedUrl(freshDoc.storage_path, 4 * 3600);
+      const download_url = urlData?.signedUrl || "";
+      if (!download_url) { toast.error("Download-URL nicht verfügbar"); return; }
+
+      // Kurzlebigen Agent-Token erstellen
+      const { data: tokenRow, error: tokenErr } = await supabase
+        .from("agent_tokens")
+        .insert({ doc_id: freshDoc.id, item_id: '', filename: freshDoc.filename, jwt, user_id: authUser.id, download_url })
+        .select("id").single();
+      if (tokenErr || !tokenRow) { toast.error("Fehler: " + (tokenErr?.message || "Token-Fehler")); return; }
+
+      const uri = "artis-open://checkout?token=" + tokenRow.id;
+      const _a = document.createElement("a");
+      _a.href = uri;
+      document.body.appendChild(_a); _a.click(); document.body.removeChild(_a);
+      // Signed URL Cache löschen damit beim nächsten Mal frisch generiert wird
+      setSignedUrls(prev => { const n = { ...prev }; delete n[freshDoc.id]; return n; });
+      toast.success("Artis Agent öffnet die Datei – wird beim Schließen automatisch eingecheckt.");
+    } catch (err) { toast.error("Fehler: " + err.message); }
   };
-  const openCheckin = (doc) => { handleCheckin(doc, null); };
 
+  // ── Checkin (manuell aus Webapp) ─────────────────────────────────────────
   const handleCheckin = async (doc, file) => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const jwt = session?.access_token || '';
-
-      if (file && doc.sharepoint_item_id) {
-        // SharePoint: neue Version hochladen + Sperre aufheben (checkin-save)
-        const form = new FormData();
-        form.append('action', 'checkin-save');
-        form.append('doc_id',  doc.id);
-        form.append('file',    file, file.name);
-        const res = await fetch(SPFILES, {
-          method: 'POST', headers: { Authorization: `Bearer ${jwt}` }, body: form,
-        });
-        if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || 'Upload fehlgeschlagen'); }
-        setSignedUrls(prev => { const n = { ...prev }; delete n[doc.id]; return n; });
-        toast.success('Eingecheckt – neue Version gespeichert.');
-      } else if (!file && doc.sharepoint_item_id) {
-        // Nur Sperre aufheben
-        await spCall(jwt, { action: 'checkin-discard', doc_id: doc.id });
-        toast.success('Eingecheckt.');
-      } else if (file) {
-        // Legacy: Upload zu SharePoint als neues Item
-        const sp = await spUpload(jwt, file, doc.customer_id, doc.category, doc.year);
-        if (doc.sharepoint_item_id) {
-          await spCall(jwt, { action: 'delete', item_id: doc.sharepoint_item_id }).catch(() => {});
-        } else if (doc.storage_path) {
+      if (file) {
+        // Neue Version hochladen
+        const cleanName   = safeName(file.name);
+        const storagePath = `dokumente/${doc.id}/${Date.now()}-${cleanName}`;
+        if (doc.storage_path) {
           await supabase.storage.from(BUCKET).remove([doc.storage_path]).catch(() => {});
         }
+        const { error: storErr } = await supabase.storage.from(BUCKET)
+          .upload(storagePath, file, { upsert: true, contentType: file.type || "application/octet-stream" });
+        if (storErr) throw new Error("Storage-Upload: " + storErr.message);
         await entities.Dokument.update(doc.id, {
-          sharepoint_item_id: sp.item_id, sharepoint_web_url: sp.web_url,
-          storage_path: '', filename: file.name, file_size: file.size, file_type: file.type,
+          storage_path: storagePath, filename: file.name, file_size: file.size, file_type: file.type,
           checked_out_by: null, checked_out_by_name: null, checked_out_at: null,
         });
         setSignedUrls(prev => { const n = { ...prev }; delete n[doc.id]; return n; });
-        toast.success('Eingecheckt & neue Version hochgeladen.');
+        toast.success("Eingecheckt – neue Version gespeichert.");
       } else {
+        // Nur Sperre aufheben
         await entities.Dokument.update(doc.id, {
           checked_out_by: null, checked_out_by_name: null, checked_out_at: null,
         });
-        toast.success('Eingecheckt.');
+        toast.success("Eingecheckt.");
       }
-    } catch (err) { toast.error('Fehler: ' + err.message); }
+    } catch (err) { toast.error("Fehler: " + err.message); }
     queryClient.invalidateQueries({ queryKey: ["dokumente-all"] });
-    queryClient.invalidateQueries({ queryKey: ["dokumente"] });
+    queryClient.invalidateQueries({ queryKey: ["dokumente", customerId] });
   };
 
+  const openCheckin = (doc) => handleCheckin(doc, null);
 
   // Drag & Drop
   const handleDrop = (e) => {
     e.preventDefault(); setIsDragging(false);
     const f = e.dataTransfer.files[0];
-    if (f) { setDragFile(f); setShowUpload(true); }
+    if (f) { setShowUpload(true); }
   };
 
   const treeItem = { display: "flex", alignItems: "center", gap: 5, padding: "4px 8px", cursor: "pointer", borderRadius: 5, fontSize: 12, userSelect: "none" };
@@ -461,7 +454,6 @@ export default function CustomerDokumenteTab({ customerId }) {
 
       {/* ═══ LINKS: Baum ════════════════════════════════════════════════ */}
       <div style={{ width: 230, flexShrink: 0, borderRight: "1px solid " + border, background: s.sidebarBg, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        {/* Header */}
         <div style={{ padding: "8px 10px", borderBottom: "1px solid " + border, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <span style={{ fontSize: 12, fontWeight: 600, color: s.textMain }}>Ablage</span>
           <button onClick={() => setShowUpload(true)}
@@ -470,7 +462,6 @@ export default function CustomerDokumenteTab({ customerId }) {
           </button>
         </div>
 
-        {/* "Alle" Root */}
         <div onClick={() => { setSelCat(null); setSelYear(null); }}
           style={{ ...treeItem, margin: "4px 6px", background: !selCat ? s.selBg : "transparent", color: !selCat ? accent : s.textMain, fontWeight: !selCat ? 600 : 400 }}>
           <span style={{ fontSize: 13 }}>{"\uD83D\uDCC1"}</span>
@@ -479,7 +470,7 @@ export default function CustomerDokumenteTab({ customerId }) {
         </div>
 
         <div style={{ flex: 1, overflowY: "auto", paddingBottom: 8 }}>
-          {isLoading ? <div style={{ padding: 12, color: s.textMuted, fontSize: 12 }}>Laedt...</div>
+          {isLoading ? <div style={{ padding: 12, color: s.textMuted, fontSize: 12 }}>Lädt...</div>
             : tree.length === 0 ? <div style={{ padding: 12, color: s.textMuted, fontSize: 12 }}>Noch keine Dokumente</div>
             : tree.map(cat => {
               const isCatSel = selCat === cat.key && selYear === null;
@@ -533,7 +524,6 @@ export default function CustomerDokumenteTab({ customerId }) {
 
       {/* ═══ RECHTS: Dateiliste ═════════════════════════════════════════ */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden" }}>
-        {/* Topbar */}
         <div style={{ padding: "6px 12px", borderBottom: "1px solid " + border, display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
           <span style={{ fontSize: 12, fontWeight: 600, color: accent, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
             {selCat ? (CATEGORIES.find(c => c.key === selCat)?.icon + " " + CATEGORIES.find(c => c.key === selCat)?.label) : "Alle"}
@@ -547,7 +537,6 @@ export default function CustomerDokumenteTab({ customerId }) {
           </div>
         </div>
 
-        {/* Liste */}
         <div style={{ flex: 1, overflowY: "auto" }}>
           {filtered.length === 0 ? (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "80%", color: s.textMuted, gap: 8 }}>
@@ -563,30 +552,33 @@ export default function CustomerDokumenteTab({ customerId }) {
               const isCheckedOut  = !!doc.checked_out_by;
               const isMyCheckout  = doc.checked_out_by === user?.id;
               const lockedByOther = isCheckedOut && !isMyCheckout;
-              const isAdmin       = user?.role === 'admin';
+              const isAdmin       = user?.role === "admin";
+              const docUrl        = signedUrls[doc.id] || "";
               return (
                 <div key={doc.id}
                   style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", borderBottom: "1px solid " + border + "55", transition: "background 0.1s" }}
                   onMouseEnter={e => e.currentTarget.style.background = s.rowHover}
                   onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                   {/* Typ */}
-                  <span onClick={() => { const _u = doc.sharepoint_web_url || signedUrls[doc.id]; if (!doc.checked_out_by) { handleCheckout(doc); } else if (doc.checked_out_by === user?.id) { openCheckin(doc); } else if (_u) { window.open(_u, '_blank'); } else { toast.error('URL nicht verfügbar.'); } }} style={{ background: fi.color, color: "#fff", borderRadius: 3, padding: "2px 4px", fontSize: 9, fontWeight: 700, flexShrink: 0, minWidth: 30, textAlign: "center", cursor: "pointer" }}>{fi.label}</span>
+                  <span onClick={() => { if (!isCheckedOut) handleCheckout(doc); else if (isMyCheckout) openCheckin(doc); else if (docUrl) window.open(docUrl, "_blank"); }}
+                    style={{ background: fi.color, color: "#fff", borderRadius: 3, padding: "2px 4px", fontSize: 9, fontWeight: 700, flexShrink: 0, minWidth: 30, textAlign: "center", cursor: "pointer" }}>{fi.label}</span>
                   {/* Name + Tags */}
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                    <div onClick={() => { const _u = doc.sharepoint_web_url || signedUrls[doc.id]; if (!doc.checked_out_by) { handleCheckout(doc); } else if (doc.checked_out_by === user?.id) { openCheckin(doc); } else if (_u) { window.open(_u, '_blank'); } else { toast.error('URL nicht verfügbar.'); } }} style={{ fontSize: 12, color: s.textMain, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 500, flex: 1, cursor: "pointer" }}>{doc.name}</div>
-                    {isCheckedOut && (
-                      <span title={"Ausgecheckt von " + doc.checked_out_by_name}
-                        style={{ fontSize: 9, color: isMyCheckout ? accent : "#f59e0b",
-                          background: isMyCheckout ? accent + "18" : "#f59e0b18",
-                          border: "1px solid " + (isMyCheckout ? accent + "44" : "#f59e0b44"),
-                          borderRadius: 7, padding: "1px 5px", flexShrink: 0,
-                          display: "flex", alignItems: "center", gap: 2 }}>
-                        <Lock size={8} />
-                        {isMyCheckout ? "Ich" : doc.checked_out_by_name}
-                      </span>
-                    )}
-                  </div>
+                      <div onClick={() => { if (!isCheckedOut) handleCheckout(doc); else if (isMyCheckout) openCheckin(doc); else if (docUrl) window.open(docUrl, "_blank"); }}
+                        style={{ fontSize: 12, color: s.textMain, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 500, flex: 1, cursor: "pointer" }}>{doc.name}</div>
+                      {isCheckedOut && (
+                        <span title={"Ausgecheckt von " + doc.checked_out_by_name}
+                          style={{ fontSize: 9, color: isMyCheckout ? accent : "#f59e0b",
+                            background: isMyCheckout ? accent + "18" : "#f59e0b18",
+                            border: "1px solid " + (isMyCheckout ? accent + "44" : "#f59e0b44"),
+                            borderRadius: 7, padding: "1px 5px", flexShrink: 0,
+                            display: "flex", alignItems: "center", gap: 2 }}>
+                          <Lock size={8} />
+                          {isMyCheckout ? "Ich" : doc.checked_out_by_name}
+                        </span>
+                      )}
+                    </div>
                     <div style={{ display: "flex", gap: 3, marginTop: 2, flexWrap: "wrap", alignItems: "center" }}>
                       {!selCat && cat && <span style={{ fontSize: 9, background: s.sidebarBg, color: s.textMuted, border: "1px solid " + border, borderRadius: 7, padding: "1px 5px" }}>{cat.icon} {cat.label}</span>}
                       {ids.slice(0, 3).map(id => {
@@ -599,11 +591,8 @@ export default function CustomerDokumenteTab({ customerId }) {
                       {ids.length > 3 && <span style={{ fontSize: 9, color: s.textMuted }}>+{ids.length - 3}</span>}
                     </div>
                   </div>
-                  {/* Jahr */}
                   {doc.year && <span style={{ fontSize: 10, color: s.textMuted, background: s.sidebarBg, border: "1px solid " + border, borderRadius: 5, padding: "1px 5px", flexShrink: 0 }}>{doc.year}</span>}
-                  {/* Groesse */}
                   <span style={{ fontSize: 10, color: s.textMuted, flexShrink: 0, width: 46, textAlign: "right" }}>{formatBytes(doc.file_size)}</span>
-                  {/* Checkout / Checkin */}
                   {!isCheckedOut && (
                     <button onClick={() => handleCheckout(doc)} title="Auschecken"
                       style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 3, borderRadius: 3, flexShrink: 0 }}>
@@ -622,18 +611,15 @@ export default function CustomerDokumenteTab({ customerId }) {
                       <ShieldAlert size={13} />
                     </button>
                   )}
-                  {/* Edit */}
                   <button onClick={() => setEditDoc(doc)} title="Bearbeiten"
                     style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 3, borderRadius: 3, flexShrink: 0 }}>
                     <Pencil size={13} />
                   </button>
-                  {/* Download */}
-                  <button onClick={() => { const _u = doc.sharepoint_web_url || signedUrls[doc.id]; if (_u) window.open(_u, '_blank'); else toast.error('URL nicht verfügbar.'); }}
+                  <button onClick={() => { if (docUrl) window.open(docUrl, "_blank"); else toast.error("URL nicht verfügbar."); }}
                     title="Herunterladen" style={{ background: "none", border: "none", cursor: "pointer", color: accent, display: "flex", alignItems: "center", padding: 3, borderRadius: 3, flexShrink: 0 }}>
                     <Download size={13} />
                   </button>
-                  {/* Loeschen */}
-                  <button onClick={() => !lockedByOther && handleDelete(doc)} title={lockedByOther ? "Gesperrt" : "Loeschen"}
+                  <button onClick={() => !lockedByOther && handleDelete(doc)} title={lockedByOther ? "Gesperrt" : "Löschen"}
                     style={{ background: "none", border: "none", cursor: lockedByOther ? "not-allowed" : "pointer", color: lockedByOther ? s.textMuted + "44" : "#ef4444", display: "flex", alignItems: "center", padding: 3, borderRadius: 3, flexShrink: 0 }}>
                     <Trash2 size={13} />
                   </button>
@@ -647,17 +633,22 @@ export default function CustomerDokumenteTab({ customerId }) {
       {/* Dialoge */}
       {showUpload && (
         <UploadDialog customerId={customerId} allTags={allTags}
-          onCancel={() => { setShowUpload(false); setDragFile(null); }}
-          onUploaded={() => { queryClient.invalidateQueries({ queryKey: ["dokumente", customerId] }); queryClient.invalidateQueries({ queryKey: ["dokumente-all"] }); setShowUpload(false); setDragFile(null); }}
+          onCancel={() => setShowUpload(false)}
+          onUploaded={() => { queryClient.invalidateQueries({ queryKey: ["dokumente", customerId] }); queryClient.invalidateQueries({ queryKey: ["dokumente-all"] }); setShowUpload(false); }}
           s={s} border={border} accent={accent} />
       )}
       {editDoc && (
         <EditDialog doc={editDoc} allTags={allTags} customers={allCustomers}
           onCancel={() => setEditDoc(null)}
-          onSaved={() => { queryClient.invalidateQueries({ queryKey: ["dokumente", customerId] }); queryClient.invalidateQueries({ queryKey: ["dokumente-all"] }); setEditDoc(null); }}
+          onSaved={(updatedDoc) => {
+            queryClient.setQueryData(["dokumente", customerId], (old) => (old || []).map(d => d.id === updatedDoc.id ? updatedDoc : d));
+            queryClient.setQueryData(["dokumente-all"], (old) => (old || []).map(d => d.id === updatedDoc.id ? updatedDoc : d));
+            queryClient.invalidateQueries({ queryKey: ["dokumente", customerId] });
+            queryClient.invalidateQueries({ queryKey: ["dokumente-all"] });
+            setEditDoc(null);
+          }}
           s={s} border={border} accent={accent} />
       )}
-      {/* CheckinDialog ersetzt */}
     </div>
   );
 }
