@@ -11,7 +11,7 @@ import { ChevronDown, Check } from "lucide-react";
  *   border   : string (CSS color)
  *   accent   : string (CSS color)
  */
-export default function TagSelectWidget({ value = [], onChange, allTags = [], s = {}, border = "#ccc", accent = "#6366f1" }) {
+export default function TagSelectWidget({ value = [], onChange, onCategoryChange, allTags = [], s = {}, border = "#ccc", accent = "#6366f1" }) {
   const [open, setOpen] = useState(false);
   const ref  = useRef();
 
@@ -24,7 +24,15 @@ export default function TagSelectWidget({ value = [], onChange, allTags = [], s 
 
   const parents    = allTags.filter(t => !t.parent_id).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
   const kidsOf     = (pid) => allTags.filter(t => t.parent_id === pid).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
-  const toggle     = (id)  => onChange(value.includes(id) ? value.filter(x => x !== id) : [...value, id]);
+  const toggle     = (id)  => {
+    const isAdding = !value.includes(id);
+    onChange(isAdding ? [...value, id] : value.filter(x => x !== id));
+    if (isAdding && onCategoryChange) {
+      const tag    = allTags.find(t => t.id === id);
+      const parent = tag?.parent_id ? allTags.find(t => t.id === tag.parent_id) : tag;
+      if (parent?.category) onCategoryChange(parent.category);
+    }
+  };
   const getTag     = (id)  => allTags.find(t => t.id === id);
 
   const triggerStyle = {

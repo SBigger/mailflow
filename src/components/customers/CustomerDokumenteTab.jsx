@@ -142,7 +142,7 @@ function UploadDialog({ customerId, allTags, onCancel, onUploaded, s, border, ac
           {/* Tags */}
           <div>
             <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Tags</label>
-            <TagSelectWidget value={tagIds} onChange={setTagIds} allTags={allTags} s={s} border={border} accent={accent} />
+            <TagSelectWidget value={tagIds} onChange={setTagIds} onCategoryChange={setCategory} allTags={allTags} s={s} border={border} accent={accent} />
           </div>
           {/* Notiz */}
           <div>
@@ -227,7 +227,7 @@ function EditDialog({ doc, allTags, customers = [], onCancel, onSaved, s, border
           </div>
           <div>
             <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Tags</label>
-            <TagSelectWidget value={tagIds} onChange={setTagIds} allTags={allTags} s={s} border={border} accent={accent} />
+            <TagSelectWidget value={tagIds} onChange={setTagIds} onCategoryChange={setCategory} allTags={allTags} s={s} border={border} accent={accent} />
           </div>
           <div>
             <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Notiz</label>
