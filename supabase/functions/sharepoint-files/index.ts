@@ -402,14 +402,91 @@ serve(async (req) => {
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
-    // ── checkin-discard ────────────────────────────────────────────────────────
+    // ── checkin-from-draft ───────────────────────────────────────────────────────────────────────
+    if (action === 'checkin-from-draft') {
+      const doc_id      = validateUUID(body.doc_id, 'doc_id')
+      const draftItemId = validateItemId(body.draft_item_id)
+
+      const { data: doc, error: docErr } = await supabase.from('dokumente')
+        .select('id, sharepoint_item_id, checked_out_by, filename')
+        .eq('id', doc_id).single()
+      if (docErr || !doc) throw new Error('Dokument nicht gefunden')
+      if (doc.checked_out_by !== authUser.id) throw new Error('Dokument nicht von dir ausgecheckt')
+      if (!doc.sharepoint_item_id) throw new Error('Kein SharePoint-Item vorhanden')
+
+      // Draft-Inhalt herunterladen
+      const draftRes = await fetch(
+        `${GRAPH}/sites/${siteId}/drives/${driveId}/items/${draftItemId}/content`,
+        { headers: { Authorization: `Bearer ${accessToken}` }, redirect: 'follow' }
+      )
+      if (!draftRes.ok) throw new Error(`Draft nicht abrufbar: ${draftRes.status}`)
+      const draftData = new Uint8Array(await draftRes.arrayBuffer())
+      if (draftData.length === 0) throw new Error('Draft ist leer')
+      if (draftData.length > MAX_FILE_SIZE) throw new Error('Draft zu gross (max. 100 MB)')
+
+      // Draft-Inhalt in SharePoint-Hauptdokument schreiben
+      let item: any
+      if (draftData.length < 4 * 1024 * 1024) {
+        item = await graph('PUT',
+          `/sites/${siteId}/drives/${driveId}/items/${doc.sharepoint_item_id}/content`,
+          accessToken, draftData)
+      } else {
+        const sess = await graph('POST',
+          `/sites/${siteId}/drives/${driveId}/items/${doc.sharepoint_item_id}/createUploadSession`,
+          accessToken, { item: { '@microsoft.graph.conflictBehavior': 'replace' } })
+        const chunkSize = 3 * 1024 * 1024
+        let offset = 0
+        while (offset < draftData.length) {
+          const chunk = draftData.slice(offset, offset + chunkSize)
+          const end   = Math.min(offset + chunkSize - 1, draftData.length - 1)
+          const res   = await fetch(sess.uploadUrl, {
+            method: 'PUT',
+            headers: {
+              'Content-Length': chunk.length.toString(),
+              'Content-Range':  `bytes ${offset}-${end}/${draftData.length}`,
+            },
+            body: chunk,
+          })
+          if (res.ok && res.status !== 202) item = await res.json()
+          offset += chunkSize
+        }
+      }
+
+      // Draft loeschen
+      await graph('DELETE',
+        `/sites/${siteId}/drives/${driveId}/items/${draftItemId}`,
+        accessToken).catch(() => {})
+
+      // Checkout freigeben
+      await supabase.from('dokumente').update({
+        sharepoint_item_id:  item.id,
+        sharepoint_web_url:  item.webUrl,
+        file_size:           draftData.length,
+        checked_out_by:      null,
+        checked_out_by_name: null,
+        checked_out_at:      null,
+      }).eq('id', doc_id)
+
+      return new Response(JSON.stringify({ ok: true, item_id: item.id, web_url: item.webUrl }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    // ── checkin-discard ────────────────────────────────────────────────────────────────────────────────────
     if (action === 'checkin-discard') {
-      const doc_id = validateUUID(body.doc_id, 'doc_id')
+      const doc_id      = validateUUID(body.doc_id, 'doc_id')
+      const draftItemId = (body.draft_item_id || '').trim()
 
       const { data: doc } = await supabase.from('dokumente')
         .select('id, checked_out_by').eq('id', doc_id).single()
       if (!doc) throw new Error('Dokument nicht gefunden')
       if (doc.checked_out_by !== authUser.id) throw new Error('Dokument nicht von dir ausgecheckt')
+
+      // Draft loeschen falls vorhanden
+      if (draftItemId) {
+        await graph('DELETE',
+          `/sites/${siteId}/drives/${driveId}/items/${draftItemId}`,
+          accessToken).catch(() => {})
+      }
 
       await supabase.from('dokumente').update({
         checked_out_by:      null,

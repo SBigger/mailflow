@@ -1,7 +1,6 @@
 """
-Artis Agent v2.1 - Minimal
-Download -> Lokal oeffnen -> Bei Schliessen nach SharePoint hochladen.
-Kein Tray-Icon, keine Bestaetigung, keine Benachrichtigungen.
+Artis Agent v3.0 - mtime-Poll + ~$-Lockfile + Draft-Upload
+Download -> Lokal oeffnen -> Aenderungen per Draft sichern -> Beim Schliessen einchecken.
 """
 
 import sys
@@ -11,7 +10,6 @@ import urllib.parse
 import ctypes
 import winreg
 import requests
-import psutil
 
 SUPABASE_URL      = "https://uawgpxcihixqxqxxbjak.supabase.co"
 SPFILES           = f"{SUPABASE_URL}/functions/v1/sharepoint-files"
@@ -21,12 +19,21 @@ WORKSPACE         = os.path.join(
     "ArtisAgent", "Workspace"
 )
 APP_NAME          = "Artis Agent"
-APP_VERSION       = "2.1.0"
-FILE_OPEN_TIMEOUT = 8 * 60 * 60
+APP_VERSION       = "3.0.0"
+POLL_INTERVAL     = 3            # Sekunden zwischen mtime-Checks
+CLOSE_TIMEOUT     = 8 * 60 * 60  # 8 Stunden max
+OPEN_WAIT         = 5            # Sekunden warten bis App geoeffnet ist
+CLOSE_GRACE       = 3            # Sekunden nach Lockfile-Verschwinden warten
 
-MB_OK          = 0x00
-MB_ICONSTOP    = 0x10
-MB_TOPMOST     = 0x40000
+MB_OK       = 0x00
+MB_ICONSTOP = 0x10
+MB_TOPMOST  = 0x40000
+
+OFFICE_EXTS = {
+    '.docx', '.doc', '.docm',
+    '.xlsx', '.xls', '.xlsm', '.xlsb',
+    '.pptx', '.ppt', '.pptm',
+}
 
 
 def msgbox(text, style=MB_OK):
@@ -53,14 +60,30 @@ def download_file(url, dest):
             f.write(chunk)
 
 
-def call_checkin(jwt, doc_id, local_path, filename):
+def upload_draft(jwt, doc_id, local_path, filename, prev_draft_item_id=""):
     with open(local_path, "rb") as f:
         file_bytes = f.read()
+    data = {"action": "upload-draft", "doc_id": doc_id}
+    if prev_draft_item_id:
+        data["prev_draft_item_id"] = prev_draft_item_id
     r = requests.post(
         SPFILES,
         headers={"Authorization": f"Bearer {jwt}"},
         files={"file": (filename, file_bytes, "application/octet-stream")},
-        data={"action": "checkin-save", "doc_id": doc_id},
+        data=data,
+        timeout=120
+    )
+    result = r.json() if r.content else {}
+    if not r.ok:
+        raise RuntimeError(result.get("error") or f"HTTP {r.status_code}")
+    return result.get("draft_item_id", "")
+
+
+def call_checkin_from_draft(jwt, doc_id, draft_item_id):
+    r = requests.post(
+        SPFILES,
+        headers={"Authorization": f"Bearer {jwt}", "Content-Type": "application/json"},
+        json={"action": "checkin-from-draft", "doc_id": doc_id, "draft_item_id": draft_item_id},
         timeout=300
     )
     data = r.json() if r.content else {}
@@ -69,77 +92,126 @@ def call_checkin(jwt, doc_id, local_path, filename):
     return data
 
 
-def call_discard(jwt, doc_id):
+def call_discard(jwt, doc_id, draft_item_id=""):
     try:
+        payload = {"action": "checkin-discard", "doc_id": doc_id}
+        if draft_item_id:
+            payload["draft_item_id"] = draft_item_id
         requests.post(
             SPFILES,
             headers={"Authorization": f"Bearer {jwt}", "Content-Type": "application/json"},
-            json={"action": "checkin-discard", "doc_id": doc_id},
+            json=payload,
             timeout=15
         )
     except Exception:
         pass
 
 
-def is_open_by_app(path):
-    norm = os.path.normcase(os.path.abspath(path))
+def has_lockfile(path):
+    """Office ~$-Lockfile pruefen."""
+    d = os.path.dirname(path)
+    n = os.path.basename(path)
+    return os.path.exists(os.path.join(d, "~$" + n))
+
+
+def is_file_locked(path):
+    """Exklusiver Dateizugriff fehlgeschlagen = Datei noch geoeffnet."""
     try:
-        for proc in psutil.process_iter():
-            try:
-                for f in proc.open_files():
-                    if os.path.normcase(f.path) == norm:
-                        return True
-            except (psutil.AccessDenied, psutil.NoSuchProcess, OSError):
-                continue
-    except Exception:
-        pass
-    d, n = os.path.dirname(path), os.path.basename(path)
-    return os.path.exists(os.path.join(d, f"~${n}"))
-
-
-def wait_for_file_close(path):
-    opened = False
-    for _ in range(45):
-        if is_open_by_app(path):
-            opened = True
-            break
-        time.sleep(1)
-    if not opened:
+        with open(path, "r+b"):
+            return False
+    except (IOError, OSError, PermissionError):
         return True
-    deadline = time.time() + FILE_OPEN_TIMEOUT
-    while time.time() < deadline:
-        if not is_open_by_app(path):
-            return True
-        time.sleep(2)
-    return False
+
+
+def is_office_file(filename):
+    ext = os.path.splitext(filename)[1].lower()
+    return ext in OFFICE_EXTS
 
 
 def checkout_workflow(doc_id, jwt, download_url, filename):
     local_path = None
+    draft_item_id = ""
     try:
-        safe       = filename.replace("/", "_").replace(chr(92), "_")
-        ts         = int(time.time())
+        safe = filename.replace("/", "_").replace(chr(92), "_")
+        ts = int(time.time())
         local_path = os.path.join(WORKSPACE, f"{doc_id}_{ts}_{safe}")
+
+        # Alte Workspace-Dateien fuer diese doc_id bereinigen
         for old in [f for f in os.listdir(WORKSPACE) if f.startswith(f"{doc_id}_")]:
-            try: os.remove(os.path.join(WORKSPACE, old))
-            except Exception: pass
+            try:
+                os.remove(os.path.join(WORKSPACE, old))
+            except Exception:
+                pass
+
         download_file(download_url, local_path)
         os.startfile(local_path)
-        closed = wait_for_file_close(local_path)
-        if not closed:
+        time.sleep(OPEN_WAIT)
+
+        last_mtime = os.path.getmtime(local_path) if os.path.exists(local_path) else 0
+        last_draft_mtime = last_mtime
+        deadline = time.time() + CLOSE_TIMEOUT
+        is_office = is_office_file(filename)
+
+        while time.time() < deadline:
+            time.sleep(POLL_INTERVAL)
+
+            if not os.path.exists(local_path):
+                break
+
+            cur_mtime = os.path.getmtime(local_path)
+            if cur_mtime != last_mtime:
+                # Datei wurde gespeichert -> Draft hochladen
+                last_mtime = cur_mtime
+                try:
+                    draft_item_id = upload_draft(
+                        jwt, doc_id, local_path, filename, draft_item_id
+                    )
+                    last_draft_mtime = cur_mtime
+                except Exception:
+                    pass  # Draft-Upload-Fehler ist nicht fatal
+
+            # Datei geschlossen?
+            if is_office:
+                if not has_lockfile(local_path):
+                    # Lockfile weg = Word/Excel/PowerPoint hat geschlossen
+                    time.sleep(CLOSE_GRACE)
+                    # Noch einen letzten mtime-Check machen
+                    if os.path.exists(local_path):
+                        final_mtime = os.path.getmtime(local_path)
+                        if final_mtime != last_draft_mtime:
+                            try:
+                                draft_item_id = upload_draft(
+                                    jwt, doc_id, local_path, filename, draft_item_id
+                                )
+                            except Exception:
+                                pass
+                    break
+            else:
+                # Nicht-Office: Exklusiver Dateizugriff testen
+                if not is_file_locked(local_path):
+                    time.sleep(2)
+                    if not is_file_locked(local_path):
+                        break
+
+        if draft_item_id:
+            # Draft einchecken (Draft -> SharePoint Hauptdokument)
+            try:
+                call_checkin_from_draft(jwt, doc_id, draft_item_id)
+            except Exception as e:
+                msgbox("Fehler beim Einchecken:\n\n" + str(e), style=MB_ICONSTOP)
+        else:
+            # Keine Aenderungen -> Checkout verwerfen
             call_discard(jwt, doc_id)
-            return
-        try:
-            call_checkin(jwt, doc_id, local_path, filename)
-        except Exception as e:
-            msgbox("Fehler beim Einchecken:\n\n" + str(e), style=MB_ICONSTOP)
+
     except Exception as e:
         msgbox("Fehler:\n\n" + str(e), style=MB_ICONSTOP)
-        call_discard(jwt, doc_id)
+        call_discard(jwt, doc_id, draft_item_id)
     finally:
         if local_path and os.path.exists(local_path):
-            try: os.remove(local_path)
-            except Exception: pass
+            try:
+                os.remove(local_path)
+            except Exception:
+                pass
 
 
 def register_uri_scheme():
@@ -147,9 +219,12 @@ def register_uri_scheme():
     if getattr(sys, "frozen", False):
         cmd = q + sys.executable + q + " " + q + "%1" + q
     else:
-        cmd = q + sys.executable + q + " " + q + os.path.abspath(__file__) + q + " " + q + "%1" + q
+        cmd = (q + sys.executable + q + " " +
+               q + os.path.abspath(__file__) + q + " " +
+               q + "%1" + q)
     try:
-        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software" + chr(92) + "Classes" + chr(92) + "artis-open") as k:
+        key = (r"Software" + chr(92) + "Classes" + chr(92) + "artis-open")
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key) as k:
             winreg.SetValue(k, "", winreg.REG_SZ, "URL:Artis Open Protocol")
             winreg.SetValueEx(k, "URL Protocol", 0, winreg.REG_SZ, "")
             with winreg.CreateKey(k, r"shell\open\command") as ck:
@@ -166,8 +241,10 @@ def main():
         if ok:
             msgbox(f"Artis Agent v{APP_VERSION} installiert.")
         else:
-            msgbox("Fehler bei der Installation.\n\nBitte als Administrator ausfuehren.",
-                   style=MB_ICONSTOP)
+            msgbox(
+                "Fehler bei der Installation.\n\nBitte als Administrator ausfuehren.",
+                style=MB_ICONSTOP
+            )
         sys.exit(0)
 
     try:
@@ -194,8 +271,10 @@ def main():
         if action == "checkout":
             os.makedirs(WORKSPACE, exist_ok=True)
             for old_f in [f for f in os.listdir(WORKSPACE) if f.startswith(f"{doc_id}_")]:
-                try: os.remove(os.path.join(WORKSPACE, old_f))
-                except Exception: pass
+                try:
+                    os.remove(os.path.join(WORKSPACE, old_f))
+                except Exception:
+                    pass
             checkout_workflow(doc_id, jwt, download_url, filename)
         else:
             raise ValueError(f"Unbekannte Aktion: {action!r}")
