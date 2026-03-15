@@ -351,7 +351,11 @@ export default function CustomerDokumenteTab({ customerId }) {
   // ── Checkout (via Artis Agent) ───────────────────────────────────────────
   const handleCheckout = async (doc) => {
     try {
-      if (!doc.storage_path) {
+      // IMMER frische Daten aus DB holen (Agent-Checkin aktualisiert storage_path!)
+      const { data: freshDoc, error: fetchErr } = await supabase
+        .from("dokumente").select("*").eq("id", doc.id).single();
+      if (fetchErr || !freshDoc) { toast.error("Dokument nicht gefunden"); return; }
+      if (!freshDoc.storage_path) {
         toast.error("Datei nicht verfügbar (kein Storage-Pfad). Bitte erneut hochladen.");
         return;
       }
@@ -360,23 +364,26 @@ export default function CustomerDokumenteTab({ customerId }) {
       const jwt = session?.access_token || "";
 
       // Checkout-Sperre in DB setzen
-      await entities.Dokument.update(doc.id, {
+      await entities.Dokument.update(freshDoc.id, {
         checked_out_by:      authUser.id,
         checked_out_by_name: user?.full_name || authUser.email,
         checked_out_at:      new Date().toISOString(),
       });
+      // Cache mit frischen Daten aktualisieren
+      queryClient.setQueryData(["dokumente", customerId], (old) => (old || []).map(d => d.id === freshDoc.id ? { ...freshDoc, checked_out_by: authUser.id, checked_out_by_name: user?.full_name || authUser.email, checked_out_at: new Date().toISOString() } : d));
+      queryClient.setQueryData(["dokumente-all"], (old) => (old || []).map(d => d.id === freshDoc.id ? { ...freshDoc, checked_out_by: authUser.id } : d));
       queryClient.invalidateQueries({ queryKey: ["dokumente-all"] });
       queryClient.invalidateQueries({ queryKey: ["dokumente", customerId] });
 
-      // Signed URL (4 Stunden)
-      const { data: urlData } = await supabase.storage.from(BUCKET).createSignedUrl(doc.storage_path, 4 * 3600);
+      // Signed URL (4 Stunden) — mit FRISCHEM storage_path
+      const { data: urlData } = await supabase.storage.from(BUCKET).createSignedUrl(freshDoc.storage_path, 4 * 3600);
       const download_url = urlData?.signedUrl || "";
       if (!download_url) { toast.error("Download-URL nicht verfügbar"); return; }
 
       // Kurzlebigen Agent-Token erstellen
       const { data: tokenRow, error: tokenErr } = await supabase
         .from("agent_tokens")
-        .insert({ doc_id: doc.id, item_id: '', filename: doc.filename, jwt, user_id: authUser.id, download_url })
+        .insert({ doc_id: freshDoc.id, item_id: '', filename: freshDoc.filename, jwt, user_id: authUser.id, download_url })
         .select("id").single();
       if (tokenErr || !tokenRow) { toast.error("Fehler: " + (tokenErr?.message || "Token-Fehler")); return; }
 
@@ -384,6 +391,8 @@ export default function CustomerDokumenteTab({ customerId }) {
       const _a = document.createElement("a");
       _a.href = uri;
       document.body.appendChild(_a); _a.click(); document.body.removeChild(_a);
+      // Signed URL Cache löschen damit beim nächsten Mal frisch generiert wird
+      setSignedUrls(prev => { const n = { ...prev }; delete n[freshDoc.id]; return n; });
       toast.success("Artis Agent öffnet die Datei – wird beim Schließen automatisch eingecheckt.");
     } catch (err) { toast.error("Fehler: " + err.message); }
   };
