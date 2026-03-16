@@ -41,7 +41,7 @@ function generatePrintHtml(recipients, letterDate, subject, bodyTemplate, logoUr
       "<div class=\"page\">" +
       "<div class=\"letterhead\">" +
       // Absender-Zeile: Name · Strasse · Stadt · E-Mail (kein Telefon)
-      "<div class=\"sender-line\">" + SENDER_NAME + " \u00b7 " + SENDER_STREET + " \u00b7 " + SENDER_CITY + " \u00b7 " + SENDER_EMAIL + "</div>" +
+      "<div class=\"sender-line\">" + SENDER_NAME + " \u00b7 " + SENDER_STREET + " \u00b7 " + SENDER_CITY + "</div>" +
       (logoUrl ? "<img class=\"logo\" src=\"" + logoUrl + "\" alt=\"Logo\" />" : "<span class=\"logo-text\">" + SENDER_NAME + "</span>") +
       "</div>" +
       "<div class=\"hline\"></div>" +
@@ -71,7 +71,7 @@ function generatePrintHtml(recipients, letterDate, subject, bodyTemplate, logoUr
     ".logo-text { font-size: 13pt; font-weight: bold; color: #2d5a2d; flex-shrink: 0; margin-left: 8mm; }" +
     ".hline { border-top: 0.5pt solid #999; margin-top: 2mm; margin-bottom: 14mm; }" +
     ".recipient { margin-bottom: 14mm; line-height: 1.6; font-size: 11pt; }" +
-    ".date { text-align: right; margin-bottom: 10mm; font-size: 11pt; }" +
+    ".date { text-align: left; margin-top: 14mm; margin-bottom: 14mm; font-size: 11pt; }" +
     ".subject { font-weight: bold; margin-bottom: 8mm; font-size: 11pt; }" +
     ".body { line-height: 1.7; font-size: 11pt; }" +
     ".body p { margin: 0 0 3px 0; }" +
@@ -193,11 +193,17 @@ export default function FristenBriefeDialog({ fristen, customers, onClose }) {
   const handlePrint = () => {
     if (recipients.length === 0) return;
     const html = generatePrintHtml(recipients, letterDate, subject, bodyText, logoUrl);
-    const win = window.open("", "_blank");
-    if (!win) { alert("Popup blockiert. Bitte Popups f\u00fcr diese Seite erlauben."); return; }
-    win.document.write(html);
-    win.document.close();
-    setTimeout(() => { win.focus(); win.print(); }, 700);
+    const iframe = document.createElement("iframe");
+    iframe.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;";
+    document.body.appendChild(iframe);
+    iframe.contentDocument.open();
+    iframe.contentDocument.write(html);
+    iframe.contentDocument.close();
+    setTimeout(() => {
+      iframe.contentWindow.focus();
+      iframe.contentWindow.print();
+      setTimeout(() => document.body.removeChild(iframe), 1000);
+    }, 700);
   };
 
   const inp = {
@@ -344,7 +350,7 @@ export default function FristenBriefeDialog({ fristen, customers, onClose }) {
                   {/* Briefkopf: Absender ohne Telefon */}
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", borderBottom: "0.5px solid #bbb", paddingBottom: 4, marginBottom: 12 }}>
                     <span style={{ fontSize: 8, color: "#666" }}>
-                      {SENDER_NAME} · {SENDER_STREET} · {SENDER_CITY} · {SENDER_EMAIL}
+                      {SENDER_NAME} · {SENDER_STREET} · {SENDER_CITY}
                     </span>
                     <span style={{ fontSize: 11, fontWeight: "bold", color: "#2d5a2d", marginLeft: 12 }}>{SENDER_NAME}</span>
                   </div>
@@ -354,8 +360,8 @@ export default function FristenBriefeDialog({ fristen, customers, onClose }) {
                     {previewR.strasse && <div>{previewR.strasse}</div>}
                     <div>{[previewR.plz, previewR.ort].filter(Boolean).join(" ")}</div>
                   </div>
-                  {/* Ort + Datum: rechtsb\u00fcndig */}
-                  <div style={{ textAlign: "right", marginBottom: 10, fontSize: 10 }}>
+                  {/* Ort + Datum: linksbündig, mehr Abstand */}
+                  <div style={{ textAlign: "left", marginTop: 14, marginBottom: 14, fontSize: 10 }}>
                     {LETTER_CITY}, {letterDate}
                   </div>
                   <div style={{ fontWeight: "bold", marginBottom: 8, fontSize: 10 }}>{resolve(subject)}</div>
