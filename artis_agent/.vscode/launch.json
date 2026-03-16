@@ -1,0 +1,15 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Artis Agent mit URI",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "args": [
+                "artis-open://checkout?doc_id=644822ad-2a22-4a84-b219-774e523ef756&jwt=eyJhbGciOiJFUzI1NiIsImtpZCI6IjE3NDM3YzJiLTRkODgtNDI1MS1iNWJjLWZkMjI5MWRkMDE3ZSIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL3Vhd2dweGNpaGl4cXhxeHhiamFrLnN1cGFiYXNlLmNvL2F1dGgvdjEiLCJzdWIiOiJlYmFjMzNmOC03ZmM3LTQwY2EtOTdjYS0yMTEyNzg4MjY1ZTciLCJhdWQiOiJhdXRoZW50aWNhdGVkIiwiZXhwIjoxNzczNjA5NzcyLCJpYXQiOjE3NzM2MDYxNzIsImVtYWlsIjoic2FzY2hhLmJpZ2dlckBhcnRpcy1nbWJoLmNoIiwicGhvbmUiOiIiLCJhcHBfbWV0YWRhdGEiOnsicHJvdmlkZXIiOiJlbWFpbCIsInByb3ZpZGVycyI6WyJlbWFpbCJdfSwidXNlcl9tZXRhZGF0YSI6eyJlbWFpbF92ZXJpZmllZCI6dHJ1ZX0sInJvbGUiOiJhdXRoZW50aWNhdGVkIiwiYWFsIjoiYWFsMSIsImFtciI6W3sibWV0aG9kIjoicGFzc3dvcmQiLCJ0aW1lc3RhbXAiOjE3NzM2MDYxNzF9XSwic2Vzc2lvbl9pZCI6IjIzNDNjMTQzLTY4OTYtNDdkMC04ZmMyLTg4ZTM5MDE0ZDY1MiIsImlzX2Fub255bW91cyI6ZmFsc2V9.69_odA7oBNU51I872tWkbv4jNmm6acrb3uYeJRQcG8IsQCBPpRtkktKV_t4zauMaV84sTCyXtHgDFUQ70c_Kkg&item_id=https%3A%2F%2Fuawgpxcihixqxqxxbjak.supabase.co%2Fstorage%2Fv1%2Fobject%2Fsign%2Fdokumente%2Fdokumente%2F644822ad-2a22-4a84-b219-774e523ef756%2F1773608602243-Rosenhorn.jpg%3Ftoken%3DeyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV81MWY3ZDg1YS1jMGFkLTQ4NGEtYWRmZC02NTkxYjIzMTI0OTEiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJkb2t1bWVudGUvZG9rdW1lbnRlLzY0NDgyMmFkLTJhMjItNGE4NC1iMjE5LTc3NGU1MjNlZjc1Ni8xNzczNjA4NjAyMjQzLVJvc2VuaG9ybi5qcGciLCJpYXQiOjE3NzM2MDg4MjMsImV4cCI6MTc3MzYxMjQyM30.clRkK0klgLaD-fvY6tOCgP73dLyzbrGPA2XV7pPS0ZI&filename=Rosenhorn.jpg"
+            ]
+        }
+    ]
+}

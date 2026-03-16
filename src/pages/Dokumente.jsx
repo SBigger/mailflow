@@ -416,6 +416,7 @@ export default function Dokumente() {
     try {
       await supabase.storage.from(BUCKET).remove(doc.storage_path);
       await entities.Dokument.delete(doc.id);
+      queryClient.invalidateQueries(["dokumente-all"]);
       toast.success("Dokument gel\u00f6scht", {closeButton: true});
     } catch (err) { toast.error("Fehler: " + err.message); }
   };
@@ -432,7 +433,7 @@ export default function Dokumente() {
         checked_out_by_name: user?.full_name || authUser.email,
         checked_out_at:      new Date().toISOString(),
       });
-      queryClient.invalidateQueries({ queryKey: ["dokumente"] });
+      queryClient.invalidateQueries({ queryKey: ["dokumente-all"] });
 
         // Alle SharePoint-Dateien: via Artis Agent öffnen (jede Endung)
       const { data: urlData } = await supabase.storage.from(BUCKET).createSignedUrl(doc.storage_path, 3600);
@@ -504,7 +505,6 @@ export default function Dokumente() {
       }
     } catch (err) { toast.error('Fehler: ' + err.message); }
     queryClient.invalidateQueries({ queryKey: ["dokumente-all"] });
-    queryClient.invalidateQueries({ queryKey: ["dokumente"] });
   };
 
 
@@ -799,13 +799,13 @@ export default function Dokumente() {
       {showUpload && (
         <UploadDialog customers={customers} preCustomer={selCustomer} allTags={allTags}
           onCancel={() => setShowUpload(false)}
-          onUpload={() => { queryClient.invalidateQueries({ queryKey: ["dokumente-all"] }); queryClient.invalidateQueries({ queryKey: ["dokumente"] }); setShowUpload(false); }}
+          onUpload={() => { queryClient.invalidateQueries({ queryKey: ["dokumente-all"] }); setShowUpload(false); }}
           s={s} border={border} accent={accent} />
       )}
       {editDoc && (
         <EditDialog doc={editDoc} allTags={allTags} customers={customers}
           onCancel={() => setEditDoc(null)}
-          onSave={() => { queryClient.invalidateQueries({ queryKey: ["dokumente-all"] }); queryClient.invalidateQueries({ queryKey: ["dokumente"] }); setEditDoc(null); }}
+          onSave={() => { queryClient.invalidateQueries({ queryKey: ["dokumente-all"] });  setEditDoc(null); }}
           s={s} border={border} accent={accent} />
       )}
       {/* CheckinDialog ersetzt durch direktes handleCheckin */}
