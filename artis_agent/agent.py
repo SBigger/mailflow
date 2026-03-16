@@ -17,6 +17,7 @@ Aufruf durch Browser:
 """
 
 import sys
+print(sys.executable)
 import os
 import time
 import threading
@@ -50,7 +51,7 @@ WORKSPACE    = os.path.join(
     'ArtisAgent', 'Workspace'
 )
 APP_NAME     = "Artis Agent"
-APP_VERSION  = "1.0.0"
+APP_VERSION  = "2.0.0"
 DRAFT_INTERVAL = 60   # Sekunden zwischen Draft-Uploads
 FILE_OPEN_TIMEOUT = 8 * 60 * 60  # 8 Stunden max Bearbeitung
 
@@ -189,6 +190,7 @@ if HAS_WATCHDOG:
                 now = time.time()
                 if now - self._last > DRAFT_INTERVAL:
                     self._last = now
+                    print("Datei wurde gespeichert")
                     threading.Thread(target=self.upload_fn, daemon=True).start()
 
         def on_modified(self, e):
@@ -333,28 +335,13 @@ def checkout_workflow(doc_id: str, jwt: str, item_id: str, filename: str):
         current_mtime  = os.path.getmtime(local_path)
         was_modified   = abs(current_mtime - original_mtime) > 0.5
 
-        if was_modified:
-            msg    = f"'{filename}'\n\nwurde geändert.\n\nEinchecken und neue Version speichern?"
-            answer = msgbox(msg, style=MB_YESNOCANCEL | MB_ICONQUESTION)
-        else:
-            msg    = f"'{filename}'\n\nwurde geschlossen (keine Änderungen erkannt).\n\nCheckout aufheben?"
-            answer = msgbox(msg, style=MB_YESNO | MB_ICONQUESTION)
-
         if done_event.is_set():
             return
 
         done_event.set()
 
-        if answer == IDYES and was_modified:
+        if was_modified:
             do_checkin(doc_id, jwt, local_path, filename, draft_item_id[0])
-        elif answer == IDYES:
-            # Keine Änderungen – nur Sperre aufheben
-            _safe_discard(doc_id, jwt, draft_item_id[0])
-            msgbox(f"'{filename}'\n\nCheckout aufgehoben.", style=MB_OK | MB_ICONINFORMATION)
-        elif answer == IDNO:
-            # Änderungen verwerfen
-            do_discard(doc_id, jwt, filename, draft_item_id[0])
-        # IDCANCEL → nichts tun, Datei bleibt ausgecheckt
 
     except Exception as e:
         log(f"FEHLER: {e}")
@@ -395,7 +382,7 @@ def do_checkin(doc_id: str, jwt: str, local_path: str,
                 sp_call(jwt, {"action": "delete", "item_id": draft_item_id}, timeout=15)
             except Exception:
                 pass
-        msgbox(f"'{filename}'\n\nErfolgreich eingecheckt ✓", style=MB_OK | MB_ICONINFORMATION)
+        #msgbox(f"'{filename}'\n\nErfolgreich eingecheckt ✓", style=MB_OK | MB_ICONINFORMATION)
     except Exception as e:
         msgbox(
             f"Fehler beim Einchecken von '{filename}':\n\n{e}\n\n"
