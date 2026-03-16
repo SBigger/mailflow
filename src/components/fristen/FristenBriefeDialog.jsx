@@ -151,6 +151,7 @@ export default function FristenBriefeDialog({ fristen, customers, onClose }) {
       if (seen.has(f.customer_id)) return;
       seen.add(f.customer_id);
       const cust = (customers || []).find(c => c.id === f.customer_id) || {};
+      if (cust.aktiv === false) return;
       result.push({
         customer_id:  f.customer_id,
         company_name: cust.company_name || "(unbekannt)",

@@ -297,7 +297,11 @@ export default function Fristen() {
   }, [fristen]);
 
   const filtered = useMemo(() => {
-    let list = fristen;
+    // Inaktive Kunden komplett ausschliessen
+    let list = fristen.filter(f => {
+      const cust = customers.find(c => c.id === f.customer_id);
+      return !cust || cust.aktiv !== false;
+    });
 
     // Tab filter
     if (activeTab === "offen")    list = list.filter(f => f.status === "offen");

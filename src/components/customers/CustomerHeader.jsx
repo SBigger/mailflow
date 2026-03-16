@@ -26,6 +26,7 @@ export default function CustomerHeader({ customer, staff, onUpdate }) {
   const isArtis = theme === 'artis';
 
   const isPrivatperson   = customer.person_type === 'privatperson';
+  const isInaktiv        = customer.aktiv === false;
   // Shared fields
   const [strasse,  setStrasse]  = useState(customer.strasse || "");
   const [plz,      setPlz]      = useState(customer.plz || "");
@@ -95,33 +96,50 @@ export default function CustomerHeader({ customer, staff, onUpdate }) {
   return (
     <div className="p-6 space-y-4 border-b" style={{ borderColor: isLight ? '#d4d4e8' : 'rgba(63,63,70,0.6)' }}>
 
-      {/* ── Title: Firmenname OR Nachname + Vorname ── */}
-      {isPrivatperson ? (
-        <div className="flex gap-2">
-          <Input
-            value={nachname}
-            onChange={e => setNachname(e.target.value)}
-            onBlur={handleNameBlur}
-            className={`text-2xl font-bold focus-visible:ring-violet-500 h-auto py-2 flex-1 ${inputClass}`}
-            placeholder="Nachname..."
-          />
-          <Input
-            value={vorname}
-            onChange={e => setVorname(e.target.value)}
-            onBlur={handleNameBlur}
-            className={`text-2xl font-bold focus-visible:ring-violet-500 h-auto py-2 flex-1 ${inputClass}`}
-            placeholder="Vorname..."
-          />
+      {/* ── Title row: Name + Inaktiv toggle oben rechts ── */}
+      <div className="flex items-start gap-3">
+        <div className="flex-1 min-w-0">
+          {isPrivatperson ? (
+            <div className="flex gap-2">
+              <Input
+                value={nachname}
+                onChange={e => setNachname(e.target.value)}
+                onBlur={handleNameBlur}
+                className={`text-2xl font-bold focus-visible:ring-violet-500 h-auto py-2 flex-1 ${inputClass}`}
+                placeholder="Nachname..."
+              />
+              <Input
+                value={vorname}
+                onChange={e => setVorname(e.target.value)}
+                onBlur={handleNameBlur}
+                className={`text-2xl font-bold focus-visible:ring-violet-500 h-auto py-2 flex-1 ${inputClass}`}
+                placeholder="Vorname..."
+              />
+            </div>
+          ) : (
+            <Input
+              value={companyName}
+              onChange={e => setCompanyName(e.target.value)}
+              onBlur={() => { if (companyName !== customer.company_name) onUpdate({ company_name: companyName }); }}
+              className={`text-2xl font-bold focus-visible:ring-violet-500 h-auto py-2 ${inputClass}`}
+              placeholder="Firmenname..."
+            />
+          )}
         </div>
-      ) : (
-        <Input
-          value={companyName}
-          onChange={e => setCompanyName(e.target.value)}
-          onBlur={() => { if (companyName !== customer.company_name) onUpdate({ company_name: companyName }); }}
-          className={`text-2xl font-bold focus-visible:ring-violet-500 h-auto py-2 ${inputClass}`}
-          placeholder="Firmenname..."
-        />
-      )}
+
+        {/* Inaktiv-Toggle oben rechts */}
+        <button
+          onClick={() => onUpdate({ aktiv: isInaktiv ? true : false })}
+          className={`flex-shrink-0 mt-2 px-2.5 py-1 rounded-md text-xs font-semibold border transition-colors ${
+            isInaktiv
+              ? 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100'
+              : 'bg-gray-50 text-gray-400 border-gray-200 hover:bg-gray-100'
+          }`}
+          title={isInaktiv ? 'Klicken um zu aktivieren' : 'Klicken um zu deaktivieren'}
+        >
+          {isInaktiv ? 'INAKTIV' : 'Aktiv'}
+        </button>
+      </div>
 
       {/* ── Privatperson extra fields: AHV + Geburtsdatum ── */}
       {isPrivatperson && (
