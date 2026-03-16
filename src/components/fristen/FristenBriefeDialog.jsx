@@ -151,6 +151,7 @@ export default function FristenBriefeDialog({ fristen, customers, onClose }) {
       if (seen.has(f.customer_id)) return;
       seen.add(f.customer_id);
       const cust = (customers || []).find(c => c.id === f.customer_id) || {};
+      if (cust.aktiv === false) return;
       result.push({
         customer_id:  f.customer_id,
         company_name: cust.company_name || "(unbekannt)",
@@ -238,7 +239,7 @@ export default function FristenBriefeDialog({ fristen, customers, onClose }) {
             <div style={{ marginBottom: 18 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                 <span style={{ color: s.textMain, fontWeight: 600, fontSize: 13 }}>
-                  Empf\u00e4nger ({recipients.length} von {candidates.length})
+                  Empfänger ({recipients.length} von {candidates.length})
                 </span>
                 <button onClick={toggleAll} style={{ background: "none", border: "none", cursor: "pointer", color: accent, fontSize: 12, textDecoration: "underline" }}>
                   {allSelected ? "Alle abw\u00e4hlen" : "Alle w\u00e4hlen"}
@@ -283,7 +284,7 @@ export default function FristenBriefeDialog({ fristen, customers, onClose }) {
                   style={{ ...inp, width: "auto", cursor: "pointer", fontSize: 12, color: "#ef4444" }}
                   title="Vorlage l\u00f6schen"
                 >
-                  <option value="">L\u00f6schen...</option>
+                  <option value="">Löschen...</option>
                   {vorlagen.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
                 </select>
               )}
@@ -337,13 +338,13 @@ export default function FristenBriefeDialog({ fristen, customers, onClose }) {
             {showPreview && previewR && (
               <div style={{ marginTop: 18, border: "1px solid " + border, borderRadius: 8, padding: 18, background: "#fff", color: "#222", maxHeight: 380, overflowY: "auto" }}>
                 <div style={{ fontSize: 11, color: "#888", marginBottom: 10, fontWeight: 600 }}>
-                  Vorschau \u2013 {previewR.company_name}
+                  {"Vorschau – "}{previewR.company_name}
                 </div>
                 <div style={{ fontFamily: "Helvetica, Arial, sans-serif" }}>
                   {/* Briefkopf: Absender ohne Telefon */}
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", borderBottom: "0.5px solid #bbb", paddingBottom: 4, marginBottom: 12 }}>
                     <span style={{ fontSize: 8, color: "#666" }}>
-                      {SENDER_NAME} \u00b7 {SENDER_STREET} \u00b7 {SENDER_CITY} \u00b7 {SENDER_EMAIL}
+                      {SENDER_NAME} · {SENDER_STREET} · {SENDER_CITY} · {SENDER_EMAIL}
                     </span>
                     <span style={{ fontSize: 11, fontWeight: "bold", color: "#2d5a2d", marginLeft: 12 }}>{SENDER_NAME}</span>
                   </div>

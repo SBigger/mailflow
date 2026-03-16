@@ -82,7 +82,7 @@ export default function FristenEinreichenDialog({
         return kantone.includes(kanton);
       })
       .map(f => ({ frist: f, customer: customers.find(c => c.id === f.customer_id) }))
-      .filter(({ customer }) => Boolean(customer))
+      .filter(({ customer }) => Boolean(customer) && customer.aktiv !== false)
       .sort((a, b) => (a.customer.company_name || "").localeCompare(b.customer.company_name || "", "de"));
   }, [fristen, kanton, jahr, customers]);
 
