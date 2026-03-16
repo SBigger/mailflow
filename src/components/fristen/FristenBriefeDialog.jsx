@@ -193,11 +193,17 @@ export default function FristenBriefeDialog({ fristen, customers, onClose }) {
   const handlePrint = () => {
     if (recipients.length === 0) return;
     const html = generatePrintHtml(recipients, letterDate, subject, bodyText, logoUrl);
-    const win = window.open("", "_blank");
-    if (!win) { alert("Popup blockiert. Bitte Popups f\u00fcr diese Seite erlauben."); return; }
-    win.document.write(html);
-    win.document.close();
-    setTimeout(() => { win.focus(); win.print(); }, 700);
+    const iframe = document.createElement("iframe");
+    iframe.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;";
+    document.body.appendChild(iframe);
+    iframe.contentDocument.open();
+    iframe.contentDocument.write(html);
+    iframe.contentDocument.close();
+    setTimeout(() => {
+      iframe.contentWindow.focus();
+      iframe.contentWindow.print();
+      setTimeout(() => document.body.removeChild(iframe), 1000);
+    }, 700);
   };
 
   const inp = {
