@@ -50,7 +50,7 @@ export default function TaskBoard() {
   const [editingColumnColor, setEditingColumnColor] = useState(null);
   const [sortByPriority, setSortByPriority] = useState(false);
    const [filterPriorityIds, setFilterPriorityIds] = useState([]);
-   const [userFilter, setUserFilter] = useState('me');
+   const [userFilter, setUserFilter] = useState('all');
    const [verantwortlichFilter, setVerantwortlichFilter] = useState('all');
    const [searchQuery, setSearchQuery] = useState("");
   const [globalListView, setGlobalListView] = useState(false);
