@@ -10,12 +10,18 @@ import {
   SelectLabel,
 } from "@/components/ui/select";
 
-export default function UserFilterSelect({ value, onChange, users = [] }) {
+export default function UserFilterSelect({
+  value, onChange, users = [],
+  myLabel = 'Meine Tasks',
+  allLabel = 'Alle Tasks',
+  groupLabel = 'Nach Benutzer',
+  showMe = true,
+}) {
   const getDisplayLabel = () => {
-    if (value === 'me') return 'Meine Tasks';
-    if (value === 'all') return 'Alle Tasks';
+    if (value === 'me') return myLabel;
+    if (value === 'all') return allLabel;
     const user = users.find(u => u.email === value);
-    return user ? user.full_name : value;
+    return user ? (user.full_name || user.email) : value;
   };
 
   return (
@@ -29,17 +35,19 @@ export default function UserFilterSelect({ value, onChange, users = [] }) {
       <SelectContent className="bg-zinc-900 border-zinc-800">
         <SelectGroup>
           <SelectLabel className="text-zinc-400 text-xs">Ansicht</SelectLabel>
-          <SelectItem value="me" className="text-zinc-200">
-            Meine Tasks
-          </SelectItem>
+          {showMe && (
+            <SelectItem value="me" className="text-zinc-200">
+              {myLabel}
+            </SelectItem>
+          )}
           <SelectItem value="all" className="text-zinc-200">
-            Alle Tasks
+            {allLabel}
           </SelectItem>
         </SelectGroup>
-        
+
         {users.length > 0 && (
           <SelectGroup>
-            <SelectLabel className="text-zinc-400 text-xs">Nach Benutzer</SelectLabel>
+            <SelectLabel className="text-zinc-400 text-xs">{groupLabel}</SelectLabel>
             {users.map((user) => (
               <SelectItem key={user.id} value={user.email} className="text-zinc-200">
                 {user.full_name || user.email}

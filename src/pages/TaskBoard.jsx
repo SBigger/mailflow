@@ -51,6 +51,7 @@ export default function TaskBoard() {
   const [sortByPriority, setSortByPriority] = useState(false);
    const [filterPriorityIds, setFilterPriorityIds] = useState([]);
    const [userFilter, setUserFilter] = useState('me');
+   const [verantwortlichFilter, setVerantwortlichFilter] = useState('all');
    const [searchQuery, setSearchQuery] = useState("");
   const [globalListView, setGlobalListView] = useState(false);
   const [mobileColumnIndex, setMobileColumnIndex] = useState(0);
@@ -78,6 +79,11 @@ export default function TaskBoard() {
     },
     enabled: !!currentUser,
   });
+
+  // Alle User inkl. aktuellem Benutzer (für Verantwortlich-Filter)
+  const allUsersWithMe = currentUser
+    ? [{ id: currentUser.id, email: currentUser.email, full_name: currentUser.full_name || currentUser.email }, ...allUsers]
+    : allUsers;
 
   const { data: columns = [], isLoading: colLoading } = useQuery({
     queryKey: ["taskColumns"],
@@ -127,6 +133,13 @@ export default function TaskBoard() {
     }
     // Wenn userFilter === 'all', keine weitere Filterung - alle Tasks anzeigen
 
+    // Filter by verantwortlich
+    if (verantwortlichFilter === 'me') {
+      result = result.filter(t => t.verantwortlich === currentUser?.email);
+    } else if (verantwortlichFilter !== 'all') {
+      result = result.filter(t => t.verantwortlich === verantwortlichFilter);
+    }
+
     // Filter by priority
     if (filterPriorityIds.length > 0) {
       result = result.filter(t => filterPriorityIds.includes(t.priority_id));
@@ -156,7 +169,7 @@ export default function TaskBoard() {
     }
 
     return result;
-  }, [tasks, filterPriorityIds, sortByPriority, priorities, currentUser, userFilter, searchQuery, allUsers]);
+  }, [tasks, filterPriorityIds, sortByPriority, priorities, currentUser, userFilter, verantwortlichFilter, searchQuery, allUsers]);
 
   const createTaskMutation = useMutation({
     mutationFn: (data) => entities.Task.create(data),
@@ -310,6 +323,15 @@ export default function TaskBoard() {
                 </div>
                 <div className="flex gap-2">
                   <UserFilterSelect value={userFilter} onChange={setUserFilter} users={allUsers} />
+                  <UserFilterSelect
+                    value={verantwortlichFilter}
+                    onChange={setVerantwortlichFilter}
+                    users={allUsersWithMe}
+                    myLabel="Ich verantwortlich"
+                    allLabel="Alle Verantwortlichen"
+                    groupLabel="Verantwortlich"
+                    showMe={true}
+                  />
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button variant="outline" size="sm" className="gap-2 h-9 flex-1"
@@ -357,6 +379,15 @@ export default function TaskBoard() {
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <UserFilterSelect value={userFilter} onChange={setUserFilter} users={allUsers} />
+              <UserFilterSelect
+                value={verantwortlichFilter}
+                onChange={setVerantwortlichFilter}
+                users={allUsersWithMe}
+                myLabel="Ich verantwortlich"
+                allLabel="Alle Verantwortlichen"
+                groupLabel="Verantwortlich"
+                showMe={true}
+              />
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4" style={{ color: mutedText }} />
                 <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Tasks suchen..."

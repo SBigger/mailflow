@@ -11,8 +11,7 @@ export default function VoiceTaskDialog({ open, onClose, onAdd, columns, priorit
   const [phase, setPhase] = useState("idle"); // idle | recording | analyzing | preview
   const [transcript, setTranscript] = useState("");
   const [taskData, setTaskData] = useState(null);
-  const mediaRecorderRef = useRef(null);
-  const audioChunksRef = useRef([]);
+  const recognitionRef = useRef(null);
 
   const { data: users = [] } = useQuery({
     queryKey: ["users"],
@@ -27,137 +26,104 @@ export default function VoiceTaskDialog({ open, onClose, onAdd, columns, priorit
     queryFn: () => entities.Customer.list(),
   });
 
-  const highPriority = priorities?.find(p => p.level === 1) || priorities?.[0];
+  const highPriority   = priorities?.find(p => p.level === 1) || priorities?.[0];
   const internalColumn = columns?.find(c => c.name?.toLowerCase().includes("intern")) || columns?.[0];
 
-  const startRecording = async () => {
-    let stream;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch (e) {
-      toast.error("Mikrofonzugriff verweigert: " + e.message);
+  // Alle User inkl. aktueller Benutzer
+  const allUsers = currentUser
+    ? [{ id: currentUser.id, email: currentUser.email, full_name: currentUser.full_name || currentUser.email }, ...users.filter(u => u.email !== currentUser.email)]
+    : users;
+
+  const startRecording = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      toast.error("Spracherkennung wird von diesem Browser nicht unterstützt. Bitte Chrome oder Edge verwenden.");
       return;
     }
 
-    audioChunksRef.current = [];
-    const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-    mediaRecorderRef.current = mediaRecorder;
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'de-CH'; // Schweizerdeutsch/Hochdeutsch
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    recognition.continuous = false;
 
-    mediaRecorder.ondataavailable = (e) => {
-      if (e.data.size > 0) audioChunksRef.current.push(e.data);
+    recognition.onstart = () => setPhase("recording");
+
+    recognition.onresult = async (event) => {
+      const text = event.results[0][0].transcript;
+      setTranscript(text);
+      setPhase("analyzing");
+      await analyzeWithAI(text);
     };
 
-    mediaRecorder.onstop = async () => {
-      stream.getTracks().forEach(t => t.stop());
-      const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-      await transcribeAndAnalyze(audioBlob);
+    recognition.onerror = (event) => {
+      console.error("SpeechRecognition error:", event.error);
+      if (event.error === 'no-speech') {
+        toast.error("Kein Sprache erkannt. Bitte nochmals versuchen.");
+      } else if (event.error === 'not-allowed') {
+        toast.error("Mikrofonzugriff verweigert. Bitte in den Browser-Einstellungen erlauben.");
+      } else {
+        toast.error("Spracherkennungsfehler: " + event.error);
+      }
+      setPhase("idle");
     };
 
-    mediaRecorder.start();
-    setPhase("recording");
+    recognition.onend = () => {
+      // Falls phase noch "recording" (kein Ergebnis), zurück zu idle
+      setPhase(prev => prev === "recording" ? "idle" : prev);
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
   };
 
   const stopRecording = () => {
-    mediaRecorderRef.current?.stop();
-    setPhase("analyzing");
-  };
-
-  const transcribeAndAnalyze = async (audioBlob) => {
-    setPhase("analyzing");
-
-    let transcriptText = "";
-    // Upload audio to Base44 storage, then send URL to Whisper backend
-    const uploadRes = await entities.integrations.Core.UploadFile({ file: new File([audioBlob], 'audio.webm', { type: 'audio/webm' }) });
-    const fileUrl = uploadRes.file_url;
-
-    const transcribeRes = await functions.invoke('whisperTranscribe', { audio_url: fileUrl });
-    transcriptText = transcribeRes.data?.transcript || "";
-
-    if (!transcriptText) {
-      toast.error("Kein Text erkannt. Bitte nochmals versuchen.");
-      setPhase("idle");
-      return;
-    }
-
-    setTranscript(transcriptText);
-    await analyzeWithAI(transcriptText);
+    recognitionRef.current?.stop();
   };
 
   const analyzeWithAI = async (text) => {
-    const columnList = columns?.map(c => `${c.name} (id: ${c.id})`).join(", ") || "";
-    const priorityList = priorities?.map(p => `${p.name} (id: ${p.id}, level: ${p.level})`).join(", ") || "";
-    const userList = users.map(u => `${u.full_name || u.email} → ${u.email}`).join("\n") || "";
-    const customerList = customers?.map(c => c.company_name).join(", ") || "";
+    try {
+      const result = await functions.invoke('parse-voice-task', {
+        transcript: text,
+        columns:    columns  || [],
+        priorities: priorities || [],
+        users:      allUsers,
+        customers:  customers || [],
+      });
 
-    const result = await entities.integrations.Core.InvokeLLM({
-      prompt: `Du erstellst einen strukturierten Task aus einem frei gesprochenen Text. Der Benutzer spricht natürlich, ohne Schlüsselwörter.
+      const data = result.data || {};
 
-Gesprochener Text: "${text}"
+      const col  = data.column_id   ? (columns?.find(c => c.id === data.column_id) || internalColumn)  : internalColumn;
+      const prio = data.priority_id ? (priorities?.find(p => p.id === data.priority_id) || highPriority) : highPriority;
 
-Heute: ${new Date().toISOString().split("T")[0]}
+      // assignee: aus KI oder aktueller Benutzer
+      const assigneeEmail      = data.assignee_email      || currentUser?.email || "";
+      // verantwortlich: aus KI oder aktueller Benutzer
+      const verantwortlichEmail = data.verantwortlich_email || currentUser?.email || "";
 
-Verfügbare Spalten (Name + ID): ${columnList}
-Verfügbare Prioritäten (Name + ID): ${priorityList}
-Bekannte Mitarbeiter (Name → E-Mail):
-${userList}
-Bekannte Kunden: ${customerList}
+      setTaskData({
+        title:          data.title       || "",
+        description:    (data.description && data.description !== "null") ? data.description : "",
+        column_id:      col?.id          || "",
+        priority_id:    prio?.id         || "",
+        due_date:       data.due_date ? data.due_date.split("T")[0] : "",
+        assignee:       assigneeEmail,
+        verantwortlich: verantwortlichEmail,
+      });
 
-Deine Aufgabe:
-1. TITEL: Pflichtformat: "[Kundenname] – [Tätigkeit in 1-2 Wörtern]"
-   - Erkenne den Kundennamen aus dem Text (auch bei leicht abweichender Aussprache, z.B. "Banderet" → "Banderet AG").
-   - Falls kein Kunde erkennbar ist, schreibe nur die Tätigkeit ohne Prefix.
-   - Beispiele: "Müller AG – Rechnung prüfen", "Banderet AG – Jahresabschluss", "Kanton Graubünden – Steuererklärung"
-2. BESCHREIBUNG: Falls der Text mehr Details enthält als der Titel abdeckt, schreibe sie als Beschreibung. Wenn der Text mehrere Unteraufgaben oder Punkte enthält, formatiere sie als Liste mit "- " am Anfang jeder Zeile (z.B. "- GV Protokoll\n- Bilanz prüfen"). Sonst null.
-3. SPALTE: Wähle die passende Spalten-ID aus der Liste. Falls unklar, gib null zurück.
-4. PRIORITÄT: Wähle die passende Prioritäts-ID. Wörter wie "dringend", "wichtig", "sofort" → höchste Priorität. Falls nicht erwähnt, gib null zurück.
-5. DATUM: Interpretiere Datumsangaben ("morgen", "nächste Woche", "bis Freitag"). Format: YYYY-MM-DD. Falls nicht erwähnt, null.
-6. PERSON: Suche den ähnlichsten Namen und gib seine E-Mail zurück. Falls nicht erwähnt, null.
-
-Gib die IDs direkt zurück (nicht die Namen).`,
-      response_json_schema: {
-        type: "object",
-        properties: {
-          title: { type: "string" },
-          description: { type: ["string", "null"] },
-          column_id: { type: ["string", "null"] },
-          priority_id: { type: ["string", "null"] },
-          due_date: { type: ["string", "null"] },
-          assignee_email: { type: ["string", "null"] },
-        }
-      }
-    });
-
-    const col = result.column_id
-      ? columns?.find(c => c.id === result.column_id) || internalColumn
-      : internalColumn;
-
-    const prio = result.priority_id
-      ? priorities?.find(p => p.id === result.priority_id) || highPriority
-      : highPriority;
-
-    const assigneeEmail = result.assignee_email || currentUser?.email || "";
-
-    setTaskData({
-      title: result.title || "",
-      description: (result.description && result.description !== "null") ? result.description : "",
-      column_id: col?.id || "",
-      priority_id: prio?.id || "",
-      due_date: result.due_date ? result.due_date.split("T")[0] : "",
-      assignee: assigneeEmail,
-    });
-
-    setPhase("preview");
+      setPhase("preview");
+    } catch (err) {
+      toast.error("KI-Analyse fehlgeschlagen: " + err.message);
+      setPhase("idle");
+    }
   };
 
   const handleSave = () => {
-    if (!taskData.title?.trim()) {
-      toast.error("Titel ist ein Pflichtfeld.");
-      return;
-    }
-    if (!taskData.column_id) {
-      toast.error("Bitte eine Spalte auswählen.");
-      return;
-    }
+    if (!taskData?.title?.trim()) { toast.error("Titel ist ein Pflichtfeld."); return; }
+    if (!taskData.column_id)       { toast.error("Bitte eine Spalte auswählen."); return; }
+    if (!taskData.assignee)        { toast.error("Bitte 'Zugewiesen an' auswählen."); return; }
+    if (!taskData.verantwortlich)  { toast.error("Bitte 'Verantwortlich' auswählen."); return; }
+
     onAdd({
       ...taskData,
       due_date: taskData.due_date ? taskData.due_date + "T00:00:00.000Z" : null,
@@ -166,7 +132,7 @@ Gib die IDs direkt zurück (nicht die Namen).`,
   };
 
   const handleClose = () => {
-    mediaRecorderRef.current?.stop();
+    recognitionRef.current?.stop();
     setPhase("idle");
     setTranscript("");
     setTaskData(null);
@@ -201,13 +167,13 @@ Gib die IDs direkt zurück (nicht die Namen).`,
             </button>
             <p className="text-zinc-400 text-sm text-center">
               {phase === "recording"
-                ? "Aufnahme läuft... Klicke zum Stoppen"
+                ? "Aufnahme läuft... Klicke zum Stoppen (oder einfach aufhören zu sprechen)"
                 : "Klicke und beschreibe deinen Task auf Deutsch"
               }
             </p>
             {phase === "idle" && (
               <p className="text-zinc-600 text-xs text-center max-w-xs">
-                Einfach frei sprechen – z.B. „Ich muss die Rechnung von Müller AG dringend prüfen, bis Freitag, für Reto"
+                Einfach frei sprechen – z.B. „Ich muss die Rechnung von Müller AG dringend prüfen, bis Freitag, zugewiesen an Reto, verantwortlich bin ich"
               </p>
             )}
           </div>
@@ -217,7 +183,7 @@ Gib die IDs direkt zurück (nicht die Namen).`,
         {phase === "analyzing" && (
           <div className="flex flex-col items-center gap-4 py-10">
             <Loader2 className="h-10 w-10 text-violet-400 animate-spin" />
-            <p className="text-zinc-400 text-sm">Whisper transkribiert & KI analysiert...</p>
+            <p className="text-zinc-400 text-sm">KI analysiert und weist Felder zu...</p>
             {transcript && (
               <p className="text-zinc-500 text-xs italic text-center max-w-sm">„{transcript}"</p>
             )}
@@ -234,6 +200,7 @@ Gib die IDs direkt zurück (nicht die Namen).`,
             )}
 
             <div className="space-y-3">
+              {/* Titel */}
               <div>
                 <label className="text-xs text-zinc-400 mb-1 block">Titel *</label>
                 <input
@@ -244,6 +211,7 @@ Gib die IDs direkt zurück (nicht die Namen).`,
                 />
               </div>
 
+              {/* Beschreibung */}
               <div>
                 <label className="text-xs text-zinc-400 mb-1 block">Beschreibung</label>
                 <textarea
@@ -255,6 +223,7 @@ Gib die IDs direkt zurück (nicht die Namen).`,
                 />
               </div>
 
+              {/* Spalte + Priorität */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs text-zinc-400 mb-1 block">Spalte *</label>
@@ -269,7 +238,6 @@ Gib die IDs direkt zurück (nicht die Namen).`,
                     </SelectContent>
                   </Select>
                 </div>
-
                 <div>
                   <label className="text-xs text-zinc-400 mb-1 block">Priorität</label>
                   <Select value={taskData.priority_id} onValueChange={v => setTaskData(prev => ({ ...prev, priority_id: v }))}>
@@ -290,6 +258,7 @@ Gib die IDs direkt zurück (nicht die Namen).`,
                 </div>
               </div>
 
+              {/* Datum */}
               <div>
                 <label className="text-xs text-zinc-400 mb-1 block">Fälligkeitsdatum</label>
                 <input
@@ -300,21 +269,40 @@ Gib die IDs direkt zurück (nicht die Namen).`,
                 />
               </div>
 
-              <div>
-                <label className="text-xs text-zinc-400 mb-1 block">Zugewiesen an</label>
-                <Select value={taskData.assignee} onValueChange={v => setTaskData(prev => ({ ...prev, assignee: v }))}>
-                  <SelectTrigger className="bg-zinc-800 border-zinc-700 text-zinc-200 h-9">
-                    <SelectValue placeholder="Benutzer wählen..." />
-                  </SelectTrigger>
-                  <SelectContent className="bg-zinc-900 border-zinc-800">
-                    <SelectItem value={null} className="text-zinc-400">Niemand</SelectItem>
-                    {users.map(u => (
-                      <SelectItem key={u.id} value={u.email} className="text-zinc-200">
-                        {u.full_name || u.email}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              {/* Zugewiesen + Verantwortlich */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-zinc-400 mb-1 block">Zugewiesen an *</label>
+                  <Select value={taskData.assignee || 'none'} onValueChange={v => setTaskData(prev => ({ ...prev, assignee: v === 'none' ? '' : v }))}>
+                    <SelectTrigger className="bg-zinc-800 border-zinc-700 text-zinc-200 h-9">
+                      <SelectValue placeholder="Benutzer wählen..." />
+                    </SelectTrigger>
+                    <SelectContent className="bg-zinc-900 border-zinc-800">
+                      <SelectItem value="none" className="text-zinc-400">Niemand</SelectItem>
+                      {allUsers.map(u => (
+                        <SelectItem key={u.id} value={u.email} className="text-zinc-200">
+                          {u.full_name || u.email}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <label className="text-xs text-zinc-400 mb-1 block">Verantwortlich *</label>
+                  <Select value={taskData.verantwortlich || 'none'} onValueChange={v => setTaskData(prev => ({ ...prev, verantwortlich: v === 'none' ? '' : v }))}>
+                    <SelectTrigger className="bg-zinc-800 border-zinc-700 text-zinc-200 h-9">
+                      <SelectValue placeholder="Verantwortliche/r..." />
+                    </SelectTrigger>
+                    <SelectContent className="bg-zinc-900 border-zinc-800">
+                      <SelectItem value="none" className="text-zinc-400">Niemand</SelectItem>
+                      {allUsers.map(u => (
+                        <SelectItem key={u.id} value={u.email} className="text-zinc-200">
+                          {u.full_name || u.email}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </div>
           </div>
@@ -322,7 +310,7 @@ Gib die IDs direkt zurück (nicht die Namen).`,
 
         {phase === "preview" && (
           <DialogFooter className="gap-2">
-            <Button variant="ghost" onClick={() => setPhase("idle")} className="text-zinc-400">
+            <Button variant="ghost" onClick={() => { setPhase("idle"); setTranscript(""); }} className="text-zinc-400">
               <Mic className="h-4 w-4 mr-1" /> Neu aufnehmen
             </Button>
             <Button onClick={handleSave} className="bg-violet-600 hover:bg-violet-500 text-white">

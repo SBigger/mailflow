@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { motion } from "framer-motion";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
-import { entities, functions, auth, supabase } from "@/api/supabaseClient";
+import { entities, functions, auth, supabase, uploadFile } from "@/api/supabaseClient";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -25,6 +25,7 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }) {
   const [columnId, setColumnId] = useState(task.column_id || '');
   const [attachments, setAttachments] = useState(task.attachments || []);
   const [uploading, setUploading] = useState(false);
+  const [verantwortlich, setVerantwortlich] = useState(task.verantwortlich || '');
   const [customerId, setCustomerId] = useState(task.customer_id || '');
   const [customerSearch, setCustomerSearch] = useState('');
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
@@ -100,6 +101,7 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }) {
       title,
       description,
       assignee,
+      verantwortlich: verantwortlich || null,
       priority_id: priorityId || null,
       due_date: dueDate || null,
       column_id: columnId,
@@ -118,8 +120,8 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }) {
     try {
       const uploadedUrls = [];
       for (const file of files) {
-        const res = await entities.integrations.Core.UploadFile({ file });
-        uploadedUrls.push(res.file_url);
+        const url = await uploadFile(file);
+        uploadedUrls.push(url);
       }
       setAttachments([...attachments, ...uploadedUrls]);
       toast.success(`${files.length} Datei(en) hochgeladen`);
@@ -248,13 +250,13 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }) {
           </div>
 
           <div className="space-y-2">
-            <Label className="text-zinc-400">Zugewiesen an</Label>
-            <Select value={assignee || ''} onValueChange={(v) => setAssignee(v === '' ? '' : v)}>
+            <Label className="text-zinc-400">Zugewiesen an *</Label>
+            <Select value={assignee || 'none'} onValueChange={(v) => setAssignee(v === 'none' ? '' : v)}>
               <SelectTrigger className="bg-zinc-900/60 border-zinc-700 text-zinc-200">
                 <SelectValue placeholder="Benutzer wählen..." />
               </SelectTrigger>
               <SelectContent className="bg-zinc-900 border-zinc-800 text-zinc-200">
-                <SelectItem value={null} className="text-zinc-400">Niemand</SelectItem>
+                <SelectItem value="none" className="text-zinc-400">Niemand</SelectItem>
                 {users.map((user) => (
                   <SelectItem key={user.id} value={user.email} className="text-zinc-200">
                     {user.full_name || user.email}
@@ -263,6 +265,23 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }) {
               </SelectContent>
             </Select>
           </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label className="text-zinc-400">Verantwortlich *</Label>
+          <Select value={verantwortlich || 'none'} onValueChange={(v) => setVerantwortlich(v === 'none' ? '' : v)}>
+            <SelectTrigger className="bg-zinc-900/60 border-zinc-700 text-zinc-200">
+              <SelectValue placeholder="Verantwortliche/r..." />
+            </SelectTrigger>
+            <SelectContent className="bg-zinc-900 border-zinc-800 text-zinc-200">
+              <SelectItem value="none" className="text-zinc-400">Niemand</SelectItem>
+              {users.map((user) => (
+                <SelectItem key={user.id} value={user.email} className="text-zinc-200">
+                  {user.full_name || user.email}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         <div className="space-y-2">
