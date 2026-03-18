@@ -15,7 +15,7 @@ export default function CustomerTasksTab({ customer }) {
   // QueryKey ["tasks", ...] damit TaskBoard-Invalidierungen auch hier ankommen
   const { data: tasks = [], isLoading } = useQuery({
     queryKey: ["tasks", "customer", customer.id],
-    queryFn: () => entities.Task.filter({ customer_id: customer.id }, "-created_date"),
+    queryFn: () => entities.Task.filter({ customer_id: customer.id }, "-created_at"),
   });
 
   const textMuted  = isArtis ? '#6b826b' : isLight ? '#9090b8' : '#52525b';
