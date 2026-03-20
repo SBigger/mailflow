@@ -19,13 +19,13 @@ serve(async (req) => {
       });
     }
 
+    // Correct Supabase pattern: anon key + user token as global header
     const supabaseClient = createClient(
       Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+      Deno.env.get("SUPABASE_ANON_KEY")!,
+      { global: { headers: { Authorization: authHeader } } }
     );
-    const { data: { user }, error: authError } = await supabaseClient.auth.getUser(
-      authHeader.replace("Bearer ", "")
-    );
+    const { data: { user }, error: authError } = await supabaseClient.auth.getUser();
     if (authError || !user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -49,7 +49,7 @@ serve(async (req) => {
     const today = new Date().toISOString().split("T")[0];
     const columnList = (columns || []).map((c: any) => `"${c.name}" (id: ${c.id})`).join(", ");
     const priorityList = (priorities || []).map((p: any) => `"${p.name}" level=${p.level} (id: ${p.id})`).join(", ");
-    const userList = (users || []).map((u: any) => `${u.full_name || u.email} → ${u.email}`).join("\n");
+    const userList = (users || []).map((u: any) => `${u.full_name || u.email} -> ${u.email}`).join("\n");
     const customerList = (customers || []).map((c: any) => c.company_name).join(", ");
 
     const prompt = `Du analysierst einen frei gesprochenen Task-Text eines Schweizer Treuhänders und extrahierst strukturierte Felder.
@@ -60,7 +60,7 @@ Heute: ${today}
 Verfügbare Spalten: ${columnList || "—"}
 Verfügbare Prioritäten: ${priorityList || "—"}
 
-Bekannte Mitarbeiter (Name → E-Mail):
+Bekannte Mitarbeiter (Name -> E-Mail):
 ${userList || "—"}
 
 Bekannte Kunden: ${customerList || "—"}
@@ -93,23 +93,20 @@ Antworte NUR mit gültigem JSON, ohne Kommentare.`;
       body: JSON.stringify({
         model: "claude-haiku-4-5-20251001",
         max_tokens: 512,
-        messages: [{
-          role: "user",
-          content: prompt,
-        }],
+        messages: [{ role: "user", content: prompt }],
         tools: [{
           name: "extract_task",
           description: "Extrahiere Task-Felder aus dem gesprochenen Text",
           input_schema: {
             type: "object",
             properties: {
-              title:               { type: "string" },
-              description:         { type: ["string", "null"] },
-              column_id:           { type: ["string", "null"] },
-              priority_id:         { type: ["string", "null"] },
-              due_date:            { type: ["string", "null"] },
-              assignee_email:      { type: ["string", "null"] },
-              verantwortlich_email:{ type: ["string", "null"] },
+              title:                { type: "string" },
+              description:          { type: ["string", "null"] },
+              column_id:            { type: ["string", "null"] },
+              priority_id:          { type: ["string", "null"] },
+              due_date:             { type: ["string", "null"] },
+              assignee_email:       { type: ["string", "null"] },
+              verantwortlich_email: { type: ["string", "null"] },
             },
             required: ["title"],
           },
