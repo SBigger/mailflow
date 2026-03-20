@@ -82,7 +82,7 @@ export default function TaskBoardColumn({ column, index, tasks, onRename, onDele
           >
             <div className="flex flex-col items-center justify-between h-full">
               <ChevronRight className="h-4 w-4 text-zinc-500 flex-shrink-0" />
-              <div className="text-sm font-medium text-center break-words w-full" style={{ color: isLight ? '#5a5a7a' : '#a1a1aa' }}>
+              <div className="text-sm font-medium flex-1 flex items-center justify-center" style={{ color: '#ffffff', writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>
                 {column.name}
               </div>
               <Badge variant="outline" className="text-xs flex-shrink-0">{totalCount}</Badge>
