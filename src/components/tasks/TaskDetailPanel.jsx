@@ -13,7 +13,7 @@ import { de } from "date-fns/locale";
 import { entities, functions, auth, supabase, uploadFile } from "@/api/supabaseClient";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ThemeContext } from "@/ThemeContext";
+import { ThemeContext } from "@/Layout";
 
 export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }) {
   const isMobile = useIsMobile();
