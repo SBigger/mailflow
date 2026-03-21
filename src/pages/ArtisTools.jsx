@@ -1,4 +1,5 @@
 import React, { useContext } from "react";
+import { useNavigate } from "react-router-dom";
 import { ThemeContext } from "@/Layout";
 import { BookOpen, Car, FileText, UserCog, ChevronRight, Wrench } from "lucide-react";
 
@@ -10,6 +11,7 @@ const TOOLS = [
     icon: BookOpen,
     color: "#5b8a5b",
     bg: "#e8f2e8",
+    route: null,
   },
   {
     id: "fahrzeugliste",
@@ -18,6 +20,7 @@ const TOOLS = [
     icon: Car,
     color: "#3b6a8a",
     bg: "#e0eef5",
+    route: null,
   },
   {
     id: "briefe",
@@ -26,6 +29,7 @@ const TOOLS = [
     icon: FileText,
     color: "#8a6a3b",
     bg: "#f5ede0",
+    route: "/BriefSchreiben",
   },
   {
     id: "abschluss",
@@ -34,11 +38,13 @@ const TOOLS = [
     icon: UserCog,
     color: "#6a5b8a",
     bg: "#eeeaf5",
+    route: null,
   },
 ];
 
 export default function ArtisTools() {
   const { theme } = useContext(ThemeContext);
+  const navigate = useNavigate();
   const isLight = theme === "light";
   const isArtis = theme === "artis";
   const isDark = !isLight && !isArtis;
@@ -75,13 +81,15 @@ export default function ArtisTools() {
 
       {/* ── Tool-Kacheln ────────────────────────────────────────── */}
       <div className="grid grid-cols-2 gap-5 max-w-3xl">
-        {TOOLS.map(({ id, title, description, icon: Icon, color, bg }) => (
+        {TOOLS.map(({ id, title, description, icon: Icon, color, bg, route }) => (
           <div
             key={id}
-            className="rounded-2xl p-6 flex flex-col gap-4 cursor-pointer transition-all hover:shadow-lg hover:-translate-y-0.5"
+            onClick={() => route && navigate(route)}
+            className="rounded-2xl p-6 flex flex-col gap-4 transition-all hover:shadow-lg hover:-translate-y-0.5"
             style={{
               backgroundColor: cardBg,
               border: `1px solid ${cardBorder}`,
+              cursor: route ? "pointer" : "default",
             }}
           >
             {/* Icon + Badge */}
@@ -94,9 +102,9 @@ export default function ArtisTools() {
               </div>
               <span
                 className="text-xs px-2.5 py-1 rounded-full font-medium"
-                style={{ backgroundColor: badgeBg, color: subColor }}
+                style={{ backgroundColor: badgeBg, color: route ? accent : subColor }}
               >
-                Kommt bald
+                {route ? "Verfügbar" : "Kommt bald"}
               </span>
             </div>
 
