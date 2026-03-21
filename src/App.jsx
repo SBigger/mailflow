@@ -18,6 +18,7 @@ import TicketBoard from './pages/TicketBoard';
 import KnowledgeBase from './pages/KnowledgeBase';
 import Dokumente from './pages/Dokumente';
 import UserManagement from './pages/UserManagement';
+import ArtisTools from './pages/ArtisTools';
 import Login from './pages/Login';
 import ResetPassword from './pages/ResetPassword';
 import Layout from './Layout';
@@ -57,6 +58,7 @@ function AuthenticatedApp() {
         <Route path="/KnowledgeBase" element={<KnowledgeBase />} />
         <Route path="/Dokumente" element={<Dokumente />} />
         <Route path="/UserManagement" element={<UserManagement />} />
+        <Route path="/ArtisTools" element={<ArtisTools />} />
         <Route path="*" element={<Navigate to="/Dashboard" replace />} />
       </Routes>
     </Layout>
