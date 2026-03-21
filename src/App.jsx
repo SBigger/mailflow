@@ -22,6 +22,7 @@ import ArtisTools from './pages/ArtisTools';
 import BriefSchreiben from './pages/BriefSchreiben';
 import Fahrzeugliste from './pages/Fahrzeugliste';
 import Aktienbuch from './pages/Aktienbuch';
+import Unterschriften from './pages/Unterschriften';
 import Login from './pages/Login';
 import ResetPassword from './pages/ResetPassword';
 import Layout from './Layout';
@@ -65,6 +66,7 @@ function AuthenticatedApp() {
         <Route path="/BriefSchreiben" element={<BriefSchreiben />} />
         <Route path="/Fahrzeugliste" element={<Fahrzeugliste />} />
         <Route path="/Aktienbuch" element={<Aktienbuch />} />
+        <Route path="/Unterschriften" element={<Unterschriften />} />
         <Route path="*" element={<Navigate to="/Dashboard" replace />} />
       </Routes>
     </Layout>

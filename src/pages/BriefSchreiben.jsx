@@ -194,6 +194,19 @@ export default function BriefSchreiben() {
   const [newName, setNewName] = useState("");
   const [showPreview, setShowPreview] = useState(false);
   const [activeVorlage, setActiveVorlage] = useState(null); // geladene DB-Vorlage (nicht Preset)
+  const [hiddenPresets, setHiddenPresets] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("artis_hidden_presets") || "[]"); } catch { return []; }
+  });
+
+  const hidePreset = (id) => {
+    const next = [...hiddenPresets, id];
+    setHiddenPresets(next);
+    localStorage.setItem("artis_hidden_presets", JSON.stringify(next));
+  };
+  const resetHiddenPresets = () => {
+    setHiddenPresets([]);
+    localStorage.removeItem("artis_hidden_presets");
+  };
 
   // ── Empfänger-Objekt ───────────────────────────────────────────────────────
   const selectedKundeObj = kunden.find(c => c.id === selectedKunde) || null;
@@ -257,7 +270,8 @@ export default function BriefSchreiben() {
 
   // ── Filter Vorlagen ────────────────────────────────────────────────────────
   const filteredVorlagen = vorlagen.filter(v => v.name.toLowerCase().includes(vorlageSearch.toLowerCase()));
-  const filteredPresets  = PRESETS.filter(v => v.name.toLowerCase().includes(vorlageSearch.toLowerCase()));
+  const filteredPresets  = PRESETS.filter(v => !hiddenPresets.includes(v.id) && v.name.toLowerCase().includes(vorlageSearch.toLowerCase()));
+  const hiddenCount = hiddenPresets.filter(id => PRESETS.some(p => p.id === id)).length;
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -349,24 +363,44 @@ export default function BriefSchreiben() {
             )}
 
             {/* Eingebaute Vorschläge */}
-            {filteredPresets.length > 0 && (
+            {(filteredPresets.length > 0 || hiddenCount > 0) && (
               <>
-                <div className="px-3 pt-3 pb-1">
+                <div className="px-3 pt-3 pb-1 flex items-center justify-between">
                   <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: subCol }}>
                     Vorschläge
                   </span>
+                  {hiddenCount > 0 && (
+                    <button
+                      onClick={resetHiddenPresets}
+                      className="text-[10px] underline"
+                      style={{ color: subCol }}
+                      title="Ausgeblendete Vorschläge wiederherstellen"
+                    >
+                      {hiddenCount} ausgeblendet · Reset
+                    </button>
+                  )}
                 </div>
                 {filteredPresets.map(p => (
                   <div
                     key={p.id}
-                    className="flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors"
+                    className="group flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors"
                     style={{ borderBottom: `1px solid ${panelBorder}` }}
                     onMouseEnter={e => e.currentTarget.style.backgroundColor = rowHover}
                     onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}
                     onClick={() => loadVorlage(p)}
                   >
                     <Plus className="w-3.5 h-3.5 flex-shrink-0" style={{ color: subCol }} />
-                    <span className="text-xs" style={{ color: subCol }}>{p.name}</span>
+                    <span className="text-xs flex-1" style={{ color: subCol }}>{p.name}</span>
+                    <button
+                      onClick={e => { e.stopPropagation(); hidePreset(p.id); toast.success(`"${p.name}" ausgeblendet`); }}
+                      className="flex-shrink-0 rounded p-0.5 opacity-0 group-hover:opacity-100 transition-all hover:bg-red-50"
+                      style={{ color: "#d1d5db" }}
+                      onMouseEnter={e => e.currentTarget.style.color = "#ef4444"}
+                      onMouseLeave={e => e.currentTarget.style.color = "#d1d5db"}
+                      title="Vorschlag ausblenden"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
                   </div>
                 ))}
               </>

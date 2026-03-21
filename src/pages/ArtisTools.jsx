@@ -1,7 +1,7 @@
 import React, { useContext } from "react";
 import { useNavigate } from "react-router-dom";
 import { ThemeContext } from "@/Layout";
-import { BookOpen, Car, FileText, UserCog, ChevronRight, Wrench } from "lucide-react";
+import { BookOpen, Car, FileText, UserCog, ChevronRight, Wrench, PenLine } from "lucide-react";
 
 const TOOLS = [
   {
@@ -30,6 +30,15 @@ const TOOLS = [
     color: "#8a6a3b",
     bg: "#f5ede0",
     route: "/BriefSchreiben",
+  },
+  {
+    id: "unterschriften",
+    title: "Unterschriften",
+    description: "Dokumente digital signieren lassen – rechtsgültig nach OR Art. 14 (AES/SES)",
+    icon: PenLine,
+    color: "#1e6a7a",
+    bg: "#dff0f5",
+    route: "/Unterschriften",
   },
   {
     id: "abschluss",
