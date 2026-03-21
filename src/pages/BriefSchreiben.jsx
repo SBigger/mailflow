@@ -193,6 +193,7 @@ export default function BriefSchreiben() {
   const [saveModal, setSaveModal] = useState(false);
   const [newName, setNewName] = useState("");
   const [showPreview, setShowPreview] = useState(false);
+  const [activeVorlage, setActiveVorlage] = useState(null); // geladene DB-Vorlage (nicht Preset)
 
   // ── Empfänger-Objekt ───────────────────────────────────────────────────────
   const selectedKundeObj = kunden.find(c => c.id === selectedKunde) || null;
@@ -230,6 +231,8 @@ export default function BriefSchreiben() {
   const loadVorlage = (v) => {
     setBetreff(v.betreff || v.subject || "");
     setBody(v.body || "");
+    // Nur DB-Vorlagen (nicht Presets) als aktiv setzen
+    setActiveVorlage(typeof v.id === "string" && !v.id.startsWith("p") ? v : null);
     toast.success(`"${v.name}" geladen`);
   };
 
@@ -526,6 +529,25 @@ export default function BriefSchreiben() {
               >
                 <Save className="w-4 h-4" /> Als Vorlage speichern
               </button>
+
+              {/* Aktive Vorlage löschen */}
+              {activeVorlage && (
+                <button
+                  onClick={() => {
+                    if (window.confirm(`Vorlage "${activeVorlage.name}" endgültig löschen?`)) {
+                      deleteMut.mutate(activeVorlage.id);
+                      setActiveVorlage(null);
+                      setBetreff("");
+                      setBody("");
+                    }
+                  }}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all"
+                  style={{ backgroundColor: "#fef2f2", color: "#ef4444", border: "1px solid #fecaca" }}
+                  title={`Vorlage "${activeVorlage.name}" löschen`}
+                >
+                  <Trash2 className="w-4 h-4" /> Vorlage löschen
+                </button>
+              )}
 
               <button
                 onClick={() => setShowPreview(!showPreview)}

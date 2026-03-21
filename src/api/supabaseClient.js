@@ -105,6 +105,7 @@ export const entities = {
   Dokument:         makeEntity('dokumente'),
   DokTag:           makeEntity('dok_tags'),
   BriefVorlage:     makeEntity('brief_vorlagen'),
+  Fahrzeug:         makeEntity('fahrzeuge'),
 };
 
 // Auth helpers

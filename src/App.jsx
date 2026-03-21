@@ -20,6 +20,7 @@ import Dokumente from './pages/Dokumente';
 import UserManagement from './pages/UserManagement';
 import ArtisTools from './pages/ArtisTools';
 import BriefSchreiben from './pages/BriefSchreiben';
+import Fahrzeugliste from './pages/Fahrzeugliste';
 import Login from './pages/Login';
 import ResetPassword from './pages/ResetPassword';
 import Layout from './Layout';
@@ -61,6 +62,7 @@ function AuthenticatedApp() {
         <Route path="/UserManagement" element={<UserManagement />} />
         <Route path="/ArtisTools" element={<ArtisTools />} />
         <Route path="/BriefSchreiben" element={<BriefSchreiben />} />
+        <Route path="/Fahrzeugliste" element={<Fahrzeugliste />} />
         <Route path="*" element={<Navigate to="/Dashboard" replace />} />
       </Routes>
     </Layout>

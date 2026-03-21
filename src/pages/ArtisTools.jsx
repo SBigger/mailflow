@@ -16,11 +16,11 @@ const TOOLS = [
   {
     id: "fahrzeugliste",
     title: "Fahrzeugliste",
-    description: "Firmenfahrzeuge pro Mandant erfassen und verwalten",
+    description: "Firmenfahrzeuge pro Mandant erfassen, Privatanteil berechnen & exportieren",
     icon: Car,
     color: "#3b6a8a",
     bg: "#e0eef5",
-    route: null,
+    route: "/Fahrzeugliste",
   },
   {
     id: "briefe",
