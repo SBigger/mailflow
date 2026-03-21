@@ -7,11 +7,11 @@ const TOOLS = [
   {
     id: "aktienbuch",
     title: "Aktienbuch",
-    description: "Aktionärsregister, Kapitalstruktur und Transaktionen verwalten",
+    description: "Aktionärsregister nach Art. 686 OR: Namenaktien, Übertragungen, Splits & Kapitalstruktur",
     icon: BookOpen,
     color: "#5b8a5b",
     bg: "#e8f2e8",
-    route: null,
+    route: "/Aktienbuch",
   },
   {
     id: "fahrzeugliste",

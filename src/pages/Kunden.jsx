@@ -21,6 +21,7 @@ import CustomerImportDialog from "../components/customers/CustomerImportDialog";
 import PrivatpersonImportDialog from "../components/customers/PrivatpersonImportDialog";
 import CustomerFristenTab from "../components/customers/CustomerFristenTab";
 import CustomerDokumenteTab from "../components/customers/CustomerDokumenteTab";
+import CustomerAktionaereTab from "../components/customers/CustomerAktionaereTab";
 import MobileCustomerView from "../components/customers/MobileCustomerView";
 
 function escapeCsv(val) {
@@ -381,6 +382,9 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
                         <TabsTrigger value="contacts"   className="text-xs">👤 Kontakte</TabsTrigger>
                         <TabsTrigger value="notes"      className="text-xs">📝 Notizen</TabsTrigger>
           <TabsTrigger value="dokumente"  className="text-xs">📄 Dokumente</TabsTrigger>
+                        {!isPrivatperson && (
+                          <TabsTrigger value="aktionaere" className="text-xs">📗 Aktionäre</TabsTrigger>
+                        )}
                       </>
                     )}
                   </TabsList>
@@ -414,6 +418,11 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
           <CustomerDokumenteTab customerId={currentCustomer?.id} />
         </TabsContent>
 
+                      {!isPrivatperson && (
+                        <TabsContent value="aktionaere" className="mt-0">
+                          <CustomerAktionaereTab customer={currentCustomer} />
+                        </TabsContent>
+                      )}
                     </>
                   )}
 
