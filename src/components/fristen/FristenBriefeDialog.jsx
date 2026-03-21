@@ -5,6 +5,7 @@ import { ThemeContext } from "@/Layout";
 import { entities } from "@/api/supabaseClient";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { FONT_REGULAR_B64, FONT_BOLD_B64 } from "./fontData.js";
 
 function today() {
   const d  = new Date();
@@ -40,11 +41,10 @@ function generatePrintHtml(recipients, letterDate, subject, bodyTemplate, logoUr
     return (
       "<div class=\"page\">" +
       "<div class=\"letterhead\">" +
-      // Absender-Zeile: Name · Strasse · Stadt · E-Mail (kein Telefon)
-      "<div class=\"sender-line\">" + SENDER_NAME + " \u00b7 " + SENDER_STREET + " \u00b7 " + SENDER_CITY + "</div>" +
+      "<div class=\"left-col\"></div>" +
       (logoUrl ? "<img class=\"logo\" src=\"" + logoUrl + "\" alt=\"Logo\" />" : "<span class=\"logo-text\">" + SENDER_NAME + "</span>") +
       "</div>" +
-      "<div class=\"hline\"></div>" +
+      "<div class=\"sender-line\">" + SENDER_NAME + " \u00b7 " + SENDER_STREET + " \u00b7 " + SENDER_CITY + "</div>" +
       "<div class=\"recipient\">" +
       "<div>" + r.company_name + "</div>" +
       (r.strasse ? "<div>" + r.strasse + "</div>" : "") +
@@ -54,27 +54,36 @@ function generatePrintHtml(recipients, letterDate, subject, bodyTemplate, logoUr
       "<div class=\"date\">" + LETTER_CITY + ", " + letterDate + "</div>" +
       "<div class=\"subject\">" + rSub + "</div>" +
       "<div class=\"body\">" + bodyHtml + "</div>" +
+      "<div class=\"footer\">" +
+      "<div class=\"footer-col\">Artis Treuhand GmbH<br/>www.artis-gmbh.ch</div>" +
+      "<div class=\"footer-col\">Trischlistrasse 10<br/>9400 Rorschach</div>" +
+      "<div class=\"footer-col\">info@artis-gmbh.ch<br/>+41 71 511 50 00</div>" +
+      "</div>" +
       "</div>"
     );
   }).join("\n");
 
   return (
     "<!DOCTYPE html><html><head><meta charset=\"utf-8\"/><title>Briefe</title><style>" +
+    "@font-face { font-family: 'CenturyGothic'; font-weight: normal; font-style: normal; src: url('data:font/otf;base64," + FONT_REGULAR_B64 + "') format('opentype'); }" +
+    "@font-face { font-family: 'CenturyGothic'; font-weight: bold; font-style: normal; src: url('data:font/otf;base64," + FONT_BOLD_B64 + "') format('opentype'); }" +
     "* { box-sizing: border-box; margin: 0; padding: 0; }" +
-    "body { font-family: Helvetica, Arial, sans-serif; font-size: 11pt; color: #222; background: white; }" +
+    "body { font-family: 'CenturyGothic', Helvetica, Arial, sans-serif; font-size: 10pt; color: #222; background: white; }" +
     "@page { size: A4; margin: 0; }" +
     "@media print { .page { page-break-after: always; } .page:last-child { page-break-after: avoid; } }" +
-    ".page { width: 210mm; min-height: 297mm; padding: 18mm 22mm 20mm 25mm; position: relative; background: white; overflow: hidden; }" +
-    ".letterhead { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 3mm; }" +
-    ".sender-line { font-size: 7.5pt; color: #666; flex: 1; padding-bottom: 1mm; }" +
-    ".logo { height: 16mm; max-width: 52mm; object-fit: contain; flex-shrink: 0; margin-left: 8mm; }" +
-    ".logo-text { font-size: 13pt; font-weight: bold; color: #2d5a2d; flex-shrink: 0; margin-left: 8mm; }" +
-    ".hline { border-top: 0.5pt solid #999; margin-top: 2mm; margin-bottom: 14mm; }" +
-    ".recipient { margin-bottom: 14mm; line-height: 1.6; font-size: 11pt; }" +
-    ".date { text-align: left; margin-top: 14mm; margin-bottom: 14mm; font-size: 11pt; }" +
-    ".subject { font-weight: bold; margin-bottom: 8mm; font-size: 11pt; }" +
-    ".body { line-height: 1.7; font-size: 11pt; }" +
+    ".page { width: 210mm; min-height: 297mm; padding: 24mm 22mm 20mm 25mm; position: relative; background: white; overflow: hidden; }" +
+    ".letterhead { height: 24mm; margin-bottom: 0; }" +
+    ".sender-line { font-size: 7pt; color: #666; letter-spacing: -0.15px; word-spacing: -0.5px; margin-bottom: 2mm; }" +
+    ".logo { position: absolute; top: 22mm; right: 20mm; height: 32mm; max-width: 88mm; object-fit: contain; }" +
+    ".logo-text { font-size: 13pt; font-weight: bold; color: #2d5a2d; flex-shrink: 0; margin-left: 10mm; }" +
+    ".recipient { margin-bottom: 14mm; line-height: 1.6; font-size: 10pt; }" +
+    ".date { text-align: left; margin-top: 14mm; margin-bottom: 20mm; font-size: 10pt; }" +
+    ".subject { font-weight: bold; margin-bottom: 8mm; font-size: 10pt; }" +
+    ".body { line-height: 1.7; font-size: 10pt; }" +
     ".body p { margin: 0 0 3px 0; }" +
+    ".footer { position: absolute; bottom: 12mm; left: 25mm; right: 22mm; display: flex; justify-content: space-between; font-size: 7pt; color: #7a9b7f; border-top: 0.3pt solid #7a9b7f; padding-top: 2.5mm; }" +
+    ".footer-col { line-height: 1.6; }" +
+    ".footer-col:last-child { text-align: right; }" +
     "</style></head><body>" +
     pages +
     "</body></html>"
