@@ -73,7 +73,7 @@ function generatePrintHtml(recipients, letterDate, subject, bodyTemplate, logoUr
     "@media print { .page { page-break-after: always; } .page:last-child { page-break-after: avoid; } }" +
     ".page { width: 210mm; min-height: 297mm; padding: 24mm 22mm 20mm 25mm; position: relative; background: white; overflow: hidden; }" +
     ".letterhead { height: 24mm; margin-bottom: 0; }" +
-    ".sender-line { font-size: 7pt; color: #666; letter-spacing: -0.15px; word-spacing: -0.5px; margin-bottom: 2mm; }" +
+    ".sender-line { display: inline-block; font-size: 7pt; color: #666; letter-spacing: -0.15px; word-spacing: -0.5px; margin-bottom: 8mm; border-bottom: 0.4pt solid #222; padding-bottom: 1mm; }" +
     ".logo { position: absolute; top: 22mm; right: 20mm; height: 32mm; max-width: 88mm; object-fit: contain; }" +
     ".logo-text { font-size: 13pt; font-weight: bold; color: #2d5a2d; flex-shrink: 0; margin-left: 10mm; }" +
     ".recipient { margin-bottom: 14mm; line-height: 1.6; font-size: 10pt; }" +
@@ -81,7 +81,7 @@ function generatePrintHtml(recipients, letterDate, subject, bodyTemplate, logoUr
     ".subject { font-weight: bold; margin-bottom: 8mm; font-size: 10pt; }" +
     ".body { line-height: 1.7; font-size: 10pt; }" +
     ".body p { margin: 0 0 3px 0; }" +
-    ".footer { position: absolute; bottom: 12mm; left: 25mm; right: 22mm; display: flex; justify-content: space-between; font-size: 7pt; color: #7a9b7f; border-top: 0.3pt solid #7a9b7f; padding-top: 2.5mm; }" +
+    ".footer { position: absolute; bottom: 12mm; left: 25mm; right: 22mm; display: flex; justify-content: space-between; font-size: 7pt; color: #7a9b7f; border-top: 0.15pt solid #7a9b7f; padding-top: 2.5mm; }" +
     ".footer-col { line-height: 1.6; }" +
     ".footer-col:last-child { text-align: right; }" +
     "</style></head><body>" +
