@@ -56,22 +56,23 @@ export default function CustomerContactPersons({ customer, onUpdate }) {
 
       {adding ? (
         <div className="p-3 rounded-lg border border-violet-300 space-y-2" style={{ backgroundColor: isArtis ? '#f5f8f5' : isLight ? '#f7f7fc' : '#f9fafb' }}>
-          {/* Anrede + Vorname + Name */}
-          <div className="flex gap-2">
+          {/* Zeile 1: Anrede | Vorname | Nachname */}
+          <div className="grid gap-2" style={{ gridTemplateColumns: '100px 1fr 1fr' }}>
             <select
               value={form.anrede}
               onChange={e => setForm({ ...form, anrede: e.target.value })}
               className="text-xs h-8 rounded-md border px-2"
-              style={{ backgroundColor: '#ffffff', borderColor: isArtis ? '#bfcfbf' : isLight ? '#c8c8dc' : '#d1d5db', color: isArtis ? '#2d3a2d' : isLight ? '#1a1a2e' : '#1f2937', width: 90 }}
+              style={{ backgroundColor: '#ffffff', borderColor: isArtis ? '#bfcfbf' : isLight ? '#c8c8dc' : '#d1d5db', color: form.anrede ? (isArtis ? '#2d3a2d' : isLight ? '#1a1a2e' : '#1f2937') : '#9ca3af' }}
             >
               <option value="">Anrede</option>
               <option value="Herr">Herr</option>
               <option value="Frau">Frau</option>
             </select>
-            <Input value={form.vorname} onChange={e => setForm({ ...form, vorname: e.target.value })} placeholder="Vorname" className="text-xs h-8 flex-1" style={{ backgroundColor: '#ffffff', borderColor: isArtis ? '#bfcfbf' : isLight ? '#c8c8dc' : '#d1d5db', color: isArtis ? '#2d3a2d' : isLight ? '#1a1a2e' : '#1f2937' }} />
-            <Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Nachname*" className="text-xs h-8 flex-1" style={{ backgroundColor: '#ffffff', borderColor: isArtis ? '#bfcfbf' : isLight ? '#c8c8dc' : '#d1d5db', color: isArtis ? '#2d3a2d' : isLight ? '#1a1a2e' : '#1f2937' }} />
+            <Input value={form.vorname} onChange={e => setForm({ ...form, vorname: e.target.value })} placeholder="Vorname" className="text-xs h-8" style={{ backgroundColor: '#ffffff', borderColor: isArtis ? '#bfcfbf' : isLight ? '#c8c8dc' : '#d1d5db', color: isArtis ? '#2d3a2d' : isLight ? '#1a1a2e' : '#1f2937' }} />
+            <Input value={form.name}    onChange={e => setForm({ ...form, name: e.target.value })}    placeholder="Nachname *" className="text-xs h-8" style={{ backgroundColor: '#ffffff', borderColor: isArtis ? '#bfcfbf' : isLight ? '#c8c8dc' : '#d1d5db', color: isArtis ? '#2d3a2d' : isLight ? '#1a1a2e' : '#1f2937' }} />
           </div>
-          <div className="grid grid-cols-2 gap-2">
+          {/* Zeile 2: Funktion | E-Mail | Telefon */}
+          <div className="grid grid-cols-3 gap-2">
             {[['role','Funktion (z.B. CEO)'],['email','E-Mail'],['phone','Telefon']].map(([key, ph]) => (
               <Input key={key} value={form[key]} onChange={e => setForm({...form, [key]: e.target.value})} placeholder={ph} className="text-xs h-8" style={{ backgroundColor: '#ffffff', borderColor: isArtis ? '#bfcfbf' : isLight ? '#c8c8dc' : '#d1d5db', color: isArtis ? '#2d3a2d' : isLight ? '#1a1a2e' : '#1f2937' }} />
             ))}
