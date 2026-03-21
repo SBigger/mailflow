@@ -90,14 +90,14 @@ const EMPTY = {
 };
 
 // ── Eingabefelder-Helfer ──────────────────────────────────────────────────────
-function Field({ label, children, hint }) {
+function Field({ label, children, hint, col }) {
   return (
-    <div className="space-y-1">
-      <label className="block text-[10px] font-semibold uppercase tracking-widest" style={{ color: "#9ca3af" }}>
+    <div className="flex flex-col gap-1" style={col ? { gridColumn: col } : {}}>
+      <label className="text-[10px] font-semibold uppercase tracking-widest leading-none" style={{ color: "#9ca3af", minHeight: 12 }}>
         {label}
       </label>
       {children}
-      {hint && <div className="text-[9px]" style={{ color: "#9ca3af" }}>{hint}</div>}
+      {hint && <div className="text-[9px] leading-tight" style={{ color: "#b0b8c4" }}>{hint}</div>}
     </div>
   );
 }
@@ -113,16 +113,17 @@ function AktionaerModal({ initial, title, onSave, onClose, accent, theme }) {
 
   const iStyle = {
     backgroundColor: "#ffffff", border: "1px solid #d1d5db", borderRadius: 6,
-    padding: "5px 10px", fontSize: 12, color: "#1f2937", width: "100%", outline: "none",
+    padding: "0 10px", fontSize: 12, color: "#1f2937", width: "100%", outline: "none",
+    height: 32, boxSizing: "border-box",
   };
-  const selectStyle = { ...iStyle, height: 28 };
+  const selectStyle = { ...iStyle };
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div className="rounded-2xl overflow-hidden" style={{
         background: isArtis ? "#f5f8f5" : isLight ? "#f8f8fc" : "#27272a",
         border: `1px solid ${isArtis ? "#ccd8cc" : isLight ? "#e2e2ec" : "#3f3f46"}`,
-        width: 640, maxHeight: "90vh", display: "flex", flexDirection: "column",
+        width: 720, maxHeight: "90vh", display: "flex", flexDirection: "column",
       }}>
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4" style={{
@@ -141,14 +142,14 @@ function AktionaerModal({ initial, title, onSave, onClose, accent, theme }) {
         </div>
 
         {/* Body */}
-        <div className="overflow-y-auto p-5 space-y-5">
+        <div className="overflow-y-auto p-6 space-y-6">
 
           {/* Aktionär */}
           <div>
-            <div className="text-[10px] font-bold tracking-widest uppercase mb-3" style={{ color: accent }}>
+            <div className="text-[10px] font-bold tracking-widest uppercase mb-3 pb-2" style={{ color: accent, borderBottom: `1px solid ${isArtis ? "#ccd8cc" : "#e5e7eb"}` }}>
               Aktionär (Art. 686 Abs. 1 OR)
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-4">
               <Field label="Name / Firma *">
                 <input value={f.aktionaer_name} onChange={e => set("aktionaer_name", e.target.value)}
                   placeholder="Max Muster / Muster AG" style={iStyle} />
@@ -170,10 +171,10 @@ function AktionaerModal({ initial, title, onSave, onClose, accent, theme }) {
 
           {/* Aktien */}
           <div>
-            <div className="text-[10px] font-bold tracking-widest uppercase mb-3" style={{ color: accent }}>
+            <div className="text-[10px] font-bold tracking-widest uppercase mb-3 pb-2" style={{ color: accent, borderBottom: `1px solid ${isArtis ? "#ccd8cc" : "#e5e7eb"}` }}>
               Aktien
             </div>
-            <div className="grid grid-cols-4 gap-3">
+            <div className="grid gap-4" style={{ gridTemplateColumns: "2fr 1fr 1fr 1fr" }}>
               <Field label="Aktienart *">
                 <select value={f.aktienart} onChange={e => set("aktienart", e.target.value)} style={selectStyle}>
                   {AKTIENARTEN.map(a => <option key={a} value={a}>{a}</option>)}
@@ -181,13 +182,13 @@ function AktionaerModal({ initial, title, onSave, onClose, accent, theme }) {
               </Field>
               <Field label="Anzahl *">
                 <input value={f.anzahl} onChange={e => set("anzahl", e.target.value)}
-                  type="number" min="1" placeholder="z.B. 100" style={iStyle} />
+                  type="number" min="1" placeholder="100" style={iStyle} />
               </Field>
-              <Field label="Nennwert / Aktie (CHF) *">
+              <Field label="Nennwert CHF *">
                 <input value={f.nominalwert} onChange={e => set("nominalwert", e.target.value)}
                   type="number" min="0.01" step="0.01" style={iStyle} />
               </Field>
-              <Field label="Liberierungsgrad (%)">
+              <Field label="Liberierung %">
                 <input value={f.liberierungsgrad} onChange={e => set("liberierungsgrad", Math.min(100, Math.max(0, parseInt(e.target.value) || 0)))}
                   type="number" min="0" max="100" style={iStyle} />
               </Field>
@@ -208,10 +209,10 @@ function AktionaerModal({ initial, title, onSave, onClose, accent, theme }) {
 
           {/* Zertifikat */}
           <div>
-            <div className="text-[10px] font-bold tracking-widest uppercase mb-3" style={{ color: accent }}>
+            <div className="text-[10px] font-bold tracking-widest uppercase mb-3 pb-2" style={{ color: accent, borderBottom: `1px solid ${isArtis ? "#ccd8cc" : "#e5e7eb"}` }}>
               Zertifikat & Aktiennummern
             </div>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-3 gap-4">
               <Field label="Zertifikat-Nr." hint="z.B. Z-001 oder leer lassen">
                 <input value={f.zertifikat_nr} onChange={e => set("zertifikat_nr", e.target.value)}
                   placeholder="Z-001" style={iStyle} />
@@ -229,16 +230,16 @@ function AktionaerModal({ initial, title, onSave, onClose, accent, theme }) {
 
           {/* Transaktion */}
           <div>
-            <div className="text-[10px] font-bold tracking-widest uppercase mb-3" style={{ color: accent }}>
+            <div className="text-[10px] font-bold tracking-widest uppercase mb-3 pb-2" style={{ color: accent, borderBottom: `1px solid ${isArtis ? "#ccd8cc" : "#e5e7eb"}` }}>
               Transaktion & Rechtliches
             </div>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-3 gap-4">
               <Field label="Transaktionstyp *">
                 <select value={f.transaktionstyp} onChange={e => set("transaktionstyp", e.target.value)} style={selectStyle}>
                   {TRANSAKTIONSTYPEN.map(t => <option key={t} value={t}>{TRANSAKTION_ICONS[t]} {t}</option>)}
                 </select>
               </Field>
-              <Field label="Kaufdatum / Datum Eintragung">
+              <Field label="Kaufdatum / Eintragung">
                 <input value={f.kaufdatum} onChange={e => set("kaufdatum", e.target.value)}
                   type="date" style={iStyle} />
               </Field>
@@ -247,7 +248,7 @@ function AktionaerModal({ initial, title, onSave, onClose, accent, theme }) {
                   type="date" style={iStyle} />
               </Field>
             </div>
-            <div className="mt-3 flex items-center gap-6">
+            <div className="mt-4 flex items-center gap-6">
               <label className="flex items-center gap-2 cursor-pointer">
                 <button type="button"
                   onClick={() => set("vinkuliert", !f.vinkuliert)}
@@ -258,7 +259,7 @@ function AktionaerModal({ initial, title, onSave, onClose, accent, theme }) {
                 <span className="text-xs" style={{ color: "#6b7280" }}>Vinkulierte Namenaktie (Übertragung bedarf VR-Zustimmung)</span>
               </label>
             </div>
-            <div className="mt-3">
+            <div className="mt-4">
               <Field label="Notizen">
                 <input value={f.notizen} onChange={e => set("notizen", e.target.value)}
                   placeholder="Zusätzliche Bemerkungen..." style={iStyle} />
