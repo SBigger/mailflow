@@ -393,7 +393,7 @@ export default function BriefSchreiben() {
                     <span className="text-xs flex-1" style={{ color: subCol }}>{p.name}</span>
                     <button
                       onClick={e => { e.stopPropagation(); hidePreset(p.id); toast.success(`"${p.name}" ausgeblendet`); }}
-                      className="flex-shrink-0 rounded p-0.5 opacity-0 group-hover:opacity-100 transition-all hover:bg-red-50"
+                      className="flex-shrink-0 rounded p-0.5 transition-all hover:bg-red-50"
                       style={{ color: "#d1d5db" }}
                       onMouseEnter={e => e.currentTarget.style.color = "#ef4444"}
                       onMouseLeave={e => e.currentTarget.style.color = "#d1d5db"}
