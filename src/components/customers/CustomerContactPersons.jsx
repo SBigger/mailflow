@@ -10,14 +10,14 @@ export default function CustomerContactPersons({ customer, onUpdate }) {
   const isArtis = theme === 'artis';
   const contacts = customer.contact_persons || [];
   const [adding, setAdding] = useState(false);
-  const [form, setForm] = useState({ name: "", email: "", phone: "", role: "" });
+  const [form, setForm] = useState({ anrede: "", vorname: "", name: "", email: "", phone: "", role: "" });
 
   const save = (updated) => onUpdate({ contact_persons: updated });
 
   const add = () => {
     if (!form.name.trim()) return;
     save([...contacts, form]);
-    setForm({ name: "", email: "", phone: "", role: "" });
+    setForm({ anrede: "", vorname: "", name: "", email: "", phone: "", role: "" });
     setAdding(false);
   };
 
@@ -29,7 +29,10 @@ export default function CustomerContactPersons({ customer, onUpdate }) {
         <div key={idx} className="flex items-start gap-3 p-3 rounded-lg border group" style={{ backgroundColor: isArtis ? '#f5f8f5' : isLight ? '#f7f7fc' : '#f9fafb', borderColor: isArtis ? '#ccd8cc' : isLight ? '#d4d4e8' : '#e5e7eb' }}>
           <User className="h-4 w-4 mt-0.5 flex-shrink-0" style={{ color: isLight ? '#7070a0' : '#71717a' }} />
           <div className="flex-1 min-w-0">
-            <div className="text-sm font-medium" style={{ color: isLight ? '#1a1a2e' : '#e4e4e7' }}>{cp.name} {cp.role && <span className="font-normal" style={{ color: isLight ? '#7070a0' : '#71717a' }}>· {cp.role}</span>}</div>
+            <div className="text-sm font-medium" style={{ color: isLight ? '#1a1a2e' : '#e4e4e7' }}>
+              {[cp.anrede, cp.vorname, cp.name].filter(Boolean).join(" ")}
+              {cp.role && <span className="font-normal" style={{ color: isLight ? '#7070a0' : '#71717a' }}> · {cp.role}</span>}
+            </div>
             {cp.email && <div className="text-xs" style={{ color: isLight ? '#5a5a7a' : '#a1a1aa' }}>{cp.email}</div>}
             {cp.phone && (
               <div className="flex items-center gap-1.5 mt-0.5">
@@ -53,8 +56,23 @@ export default function CustomerContactPersons({ customer, onUpdate }) {
 
       {adding ? (
         <div className="p-3 rounded-lg border border-violet-300 space-y-2" style={{ backgroundColor: isArtis ? '#f5f8f5' : isLight ? '#f7f7fc' : '#f9fafb' }}>
+          {/* Anrede + Vorname + Name */}
+          <div className="flex gap-2">
+            <select
+              value={form.anrede}
+              onChange={e => setForm({ ...form, anrede: e.target.value })}
+              className="text-xs h-8 rounded-md border px-2"
+              style={{ backgroundColor: '#ffffff', borderColor: isArtis ? '#bfcfbf' : isLight ? '#c8c8dc' : '#d1d5db', color: isArtis ? '#2d3a2d' : isLight ? '#1a1a2e' : '#1f2937', width: 90 }}
+            >
+              <option value="">Anrede</option>
+              <option value="Herr">Herr</option>
+              <option value="Frau">Frau</option>
+            </select>
+            <Input value={form.vorname} onChange={e => setForm({ ...form, vorname: e.target.value })} placeholder="Vorname" className="text-xs h-8 flex-1" style={{ backgroundColor: '#ffffff', borderColor: isArtis ? '#bfcfbf' : isLight ? '#c8c8dc' : '#d1d5db', color: isArtis ? '#2d3a2d' : isLight ? '#1a1a2e' : '#1f2937' }} />
+            <Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Nachname*" className="text-xs h-8 flex-1" style={{ backgroundColor: '#ffffff', borderColor: isArtis ? '#bfcfbf' : isLight ? '#c8c8dc' : '#d1d5db', color: isArtis ? '#2d3a2d' : isLight ? '#1a1a2e' : '#1f2937' }} />
+          </div>
           <div className="grid grid-cols-2 gap-2">
-            {[['name','Name*'],['role','Funktion (z.B. CEO)'],['email','E-Mail'],['phone','Telefon']].map(([key, ph]) => (
+            {[['role','Funktion (z.B. CEO)'],['email','E-Mail'],['phone','Telefon']].map(([key, ph]) => (
               <Input key={key} value={form[key]} onChange={e => setForm({...form, [key]: e.target.value})} placeholder={ph} className="text-xs h-8" style={{ backgroundColor: '#ffffff', borderColor: isArtis ? '#bfcfbf' : isLight ? '#c8c8dc' : '#d1d5db', color: isArtis ? '#2d3a2d' : isLight ? '#1a1a2e' : '#1f2937' }} />
             ))}
           </div>

@@ -57,9 +57,14 @@ const PRESETS = [
 ];
 
 // ── HTML-Generator (identisch mit Fristen-Briefe) ────────────────────────────
-function generateBriefHtml(recipient, datum, betreff, body) {
+function generateBriefHtml(recipient, datum, betreff, body, signer) {
   const logoUrl = "/artis-logo.png";
   const bodyHtml = body.split("\n").map(l => l === "" ? "<br/>" : "<p>" + l + "</p>").join("");
+  // Signatur: Name + Titel unter Artis Treuhand GmbH
+  const signerHtml = signer?.name
+    ? `<div class="signer-name">${signer.name}</div>` +
+      (signer.titel ? `<div class="signer-titel">${signer.titel}</div>` : "")
+    : "";
   const page =
     `<div class="page">` +
     `<div class="letterhead"><div class="left-col"></div>` +
@@ -67,12 +72,14 @@ function generateBriefHtml(recipient, datum, betreff, body) {
     `<div class="sender-line">${SENDER_NAME} · ${SENDER_STREET} · ${SENDER_CITY}</div>` +
     `<div class="recipient">` +
     (recipient.name ? `<div>${recipient.name}</div>` : "") +
+    (recipient.firma ? `<div>${recipient.firma}</div>` : "") +
     (recipient.strasse ? `<div>${recipient.strasse}</div>` : "") +
     ((recipient.plz || recipient.ort) ? `<div>${[recipient.plz, recipient.ort].filter(Boolean).join(" ")}</div>` : "") +
     `</div>` +
     `<div class="date">${LETTER_CITY}, ${datum}</div>` +
     `<div class="subject">${betreff}</div>` +
     `<div class="body">${bodyHtml}</div>` +
+    (signerHtml ? `<div class="signature">${signerHtml}</div>` : "") +
     `<div class="footer">` +
     `<div class="footer-col">Artis Treuhand GmbH<br/>www.artis-gmbh.ch</div>` +
     `<div class="footer-col">Trischlistrasse 10<br/>9400 Rorschach</div>` +
@@ -95,6 +102,9 @@ function generateBriefHtml(recipient, datum, betreff, body) {
     `.subject{font-weight:bold;margin-bottom:8mm;font-size:10pt;}` +
     `.body{line-height:1.7;font-size:10pt;}` +
     `.body p{margin:0 0 3px 0;}` +
+    `.signature{margin-top:2mm;font-size:10pt;}` +
+    `.signer-name{font-size:10pt;color:#222;}` +
+    `.signer-titel{font-size:8.5pt;color:#555;margin-top:1mm;}` +
     `.footer{position:absolute;bottom:12mm;left:0;right:0;display:flex;justify-content:space-between;font-size:7pt;color:#7a9b7f;border-top:0.5pt solid #7a9b7f;padding-top:2.5mm;padding-left:25mm;padding-right:22mm;}` +
     `.footer-col{line-height:1.6;color:#7a9b7f;}` +
     `.footer-col:last-child{text-align:right;color:#7a9b7f;}` +
@@ -156,9 +166,21 @@ export default function BriefSchreiben() {
     onError: (e) => toast.error("Fehler: " + e.message),
   });
 
+  // ── Aktueller Benutzer (für Signatur) ─────────────────────────────────────
+  const { data: currentProfile } = useQuery({
+    queryKey: ["currentProfile"],
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return null;
+      const { data } = await supabase.from("profiles").select("full_name, titel").eq("id", user.id).single();
+      return data;
+    },
+  });
+
   // ── Formular-State ─────────────────────────────────────────────────────────
   const [empfMode, setEmpfMode] = useState("kunden"); // "kunden" | "personen" | "frei"
   const [selectedKunde, setSelectedKunde] = useState("");
+  const [selectedKontakt, setSelectedKontakt] = useState(""); // index in contact_persons
   const [selectedPerson, setSelectedPerson] = useState("");
   const [freiName, setFreiName] = useState("");
   const [freiStrasse, setFreiStrasse] = useState("");
@@ -173,14 +195,27 @@ export default function BriefSchreiben() {
   const [showPreview, setShowPreview] = useState(false);
 
   // ── Empfänger-Objekt ───────────────────────────────────────────────────────
+  const selectedKundeObj = kunden.find(c => c.id === selectedKunde) || null;
+  const kundeKontakte = selectedKundeObj?.contact_persons || [];
+
   const getRecipient = () => {
     if (empfMode === "kunden" && selectedKunde) {
-      const k = kunden.find(c => c.id === selectedKunde);
-      return k ? { name: k.company_name, strasse: k.strasse, plz: k.plz, ort: k.ort } : null;
+      const k = selectedKundeObj;
+      if (!k) return null;
+      // Wenn Kontaktperson gewählt: Namen-Zeile = Kontaktperson, darunter Firma + Adresse
+      if (selectedKontakt !== "" && kundeKontakte[parseInt(selectedKontakt)]) {
+        const cp = kundeKontakte[parseInt(selectedKontakt)];
+        const cpName = [cp.anrede, cp.vorname, cp.name].filter(Boolean).join(" ");
+        return { name: cpName, firma: k.company_name, strasse: k.strasse, plz: k.plz, ort: k.ort };
+      }
+      return { name: k.company_name, strasse: k.strasse, plz: k.plz, ort: k.ort };
     }
     if (empfMode === "personen" && selectedPerson) {
       const p = personen.find(x => x.id === selectedPerson);
-      return p ? { name: [p.vorname, p.nachname].filter(Boolean).join(" "), strasse: p.strasse, plz: p.plz, ort: p.ort } : null;
+      if (!p) return null;
+      const name = [p.anrede, p.vorname, p.nachname].filter(Boolean).join(" ") ||
+                   [p.vorname, p.nachname].filter(Boolean).join(" ");
+      return { name, strasse: p.strasse, plz: p.plz, ort: p.ort };
     }
     if (empfMode === "frei" && freiName.trim()) {
       return { name: freiName.trim(), strasse: freiStrasse.trim(), plz: freiPlz.trim(), ort: freiOrt.trim() };
@@ -199,9 +234,11 @@ export default function BriefSchreiben() {
   };
 
   // ── Drucken ────────────────────────────────────────────────────────────────
+  const signer = currentProfile ? { name: currentProfile.full_name, titel: currentProfile.titel } : null;
+
   const handlePrint = () => {
     if (!canPrint) return;
-    const html = generateBriefHtml(recipient, datum, betreff, body);
+    const html = generateBriefHtml(recipient, datum, betreff, body, signer);
     const iframe = document.createElement("iframe");
     iframe.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;";
     document.body.appendChild(iframe);
@@ -365,12 +402,24 @@ export default function BriefSchreiben() {
 
               {/* Kunden-Dropdown */}
               {empfMode === "kunden" && (
-                <select value={selectedKunde} onChange={e => setSelectedKunde(e.target.value)} style={inp}>
-                  <option value="">– Kunden auswählen –</option>
-                  {kunden.map(k => (
-                    <option key={k.id} value={k.id}>{k.company_name}{k.ort ? ` – ${k.ort}` : ""}</option>
-                  ))}
-                </select>
+                <div className="flex flex-col gap-2">
+                  <select value={selectedKunde} onChange={e => { setSelectedKunde(e.target.value); setSelectedKontakt(""); }} style={inp}>
+                    <option value="">– Kunden auswählen –</option>
+                    {kunden.map(k => (
+                      <option key={k.id} value={k.id}>{k.company_name}{k.ort ? ` – ${k.ort}` : ""}</option>
+                    ))}
+                  </select>
+                  {kundeKontakte.length > 0 && (
+                    <select value={selectedKontakt} onChange={e => setSelectedKontakt(e.target.value)} style={inp}>
+                      <option value="">– Kontaktperson (optional) –</option>
+                      {kundeKontakte.map((cp, i) => (
+                        <option key={i} value={i}>
+                          {[cp.anrede, cp.vorname, cp.name].filter(Boolean).join(" ")}{cp.role ? ` (${cp.role})` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
               )}
 
               {/* Personen-Dropdown */}
@@ -501,6 +550,7 @@ export default function BriefSchreiben() {
                   {recipient && (
                     <div style={{ marginBottom: 20 }}>
                       <div>{recipient.name}</div>
+                      {recipient.firma && <div>{recipient.firma}</div>}
                       {recipient.strasse && <div>{recipient.strasse}</div>}
                       {(recipient.plz || recipient.ort) && <div>{[recipient.plz, recipient.ort].filter(Boolean).join(" ")}</div>}
                     </div>
@@ -515,6 +565,13 @@ export default function BriefSchreiben() {
                       line === "" ? <br key={i} /> : <p key={i} style={{ margin: "0 0 2px 0" }}>{line}</p>
                     )}
                   </div>
+                  {/* Signatur */}
+                  {signer?.name && (
+                    <div style={{ marginTop: 8 }}>
+                      <div>{signer.name}</div>
+                      {signer.titel && <div style={{ fontSize: 10, color: "#555" }}>{signer.titel}</div>}
+                    </div>
+                  )}
                 </div>
               </div>
             )}

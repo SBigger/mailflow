@@ -52,6 +52,7 @@ export default function Settings() {
   const [editingUserRole, setEditingUserRole] = useState('');
   const [editingUserNameId, setEditingUserNameId] = useState(null);
   const [editingUserNameValue, setEditingUserNameValue] = useState('');
+  const [editingUserTitelValue, setEditingUserTitelValue] = useState('');
   const [invitingEmail, setInvitingEmail] = useState('');
   const [invitedUsers, setInvitedUsers] = useState(() => {
     const stored = localStorage.getItem('invitedUsers');
@@ -330,15 +331,15 @@ export default function Settings() {
   });
 
   const updateUserNameMutation = useMutation({
-    mutationFn: async ({ id, full_name }) => {
+    mutationFn: async ({ id, full_name, titel }) => {
       // Requires RLS policy "profiles_admin_update_all" (migration 20260305_admin_can_update_profiles.sql)
-      const { error } = await supabase.from('profiles').update({ full_name }).eq('id', id);
+      const { error } = await supabase.from('profiles').update({ full_name, titel: titel ?? '' }).eq('id', id);
       if (error) throw new Error(error.message);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
       setEditingUserNameId(null);
-      toast.success('Name aktualisiert');
+      toast.success('Profil aktualisiert');
     },
     onError: (e) => toast.error('Fehler: ' + e.message),
   });
@@ -478,7 +479,7 @@ export default function Settings() {
       // Profiles ohne sensible OAuth-Token
       const { data: profiles } = await supabase
         .from('profiles')
-        .select('id, email, full_name, role, created_at, theme, sync_days, email_signature, chat_signature, current_mailbox');
+        .select('id, email, full_name, titel, role, created_at, theme, sync_days, email_signature, chat_signature, current_mailbox');
       backup.tables.profiles = profiles || [];
 
       // Kanban-Snapshot: outlook_id → column_id für Restore nach Reset
@@ -1340,38 +1341,49 @@ export default function Settings() {
                             {/* Name / Email area */}
                             <div className="flex-1 min-w-0">
                               {editingUserNameId === u.id ? (
-                                <div className="flex items-center gap-2">
+                                <div className="flex flex-col gap-1.5">
+                                  <div className="flex items-center gap-2">
+                                    <Input
+                                      autoFocus
+                                      value={editingUserNameValue}
+                                      onChange={(e) => setEditingUserNameValue(e.target.value)}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Escape') setEditingUserNameId(null);
+                                      }}
+                                      placeholder="Vorname Nachname"
+                                      className="h-7 text-sm flex-1"
+                                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: inputColor }}
+                                    />
+                                    <Button
+                                      variant="ghost" size="icon"
+                                      onClick={() => updateUserNameMutation.mutate({ id: u.id, full_name: editingUserNameValue.trim(), titel: editingUserTitelValue.trim() })}
+                                      disabled={updateUserNameMutation.isPending}
+                                      className="h-7 w-7 text-green-500 hover:text-green-400 hover:bg-green-500/10 flex-shrink-0"
+                                    >
+                                      <Check className="h-3.5 w-3.5" />
+                                    </Button>
+                                    <Button variant="ghost" size="icon" onClick={() => setEditingUserNameId(null)} className="h-7 w-7 flex-shrink-0" style={{ color: textMuted }}>
+                                      <X className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </div>
                                   <Input
-                                    autoFocus
-                                    value={editingUserNameValue}
-                                    onChange={(e) => setEditingUserNameValue(e.target.value)}
-                                    onKeyDown={(e) => {
-                                      if (e.key === 'Enter') updateUserNameMutation.mutate({ id: u.id, full_name: editingUserNameValue.trim() });
-                                      if (e.key === 'Escape') setEditingUserNameId(null);
-                                    }}
-                                    placeholder="Vorname Nachname"
-                                    className="h-7 text-sm flex-1"
+                                    value={editingUserTitelValue}
+                                    onChange={(e) => setEditingUserTitelValue(e.target.value)}
+                                    placeholder="Titel (z.B. lic.iur., Dr.)"
+                                    className="h-7 text-xs"
                                     style={{ backgroundColor: inputBg, borderColor: inputBorder, color: inputColor }}
                                   />
-                                  <Button
-                                    variant="ghost" size="icon"
-                                    onClick={() => updateUserNameMutation.mutate({ id: u.id, full_name: editingUserNameValue.trim() })}
-                                    disabled={updateUserNameMutation.isPending}
-                                    className="h-7 w-7 text-green-500 hover:text-green-400 hover:bg-green-500/10 flex-shrink-0"
-                                  >
-                                    <Check className="h-3.5 w-3.5" />
-                                  </Button>
-                                  <Button variant="ghost" size="icon" onClick={() => setEditingUserNameId(null)} className="h-7 w-7 flex-shrink-0" style={{ color: textMuted }}>
-                                    <X className="h-3.5 w-3.5" />
-                                  </Button>
                                 </div>
                               ) : (
                                 <div className="flex items-center gap-1.5">
-                                  <div className="font-semibold truncate" style={{ color: headingColor }}>{u.full_name || u.email}</div>
+                                  <div>
+                                    <div className="font-semibold truncate" style={{ color: headingColor }}>{u.full_name || u.email}</div>
+                                    {u.titel && <div className="text-xs" style={{ color: textMuted }}>{u.titel}</div>}
+                                  </div>
                                   <button
-                                    onClick={() => { setEditingUserNameId(u.id); setEditingUserNameValue(u.full_name || ''); }}
+                                    onClick={() => { setEditingUserNameId(u.id); setEditingUserNameValue(u.full_name || ''); setEditingUserTitelValue(u.titel || ''); }}
                                     className="opacity-40 hover:opacity-100 transition-opacity flex-shrink-0"
-                                    title="Name bearbeiten"
+                                    title="Name & Titel bearbeiten"
                                   >
                                     <Pencil className="h-3 w-3" style={{ color: textMuted }} />
                                   </button>

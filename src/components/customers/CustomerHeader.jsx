@@ -38,6 +38,7 @@ export default function CustomerHeader({ customer, staff, onUpdate }) {
   const [companyName, setCompanyName] = useState(customer.company_name || "");
 
   // Privatperson
+  const [anrede,         setAnrede]         = useState(customer.anrede || "");
   const [nachname,       setNachname]       = useState(customer.nachname || "");
   const [vorname,        setVorname]        = useState(customer.vorname || "");
   const [ahvNummer,      setAhvNummer]      = useState(customer.ahv_nummer || "");
@@ -61,6 +62,7 @@ export default function CustomerHeader({ customer, staff, onUpdate }) {
     setOrt(customer.ort || "");
     setPhone(customer.phone || "");
     setBudget(customer.budget !== undefined && customer.budget !== null ? formatBudgetStatic(customer.budget) : "");
+    setAnrede(customer.anrede || "");
     setNachname(customer.nachname || "");
     setVorname(customer.vorname || "");
     setAhvNummer(customer.ahv_nummer || "");
@@ -85,6 +87,11 @@ export default function CustomerHeader({ customer, staff, onUpdate }) {
     }
   };
 
+  const handleAnredeChange = (val) => {
+    setAnrede(val);
+    if (val !== (customer.anrede || "")) onUpdate({ anrede: val });
+  };
+
   const inputClass = isArtis
     ? 'bg-white border-[#bfcfbf] text-[#2d3a2d] placeholder:text-[#8aaa8f]'
     : isLight
@@ -100,21 +107,33 @@ export default function CustomerHeader({ customer, staff, onUpdate }) {
       <div className="flex items-start gap-3">
         <div className="flex-1 min-w-0">
           {isPrivatperson ? (
-            <div className="flex gap-2">
-              <Input
-                value={nachname}
-                onChange={e => setNachname(e.target.value)}
-                onBlur={handleNameBlur}
-                className={`text-2xl font-bold focus-visible:ring-violet-500 h-auto py-2 flex-1 ${inputClass}`}
-                placeholder="Nachname..."
-              />
-              <Input
-                value={vorname}
-                onChange={e => setVorname(e.target.value)}
-                onBlur={handleNameBlur}
-                className={`text-2xl font-bold focus-visible:ring-violet-500 h-auto py-2 flex-1 ${inputClass}`}
-                placeholder="Vorname..."
-              />
+            <div className="flex flex-col gap-2">
+              <select
+                value={anrede}
+                onChange={e => handleAnredeChange(e.target.value)}
+                className={`rounded-md border px-3 py-1.5 text-sm w-32 ${inputClass}`}
+                style={{ height: 36 }}
+              >
+                <option value="">Anrede</option>
+                <option value="Herr">Herr</option>
+                <option value="Frau">Frau</option>
+              </select>
+              <div className="flex gap-2">
+                <Input
+                  value={nachname}
+                  onChange={e => setNachname(e.target.value)}
+                  onBlur={handleNameBlur}
+                  className={`text-2xl font-bold focus-visible:ring-violet-500 h-auto py-2 flex-1 ${inputClass}`}
+                  placeholder="Nachname..."
+                />
+                <Input
+                  value={vorname}
+                  onChange={e => setVorname(e.target.value)}
+                  onBlur={handleNameBlur}
+                  className={`text-2xl font-bold focus-visible:ring-violet-500 h-auto py-2 flex-1 ${inputClass}`}
+                  placeholder="Vorname..."
+                />
+              </div>
             </div>
           ) : (
             <Input
