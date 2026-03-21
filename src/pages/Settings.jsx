@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Mail, MessageSquare, Link2, Tag as TagIcon, FolderOpen, Plus, Trash2, Save, Users, Send, Calendar, Menu, ChevronDown, LayoutDashboard, CheckSquare, RefreshCw, ClipboardList, GripVertical, UserMinus, Pencil, Check, X, Sun, Moon, KeyRound, HardDrive, Download, Database, Inbox } from "lucide-react";
+import { Mail, MessageSquare, Link2, Tag as TagIcon, FolderOpen, Plus, Trash2, Save, Users, Send, Calendar, Menu, ChevronDown, LayoutDashboard, CheckSquare, RefreshCw, ClipboardList, GripVertical, UserMinus, Pencil, Check, X, Sun, Moon, KeyRound, HardDrive, Download, Database, Inbox, BookOpen } from "lucide-react";
 import { ThemeContext } from "@/Layout";
 import DeleteUserDialog from "@/components/settings/DeleteUserDialog";
 import DokAblageSettings from "@/components/settings/DokAblageSettings";
@@ -650,6 +650,12 @@ export default function Settings() {
           >
             <FolderOpen className="h-4 w-4" /> Dateiablage
           </button>
+          <Link
+            to={createPageUrl('KnowledgeBase')}
+            className={`w-full justify-start flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${navInactiveStyle}`}
+          >
+            <BookOpen className="h-4 w-4" /> Wissensdatenbank
+          </Link>
           <button
             onClick={() => setActiveTab('appearance')}
             className={`w-full justify-start flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'appearance' ? navActiveStyle : navInactiveStyle}`}
