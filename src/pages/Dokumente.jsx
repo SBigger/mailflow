@@ -384,7 +384,6 @@ export default function Dokumente() {
     return () => clearTimeout(timer);
   }, [ftSearch, selCustomerId]);
 
-  const [reindexing,    setReindexing]    = useState(false);
   const [showUpload,    setShowUpload]    = useState(false);
   const [editDoc,        setEditDoc]        = useState(null);
   const [checkinDoc,     setCheckinDoc]     = useState(null);  // wird nicht mehr benoetigt, bleibt fuer Compat
@@ -403,6 +402,42 @@ export default function Dokumente() {
     queryKey: ["dok_tags"],
     queryFn:  () => entities.DokTag.list("sort_order"),
   });
+
+  // ── Stilles Auto-Indexing (wie M-Files Background Service) ──────────────
+  // Läuft automatisch im Hintergrund wenn allDoks geladen sind.
+  // Kein Button, kein Spinner – transparent für den User.
+  const autoIndexRef = useRef(false);
+  useEffect(() => {
+    if (autoIndexRef.current) return;            // bereits gestartet
+    const toIndex = allDoks.filter(d => !d.content_text && d.storage_path);
+    if (!toIndex.length) return;
+    autoIndexRef.current = true;
+
+    (async () => {
+      let done = 0;
+      for (const doc of toIndex) {
+        try {
+          const { data } = await supabase.storage.from(BUCKET).createSignedUrl(doc.storage_path, 120);
+          if (!data?.signedUrl) continue;
+          const resp = await fetch(data.signedUrl);
+          if (!resp.ok) continue;
+          const blob = await resp.blob();
+          const file = new File([blob], doc.filename || doc.name || "doc", { type: doc.file_type || "" });
+          const text = await extractDocumentText(file);
+          if (text) {
+            await entities.Dokument.update(doc.id, { content_text: text });
+            done++;
+          }
+        } catch (e) {
+          console.warn("[AutoIndex] Fehler bei", doc.id, e);
+        }
+      }
+      if (done > 0) {
+        queryClient.invalidateQueries(["dokumente-all"]);
+        console.info(`[AutoIndex] ${done} Dokumente im Hintergrund indexiert`);
+      }
+    })();
+  }, [allDoks]);
 
   // Von aktuellem User ausgecheckte Dokumente
   const myCheckedOutDocs = useMemo(() =>
@@ -478,27 +513,6 @@ export default function Dokumente() {
 
     window.open(fileUrl, '_blank');
   }
-
-  const handleReindex = async () => {
-    const toIndex = allDoks.filter(d => !d.content_text && d.storage_path);
-    if (!toIndex.length) { toast.info("Alle Dokumente sind bereits indexiert."); return; }
-    setReindexing(true);
-    let done = 0;
-    for (const doc of toIndex) {
-      try {
-        const { data } = await supabase.storage.from(BUCKET).createSignedUrl(doc.storage_path, 120);
-        if (!data?.signedUrl) continue;
-        const resp = await fetch(data.signedUrl);
-        const blob = await resp.blob();
-        const file = new File([blob], doc.filename || doc.name || "doc", { type: doc.file_type || "" });
-        const text = await extractDocumentText(file);
-        if (text) { await entities.Dokument.update(doc.id, { content_text: text }); done++; }
-      } catch (e) { console.warn("Reindex fehlgeschlagen für", doc.id, e); }
-    }
-    toast.success(`${done} von ${toIndex.length} Dokumente neu indexiert`);
-    setReindexing(false);
-    queryClient.invalidateQueries(["dokumente-all"]);
-  };
 
   const handleDelete = async (doc) => {
     if (!window.confirm(`"${doc.name}" wirklich l\u00f6schen?`)) return;
@@ -649,12 +663,6 @@ export default function Dokumente() {
           )}
         </div>
         <span style={{ fontSize: 12, color: s.textMuted }}>{allDoks.length} Dok.</span>
-        {allDoks.some(d => !d.content_text && d.storage_path) && (
-          <Button onClick={handleReindex} disabled={reindexing}
-            style={{ background: s.cardBg, border: "1px solid " + border, color: s.textMuted, fontSize: 11, height: 32, display: "flex", alignItems: "center", gap: 4 }}>
-            <Search size={11} /> {reindexing ? "Indexiere…" : "Neu indexieren"}
-          </Button>
-        )}
         <Button onClick={() => setShowUpload(true)} style={{ background: accent, color: "#fff", fontSize: 12, height: 32, display: "flex", alignItems: "center", gap: 5 }}>
           <Upload size={13} /> Hochladen
         </Button>
