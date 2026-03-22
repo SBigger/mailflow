@@ -297,25 +297,29 @@ export default function Dokumente() {
   const [expandedCat,   setExpandedCat]   = useState({});
   const [custSearch,    setCustSearch]    = useState("");
   const [fileSearch,    setFileSearch]    = useState("");
-  const [spSearch,    setSpSearch]    = useState("");
-  const [spResults,   setSpResults]   = useState(null);
-  const [spSearching, setSpSearching] = useState(false);
+  const [ftSearch,    setFtSearch]    = useState("");
+  const [ftResults,   setFtResults]   = useState(null);
+  const [ftSearching, setFtSearching] = useState(false);
 
-  // Volltextsuche via SharePoint
+  // Volltext-Suche via Supabase RPC (PostgreSQL GIN-Index)
   useEffect(() => {
-    const q = spSearch.trim();
-    if (q.length < 2) { setSpResults(null); return; }
+    const q = ftSearch.trim();
+    if (q.length < 2) { setFtResults(null); return; }
     const timer = setTimeout(async () => {
-      setSpSearching(true);
+      setFtSearching(true);
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const data = await spCall(session?.access_token || '', { action: 'search', q });
-        setSpResults(data.items || []);
-      } catch (e) { toast.error("Suche fehlgeschlagen: " + e.message); setSpResults([]); }
-      finally { setSpSearching(false); }
-    }, 500);
+        const { data, error } = await supabase.rpc("search_dokumente", {
+          p_query:       q,
+          p_customer_id: selCustomerId || null,
+          p_limit:       100,
+        });
+        if (error) throw error;
+        setFtResults(data || []);
+      } catch (e) { toast.error("Suche fehlgeschlagen: " + e.message); setFtResults([]); }
+      finally { setFtSearching(false); }
+    }, 350);
     return () => clearTimeout(timer);
-  }, [spSearch]);
+  }, [ftSearch, selCustomerId]);
 
   const [showUpload,    setShowUpload]    = useState(false);
   const [editDoc,        setEditDoc]        = useState(null);
@@ -532,13 +536,81 @@ export default function Dokumente() {
           ))}
         </div>
         <div style={{ flex: 1 }} />
+        {/* ── Volltext-Suche ── */}
+        <div style={{ position: "relative" }}>
+          <Search size={13} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: ftSearching ? accent : s.textMuted, pointerEvents: "none" }} />
+          <input
+            value={ftSearch}
+            onChange={e => setFtSearch(e.target.value)}
+            placeholder={selCustomerId ? "Volltext-Suche (dieser Kunde)…" : "Volltext-Suche über alle Dokumente…"}
+            style={{ background: s.inputBg, border: "1px solid " + (ftSearch ? accent : border), color: s.textMain, borderRadius: 8, padding: "5px 32px 5px 30px", fontSize: 12, width: 280, outline: "none", transition: "border 0.2s" }}
+          />
+          {ftSearch && (
+            <button onClick={() => { setFtSearch(""); setFtResults(null); }}
+              style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: s.textMuted, padding: 0 }}>
+              <X size={13} />
+            </button>
+          )}
+        </div>
         <span style={{ fontSize: 12, color: s.textMuted }}>{allDoks.length} Dok.</span>
         <Button onClick={() => setShowUpload(true)} style={{ background: accent, color: "#fff", fontSize: 12, height: 32, display: "flex", alignItems: "center", gap: 5 }}>
           <Upload size={13} /> Hochladen
         </Button>
       </div>
 
-      {pageTab === 'ausgecheckt' && (
+      {/* ── Volltext-Suchergebnisse (überlagert normale Ansicht) ── */}
+      {ftResults !== null && (
+        <div style={{ flex: 1, overflowY: "auto", padding: "12px 20px" }}>
+          <div style={{ fontSize: 12, color: s.textMuted, marginBottom: 10, display: "flex", alignItems: "center", gap: 8 }}>
+            {ftSearching
+              ? <><Search size={12} style={{ color: accent }} /> Suche läuft…</>
+              : <><Search size={12} style={{ color: accent }} />
+                  <strong style={{ color: s.textMain }}>{ftResults.length}</strong> Treffer für „{ftSearch}"
+                  {selCustomerId && <span> (nur dieser Kunde)</span>}
+                </>
+            }
+          </div>
+          {ftResults.length === 0 && !ftSearching && (
+            <div style={{ textAlign: "center", color: s.textMuted, paddingTop: 60, fontSize: 14 }}>
+              Kein Treffer — versuche andere Begriffe oder weniger spezifische Wörter.
+            </div>
+          )}
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {ftResults.map(doc => {
+              const fi   = getFileInfo(doc.file_type, doc.filename);
+              const cat  = CATEGORIES.find(c => c.key === doc.category);
+              const cust = customers.find(c => c.id === doc.customer_id);
+              return (
+                <div key={doc.id}
+                  onClick={() => { setFtSearch(""); setFtResults(null); setSelCustomerId(doc.customer_id); setSelCat(doc.category); setSelYear(doc.year || null); }}
+                  style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "10px 14px", background: s.cardBg,
+                    border: "1px solid " + border, borderRadius: 8, cursor: "pointer", transition: "border 0.15s" }}
+                  onMouseEnter={e => e.currentTarget.style.borderColor = accent}
+                  onMouseLeave={e => e.currentTarget.style.borderColor = border}>
+                  <span style={{ background: fi.color, color: "#fff", borderRadius: 4, padding: "2px 6px", fontSize: 10, fontWeight: 700, flexShrink: 0, minWidth: 36, textAlign: "center", marginTop: 2 }}>{fi.label}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, color: s.textMain, fontWeight: 600 }}>{doc.name}</div>
+                    {doc.headline && (
+                      <div style={{ fontSize: 11, color: s.textMuted, marginTop: 2, fontStyle: "italic" }}
+                        dangerouslySetInnerHTML={{ __html: doc.headline.replace(/<b>/g, `<b style="color:${accent};font-style:normal">`).replace(/<\/b>/g, "</b>") }} />
+                    )}
+                    <div style={{ fontSize: 11, color: s.textMuted, marginTop: 3, display: "flex", gap: 8 }}>
+                      {cust && <span style={{ color: accent, fontWeight: 500 }}>{cust.company_name}</span>}
+                      {cat && <span>{cat.icon} {cat.label}</span>}
+                      {doc.year && <span>{doc.year}</span>}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 11, color: s.textMuted, flexShrink: 0, alignSelf: "center" }}>
+                    {Math.round((doc.rank || 0) * 100)}% Relevanz
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {pageTab === 'ausgecheckt' && !ftResults && (
         <div style={{ flex: 1, overflowY: "auto", padding: 24 }}>
           {myCheckedOutDocs.length === 0 ? (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "50%", color: s.textMuted, gap: 10 }}>
@@ -579,7 +651,7 @@ export default function Dokumente() {
         </div>
       )}
 
-      {pageTab === 'alle' && (
+      {pageTab === 'alle' && !ftResults && (
       <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
 
         {/* ═══ LINKS: Baum ═══════════════════════════════════════════════ */}
