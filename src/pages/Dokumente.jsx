@@ -431,7 +431,25 @@ export default function Dokumente() {
       const { data: { session } }        = await supabase.auth.getSession();
       const jwt = session?.access_token || '';
 
-      // Checkout-Sperre sofort in DB setzen (optimistisch)
+      // Datei-URL ermitteln BEVOR die Checkout-Sperre gesetzt wird
+      let fileUrl = '';
+      if (doc.sharepoint_web_url) {
+        // SharePoint-Dokument: direkte Web-URL verwenden
+        fileUrl = doc.sharepoint_web_url;
+      } else if (doc.storage_path) {
+        // Legacy Supabase Storage: signierte URL erstellen
+        const { data: urlData } = await supabase.storage.from(BUCKET).createSignedUrl(doc.storage_path, 3600);
+        if (!urlData?.signedUrl) {
+          toast.error('Fehler beim Erstellen der Download-URL');
+          return;
+        }
+        fileUrl = urlData.signedUrl;
+      } else {
+        toast.error('Keine Datei-URL verfügbar.');
+        return;
+      }
+
+      // Checkout-Sperre in DB setzen (erst nachdem URL erfolgreich ermittelt wurde)
       await entities.Dokument.update(doc.id, {
         checked_out_by:      authUser.id,
         checked_out_by_name: user?.full_name || authUser.email,
@@ -439,25 +457,18 @@ export default function Dokumente() {
       });
       queryClient.invalidateQueries({ queryKey: ["dokumente-all"] });
 
-        // Alle SharePoint-Dateien: via Artis Agent öffnen (jede Endung)
-      const { data: urlData } = await supabase.storage.from(BUCKET).createSignedUrl(doc.storage_path, 3600);
-      if (!urlData?.signedUrl) {
-        toast.error('Fehler beim Erstellen der Download-URL')
-        ; return;
-      }
-
       const uri = [
           'artis-open://checkout',
           '?doc_id=',   encodeURIComponent(doc.id),
           '&jwt=',      encodeURIComponent(jwt),
-          '&item_id=',  encodeURIComponent(urlData.signedUrl),
+          '&item_id=',  encodeURIComponent(fileUrl),
           '&filename=', encodeURIComponent(doc.filename),
         ].join('');
-        const _a = document.createElement('a');
-        _a.href = uri;
-        document.body.appendChild(_a); _a.click();
-        document.body.removeChild(_a);
-        toast.success('Artis Agent öffnet die Datei – wird beim Schließen automatisch eingecheckt.');
+      const _a = document.createElement('a');
+      _a.href = uri;
+      document.body.appendChild(_a); _a.click();
+      document.body.removeChild(_a);
+      toast.success('Artis Agent öffnet die Datei – wird beim Schließen automatisch eingecheckt.');
     } catch (err) {
       toast.error('Fehler: ' + err.message);
     }
