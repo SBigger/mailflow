@@ -27,7 +27,7 @@ async function extractDocumentText(file) {
     if (name.endsWith(".xlsx") || name.endsWith(".xls") || name.endsWith(".csv")) {
       const { read, utils } = await import("xlsx");
       const buf = await file.arrayBuffer();
-      const wb  = read(buf, { type: "array" });
+      const wb  = read(new Uint8Array(buf), { type: "array" });
       let text  = "";
       for (const sheetName of wb.SheetNames) {
         const ws   = wb.Sheets[sheetName];
