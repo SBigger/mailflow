@@ -99,14 +99,16 @@ export default function TagSelectWidget({ value = [], onChange, onCategoryChange
                 if (e.key === "Escape") { setOpen(false); return; }
                 if (e.key === "ArrowDown") {
                   e.preventDefault();
-                  setHighlight(h => Math.min(h + 1, flatItems.length - 1));
-                  listRef.current?.children[Math.min(highlight + 1, flatItems.length - 1)]?.scrollIntoView({ block: "nearest" });
+                  const next = Math.min(highlight + 1, flatItems.length - 1);
+                  setHighlight(next);
+                  listRef.current?.querySelector(`[data-flatidx="${next}"]`)?.scrollIntoView({ block: "nearest" });
                   return;
                 }
                 if (e.key === "ArrowUp") {
                   e.preventDefault();
-                  setHighlight(h => Math.max(h - 1, 0));
-                  listRef.current?.children[Math.max(highlight - 1, 0)]?.scrollIntoView({ block: "nearest" });
+                  const next = Math.max(highlight - 1, 0);
+                  setHighlight(next);
+                  listRef.current?.querySelector(`[data-flatidx="${next}"]`)?.scrollIntoView({ block: "nearest" });
                   return;
                 }
                 if (e.key === "Enter" && flatItems[highlight]) {
@@ -149,7 +151,7 @@ export default function TagSelectWidget({ value = [], onChange, onCategoryChange
                 return (
                   <div key={par.id}>
                     {/* Parent */}
-                    <div onClick={() => { toggle(par.id); setHighlight(parIdx); }} style={{
+                    <div data-flatidx={parIdx} onClick={() => { toggle(par.id); setHighlight(parIdx); }} style={{
                       display: "flex", alignItems: "center", gap: 8,
                       padding: "7px 12px", cursor: "pointer", fontSize: 12, fontWeight: 600,
                       background: highlight === parIdx ? parCol + "33" : parSel ? parCol + "22" : "transparent",
@@ -168,7 +170,7 @@ export default function TagSelectWidget({ value = [], onChange, onCategoryChange
                       const kidSel = value.includes(kid.id);
                       const kidIdx = flatIdx++;
                       return (
-                        <div key={kid.id} onClick={() => { toggle(kid.id); setHighlight(kidIdx); }} style={{
+                        <div key={kid.id} data-flatidx={kidIdx} onClick={() => { toggle(kid.id); setHighlight(kidIdx); }} style={{
                           display: "flex", alignItems: "center", gap: 8,
                           padding: "5px 12px 5px 30px", cursor: "pointer", fontSize: 12,
                           background: highlight === kidIdx ? parCol + "28" : kidSel ? parCol + "14" : "transparent",
