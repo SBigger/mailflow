@@ -41,7 +41,7 @@ function todayStr() {
 function exportCSV(fahrzeuge, customerName) {
   const headers = [
     "Kennzeichen", "Marke", "Modell", "Fahrzeugart", "Fahrer",
-    "Kaufpreis exkl. MWST", "Leasing", "Leasing-Barkaufpreis", "Leasing bis",
+    "Kaufpreis exkl. MWST", "Leasing", "Leasing-Barkaufpreis", "Leasingbeginn", "Laufzeit Ende", "Anz. Raten", "Monatl. Rate CHF", "Erste Rate CHF", "Restwert CHF",
     "Monate im Betrieb", "Eigenanteil Fahrer/Mt", "Privatanteil/Mt (CHF)",
     "Privatanteil/Jahr (CHF)", "MWST 8.1% (Ziff. 415)",
     "Lohnausweis Ziff. 2.2", "Feld F (unentgeltl. Befördg.)", "Fahrtenbuch",
@@ -53,7 +53,12 @@ function exportCSV(fahrzeuge, customerName) {
       fz.kennzeichen, fz.marke, fz.modell, fz.fahrzeugart, fz.fahrer_name,
       fz.kaufpreis_exkl_mwst ?? "", fz.leasing ? "Ja" : "Nein",
       fz.leasing ? (fz.leasing_barkaufpreis ?? "") : "",
-      fz.leasing && fz.leasing_laufzeit_bis ? fz.leasing_laufzeit_bis : "",
+      fz.leasing ? (fz.leasing_startdatum ?? "") : "",
+      fz.leasing ? (fz.leasing_laufzeit_bis ?? "") : "",
+      fz.leasing ? (fz.leasing_anzahl_raten ?? "") : "",
+      fz.leasing ? (fz.leasing_monatliche_rate ?? "") : "",
+      fz.leasing ? (fz.leasing_erste_rate ?? "") : "",
+      fz.leasing ? (fz.leasing_restwert ?? "") : "",
       fz.monate_im_betrieb,
       fz.fahrer_selbstbezahlt_monat ?? 0,
       c.pa_month.toFixed(2), c.pa_year.toFixed(2),
@@ -104,12 +109,24 @@ const EMPTY = {
   kennzeichen: "", marke: "", modell: "", fahrzeugart: "Personenwagen",
   chassis_nummer: "", anschaffungsjahr: "",
   kaufpreis_exkl_mwst: "", leasing: false, leasing_barkaufpreis: "",
-  leasing_laufzeit_bis: "", leasing_vertrag_url: "",
+  leasing_startdatum: "", leasing_laufzeit_bis: "",
+  leasing_anzahl_raten: "", leasing_erste_rate: "",
+  leasing_monatliche_rate: "", leasing_restwert: "",
+  leasing_vertrag_url: "", leasing_dokument_id: null,
   monate_im_betrieb: 12, fahrer_name: "", fahrer_selbstbezahlt_monat: "",
   unentgeltliche_befoerderung: false, fahrtenbuch: false,
   effektive_privatkilometer: "", ausschliesslich_geschaeftlich: false,
   notizen: "", sort_order: 0,
 };
+
+// Auto-berechne Anzahl Raten aus Start- und Enddatum
+function calcRaten(startdatum, laufzeit_bis) {
+  if (!startdatum || !laufzeit_bis) return "";
+  const s = new Date(startdatum);
+  const e = new Date(laufzeit_bis);
+  if (isNaN(s) || isNaN(e) || e <= s) return "";
+  return (e.getFullYear() - s.getFullYear()) * 12 + (e.getMonth() - s.getMonth());
+}
 
 const FAHRZEUGARTEN = [
   "Personenwagen", "Kombi", "SUV", "Lieferwagen", "Transporter",
@@ -239,49 +256,113 @@ function FahrzeugForm({ initial, onSave, onCancel, theme, accent, uploading, onF
         </div>
 
         {/* Leasing */}
-        <div className="rounded-lg p-3 space-y-2" style={{
+        <div className="rounded-lg p-3 space-y-3" style={{
           backgroundColor: f.leasing ? (isArtis ? "#e8f2e8" : isLight ? "#eef2ff" : "#1e1e2e") : "transparent",
           border: `1px dashed ${f.leasing ? accent : borderC}`,
         }}>
           <CB checked={f.leasing} onChange={v => set("leasing", v)}
             label="Leasingfahrzeug (Barkaufpreis aus Vertrag verwenden)" color={accent} />
-          {f.leasing && (
-            <div className="grid grid-cols-3 gap-2 mt-1">
+          {f.leasing && (<>
+            {/* Zeile 1: Barkaufpreis + Laufzeit */}
+            <div className="grid grid-cols-3 gap-2">
               <div>
                 <label style={labelStyle}>Barkaufpreis exkl. MWST *</label>
                 <input value={f.leasing_barkaufpreis} onChange={e => set("leasing_barkaufpreis", e.target.value)}
-                  placeholder="Laut Leasingvertrag" type="number" style={inpStyle} />
+                  placeholder="Laut Vertrag" type="number" style={inpStyle} />
               </div>
               <div>
-                <label style={labelStyle}>Leasing bis</label>
-                <input value={f.leasing_laufzeit_bis} onChange={e => set("leasing_laufzeit_bis", e.target.value)}
-                  type="date" style={inpStyle} />
+                <label style={labelStyle}>Leasingbeginn</label>
+                <input value={f.leasing_startdatum} type="date" style={inpStyle}
+                  onChange={e => {
+                    const nd = e.target.value;
+                    const raten = calcRaten(nd, f.leasing_laufzeit_bis);
+                    setF(p => ({ ...p, leasing_startdatum: nd, leasing_anzahl_raten: raten !== "" ? raten : p.leasing_anzahl_raten }));
+                  }} />
               </div>
               <div>
-                <label style={labelStyle}>Leasingvertrag</label>
-                {f.leasing_vertrag_url ? (
-                  <div className="flex items-center gap-1">
-                    <a href={f.leasing_vertrag_url} target="_blank" rel="noopener noreferrer"
-                      className="flex items-center gap-1 text-xs"
-                      style={{ color: accent }}>
-                      <FileText className="w-3 h-3" /> Vertrag anzeigen
-                      <ExternalLink className="w-2.5 h-2.5" />
-                    </a>
-                    <button type="button" onClick={() => set("leasing_vertrag_url", "")}
-                      className="text-red-400 hover:text-red-600 ml-1"><X className="w-3 h-3" /></button>
-                  </div>
-                ) : (
-                  <label className="flex items-center gap-1 cursor-pointer text-xs"
-                    style={{ color: accent }}>
-                    <Upload className="w-3 h-3" />
-                    {uploading ? "Lädt…" : "PDF hochladen"}
-                    <input type="file" accept=".pdf,.doc,.docx" className="hidden"
-                      onChange={e => e.target.files?.[0] && onFileUpload(e.target.files[0], v => set("leasing_vertrag_url", v))} />
-                  </label>
-                )}
+                <label style={labelStyle}>Laufzeit Ende</label>
+                <input value={f.leasing_laufzeit_bis} type="date" style={inpStyle}
+                  onChange={e => {
+                    const nd = e.target.value;
+                    const raten = calcRaten(f.leasing_startdatum, nd);
+                    setF(p => ({ ...p, leasing_laufzeit_bis: nd, leasing_anzahl_raten: raten !== "" ? raten : p.leasing_anzahl_raten }));
+                  }} />
               </div>
             </div>
-          )}
+            {/* Zeile 2: Raten-Details */}
+            <div className="grid grid-cols-4 gap-2">
+              <div>
+                <label style={labelStyle}>
+                  Anz. Raten
+                  {calcRaten(f.leasing_startdatum, f.leasing_laufzeit_bis) !== "" && (
+                    <span className="ml-1 text-[9px]" style={{ color: accent }}>(auto)</span>
+                  )}
+                </label>
+                <input value={f.leasing_anzahl_raten} onChange={e => set("leasing_anzahl_raten", e.target.value)}
+                  type="number" min="1" placeholder="z.B. 48" style={inpStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>Monatl. Rate CHF</label>
+                <input value={f.leasing_monatliche_rate} onChange={e => set("leasing_monatliche_rate", e.target.value)}
+                  type="number" min="0" placeholder="0.00" style={inpStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>Erste Rate CHF</label>
+                <input value={f.leasing_erste_rate} onChange={e => set("leasing_erste_rate", e.target.value)}
+                  type="number" min="0" placeholder="Sonderzahlung" style={inpStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>Restwert CHF</label>
+                <input value={f.leasing_restwert} onChange={e => set("leasing_restwert", e.target.value)}
+                  type="number" min="0" placeholder="Fakultativ" style={inpStyle} />
+              </div>
+            </div>
+            {/* Leasing-Zusammenfassung */}
+            {f.leasing_anzahl_raten && f.leasing_monatliche_rate && (
+              <div className="text-xs rounded px-3 py-1.5 flex gap-4 flex-wrap"
+                style={{ backgroundColor: isArtis ? "#ddeedd" : "#eff6ff", color: "#374151" }}>
+                <span>
+                  <span style={{ color: "#6b7280" }}>Total Raten: </span>
+                  <strong style={{ color: accent }}>CHF {fmtCHF(
+                    (parseFloat(f.leasing_erste_rate) || parseFloat(f.leasing_monatliche_rate) || 0) +
+                    Math.max(0, (parseInt(f.leasing_anzahl_raten) || 0) - 1) * (parseFloat(f.leasing_monatliche_rate) || 0)
+                  )}</strong>
+                </span>
+                {f.leasing_restwert && <span>
+                  <span style={{ color: "#6b7280" }}>+ Restwert: </span>
+                  <strong>CHF {fmtCHF(parseFloat(f.leasing_restwert))}</strong>
+                </span>}
+              </div>
+            )}
+            {/* Leasingvertrag Upload */}
+            <div>
+              <label style={labelStyle}>Leasingvertrag (PDF)</label>
+              {f.leasing_vertrag_url ? (
+                <div className="flex items-center gap-2">
+                  <a href={f.leasing_vertrag_url} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-1 text-xs"
+                    style={{ color: accent }}>
+                    <FileText className="w-3 h-3" /> Vertrag anzeigen
+                    <ExternalLink className="w-2.5 h-2.5" />
+                  </a>
+                  <span className="text-xs" style={{ color: "#9ca3af" }}>· in Dateiablage gespeichert</span>
+                  <button type="button" onClick={() => { set("leasing_vertrag_url", ""); set("leasing_dokument_id", null); }}
+                    className="text-red-400 hover:text-red-600 ml-1"><X className="w-3 h-3" /></button>
+                </div>
+              ) : (
+                <label className="flex items-center gap-1.5 cursor-pointer text-xs px-3 py-1.5 rounded-md w-fit"
+                  style={{ color: accent, border: `1px solid ${accent}`, opacity: uploading ? 0.6 : 1 }}>
+                  <Upload className="w-3 h-3" />
+                  {uploading ? "Lädt & indexiert…" : "PDF hochladen + in Ablage speichern"}
+                  <input type="file" accept=".pdf,.doc,.docx" className="hidden" disabled={uploading}
+                    onChange={e => e.target.files?.[0] && onFileUpload(e.target.files[0], f, (url, docId) => {
+                      set("leasing_vertrag_url", url);
+                      if (docId) set("leasing_dokument_id", docId);
+                    })} />
+                </label>
+              )}
+            </div>
+          </>)}
         </div>
       </div>
 
@@ -427,13 +508,38 @@ export default function Fahrzeugliste() {
     onError: (e) => toast.error("Fehler: " + e.message),
   });
 
-  // ── File upload ────────────────────────────────────────────────────────────
-  const handleFileUpload = async (file, onDone) => {
+  // ── File upload + Dokumente-Indexierung ────────────────────────────────────
+  const handleFileUpload = async (file, fahrzeugData, onDone) => {
     setUploading(true);
     try {
+      // 1. Datei in Supabase Storage hochladen
       const url = await uploadFile(file, "leasing-vertraege");
-      onDone(url);
-      toast.success("Vertrag hochgeladen");
+
+      // 2. Dokument-Eintrag erstellen (sichtbar in Dateiablage)
+      let docId = null;
+      if (selectedCid) {
+        const kennzeichen = fahrzeugData?.kennzeichen || "";
+        const marke = fahrzeugData?.marke || "";
+        const name = ["Leasingvertrag", marke, kennzeichen].filter(Boolean).join(" ").trim() || "Leasingvertrag";
+        const path = url.split("/").slice(-2).join("/"); // relativer Pfad
+        try {
+          const { data: dok } = await supabase.from("dokumente").insert({
+            customer_id: selectedCid,
+            name,
+            filename: file.name,
+            storage_path: path,
+            file_size: file.size,
+            file_type: file.type,
+            category: "vertraege",
+            year: new Date().getFullYear(),
+            notes: `Automatisch hochgeladen via Fahrzeugliste. Fahrzeug: ${[marke, kennzeichen].filter(Boolean).join(" ")}`,
+          }).select("id").single();
+          docId = dok?.id || null;
+        } catch (_) { /* Dokument-Eintrag ist optional */ }
+      }
+
+      onDone(url, docId);
+      toast.success("Leasingvertrag hochgeladen und in Dateiablage gespeichert");
     } catch (e) {
       toast.error("Upload fehlgeschlagen: " + e.message);
     } finally {
