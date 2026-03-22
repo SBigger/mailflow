@@ -494,9 +494,9 @@ export default function BriefSchreiben() {
                     <button
                       onClick={e => { e.stopPropagation(); if (window.confirm(`Vorlage "${v.name}" löschen?`)) deleteMut.mutate(v.id); }}
                       className="flex-shrink-0 rounded p-0.5 transition-colors hover:bg-red-50"
-                      style={{ color: "#d1d5db" }}
+                      style={{ color: "#fca5a5" }}
                       onMouseEnter={e => e.currentTarget.style.color = "#ef4444"}
-                      onMouseLeave={e => e.currentTarget.style.color = "#d1d5db"}
+                      onMouseLeave={e => e.currentTarget.style.color = "#fca5a5"}
                       title="Vorlage löschen"
                     >
                       <Trash2 className="w-3 h-3" />

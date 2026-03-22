@@ -268,8 +268,8 @@ async function actionStoreInDokumente(body: Record<string, unknown>) {
     const year = new Date().getFullYear();
     const safeName = (sig.document_name || "Dokument").replace(/[^a-zA-Z0-9._-]/g, "_");
     const storagePath = customer_id
-      ? `signing-completed/${customer_id}/${year}/${Date.now()}_signiert_${safeName}`
-      : `signing-completed/allgemein/${year}/${Date.now()}_signiert_${safeName}`;
+      ? `${customer_id}/${year}/${Date.now()}_signiert_${safeName}`
+      : `allgemein/${year}/${Date.now()}_signiert_${safeName}`;
 
     const { error: upErr } = await db.storage.from("dokumente").upload(storagePath, pdfBytes, {
       contentType: "application/pdf",

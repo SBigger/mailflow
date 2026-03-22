@@ -1,11 +1,11 @@
-import React, { useState, useContext, useRef } from "react";
+import React, { useState, useContext } from "react";
 import { ThemeContext } from "@/Layout";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { entities, supabase, uploadFile } from "@/api/supabaseClient";
+import { entities, supabase } from "@/api/supabaseClient";
 import { toast } from "sonner";
 import {
   Car, Wrench, ChevronRight, Plus, Trash2, Edit3, Save, X,
-  FileText, Download, CheckSquare, Square, Upload, ExternalLink,
+  FileText, Download, Link, ExternalLink,
   ChevronDown, ChevronUp, AlertCircle, Calculator
 } from "lucide-react";
 
@@ -113,6 +113,7 @@ const EMPTY = {
   leasing_anzahl_raten: "", leasing_erste_rate: "",
   leasing_monatliche_rate: "", leasing_restwert: "",
   leasing_vertrag_url: "", leasing_dokument_id: null,
+  _leasing_dok_filename: "",
   monate_im_betrieb: 12, fahrer_name: "", fahrer_selbstbezahlt_monat: "",
   unentgeltliche_befoerderung: false, fahrtenbuch: false,
   effektive_privatkilometer: "", ausschliesslich_geschaeftlich: false,
@@ -153,9 +154,79 @@ function CB({ checked, onChange, label, color }) {
   );
 }
 
+// ── Null-Konvertierung für numerische Felder ─────────────────────────────────
+const toNull = (v) => (v === "" || v === undefined || v === null) ? null : Number(v);
+
+// ── Dateiablage-Modal ────────────────────────────────────────────────────────
+function DateiablageModal({ customerId, onSelect, onClose, theme, accent }) {
+  const isLight = theme === "light";
+  const isArtis = theme === "artis";
+  const overlayBg = "rgba(0,0,0,0.5)";
+  const panelBg = isArtis ? "#ffffff" : isLight ? "#ffffff" : "#27272a";
+  const borderC = isArtis ? "#ccd8cc" : isLight ? "#e2e2ec" : "#3f3f46";
+  const headingC = isArtis ? "#1a3a1a" : isLight ? "#1e293b" : "#e4e4e7";
+  const subC = isArtis ? "#4a6a4a" : isLight ? "#64748b" : "#a1a1aa";
+  const rowHover = isLight ? "#f8f8fc" : isArtis ? "#f0f5f0" : "#2f2f35";
+
+  const { data: dokumente = [], isLoading } = useQuery({
+    queryKey: ["dokumente_dateiablage", customerId],
+    queryFn: () => supabase
+      .from("dokumente")
+      .select("id, filename, category, tags, created_at")
+      .eq("customer_id", customerId)
+      .order("created_at", { ascending: false })
+      .then(({ data, error }) => { if (error) throw error; return data || []; }),
+    enabled: !!customerId,
+  });
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: overlayBg }}>
+      <div className="rounded-xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden"
+        style={{ backgroundColor: panelBg, border: `1px solid ${borderC}`, maxHeight: "80vh", display: "flex", flexDirection: "column" }}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3"
+          style={{ borderBottom: `1px solid ${borderC}`, backgroundColor: isArtis ? "#e8f2e8" : isLight ? "#f1f5f9" : "#2f2f35" }}>
+          <div className="flex items-center gap-2">
+            <Link className="w-4 h-4" style={{ color: accent }} />
+            <span className="text-sm font-semibold" style={{ color: headingC }}>Dokument aus Dateiablage wählen</span>
+          </div>
+          <button onClick={onClose} className="p-1 rounded hover:opacity-70"><X className="w-4 h-4" style={{ color: subC }} /></button>
+        </div>
+        {/* Liste */}
+        <div className="overflow-y-auto flex-1">
+          {isLoading && <div className="px-4 py-8 text-sm text-center" style={{ color: subC }}>Lädt…</div>}
+          {!isLoading && dokumente.length === 0 && (
+            <div className="px-4 py-8 text-sm text-center" style={{ color: subC }}>
+              Keine Dokumente für diesen Kunden in der Dateiablage gefunden.
+            </div>
+          )}
+          {dokumente.map(dok => (
+            <button key={dok.id} type="button"
+              onClick={() => onSelect(dok)}
+              className="w-full text-left px-4 py-2.5 flex items-center gap-3 transition-colors"
+              style={{ borderBottom: `1px solid ${borderC}` }}
+              onMouseEnter={e => e.currentTarget.style.backgroundColor = rowHover}
+              onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
+              <FileText className="w-4 h-4 flex-shrink-0" style={{ color: accent }} />
+              <div className="min-w-0 flex-1">
+                <div className="text-xs font-medium truncate" style={{ color: headingC }}>{dok.filename}</div>
+                <div className="text-[10px]" style={{ color: subC }}>
+                  {dok.category && <span className="mr-2">{dok.category}</span>}
+                  {new Date(dok.created_at).toLocaleDateString("de-CH")}
+                </div>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Fahrzeug-Formular (Inline) ───────────────────────────────────────────────
-function FahrzeugForm({ initial, onSave, onCancel, theme, accent, uploading, onFileUpload }) {
+function FahrzeugForm({ initial, onSave, onCancel, theme, accent, customerId }) {
   const [f, setF] = useState({ ...EMPTY, ...initial });
+  const [showDateiablage, setShowDateiablage] = useState(false);
   const isLight = theme === "light";
   const isArtis = theme === "artis";
   const calc = calcPrivatanteil(f);
@@ -334,32 +405,42 @@ function FahrzeugForm({ initial, onSave, onCancel, theme, accent, uploading, onF
                 </span>}
               </div>
             )}
-            {/* Leasingvertrag Upload */}
+            {/* Leasingvertrag – Dateiablage-Verlinkung */}
             <div>
-              <label style={labelStyle}>Leasingvertrag (PDF)</label>
-              {f.leasing_vertrag_url ? (
+              <label style={labelStyle}>Leasingvertrag (aus Dateiablage)</label>
+              {f.leasing_dokument_id ? (
                 <div className="flex items-center gap-2">
-                  <a href={f.leasing_vertrag_url} target="_blank" rel="noopener noreferrer"
-                    className="flex items-center gap-1 text-xs"
-                    style={{ color: accent }}>
-                    <FileText className="w-3 h-3" /> Vertrag anzeigen
-                    <ExternalLink className="w-2.5 h-2.5" />
-                  </a>
-                  <span className="text-xs" style={{ color: "#9ca3af" }}>· in Dateiablage gespeichert</span>
-                  <button type="button" onClick={() => { set("leasing_vertrag_url", ""); set("leasing_dokument_id", null); }}
-                    className="text-red-400 hover:text-red-600 ml-1"><X className="w-3 h-3" /></button>
+                  <FileText className="w-3 h-3 flex-shrink-0" style={{ color: accent }} />
+                  <span className="text-xs font-medium" style={{ color: accent }}>
+                    {f._leasing_dok_filename || "Dokument verknüpft"}
+                  </span>
+                  <button type="button"
+                    onClick={() => { set("leasing_dokument_id", null); set("_leasing_dok_filename", ""); }}
+                    className="text-red-400 hover:text-red-600 ml-1" title="Verknüpfung entfernen">
+                    <X className="w-3 h-3" />
+                  </button>
                 </div>
               ) : (
-                <label className="flex items-center gap-1.5 cursor-pointer text-xs px-3 py-1.5 rounded-md w-fit"
-                  style={{ color: accent, border: `1px solid ${accent}`, opacity: uploading ? 0.6 : 1 }}>
-                  <Upload className="w-3 h-3" />
-                  {uploading ? "Lädt & indexiert…" : "PDF hochladen + in Ablage speichern"}
-                  <input type="file" accept=".pdf,.doc,.docx" className="hidden" disabled={uploading}
-                    onChange={e => e.target.files?.[0] && onFileUpload(e.target.files[0], f, (url, docId) => {
-                      set("leasing_vertrag_url", url);
-                      if (docId) set("leasing_dokument_id", docId);
-                    })} />
-                </label>
+                <button type="button"
+                  onClick={() => setShowDateiablage(true)}
+                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md transition-colors"
+                  style={{ color: accent, border: `1px solid ${accent}` }}>
+                  <Link className="w-3 h-3" />
+                  Aus Dateiablage wählen
+                </button>
+              )}
+              {showDateiablage && (
+                <DateiablageModal
+                  customerId={customerId}
+                  theme={theme}
+                  accent={accent}
+                  onClose={() => setShowDateiablage(false)}
+                  onSelect={(dok) => {
+                    set("leasing_dokument_id", dok.id);
+                    set("_leasing_dok_filename", dok.filename);
+                    setShowDateiablage(false);
+                  }}
+                />
               )}
             </div>
           </>)}
@@ -438,7 +519,24 @@ function FahrzeugForm({ initial, onSave, onCancel, theme, accent, uploading, onF
 
       {/* ── Buttons ── */}
       <div className="flex items-center gap-2 pt-1">
-        <button type="button" onClick={() => onSave(f)}
+        <button type="button" onClick={() => {
+          // eslint-disable-next-line no-unused-vars
+          const { _leasing_dok_filename, ...rest } = f;
+          onSave({
+            ...rest,
+            anschaffungsjahr: toNull(rest.anschaffungsjahr),
+            kaufpreis_exkl_mwst: toNull(rest.kaufpreis_exkl_mwst),
+            monate_im_betrieb: toNull(rest.monate_im_betrieb),
+            fahrer_selbstbezahlt_monat: toNull(rest.fahrer_selbstbezahlt_monat),
+            effektive_privatkilometer: toNull(rest.effektive_privatkilometer),
+            leasing_barkaufpreis: toNull(rest.leasing_barkaufpreis),
+            leasing_anzahl_raten: toNull(rest.leasing_anzahl_raten),
+            leasing_monatliche_rate: toNull(rest.leasing_monatliche_rate),
+            leasing_erste_rate: toNull(rest.leasing_erste_rate),
+            leasing_restwert: toNull(rest.leasing_restwert),
+            leasing_vertrag_url: rest.leasing_dokument_id ? null : (rest.leasing_vertrag_url || null),
+          });
+        }}
           className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-colors"
           style={{ backgroundColor: accent }}>
           <Save className="w-3.5 h-3.5" /> Speichern
@@ -473,7 +571,6 @@ export default function Fahrzeugliste() {
   const qc = useQueryClient();
   const [selectedCid, setSelectedCid] = useState("");
   const [editingId, setEditingId]     = useState(null);   // null | "new" | uuid
-  const [uploading, setUploading]     = useState(false);
 
   // ── Daten laden ────────────────────────────────────────────────────────────
   const { data: kunden = [] } = useQuery({
@@ -507,45 +604,6 @@ export default function Fahrzeugliste() {
     onSuccess: () => { invalidate(); toast.success("Fahrzeug gelöscht"); },
     onError: (e) => toast.error("Fehler: " + e.message),
   });
-
-  // ── File upload + Dokumente-Indexierung ────────────────────────────────────
-  const handleFileUpload = async (file, fahrzeugData, onDone) => {
-    setUploading(true);
-    try {
-      // 1. Datei in Supabase Storage hochladen
-      const url = await uploadFile(file, "leasing-vertraege");
-
-      // 2. Dokument-Eintrag erstellen (sichtbar in Dateiablage)
-      let docId = null;
-      if (selectedCid) {
-        const kennzeichen = fahrzeugData?.kennzeichen || "";
-        const marke = fahrzeugData?.marke || "";
-        const name = ["Leasingvertrag", marke, kennzeichen].filter(Boolean).join(" ").trim() || "Leasingvertrag";
-        const path = url.split("/").slice(-2).join("/"); // relativer Pfad
-        try {
-          const { data: dok } = await supabase.from("dokumente").insert({
-            customer_id: selectedCid,
-            name,
-            filename: file.name,
-            storage_path: path,
-            file_size: file.size,
-            file_type: file.type,
-            category: "vertraege",
-            year: new Date().getFullYear(),
-            notes: `Automatisch hochgeladen via Fahrzeugliste. Fahrzeug: ${[marke, kennzeichen].filter(Boolean).join(" ")}`,
-          }).select("id").single();
-          docId = dok?.id || null;
-        } catch (_) { /* Dokument-Eintrag ist optional */ }
-      }
-
-      onDone(url, docId);
-      toast.success("Leasingvertrag hochgeladen und in Dateiablage gespeichert");
-    } catch (e) {
-      toast.error("Upload fehlgeschlagen: " + e.message);
-    } finally {
-      setUploading(false);
-    }
-  };
 
   // ── Gewählter Kunde ────────────────────────────────────────────────────────
   const selectedCustomer = kunden.find(c => c.id === selectedCid);
@@ -723,12 +781,10 @@ export default function Fahrzeugliste() {
                         </div>
                         {/* Leasing badge */}
                         <div>
-                          {fz.leasing && fz.leasing_vertrag_url && (
-                            <a href={fz.leasing_vertrag_url} target="_blank" rel="noopener noreferrer"
-                              className="text-xs flex items-center gap-0.5" style={{ color: accent }}
-                              onClick={e => e.stopPropagation()}>
+                          {fz.leasing && (fz.leasing_dokument_id || fz.leasing_vertrag_url) && (
+                            <span className="text-xs flex items-center gap-0.5" style={{ color: accent }}>
                               <FileText className="w-3 h-3" /> Vertrag
-                            </a>
+                            </span>
                           )}
                         </div>
                         {/* Fahrtenbuch */}
@@ -760,8 +816,7 @@ export default function Fahrzeugliste() {
                           initial={fz}
                           theme={theme}
                           accent={accent}
-                          uploading={uploading}
-                          onFileUpload={handleFileUpload}
+                          customerId={selectedCid}
                           onSave={(data) => updateMut.mutate({ id: fz.id, ...data })}
                           onCancel={() => setEditingId(null)}
                         />
@@ -778,8 +833,7 @@ export default function Fahrzeugliste() {
                     initial={{}}
                     theme={theme}
                     accent={accent}
-                    uploading={uploading}
-                    onFileUpload={handleFileUpload}
+                    customerId={selectedCid}
                     onSave={(data) => createMut.mutate(data)}
                     onCancel={() => setEditingId(null)}
                   />
