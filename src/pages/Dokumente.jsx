@@ -3,21 +3,59 @@ import { Search, Upload, Download, Trash2, ChevronDown, ChevronRight, X, Pencil,
 import * as pdfjsLib from "pdfjs-dist";
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
-async function extractPdfText(file) {
-  if (!file || !(file.type === "application/pdf" || file.name?.toLowerCase().endsWith(".pdf"))) return "";
+// ─── Dokument-Textextraktion für Volltext-Suche ──────────────────────────────
+async function extractDocumentText(file) {
+  if (!file) return "";
+  const name = file.name?.toLowerCase() || "";
+  const type = file.type || "";
+
   try {
-    const buf = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
-    let text = "";
-    const pages = Math.min(pdf.numPages, 100);
-    for (let i = 1; i <= pages; i++) {
-      const page = await pdf.getPage(i);
-      const content = await page.getTextContent();
-      text += content.items.map(it => it.str).join(" ") + "\n";
+    // PDF → pdfjs-dist
+    if (type === "application/pdf" || name.endsWith(".pdf")) {
+      const buf = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+      let text = "";
+      for (let i = 1; i <= Math.min(pdf.numPages, 100); i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        text += content.items.map(it => it.str).join(" ") + "\n";
+      }
+      return text.trim().slice(0, 100000);
     }
-    return text.trim().slice(0, 100000);
+
+    // Excel (.xlsx, .xls, .csv) → xlsx library
+    if (name.endsWith(".xlsx") || name.endsWith(".xls") || name.endsWith(".csv")) {
+      const { read, utils } = await import("xlsx");
+      const buf = await file.arrayBuffer();
+      const wb  = read(buf, { type: "array" });
+      let text  = "";
+      for (const sheetName of wb.SheetNames) {
+        const ws   = wb.Sheets[sheetName];
+        const rows = utils.sheet_to_json(ws, { header: 1, defval: "" });
+        text += rows.map(r => r.join(" ")).join("\n") + "\n";
+      }
+      return text.trim().slice(0, 100000);
+    }
+
+    // Word (.docx) → XML aus ZIP extrahieren
+    if (name.endsWith(".docx")) {
+      const { default: JSZip } = await import("jszip");
+      const buf  = await file.arrayBuffer();
+      const zip  = await JSZip.loadAsync(buf);
+      const xml  = await zip.file("word/document.xml")?.async("text") || "";
+      const text = xml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+      return text.slice(0, 100000);
+    }
+
+    // Plaintext (.txt, .md, .csv ohne Extension-Match)
+    if (type.startsWith("text/") || name.endsWith(".txt") || name.endsWith(".md")) {
+      const text = await file.text();
+      return text.slice(0, 100000);
+    }
+
+    return "";
   } catch (e) {
-    console.warn("PDF-Textextraktion fehlgeschlagen:", e);
+    console.warn("Textextraktion fehlgeschlagen für", name, e);
     return "";
   }
 }
@@ -117,8 +155,8 @@ function UploadDialog({ customers, preCustomer, allTags, onCancel, onUpload, s, 
     if (!year || isNaN(parseInt(year)))   { toast.error("Bitte ein g\u00fcltiges Jahr eingeben"); return; }
     setUploading(true);
     try {
-      // PDF-Text extrahieren (für Volltext-Suche)
-      const contentText = await extractPdfText(file);
+      // Text extrahieren (PDF, Excel, Word, etc.) für Volltext-Suche
+      const contentText = await extractDocumentText(file);
 
       const fileExt = file.name.split('.').pop();
       const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExt}`;

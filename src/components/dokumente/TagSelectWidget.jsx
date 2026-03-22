@@ -12,10 +12,12 @@ import { ChevronDown, Check, Search } from "lucide-react";
  *   accent   : string (CSS color)
  */
 export default function TagSelectWidget({ value = [], onChange, onCategoryChange, allTags = [], s = {}, border = "#ccc", accent = "#6366f1" }) {
-  const [open,   setOpen]   = useState(false);
-  const [search, setSearch] = useState("");
+  const [open,      setOpen]      = useState(false);
+  const [search,    setSearch]    = useState("");
+  const [highlight, setHighlight] = useState(0);
   const ref      = useRef();
   const inputRef = useRef();
+  const listRef  = useRef();
 
   useEffect(() => {
     if (!open) { setSearch(""); return; }
@@ -34,6 +36,12 @@ export default function TagSelectWidget({ value = [], onChange, onCategoryChange
     if (!q) return true;
     if (par.name.toLowerCase().includes(q)) return true;
     return kidsOf(par.id).some(k => k.name.toLowerCase().includes(q));
+  });
+
+  // Flache Liste aller sichtbaren Items für Tastatur-Navigation
+  const flatItems = visibleParents.flatMap(par => {
+    const kids = kidsOf(par.id).filter(k => !q || k.name.toLowerCase().includes(q) || par.name.toLowerCase().includes(q));
+    return [par, ...kids];
   });
 
   const toggle  = (id) => {
@@ -87,7 +95,27 @@ export default function TagSelectWidget({ value = [], onChange, onCategoryChange
               ref={inputRef}
               value={search}
               onChange={e => setSearch(e.target.value)}
-              onKeyDown={e => e.key === "Escape" && setOpen(false)}
+              onKeyDown={e => {
+                if (e.key === "Escape") { setOpen(false); return; }
+                if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  setHighlight(h => Math.min(h + 1, flatItems.length - 1));
+                  listRef.current?.children[Math.min(highlight + 1, flatItems.length - 1)]?.scrollIntoView({ block: "nearest" });
+                  return;
+                }
+                if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  setHighlight(h => Math.max(h - 1, 0));
+                  listRef.current?.children[Math.max(highlight - 1, 0)]?.scrollIntoView({ block: "nearest" });
+                  return;
+                }
+                if (e.key === "Enter" && flatItems[highlight]) {
+                  e.preventDefault();
+                  toggle(flatItems[highlight].id);
+                  return;
+                }
+                setHighlight(0);
+              }}
               placeholder="Suchen..."
               style={{
                 flex: 1, border: "none", outline: "none", fontSize: 12,
@@ -104,51 +132,60 @@ export default function TagSelectWidget({ value = [], onChange, onCategoryChange
           </div>
 
           {/* Liste */}
-          <div style={{ maxHeight: 220, overflowY: "auto" }}>
+          <div ref={listRef} style={{ maxHeight: 220, overflowY: "auto" }}>
             {visibleParents.length === 0 ? (
               <div style={{ padding: "12px 14px", fontSize: 12, color: s.textMuted }}>
                 {allTags.length === 0
                   ? "Keine Tags vorhanden. Bitte in Einstellungen \u2192 Dateiablage anlegen."
                   : "Keine Tags gefunden."}
               </div>
-            ) : visibleParents.map(par => {
-              const kids   = kidsOf(par.id).filter(k => !q || k.name.toLowerCase().includes(q) || par.name.toLowerCase().includes(q));
-              const parSel = value.includes(par.id);
-              const parCol = par.color || accent;
-              return (
-                <div key={par.id}>
-                  {/* Parent */}
-                  <div onClick={() => toggle(par.id)} style={{
-                    display: "flex", alignItems: "center", gap: 8,
-                    padding: "7px 12px", cursor: "pointer", fontSize: 12, fontWeight: 600,
-                    background: parSel ? parCol + "22" : "transparent",
-                    borderBottom: "1px solid " + (s.border || border) + "55",
-                    color: parSel ? parCol : (s.textMain || "#000"),
-                  }}>
-                    <span style={{ width: 9, height: 9, borderRadius: "50%", background: parCol, flexShrink: 0 }} />
-                    <span style={{ flex: 1 }}>{par.name}</span>
-                    {kids.length > 0 && <span style={{ fontSize: 10, color: s.textMuted, opacity: 0.6 }}>{kids.length}</span>}
-                    {parSel && <Check size={11} style={{ color: parCol, flexShrink: 0 }} />}
+            ) : (() => {
+              let flatIdx = 0;
+              return visibleParents.map(par => {
+                const kids   = kidsOf(par.id).filter(k => !q || k.name.toLowerCase().includes(q) || par.name.toLowerCase().includes(q));
+                const parSel = value.includes(par.id);
+                const parCol = par.color || accent;
+                const parIdx = flatIdx++;
+                return (
+                  <div key={par.id}>
+                    {/* Parent */}
+                    <div onClick={() => { toggle(par.id); setHighlight(parIdx); }} style={{
+                      display: "flex", alignItems: "center", gap: 8,
+                      padding: "7px 12px", cursor: "pointer", fontSize: 12, fontWeight: 600,
+                      background: highlight === parIdx ? parCol + "33" : parSel ? parCol + "22" : "transparent",
+                      borderBottom: "1px solid " + (s.border || border) + "55",
+                      color: parSel ? parCol : (s.textMain || "#000"),
+                      outline: highlight === parIdx ? "2px solid " + parCol + "66" : "none",
+                      outlineOffset: -2,
+                    }}>
+                      <span style={{ width: 9, height: 9, borderRadius: "50%", background: parCol, flexShrink: 0 }} />
+                      <span style={{ flex: 1 }}>{par.name}</span>
+                      {kids.length > 0 && <span style={{ fontSize: 10, color: s.textMuted, opacity: 0.6 }}>{kids.length}</span>}
+                      {parSel && <Check size={11} style={{ color: parCol, flexShrink: 0 }} />}
+                    </div>
+                    {/* Subtags */}
+                    {kids.map(kid => {
+                      const kidSel = value.includes(kid.id);
+                      const kidIdx = flatIdx++;
+                      return (
+                        <div key={kid.id} onClick={() => { toggle(kid.id); setHighlight(kidIdx); }} style={{
+                          display: "flex", alignItems: "center", gap: 8,
+                          padding: "5px 12px 5px 30px", cursor: "pointer", fontSize: 12,
+                          background: highlight === kidIdx ? parCol + "28" : kidSel ? parCol + "14" : "transparent",
+                          color: kidSel ? parCol : (s.textMuted || "#666"),
+                          outline: highlight === kidIdx ? "2px solid " + parCol + "66" : "none",
+                          outlineOffset: -2,
+                        }}>
+                          <span style={{ fontSize: 10, opacity: 0.5, flexShrink: 0 }}>&ndash;</span>
+                          <span style={{ flex: 1 }}>{kid.name}</span>
+                          {kidSel && <Check size={11} style={{ color: parCol, flexShrink: 0 }} />}
+                        </div>
+                      );
+                    })}
                   </div>
-                  {/* Subtags */}
-                  {kids.map(kid => {
-                    const kidSel = value.includes(kid.id);
-                    return (
-                      <div key={kid.id} onClick={() => toggle(kid.id)} style={{
-                        display: "flex", alignItems: "center", gap: 8,
-                        padding: "5px 12px 5px 30px", cursor: "pointer", fontSize: 12,
-                        background: kidSel ? parCol + "14" : "transparent",
-                        color: kidSel ? parCol : (s.textMuted || "#666"),
-                      }}>
-                        <span style={{ fontSize: 10, opacity: 0.5, flexShrink: 0 }}>&ndash;</span>
-                        <span style={{ flex: 1 }}>{kid.name}</span>
-                        {kidSel && <Check size={11} style={{ color: parCol, flexShrink: 0 }} />}
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            })}
+                );
+              });
+            })()}
           </div>
         </div>
       )}
