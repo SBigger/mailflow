@@ -1,5 +1,26 @@
 import React, { useState, useMemo, useEffect, useRef, useContext } from "react";
 import { Search, Upload, Download, Trash2, ChevronDown, ChevronRight, X, Pencil, Lock, LockOpen, ShieldAlert } from "lucide-react";
+import * as pdfjsLib from "pdfjs-dist";
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+
+async function extractPdfText(file) {
+  if (!file || !(file.type === "application/pdf" || file.name?.toLowerCase().endsWith(".pdf"))) return "";
+  try {
+    const buf = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+    let text = "";
+    const pages = Math.min(pdf.numPages, 100);
+    for (let i = 1; i <= pages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      text += content.items.map(it => it.str).join(" ") + "\n";
+    }
+    return text.trim().slice(0, 100000);
+  } catch (e) {
+    console.warn("PDF-Textextraktion fehlgeschlagen:", e);
+    return "";
+  }
+}
 import { Button } from "@/components/ui/button";
 import { ThemeContext } from "@/Layout";
 import { supabase, entities } from "@/api/supabaseClient";
@@ -96,6 +117,9 @@ function UploadDialog({ customers, preCustomer, allTags, onCancel, onUpload, s, 
     if (!year || isNaN(parseInt(year)))   { toast.error("Bitte ein g\u00fcltiges Jahr eingeben"); return; }
     setUploading(true);
     try {
+      // PDF-Text extrahieren (für Volltext-Suche)
+      const contentText = await extractPdfText(file);
+
       const fileExt = file.name.split('.').pop();
       const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExt}`;
       const path = `${custId}/${fileName}`;
@@ -110,7 +134,8 @@ function UploadDialog({ customers, preCustomer, allTags, onCancel, onUpload, s, 
         customer_id: custId, category, year: parseInt(year),
         name: name.trim(), filename: file.name,
         storage_path: uploadData.path, file_size: file.size, file_type: file.type,
-        tag_ids: tagIds, notes
+        tag_ids: tagIds, notes,
+        content_text: contentText,
       });
       toast.success("Dokument hochgeladen", {closeButton: true});
       onUpload();
@@ -611,8 +636,11 @@ export default function Dokumente() {
                       {doc.year && <span>{doc.year}</span>}
                     </div>
                   </div>
-                  <div style={{ fontSize: 11, color: s.textMuted, flexShrink: 0, alignSelf: "center" }}>
-                    {Math.round((doc.rank || 0) * 100)}% Relevanz
+                  <div style={{ flexShrink: 0, alignSelf: "center", display: "flex", gap: 2 }}>
+                    {[1,2,3,4,5].map(i => {
+                      const filled = (doc.rank || 0) >= i * 0.06;
+                      return <div key={i} style={{ width: 6, height: 6, borderRadius: "50%", background: filled ? accent : border }} />;
+                    })}
                   </div>
                 </div>
               );
