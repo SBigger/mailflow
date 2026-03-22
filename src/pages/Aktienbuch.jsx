@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import {
   BookOpen, Wrench, ChevronRight, Plus, Trash2, Edit3, Save, X,
   Download, ArrowRight, Scissors, RotateCcw, Users, BarChart2,
-  Clock, Shield, AlertCircle, Building2
+  Clock, Shield, AlertCircle, Building2, TrendingUp, Percent, Search
 } from "lucide-react";
 
 // ── Konstanten ────────────────────────────────────────────────────────────────
@@ -755,33 +755,75 @@ export default function Aktienbuch() {
       <div className="flex-1 overflow-y-auto px-6 py-5">
         <div style={{ maxWidth: 1100 }}>
 
-          {/* Unternehmens-Auswahl */}
-          <div className="flex items-end gap-4 mb-6">
-            <div className="flex-1 max-w-md">
-              <label className="text-xs font-semibold uppercase tracking-wider mb-1.5 block" style={{ color: subC }}>
-                Unternehmen (Aktiengesellschaft)
-              </label>
+          {/* ── Unternehmens-Auswahl ──────────────────────────────────────────── */}
+          <div className="rounded-2xl mb-6 overflow-hidden" style={{ border: `1px solid ${panelBdr}`, backgroundColor: panelBg }}>
+            <div className="px-5 py-4 flex items-center gap-4" style={{ borderBottom: selectedCid ? `1px solid ${panelBdr}` : "none" }}>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <Building2 className="w-4 h-4" style={{ color: accent }} />
+                <span className="text-sm font-semibold" style={{ color: headingC }}>Aktiengesellschaft</span>
+              </div>
               <select
                 value={selectedCid}
                 onChange={e => { setSelectedCid(e.target.value); setActiveTab("aktionaere"); }}
-                className="w-full rounded-lg border text-sm px-3 py-2 focus:outline-none"
-                style={{ backgroundColor: panelBg, borderColor: panelBdr, color: headingC }}>
-                <option value="">– Unternehmen auswählen –</option>
+                className="flex-1 rounded-lg border text-sm px-3 py-2 focus:outline-none"
+                style={{ backgroundColor: isArtis ? "#f5f8f5" : isLight ? "#f8fafc" : "#1c1c21", borderColor: panelBdr, color: headingC, maxWidth: 440 }}>
+                <option value="">– Unternehmen wählen –</option>
                 {unternehmen.map(c => (
                   <option key={c.id} value={c.id}>
-                    {c.company_name}{c.ort ? ` – ${c.ort}` : ""}
+                    {c.company_name}{c.ort ? ` · ${c.ort}` : ""}
                   </option>
                 ))}
               </select>
+              <div className="ml-auto flex items-center gap-2">
+                {selectedCid && eintraege.length > 0 && (
+                  <button
+                    onClick={() => exportCSV(eintraege, firmaName)}
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                    style={{ backgroundColor: isArtis ? "#e8f2e8" : isLight ? "#f1f5f9" : "#2f2f35", color: headingC, border: `1px solid ${panelBdr}` }}>
+                    <Download className="w-4 h-4" /> CSV
+                  </button>
+                )}
+                {selectedCid && (
+                  <button
+                    onClick={() => setAddModal(true)}
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-colors"
+                    style={{ backgroundColor: accent }}>
+                    <Plus className="w-4 h-4" /> Aktionär
+                  </button>
+                )}
+              </div>
             </div>
-            {selectedCid && eintraege.length > 0 && (
-              <button
-                onClick={() => exportCSV(eintraege, firmaName)}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium"
-                style={{ backgroundColor: "#f1f5f9", color: headingC, border: `1px solid ${panelBdr}` }}>
-                <Download className="w-4 h-4" /> Export (CSV)
-              </button>
-            )}
+
+            {/* ── KPI-Strip ────────────────────────────────────────────── */}
+            {selectedCid && aktivEintraege.length > 0 && (() => {
+              const totalNom = aktivEintraege.reduce((s, e) => s + (e.anzahl || 0) * (e.nominalwert || 0), 0);
+              const totalLib = aktivEintraege.reduce((s, e) => s + (e.anzahl || 0) * (e.nominalwert || 0) * ((e.liberierungsgrad || 100) / 100), 0);
+              const libPct   = totalNom > 0 ? Math.round(totalLib / totalNom * 100) : 100;
+              const aktionaereCount = [...new Set(aktivEintraege.map(e => e.aktionaer_name))].length;
+              const kpis = [
+                { icon: TrendingUp,  label: "Gesamtnominal",  value: `CHF ${fmtCHF(totalNom)}`,        sub: `${totalAktien.toLocaleString("de-CH")} Aktien`,    color: accent },
+                { icon: Percent,     label: "Liberierungsgrad", value: `${libPct}%`,                   sub: `CHF ${fmtCHF(totalLib)} liberiert`,                color: libPct === 100 ? "#059669" : "#d97706" },
+                { icon: Users,       label: "Aktionäre",       value: aktionaereCount,                  sub: `${aktivEintraege.length} Eintrag${aktivEintraege.length !== 1 ? "e" : ""}`, color: accent },
+                { icon: BarChart2,   label: "Nicht liberiert", value: `CHF ${fmtCHF(totalNom - totalLib)}`, sub: "Ausstehende Einlagen",                        color: totalNom - totalLib > 0 ? "#dc2626" : "#059669" },
+              ];
+              return (
+                <div className="grid grid-cols-4 divide-x" style={{ borderColor: panelBdr }}>
+                  {kpis.map(({ icon: Icon, label, value, sub, color }) => (
+                    <div key={label} className="px-5 py-4 flex items-start gap-3">
+                      <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5"
+                        style={{ backgroundColor: isArtis ? "#e8f2e8" : isLight ? "#f1f5f9" : "#2f2f35" }}>
+                        <Icon className="w-4 h-4" style={{ color }} />
+                      </div>
+                      <div>
+                        <div className="text-[10px] uppercase tracking-wider font-semibold mb-0.5" style={{ color: subC }}>{label}</div>
+                        <div className="text-lg font-bold leading-none" style={{ color }}>{value}</div>
+                        <div className="text-xs mt-1" style={{ color: subC }}>{sub}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
           </div>
 
           {selectedCid && (
@@ -819,11 +861,6 @@ export default function Aktienbuch() {
                         Aktuelle Aktionäre — Stand {new Date().toLocaleDateString("de-CH")}
                       </span>
                     </div>
-                    <button onClick={() => setAddModal(true)}
-                      className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg text-white"
-                      style={{ backgroundColor: accent }}>
-                      <Plus className="w-3.5 h-3.5" /> Aktionär hinzufügen
-                    </button>
                   </div>
 
                   {/* Spalten-Header */}
@@ -1046,11 +1083,27 @@ export default function Aktienbuch() {
           )}
 
           {!selectedCid && (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <BookOpen className="w-12 h-12 mb-3" style={{ color: isArtis ? "#ccd8cc" : "#d1d5db" }} />
-              <div className="text-base font-medium mb-1" style={{ color: headingC }}>Unternehmen auswählen</div>
-              <div className="text-sm" style={{ color: subC }}>
-                Wählen Sie oben eine Aktiengesellschaft aus, um das Aktienbuch zu öffnen.
+            <div className="flex flex-col items-center justify-center py-20 text-center">
+              <div className="w-20 h-20 rounded-3xl flex items-center justify-center mb-5"
+                style={{ backgroundColor: isArtis ? "#e8f2e8" : isLight ? "#f1f5f9" : "#2f2f35" }}>
+                <BookOpen className="w-9 h-9" style={{ color: isArtis ? "#5b8a5b" : isLight ? "#94a3b8" : "#52525b" }} />
+              </div>
+              <div className="text-lg font-semibold mb-2" style={{ color: headingC }}>Aktienbuch (Art. 686 OR)</div>
+              <div className="text-sm mb-6 max-w-sm" style={{ color: subC }}>
+                Wählen Sie oben eine Aktiengesellschaft aus. Das Aktienbuch verzeichnet alle Aktionäre, Transaktionen und die Kapitalstruktur rechtskonform gemäss OR.
+              </div>
+              <div className="grid grid-cols-3 gap-3 text-left max-w-lg">
+                {[
+                  { icon: Users,    title: "Aktionärsverzeichnis", desc: "Name, Adresse, wirtschaftlich Berechtigter" },
+                  { icon: Clock,    title: "Transaktionshistorie",  desc: "Gründung, Übertragung, Split, Einzug" },
+                  { icon: BarChart2, title: "Kapitalstruktur",     desc: "Nominalkapital, Liberierungsgrad, Anteile" },
+                ].map(({ icon: Icon, title, desc }) => (
+                  <div key={title} className="rounded-xl p-4" style={{ backgroundColor: panelBg, border: `1px solid ${panelBdr}` }}>
+                    <Icon className="w-5 h-5 mb-2" style={{ color: accent }} />
+                    <div className="text-sm font-semibold mb-1" style={{ color: headingC }}>{title}</div>
+                    <div className="text-xs leading-tight" style={{ color: subC }}>{desc}</div>
+                  </div>
+                ))}
               </div>
             </div>
           )}

@@ -7,7 +7,7 @@ import { FONT_REGULAR_B64, FONT_BOLD_B64 } from "@/components/fristen/fontData.j
 import {
   BookOpen, Save, Printer, Plus, Trash2,
   Building2, User, Edit3, FileText, Wrench,
-  ChevronRight, Search, Eye
+  ChevronRight, Search, Eye, PenLine, Loader2, X, UserPlus
 } from "lucide-react";
 
 // ── Absender-Konstanten (gleich wie Fristen-Briefe) ──────────────────────────
@@ -198,6 +198,13 @@ export default function BriefSchreiben() {
     try { return JSON.parse(localStorage.getItem("artis_hidden_presets") || "[]"); } catch { return []; }
   });
 
+  // ── Skribble-Signing State ─────────────────────────────────────────────────
+  const [showSignModal, setShowSignModal] = useState(false);
+  const [bSigners, setBSigners]           = useState([{ name: "", email: "" }]);
+  const [bSigType, setBSigType]           = useState("AES");
+  const [bExpiry, setBExpiry]             = useState("");
+  const [signing, setSigning]             = useState(false);
+
   const hidePreset = (id) => {
     const next = [...hiddenPresets, id];
     setHiddenPresets(next);
@@ -266,6 +273,143 @@ export default function BriefSchreiben() {
       iframe.contentWindow.print();
       setTimeout(() => document.body.removeChild(iframe), 1000);
     }, 700);
+  };
+
+  // ── PDF-Blob für Skribble generieren ──────────────────────────────────────
+  async function generatePdfBlob(rec, dat, subj, txt, sig) {
+    const { jsPDF } = await import("jspdf");
+    const doc  = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    const lm   = 25;
+    const maxW = 165;
+    let y      = 30;
+
+    // Absender-Zeile
+    doc.setFontSize(7);
+    doc.setTextColor(100);
+    const senderLine = `${SENDER_NAME} · ${SENDER_STREET} · ${SENDER_CITY}`;
+    doc.text(senderLine, lm, y);
+    doc.setDrawColor(50);
+    doc.setLineWidth(0.3);
+    doc.line(lm, y + 1.5, lm + doc.getTextWidth(senderLine), y + 1.5);
+    y += 14;
+
+    // Empfänger
+    doc.setFontSize(10);
+    doc.setTextColor(30);
+    if (rec.name)   { doc.text(rec.name,   lm, y); y += 6; }
+    if (rec.firma)  { doc.text(rec.firma,  lm, y); y += 6; }
+    if (rec.strasse){ doc.text(rec.strasse,lm, y); y += 6; }
+    const cityLine = [rec.plz, rec.ort].filter(Boolean).join(" ");
+    if (cityLine)   { doc.text(cityLine,   lm, y); y += 6; }
+    y += 14;
+
+    // Datum
+    doc.text(`${LETTER_CITY}, ${dat}`, lm, y);
+    y += 20;
+
+    // Betreff
+    doc.setFont(undefined, "bold");
+    const subjWrapped = doc.splitTextToSize(subj, maxW);
+    doc.text(subjWrapped, lm, y);
+    y += subjWrapped.length * 6 + 4;
+
+    // Brieftext
+    doc.setFont(undefined, "normal");
+    for (const line of txt.split("\n")) {
+      if (line === "") {
+        y += 4;
+      } else {
+        const wrapped = doc.splitTextToSize(line, maxW);
+        doc.text(wrapped, lm, y);
+        y += wrapped.length * 6;
+      }
+      if (y > 268) { doc.addPage(); y = 30; }
+    }
+
+    // Signatur
+    if (sig?.name) {
+      y += 4;
+      doc.setFontSize(10);
+      doc.setTextColor(30);
+      doc.text(sig.name, lm, y);
+      if (sig.titel) {
+        y += 5;
+        doc.setFontSize(8.5);
+        doc.setTextColor(85);
+        doc.text(sig.titel, lm, y);
+      }
+    }
+
+    // Footer
+    const fp = 284;
+    doc.setFontSize(7);
+    doc.setTextColor(122, 155, 127);
+    doc.setDrawColor(122, 155, 127);
+    doc.setLineWidth(0.3);
+    doc.line(lm, 280, 190, 280);
+    doc.text("Artis Treuhand GmbH  |  www.artis-gmbh.ch", lm, fp);
+    doc.text("Trischlistrasse 10  |  9400 Rorschach", lm + 57, fp);
+    doc.text("info@artis-gmbh.ch  |  +41 71 511 50 00", 190, fp, { align: "right" });
+
+    return doc.output("blob");
+  }
+
+  // ── Skribble-Signatur senden ───────────────────────────────────────────────
+  const handleSkribbleSign = async () => {
+    if (!canPrint) return;
+    const validSigners = bSigners.filter(s => s.email.trim());
+    if (validSigners.length === 0) {
+      toast.error("Mindestens ein Unterzeichner mit E-Mail-Adresse benötigt");
+      return;
+    }
+    setSigning(true);
+    try {
+      // 1. PDF generieren
+      const blob = await generatePdfBlob(recipient, datum, betreff, body, signer);
+
+      // 2. Zu Supabase Storage hochladen
+      const ts       = Date.now();
+      const safeName = betreff.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 60);
+      const storagePath = `signing-temp/${ts}_${safeName}.pdf`;
+      const { error: upErr } = await supabase.storage
+        .from("dokumente")
+        .upload(storagePath, blob, { contentType: "application/pdf" });
+      if (upErr) throw new Error("Upload fehlgeschlagen: " + upErr.message);
+
+      const { data: { publicUrl } } = supabase.storage.from("dokumente").getPublicUrl(storagePath);
+
+      // 3. Skribble-Anfrage erstellen
+      const { data: { session } } = await supabase.auth.getSession();
+      const jwt = session?.access_token;
+
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/skribble-proxy`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${jwt}` },
+          body: JSON.stringify({
+            action:        "create",
+            document_url:  publicUrl,
+            document_name: `${betreff}.pdf`,
+            signers:       validSigners,
+            signature_type: bSigType,
+            ...(bExpiry    ? { expires_at: bExpiry }     : {}),
+            ...(selectedKunde ? { customer_id: selectedKunde } : {}),
+          }),
+        }
+      );
+      const result = await res.json();
+      if (!res.ok || result.error) throw new Error(result.error || "Skribble-Fehler");
+
+      toast.success("Signaturanfrage gesendet! Die Unterzeichner erhalten eine E-Mail von Skribble.");
+      setShowSignModal(false);
+      setBSigners([{ name: "", email: "" }]);
+      setBExpiry("");
+    } catch (e) {
+      toast.error("Fehler: " + e.message);
+    } finally {
+      setSigning(false);
+    }
   };
 
   // ── Filter Vorlagen ────────────────────────────────────────────────────────
@@ -590,6 +734,21 @@ export default function BriefSchreiben() {
               >
                 <Eye className="w-4 h-4" /> {showPreview ? "Vorschau ausblenden" : "Vorschau"}
               </button>
+
+              {/* Skribble-Button */}
+              <button
+                onClick={() => canPrint && setShowSignModal(true)}
+                disabled={!canPrint}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ml-auto"
+                style={{
+                  backgroundColor: canPrint ? (isArtis ? "#2d6a4f" : isLight ? "#1e40af" : "#5b21b6") : panelBorder,
+                  color: canPrint ? "#fff" : subCol,
+                  cursor: canPrint ? "pointer" : "not-allowed",
+                }}
+                title="Brief digital signieren via Skribble"
+              >
+                <PenLine className="w-4 h-4" /> Zur Unterzeichnung senden
+              </button>
             </div>
 
             {/* Brief-Vorschau ──────────────────────────────────────────── */}
@@ -636,6 +795,140 @@ export default function BriefSchreiben() {
           </div>
         </div>
       </div>
+
+      {/* ── Skribble-Signatur Modal ───────────────────────────────────────── */}
+      {showSignModal && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div className="rounded-2xl p-6 flex flex-col gap-5" style={{ background: panelBg, border: `1px solid ${panelBorder}`, width: 480, maxHeight: "90vh", overflowY: "auto" }}>
+
+            {/* Header */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <PenLine className="w-5 h-5" style={{ color: accent }} />
+                <h4 className="font-semibold text-base" style={{ color: headingCol }}>Zur Unterzeichnung senden</h4>
+              </div>
+              <button onClick={() => setShowSignModal(false)} className="rounded-lg p-1 hover:bg-gray-100 transition-colors">
+                <X className="w-4 h-4" style={{ color: subCol }} />
+              </button>
+            </div>
+
+            {/* Dokument-Info */}
+            <div className="rounded-xl px-4 py-3" style={{ backgroundColor: isArtis ? "#e8f2e8" : isLight ? "#eff6ff" : "#1e1b4b", border: `1px solid ${panelBorder}` }}>
+              <div className="text-xs font-medium mb-0.5" style={{ color: subCol }}>Dokument</div>
+              <div className="text-sm font-semibold truncate" style={{ color: headingCol }}>{betreff || "Brief"}</div>
+              {recipient && (
+                <div className="text-xs mt-1" style={{ color: subCol }}>
+                  Empfänger: {recipient.name}{recipient.ort ? ` · ${recipient.ort}` : ""}
+                </div>
+              )}
+            </div>
+
+            {/* Unterzeichner */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: subCol }}>
+                  Unterzeichner
+                </label>
+                <button
+                  onClick={() => setBSigners(prev => [...prev, { name: "", email: "" }])}
+                  className="flex items-center gap-1 text-xs px-2 py-1 rounded-md transition-colors"
+                  style={{ backgroundColor: badgeBg, color: accent }}
+                >
+                  <UserPlus className="w-3 h-3" /> Hinzufügen
+                </button>
+              </div>
+              <div className="flex flex-col gap-2">
+                {bSigners.map((s, i) => (
+                  <div key={i} className="flex gap-2 items-center">
+                    <input
+                      value={s.name}
+                      onChange={e => setBSigners(prev => prev.map((x, j) => j === i ? { ...x, name: e.target.value } : x))}
+                      placeholder="Name"
+                      style={{ ...inp, width: "40%" }}
+                    />
+                    <input
+                      value={s.email}
+                      onChange={e => setBSigners(prev => prev.map((x, j) => j === i ? { ...x, email: e.target.value } : x))}
+                      placeholder="E-Mail *"
+                      type="email"
+                      style={{ ...inp, flex: 1 }}
+                    />
+                    {bSigners.length > 1 && (
+                      <button
+                        onClick={() => setBSigners(prev => prev.filter((_, j) => j !== i))}
+                        className="p-1.5 rounded-md hover:bg-red-50 transition-colors flex-shrink-0"
+                      >
+                        <X className="w-3.5 h-3.5 text-red-400" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Signatur-Typ & Ablaufdatum */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-wider mb-1.5 block" style={{ color: subCol }}>
+                  Signatur-Typ
+                </label>
+                <select value={bSigType} onChange={e => setBSigType(e.target.value)} style={inp}>
+                  <option value="AES">AES – Fortgeschritten</option>
+                  <option value="QES">QES – Qualifiziert (CH-rechtsgültig)</option>
+                  <option value="SES">SES – Einfach</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-wider mb-1.5 block" style={{ color: subCol }}>
+                  Ablaufdatum (optional)
+                </label>
+                <input
+                  type="date"
+                  value={bExpiry}
+                  onChange={e => setBExpiry(e.target.value)}
+                  min={new Date().toISOString().slice(0, 10)}
+                  style={inp}
+                />
+              </div>
+            </div>
+
+            {/* Hinweis */}
+            <div className="text-xs rounded-lg px-3 py-2" style={{ backgroundColor: badgeBg, color: subCol }}>
+              Die Unterzeichner erhalten eine E-Mail von Skribble und können den Brief digital signieren.
+              Das signierte Dokument wird automatisch in der Dokumentenablage gespeichert.
+            </div>
+
+            {/* Actions */}
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowSignModal(false)}
+                className="px-4 py-2 rounded-lg text-sm"
+                style={{ backgroundColor: badgeBg, color: subCol }}
+              >
+                Abbrechen
+              </button>
+              <button
+                onClick={handleSkribbleSign}
+                disabled={signing || bSigners.every(s => !s.email.trim())}
+                className="flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-semibold transition-all"
+                style={{
+                  backgroundColor: signing || bSigners.every(s => !s.email.trim())
+                    ? panelBorder
+                    : (isArtis ? "#2d6a4f" : isLight ? "#1e40af" : "#5b21b6"),
+                  color: signing || bSigners.every(s => !s.email.trim()) ? subCol : "#fff",
+                  cursor: signing || bSigners.every(s => !s.email.trim()) ? "not-allowed" : "pointer",
+                }}
+              >
+                {signing ? (
+                  <><Loader2 className="w-4 h-4 animate-spin" /> Wird gesendet…</>
+                ) : (
+                  <><PenLine className="w-4 h-4" /> Signaturanfrage senden</>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Vorlage-Speichern Modal ───────────────────────────────────────── */}
       {saveModal && (
