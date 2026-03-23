@@ -7,7 +7,7 @@ import { FONT_REGULAR_B64, FONT_BOLD_B64 } from "@/components/fristen/fontData.j
 import {
   BookOpen, Save, Printer, Plus, Trash2,
   Building2, User, Edit3, FileText, Wrench,
-  ChevronRight, Search, Eye, PenLine, Loader2, X, UserPlus
+  ChevronRight, Search, Eye, PenLine, Loader2, X, UserPlus, Archive
 } from "lucide-react";
 
 // ── Absender-Konstanten (gleich wie Fristen-Briefe) ──────────────────────────
@@ -204,6 +204,7 @@ export default function BriefSchreiben() {
   const [bSigType, setBSigType]           = useState("AES");
   const [bExpiry, setBExpiry]             = useState("");
   const [signing, setSigning]             = useState(false);
+  const [savingToAblage, setSavingToAblage] = useState(false);
 
   const hidePreset = (id) => {
     const next = [...hiddenPresets, id];
@@ -273,6 +274,42 @@ export default function BriefSchreiben() {
       iframe.contentWindow.print();
       setTimeout(() => document.body.removeChild(iframe), 1000);
     }, 700);
+  };
+
+  // ── PDF in Dateiablage speichern ───────────────────────────────────────────
+  const handleSaveToAblage = async () => {
+    if (!canPrint) return;
+    setSavingToAblage(true);
+    try {
+      const blob = await generatePdfBlob(recipient, datum, betreff, body, signer);
+      const year = new Date().getFullYear();
+      const safeName = betreff.trim().replace(/[^a-zA-Z0-9äöüÄÖÜ._-]/g, "_").slice(0, 60);
+      const customerId = empfMode === "kunden" ? selectedKunde : null;
+      const storagePath = customerId
+        ? `${customerId}/${year}/${Date.now()}_Brief_${safeName}.pdf`
+        : `allgemein/${year}/${Date.now()}_Brief_${safeName}.pdf`;
+
+      const { error: upErr } = await supabase.storage.from("dokumente").upload(
+        storagePath, blob, { contentType: "application/pdf", upsert: false }
+      );
+      if (upErr) throw new Error(upErr.message);
+
+      await supabase.from("dokumente").insert({
+        customer_id:  customerId || null,
+        filename:     `Brief_${safeName}.pdf`,
+        storage_path: storagePath,
+        category:     "Korrespondenz",
+        year:         String(year),
+        tags:         ["Brief"],
+        notizen:      `Erstellt via Briefe schreiben`,
+      });
+
+      toast.success("Brief in Dateiablage gespeichert");
+    } catch (e) {
+      toast.error("Fehler: " + e.message);
+    } finally {
+      setSavingToAblage(false);
+    }
   };
 
   // ── PDF-Blob für Skribble generieren ──────────────────────────────────────
@@ -692,6 +729,22 @@ export default function BriefSchreiben() {
                 }}
               >
                 <Printer className="w-4 h-4" /> Drucken / PDF
+              </button>
+
+              <button
+                onClick={handleSaveToAblage}
+                disabled={!canPrint || savingToAblage}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all"
+                style={{
+                  backgroundColor: badgeBg,
+                  color: canPrint ? headingCol : subCol,
+                  border: `1px solid ${panelBorder}`,
+                  cursor: canPrint ? "pointer" : "not-allowed",
+                }}
+              >
+                {savingToAblage
+                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Speichern…</>
+                  : <><Archive className="w-4 h-4" /> In Ablage speichern</>}
               </button>
 
               <button
