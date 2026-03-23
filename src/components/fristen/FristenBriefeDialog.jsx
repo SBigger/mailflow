@@ -152,6 +152,16 @@ export default function FristenBriefeDialog({ fristen, customers, onClose }) {
 
   // ── Kandidaten ───────────────────────────────────────────────────────
   const candidates = useMemo(() => {
+    // Sammle alle Kantons pro Kunde
+    const custKantons = {};
+    (fristen || []).forEach(f => {
+      if (f.formular_erhalten) return;
+      if (f.status === "erledigt") return;
+      const kants = (f.kanton || "").split(",").map(k => k.trim()).filter(Boolean);
+      if (!custKantons[f.customer_id]) custKantons[f.customer_id] = new Set();
+      kants.forEach(k => custKantons[f.customer_id].add(k));
+    });
+
     const seen = new Set();
     const result = [];
     (fristen || []).forEach(f => {
@@ -170,10 +180,18 @@ export default function FristenBriefeDialog({ fristen, customers, onClose }) {
         kategorie:    f.category || "",
         jahr:         f.jahr ?? null,
         person_type:  cust.person_type || "unternehmen",
+        kantons:      [...(custKantons[f.customer_id] || [])],
       });
     });
     return result.sort((a, b) => a.company_name.localeCompare(b.company_name, "de"));
   }, [fristen, customers]);
+
+  // Alle vorhandenen Kantone
+  const allKantons = useMemo(() => {
+    const set = new Set();
+    candidates.forEach(c => c.kantons.forEach(k => set.add(k)));
+    return [...set].sort();
+  }, [candidates]);
 
   const [selected,       setSelected]       = useState(() => new Set(candidates.map(c => c.customer_id)));
   const [letterDate,     setLetterDate]     = useState(today());
@@ -182,13 +200,19 @@ export default function FristenBriefeDialog({ fristen, customers, onClose }) {
   const [showPreview,    setShowPreview]    = useState(false);
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [logoUrl]                           = useState("/artis-logo.png");
-  const [typeFilter,     setTypeFilter]     = useState("alle"); // "alle" | "unternehmen" | "privatperson"
+  const [typeFilter,   setTypeFilter]   = useState("alle"); // "alle" | "unternehmen" | "privatperson"
+  const [kantonFilter, setKantonFilter] = useState("alle");
 
-  const filtered    = useMemo(() => {
-    if (typeFilter === "privatperson") return candidates.filter(c => c.person_type === "privatperson");
-    if (typeFilter === "unternehmen")  return candidates.filter(c => c.person_type !== "privatperson");
-    return candidates;
-  }, [candidates, typeFilter]);
+  const filtered = useMemo(() => {
+    return candidates.filter(c => {
+      const matchType =
+        typeFilter === "privatperson" ? c.person_type === "privatperson" :
+        typeFilter === "unternehmen"  ? c.person_type !== "privatperson" : true;
+      const matchKanton =
+        kantonFilter === "alle" ? true : c.kantons.includes(kantonFilter);
+      return matchType && matchKanton;
+    });
+  }, [candidates, typeFilter, kantonFilter]);
 
   const allSelected = filtered.length > 0 && filtered.every(c => selected.has(c.customer_id));
   const toggle      = id => setSelected(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
@@ -270,22 +294,36 @@ export default function FristenBriefeDialog({ fristen, customers, onClose }) {
                   {allSelected ? "Alle abwählen" : "Alle wählen"}
                 </button>
               </div>
-              {/* Filter-Pills */}
-              <div style={{ display: "flex", gap: 4, padding: 4, borderRadius: 8, backgroundColor: "rgba(0,0,0,0.04)", width: "fit-content", marginBottom: 8 }}>
-                {[
-                  { key: "alle",         label: "Alle" },
-                  { key: "unternehmen",  label: "Kunden" },
-                  { key: "privatperson", label: "Personen" },
-                ].map(({ key, label }) => (
-                  <button key={key} onClick={() => setTypeFilter(key)}
-                    style={{
-                      backgroundColor: typeFilter === key ? accent : "transparent",
-                      color: typeFilter === key ? "#fff" : s.textMuted,
-                      fontSize: 11, padding: "3px 10px", borderRadius: 6,
-                      border: "none", cursor: "pointer", fontWeight: 500, transition: "all 0.15s",
-                    }}
-                  >{label}</button>
-                ))}
+              {/* Filter-Zeile: Typ + Kanton */}
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+                {/* Typ-Pills */}
+                <div style={{ display: "flex", gap: 4, padding: 4, borderRadius: 8, backgroundColor: "rgba(0,0,0,0.06)" }}>
+                  {[
+                    { key: "alle",         label: "Alle" },
+                    { key: "unternehmen",  label: "Kunden" },
+                    { key: "privatperson", label: "Personen" },
+                  ].map(({ key, label }) => (
+                    <button key={key} onClick={() => setTypeFilter(key)}
+                      style={{
+                        backgroundColor: typeFilter === key ? accent : "transparent",
+                        color: typeFilter === key ? "#fff" : s.textMuted,
+                        fontSize: 11, padding: "3px 10px", borderRadius: 6,
+                        border: "none", cursor: "pointer", fontWeight: 500, transition: "all 0.15s",
+                      }}
+                    >{label}</button>
+                  ))}
+                </div>
+                {/* Kanton-Dropdown */}
+                {allKantons.length > 0 && (
+                  <select value={kantonFilter} onChange={e => setKantonFilter(e.target.value)}
+                    style={{ ...inp, width: "auto", fontSize: 11, padding: "3px 8px", cursor: "pointer" }}>
+                    <option value="alle">Alle Kantone</option>
+                    {allKantons.map(k => <option key={k} value={k}>{k}</option>)}
+                  </select>
+                )}
+                <span style={{ fontSize: 11, color: s.textMuted, marginLeft: "auto" }}>
+                  {filtered.length} von {candidates.length} angezeigt
+                </span>
               </div>
               <div style={{ border: "1px solid " + border, borderRadius: 8, maxHeight: 190, overflowY: "auto", background: s.inputBg }}>
                 {filtered.map(c => (
