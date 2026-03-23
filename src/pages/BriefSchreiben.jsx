@@ -178,10 +178,9 @@ export default function BriefSchreiben() {
   });
 
   // ── Formular-State ─────────────────────────────────────────────────────────
-  const [empfMode, setEmpfMode] = useState("kunden"); // "kunden" | "personen" | "frei"
+  const [empfFilter, setEmpfFilter] = useState("alle"); // "alle" | "unternehmen" | "privatperson" | "frei"
   const [selectedKunde, setSelectedKunde] = useState("");
   const [selectedKontakt, setSelectedKontakt] = useState(""); // index in contact_persons
-  const [selectedPerson, setSelectedPerson] = useState("");
   const [freiName, setFreiName] = useState("");
   const [freiStrasse, setFreiStrasse] = useState("");
   const [freiPlz, setFreiPlz] = useState("");
@@ -205,7 +204,6 @@ export default function BriefSchreiben() {
   const [bExpiry, setBExpiry]             = useState("");
   const [signing, setSigning]             = useState(false);
   const [savingToAblage, setSavingToAblage] = useState(false);
-  const [kundeTypeFilter, setKundeTypeFilter] = useState("alle"); // "alle" | "unternehmen" | "privatperson"
   const [ablageJahr, setAblageJahr] = useState(String(new Date().getFullYear()));
 
   const hidePreset = (id) => {
@@ -223,10 +221,9 @@ export default function BriefSchreiben() {
   const kundeKontakte = selectedKundeObj?.contact_persons || [];
 
   const getRecipient = () => {
-    if (empfMode === "kunden" && selectedKunde) {
+    if (empfFilter !== "frei" && selectedKunde) {
       const k = selectedKundeObj;
       if (!k) return null;
-      // Wenn Kontaktperson gewählt: Namen-Zeile = Kontaktperson, darunter Firma + Adresse
       if (selectedKontakt !== "" && kundeKontakte[parseInt(selectedKontakt)]) {
         const cp = kundeKontakte[parseInt(selectedKontakt)];
         const cpName = [cp.anrede, cp.vorname, cp.name].filter(Boolean).join(" ");
@@ -234,14 +231,7 @@ export default function BriefSchreiben() {
       }
       return { name: k.company_name, strasse: k.strasse, plz: k.plz, ort: k.ort };
     }
-    if (empfMode === "personen" && selectedPerson) {
-      const p = personen.find(x => x.id === selectedPerson);
-      if (!p) return null;
-      const name = [p.anrede, p.vorname, p.nachname].filter(Boolean).join(" ") ||
-                   [p.vorname, p.nachname].filter(Boolean).join(" ");
-      return { name, strasse: p.strasse, plz: p.plz, ort: p.ort };
-    }
-    if (empfMode === "frei" && freiName.trim()) {
+    if (empfFilter === "frei" && freiName.trim()) {
       return { name: freiName.trim(), strasse: freiStrasse.trim(), plz: freiPlz.trim(), ort: freiOrt.trim() };
     }
     return null;
@@ -286,7 +276,7 @@ export default function BriefSchreiben() {
       const blob = await generatePdfBlob(recipient, datum, betreff, body, signer);
       const year = ablageJahr;
       const safeName = betreff.trim().replace(/[^a-zA-Z0-9äöüÄÖÜ._-]/g, "_").slice(0, 60);
-      const customerId = empfMode === "kunden" ? selectedKunde : null;
+      const customerId = empfFilter !== "frei" ? selectedKunde : null;
       const storagePath = customerId
         ? `${customerId}/${year}/${Date.now()}_Brief_${safeName}.pdf`
         : `allgemein/${year}/${Date.now()}_Brief_${safeName}.pdf`;
@@ -601,58 +591,40 @@ export default function BriefSchreiben() {
                 Empfänger
               </label>
 
-              {/* Modus-Tabs */}
-              <div className="flex gap-1 mb-3 p-1 rounded-lg w-fit" style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
+              {/* Filter-Pills — sofort sichtbar, analog Kunden.jsx */}
+              <div className="flex gap-1 mb-3 p-1 rounded-lg w-fit" style={{ backgroundColor: isArtis ? "rgba(0,0,0,0.04)" : isLight ? "rgba(0,0,0,0.04)" : "rgba(255,255,255,0.05)" }}>
                 {[
-                  { key: "kunden",   icon: Building2, label: "Kunden" },
-                  { key: "personen", icon: User,      label: "Personen" },
-                  { key: "frei",     icon: Edit3,     label: "Freie Eingabe" },
-                ].map(({ key, icon: Icon, label }) => (
-                  <button
-                    key={key}
-                    onClick={() => setEmpfMode(key)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all"
+                  { key: "alle",         label: "Alle" },
+                  { key: "unternehmen",  label: "Kunden" },
+                  { key: "privatperson", label: "Personen" },
+                  { key: "frei",         label: "Freie Eingabe" },
+                ].map(({ key, label }) => (
+                  <button key={key}
+                    onClick={() => { setEmpfFilter(key); setSelectedKunde(""); setSelectedKontakt(""); }}
                     style={{
-                      backgroundColor: empfMode === key ? (isArtis ? "#7a9b7f" : isLight ? "#4f6aab" : "#7c3aed") : "transparent",
-                      color: empfMode === key ? "#fff" : subCol,
+                      backgroundColor: empfFilter === key ? (isArtis ? "#7a9b7f" : isLight ? "#4f6aab" : "#7c3aed") : "transparent",
+                      color: empfFilter === key ? "#fff" : subCol,
+                      fontSize: "11px", padding: "3px 10px", borderRadius: "6px",
+                      border: "none", cursor: "pointer", fontWeight: "500", transition: "all 0.15s",
                     }}
-                  >
-                    <Icon className="w-3.5 h-3.5" /> {label}
-                  </button>
+                  >{label}</button>
                 ))}
               </div>
 
-              {/* Kunden-Dropdown */}
-              {empfMode === "kunden" && (
+              {/* Kunden-Dropdown (Alle / Kunden / Personen) */}
+              {empfFilter !== "frei" && (
                 <div className="flex flex-col gap-2">
-                  {/* Typ-Filter Pills */}
-                  <div className="flex gap-1 p-1 rounded-lg w-fit" style={{ backgroundColor: isArtis ? "rgba(0,0,0,0.04)" : isLight ? "rgba(0,0,0,0.04)" : "rgba(255,255,255,0.05)" }}>
-                    {[
-                      { key: "alle",         label: "Alle" },
-                      { key: "unternehmen",  label: "Kunden" },
-                      { key: "privatperson", label: "Personen" },
-                    ].map(({ key, label }) => (
-                      <button key={key} onClick={() => { setKundeTypeFilter(key); setSelectedKunde(""); setSelectedKontakt(""); }}
-                        style={{
-                          backgroundColor: kundeTypeFilter === key ? (isArtis ? "#7a9b7f" : isLight ? "#4f6aab" : "#7c3aed") : "transparent",
-                          color: kundeTypeFilter === key ? "#fff" : subCol,
-                          fontSize: "11px", padding: "3px 8px", borderRadius: "6px",
-                          border: "none", cursor: "pointer", fontWeight: "500", transition: "all 0.15s",
-                        }}
-                      >{label}</button>
-                    ))}
-                  </div>
                   <select value={selectedKunde} onChange={e => { setSelectedKunde(e.target.value); setSelectedKontakt(""); }} style={inp}>
-                    <option value="">– Kunden auswählen –</option>
+                    <option value="">– Auswählen –</option>
                     {kunden
                       .filter(k => {
-                        if (kundeTypeFilter === "privatperson") return k.person_type === "privatperson";
-                        if (kundeTypeFilter === "unternehmen")  return k.person_type !== "privatperson";
+                        if (empfFilter === "privatperson") return k.person_type === "privatperson";
+                        if (empfFilter === "unternehmen")  return k.person_type !== "privatperson";
                         return true;
                       })
                       .map(k => (
-                      <option key={k.id} value={k.id}>{k.company_name}{k.ort ? ` – ${k.ort}` : ""}</option>
-                    ))}
+                        <option key={k.id} value={k.id}>{k.company_name}{k.ort ? ` – ${k.ort}` : ""}</option>
+                      ))}
                   </select>
                   {kundeKontakte.length > 0 && (
                     <select value={selectedKontakt} onChange={e => setSelectedKontakt(e.target.value)} style={inp}>
@@ -667,20 +639,8 @@ export default function BriefSchreiben() {
                 </div>
               )}
 
-              {/* Personen-Dropdown */}
-              {empfMode === "personen" && (
-                <select value={selectedPerson} onChange={e => setSelectedPerson(e.target.value)} style={inp}>
-                  <option value="">– Person auswählen –</option>
-                  {personen.map(p => (
-                    <option key={p.id} value={p.id}>
-                      {[p.vorname, p.nachname].filter(Boolean).join(" ")}{p.ort ? ` – ${p.ort}` : ""}
-                    </option>
-                  ))}
-                </select>
-              )}
-
               {/* Freie Eingabe */}
-              {empfMode === "frei" && (
+              {empfFilter === "frei" && (
                 <div className="grid gap-2">
                   <input value={freiName}    onChange={e => setFreiName(e.target.value)}    placeholder="Name / Firma"  style={inp} />
                   <input value={freiStrasse} onChange={e => setFreiStrasse(e.target.value)} placeholder="Strasse Nr."   style={inp} />
