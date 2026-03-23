@@ -538,9 +538,9 @@ export default function BriefSchreiben() {
                     <button
                       onClick={e => { e.stopPropagation(); hidePreset(p.id); toast.success(`"${p.name}" ausgeblendet`); }}
                       className="flex-shrink-0 rounded p-0.5 transition-all hover:bg-red-50"
-                      style={{ color: "#d1d5db" }}
+                      style={{ color: "#fca5a5" }}
                       onMouseEnter={e => e.currentTarget.style.color = "#ef4444"}
-                      onMouseLeave={e => e.currentTarget.style.color = "#d1d5db"}
+                      onMouseLeave={e => e.currentTarget.style.color = "#fca5a5"}
                       title="Vorschlag ausblenden"
                     >
                       <X className="w-3 h-3" />
