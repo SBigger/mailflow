@@ -205,6 +205,8 @@ export default function BriefSchreiben() {
   const [bExpiry, setBExpiry]             = useState("");
   const [signing, setSigning]             = useState(false);
   const [savingToAblage, setSavingToAblage] = useState(false);
+  const [kundeTypeFilter, setKundeTypeFilter] = useState("alle"); // "alle" | "unternehmen" | "privatperson"
+  const [ablageJahr, setAblageJahr] = useState(String(new Date().getFullYear()));
 
   const hidePreset = (id) => {
     const next = [...hiddenPresets, id];
@@ -282,7 +284,7 @@ export default function BriefSchreiben() {
     setSavingToAblage(true);
     try {
       const blob = await generatePdfBlob(recipient, datum, betreff, body, signer);
-      const year = new Date().getFullYear();
+      const year = ablageJahr;
       const safeName = betreff.trim().replace(/[^a-zA-Z0-9äöüÄÖÜ._-]/g, "_").slice(0, 60);
       const customerId = empfMode === "kunden" ? selectedKunde : null;
       const storagePath = customerId
@@ -623,9 +625,32 @@ export default function BriefSchreiben() {
               {/* Kunden-Dropdown */}
               {empfMode === "kunden" && (
                 <div className="flex flex-col gap-2">
+                  {/* Typ-Filter Pills */}
+                  <div className="flex gap-1 p-1 rounded-lg w-fit" style={{ backgroundColor: isArtis ? "rgba(0,0,0,0.04)" : isLight ? "rgba(0,0,0,0.04)" : "rgba(255,255,255,0.05)" }}>
+                    {[
+                      { key: "alle",         label: "Alle" },
+                      { key: "unternehmen",  label: "Kunden" },
+                      { key: "privatperson", label: "Personen" },
+                    ].map(({ key, label }) => (
+                      <button key={key} onClick={() => { setKundeTypeFilter(key); setSelectedKunde(""); setSelectedKontakt(""); }}
+                        style={{
+                          backgroundColor: kundeTypeFilter === key ? (isArtis ? "#7a9b7f" : isLight ? "#4f6aab" : "#7c3aed") : "transparent",
+                          color: kundeTypeFilter === key ? "#fff" : subCol,
+                          fontSize: "11px", padding: "3px 8px", borderRadius: "6px",
+                          border: "none", cursor: "pointer", fontWeight: "500", transition: "all 0.15s",
+                        }}
+                      >{label}</button>
+                    ))}
+                  </div>
                   <select value={selectedKunde} onChange={e => { setSelectedKunde(e.target.value); setSelectedKontakt(""); }} style={inp}>
                     <option value="">– Kunden auswählen –</option>
-                    {kunden.map(k => (
+                    {kunden
+                      .filter(k => {
+                        if (kundeTypeFilter === "privatperson") return k.person_type === "privatperson";
+                        if (kundeTypeFilter === "unternehmen")  return k.person_type !== "privatperson";
+                        return true;
+                      })
+                      .map(k => (
                       <option key={k.id} value={k.id}>{k.company_name}{k.ort ? ` – ${k.ort}` : ""}</option>
                     ))}
                   </select>
@@ -731,21 +756,38 @@ export default function BriefSchreiben() {
                 <Printer className="w-4 h-4" /> Drucken / PDF
               </button>
 
-              <button
-                onClick={handleSaveToAblage}
-                disabled={!canPrint || savingToAblage}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all"
-                style={{
-                  backgroundColor: badgeBg,
-                  color: canPrint ? headingCol : subCol,
-                  border: `1px solid ${panelBorder}`,
-                  cursor: canPrint ? "pointer" : "not-allowed",
-                }}
-              >
-                {savingToAblage
-                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Speichern…</>
-                  : <><Archive className="w-4 h-4" /> In Ablage speichern</>}
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={handleSaveToAblage}
+                  disabled={!canPrint || savingToAblage}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-l-lg text-sm font-medium transition-all"
+                  style={{
+                    backgroundColor: badgeBg,
+                    color: canPrint ? headingCol : subCol,
+                    border: `1px solid ${panelBorder}`,
+                    borderRight: "none",
+                    cursor: canPrint ? "pointer" : "not-allowed",
+                  }}
+                >
+                  {savingToAblage
+                    ? <><Loader2 className="w-4 h-4 animate-spin" /> Speichern…</>
+                    : <><Archive className="w-4 h-4" /> In Ablage speichern</>}
+                </button>
+                <select
+                  value={ablageJahr}
+                  onChange={e => setAblageJahr(e.target.value)}
+                  style={{
+                    background: inputBg, border: `1px solid ${panelBorder}`,
+                    borderLeft: "none", color: headingCol,
+                    borderRadius: "0 8px 8px 0", padding: "7px 8px",
+                    fontSize: 12, outline: "none", cursor: "pointer",
+                  }}
+                >
+                  {[2023,2024,2025,2026,2027].map(y => (
+                    <option key={y} value={y}>{y}</option>
+                  ))}
+                </select>
+              </div>
 
               <button
                 onClick={() => setSaveModal(true)}

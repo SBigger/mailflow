@@ -68,6 +68,7 @@ export default function FristenEinreichenDialog({
   const [targetDate,  setTargetDate] = useState(getDefaultTargetDate);  // ← Default-Datum vorausgefüllt
   const [search,      setSearch]     = useState("");
   const [excluded,    setExcluded]   = useState(new Set());
+  const [typeFilter,  setTypeFilter] = useState("alle"); // "alle" | "unternehmen" | "privatperson"
   const [phase,       setPhase]      = useState("setup");
   const [results,     setResults]    = useState([]);
   const [currentIdx,  setCurrentIdx] = useState(0);
@@ -83,8 +84,13 @@ export default function FristenEinreichenDialog({
       })
       .map(f => ({ frist: f, customer: customers.find(c => c.id === f.customer_id) }))
       .filter(({ customer }) => Boolean(customer) && customer.aktiv !== false)
+      .filter(({ customer }) => {
+        if (typeFilter === "privatperson") return customer.person_type === "privatperson";
+        if (typeFilter === "unternehmen")  return customer.person_type !== "privatperson";
+        return true;
+      })
       .sort((a, b) => (a.customer.company_name || "").localeCompare(b.customer.company_name || "", "de"));
-  }, [fristen, kanton, jahr, customers]);
+  }, [fristen, kanton, jahr, customers, typeFilter]);
 
   const filtered = useMemo(() => {
     if (!search.trim()) return kandidaten;
@@ -268,6 +274,24 @@ export default function FristenEinreichenDialog({
                 <input type="date" value={targetDate} onChange={e => setTargetDate(e.target.value)}
                   className={inpCls} style={{ ...inStyle }} />
               </div>
+            </div>
+
+            {/* Typ-Filter Pills */}
+            <div className="flex gap-1 p-1 rounded-lg w-fit" style={{ backgroundColor: "rgba(0,0,0,0.04)" }}>
+              {[
+                { key: "alle",         label: "Alle" },
+                { key: "unternehmen",  label: "JP" },
+                { key: "privatperson", label: "NP" },
+              ].map(({ key, label }) => (
+                <button key={key} onClick={() => { setTypeFilter(key); setExcluded(new Set()); }}
+                  style={{
+                    backgroundColor: typeFilter === key ? accentBg : "transparent",
+                    color: typeFilter === key ? "#fff" : textMuted,
+                    fontSize: "11px", padding: "3px 10px", borderRadius: "6px",
+                    border: "none", cursor: "pointer", fontWeight: "500", transition: "all 0.15s",
+                  }}
+                >{label}</button>
+              ))}
             </div>
 
             {/* Suche + Alle/Keine */}
