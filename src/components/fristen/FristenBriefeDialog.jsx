@@ -169,6 +169,7 @@ export default function FristenBriefeDialog({ fristen, customers, onClose }) {
         ort:          cust.ort || "",
         kategorie:    f.category || "",
         jahr:         f.jahr ?? null,
+        person_type:  cust.person_type || "unternehmen",
       });
     });
     return result.sort((a, b) => a.company_name.localeCompare(b.company_name, "de"));
@@ -181,10 +182,19 @@ export default function FristenBriefeDialog({ fristen, customers, onClose }) {
   const [showPreview,    setShowPreview]    = useState(false);
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [logoUrl]                           = useState("/artis-logo.png");
+  const [typeFilter,     setTypeFilter]     = useState("alle"); // "alle" | "unternehmen" | "privatperson"
 
-  const allSelected = candidates.length > 0 && selected.size === candidates.length;
+  const filtered    = useMemo(() => {
+    if (typeFilter === "privatperson") return candidates.filter(c => c.person_type === "privatperson");
+    if (typeFilter === "unternehmen")  return candidates.filter(c => c.person_type !== "privatperson");
+    return candidates;
+  }, [candidates, typeFilter]);
+
+  const allSelected = filtered.length > 0 && filtered.every(c => selected.has(c.customer_id));
   const toggle      = id => setSelected(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
-  const toggleAll   = () => allSelected ? setSelected(new Set()) : setSelected(new Set(candidates.map(c => c.customer_id)));
+  const toggleAll   = () => allSelected
+    ? setSelected(prev => { const n = new Set(prev); filtered.forEach(c => n.delete(c.customer_id)); return n; })
+    : setSelected(prev => { const n = new Set(prev); filtered.forEach(c => n.add(c.customer_id)); return n; });
   const recipients  = candidates.filter(c => selected.has(c.customer_id));
 
   const loadVorlage = (vorlage) => {
@@ -257,11 +267,28 @@ export default function FristenBriefeDialog({ fristen, customers, onClose }) {
                   Empfänger ({recipients.length} von {candidates.length})
                 </span>
                 <button onClick={toggleAll} style={{ background: "none", border: "none", cursor: "pointer", color: accent, fontSize: 12, textDecoration: "underline" }}>
-                  {allSelected ? "Alle abw\u00e4hlen" : "Alle w\u00e4hlen"}
+                  {allSelected ? "Alle abwählen" : "Alle wählen"}
                 </button>
               </div>
+              {/* Filter-Pills */}
+              <div style={{ display: "flex", gap: 4, padding: 4, borderRadius: 8, backgroundColor: "rgba(0,0,0,0.04)", width: "fit-content", marginBottom: 8 }}>
+                {[
+                  { key: "alle",         label: "Alle" },
+                  { key: "unternehmen",  label: "Kunden" },
+                  { key: "privatperson", label: "Personen" },
+                ].map(({ key, label }) => (
+                  <button key={key} onClick={() => setTypeFilter(key)}
+                    style={{
+                      backgroundColor: typeFilter === key ? accent : "transparent",
+                      color: typeFilter === key ? "#fff" : s.textMuted,
+                      fontSize: 11, padding: "3px 10px", borderRadius: 6,
+                      border: "none", cursor: "pointer", fontWeight: 500, transition: "all 0.15s",
+                    }}
+                  >{label}</button>
+                ))}
+              </div>
               <div style={{ border: "1px solid " + border, borderRadius: 8, maxHeight: 190, overflowY: "auto", background: s.inputBg }}>
-                {candidates.map(c => (
+                {filtered.map(c => (
                   <label key={c.customer_id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", cursor: "pointer", borderBottom: "1px solid " + border, color: s.textMain, fontSize: 13 }}>
                     <input type="checkbox" checked={selected.has(c.customer_id)} onChange={() => toggle(c.customer_id)} style={{ accentColor: accent }} />
                     <span style={{ flex: 1 }}>{c.company_name}</span>
