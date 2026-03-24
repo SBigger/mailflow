@@ -1,4 +1,4 @@
-import React, { useState, useContext } from "react";
+import React, { useState, useContext, useRef, useEffect } from "react";
 import { ThemeContext } from "@/Layout";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { entities, supabase } from "@/api/supabaseClient";
@@ -551,6 +551,119 @@ function FahrzeugForm({ initial, onSave, onCancel, theme, accent, customerId }) 
   );
 }
 
+// ── Custom Dropdown mit Fahrzeug-Indikator ───────────────────────────────────
+function FahrzeuglisteDropdown({ unternehmen, privatpersonen, selectedCid, mitFahrzeugenSet, onChange, panelBg, panelBdr, headingC, subC, accent }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    function handleClick(e) {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  const allKunden = [...unternehmen, ...privatpersonen];
+  const selected = allKunden.find(c => c.id === selectedCid);
+  const getLabel = (c) => c.person_type === "privatperson"
+    ? [c.anrede, c.nachname, c.vorname].filter(Boolean).join(" ") + (c.ort ? ` · ${c.ort}` : "")
+    : c.company_name + (c.ort ? ` · ${c.ort}` : "");
+  const label = selected ? getLabel(selected) : "– Mandant auswählen –";
+  const hasSelected = !!selected && mitFahrzeugenSet.has(selectedCid);
+
+  const renderRow = (c) => {
+    const hatFahrzeuge = mitFahrzeugenSet.has(c.id);
+    const isActive = c.id === selectedCid;
+    return (
+      <div
+        key={c.id}
+        onClick={() => { onChange(c.id); setOpen(false); }}
+        className="flex items-center gap-2 px-3 py-2 cursor-pointer text-sm"
+        style={{ backgroundColor: isActive ? accent + "20" : "transparent", color: headingC }}
+        onMouseEnter={e => { if (!isActive) e.currentTarget.style.backgroundColor = accent + "12"; }}
+        onMouseLeave={e => { if (!isActive) e.currentTarget.style.backgroundColor = "transparent"; }}>
+        <span
+          style={{
+            width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
+            backgroundColor: hatFahrzeuge ? "#22c55e" : "transparent",
+            border: hatFahrzeuge ? "none" : `1.5px solid ${panelBdr}`,
+            display: "inline-block",
+          }}
+        />
+        {getLabel(c)}
+      </div>
+    );
+  };
+
+  return (
+    <div ref={ref} style={{ position: "relative", flex: 1, maxWidth: 440 }}>
+      {/* Trigger */}
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-2 w-full rounded-lg border text-sm px-3 py-2 focus:outline-none text-left"
+        style={{ backgroundColor: panelBg, borderColor: panelBdr, color: headingC, cursor: "pointer" }}>
+        {selected && (
+          <span
+            style={{
+              width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
+              backgroundColor: hasSelected ? "#22c55e" : "transparent",
+              border: hasSelected ? "none" : `1.5px solid ${panelBdr}`,
+              display: "inline-block",
+            }}
+          />
+        )}
+        <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+        <svg width="12" height="12" viewBox="0 0 12 12" style={{ flexShrink: 0, color: subC, transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}>
+          <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+
+      {/* Dropdown Liste */}
+      {open && (
+        <div
+          style={{
+            position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 9998,
+            backgroundColor: panelBg, border: `1px solid ${panelBdr}`, borderRadius: 8,
+            boxShadow: "0 4px 16px rgba(0,0,0,0.12)", maxHeight: 320, overflowY: "auto",
+          }}>
+          {/* Leer-Option */}
+          <div
+            onClick={() => { onChange(""); setOpen(false); }}
+            className="flex items-center gap-2 px-3 py-2 cursor-pointer text-sm"
+            style={{ color: subC }}
+            onMouseEnter={e => e.currentTarget.style.backgroundColor = accent + "18"}
+            onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
+            <span style={{ width: 8, height: 8, display: "inline-block" }} />
+            – Mandant auswählen –
+          </div>
+
+          {/* Unternehmen */}
+          {unternehmen.length > 0 && (
+            <>
+              <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-widest" style={{ color: subC, borderTop: `1px solid ${panelBdr}` }}>
+                Unternehmen
+              </div>
+              {unternehmen.map(renderRow)}
+            </>
+          )}
+
+          {/* Privatpersonen */}
+          {privatpersonen.length > 0 && (
+            <>
+              <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-widest" style={{ color: subC, borderTop: `1px solid ${panelBdr}` }}>
+                Privatpersonen
+              </div>
+              {privatpersonen.map(renderRow)}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Hauptkomponente ──────────────────────────────────────────────────────────
 export default function Fahrzeugliste() {
   const { theme } = useContext(ThemeContext);
@@ -577,6 +690,20 @@ export default function Fahrzeugliste() {
     queryKey: ["customers_all"],
     queryFn: () => entities.Customer.list("company_name"),
   });
+
+  // Welche customer_ids haben bereits Fahrzeug-Einträge?
+  const { data: mitFahrzeuge = [] } = useQuery({
+    queryKey: ["fahrzeuge_cids"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("fahrzeuge").select("customer_id");
+      if (error) throw new Error(error.message);
+      return [...new Set((data || []).map(r => r.customer_id))];
+    },
+  });
+  const mitFahrzeugenSet = new Set(mitFahrzeuge);
+
+  const unternehmen   = kunden.filter(c => c.person_type !== "privatperson" && c.aktiv !== false);
+  const privatpersonen = kunden.filter(c => c.person_type === "privatperson" && c.aktiv !== false);
 
   const { data: fahrzeuge = [], isLoading } = useQuery({
     queryKey: ["fahrzeuge", selectedCid],
@@ -645,29 +772,18 @@ export default function Fahrzeugliste() {
               <label className="text-xs font-semibold uppercase tracking-wider mb-1.5 block" style={{ color: subC }}>
                 Mandant / Unternehmen
               </label>
-              <select
-                value={selectedCid}
-                onChange={e => { setSelectedCid(e.target.value); setEditingId(null); }}
-                className="w-full rounded-lg border text-sm px-3 py-2 focus:outline-none focus:ring-2"
-                style={{
-                  backgroundColor: panelBg, borderColor: panelBdr,
-                  color: headingC, focusRingColor: accent,
-                }}
-              >
-                <option value="">– Mandant auswählen –</option>
-                {/* Unternehmen */}
-                <optgroup label="Unternehmen">
-                  {kunden.filter(c => c.person_type !== "privatperson" && c.aktiv !== false)
-                    .map(c => <option key={c.id} value={c.id}>{c.company_name}{c.ort ? ` – ${c.ort}` : ""}</option>)}
-                </optgroup>
-                {/* Privatpersonen */}
-                <optgroup label="Privatpersonen">
-                  {kunden.filter(c => c.person_type === "privatperson" && c.aktiv !== false)
-                    .map(c => <option key={c.id} value={c.id}>
-                      {[c.anrede, c.nachname, c.vorname].filter(Boolean).join(" ")}{c.ort ? ` – ${c.ort}` : ""}
-                    </option>)}
-                </optgroup>
-              </select>
+              <FahrzeuglisteDropdown
+                unternehmen={unternehmen}
+                privatpersonen={privatpersonen}
+                selectedCid={selectedCid}
+                mitFahrzeugenSet={mitFahrzeugenSet}
+                onChange={cid => { setSelectedCid(cid); setEditingId(null); }}
+                panelBg={panelBg}
+                panelBdr={panelBdr}
+                headingC={headingC}
+                subC={subC}
+                accent={accent}
+              />
             </div>
 
             {selectedCid && fahrzeuge.length > 0 && (
