@@ -1,7 +1,7 @@
-import React, { useState, useContext } from "react";
+import React, { useState, useContext, useRef, useEffect } from "react";
 import { ThemeContext } from "@/Layout";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { entities } from "@/api/supabaseClient";
+import { entities, supabase } from "@/api/supabaseClient";
 import { toast } from "sonner";
 import {
   BookOpen, Wrench, ChevronRight, Plus, Trash2, Edit3, Save, X,
@@ -593,6 +593,97 @@ function KapitalstrukturView({ eintraege, headingC, subC, accent, panelBg, panel
   );
 }
 
+// ── Custom Dropdown mit Eintrags-Indikator ────────────────────────────────────
+function AktienbuchDropdown({ unternehmen, selectedCid, mitEintraegenSet, onChange, panelBg, panelBdr, headingC, subC, accent }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    function handleClick(e) {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  const selected = unternehmen.find(c => c.id === selectedCid);
+  const label = selected
+    ? `${selected.company_name}${selected.ort ? ` · ${selected.ort}` : ""}`
+    : "– Unternehmen wählen –";
+  const hasSelected = !!selected && mitEintraegenSet.has(selectedCid);
+
+  return (
+    <div ref={ref} style={{ position: "relative", flex: 1, maxWidth: 440 }}>
+      {/* Trigger */}
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-2 w-full rounded-lg border text-sm px-3 py-2 focus:outline-none text-left"
+        style={{ backgroundColor: panelBg, borderColor: panelBdr, color: headingC, cursor: "pointer" }}>
+        {selected && (
+          <span
+            style={{
+              width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
+              backgroundColor: hasSelected ? "#22c55e" : "transparent",
+              border: hasSelected ? "none" : `1.5px solid ${panelBdr}`,
+              display: "inline-block",
+            }}
+          />
+        )}
+        <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+        <svg width="12" height="12" viewBox="0 0 12 12" style={{ flexShrink: 0, color: subC, transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}>
+          <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+
+      {/* Dropdown Liste */}
+      {open && (
+        <div
+          style={{
+            position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 9998,
+            backgroundColor: panelBg, border: `1px solid ${panelBdr}`, borderRadius: 8,
+            boxShadow: "0 4px 16px rgba(0,0,0,0.12)", maxHeight: 320, overflowY: "auto",
+          }}>
+          {/* Leer-Option */}
+          <div
+            onClick={() => { onChange(""); setOpen(false); }}
+            className="flex items-center gap-2 px-3 py-2 cursor-pointer text-sm"
+            style={{ color: subC }}
+            onMouseEnter={e => e.currentTarget.style.backgroundColor = accent + "18"}
+            onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
+            <span style={{ width: 8, height: 8, display: "inline-block" }} />
+            – Unternehmen wählen –
+          </div>
+
+          {unternehmen.map(c => {
+            const hatEintraege = mitEintraegenSet.has(c.id);
+            const isActive = c.id === selectedCid;
+            return (
+              <div
+                key={c.id}
+                onClick={() => { onChange(c.id); setOpen(false); }}
+                className="flex items-center gap-2 px-3 py-2 cursor-pointer text-sm"
+                style={{ backgroundColor: isActive ? accent + "20" : "transparent", color: headingC }}
+                onMouseEnter={e => { if (!isActive) e.currentTarget.style.backgroundColor = accent + "12"; }}
+                onMouseLeave={e => { if (!isActive) e.currentTarget.style.backgroundColor = "transparent"; }}>
+                <span
+                  style={{
+                    width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
+                    backgroundColor: hatEintraege ? "#22c55e" : "transparent",
+                    border: hatEintraege ? "none" : `1.5px solid ${panelBdr}`,
+                    display: "inline-block",
+                  }}
+                />
+                {c.company_name}{c.ort ? ` · ${c.ort}` : ""}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Hauptkomponente ───────────────────────────────────────────────────────────
 export default function Aktienbuch() {
   const { theme } = useContext(ThemeContext);
@@ -623,6 +714,19 @@ export default function Aktienbuch() {
     queryFn: () => entities.Customer.list("company_name"),
   });
   const unternehmen = kunden.filter(c => c.person_type !== "privatperson" && c.aktiv !== false);
+
+  // Welche customer_ids haben bereits Aktienbuch-Einträge?
+  const { data: mitEintraegen = [] } = useQuery({
+    queryKey: ["aktienbuch_cids"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("aktienbuch")
+        .select("customer_id");
+      if (error) throw new Error(error.message);
+      return [...new Set((data || []).map(r => r.customer_id))];
+    },
+  });
+  const mitEintraegenSet = new Set(mitEintraegen);
 
   const { data: eintraege = [], isLoading } = useQuery({
     queryKey: ["aktienbuch", selectedCid],
@@ -762,18 +866,17 @@ export default function Aktienbuch() {
                 <Building2 className="w-4 h-4" style={{ color: accent }} />
                 <span className="text-sm font-semibold" style={{ color: headingC }}>Aktiengesellschaft</span>
               </div>
-              <select
-                value={selectedCid}
-                onChange={e => { setSelectedCid(e.target.value); setActiveTab("aktionaere"); }}
-                className="flex-1 rounded-lg border text-sm px-3 py-2 focus:outline-none"
-                style={{ backgroundColor: isArtis ? "#f5f8f5" : isLight ? "#f8fafc" : "#1c1c21", borderColor: panelBdr, color: headingC, maxWidth: 440 }}>
-                <option value="">– Unternehmen wählen –</option>
-                {unternehmen.map(c => (
-                  <option key={c.id} value={c.id}>
-                    {c.company_name}{c.ort ? ` · ${c.ort}` : ""}
-                  </option>
-                ))}
-              </select>
+              <AktienbuchDropdown
+                unternehmen={unternehmen}
+                selectedCid={selectedCid}
+                mitEintraegenSet={mitEintraegenSet}
+                onChange={cid => { setSelectedCid(cid); setActiveTab("aktionaere"); }}
+                panelBg={isArtis ? "#f5f8f5" : isLight ? "#f8fafc" : "#1c1c21"}
+                panelBdr={panelBdr}
+                headingC={headingC}
+                subC={subC}
+                accent={accent}
+              />
               <div className="ml-auto flex items-center gap-2">
                 {selectedCid && eintraege.length > 0 && (
                   <button
