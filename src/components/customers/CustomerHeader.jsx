@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useContext } from "react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { User, Phone, MapPin, Briefcase, Heart } from "lucide-react";
+import { User, Phone, MapPin, Briefcase, Heart, Mail } from "lucide-react";
 import { ThemeContext } from "@/Layout";
 
 const CH_KANTONE = [
@@ -46,6 +46,7 @@ export default function CustomerHeader({ customer, staff, onUpdate }) {
   const [plz,      setPlz]      = useState(customer.plz || "");
   const [ort,      setOrt]      = useState(customer.ort || "");
   const [phone,    setPhone]    = useState(customer.phone || "");
+  const [email,    setEmail]    = useState(customer.email || "");
   const [budget,   setBudget]   = useState(
     customer.budget !== undefined && customer.budget !== null ? formatBudgetStatic(customer.budget) : ""
   );
@@ -77,6 +78,7 @@ export default function CustomerHeader({ customer, staff, onUpdate }) {
     setPlz(customer.plz || "");
     setOrt(customer.ort || "");
     setPhone(customer.phone || "");
+    setEmail(customer.email || "");
     setBudget(customer.budget !== undefined && customer.budget !== null ? formatBudgetStatic(customer.budget) : "");
     setAnrede(customer.anrede || "");
     setNachname(customer.nachname || "");
@@ -339,6 +341,34 @@ export default function CustomerHeader({ customer, staff, onUpdate }) {
                     className="flex items-center justify-center w-8 h-8 rounded-md bg-emerald-600 hover:bg-emerald-500 transition-colors flex-shrink-0"
                   >
                     <Phone className="h-3.5 w-3.5 text-white" />
+                  </a>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* E-Mail */}
+          <div className="flex items-center flex-1 gap-2">
+            <div className="flex-1 space-y-1">
+              <label className="text-[10px] font-medium tracking-wide" style={{ color: labelColor }}>E-Mail</label>
+              <div className="flex items-center gap-2">
+                <Input
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  onBlur={() => { if (email !== (customer.email || "")) onUpdate({ email }); }}
+                  placeholder="E-Mail-Adresse"
+                  type="email"
+                  autoComplete="new-password"
+                  name="customer-email-field"
+                  {...inp('flex-1')}
+                />
+                {email && (
+                  <a
+                    href={`mailto:${email}`}
+                    title="E-Mail senden"
+                    className="flex items-center justify-center w-8 h-8 rounded-md bg-emerald-600 hover:bg-emerald-500 transition-colors flex-shrink-0"
+                  >
+                    <Mail className="h-3.5 w-3.5 text-white" />
                   </a>
                 )}
               </div>
