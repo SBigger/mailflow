@@ -897,6 +897,28 @@ export default function Aktienbuch() {
               </div>
             </div>
 
+            {/* ── Schnellliste: Kunden mit Einträgen ───────────────────── */}
+            {mitEintraegenSet.size > 0 && (
+              <div className="px-5 py-2.5" style={{ borderBottom: selectedCid ? `1px solid ${panelBdr}` : "none" }}>
+                <div className="text-[10px] font-semibold uppercase tracking-widest mb-1.5" style={{ color: subC }}>
+                  Mit Einträgen ({mitEintraegenSet.size})
+                </div>
+                <div className="flex flex-wrap gap-x-4 gap-y-0.5">
+                  {unternehmen.filter(c => mitEintraegenSet.has(c.id)).map(c => (
+                    <button
+                      key={c.id}
+                      onClick={() => { setSelectedCid(c.id); setActiveTab("aktionaere"); }}
+                      className="flex items-center gap-1 text-xs transition-opacity hover:opacity-70"
+                      style={{ color: c.id === selectedCid ? accent : headingC, background: "none", border: "none", padding: 0, cursor: "pointer" }}
+                    >
+                      <span style={{ color: "#22c55e", fontSize: 8 }}>●</span>
+                      {c.company_name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* ── KPI-Strip ────────────────────────────────────────────── */}
             {selectedCid && aktivEintraege.length > 0 && (() => {
               const totalNom = aktivEintraege.reduce((s, e) => s + (e.anzahl || 0) * (e.nominalwert || 0), 0);

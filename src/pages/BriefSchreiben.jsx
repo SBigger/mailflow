@@ -27,32 +27,32 @@ const PRESETS = [
   {
     id: "p1", name: "Unterlagen Steuererklärung",
     betreff: "Steuererklärung – Unterlagen benötigt",
-    body: `Sehr geehrte Damen und Herren\n\nWir erlauben uns, Sie höflich daran zu erinnern, dass wir für die Erstellung Ihrer Steuererklärung noch Ihre Unterlagen benötigen.\n\nWir bitten Sie, uns die Unterlagen baldmöglichst zukommen zu lassen.\n\nFür Rückfragen stehen wir Ihnen gerne zur Verfügung.\n\nFreundliche Grüsse\n\n${SENDER_NAME}`,
+    body: `Sehr geehrte Damen und Herren\n\nWir erlauben uns, Sie höflich daran zu erinnern, dass wir für die Erstellung Ihrer Steuererklärung noch Ihre Unterlagen benötigen.\n\nWir bitten Sie, uns die Unterlagen baldmöglichst zukommen zu lassen.\n\nFür Rückfragen stehen wir Ihnen gerne zur Verfügung.\n\nFreundliche Grüsse\n${SENDER_NAME}`,
   },
   {
     id: "p2", name: "Unterlagen Jahresabschluss",
     betreff: "Jahresabschluss – Unterlagen benötigt",
-    body: `Sehr geehrte Damen und Herren\n\nFür die Erstellung Ihres Jahresabschlusses benötigen wir noch folgende Unterlagen:\n\n– Kontoauszüge per Jahresende\n– Belege für Anlagenzugänge\n– Inventarliste\n– Offene Debitoren und Kreditoren\n\nWir bitten Sie, uns die Unterlagen baldmöglichst zukommen zu lassen.\n\nFreundliche Grüsse\n\n${SENDER_NAME}`,
+    body: `Sehr geehrte Damen und Herren\n\nFür die Erstellung Ihres Jahresabschlusses benötigen wir noch folgende Unterlagen:\n\n– Kontoauszüge per Jahresende\n– Belege für Anlagenzugänge\n– Inventarliste\n– Offene Debitoren und Kreditoren\n\nWir bitten Sie, uns die Unterlagen baldmöglichst zukommen zu lassen.\n\nFreundliche Grüsse\n${SENDER_NAME}`,
   },
   {
     id: "p3", name: "GV-Einladung",
     betreff: "Einladung zur ordentlichen Generalversammlung",
-    body: `Sehr geehrte Damen und Herren\n\nWir laden Sie herzlich zur ordentlichen Generalversammlung ein.\n\nDatum: [Datum einfügen]\nZeit: [Uhrzeit einfügen]\nOrt: [Ort einfügen]\n\nTraktanden:\n1. Begrüssung\n2. Genehmigung des Jahresberichts\n3. Genehmigung der Jahresrechnung\n4. Entlastung des Verwaltungsrats\n5. Diverses\n\nUm Ihre Teilnahme bitten wir freundlichst bis [Datum] zu bestätigen.\n\nFreundliche Grüsse\n\n${SENDER_NAME}`,
+    body: `Sehr geehrte Damen und Herren\n\nWir laden Sie herzlich zur ordentlichen Generalversammlung ein.\n\nDatum: [Datum einfügen]\nZeit: [Uhrzeit einfügen]\nOrt: [Ort einfügen]\n\nTraktanden:\n1. Begrüssung\n2. Genehmigung des Jahresberichts\n3. Genehmigung der Jahresrechnung\n4. Entlastung des Verwaltungsrats\n5. Diverses\n\nUm Ihre Teilnahme bitten wir freundlichst bis [Datum] zu bestätigen.\n\nFreundliche Grüsse\n${SENDER_NAME}`,
   },
   {
     id: "p4", name: "GV-Protokoll Begleitschreiben",
     betreff: "Protokoll der Generalversammlung vom [Datum]",
-    body: `Sehr geehrte Damen und Herren\n\nWir übermitteln Ihnen anbei das Protokoll der Generalversammlung vom [Datum].\n\nBitte prüfen Sie das Protokoll und bestätigen Sie uns, ob Sie damit einverstanden sind.\n\nFreundliche Grüsse\n\n${SENDER_NAME}`,
+    body: `Sehr geehrte Damen und Herren\n\nWir übermitteln Ihnen anbei das Protokoll der Generalversammlung vom [Datum].\n\nBitte prüfen Sie das Protokoll und bestätigen Sie uns, ob Sie damit einverstanden sind.\n\nFreundliche Grüsse\n${SENDER_NAME}`,
   },
   {
     id: "p5", name: "Zahlungserinnerung",
     betreff: "Zahlungserinnerung – Rechnung vom [Datum]",
-    body: `Sehr geehrte Damen und Herren\n\nErlauben Sie uns, Sie höflich daran zu erinnern, dass unsere Rechnung vom [Datum] über CHF [Betrag] noch offen ist.\n\nWir bitten Sie, den ausstehenden Betrag bis zum [Fälligkeitsdatum] auf unser Konto zu überweisen.\n\nFalls Sie bereits bezahlt haben, betrachten Sie dieses Schreiben als gegenstandslos.\n\nFreundliche Grüsse\n\n${SENDER_NAME}`,
+    body: `Sehr geehrte Damen und Herren\n\nErlauben Sie uns, Sie höflich daran zu erinnern, dass unsere Rechnung vom [Datum] über CHF [Betrag] noch offen ist.\n\nWir bitten Sie, den ausstehenden Betrag bis zum [Fälligkeitsdatum] auf unser Konto zu überweisen.\n\nFalls Sie bereits bezahlt haben, betrachten Sie dieses Schreiben als gegenstandslos.\n\nFreundliche Grüsse\n${SENDER_NAME}`,
   },
   {
     id: "p6", name: "Fristverlängerungsgesuch",
     betreff: "Gesuch um Fristverlängerung",
-    body: `Sehr geehrte Damen und Herren\n\nWir erlauben uns, für unseren Mandanten um Fristverlängerung zu ersuchen.\n\nAls Begründung führen wir an: [Grund einfügen]\n\nWir bitten Sie, die Frist bis zum [Datum] zu erstrecken.\n\nFür Rückfragen stehen wir Ihnen gerne zur Verfügung.\n\nFreundliche Grüsse\n\n${SENDER_NAME}`,
+    body: `Sehr geehrte Damen und Herren\n\nWir erlauben uns, für unseren Mandanten um Fristverlängerung zu ersuchen.\n\nAls Begründung führen wir an: [Grund einfügen]\n\nWir bitten Sie, die Frist bis zum [Datum] zu erstrecken.\n\nFür Rückfragen stehen wir Ihnen gerne zur Verfügung.\n\nFreundliche Grüsse\n${SENDER_NAME}`,
   },
 ];
 
@@ -71,6 +71,7 @@ function generateBriefHtml(recipient, datum, betreff, body, signer) {
     `<img class="logo" src="${logoUrl}" alt="Logo" /></div>` +
     `<div class="sender-line">${SENDER_NAME} · ${SENDER_STREET} · ${SENDER_CITY}</div>` +
     `<div class="recipient">` +
+    (recipient.kontakt ? `<div>${recipient.kontakt}</div>` : "") +
     (recipient.name ? `<div>${recipient.name}</div>` : "") +
     (recipient.firma ? `<div>${recipient.firma}</div>` : "") +
     (recipient.strasse ? `<div>${recipient.strasse}</div>` : "") +
@@ -90,7 +91,7 @@ function generateBriefHtml(recipient, datum, betreff, body, signer) {
     `@font-face{font-family:'CenturyGothic';font-weight:normal;src:url('data:font/otf;base64,${FONT_REGULAR_B64}') format('opentype');}` +
     `@font-face{font-family:'CenturyGothic';font-weight:bold;src:url('data:font/otf;base64,${FONT_BOLD_B64}') format('opentype');}` +
     `*{box-sizing:border-box;margin:0;padding:0;}` +
-    `body{font-family:'CenturyGothic',Helvetica,Arial,sans-serif;font-size:10pt;color:#222;background:white;}` +
+    `body{font-family:'Century Gothic','CenturyGothic',AppleGothic,sans-serif;font-size:10pt;color:#222;background:white;}` +
     `@page{size:A4;margin:0;}` +
     `@media print{.page{page-break-after:always;}.page:last-child{page-break-after:avoid;}}` +
     `.page{width:210mm;min-height:297mm;padding:24mm 22mm 20mm 25mm;position:relative;background:white;overflow:hidden;}` +
@@ -102,7 +103,7 @@ function generateBriefHtml(recipient, datum, betreff, body, signer) {
     `.subject{font-weight:bold;margin-bottom:8mm;font-size:10pt;}` +
     `.body{line-height:1.7;font-size:10pt;}` +
     `.body p{margin:0 0 3px 0;}` +
-    `.signature{margin-top:2mm;font-size:10pt;}` +
+    `.signature{margin-top:14mm;font-size:10pt;}` +
     `.signer-name{font-size:10pt;color:#222;}` +
     `.signer-titel{font-size:8.5pt;color:#555;margin-top:1mm;}` +
     `.footer{position:absolute;bottom:12mm;left:0;right:0;display:flex;justify-content:space-between;font-size:7pt;color:#7a9b7f;border-top:0.5pt solid #7a9b7f;padding-top:2.5mm;padding-left:25mm;padding-right:22mm;}` +
@@ -181,6 +182,7 @@ export default function BriefSchreiben() {
   const [empfFilter, setEmpfFilter] = useState("alle"); // "alle" | "unternehmen" | "privatperson" | "frei"
   const [selectedKunde, setSelectedKunde] = useState("");
   const [selectedKontakt, setSelectedKontakt] = useState(""); // index in contact_persons
+  const [freiKontakt, setFreiKontakt] = useState("");
   const [freiName, setFreiName] = useState("");
   const [freiStrasse, setFreiStrasse] = useState("");
   const [freiPlz, setFreiPlz] = useState("");
@@ -205,6 +207,8 @@ export default function BriefSchreiben() {
   const [signing, setSigning]             = useState(false);
   const [savingToAblage, setSavingToAblage] = useState(false);
   const [ablageJahr, setAblageJahr] = useState(String(new Date().getFullYear()));
+  const [showAblageTagsModal, setShowAblageTagsModal] = useState(false);
+  const [ablageTags, setAblageTags] = useState("Brief");
 
   const hidePreset = (id) => {
     const next = [...hiddenPresets, id];
@@ -232,7 +236,7 @@ export default function BriefSchreiben() {
       return { name: k.company_name, strasse: k.strasse, plz: k.plz, ort: k.ort };
     }
     if (empfFilter === "frei" && freiName.trim()) {
-      return { name: freiName.trim(), strasse: freiStrasse.trim(), plz: freiPlz.trim(), ort: freiOrt.trim() };
+      return { kontakt: freiKontakt.trim() || undefined, name: freiName.trim(), strasse: freiStrasse.trim(), plz: freiPlz.trim(), ort: freiOrt.trim() };
     }
     return null;
   };
@@ -269,13 +273,24 @@ export default function BriefSchreiben() {
   };
 
   // ── PDF in Dateiablage speichern ───────────────────────────────────────────
-  const handleSaveToAblage = async () => {
+  const handleSaveToAblage = () => {
     if (!canPrint) return;
+    setAblageTags("Brief");
+    setShowAblageTagsModal(true);
+  };
+
+  const handleSaveToAblageConfirm = async () => {
+    setShowAblageTagsModal(false);
     setSavingToAblage(true);
     try {
       const blob = await generatePdfBlob(recipient, datum, betreff, body, signer);
       const year = ablageJahr;
-      const safeName = betreff.trim().replace(/[^a-zA-Z0-9äöüÄÖÜ._-]/g, "_").slice(0, 60);
+      const safeName = betreff.trim()
+        .replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue")
+        .replace(/Ä/g, "Ae").replace(/Ö/g, "Oe").replace(/Ü/g, "Ue")
+        .replace(/[^a-zA-Z0-9._-]/g, "_")
+        .replace(/_+/g, "_").replace(/^_|_$/g, "")
+        .slice(0, 60);
       const customerId = empfFilter !== "frei" ? selectedKunde : null;
       const storagePath = customerId
         ? `${customerId}/${year}/${Date.now()}_Brief_${safeName}.pdf`
@@ -286,13 +301,14 @@ export default function BriefSchreiben() {
       );
       if (upErr) throw new Error(upErr.message);
 
+      const tagList = ablageTags.split(",").map(t => t.trim()).filter(Boolean);
       await supabase.from("dokumente").insert({
         customer_id:  customerId || null,
         filename:     `Brief_${safeName}.pdf`,
         storage_path: storagePath,
         category:     "Korrespondenz",
         year:         String(year),
-        tags:         ["Brief"],
+        tags:         tagList,
         notizen:      `Erstellt via Briefe schreiben`,
       });
 
@@ -308,6 +324,7 @@ export default function BriefSchreiben() {
   async function generatePdfBlob(rec, dat, subj, txt, sig) {
     const { jsPDF } = await import("jspdf");
     const doc  = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    doc.setFont("helvetica"); // Century Gothic nicht verfügbar in jsPDF ohne Embedding – Helvetica als Fallback
     const lm   = 25;
     const maxW = 165;
     let y      = 30;
@@ -325,6 +342,7 @@ export default function BriefSchreiben() {
     // Empfänger
     doc.setFontSize(10);
     doc.setTextColor(30);
+    if (rec.kontakt){ doc.text(rec.kontakt,lm, y); y += 6; }
     if (rec.name)   { doc.text(rec.name,   lm, y); y += 6; }
     if (rec.firma)  { doc.text(rec.firma,  lm, y); y += 6; }
     if (rec.strasse){ doc.text(rec.strasse,lm, y); y += 6; }
@@ -355,9 +373,9 @@ export default function BriefSchreiben() {
       if (y > 268) { doc.addPage(); y = 30; }
     }
 
-    // Signatur
+    // Signatur (14mm Platz für Handunterschrift)
     if (sig?.name) {
-      y += 4;
+      y += 14;
       doc.setFontSize(10);
       doc.setTextColor(30);
       doc.text(sig.name, lm, y);
@@ -565,14 +583,12 @@ export default function BriefSchreiben() {
                     <Plus className="w-3.5 h-3.5 flex-shrink-0" style={{ color: subCol }} />
                     <span className="text-xs flex-1" style={{ color: subCol }}>{p.name}</span>
                     <button
-                      onClick={e => { e.stopPropagation(); hidePreset(p.id); toast.success(`"${p.name}" ausgeblendet`); }}
+                      onClick={e => { e.stopPropagation(); hidePreset(p.id); toast.success(`"${p.name}" gelöscht`); }}
                       className="flex-shrink-0 rounded p-0.5 transition-all hover:bg-red-50"
-                      style={{ color: "#fca5a5" }}
-                      onMouseEnter={e => e.currentTarget.style.color = "#ef4444"}
-                      onMouseLeave={e => e.currentTarget.style.color = "#fca5a5"}
-                      title="Vorschlag ausblenden"
+                      style={{ color: "#ef4444" }}
+                      title="Vorschlag löschen"
                     >
-                      <X className="w-3 h-3" />
+                      <Trash2 className="w-3 h-3" />
                     </button>
                   </div>
                 ))}
@@ -581,9 +597,12 @@ export default function BriefSchreiben() {
           </div>
         </div>
 
-        {/* ──── Rechte Spalte: Brief-Editor ───────────────────────────────── */}
-        <div className="flex-1 overflow-y-auto px-8 py-6">
-          <div style={{ maxWidth: 700 }}>
+        {/* ──── Rechte Spalte: Brief-Editor + Aktions-Sidebar ─────────────── */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="flex gap-0 h-full">
+          {/* Brief-Inhalt */}
+          <div className="flex-1 overflow-y-auto px-8 py-6">
+          <div style={{ maxWidth: 680 }}>
 
             {/* Empfänger ─────────────────────────────────────────────────── */}
             <section className="mb-6">
@@ -642,6 +661,7 @@ export default function BriefSchreiben() {
               {/* Freie Eingabe */}
               {empfFilter === "frei" && (
                 <div className="grid gap-2">
+                  <input value={freiKontakt} onChange={e => setFreiKontakt(e.target.value)} placeholder="Kontaktperson (z.B. Herr Paul Maier)" style={inp} />
                   <input value={freiName}    onChange={e => setFreiName(e.target.value)}    placeholder="Name / Firma"  style={inp} />
                   <input value={freiStrasse} onChange={e => setFreiStrasse(e.target.value)} placeholder="Strasse Nr."   style={inp} />
                   <div className="grid grid-cols-2 gap-2">
@@ -696,115 +716,10 @@ export default function BriefSchreiben() {
                 value={body}
                 onChange={e => setBody(e.target.value)}
                 rows={18}
-                placeholder={"Sehr geehrte Damen und Herren\n\n...\n\nFreundliche Grüsse\n\nArtis Treuhand GmbH"}
+                placeholder={"Sehr geehrte Damen und Herren\n\n...\n\nFreundliche Grüsse\nArtis Treuhand GmbH"}
                 style={{ ...inp, resize: "vertical", lineHeight: 1.7, fontFamily: "inherit" }}
               />
             </section>
-
-            {/* Aktions-Leiste ──────────────────────────────────────────── */}
-            <div className="flex items-center gap-3 pb-8">
-              <button
-                onClick={handlePrint}
-                disabled={!canPrint}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-all"
-                style={{
-                  backgroundColor: canPrint ? accent : panelBorder,
-                  color: canPrint ? "#fff" : subCol,
-                  cursor: canPrint ? "pointer" : "not-allowed",
-                }}
-              >
-                <Printer className="w-4 h-4" /> Drucken / PDF
-              </button>
-
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={handleSaveToAblage}
-                  disabled={!canPrint || savingToAblage}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-l-lg text-sm font-medium transition-all"
-                  style={{
-                    backgroundColor: badgeBg,
-                    color: canPrint ? headingCol : subCol,
-                    border: `1px solid ${panelBorder}`,
-                    borderRight: "none",
-                    cursor: canPrint ? "pointer" : "not-allowed",
-                  }}
-                >
-                  {savingToAblage
-                    ? <><Loader2 className="w-4 h-4 animate-spin" /> Speichern…</>
-                    : <><Archive className="w-4 h-4" /> In Ablage speichern</>}
-                </button>
-                <select
-                  value={ablageJahr}
-                  onChange={e => setAblageJahr(e.target.value)}
-                  style={{
-                    background: inputBg, border: `1px solid ${panelBorder}`,
-                    borderLeft: "none", color: headingCol,
-                    borderRadius: "0 8px 8px 0", padding: "7px 8px",
-                    fontSize: 12, outline: "none", cursor: "pointer",
-                  }}
-                >
-                  {[2023,2024,2025,2026,2027].map(y => (
-                    <option key={y} value={y}>{y}</option>
-                  ))}
-                </select>
-              </div>
-
-              <button
-                onClick={() => setSaveModal(true)}
-                disabled={!betreff.trim() && !body.trim()}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all"
-                style={{
-                  backgroundColor: badgeBg,
-                  color: betreff.trim() || body.trim() ? headingCol : subCol,
-                  border: `1px solid ${panelBorder}`,
-                  cursor: betreff.trim() || body.trim() ? "pointer" : "not-allowed",
-                }}
-              >
-                <Save className="w-4 h-4" /> Als Vorlage speichern
-              </button>
-
-              {/* Aktive Vorlage löschen */}
-              {activeVorlage && (
-                <button
-                  onClick={() => {
-                    if (window.confirm(`Vorlage "${activeVorlage.name}" endgültig löschen?`)) {
-                      deleteMut.mutate(activeVorlage.id);
-                      setActiveVorlage(null);
-                      setBetreff("");
-                      setBody("");
-                    }
-                  }}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all"
-                  style={{ backgroundColor: "#fef2f2", color: "#ef4444", border: "1px solid #fecaca" }}
-                  title={`Vorlage "${activeVorlage.name}" löschen`}
-                >
-                  <Trash2 className="w-4 h-4" /> Vorlage löschen
-                </button>
-              )}
-
-              <button
-                onClick={() => setShowPreview(!showPreview)}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all"
-                style={{ backgroundColor: badgeBg, color: headingCol, border: `1px solid ${panelBorder}` }}
-              >
-                <Eye className="w-4 h-4" /> {showPreview ? "Vorschau ausblenden" : "Vorschau"}
-              </button>
-
-              {/* Skribble-Button */}
-              <button
-                onClick={() => canPrint && setShowSignModal(true)}
-                disabled={!canPrint}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ml-auto"
-                style={{
-                  backgroundColor: canPrint ? (isArtis ? "#2d6a4f" : isLight ? "#1e40af" : "#5b21b6") : panelBorder,
-                  color: canPrint ? "#fff" : subCol,
-                  cursor: canPrint ? "pointer" : "not-allowed",
-                }}
-                title="Brief digital signieren via Skribble"
-              >
-                <PenLine className="w-4 h-4" /> Zur Unterzeichnung senden
-              </button>
-            </div>
 
             {/* Brief-Vorschau ──────────────────────────────────────────── */}
             {showPreview && (
@@ -813,7 +728,7 @@ export default function BriefSchreiben() {
                   <Eye className="w-3.5 h-3.5" style={{ color: subCol }} />
                   <span className="text-xs font-medium" style={{ color: subCol }}>Vorschau (vereinfacht)</span>
                 </div>
-                <div className="p-8 bg-white" style={{ fontFamily: "Helvetica, Arial, sans-serif", fontSize: 12, color: "#222", lineHeight: 1.7 }}>
+                <div className="p-8 bg-white" style={{ fontFamily: "'Century Gothic', 'CenturyGothic', AppleGothic, sans-serif", fontSize: 12, color: "#222", lineHeight: 1.7 }}>
                   {/* Absender */}
                   <div style={{ fontSize: 8, color: "#666", borderBottom: "0.5px solid #222", paddingBottom: 3, marginBottom: 16, display: "inline-block" }}>
                     {SENDER_NAME} · {SENDER_STREET} · {SENDER_CITY}
@@ -821,6 +736,7 @@ export default function BriefSchreiben() {
                   {/* Empfänger */}
                   {recipient && (
                     <div style={{ marginBottom: 20 }}>
+                      {recipient.kontakt && <div>{recipient.kontakt}</div>}
                       <div>{recipient.name}</div>
                       {recipient.firma && <div>{recipient.firma}</div>}
                       {recipient.strasse && <div>{recipient.strasse}</div>}
@@ -848,8 +764,172 @@ export default function BriefSchreiben() {
               </div>
             )}
           </div>
+          </div>{/* Ende Brief-Inhalt */}
+
+          {/* ──── Aktions-Sidebar rechts ──────────────────────────────── */}
+          <div
+            className="flex-shrink-0 flex flex-col gap-2 py-6 px-3"
+            style={{
+              width: 188,
+              borderLeft: `1px solid ${panelBorder}`,
+              backgroundColor: panelBg,
+            }}
+          >
+            <button
+              onClick={handlePrint}
+              disabled={!canPrint}
+              className="flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-semibold transition-all w-full"
+              style={{
+                backgroundColor: canPrint ? accent : panelBorder,
+                color: canPrint ? "#fff" : subCol,
+                cursor: canPrint ? "pointer" : "not-allowed",
+              }}
+            >
+              <Printer className="w-4 h-4 flex-shrink-0" /> Drucken / PDF
+            </button>
+
+            <div className="flex flex-col gap-0">
+              <button
+                onClick={handleSaveToAblage}
+                disabled={!canPrint || savingToAblage}
+                className="flex items-center gap-2 px-3 py-2.5 rounded-t-lg text-sm font-medium transition-all w-full"
+                style={{
+                  backgroundColor: badgeBg,
+                  color: canPrint ? headingCol : subCol,
+                  border: `1px solid ${panelBorder}`,
+                  borderBottom: "none",
+                  cursor: canPrint ? "pointer" : "not-allowed",
+                }}
+              >
+                {savingToAblage
+                  ? <><Loader2 className="w-4 h-4 animate-spin flex-shrink-0" /><span className="truncate">Speichern…</span></>
+                  : <><Archive className="w-4 h-4 flex-shrink-0" /><span className="truncate">In Ablage</span></>}
+              </button>
+              <select
+                value={ablageJahr}
+                onChange={e => setAblageJahr(e.target.value)}
+                style={{
+                  background: inputBg, border: `1px solid ${panelBorder}`,
+                  borderTop: "none", color: headingCol,
+                  borderRadius: "0 0 8px 8px", padding: "5px 8px",
+                  fontSize: 12, outline: "none", cursor: "pointer", width: "100%",
+                }}
+              >
+                {[2023,2024,2025,2026,2027].map(y => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+            </div>
+
+            <button
+              onClick={() => setSaveModal(true)}
+              disabled={!betreff.trim() && !body.trim()}
+              className="flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium transition-all w-full"
+              style={{
+                backgroundColor: badgeBg,
+                color: betreff.trim() || body.trim() ? headingCol : subCol,
+                border: `1px solid ${panelBorder}`,
+                cursor: betreff.trim() || body.trim() ? "pointer" : "not-allowed",
+              }}
+            >
+              <Save className="w-4 h-4 flex-shrink-0" /><span className="truncate">Als Vorlage</span>
+            </button>
+
+            <button
+              onClick={() => setShowPreview(!showPreview)}
+              className="flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium transition-all w-full"
+              style={{ backgroundColor: badgeBg, color: headingCol, border: `1px solid ${panelBorder}` }}
+            >
+              <Eye className="w-4 h-4 flex-shrink-0" /><span className="truncate">{showPreview ? "Vorschau aus" : "Vorschau"}</span>
+            </button>
+
+            {/* Aktive Vorlage löschen */}
+            {activeVorlage && (
+              <button
+                onClick={() => {
+                  if (window.confirm(`Vorlage "${activeVorlage.name}" endgültig löschen?`)) {
+                    deleteMut.mutate(activeVorlage.id);
+                    setActiveVorlage(null);
+                    setBetreff("");
+                    setBody("");
+                  }
+                }}
+                className="flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium transition-all w-full"
+                style={{ backgroundColor: "#fef2f2", color: "#ef4444", border: "1px solid #fecaca" }}
+                title={`Vorlage "${activeVorlage.name}" löschen`}
+              >
+                <Trash2 className="w-4 h-4 flex-shrink-0" /><span className="truncate">Vorlage löschen</span>
+              </button>
+            )}
+
+            <div style={{ flex: 1 }} />
+
+            {/* Skribble-Button */}
+            <button
+              onClick={() => canPrint && setShowSignModal(true)}
+              disabled={!canPrint}
+              className="flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium transition-all w-full"
+              style={{
+                backgroundColor: canPrint ? (isArtis ? "#2d6a4f" : isLight ? "#1e40af" : "#5b21b6") : panelBorder,
+                color: canPrint ? "#fff" : subCol,
+                cursor: canPrint ? "pointer" : "not-allowed",
+              }}
+              title="Brief digital signieren via Skribble"
+            >
+              <PenLine className="w-4 h-4 flex-shrink-0" /><span className="truncate">Zur Unterzeichnung</span>
+            </button>
+          </div>
+
+          </div>{/* Ende flex-container */}
         </div>
       </div>
+
+      {/* ── Ablage-Tags Modal ────────────────────────────────────────────── */}
+      {showAblageTagsModal && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div className="rounded-xl p-6" style={{ background: panelBg, border: `1px solid ${panelBorder}`, width: 380 }}>
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="font-semibold text-base" style={{ color: headingCol }}>In Ablage speichern</h4>
+              <button onClick={() => setShowAblageTagsModal(false)} className="rounded-lg p-1 hover:bg-gray-100 transition-colors">
+                <X className="w-4 h-4" style={{ color: subCol }} />
+              </button>
+            </div>
+            <label className="text-xs font-semibold uppercase tracking-wider mb-1.5 block" style={{ color: subCol }}>
+              Tags (kommagetrennt)
+            </label>
+            <input
+              autoFocus
+              value={ablageTags}
+              onChange={e => setAblageTags(e.target.value)}
+              placeholder="Brief, Korrespondenz, ..."
+              onKeyDown={e => {
+                if (e.key === "Enter") handleSaveToAblageConfirm();
+                if (e.key === "Escape") setShowAblageTagsModal(false);
+              }}
+              style={inp}
+            />
+            <div className="text-xs mt-2 mb-4" style={{ color: subCol }}>
+              Datei wird unter <span style={{ color: headingCol }}>Korrespondenz / {ablageJahr}</span> abgelegt.
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowAblageTagsModal(false)}
+                className="px-4 py-2 rounded-lg text-sm"
+                style={{ backgroundColor: badgeBg, color: subCol }}
+              >
+                Abbrechen
+              </button>
+              <button
+                onClick={handleSaveToAblageConfirm}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold"
+                style={{ backgroundColor: accent, color: "#fff" }}
+              >
+                <Archive className="w-4 h-4" /> Speichern
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Skribble-Signatur Modal ───────────────────────────────────────── */}
       {showSignModal && (

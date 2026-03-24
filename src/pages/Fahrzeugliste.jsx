@@ -704,6 +704,9 @@ export default function Fahrzeugliste() {
 
   const unternehmen   = kunden.filter(c => c.person_type !== "privatperson" && c.aktiv !== false);
   const privatpersonen = kunden.filter(c => c.person_type === "privatperson" && c.aktiv !== false);
+  const getKundeLabel = (c) => c.person_type === "privatperson"
+    ? [c.anrede, c.nachname, c.vorname].filter(Boolean).join(" ")
+    : c.company_name;
 
   const { data: fahrzeuge = [], isLoading } = useQuery({
     queryKey: ["fahrzeuge", selectedCid],
@@ -796,6 +799,28 @@ export default function Fahrzeugliste() {
               </button>
             )}
           </div>
+
+          {/* ── Schnellliste: Kunden mit Fahrzeugen ──────────────────────── */}
+          {mitFahrzeugenSet.size > 0 && (
+            <div className="mb-5 px-3 py-2 rounded-xl" style={{ backgroundColor: panelBg, border: `1px solid ${panelBdr}` }}>
+              <div className="text-[10px] font-semibold uppercase tracking-widest mb-1.5" style={{ color: subC }}>
+                Mit Einträgen ({mitFahrzeugenSet.size})
+              </div>
+              <div className="flex flex-wrap gap-x-4 gap-y-0.5">
+                {[...unternehmen, ...privatpersonen].filter(c => mitFahrzeugenSet.has(c.id)).map(c => (
+                  <button
+                    key={c.id}
+                    onClick={() => { setSelectedCid(c.id); setEditingId(null); }}
+                    className="flex items-center gap-1 text-xs transition-opacity hover:opacity-70"
+                    style={{ color: c.id === selectedCid ? accent : headingC, background: "none", border: "none", padding: 0, cursor: "pointer" }}
+                  >
+                    <span style={{ color: "#22c55e", fontSize: 8 }}>●</span>
+                    {getKundeLabel(c)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* ── Stats Cards ──────────────────────────────────────────────── */}
           {selectedCid && fahrzeuge.length > 0 && (
