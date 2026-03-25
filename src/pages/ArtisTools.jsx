@@ -47,7 +47,7 @@ const TOOLS = [
     icon: UserCog,
     color: "#6a5b8a",
     bg: "#eeeaf5",
-    route: null,
+    route: "/Abschlussdokumentation",
   },
 ];
 

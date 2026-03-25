@@ -1,0 +1,1419 @@
+import React, { useState, useContext, useRef, useEffect, useCallback, useMemo } from "react";
+import { createPortal } from "react-dom";
+import { useNavigate } from "react-router-dom";
+import { ThemeContext } from "@/Layout";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { entities, supabase } from "@/api/supabaseClient";
+import { toast } from "sonner";
+import * as XLSX from "xlsx";
+import {
+  BookCheck, FileSpreadsheet, Upload, Download, ChevronRight, Wrench,
+  Lock, Unlock, CheckCircle2, AlertCircle, TrendingUp, TrendingDown,
+  Search, ChevronDown, ChevronUp, X, FileText, BarChart2, RotateCcw,
+} from "lucide-react";
+
+// ── Swiss Kontenrahmen KMU ────────────────────────────────────────────────────
+const KONTENRAHMEN_POSITIONEN = [
+  // BILANZ – AKTIVEN
+  { id: "UV_FLUESSIG",      label: "Flüssige Mittel",                  typ: "bilanz", seite: "aktiven",  gruppe: "Umlaufvermögen",    von: 1000, bis: 1059, level: 2 },
+  { id: "UV_WERTSCHRIFTEN", label: "Wertschriften UV",                 typ: "bilanz", seite: "aktiven",  gruppe: "Umlaufvermögen",    von: 1060, bis: 1099, level: 2 },
+  { id: "UV_FORD_LL",       label: "Forderungen aus L+L",              typ: "bilanz", seite: "aktiven",  gruppe: "Umlaufvermögen",    von: 1100, bis: 1109, level: 2 },
+  { id: "UV_FORD_SONST",    label: "Übrige Forderungen",               typ: "bilanz", seite: "aktiven",  gruppe: "Umlaufvermögen",    von: 1110, bis: 1179, level: 2 },
+  { id: "UV_VORRAETE",      label: "Warenvorräte",                     typ: "bilanz", seite: "aktiven",  gruppe: "Umlaufvermögen",    von: 1200, bis: 1269, level: 2 },
+  { id: "UV_ABGRENZUNG",    label: "Aktive Rechnungsabgrenzung",       typ: "bilanz", seite: "aktiven",  gruppe: "Umlaufvermögen",    von: 1300, bis: 1309, level: 2 },
+  { id: "AV_FINANZ",        label: "Finanzanlagen",                    typ: "bilanz", seite: "aktiven",  gruppe: "Anlagevermögen",    von: 1400, bis: 1479, level: 2 },
+  { id: "AV_MOBIL",         label: "Mobile Sachanlagen",               typ: "bilanz", seite: "aktiven",  gruppe: "Anlagevermögen",    von: 1500, bis: 1599, level: 2 },
+  { id: "AV_IMMOBIL",       label: "Immobile Sachanlagen",             typ: "bilanz", seite: "aktiven",  gruppe: "Anlagevermögen",    von: 1600, bis: 1699, level: 2 },
+  { id: "AV_IMMATERIELL",   label: "Immaterielle Werte",               typ: "bilanz", seite: "aktiven",  gruppe: "Anlagevermögen",    von: 1700, bis: 1799, level: 2 },
+  // BILANZ – PASSIVEN
+  { id: "FK_KURZ_LL",         label: "Verbindlichkeiten aus L+L",          typ: "bilanz", seite: "passiven", gruppe: "Kurzfristiges FK",   von: 2000, bis: 2009, level: 2 },
+  { id: "FK_KURZ_BANK",       label: "Kurzfristige Bankverbindlichkeiten", typ: "bilanz", seite: "passiven", gruppe: "Kurzfristiges FK",   von: 2010, bis: 2069, level: 2 },
+  { id: "FK_KURZ_SONST",      label: "Übrige kurzfristige Verbindlichkeiten", typ: "bilanz", seite: "passiven", gruppe: "Kurzfristiges FK", von: 2070, bis: 2299, level: 2 },
+  { id: "FK_KURZ_ABGRENZUNG", label: "Passive Rechnungsabgrenzung",        typ: "bilanz", seite: "passiven", gruppe: "Kurzfristiges FK",   von: 2300, bis: 2399, level: 2 },
+  { id: "FK_LANG_BANK",        label: "Langfristige Bankverbindlichkeiten", typ: "bilanz", seite: "passiven", gruppe: "Langfristiges FK",   von: 2400, bis: 2499, level: 2 },
+  { id: "FK_LANG_SONST",       label: "Übrige langfristige Verbindlichkeiten", typ: "bilanz", seite: "passiven", gruppe: "Langfristiges FK", von: 2500, bis: 2599, level: 2 },
+  { id: "FK_RUECKSTELLUNGEN",  label: "Rückstellungen",                     typ: "bilanz", seite: "passiven", gruppe: "Langfristiges FK",   von: 2600, bis: 2799, level: 2 },
+  { id: "EK_KAPITAL",          label: "Grund-/Stammkapital",                typ: "bilanz", seite: "passiven", gruppe: "Eigenkapital",       von: 2800, bis: 2819, level: 2 },
+  { id: "EK_RESERVEN",         label: "Reserven & Gewinnvortrag",           typ: "bilanz", seite: "passiven", gruppe: "Eigenkapital",       von: 2820, bis: 2889, level: 2 },
+  { id: "EK_JAHRESERGEBNIS",   label: "Jahresergebnis",                     typ: "bilanz", seite: "passiven", gruppe: "Eigenkapital",       von: 2890, bis: 2999, level: 2 },
+  // ERFOLGSRECHNUNG
+  { id: "ER_UMSATZ",          label: "Nettoumsatzerlöse",               typ: "er", seite: "ertrag",  gruppe: "Betriebsertrag",   von: 3000, bis: 3699, level: 2 },
+  { id: "ER_EIGENLEISTUNG",   label: "Eigenleistungen",                 typ: "er", seite: "ertrag",  gruppe: "Betriebsertrag",   von: 3700, bis: 3799, level: 2 },
+  { id: "ER_BESTAND",         label: "Bestandesveränderungen",          typ: "er", seite: "ertrag",  gruppe: "Betriebsertrag",   von: 3800, bis: 3999, level: 2 },
+  { id: "ER_MATERIAL",        label: "Materialaufwand",                 typ: "er", seite: "aufwand", gruppe: "Betriebsaufwand",  von: 4000, bis: 4799, level: 2 },
+  { id: "ER_PERSONAL",        label: "Personalaufwand",                 typ: "er", seite: "aufwand", gruppe: "Betriebsaufwand",  von: 5000, bis: 5999, level: 2 },
+  { id: "ER_BETRIEB",         label: "Übriger Betriebsaufwand",         typ: "er", seite: "aufwand", gruppe: "Betriebsaufwand",  von: 6000, bis: 6699, level: 2 },
+  { id: "ER_ABSCHR",          label: "Abschreibungen",                  typ: "er", seite: "aufwand", gruppe: "Betriebsaufwand",  von: 6700, bis: 6899, level: 2 },
+  { id: "ER_FINANZ_ERTRAG",   label: "Finanzertrag",                    typ: "er", seite: "ertrag",  gruppe: "Finanzergebnis",   von: 7000, bis: 7099, level: 2 },
+  { id: "ER_FINANZ_AUFW",     label: "Finanzaufwand",                   typ: "er", seite: "aufwand", gruppe: "Finanzergebnis",   von: 7100, bis: 7499, level: 2 },
+  { id: "ER_LIEGENSCHAFTEN",  label: "Liegenschaftsertrag/-aufwand",    typ: "er", seite: "ertrag",  gruppe: "Finanzergebnis",   von: 7500, bis: 7999, level: 2 },
+  { id: "ER_FREMD_ERTRAG",    label: "Betriebsfremder Ertrag",          typ: "er", seite: "ertrag",  gruppe: "Betriebsfremd",    von: 8000, bis: 8099, level: 2 },
+  { id: "ER_FREMD_AUFW",      label: "Betriebsfremder Aufwand",         typ: "er", seite: "aufwand", gruppe: "Betriebsfremd",    von: 8100, bis: 8499, level: 2 },
+  { id: "ER_AO_ERTRAG",       label: "Ausserordentlicher Ertrag",       typ: "er", seite: "ertrag",  gruppe: "Ausserordentlich", von: 8500, bis: 8599, level: 2 },
+  { id: "ER_AO_AUFW",         label: "Ausserordentlicher Aufwand",      typ: "er", seite: "aufwand", gruppe: "Ausserordentlich", von: 8600, bis: 8899, level: 2 },
+  { id: "ER_STEUERN",         label: "Ertragssteuern",                  typ: "er", seite: "aufwand", gruppe: "Steuern",          von: 8900, bis: 8999, level: 2 },
+  { id: "ABSCHLUSS",          label: "Abschlusskonten",                 typ: "er", seite: "aufwand", gruppe: "Abschluss",        von: 9000, bis: 9999, level: 2 },
+];
+
+// Lookup-Map für schnellen Zugriff
+const POSITION_MAP = Object.fromEntries(KONTENRAHMEN_POSITIONEN.map(p => [p.id, p]));
+
+// ── Auto-Mapping Funktion ─────────────────────────────────────────────────────
+function autoMapKonto(kontonummer) {
+  const nr = parseInt(kontonummer);
+  if (isNaN(nr)) return null;
+  return KONTENRAHMEN_POSITIONEN.find(p => nr >= p.von && nr <= p.bis)?.id || null;
+}
+
+// ── Hilfsfunktionen ───────────────────────────────────────────────────────────
+function fmtCHF(val, digits = 2) {
+  if (val === null || val === undefined || isNaN(Number(val))) return "—";
+  return Number(val).toLocaleString("de-CH", {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
+}
+
+function fmtCHFshort(val) {
+  if (val === null || val === undefined || isNaN(Number(val))) return "—";
+  return "CHF\u00a0" + fmtCHF(val);
+}
+
+function todayStr() {
+  return new Date().toLocaleDateString("de-CH");
+}
+
+function currentYear() {
+  return new Date().getFullYear();
+}
+
+const YEARS = Array.from({ length: 11 }, (_, i) => 2020 + i);
+
+const STATUS_CONFIG = {
+  in_arbeit:    { label: "In Arbeit",    bg: "#fff7ed", text: "#c2410c", border: "#fed7aa" },
+  abgeschlossen:{ label: "Abgeschlossen",bg: "#f0fdf4", text: "#15803d", border: "#bbf7d0" },
+  genehmigt:    { label: "Genehmigt",   bg: "#eff6ff", text: "#1d4ed8", border: "#bfdbfe" },
+};
+
+// ── CSV Export ────────────────────────────────────────────────────────────────
+function exportKontenCSV(konten, customerName, jahr) {
+  const headers = ["Konto-Nr", "Kontoname", "Position", "Saldo IST", "Saldo VJ", "Notiz"];
+  const rows = konten.map(k => {
+    const pos = k.position_override || k.position_auto;
+    const posLabel = pos ? (POSITION_MAP[pos]?.label || pos) : "—";
+    return [
+      k.kontonummer, k.kontoname, posLabel,
+      k.saldo_ist ?? "", k.saldo_vorjahr ?? "", k.notiz ?? "",
+    ].map(v => `"${String(v ?? "").replace(/"/g, '""')}"`).join(";");
+  });
+  const bom = "\uFEFF";
+  const csv = bom + [
+    `"Abschlussdokumentation – ${customerName} – ${jahr}"`,
+    `"Erstellt am: ${todayStr()}"`,
+    "",
+    headers.map(h => `"${h}"`).join(";"),
+    ...rows,
+  ].join("\r\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `Abschluss_${customerName.replace(/[^a-zA-Z0-9]/g, "_")}_${jahr}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ── Mandanten-Dropdown (wiederverwendet aus Fahrzeugliste-Pattern) ────────────
+function MandantDropdown({ kunden, selectedCid, onChange, panelBg, panelBdr, headingC, subC, accent, withAbschlussSet }) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [dropPos, setDropPos] = useState({ top: 0, left: 0, width: 0 });
+  const triggerRef = useRef(null);
+  const inputRef = useRef(null);
+
+  const getLabel = (c) => c.person_type === "privatperson"
+    ? [c.anrede, c.nachname, c.vorname].filter(Boolean).join(" ") + (c.ort ? ` · ${c.ort}` : "")
+    : c.company_name + (c.ort ? ` · ${c.ort}` : "");
+
+  const selected = kunden.find(c => c.id === selectedCid);
+
+  const calcPos = useCallback(() => {
+    if (!triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const top = spaceBelow >= 320 ? rect.bottom + 4 : rect.top - 320 - 4;
+    setDropPos({ top, left: rect.left, width: rect.width });
+  }, []);
+
+  useEffect(() => {
+    if (!open) { setSearch(""); return; }
+    calcPos();
+    setTimeout(() => inputRef.current?.focus(), 30);
+    const onClose = (e) => { if (!triggerRef.current?.contains(e.target)) setOpen(false); };
+    const onScroll = () => calcPos();
+    document.addEventListener("mousedown", onClose);
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", calcPos);
+    return () => {
+      document.removeEventListener("mousedown", onClose);
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", calcPos);
+    };
+  }, [open, calcPos]);
+
+  const q = search.trim().toLowerCase();
+  const filtered = kunden.filter(c => !q || getLabel(c).toLowerCase().includes(q));
+  const unternehmen = filtered.filter(c => c.person_type !== "privatperson");
+  const privatpersonen = filtered.filter(c => c.person_type === "privatperson");
+
+  const renderRow = (c) => {
+    const hasAbschluss = withAbschlussSet?.has(c.id);
+    const isActive = c.id === selectedCid;
+    return (
+      <div key={c.id}
+        onMouseDown={e => e.stopPropagation()}
+        onClick={() => { onChange(c.id); setOpen(false); }}
+        style={{
+          display: "flex", alignItems: "center", gap: 8,
+          padding: "8px 12px", cursor: "pointer", fontSize: 13,
+          backgroundColor: isActive ? accent + "20" : "transparent", color: headingC,
+        }}
+        onMouseEnter={e => { if (!isActive) e.currentTarget.style.backgroundColor = accent + "12"; }}
+        onMouseLeave={e => { e.currentTarget.style.backgroundColor = isActive ? accent + "20" : "transparent"; }}
+      >
+        <span style={{
+          width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
+          backgroundColor: hasAbschluss ? "#22c55e" : "transparent",
+          border: hasAbschluss ? "none" : `1.5px solid ${panelBdr}`,
+          display: "inline-block",
+        }} />
+        <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{getLabel(c)}</span>
+      </div>
+    );
+  };
+
+  const dropdown = open && createPortal(
+    <div onMouseDown={e => e.stopPropagation()} style={{
+      position: "fixed", top: dropPos.top, left: dropPos.left, width: dropPos.width,
+      backgroundColor: panelBg, border: `1px solid ${panelBdr}`, borderRadius: 10,
+      boxShadow: "0 8px 28px rgba(0,0,0,0.16)", zIndex: 999999, overflow: "hidden",
+    }}>
+      <div style={{ padding: "8px 10px", borderBottom: `1px solid ${panelBdr}`, display: "flex", alignItems: "center", gap: 6 }}>
+        <Search size={13} style={{ color: subC, flexShrink: 0 }} />
+        <input ref={inputRef} value={search} onChange={e => setSearch(e.target.value)}
+          onKeyDown={e => { if (e.key === "Escape") setOpen(false); }}
+          placeholder="Mandant suchen…"
+          style={{ flex: 1, border: "none", outline: "none", fontSize: 13, background: "transparent", color: headingC }} />
+        {search && <button onClick={() => setSearch("")} style={{ background: "none", border: "none", cursor: "pointer", color: subC, fontSize: 16, padding: 0 }}>&times;</button>}
+      </div>
+      <div style={{ maxHeight: 300, overflowY: "auto" }}>
+        {!q && (
+          <div onClick={() => { onChange(""); setOpen(false); }}
+            style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", cursor: "pointer", fontSize: 13, color: subC }}
+            onMouseEnter={e => e.currentTarget.style.backgroundColor = accent + "14"}
+            onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
+            <span style={{ width: 8, height: 8, display: "inline-block" }} />
+            – Mandant auswählen –
+          </div>
+        )}
+        {unternehmen.length > 0 && (
+          <>
+            <div style={{ padding: "5px 12px 3px", fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", color: subC, borderTop: `1px solid ${panelBdr}`, textTransform: "uppercase" }}>Unternehmen</div>
+            {unternehmen.map(renderRow)}
+          </>
+        )}
+        {privatpersonen.length > 0 && (
+          <>
+            <div style={{ padding: "5px 12px 3px", fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", color: subC, borderTop: `1px solid ${panelBdr}`, textTransform: "uppercase" }}>Privatpersonen</div>
+            {privatpersonen.map(renderRow)}
+          </>
+        )}
+        {filtered.length === 0 && (
+          <div style={{ padding: 12, fontSize: 12, color: subC, textAlign: "center" }}>Keine Treffer</div>
+        )}
+      </div>
+    </div>,
+    document.body
+  );
+
+  return (
+    <div ref={triggerRef} style={{ flex: 1, maxWidth: 380 }}>
+      <button type="button" onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-2 w-full rounded-lg border text-sm px-3 py-2 focus:outline-none text-left"
+        style={{ backgroundColor: panelBg, borderColor: open ? accent : panelBdr, color: headingC, cursor: "pointer", transition: "border-color 0.15s" }}>
+        {selected && (
+          <span style={{
+            width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
+            backgroundColor: withAbschlussSet?.has(selectedCid) ? "#22c55e" : "transparent",
+            border: withAbschlussSet?.has(selectedCid) ? "none" : `1.5px solid ${panelBdr}`,
+            display: "inline-block",
+          }} />
+        )}
+        <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {selected ? getLabel(selected) : "– Mandant auswählen –"}
+        </span>
+        <svg width="12" height="12" viewBox="0 0 12 12" style={{ flexShrink: 0, color: subC, transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}>
+          <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      {dropdown}
+    </div>
+  );
+}
+
+// ── Positions-Badge ───────────────────────────────────────────────────────────
+const POSITION_BADGE_COLORS = {
+  aktiven:  { bg: "#dbeafe", text: "#1d4ed8" },
+  passiven: { bg: "#fce7f3", text: "#9d174d" },
+  ertrag:   { bg: "#dcfce7", text: "#15803d" },
+  aufwand:  { bg: "#fef3c7", text: "#92400e" },
+};
+
+function PositionBadge({ posId }) {
+  if (!posId) return <span style={{ color: "#9ca3af", fontSize: 11 }}>—</span>;
+  const pos = POSITION_MAP[posId];
+  if (!pos) return <span style={{ fontSize: 11, color: "#9ca3af" }}>{posId}</span>;
+  const colors = POSITION_BADGE_COLORS[pos.seite] || { bg: "#f3f4f6", text: "#374151" };
+  return (
+    <span style={{
+      display: "inline-block", fontSize: 10, fontWeight: 600, padding: "2px 7px",
+      borderRadius: 5, backgroundColor: colors.bg, color: colors.text,
+      whiteSpace: "nowrap", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis",
+    }} title={pos.label}>
+      {pos.label}
+    </span>
+  );
+}
+
+// ── Inline-Positions-Selector ─────────────────────────────────────────────────
+function PositionSelector({ value, onChange, subC, panelBg, panelBdr, headingC, accent }) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [dropPos, setDropPos] = useState({ top: 0, left: 0, width: 260 });
+  const triggerRef = useRef(null);
+
+  const calcPos = useCallback(() => {
+    if (!triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const top = spaceBelow >= 300 ? rect.bottom + 2 : rect.top - 300 - 2;
+    setDropPos({ top, left: rect.left, width: Math.max(rect.width, 260) });
+  }, []);
+
+  useEffect(() => {
+    if (!open) { setSearch(""); return; }
+    calcPos();
+    const onClose = (e) => { if (!triggerRef.current?.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", onClose);
+    return () => document.removeEventListener("mousedown", onClose);
+  }, [open, calcPos]);
+
+  const filtered = KONTENRAHMEN_POSITIONEN.filter(p =>
+    !search.trim() || p.label.toLowerCase().includes(search.trim().toLowerCase()) || p.id.toLowerCase().includes(search.trim().toLowerCase())
+  );
+
+  const dropdown = open && createPortal(
+    <div onMouseDown={e => e.stopPropagation()} style={{
+      position: "fixed", top: dropPos.top, left: dropPos.left, width: dropPos.width,
+      backgroundColor: panelBg, border: `1px solid ${panelBdr}`, borderRadius: 8,
+      boxShadow: "0 8px 24px rgba(0,0,0,0.18)", zIndex: 999999, overflow: "hidden",
+    }}>
+      <div style={{ padding: "6px 8px", borderBottom: `1px solid ${panelBdr}`, display: "flex", alignItems: "center", gap: 5 }}>
+        <Search size={11} style={{ color: subC }} />
+        <input value={search} onChange={e => setSearch(e.target.value)}
+          autoFocus placeholder="Position suchen…"
+          style={{ flex: 1, border: "none", outline: "none", fontSize: 12, background: "transparent", color: headingC }} />
+      </div>
+      <div style={{ maxHeight: 260, overflowY: "auto" }}>
+        <div onClick={() => { onChange(null); setOpen(false); }}
+          style={{ padding: "6px 10px", cursor: "pointer", fontSize: 12, color: subC }}
+          onMouseEnter={e => e.currentTarget.style.backgroundColor = accent + "14"}
+          onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
+          — Keine Position —
+        </div>
+        {filtered.map(p => {
+          const colors = POSITION_BADGE_COLORS[p.seite] || { bg: "#f3f4f6", text: "#374151" };
+          return (
+            <div key={p.id}
+              onClick={() => { onChange(p.id); setOpen(false); }}
+              style={{
+                display: "flex", alignItems: "center", gap: 6,
+                padding: "6px 10px", cursor: "pointer", fontSize: 12,
+                backgroundColor: p.id === value ? accent + "18" : "transparent", color: headingC,
+              }}
+              onMouseEnter={e => { if (p.id !== value) e.currentTarget.style.backgroundColor = accent + "10"; }}
+              onMouseLeave={e => { e.currentTarget.style.backgroundColor = p.id === value ? accent + "18" : "transparent"; }}>
+              <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, flexShrink: 0, backgroundColor: colors.bg, border: `1px solid ${colors.text}40` }} />
+              <span style={{ flex: 1 }}>{p.label}</span>
+              <span style={{ fontSize: 10, color: subC }}>{p.von}–{p.bis}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>,
+    document.body
+  );
+
+  return (
+    <div ref={triggerRef} style={{ display: "inline-block" }}>
+      <button type="button" onClick={(e) => { e.stopPropagation(); calcPos(); setOpen(o => !o); }}
+        style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+        <PositionBadge posId={value} />
+      </button>
+      {dropdown}
+    </div>
+  );
+}
+
+// ── Import Dialog ─────────────────────────────────────────────────────────────
+function ImportDialog({ onClose, onImport, accent, theme }) {
+  const isLight = theme === "light";
+  const isArtis = theme === "artis";
+  const panelBg  = isArtis ? "#ffffff" : isLight ? "#ffffff" : "#27272a";
+  const panelBdr = isArtis ? "#ccd8cc" : isLight ? "#e2e2ec" : "#3f3f46";
+  const headingC = isArtis ? "#1a3a1a" : isLight ? "#1e293b" : "#e4e4e7";
+  const subC     = isArtis ? "#4a6a4a" : isLight ? "#64748b" : "#a1a1aa";
+  const pageBg   = isArtis ? "#f2f5f2" : isLight ? "#f4f4f8" : "#2a2a2f";
+
+  const [dragging, setDragging] = useState(false);
+  const [parsed, setParsed] = useState(null); // { rows, mapping }
+  const [colMap, setColMap] = useState({ kontonummer: "", kontoname: "", saldo_ist: "", saldo_vorjahr: "" });
+  const [preview, setPreview] = useState([]);
+  const [headers, setHeaders] = useState([]);
+  const fileRef = useRef(null);
+
+  function detectColumn(headers, patterns) {
+    for (const h of headers) {
+      const lc = h.toLowerCase().trim();
+      if (patterns.some(p => lc.includes(p))) return h;
+    }
+    return "";
+  }
+
+  function parseFile(file) {
+    const ext = file.name.split(".").pop().toLowerCase();
+    if (ext === "xlsx" || ext === "xls") {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const data = new Uint8Array(e.target.result);
+        const wb = XLSX.read(data, { type: "array" });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+        processRows(rows, file.name);
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      // CSV
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const text = e.target.result;
+        // Detect separator
+        const firstLine = text.split("\n")[0];
+        const sep = firstLine.includes(";") ? ";" : firstLine.includes("\t") ? "\t" : ",";
+        const rows = text.split("\n").map(line =>
+          line.replace(/\r$/, "").split(sep).map(cell => cell.replace(/^"(.*)"$/, "$1").replace(/""/g, '"'))
+        ).filter(r => r.some(c => c.trim()));
+        processRows(rows, file.name);
+      };
+      reader.readAsText(file, "UTF-8");
+    }
+  }
+
+  function processRows(rows, filename) {
+    if (rows.length < 2) { toast.error("Datei enthält zu wenig Zeilen"); return; }
+    const hdrs = rows[0].map(String);
+    const dataRows = rows.slice(1).filter(r => r.some(c => String(c).trim()));
+
+    const detected = {
+      kontonummer:   detectColumn(hdrs, ["konto", "kontonummer", "nummer", "nr."]),
+      kontoname:     detectColumn(hdrs, ["bezeichnung", "name", "kontoname", "text", "beschreibung"]),
+      saldo_ist:     detectColumn(hdrs, ["saldo", "betrag", "saldo ist", "ist", "aktuell"]),
+      saldo_vorjahr: detectColumn(hdrs, ["vorjahr", "saldo vj", "vj", "vorperiode"]),
+    };
+    setHeaders(hdrs);
+    setColMap(detected);
+    setParsed({ rows: dataRows, filename });
+    // Preview first 5 rows
+    setPreview(dataRows.slice(0, 5));
+  }
+
+  function handleDrop(e) {
+    e.preventDefault();
+    setDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file) parseFile(file);
+  }
+
+  function handleFileChange(e) {
+    const file = e.target.files[0];
+    if (file) parseFile(file);
+  }
+
+  function doImport() {
+    if (!parsed) return;
+    const { rows } = parsed;
+    const colIdx = (col) => headers.indexOf(col);
+    const getCell = (row, col) => {
+      const idx = colIdx(col);
+      return idx >= 0 ? String(row[idx] ?? "").trim() : "";
+    };
+    const parseNum = (v) => {
+      if (!v) return null;
+      // Handle Swiss number format: 1'234.56 or 1.234,56
+      const cleaned = v.replace(/'/g, "").replace(/\s/g, "").replace(",", ".");
+      const n = parseFloat(cleaned);
+      return isNaN(n) ? null : n;
+    };
+
+    const konten = rows
+      .filter(row => getCell(row, colMap.kontonummer))
+      .map(row => {
+        const nr = getCell(row, colMap.kontonummer);
+        return {
+          kontonummer: nr,
+          kontoname: colMap.kontoname ? getCell(row, colMap.kontoname) : "",
+          saldo_ist: colMap.saldo_ist ? parseNum(getCell(row, colMap.saldo_ist)) : null,
+          saldo_vorjahr: colMap.saldo_vorjahr ? parseNum(getCell(row, colMap.saldo_vorjahr)) : null,
+          position_auto: autoMapKonto(nr),
+          position_override: null,
+          notiz: "",
+        };
+      });
+
+    if (konten.length === 0) { toast.error("Keine Konten gefunden – Spalten-Zuordnung prüfen"); return; }
+    onImport(konten);
+  }
+
+  const iStyle = {
+    width: "100%", fontSize: 12, padding: "5px 8px", borderRadius: 6,
+    border: `1px solid ${panelBdr}`, outline: "none", backgroundColor: pageBg, color: headingC,
+  };
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: "rgba(0,0,0,0.5)" }}>
+      <div className="rounded-2xl overflow-hidden flex flex-col" style={{
+        backgroundColor: panelBg, border: `1px solid ${panelBdr}`,
+        width: 680, maxHeight: "90vh", boxShadow: "0 20px 60px rgba(0,0,0,0.25)",
+      }}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: `1px solid ${panelBdr}`, backgroundColor: isArtis ? "#e8f2e8" : isLight ? "#f1f5f9" : "#2f2f35" }}>
+          <div className="flex items-center gap-2">
+            <Upload className="w-4 h-4" style={{ color: accent }} />
+            <span className="text-sm font-bold" style={{ color: headingC }}>Kontenplan importieren</span>
+          </div>
+          <button onClick={onClose} className="p-1 rounded hover:opacity-70"><X className="w-4 h-4" style={{ color: subC }} /></button>
+        </div>
+
+        <div className="overflow-y-auto flex-1 p-5 space-y-5">
+          {/* Drop Zone */}
+          {!parsed && (
+            <div
+              onDragOver={e => { e.preventDefault(); setDragging(true); }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={handleDrop}
+              onClick={() => fileRef.current?.click()}
+              style={{
+                border: `2px dashed ${dragging ? accent : panelBdr}`,
+                borderRadius: 12, padding: "48px 24px", textAlign: "center", cursor: "pointer",
+                backgroundColor: dragging ? accent + "0a" : pageBg,
+                transition: "all 0.15s",
+              }}>
+              <FileSpreadsheet className="w-10 h-10 mx-auto mb-3" style={{ color: dragging ? accent : subC }} />
+              <div className="text-sm font-semibold mb-1" style={{ color: headingC }}>CSV oder Excel-Datei hier ablegen</div>
+              <div className="text-xs" style={{ color: subC }}>oder klicken zum Auswählen · .csv, .xlsx, .xls</div>
+              <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={handleFileChange} />
+            </div>
+          )}
+
+          {parsed && (
+            <>
+              {/* Dateiname */}
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ backgroundColor: accent + "10", border: `1px solid ${accent}30` }}>
+                <FileText className="w-4 h-4" style={{ color: accent }} />
+                <span className="text-sm font-medium" style={{ color: headingC }}>{parsed.filename}</span>
+                <span className="text-xs ml-auto" style={{ color: subC }}>{parsed.rows.length} Zeilen</span>
+                <button onClick={() => { setParsed(null); setHeaders([]); setPreview([]); }}
+                  className="ml-2 p-0.5 rounded hover:opacity-70"><RotateCcw className="w-3.5 h-3.5" style={{ color: subC }} /></button>
+              </div>
+
+              {/* Spalten-Zuordnung */}
+              <div>
+                <div className="text-xs font-bold uppercase tracking-wider mb-3" style={{ color: subC }}>Spalten-Zuordnung</div>
+                <div className="grid grid-cols-2 gap-3">
+                  {[
+                    { key: "kontonummer",   label: "Kontonummer *" },
+                    { key: "kontoname",     label: "Kontoname" },
+                    { key: "saldo_ist",     label: "Saldo IST" },
+                    { key: "saldo_vorjahr", label: "Saldo Vorjahr" },
+                  ].map(({ key, label }) => (
+                    <div key={key}>
+                      <label className="text-xs font-semibold block mb-1" style={{ color: subC }}>{label}</label>
+                      <select value={colMap[key]} onChange={e => setColMap(p => ({ ...p, [key]: e.target.value }))} style={iStyle}>
+                        <option value="">— nicht zugeordnet —</option>
+                        {headers.map(h => <option key={h} value={h}>{h}</option>)}
+                      </select>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Preview */}
+              {preview.length > 0 && (
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: subC }}>Vorschau (erste 5 Zeilen)</div>
+                  <div className="overflow-x-auto rounded-lg" style={{ border: `1px solid ${panelBdr}` }}>
+                    <table style={{ width: "100%", fontSize: 11, borderCollapse: "collapse" }}>
+                      <thead>
+                        <tr style={{ backgroundColor: isArtis ? "#e8f2e8" : isLight ? "#f1f5f9" : "#2f2f35" }}>
+                          {headers.slice(0, 6).map(h => (
+                            <th key={h} style={{ padding: "6px 10px", textAlign: "left", fontWeight: 700, color: subC, borderBottom: `1px solid ${panelBdr}` }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {preview.map((row, i) => (
+                          <tr key={i} style={{ borderBottom: `1px solid ${panelBdr}` }}>
+                            {row.slice(0, 6).map((cell, j) => (
+                              <td key={j} style={{ padding: "5px 10px", color: headingC }}>{String(cell)}</td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex justify-end gap-2 px-5 py-3" style={{ borderTop: `1px solid ${panelBdr}` }}>
+          <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm" style={{ color: subC }}>Abbrechen</button>
+          <button
+            disabled={!parsed || !colMap.kontonummer}
+            onClick={doImport}
+            className="flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-semibold text-white transition-opacity"
+            style={{ backgroundColor: accent, opacity: parsed && colMap.kontonummer ? 1 : 0.4 }}>
+            <Upload className="w-3.5 h-3.5" />
+            {parsed ? `${parsed.rows.length} Zeilen importieren` : "Importieren"}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+// ── Kontenplan Tab ────────────────────────────────────────────────────────────
+function KontenplanTab({ konten, onUpdateKonto, accent, theme, headingC, subC, panelBg, panelBdr, tableBdr, rowHover }) {
+  const isArtis = theme === "artis";
+  const isLight = theme === "light";
+  const [collapsed, setCollapsed] = useState({});
+
+  const sortedKonten = useMemo(() =>
+    [...konten].sort((a, b) => {
+      const na = parseInt(a.kontonummer) || 0;
+      const nb = parseInt(b.kontonummer) || 0;
+      return na - nb;
+    }), [konten]);
+
+  // Group by effective position
+  const grouped = useMemo(() => {
+    const groups = {};
+    for (const k of sortedKonten) {
+      const pos = k.position_override || k.position_auto;
+      const key = pos || "__KEIN_MAPPING__";
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(k);
+    }
+    return groups;
+  }, [sortedKonten]);
+
+  // Order groups by Kontenrahmen order, unmapped last
+  const groupOrder = useMemo(() => {
+    const posOrder = KONTENRAHMEN_POSITIONEN.map(p => p.id);
+    const keys = Object.keys(grouped);
+    return [
+      ...posOrder.filter(id => keys.includes(id)),
+      ...keys.filter(k => !posOrder.includes(k)),
+    ];
+  }, [grouped]);
+
+  if (konten.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-center">
+        <FileSpreadsheet className="w-12 h-12 mb-3" style={{ color: isArtis ? "#ccd8cc" : "#d1d5db" }} />
+        <div className="text-base font-medium mb-1" style={{ color: headingC }}>Noch keine Konten importiert</div>
+        <div className="text-sm" style={{ color: subC }}>Verwenden Sie den Import-Button, um einen Kontenplan hochzuladen.</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+        <thead style={{ position: "sticky", top: 0, zIndex: 10 }}>
+          <tr style={{ backgroundColor: isArtis ? "#e8f2e8" : isLight ? "#f1f5f9" : "#2f2f35" }}>
+            {["Konto-Nr", "Kontoname", "Saldo IST", "Saldo VJ", "Abw.", "Position", "Notiz"].map(h => (
+              <th key={h} style={{
+                padding: "9px 12px", textAlign: h === "Saldo IST" || h === "Saldo VJ" || h === "Abw." ? "right" : "left",
+                fontWeight: 700, fontSize: 11, letterSpacing: "0.04em", textTransform: "uppercase",
+                color: subC, borderBottom: `2px solid ${tableBdr}`, whiteSpace: "nowrap",
+              }}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {groupOrder.map(groupKey => {
+            const rows = grouped[groupKey];
+            if (!rows) return null;
+            const pos = POSITION_MAP[groupKey];
+            const isUnmapped = groupKey === "__KEIN_MAPPING__";
+            const isOpen = !collapsed[groupKey];
+            const groupTotal = rows.reduce((s, k) => s + (parseFloat(k.saldo_ist) || 0), 0);
+            const groupTotalVJ = rows.reduce((s, k) => s + (parseFloat(k.saldo_vorjahr) || 0), 0);
+            const groupColors = POSITION_BADGE_COLORS[pos?.seite] || { bg: "#f3f4f6", text: "#374151" };
+
+            return (
+              <React.Fragment key={groupKey}>
+                {/* Group Header */}
+                <tr
+                  onClick={() => setCollapsed(p => ({ ...p, [groupKey]: !p[groupKey] }))}
+                  style={{
+                    backgroundColor: isUnmapped ? "#fef2f2" : (isArtis ? "#f0f5f0" : isLight ? "#f8fafc" : "#2c2c32"),
+                    cursor: "pointer", borderTop: `2px solid ${isUnmapped ? "#fecaca" : tableBdr}`,
+                  }}>
+                  <td colSpan={3} style={{ padding: "8px 12px" }}>
+                    <div className="flex items-center gap-2">
+                      {isOpen
+                        ? <ChevronDown className="w-3.5 h-3.5 flex-shrink-0" style={{ color: subC }} />
+                        : <ChevronUp className="w-3.5 h-3.5 flex-shrink-0" style={{ color: subC }} />}
+                      {isUnmapped
+                        ? <span style={{ fontWeight: 700, fontSize: 12, color: "#dc2626" }}>Ohne Mapping ({rows.length} Konten)</span>
+                        : (
+                          <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, backgroundColor: groupColors.bg, border: `1px solid ${groupColors.text}40` }} />
+                            <span style={{ fontWeight: 700, fontSize: 12, color: headingC }}>{pos?.label}</span>
+                            <span style={{ fontSize: 10, color: subC }}>{pos?.von}–{pos?.bis} · {rows.length} Kto.</span>
+                          </span>
+                        )}
+                    </div>
+                  </td>
+                  <td style={{ padding: "8px 12px", textAlign: "right", fontWeight: 700, fontSize: 12, color: headingC }}>
+                    {fmtCHF(groupTotalVJ)}
+                  </td>
+                  <td style={{ padding: "8px 12px" }} />
+                  <td style={{ padding: "8px 12px", textAlign: "right", fontWeight: 700, fontSize: 12, color: headingC }}>
+                    {fmtCHF(groupTotal)}
+                  </td>
+                  <td style={{ padding: "8px 12px" }} />
+                </tr>
+
+                {/* Rows */}
+                {isOpen && rows.map(konto => {
+                  const effectivePos = konto.position_override || konto.position_auto;
+                  const isOverridden = !!konto.position_override;
+                  const abw = (parseFloat(konto.saldo_ist) || 0) - (parseFloat(konto.saldo_vorjahr) || 0);
+                  const noMapping = !effectivePos && /^[1-8]/.test(String(konto.kontonummer));
+
+                  return (
+                    <tr key={konto.id} style={{
+                      borderBottom: `1px solid ${tableBdr}`,
+                      backgroundColor: noMapping ? "#fef2f250" : "transparent",
+                    }}
+                      onMouseEnter={e => e.currentTarget.style.backgroundColor = noMapping ? "#fef2f2" : rowHover}
+                      onMouseLeave={e => e.currentTarget.style.backgroundColor = noMapping ? "#fef2f250" : "transparent"}>
+
+                      {/* Konto-Nr */}
+                      <td style={{ padding: "7px 12px", fontWeight: 600, color: headingC, whiteSpace: "nowrap", width: 90 }}>
+                        {konto.kontonummer}
+                      </td>
+                      {/* Name */}
+                      <td style={{ padding: "7px 12px", color: headingC }}>
+                        {konto.kontoname || <span style={{ color: subC, fontStyle: "italic" }}>—</span>}
+                      </td>
+                      {/* Saldo IST */}
+                      <td style={{ padding: "7px 12px", textAlign: "right", fontFamily: "monospace", color: headingC, whiteSpace: "nowrap" }}>
+                        {fmtCHF(konto.saldo_ist)}
+                      </td>
+                      {/* Saldo VJ */}
+                      <td style={{ padding: "7px 12px", textAlign: "right", fontFamily: "monospace", color: subC, whiteSpace: "nowrap" }}>
+                        {fmtCHF(konto.saldo_vorjahr)}
+                      </td>
+                      {/* Abweichung */}
+                      <td style={{ padding: "7px 12px", textAlign: "right", whiteSpace: "nowrap" }}>
+                        {konto.saldo_ist !== null && konto.saldo_vorjahr !== null ? (
+                          <span style={{ color: abw > 0 ? "#16a34a" : abw < 0 ? "#dc2626" : subC, fontSize: 12 }}>
+                            {abw > 0 ? "+" : ""}{fmtCHF(abw)}
+                          </span>
+                        ) : <span style={{ color: subC }}>—</span>}
+                      </td>
+                      {/* Position */}
+                      <td style={{ padding: "7px 12px", whiteSpace: "nowrap" }}>
+                        <div className="flex items-center gap-1.5">
+                          <PositionSelector
+                            value={effectivePos}
+                            onChange={(newPos) => onUpdateKonto(konto.id, { position_override: newPos })}
+                            subC={subC} panelBg={panelBg} panelBdr={panelBdr} headingC={headingC} accent={accent}
+                          />
+                          {isOverridden && (
+                            <button
+                              onClick={() => onUpdateKonto(konto.id, { position_override: null })}
+                              title="Manuelle Zuweisung zurücksetzen"
+                              style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>
+                              <Lock className="w-3 h-3" style={{ color: accent }} />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                      {/* Notiz */}
+                      <td style={{ padding: "7px 12px", minWidth: 160 }}>
+                        <input
+                          value={konto.notiz || ""}
+                          onChange={e => onUpdateKonto(konto.id, { notiz: e.target.value })}
+                          placeholder="Notiz…"
+                          style={{
+                            width: "100%", fontSize: 12, padding: "3px 6px", borderRadius: 5,
+                            border: `1px solid transparent`, outline: "none",
+                            backgroundColor: "transparent", color: headingC,
+                          }}
+                          onFocus={e => e.target.style.border = `1px solid ${accent}60`}
+                          onBlur={e => e.target.style.border = "1px solid transparent"}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
+
+                {/* Group Total Row */}
+                {isOpen && (
+                  <tr style={{ backgroundColor: isArtis ? "#f0f5f0" : isLight ? "#f8fafc" : "#2c2c32", borderBottom: `2px solid ${tableBdr}` }}>
+                    <td colSpan={2} style={{ padding: "6px 12px 6px 32px", fontSize: 11, fontWeight: 600, color: subC }}>
+                      Total {pos?.label || "Ohne Mapping"}
+                    </td>
+                    <td style={{ padding: "6px 12px", textAlign: "right", fontWeight: 700, fontSize: 12, color: headingC, fontFamily: "monospace" }}>
+                      {fmtCHF(groupTotal)}
+                    </td>
+                    <td style={{ padding: "6px 12px", textAlign: "right", fontWeight: 600, fontSize: 12, color: subC, fontFamily: "monospace" }}>
+                      {fmtCHF(groupTotalVJ)}
+                    </td>
+                    <td colSpan={3} />
+                  </tr>
+                )}
+              </React.Fragment>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ── Bilanz Tab ────────────────────────────────────────────────────────────────
+function BilanzkennzahlRow({ label, value, isSubtotal, isTotal, indent, accent, subC, headingC }) {
+  const fontW = isTotal ? 800 : isSubtotal ? 700 : 400;
+  const borderTop = isTotal ? `2px solid ${accent}40` : isSubtotal ? `1px solid ${accent}20` : "none";
+  const bg = isTotal ? accent + "08" : "transparent";
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
+      padding: `${isTotal ? 8 : 5}px ${indent ? 28 : 12}px`, borderTop, backgroundColor: bg }}>
+      <span style={{ fontSize: isTotal ? 13 : 12, fontWeight: fontW, color: isTotal ? accent : headingC }}>
+        {label}
+      </span>
+      <span style={{ fontSize: isTotal ? 13 : 12, fontWeight: fontW, fontFamily: "monospace",
+        color: isTotal ? accent : headingC, minWidth: 110, textAlign: "right" }}>
+        {value === null ? "—" : fmtCHF(value)}
+      </span>
+    </div>
+  );
+}
+
+function BilanzTab({ konten, accent, headingC, subC, panelBg, panelBdr, tableBdr }) {
+  const sumByIds = (ids) => konten
+    .filter(k => ids.includes(k.position_override || k.position_auto))
+    .reduce((s, k) => s + (parseFloat(k.saldo_ist) || 0), 0);
+
+  const UV_IDS = ["UV_FLUESSIG","UV_WERTSCHRIFTEN","UV_FORD_LL","UV_FORD_SONST","UV_VORRAETE","UV_ABGRENZUNG"];
+  const AV_IDS = ["AV_FINANZ","AV_MOBIL","AV_IMMOBIL","AV_IMMATERIELL"];
+  const FK_KURZ_IDS = ["FK_KURZ_LL","FK_KURZ_BANK","FK_KURZ_SONST","FK_KURZ_ABGRENZUNG"];
+  const FK_LANG_IDS = ["FK_LANG_BANK","FK_LANG_SONST","FK_RUECKSTELLUNGEN"];
+  const EK_IDS = ["EK_KAPITAL","EK_RESERVEN","EK_JAHRESERGEBNIS"];
+
+  const uvTotal = sumByIds(UV_IDS);
+  const avTotal = sumByIds(AV_IDS);
+  const aktivenTotal = uvTotal + avTotal;
+
+  const fkKurzTotal = sumByIds(FK_KURZ_IDS);
+  const fkLangTotal = sumByIds(FK_LANG_IDS);
+  const ekTotal = sumByIds(EK_IDS);
+  const passivenTotal = fkKurzTotal + fkLangTotal + ekTotal;
+
+  const diff = aktivenTotal - passivenTotal;
+  const balanced = Math.abs(diff) < 0.005;
+
+  const makePos = (id) => {
+    const pos = POSITION_MAP[id];
+    const val = sumByIds([id]);
+    return { label: pos?.label || id, val };
+  };
+
+  if (konten.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-center">
+        <BarChart2 className="w-12 h-12 mb-3" style={{ color: "#d1d5db" }} />
+        <div className="text-sm font-medium" style={{ color: headingC }}>Noch keine Konten importiert</div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, maxWidth: 1000 }}>
+      {/* AKTIVEN */}
+      <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${panelBdr}`, boxShadow: "0 2px 8px rgba(0,0,0,0.05)" }}>
+        <div style={{ padding: "12px 14px", backgroundColor: "#dbeafe", borderBottom: `1px solid ${panelBdr}` }}>
+          <span style={{ fontWeight: 800, fontSize: 13, color: "#1d4ed8", letterSpacing: "0.03em" }}>AKTIVEN</span>
+        </div>
+        {/* Umlaufvermögen */}
+        <div style={{ padding: "8px 12px 0", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: subC }}>
+          Umlaufvermögen
+        </div>
+        {UV_IDS.map(id => { const { label, val } = makePos(id); return val !== 0 ? <BilanzkennzahlRow key={id} label={label} value={val} indent headingC={headingC} subC={subC} accent={accent} /> : null; })}
+        <BilanzkennzahlRow label="Total Umlaufvermögen" value={uvTotal} isSubtotal headingC={headingC} subC={subC} accent={accent} />
+        {/* Anlagevermögen */}
+        <div style={{ padding: "8px 12px 0", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: subC, marginTop: 4 }}>
+          Anlagevermögen
+        </div>
+        {AV_IDS.map(id => { const { label, val } = makePos(id); return val !== 0 ? <BilanzkennzahlRow key={id} label={label} value={val} indent headingC={headingC} subC={subC} accent={accent} /> : null; })}
+        <BilanzkennzahlRow label="Total Anlagevermögen" value={avTotal} isSubtotal headingC={headingC} subC={subC} accent={accent} />
+        <BilanzkennzahlRow label="TOTAL AKTIVEN" value={aktivenTotal} isTotal headingC={headingC} subC={subC} accent={accent} />
+      </div>
+
+      {/* PASSIVEN */}
+      <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${panelBdr}`, boxShadow: "0 2px 8px rgba(0,0,0,0.05)" }}>
+        <div style={{ padding: "12px 14px", backgroundColor: "#fce7f3", borderBottom: `1px solid ${panelBdr}` }}>
+          <span style={{ fontWeight: 800, fontSize: 13, color: "#9d174d", letterSpacing: "0.03em" }}>PASSIVEN</span>
+        </div>
+        {/* FK Kurzfristig */}
+        <div style={{ padding: "8px 12px 0", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: subC }}>
+          Kurzfristiges Fremdkapital
+        </div>
+        {FK_KURZ_IDS.map(id => { const { label, val } = makePos(id); return val !== 0 ? <BilanzkennzahlRow key={id} label={label} value={val} indent headingC={headingC} subC={subC} accent={accent} /> : null; })}
+        <BilanzkennzahlRow label="Total Kurzfristiges FK" value={fkKurzTotal} isSubtotal headingC={headingC} subC={subC} accent={accent} />
+        {/* FK Langfristig */}
+        <div style={{ padding: "8px 12px 0", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: subC, marginTop: 4 }}>
+          Langfristiges Fremdkapital
+        </div>
+        {FK_LANG_IDS.map(id => { const { label, val } = makePos(id); return val !== 0 ? <BilanzkennzahlRow key={id} label={label} value={val} indent headingC={headingC} subC={subC} accent={accent} /> : null; })}
+        <BilanzkennzahlRow label="Total Langfristiges FK" value={fkLangTotal} isSubtotal headingC={headingC} subC={subC} accent={accent} />
+        {/* Eigenkapital */}
+        <div style={{ padding: "8px 12px 0", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: subC, marginTop: 4 }}>
+          Eigenkapital
+        </div>
+        {EK_IDS.map(id => { const { label, val } = makePos(id); return val !== 0 ? <BilanzkennzahlRow key={id} label={label} value={val} indent headingC={headingC} subC={subC} accent={accent} /> : null; })}
+        <BilanzkennzahlRow label="Total Eigenkapital" value={ekTotal} isSubtotal headingC={headingC} subC={subC} accent={accent} />
+        <BilanzkennzahlRow label="TOTAL PASSIVEN" value={passivenTotal} isTotal headingC={headingC} subC={subC} accent={accent} />
+      </div>
+
+      {/* Differenz-Hinweis */}
+      {!balanced && (
+        <div className="col-span-2 flex items-center gap-3 px-4 py-3 rounded-xl" style={{ backgroundColor: "#fef2f2", border: "1px solid #fecaca" }}>
+          <AlertCircle className="w-4 h-4 flex-shrink-0" style={{ color: "#dc2626" }} />
+          <span className="text-sm font-medium" style={{ color: "#dc2626" }}>
+            Aktiven ≠ Passiven · Differenz: CHF {fmtCHF(Math.abs(diff))} — Konten-Zuweisung prüfen
+          </span>
+        </div>
+      )}
+      {balanced && konten.length > 0 && (
+        <div className="col-span-2 flex items-center gap-3 px-4 py-3 rounded-xl" style={{ backgroundColor: "#f0fdf4", border: "1px solid #bbf7d0" }}>
+          <CheckCircle2 className="w-4 h-4 flex-shrink-0" style={{ color: "#16a34a" }} />
+          <span className="text-sm font-medium" style={{ color: "#16a34a" }}>Bilanz ausgeglichen</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Erfolgsrechnung Tab ───────────────────────────────────────────────────────
+function ERRow({ label, value, isSubtotal, isTotal, isNegative, indent, accent, headingC, subC, highlightGreen }) {
+  const fontW = isTotal ? 800 : isSubtotal ? 700 : 400;
+  const color = isTotal && highlightGreen ? "#16a34a" : isTotal ? accent : isNegative && value < 0 ? "#dc2626" : headingC;
+  return (
+    <div style={{
+      display: "flex", justifyContent: "space-between", alignItems: "center",
+      padding: `${isTotal ? 9 : 5}px ${indent ? 24 : 12}px`,
+      borderTop: isTotal ? `2px solid ${isTotal && highlightGreen ? "#bbf7d0" : accent + "40"}` : "none",
+      backgroundColor: isTotal && highlightGreen ? "#f0fdf4" : isTotal ? accent + "06" : "transparent",
+      borderRadius: isTotal ? 4 : 0,
+    }}>
+      <span style={{ fontSize: isTotal ? 13 : 12, fontWeight: fontW, color }}>{label}</span>
+      <span style={{ fontSize: isTotal ? 13 : 12, fontWeight: fontW, fontFamily: "monospace", color, minWidth: 130, textAlign: "right" }}>
+        {value === null ? "—" : fmtCHF(value)}
+      </span>
+    </div>
+  );
+}
+
+function ERSeparator({ label, subC }) {
+  return (
+    <div style={{ padding: "6px 12px 2px", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: subC, borderTop: "1px solid #e5e7eb", marginTop: 4 }}>
+      {label}
+    </div>
+  );
+}
+
+function ErfolgsrechnungTab({ konten, accent, headingC, subC, panelBg, panelBdr }) {
+  const sumByIds = (ids) => konten
+    .filter(k => ids.includes(k.position_override || k.position_auto))
+    .reduce((s, k) => s + (parseFloat(k.saldo_ist) || 0), 0);
+
+  if (konten.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-center">
+        <TrendingUp className="w-12 h-12 mb-3" style={{ color: "#d1d5db" }} />
+        <div className="text-sm font-medium" style={{ color: headingC }}>Noch keine Konten importiert</div>
+      </div>
+    );
+  }
+
+  const nettoumsatz   = sumByIds(["ER_UMSATZ","ER_EIGENLEISTUNG","ER_BESTAND"]);
+  const material      = sumByIds(["ER_MATERIAL"]);
+  const bruttogewinn  = nettoumsatz - material;
+  const personal      = sumByIds(["ER_PERSONAL"]);
+  const betrieb       = sumByIds(["ER_BETRIEB"]);
+  const ebitda        = bruttogewinn - personal - betrieb;
+  const abschr        = sumByIds(["ER_ABSCHR"]);
+  const ebit          = ebitda - abschr;
+  const finErtrag     = sumByIds(["ER_FINANZ_ERTRAG","ER_LIEGENSCHAFTEN"]);
+  const finAufw       = sumByIds(["ER_FINANZ_AUFW"]);
+  const finanzergebnis = finErtrag - finAufw;
+  const ebt           = ebit + finanzergebnis;
+  const fremdErtrag   = sumByIds(["ER_FREMD_ERTRAG","ER_AO_ERTRAG"]);
+  const fremdAufw     = sumByIds(["ER_FREMD_AUFW","ER_AO_AUFW"]);
+  const steuern       = sumByIds(["ER_STEUERN"]);
+  const jahresergebnis = ebt + fremdErtrag - fremdAufw - steuern;
+
+  const props = { accent, headingC, subC };
+
+  return (
+    <div style={{ maxWidth: 560 }}>
+      <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${panelBdr}`, boxShadow: "0 2px 8px rgba(0,0,0,0.05)" }}>
+        <div style={{ padding: "12px 14px", backgroundColor: "#dcfce7", borderBottom: `1px solid ${panelBdr}` }}>
+          <span style={{ fontWeight: 800, fontSize: 13, color: "#15803d", letterSpacing: "0.03em" }}>ERFOLGSRECHNUNG</span>
+        </div>
+
+        <ERSeparator label="Betriebsertrag" subC={subC} />
+        <ERRow label="Nettoumsatzerlöse" value={sumByIds(["ER_UMSATZ"])} indent {...props} />
+        <ERRow label="Eigenleistungen" value={sumByIds(["ER_EIGENLEISTUNG"])} indent {...props} />
+        <ERRow label="Bestandesveränderungen" value={sumByIds(["ER_BESTAND"])} indent {...props} />
+        <ERRow label="Nettoumsatz Total" value={nettoumsatz} isSubtotal {...props} />
+
+        <ERSeparator label="Betriebsaufwand" subC={subC} />
+        <ERRow label="− Materialaufwand" value={material} isNegative indent {...props} />
+        <ERRow label="= Bruttogewinn (Rohergebnis)" value={bruttogewinn} isTotal
+          highlightGreen={bruttogewinn >= 0} {...props} />
+
+        <ERSeparator label="Betriebskosten" subC={subC} />
+        <ERRow label="− Personalaufwand" value={personal} isNegative indent {...props} />
+        <ERRow label="− Übriger Betriebsaufwand" value={betrieb} isNegative indent {...props} />
+        <ERRow label="= EBITDA" value={ebitda} isTotal highlightGreen={ebitda >= 0} {...props} />
+
+        <ERSeparator label="Abschreibungen" subC={subC} />
+        <ERRow label="− Abschreibungen" value={abschr} isNegative indent {...props} />
+        <ERRow label="= EBIT" value={ebit} isTotal highlightGreen={ebit >= 0} {...props} />
+
+        <ERSeparator label="Finanzergebnis" subC={subC} />
+        <ERRow label="+ Finanzertrag" value={finErtrag} indent {...props} />
+        <ERRow label="− Finanzaufwand" value={finAufw} isNegative indent {...props} />
+        <ERRow label="+/− Finanzergebnis" value={finanzergebnis} isSubtotal {...props} />
+        <ERRow label="= EBT (vor Sonderergebnis)" value={ebt} isTotal highlightGreen={ebt >= 0} {...props} />
+
+        <ERSeparator label="Sonderergebnis & Steuern" subC={subC} />
+        <ERRow label="+ Betriebsfremder/AO Ertrag" value={fremdErtrag} indent {...props} />
+        <ERRow label="− Betriebsfremder/AO Aufwand" value={fremdAufw} isNegative indent {...props} />
+        <ERRow label="− Ertragssteuern" value={steuern} isNegative indent {...props} />
+
+        <div style={{ margin: "8px 8px 8px", borderRadius: 8, overflow: "hidden", border: `2px solid ${jahresergebnis >= 0 ? "#bbf7d0" : "#fecaca"}` }}>
+          <ERRow label="JAHRESERGEBNIS" value={jahresergebnis} isTotal highlightGreen={jahresergebnis >= 0}
+            accent={jahresergebnis >= 0 ? "#16a34a" : "#dc2626"} headingC={headingC} subC={subC} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Hauptkomponente ───────────────────────────────────────────────────────────
+export default function Abschlussdokumentation() {
+  const navigate = useNavigate();
+  const { theme } = useContext(ThemeContext);
+  const isLight = theme === "light";
+  const isArtis = theme === "artis";
+
+  const pageBg   = isLight ? "#f4f4f8"   : isArtis ? "#f2f5f2"   : "#2a2a2f";
+  const panelBg  = isLight ? "#ffffff"   : isArtis ? "#ffffff"   : "#27272a";
+  const panelBdr = isLight ? "#e2e2ec"   : isArtis ? "#ccd8cc"   : "#3f3f46";
+  const headingC = isLight ? "#1e293b"   : isArtis ? "#1a3a1a"   : "#e4e4e7";
+  const subC     = isLight ? "#64748b"   : isArtis ? "#4a6a4a"   : "#a1a1aa";
+  const accent   = isArtis ? "#5b8a5b"   : isLight  ? "#3b6a8a"  : "#3b82f6";
+  const accentL  = isArtis ? "#7a9b7a"   : isLight  ? "#5b8aaa"  : "#60a5fa";
+  const rowHover = isLight ? "#f8f8fc"   : isArtis ? "#f0f5f0"   : "#2f2f35";
+  const tableBdr = isLight ? "#e8e8f0"   : isArtis ? "#d4e4d4"   : "#3f3f46";
+
+  const qc = useQueryClient();
+  const [selectedCid, setSelectedCid] = useState("");
+  const [selectedYear, setSelectedYear] = useState(currentYear());
+  const [activeTab, setActiveTab] = useState("kontenplan");
+  const [showImport, setShowImport] = useState(false);
+
+  // ── Kunden laden ─────────────────────────────────────────────────────────
+  const { data: kunden = [] } = useQuery({
+    queryKey: ["customers_all"],
+    queryFn: () => entities.Customer.list("company_name"),
+  });
+
+  const allKunden = kunden.filter(c => c.aktiv !== false);
+  const unternehmen = allKunden.filter(c => c.person_type !== "privatperson");
+  const privatpersonen = allKunden.filter(c => c.person_type === "privatperson");
+  const sortedKunden = [...unternehmen, ...privatpersonen];
+
+  const selectedCustomer = kunden.find(c => c.id === selectedCid);
+  const customerName = selectedCustomer
+    ? (selectedCustomer.person_type === "privatperson"
+        ? [selectedCustomer.anrede, selectedCustomer.nachname, selectedCustomer.vorname].filter(Boolean).join(" ")
+        : selectedCustomer.company_name)
+    : "";
+
+  // Welche Kunden haben bereits Abschlüsse?
+  const { data: existingAbschlussIds = [] } = useQuery({
+    queryKey: ["abschluss_cids"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("abschluss").select("customer_id");
+      if (error) throw new Error(error.message);
+      return [...new Set((data || []).map(r => r.customer_id))];
+    },
+  });
+  const withAbschlussSet = new Set(existingAbschlussIds);
+
+  // ── Abschluss laden / erstellen ───────────────────────────────────────────
+  const { data: abschluss, isLoading: abschlussLoading, refetch: refetchAbschluss } = useQuery({
+    queryKey: ["abschluss", selectedCid, selectedYear],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("abschluss")
+        .select("*")
+        .eq("customer_id", selectedCid)
+        .eq("geschaeftsjahr", selectedYear)
+        .maybeSingle();
+      if (error) throw new Error(error.message);
+      return data; // null if not exists
+    },
+    enabled: !!selectedCid,
+  });
+
+  // ── Abschluss erstellen falls nicht vorhanden ─────────────────────────────
+  const createAbschlussMut = useMutation({
+    mutationFn: async () => {
+      const { data, error } = await supabase
+        .from("abschluss")
+        .insert({ customer_id: selectedCid, geschaeftsjahr: selectedYear, status: "in_arbeit" })
+        .select()
+        .single();
+      if (error) throw new Error(error.message);
+      return data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["abschluss", selectedCid, selectedYear] });
+      qc.invalidateQueries({ queryKey: ["abschluss_cids"] });
+    },
+    onError: (e) => toast.error("Fehler: " + e.message),
+  });
+
+  // Auto-create abschluss when customer & year selected but no abschluss exists
+  useEffect(() => {
+    if (selectedCid && !abschlussLoading && abschluss === null && !createAbschlussMut.isPending) {
+      createAbschlussMut.mutate();
+    }
+  }, [selectedCid, selectedYear, abschluss, abschlussLoading]);
+
+  const abschlussId = abschluss?.id;
+
+  // ── Konten laden ──────────────────────────────────────────────────────────
+  const { data: konten = [], isLoading: kontenLoading } = useQuery({
+    queryKey: ["abschluss_konten", abschlussId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("abschluss_konten")
+        .select("*")
+        .eq("abschluss_id", abschlussId)
+        .order("kontonummer");
+      if (error) throw new Error(error.message);
+      return data || [];
+    },
+    enabled: !!abschlussId,
+  });
+
+  // ── Status aktualisieren ──────────────────────────────────────────────────
+  const updateStatusMut = useMutation({
+    mutationFn: async (newStatus) => {
+      const { error } = await supabase.from("abschluss").update({ status: newStatus }).eq("id", abschlussId);
+      if (error) throw new Error(error.message);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["abschluss", selectedCid, selectedYear] });
+      toast.success("Status aktualisiert");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  // ── Konto aktualisieren ───────────────────────────────────────────────────
+  const updateKontoMut = useMutation({
+    mutationFn: async ({ id, ...fields }) => {
+      const { error } = await supabase.from("abschluss_konten").update(fields).eq("id", id);
+      if (error) throw new Error(error.message);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["abschluss_konten", abschlussId] }),
+    onError: (e) => toast.error(e.message),
+  });
+
+  function handleUpdateKonto(id, fields) {
+    updateKontoMut.mutate({ id, ...fields });
+  }
+
+  // ── Konten importieren ────────────────────────────────────────────────────
+  const importKontenMut = useMutation({
+    mutationFn: async (newKonten) => {
+      // Delete existing konten for this abschluss
+      const { error: delErr } = await supabase.from("abschluss_konten").delete().eq("abschluss_id", abschlussId);
+      if (delErr) throw new Error(delErr.message);
+      // Insert new konten in batches of 100
+      const rows = newKonten.map(k => ({ ...k, abschluss_id: abschlussId }));
+      for (let i = 0; i < rows.length; i += 100) {
+        const { error: insErr } = await supabase.from("abschluss_konten").insert(rows.slice(i, i + 100));
+        if (insErr) throw new Error(insErr.message);
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["abschluss_konten", abschlussId] });
+      toast.success("Kontenplan importiert");
+      setShowImport(false);
+    },
+    onError: (e) => toast.error("Import fehlgeschlagen: " + e.message),
+  });
+
+  function handleImport(kontenData) {
+    if (!abschlussId) { toast.error("Abschluss nicht bereit"); return; }
+    importKontenMut.mutate(kontenData);
+  }
+
+  const status = abschluss?.status || "in_arbeit";
+  const statusCfg = STATUS_CONFIG[status] || STATUS_CONFIG.in_arbeit;
+
+  const tabs = [
+    { id: "kontenplan",       label: "Kontenplan",         icon: FileSpreadsheet },
+    { id: "bilanz",           label: "Bilanz",             icon: BarChart2 },
+    { id: "erfolgsrechnung",  label: "Erfolgsrechnung",    icon: TrendingUp },
+  ];
+
+  const tabProps = { konten, accent, headingC, subC, panelBg, panelBdr, tableBdr, rowHover, theme };
+
+  return (
+    <div className="flex flex-col h-full overflow-hidden" style={{ backgroundColor: pageBg }}>
+
+      {/* ── Breadcrumb ─────────────────────────────────────────────────────── */}
+      <div className="flex items-center gap-2 px-6 py-3 flex-shrink-0"
+        style={{ borderBottom: `1px solid ${panelBdr}`, backgroundColor: panelBg }}>
+        <Wrench className="w-4 h-4" style={{ color: accentL }} />
+        <button onClick={() => navigate("/ArtisTools")} className="text-sm hover:underline"
+          style={{ color: subC, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+          Artis Tools
+        </button>
+        <ChevronRight className="w-3 h-3" style={{ color: subC }} />
+        <BookCheck className="w-4 h-4" style={{ color: accent }} />
+        <span className="text-sm font-semibold" style={{ color: headingC }}>Abschlussdokumentation</span>
+      </div>
+
+      {/* ── Toolbar ────────────────────────────────────────────────────────── */}
+      <div className="flex-shrink-0 px-6 py-4" style={{ borderBottom: `1px solid ${panelBdr}`, backgroundColor: panelBg }}>
+        <div className="flex flex-wrap items-end gap-4">
+
+          {/* Mandant */}
+          <div className="flex-1" style={{ minWidth: 260, maxWidth: 380 }}>
+            <label className="text-xs font-semibold uppercase tracking-wider mb-1.5 block" style={{ color: subC }}>
+              Mandant
+            </label>
+            <MandantDropdown
+              kunden={sortedKunden}
+              selectedCid={selectedCid}
+              onChange={setSelectedCid}
+              panelBg={panelBg} panelBdr={panelBdr} headingC={headingC} subC={subC} accent={accent}
+              withAbschlussSet={withAbschlussSet}
+            />
+          </div>
+
+          {/* Jahr */}
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-wider mb-1.5 block" style={{ color: subC }}>
+              Geschäftsjahr
+            </label>
+            <select
+              value={selectedYear}
+              onChange={e => setSelectedYear(Number(e.target.value))}
+              style={{
+                height: 36, padding: "0 10px", borderRadius: 8, fontSize: 13, fontWeight: 600,
+                border: `1px solid ${panelBdr}`, backgroundColor: panelBg, color: headingC,
+                outline: "none", cursor: "pointer", minWidth: 90,
+              }}>
+              {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
+          </div>
+
+          {/* Status Badge + Changer */}
+          {abschluss && (
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wider mb-1.5 block" style={{ color: subC }}>
+                Status
+              </label>
+              <div className="flex items-center gap-1.5">
+                <span style={{
+                  display: "inline-flex", alignItems: "center", gap: 5,
+                  padding: "5px 12px", borderRadius: 20, fontSize: 12, fontWeight: 700,
+                  backgroundColor: statusCfg.bg, color: statusCfg.text,
+                  border: `1px solid ${statusCfg.border}`,
+                }}>
+                  {status === "abgeschlossen" && <CheckCircle2 className="w-3 h-3" />}
+                  {status === "genehmigt" && <CheckCircle2 className="w-3 h-3" />}
+                  {status === "in_arbeit" && <AlertCircle className="w-3 h-3" />}
+                  {statusCfg.label}
+                </span>
+                <select
+                  value={status}
+                  onChange={e => updateStatusMut.mutate(e.target.value)}
+                  style={{
+                    height: 30, padding: "0 6px", borderRadius: 6, fontSize: 11,
+                    border: `1px solid ${panelBdr}`, backgroundColor: pageBg, color: subC,
+                    outline: "none", cursor: "pointer",
+                  }}>
+                  <option value="in_arbeit">In Arbeit</option>
+                  <option value="abgeschlossen">Abgeschlossen</option>
+                  <option value="genehmigt">Genehmigt</option>
+                </select>
+              </div>
+            </div>
+          )}
+
+          {/* Spacer */}
+          <div className="flex-1" />
+
+          {/* Buttons */}
+          <div className="flex items-end gap-2">
+            <button
+              disabled={!abschlussId}
+              onClick={() => setShowImport(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-opacity"
+              style={{
+                backgroundColor: accent + "14", color: accent,
+                border: `1px solid ${accent}40`,
+                opacity: abschlussId ? 1 : 0.4, cursor: abschlussId ? "pointer" : "not-allowed",
+              }}>
+              <Upload className="w-3.5 h-3.5" />
+              Importieren
+            </button>
+            <button
+              disabled={konten.length === 0}
+              onClick={() => exportKontenCSV(konten, customerName, selectedYear)}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-opacity"
+              style={{
+                backgroundColor: accent, color: "#ffffff",
+                opacity: konten.length > 0 ? 1 : 0.4,
+                cursor: konten.length > 0 ? "pointer" : "not-allowed",
+              }}>
+              <Download className="w-3.5 h-3.5" />
+              Export CSV
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Content ────────────────────────────────────────────────────────── */}
+      <div className="flex-1 overflow-y-auto">
+        {!selectedCid ? (
+          /* Empty state */
+          <div className="flex flex-col items-center justify-center py-24 text-center">
+            <BookCheck className="w-14 h-14 mb-4" style={{ color: isArtis ? "#ccd8cc" : "#d1d5db" }} />
+            <div className="text-lg font-semibold mb-2" style={{ color: headingC }}>Mandant auswählen</div>
+            <div className="text-sm" style={{ color: subC }}>
+              Wählen Sie einen Mandanten und ein Geschäftsjahr aus, um die Abschlussdokumentation anzuzeigen.
+            </div>
+          </div>
+        ) : (
+          <>
+            {/* ── Tabs ─────────────────────────────────────────────────────── */}
+            <div className="flex items-center gap-0 px-6 pt-4 flex-shrink-0 border-b"
+              style={{ borderColor: panelBdr, backgroundColor: panelBg }}>
+              {tabs.map(({ id, label, icon: Icon }) => {
+                const isActive = activeTab === id;
+                return (
+                  <button
+                    key={id}
+                    onClick={() => setActiveTab(id)}
+                    className="flex items-center gap-2 px-5 py-2.5 text-sm font-semibold transition-colors relative"
+                    style={{
+                      color: isActive ? accent : subC,
+                      background: "none", border: "none", cursor: "pointer",
+                      borderBottom: isActive ? `2px solid ${accent}` : "2px solid transparent",
+                      marginBottom: -1,
+                    }}>
+                    <Icon className="w-3.5 h-3.5" />
+                    {label}
+                    {id === "kontenplan" && konten.length > 0 && (
+                      <span style={{
+                        fontSize: 10, fontWeight: 700, padding: "1px 5px", borderRadius: 10,
+                        backgroundColor: isActive ? accent : subC + "30",
+                        color: isActive ? "#fff" : subC,
+                      }}>
+                        {konten.length}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* ── Tab Content ──────────────────────────────────────────────── */}
+            <div className="p-6">
+              {abschlussLoading || kontenLoading ? (
+                <div className="flex items-center justify-center py-16">
+                  <div className="animate-spin w-6 h-6 rounded-full border-2" style={{ borderColor: accent + "30", borderTopColor: accent }} />
+                </div>
+              ) : (
+                <>
+                  {activeTab === "kontenplan" && (
+                    <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${panelBdr}`, backgroundColor: panelBg, boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
+                      <KontenplanTab {...tabProps} onUpdateKonto={handleUpdateKonto} />
+                    </div>
+                  )}
+                  {activeTab === "bilanz" && (
+                    <BilanzTab {...tabProps} />
+                  )}
+                  {activeTab === "erfolgsrechnung" && (
+                    <ErfolgsrechnungTab {...tabProps} />
+                  )}
+                </>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* ── Import Dialog ──────────────────────────────────────────────────── */}
+      {showImport && (
+        <ImportDialog
+          onClose={() => setShowImport(false)}
+          onImport={handleImport}
+          accent={accent}
+          theme={theme}
+        />
+      )}
+    </div>
+  );
+}
