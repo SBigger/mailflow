@@ -113,7 +113,7 @@ function UploadDialog({ customerId, allTags, onCancel, onUploaded, s, border, ac
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ background: s.cardBg, border: "1px solid " + border, borderRadius: 12, padding: 24, width: 680, minWidth: 420, minHeight: 420, maxWidth: "95vw", maxHeight: "92vh", overflow: "auto", resize: "both", position: "relative" }}>
+      <div style={{ background: s.cardBg, border: "1px solid " + border, borderRadius: 12, padding: 24, width: 720, minWidth: 420, minHeight: 420, maxWidth: "95vw", maxHeight: "92vh", overflow: "auto", resize: "both", position: "relative" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <h3 style={{ color: s.textMain, fontSize: 14, fontWeight: 700 }}>Dokument hochladen</h3>
           <button onClick={onCancel} style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted }}><X size={18} /></button>
