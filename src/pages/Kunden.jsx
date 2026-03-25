@@ -4,7 +4,7 @@ import { entities, functions, auth } from "@/api/supabaseClient";
 import { ThemeContext } from "@/Layout";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Upload, Trash2, Download, Building2, UserRound, ChevronDown, PowerOff, ArrowLeft } from "lucide-react";
+import { Upload, Trash2, Download, Building2, UserRound, ChevronDown, PowerOff, ArrowLeft, LayoutList, LayoutGrid } from "lucide-react";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuTrigger, DropdownMenuSeparator,
@@ -17,6 +17,7 @@ import CustomerMailsTab from "../components/customers/CustomerMailsTab";
 import CustomerTasksTab from "../components/customers/CustomerTasksTab";
 import CustomerNotesTab from "../components/customers/CustomerNotesTab";
 import CustomerContactPersons from "../components/customers/CustomerContactPersons";
+import CustomerGrid from "../components/customers/CustomerGrid";
 import CustomerImportDialog from "../components/customers/CustomerImportDialog";
 import PrivatpersonImportDialog from "../components/customers/PrivatpersonImportDialog";
 import CustomerFristenTab from "../components/customers/CustomerFristenTab";
@@ -85,6 +86,7 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
   const [showImport,        setShowImport]         = useState(false);
   const [showPersonImport,  setShowPersonImport]   = useState(false);
   const [personTypeFilter,  setPersonTypeFilter]   = useState(initialPersonTypeFilter); // 'alle' | 'unternehmen' | 'privatperson'
+  const [viewMode,          setViewMode]           = useState("liste"); // 'liste' | 'kacheln'
   const [leftWidth,         setLeftWidth]          = useState(288);
   const isResizing = React.useRef(false);
 
@@ -238,6 +240,19 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
           <div className="flex items-center justify-between">
             <h1 className="text-lg font-semibold" style={{ color: isArtis ? '#2d3a2d' : isLight ? '#1a1a2e' : '#e4e4e7' }}>Kunden</h1>
             <div className="flex gap-1">
+              {/* View-Mode Toggle */}
+              <Button
+                variant="ghost" size="sm"
+                onClick={() => setViewMode(v => v === "liste" ? "kacheln" : "liste")}
+                className="h-7 px-2"
+                style={{ color: viewMode === "kacheln" ? accentBg : textMuted }}
+                title={viewMode === "liste" ? "Kachelansicht" : "Listenansicht"}
+              >
+                {viewMode === "liste"
+                  ? <LayoutGrid className="h-3.5 w-3.5" />
+                  : <LayoutList className="h-3.5 w-3.5" />}
+              </Button>
+
               <Button
                 variant="ghost" size="sm" onClick={() => exportCustomers(customers, appUsers, activityTemplates)}
                 className="h-7 px-2" style={{ color: textMuted }} title="CSV exportieren"
@@ -279,14 +294,22 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
         </div>
 
         <div className="flex-1 overflow-hidden">
-          <CustomerList
-            customers={customers}
-            selectedId={currentCustomer?.id}
-            onSelect={setSelectedCustomer}
-            onNew={handleNew}
-            onNewPrivatperson={handleNewPrivatperson}
-            personTypeFilter={personTypeFilter}
-          />
+          {viewMode === "liste" ? (
+            <CustomerList
+              customers={customers}
+              selectedId={currentCustomer?.id}
+              onSelect={setSelectedCustomer}
+              onNew={handleNew}
+              onNewPrivatperson={handleNewPrivatperson}
+              personTypeFilter={personTypeFilter}
+            />
+          ) : (
+            <CustomerGrid
+              customers={customers}
+              onSelect={setSelectedCustomer}
+              personTypeFilter={personTypeFilter}
+            />
+          )}
         </div>
       </div>
 

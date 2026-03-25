@@ -99,7 +99,7 @@ const STATUS_CONFIG = {
 function exportKontenCSV(konten, customerName, jahr) {
   const headers = ["Konto-Nr", "Kontoname", "Position", "Saldo IST", "Saldo VJ", "Notiz"];
   const rows = konten.map(k => {
-    const pos = k.position_override || k.position_auto;
+    const pos = k.position_id;
     const posLabel = pos ? (POSITION_MAP[pos]?.label || pos) : "—";
     return [
       k.kontonummer, k.kontoname, posLabel,
@@ -474,8 +474,8 @@ function ImportDialog({ onClose, onImport, accent, theme }) {
           kontoname: colMap.kontoname ? getCell(row, colMap.kontoname) : "",
           saldo_ist: colMap.saldo_ist ? parseNum(getCell(row, colMap.saldo_ist)) : null,
           saldo_vorjahr: colMap.saldo_vorjahr ? parseNum(getCell(row, colMap.saldo_vorjahr)) : null,
-          position_auto: autoMapKonto(nr),
-          position_override: null,
+          position_id: autoMapKonto(nr),   // DB-Spalte: auto-gemappte Position
+          position_override: false,          // DB-Spalte: BOOLEAN, manuell überschrieben?
           notiz: "",
         };
       });
@@ -622,7 +622,7 @@ function KontenplanTab({ konten, onUpdateKonto, accent, theme, headingC, subC, p
   const grouped = useMemo(() => {
     const groups = {};
     for (const k of sortedKonten) {
-      const pos = k.position_override || k.position_auto;
+      const pos = k.position_id;
       const key = pos || "__KEIN_MAPPING__";
       if (!groups[key]) groups[key] = [];
       groups[key].push(k);
@@ -712,7 +712,7 @@ function KontenplanTab({ konten, onUpdateKonto, accent, theme, headingC, subC, p
 
                 {/* Rows */}
                 {isOpen && rows.map(konto => {
-                  const effectivePos = konto.position_override || konto.position_auto;
+                  const effectivePos = konto.position_id;
                   const isOverridden = !!konto.position_override;
                   const abw = (parseFloat(konto.saldo_ist) || 0) - (parseFloat(konto.saldo_vorjahr) || 0);
                   const noMapping = !effectivePos && /^[1-8]/.test(String(konto.kontonummer));
@@ -754,12 +754,18 @@ function KontenplanTab({ konten, onUpdateKonto, accent, theme, headingC, subC, p
                         <div className="flex items-center gap-1.5">
                           <PositionSelector
                             value={effectivePos}
-                            onChange={(newPos) => onUpdateKonto(konto.id, { position_override: newPos })}
+                            onChange={(newPos) => onUpdateKonto(konto.id, {
+                              position_id: newPos,
+                              position_override: newPos !== null,
+                            })}
                             subC={subC} panelBg={panelBg} panelBdr={panelBdr} headingC={headingC} accent={accent}
                           />
                           {isOverridden && (
                             <button
-                              onClick={() => onUpdateKonto(konto.id, { position_override: null })}
+                              onClick={() => onUpdateKonto(konto.id, {
+                                position_id: autoMapKonto(konto.kontonummer),
+                                position_override: false,
+                              })}
                               title="Manuelle Zuweisung zurücksetzen"
                               style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>
                               <Lock className="w-3 h-3" style={{ color: accent }} />
@@ -831,7 +837,7 @@ function BilanzkennzahlRow({ label, value, isSubtotal, isTotal, indent, accent, 
 
 function BilanzTab({ konten, accent, headingC, subC, panelBg, panelBdr, tableBdr }) {
   const sumByIds = (ids) => konten
-    .filter(k => ids.includes(k.position_override || k.position_auto))
+    .filter(k => ids.includes(k.position_id))
     .reduce((s, k) => s + (parseFloat(k.saldo_ist) || 0), 0);
 
   const UV_IDS = ["UV_FLUESSIG","UV_WERTSCHRIFTEN","UV_FORD_LL","UV_FORD_SONST","UV_VORRAETE","UV_ABGRENZUNG"];
@@ -964,7 +970,7 @@ function ERSeparator({ label, subC }) {
 
 function ErfolgsrechnungTab({ konten, accent, headingC, subC, panelBg, panelBdr }) {
   const sumByIds = (ids) => konten
-    .filter(k => ids.includes(k.position_override || k.position_auto))
+    .filter(k => ids.includes(k.position_id))
     .reduce((s, k) => s + (parseFloat(k.saldo_ist) || 0), 0);
 
   if (konten.length === 0) {
