@@ -98,6 +98,9 @@ function UploadDialog({ customerId, allTags, onCancel, onUploaded, s, border, ac
       // 3. storage_path aktualisieren
       await supabase.from("dokumente").update({ storage_path: storagePath }).eq("id", newDoc.id);
 
+      // 4. Volltext-Indexierung asynchron anstoßen (kein Blocker)
+      supabase.functions.invoke("index-document", { body: { doc_id: newDoc.id } }).catch(() => {});
+
       toast.success("Dokument hochgeladen");
       onUploaded();
     } catch (err) {
@@ -413,7 +416,9 @@ export default function CustomerDokumenteTab({ customerId }) {
         await entities.Dokument.update(doc.id, {
           storage_path: storagePath, filename: file.name, file_size: file.size, file_type: file.type,
           checked_out_by: null, checked_out_by_name: null, checked_out_at: null,
+          content_text: null,
         });
+        supabase.functions.invoke("index-document", { body: { doc_id: doc.id } }).catch(() => {});
         setSignedUrls(prev => { const n = { ...prev }; delete n[doc.id]; return n; });
         toast.success("Eingecheckt – neue Version gespeichert.");
       } else {
