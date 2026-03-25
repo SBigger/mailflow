@@ -1,4 +1,6 @@
-import React, { useState, useContext, useRef, useEffect } from "react";
+import React, { useState, useContext, useRef, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
+import { useNavigate } from "react-router-dom";
 import { ThemeContext } from "@/Layout";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { entities, supabase } from "@/api/supabaseClient";
@@ -11,6 +13,18 @@ import {
 
 // ── Hilfsfunktionen ──────────────────────────────────────────────────────────
 
+// Leere Strings / 0-Strings zu null konvertieren (für DB-Felder)
+function toNull(v) {
+  if (v === "" || v === null || v === undefined) return null;
+  const n = Number(v);
+  return isNaN(n) ? null : n;
+}
+// Leere Strings zu null für Datum-Felder
+function toNullDate(v) {
+  if (!v || String(v).trim() === "") return null;
+  return v;
+}
+
 function fmtCHF(val, digits = 2) {
   if (val === null || val === undefined || isNaN(Number(val))) return "—";
   return Number(val).toLocaleString("de-CH", {
@@ -20,18 +34,18 @@ function fmtCHF(val, digits = 2) {
 }
 
 function calcPrivatanteil(fz) {
-  if (fz.ausschliesslich_geschaeftlich) return { pa_month: 0, pa_year: 0, mwst: 0, lohnausweis: 0 };
+  if (fz.ausschliesslich_geschaeftlich) return { pa_month: 0, pa_month_brutto: 0, pa_year: 0, mwst: 0, lohnausweis: 0, selbst: 0 };
   const basis = fz.leasing
     ? (parseFloat(fz.leasing_barkaufpreis) || 0)
     : (parseFloat(fz.kaufpreis_exkl_mwst) || 0);
-  if (basis <= 0) return { pa_month: 0, pa_year: 0, mwst: 0, lohnausweis: 0 };
-  const pa_month_raw = Math.max(basis * 0.009, 150);
+  if (basis <= 0) return { pa_month: 0, pa_month_brutto: 0, pa_year: 0, mwst: 0, lohnausweis: 0, selbst: 0 };
+  const pa_month_brutto = Math.max(basis * 0.009, 150);
   const selbst = parseFloat(fz.fahrer_selbstbezahlt_monat) || 0;
-  const pa_month = Math.max(pa_month_raw - selbst, 0);
+  const pa_month = Math.max(pa_month_brutto - selbst, 0);
   const monate = Math.min(Math.max(parseInt(fz.monate_im_betrieb) || 12, 1), 12);
   const pa_year = pa_month * monate;
-  const mwst = pa_year * 8.1 / 108.1;  // pa_year gilt als inkl. MWST
-  return { pa_month, pa_year, mwst, lohnausweis: pa_year, basis };
+  const mwst = pa_year * 8.1 / 108.1;
+  return { pa_month, pa_month_brutto, pa_year, mwst, lohnausweis: pa_year, basis, selbst };
 }
 
 function todayStr() {
@@ -492,9 +506,17 @@ function FahrzeugForm({ initial, onSave, onCancel, theme, accent, customerId }) 
               <div className="font-semibold" style={{ color: textC }}>CHF {fmtCHF(calc.basis)}</div>
             </div>
             <div>
-              <div style={{ color: labelC }}>Privatanteil / Monat</div>
-              <div className="font-semibold" style={{ color: textC }}>CHF {fmtCHF(calc.pa_month)}</div>
+              <div style={{ color: labelC }}>PA brutto / Monat</div>
+              <div className="font-semibold" style={{ color: textC }}>CHF {fmtCHF(calc.pa_month_brutto)}</div>
               <div style={{ color: labelC, fontSize: 9 }}>max(Basis×0.9%, 150)</div>
+              {calc.selbst > 0 && (
+                <div style={{ color: labelC, fontSize: 9 }}>− Eigenanteil CHF {fmtCHF(calc.selbst)}</div>
+              )}
+              {calc.selbst > 0 && (
+                <div className="font-semibold" style={{ color: calc.pa_month === 0 ? "#ef4444" : accent, fontSize: 11 }}>
+                  = CHF {fmtCHF(calc.pa_month)} netto
+                </div>
+              )}
             </div>
             <div>
               <div style={{ color: labelC }}>Lohnausweis Ziff. 2.2</div>
@@ -524,16 +546,18 @@ function FahrzeugForm({ initial, onSave, onCancel, theme, accent, customerId }) 
           const { _leasing_dok_filename, ...rest } = f;
           onSave({
             ...rest,
-            anschaffungsjahr: toNull(rest.anschaffungsjahr),
-            kaufpreis_exkl_mwst: toNull(rest.kaufpreis_exkl_mwst),
-            monate_im_betrieb: toNull(rest.monate_im_betrieb),
+            anschaffungsjahr:           toNull(rest.anschaffungsjahr),
+            kaufpreis_exkl_mwst:        toNull(rest.kaufpreis_exkl_mwst),
+            monate_im_betrieb:          toNull(rest.monate_im_betrieb),
             fahrer_selbstbezahlt_monat: toNull(rest.fahrer_selbstbezahlt_monat),
-            effektive_privatkilometer: toNull(rest.effektive_privatkilometer),
-            leasing_barkaufpreis: toNull(rest.leasing_barkaufpreis),
-            leasing_anzahl_raten: toNull(rest.leasing_anzahl_raten),
-            leasing_monatliche_rate: toNull(rest.leasing_monatliche_rate),
-            leasing_erste_rate: toNull(rest.leasing_erste_rate),
-            leasing_restwert: toNull(rest.leasing_restwert),
+            effektive_privatkilometer:  toNull(rest.effektive_privatkilometer),
+            leasing_barkaufpreis:       toNull(rest.leasing_barkaufpreis),
+            leasing_anzahl_raten:       toNull(rest.leasing_anzahl_raten),
+            leasing_monatliche_rate:    toNull(rest.leasing_monatliche_rate),
+            leasing_erste_rate:         toNull(rest.leasing_erste_rate),
+            leasing_restwert:           toNull(rest.leasing_restwert),
+            leasing_startdatum:         toNullDate(rest.leasing_startdatum),
+            leasing_laufzeit_bis:       toNullDate(rest.leasing_laufzeit_bis),
             leasing_vertrag_url: rest.leasing_dokument_id ? null : (rest.leasing_vertrag_url || null),
           });
         }}
@@ -551,121 +575,163 @@ function FahrzeugForm({ initial, onSave, onCancel, theme, accent, customerId }) 
   );
 }
 
-// ── Custom Dropdown mit Fahrzeug-Indikator ───────────────────────────────────
+// ── Suchbares Mandanten-Select mit Portal ────────────────────────────────────
 function FahrzeuglisteDropdown({ unternehmen, privatpersonen, selectedCid, mitFahrzeugenSet, onChange, panelBg, panelBdr, headingC, subC, accent }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef(null);
-
-  useEffect(() => {
-    function handleClick(e) {
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, []);
+  const [open,    setOpen]    = useState(false);
+  const [search,  setSearch]  = useState("");
+  const [dropPos, setDropPos] = useState({ top: 0, left: 0, width: 0 });
+  const triggerRef = useRef(null);
+  const inputRef   = useRef(null);
 
   const allKunden = [...unternehmen, ...privatpersonen];
-  const selected = allKunden.find(c => c.id === selectedCid);
-  const getLabel = (c) => c.person_type === "privatperson"
+  const getLabel  = (c) => c.person_type === "privatperson"
     ? [c.anrede, c.nachname, c.vorname].filter(Boolean).join(" ") + (c.ort ? ` · ${c.ort}` : "")
     : c.company_name + (c.ort ? ` · ${c.ort}` : "");
-  const label = selected ? getLabel(selected) : "– Mandant auswählen –";
+
+  const selected    = allKunden.find(c => c.id === selectedCid);
   const hasSelected = !!selected && mitFahrzeugenSet.has(selectedCid);
+
+  const calcPos = useCallback(() => {
+    if (!triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const top = spaceBelow >= 340 ? rect.bottom + 4 : rect.top - 340 - 4;
+    setDropPos({ top, left: rect.left, width: rect.width });
+  }, []);
+
+  useEffect(() => {
+    if (!open) { setSearch(""); return; }
+    calcPos();
+    setTimeout(() => inputRef.current?.focus(), 30);
+    const onClose  = (e) => { if (!triggerRef.current?.contains(e.target)) setOpen(false); };
+    const onScroll = () => calcPos();
+    document.addEventListener("mousedown", onClose);
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", calcPos);
+    return () => {
+      document.removeEventListener("mousedown", onClose);
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", calcPos);
+    };
+  }, [open, calcPos]);
+
+  const q = search.trim().toLowerCase();
+  const filterKunden = (list) => list.filter(c =>
+    !q || getLabel(c).toLowerCase().includes(q)
+  );
+  const filteredU = filterKunden(unternehmen);
+  const filteredP = filterKunden(privatpersonen);
 
   const renderRow = (c) => {
     const hatFahrzeuge = mitFahrzeugenSet.has(c.id);
-    const isActive = c.id === selectedCid;
+    const isActive     = c.id === selectedCid;
     return (
       <div
         key={c.id}
+        onMouseDown={e => e.stopPropagation()}
         onClick={() => { onChange(c.id); setOpen(false); }}
-        className="flex items-center gap-2 px-3 py-2 cursor-pointer text-sm"
-        style={{ backgroundColor: isActive ? accent + "20" : "transparent", color: headingC }}
+        style={{
+          display: "flex", alignItems: "center", gap: 8,
+          padding: "8px 12px", cursor: "pointer", fontSize: 13,
+          backgroundColor: isActive ? accent + "20" : "transparent", color: headingC,
+        }}
         onMouseEnter={e => { if (!isActive) e.currentTarget.style.backgroundColor = accent + "12"; }}
-        onMouseLeave={e => { if (!isActive) e.currentTarget.style.backgroundColor = "transparent"; }}>
-        <span
-          style={{
-            width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
-            backgroundColor: hatFahrzeuge ? "#22c55e" : "transparent",
-            border: hatFahrzeuge ? "none" : `1.5px solid ${panelBdr}`,
-            display: "inline-block",
-          }}
-        />
-        {getLabel(c)}
+        onMouseLeave={e => { e.currentTarget.style.backgroundColor = isActive ? accent + "20" : "transparent"; }}
+      >
+        <span style={{
+          width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
+          backgroundColor: hatFahrzeuge ? "#22c55e" : "transparent",
+          border: hatFahrzeuge ? "none" : `1.5px solid ${panelBdr}`,
+          display: "inline-block",
+        }} />
+        <span style={{ flex: 1 }}>{getLabel(c)}</span>
+        {hatFahrzeuge && <span style={{ fontSize: 10, color: "#22c55e", fontWeight: 600 }}>●</span>}
       </div>
     );
   };
 
-  return (
-    <div ref={ref} style={{ position: "relative", flex: 1, maxWidth: 440 }}>
-      {/* Trigger */}
-      <button
-        type="button"
-        onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-2 w-full rounded-lg border text-sm px-3 py-2 focus:outline-none text-left"
-        style={{ backgroundColor: panelBg, borderColor: panelBdr, color: headingC, cursor: "pointer" }}>
-        {selected && (
-          <span
-            style={{
-              width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
-              backgroundColor: hasSelected ? "#22c55e" : "transparent",
-              border: hasSelected ? "none" : `1.5px solid ${panelBdr}`,
-              display: "inline-block",
-            }}
-          />
-        )}
-        <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
-        <svg width="12" height="12" viewBox="0 0 12 12" style={{ flexShrink: 0, color: subC, transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}>
-          <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      </button>
+  const dropdown = open && createPortal(
+    <div
+      onMouseDown={e => e.stopPropagation()}
+      style={{
+        position: "fixed", top: dropPos.top, left: dropPos.left, width: dropPos.width,
+        backgroundColor: panelBg, border: `1px solid ${panelBdr}`, borderRadius: 10,
+        boxShadow: "0 8px 28px rgba(0,0,0,0.16)", zIndex: 999999, overflow: "hidden",
+      }}
+    >
+      {/* Suchfeld */}
+      <div style={{ padding: "8px 10px", borderBottom: `1px solid ${panelBdr}`, display: "flex", alignItems: "center", gap: 6 }}>
+        <Search size={13} style={{ color: subC, flexShrink: 0 }} />
+        <input
+          ref={inputRef}
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          onKeyDown={e => { if (e.key === "Escape") setOpen(false); }}
+          placeholder="Mandant suchen…"
+          style={{ flex: 1, border: "none", outline: "none", fontSize: 13, background: "transparent", color: headingC }}
+        />
+        {search && <button onClick={() => setSearch("")} style={{ background: "none", border: "none", cursor: "pointer", color: subC, fontSize: 16, padding: 0 }}>&times;</button>}
+      </div>
 
-      {/* Dropdown Liste */}
-      {open && (
-        <div
-          style={{
-            position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 9998,
-            backgroundColor: panelBg, border: `1px solid ${panelBdr}`, borderRadius: 8,
-            boxShadow: "0 4px 16px rgba(0,0,0,0.12)", maxHeight: 320, overflowY: "auto",
-          }}>
-          {/* Leer-Option */}
-          <div
-            onClick={() => { onChange(""); setOpen(false); }}
-            className="flex items-center gap-2 px-3 py-2 cursor-pointer text-sm"
-            style={{ color: subC }}
-            onMouseEnter={e => e.currentTarget.style.backgroundColor = accent + "18"}
+      <div style={{ maxHeight: 300, overflowY: "auto" }}>
+        {/* Leer-Option */}
+        {!q && (
+          <div onClick={() => { onChange(""); setOpen(false); }}
+            style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", cursor: "pointer", fontSize: 13, color: subC }}
+            onMouseEnter={e => e.currentTarget.style.backgroundColor = accent + "14"}
             onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
             <span style={{ width: 8, height: 8, display: "inline-block" }} />
             – Mandant auswählen –
           </div>
+        )}
+        {filteredU.length > 0 && (
+          <>
+            <div style={{ padding: "5px 12px 3px", fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", color: subC, borderTop: `1px solid ${panelBdr}`, textTransform: "uppercase" }}>Unternehmen</div>
+            {filteredU.map(renderRow)}
+          </>
+        )}
+        {filteredP.length > 0 && (
+          <>
+            <div style={{ padding: "5px 12px 3px", fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", color: subC, borderTop: `1px solid ${panelBdr}`, textTransform: "uppercase" }}>Privatpersonen</div>
+            {filteredP.map(renderRow)}
+          </>
+        )}
+        {filteredU.length === 0 && filteredP.length === 0 && (
+          <div style={{ padding: 12, fontSize: 12, color: subC, textAlign: "center" }}>Keine Treffer</div>
+        )}
+      </div>
+    </div>,
+    document.body
+  );
 
-          {/* Unternehmen */}
-          {unternehmen.length > 0 && (
-            <>
-              <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-widest" style={{ color: subC, borderTop: `1px solid ${panelBdr}` }}>
-                Unternehmen
-              </div>
-              {unternehmen.map(renderRow)}
-            </>
-          )}
-
-          {/* Privatpersonen */}
-          {privatpersonen.length > 0 && (
-            <>
-              <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-widest" style={{ color: subC, borderTop: `1px solid ${panelBdr}` }}>
-                Privatpersonen
-              </div>
-              {privatpersonen.map(renderRow)}
-            </>
-          )}
-        </div>
-      )}
+  return (
+    <div ref={triggerRef} style={{ flex: 1, maxWidth: 440 }}>
+      <button type="button" onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-2 w-full rounded-lg border text-sm px-3 py-2 focus:outline-none text-left"
+        style={{ backgroundColor: panelBg, borderColor: open ? accent : panelBdr, color: headingC, cursor: "pointer", transition: "border-color 0.15s" }}>
+        {selected && (
+          <span style={{
+            width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
+            backgroundColor: hasSelected ? "#22c55e" : "transparent",
+            border: hasSelected ? "none" : `1.5px solid ${panelBdr}`,
+            display: "inline-block",
+          }} />
+        )}
+        <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {selected ? getLabel(selected) : "– Mandant auswählen –"}
+        </span>
+        <svg width="12" height="12" viewBox="0 0 12 12" style={{ flexShrink: 0, color: subC, transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}>
+          <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      {dropdown}
     </div>
   );
 }
 
 // ── Hauptkomponente ──────────────────────────────────────────────────────────
 export default function Fahrzeugliste() {
+  const navigate = useNavigate();
   const { theme } = useContext(ThemeContext);
   const isLight = theme === "light";
   const isArtis = theme === "artis";
@@ -760,7 +826,10 @@ export default function Fahrzeugliste() {
       <div className="flex items-center gap-2 px-6 py-4 flex-shrink-0"
         style={{ borderBottom: `1px solid ${panelBdr}`, backgroundColor: panelBg }}>
         <Wrench className="w-4 h-4" style={{ color: accentL }} />
-        <span className="text-sm" style={{ color: subC }}>Artis Tools</span>
+        <button onClick={() => navigate("/ArtisTools")} className="text-sm hover:underline"
+          style={{ color: subC, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+          Artis Tools
+        </button>
         <ChevronRight className="w-3 h-3" style={{ color: subC }} />
         <Car className="w-4 h-4" style={{ color: accent }} />
         <span className="text-sm font-semibold" style={{ color: headingC }}>Fahrzeugliste</span>
