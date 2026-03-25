@@ -1,4 +1,6 @@
-import React, { useState, useContext, useRef, useEffect } from "react";
+import React, { useState, useContext, useRef, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
+import { useNavigate } from "react-router-dom";
 import { ThemeContext } from "@/Layout";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { entities, supabase } from "@/api/supabaseClient";
@@ -593,99 +595,160 @@ function KapitalstrukturView({ eintraege, headingC, subC, accent, panelBg, panel
   );
 }
 
-// ── Custom Dropdown mit Eintrags-Indikator ────────────────────────────────────
+// ── Suchbares Firmen-Select mit Portal (kein Überlagerungs-Problem) ──────────
 function AktienbuchDropdown({ unternehmen, selectedCid, mitEintraegenSet, onChange, panelBg, panelBdr, headingC, subC, accent }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef(null);
+  const [open,    setOpen]    = useState(false);
+  const [search,  setSearch]  = useState("");
+  const [dropPos, setDropPos] = useState({ top: 0, left: 0, width: 0 });
+  const triggerRef = useRef(null);
+  const inputRef   = useRef(null);
 
-  useEffect(() => {
-    function handleClick(e) {
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, []);
-
-  const selected = unternehmen.find(c => c.id === selectedCid);
-  const label = selected
-    ? `${selected.company_name}${selected.ort ? ` · ${selected.ort}` : ""}`
-    : "– Unternehmen wählen –";
+  const selected    = unternehmen.find(c => c.id === selectedCid);
   const hasSelected = !!selected && mitEintraegenSet.has(selectedCid);
 
+  const calcPos = useCallback(() => {
+    if (!triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const dropH = 320;
+    const top = spaceBelow >= dropH ? rect.bottom + 4 : rect.top - dropH - 4;
+    setDropPos({ top, left: rect.left, width: rect.width });
+  }, []);
+
+  useEffect(() => {
+    if (!open) { setSearch(""); return; }
+    calcPos();
+    setTimeout(() => inputRef.current?.focus(), 30);
+    const onClose  = (e) => { if (!triggerRef.current?.contains(e.target)) setOpen(false); };
+    const onScroll = () => calcPos();
+    document.addEventListener("mousedown", onClose);
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", calcPos);
+    return () => {
+      document.removeEventListener("mousedown", onClose);
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", calcPos);
+    };
+  }, [open, calcPos]);
+
+  const q        = search.trim().toLowerCase();
+  const filtered = unternehmen.filter(c =>
+    !q ||
+    (c.company_name || "").toLowerCase().includes(q) ||
+    (c.ort          || "").toLowerCase().includes(q)
+  );
+
+  const dropdown = open && createPortal(
+    <div
+      onMouseDown={e => e.stopPropagation()}
+      style={{
+        position: "fixed", top: dropPos.top, left: dropPos.left, width: dropPos.width,
+        backgroundColor: panelBg, border: `1px solid ${panelBdr}`, borderRadius: 10,
+        boxShadow: "0 8px 28px rgba(0,0,0,0.16)", zIndex: 999999, overflow: "hidden",
+      }}
+    >
+      {/* Suchfeld */}
+      <div style={{ padding: "8px 10px", borderBottom: `1px solid ${panelBdr}`, display: "flex", alignItems: "center", gap: 6 }}>
+        <Search size={13} style={{ color: subC, flexShrink: 0 }} />
+        <input
+          ref={inputRef}
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          onKeyDown={e => { if (e.key === "Escape") setOpen(false); }}
+          placeholder="Unternehmen suchen…"
+          style={{
+            flex: 1, border: "none", outline: "none", fontSize: 13,
+            background: "transparent", color: headingC,
+          }}
+        />
+        {search && (
+          <button onClick={() => setSearch("")} style={{ background: "none", border: "none", cursor: "pointer", color: subC, fontSize: 16, padding: 0, lineHeight: 1 }}>&times;</button>
+        )}
+      </div>
+
+      {/* Liste */}
+      <div style={{ maxHeight: 280, overflowY: "auto" }}>
+        {/* Leer-Option */}
+        {!q && (
+          <div
+            onClick={() => { onChange(""); setOpen(false); }}
+            style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", cursor: "pointer", fontSize: 13, color: subC }}
+            onMouseEnter={e => e.currentTarget.style.backgroundColor = accent + "14"}
+            onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}
+          >
+            <span style={{ width: 8, height: 8, display: "inline-block" }} />
+            – Unternehmen wählen –
+          </div>
+        )}
+
+        {filtered.length === 0 && (
+          <div style={{ padding: "12px", fontSize: 12, color: subC, textAlign: "center" }}>Keine Treffer</div>
+        )}
+
+        {filtered.map(c => {
+          const hatEintraege = mitEintraegenSet.has(c.id);
+          const isActive     = c.id === selectedCid;
+          return (
+            <div
+              key={c.id}
+              onClick={() => { onChange(c.id); setOpen(false); }}
+              style={{
+                display: "flex", alignItems: "center", gap: 8,
+                padding: "8px 12px", cursor: "pointer", fontSize: 13,
+                backgroundColor: isActive ? accent + "20" : "transparent",
+                color: headingC,
+              }}
+              onMouseEnter={e => { if (!isActive) e.currentTarget.style.backgroundColor = accent + "12"; }}
+              onMouseLeave={e => { if (!isActive) e.currentTarget.style.backgroundColor = isActive ? accent + "20" : "transparent"; }}
+            >
+              <span style={{
+                width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
+                backgroundColor: hatEintraege ? "#22c55e" : "transparent",
+                border: hatEintraege ? "none" : `1.5px solid ${panelBdr}`,
+                display: "inline-block",
+              }} />
+              <span style={{ flex: 1 }}>{c.company_name}{c.ort ? ` · ${c.ort}` : ""}</span>
+              {hatEintraege && <span style={{ fontSize: 10, color: "#22c55e", fontWeight: 600 }}>●</span>}
+            </div>
+          );
+        })}
+      </div>
+    </div>,
+    document.body
+  );
+
   return (
-    <div ref={ref} style={{ position: "relative", flex: 1, maxWidth: 440 }}>
-      {/* Trigger */}
+    <div ref={triggerRef} style={{ flex: 1, maxWidth: 440 }}>
+      {/* Trigger-Button */}
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
         className="flex items-center gap-2 w-full rounded-lg border text-sm px-3 py-2 focus:outline-none text-left"
-        style={{ backgroundColor: panelBg, borderColor: panelBdr, color: headingC, cursor: "pointer" }}>
+        style={{ backgroundColor: panelBg, borderColor: open ? accent : panelBdr, color: headingC, cursor: "pointer", transition: "border-color 0.15s" }}
+      >
         {selected && (
-          <span
-            style={{
-              width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
-              backgroundColor: hasSelected ? "#22c55e" : "transparent",
-              border: hasSelected ? "none" : `1.5px solid ${panelBdr}`,
-              display: "inline-block",
-            }}
-          />
+          <span style={{
+            width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
+            backgroundColor: hasSelected ? "#22c55e" : "transparent",
+            border: hasSelected ? "none" : `1.5px solid ${panelBdr}`,
+            display: "inline-block",
+          }} />
         )}
-        <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+        <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {selected ? `${selected.company_name}${selected.ort ? ` · ${selected.ort}` : ""}` : "– Unternehmen wählen –"}
+        </span>
         <svg width="12" height="12" viewBox="0 0 12 12" style={{ flexShrink: 0, color: subC, transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}>
           <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </button>
-
-      {/* Dropdown Liste */}
-      {open && (
-        <div
-          style={{
-            position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 9998,
-            backgroundColor: panelBg, border: `1px solid ${panelBdr}`, borderRadius: 8,
-            boxShadow: "0 4px 16px rgba(0,0,0,0.12)", maxHeight: 320, overflowY: "auto",
-          }}>
-          {/* Leer-Option */}
-          <div
-            onClick={() => { onChange(""); setOpen(false); }}
-            className="flex items-center gap-2 px-3 py-2 cursor-pointer text-sm"
-            style={{ color: subC }}
-            onMouseEnter={e => e.currentTarget.style.backgroundColor = accent + "18"}
-            onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
-            <span style={{ width: 8, height: 8, display: "inline-block" }} />
-            – Unternehmen wählen –
-          </div>
-
-          {unternehmen.map(c => {
-            const hatEintraege = mitEintraegenSet.has(c.id);
-            const isActive = c.id === selectedCid;
-            return (
-              <div
-                key={c.id}
-                onClick={() => { onChange(c.id); setOpen(false); }}
-                className="flex items-center gap-2 px-3 py-2 cursor-pointer text-sm"
-                style={{ backgroundColor: isActive ? accent + "20" : "transparent", color: headingC }}
-                onMouseEnter={e => { if (!isActive) e.currentTarget.style.backgroundColor = accent + "12"; }}
-                onMouseLeave={e => { if (!isActive) e.currentTarget.style.backgroundColor = "transparent"; }}>
-                <span
-                  style={{
-                    width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
-                    backgroundColor: hatEintraege ? "#22c55e" : "transparent",
-                    border: hatEintraege ? "none" : `1.5px solid ${panelBdr}`,
-                    display: "inline-block",
-                  }}
-                />
-                {c.company_name}{c.ort ? ` · ${c.ort}` : ""}
-              </div>
-            );
-          })}
-        </div>
-      )}
+      {dropdown}
     </div>
   );
 }
 
 // ── Hauptkomponente ───────────────────────────────────────────────────────────
 export default function Aktienbuch() {
+  const navigate = useNavigate();
   const { theme } = useContext(ThemeContext);
   const isLight = theme === "light";
   const isArtis = theme === "artis";
@@ -846,7 +909,11 @@ export default function Aktienbuch() {
       <div className="flex items-center gap-2 px-6 py-4 flex-shrink-0"
         style={{ borderBottom: `1px solid ${panelBdr}`, backgroundColor: panelBg }}>
         <Wrench className="w-4 h-4" style={{ color: accentL }} />
-        <span className="text-sm" style={{ color: subC }}>Artis Tools</span>
+        <button
+          onClick={() => navigate("/ArtisTools")}
+          className="text-sm hover:underline"
+          style={{ color: subC, background: "none", border: "none", cursor: "pointer", padding: 0 }}
+        >Artis Tools</button>
         <ChevronRight className="w-3 h-3" style={{ color: subC }} />
         <BookOpen className="w-4 h-4" style={{ color: accent }} />
         <span className="text-sm font-semibold" style={{ color: headingC }}>Aktienbuch</span>
