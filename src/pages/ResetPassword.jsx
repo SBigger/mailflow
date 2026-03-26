@@ -4,7 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
-import { KeyRound, Eye, EyeOff, CheckCircle2 } from "lucide-react";
+import { Eye, EyeOff, CheckCircle2, Lock, Loader2 } from "lucide-react";
+import artisLogo from '/artis-logo.png';
 
 export default function ResetPassword() {
   const [password, setPassword] = useState("");
@@ -16,18 +17,20 @@ export default function ResetPassword() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Supabase setzt die Session automatisch aus dem URL-Hash (access_token)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === "PASSWORD_RECOVERY" || (event === "SIGNED_IN" && session)) {
+    // Prüfen, ob wir eine Session haben (kommt via URL-Hash vom Invite-Link)
+    const checkSession = async () => {
+      const { data } = await supabase.auth.getSession();
+      if (data.session) {
         setSessionReady(true);
+      } else {
+        // Falls nach 2 Sek. keine Session da ist, war der Link evtl. abgelaufen
+        setTimeout(() => {
+          if (!sessionReady) toast.error("Sitzung abgelaufen oder ungültiger Link.");
+        }, 2000);
       }
-    });
-    // Auch direkt prüfen falls Session schon gesetzt
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) setSessionReady(true);
-    });
-    return () => subscription.unsubscribe();
-  }, []);
+    };
+    checkSession();
+  }, [sessionReady]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -39,100 +42,113 @@ export default function ResetPassword() {
       toast.error("Passwort muss mindestens 6 Zeichen haben");
       return;
     }
+
     setLoading(true);
     try {
-      const { error } = await supabase.auth.updateUser({ password });
+      const { error, user } = await supabase.auth.updateUser({ password });
       if (error) throw error;
+
       setDone(true);
       toast.success("Passwort erfolgreich gesetzt!");
-      setTimeout(() => navigate("/Dashboard"), 2500);
-    } catch (e) {
-      toast.error("Fehler: " + e.message);
+      setTimeout(() => navigate("/mfa-setup"), 2000);
+    } catch (err) {
+      toast.error(err.message);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-4">
-      <div className="w-full max-w-sm">
-        {/* Logo / Header */}
-        <div className="flex items-center gap-3 mb-8 justify-center">
-          <div className="w-10 h-10 rounded-xl bg-violet-600 flex items-center justify-center">
-            <KeyRound className="h-5 w-5 text-white" />
+      <div className="min-h-screen flex items-center justify-center p-4" style={{ backgroundColor: '#f2f5f2' }}>
+        <div className="w-full max-w-sm">
+          {/* Logo & Header */}
+          <div className="text-center mb-8">
+            <img src={artisLogo} alt="Artis" className="w-20 h-20 mb-4 mx-auto object-contain" />
+            <h1 className="text-2xl font-bold" style={{ color: '#2d3a2d' }}>Artis MailFlow</h1>
+            <p className="text-sm mt-1" style={{ color: '#6b826b' }}>Sicherheit & Account-Setup</p>
           </div>
-          <div>
-            <h1 className="text-xl font-bold text-white">Artis MailFlow</h1>
-            <p className="text-xs text-zinc-400">Neues Passwort festlegen</p>
-          </div>
-        </div>
 
-        <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-7">
-          {done ? (
-            <div className="flex flex-col items-center gap-3 py-4 text-center">
-              <CheckCircle2 className="h-12 w-12 text-green-400" />
-              <p className="text-white font-medium">Passwort gespeichert!</p>
-              <p className="text-sm text-zinc-400">Du wirst weitergeleitet…</p>
-            </div>
-          ) : !sessionReady ? (
-            <div className="text-center py-4">
-              <div className="w-6 h-6 border-2 border-violet-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-              <p className="text-zinc-400 text-sm">Link wird überprüft…</p>
-            </div>
-          ) : (
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="text-sm text-zinc-300 block mb-1.5">Neues Passwort</label>
-                <div className="relative">
-                  <Input
-                    type={showPw ? "text" : "password"}
-                    placeholder="Mindestens 6 Zeichen"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 pr-10"
-                    required
-                    autoFocus
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPw(!showPw)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-200"
-                  >
-                    {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
+          {/* Card Container */}
+          <div className="rounded-2xl p-7 shadow-sm border" style={{ backgroundColor: '#ffffff', borderColor: '#ccd8cc' }}>
+            {done ? (
+                <div className="flex flex-col items-center gap-3 py-6 text-center">
+                  <CheckCircle2 className="h-12 w-12" style={{ color: '#7c9881' }} />
+                  <h2 className="text-lg font-semibold" style={{ color: '#2d3a2d' }}>Passwort gespeichert!</h2>
+                  <p className="text-sm" style={{ color: '#6b826b' }}>Du wirst zum Dashboard weitergeleitet…</p>
                 </div>
-              </div>
+            ) : !sessionReady ? (
+                <div className="text-center py-10">
+                  <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" style={{ color: '#7c9881' }} />
+                  <p style={{ color: '#6b826b' }} className="text-sm">Verifizierung läuft...</p>
+                </div>
+            ) : (
+                <form onSubmit={handleSubmit} className="space-y-5">
+                  <p className="text-sm mb-2" style={{ color: '#4a5e4a' }}>
+                    Bitte lege dein persönliches Passwort fest.
+                  </p>
 
-              <div>
-                <label className="text-sm text-zinc-300 block mb-1.5">Passwort bestätigen</label>
-                <Input
-                  type="password"
-                  placeholder="Passwort wiederholen"
-                  value={confirm}
-                  onChange={(e) => setConfirm(e.target.value)}
-                  className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500"
-                  required
-                />
-              </div>
+                  {/* Passwort Feld */}
+                  <div>
+                    <label className="block text-xs mb-1.5 font-bold uppercase tracking-wider" style={{ color: '#8aaa8f' }}>
+                      Neues Passwort
+                    </label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: '#8aaa8f' }} />
+                      <Input
+                          type={showPw ? "text" : "password"}
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          placeholder="••••••••"
+                          required
+                          className="pl-10 h-11"
+                          style={{ backgroundColor: '#f2f5f2', border: '1px solid #bfcfbf', color: '#2d3a2d' }}
+                      />
+                      <button
+                          type="button"
+                          onClick={() => setShowPw(!showPw)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 transition-colors"
+                          style={{ color: '#8aaa8f' }}
+                      >
+                        {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                  </div>
 
-              <Button
-                type="submit"
-                disabled={loading}
-                className="w-full bg-violet-600 hover:bg-violet-500 text-white mt-2"
-              >
-                {loading ? (
-                  <span className="flex items-center gap-2">
-                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    Speichern…
-                  </span>
-                ) : (
-                  "Passwort speichern"
-                )}
-              </Button>
-            </form>
-          )}
+                  {/* Bestätigung Feld */}
+                  <div>
+                    <label className="block text-xs mb-1.5 font-bold uppercase tracking-wider" style={{ color: '#8aaa8f' }}>
+                      Passwort bestätigen
+                    </label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: '#8aaa8f' }} />
+                      <Input
+                          type="password"
+                          value={confirm}
+                          onChange={(e) => setConfirm(e.target.value)}
+                          placeholder="••••••••"
+                          required
+                          className="pl-10 h-11"
+                          style={{ backgroundColor: '#f2f5f2', border: '1px solid #bfcfbf', color: '#2d3a2d' }}
+                      />
+                    </div>
+                  </div>
+
+                  <Button
+                      type="submit"
+                      disabled={loading}
+                      className="w-full h-11 text-white font-semibold transition-all"
+                      style={{ backgroundColor: '#7c9881', borderRadius: '10px' }}
+                  >
+                    {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : "Konto aktivieren"}
+                  </Button>
+                </form>
+            )}
+          </div>
+
+          <p className="text-center text-xs mt-8" style={{ color: '#8aaa8f' }}>
+            © 2026 Artis Treuhand GmbH · MailFlow
+          </p>
         </div>
       </div>
-    </div>
   );
 }

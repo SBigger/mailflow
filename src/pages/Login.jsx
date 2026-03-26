@@ -2,22 +2,42 @@ import { useState } from 'react';
 import { useAuth } from '../lib/AuthContext';
 import { Mail, Lock, Loader2 } from 'lucide-react';
 import artisLogo from '/artis-logo.png';
+import {toast} from "sonner";
+import {useNavigate} from "react-router-dom";
 
 export default function Login() {
-  const { login } = useAuth();
+  const { login, checkMFA } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const navigate = useNavigate();
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
-    setError('');
+
     try {
-      await login(email, password);
+      const { data, error } = await login(email, password);
+
+      if (error) throw error;
+
+      // PRÜFUNG: Braucht der User MFA?
+      const { data: mfaData, error: mfaError } = await checkMFA();
+
+      if (mfaError) throw mfaError;
+
+      // Wenn der User MFA aktiviert hat, ist sein 'nextLevel' aal2,
+      // aber sein 'currentLevel' noch aal1.
+      if (mfaData.nextLevel === 'aal2' && mfaData.currentLevel !== 'aal2') {
+        // Weiterleitung zur 2FA-Eingabeseite (Schritt B)
+        navigate("/mfa-login");
+      } else {
+        // Normaler Login ohne MFA
+        navigate("/Dashboard");
+      }
     } catch (err) {
-      setError(err.message || 'Login fehlgeschlagen');
+      toast.error(err.message);
     } finally {
       setLoading(false);
     }

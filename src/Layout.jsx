@@ -1,7 +1,6 @@
-import React, { useState, useEffect, useRef, createContext, useContext } from "react";
-import { Link, useLocation } from "react-router-dom";
+import React, { useState, useEffect, useRef, createContext, useContext, useMemo, useCallback } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { entities, functions, auth, supabase } from "@/api/supabaseClient";
 import {
   LayoutDashboard,
   Mail,
@@ -19,79 +18,55 @@ import BottomNav from "@/components/mobile/BottomNav";
 import { useIsMobile } from "@/components/mobile/useIsMobile";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import { useAuth } from '@/lib/AuthContext';
-import { useNavigate } from 'react-router-dom';
 import * as packageJson from "../package.json";
 
-// Theme context
+// Theme context for global access if needed elsewhere
 export const ThemeContext = createContext({ theme: 'dark', setTheme: () => {} });
 
-export default function Layout({ children, currentPageName, onMailFilterAction, onShowCompletedToggle, onRefresh, isSyncing }) {
-  const location = useLocation();
-  const [currentUser, setCurrentUser] = React.useState(null);
-  const [theme, setThemeState] = React.useState(() => localStorage.getItem("app_theme") || "artis");
-  const { signOut, profile } = useAuth(); //
+export default function Layout({ children, currentPageName }) {
+  const { signOut, profile, loading } = useAuth();
   const navigate = useNavigate();
-  // Nav order state - persisted in localStorage
-  const [navOrder, setNavOrder] = React.useState(() => {
+  const isMobile = useIsMobile();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef(null);
+
+  // --- Theme State ---
+  const [theme, setThemeState] = useState(() => localStorage.getItem("app_theme") || "artis");
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+  }, [theme]);
+
+  const setTheme = useCallback((newTheme) => {
+    setThemeState(newTheme);
+    localStorage.setItem("app_theme", newTheme);
+  }, []);
+
+  // --- Navigation Order Persistence ---
+  const [navOrder, setNavOrder] = useState(() => {
     try {
-      return JSON.parse(localStorage.getItem("nav_order") || "null") || null;
+      return JSON.parse(localStorage.getItem("nav_order")) || null;
     } catch {
       return null;
     }
   });
 
-  // Apply theme to <html> element
-  React.useEffect(() => {
-    document.documentElement.setAttribute("data-theme", theme);
-  }, [theme]);
-
-  const setTheme = React.useCallback((newTheme) => {
-    setThemeState(newTheme);
-    localStorage.setItem("app_theme", newTheme);
-    document.documentElement.setAttribute("data-theme", newTheme);
-  }, []);
-
-  React.useEffect(() => {
-    const fetchUser = async () => {
-      try {
-        const { data: { user: authUser } } = await supabase.auth.getUser();
-        if (!authUser) return;
-        const { data: user } = await supabase.from("profiles").select("*").eq("id", authUser.id).single();
-        setCurrentUser(user);
-        // Apply profile theme from DB (DB wins unless user explicitly changed it this session)
-        if (user?.theme) {
-          const localTheme = localStorage.getItem("app_theme");
-          // Only override if local theme matches default or is same as DB - DB is the source of truth
-          if (!localTheme || localTheme === user.theme) {
-            setTheme(user.theme);
-          }
-        }
-        // Task-User automatisch zum TaskBoard weiterleiten
-        if (user?.role === 'task_user' && currentPageName !== 'TaskBoard') {
-          window.location.href = createPageUrl('TaskBoard');
-        }
-      } catch (e) {
-        console.error('Failed to fetch user:', e);
-      }
-    };
-    fetchUser();
-  }, [currentPageName]);
-
-  const getPageTitle = (pageName) => {
-    switch (pageName) {
-      case 'Dashboard': return 'Dashboard';
-      case 'MailKanban': return 'Mailverwaltung';
-      case 'TaskBoard': return 'Task-Verwaltung';
-      case 'Settings': return 'Einstellungen';
-      case 'PrioritySettings': return 'Prioritäten';
-      default: return pageName;
+  // --- Role-Based Access Control & Redirection ---
+  useEffect(() => {
+    if (!loading && profile?.role === 'task_user' && currentPageName !== 'TaskBoard') {
+      navigate(createPageUrl('TaskBoard'));
     }
-  };
 
-  const currentTitle = getPageTitle(currentPageName);
-  const isTaskUser = currentUser?.role === 'task_user';
+    // Sync theme from profile if it exists and hasn't been set locally this session
+    if (profile?.theme && !localStorage.getItem("app_theme")) {
+      setTheme(profile.theme);
+    }
+  }, [profile, loading, currentPageName, navigate, setTheme]);
 
-  const navItems = isTaskUser ? [] : [
+  // --- Navigation Config ---
+  const isTaskUser = profile?.role === 'task_user';
+
+  const navItems = useMemo(() => isTaskUser ? [] : [
     { name: 'Dashboard',      icon: LayoutDashboard, label: 'Dashboard' },
     { name: 'MailKanban',     icon: Mail,            label: 'Mails' },
     { name: 'TaskBoard',      icon: CheckSquare,     label: 'Tasks' },
@@ -101,15 +76,14 @@ export default function Layout({ children, currentPageName, onMailFilterAction, 
     { name: 'Kunden',         icon: Building2,       label: 'Kunden' },
     { name: 'Dokumente',      icon: FolderOpen,      label: 'Dokumente' },
     { name: 'Settings',       icon: SettingsIcon,    label: 'Einstellungen' },
-  ];
+  ], [isTaskUser]);
 
-  // Sort navItems by saved order (if available)
-  const orderedNavItems = React.useMemo(() => {
+  const orderedNavItems = useMemo(() => {
     if (!navOrder || navOrder.length === 0) return navItems;
     const orderMap = new Map(navOrder.map((name, idx) => [name, idx]));
     return [...navItems].sort((a, b) => {
-      const ai = orderMap.has(a.name) ? orderMap.get(a.name) : 9999;
-      const bi = orderMap.has(b.name) ? orderMap.get(b.name) : 9999;
+      const ai = orderMap.has(a.name) ? orderMap.get(a.name) : 999;
+      const bi = orderMap.has(b.name) ? orderMap.get(b.name) : 999;
       return ai - bi;
     });
   }, [navItems, navOrder]);
@@ -124,144 +98,129 @@ export default function Layout({ children, currentPageName, onMailFilterAction, 
     localStorage.setItem("nav_order", JSON.stringify(newOrder));
   };
 
-  const isMobile = useIsMobile();
-  const isLight = theme === 'light';
-  const isArtis = theme === 'artis';
-
-  const sidebarBg = isLight ? '#e8e8ef' : isArtis ? '#e6ede6' : '#2a2a2f';
-  const sidebarBorder = isLight ? '#d0d0dc' : isArtis ? '#bfcfbf' : 'rgba(113,113,122,0.3)';
-  const pageBg = isLight ? '#f4f4f8' : isArtis ? '#f2f5f2' : '#2a2a2f';
-
-  const handleLogout = async () => {
-    try {
-      setMenuOpen(false);
-      await signOut(); // Führt das Supabase SignOut aus
-      navigate('/Login'); // Optional: Manuelle Weiterleitung
-    } catch (error) {
-      console.error("Fehler beim Abmelden:", error);
-    }
-  };
-
-
-  const [menuOpen, setMenuOpen] = useState(false);
-  const menuRef = useRef(null);
-
-  // Schließt das Menü, wenn man außerhalb klickt
+  // --- UI Helpers ---
   useEffect(() => {
     const handleClickOutside = (event) => {
-      if (menuRef.current && !menuRef.current.contains(event.target)) {
-        setMenuOpen(false);
-      }
+      if (menuRef.current && !menuRef.current.contains(event.target)) setMenuOpen(false);
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  const handleLogout = async () => {
+    setMenuOpen(false);
+    await signOut();
+    navigate('/Login');
+  };
+
+  const isLight = theme === 'light';
+  const isArtis = theme === 'artis';
+  const sidebarBg = isLight ? '#e8e8ef' : isArtis ? '#e6ede6' : '#2a2a2f';
+  const sidebarBorder = isLight ? '#d0d0dc' : isArtis ? '#bfcfbf' : 'rgba(113,113,122,0.3)';
+  const pageBg = isLight ? '#f4f4f8' : isArtis ? '#f2f5f2' : '#2a2a2f';
+
+  // Prevent flash of content if still loading auth
+  if (loading) return <div className="h-screen w-screen flex items-center justify-center" style={{ backgroundColor: pageBg }}>...</div>;
+
   return (
-    <ThemeContext.Provider value={{ theme, setTheme }}>
-    <div className="flex h-screen overflow-hidden" style={{ backgroundColor: pageBg }}>
-      {/* Sidebar - hidden on mobile */}
-      {!isTaskUser && !isMobile && (
-        <div
-          className="w-14 flex-shrink-0 flex flex-col items-center justify-between py-4 gap-2 border-r"
-          style={{ backgroundColor: sidebarBg, borderColor: sidebarBorder }}
-        >
-          <DragDropContext onDragEnd={handleNavDragEnd}>
-            <Droppable droppableId="sidebar-nav" direction="vertical">
-              {(provided) => (
-                <div
-                  ref={provided.innerRef}
-                  {...provided.droppableProps}
-                  className="flex flex-col items-center gap-2 w-full"
-                >
-                  {orderedNavItems.map(({ name, icon: Icon, label }, index) => (
-                    <Draggable key={name} draggableId={name} index={index}>
-                      {(dragProvided, dragSnapshot) => (
-                        <div
-                          ref={dragProvided.innerRef}
-                          {...dragProvided.draggableProps}
-                          className="relative group flex items-center justify-center w-full"
-                          style={{
-                            ...dragProvided.draggableProps.style,
-                            opacity: dragSnapshot.isDragging ? 0.85 : 1,
-                          }}
+      <ThemeContext.Provider value={{ theme, setTheme }}>
+        <div className="flex h-screen overflow-hidden" style={{ backgroundColor: pageBg }}>
+
+          {/* Sidebar - Desktop Only & Not for Task Users */}
+          {!isTaskUser && !isMobile && (
+              <aside
+                  className="w-14 flex-shrink-0 flex flex-col items-center justify-between py-4 border-r transition-colors duration-300"
+                  style={{ backgroundColor: sidebarBg, borderColor: sidebarBorder }}
+              >
+                <DragDropContext onDragEnd={handleNavDragEnd}>
+                  <Droppable droppableId="sidebar-nav">
+                    {(provided) => (
+                        <nav
+                            ref={provided.innerRef}
+                            {...provided.droppableProps}
+                            className="flex flex-col items-center gap-2 w-full"
                         >
-                          {/* Drag handle - visible on hover */}
-                          <div
-                            {...dragProvided.dragHandleProps}
-                            className="absolute left-0.5 opacity-0 group-hover:opacity-40 transition-opacity cursor-grab active:cursor-grabbing"
-                            style={{ color: isLight ? '#64748b' : isArtis ? '#6b826b' : '#71717a' }}
-                            title="Reihenfolge ändern"
-                          >
-                            <GripVertical className="h-3 w-3" />
-                          </div>
+                          {orderedNavItems.map(({ name, icon: Icon, label }, index) => (
+                              <Draggable key={name} draggableId={name} index={index}>
+                                {(dragProvided, dragSnapshot) => (
+                                    <div
+                                        ref={dragProvided.innerRef}
+                                        {...dragProvided.draggableProps}
+                                        className="relative group flex items-center justify-center w-full px-1"
+                                        style={dragProvided.draggableProps.style}
+                                    >
+                                      <div
+                                          {...dragProvided.dragHandleProps}
+                                          className="absolute left-0 opacity-0 group-hover:opacity-40 transition-opacity cursor-grab"
+                                          style={{ color: isLight ? '#64748b' : isArtis ? '#6b826b' : '#71717a' }}
+                                      >
+                                        <GripVertical className="h-3 w-3" />
+                                      </div>
 
-                          <Link
-                            to={createPageUrl(name)}
-                            title={label}
-                            className={`w-10 h-10 flex items-center justify-center rounded-lg transition-colors ${
-                              currentPageName === name
-                                ? 'text-white'
-                                : isLight
-                                ? 'text-slate-500 hover:text-slate-800 hover:bg-slate-200'
-                                : isArtis
-                                ? 'text-slate-500 hover:text-slate-700 hover:bg-green-100'
-                                : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/60'
-                            }`}
-                            style={currentPageName === name ? { backgroundColor: isArtis ? '#7a9b7f' : '#7c3aed' } : {}}
-                          >
-                            <Icon className="h-5 w-5" />
-                          </Link>
-                        </div>
-                      )}
-                    </Draggable>
-                  ))}
-                  {provided.placeholder}
-                </div>
-              )}
-            </Droppable>
-          </DragDropContext>
+                                      <Link
+                                          to={createPageUrl(name)}
+                                          title={label}
+                                          className={`w-10 h-10 flex items-center justify-center rounded-lg transition-all duration-200 ${
+                                              currentPageName === name
+                                                  ? 'text-white shadow-md'
+                                                  : isLight
+                                                      ? 'text-slate-500 hover:bg-slate-200'
+                                                      : isArtis
+                                                          ? 'text-slate-500 hover:bg-green-100'
+                                                          : 'text-zinc-500 hover:bg-zinc-800/60'
+                                          }`}
+                                          style={currentPageName === name ? { backgroundColor: isArtis ? '#7a9b7f' : '#7c3aed' } : {}}
+                                      >
+                                        <Icon className="h-5 w-5" />
+                                      </Link>
+                                    </div>
+                                )}
+                              </Draggable>
+                          ))}
+                          {provided.placeholder}
+                        </nav>
+                    )}
+                  </Droppable>
+                </DragDropContext>
 
-          <div className="relative" ref={menuRef}>
-            <div
-                onClick={() => setMenuOpen(!menuOpen)}
-                className="w-9 h-9 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400 text-sm font-semibold flex-shrink-0 cursor-pointer hover:bg-indigo-500/30 transition-all border border-indigo-500/30"
-            >
-              {profile?.full_name?.charAt(0) || 'I'}
-            </div>
-
-            {/* Das Dropdown Menü */}
-            {menuOpen && (
-                <div className="absolute bottom-0 left-14 mb-2 w-48 rounded-md shadow-lg bg-zinc-900 border border-zinc-800 py-1 z-50 animate-in fade-in slide-in-from-left-2">
-                  <div className="px-4 py-2 border-b border-zinc-800">
-                    <p className="text-xs text-zinc-500">Eingeloggt als</p>
-                    <p className="text-sm font-medium text-zinc-200 truncate">{profile?.full_name || 'Benutzer'}</p>
-                    <p className="text-xs text-zinc-500">Version als</p>
-                    <p className="text-sm text-zinc-200 truncate">{packageJson.version}</p>
-                  </div>
-
+                {/* Profile Menu */}
+                <div className="relative" ref={menuRef}>
                   <button
-                      onClick={handleLogout}
-                      className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-400 hover:bg-zinc-800 transition-colors"
+                      onClick={() => setMenuOpen(!menuOpen)}
+                      className="w-9 h-9 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400 text-sm font-semibold border border-indigo-500/30 hover:bg-indigo-500/30 transition-all"
                   >
-                    <LogOut size={16} />
-                    Abmelden
+                    {profile?.full_name?.charAt(0) || profile?.email?.charAt(0)}
                   </button>
+
+                  {menuOpen && (
+                      <div className="absolute bottom-0 left-14 mb-2 w-52 rounded-md shadow-xl bg-zinc-900 border border-zinc-800 py-2 z-50 animate-in fade-in slide-in-from-left-2">
+                        <div className="px-4 py-2 border-b border-zinc-800 mb-1">
+                          <p className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold">Benutzer</p>
+                          <p className="text-sm font-medium text-zinc-200 truncate">{profile?.full_name || profile?.email}</p>
+                          <p className="text-[10px] text-zinc-500 mt-1 italic">v{packageJson.version}</p>
+                        </div>
+
+                        <button
+                            onClick={handleLogout}
+                            className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-400 hover:bg-red-500/10 transition-colors"
+                        >
+                          <LogOut size={14} />
+                          Abmelden
+                        </button>
+                      </div>
+                  )}
                 </div>
-            )}
-          </div>
+              </aside>
+          )}
+
+          {/* Main Content Area */}
+          <main className="flex-1 overflow-hidden relative" style={{ paddingBottom: isMobile && !isTaskUser ? 56 : 0 }}>
+            {children}
+          </main>
+
+          {/* Mobile Navigation */}
+          {isMobile && !isTaskUser && <BottomNav />}
         </div>
-      )}
-
-      {/* Page Content */}
-      <div className="flex-1 overflow-hidden" style={{paddingBottom: isMobile && !isTaskUser ? 56 : 0 }}>
-        {children}
-      </div>
-
-      {/* Bottom Nav - mobile only, not for task_user */}
-      {isMobile && !isTaskUser && <BottomNav />}
-    </div>
-    </ThemeContext.Provider>
+      </ThemeContext.Provider>
   );
 }
-

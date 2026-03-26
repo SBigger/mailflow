@@ -31,8 +31,11 @@ export function AuthProvider({ children }) {
   }
 
   async function login(email, password) {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw error;
+    return  await supabase.auth.signInWithPassword({ email, password });
+  }
+
+  async function checkMFA() {
+    return await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
   }
 
   async function signOut() {
@@ -52,7 +55,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, login, signOut, updateProfile }}>
+    <AuthContext.Provider value={{ user, profile, loading, login, checkMFA, signOut, updateProfile }}>
       {children}
     </AuthContext.Provider>
   );

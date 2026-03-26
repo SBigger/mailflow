@@ -1,5 +1,5 @@
 #env
-.env
+.env.production
 .env.*
 
 # Logs
@@ -27,4 +27,4 @@ dist-ssr
 *.sln
 *.sw?
 
-.env
+.env.production

@@ -95,7 +95,6 @@ export const entities = {
   Priority:         makeEntity('priorities'),
   User:             makeEntity('profiles'),
   TaskReadStatus:   makeEntity('task_read_statuses'),
-  Staff:            makeEntity('staff'),
   ActivityTemplate: makeEntity('activity_templates'),
   Frist:            makeEntity('fristen'),
   Ticket:           makeEntity('support_tickets'),

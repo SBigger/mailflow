@@ -27,6 +27,8 @@ import Abschlussdokumentation from './pages/Abschlussdokumentation';
 import Login from './pages/Login';
 import ResetPassword from './pages/ResetPassword';
 import Layout from './Layout';
+import MFASetup from "./pages/MFASetup.jsx";
+import MFALogin from "./pages/MFALogin.jsx";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30000 } }
@@ -83,6 +85,8 @@ function App() {
           <Routes>
             {/* Passwort-Reset: zugänglich ohne Login */}
             <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/mfa-setup" element={<MFASetup />} />
+            <Route path="/mfa-login" element={<MFALogin />} />
             {/* Alle anderen Routen: benötigen Auth */}
             <Route path="*" element={<AuthenticatedApp />} />
           </Routes>
