@@ -168,9 +168,6 @@ function CB({ checked, onChange, label, color }) {
   );
 }
 
-// ── Null-Konvertierung für numerische Felder ─────────────────────────────────
-const toNull = (v) => (v === "" || v === undefined || v === null) ? null : Number(v);
-
 // ── Dateiablage-Modal ────────────────────────────────────────────────────────
 function DateiablageModal({ customerId, onSelect, onClose, theme, accent }) {
   const isLight = theme === "light";

@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7fb; margin: 0; padding: 0; }
+        .email-container { max-width: 500px; margin: 40px auto; background-color: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05); overflow: hidden; }
+        .header { background-color: #3ecf8e; padding: 30px; text-align: center; color: white; }
+        .body { padding: 40px; text-align: center; color: #1e293b; line-height: 1.6; }
+        .btn { display: inline-block; padding: 14px 28px; background-color: #3ecf8e; color: #ffffff !important; text-decoration: none; border-radius: 8px; font-weight: 600; margin: 20px 0; }
+        .footer { padding: 20px; text-align: center; font-size: 12px; color: #94a3b8; background-color: #f8fafc; }
+        h2 { margin-top: 0; color: #0f172a; }
+    </style>
+</head>
+<body>
+<div class="email-container">
+    <div class="header">
+        <h1 style="margin:0; font-size: 24px;">Welcome!</h1>
+    </div>
+    <div class="body">
+        <h2>You have been invited</h2>
+        <p>You have been invited to create a user on <strong>{{ .SiteURL }}</strong>. Follow the link below to accept the invitation and set up your account:</p>
+
+        <a href="{{ .ConfirmationURL }}" class="btn">Accept the invite</a>
+
+        <p style="font-size: 13px; color: #64748b; margin-top: 25px;">
+            If the button above doesn't work, copy and paste this URL into your browser:<br>
+            <span style="word-break: break-all; color: #3ecf8e;">{{ .ConfirmationURL }}</span>
+        </p>
+    </div>
+    <div class="footer">
+        This invite was sent from {{ .SiteURL }}. If you were not expecting this, you can ignore this email.
+    </div>
+</div>
+</body>
+</html>

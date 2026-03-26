@@ -1,13 +1,68 @@
+# A complete configuration for Supabase Local Development
+project_id = "mailflow"
+
 [api]
-enabled = true
 port = 54321
+# Max rows returned from a single query
+max_rows = 1000
+extra_search_path = ["public", "extensions"]
+
+[db]
+port = 54322
+# The version of Postgres to use
+major_version = 15
+
+[db.pooler]
+enabled = true
+port = 54329
+# Pooler mode: 'transaction' or 'session'
+pool_mode = "transaction"
+
+[studio]
+enabled = true
+# The port where you access the Supabase Dashboard locally
+port = 54323
+
+[storage]
+enabled = true
+file_size_limit = "50MiB"
+
+# --- AUTHENTICATION & EMAIL SETTINGS ---
 
 [auth]
 enabled = true
-site_url = "https://smartis.me"
-additional_redirect_urls = ["https://smartis.me", "https://mailflow-eosin.vercel.app", "http://localhost:3000", "http://localhost:3001"]
+site_url = "http://localhost:3000"
+additional_redirect_urls = ["http://localhost:3000/*"]
+jwt_expiry = 3600
+enable_signup = true
 
 [auth.email]
+enable_confirmations = true
 enable_signup = true
-double_confirm_changes = false
-enable_confirmations = false
+
+# This is where Inbucket (Mailpit) catches your local emails
+[inbucket]
+enabled = true
+port = 54324
+smtp_port = 54325
+
+# --- LOCAL EMAIL TEMPLATES ---
+
+[auth.email.template.invite]
+subject = "Du bist zu Artis Mailflow eingeladen worden"
+content_path = "./supabase/templates/invite.html"
+
+[auth.email.template.confirmation]
+subject = "Confirm your signup"
+# You can point this to an actual HTML file in your repo:
+content_path = "./supabase/templates/confirmation.html"
+
+[auth.email.template.recovery]
+subject = "Reset your password"
+
+[auth.email.notification.password_changed]
+subject = "Your password has been changed"
+content_path = "./supabase/templates/password_changed_notification.html"
+
+[auth.email.template.magic_link]
+subject = "Your magic link"
