@@ -24,7 +24,6 @@ import Fahrzeugliste from './pages/Fahrzeugliste';
 import Aktienbuch from './pages/Aktienbuch';
 import Unterschriften from './pages/Unterschriften';
 import Abschlussdokumentation from './pages/Abschlussdokumentation';
-import Ablage from './pages/Ablage';
 import Login from './pages/Login';
 import ResetPassword from './pages/ResetPassword';
 import Layout from './Layout';
@@ -72,7 +71,6 @@ function AuthenticatedApp() {
         <Route path="/Aktienbuch" element={<Aktienbuch />} />
         <Route path="/Unterschriften" element={<Unterschriften />} />
         <Route path="/Abschlussdokumentation" element={<Abschlussdokumentation />} />
-        <Route path="/Ablage" element={<Ablage />} />
         <Route path="*" element={<Navigate to="/Dashboard" replace />} />
       </Routes>
     </Layout>

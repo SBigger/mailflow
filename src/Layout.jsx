@@ -12,9 +12,7 @@ import {
   BookOpen,
   GripVertical,
   FolderOpen,
-  Archive,
-  LogOut,
-  Wrench
+  LogOut
 } from "lucide-react";
 import BottomNav from "@/components/mobile/BottomNav";
 import { useIsMobile } from "@/components/mobile/useIsMobile";
@@ -77,8 +75,6 @@ export default function Layout({ children, currentPageName }) {
     { name: 'Fristen',        icon: CalendarClock,   label: 'Fristen' },
     { name: 'Kunden',         icon: Building2,       label: 'Kunden' },
     { name: 'Dokumente',      icon: FolderOpen,      label: 'Dokumente' },
-    { name: 'Ablage',         icon: Archive,         label: 'Team-Ablage' },
-    { name: 'ArtisTools',     icon: Wrench,          label: 'Artis Tools' },
     { name: 'Settings',       icon: SettingsIcon,    label: 'Einstellungen' },
   ], [isTaskUser]);
 
