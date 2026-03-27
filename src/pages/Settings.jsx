@@ -650,6 +650,12 @@ export default function Settings() {
           >
             <FolderOpen className="h-4 w-4" /> Dateiablage
           </button>
+          <button
+            onClick={() => setActiveTab('desktop-apps')}
+            className={`w-full justify-start flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'desktop-apps' ? navActiveStyle : navInactiveStyle}`}
+          >
+            <Download className="h-4 w-4" /> Desktop Apps
+          </button>
           <Link
             to={createPageUrl('KnowledgeBase')}
             className={`w-full justify-start flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${navInactiveStyle}`}
@@ -1487,6 +1493,71 @@ export default function Settings() {
           </div>
         )}
       </div>
+
+        {/* Desktop Apps Tab */}
+        {activeTab === 'desktop-apps' && (
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-xl font-bold mb-1" style={{ color: headingColor }}>Desktop Apps</h2>
+              <p className="text-sm" style={{ color: textMuted }}>Windows-Hilfsprogramme für Artis MailFlow</p>
+            </div>
+
+            {/* ArtisAgent */}
+            <div className="rounded-xl p-6 border" style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1">
+                  <h3 className="text-base font-semibold mb-1 flex items-center gap-2" style={{ color: headingColor }}>
+                    <HardDrive className="h-4 w-4" /> ArtisAgent
+                  </h3>
+                  <p className="text-sm mb-3" style={{ color: textMuted }}>
+                    Öffnet und bearbeitet Dokumente direkt aus der Dateiablage. Ermöglicht Check-out / Check-in von Excel-, Word- und anderen Office-Dateien.
+                  </p>
+                  <ul className="text-xs space-y-1" style={{ color: textMuted }}>
+                    <li>✓ Direkt-Öffnen von Dokumenten aus dem Browser</li>
+                    <li>✓ Automatisches Check-out beim Öffnen</li>
+                    <li>✓ Check-in nach dem Speichern</li>
+                  </ul>
+                </div>
+                <a
+                  href="/ArtisAgent.exe"
+                  download="ArtisAgent.exe"
+                  className="flex-shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-xl text-white font-medium text-sm transition-opacity hover:opacity-90"
+                  style={{ backgroundColor: isArtis ? '#7a9b7f' : '#6366f1' }}
+                >
+                  <Download className="h-4 w-4" /> Download
+                </a>
+              </div>
+            </div>
+
+            {/* ArtisSync */}
+            <div className="rounded-xl p-6 border" style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1">
+                  <h3 className="text-base font-semibold mb-1 flex items-center gap-2" style={{ color: headingColor }}>
+                    <FolderOpen className="h-4 w-4" /> ArtisSync
+                  </h3>
+                  <p className="text-sm mb-3" style={{ color: textMuted }}>
+                    Synchronisiert alle Dokumente der Dateiablage automatisch in einen lokalen Ordner — ähnlich wie OneDrive oder Dropbox.
+                  </p>
+                  <ul className="text-xs space-y-1" style={{ color: textMuted }}>
+                    <li>✓ Alle Dokumente lokal verfügbar</li>
+                    <li>✓ Neue Datei ablegen → automatisches Upload-Popup</li>
+                    <li>✓ Ordnerstruktur: Kunde / Kategorie / Jahr</li>
+                    <li>✓ Läuft im Hintergrund, startet mit Windows</li>
+                  </ul>
+                </div>
+                <a
+                  href="/ArtisSync.exe"
+                  download="ArtisSync.exe"
+                  className="flex-shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-xl text-white font-medium text-sm transition-opacity hover:opacity-90"
+                  style={{ backgroundColor: isArtis ? '#7a9b7f' : '#6366f1' }}
+                >
+                  <Download className="h-4 w-4" /> Download
+                </a>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Darstellung Tab */}
         {activeTab === 'appearance' && (
