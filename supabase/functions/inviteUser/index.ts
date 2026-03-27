@@ -57,6 +57,7 @@ Deno.serve(async (req) => {
       id: inviteData.user.id,
       email: email,
       role: role,
+      invite: 1,
       full_name: email.split('@')[0],
     }, { onConflict: 'id' })
 

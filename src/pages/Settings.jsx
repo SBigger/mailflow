@@ -53,10 +53,6 @@ export default function Settings() {
   const [editingUserNameValue, setEditingUserNameValue] = useState('');
   const [editingUserTitelValue, setEditingUserTitelValue] = useState('');
   const [invitingEmail, setInvitingEmail] = useState('');
-  const [invitedUsers, setInvitedUsers] = useState(() => {
-    const stored = localStorage.getItem('invitedUsers');
-    return stored ? JSON.parse(stored) : [];
-  });
   const [assigningTagToAll, setAssigningTagToAll] = useState({});
   const [backupLoading, setBackupLoading] = useState(false);
   const [supportSyncing, setSupportSyncing] = useState(false);
@@ -102,7 +98,14 @@ export default function Settings() {
   });
 
   // Use getAllUsers edge function (bypasses RLS with service_role key)
-  const { data: users = [] } = useQuery({
+  const {
+    data: users = [],
+    isLoading,
+    isError,
+    error,
+    isFetching,
+    fetchStatus
+  } = useQuery({
     queryKey: ['users'],
     queryFn: async () => {
       const { data } = await functions.invoke('getAllUsers', {});
@@ -122,11 +125,6 @@ export default function Settings() {
     queryFn: () => entities.ActivityTemplate.list("order"),
   });
 
-  const { data: staffList = [], refetch: refetchStaff } = useQuery({
-    queryKey: ['staff'],
-    queryFn: () => entities.Staff.list("order"),
-  });
-
   const { data: supportSettings = [] } = useQuery({
     queryKey: ['systemSettings'],
     queryFn: async () => {
@@ -135,31 +133,6 @@ export default function Settings() {
     },
     enabled: user?.role === 'admin',
     refetchInterval: 30000,
-  });
-
-  const createStaffMutation = useMutation({
-    mutationFn: (data) => entities.Staff.create(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['staff'] });
-      setNewStaff({ name: '', email: '' });
-      toast.success('Mitarbeiter erstellt');
-    }
-  });
-
-  const deleteStaffMutation = useMutation({
-    mutationFn: (id) => entities.Staff.delete(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['staff'] });
-      toast.success('Mitarbeiter gelöscht');
-    }
-  });
-
-  const updateStaffUserMutation = useMutation({
-    mutationFn: ({ id, user_id }) => entities.Staff.update(id, { user_id }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['staff'] });
-      toast.success('Login-User verknüpft');
-    }
   });
 
   const createActivityTemplateMutation = useMutation({
@@ -195,27 +168,6 @@ export default function Settings() {
     reordered.splice(result.destination.index, 0, moved);
     reorderActivityTemplatesMutation.mutate(reordered.map((a, i) => ({ ...a, order: i })));
   };
-
-  const inviteUserMutation = useMutation({
-    mutationFn: async ({ email, role }) => {
-      console.log('Inviting user:', email, role);
-      return await functions.invoke('inviteUser', { email, role });
-    },
-    onSuccess: (_, { email, role }) => {
-      console.log('Invite successful:', email, role);
-      const newInvited = [...invitedUsers, { email, role, invitedAt: new Date().toISOString() }];
-      setInvitedUsers(newInvited);
-      localStorage.setItem('invitedUsers', JSON.stringify(newInvited));
-      toast.success(`Einladung versendet an ${email}`);
-      setInviteEmail('');
-      setInviteRole('user');
-      queryClient.invalidateQueries({ queryKey: ['users'] });
-    },
-    onError: (error) => {
-      console.error('Invite error:', error);
-      toast.error('Fehler beim Einladen: ' + error.message);
-    }
-  });
 
   const updateSignatureMutation = useMutation({
     mutationFn: (data) => auth.updateMe(data),
@@ -670,6 +622,7 @@ export default function Settings() {
           </button>
           {user?.role === 'admin' && (
             <>
+              {isFetching ? 'Zusätzliche Tabs werden geladen...' : ''}
               <button
                 onClick={() => setActiveTab('users')}
                 className={`w-full justify-start flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'users' ? navActiveStyle : navInactiveStyle}`}
@@ -1331,7 +1284,7 @@ export default function Settings() {
 
                 <div className="space-y-2">
                   <h4 className="text-sm font-medium mb-3" style={{ color: textMuted }}>Benutzer & Einladungen</h4>
-                  {users.length === 0 && invitedUsers.length === 0 ? (
+                  {users.length === 0 ? (
                     <p className="text-sm py-4" style={{ color: textMuted }}>Noch keine Benutzer</p>
                   ) : (
                     <>
@@ -1465,27 +1418,6 @@ export default function Settings() {
                           </div>
                         </div>
                       ))}
-                      
-                      {/* Offene Einladungen */}
-                      {invitedUsers.length > 0 && (
-                        <>
-                          <div className="text-xs font-medium uppercase tracking-wider mt-4 mb-2 px-1" style={{ color: textMuted }}>Pending Einladungen</div>
-                          {invitedUsers.map((email) => (
-                           <div key={email} className="flex items-center justify-between p-3 rounded-lg border border-amber-500/20 bg-amber-500/5">
-                             <div className="flex items-center gap-3">
-                               <div className="w-8 h-8 rounded-full bg-amber-500/20 flex items-center justify-center text-amber-400 text-sm font-medium">
-                                 {email?.charAt(0) || '?'}
-                               </div>
-                               <div>
-                                 <div className="font-medium" style={{ color: headingColor }}>{email}</div>
-                                 <div className="text-xs text-amber-500">Einladung ausstehend</div>
-                               </div>
-                             </div>
-                             <span className="text-xs px-2 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30">Pending</span>
-                           </div>
-                          ))}
-                        </>
-                      )}
                     </>
                   )}
                   </div>

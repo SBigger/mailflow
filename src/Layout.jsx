@@ -197,7 +197,8 @@ export default function Layout({ children, currentPageName }) {
                         <div className="px-4 py-2 border-b border-zinc-800 mb-1">
                           <p className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold">Benutzer</p>
                           <p className="text-sm font-medium text-zinc-200 truncate">{profile?.full_name || profile?.email}</p>
-                          <p className="text-[10px] text-zinc-500 mt-1 italic">v{packageJson.version}</p>
+                          <p className="text-[10px] text-zinc-500 mt-1 italic">Role: {profile?.role}</p>
+                          <p className="text-[10px] text-zinc-500 mt-1 italic">Version: {packageJson.version}</p>
                         </div>
 
                         <button

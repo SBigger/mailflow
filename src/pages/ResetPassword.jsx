@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { supabase } from "@/api/supabaseClient";
+import {entities, supabase} from "@/api/supabaseClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
@@ -13,6 +13,7 @@ export default function ResetPassword() {
   const [loading, setLoading] = useState(false);
   const [showPw, setShowPw] = useState(false);
   const [done, setDone] = useState(false);
+  const [user, setUser] = useState({});
   const [sessionReady, setSessionReady] = useState(false);
   const navigate = useNavigate();
 
@@ -21,6 +22,12 @@ export default function ResetPassword() {
     const checkSession = async () => {
       const { data } = await supabase.auth.getSession();
       if (data.session) {
+        const { data, err } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+
+        if (data?.nextLevel === 'aal2' && data?.nextLevel !== data?.currentLevel) {
+          navigate('/mfa-login', { state: { redirect: '/reset-password' } });
+        }
+        
         setSessionReady(true);
       } else {
         // Falls nach 2 Sek. keine Session da ist, war der Link evtl. abgelaufen
@@ -45,12 +52,28 @@ export default function ResetPassword() {
 
     setLoading(true);
     try {
-      const { error, user } = await supabase.auth.updateUser({ password });
+      const { data, error} = await supabase.auth.updateUser({ password });
       if (error) throw error;
+
+      let route = "";
+      let inviteState = 0;
+      const response = await entities.User.get(data?.user.id);
+      switch (response.inviteState) {
+        case 0:
+          route = "/mfa-setup";
+          inviteState = 1;
+          break;
+        case 1:
+          route = "/Dashboard";
+          inviteState = 2;
+          break;
+      }
+      const { err } = await entities.User.update(data?.user.id, { inviteState: inviteState });
+      if (err) throw err;
 
       setDone(true);
       toast.success("Passwort erfolgreich gesetzt!");
-      setTimeout(() => navigate("/mfa-setup"), 2000);
+      setTimeout(() => navigate(route), 2000);
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -139,7 +162,7 @@ export default function ResetPassword() {
                       className="w-full h-11 text-white font-semibold transition-all"
                       style={{ backgroundColor: '#7c9881', borderRadius: '10px' }}
                   >
-                    {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : "Konto aktivieren"}
+                    {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : user?.inviteState === 1 ? "Konto aktivieren" : "Passwort zurücksetzen"}
                   </Button>
                 </form>
             )}

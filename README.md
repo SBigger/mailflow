@@ -2,7 +2,7 @@
 
 **About**
 
-View and Edit  your app on [Base44.com](http://Base44.com) 
+View and Edit  your app on [MailFlow](http://MailFlow) 
 
 This project contains everything you need to run your app locally.
 
@@ -30,10 +30,10 @@ Run the app: `npm run dev`
 
 **Publish your changes**
 
-Open [Base44.com](http://Base44.com) and click on Publish.
+Open [MailFlow](http://MailFlow) and click on Publish.
 
 **Docs & Support**
 
-Documentation: [https://docs.base44.com/Integrations/Using-GitHub](https://docs.base44.com/Integrations/Using-GitHub)
+Documentation: [https://docs.MailFlow/Integrations/Using-GitHub](https://docs.MailFlow/Integrations/Using-GitHub)
 
-Support: [https://app.base44.com/support](https://app.base44.com/support)
+Support: [https://app.MailFlow/support](https://app.MailFlow/support)

@@ -5,11 +5,15 @@ import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { ShieldCheck, Loader2 } from "lucide-react";
+import { useLocation } from 'react-router-dom';
 
 export default function MFALogin() {
     const [code, setCode] = useState("");
     const [loading, setLoading] = useState(false);
     const navigate = useNavigate();
+
+    const location = useLocation();
+    const redirect = location.state ? location.state.redirect : '/Dashboard';
 
     const handleVerify = async (e) => {
         e.preventDefault();
@@ -40,7 +44,7 @@ export default function MFALogin() {
             if (verifyError) throw verifyError;
 
             toast.success("Erfolgreich angemeldet!");
-            navigate("/Dashboard");
+            navigate(redirect);
         } catch (err) {
             toast.error("Code falsch oder abgelaufen.");
         } finally {
