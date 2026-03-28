@@ -1532,21 +1532,21 @@ export default function Settings() {
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1">
                   <h3 className="text-base font-semibold mb-1 flex items-center gap-2" style={{ color: headingColor }}>
-                    <FolderOpen className="h-4 w-4" /> Wandreif <span className="text-xs font-normal opacity-50">v1.0.5</span>
+                    <FolderOpen className="h-4 w-4" /> Wandreif <span className="text-xs font-normal opacity-50">v1.1.0</span>
                   </h3>
                   <p className="text-sm mb-3" style={{ color: textMuted }}>
                     Synchronisiert alle Dokumente der Dateiablage automatisch in einen lokalen Ordner — ähnlich wie OneDrive oder Dropbox.
                   </p>
                   <ul className="text-xs space-y-1" style={{ color: textMuted }}>
-                    <li>✓ Alle Dokumente lokal verfügbar</li>
+                    <li>✓ Alle Dokumente lokal verfügbar (bis 400'000 Dateien)</li>
                     <li>✓ Neue Datei ablegen → automatisches Upload-Popup</li>
                     <li>✓ Ordnerstruktur: Kunde / Kategorie / Jahr</li>
                     <li>✓ Läuft im Hintergrund, startet mit Windows</li>
                   </ul>
                 </div>
                 <a
-                  href="/Wandreif.exe"
-                  download="Wandreif.exe"
+                  href="https://github.com/SBigger/mailflow/releases/download/apps-v1.0/Wandreif-Setup-v1.1.0.exe"
+                  download="Wandreif-Setup-v1.1.0.exe"
                   className="flex-shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-xl text-white font-medium text-sm transition-opacity hover:opacity-90"
                   style={{ backgroundColor: isArtis ? '#7a9b7f' : '#6366f1' }}
                 >
