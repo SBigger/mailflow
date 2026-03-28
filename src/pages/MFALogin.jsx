@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { supabase } from "@/api/supabaseClient";
+import { supabase} from "@/api/supabaseClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
@@ -42,7 +42,6 @@ export default function MFALogin() {
             });
 
             if (verifyError) throw verifyError;
-
             toast.success("Erfolgreich angemeldet!");
             navigate(redirect);
         } catch (err) {

@@ -34,7 +34,7 @@ Deno.serve(async (req) => {
     // Return all profiles (any authenticated user can list users for task assignment etc.)
     const { data: profiles, error } = await adminClient
       .from('profiles')
-      .select('id, email, full_name, role, created_at')
+      .select('*')
       .order('full_name', { ascending: true })
 
     if (error) throw error

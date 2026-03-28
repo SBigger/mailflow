@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { supabase } from "@/api/supabaseClient";
+import {entities, supabase} from "@/api/supabaseClient";
 import { QRCodeSVG } from "qrcode.react"; // Einfache QR-Code Komponente
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -60,7 +60,10 @@ export default function MFASetup() {
             if (verifyError) throw verifyError;
 
             toast.success("2-Faktor-Authentifizierung erfolgreich aktiviert!");
-            navigate("/Dashboard");
+            const { data, error} = await supabase.auth.getSession();
+            if (error) throw error;
+            await entities.User.update(data.session.user.id, { inviteState: 3 });
+            navigate("/Login");
         } catch (err) {
             toast.error("Code ungültig: " + err.message);
         } finally {

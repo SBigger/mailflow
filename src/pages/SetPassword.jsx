@@ -7,12 +7,13 @@ import { useNavigate } from "react-router-dom";
 import { Eye, EyeOff, CheckCircle2, Lock, Loader2 } from "lucide-react";
 import artisLogo from '/artis-logo.png';
 
-export default function ResetPassword() {
+export default function SetPassword() {
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPw, setShowPw] = useState(false);
   const [done, setDone] = useState(false);
+  const [user, setUser] = useState({});
   const [sessionReady, setSessionReady] = useState(false);
   const navigate = useNavigate();
 
@@ -21,12 +22,6 @@ export default function ResetPassword() {
     const checkSession = async () => {
       const { data } = await supabase.auth.getSession();
       if (data.session) {
-        const { data, err } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-
-        if (data?.nextLevel === 'aal2' && data?.nextLevel !== data?.currentLevel) {
-          navigate('/mfa-login', { state: { redirect: '/reset-password' } });
-        }
-        
         setSessionReady(true);
       } else {
         // Falls nach 2 Sek. keine Session da ist, war der Link evtl. abgelaufen
@@ -54,20 +49,12 @@ export default function ResetPassword() {
       const { data, error} = await supabase.auth.updateUser({ password });
       if (error) throw error;
 
-      let route = "";
-      const response = await entities.User.get(data?.user.id);
-      switch (response.inviteState) {
-        case 2:
-          route = "/mfa-setup";
-          break;
-        case 3:
-          route = "/Login";
-          break;
-      }
+      const { err } = await entities.User.update(data?.user.id, { inviteState: 2 });
+      if (err) throw err;
 
       setDone(true);
       toast.success("Passwort erfolgreich gesetzt!");
-      setTimeout(() => navigate(route), 2000);
+      setTimeout(() => navigate('/mfa-setup'), 2000);
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -91,7 +78,7 @@ export default function ResetPassword() {
                 <div className="flex flex-col items-center gap-3 py-6 text-center">
                   <CheckCircle2 className="h-12 w-12" style={{ color: '#7c9881' }} />
                   <h2 className="text-lg font-semibold" style={{ color: '#2d3a2d' }}>Passwort gespeichert!</h2>
-                  <p className="text-sm" style={{ color: '#6b826b' }}>Du wirst zum Dashboard weitergeleitet…</p>
+                  <p className="text-sm" style={{ color: '#6b826b' }}>Du wirst zum Login weitergeleitet…</p>
                 </div>
             ) : !sessionReady ? (
                 <div className="text-center py-10">
@@ -107,7 +94,7 @@ export default function ResetPassword() {
                   {/* Passwort Feld */}
                   <div>
                     <label className="block text-xs mb-1.5 font-bold uppercase tracking-wider" style={{ color: '#8aaa8f' }}>
-                      Neues Passwort
+                      Passwort
                     </label>
                     <div className="relative">
                       <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: '#8aaa8f' }} />
@@ -156,7 +143,7 @@ export default function ResetPassword() {
                       className="w-full h-11 text-white font-semibold transition-all"
                       style={{ backgroundColor: '#7c9881', borderRadius: '10px' }}
                   >
-                    {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : "Passwort zurücksetzen"}
+                    {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : "Konto aktivieren"}
                   </Button>
                 </form>
             )}

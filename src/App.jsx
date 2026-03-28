@@ -29,13 +29,14 @@ import ResetPassword from './pages/ResetPassword';
 import Layout from './Layout';
 import MFASetup from "./pages/MFASetup.jsx";
 import MFALogin from "./pages/MFALogin.jsx";
+import SetPassword from "./pages/SetPassword.jsx";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30000 } }
 });
 
 function AuthenticatedApp() {
-  const { user, loading } = useAuth();
+  const { user, loading, requiresMfa} = useAuth();
 
   if (loading) {
     return (
@@ -47,6 +48,10 @@ function AuthenticatedApp() {
 
   if (!user) {
     return <Login />;
+  }
+
+  if (requiresMfa) {
+    return <MFALogin />;
   }
 
   return (
@@ -84,6 +89,7 @@ function App() {
         <Router>
           <Routes>
             {/* Passwort-Reset: zugänglich ohne Login */}
+            <Route path="/set-password" element={<SetPassword />} />
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/mfa-setup" element={<MFASetup />} />
             <Route path="/mfa-login" element={<MFALogin />} />

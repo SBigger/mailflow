@@ -3,7 +3,39 @@ import { entities, functions, auth, supabase } from "@/api/supabaseClient";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Mail, MessageSquare, Link2, Tag as TagIcon, FolderOpen, Plus, Trash2, Save, Users, Send, Calendar, Menu, ChevronDown, LayoutDashboard, CheckSquare, RefreshCw, ClipboardList, GripVertical, UserMinus, Pencil, Check, X, Sun, Moon, KeyRound, HardDrive, Download, Database, Inbox, BookOpen } from "lucide-react";
+import {
+  Mail,
+  MessageSquare,
+  Link2,
+  Tag as TagIcon,
+  FolderOpen,
+  Plus,
+  Trash2,
+  Save,
+  Users,
+  Send,
+  Calendar,
+  Menu,
+  ChevronDown,
+  LayoutDashboard,
+  CheckSquare,
+  RefreshCw,
+  ClipboardList,
+  GripVertical,
+  UserMinus,
+  Pencil,
+  Check,
+  X,
+  Sun,
+  Moon,
+  KeyRound,
+  HardDrive,
+  Download,
+  Database,
+  Inbox,
+  BookOpen,
+  ShieldCheck
+} from "lucide-react";
 import { ThemeContext } from "@/Layout";
 import DeleteUserDialog from "@/components/settings/DeleteUserDialog";
 import DokAblageSettings from "@/components/settings/DokAblageSettings";
@@ -1292,6 +1324,9 @@ export default function Settings() {
                         <div key={u.id} className="rounded-lg border" style={{ backgroundColor: rowBg, borderColor: rowBorder }}>
                           <div className="flex items-center justify-between p-3 gap-3">
                             {/* Avatar */}
+                            {u.inviteState === 3 ? (
+                                <ShieldCheck className="h-5 w-5" />
+                            ):(<></>)}
                             <div className="w-9 h-9 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400 text-sm font-semibold flex-shrink-0">
                               {(u.full_name || u.email || '?').charAt(0).toUpperCase()}
                             </div>
@@ -1351,68 +1386,70 @@ export default function Settings() {
                                 <div className="text-xs truncate" style={{ color: textMuted }}>{u.email}</div>
                               )}
                             </div>
-
+                            {u.inviteState === 1 ? (
+                                <p>Einladung ausstehend</p>
+                              ):(<></>)}
                             {/* Role + Actions */}
                             <div className="flex items-center gap-2 flex-shrink-0">
                               {editingUserId === u.id ? (
-                                <>
-                                  <select value={editingUserRole} onChange={(e) => setEditingUserRole(e.target.value)} className="rounded-md px-2 py-1 text-xs h-7" style={{ backgroundColor: inputBg, borderColor: inputBorder, color: inputColor, border: `1px solid ${inputBorder}` }}>
-                                    <option value="admin">Admin</option>
-                                    <option value="user">Benutzer</option>
-                                    <option value="task_user">Task Benutzer</option>
-                                  </select>
-                                  <Button
-                                    variant="ghost" size="icon"
-                                    onClick={() => updateUserRoleMutation.mutate({ id: u.id, role: editingUserRole })}
-                                    disabled={updateUserRoleMutation.isPending}
-                                    className="h-7 w-7 text-green-400 hover:text-green-300 hover:bg-green-500/10"
-                                  >
-                                    <Check className="h-3.5 w-3.5" />
-                                  </Button>
-                                  <Button variant="ghost" size="icon" onClick={() => setEditingUserId(null)} className="h-7 w-7" style={{ color: textMuted }}>
-                                    <X className="h-3.5 w-3.5" />
-                                  </Button>
-                                </>
+                                  <>
+                                    <select value={editingUserRole} onChange={(e) => setEditingUserRole(e.target.value)} className="rounded-md px-2 py-1 text-xs h-7" style={{ backgroundColor: inputBg, borderColor: inputBorder, color: inputColor, border: `1px solid ${inputBorder}` }}>
+                                      <option value="admin">Admin</option>
+                                      <option value="user">Benutzer</option>
+                                      <option value="task_user">Task Benutzer</option>
+                                    </select>
+                                    <Button
+                                        variant="ghost" size="icon"
+                                        onClick={() => updateUserRoleMutation.mutate({ id: u.id, role: editingUserRole })}
+                                        disabled={updateUserRoleMutation.isPending}
+                                        className="h-7 w-7 text-green-400 hover:text-green-300 hover:bg-green-500/10"
+                                    >
+                                      <Check className="h-3.5 w-3.5" />
+                                    </Button>
+                                    <Button variant="ghost" size="icon" onClick={() => setEditingUserId(null)} className="h-7 w-7" style={{ color: textMuted }}>
+                                      <X className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </>
                               ) : (
-                                <>
+                                  <>
                                   <span className={`text-xs px-2 py-1 rounded-full ${
-                                    u.role === 'admin'
-                                      ? 'bg-purple-500/10 text-purple-400 border border-purple-500/30'
-                                      : u.role === 'task_user'
-                                      ? 'bg-green-500/10 text-green-400 border border-green-500/30'
-                                      : 'bg-blue-500/10 text-blue-400 border border-blue-500/30'
+                                      u.role === 'admin'
+                                          ? 'bg-purple-500/10 text-purple-400 border border-purple-500/30'
+                                          : u.role === 'task_user'
+                                              ? 'bg-green-500/10 text-green-400 border border-green-500/30'
+                                              : 'bg-blue-500/10 text-blue-400 border border-blue-500/30'
                                   }`}>
                                     {u.role === 'admin' ? 'Admin' : u.role === 'task_user' ? 'Task Benutzer' : 'Benutzer'}
                                   </span>
-                                  {u.id !== user?.id && (
-                                    <>
-                                      <Button
-                                        variant="ghost" size="icon"
-                                        title="Rolle bearbeiten"
-                                        onClick={() => { setEditingUserId(u.id); setEditingUserRole(u.role || 'user'); }}
-                                        className="h-7 w-7" style={{ color: textMuted }}
-                                      >
-                                        <Pencil className="h-3.5 w-3.5" />
-                                      </Button>
-                                      <Button
-                                        variant="ghost" size="icon"
-                                        title="Passwort zurücksetzen"
-                                        onClick={() => handleResetPassword(u.email)}
-                                        className="h-7 w-7 text-amber-400 hover:text-amber-300 hover:bg-amber-500/10"
-                                      >
-                                        <KeyRound className="h-3.5 w-3.5" />
-                                      </Button>
-                                      <Button
-                                        variant="ghost" size="icon"
-                                        title="Benutzer entfernen & Daten übertragen"
-                                        onClick={() => { setUserToDelete(u); setDeleteUserDialogOpen(true); }}
-                                        className="h-7 w-7 text-red-400 hover:text-red-300 hover:bg-red-500/10"
-                                      >
-                                        <UserMinus className="h-4 w-4" />
-                                      </Button>
-                                    </>
-                                  )}
-                                </>
+                                    {u.id !== user?.id && (
+                                        <>
+                                          <Button
+                                              variant="ghost" size="icon"
+                                              title="Rolle bearbeiten"
+                                              onClick={() => { setEditingUserId(u.id); setEditingUserRole(u.role || 'user'); }}
+                                              className="h-7 w-7" style={{ color: textMuted }}
+                                          >
+                                            <Pencil className="h-3.5 w-3.5" />
+                                          </Button>
+                                          <Button
+                                              variant="ghost" size="icon"
+                                              title="Passwort zurücksetzen"
+                                              onClick={() => handleResetPassword(u.email)}
+                                              className="h-7 w-7 text-amber-400 hover:text-amber-300 hover:bg-amber-500/10"
+                                          >
+                                            <KeyRound className="h-3.5 w-3.5" />
+                                          </Button>
+                                          <Button
+                                              variant="ghost" size="icon"
+                                              title="Benutzer entfernen & Daten übertragen"
+                                              onClick={() => { setUserToDelete(u); setDeleteUserDialogOpen(true); }}
+                                              className="h-7 w-7 text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                                          >
+                                            <UserMinus className="h-4 w-4" />
+                                          </Button>
+                                        </>
+                                    )}
+                                  </>
                               )}
                             </div>
                           </div>

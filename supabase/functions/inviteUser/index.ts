@@ -48,7 +48,7 @@ Deno.serve(async (req) => {
 
     // Invite user via Supabase Admin API
     const { data: inviteData, error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(email, {
-      redirectTo: `${appUrl}/reset-password`,
+      redirectTo: `${appUrl}/set-password`,
     })
     if (inviteError) throw new Error(inviteError.message)
 
@@ -57,7 +57,7 @@ Deno.serve(async (req) => {
       id: inviteData.user.id,
       email: email,
       role: role,
-      invite: 1,
+      inviteState: 1,
       full_name: email.split('@')[0],
     }, { onConflict: 'id' })
 
