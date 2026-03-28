@@ -91,7 +91,7 @@ export default function ResetPassword() {
                 <div className="flex flex-col items-center gap-3 py-6 text-center">
                   <CheckCircle2 className="h-12 w-12" style={{ color: '#7c9881' }} />
                   <h2 className="text-lg font-semibold" style={{ color: '#2d3a2d' }}>Passwort gespeichert!</h2>
-                  <p className="text-sm" style={{ color: '#6b826b' }}>Du wirst zum Dashboard weitergeleitet…</p>
+                  <p className="text-sm" style={{ color: '#6b826b' }}>Du wirst weitergeleitet…</p>
                 </div>
             ) : !sessionReady ? (
                 <div className="text-center py-10">
