@@ -1479,7 +1479,7 @@ export default function Settings() {
                   </ul>
                 </div>
                 <a
-                  href="/VoxDrop.exe"
+                  href="https://github.com/SBigger/mailflow/releases/download/apps-v1.0/VoxDrop.exe"
                   download="VoxDrop.exe"
                   className="flex-shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-xl text-white font-medium text-sm transition-opacity hover:opacity-90"
                   style={{ backgroundColor: isArtis ? '#7a9b7f' : '#6366f1' }}
