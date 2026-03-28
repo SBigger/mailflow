@@ -1461,6 +1461,34 @@ export default function Settings() {
               </div>
             </div>
 
+            {/* VoxDrop */}
+            <div className="rounded-xl p-6 border" style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1">
+                  <h3 className="text-base font-semibold mb-1 flex items-center gap-2" style={{ color: headingColor }}>
+                    <Inbox className="h-4 w-4" /> VoxDrop <span className="text-xs font-normal opacity-50">v1.0.0</span>
+                  </h3>
+                  <p className="text-sm mb-3" style={{ color: textMuted }}>
+                    Sprache direkt in Text umwandeln — Strg+Q halten, sprechen, loslassen. Text wird sofort an der Cursor-Position eingefügt.
+                  </p>
+                  <ul className="text-xs space-y-1" style={{ color: textMuted }}>
+                    <li>✓ Funktioniert in jedem Programm</li>
+                    <li>✓ Lokal, Groq oder OpenAI Whisper</li>
+                    <li>✓ Sprachbefehle für Zeilenumbrüche, Listen etc.</li>
+                    <li>✓ Läuft im Hintergrund, startet mit Windows</li>
+                  </ul>
+                </div>
+                <a
+                  href="/VoxDrop.exe"
+                  download="VoxDrop.exe"
+                  className="flex-shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-xl text-white font-medium text-sm transition-opacity hover:opacity-90"
+                  style={{ backgroundColor: isArtis ? '#7a9b7f' : '#6366f1' }}
+                >
+                  <Download className="h-4 w-4" /> Download
+                </a>
+              </div>
+            </div>
+
             {/* Wandreif */}
             <div className="rounded-xl p-6 border" style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
               <div className="flex items-start justify-between gap-4">
