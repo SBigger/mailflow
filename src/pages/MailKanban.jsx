@@ -915,19 +915,24 @@ export default function MailKanban() {
           onDelete={async (mail) => {
             const warnings = [];
             if (mail.reminder_date) warnings.push(`Reminder gesetzt: ${new Date(mail.reminder_date).toLocaleDateString('de-CH', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`);
-            if (mail.is_completed === false && mail.reminder_date) warnings.push('Mail noch nicht erledigt');
             if (warnings.length > 0) {
               setDeleteWarning({ mail, mode: 'outlook', warnings });
               return;
             }
             try {
-              await functions.invoke('deleteOutlookMail', { mail_id: mail.id });
+              let outlookOk = true;
+              try {
+                await functions.invoke('deleteOutlookMail', { mail_id: mail.id });
+              } catch {
+                outlookOk = false;
+              }
               await entities.MailItem.update(mail.id, { is_archived: true });
               queryClient.setQueryData(["mailItems", currentUser?.id], (old) =>
                 old ? old.filter(m => m.id !== mail.id) : old
               );
               setSelectedMail(null);
-              toast.success('E-Mail in Outlook-Papierkorb verschoben');
+              if (outlookOk) toast.success('E-Mail in Outlook-Papierkorb verschoben');
+              else toast.warning('Aus MailFlow entfernt – Outlook-Löschung fehlgeschlagen (Token abgelaufen?)');
             } catch (e) {
               toast.error('Fehler: ' + e.message);
             }
@@ -1048,15 +1053,19 @@ export default function MailKanban() {
                   const { mail, mode } = deleteWarning;
                   setDeleteWarning(null);
                   try {
+                    let outlookOk = true;
                     if (mode === 'outlook') {
-                      await functions.invoke('deleteOutlookMail', { mail_id: mail.id });
+                      try { await functions.invoke('deleteOutlookMail', { mail_id: mail.id }); }
+                      catch { outlookOk = false; }
                     }
                     await entities.MailItem.update(mail.id, { is_archived: true });
                     queryClient.setQueryData(["mailItems", currentUser?.id], (old) =>
                       old ? old.filter(m => m.id !== mail.id) : old
                     );
                     setSelectedMail(null);
-                    toast.success(mode === 'outlook' ? 'E-Mail in Outlook-Papierkorb verschoben' : 'Aus Kanban entfernt');
+                    if (mode === 'local') toast.success('Aus Kanban entfernt');
+                    else if (outlookOk) toast.success('E-Mail in Outlook-Papierkorb verschoben');
+                    else toast.warning('Aus MailFlow entfernt – Outlook-Löschung fehlgeschlagen');
                   } catch (e) {
                     toast.error('Fehler: ' + e.message);
                   }

@@ -64,33 +64,45 @@ serve(async (req) => {
         }).eq('id', profile.id)
       }
 
-      // Build sync URL
+      // Build start URL
       const deltaLink = profile.microsoft_delta_link
-      let syncUrl: string
+      let startUrl: string
       if (deltaLink && deltaLink.trim() !== '') {
-        syncUrl = deltaLink
+        startUrl = deltaLink
       } else {
         const syncDays = profile.sync_days || 80
         const fromDate = new Date()
         fromDate.setDate(fromDate.getDate() - syncDays)
-        syncUrl = `https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages/delta?$select=id,internetMessageId,receivedDateTime,subject,from,sender,hasAttachments,isRead,importance,bodyPreview&$filter=receivedDateTime+ge+${fromDate.toISOString()}&$top=999`
+        startUrl = `https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages/delta?$select=id,internetMessageId,receivedDateTime,subject,from,sender,hasAttachments,isRead,importance,bodyPreview&$filter=receivedDateTime+ge+${fromDate.toISOString()}&$top=999`
       }
 
-      const response = await fetch(syncUrl, { headers: { Authorization: `Bearer ${accessToken}` } })
-      if (!response.ok) {
-        if (response.status === 410) {
-          await supabase.from('profiles').update({ microsoft_delta_link: '' }).eq('id', profile.id)
-          results.push({ email: profile.email, error: 'Delta expired, reset' })
-          continue
+      // Volle Pagination – alle Seiten in einem Lauf abholen
+      const allMessages: any[] = []
+      let finalDeltaLink: string | null = null
+      let currentUrl: string | null = startUrl
+      let pageCount = 0
+      const MAX_PAGES = 10  // max 10 Seiten × 999 = ~10'000 Mails pro User
+      while (currentUrl && pageCount < MAX_PAGES) {
+        pageCount++
+        const response = await fetch(currentUrl, { headers: { Authorization: `Bearer ${accessToken}` } })
+        if (!response.ok) {
+          if (response.status === 410) {
+            await supabase.from('profiles').update({ microsoft_delta_link: '' }).eq('id', profile.id)
+            results.push({ email: profile.email, error: 'Delta expired, reset' })
+          } else {
+            results.push({ email: profile.email, error: `Graph ${response.status}` })
+          }
+          currentUrl = null
+          break
         }
-        results.push({ email: profile.email, error: `Graph ${response.status}` })
-        continue
+        const data = await response.json()
+        allMessages.push(...(data.value || []))
+        if (data['@odata.deltaLink']) { finalDeltaLink = data['@odata.deltaLink']; currentUrl = null }
+        else if (data['@odata.nextLink']) { currentUrl = data['@odata.nextLink'] }
+        else { currentUrl = null }
       }
-
-      const data = await response.json()
-      const messages = data.value || []
-      const newDeltaLink = data['@odata.deltaLink'] || null
-      const nextLink = data['@odata.nextLink'] || null
+      if (!currentUrl && !finalDeltaLink && allMessages.length === 0) continue
+      const messages = allMessages
 
       // Get existing mails for this user
       const { data: existingMails } = await supabase.from('mail_items')
@@ -180,10 +192,9 @@ serve(async (req) => {
         updated++
       }
 
-      if (newDeltaLink) await supabase.from('profiles').update({ microsoft_delta_link: newDeltaLink }).eq('id', profile.id)
-      else if (nextLink) await supabase.from('profiles').update({ microsoft_delta_link: nextLink }).eq('id', profile.id)
+      if (finalDeltaLink) await supabase.from('profiles').update({ microsoft_delta_link: finalDeltaLink }).eq('id', profile.id)
 
-      results.push({ email: profile.email, inserted, updated, messages: messages.length })
+      results.push({ email: profile.email, inserted, updated, messages: messages.length, pages: pageCount })
     } catch (e) {
       results.push({ email: profile.email, error: e.message })
     }
