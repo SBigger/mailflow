@@ -73,7 +73,7 @@ serve(async (req) => {
         const syncDays = profile.sync_days || 80
         const fromDate = new Date()
         fromDate.setDate(fromDate.getDate() - syncDays)
-        syncUrl = `https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages/delta?$select=id,receivedDateTime,subject,from,sender,hasAttachments,isRead,importance,bodyPreview&$filter=receivedDateTime+ge+${fromDate.toISOString()}&$top=999`
+        syncUrl = `https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages/delta?$select=id,internetMessageId,receivedDateTime,subject,from,sender,hasAttachments,isRead,importance,bodyPreview&$filter=receivedDateTime+ge+${fromDate.toISOString()}&$top=999`
       }
 
       const response = await fetch(syncUrl, { headers: { Authorization: `Bearer ${accessToken}` } })
@@ -94,10 +94,12 @@ serve(async (req) => {
 
       // Get existing mails for this user
       const { data: existingMails } = await supabase.from('mail_items')
-        .select('id, outlook_id, is_read').eq('created_by', profile.id)
+        .select('id, outlook_id, internet_message_id, is_read').eq('created_by', profile.id)
       const existingMap = new Map()
+      const existingByMsgId = new Map()
       for (const m of (existingMails || [])) {
-        if (m.outlook_id) existingMap.set(m.outlook_id, { id: m.id, is_read: m.is_read })
+        if (m.outlook_id) existingMap.set(m.outlook_id, { id: m.id, is_read: m.is_read, internet_message_id: m.internet_message_id })
+        if (m.internet_message_id) existingByMsgId.set(m.internet_message_id, { id: m.id, is_read: m.is_read })
       }
 
       // Get or create Outlook column
@@ -141,16 +143,23 @@ serve(async (req) => {
         }
 
         const existing = existingMap.get(msg.id)
+          || (msg.internetMessageId ? existingByMsgId.get(msg.internetMessageId) : null)
         if (existing) {
-          if (isDelta) {
-            const newIsRead = existing.is_read ? true : (msg.isRead || false)
-            toUpdate.push({ id: existing.id, is_read: newIsRead, body_preview: msg.bodyPreview || '' })
-          }
+          toUpdate.push({
+            id: existing.id,
+            is_read: msg.isRead ?? existing.is_read,  // FIX: bidirektional
+            subject: (msg.subject || '').trim() || '(Kein Betreff)',
+            body_preview: msg.bodyPreview || '',
+            outlook_id: msg.id,
+            internet_message_id: msg.internetMessageId || existing.internet_message_id || null,
+          })
         } else {
           const senderName = msg.from?.emailAddress?.name || msg.from?.emailAddress?.address || 'Unbekannt'
           const subject = (msg.subject || '').trim() || '(Kein Betreff)'
           toInsert.push({
-            outlook_id: msg.id, subject, sender_name: senderName, sender_email: senderEmail,
+            outlook_id: msg.id,
+            internet_message_id: msg.internetMessageId || null,
+            subject, sender_name: senderName, sender_email: senderEmail,
             received_date: msg.receivedDateTime || new Date().toISOString(),
             is_read: msg.isRead || false, has_attachments: msg.hasAttachments || false,
             body_preview: msg.bodyPreview || '', mailbox: 'personal',
