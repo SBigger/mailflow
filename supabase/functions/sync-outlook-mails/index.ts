@@ -231,19 +231,29 @@ serve(async (req) => {
     }
   }
 
-  // Batch-Insert/Update
+  // Batch-Insert
   let inserted = 0, updated = 0
   for (let i = 0; i < toInsert.length; i += 50) {
     const batch = toInsert.slice(i, i + 50)
     const { error } = await supabase.from('mail_items').insert(batch)
     if (error) console.error(`[SYNC] Insert Fehler:`, error.message)
     else inserted += batch.length
-    if (i + 50 < toInsert.length) await new Promise(r => setTimeout(r, 100))
+    if (i + 50 < toInsert.length) await new Promise(r => setTimeout(r, 50))
   }
-  for (const u of toUpdate) {
-    const { id, ...data } = u
-    await supabase.from('mail_items').update(data).eq('id', id)
-    updated++
+
+  // Batch-Update via upsert (viel schneller als 1-per-1)
+  for (let i = 0; i < toUpdate.length; i += 50) {
+    const batch = toUpdate.slice(i, i + 50)
+    const { error } = await supabase.from('mail_items').upsert(batch, { onConflict: 'id' })
+    if (error) {
+      // Fallback: einzeln updaten wenn upsert fehlschlägt
+      for (const u of batch) {
+        const { id, ...data } = u
+        await supabase.from('mail_items').update(data).eq('id', id)
+      }
+    }
+    updated += batch.length
+    if (i + 50 < toUpdate.length) await new Promise(r => setTimeout(r, 50))
   }
 
   // Delta-Token speichern

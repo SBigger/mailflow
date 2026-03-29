@@ -186,10 +186,13 @@ serve(async (req) => {
         await supabase.from('mail_items').insert(toInsert.slice(i, i + 50))
         inserted += Math.min(50, toInsert.length - i)
       }
-      for (const u of toUpdate) {
-        const { id, ...d } = u
-        await supabase.from('mail_items').update(d).eq('id', id)
-        updated++
+      for (let i = 0; i < toUpdate.length; i += 50) {
+        const batch = toUpdate.slice(i, i + 50)
+        const { error } = await supabase.from('mail_items').upsert(batch, { onConflict: 'id' })
+        if (error) {
+          for (const u of batch) { const { id, ...d } = u; await supabase.from('mail_items').update(d).eq('id', id) }
+        }
+        updated += batch.length
       }
 
       if (finalDeltaLink) await supabase.from('profiles').update({ microsoft_delta_link: finalDeltaLink }).eq('id', profile.id)
