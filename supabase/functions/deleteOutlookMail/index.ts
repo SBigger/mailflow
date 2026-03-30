@@ -77,5 +77,8 @@ serve(async (req) => {
     return new Response(JSON.stringify({ error: `Graph Error: ${err}` }), { status: 500, headers: corsHeaders })
   }
 
+  //Archive mail in DB
+  await supabase.from('mail_items').update({is_archived: true}).eq('id', mail_id);
+
   return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
 })

@@ -1,23 +1,16 @@
 import React, { useState, useMemo, useEffect, useContext } from "react";
-import { entities, functions, auth } from "@/api/supabaseClient";
+import {entities, functions, auth, supabase} from "@/api/supabaseClient";
 import { ThemeContext } from "@/Layout";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import { Plus, RefreshCw, Search, Mail, Settings, Bell, CheckCircle2, Menu, ChevronDown, LayoutDashboard, CheckSquare, X, MoreHorizontal } from "lucide-react";
 import { useIsMobile } from "@/components/mobile/useIsMobile";
 import MobileMailColumnNav from "@/components/mobile/MobileMailColumnNav";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { startOfDay, endOfDay, isToday, isTomorrow, isThisWeek, addDays, addWeeks, format, isPast } from "date-fns";
+import { isToday } from "date-fns";
 
 import KanbanColumn from "../components/mail/KanbanColumn";
 import TagColumn from "../components/mail/TagColumn";
@@ -26,10 +19,6 @@ import MailDetailPanel from "../components/mail/MailDetailPanel";
 import AddColumnDialog from "../components/mail/AddColumnDialog";
 import ReplyDialog from "../components/mail/ReplyDialog";
 import EditMailDialog from "../components/mail/EditMailDialog";
-import MailFilters from "../components/mail/MailFilters";
-import EditColumnColorDialog from "../components/mail/EditColumnColorDialog";
-import MailSearchBar from "../components/mail/MailSearchBar";
-import ReminderDialog from "../components/mail/ReminderDialog";
 import DailyReminderPopup from "../components/mail/DailyReminderPopup";
 import NewMailDialog from "../components/mail/NewMailDialog";
 import { Tag as TagIcon } from "lucide-react";
@@ -85,18 +74,6 @@ export default function MailKanban() {
   // Mails sind strikt pro User - kein userFilter nötig
   const queryClient = useQueryClient();
 
-  // Stiller Auto-Sync beim Seitenöffnen (max. alle 5 Minuten)
-  useEffect(() => {
-    if (!currentUser?.microsoft_access_token) return;
-    const SYNC_KEY = 'mailKanban_lastAutoSync';
-    const lastSync = parseInt(sessionStorage.getItem(SYNC_KEY) || '0', 10);
-    if (Date.now() - lastSync < 5 * 60 * 1000) return;
-    sessionStorage.setItem(SYNC_KEY, String(Date.now()));
-    functions.invoke('sync-outlook-mails', {})
-      .then(() => queryClient.invalidateQueries({ queryKey: ['mailItems'] }))
-      .catch(() => {});
-  }, [currentUser?.id]);
-
   // Helper: Update/Create Mapping for Mail
   const updateMailMapping = async (mail, updates) => {
     if (!mail.outlook_id || !currentUser?.id) return;
@@ -145,21 +122,32 @@ export default function MailKanban() {
     }
   }, []);
 
-  // Auto-Sync alle 30 Minuten im Hintergrund (solange App offen)
+  // Auto-Sync
   useEffect(() => {
     if (!currentUser) return;
-    const SYNC_INTERVAL = 30 * 60 * 1000; // 30 Minuten
-    const interval = setInterval(async () => {
-      try {
-        await functions.invoke('sync-outlook-mails', {});
-        queryClient.invalidateQueries({ queryKey: ["mailItems"] });
-        queryClient.invalidateQueries({ queryKey: ["kanbanColumns"] });
-      } catch (e) {
-        console.warn('[AUTO-SYNC] Fehler:', e.message);
-      }
-    }, SYNC_INTERVAL);
-    return () => clearInterval(interval);
-  }, [currentUser?.id]);
+      // 1. Create the subscription
+      const channel = supabase
+          .channel('schema-db-changes')
+          .on(
+              'postgres_changes',
+              {
+                event: '*', // Listen to INSERT, UPDATE, and DELETE
+                schema: 'public',
+                table: 'mail_items',
+                filter: `created_by=eq.${currentUser?.id}`,
+              },
+              (payload) => {
+                queryClient.invalidateQueries({ queryKey: ["mailItems"] });
+                queryClient.invalidateQueries({ queryKey: ["kanbanColumns"] });
+              }
+          )
+          .subscribe();
+
+      // 3. Cleanup on unmount
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    }, [currentUser?.id, queryClient]);
 
   // Fetch columns - nur für aktuellen Benutzer
   const { data: columns = [], isLoading: colLoading } = useQuery({
@@ -187,23 +175,9 @@ export default function MailKanban() {
   const { data: mails = [], isLoading: mailLoading } = useQuery({
     queryKey: ["mailItems", currentUser?.id],
     queryFn: async () => {
-      if (!currentUser?.microsoft_access_token) return [];
-      let allMails = [];
-      let skip = 0;
-      const BATCH = 500;
-      while (true) {
-        const batch = await entities.MailItem.filter(
-          { created_by: currentUser.id }, "-received_date", BATCH, skip
-        );
-        const arr = Array.isArray(batch) ? batch : (batch ? [batch] : []);
-        allMails = allMails.concat(arr);
-        if (arr.length < BATCH) break;
-        skip += BATCH;
-        if (skip >= 5000) break;
-      }
-      return allMails;
-    },
-    enabled: !!currentUser?.microsoft_access_token,
+      const mails = await entities.MailItem.filter({ created_by: currentUser.id }, "received_date")
+      return mails;
+    }
   });
 
 
@@ -912,28 +886,14 @@ export default function MailKanban() {
             setConvertMailDialogOpen(true);
           }}
           onDelete={async (mail) => {
+            if (!confirm('Email löschen?')) return;
             try {
               await functions.invoke('deleteOutlookMail', { mail_id: mail.id });
-              await entities.MailItem.update(mail.id, { is_archived: true });
-              queryClient.setQueryData(["mailItems", currentUser?.id], (old) =>
-                old ? old.filter(m => m.id !== mail.id) : old
-              );
+              toast.success('Email erfolgreich gelöscht');
+            } catch (error) {
+              toast.error('Fehler: ' + (error.response?.data?.error || error.message));
+            } finally {
               setSelectedMail(null);
-              toast.success('E-Mail in Outlook-Papierkorb verschoben');
-            } catch (e) {
-              toast.error('Fehler: ' + e.message);
-            }
-          }}
-          onDeleteLocal={async (mail) => {
-            try {
-              await entities.MailItem.update(mail.id, { is_archived: true });
-              queryClient.setQueryData(["mailItems", currentUser?.id], (old) =>
-                old ? old.filter(m => m.id !== mail.id) : old
-              );
-              setSelectedMail(null);
-              toast.success('Aus Kanban entfernt');
-            } catch (e) {
-              toast.error('Fehler: ' + e.message);
             }
           }}
           />

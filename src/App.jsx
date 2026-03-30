@@ -82,25 +82,34 @@ function AuthenticatedApp() {
   );
 }
 
+// ... (your imports remain the same)
+
 function App() {
   return (
-    <AuthProvider>
-      <QueryClientProvider client={queryClient}>
-        <Router>
-          <Routes>
-            {/* Passwort-Reset: zugänglich ohne Login */}
-            <Route path="/set-password" element={<SetPassword />} />
-            <Route path="/reset-password" element={<ResetPassword />} />
-            <Route path="/mfa-setup" element={<MFASetup />} />
-            <Route path="/mfa-login" element={<MFALogin />} />
-            {/* Alle anderen Routen: benötigen Auth */}
-            <Route path="*" element={<AuthenticatedApp />} />
-          </Routes>
-        </Router>
-        <Toaster />
-        <SonnerToaster richColors position="top-center" />
-      </QueryClientProvider>
-    </AuthProvider>
+      <AuthProvider>
+        <QueryClientProvider client={queryClient}>
+          {/* Added future flag here to resolve the v7 warning */}
+          <Router
+              future={{
+                v7_startTransition: true,
+                v7_relativeSplatPath: true
+              }}
+          >
+            <Routes>
+              {/* Password-Reset: accessible without login */}
+              <Route path="/set-password" element={<SetPassword />} />
+              <Route path="/reset-password" element={<ResetPassword />} />
+              <Route path="/mfa-setup" element={<MFASetup />} />
+              <Route path="/mfa-login" element={<MFALogin />} />
+
+              {/* All other routes: handled via AuthenticatedApp */}
+              <Route path="*" element={<AuthenticatedApp />} />
+            </Routes>
+          </Router>
+          <Toaster />
+          <SonnerToaster richColors position="top-center" />
+        </QueryClientProvider>
+      </AuthProvider>
   );
 }
 

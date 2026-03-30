@@ -1,4 +1,3 @@
-import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const corsHeaders = {
@@ -38,7 +37,7 @@ async function getAccessToken(supabase: any, authUser: any, profile: any): Promi
   return accessToken
 }
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   const supabase = createClient(
@@ -79,7 +78,7 @@ serve(async (req) => {
 
   // Fetch attachments from Microsoft Graph
   const res = await fetch(
-    `https://graph.microsoft.com/v1.0/me/messages/${mail.outlook_id}/attachments?$select=id,name,contentType,size,contentBytes`,
+    `https://graph.microsoft.com/v1.0/me/messages/${mail.outlook_id}?$expand=attachments`,
     {
       headers: { Authorization: `Bearer ${accessToken}` }
     }
@@ -93,7 +92,7 @@ serve(async (req) => {
 
   const data = await res.json()
   // Only return file attachments (not reference/item attachments)
-  const attachments = (data.value || [])
+  const attachments = (data.attachments || [])
     .filter((att: any) => att['@odata.type'] === '#microsoft.graph.fileAttachment')
     .map((att: any) => ({
       id: att.id,

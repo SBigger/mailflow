@@ -1,13 +1,24 @@
-import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 
-serve(async (req) => {
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
+
   const clientId = Deno.env.get('MICROSOFT_CLIENT_ID')!
   const tenantId = Deno.env.get('MICROSOFT_TENANT_ID') || 'common'
   const redirectUri = Deno.env.get('MICROSOFT_REDIRECT_URI')!
 
   // Supabase user token aus state-Parameter lesen und weiterleiten
-  const reqUrl = new URL(req.url)
-  const state = reqUrl.searchParams.get('state') || ''
+  let body = {state: ''};
+  try {
+    body = await req.json();
+  } catch (e) {
+    console.error("No JSON body provided or invalid format");
+  }
+  const state = body.state || ''
 
   const params = new URLSearchParams({
     client_id: clientId,
@@ -19,5 +30,7 @@ serve(async (req) => {
   })
 
   const url = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/authorize?${params}`
-  return Response.redirect(url, 302)
+  return new Response(url, {
+    headers: { ...corsHeaders, 'Content-Type': 'application/text' }
+  });
 })

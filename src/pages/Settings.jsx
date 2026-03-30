@@ -344,8 +344,8 @@ export default function Settings() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) { toast.error('Nicht eingeloggt'); return; }
-      const fnUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/microsoft-auth?state=${session.access_token}`;
-      window.location.href = fnUrl;
+      const { data } = await functions.invoke('microsoft-auth', {state: session.access_token})
+      window.location.href = data;
     } catch (error) {
       toast.error('Fehler: ' + error.message);
     }
@@ -654,7 +654,8 @@ export default function Settings() {
           </button>
           {user?.role === 'admin' && (
             <>
-              {isFetching ? 'Zusätzliche Tabs werden geladen...' : ''}
+              {isFetching ? '...loading' : (
+                  <>
               <button
                 onClick={() => setActiveTab('users')}
                 className={`w-full justify-start flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'users' ? navActiveStyle : navInactiveStyle}`}
@@ -673,6 +674,9 @@ export default function Settings() {
               >
                 <Inbox className="h-4 w-4" /> Support-Postfach
               </button>
+
+                </>
+              )}
             </>
           )}
         </div>
@@ -1503,7 +1507,7 @@ export default function Settings() {
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1">
                   <h3 className="text-base font-semibold mb-1 flex items-center gap-2" style={{ color: headingColor }}>
-                    <Inbox className="h-4 w-4" /> VoxDrop <span className="text-xs font-normal opacity-50">v1.0.0</span>
+                    <Inbox className="h-4 w-4" /> VoxDrop <span className="text-xs font-normal opacity-50">v1.1.0</span>
                   </h3>
                   <p className="text-sm mb-3" style={{ color: textMuted }}>
                     Sprache direkt in Text umwandeln — Strg+Q halten, sprechen, loslassen. Text wird sofort an der Cursor-Position eingefügt.
@@ -1511,13 +1515,14 @@ export default function Settings() {
                   <ul className="text-xs space-y-1" style={{ color: textMuted }}>
                     <li>✓ Funktioniert in jedem Programm</li>
                     <li>✓ Lokal, Groq oder OpenAI Whisper</li>
-                    <li>✓ Sprachbefehle für Zeilenumbrüche, Listen etc.</li>
+                    <li>✓ Premium-Modus mit GPT-4o (beste Qualität)</li>
+                    <li>✓ Einstellungen via Browser — kein Fenster</li>
                     <li>✓ Läuft im Hintergrund, startet mit Windows</li>
                   </ul>
                 </div>
                 <a
-                  href="https://github.com/SBigger/mailflow/releases/download/apps-v1.0/VoxDrop.exe"
-                  download="VoxDrop.exe"
+                  href="https://github.com/SBigger/mailflow/releases/download/apps-v1.0/VoxDrop-Setup-v1.1.0.exe"
+                  download="VoxDrop-Setup-v1.1.0.exe"
                   className="flex-shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-xl text-white font-medium text-sm transition-opacity hover:opacity-90"
                   style={{ backgroundColor: isArtis ? '#7a9b7f' : '#6366f1' }}
                 >

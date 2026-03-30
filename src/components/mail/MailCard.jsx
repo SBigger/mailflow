@@ -14,12 +14,12 @@ export default function MailCard({ mail, isDragging, onClick, onDelete }) {
 
   const handleDelete = async (e) => {
     e.stopPropagation();
-    if (!confirm('Email in Outlook löschen?')) return;
+    if (!confirm('Email löschen?')) return;
     
     setDeleting(true);
     try {
       await functions.invoke('deleteOutlookMail', { mail_id: mail.id });
-      toast.success('Email gelöscht');
+      toast.success('Email erfolgreich gelöscht');
       onDelete?.(mail);
     } catch (error) {
       toast.error('Fehler: ' + (error.response?.data?.error || error.message));
