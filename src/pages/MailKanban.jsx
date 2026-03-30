@@ -137,11 +137,53 @@ export default function MailKanban() {
                 filter: `created_by=eq.${currentUser?.id}`,
               },
               (payload) => {
-                queryClient.invalidateQueries({ queryKey: ["mailItems"] });
-                queryClient.invalidateQueries({ queryKey: ["kanbanColumns"] });
+                //console.log('Change received!', payload)
+                const { eventType, new: newItem, old: oldItem } = payload;
+
+                queryClient.setQueryData(["mailItems", currentUser?.id], (oldData) => {
+                  // Ensure we have a list to work with
+                  const currentMails = oldData || [];
+
+                  switch (eventType) {
+                    case 'INSERT':
+                      // Add new mail to the top (since you sort by received desc)
+                      return [newItem, ...currentMails];
+
+                    case 'UPDATE':
+                      // Find the item and update its fields
+                      return currentMails.map((item) =>
+                          item.id === newItem.id ? { ...item, ...newItem } : item
+                      );
+
+                    case 'DELETE':
+                      // Remove the item from the list
+                      return currentMails.filter((item) => item.id !== oldItem.id);
+
+                    default:
+                      return currentMails;
+                  }
+                });
+
+                // Also update Kanban columns if the status/folder changed
+                if (eventType === 'UPDATE' && newItem.status !== oldItem.status) {
+                  queryClient.invalidateQueries({ queryKey: ["kanbanColumns"] });
+                }
               }
           )
-          .subscribe();
+          .subscribe((status, err) => {
+            console.log("Realtime Status:", status);
+            if (err) console.error("Realtime Error:", err);
+
+            if (status === 'SUBSCRIBED') {
+              console.log('Successfully connected to Realtime!');
+            }
+            if (status === 'CLOSED') {
+              console.log('Connection closed.');
+            }
+            if (status === 'CHANNEL_ERROR') {
+              console.error('Error connecting. Check RLS policies or database settings.');
+            }
+          });
 
       // 3. Cleanup on unmount
       return () => {
@@ -175,8 +217,7 @@ export default function MailKanban() {
   const { data: mails = [], isLoading: mailLoading } = useQuery({
     queryKey: ["mailItems", currentUser?.id],
     queryFn: async () => {
-      const mails = await entities.MailItem.filter({ created_by: currentUser.id }, "received_date")
-      return mails;
+      return await entities.MailItem.filter({ created_by: currentUser.id },"-created_at",500)
     }
   });
 
