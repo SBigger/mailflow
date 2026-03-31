@@ -2,7 +2,8 @@ import React, { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Upload, CheckCircle2, AlertCircle, Download } from "lucide-react";
-import { entities, functions, auth } from "@/api/supabaseClient";
+import {entities, functions, auth, supabase} from "@/api/supabaseClient";
+import {toast} from "sonner";
 
 export default function CustomerImportDialog({ open, onClose, staff = [], activityTemplates = [], onImported }) {
   const [status, setStatus] = useState(null); // null | 'loading' | 'done' | 'error'
@@ -38,75 +39,31 @@ export default function CustomerImportDialog({ open, onClose, staff = [], activi
     const file = e.target.files?.[0];
     if (!file) return;
     setStatus("loading");
-    try {
-      const text = await file.text();
-      const lines = text.replace(/^\uFEFF/, '').split("\n").filter(l => l.trim());
-      if (lines.length < 2) throw new Error("Datei enthält keine Daten");
-
-      const delimiter = detectDelimiter(lines[0]);
-
-      // First line = header
-      const headers = parseCsvLine(lines[0], delimiter);
-      const fixedCount = 9; // Firmenname,Strasse,PLZ,Ort,Telefon,Budget,Mandatsleiter,Sachbearbeiter,Kanton
-      const activityNames = headers.slice(fixedCount);
-
-      const records = [];
-      for (let i = 1; i < lines.length; i++) {
-        const cols = parseCsvLine(lines[i], delimiter);
-        const [company_name, strasse, plz, ort, phone_raw, budget_raw, mandatsleiter_raw, sachbearbeiter_raw, kanton_raw] = cols;
-
-        if (!company_name) continue;
-
-        const ml = mandatsleiter_raw?.trim() || "";
-        const sb = sachbearbeiter_raw?.trim() || "";
-        // Match by name, or create new staff on-the-fly if not found
-        let mandatsleiter = staff.find(s => s.name === ml || s.email === ml);
-        if (!mandatsleiter && ml) {
-          mandatsleiter = await entities.Staff.create({ name: ml });
-          staff.push(mandatsleiter);
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        const items = Array.isArray(data) ? data : (data.customers || []);
+        if (!Array.isArray(items) || items.length === 0) {
+          toast.error("Ungültiges Backup-Format oder keine Kunden gefunden");
+          return;
         }
-        let sachbearbeiter = staff.find(s => s.name === sb || s.email === sb);
-        if (!sachbearbeiter && sb) {
-          sachbearbeiter = await entities.Staff.create({ name: sb });
-          staff.push(sachbearbeiter);
+        let created = 0;
+        for (const rec of items) {
+          await entities.Customer.create(rec);
+          created++;
         }
-
-        // Each activity gets its own column with 1/0
-        const activities = activityNames.map((name, idx) => ({
-          name,
-          completed: cols[fixedCount + idx] === "1",
-          order: idx
-        })).filter(a => a.name);
-
-        records.push({
-          company_name,
-          strasse: strasse || "",
-          plz: plz || "",
-          ort: ort || "",
-          phone: phone_raw?.trim() || null,
-          budget: budget_raw ? parseFloat(budget_raw.replace(/[^0-9.,]/g, '').replace(',', '.')) || null : null,
-          kanton: kanton_raw?.trim() || null,
-          mandatsleiter_id: mandatsleiter?.id || null,
-          sachbearbeiter_id: sachbearbeiter?.id || null,
-          activities,
-          contact_persons: [],
-          tags: []
-        });
+        setResult({ created, total: items.length });
+        setStatus("done");
+        onImported();
+      } catch (err) {
+        setResult({ error: err.message });
+        setStatus("error");
+      } finally {
+        e.target.value = "";
       }
-
-      let created = 0;
-      for (const r of records) {
-        await entities.Customer.create(r);
-        created++;
-      }
-
-      setResult({ created, total: records.length });
-      setStatus("done");
-      onImported();
-    } catch (err) {
-      setResult({ error: err.message });
-      setStatus("error");
-    }
+    };
+    reader.readAsText(file);
   };
 
   const downloadTemplate = () => {

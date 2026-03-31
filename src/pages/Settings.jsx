@@ -1,4 +1,4 @@
-import React, { useState, useContext } from "react";
+import React, {useState, useContext, useRef, useEffect} from "react";
 import { entities, functions, auth, supabase } from "@/api/supabaseClient";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -34,7 +34,7 @@ import {
   Database,
   Inbox,
   BookOpen,
-  ShieldCheck
+  ShieldCheck, Upload
 } from "lucide-react";
 import { ThemeContext } from "@/Layout";
 import DeleteUserDialog from "@/components/settings/DeleteUserDialog";
@@ -89,6 +89,9 @@ export default function Settings() {
   const [backupLoading, setBackupLoading] = useState(false);
   const [supportSyncing, setSupportSyncing] = useState(false);
   const [supportSyncStatus, setSupportSyncStatus] = useState('');
+  const [status, setStatus] = useState(false);
+  const [trigger, setTrigger] = useState(false);
+  const fileInputRef = useRef(null);
 
   const { data: user } = useQuery({
     queryKey: ['currentUser'],
@@ -552,6 +555,120 @@ export default function Settings() {
       setSupportSyncing(false);
     }
   };
+
+  const [result, setResult] = useState(null);
+
+  const parseCsvLine = (line, delimiter) => {
+    const cols = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        if (inQuotes && line[i + 1] === '"') { current += '"'; i++; }
+        else inQuotes = !inQuotes;
+      } else if (ch === delimiter && !inQuotes) {
+        cols.push(current.trim());
+        current = '';
+      } else {
+        current += ch;
+      }
+    }
+    cols.push(current.trim());
+    return cols;
+  };
+
+  const detectDelimiter = (firstLine) => {
+    const commas = (firstLine.match(/,/g) || []).length;
+    const semicolons = (firstLine.match(/;/g) || []).length;
+    return semicolons > commas ? ';' : ',';
+  };
+
+  const importFromCsv = async (e, tablename) => {
+    const file = e?.target.files?.[0];
+    if (!file) return;
+    setStatus("loading");
+    try {
+      const text = await file.text();
+      const lines = text.replace(/^\uFEFF/, '').split("\n").filter(l => l.trim());
+      if (lines.length < 2) throw new Error("Datei enthält keine Daten");
+
+      const delimiter = detectDelimiter(lines[0]);
+
+      // First line = header
+      let headers = parseCsvLine(lines[0], delimiter);
+      const records = [];
+      for (let i = 1; i < lines.length; i++) {
+        const cols = parseCsvLine(lines[i], delimiter);
+        const result = headers.reduce((obj, key, index) => {
+          const value = cols[index];
+
+          // Checks for null, undefined, and empty string
+          if (value !== null && value !== "null" && value !== undefined && value !== '' && !value.includes('[obj')) {
+            obj[key] = value;
+          }
+
+          return obj;
+        }, {});
+
+        records.push(result);
+      }
+
+      let created = 0;
+      for (const rec of records) {
+        try {
+          switch (tablename) {
+            case 'DokTag':
+              await entities.DokTag.create(rec);
+              break;
+            case 'activities':
+              await entities.ActivityTemplate.create(rec);
+          }
+          created++;
+        } catch (e){
+          console.error(e);
+        }
+      }
+
+      toast.info(`Import erfolgreich durchgeführt -> ${created} importiert`);
+      setTrigger(trigger != trigger);
+      queryClient.invalidateQueries({ queryKey: ["activityTemplates"] })
+    } catch (err) {
+      toast.error(err.message );
+    }
+  };
+
+  function convertToCSV(objArray) {
+    if (objArray.length === 0) return '';
+
+    // Extract headers (the keys of the first object)
+    const headers = Object.keys(objArray[0]).join(',');
+
+    // Map the rows
+    const rows = objArray.map(obj =>
+        Object.values(obj).map(value => `"${value}"`).join(',')
+    );
+
+    // Combine headers and rows
+    return [headers, ...rows].join('\n');
+  }
+
+  function exportAsCsv(data, filename) {
+
+    const csvData = convertToCSV(data);
+
+    const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+
+    link.setAttribute('href', url);
+    link.setAttribute('download', filename);
+    link.style.visibility = 'hidden';
+
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
   // ──────────────────────────────────────────────────
 
   const isLight = theme === 'light';
@@ -1186,9 +1303,29 @@ export default function Settings() {
         {activeTab === 'activities' && (
          <div className="space-y-6">
            <div className="rounded-xl p-6 border" style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
-             <h3 className="text-lg font-semibold mb-2 flex items-center gap-2" style={{ color: headingColor }}>
-               <ClipboardList className="h-5 w-5" /> Tätigkeiten verwalten
-             </h3>
+             <div className="flex items-center justify-between w-full">
+               {/* Left Side: Title */}
+               <h3 className="text-lg font-semibold mb-2 flex items-center gap-2" style={{ color: headingColor }}>
+                 <ClipboardList className="h-5 w-5" /> Tätigkeiten verwalten
+               </h3>
+
+               {/* Right Side: Button Group */}
+               <div className="flex items-center gap-1">
+                 <Button variant="ghost" size="sm" onClick={() => exportAsCsv(activityTemplates,  'export_Tätigkeiten.csv')} className="h-7 px-2" style={{ color: textMuted }} title="csv exportieren">
+                   <Upload className="h-3.5 w-3.5" />
+                 </Button>
+                 <input
+                     type="file"
+                     ref={fileInputRef}
+                     onChange={ (e) => {importFromCsv(e,'activities')}}
+                     accept=".csv"
+                     className="hidden"
+                 />
+                 <Button variant="ghost" size="sm" onClick={() => fileInputRef.current.click()} className="h-7 px-2" style={{ color: textMuted }} title="CSV importieren">
+                   <Download className="h-3.5 w-3.5" />
+                 </Button>
+               </div>
+             </div>
              <p className="text-sm mb-6" style={{ color: textMuted }}>
                 Diese Tätigkeiten stehen für alle Kunden zur Verfügung und können dort einzeln als erledigt markiert werden.
               </p>
@@ -1259,7 +1396,11 @@ export default function Settings() {
 
         {/* Dateiablage Tab */}
         {activeTab === 'dateiablage' && (
-          <DokAblageSettings />
+          <DokAblageSettings
+              importCsv={(e) => importFromCsv(e, 'DokTag')}
+              exportCsv={(data, filename) => exportAsCsv(data, filename)}
+              loadDataTrigger={trigger}
+          />
         )}
 
         {/* Benutzer Tab */}

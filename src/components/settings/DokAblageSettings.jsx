@@ -1,5 +1,5 @@
-import React, { useState, useContext } from "react";
-import { Plus, Trash2, Pencil, Check, X, ChevronDown, ChevronRight } from "lucide-react";
+import React, {useState, useContext, useRef, useEffect} from "react";
+import {Plus, Trash2, Pencil, Check, X, ChevronDown, ChevronRight, ClipboardList, Upload, Download} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeContext } from "@/Layout";
 import { entities } from "@/api/supabaseClient";
@@ -16,7 +16,7 @@ const CATEGORIES = [
   { key: "korrespondenz",  label: "09 - Korrespondenz",  icon: "\u2709\uFE0F" },
 ];
 
-export default function DokAblageSettings() {
+export default function DokAblageSettings({importCsv, exportCsv, loadDataTrigger}) {
   const { theme } = useContext(ThemeContext);
   const isArtis   = theme === "artis";
   const isLight   = theme === "light";
@@ -32,7 +32,7 @@ export default function DokAblageSettings() {
   const accent      = isArtis ? "#4a7a4f" : "#7c3aed";
 
   const inp = {
-    background: inputBg, border: "1px solid " + inputBorder,
+    background: inputBg, border: `1px solid ${inputBorder}`,
     color: headingColor, borderRadius: 6, padding: "5px 10px",
     fontSize: 13, outline: "none",
   };
@@ -49,6 +49,13 @@ export default function DokAblageSettings() {
   const [editName,         setEditName]         = useState("");
   const [editColor,        setEditColor]        = useState("");
   const [editCategory,     setEditCategory]     = useState("");
+  const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    if (loadDataTrigger) {
+      queryClient.invalidateQueries({ queryKey: ["dok_tags"] })
+    }
+  }, [loadDataTrigger]);
 
   const { data: allTags = [], isLoading } = useQuery({
     queryKey: ["dok_tags"],
@@ -100,19 +107,46 @@ export default function DokAblageSettings() {
 
       {/* ── Tag-Manager ─────────────────────────────────────────────────── */}
       <div className="rounded-xl p-6 border" style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 16 }}>
+        <div div className="flex items-center justify-between w-full">
+          {/* Left Side: Title */}
           <div>
-            <h3 className="text-lg font-semibold" style={{ color: headingColor }}>Dokument-Tags</h3>
+            <h3 className="text-lg font-semibold mb-2 flex items-center gap-2" style={{ color: headingColor }}>
+              <ClipboardList className="h-5 w-5" /> Dokument-Tags
+            </h3>
             <p className="text-sm mt-1" style={{ color: textMuted }}>
               Hierarchisch strukturierbar: Haupt-Tag &rarr; Subtags (z.B. &ldquo;Abschlussunterlagen&rdquo; &rarr; &ldquo;Debitoren&rdquo;).
             </p>
           </div>
-          <Button onClick={() => { setAddingParent(true); setNewParentName(""); }}
-            style={{ background: accent, color: "#fff", fontSize: 12, height: 34, display: "flex", alignItems: "center", gap: 5 }}>
-            <Plus size={14} /> Neuer Tag
-          </Button>
-        </div>
 
+
+          {/* Right Side: Button Group */}
+          <div className="flex flex-col items-center gap-1 mb-4">
+            <div className="flex flex-row">
+              <Button variant="ghost" size="sm" onClick={() => {
+                const sortedTags = allTags.sort((a, b) =>
+                    (a.parent_id !== null) - (b.parent_id !== null)
+                );
+                exportCsv(sortedTags,  'export_DokTags.csv')
+              }} className="h-7 px-2" style={{ color: textMuted }} title="csv exportieren">
+                <Upload className="h-3.5 w-3.5" />
+              </Button>
+              <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={(e)=>{importCsv(e), e.target.value=''}}
+                  accept=".csv"
+                  className="hidden"
+              />
+              <Button variant="ghost" size="sm" onClick={() => fileInputRef.current.click()} className="h-7 px-2" style={{ color: textMuted }} title="CSV importieren">
+                <Download className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+            <Button onClick={() => { setAddingParent(true); setNewParentName(""); }}
+                    style={{ background: accent, color: "#fff", fontSize: 12, height: 34, display: "flex", alignitems: "center", gap: 5 }}>
+              <Plus size={14} /> Neuer Tag
+            </Button>
+          </div>
+        </div>
         {isLoading && <p style={{ color: textMuted, fontSize: 13 }}>Laedt...</p>}
 
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
