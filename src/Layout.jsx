@@ -13,8 +13,10 @@ import {
   GripVertical,
   FolderOpen,
   LogOut,
-  Wrench
+  Wrench,
+  Mic,
 } from "lucide-react";
+import VoiceAssistant from "@/components/voice/VoiceAssistant";
 import BottomNav from "@/components/mobile/BottomNav";
 import { useIsMobile } from "@/components/mobile/useIsMobile";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
@@ -29,6 +31,7 @@ export default function Layout({ children, currentPageName }) {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [voiceOpen, setVoiceOpen] = useState(false);
   const menuRef = useRef(null);
 
   // --- Theme State ---
@@ -185,6 +188,18 @@ export default function Layout({ children, currentPageName }) {
                   </Droppable>
                 </DragDropContext>
 
+                {/* Voice Assistant Button */}
+                <button
+                    onClick={() => setVoiceOpen(v => !v)}
+                    title="Smartis KI-Assistent (Ctrl+Shift+Space)"
+                    className={`w-10 h-10 flex items-center justify-center rounded-lg transition-all duration-200 ${
+                        voiceOpen ? 'text-white shadow-md' : isLight ? 'text-slate-500 hover:bg-slate-200' : isArtis ? 'text-slate-500 hover:bg-green-100' : 'text-zinc-500 hover:bg-zinc-800/60'
+                    }`}
+                    style={voiceOpen ? { backgroundColor: isArtis ? '#7a9b7f' : '#7c3aed' } : {}}
+                >
+                    <Mic className="h-5 w-5" />
+                </button>
+
                 {/* Profile Menu */}
                 <div className="relative" ref={menuRef}>
                   <button
@@ -224,6 +239,9 @@ export default function Layout({ children, currentPageName }) {
           {/* Mobile Navigation */}
           {isMobile && !isTaskUser && <BottomNav />}
         </div>
+
+        {/* Voice Assistant Panel */}
+        <VoiceAssistant open={voiceOpen && !isTaskUser && !isMobile} onClose={() => setVoiceOpen(false)} />
       </ThemeContext.Provider>
   );
 }
