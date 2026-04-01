@@ -2,7 +2,7 @@ import React, { useState, useRef } from "react";
 import {
     Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter
 } from "@/components/ui/dialog";
-import { X, Upload, FileText, Calendar, Tag, MessageSquare, Building2 } from "lucide-react";
+import { Calendar, Building2 } from "lucide-react";
 import {toast} from "sonner";
 
 const CATEGORIES = [
@@ -18,10 +18,7 @@ const CATEGORIES = [
 export default function CreateLinkDialog({open, customers, preCustomer, allTags, onClose, s, border, accent, isArtis, BUCKET = "posteingang"}) {
     const [file, setFile] = useState(null);
     const [custId, setCustId] = useState(preCustomer?.id || "");
-    const [name, setName] = useState("");
     const [tagIds, setTagIds] = useState([]);
-    const [notes, setNotes] = useState("");
-    const [uploading, setUploading] = useState(false);
     const fileRef = useRef();
     const [dialogData, setDialogData] = useState({
         customerId: preCustomer || "",
@@ -183,7 +180,7 @@ export default function CreateLinkDialog({open, customers, preCustomer, allTags,
                         className="px-4 py-1.5 rounded-md text-sm font-medium text-white transition-opacity disabled:opacity-40"
                         style={{ backgroundColor: accent }}
                     >
-                        {uploading ? "Verarbeite..." : "Hochladen & Speichern"}
+                        Link erstellen
                     </button>
                 </DialogFooter>
             </DialogContent>
