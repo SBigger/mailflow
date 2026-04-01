@@ -30,6 +30,8 @@ import Layout from './Layout';
 import MFASetup from "./pages/MFASetup.jsx";
 import MFALogin from "./pages/MFALogin.jsx";
 import SetPassword from "./pages/SetPassword.jsx";
+import DokumentUploadKunden from "./pages/DokumentUploadKunden.jsx";
+import Posteingang from "./pages/Posteingang.jsx";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30000 } }
@@ -69,6 +71,7 @@ function AuthenticatedApp() {
         <Route path="/TicketBoard"   element={<TicketBoard />} />
         <Route path="/KnowledgeBase" element={<KnowledgeBase />} />
         <Route path="/Dokumente" element={<Dokumente />} />
+        <Route path="/Posteingang" element={<Posteingang />} />
         <Route path="/UserManagement" element={<UserManagement />} />
         <Route path="/ArtisTools" element={<ArtisTools />} />
         <Route path="/BriefSchreiben" element={<BriefSchreiben />} />
@@ -101,6 +104,7 @@ function App() {
               <Route path="/reset-password" element={<ResetPassword />} />
               <Route path="/mfa-setup" element={<MFASetup />} />
               <Route path="/mfa-login" element={<MFALogin />} />
+              <Route path="/upload/:hash" element={<DokumentUploadKunden />} />
 
               {/* All other routes: handled via AuthenticatedApp */}
               <Route path="*" element={<AuthenticatedApp />} />
