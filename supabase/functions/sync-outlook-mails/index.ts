@@ -142,7 +142,7 @@ Deno.serve(async (req) => {
       const toUpdate: any[] = []
 
       for (const msg of messages) {
-        if (msg['@odata.removed']) {
+        if (msg['@removed']) {
           // Mail aus Outlook gelöscht → in Supabase behalten, nur als archiviert markieren
           const existing = existingMap.get(msg.id)
           if (existing?.id) {
