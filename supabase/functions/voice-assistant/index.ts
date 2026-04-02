@@ -30,19 +30,24 @@ serve(async (req) => {
       });
     }
 
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser(
-      authHeader.replace("Bearer ", "")
-    );
-    if (authError || !user) {
+    // JWT lokal prüfen (kein extra API-Call): Payload dekodieren und exp prüfen
+    const token = authHeader.replace("Bearer ", "");
+    try {
+      const parts = token.split(".");
+      if (parts.length !== 3) throw new Error("invalid jwt");
+      const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
+      if (!payload.sub && payload.role !== "service_role") throw new Error("no sub");
+      if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) throw new Error("expired");
+    } catch {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+    );
 
     const { question } = await req.json();
     if (!question?.trim()) {
