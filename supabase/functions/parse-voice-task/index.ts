@@ -39,9 +39,9 @@ serve(async (req) => {
       });
     }
 
-    const anthropicApiKey = Deno.env.get("ANTHROPIC_API_KEY");
-    if (!anthropicApiKey) {
-      return new Response(JSON.stringify({ error: "ANTHROPIC_API_KEY not configured" }), {
+    const geminiKey = Deno.env.get("GEMINI_API_KEY");
+    if (!geminiKey) {
+      return new Response(JSON.stringify({ error: "GEMINI_API_KEY not configured" }), {
         status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -65,64 +65,48 @@ ${userList || "—"}
 
 Bekannte Kunden: ${customerList || "—"}
 
-Extrahiere folgende Felder:
+Extrahiere folgende Felder und antworte NUR mit gültigem JSON:
 
-TITEL: Format "[Kundenname] – [Tätigkeit]" wenn Kunde erkennbar. Z.B. "Müller AG – Steuerklärung prüfen". Sonst nur Tätigkeit. Max. 60 Zeichen.
+{
+  "title": "Format '[Kundenname] – [Tätigkeit]' wenn Kunde erkennbar, max. 60 Zeichen",
+  "description": "Zusätzliche Details als '- item\\n- item' oder null",
+  "column_id": "Passende Spalten-ID oder null",
+  "priority_id": "Prioritäts-ID (dringend/sofort/wichtig → höchste) oder null",
+  "due_date": "YYYY-MM-DD (morgen/nächste Woche/etc interpretieren) oder null",
+  "assignee_email": "E-Mail der zugewiesenen Person oder null",
+  "verantwortlich_email": "E-Mail der verantwortlichen Person (bei 'ich' → null) oder null"
+}`;
 
-BESCHREIBUNG: Zusätzliche Details, mehrere Punkte als "- item\n- item". Null wenn keine.
-
-SPALTE: Passende Spalten-ID. Z.B. "Intern", "In Arbeit", "Warten". Null wenn unklar.
-
-PRIORITÄT: Aus Liste. "dringend/sofort/wichtig" → höchste Priorität. Null wenn nicht erwähnt.
-
-DATUM: Interpretiere: "morgen", "nächste Woche", "bis Freitag", "Ende Monat", "Ende Jahr". Format YYYY-MM-DD. Null wenn nicht erwähnt.
-
-ZUGEWIESEN (assignee_email): Person der die Arbeit zugewiesen wird. Suche ähnlichen Namen in der Mitarbeiterliste (auch bei Spitznamen oder Teilen des Namens). Null wenn nicht erkennbar.
-
-VERANTWORTLICH (verantwortlich_email): Person die für den Task verantwortlich ist (oft die sprechende Person oder "ich"). Falls "ich" oder kein Name → null (wird automatisch auf aktuellen Benutzer gesetzt). Sonst: suche in Mitarbeiterliste.
-
-Antworte NUR mit gültigem JSON, ohne Kommentare.`;
-
-    const claudeResponse = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": anthropicApiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 512,
-        messages: [{ role: "user", content: prompt }],
-        tools: [{
-          name: "extract_task",
-          description: "Extrahiere Task-Felder aus dem gesprochenen Text",
-          input_schema: {
-            type: "object",
-            properties: {
-              title:                { type: "string" },
-              description:          { type: ["string", "null"] },
-              column_id:            { type: ["string", "null"] },
-              priority_id:          { type: ["string", "null"] },
-              due_date:             { type: ["string", "null"] },
-              assignee_email:       { type: ["string", "null"] },
-              verantwortlich_email: { type: ["string", "null"] },
-            },
-            required: ["title"],
+    const geminiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${geminiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.1,
+            maxOutputTokens: 512,
+            responseMimeType: "application/json",
           },
-        }],
-        tool_choice: { type: "tool", name: "extract_task" },
-      }),
-    });
+        }),
+      }
+    );
 
-    if (!claudeResponse.ok) {
-      const errorText = await claudeResponse.text();
-      throw new Error(`Claude API error: ${claudeResponse.status} ${errorText}`);
+    if (!geminiRes.ok) {
+      const errorText = await geminiRes.text();
+      throw new Error(`Gemini API error: ${geminiRes.status} ${errorText}`);
     }
 
-    const claudeData = await claudeResponse.json();
-    const toolUse = claudeData.content?.find((c: any) => c.type === "tool_use");
-    const result = toolUse?.input || {};
+    const geminiData = await geminiRes.json();
+    const rawText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+    let result: any = {};
+    try {
+      result = JSON.parse(rawText);
+    } catch {
+      const match = rawText.match(/\{[\s\S]*\}/);
+      result = match ? JSON.parse(match[0]) : {};
+    }
 
     return new Response(JSON.stringify(result), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

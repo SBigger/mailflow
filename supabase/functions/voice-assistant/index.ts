@@ -32,11 +32,12 @@ serve(async (req) => {
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_ANON_KEY")!,
-      { global: { headers: { Authorization: authHeader } } }
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    const { data: { user }, error: authError } = await supabase.auth.getUser(
+      authHeader.replace("Bearer ", "")
+    );
     if (authError || !user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -88,9 +89,13 @@ serve(async (req) => {
         .order('received_date', { ascending: false })
         .limit(6),
 
+      // Volltext-Suche auf search_vector, Fallback auf ilike
       supabase.from('dokumente')
-        .select('id, name, filename, customer_id, file_type')
-        .or(buildOrFilter(['name', 'filename'], keywords))
+        .select('id, name, filename, customer_id, file_type, content_text')
+        .or([
+          buildOrFilter(['name', 'filename'], keywords),
+          keywords.map(k => `content_text.ilike.%${k}%`).join(','),
+        ].join(','))
         .limit(5),
     ]);
 
@@ -181,6 +186,7 @@ serve(async (req) => {
       ctx += `## DOKUMENTE (${doks.length} gefunden)\n`;
       doks.slice(0, 5).forEach((d: any) => {
         ctx += `ID:${d.id} | "${d.name}" | Kunde: ${cn(d.customer_id)} | Typ: ${d.file_type || d.filename?.split('.').pop() || '–'}\n`;
+        if (d.content_text) ctx += `  Inhalt: ${d.content_text.slice(0, 300)}\n`;
       });
       ctx += '\n';
     }
@@ -193,17 +199,16 @@ serve(async (req) => {
     const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY");
     if (!anthropicKey) throw new Error("ANTHROPIC_API_KEY not configured");
 
-    const systemPrompt = `Du bist Smartis, der KI-Assistent von Artis Treuhand. Beantworte Fragen auf Deutsch basierend auf den Daten.
+    const userPrompt = `${ctx}
 
-Regeln:
-- Antworte präzise, informativ und freundlich
-- Bei Fristen: nenne Kategorie, Kanton, Jahr, Fälligkeitsdatum und Status
-- Bei Aufgaben: nenne Titel, Fälligkeitsdatum und Status
-- Bei Mails: nenne Betreff, Absender und Datum
-- Bei Dokumenten: nenne Dokumentname und Kunden
-- Wenn nichts gefunden: sag es klar und schlage vor wie man besser suchen könnte
-- speak_text: kurze Zusammenfassung ohne Markdown, 1-2 Sätze zum Vorlesen
-- sources: liste NUR Einträge die wirklich relevant für die Frage sind (max. 8)`;
+Antworte mit genau diesem JSON-Format (kein Markdown-Codeblock, nur reines JSON):
+{
+  "answer": "Vollständige Antwort mit Details. ** für fett, - für Listenelemente.",
+  "speak_text": "1-2 Sätze zum Vorlesen, kein Markdown.",
+  "sources": [
+    {"type": "frist|task|mail|dokument", "id": "uuid", "title": "Titel", "subtitle": "Datum/Status", "customer_name": "Kundenname"}
+  ]
+}`;
 
     const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -214,43 +219,18 @@ Regeln:
       },
       body: JSON.stringify({
         model: "claude-haiku-4-5-20251001",
-        max_tokens: 1200,
-        system: systemPrompt,
-        messages: [{ role: "user", content: ctx }],
-        tools: [{
-          name: "voice_answer",
-          description: "Strukturierte Antwort auf die Suchanfrage",
-          input_schema: {
-            type: "object",
-            properties: {
-              answer: {
-                type: "string",
-                description: "Vollständige Antwort mit allen Details. Markdown erlaubt (** für fett, - für Liste)."
-              },
-              speak_text: {
-                type: "string",
-                description: "Sehr kurze Version zum Vorlesen, 1-2 Sätze, kein Markdown."
-              },
-              sources: {
-                type: "array",
-                description: "Relevante Quellen als klickbare Links",
-                items: {
-                  type: "object",
-                  properties: {
-                    type:          { type: "string", enum: ["frist", "task", "mail", "dokument"] },
-                    id:            { type: "string" },
-                    title:         { type: "string", description: "Kurzer Titel" },
-                    subtitle:      { type: "string", description: "Zusatzinfo: Datum, Status, Kundenname" },
-                    customer_name: { type: "string" },
-                  },
-                  required: ["type", "id", "title"],
-                },
-              },
-            },
-            required: ["answer", "speak_text", "sources"],
-          },
-        }],
-        tool_choice: { type: "tool", name: "voice_answer" },
+        max_tokens: 1500,
+        system: `Du bist Smartis, der KI-Assistent von Artis Treuhand. Beantworte Fragen auf Deutsch.
+
+Regeln:
+- Antworte präzise, informativ und freundlich
+- Bei Fristen: nenne Kategorie, Kanton, Jahr, Fälligkeitsdatum und Status
+- Bei Aufgaben: nenne Titel, Fälligkeitsdatum und Status
+- Bei Mails: nenne Betreff, Absender und Datum
+- Bei Dokumenten: nenne Dokumentname und Kunden
+- Wenn nichts gefunden: sag es klar
+- Antworte NUR mit einem JSON-Objekt, kein Markdown-Codeblock`,
+        messages: [{ role: "user", content: userPrompt }],
       }),
     });
 
@@ -260,12 +240,23 @@ Regeln:
     }
 
     const claudeData = await claudeRes.json();
-    const toolUse = claudeData.content?.find((c: any) => c.type === "tool_use");
-    const result = toolUse?.input || {
-      answer: "Entschuldigung, ich konnte keine Antwort generieren.",
-      speak_text: "Keine Antwort erhalten.",
-      sources: [],
-    };
+    const rawText = claudeData.content?.[0]?.text || "{}";
+
+    let result;
+    try {
+      result = JSON.parse(rawText);
+    } catch {
+      // Fallback: try extracting JSON from text
+      const match = rawText.match(/\{[\s\S]*\}/);
+      result = match ? JSON.parse(match[0]) : {
+        answer: "Entschuldigung, ich konnte keine Antwort generieren.",
+        speak_text: "Keine Antwort erhalten.",
+        sources: [],
+      };
+    }
+
+    if (!result.sources) result.sources = [];
+    if (!result.speak_text) result.speak_text = result.answer?.slice(0, 150) || "";
 
     return new Response(JSON.stringify(result), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
