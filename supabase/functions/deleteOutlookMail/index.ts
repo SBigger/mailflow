@@ -66,7 +66,7 @@ serve(async (req) => {
   const accessToken = await getAccessToken(supabase, authUser, profile)
   if (!accessToken) return new Response(JSON.stringify({ error: 'Nicht mit Outlook verbunden' }), { status: 400, headers: corsHeaders })
 
-  // Delete from Outlook
+  // Delete from Outlook (Fehler nur loggen, nicht als 500 zurückgeben)
   const res = await fetch(`https://graph.microsoft.com/v1.0/me/messages/${mail.outlook_id}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${accessToken}` }
@@ -74,7 +74,8 @@ serve(async (req) => {
 
   if (!res.ok && res.status !== 404) {
     const err = await res.text()
-    return new Response(JSON.stringify({ error: `Graph Error: ${err}` }), { status: 500, headers: corsHeaders })
+    console.error(`[DELETE_MAIL] Graph error ${res.status}: ${err}`)
+    return new Response(JSON.stringify({ success: true, warning: `Outlook-Löschung fehlgeschlagen: ${res.status}` }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
   }
 
   return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })

@@ -139,7 +139,30 @@ function UploadDialog({ customers, preCustomer, allTags, onCancel, onUpload, s, 
   const [tagIds,     setTagIds]     = useState([]);
   const [notes,      setNotes]      = useState("");
   const [uploading,  setUploading]  = useState(false);
+  const [errors,     setErrors]     = useState({});
   const fileRef = useRef();
+
+  // Draggable state
+  const [dragPos,    setDragPos]    = useState({ x: 0, y: 0 });
+  const dragRef      = useRef({ dragging: false, startX: 0, startY: 0, posX: 0, posY: 0 });
+  const dialogRef    = useRef();
+
+  const onHeaderMouseDown = (e) => {
+    if (e.button !== 0) return;
+    dragRef.current = { dragging: true, startX: e.clientX, startY: e.clientY, posX: dragPos.x, posY: dragPos.y };
+    const onMove = (ev) => {
+      if (!dragRef.current.dragging) return;
+      setDragPos({ x: dragRef.current.posX + ev.clientX - dragRef.current.startX, y: dragRef.current.posY + ev.clientY - dragRef.current.startY });
+    };
+    const onUp = () => {
+      dragRef.current.dragging = false;
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    e.preventDefault();
+  };
 
   const inp = { background: s.inputBg, border: "1px solid " + (s.inputBorder || border), color: s.textMain, borderRadius: 6, padding: "5px 8px", fontSize: 13, width: "100%", outline: "none" };
 
@@ -151,8 +174,13 @@ function UploadDialog({ customers, preCustomer, allTags, onCancel, onUpload, s, 
   };
 
   const handleUpload = async () => {
+    const newErrors = {};
     if (!file || !custId || !name.trim()) { toast.error("Bitte Datei, Kunde und Name ausf\u00fcllen"); return; }
     if (!year || isNaN(parseInt(year)))   { toast.error("Bitte ein g\u00fcltiges Jahr eingeben"); return; }
+    if (!category)                        { newErrors.category = "Bitte eine Kategorie ausw\u00e4hlen."; }
+    if (!tagIds || tagIds.length === 0)   { newErrors.tags = "Bitte mindestens einen Tag ausw\u00e4hlen."; }
+    if (Object.keys(newErrors).length > 0) { setErrors(newErrors); return; }
+    setErrors({});
     setUploading(true);
     try {
       // Text extrahieren (PDF, Excel, Word, etc.) für Volltext-Suche
@@ -187,8 +215,8 @@ function UploadDialog({ customers, preCustomer, allTags, onCancel, onUpload, s, 
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ background: s.cardBg, border: "1px solid " + border, borderRadius: 12, padding: 28, width: 660, maxWidth: "95vw", maxHeight: "90vh", overflowY: "auto" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+      <div ref={dialogRef} style={{ background: s.cardBg, border: "1px solid " + border, borderRadius: 12, padding: 28, width: 660, minWidth: 500, minHeight: 400, maxWidth: "95vw", maxHeight: "90vh", overflowY: "auto", resize: "both", transform: `translate(${dragPos.x}px, ${dragPos.y}px)` }}>
+        <div onMouseDown={onHeaderMouseDown} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, cursor: "move", userSelect: "none" }}>
           <h3 style={{ color: s.textMain, fontSize: 14, fontWeight: 700 }}>Dokument hochladen</h3>
           <button onClick={onCancel} style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted }}><X size={18} /></button>
         </div>
@@ -215,10 +243,12 @@ function UploadDialog({ customers, preCustomer, allTags, onCancel, onUpload, s, 
           {/* Kategorie + Jahr */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <div>
-              <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Kategorie</label>
-              <select value={category} onChange={e => setCategory(e.target.value)} style={{ ...inp, cursor: "pointer" }}>
+              <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Kategorie *</label>
+              <select value={category} onChange={e => { setCategory(e.target.value); setErrors(prev => ({ ...prev, category: undefined })); }} style={{ ...inp, cursor: "pointer", borderColor: errors.category ? "#ef4444" : (s.inputBorder || border) }}>
+                <option value="">-- Kategorie w\u00e4hlen --</option>
                 {CATEGORIES.map(c => <option key={c.key} value={c.key}>{c.icon} {c.label}</option>)}
               </select>
+              {errors.category && <div style={{ color: "#ef4444", fontSize: 11, marginTop: 3 }}>{errors.category}</div>}
             </div>
             <div>
               <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Jahr *</label>
@@ -227,8 +257,9 @@ function UploadDialog({ customers, preCustomer, allTags, onCancel, onUpload, s, 
           </div>
           {/* Tags */}
           <div>
-            <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Tags</label>
-            <TagSelectWidget value={tagIds} onChange={setTagIds} allTags={allTags} s={s} border={border} accent={accent} />
+            <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Tags *</label>
+            <TagSelectWidget value={tagIds} onChange={(v) => { setTagIds(v); setErrors(prev => ({ ...prev, tags: undefined })); }} allTags={allTags} s={s} border={errors.tags ? "#ef4444" : border} accent={accent} />
+            {errors.tags && <div style={{ color: "#ef4444", fontSize: 11, marginTop: 3 }}>{errors.tags}</div>}
           </div>
           {/* Notiz */}
           <div>

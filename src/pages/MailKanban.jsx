@@ -81,6 +81,7 @@ export default function MailKanban() {
   const [advancedSearch, setAdvancedSearch] = useState({ dateFrom: null, dateTo: null, searchField: 'all' });
   const [mobileActiveColumnId, setMobileActiveColumnId] = useState(null);
   const [showMobileSearch, setShowMobileSearch] = useState(false);
+  const [deleteWarning, setDeleteWarning] = useState(null); // { mail, mode: 'outlook'|'local', warnings: [] }
   const isMobile = useIsMobile();
   // Mails sind strikt pro User - kein userFilter nötig
   const queryClient = useQueryClient();
@@ -912,19 +913,37 @@ export default function MailKanban() {
             setConvertMailDialogOpen(true);
           }}
           onDelete={async (mail) => {
+            const warnings = [];
+            if (mail.reminder_date) warnings.push(`Reminder gesetzt: ${new Date(mail.reminder_date).toLocaleDateString('de-CH', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`);
+            if (warnings.length > 0) {
+              setDeleteWarning({ mail, mode: 'outlook', warnings });
+              return;
+            }
             try {
-              await functions.invoke('deleteOutlookMail', { mail_id: mail.id });
+              let outlookOk = true;
+              try {
+                await functions.invoke('deleteOutlookMail', { mail_id: mail.id });
+              } catch {
+                outlookOk = false;
+              }
               await entities.MailItem.update(mail.id, { is_archived: true });
               queryClient.setQueryData(["mailItems", currentUser?.id], (old) =>
                 old ? old.filter(m => m.id !== mail.id) : old
               );
               setSelectedMail(null);
-              toast.success('E-Mail in Outlook-Papierkorb verschoben');
+              if (outlookOk) toast.success('E-Mail in Outlook-Papierkorb verschoben');
+              else toast.warning('Aus MailFlow entfernt – Outlook-Löschung fehlgeschlagen (Token abgelaufen?)');
             } catch (e) {
               toast.error('Fehler: ' + e.message);
             }
           }}
           onDeleteLocal={async (mail) => {
+            const warnings = [];
+            if (mail.reminder_date) warnings.push(`Reminder gesetzt: ${new Date(mail.reminder_date).toLocaleDateString('de-CH', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`);
+            if (warnings.length > 0) {
+              setDeleteWarning({ mail, mode: 'local', warnings });
+              return;
+            }
             try {
               await entities.MailItem.update(mail.id, { is_archived: true });
               queryClient.setQueryData(["mailItems", currentUser?.id], (old) =>
@@ -1005,6 +1024,57 @@ export default function MailKanban() {
             setMailToConvert(null);
           }}
         />
+      )}
+
+      {/* Warnung bei Löschung mit aktivem Reminder */}
+      {deleteWarning && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60">
+          <div className="bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl p-6 max-w-sm w-full mx-4">
+            <div className="flex items-center gap-3 mb-3">
+              <span className="text-2xl">⚠️</span>
+              <h3 className="text-white font-semibold text-base">Achtung – Reminder aktiv</h3>
+            </div>
+            <p className="text-zinc-300 text-sm mb-2">Diese E-Mail hat noch einen aktiven Reminder:</p>
+            <ul className="mb-4 space-y-1">
+              {deleteWarning.warnings.map((w, i) => (
+                <li key={i} className="text-amber-400 text-sm flex items-center gap-2">
+                  <Bell className="h-3.5 w-3.5 flex-shrink-0" /> {w}
+                </li>
+              ))}
+            </ul>
+            <p className="text-zinc-400 text-sm mb-5">Trotzdem {deleteWarning.mode === 'outlook' ? 'in Outlook löschen' : 'aus Kanban entfernen'}?</p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setDeleteWarning(null)}
+                className="px-4 py-2 text-sm text-zinc-300 hover:text-white bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-colors"
+              >Abbrechen</button>
+              <button
+                onClick={async () => {
+                  const { mail, mode } = deleteWarning;
+                  setDeleteWarning(null);
+                  try {
+                    let outlookOk = true;
+                    if (mode === 'outlook') {
+                      try { await functions.invoke('deleteOutlookMail', { mail_id: mail.id }); }
+                      catch { outlookOk = false; }
+                    }
+                    await entities.MailItem.update(mail.id, { is_archived: true });
+                    queryClient.setQueryData(["mailItems", currentUser?.id], (old) =>
+                      old ? old.filter(m => m.id !== mail.id) : old
+                    );
+                    setSelectedMail(null);
+                    if (mode === 'local') toast.success('Aus Kanban entfernt');
+                    else if (outlookOk) toast.success('E-Mail in Outlook-Papierkorb verschoben');
+                    else toast.warning('Aus MailFlow entfernt – Outlook-Löschung fehlgeschlagen');
+                  } catch (e) {
+                    toast.error('Fehler: ' + e.message);
+                  }
+                }}
+                className="px-4 py-2 text-sm text-white bg-red-600 hover:bg-red-500 rounded-lg transition-colors"
+              >Ja, trotzdem löschen</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {showDailyReminders && todayReminders.length > 0 && (

@@ -605,7 +605,7 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
           {/* Bemerkung toggle */}
           <button
             onClick={() => setShowDesc(v => !v)}
-            className="p-1.5 rounded hover:bg-blue-500/10 transition-opacity opacity-0 group-hover:opacity-100"
+            className={`p-1.5 rounded hover:bg-blue-500/10 transition-opacity ${description ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
             style={{ color: description ? s.accentBg : s.textMuted }}
             title="Bemerkung"
           >
