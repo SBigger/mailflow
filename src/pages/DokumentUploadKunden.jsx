@@ -37,14 +37,6 @@ export default function DokumentUploadKunden() {
         setFiles(files => [...files, ...Array.from(e.target.files)]);
     };
 
-    const formatFileSize = (bytes) => {
-        if (bytes === 0) return '0 Bytes';
-        const k = 1024;
-        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-    };
-
     const handleUpload = async (e) => {
         e.preventDefault();
         if (!files.length || !config) return;
@@ -143,7 +135,6 @@ export default function DokumentUploadKunden() {
                                 {files.map((f, i) => (
                                     <li key={i} className="flex items-center gap-2 text-[#4a5e4a]">
                                         <FileText className="w-3 h-3" /> {f.name}
-                                        <spam className="ml-auto">{formatFileSize(f.size)}</spam>
                                         <Trash2 size={16} className="ml-auto" onClick={() => {
                                             setFiles(files.filter(file => file.name !== f.name));
                                         }} style={{ cursor: "pointer", color: "#ef4444" }} />
