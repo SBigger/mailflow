@@ -15,6 +15,7 @@ import {
   LogOut,
   Wrench,
   Mic,
+  CloudUpload
 } from "lucide-react";
 import VoiceAssistant from "@/components/voice/VoiceAssistant";
 import BottomNav from "@/components/mobile/BottomNav";
@@ -79,6 +80,7 @@ export default function Layout({ children, currentPageName }) {
     { name: 'Fristen',        icon: CalendarClock,   label: 'Fristen' },
     { name: 'Kunden',         icon: Building2,       label: 'Kunden' },
     { name: 'Dokumente',      icon: FolderOpen,      label: 'Dokumente' },
+    { name: 'Posteingang',    icon: CloudUpload,      label: 'Posteingang' },
     { name: 'ArtisTools',     icon: Wrench,          label: 'Artis Tools' },
     { name: 'Settings',       icon: SettingsIcon,    label: 'Einstellungen' },
   ], [isTaskUser]);
