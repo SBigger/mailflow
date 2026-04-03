@@ -98,7 +98,7 @@ export default function AssignDialog({ customers, preCustomerId, doc, onClose, o
         try {
             const { data: uploadData, error: uploadError } = await supabase
                 .storage.from(BUCKET)
-                .copy(doc.storage_path, doc.storage_path, {
+                .copy(doc.storage_path, `${custId}/${doc.fileName}`, {
                     destinationBucket: 'dokumente'
                 });
 

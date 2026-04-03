@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { Upload, FileText, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
+import {Upload, FileText, Loader2, AlertCircle, Trash2} from 'lucide-react';
 import artisLogo from '/artis-logo.png';
 import { toast } from "sonner";
 import {supabase} from "../api/supabaseClient.js";
@@ -34,7 +34,7 @@ export default function DokumentUploadKunden() {
     }, [hash]);
 
     const handleFileChange = (e) => {
-        setFiles(Array.from(e.target.files));
+        setFiles(files => [...files, ...Array.from(e.target.files)]);
     };
 
     const handleUpload = async (e) => {
@@ -94,12 +94,18 @@ export default function DokumentUploadKunden() {
                 {/* Content Box */}
                 <div className="rounded-2xl p-6 shadow-sm border" style={{ backgroundColor: '#ffffff', borderColor: '#ccd8cc' }}>
                     <div className="mb-6">
-                        <div className="flex flex-wrap gap-2 mb-4">
+                        <div className="flex justify-center flex-wrap gap-2 mb-4">
                             {config?.tags?.map((tag, i) => (
                                 <span key={i} className="px-2 py-1 text-[10px] uppercase tracking-wider font-bold rounded" style={{ backgroundColor: '#e2eae2', color: '#4a5e4a' }}>
-                  {tag}
-                </span>
+                                  {tag}
+                                </span>
                             ))}
+                            <span key={config?.category} className="px-2 py-1 text-[10px] uppercase tracking-wider font-bold rounded" style={{ backgroundColor: '#e2eae2', color: '#4a5e4a' }}>
+                                  {config?.category}
+                                </span>
+                            <span key={config?.year} className="px-2 py-1 text-[10px] uppercase tracking-wider font-bold rounded" style={{ backgroundColor: '#e2eae2', color: '#4a5e4a' }}>
+                                  {config?.year}
+                                </span>
                         </div>
                         <p className="text-sm text-[#4a5e4a]">
                             Bitte laden Sie hier Ihre Dokumente für den Posteingang hoch.
@@ -129,6 +135,9 @@ export default function DokumentUploadKunden() {
                                 {files.map((f, i) => (
                                     <li key={i} className="flex items-center gap-2 text-[#4a5e4a]">
                                         <FileText className="w-3 h-3" /> {f.name}
+                                        <Trash2 size={16} className="ml-auto" onClick={() => {
+                                            setFiles(files.filter(file => file.name !== f.name));
+                                        }} style={{ cursor: "pointer", color: "#ef4444" }} />
                                     </li>
                                 ))}
                             </ul>

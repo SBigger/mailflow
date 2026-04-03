@@ -1,5 +1,18 @@
 import React, { useState, useMemo, useEffect, useRef, useContext } from "react";
-import { Search, Upload, Download, Trash2, ChevronDown, ChevronRight, X, Pencil, Lock, LockOpen, ShieldAlert } from "lucide-react";
+import {
+  Search,
+  Upload,
+  Download,
+  Trash2,
+  ChevronDown,
+  ChevronRight,
+  X,
+  Pencil,
+  Lock,
+  LockOpen,
+  ShieldAlert,
+  RefreshCw
+} from "lucide-react";
 import * as pdfjsLib from "pdfjs-dist";
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
@@ -363,6 +376,7 @@ export default function Dokumente() {
   const [ftSearch,    setFtSearch]    = useState("");
   const [ftResults,   setFtResults]   = useState(null);
   const [ftSearching, setFtSearching] = useState(false);
+  const [syncData, setSyncData ] = useState(false);
 
   // Volltext-Suche via Supabase RPC (PostgreSQL GIN-Index)
   useEffect(() => {
@@ -497,8 +511,16 @@ export default function Dokumente() {
   useEffect(() => {
     const legacy = filtered.filter(d => !d.sharepoint_web_url && d.storage_path && !signedUrls[d.id]);
     if (!legacy.length) return;
+
     legacy.forEach(async doc => {
-      const { data } = await supabase.storage.from(BUCKET).createSignedUrl(doc.storage_path, 3600);
+      const storagePath = doc.storage_path.replace('dokumente/', '');
+      const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(storagePath, 3600);
+      if (error) {
+        console.error("Signed URL Error:", error);
+        console.error("Path:", doc.storage_path);
+        toast.error(`Create Url fehlgeschlagen: ${error.message}`); // This will show "Object not found"
+        return;
+      }
       if (data?.signedUrl) setSignedUrls(prev => ({ ...prev, [doc.id]: data.signedUrl }));
     });
   }, [filtered]);
@@ -537,7 +559,8 @@ export default function Dokumente() {
         fileUrl = doc.sharepoint_web_url;
       } else if (doc.storage_path) {
         // Legacy Supabase Storage: signierte URL erstellen
-        const { data: urlData } = await supabase.storage.from(BUCKET).createSignedUrl(doc.storage_path, 3600);
+        const storagePath = doc.storage_path.replace('dokumente/', '');
+        const { data: urlData } = await supabase.storage.from(BUCKET).createSignedUrl(storagePath, 3600);
         if (!urlData?.signedUrl) {
           toast.error('Fehler beim Erstellen der Download-URL');
           return;

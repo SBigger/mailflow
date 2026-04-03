@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useContext } from "react";
-import { Search, Download, Trash2, FileUser} from "lucide-react";
+import {Search, Download, Trash2, FileUser, RefreshCw} from "lucide-react";
 import * as pdfjsLib from "pdfjs-dist";
 import { Button } from "@/components/ui/button";
 import { ThemeContext } from "@/Layout";
@@ -51,12 +51,13 @@ export default function Posteingang() {
   const [showLinkDialog, setShowLinkDialog] = useState(false);
   const [showAssignDialog, setShowAssignDialog] = useState(false);
   const [assignDoc, setAssignDoc] = useState(null);
+  const [syncData, setSyncData] = useState(false);
 
   // Queries
   const { data: customers = [] } = useQuery({ queryKey: ["customers"], queryFn: () => entities.Customer.list("company_name") });
 
   const { data: allDoks = [], isLoading } = useQuery({
-    queryKey: ["dokumente-all"],
+    queryKey: ["dokumente-all-post"],
     queryFn: async () => {
       const { data: folders, error: folderError } = await supabase.storage.from(BUCKET).list();
       if (folderError) throw folderError;
@@ -132,7 +133,7 @@ export default function Posteingang() {
       toast.error(`Löschen für ${doc.name} hat nicht funktioniert.`);
     } else {
       toast.success(`${doc.name} gelöscht.`)
-      queryClient.invalidateQueries({ queryKey: ["dokumente-all"] });
+      queryClient.invalidateQueries({ queryKey: ["dokumente-all-post"] });
     }
   }
 
@@ -197,13 +198,13 @@ export default function Posteingang() {
                 <div style={{ textAlign: "center", color: s.textMuted, marginTop: 40 }}>Keine Dokumente gefunden.</div>
             ) : (
                 filtered.map(doc => {
-                  const fi = getFileInfo(doc.metadata?.mimetype, doc.name);
+                  const fi = getFileInfo(doc?.metadata?.mimetype, doc?.name);
                   return (
-                      <div key={doc.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px", borderBottom: "1px solid " + border, transition: "background 0.2s" }}>
+                      <div key={doc?.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px", borderBottom: "1px solid " + border, transition: "background 0.2s" }}>
                         <span style={{ background: fi.color, color: "white", padding: "2px 8px", borderRadius: 4, fontSize: 10, fontWeight: 700 }}>{fi.label}</span>
-                        <span style={{ flex: 1, fontSize: 14 }}>{doc.fileName}</span>
-                        {doc.year && <span style={{ fontSize: 11, color: s.textMuted, background: s.sidebarBg, border: "1px solid " + border, borderRadius: 6, padding: "2px 7px", flexShrink: 0 }}>{doc.year}</span>}
-                        {doc.category && <span style={{ fontSize: 11, color: s.textMuted, background: s.sidebarBg, border: "1px solid " + border, borderRadius: 6, padding: "2px 7px", flexShrink: 0 }}>{doc.category}</span>}
+                        <span style={{ flex: 1, fontSize: 14 }}>{doc?.fileName}</span>
+                        {doc?.year && <span style={{ fontSize: 11, color: s.textMuted, background: s.sidebarBg, border: "1px solid " + border, borderRadius: 6, padding: "2px 7px", flexShrink: 0 }}>{doc?.year}</span>}
+                        {doc?.category && <span style={{ fontSize: 11, color: s.textMuted, background: s.sidebarBg, border: "1px solid " + border, borderRadius: 6, padding: "2px 7px", flexShrink: 0 }}>{doc?.category}</span>}
                         <div style={{ display: "flex", alignItems: "center", gap: 15 }}>
                           <FileUser size={25} onClick={() => {setAssignDoc(doc), setShowAssignDialog(true)}} style={{ cursor: "pointer", color: s.textMuted }} />
                           <Download size={16} onClick={() => downloadDoc(doc)} style={{ cursor: "pointer", color: s.textMuted }} />
@@ -221,8 +222,8 @@ export default function Posteingang() {
                 open={showAssignDialog}
                 onClose={() => {
                   setShowAssignDialog(false);
-                  setAssignDoc(null); // Good practice to clear the doc state
-                  queryClient.invalidateQueries(["dokumente-all"]);
+                  setAssignDoc(null);
+                  queryClient.invalidateQueries(["dokumente-all-post"]);
                 }}
                 doc={assignDoc}
                 customers={customers}
