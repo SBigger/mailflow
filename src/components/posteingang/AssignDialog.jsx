@@ -191,7 +191,7 @@ export default function AssignDialog({ customers, preCustomerId, doc, onClose, o
                 <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 16 }}>
                     <Button variant="outline" onClick={onClose} style={{ color: s.textMuted, borderColor: border }}>Abbrechen</Button>
                     <Button onClick={handleUpload} disabled={uploading || !custId} style={{ background: accent, color: "#fff" }}>
-                        {uploading ? "Laedt hoch..." : "Zuweisen"}
+                        {uploading ? "Zuweisung läuft..." : "zuweisen"}
                     </Button>
                 </div>
             </div>
