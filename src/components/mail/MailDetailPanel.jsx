@@ -20,7 +20,7 @@ import SendWithTagsReminderDialog from "./SendWithTagsReminderDialog";
 import ForwardMailDialog from "./ForwardMailDialog";
 import AssignToCustomerDialog from "./AssignToCustomerDialog";
 
-export default function MailDetailPanel({ mail, onClose, onReply, onDelete, onDeleteLocal, onEdit, onViewChange, onConvertToTask, onToggleComplete, linkedTaskId, onUnlinkTask }) {
+export default function MailDetailPanel({ mail, onClose, onReply, onDelete, onEdit, onViewChange, onConvertToTask, onToggleComplete, linkedTaskId, onUnlinkTask }) {
 
   const [replyText, setReplyText] = useState('');
   const [sending, setSending] = useState(false);
@@ -188,29 +188,9 @@ export default function MailDetailPanel({ mail, onClose, onReply, onDelete, onDe
             <Button variant="ghost" size="sm" onClick={() => setAssignCustomerOpen(true)} className="justify-start text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 gap-1.5 text-xs">
               <Building2 className="h-3.5 w-3.5" /> Firma zuweisen
             </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="justify-start text-red-400 hover:text-red-300 hover:bg-red-500/10 gap-1.5 text-xs w-full">
-                  <Trash2 className="h-3.5 w-3.5" /> Löschen
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent className="bg-zinc-900 border-zinc-800 text-zinc-200">
-                <DropdownMenuItem 
-                  onClick={() => onDeleteLocal?.(mail)}
-                  className="text-yellow-400 focus:text-yellow-300 focus:bg-yellow-500/10"
-                >
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Nur aus Kanban entfernen
-                </DropdownMenuItem>
-                <DropdownMenuItem 
-                  onClick={() => onDelete?.(mail)}
-                  className="text-red-400 focus:text-red-300 focus:bg-red-500/10"
-                >
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  In Outlook-Papierkorb verschieben
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <Button variant="ghost" size="sm" onClick={() => onDelete?.(mail)} className="justify-start text-red-400 hover:text-red-300 hover:bg-red-500/10 gap-1.5 text-xs w-full">
+              <Trash2 className="h-3.5 w-3.5" /> Löschen
+            </Button>
             {linkedTaskId && (
               <Button 
                 variant="ghost" 

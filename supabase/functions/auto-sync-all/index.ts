@@ -6,11 +6,10 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-const FLAG_FETCH_DELTA = 'FETCH_DELTA'
-
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
+  // This function is called by pg_cron - verify it's an internal call or has the service role key
   const authHeader = req.headers.get('Authorization') || ''
   const isServiceCall = authHeader.includes(Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '__NO_KEY__')
   const isCronCall = req.headers.get('X-Cron-Secret') === Deno.env.get('CRON_SECRET')
@@ -23,6 +22,7 @@ serve(async (req) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
   )
 
+  // Get all profiles with a microsoft refresh token
   const { data: profiles } = await supabase
     .from('profiles')
     .select('id, email, microsoft_refresh_token, microsoft_access_token, microsoft_token_expiry, microsoft_delta_link, sync_days')
@@ -33,10 +33,9 @@ serve(async (req) => {
   }
 
   const results = []
-
   for (const profile of profiles) {
     try {
-      // Token refresh
+      // Refresh token if needed
       let accessToken = profile.microsoft_access_token
       const tokenExpiry = profile.microsoft_token_expiry || 0
       if (!accessToken || Date.now() > tokenExpiry - 60000) {
@@ -52,7 +51,10 @@ serve(async (req) => {
             })
           }
         )
-        if (!tokenRes.ok) { results.push({ email: profile.email, error: 'Token refresh failed' }); continue }
+        if (!tokenRes.ok) {
+          results.push({ email: profile.email, error: 'Token refresh failed' })
+          continue
+        }
         const tokens = await tokenRes.json()
         accessToken = tokens.access_token
         await supabase.from('profiles').update({
@@ -62,21 +64,43 @@ serve(async (req) => {
         }).eq('id', profile.id)
       }
 
-      const authHeaders = { Authorization: `Bearer ${accessToken}` }
-      const savedDeltaLink = profile.microsoft_delta_link || ''
-      const syncDays = profile.sync_days || 80
-
-      // Bestehende Mails laden
-      const { data: existingMails } = await supabase.from('mail_items')
-        .select('id, outlook_id, internet_message_id, is_read').eq('created_by', profile.id)
-      const existingMap = new Map()
-      const existingByMsgId = new Map()
-      for (const m of (existingMails || [])) {
-        if (m.outlook_id) existingMap.set(m.outlook_id, m)
-        if (m.internet_message_id) existingByMsgId.set(m.internet_message_id, m)
+      // Build sync URL
+      const deltaLink = profile.microsoft_delta_link
+      let syncUrl: string
+      if (deltaLink && deltaLink.trim() !== '') {
+        syncUrl = deltaLink
+      } else {
+        const syncDays = profile.sync_days || 80
+        const fromDate = new Date()
+        fromDate.setDate(fromDate.getDate() - syncDays)
+        syncUrl = `https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages/delta?$select=id,receivedDateTime,subject,from,sender,hasAttachments,isRead,importance,bodyPreview&$filter=receivedDateTime+ge+${fromDate.toISOString()}&$top=999`
       }
 
-      // Outlook-Spalte
+      const response = await fetch(syncUrl, { headers: { Authorization: `Bearer ${accessToken}` } })
+      if (!response.ok) {
+        if (response.status === 410) {
+          await supabase.from('profiles').update({ microsoft_delta_link: '' }).eq('id', profile.id)
+          results.push({ email: profile.email, error: 'Delta expired, reset' })
+          continue
+        }
+        results.push({ email: profile.email, error: `Graph ${response.status}` })
+        continue
+      }
+
+      const data = await response.json()
+      const messages = data.value || []
+      const newDeltaLink = data['@odata.deltaLink'] || null
+      const nextLink = data['@odata.nextLink'] || null
+
+      // Get existing mails for this user
+      const { data: existingMails } = await supabase.from('mail_items')
+        .select('id, outlook_id, is_read').eq('created_by', profile.id)
+      const existingMap = new Map()
+      for (const m of (existingMails || [])) {
+        if (m.outlook_id) existingMap.set(m.outlook_id, { id: m.id, is_read: m.is_read })
+      }
+
+      // Get or create Outlook column
       let { data: outlookCol } = await supabase.from('kanban_columns')
         .select('*').eq('created_by', profile.id).eq('name', 'Outlook').single()
       if (!outlookCol) {
@@ -86,47 +110,47 @@ serve(async (req) => {
         outlookCol = newCol
       }
 
-      // Domain-Regeln
+      // Get domain rules for this user
       const { data: domainRules } = await supabase.from('domain_tag_rules').select('*').eq('created_by', profile.id)
 
-      // ──────────────────────────────────────────────────────────────────
-      // PHASE 1: Erster Sync (delta_link leer)
-      // messages-Endpoint (NICHT delta) – respektiert $top=999 korrekt
-      // ──────────────────────────────────────────────────────────────────
-      if (!savedDeltaLink) {
-        const fromDate = new Date()
-        fromDate.setDate(fromDate.getDate() - syncDays)
-        let url: string | null = `https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$select=id,internetMessageId,receivedDateTime,subject,from,sender,hasAttachments,isRead,importance,bodyPreview&$filter=receivedDateTime+ge+${fromDate.toISOString()}&$top=999&$orderby=receivedDateTime+asc`
+      let inserted = 0, updated = 0
+      const toInsert: any[] = []
+      const toUpdate: any[] = []
+      const isDelta = !!(deltaLink && deltaLink.trim() !== '')
 
-        const allMessages: any[] = []
-        let pageCount = 0
-        while (url && pageCount < 100) {
-          pageCount++
-          const resp = await fetch(url, { headers: authHeaders })
-          if (!resp.ok) { console.error(`[AUTOSYNC P1] ${profile.email} Graph ${resp.status}`); break }
-          const data = await resp.json()
-          allMessages.push(...(data.value || []))
-          url = data['@odata.nextLink'] || null
-          if (url) await new Promise(r => setTimeout(r, 50))
+      for (const msg of messages) {
+        if (msg['@odata.removed']) {
+          const existing = existingMap.get(msg.id)
+          if (existing?.id) {
+            await supabase.from('mail_items').update({ is_archived: true }).eq('id', existing.id)
+          }
+          continue
         }
 
-        const toInsert: any[] = []
-        for (const msg of allMessages) {
-          if (msg['@odata.removed']) continue
-          const existing = existingMap.get(msg.id) || (msg.internetMessageId ? existingByMsgId.get(msg.internetMessageId) : null)
-          if (existing) continue
-          let senderEmail = '', senderName = 'Unbekannt'
-          if (msg.from?.emailAddress) { senderEmail = (msg.from.emailAddress.address || '').toLowerCase(); senderName = msg.from.emailAddress.name || senderEmail || 'Unbekannt' }
-          const autoTags: string[] = []
-          let matchedCustomerId: string | null = null
-          for (const rule of (domainRules || [])) {
-            const domain = rule.domain.toLowerCase().replace(/^@/, '')
-            if (senderEmail.endsWith('@' + domain)) { autoTags.push(rule.tag); if (rule.customer_id && !matchedCustomerId) matchedCustomerId = rule.customer_id }
+        let senderEmail = ''
+        if (msg.from?.emailAddress) senderEmail = (msg.from.emailAddress.address || '').toLowerCase()
+
+        const autoTags: string[] = []
+        let matchedCustomerId: string | null = null
+        for (const rule of (domainRules || [])) {
+          const domain = rule.domain.toLowerCase().replace(/^@/, '')
+          if (senderEmail.endsWith('@' + domain)) {
+            autoTags.push(rule.tag)
+            if (rule.customer_id && !matchedCustomerId) matchedCustomerId = rule.customer_id
           }
+        }
+
+        const existing = existingMap.get(msg.id)
+        if (existing) {
+          if (isDelta) {
+            const newIsRead = existing.is_read ? true : (msg.isRead || false)
+            toUpdate.push({ id: existing.id, is_read: newIsRead, body_preview: msg.bodyPreview || '' })
+          }
+        } else {
+          const senderName = msg.from?.emailAddress?.name || msg.from?.emailAddress?.address || 'Unbekannt'
+          const subject = (msg.subject || '').trim() || '(Kein Betreff)'
           toInsert.push({
-            outlook_id: msg.id, internet_message_id: msg.internetMessageId || null,
-            subject: (msg.subject || '').trim() || '(Kein Betreff)',
-            sender_name: senderName, sender_email: senderEmail,
+            outlook_id: msg.id, subject, sender_name: senderName, sender_email: senderEmail,
             received_date: msg.receivedDateTime || new Date().toISOString(),
             is_read: msg.isRead || false, has_attachments: msg.hasAttachments || false,
             body_preview: msg.bodyPreview || '', mailbox: 'personal',
@@ -135,137 +159,29 @@ serve(async (req) => {
             customer_id: matchedCustomerId || null
           })
         }
-
-        let inserted = 0
-        for (let i = 0; i < toInsert.length; i += 50) {
-          const { error } = await supabase.from('mail_items').insert(toInsert.slice(i, i + 50))
-          if (!error) inserted += Math.min(50, toInsert.length - i)
-        }
-
-        await supabase.from('profiles').update({ microsoft_delta_link: FLAG_FETCH_DELTA }).eq('id', profile.id)
-        results.push({ email: profile.email, phase: 'initial', inserted, messages: allMessages.length, pages: pageCount })
-        continue
       }
 
-      // ──────────────────────────────────────────────────────────────────
-      // PHASE 2: Delta-Token holen (FETCH_DELTA)
-      // ──────────────────────────────────────────────────────────────────
-      if (savedDeltaLink === FLAG_FETCH_DELTA) {
-        let url: string | null = `https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages/delta?$select=id,internetMessageId,receivedDateTime,subject,from,sender,hasAttachments,isRead,importance,bodyPreview&$top=999`
-        let finalDeltaLink: string | null = null
-        let lastNextLink: string | null = null
-        const allMessages: any[] = []
-        let pageCount = 0
-
-        while (url && pageCount < 200) {
-          pageCount++
-          const resp = await fetch(url, { headers: authHeaders })
-          if (!resp.ok) {
-            if (resp.status === 410) { await supabase.from('profiles').update({ microsoft_delta_link: '' }).eq('id', profile.id) }
-            break
-          }
-          const data = await resp.json()
-          allMessages.push(...(data.value || []))
-          if (data['@odata.deltaLink']) { finalDeltaLink = data['@odata.deltaLink']; url = null }
-          else if (data['@odata.nextLink']) { lastNextLink = data['@odata.nextLink']; url = data['@odata.nextLink']; await new Promise(r => setTimeout(r, 50)) }
-          else { url = null }
-        }
-
-        const toInsert: any[] = [], toUpdate: any[] = []
-        for (const msg of allMessages) {
-          if (msg['@odata.removed']) { const e = existingMap.get(msg.id); if (e?.id) await supabase.from('mail_items').update({ is_archived: true }).eq('id', e.id); continue }
-          let senderEmail = '', senderName = 'Unbekannt'
-          if (msg.from?.emailAddress) { senderEmail = (msg.from.emailAddress.address || '').toLowerCase(); senderName = msg.from.emailAddress.name || senderEmail || 'Unbekannt' }
-          const existing = existingMap.get(msg.id) || (msg.internetMessageId ? existingByMsgId.get(msg.internetMessageId) : null)
-          if (existing) {
-            toUpdate.push({ id: existing.id, is_read: msg.isRead ?? existing.is_read, subject: (msg.subject || '').trim() || '(Kein Betreff)', body_preview: msg.bodyPreview || '', outlook_id: msg.id, internet_message_id: msg.internetMessageId || existing.internet_message_id || null })
-          } else {
-            const autoTags: string[] = []
-            let matchedCustomerId: string | null = null
-            for (const rule of (domainRules || [])) {
-              const domain = rule.domain.toLowerCase().replace(/^@/, '')
-              if (senderEmail.endsWith('@' + domain)) { autoTags.push(rule.tag); if (rule.customer_id && !matchedCustomerId) matchedCustomerId = rule.customer_id }
-            }
-            toInsert.push({ outlook_id: msg.id, internet_message_id: msg.internetMessageId || null, subject: (msg.subject || '').trim() || '(Kein Betreff)', sender_name: senderName, sender_email: senderEmail, received_date: msg.receivedDateTime || new Date().toISOString(), is_read: msg.isRead || false, has_attachments: msg.hasAttachments || false, body_preview: msg.bodyPreview || '', mailbox: 'personal', priority: msg.importance === 'high' ? 'high' : msg.importance === 'low' ? 'low' : 'normal', tags: autoTags, column_id: outlookCol!.id, created_by: profile.id, customer_id: matchedCustomerId || null })
-          }
-        }
-
-        let inserted = 0, updated = 0
-        for (let i = 0; i < toInsert.length; i += 50) { const { error } = await supabase.from('mail_items').insert(toInsert.slice(i, i + 50)); if (!error) inserted += Math.min(50, toInsert.length - i) }
-        for (let i = 0; i < toUpdate.length; i += 50) {
-          const batch = toUpdate.slice(i, i + 50)
-          const { error } = await supabase.from('mail_items').upsert(batch, { onConflict: 'id' })
-          if (error) for (const u of batch) { const { id, ...d } = u; await supabase.from('mail_items').update(d).eq('id', id) }
-          updated += batch.length
-        }
-
-        if (finalDeltaLink) await supabase.from('profiles').update({ microsoft_delta_link: finalDeltaLink }).eq('id', profile.id)
-        else if (lastNextLink) await supabase.from('profiles').update({ microsoft_delta_link: lastNextLink }).eq('id', profile.id)
-
-        results.push({ email: profile.email, phase: 'fetch_delta', inserted, updated, messages: allMessages.length, pages: pageCount, deltaReady: !!finalDeltaLink })
-        continue
+      for (let i = 0; i < toInsert.length; i += 50) {
+        await supabase.from('mail_items').insert(toInsert.slice(i, i + 50))
+        inserted += Math.min(50, toInsert.length - i)
+      }
+      for (const u of toUpdate) {
+        const { id, ...d } = u
+        await supabase.from('mail_items').update(d).eq('id', id)
+        updated++
       }
 
-      // ──────────────────────────────────────────────────────────────────
-      // PHASE 3: Inkrementelles Delta
-      // ──────────────────────────────────────────────────────────────────
-      let url: string | null = savedDeltaLink
-      const allMessages: any[] = []
-      let finalDeltaLink: string | null = null
-      let pageCount = 0
+      if (newDeltaLink) await supabase.from('profiles').update({ microsoft_delta_link: newDeltaLink }).eq('id', profile.id)
+      else if (nextLink) await supabase.from('profiles').update({ microsoft_delta_link: nextLink }).eq('id', profile.id)
 
-      while (url && pageCount < 20) {
-        pageCount++
-        const resp = await fetch(url, { headers: authHeaders })
-        if (!resp.ok) {
-          if (resp.status === 410) { await supabase.from('profiles').update({ microsoft_delta_link: '' }).eq('id', profile.id); results.push({ email: profile.email, error: 'Delta expired, reset' }); url = null; break }
-          results.push({ email: profile.email, error: `Graph ${resp.status}` }); url = null; break
-        }
-        const data = await resp.json()
-        allMessages.push(...(data.value || []))
-        if (data['@odata.deltaLink']) { finalDeltaLink = data['@odata.deltaLink']; url = null }
-        else if (data['@odata.nextLink']) { url = data['@odata.nextLink']; await new Promise(r => setTimeout(r, 50)) }
-        else { url = null }
-      }
-
-      const toInsert: any[] = [], toUpdate: any[] = []
-      for (const msg of allMessages) {
-        if (msg['@odata.removed']) { const e = existingMap.get(msg.id); if (e?.id) await supabase.from('mail_items').update({ is_archived: true }).eq('id', e.id); continue }
-        let senderEmail = '', senderName = 'Unbekannt'
-        if (msg.from?.emailAddress) { senderEmail = (msg.from.emailAddress.address || '').toLowerCase(); senderName = msg.from.emailAddress.name || senderEmail || 'Unbekannt' }
-        const existing = existingMap.get(msg.id) || (msg.internetMessageId ? existingByMsgId.get(msg.internetMessageId) : null)
-        if (existing) {
-          toUpdate.push({ id: existing.id, is_read: msg.isRead ?? existing.is_read, subject: (msg.subject || '').trim() || '(Kein Betreff)', body_preview: msg.bodyPreview || '', outlook_id: msg.id, internet_message_id: msg.internetMessageId || existing.internet_message_id || null })
-        } else {
-          const autoTags: string[] = []
-          let matchedCustomerId: string | null = null
-          for (const rule of (domainRules || [])) {
-            const domain = rule.domain.toLowerCase().replace(/^@/, '')
-            if (senderEmail.endsWith('@' + domain)) { autoTags.push(rule.tag); if (rule.customer_id && !matchedCustomerId) matchedCustomerId = rule.customer_id }
-          }
-          toInsert.push({ outlook_id: msg.id, internet_message_id: msg.internetMessageId || null, subject: (msg.subject || '').trim() || '(Kein Betreff)', sender_name: senderName, sender_email: senderEmail, received_date: msg.receivedDateTime || new Date().toISOString(), is_read: msg.isRead || false, has_attachments: msg.hasAttachments || false, body_preview: msg.bodyPreview || '', mailbox: 'personal', priority: msg.importance === 'high' ? 'high' : msg.importance === 'low' ? 'low' : 'normal', tags: autoTags, column_id: outlookCol!.id, created_by: profile.id, customer_id: matchedCustomerId || null })
-        }
-      }
-
-      let inserted = 0, updated = 0
-      for (let i = 0; i < toInsert.length; i += 50) { const { error } = await supabase.from('mail_items').insert(toInsert.slice(i, i + 50)); if (!error) inserted += Math.min(50, toInsert.length - i) }
-      for (let i = 0; i < toUpdate.length; i += 50) {
-        const batch = toUpdate.slice(i, i + 50)
-        const { error } = await supabase.from('mail_items').upsert(batch, { onConflict: 'id' })
-        if (error) for (const u of batch) { const { id, ...d } = u; await supabase.from('mail_items').update(d).eq('id', id) }
-        updated += batch.length
-      }
-      if (finalDeltaLink) await supabase.from('profiles').update({ microsoft_delta_link: finalDeltaLink }).eq('id', profile.id)
-      results.push({ email: profile.email, phase: 'incremental', inserted, updated, messages: allMessages.length, pages: pageCount })
-
-    } catch (e: any) {
+      results.push({ email: profile.email, inserted, updated, messages: messages.length })
+    } catch (e) {
       results.push({ email: profile.email, error: e.message })
     }
   }
 
-  // ──────────────────────────────────────────────────────────────────
-  // Support-Mailbox (unverändert)
-  // ──────────────────────────────────────────────────────────────────
+
+  // Support-Mailbox separat synchronisieren (client_credentials)
   let supportResult: any = null
   try {
     const SUPPORT_MAILBOX = 'support@artis-gmbh.ch'
@@ -299,8 +215,8 @@ serve(async (req) => {
     } else {
       const supportData = await supportRes.json()
       const supportMsgs: any[] = supportData.value || []
-      const supportNewDeltaLink: string | null = supportData['@odata.deltaLink'] || null
       const supportNextLink: string | null = supportData['@odata.nextLink'] || null
+      const supportNewDeltaLink: string | null = supportData['@odata.deltaLink'] || null
       const { data: existingTickets } = await supabase.from('support_tickets').select('outlook_message_id').not('outlook_message_id', 'is', null)
       const existingIds = new Set((existingTickets || []).map((t: any) => t.outlook_message_id))
       const { data: firstColumn } = await supabase.from('ticket_columns').select('id').order('order', { ascending: true }).limit(1).maybeSingle()

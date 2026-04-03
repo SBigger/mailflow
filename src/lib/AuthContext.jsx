@@ -68,7 +68,9 @@ export function AuthProvider({ children }) {
   }
 
   async function signOut() {
+    setLoading(true);
     const { error} = await supabase.auth.signOut();
+    setLoading(false);
     if (error) {
       console.error("Logout fehlgeschlagen:", error);
       return;

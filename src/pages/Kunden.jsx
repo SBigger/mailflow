@@ -1,14 +1,13 @@
-import React, { useState, useContext } from "react";
+import React, {useState, useContext, useRef} from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { entities, functions, auth } from "@/api/supabaseClient";
 import { ThemeContext } from "@/Layout";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Upload, Trash2, Download, Building2, UserRound, ChevronDown, PowerOff, ArrowLeft, LayoutList, LayoutGrid } from "lucide-react";
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem,
-  DropdownMenuTrigger, DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
+  Upload, Trash2, Download, Building2, UserRound, ChevronDown, PowerOff, ArrowLeft, LayoutList, LayoutGrid,
+  RefreshCw
+} from "lucide-react";
 import { useIsMobile } from "@/components/mobile/useIsMobile";
 import CustomerList from "../components/customers/CustomerList";
 import CustomerHeader from "../components/customers/CustomerHeader";
@@ -24,58 +23,7 @@ import CustomerFristenTab from "../components/customers/CustomerFristenTab";
 import CustomerDokumenteTab from "../components/customers/CustomerDokumenteTab";
 import CustomerAktionaereTab from "../components/customers/CustomerAktionaereTab";
 import MobileCustomerView from "../components/customers/MobileCustomerView";
-
-function escapeCsv(val) {
-  if (val === null || val === undefined) return "";
-  const str = String(val);
-  if (str.includes(",") || str.includes('"') || str.includes("\n")) {
-    return '"' + str.replace(/"/g, '""') + '"';
-  }
-  return str;
-}
-
-function exportCustomers(customers, appUsers, activityTemplates) {
-  const templateNames = activityTemplates.map(t => t.name);
-  const allNames = [...templateNames];
-  customers.forEach(c => {
-    (c.activities || []).forEach(a => {
-      if (!allNames.includes(a.name)) allNames.push(a.name);
-    });
-  });
-
-  const fixedHeaders = ["Firmenname", "Strasse", "PLZ", "Ort", "Telefon", "Budget", "Mandatsleiter", "Sachbearbeiter"];
-  const header = [...fixedHeaders, ...allNames];
-
-  const rows = customers.map(c => {
-    const ml = appUsers.find(u => u.id === c.mandatsleiter_id);
-    const sb = appUsers.find(u => u.id === c.sachbearbeiter_id);
-    const actMap = {};
-    (c.activities || []).forEach(a => { actMap[a.name] = a.completed ? "1" : "0"; });
-    const actCols = allNames.map(name => actMap[name] !== undefined ? actMap[name] : "");
-    return [
-      c.company_name || "",
-      c.strasse || "",
-      c.plz || "",
-      c.ort || "",
-      c.phone || "",
-      c.budget !== null && c.budget !== undefined ? c.budget : "",
-      ml ? (ml.full_name || ml.email) : "",
-      sb ? (sb.full_name || sb.email) : "",
-      ...actCols
-    ].map(escapeCsv).join(",");
-  });
-
-  const csv = [header.map(escapeCsv).join(","), ...rows].join("\n");
-  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
-  const url = window.URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "kunden_export.csv";
-  document.body.appendChild(a);
-  a.click();
-  window.URL.revokeObjectURL(url);
-  a.remove();
-}
+import {toast} from "sonner";
 
 export default function Kunden({ initialPersonTypeFilter = "alle" }) {
   const { theme } = useContext(ThemeContext);
@@ -89,6 +37,8 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
   const [viewMode,          setViewMode]           = useState("liste"); // 'liste' | 'kacheln'
   const [leftWidth,         setLeftWidth]          = useState(288);
   const isResizing = React.useRef(false);
+  const restoreInputRef = useRef(null);
+  const [status, setStatus] = useState(null); // null | 'loading' | 'done' | 'error'
 
   const handleMouseDown = (e) => {
     isResizing.current = true;
@@ -105,6 +55,59 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
     };
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
+  };
+
+  const exportCustomers = async (customers) => {
+    try {
+      const backup = {
+        version: "1.0",
+        type: "kunden-backup",
+        created_at: new Date().toISOString(),
+        customers: customers,
+      };
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `kunden-backup-${new Date().toISOString().split("T")[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success(`${customers.length} Kunden gesichert`);
+    } catch (e) {
+      toast.error("Sichern fehlgeschlagen: " + e.message);
+    }
+  }
+
+  const importCustomers = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setStatus("loading");
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        const items = Array.isArray(data) ? data : (data.customers || []);
+        if (!Array.isArray(items) || items.length === 0) {
+          toast.error("Ungültiges Backup-Format oder keine Kunden gefunden");
+          return;
+        }
+        let created = 0;
+        for (const rec of items) {
+          await entities.Customer.create(rec);
+          created++;
+        }
+        toast.success(`${created}, total: ${items.length}`);
+        setStatus("done");
+      } catch (err) {
+        toast.error(err.message);
+        setStatus("error");
+      } finally {
+        e.target.value = "";
+      }
+    };
+    reader.readAsText(file);
   };
 
   const queryClient = useQueryClient();
@@ -253,29 +256,27 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
                   : <LayoutList className="h-3.5 w-3.5" />}
               </Button>
 
-              <Button
-                variant="ghost" size="sm" onClick={() => exportCustomers(customers, appUsers, activityTemplates)}
-                className="h-7 px-2" style={{ color: textMuted }} title="CSV exportieren"
-              >
-                <Download className="h-3.5 w-3.5" />
+              <Button variant="ghost" size="sm" onClick={() => exportCustomers(customers)}
+                className="h-7 px-2" style={{ color: textMuted }} title="JSON exportieren">
+                <Upload className="h-3.5 w-3.5" />
               </Button>
-
-              {/* Import dropdown */}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="sm" className="h-7 px-2" style={{ color: textMuted }} title="Importieren">
-                    <Upload className="h-3.5 w-3.5" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => setShowImport(true)} className="gap-2 text-xs">
-                    <Building2 className="h-3.5 w-3.5" /> Unternehmen importieren
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setShowPersonImport(true)} className="gap-2 text-xs">
-                    <UserRound className="h-3.5 w-3.5" /> Privatpersonen importieren
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <input
+                  ref={restoreInputRef}
+                  type="file"
+                  accept=".json"
+                  className="hidden"
+                  onChange={importCustomers}
+              />
+              <Button variant="ghost" size="sm" onClick={() => restoreInputRef.current?.click()}
+                  className="h-7 px-2" style={{ color: textMuted }} title="JSON importieren">
+                {status === "loading" ? (
+                    <RefreshCw className={`h-4 w-4 "animate-spin"`} />
+                    ):(
+                        <>
+                          <Download className="h-3.5 w-3.5" />
+                        </>
+                    )}
+              </Button>
             </div>
           </div>
 
@@ -404,7 +405,7 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
                         <TabsTrigger value="activities" className="text-xs">📋 Tätigkeiten</TabsTrigger>
                         <TabsTrigger value="contacts"   className="text-xs">👤 Kontakte</TabsTrigger>
                         <TabsTrigger value="notes"      className="text-xs">📝 Notizen</TabsTrigger>
-          <TabsTrigger value="dokumente"  className="text-xs">📄 Dokumente</TabsTrigger>
+                        <TabsTrigger value="dokumente"  className="text-xs">📄 Dokumente</TabsTrigger>
                         {!isPrivatperson && (
                           <TabsTrigger value="aktionaere" className="text-xs">📗 Aktionäre</TabsTrigger>
                         )}

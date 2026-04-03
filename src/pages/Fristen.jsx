@@ -557,8 +557,8 @@ export default function Fristen() {
               style={{ backgroundColor: inputBg, borderColor: isArtis ? "#bfcfbf" : "#6ee7b7", color: isArtis ? "#4a5e4a" : "#059669" }}
               title="Alle Fristen als JSON-Datei herunterladen"
             >
-              <Download className="h-3.5 w-3.5" />
-              Sichern
+              <Upload className="h-3.5 w-3.5" />
+              Exportieren
             </Button>
 
             {/* Fristen Zurückladen */}
@@ -570,8 +570,8 @@ export default function Fristen() {
               style={{ backgroundColor: inputBg, borderColor: isArtis ? "#bfcfbf" : "#fcd34d", color: isArtis ? "#4a5e4a" : "#d97706" }}
               title="Fristen aus JSON-Backup wiederherstellen"
             >
-              <Upload className="h-3.5 w-3.5" />
-              Zurückladen
+              <Download className="h-3.5 w-3.5" />
+              Importieren
             </Button>
             <input
               ref={restoreInputRef}
