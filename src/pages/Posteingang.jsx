@@ -96,7 +96,7 @@ export default function Posteingang() {
       return {
         ...folder,
         company_name: customer ? customer.company_name : `Unbekannt (${folder.customerId})`,
-        docCount: folder.docs.length
+        docCount: folder.docs?.length
       };
     })
         .filter(item => item.company_name.toLowerCase().includes(q))
@@ -126,7 +126,7 @@ export default function Posteingang() {
   };
 
   const handleDelete = async (doc) => {
-    const { data , error} = await supabase.storage.from(BUCKET).remove([doc.storage_path])
+    const {data, error} = await supabase.storage.from(BUCKET).remove([doc.storage_path])
 
     if(error) {
       toast.error(`Löschen für ${doc.name} hat nicht funktioniert.`);
@@ -165,7 +165,7 @@ export default function Posteingang() {
                 onClick={() => setSelCustomerId(null)}
                 style={{ ...treeItem, fontWeight: !selCustomerId ? 700 : 400, background: !selCustomerId ? s.selBg : "transparent" }}
             >
-              📁 Alle Dokumente ({allDoks.reduce((acc, curr) => acc + curr.docs.length, 0)})
+              📁 Alle Dokumente ({allDoks.reduce((acc, curr) => acc + curr.docs?.length, 0)})
             </div>
 
             {tree.map(item => (
