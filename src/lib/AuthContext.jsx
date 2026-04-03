@@ -75,6 +75,7 @@ export function AuthProvider({ children }) {
       console.error("Logout fehlgeschlagen:", error);
       return;
     }
+
     setUser(null);
   }
 
