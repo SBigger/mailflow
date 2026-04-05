@@ -7,7 +7,7 @@ import { useNavigate } from "react-router-dom";
 import {
   Mic, MicOff, X, Send, Volume2, VolumeX, Mail, CheckSquare,
   CalendarClock, FolderOpen, ExternalLink, Loader2, Sparkles,
-  ChevronRight, MessageSquare, RotateCcw,
+  ChevronRight, MessageSquare, RotateCcw, FileText, Download,
 } from "lucide-react";
 import { supabase } from "@/api/supabaseClient";
 import { createPageUrl } from "@/utils";
@@ -244,9 +244,37 @@ export default function VoiceAssistant({ open, onClose }) {
     }
   };
 
-  const handleSource = (source) => {
+  const [openingDocId, setOpeningDocId] = useState(null);
+
+  const handleSource = async (source) => {
     const cfg = SOURCE_CFG[source.type];
     if (!cfg) return;
+
+    // Dokumente: direkt öffnen via SignedURL
+    if (source.type === 'dokument') {
+      if (source.storage_path) {
+        setOpeningDocId(source.id);
+        try {
+          const { data } = await supabase.storage
+            .from('dokumente')
+            .createSignedUrl(source.storage_path, 3600);
+          if (data?.signedUrl) {
+            window.open(data.signedUrl, '_blank');
+          }
+        } catch (e) {
+          console.error('Dokument öffnen fehlgeschlagen:', e);
+        } finally {
+          setOpeningDocId(null);
+        }
+      } else {
+        // Kein storage_path → zur Dokumente-Seite
+        navigate(createPageUrl('Dokumente'));
+        onClose();
+      }
+      return;
+    }
+
+    // Alle anderen: zur Seite navigieren
     navigate(createPageUrl(cfg.page));
     onClose();
   };
@@ -444,6 +472,10 @@ export default function VoiceAssistant({ open, onClose }) {
                     {result.sources.map((src, i) => {
                       const cfg = SOURCE_CFG[src.type] || SOURCE_CFG.task;
                       const Icon = cfg.icon;
+                      const isDoc = src.type === 'dokument';
+                      const isLoadingDoc = openingDocId === src.id;
+                      const canOpenFile = isDoc && src.storage_path;
+
                       return (
                         <div
                           key={i}
@@ -454,6 +486,7 @@ export default function VoiceAssistant({ open, onClose }) {
                             padding: '8px 10px',
                             display: 'flex', alignItems: 'center', gap: 10,
                             cursor: 'pointer', transition: 'all 0.15s',
+                            opacity: isLoadingDoc ? 0.7 : 1,
                           }}
                           onClick={() => handleSource(src)}
                           onMouseEnter={e => {
@@ -471,7 +504,10 @@ export default function VoiceAssistant({ open, onClose }) {
                             background: `${cfg.color}18`,
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
                           }}>
-                            <Icon size={14} color={cfg.color} />
+                            {isLoadingDoc
+                              ? <Loader2 size={14} color={cfg.color} style={{ animation: 'spin 1s linear infinite' }} />
+                              : <Icon size={14} color={cfg.color} />
+                            }
                           </div>
 
                           {/* Text */}
@@ -492,7 +528,7 @@ export default function VoiceAssistant({ open, onClose }) {
                             )}
                           </div>
 
-                          {/* Badge + arrow */}
+                          {/* Badge + action icon */}
                           <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
                             <span style={{
                               fontSize: '0.65rem', fontWeight: 600, padding: '2px 6px',
@@ -501,7 +537,10 @@ export default function VoiceAssistant({ open, onClose }) {
                             }}>
                               {cfg.label}
                             </span>
-                            <ChevronRight size={12} color={textSecond} />
+                            {canOpenFile
+                              ? <ExternalLink size={12} color={cfg.color} title="Datei öffnen" />
+                              : <ChevronRight size={12} color={textSecond} />
+                            }
                           </div>
                         </div>
                       );

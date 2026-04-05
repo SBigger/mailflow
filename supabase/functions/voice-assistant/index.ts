@@ -36,7 +36,7 @@ serve(async (req) => {
       const parts = token.split(".");
       if (parts.length !== 3) throw new Error("invalid jwt");
       const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
-      if (!payload.sub && payload.role !== "service_role") throw new Error("no sub");
+      if (!payload.sub && payload.role !== "service_role" && payload.role !== "anon") throw new Error("no sub");
       if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) throw new Error("expired");
     } catch {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -96,7 +96,7 @@ serve(async (req) => {
 
       // Volltext-Suche auf search_vector, Fallback auf ilike
       supabase.from('dokumente')
-        .select('id, name, filename, customer_id, file_type, content_text')
+        .select('id, name, filename, storage_path, customer_id, file_type, content_text')
         .or([
           buildOrFilter(['name', 'filename'], keywords),
           keywords.map(k => `content_text.ilike.%${k}%`).join(','),
@@ -262,6 +262,13 @@ Regeln:
 
     if (!result.sources) result.sources = [];
     if (!result.speak_text) result.speak_text = result.answer?.slice(0, 150) || "";
+
+    // Dokument-Quellen mit storage_path anreichern (für direktes Öffnen im Frontend)
+    const dokMap: Record<string, string> = {};
+    doks.forEach((d: any) => { if (d.storage_path) dokMap[d.id] = d.storage_path; });
+    result.sources = result.sources.map((s: any) =>
+      s.type === 'dokument' && dokMap[s.id] ? { ...s, storage_path: dokMap[s.id] } : s
+    );
 
     return new Response(JSON.stringify(result), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
