@@ -408,6 +408,7 @@ export default function Dokumente() {
   const [ftResults,   setFtResults]   = useState(null);
   const [ftSearching, setFtSearching] = useState(false);
   const [syncData, setSyncData ] = useState(false);
+  const [highlightDocId, setHighlightDocId] = useState(null);
 
   // Volltext-Suche via Supabase RPC (PostgreSQL GIN-Index)
   useEffect(() => {
@@ -566,6 +567,36 @@ export default function Dokumente() {
 
     window.open(fileUrl, '_blank');
   }
+
+  // ── URL-Parameter ?open=<doc_id> → Dokument direkt öffnen (von VoxDrop / Smartis) ──
+  useEffect(() => {
+    if (isLoading || !allDoks.length) return;
+    const params = new URLSearchParams(window.location.search);
+    const openId = params.get('open');
+    if (!openId) return;
+    const doc = allDoks.find(d => d.id === openId);
+    if (!doc) return;
+    // Kunden-Filter setzen und Dokument öffnen
+    setSelCustomerId(doc.customer_id);
+    setHighlightDocId(doc.id);
+    downloadDoc(doc);
+    // URL bereinigen
+    window.history.replaceState({}, '', '/Dokumente');
+  }, [allDoks, isLoading]);
+
+  // ?open=<doc_id> URL parameter support
+  useEffect(() => {
+    if (isLoading || !allDoks.length) return;
+    const params = new URLSearchParams(window.location.search);
+    const openId = params.get("open");
+    if (!openId) return;
+    const doc = allDoks.find(d => d.id === openId);
+    if (!doc) return;
+    setSelCustomerId(doc.customer_id);
+    setHighlightDocId(doc.id);
+    downloadDoc(doc);
+    window.history.replaceState({}, '', '/Dokumente');
+  }, [allDoks, isLoading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleDelete = async (doc) => {
     if (!window.confirm(`"${doc.name}" wirklich l\u00f6schen?`)) return;
@@ -947,9 +978,9 @@ export default function Dokumente() {
                 const isAdmin       = user?.role === 'admin';
                 return (
                   <div key={doc.id}
-                    style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 16px", borderBottom: "1px solid " + border + "55", transition: "background 0.1s" }}
+                    style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 16px", borderBottom: "1px solid " + border + "55", transition: "background 0.1s", ...(doc.id === highlightDocId ? { boxShadow: "0 0 0 2px " + accent + "88 inset", background: accent + "12", borderRadius: 6 } : {}) }}
                     onMouseEnter={e => e.currentTarget.style.background = s.rowHover}
-                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                    onMouseLeave={e => e.currentTarget.style.background = doc.id === highlightDocId ? accent + "12" : "transparent"}>
                     {/* Typ */}
                     <span onClick={() => { const _u = doc.sharepoint_web_url || signedUrls[doc.id]; if (!doc.checked_out_by) { handleCheckout(doc); } else if (doc.checked_out_by === user?.id) { openCheckin(doc); } else if (_u) { window.open(_u, '_blank'); } else { toast.error('URL nicht verfuegbar.'); } }} style={{ background: fi.color, color: "#fff", borderRadius: 4, padding: "2px 5px", fontSize: 10, fontWeight: 700, flexShrink: 0, minWidth: 36, textAlign: "center", cursor: "pointer" }}>{fi.label}</span>
                     {/* Name + Tags */}

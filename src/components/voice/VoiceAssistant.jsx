@@ -246,36 +246,40 @@ export default function VoiceAssistant({ open, onClose }) {
 
   const [openingDocId, setOpeningDocId] = useState(null);
 
-  const handleSource = async (source) => {
+  const handleSource = async (source, openFile = false) => {
     const cfg = SOURCE_CFG[source.type];
     if (!cfg) return;
 
-    // Dokumente: direkt öffnen via SignedURL
+    // Dokumente: Datei direkt öffnen ODER in Smartis-Dokumente-Seite anzeigen
     if (source.type === 'dokument') {
-      if (source.storage_path) {
+      if (openFile && source.storage_path) {
+        // "Datei öffnen" Button → raw SignedURL
         setOpeningDocId(source.id);
         try {
           const { data } = await supabase.storage
             .from('dokumente')
             .createSignedUrl(source.storage_path, 3600);
-          if (data?.signedUrl) {
-            window.open(data.signedUrl, '_blank');
-          }
+          if (data?.signedUrl) window.open(data.signedUrl, '_blank');
         } catch (e) {
           console.error('Dokument öffnen fehlgeschlagen:', e);
         } finally {
           setOpeningDocId(null);
         }
       } else {
-        // Kein storage_path → zur Dokumente-Seite
-        navigate(createPageUrl('Dokumente'));
+        // Klick auf Karte → Dokumente-Seite mit ?open=<id>
+        navigate(`/Dokumente?open=${source.id}`);
         onClose();
       }
       return;
     }
 
-    // Alle anderen: zur Seite navigieren
-    navigate(createPageUrl(cfg.page));
+    // Fristen / Tasks / Mails → mit ID-Parameter zur Seite
+    const PAGE_WITH_ID = {
+      frist:    `/Fristen?open=${source.id}`,
+      task:     `/TaskBoard?open=${source.id}`,
+      mail:     `/MailKanban?mail=${source.id}`,
+    };
+    navigate(PAGE_WITH_ID[source.type] || createPageUrl(cfg.page));
     onClose();
   };
 
@@ -528,7 +532,7 @@ export default function VoiceAssistant({ open, onClose }) {
                             )}
                           </div>
 
-                          {/* Badge + action icon */}
+                          {/* Badge + action icons */}
                           <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
                             <span style={{
                               fontSize: '0.65rem', fontWeight: 600, padding: '2px 6px',
@@ -537,8 +541,22 @@ export default function VoiceAssistant({ open, onClose }) {
                             }}>
                               {cfg.label}
                             </span>
-                            {canOpenFile
-                              ? <ExternalLink size={12} color={cfg.color} title="Datei öffnen" />
+                            {/* Dokument: extra "Datei direkt öffnen" Button */}
+                            {canOpenFile && (
+                              <button
+                                title="Datei direkt öffnen"
+                                onClick={e => { e.stopPropagation(); handleSource(src, true); }}
+                                style={{
+                                  border: 'none', background: `${cfg.color}18`,
+                                  borderRadius: 4, padding: '3px 5px', cursor: 'pointer',
+                                  display: 'flex', alignItems: 'center',
+                                }}
+                              >
+                                <Download size={11} color={cfg.color} />
+                              </button>
+                            )}
+                            {isDoc
+                              ? <ChevronRight size={12} color={cfg.color} title="In Smartis öffnen" />
                               : <ChevronRight size={12} color={textSecond} />
                             }
                           </div>

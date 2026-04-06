@@ -94,14 +94,21 @@ serve(async (req) => {
         .order('received_date', { ascending: false })
         .limit(6),
 
-      // Volltext-Suche auf search_vector, Fallback auf ilike
-      supabase.from('dokumente')
-        .select('id, name, filename, storage_path, customer_id, file_type, content_text')
-        .or([
-          buildOrFilter(['name', 'filename'], keywords),
-          keywords.map(k => `content_text.ilike.%${k}%`).join(','),
-        ].join(','))
-        .limit(5),
+      // Volltext-Suche via RPC (PostgreSQL GIN-Index), Fallback auf ilike
+      supabase.rpc('search_dokumente', {
+        p_query:       keywords.join(' '),
+        p_customer_id: null,
+        p_limit:       8,
+      }).then(r => r).catch(() =>
+        // Fallback: einfache ilike-Suche
+        supabase.from('dokumente')
+          .select('id, name, filename, storage_path, customer_id, file_type, content_text')
+          .or([
+            buildOrFilter(['name', 'filename'], keywords),
+            keywords.map(k => `content_text.ilike.%${k}%`).join(','),
+          ].join(','))
+          .limit(8)
+      ),
     ]);
 
     const customers = custRes.status === 'fulfilled' ? (custRes.value.data || []) : [];
