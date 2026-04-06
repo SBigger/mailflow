@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-const CATEGORIES = ["Allgemein", "Steuern", "Abacus", "Jahresabschluss", "AHV/IV", "MWST", "Lohn", "Diverses"];
+const CATEGORIES = ["Allgemein", "Steuern", "Abacus", "Jahresabschluss", "AHV/IV", "MWST", "Lohn", "Software", "Diverses"];
 
 export default function KnowledgeBase() {
   const { theme } = useContext(ThemeContext);
