@@ -217,7 +217,7 @@ export default function MailKanban() {
   const { data: mails = [], isLoading: mailLoading } = useQuery({
     queryKey: ["mailItems", currentUser?.id],
     queryFn: async () => {
-      return await entities.MailItem.filter({ created_by: currentUser.id },"-created_at",500)
+      return await entities.MailItem.filter({ created_by: currentUser.id },"-created_at")
     }
   });
 
