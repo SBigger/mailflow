@@ -81,22 +81,9 @@ export default function MailKanban() {
   const [advancedSearch, setAdvancedSearch] = useState({ dateFrom: null, dateTo: null, searchField: 'all' });
   const [mobileActiveColumnId, setMobileActiveColumnId] = useState(null);
   const [showMobileSearch, setShowMobileSearch] = useState(false);
-  const [deleteWarning, setDeleteWarning] = useState(null); // { mail, mode: 'outlook'|'local', warnings: [] }
   const isMobile = useIsMobile();
   // Mails sind strikt pro User - kein userFilter nötig
   const queryClient = useQueryClient();
-
-  // Stiller Auto-Sync beim Seitenöffnen (max. alle 5 Minuten)
-  useEffect(() => {
-    if (!currentUser?.microsoft_access_token) return;
-    const SYNC_KEY = 'mailKanban_lastAutoSync';
-    const lastSync = parseInt(sessionStorage.getItem(SYNC_KEY) || '0', 10);
-    if (Date.now() - lastSync < 5 * 60 * 1000) return;
-    sessionStorage.setItem(SYNC_KEY, String(Date.now()));
-    functions.invoke('sync-outlook-mails', {})
-      .then(() => queryClient.invalidateQueries({ queryKey: ['mailItems'] }))
-      .catch(() => {});
-  }, [currentUser?.id]);
 
   // Helper: Update/Create Mapping for Mail
   const updateMailMapping = async (mail, updates) => {
@@ -146,21 +133,74 @@ export default function MailKanban() {
     }
   }, []);
 
-  // Auto-Sync alle 30 Minuten im Hintergrund (solange App offen)
+  // Auto-Sync
   useEffect(() => {
     if (!currentUser) return;
-    const SYNC_INTERVAL = 30 * 60 * 1000; // 30 Minuten
-    const interval = setInterval(async () => {
-      try {
-        await functions.invoke('sync-outlook-mails', {});
-        queryClient.invalidateQueries({ queryKey: ["mailItems"] });
-        queryClient.invalidateQueries({ queryKey: ["kanbanColumns"] });
-      } catch (e) {
-        console.warn('[AUTO-SYNC] Fehler:', e.message);
-      }
-    }, SYNC_INTERVAL);
-    return () => clearInterval(interval);
-  }, [currentUser?.id]);
+      // 1. Create the subscription
+      const channel = supabase
+          .channel('schema-db-changes')
+          .on(
+              'postgres_changes',
+              {
+                event: '*', // Listen to INSERT, UPDATE, and DELETE
+                schema: 'public',
+                table: 'mail_items',
+                filter: `created_by=eq.${currentUser?.id}`,
+              },
+              (payload) => {
+                //console.log('Change received!', payload)
+                const { eventType, new: newItem, old: oldItem } = payload;
+
+                queryClient.setQueryData(["mailItems", currentUser?.id], (oldData) => {
+                  // Ensure we have a list to work with
+                  const currentMails = oldData || [];
+
+                  switch (eventType) {
+                    case 'INSERT':
+                      // Add new mail to the top (since you sort by received desc)
+                      return [newItem, ...currentMails];
+
+                    case 'UPDATE':
+                      // Find the item and update its fields
+                      return currentMails.map((item) =>
+                          item.id === newItem.id ? { ...item, ...newItem } : item
+                      );
+
+                    case 'DELETE':
+                      // Remove the item from the list
+                      return currentMails.filter((item) => item.id !== oldItem.id);
+
+                    default:
+                      return currentMails;
+                  }
+                });
+
+                // Also update Kanban columns if the status/folder changed
+                if (eventType === 'UPDATE' && newItem.status !== oldItem.status) {
+                  queryClient.invalidateQueries({ queryKey: ["kanbanColumns"] });
+                }
+              }
+          )
+          .subscribe((status, err) => {
+            console.log("Realtime Status:", status);
+            if (err) console.error("Realtime Error:", err);
+
+            if (status === 'SUBSCRIBED') {
+              console.log('Successfully connected to Realtime!');
+            }
+            if (status === 'CLOSED') {
+              console.log('Connection closed.');
+            }
+            if (status === 'CHANNEL_ERROR') {
+              console.error('Error connecting. Check RLS policies or database settings.');
+            }
+          });
+
+      // 3. Cleanup on unmount
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    }, [currentUser?.id, queryClient]);
 
   // Fetch columns - nur für aktuellen Benutzer
   const { data: columns = [], isLoading: colLoading } = useQuery({
@@ -188,23 +228,8 @@ export default function MailKanban() {
   const { data: mails = [], isLoading: mailLoading } = useQuery({
     queryKey: ["mailItems", currentUser?.id],
     queryFn: async () => {
-      if (!currentUser?.microsoft_access_token) return [];
-      let allMails = [];
-      let skip = 0;
-      const BATCH = 500;
-      while (true) {
-        const batch = await entities.MailItem.filter(
-          { created_by: currentUser.id }, "-received_date", BATCH, skip
-        );
-        const arr = Array.isArray(batch) ? batch : (batch ? [batch] : []);
-        allMails = allMails.concat(arr);
-        if (arr.length < BATCH) break;
-        skip += BATCH;
-        if (skip >= 5000) break;
-      }
-      return allMails;
-    },
-    enabled: !!currentUser?.microsoft_access_token,
+      return await entities.MailItem.filter({ created_by: currentUser.id },"-created_at",500)
+    }
   });
 
 
@@ -913,46 +938,14 @@ export default function MailKanban() {
             setConvertMailDialogOpen(true);
           }}
           onDelete={async (mail) => {
-            const warnings = [];
-            if (mail.reminder_date) warnings.push(`Reminder gesetzt: ${new Date(mail.reminder_date).toLocaleDateString('de-CH', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`);
-            if (warnings.length > 0) {
-              setDeleteWarning({ mail, mode: 'outlook', warnings });
-              return;
-            }
+            if (!confirm('Email löschen?')) return;
             try {
-              let outlookOk = true;
-              try {
-                await functions.invoke('deleteOutlookMail', { mail_id: mail.id });
-              } catch {
-                outlookOk = false;
-              }
-              await entities.MailItem.update(mail.id, { is_archived: true });
-              queryClient.setQueryData(["mailItems", currentUser?.id], (old) =>
-                old ? old.filter(m => m.id !== mail.id) : old
-              );
+              await functions.invoke('deleteOutlookMail', { mail_id: mail.id });
+              toast.success('Email erfolgreich gelöscht');
+            } catch (error) {
+              toast.error('Fehler: ' + (error.response?.data?.error || error.message));
+            } finally {
               setSelectedMail(null);
-              if (outlookOk) toast.success('E-Mail in Outlook-Papierkorb verschoben');
-              else toast.warning('Aus MailFlow entfernt – Outlook-Löschung fehlgeschlagen (Token abgelaufen?)');
-            } catch (e) {
-              toast.error('Fehler: ' + e.message);
-            }
-          }}
-          onDeleteLocal={async (mail) => {
-            const warnings = [];
-            if (mail.reminder_date) warnings.push(`Reminder gesetzt: ${new Date(mail.reminder_date).toLocaleDateString('de-CH', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`);
-            if (warnings.length > 0) {
-              setDeleteWarning({ mail, mode: 'local', warnings });
-              return;
-            }
-            try {
-              await entities.MailItem.update(mail.id, { is_archived: true });
-              queryClient.setQueryData(["mailItems", currentUser?.id], (old) =>
-                old ? old.filter(m => m.id !== mail.id) : old
-              );
-              setSelectedMail(null);
-              toast.success('Aus Kanban entfernt');
-            } catch (e) {
-              toast.error('Fehler: ' + e.message);
             }
           }}
           />
@@ -1024,57 +1017,6 @@ export default function MailKanban() {
             setMailToConvert(null);
           }}
         />
-      )}
-
-      {/* Warnung bei Löschung mit aktivem Reminder */}
-      {deleteWarning && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60">
-          <div className="bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl p-6 max-w-sm w-full mx-4">
-            <div className="flex items-center gap-3 mb-3">
-              <span className="text-2xl">⚠️</span>
-              <h3 className="text-white font-semibold text-base">Achtung – Reminder aktiv</h3>
-            </div>
-            <p className="text-zinc-300 text-sm mb-2">Diese E-Mail hat noch einen aktiven Reminder:</p>
-            <ul className="mb-4 space-y-1">
-              {deleteWarning.warnings.map((w, i) => (
-                <li key={i} className="text-amber-400 text-sm flex items-center gap-2">
-                  <Bell className="h-3.5 w-3.5 flex-shrink-0" /> {w}
-                </li>
-              ))}
-            </ul>
-            <p className="text-zinc-400 text-sm mb-5">Trotzdem {deleteWarning.mode === 'outlook' ? 'in Outlook löschen' : 'aus Kanban entfernen'}?</p>
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={() => setDeleteWarning(null)}
-                className="px-4 py-2 text-sm text-zinc-300 hover:text-white bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-colors"
-              >Abbrechen</button>
-              <button
-                onClick={async () => {
-                  const { mail, mode } = deleteWarning;
-                  setDeleteWarning(null);
-                  try {
-                    let outlookOk = true;
-                    if (mode === 'outlook') {
-                      try { await functions.invoke('deleteOutlookMail', { mail_id: mail.id }); }
-                      catch { outlookOk = false; }
-                    }
-                    await entities.MailItem.update(mail.id, { is_archived: true });
-                    queryClient.setQueryData(["mailItems", currentUser?.id], (old) =>
-                      old ? old.filter(m => m.id !== mail.id) : old
-                    );
-                    setSelectedMail(null);
-                    if (mode === 'local') toast.success('Aus Kanban entfernt');
-                    else if (outlookOk) toast.success('E-Mail in Outlook-Papierkorb verschoben');
-                    else toast.warning('Aus MailFlow entfernt – Outlook-Löschung fehlgeschlagen');
-                  } catch (e) {
-                    toast.error('Fehler: ' + e.message);
-                  }
-                }}
-                className="px-4 py-2 text-sm text-white bg-red-600 hover:bg-red-500 rounded-lg transition-colors"
-              >Ja, trotzdem löschen</button>
-            </div>
-          </div>
-        </div>
       )}
 
       {showDailyReminders && todayReminders.length > 0 && (
