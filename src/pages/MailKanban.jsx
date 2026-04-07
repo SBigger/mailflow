@@ -1,23 +1,16 @@
 import React, { useState, useMemo, useEffect, useContext } from "react";
-import { entities, functions, auth } from "@/api/supabaseClient";
+import {entities, functions, auth, supabase} from "@/api/supabaseClient";
 import { ThemeContext } from "@/Layout";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import { Plus, RefreshCw, Search, Mail, Settings, Bell, CheckCircle2, Menu, ChevronDown, LayoutDashboard, CheckSquare, X, MoreHorizontal } from "lucide-react";
 import { useIsMobile } from "@/components/mobile/useIsMobile";
 import MobileMailColumnNav from "@/components/mobile/MobileMailColumnNav";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { startOfDay, endOfDay, isToday, isTomorrow, isThisWeek, addDays, addWeeks, format, isPast } from "date-fns";
+import { isToday} from "date-fns";
 
 import KanbanColumn from "../components/mail/KanbanColumn";
 import TagColumn from "../components/mail/TagColumn";
@@ -26,10 +19,6 @@ import MailDetailPanel from "../components/mail/MailDetailPanel";
 import AddColumnDialog from "../components/mail/AddColumnDialog";
 import ReplyDialog from "../components/mail/ReplyDialog";
 import EditMailDialog from "../components/mail/EditMailDialog";
-import MailFilters from "../components/mail/MailFilters";
-import EditColumnColorDialog from "../components/mail/EditColumnColorDialog";
-import MailSearchBar from "../components/mail/MailSearchBar";
-import ReminderDialog from "../components/mail/ReminderDialog";
 import DailyReminderPopup from "../components/mail/DailyReminderPopup";
 import NewMailDialog from "../components/mail/NewMailDialog";
 import { Tag as TagIcon } from "lucide-react";
