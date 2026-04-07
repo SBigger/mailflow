@@ -25,6 +25,7 @@ export default function AddTaskDialog({ open, onClose, onAdd, columns }) {
   const [customerId, setCustomerId] = useState('');
   const [customerSearch, setCustomerSearch] = useState('');
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
+  const [customerHighlight, setCustomerHighlight] = useState(-1);
   const titleRef = React.useRef(null);
 
   const { data: priorities = [] } = useQuery({
@@ -224,21 +225,45 @@ export default function AddTaskDialog({ open, onClose, onAdd, columns }) {
             <div className="relative">
               <Input
                 value={customerSearch}
-                onChange={(e) => { setCustomerSearch(e.target.value); setShowCustomerDropdown(true); if (!e.target.value) setCustomerId(''); }}
+                onChange={(e) => { setCustomerSearch(e.target.value); setShowCustomerDropdown(true); setCustomerHighlight(-1); if (!e.target.value) setCustomerId(''); }}
                 onFocus={() => setShowCustomerDropdown(true)}
                 onBlur={() => setTimeout(() => setShowCustomerDropdown(false), 150)}
+                onKeyDown={(e) => {
+                  if (!showCustomerDropdown) return;
+                  const filtered = customers.filter(c => c.company_name.toLowerCase().includes(customerSearch.toLowerCase()));
+                  // -1 = "Kein Kunde", 0..n-1 = Kunden
+                  const total = filtered.length + 1;
+                  if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    setCustomerHighlight(h => (h + 1) % total);
+                  } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    setCustomerHighlight(h => (h - 1 + total) % total);
+                  } else if (e.key === 'Enter' && customerHighlight >= 0) {
+                    e.preventDefault();
+                    if (customerHighlight === 0) {
+                      setCustomerId(''); setCustomerSearch('');
+                    } else {
+                      const c = filtered[customerHighlight - 1];
+                      setCustomerId(c.id); setCustomerSearch(c.company_name);
+                    }
+                    setShowCustomerDropdown(false); setCustomerHighlight(-1);
+                  } else if (e.key === 'Escape') {
+                    setShowCustomerDropdown(false); setCustomerHighlight(-1);
+                  }
+                }}
                 placeholder="Kunde suchen..." className="bg-zinc-900/60 border-zinc-700 text-zinc-200"
                 tabIndex={8} autoComplete="off" data-lpignore="true"
               />
               {showCustomerDropdown && (
                 <div className="absolute z-50 top-full left-0 mt-1 w-full bg-zinc-900 border border-zinc-700 rounded-md shadow-lg max-h-48 overflow-y-auto">
-                  <div className="px-3 py-2 text-zinc-400 text-sm cursor-pointer hover:bg-zinc-800"
-                    onMouseDown={() => { setCustomerId(''); setCustomerSearch(''); setShowCustomerDropdown(false); }}>
+                  <div className={`px-3 py-2 text-zinc-400 text-sm cursor-pointer ${customerHighlight === 0 ? 'bg-zinc-700' : 'hover:bg-zinc-800'}`}
+                    onMouseDown={() => { setCustomerId(''); setCustomerSearch(''); setShowCustomerDropdown(false); setCustomerHighlight(-1); }}>
                     Kein Kunde
                   </div>
-                  {customers.filter(c => c.company_name.toLowerCase().includes(customerSearch.toLowerCase())).map((c) => (
-                    <div key={c.id} className="px-3 py-2 text-zinc-200 text-sm cursor-pointer hover:bg-zinc-800"
-                      onMouseDown={() => { setCustomerId(c.id); setCustomerSearch(c.company_name); setShowCustomerDropdown(false); }}>
+                  {customers.filter(c => c.company_name.toLowerCase().includes(customerSearch.toLowerCase())).map((c, i) => (
+                    <div key={c.id} className={`px-3 py-2 text-zinc-200 text-sm cursor-pointer ${customerHighlight === i + 1 ? 'bg-zinc-700' : 'hover:bg-zinc-800'}`}
+                      onMouseDown={() => { setCustomerId(c.id); setCustomerSearch(c.company_name); setShowCustomerDropdown(false); setCustomerHighlight(-1); }}>
                       {c.company_name}
                     </div>
                   ))}
