@@ -17,20 +17,128 @@ const STOP_WORDS = new Set([
   'kann','doch','auch','then','this','that',
 ]);
 
+// ── Hilfsfunktionen ───────────────────────────────────────────────────────────
+
+function fmt(date?: string | null) {
+  if (!date) return '–';
+  return date.split('T')[0].split('-').reverse().join('.');
+}
+
+function buildOrFilter(fields: string[], kws: string[]) {
+  return kws.flatMap(k => fields.map(f => `${f}.ilike.%${k}%`)).join(',');
+}
+
+// ── Antwort ohne KI direkt aus DB-Resultaten bauen ───────────────────────────
+
+function buildAnswer(
+  question: string,
+  fristen: any[], tasks: any[], mails: any[], doks: any[],
+  custMap: Record<string, string>
+): string {
+  const cn = (id: string) => custMap[id] || '–';
+  const total = fristen.length + tasks.length + mails.length + doks.length;
+
+  if (total === 0) {
+    return `Keine Einträge gefunden für: **"${question}"**\n\nBitte prüfe die Schreibweise oder versuche es mit anderen Suchbegriffen.`;
+  }
+
+  let out = `Suchergebnisse für **"${question}"** – ${total} Treffer:\n\n`;
+
+  if (fristen.length > 0) {
+    out += `## Fristen (${fristen.length})\n`;
+    for (const f of fristen.slice(0, 8)) {
+      const status = f.status === 'erledigt' ? '✅' : f.status === 'eingereicht' ? '📤' : '🔴';
+      out += `- ${status} **${f.title || f.category}** | ${cn(f.customer_id)} | Kanton: ${f.kanton || '–'} | Jahr: ${f.jahr || '–'} | Fällig: ${fmt(f.due_date)}\n`;
+      if (f.description) out += `  _${f.description.slice(0, 100)}_\n`;
+    }
+    out += '\n';
+  }
+
+  if (tasks.length > 0) {
+    out += `## Aufgaben (${tasks.length})\n`;
+    for (const t of tasks.slice(0, 8)) {
+      const status = t.status === 'done' ? '✅' : '🔲';
+      out += `- ${status} **${t.title}** | ${cn(t.customer_id)} | Fällig: ${fmt(t.due_date)} | ${t.assignee || '–'}\n`;
+      if (t.description) out += `  _${t.description.slice(0, 100)}_\n`;
+    }
+    out += '\n';
+  }
+
+  if (mails.length > 0) {
+    out += `## Mails (${mails.length})\n`;
+    for (const m of mails.slice(0, 6)) {
+      out += `- 📧 **${m.subject}** | Von: ${m.from_address} | ${fmt(m.received_date)} | ${cn(m.customer_id)}\n`;
+      if (m.body_preview) out += `  _${m.body_preview.slice(0, 120)}_\n`;
+    }
+    out += '\n';
+  }
+
+  if (doks.length > 0) {
+    out += `## Dokumente (${doks.length})\n`;
+    for (const d of doks.slice(0, 6)) {
+      const ext = d.file_type || d.filename?.split('.').pop()?.toUpperCase() || '–';
+      out += `- 📄 **${d.name}** | ${cn(d.customer_id)} | ${ext}\n`;
+      if (d.content_snippet) out += `  _...${d.content_snippet}..._\n`;
+    }
+    out += '\n';
+  }
+
+  return out.trim();
+}
+
+function buildSpeakText(fristen: any[], tasks: any[], mails: any[], doks: any[]): string {
+  const parts: string[] = [];
+  if (fristen.length > 0) parts.push(`${fristen.length} Frist${fristen.length > 1 ? 'en' : ''}`);
+  if (tasks.length > 0)   parts.push(`${tasks.length} Aufgabe${tasks.length > 1 ? 'n' : ''}`);
+  if (mails.length > 0)   parts.push(`${mails.length} Mail${mails.length > 1 ? 's' : ''}`);
+  if (doks.length > 0)    parts.push(`${doks.length} Dokument${doks.length > 1 ? 'e' : ''}`);
+  if (parts.length === 0) return 'Keine Einträge gefunden.';
+  return `Ich habe ${parts.join(', ')} gefunden.`;
+}
+
+function buildSources(
+  fristen: any[], tasks: any[], mails: any[], doks: any[],
+  custMap: Record<string, string>
+): any[] {
+  const cn = (id: string) => custMap[id] || '–';
+  const sources: any[] = [];
+
+  for (const f of fristen.slice(0, 4)) {
+    sources.push({ type: 'frist', id: f.id, title: f.title || f.category || 'Frist',
+      subtitle: `${fmt(f.due_date)} | ${f.status || '–'}`, customer_name: cn(f.customer_id) });
+  }
+  for (const t of tasks.slice(0, 4)) {
+    sources.push({ type: 'task', id: t.id, title: t.title,
+      subtitle: `${fmt(t.due_date)} | ${t.status || 'offen'}`, customer_name: cn(t.customer_id) });
+  }
+  for (const m of mails.slice(0, 3)) {
+    sources.push({ type: 'mail', id: m.id, title: m.subject,
+      subtitle: fmt(m.received_date), customer_name: cn(m.customer_id) });
+  }
+  for (const d of doks.slice(0, 3)) {
+    const src: any = { type: 'dokument', id: d.id, title: d.name,
+      subtitle: d.file_type || d.filename?.split('.').pop() || '–', customer_name: cn(d.customer_id) };
+    if (d.storage_path) src.storage_path = d.storage_path;
+    sources.push(src);
+  }
+  return sources;
+}
+
+// ── Haupt-Handler ─────────────────────────────────────────────────────────────
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
 
   try {
+    // JWT prüfen
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-
-    // JWT lokal prüfen (kein extra API-Call): Payload dekodieren und exp prüfen
     const token = authHeader.replace("Bearer ", "");
     try {
       const parts = token.split(".");
@@ -59,92 +167,99 @@ serve(async (req) => {
     const today = new Date().toISOString().split("T")[0];
     const q = question.toLowerCase();
 
-    // Extract meaningful keywords
     const keywords = q
       .split(/[\s,.\-!?;:()]+/)
-      .filter(w => w.length >= 3 && !STOP_WORDS.has(w));
-
+      .filter((w: string) => w.length >= 3 && !STOP_WORDS.has(w));
     if (keywords.length === 0) keywords.push(q.slice(0, 20));
 
-    const buildOrFilter = (fields: string[], kws: string[]) =>
-      kws.flatMap(k => fields.map(f => `${f}.ilike.%${k}%`)).join(',');
+    // ── Parallele DB-Suche ────────────────────────────────────────────────────
+    const [custRes, fristenRes, tasksRes, mailsRes, rpcRes, contentRes] =
+      await Promise.allSettled([
 
-    // ── Parallel DB queries ───────────────────────────────────
-    const [custRes, fristenRes, tasksRes, mailsRes, doksRes] = await Promise.allSettled([
-      supabase.from('customers')
-        .select('id, company_name, email')
-        .or(buildOrFilter(['company_name'], keywords))
-        .limit(10),
+        supabase.from('customers')
+          .select('id, company_name, email')
+          .or(buildOrFilter(['company_name'], keywords))
+          .limit(10),
 
-      supabase.from('fristen')
-        .select('id, title, category, kanton, jahr, due_date, status, description, customer_id')
-        .or(buildOrFilter(['title', 'category', 'description'], keywords))
-        .order('due_date', { ascending: true })
-        .limit(8),
+        supabase.from('fristen')
+          .select('id, title, category, kanton, jahr, due_date, status, description, customer_id')
+          .or(buildOrFilter(['title', 'category', 'description'], keywords))
+          .order('due_date', { ascending: true })
+          .limit(8),
 
-      supabase.from('tasks')
-        .select('id, title, description, due_date, status, assignee, customer_id')
-        .or(buildOrFilter(['title', 'description'], keywords))
-        .order('due_date', { ascending: true })
-        .limit(8),
+        supabase.from('tasks')
+          .select('id, title, description, due_date, status, assignee, customer_id')
+          .or(buildOrFilter(['title', 'description'], keywords))
+          .order('due_date', { ascending: true })
+          .limit(8),
 
-      supabase.from('mail_items')
-        .select('id, subject, body_preview, received_date, from_address, customer_id')
-        .or(buildOrFilter(['subject', 'body_preview', 'from_address'], keywords))
-        .order('received_date', { ascending: false })
-        .limit(6),
+        supabase.from('mail_items')
+          .select('id, subject, body_preview, received_date, from_address, customer_id')
+          .or(buildOrFilter(['subject', 'body_preview', 'from_address'], keywords))
+          .order('received_date', { ascending: false })
+          .limit(6),
 
-      // Volltext-Suche via RPC (PostgreSQL GIN-Index), Fallback auf ilike
-      supabase.rpc('search_dokumente', {
-        p_query:       keywords.join(' '),
-        p_customer_id: null,
-        p_limit:       8,
-      }).then(r => r).catch(() =>
-        // Fallback: einfache ilike-Suche
+        // GIN-Volltext-Suche (inkl. PDF-Inhalt via search_vector)
+        supabase.rpc('search_dokumente', {
+          p_query: keywords.join(' '), p_customer_id: null, p_limit: 8,
+        }),
+
+        // Parallel: direkte content_text ilike-Suche (findet auch nicht-GIN-indexierte Docs)
         supabase.from('dokumente')
           .select('id, name, filename, storage_path, customer_id, file_type, content_text')
-          .or([
-            buildOrFilter(['name', 'filename'], keywords),
-            keywords.map(k => `content_text.ilike.%${k}%`).join(','),
-          ].join(','))
-          .limit(8)
-      ),
-    ]);
+          .or(keywords.map((k: string) => `content_text.ilike.%${k}%`).join(','))
+          .limit(6),
+      ]);
 
     const customers = custRes.status === 'fulfilled' ? (custRes.value.data || []) : [];
-    let fristen  = fristenRes.status === 'fulfilled'  ? (fristenRes.value.data || [])  : [];
-    let tasks    = tasksRes.status === 'fulfilled'    ? (tasksRes.value.data || [])    : [];
-    const mails  = mailsRes.status === 'fulfilled'    ? (mailsRes.value.data || [])    : [];
-    const doks   = doksRes.status === 'fulfilled'     ? (doksRes.value.data || [])     : [];
+    let fristen     = fristenRes.status === 'fulfilled' ? (fristenRes.value.data || []) : [];
+    let tasks       = tasksRes.status === 'fulfilled'   ? (tasksRes.value.data || [])   : [];
+    const mails     = mailsRes.status === 'fulfilled'   ? (mailsRes.value.data || [])   : [];
 
-    // If customer found by name → also load their fristen + tasks
+    // Dokumente: RPC + content_text zusammenführen, deduplizieren
+    const rpcDoks     = rpcRes.status === 'fulfilled'     ? (rpcRes.value.data || [])     : [];
+    const contentDoks = contentRes.status === 'fulfilled' ? (contentRes.value.data || []) : [];
+    const seenIds = new Set(rpcDoks.map((d: any) => d.id));
+    // content_text-Treffer: Snippet für Anzeige vorbereiten
+    const extraDoks = contentDoks
+      .filter((d: any) => !seenIds.has(d.id))
+      .map((d: any) => {
+        let snippet = '';
+        if (d.content_text) {
+          for (const kw of keywords) {
+            const idx = d.content_text.toLowerCase().indexOf(kw);
+            if (idx >= 0) {
+              snippet = d.content_text.slice(Math.max(0, idx - 40), idx + 80).replace(/\s+/g, ' ');
+              break;
+            }
+          }
+        }
+        return { ...d, content_snippet: snippet };
+      });
+    const doks = [...rpcDoks, ...extraDoks];
+
+    // Wenn Kunde gefunden → auch seine Fristen + Tasks laden
     if (customers.length > 0) {
       const cusIds = customers.map((c: any) => c.id);
-
       const [moreF, moreT] = await Promise.all([
         supabase.from('fristen')
           .select('id, title, category, kanton, jahr, due_date, status, description, customer_id')
-          .in('customer_id', cusIds)
-          .order('due_date', { ascending: true })
-          .limit(10),
+          .in('customer_id', cusIds).order('due_date', { ascending: true }).limit(10),
         supabase.from('tasks')
           .select('id, title, description, due_date, status, assignee, customer_id')
-          .in('customer_id', cusIds)
-          .order('due_date', { ascending: true })
-          .limit(10),
+          .in('customer_id', cusIds).order('due_date', { ascending: true }).limit(10),
       ]);
-
       if (moreF.data) {
-        const existing = new Set(fristen.map((f: any) => f.id));
-        fristen = [...fristen, ...moreF.data.filter((f: any) => !existing.has(f.id))];
+        const ex = new Set(fristen.map((f: any) => f.id));
+        fristen = [...fristen, ...moreF.data.filter((f: any) => !ex.has(f.id))];
       }
       if (moreT.data) {
-        const existing = new Set(tasks.map((t: any) => t.id));
-        tasks = [...tasks, ...moreT.data.filter((t: any) => !existing.has(t.id))];
+        const ex = new Set(tasks.map((t: any) => t.id));
+        tasks = [...tasks, ...moreT.data.filter((t: any) => !ex.has(t.id))];
       }
     }
 
-    // Build customer name map
+    // Kunden-Namens-Map aufbauen
     const allCustIds = new Set([
       ...fristen.map((f: any) => f.customer_id),
       ...tasks.map((t: any) => t.customer_id),
@@ -154,130 +269,19 @@ serve(async (req) => {
 
     const custMap: Record<string, string> = {};
     customers.forEach((c: any) => { custMap[c.id] = c.company_name; });
-
     const uncached = [...allCustIds].filter(id => !custMap[id]);
     if (uncached.length > 0) {
       const { data: extra } = await supabase.from('customers')
-        .select('id, company_name')
-        .in('id', uncached);
+        .select('id, company_name').in('id', uncached);
       if (extra) extra.forEach((c: any) => { custMap[c.id] = c.company_name; });
     }
 
-    const cn = (id: string) => custMap[id] || '–';
+    // ── Antwort direkt aus DB-Resultaten bauen (kein Claude-API-Call) ─────────
+    const answer     = buildAnswer(question, fristen, tasks, mails, doks, custMap);
+    const speak_text = buildSpeakText(fristen, tasks, mails, doks);
+    const sources    = buildSources(fristen, tasks, mails, doks, custMap);
 
-    // ── Build context for Claude ──────────────────────────────
-    let ctx = `Heute: ${today}\nFrage: "${question}"\n\n`;
-
-    if (fristen.length > 0) {
-      ctx += `## FRISTEN (${fristen.length} gefunden)\n`;
-      fristen.slice(0, 8).forEach((f: any) => {
-        ctx += `ID:${f.id} | "${f.title || f.category}" | Kunde: ${cn(f.customer_id)} | Kanton: ${f.kanton} | Jahr: ${f.jahr} | Fällig: ${f.due_date || '–'} | Status: ${f.status}\n`;
-        if (f.description) ctx += `  Info: ${f.description.slice(0, 100)}\n`;
-      });
-      ctx += '\n';
-    }
-
-    if (tasks.length > 0) {
-      ctx += `## AUFGABEN (${tasks.length} gefunden)\n`;
-      tasks.slice(0, 8).forEach((t: any) => {
-        ctx += `ID:${t.id} | "${t.title}" | Kunde: ${cn(t.customer_id)} | Fällig: ${t.due_date || '–'} | Status: ${t.status || 'offen'} | Zuständig: ${t.assignee || '–'}\n`;
-      });
-      ctx += '\n';
-    }
-
-    if (mails.length > 0) {
-      ctx += `## MAILS (${mails.length} gefunden)\n`;
-      mails.slice(0, 6).forEach((m: any) => {
-        ctx += `ID:${m.id} | Betreff: "${m.subject}" | Von: ${m.from_address} | Am: ${m.received_date?.split('T')[0] || '–'} | Kunde: ${cn(m.customer_id)}\n`;
-        if (m.body_preview) ctx += `  Inhalt: ${m.body_preview.slice(0, 200)}\n`;
-      });
-      ctx += '\n';
-    }
-
-    if (doks.length > 0) {
-      ctx += `## DOKUMENTE (${doks.length} gefunden)\n`;
-      doks.slice(0, 5).forEach((d: any) => {
-        ctx += `ID:${d.id} | "${d.name}" | Kunde: ${cn(d.customer_id)} | Typ: ${d.file_type || d.filename?.split('.').pop() || '–'}\n`;
-        if (d.content_text) ctx += `  Inhalt: ${d.content_text.slice(0, 300)}\n`;
-      });
-      ctx += '\n';
-    }
-
-    if (fristen.length === 0 && tasks.length === 0 && mails.length === 0 && doks.length === 0) {
-      ctx += `Keine Einträge für die Suche gefunden. Teile dem Benutzer mit, dass du nichts gefunden hast.\n`;
-    }
-
-    // ── Claude Haiku ──────────────────────────────────────────
-    const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY");
-    if (!anthropicKey) throw new Error("ANTHROPIC_API_KEY not configured");
-
-    const userPrompt = `${ctx}
-
-Antworte mit genau diesem JSON-Format (kein Markdown-Codeblock, nur reines JSON):
-{
-  "answer": "Vollständige Antwort mit Details. ** für fett, - für Listenelemente.",
-  "speak_text": "1-2 Sätze zum Vorlesen, kein Markdown.",
-  "sources": [
-    {"type": "frist|task|mail|dokument", "id": "uuid", "title": "Titel", "subtitle": "Datum/Status", "customer_name": "Kundenname"}
-  ]
-}`;
-
-    const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": anthropicKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 1500,
-        system: `Du bist Smartis, der KI-Assistent von Artis Treuhand. Beantworte Fragen auf Deutsch.
-
-Regeln:
-- Antworte präzise, informativ und freundlich
-- Bei Fristen: nenne Kategorie, Kanton, Jahr, Fälligkeitsdatum und Status
-- Bei Aufgaben: nenne Titel, Fälligkeitsdatum und Status
-- Bei Mails: nenne Betreff, Absender und Datum
-- Bei Dokumenten: nenne Dokumentname und Kunden
-- Wenn nichts gefunden: sag es klar
-- Antworte NUR mit einem JSON-Objekt, kein Markdown-Codeblock`,
-        messages: [{ role: "user", content: userPrompt }],
-      }),
-    });
-
-    if (!claudeRes.ok) {
-      const errTxt = await claudeRes.text();
-      throw new Error(`Claude error ${claudeRes.status}: ${errTxt}`);
-    }
-
-    const claudeData = await claudeRes.json();
-    const rawText = claudeData.content?.[0]?.text || "{}";
-
-    let result;
-    try {
-      result = JSON.parse(rawText);
-    } catch {
-      // Fallback: try extracting JSON from text
-      const match = rawText.match(/\{[\s\S]*\}/);
-      result = match ? JSON.parse(match[0]) : {
-        answer: "Entschuldigung, ich konnte keine Antwort generieren.",
-        speak_text: "Keine Antwort erhalten.",
-        sources: [],
-      };
-    }
-
-    if (!result.sources) result.sources = [];
-    if (!result.speak_text) result.speak_text = result.answer?.slice(0, 150) || "";
-
-    // Dokument-Quellen mit storage_path anreichern (für direktes Öffnen im Frontend)
-    const dokMap: Record<string, string> = {};
-    doks.forEach((d: any) => { if (d.storage_path) dokMap[d.id] = d.storage_path; });
-    result.sources = result.sources.map((s: any) =>
-      s.type === 'dokument' && dokMap[s.id] ? { ...s, storage_path: dokMap[s.id] } : s
-    );
-
-    return new Response(JSON.stringify(result), {
+    return new Response(JSON.stringify({ answer, speak_text, sources, today }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
 
