@@ -33,10 +33,16 @@ function saveColOrder(userEmail, order) {
   } catch {}
 }
 
-function renderCell(key, task, priority, customer, user) {
+function renderCell(key, task, priority, customer, user, theme) {
+  const isArtis = theme === 'artis';
+  const isLight = theme === 'light';
+  const primaryText   = isArtis ? '#2d3a2d' : isLight ? '#1a1a2e' : '#d4d4d8';
+  const secondaryText = isArtis ? '#6b826b' : isLight ? '#7a7a9a' : '#71717a';
+  const emptyText     = isArtis ? '#9aad9a' : isLight ? '#9898b8' : '#52525b';
+
   switch (key) {
     case "title":
-      return <span className="text-sm font-medium text-green-300/80">{task.title}</span>;
+      return <span className="text-sm font-medium" style={{ color: isArtis ? '#2d5a2d' : isLight ? '#1a1a2e' : '#86efac' }}>{task.title}</span>;
     case "priority_id":
       return priority ? (
         <Badge
@@ -47,23 +53,23 @@ function renderCell(key, task, priority, customer, user) {
           {priority.level === 1 && <AlertTriangle className="h-3 w-3" />}
           {priority.name}
         </Badge>
-      ) : <span className="text-zinc-600 text-xs">—</span>;
+      ) : <span className="text-xs" style={{ color: emptyText }}>—</span>;
     case "assignee":
       return task.assignee ? (
         <div className="flex items-center gap-1.5">
           <div className="h-6 w-6 rounded-full bg-violet-600/30 flex items-center justify-center text-violet-300 text-xs font-medium flex-shrink-0">
             {(user?.full_name || task.assignee).charAt(0).toUpperCase()}
           </div>
-          <span className="text-xs text-zinc-300 truncate max-w-[120px]">{user?.full_name || task.assignee}</span>
+          <span className="text-xs truncate max-w-[120px]" style={{ color: primaryText }}>{user?.full_name || task.assignee}</span>
         </div>
-      ) : <span className="text-zinc-600 text-xs">—</span>;
+      ) : <span className="text-xs" style={{ color: emptyText }}>—</span>;
     case "due_date":
       return task.due_date ? (
-        <div className="flex items-center gap-1 text-xs text-zinc-400 whitespace-nowrap">
+        <div className="flex items-center gap-1 text-xs whitespace-nowrap" style={{ color: secondaryText }}>
           <Clock className="h-3 w-3" />
           {format(new Date(task.due_date), "dd.MM.yyyy", { locale: de })}
         </div>
-      ) : <span className="text-zinc-600 text-xs">—</span>;
+      ) : <span className="text-xs" style={{ color: emptyText }}>—</span>;
     case "tags":
       return task.tags?.length > 0 ? (
         <div className="flex flex-wrap gap-1">
@@ -71,16 +77,16 @@ function renderCell(key, task, priority, customer, user) {
             <span key={tag} className="text-xs text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 px-1.5 py-0.5 rounded">{tag}</span>
           ))}
         </div>
-      ) : <span className="text-zinc-600 text-xs">—</span>;
+      ) : <span className="text-xs" style={{ color: emptyText }}>—</span>;
     case "customer_id":
       return customer ? (
-        <div className="flex items-center gap-1 text-xs text-zinc-300">
-          <Building2 className="h-3 w-3 text-zinc-500 flex-shrink-0" />
+        <div className="flex items-center gap-1 text-xs" style={{ color: primaryText }}>
+          <Building2 className="h-3 w-3 flex-shrink-0" style={{ color: secondaryText }} />
           {customer.company_name}
         </div>
-      ) : <span className="text-zinc-600 text-xs">—</span>;
+      ) : <span className="text-xs" style={{ color: emptyText }}>—</span>;
     case "description":
-      return <span className="text-xs text-zinc-500 line-clamp-2">{task.description || "—"}</span>;
+      return <span className="text-xs line-clamp-2" style={{ color: secondaryText }}>{task.description || "—"}</span>;
     default:
       return null;
   }
@@ -143,7 +149,22 @@ export default function TaskListViewOverlay({ column, tasks, onClose, onTaskClic
   const theme = localStorage.getItem("app_theme") || "dark";
   const isArtis = theme === 'artis';
   const isLight = theme === 'light';
-  const sortActiveColor = isArtis ? '#3d7a3d' : isLight ? '#4040a0' : '#86efac';
+
+  // Theme-Farben
+  const bgColor        = isArtis ? '#f2f5f2'         : isLight ? '#f0f0f6'         : '#09090b';
+  const headerBg       = isArtis ? '#e8ede8'         : isLight ? '#e4e4f0'         : '#18181b';
+  const headerBorder   = isArtis ? '#ccd8cc'         : isLight ? '#d0d0e8'         : 'rgba(39,39,42,0.6)';
+  const theadBg        = isArtis ? '#e8ede8'         : isLight ? '#e4e4f0'         : 'rgba(24,24,27,0.95)';
+  const theadBorder    = isArtis ? '#ccd8cc'         : isLight ? '#d0d0e8'         : '#27272a';
+  const rowHoverBg     = isArtis ? 'rgba(0,100,0,0.06)' : isLight ? 'rgba(0,0,100,0.04)' : 'rgba(39,39,42,0.4)';
+  const rowBorder      = isArtis ? '#dde6dd'         : isLight ? '#e0e0f0'         : 'rgba(39,39,42,0.5)';
+  const primaryText    = isArtis ? '#2d3a2d'         : isLight ? '#1a1a2e'         : '#f4f4f5';
+  const secondaryText  = isArtis ? '#6b826b'         : isLight ? '#7a7a9a'         : '#71717a';
+  const headerText     = isArtis ? '#4a5e4a'         : isLight ? '#4a4a6a'         : '#a1a1aa';
+  const sortActiveColor= isArtis ? '#3d7a3d'         : isLight ? '#4040a0'         : '#86efac';
+  const dividerColor   = isArtis ? '#ccd8cc'         : isLight ? '#d0d0e8'         : 'rgba(63,63,70,0.6)';
+  const gripColor      = isArtis ? '#b0c4b0'         : isLight ? '#c0c0d8'         : '#3f3f46';
+  const gripHoverColor = isArtis ? '#6b826b'         : isLight ? '#7a7a9a'         : '#71717a';
 
   const handleSort = (field) => {
     if (sortField === field) setSortDir(d => d * -1);
@@ -171,22 +192,22 @@ export default function TaskListViewOverlay({ column, tasks, onClose, onTaskClic
   }, [activeTasks, sortField, sortDir, priorities]);
 
   return (
-    <div className="fixed inset-0 z-50 bg-zinc-950 flex flex-col overflow-hidden">
+    <div className="fixed inset-0 z-50 flex flex-col overflow-hidden" style={{ backgroundColor: bgColor }}>
       {/* Header */}
       <div
-        className="flex-shrink-0 px-6 py-4 border-b border-zinc-800/60 flex items-center gap-4"
-        style={{ borderTopColor: column.color || '#4F46E5', borderTopWidth: '3px' }}
+        className="flex-shrink-0 px-6 py-4 flex items-center gap-4"
+        style={{ backgroundColor: headerBg, borderBottom: `1px solid ${headerBorder}`, borderTop: `3px solid ${column.color || '#4F46E5'}` }}
       >
-        <Button variant="ghost" size="sm" onClick={onClose} className="text-zinc-400 hover:text-zinc-200 gap-2">
+        <Button variant="ghost" size="sm" onClick={onClose} className="gap-2" style={{ color: secondaryText }}>
           <ArrowLeft className="h-4 w-4" />
           Zurück zur Kanban-Ansicht
         </Button>
-        <div className="h-5 w-px bg-zinc-700" />
+        <div className="h-5 w-px" style={{ backgroundColor: headerBorder }} />
         <div>
-          <h2 className="text-lg font-bold text-zinc-100">{column.name}</h2>
-          <p className="text-xs text-zinc-500">{activeTasks.length} offen · {completedTasks.length} erledigt</p>
+          <h2 className="text-lg font-bold" style={{ color: primaryText }}>{column.name}</h2>
+          <p className="text-xs" style={{ color: secondaryText }}>{activeTasks.length} offen · {completedTasks.length} erledigt</p>
         </div>
-        <Button variant="ghost" size="icon" onClick={onClose} className="ml-auto text-zinc-500 hover:text-zinc-200">
+        <Button variant="ghost" size="icon" onClick={onClose} className="ml-auto" style={{ color: secondaryText }}>
           <X className="h-5 w-5" />
         </Button>
       </div>
@@ -194,8 +215,8 @@ export default function TaskListViewOverlay({ column, tasks, onClose, onTaskClic
       {/* Table */}
       <div className="flex-1 overflow-auto">
         <table className="w-full min-w-[900px]">
-          <thead className="sticky top-0 bg-zinc-900/95 backdrop-blur z-10">
-            <tr className="border-b border-zinc-800">
+          <thead className="sticky top-0 backdrop-blur z-10" style={{ backgroundColor: theadBg }}>
+            <tr style={{ borderBottom: `1px solid ${theadBorder}` }}>
               <th className="px-4 py-3 w-10" />
               {orderedCols.map(col => (
                 <th
@@ -205,11 +226,11 @@ export default function TaskListViewOverlay({ column, tasks, onClose, onTaskClic
                   onDragOver={(e) => handleColDragOver(e, col.key)}
                   onDrop={handleColDrop}
                   onClick={() => handleSort(col.key)}
-                  className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider whitespace-nowrap cursor-pointer select-none group"
-                  style={{ color: sortField === col.key ? sortActiveColor : undefined }}
+                  className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider whitespace-nowrap cursor-pointer select-none"
+                  style={{ color: sortField === col.key ? sortActiveColor : headerText }}
                 >
                   <div className="flex items-center gap-1">
-                    <GripVertical className="h-3 w-3 text-zinc-700 group-hover:text-zinc-500" />
+                    <GripVertical className="h-3 w-3" style={{ color: gripColor }} />
                     {col.label}
                     {sortField === col.key
                       ? (sortDir === 1 ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />)
@@ -229,16 +250,19 @@ export default function TaskListViewOverlay({ column, tasks, onClose, onTaskClic
                 <tr
                   key={task.id}
                   onClick={() => onTaskClick(task)}
-                  className="cursor-pointer transition-colors hover:bg-zinc-800/40 border-b border-zinc-800/50"
+                  className="cursor-pointer transition-colors"
+                  style={{ borderBottom: `1px solid ${rowBorder}` }}
+                  onMouseEnter={e => e.currentTarget.style.backgroundColor = rowHoverBg}
+                  onMouseLeave={e => e.currentTarget.style.backgroundColor = ''}
                 >
                   <td className="px-4 py-3" onClick={e => { e.stopPropagation(); onToggleComplete(task); }}>
-                    <button className="text-zinc-500 hover:text-green-400 transition-colors">
+                    <button className="transition-colors" style={{ color: secondaryText }}>
                       <Circle className="h-4 w-4" />
                     </button>
                   </td>
                   {orderedCols.map(col => (
                     <td key={col.key} className="px-4 py-3">
-                      {renderCell(col.key, task, priority, customer, user)}
+                      {renderCell(col.key, task, priority, customer, user, theme)}
                     </td>
                   ))}
                 </tr>
@@ -250,12 +274,12 @@ export default function TaskListViewOverlay({ column, tasks, onClose, onTaskClic
               <tr>
                 <td colSpan={orderedCols.length + 1} className="px-4 pt-6 pb-2">
                   <div className="flex items-center gap-3">
-                    <div className="flex-1 h-px bg-zinc-700/60" />
-                    <span className="text-xs text-zinc-500 font-semibold uppercase tracking-wider flex items-center gap-1.5">
-                      <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />
+                    <div className="flex-1 h-px" style={{ backgroundColor: dividerColor }} />
+                    <span className="text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5" style={{ color: secondaryText }}>
+                      <CheckCircle2 className="h-3.5 w-3.5" style={{ color: sortActiveColor }} />
                       Erledigt ({completedTasks.length})
                     </span>
-                    <div className="flex-1 h-px bg-zinc-700/60" />
+                    <div className="flex-1 h-px" style={{ backgroundColor: dividerColor }} />
                   </div>
                 </td>
               </tr>
@@ -269,18 +293,21 @@ export default function TaskListViewOverlay({ column, tasks, onClose, onTaskClic
                 <tr
                   key={task.id}
                   onClick={() => onTaskClick(task)}
-                  className="cursor-pointer transition-colors hover:bg-zinc-800/40 border-b border-zinc-800/30 opacity-50"
+                  className="cursor-pointer transition-colors opacity-50"
+                  style={{ borderBottom: `1px solid ${rowBorder}` }}
+                  onMouseEnter={e => e.currentTarget.style.backgroundColor = rowHoverBg}
+                  onMouseLeave={e => e.currentTarget.style.backgroundColor = ''}
                 >
                   <td className="px-4 py-3" onClick={e => { e.stopPropagation(); onToggleComplete(task); }}>
-                    <button className="text-green-500 hover:text-zinc-400 transition-colors">
+                    <button className="transition-colors" style={{ color: sortActiveColor }}>
                       <CheckCircle2 className="h-4 w-4" />
                     </button>
                   </td>
                   {orderedCols.map(col => (
                     <td key={col.key} className="px-4 py-3">
                       {col.key === "title"
-                        ? <span className="text-sm font-medium line-through text-zinc-500">{task.title}</span>
-                        : renderCell(col.key, task, priority, customer, user)
+                        ? <span className="text-sm font-medium line-through" style={{ color: secondaryText }}>{task.title}</span>
+                        : renderCell(col.key, task, priority, customer, user, theme)
                       }
                     </td>
                   ))}
@@ -290,7 +317,7 @@ export default function TaskListViewOverlay({ column, tasks, onClose, onTaskClic
 
             {activeTasks.length === 0 && completedTasks.length === 0 && (
               <tr>
-                <td colSpan={orderedCols.length + 1} className="px-4 py-16 text-center text-zinc-600 text-sm">
+                <td colSpan={orderedCols.length + 1} className="px-4 py-16 text-center text-sm" style={{ color: secondaryText }}>
                   Keine Tasks in dieser Spalte
                 </td>
               </tr>
