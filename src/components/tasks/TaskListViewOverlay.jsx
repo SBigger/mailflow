@@ -155,10 +155,13 @@ export default function TaskListViewOverlay({ column, tasks, onClose, onTaskClic
     return [...activeTasks].sort((a, b) => {
       let av, bv;
       switch (sortField) {
-        case 'title':       av = (a.title || '').toLowerCase();                         bv = (b.title || '').toLowerCase(); break;
-        case 'priority_id': av = getPriority(a.priority_id)?.level ?? 99;              bv = getPriority(b.priority_id)?.level ?? 99; break;
-        case 'assignee':    av = (a.assignee || '').toLowerCase();                      bv = (b.assignee || '').toLowerCase(); break;
-        case 'due_date':    av = a.due_date || '9999';                                  bv = b.due_date || '9999'; break;
+        case 'title':       av = (a.title || '').toLowerCase();                                              bv = (b.title || '').toLowerCase(); break;
+        case 'priority_id': av = getPriority(a.priority_id)?.level ?? 99;                                  bv = getPriority(b.priority_id)?.level ?? 99; break;
+        case 'assignee':    av = (a.assignee || '').toLowerCase();                                          bv = (b.assignee || '').toLowerCase(); break;
+        case 'due_date':    av = a.due_date || '9999';                                                      bv = b.due_date || '9999'; break;
+        case 'customer_id': av = (getCustomer(a.customer_id)?.company_name || '').toLowerCase();            bv = (getCustomer(b.customer_id)?.company_name || '').toLowerCase(); break;
+        case 'tags':        av = (a.tags?.[0] || '').toLowerCase();                                         bv = (b.tags?.[0] || '').toLowerCase(); break;
+        case 'description': av = (a.description || '').toLowerCase();                                       bv = (b.description || '').toLowerCase(); break;
         default: return 0;
       }
       if (av < bv) return -sortDir;
@@ -201,7 +204,7 @@ export default function TaskListViewOverlay({ column, tasks, onClose, onTaskClic
                   onDragStart={() => handleColDragStart(col.key)}
                   onDragOver={(e) => handleColDragOver(e, col.key)}
                   onDrop={handleColDrop}
-                  onClick={() => ["title","priority_id","assignee","due_date"].includes(col.key) && handleSort(col.key)}
+                  onClick={() => handleSort(col.key)}
                   className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider whitespace-nowrap cursor-pointer select-none group"
                   style={{ color: sortField === col.key ? sortActiveColor : undefined }}
                 >
