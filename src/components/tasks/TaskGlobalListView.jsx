@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { ChevronDown, ChevronRight, Circle, CheckCircle2, Clock, Building2, AlertTriangle } from "lucide-react";
+import React, { useState, useMemo } from "react";
+import { ChevronDown, ChevronRight, ChevronUp, Circle, CheckCircle2, Clock, Building2, AlertTriangle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
@@ -88,8 +88,37 @@ function ColumnSection({ column, tasks, onTaskClick, onToggleComplete, prioritie
   const [collapsed, setCollapsed] = useState(false);
 
   const [showCompleted, setShowCompleted] = useState(false);
+  const [sortKey, setSortKey] = useState(null);
+  const [sortDir, setSortDir] = useState(1);
+
+  const handleSort = (key) => {
+    if (sortKey === key) setSortDir(d => d * -1);
+    else { setSortKey(key); setSortDir(1); }
+  };
+
   const activeTasks = tasks.filter(t => !t.completed);
   const completedTasks = tasks.filter(t => t.completed);
+
+  const sortedActiveTasks = useMemo(() => {
+    if (!sortKey) return activeTasks;
+    return [...activeTasks].sort((a, b) => {
+      let av, bv;
+      switch (sortKey) {
+        case 'title':          av = (a.title || '').toLowerCase();                                              bv = (b.title || '').toLowerCase(); break;
+        case 'priority_id':    av = priorities.find(p => p.id === a.priority_id)?.level ?? 99;                 bv = priorities.find(p => p.id === b.priority_id)?.level ?? 99; break;
+        case 'assignee':       av = (a.assignee || '').toLowerCase();                                          bv = (b.assignee || '').toLowerCase(); break;
+        case 'verantwortlich': av = (a.verantwortlich || '').toLowerCase();                                    bv = (b.verantwortlich || '').toLowerCase(); break;
+        case 'due_date':       av = a.due_date || '9999';                                                      bv = b.due_date || '9999'; break;
+        case 'customer_id':    av = (customers.find(c => c.id === a.customer_id)?.company_name || '').toLowerCase(); bv = (customers.find(c => c.id === b.customer_id)?.company_name || '').toLowerCase(); break;
+        case 'tags':           av = (a.tags?.[0] || '').toLowerCase();                                         bv = (b.tags?.[0] || '').toLowerCase(); break;
+        case 'description':    av = (a.description || '').toLowerCase();                                       bv = (b.description || '').toLowerCase(); break;
+        default: return 0;
+      }
+      if (av < bv) return -sortDir;
+      if (av > bv) return sortDir;
+      return 0;
+    });
+  }, [activeTasks, sortKey, sortDir, priorities, customers]);
   const accentColor = column.color || "#6366f1";
   
   const isLight = theme === 'light';
@@ -136,14 +165,25 @@ function ColumnSection({ column, tasks, onTaskClick, onToggleComplete, prioritie
               <tr style={{ borderBottomColor: tableBorder, borderBottomWidth: '1px' }}>
                 <th className="px-4 py-2 w-8" />
                 {COLUMNS.map(col => (
-                  <th key={col.key} className={`px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider ${col.width}`} style={{ color: tableHeaderText }}>
-                    {col.label}
+                  <th
+                    key={col.key}
+                    className={`px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider ${col.width} cursor-pointer select-none`}
+                    style={{ color: sortKey === col.key ? (isArtis ? '#3d7a3d' : isLight ? '#4040a0' : '#86efac') : tableHeaderText }}
+                    onClick={() => handleSort(col.key)}
+                  >
+                    <div className="flex items-center gap-1">
+                      {col.label}
+                      {sortKey === col.key
+                        ? (sortDir === 1 ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />)
+                        : <ChevronUp className="h-3 w-3 opacity-0" />
+                      }
+                    </div>
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {activeTasks.map((task) => (
+              {sortedActiveTasks.map((task) => (
                 <tr
                   key={task.id}
                   onClick={() => onTaskClick(task)}

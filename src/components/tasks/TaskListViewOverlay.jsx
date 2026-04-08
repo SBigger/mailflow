@@ -1,5 +1,5 @@
-import React, { useState, useRef } from "react";
-import { X, ArrowLeft, CheckCircle2, Circle, Clock, Building2, AlertTriangle, GripVertical } from "lucide-react";
+import React, { useState, useRef, useMemo } from "react";
+import { X, ArrowLeft, CheckCircle2, Circle, Clock, Building2, AlertTriangle, GripVertical, ChevronUp, ChevronDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
@@ -140,10 +140,32 @@ export default function TaskListViewOverlay({ column, tasks, onClose, onTaskClic
   const getCustomer = (id) => customers.find(c => c.id === id);
   const getUser = (email) => allUsers.find(u => u.email === email);
 
+  const theme = localStorage.getItem("app_theme") || "dark";
+  const isArtis = theme === 'artis';
+  const isLight = theme === 'light';
+  const sortActiveColor = isArtis ? '#3d7a3d' : isLight ? '#4040a0' : '#86efac';
+
   const handleSort = (field) => {
     if (sortField === field) setSortDir(d => d * -1);
     else { setSortField(field); setSortDir(1); }
   };
+
+  const sortedActiveTasks = useMemo(() => {
+    if (sortField === "order") return activeTasks;
+    return [...activeTasks].sort((a, b) => {
+      let av, bv;
+      switch (sortField) {
+        case 'title':       av = (a.title || '').toLowerCase();                         bv = (b.title || '').toLowerCase(); break;
+        case 'priority_id': av = getPriority(a.priority_id)?.level ?? 99;              bv = getPriority(b.priority_id)?.level ?? 99; break;
+        case 'assignee':    av = (a.assignee || '').toLowerCase();                      bv = (b.assignee || '').toLowerCase(); break;
+        case 'due_date':    av = a.due_date || '9999';                                  bv = b.due_date || '9999'; break;
+        default: return 0;
+      }
+      if (av < bv) return -sortDir;
+      if (av > bv) return sortDir;
+      return 0;
+    });
+  }, [activeTasks, sortField, sortDir, priorities]);
 
   return (
     <div className="fixed inset-0 z-50 bg-zinc-950 flex flex-col overflow-hidden">
@@ -180,19 +202,23 @@ export default function TaskListViewOverlay({ column, tasks, onClose, onTaskClic
                   onDragOver={(e) => handleColDragOver(e, col.key)}
                   onDrop={handleColDrop}
                   onClick={() => ["title","priority_id","assignee","due_date"].includes(col.key) && handleSort(col.key)}
-                  className="px-4 py-3 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider whitespace-nowrap cursor-pointer hover:text-zinc-200 select-none group"
+                  className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider whitespace-nowrap cursor-pointer select-none group"
+                  style={{ color: sortField === col.key ? sortActiveColor : undefined }}
                 >
                   <div className="flex items-center gap-1">
                     <GripVertical className="h-3 w-3 text-zinc-700 group-hover:text-zinc-500" />
                     {col.label}
-                    {sortField === col.key ? (sortDir === 1 ? " ↑" : " ↓") : ""}
+                    {sortField === col.key
+                      ? (sortDir === 1 ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />)
+                      : <ChevronUp className="h-3 w-3 opacity-0" />
+                    }
                   </div>
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {activeTasks.map((task) => {
+            {sortedActiveTasks.map((task) => {
               const priority = getPriority(task.priority_id);
               const customer = getCustomer(task.customer_id);
               const user = getUser(task.assignee);
