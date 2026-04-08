@@ -1,9 +1,9 @@
 import React, { useState, useMemo, useContext } from "react";
-import { entities, functions, auth } from "@/api/supabaseClient";
+import { entities, functions, auth, supabase } from "@/api/supabaseClient";
 import { ThemeContext } from "@/Layout";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { DragDropContext, Droppable } from "@hello-pangea/dnd";
-import { Plus, RefreshCw, Palette, Users, Search, X, ChevronsLeftRight, Mic, LayoutList, LayoutDashboard, MoreHorizontal } from "lucide-react";
+import { Plus, RefreshCw, Palette, Users, Search, X, ChevronsLeftRight, Mic, LayoutList, LayoutDashboard, MoreHorizontal, Bell } from "lucide-react";
 import { useIsMobile } from "@/components/mobile/useIsMobile";
 import MobileColumnNav from "@/components/mobile/MobileColumnNav";
 import { Button } from "@/components/ui/button";
@@ -107,6 +107,27 @@ export default function TaskBoard() {
   const { data: priorities = [] } = useQuery({
     queryKey: ["priorities"],
     queryFn: () => entities.Priority.list("level"),
+  });
+
+  const { data: unreadComments = [] } = useQuery({
+    queryKey: ["unread_comments", currentUser?.email],
+    queryFn: async () => {
+      if (!currentUser || tasks.length === 0) return [];
+      const myTaskIds = tasks
+        .filter(t => t.assignee === currentUser.email || t.verantwortlich === currentUser.email)
+        .map(t => t.id);
+      if (myTaskIds.length === 0) return [];
+      const { data, error } = await supabase
+        .from('task_comments')
+        .select('*')
+        .in('task_id', myTaskIds)
+        .neq('user_email', currentUser.email)
+        .order('created_at', { ascending: false });
+      if (error) return [];
+      return (data || []).filter(c => !c.read_by?.includes(currentUser.email));
+    },
+    enabled: !!currentUser && tasks.length > 0,
+    refetchInterval: 30000,
   });
 
   const filteredAndSortedTasks = useMemo(() => {
@@ -279,6 +300,8 @@ export default function TaskBoard() {
   const inputBorder = isArtis ? '#bfcfbf' : isLight ? '#c8c8dc' : '#3f3f46';
   const inputText = isArtis ? '#2d3a2d' : isLight ? '#1a1a2e' : '#e4e4e7';
   const mutedText = isArtis ? '#6b826b' : isLight ? '#7a7a9a' : '#71717a';
+  const dropdownBg = isArtis ? '#ffffff' : isLight ? '#ffffff' : '#18181b';
+  const textColor = isArtis ? '#2d3a2d' : isLight ? '#1a1a2e' : '#e4e4e7';
 
   return (
     <div className="h-screen flex flex-col overflow-hidden" style={{ backgroundColor: topBarBg }}>
@@ -401,6 +424,54 @@ export default function TaskBoard() {
               </div>
             </div>
             <div className="flex items-center gap-2">
+              {/* Benachrichtigungs-Badge */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-9 w-9 relative" style={{ color: unreadComments.length > 0 ? (isArtis ? '#3d7a3d' : '#f59e0b') : mutedText }}>
+                    <Bell className="h-4 w-4" />
+                    {unreadComments.length > 0 && (
+                      <span className="absolute -top-0.5 -right-0.5 h-4 w-4 text-[10px] font-bold bg-red-500 text-white rounded-full flex items-center justify-center">
+                        {unreadComments.length > 9 ? '9+' : unreadComments.length}
+                      </span>
+                    )}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-80" style={{ backgroundColor: dropdownBg, borderColor: inputBorder }}>
+                  {unreadComments.length === 0 ? (
+                    <div className="px-4 py-6 text-center text-sm" style={{ color: mutedText }}>Keine neuen Meldungen</div>
+                  ) : (
+                    <>
+                      <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wider" style={{ color: mutedText }}>
+                        {unreadComments.length} neue Kommentare
+                      </div>
+                      <DropdownMenuSeparator />
+                      {Object.values(
+                        unreadComments.reduce((groups, c) => {
+                          if (!groups[c.task_id]) groups[c.task_id] = { taskId: c.task_id, comments: [] };
+                          groups[c.task_id].comments.push(c);
+                          return groups;
+                        }, {})
+                      ).map(({ taskId, comments: grpComments }) => {
+                        const t = tasks.find(x => x.id === taskId);
+                        return (
+                          <DropdownMenuItem key={taskId} onClick={() => t && setSelectedTask(t)}
+                            className="flex flex-col items-start gap-1 px-3 py-2.5 cursor-pointer"
+                            style={{ color: textColor }}>
+                            <div className="font-medium text-sm truncate w-full">{t?.title || 'Unbekannter Task'}</div>
+                            <div className="text-xs truncate w-full" style={{ color: mutedText }}>
+                              {grpComments[0]?.user_name || grpComments[0]?.user_email}: {grpComments[0]?.message}
+                            </div>
+                            {grpComments.length > 1 && (
+                              <div className="text-xs" style={{ color: mutedText }}>+{grpComments.length - 1} weitere</div>
+                            )}
+                          </DropdownMenuItem>
+                        );
+                      })}
+                    </>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+
               <Button variant="ghost" size="icon" title={globalListView ? "Kanban-Ansicht" : "Listenansicht"} onClick={() => setGlobalListView(v => !v)}
                 className={`h-9 w-9 ${globalListView ? "text-violet-400 bg-violet-500/10" : ""}`} style={!globalListView ? { color: mutedText } : {}}>
                 {globalListView ? <LayoutDashboard className="h-4 w-4" /> : <LayoutList className="h-4 w-4" />}

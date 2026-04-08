@@ -1,6 +1,6 @@
-import React, { useState, useRef, useContext, useCallback } from "react";
+import React, { useState, useRef, useContext, useCallback, useEffect } from "react";
 import { useIsMobile } from "@/components/mobile/useIsMobile";
-import { X, Trash2, CheckCircle2, Circle, Mail, Tag, Paperclip, Upload, Download } from "lucide-react";
+import { X, Trash2, CheckCircle2, Circle, Mail, Tag, Paperclip, Upload, Download, MessageSquare, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,7 +11,7 @@ import { motion } from "framer-motion";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
 import { entities, functions, auth, supabase, uploadFile } from "@/api/supabaseClient";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ThemeContext } from "@/Layout";
 
@@ -34,6 +34,10 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }) {
   const [customerId, setCustomerId] = useState(task.customer_id || '');
   const [customerSearch, setCustomerSearch] = useState('');
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
+  const [chatMessage, setChatMessage] = useState('');
+  const [sendingMessage, setSendingMessage] = useState(false);
+  const chatEndRef = useRef(null);
+  const queryClient = useQueryClient();
 
   // Resize state
   const [panelWidth, setPanelWidth] = useState(512); // default max-w-lg = 512px
@@ -95,12 +99,60 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }) {
     queryFn: () => entities.Customer.list("company_name"),
   });
 
+  const { data: comments = [], refetch: refetchComments } = useQuery({
+    queryKey: ["task_comments", task.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('task_comments')
+        .select('*')
+        .eq('task_id', task.id)
+        .order('created_at', { ascending: true });
+      if (error) throw error;
+      return data || [];
+    },
+    refetchInterval: 15000,
+  });
+
   React.useEffect(() => {
     if (task.customer_id && customers.length > 0) {
       const found = customers.find(c => c.id === task.customer_id);
       if (found) setCustomerSearch(found.company_name);
     }
   }, [task.customer_id, customers]);
+
+  useEffect(() => {
+    if (!currentUser || comments.length === 0) return;
+    const unread = comments.filter(c => c.user_email !== currentUser.email && !c.read_by?.includes(currentUser.email));
+    if (unread.length === 0) return;
+    Promise.all(unread.map(c =>
+      supabase.from('task_comments').update({ read_by: [...(c.read_by || []), currentUser.email] }).eq('id', c.id)
+    )).then(() => queryClient.invalidateQueries({ queryKey: ["unread_comments"] }));
+  }, [comments, currentUser?.email]);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [comments]);
+
+  const handleSendMessage = async () => {
+    if (!chatMessage.trim() || !currentUser) return;
+    setSendingMessage(true);
+    try {
+      await supabase.from('task_comments').insert({
+        task_id: task.id,
+        user_email: currentUser.email,
+        user_name: currentUser.full_name || currentUser.email,
+        message: chatMessage.trim(),
+        read_by: [currentUser.email],
+      });
+      setChatMessage('');
+      refetchComments();
+      queryClient.invalidateQueries({ queryKey: ["unread_comments"] });
+    } catch (error) {
+      toast.error('Fehler beim Senden: ' + error.message);
+    } finally {
+      setSendingMessage(false);
+    }
+  };
 
   React.useEffect(() => {
     const markAsRead = async () => {
@@ -468,6 +520,56 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }) {
               )}
             </div>
           )}
+
+          {/* Chat */}
+          <div className="space-y-3 pt-4 border-t" style={{ borderColor: headerBorder }}>
+            <Label className="flex items-center gap-2" style={{ color: labelColor }}>
+              <MessageSquare className="h-4 w-4" /> Kommentare
+              {comments.length > 0 && <span className="text-xs px-1.5 py-0.5 rounded-full" style={{ backgroundColor: inputBg, color: mutedText }}>{comments.length}</span>}
+            </Label>
+            <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
+              {comments.length === 0 && (
+                <p className="text-xs text-center py-3" style={{ color: mutedText }}>Noch keine Kommentare</p>
+              )}
+              {comments.map(comment => {
+                const isMe = comment.user_email === currentUser?.email;
+                return (
+                  <div key={comment.id} className={`flex gap-2 ${isMe ? 'flex-row-reverse' : ''}`}>
+                    <div className="h-7 w-7 rounded-full bg-violet-600/30 flex items-center justify-center text-violet-300 text-xs font-semibold flex-shrink-0">
+                      {(comment.user_name || comment.user_email).charAt(0).toUpperCase()}
+                    </div>
+                    <div className={`max-w-[80%] flex flex-col gap-0.5 ${isMe ? 'items-end' : 'items-start'}`}>
+                      <div className="text-xs" style={{ color: mutedText }}>
+                        {isMe ? 'Du' : (comment.user_name || comment.user_email)} · {format(new Date(comment.created_at), "dd.MM. HH:mm", { locale: de })}
+                      </div>
+                      <div className="text-sm px-3 py-2" style={{
+                        backgroundColor: isMe ? accentColor : inputBg,
+                        color: isMe ? '#ffffff' : textColor,
+                        borderRadius: isMe ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
+                      }}>
+                        {comment.message}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+              <div ref={chatEndRef} />
+            </div>
+            <div className="flex gap-2">
+              <Input
+                value={chatMessage}
+                onChange={e => setChatMessage(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } }}
+                placeholder="Kommentar schreiben... (Enter)"
+                className="border flex-1 text-sm"
+                style={inputStyle}
+              />
+              <Button size="icon" onClick={handleSendMessage} disabled={!chatMessage.trim() || sendingMessage}
+                style={{ backgroundColor: accentColor, color: '#ffffff', flexShrink: 0 }}>
+                <Send className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
         </div>
 
         {/* Footer */}
