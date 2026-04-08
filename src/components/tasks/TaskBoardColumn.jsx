@@ -85,7 +85,7 @@ export default function TaskBoardColumn({ column, index, tasks, onRename, onDele
               <div className="text-sm font-medium flex-1 flex items-center justify-center" style={{ color: '#ffffff', writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>
                 {column.name}
               </div>
-              <Badge variant="outline" className="text-xs flex-shrink-0">{totalCount}</Badge>
+              <Badge variant="outline" className="text-xs flex-shrink-0">{activeTasks.length}</Badge>
             </div>
           </div>
         )}
@@ -131,7 +131,7 @@ export default function TaskBoardColumn({ column, index, tasks, onRename, onDele
                  </h3>
                )}
               <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{ color: isArtis ? '#6b826b' : isLight ? '#7a7a9a' : '#71717a', backgroundColor: isArtis ? 'rgba(122,155,127,0.12)' : isLight ? 'rgba(100,100,180,0.12)' : 'rgba(39,39,42,0.6)' }}>
-                {totalCount}
+                {activeTasks.length}
               </span>
             </div>
 
