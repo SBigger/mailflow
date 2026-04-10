@@ -669,9 +669,7 @@ export default function Dokumente() {
       const storagePath = doc.storage_path.replace('dokumente/', '');
       const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(storagePath, 3600);
       if (error) {
-        console.error("Signed URL Error:", error);
-        console.error("Path:", doc.storage_path);
-        toast.error(`Create Url fehlgeschlagen: ${error.message}`); // This will show "Object not found"
+        console.warn("Signed URL nicht verfügbar:", doc.storage_path, error.message);
         return;
       }
       if (data?.signedUrl) setSignedUrls(prev => ({ ...prev, [doc.id]: data.signedUrl }));
