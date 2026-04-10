@@ -159,33 +159,26 @@ function ShareLinkDialog({ info, accent, s, border, onClose }) {
   async function createLink() {
     setLoading(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const jwt = session?.access_token;
-      if (!jwt) { toast.error("Nicht eingeloggt"); setLoading(false); return; }
-
-      const body = { name: info.name };
-      if (info.type === 'doc') body.doc_id      = info.doc_id;
-      if (info.customer_id)    body.customer_id  = info.customer_id;
-      if (info.category)       body.category     = info.category;
-      if (info.year)           body.year         = info.year;
-      if (expiry)              body.expires_days = expiry;
-      if (password.trim())     body.password     = password.trim();
-
-      const res = await fetch(`${SHARE_FN}?action=create`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${jwt}`,
-          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
-      if (data.token) {
-        setLink(`${window.location.origin}/share/${data.token}`);
-      } else {
-        toast.error(data.error || "Fehler beim Erstellen");
+      const insertData = { name: info.name };
+      if (info.type === 'doc') insertData.doc_id      = info.doc_id;
+      if (info.customer_id)    insertData.customer_id  = info.customer_id;
+      if (info.category)       insertData.category     = info.category;
+      if (info.year)           insertData.year         = info.year;
+      if (password.trim())     insertData.password     = password.trim();
+      if (expiry) {
+        const exp = new Date();
+        exp.setDate(exp.getDate() + parseInt(expiry));
+        insertData.expires_at = exp.toISOString();
       }
+
+      const { data, error } = await supabase
+        .from("share_links")
+        .insert(insertData)
+        .select("token")
+        .single();
+
+      if (error) throw error;
+      setLink(`${window.location.origin}/share/${data.token}`);
     } catch (e) {
       toast.error("Fehler: " + e.message);
     } finally {
@@ -1138,7 +1131,7 @@ export default function Dokumente() {
                     {/* Name + Tags */}
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                      <div onClick={() => { const _u = doc.sharepoint_web_url || signedUrls[doc.id]; if (!doc.checked_out_by) { handleCheckout(doc); } else if (doc.checked_out_by === user?.id) { openCheckin(doc); } else if (_u) { window.open(_u, '_blank'); } else { toast.error('URL nicht verfuegbar.'); } }} style={{ fontSize: 13, color: s.textMain, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 500, flex: 1, cursor: "pointer" }}>{doc.name}</div>
+                      <div onClick={() => { const _u = doc.sharepoint_web_url || signedUrls[doc.id]; if (!doc.checked_out_by) { handleCheckout(doc); } else if (doc.checked_out_by === user?.id) { openCheckin(doc); } else if (_u) { window.open(_u, '_blank'); } else { toast.error('URL nicht verfügbar.'); } }} style={{ fontSize: 13, color: s.textMain, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 500, flex: 1, cursor: "pointer" }}>{doc.name}</div>
                       {isCheckedOut && (
                         <span title={"Ausgecheckt von " + doc.checked_out_by_name + " am " + (doc.checked_out_at ? new Date(doc.checked_out_at).toLocaleDateString("de-CH") : "")}
                           style={{ fontSize: 10, color: isMyCheckout ? accent : "#f59e0b",
