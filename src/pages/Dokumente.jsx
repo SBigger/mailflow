@@ -170,7 +170,11 @@ function ShareLinkDialog({ info, accent, s, border, onClose }) {
 
       const res = await fetch(`${SHARE_FN}?action=create`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${jwt}`, "Content-Type": "application/json" },
+        headers: {
+          Authorization: `Bearer ${jwt}`,
+          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify(body),
       });
       const data = await res.json();
