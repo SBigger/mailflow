@@ -108,7 +108,7 @@ serve(async (req) => {
         // Einzelne Datei
         const { data } = await supabase
           .from("dokumente")
-          .select("id, name, filename, file_size, file_type, storage_path, sharepoint_web_url, customer_id")
+          .select("id, name, filename, file_size, file_type, storage_path, customer_id")
           .eq("id", link.doc_id)
           .single();
         if (data) docs = [data];
@@ -116,7 +116,7 @@ serve(async (req) => {
         // Ordner: alle Dokumente des Kunden (+ optionale Kategorie/Jahr-Filter)
         let q = supabase
           .from("dokumente")
-          .select("id, name, filename, file_size, file_type, storage_path, sharepoint_web_url, customer_id, category, year")
+          .select("id, name, filename, file_size, file_type, storage_path, customer_id, category, year")
           .eq("customer_id", link.customer_id);
         if (link.category) q = q.eq("category", link.category);
         if (link.year) q = q.eq("year", link.year);
@@ -148,7 +148,7 @@ serve(async (req) => {
       });
     }
 
-    // ── DOWNLOAD: Datei herunterladen ─────────────────────────────────────────
+    // ── DOWNLOAD: Datei via Supabase Storage herunterladen ────────────────────
     if (action === "download") {
       const doc_id_param = url.searchParams.get("doc_id") || link.doc_id;
       if (!doc_id_param) {
@@ -159,7 +159,7 @@ serve(async (req) => {
 
       const { data: doc } = await supabase
         .from("dokumente")
-        .select("storage_path, sharepoint_web_url, filename, name")
+        .select("storage_path, filename, name")
         .eq("id", doc_id_param)
         .single();
 
@@ -174,30 +174,27 @@ serve(async (req) => {
         .update({ download_count: (link.download_count || 0) + 1 })
         .eq("id", link.id);
 
-      if (doc.sharepoint_web_url) {
-        // SharePoint: direkte URL zurückgeben
-        return new Response(JSON.stringify({ url: doc.sharepoint_web_url }), {
+      if (!doc.storage_path) {
+        return new Response(JSON.stringify({ error: "Datei nicht im Storage verfügbar" }), {
+          status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Signed URL generieren (1 Stunde gültig)
+      const { data: signed } = await supabase.storage
+        .from("dokumente")
+        .createSignedUrl(doc.storage_path, 3600, {
+          download: doc.filename || doc.name,
+        });
+
+      if (signed?.signedUrl) {
+        return new Response(JSON.stringify({ url: signed.signedUrl }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      if (doc.storage_path) {
-        // Supabase Storage: Signed URL generieren (1h)
-        const { data: signed } = await supabase.storage
-          .from("dokumente")
-          .createSignedUrl(doc.storage_path, 3600, {
-            download: doc.filename || doc.name,
-          });
-
-        if (signed?.signedUrl) {
-          return new Response(JSON.stringify({ url: signed.signedUrl }), {
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-      }
-
-      return new Response(JSON.stringify({ error: "Datei nicht verfügbar" }), {
-        status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      return new Response(JSON.stringify({ error: "Signed URL konnte nicht erstellt werden" }), {
+        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
