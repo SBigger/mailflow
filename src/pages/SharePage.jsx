@@ -26,29 +26,51 @@ export default function SharePage() {
   const token = new URLSearchParams(window.location.search).get("token")
     || window.location.pathname.split("/share/")[1]?.split("?")[0];
 
-  const [info, setInfo] = useState(null);
-  const [error, setError] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [downloading, setDownloading] = useState({});
+  const [info,          setInfo]          = useState(null);
+  const [error,         setError]         = useState(null);
+  const [loading,       setLoading]       = useState(true);
+  const [downloading,   setDownloading]   = useState({});
+  const [pwRequired,    setPwRequired]    = useState(false);
+  const [pwInput,       setPwInput]       = useState("");
+  const [pwError,       setPwError]       = useState(false);
 
-  useEffect(() => {
+  function fetchInfo(password = "") {
     if (!token) { setError("Kein Token in der URL gefunden."); setLoading(false); return; }
-    fetch(`${SHARE_FN}?token=${token}&action=info`, {
-      headers: { apikey: SUPABASE_ANON },
-    })
+    const url = `${SHARE_FN}?token=${token}&action=info${password ? "&password=" + encodeURIComponent(password) : ""}`;
+    fetch(url, { headers: { apikey: SUPABASE_ANON } })
       .then(r => r.json())
       .then(data => {
-        if (data.error) setError(data.error);
+        if (data.password_required) { setPwRequired(true); }
+        else if (data.error) setError(data.error);
         else setInfo(data);
       })
       .catch(() => setError("Verbindung fehlgeschlagen."))
       .finally(() => setLoading(false));
-  }, [token]);
+  }
+
+  useEffect(() => { fetchInfo(); }, [token]);
+
+  function submitPassword() {
+    if (!pwInput.trim()) return;
+    setPwError(false);
+    setLoading(true);
+    const url = `${SHARE_FN}?token=${token}&action=info&password=${encodeURIComponent(pwInput.trim())}`;
+    fetch(url, { headers: { apikey: SUPABASE_ANON } })
+      .then(r => r.json())
+      .then(data => {
+        if (data.password_required) { setPwError(true); }
+        else if (data.error) setError(data.error);
+        else setInfo(data);
+      })
+      .catch(() => setError("Verbindung fehlgeschlagen."))
+      .finally(() => setLoading(false));
+  }
 
   async function downloadFile(docId, docName) {
     setDownloading(p => ({ ...p, [docId]: true }));
     try {
-      const res = await fetch(`${SHARE_FN}?token=${token}&action=download&doc_id=${docId}`, {
+      const pwParam = pwInput.trim() ? `&password=${encodeURIComponent(pwInput.trim())}` : "";
+      const res = await fetch(`${SHARE_FN}?token=${token}&action=download&doc_id=${docId}${pwParam}`, {
         headers: { apikey: SUPABASE_ANON },
       });
       const data = await res.json();
@@ -104,6 +126,26 @@ export default function SharePage() {
               <div style={{ color: "#fca5a5", fontWeight: 600, marginBottom: 4 }}>Link nicht verfügbar</div>
               <div style={{ color: "#f87171", fontSize: 14 }}>{error}</div>
             </div>
+          </div>
+        )}
+
+        {pwRequired && !info && (
+          <div style={{ background: CARD, border: "1px solid " + BORD, borderRadius: 12, padding: 28, textAlign: "center" }}>
+            <div style={{ fontSize: 32, marginBottom: 12 }}>🔒</div>
+            <div style={{ color: FG, fontWeight: 700, fontSize: 16, marginBottom: 6 }}>Passwort erforderlich</div>
+            <div style={{ color: FG2, fontSize: 13, marginBottom: 20 }}>Dieser Link ist passwortgeschützt.</div>
+            <input
+              type="password"
+              value={pwInput}
+              onChange={e => setPwInput(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && submitPassword()}
+              placeholder="Passwort eingeben..."
+              style={{ background: "#0f172a", border: "1px solid " + (pwError ? "#ef4444" : BORD), borderRadius: 8, color: FG, padding: "10px 14px", width: "100%", fontSize: 14, outline: "none", marginBottom: 8, boxSizing: "border-box" }}
+            />
+            {pwError && <div style={{ color: "#f87171", fontSize: 12, marginBottom: 10 }}>Falsches Passwort</div>}
+            <button onClick={submitPassword} style={{ background: ACC, color: "#fff", border: "none", borderRadius: 8, padding: "10px 24px", cursor: "pointer", fontSize: 14, fontWeight: 600, width: "100%" }}>
+              Bestätigen
+            </button>
           </div>
         )}
 

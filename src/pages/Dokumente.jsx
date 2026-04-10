@@ -150,7 +150,8 @@ function formatBytes(bytes) {
 const SHARE_FN = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/share-link`;
 
 function ShareLinkDialog({ info, accent, s, border, onClose }) {
-  const [expiry,   setExpiry]   = useState("30");   // Tage, "" = unbegrenzt
+  const [expiry,   setExpiry]   = useState("30");
+  const [password, setPassword] = useState("");
   const [loading,  setLoading]  = useState(false);
   const [link,     setLink]     = useState(null);
   const [copied,   setCopied]   = useState(false);
@@ -160,13 +161,15 @@ function ShareLinkDialog({ info, accent, s, border, onClose }) {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const jwt = session?.access_token;
+      if (!jwt) { toast.error("Nicht eingeloggt"); setLoading(false); return; }
 
       const body = { name: info.name };
-      if (info.type === 'doc')    body.doc_id      = info.doc_id;
-      if (info.customer_id)       body.customer_id  = info.customer_id;
-      if (info.category)          body.category     = info.category;
-      if (info.year)              body.year         = info.year;
-      if (expiry)                 body.expires_days = expiry;
+      if (info.type === 'doc') body.doc_id      = info.doc_id;
+      if (info.customer_id)    body.customer_id  = info.customer_id;
+      if (info.category)       body.category     = info.category;
+      if (info.year)           body.year         = info.year;
+      if (expiry)              body.expires_days = expiry;
+      if (password.trim())     body.password     = password.trim();
 
       const res = await fetch(`${SHARE_FN}?action=create`, {
         method: "POST",
@@ -197,67 +200,88 @@ function ShareLinkDialog({ info, accent, s, border, onClose }) {
     setTimeout(() => setCopied(false), 2000);
   }
 
-  const overlay = { position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" };
-  const card    = { background: s.bg || "#1e293b", border: "1px solid " + border, borderRadius: 14, padding: 28, width: "100%", maxWidth: 460, boxShadow: "0 20px 60px rgba(0,0,0,0.5)" };
-  const inp     = { background: s.inputBg || "#0f172a", border: "1px solid " + border, borderRadius: 8, color: s.textMain || "#f1f5f9", padding: "8px 12px", width: "100%", fontSize: 13, fontFamily: "inherit", outline: "none" };
-  const btn     = (primary) => ({ background: primary ? accent : "transparent", color: primary ? "#fff" : (s.textMuted || "#94a3b8"), border: primary ? "none" : "1px solid " + border, borderRadius: 8, padding: "9px 18px", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 6 });
+  const overlay = { position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 };
+  const card    = { background: s.cardBg, border: "1px solid " + border, borderRadius: 14, padding: 28, width: "100%", maxWidth: 460, boxShadow: "0 20px 60px rgba(0,0,0,0.25)" };
+  const inp     = { background: s.inputBg, border: "1px solid " + (s.inputBorder || border), borderRadius: 8, color: s.textMain, padding: "8px 12px", width: "100%", fontSize: 13, fontFamily: "inherit", outline: "none" };
+  const lbl     = { display: "block", color: s.textMuted, fontSize: 11, marginBottom: 5, fontWeight: 700, letterSpacing: "0.05em" };
+  const btn     = (primary) => ({ background: primary ? accent : "transparent", color: primary ? "#fff" : s.textMuted, border: primary ? "none" : "1px solid " + border, borderRadius: 8, padding: "9px 18px", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 6 });
 
   return (
     <div style={overlay} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div style={card}>
         {/* Header */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
-          <Link2 size={18} style={{ color: accent }} />
-          <div style={{ flex: 1 }}>
-            <div style={{ color: s.textMain || "#f1f5f9", fontWeight: 700, fontSize: 15 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 22 }}>
+          <div style={{ width: 36, height: 36, borderRadius: 9, background: accent + "18", border: "1px solid " + accent + "44", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <Link2 size={16} style={{ color: accent }} />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ color: s.textMain, fontWeight: 700, fontSize: 15 }}>
               {info.type === 'folder' ? 'Ordner-Link erstellen' : 'Datei-Link erstellen'}
             </div>
-            <div style={{ color: s.textMuted || "#94a3b8", fontSize: 12, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{info.name}</div>
+            <div style={{ color: s.textMuted, fontSize: 12, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{info.name}</div>
           </div>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted || "#94a3b8", fontSize: 18, padding: 4 }}>✕</button>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, fontSize: 16, padding: 4, lineHeight: 1 }}>✕</button>
         </div>
 
         {!link ? (
           <>
-            {/* Ablaufdatum */}
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ display: "block", color: s.textMuted || "#94a3b8", fontSize: 12, marginBottom: 6, fontWeight: 600 }}>ABLAUFDATUM</label>
-              <select value={expiry} onChange={e => setExpiry(e.target.value)} style={{ ...inp, cursor: "pointer" }}>
-                <option value="7">7 Tage</option>
-                <option value="30">30 Tage</option>
-                <option value="90">90 Tage</option>
-                <option value="365">1 Jahr</option>
-                <option value="">Unbegrenzt</option>
-              </select>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+              {/* Ablaufdatum */}
+              <div>
+                <label style={lbl}>ABLAUFDATUM</label>
+                <select value={expiry} onChange={e => setExpiry(e.target.value)} style={{ ...inp, cursor: "pointer" }}>
+                  <option value="7">7 Tage</option>
+                  <option value="30">30 Tage</option>
+                  <option value="90">90 Tage</option>
+                  <option value="365">1 Jahr</option>
+                  <option value="">Unbegrenzt</option>
+                </select>
+              </div>
+              {/* Passwort */}
+              <div>
+                <label style={lbl}>PASSWORT (optional)</label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  placeholder="Kein Passwort"
+                  style={inp}
+                />
+              </div>
             </div>
 
-            {/* Buttons */}
+            {password.trim() && (
+              <div style={{ background: accent + "12", border: "1px solid " + accent + "33", borderRadius: 8, padding: "8px 12px", marginBottom: 14, fontSize: 12, color: accent }}>
+                🔒 Link wird mit Passwort geschützt
+              </div>
+            )}
+
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
               <button style={btn(false)} onClick={onClose}>Abbrechen</button>
               <button style={btn(true)} onClick={createLink} disabled={loading}>
-                {loading ? <span>Erstelle...</span> : <><Link2 size={14} /> Link erstellen</>}
+                {loading ? "Erstelle..." : <><Link2 size={14} /> Link erstellen</>}
               </button>
             </div>
           </>
         ) : (
           <>
-            {/* Link anzeigen */}
-            <div style={{ background: s.inputBg || "#0f172a", border: "1px solid " + border, borderRadius: 10, padding: "12px 14px", marginBottom: 16 }}>
-              <div style={{ color: s.textMuted || "#94a3b8", fontSize: 11, marginBottom: 6, fontWeight: 600 }}>LINK</div>
-              <div style={{ color: accent, fontSize: 12, wordBreak: "break-all", lineHeight: 1.5 }}>{link}</div>
+            <div style={{ background: s.sidebarBg, border: "1px solid " + border, borderRadius: 10, padding: "12px 14px", marginBottom: 16 }}>
+              <div style={{ color: s.textMuted, fontSize: 10, marginBottom: 5, fontWeight: 700, letterSpacing: "0.05em" }}>LINK</div>
+              <div style={{ color: accent, fontSize: 12, wordBreak: "break-all", lineHeight: 1.6 }}>{link}</div>
             </div>
 
-            <div style={{ display: "flex", gap: 10 }}>
+            <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
               <button style={{ ...btn(true), flex: 1, justifyContent: "center" }} onClick={copyLink}>
                 {copied ? <><CheckCheck size={14} /> Kopiert!</> : <><Copy size={14} /> Link kopieren</>}
               </button>
-              <button style={btn(false)} onClick={() => { setLink(null); setCopied(false); }}>Neu</button>
+              <button style={btn(false)} onClick={() => { setLink(null); setCopied(false); setPassword(""); }}>Neu</button>
               <button style={btn(false)} onClick={onClose}>Schliessen</button>
             </div>
 
-            <div style={{ marginTop: 14, color: s.textMuted || "#94a3b8", fontSize: 11, textAlign: "center" }}>
-              {expiry ? `Gültig für ${expiry} Tage · ` : "Unbegrenzt gültig · "}
-              Jeder mit dem Link kann {info.type === 'folder' ? 'alle Dateien im Ordner' : 'diese Datei'} herunterladen
+            <div style={{ color: s.textMuted, fontSize: 11, textAlign: "center" }}>
+              {expiry ? `Gültig für ${expiry} Tage` : "Unbegrenzt gültig"}
+              {password.trim() ? " · 🔒 Passwortgeschützt" : ""}
+              {" · "}{info.type === 'folder' ? 'Ordner-Inhalt' : 'Datei'} für alle mit dem Link
             </div>
           </>
         )}

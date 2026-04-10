@@ -31,13 +31,14 @@ serve(async (req) => {
       }
 
       const body = await req.json();
-      const { doc_id, customer_id, category, year, name, expires_days } = body;
+      const { doc_id, customer_id, category, year, name, expires_days, password } = body;
 
       const insertData: any = { name };
       if (doc_id) insertData.doc_id = doc_id;
       if (customer_id) insertData.customer_id = customer_id;
       if (category) insertData.category = category;
       if (year) insertData.year = year;
+      if (password?.trim()) insertData.password = password.trim();
       if (expires_days) {
         const exp = new Date();
         exp.setDate(exp.getDate() + parseInt(expires_days));
@@ -98,6 +99,16 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: "Dieser Link ist abgelaufen" }), {
         status: 410, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    // ── Passwort prüfen (falls gesetzt) ──────────────────────────────────────
+    if (link.password) {
+      const provided = url.searchParams.get("password") || "";
+      if (provided !== link.password) {
+        return new Response(JSON.stringify({ error: "password_required", password_required: true }), {
+          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
 
     // ── INFO: Metadaten zurückgeben (für SharePage) ───────────────────────────
