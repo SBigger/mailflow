@@ -11,7 +11,11 @@ import {
   Lock,
   LockOpen,
   ShieldAlert,
-  RefreshCw
+  RefreshCw,
+  Link2,
+  Copy,
+  CheckCheck,
+  FolderOpen
 } from "lucide-react";
 import * as pdfjsLib from "pdfjs-dist";
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
@@ -140,6 +144,122 @@ function formatBytes(bytes) {
   if (bytes < 1024) return bytes + " B";
   if (bytes < 1048576) return (bytes / 1024).toFixed(0) + " KB";
   return (bytes / 1048576).toFixed(1) + " MB";
+}
+
+// ─── Share-Link Dialog ─────────────────────────────────────────────────────
+const SHARE_FN = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/share-link`;
+
+function ShareLinkDialog({ info, accent, s, border, onClose }) {
+  const [expiry,   setExpiry]   = useState("30");   // Tage, "" = unbegrenzt
+  const [loading,  setLoading]  = useState(false);
+  const [link,     setLink]     = useState(null);
+  const [copied,   setCopied]   = useState(false);
+
+  async function createLink() {
+    setLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const jwt = session?.access_token;
+
+      const body = { name: info.name };
+      if (info.type === 'doc')    body.doc_id      = info.doc_id;
+      if (info.customer_id)       body.customer_id  = info.customer_id;
+      if (info.category)          body.category     = info.category;
+      if (info.year)              body.year         = info.year;
+      if (expiry)                 body.expires_days = expiry;
+
+      const res = await fetch(`${SHARE_FN}?action=create`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${jwt}`, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (data.token) {
+        setLink(`${window.location.origin}/share/${data.token}`);
+      } else {
+        toast.error(data.error || "Fehler beim Erstellen");
+      }
+    } catch (e) {
+      toast.error("Fehler: " + e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function copyLink() {
+    if (!link) return;
+    navigator.clipboard.writeText(link);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  const overlay = { position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" };
+  const card    = { background: s.bg || "#1e293b", border: "1px solid " + border, borderRadius: 14, padding: 28, width: "100%", maxWidth: 460, boxShadow: "0 20px 60px rgba(0,0,0,0.5)" };
+  const inp     = { background: s.inputBg || "#0f172a", border: "1px solid " + border, borderRadius: 8, color: s.textMain || "#f1f5f9", padding: "8px 12px", width: "100%", fontSize: 13, fontFamily: "inherit", outline: "none" };
+  const btn     = (primary) => ({ background: primary ? accent : "transparent", color: primary ? "#fff" : (s.textMuted || "#94a3b8"), border: primary ? "none" : "1px solid " + border, borderRadius: 8, padding: "9px 18px", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 6 });
+
+  return (
+    <div style={overlay} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={card}>
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
+          <Link2 size={18} style={{ color: accent }} />
+          <div style={{ flex: 1 }}>
+            <div style={{ color: s.textMain || "#f1f5f9", fontWeight: 700, fontSize: 15 }}>
+              {info.type === 'folder' ? 'Ordner-Link erstellen' : 'Datei-Link erstellen'}
+            </div>
+            <div style={{ color: s.textMuted || "#94a3b8", fontSize: 12, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{info.name}</div>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted || "#94a3b8", fontSize: 18, padding: 4 }}>✕</button>
+        </div>
+
+        {!link ? (
+          <>
+            {/* Ablaufdatum */}
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: "block", color: s.textMuted || "#94a3b8", fontSize: 12, marginBottom: 6, fontWeight: 600 }}>ABLAUFDATUM</label>
+              <select value={expiry} onChange={e => setExpiry(e.target.value)} style={{ ...inp, cursor: "pointer" }}>
+                <option value="7">7 Tage</option>
+                <option value="30">30 Tage</option>
+                <option value="90">90 Tage</option>
+                <option value="365">1 Jahr</option>
+                <option value="">Unbegrenzt</option>
+              </select>
+            </div>
+
+            {/* Buttons */}
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button style={btn(false)} onClick={onClose}>Abbrechen</button>
+              <button style={btn(true)} onClick={createLink} disabled={loading}>
+                {loading ? <span>Erstelle...</span> : <><Link2 size={14} /> Link erstellen</>}
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            {/* Link anzeigen */}
+            <div style={{ background: s.inputBg || "#0f172a", border: "1px solid " + border, borderRadius: 10, padding: "12px 14px", marginBottom: 16 }}>
+              <div style={{ color: s.textMuted || "#94a3b8", fontSize: 11, marginBottom: 6, fontWeight: 600 }}>LINK</div>
+              <div style={{ color: accent, fontSize: 12, wordBreak: "break-all", lineHeight: 1.5 }}>{link}</div>
+            </div>
+
+            <div style={{ display: "flex", gap: 10 }}>
+              <button style={{ ...btn(true), flex: 1, justifyContent: "center" }} onClick={copyLink}>
+                {copied ? <><CheckCheck size={14} /> Kopiert!</> : <><Copy size={14} /> Link kopieren</>}
+              </button>
+              <button style={btn(false)} onClick={() => { setLink(null); setCopied(false); }}>Neu</button>
+              <button style={btn(false)} onClick={onClose}>Schliessen</button>
+            </div>
+
+            <div style={{ marginTop: 14, color: s.textMuted || "#94a3b8", fontSize: 11, textAlign: "center" }}>
+              {expiry ? `Gültig für ${expiry} Tage · ` : "Unbegrenzt gültig · "}
+              Jeder mit dem Link kann {info.type === 'folder' ? 'alle Dateien im Ordner' : 'diese Datei'} herunterladen
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
 }
 
 // ─── Upload-Dialog ─────────────────────────────────────────────────────────
@@ -409,6 +529,7 @@ export default function Dokumente() {
   const [ftSearching, setFtSearching] = useState(false);
   const [syncData, setSyncData ] = useState(false);
   const [highlightDocId, setHighlightDocId] = useState(null);
+  const [shareDialog,   setShareDialog]   = useState(null); // { type: 'doc'|'folder', doc?, customer_id?, category?, year?, name? }
 
   // Volltext-Suche via Supabase RPC (PostgreSQL GIN-Index)
   useEffect(() => {
@@ -904,6 +1025,11 @@ export default function Dokumente() {
                             <span style={{ fontSize: 12 }}>{cat.icon}</span>
                             <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cat.label}</span>
                             <span style={{ fontSize: 10, color: s.textMuted, background: border, borderRadius: 8, padding: "1px 5px", flexShrink: 0 }}>{cat.count}</span>
+                            <span onClick={e => { e.stopPropagation(); setShareDialog({ type: 'folder', customer_id: cust.id, category: cat.key, name: cust.company_name + " – " + cat.label }); }}
+                              title="Ordner-Link erstellen"
+                              style={{ display: "flex", alignItems: "center", color: s.textMuted, padding: "0 2px", cursor: "pointer", flexShrink: 0, opacity: 0.6 }}>
+                              <Link2 size={11} />
+                            </span>
                           </div>
 
                           {catExp && (
@@ -1051,6 +1177,13 @@ export default function Dokumente() {
                       title="Herunterladen" style={{ background: "none", border: "none", cursor: "pointer", color: accent, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}>
                       <Download size={15} />
                     </button>
+                    {/* Share */}
+                    <button
+                      onClick={() => setShareDialog({ type: 'doc', doc_id: doc.id, name: doc.name, customer_id: doc.customer_id })}
+                      title="Link erstellen"
+                      style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}>
+                      <Link2 size={15} />
+                    </button>
                     {/* Loeschen */}
                     <button onClick={() => !lockedByOther && handleDelete(doc)} title={lockedByOther ? "Gesperrt – kann nicht geloescht werden" : "Loeschen"}
                       style={{ background: "none", border: "none", cursor: lockedByOther ? "not-allowed" : "pointer", color: lockedByOther ? s.textMuted + "44" : "#ef4444", display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}>
@@ -1079,6 +1212,17 @@ export default function Dokumente() {
           s={s} border={border} accent={accent} />
       )}
       {/* CheckinDialog ersetzt durch direktes handleCheckin */}
+
+      {/* Share-Link Dialog */}
+      {shareDialog && (
+        <ShareLinkDialog
+          info={shareDialog}
+          accent={accent}
+          s={s}
+          border={border}
+          onClose={() => setShareDialog(null)}
+        />
+      )}
     </div>
   );
 }

@@ -32,6 +32,7 @@ import MFALogin from "./pages/MFALogin.jsx";
 import SetPassword from "./pages/SetPassword.jsx";
 import DokumentUploadKunden from "./pages/DokumentUploadKunden.jsx";
 import Posteingang from "./pages/Posteingang.jsx";
+import SharePage from "./pages/SharePage.jsx";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30000 } }
@@ -105,6 +106,8 @@ function App() {
               <Route path="/mfa-setup" element={<MFASetup />} />
               <Route path="/mfa-login" element={<MFALogin />} />
               <Route path="/upload/:hash" element={<DokumentUploadKunden />} />
+              <Route path="/share/:token" element={<SharePage />} />
+              <Route path="/share" element={<SharePage />} />
 
               {/* All other routes: handled via AuthenticatedApp */}
               <Route path="*" element={<AuthenticatedApp />} />
