@@ -754,35 +754,40 @@ export default function Dokumente() {
       const { data: { session } }        = await supabase.auth.getSession();
       const jwt = session?.access_token || '';
 
-      // Checkout-Sperre sofort in DB setzen (optimistisch)
+      // Datei-URL ermitteln BEVOR die Checkout-Sperre gesetzt wird
+      let fileUrl = '';
+      if (doc.sharepoint_web_url) {
+        // SharePoint-Dokument: direkte Web-URL verwenden
+        fileUrl = doc.sharepoint_web_url;
+      } else if (doc.storage_path) {
+        // Legacy Supabase Storage: signierte URL erstellen
+        const storagePath = doc.storage_path.replace('dokumente/', '');
+        const { data: urlData } = await supabase.storage.from(BUCKET).createSignedUrl(storagePath, 3600);
+        if (!urlData?.signedUrl) {
+          toast.error('Fehler beim Erstellen der Download-URL');
+          return;
+        }
+        fileUrl = urlData.signedUrl;
+      } else {
+        toast.error('Keine Datei-URL verfügbar.');
+        return;
+      }
+
+      // Checkout-Sperre in DB setzen (erst nachdem URL erfolgreich ermittelt wurde)
       await entities.Dokument.update(doc.id, {
         checked_out_by:      authUser.id,
         checked_out_by_name: user?.full_name || authUser.email,
         checked_out_at:      new Date().toISOString(),
       });
       queryClient.invalidateQueries({ queryKey: ["dokumente-all"] });
-      queryClient.invalidateQueries({ queryKey: ["dokumente"] });
 
-      // Download-URL holen (signierte URL, 4 Stunden)
-      let download_url = '';
-      if (doc.sharepoint_item_id) {
-        const dlData = await spCall(jwt, { action: 'get-download-url', item_id: doc.sharepoint_item_id });
-        download_url = dlData.download_url || '';
-      } else if (doc.storage_path) {
-        const storagePath = doc.storage_path.replace('dokumente/', '');
-        const { data: urlData } = await supabase.storage.from(BUCKET).createSignedUrl(storagePath, 4 * 3600);
-        download_url = urlData?.signedUrl || '';
-      }
-      if (!download_url) { toast.error('Download-URL nicht verfügbar'); return; }
-
-      // Kurzlebigen Token in DB speichern (JWT + Download-URL sicher, nicht im URI)
-      const { data: tokenRow, error: tokenErr } = await supabase
-        .from('agent_tokens')
-        .insert({ doc_id: doc.id, item_id: doc.sharepoint_item_id || '', filename: doc.filename, jwt, user_id: authUser.id, download_url })
-        .select('id').single();
-      if (tokenErr || !tokenRow) { toast.error('Fehler: ' + (tokenErr?.message || 'Token-Fehler')); return; }
-
-      const uri = 'artis-open://checkout?token=' + tokenRow.id;
+      const uri = [
+          'artis-open://checkout',
+          '?doc_id=',   encodeURIComponent(doc.id),
+          '&jwt=',      encodeURIComponent(jwt),
+          '&item_id=',  encodeURIComponent(fileUrl),
+          '&filename=', encodeURIComponent(doc.filename),
+        ].join('');
       const _a = document.createElement('a');
       _a.href = uri;
       document.body.appendChild(_a); _a.click();
