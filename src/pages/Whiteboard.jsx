@@ -105,6 +105,14 @@ export default function Whiteboard() {
     },
   });
 
+  const { data: allCustomers = [] } = useQuery({
+    queryKey: ["customers-wb-all"],
+    queryFn: async () => {
+      const { data } = await supabase.from("customers").select("id, company_name").order("company_name");
+      return data || [];
+    },
+  });
+
   const { data: boards = [], refetch: refetchBoards } = useQuery({
     queryKey: ["whiteboards", customerId],
     queryFn: async () => {
@@ -324,7 +332,7 @@ export default function Whiteboard() {
       }
 
       if (boardId) {
-        await supabase.from("whiteboards").update({ name: boardName, data, thumbnail, updated_at: new Date().toISOString() }).eq("id", boardId);
+        await supabase.from("whiteboards").update({ name: boardName, customer_id: customerId || null, data, thumbnail, updated_at: new Date().toISOString() }).eq("id", boardId);
       } else {
         const { data: row } = await supabase.from("whiteboards").insert({
           name: boardName, customer_id: customerId || null, data, thumbnail,
@@ -334,6 +342,7 @@ export default function Whiteboard() {
       }
       toast.success("Gespeichert");
       refetchBoards();
+      queryClient.invalidateQueries({ queryKey: ["customers-wb"] });
     } catch (e) {
       toast.error("Fehler: " + e.message);
     } finally {
@@ -526,6 +535,13 @@ export default function Whiteboard() {
           onChange={e => { if (e.target.files[0]) importPdf(e.target.files[0]); e.target.value = ""; }} />
         <button onClick={() => pdfInputRef.current?.click()} style={btnStyle(false)} title="PDF importieren"><Upload size={15} /></button>
         <button onClick={exportPdf} style={btnStyle(false)} title="PDF exportieren"><Download size={15} /></button>
+
+        {/* Kunde */}
+        <select value={customerId} onChange={e => setCustomerId(e.target.value)}
+          style={{ background: cardBg, border: `1px solid ${border}`, color: customerId ? textMain : textMuted, borderRadius: 6, padding: "4px 8px", fontSize: 12, maxWidth: 160 }}>
+          <option value="">Kein Kunde</option>
+          {allCustomers.map(c => <option key={c.id} value={c.id}>{c.company_name}</option>)}
+        </select>
 
         {/* Speichern */}
         <button onClick={saveBoard} disabled={saving} style={{ ...btnStyle(true), gap: 5, padding: "6px 14px", fontSize: 12, fontWeight: 600 }}>
