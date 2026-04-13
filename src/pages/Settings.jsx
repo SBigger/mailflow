@@ -15,10 +15,6 @@ import {
   Users,
   Send,
   Calendar,
-  Menu,
-  ChevronDown,
-  LayoutDashboard,
-  CheckSquare,
   RefreshCw,
   ClipboardList,
   GripVertical,
@@ -40,12 +36,6 @@ import { ThemeContext } from "@/Layout";
 import DeleteUserDialog from "@/components/settings/DeleteUserDialog";
 import DokAblageSettings from "@/components/settings/DokAblageSettings";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
@@ -89,7 +79,7 @@ export default function Settings() {
   const [backupLoading, setBackupLoading] = useState(false);
   const [supportSyncing, setSupportSyncing] = useState(false);
   const [supportSyncStatus, setSupportSyncStatus] = useState('');
-  const [status, setStatus] = useState(false);
+  const [status, setStatus] = useState('');
   const [trigger, setTrigger] = useState(false);
   const fileInputRef = useRef(null);
 
@@ -631,8 +621,8 @@ export default function Settings() {
       }
 
       toast.info(`Import erfolgreich durchgeführt -> ${created} importiert`);
-      setTrigger(trigger != trigger);
-      queryClient.invalidateQueries({ queryKey: ["activityTemplates"] })
+      queryClient.invalidateQueries({ queryKey: ["activityTemplates"] });
+      setStatus("done");
     } catch (err) {
       toast.error(err.message );
     }
@@ -1399,7 +1389,7 @@ export default function Settings() {
           <DokAblageSettings
               importCsv={(e) => importFromCsv(e, 'DokTag')}
               exportCsv={(data, filename) => exportAsCsv(data, filename)}
-              loadDataTrigger={trigger}
+              loadDataTrigger={status}
           />
         )}
 

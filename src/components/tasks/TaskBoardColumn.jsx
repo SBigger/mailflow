@@ -20,6 +20,8 @@ export default function TaskBoardColumn({ column, index, tasks, onRename, onDele
   const { theme } = useContext(ThemeContext);
   const isLight = theme === 'light';
   const isArtis = theme === 'artis';
+  const countText = isArtis ? '#6b826b' : isLight ? '#7a7a9a' : '#a1a1aa';
+  const countBg = isArtis ? '#edf2ed' : isLight ? '#e4e4f0' : '#3f3f46';
   const { data: allUsers = [] } = useQuery({
     queryKey: ["allUsers"],
     queryFn: async () => {
@@ -85,7 +87,7 @@ export default function TaskBoardColumn({ column, index, tasks, onRename, onDele
               <div className="text-sm font-medium flex-1 flex items-center justify-center" style={{ color: '#ffffff', writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>
                 {column.name}
               </div>
-              <Badge variant="outline" className="text-xs flex-shrink-0">{activeTasks.length}</Badge>
+              <Badge variant="outline" className="text-xs flex-shrink-0">{activeTasks.length} offen</Badge>
             </div>
           </div>
         )}
@@ -130,9 +132,7 @@ export default function TaskBoardColumn({ column, index, tasks, onRename, onDele
                    {column.name}
                  </h3>
                )}
-              <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{ color: isArtis ? '#6b826b' : isLight ? '#7a7a9a' : '#71717a', backgroundColor: isArtis ? 'rgba(122,155,127,0.12)' : isLight ? 'rgba(100,100,180,0.12)' : 'rgba(39,39,42,0.6)' }}>
-                {activeTasks.length}
-              </span>
+              <span className="text-xs px-2 py-0.5 rounded-full" style={{ color: countText, backgroundColor: countBg }}>{activeTasks.length} offen</span>
             </div>
 
             <div className="flex items-center gap-1">

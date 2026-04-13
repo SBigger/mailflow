@@ -5,7 +5,7 @@ import { ThemeContext } from "@/Layout";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import {
-  Upload, Trash2, Download, Building2, UserRound, ChevronDown, PowerOff, ArrowLeft, LayoutList, LayoutGrid,
+  Upload, Trash2, Download, PowerOff, ArrowLeft, LayoutList, LayoutGrid,
   RefreshCw
 } from "lucide-react";
 import { useIsMobile } from "@/components/mobile/useIsMobile";
@@ -100,6 +100,7 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
         }
         toast.success(`${created}, total: ${items.length}`);
         setStatus("done");
+        queryClient.invalidateQueries({ queryKey: ["customers"] })
       } catch (err) {
         toast.error(err.message);
         setStatus("error");
@@ -270,7 +271,7 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
               <Button variant="ghost" size="sm" onClick={() => restoreInputRef.current?.click()}
                   className="h-7 px-2" style={{ color: textMuted }} title="JSON importieren">
                 {status === "loading" ? (
-                    <RefreshCw className={`h-4 w-4 "animate-spin"`} />
+                    <RefreshCw className={`h-4 w-4 animate-spin`} />
                     ):(
                         <>
                           <Download className="h-3.5 w-3.5" />

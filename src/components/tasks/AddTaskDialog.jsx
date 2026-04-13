@@ -145,7 +145,7 @@ export default function AddTaskDialog({open, onClose, onAdd, columns}) {
         try {
             const uploadedUrls = [];
             for (const file of files) {
-                const url = await uploadFile(file);
+                const url = await uploadFile(file, 'task-attachments');
                 uploadedUrls.push(url);
             }
             setAttachments([...attachments, ...uploadedUrls]);
@@ -294,7 +294,7 @@ export default function AddTaskDialog({open, onClose, onAdd, columns}) {
                     <div>
                         <label className={labelCls} style={{ color: labelColor }}>Kunde</label>
                         <div className="relative">
-                            <Input
+                            <input
                                 value={customerSearch}
                                 onChange={(e) => {
                                     setCustomerSearch(e.target.value);
@@ -303,13 +303,12 @@ export default function AddTaskDialog({open, onClose, onAdd, columns}) {
                                 }}
                                 onFocus={() => setShowCustomerDropdown(true)}
                                 onBlur={() => setTimeout(() => setShowCustomerDropdown(false), 150)}
-                                placeholder="Kunde suchen..." className="bg-zinc-900/60 border-zinc-700 text-zinc-200"
+                                placeholder="Kunde suchen..." className={selectCls} style={inStyle}
                                 tabIndex={8} autoComplete="off" data-lpignore="true"
                             />
                             {showCustomerDropdown && (
-                                <div
-                                    className="absolute z-50 top-full left-0 mt-1 w-full bg-zinc-900 border border-zinc-700 rounded-md shadow-lg max-h-48 overflow-y-auto">
-                                    <div className="px-3 py-2 text-zinc-400 text-sm cursor-pointer hover:bg-zinc-800"
+                                <div className="absolute z-50 top-full p-1 w-full rounded-md shadow-lg max-h-48 overflow-y-auto" style={inStyle}>
+                                    <div
                                          onMouseDown={() => {
                                              setCustomerId('');
                                              setCustomerSearch('');
@@ -319,7 +318,6 @@ export default function AddTaskDialog({open, onClose, onAdd, columns}) {
                                     </div>
                                     {customers.filter(c => c.company_name.toLowerCase().includes(customerSearch.toLowerCase())).map((c) => (
                                         <div key={c.id}
-                                             className="px-3 py-2 text-zinc-200 text-sm cursor-pointer hover:bg-zinc-800"
                                              onMouseDown={() => {
                                                  setCustomerId(c.id);
                                                  setCustomerSearch(c.company_name);
@@ -348,13 +346,13 @@ export default function AddTaskDialog({open, onClose, onAdd, columns}) {
                                 ))}
                             </div>
                         )}
-                        <Select value="" onValueChange={handleAddTag}>
-                            <SelectTrigger className="bg-zinc-900/60 border-zinc-700 text-zinc-200" tabIndex={9}>
+                        <Select value="" onValueChange={handleAddTag} className={selectCls} style={inStyle}>
+                            <SelectTrigger tabIndex={9}>
                                 <SelectValue placeholder="Tag hinzufügen..."/>
                             </SelectTrigger>
-                            <SelectContent className="bg-zinc-900 border-zinc-700">
+                            <SelectContent >
                                 {existingTags.filter(t => !tags.includes(t.name)).map((tag) => (
-                                    <SelectItem key={tag.id} value={tag.name} className="text-zinc-200">
+                                    <SelectItem key={tag.id} value={tag.name}>
                                         <div className="flex items-center gap-2">
                                             <div className="w-2 h-2 rounded-full"
                                                  style={{backgroundColor: tag.color || '#a78bfa'}}/>
@@ -369,13 +367,10 @@ export default function AddTaskDialog({open, onClose, onAdd, columns}) {
                     {/* Anhänge */}
                     <div>
                         <label className={labelCls} style={{ color: labelColor }}>Anhänge</label>
-                        <label
-                            className="flex items-center justify-center gap-2 w-full p-3 border-2 border-dashed border-zinc-700 rounded-lg hover:border-zinc-600 transition-colors cursor-pointer bg-zinc-900/60">
+                        <label className="flex items-center justify-center gap-2 w-full p-3 border-2 border-dashed rounded-lg transition-colors cursor-pointer ">
                             <Upload className="h-4 w-4 text-zinc-500"/>
-                            <span
-                                className="text-sm text-zinc-400">{uploading ? 'Wird hochgeladen...' : 'Dateien hochladen'}</span>
-                            <input type="file" multiple onChange={handleFileUpload} disabled={uploading}
-                                   className="hidden"/>
+                            <span className="text-sm text-zinc-400">{uploading ? 'Wird hochgeladen...' : 'Dateien hochladen'}</span>
+                            <input type="file" multiple onChange={handleFileUpload} disabled={uploading} className="hidden"/>
                         </label>
                         {attachments.length > 0 && (
                             <div className="space-y-1">
@@ -383,10 +378,10 @@ export default function AddTaskDialog({open, onClose, onAdd, columns}) {
                                     const filename = decodeURIComponent(url.split('/').pop().replace(/^\d+_/, ''));
                                     return (
                                         <div key={index}
-                                             className="flex items-center justify-between p-2 bg-zinc-900/60 rounded-lg border border-zinc-800">
+                                             className="flex items-center justify-between p-2 rounded-lg border ">
                                             <div className="flex items-center gap-2 min-w-0 flex-1">
                                                 <Paperclip className="h-3 w-3 text-zinc-500 flex-shrink-0"/>
-                                                <span className="text-xs text-zinc-300 truncate">{filename}</span>
+                                                <span className={labelCls}>{filename}</span>
                                             </div>
                                             <button onClick={() => handleRemoveAttachment(index)}
                                                     className="text-zinc-500 hover:text-red-400 flex-shrink-0">

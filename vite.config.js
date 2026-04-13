@@ -37,8 +37,9 @@ export default defineConfig(({ mode }) => {
       'process.env.VITE_SUPABASE_URL': JSON.stringify(env.VITE_SUPABASE_URL),
     },
     server: {
+      host: '0.0.0.0',
       port: 3000,
-      host: '127.0.0.1',
+      strictPort: true, // Prevents Vite from trying 3001 if 3000 is "busy"
     },
   };
 });

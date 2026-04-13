@@ -147,9 +147,6 @@ function ColumnSection({ column, tasks, onTaskClick, onToggleComplete, prioritie
         <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: accentColor }} />
         <span className="text-sm font-semibold uppercase tracking-wide" style={{ color: columnNameText }}>{column.name}</span>
         <span className="text-xs px-2 py-0.5 rounded-full" style={{ color: countText, backgroundColor: countBg }}>{activeTasks.length} offen</span>
-        {completedTasks.length > 0 && (
-          <span className="text-xs px-2 py-0.5 rounded-full" style={{ color: countText, backgroundColor: countBg }}>{completedTasks.length} erledigt</span>
-        )}
         <div className="ml-auto" style={{ color: countText }}>
           {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
         </div>

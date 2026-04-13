@@ -44,9 +44,7 @@ export default function DokAblageSettings({importCsv, exportCsv, loadDataTrigger
   const fileInputRef = useRef(null);
 
   useEffect(() => {
-    if (loadDataTrigger) {
-      queryClient.invalidateQueries({ queryKey: ["dok_tags"] })
-    }
+    queryClient.invalidateQueries({ queryKey: ["dok_tags"] })
   }, [loadDataTrigger]);
 
   const { data: allTags = [], isLoading } = useQuery({

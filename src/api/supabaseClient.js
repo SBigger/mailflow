@@ -156,7 +156,7 @@ export const auth = {
 
 // ─── File Upload via Supabase Storage ────────────────────────────────────────
 // Lädt eine Datei in den 'dokumente'-Bucket hoch und gibt die öffentliche URL zurück.
-export async function uploadFile(file, folder = 'task-attachments') {
+export async function uploadFile(file, bucket = 'dokumente', folder = '') {
   const ext = file.name.includes('.') ? file.name.split('.').pop() : 'bin';
   const safeName = file.name
     .replace(/[äÄ]/g, 'ae').replace(/[öÖ]/g, 'oe').replace(/[üÜ]/g, 'ue').replace(/ß/g, 'ss')

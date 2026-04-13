@@ -220,7 +220,7 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }) {
     try {
       const uploadedUrls = [];
       for (const file of files) {
-        const url = await uploadFile(file);
+        const url = await uploadFile(file, 'task-attachments');
         uploadedUrls.push(url);
       }
       setAttachments([...attachments, ...uploadedUrls]);
