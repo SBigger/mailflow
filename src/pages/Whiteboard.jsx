@@ -97,7 +97,10 @@ export default function Whiteboard() {
   const { data: customers = [] } = useQuery({
     queryKey: ["customers-wb"],
     queryFn: async () => {
-      const { data } = await supabase.from("customers").select("id, company_name").order("company_name");
+      const { data: wbs } = await supabase.from("whiteboards").select("customer_id");
+      const ids = [...new Set((wbs || []).map(w => w.customer_id).filter(Boolean))];
+      if (ids.length === 0) return [];
+      const { data } = await supabase.from("customers").select("id, company_name").in("id", ids).order("company_name");
       return data || [];
     },
   });
