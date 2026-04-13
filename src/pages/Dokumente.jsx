@@ -283,6 +283,104 @@ function ShareLinkDialog({ info, accent, s, border, onClose }) {
   );
 }
 
+// ─── Share-Links-Übersicht ─────────────────────────────────────────────────
+function ShareLinksOverview({ accent, s, border, onClose }) {
+  const [links, setLinks] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    supabase.from("share_links").select("id, token, name, doc_id, customer_id, category, year, password, expires_at, is_active, download_count, created_at")
+      .order("created_at", { ascending: false })
+      .then(({ data }) => { setLinks(data || []); setLoading(false); });
+  }, []);
+
+  async function toggleActive(link) {
+    const newVal = !link.is_active;
+    await supabase.from("share_links").update({ is_active: newVal }).eq("id", link.id);
+    setLinks(prev => prev.map(l => l.id === link.id ? { ...l, is_active: newVal } : l));
+  }
+
+  async function deleteLink(link) {
+    if (!confirm("Link endgültig löschen?")) return;
+    await supabase.from("share_links").delete().eq("id", link.id);
+    setLinks(prev => prev.filter(l => l.id !== link.id));
+  }
+
+  function isExpired(link) {
+    return link.expires_at && new Date(link.expires_at) < new Date();
+  }
+
+  function formatDate(d) {
+    if (!d) return "–";
+    return new Date(d).toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit", year: "numeric" });
+  }
+
+  function statusBadge(link) {
+    if (!link.is_active) return { label: "Deaktiviert", bg: "#450a0a", color: "#f87171" };
+    if (isExpired(link)) return { label: "Abgelaufen", bg: "#451a03", color: "#fb923c" };
+    return { label: "Aktiv", bg: "#052e16", color: "#4ade80" };
+  }
+
+  const overlay = { position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 };
+  const card = { background: s.cardBg, border: "1px solid " + border, borderRadius: 14, padding: 28, width: "100%", maxWidth: 720, maxHeight: "80vh", display: "flex", flexDirection: "column", boxShadow: "0 20px 60px rgba(0,0,0,0.25)" };
+
+  return (
+    <div style={overlay} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={card}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
+          <Link2 size={18} style={{ color: accent }} />
+          <div style={{ flex: 1 }}>
+            <div style={{ color: s.textMain, fontWeight: 700, fontSize: 15 }}>Geteilte Links</div>
+            <div style={{ color: s.textMuted, fontSize: 12 }}>{links.length} Link{links.length !== 1 ? "s" : ""}</div>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, fontSize: 16, padding: 4 }}>✕</button>
+        </div>
+
+        <div style={{ flex: 1, overflowY: "auto", margin: "0 -8px", padding: "0 8px" }}>
+          {loading && <div style={{ textAlign: "center", color: s.textMuted, padding: 40 }}>Lade...</div>}
+          {!loading && links.length === 0 && <div style={{ textAlign: "center", color: s.textMuted, padding: 40 }}>Keine Links erstellt.</div>}
+
+          {links.map(link => {
+            const st = statusBadge(link);
+            const url = `${window.location.origin}/share/${link.token}`;
+            return (
+              <div key={link.id} style={{ background: s.sidebarBg, border: "1px solid " + border, borderRadius: 10, padding: "12px 14px", marginBottom: 8, opacity: !link.is_active ? 0.5 : 1 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                  <span style={{ fontSize: 14 }}>{link.doc_id ? "\uD83D\uDCC4" : "\uD83D\uDCC2"}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ color: s.textMain, fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{link.name}</div>
+                  </div>
+                  <span style={{ background: st.bg, color: st.color, fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 6 }}>{st.label}</span>
+                  {link.password && <span title="Passwortgeschützt" style={{ fontSize: 12 }}>🔒</span>}
+                </div>
+
+                <div style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 11, color: s.textMuted, flexWrap: "wrap" }}>
+                  <span>Erstellt: {formatDate(link.created_at)}</span>
+                  <span>Ablauf: {link.expires_at ? formatDate(link.expires_at) : "Unbegrenzt"}</span>
+                  <span>{link.download_count || 0}× heruntergeladen</span>
+                  <div style={{ flex: 1 }} />
+                  <button onClick={() => { navigator.clipboard.writeText(url); toast.success("Link kopiert"); }}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: accent, fontSize: 11, fontWeight: 600, padding: "2px 6px" }}>
+                    Kopieren
+                  </button>
+                  <button onClick={() => toggleActive(link)}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, fontSize: 11, padding: "2px 6px" }}>
+                    {link.is_active ? "Deaktivieren" : "Aktivieren"}
+                  </button>
+                  <button onClick={() => deleteLink(link)}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: "#f87171", fontSize: 11, padding: "2px 6px" }}>
+                    Löschen
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Upload-Dialog ─────────────────────────────────────────────────────────
 function UploadDialog({ customers, preCustomer, allTags, onCancel, onUpload, s, border, accent }) {
   const [file,       setFile]       = useState(null);
@@ -551,6 +649,7 @@ export default function Dokumente() {
   const [syncData, setSyncData ] = useState(false);
   const [highlightDocId, setHighlightDocId] = useState(null);
   const [shareDialog,   setShareDialog]   = useState(null); // { type: 'doc'|'folder', doc?, customer_id?, category?, year?, name? }
+  const [showShareLinks, setShowShareLinks] = useState(false);
 
   // Volltext-Suche via Supabase RPC (PostgreSQL GIN-Index)
   useEffect(() => {
@@ -888,6 +987,9 @@ export default function Dokumente() {
           )}
         </div>
         <span style={{ fontSize: 12, color: s.textMuted }}>{allDoks.length} Dok.</span>
+        <Button onClick={() => setShowShareLinks(true)} style={{ background: "transparent", color: s.textMuted, border: "1px solid " + border, fontSize: 12, height: 32, display: "flex", alignItems: "center", gap: 5 }}>
+          <Link2 size={13} /> Links
+        </Button>
         <Button onClick={() => setShowUpload(true)} style={{ background: accent, color: "#fff", fontSize: 12, height: 32, display: "flex", alignItems: "center", gap: 5 }}>
           <Upload size={13} /> Hochladen
         </Button>
@@ -1240,6 +1342,16 @@ export default function Dokumente() {
           s={s}
           border={border}
           onClose={() => setShareDialog(null)}
+        />
+      )}
+
+      {/* Share-Links Übersicht */}
+      {showShareLinks && (
+        <ShareLinksOverview
+          accent={accent}
+          s={s}
+          border={border}
+          onClose={() => setShowShareLinks(false)}
         />
       )}
     </div>

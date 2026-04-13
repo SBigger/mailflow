@@ -100,12 +100,12 @@ serve(async (req) => {
             const fileData = new Uint8Array(await file.arrayBuffer())
             if (fileData.length === 0) throw new Error('Datei ist leer')
             if (fileData.length > MAX_FILE_SIZE) throw new Error('Datei zu gross')
-            const storagePath = `dokumente/${docId}/${Date.now()}-${safeName((file.name as string) || doc.filename)}`
+            const uploadKey = `${docId}/${Date.now()}-${safeName((file.name as string) || doc.filename)}`
             const { error: storErr } = await supabase.storage
-              .from('dokumente').upload(storagePath, fileData, { upsert: true, contentType: 'application/octet-stream' })
+              .from('dokumente').upload(uploadKey, fileData, { upsert: true, contentType: 'application/octet-stream' })
             if (storErr) throw new Error('Storage Upload: ' + storErr.message)
             await supabase.from('dokumente').update({
-              storage_path: storagePath, file_size: fileData.length,
+              storage_path: `dokumente/${uploadKey}`, file_size: fileData.length,
               checked_out_by: null, checked_out_by_name: null, checked_out_at: null,
             }).eq('id', docId)
           }
@@ -131,18 +131,21 @@ serve(async (req) => {
           if (fileData.length === 0) throw new Error('Datei ist leer')
           if (fileData.length > MAX_FILE_SIZE) throw new Error('Datei zu gross')
 
-          const storagePath = `dokumente/${docId}/${Date.now()}-${safeName((file.name as string) || doc.filename)}`
+          const uploadKey = `${docId}/${Date.now()}-${safeName((file.name as string) || doc.filename)}`
           const { error: storErr } = await supabase.storage
-            .from('dokumente').upload(storagePath, fileData, { upsert: true, contentType: 'application/octet-stream' })
+            .from('dokumente').upload(uploadKey, fileData, { upsert: true, contentType: 'application/octet-stream' })
           if (storErr) throw new Error('Storage Upload: ' + storErr.message)
 
           // Alten Storage-Pfad löschen
-          if (doc.storage_path && doc.storage_path !== storagePath)
-            await supabase.storage.from('dokumente').remove([doc.storage_path]).catch(() => {})
+          if (doc.storage_path) {
+            const oldKey = doc.storage_path.replace(/^dokumente\//, '')
+            if (oldKey !== uploadKey)
+              await supabase.storage.from('dokumente').remove([oldKey]).catch(() => {})
+          }
 
           // DB aktualisieren + Checkout freigeben
           await supabase.from('dokumente').update({
-            storage_path: storagePath,
+            storage_path: `dokumente/${uploadKey}`,
             file_size: fileData.length,
             checked_out_by: null, checked_out_by_name: null, checked_out_at: null,
           }).eq('id', docId)
@@ -173,7 +176,16 @@ serve(async (req) => {
   const jwt = (req.headers.get('Authorization') || '').replace('Bearer ', '').trim()
   if (!jwt) return err('Kein Token', 401)
 
-  const { data: { user: authUser } } = await supabase.auth.getUser(jwt)
+  // JWT-Payload manuell dekodieren (unabhängig von supabase-js Version)
+  let authUser: { id: string } | null = null
+  try {
+    const seg = jwt.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
+    const pad = seg + '='.repeat((4 - seg.length % 4) % 4)
+    const payload = JSON.parse(atob(pad))
+    if (payload?.sub && typeof payload.sub === 'string') {
+      authUser = { id: payload.sub }
+    }
+  } catch { /* ungültiges JWT-Format */ }
   if (!authUser) return err('Unauthorized', 401)
 
   try {
@@ -225,14 +237,16 @@ serve(async (req) => {
       if (fileData.length === 0) throw new Error('Datei ist leer')
       if (fileData.length > MAX_FILE_SIZE) throw new Error('Datei zu gross')
       const cleanName   = safeName(file.name || doc.filename)
-      const storagePath = `dokumente/${docId}/${Date.now()}-${cleanName}`
-      if (doc.storage_path)
-        await supabase.storage.from('dokumente').remove([doc.storage_path]).catch(() => {})
+      const uploadKey   = `${docId}/${Date.now()}-${cleanName}`
+      if (doc.storage_path) {
+        const oldKey = doc.storage_path.replace(/^dokumente\//, '')
+        await supabase.storage.from('dokumente').remove([oldKey]).catch(() => {})
+      }
       const { error: storErr } = await supabase.storage
-        .from('dokumente').upload(storagePath, fileData, { upsert: true, contentType: 'application/octet-stream' })
+        .from('dokumente').upload(uploadKey, fileData, { upsert: true, contentType: 'application/octet-stream' })
       if (storErr) throw new Error('Storage Upload: ' + storErr.message)
       await supabase.from('dokumente').update({
-        storage_path: storagePath, filename: cleanName, file_size: fileData.length,
+        storage_path: `dokumente/${uploadKey}`, filename: cleanName, file_size: fileData.length,
         checked_out_by: null, checked_out_by_name: null, checked_out_at: null,
       }).eq('id', docId)
       return ok({ ok: true })

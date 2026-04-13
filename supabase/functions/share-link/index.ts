@@ -192,9 +192,10 @@ serve(async (req) => {
       }
 
       // Signed URL generieren (1 Stunde gültig)
+      const storageKey = doc.storage_path.replace(/^dokumente\//, '')
       const { data: signed } = await supabase.storage
         .from("dokumente")
-        .createSignedUrl(doc.storage_path, 3600, {
+        .createSignedUrl(storageKey, 3600, {
           download: doc.filename || doc.name,
         });
 

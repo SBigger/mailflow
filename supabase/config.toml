@@ -37,9 +37,9 @@ file_size_limit = "50MiB"
 
 [auth]
 enabled = true
-site_url = "http://localhost:3000"
-additional_redirect_urls = ["http://localhost:3000/*"]
-jwt_expiry = 3600
+site_url = "https://smartis.me"
+additional_redirect_urls = []
+jwt_expiry = 86400
 enable_signup = true
 
 [auth.mfa]
