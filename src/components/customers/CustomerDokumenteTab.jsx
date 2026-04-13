@@ -86,10 +86,11 @@ function UploadDialog({ customerId, allTags, onCancel, onUploaded, s, border, ac
         .select("id").single();
       if (dbErr) throw new Error(dbErr.message);
 
-      // 2. Datei in Supabase Storage hochladen
+      // 2. Datei in Supabase Storage hochladen (File mit sauberem Namen fuer Header-Kompatibilitaet)
       const storagePath = `dokumente/${newDoc.id}/${Date.now()}-${cleanName}`;
+      const cleanFile = new File([file], cleanName, { type: file.type || "application/octet-stream" });
       const { error: storErr } = await supabase.storage.from(BUCKET)
-        .upload(storagePath, file, { upsert: true, contentType: file.type || "application/octet-stream" });
+        .upload(storagePath, cleanFile, { upsert: true, contentType: file.type || "application/octet-stream" });
       if (storErr) {
         try { await supabase.from("dokumente").delete().eq("id", newDoc.id); } catch {}
         throw new Error("Storage-Upload: " + storErr.message);
@@ -410,8 +411,9 @@ export default function CustomerDokumenteTab({ customerId }) {
         if (doc.storage_path) {
           await supabase.storage.from(BUCKET).remove([doc.storage_path]).catch(() => {});
         }
+        const cleanFile = new File([file], cleanName, { type: file.type || "application/octet-stream" });
         const { error: storErr } = await supabase.storage.from(BUCKET)
-          .upload(storagePath, file, { upsert: true, contentType: file.type || "application/octet-stream" });
+          .upload(storagePath, cleanFile, { upsert: true, contentType: file.type || "application/octet-stream" });
         if (storErr) throw new Error("Storage-Upload: " + storErr.message);
         await entities.Dokument.update(doc.id, {
           storage_path: storagePath, filename: file.name, file_size: file.size, file_type: file.type,

@@ -109,11 +109,14 @@ export default function CustomerNotesTab({ customer, onUpdate }) {
   const uploadFiles = async (files, customerId) => {
     const uploaded = [];
     for (const file of files) {
-      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const safeName = file.name
+        .replace(/[äÄ]/g, "ae").replace(/[öÖ]/g, "oe").replace(/[üÜ]/g, "ue").replace(/ß/g, "ss")
+        .replace(/[^a-zA-Z0-9._-]/g, "_");
       const path = `${customerId}/${Date.now()}-${safeName}`;
+      const cleanFile = new File([file], safeName, { type: file.type });
       const { error } = await supabase.storage
         .from("note-attachments")
-        .upload(path, file, { upsert: false });
+        .upload(path, cleanFile, { upsert: false });
       if (!error) uploaded.push({ name: file.name, path });
     }
     return uploaded;

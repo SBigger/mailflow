@@ -158,9 +158,12 @@ export const auth = {
 // Lädt eine Datei in den 'dokumente'-Bucket hoch und gibt die öffentliche URL zurück.
 export async function uploadFile(file, folder = 'task-attachments') {
   const ext = file.name.includes('.') ? file.name.split('.').pop() : 'bin';
-  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const safeName = file.name
+    .replace(/[äÄ]/g, 'ae').replace(/[öÖ]/g, 'oe').replace(/[üÜ]/g, 'ue').replace(/ß/g, 'ss')
+    .replace(/[^a-zA-Z0-9._-]/g, '_');
   const path = `${folder}/${Date.now()}_${safeName}`;
-  const { error } = await supabase.storage.from('dokumente').upload(path, file, { upsert: false });
+  const cleanFile = new File([file], safeName, { type: file.type });
+  const { error } = await supabase.storage.from('dokumente').upload(path, cleanFile, { upsert: false });
   if (error) throw new Error(error.message);
   const { data: { publicUrl } } = supabase.storage.from('dokumente').getPublicUrl(path);
   return publicUrl;

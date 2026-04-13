@@ -434,9 +434,11 @@ function UploadDialog({ customers, preCustomer, allTags, onCancel, onUpload, s, 
       const fileExt = file.name.split('.').pop();
       const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExt}`;
       const path = `${custId}/${fileName}`;
+      // File-Objekt mit sauberem Namen (ohne Umlaute) – Supabase Header-Kompatibilitaet
+      const cleanFile = new File([file], fileName, { type: file.type });
       const { data: uploadData, error: uploadError } = await supabase
           .storage.from(BUCKET)
-          .upload(path, file);
+          .upload(path, cleanFile);
 
       if (uploadError) {
         throw uploadError;

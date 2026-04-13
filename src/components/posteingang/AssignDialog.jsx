@@ -6,6 +6,7 @@ import {useQuery} from "@tanstack/react-query";
 import TagSelectWidget from "../dokumente/TagSelectWidget.jsx";
 import {Button} from "../ui/button.jsx";
 import * as pdfjsLib from "pdfjs-dist";
+import { CATEGORIES } from "@/lib/categories";
 
 export default function AssignDialog({ customers, preCustomerId, doc, onClose, onUpload, s, border, accent }) {
     const [custId,     setCustId]     = useState(preCustomerId || "");
@@ -20,15 +21,7 @@ export default function AssignDialog({ customers, preCustomerId, doc, onClose, o
 
     const BUCKET = 'posteingang';
 
-    const CATEGORIES = [
-        { key: "rechnungswesen", label: "01 - Rechnungswesen", icon: "\uD83D\uDCCA" },
-        { key: "steuern",        label: "02 - Steuern",        icon: "\uD83D\uDCB0" },
-        { key: "mwst",           label: "03 - Mehrwertsteuer", icon: "\uD83E\uDDFE" },
-        { key: "revision",       label: "04 - Revision",       icon: "\uD83D\uDD0D" },
-        { key: "rechtsberatung", label: "05 - Rechtsberatung", icon: "\u2696\uFE0F" },
-        { key: "personal",       label: "06 - Personal",       icon: "\uD83D\uDC65" },
-        { key: "korrespondenz",  label: "09 - Korrespondenz",  icon: "\u2709\uFE0F" },
-    ];
+    // CATEGORIES zentral importiert aus @/lib/categories
 
     const inp = { background: s.inputBg, border: "1px solid " + (s.inputBorder || border), color: s.textMain, borderRadius: 6, padding: "5px 8px", fontSize: 13, width: "100%", outline: "none" };
 
@@ -96,9 +89,13 @@ export default function AssignDialog({ customers, preCustomerId, doc, onClose, o
     const handleUpload = async () => {
         setUploading(true);
         try {
+            // Dateiname bereinigen (Umlaute → ae/oe/ue) fuer Storage-Kompatibilitaet
+            const cleanFileName = (doc.fileName || "file")
+                .replace(/[äÄ]/g, "ae").replace(/[öÖ]/g, "oe").replace(/[üÜ]/g, "ue").replace(/ß/g, "ss")
+                .replace(/[^a-zA-Z0-9._-]/g, "_");
             const { data: uploadData, error: uploadError } = await supabase
                 .storage.from(BUCKET)
-                .copy(doc.storage_path, `${custId}/${doc.fileName}`, {
+                .copy(doc.storage_path, `${custId}/${Date.now()}-${cleanFileName}`, {
                     destinationBucket: 'dokumente'
                 });
 

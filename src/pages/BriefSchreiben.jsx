@@ -416,7 +416,10 @@ export default function BriefSchreiben() {
 
       // 2. Zu Supabase Storage hochladen
       const ts       = Date.now();
-      const safeName = betreff.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 60);
+      const safeName = betreff
+        .replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue")
+        .replace(/Ä/g, "Ae").replace(/Ö/g, "Oe").replace(/Ü/g, "Ue")
+        .replace(/[^a-zA-Z0-9._-]/g, "_").replace(/_+/g, "_").slice(0, 60);
       const storagePath = `signing-temp/${ts}_${safeName}.pdf`;
       const { error: upErr } = await supabase.storage
         .from("dokumente")

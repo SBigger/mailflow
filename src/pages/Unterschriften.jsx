@@ -147,9 +147,12 @@ export default function Unterschriften() {
 
     setSending(true);
     try {
-      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const safeName = file.name
+        .replace(/[äÄ]/g, "ae").replace(/[öÖ]/g, "oe").replace(/[üÜ]/g, "ue").replace(/ß/g, "ss")
+        .replace(/[^a-zA-Z0-9._-]/g, "_");
       const path = `signing-temp/${Date.now()}_${safeName}`;
-      const { error: upErr } = await supabase.storage.from("dokumente").upload(path, file);
+      const cleanFile = new File([file], safeName, { type: file.type });
+      const { error: upErr } = await supabase.storage.from("dokumente").upload(path, cleanFile);
       if (upErr) throw upErr;
       const { data: { publicUrl } } = supabase.storage.from("dokumente").getPublicUrl(path);
 
