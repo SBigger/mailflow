@@ -5,15 +5,7 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const SHARE_FN = `${SUPABASE_URL}/functions/v1/share-link`;
 
-const CATEGORIES = [
-  { key: "rechnungswesen", label: "01 - Rechnungswesen", icon: "\uD83D\uDCCA" },
-  { key: "steuern",        label: "02 - Steuern",        icon: "\uD83D\uDCB0" },
-  { key: "mwst",           label: "03 - Mehrwertsteuer", icon: "\uD83E\uDDFE" },
-  { key: "revision",       label: "04 - Revision",       icon: "\uD83D\uDD0D" },
-  { key: "rechtsberatung", label: "05 - Rechtsberatung", icon: "\u2696\uFE0F" },
-  { key: "personal",       label: "06 - Personal",       icon: "\uD83D\uDC65" },
-  { key: "korrespondenz",  label: "09 - Korrespondenz",  icon: "\u2709\uFE0F" },
-];
+import { CATEGORIES } from "@/lib/categories";
 
 function catLabel(key) {
   const c = CATEGORIES.find(x => x.key === key);

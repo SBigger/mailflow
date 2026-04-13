@@ -116,15 +116,8 @@ async function spUpload(jwt, file, customer_id, category, year) {
 
 const CUR_YEAR = new Date().getFullYear();
 
-const CATEGORIES = [
-  { key: "rechnungswesen", label: "01 - Rechnungswesen", icon: "\uD83D\uDCCA" },
-  { key: "steuern",        label: "02 - Steuern",        icon: "\uD83D\uDCB0" },
-  { key: "mwst",           label: "03 - Mehrwertsteuer", icon: "\uD83E\uDDFE" },
-  { key: "revision",       label: "04 - Revision",       icon: "\uD83D\uDD0D" },
-  { key: "rechtsberatung", label: "05 - Rechtsberatung", icon: "\u2696\uFE0F" },
-  { key: "personal",       label: "06 - Personal",       icon: "\uD83D\uDC65" },
-  { key: "korrespondenz",  label: "09 - Korrespondenz",  icon: "\u2709\uFE0F" },
-];
+// Kategorien zentral in src/lib/categories.js definiert
+import { CATEGORIES } from "@/lib/categories";
 
 function getFileInfo(mimeType, filename) {
   const ext = (filename || "").split(".").pop().toLowerCase();
