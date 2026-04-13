@@ -42,7 +42,7 @@ function getSvgPathFromStroke(stroke) {
 }
 
 // ── Strich-Komponente (perfect-freehand gerendert als Konva Shape) ──
-function FreehandLine({ points, color, options }) {
+function FreehandLine({ points, color, options, opacity }) {
   // points ist ein flaches Array [x,y,pressure, x,y,pressure, ...]
   // getStroke erwartet [[x,y,pressure], ...]
   const pointArrays = [];
@@ -54,7 +54,7 @@ function FreehandLine({ points, color, options }) {
   const flatPoints = [];
   for (const [x, y] of stroke) { flatPoints.push(x, y); }
   return (
-    <Line points={flatPoints} fill={color || "#000"} closed tension={0} listening={false} />
+    <Line points={flatPoints} fill={color || "#000"} opacity={opacity != null ? opacity : 1} closed tension={0} listening={false} />
   );
 }
 
@@ -80,6 +80,7 @@ export default function Whiteboard() {
   const [tool, setTool]           = useState("pen");      // pen | eraser | hand
   const [penColor, setPenColor]   = useState("#000000");
   const [penSize, setPenSize]     = useState(3);
+  const [penOpacity, setPenOpacity] = useState(1);
   const [mode, setMode]           = useState("infinite");  // infinite | a4
   const [lines, setLines]         = useState([]);          // {points, color, size, page}
   const [currentLine, setCurrentLine] = useState(null);
@@ -170,7 +171,7 @@ export default function Whiteboard() {
     }
 
     setIsDrawing(true);
-    setCurrentLine({ points: [x, y, 0.5], color: penColor, size: penSize, page: mode === "a4" ? page : 0 });
+    setCurrentLine({ points: [x, y, 0.5], color: penColor, size: penSize, opacity: penOpacity, page: mode === "a4" ? page : 0 });
   }, [tool, penColor, penSize, position, scale, mode, page]);
 
   const handlePointerMove = useCallback((e) => {
@@ -312,7 +313,7 @@ export default function Whiteboard() {
         if (stroke.length < 2) continue;
         const flat = [];
         for (const [x, y] of stroke) flat.push(x, y);
-        tmpLayer.add(new Konva.Line({ points: flat, fill: line.color, closed: true, tension: 0 }));
+        tmpLayer.add(new Konva.Line({ points: flat, fill: line.color, opacity: line.opacity != null ? line.opacity : 1, closed: true, tension: 0 }));
       }
       tmpLayer.draw();
 
@@ -500,6 +501,11 @@ export default function Whiteboard() {
         <input type="range" min="1" max="12" value={penSize} onChange={e => setPenSize(Number(e.target.value))}
           style={{ width: 70, accentColor: accent }} title={`Stiftgroesse: ${penSize}`} />
 
+        {/* Deckkraft */}
+        <input type="range" min="0.05" max="1" step="0.05" value={penOpacity} onChange={e => setPenOpacity(Number(e.target.value))}
+          style={{ width: 60, accentColor: accent }} title={`Deckkraft: ${Math.round(penOpacity * 100)}%`} />
+        <span style={{ color: textMuted, fontSize: 10, minWidth: 28 }}>{Math.round(penOpacity * 100)}%</span>
+
         <div style={{ width: 1, height: 24, background: border, margin: "0 4px" }} />
 
         {/* Undo/Redo */}
@@ -586,12 +592,12 @@ export default function Whiteboard() {
 
             {/* Gespeicherte Linien */}
             {visibleLines.map((line, i) => (
-              <FreehandLine key={i} points={line.points} color={line.color} options={{ ...PEN_OPTIONS, size: line.size || 3 }} />
+              <FreehandLine key={i} points={line.points} color={line.color} opacity={line.opacity} options={{ ...PEN_OPTIONS, size: line.size || 3 }} />
             ))}
 
             {/* Aktuelle Linie (wird gerade gezeichnet) */}
             {currentLine && (
-              <FreehandLine points={currentLine.points} color={currentLine.color} options={{ ...PEN_OPTIONS, size: currentLine.size || 3 }} />
+              <FreehandLine points={currentLine.points} color={currentLine.color} opacity={currentLine.opacity} options={{ ...PEN_OPTIONS, size: currentLine.size || 3 }} />
             )}
           </Layer>
         </Stage>
