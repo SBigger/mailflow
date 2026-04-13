@@ -150,7 +150,7 @@ function formatBytes(bytes) {
 const SHARE_FN = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/share-link`;
 
 function ShareLinkDialog({ info, accent, s, border, onClose }) {
-  const [expiry,   setExpiry]   = useState("30");
+  const [expiry,   setExpiry]   = useState("");
   const [password, setPassword] = useState("");
   const [loading,  setLoading]  = useState(false);
   const [link,     setLink]     = useState(null);
@@ -223,11 +223,11 @@ function ShareLinkDialog({ info, accent, s, border, onClose }) {
               <div>
                 <label style={lbl}>ABLAUFDATUM</label>
                 <select value={expiry} onChange={e => setExpiry(e.target.value)} style={{ ...inp, cursor: "pointer" }}>
+                  <option value="">Permanent</option>
                   <option value="7">7 Tage</option>
                   <option value="30">30 Tage</option>
                   <option value="90">90 Tage</option>
                   <option value="365">1 Jahr</option>
-                  <option value="">Unbegrenzt</option>
                 </select>
               </div>
               {/* Passwort */}
@@ -272,7 +272,7 @@ function ShareLinkDialog({ info, accent, s, border, onClose }) {
             </div>
 
             <div style={{ color: s.textMuted, fontSize: 11, textAlign: "center" }}>
-              {expiry ? `Gültig für ${expiry} Tage` : "Unbegrenzt gültig"}
+              {expiry ? `Gültig für ${expiry} Tage` : "Permanenter Link"}
               {password.trim() ? " · 🔒 Passwortgeschützt" : ""}
               {" · "}{info.type === 'folder' ? 'Ordner-Inhalt' : 'Datei'} für alle mit dem Link
             </div>
@@ -1127,6 +1127,11 @@ export default function Dokumente() {
                       <span style={{ fontSize: 13 }}>{isExp ? "\uD83D\uDCC2" : "\uD83D\uDCC1"}</span>
                       <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cust.company_name}</span>
                       <span style={{ fontSize: 10, color: s.textMuted, background: border, borderRadius: 8, padding: "1px 5px", flexShrink: 0 }}>{cust.docCount}</span>
+                      <span onClick={e => { e.stopPropagation(); setShareDialog({ type: 'folder', customer_id: cust.id, name: cust.company_name }); }}
+                        title="Alle Dokumente dieses Kunden teilen"
+                        style={{ display: "flex", alignItems: "center", color: s.textMuted, padding: "0 2px", cursor: "pointer", flexShrink: 0, opacity: 0.6 }}>
+                        <Link2 size={11} />
+                      </span>
                     </div>
 
                     {isExp && cust.cats.map(cat => {
