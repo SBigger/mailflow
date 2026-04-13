@@ -790,7 +790,7 @@ export default function Settings() {
             </div>
 
             {/* Main Content Area */}
-            <div className="flex-1 p-2 overflow-y-auto">
+            <div className="flex-1 p-8 overflow-y-auto">
                 {/* Signaturen Tab */}
                 {activeTab === 'signature' && (
                     <div className="space-y-6">
