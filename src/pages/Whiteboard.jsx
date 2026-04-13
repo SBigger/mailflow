@@ -7,7 +7,8 @@ import { useAuth } from "@/lib/AuthContext";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import * as pdfjsLib from "pdfjs-dist";
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 import {
   ArrowLeft, Pen, Eraser, Hand, ZoomIn, ZoomOut, Save, Download, Upload,
   FileText, Plus, Trash2, ChevronLeft, ChevronRight, Maximize2, Undo2, Redo2,
@@ -42,13 +43,18 @@ function getSvgPathFromStroke(stroke) {
 
 // ── Strich-Komponente (perfect-freehand gerendert als Konva Shape) ──
 function FreehandLine({ points, color, options }) {
-  const stroke = getStroke(points, options || PEN_OPTIONS);
+  // points ist ein flaches Array [x,y,pressure, x,y,pressure, ...]
+  // getStroke erwartet [[x,y,pressure], ...]
+  const pointArrays = [];
+  for (let i = 0; i < points.length; i += 3) {
+    pointArrays.push([points[i], points[i + 1], points[i + 2]]);
+  }
+  const stroke = getStroke(pointArrays, options || PEN_OPTIONS);
   if (stroke.length < 2) return null;
-  // Flatten für Konva Line
   const flatPoints = [];
   for (const [x, y] of stroke) { flatPoints.push(x, y); }
   return (
-    <Line points={flatPoints} fill={color || "#000"} closed tension={0.5} listening={false} />
+    <Line points={flatPoints} fill={color || "#000"} closed tension={0} listening={false} />
   );
 }
 
@@ -306,7 +312,7 @@ export default function Whiteboard() {
         if (stroke.length < 2) continue;
         const flat = [];
         for (const [x, y] of stroke) flat.push(x, y);
-        tmpLayer.add(new Konva.Line({ points: flat, fill: line.color, closed: true, tension: 0.5 }));
+        tmpLayer.add(new Konva.Line({ points: flat, fill: line.color, closed: true, tension: 0 }));
       }
       tmpLayer.draw();
 
