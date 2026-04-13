@@ -8,7 +8,6 @@ import { useIsMobile } from "@/components/mobile/useIsMobile";
 import MobileColumnNav from "@/components/mobile/MobileColumnNav";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { createPageUrl } from "@/utils";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,15 +16,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuCheckboxItem,
 } from "@/components/ui/dropdown-menu";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-  SelectGroup,
-  SelectLabel,
-} from "@/components/ui/select";
 
 import TaskBoardColumn from "../components/tasks/TaskBoardColumn";
 import AddTaskDialog from "../components/tasks/AddTaskDialog";
