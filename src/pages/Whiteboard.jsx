@@ -400,7 +400,19 @@ export default function Whiteboard() {
   }, [boardId, newBoard, refetchBoards]);
 
   // ── Farben ─────────────────────────────────────────────────
-  const COLORS = ["#000000", "#dc2626", "#2563eb", "#16a34a", "#d97706", "#7c3aed", "#e11d48", "#64748b"];
+  const [showPalette, setShowPalette] = useState(false);
+  const COLOR_ROWS = [
+    // Kräftig
+    ["#000000", "#374151", "#64748b", "#ffffff"],
+    ["#dc2626", "#ea580c", "#d97706", "#ca8a04"],
+    ["#16a34a", "#0d9488", "#2563eb", "#7c3aed"],
+    ["#db2777", "#e11d48", "#8b5cf6", "#6366f1"],
+    // Pastell
+    ["#fca5a5", "#fdba74", "#fde68a", "#fef08a"],
+    ["#bbf7d0", "#a7f3d0", "#99f6e4", "#a5f3fc"],
+    ["#bfdbfe", "#c7d2fe", "#ddd6fe", "#e9d5ff"],
+    ["#fbcfe8", "#fecdd3", "#fed7aa", "#fef9c3"],
+  ];
 
   // ── Styles ─────────────────────────────────────────────────
   const btnStyle = (active) => ({
@@ -491,11 +503,42 @@ export default function Whiteboard() {
 
         <div style={{ width: 1, height: 24, background: border, margin: "0 4px" }} />
 
-        {/* Farben */}
-        {COLORS.map(c => (
-          <button key={c} onClick={() => { setPenColor(c); setTool("pen"); }}
-            style={{ width: 22, height: 22, borderRadius: "50%", background: c, border: penColor === c && tool === "pen" ? `3px solid ${accent}` : "2px solid " + border, cursor: "pointer", padding: 0 }} />
-        ))}
+        {/* Farben - aktuelle Farbe + Faecher */}
+        <div style={{ position: "relative" }}>
+          <button onClick={() => setShowPalette(p => !p)}
+            style={{ width: 28, height: 28, borderRadius: "50%", background: penColor, border: `3px solid ${accent}`, cursor: "pointer", padding: 0, boxShadow: "0 1px 3px rgba(0,0,0,0.2)" }}
+            title="Farbpalette" />
+          {showPalette && (
+            <div style={{
+              position: "absolute", top: 36, left: 0, zIndex: 100,
+              background: cardBg, border: `1px solid ${border}`, borderRadius: 12,
+              padding: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.15)", minWidth: 160,
+            }}>
+              {COLOR_ROWS.map((row, ri) => (
+                <div key={ri} style={{ display: "flex", gap: 4, marginBottom: ri === 3 ? 6 : 3 }}>
+                  {row.map(c => (
+                    <button key={c} onClick={() => { setPenColor(c); setTool("pen"); setShowPalette(false); }}
+                      style={{
+                        width: 26, height: 26, borderRadius: 6,
+                        background: c, cursor: "pointer", padding: 0,
+                        border: penColor === c ? `3px solid ${accent}` : c === "#ffffff" ? `2px solid ${border}` : "2px solid transparent",
+                        transition: "transform 0.1s",
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.transform = "scale(1.2)"}
+                      onMouseLeave={e => e.currentTarget.style.transform = "scale(1)"}
+                    />
+                  ))}
+                </div>
+              ))}
+              {/* Custom Color */}
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, borderTop: `1px solid ${border}`, paddingTop: 6 }}>
+                <input type="color" value={penColor} onChange={e => { setPenColor(e.target.value); setTool("pen"); }}
+                  style={{ width: 26, height: 26, border: "none", padding: 0, cursor: "pointer", borderRadius: 4 }} />
+                <span style={{ color: textMuted, fontSize: 11 }}>Eigene Farbe</span>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Stiftgroesse */}
         <input type="range" min="1" max="12" value={penSize} onChange={e => setPenSize(Number(e.target.value))}
