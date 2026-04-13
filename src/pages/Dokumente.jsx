@@ -150,7 +150,7 @@ function formatBytes(bytes) {
 const SHARE_FN = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/share-link`;
 
 function ShareLinkDialog({ info, accent, s, border, onClose }) {
-  const [expiry,   setExpiry]   = useState("");
+  const [expiry,   setExpiry]   = useState("30");
   const [password, setPassword] = useState("");
   const [loading,  setLoading]  = useState(false);
   const [link,     setLink]     = useState(null);
@@ -223,11 +223,11 @@ function ShareLinkDialog({ info, accent, s, border, onClose }) {
               <div>
                 <label style={lbl}>ABLAUFDATUM</label>
                 <select value={expiry} onChange={e => setExpiry(e.target.value)} style={{ ...inp, cursor: "pointer" }}>
-                  <option value="">Permanent</option>
                   <option value="7">7 Tage</option>
                   <option value="30">30 Tage</option>
                   <option value="90">90 Tage</option>
                   <option value="365">1 Jahr</option>
+                  <option value="">Permanent</option>
                 </select>
               </div>
               {/* Passwort */}
@@ -1197,7 +1197,29 @@ export default function Dokumente() {
         <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden" }}>
           {/* Topbar */}
           <div style={{ padding: "8px 16px", borderBottom: "1px solid " + border, display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-            <span style={{ fontSize: 13, fontWeight: 600, color: accent, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{breadcrumb}</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 13, fontWeight: 600, color: accent, overflow: "hidden", minWidth: 0 }}>
+              {selCustomer ? (<>
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flexShrink: 1 }}>{selCustomer.company_name}</span>
+                <span onClick={() => setShareDialog({ type: 'folder', customer_id: selCustomer.id, name: selCustomer.company_name })}
+                  title="Alle Dokumente dieses Kunden teilen" style={{ cursor: "pointer", opacity: 0.5, flexShrink: 0, display: "flex" }}><Link2 size={12} /></span>
+                {selCat && (<>
+                  <span style={{ color: s.textMuted, margin: "0 2px", flexShrink: 0 }}>{"\u203a"}</span>
+                  <span style={{ whiteSpace: "nowrap", flexShrink: 0 }}>{(CATEGORIES.find(x => x.key === selCat)?.icon || "") + " " + (CATEGORIES.find(x => x.key === selCat)?.label || selCat)}</span>
+                  <span onClick={() => setShareDialog({ type: 'folder', customer_id: selCustomer.id, category: selCat, name: selCustomer.company_name + " – " + (CATEGORIES.find(x => x.key === selCat)?.label || selCat) })}
+                    title="Diese Kategorie teilen" style={{ cursor: "pointer", opacity: 0.5, flexShrink: 0, display: "flex" }}><Link2 size={12} /></span>
+                </>)}
+                {selYear && (<>
+                  <span style={{ color: s.textMuted, margin: "0 2px", flexShrink: 0 }}>{"\u203a"}</span>
+                  <span style={{ whiteSpace: "nowrap", flexShrink: 0 }}>{selYear === "__none__" ? "Kein Jahr" : selYear}</span>
+                  {selYear !== "__none__" && (
+                    <span onClick={() => setShareDialog({ type: 'folder', customer_id: selCustomer.id, category: selCat, year: selYear, name: selCustomer.company_name + " – " + (CATEGORIES.find(x => x.key === selCat)?.label || selCat) + " " + selYear })}
+                      title="Dieses Jahr teilen" style={{ cursor: "pointer", opacity: 0.5, flexShrink: 0, display: "flex" }}><Link2 size={12} /></span>
+                  )}
+                </>)}
+              </>) : (
+                <span>Alle Dokumente</span>
+              )}
+            </div>
             <span style={{ fontSize: 11, color: s.textMuted, flexShrink: 0 }}>({filtered.length})</span>
             <div style={{ flex: 1 }} />
             <div style={{ position: "relative" }}>
