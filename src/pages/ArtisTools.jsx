@@ -1,7 +1,7 @@
 import React, { useContext } from "react";
 import { useNavigate } from "react-router-dom";
 import { ThemeContext } from "@/Layout";
-import { BookOpen, Car, FileText, UserCog, ChevronRight, Wrench, PenLine } from "lucide-react";
+import { BookOpen, Car, FileText, UserCog, ChevronRight, Wrench, PenLine, Presentation } from "lucide-react";
 
 const TOOLS = [
   {
@@ -48,6 +48,15 @@ const TOOLS = [
     color: "#6a5b8a",
     bg: "#eeeaf5",
     route: "/Abschlussdokumentation",
+  },
+  {
+    id: "whiteboard",
+    title: "Whiteboard",
+    description: "Digitales Whiteboard zum Skizzieren und Zeichnen – pro Kunde, mit PDF Import/Export",
+    icon: Presentation,
+    color: "#2a7a5a",
+    bg: "#e0f5ec",
+    route: "/Whiteboard",
   },
 ];
 
