@@ -11,7 +11,8 @@ import CreateLinkDialog from "../components/posteingang/CreateLinkDialog.jsx";
 import AssignDialog from "../components/posteingang/AssignDialog.jsx";
 
 // Configuration
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 const BUCKET = "posteingang";
 
 // ─── Helper Functions ────────────────────────────────────────────────────────

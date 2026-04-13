@@ -18,7 +18,8 @@ import {
   FolderOpen
 } from "lucide-react";
 import * as pdfjsLib from "pdfjs-dist";
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
 // ─── Dokument-Textextraktion für Volltext-Suche ──────────────────────────────
 async function extractDocumentText(file) {
