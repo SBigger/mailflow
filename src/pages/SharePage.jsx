@@ -1,9 +1,24 @@
-import React, { useState, useEffect } from "react";
-import { Download, FileText, Folder, AlertCircle, Clock, CheckCircle2, Loader2 } from "lucide-react";
+import React, { useState, useEffect, useMemo } from "react";
+import { Download, FileText, Folder, AlertCircle, Clock, CheckCircle2, Loader2, ChevronDown, ChevronRight } from "lucide-react";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const SHARE_FN = `${SUPABASE_URL}/functions/v1/share-link`;
+
+const CATEGORIES = [
+  { key: "rechnungswesen", label: "01 - Rechnungswesen", icon: "\uD83D\uDCCA" },
+  { key: "steuern",        label: "02 - Steuern",        icon: "\uD83D\uDCB0" },
+  { key: "mwst",           label: "03 - Mehrwertsteuer", icon: "\uD83E\uDDFE" },
+  { key: "revision",       label: "04 - Revision",       icon: "\uD83D\uDD0D" },
+  { key: "rechtsberatung", label: "05 - Rechtsberatung", icon: "\u2696\uFE0F" },
+  { key: "personal",       label: "06 - Personal",       icon: "\uD83D\uDC65" },
+  { key: "korrespondenz",  label: "09 - Korrespondenz",  icon: "\u2709\uFE0F" },
+];
+
+function catLabel(key) {
+  const c = CATEGORIES.find(x => x.key === key);
+  return c ? c.icon + " " + c.label : key || "Ohne Kategorie";
+}
 
 function formatBytes(bytes) {
   if (!bytes) return "";
@@ -12,10 +27,10 @@ function formatBytes(bytes) {
   return (bytes / 1048576).toFixed(1) + " MB";
 }
 
-function getFileIcon(filename, fileType) {
+function getFileIcon(filename) {
   const ext = (filename || "").split(".").pop().toLowerCase();
-  if (fileType === "application/pdf" || ext === "pdf") return { label: "PDF", color: "#dc2626" };
-  if (["xls","xlsx","csv"].includes(ext)) return { label: "XLS", color: "#16a34a" };
+  if (ext === "pdf") return { label: "PDF", color: "#dc2626" };
+  if (["xls","xlsx","xlsm","csv"].includes(ext)) return { label: "XLS", color: "#16a34a" };
   if (["doc","docx"].includes(ext)) return { label: "DOC", color: "#2563eb" };
   if (["jpg","jpeg","png","gif","webp"].includes(ext)) return { label: "IMG", color: "#7c3aed" };
   if (["zip","rar","7z"].includes(ext)) return { label: "ZIP", color: "#d97706" };
@@ -33,6 +48,7 @@ export default function SharePage() {
   const [pwRequired,    setPwRequired]    = useState(false);
   const [pwInput,       setPwInput]       = useState("");
   const [pwError,       setPwError]       = useState(false);
+  const [expanded,      setExpanded]      = useState({});
 
   function fetchInfo(password = "") {
     if (!token) { setError("Kein Token in der URL gefunden."); setLoading(false); return; }
@@ -90,7 +106,47 @@ export default function SharePage() {
     }
   }
 
-  // Styles
+  // Dokumente nach Kategorie > Jahr gruppieren
+  const tree = useMemo(() => {
+    if (!info?.docs?.length) return [];
+    const catMap = {};
+    for (const doc of info.docs) {
+      const ck = doc.category || "__none__";
+      if (!catMap[ck]) catMap[ck] = {};
+      const yr = doc.year || "Ohne Jahr";
+      if (!catMap[ck][yr]) catMap[ck][yr] = [];
+      catMap[ck][yr].push(doc);
+    }
+    // Sortiert nach CATEGORIES-Reihenfolge
+    const catOrder = CATEGORIES.map(c => c.key);
+    return Object.entries(catMap)
+      .sort(([a], [b]) => {
+        const ai = catOrder.indexOf(a), bi = catOrder.indexOf(b);
+        return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+      })
+      .map(([catKey, years]) => ({
+        key: catKey,
+        label: catLabel(catKey),
+        years: Object.entries(years)
+          .sort(([a], [b]) => String(b).localeCompare(String(a)))
+          .map(([yr, docs]) => ({ year: yr, docs })),
+        totalDocs: Object.values(years).flat().length,
+      }));
+  }, [info]);
+
+  // Beim Laden alle aufklappen wenn nur 1 Kategorie
+  useEffect(() => {
+    if (tree.length === 1) {
+      setExpanded({ [tree[0].key]: true });
+    } else if (tree.length > 0) {
+      const all = {};
+      tree.forEach(c => { all[c.key] = true; });
+      setExpanded(all);
+    }
+  }, [tree]);
+
+  const needsTree = info?.is_folder && info?.docs?.length > 1 && tree.length > 0;
+
   const BG    = "#0f172a";
   const CARD  = "#1e293b";
   const ACC   = "#3d7a3d";
@@ -98,20 +154,46 @@ export default function SharePage() {
   const FG2   = "#94a3b8";
   const BORD  = "#334155";
 
+  function DocRow({ doc }) {
+    const fi = getFileIcon(doc.filename || doc.name);
+    const isLoading = downloading[doc.id];
+    return (
+      <div style={{ background: CARD, border: "1px solid " + BORD, borderRadius: 10, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
+        <span style={{ background: fi.color, color: "#fff", borderRadius: 4, padding: "2px 6px", fontSize: 10, fontWeight: 700, flexShrink: 0, minWidth: 32, textAlign: "center" }}>
+          {fi.label}
+        </span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ color: FG, fontSize: 13, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {doc.name || doc.filename}
+          </div>
+          <div style={{ color: FG2, fontSize: 11, marginTop: 1 }}>
+            {formatBytes(doc.file_size)}{doc.year ? " \u00b7 " + doc.year : ""}
+          </div>
+        </div>
+        <button
+          onClick={() => downloadFile(doc.id, doc.filename || doc.name)}
+          disabled={isLoading}
+          style={{ background: isLoading ? BORD : ACC, color: "#fff", border: "none", borderRadius: 8, padding: "7px 12px", cursor: isLoading ? "default" : "pointer", display: "flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 600, flexShrink: 0, transition: "background 0.15s" }}
+        >
+          {isLoading ? <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} /> : <Download size={13} />}
+          {isLoading ? "..." : "Download"}
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div style={{ minHeight: "100vh", background: BG, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start", padding: "0 0 40px 0", fontFamily: "Segoe UI, system-ui, sans-serif" }}>
       {/* Header */}
-      <div style={{ width: "100%", background: "#1e293b", borderBottom: "1px solid " + BORD, padding: "14px 24px", display: "flex", alignItems: "center", gap: 12, marginBottom: 32 }}>
-        <div style={{ width: 32, height: 32, borderRadius: 8, background: ACC, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <span style={{ color: "#fff", fontWeight: 700, fontSize: 14 }}>A</span>
-        </div>
-        <div>
+      <div style={{ width: "100%", background: "#1e293b", borderBottom: "1px solid " + BORD, padding: "10px 24px", display: "flex", alignItems: "center", gap: 12, marginBottom: 32 }}>
+        <img src="/artis-logo.png" alt="Artis" style={{ height: 36, borderRadius: 6 }} />
+        <div style={{ flex: 1 }}>
           <div style={{ color: FG, fontWeight: 700, fontSize: 15 }}>Artis Treuhand GmbH</div>
-          <div style={{ color: FG2, fontSize: 12 }}>Freigegebene Datei</div>
+          <div style={{ color: FG2, fontSize: 12 }}>Freigegebene Dokumente</div>
         </div>
       </div>
 
-      <div style={{ width: "100%", maxWidth: 640, padding: "0 16px" }}>
+      <div style={{ width: "100%", maxWidth: 700, padding: "0 16px" }}>
         {loading && (
           <div style={{ textAlign: "center", color: FG2, padding: 60 }}>
             <Loader2 style={{ width: 32, height: 32, animation: "spin 1s linear infinite", margin: "0 auto 12px" }} />
@@ -177,16 +259,15 @@ export default function SharePage() {
                     {info.download_count}× heruntergeladen
                   </div>
                 )}
-                {info.expires_at && (
+                {info.expires_at ? (
                   <div style={{ display: "flex", alignItems: "center", gap: 6, color: FG2, fontSize: 13 }}>
                     <Clock size={14} />
                     Gültig bis {new Date(info.expires_at).toLocaleDateString("de-CH")}
                   </div>
-                )}
-                {!info.expires_at && (
+                ) : (
                   <div style={{ display: "flex", alignItems: "center", gap: 6, color: FG2, fontSize: 13 }}>
                     <Clock size={14} />
-                    Unbegrenzt gültig
+                    Permanenter Link
                   </div>
                 )}
               </div>
@@ -197,38 +278,50 @@ export default function SharePage() {
               <div style={{ textAlign: "center", color: FG2, padding: 40 }}>Keine Dateien in diesem Ordner.</div>
             )}
 
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {info.docs.map(doc => {
-                const fi = getFileIcon(doc.filename || doc.name, doc.file_type);
-                const isLoading = downloading[doc.id];
-                return (
-                  <div key={doc.id} style={{ background: CARD, border: "1px solid " + BORD, borderRadius: 10, padding: "12px 16px", display: "flex", alignItems: "center", gap: 12 }}>
-                    <span style={{ background: fi.color, color: "#fff", borderRadius: 4, padding: "2px 6px", fontSize: 10, fontWeight: 700, flexShrink: 0, minWidth: 36, textAlign: "center" }}>
-                      {fi.label}
-                    </span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ color: FG, fontSize: 14, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {doc.name || doc.filename}
+            {needsTree ? (
+              /* Baum-Ansicht nach Kategorie > Jahr */
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {tree.map(cat => {
+                  const isExp = expanded[cat.key];
+                  return (
+                    <div key={cat.key}>
+                      {/* Kategorie-Header */}
+                      <div
+                        onClick={() => setExpanded(p => ({ ...p, [cat.key]: !p[cat.key] }))}
+                        style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: CARD, border: "1px solid " + BORD, borderRadius: 10, cursor: "pointer", userSelect: "none" }}
+                      >
+                        {isExp ? <ChevronDown size={14} style={{ color: FG2 }} /> : <ChevronRight size={14} style={{ color: FG2 }} />}
+                        <span style={{ color: FG, fontWeight: 600, fontSize: 14 }}>{cat.label}</span>
+                        <span style={{ color: FG2, fontSize: 11, background: BORD, borderRadius: 8, padding: "1px 7px" }}>{cat.totalDocs}</span>
                       </div>
-                      {doc.file_size && (
-                        <div style={{ color: FG2, fontSize: 12, marginTop: 2 }}>{formatBytes(doc.file_size)}</div>
+
+                      {isExp && (
+                        <div style={{ paddingLeft: 16, marginTop: 4 }}>
+                          {cat.years.map(({ year, docs }) => (
+                            <div key={year} style={{ marginBottom: 8 }}>
+                              {cat.years.length > 1 && (
+                                <div style={{ color: FG2, fontSize: 12, fontWeight: 600, padding: "4px 8px", display: "flex", alignItems: "center", gap: 6 }}>
+                                  <span>{"\uD83D\uDCC5"}</span> {year}
+                                  <span style={{ color: FG2, fontSize: 10, background: BORD, borderRadius: 8, padding: "0 5px" }}>{docs.length}</span>
+                                </div>
+                              )}
+                              <div style={{ display: "flex", flexDirection: "column", gap: 4, paddingLeft: cat.years.length > 1 ? 8 : 0 }}>
+                                {docs.map(doc => <DocRow key={doc.id} doc={doc} />)}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                       )}
                     </div>
-                    <button
-                      onClick={() => downloadFile(doc.id, doc.filename || doc.name)}
-                      disabled={isLoading}
-                      style={{ background: isLoading ? BORD : ACC, color: "#fff", border: "none", borderRadius: 8, padding: "8px 14px", cursor: isLoading ? "default" : "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, flexShrink: 0, transition: "background 0.15s" }}
-                    >
-                      {isLoading
-                        ? <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />
-                        : <Download size={14} />
-                      }
-                      {isLoading ? "..." : "Download"}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            ) : (
+              /* Einfache Liste (1 Datei oder alle gleiche Kategorie) */
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {info.docs.map(doc => <DocRow key={doc.id} doc={doc} />)}
+              </div>
+            )}
 
             {/* Footer */}
             <div style={{ marginTop: 32, textAlign: "center", color: FG2, fontSize: 12 }}>
