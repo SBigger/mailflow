@@ -37,6 +37,14 @@ export default function DokumentUploadKunden() {
         setFiles(files => [...files, ...Array.from(e.target.files)]);
     };
 
+    const sanitizeFilename = (name) => {
+        return name
+            .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue')
+            .replace(/Ä/g, 'Ae').replace(/Ö/g, 'Oe').replace(/Ü/g, 'Ue')
+            .replace(/ß/g, 'ss')
+            .replace(/[^a-zA-Z0-9._\-]/g, '_');
+    };
+
     const handleUpload = async (e) => {
         e.preventDefault();
         if (!files.length || !config) return;
@@ -44,8 +52,8 @@ export default function DokumentUploadKunden() {
         setUploading(true);
         try {
             for (const file of files) {
-                const fileExt = file.name.split('.').pop();
-                const fileName = `${Date.now()}@${file.name}`;
+                const safeName = sanitizeFilename(file.name);
+                const fileName = `${Date.now()}@${safeName}`;
                 const filePath = `${config.customerId}/${config.category}_${config.year}_${fileName}`;
 
                 const { error: uploadError } = await supabase.storage
