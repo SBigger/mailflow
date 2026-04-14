@@ -1,6 +1,6 @@
 import React, { useState, useContext, useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { entities, functions } from "@/api/supabaseClient";
+import { entities, functions, supabase } from "@/api/supabaseClient";
 import { ThemeContext } from "@/Layout";
 import { format, differenceInDays } from "date-fns";
 import { de } from "date-fns/locale";
@@ -101,18 +101,30 @@ export default function TicketDetailPanel({ ticket, onClose, currentUser, users 
     if (!ticket?.id) return;
     setAiLoading(true);
     try {
-      const { data } = await functions.invoke("suggest-ticket-reply", { ticket_id: ticket.id });
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/suggest-ticket-reply`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`,
+            "apikey": import.meta.env.VITE_SUPABASE_ANON_KEY,
+          },
+          body: JSON.stringify({ ticket_id: ticket.id }),
+        }
+      );
+      const data = await res.json();
       if (data?.suggestion) {
         setReplyText(data.suggestion);
         toast.success("KI-Vorschlag wurde eingefügt");
-      } else if (data?.error) {
-        toast.error("KI-Vorschlag fehlgeschlagen: " + data.error);
       } else {
-        toast.error("Kein Vorschlag erhalten");
+        toast.error("KI: " + (data?.error || "Kein Vorschlag erhalten"));
       }
     } catch (e) {
       console.error(e);
-      toast.error("Fehler beim Laden des KI-Vorschlags: " + e.message);
+      toast.error("Netzwerkfehler: " + e.message);
     } finally {
       setAiLoading(false);
     }
