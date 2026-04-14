@@ -792,9 +792,8 @@ export default function Dokumente() {
     });
   }, [filtered]);
 
-  // ── Ordner-Download (File System Access API + JSZip Fallback) ──
+  // ── Ordner-Download als ZIP ──
   const downloadFolder = async (customerId, category, year) => {
-    // Dateien filtern
     let docs = allDoks.filter(d => d.customer_id === customerId && d.storage_path);
     if (category) docs = docs.filter(d => d.category === category);
     if (year === "__none__") docs = docs.filter(d => !d.year);
@@ -802,94 +801,39 @@ export default function Dokumente() {
 
     if (docs.length === 0) { toast.error("Keine Dateien zum Herunterladen"); return; }
 
-    const customerName = customers.find(c => c.id === customerId)?.company_name || "Kunde";
-    const catLabel = category ? (CATEGORIES.find(c => c.key === category)?.label || category) : null;
-    toast.info(`${docs.length} Dateien werden heruntergeladen...`);
+    const customerName = (customers.find(c => c.id === customerId)?.company_name || "Kunde").replace(/[<>:"/\\|?*]/g, "_");
+    const catLabel = category ? (CATEGORIES.find(c => c.key === category)?.label || category).replace(/[<>:"/\\|?*]/g, "_") : null;
+    toast.info(`${docs.length} Dateien werden als ZIP vorbereitet...`);
 
-    // Signed URLs holen fuer alle Dateien
-    const filesWithUrls = [];
-    for (const doc of docs) {
-      const url = signedUrls[doc.id] || doc.sharepoint_web_url;
-      if (url) {
-        filesWithUrls.push({ doc, url });
-      } else {
-        const storagePath = doc.storage_path.replace('dokumente/', '');
-        const { data } = await supabase.storage.from(BUCKET).createSignedUrl(storagePath, 600);
-        if (data?.signedUrl) filesWithUrls.push({ doc, url: data.signedUrl });
-      }
-    }
-
-    // Pfad-Builder: Kunde / Kategorie / Jahr / Datei
-    const buildPath = (doc) => {
-      const parts = [];
-      if (!category) {
-        const cat = CATEGORIES.find(c => c.key === doc.category);
-        parts.push(cat ? cat.label : (doc.category || "Sonstige"));
-      }
-      if (!year && doc.year) parts.push(String(doc.year));
-      parts.push(doc.filename || doc.name || "datei");
-      return parts;
-    };
-
-    // Versuch 1: File System Access API (Chrome/Edge)
-    if ('showDirectoryPicker' in window) {
-      try {
-        const rootDir = await window.showDirectoryPicker({ mode: 'readwrite' });
-        const baseDir = await rootDir.getDirectoryHandle(customerName.replace(/[<>:"/\\|?*]/g, "_"), { create: true });
-        let targetDir = baseDir;
-        if (catLabel) targetDir = await baseDir.getDirectoryHandle(catLabel.replace(/[<>:"/\\|?*]/g, "_"), { create: true });
-        if (year && year !== "__none__") targetDir = await targetDir.getDirectoryHandle(String(year), { create: true });
-
-        let done = 0;
-        for (const { doc, url } of filesWithUrls) {
-          try {
-            const pathParts = buildPath(doc);
-            let dir = targetDir;
-            // Unterordner erstellen falls noetig
-            for (let i = 0; i < pathParts.length - 1; i++) {
-              dir = await dir.getDirectoryHandle(pathParts[i].replace(/[<>:"/\\|?*]/g, "_"), { create: true });
-            }
-            const fileName = pathParts[pathParts.length - 1].replace(/[<>:"/\\|?*]/g, "_");
-            const fileHandle = await dir.getFileHandle(fileName, { create: true });
-            const writable = await fileHandle.createWritable();
-            const resp = await fetch(url);
-            const blob = await resp.blob();
-            await writable.write(blob);
-            await writable.close();
-            done++;
-          } catch (e) {
-            console.warn("Datei-Download fehlgeschlagen:", doc.name, e);
-          }
-        }
-        toast.success(`${done} / ${filesWithUrls.length} Dateien heruntergeladen`);
-        return;
-      } catch (e) {
-        if (e.name === 'AbortError') return; // User hat Dialog abgebrochen
-        console.warn("File System Access API fehlgeschlagen, Fallback auf ZIP:", e);
-      }
-    }
-
-    // Versuch 2: JSZip Fallback
     try {
       const JSZip = (await import("jszip")).default;
       const zip = new JSZip();
-      const rootFolder = zip.folder(customerName.replace(/[<>:"/\\|?*]/g, "_"));
-      let catFolder = rootFolder;
-      if (catLabel) catFolder = rootFolder.folder(catLabel.replace(/[<>:"/\\|?*]/g, "_"));
-      let targetFolder = catFolder;
-      if (year && year !== "__none__") targetFolder = catFolder.folder(String(year));
+      const root = zip.folder(customerName);
 
       let done = 0;
-      for (const { doc, url } of filesWithUrls) {
+      for (const doc of docs) {
         try {
-          const pathParts = buildPath(doc);
-          let folder = targetFolder;
-          for (let i = 0; i < pathParts.length - 1; i++) {
-            folder = folder.folder(pathParts[i].replace(/[<>:"/\\|?*]/g, "_"));
+          let url = signedUrls[doc.id] || doc.sharepoint_web_url;
+          if (!url) {
+            const sp = doc.storage_path.replace('dokumente/', '');
+            const { data } = await supabase.storage.from(BUCKET).createSignedUrl(sp, 600);
+            url = data?.signedUrl;
           }
+          if (!url) continue;
+
+          // Pfad: Kategorie / Jahr / Datei
+          let folder = root;
+          if (!category) {
+            const cat = CATEGORIES.find(c => c.key === doc.category);
+            folder = folder.folder((cat ? cat.label : (doc.category || "Sonstige")).replace(/[<>:"/\\|?*]/g, "_"));
+          } else {
+            folder = root.folder(catLabel);
+          }
+          if (doc.year) folder = folder.folder(String(doc.year));
+
           const resp = await fetch(url);
           const blob = await resp.blob();
-          folder.file(pathParts[pathParts.length - 1].replace(/[<>:"/\\|?*]/g, "_"), blob);
+          folder.file((doc.filename || doc.name || "datei").replace(/[<>:"/\\|?*]/g, "_"), blob);
           done++;
         } catch (e) {
           console.warn("ZIP: Datei fehlgeschlagen:", doc.name, e);
@@ -1239,6 +1183,11 @@ export default function Dokumente() {
                       <span style={{ fontSize: 13 }}>{isExp ? "\uD83D\uDCC2" : "\uD83D\uDCC1"}</span>
                       <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cust.company_name}</span>
                       <span style={{ fontSize: 10, color: s.textMuted, background: border, borderRadius: 8, padding: "1px 5px", flexShrink: 0 }}>{cust.docCount}</span>
+                      <span onClick={e => { e.stopPropagation(); downloadFolder(cust.id, null, null); }}
+                        title="Alle Dokumente als ZIP herunterladen"
+                        style={{ display: "flex", alignItems: "center", color: s.textMuted, padding: "0 2px", cursor: "pointer", flexShrink: 0, opacity: 0.6 }}>
+                        <Download size={11} />
+                      </span>
                       <span onClick={e => { e.stopPropagation(); setShareDialog({ type: 'folder', customer_id: cust.id, name: cust.company_name }); }}
                         title="Alle Dokumente dieses Kunden teilen"
                         style={{ display: "flex", alignItems: "center", color: s.textMuted, padding: "0 2px", cursor: "pointer", flexShrink: 0, opacity: 0.6 }}>
@@ -1374,16 +1323,7 @@ export default function Dokumente() {
                 const isAdmin       = user?.role === 'admin';
                 return (
                   <div key={doc.id}
-                    draggable={!!(doc.sharepoint_web_url || signedUrls[doc.id])}
-                    onDragStart={e => {
-                      const url = doc.sharepoint_web_url || signedUrls[doc.id];
-                      if (!url) { e.preventDefault(); return; }
-                      const fname = doc.filename || doc.name || "datei";
-                      const mime = doc.file_type || "application/octet-stream";
-                      e.dataTransfer.setData("DownloadURL", `${mime}:${fname}:${url}`);
-                      e.dataTransfer.effectAllowed = "copy";
-                    }}
-                    style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 16px", borderBottom: "1px solid " + border + "55", transition: "background 0.1s", cursor: (doc.sharepoint_web_url || signedUrls[doc.id]) ? "grab" : "default", ...(doc.id === highlightDocId ? { boxShadow: "0 0 0 2px " + accent + "88 inset", background: accent + "12", borderRadius: 6 } : {}) }}
+                    style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 16px", borderBottom: "1px solid " + border + "55", transition: "background 0.1s", ...(doc.id === highlightDocId ? { boxShadow: "0 0 0 2px " + accent + "88 inset", background: accent + "12", borderRadius: 6 } : {}) }}
                     onMouseEnter={e => e.currentTarget.style.background = s.rowHover}
                     onMouseLeave={e => e.currentTarget.style.background = doc.id === highlightDocId ? accent + "12" : "transparent"}>
                     {/* Typ */}
