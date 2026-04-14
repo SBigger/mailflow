@@ -6,6 +6,12 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+const ok = (body: object) =>
+  new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -14,10 +20,7 @@ serve(async (req) => {
   try {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return ok({ suggestion: null, error: "Kein Auth-Header – bitte neu einloggen" });
     }
 
     const supabaseClient = createClient(
@@ -25,23 +28,16 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    // Verify caller
     const { data: { user }, error: authError } = await supabaseClient.auth.getUser(
       authHeader.replace("Bearer ", "")
     );
     if (authError || !user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return ok({ suggestion: null, error: "Authentifizierung fehlgeschlagen: " + (authError?.message || "kein User") });
     }
 
     const { ticket_id } = await req.json();
     if (!ticket_id) {
-      return new Response(JSON.stringify({ error: "ticket_id required" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return ok({ suggestion: null, error: "ticket_id fehlt" });
     }
 
     // Ticket laden
@@ -52,10 +48,7 @@ serve(async (req) => {
       .single();
 
     if (ticketError || !ticket) {
-      return new Response(JSON.stringify({ error: "Ticket not found" }), {
-        status: 404,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return ok({ suggestion: null, error: "Ticket nicht gefunden: " + (ticketError?.message || ticket_id) });
     }
 
     // Bisherige Nachrichten laden
@@ -65,14 +58,14 @@ serve(async (req) => {
       .eq("ticket_id", ticket_id)
       .order("created_at", { ascending: true });
 
-    // Wissensdatenbank laden (aktive Einträge)
+    // Wissensdatenbank laden
     const { data: knowledgeEntries = [] } = await supabaseClient
       .from("knowledge_base")
       .select("title, content, category")
       .eq("is_active", true)
       .order("category", { ascending: true });
 
-    // KB-Kontext für System-Prompt aufbauen
+    // KB-Kontext aufbauen
     let kbContext = "";
     if (knowledgeEntries.length > 0) {
       kbContext = "\n\n## Interne Wissensdatenbank\nNutze folgende Informationen wenn relevant:\n\n";
@@ -94,114 +87,79 @@ Wichtige Richtlinien:
 - Bei Unterlageneingängen: bestätige den Eingang kurz und freundlich
 - Nutze die interne Wissensdatenbank wenn vorhanden${kbContext}`;
 
-    // Konversations-History für Gemini aufbauen (user/model alternierend)
-    const contents: Array<{ role: string; parts: Array<{ text: string }> }> = [];
+    // Konversations-History aufbauen
+    const userMessages: Array<{ role: string; content: string }> = [];
 
-    // Erste Kundennachricht (aus dem Ticket selbst)
     if (ticket.body) {
-      contents.push({
+      userMessages.push({
         role: "user",
-        parts: [{ text: `Von: ${ticket.from_name || ticket.from_email}\nBetreff: ${ticket.title}\n\n${ticket.body}` }],
+        content: `Von: ${ticket.from_name || ticket.from_email}\nBetreff: ${ticket.title}\n\n${ticket.body}`,
       });
     }
 
-    // Weitere Nachrichten
     for (const msg of messages) {
-      if (msg.is_ai_suggestion) continue; // KI-Vorschläge nicht in History
+      if (msg.is_ai_suggestion) continue;
       if (msg.sender_type === "customer") {
-        contents.push({ role: "user", parts: [{ text: msg.body }] });
+        userMessages.push({ role: "user", content: msg.body });
       } else if (msg.sender_type === "staff") {
-        contents.push({ role: "model", parts: [{ text: msg.body }] });
+        userMessages.push({ role: "assistant", content: msg.body });
       }
     }
 
-    // Falls keine History: Dummy-User-Message hinzufügen
-    if (contents.length === 0) {
-      contents.push({
+    if (userMessages.length === 0) {
+      userMessages.push({
         role: "user",
-        parts: [{ text: `Betreff: ${ticket.title}\nVon: ${ticket.from_email}` }],
+        content: `Betreff: ${ticket.title}\nVon: ${ticket.from_email}`,
       });
     }
 
     // Sicherstellen dass letzte Message von "user" ist
-    if (contents[contents.length - 1].role === "model") {
-      contents.push({
+    if (userMessages[userMessages.length - 1].role === "assistant") {
+      userMessages.push({
         role: "user",
-        parts: [{ text: "[Bitte erstelle eine passende Antwort auf die bisherige Konversation]" }],
+        content: "[Bitte erstelle eine passende Antwort auf die bisherige Konversation]",
       });
     }
 
-    const geminiKey = Deno.env.get("GEMINI_API_KEY");
-    if (!geminiKey) {
-      return new Response(JSON.stringify({ suggestion: null, error: "GEMINI_API_KEY not configured" }), {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY");
+    if (!anthropicKey) {
+      return ok({ suggestion: null, error: "ANTHROPIC_API_KEY nicht konfiguriert" });
     }
 
-    // Modelle in Reihenfolge: aktuell → fallback
-    const modelCandidates = [
-      "gemini-2.5-flash",
-      "gemini-2.0-flash",
-      "gemini-2.0-flash-lite",
-    ];
+    // Anthropic Claude API aufrufen
+    const anthropicRes = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": anthropicKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 1024,
+        system: systemPrompt,
+        messages: userMessages,
+      }),
+    });
 
-    let suggestion = "";
-    let lastError = "";
-    for (const model of modelCandidates) {
-      try {
-        const geminiRes = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              systemInstruction: { parts: [{ text: systemPrompt }] },
-              contents,
-              generationConfig: {
-                temperature: 0.3,
-                maxOutputTokens: 1024,
-              },
-            }),
-          }
-        );
-
-        if (!geminiRes.ok) {
-          const errorText = await geminiRes.text();
-          console.error(`Gemini API error [${model}]:`, errorText);
-          lastError = `${model}: HTTP ${geminiRes.status} – ${errorText.substring(0, 300)}`;
-          continue; // nächstes Modell versuchen
-        }
-
-        const geminiData = await geminiRes.json();
-        suggestion = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || "";
-        if (suggestion) {
-          console.log(`Gemini OK mit ${model}`);
-          break;
-        }
-        lastError = `${model}: leere Antwort`;
-      } catch (e: any) {
-        lastError = `${model}: ${e?.message || "network error"}`;
-        console.error(`Gemini fetch error [${model}]:`, e);
-      }
+    const responseText = await anthropicRes.text();
+    if (!anthropicRes.ok) {
+      console.error("Anthropic API error:", responseText.substring(0, 500));
+      return ok({ suggestion: null, error: "Claude API Fehler: HTTP " + anthropicRes.status + " – " + responseText.substring(0, 200) });
     }
+
+    const anthropicData = JSON.parse(responseText);
+    const suggestion = anthropicData.content?.[0]?.text || "";
 
     if (!suggestion) {
-      return new Response(JSON.stringify({ suggestion: null, error: lastError || "Gemini API fehlgeschlagen" }), {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return ok({ suggestion: null, error: "Keine Antwort von Claude erhalten" });
     }
 
-    return new Response(JSON.stringify({ suggestion }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    console.log("Claude OK – " + suggestion.length + " Zeichen");
+    return ok({ suggestion });
 
   } catch (error: any) {
-    console.error("Error in suggest-ticket-reply:", error);
-    return new Response(JSON.stringify({ suggestion: null, error: error?.message || String(error) }), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    console.error("Unerwarteter Fehler in suggest-ticket-reply:", error);
+    return ok({ suggestion: null, error: "Unerwarteter Fehler: " + (error?.message || String(error)) });
   }
 });

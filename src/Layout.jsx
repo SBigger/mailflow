@@ -18,6 +18,7 @@ import {
   CloudUpload
 } from "lucide-react";
 import VoiceAssistant from "@/components/voice/VoiceAssistant";
+import TaskReminderPopup from "@/components/tasks/TaskReminderPopup";
 import BottomNav from "@/components/mobile/BottomNav";
 import { useIsMobile } from "@/components/mobile/useIsMobile";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
@@ -244,6 +245,9 @@ export default function Layout({ children, currentPageName }) {
 
         {/* Voice Assistant Panel */}
         <VoiceAssistant open={voiceOpen && !isTaskUser && !isMobile} onClose={() => setVoiceOpen(false)} />
+
+        {/* Task Reminder Popup – globale Erinnerungen unten rechts */}
+        <TaskReminderPopup currentUser={profile} />
       </ThemeContext.Provider>
   );
 }
