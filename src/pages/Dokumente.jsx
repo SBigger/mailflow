@@ -1248,7 +1248,16 @@ export default function Dokumente() {
                 const isAdmin       = user?.role === 'admin';
                 return (
                   <div key={doc.id}
-                    style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 16px", borderBottom: "1px solid " + border + "55", transition: "background 0.1s", ...(doc.id === highlightDocId ? { boxShadow: "0 0 0 2px " + accent + "88 inset", background: accent + "12", borderRadius: 6 } : {}) }}
+                    draggable={!!(doc.sharepoint_web_url || signedUrls[doc.id])}
+                    onDragStart={e => {
+                      const url = doc.sharepoint_web_url || signedUrls[doc.id];
+                      if (!url) { e.preventDefault(); return; }
+                      const fname = doc.filename || doc.name || "datei";
+                      const mime = doc.file_type || "application/octet-stream";
+                      e.dataTransfer.setData("DownloadURL", `${mime}:${fname}:${url}`);
+                      e.dataTransfer.effectAllowed = "copy";
+                    }}
+                    style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 16px", borderBottom: "1px solid " + border + "55", transition: "background 0.1s", cursor: (doc.sharepoint_web_url || signedUrls[doc.id]) ? "grab" : "default", ...(doc.id === highlightDocId ? { boxShadow: "0 0 0 2px " + accent + "88 inset", background: accent + "12", borderRadius: 6 } : {}) }}
                     onMouseEnter={e => e.currentTarget.style.background = s.rowHover}
                     onMouseLeave={e => e.currentTarget.style.background = doc.id === highlightDocId ? accent + "12" : "transparent"}>
                     {/* Typ */}
