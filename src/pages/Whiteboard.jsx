@@ -145,6 +145,8 @@ export default function Whiteboard() {
   // ── Zeichnen ───────────────────────────────────────────────
   const handlePointerDown = useCallback((e) => {
     if (tool === "hand") return;
+    // Nur primären Pointer akzeptieren (ignoriert Palm/Finger bei Stift)
+    if (e.evt && e.evt.pointerType === "touch" && e.evt.isPrimary === false) return;
     const stage = e.target.getStage();
     const pos = stage.getPointerPosition();
     const x = (pos.x - position.x) / scale;
@@ -172,10 +174,11 @@ export default function Whiteboard() {
 
     setIsDrawing(true);
     setCurrentLine({ points: [x, y, 0.5], color: penColor, size: penSize, opacity: penOpacity, page: mode === "a4" ? page : 0 });
-  }, [tool, penColor, penSize, position, scale, mode, page]);
+  }, [tool, penColor, penSize, penOpacity, position, scale, mode, page]);
 
   const handlePointerMove = useCallback((e) => {
     if (!isDrawing || tool !== "pen") return;
+    if (e.evt && e.evt.pointerType === "touch" && e.evt.isPrimary === false) return;
     const stage = e.target.getStage();
     const pos = stage.getPointerPosition();
     const x = (pos.x - position.x) / scale;
@@ -605,7 +608,7 @@ export default function Whiteboard() {
       </div>
 
       {/* ── Canvas ─────────────────────────────────────────── */}
-      <div ref={containerRef} style={{ flex: 1, overflow: "hidden", cursor: tool === "hand" ? "grab" : tool === "eraser" ? "crosshair" : "crosshair" }}>
+      <div ref={containerRef} style={{ flex: 1, overflow: "hidden", touchAction: "none", cursor: tool === "hand" ? "grab" : tool === "eraser" ? "crosshair" : "crosshair" }}>
         <Stage
           ref={stageRef}
           width={stageSize.w}
