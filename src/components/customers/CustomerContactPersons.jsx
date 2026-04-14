@@ -10,43 +10,46 @@ export default function CustomerContactPersons({ customer, onUpdate }) {
   const isArtis = theme === 'artis';
   const contacts = customer.contact_persons || [];
   const [adding, setAdding] = useState(false);
-  const [form, setForm] = useState({ anrede: "", vorname: "", name: "", email: "", phone: "", role: "" });
+  const [form, setForm] = useState({ anrede: "", vorname: "", name: "", email: "", phone: "", phone2: "", role: "" });
 
   const save = (updated) => onUpdate({ contact_persons: updated });
 
   const add = () => {
     if (!form.name.trim()) return;
     save([...contacts, form]);
-    setForm({ anrede: "", vorname: "", name: "", email: "", phone: "", role: "" });
+    setForm({ anrede: "", vorname: "", name: "", email: "", phone: "", phone2: "", role: "" });
     setAdding(false);
   };
 
   const remove = (idx) => save(contacts.filter((_, i) => i !== idx));
 
+  const PhoneRow = ({ number, label }) => number ? (
+    <div className="flex items-center gap-1.5 mt-0.5">
+      <a
+        href={`tel:${number}`}
+        onClick={e => { e.preventDefault(); window.location.href = `tel:${number}`; }}
+        title={label || "Anrufen"}
+        className="flex items-center justify-center w-5 h-5 rounded bg-emerald-600 hover:bg-emerald-500 transition-colors flex-shrink-0"
+      >
+        <Phone className="h-3 w-3 text-white" />
+      </a>
+      <span className="text-xs" style={{ color: isArtis ? '#8aaa8a' : isLight ? '#9090b0' : '#a1a1aa' }}>{number}</span>
+    </div>
+  ) : null;
+
   return (
     <div className="space-y-3">
       {contacts.map((cp, idx) => (
-        <div key={idx} className="flex items-start gap-3 p-3 rounded-lg border group" style={{ backgroundColor: isArtis ? '#f5f8f5' : isLight ? '#f7f7fc' : '#f9fafb', borderColor: isArtis ? '#ccd8cc' : isLight ? '#d4d4e8' : '#e5e7eb' }}>
-          <User className="h-4 w-4 mt-0.5 flex-shrink-0" style={{ color: isLight ? '#7070a0' : '#71717a' }} />
+        <div key={idx} className="flex items-start gap-3 p-3 rounded-lg border group" style={{ backgroundColor: isArtis ? '#fafcfa' : isLight ? '#fafaff' : '#f9fafb', borderColor: isArtis ? '#dde8dd' : isLight ? '#e0e0f0' : '#e5e7eb' }}>
+          <User className="h-4 w-4 mt-0.5 flex-shrink-0" style={{ color: isArtis ? '#a0bca0' : isLight ? '#9090b0' : '#71717a' }} />
           <div className="flex-1 min-w-0">
-            <div className="text-sm font-medium" style={{ color: isLight ? '#1a1a2e' : '#e4e4e7' }}>
+            <div className="text-sm font-medium" style={{ color: isArtis ? '#4a5f4a' : isLight ? '#3a3a5e' : '#e4e4e7' }}>
               {[cp.anrede, cp.vorname, cp.name].filter(Boolean).join(" ")}
-              {cp.role && <span className="font-normal" style={{ color: isLight ? '#7070a0' : '#71717a' }}> · {cp.role}</span>}
+              {cp.role && <span className="font-normal" style={{ color: isArtis ? '#8aaa8a' : isLight ? '#9090b0' : '#71717a' }}> · {cp.role}</span>}
             </div>
-            {cp.email && <div className="text-xs" style={{ color: isLight ? '#5a5a7a' : '#a1a1aa' }}>{cp.email}</div>}
-            {cp.phone && (
-              <div className="flex items-center gap-1.5 mt-0.5">
-                <a
-                  href={`tel:${cp.phone}`}
-                  onClick={e => { e.preventDefault(); window.location.href = `tel:${cp.phone}`; }}
-                  title="Anrufen"
-                  className="flex items-center justify-center w-5 h-5 rounded bg-emerald-600 hover:bg-emerald-500 transition-colors flex-shrink-0"
-                >
-                  <Phone className="h-3 w-3 text-white" />
-                </a>
-                <span className="text-xs" style={{ color: isLight ? '#7070a0' : '#71717a' }}>{cp.phone}</span>
-              </div>
-            )}
+            {cp.email && <div className="text-xs" style={{ color: isArtis ? '#7a9a7a' : isLight ? '#8080a0' : '#a1a1aa' }}>{cp.email}</div>}
+            <PhoneRow number={cp.phone} label="Anrufen (Tel. 1)" />
+            <PhoneRow number={cp.phone2} label="Anrufen (Tel. 2)" />
           </div>
           <button onClick={() => remove(idx)} className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-400 transition-all">
             <Trash2 className="h-3.5 w-3.5" />
@@ -55,7 +58,7 @@ export default function CustomerContactPersons({ customer, onUpdate }) {
       ))}
 
       {adding ? (
-        <div className="p-3 rounded-lg border border-violet-300 space-y-2" style={{ backgroundColor: isArtis ? '#f5f8f5' : isLight ? '#f7f7fc' : '#f9fafb' }}>
+        <div className="p-3 rounded-lg border border-violet-300 space-y-2" style={{ backgroundColor: isArtis ? '#fafcfa' : isLight ? '#fafaff' : '#f9fafb' }}>
           {/* Zeile 1: Anrede | Vorname | Nachname */}
           <div className="grid gap-2" style={{ gridTemplateColumns: '100px 1fr 1fr' }}>
             <select
@@ -71,20 +74,24 @@ export default function CustomerContactPersons({ customer, onUpdate }) {
             <Input value={form.vorname} onChange={e => setForm({ ...form, vorname: e.target.value })} placeholder="Vorname" className="text-xs h-8" style={{ backgroundColor: '#ffffff', borderColor: isArtis ? '#bfcfbf' : isLight ? '#c8c8dc' : '#d1d5db', color: isArtis ? '#2d3a2d' : isLight ? '#1a1a2e' : '#1f2937' }} />
             <Input value={form.name}    onChange={e => setForm({ ...form, name: e.target.value })}    placeholder="Nachname *" className="text-xs h-8" style={{ backgroundColor: '#ffffff', borderColor: isArtis ? '#bfcfbf' : isLight ? '#c8c8dc' : '#d1d5db', color: isArtis ? '#2d3a2d' : isLight ? '#1a1a2e' : '#1f2937' }} />
           </div>
-          {/* Zeile 2: Funktion | E-Mail | Telefon */}
-          <div className="grid grid-cols-3 gap-2">
-            {[['role','Funktion (z.B. CEO)'],['email','E-Mail'],['phone','Telefon']].map(([key, ph]) => (
-              <Input key={key} value={form[key]} onChange={e => setForm({...form, [key]: e.target.value})} placeholder={ph} className="text-xs h-8" style={{ backgroundColor: '#ffffff', borderColor: isArtis ? '#bfcfbf' : isLight ? '#c8c8dc' : '#d1d5db', color: isArtis ? '#2d3a2d' : isLight ? '#1a1a2e' : '#1f2937' }} />
-            ))}
+          {/* Zeile 2: Funktion | E-Mail */}
+          <div className="grid grid-cols-2 gap-2">
+            <Input value={form.role}  onChange={e => setForm({...form, role: e.target.value})}  placeholder="Funktion (z.B. CEO)" className="text-xs h-8" style={{ backgroundColor: '#ffffff', borderColor: isArtis ? '#bfcfbf' : isLight ? '#c8c8dc' : '#d1d5db', color: isArtis ? '#2d3a2d' : isLight ? '#1a1a2e' : '#1f2937' }} />
+            <Input value={form.email} onChange={e => setForm({...form, email: e.target.value})} placeholder="E-Mail" className="text-xs h-8" style={{ backgroundColor: '#ffffff', borderColor: isArtis ? '#bfcfbf' : isLight ? '#c8c8dc' : '#d1d5db', color: isArtis ? '#2d3a2d' : isLight ? '#1a1a2e' : '#1f2937' }} />
+          </div>
+          {/* Zeile 3: Telefon 1 | Telefon 2 */}
+          <div className="grid grid-cols-2 gap-2">
+            <Input value={form.phone}  onChange={e => setForm({...form, phone: e.target.value})}  placeholder="Telefon 1" className="text-xs h-8" style={{ backgroundColor: '#ffffff', borderColor: isArtis ? '#bfcfbf' : isLight ? '#c8c8dc' : '#d1d5db', color: isArtis ? '#2d3a2d' : isLight ? '#1a1a2e' : '#1f2937' }} />
+            <Input value={form.phone2} onChange={e => setForm({...form, phone2: e.target.value})} placeholder="Telefon 2" className="text-xs h-8" style={{ backgroundColor: '#ffffff', borderColor: isArtis ? '#bfcfbf' : isLight ? '#c8c8dc' : '#d1d5db', color: isArtis ? '#2d3a2d' : isLight ? '#1a1a2e' : '#1f2937' }} />
           </div>
           <div className="flex gap-2 justify-end">
             <Button variant="ghost" size="sm" onClick={() => setAdding(false)} className="h-7 text-xs" style={{ color: isLight ? '#7070a0' : '#71717a' }}>Abbrechen</Button>
-            <Button size="sm" onClick={add} className="bg-violet-600 hover:bg-violet-500 h-7 text-xs">Hinzufügen</Button>
+            <Button size="sm" onClick={add} className="bg-violet-600 hover:bg-violet-500 h-7 text-xs">Hinzufuegen</Button>
           </div>
         </div>
       ) : (
         <Button variant="ghost" size="sm" onClick={() => setAdding(true)} className="text-xs" style={{ color: isLight ? '#7070a0' : '#71717a' }}>
-          <Plus className="h-3 w-3" /> Kontaktperson hinzufügen
+          <Plus className="h-3 w-3" /> Kontaktperson hinzufuegen
         </Button>
       )}
     </div>
