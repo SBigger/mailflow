@@ -133,40 +133,65 @@ Wichtige Richtlinien:
 
     const geminiKey = Deno.env.get("GEMINI_API_KEY");
     if (!geminiKey) {
-      return new Response(JSON.stringify({ error: "GEMINI_API_KEY not configured" }), {
-        status: 500,
+      return new Response(JSON.stringify({ suggestion: null, error: "GEMINI_API_KEY not configured" }), {
+        status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Gemini API aufrufen
-    const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${geminiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: systemPrompt }] },
-          contents,
-          generationConfig: {
-            temperature: 0.3,
-            maxOutputTokens: 1024,
-          },
-        }),
+    // Modelle in Reihenfolge: aktuell → fallback
+    const modelCandidates = [
+      "gemini-2.5-flash",
+      "gemini-2.0-flash",
+      "gemini-2.0-flash-lite",
+    ];
+
+    let suggestion = "";
+    let lastError = "";
+    for (const model of modelCandidates) {
+      try {
+        const geminiRes = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              systemInstruction: { parts: [{ text: systemPrompt }] },
+              contents,
+              generationConfig: {
+                temperature: 0.3,
+                maxOutputTokens: 1024,
+              },
+            }),
+          }
+        );
+
+        if (!geminiRes.ok) {
+          const errorText = await geminiRes.text();
+          console.error(`Gemini API error [${model}]:`, errorText);
+          lastError = `${model}: HTTP ${geminiRes.status} – ${errorText.substring(0, 300)}`;
+          continue; // nächstes Modell versuchen
+        }
+
+        const geminiData = await geminiRes.json();
+        suggestion = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        if (suggestion) {
+          console.log(`Gemini OK mit ${model}`);
+          break;
+        }
+        lastError = `${model}: leere Antwort`;
+      } catch (e: any) {
+        lastError = `${model}: ${e?.message || "network error"}`;
+        console.error(`Gemini fetch error [${model}]:`, e);
       }
-    );
+    }
 
-    if (!geminiRes.ok) {
-      const errorText = await geminiRes.text();
-      console.error("Gemini API error:", errorText);
-      return new Response(JSON.stringify({ error: "Gemini API error", details: errorText }), {
-        status: 500,
+    if (!suggestion) {
+      return new Response(JSON.stringify({ suggestion: null, error: lastError || "Gemini API fehlgeschlagen" }), {
+        status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-
-    const geminiData = await geminiRes.json();
-    const suggestion = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
     return new Response(JSON.stringify({ suggestion }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -174,8 +199,8 @@ Wichtige Richtlinien:
 
   } catch (error: any) {
     console.error("Error in suggest-ticket-reply:", error);
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
+    return new Response(JSON.stringify({ suggestion: null, error: error?.message || String(error) }), {
+      status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }

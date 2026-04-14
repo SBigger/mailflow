@@ -105,6 +105,8 @@ export default function TicketDetailPanel({ ticket, onClose, currentUser, users 
       if (data?.suggestion) {
         setReplyText(data.suggestion);
         toast.success("KI-Vorschlag wurde eingefügt");
+      } else if (data?.error) {
+        toast.error("KI-Vorschlag fehlgeschlagen: " + data.error);
       } else {
         toast.error("Kein Vorschlag erhalten");
       }
