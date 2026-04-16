@@ -1,0 +1,49 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "Smartis",
+  "version": "1.0.0",
+  "identifier": "ch.artis.smartis",
+  "build": {
+    "frontendDist": "https://smartis.me",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": ""
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Smartis by Artis Treuhand",
+        "width": 1400,
+        "height": 900,
+        "minWidth": 1024,
+        "minHeight": 700,
+        "resizable": true,
+        "fullscreen": false,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "msi"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "perMachine"
+      }
+    },
+    "publisher": "Artis Treuhand GmbH",
+    "copyright": "© 2026 Artis Treuhand GmbH",
+    "shortDescription": "Smartis – Kanzleisoftware",
+    "longDescription": "Smartis ist die interne Kanzleisoftware der Artis Treuhand GmbH mit Offline-Unterstützung."
+  }
+}
