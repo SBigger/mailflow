@@ -376,20 +376,11 @@ function ShareLinksOverview({ accent, s, border, onClose }) {
 }
 
 // ─── Tag-Filterung nach Kategorie ────────────────────────────────────────
-function normalizeCatName(name) {
-  // "02 - Steuern" → "steuern", "Steuern" → "steuern"
-  return (name || "").replace(/^\d+\s*[-–]\s*/, "").toLowerCase().trim();
-}
-
+// Nutzt das "category"-Feld auf Eltern-Tags (wird in den Einstellungen gesetzt)
 function filterTagsByCategory(allTags, category) {
   if (!category) return allTags;
-  const catNorm = normalizeCatName(
-    CATEGORIES.find(c => c.key === category)?.label || category
-  );
-  // Eltern-Tags finden, deren Name zur Kategorie passt
-  const matchingParents = allTags.filter(t =>
-    !t.parent_id && (normalizeCatName(t.name) === catNorm || t.name.toLowerCase() === category.toLowerCase())
-  );
+  // Eltern-Tags finden, die explizit dieser Kategorie zugeordnet sind
+  const matchingParents = allTags.filter(t => !t.parent_id && t.category === category);
   if (matchingParents.length === 0) return allTags; // Fallback: alle Tags zeigen
   const parentIds = new Set(matchingParents.map(t => t.id));
   return allTags.filter(t => parentIds.has(t.id) || parentIds.has(t.parent_id));
