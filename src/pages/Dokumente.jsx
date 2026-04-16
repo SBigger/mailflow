@@ -672,6 +672,8 @@ export default function Dokumente() {
   const [checkinDoc,     setCheckinDoc]     = useState(null);  // wird nicht mehr benoetigt, bleibt fuer Compat
   const [signedUrls,    setSignedUrls]    = useState({});
   const [pageTab,       setPageTab]       = useState('alle');
+  const [deletingIds,   setDeletingIds]   = useState(new Set());
+  const [clickedBtns,   setClickedBtns]   = useState({});
 
   const { data: customers = [] } = useQuery({
     queryKey: ["customers"],
@@ -765,8 +767,10 @@ export default function Dokumente() {
       const q = fileSearch.toLowerCase();
       list = list.filter(d => d.name.toLowerCase().includes(q));
     }
-    return list.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-  }, [allDoks, selCustomerId, selCat, selYear, fileSearch]);
+    return list
+      .filter(d => !deletingIds.has(d.id))
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  }, [allDoks, selCustomerId, selCat, selYear, fileSearch, deletingIds]);
 
   const breadcrumb = useMemo(() => {
     if (!selCustomer) return "Alle Dokumente";
@@ -893,14 +897,27 @@ export default function Dokumente() {
     window.history.replaceState({}, '', '/Dokumente');
   }, [allDoks, isLoading]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Button-Klick animieren (kurzes Scale-Feedback)
+  const animateBtn = (key) => {
+    setClickedBtns(prev => ({ ...prev, [key]: true }));
+    setTimeout(() => setClickedBtns(prev => { const n = { ...prev }; delete n[key]; return n; }), 180);
+  };
+
   const handleDelete = async (doc) => {
     if (!window.confirm(`"${doc.name}" wirklich l\u00f6schen?`)) return;
+    animateBtn(`del-${doc.id}`);
+    // Optimistic: sofort aus Liste entfernen
+    setDeletingIds(prev => new Set([...prev, doc.id]));
     try {
-      await supabase.storage.from(BUCKET).remove(doc.storage_path);
+      if (doc.storage_path) await supabase.storage.from(BUCKET).remove([doc.storage_path.replace('dokumente/', '')]);
       await entities.Dokument.delete(doc.id);
       queryClient.invalidateQueries(["dokumente-all"]);
       toast.success("Dokument gel\u00f6scht", {closeButton: true});
-    } catch (err) { toast.error("Fehler: " + err.message); }
+    } catch (err) {
+      // Bei Fehler: wieder anzeigen
+      setDeletingIds(prev => { const n = new Set(prev); n.delete(doc.id); return n; });
+      toast.error("Fehler: " + err.message);
+    }
   };
 
   const handleCheckout = async (doc) => {
@@ -1392,20 +1409,20 @@ export default function Dokumente() {
                       <Pencil size={14} />
                     </button>
                     {/* Download */}
-                    <button onClick={() => { downloadDoc(doc) }}
-                      title="Herunterladen" style={{ background: "none", border: "none", cursor: "pointer", color: accent, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}>
+                    <button onClick={() => { animateBtn(`dl-${doc.id}`); downloadDoc(doc); }}
+                      title="Herunterladen" style={{ background: "none", border: "none", cursor: "pointer", color: accent, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0, transition: "transform 0.15s", transform: clickedBtns[`dl-${doc.id}`] ? "scale(0.75)" : "scale(1)" }}>
                       <Download size={15} />
                     </button>
                     {/* Share */}
                     <button
-                      onClick={() => setShareDialog({ type: 'doc', doc_id: doc.id, name: doc.name, customer_id: doc.customer_id })}
+                      onClick={() => { animateBtn(`sh-${doc.id}`); setShareDialog({ type: 'doc', doc_id: doc.id, name: doc.name, customer_id: doc.customer_id }); }}
                       title="Link erstellen"
-                      style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}>
+                      style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0, transition: "transform 0.15s", transform: clickedBtns[`sh-${doc.id}`] ? "scale(0.75)" : "scale(1)" }}>
                       <Link2 size={15} />
                     </button>
                     {/* Loeschen */}
                     <button onClick={() => !lockedByOther && handleDelete(doc)} title={lockedByOther ? "Gesperrt – kann nicht geloescht werden" : "Loeschen"}
-                      style={{ background: "none", border: "none", cursor: lockedByOther ? "not-allowed" : "pointer", color: lockedByOther ? s.textMuted + "44" : "#ef4444", display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}>
+                      style={{ background: clickedBtns[`del-${doc.id}`] ? "#ef444420" : "none", border: "none", cursor: lockedByOther ? "not-allowed" : "pointer", color: lockedByOther ? s.textMuted + "44" : "#ef4444", display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0, transition: "transform 0.15s, background 0.15s", transform: clickedBtns[`del-${doc.id}`] ? "scale(0.75)" : "scale(1)" }}>
                       <Trash2 size={15} />
                     </button>
                   </div>
