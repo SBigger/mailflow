@@ -375,6 +375,26 @@ function ShareLinksOverview({ accent, s, border, onClose }) {
   );
 }
 
+// ─── Tag-Filterung nach Kategorie ────────────────────────────────────────
+function normalizeCatName(name) {
+  // "02 - Steuern" → "steuern", "Steuern" → "steuern"
+  return (name || "").replace(/^\d+\s*[-–]\s*/, "").toLowerCase().trim();
+}
+
+function filterTagsByCategory(allTags, category) {
+  if (!category) return allTags;
+  const catNorm = normalizeCatName(
+    CATEGORIES.find(c => c.key === category)?.label || category
+  );
+  // Eltern-Tags finden, deren Name zur Kategorie passt
+  const matchingParents = allTags.filter(t =>
+    !t.parent_id && (normalizeCatName(t.name) === catNorm || t.name.toLowerCase() === category.toLowerCase())
+  );
+  if (matchingParents.length === 0) return allTags; // Fallback: alle Tags zeigen
+  const parentIds = new Set(matchingParents.map(t => t.id));
+  return allTags.filter(t => parentIds.has(t.id) || parentIds.has(t.parent_id));
+}
+
 // ─── Upload-Dialog ─────────────────────────────────────────────────────────
 function UploadDialog({ customers, preCustomer, allTags, onCancel, onUpload, s, border, accent }) {
   const [file,       setFile]       = useState(null);
@@ -387,6 +407,15 @@ function UploadDialog({ customers, preCustomer, allTags, onCancel, onUpload, s, 
   const [uploading,  setUploading]  = useState(false);
   const [errors,     setErrors]     = useState({});
   const fileRef = useRef();
+
+  // Tags auf die gewählte Kategorie einschränken
+  const filteredTags = useMemo(() => filterTagsByCategory(allTags, category), [allTags, category]);
+
+  // Beim Kategoriewechsel: Tags entfernen, die nicht mehr zur Kategorie gehören
+  useEffect(() => {
+    const validIds = new Set(filteredTags.map(t => t.id));
+    setTagIds(prev => prev.filter(id => validIds.has(id)));
+  }, [filteredTags]);
 
   // Draggable state
   const [dragPos,    setDragPos]    = useState({ x: 0, y: 0 });
@@ -470,8 +499,11 @@ function UploadDialog({ customers, preCustomer, allTags, onCancel, onUpload, s, 
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {/* Datei */}
-          <div onClick={() => fileRef.current?.click()}
-            style={{ border: "2px dashed " + (file ? accent : border), borderRadius: 8, padding: 14, textAlign: "center", cursor: "pointer", color: file ? accent : s.textMuted, fontSize: 13 }}>
+          <div
+            onClick={() => fileRef.current?.click()}
+            tabIndex={0}
+            onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileRef.current?.click(); } }}
+            style={{ border: "2px dashed " + (file ? accent : border), borderRadius: 8, padding: 14, textAlign: "center", cursor: "pointer", color: file ? accent : s.textMuted, fontSize: 13, outline: "none" }}>
             {file ? `${file.name} (${formatBytes(file.size)})` : "Datei auswaehlen oder hierher ziehen"}
             <input ref={fileRef} type="file" style={{ display: "none" }} onChange={e => e.target.files[0] && pickFile(e.target.files[0])} />
           </div>
@@ -506,7 +538,7 @@ function UploadDialog({ customers, preCustomer, allTags, onCancel, onUpload, s, 
           {/* Tags */}
           <div>
             <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Tags *</label>
-            <TagSelectWidget value={tagIds} onChange={(v) => { setTagIds(v); setErrors(prev => ({ ...prev, tags: undefined })); }} allTags={allTags} s={s} border={errors.tags ? "#ef4444" : border} accent={accent} />
+            <TagSelectWidget value={tagIds} onChange={(v) => { setTagIds(v); setErrors(prev => ({ ...prev, tags: undefined })); }} allTags={filteredTags} s={s} border={errors.tags ? "#ef4444" : border} accent={accent} />
             {errors.tags && <div style={{ color: "#ef4444", fontSize: 11, marginTop: 3 }}>{errors.tags}</div>}
           </div>
           {/* Notiz */}
@@ -535,6 +567,15 @@ function EditDialog({ doc, allTags, customers = [], onCancel, onSave, s, border,
   const [tagIds,     setTagIds]     = useState(doc.tag_ids || []);
   const [notes,      setNotes]      = useState(doc.notes || "");
   const [saving,     setSaving]     = useState(false);
+
+  // Tags auf die gewählte Kategorie einschränken
+  const filteredTags = useMemo(() => filterTagsByCategory(allTags, category), [allTags, category]);
+
+  // Beim Kategoriewechsel: Tags entfernen, die nicht mehr zur Kategorie gehören
+  useEffect(() => {
+    const validIds = new Set(filteredTags.map(t => t.id));
+    setTagIds(prev => prev.filter(id => validIds.has(id)));
+  }, [filteredTags]);
 
   const inp = { background: s.inputBg, border: "1px solid " + (s.inputBorder || border), color: s.textMain, borderRadius: 6, padding: "5px 8px", fontSize: 13, width: "100%", outline: "none" };
 
@@ -593,7 +634,7 @@ function EditDialog({ doc, allTags, customers = [], onCancel, onSave, s, border,
           </div>
           <div>
             <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Tags</label>
-            <TagSelectWidget value={tagIds} onChange={setTagIds} allTags={allTags} s={s} border={border} accent={accent} />
+            <TagSelectWidget value={tagIds} onChange={setTagIds} allTags={filteredTags} s={s} border={border} accent={accent} />
           </div>
           <div>
             <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Notiz</label>

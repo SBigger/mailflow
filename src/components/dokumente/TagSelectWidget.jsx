@@ -180,7 +180,11 @@ export default function TagSelectWidget({ value = [], onChange, onCategoryChange
 
   return (
       <div ref={triggerRef} style={{ position: "relative" }}>
-        <div onClick={() => setOpen(o => !o)} style={{
+        <div
+        onClick={() => setOpen(o => !o)}
+        tabIndex={0}
+        onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen(o => !o); } if (e.key === "Escape") setOpen(false); }}
+        style={{
           background: s.inputBg || "#fff", border: "1px solid " + (open ? accent : (s.inputBorder || border)),
           borderRadius: 6, padding: "5px 10px", cursor: "pointer", display: "flex", alignItems: "center",
           gap: 6, minHeight: 34, fontSize: 13, width: "100%", boxSizing: "border-box"
