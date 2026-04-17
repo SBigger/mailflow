@@ -398,6 +398,7 @@ function UploadDialog({ customers, preCustomer, preFile, allTags, onCancel, onUp
   const [uploading,  setUploading]  = useState(false);
   const [errors,     setErrors]     = useState({});
   const fileRef = useRef();
+  const yearRef = useRef();
 
   // Per Drag & Drop übergebene Datei direkt einlesen
   useEffect(() => {
@@ -520,7 +521,7 @@ function UploadDialog({ customers, preCustomer, preFile, allTags, onCancel, onUp
           {/* Tags */}
           <div>
             <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Tags *</label>
-            <TagSelectWidget value={tagIds} onChange={(v) => { setTagIds(v); setErrors(prev => ({ ...prev, tags: undefined })); }} onCategoryChange={setCategory} allTags={filteredTags} s={s} border={errors.tags ? "#ef4444" : border} accent={accent} />
+            <TagSelectWidget value={tagIds} onChange={(v) => { setTagIds(v); setErrors(prev => ({ ...prev, tags: undefined })); }} onCategoryChange={(cat) => { setCategory(cat); setTimeout(() => { yearRef.current?.select(); yearRef.current?.focus(); }, 80); }} allTags={filteredTags} s={s} border={errors.tags ? "#ef4444" : border} accent={accent} />
             {errors.tags && <div style={{ color: "#ef4444", fontSize: 11, marginTop: 3 }}>{errors.tags}</div>}
           </div>
           {/* Kategorie + Jahr */}
@@ -535,7 +536,7 @@ function UploadDialog({ customers, preCustomer, preFile, allTags, onCancel, onUp
             </div>
             <div>
               <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Jahr *</label>
-              <input type="number" value={year} min="2000" max="2099" onChange={e => setYear(e.target.value)} style={{ ...inp, borderColor: !year ? "#ef4444" : (s.inputBorder || border) }} placeholder="z.B. 2025" />
+              <input ref={yearRef} type="number" value={year} min="2000" max="2099" onChange={e => setYear(e.target.value)} style={{ ...inp, borderColor: !year ? "#ef4444" : (s.inputBorder || border) }} placeholder="z.B. 2025" />
             </div>
           </div>
           {/* Notiz */}
