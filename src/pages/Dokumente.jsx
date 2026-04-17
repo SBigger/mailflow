@@ -709,6 +709,7 @@ export default function Dokumente() {
   const [showUpload,    setShowUpload]    = useState(false);
   const [dropFile,      setDropFile]      = useState(null);
   const [dragOver,      setDragOver]      = useState(false);
+  const [sortBy,        setSortBy]        = useState("-created_at"); // "-created_at" | "name" | "year"
   const [editDoc,        setEditDoc]        = useState(null);
   const [checkinDoc,     setCheckinDoc]     = useState(null);  // wird nicht mehr benoetigt, bleibt fuer Compat
   const [signedUrls,    setSignedUrls]    = useState({});
@@ -808,10 +809,12 @@ export default function Dokumente() {
       const q = fileSearch.toLowerCase();
       list = list.filter(d => d.name.toLowerCase().includes(q));
     }
-    return list
-      .filter(d => !deletingIds.has(d.id))
-      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-  }, [allDoks, selCustomerId, selCat, selYear, fileSearch, deletingIds]);
+    list = list.filter(d => !deletingIds.has(d.id));
+    if (sortBy === "name")        list = [...list].sort((a, b) => (a.name || "").localeCompare(b.name || "", "de"));
+    else if (sortBy === "year")   list = [...list].sort((a, b) => (b.year || 0) - (a.year || 0));
+    else                          list = [...list].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    return list;
+  }, [allDoks, selCustomerId, selCat, selYear, fileSearch, deletingIds, sortBy]);
 
   const breadcrumb = useMemo(() => {
     if (!selCustomer) return "Alle Dokumente";
@@ -1376,6 +1379,16 @@ export default function Dokumente() {
               <input value={fileSearch} onChange={e => setFileSearch(e.target.value)} placeholder="Suchen..."
                 style={{ background: s.inputBg, border: "1px solid " + border, color: s.textMain, borderRadius: 6, padding: "4px 8px 4px 24px", fontSize: 12, width: 180, outline: "none" }} />
             </div>
+            {/* Sortierung */}
+            <div style={{ display: "flex", gap: 2, background: s.inputBg, border: "1px solid " + border, borderRadius: 6, padding: 2, flexShrink: 0 }}>
+              {[{ key: "-created_at", label: "Datum" }, { key: "name", label: "Name" }, { key: "year", label: "Jahr" }].map(opt => (
+                <button key={opt.key} onClick={() => setSortBy(opt.key)}
+                  style={{ background: sortBy === opt.key ? accent : "none", color: sortBy === opt.key ? "#fff" : s.textMuted,
+                    border: "none", cursor: "pointer", borderRadius: 4, padding: "2px 8px", fontSize: 11, fontWeight: sortBy === opt.key ? 600 : 400 }}>
+                  {opt.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Liste */}
@@ -1443,8 +1456,14 @@ export default function Dokumente() {
                     </div>
                     {/* Jahr */}
                     {doc.year && <span style={{ fontSize: 11, color: s.textMuted, background: s.sidebarBg, border: "1px solid " + border, borderRadius: 6, padding: "2px 7px", flexShrink: 0 }}>{doc.year}</span>}
-                    {/* Groesse */}
+                    {/* Groesse + Upload-Datum */}
                     <span style={{ fontSize: 11, color: s.textMuted, flexShrink: 0, width: 55, textAlign: "right" }}>{formatBytes(doc.file_size)}</span>
+                    {doc.created_at && (
+                      <span title={"Hochgeladen: " + new Date(doc.created_at).toLocaleString("de-CH")}
+                        style={{ fontSize: 10, color: s.textMuted, flexShrink: 0, whiteSpace: "nowrap", minWidth: 58, textAlign: "right" }}>
+                        {new Date(doc.created_at).toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit", year: "2-digit" })}
+                      </span>
+                    )}
                     {/* Checkout / Checkin */}
                     {!isCheckedOut && (
                       <button onClick={() => handleCheckout(doc)} title="Auschecken"
