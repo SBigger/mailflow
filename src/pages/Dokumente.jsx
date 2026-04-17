@@ -522,7 +522,7 @@ function UploadDialog({ customers, preCustomer, allTags, onCancel, onUpload, s, 
             <div>
               <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Kategorie *</label>
               <select value={category} onChange={e => { setCategory(e.target.value); setErrors(prev => ({ ...prev, category: undefined })); }} style={{ ...inp, cursor: "pointer", borderColor: errors.category ? "#ef4444" : (s.inputBorder || border) }}>
-                <option value="">-- Kategorie w\u00e4hlen --</option>
+                <option value="">-- Kategorie wählen --</option>
                 {CATEGORIES.map(c => <option key={c.key} value={c.key}>{c.icon} {c.label}</option>)}
               </select>
               {errors.category && <div style={{ color: "#ef4444", fontSize: 11, marginTop: 3 }}>{errors.category}</div>}
