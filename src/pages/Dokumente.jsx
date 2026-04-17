@@ -1370,11 +1370,12 @@ export default function Dokumente() {
         {/* ═══ RECHTS: Dateiliste ════════════════════════════════════════ */}
         <div
           style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden", position: "relative" }}
-          onDragOver={e => { e.preventDefault(); e.stopPropagation(); setDragOver(true); }}
-          onDragEnter={e => { e.preventDefault(); e.stopPropagation(); setDragOver(true); }}
+          onDragOver={e => { e.preventDefault(); e.stopPropagation(); if (selCustomerId) setDragOver(true); }}
+          onDragEnter={e => { e.preventDefault(); e.stopPropagation(); if (selCustomerId) setDragOver(true); }}
           onDragLeave={e => { e.preventDefault(); e.stopPropagation(); if (!e.currentTarget.contains(e.relatedTarget)) setDragOver(false); }}
           onDrop={e => {
             e.preventDefault(); e.stopPropagation(); setDragOver(false);
+            if (!selCustomerId) { toast.error("Bitte zuerst einen Kunden in der Seitenleiste auswählen"); return; }
             const f = e.dataTransfer.files?.[0];
             if (f) { setDropFile(f); setShowUpload(true); }
           }}
