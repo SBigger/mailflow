@@ -710,6 +710,9 @@ export default function Dokumente() {
   const [dropFile,      setDropFile]      = useState(null);
   const [dragOver,      setDragOver]      = useState(false);
   const [sortBy,        setSortBy]        = useState("-created_at"); // "-created_at" | "name" | "year"
+  const [viewMode,      setViewMode]      = useState("normal");      // "normal" | "abschluss"
+  const [openFolders,   setOpenFolders]   = useState(new Set());
+  const [showSortMenu,  setShowSortMenu]  = useState(false);
   const [editDoc,        setEditDoc]        = useState(null);
   const [checkinDoc,     setCheckinDoc]     = useState(null);  // wird nicht mehr benoetigt, bleibt fuer Compat
   const [signedUrls,    setSignedUrls]    = useState({});
@@ -815,6 +818,45 @@ export default function Dokumente() {
     else                          list = [...list].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
     return list;
   }, [allDoks, selCustomerId, selCat, selYear, fileSearch, deletingIds, sortBy]);
+
+  // ── Abschluss-View: Dokumente nach Tag-Hierarchie gruppiert ──────────────
+  const abschlussTree = useMemo(() => {
+    if (viewMode !== "abschluss" || !filtered.length) return [];
+    // parentId → { tag, children: Map(childId → { tag, docs[] }) }
+    const parentMap = new Map();
+    filtered.forEach(doc => {
+      const ids = doc.tag_ids || [];
+      if (!ids.length) {
+        // Ohne Tag: in Sondergruppe "__none__"
+        if (!parentMap.has("__none__")) parentMap.set("__none__", { tag: { id: "__none__", name: "Ohne Tag", sort_order: 9999 }, children: new Map() });
+        const pm = parentMap.get("__none__");
+        if (!pm.children.has("__direct__")) pm.children.set("__direct__", { tag: { id: "__direct__", name: "Allgemein", sort_order: 0 }, docs: [] });
+        pm.children.get("__direct__").docs.push(doc);
+        return;
+      }
+      ids.forEach(tagId => {
+        const tag = allTags.find(t => t.id === tagId);
+        if (!tag) return;
+        if (tag.parent_id) {
+          const parent = allTags.find(t => t.id === tag.parent_id);
+          if (!parent) return;
+          if (!parentMap.has(parent.id)) parentMap.set(parent.id, { tag: parent, children: new Map() });
+          const pm = parentMap.get(parent.id);
+          if (!pm.children.has(tag.id)) pm.children.set(tag.id, { tag, docs: [] });
+          if (!pm.children.get(tag.id).docs.find(d => d.id === doc.id))
+            pm.children.get(tag.id).docs.push(doc);
+        } else {
+          // Top-level Tag ohne Parent → direkt rein
+          if (!parentMap.has(tag.id)) parentMap.set(tag.id, { tag, children: new Map() });
+          const pm = parentMap.get(tag.id);
+          if (!pm.children.has("__direct__")) pm.children.set("__direct__", { tag: { id: "__direct__", name: "Direkt", sort_order: -1 }, docs: [] });
+          if (!pm.children.get("__direct__").docs.find(d => d.id === doc.id))
+            pm.children.get("__direct__").docs.push(doc);
+        }
+      });
+    });
+    return [...parentMap.values()].sort((a, b) => (a.tag.sort_order ?? 999) - (b.tag.sort_order ?? 999));
+  }, [filtered, allTags, viewMode]);
 
   const breadcrumb = useMemo(() => {
     if (!selCustomer) return "Alle Dokumente";
@@ -1379,20 +1421,47 @@ export default function Dokumente() {
               <input value={fileSearch} onChange={e => setFileSearch(e.target.value)} placeholder="Suchen..."
                 style={{ background: s.inputBg, border: "1px solid " + border, color: s.textMain, borderRadius: 6, padding: "4px 8px 4px 24px", fontSize: 12, width: 180, outline: "none" }} />
             </div>
-            {/* Sortierung */}
-            <div style={{ display: "flex", gap: 2, background: s.inputBg, border: "1px solid " + border, borderRadius: 6, padding: 2, flexShrink: 0 }}>
-              {[{ key: "-created_at", label: "Datum" }, { key: "name", label: "Name" }, { key: "year", label: "Jahr" }].map(opt => (
-                <button key={opt.key} onClick={() => setSortBy(opt.key)}
-                  style={{ background: sortBy === opt.key ? accent : "none", color: sortBy === opt.key ? "#fff" : s.textMuted,
-                    border: "none", cursor: "pointer", borderRadius: 4, padding: "2px 8px", fontSize: 11, fontWeight: sortBy === opt.key ? 600 : 400 }}>
-                  {opt.label}
+            {/* View + Sortierung */}
+            <div style={{ display: "flex", gap: 4, alignItems: "center", flexShrink: 0 }}>
+              {/* View-Umschalter */}
+              <div style={{ display: "flex", gap: 2, background: s.inputBg, border: "1px solid " + border, borderRadius: 6, padding: 2 }}>
+                {[{ key: "normal", label: "Normal" }, { key: "abschluss", label: "Abschluss" }].map(v => (
+                  <button key={v.key} onClick={() => { setViewMode(v.key); setOpenFolders(new Set()); }}
+                    style={{ background: viewMode === v.key ? accent : "none", color: viewMode === v.key ? "#fff" : s.textMuted,
+                      border: "none", cursor: "pointer", borderRadius: 4, padding: "2px 10px", fontSize: 11, fontWeight: viewMode === v.key ? 600 : 400 }}>
+                    {v.label}
+                  </button>
+                ))}
+              </div>
+              {/* Sort-Dropdown */}
+              <div style={{ position: "relative" }}>
+                <button onClick={() => setShowSortMenu(m => !m)}
+                  style={{ background: s.inputBg, border: "1px solid " + border, color: s.textMuted, borderRadius: 6,
+                    padding: "3px 8px", fontSize: 11, cursor: "pointer", display: "flex", alignItems: "center", gap: 3 }}>
+                  {sortBy === "-created_at" ? "Datum" : sortBy === "name" ? "Name" : "Jahr"}
+                  <ChevronDown size={11} />
                 </button>
-              ))}
+                {showSortMenu && (
+                  <div style={{ position: "absolute", right: 0, top: "calc(100% + 4px)", background: s.cardBg,
+                    border: "1px solid " + border, borderRadius: 6, padding: 4, zIndex: 60,
+                    minWidth: 90, boxShadow: "0 4px 16px #0003" }}>
+                    {[{ key: "-created_at", label: "Datum" }, { key: "name", label: "Name" }, { key: "year", label: "Jahr" }].map(opt => (
+                      <button key={opt.key} onClick={() => { setSortBy(opt.key); setShowSortMenu(false); }}
+                        style={{ display: "block", width: "100%", textAlign: "left",
+                          background: sortBy === opt.key ? accent + "22" : "none",
+                          color: sortBy === opt.key ? accent : s.textMain,
+                          border: "none", cursor: "pointer", borderRadius: 4, padding: "5px 10px", fontSize: 11 }}>
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
           {/* Liste */}
-          <div style={{ flex: 1, overflowY: "auto" }}>
+          <div style={{ flex: 1, overflowY: "auto" }} onClick={() => showSortMenu && setShowSortMenu(false)}>
             {!selCustomerId ? (
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", color: s.textMuted, gap: 10 }}>
                 <span style={{ fontSize: 48 }}>{"\uD83D\uDCC1"}</span>
@@ -1403,7 +1472,111 @@ export default function Dokumente() {
                 <span style={{ fontSize: 36 }}>{"\uD83D\uDCC2"}</span>
                 <span style={{ fontSize: 13 }}>Keine Dokumente in diesem Ordner</span>
               </div>
+            ) : viewMode === "abschluss" ? (
+              /* ── Abschluss-View: Tag-Ordner ── */
+              abschlussTree.map(({ tag: parent, children }) => {
+                const isParentOpen = openFolders.has(parent.id);
+                const totalDocs = [...children.values()].reduce((s, c) => s + c.docs.length, 0);
+                const pColor = parent.color || accent;
+                return (
+                  <div key={parent.id}>
+                    {/* Parent-Ordner */}
+                    <div
+                      onClick={() => setOpenFolders(f => { const n = new Set(f); n.has(parent.id) ? n.delete(parent.id) : n.add(parent.id); return n; })}
+                      style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 16px",
+                        borderBottom: "1px solid " + border + "66", cursor: "pointer",
+                        background: isParentOpen ? pColor + "10" : "transparent", transition: "background 0.1s" }}
+                      onMouseEnter={e => e.currentTarget.style.background = isParentOpen ? pColor + "15" : s.rowHover}
+                      onMouseLeave={e => e.currentTarget.style.background = isParentOpen ? pColor + "10" : "transparent"}>
+                      {isParentOpen
+                        ? <ChevronDown size={14} style={{ color: pColor, flexShrink: 0 }} />
+                        : <ChevronRight size={14} style={{ color: s.textMuted, flexShrink: 0 }} />}
+                      <span style={{ fontSize: 16, flexShrink: 0 }}>📁</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: s.textMain, flex: 1 }}>{parent.name}</span>
+                      <span style={{ fontSize: 11, color: s.textMuted, background: s.inputBg, border: "1px solid " + border,
+                        borderRadius: 10, padding: "1px 7px" }}>{totalDocs}</span>
+                    </div>
+                    {/* Unterordner (Subtags) */}
+                    {isParentOpen && [...children.values()]
+                      .sort((a, b) => (a.tag.sort_order ?? 999) - (b.tag.sort_order ?? 999))
+                      .map(({ tag: child, docs: childDocs }) => {
+                        if (child.id === "__direct__" && childDocs.length === 0) return null;
+                        const childKey = parent.id + "_" + child.id;
+                        const isChildOpen = openFolders.has(childKey);
+                        const cColor = child.color || pColor;
+                        return (
+                          <div key={child.id}>
+                            {/* Subtag-Ordner */}
+                            <div
+                              onClick={() => setOpenFolders(f => { const n = new Set(f); n.has(childKey) ? n.delete(childKey) : n.add(childKey); return n; })}
+                              style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 16px 7px 36px",
+                                borderBottom: "1px solid " + border + "44", cursor: "pointer",
+                                background: isChildOpen ? cColor + "08" : "transparent", transition: "background 0.1s" }}
+                              onMouseEnter={e => e.currentTarget.style.background = isChildOpen ? cColor + "12" : s.rowHover}
+                              onMouseLeave={e => e.currentTarget.style.background = isChildOpen ? cColor + "08" : "transparent"}>
+                              {isChildOpen
+                                ? <ChevronDown size={12} style={{ color: cColor, flexShrink: 0 }} />
+                                : <ChevronRight size={12} style={{ color: s.textMuted, flexShrink: 0 }} />}
+                              <span style={{ fontSize: 14, flexShrink: 0 }}>📂</span>
+                              <span style={{ fontSize: 12, fontWeight: 600, color: s.textMain, flex: 1 }}>
+                                {child.id === "__direct__" ? "" : child.name}
+                              </span>
+                              <span style={{ fontSize: 10, color: s.textMuted, background: s.inputBg, border: "1px solid " + border,
+                                borderRadius: 10, padding: "1px 6px" }}>{childDocs.length}</span>
+                            </div>
+                            {/* Dateien im Subtag */}
+                            {isChildOpen && childDocs.map(doc => {
+                              const fi           = getFileInfo(doc.file_type, doc.filename);
+                              const isCheckedOut = !!doc.checked_out_by;
+                              const isMyCheckout = doc.checked_out_by === user?.id;
+                              const lockedByOther= isCheckedOut && !isMyCheckout;
+                              const isAdmin      = user?.role === 'admin';
+                              return (
+                                <div key={doc.id}
+                                  style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 16px 6px 54px",
+                                    borderBottom: "1px solid " + border + "33", transition: "background 0.1s" }}
+                                  onMouseEnter={e => e.currentTarget.style.background = s.rowHover}
+                                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                                  <span onClick={() => { const _u = doc.sharepoint_web_url || signedUrls[doc.id]; if (!doc.checked_out_by) { handleCheckout(doc); } else if (doc.checked_out_by === user?.id) { openCheckin(doc); } else if (_u) { window.open(_u, '_blank'); } else { toast.error('URL nicht verfügbar.'); } }}
+                                    style={{ background: fi.color, color: "#fff", borderRadius: 4, padding: "2px 5px", fontSize: 10,
+                                      fontWeight: 700, flexShrink: 0, minWidth: 36, textAlign: "center", cursor: "pointer" }}>{fi.label}</span>
+                                  <div onClick={() => { const _u = doc.sharepoint_web_url || signedUrls[doc.id]; if (!doc.checked_out_by) { handleCheckout(doc); } else if (doc.checked_out_by === user?.id) { openCheckin(doc); } else if (_u) { window.open(_u, '_blank'); } else { toast.error('URL nicht verfügbar.'); } }}
+                                    style={{ flex: 1, minWidth: 0, fontSize: 12, color: s.textMain, overflow: "hidden",
+                                      textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer", fontWeight: 500 }}>{doc.name}</div>
+                                  {isCheckedOut && (
+                                    <span style={{ fontSize: 10, color: isMyCheckout ? accent : "#f59e0b",
+                                      background: isMyCheckout ? accent + "18" : "#f59e0b18",
+                                      border: "1px solid " + (isMyCheckout ? accent + "44" : "#f59e0b44"),
+                                      borderRadius: 8, padding: "1px 6px", flexShrink: 0, display: "flex", alignItems: "center", gap: 3 }}>
+                                      <Lock size={9} />{isMyCheckout ? "Ich" : doc.checked_out_by_name}
+                                    </span>
+                                  )}
+                                  {doc.year && <span style={{ fontSize: 10, color: s.textMuted, flexShrink: 0 }}>{doc.year}</span>}
+                                  <span style={{ fontSize: 10, color: s.textMuted, flexShrink: 0 }}>{formatBytes(doc.file_size)}</span>
+                                  {doc.created_at && (
+                                    <span title={"Hochgeladen: " + new Date(doc.created_at).toLocaleString("de-CH")}
+                                      style={{ fontSize: 10, color: s.textMuted, flexShrink: 0, whiteSpace: "nowrap", minWidth: 50, textAlign: "right" }}>
+                                      {new Date(doc.created_at).toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit", year: "2-digit" })}
+                                    </span>
+                                  )}
+                                  {!isCheckedOut && <button onClick={() => handleCheckout(doc)} title="Auschecken" style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}><LockOpen size={13} /></button>}
+                                  {isMyCheckout && <button onClick={() => openCheckin(doc)} title="Einchecken" style={{ background: "none", border: "none", cursor: "pointer", color: accent, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}><Lock size={13} /></button>}
+                                  {lockedByOther && isAdmin && <button onClick={() => handleCheckin(doc, null)} title="Sperre aufheben" style={{ background: "none", border: "none", cursor: "pointer", color: "#ef4444", display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}><ShieldAlert size={13} /></button>}
+                                  <button onClick={() => setEditDoc(doc)} title="Bearbeiten" style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}><Pencil size={13} /></button>
+                                  <button onClick={() => { animateBtn(`dl-${doc.id}`); downloadDoc(doc); }} title="Herunterladen" style={{ background: "none", border: "none", cursor: "pointer", color: accent, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0, transition: "transform 0.15s", transform: clickedBtns[`dl-${doc.id}`] ? "scale(0.75)" : "scale(1)" }}><Download size={14} /></button>
+                                  <button onClick={() => { animateBtn(`sh-${doc.id}`); setShareDialog({ type: 'doc', doc_id: doc.id, name: doc.name, customer_id: doc.customer_id }); }} title="Link erstellen" style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}><Link2 size={14} /></button>
+                                  <button onClick={() => !lockedByOther && handleDelete(doc)} title={lockedByOther ? "Gesperrt" : "Löschen"} style={{ background: "none", border: "none", cursor: lockedByOther ? "not-allowed" : "pointer", color: lockedByOther ? s.textMuted + "44" : "#ef4444", display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}><Trash2 size={14} /></button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })}
+                  </div>
+                );
+              })
             ) : (
+              /* ── Normal-View ── */
               filtered.map(doc => {
                 const fi            = getFileInfo(doc.file_type, doc.filename);
                 const cat           = CATEGORIES.find(c => c.key === doc.category);
@@ -1513,6 +1686,7 @@ export default function Dokumente() {
         </div>
       </div>
       )}
+
 
       {/* Dialoge */}
       {showUpload && (
