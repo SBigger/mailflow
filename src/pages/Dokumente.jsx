@@ -391,7 +391,7 @@ function UploadDialog({ customers, preCustomer, allTags, onCancel, onUpload, s, 
   const [file,       setFile]       = useState(null);
   const [custId,     setCustId]     = useState(preCustomer?.id || "");
   const [name,       setName]       = useState("");
-  const [category,   setCategory]   = useState("steuern");
+  const [category,   setCategory]   = useState("");
   const [year,       setYear]       = useState(String(CUR_YEAR));
   const [tagIds,     setTagIds]     = useState([]);
   const [notes,      setNotes]      = useState("");
@@ -511,6 +511,12 @@ function UploadDialog({ customers, preCustomer, allTags, onCancel, onUpload, s, 
             <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Anzeigename *</label>
             <input value={name} onChange={e => setName(e.target.value)} style={inp} placeholder="Dateiname (ohne Endung)" />
           </div>
+          {/* Tags */}
+          <div>
+            <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Tags *</label>
+            <TagSelectWidget value={tagIds} onChange={(v) => { setTagIds(v); setErrors(prev => ({ ...prev, tags: undefined })); }} onCategoryChange={setCategory} allTags={filteredTags} s={s} border={errors.tags ? "#ef4444" : border} accent={accent} />
+            {errors.tags && <div style={{ color: "#ef4444", fontSize: 11, marginTop: 3 }}>{errors.tags}</div>}
+          </div>
           {/* Kategorie + Jahr */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <div>
@@ -525,12 +531,6 @@ function UploadDialog({ customers, preCustomer, allTags, onCancel, onUpload, s, 
               <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Jahr *</label>
               <input type="number" value={year} min="2000" max="2099" onChange={e => setYear(e.target.value)} style={{ ...inp, borderColor: !year ? "#ef4444" : (s.inputBorder || border) }} placeholder="z.B. 2025" />
             </div>
-          </div>
-          {/* Tags */}
-          <div>
-            <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Tags *</label>
-            <TagSelectWidget value={tagIds} onChange={(v) => { setTagIds(v); setErrors(prev => ({ ...prev, tags: undefined })); }} allTags={filteredTags} s={s} border={errors.tags ? "#ef4444" : border} accent={accent} />
-            {errors.tags && <div style={{ color: "#ef4444", fontSize: 11, marginTop: 3 }}>{errors.tags}</div>}
           </div>
           {/* Notiz */}
           <div>

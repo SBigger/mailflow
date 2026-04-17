@@ -110,7 +110,7 @@ export default function TagSelectWidget({ value = [], onChange, onCategoryChange
           />
         </div>
 
-        <div ref={listRef} style={{ maxHeight: 230, overflowY: "auto" }}>
+        <div ref={listRef} tabIndex={-1} style={{ maxHeight: 230, overflowY: "auto", outline: "none" }} onMouseEnter={() => listRef.current?.focus()} onWheel={e => e.stopPropagation()}>
           {visibleParents.length === 0 ? (
               <div style={{ padding: "12px 14px", fontSize: 12, color: s.textMuted }}>Keine Tags gefunden.</div>
           ) : (() => {
