@@ -196,15 +196,15 @@ export default function AddTaskDialog({open, onClose, onAdd, columns}) {
                     {/* Bezeichnung */}
                     <div>
                         <label className={labelCls} style={{color: labelColor}}>Bezeichnung *</label>
-                        <input
+                        <Textarea
                             autoFocus
                             value={description}
                             onChange={e => setDescription(e.target.value)}
-                            onKeyDown={e => e.key === "Enter" && handleSave()}
                             placeholder="Details..."
                             className={inputCls}
-                            style={inStyle}
+                            style={{ ...inStyle, minHeight: 80, resize: "vertical" }}
                             tabIndex={2}
+                            rows={3}
                         />
                     </div>
 
