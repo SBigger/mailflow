@@ -78,7 +78,7 @@ export default function TagSelectWidget({ value = [], onChange, onCategoryChange
     return isExpanded ? [par, ...kids] : [par];
   });
 
-  const toggle = (id) => {
+  const toggle = (id, closeAfter = false) => {
     const isAdding = !value.includes(id);
     onChange(isAdding ? [...value, id] : value.filter(x => x !== id));
     if (isAdding && onCategoryChange) {
@@ -86,7 +86,15 @@ export default function TagSelectWidget({ value = [], onChange, onCategoryChange
       const parent = tag?.parent_id ? allTags.find(t => t.id === tag.parent_id) : tag;
       if (parent?.category) onCategoryChange(parent.category);
     }
+    if (closeAfter) setOpen(false);
   };
+
+  // Highlighted item ins Sichtfeld scrollen
+  useEffect(() => {
+    if (!listRef.current) return;
+    const el = listRef.current.querySelector(`[data-flatidx="${highlight}"]`);
+    el?.scrollIntoView({ block: "nearest" });
+  }, [highlight]);
 
   const getTag = (id) => allTags.find(t => t.id === id);
 
@@ -107,6 +115,12 @@ export default function TagSelectWidget({ value = [], onChange, onCategoryChange
               onChange={e => { setSearch(e.target.value); setHighlight(0); }}
               placeholder="Tag suchen..."
               style={{ flex: 1, border: "none", outline: "none", fontSize: 13, background: "transparent", color: s.textMain || "#000" }}
+              onKeyDown={e => {
+                if (e.key === "ArrowDown") { e.preventDefault(); setHighlight(h => Math.min(h + 1, flatItems.length - 1)); }
+                else if (e.key === "ArrowUp") { e.preventDefault(); setHighlight(h => Math.max(h - 1, 0)); }
+                else if (e.key === "Enter") { e.preventDefault(); if (flatItems[highlight]) toggle(flatItems[highlight].id, true); }
+                else if (e.key === "Escape") { setOpen(false); }
+              }}
           />
         </div>
 
@@ -127,7 +141,7 @@ export default function TagSelectWidget({ value = [], onChange, onCategoryChange
                   <div key={par.id}>
                     <div
                         data-flatidx={parIdx}
-                        onClick={() => { toggle(par.id); setHighlight(parIdx); }}
+                        onClick={() => { toggle(par.id, true); setHighlight(parIdx); }}
                         style={{
                           display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", cursor: "pointer", fontSize: 13,
                           background: highlight === parIdx ? parCol + "33" : "transparent",
@@ -156,7 +170,7 @@ export default function TagSelectWidget({ value = [], onChange, onCategoryChange
                           <div
                               key={kid.id}
                               data-flatidx={kidIdx}
-                              onClick={() => { toggle(kid.id); setHighlight(kidIdx); }}
+                              onClick={() => { toggle(kid.id, true); setHighlight(kidIdx); }}
                               style={{
                                 display: "flex", alignItems: "center", gap: 8, padding: "6px 12px 6px 44px",
                                 cursor: "pointer", fontSize: 12,
