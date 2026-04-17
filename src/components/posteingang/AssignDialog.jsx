@@ -1,4 +1,4 @@
-import {createContext, useRef, useState} from "react";
+import {createContext, useRef, useState, useEffect} from "react";
 import {X} from "lucide-react";
 import {entities, supabase} from "../../api/supabaseClient.js";
 import {toast} from "sonner";
@@ -11,13 +11,15 @@ import { CATEGORIES } from "@/lib/categories";
 export default function AssignDialog({ customers, preCustomerId, doc, onClose, onUpload, s, border, accent }) {
     const [custId,     setCustId]     = useState(preCustomerId || "");
     const [name,       setName]       = useState(doc.fileName.split('.')[0]);
-    const [cat,   setCategory]   = useState(doc.category);
-    const [ye,       setYear]       = useState(doc.year);
+    const [cat,        setCategory]   = useState("");   // leer bis Tag gewählt
+    const [ye,         setYear]       = useState(doc.year);
     const [tagIds,     setTagIds]     = useState([]);
     const [notes,      setNotes]      = useState("");
     const [uploading,  setUploading]  = useState(false);
+    const [catError,   setCatError]   = useState(false);
     const [document, seDocument] = useState(doc);
     const fileRef = useRef();
+    const yearRef = useRef();
 
     const BUCKET = 'posteingang';
 
@@ -87,6 +89,8 @@ export default function AssignDialog({ customers, preCustomerId, doc, onClose, o
     }
 
     const handleUpload = async () => {
+        if (!cat) { setCatError(true); return; }
+        setCatError(false);
         setUploading(true);
         try {
             // Dateiname bereinigen (Umlaute → ae/oe/ue) fuer Storage-Kompatibilitaet
@@ -145,27 +149,44 @@ export default function AssignDialog({ customers, preCustomerId, doc, onClose, o
                         <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Anzeigename *</label>
                         <input value={name} onChange={e => setName(e.target.value)} style={inp} placeholder="Dateiname (ohne Endung)" />
                     </div>
+                    {/* Tags — zuerst, befüllen Kategorie auto */}
+                    <div>
+                        <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Tags</label>
+                        <TagSelectWidget
+                            value={tagIds}
+                            onChange={setTagIds}
+                            allTags={allTags}
+                            s={s} border={border} accent={accent}
+                            onCategoryChange={newCat => {
+                                setCategory(newCat);
+                                setCatError(false);
+                                setTimeout(() => { yearRef.current?.select(); yearRef.current?.focus(); }, 80);
+                            }}
+                        />
+                    </div>
                     {/* Kategorie + Jahr */}
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                         <div>
-                            <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Kategorie *</label>
+                            <label style={{ fontSize: 12, color: catError ? "#ef4444" : s.textMuted, display: "block", marginBottom: 3 }}>
+                                Kategorie * {catError && <span style={{ fontSize: 11 }}>– Pflichtfeld</span>}
+                            </label>
                             <select
-                                value={cat} // Use state 'cat', not prop 'category'
-                                onChange={e => setCategory(e.target.value)}
-                                style={{ ...inp, cursor: "pointer" }}
+                                value={cat}
+                                onChange={e => { setCategory(e.target.value); setCatError(false); }}
+                                style={{ ...inp, cursor: "pointer", borderColor: catError ? "#ef4444" : (s.inputBorder || border) }}
                             >
+                                <option value="">-- wählen --</option>
                                 {CATEGORIES.map(c => (
-                                    <option key={c.key} value={c.key}>
-                                        {c.icon} {c.label}
-                                    </option>
+                                    <option key={c.key} value={c.key}>{c.icon} {c.label}</option>
                                 ))}
                             </select>
                         </div>
                         <div>
                             <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Jahr *</label>
                             <input
+                                ref={yearRef}
                                 type="number"
-                                value={ye} // Use state 'ye', not prop 'year'
+                                value={ye}
                                 min="2000"
                                 max="2099"
                                 onChange={e => setYear(e.target.value)}
@@ -173,11 +194,6 @@ export default function AssignDialog({ customers, preCustomerId, doc, onClose, o
                                 placeholder="z.B. 2025"
                             />
                         </div>
-                    </div>
-                    {/* Tags */}
-                    <div>
-                        <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Tags</label>
-                        <TagSelectWidget value={tagIds} onChange={setTagIds} allTags={allTags} s={s} border={border} accent={accent} />
                     </div>
                     {/* Notiz */}
                     <div>
