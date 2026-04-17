@@ -387,7 +387,7 @@ function filterTagsByCategory(allTags, category) {
 }
 
 // ─── Upload-Dialog ─────────────────────────────────────────────────────────
-function UploadDialog({ customers, preCustomer, allTags, onCancel, onUpload, s, border, accent }) {
+function UploadDialog({ customers, preCustomer, preFile, allTags, onCancel, onUpload, s, border, accent }) {
   const [file,       setFile]       = useState(null);
   const [custId,     setCustId]     = useState(preCustomer?.id || "");
   const [name,       setName]       = useState("");
@@ -398,6 +398,12 @@ function UploadDialog({ customers, preCustomer, allTags, onCancel, onUpload, s, 
   const [uploading,  setUploading]  = useState(false);
   const [errors,     setErrors]     = useState({});
   const fileRef = useRef();
+
+  // Per Drag & Drop übergebene Datei direkt einlesen
+  useEffect(() => {
+    if (preFile) pickFile(preFile);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Tags auf die gewählte Kategorie einschränken
   const filteredTags = useMemo(() => filterTagsByCategory(allTags, category), [allTags, category]);
@@ -700,6 +706,8 @@ export default function Dokumente() {
   }, [ftSearch, selCustomerId]);
 
   const [showUpload,    setShowUpload]    = useState(false);
+  const [dropFile,      setDropFile]      = useState(null);
+  const [dragOver,      setDragOver]      = useState(false);
   const [editDoc,        setEditDoc]        = useState(null);
   const [checkinDoc,     setCheckinDoc]     = useState(null);  // wird nicht mehr benoetigt, bleibt fuer Compat
   const [signedUrls,    setSignedUrls]    = useState({});
@@ -1314,7 +1322,27 @@ export default function Dokumente() {
         </div>
 
         {/* ═══ RECHTS: Dateiliste ════════════════════════════════════════ */}
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden" }}>
+        <div
+          style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden", position: "relative" }}
+          onDragOver={e => { e.preventDefault(); e.stopPropagation(); setDragOver(true); }}
+          onDragEnter={e => { e.preventDefault(); e.stopPropagation(); setDragOver(true); }}
+          onDragLeave={e => { e.preventDefault(); e.stopPropagation(); if (!e.currentTarget.contains(e.relatedTarget)) setDragOver(false); }}
+          onDrop={e => {
+            e.preventDefault(); e.stopPropagation(); setDragOver(false);
+            const f = e.dataTransfer.files?.[0];
+            if (f) { setDropFile(f); setShowUpload(true); }
+          }}
+        >
+          {/* Drop-Overlay */}
+          {dragOver && (
+            <div style={{ position: "absolute", inset: 0, zIndex: 50, background: accent + "18",
+              border: "3px dashed " + accent, borderRadius: 10, pointerEvents: "none",
+              display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10 }}>
+              <Upload size={40} style={{ color: accent, opacity: 0.8 }} />
+              <span style={{ fontSize: 16, fontWeight: 700, color: accent }}>Datei hier ablegen</span>
+              {selCustomer && <span style={{ fontSize: 12, color: accent, opacity: 0.7 }}>für {selCustomer.company_name}</span>}
+            </div>
+          )}
           {/* Topbar */}
           <div style={{ padding: "8px 16px", borderBottom: "1px solid " + border, display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 13, fontWeight: 600, color: accent, overflow: "hidden", minWidth: 0 }}>
@@ -1468,9 +1496,9 @@ export default function Dokumente() {
 
       {/* Dialoge */}
       {showUpload && (
-        <UploadDialog customers={customers} preCustomer={selCustomer} allTags={allTags}
-          onCancel={() => setShowUpload(false)}
-          onUpload={() => { queryClient.invalidateQueries({ queryKey: ["dokumente-all"] }); setShowUpload(false); }}
+        <UploadDialog customers={customers} preCustomer={selCustomer} preFile={dropFile} allTags={allTags}
+          onCancel={() => { setShowUpload(false); setDropFile(null); }}
+          onUpload={() => { queryClient.invalidateQueries({ queryKey: ["dokumente-all"] }); setShowUpload(false); setDropFile(null); }}
           s={s} border={border} accent={accent} />
       )}
       {editDoc && (
