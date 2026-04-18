@@ -709,6 +709,24 @@ export default function Dokumente() {
   const [showUpload,    setShowUpload]    = useState(false);
   const [dropFile,      setDropFile]      = useState(null);
   const [dragOver,      setDragOver]      = useState(false);
+
+  // Excel Add-in Integration: Tauri-Desktop injiziert window.__SMARTIS_EXCEL_UPLOAD__
+  useEffect(() => {
+    const check = setInterval(() => {
+      const pending = window.__SMARTIS_EXCEL_UPLOAD__;
+      if (!pending) return;
+      window.__SMARTIS_EXCEL_UPLOAD__ = null;
+      try {
+        const binary = atob(pending.data);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        const file = new File([bytes], pending.filename);
+        setDropFile(file);
+        setShowUpload(true);
+      } catch (e) { console.error("Excel-Upload Fehler:", e); }
+    }, 500);
+    return () => clearInterval(check);
+  }, []);
   const [sortBy,        setSortBy]        = useState("-created_at"); // "-created_at" | "name" | "year"
   const [viewMode,      setViewMode]      = useState("normal");      // "normal" | "abschluss"
   const [openFolders,   setOpenFolders]   = useState(new Set());
