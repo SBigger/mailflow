@@ -25,6 +25,7 @@ import Aktienbuch from './pages/Aktienbuch';
 import Unterschriften from './pages/Unterschriften';
 import Abschlussdokumentation from './pages/Abschlussdokumentation';
 import Whiteboard from './pages/Whiteboard';
+import Auswertungen from './pages/Auswertungen';
 import Login from './pages/Login';
 import ResetPassword from './pages/ResetPassword';
 import Layout from './Layout';
@@ -82,6 +83,7 @@ function AuthenticatedApp() {
         <Route path="/Unterschriften" element={<Unterschriften />} />
         <Route path="/Abschlussdokumentation" element={<Abschlussdokumentation />} />
         <Route path="/Whiteboard" element={<Whiteboard />} />
+        <Route path="/Auswertungen" element={<Auswertungen />} />
         <Route path="*" element={<Navigate to="/Dashboard" replace />} />
       </Routes>
     </Layout>
