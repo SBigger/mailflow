@@ -20,11 +20,28 @@
         "resizable": true,
         "fullscreen": false,
         "center": true,
-        "dragDropEnabled": false
+        "dragDropEnabled": false,
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0",
+        "additionalBrowserArgs": "--disable-features=BlockThirdPartyCookies,SameSiteByDefaultCookies,CookiesWithoutSameSiteMustBeSecure --enable-features=SharedArrayBuffer"
       }
     ],
     "security": {
       "csp": null
+    },
+    "withGlobalTauri": true
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://uawgpxcihixqxqxxbjak.supabase.co/storage/v1/object/public/smartis-updates/latest.json"
+      ],
+      "dialog": false,
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDgwRTFCRkEwODY5MzNBRTQKUldUa09wT0dvTC9oZ05iS3VvTk1NWVpiOE50alZKRmhRSGRZUHRIb1BidmZPdkN2SnhjMjhLNG8K"
+    },
+    "deep-link": {
+      "desktop": {
+        "schemes": ["smartis"]
+      }
     }
   },
   "bundle": {

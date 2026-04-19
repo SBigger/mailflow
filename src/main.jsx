@@ -4,6 +4,33 @@ import App from '@/App.jsx'
 import '@/index.css'
 import { registerSW } from 'virtual:pwa-register'
 
+// ── OAuth-Popup-Interceptor für Tauri-Client ─────────────────────────────────
+// Im Tauri WebView2 werden window.open() Popups normalerweise im externen Browser
+// geöffnet → Cookies landen dort, nicht im WebView → Power-BI/M365-Login schlägt fehl.
+// Hier fangen wir Microsoft-Login-Popups ab und leiten sie an einen Rust-Command,
+// der ein internes Tauri-Fenster öffnet (Cookies werden geshared).
+// Browser bleibt unberührt (window.__TAURI__ ist dort undefined).
+// Berührt NICHT die Deep-Link-Handler (smartis://).
+if (typeof window !== 'undefined' && window.__TAURI__) {
+  const origOpen = window.open.bind(window)
+  const oauthHosts = /login\.microsoftonline\.com|login\.live\.com|login\.microsoft\.com|login\.windows\.net/
+  window.open = function (url, name, features) {
+    try {
+      if (typeof url === 'string' && oauthHosts.test(url)) {
+        window.__TAURI__.core
+          .invoke('open_oauth_window', { url })
+          .catch((e) => console.error('[Smartis] OAuth-Popup fehlgeschlagen:', e))
+        // Dummy-Window für Libraries die window.open().closed prüfen (z.B. MSAL)
+        return { closed: false, close() {}, focus() {}, postMessage() {} }
+      }
+    } catch (e) {
+      console.warn('[Smartis] OAuth-Intercept Fehler:', e)
+    }
+    return origOpen(url, name, features)
+  }
+  console.info('[Smartis] OAuth-Popup-Interceptor aktiv')
+}
+
 // Service Worker: automatisches Update beim App-Start
 // Wenn eine neue Version deployed wurde, wird sie sofort aktiviert
 registerSW({
