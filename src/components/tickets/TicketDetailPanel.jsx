@@ -103,6 +103,11 @@ export default function TicketDetailPanel({ ticket, onClose, currentUser, users 
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData?.session?.access_token;
+      if (!token) {
+        toast.error("KI: Nicht eingeloggt – bitte neu anmelden");
+        return;
+      }
+
       const res = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/suggest-ticket-reply`,
         {
@@ -115,15 +120,37 @@ export default function TicketDetailPanel({ ticket, onClose, currentUser, users 
           body: JSON.stringify({ ticket_id: ticket.id }),
         }
       );
-      const data = await res.json();
+
+      // Erst als Text lesen, damit wir auch bei Non-JSON-Fehlern was Sinnvolles zeigen
+      const responseText = await res.text();
+      console.log("[KI-Antwort] HTTP", res.status, "Response:", responseText.substring(0, 500));
+
+      let data = null;
+      try {
+        data = JSON.parse(responseText);
+      } catch {
+        toast.error(`KI: HTTP ${res.status} – Antwort kein JSON: ${responseText.substring(0, 150)}`);
+        return;
+      }
+
+      if (!res.ok) {
+        toast.error(
+          `KI: HTTP ${res.status} – ${data?.error || data?.message || data?.msg || responseText.substring(0, 150)}`
+        );
+        return;
+      }
+
       if (data?.suggestion) {
         setReplyText(data.suggestion);
         toast.success("KI-Vorschlag wurde eingefügt");
+      } else if (data?.error) {
+        toast.error("KI: " + data.error);
       } else {
-        toast.error("KI: " + (data?.error || "Kein Vorschlag erhalten"));
+        // Response war 200 OK, aber kein suggestion und kein error → Diagnose-Info
+        toast.error(`KI: Unerwartete Antwort – ${JSON.stringify(data).substring(0, 200)}`);
       }
     } catch (e) {
-      console.error(e);
+      console.error("[KI-Antwort] Exception:", e);
       toast.error("Netzwerkfehler: " + e.message);
     } finally {
       setAiLoading(false);

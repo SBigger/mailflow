@@ -126,37 +126,60 @@ Wichtige Richtlinien:
       return ok({ suggestion: null, error: "ANTHROPIC_API_KEY nicht konfiguriert" });
     }
 
-    // Anthropic Claude API aufrufen
-    const anthropicRes = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": anthropicKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 1024,
-        system: systemPrompt,
-        messages: userMessages,
-      }),
+    // Model mit Fallback-Kette: zuerst Haiku 4.5 (Alias), bei Fehler → Sonnet 4.5 (Alias) → 3.5 Haiku
+    const modelCandidates = [
+      "claude-haiku-4-5",
+      "claude-sonnet-4-5",
+      "claude-3-5-haiku-latest",
+    ];
+
+    let suggestion = "";
+    let lastError = "";
+
+    for (const model of modelCandidates) {
+      console.log(`[suggest-ticket-reply] Versuche Model: ${model}`);
+      try {
+        const anthropicRes = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": anthropicKey,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model,
+            max_tokens: 1024,
+            system: systemPrompt,
+            messages: userMessages,
+          }),
+        });
+
+        const responseText = await anthropicRes.text();
+        if (!anthropicRes.ok) {
+          lastError = `HTTP ${anthropicRes.status} (${model}): ${responseText.substring(0, 200)}`;
+          console.error(`[suggest-ticket-reply] Anthropic Fehler mit ${model}:`, responseText.substring(0, 300));
+          // 404/400 = Model-Problem → nächster Kandidat. 401/429/500 → abbrechen.
+          if (anthropicRes.status === 404 || anthropicRes.status === 400) continue;
+          return ok({ suggestion: null, error: `Claude API Fehler: ${lastError}` });
+        }
+
+        const anthropicData = JSON.parse(responseText);
+        suggestion = anthropicData.content?.[0]?.text || "";
+        if (suggestion) {
+          console.log(`[suggest-ticket-reply] OK mit ${model} – ${suggestion.length} Zeichen`);
+          return ok({ suggestion, model_used: model });
+        }
+        lastError = `Leere Antwort von ${model}`;
+      } catch (e: any) {
+        lastError = `Exception (${model}): ${e?.message || String(e)}`;
+        console.error(`[suggest-ticket-reply] Exception mit ${model}:`, e);
+      }
+    }
+
+    return ok({
+      suggestion: null,
+      error: `Kein Modell funktionierte. Letzter Fehler: ${lastError}`,
     });
-
-    const responseText = await anthropicRes.text();
-    if (!anthropicRes.ok) {
-      console.error("Anthropic API error:", responseText.substring(0, 500));
-      return ok({ suggestion: null, error: "Claude API Fehler: HTTP " + anthropicRes.status + " – " + responseText.substring(0, 200) });
-    }
-
-    const anthropicData = JSON.parse(responseText);
-    const suggestion = anthropicData.content?.[0]?.text || "";
-
-    if (!suggestion) {
-      return ok({ suggestion: null, error: "Keine Antwort von Claude erhalten" });
-    }
-
-    console.log("Claude OK – " + suggestion.length + " Zeichen");
-    return ok({ suggestion });
 
   } catch (error: any) {
     console.error("Unerwarteter Fehler in suggest-ticket-reply:", error);
