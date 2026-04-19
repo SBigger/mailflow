@@ -1,9 +1,10 @@
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as SonnerToaster } from "sonner";
 import { QueryClientProvider, QueryClient } from '@tanstack/react-query';
-import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Route, Routes, Navigate, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import { Loader2 } from 'lucide-react';
+import { useEffect } from 'react';
 
 // Pages
 import Dashboard from './pages/Dashboard';
@@ -42,6 +43,18 @@ const queryClient = new QueryClient({
 
 function AuthenticatedApp() {
   const { user, loading, requiresMfa} = useAuth();
+  const navigate = useNavigate();
+
+  // Globales Polling: Excel Add-in → Tauri injiziert window.__SMARTIS_EXCEL_UPLOAD__
+  // Navigiert zur Dokumente-Seite, damit der dortige Upload-Dialog die Datei aufgreift.
+  useEffect(() => {
+    const check = setInterval(() => {
+      if (window.__SMARTIS_EXCEL_UPLOAD__ && user) {
+        navigate('/Dokumente');
+      }
+    }, 300);
+    return () => clearInterval(check);
+  }, [user, navigate]);
 
   if (loading) {
     return (
