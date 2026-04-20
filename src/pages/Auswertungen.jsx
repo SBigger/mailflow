@@ -119,15 +119,10 @@ export default function Auswertungen() {
     }
   };
 
-  // Öffnet app.powerbi.com in einem Tauri-Popup – nach Login teilt WebView2
-  // die Cookies mit dem Haupt-Fenster, damit der Report ohne Neuanmeldung lädt.
+  // Öffnet office.com als natives WebView2-Popup (window.open, kein Tauri-Command).
+  // Nach dem Microsoft-Login teilt WebView2 die Cookies mit dem Haupt-Fenster.
   const openPowerBiLogin = () => {
-    if (isTauri) {
-      window.__TAURI__.core.invoke("open_oauth_window", { url: "https://www.office.com" })
-        .catch(() => window.open("https://www.office.com", "_blank"));
-    } else {
-      window.open("https://www.office.com", "_blank");
-    }
+    window.open("https://www.office.com", "pbi-login", "width=640,height=800");
   };
 
   useEffect(() => {
