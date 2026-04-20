@@ -123,10 +123,10 @@ export default function Auswertungen() {
   // die Cookies mit dem Haupt-Fenster, damit der Report ohne Neuanmeldung lädt.
   const openPowerBiLogin = () => {
     if (isTauri) {
-      window.__TAURI__.core.invoke("open_oauth_window", { url: "https://app.powerbi.com" })
-        .catch(() => window.open("https://app.powerbi.com", "_blank"));
+      window.__TAURI__.core.invoke("open_oauth_window", { url: "https://www.office.com" })
+        .catch(() => window.open("https://www.office.com", "_blank"));
     } else {
-      window.open("https://app.powerbi.com", "_blank");
+      window.open("https://www.office.com", "_blank");
     }
   };
 
