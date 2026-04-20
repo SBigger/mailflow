@@ -11,6 +11,7 @@
     "supabase debug": "supabase start && supabase functions serve --env-file .env.local --inspect-mode brk"
   },
   "dependencies": {
+    "@azure/msal-browser": "^5.7.0",
     "@hello-pangea/dnd": "^17.0.0",
     "@hookform/resolvers": "^4.1.2",
     "@radix-ui/react-accordion": "^1.2.3",
@@ -46,6 +47,7 @@
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^5.5.207",
     "perfect-freehand": "^1.2.3",
+    "powerbi-client": "^2.23.10",
     "qrcode.react": "^4.2.0",
     "react": "^18.2.0",
     "react-day-picker": "^8.10.1",
