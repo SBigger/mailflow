@@ -9,6 +9,7 @@ import {
   ExternalLink,
   Info,
   X,
+  LogIn,
 } from "lucide-react";
 import { useTheme } from "@/components/useTheme";
 
@@ -118,6 +119,17 @@ export default function Auswertungen() {
     }
   };
 
+  // Öffnet app.powerbi.com in einem Tauri-Popup – nach Login teilt WebView2
+  // die Cookies mit dem Haupt-Fenster, damit der Report ohne Neuanmeldung lädt.
+  const openPowerBiLogin = () => {
+    if (isTauri) {
+      window.__TAURI__.core.invoke("open_oauth_window", { url: "https://app.powerbi.com" })
+        .catch(() => window.open("https://app.powerbi.com", "_blank"));
+    } else {
+      window.open("https://app.powerbi.com", "_blank");
+    }
+  };
+
   useEffect(() => {
     localStorage.setItem(STATE_KEY, JSON.stringify({ section: currentSection, page: currentPage }));
   }, [currentSection, currentPage]);
@@ -205,6 +217,17 @@ export default function Auswertungen() {
         >
           <RefreshCw className="w-4 h-4" />
         </button>
+        {isTauri && (
+          <button
+            onClick={openPowerBiLogin}
+            title="Microsoft / Power BI anmelden (einmalig)"
+            className="w-9 h-9 flex items-center justify-center rounded-lg transition-colors"
+            style={{ color: muted, background: "transparent", border: "none", cursor: "pointer" }}
+            {...iconBtnHandlers}
+          >
+            <LogIn className="w-4 h-4" />
+          </button>
+        )}
         <button
           onClick={() => openInBrowser(directUrl)}
           title="In Power BI öffnen"
