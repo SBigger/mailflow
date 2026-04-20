@@ -1,7 +1,7 @@
 import React, { useContext } from "react";
 import { useNavigate } from "react-router-dom";
 import { ThemeContext } from "@/Layout";
-import { BookOpen, Car, FileText, UserCog, ChevronRight, Wrench, PenLine, Presentation } from "lucide-react";
+import { BookOpen, Car, FileText, UserCog, ChevronRight, Wrench, PenLine, Presentation, FileSpreadsheet } from "lucide-react";
 
 const TOOLS = [
   {
@@ -48,6 +48,15 @@ const TOOLS = [
     color: "#6a5b8a",
     bg: "#eeeaf5",
     route: "/Abschlussdokumentation",
+  },
+  {
+    id: "steuern",
+    title: "Steuererklärungen",
+    description: "Juristische Personen SG / TG / ESTV: AcroForm-Vorlagen, Live-PDF-Vorschau, Speichern pro Kunde & Jahr",
+    icon: FileSpreadsheet,
+    color: "#8a3b5b",
+    bg: "#f5e0ea",
+    route: "/Steuern",
   },
   {
     id: "whiteboard",

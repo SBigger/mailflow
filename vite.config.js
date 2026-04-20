@@ -40,6 +40,28 @@ export default defineConfig(({ mode }) => {
       host: '0.0.0.0',
       port: 3000,
       strictPort: true, // Prevents Vite from trying 3001 if 3000 is "busy"
+      proxy: {
+        // Für /Steuern: AcroForm-Formulare werden proxied geladen, damit pdf-lib/pdfjs
+        // sie CORS-frei lesen kann (ehemals steuerapp).
+        '/pdf-sg': {
+          target: 'https://www.sg.ch',
+          changeOrigin: true,
+          rewrite: p => p.replace(/^\/pdf-sg/, ''),
+        },
+        '/pdf-tg': {
+          target: 'https://steuerverwaltung.tg.ch',
+          changeOrigin: true,
+          rewrite: p => p.replace(/^\/pdf-tg/, ''),
+        },
+        '/pdf-estv': {
+          target: 'https://www.estv.admin.ch',
+          changeOrigin: true,
+          rewrite: p => p.replace(/^\/pdf-estv/, ''),
+        },
+      },
+    },
+    optimizeDeps: {
+      exclude: ['pdfjs-dist'],
     },
   };
 });
