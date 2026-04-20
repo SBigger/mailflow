@@ -260,67 +260,21 @@ export default function Auswertungen() {
         </div>
       )}
 
-      {/* ── Report-Bereich ──────────────────────────────────────────── */}
+      {/* ── Report-iFrame ───────────────────────────────────────────── */}
       <div className="flex-1 min-h-0 p-2.5">
-        {isTauri ? (
-          // Tauri-Desktop-Client: Power BI kann im WebView2 wegen Tracking-Prevention
-          // nicht eingebettet werden → Report öffnet sich im externen Browser.
-          <div
-            className="w-full h-full rounded-xl flex flex-col items-center justify-center gap-5 p-8"
-            style={{
-              border: `1px solid ${cardBorder}`,
-              boxShadow: "0 1px 4px rgba(26,58,26,0.04)",
-              backgroundColor: "white",
-            }}
-          >
-            <div
-              className="w-16 h-16 rounded-2xl flex items-center justify-center"
-              style={{ backgroundColor: titleIconBg, color: accentDark }}
-            >
-              <BarChart3 className="w-8 h-8" />
-            </div>
-            <div className="text-center max-w-md">
-              <h2 className="text-xl font-semibold m-0 mb-2" style={{ color: heading }}>
-                {section.label} – {page.name}
-              </h2>
-              <p className="text-sm mb-5" style={{ color: muted, lineHeight: 1.6 }}>
-                Power BI funktioniert im Smartis-Desktop-Client nicht direkt eingebettet
-                (Microsoft-Login-Einschränkung im WebView). Der Report öffnet sich deshalb
-                im normalen Browser – dort bist du bereits authentifiziert.
-              </p>
-              <button
-                onClick={() => openInBrowser(directUrl)}
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-all"
-                style={{
-                  backgroundColor: accent,
-                  color: "white",
-                  border: "none",
-                  cursor: "pointer",
-                  boxShadow: "0 2px 6px rgba(26,58,26,0.18)",
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = accentDark; }}
-                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = accent; }}
-              >
-                <ExternalLink className="w-4 h-4" />
-                Report im Browser öffnen
-              </button>
-            </div>
-          </div>
-        ) : (
-          <iframe
-            key={`${page.pageName}-${reloadKey}`}
-            src={embedUrl}
-            title={`${section.label} – ${page.name}`}
-            allowFullScreen
-            referrerPolicy="strict-origin-when-cross-origin"
-            className="w-full h-full rounded-xl"
-            style={{
-              border: `1px solid ${cardBorder}`,
-              boxShadow: "0 1px 4px rgba(26,58,26,0.04)",
-              backgroundColor: "white",
-            }}
-          />
-        )}
+        <iframe
+          key={`${page.pageName}-${reloadKey}`}
+          src={embedUrl}
+          title={`${section.label} – ${page.name}`}
+          allowFullScreen
+          referrerPolicy="strict-origin-when-cross-origin"
+          className="w-full h-full rounded-xl"
+          style={{
+            border: `1px solid ${cardBorder}`,
+            boxShadow: "0 1px 4px rgba(26,58,26,0.04)",
+            backgroundColor: "white",
+          }}
+        />
       </div>
 
       {/* ── Info-Modal ──────────────────────────────────────────────── */}
