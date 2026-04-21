@@ -16,6 +16,40 @@ const SNOOZE_OPTIONS = [
 // localStorage-Schlüssel
 const lsKey = (taskId, type) => `task_reminder_${type}_${taskId}`;
 
+// Native Desktop-Notification (Electron) oder Web-Notification (Browser PWA).
+// Deduplikation pro Task via localStorage, damit bei jedem 60s-Poll nicht
+// erneut getoastet wird.
+function fireNativeNotification(task) {
+  const key = lsKey(task.id, "notified");
+  if (localStorage.getItem(key)) return;
+  const title = "Erinnerung: " + (task.title || "Aufgabe fällig");
+  const body = task.description
+    ? String(task.description).slice(0, 140)
+    : "Jetzt fällig";
+  try {
+    if (typeof window !== "undefined" && window.smartis && window.smartis.notify) {
+      window.smartis.notify(title, body);
+      localStorage.setItem(key, "1");
+      return;
+    }
+    if (typeof Notification !== "undefined") {
+      if (Notification.permission === "granted") {
+        new Notification(title, { body });
+        localStorage.setItem(key, "1");
+      } else if (Notification.permission !== "denied") {
+        Notification.requestPermission().then((p) => {
+          if (p === "granted") {
+            new Notification(title, { body });
+            localStorage.setItem(key, "1");
+          }
+        });
+      }
+    }
+  } catch (e) {
+    console.warn("Notification fehlgeschlagen:", e);
+  }
+}
+
 function isDismissed(taskId) {
   const v = localStorage.getItem(lsKey(taskId, "dismissed"));
   return !!v;
@@ -34,6 +68,9 @@ function dismiss(taskId) {
 function snooze(taskId, minutes) {
   const until = new Date(Date.now() + minutes * 60 * 1000);
   localStorage.setItem(lsKey(taskId, "snoozed"), until.toISOString());
+  // Notified-Flag zurücksetzen, damit nach Ablauf der Snooze-Zeit
+  // eine neue Desktop-Notification getriggert wird.
+  localStorage.removeItem(lsKey(taskId, "notified"));
 }
 
 // Reminder wird angezeigt wenn:
@@ -87,6 +124,7 @@ export default function TaskReminderPopup({ currentUser }) {
       if (error || !tasks) return;
 
       const visible = tasks.filter(shouldShowReminder);
+      visible.forEach(fireNativeNotification);
       setReminders(visible);
     } catch (e) {
       console.error("TaskReminder check error:", e);
