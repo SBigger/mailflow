@@ -113,6 +113,19 @@ export default function Auswertungen() {
     }
   };
 
+  // Power BI in eigenem Tauri-Fenster öffnen (top-level Frame, kein Iframe-Crash).
+  const openInTauriWindow = (url, title) => {
+    window.__TAURI__.core.invoke("open_embedded_window", {
+      url,
+      title,
+      width: 1400,
+      height: 900,
+    }).catch((e) => {
+      console.error("[Smartis] open_embedded_window fehlgeschlagen, Fallback Browser:", e);
+      window.__TAURI__.core.invoke("open_external_url", { url });
+    });
+  };
+
   useEffect(() => {
     localStorage.setItem(STATE_KEY, JSON.stringify({ section: currentSection, page: currentPage }));
   }, [currentSection, currentPage]);
@@ -226,12 +239,12 @@ export default function Auswertungen() {
                 {section.label} – {page.name}
               </h2>
               <p className="text-sm max-w-md mx-auto" style={{ color: muted, lineHeight: 1.6 }}>
-                Power-BI-Reports lassen sich in der Desktop-App nicht direkt einbetten.
-                Der Report öffnet im Browser – dort bist du mit deinem Microsoft-365-Konto angemeldet.
+                Klicke hier, um den Report in einem eigenen Smartis-Fenster zu öffnen.
+                Du bleibst mit deinem Microsoft-365-Konto angemeldet.
               </p>
             </div>
             <button
-              onClick={() => openInBrowser(directUrl)}
+              onClick={() => openInTauriWindow(embedUrl, `Smartis – ${section.label} · ${page.name}`)}
               className="inline-flex items-center gap-2 px-6 py-3 rounded-lg font-medium text-sm transition-all"
               style={{
                 backgroundColor: accent,
@@ -243,8 +256,8 @@ export default function Auswertungen() {
               onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = accentDark; }}
               onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = accent; }}
             >
-              <ExternalLink className="w-4 h-4" />
-              Report im Browser öffnen
+              <BarChart3 className="w-4 h-4" />
+              Report in neuem Fenster öffnen
             </button>
           </div>
         ) : (
