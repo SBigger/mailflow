@@ -100,10 +100,10 @@ export default function Auswertungen() {
   const [currentPage, setCurrentPage]       = useState(initial.page);
   const [infoOpen, setInfoOpen]             = useState(false);
   const [reloadKey, setReloadKey]           = useState(0);
-  // In Tauri: iframe erst rendern wenn Tracking-Prevention aus ist.
-  // Browser: sofort true (kein Problem).
+  // In Tauri: iframe nicht rendern (Tauri's Plugin-Init-Scripts crashen im
+  // cross-origin Power-BI-iframe auf window.__TAURI_INTERNALS__.plugins).
+  // Stattdessen Fallback-UI mit Browser-Button.
   const isTauri = typeof window !== "undefined" && !!window.__TAURI__;
-  const [tpReady, setTpReady] = useState(!isTauri);
 
   const openInBrowser = (url) => {
     if (isTauri) {
@@ -112,15 +112,6 @@ export default function Auswertungen() {
       window.open(url, "_blank");
     }
   };
-
-  // Power BI crasht im WebView2 mit "Cannot read properties of undefined (reading 'plugins')"
-  // wenn Tracking Prevention auf Balanced steht. Rust-Command setzt auf NONE.
-  useEffect(() => {
-    if (!isTauri) return;
-    window.__TAURI__.core.invoke("disable_tracking_prevention")
-      .then(msg => { console.info("[PBI-TP]", msg); setTpReady(true); })
-      .catch(err => { console.error("[PBI-TP] fehlgeschlagen:", err); setTpReady(true); });
-  }, [isTauri]);
 
   useEffect(() => {
     localStorage.setItem(STATE_KEY, JSON.stringify({ section: currentSection, page: currentPage }));
@@ -221,9 +212,42 @@ export default function Auswertungen() {
         </div>
       )}
 
-      {/* ── iFrame ──────────────────────────────────────────────────────── */}
+      {/* ── iFrame (Browser) / Fallback (Tauri) ─────────────────────────── */}
       <div className="flex-1 min-h-0 p-2.5">
-        {tpReady ? (
+        {isTauri ? (
+          <div className="w-full h-full rounded-xl flex flex-col items-center justify-center gap-5 text-center px-8"
+            style={{ border: `1px solid ${cardBorder}`, backgroundColor: "white" }}>
+            <div className="w-16 h-16 flex items-center justify-center rounded-2xl"
+              style={{ backgroundColor: titleIconBg, color: accentDark }}>
+              <BarChart3 className="w-8 h-8" />
+            </div>
+            <div>
+              <h2 className="text-xl font-semibold m-0 mb-2" style={{ color: heading }}>
+                {section.label} – {page.name}
+              </h2>
+              <p className="text-sm max-w-md mx-auto" style={{ color: muted, lineHeight: 1.6 }}>
+                Power-BI-Reports lassen sich in der Desktop-App nicht direkt einbetten.
+                Der Report öffnet im Browser – dort bist du mit deinem Microsoft-365-Konto angemeldet.
+              </p>
+            </div>
+            <button
+              onClick={() => openInBrowser(directUrl)}
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-lg font-medium text-sm transition-all"
+              style={{
+                backgroundColor: accent,
+                color: "white",
+                border: "none",
+                cursor: "pointer",
+                boxShadow: "0 2px 8px rgba(26,58,26,0.15)",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = accentDark; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = accent; }}
+            >
+              <ExternalLink className="w-4 h-4" />
+              Report im Browser öffnen
+            </button>
+          </div>
+        ) : (
           <iframe
             key={`${page.pageName}-${reloadKey}`}
             src={embedUrl}
@@ -233,11 +257,6 @@ export default function Auswertungen() {
             className="w-full h-full rounded-xl"
             style={{ border: `1px solid ${cardBorder}`, boxShadow: "0 1px 4px rgba(26,58,26,0.04)", backgroundColor: "white" }}
           />
-        ) : (
-          <div className="w-full h-full rounded-xl flex items-center justify-center"
-            style={{ border: `1px solid ${cardBorder}`, backgroundColor: "white", color: muted, fontSize: 13 }}>
-            WebView wird vorbereitet …
-          </div>
         )}
       </div>
 
