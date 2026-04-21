@@ -1,6 +1,6 @@
 [package]
 name = "smartis"
-version = "1.0.11"
+version = "1.0.12"
 description = "Smartis – Kanzleisoftware von Artis Treuhand GmbH"
 authors = ["Artis Treuhand GmbH"]
 license = "proprietary"

@@ -100,9 +100,6 @@ export default function Auswertungen() {
   const [currentPage, setCurrentPage]       = useState(initial.page);
   const [infoOpen, setInfoOpen]             = useState(false);
   const [reloadKey, setReloadKey]           = useState(0);
-  // In Tauri: iframe nicht rendern (Tauri's Plugin-Init-Scripts crashen im
-  // cross-origin Power-BI-iframe auf window.__TAURI_INTERNALS__.plugins).
-  // Stattdessen Fallback-UI mit Browser-Button.
   const isTauri = typeof window !== "undefined" && !!window.__TAURI__;
 
   const openInBrowser = (url) => {
@@ -111,19 +108,6 @@ export default function Auswertungen() {
     } else {
       window.open(url, "_blank");
     }
-  };
-
-  // Power BI in eigenem Tauri-Fenster öffnen (top-level Frame, kein Iframe-Crash).
-  const openInTauriWindow = (url, title) => {
-    window.__TAURI__.core.invoke("open_embedded_window", {
-      url,
-      title,
-      width: 1400,
-      height: 900,
-    }).catch((e) => {
-      console.error("[Smartis] open_embedded_window fehlgeschlagen, Fallback Browser:", e);
-      window.__TAURI__.core.invoke("open_external_url", { url });
-    });
   };
 
   useEffect(() => {
@@ -225,52 +209,17 @@ export default function Auswertungen() {
         </div>
       )}
 
-      {/* ── iFrame (Browser) / Fallback (Tauri) ─────────────────────────── */}
+      {/* ── iFrame ──────────────────────────────────────────────────────── */}
       <div className="flex-1 min-h-0 p-2.5">
-        {isTauri ? (
-          <div className="w-full h-full rounded-xl flex flex-col items-center justify-center gap-5 text-center px-8"
-            style={{ border: `1px solid ${cardBorder}`, backgroundColor: "white" }}>
-            <div className="w-16 h-16 flex items-center justify-center rounded-2xl"
-              style={{ backgroundColor: titleIconBg, color: accentDark }}>
-              <BarChart3 className="w-8 h-8" />
-            </div>
-            <div>
-              <h2 className="text-xl font-semibold m-0 mb-2" style={{ color: heading }}>
-                {section.label} – {page.name}
-              </h2>
-              <p className="text-sm max-w-md mx-auto" style={{ color: muted, lineHeight: 1.6 }}>
-                Klicke hier, um den Report in einem eigenen Smartis-Fenster zu öffnen.
-                Du bleibst mit deinem Microsoft-365-Konto angemeldet.
-              </p>
-            </div>
-            <button
-              onClick={() => openInTauriWindow(directUrl, `Smartis – ${section.label} · ${page.name}`)}
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-lg font-medium text-sm transition-all"
-              style={{
-                backgroundColor: accent,
-                color: "white",
-                border: "none",
-                cursor: "pointer",
-                boxShadow: "0 2px 8px rgba(26,58,26,0.15)",
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = accentDark; }}
-              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = accent; }}
-            >
-              <BarChart3 className="w-4 h-4" />
-              Report in neuem Fenster öffnen
-            </button>
-          </div>
-        ) : (
-          <iframe
-            key={`${page.pageName}-${reloadKey}`}
-            src={embedUrl}
-            title={`${section.label} – ${page.name}`}
-            allowFullScreen
-            referrerPolicy="strict-origin-when-cross-origin"
-            className="w-full h-full rounded-xl"
-            style={{ border: `1px solid ${cardBorder}`, boxShadow: "0 1px 4px rgba(26,58,26,0.04)", backgroundColor: "white" }}
-          />
-        )}
+        <iframe
+          key={`${page.pageName}-${reloadKey}`}
+          src={embedUrl}
+          title={`${section.label} – ${page.name}`}
+          allowFullScreen
+          referrerPolicy="strict-origin-when-cross-origin"
+          className="w-full h-full rounded-xl"
+          style={{ border: `1px solid ${cardBorder}`, boxShadow: "0 1px 4px rgba(26,58,26,0.04)", backgroundColor: "white" }}
+        />
       </div>
 
       {/* ── Info-Modal ──────────────────────────────────────────────────── */}

@@ -381,10 +381,48 @@ async fn excel_upload_server(app: AppHandle) {
 
 // ── App-Start ──────────────────────────────────────────────────────────────────
 
+// Polyfill für cross-origin iframes (z.B. Power BI).
+// Tauri injiziert Plugin-Init-Scripts wie
+// `Object.defineProperty(window.__TAURI_INTERNALS__.plugins, 'path', {...})`
+// in jeden Frame. Im cross-origin iframe ist __TAURI_INTERNALS__ nicht
+// gesetzt → Crash → Blank-Screen. Wir legen das Objekt defensiv vor,
+// damit defineProperty() findet was es braucht.
+const IFRAME_POLYFILL: &str = r#"
+;(function(){
+  try {
+    if (typeof window.__TAURI_INTERNALS__ === 'undefined') {
+      Object.defineProperty(window, '__TAURI_INTERNALS__', {
+        value: { plugins: {}, metadata: { currentWebview: {}, currentWindow: {} } },
+        writable: true, configurable: true,
+      });
+    } else if (!window.__TAURI_INTERNALS__.plugins) {
+      window.__TAURI_INTERNALS__.plugins = {};
+    }
+  } catch(e) {}
+})();
+"#;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
+            use tauri::{WebviewUrl, WebviewWindowBuilder};
+
+            let url = tauri::Url::parse("https://smartis.me").map_err(|e| e.to_string())?;
+            WebviewWindowBuilder::new(app.handle(), "main", WebviewUrl::External(url))
+                .title("Smartis by Artis Treuhand")
+                .inner_size(1400.0, 900.0)
+                .min_inner_size(1024.0, 700.0)
+                .resizable(true)
+                .center()
+                .focused(true)
+                .disable_drag_drop_handler()
+                .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0")
+                .additional_browser_args("--disable-features=TrackingProtection3pcd,TrackingProtectionSettingsPageLaunch,PrivacySandboxSettings4,PartitionedCookies,ThirdPartyStoragePartitioning,BlockThirdPartyCookies,SameSiteByDefaultCookies,CookiesWithoutSameSiteMustBeSecure,msEdgeTrackingProtection,PrivacySandboxAdsAPIs,FedCm --enable-features=SharedArrayBuffer")
+                .initialization_script(IFRAME_POLYFILL)
+                .build()
+                .map_err(|e| e.to_string())?;
+
             let handle = app.handle().clone();
             // Eigener Tokio-Runtime-Thread für den Excel-Upload-Server,
             // da Tauri's setup() Callback keine aktive Tokio-Runtime hat.
