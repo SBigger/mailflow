@@ -248,7 +248,7 @@ export default function AddTaskDialog({open, onClose, onAdd, columns}) {
                     <div>
                         <label className={labelCls} style={{color: labelColor}}>Fällig am *</label>
                         <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)}
-                               className={inputCls} style={inStyle} tabIndex={-1}/>
+                               className={inputCls} style={inStyle} tabIndex={5}/>
                     </div>
 
                     {/* Zugewiesen + Verantwortlich (beide Pflichtfelder) */}
