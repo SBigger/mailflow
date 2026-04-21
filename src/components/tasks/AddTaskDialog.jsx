@@ -190,7 +190,6 @@ export default function AddTaskDialog({open, onClose, onAdd, columns}) {
                             placeholder="Task-Titel"
                             className={inputCls}
                             style={inStyle}
-                            tabIndex={1}
                         />
                     </div>
 
@@ -203,7 +202,6 @@ export default function AddTaskDialog({open, onClose, onAdd, columns}) {
                             placeholder="Details..."
                             className={inputCls}
                             style={{ ...inStyle, minHeight: 80, resize: "vertical" }}
-                            tabIndex={2}
                             rows={3}
                         />
                     </div>
@@ -213,7 +211,7 @@ export default function AddTaskDialog({open, onClose, onAdd, columns}) {
                         <div>
                             <label className={labelCls} style={{ color: labelColor }}>Spalte *</label>
                             <Select value={columnId || ''} onValueChange={setColumnId} className={selectCls} style={inStyle}>
-                                <SelectTrigger tabIndex={3}>
+                                <SelectTrigger>
                                     <SelectValue placeholder="Wählen..."/>
                                 </SelectTrigger>
                                 <SelectContent>
@@ -226,7 +224,7 @@ export default function AddTaskDialog({open, onClose, onAdd, columns}) {
                         <div>
                             <label className={labelCls} style={{ color: labelColor }}>Priorität</label>
                             <Select value={priorityId} onValueChange={setPriorityId} className={selectCls} style={inStyle}>
-                                <SelectTrigger tabIndex={4}>
+                                <SelectTrigger>
                                     <SelectValue placeholder="Wählen..."/>
                                 </SelectTrigger>
                                 <SelectContent>
@@ -248,7 +246,7 @@ export default function AddTaskDialog({open, onClose, onAdd, columns}) {
                     <div>
                         <label className={labelCls} style={{color: labelColor}}>Fällig am *</label>
                         <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)}
-                               className={inputCls} style={inStyle} tabIndex={5}/>
+                               className={inputCls} style={inStyle}/>
                     </div>
 
                     {/* Zugewiesen + Verantwortlich (beide Pflichtfelder) */}
@@ -257,7 +255,7 @@ export default function AddTaskDialog({open, onClose, onAdd, columns}) {
                             <label className={labelCls} style={{ color: labelColor }}>Zugewiesen an *</label>
                             <Select value={assignee || 'none'} className={selectCls} style={inStyle}
                                     onValueChange={(v) => setAssignee(v === 'none' ? '' : v)}>
-                                <SelectTrigger tabIndex={6}>
+                                <SelectTrigger>
                                     <SelectValue placeholder="Benutzer wählen..."/>
                                 </SelectTrigger>
                                 <SelectContent>
@@ -275,7 +273,7 @@ export default function AddTaskDialog({open, onClose, onAdd, columns}) {
                             <Select value={verantwortlich || 'none'}
                                     onValueChange={(v) => setVerantwortlich(v === 'none' ? '' : v)}
                                     className={selectCls} style={inStyle}>
-                                <SelectTrigger tabIndex={7}>
+                                <SelectTrigger>
                                     <SelectValue placeholder="Verantwortliche/r..."/>
                                 </SelectTrigger>
                                 <SelectContent>
@@ -338,7 +336,7 @@ export default function AddTaskDialog({open, onClose, onAdd, columns}) {
                                                 }
                                             }}
                                             placeholder="Kunde suchen..." className={selectCls} style={inStyle}
-                                            tabIndex={8} autoComplete="off" data-lpignore="true"
+                                            autoComplete="off" data-lpignore="true"
                                         />
                                         {showCustomerDropdown && (
                                             <div className="absolute z-50 top-full p-1 w-full rounded-md shadow-lg max-h-48 overflow-y-auto" style={inStyle}>
@@ -379,7 +377,7 @@ export default function AddTaskDialog({open, onClose, onAdd, columns}) {
                             </div>
                         )}
                         <Select value="" onValueChange={handleAddTag} className={selectCls} style={inStyle}>
-                            <SelectTrigger tabIndex={9}>
+                            <SelectTrigger>
                                 <SelectValue placeholder="Tag hinzufügen..."/>
                             </SelectTrigger>
                             <SelectContent >
@@ -432,13 +430,12 @@ export default function AddTaskDialog({open, onClose, onAdd, columns}) {
                               style={{borderColor: dialogBorder, backgroundColor: headerBg}}>
                     <button onClick={onClose}
                             className="px-4 py-1.5 rounded-md text-sm font-medium transition-colors hover:opacity-80"
-                            style={{color: mutedColor}} tabIndex={10}>
+                            style={{color: mutedColor}}>
                         Abbrechen
                     </button>
                     <button onClick={handleAdd}
                             disabled={!title.trim() || !columnId || !assignee || !verantwortlich}
                             className="px-4 py-1.5 rounded-md text-sm font-medium text-white transition-opacity disabled:opacity-40"
-                            tabIndex={11}
                             style={{backgroundColor: accentBg}}>
                         Erstellen
                     </button>
