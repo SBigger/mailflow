@@ -171,8 +171,8 @@ export default function TaskReminderPopup({ currentUser }) {
 
   return (
     <div
-      className="fixed bottom-4 right-4 z-[9999] flex flex-col-reverse gap-2"
-      style={{ maxWidth: 340, pointerEvents: "auto" }}
+      className="fixed bottom-4 right-4 z-[9999] grid grid-cols-3 gap-2"
+      style={{ maxWidth: 960, pointerEvents: "auto" }}
     >
       {reminders.map((task) => {
         const due = new Date(task.due_date);
