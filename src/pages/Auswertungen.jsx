@@ -244,7 +244,7 @@ export default function Auswertungen() {
               </p>
             </div>
             <button
-              onClick={() => openInTauriWindow(embedUrl, `Smartis – ${section.label} · ${page.name}`)}
+              onClick={() => openInTauriWindow(directUrl, `Smartis – ${section.label} · ${page.name}`)}
               className="inline-flex items-center gap-2 px-6 py-3 rounded-lg font-medium text-sm transition-all"
               style={{
                 backgroundColor: accent,
