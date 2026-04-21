@@ -100,8 +100,10 @@ export default function Auswertungen() {
   const [currentPage, setCurrentPage]       = useState(initial.page);
   const [infoOpen, setInfoOpen]             = useState(false);
   const [reloadKey, setReloadKey]           = useState(0);
-
+  // In Tauri: iframe erst rendern wenn Tracking-Prevention aus ist.
+  // Browser: sofort true (kein Problem).
   const isTauri = typeof window !== "undefined" && !!window.__TAURI__;
+  const [tpReady, setTpReady] = useState(!isTauri);
 
   const openInBrowser = (url) => {
     if (isTauri) {
@@ -110,6 +112,15 @@ export default function Auswertungen() {
       window.open(url, "_blank");
     }
   };
+
+  // Power BI crasht im WebView2 mit "Cannot read properties of undefined (reading 'plugins')"
+  // wenn Tracking Prevention auf Balanced steht. Rust-Command setzt auf NONE.
+  useEffect(() => {
+    if (!isTauri) return;
+    window.__TAURI__.core.invoke("disable_tracking_prevention")
+      .then(msg => { console.info("[PBI-TP]", msg); setTpReady(true); })
+      .catch(err => { console.error("[PBI-TP] fehlgeschlagen:", err); setTpReady(true); });
+  }, [isTauri]);
 
   useEffect(() => {
     localStorage.setItem(STATE_KEY, JSON.stringify({ section: currentSection, page: currentPage }));
@@ -212,15 +223,22 @@ export default function Auswertungen() {
 
       {/* ── iFrame ──────────────────────────────────────────────────────── */}
       <div className="flex-1 min-h-0 p-2.5">
-        <iframe
-          key={`${page.pageName}-${reloadKey}`}
-          src={embedUrl}
-          title={`${section.label} – ${page.name}`}
-          allowFullScreen
-          referrerPolicy="strict-origin-when-cross-origin"
-          className="w-full h-full rounded-xl"
-          style={{ border: `1px solid ${cardBorder}`, boxShadow: "0 1px 4px rgba(26,58,26,0.04)", backgroundColor: "white" }}
-        />
+        {tpReady ? (
+          <iframe
+            key={`${page.pageName}-${reloadKey}`}
+            src={embedUrl}
+            title={`${section.label} – ${page.name}`}
+            allowFullScreen
+            referrerPolicy="strict-origin-when-cross-origin"
+            className="w-full h-full rounded-xl"
+            style={{ border: `1px solid ${cardBorder}`, boxShadow: "0 1px 4px rgba(26,58,26,0.04)", backgroundColor: "white" }}
+          />
+        ) : (
+          <div className="w-full h-full rounded-xl flex items-center justify-center"
+            style={{ border: `1px solid ${cardBorder}`, backgroundColor: "white", color: muted, fontSize: 13 }}>
+            WebView wird vorbereitet …
+          </div>
+        )}
       </div>
 
       {/* ── Info-Modal ──────────────────────────────────────────────────── */}
