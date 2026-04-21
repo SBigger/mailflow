@@ -50,6 +50,7 @@ export default function AddTaskDialog({open, onClose, onAdd, columns}) {
     const [customerId, setCustomerId] = useState('');
     const [customerSearch, setCustomerSearch] = useState('');
     const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
+    const [customerHighlight, setCustomerHighlight] = useState(0);
     const titleRef = React.useRef(null);
 
     const {data: priorities = []} = useQuery({
@@ -197,7 +198,6 @@ export default function AddTaskDialog({open, onClose, onAdd, columns}) {
                     <div>
                         <label className={labelCls} style={{color: labelColor}}>Bezeichnung *</label>
                         <Textarea
-                            autoFocus
                             value={description}
                             onChange={e => setDescription(e.target.value)}
                             placeholder="Details..."
@@ -248,7 +248,7 @@ export default function AddTaskDialog({open, onClose, onAdd, columns}) {
                     <div>
                         <label className={labelCls} style={{color: labelColor}}>Fällig am *</label>
                         <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)}
-                               className={inputCls} style={inStyle}/>
+                               className={inputCls} style={inStyle} tabIndex={-1}/>
                     </div>
 
                     {/* Zugewiesen + Verantwortlich (beide Pflichtfelder) */}
@@ -294,40 +294,72 @@ export default function AddTaskDialog({open, onClose, onAdd, columns}) {
                     <div>
                         <label className={labelCls} style={{ color: labelColor }}>Kunde</label>
                         <div className="relative">
-                            <input
-                                value={customerSearch}
-                                onChange={(e) => {
-                                    setCustomerSearch(e.target.value);
-                                    setShowCustomerDropdown(true);
-                                    if (!e.target.value) setCustomerId('');
-                                }}
-                                onFocus={() => setShowCustomerDropdown(true)}
-                                onBlur={() => setTimeout(() => setShowCustomerDropdown(false), 150)}
-                                placeholder="Kunde suchen..." className={selectCls} style={inStyle}
-                                tabIndex={8} autoComplete="off" data-lpignore="true"
-                            />
-                            {showCustomerDropdown && (
-                                <div className="absolute z-50 top-full p-1 w-full rounded-md shadow-lg max-h-48 overflow-y-auto" style={inStyle}>
-                                    <div
-                                         onMouseDown={() => {
-                                             setCustomerId('');
-                                             setCustomerSearch('');
-                                             setShowCustomerDropdown(false);
-                                         }}>
-                                        Kein Kunde
-                                    </div>
-                                    {customers.filter(c => c.company_name.toLowerCase().includes(customerSearch.toLowerCase())).map((c) => (
-                                        <div key={c.id}
-                                             onMouseDown={() => {
-                                                 setCustomerId(c.id);
-                                                 setCustomerSearch(c.company_name);
-                                                 setShowCustomerDropdown(false);
-                                             }}>
-                                            {c.company_name}
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
+                            {(() => {
+                                const filteredCustomers = customers.filter(c =>
+                                    c.company_name.toLowerCase().includes(customerSearch.toLowerCase())
+                                );
+                                const options = [{ id: '', company_name: 'Kein Kunde' }, ...filteredCustomers];
+                                const selectOption = (opt) => {
+                                    setCustomerId(opt.id || '');
+                                    setCustomerSearch(opt.id ? opt.company_name : '');
+                                    setShowCustomerDropdown(false);
+                                };
+                                return (
+                                    <>
+                                        <input
+                                            value={customerSearch}
+                                            onChange={(e) => {
+                                                setCustomerSearch(e.target.value);
+                                                setShowCustomerDropdown(true);
+                                                setCustomerHighlight(0);
+                                                if (!e.target.value) setCustomerId('');
+                                            }}
+                                            onFocus={() => { setShowCustomerDropdown(true); setCustomerHighlight(0); }}
+                                            onBlur={() => setTimeout(() => setShowCustomerDropdown(false), 150)}
+                                            onKeyDown={(e) => {
+                                                if (!showCustomerDropdown && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+                                                    setShowCustomerDropdown(true);
+                                                    setCustomerHighlight(0);
+                                                    e.preventDefault();
+                                                    return;
+                                                }
+                                                if (e.key === 'ArrowDown') {
+                                                    e.preventDefault();
+                                                    setCustomerHighlight(i => Math.min(options.length - 1, i + 1));
+                                                } else if (e.key === 'ArrowUp') {
+                                                    e.preventDefault();
+                                                    setCustomerHighlight(i => Math.max(0, i - 1));
+                                                } else if (e.key === 'Enter' && showCustomerDropdown) {
+                                                    e.preventDefault();
+                                                    const opt = options[customerHighlight];
+                                                    if (opt) selectOption(opt);
+                                                } else if (e.key === 'Escape') {
+                                                    setShowCustomerDropdown(false);
+                                                }
+                                            }}
+                                            placeholder="Kunde suchen..." className={selectCls} style={inStyle}
+                                            tabIndex={8} autoComplete="off" data-lpignore="true"
+                                        />
+                                        {showCustomerDropdown && (
+                                            <div className="absolute z-50 top-full p-1 w-full rounded-md shadow-lg max-h-48 overflow-y-auto" style={inStyle}>
+                                                {options.map((opt, idx) => (
+                                                    <div key={opt.id || '__none__'}
+                                                         onMouseDown={() => selectOption(opt)}
+                                                         onMouseEnter={() => setCustomerHighlight(idx)}
+                                                         style={{
+                                                             padding: '4px 8px',
+                                                             borderRadius: 4,
+                                                             cursor: 'pointer',
+                                                             backgroundColor: idx === customerHighlight ? dropdownHover : 'transparent',
+                                                         }}>
+                                                        {opt.company_name}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </>
+                                );
+                            })()}
                         </div>
                     </div>
 
