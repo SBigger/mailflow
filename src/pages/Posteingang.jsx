@@ -11,7 +11,7 @@ import CreateLinkDialog from "../components/posteingang/CreateLinkDialog.jsx";
 import AssignDialog from "../components/posteingang/AssignDialog.jsx";
 
 // Configuration
-import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.js?url";
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 const BUCKET = "posteingang";
 
