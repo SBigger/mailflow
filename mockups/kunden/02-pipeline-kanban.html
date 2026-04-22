@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="de" data-theme="artis">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=1600" />
+<title>MailFlow · Kunden-Pipeline (Mockup 2 · Kanban)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  html,body{font-family:'Inter',system-ui,sans-serif}
+  body{background:#eef2ee;color:#1a1a2e}
+  .chip{display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:2px 7px;border-radius:6px;background:#e6ede6;color:#4d6a50;font-weight:500}
+  .chip-n{background:#e4e4ea;color:#4a4a5a}
+  .chip-b{background:#e3eaf5;color:#2e4a7d}
+  .chip-o{background:#fef0c7;color:#8a5a00}
+  .chip-r{background:#fde7e7;color:#8a2d2d}
+  .chip-v{background:#efe4f8;color:#5f3a9c}
+  .chip-g{background:#dcece0;color:#4d6a50}
+  .btn{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer}
+  .btn-primary{background:#7a9b7f;color:#fff}.btn-primary:hover{background:#638666}
+  .btn-ghost{color:#4a5a4a}.btn-ghost:hover{background:#e6ede6}
+  .icon{width:16px;height:16px;stroke-width:2}
+  .icon-sm{width:13px;height:13px;stroke-width:2}
+  .icon-xs{width:11px;height:11px;stroke-width:2}
+  .inp{background:#fff;border:1px solid #d4dcd4;border-radius:8px;padding:7px 10px;font-size:13px}
+  .inp:focus{border-color:#7a9b7f;outline:none}
+  ::-webkit-scrollbar{height:10px;width:10px}
+  ::-webkit-scrollbar-thumb{background:#cfd9cf;border-radius:5px}
+  ::-webkit-scrollbar-track{background:transparent}
+
+  /* Kanban */
+  .board{display:flex;gap:16px;padding:20px;overflow-x:auto;height:100%;align-items:flex-start}
+  .col{width:320px;flex-shrink:0;border-radius:14px;display:flex;flex-direction:column;max-height:100%;backdrop-filter:blur(4px)}
+  .col-head{padding:14px 16px 10px;border-top-left-radius:14px;border-top-right-radius:14px;position:sticky;top:0;z-index:1}
+  .col-body{padding:10px 10px 14px;display:flex;flex-direction:column;gap:10px;overflow-y:auto;flex:1;min-height:120px}
+
+  .col-lead  {background:rgba(227,234,245,.5);border:1px solid #c9d6ef}
+  .col-lead  .col-head{background:rgba(227,234,245,.9);border-bottom:1px solid #c9d6ef;color:#2e4a7d}
+  .col-onbo  {background:rgba(239,228,248,.5);border:1px solid #d9c6eb}
+  .col-onbo  .col-head{background:rgba(239,228,248,.9);border-bottom:1px solid #d9c6eb;color:#5f3a9c}
+  .col-active{background:rgba(220,236,224,.55);border:1px solid #bfd8c4}
+  .col-active .col-head{background:rgba(220,236,224,.95);border-bottom:1px solid #bfd8c4;color:#4d6a50}
+  .col-risk  {background:rgba(253,231,231,.5);border:1px solid #f0c4c4}
+  .col-risk  .col-head{background:rgba(253,231,231,.9);border-bottom:1px solid #f0c4c4;color:#8a2d2d}
+  .col-park  {background:rgba(254,240,199,.5);border:1px solid #f0d68f}
+  .col-park  .col-head{background:rgba(254,240,199,.9);border-bottom:1px solid #f0d68f;color:#8a5a00}
+  .col-arch  {background:rgba(228,228,234,.55);border:1px solid #d0d0d8}
+  .col-arch  .col-head{background:rgba(228,228,234,.95);border-bottom:1px solid #d0d0d8;color:#4a4a5a}
+
+  .col-title{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+  .col-count{margin-left:auto;font-size:11px;background:#fff;padding:1px 8px;border-radius:10px;font-weight:700}
+
+  /* Card */
+  .kcard{background:#fff;border:1px solid #e0e8e0;border-radius:10px;padding:12px 13px;cursor:grab;transition:box-shadow .15s,transform .1s;position:relative}
+  .kcard:hover{box-shadow:0 4px 14px rgba(122,155,127,.18);transform:translateY(-1px)}
+  .kcard::before{content:'';position:absolute;left:0;top:10px;bottom:10px;width:3px;border-radius:0 2px 2px 0}
+  .kcard.hl-g::before{background:#4caf70}
+  .kcard.hl-y::before{background:#e7b64a}
+  .kcard.hl-r::before{background:#d94f4f}
+  .kcard.hl-n::before{background:#b0b8b0}
+  .kcard.hl-v::before{background:#9e6fd6}
+
+  .kcard-head{display:flex;align-items:flex-start;gap:10px;margin-bottom:7px}
+  .kavatar{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0}
+  .kname{font-weight:600;font-size:13.5px;line-height:1.25;color:#1a2a1a}
+  .kmeta{font-size:11px;color:#6b826b;margin-top:2px}
+
+  .progbar{height:4px;background:#edf2ed;border-radius:2px;overflow:hidden;margin:8px 0 6px}
+  .progbar span{display:block;height:100%;background:#7a9b7f}
+
+  .kfoot{display:flex;align-items:center;gap:6px;justify-content:space-between;margin-top:8px;padding-top:8px;border-top:1px dashed #e0e8e0}
+  .kfoot-left{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .istat{display:inline-flex;align-items:center;gap:3px;font-size:11px;color:#6b826b;font-weight:500}
+  .istat.bad{color:#8a2d2d}
+  .istat.warn{color:#8a5a00}
+  .avs{display:flex}
+  .avs > div{width:22px;height:22px;border-radius:50%;border:2px solid #fff;margin-left:-6px;font-size:9.5px;font-weight:700;display:flex;align-items:center;justify-content:center}
+  .avs > div:first-child{margin-left:0}
+
+  .add-card{border:1.5px dashed #bfcfbf;border-radius:10px;padding:10px;text-align:center;font-size:12px;color:#6b826b;cursor:pointer}
+  .add-card:hover{background:#fff;color:#4d6a50;border-color:#7a9b7f}
+
+  /* Sub-metrics top bar */
+  .metric{padding:8px 14px;background:#fff;border:1px solid #e0e8e0;border-radius:10px;display:flex;align-items:center;gap:10px}
+  .metric-num{font-size:18px;font-weight:700;line-height:1}
+  .metric-label{font-size:11px;color:#6b826b;text-transform:uppercase;letter-spacing:.05em}
+</style>
+</head>
+<body class="min-h-screen">
+
+<div class="flex h-screen overflow-hidden">
+
+  <!-- APP-SIDEBAR -->
+  <aside class="w-14 flex-shrink-0 flex flex-col items-center justify-between py-4 border-r" style="background:#e6ede6;border-color:#bfcfbf">
+    <nav class="flex flex-col items-center gap-2">
+      <div class="w-10 h-10 flex items-center justify-center rounded-lg text-slate-500"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg></div>
+      <div class="w-10 h-10 flex items-center justify-center rounded-lg text-slate-500"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg></div>
+      <div class="w-10 h-10 flex items-center justify-center rounded-lg text-slate-500"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg></div>
+      <div class="w-10 h-10 flex items-center justify-center rounded-lg shadow-md text-white" style="background:#7a9b7f"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M9 22v-4h6v4"/></svg></div>
+      <div class="w-10 h-10 flex items-center justify-center rounded-lg text-slate-500"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 3h7v7H3zM14 3h7v4h-7zM14 12h7v9h-7zM3 16h7v5H3z"/></svg></div>
+    </nav>
+    <div class="w-9 h-9 rounded-full flex items-center justify-center text-sm font-semibold" style="background:rgba(122,155,127,.2);color:#4d6a50;border:1px solid rgba(122,155,127,.3)">SB</div>
+  </aside>
+
+  <main class="flex-1 overflow-hidden flex flex-col">
+
+    <!-- HEADER -->
+    <div class="px-6 pt-5 pb-4 border-b flex-shrink-0" style="background:#fff;border-color:#e0e8e0">
+      <div class="flex items-center justify-between gap-4 flex-wrap">
+        <div>
+          <h1 class="text-[20px] font-semibold tracking-tight">Kunden · Pipeline</h1>
+          <p class="text-[12px]" style="color:#6b826b">Lebenszyklus-Ansicht · Drag &amp; Drop zwischen Phasen</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <div class="relative">
+            <svg class="icon-sm absolute left-3 top-1/2 -translate-y-1/2" style="color:#8aaa8f" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            <input class="inp pl-9" style="width:240px" placeholder="Kunden suchen…"/>
+          </div>
+          <button class="btn btn-ghost border" style="border-color:#d4dcd4"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 6h18M6 12h12M10 18h4"/></svg>Filter</button>
+          <button class="btn btn-ghost border" style="border-color:#d4dcd4">Sortieren: Health</button>
+          <button class="btn btn-primary"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 5v14M5 12h14"/></svg>Neuer Kunde</button>
+        </div>
+      </div>
+
+      <!-- Filter-Chips -->
+      <div class="flex items-center gap-2 mt-4 flex-wrap">
+        <span class="chip chip-g">Aktiviert · Unternehmen</span>
+        <span class="chip chip-b">Kanton: SG, TG</span>
+        <span class="chip chip-v">Tag: VIP</span>
+        <button class="chip chip-n" style="border:1px dashed #9fa3aa;background:transparent">+ Filter</button>
+        <div class="ml-auto flex items-center gap-2 text-[11.5px]" style="color:#6b826b">
+          Ansicht:
+          <div class="flex rounded-lg border" style="border-color:#d4dcd4;background:#f2f5f2;padding:2px">
+            <button class="px-2.5 py-1 rounded-md text-[12px] font-semibold" style="background:#fff;color:#4d6a50;box-shadow:0 1px 2px rgba(0,0,0,.05)">Pipeline</button>
+            <button class="px-2.5 py-1 rounded-md text-[12px]" style="color:#6b826b">Liste</button>
+            <button class="px-2.5 py-1 rounded-md text-[12px]" style="color:#6b826b">Tabelle</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- KPI-Leiste -->
+      <div class="flex items-center gap-2 mt-4 overflow-x-auto">
+        <div class="metric"><div><div class="metric-num" style="color:#4d6a50">128</div><div class="metric-label">Total</div></div></div>
+        <div class="metric"><div><div class="metric-num" style="color:#5f3a9c">4</div><div class="metric-label">Neu 30 T</div></div></div>
+        <div class="metric"><div><div class="metric-num" style="color:#8a2d2d">7</div><div class="metric-label">Risiko</div></div></div>
+        <div class="metric"><div><div class="metric-num" style="color:#8a5a00">18</div><div class="metric-label">Offene Fristen</div></div></div>
+        <div class="metric"><div><div class="metric-num" style="color:#2e4a7d">23</div><div class="metric-label">Unbeantwortete Mails</div></div></div>
+        <div class="metric"><div><div class="metric-num">82%</div><div class="metric-label">Ø Health</div></div></div>
+      </div>
+    </div>
+
+    <!-- BOARD -->
+    <div class="flex-1 overflow-hidden" style="background:#eef2ee">
+      <div class="board">
+
+        <!-- Lead -->
+        <div class="col col-lead">
+          <div class="col-head">
+            <div class="col-title"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M9 12h6M12 9v6"/><circle cx="12" cy="12" r="10"/></svg> Lead · Anfrage <span class="col-count">3</span></div>
+            <div class="text-[11px] mt-1" style="color:#2e4a7d">Erstgespräch noch offen</div>
+          </div>
+          <div class="col-body">
+            <div class="kcard hl-v">
+              <div class="kcard-head"><div class="kavatar" style="background:#efe4f8;color:#5f3a9c">EW</div>
+                <div class="flex-1 min-w-0"><div class="kname">Eichwald Immobilien AG</div><div class="kmeta">SG · Balgach · empfohlen v. Müller</div></div></div>
+              <div class="flex gap-1 flex-wrap"><span class="chip chip-v">Lead</span><span class="chip">Immo</span></div>
+              <div class="kfoot"><div class="kfoot-left"><span class="istat"><svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg>2 Mails</span><span class="istat"><svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>4 Tage</span></div><div class="avs"><div style="background:#7a9b7f;color:#fff">SB</div></div></div>
+            </div>
+
+            <div class="kcard hl-n">
+              <div class="kcard-head"><div class="kavatar" style="background:#e4e4ea;color:#4a4a5a">KR</div>
+                <div class="flex-1 min-w-0"><div class="kname">Kern Restaurant</div><div class="kmeta">AI · Appenzell · Webformular</div></div></div>
+              <div class="flex gap-1 flex-wrap"><span class="chip chip-v">Lead</span><span class="chip">Gastro</span></div>
+              <div class="kfoot"><div class="kfoot-left"><span class="istat"><svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg>1 Mail</span></div><div class="avs"><div style="background:#e6ede6;color:#4d6a50">JM</div></div></div>
+            </div>
+
+            <div class="kcard hl-v">
+              <div class="kcard-head"><div class="kavatar" style="background:#efe4f8;color:#5f3a9c">HB</div>
+                <div class="flex-1 min-w-0"><div class="kname">H. Brühlmann (Privat)</div><div class="kmeta">TG · Scheidung – Steuertrennung</div></div></div>
+              <div class="flex gap-1 flex-wrap"><span class="chip chip-v">Lead</span><span class="chip chip-b">Privat</span></div>
+              <div class="kfoot"><div class="kfoot-left"><span class="istat warn"><svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></svg>wartet 7 Tage</span></div><div class="avs"><div style="background:#e3eaf5;color:#2e4a7d">DA</div></div></div>
+            </div>
+            <div class="add-card">+ Karte</div>
+          </div>
+        </div>
+
+        <!-- Onboarding -->
+        <div class="col col-onbo">
+          <div class="col-head">
+            <div class="col-title"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg> Onboarding <span class="col-count">4</span></div>
+            <div class="text-[11px] mt-1" style="color:#5f3a9c">Stammdaten · Zugänge · Vollmachten</div>
+          </div>
+          <div class="col-body">
+            <div class="kcard hl-v">
+              <div class="kcard-head"><div class="kavatar" style="background:#efe4f8;color:#5f3a9c">AT</div>
+                <div class="flex-1 min-w-0"><div class="kname">Appenzeller Tech GmbH</div><div class="kmeta">AR · Herisau · seit 12 Tagen</div></div></div>
+              <div class="flex gap-1 flex-wrap"><span class="chip">GmbH</span><span class="chip chip-b">Neu</span></div>
+              <div class="progbar"><span style="width:60%"></span></div>
+              <div class="text-[10.5px]" style="color:#5f3a9c">6 / 10 Schritten · Zugänge fehlen</div>
+              <div class="kfoot"><div class="kfoot-left"><span class="istat"><svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="m9 12 2 2 4-4"/></svg>3 Tasks</span></div><div class="avs"><div style="background:#7a9b7f;color:#fff">SB</div><div style="background:#fef0c7;color:#8a5a00">MH</div></div></div>
+            </div>
+
+            <div class="kcard hl-v">
+              <div class="kcard-head"><div class="kavatar" style="background:#efe4f8;color:#5f3a9c">NP</div>
+                <div class="flex-1 min-w-0"><div class="kname">Nestle Privat</div><div class="kmeta">ZH · Zollikon · Erstjahr</div></div></div>
+              <div class="flex gap-1 flex-wrap"><span class="chip chip-b">Privat</span><span class="chip chip-v">VIP</span></div>
+              <div class="progbar"><span style="width:35%"></span></div>
+              <div class="text-[10.5px]" style="color:#5f3a9c">3 / 8 · Steuerportal ausstehend</div>
+              <div class="kfoot"><div class="kfoot-left"><span class="istat warn"><svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg>2 Mails</span></div><div class="avs"><div style="background:#e6ede6;color:#4d6a50">JM</div></div></div>
+            </div>
+
+            <div class="kcard hl-n">
+              <div class="kcard-head"><div class="kavatar" style="background:#e4e4ea;color:#4a4a5a">BH</div>
+                <div class="flex-1 min-w-0"><div class="kname">Berg &amp; Hofer OHG</div><div class="kmeta">GR · Chur</div></div></div>
+              <div class="flex gap-1 flex-wrap"><span class="chip">OHG</span></div>
+              <div class="progbar"><span style="width:85%"></span></div>
+              <div class="text-[10.5px]" style="color:#5f3a9c">fast fertig · 1 Unterschrift</div>
+              <div class="kfoot"><div class="kfoot-left"><span class="istat"><svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M20 6 9 17l-5-5"/></svg>bald aktiv</span></div><div class="avs"><div style="background:#7a9b7f;color:#fff">SB</div></div></div>
+            </div>
+            <div class="add-card">+ Karte</div>
+          </div>
+        </div>
+
+        <!-- Aktiv -->
+        <div class="col col-active">
+          <div class="col-head">
+            <div class="col-title"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M22 12A10 10 0 1 1 12 2"/><path d="m9 12 2 2 4-4"/></svg> Aktiv · laufend <span class="col-count">94</span></div>
+            <div class="text-[11px] mt-1" style="color:#4d6a50">Health &gt; 70 · Tagesgeschäft</div>
+          </div>
+          <div class="col-body">
+            <div class="kcard hl-g">
+              <div class="kcard-head"><div class="kavatar" style="background:linear-gradient(135deg,#7a9b7f,#4d6a50);color:#fff">AM</div>
+                <div class="flex-1 min-w-0"><div class="kname">Alpbach Metallbau AG</div><div class="kmeta">SG · Widnau · seit 2019</div></div>
+                <div class="text-[11px] font-bold" style="color:#4d6a50">82</div></div>
+              <div class="flex gap-1 flex-wrap"><span class="chip chip-v">VIP</span><span class="chip chip-b">Holding</span><span class="chip">Metall</span></div>
+              <div class="kfoot"><div class="kfoot-left"><span class="istat bad"><svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg>3</span><span class="istat warn"><svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>2</span><span class="istat"><svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="m9 12 2 2 4-4"/></svg>5</span></div><div class="avs"><div style="background:#7a9b7f;color:#fff">SB</div><div style="background:#fef0c7;color:#8a5a00">MH</div></div></div>
+            </div>
+
+            <div class="kcard hl-g">
+              <div class="kcard-head"><div class="kavatar" style="background:#e3eaf5;color:#2e4a7d">SK</div>
+                <div class="flex-1 min-w-0"><div class="kname">Sutter &amp; Kuster</div><div class="kmeta">ZH · Zürich · seit 2015</div></div>
+                <div class="text-[11px] font-bold" style="color:#4d6a50">91</div></div>
+              <div class="flex gap-1 flex-wrap"><span class="chip chip-v">VIP</span><span class="chip chip-b">Holding</span></div>
+              <div class="kfoot"><div class="kfoot-left"><span class="istat"><svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="m9 12 2 2 4-4"/></svg>2</span></div><div class="avs"><div style="background:#e6ede6;color:#4d6a50">JM</div></div></div>
+            </div>
+
+            <div class="kcard hl-g">
+              <div class="kcard-head"><div class="kavatar" style="background:#dcece0;color:#4d6a50">BG</div>
+                <div class="flex-1 min-w-0"><div class="kname">Bodensee Gastro AG</div><div class="kmeta">TG · Kreuzlingen</div></div>
+                <div class="text-[11px] font-bold" style="color:#4d6a50">75</div></div>
+              <div class="flex gap-1 flex-wrap"><span class="chip">Gastro</span><span class="chip">AG</span></div>
+              <div class="kfoot"><div class="kfoot-left"><span class="istat"><svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg>1</span></div><div class="avs"><div style="background:#7a9b7f;color:#fff">SB</div></div></div>
+            </div>
+
+            <div class="kcard hl-g">
+              <div class="kcard-head"><div class="kavatar" style="background:#f7faf7;color:#4d6a50">SG</div>
+                <div class="flex-1 min-w-0"><div class="kname">Sulzer Garage Einzelfirma</div><div class="kmeta">AR · Herisau</div></div>
+                <div class="text-[11px] font-bold" style="color:#4d6a50">78</div></div>
+              <div class="flex gap-1 flex-wrap"><span class="chip">Einzelfirma</span></div>
+              <div class="kfoot"><div class="kfoot-left"><span class="istat"><svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 2v4M12 18v4"/><circle cx="12" cy="12" r="10"/></svg>Ø 8h/M</span></div><div class="avs"><div style="background:#e3eaf5;color:#2e4a7d">DA</div></div></div>
+            </div>
+
+            <div class="add-card">+ Karte</div>
+            <button class="btn btn-ghost text-[11.5px] justify-center" style="background:rgba(255,255,255,.55)">89 weitere zeigen…</button>
+          </div>
+        </div>
+
+        <!-- Risiko -->
+        <div class="col col-risk">
+          <div class="col-head">
+            <div class="col-title"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></svg> Risiko · Achtung <span class="col-count">7</span></div>
+            <div class="text-[11px] mt-1" style="color:#8a2d2d">Überfällig · Mahnung · stiller Kunde</div>
+          </div>
+          <div class="col-body">
+            <div class="kcard hl-r">
+              <div class="kcard-head"><div class="kavatar" style="background:#fde7e7;color:#8a2d2d">RT</div>
+                <div class="flex-1 min-w-0"><div class="kname">Rheintal Transport AG</div><div class="kmeta">SG · Au · Logistik</div></div>
+                <div class="text-[11px] font-bold" style="color:#8a2d2d">42</div></div>
+              <div class="flex gap-1 flex-wrap"><span class="chip chip-r">Überfällig</span><span class="chip">Logistik</span></div>
+              <div class="kfoot"><div class="kfoot-left"><span class="istat bad"><svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>Frist 5T</span><span class="istat bad"><svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg>2</span></div><div class="avs"><div style="background:#7a9b7f;color:#fff">SB</div></div></div>
+            </div>
+
+            <div class="kcard hl-r">
+              <div class="kcard-head"><div class="kavatar" style="background:#efe4f8;color:#5f3a9c">FZ</div>
+                <div class="flex-1 min-w-0"><div class="kname">Familie Züblin</div><div class="kmeta">SG · Altstätten · Privat</div></div>
+                <div class="text-[11px] font-bold" style="color:#8a2d2d">38</div></div>
+              <div class="flex gap-1 flex-wrap"><span class="chip chip-r">Überfällig</span><span class="chip chip-b">Privat</span></div>
+              <div class="kfoot"><div class="kfoot-left"><span class="istat bad"><svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>SE 2024</span></div><div class="avs"><div style="background:#e3eaf5;color:#2e4a7d">DA</div></div></div>
+            </div>
+
+            <div class="kcard hl-r">
+              <div class="kcard-head"><div class="kavatar" style="background:#fde7e7;color:#8a2d2d">MZ</div>
+                <div class="flex-1 min-w-0"><div class="kname">Mettler Zürich GmbH</div><div class="kmeta">ZH · 3. Mahnung</div></div>
+                <div class="text-[11px] font-bold" style="color:#8a2d2d">29</div></div>
+              <div class="flex gap-1 flex-wrap"><span class="chip chip-r">Mahnung 3</span></div>
+              <div class="kfoot"><div class="kfoot-left"><span class="istat bad">CHF 8.4k offen</span></div><div class="avs"><div style="background:#e6ede6;color:#4d6a50">JM</div></div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Parkiert -->
+        <div class="col col-park">
+          <div class="col-head">
+            <div class="col-title"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> Parkiert <span class="col-count">12</span></div>
+            <div class="text-[11px] mt-1" style="color:#8a5a00">Saisonal · wartet auf Info</div>
+          </div>
+          <div class="col-body">
+            <div class="kcard hl-y">
+              <div class="kcard-head"><div class="kavatar" style="background:#fef0c7;color:#8a5a00">MH</div>
+                <div class="flex-1 min-w-0"><div class="kname">Müller Holzbau GmbH</div><div class="kmeta">TG · wartet auf Unterlagen</div></div>
+                <div class="text-[11px] font-bold" style="color:#8a5a00">64</div></div>
+              <div class="flex gap-1 flex-wrap"><span class="chip chip-o">wartet</span></div>
+              <div class="kfoot"><div class="kfoot-left"><span class="istat warn">seit 14 T</span></div><div class="avs"><div style="background:#7a9b7f;color:#fff">SB</div></div></div>
+            </div>
+
+            <div class="kcard hl-y">
+              <div class="kcard-head"><div class="kavatar" style="background:#fef0c7;color:#8a5a00">LB</div>
+                <div class="flex-1 min-w-0"><div class="kname">Landwirtschaft Bühler</div><div class="kmeta">SG · saisonal Q4</div></div>
+                <div class="text-[11px] font-bold" style="color:#8a5a00">70</div></div>
+              <div class="flex gap-1 flex-wrap"><span class="chip chip-o">Saisonal</span><span class="chip">Landwirt</span></div>
+              <div class="kfoot"><div class="kfoot-left"><span class="istat">wieder Nov</span></div><div class="avs"><div style="background:#e3eaf5;color:#2e4a7d">DA</div></div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Archiv -->
+        <div class="col col-arch">
+          <div class="col-head">
+            <div class="col-title"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></svg> Archiv · Inaktiv <span class="col-count">6</span></div>
+            <div class="text-[11px] mt-1" style="color:#4a4a5a">Mandat beendet</div>
+          </div>
+          <div class="col-body">
+            <div class="kcard hl-n" style="opacity:.7">
+              <div class="kcard-head"><div class="kavatar" style="background:#e4e4ea;color:#4a4a5a">EH</div>
+                <div class="flex-1 min-w-0"><div class="kname" style="text-decoration:line-through">Ehrler Handwerk</div><div class="kmeta">Liquidation 2024</div></div></div>
+              <div class="flex gap-1 flex-wrap"><span class="chip chip-n">Liquidiert</span></div>
+            </div>
+            <div class="kcard hl-n" style="opacity:.7">
+              <div class="kcard-head"><div class="kavatar" style="background:#e4e4ea;color:#4a4a5a">PB</div>
+                <div class="flex-1 min-w-0"><div class="kname" style="text-decoration:line-through">P. Brunner</div><div class="kmeta">verstorben</div></div></div>
+              <div class="flex gap-1 flex-wrap"><span class="chip chip-n">Privat</span></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </main>
+</div>
+
+</body>
+</html>

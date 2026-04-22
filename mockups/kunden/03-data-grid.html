@@ -1,0 +1,470 @@
+<!doctype html>
+<html lang="de" data-theme="artis">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=1600" />
+<title>MailFlow · Kunden-Grid (Mockup 3 · Data-Grid)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  html,body{font-family:'Inter',system-ui,sans-serif}
+  body{background:#fafbfa;color:#1a1a2e}
+  .mono{font-family:'JetBrains Mono',ui-monospace,monospace}
+  .chip{display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:2px 7px;border-radius:5px;background:#e6ede6;color:#4d6a50;font-weight:500;white-space:nowrap}
+  .chip-n{background:#eef0f0;color:#5a6060}
+  .chip-b{background:#e3eaf5;color:#2e4a7d}
+  .chip-o{background:#fef0c7;color:#8a5a00}
+  .chip-r{background:#fde7e7;color:#8a2d2d}
+  .chip-v{background:#efe4f8;color:#5f3a9c}
+  .chip-g{background:#dcece0;color:#4d6a50}
+  .btn{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:7px;font-size:12.5px;font-weight:500;cursor:pointer}
+  .btn-primary{background:#7a9b7f;color:#fff}.btn-primary:hover{background:#638666}
+  .btn-ghost{color:#4a5a4a;background:transparent}.btn-ghost:hover{background:#eef2ee}
+  .btn-outline{background:#fff;color:#4a5a4a;border:1px solid #d4dcd4}.btn-outline:hover{background:#f7faf7}
+  .icon{width:15px;height:15px;stroke-width:2}
+  .icon-sm{width:12px;height:12px;stroke-width:2}
+  .icon-xs{width:10px;height:10px;stroke-width:2.2}
+  .inp{background:#fff;border:1px solid #d4dcd4;border-radius:7px;padding:6px 10px;font-size:13px}
+  .inp:focus{border-color:#7a9b7f;outline:none}
+
+  /* Saved-View Tabs */
+  .sv-tab{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:7px;font-size:12.5px;color:#4a5a4a;font-weight:500;cursor:pointer;white-space:nowrap}
+  .sv-tab:hover{background:#eef2ee}
+  .sv-tab.active{background:#fff;color:#1a2a1a;border:1px solid #bfcfbf;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+  .sv-tab .c{font-size:10.5px;padding:0 5px;border-radius:8px;background:#eef0f0;color:#5a6060;font-weight:600}
+  .sv-tab.active .c{background:#e6ede6;color:#4d6a50}
+
+  /* Filter pill */
+  .fpill{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:6px;font-size:11.5px;background:#fff;border:1px solid #d4dcd4;cursor:pointer}
+  .fpill b{font-weight:600;color:#1a2a1a}
+  .fpill:hover{border-color:#7a9b7f}
+  .fpill.op{color:#6b826b}
+
+  /* Grid Table */
+  .grid-scroll{overflow:auto}
+  table.grid{border-collapse:separate;border-spacing:0;width:100%;font-size:12.5px}
+  table.grid th{position:sticky;top:0;background:#f2f5f2;z-index:2;padding:6px 10px;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;font-weight:700;color:#6b826b;text-align:left;border-bottom:1px solid #d4dcd4;border-right:1px solid #e0e8e0;white-space:nowrap;user-select:none}
+  table.grid th:last-child{border-right:none}
+  table.grid th .resizer{position:absolute;right:0;top:0;bottom:0;width:3px;cursor:col-resize}
+  table.grid td{padding:0;border-bottom:1px solid #eef0f0;border-right:1px solid #f5f6f5;vertical-align:middle;background:#fff;height:36px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+  table.grid td:last-child{border-right:none}
+  table.grid tr:hover td{background:#f7faf7}
+  table.grid tr.selected td{background:#eaf2ec !important}
+
+  /* Grouping header row */
+  .grp td{background:#eef2ee !important;padding:6px 10px;font-size:11px;font-weight:700;color:#4d6a50;text-transform:uppercase;letter-spacing:.05em;border-top:2px solid #bfcfbf;border-bottom:1px solid #bfcfbf}
+  .grp td .mini{font-size:10.5px;color:#6b826b;font-weight:500;margin-left:8px;text-transform:none;letter-spacing:0}
+
+  .cell-pad{padding:0 10px;display:flex;align-items:center;gap:7px;height:100%}
+  .cell-name{font-weight:600;color:#1a2a1a}
+  .cell-mail{color:#4a5a4a}
+  .cell-muted{color:#6b826b}
+
+  .dot{width:8px;height:8px;border-radius:50%;display:inline-block;flex-shrink:0}
+  .dot-g{background:#4caf70}.dot-y{background:#e7b64a}.dot-r{background:#d94f4f}.dot-n{background:#b0b8b0}
+
+  .avatar-xs{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0}
+  .health{font-weight:700;font-size:12px;display:inline-flex;align-items:center;gap:6px}
+  .health-bar{width:40px;height:4px;border-radius:2px;background:#eef0f0;position:relative;overflow:hidden}
+  .health-bar span{position:absolute;inset:0 auto 0 0;background:#7a9b7f;border-radius:2px}
+
+  /* Inspector */
+  .insp{background:#fff;border-left:1px solid #e0e8e0;display:flex;flex-direction:column}
+  .insp-section{padding:14px 18px;border-bottom:1px solid #eef0f0}
+  .insp-label{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#8aaa8f;font-weight:700;margin-bottom:4px}
+  .insp-field{display:flex;align-items:center;gap:10px;padding:5px 0;font-size:12.5px}
+  .insp-field svg{color:#8aaa8f;flex-shrink:0}
+  .insp-field b{color:#1a2a1a;font-weight:600}
+
+  ::-webkit-scrollbar{width:9px;height:9px}
+  ::-webkit-scrollbar-thumb{background:#d4dcd4;border-radius:5px}
+</style>
+</head>
+<body class="min-h-screen">
+
+<div class="flex h-screen overflow-hidden">
+
+  <!-- APP-SIDEBAR -->
+  <aside class="w-14 flex-shrink-0 flex flex-col items-center justify-between py-4 border-r" style="background:#e6ede6;border-color:#bfcfbf">
+    <nav class="flex flex-col items-center gap-2">
+      <div class="w-10 h-10 flex items-center justify-center rounded-lg text-slate-500"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg></div>
+      <div class="w-10 h-10 flex items-center justify-center rounded-lg text-slate-500"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg></div>
+      <div class="w-10 h-10 flex items-center justify-center rounded-lg text-slate-500"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg></div>
+      <div class="w-10 h-10 flex items-center justify-center rounded-lg shadow-md text-white" style="background:#7a9b7f"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M9 22v-4h6v4"/></svg></div>
+      <div class="w-10 h-10 flex items-center justify-center rounded-lg text-slate-500"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 3h7v7H3zM14 3h7v4h-7zM14 12h7v9h-7zM3 16h7v5H3z"/></svg></div>
+    </nav>
+    <div class="w-9 h-9 rounded-full flex items-center justify-center text-sm font-semibold" style="background:rgba(122,155,127,.2);color:#4d6a50;border:1px solid rgba(122,155,127,.3)">SB</div>
+  </aside>
+
+  <main class="flex-1 flex flex-col overflow-hidden">
+
+    <!-- HEADER: Title + Saved Views -->
+    <div class="px-5 pt-4 border-b flex-shrink-0" style="border-color:#e0e8e0;background:#fff">
+      <div class="flex items-center justify-between">
+        <div class="flex items-baseline gap-3">
+          <h1 class="text-[18px] font-semibold tracking-tight">Kunden</h1>
+          <span class="text-[12px]" style="color:#8aaa8f">128 Einträge · 6 inaktiv</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <div class="relative">
+            <svg class="icon-sm absolute left-2.5 top-1/2 -translate-y-1/2" style="color:#8aaa8f" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            <input class="inp pl-8" style="width:240px" placeholder="Alle Felder durchsuchen…"/>
+            <span class="mono absolute right-2 top-1/2 -translate-y-1/2 text-[10px] px-1.5 py-0.5 rounded border" style="border-color:#d4dcd4;color:#8aaa8f;background:#f7faf7">⌘K</span>
+          </div>
+          <button class="btn btn-outline"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 4h16v2H4zM4 10h16v2H4zM4 16h16v2H4z"/></svg>Export</button>
+          <button class="btn btn-primary"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 5v14M5 12h14"/></svg>Neu</button>
+        </div>
+      </div>
+
+      <!-- Saved Views -->
+      <div class="flex items-center gap-1 mt-3 overflow-x-auto">
+        <div class="sv-tab active">
+          <svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+          Alle Kunden <span class="c">128</span>
+        </div>
+        <div class="sv-tab">
+          <svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8"/></svg>
+          Meine <span class="c">34</span>
+        </div>
+        <div class="sv-tab">
+          <svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>
+          Risiko <span class="c">7</span>
+        </div>
+        <div class="sv-tab">
+          <svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+          Offene Fristen <span class="c">18</span>
+        </div>
+        <div class="sv-tab">
+          <svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 2v10"/><path d="M4 10h16"/></svg>
+          Neu 2026 <span class="c">4</span>
+        </div>
+        <div class="sv-tab">
+          <svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M20 6 9 17l-5-5"/></svg>
+          Kanton SG <span class="c">42</span>
+        </div>
+        <div class="sv-tab">
+          <svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="7" r="4"/><path d="M6 21v-2a6 6 0 0 1 12 0v2"/></svg>
+          Privatpersonen <span class="c">41</span>
+        </div>
+        <div class="sv-tab" style="color:#8aaa8f"><svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 5v14M5 12h14"/></svg> Ansicht</div>
+      </div>
+    </div>
+
+    <!-- Toolbar: Filter · Group · Sort · Hide -->
+    <div class="px-5 py-2 border-b flex items-center gap-2 flex-wrap flex-shrink-0" style="background:#fafbfa;border-color:#e0e8e0">
+      <!-- Active Filter pills -->
+      <span class="text-[11px] font-semibold uppercase tracking-wider" style="color:#6b826b">Filter</span>
+      <span class="fpill"><svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="#4d6a50"><rect x="4" y="2" width="16" height="20" rx="2"/></svg>Typ <span class="op">ist</span><b>Unternehmen</b><svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M18 6 6 18M6 6l12 12"/></svg></span>
+      <span class="fpill"><svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="#4d6a50"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0Z"/></svg>Kanton <span class="op">in</span><b>SG, TG, AI</b><svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M18 6 6 18M6 6l12 12"/></svg></span>
+      <span class="fpill"><svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="#4d6a50"><path d="M20 6 9 17l-5-5"/></svg>Aktiv <span class="op">ist</span><b>Ja</b><svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M18 6 6 18M6 6l12 12"/></svg></span>
+      <button class="fpill" style="border-style:dashed;background:transparent;color:#6b826b"><svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 5v14M5 12h14"/></svg>Filter</button>
+
+      <div class="ml-4 h-5 w-px" style="background:#d4dcd4"></div>
+
+      <button class="btn btn-ghost text-[12px]"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 7h18M6 12h12M9 17h6"/></svg>Gruppieren: <b class="ml-1" style="color:#1a2a1a">Kanton</b></button>
+      <button class="btn btn-ghost text-[12px]"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 6h13M3 12h9M3 18h5"/><path d="m17 15 4 4 4-4M21 3v16"/></svg>Sortieren: <b class="ml-1" style="color:#1a2a1a">Letzter Kontakt ↓</b></button>
+      <button class="btn btn-ghost text-[12px]"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>Felder · <b class="ml-1" style="color:#1a2a1a">12 sichtbar</b></button>
+
+      <div class="ml-auto flex items-center gap-2">
+        <span class="text-[11.5px]" style="color:#6b826b">3 Einträge ausgewählt</span>
+        <button class="btn btn-outline"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg>Massenaktion</button>
+      </div>
+    </div>
+
+    <!-- Container Split: Grid + Inspector -->
+    <div class="flex-1 flex overflow-hidden">
+
+      <!-- TABLE -->
+      <div class="flex-1 grid-scroll" style="background:#fff">
+        <table class="grid">
+          <thead>
+            <tr>
+              <th style="width:34px"><input type="checkbox"/></th>
+              <th style="width:240px">Name</th>
+              <th style="width:90px">Typ</th>
+              <th style="width:60px">KT</th>
+              <th style="width:160px">Ort</th>
+              <th style="width:175px">E-Mail</th>
+              <th style="width:115px">Telefon</th>
+              <th style="width:140px">Tags</th>
+              <th style="width:115px">Betreuer</th>
+              <th style="width:110px">Letzter Kontakt</th>
+              <th style="width:85px">Fristen</th>
+              <th style="width:85px">Mails</th>
+              <th style="width:110px">Health</th>
+              <th style="width:110px">Zeit 12M</th>
+              <th style="width:90px">UID</th>
+            </tr>
+          </thead>
+          <tbody>
+
+            <!-- GROUP: SG -->
+            <tr class="grp"><td colspan="15">📍 SG · St. Gallen <span class="mini">· 3 Kunden · 1 Risiko · 2 Fristen</span></td></tr>
+
+            <tr class="selected">
+              <td><div class="cell-pad"><input type="checkbox" checked/></div></td>
+              <td><div class="cell-pad"><span class="dot dot-g"></span><span class="cell-name">Alpbach Metallbau AG</span></div></td>
+              <td><div class="cell-pad"><span class="chip chip-n">Unternehmen</span></div></td>
+              <td><div class="cell-pad mono" style="font-size:11px">SG</div></td>
+              <td><div class="cell-pad cell-muted">9443 Widnau</div></td>
+              <td><div class="cell-pad cell-mail">buchhaltung@alpbach…</div></td>
+              <td><div class="cell-pad mono" style="font-size:11.5px">071 722 18 40</div></td>
+              <td><div class="cell-pad"><span class="chip chip-v">VIP</span><span class="chip chip-b">Holding</span></div></td>
+              <td><div class="cell-pad"><div class="avatar-xs" style="background:#7a9b7f;color:#fff">SB</div>Sascha B.</div></td>
+              <td><div class="cell-pad cell-muted">heute 09:14</div></td>
+              <td><div class="cell-pad"><span class="chip chip-o">2</span></div></td>
+              <td><div class="cell-pad"><span class="chip chip-r">3</span></div></td>
+              <td><div class="cell-pad"><span class="health"><span class="health-bar"><span style="width:82%"></span></span>82</span></div></td>
+              <td><div class="cell-pad cell-muted">218 h</div></td>
+              <td><div class="cell-pad mono" style="font-size:11px;color:#6b826b">CHE-114.781.315</div></td>
+            </tr>
+
+            <tr>
+              <td><div class="cell-pad"><input type="checkbox"/></div></td>
+              <td><div class="cell-pad"><span class="dot dot-r"></span><span class="cell-name">Rheintal Transport AG</span></div></td>
+              <td><div class="cell-pad"><span class="chip chip-n">Unternehmen</span></div></td>
+              <td><div class="cell-pad mono" style="font-size:11px">SG</div></td>
+              <td><div class="cell-pad cell-muted">9434 Au</div></td>
+              <td><div class="cell-pad cell-mail">info@rheintal-trans…</div></td>
+              <td><div class="cell-pad mono" style="font-size:11.5px">071 744 22 10</div></td>
+              <td><div class="cell-pad"><span class="chip">Logistik</span></div></td>
+              <td><div class="cell-pad"><div class="avatar-xs" style="background:#7a9b7f;color:#fff">SB</div>Sascha B.</div></td>
+              <td><div class="cell-pad cell-muted">vor 5 T</div></td>
+              <td><div class="cell-pad"><span class="chip chip-r">1 ⚠︎</span></div></td>
+              <td><div class="cell-pad"><span class="chip chip-r">2</span></div></td>
+              <td><div class="cell-pad"><span class="health" style="color:#8a2d2d"><span class="health-bar"><span style="width:42%;background:#d94f4f"></span></span>42</span></div></td>
+              <td><div class="cell-pad cell-muted">64 h</div></td>
+              <td><div class="cell-pad mono" style="font-size:11px;color:#6b826b">CHE-102.443.992</div></td>
+            </tr>
+
+            <tr>
+              <td><div class="cell-pad"><input type="checkbox" checked/></div></td>
+              <td><div class="cell-pad"><svg class="icon-sm" style="color:#8aaa8f" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="7" r="4"/><path d="M6 21v-2a6 6 0 0 1 12 0v2"/></svg><span class="cell-name">Familie Züblin</span></div></td>
+              <td><div class="cell-pad"><span class="chip chip-b">Privat</span></div></td>
+              <td><div class="cell-pad mono" style="font-size:11px">SG</div></td>
+              <td><div class="cell-pad cell-muted">9450 Altstätten</div></td>
+              <td><div class="cell-pad cell-mail">f.zueblin@bluewin.ch</div></td>
+              <td><div class="cell-pad mono" style="font-size:11.5px">—</div></td>
+              <td><div class="cell-pad"><span class="chip chip-b">Privat</span></div></td>
+              <td><div class="cell-pad"><div class="avatar-xs" style="background:#e3eaf5;color:#2e4a7d">DA</div>D. Amann</div></td>
+              <td><div class="cell-pad cell-muted">vor 4 T</div></td>
+              <td><div class="cell-pad"><span class="chip chip-r">1 ⚠︎</span></div></td>
+              <td><div class="cell-pad"><span class="chip chip-n">0</span></div></td>
+              <td><div class="cell-pad"><span class="health" style="color:#8a2d2d"><span class="health-bar"><span style="width:38%;background:#d94f4f"></span></span>38</span></div></td>
+              <td><div class="cell-pad cell-muted">12 h</div></td>
+              <td><div class="cell-pad cell-muted">—</div></td>
+            </tr>
+
+            <!-- GROUP: TG -->
+            <tr class="grp"><td colspan="15">📍 TG · Thurgau <span class="mini">· 2 Kunden</span></td></tr>
+
+            <tr>
+              <td><div class="cell-pad"><input type="checkbox"/></div></td>
+              <td><div class="cell-pad"><span class="dot dot-y"></span><span class="cell-name">Müller Holzbau GmbH</span></div></td>
+              <td><div class="cell-pad"><span class="chip chip-n">Unternehmen</span></div></td>
+              <td><div class="cell-pad mono" style="font-size:11px">TG</div></td>
+              <td><div class="cell-pad cell-muted">8580 Amriswil</div></td>
+              <td><div class="cell-pad cell-mail">info@mueller-holzbau…</div></td>
+              <td><div class="cell-pad mono" style="font-size:11.5px">071 411 58 20</div></td>
+              <td><div class="cell-pad"><span class="chip">GmbH</span><span class="chip chip-o">wartet</span></div></td>
+              <td><div class="cell-pad"><div class="avatar-xs" style="background:#7a9b7f;color:#fff">SB</div>Sascha B.</div></td>
+              <td><div class="cell-pad cell-muted">gestern</div></td>
+              <td><div class="cell-pad"><span class="chip chip-o">1</span></div></td>
+              <td><div class="cell-pad"><span class="chip chip-n">0</span></div></td>
+              <td><div class="cell-pad"><span class="health" style="color:#8a5a00"><span class="health-bar"><span style="width:64%;background:#e7b64a"></span></span>64</span></div></td>
+              <td><div class="cell-pad cell-muted">94 h</div></td>
+              <td><div class="cell-pad mono" style="font-size:11px;color:#6b826b">CHE-115.224.481</div></td>
+            </tr>
+
+            <tr>
+              <td><div class="cell-pad"><input type="checkbox" checked/></div></td>
+              <td><div class="cell-pad"><span class="dot dot-g"></span><span class="cell-name">Bodensee Gastro AG</span></div></td>
+              <td><div class="cell-pad"><span class="chip chip-n">Unternehmen</span></div></td>
+              <td><div class="cell-pad mono" style="font-size:11px">TG</div></td>
+              <td><div class="cell-pad cell-muted">8280 Kreuzlingen</div></td>
+              <td><div class="cell-pad cell-mail">finance@bodensee-gast…</div></td>
+              <td><div class="cell-pad mono" style="font-size:11.5px">071 671 33 44</div></td>
+              <td><div class="cell-pad"><span class="chip">Gastro</span></div></td>
+              <td><div class="cell-pad"><div class="avatar-xs" style="background:#7a9b7f;color:#fff">SB</div>Sascha B.</div></td>
+              <td><div class="cell-pad cell-muted">vor 1 Wo</div></td>
+              <td><div class="cell-pad"><span class="chip chip-n">0</span></div></td>
+              <td><div class="cell-pad"><span class="chip chip-n">0</span></div></td>
+              <td><div class="cell-pad"><span class="health"><span class="health-bar"><span style="width:75%"></span></span>75</span></div></td>
+              <td><div class="cell-pad cell-muted">142 h</div></td>
+              <td><div class="cell-pad mono" style="font-size:11px;color:#6b826b">CHE-108.772.450</div></td>
+            </tr>
+
+            <!-- GROUP: ZH -->
+            <tr class="grp"><td colspan="15">📍 ZH · Zürich <span class="mini">· 2 Kunden</span></td></tr>
+
+            <tr>
+              <td><div class="cell-pad"><input type="checkbox"/></div></td>
+              <td><div class="cell-pad"><span class="dot dot-g"></span><span class="cell-name">Sutter &amp; Kuster Partner</span></div></td>
+              <td><div class="cell-pad"><span class="chip chip-n">Unternehmen</span></div></td>
+              <td><div class="cell-pad mono" style="font-size:11px">ZH</div></td>
+              <td><div class="cell-pad cell-muted">8001 Zürich</div></td>
+              <td><div class="cell-pad cell-mail">office@sutterkuster.ch</div></td>
+              <td><div class="cell-pad mono" style="font-size:11.5px">044 221 08 50</div></td>
+              <td><div class="cell-pad"><span class="chip chip-v">VIP</span><span class="chip chip-b">Holding</span></div></td>
+              <td><div class="cell-pad"><div class="avatar-xs" style="background:#e6ede6;color:#4d6a50">JM</div>J. Müller</div></td>
+              <td><div class="cell-pad cell-muted">vor 2 T</div></td>
+              <td><div class="cell-pad"><span class="chip chip-n">0</span></div></td>
+              <td><div class="cell-pad"><span class="chip chip-n">0</span></div></td>
+              <td><div class="cell-pad"><span class="health"><span class="health-bar"><span style="width:91%"></span></span>91</span></div></td>
+              <td><div class="cell-pad cell-muted">312 h</div></td>
+              <td><div class="cell-pad mono" style="font-size:11px;color:#6b826b">CHE-234.567.890</div></td>
+            </tr>
+
+            <tr>
+              <td><div class="cell-pad"><input type="checkbox"/></div></td>
+              <td><div class="cell-pad"><span class="dot dot-r"></span><span class="cell-name">Mettler Zürich GmbH</span></div></td>
+              <td><div class="cell-pad"><span class="chip chip-n">Unternehmen</span></div></td>
+              <td><div class="cell-pad mono" style="font-size:11px">ZH</div></td>
+              <td><div class="cell-pad cell-muted">8050 Zürich</div></td>
+              <td><div class="cell-pad cell-mail">buchh@mettler-zrh.ch</div></td>
+              <td><div class="cell-pad mono" style="font-size:11.5px">044 311 99 22</div></td>
+              <td><div class="cell-pad"><span class="chip chip-r">Mahnung 3</span></div></td>
+              <td><div class="cell-pad"><div class="avatar-xs" style="background:#e6ede6;color:#4d6a50">JM</div>J. Müller</div></td>
+              <td><div class="cell-pad cell-muted">vor 3 Wo</div></td>
+              <td><div class="cell-pad"><span class="chip chip-n">0</span></div></td>
+              <td><div class="cell-pad"><span class="chip chip-o">2</span></div></td>
+              <td><div class="cell-pad"><span class="health" style="color:#8a2d2d"><span class="health-bar"><span style="width:29%;background:#d94f4f"></span></span>29</span></div></td>
+              <td><div class="cell-pad cell-muted">48 h</div></td>
+              <td><div class="cell-pad mono" style="font-size:11px;color:#6b826b">CHE-445.112.003</div></td>
+            </tr>
+
+            <!-- GROUP: AI -->
+            <tr class="grp"><td colspan="15">📍 AI · Appenzell Innerrhoden <span class="mini">· 2 Kunden</span></td></tr>
+
+            <tr>
+              <td><div class="cell-pad"><input type="checkbox"/></div></td>
+              <td><div class="cell-pad"><svg class="icon-sm" style="color:#8aaa8f" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="7" r="4"/><path d="M6 21v-2a6 6 0 0 1 12 0v2"/></svg><span class="cell-name">Hasler Privat</span></div></td>
+              <td><div class="cell-pad"><span class="chip chip-b">Privat</span></div></td>
+              <td><div class="cell-pad mono" style="font-size:11px">AI</div></td>
+              <td><div class="cell-pad cell-muted">9050 Appenzell</div></td>
+              <td><div class="cell-pad cell-mail">p.hasler@gmx.ch</div></td>
+              <td><div class="cell-pad mono" style="font-size:11.5px">—</div></td>
+              <td><div class="cell-pad cell-muted">—</div></td>
+              <td><div class="cell-pad"><div class="avatar-xs" style="background:#e3eaf5;color:#2e4a7d">DA</div>D. Amann</div></td>
+              <td><div class="cell-pad cell-muted">vor 3 Wo</div></td>
+              <td><div class="cell-pad"><span class="chip chip-n">0</span></div></td>
+              <td><div class="cell-pad"><span class="chip chip-n">0</span></div></td>
+              <td><div class="cell-pad"><span class="health"><span class="health-bar"><span style="width:70%"></span></span>70</span></div></td>
+              <td><div class="cell-pad cell-muted">9 h</div></td>
+              <td><div class="cell-pad cell-muted">—</div></td>
+            </tr>
+
+            <tr>
+              <td><div class="cell-pad"><input type="checkbox"/></div></td>
+              <td><div class="cell-pad"><span class="dot dot-g"></span><span class="cell-name">Appenzeller Tech GmbH</span></div></td>
+              <td><div class="cell-pad"><span class="chip chip-n">Unternehmen</span></div></td>
+              <td><div class="cell-pad mono" style="font-size:11px">AI</div></td>
+              <td><div class="cell-pad cell-muted">9050 Appenzell</div></td>
+              <td><div class="cell-pad cell-mail">hi@appenzell-tech.ch</div></td>
+              <td><div class="cell-pad mono" style="font-size:11.5px">071 781 44 91</div></td>
+              <td><div class="cell-pad"><span class="chip chip-v">Neu</span><span class="chip">GmbH</span></div></td>
+              <td><div class="cell-pad"><div class="avatar-xs" style="background:#7a9b7f;color:#fff">SB</div>Sascha B.</div></td>
+              <td><div class="cell-pad cell-muted">heute</div></td>
+              <td><div class="cell-pad"><span class="chip chip-n">0</span></div></td>
+              <td><div class="cell-pad"><span class="chip chip-n">0</span></div></td>
+              <td><div class="cell-pad"><span class="health"><span class="health-bar"><span style="width:68%"></span></span>68</span></div></td>
+              <td><div class="cell-pad cell-muted">14 h</div></td>
+              <td><div class="cell-pad mono" style="font-size:11px;color:#6b826b">CHE-558.991.004</div></td>
+            </tr>
+
+            <!-- Add row -->
+            <tr>
+              <td colspan="15" style="height:34px"><div class="cell-pad" style="color:#8aaa8f;cursor:pointer"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 5v14M5 12h14"/></svg>Zeile hinzufügen</div></td>
+            </tr>
+
+          </tbody>
+        </table>
+      </div>
+
+      <!-- INSPECTOR -->
+      <aside class="insp w-[340px] flex-shrink-0 overflow-y-auto">
+        <div class="insp-section" style="background:linear-gradient(180deg,#f7faf7,#fff)">
+          <div class="flex items-center justify-between mb-3">
+            <span class="insp-label">Inspector</span>
+            <button class="btn-ghost p-1 rounded"><svg class="icon-sm" style="color:#8aaa8f" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+          </div>
+          <div class="flex items-center gap-3">
+            <div class="w-12 h-12 rounded-xl flex items-center justify-center text-sm font-bold" style="background:linear-gradient(135deg,#7a9b7f,#4d6a50);color:#fff">AM</div>
+            <div>
+              <div class="font-semibold text-[15px] leading-tight">Alpbach Metallbau AG</div>
+              <div class="text-[11.5px]" style="color:#6b826b">SG · Widnau · Aktiv seit 2019</div>
+            </div>
+          </div>
+          <div class="flex gap-1 mt-3 flex-wrap">
+            <span class="chip chip-v">VIP</span><span class="chip chip-b">Holding</span><span class="chip">AG</span><span class="chip">Metallbau</span>
+          </div>
+          <div class="flex gap-2 mt-3">
+            <button class="btn btn-primary flex-1 justify-center">Öffnen →</button>
+            <button class="btn btn-outline"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M22 16.92V21a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 5.18 2 2 0 0 1 4.11 3h4a2 2 0 0 1 2 1.72c.13.96.37 1.9.72 2.81a2 2 0 0 1-.45 2.11L8.9 11.1a16 16 0 0 0 6 6l1.46-1.46a2 2 0 0 1 2.11-.45c.91.35 1.85.59 2.81.72A2 2 0 0 1 22 17.92Z"/></svg></button>
+            <button class="btn btn-outline"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg></button>
+          </div>
+        </div>
+
+        <div class="insp-section">
+          <div class="insp-label">Offene Arbeit</div>
+          <div class="grid grid-cols-3 gap-2 mt-2">
+            <div class="text-center py-2 rounded-lg" style="background:#fde7e7">
+              <div class="text-lg font-bold" style="color:#8a2d2d">3</div>
+              <div class="text-[10px]" style="color:#8a2d2d;text-transform:uppercase;letter-spacing:.05em;font-weight:600">Mails</div>
+            </div>
+            <div class="text-center py-2 rounded-lg" style="background:#fef0c7">
+              <div class="text-lg font-bold" style="color:#8a5a00">2</div>
+              <div class="text-[10px]" style="color:#8a5a00;text-transform:uppercase;letter-spacing:.05em;font-weight:600">Fristen</div>
+            </div>
+            <div class="text-center py-2 rounded-lg" style="background:#e6ede6">
+              <div class="text-lg font-bold" style="color:#4d6a50">5</div>
+              <div class="text-[10px]" style="color:#4d6a50;text-transform:uppercase;letter-spacing:.05em;font-weight:600">Tasks</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="insp-section">
+          <div class="insp-label">Stammdaten</div>
+          <div class="insp-field"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 10h18M5 6h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z"/></svg><span><span class="mono" style="font-size:11.5px">CHE-114.781.315</span></span></div>
+          <div class="insp-field"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0Z"/><circle cx="12" cy="10" r="3"/></svg><span><b>Industriestrasse 18</b> · 9443 Widnau</span></div>
+          <div class="insp-field"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M22 16.92V21a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 5.18 2 2 0 0 1 4.11 3h4a2 2 0 0 1 2 1.72c.13.96.37 1.9.72 2.81a2 2 0 0 1-.45 2.11L8.9 11.1a16 16 0 0 0 6 6l1.46-1.46a2 2 0 0 1 2.11-.45c.91.35 1.85.59 2.81.72A2 2 0 0 1 22 17.92Z"/></svg><span class="mono" style="font-size:11.5px">071 722 18 40</span></div>
+          <div class="insp-field"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg><span>buchhaltung@alpbach-metallbau.ch</span></div>
+        </div>
+
+        <div class="insp-section">
+          <div class="insp-label">Ansprechpartner · 3</div>
+          <div class="flex flex-col gap-2 mt-2">
+            <div class="flex items-center gap-2"><div class="avatar-xs" style="background:#e6ede6;color:#4d6a50">RA</div><span class="text-[12.5px]"><b>Roland Alpbach</b> · GF</span></div>
+            <div class="flex items-center gap-2"><div class="avatar-xs" style="background:#e3eaf5;color:#2e4a7d">AK</div><span class="text-[12.5px]"><b>Anja Keller</b> · Buchhaltung</span></div>
+            <div class="flex items-center gap-2"><div class="avatar-xs" style="background:#efe4f8;color:#5f3a9c">MB</div><span class="text-[12.5px]"><b>Martin Blum</b> · Prokurist</span></div>
+          </div>
+        </div>
+
+        <div class="insp-section">
+          <div class="insp-label">Letzte Aktivität</div>
+          <div class="flex flex-col gap-1.5 mt-2 text-[12px]">
+            <div class="flex gap-2"><span class="mono text-[11px]" style="color:#8aaa8f">09:14</span><span class="cell-muted">Mail empfangen von A. Keller</span></div>
+            <div class="flex gap-2"><span class="mono text-[11px]" style="color:#8aaa8f">GE.</span><span class="cell-muted">Frist eingereicht · SE 2024</span></div>
+            <div class="flex gap-2"><span class="mono text-[11px]" style="color:#8aaa8f">17.4.</span><span class="cell-muted">Task erledigt · KoKo abgleichen</span></div>
+            <div class="flex gap-2"><span class="mono text-[11px]" style="color:#8aaa8f">14.4.</span><span class="cell-muted">Notiz · Telefonat R. Alpbach</span></div>
+          </div>
+        </div>
+
+      </aside>
+    </div>
+
+    <!-- Footer -->
+    <div class="px-5 py-2 border-t flex items-center justify-between text-[11.5px] flex-shrink-0" style="background:#fafbfa;border-color:#e0e8e0;color:#6b826b">
+      <div>9 von 128 sichtbar · 4 Gruppen · 12 Felder</div>
+      <div class="flex items-center gap-4">
+        <span>Summe Zeit: <b style="color:#1a2a1a">913 h</b></span>
+        <span>Ø Health: <b style="color:#1a2a1a">62</b></span>
+        <span>Offene Fristen: <b style="color:#8a5a00">5</b></span>
+      </div>
+    </div>
+  </main>
+</div>
+
+</body>
+</html>

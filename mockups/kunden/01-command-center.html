@@ -1,0 +1,514 @@
+<!doctype html>
+<html lang="de" data-theme="artis">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=1600" />
+<title>MailFlow · Kunden-Cockpit (Mockup 1 · Command Center)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  html,body{font-family:'Inter',system-ui,sans-serif}
+  body{background:#f2f5f2;color:#1a1a2e}
+  .card{background:#fff;border:1px solid #e4e9e4;border-radius:12px}
+  .subtle{color:#6b826b}
+  .chip{display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:2px 7px;border-radius:6px;background:#e6ede6;color:#4d6a50;font-weight:500}
+  .chip-n{background:#e4e4ea;color:#4a4a5a}
+  .chip-b{background:#e3eaf5;color:#2e4a7d}
+  .chip-o{background:#fef0c7;color:#8a5a00}
+  .chip-r{background:#fde7e7;color:#8a2d2d}
+  .chip-v{background:#efe4f8;color:#5f3a9c}
+  .pill{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:600}
+  .btn{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer}
+  .btn-primary{background:#7a9b7f;color:#fff}.btn-primary:hover{background:#638666}
+  .btn-ghost{color:#4a5a4a}.btn-ghost:hover{background:#e6ede6}
+  .icon{width:16px;height:16px;stroke-width:2}
+  .icon-sm{width:13px;height:13px;stroke-width:2}
+  .icon-xs{width:11px;height:11px;stroke-width:2}
+  .inp{background:#f7faf7;border:1px solid #d4dcd4;border-radius:7px;padding:7px 10px;font-size:13px;width:100%}
+  .inp:focus{border-color:#7a9b7f;background:#fff;outline:none}
+  .divider-label{font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:#94a394;font-weight:700}
+  .kpi-card{background:linear-gradient(135deg,#ffffff 0%,#f7faf7 100%);border:1px solid #e0e8e0;border-radius:12px;padding:14px 16px;position:relative;overflow:hidden}
+  .kpi-card::after{content:'';position:absolute;top:0;right:0;width:80px;height:80px;background:radial-gradient(circle,rgba(122,155,127,.1),transparent 70%)}
+  .kpi-value{font-size:26px;font-weight:700;letter-spacing:-.02em;line-height:1}
+  .kpi-label{font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:#6b826b;font-weight:600;margin-top:6px}
+  .kpi-trend{font-size:11px;color:#4d6a50;margin-top:4px;font-weight:500}
+  .nav-item{display:flex;align-items:center;gap:10px;padding:7px 11px;border-radius:8px;cursor:pointer;font-size:13px;color:#4a5a4a}
+  .nav-item:hover{background:#edf2ed}
+  .nav-item.active{background:#7a9b7f;color:#fff;font-weight:500}
+  .nav-item.active .nav-count{background:rgba(255,255,255,.22);color:#fff}
+  .nav-count{margin-left:auto;font-size:11px;font-weight:600;padding:1px 7px;border-radius:10px;background:#edf2ed;color:#6b826b}
+  .list-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border-left:3px solid transparent;cursor:pointer;border-bottom:1px solid #f0f3f0}
+  .list-row:hover{background:#f7faf7}
+  .list-row.active{background:linear-gradient(90deg,rgba(122,155,127,.15),rgba(122,155,127,.05));border-left-color:#7a9b7f}
+  .avatar{width:32px;height:32px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0}
+  .dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+  .dot-g{background:#4caf70}.dot-y{background:#e7b64a}.dot-r{background:#d94f4f}.dot-n{background:#b0b8b0}
+  .health-ring{position:relative;width:56px;height:56px}
+  .health-ring svg{transform:rotate(-90deg)}
+  .tl-item{position:relative;padding-left:28px;padding-bottom:18px}
+  .tl-item::before{content:'';position:absolute;left:10px;top:4px;bottom:-4px;width:2px;background:#e0e8e0}
+  .tl-item:last-child::before{display:none}
+  .tl-dot{position:absolute;left:5px;top:4px;width:12px;height:12px;border-radius:50%;background:#fff;border:2px solid #7a9b7f;box-shadow:0 0 0 3px #e6ede6}
+  .tl-dot.mail{border-color:#2e4a7d;box-shadow:0 0 0 3px #e3eaf5}
+  .tl-dot.frist{border-color:#8a5a00;box-shadow:0 0 0 3px #fef0c7}
+  .tl-dot.task{border-color:#5f3a9c;box-shadow:0 0 0 3px #efe4f8}
+  .tl-dot.note{border-color:#6b826b;box-shadow:0 0 0 3px #edf2ed}
+  .tab{padding:7px 12px;font-size:12.5px;font-weight:500;color:#6b826b;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
+  .tab.active{color:#4d6a50;border-bottom-color:#7a9b7f}
+  .sparkbar{display:flex;align-items:flex-end;gap:2px;height:26px}
+  .sparkbar span{flex:1;background:#bfcfbf;border-radius:2px;min-width:3px}
+  .sparkbar span.hi{background:#7a9b7f}
+  .quick-btn{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 8px;border-radius:10px;background:#f7faf7;border:1px solid #e0e8e0;cursor:pointer;flex:1}
+  .quick-btn:hover{background:#edf2ed;border-color:#bfcfbf}
+  .quick-btn span{font-size:11px;color:#4d6a50;font-weight:500}
+  ::-webkit-scrollbar{width:8px;height:8px}
+  ::-webkit-scrollbar-thumb{background:#d4dcd4;border-radius:4px}
+</style>
+</head>
+<body class="min-h-screen">
+
+<div class="flex h-screen overflow-hidden">
+
+  <!-- APP-SIDEBAR -->
+  <aside class="w-14 flex-shrink-0 flex flex-col items-center justify-between py-4 border-r" style="background:#e6ede6;border-color:#bfcfbf">
+    <nav class="flex flex-col items-center gap-2">
+      <div class="w-10 h-10 flex items-center justify-center rounded-lg text-slate-500"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg></div>
+      <div class="w-10 h-10 flex items-center justify-center rounded-lg text-slate-500"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg></div>
+      <div class="w-10 h-10 flex items-center justify-center rounded-lg text-slate-500"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="m9 12 2 2 4-4"/></svg></div>
+      <div class="w-10 h-10 flex items-center justify-center rounded-lg text-slate-500"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg></div>
+      <div class="w-10 h-10 flex items-center justify-center rounded-lg shadow-md text-white" style="background:#7a9b7f"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M9 22v-4h6v4"/></svg></div>
+      <div class="w-10 h-10 flex items-center justify-center rounded-lg text-slate-500"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 3h7v7H3zM14 3h7v4h-7zM14 12h7v9h-7zM3 16h7v5H3z"/></svg></div>
+    </nav>
+    <div class="w-9 h-9 rounded-full flex items-center justify-center text-sm font-semibold" style="background:rgba(122,155,127,.2);color:#4d6a50;border:1px solid rgba(122,155,127,.3)">SB</div>
+  </aside>
+
+  <!-- SMART-FILTER / SAVED VIEWS -->
+  <aside class="w-60 flex-shrink-0 border-r p-4 overflow-y-auto flex flex-col gap-4" style="background:#fdfefd;border-color:#e0e8e0">
+    <div>
+      <div class="flex items-center justify-between mb-2">
+        <h2 class="text-[15px] font-semibold tracking-tight">Kunden</h2>
+        <button class="btn-ghost p-1 rounded hover:bg-[#edf2ed]"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 5v14M5 12h14"/></svg></button>
+      </div>
+      <div class="text-[11px] subtle">128 Einträge · 6 inaktiv</div>
+    </div>
+
+    <div>
+      <div class="divider-label mb-2">Ansichten</div>
+      <div class="flex flex-col gap-0.5">
+        <div class="nav-item active">
+          <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 0 1 0 20"/></svg>
+          Alle aktiven<span class="nav-count">122</span>
+        </div>
+        <div class="nav-item">
+          <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"/></svg>
+          Meine Kunden<span class="nav-count">34</span>
+        </div>
+        <div class="nav-item">
+          <svg class="icon-sm text-red-500" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>
+          Risiko / Überfällig<span class="nav-count" style="background:#fde7e7;color:#8a2d2d">7</span>
+        </div>
+        <div class="nav-item">
+          <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 2v20M2 12h20"/></svg>
+          Neu (30 Tage)<span class="nav-count">4</span>
+        </div>
+        <div class="nav-item">
+          <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
+          Onboarding<span class="nav-count">9</span>
+        </div>
+        <div class="nav-item">
+          <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 3v4M8 3v4M2 11h20"/></svg>
+          Mit offener Frist<span class="nav-count">18</span>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="divider-label mb-2 flex items-center justify-between">
+        <span>Typ</span>
+      </div>
+      <div class="flex flex-col gap-0.5">
+        <div class="nav-item"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="4" y="2" width="16" height="20" rx="2"/></svg>Unternehmen<span class="nav-count">87</span></div>
+        <div class="nav-item"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="7" r="4"/><path d="M6 21v-2a6 6 0 0 1 12 0v2"/></svg>Privatpersonen<span class="nav-count">41</span></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="divider-label mb-2">Kanton</div>
+      <div class="flex flex-wrap gap-1.5">
+        <span class="chip">SG · 42</span>
+        <span class="chip chip-n">TG · 18</span>
+        <span class="chip chip-n">ZH · 12</span>
+        <span class="chip chip-n">AI · 9</span>
+        <span class="chip chip-n">AR · 7</span>
+        <span class="chip chip-n">+5</span>
+      </div>
+    </div>
+
+    <div>
+      <div class="divider-label mb-2">Tags</div>
+      <div class="flex flex-wrap gap-1.5">
+        <span class="chip chip-v">VIP</span>
+        <span class="chip chip-b">Holding</span>
+        <span class="chip chip-o">Landwirt</span>
+        <span class="chip chip-n">GmbH</span>
+        <span class="chip chip-n">Einzelfirma</span>
+        <span class="chip chip-n">+12</span>
+      </div>
+    </div>
+
+    <button class="btn btn-ghost text-xs mt-auto border border-dashed" style="border-color:#bfcfbf"><svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 5v14M5 12h14"/></svg>Ansicht speichern</button>
+  </aside>
+
+  <!-- KUNDENLISTE -->
+  <section class="w-[320px] flex-shrink-0 border-r flex flex-col" style="background:#fff;border-color:#e0e8e0">
+    <div class="p-3 border-b" style="border-color:#e0e8e0">
+      <div class="relative">
+        <svg class="icon-sm absolute left-3 top-1/2 -translate-y-1/2" style="color:#8aaa8f" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        <input class="inp pl-9" placeholder="Name, Ort, Tag, AHV…"/>
+      </div>
+      <div class="flex items-center justify-between mt-3 text-[11px] subtle">
+        <span>122 Kunden · sortiert: <b class="text-[#4d6a50]">Letzter Kontakt</b></span>
+        <button class="hover:text-[#4d6a50]"><svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 6h18M6 12h12M10 18h4"/></svg></button>
+      </div>
+    </div>
+
+    <div class="flex-1 overflow-y-auto">
+      <!-- aktive Zeile -->
+      <div class="list-row active">
+        <div class="avatar" style="background:linear-gradient(135deg,#7a9b7f,#4d6a50);color:#fff">AM</div>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-1.5">
+            <span class="dot dot-g"></span>
+            <div class="font-semibold text-[13.5px] truncate">Alpbach Metallbau AG</div>
+          </div>
+          <div class="text-[11px] subtle truncate">SG · Widnau · VIP · Holding</div>
+        </div>
+        <div class="text-right flex-shrink-0">
+          <div class="text-[10.5px] subtle">heute</div>
+          <div class="text-[11px] font-semibold" style="color:#8a2d2d">3 offen</div>
+        </div>
+      </div>
+
+      <div class="list-row">
+        <div class="avatar" style="background:#fef0c7;color:#8a5a00">MH</div>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-1.5"><span class="dot dot-y"></span><div class="font-semibold text-[13.5px] truncate">Müller Holzbau GmbH</div></div>
+          <div class="text-[11px] subtle truncate">TG · Amriswil · GmbH</div>
+        </div>
+        <div class="text-right flex-shrink-0"><div class="text-[10.5px] subtle">gestern</div><div class="text-[11px] font-semibold" style="color:#8a5a00">1 Frist</div></div>
+      </div>
+
+      <div class="list-row">
+        <div class="avatar" style="background:#e3eaf5;color:#2e4a7d">SK</div>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-1.5"><span class="dot dot-g"></span><div class="font-semibold text-[13.5px] truncate">Sutter & Kuster Partner</div></div>
+          <div class="text-[11px] subtle truncate">ZH · Zürich · Holding</div>
+        </div>
+        <div class="text-right flex-shrink-0"><div class="text-[10.5px] subtle">2 Tage</div><div class="text-[11px] subtle">—</div></div>
+      </div>
+
+      <div class="list-row">
+        <div class="avatar" style="background:#efe4f8;color:#5f3a9c">FZ</div>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-1.5"><span class="dot dot-r"></span><div class="font-semibold text-[13.5px] truncate">Familie Züblin</div></div>
+          <div class="text-[11px] subtle truncate">SG · Altstätten · Privat</div>
+        </div>
+        <div class="text-right flex-shrink-0"><div class="text-[10.5px] subtle">4 Tage</div><div class="text-[11px] font-semibold" style="color:#8a2d2d">überfällig</div></div>
+      </div>
+
+      <div class="list-row">
+        <div class="avatar" style="background:#dcece0;color:#4d6a50">BG</div>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-1.5"><span class="dot dot-g"></span><div class="font-semibold text-[13.5px] truncate">Bodensee Gastro AG</div></div>
+          <div class="text-[11px] subtle truncate">TG · Kreuzlingen · Gastro</div>
+        </div>
+        <div class="text-right flex-shrink-0"><div class="text-[10.5px] subtle">1 Woche</div><div class="text-[11px] subtle">—</div></div>
+      </div>
+
+      <div class="list-row">
+        <div class="avatar" style="background:#e4e4ea;color:#4a4a5a">HP</div>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-1.5"><span class="dot dot-n"></span><div class="font-semibold text-[13.5px] truncate">Hasler Privat</div></div>
+          <div class="text-[11px] subtle truncate">AI · Appenzell · Privat</div>
+        </div>
+        <div class="text-right flex-shrink-0"><div class="text-[10.5px] subtle">3 Wochen</div><div class="text-[11px] subtle">—</div></div>
+      </div>
+
+      <div class="list-row">
+        <div class="avatar" style="background:#fde7e7;color:#8a2d2d">RT</div>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-1.5"><span class="dot dot-r"></span><div class="font-semibold text-[13.5px] truncate">Rheintal Transport AG</div></div>
+          <div class="text-[11px] subtle truncate">SG · Au · Logistik</div>
+        </div>
+        <div class="text-right flex-shrink-0"><div class="text-[10.5px] subtle">5 Tage</div><div class="text-[11px] font-semibold" style="color:#8a2d2d">2 offen</div></div>
+      </div>
+
+      <div class="list-row">
+        <div class="avatar" style="background:#f7faf7;color:#4d6a50">BG</div>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-1.5"><span class="dot dot-g"></span><div class="font-semibold text-[13.5px] truncate">Berg Garage Sulzer</div></div>
+          <div class="text-[11px] subtle truncate">AR · Herisau · Einzelfirma</div>
+        </div>
+        <div class="text-right flex-shrink-0"><div class="text-[10.5px] subtle">1 Woche</div><div class="text-[11px] subtle">—</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- COCKPIT / DETAIL -->
+  <section class="flex-1 overflow-y-auto">
+
+    <!-- Hero-Header -->
+    <div class="px-8 pt-6 pb-5 border-b" style="background:linear-gradient(180deg,#fff 0%,#f7faf7 100%);border-color:#e0e8e0">
+      <div class="flex items-start gap-5">
+        <div class="flex-shrink-0">
+          <div class="w-16 h-16 rounded-2xl flex items-center justify-center text-2xl font-bold shadow-md" style="background:linear-gradient(135deg,#7a9b7f,#4d6a50);color:#fff">AM</div>
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 mb-1">
+            <span class="dot dot-g"></span>
+            <span class="divider-label" style="color:#4d6a50">Aktiv · seit 2019</span>
+          </div>
+          <h1 class="text-[24px] font-bold tracking-tight">Alpbach Metallbau AG</h1>
+          <div class="flex items-center gap-5 mt-2 text-[13px] subtle flex-wrap">
+            <span class="flex items-center gap-1.5"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 10h18M5 6h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z"/></svg>CHE-114.781.315</span>
+            <span class="flex items-center gap-1.5"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0Z"/><circle cx="12" cy="10" r="3"/></svg>Industriestrasse 18, 9443 Widnau · SG</span>
+            <span class="flex items-center gap-1.5"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M22 16.92V21a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 5.18 2 2 0 0 1 4.11 3h4a2 2 0 0 1 2 1.72c.13.96.37 1.9.72 2.81a2 2 0 0 1-.45 2.11L8.9 11.1a16 16 0 0 0 6 6l1.46-1.46a2 2 0 0 1 2.11-.45c.91.35 1.85.59 2.81.72A2 2 0 0 1 22 17.92Z"/></svg>+41 71 722 18 40</span>
+            <span class="flex items-center gap-1.5"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg>buchhaltung@alpbach-metallbau.ch</span>
+          </div>
+          <div class="flex items-center gap-1.5 mt-3">
+            <span class="chip chip-v">VIP</span>
+            <span class="chip chip-b">Holding</span>
+            <span class="chip">AG</span>
+            <span class="chip">Metallbau</span>
+            <span class="chip chip-n">+2</span>
+          </div>
+        </div>
+        <div class="flex flex-col items-end gap-3 flex-shrink-0">
+          <div class="flex gap-2">
+            <button class="btn btn-ghost"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg>Mail</button>
+            <button class="btn btn-ghost"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M22 16.92V21a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 5.18 2 2 0 0 1 4.11 3h4a2 2 0 0 1 2 1.72c.13.96.37 1.9.72 2.81a2 2 0 0 1-.45 2.11L8.9 11.1a16 16 0 0 0 6 6l1.46-1.46a2 2 0 0 1 2.11-.45c.91.35 1.85.59 2.81.72A2 2 0 0 1 22 17.92Z"/></svg>Anruf</button>
+            <button class="btn btn-primary"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Notiz</button>
+          </div>
+          <!-- Health Score -->
+          <div class="flex items-center gap-3 card px-4 py-2">
+            <div class="health-ring">
+              <svg width="56" height="56" viewBox="0 0 56 56">
+                <circle cx="28" cy="28" r="24" stroke="#e0e8e0" stroke-width="5" fill="none"/>
+                <circle cx="28" cy="28" r="24" stroke="#7a9b7f" stroke-width="5" fill="none" stroke-dasharray="150.8" stroke-dashoffset="27" stroke-linecap="round"/>
+              </svg>
+              <div class="absolute inset-0 flex items-center justify-center"><span class="text-sm font-bold" style="color:#4d6a50">82</span></div>
+            </div>
+            <div>
+              <div class="text-[11px] subtle">Health-Score</div>
+              <div class="text-[13px] font-semibold" style="color:#4d6a50">Stabil</div>
+              <div class="text-[10.5px] subtle">+4 vs. letzter Monat</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- KPI-Grid -->
+    <div class="px-8 pt-5">
+      <div class="grid grid-cols-4 gap-3">
+        <div class="kpi-card">
+          <div class="kpi-value" style="color:#8a2d2d">3</div>
+          <div class="kpi-label">Offene Mails</div>
+          <div class="kpi-trend" style="color:#8a2d2d">älteste: vor 6 Tagen</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-value" style="color:#8a5a00">2</div>
+          <div class="kpi-label">Fristen offen</div>
+          <div class="kpi-trend" style="color:#8a5a00">nächste: 30.04.2026</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-value">14h</div>
+          <div class="kpi-label">Zeit · April</div>
+          <div class="kpi-trend">Ø 18h/Monat</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-value">CHF 12.4k</div>
+          <div class="kpi-label">Fakturiert YTD</div>
+          <div class="kpi-trend">+8% YoY</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick-Actions -->
+    <div class="px-8 pt-4">
+      <div class="flex gap-2">
+        <button class="quick-btn"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="#4d6a50"><path d="M12 5v14M5 12h14"/></svg><span>Frist erstellen</span></button>
+        <button class="quick-btn"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="#4d6a50"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="m9 12 2 2 4-4"/></svg><span>Task</span></button>
+        <button class="quick-btn"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="#4d6a50"><circle cx="12" cy="7" r="4"/><path d="M6 21v-2a6 6 0 0 1 12 0v2"/></svg><span>Kontakt</span></button>
+        <button class="quick-btn"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="#4d6a50"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg><span>Dokument</span></button>
+        <button class="quick-btn"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="#4d6a50"><path d="M12 2v10l4 2"/><circle cx="12" cy="12" r="10"/></svg><span>Leistung</span></button>
+        <button class="quick-btn"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="#4d6a50"><path d="M3 12h18M12 3v18"/></svg><span>Portal öffnen</span></button>
+      </div>
+    </div>
+
+    <!-- TABS -->
+    <div class="px-8 mt-6 border-b flex items-center gap-4" style="border-color:#e0e8e0">
+      <div class="tab active">📋 Übersicht</div>
+      <div class="tab">📧 Mails <span class="chip chip-r" style="padding:0 5px;margin-left:3px;font-size:9.5px">3</span></div>
+      <div class="tab">✅ Tasks <span class="chip chip-n" style="padding:0 5px;margin-left:3px;font-size:9.5px">5</span></div>
+      <div class="tab">📅 Fristen <span class="chip chip-o" style="padding:0 5px;margin-left:3px;font-size:9.5px">2</span></div>
+      <div class="tab">📋 Tätigkeiten</div>
+      <div class="tab">👤 Kontakte <span class="chip chip-n" style="padding:0 5px;margin-left:3px;font-size:9.5px">4</span></div>
+      <div class="tab">📝 Notizen</div>
+      <div class="tab">📄 Dokumente</div>
+      <div class="tab">📗 Aktionäre</div>
+    </div>
+
+    <!-- ÜBERSICHT-Inhalt: 3 Spalten -->
+    <div class="px-8 py-6 grid grid-cols-[1.3fr_1fr] gap-6">
+
+      <!-- Aktivitäts-Timeline -->
+      <div>
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-[14px] font-semibold">Aktivität</h3>
+          <div class="flex gap-1">
+            <span class="chip">Alle</span><span class="chip chip-n">Mails</span><span class="chip chip-n">Fristen</span><span class="chip chip-n">Notizen</span>
+          </div>
+        </div>
+
+        <div class="card p-5">
+          <div class="tl-item">
+            <div class="tl-dot mail"></div>
+            <div class="flex items-center justify-between">
+              <div class="font-medium text-[13px]">Mail empfangen · <span class="subtle font-normal">A. Keller</span></div>
+              <div class="text-[11px] subtle">heute · 09:14</div>
+            </div>
+            <div class="text-[12.5px] subtle mt-1">„Fristverlängerung MWST Q1 2026 – bitte um Rückmeldung…"</div>
+            <div class="mt-2 flex gap-1.5"><span class="chip chip-b">#Mail</span><span class="chip chip-o">#Frist</span></div>
+          </div>
+
+          <div class="tl-item">
+            <div class="tl-dot frist"></div>
+            <div class="flex items-center justify-between">
+              <div class="font-medium text-[13px]">Frist eingereicht · <span class="subtle font-normal">Steuererklärung 2024</span></div>
+              <div class="text-[11px] subtle">gestern · 16:42</div>
+            </div>
+            <div class="text-[12.5px] subtle mt-1">Portal SG · bewilligt bis 30.09.2026 · Screenshot angehängt</div>
+          </div>
+
+          <div class="tl-item">
+            <div class="tl-dot task"></div>
+            <div class="flex items-center justify-between">
+              <div class="font-medium text-[13px]">Task erledigt · <span class="subtle font-normal">Kontokorrent abgleichen</span></div>
+              <div class="text-[11px] subtle">17. Apr · 11:08</div>
+            </div>
+            <div class="text-[12.5px] subtle mt-1">erledigt von <b>SB</b> · 2h 15min gebucht</div>
+          </div>
+
+          <div class="tl-item">
+            <div class="tl-dot note"></div>
+            <div class="flex items-center justify-between">
+              <div class="font-medium text-[13px]">Notiz · <span class="subtle font-normal">Telefonat R. Alpbach</span></div>
+              <div class="text-[11px] subtle">14. Apr · 15:30</div>
+            </div>
+            <div class="text-[12.5px] subtle mt-1">Neue Niederlassung geplant in Balgach ab 08/26 – prüfen ob Nebensteuerdomizil nötig…</div>
+          </div>
+
+          <div class="tl-item">
+            <div class="tl-dot"></div>
+            <div class="flex items-center justify-between">
+              <div class="font-medium text-[13px]">Dokument hinzugefügt · <span class="subtle font-normal">Bilanz 2024.pdf</span></div>
+              <div class="text-[11px] subtle">10. Apr · 08:55</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Rechte Spalte: Kontakte · Fristen · Stats -->
+      <div class="flex flex-col gap-4">
+
+        <div class="card p-4">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-[13px] font-semibold">Ansprechpartner</h3>
+            <button class="btn-ghost p-1 rounded hover:bg-[#edf2ed]"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 5v14M5 12h14"/></svg></button>
+          </div>
+          <div class="flex flex-col gap-3">
+            <div class="flex items-center gap-3">
+              <div class="avatar" style="background:#e6ede6;color:#4d6a50">RA</div>
+              <div class="flex-1 min-w-0">
+                <div class="text-[13px] font-medium">Roland Alpbach</div>
+                <div class="text-[11px] subtle">Geschäftsführer · r.alpbach@…</div>
+              </div>
+              <span class="pill" style="background:#e6ede6;color:#4d6a50">Hauptkontakt</span>
+            </div>
+            <div class="flex items-center gap-3">
+              <div class="avatar" style="background:#e3eaf5;color:#2e4a7d">AK</div>
+              <div class="flex-1 min-w-0">
+                <div class="text-[13px] font-medium">Anja Keller</div>
+                <div class="text-[11px] subtle">Buchhaltung · a.keller@…</div>
+              </div>
+            </div>
+            <div class="flex items-center gap-3">
+              <div class="avatar" style="background:#efe4f8;color:#5f3a9c">MB</div>
+              <div class="flex-1 min-w-0">
+                <div class="text-[13px] font-medium">Martin Blum</div>
+                <div class="text-[11px] subtle">Prokurist</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card p-4">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-[13px] font-semibold">Nächste Fristen</h3>
+            <span class="chip chip-o">2 offen</span>
+          </div>
+          <div class="flex flex-col gap-2">
+            <div class="flex items-center gap-3 p-2 rounded-lg" style="background:#fef0c7">
+              <div class="flex flex-col items-center justify-center w-10 h-10 rounded-md" style="background:#fff;border:1px solid #e9c86a">
+                <span class="text-[9px] subtle" style="color:#8a5a00">APR</span>
+                <span class="text-sm font-bold" style="color:#8a5a00">30</span>
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="text-[13px] font-semibold">MWST Q1 2026</div>
+                <div class="text-[11px]" style="color:#8a5a00">in 8 Tagen · Portal ESTV</div>
+              </div>
+            </div>
+            <div class="flex items-center gap-3 p-2 rounded-lg" style="background:#f7faf7">
+              <div class="flex flex-col items-center justify-center w-10 h-10 rounded-md" style="background:#fff;border:1px solid #d4dcd4">
+                <span class="text-[9px] subtle">SEP</span>
+                <span class="text-sm font-bold">30</span>
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="text-[13px] font-semibold">Steuererklärung 2025</div>
+                <div class="text-[11px] subtle">in 161 Tagen · SG Juristisch</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card p-4">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-[13px] font-semibold">Zeit · 12 Monate</h3>
+            <span class="text-[11px] subtle">Total 218h</span>
+          </div>
+          <div class="sparkbar mb-2">
+            <span style="height:20%"></span><span style="height:40%"></span><span style="height:30%"></span>
+            <span style="height:55%"></span><span style="height:70%"></span><span style="height:45%"></span>
+            <span style="height:60%"></span><span style="height:75%"></span><span style="height:50%"></span>
+            <span style="height:65%"></span><span style="height:90%" class="hi"></span><span style="height:55%" class="hi"></span>
+          </div>
+          <div class="flex justify-between text-[10px] subtle"><span>Mai 25</span><span>Apr 26</span></div>
+          <div class="mt-3 pt-3 border-t flex items-center justify-between text-[12px]" style="border-color:#e0e8e0">
+            <span class="subtle">Tätigkeiten</span>
+            <div class="flex gap-1">
+              <span class="chip">Buchhaltung</span>
+              <span class="chip chip-b">MWST</span>
+              <span class="chip chip-v">Steuern</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+</div>
+
+</body>
+</html>
