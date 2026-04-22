@@ -374,7 +374,8 @@ export default function MailDetailPanel({ mail, onClose, onReply, onDelete, onEd
                   onChange={(e) => setReplyText(e.target.value)}
                   placeholder={isDictating ? "🎤 Höre zu..." : "Schnell antworten..."}
                   disabled={sending}
-                  className={`w-full bg-zinc-900/60 border rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:ring-1 resize-none transition-colors ${isDictating ? 'border-red-500/60 focus:ring-red-500/50' : 'border-zinc-800/50 focus:ring-indigo-500/50'}`}
+                  className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 resize-none transition-colors"
+                  style={{ background: cardBg, color: textMain, border: `1px solid ${isDictating ? '#ef4444' : borderCol}`, boxShadow: 'none' }}
                   rows={3}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
@@ -383,7 +384,7 @@ export default function MailDetailPanel({ mail, onClose, onReply, onDelete, onEd
                     }
                   }}
                 />
-                <div className="text-[10px] text-zinc-600 mt-1 px-1">
+                <div className="text-[10px] mt-1 px-1" style={{ color: textMuted }}>
                   Signatur wird automatisch angefügt
                 </div>
               </div>
