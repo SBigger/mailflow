@@ -375,6 +375,16 @@ function ShareLinksOverview({ accent, s, border, onClose }) {
   );
 }
 
+/** Hex-Farbe → Farbton in Grad (0–360) für Rainbow-Sortierung */
+function hexToHue(hex) {
+  if (!hex || hex.length < 7) return 999;
+  const r = parseInt(hex.slice(1,3),16)/255, g = parseInt(hex.slice(3,5),16)/255, b = parseInt(hex.slice(5,7),16)/255;
+  const max = Math.max(r,g,b), min = Math.min(r,g,b), d = max - min;
+  if (d === 0) return 0;
+  let h = max === r ? (g-b)/d+(g<b?6:0) : max === g ? (b-r)/d+2 : (r-g)/d+4;
+  return h * 60;
+}
+
 // ─── Tag-Filterung nach Kategorie ────────────────────────────────────────
 // Nutzt das "category"-Feld auf Eltern-Tags (wird in den Einstellungen gesetzt)
 function filterTagsByCategory(allTags, category) {
@@ -873,7 +883,7 @@ export default function Dokumente() {
         }
       });
     });
-    return [...parentMap.values()].sort((a, b) => (a.tag.sort_order ?? 999) - (b.tag.sort_order ?? 999));
+    return [...parentMap.values()].sort((a, b) => hexToHue(a.tag.color) - hexToHue(b.tag.color));
   }, [filtered, allTags, viewMode]);
 
   const breadcrumb = useMemo(() => {

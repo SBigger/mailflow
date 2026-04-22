@@ -2,6 +2,16 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown, Check, Search, Plus, Minus } from "lucide-react";
 
+/** Hex-Farbe → Farbton in Grad (0–360) für Rainbow-Sortierung */
+function hexToHue(hex) {
+  if (!hex || hex.length < 7) return 999;
+  const r = parseInt(hex.slice(1,3),16)/255, g = parseInt(hex.slice(3,5),16)/255, b = parseInt(hex.slice(5,7),16)/255;
+  const max = Math.max(r,g,b), min = Math.min(r,g,b), d = max - min;
+  if (d === 0) return 0;
+  let h = max === r ? (g-b)/d+(g<b?6:0) : max === g ? (b-r)/d+2 : (r-g)/d+4;
+  return h * 60;
+}
+
 /**
  * Hierarchisches Tag-Select-Widget with Collapsible Parents.
  */
@@ -41,7 +51,7 @@ export default function TagSelectWidget({ value = [], onChange, onCategoryChange
   }, [open, calcPos]);
 
   const q = search.trim().toLowerCase();
-  const parents = allTags.filter(t => !t.parent_id).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+  const parents = allTags.filter(t => !t.parent_id).sort((a, b) => hexToHue(a.color) - hexToHue(b.color));
   const kidsOf = (pid) => allTags.filter(t => t.parent_id === pid).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
 
   // Auto-expand parents if searching
