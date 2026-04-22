@@ -3,10 +3,12 @@ import * as pdfjsLib from 'pdfjs-dist';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { fillPdfBytes, fetchPdfBytes } from '@/lib/pdfFill';
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.min.js',
-  import.meta.url,
-).href;
+if (pdfjsLib?.GlobalWorkerOptions) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+    'pdfjs-dist/build/pdf.worker.min.js',
+    import.meta.url,
+  ).href;
+}
 
 const C = { accent: '#5b8a5b', panelBdr: '#ccd8cc', muted: '#9ca3af', heading: '#1a3a1a', pageBg: '#f2f5f2' };
 

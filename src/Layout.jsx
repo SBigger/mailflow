@@ -16,8 +16,10 @@ import {
   Wrench,
   Mic,
   CloudUpload,
-  BarChart3
+  BarChart3,
+  Clock
 } from "lucide-react";
+import { FEATURE_LEISTUNGSERFASSUNG } from "@/lib/featureFlags";
 import VoiceAssistant from "@/components/voice/VoiceAssistant";
 import TaskReminderPopup from "@/components/tasks/TaskReminderPopup";
 import BottomNav from "@/components/mobile/BottomNav";
@@ -84,6 +86,7 @@ export default function Layout({ children, currentPageName }) {
     { name: 'Dokumente',      icon: FolderOpen,      label: 'Dokumente' },
     { name: 'Posteingang',    icon: CloudUpload,     label: 'Posteingang' },
     { name: 'Auswertungen',   icon: BarChart3,       label: 'Auswertungen' },
+    ...(FEATURE_LEISTUNGSERFASSUNG ? [{ name: 'Leistungserfassung', icon: Clock, label: 'Leistungserfassung' }] : []),
     { name: 'ArtisTools',     icon: Wrench,          label: 'Artis Tools' },
     { name: 'Settings',       icon: SettingsIcon,    label: 'Einstellungen' },
   ], [isTaskUser]);

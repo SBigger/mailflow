@@ -8,7 +8,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import * as pdfjsLib from "pdfjs-dist";
 import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.js?url";
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
+if (pdfjsLib?.GlobalWorkerOptions) pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 import {
   ArrowLeft, Pen, Eraser, Hand, ZoomIn, ZoomOut, Save, Download, Upload,
   FileText, Plus, Trash2, ChevronLeft, ChevronRight, Maximize2, Undo2, Redo2,

@@ -12,7 +12,11 @@ import TagSelectWidget from "@/components/dokumente/TagSelectWidget";
 import { CATEGORIES } from "@/lib/categories";
 import * as pdfjsLib from "pdfjs-dist";
 import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.js?url";
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
+// Guard: in einigen Vite-Konfigurationen ist GlobalWorkerOptions nach dem
+// AMD-Namespace-Import undefined. Ohne Guard crasht der Module-Load → weisse Seite.
+if (pdfjsLib?.GlobalWorkerOptions) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
+}
 
 const BUCKET   = "dokumente";
 const CUR_YEAR = new Date().getFullYear();

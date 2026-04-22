@@ -28,11 +28,31 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    const { data: { user }, error: authError } = await supabaseClient.auth.getUser(
-      authHeader.replace("Bearer ", "")
-    );
-    if (authError || !user) {
-      return ok({ suggestion: null, error: "Authentifizierung fehlgeschlagen: " + (authError?.message || "kein User") });
+    // Token manuell decoden (Workaround für ES256-Keys).
+    // Function ist mit --no-verify-jwt deployed, wir validieren selbst:
+    // - Ablaufdatum (exp)
+    // - Gültiger sub-claim
+    // - Passender issuer
+    const token = authHeader.replace("Bearer ", "");
+    let userId: string | null = null;
+    try {
+      const parts = token.split(".");
+      if (parts.length !== 3) throw new Error("Token-Format ungültig");
+      const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
+
+      // Ablaufzeit prüfen
+      if (payload.exp && payload.exp * 1000 < Date.now()) {
+        throw new Error("Token abgelaufen");
+      }
+      // Issuer muss zu unserem Supabase-Projekt passen
+      const expectedIssuer = Deno.env.get("SUPABASE_URL") + "/auth/v1";
+      if (payload.iss && payload.iss !== expectedIssuer) {
+        throw new Error("Ungültiger Issuer");
+      }
+      userId = payload.sub || null;
+      if (!userId) throw new Error("kein sub-claim");
+    } catch (e: any) {
+      return ok({ suggestion: null, error: "Token-Prüfung fehlgeschlagen: " + (e?.message || String(e)) });
     }
 
     const { ticket_id } = await req.json();

@@ -1,0 +1,2040 @@
+<!doctype html>
+<html lang="de" data-theme="artis">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=1600" />
+<title>MailFlow · Leistungserfassung (Mockup v2)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = { theme: { extend: { colors: {
+    artis: { 50:'#f2f5f2', 100:'#e6ede6', 200:'#bfcfbf', 400:'#8fae92', 500:'#7a9b7f', 600:'#638666', 700:'#4d6a50' }
+  }}}};
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  html,body{font-family:'Inter',system-ui,sans-serif}
+  body{background:#f2f5f2;color:#1a1a2e}
+  .card{background:#fff;border:1px solid #e4e4ea;border-radius:10px}
+  .subtle{color:#6b826b}
+  .pill{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:500}
+  .chip{font-size:11px;padding:2px 7px;border-radius:6px;background:#e6ede6;color:#4d6a50}
+  .chip-b{background:#e3eaf5;color:#2e4a7d}
+  .chip-o{background:#fef0c7;color:#8a5a00}
+  .chip-r{background:#fde7e7;color:#8a2d2d}
+  .chip-g{background:#dcece0;color:#4d6a50}
+  .chip-n{background:#e4e4ea;color:#4a4a5a}
+  .btn{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:8px;font-size:13px;font-weight:500}
+  .btn-primary{background:#7a9b7f;color:#fff}
+  .btn-primary:hover{background:#638666}
+  .btn-ghost{color:#4a5a4a}
+  .btn-ghost:hover{background:#e6ede6}
+  .btn-danger{color:#8a2d2d}
+  .btn-danger:hover{background:#fde7e7}
+  table{border-collapse:separate;border-spacing:0;width:100%}
+  th{font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#6b826b;text-align:left}
+  th,td{padding:7px 10px;border-bottom:1px solid #eef1ee;font-size:13px}
+  tr:last-child td{border-bottom:none}
+  tr:hover td{background:#f7faf7}
+  .tab-p{padding:6px 14px;border-radius:8px;font-size:13.5px;font-weight:500;cursor:pointer}
+  .tab-p.active{background:#7a9b7f;color:#fff}
+  .tab-p:not(.active){color:#4a5a4a}
+  .tab-p:not(.active):hover{background:#e6ede6}
+  .tab-s{padding:4px 10px;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;white-space:nowrap}
+  .tab-s.active{background:#fff;color:#4d6a50;box-shadow:0 1px 2px rgba(0,0,0,.06);border:1px solid #bfcfbf}
+  .tab-s:not(.active){color:#6b826b}
+  .tab-s:not(.active):hover{background:#e6ede6;color:#4d6a50}
+  .kbd{font-family:ui-monospace,monospace;font-size:10.5px;padding:1px 5px;border:1px solid #d4dcd4;border-radius:4px;background:#f2f5f2}
+  .divider-note{font-size:11px;color:#94a394;text-transform:uppercase;letter-spacing:.06em}
+  .icon{width:16px;height:16px;stroke-width:2}
+  .col-chip{cursor:grab;display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:6px;background:#f2f5f2;border:1px solid #d4dcd4;font-size:11px}
+  .col-chip:hover{background:#e6ede6}
+  .row-fast input,.row-fast select{padding:5px 8px;font-size:12.5px;border:1px solid transparent;background:transparent;border-radius:4px;outline:none;width:100%}
+  .row-fast input:focus,.row-fast select:focus{background:#f7faf7;border-color:#7a9b7f}
+  .row-fast td{padding:2px 4px}
+  .tag{font-size:10.5px;padding:1px 6px;border-radius:4px;background:#f0f0f4;color:#334155;font-weight:500}
+  .sect-label{font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:#94a394;font-weight:600}
+  input,select,textarea{outline:none}
+  .inp{background:#f7faf7;border:1px solid #d4dcd4;border-radius:6px;padding:6px 9px;font-size:13px;width:100%}
+  .inp:focus{border-color:#7a9b7f;background:#fff}
+  details summary{list-style:none;cursor:pointer}
+  details summary::-webkit-details-marker{display:none}
+</style>
+</head>
+<body class="min-h-screen">
+
+<div class="flex h-screen overflow-hidden">
+  <!-- SIDEBAR -->
+  <aside class="w-14 flex-shrink-0 flex flex-col items-center justify-between py-4 border-r" style="background:#e6ede6;border-color:#bfcfbf;">
+    <nav class="flex flex-col items-center gap-2 w-full">
+      <div class="w-10 h-10 flex items-center justify-center rounded-lg text-slate-500" title="Dashboard"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg></div>
+      <div class="w-10 h-10 flex items-center justify-center rounded-lg text-slate-500" title="Mails"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg></div>
+      <div class="w-10 h-10 flex items-center justify-center rounded-lg text-slate-500" title="Tasks"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="m9 12 2 2 4-4"/></svg></div>
+      <div class="w-10 h-10 flex items-center justify-center rounded-lg text-slate-500" title="Fristen"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg></div>
+      <div class="w-10 h-10 flex items-center justify-center rounded-lg text-slate-500" title="Kunden"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M9 22v-4h6v4"/></svg></div>
+      <div class="w-10 h-10 flex items-center justify-center rounded-lg shadow-md text-white" style="background:#7a9b7f;" title="Leistung"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 3h7v7H3zM14 3h7v4h-7zM14 12h7v9h-7zM3 16h7v5H3z"/></svg></div>
+      <div class="w-10 h-10 flex items-center justify-center rounded-lg text-slate-500" title="Dokumente"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 4h10l6 6v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/></svg></div>
+      <div class="w-10 h-10 flex items-center justify-center rounded-lg text-slate-500" title="Settings"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/></svg></div>
+    </nav>
+    <div class="w-9 h-9 rounded-full flex items-center justify-center text-sm font-semibold" style="background:rgba(122,155,127,.2);color:#4d6a50;border:1px solid rgba(122,155,127,.3);">SB</div>
+  </aside>
+
+  <!-- MAIN -->
+  <main class="flex-1 overflow-auto">
+
+    <!-- HEADER mit 2-Ebenen-Navigation -->
+    <div class="px-6 pt-5 pb-0 border-b sticky top-0 z-30" style="border-color:#d4dcd4;background:#f2f5f2;">
+      <div class="flex items-center justify-between">
+        <div>
+          <h1 class="text-[19px] font-semibold tracking-tight">Leistungserfassung</h1>
+          <p class="text-xs subtle">Rapport · Fakturierung · Projekte & Stammdaten</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <input class="inp" style="width:260px" placeholder="Suche Projekt, Kunde, Rechnung…"/>
+          <button class="btn btn-ghost">Heute</button>
+          <button class="btn btn-primary"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 5v14M5 12h14"/></svg>Rapport</button>
+        </div>
+      </div>
+      <!-- Primary Nav -->
+      <div class="mt-4 flex items-center gap-1">
+        <span class="tab-p active" data-pri="erfassen">Erfassen</span>
+        <span class="tab-p" data-pri="abrechnen">Abrechnen</span>
+        <span class="tab-p" data-pri="stammdaten">Stammdaten</span>
+        <span class="tab-p" data-pri="auswert">Auswertungen</span>
+        <span class="tab-p" data-pri="integration">🔌 MailFlow-Integration</span>
+        <span class="tab-p" data-pri="mobile">📱 Mobile</span>
+      </div>
+      <!-- Secondary Nav (dynamisch) -->
+      <div class="mt-3 mb-3 flex items-center gap-1 overflow-x-auto" id="secnav-erfassen" data-secnav>
+        <span class="tab-s active" data-sec="tag">Tagesansicht</span>
+        <span class="tab-s" data-sec="woche">Wochenrapport</span>
+        <span class="tab-s" data-sec="meine">Meine Rapporte</span>
+        <span class="tab-s" data-sec="abwesend">Abwesenheiten</span>
+        <span class="tab-s" data-sec="spesen-erf">Spesen erfassen</span>
+      </div>
+      <div class="mt-3 mb-3 hidden flex items-center gap-1 overflow-x-auto" id="secnav-abrechnen" data-secnav>
+        <span class="tab-s active" data-sec="aa">Angef. Arbeiten (AA)</span>
+        <span class="tab-s" data-sec="fakvor">Faktura-Vorschlag</span>
+        <span class="tab-s" data-sec="entw-durch">Entwurfs-Durchgang</span>
+        <span class="tab-s" data-sec="rechn-neu">Rechnung erstellen</span>
+        <span class="tab-s" data-sec="rechn-list">Rechnungsübersicht</span>
+        <span class="tab-s" data-sec="akonto">Akonto</span>
+        <span class="tab-s" data-sec="mahnung">Mahnwesen</span>
+        <span class="tab-s" data-sec="zahlung">Zahlungseingänge (camt.054)</span>
+        <span class="tab-s" data-sec="gutschrift">Gutschrift/Storno</span>
+        <span class="tab-s" data-sec="spesen-abr">Spesen abrechnen</span>
+        <span class="tab-s" data-sec="wiederk">Wiederkehrende</span>
+      </div>
+      <div class="mt-3 mb-3 hidden flex items-center gap-1 overflow-x-auto" id="secnav-stammdaten" data-secnav>
+        <span class="tab-s active" data-sec="sd-projekte">Projekte</span>
+        <span class="tab-s" data-sec="sd-vorlagen">Projekt-Vorlagen</span>
+        <span class="tab-s" data-sec="sd-mitarb">Mitarbeiter</span>
+        <span class="tab-s" data-sec="sd-sollzeit">Sollzeiten-Profile</span>
+        <span class="tab-s" data-sec="sd-leistung">Leistungsarten (+ Satzhistorie)</span>
+        <span class="tab-s" data-sec="sd-gruppen">Gruppenansätze</span>
+        <span class="tab-s" data-sec="sd-kondi">Kunden-Konditionen</span>
+        <span class="tab-s" data-sec="sd-templ">Rechnungs-Templates</span>
+        <span class="tab-s" data-sec="sd-nummern">Nummernkreise & Versand</span>
+      </div>
+      <div class="mt-3 mb-3 hidden flex items-center gap-1 overflow-x-auto" id="secnav-auswert" data-secnav>
+        <span class="tab-s active" data-sec="aw-ma">Mitarbeiter-Rapport</span>
+        <span class="tab-s" data-sec="aw-proj">Projekt-Rentabilität</span>
+        <span class="tab-s" data-sec="aw-budget">Budget-Warnungen</span>
+      </div>
+    </div>
+
+    <div class="px-6 py-6">
+
+      <!-- ================================================================ -->
+      <!-- ERFASSEN : TAGESANSICHT                                          -->
+      <!-- ================================================================ -->
+      <section data-panel="tag">
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <h2 class="text-base font-semibold">Tagesansicht · Dienstag, 21.04.2026</h2>
+            <p class="text-xs subtle">Schnell-Zeile ganz oben · Blöcke ziehen · Lücken sehen · Intern = erfasst, Extern wird beim Fakturieren gesetzt</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button class="btn btn-ghost">◀</button>
+            <button class="btn btn-ghost">Heute</button>
+            <button class="btn btn-ghost">▶</button>
+            <input type="date" class="inp" style="width:150px" value="2026-04-21"/>
+          </div>
+        </div>
+
+        <!-- ⚡ Schnell-Erfassung Zeile -->
+        <div class="card overflow-hidden mb-4" style="border:2px solid #7a9b7f;">
+          <div class="px-4 py-2 flex items-center justify-between text-xs" style="background:#e6ede6;color:#4d6a50;">
+            <div class="font-semibold uppercase tracking-wider">⚡ Schnell-Rapport · Dienstag 21.04.2026</div>
+            <div>Tab=Feld · Enter=Speichern+neu · F2=letzte wiederholen · Von/Bis optional</div>
+          </div>
+          <table class="row-fast">
+            <thead style="background:#f7faf7;"><tr>
+              <th style="width:68px">Von</th>
+              <th style="width:68px">Bis</th>
+              <th style="width:24%">Projekt (= Kunde, BWL)</th>
+              <th style="width:140px">Leistungsart</th>
+              <th class="text-right" style="width:85px">Std. <span class="chip chip-o">intern</span></th>
+              <th style="width:35%">Beschreibung</th>
+              <th class="text-right" style="width:90px">Satz</th>
+              <th class="text-right" style="width:85px">Wert</th>
+              <th style="width:50px"></th>
+            </tr></thead>
+            <tbody>
+              <tr>
+                <td><input type="time" value="08:00"/></td>
+                <td><input type="time" value="09:30"/></td>
+                <td><input value="Huber AG, BWL"/></td>
+                <td><select><option>Abschlussarb.</option><option>Buchhaltung</option><option>Steuern</option><option>Beratung</option><option>Admin</option><option>Intern</option></select></td>
+                <td><input value="1.50" style="color:#4d6a50;font-weight:500"/></td>
+                <td><input value="Bilanz abgestimmt, Anhang vorbereitet"/></td>
+                <td><input value="220.00"/></td>
+                <td class="text-right tabular-nums font-medium" style="padding-right:10px">330.00</td>
+                <td><button class="btn btn-primary text-xs">↵</button></td>
+              </tr>
+              <tr style="background:#fafcfa">
+                <td><input type="time" placeholder="--:--"/></td>
+                <td><input type="time" placeholder="--:--"/></td>
+                <td><input placeholder="Projekt suchen… z.B. Müller GmbH, BWL"/></td>
+                <td><select><option>— Leistungsart —</option></select></td>
+                <td><input placeholder="0.00"/></td>
+                <td><input placeholder="…"/></td>
+                <td><input placeholder="auto"/></td>
+                <td class="text-right tabular-nums subtle" style="padding-right:10px">—</td>
+                <td><button class="btn btn-ghost text-xs">+</button></td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="px-4 py-2 text-[11px]" style="background:#f7faf7;color:#4a5a4a;">
+            Rapportiert werden <b>interne Stunden</b>. Extern = gleich, wird erst beim <b>Fakturieren</b> pro Zeile angepasst (kürzen/erhöhen). Satz aus Gruppenansatz, pro Zeile übersteuerbar.
+          </div>
+        </div>
+
+        <div class="grid grid-cols-12 gap-5">
+          <!-- Zeitstrahl -->
+          <div class="col-span-8 card p-0 overflow-hidden">
+            <div class="px-4 py-3 border-b flex items-center justify-between text-xs" style="border-color:#eef1ee;">
+              <span class="subtle">07:00 – 19:00 · 15-Min-Raster</span>
+              <span><span class="chip">Klick=neuer Eintrag</span> <span class="chip">Drag=Dauer</span></span>
+            </div>
+            <div class="relative" style="height:480px">
+              <div class="absolute inset-0 grid" style="grid-template-rows:repeat(12,1fr)">
+                <div class="border-b px-3 py-1 text-[11px] subtle" style="border-color:#eef1ee">07:00</div>
+                <div class="border-b px-3 py-1 text-[11px] subtle" style="border-color:#eef1ee">08:00</div>
+                <div class="border-b px-3 py-1 text-[11px] subtle" style="border-color:#eef1ee">09:00</div>
+                <div class="border-b px-3 py-1 text-[11px] subtle" style="border-color:#eef1ee">10:00</div>
+                <div class="border-b px-3 py-1 text-[11px] subtle" style="border-color:#eef1ee">11:00</div>
+                <div class="border-b px-3 py-1 text-[11px] subtle" style="border-color:#eef1ee;background:#fafafa">12:00 · Mittag</div>
+                <div class="border-b px-3 py-1 text-[11px] subtle" style="border-color:#eef1ee">13:00</div>
+                <div class="border-b px-3 py-1 text-[11px] subtle" style="border-color:#eef1ee">14:00</div>
+                <div class="border-b px-3 py-1 text-[11px] subtle" style="border-color:#eef1ee">15:00</div>
+                <div class="border-b px-3 py-1 text-[11px] subtle" style="border-color:#eef1ee">16:00</div>
+                <div class="border-b px-3 py-1 text-[11px] subtle" style="border-color:#eef1ee">17:00</div>
+                <div class="px-3 py-1 text-[11px] subtle">18:00</div>
+              </div>
+              <div class="absolute rounded-md px-3 py-2 text-xs shadow-sm" style="top:8.3%;left:64px;right:16px;height:12.5%;background:#e6ede6;border-left:4px solid #7a9b7f;">
+                <div class="font-semibold" style="color:#2d3f2e">Huber AG, BWL</div>
+                <div class="subtle">Abschlussarb. · 1.5h · 220.-/h · 330.-</div>
+              </div>
+              <div class="absolute rounded-md px-3 py-2 text-xs shadow-sm" style="top:20.8%;left:64px;right:16px;height:6.25%;background:#e3eaf5;border-left:4px solid #5b7cb2;">
+                <div class="font-semibold" style="color:#2e4a7d">Müller GmbH, BWL <span class="chip chip-b">Pauschal</span></div>
+                <div class="subtle">Buchhaltung · 0.75h · Kontrollerfassung</div>
+              </div>
+              <div class="absolute rounded-md px-3 py-2 text-xs shadow-sm" style="top:29.2%;left:64px;right:16px;height:12.5%;background:#fdead7;border-left:4px solid #f59e0b;">
+                <div class="font-semibold" style="color:#8a5a00">Keller IT, Beratung</div>
+                <div class="subtle">Beratung · 1.5h · 260.-/h · 390.-</div>
+              </div>
+              <div class="absolute rounded-md px-3 py-2 text-xs shadow-sm" style="top:50%;left:64px;right:16px;height:8.3%;background:#ede3f7;border-left:4px solid #7c3aed;">
+                <div class="font-semibold" style="color:#4d2995">Sutter Bäckerei, Steuern 2024</div>
+                <div class="subtle">Steuern · 1.0h · 220.-/h · 220.-</div>
+              </div>
+              <div class="absolute rounded-md px-3 py-2 text-xs text-center" style="top:58.3%;left:64px;right:16px;height:6.25%;background:repeating-linear-gradient(45deg,#fff4f4,#fff4f4 6px,#ffeaea 6px,#ffeaea 12px);border:1px dashed #e3a0a0;color:#8a2d2d;">
+                ⚠ Lücke 45 Min · <button class="underline">Eintrag ergänzen</button>
+              </div>
+              <div class="absolute rounded-md px-3 py-2 text-xs shadow-sm" style="top:66.7%;left:64px;right:16px;height:16.7%;background:#f0f0f4;border-left:4px solid #94a3b8;">
+                <div class="font-semibold" style="color:#334155">Intern · Weiterbildung MWST 2026</div>
+                <div class="subtle">nicht abrechenbar · 2.0h</div>
+              </div>
+            </div>
+            <div class="px-4 py-3 border-t flex items-center justify-between text-sm" style="border-color:#eef1ee;background:#f7faf7;">
+              <div class="flex gap-4">
+                <span>Erfasst: <b class="tabular-nums">6.75 h</b></span>
+                <span>abrechenbar: <b class="tabular-nums">4.75 h</b></span>
+                <span class="subtle">Soll 8.4 h · Lücke 1.65 h</span>
+              </div>
+              <button class="btn btn-primary">Tag abschliessen</button>
+            </div>
+          </div>
+
+          <!-- Rechts -->
+          <div class="col-span-4 space-y-3">
+
+            <!-- 📅 Kalender-Vorschläge aus Outlook / MailFlow -->
+            <div class="card p-0 overflow-hidden" style="border:1px solid #cfe0d2;">
+              <div class="px-4 py-2 flex items-center justify-between text-xs" style="background:#eef5ef;color:#4d6a50;">
+                <div class="font-semibold uppercase tracking-wider">📅 Kalender-Vorschläge · Di 21.04.</div>
+                <label class="flex items-center gap-1 cursor-pointer">
+                  <input type="checkbox" checked style="accent-color:#7a9b7f"/>
+                  <span>einblenden</span>
+                </label>
+              </div>
+              <div class="px-3 py-2 text-[11px] subtle border-b" style="border-color:#eef1ee;background:#fafcfa;">
+                Aus Outlook/Teams-Kalender &amp; MailFlow erkannt · <b>nichts wird automatisch erfasst</b> · pro Termin einzeln übernehmen
+              </div>
+
+              <div class="divide-y" style="border-color:#eef1ee;">
+                <!-- Vorschlag 1 -->
+                <div class="px-3 py-2.5 hover:bg-artis-50">
+                  <div class="flex items-start justify-between gap-2">
+                    <div class="min-w-0 flex-1">
+                      <div class="flex items-center gap-2 text-[11px] subtle">
+                        <span class="tabular-nums font-medium" style="color:#4d6a50">10:00–11:00</span>
+                        <span class="chip">Outlook</span>
+                      </div>
+                      <div class="text-sm font-medium truncate" style="color:#2d3f2e">Besprechung BWL 2025 – Huber</div>
+                      <div class="text-[11px] subtle truncate">Teilnehmer: R. Huber, S. Bigger · Ort: Teams</div>
+                      <div class="text-[11px] mt-0.5">
+                        → Projekt <b>Huber AG, BWL</b> <span class="chip chip-g">erkannt</span> · Leistungsart <b>Beratung</b>
+                      </div>
+                    </div>
+                    <button class="btn btn-primary text-xs whitespace-nowrap">Übernehmen →</button>
+                  </div>
+                </div>
+
+                <!-- Vorschlag 2 -->
+                <div class="px-3 py-2.5 hover:bg-artis-50">
+                  <div class="flex items-start justify-between gap-2">
+                    <div class="min-w-0 flex-1">
+                      <div class="flex items-center gap-2 text-[11px] subtle">
+                        <span class="tabular-nums font-medium" style="color:#4d6a50">13:30–14:15</span>
+                        <span class="chip">Outlook</span>
+                      </div>
+                      <div class="text-sm font-medium truncate" style="color:#2d3f2e">Tel. Sutter – Steuerfragen</div>
+                      <div class="text-[11px] subtle truncate">Betreff-Match in MailFlow: "Steuererklärung 2024"</div>
+                      <div class="text-[11px] mt-0.5">
+                        → Projekt <b>Sutter Bäckerei, Steuern 2024</b> <span class="chip chip-g">erkannt</span> · Leistungsart <b>Steuern</b>
+                      </div>
+                    </div>
+                    <button class="btn btn-primary text-xs whitespace-nowrap">Übernehmen →</button>
+                  </div>
+                </div>
+
+                <!-- Vorschlag 3 – nicht zugeordnet -->
+                <div class="px-3 py-2.5 hover:bg-artis-50" style="background:#fffaf2;">
+                  <div class="flex items-start justify-between gap-2">
+                    <div class="min-w-0 flex-1">
+                      <div class="flex items-center gap-2 text-[11px] subtle">
+                        <span class="tabular-nums font-medium" style="color:#8a5a00">15:00–15:30</span>
+                        <span class="chip chip-o">Kein Projekt-Match</span>
+                      </div>
+                      <div class="text-sm font-medium truncate" style="color:#2d3f2e">Kaffee mit A. Weber</div>
+                      <div class="text-[11px] subtle">Projekt wählen beim Übernehmen</div>
+                    </div>
+                    <div class="flex flex-col gap-1">
+                      <button class="btn btn-ghost text-xs whitespace-nowrap">Übernehmen…</button>
+                      <button class="btn btn-ghost text-[10px] whitespace-nowrap" style="color:#94a3b8">ignorieren</button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Vorschlag 4 – aus Mail (MailFlow) -->
+                <div class="px-3 py-2.5 hover:bg-artis-50">
+                  <div class="flex items-start justify-between gap-2">
+                    <div class="min-w-0 flex-1">
+                      <div class="flex items-center gap-2 text-[11px] subtle">
+                        <span class="tabular-nums font-medium" style="color:#4d6a50">~ 09:15</span>
+                        <span class="chip">MailFlow</span>
+                      </div>
+                      <div class="text-sm font-medium truncate" style="color:#2d3f2e">Mail beantwortet: Keller IT – Offerte</div>
+                      <div class="text-[11px] subtle truncate">Bearbeitungszeit geschätzt 0.25 h</div>
+                      <div class="text-[11px] mt-0.5">
+                        → Projekt <b>Keller IT, Beratung</b> <span class="chip chip-g">erkannt</span>
+                      </div>
+                    </div>
+                    <button class="btn btn-ghost text-xs whitespace-nowrap">Übernehmen →</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="px-3 py-2 text-[11px] flex items-center justify-between" style="background:#f7faf7;color:#4a5a4a;border-top:1px solid #eef1ee;">
+                <span>4 Vorschläge · 2.25 h potenziell</span>
+                <div class="flex gap-3">
+                  <button class="underline">alle einzeln prüfen</button>
+                  <button class="underline">Einstellungen</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="card p-4">
+              <h3 class="text-sm font-semibold mb-2">Live-Timer</h3>
+              <div class="flex items-center justify-between">
+                <div>
+                  <div class="text-xs subtle">läuft seit 14:12</div>
+                  <div class="text-2xl font-bold tabular-nums" style="color:#4d6a50">02:47:15</div>
+                  <div class="text-xs">Huber AG, BWL · Abschlussarb.</div>
+                </div>
+                <div class="flex flex-col gap-1.5">
+                  <button class="btn btn-ghost text-xs">⏸ Pause</button>
+                  <button class="btn btn-primary text-xs">Stop & Erfassen</button>
+                </div>
+              </div>
+            </div>
+            <div class="card p-4">
+              <h3 class="text-sm font-semibold mb-2">Zuletzt benutzt</h3>
+              <div class="space-y-1 text-sm">
+                <button class="w-full text-left px-2 py-1.5 rounded hover:bg-artis-100">Huber AG, BWL · Abschlussarb.</button>
+                <button class="w-full text-left px-2 py-1.5 rounded hover:bg-artis-100">Müller GmbH, BWL · Buchhaltung</button>
+                <button class="w-full text-left px-2 py-1.5 rounded hover:bg-artis-100">Keller IT, Beratung · Beratung</button>
+              </div>
+            </div>
+            <div class="card p-4">
+              <h3 class="text-sm font-semibold mb-2">Tages-Status</h3>
+              <ul class="space-y-1 text-xs">
+                <li class="flex justify-between"><span>Soll 100% Pensum</span><span class="tabular-nums">8.40 h</span></li>
+                <li class="flex justify-between"><span>Ist</span><span class="tabular-nums">6.75 h</span></li>
+                <li class="flex justify-between"><span>Saldo</span><span class="tabular-nums text-amber-700">−1.65 h</span></li>
+                <li class="flex justify-between"><span>Freigabe</span><span class="chip chip-o">offen</span></li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================ -->
+      <!-- ERFASSEN : WOCHENRAPPORT                                         -->
+      <!-- ================================================================ -->
+      <section data-panel="woche" class="hidden">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-base font-semibold">Wochenrapport · KW 16 (13.–19.04.2026)</h2>
+          <div class="flex gap-2"><button class="btn btn-ghost">◀ Woche</button><button class="btn btn-ghost">Woche ▶</button><button class="btn btn-primary">Woche abschliessen</button></div>
+        </div>
+        <div class="card overflow-hidden">
+          <table>
+            <thead style="background:#f7faf7"><tr>
+              <th style="width:24%">Projekt</th>
+              <th style="width:12%">Leistungsart</th>
+              <th class="text-right">Mo 13.</th><th class="text-right">Di 14.</th><th class="text-right">Mi 15.</th><th class="text-right">Do 16.</th><th class="text-right">Fr 17.</th>
+              <th class="text-right" style="background:#eef1ee">Sa</th><th class="text-right" style="background:#eef1ee">So</th>
+              <th class="text-right">Σ</th><th></th>
+            </tr></thead>
+            <tbody>
+              <tr><td><div class="font-medium">Huber AG, BWL</div></td><td>Abschlussarb.</td><td class="text-right tabular-nums">2.0</td><td class="text-right tabular-nums">3.5</td><td class="text-right tabular-nums">1.5</td><td class="text-right tabular-nums">—</td><td class="text-right tabular-nums">3.25</td><td class="text-right subtle">—</td><td class="text-right subtle">—</td><td class="text-right tabular-nums font-semibold">10.25</td><td></td></tr>
+              <tr><td><div class="font-medium">Müller GmbH, BWL</div><div class="text-[11px] subtle">Pauschal</div></td><td>Buchhaltung</td><td class="text-right">—</td><td class="text-right">—</td><td class="text-right tabular-nums">2.0</td><td class="text-right tabular-nums">1.25</td><td class="text-right">—</td><td class="text-right subtle">—</td><td class="text-right subtle">—</td><td class="text-right tabular-nums font-semibold">3.25</td><td></td></tr>
+              <tr><td><div class="font-medium">Keller IT, Beratung</div></td><td>Beratung</td><td class="text-right">—</td><td class="text-right tabular-nums">1.0</td><td class="text-right">—</td><td class="text-right">—</td><td class="text-right">—</td><td class="text-right subtle">—</td><td class="text-right subtle">—</td><td class="text-right tabular-nums font-semibold">1.00</td><td></td></tr>
+              <tr><td><div class="font-medium">Intern</div><div class="text-[11px] subtle">Weiterbildung</div></td><td>Intern</td><td class="text-right">—</td><td class="text-right">—</td><td class="text-right">—</td><td class="text-right tabular-nums">4.0</td><td class="text-right">—</td><td class="text-right subtle">—</td><td class="text-right subtle">—</td><td class="text-right tabular-nums font-semibold">4.00</td><td></td></tr>
+              <tr><td><div class="font-medium">Ferien</div><div class="text-[11px] subtle">aus Abwesenheiten</div></td><td>—</td><td class="text-right">—</td><td class="text-right">—</td><td class="text-right">—</td><td class="text-right">—</td><td class="text-right tabular-nums" style="color:#8a5a00">8.40</td><td class="text-right subtle">—</td><td class="text-right subtle">—</td><td class="text-right tabular-nums font-semibold">8.40</td><td></td></tr>
+            </tbody>
+            <tfoot><tr style="background:#f7faf7"><td colspan="2" class="font-semibold">Tagessumme</td><td class="text-right tabular-nums font-semibold">2.00</td><td class="text-right tabular-nums font-semibold">4.50</td><td class="text-right tabular-nums font-semibold">3.50</td><td class="text-right tabular-nums font-semibold">5.25</td><td class="text-right tabular-nums font-semibold">11.65</td><td class="text-right subtle">0</td><td class="text-right subtle">0</td><td class="text-right tabular-nums font-bold" style="color:#4d6a50">26.90</td><td></td></tr></tfoot>
+          </table>
+        </div>
+      </section>
+
+      <!-- ================================================================ -->
+      <!-- ERFASSEN : MEINE RAPPORTE                                        -->
+      <!-- ================================================================ -->
+      <section data-panel="meine" class="hidden">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-base font-semibold">Meine Rapporte · April 2026</h2>
+          <div class="flex items-center gap-2">
+            <select class="inp" style="width:auto"><option>April 2026</option><option>März 2026</option></select>
+            <button class="btn btn-ghost">Export CSV</button>
+          </div>
+        </div>
+
+        <!-- Spalten-Manager -->
+        <div class="mb-3 flex items-center gap-2 flex-wrap text-[11px]" style="background:#f7faf7;padding:8px 10px;border-radius:8px">
+          <span class="subtle uppercase tracking-wider mr-1">Spalten (drag · Filter per Klick):</span>
+          <span class="col-chip">⋮⋮ Datum</span>
+          <span class="col-chip">⋮⋮ Von</span>
+          <span class="col-chip">⋮⋮ Bis</span>
+          <span class="col-chip">⋮⋮ Projekt</span>
+          <span class="col-chip">⋮⋮ Leistungsart <span class="chip chip-g">Buchh.</span></span>
+          <span class="col-chip">⋮⋮ Std. intern</span>
+          <span class="col-chip">⋮⋮ Satz</span>
+          <span class="col-chip">⋮⋮ Wert</span>
+          <span class="col-chip">⋮⋮ Beschreibung</span>
+          <span class="col-chip">⋮⋮ Status <span class="chip chip-o">Offen</span></span>
+          <span class="col-chip" style="opacity:.5;background:#fff">＋ Kunde, Rechnungs-Nr., Erfasst am, Abwesenheit, Tag</span>
+          <div class="ml-auto flex gap-2">
+            <button class="btn btn-ghost text-xs">Ansicht speichern</button>
+            <button class="btn btn-ghost text-xs">Reset</button>
+          </div>
+        </div>
+
+        <div class="card overflow-hidden">
+          <table>
+            <thead style="background:#f7faf7"><tr>
+              <th>Datum</th><th>Von</th><th>Bis</th><th>Projekt</th><th>Leistungsart</th>
+              <th class="text-right">Std. int.</th><th class="text-right">Satz</th><th class="text-right">Wert</th>
+              <th>Beschreibung</th><th>Status</th>
+            </tr></thead>
+            <tbody>
+              <tr><td>21.04.</td><td>08:00</td><td>09:30</td><td>Huber AG, BWL</td><td>Abschlussarb.</td><td class="text-right tabular-nums">1.50</td><td class="text-right tabular-nums">220.-</td><td class="text-right tabular-nums font-medium">330.-</td><td>Bilanz abgestimmt</td><td><span class="pill chip-o">Offen</span></td></tr>
+              <tr><td>21.04.</td><td>10:30</td><td>12:00</td><td>Keller IT, Beratung</td><td>Beratung</td><td class="text-right tabular-nums">1.50</td><td class="text-right tabular-nums">260.-</td><td class="text-right tabular-nums font-medium">390.-</td><td>Workflow-Analyse</td><td><span class="pill chip-o">Offen</span></td></tr>
+              <tr><td>18.04.</td><td>14:00</td><td>17:15</td><td>Huber AG, BWL</td><td>Abschlussarb.</td><td class="text-right tabular-nums">3.25</td><td class="text-right tabular-nums">220.-</td><td class="text-right tabular-nums font-medium">715.-</td><td>Anhang + ER-Details</td><td><span class="pill chip-o">Offen</span></td></tr>
+              <tr><td>15.04.</td><td>—</td><td>—</td><td>Sutter Bäckerei, Steuern 2024</td><td>Steuern</td><td class="text-right tabular-nums">1.50</td><td class="text-right tabular-nums">220.-</td><td class="text-right tabular-nums font-medium">330.-</td><td>Rückstellungen</td><td><span class="pill chip-o">Offen</span></td></tr>
+              <tr><td>10.04.</td><td>09:00</td><td>09:45</td><td>Huber AG, BWL</td><td>Admin</td><td class="text-right tabular-nums">0.75</td><td class="text-right tabular-nums">95.-</td><td class="text-right tabular-nums font-medium">71.25</td><td>Unterlagen</td><td><span class="pill chip-n">Fakturiert · 2026-0128</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ================================================================ -->
+      <!-- ERFASSEN : ABWESENHEITEN                                         -->
+      <!-- ================================================================ -->
+      <section data-panel="abwesend" class="hidden">
+        <div class="flex items-center justify-between mb-4">
+          <div><h2 class="text-base font-semibold">Abwesenheiten</h2><p class="text-xs subtle">Ferien, Krank, Militär, unbezahlt – zählen im Soll/Ist und blockieren Rapport-Erfassung.</p></div>
+          <button class="btn btn-primary">+ Abwesenheit</button>
+        </div>
+
+        <div class="grid grid-cols-12 gap-5">
+          <div class="col-span-8 card p-4">
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="text-sm font-semibold">Team-Kalender · April 2026</h3>
+              <div class="flex gap-1 text-[11px]">
+                <span class="chip" style="background:#e6ede6;color:#4d6a50">Ferien</span>
+                <span class="chip" style="background:#fde7e7;color:#8a2d2d">Krank</span>
+                <span class="chip" style="background:#fef0c7;color:#8a5a00">Militär</span>
+                <span class="chip" style="background:#e3eaf5;color:#2e4a7d">Unbezahlt</span>
+                <span class="chip" style="background:#f0f0f4;color:#334155">Feiertag</span>
+              </div>
+            </div>
+            <table>
+              <thead style="background:#f7faf7"><tr><th>MA</th>
+                <th class="text-center" style="width:3%">1</th><th class="text-center">2</th><th class="text-center">3</th><th class="text-center">4</th><th class="text-center">5</th>
+                <th class="text-center">6</th><th class="text-center">7</th><th class="text-center">8</th><th class="text-center">9</th><th class="text-center">10</th>
+                <th class="text-center">11</th><th class="text-center">12</th><th class="text-center">13</th><th class="text-center">14</th><th class="text-center">15</th>
+                <th class="text-center">16</th><th class="text-center">17</th><th class="text-center">18</th><th class="text-center">19</th><th class="text-center">20</th>
+                <th class="text-center">21</th><th class="text-center">22</th><th class="text-center">23</th><th class="text-center">24</th><th class="text-center">25</th>
+                <th class="text-center">26</th><th class="text-center">27</th><th class="text-center">28</th><th class="text-center">29</th><th class="text-center">30</th>
+              </tr></thead>
+              <tbody style="font-size:11px">
+                <tr><td class="font-medium">S. Bigger</td>
+                  <td></td><td></td><td></td><td style="background:#f0f0f4"></td><td style="background:#f0f0f4"></td>
+                  <td></td><td></td><td></td><td></td><td style="background:#f0f0f4"></td>
+                  <td style="background:#f0f0f4"></td><td></td><td></td><td></td><td></td>
+                  <td style="background:#f0f0f4"></td><td style="background:#f0f0f4"></td><td></td><td></td><td></td>
+                  <td></td><td style="background:#f0f0f4"></td><td style="background:#f0f0f4"></td><td></td><td></td>
+                  <td></td><td></td><td style="background:#e6ede6">F</td><td style="background:#e6ede6">F</td><td style="background:#e6ede6">F</td>
+                </tr>
+                <tr><td class="font-medium">M. Egli</td>
+                  <td style="background:#fde7e7">K</td><td style="background:#fde7e7">K</td><td style="background:#fde7e7">K</td><td style="background:#f0f0f4"></td><td style="background:#f0f0f4"></td>
+                  <td></td><td></td><td></td><td></td><td style="background:#f0f0f4"></td>
+                  <td style="background:#f0f0f4"></td><td></td><td></td><td></td><td></td>
+                  <td style="background:#f0f0f4"></td><td style="background:#f0f0f4"></td><td></td><td></td><td></td>
+                  <td></td><td style="background:#f0f0f4"></td><td style="background:#f0f0f4"></td><td></td><td></td>
+                  <td></td><td></td><td></td><td></td><td></td>
+                </tr>
+                <tr><td class="font-medium">L. Vogt</td>
+                  <td></td><td></td><td></td><td style="background:#f0f0f4"></td><td style="background:#f0f0f4"></td>
+                  <td style="background:#fef0c7">M</td><td style="background:#fef0c7">M</td><td style="background:#fef0c7">M</td><td style="background:#fef0c7">M</td><td style="background:#f0f0f4"></td>
+                  <td style="background:#f0f0f4"></td><td style="background:#fef0c7">M</td><td></td><td></td><td></td>
+                  <td style="background:#f0f0f4"></td><td style="background:#f0f0f4"></td><td></td><td></td><td></td>
+                  <td></td><td style="background:#f0f0f4"></td><td style="background:#f0f0f4"></td><td></td><td></td>
+                  <td></td><td></td><td></td><td></td><td></td>
+                </tr>
+                <tr><td class="font-medium">A. Rossi</td>
+                  <td></td><td></td><td></td><td style="background:#f0f0f4"></td><td style="background:#f0f0f4"></td>
+                  <td></td><td></td><td></td><td></td><td style="background:#f0f0f4"></td>
+                  <td style="background:#f0f0f4"></td><td></td><td style="background:#e6ede6">F</td><td style="background:#e6ede6">F</td><td style="background:#e6ede6">F</td>
+                  <td style="background:#f0f0f4;opacity:.5">F</td><td style="background:#f0f0f4;opacity:.5">F</td><td style="background:#e6ede6">F</td><td style="background:#e6ede6">F</td><td style="background:#e6ede6">F</td>
+                  <td></td><td style="background:#f0f0f4"></td><td style="background:#f0f0f4"></td><td></td><td></td>
+                  <td></td><td></td><td></td><td></td><td></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="col-span-4 space-y-3">
+            <div class="card p-4">
+              <h3 class="text-sm font-semibold mb-2">Ferien-Saldo (YTD)</h3>
+              <table><tbody>
+                <tr><td>S. Bigger</td><td class="text-right tabular-nums">12.5 / 25</td></tr>
+                <tr><td>M. Egli</td><td class="text-right tabular-nums">8.0 / 25</td></tr>
+                <tr><td>L. Vogt</td><td class="text-right tabular-nums">4.0 / 20</td></tr>
+                <tr><td>A. Rossi</td><td class="text-right tabular-nums" style="color:#8a5a00">22.0 / 25</td></tr>
+              </tbody></table>
+            </div>
+            <div class="card p-4">
+              <h3 class="text-sm font-semibold mb-2">Neu erfassen</h3>
+              <div class="space-y-2 text-sm">
+                <select class="inp"><option>Typ: Ferien</option><option>Krank</option><option>Militär/ZS</option><option>Unbezahlt</option><option>Mutter-/Vaterschaft</option></select>
+                <div class="grid grid-cols-2 gap-2"><input type="date" class="inp"/><input type="date" class="inp"/></div>
+                <select class="inp"><option>Ganzer Tag</option><option>Halbtag Vormittag</option><option>Halbtag Nachmittag</option></select>
+                <textarea class="inp" rows="2" placeholder="Bemerkung (optional)"></textarea>
+                <button class="btn btn-primary w-full justify-center">Speichern</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================ -->
+      <!-- ERFASSEN : SPESEN ERFASSEN                                       -->
+      <!-- ================================================================ -->
+      <section data-panel="spesen-erf" class="hidden">
+        <div class="flex items-center justify-between mb-4">
+          <div><h2 class="text-base font-semibold">Spesen erfassen</h2><p class="text-xs subtle">Auslagen einem Projekt zuweisen – werden später mit Rechnung fakturiert oder intern behalten.</p></div>
+          <button class="btn btn-primary">+ Spesen-Eintrag</button>
+        </div>
+        <div class="card overflow-hidden">
+          <table>
+            <thead style="background:#f7faf7"><tr><th>Datum</th><th>MA</th><th>Projekt</th><th>Art</th><th>Beleg</th><th>Beschreibung</th><th class="text-right">Betrag</th><th class="text-right">MWST</th><th class="text-center">Weiterbelastbar</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr><td>17.04.</td><td>S.B.</td><td>Huber AG, BWL</td><td><span class="chip">Fahrzeug km</span></td><td><span class="chip chip-g">📎 beleg.jpg</span></td><td>Besuch Huber, 42km à 0.70</td><td class="text-right tabular-nums">29.40</td><td class="text-right tabular-nums">0.-</td><td class="text-center">✓</td><td><span class="pill chip-o">Offen</span></td></tr>
+              <tr><td>15.04.</td><td>S.B.</td><td>Keller IT, Beratung</td><td><span class="chip">Essen mit Kunde</span></td><td><span class="chip chip-g">📎 restaurant.pdf</span></td><td>Workshop-Mittagessen</td><td class="text-right tabular-nums">84.50</td><td class="text-right tabular-nums">6.35</td><td class="text-center">✓</td><td><span class="pill chip-o">Offen</span></td></tr>
+              <tr><td>08.04.</td><td>M.E.</td><td>— (intern)</td><td><span class="chip">Büromaterial</span></td><td><span class="chip chip-g">📎 rechnung.pdf</span></td><td>Druckerpatronen</td><td class="text-right tabular-nums">127.00</td><td class="text-right tabular-nums">9.53</td><td class="text-center">—</td><td><span class="pill chip-n">Intern</span></td></tr>
+              <tr><td>02.04.</td><td>S.B.</td><td>Weber, Revision 2025</td><td><span class="chip">ÖV-Billett</span></td><td><span class="chip chip-g">📎 sbb.pdf</span></td><td>Zug Revision vor Ort</td><td class="text-right tabular-nums">68.00</td><td class="text-right tabular-nums">5.10</td><td class="text-center">✓</td><td><span class="pill chip-n">Fakturiert</span></td></tr>
+            </tbody>
+            <tfoot><tr style="background:#f7faf7"><td colspan="6" class="font-semibold">Total April (offen weiterbelastbar)</td><td class="text-right tabular-nums font-semibold">113.90</td><td class="text-right tabular-nums font-semibold">6.35</td><td colspan="2"></td></tr></tfoot>
+          </table>
+        </div>
+        <p class="mt-3 text-[11px] subtle">Tipp: Handy-App macht Foto vom Beleg → OCR liest Betrag + MWST automatisch aus (später).</p>
+      </section>
+
+      <!-- ================================================================ -->
+      <!-- ABRECHNEN : ANGEFANGENE ARBEITEN (AA)                            -->
+      <!-- ================================================================ -->
+      <section data-panel="aa" class="hidden">
+        <div class="flex items-center justify-between mb-4">
+          <div><h2 class="text-base font-semibold">Angefangene Arbeiten (AA)</h2><p class="text-xs subtle">Stichtag = Rechnungsdatum. Offene Aufwände werden rückwirkend berücksichtigt, auch später erfasste Rapporte ≤ Stichtag.</p></div>
+          <div class="flex gap-2">
+            <span class="text-xs subtle self-center">Stichtag</span>
+            <input type="date" class="inp" style="width:150px" value="2026-04-30"/>
+            <button class="btn btn-ghost">Export</button>
+            <button class="btn btn-primary">WIP einfrieren</button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-4 gap-3 mb-4">
+          <div class="card p-4"><div class="text-[11px] subtle">Netto-WIP 30.04.</div><div class="text-2xl font-semibold tabular-nums">52'320.-</div><div class="text-[11px]" style="color:#4d6a50">+12'180 ggü. 31.03.</div></div>
+          <div class="card p-4"><div class="text-[11px] subtle">Geleistet Brutto</div><div class="text-2xl font-semibold tabular-nums">84'320.-</div><div class="text-[11px] subtle">398.5 h · 18 Projekte</div></div>
+          <div class="card p-4"><div class="text-[11px] subtle">Akonto-Deckung</div><div class="text-2xl font-semibold tabular-nums">32'000.-</div><div class="text-[11px] subtle">5 Projekte</div></div>
+          <div class="card p-4"><div class="text-[11px] subtle">Ø Alter &gt; 60 Tage</div><div class="text-2xl font-semibold tabular-nums text-amber-700">11'450.-</div><div class="text-[11px] subtle">3 Projekte</div></div>
+        </div>
+
+        <!-- Spalten-Manager -->
+        <div class="mb-3 flex items-center gap-2 flex-wrap text-[11px]" style="background:#f7faf7;padding:8px 10px;border-radius:8px">
+          <span class="subtle uppercase tracking-wider mr-1">Spalten:</span>
+          <span class="col-chip">⋮⋮ Projekt</span>
+          <span class="col-chip">⋮⋮ Kunde</span>
+          <span class="col-chip">⋮⋮ Verantwortlich</span>
+          <span class="col-chip">⋮⋮ Geleistet</span>
+          <span class="col-chip">⋮⋮ Akonto</span>
+          <span class="col-chip">⋮⋮ Offen</span>
+          <span class="col-chip">⋮⋮ Letzte Rg.</span>
+          <span class="col-chip">⋮⋮ Vorletzte Rg.</span>
+          <span class="col-chip">⋮⋮ Ältester Eintrag</span>
+          <span class="col-chip">⋮⋮ Alter</span>
+          <span class="col-chip" style="opacity:.5;background:#fff">＋ Tags, Budget, Modus, Letzte Bewegung</span>
+          <div class="ml-auto flex gap-2"><button class="btn btn-ghost text-xs">Ansicht speichern</button></div>
+        </div>
+
+        <div class="card overflow-hidden">
+          <table>
+            <thead style="background:#f7faf7"><tr>
+              <th>Projekt</th><th>Kunde</th><th>Verantwortlich</th>
+              <th class="text-right">Geleistet (CHF)</th>
+              <th class="text-right">Akonto</th>
+              <th class="text-right">Offen</th>
+              <th>Letzte Rg.</th>
+              <th>Vorletzte Rg.</th>
+              <th>Alter</th>
+              <th></th>
+            </tr></thead>
+            <tbody>
+              <tr>
+                <td><div class="font-medium">Weber, Revision 2025</div><div class="text-[11px] subtle">P-2025-088</div></td>
+                <td>Weber & Partner AG</td>
+                <td>S. Bigger</td>
+                <td class="text-right tabular-nums">24'960.-<div class="text-[11px] subtle">108.0 h</div></td>
+                <td class="text-right tabular-nums">15'000.-<div class="text-[11px] subtle">AK-004</div></td>
+                <td class="text-right tabular-nums font-semibold">9'960.-</td>
+                <td><div>2026-0091</div><div class="text-[11px] subtle">28.02. · 4'200.- · bezahlt</div></td>
+                <td><div>2025-0742</div><div class="text-[11px] subtle">15.11.25 · 3'850.- · bezahlt</div></td>
+                <td><span class="pill chip-o">&gt; 60 T</span></td>
+                <td><button class="btn btn-ghost text-xs">Rechnen</button></td>
+              </tr>
+              <tr>
+                <td><div class="font-medium">Huber AG, BWL</div><div class="text-[11px] subtle">P-2026-014</div></td>
+                <td>Huber AG</td>
+                <td>S. Bigger</td>
+                <td class="text-right tabular-nums">9'350.-<div class="text-[11px] subtle">42.5 h</div></td>
+                <td class="text-right tabular-nums">5'000.-<div class="text-[11px] subtle">AK-007</div></td>
+                <td class="text-right tabular-nums font-semibold">4'350.-</td>
+                <td><div>2026-0128</div><div class="text-[11px] subtle">28.03. · 3'920.- · offen</div></td>
+                <td><div>2025-1012</div><div class="text-[11px] subtle">20.12.25 · 5'810.- · bezahlt</div></td>
+                <td><span class="pill chip-g">30–60 T</span></td>
+                <td><button class="btn btn-ghost text-xs">Rechnen</button></td>
+              </tr>
+              <tr>
+                <td><div class="font-medium">Sutter Bäckerei, Steuern 2024</div><div class="text-[11px] subtle">P-2026-002</div></td>
+                <td>Bäckerei Sutter</td>
+                <td>S. Bigger</td>
+                <td class="text-right tabular-nums">1'320.-<div class="text-[11px] subtle">6.25 h</div></td>
+                <td class="text-right tabular-nums subtle">—</td>
+                <td class="text-right tabular-nums font-semibold">1'320.-</td>
+                <td><div>2025-0334</div><div class="text-[11px] subtle">05.05.25 · 640.- · bezahlt</div></td>
+                <td><div>2024-0398</div><div class="text-[11px] subtle">12.04.24 · 620.- · bezahlt</div></td>
+                <td><span class="pill chip-g">&lt; 30 T</span></td>
+                <td><button class="btn btn-ghost text-xs">Rechnen</button></td>
+              </tr>
+              <tr>
+                <td><div class="font-medium">Keller IT, Beratung</div><div class="text-[11px] subtle">P-2026-021</div></td>
+                <td>Keller IT GmbH</td>
+                <td>S. Bigger</td>
+                <td class="text-right tabular-nums">650.-<div class="text-[11px] subtle">2.5 h</div></td>
+                <td class="text-right tabular-nums subtle">—</td>
+                <td class="text-right tabular-nums font-semibold">650.-</td>
+                <td class="subtle italic">— keine —</td>
+                <td class="subtle italic">— keine —</td>
+                <td><span class="pill chip-g">&lt; 30 T</span></td>
+                <td><button class="btn btn-ghost text-xs">Rechnen</button></td>
+              </tr>
+              <tr>
+                <td><div class="font-medium">ACME SA, Lohn 2026</div><div class="text-[11px] subtle">P-2026-017 · Pauschal</div></td>
+                <td>ACME SA</td>
+                <td>M. Egli</td>
+                <td class="text-right tabular-nums">2'610.-<div class="text-[11px] subtle">11.75 h (Kontroll.)</div></td>
+                <td class="text-right tabular-nums subtle">—</td>
+                <td class="text-right tabular-nums subtle" style="font-style:italic">Pauschal 280.-/Mt</td>
+                <td><div>2026-0131</div><div class="text-[11px] subtle">01.04. · 280.- · bezahlt</div></td>
+                <td><div>2026-0099</div><div class="text-[11px] subtle">01.03. · 280.- · bezahlt</div></td>
+                <td><span class="pill chip-b">Pauschal</span></td>
+                <td><button class="btn btn-ghost text-xs">Details</button></td>
+              </tr>
+            </tbody>
+            <tfoot><tr style="background:#f7faf7"><td colspan="3" class="font-semibold">Total 30.04.2026</td><td class="text-right tabular-nums font-semibold">38'890.-</td><td class="text-right tabular-nums font-semibold">20'000.-</td><td class="text-right tabular-nums font-bold" style="color:#4d6a50">16'280.-</td><td colspan="4"></td></tr></tfoot>
+          </table>
+        </div>
+
+        <p class="mt-3 text-[11px] subtle">„Rechnen" öffnet den <b>Faktura-Vorschlag</b> mit vorausgewählten Rapporten bis Stichtag. Pauschal-Projekte haben keinen offenen Saldo; Rapporte laufen nur als Kontrollgrösse.</p>
+      </section>
+
+      <!-- ================================================================ -->
+      <!-- ABRECHNEN : FAKTURA-VORSCHLAG                                    -->
+      <!-- ================================================================ -->
+      <section data-panel="fakvor" class="hidden">
+        <div class="flex items-center justify-between mb-4">
+          <div><h2 class="text-base font-semibold">Faktura-Vorschlag</h2><p class="text-xs subtle">Alle Projekte mit offenen abrechenbaren Leistungen – aufklappen zeigt die Rapporte im Detail. Batch-Modus möglich.</p></div>
+          <div class="flex gap-2">
+            <select class="inp" style="width:auto"><option>Stichtag: 30.04.2026</option></select>
+            <button class="btn btn-ghost">Alle auswählen</button>
+            <button class="btn btn-primary">Aus Auswahl Rechnungen erstellen (4)</button>
+          </div>
+        </div>
+
+        <div class="card overflow-hidden">
+          <!-- Kopf -->
+          <table>
+            <thead style="background:#f7faf7"><tr>
+              <th style="width:32px"><input type="checkbox"/></th>
+              <th>Projekt / Kunde</th>
+              <th class="text-right">Std. intern</th>
+              <th class="text-right">Std. extern (Vorschlag)</th>
+              <th class="text-right">Brutto</th>
+              <th class="text-right">Rabatt (Kunde)</th>
+              <th class="text-right">Netto vor MWST</th>
+              <th class="text-right">Akonto</th>
+              <th class="text-right">Zu fakturieren</th>
+              <th></th>
+            </tr></thead>
+            <tbody>
+              <tr style="background:#f7faf7">
+                <td><input type="checkbox" checked/></td>
+                <td><div class="font-medium">Huber AG, BWL</div><div class="text-[11px] subtle">P-2026-014 · 7 Rapporte · seit 18.03.2026</div></td>
+                <td class="text-right tabular-nums">16.75</td>
+                <td class="text-right tabular-nums font-semibold">16.75</td>
+                <td class="text-right tabular-nums">3'106.25</td>
+                <td class="text-right tabular-nums" style="color:#8a5a00">−310.63<div class="text-[11px]">10% Stamm</div></td>
+                <td class="text-right tabular-nums">2'795.62</td>
+                <td class="text-right tabular-nums">−5'000.-<div class="text-[11px] subtle">AK-007</div></td>
+                <td class="text-right tabular-nums font-bold" style="color:#4d6a50">−1'977.94</td>
+                <td><button class="btn btn-ghost text-xs">▼ Details</button></td>
+              </tr>
+              <!-- Detail-Zeile aufgeklappt -->
+              <tr><td colspan="10" style="padding:0;background:#fafcfa;border-left:3px solid #7a9b7f">
+                <div class="px-4 py-3">
+                  <div class="sect-label mb-2">Rapporte im Detail (beim Fakturieren pro Zeile Std. extern anpassen)</div>
+                  <table style="background:#fff;border:1px solid #eef1ee;border-radius:6px">
+                    <thead><tr>
+                      <th style="width:28px"><input type="checkbox" checked/></th>
+                      <th>Datum</th><th>MA</th><th>Leistungsart</th><th>Beschreibung</th>
+                      <th class="text-right">Std. intern</th>
+                      <th class="text-right" style="background:#e6ede6">Std. extern</th>
+                      <th class="text-right">Satz</th>
+                      <th class="text-right">Betrag</th>
+                      <th></th>
+                    </tr></thead>
+                    <tbody>
+                      <tr><td><input type="checkbox" checked/></td><td>18.03.</td><td>S.B.</td><td>Abschlussarb.</td><td>Bilanz & ER abstimmen</td><td class="text-right tabular-nums">3.25</td><td class="text-right" style="background:#f7faf7"><input class="inp" style="width:60px;text-align:right;padding:2px 6px" value="3.25"/></td><td class="text-right tabular-nums">220.-</td><td class="text-right tabular-nums">715.00</td><td><button class="btn btn-ghost text-xs">✎</button></td></tr>
+                      <tr><td><input type="checkbox" checked/></td><td>25.03.</td><td>M.E.</td><td>Buchhaltung</td><td>Jahresübertrag</td><td class="text-right tabular-nums">5.00</td><td class="text-right" style="background:#f7faf7"><input class="inp" style="width:60px;text-align:right;padding:2px 6px" value="5.00"/></td><td class="text-right tabular-nums">145.-</td><td class="text-right tabular-nums">725.00</td><td><button class="btn btn-ghost text-xs">✎</button></td></tr>
+                      <tr style="background:#fff8e6"><td><input type="checkbox" checked/></td><td>08.04.</td><td>S.B.</td><td>Beratung</td><td>Besprechung GF (davon 15min privat)</td><td class="text-right tabular-nums">1.25</td><td class="text-right" style="background:#fef0c7"><input class="inp" style="width:60px;text-align:right;padding:2px 6px" value="1.00"/></td><td class="text-right tabular-nums">260.-</td><td class="text-right tabular-nums">260.00</td><td><span class="chip chip-o">gekürzt</span></td></tr>
+                      <tr><td><input type="checkbox" checked/></td><td>10.04.</td><td>L.V.</td><td>Admin</td><td>Unterlagen aufbereiten</td><td class="text-right tabular-nums">0.75</td><td class="text-right" style="background:#f7faf7"><input class="inp" style="width:60px;text-align:right;padding:2px 6px" value="0.75"/></td><td class="text-right tabular-nums">95.-</td><td class="text-right tabular-nums">71.25</td><td></td></tr>
+                      <tr><td><input type="checkbox" checked/></td><td>15.04.</td><td>S.B.</td><td>Steuern</td><td>Rückstellungen geprüft</td><td class="text-right tabular-nums">1.50</td><td class="text-right" style="background:#f7faf7"><input class="inp" style="width:60px;text-align:right;padding:2px 6px" value="1.50"/></td><td class="text-right tabular-nums">220.-</td><td class="text-right tabular-nums">330.00</td><td></td></tr>
+                      <tr><td><input type="checkbox" checked/></td><td>17.04.</td><td>M.E.</td><td>Buchhaltung</td><td>Kreditoren-Nacherfassung</td><td class="text-right tabular-nums">2.00</td><td class="text-right" style="background:#f7faf7"><input class="inp" style="width:60px;text-align:right;padding:2px 6px" value="2.00"/></td><td class="text-right tabular-nums">145.-</td><td class="text-right tabular-nums">290.00</td><td></td></tr>
+                      <tr><td><input type="checkbox" checked/></td><td>18.04.</td><td>S.B.</td><td>Abschlussarb.</td><td>Anhang fertig</td><td class="text-right tabular-nums">3.25</td><td class="text-right" style="background:#f7faf7"><input class="inp" style="width:60px;text-align:right;padding:2px 6px" value="3.25"/></td><td class="text-right tabular-nums">220.-</td><td class="text-right tabular-nums">715.00</td><td></td></tr>
+                    </tbody>
+                  </table>
+                  <div class="flex items-center justify-between mt-2 text-[11px]">
+                    <div class="subtle">💡 Extern-Stunden können pro Zeile gekürzt werden (z.B. unproduktive Zeit rausnehmen), ohne den Original-Rapport zu verändern. Kürzungen werden auf Deckblatt als Ø-Satz sichtbar.</div>
+                    <div class="flex gap-2">
+                      <button class="btn btn-ghost text-xs">+ Spesen einfügen (2 offen)</button>
+                      <button class="btn btn-ghost text-xs">+ Fixpaket einfügen</button>
+                      <button class="btn btn-primary text-xs">Rechnung erstellen →</button>
+                    </div>
+                  </div>
+                </div>
+              </td></tr>
+
+              <tr>
+                <td><input type="checkbox" checked/></td>
+                <td><div class="font-medium">Weber, Revision 2025</div><div class="text-[11px] subtle">P-2025-088 · 24 Rapporte · seit 02.02.2026</div></td>
+                <td class="text-right tabular-nums">108.0</td>
+                <td class="text-right tabular-nums font-semibold">108.0</td>
+                <td class="text-right tabular-nums">24'960.-</td>
+                <td class="text-right tabular-nums subtle">—</td>
+                <td class="text-right tabular-nums">24'960.-</td>
+                <td class="text-right tabular-nums">−15'000.-</td>
+                <td class="text-right tabular-nums font-bold" style="color:#4d6a50">9'960.-</td>
+                <td><button class="btn btn-ghost text-xs">▶ Details</button></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox" checked/></td>
+                <td><div class="font-medium">Sutter Bäckerei, Steuern 2024</div><div class="text-[11px] subtle">P-2026-002 · 4 Rapporte</div></td>
+                <td class="text-right tabular-nums">6.25</td>
+                <td class="text-right tabular-nums font-semibold">6.25</td>
+                <td class="text-right tabular-nums">1'320.-</td>
+                <td class="text-right tabular-nums subtle">—</td>
+                <td class="text-right tabular-nums">1'320.-</td>
+                <td class="text-right tabular-nums subtle">—</td>
+                <td class="text-right tabular-nums font-bold" style="color:#4d6a50">1'320.-</td>
+                <td><button class="btn btn-ghost text-xs">▶ Details</button></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox" checked/></td>
+                <td><div class="font-medium">Keller IT, Beratung</div><div class="text-[11px] subtle">P-2026-021 · 3 Rapporte + 1 Spesen</div></td>
+                <td class="text-right tabular-nums">2.5</td>
+                <td class="text-right tabular-nums font-semibold">2.5</td>
+                <td class="text-right tabular-nums">650.-<div class="text-[11px] subtle">+ 84.50 Spesen</div></td>
+                <td class="text-right tabular-nums subtle">—</td>
+                <td class="text-right tabular-nums">734.50</td>
+                <td class="text-right tabular-nums subtle">—</td>
+                <td class="text-right tabular-nums font-bold" style="color:#4d6a50">734.50</td>
+                <td><button class="btn btn-ghost text-xs">▶ Details</button></td>
+              </tr>
+              <tr style="opacity:.5">
+                <td><input type="checkbox"/></td>
+                <td><div class="font-medium">Müller GmbH, BWL</div><div class="text-[11px] subtle">Pauschal – kein AA-Vorschlag</div></td>
+                <td colspan="8" class="subtle italic text-center">Pauschal-Projekt · nächste Rate: 30.06.2026 · 1'200.-</td>
+              </tr>
+            </tbody>
+            <tfoot><tr style="background:#f7faf7"><td></td><td class="font-semibold">4 Projekte zur Fakturierung</td><td></td><td></td><td class="text-right tabular-nums font-semibold">30'036.25</td><td class="text-right tabular-nums">−310.63</td><td class="text-right tabular-nums font-semibold">29'810.12</td><td class="text-right tabular-nums">−20'000.-</td><td class="text-right tabular-nums font-bold" style="color:#4d6a50">10'036.56</td><td></td></tr></tfoot>
+          </table>
+        </div>
+      </section>
+
+      <!-- ================================================================ -->
+      <!-- ABRECHNEN : ENTWURFS-DURCHGANG (Batch-Review)                    -->
+      <!-- ================================================================ -->
+      <section data-panel="entw-durch" class="hidden">
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <h2 class="text-base font-semibold">Entwurfs-Durchgang · 4 Rechnungen aus Faktura-Vorschlag</h2>
+            <p class="text-xs subtle">Pro Rechnung durchgehen · Stunden/Rabatt anpassen · am Ende alle gemeinsam definitiv stellen &amp; versenden</p>
+          </div>
+          <div class="flex gap-2">
+            <button class="btn btn-ghost">Entwürfe speichern &amp; später fortsetzen</button>
+            <button class="btn btn-ghost" style="color:#8a2d2d">Alle Entwürfe verwerfen</button>
+          </div>
+        </div>
+
+        <!-- Status-Legende / Flow -->
+        <div class="card p-3 mb-4" style="background:#f7faf7;border-color:#cfe0d2">
+          <div class="flex items-center gap-2 text-[11px] flex-wrap">
+            <span class="font-semibold uppercase tracking-wider subtle mr-2">Status-Flow:</span>
+            <span class="chip" style="background:#fff4e0;color:#8a5a00;border-color:#f3d9a4">① Entwurf</span>
+            <span class="subtle">→</span>
+            <span class="chip" style="background:#e6ede6;color:#2d5a2d;border-color:#bfd3bf">② Definitiv (Nr. vergeben)</span>
+            <span class="subtle">→</span>
+            <span class="chip" style="background:#e3eaf5;color:#2e4a7d;border-color:#b8c9e0">③ Versendet</span>
+            <span class="subtle">→</span>
+            <span class="chip" style="background:#d7f2e0;color:#1e6b3d;border-color:#a0d7b4">④ Bezahlt</span>
+            <span class="mx-2 subtle">|</span>
+            <span class="chip" style="background:#fce4e4;color:#8a2d2d;border-color:#e8b4b4">⊗ Storniert / Gutschrift</span>
+          </div>
+        </div>
+
+        <!-- Stepper Sidebar + Detail -->
+        <div class="grid grid-cols-12 gap-4">
+
+          <!-- Linke Schritt-Liste -->
+          <div class="col-span-3 card p-0 overflow-hidden">
+            <div class="px-3 py-2 border-b text-[11px] uppercase tracking-wider subtle font-semibold" style="border-color:#eef1ee;background:#f7faf7">
+              Entwürfe (4)
+            </div>
+            <div class="divide-y" style="border-color:#eef1ee">
+              <button class="w-full text-left px-3 py-2.5 hover:bg-artis-50 flex items-start gap-2">
+                <span class="text-xs font-bold" style="color:#4d6a50;min-width:18px">1</span>
+                <div class="flex-1 min-w-0">
+                  <div class="text-sm font-medium truncate">Huber AG, BWL</div>
+                  <div class="text-[11px] subtle tabular-nums">−1'977.94 · nach Akonto</div>
+                  <div class="mt-1"><span class="chip chip-g">geprüft ✓</span></div>
+                </div>
+              </button>
+              <button class="w-full text-left px-3 py-2.5 flex items-start gap-2" style="background:#e6ede6;border-left:3px solid #7a9b7f">
+                <span class="text-xs font-bold" style="color:#4d6a50;min-width:18px">2</span>
+                <div class="flex-1 min-w-0">
+                  <div class="text-sm font-medium truncate" style="color:#2d3f2e">Weber, Revision 2025</div>
+                  <div class="text-[11px] tabular-nums" style="color:#4d6a50">9'960.00</div>
+                  <div class="mt-1"><span class="chip" style="background:#fff4e0;color:#8a5a00;border-color:#f3d9a4">aktuell</span></div>
+                </div>
+              </button>
+              <button class="w-full text-left px-3 py-2.5 hover:bg-artis-50 flex items-start gap-2">
+                <span class="text-xs font-bold subtle" style="min-width:18px">3</span>
+                <div class="flex-1 min-w-0">
+                  <div class="text-sm font-medium truncate">Sutter Bäckerei, Steuern 2024</div>
+                  <div class="text-[11px] subtle tabular-nums">1'320.00</div>
+                  <div class="mt-1"><span class="chip">offen</span></div>
+                </div>
+              </button>
+              <button class="w-full text-left px-3 py-2.5 hover:bg-artis-50 flex items-start gap-2">
+                <span class="text-xs font-bold subtle" style="min-width:18px">4</span>
+                <div class="flex-1 min-w-0">
+                  <div class="text-sm font-medium truncate">Keller IT, Beratung</div>
+                  <div class="text-[11px] subtle tabular-nums">734.50</div>
+                  <div class="mt-1"><span class="chip">offen</span></div>
+                </div>
+              </button>
+            </div>
+            <div class="px-3 py-2.5 border-t text-xs" style="border-color:#eef1ee;background:#f7faf7">
+              <div class="flex justify-between"><span class="subtle">Total Batch:</span><span class="tabular-nums font-semibold" style="color:#4d6a50">10'036.56</span></div>
+              <div class="flex justify-between mt-0.5"><span class="subtle">geprüft:</span><span class="tabular-nums">1 / 4</span></div>
+            </div>
+          </div>
+
+          <!-- Rechte Detailansicht aktuelle Rechnung -->
+          <div class="col-span-9 space-y-3">
+
+            <!-- Kopf des aktuellen Entwurfs -->
+            <div class="card p-4" style="border-left:4px solid #7a9b7f">
+              <div class="flex items-start justify-between gap-4">
+                <div>
+                  <div class="flex items-center gap-2 text-[11px] subtle mb-1">
+                    <span>Entwurf 2 von 4</span>
+                    <span>·</span>
+                    <span>wird beim Definitiv-Stellen zur Nr. <b>R-2026-0147</b></span>
+                  </div>
+                  <h3 class="text-lg font-semibold">Weber, Revision 2025</h3>
+                  <div class="text-xs subtle">Kunde: Weber Holding AG · P-2025-088 · Verantwortlich: S. Bigger</div>
+                </div>
+                <div class="flex items-center gap-2">
+                  <span class="chip" style="background:#fff4e0;color:#8a5a00;border-color:#f3d9a4">Status: Entwurf</span>
+                  <button class="btn btn-ghost text-xs">◀ Vorheriger</button>
+                  <button class="btn btn-primary text-xs">Nächster ▶</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-12 gap-3">
+
+              <!-- Positionen / Rapporte anpassen -->
+              <div class="col-span-8 card p-0 overflow-hidden">
+                <div class="px-4 py-2.5 border-b flex items-center justify-between" style="border-color:#eef1ee">
+                  <div>
+                    <h4 class="text-sm font-semibold">Positionen – Std. extern editierbar</h4>
+                    <p class="text-[11px] subtle">intern = rapportiert (nicht änderbar) · extern = was der Kunde bezahlt · kürzen <i>oder</i> erhöhen möglich</p>
+                  </div>
+                  <div class="flex gap-1">
+                    <button class="btn btn-ghost text-xs">+ Spesen</button>
+                    <button class="btn btn-ghost text-xs">+ Paket</button>
+                    <button class="btn btn-ghost text-xs">+ Freie Position</button>
+                  </div>
+                </div>
+                <table>
+                  <thead style="background:#f7faf7"><tr>
+                    <th style="width:28px"><input type="checkbox" checked/></th>
+                    <th>Datum</th><th>Leistungsart</th><th>Beschreibung</th>
+                    <th class="text-right">int.</th>
+                    <th class="text-right" style="background:#e6ede6">Std. extern</th>
+                    <th class="text-right">Satz</th>
+                    <th class="text-right">Betrag</th>
+                  </tr></thead>
+                  <tbody>
+                    <tr><td><input type="checkbox" checked/></td><td>02.02.</td><td>Revision</td><td>Planungsgespräch + Umfang</td><td class="text-right tabular-nums subtle">3.50</td><td class="text-right" style="background:#f7faf7"><input class="inp" style="width:60px;text-align:right;padding:2px 6px" value="3.50"/></td><td class="text-right tabular-nums">260.-</td><td class="text-right tabular-nums">910.00</td></tr>
+                    <tr><td><input type="checkbox" checked/></td><td>14.02.</td><td>Revision</td><td>Vor-Ort Inventuraufnahme</td><td class="text-right tabular-nums subtle">8.25</td><td class="text-right" style="background:#fef0c7"><input class="inp" style="width:60px;text-align:right;padding:2px 6px;color:#8a5a00" value="10.00"/></td><td class="text-right tabular-nums">260.-</td><td class="text-right tabular-nums">2'600.00 <div class="text-[11px]"><span class="chip chip-o">erhöht +1.75</span></div></td></tr>
+                    <tr><td><input type="checkbox" checked/></td><td>22.02.</td><td>Revision</td><td>Prüfung Debitoren / Kreditoren</td><td class="text-right tabular-nums subtle">14.00</td><td class="text-right" style="background:#f7faf7"><input class="inp" style="width:60px;text-align:right;padding:2px 6px" value="14.00"/></td><td class="text-right tabular-nums">240.-</td><td class="text-right tabular-nums">3'360.00</td></tr>
+                    <tr style="background:#fff8e6"><td><input type="checkbox" checked/></td><td>05.03.</td><td>Revision</td><td>Stichproben Anlagevermögen <i>(intern Reise, nicht verrechnen)</i></td><td class="text-right tabular-nums subtle">4.50</td><td class="text-right" style="background:#fef0c7"><input class="inp" style="width:60px;text-align:right;padding:2px 6px;color:#8a5a00" value="3.00"/></td><td class="text-right tabular-nums">260.-</td><td class="text-right tabular-nums">780.00 <div class="text-[11px]"><span class="chip chip-o">gekürzt −1.50</span></div></td></tr>
+                    <tr><td><input type="checkbox" checked/></td><td>18.03.</td><td>Bericht</td><td>Entwurf Revisionsbericht</td><td class="text-right tabular-nums subtle">12.75</td><td class="text-right" style="background:#f7faf7"><input class="inp" style="width:60px;text-align:right;padding:2px 6px" value="12.75"/></td><td class="text-right tabular-nums">260.-</td><td class="text-right tabular-nums">3'315.00</td></tr>
+                    <tr style="background:#eef5ef"><td><input type="checkbox" checked/></td><td>—</td><td>Paket</td><td><b>Revisionsbericht Druck &amp; Ablage</b> (Fixpaket)</td><td class="text-right subtle">—</td><td class="text-right subtle">—</td><td class="text-right tabular-nums">350.-</td><td class="text-right tabular-nums">350.00</td></tr>
+                    <tr class="subtle italic"><td colspan="8" class="text-center text-[11px] py-1">… 19 weitere Zeilen · <a class="underline">alle anzeigen</a></td></tr>
+                  </tbody>
+                  <tfoot>
+                    <tr style="background:#f7faf7"><td colspan="5" class="text-right subtle">Zwischensumme abrechenbar</td><td class="text-right tabular-nums font-semibold">108.25 h</td><td></td><td class="text-right tabular-nums font-semibold">24'960.00</td></tr>
+                  </tfoot>
+                </table>
+              </div>
+
+              <!-- Rechte Spalte: Rabatt / Akonto / Total / Versand-Optionen -->
+              <div class="col-span-4 space-y-3">
+
+                <div class="card p-4">
+                  <h4 class="text-sm font-semibold mb-2">Rabatt &amp; Akonto</h4>
+                  <div class="space-y-2 text-xs">
+                    <label class="block">
+                      <span class="subtle">Rabatt-Art</span>
+                      <select class="inp w-full mt-0.5">
+                        <option>Kein Rabatt</option>
+                        <option>Prozent</option>
+                        <option selected>Betrag CHF</option>
+                        <option>Kulanz (nicht auf Deckblatt)</option>
+                      </select>
+                    </label>
+                    <div class="grid grid-cols-2 gap-2">
+                      <label class="block">
+                        <span class="subtle">Wert</span>
+                        <input class="inp w-full mt-0.5 tabular-nums" value="500.00"/>
+                      </label>
+                      <label class="block">
+                        <span class="subtle">Grund (intern)</span>
+                        <input class="inp w-full mt-0.5" value="Stammkunde"/>
+                      </label>
+                    </div>
+                    <div class="p-2 rounded text-[11px]" style="background:#fff4e0;color:#8a5a00">
+                      ℹ Rabatt wird nur auf Deckblatt ausgewiesen wenn ≠ 0.
+                    </div>
+
+                    <div class="border-t pt-2" style="border-color:#eef1ee">
+                      <label class="block">
+                        <span class="subtle">Akonto anrechnen</span>
+                        <select class="inp w-full mt-0.5">
+                          <option>AK-011 · 15'000.- (08.02.2026)</option>
+                          <option>keine Anrechnung</option>
+                        </select>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="card p-4">
+                  <h4 class="text-sm font-semibold mb-2">Summen</h4>
+                  <table class="w-full text-xs tabular-nums">
+                    <tr><td class="subtle">Leistungen</td><td class="text-right">24'960.00</td></tr>
+                    <tr><td class="subtle">+ Spesen</td><td class="text-right">—</td></tr>
+                    <tr><td class="subtle">+ Paket</td><td class="text-right">350.00</td></tr>
+                    <tr><td class="subtle">− Rabatt</td><td class="text-right" style="color:#8a5a00">−500.00</td></tr>
+                    <tr class="border-t" style="border-color:#eef1ee"><td class="pt-1">Netto vor MWST</td><td class="text-right pt-1 font-medium">24'810.00</td></tr>
+                    <tr><td class="subtle">+ MWST 8.1%</td><td class="text-right">2'009.61</td></tr>
+                    <tr><td class="font-semibold pt-1 border-t" style="border-color:#eef1ee">Rechnungsbetrag</td><td class="text-right font-semibold pt-1 border-t" style="border-color:#eef1ee">26'819.61</td></tr>
+                    <tr><td class="subtle">− Akonto AK-011</td><td class="text-right">−15'000.00</td></tr>
+                    <tr style="background:#e6ede6"><td class="font-bold py-1" style="color:#2d3f2e">Zu zahlen</td><td class="text-right font-bold py-1" style="color:#2d3f2e">11'819.61</td></tr>
+                  </table>
+                </div>
+
+                <div class="card p-4">
+                  <h4 class="text-sm font-semibold mb-2">Versand</h4>
+                  <div class="space-y-1.5 text-xs">
+                    <label class="flex items-center gap-2"><input type="checkbox" checked/> E-Mail an <b>buchhaltung@weber-holding.ch</b></label>
+                    <label class="flex items-center gap-2"><input type="checkbox"/> CC an Verantwortlichen</label>
+                    <label class="flex items-center gap-2"><input type="checkbox"/> Postversand (Druckerei)</label>
+                    <div class="pt-1 border-t" style="border-color:#eef1ee">
+                      <span class="subtle">Absender:</span> rechnungen@artis-treuhand.ch
+                    </div>
+                    <div><span class="subtle">Template:</span> DE · Standard (v3)</div>
+                  </div>
+                </div>
+
+                <div class="card p-4">
+                  <h4 class="text-sm font-semibold mb-2">Prüfung</h4>
+                  <label class="flex items-start gap-2 text-xs cursor-pointer">
+                    <input type="checkbox" class="mt-0.5"/>
+                    <span>Ich habe Positionen, Rabatt, Akonto &amp; Versand dieser Rechnung geprüft. <br/><span class="subtle">(Setzt Schritt auf "✓ geprüft". Erst nach allen 4 ✓ wird "Alle definitiv stellen &amp; versenden" aktiv.)</span></span>
+                  </label>
+                </div>
+
+              </div>
+            </div>
+
+            <!-- Batch-Aktionsleiste -->
+            <div class="card p-3 flex items-center justify-between" style="background:#f7faf7;border-color:#cfe0d2">
+              <div class="text-xs">
+                <span class="subtle">Batch-Status:</span>
+                <b>1 von 4</b> geprüft ·
+                <span class="subtle">noch offen:</span>
+                <span>Weber, Sutter Bäckerei, Keller IT</span>
+              </div>
+              <div class="flex gap-2">
+                <button class="btn btn-ghost text-xs">PDF-Vorschau (alle 4)</button>
+                <button class="btn btn-ghost text-xs">Entwürfe speichern</button>
+                <button class="btn btn-primary text-xs" disabled style="opacity:.5">Alle 4 definitiv stellen &amp; versenden</button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <div class="mt-4 text-[11px] subtle">
+          <b>Was passiert beim „Definitiv stellen":</b>
+          Rechnungsnummer wird vergeben · PDF wird final (Hash gespeichert) · WIP-Stichtag = Rechnungsdatum · Rapporte werden als „verrechnet" markiert · Akonto wird verbucht. <br/>
+          <b>Versenden:</b> Mail über <i>rechnungen@artis-treuhand.ch</i> mit PDF + QR · Log-Eintrag mit Zeit &amp; Empfänger · Status springt auf <b>Versendet</b>. <br/>
+          <b>Korrektur nach Definitiv?</b> Nur via Gutschrift/Storno.
+        </div>
+      </section>
+
+      <!-- ================================================================ -->
+      <!-- ABRECHNEN : RECHNUNG ERSTELLEN (Detail-Editor)                   -->
+      <!-- ================================================================ -->
+      <section data-panel="rechn-neu" class="hidden">
+        <div class="flex items-center justify-between mb-4">
+          <div><h2 class="text-base font-semibold">Rechnung erstellen · Huber AG, BWL</h2><p class="text-xs subtle">Deckblatt · Rabatt · Akonto · QR · Beiblatt – Rechnungsdatum = WIP-Stichtag</p></div>
+          <div class="flex gap-2"><button class="btn btn-ghost">PDF-Vorschau</button><button class="btn btn-primary">Als Entwurf speichern</button></div>
+        </div>
+
+        <div class="grid grid-cols-12 gap-5">
+          <!-- Linke Konfiguration -->
+          <div class="col-span-5 space-y-3">
+            <div class="card p-4">
+              <h3 class="text-sm font-semibold mb-2">Kopfdaten</h3>
+              <div class="grid grid-cols-2 gap-3 text-sm">
+                <div><label class="text-[11px] subtle">Rechnungs-Nr. (auto)</label><input class="inp" value="2026-0142" readonly/></div>
+                <div><label class="text-[11px] subtle">Sprache</label><select class="inp"><option>Deutsch</option><option>Englisch</option><option>Französisch</option><option>Italienisch</option></select></div>
+                <div><label class="text-[11px] subtle">Rechnungsdatum (= WIP-Stichtag)</label><input type="date" class="inp" value="2026-04-30"/></div>
+                <div><label class="text-[11px] subtle">Fällig am</label><input type="date" class="inp" value="2026-05-30"/></div>
+                <div><label class="text-[11px] subtle">Zahlungsfrist</label><select class="inp"><option>30 Tage</option><option>14 Tage</option><option>10 Tage</option></select></div>
+                <div><label class="text-[11px] subtle">MWST</label><select class="inp"><option>8.1% (Standard)</option><option>2.6% (reduziert)</option><option>0% (befreit)</option></select></div>
+              </div>
+              <div class="text-[11px] mt-2" style="color:#4d6a50">✓ Kunden-Konditionen geladen: Rabatt 10% Stammkunde · Sprache DE · MWST-pflichtig · 30 Tage</div>
+            </div>
+            <div class="card p-4">
+              <h3 class="text-sm font-semibold mb-2">Rabatt</h3>
+              <div class="grid grid-cols-3 gap-3 text-sm">
+                <select class="inp"><option>Prozent</option><option>Fix CHF</option><option>Auf Endsumme</option><option>Kein Rabatt</option></select>
+                <input class="inp text-right tabular-nums" value="10"/>
+                <input class="inp" value="Stammkunden-Rabatt 10%"/>
+              </div>
+              <p class="text-[11px] mt-1 subtle">Text erscheint auf Deckblatt nur wenn Wert ≠ 0.</p>
+            </div>
+            <div class="card p-4">
+              <h3 class="text-sm font-semibold mb-2">Akonto & Spesen</h3>
+              <div class="grid grid-cols-2 gap-3 text-sm">
+                <div><label class="text-[11px] subtle">Akonto verrechnen</label><select class="inp"><option>AK-2026-007 · 5'000.-</option><option>Keines</option></select></div>
+                <div><label class="text-[11px] subtle">Spesen einfügen</label><select class="inp"><option>2 offene Spesen: 113.90 ✓</option><option>Keine</option></select></div>
+              </div>
+            </div>
+            <div class="card p-4">
+              <h3 class="text-sm font-semibold mb-2">Leistungspakete (Fix-Preis)</h3>
+              <table>
+                <tbody>
+                  <tr><td><span class="chip">Gründungsdossier</span></td><td class="text-right tabular-nums">1'500.-</td><td><button class="btn btn-ghost text-xs">+ einfügen</button></td></tr>
+                  <tr><td><span class="chip">MWST-Anmeldung</span></td><td class="text-right tabular-nums">380.-</td><td><button class="btn btn-ghost text-xs">+ einfügen</button></td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="card p-4">
+              <h3 class="text-sm font-semibold mb-2">Versand</h3>
+              <div class="space-y-2 text-sm">
+                <select class="inp"><option>E-Mail (rechnungen@artis-treuhand.ch)</option><option>Post (Drucken)</option><option>E-Mail + Post</option></select>
+                <input class="inp" value="huber.gf@huber-ag.ch, buchhaltung@huber-ag.ch"/>
+                <textarea class="inp" rows="2" placeholder="Begleitmail">Guten Tag Herr Huber, beiliegend erhalten Sie unsere Honorarrechnung …</textarea>
+                <label class="flex items-center gap-2 text-xs"><input type="checkbox" checked/> BCC an buchhaltung@artis-treuhand.ch</label>
+              </div>
+            </div>
+          </div>
+
+          <!-- Rechte A4-Vorschau -->
+          <div class="col-span-7">
+            <div class="card p-8" style="background:#fff;font-family:'Inter'">
+              <div class="flex items-start justify-between">
+                <div>
+                  <div class="text-[10px] tracking-widest uppercase subtle">Artis Treuhand GmbH</div>
+                  <div class="text-[11px] subtle">Musterstrasse 1 · 9000 St. Gallen · CHE-123.456.789 MWST</div>
+                </div>
+                <div class="text-right">
+                  <div class="text-[11px] subtle">Rechnung Nr.</div>
+                  <div class="text-base font-semibold">2026-0142</div>
+                </div>
+              </div>
+              <div class="mt-6 grid grid-cols-2 gap-4 text-[12px]">
+                <div>
+                  <div class="sect-label mb-1">Rechnungsempfänger</div>
+                  <div class="font-medium">Huber AG</div>
+                  <div>Bahnhofstrasse 42</div>
+                  <div>9000 St. Gallen</div>
+                </div>
+                <div class="text-right">
+                  <div><span class="subtle">Datum:</span> 30.04.2026</div>
+                  <div><span class="subtle">Fällig:</span> 30.05.2026</div>
+                  <div><span class="subtle">Projekt:</span> Huber AG, BWL</div>
+                  <div><span class="subtle">Ref.:</span> P-2026-014</div>
+                </div>
+              </div>
+              <h1 class="mt-6 text-[16px] font-semibold">Honorarrechnung BWL 2025 – Jahresabschlussarbeiten</h1>
+              <p class="text-[11px] mt-1" style="color:#4a5a4a">Für die vom 01.01. – 30.04.2026 erbrachten Leistungen erlauben wir uns wie folgt zu fakturieren:</p>
+              <table class="mt-4 text-[12px]">
+                <thead><tr style="border-bottom:1.5px solid #1a1a2e">
+                  <th class="py-1.5 font-semibold" style="color:#1a1a2e">Leistungsart</th>
+                  <th class="text-right font-semibold" style="color:#1a1a2e">Std.</th>
+                  <th class="text-right font-semibold" style="color:#1a1a2e">Ø Ansatz</th>
+                  <th class="text-right font-semibold" style="color:#1a1a2e">Betrag CHF</th>
+                </tr></thead>
+                <tbody style="color:#1a1a2e">
+                  <tr><td class="py-1">Abschlussarbeiten</td><td class="text-right tabular-nums">6.50</td><td class="text-right tabular-nums">220.00</td><td class="text-right tabular-nums">1'430.00</td></tr>
+                  <tr><td class="py-1">Buchhaltung</td><td class="text-right tabular-nums">7.00</td><td class="text-right tabular-nums">145.00</td><td class="text-right tabular-nums">1'015.00</td></tr>
+                  <tr><td class="py-1">Steuern</td><td class="text-right tabular-nums">1.50</td><td class="text-right tabular-nums">220.00</td><td class="text-right tabular-nums">330.00</td></tr>
+                  <tr><td class="py-1">Beratung</td><td class="text-right tabular-nums">1.00</td><td class="text-right tabular-nums">260.00</td><td class="text-right tabular-nums">260.00</td></tr>
+                  <tr><td class="py-1">Admin / Sekretariat</td><td class="text-right tabular-nums">0.75</td><td class="text-right tabular-nums">95.00</td><td class="text-right tabular-nums">71.25</td></tr>
+                  <tr><td class="py-1">Spesen & Auslagen</td><td></td><td></td><td class="text-right tabular-nums">113.90</td></tr>
+                </tbody>
+                <tfoot style="color:#1a1a2e">
+                  <tr style="border-top:1px solid #1a1a2e"><td class="py-1.5 font-medium">Zwischentotal</td><td class="text-right tabular-nums">16.75</td><td></td><td class="text-right tabular-nums font-medium">3'220.15</td></tr>
+                  <tr><td class="py-1" style="color:#8a5a00">./. Stammkunden-Rabatt 10%</td><td></td><td></td><td class="text-right tabular-nums" style="color:#8a5a00">−322.02</td></tr>
+                  <tr><td class="py-1">Netto</td><td></td><td></td><td class="text-right tabular-nums">2'898.13</td></tr>
+                  <tr><td class="py-1">MWST 8.1%</td><td></td><td></td><td class="text-right tabular-nums">234.75</td></tr>
+                  <tr><td class="py-1">./. Akonto AK-2026-007 vom 15.03.2026</td><td></td><td></td><td class="text-right tabular-nums">−5'000.00</td></tr>
+                  <tr style="border-top:2px solid #1a1a2e"><td class="py-2 font-bold">Guthaben / Zu bezahlen CHF</td><td></td><td></td><td class="text-right tabular-nums font-bold">−1'867.12</td></tr>
+                </tfoot>
+              </table>
+              <p class="text-[10px] subtle mt-2 italic">Detaillierte Aufstellung aller Rapporte nach Datum sortiert siehe Beiblatt.</p>
+
+              <div class="mt-5 border-t pt-3" style="border-color:#1a1a2e">
+                <div class="grid grid-cols-3 gap-3">
+                  <div>
+                    <div class="w-28 h-28 grid grid-cols-10 grid-rows-10 border" style="border-color:#1a1a2e">
+                      <div class="col-span-3 row-span-3" style="background:#1a1a2e;border:3px solid #fff;outline:2px solid #1a1a2e"></div>
+                      <div class="col-start-8 col-span-3 row-span-3" style="background:#1a1a2e;border:3px solid #fff;outline:2px solid #1a1a2e"></div>
+                      <div class="col-span-3 row-span-3 row-start-8" style="background:#1a1a2e;border:3px solid #fff;outline:2px solid #1a1a2e"></div>
+                    </div>
+                    <div class="text-[10px] mt-1 subtle text-center">Swiss QR-Bill</div>
+                  </div>
+                  <div class="col-span-2 text-[11px]" style="color:#1a1a2e">
+                    <div class="font-semibold">Zahlbar durch</div>
+                    <div>Huber AG · 9000 St. Gallen</div>
+                    <div class="mt-1"><span class="subtle">IBAN:</span> CH93 0076 2011 6238 5295 7</div>
+                    <div><span class="subtle">Ref:</span> 21 00000 00003 13947 14300 09017</div>
+                    <div><span class="subtle">Betrag:</span> <span class="tabular-nums">Guthaben 1'867.12 CHF</span></div>
+                    <div class="mt-1 text-[10px] subtle italic">Bei Guthaben wird automatisch Gutschrift statt QR-Rechnung gedruckt.</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <p class="text-[11px] subtle mt-2">Beiblatt (Seite 2): Details nach Leistungsart, innerhalb chronologisch – siehe bestehende Vorschau.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================ -->
+      <!-- ABRECHNEN : RECHNUNGSÜBERSICHT                                   -->
+      <!-- ================================================================ -->
+      <section data-panel="rechn-list" class="hidden">
+        <div class="flex items-center justify-between mb-4">
+          <div><h2 class="text-base font-semibold">Rechnungsübersicht</h2><p class="text-xs subtle">Alle Rechnungen, Akonti, Gutschriften · filterbar, spalten-verschiebbar</p></div>
+          <div class="flex gap-2">
+            <select class="inp" style="width:auto"><option>Alle</option><option>Offen</option><option>Überfällig</option><option>Bezahlt</option><option>Entwurf</option></select>
+            <input class="inp" style="width:200px" placeholder="Nr. / Kunde / Projekt…"/>
+            <button class="btn btn-ghost">Export</button>
+          </div>
+        </div>
+
+        <!-- KPI -->
+        <div class="grid grid-cols-5 gap-3 mb-4">
+          <div class="card p-3"><div class="text-[11px] subtle">Offen total</div><div class="text-xl font-semibold tabular-nums">38'420.-</div></div>
+          <div class="card p-3"><div class="text-[11px] subtle">Davon überfällig</div><div class="text-xl font-semibold tabular-nums text-amber-700">9'880.-</div></div>
+          <div class="card p-3"><div class="text-[11px] subtle">Fakturiert YTD</div><div class="text-xl font-semibold tabular-nums">287'640.-</div></div>
+          <div class="card p-3"><div class="text-[11px] subtle">Bezahlt YTD</div><div class="text-xl font-semibold tabular-nums">249'220.-</div></div>
+          <div class="card p-3"><div class="text-[11px] subtle">Entwürfe</div><div class="text-xl font-semibold tabular-nums">4</div></div>
+        </div>
+
+        <div class="card overflow-hidden">
+          <table>
+            <thead style="background:#f7faf7"><tr>
+              <th>Nr.</th><th>Datum</th><th>Fällig</th><th>Kunde</th><th>Projekt</th>
+              <th class="text-right">Brutto</th><th class="text-right">MWST</th><th class="text-right">Total</th>
+              <th class="text-right">Offen</th><th>Status</th><th>Mahnung</th><th>Sprache</th><th></th>
+            </tr></thead>
+            <tbody>
+              <tr><td class="font-medium">2026-0142</td><td>30.04.</td><td>30.05.</td><td>Huber AG</td><td>Huber AG, BWL</td><td class="text-right tabular-nums">3'220.15</td><td class="text-right tabular-nums">234.75</td><td class="text-right tabular-nums">−1'867.12</td><td class="text-right tabular-nums subtle">Gutschrift</td><td><span class="pill chip-n">Entwurf</span></td><td>—</td><td>DE</td><td><button class="btn btn-ghost text-xs">⋯</button></td></tr>
+              <tr><td class="font-medium">2026-0141</td><td>28.04.</td><td>28.05.</td><td>Keller IT</td><td>Keller IT, Beratung</td><td class="text-right tabular-nums">734.50</td><td class="text-right tabular-nums">59.50</td><td class="text-right tabular-nums">794.00</td><td class="text-right tabular-nums">794.00</td><td><span class="pill chip-g">Versendet</span></td><td>—</td><td>DE</td><td><button class="btn btn-ghost text-xs">⋯</button></td></tr>
+              <tr><td class="font-medium">2026-0131</td><td>01.04.</td><td>01.05.</td><td>ACME SA</td><td>ACME SA, Lohn 2026</td><td class="text-right tabular-nums">280.00</td><td class="text-right tabular-nums">22.68</td><td class="text-right tabular-nums">302.68</td><td class="text-right tabular-nums" style="color:#4d6a50">0.00</td><td><span class="pill chip-g">Bezahlt</span></td><td>—</td><td>FR</td><td><button class="btn btn-ghost text-xs">⋯</button></td></tr>
+              <tr><td class="font-medium">2026-0128</td><td>28.03.</td><td>27.04.</td><td>Huber AG</td><td>Huber AG, BWL</td><td class="text-right tabular-nums">3'920.00</td><td class="text-right tabular-nums">317.52</td><td class="text-right tabular-nums">4'237.52</td><td class="text-right tabular-nums text-amber-700">4'237.52</td><td><span class="pill chip-o">Überfällig</span></td><td><span class="chip chip-o">1. Mahnung fällig</span></td><td>DE</td><td><button class="btn btn-ghost text-xs">⋯</button></td></tr>
+              <tr><td class="font-medium">2026-0091</td><td>28.02.</td><td>30.03.</td><td>Weber & Partner</td><td>Weber, Revision 2025</td><td class="text-right tabular-nums">4'200.00</td><td class="text-right tabular-nums">340.20</td><td class="text-right tabular-nums">4'540.20</td><td class="text-right tabular-nums" style="color:#4d6a50">0.00</td><td><span class="pill chip-g">Bezahlt</span></td><td>—</td><td>DE</td><td><button class="btn btn-ghost text-xs">⋯</button></td></tr>
+              <tr><td class="font-medium">AK-2026-007</td><td>15.03.</td><td>14.04.</td><td>Huber AG</td><td>Huber AG, BWL</td><td class="text-right tabular-nums">5'000.00</td><td class="text-right tabular-nums subtle">—</td><td class="text-right tabular-nums">5'000.00</td><td class="text-right tabular-nums" style="color:#4d6a50">0.00</td><td><span class="pill chip-b">Akonto · bezahlt</span></td><td>—</td><td>DE</td><td><button class="btn btn-ghost text-xs">⋯</button></td></tr>
+              <tr><td class="font-medium">GS-2026-003</td><td>10.03.</td><td>—</td><td>Bäckerei Sutter</td><td>Sutter Bäckerei, BWL</td><td class="text-right tabular-nums">−180.00</td><td class="text-right tabular-nums">−14.58</td><td class="text-right tabular-nums">−194.58</td><td class="text-right tabular-nums">—</td><td><span class="pill chip-r">Gutschrift</span></td><td>—</td><td>DE</td><td><button class="btn btn-ghost text-xs">⋯</button></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ================================================================ -->
+      <!-- ABRECHNEN : AKONTO                                               -->
+      <!-- ================================================================ -->
+      <section data-panel="akonto" class="hidden">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-base font-semibold">Akonto-Rechnungen</h2>
+          <button class="btn btn-primary">+ Neue Akonto</button>
+        </div>
+        <div class="card overflow-hidden">
+          <table>
+            <thead style="background:#f7faf7"><tr><th>Nr.</th><th>Projekt</th><th>Datum</th><th class="text-right">Betrag</th><th class="text-right">Verrechnet</th><th class="text-right">Saldo</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr><td>AK-2026-004</td><td>Weber, Revision 2025</td><td>02.02.</td><td class="text-right tabular-nums">15'000.-</td><td class="text-right tabular-nums subtle">—</td><td class="text-right tabular-nums font-semibold">15'000.-</td><td><span class="pill chip-g">Bezahlt</span></td></tr>
+              <tr><td>AK-2026-007</td><td>Huber AG, BWL</td><td>15.03.</td><td class="text-right tabular-nums">5'000.-</td><td class="text-right tabular-nums subtle">—</td><td class="text-right tabular-nums font-semibold">5'000.-</td><td><span class="pill chip-g">Bezahlt</span></td></tr>
+              <tr><td>AK-2026-009</td><td>Huber AG, BWL</td><td>10.04.</td><td class="text-right tabular-nums">5'000.-</td><td class="text-right tabular-nums subtle">—</td><td class="text-right tabular-nums font-semibold">5'000.-</td><td><span class="pill chip-o">Versendet</span></td></tr>
+              <tr><td>AK-2026-011</td><td>Div. Kleinmandate</td><td>12.04.</td><td class="text-right tabular-nums">12'000.-</td><td class="text-right tabular-nums">4'500.-</td><td class="text-right tabular-nums font-semibold">7'500.-</td><td><span class="pill chip-g">Teil-verrechnet</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ================================================================ -->
+      <!-- ABRECHNEN : MAHNWESEN                                            -->
+      <!-- ================================================================ -->
+      <section data-panel="mahnung" class="hidden">
+        <div class="flex items-center justify-between mb-4">
+          <div><h2 class="text-base font-semibold">Mahnwesen</h2><p class="text-xs subtle">3 Mahnstufen · Gebühren und Verzugszins aus Stammdaten</p></div>
+          <div class="flex gap-2"><button class="btn btn-ghost">Mahnlauf simulieren</button><button class="btn btn-primary">Mahnlauf ausführen (3 Rechnungen)</button></div>
+        </div>
+
+        <div class="grid grid-cols-4 gap-3 mb-4">
+          <div class="card p-3"><div class="text-[11px] subtle">1. Mahnung fällig</div><div class="text-xl font-semibold">3</div><div class="text-[11px] subtle">gratis · 10 Tage Frist</div></div>
+          <div class="card p-3"><div class="text-[11px] subtle">2. Mahnung fällig</div><div class="text-xl font-semibold">1</div><div class="text-[11px] subtle">Gebühr 30.- · 10 Tage</div></div>
+          <div class="card p-3"><div class="text-[11px] subtle">3. Mahnung fällig</div><div class="text-xl font-semibold">0</div><div class="text-[11px] subtle">Gebühr 50.- + 5% Zins</div></div>
+          <div class="card p-3"><div class="text-[11px] subtle">Inkasso-Übergabe</div><div class="text-xl font-semibold">0</div><div class="text-[11px] subtle">nach 3. Mahnung + 10T</div></div>
+        </div>
+
+        <div class="card overflow-hidden">
+          <table>
+            <thead style="background:#f7faf7"><tr><th>Rg.-Nr.</th><th>Kunde</th><th>Projekt</th><th>Fällig</th><th>Tage überfällig</th><th class="text-right">Offen</th><th>Stufe</th><th>Gebühr</th><th>Zins</th><th>Nächster Schritt</th><th></th></tr></thead>
+            <tbody>
+              <tr><td>2026-0128</td><td>Huber AG</td><td>Huber AG, BWL</td><td>27.04.</td><td class="text-amber-700">5 T</td><td class="text-right tabular-nums">4'237.52</td><td><span class="pill chip-o">→ 1. Mahnung</span></td><td>0.-</td><td>—</td><td>Mail am 02.05.</td><td><button class="btn btn-ghost text-xs">Vorschau</button></td></tr>
+              <tr><td>2026-0112</td><td>Meier Consulting</td><td>Meier, BWL</td><td>15.04.</td><td class="text-amber-700">17 T</td><td class="text-right tabular-nums">1'880.00</td><td><span class="pill chip-o">→ 1. Mahnung</span></td><td>0.-</td><td>—</td><td>sofort</td><td><button class="btn btn-ghost text-xs">Vorschau</button></td></tr>
+              <tr><td>2026-0095</td><td>Graf GmbH</td><td>Graf, BWL</td><td>12.03.</td><td class="text-amber-700">51 T</td><td class="text-right tabular-nums">2'940.00</td><td><span class="pill chip-r">→ 2. Mahnung</span></td><td>30.-</td><td>—</td><td>sofort</td><td><button class="btn btn-ghost text-xs">Vorschau</button></td></tr>
+              <tr><td>2026-0088</td><td>Hofer AG</td><td>Hofer, Steuern 2024</td><td>01.03.</td><td class="text-amber-700">62 T</td><td class="text-right tabular-nums">820.00</td><td><span class="pill chip-o">1. Mahnung versandt 15.04.</span></td><td>0.-</td><td>—</td><td>2. Mahnung ab 25.04.</td><td><button class="btn btn-ghost text-xs">Vorschau</button></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ================================================================ -->
+      <!-- ABRECHNEN : ZAHLUNGSEINGÄNGE (camt.054)                          -->
+      <!-- ================================================================ -->
+      <section data-panel="zahlung" class="hidden">
+        <div class="flex items-center justify-between mb-4">
+          <div><h2 class="text-base font-semibold">Zahlungseingänge</h2><p class="text-xs subtle">camt.054 hochladen oder manuell erfassen. Matching auf QR-Referenz automatisch.</p></div>
+          <div class="flex gap-2"><button class="btn btn-ghost">📁 camt.054 importieren</button><button class="btn btn-primary">+ Manuelle Buchung</button></div>
+        </div>
+
+        <div class="card p-5 mb-4" style="border:2px dashed #bfcfbf;background:#f7faf7">
+          <div class="text-center text-sm subtle">📥 camt.054.xml hierher ziehen oder klicken zum Auswählen<br/><span class="text-[11px]">Letzte Import: 20.04.2026 – 14 Transaktionen, 12 auto-gematcht, 2 manuell zuzuweisen</span></div>
+        </div>
+
+        <div class="card overflow-hidden">
+          <table>
+            <thead style="background:#f7faf7"><tr><th>Datum</th><th>Betrag</th><th>Auftraggeber</th><th>Referenz (QR)</th><th>Gefundene Rechnung</th><th>Match</th><th></th></tr></thead>
+            <tbody>
+              <tr><td>20.04.</td><td class="tabular-nums">4'540.20</td><td>Weber & Partner AG</td><td class="font-mono text-[11px]">21 00000 00002 20192 91200 00091</td><td>2026-0091 · Weber, Revision 2025</td><td><span class="pill chip-g">✓ Auto</span></td><td><button class="btn btn-ghost text-xs">OK</button></td></tr>
+              <tr><td>19.04.</td><td class="tabular-nums">302.68</td><td>ACME SA</td><td class="font-mono text-[11px]">21 00000 00001 31401 88020 00131</td><td>2026-0131 · ACME SA, Lohn 2026</td><td><span class="pill chip-g">✓ Auto</span></td><td><button class="btn btn-ghost text-xs">OK</button></td></tr>
+              <tr style="background:#fef8e6"><td>18.04.</td><td class="tabular-nums">2'000.00</td><td>Meier Consulting</td><td class="font-mono text-[11px] subtle">(keine QR-Ref)</td><td><em>unklar – 2 Kandidaten</em></td><td><span class="pill chip-o">? Manuell</span></td><td><button class="btn btn-primary text-xs">Zuweisen</button></td></tr>
+              <tr><td>17.04.</td><td class="tabular-nums">1'320.00</td><td>Bäckerei Sutter</td><td class="font-mono text-[11px]">21 00000 00004 28730 01920 00119</td><td>2026-0119 · Sutter, BWL</td><td><span class="pill chip-g">✓ Auto</span></td><td><button class="btn btn-ghost text-xs">OK</button></td></tr>
+              <tr style="background:#fef8e6"><td>15.04.</td><td class="tabular-nums">450.00</td><td>Unbekannt / D. Schmid</td><td class="font-mono text-[11px] subtle">(keine QR-Ref)</td><td><em>keine Zuordnung</em></td><td><span class="pill chip-r">⚠ Offen</span></td><td><button class="btn btn-primary text-xs">Zuweisen</button></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ================================================================ -->
+      <!-- ABRECHNEN : GUTSCHRIFT/STORNO                                    -->
+      <!-- ================================================================ -->
+      <section data-panel="gutschrift" class="hidden">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-base font-semibold">Gutschriften & Storno</h2>
+          <div class="flex gap-2"><button class="btn btn-ghost">+ Gutschrift</button><button class="btn btn-danger">+ Storno</button></div>
+        </div>
+        <div class="card p-5 mb-4">
+          <h3 class="text-sm font-semibold mb-2">Gutschrift erstellen</h3>
+          <div class="grid grid-cols-3 gap-3 text-sm">
+            <div><label class="text-[11px] subtle">Referenz-Rechnung</label><select class="inp"><option>2026-0128 · Huber AG · 4'237.52</option></select></div>
+            <div><label class="text-[11px] subtle">Grund</label><select class="inp"><option>Kulanz</option><option>Falsche Positionen</option><option>Rabatt nachträglich</option><option>Storno/Rückerstattung</option></select></div>
+            <div><label class="text-[11px] subtle">Betrag</label><input class="inp text-right tabular-nums" value="200.00"/></div>
+            <div class="col-span-3"><label class="text-[11px] subtle">Text für Kunde</label><input class="inp" value="Gutschrift wegen verzögerter Lieferung – als Kulanz"/></div>
+          </div>
+          <div class="mt-3 flex justify-end gap-2"><button class="btn btn-ghost">Abbrechen</button><button class="btn btn-primary">Gutschrift erstellen</button></div>
+        </div>
+      </section>
+
+      <!-- ================================================================ -->
+      <!-- ABRECHNEN : SPESEN ABRECHNEN                                     -->
+      <!-- ================================================================ -->
+      <section data-panel="spesen-abr" class="hidden">
+        <div class="flex items-center justify-between mb-4">
+          <div><h2 class="text-base font-semibold">Spesen abrechnen</h2><p class="text-xs subtle">Offene weiterbelastbare Spesen an Kunden fakturieren oder intern als Mitarbeiter-Auszahlung verbuchen.</p></div>
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+          <div class="card p-4">
+            <h3 class="text-sm font-semibold mb-2">Kundenweiterbelastung (offen)</h3>
+            <table>
+              <tbody>
+                <tr><td>Huber AG, BWL</td><td class="text-right tabular-nums">29.40</td><td><button class="btn btn-ghost text-xs">einfügen</button></td></tr>
+                <tr><td>Keller IT, Beratung</td><td class="text-right tabular-nums">84.50</td><td><button class="btn btn-ghost text-xs">einfügen</button></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="card p-4">
+            <h3 class="text-sm font-semibold mb-2">Mitarbeiter-Auszahlung (Spesenvergütung)</h3>
+            <table>
+              <tbody>
+                <tr><td>S. Bigger · April 2026</td><td class="text-right tabular-nums">113.90</td><td><span class="chip chip-o">offen</span></td></tr>
+                <tr><td>M. Egli · April 2026</td><td class="text-right tabular-nums">127.00</td><td><span class="chip chip-o">offen</span></td></tr>
+              </tbody>
+            </table>
+            <button class="btn btn-primary mt-2">Zahllauf erstellen</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================ -->
+      <!-- ABRECHNEN : WIEDERKEHRENDE                                       -->
+      <!-- ================================================================ -->
+      <section data-panel="wiederk" class="hidden">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-base font-semibold">Wiederkehrende Rechnungen</h2>
+          <div class="flex gap-2"><button class="btn btn-ghost">Jetzt fällige generieren (3)</button><button class="btn btn-primary">+ Serie</button></div>
+        </div>
+        <div class="card overflow-hidden">
+          <table>
+            <thead style="background:#f7faf7"><tr><th>Serie</th><th>Projekt</th><th>Modus</th><th>Intervall</th><th class="text-right">Betrag</th><th>Nächster Lauf</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr><td>Müller GmbH · BWL Quartal</td><td>Müller GmbH, BWL</td><td><span class="pill chip-b">Pauschal</span></td><td>Quartal</td><td class="text-right tabular-nums">1'200.-</td><td>30.06.2026</td><td><span class="pill chip-g">Aktiv</span></td></tr>
+              <tr><td>ACME SA · Lohn Monat</td><td>ACME SA, Lohn 2026</td><td><span class="pill chip-b">Pauschal</span></td><td>Monat</td><td class="text-right tabular-nums">280.-</td><td>01.05.2026</td><td><span class="pill chip-g">Aktiv</span></td></tr>
+              <tr><td>Weber · Akonto Monat</td><td>Weber, Revision 2025</td><td><span class="pill chip-g">Effektiv</span></td><td>Monat (25.)</td><td class="text-right tabular-nums">≈ 3'400.-</td><td>25.04.2026</td><td><span class="pill chip-o">Lauf bereit</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ================================================================ -->
+      <!-- STAMMDATEN : PROJEKTE                                            -->
+      <!-- ================================================================ -->
+      <section data-panel="sd-projekte" class="hidden">
+        <div class="flex items-center justify-between mb-4">
+          <div><h2 class="text-base font-semibold">Projekte · Stammdaten</h2><p class="text-xs subtle">Pro Unternehmenskunde min. 1 Projekt „Kunde, BWL". Privatpersonen manuell. Projekte können geklont / als Vorlage gespeichert werden.</p></div>
+          <div class="flex gap-2"><button class="btn btn-ghost">+ aus Vorlage</button><button class="btn btn-ghost">+ Klonen (letztes Jahr)</button><button class="btn btn-primary">+ Neues Projekt</button></div>
+        </div>
+        <div class="grid grid-cols-12 gap-4">
+          <div class="col-span-5 card overflow-hidden">
+            <div class="p-3 border-b flex gap-2" style="border-color:#eef1ee">
+              <input class="inp" placeholder="Filter…"/>
+              <select class="inp" style="width:auto"><option>Alle Status</option><option>Laufend</option><option>Offerte</option><option>Abgeschlossen</option></select>
+            </div>
+            <table>
+              <thead><tr><th>Projekt</th><th>Kunde</th><th>Status</th></tr></thead>
+              <tbody>
+                <tr style="background:#e6ede6"><td><div class="font-medium">Huber AG, BWL</div><div class="text-[11px] subtle">P-2026-014</div></td><td>Huber AG</td><td><span class="pill chip-g">Laufend</span></td></tr>
+                <tr><td><div class="font-medium">Müller GmbH, BWL</div><div class="text-[11px] subtle">P-2026-009</div></td><td>Müller GmbH</td><td><span class="pill chip-g">Laufend</span></td></tr>
+                <tr><td><div class="font-medium">Müller GmbH, Steuern 2024</div><div class="text-[11px] subtle">P-2026-010</div></td><td>Müller GmbH</td><td><span class="pill chip-o">Offerte</span></td></tr>
+                <tr><td><div class="font-medium">Sutter Bäckerei, BWL</div><div class="text-[11px] subtle">P-2026-001</div></td><td>Bäckerei Sutter</td><td><span class="pill chip-g">Laufend</span></td></tr>
+                <tr><td><div class="font-medium">Sutter Bäckerei, Steuern 2024</div><div class="text-[11px] subtle">P-2026-002</div></td><td>Bäckerei Sutter</td><td><span class="pill chip-g">Laufend</span></td></tr>
+                <tr><td><div class="font-medium">Weber, Revision 2025</div><div class="text-[11px] subtle">P-2025-088</div></td><td>Weber & Partner AG</td><td><span class="pill chip-n">Abgeschlossen</span></td></tr>
+                <tr><td><div class="font-medium">Keller IT, Beratung</div><div class="text-[11px] subtle">P-2026-021</div></td><td>Keller IT GmbH</td><td><span class="pill chip-g">Laufend</span></td></tr>
+                <tr><td><div class="font-medium">ACME SA, Lohn 2026</div><div class="text-[11px] subtle">P-2026-017 · Pauschal</div></td><td>ACME SA</td><td><span class="pill chip-g">Laufend</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="col-span-7 card p-5">
+            <div class="flex items-start justify-between">
+              <div>
+                <div class="text-xs subtle">Huber AG · P-2026-014</div>
+                <h3 class="text-base font-semibold">Huber AG, BWL</h3>
+              </div>
+              <div class="flex gap-1.5">
+                <button class="btn btn-ghost text-xs">Als Vorlage speichern</button>
+                <button class="btn btn-ghost text-xs">Klonen auf 2026</button>
+                <button class="btn btn-danger text-xs">Archivieren</button>
+              </div>
+            </div>
+            <div class="grid grid-cols-3 gap-3 mt-4 text-sm">
+              <div><label class="text-[11px] subtle">Kunde</label><input class="inp" value="Huber AG"/></div>
+              <div><label class="text-[11px] subtle">Projekttyp</label><select class="inp"><option>BWL</option><option>Steuern</option><option>Revision</option><option>Beratung</option><option>Lohn</option><option>Gründung</option></select></div>
+              <div><label class="text-[11px] subtle">Jahr (optional)</label><input class="inp" placeholder="z.B. 2024"/></div>
+              <div><label class="text-[11px] subtle">Modus</label><select class="inp"><option>Effektiv</option><option>Pauschal</option></select></div>
+              <div><label class="text-[11px] subtle">Verantwortlich</label><select class="inp"><option>S. Bigger</option><option>M. Egli</option></select></div>
+              <div><label class="text-[11px] subtle">Gruppenansatz</label><select class="inp"><option>Standard KMU</option><option>Grosskunde</option><option>Revisionsmandate</option></select></div>
+              <div><label class="text-[11px] subtle">Status</label><select class="inp"><option>Laufend</option><option>Offerte</option><option>Abgeschlossen</option><option>Archiviert</option></select></div>
+              <div><label class="text-[11px] subtle">Budget (h)</label><input class="inp text-right tabular-nums" value="60"/></div>
+              <div><label class="text-[11px] subtle">Budget (CHF)</label><input class="inp text-right tabular-nums" value="13'000"/></div>
+              <div><label class="text-[11px] subtle">Startdatum</label><input type="date" class="inp" value="2026-01-15"/></div>
+              <div><label class="text-[11px] subtle">Soll-Ende</label><input type="date" class="inp" value="2026-05-31"/></div>
+              <div><label class="text-[11px] subtle">Wiederkehrend</label><select class="inp"><option>Jährlich auto-klonen</option><option>Nein</option></select></div>
+              <div class="col-span-3"><label class="text-[11px] subtle">Tags / Kostenstellen</label>
+                <div class="inp flex gap-1 flex-wrap">
+                  <span class="tag">BWL</span><span class="tag">KMU</span><span class="tag">Kanton SG</span>
+                  <input class="flex-1 border-0 bg-transparent outline-none" style="min-width:80px" placeholder="+ Tag"/>
+                </div></div>
+            </div>
+            <div class="mt-4">
+              <div class="sect-label mb-2">Budget-Warnungen</div>
+              <div class="grid grid-cols-3 gap-2 text-sm">
+                <label class="flex items-center gap-2"><input type="checkbox" checked/> Warnung bei 80%</label>
+                <label class="flex items-center gap-2"><input type="checkbox" checked/> Warnung bei 100%</label>
+                <label class="flex items-center gap-2"><input type="checkbox"/> E-Mail an Verantwortliche</label>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================ -->
+      <!-- STAMMDATEN : PROJEKT-VORLAGEN                                    -->
+      <!-- ================================================================ -->
+      <section data-panel="sd-vorlagen" class="hidden">
+        <div class="flex items-center justify-between mb-4">
+          <div><h2 class="text-base font-semibold">Projekt-Vorlagen</h2><p class="text-xs subtle">Fertig konfigurierte Projekttypen – beim Neuanlegen wird alles vorausgefüllt.</p></div>
+          <button class="btn btn-primary">+ Neue Vorlage</button>
+        </div>
+        <div class="grid grid-cols-3 gap-3">
+          <div class="card p-4"><h3 class="font-semibold">BWL KMU Standard</h3><p class="text-[11px] subtle mt-1">Buchhaltung + Abschluss + Steuern</p><div class="mt-2 text-xs space-y-0.5"><div>Modus: Effektiv</div><div>Gruppenansatz: Standard KMU</div><div>Budget: 45 h</div><div>Tags: BWL, KMU</div></div><button class="btn btn-ghost text-xs mt-2">Bearbeiten</button></div>
+          <div class="card p-4"><h3 class="font-semibold">Steuererklärung Unternehmen</h3><p class="text-[11px] subtle mt-1">Nur Steuern, JP</p><div class="mt-2 text-xs space-y-0.5"><div>Modus: Pauschal 950.-</div><div>Budget: 8 h</div><div>Tags: Steuern, JP</div></div><button class="btn btn-ghost text-xs mt-2">Bearbeiten</button></div>
+          <div class="card p-4"><h3 class="font-semibold">Steuererklärung Privat</h3><p class="text-[11px] subtle mt-1">NP, Kanton variabel</p><div class="mt-2 text-xs space-y-0.5"><div>Modus: Pauschal 280.-</div><div>Budget: 2 h</div><div>Tags: Steuern, Privat</div></div><button class="btn btn-ghost text-xs mt-2">Bearbeiten</button></div>
+          <div class="card p-4"><h3 class="font-semibold">Revisionsmandat</h3><p class="text-[11px] subtle mt-1">Eingeschränkte Revision</p><div class="mt-2 text-xs space-y-0.5"><div>Modus: Effektiv</div><div>Gruppenansatz: Revision</div><div>Budget: 90 h</div><div>Tags: Revision</div></div><button class="btn btn-ghost text-xs mt-2">Bearbeiten</button></div>
+          <div class="card p-4"><h3 class="font-semibold">Lohnmandat Monatlich</h3><p class="text-[11px] subtle mt-1">Lohnverarbeitung</p><div class="mt-2 text-xs space-y-0.5"><div>Modus: Pauschal 280.-/Mt</div><div>Wiederkehrend</div><div>Tags: Lohn</div></div><button class="btn btn-ghost text-xs mt-2">Bearbeiten</button></div>
+          <div class="card p-4"><h3 class="font-semibold">Gründungsmandat</h3><p class="text-[11px] subtle mt-1">Gründung GmbH/AG</p><div class="mt-2 text-xs space-y-0.5"><div>Modus: Fixpreis 1'500.-</div><div>Leistungspaket</div><div>Tags: Gründung</div></div><button class="btn btn-ghost text-xs mt-2">Bearbeiten</button></div>
+        </div>
+      </section>
+
+      <!-- ================================================================ -->
+      <!-- STAMMDATEN : MITARBEITER                                         -->
+      <!-- ================================================================ -->
+      <section data-panel="sd-mitarb" class="hidden">
+        <div class="flex items-center justify-between mb-4">
+          <div><h2 class="text-base font-semibold">Mitarbeiter</h2><p class="text-xs subtle">Stammdaten inkl. Sollzeiten, Kostensatz, Austrittsdatum. User kommen aus MailFlow-Auth.</p></div>
+          <button class="btn btn-primary">+ Mitarbeiter</button>
+        </div>
+        <div class="card overflow-hidden">
+          <table>
+            <thead style="background:#f7faf7"><tr><th>Name</th><th>Rolle</th><th>Eintritt</th><th>Austritt</th><th class="text-right">Pensum</th><th>Sollzeiten-Profil</th><th class="text-right">Kostensatz</th><th class="text-right">Std. Verkaufssatz Default</th><th>Ferien p.a.</th><th></th></tr></thead>
+            <tbody>
+              <tr><td class="font-medium">S. Bigger</td><td>Partner</td><td>01.01.2020</td><td>—</td><td class="text-right tabular-nums">100%</td><td>Vollzeit 42h</td><td class="text-right tabular-nums">140.-</td><td class="text-right tabular-nums">240.-</td><td>25</td><td><button class="btn btn-ghost text-xs">✎</button></td></tr>
+              <tr><td class="font-medium">M. Egli</td><td>Treuhänder mit FA</td><td>01.09.2021</td><td>—</td><td class="text-right tabular-nums">100%</td><td>Vollzeit 42h</td><td class="text-right tabular-nums">95.-</td><td class="text-right tabular-nums">165.-</td><td>25</td><td><button class="btn btn-ghost text-xs">✎</button></td></tr>
+              <tr><td class="font-medium">L. Vogt</td><td>Sachbearbeiterin</td><td>15.03.2023</td><td>—</td><td class="text-right tabular-nums">80%</td><td>Teilzeit 33.6h</td><td class="text-right tabular-nums">60.-</td><td class="text-right tabular-nums">95.-</td><td>20</td><td><button class="btn btn-ghost text-xs">✎</button></td></tr>
+              <tr><td class="font-medium">A. Rossi</td><td>Treuhänderin mit FA</td><td>01.06.2022</td><td>—</td><td class="text-right tabular-nums">100%</td><td>Vollzeit 42h</td><td class="text-right tabular-nums">98.-</td><td class="text-right tabular-nums">170.-</td><td>25</td><td><button class="btn btn-ghost text-xs">✎</button></td></tr>
+              <tr style="opacity:.55"><td class="font-medium">T. Meier</td><td>Lernender 3. Lj.</td><td>01.08.2022</td><td>31.07.2025</td><td class="text-right tabular-nums">100%</td><td>Vollzeit 42h</td><td class="text-right tabular-nums">28.-</td><td class="text-right tabular-nums">65.-</td><td>25</td><td><button class="btn btn-ghost text-xs">✎</button></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ================================================================ -->
+      <!-- STAMMDATEN : SOLLZEITEN-PROFILE                                  -->
+      <!-- ================================================================ -->
+      <section data-panel="sd-sollzeit" class="hidden">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-base font-semibold">Sollzeiten-Profile</h2>
+          <button class="btn btn-primary">+ Profil</button>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div class="card p-4">
+            <h3 class="font-semibold">Vollzeit 42h</h3>
+            <table class="mt-2">
+              <thead><tr><th>Mo</th><th>Di</th><th>Mi</th><th>Do</th><th>Fr</th><th>Sa</th><th>So</th></tr></thead>
+              <tbody><tr><td class="tabular-nums">8.40</td><td class="tabular-nums">8.40</td><td class="tabular-nums">8.40</td><td class="tabular-nums">8.40</td><td class="tabular-nums">8.40</td><td class="subtle">—</td><td class="subtle">—</td></tr></tbody>
+            </table>
+            <div class="text-[11px] mt-2 subtle">42 h / Woche · 218.4 h / Monat (Ø)</div>
+          </div>
+          <div class="card p-4">
+            <h3 class="font-semibold">Teilzeit 33.6h (80%)</h3>
+            <table class="mt-2">
+              <thead><tr><th>Mo</th><th>Di</th><th>Mi</th><th>Do</th><th>Fr</th><th>Sa</th><th>So</th></tr></thead>
+              <tbody><tr><td class="tabular-nums">8.40</td><td class="tabular-nums">8.40</td><td class="tabular-nums">8.40</td><td class="tabular-nums">8.40</td><td class="subtle">—</td><td class="subtle">—</td><td class="subtle">—</td></tr></tbody>
+            </table>
+            <div class="text-[11px] mt-2 subtle">33.6 h / Woche</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================ -->
+      <!-- STAMMDATEN : LEISTUNGSARTEN (+ Satzhistorie)                    -->
+      <!-- ================================================================ -->
+      <section data-panel="sd-leistung" class="hidden">
+        <div class="flex items-center justify-between mb-4">
+          <div><h2 class="text-base font-semibold">Leistungsarten</h2><p class="text-xs subtle">Default-Stundensatz mit Historie. Alte Rapporte behalten den Satz zum Rapport-Zeitpunkt.</p></div>
+          <button class="btn btn-primary">+ Leistungsart</button>
+        </div>
+        <div class="grid grid-cols-12 gap-4">
+          <div class="col-span-6 card overflow-hidden">
+            <table>
+              <thead style="background:#f7faf7"><tr><th>Bezeichnung</th><th>Kürzel</th><th>Farbe</th><th class="text-right">Aktueller Satz</th><th>Abrechenbar</th></tr></thead>
+              <tbody>
+                <tr style="background:#e6ede6"><td class="font-medium">Buchhaltung</td><td>BH</td><td><span class="inline-block w-3 h-3 rounded-full" style="background:#7a9b7f"></span></td><td class="text-right tabular-nums">145.-</td><td>Ja</td></tr>
+                <tr><td class="font-medium">Abschlussarbeiten</td><td>AB</td><td><span class="inline-block w-3 h-3 rounded-full" style="background:#0ea5e9"></span></td><td class="text-right tabular-nums">220.-</td><td>Ja</td></tr>
+                <tr><td class="font-medium">Steuern</td><td>ST</td><td><span class="inline-block w-3 h-3 rounded-full" style="background:#7c3aed"></span></td><td class="text-right tabular-nums">220.-</td><td>Ja</td></tr>
+                <tr><td class="font-medium">Beratung</td><td>BE</td><td><span class="inline-block w-3 h-3 rounded-full" style="background:#f59e0b"></span></td><td class="text-right tabular-nums">260.-</td><td>Ja</td></tr>
+                <tr><td class="font-medium">Admin / Sekretariat</td><td>AD</td><td><span class="inline-block w-3 h-3 rounded-full" style="background:#64748b"></span></td><td class="text-right tabular-nums">95.-</td><td>Ja</td></tr>
+                <tr><td class="font-medium">Intern</td><td>IN</td><td><span class="inline-block w-3 h-3 rounded-full" style="background:#d4d4d8"></span></td><td class="text-right tabular-nums">—</td><td class="subtle">Nein</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="col-span-6 card p-4">
+            <h3 class="font-semibold">Satzhistorie: Buchhaltung</h3>
+            <table class="mt-2">
+              <thead><tr><th>Gültig ab</th><th class="text-right">Satz CHF/h</th><th>Kommentar</th></tr></thead>
+              <tbody>
+                <tr style="background:#e6ede6"><td>01.01.2026</td><td class="text-right tabular-nums font-medium">145.-</td><td>aktuell</td></tr>
+                <tr><td>01.01.2024</td><td class="text-right tabular-nums">135.-</td><td>Teuerungsanpassung</td></tr>
+                <tr><td>01.01.2022</td><td class="text-right tabular-nums">130.-</td><td>Erhöhung nach 3 Jahren</td></tr>
+                <tr><td>01.01.2019</td><td class="text-right tabular-nums">120.-</td><td>erste Erfassung</td></tr>
+              </tbody>
+            </table>
+            <button class="btn btn-primary mt-3">+ Neuer Satz ab Datum</button>
+            <p class="text-[11px] subtle mt-2">Wichtig: Rapporte speichern <b>rate_snapshot</b> zum Zeitpunkt der Erfassung. Ein neuer Satz betrifft nur zukünftige Rapporte.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================ -->
+      <!-- STAMMDATEN : GRUPPENANSÄTZE                                      -->
+      <!-- ================================================================ -->
+      <section data-panel="sd-gruppen" class="hidden">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-base font-semibold">Gruppenansätze</h2>
+          <button class="btn btn-primary">+ Gruppe</button>
+        </div>
+        <div class="grid grid-cols-12 gap-4">
+          <div class="col-span-4 card overflow-hidden">
+            <div class="p-3" style="background:#e6ede6"><div class="font-medium">Standard KMU</div><div class="text-[11px] subtle">Default · 14 Projekte</div></div>
+            <div class="p-3 border-t" style="border-color:#eef1ee"><div class="font-medium">Grosskunde (Rabatt 15%)</div><div class="text-[11px] subtle">3 Projekte</div></div>
+            <div class="p-3 border-t" style="border-color:#eef1ee"><div class="font-medium">Revisionsmandate</div><div class="text-[11px] subtle">2 Projekte</div></div>
+            <div class="p-3 border-t" style="border-color:#eef1ee"><div class="font-medium">Familie / Freunde</div><div class="text-[11px] subtle">1 Projekt</div></div>
+          </div>
+          <div class="col-span-8 card p-5">
+            <h3 class="font-semibold">Standard KMU · Sätze pro Leistungsart</h3>
+            <table class="mt-3">
+              <thead><tr><th>Leistungsart</th><th class="text-right">Default</th><th class="text-right">Gruppe</th></tr></thead>
+              <tbody>
+                <tr><td>Buchhaltung</td><td class="text-right tabular-nums subtle">145.-</td><td class="text-right tabular-nums font-medium">145.-</td></tr>
+                <tr><td>Abschlussarbeiten</td><td class="text-right tabular-nums subtle">220.-</td><td class="text-right tabular-nums font-medium">220.-</td></tr>
+                <tr><td>Steuern</td><td class="text-right tabular-nums subtle">220.-</td><td class="text-right tabular-nums font-medium">220.-</td></tr>
+                <tr><td>Beratung</td><td class="text-right tabular-nums subtle">260.-</td><td class="text-right tabular-nums font-medium">260.-</td></tr>
+              </tbody>
+            </table>
+            <h4 class="font-semibold mt-5">Mitarbeiter-Overrides</h4>
+            <table class="mt-2">
+              <thead><tr><th>Mitarbeiter</th><th>Leistungsart</th><th class="text-right">Satz</th></tr></thead>
+              <tbody>
+                <tr><td>S. Bigger</td><td>Abschlussarbeiten</td><td class="text-right tabular-nums">240.-</td></tr>
+                <tr><td>L. Vogt</td><td>Admin</td><td class="text-right tabular-nums">85.-</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================ -->
+      <!-- STAMMDATEN : KUNDEN-KONDITIONEN                                  -->
+      <!-- ================================================================ -->
+      <section data-panel="sd-kondi" class="hidden">
+        <div class="flex items-center justify-between mb-4">
+          <div><h2 class="text-base font-semibold">Kunden-Konditionen</h2><p class="text-xs subtle">Pro Kunde: Default-Rabatt, Zahlungsfrist, Sprache, MWST-Status – werden beim Fakturieren automatisch geladen.</p></div>
+        </div>
+        <div class="card overflow-hidden">
+          <table>
+            <thead style="background:#f7faf7"><tr><th>Kunde</th><th>Sprache</th><th>Zahlungsfrist</th><th class="text-right">Default-Rabatt</th><th>MWST-pflichtig</th><th>Rechn.-Versand</th><th>Mahnstopp</th></tr></thead>
+            <tbody>
+              <tr><td>Huber AG</td><td>DE</td><td>30 T</td><td class="text-right tabular-nums">10%</td><td>Ja</td><td>E-Mail</td><td>Nein</td></tr>
+              <tr><td>Müller GmbH</td><td>DE</td><td>30 T</td><td class="text-right tabular-nums">—</td><td>Ja</td><td>E-Mail</td><td>Nein</td></tr>
+              <tr><td>ACME SA</td><td>FR</td><td>14 T</td><td class="text-right tabular-nums">—</td><td>Ja</td><td>E-Mail + Post</td><td>Nein</td></tr>
+              <tr><td>Weber & Partner AG</td><td>DE</td><td>30 T</td><td class="text-right tabular-nums">—</td><td>Ja</td><td>Post</td><td>Nein</td></tr>
+              <tr><td>Bäckerei Sutter</td><td>DE</td><td>10 T</td><td class="text-right tabular-nums">—</td><td>Nein</td><td>Post</td><td>Nein</td></tr>
+              <tr style="background:#fef8e6"><td>Graf GmbH</td><td>DE</td><td>30 T</td><td class="text-right tabular-nums">—</td><td>Ja</td><td>E-Mail</td><td><span class="chip chip-r">Ja – seit 15.04.</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ================================================================ -->
+      <!-- STAMMDATEN : RECHNUNGS-TEMPLATES                                 -->
+      <!-- ================================================================ -->
+      <section data-panel="sd-templ" class="hidden">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-base font-semibold">Rechnungs-Templates</h2>
+          <button class="btn btn-primary">+ Template</button>
+        </div>
+        <div class="grid grid-cols-4 gap-3">
+          <div class="card p-4"><h3 class="font-semibold">Standard DE</h3><p class="text-[11px] subtle mt-1">Default für alle DE-Kunden</p><ul class="mt-2 text-xs space-y-0.5"><li>Logo oben links</li><li>MWST-Zeile</li><li>QR-Bill Zahlteil</li><li>Fusszeile mit Bank + MWST-Nr.</li></ul></div>
+          <div class="card p-4"><h3 class="font-semibold">Standard EN</h3><p class="text-[11px] subtle mt-1">englische Kunden</p></div>
+          <div class="card p-4"><h3 class="font-semibold">Standard FR</h3><p class="text-[11px] subtle mt-1">welsche Kunden</p></div>
+          <div class="card p-4"><h3 class="font-semibold">Standard IT</h3><p class="text-[11px] subtle mt-1">Tessiner Kunden</p></div>
+          <div class="card p-4"><h3 class="font-semibold">Mahnung 1/2/3</h3><p class="text-[11px] subtle mt-1">Mahn-Vorlagen je Stufe</p></div>
+          <div class="card p-4"><h3 class="font-semibold">Akonto</h3><p class="text-[11px] subtle mt-1">Akonto-Rechnung</p></div>
+          <div class="card p-4"><h3 class="font-semibold">Gutschrift</h3><p class="text-[11px] subtle mt-1">Gutschriftbeleg</p></div>
+        </div>
+      </section>
+
+      <!-- ================================================================ -->
+      <!-- STAMMDATEN : NUMMERNKREISE & VERSAND                             -->
+      <!-- ================================================================ -->
+      <section data-panel="sd-nummern" class="hidden">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-base font-semibold">Nummernkreise & Versand-Einstellungen</h2>
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+          <div class="card p-4">
+            <h3 class="font-semibold mb-2">Nummernkreise</h3>
+            <table>
+              <thead><tr><th>Typ</th><th>Format</th><th>Nächste</th><th></th></tr></thead>
+              <tbody>
+                <tr><td>Rechnung</td><td class="font-mono">{YYYY}-{NNNN}</td><td class="font-mono">2026-0143</td><td>lückenlos</td></tr>
+                <tr><td>Akonto</td><td class="font-mono">AK-{YYYY}-{NNN}</td><td class="font-mono">AK-2026-013</td><td>lückenlos</td></tr>
+                <tr><td>Gutschrift</td><td class="font-mono">GS-{YYYY}-{NNN}</td><td class="font-mono">GS-2026-004</td><td>lückenlos</td></tr>
+                <tr><td>Projekt</td><td class="font-mono">P-{YYYY}-{NNN}</td><td class="font-mono">P-2026-028</td><td>pro Jahr neu</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="card p-4">
+            <h3 class="font-semibold mb-2">E-Mail-Versand</h3>
+            <div class="space-y-2 text-sm">
+              <div><label class="text-[11px] subtle">Absender Rechnungen</label><input class="inp" value="rechnungen@artis-treuhand.ch"/></div>
+              <div><label class="text-[11px] subtle">Absender Mahnungen</label><input class="inp" value="mahnwesen@artis-treuhand.ch"/></div>
+              <div><label class="text-[11px] subtle">Reply-To</label><input class="inp" value="buchhaltung@artis-treuhand.ch"/></div>
+              <div><label class="text-[11px] subtle">BCC (immer)</label><input class="inp" value="buchhaltung@artis-treuhand.ch"/></div>
+              <div><label class="text-[11px] subtle">Provider</label><select class="inp"><option>Resend</option><option>SMTP</option><option>Microsoft 365</option></select></div>
+            </div>
+          </div>
+          <div class="card p-4">
+            <h3 class="font-semibold mb-2">Bank & QR</h3>
+            <div class="space-y-2 text-sm">
+              <div><label class="text-[11px] subtle">IBAN (QR)</label><input class="inp" value="CH93 0076 2011 6238 5295 7"/></div>
+              <div><label class="text-[11px] subtle">Kontoinhaber</label><input class="inp" value="Artis Treuhand GmbH"/></div>
+              <div><label class="text-[11px] subtle">Referenz-Typ</label><select class="inp"><option>QRR (Schweiz)</option><option>SCOR (ISO 11649)</option><option>keine</option></select></div>
+            </div>
+          </div>
+          <div class="card p-4">
+            <h3 class="font-semibold mb-2">Mahn-Konfiguration</h3>
+            <table>
+              <thead><tr><th>Stufe</th><th>Tage nach Fällig</th><th class="text-right">Gebühr</th><th class="text-right">Zins p.a.</th></tr></thead>
+              <tbody>
+                <tr><td>1. Mahnung</td><td>10</td><td class="text-right">0.-</td><td class="text-right">—</td></tr>
+                <tr><td>2. Mahnung</td><td>20</td><td class="text-right">30.-</td><td class="text-right">—</td></tr>
+                <tr><td>3. Mahnung</td><td>30</td><td class="text-right">50.-</td><td class="text-right">5%</td></tr>
+                <tr><td>Inkasso</td><td>40</td><td class="text-right">—</td><td class="text-right">—</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================ -->
+      <!-- AUSWERTUNGEN : MITARBEITER-RAPPORT                               -->
+      <!-- ================================================================ -->
+      <section data-panel="aw-ma" class="hidden">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-base font-semibold">Mitarbeiter-Rapport · April 2026</h2>
+          <div class="flex gap-2"><select class="inp" style="width:auto"><option>April 2026</option></select><button class="btn btn-ghost">Export</button></div>
+        </div>
+        <div class="card overflow-hidden">
+          <table>
+            <thead style="background:#f7faf7"><tr><th>Mitarbeiter</th><th class="text-right">Soll</th><th class="text-right">Ist</th><th class="text-right">Saldo</th><th class="text-right">Abrechenbar</th><th class="text-right">Intern</th><th class="text-right">Quote</th><th class="text-right">Erlös</th></tr></thead>
+            <tbody>
+              <tr><td class="font-medium">S. Bigger</td><td class="text-right tabular-nums">168.0</td><td class="text-right tabular-nums">152.25</td><td class="text-right tabular-nums text-amber-700">−15.75</td><td class="text-right tabular-nums">124.0</td><td class="text-right tabular-nums">28.25</td><td class="text-right tabular-nums">81%</td><td class="text-right tabular-nums font-semibold">27'280.-</td></tr>
+              <tr><td class="font-medium">M. Egli</td><td class="text-right tabular-nums">168.0</td><td class="text-right tabular-nums">164.5</td><td class="text-right tabular-nums">−3.5</td><td class="text-right tabular-nums">138.0</td><td class="text-right tabular-nums">26.5</td><td class="text-right tabular-nums">84%</td><td class="text-right tabular-nums font-semibold">20'010.-</td></tr>
+              <tr><td class="font-medium">L. Vogt</td><td class="text-right tabular-nums">134.4</td><td class="text-right tabular-nums">128.0</td><td class="text-right tabular-nums">−6.4</td><td class="text-right tabular-nums">74.0</td><td class="text-right tabular-nums">54.0</td><td class="text-right tabular-nums text-amber-700">58%</td><td class="text-right tabular-nums font-semibold">7'030.-</td></tr>
+              <tr><td class="font-medium">A. Rossi</td><td class="text-right tabular-nums">168.0</td><td class="text-right tabular-nums">176.5</td><td class="text-right tabular-nums" style="color:#4d6a50">+8.5</td><td class="text-right tabular-nums">151.0</td><td class="text-right tabular-nums">25.5</td><td class="text-right tabular-nums">86%</td><td class="text-right tabular-nums font-semibold">21'890.-</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ================================================================ -->
+      <!-- AUSWERTUNGEN : PROJEKT-RENTABILITÄT                              -->
+      <!-- ================================================================ -->
+      <section data-panel="aw-proj" class="hidden">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-base font-semibold">Projekt-Rentabilität</h2>
+          <select class="inp" style="width:auto"><option>YTD 2026</option></select>
+        </div>
+        <div class="card overflow-hidden">
+          <table>
+            <thead style="background:#f7faf7"><tr><th>Projekt</th><th class="text-right">Kosten</th><th class="text-right">Erlös</th><th class="text-right">DB CHF</th><th class="text-right">DB %</th><th>Budget-Status</th></tr></thead>
+            <tbody>
+              <tr><td>Weber, Revision 2025</td><td class="text-right tabular-nums">13'860.-</td><td class="text-right tabular-nums">24'960.-</td><td class="text-right tabular-nums font-semibold" style="color:#4d6a50">+11'100.-</td><td class="text-right tabular-nums" style="color:#4d6a50">44%</td><td><span class="chip chip-g">Ziel erreicht</span></td></tr>
+              <tr><td>Huber AG, BWL</td><td class="text-right tabular-nums">5'040.-</td><td class="text-right tabular-nums">9'350.-</td><td class="text-right tabular-nums font-semibold" style="color:#4d6a50">+4'310.-</td><td class="text-right tabular-nums" style="color:#4d6a50">46%</td><td><span class="chip chip-g">71% Budget</span></td></tr>
+              <tr><td>Müller GmbH, BWL</td><td class="text-right tabular-nums">1'740.-</td><td class="text-right tabular-nums">1'200.-</td><td class="text-right tabular-nums font-semibold text-amber-700">−540.-</td><td class="text-right tabular-nums text-amber-700">−45%</td><td><span class="chip chip-r">Pauschal zu tief</span></td></tr>
+              <tr><td>Keller IT, Beratung</td><td class="text-right tabular-nums">350.-</td><td class="text-right tabular-nums">650.-</td><td class="text-right tabular-nums font-semibold" style="color:#4d6a50">+300.-</td><td class="text-right tabular-nums" style="color:#4d6a50">46%</td><td><span class="chip chip-g">OK</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ================================================================ -->
+      <!-- AUSWERTUNGEN : BUDGET-WARNUNGEN                                  -->
+      <!-- ================================================================ -->
+      <section data-panel="aw-budget" class="hidden">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-base font-semibold">Budget-Warnungen</h2>
+        </div>
+        <div class="card overflow-hidden">
+          <table>
+            <thead style="background:#f7faf7"><tr><th>Projekt</th><th class="text-right">Budget (h)</th><th class="text-right">Verbraucht</th><th class="text-right">%</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr><td>Huber AG, BWL</td><td class="text-right tabular-nums">60</td><td class="text-right tabular-nums">42.5</td><td class="text-right tabular-nums">71%</td><td><span class="chip chip-g">OK</span></td></tr>
+              <tr style="background:#fef8e6"><td>Weber, Revision 2025</td><td class="text-right tabular-nums">90</td><td class="text-right tabular-nums">108.0</td><td class="text-right tabular-nums text-amber-700">120%</td><td><span class="chip chip-r">⚠ überzogen · Partner informiert</span></td></tr>
+              <tr style="background:#fef8e6"><td>Müller GmbH, Steuern 2024</td><td class="text-right tabular-nums">8</td><td class="text-right tabular-nums">6.75</td><td class="text-right tabular-nums">84%</td><td><span class="chip chip-o">⚠ 80% erreicht</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ================================================================ -->
+      <!-- MAILFLOW-INTEGRATION                                             -->
+      <!-- ================================================================ -->
+      <section data-panel="integration" class="hidden">
+        <div class="mb-3">
+          <h2 class="text-base font-semibold">🔌 Integration in MailFlow-Kundenkarte</h2>
+          <p class="text-xs subtle">So würde es in der bestehenden Kunden-Detailseite aussehen – neuer Tab „Leistung & Fakturierung". Nicht-invasiv, nur additiv.</p>
+        </div>
+
+        <!-- Mock Kundenkarte -->
+        <div class="card p-5">
+          <div class="flex items-start justify-between">
+            <div>
+              <div class="flex items-center gap-2"><span class="text-xs subtle">Kunde · CHE-114.781.315</span><span class="pill chip-g">Aktiv</span></div>
+              <h2 class="text-xl font-semibold">Huber AG</h2>
+              <div class="text-xs subtle">Bahnhofstrasse 42, 9000 St. Gallen · Unternehmen</div>
+            </div>
+            <div class="flex gap-2"><button class="btn btn-ghost">✎</button><button class="btn btn-ghost">⋯</button></div>
+          </div>
+          <!-- Bestehende Tabs + NEU -->
+          <div class="mt-5 border-b flex gap-1" style="border-color:#e0e6e0">
+            <span class="px-3 py-2 text-sm subtle">Aktivitäten</span>
+            <span class="px-3 py-2 text-sm subtle">Mails</span>
+            <span class="px-3 py-2 text-sm subtle">Tasks</span>
+            <span class="px-3 py-2 text-sm subtle">Fristen</span>
+            <span class="px-3 py-2 text-sm subtle">Dokumente</span>
+            <span class="px-3 py-2 text-sm subtle">Kontaktpersonen</span>
+            <span class="px-3 py-2 text-sm font-medium border-b-2" style="border-color:#7a9b7f;color:#4d6a50">💰 Leistung & Fakturierung <span class="chip chip-g ml-1">NEU</span></span>
+          </div>
+          <div class="mt-4">
+            <div class="grid grid-cols-3 gap-3 mb-4">
+              <div class="card p-4"><div class="text-[11px] subtle">Offene Leistung</div><div class="text-2xl font-semibold tabular-nums">4'350.-</div><div class="text-[11px] subtle">42.5 h · netto nach Akonto</div></div>
+              <div class="card p-4"><div class="text-[11px] subtle">Letzte Rechnung</div><div class="text-base font-semibold tabular-nums">2026-0128 · 3'920.-</div><div class="text-[11px] text-amber-700">offen seit 27.04.</div></div>
+              <div class="card p-4"><div class="text-[11px] subtle">Vorletzte Rechnung</div><div class="text-base font-semibold tabular-nums">2025-1012 · 5'810.-</div><div class="text-[11px]" style="color:#4d6a50">bezahlt 30.12.25</div></div>
+            </div>
+            <div class="flex gap-2 mb-4">
+              <button class="btn btn-primary">+ Rapport</button>
+              <button class="btn btn-ghost">+ Projekt eröffnen</button>
+              <button class="btn btn-ghost">+ Akonto-Rechnung</button>
+              <button class="btn btn-ghost">Faktura-Vorschlag öffnen</button>
+            </div>
+            <div class="sect-label mb-2">Projekte dieses Kunden</div>
+            <div class="card overflow-hidden">
+              <table>
+                <thead style="background:#f7faf7"><tr><th>Projekt</th><th>Modus</th><th class="text-right">Offen</th><th>Status</th></tr></thead>
+                <tbody>
+                  <tr><td>Huber AG, BWL</td><td><span class="chip">Effektiv</span></td><td class="text-right tabular-nums">4'350.-</td><td><span class="pill chip-g">Laufend</span></td></tr>
+                  <tr><td>Huber AG, Steuern 2024</td><td><span class="chip chip-b">Pauschal 950.-</span></td><td class="text-right tabular-nums subtle">—</td><td><span class="pill chip-g">Laufend</span></td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="sect-label mt-4 mb-2">Letzte Rechnungen</div>
+            <div class="card overflow-hidden">
+              <table>
+                <thead style="background:#f7faf7"><tr><th>Nr.</th><th>Datum</th><th>Projekt</th><th class="text-right">Betrag</th><th>Status</th></tr></thead>
+                <tbody>
+                  <tr><td>2026-0128</td><td>28.03.</td><td>Huber AG, BWL</td><td class="text-right tabular-nums">3'920.-</td><td><span class="pill chip-o">Offen · 5T überfällig</span></td></tr>
+                  <tr><td>AK-2026-007</td><td>15.03.</td><td>Huber AG, BWL</td><td class="text-right tabular-nums">5'000.-</td><td><span class="pill chip-g">Akonto · bezahlt</span></td></tr>
+                  <tr><td>2025-1012</td><td>20.12.25</td><td>Huber AG, BWL</td><td class="text-right tabular-nums">5'810.-</td><td><span class="pill chip-g">Bezahlt</span></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================ -->
+      <!-- MOBILE MOCKUP                                                    -->
+      <!-- ================================================================ -->
+      <section data-panel="mobile" class="hidden">
+        <h2 class="text-base font-semibold mb-4">📱 Mobile (PWA) – Schnell-Rapport unterwegs</h2>
+        <div class="flex gap-6 items-start">
+          <!-- Phone frame 1 -->
+          <div style="width:340px;border:12px solid #1a1a2e;border-radius:36px;background:#fff;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.15)">
+            <div style="background:#e6ede6;padding:16px">
+              <div class="flex items-center justify-between">
+                <div class="text-xs subtle">Dienstag 21.04.</div>
+                <div class="text-xs subtle">SB</div>
+              </div>
+              <h3 class="text-base font-semibold mt-1">Rapport</h3>
+            </div>
+            <div class="p-4 space-y-3 text-sm">
+              <div>
+                <label class="text-[11px] subtle">Projekt</label>
+                <div class="inp">Huber AG, BWL</div>
+              </div>
+              <div>
+                <label class="text-[11px] subtle">Leistungsart</label>
+                <div class="inp">Abschlussarbeiten</div>
+              </div>
+              <div class="grid grid-cols-2 gap-2">
+                <div><label class="text-[11px] subtle">Von</label><div class="inp text-center">08:00</div></div>
+                <div><label class="text-[11px] subtle">Bis</label><div class="inp text-center">09:30</div></div>
+              </div>
+              <div class="flex gap-2">
+                <button class="btn btn-ghost text-xs flex-1">+15m</button>
+                <button class="btn btn-ghost text-xs flex-1">+30m</button>
+                <button class="btn btn-ghost text-xs flex-1">+1h</button>
+              </div>
+              <div>
+                <label class="text-[11px] subtle">Beschreibung</label>
+                <textarea class="inp" rows="2">Bilanz abgestimmt</textarea>
+              </div>
+              <button class="btn btn-primary w-full justify-center">💾 Speichern (1.50 h · 330.-)</button>
+              <div class="text-center"><button class="text-[11px] underline subtle">+ Spesen-Beleg fotografieren</button></div>
+            </div>
+            <div class="border-t p-3 flex justify-around" style="border-color:#eef1ee">
+              <span class="text-[11px]">🏠 Heute</span>
+              <span class="text-[11px]" style="color:#4d6a50;font-weight:600">⏱ Timer</span>
+              <span class="text-[11px]">📊 Woche</span>
+              <span class="text-[11px]">💰 Spesen</span>
+            </div>
+          </div>
+
+          <!-- Phone frame 2: Timer -->
+          <div style="width:340px;border:12px solid #1a1a2e;border-radius:36px;background:#fff;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.15)">
+            <div style="background:#e6ede6;padding:16px">
+              <h3 class="text-base font-semibold">Live-Timer</h3>
+            </div>
+            <div class="p-6 text-center">
+              <div class="text-[11px] subtle">seit 14:12</div>
+              <div class="text-5xl font-bold tabular-nums my-2" style="color:#4d6a50">02:47</div>
+              <div class="text-sm">Huber AG, BWL</div>
+              <div class="text-xs subtle">Abschlussarbeiten</div>
+              <div class="mt-6 flex flex-col gap-2">
+                <button class="btn btn-ghost w-full justify-center">⏸ Pause</button>
+                <button class="btn btn-primary w-full justify-center">⏹ Stop & Erfassen</button>
+              </div>
+            </div>
+            <div class="border-t p-3 flex justify-around" style="border-color:#eef1ee">
+              <span class="text-[11px]">🏠</span><span class="text-[11px]" style="color:#4d6a50;font-weight:600">⏱</span><span class="text-[11px]">📊</span><span class="text-[11px]">💰</span>
+            </div>
+          </div>
+
+          <!-- Phone frame 3: Tages-Liste -->
+          <div style="width:340px;border:12px solid #1a1a2e;border-radius:36px;background:#fff;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.15)">
+            <div style="background:#e6ede6;padding:16px">
+              <h3 class="text-base font-semibold">Heute · 21.04.</h3>
+              <div class="text-xs subtle">6.75 h · Soll 8.40</div>
+            </div>
+            <div class="p-3 space-y-2 text-xs">
+              <div class="p-2 rounded" style="background:#e6ede6;border-left:3px solid #7a9b7f">
+                <div class="font-semibold">Huber AG, BWL</div>
+                <div class="subtle">08:00–09:30 · 1.5h · 330.-</div>
+              </div>
+              <div class="p-2 rounded" style="background:#fdead7;border-left:3px solid #f59e0b">
+                <div class="font-semibold">Keller IT, Beratung</div>
+                <div class="subtle">10:30–12:00 · 1.5h · 390.-</div>
+              </div>
+              <div class="p-2 rounded" style="background:#ede3f7;border-left:3px solid #7c3aed">
+                <div class="font-semibold">Sutter Bäckerei, Steuern 2024</div>
+                <div class="subtle">13:00–14:00 · 1.0h · 220.-</div>
+              </div>
+              <div class="p-2 rounded text-center" style="background:#fff4f4;border:1px dashed #e3a0a0;color:#8a2d2d">⚠ Lücke 14:00–14:45</div>
+              <div class="p-2 rounded" style="background:#f0f0f4;border-left:3px solid #94a3b8">
+                <div class="font-semibold">Intern · Weiterbildung</div>
+                <div class="subtle">15:00–17:00 · 2.0h · intern</div>
+              </div>
+              <button class="btn btn-primary w-full justify-center mt-3">Tag abschliessen</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================ -->
+      <!-- DB-Modell unten                                                  -->
+      <!-- ================================================================ -->
+      <details class="card p-4 text-sm mt-8">
+        <summary class="font-semibold">📐 Geplantes Datenmodell (Supabase-Schema `le_*` · zur Diskussion)</summary>
+        <div class="mt-3 grid grid-cols-2 gap-6 text-xs leading-relaxed" style="color:#4a5a4a">
+          <div>
+            <div class="divider-note mb-1">Kern</div>
+            <ul class="space-y-1">
+              <li><code class="chip">le_projects</code> · customer_id (→ mailflow.customers) ODER private_customer_id, code, name (auto: „Kunde, BWL"), type (BWL/Steuern/Revision/...), year, billing_mode (effektiv|pauschal|fixpreis), rate_group_id, responsible_user_id, status, budget_hours, budget_amount, budget_warn_80, budget_warn_100, recurring (bool), parent_project_id (Klon-Quelle), tags[], start_date, end_date</li>
+              <li><code class="chip">le_project_templates</code> · name, defaults_json</li>
+              <li><code class="chip">le_private_customers</code> · vorname, nachname, adresse, … (für Privat-Projekte)</li>
+              <li><code class="chip">le_employees</code> · user_id (→ auth.users), role, entry_date, exit_date, pensum_pct, sollzeit_profile_id, cost_rate, default_sale_rate, vacation_per_year, active</li>
+              <li><code class="chip">le_sollzeit_profiles</code> · name, mon, tue, wed, thu, fri, sat, sun</li>
+              <li><code class="chip">le_service_types</code> · name, short, color, billable</li>
+              <li><code class="chip">le_service_rate_history</code> · service_type_id, valid_from, rate, note</li>
+              <li><code class="chip">le_rate_groups</code> · name, is_default, notes</li>
+              <li><code class="chip">le_rate_group_rates</code> · rate_group_id, service_type_id, user_id (null=alle), rate</li>
+              <li><code class="chip">le_customer_conditions</code> · customer_id, default_discount_pct, payment_days, language, mwst_liable, delivery_channel, dunning_stop</li>
+            </ul>
+          </div>
+          <div>
+            <div class="divider-note mb-1">Erfassen & Abrechnen</div>
+            <ul class="space-y-1">
+              <li><code class="chip">le_time_entries</code> · user_id, project_id, service_type_id, entry_date, time_from?, time_to?, <b>hours_internal</b>, description, rate_snapshot, invoice_line_id, locked_at, created_at</li>
+              <li><code class="chip">le_absences</code> · user_id, type (ferien/krank/militär/unbezahlt), from, to, half_day, note</li>
+              <li><code class="chip">le_expenses</code> · user_id, project_id, expense_type, date, amount, mwst, receipt_url, billable, invoice_line_id, status</li>
+              <li><code class="chip">le_invoices</code> · number, customer_id, project_id, invoice_date (<b>=WIP-Stichtag</b>), due_date, period_from/to, language, template_id, discount_type, discount_value, discount_label, mwst_rate, total_gross, total_net, mwst_amount, final_amount, status (entwurf|versendet|bezahlt|storniert), sent_at, paid_at</li>
+              <li><code class="chip">le_invoice_lines</code> · invoice_id, service_type_id, time_entry_id?, expense_id?, fixprice_package_id?, description, <b>hours_external</b>, rate, amount, sort_order</li>
+              <li><code class="chip">le_akonto</code> · number, project_id, date, amount, status, settled_amount, remaining</li>
+              <li><code class="chip">le_credit_notes</code> · number, ref_invoice_id, reason, amount, text</li>
+              <li><code class="chip">le_payments</code> · date, amount, debtor, qr_ref, invoice_id (nullable), source (manuell|camt054), matched_at</li>
+              <li><code class="chip">le_dunnings</code> · invoice_id, stage (1/2/3), sent_at, fee, interest, next_due</li>
+              <li><code class="chip">le_recurring</code> · project_id, mode, interval, next_run, amount, reminder_days, active</li>
+              <li><code class="chip">le_fixprice_packages</code> · name, amount, service_type_id?</li>
+              <li><code class="chip">le_invoice_templates</code> · name, language, html, header_logo, footer, qr_iban</li>
+              <li><code class="chip">le_number_series</code> · type, format, next_value</li>
+              <li><code class="chip">le_column_settings</code> · user_id, table_key, column_order[], filters{}, hidden[]</li>
+            </ul>
+          </div>
+        </div>
+      </details>
+
+    </div>
+
+  </main>
+</div>
+
+<script>
+// Primary + Secondary Navigation
+const secFirstTab = { erfassen:'tag', abrechnen:'aa', stammdaten:'sd-projekte', auswert:'aw-ma', integration:'integration', mobile:'mobile' };
+
+function showPanel(key) {
+  document.querySelectorAll('[data-panel]').forEach(p => p.classList.toggle('hidden', p.dataset.panel !== key));
+  window.scrollTo({ top:0, behavior:'smooth' });
+}
+function showSecnav(pri) {
+  document.querySelectorAll('[data-secnav]').forEach(n => n.classList.add('hidden'));
+  const nav = document.getElementById('secnav-' + pri);
+  if (nav) nav.classList.remove('hidden');
+}
+document.querySelectorAll('.tab-p').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-p').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const pri = btn.dataset.pri;
+    if (['integration','mobile'].includes(pri)) {
+      document.querySelectorAll('[data-secnav]').forEach(n => n.classList.add('hidden'));
+      showPanel(pri);
+    } else {
+      showSecnav(pri);
+      const nav = document.getElementById('secnav-' + pri);
+      if (nav) {
+        nav.querySelectorAll('.tab-s').forEach(b => b.classList.remove('active'));
+        const first = nav.querySelector('.tab-s');
+        if (first) first.classList.add('active');
+      }
+      showPanel(secFirstTab[pri]);
+    }
+  });
+});
+document.querySelectorAll('.tab-s').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const parent = btn.closest('[data-secnav]');
+    parent.querySelectorAll('.tab-s').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    showPanel(btn.dataset.sec);
+  });
+});
+</script>
+</body>
+</html>

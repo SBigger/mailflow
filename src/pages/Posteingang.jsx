@@ -12,7 +12,7 @@ import AssignDialog from "../components/posteingang/AssignDialog.jsx";
 
 // Configuration
 import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.js?url";
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
+if (pdfjsLib?.GlobalWorkerOptions) pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 const BUCKET = "posteingang";
 
 // ─── Helper Functions ────────────────────────────────────────────────────────

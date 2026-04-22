@@ -37,6 +37,8 @@ import SetPassword from "./pages/SetPassword.jsx";
 import DokumentUploadKunden from "./pages/DokumentUploadKunden.jsx";
 import Posteingang from "./pages/Posteingang.jsx";
 import SharePage from "./pages/SharePage.jsx";
+import Leistungserfassung from "./pages/Leistungserfassung.jsx";
+import { FEATURE_LEISTUNGSERFASSUNG } from "@/lib/featureFlags";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30000 } }
@@ -99,6 +101,9 @@ function AuthenticatedApp() {
         <Route path="/Whiteboard" element={<Whiteboard />} />
         <Route path="/Auswertungen" element={<Auswertungen />} />
         <Route path="/Steuern" element={<Steuern />} />
+        {FEATURE_LEISTUNGSERFASSUNG && (
+          <Route path="/Leistungserfassung" element={<Leistungserfassung />} />
+        )}
         <Route path="*" element={<Navigate to="/Dashboard" replace />} />
       </Routes>
     </Layout>

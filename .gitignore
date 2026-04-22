@@ -30,3 +30,7 @@ dist-ssr
 supabase/snippets
 supabase/.branches
 supabase/.temp
+# Electron build output
+electron-dist/
+
+.vercel

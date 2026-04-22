@@ -6,12 +6,6 @@
     "main"
   ],
   "permissions": [
-    "core:default",
-    "updater:default",
-    "global-shortcut:allow-register",
-    "global-shortcut:allow-unregister",
-    "global-shortcut:allow-is-registered",
-    "notification:default",
-    "deep-link:default"
+    "core:default"
   ]
 }
