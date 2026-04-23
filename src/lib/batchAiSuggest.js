@@ -173,8 +173,8 @@ export async function extractDocumentText(file, { onStage } = {}) {
       return text.slice(0, 100000);
     }
 
-    // ─── Excel / CSV ────────────────────────────────────────────────
-    if (name.endsWith(".xlsx") || name.endsWith(".xls") || name.endsWith(".csv")) {
+    // ─── Excel / CSV (inkl. XLSM) ───────────────────────────────────
+    if (name.endsWith(".xlsx") || name.endsWith(".xls") || name.endsWith(".xlsm") || name.endsWith(".csv")) {
       const { read, utils } = await import("xlsx");
       const buf = await file.arrayBuffer();
       const wb  = read(new Uint8Array(buf), { type: "array" });
@@ -194,6 +194,22 @@ export async function extractDocumentText(file, { onStage } = {}) {
       const zip = await JSZip.loadAsync(buf);
       const xml = await zip.file("word/document.xml")?.async("text") || "";
       return xml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 100000);
+    }
+
+    // ─── PPTX ───────────────────────────────────────────────────────
+    if (name.endsWith(".pptx") || name.endsWith(".ppt")) {
+      const { default: JSZip } = await import("jszip");
+      const buf        = await file.arrayBuffer();
+      const zip        = await JSZip.loadAsync(buf);
+      const slideFiles = Object.keys(zip.files)
+        .filter(f => /^ppt\/slides\/slide\d+\.xml$/.test(f))
+        .sort();
+      let text = "";
+      for (const sf of slideFiles) {
+        const xml = await zip.files[sf].async("text");
+        text += xml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() + "\n";
+      }
+      return text.trim().slice(0, 100000);
     }
 
     // ─── Plain Text ─────────────────────────────────────────────────

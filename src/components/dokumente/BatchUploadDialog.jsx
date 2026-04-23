@@ -64,8 +64,8 @@ function iconForFile(file) {
   const name = (file?.name || "").toLowerCase();
   const type = file?.type || "";
   if (type.startsWith("image/")) return <ImgIcon size={18} />;
-  if (name.endsWith(".xlsx") || name.endsWith(".xls") || name.endsWith(".csv")) return <FileSpreadsheet size={18} />;
-  if (name.endsWith(".pdf") || name.endsWith(".docx") || name.endsWith(".txt") || name.endsWith(".md")) return <FileText size={18} />;
+  if (name.endsWith(".xlsx") || name.endsWith(".xls") || name.endsWith(".xlsm") || name.endsWith(".csv")) return <FileSpreadsheet size={18} />;
+  if (name.endsWith(".pdf") || name.endsWith(".docx") || name.endsWith(".pptx") || name.endsWith(".txt") || name.endsWith(".md")) return <FileText size={18} />;
   return <File size={18} />;
 }
 
