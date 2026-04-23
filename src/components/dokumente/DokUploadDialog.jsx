@@ -1,9 +1,14 @@
 /**
  * DokUploadDialog – Wiederverwendbarer Upload-Dialog für die Dateiablage.
  * Wird aus MailDetailPanel (Anhang hochladen) und Dokumente verwendet.
+ *
+ * Auto-Tag-Erkennung:
+ *  1. Suche im Dateinamen (Abschlussunterlagen-Subtags zuerst, dann andere)
+ *  2. Falls kein Treffer → Textinhalt extrahieren (PDF, XLSX, XLSM, DOCX, PPTX …)
+ *     und dort suchen
  */
 import React, { useState, useEffect, useRef, useMemo, useContext } from "react";
-import { X } from "lucide-react";
+import { X, Sparkles } from "lucide-react";
 import { supabase, entities } from "@/api/supabaseClient";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -12,14 +17,14 @@ import TagSelectWidget from "@/components/dokumente/TagSelectWidget";
 import { CATEGORIES } from "@/lib/categories";
 import * as pdfjsLib from "pdfjs-dist";
 import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.js?url";
-// Guard: in einigen Vite-Konfigurationen ist GlobalWorkerOptions nach dem
-// AMD-Namespace-Import undefined. Ohne Guard crasht der Module-Load → weisse Seite.
 if (pdfjsLib?.GlobalWorkerOptions) {
   pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 }
 
 const BUCKET   = "dokumente";
 const CUR_YEAR = new Date().getFullYear();
+
+// ─── Hilfsfunktionen ─────────────────────────────────────────────────────────
 
 function detectYear(filename) {
   const m = (filename || "").match(/\b(20\d{2})\b/);
@@ -38,27 +43,31 @@ function filterTagsByCategory(allTags, category) {
   const parentIds = new Set(matchingParents.map(t => t.id));
   return allTags.filter(t => parentIds.has(t.id) || parentIds.has(t.parent_id));
 }
+
+/** Dateiinhalt als Text extrahieren – PDF, XLSX/XLSM, DOCX, PPTX, TXT */
 async function extractDocumentText(file) {
   if (!file) return "";
   const name = file.name?.toLowerCase() || "";
   const type = file.type || "";
   try {
+    // PDF
     if (type === "application/pdf" || name.endsWith(".pdf")) {
       const buf = await file.arrayBuffer();
       const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
       let text = "";
       for (let i = 1; i <= Math.min(pdf.numPages, 100); i++) {
-        const page = await pdf.getPage(i);
+        const page    = await pdf.getPage(i);
         const content = await page.getTextContent();
         text += content.items.map(it => it.str).join(" ") + "\n";
       }
       return text.trim().slice(0, 100000);
     }
-    if (name.endsWith(".xlsx") || name.endsWith(".xls") || name.endsWith(".csv")) {
+    // Excel (xlsx, xls, xlsm, csv)
+    if (name.endsWith(".xlsx") || name.endsWith(".xls") || name.endsWith(".xlsm") || name.endsWith(".csv")) {
       const { read, utils } = await import("xlsx");
-      const buf = await file.arrayBuffer();
-      const wb  = read(new Uint8Array(buf), { type: "array" });
-      let text  = "";
+      const buf  = await file.arrayBuffer();
+      const wb   = read(new Uint8Array(buf), { type: "array" });
+      let text   = "";
       for (const sheetName of wb.SheetNames) {
         const ws   = wb.Sheets[sheetName];
         const rows = utils.sheet_to_json(ws, { header: 1, defval: "" });
@@ -66,13 +75,30 @@ async function extractDocumentText(file) {
       }
       return text.trim().slice(0, 100000);
     }
+    // Word (docx)
     if (name.endsWith(".docx")) {
       const { default: JSZip } = await import("jszip");
-      const buf  = await file.arrayBuffer();
-      const zip  = await JSZip.loadAsync(buf);
-      const xml  = await zip.file("word/document.xml")?.async("text") || "";
+      const buf = await file.arrayBuffer();
+      const zip = await JSZip.loadAsync(buf);
+      const xml = await zip.file("word/document.xml")?.async("text") || "";
       return xml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 100000);
     }
+    // PowerPoint (pptx)
+    if (name.endsWith(".pptx") || name.endsWith(".ppt")) {
+      const { default: JSZip } = await import("jszip");
+      const buf        = await file.arrayBuffer();
+      const zip        = await JSZip.loadAsync(buf);
+      const slideFiles = Object.keys(zip.files)
+        .filter(f => /^ppt\/slides\/slide\d+\.xml$/.test(f))
+        .sort();
+      let text = "";
+      for (const sf of slideFiles) {
+        const xml = await zip.files[sf].async("text");
+        text += xml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() + "\n";
+      }
+      return text.trim().slice(0, 100000);
+    }
+    // Plaintext
     if (type.startsWith("text/") || name.endsWith(".txt") || name.endsWith(".md")) {
       return (await file.text()).slice(0, 100000);
     }
@@ -82,6 +108,46 @@ async function extractDocumentText(file) {
     return "";
   }
 }
+
+/**
+ * Auto-Tag-Erkennung:
+ *  • Abschlussunterlagen-Subtags werden zuerst geprüft
+ *  • Erst Dateiname, dann Textinhalt
+ *  Gibt Array von Tag-IDs zurück (max. 3 Treffer).
+ */
+async function autoDetectTags(file, allTags) {
+  if (!file || !allTags.length) return [];
+
+  // Suchreihenfolge: Abschlussunterlagen-Kinder zuerst, dann alle anderen Kinder
+  const abschlussParent = allTags.find(
+    t => !t.parent_id && t.name.toLowerCase().includes("abschluss")
+  );
+  const abschlussKids = abschlussParent
+    ? allTags.filter(t => t.parent_id === abschlussParent.id)
+    : [];
+  const otherKids = allTags.filter(
+    t => t.parent_id && t.parent_id !== abschlussParent?.id
+  );
+  const searchOrder = [...abschlussKids, ...otherKids];
+
+  const matchIn = (text) => {
+    const lower = text.toLowerCase();
+    return searchOrder.filter(t => t.name && lower.includes(t.name.toLowerCase()));
+  };
+
+  // 1. Dateiname (ohne Erweiterung)
+  const baseName = file.name.replace(/\.[^.]+$/, "");
+  const fromName = matchIn(baseName);
+  if (fromName.length > 0) return fromName.slice(0, 3).map(t => t.id);
+
+  // 2. Textinhalt
+  const text = await extractDocumentText(file);
+  if (!text) return [];
+  const fromText = matchIn(text);
+  return fromText.slice(0, 3).map(t => t.id);
+}
+
+// ─── Komponente ──────────────────────────────────────────────────────────────
 
 /**
  * @param {File}   preFile         – Datei direkt öffnen (z.B. Mail-Anhang)
@@ -94,17 +160,20 @@ export default function DokUploadDialog({ preFile, preCustomerId, onClose }) {
   const isLight = theme === "light";
   const queryClient = useQueryClient();
 
-  const cardBg     = isArtis ? "#fff"         : isLight ? "#fff"         : "#27272a";
-  const textMain   = isArtis ? "#2d3a2d"      : isLight ? "#1a1a2e"      : "#e4e4e7";
-  const textMuted  = isArtis ? "#6b826b"      : isLight ? "#7a7a9a"      : "#71717a";
-  const inputBg    = isArtis ? "#fff"         : isLight ? "#fff"         : "rgba(24,24,27,0.8)";
-  const inputBorder= isArtis ? "#bfcfbf"      : isLight ? "#c8c8dc"      : "#3f3f46";
-  const border     = isArtis ? "#ccd8cc"      : isLight ? "#d4d4e8"      : "#3f3f46";
-  const accent     = isArtis ? "#4a7a4f"      : isLight ? "#7c3aed"      : "#6366f1";
-  const rowBg      = isArtis ? "#f5f8f5"      : isLight ? "#f5f5fc"      : "#1f1f23";
+  const cardBg      = isArtis ? "#fff"         : isLight ? "#fff"         : "#27272a";
+  const textMain    = isArtis ? "#2d3a2d"      : isLight ? "#1a1a2e"      : "#e4e4e7";
+  const textMuted   = isArtis ? "#6b826b"      : isLight ? "#7a7a9a"      : "#71717a";
+  const inputBg     = isArtis ? "#fff"         : isLight ? "#fff"         : "rgba(24,24,27,0.8)";
+  const inputBorder = isArtis ? "#bfcfbf"      : isLight ? "#c8c8dc"      : "#3f3f46";
+  const border      = isArtis ? "#ccd8cc"      : isLight ? "#d4d4e8"      : "#3f3f46";
+  const accent      = isArtis ? "#4a7a4f"      : isLight ? "#7c3aed"      : "#6366f1";
 
   const s   = { cardBg, textMain, textMuted, inputBg, inputBorder, border, accent };
-  const inp = { background: inputBg, border: `1px solid ${inputBorder}`, color: textMain, borderRadius: 6, padding: "6px 10px", fontSize: 13, width: "100%", outline: "none", boxSizing: "border-box" };
+  const inp = {
+    background: inputBg, border: `1px solid ${inputBorder}`, color: textMain,
+    borderRadius: 6, padding: "6px 10px", fontSize: 13, width: "100%",
+    outline: "none", boxSizing: "border-box",
+  };
 
   const { data: customers = [] } = useQuery({
     queryKey: ["customers"],
@@ -119,18 +188,43 @@ export default function DokUploadDialog({ preFile, preCustomerId, onClose }) {
   const [custId,    setCustId]    = useState(preCustomerId || "");
   const [name,      setName]      = useState(() => preFile ? preFile.name.replace(/\.[^.]+$/, "") : "");
   const [category,  setCategory]  = useState("");
-  const [year,      setYear]      = useState(() => { const y = detectYear(preFile?.name); return y ? String(y) : String(CUR_YEAR); });
+  const [year,      setYear]      = useState(() => {
+    const y = detectYear(preFile?.name);
+    return y ? String(y) : String(CUR_YEAR);
+  });
   const [tagIds,    setTagIds]    = useState([]);
   const [notes,     setNotes]     = useState("");
   const [uploading, setUploading] = useState(false);
+  const [detecting, setDetecting] = useState(false);
   const [errors,    setErrors]    = useState({});
-  const yearRef = useRef();
+  const yearRef        = useRef();
+  const autoDetectedRef = useRef(false); // nur einmal pro Dialog ausführen
 
+  // Gefilterte Tags nach gewählter Kategorie
   const filteredTags = useMemo(() => filterTagsByCategory(allTags, category), [allTags, category]);
   useEffect(() => {
     const validIds = new Set(filteredTags.map(t => t.id));
     setTagIds(prev => prev.filter(id => validIds.has(id)));
   }, [filteredTags]);
+
+  // Auto-Tag-Erkennung – läuft einmal wenn Datei + Tags geladen
+  useEffect(() => {
+    if (!file || !allTags.length || autoDetectedRef.current) return;
+    autoDetectedRef.current = true;
+    setDetecting(true);
+    autoDetectTags(file, allTags).then(ids => {
+      if (ids.length > 0) {
+        setTagIds(ids);
+        // Kategorie aus dem ersten erkannten Tag ableiten
+        const firstTag = allTags.find(t => t.id === ids[0]);
+        const parent   = firstTag?.parent_id
+          ? allTags.find(t => t.id === firstTag.parent_id)
+          : firstTag;
+        if (parent?.category) setCategory(parent.category);
+      }
+      setDetecting(false);
+    });
+  }, [file, allTags]);
 
   const handleUpload = async () => {
     const errs = {};
@@ -143,10 +237,10 @@ export default function DokUploadDialog({ preFile, preCustomerId, onClose }) {
     setUploading(true);
     try {
       const contentText = await extractDocumentText(file);
-      const fileExt  = file.name.split(".").pop();
-      const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExt}`;
-      const path     = `${custId}/${fileName}`;
-      const cleanFile = new File([file], fileName, { type: file.type });
+      const fileExt     = file.name.split(".").pop();
+      const fileName    = `${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExt}`;
+      const path        = `${custId}/${fileName}`;
+      const cleanFile   = new File([file], fileName, { type: file.type });
       const { data: uploadData, error: uploadError } = await supabase.storage.from(BUCKET).upload(path, cleanFile);
       if (uploadError) throw uploadError;
       await entities.Dokument.create({
@@ -204,7 +298,15 @@ export default function DokUploadDialog({ preFile, preCustomerId, onClose }) {
 
           {/* Tags */}
           <div>
-            <label style={{ fontSize: 12, color: textMuted, display: "block", marginBottom: 4 }}>Tags *</label>
+            <label style={{ fontSize: 12, color: textMuted, display: "block", marginBottom: 4, display: "flex", alignItems: "center", gap: 5 }}>
+              Tags *
+              {detecting && (
+                <span style={{ display: "flex", alignItems: "center", gap: 3, color: accent, fontSize: 11 }}>
+                  <Sparkles size={11} style={{ animation: "spin 1s linear infinite" }} />
+                  Erkenne Tags…
+                </span>
+              )}
+            </label>
             <TagSelectWidget
               value={tagIds}
               onChange={(v) => { setTagIds(v); setErrors(p => ({ ...p, tags: undefined })); }}
@@ -246,9 +348,9 @@ export default function DokUploadDialog({ preFile, preCustomerId, onClose }) {
               style={{ background: "none", border: `1px solid ${border}`, color: textMuted, borderRadius: 7, padding: "8px 18px", fontSize: 13, cursor: "pointer" }}>
               Abbrechen
             </button>
-            <button onClick={handleUpload} disabled={uploading}
-              style={{ background: accent, color: "#fff", border: "none", borderRadius: 7, padding: "8px 20px", fontSize: 13, fontWeight: 600, cursor: uploading ? "not-allowed" : "pointer", opacity: uploading ? 0.7 : 1, minWidth: 110 }}>
-              {uploading ? "Lädt hoch…" : "Hochladen"}
+            <button onClick={handleUpload} disabled={uploading || detecting}
+              style={{ background: accent, color: "#fff", border: "none", borderRadius: 7, padding: "8px 20px", fontSize: 13, fontWeight: 600, cursor: (uploading || detecting) ? "not-allowed" : "pointer", opacity: (uploading || detecting) ? 0.7 : 1, minWidth: 110 }}>
+              {uploading ? "Lädt hoch…" : detecting ? "Analysiere…" : "Hochladen"}
             </button>
           </div>
         </div>
