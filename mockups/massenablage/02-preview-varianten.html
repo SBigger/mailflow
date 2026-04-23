@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>Mockup 02 — Preview-Varianten</title>
+<style>
+  :root{
+    --bg:#d4dfd4; --card:#fff; --border:#ccd8cc; --text:#2d3a2d; --muted:#6b826b;
+    --accent:#4a7a4f; --accent-light:#4a7a4f15;
+  }
+  *{box-sizing:border-box}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;margin:0;background:var(--bg);padding:24px;color:var(--text)}
+  h1{font-size:14px;margin:0 0 8px;color:var(--muted);font-weight:500;letter-spacing:.05em;text-transform:uppercase}
+  .note{font-size:12px;color:var(--muted);margin-bottom:20px;background:#fffbea;padding:8px 12px;border-radius:6px;border-left:3px solid #f59e0b;max-width:1400px}
+
+  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;max-width:1400px}
+
+  .card{background:var(--card);border-radius:10px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,.08)}
+  .card-head{padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:#fafcfa}
+  .card-head .title{font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px}
+  .card-head .filetype{font-size:11px;color:var(--muted);background:var(--accent-light);color:var(--accent);padding:2px 8px;border-radius:10px;font-weight:600}
+  .preview-area{background:#1a1a1a;padding:14px;min-height:320px;max-height:420px;overflow:auto;display:flex;align-items:center;justify-content:center}
+
+  /* PDF */
+  .pdf-page{background:#fff;width:100%;max-width:320px;aspect-ratio:1/1.414;padding:22px;font-size:9px;line-height:1.5;color:#333;font-family:Georgia,serif;box-shadow:0 4px 12px rgba(0,0,0,.4)}
+  .pdf-page h3{margin:0 0 8px;font-size:11px;border-bottom:1.5px solid #333;padding-bottom:4px}
+  .hl{background:#fff3bd;padding:1px 2px;font-weight:500}
+
+  /* Image */
+  .img-wrap{position:relative;max-width:100%;max-height:380px}
+  .img-fake{background:linear-gradient(135deg,#fff 0%,#f0f0f0 50%,#ddd 100%);width:340px;height:340px;display:flex;align-items:center;justify-content:center;position:relative;box-shadow:0 4px 12px rgba(0,0,0,.4)}
+  .img-fake::before{content:'📸';font-size:60px;opacity:.3;position:absolute}
+  .img-fake .caption{position:absolute;bottom:10px;left:10px;right:10px;background:rgba(0,0,0,.7);color:#fff;padding:6px 10px;border-radius:4px;font-size:10px;font-family:sans-serif}
+  .img-fake .receipt-lines{font-family:'Courier New',monospace;font-size:9px;color:#222;background:#fffef0;padding:14px;width:220px;box-shadow:inset 0 0 0 1px #ddd}
+  .img-fake .receipt-lines div{margin:2px 0}
+
+  /* XLSX */
+  .xlsx-wrap{background:#fff;width:100%;padding:0;overflow:auto;max-height:360px;box-shadow:0 4px 12px rgba(0,0,0,.4);font-family:Arial,sans-serif;font-size:10px}
+  .xlsx-tabs{display:flex;background:#f0f0f0;border-bottom:1px solid #ccc;padding:0 8px}
+  .xlsx-tab{padding:4px 12px;font-size:10px;border-right:1px solid #ccc;cursor:default}
+  .xlsx-tab.active{background:#fff;border-top:2px solid #107c41;font-weight:600}
+  .xlsx-row{display:grid;grid-template-columns:40px repeat(5,1fr);border-bottom:1px solid #eee}
+  .xlsx-cell{padding:4px 8px;border-right:1px solid #eee;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .xlsx-row.head .xlsx-cell{background:#107c41;color:#fff;font-weight:600;font-size:9px}
+  .xlsx-row.rowhead .xlsx-cell:first-child{background:#f0f0f0;font-weight:600;color:#666;text-align:center}
+  .xlsx-cell.num{text-align:right;font-family:monospace}
+
+  /* DOCX */
+  .docx-page{background:#fff;width:100%;max-width:340px;aspect-ratio:1/1.414;padding:32px 38px;font-family:'Calibri',sans-serif;font-size:10px;line-height:1.6;color:#222;box-shadow:0 4px 12px rgba(0,0,0,.4)}
+  .docx-page h2{font-size:14px;color:#1f4e79;margin:0 0 10px;font-weight:600}
+  .docx-page p{margin:6px 0}
+
+  /* Fallback */
+  .fallback{background:#fff;padding:20px;width:100%;max-width:340px;text-align:center;color:#666;font-size:12px;box-shadow:0 4px 12px rgba(0,0,0,.4);border-radius:6px}
+  .fallback .big{font-size:48px;margin-bottom:10px;opacity:.4}
+  .fallback .name{font-family:monospace;background:#f5f5f5;padding:4px 8px;border-radius:3px;font-size:11px;color:#222;display:inline-block;margin-top:8px}
+
+  .ocr-toggle{padding:10px 14px;border-top:1px solid var(--border);background:#fafcfa;font-size:11px;color:var(--muted);display:flex;align-items:center;justify-content:space-between}
+  .ocr-toggle .ocr-label{display:flex;align-items:center;gap:6px}
+  .ocr-status{background:#d1fae5;color:#065f46;padding:2px 8px;border-radius:10px;font-weight:600;font-size:10px}
+</style>
+</head>
+<body>
+
+<h1>📸 Mockup 02 — Preview-Varianten</h1>
+<div class="note">So sieht die Datei-Vorschau im Dialog für verschiedene Formate aus. <strong>Wichtig:</strong> Die Preview-Daten werden lokal im Browser erzeugt (<code>URL.createObjectURL</code>) — keine Datei wird für die Vorschau hochgeladen, kein Traffic, kein Datenschutz-Problem.</div>
+
+<div class="grid">
+
+  <!-- PDF -->
+  <div class="card">
+    <div class="card-head">
+      <div class="title">📄 PDF-Vorschau</div>
+      <div class="filetype">pdf.js (schon im Projekt)</div>
+    </div>
+    <div class="preview-area">
+      <div class="pdf-page">
+        <h3>MWST-Abrechnung · Q1 2025</h3>
+        <p>An: Eidg. Steuerverwaltung ESTV<br>
+        <strong>Von: <span class="hl">Muster AG</span></strong><br>
+        UID: <span class="hl">CHE-114.781.315</span><br>
+        Musterstrasse 1, 9000 St. Gallen</p>
+        <hr style="border:none;border-top:1px solid #ccc">
+        <p><strong>Periode:</strong> <span class="hl">01.01.2025 – 31.03.2025</span></p>
+        <table style="width:100%;border-collapse:collapse;font-size:8px">
+          <tr><td>Umsatz 7.7%</td><td style="text-align:right">124'580.00</td></tr>
+          <tr><td>Vorsteuer</td><td style="text-align:right">3'120.50</td></tr>
+          <tr style="border-top:1px solid #333;font-weight:bold"><td>Schuld</td><td style="text-align:right">6'472.16</td></tr>
+        </table>
+        <p style="margin-top:10px;font-size:8px;color:#888">Seite 1 / 3</p>
+      </div>
+    </div>
+    <div class="ocr-toggle">
+      <div class="ocr-label">📝 Text extrahiert: <strong style="color:var(--text)">12'480 Zeichen</strong></div>
+      <span class="ocr-status">✓ KI-tauglich</span>
+    </div>
+  </div>
+
+  <!-- Bild (Scan) -->
+  <div class="card">
+    <div class="card-head">
+      <div class="title">🖼️ Bild-Vorschau (Scan / Foto)</div>
+      <div class="filetype">&lt;img&gt; + OCR-Fallback</div>
+    </div>
+    <div class="preview-area">
+      <div class="img-fake">
+        <div class="receipt-lines">
+          <div style="text-align:center;font-weight:bold">MIGROS ST. GALLEN</div>
+          <div style="text-align:center">15.03.2026  14:23</div>
+          <div>—————————————————</div>
+          <div>Büromaterial       12.90</div>
+          <div>Druckerpapier A4   18.50</div>
+          <div>Kaffee Capsule     24.00</div>
+          <div>—————————————————</div>
+          <div style="font-weight:bold">Total        CHF 55.40</div>
+          <div>MWST 7.7%           3.96</div>
+        </div>
+      </div>
+    </div>
+    <div class="ocr-toggle">
+      <div class="ocr-label">🔍 OCR läuft lokal (Tesseract.js)…</div>
+      <span class="ocr-status" style="background:#dbeafe;color:#1e40af">⏳ 40%</span>
+    </div>
+  </div>
+
+  <!-- XLSX -->
+  <div class="card">
+    <div class="card-head">
+      <div class="title">📊 Excel-Vorschau</div>
+      <div class="filetype">sheet.js / xlsx (schon im Projekt)</div>
+    </div>
+    <div class="preview-area">
+      <div class="xlsx-wrap">
+        <div class="xlsx-tabs">
+          <div class="xlsx-tab active">Lohnjournal_Dez</div>
+          <div class="xlsx-tab">Zusammenfassung</div>
+          <div class="xlsx-tab">AHV-Abgleich</div>
+        </div>
+        <div class="xlsx-row head">
+          <div class="xlsx-cell"></div>
+          <div class="xlsx-cell">A</div>
+          <div class="xlsx-cell">B</div>
+          <div class="xlsx-cell">C</div>
+          <div class="xlsx-cell">D</div>
+          <div class="xlsx-cell">E</div>
+        </div>
+        <div class="xlsx-row rowhead"><div class="xlsx-cell">1</div><div class="xlsx-cell"><strong>Mitarbeiter</strong></div><div class="xlsx-cell"><strong>Brutto</strong></div><div class="xlsx-cell"><strong>AHV</strong></div><div class="xlsx-cell"><strong>BVG</strong></div><div class="xlsx-cell"><strong>Netto</strong></div></div>
+        <div class="xlsx-row rowhead"><div class="xlsx-cell">2</div><div class="xlsx-cell">Bigger S.</div><div class="xlsx-cell num">8'500.00</div><div class="xlsx-cell num">451.86</div><div class="xlsx-cell num">680.00</div><div class="xlsx-cell num">7'368.14</div></div>
+        <div class="xlsx-row rowhead"><div class="xlsx-cell">3</div><div class="xlsx-cell">Meier M.</div><div class="xlsx-cell num">6'200.00</div><div class="xlsx-cell num">329.64</div><div class="xlsx-cell num">496.00</div><div class="xlsx-cell num">5'374.36</div></div>
+        <div class="xlsx-row rowhead"><div class="xlsx-cell">4</div><div class="xlsx-cell">Keller R.</div><div class="xlsx-cell num">5'800.00</div><div class="xlsx-cell num">308.36</div><div class="xlsx-cell num">464.00</div><div class="xlsx-cell num">5'027.64</div></div>
+        <div class="xlsx-row rowhead"><div class="xlsx-cell">5</div><div class="xlsx-cell" style="font-weight:600;background:#e8f1e8">TOTAL</div><div class="xlsx-cell num" style="font-weight:600">20'500.00</div><div class="xlsx-cell num" style="font-weight:600">1'089.86</div><div class="xlsx-cell num" style="font-weight:600">1'640.00</div><div class="xlsx-cell num" style="font-weight:600">17'770.14</div></div>
+      </div>
+    </div>
+    <div class="ocr-toggle">
+      <div class="ocr-label">📊 3 Arbeitsblätter · <strong style="color:var(--text)">42 Zeilen</strong> Text extrahiert</div>
+      <span class="ocr-status">✓ KI-tauglich</span>
+    </div>
+  </div>
+
+  <!-- DOCX -->
+  <div class="card">
+    <div class="card-head">
+      <div class="title">📝 Word-Vorschau</div>
+      <div class="filetype">JSZip → XML-Text (im Projekt)</div>
+    </div>
+    <div class="preview-area">
+      <div class="docx-page">
+        <h2>Vertrag über Treuhanddienstleistungen</h2>
+        <p>zwischen</p>
+        <p><strong><span class="hl" style="background:#fff3bd">Bühler GmbH</span></strong><br>
+        Industriestrasse 12, 9500 Wil<br>
+        UID: <span class="hl" style="background:#fff3bd">CHE-482.193.001</span></p>
+        <p>— nachfolgend „Auftraggeber" —</p>
+        <p>und</p>
+        <p><strong>Artis Treuhand GmbH</strong><br>
+        St. Gallen</p>
+        <p>— nachfolgend „Treuhänder" —</p>
+        <p style="margin-top:14px;font-weight:600">§1 Gegenstand</p>
+        <p>Der Treuhänder übernimmt die Finanz- und Lohnbuchhaltung sowie die Erstellung des Jahresabschlusses per <span class="hl" style="background:#fff3bd">31.12.2026</span>.</p>
+      </div>
+    </div>
+    <div class="ocr-toggle">
+      <div class="ocr-label">📝 Text extrahiert: <strong style="color:var(--text)">4'820 Zeichen</strong></div>
+      <span class="ocr-status">✓ KI-tauglich</span>
+    </div>
+  </div>
+
+  <!-- Fallback -->
+  <div class="card">
+    <div class="card-head">
+      <div class="title">🗂️ Unbekanntes Format</div>
+      <div class="filetype">Fallback</div>
+    </div>
+    <div class="preview-area">
+      <div class="fallback">
+        <div class="big">📦</div>
+        <div>Vorschau nicht verfügbar für <code>.zip</code>, <code>.eml</code>, <code>.msg</code> usw.</div>
+        <div class="name">Jahresabschluss_2025.zip</div>
+        <div style="margin-top:14px;font-size:11px;color:#999">Du kannst sie trotzdem hochladen — nur keine KI-Zuordnung.</div>
+      </div>
+    </div>
+    <div class="ocr-toggle">
+      <div class="ocr-label">⚠ Kein Text extrahierbar</div>
+      <span class="ocr-status" style="background:#fee2e2;color:#991b1b">manuell zuweisen</span>
+    </div>
+  </div>
+
+  <!-- TXT/MD -->
+  <div class="card">
+    <div class="card-head">
+      <div class="title">📃 Text-Vorschau</div>
+      <div class="filetype">.txt / .md / .csv</div>
+    </div>
+    <div class="preview-area" style="background:#1e1e1e;align-items:stretch">
+      <pre style="color:#d4d4d4;font-family:'Consolas',monospace;font-size:10px;line-height:1.6;margin:0;padding:12px;width:100%;overflow:auto">Kontoauszug CH93 0076 2011 6238 5295 7
+Periode: 01.03.2026 - 31.03.2026
+
+01.03.2026  Gutschrift Muster AG        +12'400.00
+03.03.2026  Lohnzahlung Bigger S.        -7'368.14
+05.03.2026  Überweisung BVG-Stiftung       -680.00
+08.03.2026  Gutschrift Bühler GmbH        +8'950.00
+12.03.2026  SVA St. Gallen                -1'451.86
+...
+
+Saldo per 31.03.2026:  CHF 42'831.95</pre>
+    </div>
+    <div class="ocr-toggle">
+      <div class="ocr-label">📃 Plain-Text: <strong style="color:var(--text)">2'140 Zeichen</strong></div>
+      <span class="ocr-status">✓ KI-tauglich</span>
+    </div>
+  </div>
+
+</div>
+
+<div style="max-width:1400px;margin-top:16px;padding:12px 16px;background:#fff;border-radius:8px;font-size:12px;color:var(--muted)">
+  <p style="margin:0 0 8px"><strong style="color:var(--text)">Technisch:</strong></p>
+  <ul style="margin:0;padding-left:20px">
+    <li><strong>PDF</strong> → <code>pdfjs-dist</code> (ist schon installiert, wird auch für Checkout-Flow genutzt)</li>
+    <li><strong>XLSX</strong> → <code>xlsx</code> (schon installiert)</li>
+    <li><strong>DOCX</strong> → <code>jszip</code> + XML-Strip (schon im Code, Z. 69–74 in DokUploadDialog.jsx)</li>
+    <li><strong>Bild</strong> → <code>&lt;img src={blobURL}&gt;</code> + optional Tesseract.js für OCR (neu, nur wenn Bild keinen EXIF-Text hat)</li>
+    <li><strong>TXT/MD/CSV</strong> → <code>file.text()</code></li>
+    <li><strong>Unbekannt</strong> → Fallback-Karte, Upload trotzdem möglich</li>
+  </ul>
+</div>
+
+</body>
+</html>

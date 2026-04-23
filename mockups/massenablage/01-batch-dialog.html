@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>Mockup 01 — Massenablage Dialog</title>
+<style>
+  :root{
+    --bg:#f5f8f5; --card:#fff; --border:#ccd8cc; --text:#2d3a2d; --muted:#6b826b;
+    --accent:#4a7a4f; --accent-light:#4a7a4f15; --accent-hover:#3d6642;
+    --input-border:#bfcfbf; --row-bg:#f5f8f5; --row-hover:#e8efe8;
+    --success:#10b981; --warn:#f59e0b; --error:#ef4444; --info:#3b82f6;
+    --ai-bg:#fef3c7; --ai-border:#fbbf24; --ai-text:#92400e;
+  }
+  *{box-sizing:border-box}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;margin:0;background:#d4dfd4;padding:24px;color:var(--text)}
+  h1{font-size:14px;margin:0 0 8px;color:var(--muted);font-weight:500;letter-spacing:.05em;text-transform:uppercase}
+  .note{font-size:12px;color:var(--muted);margin-bottom:16px;background:#fffbea;padding:8px 12px;border-radius:6px;border-left:3px solid var(--warn)}
+
+  /* Overlay Simulation */
+  .overlay{background:rgba(0,0,0,.5);padding:32px;border-radius:12px;display:flex;justify-content:center}
+
+  .dialog{background:var(--card);border-radius:14px;width:1200px;max-width:100%;box-shadow:0 24px 48px rgba(0,0,0,.35);overflow:hidden;display:flex;flex-direction:column;height:720px}
+
+  .head{padding:18px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+  .head h2{margin:0;font-size:16px;font-weight:700}
+  .head .sub{font-size:12px;color:var(--muted);margin-top:2px}
+  .close{background:none;border:none;cursor:pointer;color:var(--muted);font-size:20px;padding:4px 8px;border-radius:4px}
+  .close:hover{background:var(--row-bg)}
+
+  .body{flex:1;display:grid;grid-template-columns:380px 1fr;overflow:hidden}
+
+  /* Links: Drop + Liste */
+  .left{border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+  .drop{margin:14px;border:2px dashed var(--input-border);border-radius:10px;padding:18px;text-align:center;color:var(--muted);cursor:pointer;background:var(--row-bg);transition:all .15s}
+  .drop:hover{border-color:var(--accent);background:var(--accent-light);color:var(--accent)}
+  .drop strong{display:block;color:var(--text);font-size:13px;margin-bottom:4px}
+  .drop small{font-size:11px}
+
+  .list-head{padding:6px 16px;font-size:11px;color:var(--muted);display:flex;justify-content:space-between;align-items:center;text-transform:uppercase;letter-spacing:.04em}
+  .list{flex:1;overflow-y:auto;padding:0 8px 12px}
+  .item{display:flex;align-items:center;gap:10px;padding:10px 10px;border-radius:7px;margin-bottom:4px;cursor:pointer;border:1px solid transparent}
+  .item:hover{background:var(--row-hover)}
+  .item.active{background:var(--accent-light);border-color:var(--accent)}
+  .item .ico{font-size:18px;flex-shrink:0}
+  .item .meta{flex:1;min-width:0}
+  .item .fn{font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
+  .item .sub{font-size:10px;color:var(--muted);margin-top:2px;display:flex;align-items:center;gap:6px}
+  .item .badge{padding:1px 6px;border-radius:10px;font-size:9px;font-weight:600;letter-spacing:.02em}
+  .badge.ai{background:var(--ai-bg);color:var(--ai-text);border:1px solid var(--ai-border)}
+  .badge.ok{background:#d1fae5;color:#065f46}
+  .badge.pending{background:#dbeafe;color:#1e40af}
+  .badge.warn{background:#fee2e2;color:#991b1b}
+  .item .rm{opacity:0;transition:opacity .15s;font-size:14px;color:var(--muted);background:none;border:none;cursor:pointer;padding:2px 6px}
+  .item:hover .rm{opacity:1}
+
+  /* Rechts: Detail + Preview */
+  .right{display:grid;grid-template-rows:1fr auto;overflow:hidden}
+  .detail{display:grid;grid-template-columns:1fr 320px;overflow:hidden}
+
+  .preview{background:#1a1a1a;display:flex;align-items:center;justify-content:center;padding:16px;position:relative;overflow:auto}
+  .preview .page{background:#fff;width:100%;max-width:480px;aspect-ratio:1/1.414;box-shadow:0 8px 24px rgba(0,0,0,.5);padding:32px;font-size:10px;line-height:1.5;color:#333;font-family:Georgia,serif}
+  .preview .page h3{margin:0 0 12px;font-size:14px}
+  .preview .page .hl{background:#fff3bd;padding:1px 3px;border-radius:2px;font-weight:500}
+  .preview-toolbar{position:absolute;top:8px;right:8px;display:flex;gap:4px}
+  .preview-toolbar button{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:#fff;padding:4px 8px;border-radius:4px;font-size:11px;cursor:pointer}
+
+  .fields{background:var(--card);padding:18px;overflow-y:auto;border-left:1px solid var(--border)}
+  .field{margin-bottom:12px}
+  .field label{font-size:11px;color:var(--muted);display:block;margin-bottom:3px;font-weight:500}
+  .field input, .field select, .field textarea{width:100%;padding:7px 9px;border:1px solid var(--input-border);border-radius:5px;font-size:12px;font-family:inherit;background:#fff;color:var(--text)}
+  .field textarea{resize:vertical;min-height:56px}
+  .field.ai-suggested input, .field.ai-suggested select{border-color:var(--ai-border);background:var(--ai-bg)}
+  .field .ai-hint{font-size:10px;color:var(--ai-text);margin-top:3px;display:flex;align-items:center;gap:4px}
+  .field .ai-hint.low{color:var(--error)}
+  .field-row{display:grid;grid-template-columns:1fr 90px;gap:8px}
+
+  .tags{display:flex;flex-wrap:wrap;gap:4px;padding:4px;min-height:32px;border:1px solid var(--input-border);border-radius:5px;background:#fff}
+  .tag{padding:3px 10px;border-radius:12px;font-size:11px;display:inline-flex;align-items:center;gap:4px;font-weight:500}
+  .tag.ai-suggested{background:var(--ai-bg);color:var(--ai-text);border:1px dashed var(--ai-border)}
+  .tag .x{cursor:pointer;opacity:.6;font-weight:400}
+  .tag .x:hover{opacity:1}
+
+  /* Footer */
+  .foot{border-top:1px solid var(--border);padding:14px 20px;display:flex;justify-content:space-between;align-items:center;background:#fafcfa}
+  .foot .stats{font-size:12px;color:var(--muted)}
+  .foot .stats strong{color:var(--text)}
+  .foot .actions{display:flex;gap:8px}
+  .btn{padding:9px 18px;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;border:1px solid transparent}
+  .btn-primary{background:var(--accent);color:#fff}
+  .btn-primary:hover{background:var(--accent-hover)}
+  .btn-secondary{background:#fff;border-color:var(--border);color:var(--muted)}
+  .btn-secondary:hover{background:var(--row-bg)}
+
+  /* Parken-Badge */
+  .parked{background:#fef2f2;color:#991b1b;border:1px dashed #fca5a5;padding:8px 10px;border-radius:6px;font-size:11px;margin:0 12px 10px}
+
+  .legend{margin-top:16px;padding:12px 16px;background:#fff;border-radius:8px;font-size:12px;color:var(--muted);max-width:1248px;margin-left:auto;margin-right:auto}
+  .legend strong{color:var(--text)}
+  .legend kbd{background:#eee;border:1px solid #ccc;border-bottom-width:2px;padding:1px 5px;border-radius:3px;font-size:10px;font-family:monospace}
+</style>
+</head>
+<body>
+
+<h1>📄 Mockup 01 — Massenablage-Dialog (klickbarer Entwurf)</h1>
+<div class="note"><strong>Status:</strong> Reiner Mockup — keine Funktion, nur Optik. Soll ich so weitermachen? Klicke durch die Dateien in der Liste links, um zu sehen, wie sich die Ansicht rechts ändert. Alle KI-Vorschläge sind <span style="background:var(--ai-bg);color:var(--ai-text);padding:1px 6px;border-radius:3px">gelb markiert</span> — Nutzer kann jeden überschreiben.</div>
+
+<div class="overlay">
+  <div class="dialog">
+
+    <!-- Kopf -->
+    <div class="head">
+      <div>
+        <h2>📚 Massenablage</h2>
+        <div class="sub">5 Dateien · 3 mit KI-Vorschlag · 1 geparkt (kein Kunde gefunden)</div>
+      </div>
+      <button class="close">✕</button>
+    </div>
+
+    <!-- Body -->
+    <div class="body">
+
+      <!-- Links -->
+      <div class="left">
+        <div class="drop">
+          <strong>Dateien hierher ziehen</strong>
+          <small>oder klicken — PDF, Bilder, XLSX, DOCX</small>
+        </div>
+
+        <div class="list-head">
+          <span>Warteschlange (5)</span>
+          <a href="#" style="color:var(--accent);text-decoration:none;font-size:11px">Alle entfernen</a>
+        </div>
+
+        <div class="list">
+
+          <div class="item active">
+            <span class="ico">📄</span>
+            <div class="meta">
+              <div class="fn">MWST_Q1_2025_Muster_AG.pdf</div>
+              <div class="sub">
+                <span>284 KB</span>
+                <span class="badge ai">✨ KI · 92%</span>
+              </div>
+            </div>
+            <button class="rm">✕</button>
+          </div>
+
+          <div class="item">
+            <span class="ico">📊</span>
+            <div class="meta">
+              <div class="fn">Lohnjournal_Dezember_2025.xlsx</div>
+              <div class="sub">
+                <span>54 KB</span>
+                <span class="badge ai">✨ KI · 88%</span>
+              </div>
+            </div>
+            <button class="rm">✕</button>
+          </div>
+
+          <div class="item">
+            <span class="ico">📄</span>
+            <div class="meta">
+              <div class="fn">Rechnung_Bühler_GmbH_2026-03.pdf</div>
+              <div class="sub">
+                <span>128 KB</span>
+                <span class="badge ai">✨ KI · 76%</span>
+              </div>
+            </div>
+            <button class="rm">✕</button>
+          </div>
+
+          <div class="item">
+            <span class="ico">🖼️</span>
+            <div class="meta">
+              <div class="fn">Scan_Beleg_20260315.jpg</div>
+              <div class="sub">
+                <span>1.2 MB</span>
+                <span class="badge warn">⚠ kein Kunde</span>
+              </div>
+            </div>
+            <button class="rm">✕</button>
+          </div>
+
+          <div class="item">
+            <span class="ico">📄</span>
+            <div class="meta">
+              <div class="fn">Kontoauszug_032026.pdf</div>
+              <div class="sub">
+                <span>412 KB</span>
+                <span class="badge pending">⏳ analysiert…</span>
+              </div>
+            </div>
+            <button class="rm">✕</button>
+          </div>
+
+        </div>
+
+        <div class="parked">🅿️ <strong>Geparkt:</strong> 1 Datei ohne erkannten Kunden. Bleibt im Dialog — du kannst später manuell zuweisen oder wegklicken.</div>
+      </div>
+
+      <!-- Rechts: Detail -->
+      <div class="right">
+        <div class="detail">
+
+          <!-- Preview -->
+          <div class="preview">
+            <div class="preview-toolbar">
+              <button>◀</button>
+              <button>1 / 3</button>
+              <button>▶</button>
+              <button>+</button>
+              <button>−</button>
+            </div>
+            <div class="page">
+              <h3 style="border-bottom:2px solid #333;padding-bottom:6px">MWST-Abrechnung · 1. Quartal 2025</h3>
+              <p>An: Eidg. Steuerverwaltung ESTV<br>
+              <strong>Von: <span class="hl">Muster AG</span></strong><br>
+              UID: <span class="hl">CHE-114.781.315</span><br>
+              Adresse: Musterstrasse 1, 9000 St. Gallen</p>
+              <hr style="border:none;border-top:1px solid #ccc">
+              <p><strong>Abrechnungsperiode:</strong> <span class="hl">01.01.2025 – 31.03.2025</span></p>
+              <table style="width:100%;border-collapse:collapse;font-size:9px">
+                <tr><td>Umsatz 7.7%</td><td style="text-align:right">CHF 124'580.00</td></tr>
+                <tr><td>MWST Ausgangsrechnung</td><td style="text-align:right">CHF 9'592.66</td></tr>
+                <tr><td>MWST Eingangsrechnung</td><td style="text-align:right">CHF 3'120.50</td></tr>
+                <tr style="border-top:1px solid #333;font-weight:bold"><td>Schuld</td><td style="text-align:right">CHF 6'472.16</td></tr>
+              </table>
+              <p style="margin-top:14px;font-size:9px;color:#666">Seite 1 von 3 — Formular 0550</p>
+            </div>
+          </div>
+
+          <!-- Felder -->
+          <div class="fields">
+
+            <div class="field ai-suggested">
+              <label>Anzeigename *</label>
+              <input value="MWST-Abrechnung Q1 2025">
+              <div class="ai-hint">✨ aus Titel extrahiert</div>
+            </div>
+
+            <div class="field ai-suggested">
+              <label>Kunde *</label>
+              <select><option>Muster AG (CHE-114.781.315)</option><option>— andere wählen —</option></select>
+              <div class="ai-hint">✨ UID im Text gefunden · 98% sicher</div>
+            </div>
+
+            <div class="field ai-suggested">
+              <label>Tags *</label>
+              <div class="tags">
+                <span class="tag ai-suggested" style="background:#ddd6fe;color:#5b21b6;border-color:#a78bfa">MWST <span class="x">✕</span></span>
+                <span class="tag ai-suggested" style="background:#fef3c7;color:#92400e;border-color:#fbbf24">› Abrechnung <span class="x">✕</span></span>
+              </div>
+              <div class="ai-hint">✨ „MWST-Abrechnung" im Titel → Parent + Untertag</div>
+            </div>
+
+            <div class="field-row">
+              <div class="field ai-suggested">
+                <label>Kategorie *</label>
+                <select><option>💰 MWST</option></select>
+                <div class="ai-hint">✨</div>
+              </div>
+              <div class="field ai-suggested">
+                <label>Jahr *</label>
+                <input type="number" value="2025">
+                <div class="ai-hint">✨</div>
+              </div>
+            </div>
+
+            <div class="field">
+              <label>Datum (optional)</label>
+              <input type="date" value="2025-03-31">
+            </div>
+
+            <div class="field">
+              <label>Notiz</label>
+              <textarea placeholder="Interne Notiz…">Q1-Abrechnung · fristgerecht eingereicht am 31.05.</textarea>
+            </div>
+
+            <div style="padding-top:8px;border-top:1px solid var(--border);margin-top:8px">
+              <button class="btn btn-secondary" style="width:100%;font-size:11px;padding:6px">↺ Erneut von KI vorschlagen lassen</button>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Footer -->
+    <div class="foot">
+      <div class="stats">
+        <strong>5 Dateien</strong> · <strong style="color:var(--success)">3 bereit</strong> · <strong style="color:var(--warn)">1 geparkt</strong> · <strong style="color:var(--info)">1 wird analysiert</strong>
+      </div>
+      <div class="actions">
+        <button class="btn btn-secondary">Abbrechen</button>
+        <button class="btn btn-primary">✓ 3 Dateien hochladen</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="legend">
+  <p><strong>Interaktion (im echten Dialog geplant):</strong></p>
+  <ul>
+    <li>📁 <strong>Datei reinziehen</strong> → Liste links, sofort „wird analysiert"</li>
+    <li>✨ <strong>KI arbeitet im Hintergrund:</strong> OCR → Kunde-Matching aus Stammdaten → Tag-Vorschlag (lokal zuerst, Claude als Fallback)</li>
+    <li>🟡 <strong>Gelbe Felder</strong> = KI-Vorschlag (kann einfach überschrieben werden)</li>
+    <li>🔤 <strong>Alle Felder</strong> (Kunde, Tag, Kategorie, Jahr, Datum, Name, Notiz) sind Dropdowns/Inputs aus den Stammdaten</li>
+    <li>🅿️ <strong>Kein Kunde erkannt</strong> → Datei bleibt geparkt, blockiert den Massen-Upload nicht</li>
+    <li>✅ <strong>„X Dateien hochladen"</strong> = nur fertige Zeilen. Geparkte & analysierende Dateien bleiben stehen</li>
+    <li>🔒 <strong>Check-in/-out unverändert</strong> — dieser Dialog schreibt nur neue Dokumente, kippt keine Locks</li>
+  </ul>
+</div>
+
+</body>
+</html>

@@ -61,7 +61,10 @@ export default defineConfig(({ mode }) => {
       },
     },
     optimizeDeps: {
-      exclude: ['pdfjs-dist'],
+      // pdfjs-dist 3.11 ist AMD/UMD (package.json "format": "amd").
+      // OHNE Pre-Bundling kommt `getDocument` nicht im ES-Namespace an → "is not a function".
+      // MIT Pre-Bundling konvertiert Vite es sauber auf ES-Module — named/namespace imports funktionieren.
+      include: ['pdfjs-dist'],
     },
   };
 });

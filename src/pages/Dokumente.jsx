@@ -15,10 +15,13 @@ import {
   Link2,
   Copy,
   CheckCheck,
-  FolderOpen
+  FolderOpen,
+  Library
 } from "lucide-react";
-import * as pdfjsLib from "pdfjs-dist";
+import * as _pdfjsNs from "pdfjs-dist";
 import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.js?url";
+// pdfjs-dist 3.11 ist UMD → je nach Vite-Mode liegt getDocument direkt oder unter .default
+const pdfjsLib = (_pdfjsNs && typeof _pdfjsNs.getDocument === "function") ? _pdfjsNs : (_pdfjsNs?.default || _pdfjsNs);
 if (pdfjsLib?.GlobalWorkerOptions) pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
 // ─── Dokument-Textextraktion für Volltext-Suche ──────────────────────────────
@@ -83,6 +86,7 @@ import { supabase, entities } from "@/api/supabaseClient";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import TagSelectWidget from "@/components/dokumente/TagSelectWidget";
+import BatchUploadDialog from "@/components/dokumente/BatchUploadDialog";
 import { useAuth } from "@/lib/AuthContext";
 
 const BUCKET   = "dokumente";
@@ -717,6 +721,7 @@ export default function Dokumente() {
   }, [ftSearch, selCustomerId]);
 
   const [showUpload,    setShowUpload]    = useState(false);
+  const [showBatch,     setShowBatch]     = useState(false);
   const [dropFile,      setDropFile]      = useState(null);
   const [dragOver,      setDragOver]      = useState(false);
 
@@ -1179,6 +1184,11 @@ export default function Dokumente() {
         </Button>
         <Button onClick={() => setShowUpload(true)} style={{ background: accent, color: "#fff", fontSize: 12, height: 32, display: "flex", alignItems: "center", gap: 5 }}>
           <Upload size={13} /> Hochladen
+        </Button>
+        <Button onClick={() => setShowBatch(true)}
+          title="Mehrere Dateien auf einmal mit KI-Zuordnung hochladen (Beta)"
+          style={{ background: "transparent", color: accent, border: "1px solid " + accent, fontSize: 12, height: 32, display: "flex", alignItems: "center", gap: 5 }}>
+          <Library size={13} /> Massenablage
         </Button>
       </div>
 
@@ -1723,6 +1733,12 @@ export default function Dokumente() {
           onCancel={() => { setShowUpload(false); setDropFile(null); }}
           onUpload={() => { queryClient.invalidateQueries({ queryKey: ["dokumente-all"] }); setShowUpload(false); setDropFile(null); }}
           s={s} border={border} accent={accent} />
+      )}
+      {showBatch && (
+        <BatchUploadDialog
+          preCustomerId={selCustomerId}
+          onClose={() => setShowBatch(false)}
+        />
       )}
       {editDoc && (
         <EditDialog doc={editDoc} allTags={allTags} customers={customers}

@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>Mockup 03 — KI-Ablauf</title>
+<style>
+  :root{
+    --bg:#d4dfd4; --card:#fff; --border:#ccd8cc; --text:#2d3a2d; --muted:#6b826b;
+    --accent:#4a7a4f; --accent-light:#4a7a4f15;
+    --step1:#dbeafe; --step1-b:#3b82f6;
+    --step2:#ddd6fe; --step2-b:#8b5cf6;
+    --step3:#fef3c7; --step3-b:#f59e0b;
+    --step4:#d1fae5; --step4-b:#10b981;
+    --step5:#fee2e2; --step5-b:#ef4444;
+  }
+  *{box-sizing:border-box}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;margin:0;background:var(--bg);padding:24px;color:var(--text);line-height:1.55}
+  h1{font-size:14px;margin:0 0 8px;color:var(--muted);font-weight:500;letter-spacing:.05em;text-transform:uppercase}
+  h2{font-size:16px;margin:24px 0 8px;color:var(--text)}
+  .note{font-size:12px;color:var(--muted);margin-bottom:20px;background:#fffbea;padding:8px 12px;border-radius:6px;border-left:3px solid #f59e0b;max-width:1100px}
+  .wrap{max-width:1100px}
+
+  .flow{display:flex;flex-direction:column;gap:12px;margin:20px 0}
+  .step{background:#fff;border-radius:12px;padding:18px 22px;box-shadow:0 2px 8px rgba(0,0,0,.06);position:relative;display:grid;grid-template-columns:60px 1fr;gap:18px;border-left:5px solid}
+  .step.s1{border-left-color:var(--step1-b)} .step.s1 .num{background:var(--step1);color:var(--step1-b)}
+  .step.s2{border-left-color:var(--step2-b)} .step.s2 .num{background:var(--step2);color:var(--step2-b)}
+  .step.s3{border-left-color:var(--step3-b)} .step.s3 .num{background:var(--step3);color:var(--step3-b)}
+  .step.s4{border-left-color:var(--step4-b)} .step.s4 .num{background:var(--step4);color:var(--step4-b)}
+  .step.s5{border-left-color:var(--step5-b)} .step.s5 .num{background:var(--step5);color:var(--step5-b)}
+  .step .num{width:48px;height:48px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:20px}
+  .step h3{margin:0 0 6px;font-size:15px}
+  .step .body{font-size:13px;color:var(--text)}
+  .step code{background:#f5f5f5;padding:1px 6px;border-radius:3px;font-size:11px;color:#333}
+
+  .branch{margin-top:10px;padding-left:18px;border-left:2px dashed var(--border)}
+  .branch-row{display:flex;gap:10px;align-items:flex-start;margin-bottom:6px;font-size:12px}
+  .branch-row .chip{flex-shrink:0;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600}
+  .chip.ok{background:#d1fae5;color:#065f46}
+  .chip.mid{background:#fef3c7;color:#92400e}
+  .chip.fail{background:#fee2e2;color:#991b1b}
+
+  .arrow{text-align:center;color:var(--muted);font-size:20px;margin:-6px 0}
+
+  .table{width:100%;border-collapse:collapse;margin:12px 0;font-size:12px;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+  .table th{background:var(--accent);color:#fff;text-align:left;padding:10px 14px;font-size:12px}
+  .table td{padding:10px 14px;border-top:1px solid var(--border)}
+  .table tr:nth-child(even) td{background:#fafcfa}
+
+  .learn-box{background:#fff;padding:18px 22px;border-radius:12px;border:2px dashed var(--accent);margin-top:12px}
+  .learn-box h3{margin:0 0 8px;color:var(--accent);font-size:14px}
+  .learn-box pre{background:#1e1e1e;color:#d4d4d4;padding:12px 14px;border-radius:6px;font-size:11px;overflow-x:auto;margin:8px 0}
+
+  .callout{background:#fff;padding:16px 20px;border-radius:10px;border-left:4px solid var(--step4-b);margin:16px 0;font-size:13px}
+  .callout strong{color:var(--step4-b)}
+
+  .safety{background:#fff5f5;padding:16px 20px;border-radius:10px;border-left:4px solid var(--step5-b);margin:16px 0;font-size:13px}
+  .safety strong{color:var(--step5-b)}
+
+  ul{margin:6px 0;padding-left:22px}
+  li{margin:3px 0}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+<h1>🤖 Mockup 03 — KI-Ablauf & Lern-Logik</h1>
+<div class="note">Dies ist der konzeptuelle Ablauf, wenn eine Datei in den Massenablage-Dialog gezogen wird. <strong>Nichts davon ist schon gebaut</strong> — nur der Plan. Lies ihn durch und sag, wo du etwas anders willst.</div>
+
+<div class="flow">
+
+  <!-- Step 1 -->
+  <div class="step s1">
+    <div class="num">1</div>
+    <div>
+      <h3>🗂️ Datei landet im Dialog</h3>
+      <div class="body">
+        Nutzer zieht 1–20 Dateien in die Drop-Zone oder klickt „Auswählen". Jede Datei bekommt sofort eine Zeile in der Liste mit Status <code>⏳ analysiert…</code>
+        <div class="branch">
+          <div class="branch-row"><span class="chip ok">lokal</span> <span>Preview wird sofort via <code>URL.createObjectURL(file)</code> erzeugt — keine Internet-Verbindung nötig</span></div>
+          <div class="branch-row"><span class="chip ok">lokal</span> <span>Datei bleibt im Browser — noch kein Upload</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow">▼</div>
+
+  <!-- Step 2 -->
+  <div class="step s2">
+    <div class="num">2</div>
+    <div>
+      <h3>📝 Text extrahieren (OCR / Parser)</h3>
+      <div class="body">
+        Je nach Dateityp andere Methode — <strong>alles lokal im Browser</strong>:
+        <table class="table">
+          <tr><th>Dateityp</th><th>Methode</th><th>Dauer typisch</th></tr>
+          <tr><td>PDF (mit Text-Layer)</td><td><code>pdfjs-dist</code> → getTextContent()</td><td>&lt; 1s</td></tr>
+          <tr><td>PDF (Scan / Bild)</td><td>pdfjs → Canvas → Tesseract.js OCR</td><td>3–15s pro Seite</td></tr>
+          <tr><td>XLSX / CSV</td><td><code>xlsx</code> Library</td><td>&lt; 1s</td></tr>
+          <tr><td>DOCX</td><td><code>jszip</code> + XML-Strip</td><td>&lt; 1s</td></tr>
+          <tr><td>JPG / PNG (Scan)</td><td>Tesseract.js OCR direkt</td><td>2–8s</td></tr>
+          <tr><td>TXT / MD</td><td><code>file.text()</code></td><td>sofort</td></tr>
+        </table>
+        Ergebnis: roher Text-String (max. 100'000 Zeichen), gespeichert als <code>content_text</code> (gleiches Feld wie bestehender Upload)
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow">▼</div>
+
+  <!-- Step 3 -->
+  <div class="step s3">
+    <div class="num">3</div>
+    <div>
+      <h3>🔍 Lokales Matching zuerst (günstig & schnell)</h3>
+      <div class="body">
+        Bevor wir Claude anrufen (kostet Geld), versuchen wir es mit einfachen Regeln:
+        <ul>
+          <li><strong>Kunde:</strong> UID-Regex <code>CHE-\d{3}\.\d{3}\.\d{3}</code> im Text → direkter Treffer in <code>customers.uid</code></li>
+          <li><strong>Kunde Fallback:</strong> Firmen-Name (aus <code>customers.company_name</code>) als Substring suchen — Groß-/Kleinschreibung egal, Umlaute normalisiert</li>
+          <li><strong>Tag:</strong> Keyword-Tabelle aus <code>dok_tag_learnings</code> abfragen — z.B. „MWST-Abrechnung" → Tag <em>MWST › Abrechnung</em></li>
+          <li><strong>Jahr:</strong> Regex <code>\b(20\d{2})\b</code> (ist schon im Projekt, Z. 24 in DokUploadDialog.jsx)</li>
+          <li><strong>Kategorie:</strong> aus Tag-Zuordnung ableitbar (jeder Tag hat eine Kategorie)</li>
+        </ul>
+        <div class="branch">
+          <div class="branch-row"><span class="chip ok">Treffer</span> <span>Feld wird <strong>gelb</strong> vorbefüllt, Badge „✨ KI · 95%" → weiter zu Schritt 5</span></div>
+          <div class="branch-row"><span class="chip mid">Unsicher</span> <span>Kunde gefunden, Tag nicht → weiter zu Schritt 4 nur für Tag</span></div>
+          <div class="branch-row"><span class="chip fail">Nichts</span> <span>Weder UID noch Firma im Text → weiter zu Schritt 4 (Claude entscheidet)</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow">▼</div>
+
+  <!-- Step 4 -->
+  <div class="step s3">
+    <div class="num">4</div>
+    <div>
+      <h3>🧠 Claude-Fallback (nur wenn lokal nicht reicht)</h3>
+      <div class="body">
+        Supabase Edge Function <code>suggest-document-fields</code> (neu) ruft Claude API:
+        <ul>
+          <li><strong>Input:</strong> Datei-Text (erste 10'000 Zeichen), Liste aller Kunden (ID + Name + UID), Liste aller Tags (ID + Name + Parent + Kategorie)</li>
+          <li><strong>Output:</strong> <code>{customer_id, tag_ids[], category, year, name, confidence}</code></li>
+          <li><strong>Caching:</strong> Antwort per SHA-256-Hash des Datei-Inhalts cachen → gleiche Datei wird nie 2× bezahlt</li>
+          <li><strong>Kosten:</strong> ~0.003 CHF pro Datei (Claude Haiku), ~0.015 CHF (Sonnet)</li>
+        </ul>
+        <div class="branch">
+          <div class="branch-row"><span class="chip ok">Confidence ≥ 80%</span> <span>Felder werden vorbefüllt (gelb)</span></div>
+          <div class="branch-row"><span class="chip mid">50–80%</span> <span>Felder vorbefüllt mit Warn-Badge „niedrige Sicherheit, bitte prüfen"</span></div>
+          <div class="branch-row"><span class="chip fail">&lt; 50% / kein Kunde</span> <span>Datei wird <strong>geparkt</strong> → rotes Badge, bleibt im Dialog liegen</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow">▼</div>
+
+  <!-- Step 5 -->
+  <div class="step s4">
+    <div class="num">5</div>
+    <div>
+      <h3>👤 Nutzer prüft, korrigiert, klickt „Hochladen"</h3>
+      <div class="body">
+        Alle KI-Felder sind editierbar (Dropdowns aus Stammdaten). Nutzer kann
+        <ul>
+          <li>einzelne Felder überschreiben</li>
+          <li>mehrere Dateien auf einmal auswählen und Batch-Änderung vornehmen (z.B. „alle auf Kunde X zuweisen")</li>
+          <li>geparkte Dateien jetzt manuell vervollständigen</li>
+          <li>einzelne Dateien entfernen</li>
+        </ul>
+        Klick auf <strong>„X Dateien hochladen"</strong> → Batch-Upload in den Bucket <code>dokumente</code>, pro Datei ein Insert in <code>dokumente</code>-Tabelle. <strong>Exakt gleich wie der bestehende Einzel-Upload</strong>, nur in Schleife.
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow">▼</div>
+
+  <!-- Step 6 -->
+  <div class="step s4">
+    <div class="num">6</div>
+    <div>
+      <h3>📚 Lernen: was der Nutzer korrigiert, wird gespeichert</h3>
+      <div class="body">
+        Wenn der Nutzer einen KI-Vorschlag ändert, lernen wir daraus:
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="learn-box">
+  <h3>🧠 Learning-Tabelle (neu, additiv)</h3>
+  <p style="margin:0 0 8px;font-size:13px">Eine neue Tabelle <code>dok_tag_learnings</code> merkt sich Keyword→Tag-Paare aus Nutzer-Korrekturen. Kein Overhead für die KI, reines Nachschlagen beim nächsten Match.</p>
+
+<pre>create table dok_tag_learnings (
+  id           uuid primary key default gen_random_uuid(),
+  keyword      text not null,                    -- z.B. "lohnjournal", "mwst-abrechnung"
+  tag_id       uuid references dok_tags(id) on delete cascade,
+  customer_id  uuid references customers(id) on delete set null,  -- optional: kundespezifisch
+  hits         int default 1,                    -- wie oft bestätigt
+  source       text default 'user_correction',  -- woher kam das Learning
+  created_at   timestamptz default now()
+);
+
+create index dok_tag_learnings_keyword_idx on dok_tag_learnings(lower(keyword));</pre>
+
+  <p style="margin:8px 0 0;font-size:12px;color:var(--muted)">Beispiel: Nutzer hat „Rechnung_Bühler_2026.pdf" korrigiert von <em>„Rechnungswesen › Allgemein"</em> auf <em>„Rechnungswesen › Ausgangsrechnung"</em> → neuer Eintrag <code>("rechnung", tag_id_ausgangsrechnung, bühler_id, hits=1)</code>. Beim nächsten Upload für Bühler mit „Rechnung" im Namen trifft es sofort richtig.</p>
+</div>
+
+<h2>🅿️ Sonderfall: kein Kunde gefunden</h2>
+<div class="callout">
+  <p style="margin:0 0 6px"><strong>Nicht blockieren — parken.</strong></p>
+  <p style="margin:0">Die Datei bleibt im Dialog mit Badge <span style="background:#fee2e2;color:#991b1b;padding:1px 6px;border-radius:10px;font-size:11px">⚠ kein Kunde</span>.
+  Nutzer kann sie später manuell zuweisen ODER mit „Abbrechen" den Dialog schließen — die anderen Dateien sind bereits hochgeladen, die geparkte bleibt erhalten (im nächsten Öffnen des Dialogs wird sie wieder angezeigt via LocalStorage-Cache oder Session-State).
+  Kein Datenverlust, kein „Alles oder nichts".</p>
+</div>
+
+<h2>🔒 Was garantiert nicht passiert</h2>
+<div class="safety">
+  <ul style="margin:0">
+    <li><strong>Check-out/-in unberührt:</strong> Dieser Dialog ruft <code>handleCheckout</code> / <code>handleCheckin</code> nie auf und schreibt nie in <code>checked_out_by</code>, <code>checked_out_at</code></li>
+    <li><strong>Bestehende Upload-Dialoge bleiben:</strong> Die alten Einzel-Upload-Dialoge (<code>DokUploadDialog.jsx</code>, inline <code>UploadDialog</code> in Dokumente.jsx) werden nicht verändert</li>
+    <li><strong>Live-Seite smartis.me:</strong> Wir arbeiten auf Branch <code>feat/massenablage</code> — solange kein <code>git push</code> zu <code>master</code> passiert, geht auf Vercel nichts live</li>
+    <li><strong>Datenbank:</strong> Nur additive Migration (<code>dok_tag_learnings</code>-Tabelle neu), keine Änderung an <code>dokumente</code>-Schema, keine Änderung an <code>customers</code>, <code>dok_tags</code></li>
+    <li><strong>MS365:</strong> Dieser Dialog spricht nicht mit MS365. Punkt.</li>
+  </ul>
+</div>
+
+<h2>📏 Aufwand-Schätzung (transparent)</h2>
+<table class="table">
+  <tr><th>Teil</th><th>Was</th><th>Dauer</th></tr>
+  <tr><td>1</td><td>React-Komponente <code>BatchUploadDialog.jsx</code> (Layout, Drop, Liste, Detail, Felder)</td><td>~3–4 h</td></tr>
+  <tr><td>2</td><td>Preview-Varianten (PDF/IMG/XLSX/DOCX) — Großteil wiederverwendet</td><td>~1 h</td></tr>
+  <tr><td>3</td><td>Lokales Matching (UID + Firma + Jahr + Learning-Lookup)</td><td>~2 h</td></tr>
+  <tr><td>4</td><td>Supabase Edge Function <code>suggest-document-fields</code> + Claude-Call</td><td>~2 h</td></tr>
+  <tr><td>5</td><td>Migration <code>dok_tag_learnings</code> + Learning-Insert-Logik</td><td>~1 h</td></tr>
+  <tr><td>6</td><td>Batch-Upload (Schleife + Fehlerbehandlung + Progress)</td><td>~1.5 h</td></tr>
+  <tr><td>7</td><td>Button an den 2 Stellen (Dokumente.jsx, CustomerDokumenteTab.jsx) — je 2 Zeilen</td><td>~15 min</td></tr>
+  <tr><td>8</td><td>Testen im Dev-Server, Edge-Cases (leere Datei, riesige PDF, Zeichensalat)</td><td>~1–2 h</td></tr>
+  <tr><th colspan="2" style="text-align:right">Gesamt</th><th>~12–14 h reine Dev-Zeit</th></tr>
+</table>
+
+<h2>🎬 Als nächstes</h2>
+<p style="background:#fff;padding:14px 18px;border-radius:10px;font-size:13px">
+Wenn du die drei Mockups OK findest, gehe ich so vor:<br>
+1️⃣ Migration <code>dok_tag_learnings</code> schreiben (additiv, nicht einspielen) und dir zum Review zeigen<br>
+2️⃣ Komponente <code>BatchUploadDialog.jsx</code> als Skelett bauen — UI ohne KI, nur die Liste + Felder<br>
+3️⃣ Lokales Matching einbauen und mit dir testen<br>
+4️⃣ Claude-Fallback via Edge Function<br>
+5️⃣ Button an den 2 Stellen aktivieren<br>
+6️⃣ Gemeinsam auf <code>localhost:5173</code> testen<br>
+7️⃣ Erst dann Frage: pushen wir nach <code>master</code> oder willst du länger testen?
+</p>
+
+</div>
+
+</body>
+</html>
