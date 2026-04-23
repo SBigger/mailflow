@@ -10,8 +10,9 @@
  */
 import React, { useState, useMemo, useCallback, useContext, useRef, useEffect } from "react";
 import { X, Upload, FileText, Image as ImgIcon, FileSpreadsheet, File, Trash2, Sparkles, Eye } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
-import { entities } from "@/api/supabaseClient";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { entities, supabase } from "@/api/supabaseClient";
+import { toast } from "sonner";
 import { ThemeContext } from "@/Layout";
 import { CATEGORIES } from "@/lib/categories";
 import { analyzeFile } from "@/lib/batchAiSuggest";
@@ -167,7 +168,9 @@ export default function BatchUploadDialog({ preCustomerId, onClose }) {
   const [selectedId, setSelectedId] = useState(null);
   const [isDragOver, setDragOver] = useState(false);
   const [showText, setShowText]   = useState(false);  // OCR-Text-Viewer
+  const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef();
+  const queryClient  = useQueryClient();
 
   const selected = useMemo(
     () => items.find(i => i.id === selectedId) || null,
@@ -283,6 +286,58 @@ export default function BatchUploadDialog({ preCustomerId, onClose }) {
       return { ...i, aiHints: rest };
     }));
   }, []);
+
+  // ─── Upload ─────────────────────────────────────────────────────────────
+  const handleUploadAll = async () => {
+    const toUpload = items.filter(i =>
+      i.status === "ready" &&
+      i.fields.customer_id && i.fields.category && i.fields.tag_ids?.length && i.fields.year
+    );
+    if (!toUpload.length) {
+      toast.error("Keine vollständig ausgefüllten Dateien zum Hochladen.");
+      return;
+    }
+    setUploading(true);
+    let successCount = 0;
+    let errorCount   = 0;
+    for (const item of toUpload) {
+      setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: "uploading" } : i));
+      try {
+        const fileExt  = item.file.name.split(".").pop();
+        const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExt}`;
+        const path     = `${item.fields.customer_id}/${fileName}`;
+        const cleanFile = new File([item.file], fileName, { type: item.file.type });
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from("dokumente").upload(path, cleanFile);
+        if (uploadError) throw uploadError;
+        const displayName = item.file.name.replace(/\.[^.]+$/, "");
+        await entities.Dokument.create({
+          customer_id:  item.fields.customer_id,
+          category:     item.fields.category,
+          year:         parseInt(item.fields.year) || new Date().getFullYear(),
+          name:         displayName,
+          filename:     item.file.name,
+          storage_path: uploadData.path,
+          file_size:    item.file.size,
+          file_type:    item.file.type,
+          tag_ids:      item.fields.tag_ids,
+          notes:        item.fields.notes || "",
+          content_text: item.contentText || "",
+        });
+        setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: "done" } : i));
+        successCount++;
+      } catch (err) {
+        console.error("[BatchUpload] Fehler bei", item.file.name, err);
+        setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: "error", error: err.message } : i));
+        errorCount++;
+      }
+    }
+    setUploading(false);
+    queryClient.invalidateQueries({ queryKey: ["dokumente"] });
+    if (successCount > 0) toast.success(`${successCount} Dokument${successCount !== 1 ? "e" : ""} hochgeladen ✓`, { closeButton: true });
+    if (errorCount   > 0) toast.error(`${errorCount} Fehler beim Hochladen`);
+    if (errorCount === 0) onClose();
+  };
 
   // Drag & Drop
   const onDragOver = useCallback((e) => { e.preventDefault(); setDragOver(true); }, []);
@@ -620,14 +675,17 @@ export default function BatchUploadDialog({ preCustomerId, onClose }) {
               }}>
               Abbrechen
             </button>
-            <button disabled
-              title="Upload-Logik folgt in Schritt 5"
+            <button
+              onClick={handleUploadAll}
+              disabled={uploading || stats.ready === 0}
               style={{
                 padding: "8px 18px", borderRadius: 7, fontSize: 13, fontWeight: 600,
                 background: accent, color: "#fff", border: "none",
-                opacity: 0.5, cursor: "not-allowed", minWidth: 160,
+                opacity: (uploading || stats.ready === 0) ? 0.5 : 1,
+                cursor: (uploading || stats.ready === 0) ? "not-allowed" : "pointer",
+                minWidth: 160,
               }}>
-              ✓ Hochladen (Schritt 5)
+              {uploading ? "Lädt hoch…" : `✓ Hochladen (${stats.ready})`}
             </button>
           </div>
         </div>
