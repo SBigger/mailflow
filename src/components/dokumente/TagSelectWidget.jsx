@@ -21,8 +21,11 @@ export default function TagSelectWidget({ value = [], onChange, onCategoryChange
   const [highlight, setHighlight] = useState(0);
   const [dropPos, setDropPos] = useState({ top: 0, left: 0, width: 0 });
 
-  // Track which parent IDs are expanded
-  const [expandedParents, setExpandedParents] = useState(new Set());
+  // Track which parent IDs are expanded – "Abschlussunterlagen" standardmässig offen
+  const [expandedParents, setExpandedParents] = useState(() => {
+    const abschluss = allTags.find(t => !t.parent_id && t.name.toLowerCase().includes("abschluss"));
+    return abschluss ? new Set([abschluss.id]) : new Set();
+  });
 
   const triggerRef = useRef();
   const inputRef = useRef();
@@ -51,7 +54,14 @@ export default function TagSelectWidget({ value = [], onChange, onCategoryChange
   }, [open, calcPos]);
 
   const q = search.trim().toLowerCase();
-  const parents = allTags.filter(t => !t.parent_id).sort((a, b) => hexToHue(a.color) - hexToHue(b.color));
+  const parents = allTags.filter(t => !t.parent_id).sort((a, b) => {
+    // "Abschlussunterlagen" immer zuerst, dann nach Farbton
+    const aIsAb = a.name.toLowerCase().includes("abschluss");
+    const bIsAb = b.name.toLowerCase().includes("abschluss");
+    if (aIsAb && !bIsAb) return -1;
+    if (!aIsAb && bIsAb) return 1;
+    return hexToHue(a.color) - hexToHue(b.color);
+  });
   const kidsOf = (pid) => allTags.filter(t => t.parent_id === pid).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
 
   // Auto-expand parents if searching
