@@ -62,8 +62,8 @@ async function extractDocumentText(file) {
       }
       return text.trim().slice(0, 100000);
     }
-    // Excel (xlsx, xls, xlsm, csv)
-    if (name.endsWith(".xlsx") || name.endsWith(".xls") || name.endsWith(".xlsm") || name.endsWith(".csv")) {
+    // Excel (alle gängigen Formate)
+    if (/\.(xlsx|xls|xlsm|xlsb|xlt|xltx|xltm|ods|csv)$/.test(name)) {
       const { read, utils } = await import("xlsx");
       const buf  = await file.arrayBuffer();
       const wb   = read(new Uint8Array(buf), { type: "array" });
@@ -75,12 +75,20 @@ async function extractDocumentText(file) {
       }
       return text.trim().slice(0, 100000);
     }
-    // Word (docx)
-    if (name.endsWith(".docx")) {
+    // Word (docx, docm)
+    if (name.endsWith(".docx") || name.endsWith(".docm")) {
       const { default: JSZip } = await import("jszip");
       const buf = await file.arrayBuffer();
       const zip = await JSZip.loadAsync(buf);
       const xml = await zip.file("word/document.xml")?.async("text") || "";
+      return xml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 100000);
+    }
+    // OpenDocument Text (odt, ott)
+    if (name.endsWith(".odt") || name.endsWith(".ott")) {
+      const { default: JSZip } = await import("jszip");
+      const buf = await file.arrayBuffer();
+      const zip = await JSZip.loadAsync(buf);
+      const xml = await zip.file("content.xml")?.async("text") || "";
       return xml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 100000);
     }
     // PowerPoint (pptx)
