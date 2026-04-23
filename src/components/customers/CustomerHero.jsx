@@ -53,7 +53,7 @@ export default function CustomerHero({ customer, onAction }) {
     .sort((a, b) => new Date(a.received_date || 0) - new Date(b.received_date || 0))[0];
 
   return (
-    <div style={{ background: heroBg, borderBottom: `1px solid ${borderColor}`, padding: "20px 28px 18px" }}>
+    <div style={{ background: heroBg, padding: "20px 28px 18px" }}>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 20 }}>
         <div style={{
           flexShrink: 0, width: 64, height: 64, borderRadius: 16,

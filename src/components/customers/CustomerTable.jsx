@@ -441,9 +441,39 @@ function Row({ c, cols, onSelect, rowHover, textMain, textMuted, subtle, borderC
           case "ort":
             return <td key={col.key} style={{ ...td, color: textMuted }}>{c.ort || ""}</td>;
           case "email":
-            return <td key={col.key} style={{ ...td, color: textMuted }}>{c.email || ""}</td>;
+            return (
+              <td key={col.key} style={{ ...td, color: textMuted }}>
+                {c.email ? (
+                  <a
+                    href={`mailto:${c.email}`}
+                    onClick={e => e.stopPropagation()}
+                    title={`E-Mail an ${c.email}`}
+                    style={{ color: textMuted, textDecoration: "none" }}
+                    onMouseEnter={e => { e.currentTarget.style.color = accent; e.currentTarget.style.textDecoration = "underline"; }}
+                    onMouseLeave={e => { e.currentTarget.style.color = textMuted; e.currentTarget.style.textDecoration = "none"; }}
+                  >
+                    {c.email}
+                  </a>
+                ) : ""}
+              </td>
+            );
           case "phone":
-            return <td key={col.key} style={{ ...td, color: textMuted }}>{c.phone || ""}</td>;
+            return (
+              <td key={col.key} style={{ ...td, color: textMuted }}>
+                {c.phone ? (
+                  <a
+                    href={`tel:${c.phone.replace(/[^+\d]/g, "")}`}
+                    onClick={e => e.stopPropagation()}
+                    title={`Anrufen: ${c.phone}`}
+                    style={{ color: textMuted, textDecoration: "none" }}
+                    onMouseEnter={e => { e.currentTarget.style.color = accent; e.currentTarget.style.textDecoration = "underline"; }}
+                    onMouseLeave={e => { e.currentTarget.style.color = textMuted; e.currentTarget.style.textDecoration = "none"; }}
+                  >
+                    {c.phone}
+                  </a>
+                ) : ""}
+              </td>
+            );
           case "tags":
             return (
               <td key={col.key} style={td}>

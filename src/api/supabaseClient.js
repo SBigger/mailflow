@@ -113,6 +113,7 @@ export const entities = {
   Fahrzeug:         makeEntity('fahrzeuge'),
   Aktienbuch:       makeEntity('aktienbuch'),
   Signatur:         makeEntity('signaturen'),
+  CallRecord:       makeEntity('call_records'),
 };
 
 // Auth helpers

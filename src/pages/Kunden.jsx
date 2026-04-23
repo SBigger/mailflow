@@ -11,11 +11,11 @@ import {
 import { useIsMobile } from "@/components/mobile/useIsMobile";
 import CustomerMiniList from "../components/customers/CustomerMiniList";
 import CustomerTable from "../components/customers/CustomerTable";
-import CustomerHero from "../components/customers/CustomerHero";
 import CustomerHeader from "../components/customers/CustomerHeader";
 import CustomerOverviewTab from "../components/customers/CustomerOverviewTab";
 import CustomerActivities from "../components/customers/CustomerActivities";
 import CustomerMailsTab from "../components/customers/CustomerMailsTab";
+import CustomerCallsTab from "../components/customers/CustomerCallsTab";
 import CustomerTasksTab from "../components/customers/CustomerTasksTab";
 import CustomerNotesTab from "../components/customers/CustomerNotesTab";
 import CustomerContactPersons from "../components/customers/CustomerContactPersons";
@@ -186,19 +186,6 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
   const handleSelectFromMini = (c) => {
     setSelectedCustomer(c);
     setActiveTab(isNebendomizilOf(c) ? "fristen" : "overview");
-  };
-
-  // Quick-Action aus dem Hero → entsprechenden Tab aktivieren
-  const handleHeroAction = (kind) => {
-    const map = {
-      frist:    "fristen",
-      task:     "tasks",
-      kontakt:  "contacts",
-      dokument: "dokumente",
-      notiz:    "notes",
-    };
-    const next = map[kind];
-    if (next) setActiveTab(next);
   };
 
   const isPrivatperson  = currentCustomer?.person_type === 'privatperson';
@@ -391,9 +378,9 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
                   </div>
                 )}
 
-                {/* Hero + Aktionen (Inaktiv / Löschen) als Overlay-Icons oben rechts */}
+                {/* Stammdaten oben (editierbar) + Aktionen (Inaktiv / Löschen) als Overlay-Icons oben rechts */}
                 <div style={{ position: "relative" }}>
-                  <CustomerHero customer={currentCustomer} onAction={handleHeroAction} />
+                  <CustomerHeader customer={currentCustomer} staff={appUsers} onUpdate={handleUpdate} />
                   <div style={{ position: "absolute", top: 12, right: 16, display: "flex", gap: 6 }}>
                     <button
                       onClick={() => handleUpdate({ aktiv: currentCustomer.aktiv === false ? true : false })}
@@ -434,8 +421,8 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
                         ) : (
                           <>
                             <TabsTrigger value="overview"   className="text-xs">🏠 Übersicht</TabsTrigger>
-                            <TabsTrigger value="stammdaten" className="text-xs">📇 Stammdaten</TabsTrigger>
                             <TabsTrigger value="mails"      className="text-xs">📧 Mails</TabsTrigger>
+                            <TabsTrigger value="telefonate" className="text-xs">📞 Telefonate</TabsTrigger>
                             <TabsTrigger value="tasks"      className="text-xs">✅ Tasks</TabsTrigger>
                             <TabsTrigger value="fristen"    className="text-xs">📅 Fristen</TabsTrigger>
                             <TabsTrigger value="activities" className="text-xs">📋 Tätigkeiten</TabsTrigger>
@@ -457,12 +444,12 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
                             <CustomerOverviewTab customer={currentCustomer} />
                           </TabsContent>
 
-                          <TabsContent value="stammdaten" className="mt-0">
-                            <CustomerHeader customer={currentCustomer} staff={appUsers} onUpdate={handleUpdate} />
-                          </TabsContent>
-
                           <TabsContent value="mails" className="mt-0">
                             <CustomerMailsTab customer={currentCustomer} />
+                          </TabsContent>
+
+                          <TabsContent value="telefonate" className="mt-0">
+                            <CustomerCallsTab customer={currentCustomer} />
                           </TabsContent>
 
                           <TabsContent value="tasks" className="mt-0">
