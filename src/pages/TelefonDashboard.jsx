@@ -1,10 +1,11 @@
 import React, { useContext, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Phone, PhoneIncoming, PhoneOutgoing, Clock, TrendingUp,
   UserCheck, UserX, Search, ExternalLink, Users, Video,
   LayoutGrid, ListChecks, Hourglass, ChevronDown, ChevronRight,
+  UserPlus, Pencil,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip as RTooltip, ResponsiveContainer, CartesianGrid,
@@ -13,6 +14,7 @@ import { format, isToday, isThisWeek, isThisMonth, startOfDay } from "date-fns";
 import { de } from "date-fns/locale";
 import { supabase } from "@/api/supabaseClient";
 import { ThemeContext } from "@/Layout";
+import CallCustomerPicker from "@/components/calls/CallCustomerPicker";
 
 /**
  * Telefon-Dashboard
@@ -56,13 +58,31 @@ export default function TelefonDashboard() {
   React.useEffect(() => { localStorage.setItem(LS_VIEW,  view);  }, [view]);
   React.useEffect(() => { localStorage.setItem(LS_RANGE, range); }, [range]);
 
+  // ── Kunden-Picker (manuelle Zuweisung) ───────────────
+  const queryClient = useQueryClient();
+  const [picker, setPicker] = useState(null); // { call, rect } | null
+
+  const assignCustomer = useMutation({
+    mutationFn: async ({ callId, customerId, manual }) => {
+      const { error } = await supabase
+        .from("call_records")
+        .update({ customer_id: customerId, customer_id_manual: manual })
+        .eq("id", callId);
+      if (error) throw new Error(error.message);
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["call-dashboard-calls"] }),
+  });
+
+  const openPicker = (call, rect) => setPicker({ call, rect });
+  const closePicker = () => setPicker(null);
+
   // ── Daten ─────────────────────────────────────────────
   const { data: calls = [], isLoading, error } = useQuery({
     queryKey: ["call-dashboard-calls"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("call_records")
-        .select("id, direction, call_type, caller_number, callee_number, caller_name, callee_name, artis_user_name, customer_id, start_time, duration_seconds, notes")
+        .select("id, direction, call_type, caller_number, callee_number, caller_name, callee_name, artis_user_name, customer_id, customer_id_manual, start_time, duration_seconds, notes")
         .order("start_time", { ascending: false })
         .limit(5000);
       if (error) throw new Error(error.message);
@@ -177,6 +197,7 @@ export default function TelefonDashboard() {
             pendings={pendingsInRange}
             customerMap={customerMap}
             navigate={navigate}
+            onOpenPicker={openPicker}
             colors={{ cardBg, border, headingCol, subCol, mutedCol, accent, accentIn, accentOut, rowHover }}
           />
         ) : (
@@ -185,10 +206,31 @@ export default function TelefonDashboard() {
             allCalls={calls}
             customerMap={customerMap}
             navigate={navigate}
+            onOpenPicker={openPicker}
             colors={{ pageBg, cardBg, border, headingCol, subCol, mutedCol, accent, accentIn, accentOut, inputBg, rowHover, chartGrid }}
           />
         )}
       </div>
+
+      {/* ── Kunden-Picker ────────────────────────────────── */}
+      <CallCustomerPicker
+        open={!!picker}
+        onClose={closePicker}
+        anchorRect={picker?.rect || null}
+        customers={customers}
+        currentCustomerId={picker?.call?.customer_id || null}
+        isManual={!!picker?.call?.customer_id_manual}
+        onAssign={async (customerId) => {
+          await assignCustomer.mutateAsync({ callId: picker.call.id, customerId, manual: true });
+        }}
+        onClear={async () => {
+          await assignCustomer.mutateAsync({ callId: picker.call.id, customerId: null, manual: true });
+        }}
+        onReset={async () => {
+          // manual=false → beim nächsten Sync greift Auto-Matching wieder
+          await assignCustomer.mutateAsync({ callId: picker.call.id, customerId: picker.call.customer_id || null, manual: false });
+        }}
+      />
     </div>
   );
 }
@@ -196,7 +238,7 @@ export default function TelefonDashboard() {
 // ══════════════════════════════════════════════════════════════════
 // MITARBEITER-ANSICHT  (Default)
 // ══════════════════════════════════════════════════════════════════
-function MitarbeiterView({ calls, pendings, customerMap, navigate, colors }) {
+function MitarbeiterView({ calls, pendings, customerMap, navigate, onOpenPicker, colors }) {
   const { cardBg, border, headingCol, subCol, mutedCol, accentIn, accentOut, rowHover } = colors;
 
   const [expanded, setExpanded] = useState({}); // { [name]: bool } – initial alle auf
@@ -285,6 +327,7 @@ function MitarbeiterView({ calls, pendings, customerMap, navigate, colors }) {
             onToggle={() => setExpanded(s => ({ ...s, [g.name]: !s[g.name] }))}
             customerMap={customerMap}
             navigate={navigate}
+            onOpenPicker={onOpenPicker}
             colors={colors}
           />
         ))}
@@ -293,7 +336,7 @@ function MitarbeiterView({ calls, pendings, customerMap, navigate, colors }) {
   );
 }
 
-function EmployeeSection({ group, expanded, onToggle, customerMap, navigate, colors }) {
+function EmployeeSection({ group, expanded, onToggle, customerMap, navigate, onOpenPicker, colors }) {
   const { cardBg, border, headingCol, subCol, mutedCol, accentIn, accentOut, rowHover } = colors;
 
   // Initialen für Avatar
@@ -383,7 +426,7 @@ function EmployeeSection({ group, expanded, onToggle, customerMap, navigate, col
           )}
           {timeline.map((item, idx) =>
             item.kind === "call"
-              ? <CallRow key={`c_${item.data.id}`} call={item.data} customerMap={customerMap} navigate={navigate} colors={colors} last={idx === timeline.length - 1} />
+              ? <CallRow key={`c_${item.data.id}`} call={item.data} customerMap={customerMap} navigate={navigate} onOpenPicker={onOpenPicker} colors={colors} last={idx === timeline.length - 1} />
               : <PendingRow key={`p_${item.data.id}`} pending={item.data} customerMap={customerMap} navigate={navigate} colors={colors} last={idx === timeline.length - 1} />
           )}
         </div>
@@ -392,7 +435,7 @@ function EmployeeSection({ group, expanded, onToggle, customerMap, navigate, col
   );
 }
 
-function CallRow({ call, customerMap, navigate, colors, last }) {
+function CallRow({ call, customerMap, navigate, onOpenPicker, colors, last }) {
   const { border, headingCol, subCol, mutedCol, accentIn, accentOut, rowHover } = colors;
   const isIn  = call.direction === "incoming";
   const isOut = call.direction === "outgoing";
@@ -407,6 +450,13 @@ function CallRow({ call, customerMap, navigate, colors, last }) {
 
   const cust = call.customer_id ? customerMap.get(call.customer_id) : null;
   const custLabel = cust ? (cust.company_name || `${cust.vorname || ""} ${cust.name || ""}`.trim()) : null;
+  const isManual = !!call.customer_id_manual;
+
+  const handleAssignClick = (e) => {
+    e.stopPropagation();
+    const rect = e.currentTarget.getBoundingClientRect();
+    onOpenPicker?.(call, rect);
+  };
 
   return (
     <div
@@ -460,6 +510,14 @@ function CallRow({ call, customerMap, navigate, colors, last }) {
               unzugeordnet
             </span>
           )}
+          {isManual && (
+            <span
+              title="Manuell zugeordnet – Sync überschreibt nicht"
+              style={{ fontSize: 9.5, color: "#5b21b6", border: "1px solid #5b21b655", padding: "0 5px", borderRadius: 3 }}
+            >
+              manuell
+            </span>
+          )}
         </div>
 
         <div style={{ fontSize: 10.5, color: mutedCol, marginTop: 2 }}>
@@ -474,6 +532,22 @@ function CallRow({ call, customerMap, navigate, colors, last }) {
           {formatDuration(call.duration_seconds)}
         </div>
       )}
+
+      {/* Zuweisen / Ändern */}
+      <button
+        onClick={handleAssignClick}
+        title={cust ? "Kunde ändern" : "Kunde zuordnen"}
+        style={{
+          flexShrink: 0, width: 26, height: 26, borderRadius: 7,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          border: `1px solid ${border}`, background: "transparent",
+          color: cust ? mutedCol : "#5b21b6", cursor: "pointer",
+        }}
+        onMouseEnter={e => { e.currentTarget.style.backgroundColor = rowHover; }}
+        onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; }}
+      >
+        {cust ? <Pencil size={12} /> : <UserPlus size={12} />}
+      </button>
     </div>
   );
 }
@@ -528,7 +602,7 @@ function PendingRow({ pending, customerMap, navigate, colors, last }) {
 // ══════════════════════════════════════════════════════════════════
 // STATS-ANSICHT  (optional – altes Dashboard)
 // ══════════════════════════════════════════════════════════════════
-function StatsView({ calls, allCalls, customerMap, navigate, colors }) {
+function StatsView({ calls, allCalls, customerMap, navigate, onOpenPicker, colors }) {
   const { cardBg, border, headingCol, subCol, mutedCol, accent, accentIn, accentOut, inputBg, rowHover, chartGrid } = colors;
 
   const kpi = useMemo(() => {
@@ -844,6 +918,22 @@ function StatsView({ calls, allCalls, customerMap, navigate, colors }) {
                 <div style={{ fontSize: 11.5, color: subCol, fontVariantNumeric: "tabular-nums", flexShrink: 0 }}>
                   {formatDuration(c.duration_seconds || 0)}
                 </div>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    onOpenPicker?.(c, rect);
+                  }}
+                  title={cust ? "Kunde ändern" : "Kunde zuordnen"}
+                  style={{
+                    flexShrink: 0, width: 24, height: 24, borderRadius: 6,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    border: `1px solid ${border}`, background: "transparent",
+                    color: cust ? mutedCol : "#5b21b6", cursor: "pointer",
+                  }}
+                >
+                  {cust ? <Pencil size={11} /> : <UserPlus size={11} />}
+                </button>
               </div>
             );
           })}
