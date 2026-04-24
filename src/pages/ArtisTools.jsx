@@ -116,12 +116,12 @@ export default function ArtisTools() {
       </div>
 
       {/* ── Tool-Kacheln ────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 gap-5 max-w-3xl">
+      <div className="grid grid-cols-3 gap-4">
         {TOOLS.map(({ id, title, description, icon: Icon, color, bg, route }) => (
           <div
             key={id}
             onClick={() => route && navigate(route)}
-            className="rounded-2xl p-6 flex flex-col gap-4 transition-all hover:shadow-lg hover:-translate-y-0.5"
+            className="rounded-2xl p-4 flex flex-col gap-3 transition-all hover:shadow-lg hover:-translate-y-0.5"
             style={{
               backgroundColor: cardBg,
               border: `1px solid ${cardBorder}`,
@@ -131,25 +131,25 @@ export default function ArtisTools() {
             {/* Icon + Badge */}
             <div className="flex items-start justify-between">
               <div
-                className="w-14 h-14 rounded-xl flex items-center justify-center"
+                className="w-10 h-10 rounded-xl flex items-center justify-center"
                 style={{ backgroundColor: isDark ? "rgba(255,255,255,0.06)" : bg }}
               >
-                <Icon className="w-7 h-7" style={{ color: isDark ? "#a1a1aa" : color }} />
+                <Icon className="w-5 h-5" style={{ color: isDark ? "#a1a1aa" : color }} />
               </div>
               <span
-                className="text-xs px-2.5 py-1 rounded-full font-medium"
+                className="text-xs px-2 py-0.5 rounded-full font-medium"
                 style={{ backgroundColor: badgeBg, color: route ? accent : subColor }}
               >
-                {route ? "Verfügbar" : "Kommt bald"}
+                {route ? "Verfügbar" : "Bald"}
               </span>
             </div>
 
             {/* Text */}
             <div>
-              <h3 className="font-semibold text-base mb-1" style={{ color: headingColor }}>
+              <h3 className="font-semibold text-sm mb-1" style={{ color: headingColor }}>
                 {title}
               </h3>
-              <p className="text-sm leading-relaxed" style={{ color: subColor }}>
+              <p className="text-xs leading-relaxed" style={{ color: subColor }}>
                 {description}
               </p>
             </div>
@@ -157,7 +157,7 @@ export default function ArtisTools() {
             {/* Footer-Link */}
             <div className="flex items-center gap-1 mt-auto" style={{ color: accent }}>
               <span className="text-xs font-semibold">Öffnen</span>
-              <ChevronRight className="w-3.5 h-3.5" />
+              <ChevronRight className="w-3 h-3" />
             </div>
           </div>
         ))}
