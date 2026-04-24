@@ -3,6 +3,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { User, Phone, MapPin, Briefcase, Heart, Mail } from "lucide-react";
 import { ThemeContext } from "@/Layout";
+import CallNotePopup from "./CallNotePopup";
 
 const CH_KANTONE = [
   { code: 'AG', name: 'Aargau' },         { code: 'AI', name: 'Appenzell Innerrhoden' },
@@ -65,6 +66,9 @@ export default function CustomerHeader({ customer, staff, onUpdate }) {
 
   // Kanton (beide Typen)
   const [kanton, setKanton] = useState(customer.kanton || "");
+
+  // Call-Popup
+  const [callOpen, setCallOpen] = useState(false);
 
   function formatBudgetStatic(val) {
     const num = parseFloat(val);
@@ -335,13 +339,14 @@ export default function CustomerHeader({ customer, staff, onUpdate }) {
                   {...inp('flex-1')}
                 />
                 {phone && (
-                  <a
-                    href={`tel:${phone}`}
-                    title="Anrufen"
+                  <button
+                    type="button"
+                    onClick={() => setCallOpen(true)}
+                    title="Anrufen mit Notiz"
                     className="flex items-center justify-center w-8 h-8 rounded-md bg-emerald-600 hover:bg-emerald-500 transition-colors flex-shrink-0"
                   >
                     <Phone className="h-3.5 w-3.5 text-white" />
-                  </a>
+                  </button>
                 )}
               </div>
             </div>
@@ -427,6 +432,13 @@ export default function CustomerHeader({ customer, staff, onUpdate }) {
         </div>
       </div>
 
+      <CallNotePopup
+        open={callOpen}
+        onClose={() => setCallOpen(false)}
+        phone={phone}
+        customerId={customer.id}
+        customerName={customer.company_name}
+      />
     </div>
   );
 }

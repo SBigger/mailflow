@@ -1,7 +1,7 @@
 import React, { useContext, useState, useEffect, useRef } from "react";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
-import { PhoneIncoming, PhoneOutgoing, Phone, Clock, Pencil, Check, X } from "lucide-react";
+import { PhoneIncoming, PhoneOutgoing, Phone, Clock, Pencil, Check, X, Hourglass, Trash2 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { entities } from "@/api/supabaseClient";
 import { toast } from "sonner";
@@ -32,6 +32,16 @@ export default function CustomerCallsTab({ customer }) {
     enabled:  !!customer.id,
   });
 
+  // Unverknüpfte Vorab-Notizen (Click-to-Call in MailFlow, noch kein Match vom Sync)
+  const { data: pendings = [] } = useQuery({
+    queryKey: ["customer-pending-calls", customer.id],
+    queryFn:  async () => {
+      const all = await entities.CallNotePending.filter({ customer_id: customer.id }, "-clicked_at", 100);
+      return all.filter(p => !p.linked_call_id);
+    },
+    enabled:  !!customer.id,
+  });
+
   const saveNoteMutation = useMutation({
     mutationFn: ({ id, notes }) => entities.CallRecord.update(id, { notes }),
     onSuccess: () => {
@@ -41,10 +51,28 @@ export default function CustomerCallsTab({ customer }) {
     onError: (e) => toast.error(`Fehler: ${e.message}`),
   });
 
+  const savePendingMutation = useMutation({
+    mutationFn: ({ id, fields }) => entities.CallNotePending.update(id, fields),
+    onSuccess: () => {
+      toast.success("Vorab-Notiz aktualisiert");
+      queryClient.invalidateQueries({ queryKey: ["customer-pending-calls", customer.id] });
+    },
+    onError: (e) => toast.error(`Fehler: ${e.message}`),
+  });
+
+  const deletePendingMutation = useMutation({
+    mutationFn: (id) => entities.CallNotePending.delete(id),
+    onSuccess: () => {
+      toast.success("Vorab-Notiz gelöscht");
+      queryClient.invalidateQueries({ queryKey: ["customer-pending-calls", customer.id] });
+    },
+    onError: (e) => toast.error(`Fehler: ${e.message}`),
+  });
+
   if (isLoading) return <div style={{ padding: 16, fontSize: 13, color: subtle }}>Lade Telefonate …</div>;
   if (error)     return <div style={{ padding: 16, fontSize: 13, color: "#b04040" }}>Fehler: {String(error?.message || error)}</div>;
 
-  if (calls.length === 0) {
+  if (calls.length === 0 && pendings.length === 0) {
     return (
       <div style={{ padding: 24, textAlign: "center", fontSize: 13, color: subtle }}>
         Noch keine Telefonate zu diesem Kunden erfasst.<br />
@@ -55,17 +83,148 @@ export default function CustomerCallsTab({ customer }) {
     );
   }
 
+  const colors = { muted, subtle, textMain, border, hoverBg, inputBg, accent };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 4 }}>
+      {pendings.map(p => (
+        <PendingRow
+          key={`p_${p.id}`}
+          pending={p}
+          onSave={(fields) => savePendingMutation.mutate({ id: p.id, fields })}
+          onDelete={() => {
+            if (confirm("Vorab-Notiz löschen?")) deletePendingMutation.mutate(p.id);
+          }}
+          saving={savePendingMutation.isPending && savePendingMutation.variables?.id === p.id}
+          colors={colors}
+        />
+      ))}
       {calls.map(call => (
         <CallRow
           key={call.id}
           call={call}
           onSaveNote={(notes) => saveNoteMutation.mutate({ id: call.id, notes })}
           saving={saveNoteMutation.isPending && saveNoteMutation.variables?.id === call.id}
-          colors={{ muted, subtle, textMain, border, hoverBg, inputBg, accent }}
+          colors={colors}
         />
       ))}
+    </div>
+  );
+}
+
+function PendingRow({ pending, onSave, onDelete, saving, colors }) {
+  const { muted, subtle, textMain, border, hoverBg, inputBg, accent } = colors;
+  const [editing, setEditing] = useState(false);
+  const [title, setTitle] = useState(pending.note_title || "");
+  const [text,  setText]  = useState(pending.note_text  || "");
+  useEffect(() => { setTitle(pending.note_title || ""); setText(pending.note_text || ""); }, [pending.note_title, pending.note_text]);
+
+  const commit = () => {
+    onSave({
+      note_title: title.trim() || null,
+      note_text:  text.trim()  || null,
+    });
+    setEditing(false);
+  };
+  const cancel = () => {
+    setTitle(pending.note_title || "");
+    setText(pending.note_text || "");
+    setEditing(false);
+  };
+
+  const badgeBg = "#fff4d0";
+  const badgeFg = "#8a5a00";
+
+  return (
+    <div style={{
+      display: "flex", flexDirection: "column",
+      padding: "10px 12px",
+      borderRadius: 8,
+      border: `1px dashed ${badgeFg}66`,
+      background: "#fffbee",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <div style={{
+          flexShrink: 0, width: 32, height: 32, borderRadius: 8,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          background: badgeBg,
+        }}>
+          <Hourglass size={15} style={{ color: badgeFg }} />
+        </div>
+
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, color: textMain, fontWeight: 500, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span>Vorab-Notiz <span style={{ color: muted, fontWeight: 400 }}>· {pending.phone_number}</span></span>
+            <span style={{ fontSize: 9.5, letterSpacing: ".04em", textTransform: "uppercase", padding: "1px 6px", borderRadius: 8, background: badgeBg, color: badgeFg, fontWeight: 700 }}>
+              noch nicht verknüpft
+            </span>
+          </div>
+          <div style={{ fontSize: 11.5, color: subtle, marginTop: 2, display: "flex", alignItems: "center", gap: 10 }}>
+            {pending.artis_user_name && <span>🧑 {pending.artis_user_name}</span>}
+            <span>Klick: {format(new Date(pending.clicked_at), "dd.MM.yyyy HH:mm", { locale: de })}</span>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: 6 }}>
+          {!editing && (
+            <button
+              onClick={onDelete}
+              title="Notiz löschen"
+              style={{ background: "transparent", border: "none", cursor: "pointer", color: subtle, padding: 4, borderRadius: 4 }}
+            >
+              <Trash2 size={13} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div style={{ marginTop: 8, marginLeft: 44 }}>
+        {editing ? (
+          <div>
+            <input
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              placeholder="Titel"
+              style={{
+                width: "100%", padding: "6px 10px", fontSize: 12.5, marginBottom: 6,
+                borderRadius: 6, border: `1px solid ${border}`, background: inputBg, color: textMain, outline: "none",
+              }}
+            />
+            <textarea
+              value={text}
+              onChange={e => setText(e.target.value)}
+              rows={3}
+              placeholder="Notiz"
+              style={{
+                width: "100%", padding: "6px 10px", fontSize: 12.5,
+                borderRadius: 6, border: `1px solid ${border}`, background: inputBg, color: textMain,
+                fontFamily: "inherit", resize: "vertical", outline: "none",
+              }}
+            />
+            <div style={{ display: "flex", gap: 6, marginTop: 6, justifyContent: "flex-end" }}>
+              <button
+                onClick={cancel}
+                disabled={saving}
+                style={{ fontSize: 11.5, padding: "4px 10px", borderRadius: 6, background: "transparent", color: subtle, border: `1px solid ${border}`, cursor: "pointer" }}
+              >Abbrechen</button>
+              <button
+                onClick={commit}
+                disabled={saving}
+                style={{ fontSize: 11.5, padding: "4px 10px", borderRadius: 6, background: accent, color: "#fff", border: `1px solid ${accent}`, cursor: "pointer", opacity: saving ? 0.6 : 1 }}
+              >{saving ? "Speichere…" : "Speichern"}</button>
+            </div>
+          </div>
+        ) : (
+          <div
+            onClick={() => setEditing(true)}
+            title="Klick zum Bearbeiten"
+            style={{ fontSize: 12.5, color: textMain, whiteSpace: "pre-wrap", padding: "6px 10px", borderRadius: 6, border: `1px dashed ${border}`, cursor: "pointer", background: "#fff" }}
+          >
+            {pending.note_title && <div style={{ fontWeight: 600, marginBottom: 2 }}>{pending.note_title}</div>}
+            {pending.note_text || <span style={{ color: subtle }}>— leer —</span>}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

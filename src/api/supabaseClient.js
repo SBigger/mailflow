@@ -114,6 +114,7 @@ export const entities = {
   Aktienbuch:       makeEntity('aktienbuch'),
   Signatur:         makeEntity('signaturen'),
   CallRecord:       makeEntity('call_records'),
+  CallNotePending:  makeEntity('call_notes_pending'),
   PromptVorlage:    makeEntity('prompt_vorlagen'),
 };
 

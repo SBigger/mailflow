@@ -204,6 +204,98 @@ function buildRow(rec: any, phoneIndex: Map<string, string>): DbRow {
   };
 }
 
+// ── Pending-Notes → call_records verknüpfen ─────────────────────
+function buildMergedNote(existing: string | null | undefined, pending: { note_title: string | null; note_text: string | null }): string {
+  const parts: string[] = [];
+  if (pending.note_title && pending.note_title.trim()) parts.push(`▸ ${pending.note_title.trim()}`);
+  if (pending.note_text  && pending.note_text.trim())  parts.push(pending.note_text.trim());
+  const pendingText = parts.join("\n");
+  const existingText = (existing || "").trim();
+  if (!existingText) return pendingText;
+  if (!pendingText)  return existingText;
+  return `${existingText}\n\n— Vorab-Notiz —\n${pendingText}`;
+}
+
+async function linkPendingNotes(supabase: any, rows: DbRow[]): Promise<number> {
+  const namedRows = rows.filter(r => r.artis_user_name && r.start_time);
+  if (!namedRows.length) return 0;
+
+  // 1) Alle Mitarbeiter-Namen die in diesem Batch vorkommen
+  const names = Array.from(new Set(namedRows.map(r => r.artis_user_name!))).filter(Boolean);
+  if (!names.length) return 0;
+
+  // 2) Alle unverknüpften Pending Notes für diese Mitarbeiter laden
+  const { data: pendings, error: pendErr } = await supabase
+    .from('call_notes_pending')
+    .select('id, customer_id, phone_number, phone_suffix, artis_user_name, note_title, note_text, clicked_at')
+    .is('linked_call_id', null)
+    .in('artis_user_name', names);
+  if (pendErr) {
+    console.warn('linkPendingNotes: pending select failed', pendErr.message);
+    return 0;
+  }
+  if (!pendings || !pendings.length) return 0;
+
+  // 3) DB-Zeilen nachladen, um die echten call_records.id zu bekommen
+  const graphIds = namedRows.map(r => r.graph_call_id);
+  const { data: dbCalls } = await supabase
+    .from('call_records')
+    .select('id, graph_call_id, artis_user_name, caller_number, callee_number, direction, start_time, notes, customer_id')
+    .in('graph_call_id', graphIds);
+  if (!dbCalls || !dbCalls.length) return 0;
+
+  const THIRTY_MIN = 30 * 60 * 1000;
+  const used = new Set<string>();
+  let linked = 0;
+
+  // Pro Anruf: älteste passende Pending-Notiz nehmen (FIFO)
+  for (const call of dbCalls) {
+    if (!call.artis_user_name || !call.start_time) continue;
+    const external = call.direction === 'outgoing' ? call.callee_number : call.caller_number;
+    const suffix = phoneSuffix(external);
+    if (!suffix) continue;
+    const callMs = new Date(call.start_time).getTime();
+
+    const matches = pendings
+      .filter((p: any) =>
+        !used.has(p.id)
+        && p.artis_user_name === call.artis_user_name
+        && p.phone_suffix    === suffix
+        && Math.abs(new Date(p.clicked_at).getTime() - callMs) <= THIRTY_MIN,
+      )
+      .sort((a: any, b: any) => new Date(a.clicked_at).getTime() - new Date(b.clicked_at).getTime());
+
+    if (!matches.length) continue;
+    const p = matches[0];
+    used.add(p.id);
+
+    // Notiz in call_records.notes einmergen
+    const mergedNote = buildMergedNote(call.notes, p);
+    const callUpdate: any = { notes: mergedNote };
+    // Falls Pending einen Kunden hatte, der Anruf aber nicht → übernehmen
+    if (!call.customer_id && p.customer_id) callUpdate.customer_id = p.customer_id;
+
+    const { error: uErr } = await supabase
+      .from('call_records')
+      .update(callUpdate)
+      .eq('id', call.id);
+    if (uErr) {
+      console.warn('linkPendingNotes: call update failed', uErr.message);
+      continue;
+    }
+    const { error: pErr } = await supabase
+      .from('call_notes_pending')
+      .update({ linked_call_id: call.id, linked_at: new Date().toISOString() })
+      .eq('id', p.id);
+    if (pErr) {
+      console.warn('linkPendingNotes: pending update failed', pErr.message);
+      continue;
+    }
+    linked++;
+  }
+  return linked;
+}
+
 // ══════════════════════════════════════════════════════════════════
 // HTTP Handler
 // ══════════════════════════════════════════════════════════════════
@@ -303,6 +395,11 @@ Deno.serve(async (req) => {
       upserted = rows.length;
     }
 
+    // 6) Pending-Notes verknüpfen (Click-to-Call aus MailFlow)
+    //    Regel: gleicher artis_user_name + gleiche Nummer (suffix) + ±30 Min um start_time.
+    //    FIFO: älteste passende Pending-Notiz gewinnt pro Anruf.
+    const linkedNotes = await linkPendingNotes(supabase, rows);
+
     const url = new URL(req.url);
     const debug = url.searchParams.get('debug') === '1';
     const body: any = {
@@ -311,6 +408,7 @@ Deno.serve(async (req) => {
       fetched: records.length,
       upserted,
       matched: rows.filter(r => r.customer_id).length,
+      linked_pending_notes: linkedNotes,
       customer_phone_suffixes: phoneIndex.size,
     };
     if (debug) {

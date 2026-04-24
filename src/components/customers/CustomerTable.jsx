@@ -7,6 +7,7 @@ import {
   Search, Building2, UserRound, ChevronDown, ChevronRight,
 } from "lucide-react";
 import { ThemeContext } from "@/Layout";
+import CallNotePopup from "./CallNotePopup";
 
 /**
  * Full-width table view of customers.
@@ -52,6 +53,7 @@ export default function CustomerTable({
   const [groupByKt, setGroupByKt] = useState(true);
   const [showInactive, setShowInactive] = useState(false);
   const [collapsedKt, setCollapsedKt]   = useState({});
+  const [callPopup, setCallPopup] = useState(null); // { phone, customerId, customerName } | null
 
   // ── Columns: Order + Widths ────────────────────────────────
   const [colKeys, setColKeys] = useState(() => {
@@ -327,6 +329,7 @@ export default function CustomerTable({
                     openMails={mailsByCustomer[c.id] || 0}
                     openFristen={fristenByCustomer[c.id] || 0}
                     isArtis={isArtis}
+                    onPhoneClick={(phone, customer) => setCallPopup({ phone, customerId: customer.id, customerName: customer.company_name })}
                   />
                 ))}
               </React.Fragment>
@@ -372,6 +375,7 @@ export default function CustomerTable({
                     openMails={mailsByCustomer[c.id] || 0}
                     openFristen={fristenByCustomer[c.id] || 0}
                     isArtis={isArtis}
+                    onPhoneClick={(phone, customer) => setCallPopup({ phone, customerId: customer.id, customerName: customer.company_name })}
                     inactive
                   />
                 ))}
@@ -380,6 +384,14 @@ export default function CustomerTable({
           </tbody>
         </table>
       </div>
+
+      <CallNotePopup
+        open={!!callPopup}
+        onClose={() => setCallPopup(null)}
+        phone={callPopup?.phone}
+        customerId={callPopup?.customerId}
+        customerName={callPopup?.customerName}
+      />
     </div>
   );
 }
@@ -405,7 +417,7 @@ const tdBase = {
   textOverflow: "ellipsis",
 };
 
-function Row({ c, cols, onSelect, rowHover, textMain, textMuted, subtle, borderColor, accent, openMails, openFristen, isArtis, inactive }) {
+function Row({ c, cols, onSelect, rowHover, textMain, textMuted, subtle, borderColor, accent, openMails, openFristen, isArtis, inactive, onPhoneClick }) {
   const isPrivat = c.person_type === "privatperson";
   return (
     <tr
@@ -461,16 +473,16 @@ function Row({ c, cols, onSelect, rowHover, textMain, textMuted, subtle, borderC
             return (
               <td key={col.key} style={{ ...td, color: textMuted }}>
                 {c.phone ? (
-                  <a
-                    href={`tel:${c.phone.replace(/[^+\d]/g, "")}`}
-                    onClick={e => e.stopPropagation()}
-                    title={`Anrufen: ${c.phone}`}
-                    style={{ color: textMuted, textDecoration: "none" }}
+                  <button
+                    type="button"
+                    onClick={e => { e.stopPropagation(); onPhoneClick && onPhoneClick(c.phone, c); }}
+                    title={`Anrufen mit Notiz: ${c.phone}`}
+                    style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", color: textMuted, font: "inherit", textAlign: "left" }}
                     onMouseEnter={e => { e.currentTarget.style.color = accent; e.currentTarget.style.textDecoration = "underline"; }}
                     onMouseLeave={e => { e.currentTarget.style.color = textMuted; e.currentTarget.style.textDecoration = "none"; }}
                   >
                     {c.phone}
-                  </a>
+                  </button>
                 ) : ""}
               </td>
             );

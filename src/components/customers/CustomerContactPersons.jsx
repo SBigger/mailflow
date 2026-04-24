@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Plus, Trash2, User, Phone } from "lucide-react";
 import { ThemeContext } from "@/Layout";
+import CallNotePopup from "./CallNotePopup";
 
 export default function CustomerContactPersons({ customer, onUpdate }) {
   const { theme } = useContext(ThemeContext);
@@ -11,6 +12,7 @@ export default function CustomerContactPersons({ customer, onUpdate }) {
   const contacts = customer.contact_persons || [];
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({ anrede: "", vorname: "", name: "", email: "", phone: "", phone2: "", role: "" });
+  const [callPopup, setCallPopup] = useState(null); // { phone, contactLabel } | null
 
   const save = (updated) => onUpdate({ contact_persons: updated });
 
@@ -23,16 +25,16 @@ export default function CustomerContactPersons({ customer, onUpdate }) {
 
   const remove = (idx) => save(contacts.filter((_, i) => i !== idx));
 
-  const PhoneRow = ({ number, label }) => number ? (
+  const PhoneRow = ({ number, label, contactLabel }) => number ? (
     <div className="flex items-center gap-1.5 mt-0.5">
-      <a
-        href={`tel:${number}`}
-        onClick={e => { e.preventDefault(); window.location.href = `tel:${number}`; }}
-        title={label || "Anrufen"}
+      <button
+        type="button"
+        onClick={() => setCallPopup({ phone: number, contactLabel })}
+        title={label || "Anrufen mit Notiz"}
         className="flex items-center justify-center w-5 h-5 rounded bg-emerald-600 hover:bg-emerald-500 transition-colors flex-shrink-0"
       >
         <Phone className="h-3 w-3 text-white" />
-      </a>
+      </button>
       <span className="text-xs" style={{ color: isArtis ? '#8aaa8a' : isLight ? '#9090b0' : '#a1a1aa' }}>{number}</span>
     </div>
   ) : null;
@@ -48,8 +50,8 @@ export default function CustomerContactPersons({ customer, onUpdate }) {
               {cp.role && <span className="font-normal" style={{ color: isArtis ? '#8aaa8a' : isLight ? '#9090b0' : '#71717a' }}> · {cp.role}</span>}
             </div>
             {cp.email && <div className="text-xs" style={{ color: isArtis ? '#7a9a7a' : isLight ? '#8080a0' : '#a1a1aa' }}>{cp.email}</div>}
-            <PhoneRow number={cp.phone} label="Anrufen (Tel. 1)" />
-            <PhoneRow number={cp.phone2} label="Anrufen (Tel. 2)" />
+            <PhoneRow number={cp.phone}  label="Anrufen mit Notiz (Tel. 1)" contactLabel={[cp.anrede, cp.vorname, cp.name].filter(Boolean).join(" ") + (cp.role ? ` · ${cp.role}` : "")} />
+            <PhoneRow number={cp.phone2} label="Anrufen mit Notiz (Tel. 2)" contactLabel={[cp.anrede, cp.vorname, cp.name].filter(Boolean).join(" ") + (cp.role ? ` · ${cp.role}` : "")} />
           </div>
           <button onClick={() => remove(idx)} className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-400 transition-all">
             <Trash2 className="h-3.5 w-3.5" />
@@ -94,6 +96,15 @@ export default function CustomerContactPersons({ customer, onUpdate }) {
           <Plus className="h-3 w-3" /> Kontaktperson hinzufuegen
         </Button>
       )}
+
+      <CallNotePopup
+        open={!!callPopup}
+        onClose={() => setCallPopup(null)}
+        phone={callPopup?.phone}
+        customerId={customer.id}
+        customerName={customer.company_name}
+        contactLabel={callPopup?.contactLabel}
+      />
     </div>
   );
 }
