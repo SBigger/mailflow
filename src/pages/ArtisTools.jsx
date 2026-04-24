@@ -1,7 +1,7 @@
 import React, { useContext } from "react";
 import { useNavigate } from "react-router-dom";
 import { ThemeContext } from "@/Layout";
-import { BookOpen, Car, FileText, UserCog, ChevronRight, Wrench, PenLine, Presentation, FileSpreadsheet, Sparkles } from "lucide-react";
+import { BookOpen, Car, FileText, UserCog, ChevronRight, Wrench, PenLine, Presentation, FileSpreadsheet, Sparkles, Phone } from "lucide-react";
 
 const TOOLS = [
   {
@@ -75,6 +75,15 @@ const TOOLS = [
     color: "#6a3ba0",
     bg: "#ede0f5",
     route: "/Promptvorlagen",
+  },
+  {
+    id: "telefondashboard",
+    title: "Telefon-Dashboard",
+    description: "Microsoft-Teams-Anrufe auswerten: KPIs, Verlauf, Top-Kunden, Mitarbeiter-Ranking, unzugeordnete Nummern",
+    icon: Phone,
+    color: "#3b7a6a",
+    bg: "#e0f0ec",
+    route: "/TelefonDashboard",
   },
 ];
 
