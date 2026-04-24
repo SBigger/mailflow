@@ -1,7 +1,7 @@
 import React, { useContext } from "react";
 import { useNavigate } from "react-router-dom";
 import { ThemeContext } from "@/Layout";
-import { BookOpen, Car, FileText, UserCog, ChevronRight, Wrench, PenLine, Presentation, FileSpreadsheet } from "lucide-react";
+import { BookOpen, Car, FileText, UserCog, ChevronRight, Wrench, PenLine, Presentation, FileSpreadsheet, Sparkles } from "lucide-react";
 
 const TOOLS = [
   {
@@ -66,6 +66,15 @@ const TOOLS = [
     color: "#2a7a5a",
     bg: "#e0f5ec",
     route: "/Whiteboard",
+  },
+  {
+    id: "promptvorlagen",
+    title: "Promptvorlagen",
+    description: "Claude-Prompts für alle Mitarbeitenden – erstellen, verwalten und mit einem Klick kopieren",
+    icon: Sparkles,
+    color: "#6a3ba0",
+    bg: "#ede0f5",
+    route: "/Promptvorlagen",
   },
 ];
 

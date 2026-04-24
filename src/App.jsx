@@ -38,6 +38,7 @@ import DokumentUploadKunden from "./pages/DokumentUploadKunden.jsx";
 import Posteingang from "./pages/Posteingang.jsx";
 import SharePage from "./pages/SharePage.jsx";
 import Leistungserfassung from "./pages/Leistungserfassung.jsx";
+import Promptvorlagen from "./pages/Promptvorlagen.jsx";
 import { FEATURE_LEISTUNGSERFASSUNG } from "@/lib/featureFlags";
 
 const queryClient = new QueryClient({
@@ -101,6 +102,7 @@ function AuthenticatedApp() {
         <Route path="/Whiteboard" element={<Whiteboard />} />
         <Route path="/Auswertungen" element={<Auswertungen />} />
         <Route path="/Steuern" element={<Steuern />} />
+        <Route path="/Promptvorlagen" element={<Promptvorlagen />} />
         {FEATURE_LEISTUNGSERFASSUNG && (
           <Route path="/Leistungserfassung" element={<Leistungserfassung />} />
         )}

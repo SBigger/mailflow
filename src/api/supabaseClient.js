@@ -114,6 +114,7 @@ export const entities = {
   Aktienbuch:       makeEntity('aktienbuch'),
   Signatur:         makeEntity('signaturen'),
   CallRecord:       makeEntity('call_records'),
+  PromptVorlage:    makeEntity('prompt_vorlagen'),
 };
 
 // Auth helpers
