@@ -86,24 +86,37 @@ function pickName(identity: any): string | null {
   return identity.user?.displayName || identity.phone?.displayName || identity.guest?.displayName || null;
 }
 
-// ── Graph: callRecords mit Filter + Expand ──────────────────────
-async function fetchCallRecords(token: string, sinceISO: string): Promise<any[]> {
+// ── Graph: callRecords mit Filter (Expand pro Einzel-Record) ────
+// Graph erlaubt $expand NICHT auf der Listen-Route, daher 2-Schritt:
+//   1) Liste mit $filter holen
+//   2) Pro Record Detail mit $expand=sessions($expand=segments) nachladen
+async function fetchCallRecordsList(token: string, sinceISO: string): Promise<any[]> {
   const all: any[] = [];
-  // Max window Graph erlaubt: startDateTime ge X (bis jetzt)
   const filter = `startDateTime ge ${sinceISO}`;
-  let url = `https://graph.microsoft.com/v1.0/communications/callRecords?$filter=${encodeURIComponent(filter)}&$expand=sessions($expand=segments)`;
+  let url = `https://graph.microsoft.com/v1.0/communications/callRecords?$filter=${encodeURIComponent(filter)}`;
 
   while (url) {
     const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
     if (!res.ok) {
       const txt = await res.text();
-      throw new Error(`Graph callRecords failed: ${res.status} ${txt}`);
+      throw new Error(`Graph callRecords list failed: ${res.status} ${txt}`);
     }
     const json = await res.json();
     if (Array.isArray(json.value)) all.push(...json.value);
     url = json['@odata.nextLink'] || '';
   }
   return all;
+}
+
+async function fetchCallRecordDetail(token: string, id: string): Promise<any | null> {
+  const url = `https://graph.microsoft.com/v1.0/communications/callRecords/${id}?$expand=sessions($expand=segments)`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) {
+    // Einzelner Fehler soll nicht den ganzen Sync killen
+    console.warn(`detail fetch failed for ${id}: ${res.status}`);
+    return null;
+  }
+  return res.json();
 }
 
 // ── Record → DB-Zeile ───────────────────────────────────────────
@@ -216,40 +229,68 @@ Deno.serve(async (req) => {
     });
 
     // 1) letzten Sync-Zeitpunkt bestimmen
-    const { data: latestRow } = await supabase
-      .from('call_records')
-      .select('start_time')
-      .order('start_time', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    //    Override via ?hours_back=168 möglich (Backfill / Re-Match).
+    const reqUrl = new URL(req.url);
+    const hoursBackParam = reqUrl.searchParams.get('hours_back');
+    const hoursBack = hoursBackParam ? Number(hoursBackParam) : NaN;
 
     const now = new Date();
-    const since = latestRow?.start_time
-      ? new Date(new Date(latestRow.start_time).getTime() - OVERLAP_MINUTES * 60_000)
-      : new Date(now.getTime() - INITIAL_HOURS_BACK * 3600_000);
+    let since: Date;
+    if (Number.isFinite(hoursBack) && hoursBack > 0) {
+      since = new Date(now.getTime() - hoursBack * 3600_000);
+    } else {
+      const { data: latestRow } = await supabase
+        .from('call_records')
+        .select('start_time')
+        .order('start_time', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      since = latestRow?.start_time
+        ? new Date(new Date(latestRow.start_time).getTime() - OVERLAP_MINUTES * 60_000)
+        : new Date(now.getTime() - INITIAL_HOURS_BACK * 3600_000);
+    }
     const sinceISO = since.toISOString();
 
     // 2) Phone-Index aus customers aufbauen (für Match)
-    const { data: customers } = await supabase
+    //    Quellen: customers.phone + customers.contact_persons[].phone / .phone2
+    const { data: customers, error: custErr } = await supabase
       .from('customers')
-      .select('id, phone, phone_2, phone_geschaeft, phone_privat')
-      .not('phone', 'is', null);
+      .select('id, phone, contact_persons');
+    if (custErr) throw new Error(`customers select failed: ${custErr.message}`);
 
     const phoneIndex = new Map<string, string>();
+    const addPhone = (raw: unknown, id: string) => {
+      if (typeof raw !== 'string' || !raw.trim()) return;
+      const suf = phoneSuffix(normalizePhone(raw));
+      if (suf && !phoneIndex.has(suf)) phoneIndex.set(suf, id);
+    };
     for (const c of customers || []) {
-      for (const key of ['phone', 'phone_2', 'phone_geschaeft', 'phone_privat'] as const) {
-        const p = (c as any)[key];
-        if (!p) continue;
-        const suf = phoneSuffix(normalizePhone(p));
-        if (suf) phoneIndex.set(suf, c.id);
+      addPhone((c as any).phone, c.id);
+      const cps = Array.isArray((c as any).contact_persons) ? (c as any).contact_persons : [];
+      for (const cp of cps) {
+        if (!cp || typeof cp !== 'object') continue;
+        addPhone(cp.phone,  c.id);
+        addPhone(cp.phone2, c.id);
       }
     }
 
     // 3) Graph-Token holen
     const token = await getGraphToken();
 
-    // 4) callRecords holen (alle Seiten)
-    const records = await fetchCallRecords(token, sinceISO);
+    // 4) callRecords Liste holen (alle Seiten, ohne expand)
+    const listRecords = await fetchCallRecordsList(token, sinceISO);
+
+    // 4b) Details pro Record nachladen (sessions + segments für Nummern)
+    //     Parallelisiert in Batches, damit wir Graph nicht überrennen.
+    const BATCH = 5;
+    const records: any[] = [];
+    for (let i = 0; i < listRecords.length; i += BATCH) {
+      const slice = listRecords.slice(i, i + BATCH);
+      const details = await Promise.all(
+        slice.map(r => fetchCallRecordDetail(token, r.id).then(d => d ?? r))
+      );
+      records.push(...details);
+    }
 
     // 5) Normalisieren + upsert
     const rows = records.map(r => buildRow(r, phoneIndex));
@@ -262,13 +303,33 @@ Deno.serve(async (req) => {
       upserted = rows.length;
     }
 
-    return new Response(JSON.stringify({
+    const url = new URL(req.url);
+    const debug = url.searchParams.get('debug') === '1';
+    const body: any = {
       ok: true,
       since: sinceISO,
       fetched: records.length,
       upserted,
       matched: rows.filter(r => r.customer_id).length,
-    }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      customer_phone_suffixes: phoneIndex.size,
+    };
+    if (debug) {
+      body.sample_rows = rows.slice(0, 10).map(r => ({
+        direction: r.direction,
+        caller_number: r.caller_number,
+        callee_number: r.callee_number,
+        caller_name: r.caller_name,
+        callee_name: r.callee_name,
+        artis_user_name: r.artis_user_name,
+        call_type: r.call_type,
+        matched: !!r.customer_id,
+      }));
+      // Phone-Index Beispiel (max 10)
+      body.sample_customer_suffixes = Array.from(phoneIndex.keys()).slice(0, 10);
+    }
+    return new Response(JSON.stringify(body), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
 
   } catch (e) {
     console.error('sync-teams-calls error', e);
