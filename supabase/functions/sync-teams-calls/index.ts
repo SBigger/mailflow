@@ -138,47 +138,104 @@ type DbRow = {
 };
 
 function buildRow(rec: any, phoneIndex: Map<string, string>): DbRow {
-  // Teilnehmer aus organizer + participants
-  const organizer = rec.organizer_v2 || rec.organizer || null;
-  const participants: any[] = Array.isArray(rec.participants_v2) ? rec.participants_v2
-                            : Array.isArray(rec.participants)    ? rec.participants
-                            : [];
-
-  // Caller / Callee aus erstem Segment (wenn vorhanden) ableiten
-  let callerIdentity: any = organizer || null;
-  let calleeIdentity: any = participants.find(p => p !== organizer) || null;
-
-  const firstSession = Array.isArray(rec.sessions) ? rec.sessions[0] : null;
-  const firstSegment = firstSession && Array.isArray(firstSession.segments) ? firstSession.segments[0] : null;
-  if (firstSegment) {
-    if (firstSegment.caller?.identity) callerIdentity = firstSegment.caller.identity;
-    if (firstSegment.callee?.identity) calleeIdentity = firstSegment.callee.identity;
+  // ── 1) Alle Identities aus sessions/segments sammeln ─────────────
+  const sessions: any[] = Array.isArray(rec.sessions) ? rec.sessions : [];
+  const identities: any[] = [];
+  const pushId = (i: any) => { if (i) identities.push(i); };
+  for (const s of sessions) {
+    const segs = Array.isArray(s.segments) ? s.segments : [];
+    for (const seg of segs) {
+      pushId(seg.caller?.identity);
+      pushId(seg.callee?.identity);
+    }
+  }
+  // Fallback: organizer + participants wenn keine Segmente da sind
+  if (!identities.length) {
+    pushId(rec.organizer_v2 || rec.organizer);
+    const ps: any[] = Array.isArray(rec.participants_v2) ? rec.participants_v2
+                    : Array.isArray(rec.participants)    ? rec.participants
+                    : [];
+    for (const p of ps) pushId(p);
   }
 
-  const callerNumRaw = pickNumber(callerIdentity);
-  const calleeNumRaw = pickNumber(calleeIdentity);
-  const callerNum = normalizePhone(callerNumRaw);
-  const calleeNum = normalizePhone(calleeNumRaw);
-
-  // Artis-User: der user.* im organizer oder participants
-  const artisParticipant = (callerIdentity?.user && !callerNum) ? callerIdentity
-                         : (calleeIdentity?.user && !calleeNum) ? calleeIdentity
-                         : null;
-  const artisUserId   = artisParticipant?.user?.id || null;
-  const artisUserName = artisParticipant?.user?.displayName || null;
-
-  // Direction: wenn artis = caller → outgoing, wenn artis = callee → incoming
-  let direction = 'unknown';
-  if (artisParticipant) {
-    if (callerIdentity?.user?.id === artisUserId) direction = 'outgoing';
-    else if (calleeIdentity?.user?.id === artisUserId) direction = 'incoming';
+  // ── 2) Artis-User ermitteln (interner AAD-User ohne PSTN-Nummer) ─
+  const artisCandidates = identities.filter(i => i?.user?.id && !i?.phone?.id);
+  // häufigster Auftritt gewinnt (Teams-Calls haben den Artis-User in mehreren Segmenten)
+  const countBy = new Map<string, { name: string; count: number }>();
+  for (const i of artisCandidates) {
+    const id = i.user.id as string;
+    const cur = countBy.get(id) || { name: i.user.displayName || "", count: 0 };
+    cur.count++;
+    if (!cur.name && i.user.displayName) cur.name = i.user.displayName;
+    countBy.set(id, cur);
+  }
+  let artisUserId: string | null = null;
+  let artisUserName: string | null = null;
+  if (countBy.size) {
+    const [winnerId, winner] = Array.from(countBy.entries()).sort((a, b) => b[1].count - a[1].count)[0];
+    artisUserId = winnerId;
+    artisUserName = winner.name || null;
   }
 
-  // Customer-Match via phoneIndex (lookup via suffix)
+  // ── 3) Externen Teilnehmer finden ────────────────────────────────
+  //     Priorität: a) PSTN-Nummer, b) anderer AAD-User (nicht Artis)
+  const externalIdentity =
+       identities.find(i => i?.phone?.id)
+    || identities.find(i => i?.user?.id && i.user.id !== artisUserId)
+    || null;
+  const externalNumRaw = pickNumber(externalIdentity);
+  const externalNum    = normalizePhone(externalNumRaw);
+  const externalName   = pickName(externalIdentity)
+                         // als letzte Rettung: Name nie gleich Artis-User
+                         ?? (externalIdentity?.user?.displayName && externalIdentity.user.displayName !== artisUserName
+                             ? externalIdentity.user.displayName : null);
+
+  // ── 4) Direction aus dem ersten Segment + Artis-User ─────────────
+  let direction: string = 'unknown';
+  const firstSegment = sessions[0] && Array.isArray(sessions[0].segments) ? sessions[0].segments[0] : null;
+  if (firstSegment && artisUserId) {
+    const callerUser = firstSegment.caller?.identity?.user?.id;
+    const calleeUser = firstSegment.callee?.identity?.user?.id;
+    const callerPhone = firstSegment.caller?.identity?.phone?.id;
+    const calleePhone = firstSegment.callee?.identity?.phone?.id;
+    if      (callerUser === artisUserId) direction = 'outgoing';
+    else if (calleeUser === artisUserId) direction = 'incoming';
+    else if (callerPhone && !calleePhone) direction = 'incoming';
+    else if (!callerPhone && calleePhone) direction = 'outgoing';
+  }
+  // Fallback: organizer-Check
+  if (direction === 'unknown') {
+    const org = rec.organizer_v2 || rec.organizer;
+    if (org?.user?.id && artisUserId && org.user.id === artisUserId) direction = 'outgoing';
+  }
+
+  // ── 5) caller_*/callee_* Felder aus direction + external ableiten ─
+  let callerNum: string | null  = null;
+  let calleeNum: string | null  = null;
+  let callerName: string | null = null;
+  let calleeName: string | null = null;
+  if (direction === 'outgoing') {
+    callerName = artisUserName;
+    calleeName = externalName;
+    calleeNum  = externalNum;
+  } else if (direction === 'incoming') {
+    callerName = externalName;
+    callerNum  = externalNum;
+    calleeName = artisUserName;
+  } else {
+    // unknown: nimm was wir haben
+    callerName = pickName(firstSegment?.caller?.identity) ?? externalName;
+    calleeName = pickName(firstSegment?.callee?.identity) ?? artisUserName;
+    callerNum  = normalizePhone(pickNumber(firstSegment?.caller?.identity));
+    calleeNum  = normalizePhone(pickNumber(firstSegment?.callee?.identity));
+  }
+
+  // Safety: Name darf nicht = Artis-User sein, wenn es ein echter externer Call ist
+  if (callerName && callerName === artisUserName && direction === 'incoming') callerName = externalName || null;
+  if (calleeName && calleeName === artisUserName && direction === 'outgoing') calleeName = externalName || null;
+
+  // ── 6) Kunde matchen via Nummer-Suffix ───────────────────────────
   let customerId: string | null = null;
-  const externalNum = direction === 'outgoing' ? calleeNum
-                    : direction === 'incoming' ? callerNum
-                    : (callerNum || calleeNum);
   const suffix = phoneSuffix(externalNum);
   if (suffix && phoneIndex.has(suffix)) customerId = phoneIndex.get(suffix)!;
 
@@ -189,8 +246,8 @@ function buildRow(rec: any, phoneIndex: Map<string, string>): DbRow {
     call_type:        rec.type || 'unknown',
     caller_number:    callerNum,
     callee_number:    calleeNum,
-    caller_name:      pickName(callerIdentity),
-    callee_name:      pickName(calleeIdentity),
+    caller_name:      callerName,
+    callee_name:      calleeName,
     artis_user_id:    artisUserId,
     artis_user_name:  artisUserName,
     start_time:       rec.startDateTime || null,
