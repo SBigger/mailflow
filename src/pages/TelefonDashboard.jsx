@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Phone, PhoneIncoming, PhoneOutgoing, Clock, TrendingUp,
   UserCheck, UserX, Search, ExternalLink, Users, Video,
-  LayoutGrid, ListChecks, Hourglass,
+  LayoutGrid, ListChecks, Hourglass, ChevronDown, ChevronRight,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip as RTooltip, ResponsiveContainer, CartesianGrid,
@@ -327,12 +327,25 @@ function EmployeeSection({ group, expanded, onToggle, customerMap, navigate, col
       {/* Header */}
       <div
         onClick={onToggle}
+        role="button"
+        aria-expanded={expanded}
         style={{
           display: "flex", alignItems: "center", gap: 12,
           padding: "12px 16px", cursor: "pointer",
           borderBottom: expanded ? `1px solid ${border}` : "none",
+          userSelect: "none",
         }}
+        onMouseEnter={e => { e.currentTarget.style.backgroundColor = rowHover; }}
+        onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; }}
       >
+        <div style={{
+          width: 22, height: 22, borderRadius: 6,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          color: mutedCol, flexShrink: 0,
+          transition: "transform .15s ease",
+        }}>
+          {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+        </div>
         <div style={{
           width: 36, height: 36, borderRadius: 10,
           background: "#5b21b6" + "22",
@@ -360,9 +373,9 @@ function EmployeeSection({ group, expanded, onToggle, customerMap, navigate, col
         </div>
       </div>
 
-      {/* Body */}
+      {/* Body – leicht eingerückt unter dem Mitarbeiter-Header */}
       {expanded && (
-        <div>
+        <div style={{ paddingLeft: 40 }}>
           {timeline.length === 0 && (
             <div style={{ padding: 18, fontSize: 12.5, color: mutedCol, textAlign: "center" }}>
               Keine Anrufe im Zeitraum.
