@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { entities } from "@/api/supabaseClient";
 import { Input } from "@/components/ui/input";
 import {
-  Search, Phone, Mail, User as UserIcon, Building2, StickyNote,
+  Search, Phone, Mail, User as UserIcon, Building2,
 } from "lucide-react";
 import { ThemeContext } from "@/Layout";
 import CallNotePopup from "@/components/customers/CallNotePopup";
@@ -158,10 +158,17 @@ export default function Telefonliste({ embedded = false }) {
     return n;
   };
 
-  const dialTel = (phoneRaw) => {
+  const callAndNote = (row, phoneRaw) => {
     const clean = normalizePhone(phoneRaw).replace(/[^\d+]/g, "");
-    if (!clean) return;
-    window.location.href = `tel:${clean}`;
+    if (clean) window.location.href = `tel:${clean}`;
+    setCallPopup({
+      phone: phoneRaw,
+      customerId: row.customerId,
+      customerName: row.customerName,
+      contactLabel: row.kind === "kontakt"
+        ? row.name + (row.role ? " · " + row.role : "")
+        : row.name,
+    });
   };
 
   const filterBtn = (key, label) => {
@@ -217,9 +224,8 @@ export default function Telefonliste({ embedded = false }) {
             <col style={{ width: 36 }} />
             <col style={{ width: "24%" }} />
             <col style={{ width: "26%" }} />
-            <col style={{ width: "22%" }} />
+            <col style={{ width: "24%" }} />
             <col style={{ width: "26%" }} />
-            <col style={{ width: 40 }} />
           </colgroup>
           <thead>
             <tr style={{ position: "sticky", top: 0, zIndex: 2, background: headerBg, borderBottom: `1px solid ${borderColor}` }}>
@@ -228,12 +234,11 @@ export default function Telefonliste({ embedded = false }) {
               <th style={{ ...thStyle, color: textMuted }}>Firma / Funktion</th>
               <th style={{ ...thStyle, color: textMuted }}>Telefon</th>
               <th style={{ ...thStyle, color: textMuted }}>E-Mail</th>
-              <th style={thStyle}></th>
             </tr>
           </thead>
           <tbody>
             {isLoading && (
-              <tr><td colSpan={6} style={{ padding: 32, textAlign: "center", color: subtle, fontSize: 13 }}>Lädt…</td></tr>
+              <tr><td colSpan={5} style={{ padding: 32, textAlign: "center", color: subtle, fontSize: 13 }}>Lädt…</td></tr>
             )}
             {!isLoading && filtered.map((r, idx) => {
               const key = r.kind + ":" + r.customerId + ":" + (r.contactIdx ?? "x") + ":" + idx;
@@ -280,8 +285,8 @@ export default function Telefonliste({ embedded = false }) {
                           <button
                             key={i}
                             type="button"
-                            onClick={() => dialTel(p)}
-                            title={`Anrufen via Teams: ${p}`}
+                            onClick={() => callAndNote(r, p)}
+                            title={`Anrufen & Notiz: ${formatPhoneDisplay(p)}`}
                             style={{
                               display: "inline-flex", alignItems: "center", gap: 6,
                               background: "transparent", border: "none", padding: 0,
@@ -312,37 +317,12 @@ export default function Telefonliste({ embedded = false }) {
                       </a>
                     ) : <span style={{ color: subtle }}>—</span>}
                   </td>
-                  <td style={{ ...tdBase, borderBottomColor: borderColor, paddingRight: 12, textAlign: "right" }}>
-                    {r.phones[0] && (
-                      <button
-                        type="button"
-                        onClick={() => setCallPopup({
-                          phone: r.phones[0],
-                          customerId: r.customerId,
-                          customerName: r.customerName,
-                          contactLabel: r.kind === "kontakt"
-                            ? r.name + (r.role ? " · " + r.role : "")
-                            : r.name,
-                        })}
-                        title="Anruf mit Notiz erfassen"
-                        style={{
-                          background: "transparent", border: "none", padding: 4,
-                          cursor: "pointer", color: subtle, borderRadius: 4,
-                          display: "inline-flex", alignItems: "center", justifyContent: "center",
-                        }}
-                        onMouseEnter={e => { e.currentTarget.style.color = accent; }}
-                        onMouseLeave={e => { e.currentTarget.style.color = subtle; }}
-                      >
-                        <StickyNote size={14} />
-                      </button>
-                    )}
-                  </td>
                 </tr>
               );
             })}
             {!isLoading && filtered.length === 0 && (
               <tr>
-                <td colSpan={6} style={{ padding: 48, textAlign: "center", color: subtle, fontSize: 13 }}>
+                <td colSpan={5} style={{ padding: 48, textAlign: "center", color: subtle, fontSize: 13 }}>
                   {q ? "Keine Treffer." : "Keine Einträge mit Telefon oder Mail."}
                 </td>
               </tr>

@@ -90,8 +90,7 @@ export default function CallNotePopup({
     return d.length >= 7 ? d.slice(-9) : null;
   };
 
-  const saveAndCall = async () => {
-    if (!cleanTel) { toast.error("Keine Telefonnummer vorhanden."); return; }
+  const saveNote = async () => {
     setSaving(true);
     try {
       const normalized = normalizePhone(phone);
@@ -109,9 +108,7 @@ export default function CallNotePopup({
       };
       const { error } = await supabase.from("call_notes_pending").insert(insertRow);
       if (error) throw error;
-      // Anruf auslösen – erst jetzt, nachdem die Notiz sicher persistiert ist
-      window.location.href = `tel:${cleanTel}`;
-      toast.success("Notiz gespeichert – Anruf wird gestartet");
+      toast.success("Notiz gespeichert");
       onClose();
     } catch (e) {
       toast.error(`Fehler beim Speichern: ${e.message || e}`);
@@ -123,7 +120,7 @@ export default function CallNotePopup({
   const onKeyDown = (e) => {
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
-      saveAndCall();
+      saveNote();
     }
   };
 
@@ -163,7 +160,7 @@ export default function CallNotePopup({
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 14, fontWeight: 600, color: textMain }}>
-              Anruf vorbereiten
+              Anruf notieren
             </div>
             <div style={{ fontSize: 11.5, color: subtle, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {formatPhoneDisplay(phone) || phone}
@@ -264,8 +261,8 @@ export default function CallNotePopup({
             Abbrechen
           </button>
           <button
-            onClick={saveAndCall}
-            disabled={saving || !cleanTel}
+            onClick={saveNote}
+            disabled={saving}
             style={{
               padding: "7px 14px",
               fontSize: 12.5,
@@ -275,12 +272,11 @@ export default function CallNotePopup({
               background: accent,
               color: "#fff",
               cursor: saving ? "wait" : "pointer",
-              opacity: saving || !cleanTel ? 0.6 : 1,
+              opacity: saving ? 0.6 : 1,
               display: "inline-flex", alignItems: "center", gap: 6,
             }}
           >
-            <Phone size={13} />
-            {saving ? "Speichere …" : "Speichern & Anrufen"}
+            {saving ? "Speichere …" : "Notiz speichern"}
           </button>
         </div>
       </div>

@@ -329,7 +329,11 @@ export default function CustomerTable({
                     openMails={mailsByCustomer[c.id] || 0}
                     openFristen={fristenByCustomer[c.id] || 0}
                     isArtis={isArtis}
-                    onPhoneClick={(phone, customer) => setCallPopup({ phone, customerId: customer.id, customerName: customer.company_name })}
+                    onPhoneClick={(phone, customer) => {
+                      const clean = normalizePhone(phone).replace(/[^+\d]/g, "");
+                      if (clean) window.location.href = `tel:${clean}`;
+                      setCallPopup({ phone, customerId: customer.id, customerName: customer.company_name });
+                    }}
                   />
                 ))}
               </React.Fragment>
@@ -375,7 +379,11 @@ export default function CustomerTable({
                     openMails={mailsByCustomer[c.id] || 0}
                     openFristen={fristenByCustomer[c.id] || 0}
                     isArtis={isArtis}
-                    onPhoneClick={(phone, customer) => setCallPopup({ phone, customerId: customer.id, customerName: customer.company_name })}
+                    onPhoneClick={(phone, customer) => {
+                      const clean = normalizePhone(phone).replace(/[^+\d]/g, "");
+                      if (clean) window.location.href = `tel:${clean}`;
+                      setCallPopup({ phone, customerId: customer.id, customerName: customer.company_name });
+                    }}
                     inactive
                   />
                 ))}
