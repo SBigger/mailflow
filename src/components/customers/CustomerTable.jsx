@@ -330,9 +330,9 @@ export default function CustomerTable({
                     openFristen={fristenByCustomer[c.id] || 0}
                     isArtis={isArtis}
                     onPhoneClick={(phone, customer) => {
-                      const clean = normalizePhone(phone).replace(/[^+\d]/g, "");
-                      if (clean) window.location.href = `tel:${clean}`;
                       setCallPopup({ phone, customerId: customer.id, customerName: customer.company_name });
+                      const clean = normalizePhone(phone).replace(/[^+\d]/g, "");
+                      if (clean) setTimeout(() => { window.location.href = `tel:${clean}`; }, 80);
                     }}
                   />
                 ))}
@@ -380,9 +380,9 @@ export default function CustomerTable({
                     openFristen={fristenByCustomer[c.id] || 0}
                     isArtis={isArtis}
                     onPhoneClick={(phone, customer) => {
-                      const clean = normalizePhone(phone).replace(/[^+\d]/g, "");
-                      if (clean) window.location.href = `tel:${clean}`;
                       setCallPopup({ phone, customerId: customer.id, customerName: customer.company_name });
+                      const clean = normalizePhone(phone).replace(/[^+\d]/g, "");
+                      if (clean) setTimeout(() => { window.location.href = `tel:${clean}`; }, 80);
                     }}
                     inactive
                   />

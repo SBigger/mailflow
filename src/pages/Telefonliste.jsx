@@ -163,8 +163,6 @@ export default function Telefonliste({ embedded = false }) {
   };
 
   const callAndNote = (row, phoneRaw) => {
-    const clean = normalizePhone(phoneRaw).replace(/[^\d+]/g, "");
-    if (clean) window.location.href = `tel:${clean}`;
     setCallPopup({
       phone: phoneRaw,
       customerId: row.customerId,
@@ -173,6 +171,8 @@ export default function Telefonliste({ embedded = false }) {
         ? row.name + (row.role ? " · " + row.role : "")
         : row.name,
     });
+    const clean = normalizePhone(phoneRaw).replace(/[^\d+]/g, "");
+    if (clean) setTimeout(() => { window.location.href = `tel:${clean}`; }, 80);
   };
 
   return (
