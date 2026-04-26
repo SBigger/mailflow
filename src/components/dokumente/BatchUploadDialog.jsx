@@ -102,89 +102,247 @@ function newItem(file, preCustomerId) {
   };
 }
 
+// ─── ExcelViewer ──────────────────────────────────────────────────────
+// Vollwertiger Tabellenviewer: Zoom, Drag-Resize, Sticky-Header, Blatt-Tabs.
+function ExcelViewer({ file }) {
+  const [sheets,    setSheets]    = useState(null);   // [{name, rows, cols}]
+  const [activeIdx, setActiveIdx] = useState(0);
+  const [zoom,      setZoom]      = useState(100);
+  const [colWidths, setColWidths] = useState({});     // "sheetIdx_colIdx" → px
+  const resizeRef = useRef(null);
+
+  useEffect(() => {
+    if (!file) return;
+    let cancelled = false;
+    setSheets(null); setActiveIdx(0); setColWidths({});
+    (async () => {
+      try {
+        const { read, utils } = await import("xlsx");
+        const buf = await file.arrayBuffer();
+        const wb  = read(new Uint8Array(buf), { type: "array", cellDates: true });
+        const parsed = wb.SheetNames.map(name => {
+          const ws   = wb.Sheets[name];
+          const rows = utils.sheet_to_json(ws, { header: 1, raw: false, defval: "" });
+          const xlCols = ws["!cols"] || [];
+          const colCount = Math.max(...rows.map(r => r.length), 0);
+          const cols = Array.from({ length: colCount }, (_, ci) => {
+            const wch = xlCols[ci]?.wch || xlCols[ci]?.width || 10;
+            return Math.max(60, Math.min(320, wch * 7));
+          });
+          return { name, rows, cols };
+        });
+        if (!cancelled) setSheets(parsed);
+      } catch (e) {
+        if (!cancelled) setSheets([{ name: "Fehler", rows: [[e.message]], cols: [300] }]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [file]);
+
+  const getW = (ci) => colWidths[`${activeIdx}_${ci}`] ?? sheets?.[activeIdx]?.cols[ci] ?? 100;
+
+  const startResize = (e, ci) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = getW(ci);
+    resizeRef.current = true;
+    const onMove = (ev) => {
+      const w = Math.max(36, startW + ev.clientX - startX);
+      setColWidths(prev => ({ ...prev, [`${activeIdx}_${ci}`]: w }));
+    };
+    const onUp = () => {
+      resizeRef.current = false;
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  };
+
+  const isNumber = (v) => v !== "" && v !== null && !isNaN(parseFloat(String(v).replace(/['\s]/g, "").replace(",", ".")));
+
+  if (!sheets) return (
+    <div style={{ color: "#888", fontSize: 12, padding: 20, textAlign: "center" }}>Lade Tabelle…</div>
+  );
+
+  const sheet    = sheets[activeIdx];
+  const colCount = sheet.rows[0]?.length || 0;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", userSelect: resizeRef.current ? "none" : "auto" }}>
+
+      {/* ── Toolbar ── */}
+      <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 10px",
+        background: "#1e1e1e", borderBottom: "1px solid #333", flexShrink: 0 }}>
+        <span style={{ color: "#777", fontSize: 11 }}>Zoom</span>
+        <button onClick={() => setZoom(z => Math.max(40, z - 10))}
+          style={{ background: "#333", border: "none", color: "#ccc", borderRadius: 3,
+            width: 22, height: 22, cursor: "pointer", fontSize: 15, lineHeight: 1, display:"flex", alignItems:"center", justifyContent:"center" }}>−</button>
+        <input type="range" min={40} max={200} step={5} value={zoom}
+          onChange={e => setZoom(+e.target.value)}
+          style={{ width: 90, accentColor: "#4a7a4f", cursor: "pointer" }} />
+        <button onClick={() => setZoom(z => Math.min(200, z + 10))}
+          style={{ background: "#333", border: "none", color: "#ccc", borderRadius: 3,
+            width: 22, height: 22, cursor: "pointer", fontSize: 15, lineHeight: 1, display:"flex", alignItems:"center", justifyContent:"center" }}>+</button>
+        <button onClick={() => setZoom(100)}
+          style={{ background: "#252525", border: "1px solid #3a3a3a", color: "#888",
+            borderRadius: 3, padding: "0 7px", height: 22, cursor: "pointer", fontSize: 10 }}>
+          {zoom}% ↺
+        </button>
+        <div style={{ flex: 1 }} />
+        <span style={{ color: "#555", fontSize: 10 }}>
+          {sheet.rows.length} Z · {colCount} S
+        </span>
+      </div>
+
+      {/* ── Tabelle ── */}
+      <div style={{ flex: 1, overflow: "auto", background: "#161616" }}>
+        <div style={{ transform: `scale(${zoom / 100})`, transformOrigin: "top left",
+          width: `${(100 * 100) / zoom}%`, minWidth: "max-content" }}>
+          <table style={{ borderCollapse: "collapse", fontSize: 12, color: "#ddd", tableLayout: "fixed" }}>
+            <thead>
+              <tr>
+                {Array.from({ length: colCount }, (_, ci) => (
+                  <th key={ci} style={{
+                    position: "sticky", top: 0, zIndex: 2,
+                    background: "#252525", color: "#eee", fontWeight: 600,
+                    border: "1px solid #383838", padding: "5px 8px 5px 8px",
+                    textAlign: "left", whiteSpace: "nowrap",
+                    width: getW(ci), minWidth: getW(ci), maxWidth: getW(ci),
+                    overflow: "hidden", textOverflow: "ellipsis", boxSizing: "border-box",
+                  }}>
+                    <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {String(sheet.rows[0]?.[ci] ?? "")}
+                    </span>
+                    {/* Drag-Handle */}
+                    <span onMouseDown={e => startResize(e, ci)}
+                      style={{
+                        position: "absolute", right: 0, top: 0, bottom: 0, width: 6,
+                        cursor: "col-resize", zIndex: 3,
+                        borderRight: "2px solid transparent",
+                        transition: "border-color 0.15s",
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.borderRightColor = "#4a7a4f"}
+                      onMouseLeave={e => e.currentTarget.style.borderRightColor = "transparent"}
+                    />
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {sheet.rows.slice(1).map((row, ri) => (
+                <tr key={ri} style={{ background: ri % 2 === 0 ? "transparent" : "#1b1b1b" }}
+                  onMouseEnter={e => e.currentTarget.style.background = "#222"}
+                  onMouseLeave={e => e.currentTarget.style.background = ri % 2 === 0 ? "transparent" : "#1b1b1b"}>
+                  {Array.from({ length: colCount }, (_, ci) => {
+                    const val = row[ci] ?? "";
+                    const num = isNumber(val);
+                    return (
+                      <td key={ci} title={String(val)} style={{
+                        border: "1px solid #282828", padding: "3px 8px",
+                        whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                        textAlign: num ? "right" : "left",
+                        width: getW(ci), minWidth: getW(ci), maxWidth: getW(ci),
+                        boxSizing: "border-box",
+                        color: num ? "#86efac" : "#d4d4d4",
+                      }}>
+                        {String(val)}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* ── Blatt-Tabs ── */}
+      {sheets.length > 1 && (
+        <div style={{ display: "flex", borderTop: "1px solid #333", background: "#111",
+          flexShrink: 0, overflowX: "auto" }}>
+          {sheets.map((s, i) => (
+            <button key={i} onClick={() => { setActiveIdx(i); }}
+              style={{
+                padding: "5px 14px", fontSize: 11, border: "none", cursor: "pointer",
+                borderRight: "1px solid #2a2a2a", flexShrink: 0, whiteSpace: "nowrap",
+                background: i === activeIdx ? "#252525" : "transparent",
+                color:      i === activeIdx ? "#fff"    : "#777",
+                borderTop:  `2px solid ${i === activeIdx ? "#4a7a4f" : "transparent"}`,
+              }}>
+              {s.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── FilePreviewPane ──────────────────────────────────────────────────
-// Zeigt PDF (seitenweise), Bilder, Excel-Tabelle oder extrahierten Text.
+// Routing: Bild / PDF / Excel → ExcelViewer / Text-Fallback
 function FilePreviewPane({ file, contentText }) {
-  const [state, setState] = useState({ type: null, loading: true, error: null });
-  const [pdfPages, setPdfPages]   = useState([]); // canvas-DataURLs
-  const [pdfPage,  setPdfPage]    = useState(0);
-  const [tableHtml, setTableHtml] = useState("");
-  const [imgUrl,   setImgUrl]     = useState(null);
+  const [state,    setState]    = useState({ type: null, loading: true, error: null });
+  const [pdfPages, setPdfPages] = useState([]);
+  const [pdfPage,  setPdfPage]  = useState(0);
+  const [imgUrl,   setImgUrl]   = useState(null);
 
   useEffect(() => {
     if (!file) return;
     setState({ type: null, loading: true, error: null });
-    setPdfPages([]); setPdfPage(0); setTableHtml(""); setImgUrl(null);
+    setPdfPages([]); setPdfPage(0); setImgUrl(null);
 
     const name = file.name.toLowerCase();
     const type = file.type || "";
     let cancelled = false;
+    let objUrl = null;
 
     (async () => {
       try {
         // ── Bild ──────────────────────────────────────────────────────
         if (type.startsWith("image/") || /\.(png|jpg|jpeg|webp|bmp|gif)$/.test(name)) {
-          const url = URL.createObjectURL(file);
-          if (!cancelled) { setImgUrl(url); setState({ type: "img", loading: false }); }
+          objUrl = URL.createObjectURL(file);
+          if (!cancelled) { setImgUrl(objUrl); setState({ type: "img", loading: false }); }
           return;
         }
-
         // ── PDF ───────────────────────────────────────────────────────
         if (type === "application/pdf" || name.endsWith(".pdf")) {
-          const buf  = await file.arrayBuffer();
-          const pdf  = await pdfjsLib.getDocument({ data: buf }).promise;
+          const buf = await file.arrayBuffer();
+          const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
           const pages = [];
-          const total = Math.min(pdf.numPages, 20);
-          for (let i = 1; i <= total; i++) {
+          for (let i = 1; i <= Math.min(pdf.numPages, 20); i++) {
             if (cancelled) return;
             const page = await pdf.getPage(i);
             const vp   = page.getViewport({ scale: 1.6 });
             const canvas = document.createElement("canvas");
-            canvas.width  = vp.width;
-            canvas.height = vp.height;
+            canvas.width = vp.width; canvas.height = vp.height;
             await page.render({ canvasContext: canvas.getContext("2d"), viewport: vp }).promise;
             pages.push(canvas.toDataURL("image/jpeg", 0.88));
           }
           if (!cancelled) { setPdfPages(pages); setPdfPage(0); setState({ type: "pdf", loading: false }); }
           return;
         }
-
-        // ── Excel / CSV ───────────────────────────────────────────────
+        // ── Excel → ExcelViewer übernimmt ────────────────────────────
         if (/\.(xlsx|xls|xlsm|xlsb|xlt|xltx|xltm|ods|csv)$/.test(name)) {
-          const { read, utils } = await import("xlsx");
-          const buf  = await file.arrayBuffer();
-          const wb   = read(new Uint8Array(buf), { type: "array" });
-          const ws   = wb.Sheets[wb.SheetNames[0]];
-          const html = utils.sheet_to_html(ws, { editable: false });
-          if (!cancelled) { setTableHtml(html); setState({ type: "table", loading: false }); }
+          if (!cancelled) setState({ type: "excel", loading: false });
           return;
         }
-
-        // ── Text (docx / pptx / txt → extrahierter Text) ─────────────
-        setState({ type: "text", loading: false });
+        // ── Text-Fallback ─────────────────────────────────────────────
+        if (!cancelled) setState({ type: "text", loading: false });
       } catch (e) {
         if (!cancelled) setState({ type: "text", loading: false, error: e.message });
       }
     })();
 
-    return () => {
-      cancelled = true;
-      if (imgUrl) URL.revokeObjectURL(imgUrl);
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => { cancelled = true; if (objUrl) URL.revokeObjectURL(objUrl); };
   }, [file]);
 
-  const previewWrap = {
-    width: "100%", height: "100%", display: "flex",
-    alignItems: "center", justifyContent: "center", overflow: "auto",
-  };
+  const wrap = { width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" };
 
-  if (state.loading) return (
-    <div style={{ ...previewWrap, color: "#888", fontSize: 13 }}>Lade Vorschau…</div>
-  );
+  if (state.loading) return <div style={{ ...wrap, color: "#888", fontSize: 13 }}>Lade Vorschau…</div>;
 
   if (state.type === "img") return (
-    <div style={{ ...previewWrap, padding: 12 }}>
+    <div style={{ ...wrap, overflow: "auto", padding: 12 }}>
       <img src={imgUrl} alt={file.name}
         style={{ maxWidth: "100%", maxHeight: "100%", borderRadius: 4, objectFit: "contain", boxShadow: "0 4px 20px rgba(0,0,0,0.4)" }} />
     </div>
@@ -192,7 +350,6 @@ function FilePreviewPane({ file, contentText }) {
 
   if (state.type === "pdf") return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-      {/* Navigation */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
         padding: "6px 12px", background: "#111", borderBottom: "1px solid #333", flexShrink: 0 }}>
         <button onClick={() => setPdfPage(p => Math.max(0, p - 1))} disabled={pdfPage === 0}
@@ -209,7 +366,6 @@ function FilePreviewPane({ file, contentText }) {
           <ChevronRight size={16} />
         </button>
       </div>
-      {/* Seite */}
       <div style={{ flex: 1, overflow: "auto", padding: 12, display: "flex", alignItems: "flex-start", justifyContent: "center" }}>
         <img src={pdfPages[pdfPage]} alt={`Seite ${pdfPage + 1}`}
           style={{ maxWidth: "100%", borderRadius: 3, boxShadow: "0 4px 20px rgba(0,0,0,0.5)" }} />
@@ -217,19 +373,9 @@ function FilePreviewPane({ file, contentText }) {
     </div>
   );
 
-  if (state.type === "table") return (
-    <div style={{ width: "100%", height: "100%", overflow: "auto", padding: 12 }}>
-      <style>{`
-        .batch-preview-table table { border-collapse: collapse; font-size: 11px; color: #ccc; }
-        .batch-preview-table td, .batch-preview-table th { border: 1px solid #333; padding: 3px 7px; white-space: nowrap; }
-        .batch-preview-table tr:nth-child(even) td { background: #1e1e1e; }
-        .batch-preview-table tr:first-child td { background: #2a2a2a; font-weight: 600; color: #fff; }
-      `}</style>
-      <div className="batch-preview-table" dangerouslySetInnerHTML={{ __html: tableHtml }} />
-    </div>
-  );
+  if (state.type === "excel") return <ExcelViewer file={file} />;
 
-  // Fallback: Text
+  // Fallback Text
   return (
     <div style={{ width: "100%", height: "100%", overflow: "auto", padding: 16 }}>
       {state.error && <div style={{ color: "#f87171", fontSize: 11, marginBottom: 8 }}>⚠ {state.error}</div>}
@@ -239,9 +385,7 @@ function FilePreviewPane({ file, contentText }) {
           {contentText.length > 8000 && <span style={{ color: "#666" }}>{"\n\n…(gekürzt)"}</span>}
         </pre>
       ) : (
-        <div style={{ color: "#666", fontSize: 12, textAlign: "center", marginTop: 40 }}>
-          Keine Vorschau verfügbar
-        </div>
+        <div style={{ color: "#666", fontSize: 12, textAlign: "center", marginTop: 40 }}>Keine Vorschau verfügbar</div>
       )}
     </div>
   );
