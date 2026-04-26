@@ -63,16 +63,27 @@ export default function CallNotePopup({
   const inputBg   = isArtis ? "#fafcfa" : isLight ? "#fafaff" : "rgba(24,24,27,0.6)";
   const accent    = isArtis ? "#4d6a50" : "#5b21b6";
 
-  const cleanTel = (phone || "").replace(/[^+\d]/g, "");
-
   const normalizePhone = (raw) => {
     if (!raw) return null;
-    const digits = String(raw).replace(/[^\d+]/g, "");
-    if (!digits) return null;
-    if (digits.startsWith("00")) return "+" + digits.slice(2);
-    if (digits.startsWith("0") && !digits.startsWith("+")) return "+41" + digits.slice(1);
-    return digits.startsWith("+") ? digits : "+" + digits;
+    let s = String(raw).replace(/[\s.\-()/]/g, "");
+    if (s.startsWith("+41"))  return s;
+    if (s.startsWith("0041")) return "+41" + s.slice(4);
+    if (s.startsWith("00"))   return "+41" + s.slice(2);
+    if (s.startsWith("0"))    return "+41" + s.slice(1);
+    return s.startsWith("+") ? s : "+" + s;
   };
+
+  const formatPhoneDisplay = (raw) => {
+    if (!raw) return "";
+    const n = normalizePhone(raw) || "";
+    if (!n.startsWith("+41")) return raw;
+    const rest = n.slice(3);
+    if (rest.length === 9)
+      return `+41 ${rest.slice(0,2)} ${rest.slice(2,5)} ${rest.slice(5,7)} ${rest.slice(7,9)}`;
+    return n;
+  };
+
+  const cleanTel = normalizePhone(phone)?.replace(/[^+\d]/g, "") || "";
   const phoneSuffix = (norm) => {
     if (!norm) return null;
     const d = String(norm).replace(/\D/g, "");
@@ -155,7 +166,7 @@ export default function CallNotePopup({
               Anruf vorbereiten
             </div>
             <div style={{ fontSize: 11.5, color: subtle, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {cleanTel || phone}
+              {formatPhoneDisplay(phone) || phone}
               {customerName ? ` · ${customerName}` : ""}
               {contactLabel ? ` · ${contactLabel}` : ""}
             </div>
