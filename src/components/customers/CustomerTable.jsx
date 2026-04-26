@@ -88,7 +88,20 @@ export default function CustomerTable({
     .map(c => ({ ...c, w: colWidths[c.key] ?? c.w }));
 
   // ── Drag-to-reorder (Header) ────────────────────────────────
-  const dragKeyRef = useRef(null);
+  const dragKeyRef  = useRef(null);
+  const searchRef   = useRef(null);
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.key === "f" && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        searchRef.current?.focus();
+        searchRef.current?.select();
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, []);
   const [dragOverKey, setDragOverKey] = useState(null);
 
   const onDragStart = (key) => (e) => {
@@ -216,9 +229,10 @@ export default function CustomerTable({
         <div style={{ position: "relative", flex: "0 1 320px" }}>
           <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: subtle }} />
           <Input
+            ref={searchRef}
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Suchen: Name, E-Mail, Ort, UID, Tag…"
+            placeholder="Suchen: Name, E-Mail, Ort, UID, Tag… (Ctrl+F)"
             style={{ paddingLeft: 32, height: 32, fontSize: 13, background: isArtis ? "#f5f5f5" : isLight ? "#f0f0f8" : "rgba(24,24,27,0.6)", borderColor, color: textMain }}
           />
         </div>
