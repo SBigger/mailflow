@@ -1,4 +1,4 @@
-import React, { useContext, useState } from "react";
+import React, { useContext, useEffect, useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Search, Building2, UserRound, ChevronDown, ChevronRight } from "lucide-react";
 import { ThemeContext } from "@/Layout";
@@ -29,6 +29,19 @@ export default function CustomerMiniList({
 
   const [search, setSearch]             = useState("");
   const [showInactive, setShowInactive] = useState(false);
+  const searchRef = useRef(null);
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.key === "f" && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        searchRef.current?.focus();
+        searchRef.current?.select();
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, []);
 
   const typeFiltered = customers.filter(c => {
     if (c.ist_nebensteuerdomizil === true) return false;
@@ -51,9 +64,10 @@ export default function CustomerMiniList({
         <div style={{ position: "relative" }}>
           <Search size={13} style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", color: subtle }} />
           <Input
+            ref={searchRef}
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Suchen…"
+            placeholder="Suchen… (Ctrl+F)"
             style={{
               paddingLeft: 28, height: 30, fontSize: 12.5,
               background: isArtis ? "#f5f5f5" : isLight ? "#f0f0f8" : "rgba(24,24,27,0.6)",
