@@ -4,7 +4,7 @@ import { entities } from "@/api/supabaseClient";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
-  Search, Building2, UserRound, ChevronDown, ChevronRight,
+  Search, Building2, UserRound, ChevronDown, ChevronRight, Phone,
 } from "lucide-react";
 import { ThemeContext } from "@/Layout";
 import CallNotePopup from "./CallNotePopup";
@@ -417,6 +417,26 @@ const tdBase = {
   textOverflow: "ellipsis",
 };
 
+function normalizePhone(raw) {
+  if (!raw) return "";
+  let s = String(raw).replace(/[\s.\-()/]/g, "");
+  if (s.startsWith("+41"))  return s;
+  if (s.startsWith("0041")) return "+41" + s.slice(4);
+  if (s.startsWith("00"))   return "+41" + s.slice(2);
+  if (s.startsWith("0"))    return "+41" + s.slice(1);
+  return s;
+}
+
+function formatPhoneDisplay(raw) {
+  if (!raw) return "";
+  const n = normalizePhone(raw);
+  if (!n.startsWith("+41")) return raw;
+  const rest = n.slice(3);
+  if (rest.length === 9)
+    return `+41 ${rest.slice(0,2)} ${rest.slice(2,5)} ${rest.slice(5,7)} ${rest.slice(7,9)}`;
+  return n;
+}
+
 function Row({ c, cols, onSelect, rowHover, textMain, textMuted, subtle, borderColor, accent, openMails, openFristen, isArtis, inactive, onPhoneClick }) {
   const isPrivat = c.person_type === "privatperson";
   return (
@@ -476,12 +496,13 @@ function Row({ c, cols, onSelect, rowHover, textMain, textMuted, subtle, borderC
                   <button
                     type="button"
                     onClick={e => { e.stopPropagation(); onPhoneClick && onPhoneClick(c.phone, c); }}
-                    title={`Anrufen mit Notiz: ${c.phone}`}
-                    style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", color: textMuted, font: "inherit", textAlign: "left" }}
-                    onMouseEnter={e => { e.currentTarget.style.color = accent; e.currentTarget.style.textDecoration = "underline"; }}
-                    onMouseLeave={e => { e.currentTarget.style.color = textMuted; e.currentTarget.style.textDecoration = "none"; }}
+                    title={`Anrufen mit Notiz: ${formatPhoneDisplay(c.phone)}`}
+                    style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", color: textMuted, font: "inherit", textAlign: "left", display: "inline-flex", alignItems: "center", gap: 5, maxWidth: "100%" }}
+                    onMouseEnter={e => { e.currentTarget.style.color = accent; }}
+                    onMouseLeave={e => { e.currentTarget.style.color = textMuted; }}
                   >
-                    {c.phone}
+                    <Phone size={11} style={{ color: "#10b981", flexShrink: 0 }} />
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{formatPhoneDisplay(c.phone)}</span>
                   </button>
                 ) : ""}
               </td>
