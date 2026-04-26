@@ -29,7 +29,9 @@ export default function CustomerMiniList({
 
   const [search, setSearch]             = useState("");
   const [showInactive, setShowInactive] = useState(false);
+  const [focusedIdx, setFocusedIdx]     = useState(-1);
   const searchRef = useRef(null);
+  const listRef   = useRef(null);
 
   useEffect(() => {
     const handler = (e) => {
@@ -42,6 +44,17 @@ export default function CustomerMiniList({
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
   }, []);
+
+  // Reset highlight when search/filter changes
+  useEffect(() => { setFocusedIdx(-1); }, [search, personTypeFilter]);
+
+  // Scroll highlighted item into view
+  useEffect(() => {
+    if (focusedIdx >= 0 && listRef.current) {
+      const el = listRef.current.querySelector(`[data-idx="${focusedIdx}"]`);
+      el?.scrollIntoView({ block: "nearest" });
+    }
+  }, [focusedIdx]);
 
   const typeFiltered = customers.filter(c => {
     if (c.ist_nebensteuerdomizil === true) return false;
@@ -67,6 +80,12 @@ export default function CustomerMiniList({
             ref={searchRef}
             value={search}
             onChange={e => setSearch(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === "ArrowDown") { e.preventDefault(); setFocusedIdx(i => Math.min(i + 1, active.length - 1)); }
+              else if (e.key === "ArrowUp") { e.preventDefault(); setFocusedIdx(i => Math.max(i - 1, 0)); }
+              else if (e.key === "Enter" && focusedIdx >= 0 && active[focusedIdx]) { e.preventDefault(); onSelect(active[focusedIdx]); }
+              else if (e.key === "Escape") { setSearch(""); setFocusedIdx(-1); }
+            }}
             placeholder="Suchen… (Ctrl+F)"
             style={{
               paddingLeft: 28, height: 30, fontSize: 12.5,
@@ -77,9 +96,10 @@ export default function CustomerMiniList({
         </div>
       </div>
 
-      <div style={{ flex: 1, overflowY: "auto", padding: "6px 4px" }}>
-        {active.map(c => (
-          <Row key={c.id} c={c} selected={c.id === selectedId} onSelect={onSelect}
+      <div ref={listRef} style={{ flex: 1, overflowY: "auto", padding: "6px 4px" }}>
+        {active.map((c, idx) => (
+          <Row key={c.id} c={c} selected={c.id === selectedId} focused={idx === focusedIdx}
+               onSelect={onSelect} dataIdx={idx}
                textMain={textMain} textMuted={textMuted} subtle={subtle}
                selBg={selBg} selAccent={selAccent} hoverBg={hoverBg} isArtis={isArtis} />
         ))}
@@ -112,16 +132,18 @@ export default function CustomerMiniList({
   );
 }
 
-function Row({ c, selected, onSelect, textMain, textMuted, subtle, selBg, selAccent, hoverBg, isArtis, inactive }) {
+function Row({ c, selected, focused, onSelect, dataIdx, textMain, textMuted, subtle, selBg, selAccent, hoverBg, isArtis, inactive }) {
   const isPrivat = c.person_type === "privatperson";
+  const bg = selected ? selBg : focused ? hoverBg : "transparent";
   return (
     <button
+      data-idx={dataIdx}
       onClick={() => onSelect(c)}
       style={{
         width: "100%", display: "flex", alignItems: "center", gap: 8,
         padding: "7px 10px", borderRadius: 7, border: "none", cursor: "pointer",
-        background: selected ? selBg : "transparent",
-        borderLeft: `3px solid ${selected ? selAccent : "transparent"}`,
+        background: bg,
+        borderLeft: `3px solid ${selected ? selAccent : focused ? selAccent : "transparent"}`,
         textAlign: "left", marginBottom: 1,
         opacity: inactive ? 0.55 : 1,
         transition: "background .1s",
