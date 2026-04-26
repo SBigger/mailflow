@@ -1,4 +1,4 @@
-import React, { useContext, useMemo, useState } from "react";
+import React, { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { entities } from "@/api/supabaseClient";
@@ -36,8 +36,8 @@ export default function Telefonliste({ embedded = false }) {
   const accent      = isArtis ? "#4d6a50" : "#5b21b6";
 
   const [search, setSearch] = useState("");
-  const [filterKind, setFilterKind] = useState("alle"); // alle | firma | privat | kontakt
   const [callPopup, setCallPopup] = useState(null);
+  const searchRef = useRef(null);
 
   const { data: customers = [], isLoading } = useQuery({
     queryKey: ["customers"],
@@ -113,11 +113,10 @@ export default function Telefonliste({ embedded = false }) {
     return out;
   }, [customers]);
 
-  // ── Filter + Suche ────────────────────────────────────────────
+  // ── Suche ─────────────────────────────────────────────────────
   const q = search.trim().toLowerCase();
   const filtered = useMemo(() => {
     let list = rows;
-    if (filterKind !== "alle") list = list.filter(r => r.kind === filterKind);
     if (q) {
       list = list.filter(r => {
         const hay = [r.name, r.firma, r.role, r.email, ...r.phones]
@@ -129,14 +128,19 @@ export default function Telefonliste({ embedded = false }) {
       if (a.sortName !== b.sortName) return a.sortName.localeCompare(b.sortName);
       return (a.name || "").localeCompare(b.name || "");
     });
-  }, [rows, q, filterKind]);
+  }, [rows, q]);
 
-  // Stats für Filter-Buttons
-  const counts = useMemo(() => {
-    const c = { alle: rows.length, firma: 0, privat: 0, kontakt: 0 };
-    for (const r of rows) c[r.kind]++;
-    return c;
-  }, [rows]);
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.key === "f" && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        searchRef.current?.focus();
+        searchRef.current?.select();
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, []);
 
   const normalizePhone = (raw) => {
     if (!raw) return "";
@@ -171,47 +175,18 @@ export default function Telefonliste({ embedded = false }) {
     });
   };
 
-  const filterBtn = (key, label) => {
-    const active = filterKind === key;
-    return (
-      <button
-        key={key}
-        onClick={() => setFilterKind(key)}
-        style={{
-          backgroundColor: active ? accent : "transparent",
-          color: active ? "#fff" : textMuted,
-          fontSize: 11,
-          padding: "3px 10px",
-          borderRadius: 6,
-          border: "none",
-          cursor: "pointer",
-          fontWeight: 500,
-          transition: "all 0.15s",
-        }}
-      >
-        {label} <span style={{ opacity: 0.7, marginLeft: 4 }}>{counts[key]}</span>
-      </button>
-    );
-  };
-
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", background: pageBg, overflow: "hidden" }}>
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 16px", borderBottom: `1px solid ${borderColor}`, background: cardBg, flexShrink: 0 }}>
-        {!embedded && <h1 style={{ fontSize: 18, fontWeight: 600, color: textMain, margin: 0 }}>Telefonliste</h1>}
-        <div style={{ display: "flex", gap: 4, padding: 4, borderRadius: 8, background: isArtis ? "rgba(0,0,0,0.04)" : isLight ? "rgba(0,0,0,0.04)" : "rgba(255,255,255,0.05)" }}>
-          {filterBtn("alle",    "Alle")}
-          {filterBtn("firma",   "Firmen")}
-          {filterBtn("privat",  "Privat")}
-          {filterBtn("kontakt", "Kontakte")}
-        </div>
-        <div style={{ flex: 1 }} />
-        <div style={{ position: "relative", width: 320 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", borderBottom: `1px solid ${borderColor}`, background: cardBg, flexShrink: 0 }}>
+        {!embedded && <h1 style={{ fontSize: 18, fontWeight: 600, color: textMain, margin: 0, flexShrink: 0 }}>Telefonliste</h1>}
+        <div style={{ position: "relative", flex: 1, maxWidth: 420 }}>
           <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: subtle }} />
           <Input
+            ref={searchRef}
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Suchen: Name, Firma, Telefon, E-Mail …"
+            placeholder="Suchen: Name, Firma, Telefon, E-Mail … (Ctrl+F)"
             style={{ paddingLeft: 32, height: 32, fontSize: 13, background: isArtis ? "#f5f5f5" : isLight ? "#f0f0f8" : "rgba(24,24,27,0.6)", borderColor, color: textMain }}
           />
         </div>
