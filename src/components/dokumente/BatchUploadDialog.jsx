@@ -9,7 +9,7 @@
  * Er verändert KEINE der Check-in/-out-Logik.
  */
 import React, { useState, useMemo, useCallback, useContext, useRef, useEffect } from "react";
-import { X, Upload, FileText, Image as ImgIcon, FileSpreadsheet, File, Trash2, Sparkles, Eye } from "lucide-react";
+import { X, Upload, FileText, Image as ImgIcon, FileSpreadsheet, File, Trash2, Sparkles, Eye, ChevronLeft, ChevronRight } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { entities, supabase } from "@/api/supabaseClient";
 import { toast } from "sonner";
@@ -17,6 +17,10 @@ import { ThemeContext } from "@/Layout";
 import { CATEGORIES } from "@/lib/categories";
 import { analyzeFile } from "@/lib/batchAiSuggest";
 import TagSelectWidget from "@/components/dokumente/TagSelectWidget";
+import * as _pdfjsNs from "pdfjs-dist";
+import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.js?url";
+const pdfjsLib = (_pdfjsNs && typeof _pdfjsNs.getDocument === "function") ? _pdfjsNs : (_pdfjsNs?.default || _pdfjsNs);
+if (pdfjsLib?.GlobalWorkerOptions) pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
 // ─── Helpers ──────────────────────────────────────────────────────────
 
@@ -96,6 +100,151 @@ function newItem(file, preCustomerId) {
     stageInfo: "",               // Detail-Text zum Stage
     claudeError: null,           // Wenn Claude-Fallback gescheitert ist
   };
+}
+
+// ─── FilePreviewPane ──────────────────────────────────────────────────
+// Zeigt PDF (seitenweise), Bilder, Excel-Tabelle oder extrahierten Text.
+function FilePreviewPane({ file, contentText }) {
+  const [state, setState] = useState({ type: null, loading: true, error: null });
+  const [pdfPages, setPdfPages]   = useState([]); // canvas-DataURLs
+  const [pdfPage,  setPdfPage]    = useState(0);
+  const [tableHtml, setTableHtml] = useState("");
+  const [imgUrl,   setImgUrl]     = useState(null);
+
+  useEffect(() => {
+    if (!file) return;
+    setState({ type: null, loading: true, error: null });
+    setPdfPages([]); setPdfPage(0); setTableHtml(""); setImgUrl(null);
+
+    const name = file.name.toLowerCase();
+    const type = file.type || "";
+    let cancelled = false;
+
+    (async () => {
+      try {
+        // ── Bild ──────────────────────────────────────────────────────
+        if (type.startsWith("image/") || /\.(png|jpg|jpeg|webp|bmp|gif)$/.test(name)) {
+          const url = URL.createObjectURL(file);
+          if (!cancelled) { setImgUrl(url); setState({ type: "img", loading: false }); }
+          return;
+        }
+
+        // ── PDF ───────────────────────────────────────────────────────
+        if (type === "application/pdf" || name.endsWith(".pdf")) {
+          const buf  = await file.arrayBuffer();
+          const pdf  = await pdfjsLib.getDocument({ data: buf }).promise;
+          const pages = [];
+          const total = Math.min(pdf.numPages, 20);
+          for (let i = 1; i <= total; i++) {
+            if (cancelled) return;
+            const page = await pdf.getPage(i);
+            const vp   = page.getViewport({ scale: 1.6 });
+            const canvas = document.createElement("canvas");
+            canvas.width  = vp.width;
+            canvas.height = vp.height;
+            await page.render({ canvasContext: canvas.getContext("2d"), viewport: vp }).promise;
+            pages.push(canvas.toDataURL("image/jpeg", 0.88));
+          }
+          if (!cancelled) { setPdfPages(pages); setPdfPage(0); setState({ type: "pdf", loading: false }); }
+          return;
+        }
+
+        // ── Excel / CSV ───────────────────────────────────────────────
+        if (/\.(xlsx|xls|xlsm|xlsb|xlt|xltx|xltm|ods|csv)$/.test(name)) {
+          const { read, utils } = await import("xlsx");
+          const buf  = await file.arrayBuffer();
+          const wb   = read(new Uint8Array(buf), { type: "array" });
+          const ws   = wb.Sheets[wb.SheetNames[0]];
+          const html = utils.sheet_to_html(ws, { editable: false });
+          if (!cancelled) { setTableHtml(html); setState({ type: "table", loading: false }); }
+          return;
+        }
+
+        // ── Text (docx / pptx / txt → extrahierter Text) ─────────────
+        setState({ type: "text", loading: false });
+      } catch (e) {
+        if (!cancelled) setState({ type: "text", loading: false, error: e.message });
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (imgUrl) URL.revokeObjectURL(imgUrl);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [file]);
+
+  const previewWrap = {
+    width: "100%", height: "100%", display: "flex",
+    alignItems: "center", justifyContent: "center", overflow: "auto",
+  };
+
+  if (state.loading) return (
+    <div style={{ ...previewWrap, color: "#888", fontSize: 13 }}>Lade Vorschau…</div>
+  );
+
+  if (state.type === "img") return (
+    <div style={{ ...previewWrap, padding: 12 }}>
+      <img src={imgUrl} alt={file.name}
+        style={{ maxWidth: "100%", maxHeight: "100%", borderRadius: 4, objectFit: "contain", boxShadow: "0 4px 20px rgba(0,0,0,0.4)" }} />
+    </div>
+  );
+
+  if (state.type === "pdf") return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+      {/* Navigation */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+        padding: "6px 12px", background: "#111", borderBottom: "1px solid #333", flexShrink: 0 }}>
+        <button onClick={() => setPdfPage(p => Math.max(0, p - 1))} disabled={pdfPage === 0}
+          style={{ background: "none", border: "none", cursor: pdfPage > 0 ? "pointer" : "default",
+            color: pdfPage > 0 ? "#ccc" : "#555", display: "flex", padding: 4 }}>
+          <ChevronLeft size={16} />
+        </button>
+        <span style={{ color: "#aaa", fontSize: 12, minWidth: 90, textAlign: "center" }}>
+          Seite {pdfPage + 1} / {pdfPages.length}
+        </span>
+        <button onClick={() => setPdfPage(p => Math.min(pdfPages.length - 1, p + 1))} disabled={pdfPage >= pdfPages.length - 1}
+          style={{ background: "none", border: "none", cursor: pdfPage < pdfPages.length - 1 ? "pointer" : "default",
+            color: pdfPage < pdfPages.length - 1 ? "#ccc" : "#555", display: "flex", padding: 4 }}>
+          <ChevronRight size={16} />
+        </button>
+      </div>
+      {/* Seite */}
+      <div style={{ flex: 1, overflow: "auto", padding: 12, display: "flex", alignItems: "flex-start", justifyContent: "center" }}>
+        <img src={pdfPages[pdfPage]} alt={`Seite ${pdfPage + 1}`}
+          style={{ maxWidth: "100%", borderRadius: 3, boxShadow: "0 4px 20px rgba(0,0,0,0.5)" }} />
+      </div>
+    </div>
+  );
+
+  if (state.type === "table") return (
+    <div style={{ width: "100%", height: "100%", overflow: "auto", padding: 12 }}>
+      <style>{`
+        .batch-preview-table table { border-collapse: collapse; font-size: 11px; color: #ccc; }
+        .batch-preview-table td, .batch-preview-table th { border: 1px solid #333; padding: 3px 7px; white-space: nowrap; }
+        .batch-preview-table tr:nth-child(even) td { background: #1e1e1e; }
+        .batch-preview-table tr:first-child td { background: #2a2a2a; font-weight: 600; color: #fff; }
+      `}</style>
+      <div className="batch-preview-table" dangerouslySetInnerHTML={{ __html: tableHtml }} />
+    </div>
+  );
+
+  // Fallback: Text
+  return (
+    <div style={{ width: "100%", height: "100%", overflow: "auto", padding: 16 }}>
+      {state.error && <div style={{ color: "#f87171", fontSize: 11, marginBottom: 8 }}>⚠ {state.error}</div>}
+      {contentText ? (
+        <pre style={{ color: "#ccc", fontSize: 11, lineHeight: 1.6, whiteSpace: "pre-wrap", wordBreak: "break-word", margin: 0 }}>
+          {contentText.slice(0, 8000)}
+          {contentText.length > 8000 && <span style={{ color: "#666" }}>{"\n\n…(gekürzt)"}</span>}
+        </pre>
+      ) : (
+        <div style={{ color: "#666", fontSize: 12, textAlign: "center", marginTop: 40 }}>
+          Keine Vorschau verfügbar
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ─── Hauptkomponente ──────────────────────────────────────────────────
@@ -491,48 +640,27 @@ export default function BatchUploadDialog({ preCustomerId, onClose }) {
           ) : (
             <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", overflow: "hidden" }}>
 
-              {/* Preview (Placeholder für Schritt 3) */}
-              <div style={{
-                background: "#1a1a1a", display: "flex", alignItems: "center",
-                justifyContent: "center", padding: 16, overflow: "auto",
-              }}>
-                <div style={{
-                  color: "#888", fontSize: 13, textAlign: "center",
-                  background: "#252525", padding: 40, borderRadius: 10, maxWidth: 400,
-                }}>
-                  <div style={{ fontSize: 48, marginBottom: 12, opacity: 0.4 }}>📄</div>
-                  <div style={{ color: "#ccc", fontWeight: 500, marginBottom: 6, wordBreak: "break-all" }}>
+              {/* Vorschau */}
+              <div style={{ background: "#1a1a1a", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+                {/* Dateiinfo-Leiste */}
+                <div style={{ padding: "6px 12px", background: "#111", borderBottom: "1px solid #333",
+                  fontSize: 11, color: "#888", display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                  <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {selected.file.name}
-                  </div>
-                  <div style={{ fontSize: 11 }}>
-                    {formatBytes(selected.file.size)} · {selected.file.type || "unbekannt"}
-                  </div>
-                  <div style={{ marginTop: 20, fontSize: 11, color: "#666", fontStyle: "italic" }}>
-                    Vorschau folgt in Schritt 3<br/>(PDF-Rendering, Bild-Anzeige, XLSX-Tabelle)
-                  </div>
-                  <button
-                    onClick={() => setShowText(true)}
-                    disabled={!selected.contentText}
-                    style={{
-                      marginTop: 18, padding: "7px 14px", fontSize: 11,
-                      background: selected.contentText ? "#4a7a4f" : "#3a3a3a",
-                      color: selected.contentText ? "#fff" : "#777",
-                      border: "none", borderRadius: 6,
-                      cursor: selected.contentText ? "pointer" : "not-allowed",
-                      display: "inline-flex", alignItems: "center", gap: 6,
-                    }}
-                    title={selected.contentText
-                      ? "Zeigt den von OCR/Extraktion erkannten Text"
-                      : "Noch kein Text extrahiert"}
-                  >
-                    <Eye size={12} />
-                    Erkannten Text anzeigen
-                    {selected.contentText && (
-                      <span style={{ opacity: 0.8, fontSize: 10 }}>
-                        ({selected.contentText.length} Zeichen)
-                      </span>
-                    )}
-                  </button>
+                  </span>
+                  <span style={{ flexShrink: 0 }}>{formatBytes(selected.file.size)}</span>
+                  {selected.contentText && (
+                    <button onClick={() => setShowText(true)}
+                      style={{ background: "#2a2a2a", border: "1px solid #444", color: "#aaa",
+                        borderRadius: 5, padding: "2px 8px", fontSize: 10, cursor: "pointer",
+                        display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+                      <Eye size={10} /> Text ({selected.contentText.length})
+                    </button>
+                  )}
+                </div>
+                {/* Eigentliche Vorschau */}
+                <div style={{ flex: 1, overflow: "hidden" }}>
+                  <FilePreviewPane file={selected.file} contentText={selected.contentText} />
                 </div>
               </div>
 
