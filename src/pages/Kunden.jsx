@@ -216,17 +216,42 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
   });
 
   if (isMobile) {
+    const mobileBg = isArtis ? '#f2f5f2' : isLight ? '#f0f0f6' : '#2a2a2f';
+    const mobileAccent = isArtis ? '#7a9b7f' : '#7c3aed';
     return (
-      <div className="h-screen overflow-hidden" style={{ backgroundColor: isArtis ? '#f2f5f2' : isLight ? '#f0f0f6' : '#2a2a2f' }}>
-        <MobileCustomerView
-          customers={customers}
-          staff={appUsers}
-          selectedCustomer={selectedCustomer}
-          onNew={handleNew}
-          onSelect={setSelectedCustomer}
-          onUpdate={handleMobileUpdate}
-          onDelete={(id) => { deleteMutation.mutate(id); setSelectedCustomer(null); }}
-        />
+      <div className="h-screen overflow-hidden flex flex-col" style={{ backgroundColor: mobileBg }}>
+        {/* Mobile Tab-Switcher */}
+        <div className="flex flex-shrink-0 border-b" style={{ backgroundColor: isArtis ? '#fff' : isLight ? '#fff' : 'rgba(24,24,27,0.9)', borderColor }}>
+          {[{ key: 'kunden', label: 'Kunden' }, { key: 'telefonliste', label: 'Telefonliste' }].map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => setPersonTypeFilter(key)}
+              className="flex-1 py-2 text-xs font-semibold transition-colors"
+              style={{
+                color: personTypeFilter === key ? mobileAccent : textMuted,
+                borderBottom: personTypeFilter === key ? `2px solid ${mobileAccent}` : '2px solid transparent',
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {/* Mobile Content */}
+        <div className="flex-1 overflow-hidden">
+          {personTypeFilter === 'telefonliste' ? (
+            <Telefonliste embedded />
+          ) : (
+            <MobileCustomerView
+              customers={customers}
+              staff={appUsers}
+              selectedCustomer={selectedCustomer}
+              onNew={handleNew}
+              onSelect={setSelectedCustomer}
+              onUpdate={handleMobileUpdate}
+              onDelete={(id) => { deleteMutation.mutate(id); setSelectedCustomer(null); }}
+            />
+          )}
+        </div>
         <CustomerImportDialog
           open={showImport}
           onClose={() => setShowImport(false)}

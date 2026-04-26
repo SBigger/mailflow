@@ -138,8 +138,28 @@ export default function Telefonliste({ embedded = false }) {
     return c;
   }, [rows]);
 
+  const normalizePhone = (raw) => {
+    if (!raw) return "";
+    let s = String(raw).replace(/[\s.\-()/]/g, "");
+    if (s.startsWith("+41")) return s;
+    if (s.startsWith("0041")) return "+41" + s.slice(4);
+    if (s.startsWith("00")) return "+41" + s.slice(2); // z.B. 0071 → +4171
+    if (s.startsWith("0")) return "+41" + s.slice(1);
+    return s;
+  };
+
+  const formatPhoneDisplay = (raw) => {
+    if (!raw) return "";
+    const n = normalizePhone(raw);
+    if (!n.startsWith("+41")) return raw;
+    const rest = n.slice(3);
+    if (rest.length === 9)
+      return `+41 ${rest.slice(0,2)} ${rest.slice(2,5)} ${rest.slice(5,7)} ${rest.slice(7,9)}`;
+    return n;
+  };
+
   const dialTel = (phoneRaw) => {
-    const clean = String(phoneRaw || "").replace(/[^\d+]/g, "");
+    const clean = normalizePhone(phoneRaw).replace(/[^\d+]/g, "");
     if (!clean) return;
     window.location.href = `tel:${clean}`;
   };
@@ -272,7 +292,7 @@ export default function Telefonliste({ embedded = false }) {
                             onMouseLeave={e => { e.currentTarget.style.color = textMuted; }}
                           >
                             <Phone size={11} style={{ color: "#10b981", flexShrink: 0 }} />
-                            <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{p}</span>
+                            <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{formatPhoneDisplay(p)}</span>
                           </button>
                         ))}
                       </div>
