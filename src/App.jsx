@@ -40,7 +40,6 @@ import SharePage from "./pages/SharePage.jsx";
 import Leistungserfassung from "./pages/Leistungserfassung.jsx";
 import Promptvorlagen from "./pages/Promptvorlagen.jsx";
 import TelefonDashboard from "./pages/TelefonDashboard.jsx";
-import Telefonliste from "./pages/Telefonliste.jsx";
 import { FEATURE_LEISTUNGSERFASSUNG } from "@/lib/featureFlags";
 
 const queryClient = new QueryClient({
@@ -106,7 +105,6 @@ function AuthenticatedApp() {
         <Route path="/Steuern" element={<Steuern />} />
         <Route path="/Promptvorlagen" element={<Promptvorlagen />} />
         <Route path="/TelefonDashboard" element={<TelefonDashboard />} />
-        <Route path="/Telefonliste" element={<Telefonliste />} />
         {FEATURE_LEISTUNGSERFASSUNG && (
           <Route path="/Leistungserfassung" element={<Leistungserfassung />} />
         )}

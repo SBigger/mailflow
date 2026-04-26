@@ -25,6 +25,7 @@ import CustomerFristenTab from "../components/customers/CustomerFristenTab";
 import CustomerDokumenteTab from "../components/customers/CustomerDokumenteTab";
 import CustomerAktionaereTab from "../components/customers/CustomerAktionaereTab";
 import MobileCustomerView from "../components/customers/MobileCustomerView";
+import Telefonliste from "./Telefonliste";
 import {toast} from "sonner";
 
 /**
@@ -251,9 +252,10 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
         {/* Typ-Filter */}
         <div className="flex gap-1 p-1 rounded-lg" style={{ backgroundColor: isArtis ? 'rgba(0,0,0,0.04)' : isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.05)' }}>
           {[
-            { key: "alle",        label: "Alle" },
-            { key: "unternehmen", label: "Kunden" },
-            { key: "privatperson",label: "Personen" },
+            { key: "alle",         label: "Alle" },
+            { key: "unternehmen",  label: "Kunden" },
+            { key: "privatperson", label: "Personen" },
+            { key: "telefonliste", label: "Telefonliste" },
           ].map(({ key, label }) => (
             <button key={key} style={tabStyle(key)} onClick={() => setPersonTypeFilter(key)}>
               {label}
@@ -331,7 +333,11 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
     <div className="flex flex-col h-screen overflow-hidden" style={{ backgroundColor: isArtis ? '#f2f5f2' : isLight ? '#f0f0f6' : '#f2f5f2' }}>
       {Header}
 
-      {viewMode === "tabelle" ? (
+      {personTypeFilter === "telefonliste" ? (
+        <div className="flex-1 overflow-hidden">
+          <Telefonliste embedded />
+        </div>
+      ) : viewMode === "tabelle" ? (
         <div className="flex-1 overflow-hidden">
           <CustomerTable
             customers={customers}

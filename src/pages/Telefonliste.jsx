@@ -19,7 +19,7 @@ import CallNotePopup from "@/components/customers/CallNotePopup";
  * Default Phone-App) übernommen.
  * Stift-Icon → 'Anrufen mit Notiz'-Popup wie bisher.
  */
-export default function Telefonliste() {
+export default function Telefonliste({ embedded = false }) {
   const { theme } = useContext(ThemeContext);
   const navigate = useNavigate();
   const isArtis = theme === "artis";
@@ -168,10 +168,10 @@ export default function Telefonliste() {
   };
 
   return (
-    <div style={{ height: "100vh", display: "flex", flexDirection: "column", background: pageBg, overflow: "hidden" }}>
+    <div style={{ height: "100%", display: "flex", flexDirection: "column", background: pageBg, overflow: "hidden" }}>
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 16px", borderBottom: `1px solid ${borderColor}`, background: cardBg, flexShrink: 0 }}>
-        <h1 style={{ fontSize: 18, fontWeight: 600, color: textMain, margin: 0 }}>Telefonliste</h1>
+        {!embedded && <h1 style={{ fontSize: 18, fontWeight: 600, color: textMain, margin: 0 }}>Telefonliste</h1>}
         <div style={{ display: "flex", gap: 4, padding: 4, borderRadius: 8, background: isArtis ? "rgba(0,0,0,0.04)" : isLight ? "rgba(0,0,0,0.04)" : "rgba(255,255,255,0.05)" }}>
           {filterBtn("alle",    "Alle")}
           {filterBtn("firma",   "Firmen")}
