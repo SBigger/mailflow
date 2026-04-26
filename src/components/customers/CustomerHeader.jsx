@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useContext } from "react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { User, Phone, MapPin, Briefcase, Heart, Mail } from "lucide-react";
+import { User, Phone, MapPin, Briefcase, Heart, Mail, ChevronDown, ChevronRight } from "lucide-react";
 import { ThemeContext } from "@/Layout";
 import CallNotePopup from "./CallNotePopup";
 
@@ -21,6 +21,17 @@ const CH_KANTONE = [
   { code: 'ZG', name: 'Zug' },             { code: 'ZH', name: 'Zürich' },
 ];
 
+// Kurze Adress-Zusammenfassung im eingeklappten Zustand
+function adresseSummary({ strasse, plz, ort, kanton }) {
+  const parts = [];
+  if (strasse) parts.push(strasse);
+  const po = [plz, ort].filter(Boolean).join(" ");
+  if (po) parts.push(po);
+  if (kanton) parts.push(kanton);
+  const s = parts.join(", ");
+  return s ? `Adresse · ${s}` : "";
+}
+
 // ── Section divider with label ──────────────────────────────────────────────
 function SectionLabel({ icon: Icon, label, color, lineColor }) {
   return (
@@ -31,6 +42,28 @@ function SectionLabel({ icon: Icon, label, color, lineColor }) {
       </span>
       <div className="flex-1 h-px" style={{ backgroundColor: lineColor }} />
     </div>
+  );
+}
+
+// ── Collapsible section header (clickable, with chevron) ────────────────────
+function CollapsibleSectionLabel({ icon: Icon, label, color, lineColor, open, onToggle }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className="flex items-center gap-2 pt-1 w-full bg-transparent border-0 cursor-pointer"
+      style={{ padding: 0 }}
+      title={open ? "Einklappen" : "Aufklappen"}
+    >
+      {open
+        ? <ChevronDown className="h-3 w-3 flex-shrink-0" style={{ color }} />
+        : <ChevronRight className="h-3 w-3 flex-shrink-0" style={{ color }} />}
+      <Icon className="h-3 w-3 flex-shrink-0" style={{ color }} />
+      <span className="text-[10px] font-semibold tracking-widest uppercase whitespace-nowrap" style={{ color }}>
+        {label}
+      </span>
+      <div className="flex-1 h-px" style={{ backgroundColor: lineColor }} />
+    </button>
   );
 }
 
@@ -69,6 +102,16 @@ export default function CustomerHeader({ customer, staff, onUpdate }) {
 
   // Call-Popup
   const [callOpen, setCallOpen] = useState(false);
+
+  // Collapsible Sections – default: offen, wenn Daten vorhanden
+  const partnerHasData  = !!(customer.partner_name || customer.partner_vorname);
+  const adresseHasData  = !!(customer.strasse || customer.plz || customer.ort || customer.kanton);
+  const [partnerOpen,  setPartnerOpen]  = useState(partnerHasData);
+  const [adresseOpen,  setAdresseOpen]  = useState(adresseHasData);
+  useEffect(() => {
+    setPartnerOpen(!!(customer.partner_name || customer.partner_vorname));
+    setAdresseOpen(!!(customer.strasse || customer.plz || customer.ort || customer.kanton));
+  }, [customer.id]);
 
   function formatBudgetStatic(val) {
     const num = parseFloat(val);
@@ -231,93 +274,99 @@ export default function CustomerHeader({ customer, staff, onUpdate }) {
       {/* ── PARTNER (nur Privatperson) ────────────────────────────────────── */}
       {isPrivatperson && (
         <div className="space-y-2.5">
-          <SectionLabel icon={Heart} label="Ehe- / Lebenspartner" color={sectionColor} lineColor={lineColor} />
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <label className="text-[10px] font-medium tracking-wide" style={{ color: labelColor }}>Nachname</label>
-              <Input
-                value={partnerName}
-                onChange={e => setPartnerName(e.target.value)}
-                onBlur={() => { if (partnerName !== (customer.partner_name || "")) onUpdate({ partner_name: partnerName || null }); }}
-                placeholder="Partner Nachname"
-                {...inp()}
-              />
+          <CollapsibleSectionLabel icon={Heart} label="Ehe- / Lebenspartner" color={sectionColor} lineColor={lineColor} open={partnerOpen} onToggle={() => setPartnerOpen(o => !o)} />
+          {partnerOpen && (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-[10px] font-medium tracking-wide" style={{ color: labelColor }}>Nachname</label>
+                <Input
+                  value={partnerName}
+                  onChange={e => setPartnerName(e.target.value)}
+                  onBlur={() => { if (partnerName !== (customer.partner_name || "")) onUpdate({ partner_name: partnerName || null }); }}
+                  placeholder="Partner Nachname"
+                  {...inp()}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-medium tracking-wide" style={{ color: labelColor }}>Vorname</label>
+                <Input
+                  value={partnerVorname}
+                  onChange={e => setPartnerVorname(e.target.value)}
+                  onBlur={() => { if (partnerVorname !== (customer.partner_vorname || "")) onUpdate({ partner_vorname: partnerVorname || null }); }}
+                  placeholder="Partner Vorname"
+                  {...inp()}
+                />
+              </div>
             </div>
-            <div className="space-y-1">
-              <label className="text-[10px] font-medium tracking-wide" style={{ color: labelColor }}>Vorname</label>
-              <Input
-                value={partnerVorname}
-                onChange={e => setPartnerVorname(e.target.value)}
-                onBlur={() => { if (partnerVorname !== (customer.partner_vorname || "")) onUpdate({ partner_vorname: partnerVorname || null }); }}
-                placeholder="Partner Vorname"
-                {...inp()}
-              />
-            </div>
-          </div>
+          )}
         </div>
       )}
 
       {/* ── ADRESSE ───────────────────────────────────────────────────────── */}
       <div className="space-y-2.5">
-        <SectionLabel icon={MapPin} label="Adresse" color={sectionColor} lineColor={lineColor} />
-        <div className="space-y-1">
-          <label className="text-[10px] font-medium tracking-wide" style={{ color: labelColor }}>Strasse</label>
-          <Input
-            value={strasse}
-            onChange={e => setStrasse(e.target.value)}
-            onBlur={() => { if (strasse !== customer.strasse) onUpdate({ strasse }); }}
-            placeholder="Strasse und Hausnummer"
-            autoComplete="off"
-            {...inp()}
-          />
-        </div>
-        <div className="grid gap-2" style={{ gridTemplateColumns: '80px 1fr 160px' }}>
-          <div className="space-y-1">
-            <label className="text-[10px] font-medium tracking-wide" style={{ color: labelColor }}>PLZ</label>
-            <Input
-              value={plz}
-              onChange={e => setPlz(e.target.value)}
-              onBlur={() => { if (plz !== customer.plz) onUpdate({ plz }); }}
-              placeholder="PLZ"
-              autoComplete="off"
-              {...inp()}
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="text-[10px] font-medium tracking-wide" style={{ color: labelColor }}>Ort</label>
-            <Input
-              value={ort}
-              onChange={e => setOrt(e.target.value)}
-              onBlur={() => { if (ort !== customer.ort) onUpdate({ ort }); }}
-              placeholder="Ortschaft"
-              autoComplete="off"
-              {...inp()}
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="text-[10px] font-medium tracking-wide" style={{ color: labelColor }}>Kanton</label>
-            <Select
-              value={kanton || "__none__"}
-              onValueChange={v => {
-                const val = v === "__none__" ? "" : v;
-                setKanton(val);
-                onUpdate({ kanton: val || null });
-              }}
-            >
-              <SelectTrigger className="h-8 text-xs" style={inputStyle}>
-                <SelectValue placeholder="— KT" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__none__" className="text-xs text-gray-400">— Kanton</SelectItem>
-                {CH_KANTONE.map(k => (
-                  <SelectItem key={k.code} value={k.code} className="text-xs text-gray-800">
-                    {k.code} – {k.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
+        <CollapsibleSectionLabel icon={MapPin} label={adresseOpen ? "Adresse" : (adresseSummary({ strasse, plz, ort, kanton }) || "Adresse")} color={sectionColor} lineColor={lineColor} open={adresseOpen} onToggle={() => setAdresseOpen(o => !o)} />
+        {adresseOpen && (
+          <>
+            <div className="space-y-1">
+              <label className="text-[10px] font-medium tracking-wide" style={{ color: labelColor }}>Strasse</label>
+              <Input
+                value={strasse}
+                onChange={e => setStrasse(e.target.value)}
+                onBlur={() => { if (strasse !== customer.strasse) onUpdate({ strasse }); }}
+                placeholder="Strasse und Hausnummer"
+                autoComplete="off"
+                {...inp()}
+              />
+            </div>
+            <div className="grid gap-2" style={{ gridTemplateColumns: '80px 1fr 160px' }}>
+              <div className="space-y-1">
+                <label className="text-[10px] font-medium tracking-wide" style={{ color: labelColor }}>PLZ</label>
+                <Input
+                  value={plz}
+                  onChange={e => setPlz(e.target.value)}
+                  onBlur={() => { if (plz !== customer.plz) onUpdate({ plz }); }}
+                  placeholder="PLZ"
+                  autoComplete="off"
+                  {...inp()}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-medium tracking-wide" style={{ color: labelColor }}>Ort</label>
+                <Input
+                  value={ort}
+                  onChange={e => setOrt(e.target.value)}
+                  onBlur={() => { if (ort !== customer.ort) onUpdate({ ort }); }}
+                  placeholder="Ortschaft"
+                  autoComplete="off"
+                  {...inp()}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-medium tracking-wide" style={{ color: labelColor }}>Kanton</label>
+                <Select
+                  value={kanton || "__none__"}
+                  onValueChange={v => {
+                    const val = v === "__none__" ? "" : v;
+                    setKanton(val);
+                    onUpdate({ kanton: val || null });
+                  }}
+                >
+                  <SelectTrigger className="h-8 text-xs" style={inputStyle}>
+                    <SelectValue placeholder="— KT" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__" className="text-xs text-gray-400">— Kanton</SelectItem>
+                    {CH_KANTONE.map(k => (
+                      <SelectItem key={k.code} value={k.code} className="text-xs text-gray-800">
+                        {k.code} – {k.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       {/* ── KONTAKT ───────────────────────────────────────────────────────── */}

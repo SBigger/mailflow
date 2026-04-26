@@ -17,7 +17,8 @@ import {
   Mic,
   CloudUpload,
   BarChart3,
-  Clock
+  Clock,
+  Phone
 } from "lucide-react";
 import { FEATURE_LEISTUNGSERFASSUNG } from "@/lib/featureFlags";
 import VoiceAssistant from "@/components/voice/VoiceAssistant";
@@ -83,6 +84,7 @@ export default function Layout({ children, currentPageName }) {
     { name: 'KnowledgeBase',  icon: BookOpen,        label: 'Wissen' },
     { name: 'Fristen',        icon: CalendarClock,   label: 'Fristen' },
     { name: 'Kunden',         icon: Building2,       label: 'Kunden' },
+    { name: 'Telefonliste',   icon: Phone,           label: 'Telefonliste' },
     { name: 'Dokumente',      icon: FolderOpen,      label: 'Dokumente' },
     { name: 'Posteingang',    icon: CloudUpload,     label: 'Posteingang' },
     { name: 'Auswertungen',   icon: BarChart3,       label: 'Auswertungen' },
