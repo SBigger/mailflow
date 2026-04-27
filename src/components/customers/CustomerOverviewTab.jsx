@@ -54,6 +54,7 @@ export default function CustomerOverviewTab({ customer }) {
     .slice(0, 5);
 
   return (
+    <>
     <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 320px", gap: 16 }}>
       {/* ── Left: Activity Timeline ─────────────────────────── */}
       <div>
@@ -122,6 +123,7 @@ export default function CustomerOverviewTab({ customer }) {
         customerName={callPopup.customerName}
       />
     )}
+    </>
   );
 }
 
