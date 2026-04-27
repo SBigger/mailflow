@@ -626,7 +626,7 @@ export default function BatchUploadDialog({ preCustomerId, onClose }) {
       }
     }
     setUploading(false);
-    queryClient.invalidateQueries({ queryKey: ["dokumente"] });
+    queryClient.invalidateQueries({ queryKey: ["dokumente-all"] });
     if (successCount > 0) toast.success(`${successCount} Dokument${successCount !== 1 ? "e" : ""} hochgeladen ✓`, { closeButton: true });
     if (errorCount   > 0) toast.error(`${errorCount} Fehler beim Hochladen`);
     if (errorCount === 0) onClose();
