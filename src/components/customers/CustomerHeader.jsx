@@ -21,6 +21,16 @@ const CH_KANTONE = [
   { code: 'ZG', name: 'Zug' },             { code: 'ZH', name: 'Zürich' },
 ];
 
+// Swiss phone number normalizer → +41 XX XXX XX XX
+function normalizePhone(raw) {
+  if (!raw) return "";
+  let d = raw.replace(/\s+/g, "").replace(/[-().]/g, "");
+  if (d.startsWith("0041")) d = "+41" + d.slice(4);
+  else if (d.startsWith("00") && d.length >= 4 && d[2] !== "0") d = "+41" + d.slice(4);
+  else if (d.startsWith("0") && d.length >= 2) d = "+41" + d.slice(1);
+  return d;
+}
+
 // Kurze Adress-Zusammenfassung im eingeklappten Zustand
 function adresseSummary({ strasse, plz, ort, kanton }) {
   const parts = [];
@@ -390,7 +400,11 @@ export default function CustomerHeader({ customer, staff, onUpdate }) {
                 {phone && (
                   <button
                     type="button"
-                    onClick={() => setCallOpen(true)}
+                    onClick={() => {
+                      setCallOpen(true);
+                      const clean = normalizePhone(phone).replace(/[^\d+]/g, "");
+                      if (clean) setTimeout(() => { window.location.href = `tel:${clean}`; }, 80);
+                    }}
                     title="Anrufen mit Notiz"
                     className="flex items-center justify-center w-8 h-8 rounded-md bg-emerald-600 hover:bg-emerald-500 transition-colors flex-shrink-0"
                   >
