@@ -1,4 +1,4 @@
-import React, { useContext } from "react";
+import React, { useContext, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { entities } from "@/api/supabaseClient";
 import { User, Phone, Mail as MailIcon, CalendarClock, AlertCircle } from "lucide-react";
@@ -6,6 +6,16 @@ import { format, differenceInCalendarDays } from "date-fns";
 import { de } from "date-fns/locale";
 import { ThemeContext } from "@/Layout";
 import CustomerActivityTimeline from "./CustomerActivityTimeline";
+import CallNotePopup from "./CallNotePopup";
+
+function normalizePhone(raw) {
+  if (!raw) return "";
+  let d = raw.replace(/\s+/g, "").replace(/[-().]/g, "");
+  if (d.startsWith("0041")) d = "+41" + d.slice(4);
+  else if (d.startsWith("00") && d.length >= 4 && d[2] !== "0") d = "+41" + d.slice(4);
+  else if (d.startsWith("0") && d.length >= 2) d = "+41" + d.slice(1);
+  return d;
+}
 
 /**
  * Overview tab: 2-column layout with activity timeline + sidebar
@@ -15,6 +25,14 @@ export default function CustomerOverviewTab({ customer }) {
   const { theme } = useContext(ThemeContext);
   const isArtis = theme === "artis";
   const isLight = theme === "light";
+
+  const [callPopup, setCallPopup] = useState(null);
+
+  const handleCallPhone = (phone) => {
+    setCallPopup({ phone, customerId: customer?.id, customerName: customer?.company_name });
+    const clean = normalizePhone(phone).replace(/[^\d+]/g, "");
+    if (clean) setTimeout(() => { window.location.href = `tel:${clean}`; }, 80);
+  };
 
   const borderColor = isArtis ? "#e0e8e0" : isLight ? "#e4e4ea" : "#3f3f46";
   const subtle      = isArtis ? "#6b826b" : isLight ? "#8080a0" : "#9090b8";
@@ -63,6 +81,7 @@ export default function CustomerOverviewTab({ customer }) {
                     textMain={textMain}
                     subtle={subtle}
                     accent={accent}
+                    onCallPhone={handleCallPhone}
                   />
                 ))}
                 {contacts.length > 4 && (
@@ -93,6 +112,16 @@ export default function CustomerOverviewTab({ customer }) {
 
       </div>
     </div>
+
+    {callPopup && (
+      <CallNotePopup
+        open={!!callPopup}
+        onClose={() => setCallPopup(null)}
+        phone={callPopup.phone}
+        customerId={callPopup.customerId}
+        customerName={callPopup.customerName}
+      />
+    )}
   );
 }
 
@@ -111,7 +140,7 @@ function SectionHeader({ label, subtle, count }) {
   );
 }
 
-function ContactRow({ cp, isArtis, isLight, textMain, subtle, accent }) {
+function ContactRow({ cp, isArtis, isLight, textMain, subtle, accent, onCallPhone }) {
   const name = [cp.anrede, cp.vorname, cp.name].filter(Boolean).join(" ");
   const avatarBg = isArtis ? "#e6ede6" : isLight ? "#eef0fb" : "rgba(63,63,70,0.4)";
   return (
@@ -135,7 +164,16 @@ function ContactRow({ cp, isArtis, isLight, textMain, subtle, accent }) {
           </div>
         )}
         {cp.phone && (
-          <div style={{ fontSize: 11.5, color: subtle, display: "flex", alignItems: "center", gap: 4, marginTop: 1 }}>
+          <div
+            onClick={() => onCallPhone && onCallPhone(cp.phone)}
+            title="Anrufen mit Notiz"
+            style={{
+              fontSize: 11.5, color: subtle, display: "flex", alignItems: "center",
+              gap: 4, marginTop: 1, cursor: onCallPhone ? "pointer" : "default",
+            }}
+            onMouseEnter={e => { if (onCallPhone) e.currentTarget.style.color = "#16a34a"; }}
+            onMouseLeave={e => { e.currentTarget.style.color = subtle; }}
+          >
             <Phone size={11} /> {cp.phone}
           </div>
         )}
