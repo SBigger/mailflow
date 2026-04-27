@@ -9,7 +9,7 @@
  * Er verändert KEINE der Check-in/-out-Logik.
  */
 import React, { useState, useMemo, useCallback, useContext, useRef, useEffect } from "react";
-import { X, Upload, FileText, Image as ImgIcon, FileSpreadsheet, File, Trash2, Sparkles, Eye, ChevronLeft, ChevronRight } from "lucide-react";
+import { X, Upload, FileText, Image as ImgIcon, FileSpreadsheet, File as FileIcon, Trash2, Sparkles, Eye, ChevronLeft, ChevronRight } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { entities, supabase } from "@/api/supabaseClient";
 import { toast } from "sonner";
@@ -71,7 +71,7 @@ function iconForFile(file) {
   if (type.startsWith("image/")) return <ImgIcon size={18} />;
   if (/\.(xlsx|xls|xlsm|xlsb|xlt|xltx|xltm|ods|csv)$/.test(name)) return <FileSpreadsheet size={18} />;
   if (/\.(pdf|docx|docm|odt|ott|pptx|ppt|txt|md)$/.test(name)) return <FileText size={18} />;
-  return <File size={18} />;
+  return <FileIcon size={18} />;
 }
 
 // Eindeutige ID pro gedropptem File
