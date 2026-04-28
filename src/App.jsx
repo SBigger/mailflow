@@ -16,38 +16,39 @@ const PageLoader = () => (
 );
 
 // --- Lazy Imports der Seiten ---
-const Dashboard = lazy(() => import('./pages/Dashboard'));
-const MailKanban = lazy(() => import('./pages/MailKanban'));
-const TaskBoard = lazy(() => import('./pages/TaskBoard'));
-const Settings = lazy(() => import('./pages/Settings'));
-const Kunden = lazy(() => import('./pages/Kunden'));
-const Personen = lazy(() => import('./pages/Personen'));
-const Fristen = lazy(() => import('./pages/Fristen'));
-const ReminderBoard = lazy(() => import('./pages/ReminderBoard'));
-const TicketBoard = lazy(() => import('./pages/TicketBoard'));
-const KnowledgeBase = lazy(() => import('./pages/KnowledgeBase'));
-const Dokumente = lazy(() => import('./pages/Dokumente'));
-const UserManagement = lazy(() => import('./pages/UserManagement'));
-const ArtisTools = lazy(() => import('./pages/ArtisTools'));
-const BriefSchreiben = lazy(() => import('./pages/BriefSchreiben'));
-const Fahrzeugliste = lazy(() => import('./pages/Fahrzeugliste'));
-const Aktienbuch = lazy(() => import('./pages/Aktienbuch'));
-const Unterschriften = lazy(() => import('./pages/Unterschriften'));
+const Dashboard             = lazy(() => import('./pages/Dashboard'));
+const MailKanban            = lazy(() => import('./pages/MailKanban'));
+const TaskBoard             = lazy(() => import('./pages/TaskBoard'));
+const Settings              = lazy(() => import('./pages/Settings'));
+const Kunden                = lazy(() => import('./pages/Kunden'));
+const Personen              = lazy(() => import('./pages/Personen'));
+const Fristen               = lazy(() => import('./pages/Fristen'));
+const ReminderBoard         = lazy(() => import('./pages/ReminderBoard'));
+const TicketBoard           = lazy(() => import('./pages/TicketBoard'));
+const KnowledgeBase         = lazy(() => import('./pages/KnowledgeBase'));
+const Dokumente             = lazy(() => import('./pages/Dokumente'));
+const UserManagement        = lazy(() => import('./pages/UserManagement'));
+const ArtisTools            = lazy(() => import('./pages/ArtisTools'));
+const BriefSchreiben        = lazy(() => import('./pages/BriefSchreiben'));
+const Fahrzeugliste         = lazy(() => import('./pages/Fahrzeugliste'));
+const Aktienbuch            = lazy(() => import('./pages/Aktienbuch'));
+const Unterschriften        = lazy(() => import('./pages/Unterschriften'));
 const Abschlussdokumentation = lazy(() => import('./pages/Abschlussdokumentation'));
-const Whiteboard = lazy(() => import('./pages/Whiteboard'));
-const Auswertungen = lazy(() => import('./pages/Auswertungen'));
-const Steuern = lazy(() => import('./pages/Steuern'));
-const Login = lazy(() => import('./pages/Login'));
-const ResetPassword = lazy(() => import('./pages/ResetPassword'));
-const MFASetup = lazy(() => import("./pages/MFASetup.jsx"));
-const MFALogin = lazy(() => import("./pages/MFALogin.jsx"));
-const SetPassword = lazy(() => import("./pages/SetPassword.jsx"));
-const DokumentUploadKunden = lazy(() => import("./pages/DokumentUploadKunden.jsx"));
-const Posteingang = lazy(() => import("./pages/Posteingang.jsx"));
-const SharePage = lazy(() => import("./pages/SharePage.jsx"));
-const Leistungserfassung = lazy(() => import("./pages/Leistungserfassung.jsx"));
-const Promptvorlagen = lazy(() => import("./pages/Promptvorlagen.jsx"));
-const TelefonDashboard = lazy(() => import("./pages/TelefonDashboard.jsx"));
+const Whiteboard            = lazy(() => import('./pages/Whiteboard'));
+const Auswertungen          = lazy(() => import('./pages/Auswertungen'));
+const Steuern               = lazy(() => import('./pages/Steuern'));
+const Login                 = lazy(() => import('./pages/Login'));
+const ResetPassword         = lazy(() => import('./pages/ResetPassword'));
+const MFASetup              = lazy(() => import("./pages/MFASetup.jsx"));
+const MFALogin              = lazy(() => import("./pages/MFALogin.jsx"));
+const SetPassword           = lazy(() => import("./pages/SetPassword.jsx"));
+const DokumentUploadKunden  = lazy(() => import("./pages/DokumentUploadKunden.jsx"));
+const Posteingang           = lazy(() => import("./pages/Posteingang.jsx"));
+const SharePage             = lazy(() => import("./pages/SharePage.jsx"));
+const Leistungserfassung    = lazy(() => import("./pages/Leistungserfassung.jsx"));
+const Promptvorlagen        = lazy(() => import("./pages/Promptvorlagen.jsx"));
+const TelefonDashboard      = lazy(() => import("./pages/TelefonDashboard.jsx"));
+const Jahresplanung         = lazy(() => import("./pages/Jahresplanung.jsx"));
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30000 } }
@@ -72,7 +73,6 @@ function AuthenticatedApp() {
 
   return (
       <Layout>
-        {/* Suspense fängt das Laden der lazy-Komponenten ab */}
         <Suspense fallback={<PageLoader />}>
           <Routes>
             <Route path="/" element={<Navigate to="/Dashboard" replace />} />
@@ -100,6 +100,7 @@ function AuthenticatedApp() {
             <Route path="/Steuern" element={<Steuern />} />
             <Route path="/Promptvorlagen" element={<Promptvorlagen />} />
             <Route path="/TelefonDashboard" element={<TelefonDashboard />} />
+            <Route path="/Jahresplanung" element={<Jahresplanung />} />
             {FEATURE_LEISTUNGSERFASSUNG && (
                 <Route path="/Leistungserfassung" element={<Leistungserfassung />} />
             )}
@@ -120,18 +121,16 @@ function App() {
                 v7_relativeSplatPath: true
               }}
           >
-            <Suspense fallback={<PageLoader />}>
-              <Routes>
-                <Route path="/set-password" element={<SetPassword />} />
-                <Route path="/reset-password" element={<ResetPassword />} />
-                <Route path="/mfa-setup" element={<MFASetup />} />
-                <Route path="/mfa-login" element={<MFALogin />} />
-                <Route path="/upload/:hash" element={<DokumentUploadKunden />} />
-                <Route path="/share/:token" element={<SharePage />} />
-                <Route path="/share" element={<SharePage />} />
-                <Route path="*" element={<AuthenticatedApp />} />
-              </Routes>
-            </Suspense>
+            <Routes>
+              <Route path="/set-password" element={<Suspense fallback={<PageLoader />}><SetPassword /></Suspense>} />
+              <Route path="/reset-password" element={<Suspense fallback={<PageLoader />}><ResetPassword /></Suspense>} />
+              <Route path="/mfa-setup" element={<Suspense fallback={<PageLoader />}><MFASetup /></Suspense>} />
+              <Route path="/mfa-login" element={<Suspense fallback={<PageLoader />}><MFALogin /></Suspense>} />
+              <Route path="/upload/:hash" element={<Suspense fallback={<PageLoader />}><DokumentUploadKunden /></Suspense>} />
+              <Route path="/share/:token" element={<Suspense fallback={<PageLoader />}><SharePage /></Suspense>} />
+              <Route path="/share" element={<Suspense fallback={<PageLoader />}><SharePage /></Suspense>} />
+              <Route path="*" element={<AuthenticatedApp />} />
+            </Routes>
           </Router>
           <Toaster />
           <SonnerToaster richColors position="top-center" />
