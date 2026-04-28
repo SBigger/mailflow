@@ -14,12 +14,27 @@ const STOP_WORDS = new Set([
   'schon','nur','mich','mir','bei','des','ich','sie','wir','ihr','ihn',
   'ihm','uns','euch','sich','ein','kein','viel','sehr','bitte','mal',
   'gibt','habe','hatte','wurde','werden','muss','soll','will','darf',
-  'kann','doch','auch','then','this','that',
+  'kann','doch','auch','then','this','that','letzte','letzten','aktion',
+  'aktionen','kunde','kunden',
 ]);
 
 function fmt(date?: string | null) {
   if (!date) return '–';
   return date.split('T')[0].split('-').reverse().join('.');
+}
+
+function fmtDateTime(date?: string | null) {
+  if (!date) return '–';
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return fmt(date);
+  return `${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}.${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+
+function fmtDuration(sec?: number | null) {
+  if (!sec) return '–';
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return m > 0 ? `${m}m ${s}s` : `${s}s`;
 }
 
 function buildOrFilter(fields: string[], kws: string[]) {
@@ -29,11 +44,11 @@ function buildOrFilter(fields: string[], kws: string[]) {
 // Direkt-Formatter als Fallback falls Claude nicht antwortet
 function buildDirectAnswer(
   question: string,
-  fristen: any[], tasks: any[], mails: any[], doks: any[],
+  fristen: any[], tasks: any[], mails: any[], doks: any[], calls: any[], aktien: any[],
   custMap: Record<string, string>
 ): { answer: string; speak_text: string; sources: any[] } {
   const cn = (id: string) => custMap[id] || '–';
-  const total = fristen.length + tasks.length + mails.length + doks.length;
+  const total = fristen.length + tasks.length + mails.length + doks.length + calls.length + aktien.length;
 
   if (total === 0) {
     return {
@@ -59,6 +74,16 @@ function buildDirectAnswer(
     }
     answer += '\n';
   }
+  if (calls.length > 0) {
+    answer += `## Telefonate (${calls.length})\n`;
+    for (const c of calls.slice(0, 8)) {
+      const dir = c.direction === 'in' ? '⬅' : c.direction === 'out' ? '➡' : '☎';
+      const partner = c.direction === 'in' ? (c.caller_name || c.caller_number) : (c.callee_name || c.callee_number);
+      answer += `- ${dir} **${partner || '–'}** | ${cn(c.customer_id)} | ${fmtDateTime(c.start_time)} | ${fmtDuration(c.duration_seconds)}\n`;
+      if (c.notes) answer += `  _${c.notes.slice(0, 120)}_\n`;
+    }
+    answer += '\n';
+  }
   if (mails.length > 0) {
     answer += `## Mails (${mails.length})\n`;
     for (const m of mails.slice(0, 6)) {
@@ -72,19 +97,32 @@ function buildDirectAnswer(
       answer += `- 📄 **${d.name}** | ${cn(d.customer_id)}\n`;
       if (d.content_snippet) answer += `  _...${d.content_snippet}..._\n`;
     }
+    answer += '\n';
+  }
+  if (aktien.length > 0) {
+    answer += `## Aktienbuch (${aktien.length})\n`;
+    for (const a of aktien.slice(0, 6)) {
+      answer += `- 📜 **${a.aktionaer_name}** | ${cn(a.customer_id)} | ${a.transaktionstyp || '–'} | ${fmt(a.kaufdatum)}\n`;
+    }
   }
 
   const parts: string[] = [];
   if (fristen.length) parts.push(`${fristen.length} Frist${fristen.length > 1 ? 'en' : ''}`);
   if (tasks.length)   parts.push(`${tasks.length} Aufgabe${tasks.length > 1 ? 'n' : ''}`);
+  if (calls.length)   parts.push(`${calls.length} Telefonat${calls.length > 1 ? 'e' : ''}`);
   if (mails.length)   parts.push(`${mails.length} Mail${mails.length > 1 ? 's' : ''}`);
   if (doks.length)    parts.push(`${doks.length} Dokument${doks.length > 1 ? 'e' : ''}`);
+  if (aktien.length)  parts.push(`${aktien.length} Aktienbuch-Eintrag${aktien.length > 1 ? 'e' : ''}`);
 
   const sources: any[] = [];
   for (const f of fristen.slice(0, 3))
     sources.push({ type: 'frist', id: f.id, title: f.title || f.category, subtitle: `${fmt(f.due_date)} | ${f.status}`, customer_name: cn(f.customer_id) });
   for (const t of tasks.slice(0, 3))
     sources.push({ type: 'task', id: t.id, title: t.title, subtitle: `${fmt(t.due_date)} | ${t.status || 'offen'}`, customer_name: cn(t.customer_id) });
+  for (const c of calls.slice(0, 3)) {
+    const partner = c.direction === 'in' ? (c.caller_name || c.caller_number) : (c.callee_name || c.callee_number);
+    sources.push({ type: 'call', id: c.id, title: partner || 'Anruf', subtitle: `${fmtDateTime(c.start_time)} | ${fmtDuration(c.duration_seconds)}`, customer_name: cn(c.customer_id) });
+  }
   for (const m of mails.slice(0, 2))
     sources.push({ type: 'mail', id: m.id, title: m.subject, subtitle: fmt(m.received_date), customer_name: cn(m.customer_id) });
   for (const d of doks.slice(0, 3)) {
@@ -92,6 +130,8 @@ function buildDirectAnswer(
     if (d.storage_path) s.storage_path = d.storage_path;
     sources.push(s);
   }
+  for (const a of aktien.slice(0, 2))
+    sources.push({ type: 'aktie', id: a.id, title: a.aktionaer_name, subtitle: `${a.transaktionstyp || '–'} | ${fmt(a.kaufdatum)}`, customer_name: cn(a.customer_id) });
 
   return { answer: answer.trim(), speak_text: `Ich habe ${parts.join(', ')} gefunden.`, sources };
 }
@@ -145,7 +185,7 @@ serve(async (req) => {
     if (keywords.length === 0) keywords.push(q.slice(0, 20));
 
     // ── Parallele DB-Suche ────────────────────────────────────────────────────
-    const [custRes, fristenRes, tasksRes, mailsRes, rpcRes, contentRes] =
+    const [custRes, fristenRes, tasksRes, mailsRes, rpcRes, contentRes, callsRes, aktienRes] =
       await Promise.allSettled([
         supabase.from('customers')
           .select('id, company_name, email')
@@ -170,24 +210,37 @@ serve(async (req) => {
           .order('received_date', { ascending: false })
           .limit(6),
 
-        // GIN-Volltext-Suche inkl. PDF-Inhalt
         supabase.rpc('search_dokumente', {
           p_query: keywords.join(' '), p_customer_id: null, p_limit: 8,
         }),
 
-        // Parallel: content_text ilike für alle indizierten Dokumente
         supabase.from('dokumente')
           .select('id, name, filename, storage_path, customer_id, file_type, content_text')
           .or(keywords.map((k: string) => `content_text.ilike.%${k}%`).join(','))
           .limit(6),
+
+        // NEU: Telefonate
+        supabase.from('call_records')
+          .select('id, direction, caller_name, callee_name, caller_number, callee_number, start_time, duration_seconds, notes, customer_id')
+          .or(buildOrFilter(['caller_name', 'callee_name', 'caller_number', 'callee_number', 'notes'], keywords))
+          .order('start_time', { ascending: false })
+          .limit(8),
+
+        // NEU: Aktienbuch
+        supabase.from('aktienbuch')
+          .select('id, aktionaer_name, aktionaer_adresse, wirtschaftlich_berechtigter, transaktionstyp, kaufdatum, datum_vr_entscheid, customer_id')
+          .or(buildOrFilter(['aktionaer_name', 'wirtschaftlich_berechtigter', 'transaktionstyp'], keywords))
+          .order('kaufdatum', { ascending: false })
+          .limit(8),
       ]);
 
     const customers = custRes.status === 'fulfilled' ? (custRes.value.data || []) : [];
     let fristen     = fristenRes.status === 'fulfilled' ? (fristenRes.value.data || []) : [];
     let tasks       = tasksRes.status === 'fulfilled'   ? (tasksRes.value.data || [])   : [];
-    const mails     = mailsRes.status === 'fulfilled'   ? (mailsRes.value.data || [])   : [];
+    let mails       = mailsRes.status === 'fulfilled'   ? (mailsRes.value.data || [])   : [];
+    let calls       = callsRes.status === 'fulfilled'   ? (callsRes.value.data || [])   : [];
+    let aktien      = aktienRes.status === 'fulfilled'  ? (aktienRes.value.data || [])  : [];
 
-    // Dokumente: GIN-RPC + content_text zusammenführen, deduplizieren
     const rpcDoks     = rpcRes.status === 'fulfilled'     ? (rpcRes.value.data || [])     : [];
     const contentDoks = contentRes.status === 'fulfilled' ? (contentRes.value.data || []) : [];
     const seenIds = new Set(rpcDoks.map((d: any) => d.id));
@@ -206,27 +259,43 @@ serve(async (req) => {
         }
         return { ...d, content_snippet };
       });
-    const doks = [...rpcDoks, ...extraDoks];
+    let doks = [...rpcDoks, ...extraDoks];
 
-    // Wenn Kunde gefunden → auch seine Fristen + Tasks laden
+    // Wenn Kunde gefunden → ALLE seine Aktivitäten laden
+    // ("zeige mir die letzten Aktionen von Kunde XY")
     if (customers.length > 0) {
       const cusIds = customers.map((c: any) => c.id);
-      const [moreF, moreT] = await Promise.all([
+      const [moreF, moreT, moreM, moreC, moreA, moreD] = await Promise.all([
         supabase.from('fristen')
           .select('id, title, category, kanton, jahr, due_date, status, description, customer_id')
-          .in('customer_id', cusIds).order('due_date', { ascending: true }).limit(10),
+          .in('customer_id', cusIds).order('due_date', { ascending: true }).limit(15),
         supabase.from('tasks')
           .select('id, title, description, due_date, status, assignee, customer_id')
-          .in('customer_id', cusIds).order('due_date', { ascending: true }).limit(10),
+          .in('customer_id', cusIds).order('due_date', { ascending: true }).limit(15),
+        supabase.from('mail_items')
+          .select('id, subject, body_preview, received_date, from_address, customer_id')
+          .in('customer_id', cusIds).order('received_date', { ascending: false }).limit(10),
+        supabase.from('call_records')
+          .select('id, direction, caller_name, callee_name, caller_number, callee_number, start_time, duration_seconds, notes, customer_id')
+          .in('customer_id', cusIds).order('start_time', { ascending: false }).limit(10),
+        supabase.from('aktienbuch')
+          .select('id, aktionaer_name, aktionaer_adresse, wirtschaftlich_berechtigter, transaktionstyp, kaufdatum, datum_vr_entscheid, customer_id')
+          .in('customer_id', cusIds).order('kaufdatum', { ascending: false }).limit(10),
+        supabase.from('dokumente')
+          .select('id, name, filename, storage_path, customer_id, file_type')
+          .in('customer_id', cusIds).order('created_at', { ascending: false }).limit(10),
       ]);
-      if (moreF.data) {
-        const ex = new Set(fristen.map((f: any) => f.id));
-        fristen = [...fristen, ...moreF.data.filter((f: any) => !ex.has(f.id))];
-      }
-      if (moreT.data) {
-        const ex = new Set(tasks.map((t: any) => t.id));
-        tasks = [...tasks, ...moreT.data.filter((t: any) => !ex.has(t.id))];
-      }
+      const merge = (orig: any[], extra: any[] | null) => {
+        if (!extra) return orig;
+        const ex = new Set(orig.map((x: any) => x.id));
+        return [...orig, ...extra.filter((x: any) => !ex.has(x.id))];
+      };
+      fristen = merge(fristen, moreF.data);
+      tasks   = merge(tasks,   moreT.data);
+      mails   = merge(mails,   moreM.data);
+      calls   = merge(calls,   moreC.data);
+      aktien  = merge(aktien,  moreA.data);
+      doks    = merge(doks,    moreD.data);
     }
 
     // Kunden-Namens-Map
@@ -235,6 +304,8 @@ serve(async (req) => {
       ...tasks.map((t: any) => t.customer_id),
       ...mails.map((m: any) => m.customer_id),
       ...doks.map((d: any) => d.customer_id),
+      ...calls.map((c: any) => c.customer_id),
+      ...aktien.map((a: any) => a.customer_id),
     ].filter(Boolean));
 
     const custMap: Record<string, string> = {};
@@ -251,9 +322,16 @@ serve(async (req) => {
     // ── Kontext für Claude aufbauen ───────────────────────────────────────────
     let ctx = `Heute: ${today}\nFrage: "${question}"\n\n`;
 
+    if (customers.length > 0) {
+      ctx += `## ERKANNTE KUNDEN (${customers.length})\n`;
+      customers.slice(0, 5).forEach((c: any) => {
+        ctx += `- ${c.company_name} (ID: ${c.id})\n`;
+      });
+      ctx += '\n';
+    }
     if (fristen.length > 0) {
       ctx += `## FRISTEN (${fristen.length})\n`;
-      fristen.slice(0, 8).forEach((f: any) => {
+      fristen.slice(0, 10).forEach((f: any) => {
         ctx += `ID:${f.id} | "${f.title || f.category}" | Kunde: ${cn(f.customer_id)} | Kanton: ${f.kanton || '–'} | Jahr: ${f.jahr || '–'} | Fällig: ${fmt(f.due_date)} | Status: ${f.status}\n`;
         if (f.description) ctx += `  Info: ${f.description.slice(0, 150)}\n`;
       });
@@ -261,15 +339,25 @@ serve(async (req) => {
     }
     if (tasks.length > 0) {
       ctx += `## AUFGABEN (${tasks.length})\n`;
-      tasks.slice(0, 8).forEach((t: any) => {
+      tasks.slice(0, 10).forEach((t: any) => {
         ctx += `ID:${t.id} | "${t.title}" | Kunde: ${cn(t.customer_id)} | Fällig: ${fmt(t.due_date)} | Status: ${t.status || 'offen'} | Zuständig: ${t.assignee || '–'}\n`;
         if (t.description) ctx += `  Info: ${t.description.slice(0, 150)}\n`;
       });
       ctx += '\n';
     }
+    if (calls.length > 0) {
+      ctx += `## TELEFONATE (${calls.length})\n`;
+      calls.slice(0, 10).forEach((c: any) => {
+        const dir = c.direction === 'in' ? 'eingehend' : c.direction === 'out' ? 'ausgehend' : '–';
+        const partner = c.direction === 'in' ? (c.caller_name || c.caller_number) : (c.callee_name || c.callee_number);
+        ctx += `ID:${c.id} | ${dir} | Partner: ${partner || '–'} | Kunde: ${cn(c.customer_id)} | Am: ${fmtDateTime(c.start_time)} | Dauer: ${fmtDuration(c.duration_seconds)}\n`;
+        if (c.notes) ctx += `  Notiz: ${c.notes.slice(0, 200)}\n`;
+      });
+      ctx += '\n';
+    }
     if (mails.length > 0) {
       ctx += `## MAILS (${mails.length})\n`;
-      mails.slice(0, 6).forEach((m: any) => {
+      mails.slice(0, 8).forEach((m: any) => {
         ctx += `ID:${m.id} | "${m.subject}" | Von: ${m.from_address} | Am: ${fmt(m.received_date)} | Kunde: ${cn(m.customer_id)}\n`;
         if (m.body_preview) ctx += `  Inhalt: ${m.body_preview.slice(0, 250)}\n`;
       });
@@ -277,24 +365,30 @@ serve(async (req) => {
     }
     if (doks.length > 0) {
       ctx += `## DOKUMENTE (${doks.length})\n`;
-      doks.slice(0, 6).forEach((d: any) => {
+      doks.slice(0, 8).forEach((d: any) => {
         ctx += `ID:${d.id} | "${d.name}" | Kunde: ${cn(d.customer_id)} | Typ: ${d.file_type || d.filename?.split('.').pop() || '–'}\n`;
-        // Textauszug aus PDF/Word-Inhalt mitgeben
         const snippet = (d as any).content_snippet || (d.content_text ? d.content_text.slice(0, 300) : '');
         if (snippet) ctx += `  Inhalt-Auszug: "${snippet}"\n`;
       });
       ctx += '\n';
     }
-    if (fristen.length === 0 && tasks.length === 0 && mails.length === 0 && doks.length === 0) {
+    if (aktien.length > 0) {
+      ctx += `## AKTIENBUCH (${aktien.length})\n`;
+      aktien.slice(0, 8).forEach((a: any) => {
+        ctx += `ID:${a.id} | Aktionär: "${a.aktionaer_name}" | Kunde: ${cn(a.customer_id)} | Typ: ${a.transaktionstyp || '–'} | Kauf: ${fmt(a.kaufdatum)} | VR: ${fmt(a.datum_vr_entscheid)}\n`;
+        if (a.wirtschaftlich_berechtigter) ctx += `  Wirtschaftl. Berechtigter: ${a.wirtschaftlich_berechtigter}\n`;
+      });
+      ctx += '\n';
+    }
+    if (fristen.length === 0 && tasks.length === 0 && mails.length === 0 && doks.length === 0 && calls.length === 0 && aktien.length === 0) {
       ctx += `Keine Einträge gefunden. Teile dem Benutzer mit, dass nichts gefunden wurde.\n`;
     }
 
-    // ── Claude Haiku 4.5 – beste Qualität für Deutsch & Kontextverständnis ───
+    // ── Claude Haiku 4.5 ──────────────────────────────────────────────────────
     const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY");
 
     if (!anthropicKey) {
-      // Fallback: direkte Formatierung ohne LLM
-      const fallback = buildDirectAnswer(question, fristen, tasks, mails, doks, custMap);
+      const fallback = buildDirectAnswer(question, fristen, tasks, mails, doks, calls, aktien, custMap);
       return new Response(JSON.stringify({ ...fallback, today }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -306,7 +400,7 @@ Antworte mit genau diesem JSON-Format (kein Markdown-Codeblock, nur reines JSON)
   "answer": "Vollständige Antwort auf Deutsch. Benutze ** für fett, - für Listen. Hebe das Wichtigste hervor.",
   "speak_text": "1-2 Sätze zum Vorlesen, kein Markdown, auf das Wesentliche fokussiert.",
   "sources": [
-    {"type": "frist|task|mail|dokument", "id": "uuid", "title": "Titel", "subtitle": "Datum/Status", "customer_name": "Kundenname"}
+    {"type": "frist|task|mail|dokument|call|aktie", "id": "uuid", "title": "Titel", "subtitle": "Datum/Status", "customer_name": "Kundenname"}
   ]
 }`;
 
@@ -319,18 +413,23 @@ Antworte mit genau diesem JSON-Format (kein Markdown-Codeblock, nur reines JSON)
       },
       body: JSON.stringify({
         model: "claude-haiku-4-5-20251001",
-        max_tokens: 2000,
+        max_tokens: 2500,
         system: `Du bist Smartis, der KI-Assistent von Artis Treuhand GmbH.
 Beantworte Fragen auf Schweizer Hochdeutsch (ss statt ß).
 
+Datentypen die du kennst:
+- FRISTEN: Steuerfristen mit Kategorie, Kanton, Jahr, Fälligkeit, Status
+- AUFGABEN (Tasks): Tickets mit Titel, Fälligkeit, Zuständigem
+- TELEFONATE: ein-/ausgehende Anrufe mit Partner, Datum, Dauer, Notiz
+- MAILS: empfangene/gesendete Mails mit Betreff, Absender, Datum
+- DOKUMENTE: PDFs/Word/etc mit Volltext-Inhalt
+- AKTIENBUCH: Aktionäre einer Firma mit Transaktionstyp, Kaufdatum, VR-Entscheid
+
 Regeln:
+- Bei Fragen wie "letzte Aktionen von Kunde XY" → fasse alle Datentypen für diesen Kunden chronologisch zusammen, neueste zuerst
 - Antworte präzise, informativ und freundlich
-- Erkenne Zusammenhänge zwischen Fristen, Aufgaben, Mails und Dokumenten
-- Bei Fristen: nenne Kategorie, Kanton, Jahr, Fälligkeitsdatum und Status
-- Bei Aufgaben: nenne Titel, Fälligkeitsdatum und Zuständigen
-- Bei Mails: nenne Betreff, Absender und Datum
-- Bei Dokumenten: nenne Name, Kunde und relevante Textauszüge
-- Wenn mehrere Einträge: fasse zusammen und hebe das Dringlichste hervor
+- Erkenne Zusammenhänge zwischen den Datentypen
+- Wenn mehrere Einträge: gruppiere nach Typ und hebe das Dringlichste hervor
 - Wenn nichts gefunden: sage es klar und schlage alternative Suchbegriffe vor
 - Antworte NUR mit einem JSON-Objekt, kein Markdown-Codeblock`,
         messages: [{ role: "user", content: userPrompt }],
@@ -338,9 +437,8 @@ Regeln:
     });
 
     if (!claudeRes.ok) {
-      // Claude nicht verfügbar → Direkt-Formatter als Fallback
       console.error("Claude error:", claudeRes.status, await claudeRes.text());
-      const fallback = buildDirectAnswer(question, fristen, tasks, mails, doks, custMap);
+      const fallback = buildDirectAnswer(question, fristen, tasks, mails, doks, calls, aktien, custMap);
       return new Response(JSON.stringify({ ...fallback, today }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -357,9 +455,8 @@ Regeln:
       result = match ? JSON.parse(match[0]) : null;
     }
 
-    // Falls Claude kein valides JSON liefert → Fallback
     if (!result?.answer) {
-      const fallback = buildDirectAnswer(question, fristen, tasks, mails, doks, custMap);
+      const fallback = buildDirectAnswer(question, fristen, tasks, mails, doks, calls, aktien, custMap);
       return new Response(JSON.stringify({ ...fallback, today }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

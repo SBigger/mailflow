@@ -37,8 +37,9 @@ export default function Jahresplanung() {
   const accent   = isArtis ? "#4d6a50" : "#5b21b6";
   const headerBg = isArtis ? "#e6ede6" : isLight ? "#eef0fb" : "#27272c";
 
-  const colors = { pageBg, cardBg, border, text, subtle, accent, headerBg };
+  const colors = { pageBg, cardBg, border, text, subtle, accent, headerBg, isArtis, isLight };
 
+  // year is display-only – entries are perpetual (no year filter)
   const [year, setYear]           = useState(new Date().getFullYear());
   const [staff, setStaff]         = useState([]);
   const [customers, setCustomers] = useState([]);
@@ -48,17 +49,29 @@ export default function Jahresplanung() {
   const [modal, setModal]         = useState(null);
   const searchRef = useRef(null);
 
-  // Load
+  // Load – no year filter; entries repeat every year until customer is inactive
   const loadAll = useCallback(async () => {
     const [{ data: s }, { data: c }, { data: e }] = await Promise.all([
       supabase.from("profiles").select("id,full_name,email").order("full_name"),
-      supabase.from("customers").select("id,company_name").order("company_name").limit(3000),
-      supabase.from("jahresplanung").select("*").eq("year", year),
+      // Only active customers (neq false covers both true and null)
+      supabase.from("customers").select("id,company_name,active").neq("active", false).order("company_name").limit(3000),
+      supabase.from("jahresplanung").select("*"),
     ]);
     setStaff(s || []);
     setCustomers(c || []);
     setEntries(e || []);
-  }, [year]);
+  }, []);
+
+  // On first staff load: collapse all except current user
+  const collapsedInitialized = useRef(false);
+  useEffect(() => {
+    if (staff.length > 0 && profile?.id && !collapsedInitialized.current) {
+      collapsedInitialized.current = true;
+      const init = {};
+      staff.forEach(s => { if (s.id !== profile.id) init[s.id] = true; });
+      setCollapsed(init);
+    }
+  }, [staff, profile?.id]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
@@ -91,6 +104,16 @@ export default function Jahresplanung() {
     }
     return m;
   }, [entries]);
+
+  // Current user always first, then alphabetical
+  const orderedStaff = useMemo(() => {
+    if (!profile?.id) return staff;
+    return [...staff].sort((a, b) => {
+      if (a.id === profile.id) return -1;
+      if (b.id === profile.id) return 1;
+      return (a.full_name || a.email || "").localeCompare(b.full_name || b.email || "");
+    });
+  }, [staff, profile?.id]);
 
   const filteredCustomers = useMemo(() => {
     if (!search) return customers;
@@ -143,7 +166,6 @@ export default function Jahresplanung() {
     const rows = monthsToCreate.map(m => ({
       customer_id: customerId,
       assigned_to: staffId,
-      year,
       month: m,
       activity_type: activityType,
       hours: hours ? parseFloat(hours) : null,
@@ -192,6 +214,7 @@ export default function Jahresplanung() {
           <span style={{ fontSize: 14, fontWeight: 700, color: text, minWidth: 44, textAlign: "center" }}>{year}</span>
           <button onClick={() => setYear(y => y + 1)} style={btnStyle(border, subtle)}>›</button>
         </div>
+        <span style={{ fontSize: 10.5, color: subtle, marginLeft: 2 }}>Einträge wiederkehrend · aktive Kunden</span>
         <button onClick={loadAll} title="Aktualisieren" style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: subtle, padding: 4 }}>
           <RefreshCw size={14} />
         </button>
@@ -261,20 +284,29 @@ export default function Jahresplanung() {
           {/* RIGHT: Planning Grid */}
           <div style={{ flex: 1, overflowX: "auto", overflowY: "auto" }}>
             <div style={{ minWidth: 1100, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
-              {staff.map(s => {
-                const isOpen     = !collapsed[s.id];
+              {orderedStaff.map(s => {
+                const isMe       = s.id === profile?.id;
+                const isOpen     = collapsed[s.id] === undefined ? true : !collapsed[s.id];
                 const totalHours = Array.from({ length: 12 }, (_, i) => hoursMap[`${s.id}|${i+1}`] || 0)
                                         .reduce((a, b) => a + b, 0);
                 const initials   = (s.full_name || s.email || "?").slice(0, 2).toUpperCase();
 
                 return (
-                  <div key={s.id} style={{ borderRadius: 10, border: `1px solid ${border}`, overflow: "hidden", backgroundColor: cardBg }}>
+                  <div key={s.id} style={{
+                    borderRadius: 10,
+                    border: `1px solid ${isMe ? accent : border}`,
+                    overflow: "hidden", backgroundColor: cardBg,
+                    boxShadow: isMe ? `0 0 0 1.5px ${accent}22` : "none",
+                  }}>
                     {/* Staff header */}
                     <div
                       onClick={() => setCollapsed(c => ({ ...c, [s.id]: !c[s.id] }))}
                       style={{
                         display: "flex", alignItems: "center", gap: 10, padding: "9px 14px",
-                        backgroundColor: headerBg, cursor: "pointer", userSelect: "none",
+                        backgroundColor: isMe
+                          ? (isArtis ? "#d4e8d4" : isLight ? "#ede9fe" : "#2d2d40")
+                          : headerBg,
+                        cursor: "pointer", userSelect: "none",
                       }}
                     >
                       {isOpen
@@ -291,9 +323,14 @@ export default function Jahresplanung() {
                       </div>
                       <span style={{ fontSize: 13, fontWeight: 600, color: text, flex: 1 }}>
                         {s.full_name || s.email}
+                        {isMe && (
+                          <span style={{ marginLeft: 7, fontSize: 10, fontWeight: 600, color: accent, backgroundColor: `${accent}18`, padding: "1px 6px", borderRadius: 8 }}>
+                            Du
+                          </span>
+                        )}
                       </span>
                       <span style={{ fontSize: 11, color: subtle, display: "flex", alignItems: "center", gap: 4 }}>
-                        {totalHours > 0 && <><Clock size={10} />{totalHours}h {year}</>}
+                        {totalHours > 0 && <><Clock size={10} />{totalHours}h</>}
                       </span>
                     </div>
 

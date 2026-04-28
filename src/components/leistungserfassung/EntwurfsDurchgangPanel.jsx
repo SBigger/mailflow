@@ -6,10 +6,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   ChevronLeft, ChevronRight, Plus, Trash2, Check, FileCheck2,
-  Send, Save, Receipt, SkipForward,
+  Send, Save, Receipt, SkipForward, FileDown,
 } from 'lucide-react';
-import { leInvoice, leInvoiceLine } from '@/lib/leApi';
+import { leInvoice, leInvoiceLine, leCompany } from '@/lib/leApi';
 import { supabase } from '@/api/supabaseClient';
+import { generateInvoicePdf, triggerDownload } from '@/lib/leInvoicePdf';
 import {
   Chip, Card, IconBtn, Input, Field, PanelLoader, PanelError, PanelHeader, fmt,
   artisBtn, artisPrimaryStyle, artisGhostStyle,
@@ -332,6 +333,23 @@ function DraftEditor({ invoice, onSaved, onFinalized, onDirtyChange }) {
 
       {/* Action-Row */}
       <div className="mt-5 pt-4 border-t flex items-center justify-end gap-2" style={{ borderColor: '#e4e7e4' }}>
+        <button
+          type="button"
+          onClick={async () => {
+            try {
+              const company = await leCompany.get();
+              if (!company) { toast.error('Firmen-Settings fehlen (Stammdaten → Firma).'); return; }
+              const fresh = await leInvoice.get(invoice.id);
+              const result = await generateInvoicePdf({ invoice: fresh, company });
+              if (result.blob) triggerDownload(result.blob, `Rechnung-${fresh.invoice_no || 'Entwurf'}.pdf`);
+              toast.success('PDF generiert' + (result.url ? ' und gespeichert' : ''));
+            } catch (e) { toast.error('PDF-Fehler: ' + (e?.message ?? e)); }
+          }}
+          className={artisBtn.ghost}
+          style={artisGhostStyle}
+        >
+          <FileDown className="w-4 h-4" /> PDF
+        </button>
         <button
           type="button"
           disabled={!dirty || saveMut.isPending}
