@@ -76,8 +76,8 @@ export default function Jahresplanung() {
     // Run queries independently so a failed jp_feiertage doesn't block customers/staff
     const [sRes, cRes, eRes, fRes] = await Promise.all([
       supabase.from("profiles").select("id,full_name,email").order("full_name"),
-      supabase.from("customers").select("id,company_name,active")
-        .or("active.is.null,active.eq.true").order("company_name").limit(3000),
+      supabase.from("customers").select("id,company_name,aktiv")
+        .or("aktiv.is.null,aktiv.eq.true").order("company_name").limit(3000),
       supabase.from("jahresplanung").select("*").eq("year", year),
       supabase.from("jp_feiertage").select("*").gte("date", `${year}-01-01`).lte("date", `${year}-12-31`),
     ]);
