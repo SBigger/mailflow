@@ -4,10 +4,9 @@
   "version": "1.0.12",
   "identifier": "ch.artis.smartis",
   "build": {
-    "frontendDist": "https://smartis.me",
-    "devUrl": "http://localhost:5173",
     "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": ""
+    "frontendDist": "../dist/tauri",
+    "devUrl": "http://localhost:3000"
   },
   "app": {
     "windows": [],

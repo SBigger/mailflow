@@ -3,15 +3,13 @@
   "private": true,
   "version": "2.2.5",
   "type": "module",
-  "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
     "build": "vite build --mode production",
     "preview": "vite preview",
     "supabase": "npx supabase start && npx supabase functions serve --env-file .env.local",
     "supabase debug": "supabase start && supabase functions serve --env-file .env.local --inspect-mode brk",
-    "electron:dev": "electron electron/main.cjs",
-    "electron:build": "electron-builder --win --config electron-builder.json"
+    "desktop:build": "npx @tauri-apps/cli build"
   },
   "dependencies": {
     "@azure/msal-browser": "^5.7.0",
@@ -75,8 +73,6 @@
     "@types/react-dom": "^18.2.22",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
-    "electron": "^33.4.11",
-    "electron-builder": "^25.1.8",
     "postcss": "^8.5.3",
     "supabase": "^2.93.1",
     "tailwindcss": "^3.4.17",
