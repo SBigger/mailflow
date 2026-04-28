@@ -306,7 +306,7 @@ export default function DokUploadDialog({ preFile, preCustomerId, onClose }) {
 
           {/* Tags */}
           <div>
-            <label style={{ fontSize: 12, color: textMuted, display: "block", marginBottom: 4, display: "flex", alignItems: "center", gap: 5 }}>
+            <label style={{ fontSize: 12, color: textMuted, marginBottom: 4, display: "flex", alignItems: "center", gap: 5 }}>
               Tags *
               {detecting && (
                 <span style={{ display: "flex", alignItems: "center", gap: 3, color: accent, fontSize: 11 }}>

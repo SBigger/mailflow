@@ -3,14 +3,6 @@ import ReactDOM from 'react-dom/client'
 import App from '@/App.jsx'
 import '@/index.css'
 import { registerSW } from 'virtual:pwa-register'
-
-// ── OAuth-Popup-Interceptor für Tauri-Client ─────────────────────────────────
-// Im Tauri WebView2 werden window.open() Popups normalerweise im externen Browser
-// geöffnet → Cookies landen dort, nicht im WebView → Power-BI/M365-Login schlägt fehl.
-// Hier fangen wir Microsoft-Login-Popups ab und leiten sie an einen Rust-Command,
-// der ein internes Tauri-Fenster öffnet (Cookies werden geshared).
-// Browser bleibt unberührt (window.__TAURI__ ist dort undefined).
-// Berührt NICHT die Deep-Link-Handler (smartis://).
 if (typeof window !== 'undefined' && window.__TAURI__) {
   const origOpen = window.open.bind(window)
   const oauthHosts = /login\.microsoftonline\.com|login\.live\.com|login\.microsoft\.com|login\.windows\.net/

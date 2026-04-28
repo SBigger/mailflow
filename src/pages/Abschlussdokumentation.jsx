@@ -5,7 +5,6 @@ import { ThemeContext } from "@/Layout";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { entities, supabase } from "@/api/supabaseClient";
 import { toast } from "sonner";
-import * as XLSX from "xlsx";
 import {
   BookCheck, FileSpreadsheet, Upload, Download, ChevronRight, Wrench,
   Lock, Unlock, CheckCircle2, AlertCircle, TrendingUp, TrendingDown,
@@ -394,8 +393,9 @@ function ImportDialog({ onClose, onImport, accent, theme }) {
     const ext = file.name.split(".").pop().toLowerCase();
     if (ext === "xlsx" || ext === "xls") {
       const reader = new FileReader();
-      reader.onload = (e) => {
+      reader.onload = async (e) => {
         const data = new Uint8Array(e.target.result);
+        const XLSX = await import('xlsx');
         const wb = XLSX.read(data, { type: "array" });
         const ws = wb.Sheets[wb.SheetNames[0]];
         const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
