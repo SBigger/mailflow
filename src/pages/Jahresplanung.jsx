@@ -377,7 +377,7 @@ export default function Jahresplanung() {
                                     }}
                                   >
                                     {cellEnts.map((entry, eidx) => {
-                                      const act  = ACT[entry.activity_type] || ACTIVITIES[0];
+                                      const act  = ACT[entry.activity_type] || { id: entry.activity_type, label: entry.activity_type, color: "#6b7280", bg: "#f3f4f6" };
                                       const cust = custMap[entry.customer_id];
                                       return (
                                         <Draggable key={entry.id} draggableId={`entry|${entry.id}`} index={eidx}>
@@ -548,7 +548,7 @@ function ActivityModal({ modal, onClose, staff, custMap, onSave, onUpdate, onDel
 
         {/* Activity type */}
         <Field label="TÄTIGKEIT" style={{ marginBottom: 12 }}>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 4 }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 4, marginBottom: 6 }}>
             {ACTIVITIES.map(a => (
               <button
                 key={a.id}
@@ -566,6 +566,18 @@ function ActivityModal({ modal, onClose, staff, custMap, onSave, onUpdate, onDel
               </button>
             ))}
           </div>
+          <input
+            value={ACT[activityType] ? "" : activityType}
+            onChange={e => setActivityType(e.target.value)}
+            onFocus={e => { if (ACT[activityType]) setActivityType(""); }}
+            placeholder="Oder eigene Bezeichnung eingeben…"
+            style={{
+              ...inp.style,
+              fontSize: 12,
+              borderColor: !ACT[activityType] && activityType ? accent : border,
+              color: !ACT[activityType] && activityType ? accent : subtle,
+            }}
+          />
         </Field>
 
         {/* Hours */}
