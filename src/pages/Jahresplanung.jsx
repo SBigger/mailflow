@@ -168,8 +168,8 @@ export default function Jahresplanung() {
     return m;
   }, [entries]);
 
-  const custMap = useMemo(() =>
-    Object.fromEntries(customers.map(c => [c.id, c])), [customers]);
+  const custMap  = useMemo(() => Object.fromEntries(customers.map(c => [c.id, c])), [customers]);
+  const staffMap = useMemo(() => Object.fromEntries(staff.map(s => [s.id, s])), [staff]);
 
   const hoursMap = useMemo(() => {
     const m = {};
@@ -459,28 +459,44 @@ export default function Jahresplanung() {
               <Droppable droppableId="customers" isDropDisabled={true}>
                 {(provided) => (
                   <div ref={provided.innerRef} {...provided.droppableProps}>
-                    {filteredCustomers.map((c, idx) => (
-                      <Draggable key={c.id} draggableId={`cust|${c.id}`} index={idx}>
-                        {(drag, snap) => applyDragPortal(snap,
-                          <div
-                            ref={drag.innerRef}
-                            {...drag.draggableProps}
-                            {...drag.dragHandleProps}
-                            style={{
-                              ...drag.draggableProps.style,
-                              padding: "4px 7px", marginBottom: 1, borderRadius: 5,
-                              fontSize: 11, color: text,
-                              backgroundColor: snap.isDragging ? (isArtis ? "#d8ead8" : "#ede9fe") : "transparent",
-                              border: `1px solid ${snap.isDragging ? accent : "transparent"}`,
-                              cursor: "grab", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", userSelect: "none",
-                              boxShadow: snap.isDragging ? "0 4px 12px rgba(0,0,0,0.15)" : "none",
-                            }}
-                          >
-                            {c.company_name}
-                          </div>
-                        )}
-                      </Draggable>
-                    ))}
+                    {filteredCustomers.map((c, idx) => {
+                      const ml = !myClientsOnly && c.mandatsleiter_id ? staffMap[c.mandatsleiter_id] : null;
+                      const sb = !myClientsOnly && c.sachbearbeiter_id ? staffMap[c.sachbearbeiter_id] : null;
+                      return (
+                        <Draggable key={c.id} draggableId={`cust|${c.id}`} index={idx}>
+                          {(drag, snap) => applyDragPortal(snap,
+                            <div
+                              ref={drag.innerRef}
+                              {...drag.draggableProps}
+                              {...drag.dragHandleProps}
+                              style={{
+                                ...drag.draggableProps.style,
+                                padding: "3px 7px", marginBottom: 1, borderRadius: 5,
+                                fontSize: 11, color: text,
+                                backgroundColor: snap.isDragging ? (isArtis ? "#d8ead8" : "#ede9fe") : "transparent",
+                                border: `1px solid ${snap.isDragging ? accent : "transparent"}`,
+                                cursor: "grab", userSelect: "none",
+                                boxShadow: snap.isDragging ? "0 4px 12px rgba(0,0,0,0.15)" : "none",
+                                display: "flex", alignItems: "center", gap: 4,
+                              }}
+                            >
+                              <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.company_name}</span>
+                              {/* Mandatsleiter / Sachbearbeiter Kürzel im "Alle"-Modus */}
+                              {ml && (
+                                <span title={`Mandatsleiter: ${ml.full_name || ml.email}`} style={{ fontSize: 8.5, fontWeight: 700, color: "#fff", backgroundColor: isArtis ? "#4d6a50" : "#5b21b6", borderRadius: 3, padding: "1px 4px", flexShrink: 0, letterSpacing: ".03em" }}>
+                                  {(ml.full_name || ml.email || "?").slice(0, 2).toUpperCase()}
+                                </span>
+                              )}
+                              {sb && sb.id !== ml?.id && (
+                                <span title={`Sachbearbeiter: ${sb.full_name || sb.email}`} style={{ fontSize: 8.5, fontWeight: 700, color: "#fff", backgroundColor: "#0891b2", borderRadius: 3, padding: "1px 4px", flexShrink: 0, letterSpacing: ".03em" }}>
+                                  {(sb.full_name || sb.email || "?").slice(0, 2).toUpperCase()}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </Draggable>
+                      );
+                    })}
                     {provided.placeholder}
                   </div>
                 )}
@@ -1051,7 +1067,8 @@ function ActivityModal({ modal, onClose, staff, custMap, onSave, onUpdate, onDel
 
 function KapazitaetView({ orderedStaff, profile, sollMap, hoursMap, yearSoll, currentMonth, year, entryMap, custMap, colors, onEditEntry, onAddEntry }) {
   const { pageBg, cardBg, border, text, subtle, accent, isArtis, isLight } = colors;
-  const [drillDown, setDrillDown] = useState(null); // { staffId, name, month }
+  const [drillDown,  setDrillDown]  = useState(null); // { staffId, name, month }
+  const [tooltip,    setTooltip]    = useState(null); // { content, x, y }
 
   // Team-Summe pro Monat
   const teamHoursPerMonth = useMemo(() =>
@@ -1064,6 +1081,19 @@ function KapazitaetView({ orderedStaff, profile, sollMap, hoursMap, yearSoll, cu
     ),
   [orderedStaff, hoursMap]);
 
+  // Team-Durchschnitt-% pro Monat (avg utilisation across all staff)
+  const teamAvgPctPerMonth = useMemo(() =>
+    Object.fromEntries(
+      Array.from({ length: 12 }, (_, i) => {
+        const month = i + 1;
+        const soll  = sollMap[month];
+        if (!soll || orderedStaff.length === 0) return [month, 0];
+        const sumPct = orderedStaff.reduce((s, st) => s + (hoursMap[`${st.id}|${month}`] || 0) / soll, 0);
+        return [month, sumPct / orderedStaff.length];
+      })
+    ),
+  [orderedStaff, hoursMap, sollMap]);
+
   function capColor(pct) {
     if (pct <= 0) return subtle;
     if (pct >= 1)  return "#dc2626";
@@ -1075,6 +1105,20 @@ function KapazitaetView({ orderedStaff, profile, sollMap, hoursMap, yearSoll, cu
     if (pct >= 1)  return "#fee2e2";
     if (pct >= 0.75) return "#fef3c7";
     return "#d1fae5";
+  }
+
+  // Build tooltip content for a cell (activity breakdown)
+  function buildTooltip(staffId, month) {
+    const cellEnts = entryMap[`${staffId}|${month}`] || [];
+    if (cellEnts.length === 0) return null;
+    const byAct = {};
+    for (const e of cellEnts) {
+      const key = e.activity_type;
+      if (!byAct[key]) byAct[key] = { label: ACT[key]?.label || key, color: ACT[key]?.color || "#6b7280", hours: 0, done: 0 };
+      byAct[key].hours += parseFloat(e.hours) || 0;
+      if (e.done) byAct[key].done++;
+    }
+    return Object.values(byAct);
   }
 
   const COL_W = 90; // px per month column
@@ -1177,7 +1221,6 @@ function KapazitaetView({ orderedStaff, profile, sollMap, hoursMap, yearSoll, cu
                     <div
                       key={month}
                       onClick={() => setDrillDown({ staffId: s.id, name: s.full_name || s.email, month })}
-                      title={`${s.full_name || s.email} · ${MONTHS_LONG[mi]}: ${ist}h / ${soll}h Soll — Klick für Details`}
                       style={{
                         width: COL_W, flexShrink: 0, padding: "6px 8px",
                         borderLeft: `1px solid ${border}`,
@@ -1186,8 +1229,18 @@ function KapazitaetView({ orderedStaff, profile, sollMap, hoursMap, yearSoll, cu
                         display: "flex", flexDirection: "column", justifyContent: "center", gap: 4,
                         transition: "background 0.1s",
                       }}
-                      onMouseEnter={e => { e.currentTarget.style.backgroundColor = `${accent}10`; }}
-                      onMouseLeave={e => { e.currentTarget.style.backgroundColor = isCur ? `${accent}07` : "transparent"; }}
+                      onMouseEnter={e => {
+                        e.currentTarget.style.backgroundColor = `${accent}10`;
+                        const tt = buildTooltip(s.id, month);
+                        if (tt) {
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          setTooltip({ content: tt, x: rect.left + rect.width / 2, y: rect.top - 8, staffName: s.full_name || s.email, month });
+                        }
+                      }}
+                      onMouseLeave={e => {
+                        e.currentTarget.style.backgroundColor = isCur ? `${accent}07` : "transparent";
+                        setTooltip(null);
+                      }}
                     >
                       {ist > 0 ? (
                         <>
@@ -1237,8 +1290,8 @@ function KapazitaetView({ orderedStaff, profile, sollMap, hoursMap, yearSoll, cu
               const month   = mi + 1;
               const isCur   = month === currentMonth && year === new Date().getFullYear();
               const teamH   = teamHoursPerMonth[month] || 0;
-              const teamSoll = sollMap[month] * orderedStaff.length;
-              const pct     = teamSoll > 0 ? teamH / teamSoll : 0;
+              // Avg % = Durchschnitt der individuellen Auslastungen aller Mitarbeiter
+              const pct     = teamAvgPctPerMonth[month] || 0;
               const cc      = capColor(pct);
               return (
                 <div key={month} style={{
@@ -1268,6 +1321,35 @@ function KapazitaetView({ orderedStaff, profile, sollMap, hoursMap, yearSoll, cu
           </div>
         </div>
       </div>
+
+      {/* ── Hover Tooltip (Aktivitäten-Aufschlüsselung) ───────────────────── */}
+      {tooltip && (
+        <div style={{
+          position: "fixed",
+          left: tooltip.x, top: tooltip.y,
+          transform: "translate(-50%, -100%)",
+          backgroundColor: isArtis ? "#1a2a1a" : isLight ? "#1e293b" : "#18181b",
+          color: "#fff", borderRadius: 8,
+          padding: "8px 12px", fontSize: 11.5,
+          boxShadow: "0 8px 24px rgba(0,0,0,0.3)",
+          zIndex: 9999, pointerEvents: "none",
+          minWidth: 140, maxWidth: 220,
+        }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.55)", marginBottom: 5, letterSpacing: ".07em" }}>
+            {tooltip.staffName} · {MONTHS_LONG[tooltip.month - 1]}
+          </div>
+          {tooltip.content.map((act, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+              <div style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: act.color, flexShrink: 0 }} />
+              <span style={{ flex: 1, color: "rgba(255,255,255,0.85)" }}>{act.label}</span>
+              <span style={{ fontWeight: 700, color: "#fff" }}>{act.hours}h</span>
+              {act.done > 0 && <span style={{ fontSize: 9, color: "#22c55e" }}>✓{act.done}</span>}
+            </div>
+          ))}
+          {/* Arrow */}
+          <div style={{ position: "absolute", bottom: -5, left: "50%", transform: "translateX(-50%)", width: 10, height: 10, backgroundColor: isArtis ? "#1a2a1a" : isLight ? "#1e293b" : "#18181b", clipPath: "polygon(0 0, 100% 0, 50% 100%)" }} />
+        </div>
+      )}
 
       {/* ── Drill-Down Popup ──────────────────────────────────────────────── */}
       {drillDown && (() => {
