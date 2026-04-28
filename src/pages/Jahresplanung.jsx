@@ -73,17 +73,25 @@ export default function Jahresplanung() {
   // ── Load ──────────────────────────────────────────────────────────────────
 
   const loadAll = useCallback(async () => {
-    const [{ data: s }, { data: c }, { data: e }, { data: f }] = await Promise.all([
+    // Run queries independently so a failed jp_feiertage doesn't block customers/staff
+    const [sRes, cRes, eRes, fRes] = await Promise.all([
       supabase.from("profiles").select("id,full_name,email").order("full_name"),
-      supabase.from("customers").select("id,company_name,active").neq("active", false).order("company_name").limit(3000),
+      supabase.from("customers").select("id,company_name,active")
+        .or("active.is.null,active.eq.true").order("company_name").limit(3000),
       supabase.from("jahresplanung").select("*").eq("year", year),
       supabase.from("jp_feiertage").select("*").gte("date", `${year}-01-01`).lte("date", `${year}-12-31`),
     ]);
 
-    const staffData = s || [];
-    const custData  = c || [];
-    let   entryData = e || [];
-    const feierData = f || [];
+    if (sRes.error) toast.error(`Mitarbeiter: ${sRes.error.message}`);
+    if (cRes.error) toast.error(`Kunden: ${cRes.error.message}`);
+    if (eRes.error) toast.error(`Jahresplanung: ${eRes.error.message}`);
+    // jp_feiertage error is non-fatal (table might not exist yet)
+    if (fRes.error) console.warn("jp_feiertage:", fRes.error.message);
+
+    const staffData = sRes.data || [];
+    const custData  = cRes.data || [];
+    let   entryData = eRes.data || [];
+    const feierData = fRes.data || [];
 
     // Auto carry-forward from previous year if this year is empty
     if (entryData.length === 0 && year > 2026) {
@@ -597,20 +605,31 @@ function ActivityModal({ modal, onClose, staff, custMap, onSave, onUpdate, onDel
   const [recurring,       setRecurring]       = useState(false);
   const [recurringType,   setRecurringType]   = useState("monthly");
   const [recurringMonths, setRecurringMonths] = useState([1,2,3,4,5,6,7,8,9,10,11,12]);
+  const [custSearch,      setCustSearch]      = useState("");
+  const [custPickOpen,    setCustPickOpen]    = useState(false);
+  const [selectedCustId,  setSelectedCustId]  = useState(isEdit ? (entry?.customer_id || "") : (modal.customerId || ""));
 
-  const customerId = isEdit ? entry.customer_id : modal.customerId;
-  const customer   = custMap[customerId];
-  const isPreset   = !!ACT[activityType];
+  const effectiveCustId = selectedCustId;
+  const customer        = custMap[effectiveCustId];
+  const isPreset        = !!ACT[activityType];
+
+  // Filtered customer list for picker
+  const custOptions = Object.values(custMap)
+    .filter(c => !custSearch || (c.company_name || "").toLowerCase().includes(custSearch.toLowerCase()))
+    .sort((a, b) => (a.company_name || "").localeCompare(b.company_name || ""))
+    .slice(0, 15);
 
   const toggleMonth = (m) =>
     setRecurringMonths(prev => prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m].sort((a,b) => a-b));
 
   const handleSave = () => {
-    if (!activityType.trim() || !staffId) return;
+    if (!activityType.trim()) { toast.error("Bitte Tätigkeit auswählen"); return; }
+    if (!staffId) { toast.error("Bitte Mitarbeiter wählen"); return; }
+    if (!effectiveCustId) { toast.error("Bitte Kunde wählen"); return; }
     if (isEdit) {
-      onUpdate(entry.id, { activity_type: activityType, hours: hours !== "" ? parseFloat(hours) : null, notes: notes || null, assigned_to: staffId, month });
+      onUpdate(entry.id, { customer_id: effectiveCustId, activity_type: activityType, hours: hours !== "" ? parseFloat(hours) : null, notes: notes || null, assigned_to: staffId, month });
     } else {
-      onSave({ customerId, staffId, month, activityType, hours, notes, recurring, recurringType, recurringMonths });
+      onSave({ customerId: effectiveCustId, staffId, month, activityType, hours, notes, recurring, recurringType, recurringMonths });
     }
   };
 
@@ -626,12 +645,37 @@ function ActivityModal({ modal, onClose, staff, custMap, onSave, onUpdate, onDel
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: subtle, padding: 2 }}><X size={16} /></button>
         </div>
 
-        {/* Customer */}
-        <div style={{ marginBottom: 12 }}>
+        {/* Customer – always editable */}
+        <div style={{ marginBottom: 12, position: "relative" }}>
           <label style={lbl(subtle)}>KUNDE</label>
-          <div style={{ fontSize: 13, fontWeight: 500, color: text, padding: "6px 9px", backgroundColor: pageBg, borderRadius: 6, border: `1px solid ${border}`, marginTop: 4 }}>
-            {customer?.company_name || "–"}
+          <div style={{ position: "relative", marginTop: 4 }}>
+            <input
+              value={custPickOpen ? custSearch : (customer?.company_name || "")}
+              onFocus={() => { setCustPickOpen(true); setCustSearch(customer?.company_name || ""); }}
+              onBlur={() => setTimeout(() => setCustPickOpen(false), 150)}
+              onChange={e => setCustSearch(e.target.value)}
+              placeholder="Kunde suchen…"
+              style={{ ...inp.style, borderColor: !effectiveCustId ? "#fca5a5" : border }}
+            />
+            {custPickOpen && (
+              <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 200, backgroundColor: cardBg, border: `1px solid ${border}`, borderRadius: 7, maxHeight: 200, overflowY: "auto", boxShadow: "0 6px 20px rgba(0,0,0,0.15)", marginTop: 2 }}>
+                {custOptions.length === 0 ? (
+                  <div style={{ padding: "8px 10px", fontSize: 12, color: subtle }}>Kein Treffer</div>
+                ) : custOptions.map(c => (
+                  <div
+                    key={c.id}
+                    onMouseDown={() => { setSelectedCustId(c.id); setCustSearch(""); setCustPickOpen(false); }}
+                    style={{ padding: "7px 10px", fontSize: 12.5, cursor: "pointer", color: text, borderBottom: `1px solid ${border}`, backgroundColor: c.id === effectiveCustId ? `${accent}10` : "transparent" }}
+                    onMouseEnter={e => { e.currentTarget.style.backgroundColor = `${accent}10`; }}
+                    onMouseLeave={e => { e.currentTarget.style.backgroundColor = c.id === effectiveCustId ? `${accent}10` : "transparent"; }}
+                  >
+                    {c.company_name}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
+          {!effectiveCustId && <div style={{ fontSize: 10.5, color: "#dc2626", marginTop: 3 }}>Bitte Kunde auswählen</div>}
         </div>
 
         {/* Mitarbeiter + Monat */}
@@ -668,8 +712,7 @@ function ActivityModal({ modal, onClose, staff, custMap, onSave, onUpdate, onDel
           </div>
           <input
             value={isPreset ? "" : activityType}
-            onChange={e => setActivityType(e.target.value)}
-            onFocus={() => { if (isPreset) setActivityType(""); }}
+            onChange={e => { if (e.target.value.trim()) setActivityType(e.target.value); else if (!isPreset) setActivityType(""); }}
             placeholder="Oder eigene Bezeichnung…"
             style={{ ...inp.style, fontSize: 12, borderColor: !isPreset && activityType ? accent : border, color: !isPreset && activityType ? accent : subtle }}
           />
