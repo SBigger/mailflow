@@ -272,46 +272,61 @@ export default function Jahresplanung() {
     }
   };
 
+  // ── Derived: year totals ─────────────────────────────────────────────────
+  const currentMonth = new Date().getMonth() + 1; // 1–12, stable per render
+  const yearSoll     = useMemo(() => Object.values(sollMap).reduce((a, b) => a + b, 0), [sollMap]);
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div style={{ height: "100vh", display: "flex", flexDirection: "column", backgroundColor: pageBg, overflow: "hidden" }}>
 
-      {/* Header */}
-      <div style={{ padding: "10px 20px", borderBottom: `1px solid ${border}`, display: "flex", alignItems: "center", gap: 12, backgroundColor: cardBg, flexShrink: 0 }}>
-        <Calendar size={17} style={{ color: accent }} />
-        <span style={{ fontSize: 15, fontWeight: 700, color: text }}>Jahresplanung</span>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: 4 }}>
-          <button onClick={() => setYear(y => y - 1)} style={btnStyle(border, subtle)}>‹</button>
-          <span style={{ fontSize: 14, fontWeight: 700, color: text, minWidth: 44, textAlign: "center" }}>{year}</span>
-          <button onClick={() => setYear(y => y + 1)} style={btnStyle(border, subtle)}>›</button>
+      {/* ── Top bar ─────────────────────────────────────────────────────────── */}
+      <div style={{ padding: "9px 18px", borderBottom: `1px solid ${border}`, display: "flex", alignItems: "center", gap: 10, backgroundColor: cardBg, flexShrink: 0 }}>
+        <Calendar size={16} style={{ color: accent }} />
+        <span style={{ fontSize: 14, fontWeight: 700, color: text }}>Jahresplanung</span>
+
+        {/* Year nav */}
+        <div style={{ display: "flex", alignItems: "center", gap: 4, marginLeft: 6, backgroundColor: pageBg, borderRadius: 7, border: `1px solid ${border}`, padding: "1px 2px" }}>
+          <button onClick={() => setYear(y => y - 1)} style={{ padding: "2px 9px", border: "none", background: "none", color: subtle, cursor: "pointer", fontSize: 15, borderRadius: 5 }}>‹</button>
+          <span style={{ fontSize: 13, fontWeight: 800, color: text, minWidth: 40, textAlign: "center" }}>{year}</span>
+          <button onClick={() => setYear(y => y + 1)} style={{ padding: "2px 9px", border: "none", background: "none", color: subtle, cursor: "pointer", fontSize: 15, borderRadius: 5 }}>›</button>
         </div>
-        <span style={{ fontSize: 10.5, color: subtle }}>Einträge wiederkehrend · nur aktive Kunden</span>
-        <button onClick={loadAll} title="Aktualisieren" style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: subtle, padding: 4 }}>
-          <RefreshCw size={14} />
+
+        {/* Soll total */}
+        {yearSoll > 0 && (
+          <span style={{ fontSize: 10.5, color: subtle, marginLeft: 2 }}>
+            Soll {year}: <strong style={{ color: text }}>{yearSoll}h</strong>
+          </span>
+        )}
+
+        <button onClick={loadAll} title="Aktualisieren" style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: subtle, padding: 4, borderRadius: 5, display: "flex", alignItems: "center" }}>
+          <RefreshCw size={13} />
         </button>
       </div>
 
-      {/* Body */}
+      {/* ── Body ────────────────────────────────────────────────────────────── */}
       <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
         <DragDropContext onDragEnd={onDragEnd}>
 
-          {/* LEFT: Customer Sidebar */}
-          <div style={{ width: 210, flexShrink: 0, borderRight: `1px solid ${border}`, display: "flex", flexDirection: "column", backgroundColor: cardBg }}>
-            <div style={{ padding: "8px 10px", borderBottom: `1px solid ${border}` }}>
+          {/* ── Sidebar ─────────────────────────────────────────────────────── */}
+          <div style={{ width: 200, flexShrink: 0, borderRight: `1px solid ${border}`, display: "flex", flexDirection: "column", backgroundColor: cardBg }}>
+            <div style={{ padding: "8px 8px 4px", borderBottom: `1px solid ${border}` }}>
               <div style={{ position: "relative" }}>
-                <Search size={11} style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", color: subtle }} />
+                <Search size={11} style={{ position: "absolute", left: 7, top: "50%", transform: "translateY(-50%)", color: subtle, pointerEvents: "none" }} />
                 <input
                   ref={searchRef}
                   value={search}
                   onChange={e => setSearch(e.target.value)}
                   placeholder="Suchen… (Ctrl+F)"
-                  style={{ width: "100%", paddingLeft: 24, paddingRight: 6, paddingTop: 5, paddingBottom: 5, fontSize: 11.5, borderRadius: 6, border: `1px solid ${border}`, background: pageBg, color: text, outline: "none", boxSizing: "border-box" }}
+                  style={{ width: "100%", paddingLeft: 22, paddingRight: 6, paddingTop: 5, paddingBottom: 5, fontSize: 11, borderRadius: 6, border: `1px solid ${border}`, background: pageBg, color: text, outline: "none", boxSizing: "border-box" }}
                 />
               </div>
-              <div style={{ fontSize: 10, color: subtle, marginTop: 4, textAlign: "center" }}>Ziehen → Mitarbeiter & Monat</div>
+              <div style={{ fontSize: 9.5, color: subtle, marginTop: 3, textAlign: "center", paddingBottom: 2 }}>
+                ↔ Auf Zelle ziehen · oder + klicken
+              </div>
             </div>
-            <div style={{ flex: 1, overflowY: "auto", padding: "6px 6px" }}>
+            <div style={{ flex: 1, overflowY: "auto", padding: "4px 5px" }}>
               <Droppable droppableId="customers" isDropDisabled={true}>
                 {(provided) => (
                   <div ref={provided.innerRef} {...provided.droppableProps}>
@@ -324,11 +339,12 @@ export default function Jahresplanung() {
                             {...drag.dragHandleProps}
                             style={{
                               ...drag.draggableProps.style,
-                              padding: "5px 8px", marginBottom: 1, borderRadius: 5,
-                              fontSize: 11.5, color: text,
-                              backgroundColor: snap.isDragging ? (isArtis ? "#e6ede6" : "#ede9fe") : "transparent",
+                              padding: "4px 7px", marginBottom: 1, borderRadius: 5,
+                              fontSize: 11, color: text,
+                              backgroundColor: snap.isDragging ? (isArtis ? "#d8ead8" : "#ede9fe") : "transparent",
                               border: `1px solid ${snap.isDragging ? accent : "transparent"}`,
                               cursor: "grab", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", userSelect: "none",
+                              boxShadow: snap.isDragging ? "0 4px 12px rgba(0,0,0,0.15)" : "none",
                             }}
                           >
                             {c.company_name}
@@ -343,84 +359,140 @@ export default function Jahresplanung() {
             </div>
           </div>
 
-          {/* RIGHT: Planning Grid */}
+          {/* ── Planning grid ───────────────────────────────────────────────── */}
           <div style={{ flex: 1, overflowX: "auto", overflowY: "auto" }}>
-            <div style={{ minWidth: 1300, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
-              {orderedStaff.map(s => {
-                const isMe    = s.id === profile?.id;
-                const isOpen  = collapsed[s.id] === undefined ? true : !collapsed[s.id];
-                const totalH  = Array.from({ length: 12 }, (_, i) => hoursMap[`${s.id}|${i+1}`] || 0).reduce((a,b) => a+b, 0);
-                const totalC  = new Set(entries.filter(e => e.assigned_to === s.id).map(e => e.customer_id)).size;
-                const initials = (s.full_name || s.email || "?").slice(0, 2).toUpperCase();
+            <div style={{ minWidth: 1260 }}>
 
-                return (
-                  <div key={s.id} style={{
-                    borderRadius: 10,
-                    border: `1px solid ${isMe ? accent : border}`,
-                    overflow: "hidden", backgroundColor: cardBg,
-                    boxShadow: isMe ? `0 0 0 1.5px ${accent}22` : "none",
-                  }}>
-                    {/* Staff header */}
-                    <div
-                      onClick={() => setCollapsed(c => ({ ...c, [s.id]: !c[s.id] }))}
-                      style={{
-                        display: "flex", alignItems: "center", gap: 10, padding: "10px 16px",
-                        backgroundColor: isMe ? (isArtis ? "#d4e8d4" : isLight ? "#ede9fe" : "#2d2d40") : headerBg,
-                        cursor: "pointer", userSelect: "none",
-                      }}
-                    >
-                      {isOpen ? <ChevronDown size={13} style={{ color: subtle, flexShrink: 0 }} /> : <ChevronRight size={13} style={{ color: subtle, flexShrink: 0 }} />}
-                      <div style={{ width: 30, height: 30, borderRadius: "50%", backgroundColor: accent, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
-                        {initials}
+              {/* ── GLOBAL STICKY MONTH HEADER (once, not per employee) ─────── */}
+              <div style={{
+                display: "flex",
+                position: "sticky", top: 0, zIndex: 20,
+                borderBottom: `2px solid ${border}`,
+                backgroundColor: isArtis ? "#e8f0e8" : isLight ? "#eeeef6" : "#222228",
+                flexShrink: 0,
+              }}>
+                {MONTHS.map((m, mi) => {
+                  const month  = mi + 1;
+                  const soll   = sollMap[month];
+                  const isCur  = month === currentMonth && year === new Date().getFullYear();
+                  return (
+                    <div key={mi} style={{
+                      flex: "1 0 0", minWidth: 100, padding: "6px 6px 5px",
+                      textAlign: "center",
+                      borderRight: mi < 11 ? `1px solid ${border}` : "none",
+                      backgroundColor: isCur ? `${accent}14` : "transparent",
+                      position: "relative",
+                    }}>
+                      {/* Current month indicator dot */}
+                      {isCur && (
+                        <div style={{ position: "absolute", top: 3, left: "50%", transform: "translateX(-50%)", width: 5, height: 5, borderRadius: "50%", backgroundColor: accent }} />
+                      )}
+                      <div style={{ fontSize: 11, fontWeight: 800, color: isCur ? accent : subtle, letterSpacing: ".07em", marginTop: isCur ? 6 : 0 }}>{m}</div>
+                      {/* Soll badge – clickable, shown once globally */}
+                      <div
+                        onClick={() => setSollModal(month)}
+                        title={`Sollzeit ${MONTHS_LONG[mi]} konfigurieren`}
+                        style={{
+                          fontSize: 9.5, color: isCur ? accent : subtle,
+                          cursor: "pointer", marginTop: 3, padding: "2px 5px", borderRadius: 4,
+                          display: "inline-flex", alignItems: "center", gap: 2,
+                          backgroundColor: isCur ? `${accent}18` : `${border}`,
+                          fontWeight: 600, transition: "background 0.1s",
+                        }}
+                        onMouseEnter={e => { e.currentTarget.style.backgroundColor = `${accent}20`; e.currentTarget.style.color = accent; }}
+                        onMouseLeave={e => { e.currentTarget.style.backgroundColor = isCur ? `${accent}18` : border; e.currentTarget.style.color = isCur ? accent : subtle; }}
+                      >
+                        <Clock size={8} />{soll}h
                       </div>
-                      <span style={{ fontSize: 13, fontWeight: 600, color: text, flex: 1 }}>
-                        {s.full_name || s.email}
-                        {isMe && <span style={{ marginLeft: 7, fontSize: 10, fontWeight: 600, color: accent, backgroundColor: `${accent}18`, padding: "1px 6px", borderRadius: 8 }}>Du</span>}
-                      </span>
-                      <span style={{ fontSize: 11, color: subtle, display: "flex", alignItems: "center", gap: 10 }}>
-                        {totalC > 0 && <span>{totalC} Kunden</span>}
-                        {totalH > 0 && <span style={{ display: "flex", alignItems: "center", gap: 3 }}><Clock size={10} />{totalH}h</span>}
-                      </span>
                     </div>
+                  );
+                })}
+              </div>
 
-                    {/* Month grid */}
-                    {isOpen && (
-                      <>
-                        {/* Month header row with Sollzeit */}
-                        <div style={{ display: "flex", borderBottom: `1px solid ${border}`, backgroundColor: pageBg }}>
-                          {MONTHS.map((m, mi) => {
-                            const month = mi + 1;
-                            const soll  = sollMap[month];
-                            const planned = hoursMap[`${s.id}|${month}`] || 0;
-                            const custCount = (entryMap[`${s.id}|${month}`] || []).length;
-                            return (
-                              <div key={mi} style={{ flex: "1 0 0", minWidth: 100, padding: "5px 6px", textAlign: "center", borderRight: mi < 11 ? `1px solid ${border}` : "none" }}>
-                                <div style={{ fontSize: 11, fontWeight: 700, color: subtle, letterSpacing: ".06em" }}>{m}</div>
-                                {custCount > 0 && (
-                                  <div style={{ fontSize: 9.5, color: subtle, marginTop: 1 }}>{custCount} Kd</div>
-                                )}
-                                <div
-                                  onClick={() => setSollModal(month)}
-                                  title="Sollzeiten konfigurieren"
-                                  style={{ fontSize: 9.5, color: accent, cursor: "pointer", marginTop: 1, padding: "1px 4px", borderRadius: 4, display: "inline-flex", alignItems: "center", gap: 2, backgroundColor: `${accent}10` }}
-                                >
-                                  <Clock size={8} />
-                                  {soll}h
-                                </div>
-                              </div>
-                            );
-                          })}
+              {/* ── Employee sections ────────────────────────────────────────── */}
+              <div style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 10 }}>
+                {orderedStaff.map(s => {
+                  const isMe      = s.id === profile?.id;
+                  const isOpen    = collapsed[s.id] === undefined ? true : !collapsed[s.id];
+                  const totalH    = Array.from({ length: 12 }, (_, i) => hoursMap[`${s.id}|${i+1}`] || 0).reduce((a,b) => a+b, 0);
+                  const capPct    = yearSoll > 0 ? totalH / yearSoll : 0;
+                  const capColor  = capPct >= 1 ? "#dc2626" : capPct >= 0.75 ? "#d97706" : accent;
+                  const initials  = (s.full_name || s.email || "?").slice(0, 2).toUpperCase();
+
+                  return (
+                    <div key={s.id} style={{
+                      borderRadius: 10, overflow: "hidden", backgroundColor: cardBg,
+                      border: `1px solid ${isMe ? accent : border}`,
+                      boxShadow: isMe ? `0 0 0 2px ${accent}20` : "0 1px 3px rgba(0,0,0,0.04)",
+                    }}>
+
+                      {/* ── Staff row header ─────────────────────────────────── */}
+                      <div
+                        onClick={() => setCollapsed(c => ({ ...c, [s.id]: !c[s.id] }))}
+                        style={{
+                          display: "flex", alignItems: "center", gap: 10, padding: "10px 14px",
+                          backgroundColor: isMe
+                            ? (isArtis ? "#cfe8cf" : isLight ? "#ede9fe" : "#2d2d40")
+                            : headerBg,
+                          cursor: "pointer", userSelect: "none",
+                        }}
+                      >
+                        {isOpen
+                          ? <ChevronDown  size={13} style={{ color: subtle, flexShrink: 0 }} />
+                          : <ChevronRight size={13} style={{ color: subtle, flexShrink: 0 }} />}
+
+                        {/* Avatar */}
+                        <div style={{
+                          width: 30, height: 30, borderRadius: "50%",
+                          backgroundColor: isMe ? accent : (isArtis ? "#8aaa8a" : isLight ? "#9090c0" : "#5a5a7a"),
+                          color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
+                          fontSize: 11, fontWeight: 700, flexShrink: 0,
+                        }}>
+                          {initials}
                         </div>
 
-                        {/* Droppable cells */}
-                        <div style={{ display: "flex" }}>
+                        {/* Name */}
+                        <span style={{ fontSize: 12.5, fontWeight: 600, color: text, flex: 1, display: "flex", alignItems: "center", gap: 6 }}>
+                          {s.full_name || s.email}
+                          {isMe && (
+                            <span style={{ fontSize: 9.5, fontWeight: 700, color: accent, backgroundColor: `${accent}18`, padding: "1px 7px", borderRadius: 8 }}>Du</span>
+                          )}
+                        </span>
+
+                        {/* Capacity: hours + mini bar */}
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                          {totalH > 0 && (
+                            <>
+                              <span style={{ fontSize: 10.5, color: capColor, fontWeight: 600, display: "flex", alignItems: "center", gap: 3 }}>
+                                <Clock size={10} style={{ color: capColor }} />
+                                {totalH}h
+                              </span>
+                              <div style={{ width: 52, height: 5, backgroundColor: border, borderRadius: 3, overflow: "hidden" }}>
+                                <div style={{ width: `${Math.min(capPct * 100, 100)}%`, height: "100%", backgroundColor: capColor, borderRadius: 3, transition: "width 0.3s" }} />
+                              </div>
+                              <span style={{ fontSize: 9.5, color: capColor, fontWeight: 600, minWidth: 28 }}>
+                                {Math.round(capPct * 100)}%
+                              </span>
+                            </>
+                          )}
+                          {totalH === 0 && (
+                            <span style={{ fontSize: 10.5, color: subtle }}>— leer</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* ── Month cells (NO header row repeated here) ───────── */}
+                      {isOpen && (
+                        <div style={{ display: "flex", borderTop: `1px solid ${border}` }}>
                           {Array.from({ length: 12 }, (_, mi) => {
                             const month     = mi + 1;
+                            const isCur     = month === currentMonth && year === new Date().getFullYear();
                             const key       = `${s.id}|${month}`;
                             const cellEnts  = entryMap[key] || [];
                             const cellHours = hoursMap[key] || 0;
                             const soll      = sollMap[month];
                             const pct       = soll > 0 && cellHours > 0 ? Math.min(cellHours / soll, 1) : 0;
+                            const fillColor = pct >= 1 ? "#dc2626" : pct >= 0.75 ? "#d97706" : accent;
 
                             return (
                               <Droppable key={month} droppableId={`cell|${s.id}|${month}`}>
@@ -429,21 +501,32 @@ export default function Jahresplanung() {
                                     ref={prov.innerRef}
                                     {...prov.droppableProps}
                                     style={{
-                                      flex: "1 0 0", minWidth: 100, minHeight: 130,
+                                      flex: "1 0 0", minWidth: 100, minHeight: 120,
                                       borderRight: mi < 11 ? `1px solid ${border}` : "none",
-                                      padding: "5px 4px",
-                                      backgroundColor: snap.isDraggingOver ? (isArtis ? "#d4ead4" : "#ede9fe") : "transparent",
+                                      padding: "5px 4px 20px",
+                                      backgroundColor: snap.isDraggingOver
+                                        ? (isArtis ? "#c8e8c8" : "#ddd6fe")
+                                        : isCur
+                                          ? `${accent}07`
+                                          : "transparent",
                                       transition: "background-color 0.12s",
-                                      display: "flex", flexDirection: "column", gap: 3, position: "relative",
+                                      display: "flex", flexDirection: "column", gap: 3,
+                                      position: "relative",
                                     }}
                                   >
-                                    {/* Hour fill bar */}
+                                    {/* Fill bar – bottom, 5px */}
                                     {pct > 0 && (
-                                      <div style={{ position: "absolute", bottom: 0, left: 0, width: `${pct * 100}%`, height: 3, backgroundColor: pct >= 1 ? "#dc2626" : accent, opacity: 0.4, borderRadius: "0 0 0 0" }} />
+                                      <div style={{
+                                        position: "absolute", bottom: 0, left: 0,
+                                        width: `${pct * 100}%`, height: 5,
+                                        backgroundColor: fillColor, opacity: 0.45,
+                                        borderRadius: "0 2px 0 0",
+                                      }} />
                                     )}
 
+                                    {/* Entry chips */}
                                     {cellEnts.map((entry, eidx) => {
-                                      const act  = ACT[entry.activity_type] || { id: entry.activity_type, label: entry.activity_type, color: "#6b7280", bg: "#f3f4f6" };
+                                      const act  = ACT[entry.activity_type] || { label: entry.activity_type, color: "#6b7280", bg: "#f3f4f6" };
                                       const cust = custMap[entry.customer_id];
                                       return (
                                         <Draggable key={entry.id} draggableId={`entry|${entry.id}`} index={eidx}>
@@ -456,19 +539,16 @@ export default function Jahresplanung() {
                                               style={{
                                                 ...eDrag.draggableProps.style,
                                                 backgroundColor: act.bg,
+                                                border: `1px solid ${act.color}28`,
                                                 borderLeft: `3px solid ${act.color}`,
-                                                border: `1px solid ${act.color}22`,
-                                                borderLeftWidth: 3,
-                                                borderLeftStyle: "solid",
-                                                borderLeftColor: act.color,
                                                 borderRadius: 5, padding: "4px 6px",
-                                                cursor: "grab", lineHeight: 1.35,
-                                                boxShadow: eSnap.isDragging ? "0 3px 10px rgba(0,0,0,0.18)" : "none",
+                                                cursor: "pointer", lineHeight: 1.35,
+                                                boxShadow: eSnap.isDragging ? "0 4px 14px rgba(0,0,0,0.2)" : "none",
                                               }}
                                             >
-                                              <div style={{ fontSize: 10, fontWeight: 700, color: act.color, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{act.label}</div>
-                                              <div style={{ fontSize: 10.5, color: "#333", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{cust?.company_name || "–"}</div>
-                                              {entry.hours != null && <div style={{ fontSize: 9.5, color: "#666" }}>{entry.hours}h</div>}
+                                              <div style={{ fontSize: 9.5, fontWeight: 700, color: act.color, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{act.label}</div>
+                                              <div style={{ fontSize: 10.5, color: "#2a2a2a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginTop: 1 }}>{cust?.company_name || "–"}</div>
+                                              {entry.hours != null && <div style={{ fontSize: 9, color: "#777", marginTop: 1 }}>{entry.hours}h</div>}
                                             </div>
                                           )}
                                         </Draggable>
@@ -476,22 +556,46 @@ export default function Jahresplanung() {
                                     })}
                                     {prov.placeholder}
 
+                                    {/* Σ hours */}
                                     {cellHours > 0 && (
-                                      <div style={{ marginTop: "auto", fontSize: 9.5, color: subtle, textAlign: "center", paddingTop: 4, borderTop: `1px solid ${border}` }}>
+                                      <div style={{
+                                        position: "absolute", bottom: 6, left: 0, right: 0,
+                                        fontSize: 9, color: subtle, textAlign: "center",
+                                        fontWeight: 600, letterSpacing: ".04em",
+                                      }}>
                                         Σ {cellHours}h
                                       </div>
                                     )}
+
+                                    {/* + Add button */}
+                                    <button
+                                      onClick={e => { e.stopPropagation(); setModal({ mode: "create", customerId: null, staffId: s.id, month }); }}
+                                      title={`Aktivität für ${MONTHS_LONG[mi]} hinzufügen`}
+                                      style={{
+                                        position: "absolute", top: 4, right: 4,
+                                        width: 18, height: 18, borderRadius: "50%",
+                                        border: `1px dashed ${border}`, background: "none",
+                                        color: subtle, cursor: "pointer", fontSize: 14,
+                                        display: "flex", alignItems: "center", justifyContent: "center",
+                                        lineHeight: 1, padding: 0, opacity: 0.5,
+                                        transition: "all 0.12s",
+                                      }}
+                                      onMouseEnter={e => { Object.assign(e.currentTarget.style, { opacity: "1", backgroundColor: `${accent}18`, borderColor: accent, borderStyle: "solid", color: accent }); }}
+                                      onMouseLeave={e => { Object.assign(e.currentTarget.style, { opacity: "0.5", backgroundColor: "transparent", borderColor: border, borderStyle: "dashed", color: subtle }); }}
+                                    >
+                                      +
+                                    </button>
                                   </div>
                                 )}
                               </Droppable>
                             );
                           })}
                         </div>
-                      </>
-                    )}
-                  </div>
-                );
-              })}
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </DragDropContext>
