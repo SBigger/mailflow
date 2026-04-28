@@ -6,9 +6,10 @@ import React, { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
-  FileText, Send, CheckCircle2, X as XIcon, Trash2, Eye, Search, Calendar,
+  FileText, Send, CheckCircle2, X as XIcon, Trash2, Eye, Search, Calendar, FileDown,
 } from 'lucide-react';
-import { leInvoice } from '@/lib/leApi';
+import { leInvoice, leCompany } from '@/lib/leApi';
+import { generateInvoicePdf, triggerDownload } from '@/lib/leInvoicePdf';
 import {
   Card, Chip, IconBtn, Input, Select, Field,
   PanelLoader, PanelError, PanelHeader, fmt,
@@ -332,6 +333,21 @@ function InvoiceRow({ inv, onOpen, onSend, onPay, onCancel, onRemove, sending })
         <div className="flex items-center justify-end gap-1">
           <IconBtn onClick={onOpen} title="Ansicht">
             <Eye className="w-3.5 h-3.5" />
+          </IconBtn>
+          <IconBtn
+            onClick={async () => {
+              try {
+                const company = await leCompany.get();
+                if (!company) { toast.error('Firmen-Settings fehlen.'); return; }
+                const fresh = await leInvoice.get(inv.id);
+                const result = await generateInvoicePdf({ invoice: fresh, company });
+                if (result.blob) triggerDownload(result.blob, `Rechnung-${fresh.invoice_no || 'Entwurf'}.pdf`);
+                toast.success('PDF erzeugt');
+              } catch (e) { toast.error('PDF-Fehler: ' + (e?.message ?? e)); }
+            }}
+            title="PDF herunterladen"
+          >
+            <FileDown className="w-3.5 h-3.5" />
           </IconBtn>
           {canSend && (
             <IconBtn onClick={onSend} title={sending ? 'Versende…' : 'Versenden'}>

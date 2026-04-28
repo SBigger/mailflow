@@ -12,6 +12,22 @@ import EntwurfsDurchgangPanel from '@/components/leistungserfassung/EntwurfsDurc
 import RechnungsuebersichtPanel from '@/components/leistungserfassung/RechnungsuebersichtPanel';
 import WochenrapportPanel from '@/components/leistungserfassung/WochenrapportPanel';
 import MeineRapportePanel from '@/components/leistungserfassung/MeineRapportePanel';
+import MahnungenPanel from '@/components/leistungserfassung/MahnungenPanel';
+import ZahlungseingaengePanel from '@/components/leistungserfassung/ZahlungseingaengePanel';
+import SpesenErfassenPanel from '@/components/leistungserfassung/SpesenErfassenPanel';
+import AbwesenheitenPanel from '@/components/leistungserfassung/AbwesenheitenPanel';
+import WiederkehrendePanel from '@/components/leistungserfassung/WiederkehrendePanel';
+import AuswertungenPanel from '@/components/leistungserfassung/AuswertungenPanel';
+import SollzeitenPanel from '@/components/leistungserfassung/SollzeitenPanel';
+import KundenKonditionenPanel from '@/components/leistungserfassung/KundenKonditionenPanel';
+import RechnungsTemplatesPanel from '@/components/leistungserfassung/RechnungsTemplatesPanel';
+import NummernkreisePanel from '@/components/leistungserfassung/NummernkreisePanel';
+import FirmenSettingsPanel from '@/components/leistungserfassung/FirmenSettingsPanel';
+import AkontoPanel from '@/components/leistungserfassung/AkontoPanel';
+import GutschriftPanel from '@/components/leistungserfassung/GutschriftPanel';
+import SpesenAbrechnenPanel from '@/components/leistungserfassung/SpesenAbrechnenPanel';
+import ProjektVorlagenPanel from '@/components/leistungserfassung/ProjektVorlagenPanel';
+import MobileVorschauPanel from '@/components/leistungserfassung/MobileVorschauPanel';
 
 // ---------------------------------------------------------------------
 // Navigations-Definition + welche Sec-IDs welches Panel rendern
@@ -23,8 +39,8 @@ const NAV = [
       { id: 'tag',        label: 'Tagesansicht',    comp: TagesansichtPanel },
       { id: 'woche',      label: 'Wochenrapport',   comp: WochenrapportPanel },
       { id: 'meine',      label: 'Meine Rapporte',  comp: MeineRapportePanel },
-      { id: 'abwesend',   label: 'Abwesenheiten' },
-      { id: 'spesen-erf', label: 'Spesen erfassen' },
+      { id: 'abwesend',   label: 'Abwesenheiten',   comp: AbwesenheitenPanel },
+      { id: 'spesen-erf', label: 'Spesen erfassen', comp: SpesenErfassenPanel },
     ],
   },
   {
@@ -34,39 +50,38 @@ const NAV = [
       { id: 'fakvor',     label: 'Faktura-Vorschlag',    comp: FakturaVorschlagPanel },
       { id: 'entw-durch', label: 'Entwurfs-Durchgang',   comp: EntwurfsDurchgangPanel },
       { id: 'rechn-list', label: 'Rechnungsübersicht',   comp: RechnungsuebersichtPanel },
-      { id: 'akonto',     label: 'Akonto' },
-      { id: 'mahnung',    label: 'Mahnwesen' },
-      { id: 'zahlung',    label: 'Zahlungseingänge' },
-      { id: 'gutschrift', label: 'Gutschrift/Storno' },
-      { id: 'spesen-abr', label: 'Spesen abrechnen' },
-      { id: 'wiederk',    label: 'Wiederkehrende' },
+      { id: 'akonto',     label: 'Akonto',               comp: AkontoPanel },
+      { id: 'mahnung',    label: 'Mahnwesen',            comp: MahnungenPanel },
+      { id: 'zahlung',    label: 'Zahlungseingänge',     comp: ZahlungseingaengePanel },
+      { id: 'gutschrift', label: 'Gutschrift/Storno',    comp: GutschriftPanel },
+      { id: 'spesen-abr', label: 'Spesen abrechnen',     comp: SpesenAbrechnenPanel },
+      { id: 'wiederk',    label: 'Wiederkehrende',       comp: WiederkehrendePanel },
     ],
   },
   {
     id: 'stammdaten', label: 'Stammdaten', icon: Database,
     sec: [
       { id: 'sd-projekte', label: 'Projekte',            comp: ProjektePanel },
-      { id: 'sd-vorlagen', label: 'Projekt-Vorlagen' },
+      { id: 'sd-vorlagen', label: 'Projekt-Vorlagen',    comp: ProjektVorlagenPanel },
       { id: 'sd-mitarb',   label: 'Mitarbeiter',         comp: MitarbeiterPanel },
-      { id: 'sd-sollzeit', label: 'Sollzeiten-Profile' },
+      { id: 'sd-sollzeit', label: 'Sollzeiten-Profile',  comp: SollzeitenPanel },
       { id: 'sd-leistung', label: 'Leistungsarten',      comp: LeistungsartenPanel },
       { id: 'sd-gruppen',  label: 'Gruppenansätze',      comp: GruppenansaetzePanel },
-      { id: 'sd-kondi',    label: 'Kunden-Konditionen' },
-      { id: 'sd-templ',    label: 'Rechnungs-Templates' },
-      { id: 'sd-nummern',  label: 'Nummernkreise' },
+      { id: 'sd-kondi',    label: 'Kunden-Konditionen',  comp: KundenKonditionenPanel },
+      { id: 'sd-templ',    label: 'Rechnungs-Templates', comp: RechnungsTemplatesPanel },
+      { id: 'sd-nummern',  label: 'Nummernkreise',       comp: NummernkreisePanel },
+      { id: 'sd-firma',    label: 'Firma',               comp: FirmenSettingsPanel },
     ],
   },
   {
     id: 'auswert', label: 'Auswertungen', icon: BarChart3,
     sec: [
-      { id: 'aw-ma',     label: 'Mitarbeiter-Rapport' },
-      { id: 'aw-proj',   label: 'Projekt-Rentabilität' },
-      { id: 'aw-budget', label: 'Budget-Warnungen' },
+      { id: 'aw-all',    label: 'Übersicht',           comp: AuswertungenPanel },
     ],
   },
   {
     id: 'mobile', label: 'Mobile', icon: Smartphone,
-    sec: [{ id: 'mob-overview', label: 'Mobile-Vorschau' }],
+    sec: [{ id: 'mob-overview', label: 'Mobile-Vorschau', comp: MobileVorschauPanel }],
   },
 ];
 

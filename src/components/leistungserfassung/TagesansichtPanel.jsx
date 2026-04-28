@@ -7,11 +7,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   ChevronLeft, ChevronRight, CalendarDays, CornerDownLeft,
-  Pencil, Trash2, Check, X as XIcon, Info,
+  Pencil, Trash2, Check, X as XIcon, Info, Mail, Calendar, RefreshCw, Plus,
 } from 'lucide-react';
 import {
   leTimeEntry, leProject, leServiceType, leEmployee, currentEmployee,
-  leRateGroupRate, leServiceRateHistory, resolveRateFor,
+  leRateGroupRate, leServiceRateHistory, resolveRateFor, leMs365Day,
 } from '@/lib/leApi';
 import {
   Chip, Card, IconBtn, Input, Select, PanelLoader, PanelError, PanelHeader,
@@ -264,12 +264,237 @@ export default function TagesansichtPanel() {
             )}
           </Card>
         </div>
-        <div>
+        <div className="space-y-4">
           <SummaryCard summary={summary} />
+          {currentEmployeeId && (
+            <Ms365VorschlaegeCard
+              date={currentDate}
+              projects={projects}
+              serviceTypes={serviceTypes}
+              rateGroupRates={rateGroupRates}
+              serviceRateHistory={serviceRateHistory}
+              onCreate={(payload) => createMut.mutateAsync({
+                ...payload,
+                entry_date: currentDate,
+                employee_id: currentEmployeeId,
+                status: 'erfasst',
+              })}
+            />
+          )}
         </div>
       </div>
     </div>
   );
+}
+
+// --- MS365-Vorschläge ------------------------------------------------------
+// Lädt Outlook-Termine + gesendete Mails des Tages und erlaubt 1-Klick-Übernahme.
+function Ms365VorschlaegeCard({ date, projects, serviceTypes, rateGroupRates, serviceRateHistory, onCreate }) {
+  const dayQ = useQuery({
+    queryKey: ['le', 'ms365-day', date],
+    queryFn: () => leMs365Day(date),
+    staleTime: 60_000,
+    retry: false,
+  });
+
+  const data = dayQ.data;
+  const calendar = data?.calendar ?? [];
+  const sent = data?.sent ?? [];
+  const notConnected = data?.notConnected;
+
+  // Hilfsfunktion: Eintrag aus Vorschlag bauen
+  const buildEntryFromCalendar = (cal) => {
+    const project = pickProject(cal, projects);
+    const serviceType = pickDefaultServiceType(serviceTypes);
+    const hours = computeHours(cal.start, cal.end);
+    const rate = resolveRateFor({
+      serviceTypeId: serviceType?.id,
+      rateGroupId: project?.rate_group_id ?? null,
+      date,
+      rateGroupRates,
+      serviceRateHistory,
+    });
+    const fromTime = cal.start ? cal.start.slice(11, 16) : null;
+    const toTime = cal.end ? cal.end.slice(11, 16) : null;
+    return {
+      project_id: project?.id ?? null,
+      service_type_id: serviceType?.id ?? null,
+      time_from: fromTime,
+      time_to: toTime,
+      hours_internal: hours,
+      rate_snapshot: rate || 0,
+      description: cal.subject,
+    };
+  };
+
+  const buildEntryFromMail = (m) => {
+    const project = pickProject(m, projects);
+    const serviceType = pickDefaultServiceType(serviceTypes);
+    const rate = resolveRateFor({
+      serviceTypeId: serviceType?.id,
+      rateGroupId: project?.rate_group_id ?? null,
+      date,
+      rateGroupRates,
+      serviceRateHistory,
+    });
+    return {
+      project_id: project?.id ?? null,
+      service_type_id: serviceType?.id ?? null,
+      time_from: m.sentDateTime ? m.sentDateTime.slice(11, 16) : null,
+      time_to: null,
+      hours_internal: 0.25,
+      rate_snapshot: rate || 0,
+      description: `Mail: ${m.subject}`,
+    };
+  };
+
+  const handleAdopt = async (raw) => {
+    if (!raw.project_id || !raw.service_type_id) {
+      toast.error('Kein Projekt/Leistungsart zuordenbar – bitte manuell erfassen.');
+      return;
+    }
+    try {
+      await onCreate(raw);
+    } catch { /* toast aus mutation */ }
+  };
+
+  return (
+    <Card>
+      <div className="px-4 py-2 border-b flex items-center justify-between" style={{ borderColor: '#e4e7e4' }}>
+        <div className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+          MS365 · Tagesvorschläge
+        </div>
+        <button
+          onClick={() => dayQ.refetch()}
+          className="text-zinc-400 hover:text-zinc-700 transition-colors"
+          title="Aktualisieren"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${dayQ.isFetching ? 'animate-spin' : ''}`} />
+        </button>
+      </div>
+
+      {dayQ.isLoading ? (
+        <div className="p-4 text-xs text-zinc-400">Lade Outlook-Daten…</div>
+      ) : dayQ.error ? (
+        <div className="p-4 text-xs text-orange-700 bg-orange-50">
+          {String(dayQ.error?.message ?? dayQ.error)}
+        </div>
+      ) : notConnected ? (
+        <div className="p-4 text-xs text-zinc-500">
+          Outlook nicht verbunden. Verbinde dich im Posteingang mit Microsoft 365, um Vorschläge zu sehen.
+        </div>
+      ) : (
+        <div className="divide-y" style={{ borderColor: '#eef1ee' }}>
+          {/* Kalender */}
+          <div className="p-3">
+            <div className="flex items-center gap-1.5 text-[11px] font-semibold text-zinc-600 mb-2">
+              <Calendar className="w-3.5 h-3.5" /> Kalender ({calendar.length})
+            </div>
+            {calendar.length === 0 ? (
+              <div className="text-xs text-zinc-400 italic">Keine Termine.</div>
+            ) : (
+              <ul className="space-y-1.5">
+                {calendar.map((c) => (
+                  <SuggestionItem
+                    key={c.id}
+                    title={c.subject || '(ohne Titel)'}
+                    subtitle={[
+                      c.start && c.end ? `${c.start.slice(11,16)}–${c.end.slice(11,16)}` : null,
+                      c.customer?.company_name,
+                      c.location,
+                    ].filter(Boolean).join(' · ')}
+                    customerMatched={!!c.customer}
+                    onAdopt={() => handleAdopt(buildEntryFromCalendar(c))}
+                  />
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {/* Sent */}
+          <div className="p-3">
+            <div className="flex items-center gap-1.5 text-[11px] font-semibold text-zinc-600 mb-2">
+              <Mail className="w-3.5 h-3.5" /> Gesendete Mails ({sent.length})
+            </div>
+            {sent.length === 0 ? (
+              <div className="text-xs text-zinc-400 italic">Keine gesendeten Mails.</div>
+            ) : (
+              <ul className="space-y-1.5">
+                {sent.map((m) => (
+                  <SuggestionItem
+                    key={m.id}
+                    title={m.subject || '(ohne Betreff)'}
+                    subtitle={[
+                      m.sentDateTime ? m.sentDateTime.slice(11,16) : null,
+                      m.customer?.company_name,
+                      m.to?.[0]?.email,
+                    ].filter(Boolean).join(' · ')}
+                    customerMatched={!!m.customer}
+                    onAdopt={() => handleAdopt(buildEntryFromMail(m))}
+                  />
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function SuggestionItem({ title, subtitle, customerMatched, onAdopt }) {
+  return (
+    <li className="flex items-start gap-2 group">
+      <div className="flex-1 min-w-0">
+        <div className="text-xs font-medium text-zinc-700 truncate">{title}</div>
+        {subtitle && <div className="text-[10px] text-zinc-500 truncate">{subtitle}</div>}
+      </div>
+      <button
+        onClick={onAdopt}
+        title={customerMatched ? 'Übernehmen' : 'Übernehmen (Kunde nicht erkannt)'}
+        className="opacity-50 group-hover:opacity-100 transition-opacity flex items-center justify-center w-6 h-6 rounded border"
+        style={{
+          borderColor: customerMatched ? '#bfd3bf' : '#e4e7e4',
+          background: customerMatched ? '#e6ede6' : '#fff',
+          color: customerMatched ? '#2d5a2d' : '#999',
+        }}
+      >
+        <Plus className="w-3 h-3" />
+      </button>
+    </li>
+  );
+}
+
+// --- Hilfsfunktionen für Vorschlag→Eintrag --------------------------------
+function pickProject(suggestion, projects) {
+  // 1. Wenn Backend genau 1 Projekt vorschlägt → das nehmen
+  const sp = suggestion.suggestedProjects;
+  if (sp?.length === 1) {
+    return projects.find(p => p.id === sp[0].id) ?? sp[0];
+  }
+  // 2. Wenn mehrere – das mit "BWL" im Namen bevorzugen
+  if (sp?.length > 1) {
+    const bwl = sp.find(p => /BWL/i.test(p.name));
+    return projects.find(p => p.id === (bwl ?? sp[0]).id) ?? sp[0];
+  }
+  return null;
+}
+
+function pickDefaultServiceType(serviceTypes) {
+  // Bevorzugt: Beratung (BER), sonst erste billable
+  return (
+    serviceTypes.find(s => s.code === 'BER')
+    ?? serviceTypes.find(s => s.billable)
+    ?? serviceTypes[0]
+    ?? null
+  );
+}
+
+function computeHours(startIso, endIso) {
+  if (!startIso || !endIso) return 0.5;
+  const ms = new Date(endIso).getTime() - new Date(startIso).getTime();
+  if (!Number.isFinite(ms) || ms <= 0) return 0.5;
+  return Math.round((ms / 3600000) * 100) / 100;
 }
 
 // --- Schnell-Rapport -------------------------------------------------------

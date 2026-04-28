@@ -1,7 +1,7 @@
 import React, { useContext } from "react";
 import { useNavigate } from "react-router-dom";
 import { ThemeContext } from "@/Layout";
-import { BookOpen, Car, FileText, UserCog, ChevronRight, Wrench, PenLine, Presentation, FileSpreadsheet, Sparkles, Phone } from "lucide-react";
+import { BookOpen, Car, FileText, UserCog, ChevronRight, Wrench, PenLine, Presentation, FileSpreadsheet, Sparkles, Phone, CalendarRange } from "lucide-react";
 
 const TOOLS = [
   {
@@ -84,6 +84,15 @@ const TOOLS = [
     color: "#3b7a6a",
     bg: "#e0f0ec",
     route: "/TelefonDashboard",
+  },
+  {
+    id: "jahresplanung",
+    title: "Jahresplanung",
+    description: "Tätigkeiten pro Mitarbeiter & Monat einplanen: MwSt, Jahresabschluss, Steuererklärung, Lohn, Reporting – mit Drag & Drop und Stunden-Tracking",
+    icon: CalendarRange,
+    color: "#4d6a50",
+    bg: "#e6ede6",
+    route: "/Jahresplanung",
   },
 ];
 
