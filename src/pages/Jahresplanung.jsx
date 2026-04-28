@@ -3,7 +3,8 @@ import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import { ThemeContext } from "@/Layout";
 import { supabase } from "@/api/supabaseClient";
 import {
-  ChevronDown, ChevronRight, X, Clock, Search, Calendar, Trash2, RefreshCw, Info, UserCheck
+  ChevronDown, ChevronRight, X, Clock, Search, Calendar, Trash2, RefreshCw, Info, UserCheck,
+  LayoutGrid, BarChart2
 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import { toast } from "sonner";
@@ -66,6 +67,7 @@ export default function Jahresplanung() {
   const [collapsed, setCollapsed]   = useState({});
   const [search, setSearch]         = useState("");
   const [myClientsOnly, setMyClientsOnly] = useState(true); // default: nur eigene Kunden
+  const [activeTab, setActiveTab]   = useState("planung"); // "planung" | "kapazitaet"
   const [modal, setModal]           = useState(null);
   const [sollModal, setSollModal]   = useState(null); // month number
   const searchRef = useRef(null);
@@ -282,7 +284,7 @@ export default function Jahresplanung() {
 
   // ── Derived: year totals ─────────────────────────────────────────────────
   const currentMonth = new Date().getMonth() + 1; // 1–12, stable per render
-  const yearSoll     = useMemo(() => Object.values(sollMap).reduce((a, b) => a + b, 0), [sollMap]);
+  const yearSoll     = useMemo(() => Math.round(Object.values(sollMap).reduce((a, b) => a + b, 0) * 10) / 10, [sollMap]);
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -308,6 +310,31 @@ export default function Jahresplanung() {
           </span>
         )}
 
+        {/* Tab switcher */}
+        <div style={{ display: "flex", gap: 2, marginLeft: 16, backgroundColor: pageBg, borderRadius: 7, border: `1px solid ${border}`, padding: 2 }}>
+          {[
+            { id: "planung",     label: "Planung",    Icon: LayoutGrid },
+            { id: "kapazitaet",  label: "Kapazität",  Icon: BarChart2  },
+          ].map(({ id, label, Icon }) => (
+            <button
+              key={id}
+              onClick={() => setActiveTab(id)}
+              style={{
+                display: "flex", alignItems: "center", gap: 4,
+                padding: "4px 10px", fontSize: 11.5, borderRadius: 5, cursor: "pointer",
+                border: "none",
+                backgroundColor: activeTab === id ? cardBg : "transparent",
+                color: activeTab === id ? text : subtle,
+                fontWeight: activeTab === id ? 700 : 400,
+                boxShadow: activeTab === id ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+                transition: "all 0.12s",
+              }}
+            >
+              <Icon size={12} />{label}
+            </button>
+          ))}
+        </div>
+
         <button onClick={loadAll} title="Aktualisieren" style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: subtle, padding: 4, borderRadius: 5, display: "flex", alignItems: "center" }}>
           <RefreshCw size={13} />
         </button>
@@ -315,6 +342,19 @@ export default function Jahresplanung() {
 
       {/* ── Body ────────────────────────────────────────────────────────────── */}
       <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+
+        {/* ── Kapazitäts-Tab ────────────────────────────────────────────────── */}
+        {activeTab === "kapazitaet" && (
+          <KapazitaetView
+            orderedStaff={orderedStaff} profile={profile}
+            sollMap={sollMap} hoursMap={hoursMap} yearSoll={yearSoll}
+            currentMonth={currentMonth} year={year}
+            colors={colors}
+            onClickCell={(staffId, month) => { setActiveTab("planung"); setTimeout(() => setModal({ mode: "create", customerId: null, staffId, month }), 50); }}
+          />
+        )}
+
+        {activeTab === "planung" && (
         <DragDropContext onDragEnd={onDragEnd}>
 
           {/* ── Sidebar ─────────────────────────────────────────────────────── */}
@@ -639,6 +679,7 @@ export default function Jahresplanung() {
             </div>
           </div>
         </DragDropContext>
+        )} {/* end activeTab === "planung" */}
       </div>
 
       {/* Activity Modal */}
@@ -925,6 +966,230 @@ function ActivityModal({ modal, onClose, staff, custMap, onSave, onUpdate, onDel
           <button onClick={handleSave} disabled={!activityType.trim()} style={{ padding: "7px 16px", fontSize: 12, borderRadius: 7, border: "none", backgroundColor: accent, color: "#fff", cursor: "pointer", fontWeight: 600 }}>
             {isEdit ? "Speichern" : recurring ? `${recurringType === "monthly" ? 12 : recurringType === "quarterly" ? 4 : recurringMonths.length} Einträge erstellen` : "Einplanen"}
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Kapazitäts-View ───────────────────────────────────────────────────────────
+
+function KapazitaetView({ orderedStaff, profile, sollMap, hoursMap, yearSoll, currentMonth, year, colors, onClickCell }) {
+  const { pageBg, cardBg, border, text, subtle, accent, headerBg, isArtis, isLight } = colors;
+
+  // Team-Summe pro Monat
+  const teamHoursPerMonth = useMemo(() =>
+    Object.fromEntries(
+      Array.from({ length: 12 }, (_, i) => {
+        const month = i + 1;
+        const total = orderedStaff.reduce((s, st) => s + (hoursMap[`${st.id}|${month}`] || 0), 0);
+        return [month, total];
+      })
+    ),
+  [orderedStaff, hoursMap]);
+
+  function capColor(pct) {
+    if (pct <= 0) return subtle;
+    if (pct >= 1)  return "#dc2626";
+    if (pct >= 0.75) return "#d97706";
+    return "#059669";
+  }
+  function capBg(pct) {
+    if (pct <= 0) return "transparent";
+    if (pct >= 1)  return "#fee2e2";
+    if (pct >= 0.75) return "#fef3c7";
+    return "#d1fae5";
+  }
+
+  const COL_W = 90; // px per month column
+  const ROW_H = 52; // px per employee row
+
+  return (
+    <div style={{ flex: 1, overflowX: "auto", overflowY: "auto" }}>
+      <div style={{ minWidth: COL_W * 12 + 180 }}>
+
+        {/* ── Sticky header: months ────────────────────────────────────── */}
+        <div style={{
+          display: "flex", position: "sticky", top: 0, zIndex: 20,
+          borderBottom: `2px solid ${border}`,
+          backgroundColor: isArtis ? "#e8f0e8" : isLight ? "#eeeef6" : "#222228",
+        }}>
+          {/* left spacer for name column */}
+          <div style={{ width: 180, flexShrink: 0, padding: "8px 14px", display: "flex", alignItems: "flex-end" }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: subtle, letterSpacing: ".07em" }}>MITARBEITER</span>
+          </div>
+          {MONTHS.map((m, mi) => {
+            const month = mi + 1;
+            const isCur = month === currentMonth && year === new Date().getFullYear();
+            const teamH = teamHoursPerMonth[month] || 0;
+            const teamSoll = sollMap[month] * orderedStaff.length;
+            const teamPct = teamSoll > 0 ? teamH / teamSoll : 0;
+            return (
+              <div key={mi} style={{
+                width: COL_W, flexShrink: 0, padding: "6px 6px 5px",
+                textAlign: "center",
+                borderLeft: `1px solid ${border}`,
+                backgroundColor: isCur ? `${accent}14` : "transparent",
+                position: "relative",
+              }}>
+                {isCur && <div style={{ position: "absolute", top: 3, left: "50%", transform: "translateX(-50%)", width: 5, height: 5, borderRadius: "50%", backgroundColor: accent }} />}
+                <div style={{ fontSize: 11, fontWeight: 800, color: isCur ? accent : subtle, marginTop: isCur ? 6 : 0 }}>{m}</div>
+                <div style={{ fontSize: 9.5, color: subtle, marginTop: 1 }}>{sollMap[month]}h Soll</div>
+                {/* team mini bar */}
+                {teamH > 0 && (
+                  <div style={{ marginTop: 3, height: 3, borderRadius: 2, backgroundColor: border, overflow: "hidden" }}>
+                    <div style={{ width: `${Math.min(teamPct * 100, 100)}%`, height: "100%", backgroundColor: capColor(teamPct), borderRadius: 2 }} />
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* ── Employee rows ────────────────────────────────────────────── */}
+        <div style={{ padding: "8px 0" }}>
+          {orderedStaff.map(s => {
+            const isMe     = s.id === profile?.id;
+            const initials = (s.full_name || s.email || "?").slice(0, 2).toUpperCase();
+            const yearH    = Array.from({ length: 12 }, (_, i) => hoursMap[`${s.id}|${i+1}`] || 0).reduce((a,b) => a+b, 0);
+            const yearPct  = yearSoll > 0 ? yearH / yearSoll : 0;
+
+            return (
+              <div key={s.id} style={{
+                display: "flex", alignItems: "stretch",
+                borderBottom: `1px solid ${border}`,
+                backgroundColor: isMe ? (isArtis ? "#f5faf5" : isLight ? "#faf9ff" : "#2a2a38") : "transparent",
+                minHeight: ROW_H,
+              }}>
+                {/* Name column */}
+                <div style={{
+                  width: 180, flexShrink: 0, padding: "8px 14px",
+                  display: "flex", alignItems: "center", gap: 8,
+                  borderRight: `1px solid ${border}`,
+                  position: "sticky", left: 0, zIndex: 5,
+                  backgroundColor: isMe
+                    ? (isArtis ? "#f0f8f0" : isLight ? "#f5f3ff" : "#28283a")
+                    : (isArtis ? "#f9fbf9" : isLight ? "#fafafa" : "#27272c"),
+                }}>
+                  <div style={{
+                    width: 28, height: 28, borderRadius: "50%", flexShrink: 0,
+                    backgroundColor: isMe ? accent : (isArtis ? "#8aaa8a" : isLight ? "#9090c0" : "#5a5a7a"),
+                    color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 10, fontWeight: 700,
+                  }}>{initials}</div>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 11.5, fontWeight: isMe ? 700 : 500, color: text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {s.full_name || s.email}
+                    </div>
+                    <div style={{ fontSize: 9.5, color: capColor(yearPct), fontWeight: 600, marginTop: 1 }}>
+                      {yearH}h · {Math.round(yearPct * 100)}%
+                    </div>
+                  </div>
+                </div>
+
+                {/* Month cells */}
+                {Array.from({ length: 12 }, (_, mi) => {
+                  const month  = mi + 1;
+                  const isCur  = month === currentMonth && year === new Date().getFullYear();
+                  const ist    = hoursMap[`${s.id}|${month}`] || 0;
+                  const soll   = sollMap[month];
+                  const pct    = soll > 0 ? ist / soll : 0;
+                  const cc     = capColor(pct);
+                  const cb     = capBg(pct);
+
+                  return (
+                    <div
+                      key={month}
+                      onClick={() => onClickCell(s.id, month)}
+                      title={`${s.full_name || s.email} · ${MONTHS_LONG[mi]}: ${ist}h / ${soll}h Soll`}
+                      style={{
+                        width: COL_W, flexShrink: 0, padding: "6px 8px",
+                        borderLeft: `1px solid ${border}`,
+                        backgroundColor: isCur ? `${accent}07` : "transparent",
+                        cursor: "pointer",
+                        display: "flex", flexDirection: "column", justifyContent: "center", gap: 4,
+                        transition: "background 0.1s",
+                      }}
+                      onMouseEnter={e => { e.currentTarget.style.backgroundColor = `${accent}10`; }}
+                      onMouseLeave={e => { e.currentTarget.style.backgroundColor = isCur ? `${accent}07` : "transparent"; }}
+                    >
+                      {ist > 0 ? (
+                        <>
+                          {/* Bar */}
+                          <div style={{ height: 6, borderRadius: 3, backgroundColor: border, overflow: "hidden" }}>
+                            <div style={{
+                              width: `${Math.min(pct * 100, 100)}%`, height: "100%",
+                              backgroundColor: cc, borderRadius: 3,
+                              transition: "width 0.3s",
+                            }} />
+                          </div>
+                          {/* Numbers */}
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                            <span style={{ fontSize: 10.5, fontWeight: 700, color: cc }}>{ist}h</span>
+                            <span style={{
+                              fontSize: 9.5, fontWeight: 700, color: "#fff",
+                              backgroundColor: cc, borderRadius: 4, padding: "1px 5px",
+                            }}>{Math.round(pct * 100)}%</span>
+                          </div>
+                        </>
+                      ) : (
+                        <div style={{ fontSize: 9.5, color: border, textAlign: "center" }}>—</div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+
+          {/* ── Team total row ──────────────────────────────────────────── */}
+          <div style={{
+            display: "flex", alignItems: "stretch",
+            backgroundColor: isArtis ? "#e6ede6" : isLight ? "#eeeef6" : "#222228",
+            borderTop: `2px solid ${border}`, minHeight: ROW_H,
+          }}>
+            <div style={{
+              width: 180, flexShrink: 0, padding: "8px 14px",
+              display: "flex", alignItems: "center",
+              borderRight: `1px solid ${border}`,
+              position: "sticky", left: 0, zIndex: 5,
+              backgroundColor: isArtis ? "#e6ede6" : isLight ? "#eeeef6" : "#222228",
+            }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: text }}>Team gesamt</span>
+            </div>
+            {Array.from({ length: 12 }, (_, mi) => {
+              const month   = mi + 1;
+              const isCur   = month === currentMonth && year === new Date().getFullYear();
+              const teamH   = teamHoursPerMonth[month] || 0;
+              const teamSoll = sollMap[month] * orderedStaff.length;
+              const pct     = teamSoll > 0 ? teamH / teamSoll : 0;
+              const cc      = capColor(pct);
+              return (
+                <div key={month} style={{
+                  width: COL_W, flexShrink: 0, padding: "6px 8px",
+                  borderLeft: `1px solid ${border}`,
+                  backgroundColor: isCur ? `${accent}10` : "transparent",
+                  display: "flex", flexDirection: "column", justifyContent: "center", gap: 4,
+                }}>
+                  {teamH > 0 ? (
+                    <>
+                      <div style={{ height: 6, borderRadius: 3, backgroundColor: border, overflow: "hidden" }}>
+                        <div style={{ width: `${Math.min(pct * 100, 100)}%`, height: "100%", backgroundColor: cc, borderRadius: 3 }} />
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ fontSize: 10.5, fontWeight: 700, color: cc }}>{teamH}h</span>
+                        <span style={{ fontSize: 9.5, fontWeight: 700, color: "#fff", backgroundColor: cc, borderRadius: 4, padding: "1px 5px" }}>
+                          {Math.round(pct * 100)}%
+                        </span>
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ fontSize: 9.5, color: border, textAlign: "center" }}>—</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
     </div>
