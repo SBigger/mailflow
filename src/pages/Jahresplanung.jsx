@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useContext, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import { ThemeContext } from "@/Layout";
 import { supabase } from "@/api/supabaseClient";
@@ -8,6 +9,21 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import { toast } from "sonner";
+
+// ── Drag Portal ──────────────────────────────────────────────────────────────
+// Fixes ghost-position bug in non-window scroll containers:
+// hello-pangea/dnd uses position:fixed for the drag clone. If any ancestor
+// has a CSS transform, fixed positioning becomes relative to that ancestor
+// instead of the viewport → ghost appears offset. Rendering the clone
+// directly in document.body avoids all ancestor transforms.
+const _dragPortalEl = typeof document !== "undefined"
+  ? (() => { const d = document.createElement("div"); document.body.appendChild(d); return d; })()
+  : null;
+
+function applyDragPortal(snapshot, child) {
+  if (snapshot.isDragging && _dragPortalEl) return createPortal(child, _dragPortalEl);
+  return child;
+}
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -445,7 +461,7 @@ export default function Jahresplanung() {
                   <div ref={provided.innerRef} {...provided.droppableProps}>
                     {filteredCustomers.map((c, idx) => (
                       <Draggable key={c.id} draggableId={`cust|${c.id}`} index={idx}>
-                        {(drag, snap) => (
+                        {(drag, snap) => applyDragPortal(snap,
                           <div
                             ref={drag.innerRef}
                             {...drag.draggableProps}
@@ -644,7 +660,7 @@ export default function Jahresplanung() {
                                       const isDone = entry.done === true;
                                       return (
                                         <Draggable key={entry.id} draggableId={`entry|${entry.id}`} index={eidx}>
-                                          {(eDrag, eSnap) => (
+                                          {(eDrag, eSnap) => applyDragPortal(eSnap,
                                             <div
                                               ref={eDrag.innerRef}
                                               {...eDrag.draggableProps}
