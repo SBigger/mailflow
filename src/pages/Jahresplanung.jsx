@@ -3,7 +3,7 @@ import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import { ThemeContext } from "@/Layout";
 import { supabase } from "@/api/supabaseClient";
 import {
-  ChevronDown, ChevronRight, X, Clock, Search, Calendar, Trash2, RefreshCw, Info
+  ChevronDown, ChevronRight, X, Clock, Search, Calendar, Trash2, RefreshCw, Info, UserCheck
 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import { toast } from "sonner";
@@ -65,6 +65,7 @@ export default function Jahresplanung() {
   const [feiertage, setFeiertage]   = useState([]); // { id, date, hours, notes }
   const [collapsed, setCollapsed]   = useState({});
   const [search, setSearch]         = useState("");
+  const [myClientsOnly, setMyClientsOnly] = useState(true); // default: nur eigene Kunden
   const [modal, setModal]           = useState(null);
   const [sollModal, setSollModal]   = useState(null); // month number
   const searchRef = useRef(null);
@@ -76,7 +77,7 @@ export default function Jahresplanung() {
     // Run queries independently so a failed jp_feiertage doesn't block customers/staff
     const [sRes, cRes, eRes, fRes] = await Promise.all([
       supabase.from("profiles").select("id,full_name,email").order("full_name"),
-      supabase.from("customers").select("id,company_name,aktiv")
+      supabase.from("customers").select("id,company_name,aktiv,mandatsleiter_id,sachbearbeiter_id")
         .or("aktiv.is.null,aktiv.eq.true").order("company_name").limit(3000),
       supabase.from("jahresplanung").select("*").eq("year", year),
       supabase.from("jp_feiertage").select("*").gte("date", `${year}-01-01`).lte("date", `${year}-12-31`),
@@ -157,10 +158,17 @@ export default function Jahresplanung() {
   }, [entries]);
 
   const filteredCustomers = useMemo(() => {
-    if (!search) return customers;
+    let list = customers;
+    // Meine Kunden Filter: nur wo current user Mandatsleiter ODER Sachbearbeiter ist
+    if (myClientsOnly && profile?.id) {
+      list = list.filter(c =>
+        c.mandatsleiter_id === profile.id || c.sachbearbeiter_id === profile.id
+      );
+    }
+    if (!search) return list;
     const q = search.toLowerCase();
-    return customers.filter(c => (c.company_name || "").toLowerCase().includes(q));
-  }, [customers, search]);
+    return list.filter(c => (c.company_name || "").toLowerCase().includes(q));
+  }, [customers, search, myClientsOnly, profile?.id]);
 
   // Sorted staff – current user first
   const orderedStaff = useMemo(() => {
@@ -322,8 +330,40 @@ export default function Jahresplanung() {
                   style={{ width: "100%", paddingLeft: 22, paddingRight: 6, paddingTop: 5, paddingBottom: 5, fontSize: 11, borderRadius: 6, border: `1px solid ${border}`, background: pageBg, color: text, outline: "none", boxSizing: "border-box" }}
                 />
               </div>
-              <div style={{ fontSize: 9.5, color: subtle, marginTop: 3, textAlign: "center", paddingBottom: 2 }}>
-                ↔ Auf Zelle ziehen · oder + klicken
+              {/* Filter: Meine Kunden / Alle */}
+              <div style={{ display: "flex", gap: 4, marginTop: 5 }}>
+                <button
+                  onClick={() => setMyClientsOnly(true)}
+                  title="Nur Kunden wo ich Mandatsleiter oder Sachbearbeiter bin"
+                  style={{
+                    flex: 1, padding: "4px 0", fontSize: 10.5, borderRadius: 5, cursor: "pointer",
+                    fontWeight: myClientsOnly ? 700 : 400,
+                    backgroundColor: myClientsOnly ? `${accent}18` : "transparent",
+                    color: myClientsOnly ? accent : subtle,
+                    border: `1px solid ${myClientsOnly ? accent : border}`,
+                    display: "flex", alignItems: "center", justifyContent: "center", gap: 3,
+                    transition: "all 0.12s",
+                  }}
+                >
+                  <UserCheck size={9} />Meine
+                </button>
+                <button
+                  onClick={() => setMyClientsOnly(false)}
+                  title="Alle aktiven Kunden anzeigen"
+                  style={{
+                    flex: 1, padding: "4px 0", fontSize: 10.5, borderRadius: 5, cursor: "pointer",
+                    fontWeight: !myClientsOnly ? 700 : 400,
+                    backgroundColor: !myClientsOnly ? `${accent}18` : "transparent",
+                    color: !myClientsOnly ? accent : subtle,
+                    border: `1px solid ${!myClientsOnly ? accent : border}`,
+                    transition: "all 0.12s",
+                  }}
+                >
+                  Alle
+                </button>
+              </div>
+              <div style={{ fontSize: 9.5, color: subtle, marginTop: 4, textAlign: "center", paddingBottom: 2 }}>
+                {filteredCustomers.length} Kunden · ↔ ziehen · + klicken
               </div>
             </div>
             <div style={{ flex: 1, overflowY: "auto", padding: "4px 5px" }}>
