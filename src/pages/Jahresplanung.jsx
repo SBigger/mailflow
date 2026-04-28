@@ -4,7 +4,7 @@ import { ThemeContext } from "@/Layout";
 import { supabase } from "@/api/supabaseClient";
 import {
   ChevronDown, ChevronRight, X, Clock, Search, Calendar, Trash2, RefreshCw, Info, UserCheck,
-  LayoutGrid, BarChart2
+  LayoutGrid, BarChart2, CheckCircle2, Circle, Copy
 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import { toast } from "sonner";
@@ -117,6 +117,11 @@ export default function Jahresplanung() {
   }, [year]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
+
+  // Auto-migrate: add done column etc. silently on first mount
+  useEffect(() => {
+    supabase.functions.invoke("setup-jahresplanung").catch(() => {});
+  }, []);
 
   // Ctrl+F
   useEffect(() => {
@@ -265,6 +270,32 @@ export default function Jahresplanung() {
     setModal(null);
   };
 
+  // ── Done-Toggle (optimistic) ──────────────────────────────────────────────
+
+  const toggleDone = useCallback(async (entryId, currentDone, e) => {
+    e?.stopPropagation();
+    const newDone = !currentDone;
+    setEntries(prev => prev.map(en => en.id === entryId ? { ...en, done: newDone } : en));
+    const { error } = await supabase.from("jahresplanung").update({ done: newDone }).eq("id", entryId);
+    if (error) {
+      setEntries(prev => prev.map(en => en.id === entryId ? { ...en, done: currentDone } : en));
+      toast.error("Fehler beim Speichern");
+    }
+  }, []);
+
+  // ── Duplicate entry ───────────────────────────────────────────────────────
+
+  const handleDuplicate = useCallback((entry) => {
+    setModal(null);
+    setTimeout(() => setModal({
+      mode: "create",
+      customerId: entry.customer_id,
+      staffId:    entry.assigned_to,
+      month:      entry.month,
+      prefill:    entry,
+    }), 60);
+  }, []);
+
   // ── Feiertage toggle ─────────────────────────────────────────────────────
 
   const toggleFeiertag = async (dateStr, isCurrentlyFeiertag) => {
@@ -349,8 +380,10 @@ export default function Jahresplanung() {
             orderedStaff={orderedStaff} profile={profile}
             sollMap={sollMap} hoursMap={hoursMap} yearSoll={yearSoll}
             currentMonth={currentMonth} year={year}
+            entryMap={entryMap} custMap={custMap}
             colors={colors}
-            onClickCell={(staffId, month) => { setActiveTab("planung"); setTimeout(() => setModal({ mode: "create", customerId: null, staffId, month }), 50); }}
+            onEditEntry={(entry) => { setActiveTab("planung"); setTimeout(() => setModal({ mode: "edit", entry }), 60); }}
+            onAddEntry={(staffId, month) => { setActiveTab("planung"); setTimeout(() => setModal({ mode: "create", customerId: null, staffId, month }), 60); }}
           />
         )}
 
@@ -606,8 +639,9 @@ export default function Jahresplanung() {
 
                                     {/* Entry chips */}
                                     {cellEnts.map((entry, eidx) => {
-                                      const act  = ACT[entry.activity_type] || { label: entry.activity_type, color: "#6b7280", bg: "#f3f4f6" };
-                                      const cust = custMap[entry.customer_id];
+                                      const act    = ACT[entry.activity_type] || { label: entry.activity_type, color: "#6b7280", bg: "#f3f4f6" };
+                                      const cust   = custMap[entry.customer_id];
+                                      const isDone = entry.done === true;
                                       return (
                                         <Draggable key={entry.id} draggableId={`entry|${entry.id}`} index={eidx}>
                                           {(eDrag, eSnap) => (
@@ -618,16 +652,33 @@ export default function Jahresplanung() {
                                               onClick={() => setModal({ mode: "edit", entry })}
                                               style={{
                                                 ...eDrag.draggableProps.style,
-                                                backgroundColor: act.bg,
-                                                border: `1px solid ${act.color}28`,
-                                                borderLeft: `3px solid ${act.color}`,
-                                                borderRadius: 5, padding: "4px 6px",
+                                                backgroundColor: isDone ? `${act.bg}88` : act.bg,
+                                                border: `1px solid ${isDone ? "#22c55e55" : act.color + "28"}`,
+                                                borderLeft: `3px solid ${isDone ? "#22c55e" : act.color}`,
+                                                borderRadius: 5, padding: "4px 6px 4px 6px",
                                                 cursor: "pointer", lineHeight: 1.35,
+                                                position: "relative",
+                                                opacity: isDone ? 0.8 : 1,
                                                 boxShadow: eSnap.isDragging ? "0 4px 14px rgba(0,0,0,0.2)" : "none",
                                               }}
                                             >
-                                              <div style={{ fontSize: 9.5, fontWeight: 700, color: act.color, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{act.label}</div>
-                                              <div style={{ fontSize: 10.5, color: "#2a2a2a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginTop: 1 }}>{cust?.company_name || "–"}</div>
+                                              {/* Done-Toggle */}
+                                              <button
+                                                onClick={e => toggleDone(entry.id, entry.done, e)}
+                                                title={isDone ? "Als offen markieren" : "Als erledigt markieren"}
+                                                style={{
+                                                  position: "absolute", top: 4, right: 4,
+                                                  width: 13, height: 13, borderRadius: "50%",
+                                                  border: `1.5px solid ${isDone ? "#22c55e" : "#d1d5db"}`,
+                                                  background: isDone ? "#22c55e" : "transparent",
+                                                  cursor: "pointer", padding: 0,
+                                                  display: "flex", alignItems: "center", justifyContent: "center",
+                                                }}
+                                              >
+                                                {isDone && <span style={{ fontSize: 7, color: "#fff", fontWeight: 900, lineHeight: 1 }}>✓</span>}
+                                              </button>
+                                              <div style={{ fontSize: 9.5, fontWeight: 700, color: isDone ? "#22c55e" : act.color, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textDecoration: isDone ? "line-through" : "none", paddingRight: 14 }}>{act.label}</div>
+                                              <div style={{ fontSize: 10.5, color: isDone ? "#888" : "#2a2a2a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginTop: 1 }}>{cust?.company_name || "–"}</div>
                                               {entry.hours != null && <div style={{ fontSize: 9, color: "#777", marginTop: 1 }}>{entry.hours}h</div>}
                                             </div>
                                           )}
@@ -688,6 +739,7 @@ export default function Jahresplanung() {
           modal={modal} onClose={() => setModal(null)}
           staff={staff} custMap={custMap}
           onSave={saveEntry} onUpdate={updateEntry} onDelete={deleteEntry}
+          onDuplicate={handleDuplicate}
           colors={colors}
         />
       )}
@@ -777,14 +829,15 @@ function SollzeitModal({ month, year, feiertage, feierSet, onToggle, onClose, co
 
 // ── Activity Modal ────────────────────────────────────────────────────────────
 
-function ActivityModal({ modal, onClose, staff, custMap, onSave, onUpdate, onDelete, colors }) {
+function ActivityModal({ modal, onClose, staff, custMap, onSave, onUpdate, onDelete, onDuplicate, colors }) {
   const { cardBg, border, text, subtle, accent, pageBg } = colors;
-  const isEdit = modal.mode === "edit";
-  const entry  = isEdit ? modal.entry : null;
+  const isEdit  = modal.mode === "edit";
+  const entry   = isEdit ? modal.entry : null;
+  const prefill = !isEdit ? modal.prefill : null; // for duplication
 
-  const [activityType,    setActivityType]    = useState(entry?.activity_type || "jahresabschluss");
-  const [hours,           setHours]           = useState(entry?.hours != null ? String(entry.hours) : "");
-  const [notes,           setNotes]           = useState(entry?.notes || "");
+  const [activityType,    setActivityType]    = useState(entry?.activity_type || prefill?.activity_type || "jahresabschluss");
+  const [hours,           setHours]           = useState(entry?.hours != null ? String(entry.hours) : prefill?.hours != null ? String(prefill.hours) : "");
+  const [notes,           setNotes]           = useState(entry?.notes || prefill?.notes || "");
   const [staffId,         setStaffId]         = useState(entry?.assigned_to || modal.staffId || "");
   const [month,           setMonth]           = useState(entry?.month || modal.month || 1);
   const [recurring,       setRecurring]       = useState(false);
@@ -792,7 +845,7 @@ function ActivityModal({ modal, onClose, staff, custMap, onSave, onUpdate, onDel
   const [recurringMonths, setRecurringMonths] = useState([1,2,3,4,5,6,7,8,9,10,11,12]);
   const [custSearch,      setCustSearch]      = useState("");
   const [custPickOpen,    setCustPickOpen]    = useState(false);
-  const [selectedCustId,  setSelectedCustId]  = useState(isEdit ? (entry?.customer_id || "") : (modal.customerId || ""));
+  const [selectedCustId,  setSelectedCustId]  = useState(isEdit ? (entry?.customer_id || "") : (modal.customerId || prefill?.customer_id || ""));
 
   const effectiveCustId = selectedCustId;
   const customer        = custMap[effectiveCustId];
@@ -956,12 +1009,18 @@ function ActivityModal({ modal, onClose, staff, custMap, onSave, onUpdate, onDel
         )}
 
         {/* Actions */}
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", alignItems: "center", flexWrap: "wrap" }}>
           {isEdit && (
             <button onClick={() => onDelete(entry.id)} style={{ padding: "7px 12px", fontSize: 12, borderRadius: 7, border: "1px solid #fca5a5", backgroundColor: "transparent", color: "#dc2626", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
               <Trash2 size={12} /> Löschen
             </button>
           )}
+          {isEdit && (
+            <button onClick={() => onDuplicate(entry)} title="Diesen Eintrag als Vorlage für einen neuen Eintrag verwenden" style={{ padding: "7px 12px", fontSize: 12, borderRadius: 7, border: `1px solid ${border}`, backgroundColor: "transparent", color: subtle, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+              <Copy size={12} /> Duplizieren
+            </button>
+          )}
+          <div style={{ flex: 1 }} />
           <button onClick={onClose} style={{ padding: "7px 14px", fontSize: 12, borderRadius: 7, border: `1px solid ${border}`, backgroundColor: "transparent", color: subtle, cursor: "pointer" }}>Abbrechen</button>
           <button onClick={handleSave} disabled={!activityType.trim()} style={{ padding: "7px 16px", fontSize: 12, borderRadius: 7, border: "none", backgroundColor: accent, color: "#fff", cursor: "pointer", fontWeight: 600 }}>
             {isEdit ? "Speichern" : recurring ? `${recurringType === "monthly" ? 12 : recurringType === "quarterly" ? 4 : recurringMonths.length} Einträge erstellen` : "Einplanen"}
@@ -974,8 +1033,9 @@ function ActivityModal({ modal, onClose, staff, custMap, onSave, onUpdate, onDel
 
 // ── Kapazitäts-View ───────────────────────────────────────────────────────────
 
-function KapazitaetView({ orderedStaff, profile, sollMap, hoursMap, yearSoll, currentMonth, year, colors, onClickCell }) {
-  const { pageBg, cardBg, border, text, subtle, accent, headerBg, isArtis, isLight } = colors;
+function KapazitaetView({ orderedStaff, profile, sollMap, hoursMap, yearSoll, currentMonth, year, entryMap, custMap, colors, onEditEntry, onAddEntry }) {
+  const { pageBg, cardBg, border, text, subtle, accent, isArtis, isLight } = colors;
+  const [drillDown, setDrillDown] = useState(null); // { staffId, name, month }
 
   // Team-Summe pro Monat
   const teamHoursPerMonth = useMemo(() =>
@@ -1100,8 +1160,8 @@ function KapazitaetView({ orderedStaff, profile, sollMap, hoursMap, yearSoll, cu
                   return (
                     <div
                       key={month}
-                      onClick={() => onClickCell(s.id, month)}
-                      title={`${s.full_name || s.email} · ${MONTHS_LONG[mi]}: ${ist}h / ${soll}h Soll`}
+                      onClick={() => setDrillDown({ staffId: s.id, name: s.full_name || s.email, month })}
+                      title={`${s.full_name || s.email} · ${MONTHS_LONG[mi]}: ${ist}h / ${soll}h Soll — Klick für Details`}
                       style={{
                         width: COL_W, flexShrink: 0, padding: "6px 8px",
                         borderLeft: `1px solid ${border}`,
@@ -1192,6 +1252,102 @@ function KapazitaetView({ orderedStaff, profile, sollMap, hoursMap, yearSoll, cu
           </div>
         </div>
       </div>
+
+      {/* ── Drill-Down Popup ──────────────────────────────────────────────── */}
+      {drillDown && (() => {
+        const { staffId, name, month } = drillDown;
+        const cellEnts = (entryMap[`${staffId}|${month}`] || []);
+        const doneCount = cellEnts.filter(e => e.done).length;
+        return (
+          <div
+            style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.35)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}
+            onClick={e => { if (e.target === e.currentTarget) setDrillDown(null); }}
+          >
+            <div style={{
+              backgroundColor: cardBg, border: `1px solid ${border}`, borderRadius: 14,
+              width: 360, maxHeight: "75vh", display: "flex", flexDirection: "column",
+              boxShadow: "0 24px 60px rgba(0,0,0,0.22)",
+            }}>
+              {/* Header */}
+              <div style={{ padding: "16px 18px 12px", borderBottom: `1px solid ${border}`, display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: text }}>{name}</div>
+                  <div style={{ fontSize: 11, color: subtle, marginTop: 2 }}>
+                    {MONTHS_LONG[month - 1]} {year}
+                    {cellEnts.length > 0 && (
+                      <span style={{ marginLeft: 8, color: doneCount === cellEnts.length ? "#22c55e" : accent }}>
+                        · {doneCount}/{cellEnts.length} erledigt
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <button onClick={() => setDrillDown(null)} style={{ background: "none", border: "none", cursor: "pointer", color: subtle, padding: 2 }}><X size={16} /></button>
+              </div>
+
+              {/* Entry list */}
+              <div style={{ flex: 1, overflowY: "auto", padding: "10px 14px", display: "flex", flexDirection: "column", gap: 6 }}>
+                {cellEnts.length === 0 ? (
+                  <div style={{ textAlign: "center", color: subtle, fontSize: 12, padding: "24px 0" }}>Keine Einträge für diesen Monat</div>
+                ) : cellEnts.map(entry => {
+                  const act    = ACT[entry.activity_type] || { label: entry.activity_type, color: "#6b7280", bg: "#f3f4f6" };
+                  const cust   = custMap[entry.customer_id];
+                  const isDone = entry.done === true;
+                  return (
+                    <div
+                      key={entry.id}
+                      onClick={() => { setDrillDown(null); onEditEntry(entry); }}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 10,
+                        padding: "9px 11px", borderRadius: 8, cursor: "pointer",
+                        backgroundColor: isDone ? `${act.bg}55` : act.bg,
+                        border: `1px solid ${isDone ? "#22c55e40" : act.color + "30"}`,
+                        borderLeft: `3px solid ${isDone ? "#22c55e" : act.color}`,
+                        opacity: isDone ? 0.8 : 1,
+                        transition: "all 0.1s",
+                      }}
+                      onMouseEnter={e => { e.currentTarget.style.filter = "brightness(0.96)"; }}
+                      onMouseLeave={e => { e.currentTarget.style.filter = "none"; }}
+                    >
+                      {/* Done indicator */}
+                      <div style={{
+                        width: 16, height: 16, borderRadius: "50%", flexShrink: 0,
+                        border: `1.5px solid ${isDone ? "#22c55e" : "#d1d5db"}`,
+                        backgroundColor: isDone ? "#22c55e" : "transparent",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                      }}>
+                        {isDone && <span style={{ fontSize: 8, color: "#fff", fontWeight: 900 }}>✓</span>}
+                      </div>
+                      {/* Content */}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 10.5, fontWeight: 700, color: isDone ? "#22c55e" : act.color, textDecoration: isDone ? "line-through" : "none" }}>{act.label}</div>
+                        <div style={{ fontSize: 12, color: text, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cust?.company_name || "–"}</div>
+                        {entry.notes && <div style={{ fontSize: 10.5, color: subtle, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{entry.notes}</div>}
+                      </div>
+                      {/* Hours */}
+                      {entry.hours != null && (
+                        <span style={{ fontSize: 11, fontWeight: 700, color: isDone ? "#22c55e" : act.color, flexShrink: 0 }}>{entry.hours}h</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Footer */}
+              <div style={{ padding: "10px 14px", borderTop: `1px solid ${border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: 10.5, color: subtle }}>
+                  {cellEnts.reduce((s, e) => s + (parseFloat(e.hours) || 0), 0)}h geplant
+                </span>
+                <button
+                  onClick={() => { setDrillDown(null); onAddEntry(staffId, month); }}
+                  style={{ padding: "6px 14px", fontSize: 12, borderRadius: 7, border: "none", backgroundColor: accent, color: "#fff", cursor: "pointer", fontWeight: 600, display: "flex", alignItems: "center", gap: 5 }}
+                >
+                  + Aktivität hinzufügen
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

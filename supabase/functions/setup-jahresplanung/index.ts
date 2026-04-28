@@ -11,14 +11,46 @@ Deno.serve(async (req) => {
   const sql = postgres(dbUrl, { max: 1 });
 
   try {
-    // Drop year column if it exists (entries are now perpetual / year-independent)
+    // 1. Add year column back to jahresplanung
     await sql`
       ALTER TABLE public.jahresplanung
-        DROP COLUMN IF EXISTS year
+        ADD COLUMN IF NOT EXISTS year integer NOT NULL DEFAULT 2026
+    `;
+
+    // 2. Add done column for completion tracking
+    await sql`
+      ALTER TABLE public.jahresplanung
+        ADD COLUMN IF NOT EXISTS done boolean NOT NULL DEFAULT false
+    `;
+
+    // 3. Create jp_feiertage table (global holidays, per date)
+    await sql`
+      CREATE TABLE IF NOT EXISTS public.jp_feiertage (
+        id         uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+        date       date        NOT NULL UNIQUE,
+        hours      numeric(4,2) NOT NULL DEFAULT 0,
+        notes      text,
+        created_by uuid        REFERENCES public.profiles(id),
+        created_at timestamptz DEFAULT now()
+      )
+    `;
+
+    await sql`ALTER TABLE public.jp_feiertage ENABLE ROW LEVEL SECURITY`;
+
+    await sql`
+      DO $$ BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_policies
+          WHERE tablename = 'jp_feiertage' AND policyname = 'jp_feiertage_auth'
+        ) THEN
+          CREATE POLICY "jp_feiertage_auth" ON public.jp_feiertage
+            FOR ALL TO authenticated USING (true) WITH CHECK (true);
+        END IF;
+      END $$
     `;
 
     await sql.end();
-    return new Response(JSON.stringify({ ok: true, message: "year column removed – entries are now perpetual" }), { headers: cors });
+    return new Response(JSON.stringify({ ok: true }), { headers: cors });
   } catch (err) {
     await sql.end().catch(() => {});
     return new Response(JSON.stringify({ error: String(err.message) }), { status: 500, headers: cors });
