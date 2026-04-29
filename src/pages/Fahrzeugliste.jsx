@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import {
   Car, Wrench, ChevronRight, Plus, Trash2, Edit3, Save, X,
   FileText, Download, Link, ExternalLink,
-  ChevronDown, ChevronUp, AlertCircle, Calculator
+  ChevronDown, ChevronUp, AlertCircle, Calculator, Search
 } from "lucide-react";
 
 // ── Hilfsfunktionen ──────────────────────────────────────────────────────────
