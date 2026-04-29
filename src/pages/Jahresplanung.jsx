@@ -21,7 +21,11 @@ const _dragPortalEl = typeof document !== "undefined"
   : null;
 
 function applyDragPortal(snapshot, child) {
-  if (snapshot.isDragging && _dragPortalEl) return createPortal(child, _dragPortalEl);
+  // Keep in portal during both active drag AND the drop animation;
+  // switching containers mid-animation causes a visible snap.
+  if ((snapshot.isDragging || snapshot.isDropAnimating) && _dragPortalEl) {
+    return createPortal(child, _dragPortalEl);
+  }
   return child;
 }
 
@@ -83,6 +87,7 @@ export default function Jahresplanung() {
   const [collapsed, setCollapsed]   = useState({});
   const [search, setSearch]         = useState("");
   const [myClientsOnly, setMyClientsOnly] = useState(true); // default: nur eigene Kunden
+  const [activityFilter, setActivityFilter] = useState(new Set()); // empty = alle
   const [activeTab, setActiveTab]   = useState("planung"); // "planung" | "kapazitaet"
   const [modal, setModal]           = useState(null);
   const [sollModal, setSollModal]   = useState(null); // month number
@@ -179,6 +184,18 @@ export default function Jahresplanung() {
     }
     return m;
   }, [entries]);
+
+  // entryMap used for capacity numbers (unfiltered); visibleEntryMap used for chip display
+  const visibleEntryMap = useMemo(() => {
+    const source = activityFilter.size === 0 ? entries : entries.filter(e => activityFilter.has(e.activity_type));
+    const m = {};
+    for (const e of source) {
+      const k = `${e.assigned_to}|${e.month}`;
+      if (!m[k]) m[k] = [];
+      m[k].push(e);
+    }
+    return m;
+  }, [entries, activityFilter]);
 
   const filteredCustomers = useMemo(() => {
     let list = customers;
@@ -451,6 +468,42 @@ export default function Jahresplanung() {
                   Alle
                 </button>
               </div>
+              {/* Activity filter pills */}
+              <div style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 3, paddingBottom: 2 }}>
+                {ACTIVITIES.map(a => {
+                  const active = activityFilter.has(a.id);
+                  return (
+                    <button
+                      key={a.id}
+                      onClick={() => setActivityFilter(prev => {
+                        const next = new Set(prev);
+                        if (next.has(a.id)) next.delete(a.id); else next.add(a.id);
+                        return next;
+                      })}
+                      title={`Nur ${a.label} anzeigen`}
+                      style={{
+                        padding: "2px 6px", fontSize: 9.5, borderRadius: 4, cursor: "pointer",
+                        fontWeight: active ? 700 : 400,
+                        backgroundColor: active ? a.bg : "transparent",
+                        color: active ? a.color : subtle,
+                        border: `1px solid ${active ? a.color + "60" : border}`,
+                        transition: "all 0.1s",
+                      }}
+                    >
+                      {a.label}
+                    </button>
+                  );
+                })}
+                {activityFilter.size > 0 && (
+                  <button
+                    onClick={() => setActivityFilter(new Set())}
+                    title="Filter zurücksetzen"
+                    style={{ padding: "2px 6px", fontSize: 9.5, borderRadius: 4, cursor: "pointer", backgroundColor: "transparent", color: subtle, border: `1px solid ${border}` }}
+                  >
+                    ✕ Alle
+                  </button>
+                )}
+              </div>
               <div style={{ fontSize: 9.5, color: subtle, marginTop: 4, textAlign: "center", paddingBottom: 2 }}>
                 {filteredCustomers.length} Kunden · ↔ ziehen · + klicken
               </div>
@@ -633,7 +686,7 @@ export default function Jahresplanung() {
                             const month     = mi + 1;
                             const isCur     = month === currentMonth && year === new Date().getFullYear();
                             const key       = `${s.id}|${month}`;
-                            const cellEnts  = entryMap[key] || [];
+                            const cellEnts  = visibleEntryMap[key] || [];
                             const cellHours = hoursMap[key] || 0;
                             const soll      = sollMap[month];
                             const pct       = soll > 0 && cellHours > 0 ? Math.min(cellHours / soll, 1) : 0;
@@ -684,34 +737,42 @@ export default function Jahresplanung() {
                                               onClick={() => setModal({ mode: "edit", entry })}
                                               style={{
                                                 ...eDrag.draggableProps.style,
+                                                // NOTE: no position:relative here!
+                                                // The library sets position:fixed on this element during drag.
+                                                // Adding position:relative after the spread overrides that and
+                                                // makes the portaled ghost collapse to a static block → invisible.
+                                                // The inner wrapper below provides position:relative for the done button.
                                                 backgroundColor: isDone ? `${act.bg}88` : act.bg,
                                                 border: `1px solid ${isDone ? "#22c55e55" : act.color + "28"}`,
                                                 borderLeft: `3px solid ${isDone ? "#22c55e" : act.color}`,
-                                                borderRadius: 5, padding: "4px 6px 4px 6px",
+                                                borderRadius: 5,
                                                 cursor: "pointer", lineHeight: 1.35,
-                                                position: "relative",
                                                 opacity: isDone ? 0.8 : 1,
                                                 boxShadow: eSnap.isDragging ? "0 4px 14px rgba(0,0,0,0.2)" : "none",
                                               }}
                                             >
-                                              {/* Done-Toggle */}
-                                              <button
-                                                onClick={e => toggleDone(entry.id, entry.done, e)}
-                                                title={isDone ? "Als offen markieren" : "Als erledigt markieren"}
-                                                style={{
-                                                  position: "absolute", top: 4, right: 4,
-                                                  width: 13, height: 13, borderRadius: "50%",
-                                                  border: `1.5px solid ${isDone ? "#22c55e" : "#d1d5db"}`,
-                                                  background: isDone ? "#22c55e" : "transparent",
-                                                  cursor: "pointer", padding: 0,
-                                                  display: "flex", alignItems: "center", justifyContent: "center",
-                                                }}
-                                              >
-                                                {isDone && <span style={{ fontSize: 7, color: "#fff", fontWeight: 900, lineHeight: 1 }}>✓</span>}
-                                              </button>
-                                              <div style={{ fontSize: 9.5, fontWeight: 700, color: isDone ? "#22c55e" : act.color, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textDecoration: isDone ? "line-through" : "none", paddingRight: 14 }}>{act.label}</div>
-                                              <div style={{ fontSize: 10.5, color: isDone ? "#888" : "#2a2a2a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginTop: 1 }}>{cust?.company_name || "–"}</div>
-                                              {entry.hours != null && <div style={{ fontSize: 9, color: "#777", marginTop: 1 }}>{entry.hours}h</div>}
+                                              {/* Inner wrapper: position:relative anchors the absolute done button
+                                                  without polluting the DnD outer element */}
+                                              <div style={{ position: "relative", padding: "4px 6px 4px 6px" }}>
+                                                {/* Done-Toggle */}
+                                                <button
+                                                  onClick={e => toggleDone(entry.id, entry.done, e)}
+                                                  title={isDone ? "Als offen markieren" : "Als erledigt markieren"}
+                                                  style={{
+                                                    position: "absolute", top: 0, right: 0,
+                                                    width: 13, height: 13, borderRadius: "50%",
+                                                    border: `1.5px solid ${isDone ? "#22c55e" : "#d1d5db"}`,
+                                                    background: isDone ? "#22c55e" : "transparent",
+                                                    cursor: "pointer", padding: 0,
+                                                    display: "flex", alignItems: "center", justifyContent: "center",
+                                                  }}
+                                                >
+                                                  {isDone && <span style={{ fontSize: 7, color: "#fff", fontWeight: 900, lineHeight: 1 }}>✓</span>}
+                                                </button>
+                                                <div style={{ fontSize: 9.5, fontWeight: 700, color: isDone ? "#22c55e" : act.color, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textDecoration: isDone ? "line-through" : "none", paddingRight: 14 }}>{act.label}</div>
+                                                <div style={{ fontSize: 10.5, color: isDone ? "#888" : "#2a2a2a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginTop: 1 }}>{cust?.company_name || "–"}</div>
+                                                {entry.hours != null && <div style={{ fontSize: 9, color: "#777", marginTop: 1 }}>{entry.hours}h</div>}
+                                              </div>
                                             </div>
                                           )}
                                         </Draggable>
