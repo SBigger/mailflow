@@ -5,7 +5,7 @@ import { ThemeContext } from "@/Layout";
 import { supabase } from "@/api/supabaseClient";
 import {
   ChevronDown, ChevronRight, X, Clock, Search, Calendar, Trash2, RefreshCw, Info, UserCheck,
-  LayoutGrid, BarChart2, CheckCircle2, Circle, Copy
+  LayoutGrid, BarChart2, CheckCircle2, Circle, Copy, Eye
 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import { toast } from "sonner";
@@ -89,6 +89,7 @@ export default function Jahresplanung() {
   const [myClientsOnly, setMyClientsOnly] = useState(true); // default: nur eigene Kunden
   const [activityFilter, setActivityFilter] = useState(new Set()); // empty = alle
   const [activeTab, setActiveTab]   = useState("planung"); // "planung" | "kapazitaet"
+  const [detailMonth, setDetailMonth] = useState(null); // null or 1–12
   const [modal, setModal]           = useState(null);
   const [sollModal, setSollModal]   = useState(null); // month number
   const searchRef = useRef(null);
@@ -263,7 +264,7 @@ export default function Jahresplanung() {
   // ── CRUD ─────────────────────────────────────────────────────────────────
 
   const saveEntry = async (form) => {
-    const { customerId, staffId, month, activityType, hours, notes, recurring, recurringType, recurringMonths } = form;
+    const { customerId, staffId, month, activityType, hours, notes, recurring, recurringType, recurringMonths, monthHalf } = form;
     const monthsToCreate =
       !recurring         ? [month] :
       recurringType === "monthly"   ? [1,2,3,4,5,6,7,8,9,10,11,12] :
@@ -278,6 +279,7 @@ export default function Jahresplanung() {
       activity_type: activityType,
       hours: hours ? parseFloat(hours) : null,
       notes: notes || null,
+      month_half: monthHalf || null,
       recurring_group_id: groupId, created_by: user?.id,
     }));
 
@@ -585,8 +587,25 @@ export default function Jahresplanung() {
                       {isCur && (
                         <div style={{ position: "absolute", top: 3, left: "50%", transform: "translateX(-50%)", width: 5, height: 5, borderRadius: "50%", backgroundColor: accent }} />
                       )}
-                      <div style={{ fontSize: 11, fontWeight: 800, color: isCur ? accent : subtle, letterSpacing: ".07em", marginTop: isCur ? 6 : 0 }}>{m}</div>
-                      {/* Soll badge – clickable, shown once globally */}
+                      {/* Month name + Detail-View button */}
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4, marginTop: isCur ? 6 : 0 }}>
+                        <span style={{ fontSize: 11, fontWeight: 800, color: isCur ? accent : subtle, letterSpacing: ".07em" }}>{m}</span>
+                        <button
+                          onClick={() => setDetailMonth(month)}
+                          title={`Detailansicht ${MONTHS_LONG[mi]}`}
+                          style={{
+                            background: "none", border: "none", cursor: "pointer",
+                            color: subtle, padding: 2, borderRadius: 3,
+                            display: "flex", alignItems: "center",
+                            opacity: 0.5, transition: "opacity 0.12s",
+                          }}
+                          onMouseEnter={e => { e.currentTarget.style.opacity = "1"; e.currentTarget.style.color = accent; }}
+                          onMouseLeave={e => { e.currentTarget.style.opacity = "0.5"; e.currentTarget.style.color = subtle; }}
+                        >
+                          <Eye size={9} />
+                        </button>
+                      </div>
+                      {/* Soll badge – clickable */}
                       <div
                         onClick={() => setSollModal(month)}
                         title={`Sollzeit ${MONTHS_LONG[mi]} konfigurieren`}
@@ -769,7 +788,14 @@ export default function Jahresplanung() {
                                                 >
                                                   {isDone && <span style={{ fontSize: 7, color: "#fff", fontWeight: 900, lineHeight: 1 }}>✓</span>}
                                                 </button>
-                                                <div style={{ fontSize: 9.5, fontWeight: 700, color: isDone ? "#22c55e" : act.color, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textDecoration: isDone ? "line-through" : "none", paddingRight: 14 }}>{act.label}</div>
+                                                <div style={{ display: "flex", alignItems: "center", gap: 3, paddingRight: 14 }}>
+                                                  <span style={{ fontSize: 9.5, fontWeight: 700, color: isDone ? "#22c55e" : act.color, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textDecoration: isDone ? "line-through" : "none", flex: "0 1 auto" }}>{act.label}</span>
+                                                  {entry.month_half && (
+                                                    <span style={{ fontSize: 8, fontWeight: 800, flexShrink: 0, lineHeight: 1.2, padding: "1px 3px", borderRadius: 2, color: entry.month_half === "first" ? "#2563eb" : "#b45309", backgroundColor: entry.month_half === "first" ? "#dbeafe" : "#fef3c7" }}>
+                                                      {entry.month_half === "first" ? "A" : "E"}
+                                                    </span>
+                                                  )}
+                                                </div>
                                                 <div style={{ fontSize: 10.5, color: isDone ? "#888" : "#2a2a2a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginTop: 1 }}>{cust?.company_name || "–"}</div>
                                                 {entry.hours != null && <div style={{ fontSize: 9, color: "#777", marginTop: 1 }}>{entry.hours}h</div>}
                                               </div>
@@ -845,6 +871,23 @@ export default function Jahresplanung() {
           onToggle={toggleFeiertag}
           onClose={() => setSollModal(null)}
           colors={colors}
+        />
+      )}
+
+      {/* Monats-Detailansicht */}
+      {detailMonth && (
+        <MonatsDetailModal
+          month={detailMonth} year={year}
+          orderedStaff={orderedStaff}
+          entryMap={entryMap}
+          custMap={custMap}
+          colors={colors}
+          onClose={() => setDetailMonth(null)}
+          onEdit={(entry) => {
+            setDetailMonth(null);
+            setActiveTab("planung");
+            setTimeout(() => setModal({ mode: "edit", entry }), 60);
+          }}
         />
       )}
     </div>
@@ -933,6 +976,7 @@ function ActivityModal({ modal, onClose, staff, custMap, onSave, onUpdate, onDel
   const [notes,           setNotes]           = useState(entry?.notes || prefill?.notes || "");
   const [staffId,         setStaffId]         = useState(entry?.assigned_to || modal.staffId || "");
   const [month,           setMonth]           = useState(entry?.month || modal.month || 1);
+  const [monthHalf,       setMonthHalf]       = useState(entry?.month_half || prefill?.month_half || null); // null | "first" | "second"
   const [recurring,       setRecurring]       = useState(false);
   const [recurringType,   setRecurringType]   = useState("monthly");
   const [recurringMonths, setRecurringMonths] = useState([1,2,3,4,5,6,7,8,9,10,11,12]);
@@ -958,9 +1002,9 @@ function ActivityModal({ modal, onClose, staff, custMap, onSave, onUpdate, onDel
     if (!staffId) { toast.error("Bitte Mitarbeiter wählen"); return; }
     if (!effectiveCustId) { toast.error("Bitte Kunde wählen"); return; }
     if (isEdit) {
-      onUpdate(entry.id, { customer_id: effectiveCustId, activity_type: activityType, hours: hours !== "" ? parseFloat(hours) : null, notes: notes || null, assigned_to: staffId, month });
+      onUpdate(entry.id, { customer_id: effectiveCustId, activity_type: activityType, hours: hours !== "" ? parseFloat(hours) : null, notes: notes || null, assigned_to: staffId, month, month_half: monthHalf || null });
     } else {
-      onSave({ customerId: effectiveCustId, staffId, month, activityType, hours, notes, recurring, recurringType, recurringMonths });
+      onSave({ customerId: effectiveCustId, staffId, month, activityType, hours, notes, recurring, recurringType, recurringMonths, monthHalf });
     }
   };
 
@@ -1025,6 +1069,49 @@ function ActivityModal({ modal, onClose, staff, custMap, onSave, onUpdate, onDel
               </select>
             </div>
           )}
+        </div>
+
+        {/* Monatshälfte */}
+        <div style={{ marginBottom: 12 }}>
+          <label style={lbl(subtle)}>MONATSHÄLFTE</label>
+          <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+            {[
+              { value: null,     label: "Ganzer Monat",  desc: "1.–31." },
+              { value: "first",  label: "Anfang",        desc: "1.–15." },
+              { value: "second", label: "Ende",          desc: "16.–31." },
+            ].map(({ value, label, desc }) => {
+              const active = monthHalf === value;
+              return (
+                <button
+                  key={String(value)}
+                  onClick={() => setMonthHalf(value)}
+                  style={{
+                    flex: 1, padding: "6px 4px", fontSize: 11, borderRadius: 7, cursor: "pointer",
+                    backgroundColor: active ? `${accent}18` : "transparent",
+                    color: active ? accent : subtle,
+                    border: `1px solid ${active ? accent : border}`,
+                    fontWeight: active ? 700 : 400,
+                    display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
+                    transition: "all 0.1s",
+                  }}
+                >
+                  {/* Mini timeline bar preview */}
+                  <div style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: border, position: "relative", overflow: "hidden" }}>
+                    <div style={{
+                      position: "absolute", height: "100%", borderRadius: 2,
+                      backgroundColor: active ? accent : (value === null ? subtle : value === "first" ? "#2563eb" : "#b45309"),
+                      left: value === "second" ? "50%" : "0%",
+                      width: value === null ? "100%" : "50%",
+                      opacity: active ? 1 : 0.4,
+                    }} />
+                    {value !== null && <div style={{ position: "absolute", left: "50%", top: 0, width: 1, height: "100%", backgroundColor: border }} />}
+                  </div>
+                  <span>{label}</span>
+                  <span style={{ fontSize: 9, opacity: 0.7 }}>{desc}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* Activity type – Presets + Freitext */}
@@ -1507,6 +1594,183 @@ function KapazitaetView({ orderedStaff, profile, sollMap, hoursMap, yearSoll, cu
           </div>
         );
       })()}
+    </div>
+  );
+}
+
+// ── Monats-Detailansicht ──────────────────────────────────────────────────────
+
+function MonatsDetailModal({ month, year, orderedStaff, entryMap, custMap, colors, onClose, onEdit }) {
+  const { cardBg, border, text, subtle, accent, pageBg, isArtis, isLight } = colors;
+  const [curMonth, setCurMonth] = useState(month);
+
+  const halfLabel = (half) => half === "first" ? "1.–15." : half === "second" ? "16.–31." : null;
+
+  // Grouped entries: one section per employee (only those with entries this month)
+  const sections = useMemo(() =>
+    orderedStaff
+      .map(s => {
+        const entries = (entryMap[`${s.id}|${curMonth}`] || [])
+          .slice()
+          .sort((a, b) => {
+            const ord = { first: 0, second: 1, null: 2, undefined: 2 };
+            return (ord[a.month_half] ?? 2) - (ord[b.month_half] ?? 2);
+          });
+        const total = entries.reduce((sum, e) => sum + (parseFloat(e.hours) || 0), 0);
+        return { staff: s, entries, total };
+      })
+      .filter(d => d.entries.length > 0),
+  [orderedStaff, entryMap, curMonth]);
+
+  const grandTotal  = sections.reduce((s, d) => s + d.total, 0);
+  const totalActs   = sections.reduce((s, d) => s + d.entries.length, 0);
+
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1002 }}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div style={{
+        backgroundColor: cardBg, border: `1px solid ${border}`, borderRadius: 14,
+        width: "min(860px, 95vw)", maxHeight: "88vh",
+        display: "flex", flexDirection: "column",
+        boxShadow: "0 24px 60px rgba(0,0,0,0.28)",
+      }}>
+
+        {/* ── Header ── */}
+        <div style={{ padding: "14px 20px", borderBottom: `1px solid ${border}`, display: "flex", alignItems: "center", gap: 10 }}>
+          <button
+            onClick={() => setCurMonth(m => m > 1 ? m - 1 : 12)}
+            style={{ background: "none", border: `1px solid ${border}`, borderRadius: 6, padding: "3px 11px", cursor: "pointer", color: subtle, fontSize: 15, lineHeight: 1 }}
+          >‹</button>
+          <span style={{ flex: 1, textAlign: "center", fontSize: 15, fontWeight: 700, color: text }}>
+            {MONTHS_LONG[curMonth - 1]} {year}
+          </span>
+          <button
+            onClick={() => setCurMonth(m => m < 12 ? m + 1 : 1)}
+            style={{ background: "none", border: `1px solid ${border}`, borderRadius: 6, padding: "3px 11px", cursor: "pointer", color: subtle, fontSize: 15, lineHeight: 1 }}
+          >›</button>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: subtle, padding: 4, marginLeft: 6, display: "flex" }}>
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* ── Body ── */}
+        <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px" }}>
+          {sections.length === 0 ? (
+            <div style={{ textAlign: "center", color: subtle, padding: "52px 0", fontSize: 13 }}>
+              Keine Einträge für {MONTHS_LONG[curMonth - 1]}
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+              {sections.map(({ staff, entries, total }) => {
+                const initials = (staff.full_name || staff.email || "?").slice(0, 2).toUpperCase();
+                return (
+                  <div key={staff.id}>
+                    {/* Employee header */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 7, paddingBottom: 7, borderBottom: `1px solid ${border}` }}>
+                      <div style={{
+                        width: 26, height: 26, borderRadius: "50%", flexShrink: 0,
+                        backgroundColor: accent, color: "#fff",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        fontSize: 10, fontWeight: 700,
+                      }}>{initials}</div>
+                      <span style={{ fontSize: 12.5, fontWeight: 700, color: text, flex: 1 }}>
+                        {staff.full_name || staff.email}
+                      </span>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: accent }}>{total}h</span>
+                    </div>
+
+                    {/* Entry rows */}
+                    <div style={{ display: "flex", flexDirection: "column", gap: 4, paddingLeft: 34 }}>
+                      {entries.map(entry => {
+                        const act    = ACT[entry.activity_type] || { label: entry.activity_type, color: "#6b7280", bg: "#f3f4f6" };
+                        const cust   = custMap[entry.customer_id];
+                        const isDone = entry.done === true;
+                        const half   = entry.month_half; // null | "first" | "second"
+
+                        return (
+                          <div
+                            key={entry.id}
+                            onClick={() => onEdit(entry)}
+                            style={{
+                              display: "flex", alignItems: "center", gap: 10,
+                              padding: "7px 11px", borderRadius: 8, cursor: "pointer",
+                              backgroundColor: isDone ? `${act.bg}55` : act.bg,
+                              border: `1px solid ${isDone ? "#22c55e40" : act.color + "25"}`,
+                              borderLeft: `3px solid ${isDone ? "#22c55e" : act.color}`,
+                              opacity: isDone ? 0.78 : 1,
+                              transition: "filter 0.1s",
+                            }}
+                            onMouseEnter={e => { e.currentTarget.style.filter = "brightness(0.95)"; }}
+                            onMouseLeave={e => { e.currentTarget.style.filter = "none"; }}
+                          >
+                            {/* Activity label */}
+                            <span style={{
+                              fontSize: 10.5, fontWeight: 700,
+                              color: isDone ? "#22c55e" : act.color,
+                              minWidth: 100, textDecoration: isDone ? "line-through" : "none",
+                              whiteSpace: "nowrap",
+                            }}>{act.label}</span>
+
+                            {/* Customer name */}
+                            <span style={{ flex: 1, fontSize: 12, color: isDone ? "#888" : text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {cust?.company_name || "—"}
+                            </span>
+
+                            {/* Timeline bar (month split: left = 1–15, right = 16–31) */}
+                            <div style={{ width: 56, height: 6, borderRadius: 3, backgroundColor: isArtis ? "#dde8dd" : isLight ? "#e5e7eb" : "#3f3f46", flexShrink: 0, position: "relative", overflow: "hidden" }}>
+                              {/* Filled portion */}
+                              <div style={{
+                                position: "absolute", height: "100%", borderRadius: 3,
+                                backgroundColor: isDone ? "#22c55e" : act.color,
+                                left:  half === "second" ? "50%" : "0%",
+                                width: half == null      ? "100%" : "50%",
+                                opacity: isDone ? 0.6 : 0.85,
+                              }} />
+                              {/* Mid divider */}
+                              <div style={{ position: "absolute", left: "50%", top: 0, width: 1, height: "100%", backgroundColor: isArtis ? "#bfcfbf" : isLight ? "#d1d5db" : "#52525b", opacity: 0.6 }} />
+                            </div>
+
+                            {/* Half label */}
+                            <span style={{
+                              fontSize: 9.5, fontWeight: 600, flexShrink: 0,
+                              minWidth: 38, textAlign: "center",
+                              color: half === "first" ? "#2563eb" : half === "second" ? "#b45309" : subtle,
+                              backgroundColor: half === "first" ? "#dbeafe" : half === "second" ? "#fef3c7" : "transparent",
+                              padding: half ? "2px 5px" : 0, borderRadius: 4,
+                            }}>
+                              {halfLabel(half) ?? "—"}
+                            </span>
+
+                            {/* Hours */}
+                            <span style={{ fontSize: 12, fontWeight: 700, color: isDone ? "#22c55e" : act.color, flexShrink: 0, minWidth: 32, textAlign: "right" }}>
+                              {entry.hours != null ? `${entry.hours}h` : "—"}
+                            </span>
+
+                            {/* Done badge */}
+                            {isDone && <span style={{ fontSize: 9, color: "#22c55e", flexShrink: 0 }}>✓</span>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* ── Footer ── */}
+        <div style={{ padding: "11px 20px", borderTop: `1px solid ${border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span style={{ fontSize: 11, color: subtle }}>
+            {totalActs} Aktivitäten · {sections.length} Mitarbeiter
+          </span>
+          <span style={{ fontSize: 13, fontWeight: 700, color: accent }}>
+            Total: {grandTotal}h
+          </span>
+        </div>
+      </div>
     </div>
   );
 }

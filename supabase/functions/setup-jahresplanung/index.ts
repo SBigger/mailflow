@@ -23,6 +23,12 @@ Deno.serve(async (req) => {
         ADD COLUMN IF NOT EXISTS done boolean NOT NULL DEFAULT false
     `;
 
+    // 3b. Add month_half column (null = whole month, 'first' = 1–15, 'second' = 16–31)
+    await sql`
+      ALTER TABLE public.jahresplanung
+        ADD COLUMN IF NOT EXISTS month_half text
+    `;
+
     // 3. Create jp_feiertage table (global holidays, per date)
     await sql`
       CREATE TABLE IF NOT EXISTS public.jp_feiertage (
