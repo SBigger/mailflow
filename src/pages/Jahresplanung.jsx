@@ -5,7 +5,7 @@ import { ThemeContext } from "@/Layout";
 import { supabase } from "@/api/supabaseClient";
 import {
   ChevronDown, ChevronRight, X, Clock, Search, Calendar, Trash2, RefreshCw, Info, UserCheck,
-  LayoutGrid, BarChart2, CheckCircle2, Circle, Copy, Eye
+  LayoutGrid, BarChart2, CheckCircle2, Circle, Copy, Eye, Building2
 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import { toast } from "sonner";
@@ -379,8 +379,9 @@ export default function Jahresplanung() {
         {/* Tab switcher */}
         <div style={{ display: "flex", gap: 2, marginLeft: 16, backgroundColor: pageBg, borderRadius: 7, border: `1px solid ${border}`, padding: 2 }}>
           {[
-            { id: "planung",     label: "Planung",    Icon: LayoutGrid },
-            { id: "kapazitaet",  label: "Kapazität",  Icon: BarChart2  },
+            { id: "planung",     label: "Planung",    Icon: LayoutGrid  },
+            { id: "kapazitaet",  label: "Kapazität",  Icon: BarChart2   },
+            { id: "kunden",      label: "Kunden",     Icon: Building2   },
           ].map(({ id, label, Icon }) => (
             <button
               key={id}
@@ -419,6 +420,19 @@ export default function Jahresplanung() {
             colors={colors}
             onEditEntry={(entry) => { setActiveTab("planung"); setTimeout(() => setModal({ mode: "edit", entry }), 60); }}
             onAddEntry={(staffId, month) => { setActiveTab("planung"); setTimeout(() => setModal({ mode: "create", customerId: null, staffId, month }), 60); }}
+          />
+        )}
+
+        {/* ── Kunden-Tab ──────────────────────────────────────────────────────── */}
+        {activeTab === "kunden" && (
+          <KundenView
+            entries={entries}
+            custMap={custMap}
+            staff={staff}
+            colors={colors}
+            year={year}
+            onEdit={(entry) => setModal({ mode: "edit", entry })}
+            onAdd={(custId, month) => setModal({ mode: "create", customerId: custId, staffId: null, month })}
           />
         )}
 
@@ -1219,6 +1233,209 @@ function ActivityModal({ modal, onClose, staff, custMap, onSave, onUpdate, onDel
             {isEdit ? "Speichern" : recurring ? `${recurringType === "monthly" ? 12 : recurringType === "quarterly" ? 4 : recurringMonths.length} Einträge erstellen` : "Einplanen"}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Kunden-View ──────────────────────────────────────────────────────────────
+function KundenView({ entries, custMap, staff, colors, year, onEdit, onAdd }) {
+  const { theme } = useContext(ThemeContext);
+  const isLight = theme === "light";
+  const isArtis = theme === "artis";
+
+  const cardBg = isLight ? "#fff"    : isArtis ? "#fff"    : "#3a3a3f";
+  const text   = isLight ? "#1e1e2e" : isArtis ? "#1a2e1a" : "#e4e4e7";
+  const subtle = isLight ? "#6b7280" : isArtis ? "#4b6b4b" : "#71717a";
+  const border = isLight ? "#e5e7eb" : isArtis ? "#d4e4d4" : "rgba(113,113,122,0.2)";
+  const bg     = isLight ? "#f4f4f8" : isArtis ? "#f2f5f2" : "#2a2a2f";
+  const accent = isArtis ? "#7a9b7f" : "#7c3aed";
+  const rowAlt = isLight ? "#f9f9fc" : isArtis ? "#f7faf7" : "#363640";
+
+  const [sortBy, setSortBy] = useState("name"); // "name" | "hours"
+
+  const staffMap = useMemo(() => Object.fromEntries(staff.map(s => [s.id, s])), [staff]);
+
+  // Stunden pro Kunde
+  const custTotalHours = useMemo(() => {
+    const m = {};
+    for (const e of entries) {
+      m[e.customer_id] = (m[e.customer_id] || 0) + (e.hours || 0);
+    }
+    return m;
+  }, [entries]);
+
+  // Nur Kunden mit mind. einem Eintrag
+  const activeCustomers = useMemo(() => {
+    const ids = [...new Set(entries.map(e => e.customer_id))];
+    let list = ids.map(id => custMap[id]).filter(Boolean);
+    if (sortBy === "name") {
+      list.sort((a, b) => (a.company_name || "").localeCompare(b.company_name || ""));
+    } else {
+      list.sort((a, b) => (custTotalHours[b.id] || 0) - (custTotalHours[a.id] || 0));
+    }
+    return list;
+  }, [entries, custMap, sortBy, custTotalHours]);
+
+  // custEntryMap: "custId|month" → entries[]
+  const custEntryMap = useMemo(() => {
+    const m = {};
+    for (const e of entries) {
+      const k = `${e.customer_id}|${e.month}`;
+      if (!m[k]) m[k] = [];
+      m[k].push(e);
+    }
+    return m;
+  }, [entries]);
+
+  const COL_W = 118;
+  const LEFT  = 210;
+
+  return (
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: bg }}>
+
+      {/* Sub-Header */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 16px", borderBottom: `1px solid ${border}`, background: cardBg, flexShrink: 0 }}>
+        <span style={{ fontSize: 11, color: subtle }}>{activeCustomers.length} Kunden mit Einträgen in {year}</span>
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4 }}>
+          <span style={{ fontSize: 10.5, color: subtle }}>Sortierung:</span>
+          {[{ id: "name", label: "A–Z" }, { id: "hours", label: "Stunden ↓" }].map(({ id, label }) => (
+            <button key={id} onClick={() => setSortBy(id)} style={{
+              padding: "2px 8px", fontSize: 10.5, borderRadius: 4, cursor: "pointer",
+              border: `1px solid ${sortBy === id ? accent : border}`,
+              backgroundColor: sortBy === id ? `${accent}18` : "transparent",
+              color: sortBy === id ? accent : subtle,
+              fontWeight: sortBy === id ? 700 : 400,
+            }}>{label}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* Grid */}
+      <div style={{ flex: 1, overflow: "auto" }}>
+        <table style={{ borderCollapse: "collapse", minWidth: LEFT + COL_W * 12, tableLayout: "fixed" }}>
+          <colgroup>
+            <col style={{ width: LEFT }} />
+            {MONTHS.map((_, i) => <col key={i} style={{ width: COL_W }} />)}
+          </colgroup>
+          <thead>
+            <tr>
+              <th style={{
+                position: "sticky", left: 0, top: 0, zIndex: 3,
+                background: cardBg, borderBottom: `2px solid ${border}`, borderRight: `2px solid ${border}`,
+                padding: "7px 10px", textAlign: "left",
+                fontSize: 9.5, fontWeight: 700, color: subtle, letterSpacing: ".06em",
+              }}>KUNDE</th>
+              {MONTHS.map((m, i) => (
+                <th key={i} style={{
+                  position: "sticky", top: 0, zIndex: 2,
+                  background: cardBg, borderBottom: `2px solid ${border}`, borderRight: `1px solid ${border}`,
+                  padding: "7px 4px", textAlign: "center",
+                  fontSize: 9.5, fontWeight: 700, color: subtle, letterSpacing: ".06em",
+                }}>{m}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {activeCustomers.map((cust, ci) => {
+              const totalH = custTotalHours[cust.id] || 0;
+              const rowBg  = ci % 2 === 0 ? cardBg : rowAlt;
+              return (
+                <tr key={cust.id}>
+                  {/* Kunden-Spalte sticky */}
+                  <td style={{
+                    position: "sticky", left: 0, zIndex: 1,
+                    background: rowBg,
+                    borderBottom: `1px solid ${border}`, borderRight: `2px solid ${border}`,
+                    padding: "6px 10px", verticalAlign: "middle",
+                  }}>
+                    <div style={{ fontSize: 11.5, fontWeight: 600, color: text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {cust.company_name}
+                    </div>
+                    {totalH > 0 && (
+                      <div style={{ fontSize: 9, color: subtle, marginTop: 1 }}>{totalH}h geplant</div>
+                    )}
+                  </td>
+
+                  {/* Monats-Zellen */}
+                  {MONTHS.map((_, mi) => {
+                    const month    = mi + 1;
+                    const cellEnts = custEntryMap[`${cust.id}|${month}`] || [];
+                    return (
+                      <td key={mi}
+                        onClick={cellEnts.length === 0 ? () => onAdd(cust.id, month) : undefined}
+                        style={{
+                          verticalAlign: "top",
+                          background: rowBg,
+                          borderBottom: `1px solid ${border}`,
+                          borderRight: `1px solid ${border}`,
+                          padding: 4,
+                          cursor: cellEnts.length === 0 ? "pointer" : "default",
+                        }}
+                      >
+                        {cellEnts.length === 0 ? (
+                          /* Hover-Plus bei leerer Zelle */
+                          <div className="kunden-plus" style={{ height: 28, display: "flex", alignItems: "center", justifyContent: "center", opacity: 0, transition: "opacity 0.12s" }}
+                            onMouseEnter={e => e.currentTarget.style.opacity = "1"}
+                            onMouseLeave={e => e.currentTarget.style.opacity = "0"}
+                          >
+                            <span style={{ fontSize: 16, color: subtle, lineHeight: 1 }}>+</span>
+                          </div>
+                        ) : (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                            {cellEnts.map(entry => {
+                              const act    = ACT[entry.activity_type] || { label: entry.activity_type, color: "#6b7280", bg: "#f3f4f6" };
+                              const emp    = staffMap[entry.assigned_to];
+                              const empName = emp
+                                ? (emp.full_name?.split(" ")[0] || emp.email?.split("@")[0] || "?")
+                                : "?";
+                              const isDone = entry.done === true;
+                              return (
+                                <div key={entry.id} onClick={() => onEdit(entry)}
+                                  title={entry.notes || undefined}
+                                  style={{
+                                    position: "relative",
+                                    backgroundColor: isDone ? `${act.bg}88` : act.bg,
+                                    border: `1px solid ${isDone ? "#22c55e55" : act.color + "28"}`,
+                                    borderLeft: `3px solid ${isDone ? "#22c55e" : act.color}`,
+                                    borderRadius: 5, cursor: "pointer", lineHeight: 1.35,
+                                    opacity: isDone ? 0.8 : 1,
+                                    padding: "3px 6px",
+                                  }}
+                                >
+                                  <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                                    <span style={{ fontSize: 9.5, fontWeight: 700, color: isDone ? "#22c55e" : act.color, whiteSpace: "nowrap", textDecoration: isDone ? "line-through" : "none" }}>
+                                      {act.label}
+                                    </span>
+                                    {entry.month_half && (
+                                      <span style={{ fontSize: 8, fontWeight: 800, lineHeight: 1.2, padding: "1px 3px", borderRadius: 2,
+                                        color: entry.month_half === "first" ? "#2563eb" : "#b45309",
+                                        backgroundColor: entry.month_half === "first" ? "#dbeafe" : "#fef3c7",
+                                      }}>
+                                        {entry.month_half === "first" ? "A" : "E"}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div style={{ fontSize: 10, color: isDone ? "#888" : "#555", marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                    {empName}{entry.hours != null ? ` · ${entry.hours}h` : ""}
+                                  </div>
+                                  {/* Notiz-Indikator */}
+                                  {entry.notes && (
+                                    <div style={{ position: "absolute", bottom: 2, right: 2, width: 5, height: 5, borderRadius: "50%", backgroundColor: "#f59e0b", boxShadow: "0 0 0 1.5px #fff8" }} />
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
     </div>
   );
