@@ -798,6 +798,18 @@ export default function Jahresplanung() {
                                                 </div>
                                                 <div style={{ fontSize: 10.5, color: isDone ? "#888" : "#2a2a2a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginTop: 1 }}>{cust?.company_name || "–"}</div>
                                                 {entry.hours != null && <div style={{ fontSize: 9, color: "#777", marginTop: 1 }}>{entry.hours}h</div>}
+                                                {/* Notiz-Indikator: kleiner Punkt wenn eine Notiz vorhanden */}
+                                                {entry.notes && (
+                                                  <div
+                                                    title={entry.notes}
+                                                    style={{
+                                                      position: "absolute", bottom: 3, right: 3,
+                                                      width: 5, height: 5, borderRadius: "50%",
+                                                      backgroundColor: "#f59e0b",
+                                                      boxShadow: "0 0 0 1.5px #fff8",
+                                                    }}
+                                                  />
+                                                )}
                                               </div>
                                             </div>
                                           )}
