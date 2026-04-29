@@ -9,6 +9,21 @@
 // nicht, fällt der Generator in einen "QR-Bill-only-SVG"-Modus zurück.
 
 import { supabase } from '@/api/supabaseClient';
+import {
+  ARTIS_GREEN_DARK,
+  ARTIS_GREEN_BORDER,
+  ZEBRA_BG,
+  MUTED_TEXT,
+  fmtChf,
+  fmtDate,
+  loadImageBuffer,
+  drawHeader,
+  drawAddress,
+  drawTableHeader,
+  drawTotalsBox,
+  drawFooter,
+  resetText,
+} from './leBrandingHelpers';
 
 // Lazy-Import damit der Bundle-Hit nur passiert, wenn wirklich PDF gebaut wird.
 async function loadSwissqrbill() {
@@ -20,22 +35,6 @@ async function loadSwissqrbill() {
     console.error('swissqrbill konnte nicht geladen werden:', e);
     throw new Error('PDF-Library (swissqrbill) konnte nicht geladen werden. Wahrscheinlich fehlen Buffer/Stream-Polyfills im Vite-Build.');
   }
-}
-
-function fmtChf(n) {
-  return Number(n || 0).toLocaleString('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-function fmtDate(iso) {
-  if (!iso) return '';
-  const d = new Date(iso + (iso.length === 10 ? 'T00:00:00' : ''));
-  return d.toLocaleDateString('de-CH');
-}
-
-function buildAddress(parts) {
-  return [parts.street, parts.zip && `${parts.zip} ${parts.city ?? ''}`.trim()]
-    .filter(Boolean)
-    .join('\n');
 }
 
 // QR-Referenz nach Mod-10 ergänzen (vereinfacht – swissqrbill validiert sowieso)
@@ -70,6 +69,9 @@ export async function generateInvoicePdf({ invoice, company }) {
 
   const { PDF, BlobStream } = await loadSwissqrbill();
 
+  // Logo vorab laden (parallel, blockiert nur wenn URL gesetzt)
+  const logoBuf = await loadImageBuffer(company.logo_url);
+
   // QR-Daten zusammenbauen
   const useQrIban = !!company.qr_iban;
   const reference = invoice.qr_reference || (useQrIban
@@ -77,6 +79,7 @@ export async function generateInvoicePdf({ invoice, company }) {
     : undefined);
 
   const customer = invoice.customer || {};
+  const project = invoice.project || {};
   const qrData = {
     currency: 'CHF',
     amount: Number(invoice.total || 0),
@@ -101,87 +104,146 @@ export async function generateInvoicePdf({ invoice, company }) {
     } : undefined,
   };
 
-  // PDF erzeugen
+  // PDF erzeugen – bufferPages: true → Footer kann nachträglich auf alle Seiten
   const stream = new BlobStream();
-  const pdf = new PDF(qrData, stream, { autoGenerate: false, size: 'A4' });
+  const pdf = new PDF(qrData, stream, { autoGenerate: false, size: 'A4', bufferPages: true });
 
-  // Briefkopf (rechts oben)
-  pdf.fontSize(9).text(
-    [company.company_name, company.street, `${company.zip || ''} ${company.city || ''}`.trim(), company.email, company.phone].filter(Boolean).join('\n'),
-    400, 50, { align: 'left', width: 150 }
-  );
+  // ---- 1. Branding-Header (Logo links, Adresse rechts, grüne Linie) ----
+  drawHeader(pdf, company, logoBuf);
 
-  // Adressfeld Empfänger (links, ~Position für CH-Sichtfenster)
-  if (customer.company_name) {
-    pdf.fontSize(11).text(
-      [customer.company_name, customer.street, `${customer.zip || ''} ${customer.city || ''}`.trim()].filter(Boolean).join('\n'),
-      50, 130
-    );
+  // ---- 2. Empfänger-Adressfeld (CH-Sichtfenster) ----
+  drawAddress(pdf, customer, 50, 130);
+
+  // ---- 3. Rechnungs-Header-Block ----
+  const headerY = 220;
+  pdf.font('Helvetica-Bold').fontSize(18).fillColor(ARTIS_GREEN_DARK)
+     .text('Rechnung', 50, headerY);
+  resetText(pdf);
+
+  // Rechnungsnummer rechts
+  pdf.font('Helvetica-Bold').fontSize(11).fillColor('#000000')
+     .text(`Nr. ${invoice.invoice_no || '(Entwurf)'}`, 350, headerY + 4, {
+       width: 195, align: 'right',
+     });
+  pdf.font('Helvetica');
+
+  // Meta-Block in zwei Spalten
+  const metaY = headerY + 36;
+  const labelStyle = { width: 90 };
+  const valueStyle = { width: 130 };
+
+  pdf.fontSize(9).fillColor(MUTED_TEXT);
+  pdf.text('Datum', 50, metaY, labelStyle);
+  pdf.text('Fälligkeit', 50, metaY + 14, labelStyle);
+  if (invoice.period_from || invoice.period_to) {
+    pdf.text('Leistungszeitraum', 50, metaY + 28, labelStyle);
   }
 
-  // Rechnungs-Header
-  pdf.fontSize(16).text(`Rechnung ${invoice.invoice_no || '(Entwurf)'}`, 50, 220);
-  pdf.fontSize(10).text(
-    `Datum: ${fmtDate(invoice.issue_date)}    Fällig: ${fmtDate(invoice.due_date)}`,
-    50, 245
-  );
+  pdf.fillColor('#000000').font('Helvetica');
+  pdf.text(fmtDate(invoice.issue_date), 140, metaY, valueStyle);
+  pdf.text(fmtDate(invoice.due_date), 140, metaY + 14, valueStyle);
   if (invoice.period_from || invoice.period_to) {
     pdf.text(
-      `Leistungszeitraum: ${fmtDate(invoice.period_from)} – ${fmtDate(invoice.period_to)}`,
-      50, 260
+      `${fmtDate(invoice.period_from)} – ${fmtDate(invoice.period_to)}`,
+      140, metaY + 28, valueStyle
     );
   }
 
-  // Positionstabelle
-  let y = 295;
-  const col = { desc: 50, hours: 340, rate: 400, amount: 480 };
-  pdf.fontSize(9).text('Beschreibung', col.desc, y);
-  pdf.text('Std.', col.hours, y, { width: 50, align: 'right' });
-  pdf.text('Satz', col.rate, y, { width: 60, align: 'right' });
-  pdf.text('Betrag CHF', col.amount, y, { width: 70, align: 'right' });
-  y += 14;
-  pdf.moveTo(50, y).lineTo(550, y).stroke();
-  y += 6;
+  // Rechte Spalte: Kundennr / Projekt / Sachbearbeiter
+  const rightCol = 320;
+  let rightY = metaY;
+  pdf.fontSize(9).fillColor(MUTED_TEXT);
+  if (customer.customer_no || customer.id) {
+    pdf.text('Kundennr.', rightCol, rightY, labelStyle);
+    pdf.fillColor('#000000');
+    pdf.text(String(customer.customer_no || customer.id || ''), rightCol + 90, rightY, valueStyle);
+    pdf.fillColor(MUTED_TEXT);
+    rightY += 14;
+  }
+  if (project.name || invoice.project_name) {
+    pdf.text('Projekt', rightCol, rightY, labelStyle);
+    pdf.fillColor('#000000');
+    pdf.text(project.name || invoice.project_name || '', rightCol + 90, rightY, valueStyle);
+    pdf.fillColor(MUTED_TEXT);
+    rightY += 14;
+  }
+  if (invoice.responsible || invoice.handler_name) {
+    pdf.text('Sachbearbeiter', rightCol, rightY, labelStyle);
+    pdf.fillColor('#000000');
+    pdf.text(invoice.responsible || invoice.handler_name || '', rightCol + 90, rightY, valueStyle);
+    rightY += 14;
+  }
+  resetText(pdf);
 
-  pdf.fontSize(10);
-  for (const line of (invoice.lines || [])) {
-    pdf.text(line.description || '', col.desc, y, { width: 280 });
-    pdf.text(fmtChf(line.hours), col.hours, y, { width: 50, align: 'right' });
-    pdf.text(fmtChf(line.rate), col.rate, y, { width: 60, align: 'right' });
-    pdf.text(fmtChf(line.amount), col.amount, y, { width: 70, align: 'right' });
-    y += 18;
-    if (y > 680) { pdf.addPage(); y = 60; }
+  // ---- 4. Positions-Tabelle ----
+  const cols = { no: 50, desc: 80, hours: 360, rate: 415, amount: 475 };
+  let y = Math.max(metaY + 60, rightY + 25);
+  y = drawTableHeader(pdf, y, cols);
+
+  pdf.font('Helvetica').fontSize(10).fillColor('#000000');
+  const lines = invoice.lines || [];
+  const descWidth = cols.hours - cols.desc - 10;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    // Höhe der Beschreibung berechnen, damit Zebra & Page-Break passen
+    const descText = line.description || '';
+    const descH = pdf.heightOfString(descText, { width: descWidth }) || 14;
+    const rowH = Math.max(descH + 8, 22);
+
+    // Zebra-Background
+    if (i % 2 === 0) {
+      pdf.fillColor(ZEBRA_BG).rect(50, y - 2, 495, rowH).fill();
+      resetText(pdf);
+    }
+
+    pdf.font('Helvetica').fontSize(10).fillColor('#000000');
+    pdf.text(String(i + 1), cols.no, y + 2, { width: 24 });
+    pdf.text(descText, cols.desc, y + 2, { width: descWidth });
+    pdf.text(fmtChf(line.hours), cols.hours, y + 2, { width: 50, align: 'right' });
+    pdf.text(fmtChf(line.rate), cols.rate, y + 2, { width: 55, align: 'right' });
+    pdf.text(fmtChf(line.amount), cols.amount, y + 2, { width: 70, align: 'right' });
+
+    y += rowH;
+
+    // Page-Break (lasse Platz für Total-Box + Footer)
+    if (y > 680 && i < lines.length - 1) {
+      pdf.addPage();
+      y = 60;
+      y = drawTableHeader(pdf, y, cols);
+    }
   }
 
-  // Beträge unten rechts
-  y += 10;
-  pdf.moveTo(350, y).lineTo(550, y).stroke();
-  y += 8;
-  pdf.fontSize(10).text('Zwischensumme', 350, y);
-  pdf.text(fmtChf(invoice.subtotal), col.amount, y, { width: 70, align: 'right' });
-  y += 16;
-  if (Number(invoice.discount_pct || 0) > 0 || Number(invoice.discount_amount || 0) > 0) {
-    pdf.text(`Rabatt`, 350, y);
-    const discount = (Number(invoice.subtotal) * (Number(invoice.discount_pct || 0) / 100)) + Number(invoice.discount_amount || 0);
-    pdf.text(`-${fmtChf(discount)}`, col.amount, y, { width: 70, align: 'right' });
-    y += 16;
+  // ---- 5. Total-Block rechts unten ----
+  y += 12;
+  // Falls knapp: neue Seite
+  if (y > 660) {
+    pdf.addPage();
+    y = 60;
   }
-  pdf.text(`MWST ${invoice.vat_pct ?? 8.1}%`, 350, y);
-  pdf.text(fmtChf(invoice.vat_amount), col.amount, y, { width: 70, align: 'right' });
-  y += 16;
-  pdf.fontSize(12).text('Total CHF', 350, y);
-  pdf.text(fmtChf(invoice.total), col.amount, y, { width: 70, align: 'right' });
 
-  // Notizen
+  // Rabatt berechnen
+  const discount = (Number(invoice.subtotal || 0) * (Number(invoice.discount_pct || 0) / 100))
+    + Number(invoice.discount_amount || 0);
+
+  drawTotalsBox(pdf, {
+    subtotal: invoice.subtotal,
+    discount,
+    vat_pct: invoice.vat_pct ?? 8.1,
+    vat_amount: invoice.vat_amount,
+    total: invoice.total,
+  }, y);
+
+  // ---- Notes ----
   if (invoice.notes) {
-    pdf.fontSize(9).text(invoice.notes, 50, y + 30, { width: 500 });
+    let notesY = y;
+    pdf.font('Helvetica').fontSize(9).fillColor('#444444')
+       .text(invoice.notes, 50, notesY, { width: 250 });
+    resetText(pdf);
   }
 
-  // Footer + QR-Bill anhängen
-  if (company.invoice_footer) {
-    pdf.fontSize(8).text(company.invoice_footer, 50, 740, { width: 500, align: 'center' });
-  }
-
+  // ---- 6. Footer auf allen Seiten + QR-Bill ----
+  drawFooter(pdf, company);
   pdf.addQRBill();
   pdf.end();
 

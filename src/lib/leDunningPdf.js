@@ -1,10 +1,25 @@
 // Leistungserfassung · Mahnungs-PDF
 // =====================================================================
 // Generiert eine PDF-Mahnung mit QR-Bill (für Hauptforderung + Gebühr + Zins).
-// Wiederverwendet Patterns aus leInvoicePdf.js.
+// Wiederverwendet Patterns & Helpers aus leBrandingHelpers.js.
 
 import { supabase } from '@/api/supabaseClient';
 import { buildQrReference } from './leInvoicePdf';
+import {
+  ARTIS_GREEN_DARK,
+  ARTIS_GREEN_BORDER,
+  ZEBRA_BG,
+  MUTED_TEXT,
+  AMPEL_ORANGE,
+  AMPEL_RED,
+  fmtChf,
+  fmtDate,
+  loadImageBuffer,
+  drawHeader,
+  drawAddress,
+  drawFooter,
+  resetText,
+} from './leBrandingHelpers';
 
 async function loadSwissqrbill() {
   try {
@@ -16,19 +31,10 @@ async function loadSwissqrbill() {
   }
 }
 
-function fmtChf(n) {
-  return Number(n || 0).toLocaleString('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-function fmtDate(iso) {
-  if (!iso) return '';
-  const d = new Date(iso + (iso.length === 10 ? 'T00:00:00' : ''));
-  return d.toLocaleDateString('de-CH');
-}
-
 const LEVEL_TITLES = {
   1: '1. Mahnung – Zahlungserinnerung',
   2: '2. Mahnung',
-  3: '3. Mahnung mit Betreibungsandrohung',
+  3: '3. Mahnung',
 };
 
 const LEVEL_INTROS = {
@@ -41,6 +47,8 @@ export async function generateDunningPdf({ dunning, invoice, customer, company }
   if (!dunning || !invoice || !company) throw new Error('dunning/invoice/company fehlt');
 
   const { PDF, BlobStream } = await loadSwissqrbill();
+
+  const logoBuf = await loadImageBuffer(company.logo_url);
 
   const useQrIban = !!company.qr_iban;
   const reference = useQrIban
@@ -74,93 +82,155 @@ export async function generateDunningPdf({ dunning, invoice, customer, company }
   };
 
   const stream = new BlobStream();
-  const pdf = new PDF(qrData, stream, { autoGenerate: false, size: 'A4' });
+  const pdf = new PDF(qrData, stream, { autoGenerate: false, size: 'A4', bufferPages: true });
 
-  // Briefkopf
-  pdf.fontSize(9).text(
-    [company.company_name, company.street, `${company.zip || ''} ${company.city || ''}`.trim(), company.email, company.phone].filter(Boolean).join('\n'),
-    400, 50, { align: 'left', width: 150 }
-  );
+  // ---- 1. Branding-Header ----
+  drawHeader(pdf, company, logoBuf);
 
-  // Adresse
-  if (customer?.company_name) {
-    pdf.fontSize(11).text(
-      [customer.company_name, customer.street, `${customer.zip || ''} ${customer.city || ''}`.trim()].filter(Boolean).join('\n'),
-      50, 130
-    );
-  }
+  // ---- 2. Empfänger-Adresse ----
+  drawAddress(pdf, customer || {}, 50, 130);
 
-  // Mahn-Header
+  // ---- 3. Mahn-Header ----
+  const headerY = 220;
   const title = LEVEL_TITLES[dunning.level] || `${dunning.level}. Mahnung`;
-  pdf.fontSize(16).fillColor(dunning.level === 3 ? '#8a2d2d' : '#3d4a3d')
-    .text(title, 50, 220);
-  pdf.fontSize(10).fillColor('#000')
-    .text(`Mahnung-Nr: ${dunning.dunning_no || '(Entwurf)'}    Datum: ${fmtDate(dunning.dunning_date)}`, 50, 245);
+  const isLevel3 = Number(dunning.level) === 3;
+
+  pdf.font('Helvetica-Bold').fontSize(18).fillColor(isLevel3 ? AMPEL_RED : ARTIS_GREEN_DARK)
+     .text(title, 50, headerY);
+
+  // BETREIBUNGSANDROHUNG bei Stufe 3
+  let titleBottom = headerY + 24;
+  if (isLevel3) {
+    pdf.font('Helvetica-Bold').fontSize(12).fillColor(AMPEL_RED)
+       .text('BETREIBUNGSANDROHUNG', 50, titleBottom);
+    titleBottom += 18;
+  }
+  resetText(pdf);
+  pdf.font('Helvetica');
+
+  // Mahn-Nr rechts
+  pdf.font('Helvetica-Bold').fontSize(11).fillColor('#000000')
+     .text(`Nr. ${dunning.dunning_no || '(Entwurf)'}`, 350, headerY + 4, {
+       width: 195, align: 'right',
+     });
+  pdf.font('Helvetica');
+
+  // Meta-Block
+  const metaY = titleBottom + 8;
+  pdf.fontSize(9).fillColor(MUTED_TEXT);
+  pdf.text('Datum', 50, metaY, { width: 90 });
   if (dunning.new_due_date) {
-    pdf.text(`Neue Zahlungsfrist: ${fmtDate(dunning.new_due_date)}`, 50, 260);
+    pdf.text('Neue Zahlungsfrist', 50, metaY + 14, { width: 90 });
   }
+  pdf.fillColor('#000000');
+  pdf.text(fmtDate(dunning.dunning_date), 140, metaY, { width: 130 });
+  if (dunning.new_due_date) {
+    pdf.text(fmtDate(dunning.new_due_date), 140, metaY + 14, { width: 130 });
+  }
+  resetText(pdf);
 
-  // Intro-Text
-  let y = 285;
-  pdf.fontSize(10).text(LEVEL_INTROS[dunning.level] || '', 50, y, { width: 500 });
-  y += 80;
+  // ---- 4. Intro-Text ----
+  let y = metaY + 50;
+  pdf.font('Helvetica').fontSize(10).fillColor('#000000')
+     .text(LEVEL_INTROS[dunning.level] || '', 50, y, { width: 495 });
+  y += 70;
 
-  // Rechnungs-Referenz
-  pdf.fontSize(11).fillColor('#3d4a3d').text('Offene Rechnung', 50, y);
+  // ---- 5. Rechnungs-Referenz ----
+  pdf.font('Helvetica-Bold').fontSize(11).fillColor(ARTIS_GREEN_DARK)
+     .text('Offene Rechnung', 50, y);
   y += 18;
-  pdf.fontSize(10).fillColor('#000');
-  const lines = [
-    [`Rechnungs-Nr.:`, invoice.invoice_no || '—'],
-    [`Rechnungsdatum:`, fmtDate(invoice.issue_date)],
-    [`Ursprüngliche Fälligkeit:`, fmtDate(invoice.due_date)],
-    [`Hauptforderung:`, `CHF ${fmtChf(invoice.total)}`],
+  pdf.font('Helvetica').fontSize(10).fillColor('#000000');
+  const refLines = [
+    [`Rechnungs-Nr.`, invoice.invoice_no || '—'],
+    [`Rechnungsdatum`, fmtDate(invoice.issue_date)],
+    [`Ursprüngliche Fälligkeit`, fmtDate(invoice.due_date)],
+    [`Hauptforderung`, `CHF ${fmtChf(invoice.total)}`],
   ];
-  for (const [k, v] of lines) {
-    pdf.text(k, 50, y);
-    pdf.text(v, 200, y);
+  for (const [k, v] of refLines) {
+    pdf.fillColor(MUTED_TEXT).text(k, 50, y, { width: 150 });
+    pdf.fillColor('#000000').text(v, 200, y, { width: 200 });
     y += 16;
   }
+  resetText(pdf);
 
-  // Gebühr + Zins
-  y += 10;
-  pdf.fontSize(11).fillColor('#3d4a3d').text('Mahnungs-Aufstellung', 50, y);
-  y += 18;
-  pdf.fontSize(10).fillColor('#000');
+  // ---- 6. Aufstellung mit Ampel-Farben ----
+  y += 16;
+  pdf.font('Helvetica-Bold').fontSize(11).fillColor(ARTIS_GREEN_DARK)
+     .text('Mahnungs-Aufstellung', 50, y);
+  y += 20;
+  pdf.font('Helvetica').fontSize(10);
+
   const breakdown = [
-    [`Hauptforderung`, fmtChf(dunning.outstanding_amount)],
-    [`Mahngebühr`, fmtChf(dunning.fee)],
-    [`Verzugszins (${dunning.interest_rate_pct || 5}% p.a. ab ${fmtDate(dunning.interest_from)})`, fmtChf(dunning.interest_amount)],
+    { label: 'Hauptforderung', value: dunning.outstanding_amount, color: '#000000' },
+    { label: 'Mahngebühr', value: dunning.fee, color: AMPEL_ORANGE },
+    {
+      label: `Verzugszins (${dunning.interest_rate_pct || 5}% p.a. ab ${fmtDate(dunning.interest_from)})`,
+      value: dunning.interest_amount,
+      color: AMPEL_RED,
+    },
   ];
-  for (const [k, v] of breakdown) {
-    pdf.text(k, 50, y);
-    pdf.text(`CHF ${v}`, 400, y, { width: 100, align: 'right' });
-    y += 16;
-  }
-  pdf.moveTo(380, y).lineTo(500, y).stroke();
-  y += 6;
-  pdf.fontSize(12).fillColor('#3d4a3d')
-    .text('Total Mahnbetrag', 50, y);
-  pdf.text(`CHF ${fmtChf(dunning.total_amount)}`, 380, y, { width: 120, align: 'right' });
 
-  // Notes / Outro
-  y += 35;
-  pdf.fontSize(10).fillColor('#000');
-  if (dunning.is_betreibungsandrohung) {
-    pdf.fillColor('#8a2d2d').text(
+  // Zebra-Tabelle
+  const tableLeft = 50;
+  const tableRight = 545;
+  const labelW = 350;
+  for (let i = 0; i < breakdown.length; i++) {
+    const item = breakdown[i];
+    if (i % 2 === 0) {
+      pdf.fillColor(ZEBRA_BG).rect(tableLeft, y - 2, tableRight - tableLeft, 18).fill();
+      resetText(pdf);
+    }
+    pdf.fillColor(item.color).font('Helvetica').fontSize(10)
+       .text(item.label, tableLeft + 8, y + 2, { width: labelW });
+    pdf.text(`CHF ${fmtChf(item.value)}`, tableRight - 110, y + 2, { width: 100, align: 'right' });
+    y += 18;
+  }
+  resetText(pdf);
+
+  // Total-Mahnbetrag – bei Stufe 3 in roter Box
+  y += 6;
+  const totalBoxX = 320;
+  const totalBoxW = 225;
+  const totalBoxH = 30;
+
+  if (isLevel3) {
+    pdf.fillColor('#fdecec').rect(totalBoxX, y, totalBoxW, totalBoxH).fill();
+    pdf.lineWidth(1).strokeColor(AMPEL_RED)
+       .rect(totalBoxX, y, totalBoxW, totalBoxH).stroke();
+  } else {
+    pdf.fillColor(ZEBRA_BG).rect(totalBoxX, y, totalBoxW, totalBoxH).fill();
+    pdf.lineWidth(0.5).strokeColor(ARTIS_GREEN_BORDER)
+       .rect(totalBoxX, y, totalBoxW, totalBoxH).stroke();
+  }
+  pdf.lineWidth(1).strokeColor('#000000');
+  resetText(pdf);
+
+  pdf.font('Helvetica-Bold').fontSize(13).fillColor(isLevel3 ? AMPEL_RED : ARTIS_GREEN_DARK);
+  pdf.text('Total Mahnbetrag', totalBoxX + 10, y + 9, { width: 130 });
+  pdf.text(`CHF ${fmtChf(dunning.total_amount)}`, totalBoxX + totalBoxW - 110, y + 9, {
+    width: 100, align: 'right',
+  });
+  resetText(pdf);
+  pdf.font('Helvetica');
+  y += totalBoxH + 18;
+
+  // ---- 7. Outro / Notes ----
+  if (isLevel3 || dunning.is_betreibungsandrohung) {
+    pdf.font('Helvetica').fontSize(10).fillColor(AMPEL_RED).text(
       'Wir machen Sie ausdrücklich darauf aufmerksam, dass nach Ablauf der gesetzten Frist ohne weitere Ankündigung die Betreibung beim zuständigen Betreibungsamt eingeleitet wird.',
-      50, y, { width: 500 }
+      50, y, { width: 495 }
     );
-    pdf.fillColor('#000');
+    resetText(pdf);
     y += 50;
   }
   if (dunning.notes) {
-    pdf.fontSize(9).text(dunning.notes, 50, y, { width: 500 });
+    pdf.font('Helvetica').fontSize(9).fillColor('#444444')
+       .text(dunning.notes, 50, y, { width: 495 });
+    resetText(pdf);
   }
 
-  if (company.invoice_footer) {
-    pdf.fontSize(8).fillColor('#666').text(company.invoice_footer, 50, 740, { width: 500, align: 'center' });
-  }
-
+  // ---- 8. Footer + QR-Bill ----
+  drawFooter(pdf, company);
   pdf.addQRBill();
   pdf.end();
 

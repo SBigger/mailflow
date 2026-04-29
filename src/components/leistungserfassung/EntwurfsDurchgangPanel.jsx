@@ -7,8 +7,9 @@ import { toast } from 'sonner';
 import {
   ChevronLeft, ChevronRight, Plus, Trash2, Check, FileCheck2,
   Send, Save, Receipt, SkipForward, FileDown,
+  Wallet, Banknote, X as XIcon,
 } from 'lucide-react';
-import { leInvoice, leInvoiceLine, leCompany } from '@/lib/leApi';
+import { leInvoice, leInvoiceLine, leCompany, leOpenAkonti, leInvoiceAkontoLink } from '@/lib/leApi';
 import { supabase } from '@/api/supabaseClient';
 import { generateInvoicePdf, triggerDownload } from '@/lib/leInvoicePdf';
 import {
@@ -22,6 +23,226 @@ const DARK = '#2d5a2d';
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 const num = (v) => (v === '' || v == null ? 0 : Number(v) || 0);
+
+// ------------------------------------------------------------------
+// AkontoVerrechnungCard – zeigt offene Akonti des Kunden + bereits
+// verlinkte. User kann Akonti per Checkbox auswählen und als negative
+// Lines in den Entwurf einbuchen (+ le_invoice_akonto_link-Eintrag).
+// ------------------------------------------------------------------
+function AkontoVerrechnungCard({ invoice, onLinked }) {
+  const qc = useQueryClient();
+  const [selected, setSelected] = useState(() => new Set());
+
+  const openQ = useQuery({
+    queryKey: ['le', 'open-akonti', invoice.customer_id],
+    queryFn: () => leOpenAkonti(invoice.customer_id),
+    enabled: !!invoice.customer_id,
+  });
+
+  const linkedQ = useQuery({
+    queryKey: ['le', 'akonto-link', invoice.id],
+    queryFn: () => leInvoiceAkontoLink.listForSchluss(invoice.id),
+    enabled: !!invoice.id,
+  });
+
+  const open = openQ.data ?? [];
+  const linked = linkedQ.data ?? [];
+
+  const toggle = (id) => {
+    setSelected((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id); else n.add(id);
+      return n;
+    });
+  };
+
+  const selectedAkonti = open.filter((a) => selected.has(a.id));
+  const selectedSum = selectedAkonti.reduce(
+    (s, a) => s + Number(a.subtotal || a.total || 0),
+    0,
+  );
+
+  const verrechnenMut = useMutation({
+    mutationFn: async () => {
+      let i = 0;
+      for (const a of selectedAkonti) {
+        const subtotal = Number(a.subtotal || a.total || 0);
+        const vat = Number(a.vat_amount || 0);
+        await leInvoiceLine.create({
+          invoice_id: invoice.id,
+          description: `Abzug Akonto ${a.invoice_no} vom ${fmt.date(a.issue_date)}`,
+          hours: 0,
+          rate: 0,
+          amount: -subtotal,
+          sort_order: 9000 + i,
+        });
+        await leInvoiceAkontoLink.create({
+          schluss_invoice_id: invoice.id,
+          akonto_invoice_id: a.id,
+          amount_net: subtotal,
+          amount_vat: vat,
+        });
+        i++;
+      }
+    },
+    onSuccess: () => {
+      toast.success(`${selectedAkonti.length} Akonto verrechnet`);
+      setSelected(new Set());
+      qc.invalidateQueries({ queryKey: ['le', 'invoice'] });
+      qc.invalidateQueries({ queryKey: ['le', 'open-akonti'] });
+      qc.invalidateQueries({ queryKey: ['le', 'akonto-link', invoice.id] });
+      qc.invalidateQueries({ queryKey: ['le', 'invoice', 'entwurf'] });
+      onLinked?.();
+    },
+    onError: (e) => toast.error('Akonto-Verrechnung fehlgeschlagen: ' + (e?.message ?? e)),
+  });
+
+  const removeMut = useMutation({
+    mutationFn: async ({ link }) => {
+      await leInvoiceAkontoLink.remove(link.id);
+      // Zugehörige negative Line suchen und löschen (best-effort)
+      const akNo = link.akonto?.invoice_no;
+      if (akNo) {
+        const line = (invoice.lines ?? []).find((l) =>
+          (l.description ?? '').includes(`Abzug Akonto ${akNo}`),
+        );
+        if (line?.id) {
+          try { await leInvoiceLine.remove(line.id); } catch (_) { /* ignore */ }
+        }
+      }
+    },
+    onSuccess: () => {
+      toast.success('Akonto-Verlinkung entfernt');
+      qc.invalidateQueries({ queryKey: ['le', 'invoice'] });
+      qc.invalidateQueries({ queryKey: ['le', 'open-akonti'] });
+      qc.invalidateQueries({ queryKey: ['le', 'akonto-link', invoice.id] });
+      qc.invalidateQueries({ queryKey: ['le', 'invoice', 'entwurf'] });
+      onLinked?.();
+    },
+    onError: (e) => toast.error('Entfernen fehlgeschlagen: ' + (e?.message ?? e)),
+  });
+
+  if (openQ.isLoading || linkedQ.isLoading) return null;
+  if (open.length === 0 && linked.length === 0) return null;
+
+  return (
+    <div
+      className="rounded-lg border p-4 mb-4"
+      style={{ borderColor: '#f3d9a4', background: '#fff8e6' }}
+    >
+      <div className="flex items-center gap-2 mb-3">
+        <Wallet className="w-4 h-4" style={{ color: '#a06a1a' }} />
+        <div className="text-sm font-semibold" style={{ color: '#7a4f12' }}>
+          Akonto-Verrechnung
+        </div>
+        <div className="text-[11px] text-zinc-500 ml-1">
+          Offene Akonto-Rechnungen dieses Kunden
+        </div>
+      </div>
+
+      {linked.length > 0 && (
+        <div className="mb-3">
+          <div className="text-[11px] uppercase tracking-wider text-zinc-500 font-semibold mb-1.5">
+            Verrechnete Akonti
+          </div>
+          <ul className="text-xs divide-y rounded border bg-white" style={{ borderColor: '#f3d9a4' }}>
+            {linked.map((lk) => (
+              <li key={lk.id} className="flex items-center justify-between px-2.5 py-1.5">
+                <span className="flex items-center gap-2">
+                  <Banknote className="w-3.5 h-3.5 text-zinc-400" />
+                  <span className="font-mono">{lk.akonto?.invoice_no ?? '—'}</span>
+                </span>
+                <span className="flex items-center gap-3">
+                  <span className="text-zinc-600">CHF {fmt.chf(Number(lk.amount_net || 0))}</span>
+                  <IconBtn
+                    danger
+                    title="Verrechnung entfernen"
+                    onClick={() => removeMut.mutate({ link: lk })}
+                  >
+                    <XIcon className="w-3.5 h-3.5" />
+                  </IconBtn>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {open.length > 0 && (
+        <>
+          <div className="text-[11px] uppercase tracking-wider text-zinc-500 font-semibold mb-1.5">
+            Offene Akonti
+          </div>
+          <div className="border rounded overflow-hidden bg-white" style={{ borderColor: '#f3d9a4' }}>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-[11px] uppercase tracking-wider text-zinc-600" style={{ background: '#fff3d6' }}>
+                  <th className="px-2 py-1.5 text-left w-8"></th>
+                  <th className="px-2 py-1.5 text-left font-semibold">Akonto-Nr.</th>
+                  <th className="px-2 py-1.5 text-left font-semibold">Datum</th>
+                  <th className="px-2 py-1.5 text-right font-semibold">Netto</th>
+                  <th className="px-2 py-1.5 text-right font-semibold">MWST</th>
+                  <th className="px-2 py-1.5 text-right font-semibold">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {open.map((a) => {
+                  const checked = selected.has(a.id);
+                  return (
+                    <tr
+                      key={a.id}
+                      onClick={() => toggle(a.id)}
+                      className="border-t cursor-pointer hover:bg-amber-50"
+                      style={{ borderColor: '#f3e7c6' }}
+                    >
+                      <td className="px-2 py-1.5">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggle(a.id)}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      </td>
+                      <td className="px-2 py-1.5 font-mono text-xs">{a.invoice_no ?? '—'}</td>
+                      <td className="px-2 py-1.5 text-xs text-zinc-600">{fmt.date(a.issue_date)}</td>
+                      <td className="px-2 py-1.5 text-right">CHF {fmt.chf(Number(a.subtotal || 0))}</td>
+                      <td className="px-2 py-1.5 text-right text-zinc-500">CHF {fmt.chf(Number(a.vat_amount || 0))}</td>
+                      <td className="px-2 py-1.5 text-right font-medium">CHF {fmt.chf(Number(a.total || 0))}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex items-center justify-between mt-3 pt-2 border-t" style={{ borderColor: '#f3d9a4' }}>
+            <div className="text-xs text-zinc-700">
+              {selectedAkonti.length > 0 ? (
+                <>
+                  <b>{selectedAkonti.length}</b> ausgewählt · CHF <b>{fmt.chf(selectedSum)}</b> netto
+                </>
+              ) : (
+                <span className="text-zinc-500">Keine ausgewählt</span>
+              )}
+            </div>
+            <button
+              type="button"
+              disabled={selectedAkonti.length === 0 || verrechnenMut.isPending}
+              onClick={() => verrechnenMut.mutate()}
+              className={artisBtn.primary}
+              style={{
+                ...artisPrimaryStyle,
+                opacity: (selectedAkonti.length === 0 || verrechnenMut.isPending) ? 0.55 : 1,
+              }}
+            >
+              <Check className="w-4 h-4" /> Verrechnen
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 // ------------------------------------------------------------------
 // Ein einzelner Entwurf als editierbarer Block. Hält eigenen lokalen
@@ -273,6 +494,14 @@ function DraftEditor({ invoice, onSaved, onFinalized, onDirtyChange }) {
           <Plus className="w-3.5 h-3.5" /> Position
         </button>
       </div>
+
+      {/* Akonto-Verrechnung – nur bei Schlussrechnung & vorhandenem Kunden */}
+      {invoice.customer_id && (invoice.invoice_type === 'normal' || invoice.invoice_type === 'schluss') && (
+        <AkontoVerrechnungCard
+          invoice={invoice}
+          onLinked={() => onSaved?.()}
+        />
+      )}
 
       {/* Abschluss-Block + Notizen */}
       <div className="grid grid-cols-2 gap-5">

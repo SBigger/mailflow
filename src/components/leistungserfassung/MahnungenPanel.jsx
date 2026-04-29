@@ -10,9 +10,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   AlertTriangle, FileText, Send, CheckCircle2, X as XIcon,
-  ChevronUp, Plus, Calendar, FileDown,
+  ChevronUp, Plus, Calendar, FileDown, Mail,
 } from 'lucide-react';
-import { leOverdueInvoices, leDunning, leCompany, leInvoice } from '@/lib/leApi';
+import { leOverdueInvoices, leDunning, leCompany, leInvoice, sendInvoiceViaMs365 } from '@/lib/leApi';
 import { generateDunningPdf } from '@/lib/leDunningPdf';
 import { triggerDownload } from '@/lib/leInvoicePdf';
 import {
@@ -651,6 +651,52 @@ function DunningRow({ dun, onSend, onPay, onEscalate, sending }) {
             title="PDF herunterladen"
           >
             <FileDown className="w-3.5 h-3.5" />
+          </IconBtn>
+          <IconBtn
+            onClick={async () => {
+              try {
+                // 1. PDF generieren (lädt es gleichzeitig in den Storage hoch)
+                const company = await leCompany.get();
+                if (!company) { toast.error('Firmen-Settings fehlen.'); return; }
+                const fullInv = await leInvoice.get(dun.invoice_id);
+                const result = await generateDunningPdf({
+                  dunning: dun, invoice: fullInv,
+                  customer: fullInv.customer, company,
+                });
+                // 2. PDF muss im Storage liegen, damit die Edge Function es ziehen kann
+                if (!result.url) {
+                  toast.error('PDF konnte nicht hochgeladen werden – Mail-Versand nicht möglich');
+                  return;
+                }
+                // 3. Empfänger-Mail prüfen
+                const customerEmail = fullInv.customer?.billing_email || fullInv.customer?.email;
+                if (!customerEmail) {
+                  toast.error('Kunde hat keine E-Mail-Adresse');
+                  return;
+                }
+                // 4. Mail senden
+                const subject = `Mahnung ${dun.dunning_no || 'Entwurf'} zu Rechnung ${fullInv.invoice_no}`;
+                const html = `<p>Sehr geehrte Damen und Herren</p><p>Anbei finden Sie unsere Mahnung. Wir bitten um Begleichung des offenen Betrags.</p><p>Mit freundlichen Grüssen<br>${company.company_name}</p>`;
+                await sendInvoiceViaMs365({
+                  to: customerEmail,
+                  subject,
+                  html,
+                  attachmentUrl: result.url,
+                  attachmentFilename: `Mahnung-${dun.dunning_no || 'Entwurf'}.pdf`,
+                });
+                toast.success('Mahnung versendet');
+                // 5. Als versendet markieren
+                await leDunning.update(dun.id, {
+                  status: 'versendet',
+                  sent_at: new Date().toISOString(),
+                });
+              } catch (e) {
+                toast.error('Versand-Fehler: ' + (e?.message ?? e));
+              }
+            }}
+            title="Per Mail versenden"
+          >
+            <Mail className="w-3.5 h-3.5" />
           </IconBtn>
           {canSend && (
             <IconBtn onClick={onSend} title={sending ? 'Versende…' : 'Versenden (finalisiert)'}>

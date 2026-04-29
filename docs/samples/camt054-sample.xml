@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Beispiel-camt.054-Datei zum Testen des Zahlungs-Importers (Tab "Zahlungseingänge → camt.054 Import").
+  3 Eingänge:
+    1. QRR-Match (Auto): Referenz passt exakt + Betrag stimmt → wird als "auto" matched
+    2. QRR-Match (Ambig): Referenz passt aber Betrag weicht ab → wird als "ambig" geliefert
+    3. Unstrukturiert (Unmatched): nur Verwendungszweck-Text → User muss manuell zuordnen
+  Vor Test: in mindestens einer Rechnung der DB qr_reference setzen, z.B.:
+    UPDATE le_invoice SET qr_reference = '210000000003139471430009017' WHERE invoice_no = 'R-2026-0001';
+-->
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.054.001.04">
+  <BkToCstmrDbtCdtNtfctn>
+    <GrpHdr>
+      <MsgId>20260422-MAILFLOW-DEMO-001</MsgId>
+      <CreDtTm>2026-04-22T08:00:00</CreDtTm>
+    </GrpHdr>
+
+    <Ntfctn>
+      <Id>20260422-NOT-001</Id>
+      <CreDtTm>2026-04-22T08:00:00</CreDtTm>
+      <Acct>
+        <Id><IBAN>CH4431999123000889012</IBAN></Id>
+        <Ccy>CHF</Ccy>
+      </Acct>
+
+      <!-- ENTRY 1: QRR-Match auto -->
+      <Ntry>
+        <Amt Ccy="CHF">1250.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2026-04-21</Dt></BookgDt>
+        <ValDt><Dt>2026-04-21</Dt></ValDt>
+        <BkTxCd><Domn><Cd>PMNT</Cd></Domn></BkTxCd>
+        <NtryDtls>
+          <TxDtls>
+            <Refs>
+              <AcctSvcrRef>2026042112345001</AcctSvcrRef>
+            </Refs>
+            <RltdPties>
+              <Dbtr><Nm>Muster AG</Nm></Dbtr>
+              <DbtrAcct><Id><IBAN>CH9300762011623852957</IBAN></Id></DbtrAcct>
+            </RltdPties>
+            <RmtInf>
+              <Strd>
+                <CdtrRefInf>
+                  <Tp><CdOrPrtry><Prtry>QRR</Prtry></CdOrPrtry></Tp>
+                  <Ref>210000000003139471430009017</Ref>
+                </CdtrRefInf>
+              </Strd>
+            </RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+
+      <!-- ENTRY 2: QRR-Match ambig (Betrag weicht ab) -->
+      <Ntry>
+        <Amt Ccy="CHF">2400.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2026-04-22</Dt></BookgDt>
+        <ValDt><Dt>2026-04-22</Dt></ValDt>
+        <BkTxCd><Domn><Cd>PMNT</Cd></Domn></BkTxCd>
+        <NtryDtls>
+          <TxDtls>
+            <Refs>
+              <AcctSvcrRef>2026042212345002</AcctSvcrRef>
+            </Refs>
+            <RltdPties>
+              <Dbtr><Nm>Beispiel GmbH</Nm></Dbtr>
+            </RltdPties>
+            <RmtInf>
+              <Strd>
+                <CdtrRefInf>
+                  <Tp><CdOrPrtry><Prtry>QRR</Prtry></CdOrPrtry></Tp>
+                  <Ref>050000000000000000000000017</Ref>
+                </CdtrRefInf>
+              </Strd>
+            </RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+
+      <!-- ENTRY 3: Unstrukturiert (Unmatched) -->
+      <Ntry>
+        <Amt Ccy="CHF">580.50</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2026-04-22</Dt></BookgDt>
+        <ValDt><Dt>2026-04-22</Dt></ValDt>
+        <BkTxCd><Domn><Cd>PMNT</Cd></Domn></BkTxCd>
+        <NtryDtls>
+          <TxDtls>
+            <Refs>
+              <AcctSvcrRef>2026042212345003</AcctSvcrRef>
+            </Refs>
+            <RltdPties>
+              <Dbtr><Nm>Privatperson Hans Müller</Nm></Dbtr>
+            </RltdPties>
+            <RmtInf>
+              <Ustrd>Zahlung Steuererklärung 2025 - Hans Müller</Ustrd>
+            </RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+    </Ntfctn>
+  </BkToCstmrDbtCdtNtfctn>
+</Document>

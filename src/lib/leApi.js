@@ -729,6 +729,16 @@ export async function leMs365Day(dateIso) {
   return data || { calendar: [], sent: [] };
 }
 
+// Mail-Versand via Microsoft Graph (separate Edge Function – teilt sich
+// keinen Code mit der bestehenden MS365-Sync-Integration).
+export async function sendInvoiceViaMs365({ to, subject, html, attachmentUrl, attachmentFilename }) {
+  const { data, error } = await supabase.functions.invoke('le-send-via-ms365', {
+    body: { to, subject, html, attachmentUrl, attachmentFilename },
+  });
+  if (error) throw error;
+  return data;
+}
+
 // Aggregiert offene Einträge pro Projekt für Faktura-Vorschlag
 export async function fakturaVorschlagData({ fromIso, toIso } = {}) {
   let q = supabase

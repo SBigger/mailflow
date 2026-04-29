@@ -28,6 +28,7 @@ import GutschriftPanel from '@/components/leistungserfassung/GutschriftPanel';
 import SpesenAbrechnenPanel from '@/components/leistungserfassung/SpesenAbrechnenPanel';
 import ProjektVorlagenPanel from '@/components/leistungserfassung/ProjektVorlagenPanel';
 import MobileVorschauPanel from '@/components/leistungserfassung/MobileVorschauPanel';
+import DebitorenOPPanel from '@/components/leistungserfassung/DebitorenOPPanel';
 
 // ---------------------------------------------------------------------
 // Navigations-Definition + welche Sec-IDs welches Panel rendern
@@ -50,6 +51,7 @@ const NAV = [
       { id: 'fakvor',     label: 'Faktura-Vorschlag',    comp: FakturaVorschlagPanel },
       { id: 'entw-durch', label: 'Entwurfs-Durchgang',   comp: EntwurfsDurchgangPanel },
       { id: 'rechn-list', label: 'Rechnungsübersicht',   comp: RechnungsuebersichtPanel },
+      { id: 'op-liste',   label: 'Debitoren-OP',         comp: DebitorenOPPanel },
       { id: 'akonto',     label: 'Akonto',               comp: AkontoPanel },
       { id: 'mahnung',    label: 'Mahnwesen',            comp: MahnungenPanel },
       { id: 'zahlung',    label: 'Zahlungseingänge',     comp: ZahlungseingaengePanel },
