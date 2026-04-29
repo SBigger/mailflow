@@ -55,6 +55,10 @@ Deno.serve(async (req) => {
       END $$
     `;
 
+    // Reload PostgREST schema cache so new columns (month_half, done, year)
+    // are immediately visible to the Supabase JS client without a server restart.
+    await sql`NOTIFY pgrst, 'reload schema'`;
+
     await sql.end();
     return new Response(JSON.stringify({ ok: true }), { headers: cors });
   } catch (err) {
