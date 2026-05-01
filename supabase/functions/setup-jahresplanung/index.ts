@@ -55,8 +55,13 @@ Deno.serve(async (req) => {
       END $$
     `;
 
-    // Reload PostgREST schema cache so new columns (month_half, done, year)
-    // are immediately visible to the Supabase JS client without a server restart.
+    // 4. Add direct phone number to profiles (for Teams call matching)
+    await sql`
+      ALTER TABLE public.profiles
+        ADD COLUMN IF NOT EXISTS phone text
+    `;
+
+    // Reload PostgREST schema cache so new columns are immediately visible.
     await sql`NOTIFY pgrst, 'reload schema'`;
 
     await sql.end();

@@ -3,7 +3,7 @@ import { functions, auth, supabase } from "@/api/supabaseClient";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Users, Mail, UserPlus, Trash2, Shield, User as UserIcon, CheckSquare, Pencil, Check, X, KeyRound, Eye, EyeOff } from "lucide-react";
+import { Users, Mail, UserPlus, Trash2, Shield, User as UserIcon, CheckSquare, Pencil, Check, X, KeyRound, Eye, EyeOff, Phone } from "lucide-react";
 import { toast } from "sonner";
 import { ThemeContext } from "@/Layout";
 import {
@@ -59,6 +59,11 @@ export default function UserManagement() {
   const [pwEditValue,  setPwEditValue]  = useState("");
   const [pwShowValue,  setPwShowValue]  = useState(false);
   const [pwSaving,     setPwSaving]     = useState(false);
+
+  // Inline phone state
+  const [phoneEditUserId, setPhoneEditUserId] = useState(null);
+  const [phoneEditValue,  setPhoneEditValue]  = useState("");
+  const [phoneSaving,     setPhoneSaving]     = useState(false);
 
   const queryClient = useQueryClient();
 
@@ -133,6 +138,25 @@ export default function UserManagement() {
       toast.error("Fehler: " + e.message);
     } finally {
       setSavingName(false);
+    }
+  };
+
+  const handleSavePhone = async (userId) => {
+    setPhoneSaving(true);
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ phone: phoneEditValue.trim() || null })
+        .eq('id', userId);
+      if (error) throw error;
+      toast.success("Telefonnummer gespeichert");
+      setPhoneEditUserId(null);
+      setPhoneEditValue("");
+      queryClient.invalidateQueries({ queryKey: ["allUsers"] });
+    } catch (e) {
+      toast.error("Fehler: " + e.message);
+    } finally {
+      setPhoneSaving(false);
     }
   };
 
@@ -300,6 +324,12 @@ export default function UserManagement() {
                         <Mail className="h-3 w-3" />
                         {user.email}
                       </div>
+                      {user.phone && (
+                        <div className="text-xs flex items-center gap-1 mt-0.5" style={{ color: textSecondary }}>
+                          <Phone className="h-3 w-3" />
+                          {user.phone}
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -324,6 +354,13 @@ export default function UserManagement() {
                           >
                             <KeyRound className="h-4 w-4 mr-2" />
                             Passwort setzen
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => { setPhoneEditUserId(user.id); setPhoneEditValue(user.phone || ""); }}
+                            style={{ color: textPrimary }}
+                          >
+                            <Phone className="h-4 w-4 mr-2" />
+                            Direktnummer bearbeiten
                           </DropdownMenuItem>
                           <DropdownMenuSeparator style={{ backgroundColor: cardBorder }} />
                           <DropdownMenuItem onClick={() => setUserToDelete(user)} style={{ color: '#ef4444' }}>
@@ -377,6 +414,43 @@ export default function UserManagement() {
                     </button>
                     <button
                       onClick={() => { setPwEditUserId(null); setPwEditValue(""); }}
+                      className="p-1.5 rounded hover:bg-red-500/10 text-red-400 flex-shrink-0"
+                      title="Abbrechen"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                )}
+                {/* ── Telefon-Panel (inline) ── */}
+                {phoneEditUserId === user.id && (
+                  <div
+                    className="flex items-center gap-2 px-4 pb-3 pt-0"
+                    style={{ backgroundColor: isArtis ? '#f5f8f5' : isLight ? '#f7f7fc' : 'rgba(24,24,27,0.9)' }}
+                  >
+                    <Phone className="h-3.5 w-3.5 flex-shrink-0" style={{ color: textSecondary }} />
+                    <Input
+                      type="tel"
+                      placeholder="+41 71 505 05 09"
+                      value={phoneEditValue}
+                      onChange={e => setPhoneEditValue(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') handleSavePhone(user.id);
+                        if (e.key === 'Escape') { setPhoneEditUserId(null); setPhoneEditValue(""); }
+                      }}
+                      autoFocus
+                      className="h-8 text-sm flex-1"
+                      style={{ backgroundColor: isArtis ? '#fff' : isLight ? '#fff' : '#18181b', borderColor: accentBg, color: textPrimary }}
+                    />
+                    <button
+                      onClick={() => handleSavePhone(user.id)}
+                      disabled={phoneSaving}
+                      className="p-1.5 rounded bg-green-500/20 text-green-600 hover:bg-green-500/30 disabled:opacity-40 transition-colors flex-shrink-0"
+                      title="Speichern"
+                    >
+                      <Check className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => { setPhoneEditUserId(null); setPhoneEditValue(""); }}
                       className="p-1.5 rounded hover:bg-red-500/10 text-red-400 flex-shrink-0"
                       title="Abbrechen"
                     >
