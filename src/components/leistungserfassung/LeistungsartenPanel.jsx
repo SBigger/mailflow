@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Pencil, Trash2, CalendarClock, Plus } from 'lucide-react';
+import { Pencil, Trash2, CalendarClock, Plus, Archive, ArchiveRestore } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -49,12 +49,42 @@ export default function LeistungsartenPanel() {
     onError: (e) => toast.error(String(e?.message ?? e)),
   });
 
+  const archiveMut = useMutation({
+    mutationFn: (id) => leServiceType.archive(id),
+    onSuccess: () => { toast.success('Leistungsart deaktiviert'); qc.invalidateQueries({ queryKey: ['le', 'service_type'] }); },
+    onError: (e) => toast.error(String(e?.message ?? e)),
+  });
+  const unarchiveMut = useMutation({
+    mutationFn: (id) => leServiceType.unarchive(id),
+    onSuccess: () => { toast.success('Leistungsart reaktiviert'); qc.invalidateQueries({ queryKey: ['le', 'service_type'] }); },
+    onError: (e) => toast.error(String(e?.message ?? e)),
+  });
+
   const openNew = () => { setEditing(null); setEditOpen(true); };
   const openEdit = (row) => { setEditing(row); setEditOpen(true); };
   const openRate = (row) => { setRateType(row); setRateOpen(true); };
-  const onDelete = (row) => {
-    if (!window.confirm(`Leistungsart "${row.name}" wirklich löschen?`)) return;
-    removeMut.mutate(row.id);
+  const onDelete = async (row) => {
+    try {
+      const check = await leServiceType.canDelete(row.id);
+      if (!check?.can_delete) {
+        toast.error(
+          `Löschen nicht möglich: ${check.entry_count} Rapport(e), ${check.line_count} Rechnungsposition(en), ${check.rate_count} Gruppen-Sätze, ${check.history_count} Satz-Historie verknüpft. Bitte stattdessen deaktivieren.`,
+          { duration: 6000 }
+        );
+        return;
+      }
+      if (!window.confirm(`Leistungsart "${row.name}" endgültig löschen? (Es sind keine Rapporte verknüpft.)`)) return;
+      removeMut.mutate(row.id);
+    } catch (e) {
+      toast.error('Prüfung fehlgeschlagen: ' + (e?.message ?? e));
+    }
+  };
+
+  const onToggleActive = (row) => {
+    const action = row.active ? 'deaktivieren' : 'reaktivieren';
+    if (!window.confirm(`Leistungsart "${row.name}" ${action}?`)) return;
+    if (row.active) archiveMut.mutate(row.id);
+    else unarchiveMut.mutate(row.id);
   };
 
   return (
@@ -125,7 +155,16 @@ export default function LeistungsartenPanel() {
                         >
                           <CalendarClock className="w-3.5 h-3.5" />
                         </IconBtn>
-                        <IconBtn title="Löschen" danger onClick={() => onDelete(row)}>
+                        {row.active ? (
+                          <IconBtn title="Deaktivieren (Rapporte bleiben erhalten)" onClick={() => onToggleActive(row)}>
+                            <Archive className="w-3.5 h-3.5" />
+                          </IconBtn>
+                        ) : (
+                          <IconBtn title="Reaktivieren" onClick={() => onToggleActive(row)}>
+                            <ArchiveRestore className="w-3.5 h-3.5" />
+                          </IconBtn>
+                        )}
+                        <IconBtn title="Löschen (nur wenn keine Rapporte verknüpft)" danger onClick={() => onDelete(row)}>
                           <Trash2 className="w-3.5 h-3.5" />
                         </IconBtn>
                       </div>

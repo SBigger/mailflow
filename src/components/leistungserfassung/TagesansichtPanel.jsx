@@ -1,6 +1,12 @@
-// Leistungserfassung · Tagesansicht
-// Schnell-Rapport-Zeile oben (grün) + bestehende Einträge + Tages-Summary.
-// Fokus: schnelle Tastatureingabe, Enter speichert, Fokus zurück auf Projekt.
+// Leistungserfassung · Tagesansicht V2 (3-Spalten-Layout)
+// =====================================================================
+// Links:  Outlook-Kalender mit Zeitleiste 7-19 Uhr, Termine als Boxen
+// Mitte:  Schnell-Rapport (Tab: Von → Bis → Projekt → Leistungsart →
+//         Beschreibung → ENTER) + Tabelle der Tageseinträge
+// Rechts: Gesendete Mails des Tages (mit Customer-Match) + Tages-Summary
+//
+// Fokus: schnelle Tastatureingabe, Enter speichert + Fokus zurück auf
+// "Von"-Zeit. Stunden auto-berechnet aus Von/Bis (15-Min-Raster).
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -14,7 +20,7 @@ import {
   leRateGroupRate, leServiceRateHistory, resolveRateFor, leMs365Day,
 } from '@/lib/leApi';
 import {
-  Chip, Card, IconBtn, Input, Select, PanelLoader, PanelError, PanelHeader,
+  Chip, Card, IconBtn, Input, Select, Combobox, PanelLoader, PanelError, PanelHeader,
   fmt, artisBtn, artisPrimaryStyle, artisGhostStyle,
 } from './shared';
 
@@ -22,10 +28,7 @@ import {
 
 const todayIso = () => {
   const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
 const addDays = (iso, days) => {
@@ -40,7 +43,6 @@ const weekdayLabel = (iso) => {
   return d.toLocaleDateString('de-CH', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
 };
 
-// HH:MM → minutes
 const toMin = (hhmm) => {
   if (!hhmm) return null;
   const [h, m] = String(hhmm).split(':').map(Number);
@@ -55,14 +57,48 @@ const diffHours = (from, to) => {
   return diff > 0 ? Math.round(diff * 100) / 100 : null;
 };
 
-// Rate-Ermittlung läuft über resolveRateFor(...) aus leApi.js – braucht
-// die preloaded rate_group_rates + service_rate_history (siehe Panel).
-
 const STATUS_CHIP = {
   erfasst:     { tone: 'neutral', label: 'erfasst' },
   freigegeben: { tone: 'green',   label: 'freigegeben' },
   verrechnet:  { tone: 'blue',    label: 'verrechnet' },
   storniert:   { tone: 'red',     label: 'storniert' },
+};
+
+// Kalender-Zeitleiste: 7-19 Uhr (Pixel pro Stunde = 40)
+const CAL_START_HOUR = 7;
+const CAL_END_HOUR = 19;
+const PX_PER_HOUR = 40;
+const PX_PER_MIN = PX_PER_HOUR / 60;
+
+const calTopFromTime = (timeIso) => {
+  if (!timeIso) return 0;
+  // timeIso kann ISO-Datetime sein "2026-04-30T08:00:00" oder reine Zeit "08:00"
+  const t = String(timeIso);
+  const hhmm = t.includes('T') ? t.slice(11, 16) : t.slice(0, 5);
+  const mins = toMin(hhmm);
+  if (mins == null) return 0;
+  return Math.max(0, (mins - CAL_START_HOUR * 60) * PX_PER_MIN);
+};
+
+const calHeightFromTimes = (startIso, endIso) => {
+  const a = toMin(String(startIso || '').slice(11, 16));
+  const b = toMin(String(endIso || '').slice(11, 16));
+  if (a == null || b == null) return 30;
+  return Math.max(20, (b - a) * PX_PER_MIN);
+};
+
+const timeFromIso = (iso) => {
+  if (!iso) return null;
+  return String(iso).includes('T') ? String(iso).slice(11, 16) : String(iso).slice(0, 5);
+};
+
+// 15-Minuten-Runden für UX
+const roundTo15 = (hhmm) => {
+  if (!hhmm) return hhmm;
+  const m = toMin(hhmm);
+  if (m == null) return hhmm;
+  const rounded = Math.round(m / 15) * 15;
+  return `${String(Math.floor(rounded / 60)).padStart(2, '0')}:${String(rounded % 60).padStart(2, '0')}`;
 };
 
 // --- Panel -----------------------------------------------------------------
@@ -73,7 +109,9 @@ export default function TagesansichtPanel() {
   const [currentEmployeeId, setCurrentEmployeeId] = useState(null);
   const [employeeResolved, setEmployeeResolved] = useState(false);
 
-  // Aktuellen MA initial auflösen
+  // Quick-Form-State (für Inline-Befüllung von Calendar/Mail-Übernahme)
+  const [prefill, setPrefill] = useState(null); // { time_from, time_to, project_id, service_type_id, description, ... }
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -90,17 +128,25 @@ export default function TagesansichtPanel() {
     return () => { cancelled = true; };
   }, []);
 
-  // --- Queries -------------------------------------------------------------
-  const projectsQ = useQuery({ queryKey: ['le', 'project'], queryFn: () => leProject.list() });
-  const serviceTypesQ = useQuery({ queryKey: ['le', 'service_type'], queryFn: () => leServiceType.list() });
-  const employeesQ = useQuery({ queryKey: ['le', 'employee'], queryFn: () => leEmployee.list() });
-  const rateGroupRatesQ = useQuery({ queryKey: ['le', 'rate_group_rate', 'all'], queryFn: () => leRateGroupRate.listAll() });
-  const rateHistoryQ = useQuery({ queryKey: ['le', 'service_rate_history', 'all'], queryFn: () => leServiceRateHistory.listAll() });
+  // Queries
+  const projectsQ        = useQuery({ queryKey: ['le', 'project'],         queryFn: () => leProject.list() });
+  const serviceTypesQ    = useQuery({ queryKey: ['le', 'service_type'],    queryFn: () => leServiceType.list() });
+  const employeesQ       = useQuery({ queryKey: ['le', 'employee'],        queryFn: () => leEmployee.list() });
+  const rateGroupRatesQ  = useQuery({ queryKey: ['le', 'rate_group_rate', 'all'], queryFn: () => leRateGroupRate.listAll() });
+  const rateHistoryQ     = useQuery({ queryKey: ['le', 'service_rate_history', 'all'], queryFn: () => leServiceRateHistory.listAll() });
 
   const entriesQ = useQuery({
     queryKey: ['le', 'time_entry', currentDate, currentEmployeeId],
     queryFn: () => leTimeEntry.listForDate(currentDate, { employeeId: currentEmployeeId }),
     enabled: !!currentEmployeeId,
+  });
+
+  const ms365Q = useQuery({
+    queryKey: ['le', 'ms365-day', currentDate],
+    queryFn: () => leMs365Day(currentDate),
+    enabled: !!currentEmployeeId,
+    staleTime: 60_000,
+    retry: false,
   });
 
   const projects = projectsQ.data ?? [];
@@ -109,29 +155,30 @@ export default function TagesansichtPanel() {
   const entries = entriesQ.data ?? [];
   const rateGroupRates = rateGroupRatesQ.data ?? [];
   const serviceRateHistory = rateHistoryQ.data ?? [];
+  const ms365Data = ms365Q.data ?? { calendar: [], sent: [], notConnected: false };
 
-  // --- Mutations -----------------------------------------------------------
-  const invalidate = () => qc.invalidateQueries({ queryKey: ['le', 'time_entry', currentDate, currentEmployeeId] });
+  // Mutations
+  const invalidateEntries = () => qc.invalidateQueries({ queryKey: ['le', 'time_entry', currentDate, currentEmployeeId] });
 
   const createMut = useMutation({
     mutationFn: (payload) => leTimeEntry.create(payload),
-    onSuccess: () => { toast.success('Eintrag erfasst'); invalidate(); },
+    onSuccess: () => { toast.success('Eintrag erfasst'); invalidateEntries(); },
     onError: (e) => toast.error('Fehler: ' + (e?.message ?? e)),
   });
 
   const updateMut = useMutation({
     mutationFn: ({ id, patch }) => leTimeEntry.update(id, patch),
-    onSuccess: () => { toast.success('Gespeichert'); invalidate(); },
+    onSuccess: () => { toast.success('Gespeichert'); invalidateEntries(); },
     onError: (e) => toast.error('Fehler: ' + (e?.message ?? e)),
   });
 
   const removeMut = useMutation({
     mutationFn: (id) => leTimeEntry.remove(id),
-    onSuccess: () => { toast.success('Gelöscht'); invalidate(); },
+    onSuccess: () => { toast.success('Gelöscht'); invalidateEntries(); },
     onError: (e) => toast.error('Fehler: ' + (e?.message ?? e)),
   });
 
-  // --- Summary (muss VOR allen Early-Returns stehen – Hook-Rules) ----------
+  // Summary (vor early-returns – Hook-Rules)
   const summary = useMemo(() => {
     let hours = 0; let chf = 0; let allFreigegeben = entries.length > 0;
     for (const e of entries) {
@@ -144,7 +191,6 @@ export default function TagesansichtPanel() {
     return { hours, chf, count: entries.length, allFreigegeben };
   }, [entries]);
 
-  // --- Loading / Error -----------------------------------------------------
   const anyError = projectsQ.error || serviceTypesQ.error || entriesQ.error || employeesQ.error;
   if (!employeeResolved) return <PanelLoader />;
   if (anyError) return <PanelError error={anyError} onRetry={() => { projectsQ.refetch(); serviceTypesQ.refetch(); entriesQ.refetch(); employeesQ.refetch(); }} />;
@@ -152,46 +198,49 @@ export default function TagesansichtPanel() {
   const loading = projectsQ.isLoading || serviceTypesQ.isLoading || (currentEmployeeId && entriesQ.isLoading);
   const noMasterData = !loading && (projects.length === 0 || serviceTypes.length === 0);
 
-  // --- Render --------------------------------------------------------------
-  return (
-    <div className="space-y-4">
-      <PanelHeader
-        title="Tagesansicht"
-        subtitle="Schnelle Leistungserfassung für den gewählten Tag"
-        right={
-          <>
-            {!currentEmployeeId ? (
-              <Select
-                value=""
-                onChange={(e) => setCurrentEmployeeId(e.target.value || null)}
-                style={{ minWidth: 220 }}
-              >
-                <option value="">MA auswählen…</option>
-                {employees.map((emp) => (
-                  <option key={emp.id} value={emp.id}>{emp.short_code} – {emp.full_name}</option>
-                ))}
-              </Select>
-            ) : (
-              <Chip tone="green">
-                {employees.find((e) => e.id === currentEmployeeId)?.short_code ?? 'MA'}
-              </Chip>
-            )}
-          </>
-        }
-      />
+  // Calendar/Mail-Übernahme → fülle Quick-Form vor
+  const adoptFromCalendar = (cal) => {
+    const project = pickProject(cal, projects);
+    const serviceType = pickDefaultServiceType(serviceTypes);
+    const fromT = roundTo15(timeFromIso(cal.start) || '');
+    const toT   = roundTo15(timeFromIso(cal.end) || '');
+    setPrefill({
+      time_from: fromT,
+      time_to: toT,
+      project_id: project?.id ?? '',
+      service_type_id: serviceType?.id ?? '',
+      description: cal.subject || '',
+    });
+    toast.info('Übernommen – ENTER zum Speichern');
+  };
 
-      {/* Datum-Navigation */}
-      <Card className="p-3">
+  const adoptFromMail = (m) => {
+    const project = pickProject(m, projects);
+    const serviceType = pickDefaultServiceType(serviceTypes);
+    const sentTime = timeFromIso(m.sentDateTime) || '';
+    // Default 15 Min ab Sendezeit
+    const sentMin = toMin(sentTime);
+    const endMin = sentMin != null ? sentMin + 15 : null;
+    const toT = endMin != null ? `${String(Math.floor(endMin / 60)).padStart(2,'0')}:${String(endMin % 60).padStart(2,'0')}` : '';
+    setPrefill({
+      time_from: sentTime,
+      time_to: toT,
+      project_id: project?.id ?? '',
+      service_type_id: serviceType?.id ?? '',
+      description: `Mail: ${m.subject || ''}`,
+    });
+    toast.info('Übernommen – ENTER zum Speichern');
+  };
+
+  return (
+    <div className="space-y-3">
+      {/* Datum-Navigation + MA-Selector (integriert) */}
+      <Card className="px-3 py-2">
         <div className="flex items-center gap-2 flex-wrap">
           <IconBtn onClick={() => setCurrentDate(addDays(currentDate, -1))} title="Vortag">
             <ChevronLeft className="w-4 h-4" />
           </IconBtn>
-          <button
-            type="button"
-            className={artisBtn.ghost}
-            style={artisGhostStyle}
-            onClick={() => setCurrentDate(todayIso())}
-          >
+          <button type="button" className={artisBtn.ghost} style={artisGhostStyle} onClick={() => setCurrentDate(todayIso())}>
             Heute
           </button>
           <IconBtn onClick={() => setCurrentDate(addDays(currentDate, 1))} title="Folgetag">
@@ -207,8 +256,24 @@ export default function TagesansichtPanel() {
               style={{ borderColor: '#d9dfd9' }}
             />
           </div>
-          <div className="ml-auto text-sm font-medium text-zinc-700 capitalize">
+          <div className="text-sm font-medium text-zinc-700 capitalize ml-2">
             {weekdayLabel(currentDate)}
+          </div>
+          {/* MA-Selector ganz rechts – Klick auf Namen wechselt MA */}
+          <div className="ml-auto">
+            <Select
+              value={currentEmployeeId ?? ''}
+              onChange={(e) => setCurrentEmployeeId(e.target.value || null)}
+              style={{ minWidth: 200, fontWeight: 600, color: '#2d5a2d', borderColor: '#bfd3bf', background: '#f5faf5' }}
+              title="Mitarbeiter wechseln"
+            >
+              <option value="">– MA auswählen –</option>
+              {employees
+                .filter((emp) => emp.active !== false)
+                .map((emp) => (
+                  <option key={emp.id} value={emp.id}>{emp.short_code} – {emp.full_name}</option>
+                ))}
+            </Select>
           </div>
         </div>
       </Card>
@@ -223,7 +288,7 @@ export default function TagesansichtPanel() {
         </div>
       )}
 
-      {/* Schnell-Rapport-Zeile */}
+      {/* ZEILE 1: Schnell-Erfassung volle Breite */}
       {!noMasterData && currentEmployeeId && (
         <QuickEntryCard
           projects={projects}
@@ -231,6 +296,9 @@ export default function TagesansichtPanel() {
           rateGroupRates={rateGroupRates}
           serviceRateHistory={serviceRateHistory}
           currentDate={currentDate}
+          prefill={prefill}
+          employee={employees.find((e) => e.id === currentEmployeeId)}
+          onConsumePrefill={() => setPrefill(null)}
           onCreate={(payload) => createMut.mutateAsync({
             ...payload,
             entry_date: currentDate,
@@ -240,290 +308,239 @@ export default function TagesansichtPanel() {
         />
       )}
 
-      {/* Einträge + Summary */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2">
-          <Card>
-            <div className="px-4 py-2 border-b text-xs font-semibold uppercase tracking-wider text-zinc-500" style={{ borderColor: '#e4e7e4' }}>
-              Einträge des Tages
-            </div>
-            {loading ? (
-              <PanelLoader />
-            ) : entries.length === 0 ? (
-              <div className="p-6 text-sm text-zinc-400 text-center">
-                Noch keine Einträge an diesem Tag.
-              </div>
-            ) : (
-              <EntriesTable
-                entries={entries}
-                projects={projects}
-                serviceTypes={serviceTypes}
-                onUpdate={(id, patch) => updateMut.mutateAsync({ id, patch })}
-                onRemove={(id) => removeMut.mutateAsync(id)}
-              />
-            )}
-          </Card>
+      {/* ZEILE 2: Tageseinträge volle Breite mit inline-Summary */}
+      <Card>
+        <div className="px-4 py-2 border-b flex items-center justify-between gap-4 flex-wrap" style={{ borderColor: '#e4e7e4' }}>
+          <div className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+            Einträge des Tages ({entries.length})
+          </div>
+          <div className="flex items-center gap-4 text-xs">
+            <SummaryStat label="Total Zeit" value={`${fmt.hours(summary.hours)} h`} />
+            <SummaryStat label="Total CHF" value={fmt.chf(summary.chf)} accent />
+          </div>
         </div>
-        <div className="space-y-4">
-          <SummaryCard summary={summary} />
-          {currentEmployeeId && (
-            <Ms365VorschlaegeCard
-              date={currentDate}
-              projects={projects}
-              serviceTypes={serviceTypes}
-              rateGroupRates={rateGroupRates}
-              serviceRateHistory={serviceRateHistory}
-              onCreate={(payload) => createMut.mutateAsync({
-                ...payload,
-                entry_date: currentDate,
-                employee_id: currentEmployeeId,
-                status: 'erfasst',
-              })}
-            />
-          )}
+        {loading ? (
+          <PanelLoader />
+        ) : entries.length === 0 ? (
+          <div className="p-6 text-sm text-zinc-400 text-center">
+            Noch keine Einträge an diesem Tag.
+          </div>
+        ) : (
+          <EntriesTable
+            entries={entries}
+            projects={projects}
+            serviceTypes={serviceTypes}
+            onUpdate={(id, patch) => updateMut.mutateAsync({ id, patch })}
+            onRemove={(id) => removeMut.mutateAsync(id)}
+          />
+        )}
+      </Card>
+
+      {/* ZEILE 3: Kalender + Mails nebeneinander */}
+      <div className="grid grid-cols-12 gap-3">
+        <div className="col-span-12 lg:col-span-6">
+          <CalendarColumn
+            calendar={ms365Data.calendar}
+            notConnected={ms365Data.notConnected}
+            hint={ms365Data.hint}
+            calendarError={ms365Data.calendarError}
+            loading={ms365Q.isLoading}
+            error={ms365Q.error}
+            onRefresh={() => ms365Q.refetch()}
+            onAdopt={adoptFromCalendar}
+          />
+        </div>
+        <div className="col-span-12 lg:col-span-6">
+          <SentMailsCard
+            sent={ms365Data.sent}
+            notConnected={ms365Data.notConnected}
+            hint={ms365Data.hint}
+            sentError={ms365Data.sentError}
+            loading={ms365Q.isLoading}
+            onAdopt={adoptFromMail}
+          />
         </div>
       </div>
     </div>
   );
 }
 
-// --- MS365-Vorschläge ------------------------------------------------------
-// Lädt Outlook-Termine + gesendete Mails des Tages und erlaubt 1-Klick-Übernahme.
-function Ms365VorschlaegeCard({ date, projects, serviceTypes, rateGroupRates, serviceRateHistory, onCreate }) {
-  const dayQ = useQuery({
-    queryKey: ['le', 'ms365-day', date],
-    queryFn: () => leMs365Day(date),
-    staleTime: 60_000,
-    retry: false,
-  });
+// ============================================================================
+// Kalender-Spalte (links)
+// ============================================================================
+function CalendarColumn({ calendar, notConnected, hint, calendarError, loading, error, onRefresh, onAdopt }) {
+  const totalHours = CAL_END_HOUR - CAL_START_HOUR;
+  const hours = Array.from({ length: totalHours + 1 }, (_, i) => CAL_START_HOUR + i);
 
-  const data = dayQ.data;
-  const calendar = data?.calendar ?? [];
-  const sent = data?.sent ?? [];
-  const notConnected = data?.notConnected;
-
-  // Hilfsfunktion: Eintrag aus Vorschlag bauen
-  const buildEntryFromCalendar = (cal) => {
-    const project = pickProject(cal, projects);
-    const serviceType = pickDefaultServiceType(serviceTypes);
-    const hours = computeHours(cal.start, cal.end);
-    const rate = resolveRateFor({
-      serviceTypeId: serviceType?.id,
-      rateGroupId: project?.rate_group_id ?? null,
-      date,
-      rateGroupRates,
-      serviceRateHistory,
-    });
-    const fromTime = cal.start ? cal.start.slice(11, 16) : null;
-    const toTime = cal.end ? cal.end.slice(11, 16) : null;
-    return {
-      project_id: project?.id ?? null,
-      service_type_id: serviceType?.id ?? null,
-      time_from: fromTime,
-      time_to: toTime,
-      hours_internal: hours,
-      rate_snapshot: rate || 0,
-      description: cal.subject,
-    };
-  };
-
-  const buildEntryFromMail = (m) => {
-    const project = pickProject(m, projects);
-    const serviceType = pickDefaultServiceType(serviceTypes);
-    const rate = resolveRateFor({
-      serviceTypeId: serviceType?.id,
-      rateGroupId: project?.rate_group_id ?? null,
-      date,
-      rateGroupRates,
-      serviceRateHistory,
-    });
-    return {
-      project_id: project?.id ?? null,
-      service_type_id: serviceType?.id ?? null,
-      time_from: m.sentDateTime ? m.sentDateTime.slice(11, 16) : null,
-      time_to: null,
-      hours_internal: 0.25,
-      rate_snapshot: rate || 0,
-      description: `Mail: ${m.subject}`,
-    };
-  };
-
-  const handleAdopt = async (raw) => {
-    if (!raw.project_id || !raw.service_type_id) {
-      toast.error('Kein Projekt/Leistungsart zuordenbar – bitte manuell erfassen.');
-      return;
-    }
-    try {
-      await onCreate(raw);
-    } catch { /* toast aus mutation */ }
-  };
+  // Aktuelle Zeit-Linie
+  const now = new Date();
+  const nowMins = now.getHours() * 60 + now.getMinutes();
+  const showNowLine = nowMins >= CAL_START_HOUR * 60 && nowMins <= CAL_END_HOUR * 60;
+  const nowTop = (nowMins - CAL_START_HOUR * 60) * PX_PER_MIN;
 
   return (
-    <Card>
-      <div className="px-4 py-2 border-b flex items-center justify-between" style={{ borderColor: '#e4e7e4' }}>
-        <div className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
-          MS365 · Tagesvorschläge
+    <Card className="overflow-hidden flex flex-col" style={{ height: 540 }}>
+      <div className="px-3 py-2 border-b flex items-center justify-between" style={{ borderColor: '#e4e7e4', background: '#fafbf9' }}>
+        <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-700">
+          <Calendar className="w-3.5 h-3.5" /> Outlook-Kalender
         </div>
-        <button
-          onClick={() => dayQ.refetch()}
-          className="text-zinc-400 hover:text-zinc-700 transition-colors"
-          title="Aktualisieren"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${dayQ.isFetching ? 'animate-spin' : ''}`} />
-        </button>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-zinc-400">{calendar.length} Termine</span>
+          <button onClick={onRefresh} className="text-zinc-400 hover:text-zinc-700" title="Aktualisieren">
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
       </div>
 
-      {dayQ.isLoading ? (
-        <div className="p-4 text-xs text-zinc-400">Lade Outlook-Daten…</div>
-      ) : dayQ.error ? (
-        <div className="p-4 text-xs text-orange-700 bg-orange-50">
-          {String(dayQ.error?.message ?? dayQ.error)}
-        </div>
+      {loading ? (
+        <div className="p-4 text-xs text-zinc-400">Lade Outlook-Kalender…</div>
+      ) : error ? (
+        <div className="p-4 text-xs text-orange-700">{String(error?.message ?? error)}</div>
       ) : notConnected ? (
-        <div className="p-4 text-xs text-zinc-500">
-          Outlook nicht verbunden. Verbinde dich im Posteingang mit Microsoft 365, um Vorschläge zu sehen.
+        <div className="p-4 text-xs text-zinc-600">
+          {hint || 'Outlook nicht verbunden. Verbinde im Posteingang um Kalender + Mails zu sehen.'}
+        </div>
+      ) : calendarError ? (
+        <div className="p-4 text-xs text-orange-700">
+          <div className="font-semibold">Kalender konnte nicht geladen werden:</div>
+          <div className="mt-1">{calendarError}</div>
+          <div className="mt-2 text-zinc-500">Tipp: Im Posteingang Outlook trennen + neu verbinden, damit Calendar-Scope freigegeben wird.</div>
         </div>
       ) : (
-        <div className="divide-y" style={{ borderColor: '#eef1ee' }}>
-          {/* Kalender */}
-          <div className="p-3">
-            <div className="flex items-center gap-1.5 text-[11px] font-semibold text-zinc-600 mb-2">
-              <Calendar className="w-3.5 h-3.5" /> Kalender ({calendar.length})
+        <div className="flex-1 overflow-auto relative">
+          <div className="flex">
+            {/* Stunden-Beschriftungen */}
+            <div className="w-10 text-[10px] text-zinc-400 text-right pr-2 pt-1 border-r flex-shrink-0" style={{ borderColor: '#eef1ee' }}>
+              {hours.map(h => (
+                <div key={h} style={{ height: PX_PER_HOUR }}>{String(h).padStart(2, '0')}</div>
+              ))}
             </div>
-            {calendar.length === 0 ? (
-              <div className="text-xs text-zinc-400 italic">Keine Termine.</div>
-            ) : (
-              <ul className="space-y-1.5">
-                {calendar.map((c) => (
-                  <SuggestionItem
-                    key={c.id}
-                    title={c.subject || '(ohne Titel)'}
-                    subtitle={[
-                      c.start && c.end ? `${c.start.slice(11,16)}–${c.end.slice(11,16)}` : null,
-                      c.customer?.company_name,
-                      c.location,
-                    ].filter(Boolean).join(' · ')}
-                    customerMatched={!!c.customer}
-                    onAdopt={() => handleAdopt(buildEntryFromCalendar(c))}
-                  />
-                ))}
-              </ul>
-            )}
-          </div>
 
-          {/* Sent */}
-          <div className="p-3">
-            <div className="flex items-center gap-1.5 text-[11px] font-semibold text-zinc-600 mb-2">
-              <Mail className="w-3.5 h-3.5" /> Gesendete Mails ({sent.length})
+            {/* Termin-Spalte */}
+            <div className="flex-1 relative" style={{
+              height: totalHours * PX_PER_HOUR,
+              backgroundImage: `repeating-linear-gradient(to bottom, transparent 0, transparent ${PX_PER_HOUR - 1}px, #eef1ee ${PX_PER_HOUR - 1}px, #eef1ee ${PX_PER_HOUR}px)`,
+            }}>
+              {/* Aktuelle Zeit-Linie */}
+              {showNowLine && (
+                <div className="absolute left-0 right-0 flex items-center pointer-events-none z-10" style={{ top: nowTop }}>
+                  <div className="w-1.5 h-1.5 rounded-full bg-red-500"></div>
+                  <div className="flex-1 h-px bg-red-500"></div>
+                </div>
+              )}
+
+              {/* Termine */}
+              {calendar.map((c) => {
+                const top = calTopFromTime(c.start);
+                const height = calHeightFromTimes(c.start, c.end);
+                const isAllDay = c.isAllDay;
+                if (isAllDay) return null; // separate Liste oben wäre besser, hier ausblenden
+                return <CalendarEvent key={c.id} event={c} top={top} height={height} onAdopt={onAdopt} />;
+              })}
             </div>
-            {sent.length === 0 ? (
-              <div className="text-xs text-zinc-400 italic">Keine gesendeten Mails.</div>
-            ) : (
-              <ul className="space-y-1.5">
-                {sent.map((m) => (
-                  <SuggestionItem
-                    key={m.id}
-                    title={m.subject || '(ohne Betreff)'}
-                    subtitle={[
-                      m.sentDateTime ? m.sentDateTime.slice(11,16) : null,
-                      m.customer?.company_name,
-                      m.to?.[0]?.email,
-                    ].filter(Boolean).join(' · ')}
-                    customerMatched={!!m.customer}
-                    onAdopt={() => handleAdopt(buildEntryFromMail(m))}
-                  />
-                ))}
-              </ul>
-            )}
           </div>
         </div>
       )}
+
+      <div className="px-3 py-2 border-t flex items-center gap-2 text-[10px] text-zinc-500" style={{ borderColor: '#e4e7e4', background: '#fafbf9' }}>
+        <span className="inline-block w-2 h-2 rounded" style={{ background: '#e3eaf5', border: '1px solid #b8c9e0' }}></span>Outlook
+        <span className="text-zinc-400 ml-auto">Klick auf Termin → Übernehmen</span>
+      </div>
     </Card>
   );
 }
 
-function SuggestionItem({ title, subtitle, customerMatched, onAdopt }) {
+function CalendarEvent({ event, top, height, onAdopt }) {
+  const start = timeFromIso(event.start);
+  const end = timeFromIso(event.end);
+  const matched = !!event.customer;
   return (
-    <li className="flex items-start gap-2 group">
-      <div className="flex-1 min-w-0">
-        <div className="text-xs font-medium text-zinc-700 truncate">{title}</div>
-        {subtitle && <div className="text-[10px] text-zinc-500 truncate">{subtitle}</div>}
+    <div
+      onClick={() => onAdopt(event)}
+      className="absolute left-1 right-1 border rounded p-1 text-[10px] cursor-pointer hover:shadow group transition-shadow"
+      style={{
+        top, height,
+        background: matched ? '#e3eaf5' : '#f1f1ef',
+        borderColor: matched ? '#b8c9e0' : '#dcdcd4',
+        color: matched ? '#2e4a7d' : '#4a4a4a',
+        overflow: 'hidden',
+      }}
+      title={`${event.subject || ''} ${matched ? '· ' + event.customer.company_name : ''}`}
+    >
+      <div className="font-semibold truncate">{event.subject || '(ohne Titel)'}</div>
+      <div className="text-[9px] opacity-75 truncate">
+        {start && end ? `${start}–${end}` : ''}
+        {event.customer?.company_name ? ` · ${event.customer.company_name}` : ''}
       </div>
       <button
-        onClick={onAdopt}
-        title={customerMatched ? 'Übernehmen' : 'Übernehmen (Kunde nicht erkannt)'}
-        className="opacity-50 group-hover:opacity-100 transition-opacity flex items-center justify-center w-6 h-6 rounded border"
-        style={{
-          borderColor: customerMatched ? '#bfd3bf' : '#e4e7e4',
-          background: customerMatched ? '#e6ede6' : '#fff',
-          color: customerMatched ? '#2d5a2d' : '#999',
-        }}
+        className="hidden group-hover:flex absolute right-1 top-1 px-1.5 py-0.5 text-[9px] rounded items-center gap-0.5"
+        style={{ background: '#7a9b7f', color: '#fff' }}
       >
-        <Plus className="w-3 h-3" />
+        <Plus className="w-2.5 h-2.5" />
       </button>
-    </li>
+    </div>
   );
 }
 
-// --- Hilfsfunktionen für Vorschlag→Eintrag --------------------------------
-function pickProject(suggestion, projects) {
-  // 1. Wenn Backend genau 1 Projekt vorschlägt → das nehmen
-  const sp = suggestion.suggestedProjects;
-  if (sp?.length === 1) {
-    return projects.find(p => p.id === sp[0].id) ?? sp[0];
-  }
-  // 2. Wenn mehrere – das mit "BWL" im Namen bevorzugen
-  if (sp?.length > 1) {
-    const bwl = sp.find(p => /BWL/i.test(p.name));
-    return projects.find(p => p.id === (bwl ?? sp[0]).id) ?? sp[0];
-  }
-  return null;
-}
+// ============================================================================
+// Schnell-Rapport (Mitte, oben)
+// ============================================================================
 
-function pickDefaultServiceType(serviceTypes) {
-  // Bevorzugt: Beratung (BER), sonst erste billable
-  return (
-    serviceTypes.find(s => s.code === 'BER')
-    ?? serviceTypes.find(s => s.billable)
-    ?? serviceTypes[0]
-    ?? null
-  );
-}
-
-function computeHours(startIso, endIso) {
-  if (!startIso || !endIso) return 0.5;
-  const ms = new Date(endIso).getTime() - new Date(startIso).getTime();
-  if (!Number.isFinite(ms) || ms <= 0) return 0.5;
-  return Math.round((ms / 3600000) * 100) / 100;
-}
-
-// --- Schnell-Rapport -------------------------------------------------------
-
-function QuickEntryCard({ projects, serviceTypes, rateGroupRates, serviceRateHistory, currentDate, onCreate }) {
+function QuickEntryCard({
+  projects, serviceTypes, rateGroupRates, serviceRateHistory,
+  currentDate, prefill, onConsumePrefill, onCreate, employee,
+}) {
+  const fromRef = useRef(null);
+  const hoursRef = useRef(null);
   const projectRef = useRef(null);
   const [row, setRow] = useState(() => emptyRow());
 
+  // Modus: Von/Bis-Zeit erfassen (true) oder direkt Stunden (false)
+  // Persistiert pro User in localStorage.
+  const [useTimeRange, setUseTimeRange] = useState(() => {
+    try {
+      const v = localStorage.getItem('le.quickEntry.useTimeRange');
+      return v === null ? true : v === 'true';
+    } catch { return true; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('le.quickEntry.useTimeRange', String(useTimeRange)); } catch {}
+  }, [useTimeRange]);
+
   function emptyRow() {
     return {
-      time_from: '',
-      time_to: '',
-      project_id: '',
-      service_type_id: '',
-      hours_internal: '',
-      description: '',
-      rate_snapshot: '',
-      rate_touched: false,
+      time_from: '', time_to: '',
+      project_id: '', service_type_id: '',
+      hours_internal: '', description: '',
+      rate_snapshot: '', rate_touched: false, hours_touched: false,
     };
   }
 
-  const project = projects.find((p) => p.id === row.project_id);
-  const serviceType = serviceTypes.find((s) => s.id === row.service_type_id);
+  // Prefill aus Kalender/Mail-Übernahme einspielen
+  useEffect(() => {
+    if (!prefill) return;
+    setRow((prev) => ({
+      ...prev,
+      ...prefill,
+      rate_touched: false,
+    }));
+    // Fokus auf Beschreibung damit User direkt anpassen kann
+    setTimeout(() => {
+      const el = document.querySelector('[data-quick-desc]');
+      el?.focus();
+    }, 50);
+    onConsumePrefill?.();
+  }, [prefill]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-Satz setzen wenn Projekt/Leistungsart wechselt und User Satz nicht manuell geändert hat
+  const project = projects.find((p) => p.id === row.project_id);
+
+  // Auto-Satz wenn Projekt/Leistungsart wechselt – nutzt rate_mode des Projekts
   useEffect(() => {
     if (row.rate_touched) return;
-    if (!row.service_type_id) return;
+    if (!project) return;
     const r = resolveRateFor({
+      project,
+      employee,
       serviceTypeId: row.service_type_id,
       rateGroupId: project?.rate_group_id ?? null,
       date: currentDate,
@@ -531,20 +548,19 @@ function QuickEntryCard({ projects, serviceTypes, rateGroupRates, serviceRateHis
       serviceRateHistory,
     });
     if (r > 0) setRow((prev) => ({ ...prev, rate_snapshot: String(r) }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [row.project_id, row.service_type_id, currentDate]);
+  }, [row.project_id, row.service_type_id, currentDate, employee?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Stunden automatisch aus von/bis
+  // Stunden auto aus Von/Bis (nur wenn Zeitmodus aktiv und User Stunden NICHT manuell überschrieben)
   useEffect(() => {
+    if (!useTimeRange) return;
+    if (row.hours_touched) return;
     const h = diffHours(row.time_from, row.time_to);
     if (h != null) setRow((prev) => ({ ...prev, hours_internal: String(h) }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [row.time_from, row.time_to]);
+  }, [row.time_from, row.time_to, useTimeRange]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const hoursNum = Number(row.hours_internal || 0);
   const rateNum = Number(row.rate_snapshot || 0);
   const wert = hoursNum * rateNum;
-
   const canSave = !!row.project_id && !!row.service_type_id && hoursNum > 0;
 
   const save = async () => {
@@ -564,117 +580,237 @@ function QuickEntryCard({ projects, serviceTypes, rateGroupRates, serviceRateHis
     try {
       await onCreate(payload);
       setRow(emptyRow());
+      // Fokus zurück auf Projekt-Feld – User-Wunsch (häufigstes nächstes Feld)
       setTimeout(() => projectRef.current?.focus(), 30);
-    } catch { /* toast kommt aus mutation */ }
+    } catch { /* toast aus mutation */ }
   };
 
-  const onKey = (e) => {
+  const onKeyEnter = (e) => {
     if (e.key === 'Enter') { e.preventDefault(); save(); }
   };
 
+  // Spalten-Templates je nach Modus
+  // Reihenfolge: Von | Bis | Projekt | Leistungsart | Zeit | Satz | Wert | Beschreibung | Speichern
+  const gridCols = useTimeRange
+    ? '60px 60px 2fr 1fr 70px 70px 90px 3fr 40px'
+    : '2fr 1fr 70px 70px 90px 3fr 40px';
+
   return (
-    <Card
-      className="overflow-hidden"
-      style={{ borderColor: '#bfd3bf', background: '#f5faf5' }}
-    >
-      <div className="px-4 py-2 border-b text-xs font-semibold uppercase tracking-wider" style={{ borderColor: '#bfd3bf', color: '#2d5a2d', background: '#e6ede6' }}>
-        Schnell-Rapport
+    <Card className="overflow-hidden" style={{ borderColor: '#bfd3bf', background: '#f5faf5' }}>
+      <div className="px-4 py-2 border-b flex items-center justify-between gap-3"
+        style={{ borderColor: '#bfd3bf', color: '#2d5a2d', background: '#e6ede6' }}>
+        <div className="text-xs font-semibold uppercase tracking-wider">
+          Schnell-Rapport · {useTimeRange
+            ? 'Tab: Von → Bis → Projekt → Leistungsart → Zeit → Satz → Beschreibung → ENTER'
+            : 'Tab: Projekt → Leistungsart → Zeit → Satz → Beschreibung → ENTER'}
+        </div>
+        {/* Toggle Modus */}
+        <label className="flex items-center gap-1.5 text-[11px] font-medium cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={useTimeRange}
+            onChange={(e) => setUseTimeRange(e.target.checked)}
+            className="cursor-pointer"
+          />
+          Von/Bis-Zeit erfassen
+        </label>
       </div>
-      <div className="p-3 overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-[10px] uppercase tracking-wider text-zinc-500">
-              <th className="text-left font-semibold px-1 py-1 w-20">Von</th>
-              <th className="text-left font-semibold px-1 py-1 w-20">Bis</th>
-              <th className="text-left font-semibold px-1 py-1">Projekt</th>
-              <th className="text-left font-semibold px-1 py-1">Leistungsart</th>
-              <th className="text-left font-semibold px-1 py-1 w-20">Std.</th>
-              <th className="text-left font-semibold px-1 py-1">Beschreibung</th>
-              <th className="text-left font-semibold px-1 py-1 w-20">Satz</th>
-              <th className="text-right font-semibold px-1 py-1 w-24">Wert</th>
-              <th className="px-1 py-1 w-10" />
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td className="px-1 py-1">
-                <Input type="time" value={row.time_from} onChange={(e) => setRow({ ...row, time_from: e.target.value })} />
-              </td>
-              <td className="px-1 py-1">
-                <Input type="time" value={row.time_to} onChange={(e) => setRow({ ...row, time_to: e.target.value })} />
-              </td>
-              <td className="px-1 py-1">
-                <Select
-                  ref={projectRef}
-                  value={row.project_id}
-                  onChange={(e) => setRow({ ...row, project_id: e.target.value })}
-                >
-                  <option value="">– Projekt –</option>
-                  {projects.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}{p.customer?.company_name ? ` · ${p.customer.company_name}` : ''}
-                    </option>
-                  ))}
-                </Select>
-              </td>
-              <td className="px-1 py-1">
-                <Select
-                  value={row.service_type_id}
-                  onChange={(e) => setRow({ ...row, service_type_id: e.target.value })}
-                >
-                  <option value="">– Leistungsart –</option>
-                  {serviceTypes.map((s) => (
-                    <option key={s.id} value={s.id}>{s.name}</option>
-                  ))}
-                </Select>
-              </td>
-              <td className="px-1 py-1">
-                <Input
-                  type="number" step="0.25" min="0"
-                  value={row.hours_internal}
-                  onChange={(e) => setRow({ ...row, hours_internal: e.target.value })}
-                  onKeyDown={onKey}
-                />
-              </td>
-              <td className="px-1 py-1">
-                <Input
-                  value={row.description}
-                  onChange={(e) => setRow({ ...row, description: e.target.value })}
-                  onKeyDown={onKey}
-                  placeholder="Kurzbeschrieb…"
-                />
-              </td>
-              <td className="px-1 py-1">
-                <Input
-                  type="number" step="1" min="0"
-                  value={row.rate_snapshot}
-                  onChange={(e) => setRow({ ...row, rate_snapshot: e.target.value, rate_touched: true })}
-                />
-              </td>
-              <td className="px-1 py-1 text-right tabular-nums text-zinc-700">
-                {fmt.chf(wert)}
-              </td>
-              <td className="px-1 py-1">
-                <button
-                  type="button"
-                  onClick={save}
-                  disabled={!canSave}
-                  title="Eintrag speichern (Enter)"
-                  className={artisBtn.primary}
-                  style={{ ...artisPrimaryStyle, opacity: canSave ? 1 : 0.45, padding: '6px 10px' }}
-                >
-                  <CornerDownLeft className="w-4 h-4" />
-                </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+      <div className="p-3">
+        {/* Header – Reihenfolge: Von | Bis | Projekt | Leistungsart | Zeit | Satz | Wert | Beschreibung | Speichern */}
+        <div className="grid gap-1.5 mb-1 px-1 text-[10px] uppercase tracking-wider text-zinc-500"
+          style={{ gridTemplateColumns: gridCols }}>
+          {useTimeRange && <><div>Von</div><div>Bis</div></>}
+          <div>Projekt <span className="text-red-500">*</span></div>
+          <div>Leistungsart <span className="text-red-500">*</span></div>
+          <div className="text-right">Zeit <span className="text-red-500">*</span></div>
+          <div className="text-right">Satz</div>
+          <div className="text-right">Total</div>
+          <div>Beschreibung</div>
+          <div></div>
+        </div>
+        {/* Eingabe-Zeile */}
+        <div className="grid gap-1.5 items-center"
+          style={{ gridTemplateColumns: gridCols }}>
+          {useTimeRange && (
+            <>
+              <Input
+                ref={fromRef}
+                tabIndex={1}
+                type="time"
+                value={row.time_from}
+                onChange={(e) => setRow({ ...row, time_from: e.target.value })}
+                onKeyDown={onKeyEnter}
+              />
+              <Input
+                tabIndex={2}
+                type="time"
+                value={row.time_to}
+                onChange={(e) => setRow({ ...row, time_to: e.target.value })}
+                onKeyDown={onKeyEnter}
+              />
+            </>
+          )}
+          <Combobox
+            ref={projectRef}
+            tabIndex={useTimeRange ? 3 : 1}
+            value={row.project_id}
+            onChange={(id) => setRow({ ...row, project_id: id })}
+            onKeyDown={onKeyEnter}
+            placeholder="Projekt suchen…"
+            options={projects.map((p) => ({
+              id: p.id,
+              label: p.name,
+              sublabel: p.customer?.company_name,
+            }))}
+          />
+          <Combobox
+            tabIndex={useTimeRange ? 4 : 2}
+            value={row.service_type_id}
+            onChange={(id) => setRow({ ...row, service_type_id: id })}
+            onKeyDown={onKeyEnter}
+            placeholder="Leistungsart…"
+            options={serviceTypes.map((s) => ({
+              id: s.id,
+              label: s.name,
+              sublabel: s.code,
+            }))}
+          />
+          {/* Zeit (Stunden) – immer editierbar, im Zeitmodus auto-berechnet aber überschreibbar */}
+          <Input
+            ref={hoursRef}
+            tabIndex={useTimeRange ? 5 : 3}
+            type="number" step="0.25" min="0"
+            value={row.hours_internal}
+            onChange={(e) => setRow({ ...row, hours_internal: e.target.value, hours_touched: true })}
+            onKeyDown={onKeyEnter}
+            className="text-right tabular-nums"
+            title={useTimeRange ? 'Auto aus Von/Bis – überschreibbar' : 'Stunden direkt eingeben'}
+          />
+          <Input
+            tabIndex={useTimeRange ? 6 : 4}
+            type="number" step="1" min="0"
+            value={row.rate_snapshot}
+            onChange={(e) => setRow({ ...row, rate_snapshot: e.target.value, rate_touched: true })}
+            onKeyDown={onKeyEnter}
+            className="text-right tabular-nums"
+          />
+          <div className="text-right tabular-nums text-zinc-700 font-medium">
+            {fmt.chf(wert)}
+          </div>
+          <Input
+            tabIndex={useTimeRange ? 7 : 5}
+            data-quick-desc
+            value={row.description}
+            onChange={(e) => setRow({ ...row, description: e.target.value })}
+            onKeyDown={onKeyEnter}
+            placeholder="Kurzbeschrieb…"
+          />
+          <button
+            tabIndex={useTimeRange ? 8 : 6}
+            type="button"
+            onClick={save}
+            disabled={!canSave}
+            title="Eintrag speichern (Enter)"
+            className={artisBtn.primary}
+            style={{ ...artisPrimaryStyle, opacity: canSave ? 1 : 0.45, padding: '6px 10px' }}
+          >
+            <CornerDownLeft className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="mt-2 px-1 text-[10px] text-zinc-400">
+          {useTimeRange
+            ? '💡 Stunden auto aus Von/Bis (überschreibbar). Pflichtfelder: Std., Projekt, Leistungsart.'
+            : '💡 Stunden direkt eingeben (z.B. 1.5 = 1h 30min). Pflichtfelder: Std., Projekt, Leistungsart.'}
+        </div>
       </div>
     </Card>
   );
 }
 
-// --- Einträge-Tabelle ------------------------------------------------------
+// ============================================================================
+// Gesendete Mails (rechts)
+// ============================================================================
+
+function SentMailsCard({ sent, notConnected, hint, sentError, loading, onAdopt }) {
+  return (
+    <Card className="overflow-hidden flex flex-col" style={{ height: 540 }}>
+      <div className="px-3 py-2 border-b flex items-center justify-between" style={{ borderColor: '#e4e7e4', background: '#fafbf9' }}>
+        <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-700">
+          <Mail className="w-3.5 h-3.5" /> Gesendete Mails
+        </div>
+        <span className="text-[10px] text-zinc-400">{sent.length}</span>
+      </div>
+      <div className="flex-1 overflow-auto divide-y" style={{ borderColor: '#eef1ee' }}>
+        {loading ? (
+          <div className="p-4 text-xs text-zinc-400">Lade Mails…</div>
+        ) : notConnected ? (
+          <div className="p-4 text-xs text-zinc-600">{hint || 'Outlook nicht verbunden.'}</div>
+        ) : sentError ? (
+          <div className="p-4 text-xs text-orange-700">
+            <div className="font-semibold">Mails konnten nicht geladen werden:</div>
+            <div className="mt-1">{sentError}</div>
+          </div>
+        ) : sent.length === 0 ? (
+          <div className="p-4 text-xs text-zinc-400 italic">Keine gesendeten Mails.</div>
+        ) : (
+          sent.map((m) => (
+            <div key={m.id} onClick={() => onAdopt(m)} className="p-2.5 group cursor-pointer hover:bg-zinc-50">
+              <div className="flex items-start gap-2">
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-medium text-zinc-700 truncate">{m.subject || '(ohne Betreff)'}</div>
+                  <div className="text-[10px] text-zinc-500 truncate">
+                    {m.sentDateTime ? timeFromIso(m.sentDateTime) : ''}
+                    {m.to?.[0]?.email ? ` · ${m.to[0].email}` : ''}
+                  </div>
+                </div>
+                <button
+                  className="opacity-50 group-hover:opacity-100 flex items-center justify-center w-6 h-6 rounded border text-[10px] transition-opacity"
+                  style={{
+                    borderColor: m.customer ? '#bfd3bf' : '#e4e7e4',
+                    background: m.customer ? '#e6ede6' : '#fff',
+                    color: m.customer ? '#2d5a2d' : '#999',
+                  }}
+                  title={m.customer ? 'Übernehmen' : 'Übernehmen (Kunde nicht erkannt)'}
+                >
+                  <Plus className="w-3 h-3" />
+                </button>
+              </div>
+              {m.customer && (
+                <div className="mt-1 px-1.5 py-0.5 rounded text-[9px] inline-block" style={{ background: '#e6ede6', color: '#2d5a2d' }}>
+                  → {m.customer.company_name}
+                </div>
+              )}
+              {!m.customer && (
+                <div className="mt-1 px-1.5 py-0.5 rounded text-[9px] inline-block bg-zinc-100 text-zinc-500">
+                  Kunde nicht erkannt
+                </div>
+              )}
+            </div>
+          ))
+        )}
+      </div>
+    </Card>
+  );
+}
+
+// ============================================================================
+// Inline-Summary-Stat (im Header der Einträge-Card)
+// ============================================================================
+
+function SummaryStat({ label, value, accent = false }) {
+  return (
+    <div className="flex items-baseline gap-1.5">
+      <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium">{label}</span>
+      <span className="text-sm font-semibold tabular-nums" style={accent ? { color: '#2d5a2d' } : undefined}>
+        {value}
+      </span>
+    </div>
+  );
+}
+
+// ============================================================================
+// Tabelle der Tageseinträge (Mitte, unten)
+// ============================================================================
 
 function EntriesTable({ entries, projects, serviceTypes, onUpdate, onRemove }) {
   const [editingId, setEditingId] = useState(null);
@@ -683,8 +819,8 @@ function EntriesTable({ entries, projects, serviceTypes, onUpdate, onRemove }) {
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="text-[10px] uppercase tracking-wider text-zinc-500 border-b" style={{ borderColor: '#e4e7e4' }}>
-            <th className="text-left font-semibold px-3 py-2 w-28">Zeit</th>
+          <tr className="text-[10px] uppercase tracking-wider text-zinc-500 border-b" style={{ borderColor: '#e4e7e4', background: '#fafbf9' }}>
+            <th className="text-left font-semibold px-3 py-2 w-32">Zeit</th>
             <th className="text-left font-semibold px-3 py-2">Projekt</th>
             <th className="text-left font-semibold px-3 py-2">Leistungsart</th>
             <th className="text-left font-semibold px-3 py-2">Beschreibung</th>
@@ -698,23 +834,13 @@ function EntriesTable({ entries, projects, serviceTypes, onUpdate, onRemove }) {
         <tbody>
           {entries.map((e) => (
             editingId === e.id ? (
-              <EditRow
-                key={e.id}
-                entry={e}
-                projects={projects}
-                serviceTypes={serviceTypes}
+              <EditRow key={e.id} entry={e} projects={projects} serviceTypes={serviceTypes}
                 onCancel={() => setEditingId(null)}
-                onSave={async (patch) => { await onUpdate(e.id, patch); setEditingId(null); }}
-              />
+                onSave={async (patch) => { await onUpdate(e.id, patch); setEditingId(null); }} />
             ) : (
-              <ReadRow
-                key={e.id}
-                entry={e}
+              <ReadRow key={e.id} entry={e}
                 onEdit={() => setEditingId(e.id)}
-                onRemove={async () => {
-                  if (window.confirm('Eintrag wirklich löschen?')) await onRemove(e.id);
-                }}
-              />
+                onRemove={async () => { if (window.confirm('Eintrag wirklich löschen?')) await onRemove(e.id); }} />
             )
           ))}
         </tbody>
@@ -761,8 +887,7 @@ function EditRow({ entry, projects, serviceTypes, onCancel, onSave }) {
   useEffect(() => {
     const h = diffHours(form.time_from, form.time_to);
     if (h != null) setForm((prev) => ({ ...prev, hours_internal: h }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.time_from, form.time_to]);
+  }, [form.time_from, form.time_to]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const save = () => {
     onSave({
@@ -784,7 +909,7 @@ function EditRow({ entry, projects, serviceTypes, onCancel, onSave }) {
           <Input type="time" value={form.time_to} onChange={(e) => setForm({ ...form, time_to: e.target.value })} />
         </div>
       </td>
-      <td className="px-2 py-1" colSpan={1}>
+      <td className="px-2 py-1">
         <Select value={form.project_id} onChange={(e) => setForm({ ...form, project_id: e.target.value })}>
           {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
         </Select>
@@ -817,37 +942,27 @@ function EditRow({ entry, projects, serviceTypes, onCancel, onSave }) {
   );
 }
 
-// --- Summary-Card ----------------------------------------------------------
+// ============================================================================
+// Hilfsfunktionen für Vorschlag→Eintrag
+// ============================================================================
 
-function SummaryCard({ summary }) {
+function pickProject(suggestion, projects) {
+  const sp = suggestion.suggestedProjects;
+  if (sp?.length === 1) {
+    return projects.find(p => p.id === sp[0].id) ?? sp[0];
+  }
+  if (sp?.length > 1) {
+    const bwl = sp.find(p => /BWL/i.test(p.name));
+    return projects.find(p => p.id === (bwl ?? sp[0]).id) ?? sp[0];
+  }
+  return null;
+}
+
+function pickDefaultServiceType(serviceTypes) {
   return (
-    <Card className="p-4">
-      <div className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-3">Tages-Summary</div>
-      <div className="space-y-3">
-        <div className="flex items-baseline justify-between">
-          <span className="text-xs text-zinc-500">Summe Std.</span>
-          <span className="text-lg font-semibold tabular-nums">{fmt.hours(summary.hours)}</span>
-        </div>
-        <div className="flex items-baseline justify-between">
-          <span className="text-xs text-zinc-500">Summe CHF (abrechenbar)</span>
-          <span className="text-lg font-semibold tabular-nums" style={{ color: '#2d5a2d' }}>
-            {fmt.chf(summary.chf)}
-          </span>
-        </div>
-        <div className="flex items-baseline justify-between">
-          <span className="text-xs text-zinc-500">Einträge</span>
-          <span className="text-sm font-medium">{summary.count}</span>
-        </div>
-        <div className="pt-2 border-t" style={{ borderColor: '#eef1ee' }}>
-          {summary.count === 0 ? (
-            <Chip tone="neutral">noch leer</Chip>
-          ) : summary.allFreigegeben ? (
-            <Chip tone="green">freigegeben</Chip>
-          ) : (
-            <Chip tone="orange">Freigabe offen</Chip>
-          )}
-        </div>
-      </div>
-    </Card>
+    serviceTypes.find(s => s.code === 'BER') ??
+    serviceTypes.find(s => s.billable) ??
+    serviceTypes[0] ??
+    null
   );
 }

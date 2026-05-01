@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Pencil, Trash2, Plus } from 'lucide-react';
-import { leEmployee } from '@/lib/leApi';
+import { Pencil, Trash2, Plus, Archive, ArchiveRestore } from 'lucide-react';
+import { leEmployee, leEmployeeGroup } from '@/lib/leApi';
 import {
   Chip,
   Card,
@@ -34,6 +34,8 @@ const EMPTY = {
   entry_date: '',
   exit_date: '',
   cost_rate: '',
+  billable_rate: '',
+  employee_group_id: '',
   active: true,
 };
 
@@ -50,6 +52,10 @@ export default function MitarbeiterPanel() {
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['le', 'employee'],
     queryFn: leEmployee.list,
+  });
+  const { data: groups = [] } = useQuery({
+    queryKey: ['le', 'employee_group'],
+    queryFn: leEmployeeGroup.list,
   });
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -73,6 +79,8 @@ export default function MitarbeiterPanel() {
       entry_date: emp.entry_date ?? '',
       exit_date: emp.exit_date ?? '',
       cost_rate: emp.cost_rate ?? '',
+      billable_rate: emp.billable_rate ?? '',
+      employee_group_id: emp.employee_group_id ?? '',
       active: emp.active ?? true,
     });
     setDialogOpen(true);
@@ -118,6 +126,8 @@ export default function MitarbeiterPanel() {
       entry_date: form.entry_date || null,
       exit_date: form.exit_date || null,
       cost_rate: form.cost_rate === '' ? null : Number(form.cost_rate),
+      billable_rate: form.billable_rate === '' ? null : Number(form.billable_rate),
+      employee_group_id: form.employee_group_id || null,
       active: !!form.active,
     };
     if (!payload.short_code || !payload.full_name) {
@@ -131,9 +141,47 @@ export default function MitarbeiterPanel() {
     }
   };
 
-  const handleDelete = (emp) => {
-    if (!window.confirm(`Mitarbeiter "${emp.full_name}" wirklich löschen?`)) return;
-    deleteMut.mutate(emp.id);
+  const archiveMut = useMutation({
+    mutationFn: (id) => leEmployee.archive(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['le', 'employee'] });
+      toast.success('Mitarbeiter archiviert – Rapporte bleiben erhalten');
+    },
+    onError: (e) => toast.error('Fehler: ' + (e?.message ?? e)),
+  });
+
+  const unarchiveMut = useMutation({
+    mutationFn: (id) => leEmployee.unarchive(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['le', 'employee'] });
+      toast.success('Mitarbeiter reaktiviert');
+    },
+    onError: (e) => toast.error('Fehler: ' + (e?.message ?? e)),
+  });
+
+  const handleArchive = (emp) => {
+    const action = emp.archived_at || !emp.active ? 'reaktivieren' : 'archivieren';
+    if (!window.confirm(`Mitarbeiter "${emp.full_name}" ${action}?`)) return;
+    if (emp.archived_at || !emp.active) unarchiveMut.mutate(emp.id);
+    else archiveMut.mutate(emp.id);
+  };
+
+  // Echtes Löschen NUR wenn keine Rapporte/Spesen/Abwesenheiten existieren.
+  const handleDelete = async (emp) => {
+    try {
+      const check = await leEmployee.canDelete(emp.id);
+      if (!check.can_delete) {
+        toast.error(
+          `Löschen nicht möglich: ${check.entry_count} Rapport(e), ${check.expense_count} Spesen, ${check.absence_count} Abwesenheit(en) verknüpft. Bitte stattdessen archivieren.`,
+          { duration: 6000 }
+        );
+        return;
+      }
+      if (!window.confirm(`Mitarbeiter "${emp.full_name}" endgültig löschen? (Es sind keine Rapporte verknüpft.)`)) return;
+      deleteMut.mutate(emp.id);
+    } catch (e) {
+      toast.error('Prüfung fehlgeschlagen: ' + (e?.message ?? e));
+    }
   };
 
   const saving = createMut.isPending || updateMut.isPending;
@@ -196,10 +244,12 @@ export default function MitarbeiterPanel() {
                       <td className="px-3 py-2 text-zinc-600">{fmt.date(emp.exit_date)}</td>
                       <td className="px-3 py-2 text-right">{fmt.chf(emp.cost_rate)}</td>
                       <td className="px-3 py-2">
-                        {emp.active ? (
+                        {emp.archived_at ? (
+                          <Chip tone="neutral">archiviert</Chip>
+                        ) : emp.active ? (
                           <Chip tone="green">aktiv</Chip>
                         ) : (
-                          <Chip tone="neutral">inaktiv</Chip>
+                          <Chip tone="orange">inaktiv</Chip>
                         )}
                       </td>
                       <td className="px-3 py-2">
@@ -207,7 +257,20 @@ export default function MitarbeiterPanel() {
                           <IconBtn title="Bearbeiten" onClick={() => openEdit(emp)}>
                             <Pencil className="w-3.5 h-3.5" />
                           </IconBtn>
-                          <IconBtn title="Löschen" danger onClick={() => handleDelete(emp)}>
+                          {emp.archived_at || !emp.active ? (
+                            <IconBtn title="Reaktivieren" onClick={() => handleArchive(emp)}>
+                              <ArchiveRestore className="w-3.5 h-3.5" />
+                            </IconBtn>
+                          ) : (
+                            <IconBtn title="Archivieren (Rapporte bleiben erhalten)" onClick={() => handleArchive(emp)}>
+                              <Archive className="w-3.5 h-3.5" />
+                            </IconBtn>
+                          )}
+                          <IconBtn
+                            title="Löschen (nur wenn keine Rapporte verknüpft)"
+                            danger
+                            onClick={() => handleDelete(emp)}
+                          >
                             <Trash2 className="w-3.5 h-3.5" />
                           </IconBtn>
                         </div>
@@ -275,7 +338,7 @@ export default function MitarbeiterPanel() {
                   onChange={(e) => setForm((f) => ({ ...f, pensum_pct: e.target.value }))}
                 />
               </Field>
-              <Field label="Kostensatz CHF/h">
+              <Field label="Kostensatz CHF/h" hint="Intern · für Rentabilitäts-Auswertungen">
                 <Input
                   type="number"
                   min={0}
@@ -284,6 +347,31 @@ export default function MitarbeiterPanel() {
                   onChange={(e) => setForm((f) => ({ ...f, cost_rate: e.target.value }))}
                   placeholder="z.B. 85.00"
                 />
+              </Field>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Stundenansatz CHF/h" hint={'Bei Projekten mit Ansatz-Modus „Mitarbeiter"'}>
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={form.billable_rate}
+                  onChange={(e) => setForm((f) => ({ ...f, billable_rate: e.target.value }))}
+                  placeholder="z.B. 220.00"
+                />
+              </Field>
+              <Field label="Mitarbeitergruppe" hint={'Bei Projekten mit Ansatz-Modus „Mitarbeitergruppe"'}>
+                <Select
+                  value={form.employee_group_id}
+                  onChange={(e) => setForm((f) => ({ ...f, employee_group_id: e.target.value }))}
+                >
+                  <option value="">— keine —</option>
+                  {groups.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.name}{g.billable_rate ? ` · ${fmt.chf(g.billable_rate)}/h` : ''}
+                    </option>
+                  ))}
+                </Select>
               </Field>
             </div>
             <div className="grid grid-cols-2 gap-3">

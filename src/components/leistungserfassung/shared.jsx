@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { AlertTriangle, Loader2 } from 'lucide-react';
 import { isMissingTableError } from '@/lib/leApi';
 
@@ -72,6 +73,192 @@ export const Select = React.forwardRef(({ className = '', style = {}, children, 
   </select>
 ));
 Select.displayName = 'Select';
+
+// Combobox · Textfeld mit auto-vervollständigender Liste darunter.
+// Tippt der User → Liste filtert. Pfeiltasten + Enter zur Auswahl.
+//   options: [{ id, label, sublabel? }]
+//   value:   ausgewählte id (oder '')
+//   onChange(id) wird beim Auswählen aufgerufen.
+//   onKeyDown wird nur weitergereicht wenn Liste GESCHLOSSEN (z.B. Enter → Save).
+export const Combobox = React.forwardRef(function Combobox(
+  { options = [], value = '', onChange, placeholder = '', tabIndex, onKeyDown, className = '', style = {}, autoFocus = false },
+  forwardedRef,
+) {
+  const wrapRef = React.useRef(null);
+  const inputRef = React.useRef(null);
+  React.useImperativeHandle(forwardedRef, () => inputRef.current, []);
+
+  // Selected option (für Anzeige im Input wenn nicht aktiv)
+  const selected = React.useMemo(() => options.find((o) => String(o.id) === String(value)), [options, value]);
+
+  // Lokaler Text-State für Tippen
+  const [text, setText] = React.useState(selected?.label ?? '');
+  const [open, setOpen] = React.useState(false);
+  const [activeIdx, setActiveIdx] = React.useState(0);
+
+  // Sync text wenn external value sich ändert (z.B. Prefill)
+  React.useEffect(() => {
+    if (!open) setText(selected?.label ?? '');
+  }, [selected?.id, open]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Filter
+  const filtered = React.useMemo(() => {
+    const t = text.trim().toLowerCase();
+    if (!t || (selected && t === selected.label.toLowerCase())) return options;
+    return options.filter((o) =>
+      (o.label?.toLowerCase().includes(t)) ||
+      (o.sublabel?.toLowerCase().includes(t)),
+    );
+  }, [text, options, selected]);
+
+  // Click outside zu schließen
+  React.useEffect(() => {
+    if (!open) return;
+    const onDoc = (e) => {
+      if (!wrapRef.current?.contains(e.target)) {
+        setOpen(false);
+        setText(selected?.label ?? '');
+      }
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open, selected]);
+
+  const select = (opt) => {
+    onChange?.(opt.id);
+    setText(opt.label);
+    setOpen(false);
+    setActiveIdx(0);
+  };
+
+  const handleKey = (e) => {
+    if (open) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setActiveIdx((i) => Math.min(filtered.length - 1, i + 1));
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setActiveIdx((i) => Math.max(0, i - 1));
+        return;
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const opt = filtered[activeIdx] ?? filtered[0];
+        if (opt) select(opt);
+        else if (text.trim() === '') { setOpen(false); }
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setOpen(false);
+        setText(selected?.label ?? '');
+        return;
+      }
+      if (e.key === 'Tab') {
+        // Bei Tab: ausgewählte Option übernehmen falls Match exakt oder eindeutig
+        if (filtered.length === 1) select(filtered[0]);
+        setOpen(false);
+        return;
+      }
+    } else {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setOpen(true); return; }
+      // Enter im geschlossenen Zustand → Parent (z.B. Save)
+      onKeyDown?.(e);
+    }
+  };
+
+  React.useEffect(() => { if (autoFocus) inputRef.current?.focus(); }, [autoFocus]);
+
+  const showClear = !!selected && !open;
+
+  // Position der Dropdown-Liste live tracken (für Portal-Rendering)
+  const [popupRect, setPopupRect] = React.useState(null);
+  React.useEffect(() => {
+    if (!open) { setPopupRect(null); return; }
+    const update = () => {
+      const r = inputRef.current?.getBoundingClientRect();
+      if (r) setPopupRect({ top: r.bottom + 2, left: r.left, width: r.width });
+    };
+    update();
+    window.addEventListener('scroll', update, true);
+    window.addEventListener('resize', update);
+    return () => {
+      window.removeEventListener('scroll', update, true);
+      window.removeEventListener('resize', update);
+    };
+  }, [open]);
+
+  return (
+    <div ref={wrapRef} className={`relative ${className}`} style={style}>
+      <input
+        ref={inputRef}
+        type="text"
+        tabIndex={tabIndex}
+        value={text}
+        placeholder={placeholder}
+        onFocus={() => { setOpen(true); setActiveIdx(0); }}
+        onChange={(e) => { setText(e.target.value); setOpen(true); setActiveIdx(0); }}
+        onKeyDown={handleKey}
+        className="w-full border rounded px-2 py-1.5 text-sm pr-7"
+        style={{ borderColor: '#d9dfd9' }}
+      />
+      {showClear && (
+        <button
+          type="button"
+          tabIndex={-1}
+          onMouseDown={(e) => { e.preventDefault(); onChange?.(''); setText(''); inputRef.current?.focus(); }}
+          className="absolute right-1 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center text-zinc-400 hover:text-zinc-700"
+          title="Auswahl löschen"
+        >×</button>
+      )}
+      {open && popupRect && createPortal(
+        <div
+          style={{
+            position: 'fixed',
+            top: popupRect.top,
+            left: popupRect.left,
+            width: popupRect.width,
+            maxHeight: 288,
+            overflowY: 'auto',
+            background: '#fff',
+            border: '1px solid #d9dfd9',
+            borderRadius: 6,
+            boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
+            zIndex: 1000,
+          }}
+          role="listbox"
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          {filtered.length === 0 ? (
+            <div className="px-2 py-1.5 text-xs text-zinc-400">Keine Treffer</div>
+          ) : (
+            filtered.map((o, i) => {
+              const active = i === activeIdx;
+              return (
+                <div
+                  key={o.id}
+                  onMouseDown={(e) => { e.preventDefault(); select(o); }}
+                  onMouseEnter={() => setActiveIdx(i)}
+                  className="px-2 py-1.5 cursor-pointer text-sm"
+                  style={{
+                    background: active ? '#e6ede6' : 'transparent',
+                    color: active ? '#2d5a2d' : '#3d4a3d',
+                  }}
+                >
+                  <div className="font-medium">{o.label}</div>
+                  {o.sublabel && <div className="text-[10px] text-zinc-500">{o.sublabel}</div>}
+                </div>
+              );
+            })
+          )}
+        </div>,
+        document.body,
+      )}
+    </div>
+  );
+});
 
 // Label über Input
 export const Field = ({ label, children, hint }) => (

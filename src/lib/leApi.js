@@ -9,7 +9,7 @@ export const leEmployee = {
   list: async () => {
     const { data, error } = await supabase
       .from('le_employee')
-      .select('*')
+      .select('*, employee_group:le_employee_group(id, name, billable_rate)')
       .order('active', { ascending: false })
       .order('full_name');
     if (error) throw error;
@@ -28,6 +28,31 @@ export const leEmployee = {
   remove: async (id) => {
     const { error } = await supabase.from('le_employee').delete().eq('id', id);
     if (error) throw error;
+  },
+  // Archivieren = active=false + archived_at gesetzt. Rapporte bleiben erhalten.
+  archive: async (id) => {
+    const { data, error } = await supabase
+      .from('le_employee')
+      .update({ active: false, archived_at: new Date().toISOString() })
+      .eq('id', id).select().single();
+    if (error) throw error;
+    return data;
+  },
+  unarchive: async (id) => {
+    const { data, error } = await supabase
+      .from('le_employee')
+      .update({ active: true, archived_at: null })
+      .eq('id', id).select().single();
+    if (error) throw error;
+    return data;
+  },
+  // Vorab-Check: kann der MA gelöscht werden? (zählt Rapporte/Spesen/Abwesenheiten)
+  canDelete: async (id) => {
+    const { data, error } = await supabase.rpc('le_employee_can_delete', { p_employee_id: id });
+    if (error) throw error;
+    // returns table → array of one row
+    const row = Array.isArray(data) ? data[0] : data;
+    return row ?? { can_delete: false, entry_count: 0, expense_count: 0, absence_count: 0 };
   },
 };
 
@@ -55,6 +80,13 @@ export const leServiceType = {
   remove: async (id) => {
     const { error } = await supabase.from('le_service_type').delete().eq('id', id);
     if (error) throw error;
+  },
+  archive: async (id) => leServiceType.update(id, { active: false }),
+  unarchive: async (id) => leServiceType.update(id, { active: true }),
+  canDelete: async (id) => {
+    const { data, error } = await supabase.rpc('le_service_type_can_delete', { p_id: id });
+    if (error) throw error;
+    return Array.isArray(data) ? data[0] : data;
   },
 };
 
@@ -137,12 +169,38 @@ export const leRateGroupRate = {
   },
 };
 
-export function resolveRateFor({ serviceTypeId, rateGroupId, date, rateGroupRates = [], serviceRateHistory = [] }) {
-  if (!serviceTypeId) return 0;
+// Ansatz-Findung pro Projekt – Modi:
+//   service_type   → bisherige Logik (rate_group + service_rate_history)
+//   employee       → vom Mitarbeiter selbst (billable_rate)
+//   employee_group → aus Mitarbeitergruppe (billable_rate auf Group)
+//   special        → fester Ansatz auf dem Projekt (project.special_rate)
+export function resolveRateFor({
+  project, employee,
+  serviceTypeId, rateGroupId, date,
+  rateGroupRates = [], serviceRateHistory = [],
+}) {
   const d = date || new Date().toISOString().slice(0, 10);
-  if (rateGroupId) {
+  const mode = project?.rate_mode ?? 'service_type';
+
+  if (mode === 'special') {
+    return Number(project?.special_rate ?? 0);
+  }
+
+  if (mode === 'employee') {
+    return Number(employee?.billable_rate ?? 0);
+  }
+
+  if (mode === 'employee_group') {
+    const grpRate = employee?.employee_group?.billable_rate;
+    return Number(grpRate ?? 0);
+  }
+
+  // service_type (Default + Fallback)
+  if (!serviceTypeId) return 0;
+  const rgId = rateGroupId ?? project?.rate_group_id ?? null;
+  if (rgId) {
     const match = rateGroupRates
-      .filter(r => r.service_type_id === serviceTypeId && r.rate_group_id === rateGroupId && r.valid_from <= d)
+      .filter(r => r.service_type_id === serviceTypeId && r.rate_group_id === rgId && r.valid_from <= d)
       .sort((a, b) => b.valid_from.localeCompare(a.valid_from))[0];
     if (match) return Number(match.rate);
   }
@@ -151,6 +209,33 @@ export function resolveRateFor({ serviceTypeId, rateGroupId, date, rateGroupRate
     .sort((a, b) => b.valid_from.localeCompare(a.valid_from))[0];
   return histMatch ? Number(histMatch.rate) : 0;
 }
+
+// ---------- Employee Group ----------
+export const leEmployeeGroup = {
+  list: async () => {
+    const { data, error } = await supabase
+      .from('le_employee_group')
+      .select('*')
+      .order('sort_order')
+      .order('name');
+    if (error) throw error;
+    return data ?? [];
+  },
+  create: async (payload) => {
+    const { data, error } = await supabase.from('le_employee_group').insert(payload).select().single();
+    if (error) throw error;
+    return data;
+  },
+  update: async (id, patch) => {
+    const { data, error } = await supabase.from('le_employee_group').update(patch).eq('id', id).select().single();
+    if (error) throw error;
+    return data;
+  },
+  remove: async (id) => {
+    const { error } = await supabase.from('le_employee_group').delete().eq('id', id);
+    if (error) throw error;
+  },
+};
 
 // ---------- Project ----------
 export const leProject = {
@@ -176,6 +261,11 @@ export const leProject = {
   },
   archive: async (id) => leProject.update(id, { status: 'archiviert', closed_at: new Date().toISOString().slice(0, 10) }),
   reopen: async (id) => leProject.update(id, { status: 'offen', closed_at: null }),
+  canDelete: async (id) => {
+    const { data, error } = await supabase.rpc('le_project_can_delete', { p_project_id: id });
+    if (error) throw error;
+    return Array.isArray(data) ? data[0] : data;
+  },
 };
 
 // ---------- Time Entry ----------

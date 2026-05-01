@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import { Pencil, Archive, RotateCcw, Plus, X, Search } from 'lucide-react';
 import { leProject, leEmployee, leRateGroup, customersForProjects } from '@/lib/leApi';
 import {
-  Chip, Card, IconBtn, Input, Select, Field,
+  Chip, Card, IconBtn, Input, Select, Combobox, Field,
   PanelLoader, PanelError, PanelHeader, fmt,
   artisBtn, artisPrimaryStyle, artisGhostStyle,
 } from '@/components/leistungserfassung/shared';
@@ -15,6 +15,8 @@ const EMPTY_PROJECT = {
   customer_id: '',
   responsible_employee_id: '',
   rate_group_id: '',
+  rate_mode: 'service_type',
+  special_rate: '',
   billing_mode: 'effektiv',
   pauschal_amount: '',
   pauschal_cycle: 'monatlich',
@@ -23,6 +25,13 @@ const EMPTY_PROJECT = {
   started_at: '',
   note: '',
 };
+
+const RATE_MODE_OPTIONS = [
+  { value: 'service_type',   label: 'Leistungsart',     hint: 'Standard – Ansatz aus Gruppenansatz / Standard-Satz pro Leistungsart' },
+  { value: 'employee',       label: 'Mitarbeiter',      hint: 'Stundenansatz vom Mitarbeiter selbst' },
+  { value: 'employee_group', label: 'Mitarbeitergruppe', hint: 'Junior/Treuhänder/Senior/Partner – Ansatz aus Gruppe' },
+  { value: 'special',        label: 'Spezialsatz',      hint: 'Fester Stundenansatz auf diesem Projekt' },
+];
 
 function suggestProjectNo(projects) {
   const year = new Date().getFullYear();
@@ -301,6 +310,8 @@ function ProjektDialog({ editing, customers, employees, rateGroups, projectNoSug
         customer_id: editing.customer_id ?? '',
         responsible_employee_id: editing.responsible_employee_id ?? '',
         rate_group_id: editing.rate_group_id ?? '',
+        rate_mode: editing.rate_mode ?? 'service_type',
+        special_rate: editing.special_rate ?? '',
         billing_mode: editing.billing_mode ?? 'effektiv',
         pauschal_amount: editing.pauschal_amount ?? '',
         pauschal_cycle: editing.pauschal_cycle ?? 'monatlich',
@@ -330,13 +341,22 @@ function ProjektDialog({ editing, customers, employees, rateGroups, projectNoSug
     e.preventDefault();
     if (!form.project_no?.trim()) { toast.error('Projekt-Nr. ist Pflicht'); return; }
     if (!form.name?.trim()) { toast.error('Name ist Pflicht'); return; }
+    if (!form.customer_id) { toast.error('Kunde (CRM-Adresse) ist Pflicht – jedes Projekt muss einem Kunden zugeordnet sein.'); return; }
+
+    if (form.rate_mode === 'special' && (form.special_rate === '' || Number(form.special_rate) <= 0)) {
+      toast.error('Bei Ansatz-Modus „Spezialsatz" muss ein Stundenansatz erfasst werden.');
+      return;
+    }
 
     const payload = {
       project_no: form.project_no.trim(),
       name: form.name.trim(),
-      customer_id: form.customer_id || null,
+      customer_id: form.customer_id,
       responsible_employee_id: form.responsible_employee_id || null,
-      rate_group_id: form.rate_group_id || null,
+      rate_group_id: form.rate_mode === 'service_type' ? (form.rate_group_id || null) : null,
+      rate_mode: form.rate_mode,
+      special_rate: form.rate_mode === 'special' && form.special_rate !== ''
+        ? Number(form.special_rate) : null,
       billing_mode: form.billing_mode,
       pauschal_amount: form.billing_mode === 'pauschal' && form.pauschal_amount !== ''
         ? Number(form.pauschal_amount) : null,
@@ -387,13 +407,13 @@ function ProjektDialog({ editing, customers, employees, rateGroups, projectNoSug
             </Field>
           </div>
 
-          <Field label="Kunde">
-            <Select value={form.customer_id ?? ''} onChange={(e) => onCustomerChange(e.target.value)}>
-              <option value="">— kein Kunde —</option>
-              {customers.map((c) => (
-                <option key={c.id} value={c.id}>{c.company_name}</option>
-              ))}
-            </Select>
+          <Field label={<>Kunde <span className="text-red-500">*</span></>} hint="Pflichtfeld – Adresse aus CRM. Tippen filtert die Liste. Wird für Rechnung & QR-Bill genutzt.">
+            <Combobox
+              value={form.customer_id ?? ''}
+              onChange={(id) => onCustomerChange(id)}
+              placeholder="Kunde suchen…"
+              options={customers.map((c) => ({ id: c.id, label: c.company_name }))}
+            />
           </Field>
 
           <Field label="Projektname" hint={'Konvention: "Kundenname, BWL" (z.B. "Steuern 2024" als Alternative)'}>
@@ -418,7 +438,21 @@ function ProjektDialog({ editing, customers, employees, rateGroups, projectNoSug
                 ))}
               </Select>
             </Field>
-            <Field label="Gruppenansatz">
+            <Field label="Ansatz-Modus" hint={RATE_MODE_OPTIONS.find(o => o.value === form.rate_mode)?.hint}>
+              <Select
+                value={form.rate_mode}
+                onChange={(e) => patch('rate_mode', e.target.value)}
+              >
+                {RATE_MODE_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </Select>
+            </Field>
+          </div>
+
+          {/* Konditionale Felder pro Modus */}
+          {form.rate_mode === 'service_type' && (
+            <Field label="Gruppenansatz" hint="Optional – sonst Standardsatz pro Leistungsart">
               <Select
                 value={form.rate_group_id ?? ''}
                 onChange={(e) => patch('rate_group_id', e.target.value)}
@@ -429,7 +463,27 @@ function ProjektDialog({ editing, customers, employees, rateGroups, projectNoSug
                 ))}
               </Select>
             </Field>
-          </div>
+          )}
+          {form.rate_mode === 'special' && (
+            <Field label={<>Spezialsatz <span className="text-red-500">*</span></>} hint="Fester Stundenansatz für dieses Projekt – unabhängig von Mitarbeiter/Leistungsart">
+              <Input
+                type="number" step="1" min="0"
+                value={form.special_rate ?? ''}
+                onChange={(e) => patch('special_rate', e.target.value)}
+                placeholder="z.B. 180"
+              />
+            </Field>
+          )}
+          {form.rate_mode === 'employee' && (
+            <div className="rounded p-2 text-xs" style={{ background: '#fff8e6', borderLeft: '3px solid #f3d9a4', color: '#8a5a00' }}>
+              💡 Stundenansatz wird vom <b>Mitarbeiter</b> übernommen (Stammdaten → Mitarbeiter → Stundenansatz).
+            </div>
+          )}
+          {form.rate_mode === 'employee_group' && (
+            <div className="rounded p-2 text-xs" style={{ background: '#fff8e6', borderLeft: '3px solid #f3d9a4', color: '#8a5a00' }}>
+              💡 Stundenansatz wird aus der <b>Mitarbeitergruppe</b> übernommen (Junior, Treuhänder, Senior, Partner).
+            </div>
+          )}
 
           <Field label="Verrechnung">
             <div className="flex items-center gap-4 pt-1">

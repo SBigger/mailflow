@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Mockup · Leistungserfassung – Tagesansicht V2</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: -apple-system, system-ui, "Segoe UI", sans-serif; background: #f2f5f2; }
+    .green-primary { background: #7a9b7f; color: #fff; }
+    .green-light   { background: #e6ede6; color: #2d5a2d; }
+    .green-dark    { color: #2d5a2d; }
+    .green-border  { border-color: #bfd3bf; }
+    .ev-out        { background: #e3eaf5; border-color: #b8c9e0; color: #2e4a7d; }   /* Outlook-Termin */
+    .ev-teams      { background: #ede3f7; border-color: #c9b8e0; color: #4d2995; }   /* Teams */
+    .ev-private    { background: #f1f1ef; border-color: #dcdcd4; color: #4a4a4a; }   /* privat */
+    .mail-card     { background: #fff; border-color: #e4e7e4; }
+    .row-hover:hover { background: #f5faf5; }
+    .scroll-y { overflow-y: auto; }
+    /* Kalender-Zeitspalten-Linien */
+    .grid-cal {
+      background-image: repeating-linear-gradient(to bottom, transparent 0, transparent 39px, #eef1ee 39px, #eef1ee 40px);
+    }
+  </style>
+</head>
+<body class="text-zinc-800">
+
+  <!-- ============================================================== -->
+  <!-- Header der Seite (analog zu Leistungserfassung.jsx)             -->
+  <!-- ============================================================== -->
+  <div class="px-6 pt-5 pb-3 border-b bg-white" style="border-color:#d9e0d9;">
+    <div class="flex items-center gap-3 mb-3">
+      <div class="w-10 h-10 rounded-lg flex items-center justify-center" style="background:#e6ede6;color:#4d6a50;">⏱</div>
+      <div>
+        <h1 class="text-lg font-semibold">Leistungserfassung</h1>
+        <p class="text-xs text-zinc-500">Projekte · Rapporte · Fakturierung</p>
+      </div>
+      <span class="ml-3 text-[10px] uppercase tracking-wider px-2 py-0.5 rounded font-semibold green-light border green-border">MOCKUP V2</span>
+    </div>
+
+    <!-- Primary Tabs -->
+    <div class="flex items-center gap-1 overflow-x-auto">
+      <button class="green-primary flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-semibold">⏱ Erfassen</button>
+      <button class="text-zinc-700 px-3 py-1.5 rounded-md text-sm">📄 Abrechnen</button>
+      <button class="text-zinc-700 px-3 py-1.5 rounded-md text-sm">🗄 Stammdaten</button>
+      <button class="text-zinc-700 px-3 py-1.5 rounded-md text-sm">📊 Auswertungen</button>
+      <button class="text-zinc-700 px-3 py-1.5 rounded-md text-sm">📱 Mobile</button>
+    </div>
+    <!-- Secondary Tabs -->
+    <div class="mt-2.5 flex items-center gap-1 overflow-x-auto">
+      <button class="px-2.5 py-1 rounded text-xs font-semibold border green-border green-light">Tagesansicht</button>
+      <button class="px-2.5 py-1 rounded text-xs text-zinc-500">Wochenrapport</button>
+      <button class="px-2.5 py-1 rounded text-xs text-zinc-500">Meine Rapporte</button>
+      <button class="px-2.5 py-1 rounded text-xs text-zinc-500">Abwesenheiten</button>
+      <button class="px-2.5 py-1 rounded text-xs text-zinc-500">Spesen erfassen</button>
+    </div>
+  </div>
+
+  <!-- ============================================================== -->
+  <!-- Datum-Navigation                                                -->
+  <!-- ============================================================== -->
+  <div class="px-6 py-3 bg-white border-b flex items-center gap-2 flex-wrap" style="border-color:#e4e7e4;">
+    <button class="w-7 h-7 flex items-center justify-center rounded border" style="border-color:#e4e7e4;">‹</button>
+    <button class="px-3 py-1.5 text-sm rounded border" style="border-color:#d1dcd1;background:#fff;color:#3d4a3d;">Heute</button>
+    <button class="w-7 h-7 flex items-center justify-center rounded border" style="border-color:#e4e7e4;">›</button>
+    <input type="date" value="2026-04-30" class="border rounded px-2 py-1.5 text-sm" style="border-color:#d9dfd9;" />
+    <span class="ml-auto text-sm font-medium text-zinc-700 capitalize">Donnerstag, 30. April 2026</span>
+    <span class="px-2 py-0.5 rounded text-[10px] font-medium border green-light green-border">SB · Sascha Bigger</span>
+  </div>
+
+  <!-- ============================================================== -->
+  <!-- HAUPTLAYOUT: 3 Spalten                                          -->
+  <!-- Links: Kalender (volle Höhe)                                    -->
+  <!-- Mitte: Schnellerfassung + erfasste Einträge                    -->
+  <!-- Rechts: Gesendete Mails + Summary                              -->
+  <!-- ============================================================== -->
+  <div class="px-6 py-4 grid grid-cols-12 gap-4" style="height:calc(100vh - 165px);">
+
+    <!-- ========================================================== -->
+    <!-- SPALTE LINKS: Outlook-Kalender Tagesansicht                -->
+    <!-- ========================================================== -->
+    <div class="col-span-3 bg-white border rounded-lg flex flex-col overflow-hidden" style="border-color:#e4e7e4;">
+      <div class="px-3 py-2 border-b flex items-center justify-between" style="border-color:#e4e7e4;background:#fafbf9;">
+        <div class="flex items-center gap-1.5 text-xs font-semibold text-zinc-700">
+          📅 Outlook-Kalender
+        </div>
+        <span class="text-[10px] text-zinc-400">5 Termine</span>
+      </div>
+
+      <!-- Zeitleiste 7-19 Uhr -->
+      <div class="flex-1 scroll-y relative">
+        <!-- Stunden-Beschriftungen -->
+        <div class="flex">
+          <div class="w-10 text-[10px] text-zinc-400 text-right pr-2 pt-1 border-r" style="border-color:#eef1ee;">
+            <div style="height:40px;">07</div>
+            <div style="height:40px;">08</div>
+            <div style="height:40px;">09</div>
+            <div style="height:40px;">10</div>
+            <div style="height:40px;">11</div>
+            <div style="height:40px;">12</div>
+            <div style="height:40px;">13</div>
+            <div style="height:40px;">14</div>
+            <div style="height:40px;">15</div>
+            <div style="height:40px;">16</div>
+            <div style="height:40px;">17</div>
+            <div style="height:40px;">18</div>
+          </div>
+
+          <!-- Termin-Spalte -->
+          <div class="flex-1 relative grid-cal" style="height:480px;">
+            <!-- Aktuelle Zeit-Linie 14:30 -->
+            <div class="absolute left-0 right-0 flex items-center" style="top:300px;">
+              <div class="w-1.5 h-1.5 rounded-full bg-red-500"></div>
+              <div class="flex-1 h-px bg-red-500"></div>
+            </div>
+
+            <!-- 08:00–09:00 BWL-Termin -->
+            <div class="absolute left-1 right-1 border rounded p-1 text-[10px] cursor-pointer hover:shadow ev-out group" style="top:40px; height:40px;">
+              <div class="font-semibold truncate">Huber AG · BWL Q1</div>
+              <div class="text-[9px] opacity-75">08:00–09:00 · Outlook</div>
+              <button class="hidden group-hover:block absolute right-1 top-1 px-1.5 py-0.5 text-[9px] rounded green-primary">+ Übernehmen</button>
+            </div>
+
+            <!-- 09:30–11:00 Steuern-Beratung -->
+            <div class="absolute left-1 right-1 border rounded p-1 text-[10px] cursor-pointer hover:shadow ev-out group" style="top:100px; height:60px;">
+              <div class="font-semibold truncate">Müller GmbH · Steuern 2025</div>
+              <div class="text-[9px] opacity-75">09:30–11:00 · Outlook</div>
+              <button class="hidden group-hover:block absolute right-1 top-1 px-1.5 py-0.5 text-[9px] rounded green-primary">+ Übernehmen</button>
+            </div>
+
+            <!-- 11:15–11:45 Teams -->
+            <div class="absolute left-1 right-1 border rounded p-1 text-[10px] cursor-pointer hover:shadow ev-teams group" style="top:170px; height:30px;">
+              <div class="font-semibold truncate">Teams · Brunner</div>
+              <div class="text-[9px] opacity-75">11:15–11:45</div>
+              <button class="hidden group-hover:block absolute right-1 top-1 px-1.5 py-0.5 text-[9px] rounded green-primary">+ Übernehmen</button>
+            </div>
+
+            <!-- 12:00–13:00 Mittag (privat) -->
+            <div class="absolute left-1 right-1 border rounded p-1 text-[10px] ev-private" style="top:200px; height:40px;">
+              <div class="font-medium truncate">Mittagspause</div>
+            </div>
+
+            <!-- 14:00–16:00 Revision -->
+            <div class="absolute left-1 right-1 border rounded p-1 text-[10px] cursor-pointer hover:shadow ev-out group" style="top:280px; height:80px;">
+              <div class="font-semibold truncate">Schmid &amp; Co. · Revision</div>
+              <div class="text-[9px] opacity-75">14:00–16:00 · vor Ort</div>
+              <button class="hidden group-hover:block absolute right-1 top-1 px-1.5 py-0.5 text-[9px] rounded green-primary">+ Übernehmen</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="px-3 py-2 border-t flex items-center gap-2 text-[10px] text-zinc-500" style="border-color:#e4e7e4;background:#fafbf9;">
+        <span class="inline-block w-2 h-2 rounded ev-out"></span>Outlook
+        <span class="inline-block w-2 h-2 rounded ev-teams ml-2"></span>Teams
+        <span class="inline-block w-2 h-2 rounded ev-private ml-2"></span>Privat
+      </div>
+    </div>
+
+    <!-- ========================================================== -->
+    <!-- SPALTE MITTE: Schnellerfassung + Einträge                  -->
+    <!-- ========================================================== -->
+    <div class="col-span-6 flex flex-col gap-4 overflow-hidden">
+
+      <!-- Schnell-Rapport-Zeile (prominent grün) -->
+      <div class="rounded-lg border overflow-hidden" style="border-color:#bfd3bf;background:#f5faf5;">
+        <div class="px-4 py-2 border-b text-xs font-semibold uppercase tracking-wider green-dark green-light" style="border-color:#bfd3bf;">
+          Schnell-Rapport · Tab-Reihenfolge: Von → Bis → Projekt → Leistungsart → Beschreibung → ENTER
+        </div>
+        <div class="p-3">
+          <div class="grid grid-cols-[60px_60px_70px_2fr_1fr_3fr_70px_90px_40px] gap-1.5 items-end text-[10px] uppercase tracking-wider text-zinc-500 mb-1 px-1">
+            <div>Von</div>
+            <div>Bis</div>
+            <div>Std.</div>
+            <div>Projekt</div>
+            <div>Leistungsart</div>
+            <div>Beschreibung</div>
+            <div class="text-right">Satz</div>
+            <div class="text-right">Wert</div>
+            <div></div>
+          </div>
+          <div class="grid grid-cols-[60px_60px_70px_2fr_1fr_3fr_70px_90px_40px] gap-1.5 items-center">
+            <input type="time" value="08:00" class="border rounded px-2 py-1.5 text-sm" style="border-color:#d9dfd9;" />
+            <input type="time" value="09:00" class="border rounded px-2 py-1.5 text-sm" style="border-color:#d9dfd9;" />
+            <div class="border rounded px-2 py-1.5 text-sm bg-zinc-50 text-zinc-700 text-right tabular-nums" title="auto-berechnet">1.00</div>
+            <select class="border rounded px-2 py-1.5 text-sm bg-white" style="border-color:#d9dfd9;"><option>Huber AG, BWL</option></select>
+            <select class="border rounded px-2 py-1.5 text-sm bg-white" style="border-color:#d9dfd9;"><option>Buchhaltung</option></select>
+            <input value="Quartals-BWL Q1 2026 vorbereitet" class="border rounded px-2 py-1.5 text-sm" style="border-color:#d9dfd9;" />
+            <input type="number" value="145" class="border rounded px-2 py-1.5 text-sm text-right tabular-nums" style="border-color:#d9dfd9;" />
+            <div class="text-right tabular-nums text-zinc-700">145.00</div>
+            <button class="green-primary rounded p-2 text-sm font-medium" style="background:#7a9b7f;" title="Speichern (Enter)">↵</button>
+          </div>
+          <div class="mt-2 px-1 text-[10px] text-zinc-400">
+            💡 Stunden werden automatisch aus Von/Bis berechnet (15-Minuten-Raster). Override durch direkten Eintrag möglich.
+          </div>
+        </div>
+      </div>
+
+      <!-- Einträge des Tages -->
+      <div class="rounded-lg border bg-white flex-1 overflow-hidden flex flex-col" style="border-color:#e4e7e4;">
+        <div class="px-4 py-2 border-b text-xs font-semibold uppercase tracking-wider text-zinc-500 flex items-center justify-between" style="border-color:#e4e7e4;">
+          <span>Einträge des Tages (3)</span>
+          <span class="text-zinc-400 normal-case font-normal text-[10px]">5.50 h · CHF 825.00 abrechenbar</span>
+        </div>
+        <div class="flex-1 overflow-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="text-[10px] uppercase tracking-wider text-zinc-500 border-b" style="border-color:#e4e7e4;background:#fafbf9;">
+                <th class="text-left font-semibold px-3 py-2 w-32">Zeit</th>
+                <th class="text-left font-semibold px-3 py-2">Projekt</th>
+                <th class="text-left font-semibold px-3 py-2">Leistungsart</th>
+                <th class="text-left font-semibold px-3 py-2">Beschreibung</th>
+                <th class="text-right font-semibold px-3 py-2 w-16">Std.</th>
+                <th class="text-right font-semibold px-3 py-2 w-24">Wert</th>
+                <th class="text-left font-semibold px-3 py-2 w-24">Status</th>
+                <th class="text-right font-semibold px-3 py-2 w-20">Aktion</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="border-b row-hover" style="border-color:#eef1ee;">
+                <td class="px-3 py-2 tabular-nums text-zinc-600">08:00–09:00</td>
+                <td class="px-3 py-2">Huber AG, BWL</td>
+                <td class="px-3 py-2">Buchhaltung</td>
+                <td class="px-3 py-2 text-zinc-600">Quartals-BWL Q1 2026 vorbereitet</td>
+                <td class="px-3 py-2 text-right tabular-nums">1.00</td>
+                <td class="px-3 py-2 text-right tabular-nums font-medium">145.00</td>
+                <td class="px-3 py-2"><span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border" style="background:#f1f1ef;color:#4a4a4a;border-color:#dcdcd4;">erfasst</span></td>
+                <td class="px-3 py-2 text-right text-zinc-400">✎ 🗑</td>
+              </tr>
+              <tr class="border-b row-hover" style="border-color:#eef1ee;">
+                <td class="px-3 py-2 tabular-nums text-zinc-600">09:30–11:00</td>
+                <td class="px-3 py-2">Müller GmbH, Steuern</td>
+                <td class="px-3 py-2">Steuern</td>
+                <td class="px-3 py-2 text-zinc-600">Steuererklärung 2025 – Erstgespräch</td>
+                <td class="px-3 py-2 text-right tabular-nums">1.50</td>
+                <td class="px-3 py-2 text-right tabular-nums font-medium">330.00</td>
+                <td class="px-3 py-2"><span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border" style="background:#e6ede6;color:#2d5a2d;border-color:#bfd3bf;">freigegeben</span></td>
+                <td class="px-3 py-2 text-right text-zinc-400">✎ 🗑</td>
+              </tr>
+              <tr class="border-b row-hover" style="border-color:#eef1ee;">
+                <td class="px-3 py-2 tabular-nums text-zinc-600">14:00–17:00</td>
+                <td class="px-3 py-2">Schmid &amp; Co., Revision</td>
+                <td class="px-3 py-2">Revision</td>
+                <td class="px-3 py-2 text-zinc-600">Vor-Ort-Prüfung Anlagevermögen</td>
+                <td class="px-3 py-2 text-right tabular-nums">3.00</td>
+                <td class="px-3 py-2 text-right tabular-nums font-medium">780.00</td>
+                <td class="px-3 py-2"><span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border" style="background:#f1f1ef;color:#4a4a4a;border-color:#dcdcd4;">erfasst</span></td>
+                <td class="px-3 py-2 text-right text-zinc-400">✎ 🗑</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========================================================== -->
+    <!-- SPALTE RECHTS: Gesendete Mails + Summary                   -->
+    <!-- ========================================================== -->
+    <div class="col-span-3 flex flex-col gap-4 overflow-hidden">
+
+      <!-- Gesendete Mails -->
+      <div class="rounded-lg border bg-white flex-1 overflow-hidden flex flex-col" style="border-color:#e4e7e4;">
+        <div class="px-3 py-2 border-b flex items-center justify-between" style="border-color:#e4e7e4;background:#fafbf9;">
+          <div class="flex items-center gap-1.5 text-xs font-semibold text-zinc-700">
+            📧 Gesendete Mails
+          </div>
+          <span class="text-[10px] text-zinc-400">8</span>
+        </div>
+        <div class="flex-1 overflow-auto divide-y" style="border-color:#eef1ee;">
+          <!-- Mail 1 -->
+          <div class="p-2.5 group cursor-pointer hover:bg-zinc-50">
+            <div class="flex items-start gap-2">
+              <div class="flex-1 min-w-0">
+                <div class="text-xs font-medium text-zinc-700 truncate">RE: Quartals-BWL Q1 fertig</div>
+                <div class="text-[10px] text-zinc-500 truncate">08:42 · Huber AG · m.huber@huber-ag.ch</div>
+              </div>
+              <button class="opacity-50 group-hover:opacity-100 flex items-center justify-center w-6 h-6 rounded border green-border green-light text-[10px]" title="Übernehmen">+</button>
+            </div>
+            <div class="mt-1 px-1.5 py-0.5 rounded text-[9px] inline-block" style="background:#e6ede6;color:#2d5a2d;">→ Huber AG, BWL</div>
+          </div>
+          <!-- Mail 2 -->
+          <div class="p-2.5 group cursor-pointer hover:bg-zinc-50">
+            <div class="flex items-start gap-2">
+              <div class="flex-1 min-w-0">
+                <div class="text-xs font-medium text-zinc-700 truncate">Steuererklärung 2025 – Unterlagen</div>
+                <div class="text-[10px] text-zinc-500 truncate">11:05 · Müller GmbH · k.mueller@mueller.ch</div>
+              </div>
+              <button class="opacity-50 group-hover:opacity-100 flex items-center justify-center w-6 h-6 rounded border green-border green-light text-[10px]" title="Übernehmen">+</button>
+            </div>
+            <div class="mt-1 px-1.5 py-0.5 rounded text-[9px] inline-block" style="background:#e6ede6;color:#2d5a2d;">→ Müller GmbH, Steuern</div>
+          </div>
+          <!-- Mail 3 -->
+          <div class="p-2.5 group cursor-pointer hover:bg-zinc-50">
+            <div class="flex items-start gap-2">
+              <div class="flex-1 min-w-0">
+                <div class="text-xs font-medium text-zinc-700 truncate">Revision: Vorab-Liste Anlagen</div>
+                <div class="text-[10px] text-zinc-500 truncate">13:20 · Schmid &amp; Co. · info@schmid.ch</div>
+              </div>
+              <button class="opacity-50 group-hover:opacity-100 flex items-center justify-center w-6 h-6 rounded border green-border green-light text-[10px]" title="Übernehmen">+</button>
+            </div>
+            <div class="mt-1 px-1.5 py-0.5 rounded text-[9px] inline-block" style="background:#e6ede6;color:#2d5a2d;">→ Schmid &amp; Co., Revision</div>
+          </div>
+          <!-- Mail 4 (no match) -->
+          <div class="p-2.5 group cursor-pointer hover:bg-zinc-50">
+            <div class="flex items-start gap-2">
+              <div class="flex-1 min-w-0">
+                <div class="text-xs font-medium text-zinc-700 truncate">Wegen Termin nächste Woche</div>
+                <div class="text-[10px] text-zinc-500 truncate">15:48 · privat · friend@gmail.com</div>
+              </div>
+              <button class="opacity-50 group-hover:opacity-100 flex items-center justify-center w-6 h-6 rounded border text-[10px] text-zinc-400" style="border-color:#e4e7e4;" title="Kunde nicht erkannt">+</button>
+            </div>
+            <div class="mt-1 px-1.5 py-0.5 rounded text-[9px] inline-block bg-zinc-100 text-zinc-500">Kunde nicht erkannt</div>
+          </div>
+          <!-- Mail 5 -->
+          <div class="p-2.5 group cursor-pointer hover:bg-zinc-50">
+            <div class="flex items-start gap-2">
+              <div class="flex-1 min-w-0">
+                <div class="text-xs font-medium text-zinc-700 truncate">RE: Mahnung R-2025-0042</div>
+                <div class="text-[10px] text-zinc-500 truncate">16:30 · Beispiel AG · finanzen@beispiel.ch</div>
+              </div>
+              <button class="opacity-50 group-hover:opacity-100 flex items-center justify-center w-6 h-6 rounded border green-border green-light text-[10px]" title="Übernehmen">+</button>
+            </div>
+            <div class="mt-1 px-1.5 py-0.5 rounded text-[9px] inline-block" style="background:#e6ede6;color:#2d5a2d;">→ Beispiel AG, BWL</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tages-Summary -->
+      <div class="rounded-lg border bg-white p-4" style="border-color:#e4e7e4;">
+        <div class="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-3">Tages-Summary</div>
+        <div class="space-y-3">
+          <div class="flex items-baseline justify-between">
+            <span class="text-xs text-zinc-500">Σ Std.</span>
+            <span class="text-lg font-semibold tabular-nums">5.50</span>
+          </div>
+          <div class="flex items-baseline justify-between">
+            <span class="text-xs text-zinc-500">Σ CHF (abrechenbar)</span>
+            <span class="text-lg font-semibold tabular-nums green-dark">1'255.00</span>
+          </div>
+          <div class="flex items-baseline justify-between">
+            <span class="text-xs text-zinc-500">Soll heute</span>
+            <span class="text-sm font-medium text-zinc-600">8.40 h</span>
+          </div>
+          <div class="flex items-baseline justify-between">
+            <span class="text-xs text-zinc-500">Differenz</span>
+            <span class="text-sm font-medium text-orange-600">−2.90 h</span>
+          </div>
+          <div class="pt-2 border-t" style="border-color:#eef1ee;">
+            <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border" style="background:#fff4e0;color:#8a5a00;border-color:#f3d9a4;">Freigabe offen</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hinweis-Box am Footer -->
+  <div class="px-6 pb-6">
+    <div class="rounded-lg border p-3 text-xs text-zinc-600 bg-white" style="border-color:#e4e7e4;">
+      <strong class="green-dark">Mockup-Notizen:</strong>
+      <ul class="list-disc ml-5 mt-1 space-y-0.5">
+        <li><strong>Outlook-Kalender</strong> links – Termine als Boxen, Hover zeigt „+ Übernehmen"-Button. Klick füllt die Schnellerfassungs-Zeile mit Von/Bis + Termin-Titel + Auto-Match Projekt (über Empfänger-Domain).</li>
+        <li><strong>Schnellerfassung</strong> grün hervorgehoben in der Mitte. Tab-Reihenfolge optimiert: Von → Bis → Projekt → Leistungsart → Beschreibung → ENTER. Stunden werden aus Von/Bis im 15-Minuten-Raster auto-berechnet, Override jederzeit möglich.</li>
+        <li><strong>Gesendete Mails</strong> rechts – mit Customer-Match-Chip darunter (per Empfänger-Domain → customers.email-Lookup). Bei Klick auf „+" wird ein Eintrag mit 15 Min Default-Dauer erzeugt, Beschreibung = Mail-Betreff.</li>
+        <li><strong>Tages-Summary</strong> zeigt zusätzlich Soll vs. Ist (aus Sollzeit-Profil).</li>
+        <li>Die rechte Spalte könnte später um <em>Teams-Calls</em> und <em>Telefonate</em> ergänzt werden (sobald Daten verfügbar).</li>
+      </ul>
+    </div>
+  </div>
+
+</body>
+</html>

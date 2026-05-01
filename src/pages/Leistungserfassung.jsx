@@ -29,6 +29,7 @@ import SpesenAbrechnenPanel from '@/components/leistungserfassung/SpesenAbrechne
 import ProjektVorlagenPanel from '@/components/leistungserfassung/ProjektVorlagenPanel';
 import MobileVorschauPanel from '@/components/leistungserfassung/MobileVorschauPanel';
 import DebitorenOPPanel from '@/components/leistungserfassung/DebitorenOPPanel';
+import MitarbeitergruppenPanel from '@/components/leistungserfassung/MitarbeitergruppenPanel';
 
 // ---------------------------------------------------------------------
 // Navigations-Definition + welche Sec-IDs welches Panel rendern
@@ -66,6 +67,7 @@ const NAV = [
       { id: 'sd-projekte', label: 'Projekte',            comp: ProjektePanel },
       { id: 'sd-vorlagen', label: 'Projekt-Vorlagen',    comp: ProjektVorlagenPanel },
       { id: 'sd-mitarb',   label: 'Mitarbeiter',         comp: MitarbeiterPanel },
+      { id: 'sd-magrp',    label: 'Mitarbeitergruppen',  comp: MitarbeitergruppenPanel },
       { id: 'sd-sollzeit', label: 'Sollzeiten-Profile',  comp: SollzeitenPanel },
       { id: 'sd-leistung', label: 'Leistungsarten',      comp: LeistungsartenPanel },
       { id: 'sd-gruppen',  label: 'Gruppenansätze',      comp: GruppenansaetzePanel },
@@ -109,42 +111,45 @@ export default function Leistungserfassung() {
 
   return (
     <div className="h-full w-full overflow-auto" style={{ background: '#f2f5f2' }}>
-      <div className="px-6 pt-5 pb-3 border-b" style={{ borderColor: '#d9e0d9', background: '#fff' }}>
-        <div className="flex items-center gap-3 mb-3">
-          <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: '#e6ede6', color: '#4d6a50' }}>
-            <Clock className="w-5 h-5" />
+      <div className="px-6 pt-3 pb-2 border-b" style={{ borderColor: '#d9e0d9', background: '#fff' }}>
+        {/* Zeile 1: Titel links, Primary-Tabs rechts (nutzt vorher leeren Whitespace) */}
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2.5 flex-shrink-0">
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: '#e6ede6', color: '#4d6a50' }}>
+              <Clock className="w-4 h-4" />
+            </div>
+            <div>
+              <h1 className="text-base font-semibold leading-tight">Leistungserfassung</h1>
+              <p className="text-[10px] text-zinc-500 leading-tight">Projekte · Rapporte · Fakturierung</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-lg font-semibold">Leistungserfassung</h1>
-            <p className="text-xs text-zinc-500">Projekte · Rapporte · Fakturierung</p>
+
+          {/* Primary Tabs neben Titel */}
+          <div className="flex items-center gap-1 overflow-x-auto ml-auto">
+            {NAV.map(n => {
+              const Icon = n.icon;
+              const active = n.id === primary;
+              return (
+                <button
+                  key={n.id}
+                  onClick={() => setPrimary(n.id)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm whitespace-nowrap transition-colors"
+                  style={{
+                    background: active ? '#7a9b7f' : 'transparent',
+                    color: active ? '#fff' : '#3d4a3d',
+                    fontWeight: active ? 600 : 500,
+                  }}
+                >
+                  <Icon className="w-4 h-4" />
+                  {n.label}
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        {/* Primary Tabs */}
-        <div className="flex items-center gap-1 overflow-x-auto">
-          {NAV.map(n => {
-            const Icon = n.icon;
-            const active = n.id === primary;
-            return (
-              <button
-                key={n.id}
-                onClick={() => setPrimary(n.id)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm whitespace-nowrap transition-colors"
-                style={{
-                  background: active ? '#7a9b7f' : 'transparent',
-                  color: active ? '#fff' : '#3d4a3d',
-                  fontWeight: active ? 600 : 500,
-                }}
-              >
-                <Icon className="w-4 h-4" />
-                {n.label}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Secondary Tabs */}
-        <div className="mt-2.5 flex items-center gap-1 overflow-x-auto">
+        {/* Zeile 2: Secondary Tabs (kompakter Abstand) */}
+        <div className="mt-2 flex items-center gap-1 overflow-x-auto">
           {primaryDef.sec.map(s => {
             const active = s.id === secondaryId;
             const coming = !s.comp;
@@ -169,7 +174,7 @@ export default function Leistungserfassung() {
         </div>
       </div>
 
-      <div className="px-6 py-6">
+      <div className="px-6 py-3">
         {PanelComp ? <PanelComp /> : <ComingSoon title={`${primaryDef.label} · ${secondaryDef?.label ?? ''}`} />}
       </div>
     </div>

@@ -119,15 +119,22 @@ Deno.serve(async (req) => {
     .single()
 
   if (!profile || !profile.microsoft_refresh_token) {
-    return new Response(JSON.stringify({ calendar: [], sent: [], notConnected: true }), {
+    return new Response(JSON.stringify({
+      calendar: [], sent: [], notConnected: true,
+      hint: 'Microsoft-Konto ist nicht verbunden. Verbinde im Posteingang mit MS365.',
+    }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })
   }
 
   const accessToken = await getAccessToken(supabase, profile)
   if (!accessToken) {
-    return new Response(JSON.stringify({ error: 'MS365-Token konnte nicht erneuert werden – bitte erneut anmelden.' }), {
-      status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    // 200 zurückgeben mit Hinweis, damit Frontend die Ursache anzeigen kann
+    return new Response(JSON.stringify({
+      calendar: [], sent: [], notConnected: true,
+      hint: 'MS365-Token-Refresh fehlgeschlagen. Bitte im Posteingang Outlook trennen und neu verbinden, damit der Calendar-Scope freigegeben wird.',
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })
   }
 
@@ -159,6 +166,7 @@ Deno.serve(async (req) => {
 
   // Calendar
   let calendar: any[] = []
+  let calendarError: string | null = null
   try {
     const calRes = await fetch(
       `https://graph.microsoft.com/v1.0/me/calendarView?startDateTime=${encodeURIComponent(startIso)}&endDateTime=${encodeURIComponent(endIso)}&$select=id,subject,bodyPreview,start,end,attendees,organizer,isCancelled,isAllDay,location&$orderby=start/dateTime&$top=50`,
@@ -194,14 +202,23 @@ Deno.serve(async (req) => {
           }
         })
     } else {
-      console.error('Calendar fetch failed', calRes.status, await calRes.text())
+      const txt = await calRes.text()
+      console.error('Calendar fetch failed', calRes.status, txt)
+      try {
+        const j = JSON.parse(txt)
+        calendarError = j?.error?.message || `HTTP ${calRes.status}`
+      } catch {
+        calendarError = `HTTP ${calRes.status}`
+      }
     }
   } catch (e) {
     console.error('Calendar error', e)
+    calendarError = String((e as any)?.message ?? e)
   }
 
   // Sent Items
   let sent: any[] = []
+  let sentError: string | null = null
   try {
     const sentRes = await fetch(
       `https://graph.microsoft.com/v1.0/me/mailFolders/sentitems/messages?$filter=sentDateTime+ge+${startIso}Z+and+sentDateTime+le+${endIso}Z&$select=id,subject,bodyPreview,sentDateTime,toRecipients,ccRecipients&$top=50&$orderby=sentDateTime+desc`,
@@ -231,13 +248,21 @@ Deno.serve(async (req) => {
         }
       })
     } else {
-      console.error('Sent fetch failed', sentRes.status, await sentRes.text())
+      const txt = await sentRes.text()
+      console.error('Sent fetch failed', sentRes.status, txt)
+      try {
+        const j = JSON.parse(txt)
+        sentError = j?.error?.message || `HTTP ${sentRes.status}`
+      } catch {
+        sentError = `HTTP ${sentRes.status}`
+      }
     }
   } catch (e) {
     console.error('Sent error', e)
+    sentError = String((e as any)?.message ?? e)
   }
 
-  return new Response(JSON.stringify({ calendar, sent }), {
+  return new Response(JSON.stringify({ calendar, sent, calendarError, sentError }), {
     headers: { ...corsHeaders, 'Content-Type': 'application/json' }
   })
 })
