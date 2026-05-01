@@ -20,4 +20,9 @@ contextBridge.exposeInMainWorld('smartis', {
   notify: (title, body) => ipcRenderer.invoke('smartis:smartis:notify', { title, body }),
   isDesktop: true,
   platform: 'electron',
+  // Hotkey-Listener: Shift+Ctrl+S → neuer Task
+  onNewTask: (callback) => {
+    ipcRenderer.on('smartis:new-task', callback);
+    return () => ipcRenderer.removeListener('smartis:new-task', callback);
+  },
 });

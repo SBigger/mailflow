@@ -17,7 +17,8 @@ import {
   Mic,
   CloudUpload,
   BarChart3,
-  Clock
+  Clock,
+  BookMarked
 } from "lucide-react";
 import { FEATURE_LEISTUNGSERFASSUNG } from "@/lib/featureFlags";
 import VoiceAssistant from "@/components/voice/VoiceAssistant";
@@ -87,6 +88,7 @@ export default function Layout({ children, currentPageName }) {
     { name: 'Posteingang',    icon: CloudUpload,     label: 'Posteingang' },
     { name: 'Auswertungen',   icon: BarChart3,       label: 'Auswertungen' },
     ...(FEATURE_LEISTUNGSERFASSUNG ? [{ name: 'Leistungserfassung', icon: Clock, label: 'Leistungserfassung' }] : []),
+    { name: 'FiBu',           icon: BookMarked,      label: 'Buchhaltung', href: '/fibu' },
     { name: 'ArtisTools',     icon: Wrench,          label: 'Artis Tools' },
     { name: 'Settings',       icon: SettingsIcon,    label: 'Einstellungen' },
   ], [isTaskUser]);
@@ -119,6 +121,19 @@ export default function Layout({ children, currentPageName }) {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // --- Electron Hotkey: Shift+Ctrl+S → neuer Task ---
+  useEffect(() => {
+    if (!window.smartis?.onNewTask) return;
+    const unsubscribe = window.smartis.onNewTask(() => {
+      navigate('/TaskBoard');
+      // kurze Verzögerung damit TaskBoard mountet bevor der Dialog geöffnet wird
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('smartis:open-new-task'));
+      }, 150);
+    });
+    return () => { if (typeof unsubscribe === 'function') unsubscribe(); };
+  }, [navigate]);
 
   const handleLogout = async () => {
     setMenuOpen(false);
@@ -153,7 +168,7 @@ export default function Layout({ children, currentPageName }) {
                             {...provided.droppableProps}
                             className="flex flex-col items-center gap-2 w-full"
                         >
-                          {orderedNavItems.map(({ name, icon: Icon, label }, index) => (
+                          {orderedNavItems.map(({ name, icon: Icon, label, href }, index) => (
                               <Draggable key={name} draggableId={name} index={index}>
                                 {(dragProvided, dragSnapshot) => (
                                     <div
@@ -171,7 +186,7 @@ export default function Layout({ children, currentPageName }) {
                                       </div>
 
                                       <Link
-                                          to={createPageUrl(name)}
+                                          to={href ?? createPageUrl(name)}
                                           title={label}
                                           className={`w-10 h-10 flex items-center justify-center rounded-lg transition-all duration-200 ${
                                               currentPageName === name

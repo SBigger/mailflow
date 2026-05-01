@@ -2,7 +2,7 @@
 // Lädt https://smartis.me in eine BrowserWindow. Power-BI-iframes
 // funktionieren hier nativ (Chromium ohne Tauri-Script-Injection).
 
-const { app, BrowserWindow, ipcMain, shell, Notification } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Notification, globalShortcut } = require('electron');
 const path = require('path');
 const { registerIpcHandlers } = require('./commands.cjs');
 const { startExcelServer } = require('./excel-server.cjs');
@@ -96,12 +96,22 @@ app.whenReady().then(() => {
 
   createMainWindow();
 
+  // Globaler Hotkey: Shift+Ctrl+S → neuer Task
+  globalShortcut.register('Shift+Control+S', () => {
+    if (mainWindow) {
+      mainWindow.show();
+      mainWindow.focus();
+      mainWindow.webContents.send('smartis:new-task');
+    }
+  });
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
   });
 });
 
 app.on('window-all-closed', () => {
+  globalShortcut.unregisterAll();
   if (process.platform !== 'darwin') app.quit();
 });
 

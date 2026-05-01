@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useContext } from "react";
+import React, { useState, useMemo, useContext, useEffect } from "react";
 import { entities, functions, auth, supabase } from "@/api/supabaseClient";
 import { ThemeContext } from "@/Layout";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -33,6 +33,13 @@ export default function TaskBoard() {
   const isArtis = theme === 'artis';
   const [showAddTask, setShowAddTask] = useState(false);
   const [showVoiceTask, setShowVoiceTask] = useState(false);
+
+  // Electron Hotkey Shift+Ctrl+S → Dialog direkt öffnen
+  useEffect(() => {
+    const handler = () => setShowAddTask(true);
+    window.addEventListener('smartis:open-new-task', handler);
+    return () => window.removeEventListener('smartis:open-new-task', handler);
+  }, []);
   const [showAddColumn, setShowAddColumn] = useState(false);
   const [selectedTask, setSelectedTask] = useState(null);
   const [collapsedColumns, setCollapsedColumns] = useState(new Set());
