@@ -2,7 +2,7 @@
 // Offene, nicht-verrechnete Zeiteinträge nach Projekt gruppieren und als
 // Rechnungsentwürfe erzeugen.
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -54,6 +54,17 @@ export default function FakturaVorschlagPanel() {
 
   const [selectedProjectIds, setSelectedProjectIds] = useState(() => new Set());
   const [expandedProjectIds, setExpandedProjectIds] = useState(() => new Set());
+
+  // Cross-Panel: Projekt-Vorauswahl aus Tagesansicht (sessionStorage)
+  useEffect(() => {
+    const id = sessionStorage.getItem('le.fakvor.preselectProject');
+    if (id) {
+      sessionStorage.removeItem('le.fakvor.preselectProject');
+      setSelectedProjectIds(new Set([id]));
+      setExpandedProjectIds(new Set([id]));
+      toast.info('Projekt vorausgewählt – Zeitraum bei Bedarf anpassen');
+    }
+  }, []);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   // --- Query ---------------------------------------------------------------

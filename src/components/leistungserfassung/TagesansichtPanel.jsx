@@ -856,7 +856,24 @@ function ReadRow({ entry, onEdit, onRemove }) {
   return (
     <tr className="border-b last:border-b-0" style={{ borderColor: '#eef1ee' }}>
       <td className="px-3 py-2 tabular-nums text-zinc-600">{zeit}</td>
-      <td className="px-3 py-2">{entry.project?.name ?? '—'}</td>
+      <td className="px-3 py-2">
+        {entry.project?.id ? (
+          <button
+            type="button"
+            onClick={() => {
+              sessionStorage.setItem('le.fakvor.preselectProject', entry.project.id);
+              window.dispatchEvent(new CustomEvent('le-navigate', {
+                detail: { primary: 'abrechnen', secondary: 'fakvor' },
+              }));
+            }}
+            className="hover:underline text-left"
+            style={{ color: '#2d5a2d', fontWeight: 500 }}
+            title="Zum Faktura-Vorschlag (Projekt vorausgewählt)"
+          >
+            {entry.project.name}
+          </button>
+        ) : '—'}
+      </td>
       <td className="px-3 py-2">{entry.service_type?.name ?? '—'}</td>
       <td className="px-3 py-2 text-zinc-600">{entry.description || <span className="text-zinc-300">—</span>}</td>
       <td className="px-3 py-2 text-right tabular-nums">{fmt.hours(entry.hours_internal)}</td>

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Clock, FileText, Database, BarChart3, Smartphone } from 'lucide-react';
 
 import TagesansichtPanel from '@/components/leistungserfassung/TagesansichtPanel';
@@ -102,6 +102,21 @@ export default function Leistungserfassung() {
   const [secondaryMap, setSecondaryMap] = useState(() =>
     Object.fromEntries(NAV.map(n => [n.id, n.sec[0].id]))
   );
+
+  // Cross-Panel-Navigation: erlaubt z.B. einem Klick auf einen Projekt-Link
+  // in der Tagesansicht direkt zum Faktura-Vorschlag zu springen.
+  // Aufruf: window.dispatchEvent(new CustomEvent('le-navigate', {
+  //   detail: { primary: 'abrechnen', secondary: 'fakvor' }
+  // }));
+  useEffect(() => {
+    const handler = (e) => {
+      const { primary: p, secondary: s } = e.detail || {};
+      if (p) setPrimary(p);
+      if (p && s) setSecondaryMap(m => ({ ...m, [p]: s }));
+    };
+    window.addEventListener('le-navigate', handler);
+    return () => window.removeEventListener('le-navigate', handler);
+  }, []);
 
   const primaryDef = useMemo(() => NAV.find(n => n.id === primary), [primary]);
   const secondaryId = secondaryMap[primary];
