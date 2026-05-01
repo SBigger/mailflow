@@ -1887,20 +1887,21 @@ export default function Settings() {
                                         <h3 className="text-base font-semibold mb-1 flex items-center gap-2"
                                             style={{color: headingColor}}>
                                             <HardDrive className="h-4 w-4"/> Smartis Desktop <span
-                                            className="text-xs font-normal opacity-50">v1.0.0</span>
+                                            className="text-xs font-normal opacity-50">v2.2.5</span>
                                         </h3>
                                         <p className="text-sm mb-3" style={{color: textMuted}}>
                                             Smartis als eigenständige Desktop-App für Windows. Läuft unabhängig vom Browser mit nativer Drag &amp; Drop Unterstützung.
                                         </p>
                                         <ul className="text-xs space-y-1" style={{color: textMuted}}>
-                                            <li>✓ Dateien per Drag &amp; Drop direkt in die Ablage ziehen</li>
+                                            <li>✓ Shift+Ctrl+S öffnet neuen Task von überall in Windows</li>
+                                            <li>✓ Native Windows-Benachrichtigungen für Task-Reminder</li>
                                             <li>✓ Läuft ohne Browser</li>
                                             <li>✓ Windows 64-bit</li>
                                         </ul>
                                     </div>
                                     <a
-                                        href="https://github.com/SBigger/mailflow/releases/download/desktop-v1.0.0/Smartis_1.0.0_x64-setup.exe"
-                                        download="Smartis_1.0.0_x64-setup.exe"
+                                        href="https://github.com/SBigger/mailflow/releases/download/desktop-v2.2.5/Smartis-Setup-2.2.5.exe"
+                                        download="Smartis-Setup-2.2.5.exe"
                                         className="flex-shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-xl text-white font-medium text-sm transition-opacity hover:opacity-90"
                                         style={{backgroundColor: isArtis ? '#7a9b7f' : '#6366f1'}}
                                     >
