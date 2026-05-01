@@ -61,6 +61,34 @@ Deno.serve(async (req) => {
         ADD COLUMN IF NOT EXISTS phone text
     `;
 
+    // 5. Schedule sync-teams-calls via pg_cron (every 30 minutes)
+    //    Removes existing schedule first (idempotent), then recreates it.
+    const supabaseUrl = Deno.env.get("SUPABASE_URL") || "https://uawgpxcihixqxqxxbjak.supabase.co";
+    const anonKey    = Deno.env.get("SUPABASE_ANON_KEY") || "";
+    const syncUrl    = `${supabaseUrl}/functions/v1/sync-teams-calls`;
+    const authHeader = `{"Authorization": "Bearer ${anonKey}"}`;
+
+    // Unschedule (ignore error if not exists)
+    await sql`
+      DO $do$ BEGIN
+        PERFORM cron.unschedule('sync-teams-calls-auto');
+      EXCEPTION WHEN OTHERS THEN NULL;
+      END $do$
+    `;
+
+    // Create new schedule — cron command uses single-quoted SQL string with '' escaping
+    await sql.unsafe(`
+      SELECT cron.schedule(
+        'sync-teams-calls-auto',
+        '*/30 * * * *',
+        'SELECT net.http_post(
+           url        := ''${syncUrl}'',
+           headers    := ''${authHeader.replace(/'/g, "''")}''::jsonb,
+           body       := ''{}''::jsonb
+         );'
+      )
+    `);
+
     // Reload PostgREST schema cache so new columns are immediately visible.
     await sql`NOTIFY pgrst, 'reload schema'`;
 
