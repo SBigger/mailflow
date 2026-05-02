@@ -8,7 +8,7 @@
 //   - Klick auf Outlook-Termin → Modal mit Daten aus Termin vorbefüllt
 //   - Überlappungen erlaubt: parallele Rapporte werden nebeneinander gerendert.
 
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -140,14 +140,18 @@ export default function KalenderTagPanel() {
   const [employeeResolved, setEmployeeResolved] = useState(false);
   const [dialogState, setDialogState] = useState(null); // null | { initial }
 
-  // Ref für scrollbaren Kalender-Container (Stunden + Hauptspalte gemeinsam)
-  const scrollRef = useRef(null);
-
-  // Beim ersten Mount auf 08:00 scrollen
-  useLayoutEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = (SCROLL_TO_HOUR - HOUR_START) * PX_PER_HOUR;
-    }
+  // Ref-Callback statt useLayoutEffect, damit der Initial-Scroll auch dann
+  // funktioniert wenn der Kalender erst nach <PanelLoader/> ins DOM kommt.
+  const initialScrolledRef = useRef(false);
+  const scrollRef = useCallback((node) => {
+    if (!node) return;
+    if (initialScrolledRef.current) return;
+    initialScrolledRef.current = true;
+    // sofort + 1 Frame später für sichere Layout-Stabilität
+    node.scrollTop = (SCROLL_TO_HOUR - HOUR_START) * PX_PER_HOUR;
+    requestAnimationFrame(() => {
+      node.scrollTop = (SCROLL_TO_HOUR - HOUR_START) * PX_PER_HOUR;
+    });
   }, []);
 
   useEffect(() => {
