@@ -30,7 +30,7 @@ const HOUR_START = 0;       // Kalender beginnt 00:00
 const HOUR_END = 24;        // Kalender endet 24:00 (Outlook-Style)
 const WORK_HOUR_START = 8;  // Arbeitszeit-Start (heller Hintergrund)
 const WORK_HOUR_END = 17;   // Arbeitszeit-Ende (heller Hintergrund)
-const SCROLL_TO_HOUR = 8;   // Beim Öffnen automatisch auf 08:00 scrollen
+const SCROLL_TO_HOUR = 7;   // Beim Öffnen auf 07:00 scrollen (Kontext vor Arbeitsbeginn)
 const PX_PER_HOUR = 60;     // 60px = 1 Stunde
 const PX_PER_MIN = PX_PER_HOUR / 60;
 const SLOT_GRID_MIN = 15;   // 15-Minuten-Klick-Raster
@@ -258,28 +258,71 @@ export default function KalenderTagPanel() {
 
   const noMasterData = projects.length === 0 || serviceTypes.length === 0;
 
-  // --- Klick-Handler ---
+  // --- Drag-to-Select Zeitraum ---
+  const [dragRange, setDragRange] = useState(null); // { startY, endY } während Drag
+  const dragColumnRef = useRef(null);
 
-  // Klick auf leeren Slot: Modal mit time_from = HH:MM, time_to = +30 Min
-  const handleSlotClick = (e) => {
-    if (!currentEmployeeId) {
-      toast.error('Bitte zuerst Mitarbeiter auswählen.');
-      return;
-    }
-    if (noMasterData) {
-      toast.error('Bitte zuerst Projekt + Leistungsart anlegen.');
-      return;
-    }
-    const rect = e.currentTarget.getBoundingClientRect();
-    const y = e.clientY - rect.top;
-    const fromHM = timeFromY(y);
-    const fromMin = minutesFromHHMM(fromHM);
-    const toMin = fromMin != null ? fromMin + DEFAULT_DURATION_MIN : null;
-    const toHM = toMin != null ? minutesToHHMM(toMin) : '';
-    setDialogState({
-      initial: { time_from: fromHM, time_to: toHM },
-    });
+  const checkPrereqs = () => {
+    if (!currentEmployeeId) { toast.error('Bitte zuerst Mitarbeiter auswählen.'); return false; }
+    if (noMasterData) { toast.error('Bitte zuerst Projekt + Leistungsart anlegen.'); return false; }
+    return true;
   };
+
+  const yFromMouseEvent = (e) => {
+    const rect = dragColumnRef.current?.getBoundingClientRect();
+    if (!rect) return 0;
+    return Math.max(0, Math.min(totalHeight, e.clientY - rect.top));
+  };
+
+  const handleColumnMouseDown = (e) => {
+    if (!checkPrereqs()) return;
+    // Linksklick auf leerer Spalte → Drag starten
+    if (e.button !== 0) return;
+    if (e.target !== e.currentTarget && e.target.closest('[data-rapport-box]')) return; // Klick auf Rapport-Box → an Box-Handler
+    const startY = yFromMouseEvent(e);
+    setDragRange({ startY, endY: startY });
+    e.preventDefault();
+  };
+
+  const handleColumnMouseMove = (e) => {
+    if (!dragRange) return;
+    const endY = yFromMouseEvent(e);
+    setDragRange((prev) => prev ? { ...prev, endY } : prev);
+  };
+
+  const handleColumnMouseUp = (e) => {
+    if (!dragRange) return;
+    const { startY, endY } = dragRange;
+    const yA = Math.min(startY, endY);
+    const yB = Math.max(startY, endY);
+    setDragRange(null);
+
+    const fromHM = timeFromY(yA);
+    let toHM = timeFromY(yB);
+    // Bei reinem Klick (kaum Drag): Default 30-Min
+    if (Math.abs(endY - startY) < 4) {
+      const fromMin = minutesFromHHMM(fromHM);
+      toHM = fromMin != null ? minutesToHHMM(fromMin + DEFAULT_DURATION_MIN) : '';
+    } else {
+      // Mindest-Dauer 15 Min
+      const fromMin = minutesFromHHMM(fromHM);
+      const toMin = minutesFromHHMM(toHM);
+      if (fromMin != null && toMin != null && (toMin - fromMin) < 15) {
+        toHM = minutesToHHMM(fromMin + 15);
+      }
+    }
+    setDialogState({ initial: { time_from: fromHM, time_to: toHM } });
+  };
+
+  // Wenn Drag aussen losgelassen wird → abbrechen
+  useEffect(() => {
+    if (!dragRange) return;
+    const onUp = () => setDragRange(null);
+    window.addEventListener('mouseup', onUp);
+    return () => window.removeEventListener('mouseup', onUp);
+  }, [dragRange]);
+
+  // --- Klick-Handler ---
 
   const handleEntryClick = (entry, e) => {
     e.stopPropagation();
@@ -442,11 +485,16 @@ export default function KalenderTagPanel() {
 
             {/* Kalender-Hauptspalte */}
             <div
-              className="flex-1 relative cursor-crosshair"
+              ref={dragColumnRef}
+              className="flex-1 relative"
               style={{
                 background: '#f4f4f3',  // off-hours dunkler
+                cursor: dragRange ? 'ns-resize' : 'pointer',
+                userSelect: 'none',
               }}
-              onClick={handleSlotClick}
+              onMouseDown={handleColumnMouseDown}
+              onMouseMove={handleColumnMouseMove}
+              onMouseUp={handleColumnMouseUp}
             >
               {/* Working-Hours-Hintergrund (heller) */}
               <div
@@ -488,6 +536,8 @@ export default function KalenderTagPanel() {
                 return (
                   <div
                     key={`out-${cal.id}`}
+                    data-rapport-box
+                    onMouseDown={(e) => e.stopPropagation()}
                     onClick={(e) => handleOutlookClick(cal, e)}
                     className="absolute left-1 right-1 rounded text-[10px] cursor-pointer hover:opacity-60 transition-opacity"
                     style={{
@@ -521,6 +571,8 @@ export default function KalenderTagPanel() {
                 return (
                   <div
                     key={`rap-${it.id}`}
+                    data-rapport-box
+                    onMouseDown={(ev) => ev.stopPropagation()}
                     onClick={(ev) => handleEntryClick(e, ev)}
                     className="absolute rounded shadow-sm hover:shadow-md transition-shadow cursor-pointer text-[10px]"
                     style={{
@@ -549,6 +601,28 @@ export default function KalenderTagPanel() {
                   </div>
                 );
               })}
+
+              {/* Drag-Vorschau */}
+              {dragRange && (() => {
+                const yA = Math.min(dragRange.startY, dragRange.endY);
+                const yB = Math.max(dragRange.startY, dragRange.endY);
+                const fromHM = timeFromY(yA);
+                const toHM = timeFromY(yB);
+                return (
+                  <div
+                    className="absolute left-1 right-1 rounded text-[10px] pointer-events-none flex items-center justify-center font-semibold"
+                    style={{
+                      top: yA, height: Math.max(20, yB - yA),
+                      background: 'rgba(122, 155, 127, 0.25)',
+                      border: '2px solid #7a9b7f',
+                      color: '#2d5a2d',
+                      zIndex: 8,
+                    }}
+                  >
+                    {fromHM} – {toHM}
+                  </div>
+                );
+              })()}
 
               {/* Jetzt-Linie */}
               {showNowLine && (

@@ -135,16 +135,20 @@ export const Combobox = React.forwardRef(function Combobox(
     if (open) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
+        e.stopPropagation();
         setActiveIdx((i) => Math.min(filtered.length - 1, i + 1));
         return;
       }
       if (e.key === 'ArrowUp') {
         e.preventDefault();
+        e.stopPropagation();
         setActiveIdx((i) => Math.max(0, i - 1));
         return;
       }
       if (e.key === 'Enter') {
+        // WICHTIG: Bubbling stoppen, damit der Dialog nicht zusätzlich save() triggert
         e.preventDefault();
+        e.stopPropagation();
         const opt = filtered[activeIdx] ?? filtered[0];
         if (opt) select(opt);
         else if (text.trim() === '') { setOpen(false); }
@@ -152,18 +156,20 @@ export const Combobox = React.forwardRef(function Combobox(
       }
       if (e.key === 'Escape') {
         e.preventDefault();
+        e.stopPropagation();
         setOpen(false);
         setText(selected?.label ?? '');
         return;
       }
       if (e.key === 'Tab') {
-        // Bei Tab: ausgewählte Option übernehmen falls Match exakt oder eindeutig
-        if (filtered.length === 1) select(filtered[0]);
+        // Tab: ausgewählte Option übernehmen + zum nächsten Feld
+        const opt = filtered[activeIdx] ?? (filtered.length === 1 ? filtered[0] : null);
+        if (opt) select(opt);
         setOpen(false);
         return;
       }
     } else {
-      if (e.key === 'ArrowDown') { e.preventDefault(); setOpen(true); return; }
+      if (e.key === 'ArrowDown') { e.preventDefault(); setOpen(true); setActiveIdx(0); return; }
       // Enter im geschlossenen Zustand → Parent (z.B. Save)
       onKeyDown?.(e);
     }
@@ -241,14 +247,19 @@ export const Combobox = React.forwardRef(function Combobox(
                   key={o.id}
                   onMouseDown={(e) => { e.preventDefault(); select(o); }}
                   onMouseEnter={() => setActiveIdx(i)}
-                  className="px-2 py-1.5 cursor-pointer text-sm"
+                  className="px-2 py-1.5 cursor-pointer text-sm flex items-start gap-2"
                   style={{
                     background: active ? '#e6ede6' : 'transparent',
                     color: active ? '#2d5a2d' : '#3d4a3d',
+                    borderLeft: active ? '3px solid #7a9b7f' : '3px solid transparent',
+                    fontWeight: active ? 600 : 400,
                   }}
                 >
-                  <div className="font-medium">{o.label}</div>
-                  {o.sublabel && <div className="text-[10px] text-zinc-500">{o.sublabel}</div>}
+                  <div className="flex-1 min-w-0">
+                    <div className="truncate">{o.label}</div>
+                    {o.sublabel && <div className="text-[10px] text-zinc-500 truncate">{o.sublabel}</div>}
+                  </div>
+                  {active && <span className="text-[10px] text-zinc-400 mt-0.5">↵</span>}
                 </div>
               );
             })

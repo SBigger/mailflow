@@ -122,11 +122,11 @@ export default function RapportEditDialog({
   const rateNum = num(form.rate_snapshot);
   const total = hoursNum * rateNum;
 
-  const canSave = !!form.project_id && !!form.service_type_id && hoursNum > 0;
+  const canSave = !!form.project_id && !!form.service_type_id && hoursNum > 0 && !!form.description?.trim();
 
   const handleSave = async () => {
     if (!canSave) {
-      setError('Projekt, Leistungsart und Stunden sind Pflicht.');
+      setError('Projekt, Leistungsart, Stunden und Beschreibung sind Pflicht.');
       return;
     }
     setError(null);
@@ -261,12 +261,13 @@ export default function RapportEditDialog({
           </Field>
 
           {/* Beschreibung */}
-          <Field label="Beschreibung">
+          <Field label={<>Beschreibung <span className="text-red-500">*</span></>}>
             <Input
               value={form.description}
               onChange={(e) => setForm({ ...form, description: e.target.value })}
               onKeyDown={onKey}
               placeholder="Was wurde gemacht…"
+              style={!form.description?.trim() ? { borderColor: '#e8b4b4' } : undefined}
             />
           </Field>
 

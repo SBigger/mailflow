@@ -26,8 +26,11 @@ import {
 import RapportEditDialog from './RapportEditDialog';
 
 // Konstanten wie Tagesansicht (kompakter Skalierung)
-const HOUR_START = 6;
-const HOUR_END = 22;
+const HOUR_START = 0;
+const HOUR_END = 24;
+const WORK_HOUR_START = 8;
+const WORK_HOUR_END = 17;
+const SCROLL_TO_HOUR = 7;
 const PX_PER_HOUR = 36;
 const PX_PER_MIN = PX_PER_HOUR / 60;
 const SLOT_GRID_MIN = 15;
@@ -382,7 +385,7 @@ export default function KalenderWochePanel() {
 
                 {/* Tag-Spalte */}
                 <div
-                  className="relative cursor-crosshair"
+                  className="relative cursor-pointer"
                   style={{
                     height: totalHeight,
                     background: isWeekend ? '#fafbf9' : '#fff',
