@@ -210,11 +210,7 @@ export default function KalenderWochePanel() {
     onSuccess: () => { toast.success('Rapport gelöscht'); invalidate(); },
   });
 
-  if (!employeeResolved) return <PanelLoader />;
-  const anyError = projectsQ.error || serviceTypesQ.error || entriesQ.error;
-  if (anyError) return <PanelError error={anyError} onRetry={() => { entriesQ.refetch(); }} />;
-
-  // Pro Tag gefilterte Einträge mit Lane-Berechnung
+  // --- WICHTIG: Hooks (useMemo) IMMER vor early-returns! ---
   const itemsByDay = useMemo(() => {
     const result = {};
     for (const day of days) {
@@ -242,6 +238,10 @@ export default function KalenderWochePanel() {
     }
     return { hours, chf };
   }, [entries]);
+
+  if (!employeeResolved) return <PanelLoader />;
+  const anyError = projectsQ.error || serviceTypesQ.error || entriesQ.error;
+  if (anyError) return <PanelError error={anyError} onRetry={() => { entriesQ.refetch(); }} />;
 
   const totalHeight = (HOUR_END - HOUR_START) * PX_PER_HOUR;
   const hours = Array.from({ length: HOUR_END - HOUR_START + 1 }, (_, i) => HOUR_START + i);

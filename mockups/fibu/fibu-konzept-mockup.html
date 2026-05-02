@@ -1,0 +1,1278 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=1440"/>
+<title>Artis FiBu & Kreditoren – Konzept-Mockup</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  html,body{font-family:'Inter',system-ui,sans-serif;font-size:13px}
+  body{background:#f2f5f2;color:#1a1a2e}
+  .card{background:#fff;border:1px solid #e4e9e4;border-radius:12px}
+  .subtle{color:#6b826b} .muted{color:#94a394}
+  .chip{display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:2px 8px;border-radius:6px;font-weight:500}
+  .chip-g{background:#dcf0e1;color:#1d6b35}
+  .chip-y{background:#fef0c7;color:#8a5a00}
+  .chip-r{background:#fde7e7;color:#8a2d2d}
+  .chip-b{background:#e3eaf5;color:#2e4a7d}
+  .chip-n{background:#e4e4ea;color:#4a4a5a}
+  .chip-v{background:#efe4f8;color:#5f3a9c}
+  .btn{display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:8px;font-size:12.5px;font-weight:500;cursor:pointer;border:none;transition:.12s}
+  .btn-primary{background:#7a9b7f;color:#fff}.btn-primary:hover{background:#638666}
+  .btn-outline{background:#fff;color:#4a5a4a;border:1px solid #d4dcd4}.btn-outline:hover{background:#f7faf7}
+  .btn-ghost{background:transparent;color:#4a5a4a}.btn-ghost:hover{background:#edf2ed}
+  .btn-sm{padding:4px 10px;font-size:11.5px}
+  .btn-danger{background:#fff;color:#8a2d2d;border:1px solid #fbb}
+  .icon{width:15px;height:15px;stroke-width:2;flex-shrink:0}
+  .icon-lg{width:18px;height:18px;stroke-width:2}
+  .inp{background:#f7faf7;border:1px solid #d4dcd4;border-radius:7px;padding:6px 10px;font-size:12.5px;color:#1a1a2e;outline:none;width:100%}
+  .inp:focus{border-color:#7a9b7f;background:#fff}
+  .inp-sm{padding:4px 8px;font-size:12px}
+  select.inp{cursor:pointer}
+  .lbl{font-size:11px;font-weight:600;color:#6b826b;margin-bottom:3px;display:block}
+  /* Sidebar */
+  .nav-section{font-size:9.5px;font-weight:700;letter-spacing:.12em;color:#7a9a7f;text-transform:uppercase;padding:14px 14px 4px}
+  .nav-item{display:flex;align-items:center;gap:9px;padding:6px 10px;border-radius:8px;cursor:pointer;color:#4a5a4a;font-size:12.5px;margin:1px 6px;transition:.1s}
+  .nav-item:hover{background:#edf2ed}
+  .nav-item.active{background:#7a9b7f;color:#fff;font-weight:500}
+  .nav-count{margin-left:auto;font-size:10.5px;font-weight:600;padding:1px 7px;border-radius:10px;background:rgba(0,0,0,.09)}
+  .nav-item.active .nav-count{background:rgba(255,255,255,.25);color:#fff}
+  /* Table */
+  .tbl{width:100%;border-collapse:collapse}
+  .tbl th{text-align:left;font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#6b826b;padding:9px 12px;border-bottom:2px solid #e4e9e4;white-space:nowrap;background:#fff}
+  .tbl td{padding:9px 12px;border-bottom:1px solid #f0f3f0;vertical-align:middle;font-size:12.5px}
+  .tbl tbody tr:hover td{background:#f7faf7}
+  .tbl tbody tr.selected td{background:#f0f7f0}
+  .tbl-r{text-align:right;font-variant-numeric:tabular-nums}
+  .tbl td.tbl-r{font-weight:500}
+  .tbl tfoot td{font-weight:700;font-size:12.5px;background:#f7faf7;border-top:2px solid #d4dcd4}
+  /* KPI */
+  .kpi{background:#fff;border:1px solid #e4e9e4;border-radius:10px;padding:16px 18px;position:relative;overflow:hidden}
+  .kpi::after{content:'';position:absolute;top:0;right:0;width:70px;height:70px;background:radial-gradient(circle,rgba(122,155,127,.1),transparent 70%)}
+  .kpi-val{font-size:22px;font-weight:700;letter-spacing:-.03em;line-height:1;margin:6px 0 3px}
+  .kpi-lbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#94a394}
+  .kpi-sub{font-size:11.5px;color:#6b826b}
+  /* Tabs */
+  .tab{padding:8px 16px;font-size:12.5px;font-weight:500;color:#6b826b;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap}
+  .tab.active{color:#3d6641;border-bottom-color:#7a9b7f;font-weight:600}
+  /* Screens */
+  .screen{display:none;flex-direction:column;flex:1;overflow:hidden}
+  .screen.active{display:flex}
+  /* Bilanz */
+  .bz-row{display:flex;justify-content:space-between;padding:4px 0;font-size:12.5px}
+  .bz-row.group{font-weight:700;color:#3d6641;font-size:11px;text-transform:uppercase;letter-spacing:.07em;margin-top:12px;margin-bottom:3px;padding-bottom:3px;border-bottom:1px solid #e4e9e4}
+  .bz-row.sub{padding-left:14px;color:#4a5a4a}
+  .bz-row.subtot{font-weight:600;border-top:1px solid #d4dcd4;margin-top:4px;padding-top:6px}
+  .bz-row.total{font-weight:800;border-top:2px solid #1a1a2e;margin-top:8px;padding-top:8px;font-size:14px}
+  /* MWST */
+  .mwst-grid{display:grid;grid-template-columns:52px 1fr 150px 150px}
+  .mwst-cell{padding:8px 14px;border-bottom:1px solid #f0f3f0;display:flex;align-items:center;font-size:12.5px}
+  .mwst-grid:hover .mwst-cell{background:#fafcfa}
+  .mwst-grid.sec-hdr .mwst-cell{background:#e6ede6;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:#3d6641;padding:6px 14px}
+  .mwst-grid.sum-row .mwst-cell{background:#f0f7f0;font-weight:700;font-size:13px}
+  .mwst-grid.result-row .mwst-cell{background:#dcf0e1;font-weight:700;font-size:14px}
+  .mwst-ziffer{font-weight:700;color:#94a394;font-size:11px}
+  /* Steps */
+  .step-dot{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0}
+  .step-dot.done{background:#7a9b7f;color:#fff}
+  .step-dot.now{background:#fff;border:2px solid #7a9b7f;color:#3d6641}
+  .step-dot.todo{background:#e4e9e4;color:#94a394}
+  .step-line{flex:1;height:2px;max-width:60px}
+  /* scrollbar */
+  ::-webkit-scrollbar{width:6px;height:6px}
+  ::-webkit-scrollbar-thumb{background:#d4dcd4;border-radius:3px}
+  ::-webkit-scrollbar-track{background:transparent}
+  /* helper */
+  .divider{height:1px;background:#e4e9e4;margin:12px 0}
+  .mono{font-family:'SF Mono',Consolas,monospace;font-size:12px}
+</style>
+</head>
+<body class="h-screen flex overflow-hidden">
+
+<!-- ══════════════════════ SIDEBAR ══════════════════════ -->
+<aside class="flex-shrink-0 flex flex-col overflow-hidden" style="width:220px;background:#e6ede6;border-right:1px solid #bfcfbf">
+
+  <!-- Logo + Mandant -->
+  <div class="px-4 pt-4 pb-3 border-b" style="border-color:#bfcfbf">
+    <div class="flex items-center gap-2 mb-3">
+      <div class="w-7 h-7 rounded-lg flex items-center justify-center text-white text-xs font-bold" style="background:#7a9b7f">A</div>
+      <span class="font-700 text-sm" style="color:#1a1a2e">Artis FiBu</span>
+      <span class="ml-auto text-xs muted">v0.1</span>
+    </div>
+    <div class="inp-sm inp cursor-pointer" style="background:#d4dcd4;border-color:#bfcfbf;padding:5px 9px;border-radius:7px">
+      <span class="text-xs font-500" style="color:#3a4a3a">Muster AG &nbsp;·&nbsp; GJ 2024</span>
+      <svg class="icon inline ml-1" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m6 9 6 6 6-6"/></svg>
+    </div>
+  </div>
+
+  <!-- Nav -->
+  <nav class="flex-1 overflow-y-auto py-1">
+
+    <div class="nav-section">Kreditoren</div>
+    <div class="nav-item active" onclick="show('dash')">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+      Dashboard
+    </div>
+    <div class="nav-item" onclick="show('lieferanten')">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      Lieferanten
+      <span class="nav-count">24</span>
+    </div>
+    <div class="nav-item" onclick="show('erfassen')">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+      Rechnung erfassen
+    </div>
+    <div class="nav-item" onclick="show('opliste')">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+      OP-Liste
+      <span class="nav-count">8</span>
+    </div>
+    <div class="nav-item" onclick="show('zahlungslauf')">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+      Zahlungslauf
+    </div>
+    <div class="nav-item" onclick="show('belegjournal')">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 6h16M4 10h16M4 14h8"/><rect x="2" y="2" width="20" height="20" rx="2"/></svg>
+      Belegjournal
+    </div>
+
+    <div class="nav-section">Debitoren</div>
+    <div class="nav-item" style="opacity:.5" title="Bestehendes Modul">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      Rechnungen & Zahlungen
+    </div>
+
+    <div class="nav-section">Finanzbuchhaltung</div>
+    <div class="nav-item" onclick="show('journal')">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 6h16M4 12h16M4 18h7"/></svg>
+      Journal
+    </div>
+    <div class="nav-item" onclick="show('kontoblatt')">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="3" width="20" height="18" rx="2"/><path d="M8 3v18M2 9h20M2 15h20"/></svg>
+      Kontoblätter
+    </div>
+    <div class="nav-item" onclick="show('bilanz')">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="12" y1="2" x2="12" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+      Bilanz & Erfolgsrechnung
+    </div>
+    <div class="nav-item" onclick="show('mwst')">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 13h6M9 17h4"/></svg>
+      MWST-Abrechnung
+      <span class="nav-count chip-y" style="background:#fef0c7;color:#8a5a00">Q1</span>
+    </div>
+
+    <div class="nav-section">Einstellungen</div>
+    <div class="nav-item">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z"/></svg>
+      Kontenplan
+    </div>
+    <div class="nav-item">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
+      Buchungsschlüssel
+    </div>
+  </nav>
+
+  <!-- User -->
+  <div class="px-3 py-3 border-t flex items-center gap-2" style="border-color:#bfcfbf">
+    <div class="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-700" style="background:#7a9b7f">SB</div>
+    <div class="flex-1 min-w-0">
+      <div class="text-xs font-600 truncate" style="color:#1a1a2e">Sascha Bigger</div>
+      <div class="text-xs muted">Administrator</div>
+    </div>
+    <svg class="icon muted" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+  </div>
+</aside>
+
+<!-- ══════════════════════ MAIN ══════════════════════ -->
+<main class="flex-1 flex flex-col overflow-hidden">
+
+  <!-- Top bar -->
+  <header class="flex-shrink-0 flex items-center gap-3 px-6 py-3 bg-white border-b" style="border-color:#e4e9e4">
+    <div id="breadcrumb" class="flex items-center gap-1.5 flex-1 min-w-0">
+      <span class="muted text-xs">Kreditoren</span>
+      <svg class="icon muted" style="width:12px;height:12px" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m9 18 6-6-6-6"/></svg>
+      <span id="bc-current" class="text-xs font-600" style="color:#1a1a2e">Dashboard</span>
+    </div>
+    <div class="flex items-center gap-2">
+      <div class="text-xs muted">GJ 2024</div>
+      <div class="w-px h-4" style="background:#e4e9e4"></div>
+      <button class="btn btn-ghost btn-sm">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
+        Auswertungen
+      </button>
+      <button class="btn btn-primary btn-sm" onclick="show('erfassen')">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Rechnung erfassen
+      </button>
+    </div>
+  </header>
+
+  <!-- Content area -->
+  <div class="flex-1 overflow-hidden flex flex-col">
+
+    <!-- ─────────────── SCREEN 1: DASHBOARD ─────────────── -->
+    <div id="s-dash" class="screen active overflow-y-auto">
+      <div class="p-6 flex flex-col gap-5">
+
+        <!-- KPI row -->
+        <div class="grid grid-cols-4 gap-4">
+          <div class="kpi">
+            <div class="kpi-lbl">Offene Rechnungen</div>
+            <div class="kpi-val">CHF 18'450.–</div>
+            <div class="kpi-sub">8 Belege ausstehend</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-lbl">Fällig diese Woche</div>
+            <div class="kpi-val" style="color:#8a5a00">CHF 5'280.–</div>
+            <div class="kpi-sub">3 Rechnungen bis 03.05.2024</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-lbl">Überfällig</div>
+            <div class="kpi-val" style="color:#8a2d2d">CHF 892.50</div>
+            <div class="kpi-sub">1 Rechnung · +12 Tage</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-lbl">Vorsteuer Q1 2024</div>
+            <div class="kpi-val" style="color:#2e4a7d">CHF 3'241.20</div>
+            <div class="kpi-sub">Abzugsfähige Vorsteuer</div>
+          </div>
+        </div>
+
+        <!-- Pending invoices + quick actions -->
+        <div class="grid gap-4" style="grid-template-columns:1fr 340px">
+
+          <!-- Invoice table -->
+          <div class="card overflow-hidden">
+            <div class="flex items-center justify-between px-4 py-3 border-b" style="border-color:#e4e9e4">
+              <span class="font-600 text-sm">Offene Kreditoren-Rechnungen</span>
+              <div class="flex gap-2">
+                <span class="chip chip-r">1 überfällig</span>
+                <span class="chip chip-y">3 fällig diese Woche</span>
+              </div>
+            </div>
+            <table class="tbl">
+              <thead><tr>
+                <th>Beleg-Nr.</th><th>Lieferant</th><th>Belegdatum</th><th>Fälligkeit</th><th class="tbl-r">Betrag CHF</th><th>Status</th><th></th>
+              </tr></thead>
+              <tbody>
+                <tr>
+                  <td class="mono">RE-2024-0142</td><td>Swisscom AG</td><td>15.04.2024</td><td>30.04.2024</td>
+                  <td class="tbl-r">485.00</td><td><span class="chip chip-y">fällig</span></td>
+                  <td><button class="btn btn-outline btn-sm">Zahlen</button></td>
+                </tr>
+                <tr style="background:#fff8f8">
+                  <td class="mono">RE-2024-0141</td><td>BKW Energie AG</td><td>03.04.2024</td><td>18.04.2024</td>
+                  <td class="tbl-r" style="color:#8a2d2d">892.50</td><td><span class="chip chip-r">überfällig +12</span></td>
+                  <td><button class="btn btn-danger btn-sm">Zahlen</button></td>
+                </tr>
+                <tr>
+                  <td class="mono">RE-2024-0140</td><td>Helvetia Versicherung</td><td>01.04.2024</td><td>01.06.2024</td>
+                  <td class="tbl-r">2'450.00</td><td><span class="chip chip-n">offen</span></td>
+                  <td><button class="btn btn-outline btn-sm">Zahlen</button></td>
+                </tr>
+                <tr>
+                  <td class="mono">RE-2024-0138</td><td>Weber & Partner AG</td><td>28.03.2024</td><td>28.04.2024</td>
+                  <td class="tbl-r">3'600.00</td><td><span class="chip chip-y">fällig</span></td>
+                  <td><button class="btn btn-outline btn-sm">Zahlen</button></td>
+                </tr>
+                <tr>
+                  <td class="mono">RE-2024-0136</td><td>Migros Genossenschaft</td><td>22.03.2024</td><td>06.05.2024</td>
+                  <td class="tbl-r">128.40</td><td><span class="chip chip-n">offen</span></td>
+                  <td><button class="btn btn-outline btn-sm">Zahlen</button></td>
+                </tr>
+                <tr>
+                  <td class="mono">RE-2024-0135</td><td>SBB AG</td><td>18.03.2024</td><td>02.05.2024</td>
+                  <td class="tbl-r">256.80</td><td><span class="chip chip-y">fällig</span></td>
+                  <td><button class="btn btn-outline btn-sm">Zahlen</button></td>
+                </tr>
+              </tbody>
+              <tfoot><tr>
+                <td colspan="4" class="font-700">Total offen</td>
+                <td class="tbl-r">7'812.70</td>
+                <td colspan="2"></td>
+              </tr></tfoot>
+            </table>
+          </div>
+
+          <!-- Right panel -->
+          <div class="flex flex-col gap-4">
+            <!-- Quick actions -->
+            <div class="card p-4">
+              <div class="font-600 text-sm mb-3">Schnellaktionen</div>
+              <div class="flex flex-col gap-2">
+                <button class="btn btn-primary w-full justify-start" onclick="show('erfassen')">
+                  <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  Neue Rechnung erfassen
+                </button>
+                <button class="btn btn-outline w-full justify-start" onclick="show('zahlungslauf')">
+                  <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+                  Zahlungslauf starten
+                </button>
+                <button class="btn btn-outline w-full justify-start" onclick="show('opliste')">
+                  <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M9 11l3 3L22 4"/></svg>
+                  OP-Liste per Stichtag
+                </button>
+              </div>
+            </div>
+            <!-- Letzte Zahlungen -->
+            <div class="card p-4">
+              <div class="font-600 text-sm mb-3">Zuletzt bezahlt</div>
+              <div class="flex flex-col gap-3">
+                <div class="flex items-center gap-3">
+                  <div class="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-700 text-white" style="background:#7a9b7f">W</div>
+                  <div class="flex-1 min-w-0">
+                    <div class="font-500 text-xs truncate">Weber & Partner AG</div>
+                    <div class="text-xs muted">RE-2024-0133 · 24.04.2024</div>
+                  </div>
+                  <div class="text-xs font-600 text-right" style="color:#1d6b35">3'200.00</div>
+                </div>
+                <div class="flex items-center gap-3">
+                  <div class="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-700 text-white" style="background:#5a7a9b">S</div>
+                  <div class="flex-1 min-w-0">
+                    <div class="font-500 text-xs truncate">Swisscom AG</div>
+                    <div class="text-xs muted">RE-2024-0130 · 22.04.2024</div>
+                  </div>
+                  <div class="text-xs font-600 text-right" style="color:#1d6b35">485.00</div>
+                </div>
+                <div class="flex items-center gap-3">
+                  <div class="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-700 text-white" style="background:#9b7a5a">H</div>
+                  <div class="flex-1 min-w-0">
+                    <div class="font-500 text-xs truncate">Helvetia Versicherung</div>
+                    <div class="text-xs muted">RE-2024-0128 · 15.04.2024</div>
+                  </div>
+                  <div class="text-xs font-600 text-right" style="color:#1d6b35">2'450.00</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─────────────── SCREEN 2: LIEFERANTEN ─────────────── -->
+    <div id="s-lieferanten" class="screen overflow-hidden" style="flex-direction:row">
+      <!-- List -->
+      <div class="flex flex-col flex-1 overflow-hidden border-r" style="border-color:#e4e9e4">
+        <div class="flex-shrink-0 flex items-center gap-2 px-4 py-3 bg-white border-b" style="border-color:#e4e9e4">
+          <input class="inp" style="max-width:240px" placeholder="Lieferant suchen…">
+          <button class="btn btn-ghost btn-sm">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="4" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="10" y1="18" x2="14" y2="18"/></svg>
+            Filter
+          </button>
+          <div class="flex-1"></div>
+          <button class="btn btn-primary btn-sm">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Neuer Lieferant
+          </button>
+        </div>
+        <div class="overflow-y-auto flex-1">
+          <table class="tbl">
+            <thead><tr>
+              <th>Nr.</th><th>Name / Firma</th><th>Ort</th><th>Zahlungsbedingung</th><th>Buchungskonto</th><th>MWST</th><th>Status</th>
+            </tr></thead>
+            <tbody>
+              <tr class="selected" onclick="">
+                <td class="mono muted">1001</td><td class="font-500">Swisscom AG</td><td>Worblaufen BE</td>
+                <td>30 Tage netto</td><td>6500 IT-Infrastruktur</td><td>8.1%</td><td><span class="chip chip-g">aktiv</span></td>
+              </tr>
+              <tr>
+                <td class="mono muted">1002</td><td class="font-500">BKW Energie AG</td><td>Bern BE</td>
+                <td>20 Tage netto</td><td>6210 Energieaufwand</td><td>8.1%</td><td><span class="chip chip-g">aktiv</span></td>
+              </tr>
+              <tr>
+                <td class="mono muted">1003</td><td class="font-500">Helvetia Versicherung</td><td>Basel BS</td>
+                <td>60 Tage netto</td><td>6300 Versicherungen</td><td>keine</td><td><span class="chip chip-g">aktiv</span></td>
+              </tr>
+              <tr>
+                <td class="mono muted">1004</td><td class="font-500">Weber & Partner AG</td><td>Zürich ZH</td>
+                <td>30 Tage / 2% 10 Tage</td><td>6800 Beratungsaufwand</td><td>8.1%</td><td><span class="chip chip-g">aktiv</span></td>
+              </tr>
+              <tr>
+                <td class="mono muted">1005</td><td class="font-500">SBB AG</td><td>Bern BE</td>
+                <td>30 Tage netto</td><td>6640 Reisekosten</td><td>keine</td><td><span class="chip chip-g">aktiv</span></td>
+              </tr>
+              <tr>
+                <td class="mono muted">1006</td><td class="font-500">Migros Genossenschaft</td><td>Zürich ZH</td>
+                <td>30 Tage netto</td><td>6600 Büromaterial</td><td>2.6%</td><td><span class="chip chip-g">aktiv</span></td>
+              </tr>
+              <tr>
+                <td class="mono muted">1007</td><td class="font-500">Canon Schweiz AG</td><td>Dietlikon ZH</td>
+                <td>30 Tage netto</td><td>6510 Büromaschinen</td><td>8.1%</td><td><span class="chip chip-n">inaktiv</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <!-- Detail panel -->
+      <div class="flex-shrink-0 overflow-y-auto bg-white p-5 flex flex-col gap-4" style="width:320px">
+        <div class="flex items-center justify-between">
+          <div>
+            <div class="font-700 text-sm">Swisscom AG</div>
+            <div class="text-xs muted">Lieferant Nr. 1001</div>
+          </div>
+          <span class="chip chip-g">aktiv</span>
+        </div>
+        <div class="divider"></div>
+        <div class="flex flex-col gap-3">
+          <div><span class="lbl">Adresse</span>
+            <div class="text-xs" style="color:#1a1a2e">Alte Tiefenaustrasse 6<br>3048 Worblaufen BE</div>
+          </div>
+          <div><span class="lbl">UID</span><div class="mono text-xs">CHE-107.835.964</div></div>
+          <div class="divider"></div>
+          <div><span class="lbl">IBAN</span><div class="mono text-xs">CH93 0076 2011 6238 5295 7</div></div>
+          <div><span class="lbl">Bank</span><div class="text-xs">UBS Switzerland AG, Zürich</div></div>
+          <div class="divider"></div>
+          <div><span class="lbl">Zahlungsbedingung</span><div class="text-xs">30 Tage netto</div></div>
+          <div><span class="lbl">Standard-Buchungskonto</span><div class="text-xs font-500">6500 IT-Infrastruktur</div></div>
+          <div><span class="lbl">MWST-Code</span><div class="text-xs">VS81 – Vorsteuer 8.1%</div></div>
+          <div class="divider"></div>
+          <div><span class="lbl">Offene Rechnungen</span>
+            <div class="text-xs font-600" style="color:#8a5a00">CHF 485.00 (1 Beleg)</div>
+          </div>
+        </div>
+        <div class="flex gap-2 mt-auto">
+          <button class="btn btn-outline btn-sm flex-1">Bearbeiten</button>
+          <button class="btn btn-primary btn-sm flex-1" onclick="show('erfassen')">Neue Rechnung</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─────────────── SCREEN 3: RECHNUNG ERFASSEN ─────────────── -->
+    <div id="s-erfassen" class="screen overflow-hidden" style="flex-direction:row">
+      <!-- Form left -->
+      <div class="flex-1 overflow-y-auto p-5 flex flex-col gap-4 border-r" style="border-color:#e4e9e4">
+        <div class="flex items-center justify-between">
+          <div class="font-600 text-sm">Neue Kreditoren-Rechnung</div>
+          <div class="flex gap-2">
+            <button class="btn btn-outline btn-sm">Abbrechen</button>
+            <button class="btn btn-primary btn-sm">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+              Speichern & Buchen
+            </button>
+          </div>
+        </div>
+
+        <!-- Header fields -->
+        <div class="card p-4 flex flex-col gap-3">
+          <div class="font-600 text-xs muted uppercase tracking-wider mb-1">Belegkopf</div>
+          <div class="form-grid form-2">
+            <div>
+              <label class="lbl">Lieferant *</label>
+              <select class="inp"><option>Swisscom AG (1001)</option><option>BKW Energie AG (1002)</option><option>Weber & Partner AG (1004)</option></select>
+            </div>
+            <div>
+              <label class="lbl">Beleg-Nr. (Lieferant) *</label>
+              <input class="inp" value="2024-4521" placeholder="Rechnungsnummer des Lieferanten">
+            </div>
+          </div>
+          <div class="form-grid form-4">
+            <div>
+              <label class="lbl">Belegdatum *</label>
+              <input class="inp" type="text" value="15.04.2024">
+            </div>
+            <div>
+              <label class="lbl">Fälligkeit</label>
+              <input class="inp" type="text" value="15.05.2024" style="border-color:#7a9b7f">
+            </div>
+            <div>
+              <label class="lbl">Zahlungsbedingung</label>
+              <select class="inp"><option>30 Tage netto</option><option>20 Tage netto</option><option>60 Tage netto</option></select>
+            </div>
+            <div>
+              <label class="lbl">Währung</label>
+              <select class="inp"><option>CHF</option><option>EUR</option></select>
+            </div>
+          </div>
+          <div class="form-grid form-2">
+            <div>
+              <label class="lbl">Zahlungsreferenz / QR-Ref.</label>
+              <input class="inp" placeholder="Optionale Referenznummer" class="mono">
+            </div>
+            <div>
+              <label class="lbl">Interne Notiz</label>
+              <input class="inp" placeholder="Nur intern sichtbar">
+            </div>
+          </div>
+        </div>
+
+        <!-- Positions -->
+        <div class="card overflow-hidden">
+          <div class="flex items-center justify-between px-4 py-3 border-b" style="border-color:#e4e9e4">
+            <span class="font-600 text-xs uppercase tracking-wider muted">Buchungspositionen</span>
+            <button class="btn btn-ghost btn-sm">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Position hinzufügen
+            </button>
+          </div>
+          <table class="tbl">
+            <thead><tr>
+              <th style="width:36px">#</th>
+              <th style="width:200px">Aufwandskonto *</th>
+              <th>Bezeichnung</th>
+              <th style="width:120px">MWST-Code</th>
+              <th style="width:110px" class="tbl-r">Netto CHF *</th>
+              <th style="width:110px" class="tbl-r">MWST CHF</th>
+              <th style="width:110px" class="tbl-r">Brutto CHF</th>
+              <th style="width:28px"></th>
+            </tr></thead>
+            <tbody>
+              <tr>
+                <td class="muted text-xs">1</td>
+                <td><select class="inp inp-sm"><option>6500 IT-Infrastruktur</option><option>6600 Büromaterial</option></select></td>
+                <td><input class="inp inp-sm" value="Internet & Telefon April 2024"></td>
+                <td><select class="inp inp-sm"><option>VS81 – Vorsteuer 8.1%</option><option>VS26 – 2.6%</option><option>0 – keine</option></select></td>
+                <td><input class="inp inp-sm tbl-r" value="448.65" style="text-align:right"></td>
+                <td class="tbl-r muted">36.35</td>
+                <td class="tbl-r font-600">485.00</td>
+                <td><button class="btn btn-ghost btn-sm" style="padding:2px 5px;color:#c00">✕</button></td>
+              </tr>
+            </tbody>
+          </table>
+          <!-- Totals -->
+          <div class="flex items-center justify-end gap-8 px-4 py-3 border-t" style="border-color:#e4e9e4;background:#fafcfa">
+            <div class="text-right"><div class="lbl">Netto</div><div class="font-600">CHF 448.65</div></div>
+            <div class="text-right"><div class="lbl">MWST 8.1%</div><div class="font-600" style="color:#2e4a7d">CHF 36.35</div></div>
+            <div class="text-right"><div class="lbl">Brutto</div><div class="font-700 text-base">CHF 485.00</div></div>
+          </div>
+        </div>
+
+        <!-- OCR hint -->
+        <div class="flex items-center gap-3 px-4 py-3 rounded-lg" style="background:#e3eaf5;border:1px solid #c5d4ea">
+          <svg class="icon" style="color:#2e4a7d" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9h1v6H9M13 15V9l3 3-3 3"/></svg>
+          <div class="flex-1 text-xs" style="color:#2e4a7d">
+            <strong>Lokales OCR (tesseract.js)</strong> — Beleg-PDF hochladen, Felder werden automatisch vorbelegt. Ohne Cloud-API.
+          </div>
+          <button class="btn btn-sm" style="background:#2e4a7d;color:#fff">PDF scannen</button>
+        </div>
+      </div>
+
+      <!-- PDF Preview right -->
+      <div class="flex-shrink-0 flex flex-col" style="width:380px;background:#f8f8f8">
+        <div class="flex items-center gap-2 px-4 py-3 bg-white border-b" style="border-color:#e4e9e4">
+          <svg class="icon muted" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          <span class="text-xs font-500">Belegvorschau</span>
+          <div class="flex-1"></div>
+          <button class="btn btn-outline btn-sm">PDF laden</button>
+        </div>
+        <!-- Mock invoice PDF -->
+        <div class="flex-1 flex flex-col p-4 gap-2" style="font-family:Georgia,serif">
+          <div class="bg-white rounded-lg shadow-sm p-5 flex-1 text-xs" style="color:#222;line-height:1.6;border:1px solid #ddd">
+            <div style="font-size:18px;font-weight:700;color:#0066cc;margin-bottom:12px">SWISSCOM AG</div>
+            <div style="font-size:9px;color:#666;margin-bottom:16px">Alte Tiefenaustrasse 6 · 3048 Worblaufen · CHE-107.835.964 MWST</div>
+            <div style="border-bottom:2px solid #0066cc;margin-bottom:12px;padding-bottom:6px">
+              <div style="font-weight:600">Rechnung 2024-4521</div>
+            </div>
+            <table style="width:100%;font-size:9px;margin-bottom:12px">
+              <tr><td style="color:#666">Rechnungsdatum</td><td style="text-align:right">15.04.2024</td></tr>
+              <tr><td style="color:#666">Fälligkeitsdatum</td><td style="text-align:right;font-weight:600;color:#c00">15.05.2024</td></tr>
+            </table>
+            <table style="width:100%;font-size:9px;border-collapse:collapse">
+              <tr style="background:#f0f4ff;font-weight:600"><td style="padding:4px">Leistung</td><td style="text-align:right;padding:4px">Betrag</td></tr>
+              <tr><td style="padding:4px;border-bottom:1px solid #eee">Internet & Telefon April 2024</td><td style="text-align:right;padding:4px;border-bottom:1px solid #eee">CHF 448.65</td></tr>
+            </table>
+            <div style="margin-top:10px;font-size:9px">
+              <div style="display:flex;justify-content:space-between"><span style="color:#666">Netto</span><span>CHF 448.65</span></div>
+              <div style="display:flex;justify-content:space-between"><span style="color:#666">MWST 8.1%</span><span>CHF 36.35</span></div>
+              <div style="display:flex;justify-content:space-between;font-weight:700;border-top:1px solid #000;margin-top:4px;padding-top:4px"><span>Total CHF</span><span>CHF 485.00</span></div>
+            </div>
+            <div style="margin-top:16px;font-size:8px;color:#666">IBAN: CH93 0076 2011 6238 5295 7</div>
+          </div>
+        </div>
+        <div class="px-4 py-2 text-xs muted text-center">Seite 1 von 1</div>
+      </div>
+    </div>
+
+    <!-- ─────────────── SCREEN 4: OP-LISTE ─────────────── -->
+    <div id="s-opliste" class="screen overflow-hidden flex-col">
+      <!-- Filter bar -->
+      <div class="flex-shrink-0 flex items-center gap-3 px-4 py-3 bg-white border-b" style="border-color:#e4e9e4">
+        <div>
+          <span class="lbl" style="margin:0 6px 0 0;display:inline">Stichtag:</span>
+          <input class="inp" style="width:130px;display:inline-block" value="30.04.2024">
+        </div>
+        <div class="w-px h-5" style="background:#e4e9e4"></div>
+        <div class="flex gap-1">
+          <button class="btn btn-outline btn-sm" style="background:#e6ede6;border-color:#bfcfbf">Heute</button>
+          <button class="btn btn-outline btn-sm">31.12.2023</button>
+          <button class="btn btn-outline btn-sm">31.12.2022</button>
+          <button class="btn btn-outline btn-sm">Benutzerdefiniert…</button>
+        </div>
+        <div class="flex-1"></div>
+        <div class="flex gap-1">
+          <button class="btn btn-outline btn-sm" style="background:#e6ede6;border-color:#bfcfbf">Alle</button>
+          <button class="btn btn-outline btn-sm">
+            <span class="chip chip-y" style="font-size:10px">fällig</span>
+          </button>
+          <button class="btn btn-outline btn-sm">
+            <span class="chip chip-r" style="font-size:10px">überfällig</span>
+          </button>
+        </div>
+        <button class="btn btn-outline btn-sm">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Export Excel
+        </button>
+      </div>
+      <!-- KPI strip -->
+      <div class="flex-shrink-0 flex gap-0 px-4 py-3 border-b" style="border-color:#e4e9e4;background:#fff">
+        <div class="pr-8">
+          <div class="kpi-lbl">Gesamtbetrag offen</div>
+          <div style="font-size:20px;font-weight:700;letter-spacing:-.02em">CHF 18'450.70</div>
+          <div class="text-xs muted">8 Belege per 30.04.2024</div>
+        </div>
+        <div class="px-8 border-l" style="border-color:#e4e9e4">
+          <div class="kpi-lbl">Davon fällig</div>
+          <div style="font-size:20px;font-weight:700;letter-spacing:-.02em;color:#8a5a00">CHF 4'341.80</div>
+          <div class="text-xs muted">4 Belege</div>
+        </div>
+        <div class="px-8 border-l" style="border-color:#e4e9e4">
+          <div class="kpi-lbl">Davon überfällig</div>
+          <div style="font-size:20px;font-weight:700;letter-spacing:-.02em;color:#8a2d2d">CHF 892.50</div>
+          <div class="text-xs muted">1 Beleg · Ø +12 Tage</div>
+        </div>
+        <div class="px-8 border-l" style="border-color:#e4e9e4">
+          <div class="kpi-lbl">Fällig nächste 7 Tage</div>
+          <div style="font-size:20px;font-weight:700;letter-spacing:-.02em;color:#2e4a7d">CHF 5'280.–</div>
+          <div class="text-xs muted">3 Belege bis 07.05.2024</div>
+        </div>
+      </div>
+      <!-- Table -->
+      <div class="flex-1 overflow-y-auto">
+        <table class="tbl">
+          <thead><tr>
+            <th>Beleg-Nr.</th><th>Lieferant</th><th>Belegdatum</th><th>Fälligkeit</th>
+            <th class="tbl-r">Tage</th><th class="tbl-r">Brutto CHF</th><th class="tbl-r">Bezahlt CHF</th><th class="tbl-r">Offen CHF</th>
+            <th>Konto</th><th>Status</th><th></th>
+          </tr></thead>
+          <tbody>
+            <tr style="background:#fff8f8">
+              <td class="mono">RE-2024-0141</td><td class="font-500">BKW Energie AG</td>
+              <td>03.04.2024</td><td style="color:#8a2d2d;font-weight:500">18.04.2024</td>
+              <td class="tbl-r" style="color:#8a2d2d;font-weight:600">+12</td>
+              <td class="tbl-r">892.50</td><td class="tbl-r muted">—</td>
+              <td class="tbl-r font-600" style="color:#8a2d2d">892.50</td>
+              <td class="text-xs muted">6210</td><td><span class="chip chip-r">überfällig</span></td>
+              <td><button class="btn btn-danger btn-sm">Zahlen</button></td>
+            </tr>
+            <tr>
+              <td class="mono">RE-2024-0142</td><td class="font-500">Swisscom AG</td>
+              <td>15.04.2024</td><td>30.04.2024</td>
+              <td class="tbl-r" style="color:#8a5a00;font-weight:600">0</td>
+              <td class="tbl-r">485.00</td><td class="tbl-r muted">—</td>
+              <td class="tbl-r font-600" style="color:#8a5a00">485.00</td>
+              <td class="text-xs muted">6500</td><td><span class="chip chip-y">fällig</span></td>
+              <td><button class="btn btn-outline btn-sm">Zahlen</button></td>
+            </tr>
+            <tr>
+              <td class="mono">RE-2024-0138</td><td class="font-500">Weber & Partner AG</td>
+              <td>28.03.2024</td><td>28.04.2024</td>
+              <td class="tbl-r" style="color:#8a5a00;font-weight:600">+2</td>
+              <td class="tbl-r">3'600.00</td><td class="tbl-r muted">—</td>
+              <td class="tbl-r font-600" style="color:#8a5a00">3'600.00</td>
+              <td class="text-xs muted">6800</td><td><span class="chip chip-y">fällig</span></td>
+              <td><button class="btn btn-outline btn-sm">Zahlen</button></td>
+            </tr>
+            <tr>
+              <td class="mono">RE-2024-0135</td><td class="font-500">SBB AG</td>
+              <td>18.03.2024</td><td>02.05.2024</td>
+              <td class="tbl-r muted">-2</td>
+              <td class="tbl-r">256.80</td><td class="tbl-r muted">—</td>
+              <td class="tbl-r font-600">256.80</td>
+              <td class="text-xs muted">6640</td><td><span class="chip chip-n">offen</span></td>
+              <td><button class="btn btn-outline btn-sm">Zahlen</button></td>
+            </tr>
+            <tr>
+              <td class="mono">RE-2024-0140</td><td class="font-500">Helvetia Versicherung</td>
+              <td>01.04.2024</td><td>01.06.2024</td>
+              <td class="tbl-r muted">-32</td>
+              <td class="tbl-r">2'450.00</td><td class="tbl-r muted">—</td>
+              <td class="tbl-r font-600">2'450.00</td>
+              <td class="text-xs muted">6300</td><td><span class="chip chip-n">offen</span></td>
+              <td><button class="btn btn-outline btn-sm">Zahlen</button></td>
+            </tr>
+            <tr>
+              <td class="mono">RE-2024-0136</td><td class="font-500">Migros Genossenschaft</td>
+              <td>22.03.2024</td><td>06.05.2024</td>
+              <td class="tbl-r muted">-6</td>
+              <td class="tbl-r">128.40</td><td class="tbl-r muted">—</td>
+              <td class="tbl-r font-600">128.40</td>
+              <td class="text-xs muted">6600</td><td><span class="chip chip-n">offen</span></td>
+              <td><button class="btn btn-outline btn-sm">Zahlen</button></td>
+            </tr>
+          </tbody>
+          <tfoot><tr>
+            <td colspan="5" class="font-700">Total CHF</td>
+            <td class="tbl-r">18'450.70</td>
+            <td class="tbl-r">—</td>
+            <td class="tbl-r" style="color:#1a1a2e">18'450.70</td>
+            <td colspan="3"></td>
+          </tr></tfoot>
+        </table>
+      </div>
+    </div>
+
+    <!-- ─────────────── SCREEN 5: ZAHLUNGSLAUF ─────────────── -->
+    <div id="s-zahlungslauf" class="screen overflow-hidden flex-col">
+      <!-- Stepper -->
+      <div class="flex-shrink-0 flex items-center gap-2 px-6 py-4 bg-white border-b" style="border-color:#e4e9e4">
+        <div class="step-dot done">✓</div>
+        <span class="text-xs font-600" style="color:#3d6641">1. Auswahl</span>
+        <div class="step-line" style="background:#7a9b7f"></div>
+        <div class="step-dot now">2</div>
+        <span class="text-xs font-600" style="color:#3d6641">2. Prüfung</span>
+        <div class="step-line" style="background:#e4e9e4"></div>
+        <div class="step-dot todo">3</div>
+        <span class="text-xs muted">3. Freigabe & Export</span>
+        <div class="flex-1"></div>
+        <button class="btn btn-outline btn-sm">Zurück</button>
+        <button class="btn btn-primary btn-sm">
+          Weiter
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m9 18 6-6-6-6"/></svg>
+        </button>
+      </div>
+
+      <div class="flex-1 overflow-hidden flex gap-0">
+        <!-- Left: invoice selection -->
+        <div class="flex-1 flex flex-col overflow-hidden border-r" style="border-color:#e4e9e4">
+          <div class="flex-shrink-0 flex items-center gap-3 px-4 py-3 bg-white border-b" style="border-color:#e4e9e4">
+            <span class="text-sm font-600">Rechnungen auswählen</span>
+            <div class="flex items-center gap-2 ml-4">
+              <span class="text-xs muted">Fällig bis:</span>
+              <input class="inp" style="width:130px" value="07.05.2024">
+            </div>
+            <div class="flex-1"></div>
+            <span class="text-xs muted">3 von 6 ausgewählt · CHF 4'977.80</span>
+          </div>
+          <div class="overflow-y-auto flex-1">
+            <table class="tbl">
+              <thead><tr>
+                <th style="width:36px"><input type="checkbox" checked></th>
+                <th>Beleg-Nr.</th><th>Lieferant</th><th>Fälligkeit</th>
+                <th class="tbl-r">Betrag CHF</th><th>IBAN</th><th>Status</th>
+              </tr></thead>
+              <tbody>
+                <tr class="selected">
+                  <td><input type="checkbox" checked></td>
+                  <td class="mono">RE-2024-0141</td><td>BKW Energie AG</td>
+                  <td style="color:#8a2d2d;font-weight:500">18.04.2024 ⚠</td>
+                  <td class="tbl-r font-600" style="color:#8a2d2d">892.50</td>
+                  <td class="mono text-xs muted">CH56 0483 5012 3456 7800 9</td>
+                  <td><span class="chip chip-r">überfällig</span></td>
+                </tr>
+                <tr class="selected">
+                  <td><input type="checkbox" checked></td>
+                  <td class="mono">RE-2024-0142</td><td>Swisscom AG</td>
+                  <td>30.04.2024</td>
+                  <td class="tbl-r">485.00</td>
+                  <td class="mono text-xs muted">CH93 0076 2011 6238 5295 7</td>
+                  <td><span class="chip chip-y">fällig</span></td>
+                </tr>
+                <tr class="selected">
+                  <td><input type="checkbox" checked></td>
+                  <td class="mono">RE-2024-0138</td><td>Weber & Partner AG</td>
+                  <td>28.04.2024</td>
+                  <td class="tbl-r">3'600.00</td>
+                  <td class="mono text-xs muted">CH21 0900 0000 3000 2268 3</td>
+                  <td><span class="chip chip-y">fällig</span></td>
+                </tr>
+                <tr>
+                  <td><input type="checkbox"></td>
+                  <td class="mono">RE-2024-0135</td><td>SBB AG</td>
+                  <td>02.05.2024</td>
+                  <td class="tbl-r muted">256.80</td>
+                  <td class="mono text-xs muted">CH56 0023 0230 5878 7300 C</td>
+                  <td><span class="chip chip-y">fällig</span></td>
+                </tr>
+                <tr>
+                  <td><input type="checkbox"></td>
+                  <td class="mono">RE-2024-0140</td><td>Helvetia Versicherung</td>
+                  <td>01.06.2024</td>
+                  <td class="tbl-r muted">2'450.00</td>
+                  <td class="mono text-xs muted">CH36 0070 0110 0061 1571 9</td>
+                  <td><span class="chip chip-n">offen</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Right: payment summary -->
+        <div class="flex-shrink-0 overflow-y-auto p-5 flex flex-col gap-4" style="width:300px;background:#fff">
+          <div class="font-600 text-sm">Zahlungsdetails</div>
+          <div class="flex flex-col gap-3">
+            <div><label class="lbl">Zahlungskonto (Debit)</label>
+              <select class="inp"><option>1020 UBS Girokonto (CH93 0076…)</option><option>1021 PostFinance (CH31 0900…)</option></select>
+            </div>
+            <div><label class="lbl">Valutadatum</label>
+              <input class="inp" value="02.05.2024">
+            </div>
+            <div><label class="lbl">Zahlungsformat</label>
+              <select class="inp"><option>ISO 20022 pain.001 (Swiss)</option><option>SEPA Credit Transfer</option></select>
+            </div>
+          </div>
+          <div class="divider"></div>
+          <div class="card p-4" style="background:#f0f7f0;border-color:#b8d4b8">
+            <div class="font-700 text-xs uppercase tracking-wider mb-3" style="color:#3d6641">Zahlungszusammenfassung</div>
+            <div class="flex flex-col gap-2 text-xs">
+              <div class="flex justify-between"><span class="muted">Anzahl Zahlungen</span><span class="font-600">3</span></div>
+              <div class="flex justify-between"><span class="muted">Anzahl Belege</span><span class="font-600">3</span></div>
+              <div class="divider" style="margin:6px 0"></div>
+              <div class="flex justify-between font-700 text-sm"><span>Total CHF</span><span>4'977.50</span></div>
+            </div>
+          </div>
+          <button class="btn btn-primary w-full justify-center" style="padding:10px">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            pain.001 exportieren
+          </button>
+          <div class="text-xs muted text-center">ISO 20022 XML · Swiss Payment Standard 2.0</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─────────────── SCREEN 6: BELEGJOURNAL ─────────────── -->
+    <div id="s-belegjournal" class="screen overflow-hidden flex-col">
+      <div class="flex-shrink-0 flex items-center gap-2 px-4 py-3 bg-white border-b" style="border-color:#e4e9e4">
+        <span class="text-sm font-600">Belegjournal Kreditoren</span>
+        <div class="w-px h-5 mx-2" style="background:#e4e9e4"></div>
+        <input class="inp" style="width:120px" placeholder="von" value="01.01.2024">
+        <span class="muted text-xs">bis</span>
+        <input class="inp" style="width:120px" placeholder="bis" value="30.04.2024">
+        <select class="inp" style="width:180px"><option>Alle Lieferanten</option><option>Swisscom AG</option></select>
+        <select class="inp" style="width:160px"><option>Alle Konten</option><option>6500 IT</option></select>
+        <div class="flex-1"></div>
+        <button class="btn btn-outline btn-sm">Export</button>
+        <button class="btn btn-primary btn-sm">Anwenden</button>
+      </div>
+      <div class="flex-1 overflow-y-auto">
+        <table class="tbl">
+          <thead><tr>
+            <th>Buchungs-Nr.</th><th>Datum</th><th>Beleg-Nr.</th><th>Lieferant</th>
+            <th>Soll-Konto</th><th>Haben-Konto</th><th>MWST-Code</th>
+            <th class="tbl-r">Betrag CHF</th><th class="tbl-r">MWST CHF</th><th>Text</th>
+          </tr></thead>
+          <tbody>
+            <tr>
+              <td class="mono">BU-2024-0891</td><td>15.04.2024</td><td class="mono">RE-2024-0142</td><td>Swisscom AG</td>
+              <td class="text-xs">6500 IT-Infrastruktur</td><td class="text-xs">2000 Kreditoren</td>
+              <td class="text-xs chip chip-b">VS81</td><td class="tbl-r">448.65</td><td class="tbl-r" style="color:#2e4a7d">36.35</td>
+              <td class="text-xs muted">Internet & Telefon April 2024</td>
+            </tr>
+            <tr style="background:#f9f9f9">
+              <td class="mono">BU-2024-0891</td><td>15.04.2024</td><td class="mono">RE-2024-0142</td><td>Swisscom AG</td>
+              <td class="text-xs">1170 Vorsteuer</td><td class="text-xs">2000 Kreditoren</td>
+              <td class="text-xs chip chip-b">VS81</td><td class="tbl-r" style="color:#2e4a7d">36.35</td><td class="tbl-r muted">—</td>
+              <td class="text-xs muted">Vorsteuer 8.1%</td>
+            </tr>
+            <tr>
+              <td class="mono">BU-2024-0887</td><td>03.04.2024</td><td class="mono">RE-2024-0141</td><td>BKW Energie AG</td>
+              <td class="text-xs">6210 Energieaufwand</td><td class="text-xs">2000 Kreditoren</td>
+              <td class="text-xs chip chip-b">VS81</td><td class="tbl-r">825.62</td><td class="tbl-r" style="color:#2e4a7d">66.88</td>
+              <td class="text-xs muted">Stromrechnung Q1 2024</td>
+            </tr>
+            <tr>
+              <td class="mono">BU-2024-0875</td><td>28.03.2024</td><td class="mono">RE-2024-0138</td><td>Weber & Partner AG</td>
+              <td class="text-xs">6800 Beratungsaufwand</td><td class="text-xs">2000 Kreditoren</td>
+              <td class="text-xs chip chip-b">VS81</td><td class="tbl-r">3'330.25</td><td class="tbl-r" style="color:#2e4a7d">269.75</td>
+              <td class="text-xs muted">Beratung Steueroptimierung März</td>
+            </tr>
+            <tr>
+              <td class="mono">BU-2024-0860</td><td>22.03.2024</td><td class="mono">RE-2024-0136</td><td>Migros Genossenschaft</td>
+              <td class="text-xs">6600 Büroaufwand</td><td class="text-xs">2000 Kreditoren</td>
+              <td class="text-xs chip chip-n">VS26</td><td class="tbl-r">125.15</td><td class="tbl-r" style="color:#2e4a7d">3.25</td>
+              <td class="text-xs muted">Büromaterial</td>
+            </tr>
+          </tbody>
+          <tfoot><tr>
+            <td colspan="7" class="font-700">Total Periode Jan–Apr 2024</td>
+            <td class="tbl-r">4'765.82</td><td class="tbl-r" style="color:#2e4a7d">376.23</td>
+            <td></td>
+          </tr></tfoot>
+        </table>
+      </div>
+    </div>
+
+    <!-- ─────────────── SCREEN 7: JOURNAL ─────────────── -->
+    <div id="s-journal" class="screen overflow-hidden flex-col">
+      <div class="flex-shrink-0 flex items-center gap-2 px-4 py-3 bg-white border-b" style="border-color:#e4e9e4">
+        <span class="text-sm font-600">Hauptbuch-Journal</span>
+        <div class="w-px h-5 mx-2" style="background:#e4e9e4"></div>
+        <input class="inp" style="width:120px" value="01.01.2024">
+        <span class="muted text-xs">–</span>
+        <input class="inp" style="width:120px" value="30.04.2024">
+        <input class="inp" style="width:180px" placeholder="Konto (Nr. oder Bezeichnung)">
+        <input class="inp" style="width:200px" placeholder="Suchtext">
+        <div class="flex-1"></div>
+        <button class="btn btn-primary btn-sm">Anwenden</button>
+        <button class="btn btn-outline btn-sm">Export</button>
+      </div>
+      <div class="flex-1 overflow-y-auto">
+        <table class="tbl">
+          <thead><tr>
+            <th>Buchungs-Nr.</th><th>Datum</th><th>Beleg</th><th>Text</th>
+            <th>Kto.</th><th>Kontobezeichnung</th>
+            <th class="tbl-r">Soll CHF</th><th class="tbl-r">Haben CHF</th>
+          </tr></thead>
+          <tbody>
+            <tr style="background:#e6ede650">
+              <td colspan="8" class="text-xs font-700 muted" style="padding:6px 12px;background:#f0f3f0">April 2024</td>
+            </tr>
+            <tr>
+              <td class="mono text-xs">BU-2024-0891</td><td>15.04.2024</td>
+              <td class="mono text-xs">RE-2024-0142</td><td class="text-xs">Internet & Telefon Apr 2024</td>
+              <td class="mono font-600">6500</td><td class="text-xs">IT-Infrastruktur</td>
+              <td class="tbl-r">448.65</td><td class="tbl-r muted">—</td>
+            </tr>
+            <tr>
+              <td class="mono text-xs">BU-2024-0891</td><td>15.04.2024</td>
+              <td class="mono text-xs">RE-2024-0142</td><td class="text-xs">Vorsteuer 8.1%</td>
+              <td class="mono font-600">1170</td><td class="text-xs">Vorsteuer</td>
+              <td class="tbl-r" style="color:#2e4a7d">36.35</td><td class="tbl-r muted">—</td>
+            </tr>
+            <tr>
+              <td class="mono text-xs">BU-2024-0891</td><td>15.04.2024</td>
+              <td class="mono text-xs">RE-2024-0142</td><td class="text-xs">Kreditoren Swisscom AG</td>
+              <td class="mono font-600">2000</td><td class="text-xs">Kreditoren L+L</td>
+              <td class="tbl-r muted">—</td><td class="tbl-r">485.00</td>
+            </tr>
+            <tr style="background:#e6ede650">
+              <td colspan="8" class="text-xs font-700 muted" style="padding:6px 12px;background:#f0f3f0">März 2024</td>
+            </tr>
+            <tr>
+              <td class="mono text-xs">BU-2024-0875</td><td>28.03.2024</td>
+              <td class="mono text-xs">RE-2024-0138</td><td class="text-xs">Beratung Steueroptimierung</td>
+              <td class="mono font-600">6800</td><td class="text-xs">Beratungsaufwand</td>
+              <td class="tbl-r">3'330.25</td><td class="tbl-r muted">—</td>
+            </tr>
+            <tr>
+              <td class="mono text-xs">BU-2024-0875</td><td>28.03.2024</td>
+              <td class="mono text-xs">RE-2024-0138</td><td class="text-xs">Vorsteuer 8.1%</td>
+              <td class="mono font-600">1170</td><td class="text-xs">Vorsteuer</td>
+              <td class="tbl-r" style="color:#2e4a7d">269.75</td><td class="tbl-r muted">—</td>
+            </tr>
+            <tr>
+              <td class="mono text-xs">BU-2024-0875</td><td>28.03.2024</td>
+              <td class="mono text-xs">RE-2024-0138</td><td class="text-xs">Kreditoren Weber & Partner AG</td>
+              <td class="mono font-600">2000</td><td class="text-xs">Kreditoren L+L</td>
+              <td class="tbl-r muted">—</td><td class="tbl-r">3'600.00</td>
+            </tr>
+          </tbody>
+          <tfoot><tr>
+            <td colspan="6" class="font-700">Summen Periode Jan–Apr 2024</td>
+            <td class="tbl-r">48'234.80</td>
+            <td class="tbl-r">48'234.80</td>
+          </tr></tfoot>
+        </table>
+      </div>
+    </div>
+
+    <!-- ─────────────── SCREEN 8: BILANZ & ER ─────────────── -->
+    <div id="s-bilanz" class="screen overflow-y-auto flex-col">
+      <div class="flex-shrink-0 flex items-center gap-3 px-4 py-3 bg-white border-b" style="border-color:#e4e9e4">
+        <div class="flex rounded-lg overflow-hidden border" style="border-color:#d4dcd4">
+          <button id="btn-bilanz" class="btn btn-sm" style="border-radius:0;background:#7a9b7f;color:#fff" onclick="toggleBZ('bilanz')">Bilanz</button>
+          <button id="btn-er" class="btn btn-sm btn-ghost" style="border-radius:0" onclick="toggleBZ('er')">Erfolgsrechnung</button>
+        </div>
+        <div class="w-px h-5" style="background:#e4e9e4"></div>
+        <select class="inp" style="width:160px"><option>GJ 2024 (laufend)</option><option>GJ 2023 (abgeschlossen)</option></select>
+        <select class="inp" style="width:160px"><option>Per 30.04.2024</option><option>Per 31.03.2024</option><option>Per 31.12.2023</option></select>
+        <div class="flex-1"></div>
+        <button class="btn btn-outline btn-sm">Export PDF</button>
+        <button class="btn btn-outline btn-sm">Export Excel</button>
+      </div>
+
+      <!-- Bilanz view -->
+      <div id="bz-bilanz" class="p-6">
+        <div class="text-center mb-5">
+          <div class="font-700 text-base">Bilanz per 30.04.2024</div>
+          <div class="text-xs muted">Muster AG · Beträge in CHF</div>
+        </div>
+        <div class="grid gap-5" style="grid-template-columns:1fr 1fr">
+          <!-- AKTIVEN -->
+          <div class="card p-5">
+            <div class="font-700 text-sm mb-4" style="color:#1a1a2e;border-bottom:2px solid #1a1a2e;padding-bottom:6px">AKTIVEN</div>
+            <div class="bz-row group"><span>Umlaufvermögen</span></div>
+            <div class="bz-row sub"><span>1000 Kasse</span><span>1'200.00</span></div>
+            <div class="bz-row sub"><span>1020 Bank UBS</span><span>34'850.40</span></div>
+            <div class="bz-row sub"><span>1100 Debitoren L+L</span><span>28'600.00</span></div>
+            <div class="bz-row sub"><span>1170 Vorsteuer MWST</span><span>3'241.20</span></div>
+            <div class="bz-row sub"><span>1300 Vorräte</span><span>8'500.00</span></div>
+            <div class="bz-row sub"><span>1400 Aktive Rechnungsabgrenzung</span><span>2'400.00</span></div>
+            <div class="bz-row subtot"><span>Total Umlaufvermögen</span><span class="font-600">78'791.60</span></div>
+
+            <div class="bz-row group" style="margin-top:16px"><span>Anlagevermögen</span></div>
+            <div class="bz-row sub"><span>1500 Maschinen & Einrichtungen</span><span>15'000.00</span></div>
+            <div class="bz-row sub"><span>1510 Fahrzeuge</span><span>22'000.00</span></div>
+            <div class="bz-row sub"><span>1520 EDV-Anlagen</span><span>8'400.00</span></div>
+            <div class="bz-row subtot"><span>Total Anlagevermögen</span><span class="font-600">45'400.00</span></div>
+
+            <div class="bz-row total"><span>TOTAL AKTIVEN</span><span>124'191.60</span></div>
+          </div>
+          <!-- PASSIVEN -->
+          <div class="card p-5">
+            <div class="font-700 text-sm mb-4" style="color:#1a1a2e;border-bottom:2px solid #1a1a2e;padding-bottom:6px">PASSIVEN</div>
+            <div class="bz-row group"><span>Kurzfristiges Fremdkapital</span></div>
+            <div class="bz-row sub"><span>2000 Kreditoren L+L</span><span>18'450.70</span></div>
+            <div class="bz-row sub"><span>2200 MWST Abrechnungskonto</span><span>4'820.00</span></div>
+            <div class="bz-row sub"><span>2300 Kurzfristige Bankverbindlichk.</span><span>5'000.00</span></div>
+            <div class="bz-row sub"><span>2400 Passive Rechnungsabgrenzung</span><span>1'800.00</span></div>
+            <div class="bz-row subtot"><span>Total Kurzfristiges FK</span><span class="font-600">30'070.70</span></div>
+
+            <div class="bz-row group" style="margin-top:16px"><span>Langfristiges Fremdkapital</span></div>
+            <div class="bz-row sub"><span>2500 Langfristige Bankdarlehen</span><span>30'000.00</span></div>
+            <div class="bz-row subtot"><span>Total Langfristiges FK</span><span class="font-600">30'000.00</span></div>
+
+            <div class="bz-row group" style="margin-top:16px"><span>Eigenkapital</span></div>
+            <div class="bz-row sub"><span>2800 Aktienkapital / Stammkapital</span><span>20'000.00</span></div>
+            <div class="bz-row sub"><span>2900 Gesetzliche Reserven</span><span>5'000.00</span></div>
+            <div class="bz-row sub"><span>2950 Gewinnvortrag</span><span>28'120.90</span></div>
+            <div class="bz-row sub"><span>2960 Jahresergebnis (laufend)</span><span>11'000.00</span></div>
+            <div class="bz-row subtot"><span>Total Eigenkapital</span><span class="font-600">64'120.90</span></div>
+
+            <div class="bz-row total"><span>TOTAL PASSIVEN</span><span>124'191.60</span></div>
+          </div>
+        </div>
+        <div class="mt-3 text-center">
+          <span class="chip chip-g" style="font-size:11px">✓ Bilanz ausgeglichen · Differenz: CHF 0.00</span>
+        </div>
+      </div>
+
+      <!-- Erfolgsrechnung view (hidden by default) -->
+      <div id="bz-er" class="p-6" style="display:none">
+        <div class="text-center mb-5">
+          <div class="font-700 text-base">Erfolgsrechnung Jan–Apr 2024</div>
+          <div class="text-xs muted">Muster AG · Beträge in CHF</div>
+        </div>
+        <div class="card p-5 max-w-xl mx-auto">
+          <div class="bz-row group"><span>Betriebsertrag</span></div>
+          <div class="bz-row sub"><span>3000 Dienstleistungsertrag</span><span>82'400.00</span></div>
+          <div class="bz-row sub"><span>3400 Erlösminderungen</span><span style="color:#8a2d2d">-1'200.00</span></div>
+          <div class="bz-row subtot"><span>Nettoumsatz</span><span class="font-600">81'200.00</span></div>
+
+          <div class="bz-row group" style="margin-top:16px"><span>Betriebsaufwand</span></div>
+          <div class="bz-row sub"><span>5000 Personalaufwand</span><span style="color:#8a2d2d">42'800.00</span></div>
+          <div class="bz-row sub"><span>6000 Raumaufwand</span><span style="color:#8a2d2d">4'800.00</span></div>
+          <div class="bz-row sub"><span>6200 Unterhalt & Reparaturen</span><span style="color:#8a2d2d">1'240.00</span></div>
+          <div class="bz-row sub"><span>6210 Energieaufwand</span><span style="color:#8a2d2d">825.62</span></div>
+          <div class="bz-row sub"><span>6300 Versicherungen</span><span style="color:#8a2d2d">2'450.00</span></div>
+          <div class="bz-row sub"><span>6500 IT-Infrastruktur</span><span style="color:#8a2d2d">448.65</span></div>
+          <div class="bz-row sub"><span>6600 Büroaufwand</span><span style="color:#8a2d2d">125.15</span></div>
+          <div class="bz-row sub"><span>6640 Reisekosten</span><span style="color:#8a2d2d">256.80</span></div>
+          <div class="bz-row sub"><span>6800 Beratungsaufwand</span><span style="color:#8a2d2d">3'330.25</span></div>
+          <div class="bz-row sub"><span>6900 Abschreibungen</span><span style="color:#8a2d2d">5'000.00</span></div>
+          <div class="bz-row subtot"><span>Total Betriebsaufwand</span><span class="font-600" style="color:#8a2d2d">61'276.47</span></div>
+
+          <div class="bz-row" style="font-weight:700;font-size:14px;border-top:2px solid #7a9b7f;margin-top:10px;padding-top:10px;color:#1d6b35">
+            <span>Betriebsergebnis (EBIT)</span><span>19'923.53</span>
+          </div>
+          <div class="bz-row sub" style="margin-top:8px"><span>7000 Finanzaufwand (Bankzinsen)</span><span style="color:#8a2d2d">820.00</span></div>
+          <div class="bz-row sub"><span>7100 Finanzertrag</span><span>95.00</span></div>
+          <div class="bz-row subtot"><span>Ergebnis vor Steuern (EBT)</span><span class="font-600" style="color:#1d6b35">19'198.53</span></div>
+          <div class="bz-row sub"><span>8900 Direkte Steuern (Schätzung)</span><span style="color:#8a2d2d">-8'198.53</span></div>
+          <div class="bz-row total" style="color:#1d6b35"><span>Jahresgewinn (laufend)</span><span>11'000.00</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─────────────── SCREEN 9: MWST-ABRECHNUNG ─────────────── -->
+    <div id="s-mwst" class="screen overflow-y-auto flex-col">
+      <div class="flex-shrink-0 flex items-center gap-3 px-4 py-3 bg-white border-b" style="border-color:#e4e9e4">
+        <span class="text-sm font-600">MWST-Abrechnung</span>
+        <div class="w-px h-5 mx-1" style="background:#e4e9e4"></div>
+        <select class="inp" style="width:160px"><option>Q1 2024 (Jan–Mrz)</option><option>Q4 2023 (Okt–Dez)</option><option>Q3 2023 (Jul–Sep)</option></select>
+        <span class="chip chip-y">Entwurf · nicht eingereicht</span>
+        <div class="flex-1"></div>
+        <button class="btn btn-outline btn-sm">Drucken</button>
+        <button class="btn btn-outline btn-sm">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          XML Export (ESTV)
+        </button>
+        <button class="btn btn-primary btn-sm">Als eingereicht markieren</button>
+      </div>
+
+      <div class="p-6">
+        <div class="max-w-2xl mx-auto">
+          <div class="text-center mb-5">
+            <div class="font-700 text-base">Mehrwertsteuerabrechnung Q1 2024</div>
+            <div class="text-xs muted">Muster AG · MWST-Nr. CHE-123.456.789 · 01.01.2024 – 31.03.2024</div>
+          </div>
+
+          <div class="card overflow-hidden">
+            <!-- Section: Umsätze -->
+            <div class="mwst-grid sec-hdr">
+              <div class="mwst-cell">Ziff.</div>
+              <div class="mwst-cell">Position</div>
+              <div class="mwst-cell" style="justify-content:flex-end">Umsatz CHF</div>
+              <div class="mwst-cell" style="justify-content:flex-end">Steuer CHF</div>
+            </div>
+            <div class="mwst-grid">
+              <div class="mwst-cell"><span class="mwst-ziffer">200</span></div>
+              <div class="mwst-cell">Vereinbarte / vereinnahmte Entgelte (Total Umsatz inkl. MWST)</div>
+              <div class="mwst-cell" style="justify-content:flex-end;font-variant-numeric:tabular-nums">85'680.00</div>
+              <div class="mwst-cell"></div>
+            </div>
+            <div class="mwst-grid">
+              <div class="mwst-cell"><span class="mwst-ziffer">220</span></div>
+              <div class="mwst-cell">Von der Steuer ausgenommene Leistungen (Art. 21)</div>
+              <div class="mwst-cell" style="justify-content:flex-end">—</div>
+              <div class="mwst-cell"></div>
+            </div>
+            <div class="mwst-grid">
+              <div class="mwst-cell"><span class="mwst-ziffer">221</span></div>
+              <div class="mwst-cell">Leistungen im Ausland</div>
+              <div class="mwst-cell" style="justify-content:flex-end">—</div>
+              <div class="mwst-cell"></div>
+            </div>
+            <div class="mwst-grid">
+              <div class="mwst-cell"><span class="mwst-ziffer">230</span></div>
+              <div class="mwst-cell" style="font-weight:600">Steuerbarer Umsatz (Ziff. 200 minus 220, 221)</div>
+              <div class="mwst-cell" style="justify-content:flex-end;font-weight:600">85'680.00</div>
+              <div class="mwst-cell"></div>
+            </div>
+
+            <!-- Section: Steuerberechnung -->
+            <div class="mwst-grid sec-hdr">
+              <div class="mwst-cell" colspan="4">Steuerberechnung auf dem steuerbaren Umsatz</div>
+              <div class="mwst-cell"></div><div class="mwst-cell"></div><div class="mwst-cell"></div>
+            </div>
+            <div class="mwst-grid">
+              <div class="mwst-cell"><span class="mwst-ziffer">302</span></div>
+              <div class="mwst-cell">Normalsatz 8.1% auf CHF 78'240.00</div>
+              <div class="mwst-cell" style="justify-content:flex-end">78'240.00</div>
+              <div class="mwst-cell" style="justify-content:flex-end;color:#2e4a7d;font-weight:500">6'337.44</div>
+            </div>
+            <div class="mwst-grid">
+              <div class="mwst-cell"><span class="mwst-ziffer">303</span></div>
+              <div class="mwst-cell">Sondersatz 2.6% auf CHF 7'440.00</div>
+              <div class="mwst-cell" style="justify-content:flex-end">7'440.00</div>
+              <div class="mwst-cell" style="justify-content:flex-end;color:#2e4a7d;font-weight:500">193.44</div>
+            </div>
+            <div class="mwst-grid sum-row">
+              <div class="mwst-cell"><span class="mwst-ziffer">399</span></div>
+              <div class="mwst-cell">Geschuldete Steuer (Ziff. 302 + 303)</div>
+              <div class="mwst-cell"></div>
+              <div class="mwst-cell" style="justify-content:flex-end;color:#2e4a7d">6'530.88</div>
+            </div>
+
+            <!-- Section: Vorsteuer -->
+            <div class="mwst-grid sec-hdr">
+              <div class="mwst-cell">Ziff.</div>
+              <div class="mwst-cell">Vorsteuer</div>
+              <div class="mwst-cell"></div>
+              <div class="mwst-cell" style="justify-content:flex-end">CHF</div>
+            </div>
+            <div class="mwst-grid">
+              <div class="mwst-cell"><span class="mwst-ziffer">400</span></div>
+              <div class="mwst-cell">Vorsteuer auf Material-/Dienstleistungsaufwand</div>
+              <div class="mwst-cell"></div>
+              <div class="mwst-cell" style="justify-content:flex-end;color:#1d6b35;font-weight:500">3'241.20</div>
+            </div>
+            <div class="mwst-grid">
+              <div class="mwst-cell"><span class="mwst-ziffer">405</span></div>
+              <div class="mwst-cell">Vorsteuer auf Investitionen / Betriebsmittel</div>
+              <div class="mwst-cell"></div>
+              <div class="mwst-cell" style="justify-content:flex-end;color:#1d6b35;font-weight:500">480.00</div>
+            </div>
+            <div class="mwst-grid sum-row">
+              <div class="mwst-cell"><span class="mwst-ziffer">479</span></div>
+              <div class="mwst-cell">Total abziehbare Vorsteuer</div>
+              <div class="mwst-cell"></div>
+              <div class="mwst-cell" style="justify-content:flex-end;color:#1d6b35">3'721.20</div>
+            </div>
+
+            <!-- Result -->
+            <div class="mwst-grid result-row">
+              <div class="mwst-cell"><span class="mwst-ziffer" style="color:#3d6641">500</span></div>
+              <div class="mwst-cell" style="font-size:14px">Zu zahlende Steuer (Ziff. 399 minus 479)</div>
+              <div class="mwst-cell"></div>
+              <div class="mwst-cell" style="justify-content:flex-end;font-size:18px;font-weight:800;color:#1d6b35">CHF 2'809.68</div>
+            </div>
+          </div>
+
+          <!-- Info box -->
+          <div class="mt-4 flex items-start gap-3 px-4 py-3 rounded-lg" style="background:#e3eaf5;border:1px solid #c5d4ea">
+            <svg class="icon mt-0.5 flex-shrink-0" style="color:#2e4a7d" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <div class="text-xs" style="color:#2e4a7d">
+              <strong>Einreichungsfrist Q1 2024:</strong> bis 30. April 2024 via ESTV SuisseTax Portal ·
+              Zahlung innert 60 Tagen nach Quartalsende (bis 29. Februar 2024).
+              Alle Werte werden aus den gebuchten Belegen automatisch berechnet.
+            </div>
+          </div>
+
+          <!-- Kontoblatt Vorsteuer preview -->
+          <div class="mt-4 card p-4">
+            <div class="font-600 text-xs uppercase tracking-wider muted mb-3">Nachweis Konto 1170 Vorsteuer Q1 2024</div>
+            <table class="tbl" style="font-size:11.5px">
+              <thead><tr><th>Datum</th><th>Beleg</th><th>Lieferant / Text</th><th class="tbl-r">Soll</th><th class="tbl-r">Haben</th><th class="tbl-r">Saldo</th></tr></thead>
+              <tbody>
+                <tr><td>01.01.2024</td><td colspan="2" class="muted">Eröffnungssaldo</td><td class="tbl-r">—</td><td class="tbl-r">—</td><td class="tbl-r font-600">0.00</td></tr>
+                <tr><td>15.01.2024</td><td class="mono">RE-2024-0105</td><td>Weber & Partner AG</td><td class="tbl-r" style="color:#1d6b35">240.75</td><td class="tbl-r muted">—</td><td class="tbl-r">240.75</td></tr>
+                <tr><td>22.01.2024</td><td class="mono">RE-2024-0108</td><td>Swisscom AG</td><td class="tbl-r" style="color:#1d6b35">36.35</td><td class="tbl-r muted">—</td><td class="tbl-r">277.10</td></tr>
+                <tr><td>28.02.2024</td><td class="mono">ZH-2024-0012</td><td>MWST-Zahlung Q4/23</td><td class="tbl-r muted">—</td><td class="tbl-r" style="color:#8a2d2d">2'640.00</td><td class="tbl-r">-2'362.90</td></tr>
+                <tr><td>31.03.2024</td><td colspan="2" class="muted font-500">Saldo per 31.03.2024</td><td class="tbl-r font-600" style="color:#2e4a7d">3'241.20</td><td class="tbl-r muted">—</td><td class="tbl-r font-700">3'241.20</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /content area -->
+</main>
+
+<script>
+const screenMap = {
+  'dash': {id:'s-dash', bc:'Kreditoren / Dashboard', title:'Dashboard'},
+  'lieferanten': {id:'s-lieferanten', bc:'Kreditoren / Lieferanten', title:'Lieferantenstamm'},
+  'erfassen': {id:'s-erfassen', bc:'Kreditoren / Rechnung erfassen', title:'Rechnung erfassen'},
+  'opliste': {id:'s-opliste', bc:'Kreditoren / OP-Liste', title:'OP-Liste Kreditoren'},
+  'zahlungslauf': {id:'s-zahlungslauf', bc:'Kreditoren / Zahlungslauf', title:'Zahlungslauf'},
+  'belegjournal': {id:'s-belegjournal', bc:'Kreditoren / Belegjournal', title:'Belegjournal'},
+  'journal': {id:'s-journal', bc:'Finanzbuchhaltung / Journal', title:'Hauptbuch-Journal'},
+  'kontoblatt': {id:'s-bilanz', bc:'Finanzbuchhaltung / Kontoblätter', title:'Kontoblatt'},
+  'bilanz': {id:'s-bilanz', bc:'Finanzbuchhaltung / Bilanz & ER', title:'Bilanz & Erfolgsrechnung'},
+  'mwst': {id:'s-mwst', bc:'Finanzbuchhaltung / MWST', title:'MWST-Abrechnung'},
+};
+
+function show(key) {
+  // Hide all screens
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  // Deactivate nav
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+
+  const cfg = screenMap[key];
+  if (!cfg) return;
+
+  // Show screen
+  const s = document.getElementById(cfg.id);
+  if (s) s.classList.add('active');
+
+  // Update breadcrumb
+  const parts = cfg.bc.split(' / ');
+  document.getElementById('breadcrumb').innerHTML =
+    parts.map((p, i) => i < parts.length - 1
+      ? `<span class="muted text-xs">${p}</span><svg class="icon muted" style="width:12px;height:12px" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m9 18 6-6-6-6"/></svg>`
+      : `<span class="text-xs font-600" style="color:#1a1a2e">${p}</span>`
+    ).join('');
+
+  // Activate nav item (by onclick text match)
+  document.querySelectorAll('.nav-item').forEach(n => {
+    if (n.getAttribute('onclick') === `show('${key}')`) n.classList.add('active');
+  });
+}
+
+function toggleBZ(mode) {
+  document.getElementById('bz-bilanz').style.display = mode === 'bilanz' ? '' : 'none';
+  document.getElementById('bz-er').style.display = mode === 'er' ? '' : 'none';
+  document.getElementById('btn-bilanz').style.cssText = mode === 'bilanz'
+    ? 'border-radius:0;background:#7a9b7f;color:#fff'
+    : 'border-radius:0;background:transparent;color:#4a5a4a';
+  document.getElementById('btn-er').style.cssText = mode === 'er'
+    ? 'border-radius:0;background:#7a9b7f;color:#fff'
+    : 'border-radius:0;background:transparent;color:#4a5a4a';
+}
+
+// Init
+show('dash');
+</script>
+</body>
+</html>

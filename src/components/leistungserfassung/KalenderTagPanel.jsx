@@ -212,15 +212,7 @@ export default function KalenderTagPanel() {
     onSuccess: () => { toast.success('Rapport gelöscht'); invalidate(); },
   });
 
-  // --- Loading / Error ---
-  if (!employeeResolved) return <PanelLoader />;
-  const anyError = projectsQ.error || serviceTypesQ.error || entriesQ.error || employeesQ.error;
-  if (anyError) return <PanelError error={anyError} onRetry={() => { entriesQ.refetch(); }} />;
-
-  const noMasterData = projects.length === 0 || serviceTypes.length === 0;
-
-  // --- Layer-Daten ---
-
+  // --- WICHTIG: Hooks (useMemo) IMMER vor early-returns! ---
   // Rapport-Boxen mit Lane-Berechnung
   const rapportItems = useMemo(() => {
     const items = entries.map((e) => {
@@ -228,7 +220,6 @@ export default function KalenderTagPanel() {
       const toHM = timeFromIso(e.time_to);
       const fromMin = minutesFromHHMM(fromHM);
       const toMin = minutesFromHHMM(toHM);
-      // Wenn keine Zeit gesetzt: vom Start ab 06:00 zeigen wir nicht im Kalender
       if (fromMin == null || toMin == null) return null;
       return {
         id: e.id,
@@ -240,7 +231,6 @@ export default function KalenderTagPanel() {
     return computeLanes(items);
   }, [entries]);
 
-  // Outlook-Termine
   const outlookItems = useMemo(() => {
     return (ms365.calendar ?? []).filter((c) => !c.isCancelled && !c.isAllDay).map((c) => {
       const from = timeFromIso(c.start);
@@ -251,7 +241,6 @@ export default function KalenderTagPanel() {
     }).filter((c) => c.fromMin != null && c.toMin != null);
   }, [ms365.calendar]);
 
-  // --- Tages-Summary ---
   const summary = useMemo(() => {
     let hours = 0; let chf = 0;
     for (const e of entries) {
@@ -262,6 +251,13 @@ export default function KalenderTagPanel() {
     }
     return { hours, chf, count: entries.length };
   }, [entries]);
+
+  // --- Loading / Error (NACH allen Hooks) ---
+  if (!employeeResolved) return <PanelLoader />;
+  const anyError = projectsQ.error || serviceTypesQ.error || entriesQ.error || employeesQ.error;
+  if (anyError) return <PanelError error={anyError} onRetry={() => { entriesQ.refetch(); }} />;
+
+  const noMasterData = projects.length === 0 || serviceTypes.length === 0;
 
   // --- Klick-Handler ---
 

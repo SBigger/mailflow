@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Jahresplanung – Layout-Mockups</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, 'Segoe UI', sans-serif; background: #e8ede8; padding: 24px; }
+
+  /* ── Shared ── */
+  .page-title { font-size: 22px; font-weight: 800; color: #1a2a1a; margin-bottom: 6px; }
+  .page-sub   { font-size: 13px; color: #6b826b; margin-bottom: 32px; }
+  .section-label { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+                   color: #6b826b; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+  .section-label .badge { font-size: 10px; background: #dc2626; color: #fff; padding: 1px 7px;
+                           border-radius: 10px; font-weight: 700; }
+  .section-label .badge-ok { background: #059669; }
+  .mockup-wrap { background: #fff; border-radius: 16px; border: 1px solid #dde8dd;
+                 box-shadow: 0 4px 20px rgba(0,0,0,0.06); overflow: hidden; margin-bottom: 40px; }
+  .mockup-title { background: #1a2a1a; color: #fff; font-size: 12px; font-weight: 700;
+                  padding: 8px 16px; display: flex; align-items: center; gap: 8px; }
+  .mockup-title .tag { font-size: 10px; padding: 2px 8px; border-radius: 6px; font-weight: 600; }
+  .tag-current  { background: #dc2626; }
+  .tag-proposed { background: #059669; }
+  .tag-new      { background: #7c3aed; }
+
+  /* Activity chip colors */
+  .chip { border-radius: 5px; padding: 3px 6px; font-size: 10px; font-weight: 700;
+          border-left: 3px solid; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chip-mwst   { background: #dbeafe; border-color: #2563eb; color: #2563eb; }
+  .chip-ja     { background: #ede9fe; border-color: #7c3aed; color: #7c3aed; }
+  .chip-st     { background: #fef3c7; border-color: #b45309; color: #b45309; }
+  .chip-lohn   { background: #d1fae5; border-color: #059669; color: #059669; }
+  .chip-rep    { background: #fee2e2; border-color: #dc2626; color: #dc2626; }
+
+  /* ════════════════════════════════════════════════════════
+     MOCKUP 1 – IST-ZUSTAND (vereinfacht)
+  ════════════════════════════════════════════════════════ */
+  .m1 { font-size: 12px; }
+  .m1-header { display: flex; align-items: center; gap: 12px; padding: 10px 16px;
+               border-bottom: 1px solid #dde8dd; background: #fff; }
+  .m1-header .logo { font-size: 13px; font-weight: 700; color: #1a2a1a; display: flex; align-items: center; gap: 6px; }
+  .m1-header .year-nav { display: flex; align-items: center; gap: 6px; margin-left: 4px; }
+  .m1-header .year-nav button { padding: 1px 8px; border: 1px solid #dde8dd; background: none;
+                                 border-radius: 5px; cursor: pointer; color: #6b826b; font-size: 13px; }
+  .m1-header .year-nav span { font-size: 13px; font-weight: 700; color: #1a2a1a; min-width: 40px; text-align: center; }
+  .m1-body { display: flex; height: 460px; }
+  .m1-sidebar { width: 190px; flex-shrink: 0; border-right: 1px solid #dde8dd; display: flex; flex-direction: column; }
+  .m1-sidebar-search { padding: 8px; border-bottom: 1px solid #dde8dd; }
+  .m1-sidebar-search input { width: 100%; padding: 5px 8px; font-size: 11px; border: 1px solid #dde8dd;
+                              border-radius: 5px; background: #f2f5f2; color: #1a2a1a; outline: none; }
+  .m1-sidebar-hint { font-size: 9.5px; color: #6b826b; text-align: center; margin-top: 4px; }
+  .m1-sidebar-list { flex: 1; overflow: hidden; padding: 4px; }
+  .m1-cust-row { padding: 4px 6px; font-size: 11px; color: #1a2a1a; border-radius: 4px;
+                 border: 1px solid transparent; cursor: grab; white-space: nowrap; overflow: hidden;
+                 text-overflow: ellipsis; }
+  .m1-cust-row:hover { background: #f0f4f0; }
+  .m1-grid { flex: 1; overflow: auto; }
+  .m1-staff-block { border: 1px solid #dde8dd; border-radius: 8px; margin: 10px 12px; overflow: hidden; }
+  .m1-staff-header { display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+                      background: #e6ede6; cursor: pointer; }
+  .m1-staff-header .avatar { width: 26px; height: 26px; border-radius: 50%; background: #4d6a50;
+                              color: #fff; font-size: 10px; font-weight: 700; display: flex;
+                              align-items: center; justify-content: center; }
+  .m1-staff-header .name { font-size: 12px; font-weight: 600; color: #1a2a1a; flex: 1; }
+  .m1-staff-header .stats { font-size: 10px; color: #6b826b; }
+  /* Month header repeated per employee ← PROBLEM */
+  .m1-month-header { display: flex; border-bottom: 1px solid #dde8dd; background: #f2f5f2; }
+  .m1-mh-cell { flex: 1; min-width: 90px; padding: 4px 6px; text-align: center;
+                border-right: 1px solid #dde8dd; }
+  .m1-mh-cell:last-child { border-right: none; }
+  .m1-mh-name { font-size: 10px; font-weight: 700; color: #6b826b; letter-spacing: .05em; }
+  .m1-mh-soll { font-size: 8.5px; color: #4d6a50; margin-top: 1px; background: rgba(77,106,80,0.1);
+                padding: 1px 3px; border-radius: 3px; display: inline-flex; align-items: center; gap: 2px; cursor: pointer; }
+  .m1-cells { display: flex; min-height: 130px; }
+  .m1-cell { flex: 1; min-width: 90px; border-right: 1px solid #dde8dd; padding: 4px;
+             display: flex; flex-direction: column; gap: 3px; position: relative; }
+  .m1-cell:last-child { border-right: none; }
+  .m1-chip-name { font-size: 9.5px; color: #444; margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .m1-chip-h { font-size: 8.5px; color: #888; }
+  .fill-bar { position: absolute; bottom: 0; left: 0; height: 3px; background: #4d6a50; opacity: 0.4; border-radius: 0; }
+  .m1-sigma { margin-top: auto; font-size: 8.5px; color: #6b826b; text-align: center; padding-top: 3px;
+               border-top: 1px solid #dde8dd; }
+  /* Problem-Marker */
+  .problem-marker { position: absolute; top: -1px; left: -1px; right: -1px; bottom: -1px;
+                    border: 2px dashed #dc2626; border-radius: 4px; pointer-events: none; z-index: 2; }
+  .problem-label { position: absolute; top: -18px; left: 0; background: #dc2626; color: #fff;
+                   font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 4px; z-index: 3; white-space: nowrap; }
+
+
+  /* ════════════════════════════════════════════════════════
+     MOCKUP 2 – VERBESSERTER VORSCHLAG
+  ════════════════════════════════════════════════════════ */
+  .m2 { font-size: 12px; }
+  .m2-header { display: flex; align-items: center; gap: 12px; padding: 10px 16px;
+               border-bottom: 1px solid #dde8dd; background: #fff; }
+  .m2-header .logo { font-size: 13px; font-weight: 700; color: #1a2a1a; display: flex; align-items: center; gap: 6px; }
+  .m2-year-nav { display: flex; align-items: center; gap: 6px; margin-left: 4px; }
+  .m2-year-nav button { padding: 1px 8px; border: 1px solid #dde8dd; background: none;
+                         border-radius: 5px; cursor: pointer; color: #6b826b; font-size: 13px; }
+  .m2-year-nav span { font-size: 13px; font-weight: 700; color: #1a2a1a; min-width: 40px; text-align: center; }
+  .m2-header .tabs { display: flex; gap: 2px; margin-left: 12px; }
+  .m2-tab { padding: 5px 12px; font-size: 11.5px; border-radius: 7px; cursor: pointer;
+            color: #6b826b; border: 1px solid transparent; font-weight: 500; }
+  .m2-tab.active { background: #e6ede6; color: #1a2a1a; font-weight: 700; border-color: #ccd8cc; }
+  .m2-body { display: flex; height: 520px; }
+  .m2-sidebar { width: 180px; flex-shrink: 0; border-right: 1px solid #dde8dd;
+                display: flex; flex-direction: column; background: #fafcfa; }
+  .m2-sidebar-top { padding: 8px; border-bottom: 1px solid #dde8dd; }
+  .m2-sidebar-top input { width: 100%; padding: 5px 8px; font-size: 11px; border: 1px solid #dde8dd;
+                            border-radius: 5px; background: #f2f5f2; color: #1a2a1a; outline: none; }
+  .m2-sidebar-top .hint { font-size: 9px; color: #6b826b; text-align: center; margin-top: 3px; }
+  .m2-sidebar-list { flex: 1; overflow: hidden; padding: 4px; }
+  .m2-cust-row { padding: 4px 6px; font-size: 11px; color: #1a2a1a; border-radius: 4px;
+                  cursor: grab; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .m2-cust-row:hover { background: #edf2ed; }
+  .m2-grid-wrap { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+  /* ✅ GLOBAL sticky month header – only once! */
+  .m2-global-header { display: flex; border-bottom: 2px solid #ccd8cc; background: #f2f5f2;
+                       flex-shrink: 0; position: sticky; top: 0; z-index: 10; }
+  .m2-gh-spacer { width: 0; flex-shrink: 0; }
+  .m2-gh-cell { flex: 1; min-width: 90px; padding: 6px 6px; text-align: center;
+                border-right: 1px solid #dde8dd; }
+  .m2-gh-cell:last-child { border-right: none; }
+  .m2-gh-cell.current-month { background: rgba(77,106,80,0.08); }
+  .m2-gh-name { font-size: 11px; font-weight: 800; color: #4d6a50; letter-spacing: .05em; }
+  .m2-gh-name.current { color: #2d4a2d; }
+  .m2-gh-soll { font-size: 9px; color: #4d6a50; margin-top: 2px; background: rgba(77,106,80,0.12);
+                padding: 2px 5px; border-radius: 4px; display: inline-flex; align-items: center;
+                gap: 2px; cursor: pointer; font-weight: 600; }
+  .m2-gh-soll:hover { background: rgba(77,106,80,0.22); }
+  .m2-gh-dot { width: 6px; height: 6px; background: #4d6a50; border-radius: 50%; margin: 3px auto 0; }
+
+  /* Employee sections – no repeated month headers */
+  .m2-grid-scroll { flex: 1; overflow-y: auto; padding: 8px 12px; display: flex; flex-direction: column; gap: 8px; }
+  .m2-staff-block { border: 1px solid #dde8dd; border-radius: 10px; overflow: hidden;
+                    box-shadow: 0 1px 4px rgba(0,0,0,0.04); }
+  .m2-staff-block.me { border-color: #4d6a50; box-shadow: 0 0 0 1.5px rgba(77,106,80,0.2); }
+  .m2-staff-hdr { display: flex; align-items: center; gap: 8px; padding: 9px 14px;
+                   background: #ecf0ec; cursor: pointer; user-select: none; }
+  .m2-staff-hdr.me { background: #d8e8d8; }
+  .m2-staff-hdr .avatar { width: 28px; height: 28px; border-radius: 50%; background: #4d6a50;
+                            color: #fff; font-size: 10px; font-weight: 700; display: flex;
+                            align-items: center; justify-content: center; flex-shrink: 0; }
+  .m2-staff-hdr .name { font-size: 12.5px; font-weight: 600; color: #1a2a1a; flex: 1; }
+  .m2-staff-hdr .du-badge { font-size: 9px; font-weight: 700; color: #4d6a50;
+                              background: rgba(77,106,80,0.15); padding: 1px 6px; border-radius: 8px; }
+  .m2-staff-hdr .meta { font-size: 10px; color: #6b826b; display: flex; align-items: center; gap: 8px; }
+  /* ✅ Capacity bar in staff header */
+  .m2-cap-bar-wrap { width: 72px; height: 5px; background: #dde8dd; border-radius: 3px; overflow: hidden; }
+  .m2-cap-bar { height: 100%; background: #4d6a50; border-radius: 3px; }
+  .m2-cap-bar.over { background: #dc2626; }
+  .m2-cap-text { font-size: 9.5px; color: #6b826b; }
+
+  /* Cells – no month header row per employee */
+  .m2-cells { display: flex; border-top: 1px solid #dde8dd; }
+  .m2-cell { flex: 1; min-width: 90px; min-height: 120px; border-right: 1px solid #edf2ed;
+             padding: 5px 4px; display: flex; flex-direction: column; gap: 3px;
+             position: relative; }
+  .m2-cell:last-child { border-right: none; }
+  .m2-cell.current-month { background: rgba(77,106,80,0.04); }
+  /* ✅ "+" button per cell */
+  .m2-add-btn { width: 18px; height: 18px; border-radius: 50%; background: transparent;
+                border: 1px dashed #ccd8cc; color: #9aaa9a; font-size: 14px; display: flex;
+                align-items: center; justify-content: center; cursor: pointer; line-height: 1;
+                align-self: center; margin-top: auto; transition: all 0.1s; flex-shrink: 0; }
+  .m2-add-btn:hover { background: #e6ede6; border-color: #4d6a50; color: #4d6a50; }
+  /* ✅ Better fill bar – taller, more visible */
+  .m2-fill { position: absolute; bottom: 0; left: 0; right: 0; height: 5px;
+             background: #4d6a50; opacity: 0.25; }
+  .m2-fill.over { background: #dc2626; opacity: 0.35; }
+  .m2-fill.high { background: #f59e0b; opacity: 0.35; }
+  /* ✅ Σ pill */
+  .m2-sigma { font-size: 9px; font-weight: 700; color: #4d6a50; background: rgba(77,106,80,0.1);
+               padding: 1px 5px; border-radius: 4px; display: inline-flex; align-items: center; gap: 2px;
+               margin-top: auto; align-self: center; }
+  .m2-chip-name { font-size: 9.5px; color: #333; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .m2-chip-h { font-size: 8.5px; color: #777; }
+
+
+  /* ════════════════════════════════════════════════════════
+     MOCKUP 3 – KAPAZITÄTS-ÜBERSICHT (neuer Tab)
+  ════════════════════════════════════════════════════════ */
+  .m3 { font-size: 12px; }
+  .m3-header { display: flex; align-items: center; gap: 12px; padding: 10px 16px;
+               border-bottom: 1px solid #dde8dd; background: #fff; }
+  .m3-body { padding: 16px; background: #f2f5f2; min-height: 420px; }
+  .m3-grid { display: grid; grid-template-columns: 130px repeat(12, 1fr); gap: 0; }
+
+  /* Row headers */
+  .m3-row-label { padding: 8px 10px; display: flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 600; color: #1a2a1a; }
+  .m3-row-label .av { width: 22px; height: 22px; border-radius: 50%; background: #4d6a50; color: #fff;
+                       font-size: 9px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .m3-col-header { padding: 6px 4px; text-align: center; font-size: 10px; font-weight: 800;
+                    color: #4d6a50; letter-spacing: .05em; border-bottom: 2px solid #ccd8cc; background: #fff; }
+  .m3-col-header.cur { background: rgba(77,106,80,0.1); color: #1a2a1a; }
+  .m3-corner { border-bottom: 2px solid #ccd8cc; background: #fff; }
+
+  /* Capacity cells */
+  .m3-cap-cell { padding: 4px 3px; border-right: 1px solid #e8ede8; border-bottom: 1px solid #e8ede8;
+                  min-height: 52px; display: flex; flex-direction: column; align-items: center;
+                  justify-content: flex-end; gap: 2px; position: relative; background: #fff; }
+  .m3-cap-cell.cur { background: rgba(77,106,80,0.04); }
+  .m3-cap-cell .bar-wrap { width: 100%; height: 28px; display: flex; align-items: flex-end; padding: 0 2px; }
+  .m3-bar { width: 100%; border-radius: 3px 3px 0 0; min-height: 2px; }
+  .bar-empty { background: #e8ede8; height: 100%; opacity: 0.4; }
+  .bar-low    { background: #4d6a50; }
+  .bar-mid    { background: #f59e0b; }
+  .bar-over   { background: #dc2626; }
+  .m3-cap-cell .label { font-size: 8.5px; font-weight: 700; color: #6b826b; }
+  .m3-cap-cell .label.over { color: #dc2626; }
+  .m3-cap-cell .label.full { color: #4d6a50; }
+  .m3-row-total { padding: 4px 8px; display: flex; align-items: center; justify-content: center;
+                   border-bottom: 1px solid #e8ede8; min-height: 52px; }
+  .m3-total-pill { font-size: 10px; font-weight: 700; color: #fff; background: #4d6a50;
+                    padding: 3px 8px; border-radius: 6px; }
+  .m3-soll-row .m3-cap-cell { background: #f8faf8; }
+  .m3-soll-cell { padding: 4px 3px; border-right: 1px solid #e8ede8; border-bottom: 2px solid #ccd8cc;
+                   text-align: center; font-size: 9px; font-weight: 600; color: #6b826b; background: #f8faf8; }
+  .m3-legend { display: flex; gap: 16px; margin-top: 12px; align-items: center; }
+  .m3-legend-item { display: flex; align-items: center; gap: 5px; font-size: 10.5px; color: #6b826b; }
+  .m3-legend-dot { width: 10px; height: 10px; border-radius: 2px; }
+
+  /* Annotation boxes */
+  .anno { background: #fffbeb; border: 1.5px solid #f59e0b; border-radius: 8px; padding: 10px 14px;
+          font-size: 11px; color: #92400e; margin-bottom: 8px; }
+  .anno strong { color: #78350f; display: block; margin-bottom: 3px; font-size: 12px; }
+  .anno ul { padding-left: 14px; }
+  .anno li { margin-bottom: 2px; }
+  .anno.green { background: #f0fdf4; border-color: #4d6a50; color: #1a4a20; }
+  .anno.green strong { color: #1a4a20; }
+  .anno.red { background: #fff1f2; border-color: #dc2626; color: #7f1d1d; }
+  .anno.red strong { color: #7f1d1d; }
+
+  /* Divider */
+  .divider { border: none; border-top: 2px dashed #ccd8cc; margin: 40px 0; }
+</style>
+</head>
+<body>
+
+<div class="page-title">Jahresplanung – Layout-Analyse & Mockups</div>
+<div class="page-sub">Drei Varianten: Ist-Zustand mit Problemen · Verbesserter Vorschlag · Kapazitäts-Tab</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     ANALYSE
+═══════════════════════════════════════════════════════════ -->
+<div class="anno red" style="margin-bottom:24px;">
+  <strong>⚠ Identifizierte Schwächen im Ist-Zustand</strong>
+  <ul>
+    <li><strong>Monats-Header 5× wiederholt</strong> — Jan–Dez erscheint bei jedem Mitarbeiter neu. 5 MA × 12 = 60 mini "Soll"-Badges. Visual Noise.</li>
+    <li><strong>Soll-Stunden-Klick überall</strong> — Feiertage sind global, trotzdem hat jede Zelle pro Mitarbeiter ihren eigenen Klick-Badge.</li>
+    <li><strong>Kein "+" Button pro Zelle</strong> — Kunden müssen immer aus der Sidebar gezogen werden. Bei 3000 Kunden langsam.</li>
+    <li><strong>Fill-Bar zu subtil</strong> — 3px Linie am unteren Rand, kaum sichtbar.</li>
+    <li><strong>Kein Aktueller-Monat-Marker</strong> — Man sieht nicht auf einen Blick wo "jetzt" ist.</li>
+    <li><strong>Keine Kapazitätsübersicht</strong> — Wer ist wie voll? Nur im Kopf ausrechenbar.</li>
+  </ul>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     MOCKUP 1 – IST-ZUSTAND
+═══════════════════════════════════════════════════════════ -->
+<div class="section-label">
+  <span>Mockup 1</span>
+  <span class="badge">Ist-Zustand</span>
+  <span style="color:#6b826b;font-weight:400;text-transform:none;font-size:11px;letter-spacing:0">— Probleme markiert</span>
+</div>
+
+<div class="mockup-wrap">
+  <div class="mockup-title">
+    <span>Aktuelles Layout</span>
+    <span class="tag tag-current">Status Quo</span>
+    <span style="margin-left:auto;font-size:10px;opacity:0.7">Probleme in Rot markiert</span>
+  </div>
+  <div class="m1">
+    <!-- Header -->
+    <div class="m1-header">
+      <div class="logo">📅 Jahresplanung</div>
+      <div class="year-nav">
+        <button>‹</button>
+        <span>2026</span>
+        <button>›</button>
+      </div>
+      <span style="font-size:10px;color:#6b826b;margin-left:4px">Einträge wiederkehrend · nur aktive Kunden</span>
+    </div>
+
+    <div class="m1-body">
+      <!-- Sidebar -->
+      <div class="m1-sidebar">
+        <div class="m1-sidebar-search">
+          <input placeholder="Suchen… (Ctrl+F)" />
+          <div class="m1-sidebar-hint">Ziehen → Mitarbeiter &amp; Monat</div>
+        </div>
+        <div class="m1-sidebar-list">
+          <div class="m1-cust-row">Aerne AG</div>
+          <div class="m1-cust-row">Amiet AG</div>
+          <div class="m1-cust-row">Artis Finance GmbH</div>
+          <div class="m1-cust-row">Artis Treuhand GmbH</div>
+          <div class="m1-cust-row">Balz Hug</div>
+          <div class="m1-cust-row">Becker &amp; Bläuenstein KIG</div>
+          <div class="m1-cust-row">Bergbahnen Splügen AG</div>
+          <div class="m1-cust-row">Bettina Jakob</div>
+          <div class="m1-cust-row">Bretscher AG</div>
+          <div class="m1-cust-row">…3000 weitere</div>
+        </div>
+      </div>
+
+      <!-- Grid -->
+      <div class="m1-grid" style="overflow:auto;padding:10px 12px;display:flex;flex-direction:column;gap:8px;">
+
+        <!-- Mitarbeiter 1 (Sascha – mein Abschnitt) -->
+        <div class="m1-staff-block" style="border-color:#4d6a50;">
+          <div class="m1-staff-header" style="background:#d8e8d8;">
+            <span style="font-size:11px;color:#6b826b">▼</span>
+            <div class="avatar">SB</div>
+            <div class="name">Sascha Bigger <span style="font-size:9px;background:rgba(77,106,80,0.15);color:#4d6a50;padding:1px 6px;border-radius:8px;font-weight:700;">Du</span></div>
+            <div class="stats">6 Kunden · 240h</div>
+          </div>
+          <!-- ❌ PROBLEM: Monats-Header wiederholt sich pro Mitarbeiter -->
+          <div style="position:relative">
+            <div class="problem-marker"></div>
+            <div class="problem-label">❌ Monatsheader 1× von 5</div>
+            <div class="m1-month-header">
+              <div class="m1-mh-cell"><div class="m1-mh-name">JAN</div><div class="m1-mh-soll">⏱ 182h</div></div>
+              <div class="m1-mh-cell"><div class="m1-mh-name">FEB</div><div class="m1-mh-soll">⏱ 165h</div></div>
+              <div class="m1-mh-cell"><div class="m1-mh-name">MÄR</div><div class="m1-mh-soll">⏱ 182h</div></div>
+              <div class="m1-mh-cell"><div class="m1-mh-name">APR</div><div class="m1-mh-soll">⏱ 174h</div></div>
+              <div class="m1-mh-cell" style="background:rgba(77,106,80,0.06)"><div class="m1-mh-name" style="color:#4d6a50">MAI</div><div class="m1-mh-soll">⏱ 182h</div></div>
+              <div class="m1-mh-cell"><div class="m1-mh-name">JUN</div><div class="m1-mh-soll">⏱ 174h</div></div>
+              <div class="m1-mh-cell"><div class="m1-mh-name">JUL</div><div class="m1-mh-soll">⏱ 182h</div></div>
+              <div class="m1-mh-cell"><div class="m1-mh-name">AUG</div><div class="m1-mh-soll">⏱ 174h</div></div>
+              <div class="m1-mh-cell"><div class="m1-mh-name">SEP</div><div class="m1-mh-soll">⏱ 174h</div></div>
+              <div class="m1-mh-cell"><div class="m1-mh-name">OKT</div><div class="m1-mh-soll">⏱ 182h</div></div>
+              <div class="m1-mh-cell"><div class="m1-mh-name">NOV</div><div class="m1-mh-soll">⏱ 165h</div></div>
+              <div class="m1-mh-cell"><div class="m1-mh-name">DEZ</div><div class="m1-mh-soll">⏱ 165h</div></div>
+            </div>
+          </div>
+          <div class="m1-cells">
+            <div class="m1-cell">
+              <div class="chip chip-ja">Jahresabschluss</div><div class="m1-chip-name">Artis Finance GmbH</div><div class="m1-chip-h">24h</div>
+              <div class="chip chip-lohn">Lohn</div><div class="m1-chip-name">Artis Finance GmbH</div><div class="m1-chip-h">4h</div>
+              <div class="m1-sigma">Σ 28h</div>
+              <div class="fill-bar" style="width:15%"></div>
+            </div>
+            <div class="m1-cell">
+              <div class="chip chip-mwst">MwSt Abr.</div><div class="m1-chip-name">Amiet AG</div><div class="m1-chip-h">8h</div>
+              <div class="m1-sigma">Σ 8h</div>
+              <div class="fill-bar" style="width:5%"></div>
+            </div>
+            <div class="m1-cell"></div>
+            <div class="m1-cell">
+              <div class="chip chip-st">Steuererklärung</div><div class="m1-chip-name">Artis Treuhand GmbH</div>
+              <div class="m1-sigma">Σ 16h</div>
+              <div class="fill-bar" style="width:9%"></div>
+            </div>
+            <div class="m1-cell"></div>
+            <div class="m1-cell"></div>
+            <div class="m1-cell"></div>
+            <div class="m1-cell"></div>
+            <div class="m1-cell"></div>
+            <div class="m1-cell"></div>
+            <div class="m1-cell"></div>
+            <div class="m1-cell"></div>
+          </div>
+        </div>
+
+        <!-- Mitarbeiter 2 -->
+        <div class="m1-staff-block">
+          <div class="m1-staff-header">
+            <span style="font-size:11px;color:#6b826b">▼</span>
+            <div class="avatar">RG</div>
+            <div class="name">Romy Gerber</div>
+            <div class="stats">4 Kunden · 96h</div>
+          </div>
+          <!-- ❌ PROBLEM: Wiederholt sich schon wieder -->
+          <div style="position:relative">
+            <div class="problem-marker"></div>
+            <div class="problem-label">❌ Monatsheader 2× von 5</div>
+            <div class="m1-month-header">
+              <div class="m1-mh-cell"><div class="m1-mh-name">JAN</div><div class="m1-mh-soll">⏱ 182h</div></div>
+              <div class="m1-mh-cell"><div class="m1-mh-name">FEB</div><div class="m1-mh-soll">⏱ 165h</div></div>
+              <div class="m1-mh-cell"><div class="m1-mh-name">MÄR</div><div class="m1-mh-soll">⏱ 182h</div></div>
+              <div class="m1-mh-cell"><div class="m1-mh-name">APR</div><div class="m1-mh-soll">⏱ 174h</div></div>
+              <div class="m1-mh-cell"><div class="m1-mh-name">MAI</div><div class="m1-mh-soll">⏱ 182h</div></div>
+              <div class="m1-mh-cell"><div class="m1-mh-name">JUN</div><div class="m1-mh-soll">⏱ 174h</div></div>
+              <div class="m1-mh-cell"><div class="m1-mh-name">JUL</div><div class="m1-mh-soll">⏱ 182h</div></div>
+              <div class="m1-mh-cell"><div class="m1-mh-name">AUG</div><div class="m1-mh-soll">⏱ 174h</div></div>
+              <div class="m1-mh-cell"><div class="m1-mh-name">SEP</div><div class="m1-mh-soll">⏱ 174h</div></div>
+              <div class="m1-mh-cell"><div class="m1-mh-name">OKT</div><div class="m1-mh-soll">⏱ 182h</div></div>
+              <div class="m1-mh-cell"><div class="m1-mh-name">NOV</div><div class="m1-mh-soll">⏱ 165h</div></div>
+              <div class="m1-mh-cell"><div class="m1-mh-name">DEZ</div><div class="m1-mh-soll">⏱ 165h</div></div>
+            </div>
+          </div>
+          <div class="m1-cells">
+            <div class="m1-cell">
+              <div class="chip chip-lohn">Lohn</div><div class="m1-chip-name">Bergbahnen AG</div>
+              <div class="m1-sigma">Σ 4h</div>
+            </div>
+            <div class="m1-cell"></div>
+            <div class="m1-cell">
+              <div class="chip chip-ja">Jahresabschluss</div><div class="m1-chip-name">Balz Hug</div>
+              <div class="m1-sigma">Σ 20h</div>
+            </div>
+            <div class="m1-cell"></div>
+            <div class="m1-cell"></div>
+            <div class="m1-cell"></div>
+            <div class="m1-cell"></div>
+            <div class="m1-cell"></div>
+            <div class="m1-cell"></div>
+            <div class="m1-cell"></div>
+            <div class="m1-cell"></div>
+            <div class="m1-cell"></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ═══════════════════════════════════════════════════════════
+     MOCKUP 2 – VERBESSERTER VORSCHLAG
+═══════════════════════════════════════════════════════════ -->
+<div class="section-label">
+  <span>Mockup 2</span>
+  <span class="badge badge-ok">Verbesserter Vorschlag</span>
+</div>
+
+<div class="anno green" style="margin-bottom:16px;">
+  <strong>✅ Verbesserungen in diesem Mockup</strong>
+  <ul>
+    <li><strong>Globaler Monats-Header</strong> — einmalig, ganz oben, sticky beim Scrollen</li>
+    <li><strong>Soll-Badge nur einmal</strong> — klickbar für Feiertage-Modal</li>
+    <li><strong>"+" Button pro Zelle</strong> — direktes Hinzufügen ohne Drag</li>
+    <li><strong>Aktueller Monat</strong> — grüne Spaltenmarkierung (hier: April)</li>
+    <li><strong>Kapazitätsbalken im MA-Header</strong> — Ist/Soll auf einen Blick</li>
+    <li><strong>Dickere Fill-Bar</strong> — 5px statt 3px, besser sichtbar</li>
+    <li><strong>Tab-Leiste</strong> — Planung / Kapazität / Timeline (vorbereitet)</li>
+  </ul>
+</div>
+
+<div class="mockup-wrap">
+  <div class="mockup-title">
+    <span>Verbessertes Layout</span>
+    <span class="tag tag-proposed">Vorschlag</span>
+  </div>
+  <div class="m2">
+    <!-- Header -->
+    <div class="m2-header">
+      <div class="logo">📅 Jahresplanung</div>
+      <div class="m2-year-nav">
+        <button>‹</button>
+        <span>2026</span>
+        <button>›</button>
+      </div>
+      <!-- ✅ Tab-Leiste -->
+      <div class="tabs" style="display:flex;gap:2px;margin-left:12px;">
+        <div class="m2-tab active">Planung</div>
+        <div class="m2-tab">Kapazität</div>
+        <div class="m2-tab">Timeline</div>
+      </div>
+      <span style="margin-left:auto;font-size:10px;color:#6b826b">nur aktive Kunden · wiederkehrend</span>
+    </div>
+
+    <div class="m2-body">
+      <!-- Sidebar -->
+      <div class="m2-sidebar">
+        <div class="m2-sidebar-top">
+          <input placeholder="Suchen… (Ctrl+F)" />
+          <div class="hint">↔ Auf Zelle ziehen</div>
+        </div>
+        <div class="m2-sidebar-list">
+          <div class="m2-cust-row">Aerne AG</div>
+          <div class="m2-cust-row">Amiet AG</div>
+          <div class="m2-cust-row">Artis Finance GmbH</div>
+          <div class="m2-cust-row">Artis Treuhand GmbH</div>
+          <div class="m2-cust-row">Balz Hug</div>
+          <div class="m2-cust-row">Becker &amp; Bläuenstein KIG</div>
+          <div class="m2-cust-row">Bergbahnen Splügen AG</div>
+          <div class="m2-cust-row">Bettina Jakob</div>
+          <div class="m2-cust-row">Bretscher AG</div>
+          <div class="m2-cust-row" style="color:#9aaa9a">…3000 weitere</div>
+        </div>
+      </div>
+
+      <!-- Grid -->
+      <div class="m2-grid-wrap">
+        <!-- ✅ GLOBALER Monats-Header – einmalig! -->
+        <div class="m2-global-header">
+          <div class="m2-gh-cell"><div class="m2-gh-name">JAN</div><div class="m2-gh-soll">⏱ 182h</div></div>
+          <div class="m2-gh-cell"><div class="m2-gh-name">FEB</div><div class="m2-gh-soll">⏱ 165h</div></div>
+          <div class="m2-gh-cell"><div class="m2-gh-name">MÄR</div><div class="m2-gh-soll">⏱ 182h</div></div>
+          <!-- ✅ Aktueller Monat hervorgehoben -->
+          <div class="m2-gh-cell current-month">
+            <div class="m2-gh-name current">APR</div>
+            <div class="m2-gh-soll">⏱ 174h</div>
+            <div class="m2-gh-dot"></div>
+          </div>
+          <div class="m2-gh-cell"><div class="m2-gh-name">MAI</div><div class="m2-gh-soll">⏱ 182h</div></div>
+          <div class="m2-gh-cell"><div class="m2-gh-name">JUN</div><div class="m2-gh-soll">⏱ 174h</div></div>
+          <div class="m2-gh-cell"><div class="m2-gh-name">JUL</div><div class="m2-gh-soll">⏱ 182h</div></div>
+          <div class="m2-gh-cell"><div class="m2-gh-name">AUG</div><div class="m2-gh-soll">⏱ 174h</div></div>
+          <div class="m2-gh-cell"><div class="m2-gh-name">SEP</div><div class="m2-gh-soll">⏱ 174h</div></div>
+          <div class="m2-gh-cell"><div class="m2-gh-name">OKT</div><div class="m2-gh-soll">⏱ 182h</div></div>
+          <div class="m2-gh-cell"><div class="m2-gh-name">NOV</div><div class="m2-gh-soll">⏱ 165h</div></div>
+          <div class="m2-gh-cell"><div class="m2-gh-name">DEZ</div><div class="m2-gh-soll">⏱ 165h</div></div>
+        </div>
+
+        <div class="m2-grid-scroll">
+
+          <!-- MA 1: Sascha -->
+          <div class="m2-staff-block me">
+            <div class="m2-staff-hdr me">
+              <span style="font-size:10px;color:#6b826b">▼</span>
+              <div class="avatar">SB</div>
+              <div class="name">Sascha Bigger <span class="du-badge">Du</span></div>
+              <!-- ✅ Kapazitätsbalken -->
+              <div class="meta">
+                <span class="m2-cap-text">240 / 2100h</span>
+                <div class="m2-cap-bar-wrap"><div class="m2-cap-bar" style="width:11%"></div></div>
+              </div>
+            </div>
+            <!-- Keine Monats-Header-Zeile mehr! -->
+            <div class="m2-cells">
+              <div class="m2-cell">
+                <div class="chip chip-ja">Jahresabschluss</div>
+                <div class="m2-chip-name">Artis Finance GmbH</div>
+                <div class="m2-chip-h">24h</div>
+                <div class="chip chip-lohn" style="margin-top:2px">Lohn</div>
+                <div class="m2-chip-name">Artis Finance GmbH</div>
+                <div class="m2-sigma">Σ 28h</div>
+                <div class="m2-fill" style="width:15%"></div>
+              </div>
+              <div class="m2-cell">
+                <div class="chip chip-mwst">MwSt Abr.</div>
+                <div class="m2-chip-name">Amiet AG</div>
+                <div class="m2-chip-h">8h</div>
+                <!-- ✅ "+" Button -->
+                <div class="m2-add-btn">+</div>
+                <div class="m2-sigma">Σ 8h</div>
+                <div class="m2-fill" style="width:5%"></div>
+              </div>
+              <div class="m2-cell current-month">
+                <!-- ✅ Aktueller Monat: leichte Tönung -->
+                <div class="m2-add-btn">+</div>
+              </div>
+              <div class="m2-cell current-month">
+                <div class="chip chip-st">Steuererklärung</div>
+                <div class="m2-chip-name">Artis Treuhand GmbH</div>
+                <div class="m2-chip-h">16h</div>
+                <div class="m2-sigma">Σ 16h</div>
+                <div class="m2-fill" style="width:9%"></div>
+              </div>
+              <div class="m2-cell"><div class="m2-add-btn">+</div></div>
+              <div class="m2-cell"><div class="m2-add-btn">+</div></div>
+              <div class="m2-cell"><div class="m2-add-btn">+</div></div>
+              <div class="m2-cell"><div class="m2-add-btn">+</div></div>
+              <div class="m2-cell"><div class="m2-add-btn">+</div></div>
+              <div class="m2-cell"><div class="m2-add-btn">+</div></div>
+              <div class="m2-cell"><div class="m2-add-btn">+</div></div>
+              <div class="m2-cell"><div class="m2-add-btn">+</div></div>
+            </div>
+          </div>
+
+          <!-- MA 2: Romy -->
+          <div class="m2-staff-block">
+            <div class="m2-staff-hdr">
+              <span style="font-size:10px;color:#6b826b">▼</span>
+              <div class="avatar">RG</div>
+              <div class="name">Romy Gerber</div>
+              <div class="meta">
+                <span class="m2-cap-text">96 / 2100h</span>
+                <div class="m2-cap-bar-wrap"><div class="m2-cap-bar" style="width:5%"></div></div>
+              </div>
+            </div>
+            <div class="m2-cells">
+              <div class="m2-cell">
+                <div class="chip chip-lohn">Lohn</div>
+                <div class="m2-chip-name">Bergbahnen AG</div>
+                <div class="m2-chip-h">4h</div>
+                <div class="m2-sigma">Σ 4h</div>
+                <div class="m2-fill" style="width:2%"></div>
+              </div>
+              <div class="m2-cell"><div class="m2-add-btn">+</div></div>
+              <div class="m2-cell current-month">
+                <div class="chip chip-ja">Jahresabschluss</div>
+                <div class="m2-chip-name">Balz Hug</div>
+                <div class="m2-chip-h">20h</div>
+                <div class="m2-sigma">Σ 20h</div>
+                <div class="m2-fill" style="width:11%"></div>
+              </div>
+              <div class="m2-cell current-month"><div class="m2-add-btn">+</div></div>
+              <div class="m2-cell"><div class="m2-add-btn">+</div></div>
+              <div class="m2-cell"><div class="m2-add-btn">+</div></div>
+              <div class="m2-cell"><div class="m2-add-btn">+</div></div>
+              <div class="m2-cell"><div class="m2-add-btn">+</div></div>
+              <div class="m2-cell"><div class="m2-add-btn">+</div></div>
+              <div class="m2-cell"><div class="m2-add-btn">+</div></div>
+              <div class="m2-cell"><div class="m2-add-btn">+</div></div>
+              <div class="m2-cell"><div class="m2-add-btn">+</div></div>
+            </div>
+          </div>
+
+          <!-- MA 3: collapsed -->
+          <div class="m2-staff-block">
+            <div class="m2-staff-hdr" style="opacity:0.7">
+              <span style="font-size:10px;color:#6b826b">▶</span>
+              <div class="avatar" style="background:#6b826b;">RM</div>
+              <div class="name">Reto Mühlemann</div>
+              <div class="meta">
+                <span class="m2-cap-text">0 / 2100h</span>
+                <div class="m2-cap-bar-wrap"><div class="m2-cap-bar" style="width:0%"></div></div>
+              </div>
+            </div>
+            <!-- eingeklappt: keine Zellen -->
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ═══════════════════════════════════════════════════════════
+     MOCKUP 3 – KAPAZITÄTS-TAB
+═══════════════════════════════════════════════════════════ -->
+<div class="section-label">
+  <span>Mockup 3</span>
+  <span class="badge" style="background:#7c3aed">Kapazitäts-Tab (neu)</span>
+</div>
+
+<div class="anno" style="margin-bottom:16px;">
+  <strong>💡 Neuer "Kapazität"-Tab im selben View</strong>
+  <ul>
+    <li>Pro Mitarbeiter und Monat: wie viele Stunden eingeplant vs. Soll?</li>
+    <li>Balken: grün = ok, orange = &gt;70%, rot = überlastet</li>
+    <li>Sofort sichtbar: wer hat noch Luft, wer ist voll</li>
+  </ul>
+</div>
+
+<div class="mockup-wrap">
+  <div class="mockup-title">
+    <span>Kapazitäts-Übersicht</span>
+    <span class="tag tag-new">Neuer Tab</span>
+  </div>
+  <div class="m3">
+    <div class="m3-header">
+      <div class="logo" style="font-size:13px;font-weight:700;color:#1a2a1a;display:flex;align-items:center;gap:6px;">📅 Jahresplanung</div>
+      <div style="display:flex;align-items:center;gap:6px;margin-left:4px;">
+        <button style="padding:1px 8px;border:1px solid #dde8dd;background:none;border-radius:5px;cursor:pointer;color:#6b826b;font-size:13px;">‹</button>
+        <span style="font-size:13px;font-weight:700;color:#1a2a1a;min-width:40px;text-align:center;">2026</span>
+        <button style="padding:1px 8px;border:1px solid #dde8dd;background:none;border-radius:5px;cursor:pointer;color:#6b826b;font-size:13px;">›</button>
+      </div>
+      <div style="display:flex;gap:2px;margin-left:12px;">
+        <div style="padding:5px 12px;font-size:11.5px;border-radius:7px;color:#6b826b;border:1px solid transparent;font-weight:500;cursor:pointer">Planung</div>
+        <div style="padding:5px 12px;font-size:11.5px;border-radius:7px;background:#e6ede6;color:#1a2a1a;font-weight:700;border:1px solid #ccd8cc;cursor:pointer">Kapazität</div>
+        <div style="padding:5px 12px;font-size:11.5px;border-radius:7px;color:#6b826b;border:1px solid transparent;font-weight:500;cursor:pointer">Timeline</div>
+      </div>
+    </div>
+
+    <div class="m3-body">
+      <div class="m3-grid">
+        <!-- Header row -->
+        <div class="m3-corner" style="padding:6px 10px;font-size:10px;font-weight:700;color:#6b826b;border-bottom:2px solid #ccd8cc;display:flex;align-items:flex-end;">
+          Mitarbeiter
+        </div>
+        <div class="m3-col-header">JAN</div>
+        <div class="m3-col-header">FEB</div>
+        <div class="m3-col-header">MÄR</div>
+        <div class="m3-col-header cur">APR ●</div>
+        <div class="m3-col-header">MAI</div>
+        <div class="m3-col-header">JUN</div>
+        <div class="m3-col-header">JUL</div>
+        <div class="m3-col-header">AUG</div>
+        <div class="m3-col-header">SEP</div>
+        <div class="m3-col-header">OKT</div>
+        <div class="m3-col-header">NOV</div>
+        <div class="m3-col-header">DEZ</div>
+
+        <!-- Soll row -->
+        <div style="padding:4px 10px;font-size:10px;color:#6b826b;font-weight:600;border-bottom:2px solid #ccd8cc;display:flex;align-items:center;background:#f8faf8;">Soll</div>
+        <div class="m3-soll-cell">182h</div>
+        <div class="m3-soll-cell">165h</div>
+        <div class="m3-soll-cell">182h</div>
+        <div class="m3-soll-cell" style="border-bottom:2px solid #ccd8cc;background:rgba(77,106,80,0.08)">174h</div>
+        <div class="m3-soll-cell">182h</div>
+        <div class="m3-soll-cell">174h</div>
+        <div class="m3-soll-cell">182h</div>
+        <div class="m3-soll-cell">174h</div>
+        <div class="m3-soll-cell">174h</div>
+        <div class="m3-soll-cell">182h</div>
+        <div class="m3-soll-cell">165h</div>
+        <div class="m3-soll-cell">165h</div>
+
+        <!-- Sascha row: 28h/28h/0/16h/0... -->
+        <div class="m3-row-label"><div class="av">SB</div> Sascha Bigger</div>
+        <!-- Jan: 28h / 182h = 15% -->
+        <div class="m3-cap-cell">
+          <div class="bar-wrap"><div class="m3-bar bar-low" style="height:15%"></div></div>
+          <div class="label">28h</div>
+        </div>
+        <!-- Feb: 8h / 165h = 5% -->
+        <div class="m3-cap-cell">
+          <div class="bar-wrap"><div class="m3-bar bar-low" style="height:5%"></div></div>
+          <div class="label">8h</div>
+        </div>
+        <!-- Mär: 0 -->
+        <div class="m3-cap-cell">
+          <div class="bar-wrap"><div class="m3-bar bar-empty" style="height:100%"></div></div>
+          <div class="label">—</div>
+        </div>
+        <!-- Apr: 16h / 174h = 9%, current month -->
+        <div class="m3-cap-cell cur">
+          <div class="bar-wrap"><div class="m3-bar bar-low" style="height:9%"></div></div>
+          <div class="label">16h</div>
+        </div>
+        <!-- Mai-Dez: empty -->
+        <div class="m3-cap-cell"><div class="bar-wrap"><div class="m3-bar bar-empty" style="height:100%"></div></div><div class="label">—</div></div>
+        <div class="m3-cap-cell"><div class="bar-wrap"><div class="m3-bar bar-empty" style="height:100%"></div></div><div class="label">—</div></div>
+        <div class="m3-cap-cell"><div class="bar-wrap"><div class="m3-bar bar-empty" style="height:100%"></div></div><div class="label">—</div></div>
+        <div class="m3-cap-cell"><div class="bar-wrap"><div class="m3-bar bar-empty" style="height:100%"></div></div><div class="label">—</div></div>
+        <div class="m3-cap-cell"><div class="bar-wrap"><div class="m3-bar bar-empty" style="height:100%"></div></div><div class="label">—</div></div>
+        <div class="m3-cap-cell"><div class="bar-wrap"><div class="m3-bar bar-empty" style="height:100%"></div></div><div class="label">—</div></div>
+        <div class="m3-cap-cell"><div class="bar-wrap"><div class="m3-bar bar-empty" style="height:100%"></div></div><div class="label">—</div></div>
+        <div class="m3-cap-cell"><div class="bar-wrap"><div class="m3-bar bar-empty" style="height:100%"></div></div><div class="label">—</div></div>
+
+        <!-- Romy row: 4h/0/20h/0... -->
+        <div class="m3-row-label"><div class="av" style="background:#6b826b;">RG</div> Romy Gerber</div>
+        <div class="m3-cap-cell"><div class="bar-wrap"><div class="m3-bar bar-low" style="height:2%"></div></div><div class="label">4h</div></div>
+        <div class="m3-cap-cell"><div class="bar-wrap"><div class="m3-bar bar-empty" style="height:100%"></div></div><div class="label">—</div></div>
+        <div class="m3-cap-cell"><div class="bar-wrap"><div class="m3-bar bar-low" style="height:11%"></div></div><div class="label">20h</div></div>
+        <div class="m3-cap-cell cur"><div class="bar-wrap"><div class="m3-bar bar-empty" style="height:100%"></div></div><div class="label">—</div></div>
+        <div class="m3-cap-cell"><div class="bar-wrap"><div class="m3-bar bar-empty" style="height:100%"></div></div><div class="label">—</div></div>
+        <div class="m3-cap-cell"><div class="bar-wrap"><div class="m3-bar bar-empty" style="height:100%"></div></div><div class="label">—</div></div>
+        <div class="m3-cap-cell"><div class="bar-wrap"><div class="m3-bar bar-empty" style="height:100%"></div></div><div class="label">—</div></div>
+        <div class="m3-cap-cell"><div class="bar-wrap"><div class="m3-bar bar-empty" style="height:100%"></div></div><div class="label">—</div></div>
+        <div class="m3-cap-cell"><div class="bar-wrap"><div class="m3-bar bar-empty" style="height:100%"></div></div><div class="label">—</div></div>
+        <div class="m3-cap-cell"><div class="bar-wrap"><div class="m3-bar bar-empty" style="height:100%"></div></div><div class="label">—</div></div>
+        <div class="m3-cap-cell"><div class="bar-wrap"><div class="m3-bar bar-empty" style="height:100%"></div></div><div class="label">—</div></div>
+        <div class="m3-cap-cell"><div class="bar-wrap"><div class="m3-bar bar-empty" style="height:100%"></div></div><div class="label">—</div></div>
+
+        <!-- Beispiel: Jemand mit vielen Stunden -->
+        <div class="m3-row-label"><div class="av" style="background:#b45309;">MF</div> Maura Fuster</div>
+        <div class="m3-cap-cell"><div class="bar-wrap"><div class="m3-bar bar-low" style="height:60%"></div></div><div class="label full">110h</div></div>
+        <div class="m3-cap-cell"><div class="bar-wrap"><div class="m3-bar bar-mid" style="height:75%"></div></div><div class="label" style="color:#b45309">124h</div></div>
+        <div class="m3-cap-cell"><div class="bar-wrap"><div class="m3-bar bar-over" style="height:100%"></div></div><div class="label over">190h !</div></div>
+        <div class="m3-cap-cell cur"><div class="bar-wrap"><div class="m3-bar bar-mid" style="height:70%"></div></div><div class="label" style="color:#b45309">122h</div></div>
+        <div class="m3-cap-cell"><div class="bar-wrap"><div class="m3-bar bar-low" style="height:45%"></div></div><div class="label">82h</div></div>
+        <div class="m3-cap-cell"><div class="bar-wrap"><div class="m3-bar bar-empty" style="height:100%"></div></div><div class="label">—</div></div>
+        <div class="m3-cap-cell"><div class="bar-wrap"><div class="m3-bar bar-empty" style="height:100%"></div></div><div class="label">—</div></div>
+        <div class="m3-cap-cell"><div class="bar-wrap"><div class="m3-bar bar-empty" style="height:100%"></div></div><div class="label">—</div></div>
+        <div class="m3-cap-cell"><div class="bar-wrap"><div class="m3-bar bar-empty" style="height:100%"></div></div><div class="label">—</div></div>
+        <div class="m3-cap-cell"><div class="bar-wrap"><div class="m3-bar bar-empty" style="height:100%"></div></div><div class="label">—</div></div>
+        <div class="m3-cap-cell"><div class="bar-wrap"><div class="m3-bar bar-empty" style="height:100%"></div></div><div class="label">—</div></div>
+        <div class="m3-cap-cell"><div class="bar-wrap"><div class="m3-bar bar-empty" style="height:100%"></div></div><div class="label">—</div></div>
+      </div>
+
+      <!-- Legende -->
+      <div class="m3-legend">
+        <div class="m3-legend-item"><div class="m3-legend-dot" style="background:#4d6a50"></div> Normal (&lt;70% Soll)</div>
+        <div class="m3-legend-item"><div class="m3-legend-dot" style="background:#f59e0b"></div> Hoch (70–99%)</div>
+        <div class="m3-legend-item"><div class="m3-legend-dot" style="background:#dc2626"></div> Überlastet (&gt;100%)</div>
+        <div class="m3-legend-item"><div class="m3-legend-dot" style="background:#e8ede8;border:1px solid #ccd8cc"></div> Nichts geplant</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div style="height:40px"></div>
+</body>
+</html>
