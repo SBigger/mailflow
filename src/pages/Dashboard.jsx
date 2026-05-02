@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { entities, functions, auth, supabase } from "@/api/supabaseClient";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -47,6 +47,14 @@ export default function Dashboard() {
   const [secondaryColumnIds, setSecondaryColumnIds] = useState(null); // null = use defaults
   const [secondaryPriorityFilter, setSecondaryPriorityFilter] = useState("all");
 
+  // Configurable stat card (column + priority); persisted in localStorage
+  const [statCardColumnId, setStatCardColumnId] = useState(() => {
+    try { return localStorage.getItem('dashboard.statCard.columnId') || 'all'; } catch { return 'all'; }
+  });
+  const [statCardPriorityId, setStatCardPriorityId] = useState(() => {
+    try { return localStorage.getItem('dashboard.statCard.priorityId') || 'all'; } catch { return 'all'; }
+  });
+
   const { theme } = useTheme();
   const isDark = theme === 'dark';
   const isArtis = theme === 'artis';
@@ -64,8 +72,6 @@ export default function Dashboard() {
   const dropdownBg = isDark ? '#18181b' : isArtis ? '#eaf0ea' : '#ffffff';
   const dropdownBorder = isDark ? '#27272a' : isArtis ? '#bfcfbf' : '#e2e8f0';
   const dropdownText = isDark ? '#d4d4d8' : isArtis ? '#1a3a1a' : '#374151';
-  const avatarBg = isDark ? 'rgba(129,140,248,0.15)' : isArtis ? 'rgba(122,155,127,0.18)' : 'rgba(124,58,237,0.1)';
-  const avatarText = isDark ? '#a5b4fc' : isArtis ? '#3a6640' : '#7c3aed';
   const itemHoverClass = isDark ? 'hover:bg-zinc-800/50' : isArtis ? 'hover:bg-green-50' : 'hover:bg-slate-50';
   const filterBtnStyle = {
     borderColor: cardBorder,
@@ -209,30 +215,31 @@ export default function Dashboard() {
   }, [visibleTasks, secondaryPriorityFilter]);
 
   // Statistics
-  const highPrioIds = useMemo(
-    () => new Set(priorities.filter(p => (p.level ?? 99) <= 2).map(p => p.id)),
-    [priorities]
-  );
-
   const stats = {
     totalOpenTasks: visibleTasks.length,
     totalUnreadMails: mails.filter(m => !m.is_read && !m.is_completed).length,
     overdueTasks: visibleTasks.filter(t => t.due_date && isPast(new Date(t.due_date))).length,
     todayTasks: visibleTasks.filter(t => t.due_date && isToday(new Date(t.due_date))).length,
-    highPriorityTasks: visibleTasks.filter(t => highPrioIds.has(t.priority_id)).length,
     highPriorityMails: mails.filter(m => !m.is_read && !m.is_completed && m.priority === 'high').length,
   };
 
-  // Tasks by user
-  const tasksByUser = useMemo(() => {
-    const grouped = {};
-    for (const task of visibleTasks) {
-      const assignee = task.assignee || 'Nicht zugewiesen';
-      if (!grouped[assignee]) grouped[assignee] = [];
-      grouped[assignee].push(task);
-    }
-    return grouped;
-  }, [visibleTasks]);
+  // Configurable stat card derived values
+  useEffect(() => {
+    try { localStorage.setItem('dashboard.statCard.columnId', statCardColumnId); } catch {}
+  }, [statCardColumnId]);
+  useEffect(() => {
+    try { localStorage.setItem('dashboard.statCard.priorityId', statCardPriorityId); } catch {}
+  }, [statCardPriorityId]);
+
+  const statCardColumn = statCardColumnId === 'all' ? null : taskColumns.find(c => c.id === statCardColumnId);
+  const statCardPriority = statCardPriorityId === 'all' ? null : priorityById.get(statCardPriorityId);
+  const statCardColumnLabel = statCardColumn?.name || 'Alle Spalten';
+  const statCardPriorityLabel = statCardPriority?.name || 'Alle Prioritäten';
+  const statCardPriorityColor = statCardPriority?.color || '#f97316';
+  const statCardCount = visibleTasks.filter(t =>
+    (statCardColumnId === 'all' || t.column_id === statCardColumnId) &&
+    (statCardPriorityId === 'all' || t.priority_id === statCardPriorityId)
+  ).length;
 
   const userByEmail = useMemo(() => {
     const m = new Map();
@@ -406,15 +413,60 @@ export default function Dashboard() {
           </div>
 
           <div className={`rounded-xl border ${isMobile ? 'p-4' : 'p-6'}`} style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm" style={{ color: textMuted }}>Hohe Priorität</p>
-                <p className={`${isMobile ? 'text-2xl' : 'text-3xl'} font-bold mt-2`} style={{ color: headingColor }}>{stats.highPriorityTasks}</p>
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm" style={{ color: textMuted }}>
+                  {statCardColumnLabel} · {statCardPriorityLabel}
+                </p>
+                <p className={`${isMobile ? 'text-2xl' : 'text-3xl'} font-bold mt-2`} style={{ color: headingColor }}>
+                  {statCardCount}
+                </p>
               </div>
-              <AlertCircle className={`${isMobile ? 'h-9 w-9' : 'h-12 w-12'} opacity-20 text-orange-500`} />
+              <AlertCircle className={`${isMobile ? 'h-9 w-9' : 'h-12 w-12'} opacity-20 flex-shrink-0`} style={{ color: statCardPriorityColor }} />
             </div>
-            <div className="mt-4 flex flex-wrap gap-3 text-xs">
-              <span style={{ color: textMuted }}>Tasks mit hoher/dringender Priorität</span>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="gap-2 h-8 text-xs" style={filterBtnStyle}>
+                    <Columns3 className="h-3.5 w-3.5" />
+                    <span className="truncate max-w-[120px]">{statCardColumnLabel}</span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent style={{ backgroundColor: dropdownBg, borderColor: dropdownBorder }}>
+                  <DropdownMenuItem onClick={() => setStatCardColumnId('all')} style={{ color: dropdownText }}>
+                    Alle Spalten
+                  </DropdownMenuItem>
+                  {taskColumns.map((col) => (
+                    <DropdownMenuItem key={col.id} onClick={() => setStatCardColumnId(col.id)} style={{ color: dropdownText }}>
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: col.color || accentColor }} />
+                        {col.name}
+                      </div>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="gap-2 h-8 text-xs" style={filterBtnStyle}>
+                    <Filter className="h-3.5 w-3.5" />
+                    <span className="truncate max-w-[120px]">{statCardPriorityLabel}</span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent style={{ backgroundColor: dropdownBg, borderColor: dropdownBorder }}>
+                  <DropdownMenuItem onClick={() => setStatCardPriorityId('all')} style={{ color: dropdownText }}>
+                    Alle Prioritäten
+                  </DropdownMenuItem>
+                  {priorities.map((p) => (
+                    <DropdownMenuItem key={p.id} onClick={() => setStatCardPriorityId(p.id)} style={{ color: dropdownText }}>
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: p.color }} />
+                        {p.name}
+                      </div>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
         </div>
@@ -466,47 +518,6 @@ export default function Dashboard() {
             )}
           </div>
         )}
-
-        {/* Tasks by User Overview */}
-        <div className={`rounded-xl border ${isMobile ? 'p-4 mb-4' : 'p-6 mb-8'}`} style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
-          <h2 className={`${isMobile ? 'text-base' : 'text-lg'} font-semibold mb-4 flex items-center gap-2`} style={{ color: headingColor }}>
-            <User className={isMobile ? 'h-4 w-4' : 'h-5 w-5'} style={{ color: accentColor }} />
-            Tasks pro Mitarbeiter
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {Object.entries(tasksByUser).map(([assignee, userTasks]) => {
-              const userName = userDisplayName(assignee);
-              return (
-                <div
-                  key={assignee}
-                  className="rounded-lg p-4 border"
-                  style={{ backgroundColor: itemBg, borderColor: itemBorder }}
-                >
-                  <div className="flex items-center gap-2 mb-2">
-                    <div
-                      className="w-8 h-8 rounded-full flex items-center justify-center font-semibold text-sm"
-                      style={{ backgroundColor: avatarBg, color: avatarText }}
-                    >
-                      {userName.charAt(0).toUpperCase()}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium truncate" style={{ color: headingColor }}>{userName}</div>
-                      <div className="text-xs" style={{ color: textMuted }}>{userTasks.length} offene Tasks</div>
-                    </div>
-                  </div>
-                  <div className="flex gap-2 text-xs">
-                    <span className="text-red-500 font-medium">
-                      {userTasks.filter(t => highPrioIds.has(t.priority_id)).length} dringend
-                    </span>
-                    <span className="text-amber-500 font-medium">
-                      {userTasks.filter(t => t.due_date && isPast(new Date(t.due_date))).length} überfällig
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
 
         {/* Filters (primary task list) */}
         <div className={`flex flex-wrap items-center ${isMobile ? 'gap-2 mb-4' : 'gap-3 mb-6'}`}>
