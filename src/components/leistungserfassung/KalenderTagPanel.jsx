@@ -8,7 +8,7 @@
 //   - Klick auf Outlook-Termin → Modal mit Daten aus Termin vorbefüllt
 //   - Überlappungen erlaubt: parallele Rapporte werden nebeneinander gerendert.
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -26,22 +26,18 @@ import RapportEditDialog from './RapportEditDialog';
 
 // --- Konstanten -----------------------------------------------------------
 
-const HOUR_START = 6;       // Kalender beginnt 06:00
-const HOUR_END = 22;        // Kalender endet 22:00
+const HOUR_START = 0;       // Kalender beginnt 00:00
+const HOUR_END = 24;        // Kalender endet 24:00 (Outlook-Style)
+const WORK_HOUR_START = 8;  // Arbeitszeit-Start (heller Hintergrund)
+const WORK_HOUR_END = 17;   // Arbeitszeit-Ende (heller Hintergrund)
+const SCROLL_TO_HOUR = 8;   // Beim Öffnen automatisch auf 08:00 scrollen
 const PX_PER_HOUR = 60;     // 60px = 1 Stunde
 const PX_PER_MIN = PX_PER_HOUR / 60;
 const SLOT_GRID_MIN = 15;   // 15-Minuten-Klick-Raster
 const DEFAULT_DURATION_MIN = 30; // Klick erzeugt 30-Min-Default
 
-// Farb-Pool für Rapport-Boxen (deterministisch je Projekt-ID)
-const PROJECT_COLORS = [
-  { bg: '#e6ede6', border: '#bfd3bf', text: '#2d5a2d' }, // Artis grün
-  { bg: '#e3eaf5', border: '#b8c9e0', text: '#2e4a7d' }, // Blau
-  { bg: '#fff4e0', border: '#f3d9a4', text: '#8a5a00' }, // Orange
-  { bg: '#ede3f7', border: '#c9b8e0', text: '#4d2995' }, // Violet
-  { bg: '#e0f0e8', border: '#b4d8c5', text: '#2d6a4f' }, // Mint
-  { bg: '#fce4e4', border: '#e8b4b4', text: '#8a2d2d' }, // Rot (sparsam)
-];
+// Einheitliche Farbe für alle Rapporte: leicht violett (klare Abgrenzung von Outlook-Blau)
+const RAPPORT_COLOR = { bg: '#ede3f7', border: '#c9b8e0', text: '#4d2995' };
 
 // --- Helpers --------------------------------------------------------------
 
@@ -77,15 +73,8 @@ const timeFromIso = (iso) => {
   return s.includes('T') ? s.slice(11, 16) : s.slice(0, 5);
 };
 
-// Hash-Function für deterministische Farb-Auswahl pro Projekt
-const colorForProject = (projectId) => {
-  if (!projectId) return PROJECT_COLORS[0];
-  let hash = 0;
-  for (let i = 0; i < projectId.length; i++) {
-    hash = ((hash << 5) - hash + projectId.charCodeAt(i)) | 0;
-  }
-  return PROJECT_COLORS[Math.abs(hash) % PROJECT_COLORS.length];
-};
+// Alle Rapporte einheitlich violett – klare Abgrenzung von Outlook-Blau
+const colorForProject = () => RAPPORT_COLOR;
 
 // Y-Position aus HH:MM
 const yFromTime = (hhmm) => {
@@ -150,6 +139,16 @@ export default function KalenderTagPanel() {
   const [currentEmployeeId, setCurrentEmployeeId] = useState(null);
   const [employeeResolved, setEmployeeResolved] = useState(false);
   const [dialogState, setDialogState] = useState(null); // null | { initial }
+
+  // Ref für scrollbaren Kalender-Container (Stunden + Hauptspalte gemeinsam)
+  const scrollRef = useRef(null);
+
+  // Beim ersten Mount auf 08:00 scrollen
+  useLayoutEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = (SCROLL_TO_HOUR - HOUR_START) * PX_PER_HOUR;
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -307,12 +306,12 @@ export default function KalenderTagPanel() {
   };
 
   const handleSave = async (payload) => {
-    if (payload.id) {
-      const { id, ...patch } = payload;
-      await updateMut.mutateAsync({ id, patch });
+    const { id, ...rest } = payload;
+    if (id) {
+      await updateMut.mutateAsync({ id, patch: rest });
     } else {
       await createMut.mutateAsync({
-        ...payload,
+        ...rest,
         entry_date: currentDate,
         employee_id: currentEmployeeId,
         status: 'erfasst',
@@ -324,6 +323,8 @@ export default function KalenderTagPanel() {
 
   const totalHeight = (HOUR_END - HOUR_START) * PX_PER_HOUR;
   const hours = Array.from({ length: HOUR_END - HOUR_START + 1 }, (_, i) => HOUR_START + i);
+  const workTopY = (WORK_HOUR_START - HOUR_START) * PX_PER_HOUR;
+  const workHeight = (WORK_HOUR_END - WORK_HOUR_START) * PX_PER_HOUR;
 
   // "Jetzt"-Linie
   const now = new Date();
@@ -416,32 +417,70 @@ export default function KalenderTagPanel() {
           </div>
         </div>
 
-        <div className="flex" style={{ height: 'calc(100vh - 280px)', minHeight: 500 }}>
-          {/* Stunden-Beschriftung links */}
-          <div className="w-12 flex-shrink-0 border-r overflow-hidden" style={{ borderColor: '#eef1ee' }}>
-            <div style={{ height: totalHeight, position: 'relative' }}>
-              {hours.map((h) => (
-                <div
-                  key={h}
-                  className="absolute right-1 text-[10px] text-zinc-400 -translate-y-1/2"
-                  style={{ top: (h - HOUR_START) * PX_PER_HOUR }}
-                >
-                  {String(h).padStart(2, '0')}:00
-                </div>
-              ))}
+        <div ref={scrollRef} style={{ height: 'calc(100vh - 280px)', minHeight: 500, overflowY: 'auto', overflowX: 'hidden' }}>
+          <div className="flex" style={{ height: totalHeight, position: 'relative' }}>
+            {/* Stunden-Beschriftung links */}
+            <div className="w-14 flex-shrink-0 border-r" style={{ borderColor: '#eef1ee', background: '#fafbf9', position: 'relative' }}>
+              {hours.map((h) => {
+                const isWork = h >= WORK_HOUR_START && h <= WORK_HOUR_END;
+                return (
+                  <div
+                    key={h}
+                    className="absolute right-1.5 -translate-y-1/2 tabular-nums"
+                    style={{
+                      top: (h - HOUR_START) * PX_PER_HOUR,
+                      fontSize: 10,
+                      color: isWork ? '#52525b' : '#a1a1aa',
+                      fontWeight: isWork ? 500 : 400,
+                    }}
+                  >
+                    {String(h).padStart(2, '0')}:00
+                  </div>
+                );
+              })}
             </div>
-          </div>
 
-          {/* Kalender-Hauptspalte */}
-          <div className="flex-1 overflow-auto relative">
+            {/* Kalender-Hauptspalte */}
             <div
-              className="relative cursor-crosshair"
+              className="flex-1 relative cursor-crosshair"
               style={{
-                height: totalHeight,
-                backgroundImage: `repeating-linear-gradient(to bottom, transparent 0, transparent ${PX_PER_HOUR - 1}px, #eef1ee ${PX_PER_HOUR - 1}px, #eef1ee ${PX_PER_HOUR}px), repeating-linear-gradient(to bottom, transparent 0, transparent ${PX_PER_HOUR/2 - 0.5}px, #f7f8f7 ${PX_PER_HOUR/2 - 0.5}px, #f7f8f7 ${PX_PER_HOUR/2}px)`,
+                background: '#f4f4f3',  // off-hours dunkler
               }}
               onClick={handleSlotClick}
             >
+              {/* Working-Hours-Hintergrund (heller) */}
+              <div
+                className="absolute left-0 right-0 pointer-events-none"
+                style={{ top: workTopY, height: workHeight, background: '#ffffff', zIndex: 0 }}
+              />
+
+              {/* Feine Grid-Lines: 4 pro Stunde (Outlook-Style) */}
+              <div
+                className="absolute inset-0 pointer-events-none"
+                style={{
+                  backgroundImage: [
+                    // Volle Stunde: kräftige Linie
+                    `linear-gradient(to bottom, transparent calc(100% - 1px), #d4d4d8 calc(100% - 1px))`,
+                  ].join(','),
+                  backgroundSize: `100% ${PX_PER_HOUR}px`,
+                }}
+              />
+              {/* Halbe Stunde: mittlere Linie */}
+              <div
+                className="absolute inset-0 pointer-events-none"
+                style={{
+                  backgroundImage: `linear-gradient(to bottom, transparent calc(50% - 1px), #e4e4e7 calc(50% - 1px), #e4e4e7 calc(50%), transparent calc(50%))`,
+                  backgroundSize: `100% ${PX_PER_HOUR}px`,
+                }}
+              />
+              {/* Viertelstunden: ganz feine Linien */}
+              <div
+                className="absolute inset-0 pointer-events-none"
+                style={{
+                  backgroundImage: `linear-gradient(to bottom, transparent calc(25% - 0.5px), #f4f4f5 calc(25% - 0.5px), #f4f4f5 calc(25%), transparent calc(25%), transparent calc(75% - 0.5px), #f4f4f5 calc(75% - 0.5px), #f4f4f5 calc(75%), transparent calc(75%))`,
+                  backgroundSize: `100% ${PX_PER_HOUR}px`,
+                }}
+              />
               {/* Layer 1: Outlook im Hintergrund (transparent, dashed) */}
               {outlookItems.map((cal) => {
                 const top = (cal.fromMin - HOUR_START * 60) * PX_PER_MIN;
@@ -524,6 +563,73 @@ export default function KalenderTagPanel() {
             </div>
           </div>
         </div>
+      </Card>
+
+      {/* Eintrags-Tabelle unter dem Kalender */}
+      <Card>
+        <div className="px-4 py-2 border-b flex items-center justify-between gap-4 flex-wrap" style={{ borderColor: '#e4e7e4' }}>
+          <div className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+            Einträge des Tages ({entries.length})
+          </div>
+          <div className="flex items-center gap-4 text-xs">
+            <span className="flex items-baseline gap-1.5">
+              <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium">Total Zeit</span>
+              <span className="text-sm font-semibold tabular-nums">{fmt.hours(summary.hours)} h</span>
+            </span>
+            <span className="flex items-baseline gap-1.5">
+              <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium">Total CHF</span>
+              <span className="text-sm font-semibold tabular-nums" style={{ color: '#2d5a2d' }}>{fmt.chf(summary.chf)}</span>
+            </span>
+          </div>
+        </div>
+        {entries.length === 0 ? (
+          <div className="p-6 text-sm text-zinc-400 text-center">
+            Noch keine Einträge an diesem Tag.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-[10px] uppercase tracking-wider text-zinc-500 border-b" style={{ borderColor: '#e4e7e4', background: '#fafbf9' }}>
+                  <th className="text-left font-semibold px-3 py-2 w-32">Zeit</th>
+                  <th className="text-left font-semibold px-3 py-2">Projekt</th>
+                  <th className="text-left font-semibold px-3 py-2">Leistungsart</th>
+                  <th className="text-left font-semibold px-3 py-2">Beschreibung</th>
+                  <th className="text-right font-semibold px-3 py-2 w-16">Std.</th>
+                  <th className="text-right font-semibold px-3 py-2 w-20">Satz</th>
+                  <th className="text-right font-semibold px-3 py-2 w-24">Wert</th>
+                  <th className="text-right font-semibold px-3 py-2 w-16"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {entries
+                  .slice()
+                  .sort((a, b) => String(a.time_from ?? '').localeCompare(String(b.time_from ?? '')))
+                  .map((e) => {
+                    const val = Number(e.hours_internal ?? 0) * Number(e.rate_snapshot ?? 0);
+                    const zeit = e.time_from && e.time_to ? `${e.time_from.slice(0,5)}–${e.time_to.slice(0,5)}` : '—';
+                    return (
+                      <tr
+                        key={e.id}
+                        className="border-b last:border-b-0 cursor-pointer hover:bg-zinc-50"
+                        style={{ borderColor: '#eef1ee' }}
+                        onClick={() => setDialogState({ initial: e })}
+                      >
+                        <td className="px-3 py-2 tabular-nums text-zinc-600">{zeit}</td>
+                        <td className="px-3 py-2 font-medium" style={{ color: '#4d2995' }}>{e.project?.customer?.company_name ?? e.project?.name ?? '—'}</td>
+                        <td className="px-3 py-2">{e.service_type?.name ?? '—'}</td>
+                        <td className="px-3 py-2 text-zinc-600">{e.description || <span className="text-zinc-300">—</span>}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{fmt.hours(e.hours_internal)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums text-zinc-500">{fmt.chf(e.rate_snapshot)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums font-medium">{fmt.chf(val)}</td>
+                        <td className="px-3 py-2 text-right text-zinc-400 text-xs">›</td>
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Card>
 
       {/* Modal */}

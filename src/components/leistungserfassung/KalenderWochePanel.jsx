@@ -33,14 +33,8 @@ const PX_PER_MIN = PX_PER_HOUR / 60;
 const SLOT_GRID_MIN = 15;
 const DEFAULT_DURATION_MIN = 30;
 
-const PROJECT_COLORS = [
-  { bg: '#e6ede6', border: '#bfd3bf', text: '#2d5a2d' },
-  { bg: '#e3eaf5', border: '#b8c9e0', text: '#2e4a7d' },
-  { bg: '#fff4e0', border: '#f3d9a4', text: '#8a5a00' },
-  { bg: '#ede3f7', border: '#c9b8e0', text: '#4d2995' },
-  { bg: '#e0f0e8', border: '#b4d8c5', text: '#2d6a4f' },
-  { bg: '#fce4e4', border: '#e8b4b4', text: '#8a2d2d' },
-];
+// Alle Rapporte einheitlich violett – Outlook ist blau, Rapport ist lila
+const RAPPORT_COLOR = { bg: '#ede3f7', border: '#c9b8e0', text: '#4d2995' };
 
 const todayIso = () => {
   const d = new Date();
@@ -74,12 +68,7 @@ const timeFromIso = (iso) => {
   const s = String(iso);
   return s.includes('T') ? s.slice(11, 16) : s.slice(0, 5);
 };
-const colorForProject = (id) => {
-  if (!id) return PROJECT_COLORS[0];
-  let h = 0;
-  for (let i = 0; i < id.length; i++) h = ((h << 5) - h + id.charCodeAt(i)) | 0;
-  return PROJECT_COLORS[Math.abs(h) % PROJECT_COLORS.length];
-};
+const colorForProject = () => RAPPORT_COLOR;
 const timeFromY = (y) => {
   const totalMin = Math.round((y / PX_PER_MIN) / SLOT_GRID_MIN) * SLOT_GRID_MIN + HOUR_START * 60;
   return minutesToHHMM(Math.max(HOUR_START * 60, Math.min((HOUR_END - 1) * 60 + 45, totalMin)));
@@ -266,12 +255,12 @@ export default function KalenderWochePanel() {
   };
 
   const handleSave = async (payload) => {
-    if (payload.id) {
-      const { id, ...patch } = payload;
-      await updateMut.mutateAsync({ id, patch });
+    const { id, ...rest } = payload;
+    if (id) {
+      await updateMut.mutateAsync({ id, patch: rest });
     } else {
       await createMut.mutateAsync({
-        ...payload,
+        ...rest,
         entry_date: dialogState.date,
         employee_id: currentEmployeeId,
         status: 'erfasst',
