@@ -251,16 +251,24 @@ export default function KalenderTagPanel() {
     return { hours, chf, count: entries.length };
   }, [entries]);
 
+  // --- Drag-to-Select Zeitraum (Hooks vor early-returns!) ---
+  const [dragRange, setDragRange] = useState(null); // { startY, endY } während Drag
+  const dragColumnRef = useRef(null);
+
+  // Wenn Drag aussen losgelassen wird → abbrechen
+  useEffect(() => {
+    if (!dragRange) return;
+    const onUp = () => setDragRange(null);
+    window.addEventListener('mouseup', onUp);
+    return () => window.removeEventListener('mouseup', onUp);
+  }, [dragRange]);
+
   // --- Loading / Error (NACH allen Hooks) ---
   if (!employeeResolved) return <PanelLoader />;
   const anyError = projectsQ.error || serviceTypesQ.error || entriesQ.error || employeesQ.error;
   if (anyError) return <PanelError error={anyError} onRetry={() => { entriesQ.refetch(); }} />;
 
   const noMasterData = projects.length === 0 || serviceTypes.length === 0;
-
-  // --- Drag-to-Select Zeitraum ---
-  const [dragRange, setDragRange] = useState(null); // { startY, endY } während Drag
-  const dragColumnRef = useRef(null);
 
   const checkPrereqs = () => {
     if (!currentEmployeeId) { toast.error('Bitte zuerst Mitarbeiter auswählen.'); return false; }
@@ -276,9 +284,8 @@ export default function KalenderTagPanel() {
 
   const handleColumnMouseDown = (e) => {
     if (!checkPrereqs()) return;
-    // Linksklick auf leerer Spalte → Drag starten
     if (e.button !== 0) return;
-    if (e.target !== e.currentTarget && e.target.closest('[data-rapport-box]')) return; // Klick auf Rapport-Box → an Box-Handler
+    if (e.target !== e.currentTarget && e.target.closest('[data-rapport-box]')) return;
     const startY = yFromMouseEvent(e);
     setDragRange({ startY, endY: startY });
     e.preventDefault();
@@ -299,12 +306,10 @@ export default function KalenderTagPanel() {
 
     const fromHM = timeFromY(yA);
     let toHM = timeFromY(yB);
-    // Bei reinem Klick (kaum Drag): Default 30-Min
     if (Math.abs(endY - startY) < 4) {
       const fromMin = minutesFromHHMM(fromHM);
       toHM = fromMin != null ? minutesToHHMM(fromMin + DEFAULT_DURATION_MIN) : '';
     } else {
-      // Mindest-Dauer 15 Min
       const fromMin = minutesFromHHMM(fromHM);
       const toMin = minutesFromHHMM(toHM);
       if (fromMin != null && toMin != null && (toMin - fromMin) < 15) {
@@ -313,14 +318,6 @@ export default function KalenderTagPanel() {
     }
     setDialogState({ initial: { time_from: fromHM, time_to: toHM } });
   };
-
-  // Wenn Drag aussen losgelassen wird → abbrechen
-  useEffect(() => {
-    if (!dragRange) return;
-    const onUp = () => setDragRange(null);
-    window.addEventListener('mouseup', onUp);
-    return () => window.removeEventListener('mouseup', onUp);
-  }, [dragRange]);
 
   // --- Klick-Handler ---
 
