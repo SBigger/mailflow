@@ -30,6 +30,8 @@ import ProjektVorlagenPanel from '@/components/leistungserfassung/ProjektVorlage
 import MobileVorschauPanel from '@/components/leistungserfassung/MobileVorschauPanel';
 import DebitorenOPPanel from '@/components/leistungserfassung/DebitorenOPPanel';
 import MitarbeitergruppenPanel from '@/components/leistungserfassung/MitarbeitergruppenPanel';
+import KalenderTagPanel from '@/components/leistungserfassung/KalenderTagPanel';
+import KalenderWochePanel from '@/components/leistungserfassung/KalenderWochePanel';
 
 // ---------------------------------------------------------------------
 // Navigations-Definition + welche Sec-IDs welches Panel rendern
@@ -38,6 +40,8 @@ const NAV = [
   {
     id: 'erfassen', label: 'Erfassen', icon: Clock,
     sec: [
+      { id: 'kal-tag',    label: 'Kalender Tag',    comp: KalenderTagPanel },
+      { id: 'kal-woche',  label: 'Kalender Woche',  comp: KalenderWochePanel },
       { id: 'tag',        label: 'Tagesansicht',    comp: TagesansichtPanel },
       { id: 'woche',      label: 'Wochenrapport',   comp: WochenrapportPanel },
       { id: 'meine',      label: 'Meine Rapporte',  comp: MeineRapportePanel },
