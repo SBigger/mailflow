@@ -16,6 +16,11 @@ import {
   Columns3,
   CalendarDays,
   MapPin,
+  ArrowUp,
+  ArrowDown,
+  Eye,
+  EyeOff,
+  SlidersHorizontal,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -54,6 +59,12 @@ export default function Dashboard() {
   const [slotBPriorityId, setSlotBPriorityId] = useState(() => {
     try { return localStorage.getItem('dashboard.slotB.priorityId') || 'all'; } catch { return 'all'; }
   });
+  const [slotAUserEmail, setSlotAUserEmail] = useState(() => {
+    try { return localStorage.getItem('dashboard.slotA.userEmail') || 'all'; } catch { return 'all'; }
+  });
+  const [slotBUserEmail, setSlotBUserEmail] = useState(() => {
+    try { return localStorage.getItem('dashboard.slotB.userEmail') || 'all'; } catch { return 'all'; }
+  });
 
   // Configurable stat card (column + priority); persisted in localStorage
   const [statCardColumnId, setStatCardColumnId] = useState(() => {
@@ -66,6 +77,29 @@ export default function Dashboard() {
   // Mobile-Tab (welcher Bereich sichtbar ist), persistiert
   const [mobileTab, setMobileTab] = useState(() => {
     try { return localStorage.getItem('dashboard.mobileTab') || 'tasks'; } catch { return 'tasks'; }
+  });
+
+  // Widget-Reihenfolge & Sichtbarkeit (persistiert)
+  const DEFAULT_WIDGETS = [
+    { id: 'tasks',  visible: true },
+    { id: 'mails',  visible: true },
+    { id: 'slotA',  visible: true },
+    { id: 'slotB',  visible: true },
+  ];
+  const [widgets, setWidgets] = useState(() => {
+    try {
+      const raw = localStorage.getItem('dashboard.widgets');
+      if (!raw) return DEFAULT_WIDGETS;
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return DEFAULT_WIDGETS;
+      // sicherstellen, dass alle bekannten IDs enthalten sind
+      const knownIds = DEFAULT_WIDGETS.map(w => w.id);
+      const cleaned = parsed.filter(w => knownIds.includes(w.id));
+      const missing = knownIds
+        .filter(id => !cleaned.some(w => w.id === id))
+        .map(id => ({ id, visible: true }));
+      return [...cleaned, ...missing];
+    } catch { return DEFAULT_WIDGETS; }
   });
 
   const { theme } = useTheme();
@@ -217,10 +251,11 @@ export default function Dashboard() {
   const effectiveSlotAColumnId = slotAColumnId || taskColumns[0]?.id || '';
   const effectiveSlotBColumnId = slotBColumnId || taskColumns[1]?.id || taskColumns[0]?.id || '';
 
-  const slotTasks = (columnId, priorityId) =>
+  const slotTasks = (columnId, priorityId, userEmail) =>
     visibleTasks.filter(t =>
       t.column_id === columnId &&
-      (priorityId === 'all' || t.priority_id === priorityId)
+      (priorityId === 'all' || t.priority_id === priorityId) &&
+      (userEmail === 'all' || t.assignee === userEmail || t.verantwortlich === userEmail)
     );
 
   // Statistics
@@ -254,6 +289,38 @@ export default function Dashboard() {
   useEffect(() => {
     try { localStorage.setItem('dashboard.slotB.priorityId', slotBPriorityId); } catch {}
   }, [slotBPriorityId]);
+  useEffect(() => {
+    try { localStorage.setItem('dashboard.slotA.userEmail', slotAUserEmail); } catch {}
+  }, [slotAUserEmail]);
+  useEffect(() => {
+    try { localStorage.setItem('dashboard.slotB.userEmail', slotBUserEmail); } catch {}
+  }, [slotBUserEmail]);
+  useEffect(() => {
+    try { localStorage.setItem('dashboard.widgets', JSON.stringify(widgets)); } catch {}
+  }, [widgets]);
+
+  const moveWidget = (id, direction) => {
+    setWidgets(prev => {
+      const idx = prev.findIndex(w => w.id === id);
+      if (idx < 0) return prev;
+      const target = direction === 'up' ? idx - 1 : idx + 1;
+      if (target < 0 || target >= prev.length) return prev;
+      const next = [...prev];
+      [next[idx], next[target]] = [next[target], next[idx]];
+      return next;
+    });
+  };
+
+  const toggleWidget = (id) => {
+    setWidgets(prev => prev.map(w => w.id === id ? { ...w, visible: !w.visible } : w));
+  };
+
+  const widgetMeta = {
+    tasks: { label: 'Offene Tasks',     icon: CheckSquare },
+    mails: { label: 'Ungelesene Mails', icon: Mail },
+    slotA: { label: 'Spalte A',         icon: Columns3 },
+    slotB: { label: 'Spalte B',         icon: Columns3 },
+  };
 
   const statCardColumn = statCardColumnId === 'all' ? null : taskColumns.find(c => c.id === statCardColumnId);
   const statCardPriority = statCardPriorityId === 'all' ? null : priorityById.get(statCardPriorityId);
@@ -492,46 +559,119 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Mobile Pill-Tabs */}
-        {isMobile && (
-          <div className="sticky top-0 z-10 -mx-3 px-3 py-2 mb-3 backdrop-blur" style={{ backgroundColor: cardBg, borderBottom: `1px solid ${cardBorder}` }}>
-            <div className="flex gap-1.5 overflow-x-auto -mx-1 px-1">
-              {[
-                { id: 'tasks', label: 'Tasks', count: filteredTasks.length },
-                { id: 'mails', label: 'E-Mails', count: filteredMails.length },
-                ...(showCalendar ? [{ id: 'termine', label: 'Termine', count: calendarEvents.length }] : []),
-                { id: 'spalten', label: 'Spalten', count: null },
-              ].map(({ id, label, count }) => {
-                const active = mobileTab === id;
+        {/* Widget-Toolbar: Mobile-Pills + Verwalten-Menü */}
+        <div
+          className={`flex items-center gap-2 mb-3 ${isMobile ? 'sticky top-0 z-10 -mx-3 px-3 py-2 backdrop-blur' : ''}`}
+          style={isMobile ? { backgroundColor: cardBg, borderBottom: `1px solid ${cardBorder}` } : {}}
+        >
+          {isMobile && (
+            <div className="flex gap-1.5 overflow-x-auto -mx-1 px-1 flex-1">
+              {(() => {
+                const slotCount = (sCol, sPrio, sUser) => {
+                  const c = taskColumns.find(x => x.id === sCol);
+                  return c ? slotTasks(c.id, sPrio, sUser).length : 0;
+                };
+                const widgetPill = (id) => {
+                  if (id === 'tasks') return { id, label: 'Tasks', count: filteredTasks.length };
+                  if (id === 'mails') return { id, label: 'E-Mails', count: filteredMails.length };
+                  if (id === 'slotA') {
+                    const col = taskColumns.find(c => c.id === effectiveSlotAColumnId);
+                    return { id, label: col?.name || 'Spalte A', count: slotCount(effectiveSlotAColumnId, slotAPriorityId, slotAUserEmail) };
+                  }
+                  if (id === 'slotB') {
+                    const col = taskColumns.find(c => c.id === effectiveSlotBColumnId);
+                    return { id, label: col?.name || 'Spalte B', count: slotCount(effectiveSlotBColumnId, slotBPriorityId, slotBUserEmail) };
+                  }
+                  return null;
+                };
+                const pills = [
+                  ...(showCalendar ? [{ id: 'termine', label: 'Termine', count: calendarEvents.length }] : []),
+                  ...widgets.filter(w => w.visible).map(w => widgetPill(w.id)).filter(Boolean),
+                ];
+                return pills.map(({ id, label, count }) => {
+                  const active = mobileTab === id;
+                  return (
+                    <button
+                      key={id}
+                      onClick={() => setMobileTab(id)}
+                      className="px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors flex items-center gap-1.5 touch-manipulation"
+                      style={{
+                        backgroundColor: active ? accentColor : 'transparent',
+                        color: active ? '#ffffff' : textBody,
+                        border: `1px solid ${active ? accentColor : cardBorder}`,
+                      }}
+                    >
+                      {label}
+                      {count !== null && count !== undefined && (
+                        <span
+                          className="text-[10px] px-1.5 py-0.5 rounded-full"
+                          style={{
+                            backgroundColor: active ? 'rgba(255,255,255,0.25)' : itemBg,
+                            color: active ? '#ffffff' : textMuted,
+                          }}
+                        >
+                          {count}
+                        </span>
+                      )}
+                    </button>
+                  );
+                });
+              })()}
+            </div>
+          )}
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className={`gap-2 ${isMobile ? 'flex-shrink-0' : 'ml-auto'}`} style={filterBtnStyle}>
+                <SlidersHorizontal className="h-4 w-4" />
+                <span className={isMobile ? 'sr-only' : ''}>Widgets</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-72" style={{ backgroundColor: dropdownBg, borderColor: dropdownBorder }}>
+              <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wider" style={{ color: textMuted }}>
+                Reihenfolge & Sichtbarkeit
+              </div>
+              {widgets.map((w, idx) => {
+                const meta = widgetMeta[w.id];
+                const Icon = meta?.icon || Columns3;
                 return (
-                  <button
-                    key={id}
-                    onClick={() => setMobileTab(id)}
-                    className="px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors flex items-center gap-1.5 touch-manipulation"
-                    style={{
-                      backgroundColor: active ? accentColor : 'transparent',
-                      color: active ? '#ffffff' : textBody,
-                      border: `1px solid ${active ? accentColor : cardBorder}`,
-                    }}
-                  >
-                    {label}
-                    {count !== null && count !== undefined && (
-                      <span
-                        className="text-[10px] px-1.5 py-0.5 rounded-full"
-                        style={{
-                          backgroundColor: active ? 'rgba(255,255,255,0.25)' : itemBg,
-                          color: active ? '#ffffff' : textMuted,
-                        }}
-                      >
-                        {count}
-                      </span>
-                    )}
-                  </button>
+                  <div key={w.id} className="flex items-center gap-1.5 px-2 py-1.5">
+                    <button
+                      onClick={() => toggleWidget(w.id)}
+                      className="p-1.5 rounded hover:bg-black/5"
+                      title={w.visible ? 'Ausblenden' : 'Einblenden'}
+                      style={{ color: w.visible ? accentColor : textMuted }}
+                    >
+                      {w.visible ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                    </button>
+                    <Icon className="h-4 w-4 flex-shrink-0" style={{ color: textMuted }} />
+                    <span className="flex-1 text-sm truncate" style={{ color: dropdownText }}>
+                      {meta?.label || w.id}
+                    </span>
+                    <button
+                      onClick={() => moveWidget(w.id, 'up')}
+                      disabled={idx === 0}
+                      className="p-1.5 rounded hover:bg-black/5 disabled:opacity-30"
+                      style={{ color: textMuted }}
+                      title="Nach oben"
+                    >
+                      <ArrowUp className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => moveWidget(w.id, 'down')}
+                      disabled={idx === widgets.length - 1}
+                      className="p-1.5 rounded hover:bg-black/5 disabled:opacity-30"
+                      style={{ color: textMuted }}
+                      title="Nach unten"
+                    >
+                      <ArrowDown className="h-4 w-4" />
+                    </button>
+                  </div>
                 );
               })}
-            </div>
-          </div>
-        )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
 
         {/* Termine (read-only Outlook) */}
         {showCalendar && (!isMobile || mobileTab === 'termine') && (
@@ -581,215 +721,51 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Filters (primary task list) */}
-        <div className={`flex flex-wrap items-center ${isMobile ? 'gap-2 mb-4' : 'gap-3 mb-6'} ${isMobile && mobileTab !== 'tasks' ? 'hidden' : ''}`}>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size={isMobile ? 'sm' : 'default'} className="gap-2" style={filterBtnStyle}>
-                <User className="h-4 w-4" />
-                <span className="truncate max-w-[160px]">
-                  {selectedUser === "all" ? "Alle Mitarbeiter" : userDisplayName(selectedUser)}
-                </span>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent style={{ backgroundColor: dropdownBg, borderColor: dropdownBorder }}>
-              <DropdownMenuItem onClick={() => setSelectedUser("all")} style={{ color: dropdownText }}>
-                Alle Mitarbeiter
-              </DropdownMenuItem>
-              {allUsers.map((user) => (
-                <DropdownMenuItem key={user.id || user.email} onClick={() => setSelectedUser(user.email)} style={{ color: dropdownText }}>
-                  {user.full_name || user.email}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
+        {/* Widgets-Grid (4 konfigurierbare Karten in nutzerdefinierter Reihenfolge) */}
+        <div className={`grid grid-cols-1 lg:grid-cols-2 ${isMobile ? 'gap-4' : 'gap-6'}`}>
+          {widgets.filter(w => w.visible).map((w) => {
+            if (isMobile && mobileTab !== w.id) return null;
 
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size={isMobile ? 'sm' : 'default'} className="gap-2" style={filterBtnStyle}>
-                <Filter className="h-4 w-4" />
-                {priorityFilter === "all"
-                  ? "Alle Prioritäten"
-                  : priorityById.get(priorityFilter)?.name || "Priorität"}
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent style={{ backgroundColor: dropdownBg, borderColor: dropdownBorder }}>
-              <DropdownMenuItem onClick={() => setPriorityFilter("all")} style={{ color: dropdownText }}>
-                Alle Prioritäten
-              </DropdownMenuItem>
-              {priorities.map((p) => (
-                <DropdownMenuItem
-                  key={p.id}
-                  onClick={() => setPriorityFilter(p.id)}
-                  style={{ color: dropdownText }}
-                >
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: p.color }} />
-                    {p.name}
-                  </div>
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-
-        <div className={`grid grid-cols-1 lg:grid-cols-2 ${isMobile ? 'gap-4' : 'gap-6'} ${isMobile && mobileTab !== 'tasks' && mobileTab !== 'mails' ? 'hidden' : ''}`}>
-          {/* Tasks Section */}
-          <div className={`rounded-xl border ${isMobile ? 'p-4' : 'p-6'} ${isMobile && mobileTab !== 'tasks' ? 'hidden' : ''}`} style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
-            <div className="flex items-center justify-between mb-4 gap-2">
-              <h2 className={`${isMobile ? 'text-base' : 'text-lg'} font-semibold flex items-center gap-2 min-w-0`} style={{ color: headingColor }}>
-                <CheckSquare className={isMobile ? 'h-4 w-4' : 'h-5 w-5'} style={{ color: accentColor }} />
-                <span className="truncate">Offene Tasks ({filteredTasks.length})</span>
-              </h2>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="sm" className="gap-2 flex-shrink-0" style={{ color: textMuted }}>
-                    <ArrowUpDown className="h-4 w-4" />
-                    {taskSortBy === "due_date" ? "Fälligkeit" : taskSortBy === "priority" ? "Priorität" : "Erstellt"}
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent style={{ backgroundColor: dropdownBg, borderColor: dropdownBorder }}>
-                  <DropdownMenuItem onClick={() => setTaskSortBy("due_date")} style={{ color: dropdownText }}>
-                    Nach Fälligkeit
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setTaskSortBy("priority")} style={{ color: dropdownText }}>
-                    Nach Priorität
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setTaskSortBy("created_date")} style={{ color: dropdownText }}>
-                    Nach Erstelldatum
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-
-            <div className={`space-y-2 ${isMobile ? 'max-h-[420px]' : 'max-h-[600px]'} overflow-y-auto`}>
-              {filteredTasks.length === 0 ? (
-                <div className="text-center py-8" style={{ color: textMuted }}>
-                  Keine offenen Tasks
-                </div>
-              ) : (
-                filteredTasks.map((task) => renderTaskCard(task))
-              )}
-            </div>
-          </div>
-
-          {/* Mails Section */}
-          <div className={`rounded-xl border ${isMobile ? 'p-4' : 'p-6'} ${isMobile && mobileTab !== 'mails' ? 'hidden' : ''}`} style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
-            <div className="flex items-center justify-between mb-4 gap-2">
-              <h2 className={`${isMobile ? 'text-base' : 'text-lg'} font-semibold flex items-center gap-2 min-w-0`} style={{ color: headingColor }}>
-                <Mail className={isMobile ? 'h-4 w-4' : 'h-5 w-5'} style={{ color: mailColor }} />
-                <span className="truncate">Ungelesene E-Mails ({filteredMails.length})</span>
-              </h2>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="sm" className="gap-2 flex-shrink-0" style={{ color: textMuted }}>
-                    <ArrowUpDown className="h-4 w-4" />
-                    {mailSortBy === "received_date" ? "Datum" : "Priorität"}
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent style={{ backgroundColor: dropdownBg, borderColor: dropdownBorder }}>
-                  <DropdownMenuItem onClick={() => setMailSortBy("received_date")} style={{ color: dropdownText }}>
-                    Nach Datum
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setMailSortBy("priority")} style={{ color: dropdownText }}>
-                    Nach Priorität
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-
-            <div className={`space-y-2 ${isMobile ? 'max-h-[420px]' : 'max-h-[600px]'} overflow-y-auto`}>
-              {filteredMails.length === 0 ? (
-                <div className="text-center py-8" style={{ color: textMuted }}>
-                  Keine ungelesenen E-Mails
-                </div>
-              ) : (
-                filteredMails.map((mail) => (
-                  <Link
-                    key={mail.id}
-                    to={createPageUrl('MailKanban')}
-                    className={`block p-3 rounded-lg border transition-colors ${itemHoverClass}`}
-                    style={{ backgroundColor: itemBg, borderColor: itemBorder }}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-semibold mb-1 truncate" style={{ color: headingColor }}>
-                          {mail.subject}
-                        </div>
-                        <div className="text-xs mb-2 font-medium truncate" style={{ color: textMuted }}>
-                          Von: {mail.sender_name}
-                        </div>
-                        {mail.body_preview && (
-                          <div className="text-xs line-clamp-2" style={{ color: textMuted }}>
-                            {mail.body_preview}
-                          </div>
-                        )}
-                        <div className="flex items-center gap-2 mt-2">
-                          <div className="flex items-center gap-1 text-xs" style={{ color: textMuted }}>
-                            <Clock className="h-3 w-3" />
-                            {format(new Date(mail.received_date), 'dd.MM.yyyy HH:mm', { locale: de })}
-                          </div>
-                        </div>
-                      </div>
-                      {mail.priority === 'high' && (
-                        <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700 border-orange-200 flex-shrink-0">
-                          Hoch
-                        </Badge>
-                      )}
-                    </div>
-                  </Link>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Sekundärer Task-Bereich: zwei konfigurierbare Slots */}
-        <div className={`rounded-xl border ${isMobile ? 'p-4 mt-4' : 'p-6 mt-8'} ${isMobile && mobileTab !== 'spalten' ? 'hidden' : ''}`} style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
-          <h2 className={`${isMobile ? 'text-base' : 'text-lg'} font-semibold flex items-center gap-2 min-w-0 mb-4`} style={{ color: headingColor }}>
-            <Columns3 className={isMobile ? 'h-4 w-4' : 'h-5 w-5'} style={{ color: accentColor }} />
-            <span className="truncate">Tasks nach Spalte</span>
-          </h2>
-
-          <div className={`grid gap-4 ${isMobile ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2'}`}>
-            {[
-              { columnId: effectiveSlotAColumnId, priorityId: slotAPriorityId, setColumnId: setSlotAColumnId, setPriorityId: setSlotAPriorityId, key: 'A' },
-              { columnId: effectiveSlotBColumnId, priorityId: slotBPriorityId, setColumnId: setSlotBColumnId, setPriorityId: setSlotBPriorityId, key: 'B' },
-            ].map((slot) => {
-              const col = taskColumns.find(c => c.id === slot.columnId);
-              const prio = slot.priorityId === 'all' ? null : priorityById.get(slot.priorityId);
-              const colTasks = col ? slotTasks(col.id, slot.priorityId) : [];
+            if (w.id === 'tasks') {
               return (
-                <div
-                  key={slot.key}
-                  className="rounded-lg border p-3"
-                  style={{ backgroundColor: itemBg, borderColor: itemBorder }}
-                >
+                <div key={w.id} className={`rounded-xl border ${isMobile ? 'p-4' : 'p-6'}`} style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
+                  <div className="flex items-center justify-between mb-3 gap-2">
+                    <h2 className={`${isMobile ? 'text-base' : 'text-lg'} font-semibold flex items-center gap-2 min-w-0`} style={{ color: headingColor }}>
+                      <CheckSquare className={isMobile ? 'h-4 w-4' : 'h-5 w-5'} style={{ color: accentColor }} />
+                      <span className="truncate">Offene Tasks ({filteredTasks.length})</span>
+                    </h2>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="sm" className="gap-2 flex-shrink-0" style={{ color: textMuted }}>
+                          <ArrowUpDown className="h-4 w-4" />
+                          {taskSortBy === "due_date" ? "Fälligkeit" : taskSortBy === "priority" ? "Priorität" : "Erstellt"}
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent style={{ backgroundColor: dropdownBg, borderColor: dropdownBorder }}>
+                        <DropdownMenuItem onClick={() => setTaskSortBy("due_date")} style={{ color: dropdownText }}>Nach Fälligkeit</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setTaskSortBy("priority")} style={{ color: dropdownText }}>Nach Priorität</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setTaskSortBy("created_date")} style={{ color: dropdownText }}>Nach Erstelldatum</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+
                   <div className="flex flex-wrap items-center gap-2 mb-3">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="outline" size="sm" className="gap-2 h-8 text-xs" style={filterBtnStyle}>
-                          <Columns3 className="h-3.5 w-3.5" />
-                          {col ? (
-                            <div className="flex items-center gap-1.5">
-                              <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: col.color || accentColor }} />
-                              <span className="truncate max-w-[140px]">{col.name}</span>
-                            </div>
-                          ) : (
-                            <span>Spalte wählen</span>
-                          )}
+                          <User className="h-3.5 w-3.5" />
+                          <span className="truncate max-w-[140px]">
+                            {selectedUser === "all" ? "Alle Mitarbeiter" : userDisplayName(selectedUser)}
+                          </span>
                         </Button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="start" style={{ backgroundColor: dropdownBg, borderColor: dropdownBorder }}>
-                        {taskColumns.length === 0 && (
-                          <DropdownMenuItem disabled style={{ color: textMuted }}>Keine Spalten</DropdownMenuItem>
-                        )}
-                        {taskColumns.map((c) => (
-                          <DropdownMenuItem key={c.id} onClick={() => slot.setColumnId(c.id)} style={{ color: dropdownText }}>
-                            <div className="flex items-center gap-2">
-                              <div className="w-3 h-3 rounded-full" style={{ backgroundColor: c.color || accentColor }} />
-                              {c.name}
-                            </div>
+                      <DropdownMenuContent style={{ backgroundColor: dropdownBg, borderColor: dropdownBorder }}>
+                        <DropdownMenuItem onClick={() => setSelectedUser("all")} style={{ color: dropdownText }}>
+                          Alle Mitarbeiter
+                        </DropdownMenuItem>
+                        {allUsers.map((user) => (
+                          <DropdownMenuItem key={user.id || user.email} onClick={() => setSelectedUser(user.email)} style={{ color: dropdownText }}>
+                            {user.full_name || user.email}
                           </DropdownMenuItem>
                         ))}
                       </DropdownMenuContent>
@@ -799,22 +775,17 @@ export default function Dashboard() {
                       <DropdownMenuTrigger asChild>
                         <Button variant="outline" size="sm" className="gap-2 h-8 text-xs" style={filterBtnStyle}>
                           <Filter className="h-3.5 w-3.5" />
-                          {prio ? (
-                            <div className="flex items-center gap-1.5">
-                              <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: prio.color }} />
-                              <span className="truncate max-w-[120px]">{prio.name}</span>
-                            </div>
-                          ) : (
-                            <span>Alle Prioritäten</span>
-                          )}
+                          {priorityFilter === "all"
+                            ? "Alle Prioritäten"
+                            : priorityById.get(priorityFilter)?.name || "Priorität"}
                         </Button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="start" style={{ backgroundColor: dropdownBg, borderColor: dropdownBorder }}>
-                        <DropdownMenuItem onClick={() => slot.setPriorityId('all')} style={{ color: dropdownText }}>
+                      <DropdownMenuContent style={{ backgroundColor: dropdownBg, borderColor: dropdownBorder }}>
+                        <DropdownMenuItem onClick={() => setPriorityFilter("all")} style={{ color: dropdownText }}>
                           Alle Prioritäten
                         </DropdownMenuItem>
                         {priorities.map((p) => (
-                          <DropdownMenuItem key={p.id} onClick={() => slot.setPriorityId(p.id)} style={{ color: dropdownText }}>
+                          <DropdownMenuItem key={p.id} onClick={() => setPriorityFilter(p.id)} style={{ color: dropdownText }}>
                             <div className="flex items-center gap-2">
                               <div className="w-3 h-3 rounded-full" style={{ backgroundColor: p.color }} />
                               {p.name}
@@ -823,27 +794,199 @@ export default function Dashboard() {
                         ))}
                       </DropdownMenuContent>
                     </DropdownMenu>
-
-                    <span className="text-xs ml-auto" style={{ color: textMuted }}>{colTasks.length}</span>
                   </div>
 
-                  <div className={`space-y-2 ${isMobile ? 'max-h-[320px]' : 'max-h-[480px]'} overflow-y-auto`}>
-                    {!col ? (
-                      <div className="text-center py-6 text-xs" style={{ color: textMuted }}>
-                        Bitte Spalte wählen
-                      </div>
-                    ) : colTasks.length === 0 ? (
-                      <div className="text-center py-6 text-xs" style={{ color: textMuted }}>
-                        Keine Tasks
-                      </div>
+                  <div className={`space-y-2 ${isMobile ? 'max-h-[420px]' : 'max-h-[600px]'} overflow-y-auto`}>
+                    {filteredTasks.length === 0 ? (
+                      <div className="text-center py-8" style={{ color: textMuted }}>Keine offenen Tasks</div>
                     ) : (
-                      colTasks.map((task) => renderTaskCard(task))
+                      filteredTasks.map((task) => renderTaskCard(task))
                     )}
                   </div>
                 </div>
               );
-            })}
-          </div>
+            }
+
+            if (w.id === 'mails') {
+              return (
+                <div key={w.id} className={`rounded-xl border ${isMobile ? 'p-4' : 'p-6'}`} style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
+                  <div className="flex items-center justify-between mb-4 gap-2">
+                    <h2 className={`${isMobile ? 'text-base' : 'text-lg'} font-semibold flex items-center gap-2 min-w-0`} style={{ color: headingColor }}>
+                      <Mail className={isMobile ? 'h-4 w-4' : 'h-5 w-5'} style={{ color: mailColor }} />
+                      <span className="truncate">Ungelesene E-Mails ({filteredMails.length})</span>
+                    </h2>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="sm" className="gap-2 flex-shrink-0" style={{ color: textMuted }}>
+                          <ArrowUpDown className="h-4 w-4" />
+                          {mailSortBy === "received_date" ? "Datum" : "Priorität"}
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent style={{ backgroundColor: dropdownBg, borderColor: dropdownBorder }}>
+                        <DropdownMenuItem onClick={() => setMailSortBy("received_date")} style={{ color: dropdownText }}>Nach Datum</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setMailSortBy("priority")} style={{ color: dropdownText }}>Nach Priorität</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+
+                  <div className={`space-y-2 ${isMobile ? 'max-h-[420px]' : 'max-h-[600px]'} overflow-y-auto`}>
+                    {filteredMails.length === 0 ? (
+                      <div className="text-center py-8" style={{ color: textMuted }}>Keine ungelesenen E-Mails</div>
+                    ) : (
+                      filteredMails.map((mail) => (
+                        <Link
+                          key={mail.id}
+                          to={createPageUrl('MailKanban')}
+                          className={`block p-3 rounded-lg border transition-colors ${itemHoverClass}`}
+                          style={{ backgroundColor: itemBg, borderColor: itemBorder }}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm font-semibold mb-1 truncate" style={{ color: headingColor }}>{mail.subject}</div>
+                              <div className="text-xs mb-2 font-medium truncate" style={{ color: textMuted }}>Von: {mail.sender_name}</div>
+                              {mail.body_preview && (
+                                <div className="text-xs line-clamp-2" style={{ color: textMuted }}>{mail.body_preview}</div>
+                              )}
+                              <div className="flex items-center gap-2 mt-2">
+                                <div className="flex items-center gap-1 text-xs" style={{ color: textMuted }}>
+                                  <Clock className="h-3 w-3" />
+                                  {format(new Date(mail.received_date), 'dd.MM.yyyy HH:mm', { locale: de })}
+                                </div>
+                              </div>
+                            </div>
+                            {mail.priority === 'high' && (
+                              <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700 border-orange-200 flex-shrink-0">Hoch</Badge>
+                            )}
+                          </div>
+                        </Link>
+                      ))
+                    )}
+                  </div>
+                </div>
+              );
+            }
+
+            // Slot-Widgets (slotA / slotB)
+            const isA = w.id === 'slotA';
+            const slot = {
+              columnId: isA ? effectiveSlotAColumnId : effectiveSlotBColumnId,
+              priorityId: isA ? slotAPriorityId : slotBPriorityId,
+              userEmail: isA ? slotAUserEmail : slotBUserEmail,
+              setColumnId: isA ? setSlotAColumnId : setSlotBColumnId,
+              setPriorityId: isA ? setSlotAPriorityId : setSlotBPriorityId,
+              setUserEmail: isA ? setSlotAUserEmail : setSlotBUserEmail,
+            };
+            const col = taskColumns.find(c => c.id === slot.columnId);
+            const prio = slot.priorityId === 'all' ? null : priorityById.get(slot.priorityId);
+            const slotUserName = slot.userEmail === 'all' ? null : userDisplayName(slot.userEmail);
+            const colTasks = col ? slotTasks(col.id, slot.priorityId, slot.userEmail) : [];
+            return (
+              <div key={w.id} className={`rounded-xl border ${isMobile ? 'p-4' : 'p-6'}`} style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
+                <div className="flex items-center justify-between mb-3 gap-2">
+                  <h2 className={`${isMobile ? 'text-base' : 'text-lg'} font-semibold flex items-center gap-2 min-w-0`} style={{ color: headingColor }}>
+                    <Columns3 className={isMobile ? 'h-4 w-4' : 'h-5 w-5'} style={{ color: accentColor }} />
+                    <span className="truncate">{col?.name || (isA ? 'Spalte A' : 'Spalte B')} ({colTasks.length})</span>
+                  </h2>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 mb-3">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm" className="gap-2 h-8 text-xs" style={filterBtnStyle}>
+                        <Columns3 className="h-3.5 w-3.5" />
+                        {col ? (
+                          <div className="flex items-center gap-1.5">
+                            <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: col.color || accentColor }} />
+                            <span className="truncate max-w-[140px]">{col.name}</span>
+                          </div>
+                        ) : (
+                          <span>Spalte wählen</span>
+                        )}
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" style={{ backgroundColor: dropdownBg, borderColor: dropdownBorder }}>
+                      {taskColumns.length === 0 && (
+                        <DropdownMenuItem disabled style={{ color: textMuted }}>Keine Spalten</DropdownMenuItem>
+                      )}
+                      {taskColumns.map((c) => (
+                        <DropdownMenuItem key={c.id} onClick={() => slot.setColumnId(c.id)} style={{ color: dropdownText }}>
+                          <div className="flex items-center gap-2">
+                            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: c.color || accentColor }} />
+                            {c.name}
+                          </div>
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm" className="gap-2 h-8 text-xs" style={filterBtnStyle}>
+                        <Filter className="h-3.5 w-3.5" />
+                        {prio ? (
+                          <div className="flex items-center gap-1.5">
+                            <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: prio.color }} />
+                            <span className="truncate max-w-[120px]">{prio.name}</span>
+                          </div>
+                        ) : (
+                          <span>Alle Prioritäten</span>
+                        )}
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" style={{ backgroundColor: dropdownBg, borderColor: dropdownBorder }}>
+                      <DropdownMenuItem onClick={() => slot.setPriorityId('all')} style={{ color: dropdownText }}>
+                        Alle Prioritäten
+                      </DropdownMenuItem>
+                      {priorities.map((p) => (
+                        <DropdownMenuItem key={p.id} onClick={() => slot.setPriorityId(p.id)} style={{ color: dropdownText }}>
+                          <div className="flex items-center gap-2">
+                            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: p.color }} />
+                            {p.name}
+                          </div>
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm" className="gap-2 h-8 text-xs" style={filterBtnStyle}>
+                        <User className="h-3.5 w-3.5" />
+                        <span className="truncate max-w-[140px]">{slotUserName || 'Alle Personen'}</span>
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" style={{ backgroundColor: dropdownBg, borderColor: dropdownBorder }}>
+                      <DropdownMenuItem onClick={() => slot.setUserEmail('all')} style={{ color: dropdownText }}>
+                        Alle Personen
+                      </DropdownMenuItem>
+                      {currentUser?.email && (
+                        <DropdownMenuItem onClick={() => slot.setUserEmail(currentUser.email)} style={{ color: dropdownText }}>
+                          {currentUser.full_name || currentUser.email} (ich)
+                        </DropdownMenuItem>
+                      )}
+                      {allUsers
+                        .filter(u => u.email && u.email !== currentUser?.email)
+                        .map((u) => (
+                          <DropdownMenuItem key={u.id || u.email} onClick={() => slot.setUserEmail(u.email)} style={{ color: dropdownText }}>
+                            {u.full_name || u.email}
+                          </DropdownMenuItem>
+                        ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+
+                <div className={`space-y-2 ${isMobile ? 'max-h-[420px]' : 'max-h-[600px]'} overflow-y-auto`}>
+                  {!col ? (
+                    <div className="text-center py-8 text-sm" style={{ color: textMuted }}>Bitte Spalte wählen</div>
+                  ) : colTasks.length === 0 ? (
+                    <div className="text-center py-8 text-sm" style={{ color: textMuted }}>Keine Tasks</div>
+                  ) : (
+                    colTasks.map((task) => renderTaskCard(task))
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>
