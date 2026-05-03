@@ -49,6 +49,8 @@ const Leistungserfassung    = lazy(() => import("./pages/Leistungserfassung.jsx"
 const Promptvorlagen        = lazy(() => import("./pages/Promptvorlagen.jsx"));
 const TelefonDashboard      = lazy(() => import("./pages/TelefonDashboard.jsx"));
 const Jahresplanung         = lazy(() => import("./pages/Jahresplanung.jsx"));
+const Kalender              = lazy(() => import("./pages/Kalender.jsx"));
+const FiBuRouter            = lazy(() => import("./modules/fibu/router.jsx"));
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30000 } }
@@ -72,9 +74,16 @@ function AuthenticatedApp() {
   if (requiresMfa) return <MFALogin />;
 
   return (
-      <Layout>
-        <Suspense fallback={<PageLoader />}>
-          <Routes>
+      <Suspense fallback={<PageLoader />}>
+        <Routes>
+          {/* FiBu: eigene Shell, kein MailFlow-Layout */}
+          <Route path="/fibu/*" element={<FiBuRouter />} />
+
+          {/* MailFlow: bestehender Layout-Wrapper */}
+          <Route path="*" element={
+            <Layout>
+              <Suspense fallback={<PageLoader />}>
+                <Routes>
             <Route path="/" element={<Navigate to="/Dashboard" replace />} />
             <Route path="/Dashboard" element={<Dashboard />} />
             <Route path="/MailKanban" element={<MailKanban />} />
@@ -101,13 +110,17 @@ function AuthenticatedApp() {
             <Route path="/Promptvorlagen" element={<Promptvorlagen />} />
             <Route path="/TelefonDashboard" element={<TelefonDashboard />} />
             <Route path="/Jahresplanung" element={<Jahresplanung />} />
+            <Route path="/Kalender" element={<Kalender />} />
             {FEATURE_LEISTUNGSERFASSUNG && (
                 <Route path="/Leistungserfassung" element={<Leistungserfassung />} />
             )}
             <Route path="*" element={<Navigate to="/Dashboard" replace />} />
-          </Routes>
-        </Suspense>
-      </Layout>
+                </Routes>
+              </Suspense>
+            </Layout>
+          } />
+        </Routes>
+      </Suspense>
   );
 }
 

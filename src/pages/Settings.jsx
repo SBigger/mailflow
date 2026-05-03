@@ -29,7 +29,7 @@ import {
     Download,
     Database,
     Inbox,
-    ShieldCheck, Upload
+    ShieldCheck, Upload, PanelLeft
 } from "lucide-react";
 import {ThemeContext} from "@/Layout";
 import DeleteUserDialog from "@/components/settings/DeleteUserDialog";
@@ -338,7 +338,23 @@ export default function Settings() {
                 return;
             }
             const {data} = await functions.invoke('microsoft-auth', {state: session.access_token})
-            window.location.href = data;
+
+            // Popup öffnen (funktioniert in Electron via setWindowOpenHandler + Browser)
+            const popup = window.open(data, 'microsoft-oauth', 'width=520,height=720,resizable=yes,scrollbars=yes');
+
+            if (popup) {
+                // Warten bis Popup geschlossen → User-Daten neu laden
+                const timer = setInterval(() => {
+                    if (popup.closed) {
+                        clearInterval(timer);
+                        queryClient.invalidateQueries({queryKey: ['currentUser']});
+                        toast.success('Microsoft-Verbindung aktualisiert – bitte Sync starten.');
+                    }
+                }, 500);
+            } else {
+                // Fallback: Browser hat Popup blockiert → Seitennavigation
+                window.location.href = data;
+            }
         } catch (error) {
             toast.error('Fehler: ' + error.message);
         }
@@ -346,6 +362,8 @@ export default function Settings() {
 
     const [isSyncing, setIsSyncing] = useState(false);
     const [syncProgress, setSyncProgress] = useState('');
+    const [isCalendarSyncing, setIsCalendarSyncing] = useState(false);
+    const [calendarSyncProgress, setCalendarSyncProgress] = useState('');
 
     const handleFirstSync = async () => {
         if (!confirm(`ACHTUNG: Alle deine Mails werden gelöscht und die letzten ${syncDays} Tage neu von Outlook synchronisiert.\n\nFortfahren?`)) return;
@@ -382,6 +400,47 @@ export default function Settings() {
             setSyncProgress('');
         } finally {
             setIsSyncing(false);
+        }
+    };
+
+    const handleCalendarSync = async () => {
+        setIsCalendarSyncing(true);
+        setCalendarSyncProgress('Synchronisiere Kalender...');
+        try {
+            const { data } = await functions.invoke('sync-outlook-calendar', {});
+            const result = data?.results?.[0];
+            if (result?.error) {
+                toast.error('Kalender-Sync: ' + result.error);
+            } else {
+                toast.success(`Kalender synchronisiert! ${result?.inserted || 0} neu, ${result?.updated || 0} aktualisiert.`);
+                queryClient.invalidateQueries({ queryKey: ['calendarEvents'] });
+            }
+        } catch (error) {
+            toast.error('Fehler: ' + error.message);
+        } finally {
+            setIsCalendarSyncing(false);
+            setCalendarSyncProgress('');
+        }
+    };
+
+    const handleCalendarReset = async () => {
+        if (!confirm('Alle synchronisierten Kalender-Events löschen und neu synchronisieren?')) return;
+        setIsCalendarSyncing(true);
+        setCalendarSyncProgress('Lösche Kalender-Events...');
+        try {
+            await auth.updateMe({ calendar_delta_link: null });
+            await supabase.from('calendar_events').delete().eq('created_by', user.id);
+            setCalendarSyncProgress('Synchronisiere neu...');
+            const { data } = await functions.invoke('sync-outlook-calendar', {});
+            const result = data?.results?.[0];
+            toast.success(`Kalender zurückgesetzt! ${result?.inserted || 0} Events geladen.`);
+            queryClient.invalidateQueries({ queryKey: ['calendarEvents'] });
+            queryClient.invalidateQueries({ queryKey: ['currentUser'] });
+        } catch (error) {
+            toast.error('Fehler: ' + error.message);
+        } finally {
+            setIsCalendarSyncing(false);
+            setCalendarSyncProgress('');
         }
     };
 
@@ -987,6 +1046,45 @@ export default function Settings() {
                             {!syncProgress &&
                                 <p className="text-xs mt-3" style={{color: textMuted}}>Der Sync läuft vollständig durch
                                     – alle Batches werden automatisch geladen.</p>}
+                        </div>
+
+                        {/* Kalender-Sync */}
+                        <div className="rounded-xl p-6 border"
+                             style={{backgroundColor: cardBg, borderColor: cardBorder}}>
+                            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2"
+                                style={{color: headingColor}}>
+                                <Calendar className="h-5 w-5"/> Kalender-Synchronisation
+                            </h3>
+                            <p className="mb-4 text-sm" style={{color: textMuted}}>
+                                Synchronisiert Ihren Outlook-Kalender (letzte {user?.calendar_sync_days || 30} Tage + 1 Jahr Zukunft).
+                                Benötigt eine einmalige Neu-Verbindung mit Microsoft, damit der Kalender-Zugriff erteilt wird.
+                            </p>
+                            {!user?.microsoft_access_token && !user?.microsoft_refresh_token ? (
+                                <p className="text-sm" style={{color: textMuted}}>Zuerst mit Outlook verbinden.</p>
+                            ) : (
+                                <div className="flex flex-wrap gap-2">
+                                    <Button
+                                        onClick={handleCalendarSync}
+                                        disabled={isCalendarSyncing}
+                                        className="bg-indigo-600 hover:bg-indigo-500"
+                                    >
+                                        <RefreshCw className={`h-4 w-4 mr-2 ${isCalendarSyncing ? 'animate-spin' : ''}`}/>
+                                        {isCalendarSyncing ? 'Läuft...' : 'Kalender synchronisieren'}
+                                    </Button>
+                                    <Button
+                                        onClick={handleCalendarReset}
+                                        disabled={isCalendarSyncing}
+                                        variant="outline"
+                                        className="border-red-600/30 text-red-400 hover:bg-red-600/10 hover:text-red-300"
+                                    >
+                                        <RefreshCw className="h-4 w-4 mr-2"/>
+                                        Zurücksetzen & neu laden
+                                    </Button>
+                                </div>
+                            )}
+                            {calendarSyncProgress && (
+                                <p className="text-sm mt-3" style={{color: textMuted}}>{calendarSyncProgress}</p>
+                            )}
                         </div>
                     </div>
                 )}
@@ -1935,6 +2033,39 @@ export default function Settings() {
                                     <a
                                         href="https://github.com/SBigger/mailflow/releases/download/apps-v1.4.2/VoxDrop.exe"
                                         download="VoxDrop.exe"
+                                        className="flex-shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-xl text-white font-medium text-sm transition-opacity hover:opacity-90"
+                                        style={{backgroundColor: isArtis ? '#7a9b7f' : '#6366f1'}}
+                                    >
+                                        <Download className="h-4 w-4"/> Download
+                                    </a>
+                                </div>
+                            </div>
+
+                            {/* SmartisBar */}
+                            <div className="rounded-lg border p-4 mb-6 space-y-2"
+                                 style={{backgroundColor: rowBg, borderColor: rowBorder}}>
+                                <div className="flex items-start justify-between gap-4">
+                                    <div className="flex-1">
+                                        <h3 className="text-base font-semibold mb-1 flex items-center gap-2"
+                                            style={{color: headingColor}}>
+                                            <PanelLeft className="h-4 w-4"/> SmartisBar <span
+                                            className="text-xs font-normal opacity-50">v1.0.0</span>
+                                        </h3>
+                                        <p className="text-sm mb-3" style={{color: textMuted}}>
+                                            Schmale Aufgaben-Leiste am linken Bildschirmrand — immer im Vordergrund,
+                                            immer sichtbar. Zeigt deine dringendsten Tasks auf einen Blick.
+                                        </p>
+                                        <ul className="text-xs space-y-1" style={{color: textMuted}}>
+                                            <li>✓ Zwei konfigurierbare Gruppen (z. B. «Brennt» / «Dringend»)</li>
+                                            <li>✓ Klick auf Aufgabe öffnet Smartis direkt</li>
+                                            <li>✓ Überfällige Tasks farblich markiert</li>
+                                            <li>✓ Verschiebbar, immer im Vordergrund</li>
+                                            <li>✓ Startet automatisch mit Windows</li>
+                                        </ul>
+                                    </div>
+                                    <a
+                                        href="/SmartisBar-Setup.exe"
+                                        download="SmartisBar-Setup.exe"
                                         className="flex-shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-xl text-white font-medium text-sm transition-opacity hover:opacity-90"
                                         style={{backgroundColor: isArtis ? '#7a9b7f' : '#6366f1'}}
                                     >
