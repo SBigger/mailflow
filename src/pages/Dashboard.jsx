@@ -21,6 +21,9 @@ import {
   Eye,
   EyeOff,
   SlidersHorizontal,
+  CalendarClock,
+  Inbox,
+  FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -81,10 +84,12 @@ export default function Dashboard() {
 
   // Widget-Reihenfolge & Sichtbarkeit (persistiert)
   const DEFAULT_WIDGETS = [
-    { id: 'tasks',  visible: true },
-    { id: 'mails',  visible: true },
-    { id: 'slotA',  visible: true },
-    { id: 'slotB',  visible: true },
+    { id: 'tasks',   visible: true },
+    { id: 'mails',   visible: true },
+    { id: 'slotA',   visible: true },
+    { id: 'slotB',   visible: true },
+    { id: 'fristen', visible: true },
+    { id: 'uploads', visible: true },
   ];
   const [widgets, setWidgets] = useState(() => {
     try {
@@ -177,6 +182,42 @@ export default function Dashboard() {
       return entities.MailItem.filter({ created_by: currentUser.id }, "-received_date");
     },
     enabled: !!currentUser,
+  });
+
+  // Fristen + Customers (für Fristen- und Uploads-Widget)
+  const { data: fristen = [] } = useQuery({
+    queryKey: ["fristen"],
+    queryFn: () => entities.Frist.list("due_date"),
+    enabled: !!currentUser,
+  });
+
+  const { data: customersList = [] } = useQuery({
+    queryKey: ["customers"],
+    queryFn: () => entities.Customer.list("company_name"),
+    enabled: !!currentUser,
+  });
+
+  // Kunden-Uploads aus Storage-Bucket "posteingang" (Files = noch nicht abgelegt)
+  const { data: pendingUploads = [] } = useQuery({
+    queryKey: ["dashboard", "pendingUploads"],
+    queryFn: async () => {
+      const { data: folders, error: folderErr } = await supabase.storage.from('posteingang').list();
+      if (folderErr) return [];
+      const all = await Promise.all(
+        (folders || []).map(async (folder) => {
+          const { data: files } = await supabase.storage.from('posteingang').list(folder.name);
+          return (files || []).map(f => ({
+            id: `${folder.name}/${f.name}`,
+            customer_id: folder.name,
+            file_name: (f.name.split('@')[1]) || f.name,
+            created_at: f.created_at || f.updated_at,
+          }));
+        })
+      );
+      return all.flat().sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+    },
+    enabled: !!currentUser,
+    staleTime: 60_000,
   });
 
   // Termine: read-only über bestehende MS365-Sync; nichts einrichten
@@ -316,11 +357,30 @@ export default function Dashboard() {
   };
 
   const widgetMeta = {
-    tasks: { label: 'Offene Tasks',     icon: CheckSquare },
-    mails: { label: 'Ungelesene Mails', icon: Mail },
-    slotA: { label: 'Spalte A',         icon: Columns3 },
-    slotB: { label: 'Spalte B',         icon: Columns3 },
+    tasks:   { label: 'Offene Tasks',     icon: CheckSquare },
+    mails:   { label: 'Ungelesene Mails', icon: Mail },
+    slotA:   { label: 'Spalte A',         icon: Columns3 },
+    slotB:   { label: 'Spalte B',         icon: Columns3 },
+    fristen: { label: 'Fristen (20 Tage)',icon: CalendarClock },
+    uploads: { label: 'Kunden-Uploads',   icon: Inbox },
   };
+
+  // Fristen die in den nächsten 20 Tagen ablaufen (oder überfällig sind), nur offen
+  const upcomingFristen = useMemo(() => {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const horizon = new Date(today); horizon.setDate(horizon.getDate() + 20);
+    return fristen
+      .filter(f => f.status === 'offen' && f.due_date)
+      .map(f => ({ ...f, _due: new Date(f.due_date) }))
+      .filter(f => f._due <= horizon)
+      .sort((a, b) => a._due - b._due);
+  }, [fristen]);
+
+  const customerById = useMemo(() => {
+    const m = new Map();
+    for (const c of customersList) m.set(c.id, c);
+    return m;
+  }, [customersList]);
 
   const statCardColumn = statCardColumnId === 'all' ? null : taskColumns.find(c => c.id === statCardColumnId);
   const statCardPriority = statCardPriorityId === 'all' ? null : priorityById.get(statCardPriorityId);
@@ -582,6 +642,8 @@ export default function Dashboard() {
                     const col = taskColumns.find(c => c.id === effectiveSlotBColumnId);
                     return { id, label: col?.name || 'Spalte B', count: slotCount(effectiveSlotBColumnId, slotBPriorityId, slotBUserEmail) };
                   }
+                  if (id === 'fristen') return { id, label: 'Fristen', count: upcomingFristen.length };
+                  if (id === 'uploads') return { id, label: 'Uploads', count: pendingUploads.length };
                   return null;
                 };
                 const pills = [
@@ -860,6 +922,120 @@ export default function Dashboard() {
                           </div>
                         </Link>
                       ))
+                    )}
+                  </div>
+                </div>
+              );
+            }
+
+            if (w.id === 'fristen') {
+              return (
+                <div key={w.id} className={`rounded-xl border ${isMobile ? 'p-4' : 'p-6'}`} style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
+                  <h2 className={`${isMobile ? 'text-base' : 'text-lg'} font-semibold flex items-center gap-2 min-w-0 mb-3`} style={{ color: headingColor }}>
+                    <CalendarClock className={isMobile ? 'h-4 w-4' : 'h-5 w-5'} style={{ color: accentColor }} />
+                    <span className="truncate">Fristen (≤ 20 Tage) ({upcomingFristen.length})</span>
+                  </h2>
+
+                  <div className={`space-y-2 ${isMobile ? 'max-h-[420px]' : 'max-h-[600px]'} overflow-y-auto`}>
+                    {upcomingFristen.length === 0 ? (
+                      <div className="text-center py-8 text-sm" style={{ color: textMuted }}>
+                        Keine Fristen in den nächsten 20 Tagen
+                      </div>
+                    ) : (
+                      upcomingFristen.map((f) => {
+                        const cust = customerById.get(f.customer_id);
+                        const isOverdue = f._due < new Date(new Date().setHours(0,0,0,0));
+                        const today = new Date(); today.setHours(0,0,0,0);
+                        const days = Math.round((f._due - today) / (1000 * 60 * 60 * 24));
+                        return (
+                          <Link
+                            key={f.id}
+                            to={createPageUrl('Fristen')}
+                            className={`block p-3 rounded-lg border transition-colors ${itemHoverClass}`}
+                            style={{ backgroundColor: itemBg, borderColor: itemBorder }}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-semibold mb-1 truncate" style={{ color: headingColor }}>
+                                  {f.title}
+                                </div>
+                                {(cust?.company_name || f.kanton || f.category) && (
+                                  <div className="text-xs truncate" style={{ color: textMuted }}>
+                                    {[cust?.company_name, f.category, f.kanton].filter(Boolean).join(' · ')}
+                                  </div>
+                                )}
+                                <div className="flex items-center gap-2 mt-2">
+                                  <div className={`flex items-center gap-1 text-xs ${isOverdue ? 'text-red-500' : ''}`}
+                                    style={!isOverdue ? { color: textMuted } : {}}>
+                                    <Clock className="h-3 w-3" />
+                                    {format(f._due, 'dd.MM.yyyy', { locale: de })}
+                                  </div>
+                                </div>
+                              </div>
+                              <Badge
+                                variant="outline"
+                                className="text-xs flex-shrink-0"
+                                style={{
+                                  backgroundColor: isOverdue ? 'rgba(239,68,68,0.1)' : days <= 5 ? 'rgba(245,158,11,0.1)' : 'transparent',
+                                  color: isOverdue ? '#ef4444' : days <= 5 ? '#f59e0b' : textMuted,
+                                  borderColor: isOverdue ? 'rgba(239,68,68,0.3)' : days <= 5 ? 'rgba(245,158,11,0.3)' : itemBorder,
+                                }}
+                              >
+                                {isOverdue ? 'überfällig' : days === 0 ? 'heute' : `${days}T`}
+                              </Badge>
+                            </div>
+                          </Link>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              );
+            }
+
+            if (w.id === 'uploads') {
+              return (
+                <div key={w.id} className={`rounded-xl border ${isMobile ? 'p-4' : 'p-6'}`} style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
+                  <h2 className={`${isMobile ? 'text-base' : 'text-lg'} font-semibold flex items-center gap-2 min-w-0 mb-3`} style={{ color: headingColor }}>
+                    <Inbox className={isMobile ? 'h-4 w-4' : 'h-5 w-5'} style={{ color: accentColor }} />
+                    <span className="truncate">Kunden-Uploads (nicht abgelegt) ({pendingUploads.length})</span>
+                  </h2>
+
+                  <div className={`space-y-2 ${isMobile ? 'max-h-[420px]' : 'max-h-[600px]'} overflow-y-auto`}>
+                    {pendingUploads.length === 0 ? (
+                      <div className="text-center py-8 text-sm" style={{ color: textMuted }}>
+                        Keine offenen Uploads
+                      </div>
+                    ) : (
+                      pendingUploads.map((u) => {
+                        const cust = customerById.get(u.customer_id);
+                        return (
+                          <Link
+                            key={u.id}
+                            to={createPageUrl('Posteingang')}
+                            className={`block p-3 rounded-lg border transition-colors ${itemHoverClass}`}
+                            style={{ backgroundColor: itemBg, borderColor: itemBorder }}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 text-sm font-semibold mb-1 min-w-0" style={{ color: headingColor }}>
+                                  <FileText className="h-3.5 w-3.5 flex-shrink-0" style={{ color: textMuted }} />
+                                  <span className="truncate">{u.file_name}</span>
+                                </div>
+                                <div className="text-xs truncate" style={{ color: textMuted }}>
+                                  {cust?.company_name || `Kunde: ${u.customer_id}`}
+                                </div>
+                                {u.created_at && (
+                                  <div className="flex items-center gap-1 text-xs mt-2" style={{ color: textMuted }}>
+                                    <Clock className="h-3 w-3" />
+                                    {format(new Date(u.created_at), 'dd.MM.yyyy HH:mm', { locale: de })}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </Link>
+                        );
+                      })
                     )}
                   </div>
                 </div>
