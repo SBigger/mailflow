@@ -1,11 +1,12 @@
 import React, { useState, useMemo, useEffect } from "react";
+import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
+import { GripVertical } from "lucide-react";
 import { entities, functions, auth, supabase } from "@/api/supabaseClient";
 import { useQuery } from "@tanstack/react-query";
 import {
   Mail,
   CheckSquare,
   User,
-  AlertCircle,
   Clock,
   Filter,
   ArrowUpDown,
@@ -35,7 +36,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { format, isToday, isPast } from "date-fns";
+import { format, isPast } from "date-fns";
 import { de } from "date-fns/locale";
 import { useTheme } from "@/components/useTheme";
 import { useIsMobile } from "@/components/mobile/useIsMobile";
@@ -67,14 +68,6 @@ export default function Dashboard() {
   });
   const [slotBUserEmail, setSlotBUserEmail] = useState(() => {
     try { return localStorage.getItem('dashboard.slotB.userEmail') || 'all'; } catch { return 'all'; }
-  });
-
-  // Configurable stat card (column + priority); persisted in localStorage
-  const [statCardColumnId, setStatCardColumnId] = useState(() => {
-    try { return localStorage.getItem('dashboard.statCard.columnId') || 'all'; } catch { return 'all'; }
-  });
-  const [statCardPriorityId, setStatCardPriorityId] = useState(() => {
-    try { return localStorage.getItem('dashboard.statCard.priorityId') || 'all'; } catch { return 'all'; }
   });
 
   // Mobile-Tab (welcher Bereich sichtbar ist), persistiert
@@ -299,22 +292,6 @@ export default function Dashboard() {
       (userEmail === 'all' || t.assignee === userEmail || t.verantwortlich === userEmail)
     );
 
-  // Statistics
-  const stats = {
-    totalOpenTasks: visibleTasks.length,
-    totalUnreadMails: mails.filter(m => !m.is_read && !m.is_completed).length,
-    overdueTasks: visibleTasks.filter(t => t.due_date && isPast(new Date(t.due_date))).length,
-    todayTasks: visibleTasks.filter(t => t.due_date && isToday(new Date(t.due_date))).length,
-    highPriorityMails: mails.filter(m => !m.is_read && !m.is_completed && m.priority === 'high').length,
-  };
-
-  // Configurable stat card derived values
-  useEffect(() => {
-    try { localStorage.setItem('dashboard.statCard.columnId', statCardColumnId); } catch {}
-  }, [statCardColumnId]);
-  useEffect(() => {
-    try { localStorage.setItem('dashboard.statCard.priorityId', statCardPriorityId); } catch {}
-  }, [statCardPriorityId]);
   useEffect(() => {
     try { localStorage.setItem('dashboard.mobileTab', mobileTab); } catch {}
   }, [mobileTab]);
@@ -339,6 +316,25 @@ export default function Dashboard() {
   useEffect(() => {
     try { localStorage.setItem('dashboard.widgets', JSON.stringify(widgets)); } catch {}
   }, [widgets]);
+
+  const handleWidgetDragEnd = (result) => {
+    const { source, destination } = result;
+    if (!destination || destination.index === source.index) return;
+    setWidgets(prev => {
+      // Reorder operiert auf der GESAMTEN Liste, aber Drag basiert auf gefilterten (visible).
+      // → Mappen wir source/destination Indices auf die Indizes in `prev`.
+      const visibleIds = prev.filter(w => w.visible).map(w => w.id);
+      const movedId = visibleIds[source.index];
+      const targetId = visibleIds[destination.index];
+      const fromIdx = prev.findIndex(w => w.id === movedId);
+      const toIdx = prev.findIndex(w => w.id === targetId);
+      if (fromIdx < 0 || toIdx < 0) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(fromIdx, 1);
+      next.splice(toIdx, 0, moved);
+      return next;
+    });
+  };
 
   const moveWidget = (id, direction) => {
     setWidgets(prev => {
@@ -381,16 +377,6 @@ export default function Dashboard() {
     for (const c of customersList) m.set(c.id, c);
     return m;
   }, [customersList]);
-
-  const statCardColumn = statCardColumnId === 'all' ? null : taskColumns.find(c => c.id === statCardColumnId);
-  const statCardPriority = statCardPriorityId === 'all' ? null : priorityById.get(statCardPriorityId);
-  const statCardColumnLabel = statCardColumn?.name || 'Alle Spalten';
-  const statCardPriorityLabel = statCardPriority?.name || 'Alle Prioritäten';
-  const statCardPriorityColor = statCardPriority?.color || '#f97316';
-  const statCardCount = visibleTasks.filter(t =>
-    (statCardColumnId === 'all' || t.column_id === statCardColumnId) &&
-    (statCardPriorityId === 'all' || t.priority_id === statCardPriorityId)
-  ).length;
 
   const userByEmail = useMemo(() => {
     const m = new Map();
@@ -522,100 +508,6 @@ export default function Dashboard() {
             {!isMobile && (
               <p className="text-sm" style={{ color: textMuted }}>Übersicht über alle Tasks und E-Mails</p>
             )}
-          </div>
-        </div>
-
-        {/* Statistics Cards (mobile: horizontal snap-scroll) */}
-        <div
-          className={
-            isMobile
-              ? 'flex gap-3 overflow-x-auto snap-x snap-mandatory mb-4 -mx-3 px-3 pb-1 [&>*]:snap-start [&>*]:shrink-0 [&>*]:w-[82%]'
-              : 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8'
-          }
-        >
-          <div className={`rounded-xl border ${isMobile ? 'p-4' : 'p-6'}`} style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm" style={{ color: textMuted }}>Offene Tasks</p>
-                <p className={`${isMobile ? 'text-2xl' : 'text-3xl'} font-bold mt-2`} style={{ color: headingColor }}>{stats.totalOpenTasks}</p>
-              </div>
-              <CheckSquare className={`${isMobile ? 'h-9 w-9' : 'h-12 w-12'} opacity-20`} style={{ color: accentColor }} />
-            </div>
-            <div className="mt-4 flex flex-wrap gap-3 text-xs">
-              <span className="text-red-500 font-medium">{stats.overdueTasks} überfällig</span>
-              <span className="text-amber-500 font-medium">{stats.todayTasks} heute</span>
-            </div>
-          </div>
-
-          <div className={`rounded-xl border ${isMobile ? 'p-4' : 'p-6'}`} style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm" style={{ color: textMuted }}>Ungelesene E-Mails</p>
-                <p className={`${isMobile ? 'text-2xl' : 'text-3xl'} font-bold mt-2`} style={{ color: headingColor }}>{stats.totalUnreadMails}</p>
-              </div>
-              <Mail className={`${isMobile ? 'h-9 w-9' : 'h-12 w-12'} opacity-20`} style={{ color: mailColor }} />
-            </div>
-            <div className="mt-4 flex flex-wrap gap-3 text-xs">
-              <span className="text-orange-500 font-medium">{stats.highPriorityMails} hohe Priorität</span>
-            </div>
-          </div>
-
-          <div className={`rounded-xl border ${isMobile ? 'p-4' : 'p-6'}`} style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0 flex-1">
-                <p className="text-sm" style={{ color: textMuted }}>
-                  {statCardColumnLabel} · {statCardPriorityLabel}
-                </p>
-                <p className={`${isMobile ? 'text-2xl' : 'text-3xl'} font-bold mt-2`} style={{ color: headingColor }}>
-                  {statCardCount}
-                </p>
-              </div>
-              <AlertCircle className={`${isMobile ? 'h-9 w-9' : 'h-12 w-12'} opacity-20 flex-shrink-0`} style={{ color: statCardPriorityColor }} />
-            </div>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" className="gap-2 h-8 text-xs" style={filterBtnStyle}>
-                    <Columns3 className="h-3.5 w-3.5" />
-                    <span className="truncate max-w-[120px]">{statCardColumnLabel}</span>
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent style={{ backgroundColor: dropdownBg, borderColor: dropdownBorder }}>
-                  <DropdownMenuItem onClick={() => setStatCardColumnId('all')} style={{ color: dropdownText }}>
-                    Alle Spalten
-                  </DropdownMenuItem>
-                  {taskColumns.map((col) => (
-                    <DropdownMenuItem key={col.id} onClick={() => setStatCardColumnId(col.id)} style={{ color: dropdownText }}>
-                      <div className="flex items-center gap-2">
-                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: col.color || accentColor }} />
-                        {col.name}
-                      </div>
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" className="gap-2 h-8 text-xs" style={filterBtnStyle}>
-                    <Filter className="h-3.5 w-3.5" />
-                    <span className="truncate max-w-[120px]">{statCardPriorityLabel}</span>
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent style={{ backgroundColor: dropdownBg, borderColor: dropdownBorder }}>
-                  <DropdownMenuItem onClick={() => setStatCardPriorityId('all')} style={{ color: dropdownText }}>
-                    Alle Prioritäten
-                  </DropdownMenuItem>
-                  {priorities.map((p) => (
-                    <DropdownMenuItem key={p.id} onClick={() => setStatCardPriorityId(p.id)} style={{ color: dropdownText }}>
-                      <div className="flex items-center gap-2">
-                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: p.color }} />
-                        {p.name}
-                      </div>
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
           </div>
         </div>
 
@@ -783,14 +675,33 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Widgets-Grid (4 konfigurierbare Karten in nutzerdefinierter Reihenfolge) */}
-        <div className={`grid grid-cols-1 lg:grid-cols-2 ${isMobile ? 'gap-4' : 'gap-6'}`}>
-          {widgets.filter(w => w.visible).map((w) => {
-            if (isMobile && mobileTab !== w.id) return null;
+        {/* Widgets-Grid (Drag-and-Drop sortierbar auf Desktop) */}
+        <DragDropContext onDragEnd={handleWidgetDragEnd}>
+          <Droppable droppableId="dashboard-widgets" direction="vertical" isDropDisabled={isMobile}>
+            {(droppableProvided) => (
+              <div
+                ref={droppableProvided.innerRef}
+                {...droppableProvided.droppableProps}
+                className={`grid grid-cols-1 lg:grid-cols-2 ${isMobile ? 'gap-4' : 'gap-6'}`}
+              >
+                {widgets.filter(w => w.visible).map((w, dragIndex) => {
+                  const hideOnMobile = isMobile && mobileTab !== w.id;
 
             if (w.id === 'tasks') {
               return (
-                <div key={w.id} className={`rounded-xl border ${isMobile ? 'p-4' : 'p-6'}`} style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
+                <Draggable key={w.id} draggableId={w.id} index={dragIndex} isDragDisabled={isMobile}>
+                  {(dp) => (
+                <div
+                  ref={dp.innerRef}
+                  {...dp.draggableProps}
+                  className={`${hideOnMobile ? 'hidden' : ''} rounded-xl border ${isMobile ? 'p-4' : 'p-6'} relative`}
+                  style={{ backgroundColor: cardBg, borderColor: cardBorder, ...dp.draggableProps.style }}
+                >
+                  {!isMobile && (
+                    <div {...dp.dragHandleProps} className="absolute top-2 right-2 cursor-grab active:cursor-grabbing p-1 rounded opacity-30 hover:opacity-100 transition-opacity z-[1]" title="Verschieben">
+                      <GripVertical className="h-4 w-4" style={{ color: textMuted }} />
+                    </div>
+                  )}
                   <div className="flex items-center justify-between mb-3 gap-2">
                     <h2 className={`${isMobile ? 'text-base' : 'text-lg'} font-semibold flex items-center gap-2 min-w-0`} style={{ color: headingColor }}>
                       <CheckSquare className={isMobile ? 'h-4 w-4' : 'h-5 w-5'} style={{ color: accentColor }} />
@@ -866,12 +777,26 @@ export default function Dashboard() {
                     )}
                   </div>
                 </div>
+                  )}
+                </Draggable>
               );
             }
 
             if (w.id === 'mails') {
               return (
-                <div key={w.id} className={`rounded-xl border ${isMobile ? 'p-4' : 'p-6'}`} style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
+                <Draggable key={w.id} draggableId={w.id} index={dragIndex} isDragDisabled={isMobile}>
+                  {(dp) => (
+                <div
+                  ref={dp.innerRef}
+                  {...dp.draggableProps}
+                  className={`${hideOnMobile ? 'hidden' : ''} rounded-xl border ${isMobile ? 'p-4' : 'p-6'} relative`}
+                  style={{ backgroundColor: cardBg, borderColor: cardBorder, ...dp.draggableProps.style }}
+                >
+                  {!isMobile && (
+                    <div {...dp.dragHandleProps} className="absolute top-2 right-2 cursor-grab active:cursor-grabbing p-1 rounded opacity-30 hover:opacity-100 transition-opacity z-[1]" title="Verschieben">
+                      <GripVertical className="h-4 w-4" style={{ color: textMuted }} />
+                    </div>
+                  )}
                   <div className="flex items-center justify-between mb-4 gap-2">
                     <h2 className={`${isMobile ? 'text-base' : 'text-lg'} font-semibold flex items-center gap-2 min-w-0`} style={{ color: headingColor }}>
                       <Mail className={isMobile ? 'h-4 w-4' : 'h-5 w-5'} style={{ color: mailColor }} />
@@ -925,12 +850,26 @@ export default function Dashboard() {
                     )}
                   </div>
                 </div>
+                  )}
+                </Draggable>
               );
             }
 
             if (w.id === 'fristen') {
               return (
-                <div key={w.id} className={`rounded-xl border ${isMobile ? 'p-4' : 'p-6'}`} style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
+                <Draggable key={w.id} draggableId={w.id} index={dragIndex} isDragDisabled={isMobile}>
+                  {(dp) => (
+                <div
+                  ref={dp.innerRef}
+                  {...dp.draggableProps}
+                  className={`${hideOnMobile ? 'hidden' : ''} rounded-xl border ${isMobile ? 'p-4' : 'p-6'} relative`}
+                  style={{ backgroundColor: cardBg, borderColor: cardBorder, ...dp.draggableProps.style }}
+                >
+                  {!isMobile && (
+                    <div {...dp.dragHandleProps} className="absolute top-2 right-2 cursor-grab active:cursor-grabbing p-1 rounded opacity-30 hover:opacity-100 transition-opacity z-[1]" title="Verschieben">
+                      <GripVertical className="h-4 w-4" style={{ color: textMuted }} />
+                    </div>
+                  )}
                   <h2 className={`${isMobile ? 'text-base' : 'text-lg'} font-semibold flex items-center gap-2 min-w-0 mb-3`} style={{ color: headingColor }}>
                     <CalendarClock className={isMobile ? 'h-4 w-4' : 'h-5 w-5'} style={{ color: accentColor }} />
                     <span className="truncate">Fristen (≤ 20 Tage) ({upcomingFristen.length})</span>
@@ -990,12 +929,26 @@ export default function Dashboard() {
                     )}
                   </div>
                 </div>
+                  )}
+                </Draggable>
               );
             }
 
             if (w.id === 'uploads') {
               return (
-                <div key={w.id} className={`rounded-xl border ${isMobile ? 'p-4' : 'p-6'}`} style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
+                <Draggable key={w.id} draggableId={w.id} index={dragIndex} isDragDisabled={isMobile}>
+                  {(dp) => (
+                <div
+                  ref={dp.innerRef}
+                  {...dp.draggableProps}
+                  className={`${hideOnMobile ? 'hidden' : ''} rounded-xl border ${isMobile ? 'p-4' : 'p-6'} relative`}
+                  style={{ backgroundColor: cardBg, borderColor: cardBorder, ...dp.draggableProps.style }}
+                >
+                  {!isMobile && (
+                    <div {...dp.dragHandleProps} className="absolute top-2 right-2 cursor-grab active:cursor-grabbing p-1 rounded opacity-30 hover:opacity-100 transition-opacity z-[1]" title="Verschieben">
+                      <GripVertical className="h-4 w-4" style={{ color: textMuted }} />
+                    </div>
+                  )}
                   <h2 className={`${isMobile ? 'text-base' : 'text-lg'} font-semibold flex items-center gap-2 min-w-0 mb-3`} style={{ color: headingColor }}>
                     <Inbox className={isMobile ? 'h-4 w-4' : 'h-5 w-5'} style={{ color: accentColor }} />
                     <span className="truncate">Kunden-Uploads (nicht abgelegt) ({pendingUploads.length})</span>
@@ -1039,6 +992,8 @@ export default function Dashboard() {
                     )}
                   </div>
                 </div>
+                  )}
+                </Draggable>
               );
             }
 
@@ -1057,7 +1012,19 @@ export default function Dashboard() {
             const slotUserName = slot.userEmail === 'all' ? null : userDisplayName(slot.userEmail);
             const colTasks = col ? slotTasks(col.id, slot.priorityId, slot.userEmail) : [];
             return (
-              <div key={w.id} className={`rounded-xl border ${isMobile ? 'p-4' : 'p-6'}`} style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
+              <Draggable key={w.id} draggableId={w.id} index={dragIndex} isDragDisabled={isMobile}>
+                {(dp) => (
+              <div
+                ref={dp.innerRef}
+                {...dp.draggableProps}
+                className={`${hideOnMobile ? 'hidden' : ''} rounded-xl border ${isMobile ? 'p-4' : 'p-6'} relative`}
+                style={{ backgroundColor: cardBg, borderColor: cardBorder, ...dp.draggableProps.style }}
+              >
+                {!isMobile && (
+                  <div {...dp.dragHandleProps} className="absolute top-2 right-2 cursor-grab active:cursor-grabbing p-1 rounded opacity-30 hover:opacity-100 transition-opacity z-[1]" title="Verschieben">
+                    <GripVertical className="h-4 w-4" style={{ color: textMuted }} />
+                  </div>
+                )}
                 <div className="flex items-center justify-between mb-3 gap-2">
                   <h2 className={`${isMobile ? 'text-base' : 'text-lg'} font-semibold flex items-center gap-2 min-w-0`} style={{ color: headingColor }}>
                     <Columns3 className={isMobile ? 'h-4 w-4' : 'h-5 w-5'} style={{ color: accentColor }} />
@@ -1161,9 +1128,15 @@ export default function Dashboard() {
                   )}
                 </div>
               </div>
+                )}
+              </Draggable>
             );
           })}
-        </div>
+                {droppableProvided.placeholder}
+              </div>
+            )}
+          </Droppable>
+        </DragDropContext>
       </div>
     </div>
   );
