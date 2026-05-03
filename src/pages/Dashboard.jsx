@@ -1,11 +1,12 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
+import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
+import { GripVertical } from "lucide-react";
 import { entities, functions, auth, supabase } from "@/api/supabaseClient";
 import { useQuery } from "@tanstack/react-query";
 import {
   Mail,
   CheckSquare,
   User,
-  AlertCircle,
   Clock,
   Filter,
   ArrowUpDown,
@@ -16,6 +17,14 @@ import {
   Columns3,
   CalendarDays,
   MapPin,
+  ArrowUp,
+  ArrowDown,
+  Eye,
+  EyeOff,
+  SlidersHorizontal,
+  CalendarClock,
+  Inbox,
+  FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -24,12 +33,10 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-  DropdownMenuSeparator,
-  DropdownMenuCheckboxItem,
 } from "@/components/ui/dropdown-menu";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { format, isToday, isPast } from "date-fns";
+import { format, isPast } from "date-fns";
 import { de } from "date-fns/locale";
 import { useTheme } from "@/components/useTheme";
 import { useIsMobile } from "@/components/mobile/useIsMobile";
@@ -43,9 +50,55 @@ export default function Dashboard() {
   const [mailSortBy, setMailSortBy] = useState("received_date");
   const [priorityFilter, setPriorityFilter] = useState("all"); // priority_id | "all"
 
-  // Second task area state
-  const [secondaryColumnIds, setSecondaryColumnIds] = useState(null); // null = use defaults
-  const [secondaryPriorityFilter, setSecondaryPriorityFilter] = useState("all");
+  // Sekundärer Bereich: zwei Slots, je mit eigener Spalte + Priorität
+  const [slotAColumnId, setSlotAColumnId] = useState(() => {
+    try { return localStorage.getItem('dashboard.slotA.columnId') || ''; } catch { return ''; }
+  });
+  const [slotAPriorityId, setSlotAPriorityId] = useState(() => {
+    try { return localStorage.getItem('dashboard.slotA.priorityId') || 'all'; } catch { return 'all'; }
+  });
+  const [slotBColumnId, setSlotBColumnId] = useState(() => {
+    try { return localStorage.getItem('dashboard.slotB.columnId') || ''; } catch { return ''; }
+  });
+  const [slotBPriorityId, setSlotBPriorityId] = useState(() => {
+    try { return localStorage.getItem('dashboard.slotB.priorityId') || 'all'; } catch { return 'all'; }
+  });
+  const [slotAUserEmail, setSlotAUserEmail] = useState(() => {
+    try { return localStorage.getItem('dashboard.slotA.userEmail') || 'all'; } catch { return 'all'; }
+  });
+  const [slotBUserEmail, setSlotBUserEmail] = useState(() => {
+    try { return localStorage.getItem('dashboard.slotB.userEmail') || 'all'; } catch { return 'all'; }
+  });
+
+  // Mobile-Tab (welcher Bereich sichtbar ist), persistiert
+  const [mobileTab, setMobileTab] = useState(() => {
+    try { return localStorage.getItem('dashboard.mobileTab') || 'tasks'; } catch { return 'tasks'; }
+  });
+
+  // Widget-Reihenfolge & Sichtbarkeit (persistiert)
+  const DEFAULT_WIDGETS = [
+    { id: 'tasks',   visible: true },
+    { id: 'mails',   visible: true },
+    { id: 'slotA',   visible: true },
+    { id: 'slotB',   visible: true },
+    { id: 'fristen', visible: true },
+    { id: 'uploads', visible: true },
+  ];
+  const [widgets, setWidgets] = useState(() => {
+    try {
+      const raw = localStorage.getItem('dashboard.widgets');
+      if (!raw) return DEFAULT_WIDGETS;
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return DEFAULT_WIDGETS;
+      // sicherstellen, dass alle bekannten IDs enthalten sind
+      const knownIds = DEFAULT_WIDGETS.map(w => w.id);
+      const cleaned = parsed.filter(w => knownIds.includes(w.id));
+      const missing = knownIds
+        .filter(id => !cleaned.some(w => w.id === id))
+        .map(id => ({ id, visible: true }));
+      return [...cleaned, ...missing];
+    } catch { return DEFAULT_WIDGETS; }
+  });
 
   const { theme } = useTheme();
   const isDark = theme === 'dark';
@@ -64,8 +117,6 @@ export default function Dashboard() {
   const dropdownBg = isDark ? '#18181b' : isArtis ? '#eaf0ea' : '#ffffff';
   const dropdownBorder = isDark ? '#27272a' : isArtis ? '#bfcfbf' : '#e2e8f0';
   const dropdownText = isDark ? '#d4d4d8' : isArtis ? '#1a3a1a' : '#374151';
-  const avatarBg = isDark ? 'rgba(129,140,248,0.15)' : isArtis ? 'rgba(122,155,127,0.18)' : 'rgba(124,58,237,0.1)';
-  const avatarText = isDark ? '#a5b4fc' : isArtis ? '#3a6640' : '#7c3aed';
   const itemHoverClass = isDark ? 'hover:bg-zinc-800/50' : isArtis ? 'hover:bg-green-50' : 'hover:bg-slate-50';
   const filterBtnStyle = {
     borderColor: cardBorder,
@@ -124,6 +175,42 @@ export default function Dashboard() {
       return entities.MailItem.filter({ created_by: currentUser.id }, "-received_date");
     },
     enabled: !!currentUser,
+  });
+
+  // Fristen + Customers (für Fristen- und Uploads-Widget)
+  const { data: fristen = [] } = useQuery({
+    queryKey: ["fristen"],
+    queryFn: () => entities.Frist.list("due_date"),
+    enabled: !!currentUser,
+  });
+
+  const { data: customersList = [] } = useQuery({
+    queryKey: ["customers"],
+    queryFn: () => entities.Customer.list("company_name"),
+    enabled: !!currentUser,
+  });
+
+  // Kunden-Uploads aus Storage-Bucket "posteingang" (Files = noch nicht abgelegt)
+  const { data: pendingUploads = [] } = useQuery({
+    queryKey: ["dashboard", "pendingUploads"],
+    queryFn: async () => {
+      const { data: folders, error: folderErr } = await supabase.storage.from('posteingang').list();
+      if (folderErr) return [];
+      const all = await Promise.all(
+        (folders || []).map(async (folder) => {
+          const { data: files } = await supabase.storage.from('posteingang').list(folder.name);
+          return (files || []).map(f => ({
+            id: `${folder.name}/${f.name}`,
+            customer_id: folder.name,
+            file_name: (f.name.split('@')[1]) || f.name,
+            created_at: f.created_at || f.updated_at,
+          }));
+        })
+      );
+      return all.flat().sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+    },
+    enabled: !!currentUser,
+    staleTime: 60_000,
   });
 
   // Termine: read-only über bestehende MS365-Sync; nichts einrichten
@@ -194,45 +281,102 @@ export default function Dashboard() {
     return result;
   }, [mails, mailSortBy]);
 
-  // Default selection for secondary area: first 3 columns by order
-  const effectiveSecondaryColumnIds = useMemo(() => {
-    if (secondaryColumnIds !== null) return secondaryColumnIds;
-    return taskColumns.slice(0, 3).map(c => c.id);
-  }, [secondaryColumnIds, taskColumns]);
+  // Default-Spalten für Slots A/B (erste zwei Kanban-Spalten)
+  const effectiveSlotAColumnId = slotAColumnId || taskColumns[0]?.id || '';
+  const effectiveSlotBColumnId = slotBColumnId || taskColumns[1]?.id || taskColumns[0]?.id || '';
 
-  const secondaryFiltered = useMemo(() => {
-    let result = visibleTasks;
-    if (secondaryPriorityFilter !== "all") {
-      result = result.filter(t => t.priority_id === secondaryPriorityFilter);
-    }
-    return result;
-  }, [visibleTasks, secondaryPriorityFilter]);
+  const slotTasks = (columnId, priorityId, userEmail) =>
+    visibleTasks.filter(t =>
+      t.column_id === columnId &&
+      (priorityId === 'all' || t.priority_id === priorityId) &&
+      (userEmail === 'all' || t.assignee === userEmail || t.verantwortlich === userEmail)
+    );
 
-  // Statistics
-  const highPrioIds = useMemo(
-    () => new Set(priorities.filter(p => (p.level ?? 99) <= 2).map(p => p.id)),
-    [priorities]
-  );
+  useEffect(() => {
+    try { localStorage.setItem('dashboard.mobileTab', mobileTab); } catch {}
+  }, [mobileTab]);
+  useEffect(() => {
+    try { localStorage.setItem('dashboard.slotA.columnId', slotAColumnId); } catch {}
+  }, [slotAColumnId]);
+  useEffect(() => {
+    try { localStorage.setItem('dashboard.slotA.priorityId', slotAPriorityId); } catch {}
+  }, [slotAPriorityId]);
+  useEffect(() => {
+    try { localStorage.setItem('dashboard.slotB.columnId', slotBColumnId); } catch {}
+  }, [slotBColumnId]);
+  useEffect(() => {
+    try { localStorage.setItem('dashboard.slotB.priorityId', slotBPriorityId); } catch {}
+  }, [slotBPriorityId]);
+  useEffect(() => {
+    try { localStorage.setItem('dashboard.slotA.userEmail', slotAUserEmail); } catch {}
+  }, [slotAUserEmail]);
+  useEffect(() => {
+    try { localStorage.setItem('dashboard.slotB.userEmail', slotBUserEmail); } catch {}
+  }, [slotBUserEmail]);
+  useEffect(() => {
+    try { localStorage.setItem('dashboard.widgets', JSON.stringify(widgets)); } catch {}
+  }, [widgets]);
 
-  const stats = {
-    totalOpenTasks: visibleTasks.length,
-    totalUnreadMails: mails.filter(m => !m.is_read && !m.is_completed).length,
-    overdueTasks: visibleTasks.filter(t => t.due_date && isPast(new Date(t.due_date))).length,
-    todayTasks: visibleTasks.filter(t => t.due_date && isToday(new Date(t.due_date))).length,
-    highPriorityTasks: visibleTasks.filter(t => highPrioIds.has(t.priority_id)).length,
-    highPriorityMails: mails.filter(m => !m.is_read && !m.is_completed && m.priority === 'high').length,
+  const handleWidgetDragEnd = (result) => {
+    const { source, destination } = result;
+    if (!destination || destination.index === source.index) return;
+    setWidgets(prev => {
+      // Reorder operiert auf der GESAMTEN Liste, aber Drag basiert auf gefilterten (visible).
+      // → Mappen wir source/destination Indices auf die Indizes in `prev`.
+      const visibleIds = prev.filter(w => w.visible).map(w => w.id);
+      const movedId = visibleIds[source.index];
+      const targetId = visibleIds[destination.index];
+      const fromIdx = prev.findIndex(w => w.id === movedId);
+      const toIdx = prev.findIndex(w => w.id === targetId);
+      if (fromIdx < 0 || toIdx < 0) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(fromIdx, 1);
+      next.splice(toIdx, 0, moved);
+      return next;
+    });
   };
 
-  // Tasks by user
-  const tasksByUser = useMemo(() => {
-    const grouped = {};
-    for (const task of visibleTasks) {
-      const assignee = task.assignee || 'Nicht zugewiesen';
-      if (!grouped[assignee]) grouped[assignee] = [];
-      grouped[assignee].push(task);
-    }
-    return grouped;
-  }, [visibleTasks]);
+  const moveWidget = (id, direction) => {
+    setWidgets(prev => {
+      const idx = prev.findIndex(w => w.id === id);
+      if (idx < 0) return prev;
+      const target = direction === 'up' ? idx - 1 : idx + 1;
+      if (target < 0 || target >= prev.length) return prev;
+      const next = [...prev];
+      [next[idx], next[target]] = [next[target], next[idx]];
+      return next;
+    });
+  };
+
+  const toggleWidget = (id) => {
+    setWidgets(prev => prev.map(w => w.id === id ? { ...w, visible: !w.visible } : w));
+  };
+
+  const widgetMeta = {
+    tasks:   { label: 'Offene Tasks',     icon: CheckSquare },
+    mails:   { label: 'Ungelesene Mails', icon: Mail },
+    slotA:   { label: 'Spalte A',         icon: Columns3 },
+    slotB:   { label: 'Spalte B',         icon: Columns3 },
+    fristen: { label: 'Fristen (20 Tage)',icon: CalendarClock },
+    uploads: { label: 'Kunden-Uploads',   icon: Inbox },
+  };
+
+  // Fristen die in den nächsten 20 Tagen ablaufen (oder überfällig sind), nur offen
+  const upcomingFristen = useMemo(() => {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const horizon = new Date(today); horizon.setDate(horizon.getDate() + 20);
+    return fristen
+      .filter(f => f.status === 'offen' && f.due_date)
+      .map(f => ({ ...f, _due: new Date(f.due_date) }))
+      .filter(f => f._due <= horizon)
+      .sort((a, b) => a._due - b._due);
+  }, [fristen]);
+
+  const customerById = useMemo(() => {
+    const m = new Map();
+    for (const c of customersList) m.set(c.id, c);
+    return m;
+  }, [customersList]);
 
   const userByEmail = useMemo(() => {
     const m = new Map();
@@ -297,21 +441,12 @@ export default function Dashboard() {
     );
   };
 
-  const toggleSecondaryColumn = (colId) => {
-    const current = effectiveSecondaryColumnIds;
-    const next = current.includes(colId)
-      ? current.filter(id => id !== colId)
-      : [...current, colId];
-    setSecondaryColumnIds(next);
-  };
-
   const formatTime = (iso) => {
     if (!iso) return '';
     try { return format(new Date(iso), 'HH:mm'); } catch { return ''; }
   };
 
   const containerPadding = isMobile ? 'p-3' : 'p-6';
-  const sectionGap = isMobile ? 'mb-4' : 'mb-8';
 
   return (
     <div className={`h-screen overflow-y-auto ${containerPadding}`}>
@@ -376,51 +511,124 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Statistics Cards */}
-        <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 ${isMobile ? 'gap-3 mb-4' : 'gap-4 mb-8'}`}>
-          <div className={`rounded-xl border ${isMobile ? 'p-4' : 'p-6'}`} style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm" style={{ color: textMuted }}>Offene Tasks</p>
-                <p className={`${isMobile ? 'text-2xl' : 'text-3xl'} font-bold mt-2`} style={{ color: headingColor }}>{stats.totalOpenTasks}</p>
-              </div>
-              <CheckSquare className={`${isMobile ? 'h-9 w-9' : 'h-12 w-12'} opacity-20`} style={{ color: accentColor }} />
+        {/* Widget-Toolbar: Mobile-Pills + Verwalten-Menü */}
+        <div
+          className={`flex items-center gap-2 mb-3 ${isMobile ? 'sticky top-0 z-10 -mx-3 px-3 py-2 backdrop-blur' : ''}`}
+          style={isMobile ? { backgroundColor: cardBg, borderBottom: `1px solid ${cardBorder}` } : {}}
+        >
+          {isMobile && (
+            <div className="flex gap-1.5 overflow-x-auto -mx-1 px-1 flex-1">
+              {(() => {
+                const slotCount = (sCol, sPrio, sUser) => {
+                  const c = taskColumns.find(x => x.id === sCol);
+                  return c ? slotTasks(c.id, sPrio, sUser).length : 0;
+                };
+                const widgetPill = (id) => {
+                  if (id === 'tasks') return { id, label: 'Tasks', count: filteredTasks.length };
+                  if (id === 'mails') return { id, label: 'E-Mails', count: filteredMails.length };
+                  if (id === 'slotA') {
+                    const col = taskColumns.find(c => c.id === effectiveSlotAColumnId);
+                    return { id, label: col?.name || 'Spalte A', count: slotCount(effectiveSlotAColumnId, slotAPriorityId, slotAUserEmail) };
+                  }
+                  if (id === 'slotB') {
+                    const col = taskColumns.find(c => c.id === effectiveSlotBColumnId);
+                    return { id, label: col?.name || 'Spalte B', count: slotCount(effectiveSlotBColumnId, slotBPriorityId, slotBUserEmail) };
+                  }
+                  if (id === 'fristen') return { id, label: 'Fristen', count: upcomingFristen.length };
+                  if (id === 'uploads') return { id, label: 'Uploads', count: pendingUploads.length };
+                  return null;
+                };
+                const pills = [
+                  ...(showCalendar ? [{ id: 'termine', label: 'Termine', count: calendarEvents.length }] : []),
+                  ...widgets.filter(w => w.visible).map(w => widgetPill(w.id)).filter(Boolean),
+                ];
+                return pills.map(({ id, label, count }) => {
+                  const active = mobileTab === id;
+                  return (
+                    <button
+                      key={id}
+                      onClick={() => setMobileTab(id)}
+                      className="px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors flex items-center gap-1.5 touch-manipulation"
+                      style={{
+                        backgroundColor: active ? accentColor : 'transparent',
+                        color: active ? '#ffffff' : textBody,
+                        border: `1px solid ${active ? accentColor : cardBorder}`,
+                      }}
+                    >
+                      {label}
+                      {count !== null && count !== undefined && (
+                        <span
+                          className="text-[10px] px-1.5 py-0.5 rounded-full"
+                          style={{
+                            backgroundColor: active ? 'rgba(255,255,255,0.25)' : itemBg,
+                            color: active ? '#ffffff' : textMuted,
+                          }}
+                        >
+                          {count}
+                        </span>
+                      )}
+                    </button>
+                  );
+                });
+              })()}
             </div>
-            <div className="mt-4 flex flex-wrap gap-3 text-xs">
-              <span className="text-red-500 font-medium">{stats.overdueTasks} überfällig</span>
-              <span className="text-amber-500 font-medium">{stats.todayTasks} heute</span>
-            </div>
-          </div>
+          )}
 
-          <div className={`rounded-xl border ${isMobile ? 'p-4' : 'p-6'}`} style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm" style={{ color: textMuted }}>Ungelesene E-Mails</p>
-                <p className={`${isMobile ? 'text-2xl' : 'text-3xl'} font-bold mt-2`} style={{ color: headingColor }}>{stats.totalUnreadMails}</p>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className={`gap-2 ${isMobile ? 'flex-shrink-0' : 'ml-auto'}`} style={filterBtnStyle}>
+                <SlidersHorizontal className="h-4 w-4" />
+                <span className={isMobile ? 'sr-only' : ''}>Widgets</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-72" style={{ backgroundColor: dropdownBg, borderColor: dropdownBorder }}>
+              <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wider" style={{ color: textMuted }}>
+                Reihenfolge & Sichtbarkeit
               </div>
-              <Mail className={`${isMobile ? 'h-9 w-9' : 'h-12 w-12'} opacity-20`} style={{ color: mailColor }} />
-            </div>
-            <div className="mt-4 flex flex-wrap gap-3 text-xs">
-              <span className="text-orange-500 font-medium">{stats.highPriorityMails} hohe Priorität</span>
-            </div>
-          </div>
-
-          <div className={`rounded-xl border ${isMobile ? 'p-4' : 'p-6'}`} style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm" style={{ color: textMuted }}>Hohe Priorität</p>
-                <p className={`${isMobile ? 'text-2xl' : 'text-3xl'} font-bold mt-2`} style={{ color: headingColor }}>{stats.highPriorityTasks}</p>
-              </div>
-              <AlertCircle className={`${isMobile ? 'h-9 w-9' : 'h-12 w-12'} opacity-20 text-orange-500`} />
-            </div>
-            <div className="mt-4 flex flex-wrap gap-3 text-xs">
-              <span style={{ color: textMuted }}>Tasks mit hoher/dringender Priorität</span>
-            </div>
-          </div>
+              {widgets.map((w, idx) => {
+                const meta = widgetMeta[w.id];
+                const Icon = meta?.icon || Columns3;
+                return (
+                  <div key={w.id} className="flex items-center gap-1.5 px-2 py-1.5">
+                    <button
+                      onClick={() => toggleWidget(w.id)}
+                      className="p-1.5 rounded hover:bg-black/5"
+                      title={w.visible ? 'Ausblenden' : 'Einblenden'}
+                      style={{ color: w.visible ? accentColor : textMuted }}
+                    >
+                      {w.visible ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                    </button>
+                    <Icon className="h-4 w-4 flex-shrink-0" style={{ color: textMuted }} />
+                    <span className="flex-1 text-sm truncate" style={{ color: dropdownText }}>
+                      {meta?.label || w.id}
+                    </span>
+                    <button
+                      onClick={() => moveWidget(w.id, 'up')}
+                      disabled={idx === 0}
+                      className="p-1.5 rounded hover:bg-black/5 disabled:opacity-30"
+                      style={{ color: textMuted }}
+                      title="Nach oben"
+                    >
+                      <ArrowUp className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => moveWidget(w.id, 'down')}
+                      disabled={idx === widgets.length - 1}
+                      className="p-1.5 rounded hover:bg-black/5 disabled:opacity-30"
+                      style={{ color: textMuted }}
+                      title="Nach unten"
+                    >
+                      <ArrowDown className="h-4 w-4" />
+                    </button>
+                  </div>
+                );
+              })}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
 
         {/* Termine (read-only Outlook) */}
-        {showCalendar && (
+        {showCalendar && (!isMobile || mobileTab === 'termine') && (
           <div className={`rounded-xl border ${isMobile ? 'p-4 mb-4' : 'p-6 mb-8'}`} style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
             <h2 className={`${isMobile ? 'text-base' : 'text-lg'} font-semibold mb-4 flex items-center gap-2`} style={{ color: headingColor }}>
               <CalendarDays className={isMobile ? 'h-4 w-4' : 'h-5 w-5'} style={{ color: accentColor }} />
@@ -467,342 +675,468 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Tasks by User Overview */}
-        <div className={`rounded-xl border ${isMobile ? 'p-4 mb-4' : 'p-6 mb-8'}`} style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
-          <h2 className={`${isMobile ? 'text-base' : 'text-lg'} font-semibold mb-4 flex items-center gap-2`} style={{ color: headingColor }}>
-            <User className={isMobile ? 'h-4 w-4' : 'h-5 w-5'} style={{ color: accentColor }} />
-            Tasks pro Mitarbeiter
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {Object.entries(tasksByUser).map(([assignee, userTasks]) => {
-              const userName = userDisplayName(assignee);
+        {/* Widgets-Grid (Drag-and-Drop sortierbar auf Desktop) */}
+        <DragDropContext onDragEnd={handleWidgetDragEnd}>
+          <Droppable droppableId="dashboard-widgets" direction="vertical" isDropDisabled={isMobile}>
+            {(droppableProvided) => (
+              <div
+                ref={droppableProvided.innerRef}
+                {...droppableProvided.droppableProps}
+                className={`grid grid-cols-1 lg:grid-cols-2 ${isMobile ? 'gap-4' : 'gap-6'}`}
+              >
+                {widgets.filter(w => w.visible).map((w, dragIndex) => {
+                  const hideOnMobile = isMobile && mobileTab !== w.id;
+
+            if (w.id === 'tasks') {
               return (
+                <Draggable key={w.id} draggableId={w.id} index={dragIndex} isDragDisabled={isMobile}>
+                  {(dp) => (
                 <div
-                  key={assignee}
-                  className="rounded-lg p-4 border"
-                  style={{ backgroundColor: itemBg, borderColor: itemBorder }}
+                  ref={dp.innerRef}
+                  {...dp.draggableProps}
+                  className={`${hideOnMobile ? 'hidden' : ''} rounded-xl border ${isMobile ? 'p-4' : 'p-6'} relative`}
+                  style={{ backgroundColor: cardBg, borderColor: cardBorder, ...dp.draggableProps.style }}
                 >
-                  <div className="flex items-center gap-2 mb-2">
-                    <div
-                      className="w-8 h-8 rounded-full flex items-center justify-center font-semibold text-sm"
-                      style={{ backgroundColor: avatarBg, color: avatarText }}
-                    >
-                      {userName.charAt(0).toUpperCase()}
+                  {!isMobile && (
+                    <div {...dp.dragHandleProps} className="absolute top-2 right-2 cursor-grab active:cursor-grabbing p-1 rounded opacity-30 hover:opacity-100 transition-opacity z-[1]" title="Verschieben">
+                      <GripVertical className="h-4 w-4" style={{ color: textMuted }} />
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium truncate" style={{ color: headingColor }}>{userName}</div>
-                      <div className="text-xs" style={{ color: textMuted }}>{userTasks.length} offene Tasks</div>
-                    </div>
+                  )}
+                  <div className="flex items-center justify-between mb-3 gap-2">
+                    <h2 className={`${isMobile ? 'text-base' : 'text-lg'} font-semibold flex items-center gap-2 min-w-0`} style={{ color: headingColor }}>
+                      <CheckSquare className={isMobile ? 'h-4 w-4' : 'h-5 w-5'} style={{ color: accentColor }} />
+                      <span className="truncate">Offene Tasks ({filteredTasks.length})</span>
+                    </h2>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="sm" className="gap-2 flex-shrink-0" style={{ color: textMuted }}>
+                          <ArrowUpDown className="h-4 w-4" />
+                          {taskSortBy === "due_date" ? "Fälligkeit" : taskSortBy === "priority" ? "Priorität" : "Erstellt"}
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent style={{ backgroundColor: dropdownBg, borderColor: dropdownBorder }}>
+                        <DropdownMenuItem onClick={() => setTaskSortBy("due_date")} style={{ color: dropdownText }}>Nach Fälligkeit</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setTaskSortBy("priority")} style={{ color: dropdownText }}>Nach Priorität</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setTaskSortBy("created_date")} style={{ color: dropdownText }}>Nach Erstelldatum</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
-                  <div className="flex gap-2 text-xs">
-                    <span className="text-red-500 font-medium">
-                      {userTasks.filter(t => highPrioIds.has(t.priority_id)).length} dringend
-                    </span>
-                    <span className="text-amber-500 font-medium">
-                      {userTasks.filter(t => t.due_date && isPast(new Date(t.due_date))).length} überfällig
-                    </span>
+
+                  <div className="flex flex-wrap items-center gap-2 mb-3">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" size="sm" className="gap-2 h-8 text-xs" style={filterBtnStyle}>
+                          <User className="h-3.5 w-3.5" />
+                          <span className="truncate max-w-[140px]">
+                            {selectedUser === "all" ? "Alle Mitarbeiter" : userDisplayName(selectedUser)}
+                          </span>
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent style={{ backgroundColor: dropdownBg, borderColor: dropdownBorder }}>
+                        <DropdownMenuItem onClick={() => setSelectedUser("all")} style={{ color: dropdownText }}>
+                          Alle Mitarbeiter
+                        </DropdownMenuItem>
+                        {allUsers.map((user) => (
+                          <DropdownMenuItem key={user.id || user.email} onClick={() => setSelectedUser(user.email)} style={{ color: dropdownText }}>
+                            {user.full_name || user.email}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" size="sm" className="gap-2 h-8 text-xs" style={filterBtnStyle}>
+                          <Filter className="h-3.5 w-3.5" />
+                          {priorityFilter === "all"
+                            ? "Alle Prioritäten"
+                            : priorityById.get(priorityFilter)?.name || "Priorität"}
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent style={{ backgroundColor: dropdownBg, borderColor: dropdownBorder }}>
+                        <DropdownMenuItem onClick={() => setPriorityFilter("all")} style={{ color: dropdownText }}>
+                          Alle Prioritäten
+                        </DropdownMenuItem>
+                        {priorities.map((p) => (
+                          <DropdownMenuItem key={p.id} onClick={() => setPriorityFilter(p.id)} style={{ color: dropdownText }}>
+                            <div className="flex items-center gap-2">
+                              <div className="w-3 h-3 rounded-full" style={{ backgroundColor: p.color }} />
+                              {p.name}
+                            </div>
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+
+                  <div className={`space-y-2 ${isMobile ? 'max-h-[420px]' : 'max-h-[600px]'} overflow-y-auto`}>
+                    {filteredTasks.length === 0 ? (
+                      <div className="text-center py-8" style={{ color: textMuted }}>Keine offenen Tasks</div>
+                    ) : (
+                      filteredTasks.map((task) => renderTaskCard(task))
+                    )}
                   </div>
                 </div>
+                  )}
+                </Draggable>
               );
-            })}
-          </div>
-        </div>
+            }
 
-        {/* Filters (primary task list) */}
-        <div className={`flex flex-wrap items-center ${isMobile ? 'gap-2 mb-4' : 'gap-3 mb-6'}`}>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size={isMobile ? 'sm' : 'default'} className="gap-2" style={filterBtnStyle}>
-                <User className="h-4 w-4" />
-                <span className="truncate max-w-[160px]">
-                  {selectedUser === "all" ? "Alle Mitarbeiter" : userDisplayName(selectedUser)}
-                </span>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent style={{ backgroundColor: dropdownBg, borderColor: dropdownBorder }}>
-              <DropdownMenuItem onClick={() => setSelectedUser("all")} style={{ color: dropdownText }}>
-                Alle Mitarbeiter
-              </DropdownMenuItem>
-              {allUsers.map((user) => (
-                <DropdownMenuItem key={user.id || user.email} onClick={() => setSelectedUser(user.email)} style={{ color: dropdownText }}>
-                  {user.full_name || user.email}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size={isMobile ? 'sm' : 'default'} className="gap-2" style={filterBtnStyle}>
-                <Filter className="h-4 w-4" />
-                {priorityFilter === "all"
-                  ? "Alle Prioritäten"
-                  : priorityById.get(priorityFilter)?.name || "Priorität"}
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent style={{ backgroundColor: dropdownBg, borderColor: dropdownBorder }}>
-              <DropdownMenuItem onClick={() => setPriorityFilter("all")} style={{ color: dropdownText }}>
-                Alle Prioritäten
-              </DropdownMenuItem>
-              {priorities.map((p) => (
-                <DropdownMenuItem
-                  key={p.id}
-                  onClick={() => setPriorityFilter(p.id)}
-                  style={{ color: dropdownText }}
+            if (w.id === 'mails') {
+              return (
+                <Draggable key={w.id} draggableId={w.id} index={dragIndex} isDragDisabled={isMobile}>
+                  {(dp) => (
+                <div
+                  ref={dp.innerRef}
+                  {...dp.draggableProps}
+                  className={`${hideOnMobile ? 'hidden' : ''} rounded-xl border ${isMobile ? 'p-4' : 'p-6'} relative`}
+                  style={{ backgroundColor: cardBg, borderColor: cardBorder, ...dp.draggableProps.style }}
                 >
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: p.color }} />
-                    {p.name}
-                  </div>
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-
-        <div className={`grid grid-cols-1 lg:grid-cols-2 ${isMobile ? 'gap-4' : 'gap-6'}`}>
-          {/* Tasks Section */}
-          <div className={`rounded-xl border ${isMobile ? 'p-4' : 'p-6'}`} style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
-            <div className="flex items-center justify-between mb-4 gap-2">
-              <h2 className={`${isMobile ? 'text-base' : 'text-lg'} font-semibold flex items-center gap-2 min-w-0`} style={{ color: headingColor }}>
-                <CheckSquare className={isMobile ? 'h-4 w-4' : 'h-5 w-5'} style={{ color: accentColor }} />
-                <span className="truncate">Offene Tasks ({filteredTasks.length})</span>
-              </h2>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="sm" className="gap-2 flex-shrink-0" style={{ color: textMuted }}>
-                    <ArrowUpDown className="h-4 w-4" />
-                    {taskSortBy === "due_date" ? "Fälligkeit" : taskSortBy === "priority" ? "Priorität" : "Erstellt"}
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent style={{ backgroundColor: dropdownBg, borderColor: dropdownBorder }}>
-                  <DropdownMenuItem onClick={() => setTaskSortBy("due_date")} style={{ color: dropdownText }}>
-                    Nach Fälligkeit
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setTaskSortBy("priority")} style={{ color: dropdownText }}>
-                    Nach Priorität
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setTaskSortBy("created_date")} style={{ color: dropdownText }}>
-                    Nach Erstelldatum
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-
-            <div className={`space-y-2 ${isMobile ? 'max-h-[420px]' : 'max-h-[600px]'} overflow-y-auto`}>
-              {filteredTasks.length === 0 ? (
-                <div className="text-center py-8" style={{ color: textMuted }}>
-                  Keine offenen Tasks
-                </div>
-              ) : (
-                filteredTasks.map((task) => renderTaskCard(task))
-              )}
-            </div>
-          </div>
-
-          {/* Mails Section */}
-          <div className={`rounded-xl border ${isMobile ? 'p-4' : 'p-6'}`} style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
-            <div className="flex items-center justify-between mb-4 gap-2">
-              <h2 className={`${isMobile ? 'text-base' : 'text-lg'} font-semibold flex items-center gap-2 min-w-0`} style={{ color: headingColor }}>
-                <Mail className={isMobile ? 'h-4 w-4' : 'h-5 w-5'} style={{ color: mailColor }} />
-                <span className="truncate">Ungelesene E-Mails ({filteredMails.length})</span>
-              </h2>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="sm" className="gap-2 flex-shrink-0" style={{ color: textMuted }}>
-                    <ArrowUpDown className="h-4 w-4" />
-                    {mailSortBy === "received_date" ? "Datum" : "Priorität"}
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent style={{ backgroundColor: dropdownBg, borderColor: dropdownBorder }}>
-                  <DropdownMenuItem onClick={() => setMailSortBy("received_date")} style={{ color: dropdownText }}>
-                    Nach Datum
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setMailSortBy("priority")} style={{ color: dropdownText }}>
-                    Nach Priorität
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-
-            <div className={`space-y-2 ${isMobile ? 'max-h-[420px]' : 'max-h-[600px]'} overflow-y-auto`}>
-              {filteredMails.length === 0 ? (
-                <div className="text-center py-8" style={{ color: textMuted }}>
-                  Keine ungelesenen E-Mails
-                </div>
-              ) : (
-                filteredMails.map((mail) => (
-                  <Link
-                    key={mail.id}
-                    to={createPageUrl('MailKanban')}
-                    className={`block p-3 rounded-lg border transition-colors ${itemHoverClass}`}
-                    style={{ backgroundColor: itemBg, borderColor: itemBorder }}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-semibold mb-1 truncate" style={{ color: headingColor }}>
-                          {mail.subject}
-                        </div>
-                        <div className="text-xs mb-2 font-medium truncate" style={{ color: textMuted }}>
-                          Von: {mail.sender_name}
-                        </div>
-                        {mail.body_preview && (
-                          <div className="text-xs line-clamp-2" style={{ color: textMuted }}>
-                            {mail.body_preview}
-                          </div>
-                        )}
-                        <div className="flex items-center gap-2 mt-2">
-                          <div className="flex items-center gap-1 text-xs" style={{ color: textMuted }}>
-                            <Clock className="h-3 w-3" />
-                            {format(new Date(mail.received_date), 'dd.MM.yyyy HH:mm', { locale: de })}
-                          </div>
-                        </div>
-                      </div>
-                      {mail.priority === 'high' && (
-                        <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700 border-orange-200 flex-shrink-0">
-                          Hoch
-                        </Badge>
-                      )}
+                  {!isMobile && (
+                    <div {...dp.dragHandleProps} className="absolute top-2 right-2 cursor-grab active:cursor-grabbing p-1 rounded opacity-30 hover:opacity-100 transition-opacity z-[1]" title="Verschieben">
+                      <GripVertical className="h-4 w-4" style={{ color: textMuted }} />
                     </div>
-                  </Link>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Sekundärer Task-Bereich: Spalten-Auswahl + Priorität */}
-        <div className={`rounded-xl border ${isMobile ? 'p-4 mt-4' : 'p-6 mt-8'}`} style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
-          <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
-            <h2 className={`${isMobile ? 'text-base' : 'text-lg'} font-semibold flex items-center gap-2 min-w-0`} style={{ color: headingColor }}>
-              <Columns3 className={isMobile ? 'h-4 w-4' : 'h-5 w-5'} style={{ color: accentColor }} />
-              <span className="truncate">Tasks nach Spalte</span>
-            </h2>
-            <div className="flex flex-wrap items-center gap-2">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" className="gap-2" style={filterBtnStyle}>
-                    <Columns3 className="h-4 w-4" />
-                    Spalten
-                    <span className="bg-indigo-500 text-white text-xs px-1.5 py-0.5 rounded-full">
-                      {effectiveSecondaryColumnIds.length}
-                    </span>
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" style={{ backgroundColor: dropdownBg, borderColor: dropdownBorder }}>
-                  {taskColumns.length === 0 && (
-                    <DropdownMenuItem disabled style={{ color: textMuted }}>Keine Spalten</DropdownMenuItem>
                   )}
-                  {taskColumns.map((col) => (
-                    <DropdownMenuCheckboxItem
-                      key={col.id}
-                      checked={effectiveSecondaryColumnIds.includes(col.id)}
-                      onCheckedChange={() => toggleSecondaryColumn(col.id)}
-                    >
-                      <div className="flex items-center gap-2">
-                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: col.color || accentColor }} />
-                        {col.name}
-                      </div>
-                    </DropdownMenuCheckboxItem>
-                  ))}
-                  {taskColumns.length > 0 && (
-                    <>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        onClick={() => setSecondaryColumnIds(taskColumns.map(c => c.id))}
-                        style={{ color: dropdownText }}
-                      >
-                        Alle anzeigen
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => setSecondaryColumnIds(null)}
-                        style={{ color: dropdownText }}
-                      >
-                        Standard (erste 3)
-                      </DropdownMenuItem>
-                    </>
+                  <div className="flex items-center justify-between mb-4 gap-2">
+                    <h2 className={`${isMobile ? 'text-base' : 'text-lg'} font-semibold flex items-center gap-2 min-w-0`} style={{ color: headingColor }}>
+                      <Mail className={isMobile ? 'h-4 w-4' : 'h-5 w-5'} style={{ color: mailColor }} />
+                      <span className="truncate">Ungelesene E-Mails ({filteredMails.length})</span>
+                    </h2>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="sm" className="gap-2 flex-shrink-0" style={{ color: textMuted }}>
+                          <ArrowUpDown className="h-4 w-4" />
+                          {mailSortBy === "received_date" ? "Datum" : "Priorität"}
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent style={{ backgroundColor: dropdownBg, borderColor: dropdownBorder }}>
+                        <DropdownMenuItem onClick={() => setMailSortBy("received_date")} style={{ color: dropdownText }}>Nach Datum</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setMailSortBy("priority")} style={{ color: dropdownText }}>Nach Priorität</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+
+                  <div className={`space-y-2 ${isMobile ? 'max-h-[420px]' : 'max-h-[600px]'} overflow-y-auto`}>
+                    {filteredMails.length === 0 ? (
+                      <div className="text-center py-8" style={{ color: textMuted }}>Keine ungelesenen E-Mails</div>
+                    ) : (
+                      filteredMails.map((mail) => (
+                        <Link
+                          key={mail.id}
+                          to={createPageUrl('MailKanban')}
+                          className={`block p-3 rounded-lg border transition-colors ${itemHoverClass}`}
+                          style={{ backgroundColor: itemBg, borderColor: itemBorder }}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm font-semibold mb-1 truncate" style={{ color: headingColor }}>{mail.subject}</div>
+                              <div className="text-xs mb-2 font-medium truncate" style={{ color: textMuted }}>Von: {mail.sender_name}</div>
+                              {mail.body_preview && (
+                                <div className="text-xs line-clamp-2" style={{ color: textMuted }}>{mail.body_preview}</div>
+                              )}
+                              <div className="flex items-center gap-2 mt-2">
+                                <div className="flex items-center gap-1 text-xs" style={{ color: textMuted }}>
+                                  <Clock className="h-3 w-3" />
+                                  {format(new Date(mail.received_date), 'dd.MM.yyyy HH:mm', { locale: de })}
+                                </div>
+                              </div>
+                            </div>
+                            {mail.priority === 'high' && (
+                              <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700 border-orange-200 flex-shrink-0">Hoch</Badge>
+                            )}
+                          </div>
+                        </Link>
+                      ))
+                    )}
+                  </div>
+                </div>
                   )}
-                </DropdownMenuContent>
-              </DropdownMenu>
+                </Draggable>
+              );
+            }
 
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" className="gap-2" style={filterBtnStyle}>
-                    <Filter className="h-4 w-4" />
-                    {secondaryPriorityFilter === "all"
-                      ? "Alle Prioritäten"
-                      : priorityById.get(secondaryPriorityFilter)?.name || "Priorität"}
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" style={{ backgroundColor: dropdownBg, borderColor: dropdownBorder }}>
-                  <DropdownMenuItem onClick={() => setSecondaryPriorityFilter("all")} style={{ color: dropdownText }}>
-                    Alle Prioritäten
-                  </DropdownMenuItem>
-                  {priorities.map((p) => (
-                    <DropdownMenuItem
-                      key={p.id}
-                      onClick={() => setSecondaryPriorityFilter(p.id)}
-                      style={{ color: dropdownText }}
-                    >
-                      <div className="flex items-center gap-2">
-                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: p.color }} />
-                        {p.name}
-                      </div>
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          </div>
+            if (w.id === 'fristen') {
+              return (
+                <Draggable key={w.id} draggableId={w.id} index={dragIndex} isDragDisabled={isMobile}>
+                  {(dp) => (
+                <div
+                  ref={dp.innerRef}
+                  {...dp.draggableProps}
+                  className={`${hideOnMobile ? 'hidden' : ''} rounded-xl border ${isMobile ? 'p-4' : 'p-6'} relative`}
+                  style={{ backgroundColor: cardBg, borderColor: cardBorder, ...dp.draggableProps.style }}
+                >
+                  {!isMobile && (
+                    <div {...dp.dragHandleProps} className="absolute top-2 right-2 cursor-grab active:cursor-grabbing p-1 rounded opacity-30 hover:opacity-100 transition-opacity z-[1]" title="Verschieben">
+                      <GripVertical className="h-4 w-4" style={{ color: textMuted }} />
+                    </div>
+                  )}
+                  <h2 className={`${isMobile ? 'text-base' : 'text-lg'} font-semibold flex items-center gap-2 min-w-0 mb-3`} style={{ color: headingColor }}>
+                    <CalendarClock className={isMobile ? 'h-4 w-4' : 'h-5 w-5'} style={{ color: accentColor }} />
+                    <span className="truncate">Fristen (≤ 20 Tage) ({upcomingFristen.length})</span>
+                  </h2>
 
-          {effectiveSecondaryColumnIds.length === 0 ? (
-            <div className="text-center py-8 text-sm" style={{ color: textMuted }}>
-              Keine Spalten ausgewählt
-            </div>
-          ) : (
-            <div
-              className={`grid gap-3 ${
-                isMobile
-                  ? 'grid-cols-1'
-                  : effectiveSecondaryColumnIds.length === 1
-                  ? 'grid-cols-1'
-                  : effectiveSecondaryColumnIds.length === 2
-                  ? 'grid-cols-1 md:grid-cols-2'
-                  : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'
-              }`}
-            >
-              {taskColumns
-                .filter(c => effectiveSecondaryColumnIds.includes(c.id))
-                .map((col) => {
-                  const colTasks = secondaryFiltered.filter(t => t.column_id === col.id);
-                  return (
-                    <div
-                      key={col.id}
-                      className="rounded-lg border p-3"
-                      style={{ backgroundColor: itemBg, borderColor: itemBorder }}
-                    >
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: col.color || accentColor }} />
-                          <div className="text-sm font-semibold truncate" style={{ color: headingColor }}>{col.name}</div>
-                        </div>
-                        <span className="text-xs" style={{ color: textMuted }}>{colTasks.length}</span>
+                  <div className={`space-y-2 ${isMobile ? 'max-h-[420px]' : 'max-h-[600px]'} overflow-y-auto`}>
+                    {upcomingFristen.length === 0 ? (
+                      <div className="text-center py-8 text-sm" style={{ color: textMuted }}>
+                        Keine Fristen in den nächsten 20 Tagen
                       </div>
-                      <div className={`space-y-2 ${isMobile ? 'max-h-[260px]' : 'max-h-[420px]'} overflow-y-auto`}>
-                        {colTasks.length === 0 ? (
-                          <div className="text-center py-6 text-xs" style={{ color: textMuted }}>
-                            Keine Tasks
+                    ) : (
+                      upcomingFristen.map((f) => {
+                        const cust = customerById.get(f.customer_id);
+                        const isOverdue = f._due < new Date(new Date().setHours(0,0,0,0));
+                        const today = new Date(); today.setHours(0,0,0,0);
+                        const days = Math.round((f._due - today) / (1000 * 60 * 60 * 24));
+                        return (
+                          <Link
+                            key={f.id}
+                            to={createPageUrl('Fristen')}
+                            className={`block p-3 rounded-lg border transition-colors ${itemHoverClass}`}
+                            style={{ backgroundColor: itemBg, borderColor: itemBorder }}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-semibold mb-1 truncate" style={{ color: headingColor }}>
+                                  {f.title}
+                                </div>
+                                {(cust?.company_name || f.kanton || f.category) && (
+                                  <div className="text-xs truncate" style={{ color: textMuted }}>
+                                    {[cust?.company_name, f.category, f.kanton].filter(Boolean).join(' · ')}
+                                  </div>
+                                )}
+                                <div className="flex items-center gap-2 mt-2">
+                                  <div className={`flex items-center gap-1 text-xs ${isOverdue ? 'text-red-500' : ''}`}
+                                    style={!isOverdue ? { color: textMuted } : {}}>
+                                    <Clock className="h-3 w-3" />
+                                    {format(f._due, 'dd.MM.yyyy', { locale: de })}
+                                  </div>
+                                </div>
+                              </div>
+                              <Badge
+                                variant="outline"
+                                className="text-xs flex-shrink-0"
+                                style={{
+                                  backgroundColor: isOverdue ? 'rgba(239,68,68,0.1)' : days <= 5 ? 'rgba(245,158,11,0.1)' : 'transparent',
+                                  color: isOverdue ? '#ef4444' : days <= 5 ? '#f59e0b' : textMuted,
+                                  borderColor: isOverdue ? 'rgba(239,68,68,0.3)' : days <= 5 ? 'rgba(245,158,11,0.3)' : itemBorder,
+                                }}
+                              >
+                                {isOverdue ? 'überfällig' : days === 0 ? 'heute' : `${days}T`}
+                              </Badge>
+                            </div>
+                          </Link>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+                  )}
+                </Draggable>
+              );
+            }
+
+            if (w.id === 'uploads') {
+              return (
+                <Draggable key={w.id} draggableId={w.id} index={dragIndex} isDragDisabled={isMobile}>
+                  {(dp) => (
+                <div
+                  ref={dp.innerRef}
+                  {...dp.draggableProps}
+                  className={`${hideOnMobile ? 'hidden' : ''} rounded-xl border ${isMobile ? 'p-4' : 'p-6'} relative`}
+                  style={{ backgroundColor: cardBg, borderColor: cardBorder, ...dp.draggableProps.style }}
+                >
+                  {!isMobile && (
+                    <div {...dp.dragHandleProps} className="absolute top-2 right-2 cursor-grab active:cursor-grabbing p-1 rounded opacity-30 hover:opacity-100 transition-opacity z-[1]" title="Verschieben">
+                      <GripVertical className="h-4 w-4" style={{ color: textMuted }} />
+                    </div>
+                  )}
+                  <h2 className={`${isMobile ? 'text-base' : 'text-lg'} font-semibold flex items-center gap-2 min-w-0 mb-3`} style={{ color: headingColor }}>
+                    <Inbox className={isMobile ? 'h-4 w-4' : 'h-5 w-5'} style={{ color: accentColor }} />
+                    <span className="truncate">Kunden-Uploads (nicht abgelegt) ({pendingUploads.length})</span>
+                  </h2>
+
+                  <div className={`space-y-2 ${isMobile ? 'max-h-[420px]' : 'max-h-[600px]'} overflow-y-auto`}>
+                    {pendingUploads.length === 0 ? (
+                      <div className="text-center py-8 text-sm" style={{ color: textMuted }}>
+                        Keine offenen Uploads
+                      </div>
+                    ) : (
+                      pendingUploads.map((u) => {
+                        const cust = customerById.get(u.customer_id);
+                        return (
+                          <Link
+                            key={u.id}
+                            to={createPageUrl('Posteingang')}
+                            className={`block p-3 rounded-lg border transition-colors ${itemHoverClass}`}
+                            style={{ backgroundColor: itemBg, borderColor: itemBorder }}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 text-sm font-semibold mb-1 min-w-0" style={{ color: headingColor }}>
+                                  <FileText className="h-3.5 w-3.5 flex-shrink-0" style={{ color: textMuted }} />
+                                  <span className="truncate">{u.file_name}</span>
+                                </div>
+                                <div className="text-xs truncate" style={{ color: textMuted }}>
+                                  {cust?.company_name || `Kunde: ${u.customer_id}`}
+                                </div>
+                                {u.created_at && (
+                                  <div className="flex items-center gap-1 text-xs mt-2" style={{ color: textMuted }}>
+                                    <Clock className="h-3 w-3" />
+                                    {format(new Date(u.created_at), 'dd.MM.yyyy HH:mm', { locale: de })}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </Link>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+                  )}
+                </Draggable>
+              );
+            }
+
+            // Slot-Widgets (slotA / slotB)
+            const isA = w.id === 'slotA';
+            const slot = {
+              columnId: isA ? effectiveSlotAColumnId : effectiveSlotBColumnId,
+              priorityId: isA ? slotAPriorityId : slotBPriorityId,
+              userEmail: isA ? slotAUserEmail : slotBUserEmail,
+              setColumnId: isA ? setSlotAColumnId : setSlotBColumnId,
+              setPriorityId: isA ? setSlotAPriorityId : setSlotBPriorityId,
+              setUserEmail: isA ? setSlotAUserEmail : setSlotBUserEmail,
+            };
+            const col = taskColumns.find(c => c.id === slot.columnId);
+            const prio = slot.priorityId === 'all' ? null : priorityById.get(slot.priorityId);
+            const slotUserName = slot.userEmail === 'all' ? null : userDisplayName(slot.userEmail);
+            const colTasks = col ? slotTasks(col.id, slot.priorityId, slot.userEmail) : [];
+            return (
+              <Draggable key={w.id} draggableId={w.id} index={dragIndex} isDragDisabled={isMobile}>
+                {(dp) => (
+              <div
+                ref={dp.innerRef}
+                {...dp.draggableProps}
+                className={`${hideOnMobile ? 'hidden' : ''} rounded-xl border ${isMobile ? 'p-4' : 'p-6'} relative`}
+                style={{ backgroundColor: cardBg, borderColor: cardBorder, ...dp.draggableProps.style }}
+              >
+                {!isMobile && (
+                  <div {...dp.dragHandleProps} className="absolute top-2 right-2 cursor-grab active:cursor-grabbing p-1 rounded opacity-30 hover:opacity-100 transition-opacity z-[1]" title="Verschieben">
+                    <GripVertical className="h-4 w-4" style={{ color: textMuted }} />
+                  </div>
+                )}
+                <div className="flex items-center justify-between mb-3 gap-2">
+                  <h2 className={`${isMobile ? 'text-base' : 'text-lg'} font-semibold flex items-center gap-2 min-w-0`} style={{ color: headingColor }}>
+                    <Columns3 className={isMobile ? 'h-4 w-4' : 'h-5 w-5'} style={{ color: accentColor }} />
+                    <span className="truncate">{col?.name || (isA ? 'Spalte A' : 'Spalte B')} ({colTasks.length})</span>
+                  </h2>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 mb-3">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm" className="gap-2 h-8 text-xs" style={filterBtnStyle}>
+                        <Columns3 className="h-3.5 w-3.5" />
+                        {col ? (
+                          <div className="flex items-center gap-1.5">
+                            <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: col.color || accentColor }} />
+                            <span className="truncate max-w-[140px]">{col.name}</span>
                           </div>
                         ) : (
-                          colTasks.map((task) => renderTaskCard(task))
+                          <span>Spalte wählen</span>
                         )}
-                      </div>
-                    </div>
-                  );
-                })}
-            </div>
-          )}
-        </div>
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" style={{ backgroundColor: dropdownBg, borderColor: dropdownBorder }}>
+                      {taskColumns.length === 0 && (
+                        <DropdownMenuItem disabled style={{ color: textMuted }}>Keine Spalten</DropdownMenuItem>
+                      )}
+                      {taskColumns.map((c) => (
+                        <DropdownMenuItem key={c.id} onClick={() => slot.setColumnId(c.id)} style={{ color: dropdownText }}>
+                          <div className="flex items-center gap-2">
+                            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: c.color || accentColor }} />
+                            {c.name}
+                          </div>
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm" className="gap-2 h-8 text-xs" style={filterBtnStyle}>
+                        <Filter className="h-3.5 w-3.5" />
+                        {prio ? (
+                          <div className="flex items-center gap-1.5">
+                            <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: prio.color }} />
+                            <span className="truncate max-w-[120px]">{prio.name}</span>
+                          </div>
+                        ) : (
+                          <span>Alle Prioritäten</span>
+                        )}
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" style={{ backgroundColor: dropdownBg, borderColor: dropdownBorder }}>
+                      <DropdownMenuItem onClick={() => slot.setPriorityId('all')} style={{ color: dropdownText }}>
+                        Alle Prioritäten
+                      </DropdownMenuItem>
+                      {priorities.map((p) => (
+                        <DropdownMenuItem key={p.id} onClick={() => slot.setPriorityId(p.id)} style={{ color: dropdownText }}>
+                          <div className="flex items-center gap-2">
+                            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: p.color }} />
+                            {p.name}
+                          </div>
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm" className="gap-2 h-8 text-xs" style={filterBtnStyle}>
+                        <User className="h-3.5 w-3.5" />
+                        <span className="truncate max-w-[140px]">{slotUserName || 'Alle Personen'}</span>
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" style={{ backgroundColor: dropdownBg, borderColor: dropdownBorder }}>
+                      <DropdownMenuItem onClick={() => slot.setUserEmail('all')} style={{ color: dropdownText }}>
+                        Alle Personen
+                      </DropdownMenuItem>
+                      {currentUser?.email && (
+                        <DropdownMenuItem onClick={() => slot.setUserEmail(currentUser.email)} style={{ color: dropdownText }}>
+                          {currentUser.full_name || currentUser.email} (ich)
+                        </DropdownMenuItem>
+                      )}
+                      {allUsers
+                        .filter(u => u.email && u.email !== currentUser?.email)
+                        .map((u) => (
+                          <DropdownMenuItem key={u.id || u.email} onClick={() => slot.setUserEmail(u.email)} style={{ color: dropdownText }}>
+                            {u.full_name || u.email}
+                          </DropdownMenuItem>
+                        ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+
+                <div className={`space-y-2 ${isMobile ? 'max-h-[420px]' : 'max-h-[600px]'} overflow-y-auto`}>
+                  {!col ? (
+                    <div className="text-center py-8 text-sm" style={{ color: textMuted }}>Bitte Spalte wählen</div>
+                  ) : colTasks.length === 0 ? (
+                    <div className="text-center py-8 text-sm" style={{ color: textMuted }}>Keine Tasks</div>
+                  ) : (
+                    colTasks.map((task) => renderTaskCard(task))
+                  )}
+                </div>
+              </div>
+                )}
+              </Draggable>
+            );
+          })}
+                {droppableProvided.placeholder}
+              </div>
+            )}
+          </Droppable>
+        </DragDropContext>
       </div>
     </div>
   );
