@@ -24,8 +24,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-  DropdownMenuSeparator,
-  DropdownMenuCheckboxItem,
 } from "@/components/ui/dropdown-menu";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
@@ -43,9 +41,19 @@ export default function Dashboard() {
   const [mailSortBy, setMailSortBy] = useState("received_date");
   const [priorityFilter, setPriorityFilter] = useState("all"); // priority_id | "all"
 
-  // Second task area state
-  const [secondaryColumnIds, setSecondaryColumnIds] = useState(null); // null = use defaults
-  const [secondaryPriorityFilter, setSecondaryPriorityFilter] = useState("all");
+  // Sekundärer Bereich: zwei Slots, je mit eigener Spalte + Priorität
+  const [slotAColumnId, setSlotAColumnId] = useState(() => {
+    try { return localStorage.getItem('dashboard.slotA.columnId') || ''; } catch { return ''; }
+  });
+  const [slotAPriorityId, setSlotAPriorityId] = useState(() => {
+    try { return localStorage.getItem('dashboard.slotA.priorityId') || 'all'; } catch { return 'all'; }
+  });
+  const [slotBColumnId, setSlotBColumnId] = useState(() => {
+    try { return localStorage.getItem('dashboard.slotB.columnId') || ''; } catch { return ''; }
+  });
+  const [slotBPriorityId, setSlotBPriorityId] = useState(() => {
+    try { return localStorage.getItem('dashboard.slotB.priorityId') || 'all'; } catch { return 'all'; }
+  });
 
   // Configurable stat card (column + priority); persisted in localStorage
   const [statCardColumnId, setStatCardColumnId] = useState(() => {
@@ -205,19 +213,15 @@ export default function Dashboard() {
     return result;
   }, [mails, mailSortBy]);
 
-  // Default selection for secondary area: first 3 columns by order
-  const effectiveSecondaryColumnIds = useMemo(() => {
-    if (secondaryColumnIds !== null) return secondaryColumnIds;
-    return taskColumns.slice(0, 3).map(c => c.id);
-  }, [secondaryColumnIds, taskColumns]);
+  // Default-Spalten für Slots A/B (erste zwei Kanban-Spalten)
+  const effectiveSlotAColumnId = slotAColumnId || taskColumns[0]?.id || '';
+  const effectiveSlotBColumnId = slotBColumnId || taskColumns[1]?.id || taskColumns[0]?.id || '';
 
-  const secondaryFiltered = useMemo(() => {
-    let result = visibleTasks;
-    if (secondaryPriorityFilter !== "all") {
-      result = result.filter(t => t.priority_id === secondaryPriorityFilter);
-    }
-    return result;
-  }, [visibleTasks, secondaryPriorityFilter]);
+  const slotTasks = (columnId, priorityId) =>
+    visibleTasks.filter(t =>
+      t.column_id === columnId &&
+      (priorityId === 'all' || t.priority_id === priorityId)
+    );
 
   // Statistics
   const stats = {
@@ -238,6 +242,18 @@ export default function Dashboard() {
   useEffect(() => {
     try { localStorage.setItem('dashboard.mobileTab', mobileTab); } catch {}
   }, [mobileTab]);
+  useEffect(() => {
+    try { localStorage.setItem('dashboard.slotA.columnId', slotAColumnId); } catch {}
+  }, [slotAColumnId]);
+  useEffect(() => {
+    try { localStorage.setItem('dashboard.slotA.priorityId', slotAPriorityId); } catch {}
+  }, [slotAPriorityId]);
+  useEffect(() => {
+    try { localStorage.setItem('dashboard.slotB.columnId', slotBColumnId); } catch {}
+  }, [slotBColumnId]);
+  useEffect(() => {
+    try { localStorage.setItem('dashboard.slotB.priorityId', slotBPriorityId); } catch {}
+  }, [slotBPriorityId]);
 
   const statCardColumn = statCardColumnId === 'all' ? null : taskColumns.find(c => c.id === statCardColumnId);
   const statCardPriority = statCardPriorityId === 'all' ? null : priorityById.get(statCardPriorityId);
@@ -310,14 +326,6 @@ export default function Dashboard() {
         </div>
       </Link>
     );
-  };
-
-  const toggleSecondaryColumn = (colId) => {
-    const current = effectiveSecondaryColumnIds;
-    const next = current.includes(colId)
-      ? current.filter(id => id !== colId)
-      : [...current, colId];
-    setSecondaryColumnIds(next);
   };
 
   const formatTime = (iso) => {
@@ -736,137 +744,106 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Sekundärer Task-Bereich: Spalten-Auswahl + Priorität */}
+        {/* Sekundärer Task-Bereich: zwei konfigurierbare Slots */}
         <div className={`rounded-xl border ${isMobile ? 'p-4 mt-4' : 'p-6 mt-8'} ${isMobile && mobileTab !== 'spalten' ? 'hidden' : ''}`} style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
-          <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
-            <h2 className={`${isMobile ? 'text-base' : 'text-lg'} font-semibold flex items-center gap-2 min-w-0`} style={{ color: headingColor }}>
-              <Columns3 className={isMobile ? 'h-4 w-4' : 'h-5 w-5'} style={{ color: accentColor }} />
-              <span className="truncate">Tasks nach Spalte</span>
-            </h2>
-            <div className="flex flex-wrap items-center gap-2">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" className="gap-2" style={filterBtnStyle}>
-                    <Columns3 className="h-4 w-4" />
-                    Spalten
-                    <span className="bg-indigo-500 text-white text-xs px-1.5 py-0.5 rounded-full">
-                      {effectiveSecondaryColumnIds.length}
-                    </span>
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" style={{ backgroundColor: dropdownBg, borderColor: dropdownBorder }}>
-                  {taskColumns.length === 0 && (
-                    <DropdownMenuItem disabled style={{ color: textMuted }}>Keine Spalten</DropdownMenuItem>
-                  )}
-                  {taskColumns.map((col) => (
-                    <DropdownMenuCheckboxItem
-                      key={col.id}
-                      checked={effectiveSecondaryColumnIds.includes(col.id)}
-                      onCheckedChange={() => toggleSecondaryColumn(col.id)}
-                    >
-                      <div className="flex items-center gap-2">
-                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: col.color || accentColor }} />
-                        {col.name}
-                      </div>
-                    </DropdownMenuCheckboxItem>
-                  ))}
-                  {taskColumns.length > 0 && (
-                    <>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        onClick={() => setSecondaryColumnIds(taskColumns.map(c => c.id))}
-                        style={{ color: dropdownText }}
-                      >
-                        Alle anzeigen
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => setSecondaryColumnIds(null)}
-                        style={{ color: dropdownText }}
-                      >
-                        Standard (erste 3)
-                      </DropdownMenuItem>
-                    </>
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
+          <h2 className={`${isMobile ? 'text-base' : 'text-lg'} font-semibold flex items-center gap-2 min-w-0 mb-4`} style={{ color: headingColor }}>
+            <Columns3 className={isMobile ? 'h-4 w-4' : 'h-5 w-5'} style={{ color: accentColor }} />
+            <span className="truncate">Tasks nach Spalte</span>
+          </h2>
 
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" className="gap-2" style={filterBtnStyle}>
-                    <Filter className="h-4 w-4" />
-                    {secondaryPriorityFilter === "all"
-                      ? "Alle Prioritäten"
-                      : priorityById.get(secondaryPriorityFilter)?.name || "Priorität"}
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" style={{ backgroundColor: dropdownBg, borderColor: dropdownBorder }}>
-                  <DropdownMenuItem onClick={() => setSecondaryPriorityFilter("all")} style={{ color: dropdownText }}>
-                    Alle Prioritäten
-                  </DropdownMenuItem>
-                  {priorities.map((p) => (
-                    <DropdownMenuItem
-                      key={p.id}
-                      onClick={() => setSecondaryPriorityFilter(p.id)}
-                      style={{ color: dropdownText }}
-                    >
-                      <div className="flex items-center gap-2">
-                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: p.color }} />
-                        {p.name}
-                      </div>
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          </div>
-
-          {effectiveSecondaryColumnIds.length === 0 ? (
-            <div className="text-center py-8 text-sm" style={{ color: textMuted }}>
-              Keine Spalten ausgewählt
-            </div>
-          ) : (
-            <div
-              className={`grid gap-3 ${
-                isMobile
-                  ? 'grid-cols-1'
-                  : effectiveSecondaryColumnIds.length === 1
-                  ? 'grid-cols-1'
-                  : effectiveSecondaryColumnIds.length === 2
-                  ? 'grid-cols-1 md:grid-cols-2'
-                  : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'
-              }`}
-            >
-              {taskColumns
-                .filter(c => effectiveSecondaryColumnIds.includes(c.id))
-                .map((col) => {
-                  const colTasks = secondaryFiltered.filter(t => t.column_id === col.id);
-                  return (
-                    <div
-                      key={col.id}
-                      className="rounded-lg border p-3"
-                      style={{ backgroundColor: itemBg, borderColor: itemBorder }}
-                    >
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: col.color || accentColor }} />
-                          <div className="text-sm font-semibold truncate" style={{ color: headingColor }}>{col.name}</div>
-                        </div>
-                        <span className="text-xs" style={{ color: textMuted }}>{colTasks.length}</span>
-                      </div>
-                      <div className={`space-y-2 ${isMobile ? 'max-h-[260px]' : 'max-h-[420px]'} overflow-y-auto`}>
-                        {colTasks.length === 0 ? (
-                          <div className="text-center py-6 text-xs" style={{ color: textMuted }}>
-                            Keine Tasks
-                          </div>
-                        ) : (
-                          colTasks.map((task) => renderTaskCard(task))
+          <div className={`grid gap-4 ${isMobile ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2'}`}>
+            {[
+              { columnId: effectiveSlotAColumnId, priorityId: slotAPriorityId, setColumnId: setSlotAColumnId, setPriorityId: setSlotAPriorityId, key: 'A' },
+              { columnId: effectiveSlotBColumnId, priorityId: slotBPriorityId, setColumnId: setSlotBColumnId, setPriorityId: setSlotBPriorityId, key: 'B' },
+            ].map((slot) => {
+              const col = taskColumns.find(c => c.id === slot.columnId);
+              const prio = slot.priorityId === 'all' ? null : priorityById.get(slot.priorityId);
+              const colTasks = col ? slotTasks(col.id, slot.priorityId) : [];
+              return (
+                <div
+                  key={slot.key}
+                  className="rounded-lg border p-3"
+                  style={{ backgroundColor: itemBg, borderColor: itemBorder }}
+                >
+                  <div className="flex flex-wrap items-center gap-2 mb-3">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" size="sm" className="gap-2 h-8 text-xs" style={filterBtnStyle}>
+                          <Columns3 className="h-3.5 w-3.5" />
+                          {col ? (
+                            <div className="flex items-center gap-1.5">
+                              <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: col.color || accentColor }} />
+                              <span className="truncate max-w-[140px]">{col.name}</span>
+                            </div>
+                          ) : (
+                            <span>Spalte wählen</span>
+                          )}
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" style={{ backgroundColor: dropdownBg, borderColor: dropdownBorder }}>
+                        {taskColumns.length === 0 && (
+                          <DropdownMenuItem disabled style={{ color: textMuted }}>Keine Spalten</DropdownMenuItem>
                         )}
+                        {taskColumns.map((c) => (
+                          <DropdownMenuItem key={c.id} onClick={() => slot.setColumnId(c.id)} style={{ color: dropdownText }}>
+                            <div className="flex items-center gap-2">
+                              <div className="w-3 h-3 rounded-full" style={{ backgroundColor: c.color || accentColor }} />
+                              {c.name}
+                            </div>
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" size="sm" className="gap-2 h-8 text-xs" style={filterBtnStyle}>
+                          <Filter className="h-3.5 w-3.5" />
+                          {prio ? (
+                            <div className="flex items-center gap-1.5">
+                              <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: prio.color }} />
+                              <span className="truncate max-w-[120px]">{prio.name}</span>
+                            </div>
+                          ) : (
+                            <span>Alle Prioritäten</span>
+                          )}
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" style={{ backgroundColor: dropdownBg, borderColor: dropdownBorder }}>
+                        <DropdownMenuItem onClick={() => slot.setPriorityId('all')} style={{ color: dropdownText }}>
+                          Alle Prioritäten
+                        </DropdownMenuItem>
+                        {priorities.map((p) => (
+                          <DropdownMenuItem key={p.id} onClick={() => slot.setPriorityId(p.id)} style={{ color: dropdownText }}>
+                            <div className="flex items-center gap-2">
+                              <div className="w-3 h-3 rounded-full" style={{ backgroundColor: p.color }} />
+                              {p.name}
+                            </div>
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+
+                    <span className="text-xs ml-auto" style={{ color: textMuted }}>{colTasks.length}</span>
+                  </div>
+
+                  <div className={`space-y-2 ${isMobile ? 'max-h-[320px]' : 'max-h-[480px]'} overflow-y-auto`}>
+                    {!col ? (
+                      <div className="text-center py-6 text-xs" style={{ color: textMuted }}>
+                        Bitte Spalte wählen
                       </div>
-                    </div>
-                  );
-                })}
-            </div>
-          )}
+                    ) : colTasks.length === 0 ? (
+                      <div className="text-center py-6 text-xs" style={{ color: textMuted }}>
+                        Keine Tasks
+                      </div>
+                    ) : (
+                      colTasks.map((task) => renderTaskCard(task))
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
     </div>
