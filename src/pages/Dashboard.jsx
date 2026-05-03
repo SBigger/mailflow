@@ -55,6 +55,11 @@ export default function Dashboard() {
     try { return localStorage.getItem('dashboard.statCard.priorityId') || 'all'; } catch { return 'all'; }
   });
 
+  // Mobile-Tab (welcher Bereich sichtbar ist), persistiert
+  const [mobileTab, setMobileTab] = useState(() => {
+    try { return localStorage.getItem('dashboard.mobileTab') || 'tasks'; } catch { return 'tasks'; }
+  });
+
   const { theme } = useTheme();
   const isDark = theme === 'dark';
   const isArtis = theme === 'artis';
@@ -230,6 +235,9 @@ export default function Dashboard() {
   useEffect(() => {
     try { localStorage.setItem('dashboard.statCard.priorityId', statCardPriorityId); } catch {}
   }, [statCardPriorityId]);
+  useEffect(() => {
+    try { localStorage.setItem('dashboard.mobileTab', mobileTab); } catch {}
+  }, [mobileTab]);
 
   const statCardColumn = statCardColumnId === 'all' ? null : taskColumns.find(c => c.id === statCardColumnId);
   const statCardPriority = statCardPriorityId === 'all' ? null : priorityById.get(statCardPriorityId);
@@ -318,7 +326,6 @@ export default function Dashboard() {
   };
 
   const containerPadding = isMobile ? 'p-3' : 'p-6';
-  const sectionGap = isMobile ? 'mb-4' : 'mb-8';
 
   return (
     <div className={`h-screen overflow-y-auto ${containerPadding}`}>
@@ -383,8 +390,14 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Statistics Cards */}
-        <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 ${isMobile ? 'gap-3 mb-4' : 'gap-4 mb-8'}`}>
+        {/* Statistics Cards (mobile: horizontal snap-scroll) */}
+        <div
+          className={
+            isMobile
+              ? 'flex gap-3 overflow-x-auto snap-x snap-mandatory mb-4 -mx-3 px-3 pb-1 [&>*]:snap-start [&>*]:shrink-0 [&>*]:w-[82%]'
+              : 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8'
+          }
+        >
           <div className={`rounded-xl border ${isMobile ? 'p-4' : 'p-6'}`} style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
             <div className="flex items-center justify-between">
               <div>
@@ -471,8 +484,49 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {/* Mobile Pill-Tabs */}
+        {isMobile && (
+          <div className="sticky top-0 z-10 -mx-3 px-3 py-2 mb-3 backdrop-blur" style={{ backgroundColor: cardBg, borderBottom: `1px solid ${cardBorder}` }}>
+            <div className="flex gap-1.5 overflow-x-auto -mx-1 px-1">
+              {[
+                { id: 'tasks', label: 'Tasks', count: filteredTasks.length },
+                { id: 'mails', label: 'E-Mails', count: filteredMails.length },
+                ...(showCalendar ? [{ id: 'termine', label: 'Termine', count: calendarEvents.length }] : []),
+                { id: 'spalten', label: 'Spalten', count: null },
+              ].map(({ id, label, count }) => {
+                const active = mobileTab === id;
+                return (
+                  <button
+                    key={id}
+                    onClick={() => setMobileTab(id)}
+                    className="px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors flex items-center gap-1.5 touch-manipulation"
+                    style={{
+                      backgroundColor: active ? accentColor : 'transparent',
+                      color: active ? '#ffffff' : textBody,
+                      border: `1px solid ${active ? accentColor : cardBorder}`,
+                    }}
+                  >
+                    {label}
+                    {count !== null && count !== undefined && (
+                      <span
+                        className="text-[10px] px-1.5 py-0.5 rounded-full"
+                        style={{
+                          backgroundColor: active ? 'rgba(255,255,255,0.25)' : itemBg,
+                          color: active ? '#ffffff' : textMuted,
+                        }}
+                      >
+                        {count}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Termine (read-only Outlook) */}
-        {showCalendar && (
+        {showCalendar && (!isMobile || mobileTab === 'termine') && (
           <div className={`rounded-xl border ${isMobile ? 'p-4 mb-4' : 'p-6 mb-8'}`} style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
             <h2 className={`${isMobile ? 'text-base' : 'text-lg'} font-semibold mb-4 flex items-center gap-2`} style={{ color: headingColor }}>
               <CalendarDays className={isMobile ? 'h-4 w-4' : 'h-5 w-5'} style={{ color: accentColor }} />
@@ -520,7 +574,7 @@ export default function Dashboard() {
         )}
 
         {/* Filters (primary task list) */}
-        <div className={`flex flex-wrap items-center ${isMobile ? 'gap-2 mb-4' : 'gap-3 mb-6'}`}>
+        <div className={`flex flex-wrap items-center ${isMobile ? 'gap-2 mb-4' : 'gap-3 mb-6'} ${isMobile && mobileTab !== 'tasks' ? 'hidden' : ''}`}>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size={isMobile ? 'sm' : 'default'} className="gap-2" style={filterBtnStyle}>
@@ -571,9 +625,9 @@ export default function Dashboard() {
           </DropdownMenu>
         </div>
 
-        <div className={`grid grid-cols-1 lg:grid-cols-2 ${isMobile ? 'gap-4' : 'gap-6'}`}>
+        <div className={`grid grid-cols-1 lg:grid-cols-2 ${isMobile ? 'gap-4' : 'gap-6'} ${isMobile && mobileTab !== 'tasks' && mobileTab !== 'mails' ? 'hidden' : ''}`}>
           {/* Tasks Section */}
-          <div className={`rounded-xl border ${isMobile ? 'p-4' : 'p-6'}`} style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
+          <div className={`rounded-xl border ${isMobile ? 'p-4' : 'p-6'} ${isMobile && mobileTab !== 'tasks' ? 'hidden' : ''}`} style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
             <div className="flex items-center justify-between mb-4 gap-2">
               <h2 className={`${isMobile ? 'text-base' : 'text-lg'} font-semibold flex items-center gap-2 min-w-0`} style={{ color: headingColor }}>
                 <CheckSquare className={isMobile ? 'h-4 w-4' : 'h-5 w-5'} style={{ color: accentColor }} />
@@ -612,7 +666,7 @@ export default function Dashboard() {
           </div>
 
           {/* Mails Section */}
-          <div className={`rounded-xl border ${isMobile ? 'p-4' : 'p-6'}`} style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
+          <div className={`rounded-xl border ${isMobile ? 'p-4' : 'p-6'} ${isMobile && mobileTab !== 'mails' ? 'hidden' : ''}`} style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
             <div className="flex items-center justify-between mb-4 gap-2">
               <h2 className={`${isMobile ? 'text-base' : 'text-lg'} font-semibold flex items-center gap-2 min-w-0`} style={{ color: headingColor }}>
                 <Mail className={isMobile ? 'h-4 w-4' : 'h-5 w-5'} style={{ color: mailColor }} />
@@ -683,7 +737,7 @@ export default function Dashboard() {
         </div>
 
         {/* Sekundärer Task-Bereich: Spalten-Auswahl + Priorität */}
-        <div className={`rounded-xl border ${isMobile ? 'p-4 mt-4' : 'p-6 mt-8'}`} style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
+        <div className={`rounded-xl border ${isMobile ? 'p-4 mt-4' : 'p-6 mt-8'} ${isMobile && mobileTab !== 'spalten' ? 'hidden' : ''}`} style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
           <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
             <h2 className={`${isMobile ? 'text-base' : 'text-lg'} font-semibold flex items-center gap-2 min-w-0`} style={{ color: headingColor }}>
               <Columns3 className={isMobile ? 'h-4 w-4' : 'h-5 w-5'} style={{ color: accentColor }} />
