@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Clock, FileText, Database, BarChart3, Smartphone } from 'lucide-react';
+import { Clock, FileText, Database, BarChart3, Smartphone, Banknote } from 'lucide-react';
 
 import TagesansichtPanel from '@/components/leistungserfassung/TagesansichtPanel';
 import MitarbeiterPanel from '@/components/leistungserfassung/MitarbeiterPanel';
@@ -30,6 +30,7 @@ import ProjektVorlagenPanel from '@/components/leistungserfassung/ProjektVorlage
 import MobileVorschauPanel from '@/components/leistungserfassung/MobileVorschauPanel';
 import DebitorenOPPanel from '@/components/leistungserfassung/DebitorenOPPanel';
 import MitarbeitergruppenPanel from '@/components/leistungserfassung/MitarbeitergruppenPanel';
+import MwstSaetzePanel from '@/components/leistungserfassung/MwstSaetzePanel';
 import KalenderTagPanel from '@/components/leistungserfassung/KalenderTagPanel';
 import KalenderWochePanel from '@/components/leistungserfassung/KalenderWochePanel';
 
@@ -56,13 +57,18 @@ const NAV = [
       { id: 'fakvor',     label: 'Faktura-Vorschlag',    comp: FakturaVorschlagPanel },
       { id: 'entw-durch', label: 'Entwurfs-Durchgang',   comp: EntwurfsDurchgangPanel },
       { id: 'rechn-list', label: 'Rechnungsübersicht',   comp: RechnungsuebersichtPanel },
-      { id: 'op-liste',   label: 'Debitoren-OP',         comp: DebitorenOPPanel },
       { id: 'akonto',     label: 'Akonto',               comp: AkontoPanel },
-      { id: 'mahnung',    label: 'Mahnwesen',            comp: MahnungenPanel },
-      { id: 'zahlung',    label: 'Zahlungseingänge',     comp: ZahlungseingaengePanel },
       { id: 'gutschrift', label: 'Gutschrift/Storno',    comp: GutschriftPanel },
       { id: 'spesen-abr', label: 'Spesen abrechnen',     comp: SpesenAbrechnenPanel },
       { id: 'wiederk',    label: 'Wiederkehrende',       comp: WiederkehrendePanel },
+    ],
+  },
+  {
+    id: 'debitoren', label: 'Debitoren', icon: Banknote,
+    sec: [
+      { id: 'op-liste', label: 'Offene Posten',     comp: DebitorenOPPanel },
+      { id: 'mahnung',  label: 'Mahnwesen',         comp: MahnungenPanel },
+      { id: 'zahlung',  label: 'Zahlungseingänge',  comp: ZahlungseingaengePanel },
     ],
   },
   {
@@ -75,6 +81,7 @@ const NAV = [
       { id: 'sd-sollzeit', label: 'Sollzeiten-Profile',  comp: SollzeitenPanel },
       { id: 'sd-leistung', label: 'Leistungsarten',      comp: LeistungsartenPanel },
       { id: 'sd-gruppen',  label: 'Gruppenansätze',      comp: GruppenansaetzePanel },
+      { id: 'sd-mwst',     label: 'MWST-Sätze',          comp: MwstSaetzePanel },
       { id: 'sd-kondi',    label: 'Kunden-Konditionen',  comp: KundenKonditionenPanel },
       { id: 'sd-templ',    label: 'Rechnungs-Templates', comp: RechnungsTemplatesPanel },
       { id: 'sd-nummern',  label: 'Nummernkreise',       comp: NummernkreisePanel },

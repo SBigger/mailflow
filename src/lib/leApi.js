@@ -796,6 +796,43 @@ export const leCustomerTerms = {
   },
 };
 
+// ---------- VAT Rates (MWST-Sätze) ----------
+export const leVatRate = {
+  list: async () => {
+    const { data, error } = await supabase
+      .from('le_vat_rate')
+      .select('*')
+      .order('sort_order')
+      .order('valid_from', { ascending: false });
+    if (error) throw error;
+    return data ?? [];
+  },
+  create: async (payload) => {
+    const { data, error } = await supabase.from('le_vat_rate').insert(payload).select().single();
+    if (error) throw error;
+    return data;
+  },
+  update: async (id, patch) => {
+    const { data, error } = await supabase.from('le_vat_rate').update(patch).eq('id', id).select().single();
+    if (error) throw error;
+    return data;
+  },
+  remove: async (id) => {
+    const { error } = await supabase.from('le_vat_rate').delete().eq('id', id);
+    if (error) throw error;
+  },
+};
+
+// Resolver: aktueller Satz für einen Code an einem Datum
+export function resolveVatRate(code, date, allRates = []) {
+  if (!code) return 0;
+  const d = date || new Date().toISOString().slice(0, 10);
+  const match = allRates
+    .filter(r => r.code === code && r.active !== false && r.valid_from <= d && (r.valid_to == null || r.valid_to >= d))
+    .sort((a, b) => b.valid_from.localeCompare(a.valid_from))[0];
+  return match ? Number(match.rate) : 0;
+}
+
 // ---------- Number Sequences ----------
 export const leNumberSequence = {
   list: async () => {
