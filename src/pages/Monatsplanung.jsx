@@ -691,9 +691,9 @@ export default function Monatsplanung() {
     setAllCustomers(all);
 
     // Nur Kunden mit Plänen für Übersicht
-    const usedIds = new Set((plansData || plans).map(p => p.customer_id));
+    const usedIds = new Set((plansData || []).map(p => p.customer_id));
     setCustomers(all.filter(c => usedIds.has(c.id)));
-  }, [plans]);
+  }, []);
 
   const loadEntries = useCallback(async (planId, yr) => {
     if (!planId) { setEntries([]); return; }
