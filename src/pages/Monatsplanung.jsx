@@ -173,7 +173,7 @@ function PlanTabs({ plans, selectedPlanId, onSelect, onAdd, onRename, onDelete, 
           )}
           {plan.id === selectedPlanId && (
             <button
-              onClick={() => { if (window.confirm(`Plan "${plan.name}" wirklich löschen? Alle Einträge werden entfernt.`)) onDelete(plan.id); }}
+              onClick={() => onDelete(plan.id)}
               style={{ border: "none", background: "transparent", cursor: "pointer", padding: "0 5px 0 0", color: subtle }}
             >
               <X size={10} />
@@ -236,6 +236,56 @@ function YearChangeDialog({ fromYear, toYear, onConfirm, onCancel, colors }) {
           >
             Ja, übertragen
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Einfaches Texteingabe-Modal (ersetzt window.prompt) ──────────────────────
+
+function SimpleInputModal({ title, placeholder, defaultValue = "", onConfirm, onClose, colors }) {
+  const { cardBg, border, text, subtle, accent, pageBg } = colors;
+  const [value, setValue] = useState(defaultValue);
+  const inputRef = useRef(null);
+  useEffect(() => { inputRef.current?.focus(); }, []);
+  const confirm = () => { if (value.trim()) { onConfirm(value.trim()); onClose(); } };
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.35)", display: "flex", alignItems: "center", justifyContent: "center" }}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{ background: cardBg, border: `1px solid ${border}`, borderRadius: 12, padding: "24px 28px", width: 380, maxWidth: "94vw", boxShadow: "0 16px 40px rgba(0,0,0,0.18)" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+          <span style={{ fontSize: 14, fontWeight: 700, color: text }}>{title}</span>
+          <button onClick={onClose} style={{ border: "none", background: "none", cursor: "pointer", color: subtle }}><X size={15} /></button>
+        </div>
+        <input
+          ref={inputRef}
+          value={value}
+          onChange={e => setValue(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter") confirm(); if (e.key === "Escape") onClose(); }}
+          placeholder={placeholder}
+          style={{ width: "100%", padding: "8px 10px", border: `1px solid ${border}`, borderRadius: 7, fontSize: 13, background: pageBg, color: text, outline: "none", boxSizing: "border-box", marginBottom: 16 }}
+        />
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button onClick={onClose} style={{ padding: "7px 16px", border: `1px solid ${border}`, borderRadius: 7, background: "transparent", color: text, fontSize: 13, cursor: "pointer" }}>Abbrechen</button>
+          <button onClick={confirm} disabled={!value.trim()} style={{ padding: "7px 18px", border: "none", borderRadius: 7, background: accent, color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", opacity: value.trim() ? 1 : 0.5 }}>OK</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Bestätigungs-Modal (ersetzt window.confirm) ───────────────────────────────
+
+function ConfirmModal({ message, onConfirm, onClose, colors, danger = true }) {
+  const { cardBg, border, text, subtle, accent } = colors;
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 220, background: "rgba(0,0,0,0.35)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ background: cardBg, border: `1px solid ${border}`, borderRadius: 12, padding: "24px 28px", width: 380, maxWidth: "94vw", boxShadow: "0 16px 40px rgba(0,0,0,0.18)" }}>
+        <p style={{ margin: "0 0 20px", fontSize: 13, color: text, lineHeight: 1.5 }}>{message}</p>
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button onClick={onClose} style={{ padding: "7px 16px", border: `1px solid ${border}`, borderRadius: 7, background: "transparent", color: text, fontSize: 13, cursor: "pointer" }}>Abbrechen</button>
+          <button onClick={() => { onConfirm(); onClose(); }} style={{ padding: "7px 18px", border: "none", borderRadius: 7, background: danger ? "#dc2626" : accent, color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Löschen</button>
         </div>
       </div>
     </div>
@@ -361,7 +411,7 @@ function EntryModal({ mode, entry, planId, month, year, existingTitles, onSave, 
           <div>
             {mode === "edit" && (
               <button
-                onClick={() => { if (window.confirm("Eintrag wirklich löschen?")) onDelete(entry.id); }}
+                onClick={() => onDelete(entry.id)}
                 style={{
                   display: "flex", alignItems: "center", gap: 4,
                   padding: "7px 14px", border: `1px solid #fca5a5`, borderRadius: 7,
@@ -668,6 +718,8 @@ export default function Monatsplanung() {
   const [selectedPlanId, setSelectedPlanId]         = useState(null);
   const [modal, setModal]             = useState(null);  // { mode:"create"|"edit", entry?, month, title? }
   const [yearDialog, setYearDialog]   = useState(null);  // { from, to }
+  const [promptModal, setPromptModal] = useState(null);  // { title, placeholder, defaultValue, onConfirm }
+  const [confirmModal, setConfirmModal] = useState(null); // { message, onConfirm }
   const [loading, setLoading]         = useState(true);
 
   // ── Laden ────────────────────────────────────────────────────────────
@@ -765,22 +817,26 @@ export default function Monatsplanung() {
 
   // ── Plan CRUD ────────────────────────────────────────────────────────
 
-  const handleAddPlan = async () => {
-    const name = window.prompt("Name des neuen Plans:");
-    if (!name?.trim()) return;
-    const { data: { user } } = await supabase.auth.getUser();
-    const { data, error } = await supabase
-      .from("mp_plans")
-      .insert({ customer_id: selectedCustomerId, name: name.trim(), created_by: user?.id })
-      .select().single();
-    if (error) { toast.error(error.message); return; }
-    const updated = [...plans, data];
-    setPlans(updated);
-    setSelectedPlanId(data.id);
-    // Kunden-Liste aktualisieren
-    const usedIds = new Set(updated.map(p => p.customer_id));
-    setCustomers(allCustomers.filter(c => usedIds.has(c.id)));
-    toast.success("Plan erstellt ✓");
+  const handleAddPlan = () => {
+    setPromptModal({
+      title: "Neuer Plan",
+      placeholder: "z.B. Verwaltungsratstätigkeit",
+      defaultValue: "",
+      onConfirm: async (name) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        const { data, error } = await supabase
+          .from("mp_plans")
+          .insert({ customer_id: selectedCustomerId, name, created_by: user?.id })
+          .select().single();
+        if (error) { toast.error(error.message); return; }
+        const updated = [...plans, data];
+        setPlans(updated);
+        setSelectedPlanId(data.id);
+        const usedIds = new Set(updated.map(p => p.customer_id));
+        setCustomers(allCustomers.filter(c => usedIds.has(c.id)));
+        toast.success("Plan erstellt ✓");
+      },
+    });
   };
 
   const handleRenamePlan = async (planId, newName) => {
@@ -789,17 +845,22 @@ export default function Monatsplanung() {
     setPlans(prev => prev.map(p => p.id === planId ? { ...p, name: newName } : p));
   };
 
-  const handleDeletePlan = async (planId) => {
-    const { error } = await supabase.from("mp_plans").delete().eq("id", planId);
-    if (error) { toast.error(error.message); return; }
-    const updated = plans.filter(p => p.id !== planId);
-    setPlans(updated);
-    const usedIds = new Set(updated.map(p => p.customer_id));
-    setCustomers(allCustomers.filter(c => usedIds.has(c.id)));
-    // Nächsten Plan auswählen
-    const remaining = updated.filter(p => p.customer_id === selectedCustomerId);
-    setSelectedPlanId(remaining.length > 0 ? remaining[0].id : null);
-    toast.success("Plan gelöscht");
+  const handleDeletePlan = (planId) => {
+    const plan = plans.find(p => p.id === planId);
+    setConfirmModal({
+      message: `Plan "${plan?.name}" wirklich löschen? Alle Einträge werden entfernt.`,
+      onConfirm: async () => {
+        const { error } = await supabase.from("mp_plans").delete().eq("id", planId);
+        if (error) { toast.error(error.message); return; }
+        const updated = plans.filter(p => p.id !== planId);
+        setPlans(updated);
+        const usedIds = new Set(updated.map(p => p.customer_id));
+        setCustomers(allCustomers.filter(c => usedIds.has(c.id)));
+        const remaining = updated.filter(p => p.customer_id === selectedCustomerId);
+        setSelectedPlanId(remaining.length > 0 ? remaining[0].id : null);
+        toast.success("Plan gelöscht");
+      },
+    });
   };
 
   // ── Eintrag CRUD ─────────────────────────────────────────────────────
@@ -842,46 +903,19 @@ export default function Monatsplanung() {
     setModal(null);
   };
 
-  const handleDeleteEntry = async (entryId) => {
-    const { error } = await supabase.from("mp_entries").delete().eq("id", entryId);
-    if (error) { toast.error(error.message); return; }
-    setEntries(prev => prev.filter(e => e.id !== entryId));
-    setModal(null);
-    toast.success("Gelöscht");
+  const handleDeleteEntry = (entryId) => {
+    setConfirmModal({
+      message: "Eintrag wirklich löschen?",
+      onConfirm: async () => {
+        const { error } = await supabase.from("mp_entries").delete().eq("id", entryId);
+        if (error) { toast.error(error.message); return; }
+        setEntries(prev => prev.filter(e => e.id !== entryId));
+        setModal(null);
+        toast.success("Gelöscht");
+      },
+    });
   };
 
-  // ── Neuen Kunden + Plan anlegen ──────────────────────────────────────
-
-  const handleNewCustomerPlan = async () => {
-    // Öffne Kunden-Auswahl aus allen Kunden
-    const name = window.prompt(
-      "Kunden-Name eingeben (oder wähle zuerst einen Kunden aus der Liste und klicke dann '+ Plan'):"
-    );
-    if (!name?.trim()) return;
-    // Suche in allen Kunden
-    const match = allCustomers.find(c =>
-      (c.company_name || "").toLowerCase().includes(name.toLowerCase())
-    );
-    if (!match) { toast.error("Kunde nicht gefunden. Bitte Kunden zuerst in der Kundenverwaltung anlegen."); return; }
-
-    const planName = window.prompt(`Plan-Name für "${match.company_name}":`);
-    if (!planName?.trim()) return;
-
-    const { data: { user } } = await supabase.auth.getUser();
-    const { data, error } = await supabase
-      .from("mp_plans")
-      .insert({ customer_id: match.id, name: planName.trim(), created_by: user?.id })
-      .select().single();
-    if (error) { toast.error(error.message); return; }
-
-    const updated = [...plans, data];
-    setPlans(updated);
-    const usedIds = new Set(updated.map(p => p.customer_id));
-    setCustomers(allCustomers.filter(c => usedIds.has(c.id)));
-    setSelectedCustomerId(match.id);
-    setSelectedPlanId(data.id);
-    toast.success(`Plan "${planName}" für ${match.company_name} erstellt ✓`);
-  };
 
   // ── Derived ──────────────────────────────────────────────────────────
 
@@ -928,19 +962,6 @@ export default function Monatsplanung() {
           onSelect={handleSelectCustomer}
           colors={colors}
         />
-
-        {/* Neuer Kunde/Plan Button */}
-        <button
-          onClick={handleNewCustomerPlan}
-          title="Neuen Kunden mit Plan anlegen"
-          style={{
-            display: "flex", alignItems: "center", gap: 4,
-            padding: "5px 10px", border: `1px dashed ${border}`, borderRadius: 7,
-            background: "transparent", color: subtle, fontSize: 12, cursor: "pointer",
-          }}
-        >
-          <Plus size={11} /> Neuer Kunde
-        </button>
 
         {/* Plan-Tabs – nur wenn Kunde ausgewählt */}
         {selectedCustomerId && (
@@ -1040,6 +1061,26 @@ export default function Monatsplanung() {
           toYear={yearDialog.to}
           onConfirm={confirmYearChange}
           onCancel={cancelYearChange}
+          colors={colors}
+        />
+      )}
+
+      {promptModal && (
+        <SimpleInputModal
+          title={promptModal.title}
+          placeholder={promptModal.placeholder}
+          defaultValue={promptModal.defaultValue}
+          onConfirm={promptModal.onConfirm}
+          onClose={() => setPromptModal(null)}
+          colors={colors}
+        />
+      )}
+
+      {confirmModal && (
+        <ConfirmModal
+          message={confirmModal.message}
+          onConfirm={confirmModal.onConfirm}
+          onClose={() => setConfirmModal(null)}
           colors={colors}
         />
       )}
