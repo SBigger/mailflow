@@ -452,7 +452,7 @@ function EntryModal({ mode, entry, planId, month, year, existingTitles, onSave, 
 
 // ── Übersichtsseite (Kunden ohne Plan ausgewählt) ─────────────────────────────
 
-function Uebersicht({ customersWithPlans, plansByCustomer, onSelectCustomer, colors }) {
+function Uebersicht({ customersWithPlans, plansByCustomer, onSelectCustomer, onDeleteCustomer, colors }) {
   const { cardBg, border, text, subtle, accent, pageBg } = colors;
   const [search, setSearch] = useState("");
 
@@ -489,17 +489,33 @@ function Uebersicht({ customersWithPlans, plansByCustomer, onSelectCustomer, col
           {filtered.map(c => {
             const plans = plansByCustomer[c.id] || [];
             return (
-              <button
+              <div
                 key={c.id}
-                onClick={() => onSelectCustomer(c.id)}
                 style={{
-                  textAlign: "left", background: cardBg, border: `1px solid ${border}`,
+                  position: "relative", background: cardBg, border: `1px solid ${border}`,
                   borderRadius: 10, padding: "14px 16px", cursor: "pointer",
                   transition: "border-color 0.15s, box-shadow 0.15s",
                 }}
-                onMouseEnter={e => { e.currentTarget.style.borderColor = accent; e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.08)"; }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = border; e.currentTarget.style.boxShadow = "none"; }}
+                onClick={() => onSelectCustomer(c.id)}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = accent; e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.08)"; e.currentTarget.querySelector(".del-btn").style.opacity = "1"; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = border; e.currentTarget.style.boxShadow = "none"; e.currentTarget.querySelector(".del-btn").style.opacity = "0"; }}
               >
+                {/* Löschen-Button */}
+                <button
+                  className="del-btn"
+                  onClick={e => { e.stopPropagation(); onDeleteCustomer(c); }}
+                  title="Alle Pläne dieses Kunden löschen"
+                  style={{
+                    position: "absolute", top: 8, right: 8,
+                    border: "none", background: "transparent", cursor: "pointer",
+                    color: "#dc2626", padding: 4, borderRadius: 5,
+                    opacity: 0, transition: "opacity 0.15s",
+                    display: "flex", alignItems: "center",
+                  }}
+                >
+                  <Trash2 size={13} />
+                </button>
+
                 <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 8 }}>
                   <Building2 size={13} style={{ color: accent }} />
                   <span style={{ fontSize: 13, fontWeight: 700, color: text }}>{c.company_name}</span>
@@ -518,7 +534,7 @@ function Uebersicht({ customersWithPlans, plansByCustomer, onSelectCustomer, col
                     </span>
                   ))}
                 </div>
-              </button>
+              </div>
             );
           })}
         </div>
@@ -839,6 +855,23 @@ export default function Monatsplanung() {
     });
   };
 
+  const handleDeleteCustomer = (customer) => {
+    const custPlansCount = (plansByCustomer[customer.id] || []).length;
+    setConfirmModal({
+      message: `Alle ${custPlansCount} Plan(s) von „${customer.company_name}" wirklich löschen? Alle Einträge werden entfernt.`,
+      onConfirm: async () => {
+        const custPlanIds = (plansByCustomer[customer.id] || []).map(p => p.id);
+        const { error } = await supabase.from("mp_plans").delete().in("id", custPlanIds);
+        if (error) { toast.error(error.message); return; }
+        const updated = plans.filter(p => p.customer_id !== customer.id);
+        setPlans(updated);
+        const usedIds = new Set(updated.map(p => p.customer_id));
+        setCustomers(allCustomers.filter(c => usedIds.has(c.id)));
+        toast.success(`Pläne von ${customer.company_name} gelöscht`);
+      },
+    });
+  };
+
   const handleRenamePlan = async (planId, newName) => {
     const { error } = await supabase.from("mp_plans").update({ name: newName }).eq("id", planId);
     if (error) { toast.error(error.message); return; }
@@ -1026,6 +1059,7 @@ export default function Monatsplanung() {
           customersWithPlans={customers}
           plansByCustomer={plansByCustomer}
           onSelectCustomer={handleSelectCustomer}
+          onDeleteCustomer={handleDeleteCustomer}
           colors={colors}
         />
       ) : (
