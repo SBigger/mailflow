@@ -923,7 +923,7 @@ export default function Monatsplanung() {
 
         {/* Kunden-Selector */}
         <KundenSelector
-          customers={customers}
+          customers={allCustomers}
           selectedId={selectedCustomerId}
           onSelect={handleSelectCustomer}
           colors={colors}
