@@ -235,13 +235,15 @@ export default function KalenderTagPanel() {
   }, [entries]);
 
   const outlookItems = useMemo(() => {
-    return (ms365.calendar ?? []).filter((c) => !c.isCancelled && !c.isAllDay).map((c) => {
+    const items = (ms365.calendar ?? []).filter((c) => !c.isCancelled && !c.isAllDay).map((c) => {
       const from = timeFromIso(c.start);
       const to = timeFromIso(c.end);
       const fromMin = minutesFromHHMM(from);
       const toMin = minutesFromHHMM(to);
-      return { ...c, fromMin, toMin };
+      return { id: `out-${c.id}`, fromMin, toMin, cal: c };
     }).filter((c) => c.fromMin != null && c.toMin != null);
+    // Lane-Layout für überlappende Outlook-Termine (analog zu Rapporten)
+    return computeLanes(items);
   }, [ms365.calendar]);
 
   const summary = useMemo(() => {
@@ -521,19 +523,25 @@ export default function KalenderTagPanel() {
                   }}
                 />
               ))}
-              {/* Layer 1: Outlook im Hintergrund (transparent, dashed) */}
-              {outlookItems.map((cal) => {
-                const top = (cal.fromMin - HOUR_START * 60) * PX_PER_MIN;
-                const height = Math.max(20, (cal.toMin - cal.fromMin) * PX_PER_MIN);
+              {/* Layer 1: Outlook im Hintergrund (mit Lane-Layout für Überlappungen) */}
+              {outlookItems.map((it) => {
+                const cal = it.cal;
+                const top = (it.fromMin - HOUR_START * 60) * PX_PER_MIN;
+                const height = Math.max(20, (it.toMin - it.fromMin) * PX_PER_MIN);
+                const lanes = it.totalLanes || 1;
+                const lane = it.lane || 0;
+                const widthPct = 100 / lanes;
                 return (
                   <div
                     key={`out-${cal.id}`}
                     data-rapport-box
                     onMouseDown={(e) => e.stopPropagation()}
                     onClick={(e) => handleOutlookClick(cal, e)}
-                    className="absolute left-1 right-1 rounded text-[10px] cursor-pointer hover:opacity-90 transition-opacity overflow-hidden"
+                    className="absolute rounded text-[10px] cursor-pointer hover:opacity-90 transition-opacity overflow-hidden"
                     style={{
                       top, height,
+                      left: `calc(${widthPct * lane}% + 2px)`,
+                      width: `calc(${widthPct}% - 4px)`,
                       backgroundColor: 'rgba(99, 132, 180, 0.10)',
                       borderLeft: '3px solid #94a3b8',
                       color: '#475569',
@@ -543,7 +551,7 @@ export default function KalenderTagPanel() {
                     title={`Outlook: ${cal.subject}${cal.customer?.company_name ? ' · ' + cal.customer.company_name : ''} (Klick übernimmt)`}
                   >
                     <div className="truncate italic">{cal.subject}</div>
-                    {cal.customer?.company_name && (
+                    {cal.customer?.company_name && height >= 30 && (
                       <div className="truncate text-[9px] opacity-75">{cal.customer.company_name}</div>
                     )}
                   </div>
