@@ -74,6 +74,39 @@ function eventHeightPx(startTime, endTime) {
   } catch { return SLOT_PX; }
 }
 
+// Berechnet Spalten-Layout für überlappende Events (wie Google Calendar)
+function computeEventLayout(events) {
+  const sorted = [...events].sort((a, b) =>
+    new Date(a.start_time) - new Date(b.start_time)
+  );
+  const colEnds = []; // colEnds[i] = Endzeit der letzten Belegung in Spalte i
+  const layout = new Map(); // id → { col }
+
+  for (const ev of sorted) {
+    const start = new Date(ev.start_time).getTime();
+    const end   = new Date(ev.end_time || ev.start_time).getTime();
+    let col = 0;
+    while (col < colEnds.length && colEnds[col] > start) col++;
+    colEnds[col] = end;
+    layout.set(ev.id, { col });
+  }
+
+  // Für jedes Event: wieviele Spalten braucht die Überlappungsgruppe?
+  for (const ev of sorted) {
+    const start = new Date(ev.start_time).getTime();
+    const end   = new Date(ev.end_time || ev.start_time).getTime();
+    let maxCol = layout.get(ev.id).col;
+    for (const other of sorted) {
+      if (other.id === ev.id) continue;
+      const os = new Date(other.start_time).getTime();
+      const oe = new Date(other.end_time || other.start_time).getTime();
+      if (os < end && oe > start) maxCol = Math.max(maxCol, layout.get(other.id).col);
+    }
+    layout.get(ev.id).totalCols = maxCol + 1;
+  }
+  return layout;
+}
+
 // ── Haupt-Komponente ─────────────────────────────────────────────────
 
 export default function Kalender() {
@@ -456,18 +489,25 @@ export default function Kalender() {
                   ))}
 
                   {/* Events */}
-                  {dayEvents.map(event => {
+                  {(() => {
+                    const evLayout = computeEventLayout(dayEvents);
+                    return dayEvents.map(event => {
                     const top = eventTopPx(event.start_time);
                     const height = eventHeightPx(event.start_time, event.end_time);
                     const cfg = getResponseConfig(event.response_status);
+                    const { col, totalCols = 1 } = evLayout.get(event.id) || {};
+                    const leftPct  = (col / totalCols) * 100;
+                    const widthPct = (1 / totalCols) * 100;
                     return (
                       <div
                         key={event.id}
                         onClick={() => setSelectedEvent(event)}
-                        className="absolute left-0.5 right-0.5 rounded border-l-2 px-1 py-0.5 cursor-pointer hover:opacity-90 overflow-hidden"
+                        className="absolute rounded border-l-2 px-1 py-0.5 cursor-pointer hover:opacity-90 overflow-hidden"
                         style={{
                           top,
                           height: Math.max(height, 18),
+                          left: `calc(${leftPct}% + 2px)`,
+                          width: `calc(${widthPct}% - 4px)`,
                           backgroundColor: isDark ? `${cfg.color}20` : `${cfg.color}18`,
                           borderLeftColor: cfg.color,
                           zIndex: 1,
@@ -492,7 +532,8 @@ export default function Kalender() {
                         )}
                       </div>
                     );
-                  })}
+                  });
+                })()}
                 </div>
               );
             })}
