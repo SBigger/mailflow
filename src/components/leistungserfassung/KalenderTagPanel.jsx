@@ -463,33 +463,29 @@ export default function KalenderTagPanel() {
 
         <div ref={scrollRef} style={{ height: 'calc(100vh - 280px)', minHeight: 500, overflowY: 'auto', overflowX: 'hidden' }}>
           <div className="flex" style={{ height: totalHeight, position: 'relative' }}>
-            {/* Stunden-Beschriftung links */}
-            <div className="w-14 flex-shrink-0 border-r" style={{ borderColor: '#eef1ee', background: '#fafbf9', position: 'relative' }}>
-              {hours.map((h) => {
-                const isWork = h >= WORK_HOUR_START && h <= WORK_HOUR_END;
-                return (
-                  <div
-                    key={h}
-                    className="absolute right-1.5 -translate-y-1/2 tabular-nums"
-                    style={{
-                      top: (h - HOUR_START) * PX_PER_HOUR,
-                      fontSize: 10,
-                      color: isWork ? '#52525b' : '#a1a1aa',
-                      fontWeight: isWork ? 500 : 400,
-                    }}
-                  >
-                    {String(h).padStart(2, '0')}:00
-                  </div>
-                );
-              })}
+            {/* Stunden-Beschriftung links – im Stil der Kalender-App */}
+            <div className="flex-shrink-0 relative" style={{ width: 52, minWidth: 52 }}>
+              {hours.map((h) => (
+                <div
+                  key={h}
+                  className="absolute right-2 tabular-nums text-xs"
+                  style={{
+                    top: (h - HOUR_START) * PX_PER_HOUR - 7,
+                    color: '#6b826b',
+                  }}
+                >
+                  {String(h).padStart(2, '0')}:00
+                </div>
+              ))}
             </div>
 
             {/* Kalender-Hauptspalte */}
             <div
               ref={dragColumnRef}
-              className="flex-1 relative"
+              className="flex-1 relative border-l"
               style={{
-                background: '#f4f4f3',  // off-hours dunkler
+                borderColor: '#dce8dc',
+                background: '#f6f7f6',  // off-hours leicht gräulich
                 cursor: dragRange ? 'ns-resize' : 'pointer',
                 userSelect: 'none',
               }}
@@ -497,39 +493,34 @@ export default function KalenderTagPanel() {
               onMouseMove={handleColumnMouseMove}
               onMouseUp={handleColumnMouseUp}
             >
-              {/* Working-Hours-Hintergrund (heller) */}
+              {/* Working-Hours-Hintergrund (08:00-17:00 weiß) */}
               <div
                 className="absolute left-0 right-0 pointer-events-none"
                 style={{ top: workTopY, height: workHeight, background: '#ffffff', zIndex: 0 }}
               />
 
-              {/* Feine Grid-Lines: 4 pro Stunde (Outlook-Style) */}
-              <div
-                className="absolute inset-0 pointer-events-none"
-                style={{
-                  backgroundImage: [
-                    // Volle Stunde: kräftige Linie
-                    `linear-gradient(to bottom, transparent calc(100% - 1px), #d4d4d8 calc(100% - 1px))`,
-                  ].join(','),
-                  backgroundSize: `100% ${PX_PER_HOUR}px`,
-                }}
-              />
-              {/* Halbe Stunde: mittlere Linie */}
-              <div
-                className="absolute inset-0 pointer-events-none"
-                style={{
-                  backgroundImage: `linear-gradient(to bottom, transparent calc(50% - 1px), #e4e4e7 calc(50% - 1px), #e4e4e7 calc(50%), transparent calc(50%))`,
-                  backgroundSize: `100% ${PX_PER_HOUR}px`,
-                }}
-              />
-              {/* Viertelstunden: ganz feine Linien */}
-              <div
-                className="absolute inset-0 pointer-events-none"
-                style={{
-                  backgroundImage: `linear-gradient(to bottom, transparent calc(25% - 0.5px), #f4f4f5 calc(25% - 0.5px), #f4f4f5 calc(25%), transparent calc(25%), transparent calc(75% - 0.5px), #f4f4f5 calc(75% - 0.5px), #f4f4f5 calc(75%), transparent calc(75%))`,
-                  backgroundSize: `100% ${PX_PER_HOUR}px`,
-                }}
-              />
+              {/* Stunden-Linien (saubere divs wie in Kalender.jsx) */}
+              {hours.map((h) => (
+                <div
+                  key={`hr-${h}`}
+                  className="absolute w-full pointer-events-none"
+                  style={{
+                    top: (h - HOUR_START) * PX_PER_HOUR,
+                    borderTop: '1px solid #dce8dc',
+                  }}
+                />
+              ))}
+              {/* Halb-Stunden-Linien (heller, gestrichelt) */}
+              {hours.map((h) => (
+                <div
+                  key={`hf-${h}`}
+                  className="absolute w-full pointer-events-none"
+                  style={{
+                    top: (h - HOUR_START) * PX_PER_HOUR + PX_PER_HOUR / 2,
+                    borderTop: '1px dashed #ecf2ec',
+                  }}
+                />
+              ))}
               {/* Layer 1: Outlook im Hintergrund (transparent, dashed) */}
               {outlookItems.map((cal) => {
                 const top = (cal.fromMin - HOUR_START * 60) * PX_PER_MIN;
@@ -540,14 +531,13 @@ export default function KalenderTagPanel() {
                     data-rapport-box
                     onMouseDown={(e) => e.stopPropagation()}
                     onClick={(e) => handleOutlookClick(cal, e)}
-                    className="absolute left-1 right-1 rounded text-[10px] cursor-pointer hover:opacity-60 transition-opacity"
+                    className="absolute left-1 right-1 rounded text-[10px] cursor-pointer hover:opacity-90 transition-opacity overflow-hidden"
                     style={{
                       top, height,
-                      background: 'rgba(99, 132, 180, 0.10)',
-                      border: '1px dashed #94a3b8',
+                      backgroundColor: 'rgba(99, 132, 180, 0.10)',
+                      borderLeft: '3px solid #94a3b8',
                       color: '#475569',
                       padding: '2px 6px',
-                      overflow: 'hidden',
                       zIndex: 1,
                     }}
                     title={`Outlook: ${cal.subject}${cal.customer?.company_name ? ' · ' + cal.customer.company_name : ''} (Klick übernimmt)`}
@@ -575,17 +565,17 @@ export default function KalenderTagPanel() {
                     data-rapport-box
                     onMouseDown={(ev) => ev.stopPropagation()}
                     onClick={(ev) => handleEntryClick(e, ev)}
-                    className="absolute rounded shadow-sm hover:shadow-md transition-shadow cursor-pointer text-[10px]"
+                    className="absolute rounded hover:opacity-90 transition-opacity cursor-pointer text-[10px] overflow-hidden"
                     style={{
                       top,
                       height,
-                      left: `calc(${widthPct * lane}% + 4px)`,
-                      width: `calc(${widthPct}% - 8px)`,
-                      background: it.color.bg,
-                      border: `1.5px solid ${it.color.border}`,
-                      color: it.color.text,
-                      padding: '3px 6px',
-                      overflow: 'hidden',
+                      left: `calc(${widthPct * lane}% + 2px)`,
+                      width: `calc(${widthPct}% - 4px)`,
+                      background: '#ede3f718',  // sehr leicht violett, halbtransparent
+                      backgroundColor: 'rgba(237, 227, 247, 0.55)',
+                      borderLeft: '3px solid #7b3fbf',  // kräftiger violetter Akzent
+                      color: '#3d1f6e',
+                      padding: '2px 6px',
                       zIndex: 5,
                     }}
                     title={`${customerName ?? ''} · ${e.description ?? ''} · ${fmt.hours(e.hours_internal)}h`}
