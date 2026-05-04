@@ -337,7 +337,7 @@ export default function Settings() {
                 toast.error('Nicht eingeloggt');
                 return;
             }
-            const {data} = await functions.invoke('microsoft-auth', {state: session.access_token})
+            const {data} = await functions.invoke('microsoft-auth', {state: session.access_token, forceConsent: true})
 
             // Popup öffnen (funktioniert in Electron via setWindowOpenHandler + Browser)
             const popup = window.open(data, 'microsoft-oauth', 'width=520,height=720,resizable=yes,scrollbars=yes');

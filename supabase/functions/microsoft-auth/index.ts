@@ -20,6 +20,7 @@ Deno.serve(async (req) => {
   }
   const state = body.state || ''
 
+  const forceConsent = body.forceConsent === true
   const params = new URLSearchParams({
     client_id: clientId,
     response_type: 'code',
@@ -27,6 +28,7 @@ Deno.serve(async (req) => {
     scope: 'offline_access Mail.Read Mail.ReadBasic Mail.ReadWrite Mail.Send User.Read Files.ReadWrite.All Sites.ReadWrite.All Calendars.Read',
     response_mode: 'query',
     state: state,
+    ...(forceConsent ? { prompt: 'consent' } : {}),
   })
 
   const url = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/authorize?${params}`

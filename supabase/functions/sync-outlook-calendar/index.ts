@@ -27,7 +27,7 @@ Deno.serve(async (req) => {
 
   const { data: profiles } = await supabase
     .from('profiles')
-    .select('id, email, microsoft_refresh_token, calendar_access_token, calendar_token_expiry, calendar_delta_link, calendar_sync_days')
+    .select('id, email, microsoft_access_token, microsoft_refresh_token, microsoft_token_expiry, calendar_access_token, calendar_token_expiry, calendar_delta_link, calendar_sync_days')
     .not('microsoft_refresh_token', 'is', null)
 
   if (!profiles || profiles.length === 0) {
@@ -38,9 +38,10 @@ Deno.serve(async (req) => {
 
   for (const profile of profiles) {
     try {
-      // ── Token-Management (separates Calendar-Token, Mail-Token bleibt unberührt) ──
-      let accessToken = profile.calendar_access_token
-      const tokenExpiry = profile.calendar_token_expiry || 0
+      // ── Token-Management ──
+      // Priorität: calendar_access_token → microsoft_access_token → refresh
+      let accessToken = profile.calendar_access_token || profile.microsoft_access_token
+      const tokenExpiry = profile.calendar_token_expiry || profile.microsoft_token_expiry || 0
 
       if (!accessToken || Date.now() > tokenExpiry - 60000) {
         const refreshToken = profile.microsoft_refresh_token
@@ -49,18 +50,20 @@ Deno.serve(async (req) => {
           continue
         }
 
+        // Kein scope angeben → Microsoft gibt Token mit ursprünglich konsentiertem Scope zurück
+        const refreshParams: Record<string, string> = {
+          client_id: Deno.env.get('MICROSOFT_CLIENT_ID')!,
+          client_secret: Deno.env.get('MICROSOFT_CLIENT_SECRET')!,
+          refresh_token: refreshToken,
+          grant_type: 'refresh_token',
+        }
+        const tenantId = Deno.env.get('MICROSOFT_TENANT_ID') || 'common'
         const tokenRes = await fetch(
-          `https://login.microsoftonline.com/${Deno.env.get('MICROSOFT_TENANT_ID')}/oauth2/v2.0/token`,
+          `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: new URLSearchParams({
-              client_id: Deno.env.get('MICROSOFT_CLIENT_ID')!,
-              client_secret: Deno.env.get('MICROSOFT_CLIENT_SECRET')!,
-              refresh_token: refreshToken,
-              grant_type: 'refresh_token',
-              scope: 'offline_access Calendars.Read User.Read'
-            })
+            body: new URLSearchParams(refreshParams)
           }
         )
 
@@ -75,7 +78,6 @@ Deno.serve(async (req) => {
         await supabase.from('profiles').update({
           calendar_access_token: tokens.access_token,
           calendar_token_expiry: Date.now() + (tokens.expires_in * 1000),
-          // Refresh-Token aktualisieren falls Microsoft ihn rotiert hat
           microsoft_refresh_token: tokens.refresh_token || refreshToken,
         }).eq('id', profile.id)
       }
@@ -96,7 +98,7 @@ Deno.serve(async (req) => {
         currentUrl = deltaLink
         console.log(`[CAL-SYNC] DELTA für ${profile.email}`)
       } else {
-        currentUrl = `https://graph.microsoft.com/v1.0/me/calendarView/delta?startDateTime=${startDate.toISOString()}&endDateTime=${endDate.toISOString()}&$select=id,subject,bodyPreview,start,end,isAllDay,location,organizer,responseStatus,isCancelled,onlineMeeting,importance,categories&$top=100`
+        currentUrl = `https://graph.microsoft.com/v1.0/me/calendarView/delta?startDateTime=${startDate.toISOString()}&endDateTime=${endDate.toISOString()}&$select=id,subject,bodyPreview,start,end,isAllDay,location,organizer,responseStatus,isCancelled,onlineMeeting,importance,categories`
         console.log(`[CAL-SYNC] INITIAL ${syncDays}d Vergangenheit + 1J Zukunft für ${profile.email}`)
       }
 
