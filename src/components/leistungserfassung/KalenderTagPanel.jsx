@@ -523,7 +523,7 @@ export default function KalenderTagPanel() {
                   }}
                 />
               ))}
-              {/* Layer 1: Outlook im Hintergrund (mit Lane-Layout für Überlappungen) */}
+              {/* Layer 1: Outlook im Hintergrund (zurückhaltend grau) */}
               {outlookItems.map((it) => {
                 const cal = it.cal;
                 const top = (it.fromMin - HOUR_START * 60) * PX_PER_MIN;
@@ -537,20 +537,21 @@ export default function KalenderTagPanel() {
                     data-rapport-box
                     onMouseDown={(e) => e.stopPropagation()}
                     onClick={(e) => handleOutlookClick(cal, e)}
-                    className="absolute rounded text-[10px] cursor-pointer hover:opacity-90 transition-opacity overflow-hidden"
+                    className="absolute rounded text-[10px] cursor-pointer hover:opacity-100 transition-opacity overflow-hidden italic"
                     style={{
                       top, height,
                       left: `calc(${widthPct * lane}% + 2px)`,
                       width: `calc(${widthPct}% - 4px)`,
-                      backgroundColor: 'rgba(99, 132, 180, 0.10)',
-                      borderLeft: '3px solid #94a3b8',
-                      color: '#475569',
+                      backgroundColor: 'rgba(148, 163, 184, 0.10)',
+                      borderLeft: '2px solid #cbd5e0',
+                      color: '#94a3b8',
                       padding: '2px 6px',
+                      opacity: 0.75,
                       zIndex: 1,
                     }}
                     title={`Outlook: ${cal.subject}${cal.customer?.company_name ? ' · ' + cal.customer.company_name : ''} (Klick übernimmt)`}
                   >
-                    <div className="truncate italic">{cal.subject}</div>
+                    <div className="truncate">{cal.subject}</div>
                     {cal.customer?.company_name && height >= 30 && (
                       <div className="truncate text-[9px] opacity-75">{cal.customer.company_name}</div>
                     )}
@@ -573,17 +574,19 @@ export default function KalenderTagPanel() {
                     data-rapport-box
                     onMouseDown={(ev) => ev.stopPropagation()}
                     onClick={(ev) => handleEntryClick(e, ev)}
-                    className="absolute rounded hover:opacity-90 transition-opacity cursor-pointer text-[10px] overflow-hidden"
+                    className="absolute rounded hover:shadow-lg transition-all cursor-pointer text-[11px] overflow-hidden"
                     style={{
                       top,
                       height,
                       left: `calc(${widthPct * lane}% + 2px)`,
                       width: `calc(${widthPct}% - 4px)`,
-                      background: '#ede3f718',  // sehr leicht violett, halbtransparent
-                      backgroundColor: 'rgba(237, 227, 247, 0.55)',
-                      borderLeft: '3px solid #7b3fbf',  // kräftiger violetter Akzent
-                      color: '#3d1f6e',
-                      padding: '2px 6px',
+                      // Kräftiges Violett – nicht zu übersehen
+                      background: 'linear-gradient(135deg, #c4b5fd 0%, #a78bfa 100%)',
+                      borderLeft: '5px solid #4c1d95',
+                      color: '#1e0b47',
+                      padding: '4px 8px',
+                      boxShadow: '0 2px 6px rgba(76, 29, 149, 0.30), 0 0 0 1px rgba(76, 29, 149, 0.15)',
+                      fontWeight: 600,
                       zIndex: 5,
                     }}
                     title={`${customerName ?? ''} · ${e.description ?? ''} · ${fmt.hours(e.hours_internal)}h`}
