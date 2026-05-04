@@ -370,6 +370,35 @@ export const leInvoice = {
       issue_date: new Date().toISOString().slice(0, 10),
     });
   },
+  // Entwurf löschen + alle verknüpften Time-Entries / Spesen wieder freigeben.
+  // Nur für status='entwurf' erlaubt – danach hilft nur noch Storno (Gutschrift).
+  deleteDraft: async (id) => {
+    const inv = await leInvoice.get(id);
+    if (!inv) throw new Error('Rechnung nicht gefunden');
+    if (inv.status !== 'entwurf') {
+      throw new Error('Nur Entwürfe können gelöscht werden – diese Rechnung ist bereits "' + inv.status + '". Bitte stattdessen stornieren (Gutschrift).');
+    }
+    // Time-Entries: 'verrechnet' → 'erfasst', 'kulant_abgerechnet' → 'kulant'
+    await supabase.from('le_time_entry')
+      .update({ invoice_id: null, status: 'erfasst' })
+      .eq('invoice_id', id).eq('status', 'verrechnet');
+    await supabase.from('le_time_entry')
+      .update({ invoice_id: null, status: 'kulant' })
+      .eq('invoice_id', id).eq('status', 'kulant_abgerechnet');
+    // Falls Einträge wegen Status-Änderungen noch verknüpft sind: invoice_id löschen
+    await supabase.from('le_time_entry')
+      .update({ invoice_id: null })
+      .eq('invoice_id', id);
+    // Spesen: invoiced_invoice_id zurücksetzen
+    await supabase.from('le_expense')
+      .update({ invoiced_invoice_id: null, status: 'genehmigt' })
+      .eq('invoiced_invoice_id', id);
+    // Akonto-Verlinkungen entfernen
+    await supabase.from('le_invoice_akonto_link').delete().eq('schluss_invoice_id', id);
+    // Rechnung löschen (lines kaskadieren via FK)
+    const { error } = await supabase.from('le_invoice').delete().eq('id', id);
+    if (error) throw error;
+  },
 };
 
 export const leInvoiceLine = {

@@ -26,14 +26,24 @@ import {
 } from './leBrandingHelpers';
 
 // Lazy-Import damit der Bundle-Hit nur passiert, wenn wirklich PDF gebaut wird.
+// swissqrbill v3: wir importieren direkt das Browser-Bundle (eine JS-Datei mit
+// allen Dependencies inkl. PDFKit + fontkit gebundelt) – damit Vite/Rollup nicht
+// versucht, fontkit's `fs.readFileSync` aufzulösen.
 async function loadSwissqrbill() {
   try {
-    const pdfMod = await import('swissqrbill/pdf');
-    const utilMod = await import('swissqrbill/utils').catch(() => ({}));
-    return { ...pdfMod, ...utilMod };
+    const mod = await import(
+      /* @vite-ignore */ 'swissqrbill/lib/browser/esm/browser/pdf.js'
+    );
+    const PDF = mod.PDF || mod.default?.PDF || mod;
+    if (typeof PDF !== 'function') {
+      throw new Error('PDF-Klasse nicht gefunden in swissqrbill-Browser-Bundle (keys: ' + Object.keys(mod).join(', ') + ')');
+    }
+    const blobStreamMod = await import('blob-stream');
+    const BlobStream = blobStreamMod.default || blobStreamMod;
+    return { PDF, BlobStream };
   } catch (e) {
     console.error('swissqrbill konnte nicht geladen werden:', e);
-    throw new Error('PDF-Library (swissqrbill) konnte nicht geladen werden. Wahrscheinlich fehlen Buffer/Stream-Polyfills im Vite-Build.');
+    throw new Error('PDF-Library konnte nicht geladen werden: ' + (e?.message ?? e));
   }
 }
 
@@ -68,6 +78,7 @@ export async function generateInvoicePdf({ invoice, company }) {
   if (!company) throw new Error('Firmen-Settings fehlen – bitte unter Stammdaten anlegen.');
 
   const { PDF, BlobStream } = await loadSwissqrbill();
+  // BlobStream ist eine Factory-Funktion (kein Constructor): `blobStream()` not `new`
 
   // Logo vorab laden (parallel, blockiert nur wenn URL gesetzt)
   const logoBuf = await loadImageBuffer(company.logo_url);
@@ -105,7 +116,7 @@ export async function generateInvoicePdf({ invoice, company }) {
   };
 
   // PDF erzeugen – bufferPages: true → Footer kann nachträglich auf alle Seiten
-  const stream = new BlobStream();
+  const stream = BlobStream();
   const pdf = new PDF(qrData, stream, { autoGenerate: false, size: 'A4', bufferPages: true });
 
   // ---- 1. Branding-Header (Logo links, Adresse rechts, grüne Linie) ----

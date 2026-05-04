@@ -15,9 +15,35 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { X as XIcon, Save, Trash2, CornerDownLeft } from 'lucide-react';
 import { resolveRateFor } from '@/lib/leApi';
 import {
-  Card, Combobox, Input, Field, fmt,
+  Card, Chip, Combobox, Input, Select, Field, fmt,
   artisBtn, artisPrimaryStyle, artisGhostStyle,
 } from './shared';
+
+const STATUS_OPTIONS = [
+  { value: 'erfasst',     label: 'Abzurechnen',  hint: 'Zählt im Faktura-Vorschlag und wird auf nächster Rechnung verrechnet.' },
+  { value: 'freigegeben', label: 'Freigegeben',  hint: 'Geprüft – bereit zum Abrechnen.' },
+  { value: 'kulant',      label: 'Kulant',       hint: 'Wird NICHT abgerechnet, erscheint aber als Info auf der Rechnung (Beiblatt).' },
+];
+
+const STATUS_LOCKED = ['verrechnet', 'kulant_abgerechnet'];
+
+const STATUS_TONE = {
+  erfasst:            'neutral',
+  freigegeben:        'green',
+  kulant:             'violet',
+  verrechnet:         'blue',
+  kulant_abgerechnet: 'violet',
+  storniert:          'red',
+};
+
+const STATUS_LABEL = {
+  erfasst:            'Abzurechnen',
+  freigegeben:        'Freigegeben',
+  kulant:             'Kulant',
+  verrechnet:         'Abgerechnet',
+  kulant_abgerechnet: 'Kulant abgerechnet',
+  storniert:          'Storniert',
+};
 
 const num = (v) => (v === '' || v == null ? 0 : Number(v) || 0);
 
@@ -55,6 +81,7 @@ export default function RapportEditDialog({
       hours_internal: '',
       description: '',
       rate_snapshot: '',
+      status: 'erfasst',
       rate_touched: false,
       hours_touched: false,
     };
@@ -74,6 +101,7 @@ export default function RapportEditDialog({
         hours_internal: initial.hours_internal ?? '',
         description: initial.description ?? '',
         rate_snapshot: initial.rate_snapshot ?? '',
+        status: initial.status ?? 'erfasst',
         rate_touched: !!initial.rate_snapshot,
         hours_touched: !!initial.hours_internal && !(initial.time_from && initial.time_to),
       });
@@ -141,6 +169,7 @@ export default function RapportEditDialog({
         hours_internal: hoursNum,
         rate_snapshot: rateNum || 0,
         description: form.description || null,
+        status: form.status,
       });
       onClose?.();
     } catch (e) {
@@ -291,6 +320,29 @@ export default function RapportEditDialog({
               </div>
             </Field>
           </div>
+
+          {/* Status */}
+          <Field
+            label="Status"
+            hint={STATUS_OPTIONS.find((o) => o.value === form.status)?.hint}
+          >
+            {STATUS_LOCKED.includes(form.status) ? (
+              <div className="flex items-center gap-2 px-2 py-1.5 border rounded text-sm" style={{ borderColor: '#d9dfd9', background: '#fafbf9' }}>
+                <Chip tone={STATUS_TONE[form.status]}>{STATUS_LABEL[form.status] || form.status}</Chip>
+                <span className="text-xs text-zinc-500">– bereits abgerechnet, Status kann nur via Storno geändert werden.</span>
+              </div>
+            ) : (
+              <Select
+                value={form.status}
+                onChange={(e) => setForm({ ...form, status: e.target.value })}
+                style={form.status === 'kulant' ? { background: '#faf6ff', borderColor: '#c9b8e0' } : undefined}
+              >
+                {STATUS_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </Select>
+            )}
+          </Field>
 
           {error && (
             <div className="rounded px-3 py-2 text-xs" style={{ background: '#fce4e4', color: '#8a2d2d', border: '1px solid #e8b4b4' }}>

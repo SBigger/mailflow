@@ -23,11 +23,16 @@ import {
 
 async function loadSwissqrbill() {
   try {
-    const pdfMod = await import('swissqrbill/pdf');
-    return pdfMod;
+    const mod = await import(
+      /* @vite-ignore */ 'swissqrbill/lib/browser/esm/browser/pdf.js'
+    );
+    const PDF = mod.PDF || mod.default?.PDF || mod;
+    const blobStreamMod = await import('blob-stream');
+    const BlobStream = blobStreamMod.default || blobStreamMod;
+    return { PDF, BlobStream };
   } catch (e) {
     console.error('swissqrbill konnte nicht geladen werden:', e);
-    throw new Error('PDF-Library nicht verfügbar.');
+    throw new Error('PDF-Library nicht verfügbar: ' + (e?.message ?? e));
   }
 }
 
@@ -81,7 +86,7 @@ export async function generateDunningPdf({ dunning, invoice, customer, company }
     } : undefined,
   };
 
-  const stream = new BlobStream();
+  const stream = BlobStream();
   const pdf = new PDF(qrData, stream, { autoGenerate: false, size: 'A4', bufferPages: true });
 
   // ---- 1. Branding-Header ----

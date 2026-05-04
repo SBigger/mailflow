@@ -7,6 +7,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   FileText, Send, CheckCircle2, X as XIcon, Trash2, Eye, Search, Calendar, FileDown,
+  ChevronRight, ChevronDown,
 } from 'lucide-react';
 import { leInvoice, leCompany } from '@/lib/leApi';
 import { generateInvoicePdf, triggerDownload } from '@/lib/leInvoicePdf';
@@ -221,7 +222,7 @@ export default function RechnungsuebersichtPanel() {
         </div>
       </Card>
 
-      {/* Tabelle */}
+      {/* Tabelle – gruppiert nach Jahr → Monat */}
       <Card>
         {invoicesQ.isLoading ? (
           <PanelLoader />
@@ -231,39 +232,15 @@ export default function RechnungsuebersichtPanel() {
             Keine Rechnungen gefunden.
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-[10px] uppercase tracking-wider text-zinc-500 border-b" style={{ borderColor: '#e4e7e4' }}>
-                  <th className="text-left font-semibold px-3 py-2 w-36">Rechnungsnr.</th>
-                  <th className="text-left font-semibold px-3 py-2 w-28">Datum</th>
-                  <th className="text-left font-semibold px-3 py-2">Kunde</th>
-                  <th className="text-left font-semibold px-3 py-2">Projekt</th>
-                  <th className="text-right font-semibold px-3 py-2 w-28">Total</th>
-                  <th className="text-left font-semibold px-3 py-2 w-28">Status</th>
-                  <th className="text-right font-semibold px-3 py-2 w-48">Aktionen</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((inv) => (
-                  <InvoiceRow
-                    key={inv.id}
-                    inv={inv}
-                    onOpen={() => setDetailInvoice(inv)}
-                    onSend={() => sendMut.mutate(inv.id)}
-                    onPay={() => setPayInvoice(inv)}
-                    onCancel={() => {
-                      if (window.confirm('Rechnung wirklich stornieren?')) cancelMut.mutate(inv.id);
-                    }}
-                    onRemove={() => {
-                      if (window.confirm('Entwurf wirklich löschen?')) removeMut.mutate(inv.id);
-                    }}
-                    sending={sendMut.isPending && sendMut.variables === inv.id}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <GroupedInvoiceList
+            invoices={filtered}
+            onOpen={(inv) => setDetailInvoice(inv)}
+            onSend={(inv) => sendMut.mutate(inv.id)}
+            onPay={(inv) => setPayInvoice(inv)}
+            onCancel={(inv) => { if (window.confirm('Rechnung wirklich stornieren?')) cancelMut.mutate(inv.id); }}
+            onRemove={(inv) => { if (window.confirm('Entwurf wirklich löschen? Alle Rapporte werden wieder freigegeben.')) removeMut.mutate(inv.id); }}
+            sendMutVariables={sendMut.isPending ? sendMut.variables : null}
+          />
         )}
       </Card>
 
@@ -609,5 +586,250 @@ function PaymentDialog({ invoice, onClose, onSubmit, saving }) {
         </form>
       </div>
     </div>
+  );
+}
+
+// =====================================================================
+// Gruppierte Liste: Jahr → Monat → Rechnung (mit aufklappbaren Lines)
+// =====================================================================
+
+const MONTH_LABELS = [
+  'Januar','Februar','März','April','Mai','Juni',
+  'Juli','August','September','Oktober','November','Dezember',
+];
+
+function GroupedInvoiceList({ invoices, onOpen, onSend, onPay, onCancel, onRemove, sendMutVariables }) {
+  // Gruppiere nach Jahr (desc) → Monat (desc)
+  const groups = useMemo(() => {
+    const yearMap = new Map();
+    for (const inv of invoices) {
+      const dateStr = inv.issue_date || inv.created_at?.slice(0, 10) || '';
+      const year = dateStr ? Number(dateStr.slice(0, 4)) : 0;
+      const month = dateStr ? Number(dateStr.slice(5, 7)) : 0;
+      if (!yearMap.has(year)) yearMap.set(year, new Map());
+      const monthMap = yearMap.get(year);
+      if (!monthMap.has(month)) monthMap.set(month, []);
+      monthMap.get(month).push(inv);
+    }
+    const years = [...yearMap.entries()]
+      .sort((a, b) => b[0] - a[0])
+      .map(([year, monthMap]) => {
+        const months = [...monthMap.entries()]
+          .sort((a, b) => b[0] - a[0])
+          .map(([month, list]) => ({
+            month,
+            invoices: list.slice().sort((a, b) => String(b.issue_date ?? '').localeCompare(String(a.issue_date ?? ''))),
+            total: list.reduce((s, i) => s + Number(i.total ?? 0), 0),
+            count: list.length,
+          }));
+        const yearTotal = months.reduce((s, m) => s + m.total, 0);
+        const yearCount = months.reduce((s, m) => s + m.count, 0);
+        return { year, months, yearTotal, yearCount };
+      });
+    return years;
+  }, [invoices]);
+
+  // Default: aktuelles Jahr + Monat aufgeklappt
+  const today = new Date();
+  const defaultYearKey = today.getFullYear();
+  const defaultMonthKey = `${defaultYearKey}-${today.getMonth() + 1}`;
+
+  const [openYears, setOpenYears] = useState(() => new Set([defaultYearKey]));
+  const [openMonths, setOpenMonths] = useState(() => new Set([defaultMonthKey]));
+  const [openInvoices, setOpenInvoices] = useState(() => new Set());
+
+  const toggleSet = (setState, key) => setState((prev) => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
+
+  return (
+    <div className="divide-y" style={{ borderColor: '#eef1ee' }}>
+      {groups.map((g) => {
+        const yearOpen = openYears.has(g.year);
+        return (
+          <div key={g.year}>
+            {/* Jahr-Zeile */}
+            <button
+              type="button"
+              onClick={() => toggleSet(setOpenYears, g.year)}
+              className="w-full flex items-center justify-between px-4 py-2.5 text-left hover:bg-zinc-50 transition-colors"
+              style={{ background: '#f7f9f7' }}
+            >
+              <div className="flex items-center gap-2">
+                {yearOpen ? <ChevronDown className="w-4 h-4 text-zinc-500" /> : <ChevronRight className="w-4 h-4 text-zinc-500" />}
+                <span className="text-base font-semibold" style={{ color: '#2d5a2d' }}>{g.year || '—'}</span>
+                <span className="text-xs text-zinc-500">· {g.yearCount} Rechnung{g.yearCount === 1 ? '' : 'en'}</span>
+              </div>
+              <span className="text-sm font-semibold tabular-nums" style={{ color: '#2d5a2d' }}>
+                CHF {fmt.chf(g.yearTotal)}
+              </span>
+            </button>
+
+            {yearOpen && g.months.map((m) => {
+              const monthKey = `${g.year}-${m.month}`;
+              const monthOpen = openMonths.has(monthKey);
+              return (
+                <div key={monthKey} className="border-t" style={{ borderColor: '#eef1ee' }}>
+                  {/* Monat-Zeile */}
+                  <button
+                    type="button"
+                    onClick={() => toggleSet(setOpenMonths, monthKey)}
+                    className="w-full flex items-center justify-between px-6 py-2 text-left hover:bg-zinc-50 transition-colors"
+                  >
+                    <div className="flex items-center gap-2">
+                      {monthOpen ? <ChevronDown className="w-3.5 h-3.5 text-zinc-400" /> : <ChevronRight className="w-3.5 h-3.5 text-zinc-400" />}
+                      <span className="text-sm font-medium text-zinc-700">{MONTH_LABELS[m.month - 1] || '—'}</span>
+                      <span className="text-[11px] text-zinc-400">· {m.count}</span>
+                    </div>
+                    <span className="text-xs tabular-nums text-zinc-600">
+                      CHF {fmt.chf(m.total)}
+                    </span>
+                  </button>
+
+                  {monthOpen && (
+                    <table className="w-full text-sm border-t" style={{ borderColor: '#eef1ee' }}>
+                      <thead>
+                        <tr className="text-[10px] uppercase tracking-wider text-zinc-400" style={{ background: '#fafbf9' }}>
+                          <th className="text-left font-semibold px-3 py-1.5 w-8"></th>
+                          <th className="text-left font-semibold px-3 py-1.5 w-32">Rechnungsnr.</th>
+                          <th className="text-left font-semibold px-3 py-1.5 w-24">Datum</th>
+                          <th className="text-left font-semibold px-3 py-1.5">Kunde</th>
+                          <th className="text-left font-semibold px-3 py-1.5">Projekt</th>
+                          <th className="text-left font-semibold px-3 py-1.5 w-28">Periode</th>
+                          <th className="text-right font-semibold px-3 py-1.5 w-24">Total</th>
+                          <th className="text-right font-semibold px-3 py-1.5 w-24">Bezahlt</th>
+                          <th className="text-right font-semibold px-3 py-1.5 w-24">Offen</th>
+                          <th className="text-left font-semibold px-3 py-1.5 w-24">Status</th>
+                          <th className="text-right font-semibold px-3 py-1.5 w-44">Aktionen</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {m.invoices.map((inv) => (
+                          <InvoiceGroupedRow
+                            key={inv.id}
+                            inv={inv}
+                            expanded={openInvoices.has(inv.id)}
+                            onToggle={() => toggleSet(setOpenInvoices, inv.id)}
+                            onOpen={() => onOpen(inv)}
+                            onSend={() => onSend(inv)}
+                            onPay={() => onPay(inv)}
+                            onCancel={() => onCancel(inv)}
+                            onRemove={() => onRemove(inv)}
+                            sending={sendMutVariables === inv.id}
+                          />
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function InvoiceGroupedRow({ inv, expanded, onToggle, onOpen, onSend, onPay, onCancel, onRemove, sending }) {
+  const statusInfo = STATUS_CHIP[inv.status] ?? STATUS_CHIP.entwurf;
+  const isDraft = inv.status === 'entwurf';
+  const isFinal = inv.status === 'definitiv';
+  const isSent = inv.status === 'versendet';
+  const total = Number(inv.total ?? 0);
+  const paid = Number(inv.paid_amount ?? 0);
+  const open = Math.max(0, total - paid);
+  const periodLabel = inv.period_from && inv.period_to
+    ? `${inv.period_from.slice(8,10)}.${inv.period_from.slice(5,7)}.${inv.period_from.slice(2,4)}–${inv.period_to.slice(8,10)}.${inv.period_to.slice(5,7)}.${inv.period_to.slice(2,4)}`
+    : '—';
+  const lines = inv.lines || [];
+  return (
+    <>
+      <tr
+        className="border-t hover:bg-zinc-50 cursor-pointer"
+        style={{ borderColor: '#eef1ee', background: expanded ? '#f5faf5' : undefined }}
+        onClick={onToggle}
+      >
+        <td className="px-3 py-1.5">
+          {lines.length > 0
+            ? (expanded ? <ChevronDown className="w-3.5 h-3.5 text-zinc-400" /> : <ChevronRight className="w-3.5 h-3.5 text-zinc-400" />)
+            : <span className="w-3.5 h-3.5 inline-block" />}
+        </td>
+        <td className="px-3 py-1.5 font-medium text-zinc-700">{inv.invoice_no || <span className="text-zinc-400 italic">(Entwurf)</span>}</td>
+        <td className="px-3 py-1.5 text-zinc-600 tabular-nums">{fmt.date(inv.issue_date)}</td>
+        <td className="px-3 py-1.5">{inv.customer?.company_name ?? '—'}</td>
+        <td className="px-3 py-1.5 text-zinc-600">{inv.project?.name ?? '—'}</td>
+        <td className="px-3 py-1.5 text-zinc-500 text-[11px] tabular-nums">{periodLabel}</td>
+        <td className="px-3 py-1.5 text-right tabular-nums font-medium">{fmt.chf(total)}</td>
+        <td className="px-3 py-1.5 text-right tabular-nums text-zinc-500">{paid > 0 ? fmt.chf(paid) : '—'}</td>
+        <td className="px-3 py-1.5 text-right tabular-nums" style={{ color: open > 0 && (isFinal || isSent) ? '#8a5a00' : '#a0aca0' }}>
+          {open > 0 && (isFinal || isSent) ? fmt.chf(open) : '—'}
+        </td>
+        <td className="px-3 py-1.5"><Chip tone={statusInfo.tone}>{statusInfo.label}</Chip></td>
+        <td className="px-3 py-1.5">
+          <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+            <IconBtn onClick={onOpen} title="Details"><Eye className="w-3.5 h-3.5" /></IconBtn>
+            {(isFinal || isSent || inv.status === 'bezahlt') && (
+              <IconBtn
+                onClick={async () => {
+                  try {
+                    const company = await leCompany.get();
+                    if (!company) { toast.error('Firmen-Settings fehlen.'); return; }
+                    const fresh = await leInvoice.get(inv.id);
+                    const result = await generateInvoicePdf({ invoice: fresh, company });
+                    if (result.blob) triggerDownload(result.blob, `Rechnung-${fresh.invoice_no || 'Entwurf'}.pdf`);
+                  } catch (e) { toast.error('PDF-Fehler: ' + (e?.message ?? e)); }
+                }}
+                title="PDF herunterladen"
+              >
+                <FileDown className="w-3.5 h-3.5" />
+              </IconBtn>
+            )}
+            {isFinal && <IconBtn onClick={onSend} title={sending ? 'Versende…' : 'Versenden'}><Send className="w-3.5 h-3.5" /></IconBtn>}
+            {isSent && <IconBtn onClick={onPay} title="Bezahlt markieren"><CheckCircle2 className="w-3.5 h-3.5" /></IconBtn>}
+            {(isFinal || isSent) && <IconBtn onClick={onCancel} title="Stornieren" danger><XIcon className="w-3.5 h-3.5" /></IconBtn>}
+            {isDraft && <IconBtn onClick={onRemove} title="Entwurf löschen" danger><Trash2 className="w-3.5 h-3.5" /></IconBtn>}
+          </div>
+        </td>
+      </tr>
+      {expanded && lines.length > 0 && (
+        <tr style={{ background: '#fafbf9' }}>
+          <td></td>
+          <td colSpan={10} className="px-3 py-2">
+            <div className="border rounded overflow-hidden" style={{ borderColor: '#e4e7e4', background: '#fff' }}>
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-[10px] uppercase tracking-wider text-zinc-500 border-b" style={{ borderColor: '#eef1ee', background: '#fafbf9' }}>
+                    <th className="text-left font-semibold px-2 py-1.5">Beschreibung</th>
+                    <th className="text-right font-semibold px-2 py-1.5 w-16">Stunden</th>
+                    <th className="text-right font-semibold px-2 py-1.5 w-20">Satz</th>
+                    <th className="text-right font-semibold px-2 py-1.5 w-24">Betrag</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {lines.slice().sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)).map((l) => (
+                    <tr key={l.id} className="border-b last:border-b-0" style={{ borderColor: '#eef1ee' }}>
+                      <td className="px-2 py-1.5">{l.description || <span className="text-zinc-300 italic">— ohne Beschreibung —</span>}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{Number(l.hours || 0) > 0 ? fmt.hours(l.hours) : '—'}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums text-zinc-500">{Number(l.rate || 0) > 0 ? fmt.chf(l.rate) : '—'}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums font-medium">{fmt.chf(l.amount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr style={{ background: '#f7f9f7' }}>
+                    <td className="px-2 py-1.5 font-semibold text-zinc-600">Total</td>
+                    <td colSpan={2}></td>
+                    <td className="px-2 py-1.5 text-right tabular-nums font-semibold" style={{ color: '#2d5a2d' }}>{fmt.chf(total)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
   );
 }

@@ -38,6 +38,9 @@ export default defineConfig(({ mode }) => {
       alias: {
         '@': path.resolve(__dirname, './src'),
       },
+      // Wichtig für swissqrbill v3: nutze die "browser" conditional export,
+      // damit fontkit/pdfkit's Node-Bundle (mit fs.readFileSync) NICHT geladen wird.
+      conditions: ['browser', 'module', 'import', 'default'],
     },
     define: {
       'process.env.VITE_SUPABASE_URL': JSON.stringify(env.VITE_SUPABASE_URL),
@@ -71,6 +74,17 @@ export default defineConfig(({ mode }) => {
       // OHNE Pre-Bundling kommt `getDocument` nicht im ES-Namespace an → "is not a function".
       // MIT Pre-Bundling konvertiert Vite es sauber auf ES-Module — named/namespace imports funktionieren.
       include: ['pdfjs-dist'],
+      // swissqrbill+fontkit pre-bundeln, damit fs/readFileSync nicht im
+      // Rollup-Build-Pfad landen (Browser-Bundle ist in einer Datei zusammengefasst).
+      exclude: ['swissqrbill', 'fontkit', 'pdfkit'],
+    },
+    build: {
+      rollupOptions: {
+        // fontkit/pdfkit Node-only; im Build durch leere Stubs ersetzen.
+        // Tatsächliche Nutzung passiert nur via swissqrbill-Browser-Bundle
+        // (Pre-Bundled, lädt seine eigenen gebundelten Deps).
+        external: (id) => /^(fontkit|pdfkit)($|\/)/.test(id),
+      },
     },
   };
 });

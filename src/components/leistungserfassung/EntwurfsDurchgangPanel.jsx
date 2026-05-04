@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 import {
   ChevronLeft, ChevronRight, Plus, Trash2, Check, FileCheck2,
   Send, Save, Receipt, SkipForward, FileDown,
-  Wallet, Banknote, X as XIcon,
+  Wallet, Banknote, X as XIcon, AlertTriangle,
 } from 'lucide-react';
 import { leInvoice, leInvoiceLine, leCompany, leOpenAkonti, leInvoiceAkontoLink } from '@/lib/leApi';
 import { supabase } from '@/api/supabaseClient';
@@ -387,6 +387,18 @@ function DraftEditor({ invoice, onSaved, onFinalized, onDirtyChange }) {
     onError: (e) => toast.error('Finalisieren fehlgeschlagen: ' + (e?.message ?? e)),
   });
 
+  const deleteMut = useMutation({
+    mutationFn: () => leInvoice.deleteDraft(invoice.id),
+    onSuccess: () => {
+      toast.success('Entwurf gelöscht – Rapporte wieder freigegeben');
+      qc.invalidateQueries({ queryKey: ['le', 'invoice', 'entwurf'] });
+      qc.invalidateQueries({ queryKey: ['le', 'time_entry'] });
+      qc.invalidateQueries({ queryKey: ['le', 'expense'] });
+      onSaved?.();  // gleicher Refresh-Hook wie Save
+    },
+    onError: (e) => toast.error('Löschen fehlgeschlagen: ' + (e?.message ?? e)),
+  });
+
   return (
     <Card className="p-5">
       {/* Header */}
@@ -578,6 +590,19 @@ function DraftEditor({ invoice, onSaved, onFinalized, onDirtyChange }) {
           style={artisGhostStyle}
         >
           <FileDown className="w-4 h-4" /> PDF
+        </button>
+        <button
+          type="button"
+          disabled={deleteMut.isPending}
+          onClick={() => {
+            if (!window.confirm(`Entwurf wirklich löschen?\n\nAlle verknüpften Rapporte werden wieder freigegeben (Status zurück auf "erfasst" / "kulant"), die Rechnung wird vollständig gelöscht.`)) return;
+            deleteMut.mutate();
+          }}
+          className={artisBtn.ghost}
+          style={{ ...artisGhostStyle, color: '#8a2d2d', borderColor: '#e8b4b4', opacity: deleteMut.isPending ? 0.55 : 1 }}
+          title="Entwurf löschen, Rapporte werden wieder offen"
+        >
+          <Trash2 className="w-4 h-4" /> Verwerfen
         </button>
         <button
           type="button"
