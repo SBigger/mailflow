@@ -1,14 +1,20 @@
 // Angefangene Arbeiten (AA) – Übersicht offene Leistungen pro Projekt
 // Read-only WIP-Panel, berechnet client-side aus le_project + le_time_entry.
+// Zeilen sind aufklappbar und zeigen die einzelnen Buchungen, die direkt
+// editiert werden können (öffnet RapportEditDialog).
 import React, { useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { ArrowUpDown, Download, Calculator, Search } from 'lucide-react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { ArrowUpDown, Download, Calculator, Search, ChevronRight, ChevronDown, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
-import { leProject, leTimeEntry } from '@/lib/leApi';
+import {
+  leProject, leTimeEntry, leServiceType, leEmployee,
+  leRateGroupRate, leServiceRateHistory, currentEmployee,
+} from '@/lib/leApi';
 import {
   Chip, Card, Input, Select, PanelLoader, PanelError, PanelHeader, fmt,
   artisBtn, artisPrimaryStyle, artisGhostStyle,
 } from './shared.jsx';
+import RapportEditDialog from './RapportEditDialog';
 
 // --- Hilfsfunktionen ----------------------------------------------------
 const todayIso = () => new Date().toISOString().slice(0, 10);
@@ -66,12 +72,27 @@ const SortHeader = ({ label, colKey, sort, setSort, align = 'left' }) => {
 
 // --- Panel --------------------------------------------------------------
 export default function AAPanel() {
+  const qc = useQueryClient();
   const [stichtag, setStichtag] = useState(todayIso());
   const [search, setSearch] = useState('');
   const [filterResp, setFilterResp] = useState('');
   const [minAgeOnly, setMinAgeOnly] = useState(false);
   const [minAgeDays, setMinAgeDays] = useState(60);
   const [sort, setSort] = useState({ key: 'age', dir: 'desc' });
+  const [expandedProjectIds, setExpandedProjectIds] = useState(() => new Set());
+  const [editingEntry, setEditingEntry] = useState(null);
+  const [currentEmp, setCurrentEmp] = useState(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const emp = await currentEmployee();
+        if (!cancelled) setCurrentEmp(emp);
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const fromIso = useMemo(() => isoMinusYears(stichtag, 2), [stichtag]);
 
@@ -80,17 +101,67 @@ export default function AAPanel() {
     queryFn: () => leProject.list({ status: 'offen' }),
   });
 
-  // Alle nicht-verrechneten Einträge holen: status 'erfasst' + 'freigegeben' separat.
+  // Alle nicht-verrechneten Einträge holen: status 'erfasst' + 'freigegeben' + 'kulant'
   const entriesQ = useQuery({
     queryKey: ['le', 'time_entry', 'aa', fromIso, stichtag],
     queryFn: async () => {
-      const [erfasst, freigegeben] = await Promise.all([
+      const [erfasst, freigegeben, kulant] = await Promise.all([
         leTimeEntry.listForRange(fromIso, stichtag, { status: 'erfasst' }),
         leTimeEntry.listForRange(fromIso, stichtag, { status: 'freigegeben' }),
+        leTimeEntry.listForRange(fromIso, stichtag, { status: 'kulant' }).catch(() => []),
       ]);
-      return [...erfasst, ...freigegeben];
+      return [...erfasst, ...freigegeben, ...kulant];
     },
   });
+
+  // Stammdaten für Edit-Dialog
+  const serviceTypesQ = useQuery({ queryKey: ['le', 'service_type'], queryFn: () => leServiceType.list() });
+  const employeesQ    = useQuery({ queryKey: ['le', 'employee'], queryFn: () => leEmployee.list() });
+  const rateGroupRatesQ = useQuery({ queryKey: ['le', 'rate_group_rate', 'all'], queryFn: () => leRateGroupRate.listAll() });
+  const rateHistoryQ   = useQuery({ queryKey: ['le', 'service_rate_history', 'all'], queryFn: () => leServiceRateHistory.listAll() });
+
+  // Map projectId → Liste aller Buchungen (für Aufklapp-Detail)
+  const entriesByProject = useMemo(() => {
+    const m = new Map();
+    for (const e of (entriesQ.data ?? [])) {
+      if (!e.project_id) continue;
+      if (!m.has(e.project_id)) m.set(e.project_id, []);
+      m.get(e.project_id).push(e);
+    }
+    // pro Projekt nach Datum desc sortieren
+    for (const arr of m.values()) {
+      arr.sort((a, b) => String(b.entry_date ?? '').localeCompare(String(a.entry_date ?? '')));
+    }
+    return m;
+  }, [entriesQ.data]);
+
+  // Mutation: Update Time-Entry
+  const updateMut = useMutation({
+    mutationFn: ({ id, patch }) => leTimeEntry.update(id, patch),
+    onSuccess: () => {
+      toast.success('Buchung gespeichert');
+      qc.invalidateQueries({ queryKey: ['le', 'time_entry'] });
+      setEditingEntry(null);
+    },
+    onError: (e) => toast.error('Fehler: ' + (e?.message ?? e)),
+  });
+  const removeMut = useMutation({
+    mutationFn: (id) => leTimeEntry.remove(id),
+    onSuccess: () => {
+      toast.success('Buchung gelöscht');
+      qc.invalidateQueries({ queryKey: ['le', 'time_entry'] });
+      setEditingEntry(null);
+    },
+    onError: (e) => toast.error('Fehler: ' + (e?.message ?? e)),
+  });
+
+  const toggleExpand = (projectId) => {
+    setExpandedProjectIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(projectId)) next.delete(projectId); else next.add(projectId);
+      return next;
+    });
+  };
 
   const isLoading = projectsQ.isLoading || entriesQ.isLoading;
   const error = projectsQ.error || entriesQ.error;
@@ -334,44 +405,118 @@ export default function AAPanel() {
                   {filtered.map((r) => {
                     const pauschal = r.billingMode === 'pauschal';
                     const ageTone = r.age >= 180 ? 'red' : r.age >= 90 ? 'orange' : 'green';
+                    const expanded = expandedProjectIds.has(r.id);
+                    const projectEntries = entriesByProject.get(r.id) ?? [];
                     return (
-                      <tr key={r.id} className="border-t hover:bg-zinc-50" style={{ borderColor: '#eef1ee' }}>
-                        <td className="px-2 py-2 font-medium text-zinc-800">{r.projectName}</td>
-                        <td className="px-2 py-2 text-zinc-600">{r.customerName}</td>
-                        <td className="px-2 py-2">
-                          <Chip tone="neutral">{r.responsibleShort}</Chip>
-                        </td>
-                        <td className="px-2 py-2 text-right tabular-nums">{r.hoursInternal > 0 ? fmt.hours(r.hoursInternal) : '—'}</td>
-                        <td className="px-2 py-2 text-right tabular-nums">{r.geleistet > 0 ? fmt.chf(r.geleistet) : '—'}</td>
-                        <td className="px-2 py-2 text-right text-zinc-400">—</td>
-                        <td className="px-2 py-2 text-right tabular-nums" style={{ color: pauschal ? '#a0a0a0' : undefined }}>
-                          {pauschal ? <span className="text-zinc-400">—</span> : (r.offen > 0 ? <span style={{ color: '#2d5a2d', fontWeight: 500 }}>{fmt.chf(r.offen)}</span> : fmt.chf(r.offen))}
-                        </td>
-                        <td className="px-2 py-2 text-right text-zinc-400">—</td>
-                        <td className="px-2 py-2 text-right text-zinc-400">—</td>
-                        <td className="px-2 py-2 text-right tabular-nums">
-                          {r.oldest ? (
-                            <Chip tone={ageTone}>{r.age} T</Chip>
-                          ) : (
-                            <span className="text-zinc-400">—</span>
-                          )}
-                        </td>
-                        <td className="px-2 py-2">
-                          {pauschal
-                            ? <Chip tone="blue">Pauschal</Chip>
-                            : <Chip tone="green">Effektiv</Chip>}
-                        </td>
-                        <td className="px-2 py-2 text-right">
-                          <button
-                            type="button"
-                            onClick={() => handleRechnen(r)}
-                            className={artisBtn.primary + ' !py-1 !px-2 !text-xs'}
-                            style={artisPrimaryStyle}
-                          >
-                            <Calculator className="w-3.5 h-3.5" /> Rechnen →
-                          </button>
-                        </td>
-                      </tr>
+                      <React.Fragment key={r.id}>
+                        <tr
+                          className="border-t hover:bg-zinc-50 cursor-pointer"
+                          style={{ borderColor: '#eef1ee', background: expanded ? '#f5faf5' : undefined }}
+                          onClick={() => toggleExpand(r.id)}
+                        >
+                          <td className="px-2 py-2 font-medium text-zinc-800">
+                            <div className="flex items-center gap-1.5">
+                              {projectEntries.length > 0 ? (
+                                expanded ? <ChevronDown className="w-3.5 h-3.5 text-zinc-400" /> : <ChevronRight className="w-3.5 h-3.5 text-zinc-400" />
+                              ) : (
+                                <span className="w-3.5 h-3.5 inline-block" />
+                              )}
+                              <span>{r.projectName}</span>
+                              {projectEntries.length > 0 && (
+                                <span className="text-[10px] text-zinc-400 ml-1">({projectEntries.length})</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-2 py-2 text-zinc-600">{r.customerName}</td>
+                          <td className="px-2 py-2">
+                            <Chip tone="neutral">{r.responsibleShort}</Chip>
+                          </td>
+                          <td className="px-2 py-2 text-right tabular-nums">{r.hoursInternal > 0 ? fmt.hours(r.hoursInternal) : '—'}</td>
+                          <td className="px-2 py-2 text-right tabular-nums">{r.geleistet > 0 ? fmt.chf(r.geleistet) : '—'}</td>
+                          <td className="px-2 py-2 text-right text-zinc-400">—</td>
+                          <td className="px-2 py-2 text-right tabular-nums" style={{ color: pauschal ? '#a0a0a0' : undefined }}>
+                            {pauschal ? <span className="text-zinc-400">—</span> : (r.offen > 0 ? <span style={{ color: '#2d5a2d', fontWeight: 500 }}>{fmt.chf(r.offen)}</span> : fmt.chf(r.offen))}
+                          </td>
+                          <td className="px-2 py-2 text-right text-zinc-400">—</td>
+                          <td className="px-2 py-2 text-right text-zinc-400">—</td>
+                          <td className="px-2 py-2 text-right tabular-nums">
+                            {r.oldest ? <Chip tone={ageTone}>{r.age} T</Chip> : <span className="text-zinc-400">—</span>}
+                          </td>
+                          <td className="px-2 py-2">
+                            {pauschal
+                              ? <Chip tone="blue">Pauschal</Chip>
+                              : <Chip tone="green">Effektiv</Chip>}
+                          </td>
+                          <td className="px-2 py-2 text-right">
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); handleRechnen(r); }}
+                              className={artisBtn.primary + ' !py-1 !px-2 !text-xs'}
+                              style={artisPrimaryStyle}
+                            >
+                              <Calculator className="w-3.5 h-3.5" /> Rechnen →
+                            </button>
+                          </td>
+                        </tr>
+                        {expanded && projectEntries.length > 0 && (
+                          <tr style={{ background: '#fafbf9' }}>
+                            <td colSpan={12} className="px-2 py-2">
+                              <div className="border rounded overflow-hidden" style={{ borderColor: '#e4e7e4', background: '#fff' }}>
+                                <table className="w-full text-xs">
+                                  <thead>
+                                    <tr className="text-[10px] uppercase tracking-wider text-zinc-500 border-b" style={{ borderColor: '#eef1ee', background: '#fafbf9' }}>
+                                      <th className="text-left font-semibold px-2 py-1.5 w-24">Datum</th>
+                                      <th className="text-left font-semibold px-2 py-1.5 w-12">MA</th>
+                                      <th className="text-left font-semibold px-2 py-1.5 w-32">Leistungsart</th>
+                                      <th className="text-left font-semibold px-2 py-1.5">Beschreibung</th>
+                                      <th className="text-right font-semibold px-2 py-1.5 w-14">Std.</th>
+                                      <th className="text-right font-semibold px-2 py-1.5 w-16">Satz</th>
+                                      <th className="text-right font-semibold px-2 py-1.5 w-20">Wert</th>
+                                      <th className="text-left font-semibold px-2 py-1.5 w-24">Status</th>
+                                      <th className="text-right font-semibold px-2 py-1.5 w-12"></th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {projectEntries.map((e) => {
+                                      const val = Number(e.hours_internal ?? 0) * Number(e.rate_snapshot ?? 0);
+                                      const statusTone = e.status === 'kulant' ? 'violet' : e.status === 'freigegeben' ? 'green' : 'neutral';
+                                      return (
+                                        <tr
+                                          key={e.id}
+                                          className="border-b last:border-b-0 hover:bg-zinc-50 cursor-pointer"
+                                          style={{ borderColor: '#eef1ee' }}
+                                          onClick={(ev) => { ev.stopPropagation(); setEditingEntry(e); }}
+                                        >
+                                          <td className="px-2 py-1.5 tabular-nums text-zinc-600">{fmt.date(e.entry_date)}</td>
+                                          <td className="px-2 py-1.5"><Chip tone="neutral">{e.employee?.short_code ?? '—'}</Chip></td>
+                                          <td className="px-2 py-1.5 text-zinc-700">{e.service_type?.name ?? '—'}</td>
+                                          <td className="px-2 py-1.5 text-zinc-600">
+                                            {e.description || <span className="text-zinc-300 italic">— keine Beschreibung —</span>}
+                                          </td>
+                                          <td className="px-2 py-1.5 text-right tabular-nums">{fmt.hours(e.hours_internal)}</td>
+                                          <td className="px-2 py-1.5 text-right tabular-nums text-zinc-500">{fmt.chf(e.rate_snapshot)}</td>
+                                          <td className="px-2 py-1.5 text-right tabular-nums font-medium">{fmt.chf(val)}</td>
+                                          <td className="px-2 py-1.5"><Chip tone={statusTone}>{e.status}</Chip></td>
+                                          <td className="px-2 py-1.5 text-right">
+                                            <button
+                                              type="button"
+                                              className="text-zinc-400 hover:text-zinc-700"
+                                              onClick={(ev) => { ev.stopPropagation(); setEditingEntry(e); }}
+                                              title="Bearbeiten"
+                                            >
+                                              <Pencil className="w-3.5 h-3.5" />
+                                            </button>
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
                     );
                   })}
                 </tbody>
@@ -398,6 +543,24 @@ export default function AAPanel() {
           </div>
         </>
       )}
+
+      {/* Edit-Dialog für einzelne Buchungen */}
+      <RapportEditDialog
+        open={!!editingEntry}
+        onClose={() => setEditingEntry(null)}
+        onSave={async (payload) => {
+          const { id, ...patch } = payload;
+          if (id) await updateMut.mutateAsync({ id, patch });
+        }}
+        onDelete={(id) => removeMut.mutateAsync(id)}
+        initial={editingEntry}
+        employee={editingEntry?.employee ?? currentEmp}
+        projects={projectsQ.data ?? []}
+        serviceTypes={serviceTypesQ.data ?? []}
+        rateGroupRates={rateGroupRatesQ.data ?? []}
+        serviceRateHistory={rateHistoryQ.data ?? []}
+        currentDate={editingEntry?.entry_date ?? todayIso()}
+      />
     </div>
   );
 }
