@@ -19,7 +19,8 @@ import {
   BarChart3,
   Clock,
   BookMarked,
-  CalendarDays
+  CalendarDays,
+  CalendarRange
 } from "lucide-react";
 import { FEATURE_LEISTUNGSERFASSUNG } from "@/lib/featureFlags";
 import VoiceAssistant from "@/components/voice/VoiceAssistant";
@@ -84,7 +85,6 @@ export default function Layout({ children, currentPageName }) {
     { name: 'TicketBoard',    icon: LifeBuoy,        label: 'Tickets' },
     { name: 'KnowledgeBase',  icon: BookOpen,        label: 'Wissen' },
     { name: 'Fristen',        icon: CalendarClock,   label: 'Fristen' },
-    { name: 'Kalender',       icon: CalendarDays,    label: 'Kalender' },
     { name: 'Kunden',         icon: Building2,       label: 'Kunden' },
     { name: 'Dokumente',      icon: FolderOpen,      label: 'Dokumente' },
     { name: 'Posteingang',    icon: CloudUpload,     label: 'Posteingang' },

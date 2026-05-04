@@ -1,7 +1,7 @@
 import React, { useContext } from "react";
 import { useNavigate } from "react-router-dom";
 import { ThemeContext } from "@/Layout";
-import { BookOpen, Car, FileText, UserCog, ChevronRight, Wrench, PenLine, Presentation, FileSpreadsheet, Sparkles, Phone, CalendarRange } from "lucide-react";
+import { BookOpen, Car, FileText, UserCog, ChevronRight, Wrench, PenLine, Presentation, FileSpreadsheet, Sparkles, Phone, CalendarRange, CalendarDays } from "lucide-react";
 
 const TOOLS = [
   {
@@ -93,6 +93,24 @@ const TOOLS = [
     color: "#4d6a50",
     bg: "#e6ede6",
     route: "/Jahresplanung",
+  },
+  {
+    id: "kalender",
+    title: "Kalender",
+    description: "Outlook-Kalender synchronisieren: Termine, Einladungen und Ereignisse aus Microsoft 365 im Überblick",
+    icon: CalendarDays,
+    color: "#1a6a8a",
+    bg: "#deeef5",
+    route: "/Kalender",
+  },
+  {
+    id: "monatsplanung",
+    title: "Einsatzplanung",
+    description: "Kundenspezifische Monatsplanung: frei benennbare Aktivitäten pro Monat & Jahr – mit Detailtext, optionalem Datum und Jahresübernahme",
+    icon: CalendarRange,
+    color: "#2d5a8a",
+    bg: "#deeaf5",
+    route: "/Monatsplanung",
   },
 ];
 

@@ -49,6 +49,7 @@ const Leistungserfassung    = lazy(() => import("./pages/Leistungserfassung.jsx"
 const Promptvorlagen        = lazy(() => import("./pages/Promptvorlagen.jsx"));
 const TelefonDashboard      = lazy(() => import("./pages/TelefonDashboard.jsx"));
 const Jahresplanung         = lazy(() => import("./pages/Jahresplanung.jsx"));
+const Monatsplanung         = lazy(() => import("./pages/Monatsplanung.jsx"));
 const Kalender              = lazy(() => import("./pages/Kalender.jsx"));
 const FiBuRouter            = lazy(() => import("./modules/fibu/router.jsx"));
 
@@ -110,6 +111,7 @@ function AuthenticatedApp() {
             <Route path="/Promptvorlagen" element={<Promptvorlagen />} />
             <Route path="/TelefonDashboard" element={<TelefonDashboard />} />
             <Route path="/Jahresplanung" element={<Jahresplanung />} />
+            <Route path="/Monatsplanung" element={<Monatsplanung />} />
             <Route path="/Kalender" element={<Kalender />} />
             {FEATURE_LEISTUNGSERFASSUNG && (
                 <Route path="/Leistungserfassung" element={<Leistungserfassung />} />
