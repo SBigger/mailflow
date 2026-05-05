@@ -7,13 +7,13 @@ import { useAuth } from "@/lib/AuthContext";
 import { toast } from "sonner";
 import {
   CalendarRange, Plus, X, Trash2, Search,
-  ChevronDown, ChevronRight, Building2, RefreshCw
+  ChevronDown, ChevronRight, Building2, RefreshCw, GripVertical
 } from "lucide-react";
 
 const MONTHS      = ["Jan","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"];
 const MONTHS_LONG = ["Januar","Februar","März","April","Mai","Juni","Juli","August","September","Oktober","November","Dezember"];
 
-// ── Drag portal (fixes ghost-position bug in scroll containers) ───────────────
+// ── Drag portal ───────────────────────────────────────────────────────────────
 const _dragPortalEl = typeof document !== "undefined"
   ? (() => { const d = document.createElement("div"); document.body.appendChild(d); return d; })()
   : null;
@@ -22,7 +22,7 @@ function applyDragPortal(snap, child) {
   return child;
 }
 
-// ── Activity chip colors ──────────────────────────────────────────────────────
+// ── Chip colors ───────────────────────────────────────────────────────────────
 const CHIP_COLORS = [
   { color: "#2563eb", bg: "#dbeafe" },
   { color: "#7c3aed", bg: "#ede9fe" },
@@ -39,7 +39,7 @@ function getTitleColor(title) {
   return CHIP_COLORS[h % CHIP_COLORS.length];
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 function toLocalDateStr(d) {
   if (!d) return "";
   const dt = new Date(d);
@@ -51,7 +51,7 @@ function toInputDate(d) {
   return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`;
 }
 
-// ── Kunden-Selector ───────────────────────────────────────────────────────────
+// ── KundenSelector ────────────────────────────────────────────────────────────
 function KundenSelector({ customers, selectedId, onSelect, colors }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -64,7 +64,7 @@ function KundenSelector({ customers, selectedId, onSelect, colors }) {
   }, [customers, search]);
   const selected = customers.find(c => c.id === selectedId);
   useEffect(() => {
-    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const h = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
     document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
   }, []);
@@ -98,12 +98,12 @@ function KundenSelector({ customers, selectedId, onSelect, colors }) {
   );
 }
 
-// ── Plan-Tabs ─────────────────────────────────────────────────────────────────
+// ── PlanTabs ──────────────────────────────────────────────────────────────────
 function PlanTabs({ plans, selectedPlanId, onSelect, onAdd, onRename, onDelete, colors }) {
   const { border, text, subtle, accent, pageBg } = colors;
   const [renamingId, setRenamingId] = useState(null);
   const [renameVal, setRenameVal] = useState("");
-  const startRename = (plan) => { setRenamingId(plan.id); setRenameVal(plan.name); };
+  const startRename = plan => { setRenamingId(plan.id); setRenameVal(plan.name); };
   const commitRename = async () => { if (renameVal.trim()) await onRename(renamingId, renameVal.trim()); setRenamingId(null); };
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
@@ -123,7 +123,7 @@ function PlanTabs({ plans, selectedPlanId, onSelect, onAdd, onRename, onDelete, 
   );
 }
 
-// ── Jahreswechsel-Dialog ──────────────────────────────────────────────────────
+// ── YearChangeDialog ──────────────────────────────────────────────────────────
 function YearChangeDialog({ fromYear, toYear, onConfirm, onCancel, colors }) {
   const { cardBg, border, text, subtle, accent } = colors;
   return (
@@ -182,24 +182,29 @@ function ConfirmModal({ message, onConfirm, onClose, colors }) {
   );
 }
 
-// ── EntryModal (Jahresplanung-Stil) ───────────────────────────────────────────
-function EntryModal({ mode, entry, month, year, existingTitles, onSave, onDelete, onClose, colors }) {
+// ── EntryModal ────────────────────────────────────────────────────────────────
+function EntryModal({ mode, entry, month, year, prefillTitle, existingTitles, onSave, onDelete, onClose, colors }) {
   const { cardBg, border, text, subtle, accent, pageBg } = colors;
   const lbl = { fontSize: 10.5, fontWeight: 700, color: subtle, textTransform: "uppercase", letterSpacing: ".07em", display: "block", marginBottom: 4 };
   const inp = { width: "100%", padding: "7px 10px", fontSize: 12.5, borderRadius: 7, border: `1px solid ${border}`, backgroundColor: pageBg, color: text, outline: "none", boxSizing: "border-box" };
 
-  const [title, setTitle] = useState(entry?.title || "");
-  const [detail, setDetail] = useState(entry?.detail_text || "");
-  const [datum, setDatum]   = useState(entry ? toInputDate(entry.datum) : "");
-  const [done, setDone]     = useState(entry?.done || false);
-  const [saving, setSaving] = useState(false);
+  const initStart = entry?.month || month || 1;
+  const initEnd   = entry?.month_end || initStart;
+
+  const [title, setTitle]           = useState(entry?.title || prefillTitle || "");
+  const [detail, setDetail]         = useState(entry?.detail_text || "");
+  const [datum, setDatum]           = useState(entry ? toInputDate(entry.datum) : "");
+  const [done, setDone]             = useState(entry?.done || false);
+  const [monthStart, setMonthStart] = useState(initStart);
+  const [monthEnd, setMonthEnd]     = useState(initEnd);
+  const [saving, setSaving]         = useState(false);
   const titleRef = useRef(null);
   useEffect(() => { titleRef.current?.focus(); }, []);
 
   const handleSave = async () => {
     if (!title.trim()) { toast.error("Titel ist erforderlich"); return; }
     setSaving(true);
-    await onSave({ title: title.trim(), detail_text: detail.trim() || null, datum: datum || null, done });
+    await onSave({ title: title.trim(), detail_text: detail.trim() || null, datum: datum || null, done, month_start: monthStart, month_end: monthEnd });
     setSaving(false);
   };
 
@@ -208,11 +213,11 @@ function EntryModal({ mode, entry, month, year, existingTitles, onSave, onDelete
   return (
     <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}
          onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={{ backgroundColor: cardBg, border: `1px solid ${border}`, borderRadius: 14, padding: 24, width: 440, maxHeight: "90vh", overflowY: "auto", boxShadow: "0 24px 60px rgba(0,0,0,0.25)" }}>
+      <div style={{ backgroundColor: cardBg, border: `1px solid ${border}`, borderRadius: 14, padding: 24, width: 460, maxHeight: "90vh", overflowY: "auto", boxShadow: "0 24px 60px rgba(0,0,0,0.25)" }}>
 
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
           <span style={{ fontSize: 14, fontWeight: 700, color: text }}>
-            {isEdit ? "Eintrag bearbeiten" : `Eintrag – ${MONTHS_LONG[month - 1]} ${year}`}
+            {isEdit ? "Eintrag bearbeiten" : `Neuer Eintrag – ${year}`}
           </span>
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: subtle, padding: 2 }}><X size={16} /></button>
         </div>
@@ -226,6 +231,24 @@ function EntryModal({ mode, entry, month, year, existingTitles, onSave, onDelete
           <datalist id="mp-titles-list">
             {existingTitles.map(t => <option key={t} value={t} />)}
           </datalist>
+        </div>
+
+        {/* Von / Bis Monat */}
+        <div style={{ display: "flex", gap: 12, marginBottom: 14 }}>
+          <div style={{ flex: 1 }}>
+            <label style={lbl}>VON MONAT</label>
+            <select value={monthStart} onChange={e => { const v = +e.target.value; setMonthStart(v); if (v > monthEnd) setMonthEnd(v); }} style={inp}>
+              {MONTHS_LONG.map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
+            </select>
+          </div>
+          <div style={{ flex: 1 }}>
+            <label style={lbl}>BIS MONAT</label>
+            <select value={monthEnd} onChange={e => setMonthEnd(+e.target.value)} style={inp}>
+              {MONTHS_LONG.map((m, i) => (
+                <option key={i + 1} value={i + 1} disabled={i + 1 < monthStart}>{m}</option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {/* Detail */}
@@ -244,8 +267,7 @@ function EntryModal({ mode, entry, month, year, existingTitles, onSave, onDelete
         {/* Done */}
         <div style={{ marginBottom: 20 }}>
           <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-            <input type="checkbox" checked={done} onChange={e => setDone(e.target.checked)}
-              style={{ width: 14, height: 14, accentColor: "#22c55e" }} />
+            <input type="checkbox" checked={done} onChange={e => setDone(e.target.checked)} style={{ width: 14, height: 14, accentColor: "#22c55e" }} />
             <span style={{ fontSize: 12.5, color: text, fontWeight: 500 }}>Erledigt</span>
           </label>
         </div>
@@ -280,7 +302,6 @@ function Uebersicht({ customersWithPlans, plansByCustomer, onSelectCustomer, onD
     const q = search.toLowerCase();
     return customersWithPlans.filter(c => (c.company_name || "").toLowerCase().includes(q));
   }, [customersWithPlans, search]);
-
   return (
     <div style={{ flex: 1, overflow: "auto", padding: "24px 28px" }}>
       <div style={{ maxWidth: 720 }}>
@@ -294,10 +315,10 @@ function Uebersicht({ customersWithPlans, plansByCustomer, onSelectCustomer, onD
           {filtered.map(c => {
             const plans = plansByCustomer[c.id] || [];
             return (
-              <div key={c.id} style={{ position: "relative", background: cardBg, border: `1px solid ${border}`, borderRadius: 10, padding: "14px 16px", cursor: "pointer", transition: "border-color 0.15s, box-shadow 0.15s" }}
+              <div key={c.id} style={{ position: "relative", background: cardBg, border: `1px solid ${border}`, borderRadius: 10, padding: "14px 16px", cursor: "pointer", transition: "border-color 0.15s" }}
                 onClick={() => onSelectCustomer(c.id)}
-                onMouseEnter={e => { e.currentTarget.style.borderColor = accent; e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.08)"; e.currentTarget.querySelector(".del-btn").style.opacity = "1"; }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = border; e.currentTarget.style.boxShadow = "none"; e.currentTarget.querySelector(".del-btn").style.opacity = "0"; }}>
+                onMouseEnter={e => { e.currentTarget.style.borderColor = accent; e.currentTarget.querySelector(".del-btn").style.opacity = "1"; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = border; e.currentTarget.querySelector(".del-btn").style.opacity = "0"; }}>
                 <button className="del-btn" onClick={e => { e.stopPropagation(); onDeleteCustomer(c); }} style={{ position: "absolute", top: 8, right: 8, border: "none", background: "transparent", cursor: "pointer", color: "#dc2626", padding: 4, borderRadius: 5, opacity: 0, transition: "opacity 0.15s", display: "flex", alignItems: "center" }}>
                   <Trash2 size={13} />
                 </button>
@@ -317,12 +338,20 @@ function Uebersicht({ customersWithPlans, plansByCustomer, onSelectCustomer, onD
   );
 }
 
-// ── Planungsraster (Jahresplanung-Stil) ───────────────────────────────────────
-function PlanGrid({ plan, entries, years, onCellClick, onEntryClick, onToggleDone, onDragEnd, colors }) {
-  const { cardBg, border, text, subtle, accent, headerBg, isArtis, isLight } = colors;
+// ── Planungsraster ────────────────────────────────────────────────────────────
+function PlanGrid({
+  entries, years,
+  sidebarActivities, existingTitles,
+  onCellClick, onEntryClick, onToggleDone, onDragEnd,
+  onAddActivity, onRemoveActivity,
+  colors,
+}) {
+  const { cardBg, border, text, subtle, accent, headerBg, isArtis, isLight, pageBg } = colors;
   const currentYear  = new Date().getFullYear();
   const currentMonth = new Date().getMonth() + 1;
+  const dropHl = isArtis ? "#b8ddb8" : "#c4b5fd";
 
+  const [newActivity, setNewActivity] = useState("");
   const [collapsedYears, setCollapsedYears] = useState(new Set());
   const initRef = useRef(false);
   useEffect(() => {
@@ -331,73 +360,86 @@ function PlanGrid({ plan, entries, years, onCellClick, onEntryClick, onToggleDon
       setCollapsedYears(new Set(years.slice(1)));
     }
   }, [years]);
-
-  const toggleYear = (year) => setCollapsedYears(prev => {
-    const n = new Set(prev);
-    if (n.has(year)) n.delete(year); else n.add(year);
-    return n;
+  const toggleYear = year => setCollapsedYears(prev => {
+    const n = new Set(prev); if (n.has(year)) n.delete(year); else n.add(year); return n;
   });
 
+  // byYear[year][month] = [entries...]
   const byYear = useMemo(() => {
     const m = {};
     for (const e of entries) {
       if (!m[e.year]) m[e.year] = {};
-      if (!m[e.year][e.title]) m[e.year][e.title] = {};
-      if (!m[e.year][e.title][e.month]) m[e.year][e.title][e.month] = [];
-      m[e.year][e.title][e.month].push(e);
+      if (!m[e.year][e.month]) m[e.year][e.month] = [];
+      m[e.year][e.month].push(e);
     }
     return m;
   }, [entries]);
 
-  const titlesByYear = useMemo(() => {
-    const m = {};
-    for (const e of entries) {
-      if (!m[e.year]) m[e.year] = [];
-      if (!m[e.year].includes(e.title)) m[e.year].push(e.title);
-    }
-    return m;
-  }, [entries]);
-
-  const allTitles = useMemo(() => {
-    const seen = [];
-    for (const e of entries) { if (!seen.includes(e.title)) seen.push(e.title); }
-    return seen;
-  }, [entries]);
-
-  const rowSubBg = isArtis ? "#f4f8f4" : isLight ? "#f7f7fb" : "#26262c";
+  const handleAddNew = () => {
+    const t = newActivity.trim();
+    if (!t) return;
+    onAddActivity(t);
+    setNewActivity("");
+  };
 
   return (
     <DragDropContext onDragEnd={onDragEnd}>
       <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
 
         {/* ── Sidebar ── */}
-        <div style={{ width: 180, flexShrink: 0, borderRight: `1px solid ${border}`, display: "flex", flexDirection: "column", backgroundColor: cardBg }}>
-          <div style={{ padding: "6px 8px 4px", borderBottom: `1px solid ${border}` }}>
-            <div style={{ fontSize: 9.5, color: subtle, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".07em", padding: "2px 2px 4px" }}>
-              Aktivitäten · ziehen
+        <div style={{ width: 195, flexShrink: 0, borderRight: `1px solid ${border}`, display: "flex", flexDirection: "column", backgroundColor: cardBg }}>
+          <div style={{ padding: "8px", borderBottom: `1px solid ${border}`, flexShrink: 0 }}>
+            <div style={{ fontSize: 9.5, fontWeight: 700, color: subtle, textTransform: "uppercase", letterSpacing: ".07em", marginBottom: 7 }}>
+              Aktivitäten
+            </div>
+            <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
+              <input
+                value={newActivity}
+                onChange={e => setNewActivity(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") handleAddNew(); }}
+                placeholder="Neue Aktivität…"
+                style={{ flex: 1, padding: "5px 8px", fontSize: 11.5, border: `1px solid ${border}`, borderRadius: 6, backgroundColor: pageBg, color: text, outline: "none", minWidth: 0 }}
+              />
+              <button onClick={handleAddNew} disabled={!newActivity.trim()} title="Hinzufügen"
+                style={{ width: 26, height: 26, flexShrink: 0, borderRadius: 6, border: "none", background: accent, color: "#fff", cursor: newActivity.trim() ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center", opacity: newActivity.trim() ? 1 : 0.35, padding: 0 }}>
+                <Plus size={13} />
+              </button>
             </div>
           </div>
-          <div style={{ flex: 1, overflowY: "auto", padding: "4px 5px" }}>
+
+          <div style={{ flex: 1, overflowY: "auto", padding: "5px 6px" }}>
             <Droppable droppableId="mp-sidebar" isDropDisabled={true}>
-              {(prov) => (
+              {prov => (
                 <div ref={prov.innerRef} {...prov.droppableProps}>
-                  {allTitles.map((title, idx) => {
+                  {sidebarActivities.map((title, idx) => {
                     const col = getTitleColor(title);
+                    const isManual = !existingTitles.includes(title);
                     return (
                       <Draggable key={`s-${title}`} draggableId={`mp-sidebar|${encodeURIComponent(title)}`} index={idx}>
                         {(drag, snap) => applyDragPortal(snap,
-                          <div ref={drag.innerRef} {...drag.draggableProps} {...drag.dragHandleProps}
-                            style={{ ...drag.draggableProps.style, padding: "3px 7px 3px 9px", marginBottom: 2, borderRadius: 5, fontSize: 11, color: col.color, backgroundColor: snap.isDragging ? col.bg : `${col.bg}99`, borderLeft: `3px solid ${col.color}`, border: `1px solid ${snap.isDragging ? col.color + "50" : "transparent"}`, borderLeft: `3px solid ${col.color}`, cursor: "grab", userSelect: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", boxShadow: snap.isDragging ? "0 4px 12px rgba(0,0,0,0.15)" : "none" }}>
-                            {title}
+                          <div ref={drag.innerRef} {...drag.draggableProps}
+                            style={{ ...drag.draggableProps.style, display: "flex", alignItems: "center", gap: 5, padding: "4px 5px 4px 8px", marginBottom: 3, borderRadius: 5, backgroundColor: snap.isDragging ? col.bg : `${col.bg}99`, border: `1px solid ${snap.isDragging ? col.color + "50" : "transparent"}`, borderLeft: `3px solid ${col.color}`, cursor: "grab", userSelect: "none", boxShadow: snap.isDragging ? "0 4px 14px rgba(0,0,0,0.18)" : "none" }}>
+                            <div {...drag.dragHandleProps} style={{ color: col.color, opacity: 0.45, display: "flex", alignItems: "center", flexShrink: 0, cursor: "grab" }}>
+                              <GripVertical size={10} />
+                            </div>
+                            <span style={{ fontSize: 11, color: col.color, fontWeight: 600, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {title}
+                            </span>
+                            {isManual && (
+                              <button onClick={() => onRemoveActivity(title)} title="Entfernen"
+                                style={{ border: "none", background: "none", cursor: "pointer", color: subtle, padding: 1, display: "flex", alignItems: "center", flexShrink: 0 }}>
+                                <X size={9} />
+                              </button>
+                            )}
                           </div>
                         )}
                       </Draggable>
                     );
                   })}
                   {prov.placeholder}
-                  {allTitles.length === 0 && (
-                    <div style={{ fontSize: 10.5, color: subtle, padding: "12px 6px", textAlign: "center", lineHeight: 1.6 }}>
-                      Noch keine Aktivitäten.<br />Klicke auf einen Monat.
+                  {sidebarActivities.length === 0 && (
+                    <div style={{ fontSize: 10.5, color: subtle, padding: "16px 6px", textAlign: "center", lineHeight: 1.7 }}>
+                      Aktivität oben erfassen<br />und in den Kalender ziehen.
                     </div>
                   )}
                 </div>
@@ -406,12 +448,12 @@ function PlanGrid({ plan, entries, years, onCellClick, onEntryClick, onToggleDon
           </div>
         </div>
 
-        {/* ── Planning grid ── */}
+        {/* ── Grid ── */}
         <div style={{ flex: 1, overflowX: "auto", overflowY: "auto" }}>
           <div style={{ minWidth: 12 * 100 }}>
 
             {/* Sticky month header */}
-            <div style={{ display: "flex", position: "sticky", top: 0, zIndex: 20, borderBottom: `2px solid ${border}`, backgroundColor: isArtis ? "#e8f0e8" : isLight ? "#eeeef6" : "#222228", flexShrink: 0 }}>
+            <div style={{ display: "flex", position: "sticky", top: 0, zIndex: 20, borderBottom: `2px solid ${border}`, backgroundColor: isArtis ? "#e8f0e8" : isLight ? "#eeeef6" : "#222228" }}>
               {MONTHS.map((m, mi) => {
                 const isCur = mi + 1 === currentMonth;
                 return (
@@ -426,12 +468,12 @@ function PlanGrid({ plan, entries, years, onCellClick, onEntryClick, onToggleDon
             {/* Year sections */}
             <div style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 10 }}>
               {years.map(year => {
-                const isCollapsed  = collapsedYears.has(year);
-                const isCurYear    = year === currentYear;
-                const titles       = titlesByYear[year] || [];
-                const entryMap     = byYear[year] || {};
-                const entryCount   = entries.filter(e => e.year === year).length;
-                const doneCount    = entries.filter(e => e.year === year && e.done).length;
+                const isCollapsed   = collapsedYears.has(year);
+                const isCurYear     = year === currentYear;
+                const cellsMap      = byYear[year] || {};
+                const allYrEntries  = entries.filter(e => e.year === year);
+                const entryCount    = allYrEntries.length;
+                const doneCount     = allYrEntries.filter(e => e.done).length;
 
                 return (
                   <div key={year} style={{ borderRadius: 10, overflow: "hidden", backgroundColor: cardBg, border: `1px solid ${isCurYear ? accent : border}`, boxShadow: isCurYear ? `0 0 0 2px ${accent}20` : "0 1px 3px rgba(0,0,0,0.04)" }}>
@@ -449,107 +491,72 @@ function PlanGrid({ plan, entries, years, onCellClick, onEntryClick, onToggleDon
                     </div>
 
                     {!isCollapsed && (
-                      <div style={{ borderTop: `1px solid ${border}` }}>
-
-                        {titles.length === 0 && (
-                          <div style={{ padding: "24px 16px", textAlign: "center", color: subtle, fontSize: 13 }}>
-                            Aktivität aus der Seitenleiste ziehen oder auf einen Monat klicken.
-                          </div>
-                        )}
-
-                        {/* Activity rows */}
-                        {titles.map(title => {
-                          const col         = getTitleColor(title);
-                          const titleTotal  = entries.filter(e => e.year === year && e.title === title).length;
-                          const titleDone   = entries.filter(e => e.year === year && e.title === title && e.done).length;
+                      <div style={{ borderTop: `1px solid ${border}`, display: "flex" }}>
+                        {MONTHS.map((_, mi) => {
+                          const month       = mi + 1;
+                          const isCurCell   = month === currentMonth && isCurYear;
+                          const cellEntries = cellsMap[month] || [];
 
                           return (
-                            <div key={title} style={{ borderBottom: `1px solid ${border}` }}>
-                              {/* Activity sub-header */}
-                              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 12px", backgroundColor: rowSubBg, borderBottom: `1px solid ${border}` }}>
-                                <div style={{ width: 9, height: 9, borderRadius: 2, backgroundColor: col.color, flexShrink: 0 }} />
-                                <span style={{ fontSize: 11.5, fontWeight: 700, color: text, flex: 1 }}>{title}</span>
-                                <span style={{ fontSize: 10, color: subtle }}>{titleDone}/{titleTotal}</span>
-                              </div>
+                            <Droppable key={month} droppableId={`mp-cell|${year}|${month}`}>
+                              {(prov, snap) => (
+                                <div ref={prov.innerRef} {...prov.droppableProps}
+                                  onClick={() => onCellClick(null, month, year)}
+                                  style={{ flex: "1 0 0", minWidth: 100, minHeight: 88, borderRight: mi < 11 ? `1px solid ${border}` : "none", padding: "4px 3px 22px", backgroundColor: snap.isDraggingOver ? dropHl : isCurCell ? `${accent}07` : "transparent", transition: "background-color 0.1s", display: "flex", flexDirection: "column", gap: 3, position: "relative" }}>
 
-                              {/* 12 month cells */}
-                              <div style={{ display: "flex" }}>
-                                {MONTHS.map((_, mi) => {
-                                  const month       = mi + 1;
-                                  const isCur       = month === currentMonth && isCurYear;
-                                  const cellEntries = entryMap[title]?.[month] || [];
-                                  const droppableId = `mp-cell|${year}|${encodeURIComponent(title)}|${month}`;
+                                  {cellEntries.map((entry, eidx) => {
+                                    const isDone  = !!entry.done;
+                                    const col     = getTitleColor(entry.title);
+                                    const me      = entry.month_end || entry.month;
+                                    const hasSpan = me > entry.month;
+                                    return (
+                                      <Draggable key={entry.id} draggableId={`mp-entry|${entry.id}`} index={eidx}>
+                                        {(drag, eSnap) => applyDragPortal(eSnap,
+                                          <div ref={drag.innerRef} {...drag.draggableProps} {...drag.dragHandleProps}
+                                            onClick={ev => { ev.stopPropagation(); onEntryClick(entry); }}
+                                            style={{ ...drag.draggableProps.style, backgroundColor: isDone ? `${col.bg}88` : col.bg, border: `1px solid ${isDone ? "#22c55e55" : col.color + "28"}`, borderLeft: `3px solid ${isDone ? "#22c55e" : col.color}`, borderRadius: 5, cursor: "pointer", opacity: isDone ? 0.8 : 1, boxShadow: eSnap.isDragging ? "0 4px 14px rgba(0,0,0,0.2)" : "none" }}>
+                                            <div style={{ position: "relative", padding: "4px 6px" }}>
+                                              {/* Done toggle */}
+                                              <button onClick={ev => { ev.stopPropagation(); onToggleDone(entry.id, entry.done); }}
+                                                style={{ position: "absolute", top: 0, right: 0, width: 13, height: 13, borderRadius: "50%", border: `1.5px solid ${isDone ? "#22c55e" : "#d1d5db"}`, background: isDone ? "#22c55e" : "transparent", cursor: "pointer", padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                                {isDone && <span style={{ fontSize: 7, color: "#fff", fontWeight: 900, lineHeight: 1 }}>✓</span>}
+                                              </button>
+                                              {/* Title */}
+                                              <div style={{ fontSize: 9.5, fontWeight: 700, color: isDone ? "#22c55e" : col.color, paddingRight: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textDecoration: isDone ? "line-through" : "none" }}>
+                                                {entry.title}
+                                              </div>
+                                              {/* Span indicator */}
+                                              {hasSpan && (
+                                                <div style={{ fontSize: 8.5, color: col.color, opacity: 0.75, marginTop: 1, display: "flex", alignItems: "center", gap: 2 }}>
+                                                  <span>→</span><span>{MONTHS[me - 1]}</span>
+                                                </div>
+                                              )}
+                                              {/* Datum (only if no span) */}
+                                              {!hasSpan && entry.datum && (
+                                                <div style={{ fontSize: 9.5, color: isDone ? "#888" : "#666", marginTop: 1 }}>{toLocalDateStr(entry.datum)}</div>
+                                              )}
+                                              {/* Detail dot */}
+                                              {entry.detail_text && <div title={entry.detail_text} style={{ position: "absolute", bottom: 3, right: 3, width: 5, height: 5, borderRadius: "50%", backgroundColor: "#f59e0b" }} />}
+                                            </div>
+                                          </div>
+                                        )}
+                                      </Draggable>
+                                    );
+                                  })}
+                                  {prov.placeholder}
 
-                                  return (
-                                    <Droppable key={month} droppableId={droppableId}>
-                                      {(prov, snap) => (
-                                        <div ref={prov.innerRef} {...prov.droppableProps}
-                                          onClick={() => onCellClick(title, month, year)}
-                                          style={{ flex: "1 0 0", minWidth: 100, minHeight: 80, borderRight: mi < 11 ? `1px solid ${border}` : "none", padding: "4px 3px 20px", backgroundColor: snap.isDraggingOver ? (isArtis ? "#c8e8c8" : "#ddd6fe") : isCur ? `${accent}07` : "transparent", transition: "background-color 0.12s", display: "flex", flexDirection: "column", gap: 3, position: "relative" }}>
-
-                                          {cellEntries.map((entry, eidx) => {
-                                            const isDone = entry.done === true;
-                                            return (
-                                              <Draggable key={entry.id} draggableId={`mp-entry|${entry.id}`} index={eidx}>
-                                                {(eDrag, eSnap) => applyDragPortal(eSnap,
-                                                  <div ref={eDrag.innerRef} {...eDrag.draggableProps} {...eDrag.dragHandleProps}
-                                                    onClick={ev => { ev.stopPropagation(); onEntryClick(entry); }}
-                                                    style={{ ...eDrag.draggableProps.style, backgroundColor: isDone ? `${col.bg}88` : col.bg, border: `1px solid ${isDone ? "#22c55e55" : col.color + "28"}`, borderLeft: `3px solid ${isDone ? "#22c55e" : col.color}`, borderRadius: 5, cursor: "pointer", lineHeight: 1.35, opacity: isDone ? 0.8 : 1, boxShadow: eSnap.isDragging ? "0 4px 14px rgba(0,0,0,0.2)" : "none" }}>
-                                                    <div style={{ position: "relative", padding: "4px 6px" }}>
-                                                      {/* Done toggle */}
-                                                      <button onClick={ev => { ev.stopPropagation(); onToggleDone(entry.id, entry.done); }}
-                                                        style={{ position: "absolute", top: 0, right: 0, width: 13, height: 13, borderRadius: "50%", border: `1.5px solid ${isDone ? "#22c55e" : "#d1d5db"}`, background: isDone ? "#22c55e" : "transparent", cursor: "pointer", padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                                                        {isDone && <span style={{ fontSize: 7, color: "#fff", fontWeight: 900, lineHeight: 1 }}>✓</span>}
-                                                      </button>
-                                                      <div style={{ fontSize: 9.5, fontWeight: 700, color: isDone ? "#22c55e" : col.color, paddingRight: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textDecoration: isDone ? "line-through" : "none" }}>{entry.title}</div>
-                                                      {entry.datum && <div style={{ fontSize: 9.5, color: isDone ? "#888" : "#555", marginTop: 1 }}>{toLocalDateStr(entry.datum)}</div>}
-                                                      {entry.detail_text && <div title={entry.detail_text} style={{ position: "absolute", bottom: 3, right: 3, width: 5, height: 5, borderRadius: "50%", backgroundColor: "#f59e0b", boxShadow: "0 0 0 1.5px #fff8" }} />}
-                                                    </div>
-                                                  </div>
-                                                )}
-                                              </Draggable>
-                                            );
-                                          })}
-                                          {prov.placeholder}
-
-                                          {/* + button */}
-                                          <button onClick={ev => { ev.stopPropagation(); onCellClick(title, month, year); }} title="Eintrag hinzufügen"
-                                            style={{ position: "absolute", top: 3, right: 3, width: 18, height: 18, borderRadius: "50%", border: `1px dashed ${border}`, background: "none", color: subtle, cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1, padding: 0, opacity: 0.4, transition: "all 0.12s" }}
-                                            onMouseEnter={e => { Object.assign(e.currentTarget.style, { opacity: "1", backgroundColor: `${accent}18`, borderColor: accent, borderStyle: "solid", color: accent }); }}
-                                            onMouseLeave={e => { Object.assign(e.currentTarget.style, { opacity: "0.4", backgroundColor: "transparent", borderColor: border, borderStyle: "dashed", color: subtle }); }}>
-                                            +
-                                          </button>
-                                        </div>
-                                      )}
-                                    </Droppable>
-                                  );
-                                })}
-                              </div>
-                            </div>
+                                  {/* + button */}
+                                  <button onClick={ev => { ev.stopPropagation(); onCellClick(null, month, year); }}
+                                    style={{ position: "absolute", bottom: 4, right: 4, width: 16, height: 16, borderRadius: "50%", border: `1px dashed ${border}`, background: "none", color: subtle, cursor: "pointer", fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", padding: 0, opacity: 0.35, transition: "all 0.12s" }}
+                                    onMouseEnter={e => Object.assign(e.currentTarget.style, { opacity: "1", backgroundColor: `${accent}18`, borderColor: accent, borderStyle: "solid", color: accent })}
+                                    onMouseLeave={e => Object.assign(e.currentTarget.style, { opacity: "0.35", backgroundColor: "transparent", borderColor: border, borderStyle: "dashed", color: subtle })}>
+                                    +
+                                  </button>
+                                </div>
+                              )}
+                            </Droppable>
                           );
                         })}
-
-                        {/* New entry row */}
-                        <div>
-                          <div style={{ padding: "4px 12px 0", fontSize: 10.5, color: subtle, fontStyle: "italic" }}>+ neuer Eintrag</div>
-                          <div style={{ display: "flex" }}>
-                            {MONTHS.map((_, mi) => {
-                              const month = mi + 1;
-                              return (
-                                <Droppable key={month} droppableId={`mp-new|${year}|${month}`}>
-                                  {(prov, snap) => (
-                                    <div ref={prov.innerRef} {...prov.droppableProps}
-                                      onClick={() => onCellClick(null, month, year)}
-                                      style={{ flex: "1 0 0", minWidth: 100, minHeight: 40, borderRight: mi < 11 ? `1px solid ${border}` : "none", cursor: "pointer", backgroundColor: snap.isDraggingOver ? (isArtis ? "#c8e8c8" : "#ddd6fe") : "transparent", transition: "background 0.12s" }}
-                                      onMouseEnter={e => { if (!snap.isDraggingOver) e.currentTarget.style.backgroundColor = isArtis ? "#f0f5f0" : "#f3f0fc"; }}
-                                      onMouseLeave={e => { if (!snap.isDraggingOver) e.currentTarget.style.backgroundColor = "transparent"; }}
-                                    />
-                                  )}
-                                </Droppable>
-                              );
-                            })}
-                          </div>
-                        </div>
                       </div>
                     )}
                   </div>
@@ -584,6 +591,7 @@ export default function Monatsplanung() {
   const [customers, setCustomers]       = useState([]);
   const [allCustomers, setAllCustomers] = useState([]);
   const [extraYears, setExtraYears]     = useState(() => new Set([new Date().getFullYear()]));
+  const [manualActivities, setManualActivities] = useState(new Set());
   const [selectedCustomerId, setSelectedCustomerId] = useState(null);
   const [selectedPlanId, setSelectedPlanId]         = useState(null);
   const [modal, setModal]               = useState(null);
@@ -592,20 +600,31 @@ export default function Monatsplanung() {
   const [confirmModal, setConfirmModal] = useState(null);
   const [loading, setLoading]           = useState(true);
 
+  // Reset manually added activities when plan changes
+  useEffect(() => { setManualActivities(new Set()); }, [selectedPlanId]);
+
   const years = useMemo(() => {
     const s = new Set([...entries.map(e => e.year), ...extraYears]);
     return [...s].sort((a, b) => b - a);
   }, [entries, extraYears]);
 
+  const existingTitles = useMemo(() => [...new Set(entries.map(e => e.title))], [entries]);
+
+  // Sidebar: manually added titles + titles already used in entries
+  const sidebarActivities = useMemo(() => {
+    const all = [...existingTitles];
+    for (const t of manualActivities) { if (!all.includes(t)) all.push(t); }
+    return all;
+  }, [existingTitles, manualActivities]);
+
   // ── Laden ──────────────────────────────────────────────────────────────────
   const loadPlans = useCallback(async () => {
     const { data, error } = await supabase.from("mp_plans").select("*").order("created_at");
     if (error) { toast.error(`Pläne: ${error.message}`); return []; }
-    setPlans(data || []);
-    return data || [];
+    setPlans(data || []); return data || [];
   }, []);
 
-  const loadCustomers = useCallback(async (plansData) => {
+  const loadCustomers = useCallback(async plansData => {
     const { data } = await supabase.from("customers").select("id,company_name,aktiv").or("aktiv.is.null,aktiv.eq.true").order("company_name").limit(3000);
     const all = data || [];
     setAllCustomers(all);
@@ -613,7 +632,7 @@ export default function Monatsplanung() {
     setCustomers(all.filter(c => usedIds.has(c.id)));
   }, []);
 
-  const loadEntries = useCallback(async (planId) => {
+  const loadEntries = useCallback(async planId => {
     if (!planId) { setEntries([]); return; }
     const { data, error } = await supabase.from("mp_entries").select("*").eq("plan_id", planId).order("year", { ascending: false });
     if (error) { toast.error(`Einträge: ${error.message}`); return; }
@@ -630,14 +649,20 @@ export default function Monatsplanung() {
   useEffect(() => { loadAll(); }, [loadAll]);
   useEffect(() => { if (selectedPlanId) loadEntries(selectedPlanId); }, [selectedPlanId, loadEntries]);
 
-  // ── Kunden/Plan ────────────────────────────────────────────────────────────
-  const handleSelectCustomer = (custId) => {
+  // ── Kunde/Plan ─────────────────────────────────────────────────────────────
+  const handleSelectCustomer = custId => {
     setSelectedCustomerId(custId);
     const custPlans = plans.filter(p => p.customer_id === custId);
     setSelectedPlanId(custPlans.length > 0 ? custPlans[0].id : null);
   };
 
-  // ── Jahreswechsel ──────────────────────────────────────────────────────────
+  const plansByCustomer = useMemo(() => {
+    const m = {};
+    for (const p of plans) { if (!m[p.customer_id]) m[p.customer_id] = []; m[p.customer_id].push(p); }
+    return m;
+  }, [plans]);
+
+  // ── Jahr hinzufügen ────────────────────────────────────────────────────────
   const handleAddYear = () => {
     const maxYear = years.length > 0 ? years[0] : new Date().getFullYear();
     setYearDialog({ from: maxYear, to: maxYear + 1 });
@@ -668,30 +693,23 @@ export default function Monatsplanung() {
   };
 
   // ── Plan CRUD ──────────────────────────────────────────────────────────────
-  const plansByCustomer = useMemo(() => {
-    const m = {};
-    for (const p of plans) { if (!m[p.customer_id]) m[p.customer_id] = []; m[p.customer_id].push(p); }
-    return m;
-  }, [plans]);
-
   const handleAddPlan = () => {
     setPromptModal({
       title: "Neuer Plan", placeholder: "z.B. Verwaltungsratstätigkeit", defaultValue: "",
-      onConfirm: async (name) => {
+      onConfirm: async name => {
         const { data: { user } } = await supabase.auth.getUser();
         const { data, error } = await supabase.from("mp_plans").insert({ customer_id: selectedCustomerId, name, created_by: user?.id }).select().single();
         if (error) { toast.error(error.message); return; }
         const updated = [...plans, data];
         setPlans(updated);
         setSelectedPlanId(data.id);
-        const usedIds = new Set(updated.map(p => p.customer_id));
-        setCustomers(allCustomers.filter(c => usedIds.has(c.id)));
+        setCustomers(allCustomers.filter(c => new Set(updated.map(p => p.customer_id)).has(c.id)));
         toast.success("Plan erstellt ✓");
       },
     });
   };
 
-  const handleDeleteCustomer = (customer) => {
+  const handleDeleteCustomer = customer => {
     const cnt = (plansByCustomer[customer.id] || []).length;
     setConfirmModal({
       message: `Alle ${cnt} Plan(s) von „${customer.company_name}" wirklich löschen?`,
@@ -713,7 +731,7 @@ export default function Monatsplanung() {
     setPlans(prev => prev.map(p => p.id === planId ? { ...p, name: newName } : p));
   };
 
-  const handleDeletePlan = (planId) => {
+  const handleDeletePlan = planId => {
     const plan = plans.find(p => p.id === planId);
     setConfirmModal({
       message: `Plan "${plan?.name}" wirklich löschen? Alle Einträge werden entfernt.`,
@@ -723,27 +741,34 @@ export default function Monatsplanung() {
         const updated = plans.filter(p => p.id !== planId);
         setPlans(updated);
         setCustomers(allCustomers.filter(c => new Set(updated.map(p => p.customer_id)).has(c.id)));
-        const remaining = updated.filter(p => p.customer_id === selectedCustomerId);
-        setSelectedPlanId(remaining.length > 0 ? remaining[0].id : null);
+        setSelectedPlanId(updated.filter(p => p.customer_id === selectedCustomerId)[0]?.id || null);
         toast.success("Plan gelöscht");
       },
     });
   };
 
   // ── Eintrag CRUD ──────────────────────────────────────────────────────────
-  const handleCellClick = (prefillTitle, month, year) => setModal({ mode: "create", month, prefillTitle, year });
-  const handleEntryClick = (entry) => setModal({ mode: "edit", entry, month: entry.month, year: entry.year });
+  const handleCellClick  = (prefillTitle, month, year) => setModal({ mode: "create", month, prefillTitle, year });
+  const handleEntryClick = entry => setModal({ mode: "edit", entry, month: entry.month, year: entry.year });
 
-  const handleSaveEntry = async (form) => {
-    const { title, detail_text, datum, done } = form;
+  const handleSaveEntry = async form => {
+    const { title, detail_text, datum, done, month_start, month_end } = form;
     const { data: { user } } = await supabase.auth.getUser();
     if (modal.mode === "create") {
-      const { data, error } = await supabase.from("mp_entries").insert({ plan_id: selectedPlanId, title, year: modal.year, month: modal.month, detail_text, datum: datum || null, done, created_by: user?.id }).select().single();
+      const { data, error } = await supabase.from("mp_entries").insert({
+        plan_id: selectedPlanId, title,
+        year: modal.year, month: month_start, month_end,
+        detail_text, datum: datum || null, done,
+        created_by: user?.id,
+      }).select().single();
       if (error) { toast.error(error.message); return; }
       setEntries(prev => [...prev, data]);
       toast.success("Eintrag erstellt ✓");
     } else {
-      const { data, error } = await supabase.from("mp_entries").update({ title, detail_text, datum: datum || null, done }).eq("id", modal.entry.id).select().single();
+      const { data, error } = await supabase.from("mp_entries").update({
+        title, detail_text, datum: datum || null, done,
+        month: month_start, month_end,
+      }).eq("id", modal.entry.id).select().single();
       if (error) { toast.error(error.message); return; }
       setEntries(prev => prev.map(e => e.id === modal.entry.id ? data : e));
       toast.success("Gespeichert ✓");
@@ -751,7 +776,7 @@ export default function Monatsplanung() {
     setModal(null);
   };
 
-  const handleDeleteEntry = (entryId) => {
+  const handleDeleteEntry = entryId => {
     setConfirmModal({
       message: "Eintrag wirklich löschen?",
       onConfirm: async () => {
@@ -775,22 +800,25 @@ export default function Monatsplanung() {
     }
   }, []);
 
+  // ── Sidebar-Aktivitäten verwalten ──────────────────────────────────────────
+  const handleAddActivity = useCallback(title => {
+    setManualActivities(prev => new Set([...prev, title]));
+  }, []);
+
+  const handleRemoveActivity = useCallback(title => {
+    setManualActivities(prev => { const n = new Set(prev); n.delete(title); return n; });
+  }, []);
+
   // ── Drag & Drop ────────────────────────────────────────────────────────────
-  const handleDragEnd = useCallback(async (result) => {
+  const handleDragEnd = useCallback(async result => {
     const { source, destination, draggableId } = result;
     if (!destination) return;
     if (source.droppableId === destination.droppableId) return;
 
-    const parseCell = (id) => {
-      if (id.startsWith("mp-cell|")) {
-        const p = id.split("|");
-        return { year: parseInt(p[1]), month: parseInt(p[3]) };
-      }
-      if (id.startsWith("mp-new|")) {
-        const p = id.split("|");
-        return { year: parseInt(p[1]), month: parseInt(p[2]) };
-      }
-      return null;
+    const parseCell = id => {
+      if (!id.startsWith("mp-cell|")) return null;
+      const p = id.split("|");
+      return { year: parseInt(p[1]), month: parseInt(p[2]) };
     };
 
     if (draggableId.startsWith("mp-sidebar|")) {
@@ -798,22 +826,25 @@ export default function Monatsplanung() {
       const dest = parseCell(destination.droppableId);
       if (!dest) return;
       setModal({ mode: "create", month: dest.month, year: dest.year, prefillTitle: sTitle });
+
     } else if (draggableId.startsWith("mp-entry|")) {
       const entryId = draggableId.slice("mp-entry|".length);
       const dest = parseCell(destination.droppableId);
       if (!dest) return;
-      setEntries(prev => prev.map(e => e.id === entryId ? { ...e, year: dest.year, month: dest.month } : e));
-      const { error } = await supabase.from("mp_entries").update({ year: dest.year, month: dest.month }).eq("id", entryId);
+      // Preserve the span duration when moving
+      const entry    = entries.find(e => e.id === entryId);
+      const duration = entry ? ((entry.month_end || entry.month) - entry.month) : 0;
+      const newEnd   = Math.min(12, dest.month + duration);
+      setEntries(prev => prev.map(e => e.id === entryId ? { ...e, year: dest.year, month: dest.month, month_end: newEnd } : e));
+      const { error } = await supabase.from("mp_entries").update({ year: dest.year, month: dest.month, month_end: newEnd }).eq("id", entryId);
       if (error) { toast.error("Fehler beim Verschieben"); loadEntries(selectedPlanId); }
       else toast.success("Verschoben ✓");
     }
-  }, [selectedPlanId, loadEntries]);
+  }, [entries, selectedPlanId, loadEntries]);
 
   // ── Derived ────────────────────────────────────────────────────────────────
   const custPlans = useMemo(() => plans.filter(p => p.customer_id === selectedCustomerId), [plans, selectedCustomerId]);
-  const selectedPlan = plans.find(p => p.id === selectedPlanId);
-  const existingTitles = useMemo(() => [...new Set(entries.map(e => e.title))], [entries]);
-  const nextYear = years.length > 0 ? years[0] + 1 : new Date().getFullYear() + 1;
+  const nextYear  = years.length > 0 ? years[0] + 1 : new Date().getFullYear() + 1;
 
   return (
     <div style={{ height: "100vh", display: "flex", flexDirection: "column", backgroundColor: pageBg, overflow: "hidden" }}>
@@ -854,12 +885,26 @@ export default function Monatsplanung() {
       ) : !selectedPlanId ? (
         <Uebersicht customersWithPlans={customers} plansByCustomer={plansByCustomer} onSelectCustomer={handleSelectCustomer} onDeleteCustomer={handleDeleteCustomer} colors={colors} />
       ) : (
-        <PlanGrid plan={selectedPlan} entries={entries} years={years} onCellClick={handleCellClick} onEntryClick={handleEntryClick} onToggleDone={handleToggleDone} onDragEnd={handleDragEnd} colors={colors} />
+        <PlanGrid
+          entries={entries} years={years}
+          sidebarActivities={sidebarActivities} existingTitles={existingTitles}
+          onCellClick={handleCellClick} onEntryClick={handleEntryClick}
+          onToggleDone={handleToggleDone} onDragEnd={handleDragEnd}
+          onAddActivity={handleAddActivity} onRemoveActivity={handleRemoveActivity}
+          colors={colors}
+        />
       )}
 
       {/* Modals */}
       {modal && (
-        <EntryModal mode={modal.mode} entry={modal.entry} month={modal.month} year={modal.year} existingTitles={existingTitles} onSave={handleSaveEntry} onDelete={handleDeleteEntry} onClose={() => setModal(null)} colors={colors} />
+        <EntryModal
+          mode={modal.mode} entry={modal.entry}
+          month={modal.month} year={modal.year}
+          prefillTitle={modal.prefillTitle}
+          existingTitles={existingTitles}
+          onSave={handleSaveEntry} onDelete={handleDeleteEntry}
+          onClose={() => setModal(null)} colors={colors}
+        />
       )}
       {yearDialog && <YearChangeDialog fromYear={yearDialog.from} toYear={yearDialog.to} onConfirm={confirmYearChange} onCancel={cancelYearChange} colors={colors} />}
       {promptModal && <SimpleInputModal title={promptModal.title} placeholder={promptModal.placeholder} defaultValue={promptModal.defaultValue} onConfirm={promptModal.onConfirm} onClose={() => setPromptModal(null)} colors={colors} />}
