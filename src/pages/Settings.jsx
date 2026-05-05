@@ -2016,7 +2016,7 @@ export default function Settings() {
                                         <h3 className="text-base font-semibold mb-1 flex items-center gap-2"
                                             style={{color: headingColor}}>
                                             <Inbox className="h-4 w-4"/> VoxDrop <span
-                                            className="text-xs font-normal opacity-50">v1.4.2</span>
+                                            className="text-xs font-normal opacity-50">v1.7.0</span>
                                         </h3>
                                         <p className="text-sm mb-3" style={{color: textMuted}}>
                                             Sprache direkt in Text umwandeln — Ctrl+Q drücken, sprechen, nochmals Ctrl+Q
@@ -2025,14 +2025,14 @@ export default function Settings() {
                                         <ul className="text-xs space-y-1" style={{color: textMuted}}>
                                             <li>✓ Funktioniert in jedem Programm</li>
                                             <li>✓ Live Stream mit Deepgram nova-3 (beste DE-Genauigkeit)</li>
-                                            <li>✓ Premium-Modus mit GPT-4o (maximale Qualität)</li>
+                                            <li>✓ Kunden-Picker (Ctrl+Shift+W) — alle Aktivitäten auf einen Blick</li>
                                             <li>✓ Frag Smartis (Ctrl+Shift+Q) — KI-Suche über alle Daten</li>
                                             <li>✓ Läuft im Hintergrund, startet mit Windows</li>
                                         </ul>
                                     </div>
                                     <a
-                                        href="https://github.com/SBigger/mailflow/releases/download/apps-v1.4.2/VoxDrop.exe"
-                                        download="VoxDrop.exe"
+                                        href="https://github.com/SBigger/mailflow/releases/download/voxdrop-v1.7.0/VoxDrop-Setup-v1.7.0.exe"
+                                        download="VoxDrop-Setup-v1.7.0.exe"
                                         className="flex-shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-xl text-white font-medium text-sm transition-opacity hover:opacity-90"
                                         style={{backgroundColor: isArtis ? '#7a9b7f' : '#6366f1'}}
                                     >
