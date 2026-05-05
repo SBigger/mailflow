@@ -51,6 +51,7 @@ const TelefonDashboard      = lazy(() => import("./pages/TelefonDashboard.jsx"))
 const Jahresplanung         = lazy(() => import("./pages/Jahresplanung.jsx"));
 const Monatsplanung         = lazy(() => import("./pages/Monatsplanung.jsx"));
 const Kalender              = lazy(() => import("./pages/Kalender.jsx"));
+const Steuerausscheidung    = lazy(() => import("./pages/Steuerausscheidung.jsx"));
 const FiBuRouter            = lazy(() => import("./modules/fibu/router.jsx"));
 
 const queryClient = new QueryClient({
@@ -113,6 +114,7 @@ function AuthenticatedApp() {
             <Route path="/Jahresplanung" element={<Jahresplanung />} />
             <Route path="/Monatsplanung" element={<Monatsplanung />} />
             <Route path="/Kalender" element={<Kalender />} />
+            <Route path="/Steuerausscheidung" element={<Steuerausscheidung />} />
             {FEATURE_LEISTUNGSERFASSUNG && (
                 <Route path="/Leistungserfassung" element={<Leistungserfassung />} />
             )}

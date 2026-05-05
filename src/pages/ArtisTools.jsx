@@ -1,7 +1,7 @@
 import React, { useContext } from "react";
 import { useNavigate } from "react-router-dom";
 import { ThemeContext } from "@/Layout";
-import { BookOpen, Car, FileText, UserCog, ChevronRight, Wrench, PenLine, Presentation, FileSpreadsheet, Sparkles, Phone, CalendarRange, CalendarDays } from "lucide-react";
+import { BookOpen, Car, FileText, UserCog, ChevronRight, Wrench, PenLine, Presentation, FileSpreadsheet, Sparkles, Phone, CalendarRange, CalendarDays, Scale } from "lucide-react";
 
 const TOOLS = [
   {
@@ -111,6 +111,15 @@ const TOOLS = [
     color: "#2d5a8a",
     bg: "#deeaf5",
     route: "/Monatsplanung",
+  },
+  {
+    id: "steuerausscheidung",
+    title: "Steuerausscheidung",
+    description: "Interkantonale & innerkantonale Steuerausscheidung pro Mandat: Schlüssel, Quoten, Faktoren (eigen + zum Satz), Veranlagung, Rechnungslauf & Excel-Export",
+    icon: Scale,
+    color: "#5b3b8a",
+    bg: "#ece0f5",
+    route: "/Steuerausscheidung",
   },
 ];
 

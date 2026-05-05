@@ -116,6 +116,10 @@ export const entities = {
   CallRecord:       makeEntity('call_records'),
   CallNotePending:  makeEntity('call_notes_pending'),
   PromptVorlage:    makeEntity('prompt_vorlagen'),
+  TaxPeriod:        makeEntity('tax_allocation_period'),
+  TaxUnit:          makeEntity('tax_allocation_unit'),
+  TaxInvoice:       makeEntity('tax_allocation_invoice'),
+  TaxSteuerfuss:    makeEntity('tax_steuerfuss'),
 };
 
 // Auth helpers
