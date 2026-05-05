@@ -417,9 +417,9 @@ function PlanGrid({
                     return (
                       <Draggable key={`s-${title}`} draggableId={`mp-sidebar|${encodeURIComponent(title)}`} index={idx}>
                         {(drag, snap) => applyDragPortal(snap,
-                          <div ref={drag.innerRef} {...drag.draggableProps}
+                          <div ref={drag.innerRef} {...drag.draggableProps} {...drag.dragHandleProps}
                             style={{ ...drag.draggableProps.style, display: "flex", alignItems: "center", gap: 5, padding: "4px 5px 4px 8px", marginBottom: 3, borderRadius: 5, backgroundColor: snap.isDragging ? col.bg : `${col.bg}99`, border: `1px solid ${snap.isDragging ? col.color + "50" : "transparent"}`, borderLeft: `3px solid ${col.color}`, cursor: "grab", userSelect: "none", boxShadow: snap.isDragging ? "0 4px 14px rgba(0,0,0,0.18)" : "none" }}>
-                            <div {...drag.dragHandleProps} style={{ color: col.color, opacity: 0.45, display: "flex", alignItems: "center", flexShrink: 0, cursor: "grab" }}>
+                            <div style={{ color: col.color, opacity: 0.45, display: "flex", alignItems: "center", flexShrink: 0 }}>
                               <GripVertical size={10} />
                             </div>
                             <span style={{ fontSize: 11, color: col.color, fontWeight: 600, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
