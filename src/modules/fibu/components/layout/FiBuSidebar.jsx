@@ -8,6 +8,7 @@ const NAV = [
     items: [
       { to: 'kreditoren',            label: 'Dashboard',        icon: 'grid' },
       { to: 'kreditoren/lieferanten', label: 'Lieferanten',     icon: 'users' },
+      { to: 'kreditoren/inbox',       label: 'Eingangspostfach',  icon: 'inbox' },
       { to: 'kreditoren/erfassen',   label: 'Rechnung erfassen', icon: 'plus-doc' },
       { to: 'kreditoren/opliste',    label: 'OP-Liste',          icon: 'check-list' },
       { to: 'kreditoren/zahlungslauf', label: 'Zahlungslauf',   icon: 'credit-card' },
@@ -33,7 +34,7 @@ const NAV = [
       { to: null, label: 'Journal',          icon: 'lines',     disabled: true },
       { to: null, label: 'Kontoblätter',     icon: 'table',     disabled: true },
       { to: null, label: 'Bilanz & ER',      icon: 'balance',   disabled: true },
-      { to: null, label: 'MWST-Abrechnung', icon: 'doc-text',  disabled: true },
+      { to: 'mwst/abrechnung', label: 'MWST-Abrechnung', icon: 'doc-text' },
     ],
   },
 ];
@@ -55,6 +56,7 @@ function Icon({ name, className = '' }) {
     case 'chevron':    return <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m6 9 6 6 6-6"/></svg>;
     case 'logout':     return <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>;
     case 'percent':    return <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>;
+    case 'inbox':      return <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>;
     default:           return null;
   }
 }

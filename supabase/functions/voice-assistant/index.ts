@@ -169,23 +169,109 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    const { question } = await req.json();
-    if (!question?.trim()) {
-      return new Response(JSON.stringify({ error: "question is required" }), {
+    const body = await req.json();
+
+    // ── get_customers-Modus: gibt alle Kunden zurück (umgeht RLS) ───────────
+    if (body.get_customers) {
+      const { data: customers } = await supabase
+        .from('customers')
+        .select('id, company_name')
+        .order('company_name')
+        .limit(2000);
+      return new Response(JSON.stringify({ customers: customers || [] }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const question: string = body.question || "";
+    const directCustomerId: string | null = body.customer_id || null;
+    const sinceMonths: number = Math.min(Math.max(Number(body.since_months) || 6, 1), 60);
+
+    if (!directCustomerId && !question?.trim()) {
+      return new Response(JSON.stringify({ error: "question or customer_id required" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     const today = new Date().toISOString().split("T")[0];
-    const q = question.toLowerCase();
+    const sinceDate = new Date();
+    sinceDate.setMonth(sinceDate.getMonth() - sinceMonths);
+    const sinceIso = sinceDate.toISOString();
 
+    const q = (question || "").toLowerCase();
     const keywords = q
       .split(/[\s,.\-!?;:()]+/)
       .filter((w: string) => w.length >= 3 && !STOP_WORDS.has(w));
     if (keywords.length === 0) keywords.push(q.slice(0, 20));
 
+    // ── Direkt-Modus: ein Kunde, alles der letzten N Monate ────────────────
+    if (directCustomerId) {
+      const cusIds = [directCustomerId];
+      const [custRes2, fF, tT, mM, cC, aA, dD, fzFz] = await Promise.all([
+        supabase.from('customers').select('id, company_name, email').eq('id', directCustomerId).limit(1),
+        supabase.from('fristen')
+          .select('id, title, category, kanton, jahr, due_date, status, description, customer_id')
+          .in('customer_id', cusIds).gte('due_date', sinceDate.toISOString().split('T')[0])
+          .order('due_date', { ascending: true }).limit(50),
+        supabase.from('tasks')
+          .select('id, title, description, due_date, status, assignee, customer_id, created_at')
+          .in('customer_id', cusIds).gte('created_at', sinceIso)
+          .order('due_date', { ascending: true }).limit(50),
+        supabase.from('mail_items')
+          .select('id, subject, body_preview, received_date, from_address, customer_id')
+          .in('customer_id', cusIds).gte('received_date', sinceIso)
+          .order('received_date', { ascending: false }).limit(30),
+        supabase.from('call_records')
+          .select('id, direction, caller_name, callee_name, caller_number, callee_number, start_time, duration_seconds, notes, customer_id')
+          .in('customer_id', cusIds).gte('start_time', sinceIso)
+          .order('start_time', { ascending: false }).limit(50),
+        supabase.from('aktienbuch')
+          .select('id, aktionaer_name, aktionaer_adresse, wirtschaftlich_berechtigter, transaktionstyp, kaufdatum, datum_vr_entscheid, customer_id')
+          .in('customer_id', cusIds).order('kaufdatum', { ascending: false }).limit(30),
+        supabase.from('dokumente')
+          .select('id, name, filename, storage_path, customer_id, file_type, created_at')
+          .in('customer_id', cusIds).gte('created_at', sinceIso)
+          .order('created_at', { ascending: false }).limit(30),
+        supabase.from('fahrzeuge')
+          .select('id, kennzeichen, marke, modell, fahrzeugart, fahrer_name, customer_id')
+          .in('customer_id', cusIds).limit(30),
+      ]);
+
+      const customers = custRes2.data || [];
+      const cName = customers[0]?.company_name || 'Kunde';
+      const custMap: Record<string, string> = {};
+      customers.forEach((c: any) => { custMap[c.id] = c.company_name; });
+      const cn = (id: string) => custMap[id] || '–';
+
+      const enrichedData = {
+        customers,
+        fristen:   (fF.data || []).map((f: any) => ({ ...f, customer_name: cn(f.customer_id) })),
+        tasks:     (tT.data || []).map((t: any) => ({ ...t, customer_name: cn(t.customer_id) })),
+        mails:     (mM.data || []).map((m: any) => ({ ...m, customer_name: cn(m.customer_id) })),
+        calls:     (cC.data || []).map((c: any) => ({ ...c, customer_name: cn(c.customer_id) })),
+        aktien:    (aA.data || []).map((a: any) => ({ ...a, customer_name: cn(a.customer_id) })),
+        doks:      (dD.data || []).map((d: any) => ({ ...d, customer_name: cn(d.customer_id) })),
+        fahrzeuge: (fzFz.data || []).map((f: any) => ({ ...f, customer_name: cn(f.customer_id) })),
+      };
+
+      const total =
+        enrichedData.fristen.length + enrichedData.tasks.length + enrichedData.mails.length +
+        enrichedData.calls.length + enrichedData.aktien.length + enrichedData.doks.length +
+        enrichedData.fahrzeuge.length;
+
+      const speak = `${cName}: ${total} Einträge in den letzten ${sinceMonths} Monaten.`;
+      const answer = `**${cName}** – Aktivitäten der letzten ${sinceMonths} Monate (${total} Einträge)`;
+
+      return new Response(JSON.stringify({
+        answer, speak_text: speak, sources: [], today,
+        data: enrichedData,
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // ── Parallele DB-Suche ────────────────────────────────────────────────────
-    const [custRes, fristenRes, tasksRes, mailsRes, rpcRes, contentRes, callsRes, aktienRes] =
+    const [custRes, fristenRes, tasksRes, mailsRes, rpcRes, contentRes, callsRes, aktienRes, fahrzeugRes] =
       await Promise.allSettled([
         supabase.from('customers')
           .select('id, company_name, email')
@@ -232,6 +318,12 @@ serve(async (req) => {
           .or(buildOrFilter(['aktionaer_name', 'wirtschaftlich_berechtigter', 'transaktionstyp'], keywords))
           .order('kaufdatum', { ascending: false })
           .limit(8),
+
+        // NEU: Fahrzeuge
+        supabase.from('fahrzeuge')
+          .select('id, kennzeichen, marke, modell, fahrzeugart, fahrer_name, customer_id')
+          .or(buildOrFilter(['kennzeichen', 'marke', 'modell', 'fahrer_name'], keywords))
+          .limit(8),
       ]);
 
     const customers = custRes.status === 'fulfilled' ? (custRes.value.data || []) : [];
@@ -240,6 +332,7 @@ serve(async (req) => {
     let mails       = mailsRes.status === 'fulfilled'   ? (mailsRes.value.data || [])   : [];
     let calls       = callsRes.status === 'fulfilled'   ? (callsRes.value.data || [])   : [];
     let aktien      = aktienRes.status === 'fulfilled'  ? (aktienRes.value.data || [])  : [];
+    let fahrzeuge   = fahrzeugRes.status === 'fulfilled' ? (fahrzeugRes.value.data || []) : [];
 
     const rpcDoks     = rpcRes.status === 'fulfilled'     ? (rpcRes.value.data || [])     : [];
     const contentDoks = contentRes.status === 'fulfilled' ? (contentRes.value.data || []) : [];
@@ -265,7 +358,7 @@ serve(async (req) => {
     // ("zeige mir die letzten Aktionen von Kunde XY")
     if (customers.length > 0) {
       const cusIds = customers.map((c: any) => c.id);
-      const [moreF, moreT, moreM, moreC, moreA, moreD] = await Promise.all([
+      const [moreF, moreT, moreM, moreC, moreA, moreD, moreFz] = await Promise.all([
         supabase.from('fristen')
           .select('id, title, category, kanton, jahr, due_date, status, description, customer_id')
           .in('customer_id', cusIds).order('due_date', { ascending: true }).limit(15),
@@ -284,18 +377,22 @@ serve(async (req) => {
         supabase.from('dokumente')
           .select('id, name, filename, storage_path, customer_id, file_type')
           .in('customer_id', cusIds).order('created_at', { ascending: false }).limit(10),
+        supabase.from('fahrzeuge')
+          .select('id, kennzeichen, marke, modell, fahrzeugart, fahrer_name, customer_id')
+          .in('customer_id', cusIds).limit(10),
       ]);
       const merge = (orig: any[], extra: any[] | null) => {
         if (!extra) return orig;
         const ex = new Set(orig.map((x: any) => x.id));
         return [...orig, ...extra.filter((x: any) => !ex.has(x.id))];
       };
-      fristen = merge(fristen, moreF.data);
-      tasks   = merge(tasks,   moreT.data);
-      mails   = merge(mails,   moreM.data);
-      calls   = merge(calls,   moreC.data);
-      aktien  = merge(aktien,  moreA.data);
-      doks    = merge(doks,    moreD.data);
+      fristen   = merge(fristen,   moreF.data);
+      tasks     = merge(tasks,     moreT.data);
+      mails     = merge(mails,     moreM.data);
+      calls     = merge(calls,     moreC.data);
+      aktien    = merge(aktien,    moreA.data);
+      doks      = merge(doks,      moreD.data);
+      fahrzeuge = merge(fahrzeuge, moreFz.data);
     }
 
     // Kunden-Namens-Map
@@ -387,9 +484,21 @@ serve(async (req) => {
     // ── Claude Haiku 4.5 ──────────────────────────────────────────────────────
     const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY");
 
+    // Strukturierte Daten für Quadranten-Layout in VoxDrop
+    const enrichedData = {
+      customers,
+      fristen: fristen.map((f: any) => ({ ...f, customer_name: cn(f.customer_id) })),
+      tasks:   tasks.map((t: any)   => ({ ...t, customer_name: cn(t.customer_id) })),
+      mails:   mails.map((m: any)   => ({ ...m, customer_name: cn(m.customer_id) })),
+      doks:    doks.map((d: any)    => ({ ...d, customer_name: cn(d.customer_id) })),
+      calls:   calls.map((c: any)   => ({ ...c, customer_name: cn(c.customer_id) })),
+      aktien:  aktien.map((a: any)  => ({ ...a, customer_name: cn(a.customer_id) })),
+      fahrzeuge: fahrzeuge.map((f: any) => ({ ...f, customer_name: cn(f.customer_id) })),
+    };
+
     if (!anthropicKey) {
       const fallback = buildDirectAnswer(question, fristen, tasks, mails, doks, calls, aktien, custMap);
-      return new Response(JSON.stringify({ ...fallback, today }), {
+      return new Response(JSON.stringify({ ...fallback, today, data: enrichedData }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -439,7 +548,7 @@ Regeln:
     if (!claudeRes.ok) {
       console.error("Claude error:", claudeRes.status, await claudeRes.text());
       const fallback = buildDirectAnswer(question, fristen, tasks, mails, doks, calls, aktien, custMap);
-      return new Response(JSON.stringify({ ...fallback, today }), {
+      return new Response(JSON.stringify({ ...fallback, today, data: enrichedData }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -457,7 +566,7 @@ Regeln:
 
     if (!result?.answer) {
       const fallback = buildDirectAnswer(question, fristen, tasks, mails, doks, calls, aktien, custMap);
-      return new Response(JSON.stringify({ ...fallback, today }), {
+      return new Response(JSON.stringify({ ...fallback, today, data: enrichedData }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -472,7 +581,7 @@ Regeln:
       s.type === 'dokument' && dokMap[s.id] ? { ...s, storage_path: dokMap[s.id] } : s
     );
 
-    return new Response(JSON.stringify({ ...result, today }), {
+    return new Response(JSON.stringify({ ...result, today, data: enrichedData }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
 

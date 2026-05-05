@@ -14,6 +14,8 @@ const Zahlungslauf        = React.lazy(() => import('../../pages/Zahlungslauf'))
 const Belegjournal        = React.lazy(() => import('../../pages/Belegjournal'));
 const Kontenplan          = React.lazy(() => import('../../pages/Kontenplan'));
 const MwstCodes           = React.lazy(() => import('../../pages/MwstCodes'));
+const RechnungInbox       = React.lazy(() => import('../../pages/RechnungInbox'));
+const MwstAbrechnung      = React.lazy(() => import('../../pages/MwstAbrechnung'));
 
 const Spinner = () => (
   <div className="flex-1 flex items-center justify-center">
@@ -45,6 +47,8 @@ function FiBuContent() {
         <Route path="kreditoren/journal"            element={<Belegjournal />} />
         <Route path="kontenplan"                    element={<Kontenplan />} />
         <Route path="mwstcodes"                     element={<MwstCodes />} />
+        <Route path="kreditoren/inbox"              element={<RechnungInbox />} />
+        <Route path="mwst/abrechnung"               element={<MwstAbrechnung />} />
         <Route path="*" element={<Navigate to="kreditoren" replace />} />
       </Routes>
     </Suspense>

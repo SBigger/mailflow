@@ -182,12 +182,29 @@ export const kreditorenApi = {
       .select()
       .single();
     if (error) throw error;
+
     if (positionen?.length) {
       const pos = positionen.map((p, i) => ({
         ...p, mandant_id: mandantId, beleg_id: data.id, position: i + 1,
       }));
       const { error: posErr } = await supabase.from('fibu_kreditoren_positionen').insert(pos);
       if (posErr) throw posErr;
+
+      // ── Korrekte Doppelbuchungen inkl. MWST erstellen ──
+      const { error: buchErr } = await supabase.rpc('fibu_kreditoren_verbuchen', {
+        p_beleg_id: data.id,
+      });
+      if (buchErr) console.error('Journal-Buchung fehlgeschlagen:', buchErr);
+
+      // ── Lieferant-Defaults lernen: letztes Konto + MWST-Code speichern ──
+      if (beleg.lieferant_id && positionen[0]) {
+        const hauptPos = positionen[0];
+        await supabase.from('fibu_lieferanten').update({
+          standard_konto_nr: hauptPos.konto_nr || undefined,
+          mwst_code:         hauptPos.mwst_code || undefined,
+          updated_at:        new Date().toISOString(),
+        }).eq('id', beleg.lieferant_id);
+      }
     }
     return data;
   },
@@ -290,6 +307,35 @@ export const mwstCodesApi = {
   toggleAktiv: async (id, aktiv) => {
     const { error } = await supabase.from('fibu_mwst_codes').update({ aktiv }).eq('id', id);
     if (error) throw error;
+  },
+};
+
+// ── KI-Buchungsvorschlag ─────────────────────────────────────────
+export const kiVorschlagApi = {
+  suggest: async ({ mandantId, lieferantId, lieferantName, kontextText, konten, mwstCodes, waehrung, betragBrutto }) => {
+    const session = await supabase.auth.getSession();
+    const token = session.data?.session?.access_token;
+    const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+    const resp = await fetch(`${SUPABASE_URL}/functions/v1/fibu-suggest-buchung`, {
+      method: 'POST',
+      headers: {
+        'Content-Type':  'application/json',
+        'Authorization': `Bearer ${token}`,
+        'apikey':        import.meta.env.VITE_SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify({
+        mandant_id:     mandantId,
+        lieferant_id:   lieferantId,
+        lieferant_name: lieferantName,
+        kontext_text:   kontextText,
+        konten,
+        mwst_codes:     mwstCodes,
+        waehrung,
+        betrag_brutto:  betragBrutto,
+      }),
+    });
+    if (!resp.ok) throw new Error(`KI-Suggest HTTP ${resp.status}`);
+    return await resp.json();
   },
 };
 
