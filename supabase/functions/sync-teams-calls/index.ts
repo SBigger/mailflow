@@ -137,7 +137,7 @@ type DbRow = {
   raw: any;
 };
 
-function buildRow(rec: any, phoneIndex: Map<string, string>): DbRow {
+function buildRow(rec: any, phoneIndex: Map<string, string>, staffPhoneIndex: Map<string, { staffId: string; staffName: string }>): DbRow {
   // ── 1) Alle Identities aus sessions/segments sammeln ─────────────
   const sessions: any[] = Array.isArray(rec.sessions) ? rec.sessions : [];
   const identities: any[] = [];
@@ -175,6 +175,22 @@ function buildRow(rec: any, phoneIndex: Map<string, string>): DbRow {
     const [winnerId, winner] = Array.from(countBy.entries()).sort((a, b) => b[1].count - a[1].count)[0];
     artisUserId = winnerId;
     artisUserName = winner.name || null;
+  }
+
+  // ── 2b) Fallback: Mitarbeiter via Direktnummer ermitteln ─────────
+  //        Wenn kein interner AAD-User gefunden wurde (z.B. bei Calls über
+  //        Teams-Queues), prüfen ob callee/caller eine bekannte Direktnummer hat.
+  if (!artisUserId) {
+    const allNums = identities.map(i => pickNumber(i)).filter(Boolean);
+    for (const raw of allNums) {
+      const suf = phoneSuffix(normalizePhone(raw));
+      if (suf && staffPhoneIndex.has(suf)) {
+        const match = staffPhoneIndex.get(suf)!;
+        artisUserId   = match.staffId;
+        artisUserName = match.staffName;
+        break;
+      }
+    }
   }
 
   // ── 3) Externen Teilnehmer finden ────────────────────────────────
@@ -400,7 +416,23 @@ Deno.serve(async (req) => {
     }
     const sinceISO = since.toISOString();
 
-    // 2) Phone-Index aus customers aufbauen (für Match)
+    // 2a) Mitarbeiter-Direktnummern aus profiles laden
+    //     profiles.phone → { suffix → { id, full_name } }
+    //     Wird genutzt um Anrufe auf direkte Nummern dem richtigen Mitarbeiter zuzuordnen,
+    //     auch wenn Teams intern über Telefonzentrale/Queue geroutet wird.
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, full_name, phone')
+      .not('phone', 'is', null);
+
+    // staffPhoneIndex: letzten 9 Ziffern → { staffId, staffName }
+    const staffPhoneIndex = new Map<string, { staffId: string; staffName: string }>();
+    for (const p of profiles || []) {
+      const suf = phoneSuffix(normalizePhone((p as any).phone));
+      if (suf) staffPhoneIndex.set(suf, { staffId: p.id, staffName: p.full_name || '' });
+    }
+
+    // 2b) Phone-Index aus customers aufbauen (für Kunden-Match)
     //    Quellen: customers.phone + customers.contact_persons[].phone / .phone2
     const { data: customers, error: custErr } = await supabase
       .from('customers')
@@ -442,7 +474,7 @@ Deno.serve(async (req) => {
     }
 
     // 5) Normalisieren + upsert
-    const rows = records.map(r => buildRow(r, phoneIndex));
+    const rows = records.map(r => buildRow(r, phoneIndex, staffPhoneIndex));
     let upserted = 0;
     if (rows.length) {
       const { error } = await supabase

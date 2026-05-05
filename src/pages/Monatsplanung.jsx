@@ -188,23 +188,20 @@ function EntryModal({ mode, entry, month, year, prefillTitle, existingTitles, on
   const lbl = { fontSize: 10.5, fontWeight: 700, color: subtle, textTransform: "uppercase", letterSpacing: ".07em", display: "block", marginBottom: 4 };
   const inp = { width: "100%", padding: "7px 10px", fontSize: 12.5, borderRadius: 7, border: `1px solid ${border}`, backgroundColor: pageBg, color: text, outline: "none", boxSizing: "border-box" };
 
-  const initStart = entry?.month || month || 1;
-  const initEnd   = entry?.month_end || initStart;
-
-  const [title, setTitle]           = useState(entry?.title || prefillTitle || "");
-  const [detail, setDetail]         = useState(entry?.detail_text || "");
-  const [datum, setDatum]           = useState(entry ? toInputDate(entry.datum) : "");
-  const [done, setDone]             = useState(entry?.done || false);
-  const [monthStart, setMonthStart] = useState(initStart);
-  const [monthEnd, setMonthEnd]     = useState(initEnd);
-  const [saving, setSaving]         = useState(false);
+  const [title, setTitle]         = useState(entry?.title || prefillTitle || "");
+  const [detail, setDetail]       = useState(entry?.detail_text || "");
+  const [datum, setDatum]         = useState(entry ? toInputDate(entry.datum) : "");
+  const [done, setDone]           = useState(entry?.done || false);
+  const [monthHalf, setMonthHalf] = useState(entry?.month_half || null); // null | "first" | "second"
+  const [person, setPerson]       = useState(entry?.person || "");
+  const [saving, setSaving]       = useState(false);
   const titleRef = useRef(null);
   useEffect(() => { titleRef.current?.focus(); }, []);
 
   const handleSave = async () => {
     if (!title.trim()) { toast.error("Titel ist erforderlich"); return; }
     setSaving(true);
-    await onSave({ title: title.trim(), detail_text: detail.trim() || null, datum: datum || null, done, month_start: monthStart, month_end: monthEnd });
+    await onSave({ title: title.trim(), detail_text: detail.trim() || null, datum: datum || null, done, month_half: monthHalf, person: person.trim() || null });
     setSaving(false);
   };
 
@@ -233,22 +230,36 @@ function EntryModal({ mode, entry, month, year, prefillTitle, existingTitles, on
           </datalist>
         </div>
 
-        {/* Von / Bis Monat */}
-        <div style={{ display: "flex", gap: 12, marginBottom: 14 }}>
-          <div style={{ flex: 1 }}>
-            <label style={lbl}>VON MONAT</label>
-            <select value={monthStart} onChange={e => { const v = +e.target.value; setMonthStart(v); if (v > monthEnd) setMonthEnd(v); }} style={inp}>
-              {MONTHS_LONG.map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
-            </select>
+        {/* Monatshälfte */}
+        <div style={{ marginBottom: 14 }}>
+          <label style={lbl}>MONATSHÄLFTE</label>
+          <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+            {[
+              { value: null,     label: "Ganzer Monat", desc: "1.–31." },
+              { value: "first",  label: "Anfang",       desc: "1.–15." },
+              { value: "second", label: "Ende",         desc: "16.–31." },
+            ].map(({ value, label, desc }) => {
+              const active = monthHalf === value;
+              const barColor = value === null ? subtle : value === "first" ? "#2563eb" : "#b45309";
+              return (
+                <button key={String(value)} onClick={() => setMonthHalf(value)}
+                  style={{ flex: 1, padding: "7px 4px", fontSize: 11, borderRadius: 7, cursor: "pointer", backgroundColor: active ? `${accent}18` : "transparent", color: active ? accent : subtle, border: `1px solid ${active ? accent : border}`, fontWeight: active ? 700 : 400, display: "flex", flexDirection: "column", alignItems: "center", gap: 3, transition: "all 0.1s" }}>
+                  {/* mini bar preview */}
+                  <div style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: border, position: "relative", overflow: "hidden" }}>
+                    <div style={{ position: "absolute", height: "100%", borderRadius: 2, backgroundColor: active ? accent : barColor, left: value === "second" ? "50%" : "0%", width: value === null ? "100%" : "50%" }} />
+                  </div>
+                  <span>{label}</span>
+                  <span style={{ fontSize: 9.5, opacity: 0.7 }}>{desc}</span>
+                </button>
+              );
+            })}
           </div>
-          <div style={{ flex: 1 }}>
-            <label style={lbl}>BIS MONAT</label>
-            <select value={monthEnd} onChange={e => setMonthEnd(+e.target.value)} style={inp}>
-              {MONTHS_LONG.map((m, i) => (
-                <option key={i + 1} value={i + 1} disabled={i + 1 < monthStart}>{m}</option>
-              ))}
-            </select>
-          </div>
+        </div>
+
+        {/* Person */}
+        <div style={{ marginBottom: 14 }}>
+          <label style={lbl}>PERSON (optional)</label>
+          <input value={person} onChange={e => setPerson(e.target.value)} placeholder="z.B. Max Muster" style={inp} />
         </div>
 
         {/* Detail */}
@@ -338,12 +349,234 @@ function Uebersicht({ customersWithPlans, plansByCustomer, onSelectCustomer, onD
   );
 }
 
+// ── Monats-Detailansicht ──────────────────────────────────────────────────────
+function MonthDetailView({ initMonth, year, allEntries, colors, onClose, onEntryClick, onAddEntry }) {
+  const { cardBg, border, text, subtle, accent, isArtis, isLight } = colors;
+  const [curMonth, setCurMonth] = useState(initMonth);
+
+  const monthEntries = useMemo(
+    () => allEntries.filter(e => e.year === year && e.month === curMonth),
+    [allEntries, year, curMonth]
+  );
+
+  // Group by person (entries with person first, then without)
+  const sections = useMemo(() => {
+    const personSet = [...new Set(monthEntries.map(e => e.person || ""))];
+    personSet.sort((a, b) => {
+      if (a === "" && b !== "") return 1;
+      if (a !== "" && b === "") return -1;
+      return a.localeCompare(b);
+    });
+    return personSet.map(person => {
+      const pes = monthEntries.filter(e => (e.person || "") === person);
+      return {
+        person,
+        all: pes,
+        first:  pes.filter(e => e.month_half === "first"),
+        second: pes.filter(e => e.month_half === "second"),
+        full:   pes.filter(e => !e.month_half),
+      };
+    });
+  }, [monthEntries]);
+
+  const PERSON_W  = 180;
+  const DIVIDER_W = 3;
+
+  const renderBar = entry => {
+    const col    = getTitleColor(entry.title);
+    const isDone = !!entry.done;
+    return (
+      <div key={entry.id} onClick={() => onEntryClick(entry)}
+        style={{
+          height: 36, borderRadius: 7, cursor: "pointer", position: "relative",
+          overflow: "hidden", flexShrink: 0,
+          backgroundColor: isDone ? `${col.bg}99` : col.bg,
+          border: `1px solid ${col.color}30`,
+          borderLeft: `3px solid ${isDone ? "#22c55e" : col.color}`,
+          display: "flex", alignItems: "center",
+          transition: "filter 0.1s, transform 0.1s",
+        }}
+        onMouseEnter={e => { e.currentTarget.style.filter = "brightness(0.91)"; e.currentTarget.style.transform = "translateY(-1px)"; }}
+        onMouseLeave={e => { e.currentTarget.style.filter = "none"; e.currentTarget.style.transform = "none"; }}
+      >
+        <div style={{ position: "relative", zIndex: 1, padding: "0 10px", display: "flex", alignItems: "center", gap: 7, width: "100%", overflow: "hidden" }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: isDone ? "#22c55e" : col.color, whiteSpace: "nowrap", textDecoration: isDone ? "line-through" : "none", flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>
+            {entry.title}
+          </span>
+          {entry.datum && (
+            <span style={{ fontSize: 9.5, color: subtle, flexShrink: 0 }}>
+              {toLocalDateStr(entry.datum)}
+            </span>
+          )}
+          {isDone && <span style={{ fontSize: 9, color: "#22c55e", flexShrink: 0 }}>✓</span>}
+        </div>
+      </div>
+    );
+  };
+
+  const emptyLane = () => (
+    <div style={{ height: 36, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ width: "45%", height: 1, borderTop: `1px dashed ${border}`, opacity: 0.5 }} />
+    </div>
+  );
+
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 900 }}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div style={{
+        backgroundColor: cardBg, border: `1px solid ${border}`, borderRadius: 16,
+        width: "97vw", maxWidth: 1100, height: "88vh",
+        display: "flex", flexDirection: "column",
+        boxShadow: "0 40px 100px rgba(0,0,0,0.35)",
+      }}>
+
+        {/* Header */}
+        <div style={{ padding: "13px 22px", borderBottom: `1px solid ${border}`, display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+          <CalendarRange size={15} style={{ color: accent, flexShrink: 0 }} />
+          <button onClick={() => setCurMonth(m => m > 1 ? m - 1 : 12)}
+            style={{ background: "none", border: `1px solid ${border}`, borderRadius: 7, padding: "4px 13px", cursor: "pointer", color: text, fontSize: 16, lineHeight: 1 }}>
+            ‹
+          </button>
+          <span style={{ fontSize: 16, fontWeight: 800, color: text, minWidth: 170, textAlign: "center" }}>
+            {MONTHS_LONG[curMonth - 1]} {year}
+          </span>
+          <button onClick={() => setCurMonth(m => m < 12 ? m + 1 : 1)}
+            style={{ background: "none", border: `1px solid ${border}`, borderRadius: 7, padding: "4px 13px", cursor: "pointer", color: text, fontSize: 16, lineHeight: 1 }}>
+            ›
+          </button>
+          <span style={{ fontSize: 11, color: subtle, marginLeft: 6 }}>{monthEntries.length} Einträge</span>
+          <button onClick={() => onAddEntry(curMonth, year)}
+            style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 5, padding: "5px 14px", border: `1px dashed ${border}`, borderRadius: 7, background: "transparent", color: subtle, fontSize: 12, cursor: "pointer" }}>
+            <Plus size={11} /> Eintrag
+          </button>
+          <button onClick={onClose}
+            style={{ background: "none", border: "none", cursor: "pointer", color: subtle, display: "flex", padding: 4, marginLeft: 4 }}>
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Column headers */}
+        <div style={{
+          display: "flex", alignItems: "stretch", flexShrink: 0,
+          borderBottom: `2px solid ${border}`,
+          backgroundColor: isArtis ? "#ecf3ec" : isLight ? "#f1f1f7" : "#1a1a22",
+        }}>
+          <div style={{ width: PERSON_W, flexShrink: 0, padding: "9px 16px", borderRight: `1px solid ${border}`, display: "flex", alignItems: "center" }}>
+            <span style={{ fontSize: 9.5, fontWeight: 700, color: subtle, letterSpacing: ".07em" }}>PERSON</span>
+          </div>
+          <div style={{ flex: 1, display: "flex" }}>
+            <div style={{ flex: 1, padding: "9px 16px", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+              <div style={{ flex: 1, height: 2, borderRadius: 1, backgroundColor: "#2563eb30" }} />
+              <span style={{ fontSize: 10, fontWeight: 700, color: "#2563eb", letterSpacing: ".05em", whiteSpace: "nowrap" }}>ANFANG · 1. – 15.</span>
+              <div style={{ flex: 1, height: 2, borderRadius: 1, backgroundColor: "#2563eb30" }} />
+            </div>
+            <div style={{ width: DIVIDER_W, backgroundColor: border, flexShrink: 0 }} />
+            <div style={{ flex: 1, padding: "9px 16px", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+              <div style={{ flex: 1, height: 2, borderRadius: 1, backgroundColor: "#b4530930" }} />
+              <span style={{ fontSize: 10, fontWeight: 700, color: "#b45309", letterSpacing: ".05em", whiteSpace: "nowrap" }}>ENDE · 16. – 31.</span>
+              <div style={{ flex: 1, height: 2, borderRadius: 1, backgroundColor: "#b4530930" }} />
+            </div>
+          </div>
+        </div>
+
+        {/* Rows */}
+        <div style={{ flex: 1, overflowY: "auto" }}>
+          {sections.length === 0 ? (
+            <div style={{ textAlign: "center", color: subtle, padding: "70px 0", fontSize: 14 }}>
+              Keine Einträge für {MONTHS_LONG[curMonth - 1]}
+            </div>
+          ) : sections.map(({ person, first, second, full }, idx) => {
+            const initials = person ? person.slice(0, 2).toUpperCase() : "?";
+            const hasFull   = full.length > 0;
+            const hasFirst  = first.length > 0;
+            const hasSecond = second.length > 0;
+
+            return (
+              <div key={person || "__none__"} style={{
+                display: "flex", alignItems: "stretch",
+                borderBottom: `1px solid ${border}`,
+                backgroundColor: idx % 2 === 1 ? (isArtis ? "#f8fbf8" : isLight ? "#f9f9fc" : "#1c1c24") : "transparent",
+              }}>
+
+                {/* Person column */}
+                <div style={{
+                  width: PERSON_W, flexShrink: 0, padding: "12px 16px",
+                  display: "flex", flexDirection: "column", justifyContent: "center", gap: 6,
+                  borderRight: `1px solid ${border}`,
+                }}>
+                  {person ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                      <div style={{
+                        width: 32, height: 32, borderRadius: "50%", flexShrink: 0,
+                        backgroundColor: accent, color: "#fff",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        fontSize: 11, fontWeight: 700,
+                      }}>{initials}</div>
+                      <div style={{ fontSize: 12.5, fontWeight: 700, color: text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {person}
+                      </div>
+                    </div>
+                  ) : (
+                    <span style={{ fontSize: 11, color: subtle, fontStyle: "italic" }}>Ohne Person</span>
+                  )}
+                </div>
+
+                {/* Timeline */}
+                <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+                  {/* Full-month entries */}
+                  {hasFull && (
+                    <div style={{
+                      padding: "8px 14px", display: "flex", flexDirection: "column", gap: 5,
+                      borderBottom: (hasFirst || hasSecond) ? `1px dashed ${border}` : "none",
+                    }}>
+                      <div style={{ fontSize: 8, fontWeight: 700, color: subtle, letterSpacing: ".07em", marginBottom: 1 }}>GANZER MONAT</div>
+                      {full.map(e => renderBar(e))}
+                    </div>
+                  )}
+                  {/* Half entries side by side */}
+                  {(hasFirst || hasSecond) && (
+                    <div style={{ flex: 1, display: "flex", minHeight: 54 }}>
+                      <div style={{ flex: 1, padding: "8px 14px", display: "flex", flexDirection: "column", gap: 5 }}>
+                        {hasFirst ? first.map(e => renderBar(e)) : emptyLane()}
+                      </div>
+                      <div style={{ width: DIVIDER_W, backgroundColor: border, flexShrink: 0 }} />
+                      <div style={{ flex: 1, padding: "8px 14px", display: "flex", flexDirection: "column", gap: 5 }}>
+                        {hasSecond ? second.map(e => renderBar(e)) : emptyLane()}
+                      </div>
+                    </div>
+                  )}
+                  {!hasFull && !hasFirst && !hasSecond && emptyLane()}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding: "9px 22px", borderTop: `1px solid ${border}`, flexShrink: 0, display: "flex", alignItems: "center", gap: 16 }}>
+          <span style={{ fontSize: 9.5, color: subtle, marginRight: 4 }}>Legende:</span>
+          {[["#2563eb", "Anfang 1.–15."], ["#b45309", "Ende 16.–31."], ["#6b7280", "Ganzer Monat"]].map(([c, l]) => (
+            <div key={l} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+              <div style={{ width: 9, height: 9, borderRadius: 2, backgroundColor: c }} />
+              <span style={{ fontSize: 9.5, color: subtle }}>{l}</span>
+            </div>
+          ))}
+          <span style={{ marginLeft: "auto", fontSize: 10.5, color: subtle }}>Klick auf Balken → bearbeiten</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Planungsraster ────────────────────────────────────────────────────────────
 function PlanGrid({
   entries, years,
   sidebarActivities, existingTitles,
   onCellClick, onEntryClick, onToggleDone, onDragEnd,
   onAddActivity, onRemoveActivity,
+  onMonthHeaderClick,
   colors,
 }) {
   const { cardBg, border, text, subtle, accent, headerBg, isArtis, isLight, pageBg } = colors;
@@ -457,7 +690,11 @@ function PlanGrid({
               {MONTHS.map((m, mi) => {
                 const isCur = mi + 1 === currentMonth;
                 return (
-                  <div key={mi} style={{ flex: "1 0 0", minWidth: 100, padding: "6px 4px 5px", textAlign: "center", borderRight: mi < 11 ? `1px solid ${border}` : "none", backgroundColor: isCur ? `${accent}14` : "transparent", position: "relative" }}>
+                  <div key={mi}
+                    onClick={() => onMonthHeaderClick && onMonthHeaderClick(mi + 1)}
+                    style={{ flex: "1 0 0", minWidth: 100, padding: "6px 4px 5px", textAlign: "center", borderRight: mi < 11 ? `1px solid ${border}` : "none", backgroundColor: isCur ? `${accent}14` : "transparent", position: "relative", cursor: onMonthHeaderClick ? "pointer" : "default", userSelect: "none" }}
+                    onMouseEnter={e => { if (onMonthHeaderClick) e.currentTarget.style.backgroundColor = `${accent}22`; }}
+                    onMouseLeave={e => { e.currentTarget.style.backgroundColor = isCur ? `${accent}14` : "transparent"; }}>
                     {isCur && <div style={{ position: "absolute", top: 3, left: "50%", transform: "translateX(-50%)", width: 5, height: 5, borderRadius: "50%", backgroundColor: accent }} />}
                     <span style={{ fontSize: 11, fontWeight: 800, color: isCur ? accent : subtle, letterSpacing: ".07em", display: "block", marginTop: isCur ? 6 : 0 }}>{m}</span>
                   </div>
@@ -507,8 +744,6 @@ function PlanGrid({
                                   {cellEntries.map((entry, eidx) => {
                                     const isDone  = !!entry.done;
                                     const col     = getTitleColor(entry.title);
-                                    const me      = entry.month_end || entry.month;
-                                    const hasSpan = me > entry.month;
                                     return (
                                       <Draggable key={entry.id} draggableId={`mp-entry|${entry.id}`} index={eidx}>
                                         {(drag, eSnap) => applyDragPortal(eSnap,
@@ -525,16 +760,24 @@ function PlanGrid({
                                               <div style={{ fontSize: 9.5, fontWeight: 700, color: isDone ? "#22c55e" : col.color, paddingRight: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textDecoration: isDone ? "line-through" : "none" }}>
                                                 {entry.title}
                                               </div>
-                                              {/* Span indicator */}
-                                              {hasSpan && (
-                                                <div style={{ fontSize: 8.5, color: col.color, opacity: 0.75, marginTop: 1, display: "flex", alignItems: "center", gap: 2 }}>
-                                                  <span>→</span><span>{MONTHS[me - 1]}</span>
-                                                </div>
-                                              )}
-                                              {/* Datum (only if no span) */}
-                                              {!hasSpan && entry.datum && (
-                                                <div style={{ fontSize: 9.5, color: isDone ? "#888" : "#666", marginTop: 1 }}>{toLocalDateStr(entry.datum)}</div>
-                                              )}
+                                              {/* Month half badge + person/datum */}
+                                              <div style={{ display: "flex", alignItems: "center", gap: 3, marginTop: 1, overflow: "hidden" }}>
+                                                {entry.month_half && (
+                                                  <span style={{ fontSize: 8, fontWeight: 800, padding: "1px 3px", borderRadius: 2, color: "#fff", backgroundColor: entry.month_half === "first" ? "#2563eb" : "#b45309", flexShrink: 0 }}>
+                                                    {entry.month_half === "first" ? "A" : "E"}
+                                                  </span>
+                                                )}
+                                                {entry.person && (
+                                                  <span style={{ fontSize: 8.5, color: isDone ? "#888" : subtle, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                                    {entry.person}
+                                                  </span>
+                                                )}
+                                                {!entry.person && entry.datum && (
+                                                  <span style={{ fontSize: 8.5, color: isDone ? "#888" : "#666", whiteSpace: "nowrap" }}>
+                                                    {toLocalDateStr(entry.datum)}
+                                                  </span>
+                                                )}
+                                              </div>
                                               {/* Detail dot */}
                                               {entry.detail_text && <div title={entry.detail_text} style={{ position: "absolute", bottom: 3, right: 3, width: 5, height: 5, borderRadius: "50%", backgroundColor: "#f59e0b" }} />}
                                             </div>
@@ -595,6 +838,7 @@ export default function Monatsplanung() {
   const [selectedCustomerId, setSelectedCustomerId] = useState(null);
   const [selectedPlanId, setSelectedPlanId]         = useState(null);
   const [modal, setModal]               = useState(null);
+  const [detailView, setDetailView]     = useState(null); // null | { month, year }
   const [yearDialog, setYearDialog]     = useState(null);
   const [promptModal, setPromptModal]   = useState(null);
   const [confirmModal, setConfirmModal] = useState(null);
@@ -748,17 +992,24 @@ export default function Monatsplanung() {
   };
 
   // ── Eintrag CRUD ──────────────────────────────────────────────────────────
-  const handleCellClick  = (prefillTitle, month, year) => setModal({ mode: "create", month, prefillTitle, year });
-  const handleEntryClick = entry => setModal({ mode: "edit", entry, month: entry.month, year: entry.year });
+  const handleCellClick        = (prefillTitle, month, year) => setModal({ mode: "create", month, prefillTitle, year });
+  const handleEntryClick       = entry => setModal({ mode: "edit", entry, month: entry.month, year: entry.year });
+  const handleMonthHeaderClick = month => {
+    const curYear = new Date().getFullYear();
+    const y = years.includes(curYear) ? curYear : (years.length > 0 ? years[0] : curYear);
+    setDetailView({ month, year: y });
+  };
 
   const handleSaveEntry = async form => {
-    const { title, detail_text, datum, done, month_start, month_end } = form;
+    const { title, detail_text, datum, done, month_half, person } = form;
     const { data: { user } } = await supabase.auth.getUser();
     if (modal.mode === "create") {
       const { data, error } = await supabase.from("mp_entries").insert({
         plan_id: selectedPlanId, title,
-        year: modal.year, month: month_start, month_end,
+        year: modal.year, month: modal.month,
         detail_text, datum: datum || null, done,
+        month_half: month_half || null,
+        person: person || null,
         created_by: user?.id,
       }).select().single();
       if (error) { toast.error(error.message); return; }
@@ -767,7 +1018,8 @@ export default function Monatsplanung() {
     } else {
       const { data, error } = await supabase.from("mp_entries").update({
         title, detail_text, datum: datum || null, done,
-        month: month_start, month_end,
+        month_half: month_half || null,
+        person: person || null,
       }).eq("id", modal.entry.id).select().single();
       if (error) { toast.error(error.message); return; }
       setEntries(prev => prev.map(e => e.id === modal.entry.id ? data : e));
@@ -831,12 +1083,8 @@ export default function Monatsplanung() {
       const entryId = draggableId.slice("mp-entry|".length);
       const dest = parseCell(destination.droppableId);
       if (!dest) return;
-      // Preserve the span duration when moving
-      const entry    = entries.find(e => e.id === entryId);
-      const duration = entry ? ((entry.month_end || entry.month) - entry.month) : 0;
-      const newEnd   = Math.min(12, dest.month + duration);
-      setEntries(prev => prev.map(e => e.id === entryId ? { ...e, year: dest.year, month: dest.month, month_end: newEnd } : e));
-      const { error } = await supabase.from("mp_entries").update({ year: dest.year, month: dest.month, month_end: newEnd }).eq("id", entryId);
+      setEntries(prev => prev.map(e => e.id === entryId ? { ...e, year: dest.year, month: dest.month } : e));
+      const { error } = await supabase.from("mp_entries").update({ year: dest.year, month: dest.month }).eq("id", entryId);
       if (error) { toast.error("Fehler beim Verschieben"); loadEntries(selectedPlanId); }
       else toast.success("Verschoben ✓");
     }
@@ -891,6 +1139,7 @@ export default function Monatsplanung() {
           onCellClick={handleCellClick} onEntryClick={handleEntryClick}
           onToggleDone={handleToggleDone} onDragEnd={handleDragEnd}
           onAddActivity={handleAddActivity} onRemoveActivity={handleRemoveActivity}
+          onMonthHeaderClick={handleMonthHeaderClick}
           colors={colors}
         />
       )}
@@ -909,6 +1158,16 @@ export default function Monatsplanung() {
       {yearDialog && <YearChangeDialog fromYear={yearDialog.from} toYear={yearDialog.to} onConfirm={confirmYearChange} onCancel={cancelYearChange} colors={colors} />}
       {promptModal && <SimpleInputModal title={promptModal.title} placeholder={promptModal.placeholder} defaultValue={promptModal.defaultValue} onConfirm={promptModal.onConfirm} onClose={() => setPromptModal(null)} colors={colors} />}
       {confirmModal && <ConfirmModal message={confirmModal.message} onConfirm={confirmModal.onConfirm} onClose={() => setConfirmModal(null)} colors={colors} />}
+      {detailView && (
+        <MonthDetailView
+          initMonth={detailView.month} year={detailView.year}
+          allEntries={entries}
+          colors={colors}
+          onClose={() => setDetailView(null)}
+          onEntryClick={handleEntryClick}
+          onAddEntry={(month, year) => handleCellClick(null, month, year)}
+        />
+      )}
     </div>
   );
 }
