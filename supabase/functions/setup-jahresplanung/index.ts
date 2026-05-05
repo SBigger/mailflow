@@ -80,7 +80,7 @@ Deno.serve(async (req) => {
     await sql.unsafe(`
       SELECT cron.schedule(
         'sync-teams-calls-auto',
-        '*/30 * * * *',
+        '0 * * * *',
         'SELECT net.http_post(
            url        := ''${syncUrl}'',
            headers    := ''${authHeader.replace(/'/g, "''")}''::jsonb,
