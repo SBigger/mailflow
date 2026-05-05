@@ -71,6 +71,9 @@ export default function Settings() {
     const [editingUserNameId, setEditingUserNameId] = useState(null);
     const [editingUserNameValue, setEditingUserNameValue] = useState('');
     const [editingUserTitelValue, setEditingUserTitelValue] = useState('');
+    const [phoneEditId,    setPhoneEditId]    = useState(null);
+    const [phoneEditValue, setPhoneEditValue] = useState('');
+    const [phoneSaving,    setPhoneSaving]    = useState(false);
     const [invitingEmail, setInvitingEmail] = useState('');
     const [assigningTagToAll, setAssigningTagToAll] = useState({});
     const [backupLoading, setBackupLoading] = useState(false);
@@ -316,6 +319,25 @@ export default function Settings() {
         },
         onError: (e) => toast.error('Fehler: ' + e.message),
     });
+
+    const handleSavePhone = async (userId) => {
+        setPhoneSaving(true);
+        try {
+            const { error } = await supabase
+                .from('profiles')
+                .update({ phone: phoneEditValue.trim() || null })
+                .eq('id', userId);
+            if (error) throw error;
+            toast.success('Telefonnummer gespeichert');
+            setPhoneEditId(null);
+            setPhoneEditValue('');
+            queryClient.invalidateQueries({ queryKey: ['users'] });
+        } catch (e) {
+            toast.error('Fehler: ' + e.message);
+        } finally {
+            setPhoneSaving(false);
+        }
+    };
 
     const handleResetPassword = async (email) => {
         try {
@@ -1836,6 +1858,45 @@ export default function Settings() {
                                                         {editingUserNameId !== u.id && (
                                                             <div className="text-xs truncate"
                                                                  style={{color: textMuted}}>{u.email}</div>
+                                                        )}
+                                                        {/* Direktnummer */}
+                                                        {phoneEditId === u.id ? (
+                                                            <div className="flex items-center gap-1 mt-1">
+                                                                <input
+                                                                    type="tel"
+                                                                    autoFocus
+                                                                    placeholder="+41 71 505 05 09"
+                                                                    value={phoneEditValue}
+                                                                    onChange={e => setPhoneEditValue(e.target.value)}
+                                                                    onKeyDown={e => {
+                                                                        if (e.key === 'Enter') handleSavePhone(u.id);
+                                                                        if (e.key === 'Escape') { setPhoneEditId(null); setPhoneEditValue(''); }
+                                                                    }}
+                                                                    className="text-xs rounded px-2 py-0.5 h-6 w-36 outline-none"
+                                                                    style={{ border: `1px solid ${inputBorder}`, backgroundColor: inputBg, color: inputColor }}
+                                                                />
+                                                                <button onClick={() => handleSavePhone(u.id)} disabled={phoneSaving}
+                                                                    className="text-green-500 hover:text-green-400 disabled:opacity-40">
+                                                                    <Check className="h-3.5 w-3.5"/>
+                                                                </button>
+                                                                <button onClick={() => { setPhoneEditId(null); setPhoneEditValue(''); }}
+                                                                    style={{color: textMuted}}>
+                                                                    <X className="h-3.5 w-3.5"/>
+                                                                </button>
+                                                            </div>
+                                                        ) : (
+                                                            <div className="flex items-center gap-1 mt-0.5">
+                                                                <span className="text-xs" style={{color: textMuted}}>
+                                                                    {u.phone || '—'}
+                                                                </span>
+                                                                <button
+                                                                    onClick={() => { setPhoneEditId(u.id); setPhoneEditValue(u.phone || ''); }}
+                                                                    className="opacity-40 hover:opacity-100 transition-opacity"
+                                                                    title="Direktnummer bearbeiten"
+                                                                    style={{color: textMuted}}>
+                                                                    <Pencil className="h-3 w-3"/>
+                                                                </button>
+                                                            </div>
                                                         )}
                                                     </div>
                                                     {u.inviteState === 1 ? (
