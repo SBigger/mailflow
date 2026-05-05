@@ -324,13 +324,13 @@ export default function UserManagement() {
                         <Mail className="h-3 w-3" />
                         {user.email}
                       </div>
-                      <div className="text-xs flex items-center gap-1 mt-0.5 group/phone">
+                      <div className="text-xs flex items-center gap-1 mt-0.5">
                         <Phone className="h-3 w-3" style={{ color: textSecondary }} />
                         <span style={{ color: textSecondary }}>{user.phone || '—'}</span>
                         <button
                           onClick={() => { setPhoneEditUserId(user.id); setPhoneEditValue(user.phone || ''); }}
-                          className="p-0.5 rounded opacity-0 group-hover/phone:opacity-100 transition-opacity"
-                          style={{ color: textSecondary }}
+                          className="p-0.5 rounded hover:opacity-100 transition-opacity"
+                          style={{ color: textSecondary, opacity: 0.4 }}
                           title="Direktnummer bearbeiten"
                         >
                           <Pencil className="h-3 w-3" />
