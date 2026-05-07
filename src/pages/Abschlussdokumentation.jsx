@@ -605,11 +605,185 @@ function ImportDialog({ onClose, onImport, accent, theme }) {
   );
 }
 
+// ── MiniExcel (Arbeitspapier pro Konto) ──────────────────────────────────────
+const MINI_DEFAULT_COLS = [
+  { id: "dc0", label: "Beschreibung", width: 220 },
+  { id: "dc1", label: "Betrag CHF",   width: 130 },
+  { id: "dc2", label: "Kommentar",    width: 200 },
+];
+
+function MiniExcel({ data, onSave, accent, headingC, subC, panelBdr }) {
+  const init = data?.columns?.length ? data : { columns: MINI_DEFAULT_COLS, rows: [{ id: "dr0", cells: {} }] };
+  const [cols, setCols] = useState(init.columns);
+  const [rows, setRows] = useState(init.rows);
+  const [editCell, setEditCell] = useState(null);
+  const [editVal, setEditVal] = useState("");
+  const [editColId, setEditColId] = useState(null);
+  const [editColLabel, setEditColLabel] = useState("");
+  const [dragIdx, setDragIdx] = useState(null);
+  const [dragOverIdx, setDragOverIdx] = useState(null);
+  const stRef = useRef({ cols, rows });
+  useEffect(() => { stRef.current = { cols, rows }; });
+
+  const save = useCallback((c, r) => onSave({ columns: c, rows: r }), [onSave]);
+
+  // ── Column resize ────────────────────────────────────────────────────────
+  const startResize = (e, ci) => {
+    e.preventDefault();
+    const sx = e.clientX;
+    const sw = stRef.current.cols[ci].width;
+    const move = (me) => setCols(p => p.map((c, i) => i === ci ? { ...c, width: Math.max(60, sw + me.clientX - sx) } : c));
+    const up = () => {
+      document.removeEventListener("mousemove", move);
+      document.removeEventListener("mouseup", up);
+      save(stRef.current.cols, stRef.current.rows);
+    };
+    document.addEventListener("mousemove", move);
+    document.addEventListener("mouseup", up);
+  };
+
+  // ── Cell edit ────────────────────────────────────────────────────────────
+  const commitCell = () => {
+    if (!editCell) return;
+    const newRows = rows.map(r => r.id === editCell.rowId
+      ? { ...r, cells: { ...r.cells, [editCell.colId]: editVal } } : r);
+    setRows(newRows); setEditCell(null); save(cols, newRows);
+  };
+
+  // ── Column label edit ────────────────────────────────────────────────────
+  const commitCol = () => {
+    if (!editColId) return;
+    const newCols = cols.map(c => c.id === editColId ? { ...c, label: editColLabel } : c);
+    setCols(newCols); setEditColId(null); save(newCols, rows);
+  };
+
+  // ── Add / Delete ─────────────────────────────────────────────────────────
+  const addCol = () => {
+    const nc = { id: `c${Date.now()}`, label: "Spalte", width: 150 };
+    const nc2 = [...cols, nc]; setCols(nc2); save(nc2, rows);
+  };
+  const delCol = (id) => {
+    const nc = cols.filter(c => c.id !== id);
+    const nr = rows.map(r => { const cells = { ...r.cells }; delete cells[id]; return { ...r, cells }; });
+    setCols(nc); setRows(nr); save(nc, nr);
+  };
+  const addRow = () => {
+    const nr = [...rows, { id: `r${Date.now()}`, cells: {} }];
+    setRows(nr); save(cols, nr);
+  };
+  const delRow = (id) => {
+    const nr = rows.filter(r => r.id !== id); setRows(nr); save(cols, nr);
+  };
+
+  // ── Row drag-and-drop ────────────────────────────────────────────────────
+  const onDrop = (e, ti) => {
+    e.preventDefault();
+    if (dragIdx === null || dragIdx === ti) { setDragIdx(null); setDragOverIdx(null); return; }
+    const nr = [...rows];
+    const [m] = nr.splice(dragIdx, 1);
+    nr.splice(ti, 0, m);
+    setRows(nr); setDragIdx(null); setDragOverIdx(null); save(cols, nr);
+  };
+
+  const bdr = panelBdr;
+  return (
+    <div style={{ padding: "0 8px 10px 32px", backgroundColor: accent + "05", borderTop: `1px solid ${bdr}` }}>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ borderCollapse: "collapse", fontSize: 12 }}>
+          <thead>
+            <tr style={{ backgroundColor: accent + "14" }}>
+              {/* drag-handle column */}
+              <th style={{ width: 22, borderRight: `1px solid ${bdr}`, borderBottom: `1px solid ${bdr}` }} />
+              {cols.map((col, ci) => (
+                <th key={col.id} style={{
+                  position: "relative", width: col.width, minWidth: col.width, maxWidth: col.width,
+                  padding: "5px 24px 5px 8px", textAlign: "left", fontWeight: 700, color: headingC,
+                  borderRight: `1px solid ${bdr}`, borderBottom: `1px solid ${bdr}`, whiteSpace: "nowrap",
+                }}>
+                  {editColId === col.id
+                    ? <input autoFocus value={editColLabel}
+                        onChange={e => setEditColLabel(e.target.value)}
+                        onBlur={commitCol}
+                        onKeyDown={e => { if (e.key === "Enter") commitCol(); if (e.key === "Escape") setEditColId(null); }}
+                        style={{ width: "100%", fontSize: 11, fontWeight: 700, padding: "1px 4px", borderRadius: 3, border: `1px solid ${accent}`, outline: "none", color: headingC, backgroundColor: "white" }} />
+                    : <span onDoubleClick={() => { setEditColId(col.id); setEditColLabel(col.label); }}
+                        title="Doppelklick zum Umbenennen" style={{ cursor: "text" }}>{col.label}</span>
+                  }
+                  {/* Delete col button */}
+                  {cols.length > 1 &&
+                    <button onClick={() => delCol(col.id)} title="Spalte löschen"
+                      style={{ position: "absolute", right: 4, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: subC, fontSize: 13, lineHeight: 1, opacity: 0.45, padding: 1 }}>×</button>
+                  }
+                  {/* Resize handle */}
+                  <div onMouseDown={e => startResize(e, ci)} style={{
+                    position: "absolute", right: 0, top: 0, bottom: 0, width: 5, cursor: "col-resize", zIndex: 2,
+                  }} />
+                </th>
+              ))}
+              {/* Add col */}
+              <th style={{ width: 30, padding: "4px 6px", textAlign: "center", borderBottom: `1px solid ${bdr}` }}>
+                <button onClick={addCol} title="Spalte hinzufügen"
+                  style={{ background: "none", border: `1px solid ${accent}60`, borderRadius: 3, cursor: "pointer", color: accent, fontSize: 13, padding: "0 5px", fontWeight: 700, lineHeight: "18px" }}>+</button>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, ri) => (
+              <tr key={row.id} draggable
+                onDragStart={e => { setDragIdx(ri); e.dataTransfer.effectAllowed = "move"; }}
+                onDragOver={e => { e.preventDefault(); setDragOverIdx(ri); }}
+                onDrop={e => onDrop(e, ri)}
+                onDragEnd={() => { setDragIdx(null); setDragOverIdx(null); }}
+                style={{ borderTop: `1px solid ${bdr}`, backgroundColor: dragOverIdx === ri ? accent + "18" : "transparent" }}>
+                {/* Drag handle */}
+                <td style={{ padding: "2px 4px", cursor: "grab", color: subC, textAlign: "center", borderRight: `1px solid ${bdr}`, userSelect: "none", fontSize: 13 }} title="Zeile verschieben">⠿</td>
+                {cols.map(col => {
+                  const isEd = editCell?.rowId === row.id && editCell?.colId === col.id;
+                  const val = row.cells[col.id] || "";
+                  return (
+                    <td key={col.id} style={{ padding: "1px 4px", borderRight: `1px solid ${bdr}`, width: col.width, maxWidth: col.width }}
+                      onClick={() => !isEd && (setEditCell({ rowId: row.id, colId: col.id }), setEditVal(val))}>
+                      {isEd
+                        ? <input autoFocus value={editVal} onChange={e => setEditVal(e.target.value)}
+                            onBlur={commitCell}
+                            onKeyDown={e => { if (e.key === "Enter") commitCell(); if (e.key === "Escape") setEditCell(null); if (e.key === "Tab") commitCell(); }}
+                            style={{ width: "100%", fontSize: 12, padding: "3px 5px", border: `1px solid ${accent}`, borderRadius: 3, outline: "none", color: "#111" }} />
+                        : <span style={{ display: "block", padding: "3px 5px", minHeight: 22, color: val ? headingC : subC + "60", cursor: "text", whiteSpace: "pre-wrap", wordBreak: "break-word", overflow: "hidden" }}>
+                            {val || "—"}
+                          </span>}
+                    </td>);
+                })}
+                {/* Delete row */}
+                <td style={{ padding: "2px 4px", textAlign: "center" }}>
+                  <button onClick={() => delRow(row.id)} title="Zeile löschen"
+                    style={{ background: "none", border: "none", cursor: "pointer", color: subC, fontSize: 14, opacity: 0.45 }}>×</button>
+                </td>
+              </tr>
+            ))}
+            <tr style={{ borderTop: `1px solid ${bdr}` }}>
+              <td colSpan={cols.length + 2} style={{ padding: "4px 10px" }}>
+                <button onClick={addRow}
+                  style={{ background: "none", border: "none", cursor: "pointer", color: accent, fontSize: 12, fontWeight: 600, padding: 0 }}>+ Zeile</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // ── Kontenplan Tab ────────────────────────────────────────────────────────────
 function KontenplanTab({ konten, onUpdateKonto, accent, theme, headingC, subC, panelBg, panelBdr, tableBdr, rowHover }) {
   const isArtis = theme === "artis";
   const isLight = theme === "light";
   const [collapsed, setCollapsed] = useState({});
+  const [expandedKonten, setExpandedKonten] = useState(new Set());
+  const toggleKonto = (id) => setExpandedKonten(prev => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
 
   const sortedKonten = useMemo(() =>
     [...konten].sort((a, b) => {
@@ -717,17 +891,25 @@ function KontenplanTab({ konten, onUpdateKonto, accent, theme, headingC, subC, p
                   const abw = (parseFloat(konto.saldo_ist) || 0) - (parseFloat(konto.saldo_vorjahr) || 0);
                   const noMapping = !effectivePos && /^[1-8]/.test(String(konto.kontonummer));
 
+                  const isExpanded = expandedKonten.has(konto.id);
                   return (
-                    <tr key={konto.id} style={{
-                      borderBottom: `1px solid ${tableBdr}`,
+                    <React.Fragment key={konto.id}>
+                    <tr style={{
+                      borderBottom: isExpanded ? "none" : `1px solid ${tableBdr}`,
                       backgroundColor: noMapping ? "#fef2f250" : "transparent",
                     }}
                       onMouseEnter={e => e.currentTarget.style.backgroundColor = noMapping ? "#fef2f2" : rowHover}
-                      onMouseLeave={e => e.currentTarget.style.backgroundColor = noMapping ? "#fef2f250" : "transparent"}>
+                      onMouseLeave={e => e.currentTarget.style.backgroundColor = isExpanded ? (accent + "08") : noMapping ? "#fef2f250" : "transparent"}>
 
-                      {/* Konto-Nr */}
-                      <td style={{ padding: "7px 12px", fontWeight: 600, color: headingC, whiteSpace: "nowrap", width: 90 }}>
-                        {konto.kontonummer}
+                      {/* Konto-Nr + Expand Toggle */}
+                      <td style={{ padding: "7px 8px 7px 12px", fontWeight: 600, color: headingC, whiteSpace: "nowrap", width: 90 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                          <button onClick={() => toggleKonto(konto.id)} title={isExpanded ? "Arbeitspapier ausblenden" : "Arbeitspapier einblenden"}
+                            style={{ background: "none", border: "none", cursor: "pointer", padding: "1px 2px", color: isExpanded ? accent : subC, opacity: isExpanded ? 1 : 0.45, flexShrink: 0, lineHeight: 1, fontSize: 10 }}>
+                            {isExpanded ? "▼" : "▶"}
+                          </button>
+                          {konto.kontonummer}
+                        </div>
                       </td>
                       {/* Name */}
                       <td style={{ padding: "7px 12px", color: headingC }}>
@@ -789,6 +971,19 @@ function KontenplanTab({ konten, onUpdateKonto, accent, theme, headingC, subC, p
                         />
                       </td>
                     </tr>
+                    {/* ── Arbeitspapier (MiniExcel) ── */}
+                    {isExpanded && (
+                      <tr style={{ borderBottom: `1px solid ${tableBdr}`, backgroundColor: accent + "06" }}>
+                        <td colSpan={7} style={{ padding: 0 }}>
+                          <MiniExcel
+                            data={konto.arbeitspapier}
+                            onSave={d => onUpdateKonto(konto.id, { arbeitspapier: d })}
+                            accent={accent} headingC={headingC} subC={subC} panelBdr={tableBdr}
+                          />
+                        </td>
+                      </tr>
+                    )}
+                    </React.Fragment>
                   );
                 })}
 
