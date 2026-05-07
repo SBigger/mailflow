@@ -379,7 +379,10 @@ function ImportDialog({ onClose, onImport, accent, theme }) {
   const [colMap, setColMap] = useState({ kontonummer: "", kontoname: "", saldo_ist: "", saldo_vorjahr: "" });
   const [preview, setPreview] = useState([]);
   const [headers, setHeaders] = useState([]);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfFiles, setPdfFiles] = useState([]); // bis zu 2 PDFs
   const fileRef = useRef(null);
+  const pdfRef = useRef(null);
 
   function detectColumn(headers, patterns) {
     for (const h of headers) {
@@ -387,6 +390,84 @@ function ImportDialog({ onClose, onImport, accent, theme }) {
       if (patterns.some(p => lc.includes(p))) return h;
     }
     return "";
+  }
+
+  // ── PDF Text-Extraktion ───────────────────────────────────────────────────
+  async function extractPdfText(file) {
+    const pdfjsLib = await import('pdfjs-dist');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+      'pdfjs-dist/build/pdf.worker.min.js', import.meta.url
+    ).toString();
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    let fullText = "";
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      // Items nach y-Position gruppieren (gleiche Zeile), dann nach x sortieren
+      const items = content.items.map(it => ({ x: it.transform[4], y: it.transform[5], text: it.str }));
+      const lines = [];
+      for (const item of items) {
+        const y = Math.round(item.y);
+        let line = lines.find(l => Math.abs(l.y - y) < 3);
+        if (!line) { line = { y, parts: [] }; lines.push(line); }
+        line.parts.push(item);
+      }
+      lines.sort((a, b) => b.y - a.y);
+      for (const line of lines) {
+        line.parts.sort((a, b) => a.x - b.x);
+        fullText += line.parts.map(p => p.text).join(" ") + "\n";
+      }
+    }
+    return fullText;
+  }
+
+  // ── PDF Zeilen parsen → Konten-Rows ──────────────────────────────────────
+  function parsePdfText(text) {
+    const parseNum = (s) => {
+      const cleaned = s.replace(/'/g, "").replace(/\s/g, "").replace(",", ".");
+      const n = parseFloat(cleaned);
+      return isNaN(n) ? null : n;
+    };
+    // Pattern: 4-stellige Kontonummer, dann Bezeichnung, dann Betrag(e)
+    // Beispiel: "1000 Kasse 1'234.56" oder "1000 Kasse 1'234.56 987.65"
+    const re = /^\s*(\d{3,4})\s{1,4}([A-Za-zÀ-öø-ÿ][^\d\-]{2,50?}?)\s+([-]?[\d']+[\d](?:[.,]\d{1,2})?)\s*(?:([-]?[\d']+[\d](?:[.,]\d{1,2})?))?/;
+    const rows = [];
+    for (const line of text.split("\n")) {
+      const m = line.match(re);
+      if (!m) continue;
+      const nr = m[1];
+      if (parseInt(nr) < 100) continue; // Überschriften-Nummern überspringen
+      rows.push([nr, m[2].trim(), m[3].trim(), m[4]?.trim() || ""]);
+    }
+    return rows;
+  }
+
+  async function parsePdfFiles(files) {
+    setPdfLoading(true);
+    try {
+      let allRows = [];
+      const names = [];
+      for (const file of files) {
+        names.push(file.name);
+        const text = await extractPdfText(file);
+        const rows = parsePdfText(text);
+        allRows = [...allRows, ...rows];
+      }
+      // Duplikate (gleiche Kontonummer) deduplizieren — erstes Vorkommen gewinnt
+      const seen = new Set();
+      allRows = allRows.filter(r => { if (seen.has(r[0])) return false; seen.add(r[0]); return true; });
+      if (allRows.length === 0) { toast.error("Keine Konten im PDF gefunden — Format wird nicht erkannt"); setPdfLoading(false); return; }
+      // In Standard-Format bringen: [Kontonr, Bezeichnung, Saldo IST, Saldo VJ]
+      const hdrs = ["Kontonummer", "Bezeichnung", "Saldo IST", "Saldo VJ"];
+      setHeaders(hdrs);
+      setColMap({ kontonummer: "Kontonummer", kontoname: "Bezeichnung", saldo_ist: "Saldo IST", saldo_vorjahr: "Saldo VJ" });
+      setParsed({ rows: allRows, filename: names.join(" + ") });
+      setPreview(allRows.slice(0, 5));
+    } catch (err) {
+      toast.error("PDF konnte nicht gelesen werden: " + err.message);
+    }
+    setPdfLoading(false);
   }
 
   function parseFile(file) {
@@ -407,7 +488,6 @@ function ImportDialog({ onClose, onImport, accent, theme }) {
       const reader = new FileReader();
       reader.onload = (e) => {
         const text = e.target.result;
-        // Detect separator
         const firstLine = text.split("\n")[0];
         const sep = firstLine.includes(";") ? ";" : firstLine.includes("\t") ? "\t" : ",";
         const rows = text.split("\n").map(line =>
@@ -440,13 +520,23 @@ function ImportDialog({ onClose, onImport, accent, theme }) {
   function handleDrop(e) {
     e.preventDefault();
     setDragging(false);
-    const file = e.dataTransfer.files[0];
-    if (file) parseFile(file);
+    const files = Array.from(e.dataTransfer.files);
+    const pdfs = files.filter(f => f.name.toLowerCase().endsWith(".pdf"));
+    const others = files.filter(f => !f.name.toLowerCase().endsWith(".pdf"));
+    if (pdfs.length > 0) { parsePdfFiles(pdfs.slice(0, 2)); return; }
+    if (others[0]) parseFile(others[0]);
   }
 
   function handleFileChange(e) {
     const file = e.target.files[0];
-    if (file) parseFile(file);
+    if (!file) return;
+    if (file.name.toLowerCase().endsWith(".pdf")) { parsePdfFiles([file]); return; }
+    parseFile(file);
+  }
+
+  function handlePdfChange(e) {
+    const files = Array.from(e.target.files).slice(0, 2);
+    if (files.length > 0) parsePdfFiles(files);
   }
 
   function doImport() {
@@ -507,21 +597,43 @@ function ImportDialog({ onClose, onImport, accent, theme }) {
         <div className="overflow-y-auto flex-1 p-5 space-y-5">
           {/* Drop Zone */}
           {!parsed && (
-            <div
-              onDragOver={e => { e.preventDefault(); setDragging(true); }}
-              onDragLeave={() => setDragging(false)}
-              onDrop={handleDrop}
-              onClick={() => fileRef.current?.click()}
-              style={{
-                border: `2px dashed ${dragging ? accent : panelBdr}`,
-                borderRadius: 12, padding: "48px 24px", textAlign: "center", cursor: "pointer",
-                backgroundColor: dragging ? accent + "0a" : pageBg,
-                transition: "all 0.15s",
-              }}>
-              <FileSpreadsheet className="w-10 h-10 mx-auto mb-3" style={{ color: dragging ? accent : subC }} />
-              <div className="text-sm font-semibold mb-1" style={{ color: headingC }}>CSV oder Excel-Datei hier ablegen</div>
-              <div className="text-xs" style={{ color: subC }}>oder klicken zum Auswählen · .csv, .xlsx, .xls</div>
-              <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={handleFileChange} />
+            <div>
+              {pdfLoading && (
+                <div style={{ textAlign: "center", padding: 32, color: subC, fontSize: 13 }}>
+                  ⏳ PDF wird gelesen…
+                </div>
+              )}
+              {!pdfLoading && (
+                <>
+                  {/* Haupt-Dropzone (CSV/Excel/PDF) */}
+                  <div
+                    onDragOver={e => { e.preventDefault(); setDragging(true); }}
+                    onDragLeave={() => setDragging(false)}
+                    onDrop={handleDrop}
+                    onClick={() => fileRef.current?.click()}
+                    style={{
+                      border: `2px dashed ${dragging ? accent : panelBdr}`,
+                      borderRadius: 12, padding: "36px 24px", textAlign: "center", cursor: "pointer",
+                      backgroundColor: dragging ? accent + "0a" : pageBg, transition: "all 0.15s",
+                    }}>
+                    <FileSpreadsheet className="w-10 h-10 mx-auto mb-3" style={{ color: dragging ? accent : subC }} />
+                    <div className="text-sm font-semibold mb-1" style={{ color: headingC }}>Datei hier ablegen</div>
+                    <div className="text-xs" style={{ color: subC }}>CSV, Excel oder PDF · klicken zum Auswählen</div>
+                    <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls,.pdf" className="hidden" onChange={handleFileChange} />
+                  </div>
+                  {/* Zweite Datei für PDF (Bilanz + ER separat) */}
+                  <div style={{ marginTop: 10, padding: "10px 14px", borderRadius: 10, border: `1px solid ${panelBdr}`, backgroundColor: pageBg, display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ fontSize: 12, color: subC, flex: 1 }}>
+                      📄 Zwei PDFs (Bilanz + ER)? Beide gleichzeitig auswählen oder nacheinander ablegen.
+                    </span>
+                    <button onClick={() => pdfRef.current?.click()}
+                      style={{ fontSize: 11, fontWeight: 600, padding: "4px 12px", borderRadius: 6, cursor: "pointer", border: `1px solid ${accent}60`, color: accent, backgroundColor: accent + "10" }}>
+                      PDFs wählen
+                    </button>
+                    <input ref={pdfRef} type="file" accept=".pdf" multiple className="hidden" onChange={handlePdfChange} />
+                  </div>
+                </>
+              )}
             </div>
           )}
 
