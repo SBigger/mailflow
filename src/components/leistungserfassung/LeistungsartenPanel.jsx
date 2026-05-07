@@ -11,12 +11,13 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { leServiceType, leServiceRateHistory } from '@/lib/leApi';
+import { leServiceType, leServiceRateHistory, leVatRate } from '@/lib/leApi';
 import {
   Chip,
   Card,
   IconBtn,
   Input,
+  Select,
   Field,
   PanelLoader,
   PanelError,
@@ -196,6 +197,18 @@ function EditDialog({ open, onOpenChange, initial }) {
   const qc = useQueryClient();
   const isEdit = !!initial;
 
+  const ratesQ = useQuery({ queryKey: ['le', 'vat_rate'], queryFn: leVatRate.list });
+  const vatCodes = useMemo(() => {
+    const seen = new Set();
+    const out = [];
+    for (const r of (ratesQ.data ?? [])) {
+      if (seen.has(r.code)) continue;
+      seen.add(r.code);
+      out.push({ code: r.code, label: r.label });
+    }
+    return out;
+  }, [ratesQ.data]);
+
   const [form, setForm] = useState(() => defaultForm(initial));
   // reset form on open change
   React.useEffect(() => {
@@ -232,6 +245,8 @@ function EditDialog({ open, onOpenChange, initial }) {
       billable: !!form.billable,
       sort_order: Number(form.sort_order) || 100,
       active: !!form.active,
+      default_vat_code: form.default_vat_code || 'STD',
+      default_section: form.default_section || 'honorar',
     };
     saveMut.mutate(payload);
   };
@@ -272,6 +287,30 @@ function EditDialog({ open, onOpenChange, initial }) {
               placeholder="Buchhaltung"
             />
           </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Default-MWST" hint="Code wird beim Erstellen einer Rechnungsposition übernommen.">
+              <Select
+                value={form.default_vat_code}
+                onChange={(e) => setForm({ ...form, default_vat_code: e.target.value })}
+              >
+                {vatCodes.length === 0 && <option value="STD">STD</option>}
+                {vatCodes.map((v) => (
+                  <option key={v.code} value={v.code}>{v.code} – {v.label}</option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Default-Sektion" hint="Gruppierung auf der Rechnung.">
+              <Select
+                value={form.default_section}
+                onChange={(e) => setForm({ ...form, default_section: e.target.value })}
+              >
+                <option value="honorar">Honorar</option>
+                <option value="spesen">Spesen</option>
+                <option value="drittleistungen">Drittleistungen</option>
+                <option value="kulant">Kulant</option>
+              </Select>
+            </Field>
+          </div>
           <div className="flex items-center gap-6 pt-1">
             <label className="inline-flex items-center gap-2 text-sm">
               <input
@@ -322,6 +361,8 @@ function defaultForm(initial) {
     billable: initial?.billable ?? true,
     sort_order: initial?.sort_order ?? 100,
     active: initial?.active ?? true,
+    default_vat_code: initial?.default_vat_code ?? 'STD',
+    default_section: initial?.default_section ?? 'honorar',
   };
 }
 

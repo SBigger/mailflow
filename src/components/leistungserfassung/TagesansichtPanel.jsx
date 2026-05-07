@@ -300,10 +300,10 @@ export default function TagesansichtPanel() {
           employee={employees.find((e) => e.id === currentEmployeeId)}
           onConsumePrefill={() => setPrefill(null)}
           onCreate={(payload) => createMut.mutateAsync({
-            ...payload,
             entry_date: currentDate,
             employee_id: currentEmployeeId,
             status: 'erfasst',
+            ...payload, // payload.status kann 'kulant' überschreiben
           })}
         />
       )}
@@ -512,7 +512,8 @@ function QuickEntryCard({
       time_from: '', time_to: '',
       project_id: '', service_type_id: '',
       hours_internal: '', description: '',
-      rate_snapshot: '', rate_touched: false, hours_touched: false,
+      rate_snapshot: '', status: 'erfasst',
+      rate_touched: false, hours_touched: false,
     };
   }
 
@@ -576,6 +577,7 @@ function QuickEntryCard({
       hours_internal: hoursNum,
       rate_snapshot: rateNum || 0,
       description: row.description || null,
+      status: row.status || 'erfasst',
     };
     try {
       await onCreate(payload);
@@ -717,10 +719,33 @@ function QuickEntryCard({
             <CornerDownLeft className="w-4 h-4" />
           </button>
         </div>
-        <div className="mt-2 px-1 text-[10px] text-zinc-400">
-          {useTimeRange
-            ? '💡 Stunden auto aus Von/Bis (überschreibbar). Pflichtfelder: Std., Projekt, Leistungsart.'
-            : '💡 Stunden direkt eingeben (z.B. 1.5 = 1h 30min). Pflichtfelder: Std., Projekt, Leistungsart.'}
+        {/* Status-Toggle: Abzurechnen vs Kulant */}
+        <div className="mt-2 px-1 flex items-center gap-3 text-[11px]">
+          <span className="text-zinc-500 font-medium uppercase tracking-wider text-[10px]">Status:</span>
+          <label className="flex items-center gap-1 cursor-pointer">
+            <input
+              type="radio"
+              name="quick-status"
+              checked={row.status === 'erfasst'}
+              onChange={() => setRow({ ...row, status: 'erfasst' })}
+            />
+            <span className="text-zinc-700">Abzurechnen</span>
+          </label>
+          <label className="flex items-center gap-1 cursor-pointer">
+            <input
+              type="radio"
+              name="quick-status"
+              checked={row.status === 'kulant'}
+              onChange={() => setRow({ ...row, status: 'kulant' })}
+            />
+            <span style={{ color: '#4d2995' }}>Kulant</span>
+            <span className="text-zinc-400 text-[10px]">(nicht abrechnen)</span>
+          </label>
+          <div className="ml-auto text-[10px] text-zinc-400">
+            {useTimeRange
+              ? '💡 Stunden auto aus Von/Bis (überschreibbar). Pflicht: Std., Projekt, Leistungsart.'
+              : '💡 Stunden direkt eingeben (1.5 = 1h 30min). Pflicht: Std., Projekt, Leistungsart.'}
+          </div>
         </div>
       </div>
     </Card>
