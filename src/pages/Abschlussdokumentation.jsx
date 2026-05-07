@@ -835,10 +835,15 @@ function BilanzkennzahlRow({ label, value, isSubtotal, isTotal, indent, accent, 
   );
 }
 
-function BilanzTab({ konten, accent, headingC, subC, panelBg, panelBdr, tableBdr }) {
+function BilanzTab({ konten, accent, headingC, subC, panelBg, panelBdr, tableBdr,
+                      signFlipPassiven, onFlipPassiven, diffAnpassungen, onSaveDiffAnpassungen }) {
+  const [editAnp, setEditAnp] = useState(null); // { idx, bezeichnung, betrag }
+
   const sumByIds = (ids) => konten
     .filter(k => ids.includes(k.position_id))
     .reduce((s, k) => s + (parseFloat(k.saldo_ist) || 0), 0);
+
+  const pSign = signFlipPassiven ? -1 : 1;
 
   const UV_IDS = ["UV_FLUESSIG","UV_WERTSCHRIFTEN","UV_FORD_LL","UV_FORD_SONST","UV_VORRAETE","UV_ABGRENZUNG"];
   const AV_IDS = ["AV_FINANZ","AV_MOBIL","AV_IMMOBIL","AV_IMMATERIELL"];
@@ -850,19 +855,31 @@ function BilanzTab({ konten, accent, headingC, subC, panelBg, panelBdr, tableBdr
   const avTotal = sumByIds(AV_IDS);
   const aktivenTotal = uvTotal + avTotal;
 
-  const fkKurzTotal = sumByIds(FK_KURZ_IDS);
-  const fkLangTotal = sumByIds(FK_LANG_IDS);
-  const ekTotal = sumByIds(EK_IDS);
+  const fkKurzTotal = sumByIds(FK_KURZ_IDS) * pSign;
+  const fkLangTotal = sumByIds(FK_LANG_IDS) * pSign;
+  const ekTotal = sumByIds(EK_IDS) * pSign;
   const passivenTotal = fkKurzTotal + fkLangTotal + ekTotal;
 
-  const diff = aktivenTotal - passivenTotal;
-  const balanced = Math.abs(diff) < 0.005;
-
-  const makePos = (id) => {
+  const makePos = (id, flip = false) => {
     const pos = POSITION_MAP[id];
-    const val = sumByIds([id]);
+    const val = sumByIds([id]) * (flip ? pSign : 1);
     return { label: pos?.label || id, val };
   };
+
+  const diff = aktivenTotal - passivenTotal;
+  const anpTotal = (diffAnpassungen || []).reduce((s, a) => s + (parseFloat(a.betrag) || 0), 0);
+  const diffNachAnp = diff - anpTotal;
+  const balanced = Math.abs(diff) < 0.005;
+  const balancedNachAnp = Math.abs(diffNachAnp) < 0.005;
+
+  const flipBtn = (onClick, active) => (
+    <button onClick={onClick} title="Vorzeichen umkehren" style={{
+      fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 5, cursor: "pointer",
+      backgroundColor: active ? "#9d174d22" : "transparent",
+      border: `1px solid ${active ? "#9d174d" : "#9d174d66"}`,
+      color: active ? "#9d174d" : "#9d174d99",
+    }}>± Vorzeichen</button>
+  );
 
   if (konten.length === 0) {
     return (
@@ -880,13 +897,11 @@ function BilanzTab({ konten, accent, headingC, subC, panelBg, panelBdr, tableBdr
         <div style={{ padding: "12px 14px", backgroundColor: "#dbeafe", borderBottom: `1px solid ${panelBdr}` }}>
           <span style={{ fontWeight: 800, fontSize: 13, color: "#1d4ed8", letterSpacing: "0.03em" }}>AKTIVEN</span>
         </div>
-        {/* Umlaufvermögen */}
         <div style={{ padding: "8px 12px 0", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: subC }}>
           Umlaufvermögen
         </div>
         {UV_IDS.map(id => { const { label, val } = makePos(id); return val !== 0 ? <BilanzkennzahlRow key={id} label={label} value={val} indent headingC={headingC} subC={subC} accent={accent} /> : null; })}
         <BilanzkennzahlRow label="Total Umlaufvermögen" value={uvTotal} isSubtotal headingC={headingC} subC={subC} accent={accent} />
-        {/* Anlagevermögen */}
         <div style={{ padding: "8px 12px 0", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: subC, marginTop: 4 }}>
           Anlagevermögen
         </div>
@@ -897,37 +912,122 @@ function BilanzTab({ konten, accent, headingC, subC, panelBg, panelBdr, tableBdr
 
       {/* PASSIVEN */}
       <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${panelBdr}`, boxShadow: "0 2px 8px rgba(0,0,0,0.05)" }}>
-        <div style={{ padding: "12px 14px", backgroundColor: "#fce7f3", borderBottom: `1px solid ${panelBdr}` }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", backgroundColor: "#fce7f3", borderBottom: `1px solid ${panelBdr}` }}>
           <span style={{ fontWeight: 800, fontSize: 13, color: "#9d174d", letterSpacing: "0.03em" }}>PASSIVEN</span>
+          {flipBtn(onFlipPassiven, signFlipPassiven)}
         </div>
-        {/* FK Kurzfristig */}
         <div style={{ padding: "8px 12px 0", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: subC }}>
           Kurzfristiges Fremdkapital
         </div>
-        {FK_KURZ_IDS.map(id => { const { label, val } = makePos(id); return val !== 0 ? <BilanzkennzahlRow key={id} label={label} value={val} indent headingC={headingC} subC={subC} accent={accent} /> : null; })}
+        {FK_KURZ_IDS.map(id => { const { label, val } = makePos(id, true); return val !== 0 ? <BilanzkennzahlRow key={id} label={label} value={val} indent headingC={headingC} subC={subC} accent={accent} /> : null; })}
         <BilanzkennzahlRow label="Total Kurzfristiges FK" value={fkKurzTotal} isSubtotal headingC={headingC} subC={subC} accent={accent} />
-        {/* FK Langfristig */}
         <div style={{ padding: "8px 12px 0", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: subC, marginTop: 4 }}>
           Langfristiges Fremdkapital
         </div>
-        {FK_LANG_IDS.map(id => { const { label, val } = makePos(id); return val !== 0 ? <BilanzkennzahlRow key={id} label={label} value={val} indent headingC={headingC} subC={subC} accent={accent} /> : null; })}
+        {FK_LANG_IDS.map(id => { const { label, val } = makePos(id, true); return val !== 0 ? <BilanzkennzahlRow key={id} label={label} value={val} indent headingC={headingC} subC={subC} accent={accent} /> : null; })}
         <BilanzkennzahlRow label="Total Langfristiges FK" value={fkLangTotal} isSubtotal headingC={headingC} subC={subC} accent={accent} />
-        {/* Eigenkapital */}
         <div style={{ padding: "8px 12px 0", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: subC, marginTop: 4 }}>
           Eigenkapital
         </div>
-        {EK_IDS.map(id => { const { label, val } = makePos(id); return val !== 0 ? <BilanzkennzahlRow key={id} label={label} value={val} indent headingC={headingC} subC={subC} accent={accent} /> : null; })}
+        {EK_IDS.map(id => { const { label, val } = makePos(id, true); return val !== 0 ? <BilanzkennzahlRow key={id} label={label} value={val} indent headingC={headingC} subC={subC} accent={accent} /> : null; })}
         <BilanzkennzahlRow label="Total Eigenkapital" value={ekTotal} isSubtotal headingC={headingC} subC={subC} accent={accent} />
         <BilanzkennzahlRow label="TOTAL PASSIVEN" value={passivenTotal} isTotal headingC={headingC} subC={subC} accent={accent} />
       </div>
 
-      {/* Differenz-Hinweis */}
+      {/* Differenz */}
       {!balanced && (
-        <div className="col-span-2 flex items-center gap-3 px-4 py-3 rounded-xl" style={{ backgroundColor: "#fef2f2", border: "1px solid #fecaca" }}>
-          <AlertCircle className="w-4 h-4 flex-shrink-0" style={{ color: "#dc2626" }} />
-          <span className="text-sm font-medium" style={{ color: "#dc2626" }}>
-            Aktiven ≠ Passiven · Differenz: CHF {fmtCHF(Math.abs(diff))} — Konten-Zuweisung prüfen
-          </span>
+        <div className="col-span-2 rounded-xl overflow-hidden" style={{ border: "1px solid #fecaca", backgroundColor: "#fef2f2" }}>
+          {/* Header */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderBottom: "1px solid #fecaca" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <AlertCircle className="w-4 h-4" style={{ color: "#dc2626" }} />
+              <span className="text-sm font-semibold" style={{ color: "#dc2626" }}>
+                Aktiven ≠ Passiven · Differenz: CHF {fmtCHF(Math.abs(diff))}
+              </span>
+            </div>
+            <button
+              onClick={() => {
+                const rows = [...(diffAnpassungen || []), { id: crypto.randomUUID(), bezeichnung: "", betrag: 0 }];
+                onSaveDiffAnpassungen(rows);
+                setEditAnp({ idx: rows.length - 1, bezeichnung: "", betrag: "" });
+              }}
+              style={{ fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 5, cursor: "pointer", backgroundColor: "#dc262614", border: "1px solid #dc262640", color: "#dc2626" }}>
+              + Anpassungszeile
+            </button>
+          </div>
+          {/* Anpassungszeilen */}
+          {(diffAnpassungen || []).length > 0 && (
+            <div style={{ padding: "8px 14px" }}>
+              <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ color: "#dc2626", fontWeight: 700, fontSize: 11 }}>
+                    <th style={{ textAlign: "left", padding: "3px 0", width: "60%" }}>Bezeichnung</th>
+                    <th style={{ textAlign: "right", padding: "3px 8px", width: "25%" }}>Betrag CHF</th>
+                    <th style={{ width: "15%" }} />
+                  </tr>
+                </thead>
+                <tbody>
+                  {(diffAnpassungen || []).map((a, idx) => (
+                    <tr key={a.id}>
+                      <td style={{ padding: "3px 0" }}>
+                        {editAnp?.idx === idx ? (
+                          <input autoFocus value={editAnp.bezeichnung}
+                            onChange={e => setEditAnp(v => ({ ...v, bezeichnung: e.target.value }))}
+                            onBlur={() => {
+                              const rows = (diffAnpassungen || []).map((r, i) => i === idx ? { ...r, bezeichnung: editAnp.bezeichnung, betrag: parseFloat(editAnp.betrag) || 0 } : r);
+                              onSaveDiffAnpassungen(rows);
+                              setEditAnp(null);
+                            }}
+                            style={{ width: "100%", fontSize: 12, padding: "2px 6px", borderRadius: 4, border: "1px solid #fca5a5", outline: "none" }} />
+                        ) : (
+                          <span onClick={() => setEditAnp({ idx, bezeichnung: a.bezeichnung, betrag: String(a.betrag) })}
+                            style={{ cursor: "text", color: a.bezeichnung ? "#374151" : "#9ca3af", fontStyle: a.bezeichnung ? "normal" : "italic" }}>
+                            {a.bezeichnung || "Bezeichnung eingeben…"}
+                          </span>
+                        )}
+                      </td>
+                      <td style={{ padding: "3px 8px", textAlign: "right" }}>
+                        {editAnp?.idx === idx ? (
+                          <input value={editAnp.betrag} type="number" step="0.01"
+                            onChange={e => setEditAnp(v => ({ ...v, betrag: e.target.value }))}
+                            onBlur={() => {
+                              const rows = (diffAnpassungen || []).map((r, i) => i === idx ? { ...r, bezeichnung: editAnp.bezeichnung, betrag: parseFloat(editAnp.betrag) || 0 } : r);
+                              onSaveDiffAnpassungen(rows);
+                              setEditAnp(null);
+                            }}
+                            style={{ width: 100, fontSize: 12, padding: "2px 6px", borderRadius: 4, border: "1px solid #fca5a5", outline: "none", textAlign: "right" }} />
+                        ) : (
+                          <span onClick={() => setEditAnp({ idx, bezeichnung: a.bezeichnung, betrag: String(a.betrag) })}
+                            style={{ cursor: "text", fontFamily: "monospace", color: "#374151" }}>
+                            {fmtCHF(a.betrag)}
+                          </span>
+                        )}
+                      </td>
+                      <td style={{ textAlign: "right", padding: "3px 0" }}>
+                        <button onClick={() => onSaveDiffAnpassungen((diffAnpassungen || []).filter((_, i) => i !== idx))}
+                          style={{ background: "none", border: "none", cursor: "pointer", color: "#fca5a5", fontSize: 14, lineHeight: 1 }}>×</button>
+                      </td>
+                    </tr>
+                  ))}
+                  <tr style={{ borderTop: "1px solid #fecaca", fontWeight: 700 }}>
+                    <td style={{ padding: "4px 0", fontSize: 12, color: "#dc2626" }}>Total Anpassungen</td>
+                    <td style={{ padding: "4px 8px", textAlign: "right", fontFamily: "monospace", fontSize: 12, color: "#dc2626" }}>{fmtCHF(anpTotal)}</td>
+                    <td />
+                  </tr>
+                  <tr style={{ fontWeight: 700 }}>
+                    <td style={{ padding: "4px 0", fontSize: 12, color: balancedNachAnp ? "#16a34a" : "#dc2626" }}>Verbleibende Differenz</td>
+                    <td style={{ padding: "4px 8px", textAlign: "right", fontFamily: "monospace", fontSize: 12, color: balancedNachAnp ? "#16a34a" : "#dc2626" }}>{fmtCHF(Math.abs(diffNachAnp))}</td>
+                    <td />
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
+          {(diffAnpassungen || []).length === 0 && (
+            <div style={{ padding: "8px 14px", fontSize: 12, color: "#dc2626aa" }}>
+              Konten-Zuweisung prüfen oder Anpassungszeilen erfassen.
+            </div>
+          )}
         </div>
       )}
       {balanced && konten.length > 0 && (
@@ -968,10 +1068,13 @@ function ERSeparator({ label, subC }) {
   );
 }
 
-function ErfolgsrechnungTab({ konten, accent, headingC, subC, panelBg, panelBdr }) {
-  const sumByIds = (ids) => konten
+function ErfolgsrechnungTab({ konten, accent, headingC, subC, panelBg, panelBdr, signFlipER, onFlipER }) {
+  const rawSum = (ids) => konten
     .filter(k => ids.includes(k.position_id))
     .reduce((s, k) => s + (parseFloat(k.saldo_ist) || 0), 0);
+
+  const eSign = signFlipER ? -1 : 1;
+  const sumByIds = (ids) => rawSum(ids) * eSign;
 
   if (konten.length === 0) {
     return (
@@ -1004,8 +1107,14 @@ function ErfolgsrechnungTab({ konten, accent, headingC, subC, panelBg, panelBdr 
   return (
     <div style={{ maxWidth: 560 }}>
       <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${panelBdr}`, boxShadow: "0 2px 8px rgba(0,0,0,0.05)" }}>
-        <div style={{ padding: "12px 14px", backgroundColor: "#dcfce7", borderBottom: `1px solid ${panelBdr}` }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", backgroundColor: "#dcfce7", borderBottom: `1px solid ${panelBdr}` }}>
           <span style={{ fontWeight: 800, fontSize: 13, color: "#15803d", letterSpacing: "0.03em" }}>ERFOLGSRECHNUNG</span>
+          <button onClick={onFlipER} title="Vorzeichen umkehren" style={{
+            fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 5, cursor: "pointer",
+            backgroundColor: signFlipER ? "#15803d22" : "transparent",
+            border: `1px solid ${signFlipER ? "#15803d" : "#15803d66"}`,
+            color: signFlipER ? "#15803d" : "#15803d99",
+          }}>± Vorzeichen</button>
         </div>
 
         <ERSeparator label="Betriebsertrag" subC={subC} />
@@ -1156,6 +1265,22 @@ export default function Abschlussdokumentation() {
       return data || [];
     },
     enabled: !!abschlussId,
+  });
+
+  // ── Einstellungen (sign_flip, diff_anpassungen) ───────────────────────────
+  const einstellungen = abschluss?.einstellungen || {};
+  const signFlipPassiven = einstellungen.sign_flip_passiven ?? false;
+  const signFlipER       = einstellungen.sign_flip_er       ?? false;
+  const diffAnpassungen  = einstellungen.differenz_anpassungen ?? [];
+
+  const updateEinstellungenMut = useMutation({
+    mutationFn: async (patch) => {
+      const merged = { ...(abschluss?.einstellungen || {}), ...patch };
+      const { error } = await supabase.from("abschluss").update({ einstellungen: merged }).eq("id", abschlussId);
+      if (error) throw new Error(error.message);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["abschluss", selectedCid, selectedYear] }),
+    onError: (e) => toast.error(e.message),
   });
 
   // ── Status aktualisieren ──────────────────────────────────────────────────
@@ -1399,10 +1524,18 @@ export default function Abschlussdokumentation() {
                     </div>
                   )}
                   {activeTab === "bilanz" && (
-                    <BilanzTab {...tabProps} />
+                    <BilanzTab {...tabProps}
+                      signFlipPassiven={signFlipPassiven}
+                      onFlipPassiven={() => updateEinstellungenMut.mutate({ sign_flip_passiven: !signFlipPassiven })}
+                      diffAnpassungen={diffAnpassungen}
+                      onSaveDiffAnpassungen={(rows) => updateEinstellungenMut.mutate({ differenz_anpassungen: rows })}
+                    />
                   )}
                   {activeTab === "erfolgsrechnung" && (
-                    <ErfolgsrechnungTab {...tabProps} />
+                    <ErfolgsrechnungTab {...tabProps}
+                      signFlipER={signFlipER}
+                      onFlipER={() => updateEinstellungenMut.mutate({ sign_flip_er: !signFlipER })}
+                    />
                   )}
                 </>
               )}
