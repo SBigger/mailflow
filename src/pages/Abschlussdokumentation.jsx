@@ -127,8 +127,10 @@ function MandantDropdown({ kunden, selectedCid, onChange, panelBg, panelBdr, hea
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [dropPos, setDropPos] = useState({ top: 0, left: 0, width: 0 });
+  const [highlightIdx, setHighlightIdx] = useState(-1);
   const triggerRef = useRef(null);
   const inputRef = useRef(null);
+  const listRef = useRef(null);
 
   const getLabel = (c) => c.person_type === "privatperson"
     ? [c.anrede, c.nachname, c.vorname].filter(Boolean).join(" ") + (c.ort ? ` · ${c.ort}` : "")
@@ -145,7 +147,7 @@ function MandantDropdown({ kunden, selectedCid, onChange, panelBg, panelBdr, hea
   }, []);
 
   useEffect(() => {
-    if (!open) { setSearch(""); return; }
+    if (!open) { setSearch(""); setHighlightIdx(-1); return; }
     calcPos();
     setTimeout(() => inputRef.current?.focus(), 30);
     const onClose = (e) => { if (!triggerRef.current?.contains(e.target)) setOpen(false); };
@@ -164,21 +166,43 @@ function MandantDropdown({ kunden, selectedCid, onChange, panelBg, panelBdr, hea
   const filtered = kunden.filter(c => !q || getLabel(c).toLowerCase().includes(q));
   const unternehmen = filtered.filter(c => c.person_type !== "privatperson");
   const privatpersonen = filtered.filter(c => c.person_type === "privatperson");
+  // Flache Liste für Keyboard-Navigation (Unternehmen zuerst, dann Privatpersonen)
+  const flatList = [...unternehmen, ...privatpersonen];
 
-  const renderRow = (c) => {
+  const handleKeyDown = (e) => {
+    if (e.key === "Escape") { setOpen(false); return; }
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setHighlightIdx(i => { const next = Math.min(i + 1, flatList.length - 1); scrollToItem(next); return next; });
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHighlightIdx(i => { const next = Math.max(i - 1, 0); scrollToItem(next); return next; });
+    } else if (e.key === "Enter" && highlightIdx >= 0 && flatList[highlightIdx]) {
+      onChange(flatList[highlightIdx].id); setOpen(false);
+    }
+  };
+
+  const scrollToItem = (idx) => {
+    if (!listRef.current) return;
+    const el = listRef.current.querySelector(`[data-idx="${idx}"]`);
+    el?.scrollIntoView({ block: "nearest" });
+  };
+
+  const renderRow = (c, globalIdx) => {
     const hasAbschluss = withAbschlussSet?.has(c.id);
     const isActive = c.id === selectedCid;
+    const isHighlighted = globalIdx === highlightIdx;
     return (
       <div key={c.id}
+        data-idx={globalIdx}
         onMouseDown={e => e.stopPropagation()}
         onClick={() => { onChange(c.id); setOpen(false); }}
+        onMouseEnter={() => setHighlightIdx(globalIdx)}
         style={{
           display: "flex", alignItems: "center", gap: 8,
-          padding: "8px 12px", cursor: "pointer", fontSize: 13,
-          backgroundColor: isActive ? accent + "20" : "transparent", color: headingC,
+          padding: "8px 12px", cursor: "pointer", fontSize: 13, color: headingC,
+          backgroundColor: isHighlighted ? accent + "20" : isActive ? accent + "14" : "transparent",
         }}
-        onMouseEnter={e => { if (!isActive) e.currentTarget.style.backgroundColor = accent + "12"; }}
-        onMouseLeave={e => { e.currentTarget.style.backgroundColor = isActive ? accent + "20" : "transparent"; }}
       >
         <span style={{
           width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
@@ -199,13 +223,14 @@ function MandantDropdown({ kunden, selectedCid, onChange, panelBg, panelBdr, hea
     }}>
       <div style={{ padding: "8px 10px", borderBottom: `1px solid ${panelBdr}`, display: "flex", alignItems: "center", gap: 6 }}>
         <Search size={13} style={{ color: subC, flexShrink: 0 }} />
-        <input ref={inputRef} value={search} onChange={e => setSearch(e.target.value)}
-          onKeyDown={e => { if (e.key === "Escape") setOpen(false); }}
+        <input ref={inputRef} value={search}
+          onChange={e => { setSearch(e.target.value); setHighlightIdx(-1); }}
+          onKeyDown={handleKeyDown}
           placeholder="Mandant suchen…"
           style={{ flex: 1, border: "none", outline: "none", fontSize: 13, background: "transparent", color: headingC }} />
         {search && <button onClick={() => setSearch("")} style={{ background: "none", border: "none", cursor: "pointer", color: subC, fontSize: 16, padding: 0 }}>&times;</button>}
       </div>
-      <div style={{ maxHeight: 300, overflowY: "auto" }}>
+      <div ref={listRef} style={{ maxHeight: 300, overflowY: "auto" }}>
         {!q && (
           <div onClick={() => { onChange(""); setOpen(false); }}
             style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", cursor: "pointer", fontSize: 13, color: subC }}
@@ -218,13 +243,13 @@ function MandantDropdown({ kunden, selectedCid, onChange, panelBg, panelBdr, hea
         {unternehmen.length > 0 && (
           <>
             <div style={{ padding: "5px 12px 3px", fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", color: subC, borderTop: `1px solid ${panelBdr}`, textTransform: "uppercase" }}>Unternehmen</div>
-            {unternehmen.map(renderRow)}
+            {unternehmen.map((c, i) => renderRow(c, i))}
           </>
         )}
         {privatpersonen.length > 0 && (
           <>
             <div style={{ padding: "5px 12px 3px", fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", color: subC, borderTop: `1px solid ${panelBdr}`, textTransform: "uppercase" }}>Privatpersonen</div>
-            {privatpersonen.map(renderRow)}
+            {privatpersonen.map((c, i) => renderRow(c, unternehmen.length + i))}
           </>
         )}
         {filtered.length === 0 && (
