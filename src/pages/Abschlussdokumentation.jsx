@@ -472,7 +472,7 @@ function ImportDialog({ onClose, onImport, accent, theme }) {
         return {
           kontonummer: nr,
           kontoname: colMap.kontoname ? getCell(row, colMap.kontoname) : "",
-          saldo_ist: colMap.saldo_ist ? parseNum(getCell(row, colMap.saldo_ist)) : null,
+          saldo_ist: colMap.saldo_ist ? (parseNum(getCell(row, colMap.saldo_ist)) ?? 0) : 0,
           saldo_vorjahr: colMap.saldo_vorjahr ? parseNum(getCell(row, colMap.saldo_vorjahr)) : null,
           position_id: autoMapKonto(nr),   // DB-Spalte: auto-gemappte Position
           position_override: false,          // DB-Spalte: BOOLEAN, manuell überschrieben?
