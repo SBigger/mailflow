@@ -405,13 +405,16 @@ function ImportDialog({ onClose, onImport, accent, theme }) {
   const pageBg   = isArtis ? "#f2f5f2" : isLight ? "#f4f4f8" : "#2a2a2f";
 
   const [dragging, setDragging] = useState(false);
-  const [parsed, setParsed] = useState(null); // { rows, mapping }
+  const [parsed, setParsed] = useState(null);
   const [colMap, setColMap] = useState({ kontonummer: "", kontoname: "", saldo_ist: "", saldo_vorjahr: "" });
   const [preview, setPreview] = useState([]);
   const [headers, setHeaders] = useState([]);
   const [pdfLoading, setPdfLoading] = useState(false);
-  const [pdfFiles, setPdfFiles] = useState([]); // bis zu 2 PDFs
+  // Sheet-Picker: wenn Excel mehrere Blätter hat
+  const [sheetPicker, setSheetPicker] = useState(null); // { wb, filename, sheetNames }
+  const [selectedSheets, setSelectedSheets] = useState([]);
   const fileRef = useRef(null);
+  const file2Ref = useRef(null);
   const pdfRef = useRef(null);
 
   function detectColumn(headers, patterns) {
@@ -500,19 +503,52 @@ function ImportDialog({ onClose, onImport, accent, theme }) {
     setPdfLoading(false);
   }
 
+  // ── Excel-Datei laden → Sheet-Picker wenn mehrere Blätter ───────────────
+  async function loadExcel(file) {
+    const data = new Uint8Array(await file.arrayBuffer());
+    const XLSX = await import('xlsx');
+    const wb = XLSX.read(data, { type: "array" });
+    if (wb.SheetNames.length === 1) {
+      // Nur ein Blatt → direkt parsen
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: "" });
+      processRows(rows, file.name);
+    } else {
+      // Mehrere Blätter → Sheet-Picker zeigen
+      setSheetPicker({ wb, filename: file.name, sheetNames: wb.SheetNames });
+      setSelectedSheets(wb.SheetNames); // alle vorselektiert
+    }
+  }
+
+  // ── Gewählte Sheets zusammenführen und parsen ─────────────────────────────
+  async function importSelectedSheets() {
+    if (!sheetPicker || selectedSheets.length === 0) return;
+    const XLSX = await import('xlsx');
+    const { wb, filename } = sheetPicker;
+    let allRows = [];
+    let hdrs = null;
+    for (const name of selectedSheets) {
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: "" });
+      if (rows.length < 2) continue;
+      if (!hdrs) hdrs = rows[0].map(String); // Spaltenköpfe vom ersten Blatt
+      allRows = [...allRows, ...rows.slice(1).filter(r => r.some(c => String(c).trim()))];
+    }
+    if (!hdrs || allRows.length === 0) { toast.error("Keine Daten in gewählten Blättern"); return; }
+    // Duplikate (gleiche Kontonummer) deduplizieren
+    const seen = new Set();
+    const col0 = hdrs.findIndex(h => /konto|nummer|nr/i.test(h));
+    allRows = allRows.filter(r => {
+      const nr = String(r[col0 >= 0 ? col0 : 0] ?? "").trim();
+      if (!nr || seen.has(nr)) return false;
+      seen.add(nr); return true;
+    });
+    setSheetPicker(null);
+    processRows([hdrs, ...allRows], filename + " (" + selectedSheets.join(", ") + ")");
+  }
+
   function parseFile(file) {
     const ext = file.name.split(".").pop().toLowerCase();
     if (ext === "xlsx" || ext === "xls") {
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        const data = new Uint8Array(e.target.result);
-        const XLSX = await import('xlsx');
-        const wb = XLSX.read(data, { type: "array" });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
-        processRows(rows, file.name);
-      };
-      reader.readAsArrayBuffer(file);
+      loadExcel(file);
     } else {
       // CSV
       const reader = new FileReader();
@@ -529,11 +565,60 @@ function ImportDialog({ onClose, onImport, accent, theme }) {
     }
   }
 
+  // ── Zweite Datei mergen (für Bilanz+ER in separaten Files) ───────────────
+  function handleSecondFile(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (file.name.toLowerCase().endsWith(".pdf")) { parsePdfFiles([file]); return; }
+    const ext = file.name.split(".").pop().toLowerCase();
+    if (ext === "xlsx" || ext === "xls") {
+      const reader = new FileReader();
+      reader.onload = async (ev) => {
+        const data = new Uint8Array(ev.target.result);
+        const XLSX = await import('xlsx');
+        const wb = XLSX.read(data, { type: "array" });
+        // Alle Sheets mergen mit bestehenden Daten
+        let extra = [];
+        for (const name of wb.SheetNames) {
+          const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: "" });
+          if (rows.length > 1) extra = [...extra, ...rows.slice(1).filter(r => r.some(c => String(c).trim()))];
+        }
+        mergeExtraRows(extra, file.name);
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const text = ev.target.result;
+        const firstLine = text.split("\n")[0];
+        const sep = firstLine.includes(";") ? ";" : firstLine.includes("\t") ? "\t" : ",";
+        const rows = text.split("\n").map(line =>
+          line.replace(/\r$/, "").split(sep).map(cell => cell.replace(/^"(.*)"$/, "$1").replace(/""/g, '"'))
+        ).filter(r => r.some(c => c.trim()));
+        mergeExtraRows(rows.slice(1), file.name);
+      };
+      reader.readAsText(file, "UTF-8");
+    }
+  }
+
+  function mergeExtraRows(extraRows, filename2) {
+    if (!parsed) return;
+    const colIdx = headers.indexOf(colMap.kontonummer);
+    const existingNrs = new Set(parsed.rows.map(r => String(r[colIdx] ?? "").trim()));
+    const newRows = extraRows.filter(r => {
+      const nr = String(r[colIdx >= 0 ? colIdx : 0] ?? "").trim();
+      return nr && !existingNrs.has(nr);
+    });
+    const merged = [...parsed.rows, ...newRows];
+    setParsed(p => ({ ...p, rows: merged, filename: p.filename + " + " + filename2 }));
+    setPreview(merged.slice(0, 5));
+    toast.success(`${newRows.length} Konten aus zweiter Datei hinzugefügt`);
+  }
+
   function processRows(rows, filename) {
     if (rows.length < 2) { toast.error("Datei enthält zu wenig Zeilen"); return; }
     const hdrs = rows[0].map(String);
     const dataRows = rows.slice(1).filter(r => r.some(c => String(c).trim()));
-
     const detected = {
       kontonummer:   detectColumn(hdrs, ["konto", "kontonummer", "nummer", "nr."]),
       kontoname:     detectColumn(hdrs, ["bezeichnung", "name", "kontoname", "text", "beschreibung"]),
@@ -543,7 +628,6 @@ function ImportDialog({ onClose, onImport, accent, theme }) {
     setHeaders(hdrs);
     setColMap(detected);
     setParsed({ rows: dataRows, filename });
-    // Preview first 5 rows
     setPreview(dataRows.slice(0, 5));
   }
 
@@ -633,9 +717,9 @@ function ImportDialog({ onClose, onImport, accent, theme }) {
                   ⏳ PDF wird gelesen…
                 </div>
               )}
-              {!pdfLoading && (
+              {!pdfLoading && !sheetPicker && (
                 <>
-                  {/* Haupt-Dropzone (CSV/Excel/PDF) */}
+                  {/* Haupt-Dropzone */}
                   <div
                     onDragOver={e => { e.preventDefault(); setDragging(true); }}
                     onDragLeave={() => setDragging(false)}
@@ -651,31 +735,70 @@ function ImportDialog({ onClose, onImport, accent, theme }) {
                     <div className="text-xs" style={{ color: subC }}>CSV, Excel oder PDF · klicken zum Auswählen</div>
                     <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls,.pdf" className="hidden" onChange={handleFileChange} />
                   </div>
-                  {/* Zweite Datei für PDF (Bilanz + ER separat) */}
                   <div style={{ marginTop: 10, padding: "10px 14px", borderRadius: 10, border: `1px solid ${panelBdr}`, backgroundColor: pageBg, display: "flex", alignItems: "center", gap: 10 }}>
                     <span style={{ fontSize: 12, color: subC, flex: 1 }}>
-                      📄 Zwei PDFs (Bilanz + ER)? Beide gleichzeitig auswählen oder nacheinander ablegen.
+                      📄 Zwei Dateien (Bilanz + ER)? Beide als PDFs gleichzeitig wählen, oder nacheinander ablegen.
                     </span>
                     <button onClick={() => pdfRef.current?.click()}
                       style={{ fontSize: 11, fontWeight: 600, padding: "4px 12px", borderRadius: 6, cursor: "pointer", border: `1px solid ${accent}60`, color: accent, backgroundColor: accent + "10" }}>
-                      PDFs wählen
+                      2× PDF
                     </button>
                     <input ref={pdfRef} type="file" accept=".pdf" multiple className="hidden" onChange={handlePdfChange} />
                   </div>
                 </>
+              )}
+
+              {/* Sheet-Picker: mehrere Excel-Blätter */}
+              {sheetPicker && (
+                <div style={{ border: `1px solid ${panelBdr}`, borderRadius: 12, padding: 20, backgroundColor: pageBg }}>
+                  <div style={{ fontWeight: 700, fontSize: 13, color: headingC, marginBottom: 4 }}>
+                    📋 Mehrere Tabellenblätter gefunden
+                  </div>
+                  <div style={{ fontSize: 12, color: subC, marginBottom: 14 }}>
+                    {sheetPicker.filename} · Wähle die Blätter die importiert werden sollen:
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+                    {sheetPicker.sheetNames.map(name => (
+                      <label key={name} style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", fontSize: 13, color: headingC }}>
+                        <input type="checkbox" checked={selectedSheets.includes(name)}
+                          onChange={e => setSelectedSheets(prev =>
+                            e.target.checked ? [...prev, name] : prev.filter(s => s !== name)
+                          )}
+                          style={{ width: 16, height: 16, accentColor: accent }} />
+                        <span style={{ fontWeight: selectedSheets.includes(name) ? 600 : 400 }}>{name}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={importSelectedSheets} disabled={selectedSheets.length === 0}
+                      style={{ flex: 1, padding: "8px 0", borderRadius: 8, fontWeight: 700, fontSize: 13, cursor: "pointer", backgroundColor: accent, color: "#fff", border: "none", opacity: selectedSheets.length === 0 ? 0.5 : 1 }}>
+                      {selectedSheets.length} Blatt{selectedSheets.length !== 1 ? "·er" : ""} importieren
+                    </button>
+                    <button onClick={() => setSheetPicker(null)}
+                      style={{ padding: "8px 16px", borderRadius: 8, fontSize: 13, cursor: "pointer", border: `1px solid ${panelBdr}`, backgroundColor: "transparent", color: subC }}>
+                      Abbrechen
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
           )}
 
           {parsed && (
             <>
-              {/* Dateiname */}
+              {/* Dateiname + Zweite Datei */}
               <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ backgroundColor: accent + "10", border: `1px solid ${accent}30` }}>
                 <FileText className="w-4 h-4" style={{ color: accent }} />
                 <span className="text-sm font-medium" style={{ color: headingC }}>{parsed.filename}</span>
-                <span className="text-xs ml-auto" style={{ color: subC }}>{parsed.rows.length} Zeilen</span>
+                <span className="text-xs ml-auto" style={{ color: subC }}>{parsed.rows.length} Konten</span>
+                <button onClick={() => file2Ref.current?.click()}
+                  title="Zweite Datei hinzufügen (Bilanz + ER)"
+                  style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 5, cursor: "pointer", border: `1px solid ${accent}60`, color: accent, backgroundColor: accent + "10", whiteSpace: "nowrap" }}>
+                  + Datei
+                </button>
+                <input ref={file2Ref} type="file" accept=".csv,.xlsx,.xls,.pdf" className="hidden" onChange={handleSecondFile} />
                 <button onClick={() => { setParsed(null); setHeaders([]); setPreview([]); }}
-                  className="ml-2 p-0.5 rounded hover:opacity-70"><RotateCcw className="w-3.5 h-3.5" style={{ color: subC }} /></button>
+                  className="p-0.5 rounded hover:opacity-70"><RotateCcw className="w-3.5 h-3.5" style={{ color: subC }} /></button>
               </div>
 
               {/* Spalten-Zuordnung */}
