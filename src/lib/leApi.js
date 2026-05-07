@@ -895,23 +895,37 @@ export async function sendInvoiceViaMs365({ to, subject, html, attachmentUrl, at
   return data;
 }
 
-// Aggregiert offene Einträge pro Projekt für Faktura-Vorschlag
-export async function fakturaVorschlagData({ fromIso, toIso } = {}) {
+// Aggregiert offene Einträge pro Projekt für Faktura-Vorschlag.
+// allOpen=true ignoriert Zeitfilter und holt ALLE offenen Leistungen
+//   (status erfasst|freigegeben|kulant ohne invoice_id).
+// Sonst wird auf den Zeitraum eingegrenzt.
+export async function fakturaVorschlagData({ fromIso, toIso, allOpen = false } = {}) {
   let q = supabase
     .from('le_time_entry')
-    .select('id, entry_date, hours_internal, rate_snapshot, project_id, service_type_id, description, employee_id, status, project:le_project(id, name, billing_mode, customer_id, customer:customers(id, company_name, street, building_number, zip, city, country, billing_email)), service_type:le_service_type(id, name, billable), employee:le_employee(id, short_code, full_name)')
-    .in('status', ['erfasst', 'freigegeben'])
+    .select('id, entry_date, hours_internal, rate_snapshot, project_id, service_type_id, description, employee_id, status, project:le_project(id, name, billing_mode, customer_id, customer:customers(id, company_name, street, building_number, zip, city, country, billing_email)), service_type:le_service_type(id, name, billable, default_section), employee:le_employee(id, short_code, full_name)')
+    .in('status', ['erfasst', 'freigegeben', 'kulant'])
     .is('invoice_id', null)
     .order('entry_date');
-  if (fromIso) q = q.gte('entry_date', fromIso);
-  if (toIso) q = q.lte('entry_date', toIso);
+  if (!allOpen) {
+    if (fromIso) q = q.gte('entry_date', fromIso);
+    if (toIso) q = q.lte('entry_date', toIso);
+  }
   const { data, error } = await q;
   if (error) throw error;
   return data ?? [];
 }
 
-// Rechnungsentwürfe aus ausgewählten Projekten bauen (eine Invoice pro Projekt)
-export async function createInvoiceDraftsFromEntries({ entries, projectIds, periodFrom, periodTo }) {
+// Rechnungsentwürfe aus ausgewählten Projekten bauen (eine Invoice pro Projekt).
+// Optionen:
+//   direct=true        → Status 'definitiv' statt 'entwurf' (Direkt-Rechnung),
+//                        issue_date = heute, due_date = +30 Tage
+//   includeKulant=true → Kulant-Einträge mit der Rechnung verknüpfen (status →
+//                        'kulant_abgerechnet'), aber NICHT im Subtotal.
+//                        Werden später auf dem Beiblatt zur Info aufgeführt.
+export async function createInvoiceDraftsFromEntries({
+  entries, projectIds, periodFrom, periodTo,
+  direct = false, includeKulant = true,
+}) {
   const created = [];
   const byProject = new Map();
   for (const e of entries) {
@@ -920,31 +934,48 @@ export async function createInvoiceDraftsFromEntries({ entries, projectIds, peri
     byProject.get(e.project_id).push(e);
   }
 
+  // Heute/Fälligkeit (für Direkt-Rechnungen)
+  const today = new Date();
+  const todayIso = today.toISOString().slice(0, 10);
+  const due = new Date(today); due.setDate(due.getDate() + 30);
+  const dueIso = due.toISOString().slice(0, 10);
+
   for (const [projectId, projEntries] of byProject) {
     const proj = projEntries[0].project;
-    const billable = projEntries.filter(e => e.service_type?.billable !== false);
-    if (billable.length === 0) continue;
+    // Splitting: billable (erfasst/freigegeben + service.billable) vs. kulant
+    const billable = projEntries.filter(e =>
+      e.status !== 'kulant' && e.service_type?.billable !== false
+    );
+    const kulant = projEntries.filter(e => e.status === 'kulant');
+    if (billable.length === 0 && (!includeKulant || kulant.length === 0)) continue;
 
-    // Subtotal
+    // Subtotal NUR aus billable
     const subtotal = billable.reduce((s, e) => s + Number(e.hours_internal || 0) * Number(e.rate_snapshot || 0), 0);
     const vatPct = 8.1;
     const vatAmount = Math.round(subtotal * vatPct) / 100;
     const total = subtotal + vatAmount;
 
-    const { data: inv, error: invErr } = await supabase.from('le_invoice').insert({
+    const invoicePayload = {
       project_id: projectId,
       customer_id: proj?.customer_id ?? null,
-      status: 'entwurf',
+      status: direct ? 'definitiv' : 'entwurf',
       period_from: periodFrom ?? null,
       period_to: periodTo ?? null,
       subtotal,
       vat_pct: vatPct,
       vat_amount: vatAmount,
       total,
-    }).select().single();
+    };
+    if (direct) {
+      invoicePayload.issue_date = todayIso;
+      invoicePayload.due_date = dueIso;
+    }
+
+    const { data: inv, error: invErr } = await supabase
+      .from('le_invoice').insert(invoicePayload).select().single();
     if (invErr) throw invErr;
 
-    // Aggregiere je service_type eine Linie
+    // Aggregiere je service_type eine Linie (nur billable)
     const groupedByType = new Map();
     for (const e of billable) {
       const key = e.service_type_id ?? 'none';
@@ -978,13 +1009,27 @@ export async function createInvoiceDraftsFromEntries({ entries, projectIds, peri
       if (lineErr) throw lineErr;
     }
 
-    // Time-Entries verknüpfen + auf 'verrechnet' setzen (Entwurfs-Status reicht)
-    const ids = projEntries.map(e => e.id);
-    const { error: upErr } = await supabase
-      .from('le_time_entry')
-      .update({ invoice_id: inv.id, status: 'verrechnet' })
-      .in('id', ids);
-    if (upErr) throw upErr;
+    // Time-Entries verknüpfen.
+    // - billable / nicht-billable (aber nicht kulant) → 'verrechnet'
+    // - kulant (wenn includeKulant) → 'kulant_abgerechnet'
+    const billableIds = projEntries
+      .filter(e => e.status !== 'kulant')
+      .map(e => e.id);
+    if (billableIds.length) {
+      const { error: upErr } = await supabase
+        .from('le_time_entry')
+        .update({ invoice_id: inv.id, status: 'verrechnet' })
+        .in('id', billableIds);
+      if (upErr) throw upErr;
+    }
+    if (includeKulant && kulant.length) {
+      const kulantIds = kulant.map(e => e.id);
+      const { error: kErr } = await supabase
+        .from('le_time_entry')
+        .update({ invoice_id: inv.id, status: 'kulant_abgerechnet' })
+        .in('id', kulantIds);
+      if (kErr) throw kErr;
+    }
 
     created.push(inv);
   }

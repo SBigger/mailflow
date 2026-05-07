@@ -6,7 +6,7 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
-  Filter, CheckSquare, Receipt, ChevronDown, ChevronRight, Calendar,
+  Filter, CheckSquare, Receipt, ChevronDown, ChevronRight, Calendar, Zap,
 } from 'lucide-react';
 import { fakturaVorschlagData, createInvoiceDraftsFromEntries } from '@/lib/leApi';
 import {
@@ -33,6 +33,7 @@ const addDays = (iso, days) => {
 const STATUS_CHIP = {
   erfasst:     { tone: 'neutral', label: 'erfasst' },
   freigegeben: { tone: 'green',   label: 'freigegeben' },
+  kulant:      { tone: 'violet',  label: 'Kulant' },
   verrechnet:  { tone: 'blue',    label: 'verrechnet' },
   storniert:   { tone: 'red',     label: 'storniert' },
 };
@@ -45,11 +46,13 @@ export default function FakturaVorschlagPanel() {
   // Default-Zeitraum: letzte 90 Tage bis heute
   const [fromDate, setFromDate] = useState(() => addDays(todayIso(), -90));
   const [toDate, setToDate] = useState(() => todayIso());
+  const [allOpen, setAllOpen] = useState(false);
 
   // Applied filter (changed by "Aktualisieren"-Button)
   const [appliedRange, setAppliedRange] = useState(() => ({
     fromIso: addDays(todayIso(), -90),
     toIso: todayIso(),
+    allOpen: false,
   }));
 
   const [selectedProjectIds, setSelectedProjectIds] = useState(() => new Set());
@@ -69,8 +72,12 @@ export default function FakturaVorschlagPanel() {
 
   // --- Query ---------------------------------------------------------------
   const entriesQ = useQuery({
-    queryKey: ['le', 'faktura', appliedRange.fromIso, appliedRange.toIso],
-    queryFn: () => fakturaVorschlagData({ fromIso: appliedRange.fromIso, toIso: appliedRange.toIso }),
+    queryKey: ['le', 'faktura', appliedRange.fromIso, appliedRange.toIso, appliedRange.allOpen],
+    queryFn: () => fakturaVorschlagData({
+      fromIso: appliedRange.fromIso,
+      toIso: appliedRange.toIso,
+      allOpen: appliedRange.allOpen,
+    }),
   });
 
   const entries = entriesQ.data ?? [];
@@ -91,13 +98,24 @@ export default function FakturaVorschlagPanel() {
       map.get(key).entries.push(e);
     }
     return [...map.values()].map((g) => {
-      const totalHours = g.entries.reduce((s, e) => s + Number(e.hours_internal || 0), 0);
-      const totalChf = g.entries
-        .filter((e) => e.service_type?.billable !== false)
-        .reduce((s, e) => s + Number(e.hours_internal || 0) * Number(e.rate_snapshot || 0), 0);
-      // Status-Mix
+      // Splitting: billable (erfasst/freigegeben + service.billable) vs. kulant
+      const billable = g.entries.filter((e) => e.status !== 'kulant' && e.service_type?.billable !== false);
+      const kulant = g.entries.filter((e) => e.status === 'kulant');
+      const billableHours = billable.reduce((s, e) => s + Number(e.hours_internal || 0), 0);
+      const billableChf = billable.reduce((s, e) => s + Number(e.hours_internal || 0) * Number(e.rate_snapshot || 0), 0);
+      const kulantHours = kulant.reduce((s, e) => s + Number(e.hours_internal || 0), 0);
+      const kulantChf = kulant.reduce((s, e) => s + Number(e.hours_internal || 0) * Number(e.rate_snapshot || 0), 0);
       const statusSet = new Set(g.entries.map((e) => e.status));
-      return { ...g, totalHours, totalChf, statuses: [...statusSet] };
+      return {
+        ...g,
+        totalHours: billableHours + kulantHours,
+        totalChf: billableChf,
+        billableHours, billableChf,
+        kulantHours, kulantChf,
+        billableCount: billable.length,
+        kulantCount: kulant.length,
+        statuses: [...statusSet],
+      };
     }).sort((a, b) => (a.project?.name ?? '').localeCompare(b.project?.name ?? ''));
   }, [entries]);
 
@@ -136,13 +154,22 @@ export default function FakturaVorschlagPanel() {
     const selected = grouped.filter((g) => selectedProjectIds.has(g.project_id));
     const projectCount = selected.length;
     const entryCount = selected.reduce((s, g) => s + g.entries.length, 0);
-    const hours = selected.reduce((s, g) => s + g.totalHours, 0);
-    const chf = selected.reduce((s, g) => s + g.totalChf, 0);
-    return { projectCount, entryCount, hours, chf, selected };
+    const billableHours = selected.reduce((s, g) => s + g.billableHours, 0);
+    const billableChf = selected.reduce((s, g) => s + g.billableChf, 0);
+    const kulantHours = selected.reduce((s, g) => s + g.kulantHours, 0);
+    const kulantChf = selected.reduce((s, g) => s + g.kulantChf, 0);
+    return {
+      projectCount, entryCount,
+      hours: billableHours + kulantHours, chf: billableChf,
+      billableHours, billableChf, kulantHours, kulantChf,
+      selected,
+    };
   }, [grouped, selectedProjectIds]);
 
-  // --- Mutation: Drafts erstellen -----------------------------------------
-  const createDraftsMut = useMutation({
+  // --- Mutation: Rechnungen erstellen (Entwurf oder Direkt) ----------------
+  const [confirmMode, setConfirmMode] = useState('draft'); // 'draft' | 'direct'
+
+  const createInvoicesMut = useMutation({
     mutationFn: async () => {
       const selected = selectionSummary.selected;
       const allEntries = selected.flatMap((g) => g.entries);
@@ -150,13 +177,16 @@ export default function FakturaVorschlagPanel() {
       return createInvoiceDraftsFromEntries({
         entries: allEntries,
         projectIds,
-        periodFrom: appliedRange.fromIso,
-        periodTo: appliedRange.toIso,
+        periodFrom: appliedRange.allOpen ? null : appliedRange.fromIso,
+        periodTo: appliedRange.allOpen ? null : appliedRange.toIso,
+        direct: confirmMode === 'direct',
+        includeKulant: true,
       });
     },
     onSuccess: (invoices) => {
       const n = Array.isArray(invoices) ? invoices.length : selectionSummary.projectCount;
-      toast.success(`${n} Rechnungsentwurf${n === 1 ? '' : 'entwürfe'} erstellt`);
+      const verb = confirmMode === 'direct' ? 'Rechnung' : 'Rechnungsentwurf';
+      toast.success(`${n} ${verb}${n === 1 ? '' : 'en'} erstellt`);
       setSelectedProjectIds(new Set());
       setConfirmOpen(false);
       qc.invalidateQueries({ queryKey: ['le', 'faktura'] });
@@ -171,7 +201,7 @@ export default function FakturaVorschlagPanel() {
 
   // --- Refresh -------------------------------------------------------------
   const applyFilter = () => {
-    setAppliedRange({ fromIso: fromDate, toIso: toDate });
+    setAppliedRange({ fromIso: fromDate, toIso: toDate, allOpen });
     setSelectedProjectIds(new Set());
     setExpandedProjectIds(new Set());
   };
@@ -202,6 +232,7 @@ export default function FakturaVorschlagPanel() {
                 type="date"
                 value={fromDate}
                 onChange={(e) => setFromDate(e.target.value)}
+                disabled={allOpen}
               />
             </Field>
           </div>
@@ -211,9 +242,21 @@ export default function FakturaVorschlagPanel() {
                 type="date"
                 value={toDate}
                 onChange={(e) => setToDate(e.target.value)}
+                disabled={allOpen}
               />
             </Field>
           </div>
+          <label
+            className="inline-flex items-center gap-2 text-sm cursor-pointer select-none mb-1"
+            title="Alle offenen Leistungen ohne Datumsfilter anzeigen"
+          >
+            <input
+              type="checkbox"
+              checked={allOpen}
+              onChange={(e) => setAllOpen(e.target.checked)}
+            />
+            <span className="text-zinc-700">Alle offenen Leistungen</span>
+          </label>
           <button
             type="button"
             onClick={applyFilter}
@@ -266,6 +309,7 @@ export default function FakturaVorschlagPanel() {
                   <th className="text-right font-semibold px-3 py-2 w-20">Einträge</th>
                   <th className="text-right font-semibold px-3 py-2 w-20">Std.</th>
                   <th className="text-right font-semibold px-3 py-2 w-28">CHF</th>
+                  <th className="text-right font-semibold px-3 py-2 w-24" title="Kulant-Anteil (Std. / CHF)">Kulant</th>
                   <th className="text-left font-semibold px-3 py-2 w-40">Status</th>
                 </tr>
               </thead>
@@ -300,9 +344,18 @@ export default function FakturaVorschlagPanel() {
                           {g.customer?.company_name ?? <span className="text-zinc-300">—</span>}
                         </td>
                         <td className="px-3 py-2 text-right tabular-nums">{g.entries.length}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{fmt.hours(g.totalHours)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{fmt.hours(g.billableHours)}</td>
                         <td className="px-3 py-2 text-right tabular-nums font-medium" style={{ color: '#2d5a2d' }}>
-                          {fmt.chf(g.totalChf)}
+                          {fmt.chf(g.billableChf)}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums" style={{ color: '#4d2995' }}>
+                          {g.kulantCount > 0 ? (
+                            <span title={`${g.kulantCount} kulante Einträge · ${fmt.chf(g.kulantChf)} CHF Wert`}>
+                              {fmt.hours(g.kulantHours)}h
+                            </span>
+                          ) : (
+                            <span className="text-zinc-300">—</span>
+                          )}
                         </td>
                         <td className="px-3 py-2">
                           <div className="flex flex-wrap gap-1">
@@ -315,7 +368,7 @@ export default function FakturaVorschlagPanel() {
                       </tr>
                       {isExpanded && (
                         <tr style={{ background: '#fafbf9' }}>
-                          <td colSpan={8} className="px-0 py-0">
+                          <td colSpan={9} className="px-0 py-0">
                             <EntriesSubTable entries={g.entries} />
                           </td>
                         </tr>
@@ -339,26 +392,46 @@ export default function FakturaVorschlagPanel() {
             <CheckSquare className="w-4 h-4 text-zinc-400" />
             <div className="text-sm text-zinc-700 tabular-nums">
               <span className="font-semibold">{selectionSummary.projectCount}</span>
-              <span className="text-zinc-500"> Projekt{selectionSummary.projectCount === 1 ? '' : 'e'} ausgewählt</span>
-              <span className="text-zinc-300 mx-2">·</span>
-              <span className="font-semibold">{fmt.hours(selectionSummary.hours)}</span>
-              <span className="text-zinc-500">h</span>
-              <span className="text-zinc-300 mx-2">·</span>
-              <span className="font-semibold" style={{ color: '#2d5a2d' }}>CHF {fmt.chf(selectionSummary.chf)}</span>
+              <span className="text-zinc-500"> Projekt{selectionSummary.projectCount === 1 ? '' : 'e'} · </span>
+              <span className="font-semibold">{fmt.hours(selectionSummary.billableHours)}h</span>
+              <span className="text-zinc-300 mx-1">·</span>
+              <span className="font-semibold" style={{ color: '#2d5a2d' }}>CHF {fmt.chf(selectionSummary.billableChf)}</span>
+              {selectionSummary.kulantHours > 0 && (
+                <>
+                  <span className="text-zinc-300 mx-2">+</span>
+                  <span className="text-xs" style={{ color: '#4d2995' }}>
+                    {fmt.hours(selectionSummary.kulantHours)}h kulant
+                  </span>
+                </>
+              )}
             </div>
-            <div className="ml-auto">
+            <div className="ml-auto flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => setConfirmOpen(true)}
-                disabled={selectionSummary.projectCount === 0 || createDraftsMut.isPending}
-                className={artisBtn.primary}
+                onClick={() => { setConfirmMode('draft'); setConfirmOpen(true); }}
+                disabled={selectionSummary.projectCount === 0 || createInvoicesMut.isPending}
+                className={artisBtn.ghost}
                 style={{
-                  ...artisPrimaryStyle,
-                  opacity: selectionSummary.projectCount === 0 || createDraftsMut.isPending ? 0.45 : 1,
+                  ...artisGhostStyle,
+                  opacity: selectionSummary.projectCount === 0 || createInvoicesMut.isPending ? 0.45 : 1,
                 }}
               >
                 <Receipt className="w-4 h-4" />
-                Rechnungsentwürfe erstellen ({selectionSummary.projectCount})
+                Entwürfe ({selectionSummary.projectCount})
+              </button>
+              <button
+                type="button"
+                onClick={() => { setConfirmMode('direct'); setConfirmOpen(true); }}
+                disabled={selectionSummary.projectCount === 0 || createInvoicesMut.isPending}
+                className={artisBtn.primary}
+                style={{
+                  ...artisPrimaryStyle,
+                  opacity: selectionSummary.projectCount === 0 || createInvoicesMut.isPending ? 0.45 : 1,
+                }}
+                title="Sofortige Rechnung (Status definitiv, mit Issue-Date heute)"
+              >
+                <Zap className="w-4 h-4" />
+                Direkt-Rechnung ({selectionSummary.projectCount})
               </button>
             </div>
           </div>
@@ -368,10 +441,11 @@ export default function FakturaVorschlagPanel() {
       {/* Confirmation-Dialog */}
       {confirmOpen && (
         <ConfirmDialog
+          mode={confirmMode}
           summary={selectionSummary}
-          loading={createDraftsMut.isPending}
+          loading={createInvoicesMut.isPending}
           onCancel={() => setConfirmOpen(false)}
-          onConfirm={() => createDraftsMut.mutate()}
+          onConfirm={() => createInvoicesMut.mutate()}
         />
       )}
     </div>
@@ -400,21 +474,32 @@ function EntriesSubTable({ entries }) {
             .slice()
             .sort((a, b) => String(a.entry_date).localeCompare(String(b.entry_date)))
             .map((e) => {
-              const billable = e.service_type?.billable !== false;
+              const billable = e.status !== 'kulant' && e.service_type?.billable !== false;
+              const isKulant = e.status === 'kulant';
               const wert = Number(e.hours_internal || 0) * Number(e.rate_snapshot || 0);
+              const rowStyle = isKulant
+                ? { borderColor: '#eef1ee', background: '#faf6ff' }
+                : { borderColor: '#eef1ee' };
               return (
-                <tr key={e.id} className="border-b last:border-b-0" style={{ borderColor: '#eef1ee' }}>
+                <tr key={e.id} className="border-b last:border-b-0" style={rowStyle}>
                   <td className="px-2 py-1.5 tabular-nums text-zinc-600">{fmt.date(e.entry_date)}</td>
                   <td className="px-2 py-1.5 text-zinc-600">
                     {e.employee?.short_code ?? e.employee?.full_name ?? '—'}
                   </td>
                   <td className="px-2 py-1.5">
                     {e.service_type?.name ?? '—'}
-                    {!billable && <span className="ml-1 text-[10px] text-zinc-400">(nicht abrechenbar)</span>}
+                    {isKulant && <span className="ml-1 text-[10px] font-medium" style={{ color: '#4d2995' }}>(kulant)</span>}
+                    {!isKulant && !billable && <span className="ml-1 text-[10px] text-zinc-400">(nicht abrechenbar)</span>}
                   </td>
                   <td className="px-2 py-1.5 text-right tabular-nums">{fmt.hours(e.hours_internal)}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums text-zinc-500">{fmt.chf(e.rate_snapshot)}</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums" style={{ color: billable ? '#2d5a2d' : '#a0a0a0' }}>
+                  <td
+                    className="px-2 py-1.5 text-right tabular-nums"
+                    style={{
+                      color: isKulant ? '#4d2995' : (billable ? '#2d5a2d' : '#a0a0a0'),
+                      textDecoration: isKulant ? 'line-through' : undefined,
+                    }}
+                  >
                     {fmt.chf(wert)}
                   </td>
                   <td className="px-2 py-1.5 text-zinc-600 truncate max-w-[320px]">
@@ -431,7 +516,15 @@ function EntriesSubTable({ entries }) {
 
 // --- Confirmation-Dialog ----------------------------------------------------
 
-function ConfirmDialog({ summary, loading, onCancel, onConfirm }) {
+function ConfirmDialog({ mode = 'draft', summary, loading, onCancel, onConfirm }) {
+  const isDirect = mode === 'direct';
+  const titleText = isDirect ? 'Direkt-Rechnungen erstellen' : 'Rechnungsentwürfe erstellen';
+  const headerStyle = isDirect
+    ? { background: '#fff8e6', color: '#7a5a00', borderColor: '#f0e4c0' }
+    : { background: '#e6ede6', color: '#2d5a2d', borderColor: '#e4e7e4' };
+  const Icon = isDirect ? Zap : Receipt;
+  const targetStatus = isDirect ? 'definitiv' : 'entwurf';
+
   return (
     <div
       className="fixed inset-0 z-30 flex items-center justify-center p-4"
@@ -445,21 +538,36 @@ function ConfirmDialog({ summary, loading, onCancel, onConfirm }) {
       >
         <div
           className="px-4 py-3 border-b flex items-center gap-2"
-          style={{ borderColor: '#e4e7e4', background: '#e6ede6', color: '#2d5a2d' }}
+          style={headerStyle}
         >
-          <Receipt className="w-4 h-4" />
-          <div className="text-sm font-semibold">Rechnungsentwürfe erstellen</div>
+          <Icon className="w-4 h-4" />
+          <div className="text-sm font-semibold">{titleText}</div>
         </div>
         <div className="p-4 text-sm text-zinc-700 space-y-3">
           <p>
             Aus <b>{summary.projectCount}</b> Projekt{summary.projectCount === 1 ? '' : 'en'}
-            {' '}(<b>{summary.entryCount}</b> Einträge, <b style={{ color: '#2d5a2d' }}>CHF {fmt.chf(summary.chf)}</b>)
-            {' '}werden Rechnungsentwürfe erstellt.
+            {' '}werden <b>{summary.projectCount}</b> {isDirect ? 'Rechnung' : 'Rechnungsentwurf'}
+            {summary.projectCount === 1 ? '' : 'en'} mit Status <Chip tone={isDirect ? 'orange' : 'neutral'}>{targetStatus}</Chip> erstellt.
           </p>
+          <div className="rounded border bg-zinc-50/60 px-3 py-2 text-xs space-y-1" style={{ borderColor: '#eef1ee' }}>
+            <div>
+              <span className="text-zinc-500">Verrechnet (Subtotal): </span>
+              <b>{fmt.hours(summary.billableHours)}h</b>{' · '}
+              <b style={{ color: '#2d5a2d' }}>CHF {fmt.chf(summary.billableChf)}</b>
+            </div>
+            {summary.kulantHours > 0 && (
+              <div>
+                <span className="text-zinc-500">Kulant (Beiblatt, nicht im Subtotal): </span>
+                <b style={{ color: '#4d2995' }}>{fmt.hours(summary.kulantHours)}h</b>{' · '}
+                <span style={{ color: '#4d2995' }}>CHF {fmt.chf(summary.kulantChf)}</span>
+              </div>
+            )}
+          </div>
           <p className="text-xs text-zinc-500">
-            Die zugehörigen Zeiteinträge werden auf <Chip tone="blue">verrechnet</Chip> gesetzt und können danach nicht mehr ohne Storno geändert werden.
+            Verrechnete Einträge → <Chip tone="blue">verrechnet</Chip>
+            {summary.kulantHours > 0 && <>, kulante Einträge → <Chip tone="violet">kulant_abgerechnet</Chip></>}.
+            Fortfahren?
           </p>
-          <p className="text-xs text-zinc-500">Fortfahren?</p>
         </div>
         <div className="px-4 py-3 border-t flex items-center justify-end gap-2" style={{ borderColor: '#e4e7e4' }}>
           <button
@@ -476,10 +584,14 @@ function ConfirmDialog({ summary, loading, onCancel, onConfirm }) {
             onClick={onConfirm}
             disabled={loading}
             className={artisBtn.primary}
-            style={{ ...artisPrimaryStyle, opacity: loading ? 0.6 : 1 }}
+            style={{
+              ...artisPrimaryStyle,
+              ...(isDirect ? { background: '#c89a2a' } : {}),
+              opacity: loading ? 0.6 : 1,
+            }}
           >
-            <Receipt className="w-4 h-4" />
-            {loading ? 'Erstelle…' : 'Entwürfe erstellen'}
+            <Icon className="w-4 h-4" />
+            {loading ? 'Erstelle…' : (isDirect ? 'Direkt-Rechnung erstellen' : 'Entwürfe erstellen')}
           </button>
         </div>
       </div>
