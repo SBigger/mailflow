@@ -934,6 +934,7 @@ function MiniExcel({ data, onSave, accent, headingC, subC, panelBdr }) {
 const BUCKET = "dokumente";
 
 function BelegeSection({ arbeitspapier, onSave, customerId, selectedYear, accent, headingC, subC, panelBdr }) {
+  // selectedYear wird von KontenplanTab übergeben (= aktuelles Geschäftsjahr)
   const belege = arbeitspapier?.belege || [];
   const [showPicker, setShowPicker] = useState(false);
   const [search, setSearch] = useState("");
@@ -949,21 +950,21 @@ function BelegeSection({ arbeitspapier, onSave, customerId, selectedYear, accent
     return () => document.removeEventListener("mousedown", handler);
   }, [showPicker]);
 
-  // Docs zurücksetzen wenn Kunde wechselt → erzwingt Neuladen
-  useEffect(() => { setDocs([]); }, [customerId]);
+  // Docs zurücksetzen wenn Kunde oder Jahr wechselt → erzwingt Neuladen
+  useEffect(() => { setDocs([]); }, [customerId, selectedYear]);
 
-  // Dokumente laden wenn Picker öffnet — alle Dokumente des Mandanten
+  // Dokumente laden wenn Picker öffnet — nur das gewählte Geschäftsjahr
   useEffect(() => {
     if (!showPicker || !customerId || docs.length > 0) return;
     setLoading(true);
-    supabase.from("dokumente")
+    let q = supabase.from("dokumente")
       .select("id, name, filename, storage_path, category, year, file_type")
       .eq("customer_id", customerId)
-      .order("year", { ascending: false })
       .order("created_at", { ascending: false })
-      .limit(500)
-      .then(({ data }) => { setDocs(data || []); setLoading(false); });
-  }, [showPicker, customerId]);
+      .limit(500);
+    if (selectedYear) q = q.eq("year", selectedYear);
+    q.then(({ data }) => { setDocs(data || []); setLoading(false); });
+  }, [showPicker, customerId, selectedYear]);
 
   const linkedIds = new Set(belege.map(b => b.id));
 
