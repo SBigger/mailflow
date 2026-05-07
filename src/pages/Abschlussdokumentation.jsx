@@ -858,7 +858,7 @@ function KontenplanTab({ konten, onUpdateKonto, accent, theme, headingC, subC, p
                     backgroundColor: isUnmapped ? "#fef2f2" : (isArtis ? "#f0f5f0" : isLight ? "#f8fafc" : "#2c2c32"),
                     cursor: "pointer", borderTop: `2px solid ${isUnmapped ? "#fecaca" : tableBdr}`,
                   }}>
-                  <td colSpan={3} style={{ padding: "8px 12px" }}>
+                  <td colSpan={2} style={{ padding: "8px 12px" }}>
                     <div className="flex items-center gap-2">
                       {isOpen
                         ? <ChevronDown className="w-3.5 h-3.5 flex-shrink-0" style={{ color: subC }} />
@@ -874,14 +874,13 @@ function KontenplanTab({ konten, onUpdateKonto, accent, theme, headingC, subC, p
                         )}
                     </div>
                   </td>
-                  <td style={{ padding: "8px 12px", textAlign: "right", fontWeight: 700, fontSize: 12, color: headingC }}>
-                    {fmtCHF(groupTotalVJ)}
-                  </td>
-                  <td style={{ padding: "8px 12px" }} />
-                  <td style={{ padding: "8px 12px", textAlign: "right", fontWeight: 700, fontSize: 12, color: headingC }}>
+                  <td style={{ padding: "8px 12px", textAlign: "right", fontWeight: 700, fontSize: 12, color: headingC, fontFamily: "monospace" }}>
                     {fmtCHF(groupTotal)}
                   </td>
-                  <td style={{ padding: "8px 12px" }} />
+                  <td style={{ padding: "8px 12px", textAlign: "right", fontWeight: 700, fontSize: 12, color: headingC, fontFamily: "monospace" }}>
+                    {fmtCHF(groupTotalVJ)}
+                  </td>
+                  <td colSpan={3} style={{ padding: "8px 12px" }} />
                 </tr>
 
                 {/* Rows */}
