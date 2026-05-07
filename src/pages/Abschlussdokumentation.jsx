@@ -1556,18 +1556,19 @@ export default function Abschlussdokumentation() {
   const [activeTab, setActiveTab] = useState("kontenplan");
   const [showImport, setShowImport] = useState(false);
 
-  // ── Auto-Jahr: neuestes Jahr mit Daten (abschluss → dokumente → heute) ────
+  // ── Auto-Jahr: neuestes Jahr das wirklich Konten hat (abschluss_konten → dokumente → heute) ──
   useEffect(() => {
     if (!selectedCid) return;
-    // 1. Gibt es bereits einen Abschluss für diesen Mandanten?
-    supabase.from("abschluss")
-      .select("geschaeftsjahr")
-      .eq("customer_id", selectedCid)
-      .order("geschaeftsjahr", { ascending: false })
+    // 1. Abschluss mit mindestens einem Konto → hat echte Importdaten
+    supabase.from("abschluss_konten")
+      .select("abschluss_id, abschluss!inner(geschaeftsjahr, customer_id)")
+      .eq("abschluss.customer_id", selectedCid)
+      .order("abschluss.geschaeftsjahr", { ascending: false })
       .limit(1)
       .maybeSingle()
-      .then(({ data: aData }) => {
-        if (aData?.geschaeftsjahr) { setSelectedYear(aData.geschaeftsjahr); return; }
+      .then(({ data: kData }) => {
+        const jahr = kData?.abschluss?.geschaeftsjahr;
+        if (jahr) { setSelectedYear(jahr); return; }
         // 2. Fallback: letztes Ablagejahr in Dokumente
         supabase.from("dokumente")
           .select("year")
