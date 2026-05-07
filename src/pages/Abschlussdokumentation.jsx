@@ -776,7 +776,7 @@ function MiniExcel({ data, onSave, accent, headingC, subC, panelBdr }) {
 // ── Belege-Verknüpfung pro Konto ─────────────────────────────────────────────
 const BUCKET = "dokumente";
 
-function BelegeSection({ arbeitspapier, onSave, customerId, accent, headingC, subC, panelBdr }) {
+function BelegeSection({ arbeitspapier, onSave, customerId, selectedYear, accent, headingC, subC, panelBdr }) {
   const belege = arbeitspapier?.belege || [];
   const [showPicker, setShowPicker] = useState(false);
   const [search, setSearch] = useState("");
@@ -792,17 +792,21 @@ function BelegeSection({ arbeitspapier, onSave, customerId, accent, headingC, su
     return () => document.removeEventListener("mousedown", handler);
   }, [showPicker]);
 
+  // Docs zurücksetzen wenn Jahr/Kunde wechselt → erzwingt Neuladen
+  useEffect(() => { setDocs([]); }, [customerId, selectedYear]);
+
   // Dokumente laden wenn Picker öffnet
   useEffect(() => {
     if (!showPicker || !customerId || docs.length > 0) return;
     setLoading(true);
-    supabase.from("dokumente")
+    let query = supabase.from("dokumente")
       .select("id, name, filename, storage_path, category, year, file_type")
       .eq("customer_id", customerId)
       .order("created_at", { ascending: false })
-      .limit(200)
-      .then(({ data }) => { setDocs(data || []); setLoading(false); });
-  }, [showPicker, customerId]);
+      .limit(200);
+    if (selectedYear) query = query.eq("year", selectedYear);
+    query.then(({ data }) => { setDocs(data || []); setLoading(false); });
+  }, [showPicker, customerId, selectedYear]);
 
   const linkedIds = new Set(belege.map(b => b.id));
 
@@ -921,7 +925,7 @@ function BelegeSection({ arbeitspapier, onSave, customerId, accent, headingC, su
 }
 
 // ── Kontenplan Tab ────────────────────────────────────────────────────────────
-function KontenplanTab({ konten, onUpdateKonto, customerId, accent, theme, headingC, subC, panelBg, panelBdr, tableBdr, rowHover }) {
+function KontenplanTab({ konten, onUpdateKonto, customerId, selectedYear, accent, theme, headingC, subC, panelBg, panelBdr, tableBdr, rowHover }) {
   const isArtis = theme === "artis";
   const isLight = theme === "light";
   const [collapsed, setCollapsed] = useState({});
@@ -1130,6 +1134,7 @@ function KontenplanTab({ konten, onUpdateKonto, customerId, accent, theme, headi
                             arbeitspapier={konto.arbeitspapier}
                             onSave={d => onUpdateKonto(konto.id, { arbeitspapier: d })}
                             customerId={customerId}
+                            selectedYear={selectedYear}
                             accent={accent} headingC={headingC} subC={subC} panelBdr={tableBdr}
                           />
                         </td>
@@ -1527,6 +1532,20 @@ export default function Abschlussdokumentation() {
   const [activeTab, setActiveTab] = useState("kontenplan");
   const [showImport, setShowImport] = useState(false);
 
+  // ── Auto-Jahr: letztes Ablagejahr des Mandanten ───────────────────────────
+  useEffect(() => {
+    if (!selectedCid) return;
+    supabase.from("dokumente")
+      .select("year")
+      .eq("customer_id", selectedCid)
+      .order("year", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.year) setSelectedYear(data.year);
+      });
+  }, [selectedCid]);
+
   // ── Kunden laden ─────────────────────────────────────────────────────────
   const { data: kunden = [] } = useQuery({
     queryKey: ["customers_all"],
@@ -1692,7 +1711,7 @@ export default function Abschlussdokumentation() {
     { id: "erfolgsrechnung",  label: "Erfolgsrechnung",    icon: TrendingUp },
   ];
 
-  const tabProps = { konten, accent, headingC, subC, panelBg, panelBdr, tableBdr, rowHover, theme, customerId: selectedCid };
+  const tabProps = { konten, accent, headingC, subC, panelBg, panelBdr, tableBdr, rowHover, theme, customerId: selectedCid, selectedYear };
 
   return (
     <div className="flex flex-col h-full overflow-hidden" style={{ backgroundColor: pageBg }}>
