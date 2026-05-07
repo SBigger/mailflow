@@ -32,9 +32,14 @@ const KONTENRAHMEN_POSITIONEN = [
   { id: "FK_LANG_BANK",        label: "Langfristige Bankverbindlichkeiten", typ: "bilanz", seite: "passiven", gruppe: "Langfristiges FK",   von: 2400, bis: 2499, level: 2 },
   { id: "FK_LANG_SONST",       label: "Übrige langfristige Verbindlichkeiten", typ: "bilanz", seite: "passiven", gruppe: "Langfristiges FK", von: 2500, bis: 2599, level: 2 },
   { id: "FK_RUECKSTELLUNGEN",  label: "Rückstellungen",                     typ: "bilanz", seite: "passiven", gruppe: "Langfristiges FK",   von: 2600, bis: 2799, level: 2 },
-  { id: "EK_KAPITAL",          label: "Grund-/Stammkapital",                typ: "bilanz", seite: "passiven", gruppe: "Eigenkapital",       von: 2800, bis: 2819, level: 2 },
-  { id: "EK_RESERVEN",         label: "Reserven & Gewinnvortrag",           typ: "bilanz", seite: "passiven", gruppe: "Eigenkapital",       von: 2820, bis: 2889, level: 2 },
-  { id: "EK_JAHRESERGEBNIS",   label: "Jahresergebnis",                     typ: "bilanz", seite: "passiven", gruppe: "Eigenkapital",       von: 2890, bis: 2999, level: 2 },
+  // EIGENKAPITAL – Mindestgliederung OR 959a / Swiss KMU Kontenrahmen
+  { id: "EK_KAPITAL",          label: "Aktien-/Stammkapital",               typ: "bilanz", seite: "passiven", gruppe: "Eigenkapital", von: 2800, bis: 2809, level: 2 },
+  { id: "EK_KAP_RESERVE",      label: "Gesetzliche Kapitalreserve",         typ: "bilanz", seite: "passiven", gruppe: "Eigenkapital", von: 2810, bis: 2819, level: 2 },
+  { id: "EK_GES_RESERVE",      label: "Gesetzliche Gewinnreserve",          typ: "bilanz", seite: "passiven", gruppe: "Eigenkapital", von: 2820, bis: 2849, level: 2 },
+  { id: "EK_FREIE_RESERVE",    label: "Freiwillige Gewinnreserven",         typ: "bilanz", seite: "passiven", gruppe: "Eigenkapital", von: 2850, bis: 2879, level: 2 },
+  { id: "EK_RESERVEN",         label: "Übrige Reserven",                    typ: "bilanz", seite: "passiven", gruppe: "Eigenkapital", von: 2880, bis: 2889, level: 2 },
+  { id: "EK_VORTRAG",          label: "Gewinn-/Verlustvortrag",             typ: "bilanz", seite: "passiven", gruppe: "Eigenkapital", von: 2890, bis: 2969, level: 2 },
+  { id: "EK_JAHRESERGEBNIS",   label: "Jahresergebnis",                     typ: "bilanz", seite: "passiven", gruppe: "Eigenkapital", von: 2970, bis: 2999, level: 2 },
   // ERFOLGSRECHNUNG
   { id: "ER_UMSATZ",          label: "Nettoumsatzerlöse",               typ: "er", seite: "ertrag",  gruppe: "Betriebsertrag",   von: 3000, bis: 3699, level: 2 },
   { id: "ER_EIGENLEISTUNG",   label: "Eigenleistungen",                 typ: "er", seite: "ertrag",  gruppe: "Betriebsertrag",   von: 3700, bis: 3799, level: 2 },
@@ -1361,7 +1366,7 @@ function BilanzTab({ konten, accent, headingC, subC, panelBg, panelBdr, tableBdr
   const AV_IDS = ["AV_FINANZ","AV_MOBIL","AV_IMMOBIL","AV_IMMATERIELL"];
   const FK_KURZ_IDS = ["FK_KURZ_LL","FK_KURZ_BANK","FK_KURZ_SONST","FK_KURZ_ABGRENZUNG"];
   const FK_LANG_IDS = ["FK_LANG_BANK","FK_LANG_SONST","FK_RUECKSTELLUNGEN"];
-  const EK_IDS = ["EK_KAPITAL","EK_RESERVEN","EK_JAHRESERGEBNIS"];
+  const EK_IDS = ["EK_KAPITAL","EK_KAP_RESERVE","EK_GES_RESERVE","EK_FREIE_RESERVE","EK_RESERVEN","EK_VORTRAG","EK_JAHRESERGEBNIS"];
 
   const uvTotal = sumByIds(UV_IDS);
   const avTotal = sumByIds(AV_IDS);
