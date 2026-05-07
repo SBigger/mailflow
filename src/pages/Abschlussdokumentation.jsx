@@ -815,17 +815,23 @@ function BelegeSection({ arbeitspapier, onSave, customerId, selectedYear, accent
   // Docs zurücksetzen wenn Jahr/Kunde wechselt → erzwingt Neuladen
   useEffect(() => { setDocs([]); }, [customerId, selectedYear]);
 
-  // Dokumente laden wenn Picker öffnet
+  const [yearFiltered, setYearFiltered] = useState(true);
+
+  // Dokumente laden wenn Picker öffnet — erst Jahresfilter, Fallback alle
   useEffect(() => {
     if (!showPicker || !customerId || docs.length > 0) return;
     setLoading(true);
-    let query = supabase.from("dokumente")
+    const base = supabase.from("dokumente")
       .select("id, name, filename, storage_path, category, year, file_type")
       .eq("customer_id", customerId)
       .order("created_at", { ascending: false })
       .limit(200);
-    if (selectedYear) query = query.eq("year", selectedYear);
-    query.then(({ data }) => { setDocs(data || []); setLoading(false); });
+    const withYear = selectedYear ? base.eq("year", selectedYear) : base;
+    withYear.then(({ data }) => {
+      if (data?.length > 0) { setDocs(data); setYearFiltered(true); setLoading(false); return; }
+      // Kein Resultat mit Jahresfilter → alle Jahre laden
+      base.then(({ data: all }) => { setDocs(all || []); setYearFiltered(false); setLoading(false); });
+    });
   }, [showPicker, customerId, selectedYear]);
 
   const linkedIds = new Set(belege.map(b => b.id));
@@ -885,6 +891,11 @@ function BelegeSection({ arbeitspapier, onSave, customerId, selectedYear, accent
                 <input autoFocus value={search} onChange={e => setSearch(e.target.value)}
                   placeholder="Dokument suchen…"
                   style={{ width: "100%", fontSize: 12, padding: "5px 8px", borderRadius: 5, border: `1px solid ${panelBdr}`, outline: "none" }} />
+                {!yearFiltered && selectedYear && !loading && (
+                  <div style={{ fontSize: 10, color: "#b45309", marginTop: 4, paddingLeft: 2 }}>
+                    ⚠ Keine Dokumente für {selectedYear} — alle Jahre werden angezeigt
+                  </div>
+                )}
               </div>
               <div style={{ overflowY: "auto", flex: 1 }}>
                 {loading
@@ -1556,30 +1567,32 @@ export default function Abschlussdokumentation() {
   const [activeTab, setActiveTab] = useState("kontenplan");
   const [showImport, setShowImport] = useState(false);
 
-  // ── Auto-Jahr: neuestes Jahr das wirklich Konten hat (abschluss_konten → dokumente → heute) ──
+  // ── Auto-Jahr: neuestes Jahr das wirklich Konten hat ────────────────────────
   useEffect(() => {
     if (!selectedCid) return;
-    // 1. Abschluss mit mindestens einem Konto → hat echte Importdaten
-    supabase.from("abschluss_konten")
-      .select("abschluss_id, abschluss!inner(geschaeftsjahr, customer_id)")
-      .eq("abschluss.customer_id", selectedCid)
-      .order("abschluss.geschaeftsjahr", { ascending: false })
-      .limit(1)
-      .maybeSingle()
-      .then(({ data: kData }) => {
-        const jahr = kData?.abschluss?.geschaeftsjahr;
-        if (jahr) { setSelectedYear(jahr); return; }
+    // 1. Alle abschluss des Mandanten, neuestes zuerst
+    supabase.from("abschluss")
+      .select("id, geschaeftsjahr")
+      .eq("customer_id", selectedCid)
+      .order("geschaeftsjahr", { ascending: false })
+      .limit(10)
+      .then(async ({ data: abs }) => {
+        // Erstes mit mindestens einem Konto nehmen
+        for (const ab of abs || []) {
+          const { count } = await supabase.from("abschluss_konten")
+            .select("*", { count: "exact", head: true })
+            .eq("abschluss_id", ab.id);
+          if (count > 0) { setSelectedYear(ab.geschaeftsjahr); return; }
+        }
         // 2. Fallback: letztes Ablagejahr in Dokumente
-        supabase.from("dokumente")
+        const { data: dData } = await supabase.from("dokumente")
           .select("year")
           .eq("customer_id", selectedCid)
           .order("year", { ascending: false })
           .limit(1)
-          .maybeSingle()
-          .then(({ data: dData }) => {
-            if (dData?.year) setSelectedYear(dData.year);
-            // 3. Sonst: aktuelles Jahr bleibt (currentYear())
-          });
+          .maybeSingle();
+        if (dData?.year) setSelectedYear(dData.year);
+        // 3. Sonst: aktuelles Jahr bleibt (currentYear())
       });
   }, [selectedCid]);
 
