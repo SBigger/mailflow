@@ -1425,10 +1425,10 @@ function ErfolgsrechnungTab({ konten, accent, headingC, subC, panelBg, panelBdr,
     .filter(k => ids.includes(k.position_id))
     .reduce((s, k) => s + (parseFloat(k.saldo_ist) || 0), 0);
 
-  // eSign auf ALLE Positionen (Ertrag + Aufwand):
-  // Konvention A (häufig): Umsatz + / Aufwand − → kein Flip nötig
-  // Konvention B (manche Exporte): Umsatz − / Aufwand + → Flip dreht alles
-  const eSign = signFlipER ? -1 : 1;
+  // Buchhalterische Standardkonvention: Umsatz = Haben = negativ, Aufwand = Soll = positiv
+  // → Standard: Vorzeichen drehen (eSign = -1), damit ER korrekt positiv ist
+  // → Flip-Button gedrückt: Rohdaten belassen (eSign = 1), für Exporte die bereits gedreht sind
+  const eSign = signFlipER ? 1 : -1;
   const sumByIds = (ids) => rawSum(ids) * eSign;
 
   if (konten.length === 0) {
