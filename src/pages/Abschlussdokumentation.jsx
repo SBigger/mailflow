@@ -44,10 +44,18 @@ const KONTENRAHMEN_POSITIONEN = [
   { id: "ER_UMSATZ",          label: "Nettoumsatzerlöse",               typ: "er", seite: "ertrag",  gruppe: "Betriebsertrag",   von: 3000, bis: 3699, level: 2 },
   { id: "ER_EIGENLEISTUNG",   label: "Eigenleistungen",                 typ: "er", seite: "ertrag",  gruppe: "Betriebsertrag",   von: 3700, bis: 3799, level: 2 },
   { id: "ER_BESTAND",         label: "Bestandesveränderungen",          typ: "er", seite: "ertrag",  gruppe: "Betriebsertrag",   von: 3800, bis: 3999, level: 2 },
-  { id: "ER_MATERIAL",        label: "Materialaufwand",                 typ: "er", seite: "aufwand", gruppe: "Betriebsaufwand",  von: 4000, bis: 4799, level: 2 },
+  { id: "ER_MATERIAL",        label: "Materialaufwand",                 typ: "er", seite: "aufwand", gruppe: "Betriebsaufwand",  von: 4000, bis: 4999, level: 2 },
   { id: "ER_PERSONAL",        label: "Personalaufwand",                 typ: "er", seite: "aufwand", gruppe: "Betriebsaufwand",  von: 5000, bis: 5999, level: 2 },
-  { id: "ER_BETRIEB",         label: "Übriger Betriebsaufwand",         typ: "er", seite: "aufwand", gruppe: "Betriebsaufwand",  von: 6000, bis: 6699, level: 2 },
-  { id: "ER_ABSCHR",          label: "Abschreibungen",                  typ: "er", seite: "aufwand", gruppe: "Betriebsaufwand",  von: 6700, bis: 6899, level: 2 },
+  // Übriger Betriebsaufwand – Mindestgliederung KMU (6000–6699)
+  { id: "ER_RAUM",            label: "Raumaufwand",                     typ: "er", seite: "aufwand", gruppe: "Betriebskosten",   von: 6000, bis: 6099, level: 2 },
+  { id: "ER_UNTERHALT",       label: "Unterhalt & Reparaturen",         typ: "er", seite: "aufwand", gruppe: "Betriebskosten",   von: 6100, bis: 6199, level: 2 },
+  { id: "ER_FAHRZEUG",        label: "Fahrzeug- & Transportaufwand",    typ: "er", seite: "aufwand", gruppe: "Betriebskosten",   von: 6200, bis: 6299, level: 2 },
+  { id: "ER_VERSICHERUNG",    label: "Sachversicherungen & Abgaben",    typ: "er", seite: "aufwand", gruppe: "Betriebskosten",   von: 6300, bis: 6399, level: 2 },
+  { id: "ER_ENERGIE",         label: "Energie & Entsorgung",            typ: "er", seite: "aufwand", gruppe: "Betriebskosten",   von: 6400, bis: 6499, level: 2 },
+  { id: "ER_VERWALTUNG",      label: "Verwaltungs- & Informatikaufwand",typ: "er", seite: "aufwand", gruppe: "Betriebskosten",   von: 6500, bis: 6599, level: 2 },
+  { id: "ER_WERBUNG",         label: "Werbe- & Akquisitionsaufwand",    typ: "er", seite: "aufwand", gruppe: "Betriebskosten",   von: 6600, bis: 6699, level: 2 },
+  { id: "ER_BETRIEB",         label: "Übriger Betriebsaufwand",         typ: "er", seite: "aufwand", gruppe: "Betriebskosten",   von: 6900, bis: 6949, level: 2 }, // compat + Restbereich
+  { id: "ER_ABSCHR",          label: "Abschreibungen & Wertberichtig.", typ: "er", seite: "aufwand", gruppe: "Betriebsaufwand",  von: 6700, bis: 6899, level: 2 },
   { id: "ER_FINANZ_ERTRAG",   label: "Finanzertrag",                    typ: "er", seite: "ertrag",  gruppe: "Finanzergebnis",   von: 7000, bis: 7099, level: 2 },
   { id: "ER_FINANZ_AUFW",     label: "Finanzaufwand",                   typ: "er", seite: "aufwand", gruppe: "Finanzergebnis",   von: 7100, bis: 7499, level: 2 },
   { id: "ER_LIEGENSCHAFTEN",  label: "Liegenschaftsertrag/-aufwand",    typ: "er", seite: "ertrag",  gruppe: "Finanzergebnis",   von: 7500, bis: 7999, level: 2 },
@@ -1733,8 +1741,16 @@ function ErfolgsrechnungTab({ konten, accent, headingC, subC, panelBg, panelBdr,
   const material       = sumByIds(["ER_MATERIAL"]);
   const bruttogewinn   = nettoumsatz + material;
   const personal       = sumByIds(["ER_PERSONAL"]);
-  const betrieb        = sumByIds(["ER_BETRIEB"]);
-  const ebitda         = bruttogewinn + personal + betrieb;
+  const raum           = sumByIds(["ER_RAUM"]);
+  const unterhalt      = sumByIds(["ER_UNTERHALT"]);
+  const fahrzeug       = sumByIds(["ER_FAHRZEUG"]);
+  const versicherung   = sumByIds(["ER_VERSICHERUNG"]);
+  const energie        = sumByIds(["ER_ENERGIE"]);
+  const verwaltung     = sumByIds(["ER_VERWALTUNG"]);
+  const werbung        = sumByIds(["ER_WERBUNG"]);
+  const betrieb        = sumByIds(["ER_BETRIEB"]); // compat / übrige
+  const betriebTotal   = raum + unterhalt + fahrzeug + versicherung + energie + verwaltung + werbung + betrieb;
+  const ebitda         = bruttogewinn + personal + betriebTotal;
   const abschr         = sumByIds(["ER_ABSCHR"]);
   const ebit           = ebitda + abschr;
   const finErtrag      = sumByIds(["ER_FINANZ_ERTRAG","ER_LIEGENSCHAFTEN"]);
@@ -1774,7 +1790,14 @@ function ErfolgsrechnungTab({ konten, accent, headingC, subC, panelBg, panelBdr,
 
         <ERSeparator label="Betriebskosten" subC={subC} />
         <ERRow label="− Personalaufwand" value={personal} isNegative indent {...props} />
-        <ERRow label="− Übriger Betriebsaufwand" value={betrieb} isNegative indent {...props} />
+        {raum       !== 0 && <ERRow label="− Raumaufwand"                      value={raum}        isNegative indent {...props} />}
+        {unterhalt  !== 0 && <ERRow label="− Unterhalt & Reparaturen"          value={unterhalt}   isNegative indent {...props} />}
+        {fahrzeug   !== 0 && <ERRow label="− Fahrzeug- & Transportaufwand"     value={fahrzeug}    isNegative indent {...props} />}
+        {versicherung!==0 && <ERRow label="− Sachversicherungen & Abgaben"     value={versicherung}isNegative indent {...props} />}
+        {energie    !== 0 && <ERRow label="− Energie & Entsorgung"             value={energie}     isNegative indent {...props} />}
+        {verwaltung !== 0 && <ERRow label="− Verwaltungs- & Informatikaufw."   value={verwaltung}  isNegative indent {...props} />}
+        {werbung    !== 0 && <ERRow label="− Werbe- & Akquisitionsaufwand"      value={werbung}     isNegative indent {...props} />}
+        {betrieb    !== 0 && <ERRow label="− Übriger Betriebsaufwand"          value={betrieb}     isNegative indent {...props} />}
         <ERRow label="= EBITDA" value={ebitda} isTotal highlightGreen={ebitda >= 0} {...props} />
 
         <ERSeparator label="Abschreibungen" subC={subC} />
