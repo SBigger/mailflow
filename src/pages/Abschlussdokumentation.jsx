@@ -815,22 +815,24 @@ function BelegeSection({ arbeitspapier, onSave, customerId, selectedYear, accent
   // Docs zurücksetzen wenn Jahr/Kunde wechselt → erzwingt Neuladen
   useEffect(() => { setDocs([]); }, [customerId, selectedYear]);
 
-  const [yearFiltered, setYearFiltered] = useState(true);
-
-  // Dokumente laden wenn Picker öffnet — erst Jahresfilter, Fallback alle
+  // Dokumente laden wenn Picker öffnet
   useEffect(() => {
     if (!showPicker || !customerId || docs.length > 0) return;
     setLoading(true);
-    const base = supabase.from("dokumente")
-      .select("id, name, filename, storage_path, category, year, file_type")
-      .eq("customer_id", customerId)
-      .order("created_at", { ascending: false })
-      .limit(200);
-    const withYear = selectedYear ? base.eq("year", selectedYear) : base;
-    withYear.then(({ data }) => {
-      if (data?.length > 0) { setDocs(data); setYearFiltered(true); setLoading(false); return; }
+    // Separate Query-Funktion damit kein Builder-Muations-Bug entsteht
+    const mkQuery = (withYear) => {
+      let q = supabase.from("dokumente")
+        .select("id, name, filename, storage_path, category, year, file_type")
+        .eq("customer_id", customerId)
+        .order("created_at", { ascending: false })
+        .limit(200);
+      if (withYear && selectedYear) q = q.eq("year", selectedYear);
+      return q;
+    };
+    mkQuery(true).then(({ data }) => {
+      if (data?.length > 0) { setDocs(data); setLoading(false); return; }
       // Kein Resultat mit Jahresfilter → alle Jahre laden
-      base.then(({ data: all }) => { setDocs(all || []); setYearFiltered(false); setLoading(false); });
+      mkQuery(false).then(({ data: all }) => { setDocs(all || []); setLoading(false); });
     });
   }, [showPicker, customerId, selectedYear]);
 
@@ -891,11 +893,6 @@ function BelegeSection({ arbeitspapier, onSave, customerId, selectedYear, accent
                 <input autoFocus value={search} onChange={e => setSearch(e.target.value)}
                   placeholder="Dokument suchen…"
                   style={{ width: "100%", fontSize: 12, padding: "5px 8px", borderRadius: 5, border: `1px solid ${panelBdr}`, outline: "none" }} />
-                {!yearFiltered && selectedYear && !loading && (
-                  <div style={{ fontSize: 10, color: "#b45309", marginTop: 4, paddingLeft: 2 }}>
-                    ⚠ Keine Dokumente für {selectedYear} — alle Jahre werden angezeigt
-                  </div>
-                )}
               </div>
               <div style={{ overflowY: "auto", flex: 1 }}>
                 {loading
