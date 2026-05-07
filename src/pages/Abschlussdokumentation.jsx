@@ -1609,24 +1609,34 @@ function BilanzTab({ konten, accent, headingC, subC, panelBg, panelBdr, tableBdr
               <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
                 <thead>
                   <tr style={{ color: "#dc2626", fontWeight: 700, fontSize: 11 }}>
-                    <th style={{ textAlign: "left", padding: "3px 0", width: "60%" }}>Bezeichnung</th>
-                    <th style={{ textAlign: "right", padding: "3px 8px", width: "25%" }}>Betrag CHF</th>
-                    <th style={{ width: "15%" }} />
+                    <th style={{ textAlign: "left", padding: "3px 0", width: "50%" }}>Bezeichnung</th>
+                    <th style={{ textAlign: "right", padding: "3px 8px", width: "40%" }}>Betrag CHF</th>
+                    <th style={{ width: "10%" }} />
                   </tr>
                 </thead>
                 <tbody>
-                  {(diffAnpassungen || []).map((a, idx) => (
+                  {(diffAnpassungen || []).map((a, idx) => {
+                    const isEditing = editAnp?.idx === idx;
+                    const saveAnpRow = () => {
+                      if (!editAnp || editAnp.idx !== idx) return;
+                      const rows = (diffAnpassungen || []).map((r, i) =>
+                        i === idx ? { ...r, bezeichnung: editAnp.bezeichnung, betrag: parseFloat(editAnp.betrag) || 0 } : r
+                      );
+                      onSaveDiffAnpassungen(rows);
+                      setEditAnp(null);
+                    };
+                    return (
                     <tr key={a.id}>
                       <td style={{ padding: "3px 0" }}>
-                        {editAnp?.idx === idx ? (
+                        {isEditing ? (
                           <input autoFocus value={editAnp.bezeichnung}
                             onChange={e => setEditAnp(v => ({ ...v, bezeichnung: e.target.value }))}
-                            onBlur={() => {
-                              const rows = (diffAnpassungen || []).map((r, i) => i === idx ? { ...r, bezeichnung: editAnp.bezeichnung, betrag: parseFloat(editAnp.betrag) || 0 } : r);
-                              onSaveDiffAnpassungen(rows);
-                              setEditAnp(null);
+                            onKeyDown={e => {
+                              if (e.key === "Tab") { e.preventDefault(); document.getElementById(`anp-betrag-${idx}`)?.focus(); document.getElementById(`anp-betrag-${idx}`)?.select(); }
+                              if (e.key === "Escape") setEditAnp(null);
+                              if (e.key === "Enter") { document.getElementById(`anp-betrag-${idx}`)?.focus(); document.getElementById(`anp-betrag-${idx}`)?.select(); }
                             }}
-                            style={{ width: "100%", fontSize: 12, padding: "2px 6px", borderRadius: 4, border: "1px solid #fca5a5", outline: "none" }} />
+                            style={{ width: "100%", fontSize: 12, padding: "3px 8px", borderRadius: 4, border: "1px solid #fca5a5", outline: "none" }} />
                         ) : (
                           <span onClick={() => setEditAnp({ idx, bezeichnung: a.bezeichnung, betrag: String(a.betrag) })}
                             style={{ cursor: "text", color: a.bezeichnung ? "#374151" : "#9ca3af", fontStyle: a.bezeichnung ? "normal" : "italic" }}>
@@ -1635,15 +1645,16 @@ function BilanzTab({ konten, accent, headingC, subC, panelBg, panelBdr, tableBdr
                         )}
                       </td>
                       <td style={{ padding: "3px 8px", textAlign: "right" }}>
-                        {editAnp?.idx === idx ? (
-                          <input value={editAnp.betrag} type="number" step="0.01"
+                        {isEditing ? (
+                          <input id={`anp-betrag-${idx}`} value={editAnp.betrag} type="number" step="0.01"
                             onChange={e => setEditAnp(v => ({ ...v, betrag: e.target.value }))}
-                            onBlur={() => {
-                              const rows = (diffAnpassungen || []).map((r, i) => i === idx ? { ...r, bezeichnung: editAnp.bezeichnung, betrag: parseFloat(editAnp.betrag) || 0 } : r);
-                              onSaveDiffAnpassungen(rows);
-                              setEditAnp(null);
+                            onKeyDown={e => {
+                              if (e.key === "Enter") saveAnpRow();
+                              if (e.key === "Escape") setEditAnp(null);
+                              if (e.key === "Tab") { e.preventDefault(); saveAnpRow(); }
                             }}
-                            style={{ width: 100, fontSize: 12, padding: "2px 6px", borderRadius: 4, border: "1px solid #fca5a5", outline: "none", textAlign: "right" }} />
+                            onBlur={saveAnpRow}
+                            style={{ width: "100%", fontSize: 12, padding: "3px 8px", borderRadius: 4, border: "1px solid #fca5a5", outline: "none", textAlign: "right" }} />
                         ) : (
                           <span onClick={() => setEditAnp({ idx, bezeichnung: a.bezeichnung, betrag: String(a.betrag) })}
                             style={{ cursor: "text", fontFamily: "monospace", color: "#374151" }}>
@@ -1652,11 +1663,16 @@ function BilanzTab({ konten, accent, headingC, subC, panelBg, panelBdr, tableBdr
                         )}
                       </td>
                       <td style={{ textAlign: "right", padding: "3px 0" }}>
-                        <button onClick={() => onSaveDiffAnpassungen((diffAnpassungen || []).filter((_, i) => i !== idx))}
-                          style={{ background: "none", border: "none", cursor: "pointer", color: "#fca5a5", fontSize: 14, lineHeight: 1 }}>×</button>
+                        {isEditing
+                          ? <button onMouseDown={e => { e.preventDefault(); saveAnpRow(); }}
+                              style={{ background: "none", border: "none", cursor: "pointer", color: "#16a34a", fontSize: 16, lineHeight: 1, fontWeight: 700 }}>✓</button>
+                          : <button onClick={() => onSaveDiffAnpassungen((diffAnpassungen || []).filter((_, i) => i !== idx))}
+                              style={{ background: "none", border: "none", cursor: "pointer", color: "#fca5a5", fontSize: 14, lineHeight: 1 }}>×</button>
+                        }
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                   <tr style={{ borderTop: "1px solid #fecaca", fontWeight: 700 }}>
                     <td style={{ padding: "4px 0", fontSize: 12, color: "#dc2626" }}>Total Anpassungen</td>
                     <td style={{ padding: "4px 8px", textAlign: "right", fontFamily: "monospace", fontSize: 12, color: "#dc2626" }}>{fmtCHF(anpTotal)}</td>
