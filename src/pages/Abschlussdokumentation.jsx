@@ -940,15 +940,6 @@ function BelegeSection({ arbeitspapier, onSave, customerId, selectedYear, accent
   const [search, setSearch] = useState("");
   const [docs, setDocs] = useState([]);
   const [loading, setLoading] = useState(false);
-  const pickerRef = useRef(null);
-
-  // Schliessen bei Klick ausserhalb
-  useEffect(() => {
-    if (!showPicker) return;
-    const handler = (e) => { if (pickerRef.current && !pickerRef.current.contains(e.target)) setShowPicker(false); };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [showPicker]);
 
   // Docs zurücksetzen wenn Kunde oder Jahr wechselt → erzwingt Neuladen
   useEffect(() => { setDocs([]); }, [customerId, selectedYear]);
@@ -1000,60 +991,71 @@ function BelegeSection({ arbeitspapier, onSave, customerId, selectedYear, accent
     return { label: ext, bg: "#dbeafe", col: "#1d4ed8" };
   };
 
+  const pickerModal = showPicker && createPortal(
+    <div style={{ position: "fixed", inset: 0, zIndex: 9999, backgroundColor: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center" }}
+      onMouseDown={e => { if (e.target === e.currentTarget) setShowPicker(false); }}>
+      <div style={{ backgroundColor: "white", borderRadius: 14, boxShadow: "0 24px 64px rgba(0,0,0,0.22)", width: "min(820px, 94vw)", maxHeight: "82vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        {/* Header */}
+        <div style={{ padding: "14px 18px", borderBottom: `1px solid ${panelBdr}`, display: "flex", alignItems: "center", gap: 12 }}>
+          <span style={{ fontSize: 14, fontWeight: 700, color: "#111", flex: 1 }}>📎 Beleg verknüpfen</span>
+          <span style={{ fontSize: 12, color: subC }}>{selectedYear ? `Jahr ${selectedYear}` : "Alle Jahre"} · {filtered.length} Dokumente</span>
+          <button onClick={() => setShowPicker(false)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 20, color: subC, lineHeight: 1, padding: "0 4px" }}>×</button>
+        </div>
+        {/* Suche */}
+        <div style={{ padding: "10px 18px", borderBottom: `1px solid ${panelBdr}` }}>
+          <input autoFocus value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Dokument suchen…"
+            style={{ width: "100%", fontSize: 13, padding: "7px 12px", borderRadius: 8, border: `1px solid ${panelBdr}`, outline: "none", boxSizing: "border-box" }} />
+        </div>
+        {/* Liste */}
+        <div style={{ overflowY: "auto", flex: 1 }}>
+          {loading
+            ? <div style={{ padding: 32, textAlign: "center", fontSize: 13, color: subC }}>Lädt…</div>
+            : filtered.length === 0
+              ? <div style={{ padding: 32, textAlign: "center", fontSize: 13, color: subC }}>Keine Dokumente gefunden</div>
+              : filtered.map(doc => {
+                  const fl = fileLabel(doc.file_type, doc.filename);
+                  const already = linkedIds.has(doc.id);
+                  return (
+                    <div key={doc.id} onClick={() => { if (!already) addBeleg(doc); }}
+                      style={{ padding: "10px 18px", cursor: already ? "default" : "pointer", opacity: already ? 0.5 : 1, borderBottom: `1px solid ${panelBdr}`, display: "flex", alignItems: "center", gap: 12, transition: "background 0.1s" }}
+                      onMouseEnter={e => { if (!already) e.currentTarget.style.backgroundColor = accent + "10"; }}
+                      onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 7px", borderRadius: 4, backgroundColor: fl.bg, color: fl.col, flexShrink: 0, minWidth: 36, textAlign: "center" }}>{fl.label}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, color: "#111", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{doc.name}</div>
+                        <div style={{ fontSize: 11, color: subC, marginTop: 2 }}>
+                          {doc.filename}
+                        </div>
+                      </div>
+                      <div style={{ flexShrink: 0, textAlign: "right" }}>
+                        {doc.year && <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 10, backgroundColor: accent + "15", color: accent }}>{doc.year}</span>}
+                        {doc.category && <div style={{ fontSize: 10, color: subC, marginTop: 3 }}>{doc.category}</div>}
+                      </div>
+                      {already
+                        ? <span style={{ fontSize: 12, color: "#16a34a", fontWeight: 700, flexShrink: 0 }}>✓</span>
+                        : <span style={{ fontSize: 12, color: accent, fontWeight: 700, flexShrink: 0 }}>+</span>}
+                    </div>
+                  );
+                })
+          }
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+
   return (
     <div style={{ padding: "8px 8px 10px 32px", borderTop: `1px dashed ${panelBdr}` }}>
+      {pickerModal}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
         <span style={{ fontSize: 10, fontWeight: 700, color: subC, letterSpacing: "0.06em", textTransform: "uppercase" }}>
           📎 Belege
         </span>
-        <div ref={pickerRef} style={{ position: "relative" }}>
-          <button onClick={() => setShowPicker(v => !v)} style={{
+        <button onClick={() => setShowPicker(true)} style={{
             fontSize: 11, fontWeight: 600, padding: "2px 10px", borderRadius: 5, cursor: "pointer",
             backgroundColor: accent + "14", border: `1px solid ${accent}40`, color: accent,
           }}>+ Beleg verknüpfen</button>
-
-          {showPicker && (
-            <div style={{
-              position: "absolute", right: 0, top: "calc(100% + 4px)", zIndex: 100,
-              backgroundColor: "white", border: `1px solid ${panelBdr}`, borderRadius: 8,
-              boxShadow: "0 8px 28px rgba(0,0,0,0.14)", width: 420, maxHeight: 320,
-              display: "flex", flexDirection: "column",
-            }}>
-              <div style={{ padding: "8px 10px", borderBottom: `1px solid ${panelBdr}` }}>
-                <input autoFocus value={search} onChange={e => setSearch(e.target.value)}
-                  placeholder="Dokument suchen…"
-                  style={{ width: "100%", fontSize: 12, padding: "5px 8px", borderRadius: 5, border: `1px solid ${panelBdr}`, outline: "none" }} />
-              </div>
-              <div style={{ overflowY: "auto", flex: 1 }}>
-                {loading
-                  ? <div style={{ padding: 16, textAlign: "center", fontSize: 12, color: subC }}>Lädt…</div>
-                  : filtered.length === 0
-                    ? <div style={{ padding: 16, textAlign: "center", fontSize: 12, color: subC }}>Keine Dokumente gefunden</div>
-                    : filtered.map(doc => {
-                        const fl = fileLabel(doc.file_type, doc.filename);
-                        const already = linkedIds.has(doc.id);
-                        return (
-                          <div key={doc.id} onClick={() => addBeleg(doc)} style={{
-                            padding: "7px 12px", cursor: already ? "default" : "pointer",
-                            opacity: already ? 0.45 : 1, borderBottom: `1px solid ${panelBdr}`,
-                            display: "flex", alignItems: "center", gap: 8,
-                          }}
-                            onMouseEnter={e => { if (!already) e.currentTarget.style.backgroundColor = accent + "10"; }}
-                            onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; }}>
-                            <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 5px", borderRadius: 3, backgroundColor: fl.bg, color: fl.col, flexShrink: 0 }}>{fl.label}</span>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontSize: 12, color: "#111", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{doc.name}</div>
-                              <div style={{ fontSize: 10, color: subC }}>{doc.year}{doc.category ? ` · ${doc.category}` : ""}</div>
-                            </div>
-                            {already && <span style={{ fontSize: 10, color: subC }}>✓</span>}
-                          </div>
-                        );
-                      })
-                }
-              </div>
-            </div>
-          )}
-        </div>
       </div>
 
       {belege.length === 0
