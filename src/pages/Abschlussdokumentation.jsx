@@ -1425,8 +1425,15 @@ function ErfolgsrechnungTab({ konten, accent, headingC, subC, panelBg, panelBdr,
     .filter(k => ids.includes(k.position_id))
     .reduce((s, k) => s + (parseFloat(k.saldo_ist) || 0), 0);
 
+  // eSign nur für Aufwand-Positionen:
+  // Standard (kein Flip): Aufwand-Salden sind negativ gespeichert → *1 behalten
+  // Mit Flip: Aufwand-Salden sind positiv gespeichert → *-1 auf negativ drehen
   const eSign = signFlipER ? -1 : 1;
-  const sumByIds = (ids) => rawSum(ids) * eSign;
+
+  // Ertrag: immer roh (positiv gespeichert, kein Flip nötig)
+  const sumErtrag = (ids) => rawSum(ids);
+  // Aufwand: eSign anwenden → garantiert negativ (egal ob in DB positiv oder negativ)
+  const sumAufw = (ids) => rawSum(ids) * eSign;
 
   if (konten.length === 0) {
     return (
@@ -1437,22 +1444,23 @@ function ErfolgsrechnungTab({ konten, accent, headingC, subC, panelBg, panelBdr,
     );
   }
 
-  const nettoumsatz   = sumByIds(["ER_UMSATZ","ER_EIGENLEISTUNG","ER_BESTAND"]);
-  const material      = sumByIds(["ER_MATERIAL"]);
-  const bruttogewinn  = nettoumsatz - material;
-  const personal      = sumByIds(["ER_PERSONAL"]);
-  const betrieb       = sumByIds(["ER_BETRIEB"]);
-  const ebitda        = bruttogewinn - personal - betrieb;
-  const abschr        = sumByIds(["ER_ABSCHR"]);
-  const ebit          = ebitda - abschr;
-  const finErtrag     = sumByIds(["ER_FINANZ_ERTRAG","ER_LIEGENSCHAFTEN"]);
-  const finAufw       = sumByIds(["ER_FINANZ_AUFW"]);
-  const finanzergebnis = finErtrag - finAufw;
-  const ebt           = ebit + finanzergebnis;
-  const fremdErtrag   = sumByIds(["ER_FREMD_ERTRAG","ER_AO_ERTRAG"]);
-  const fremdAufw     = sumByIds(["ER_FREMD_AUFW","ER_AO_AUFW"]);
-  const steuern       = sumByIds(["ER_STEUERN"]);
-  const jahresergebnis = ebt + fremdErtrag - fremdAufw - steuern;
+  // Algebraische Addition: Ertrag positiv, Aufwand negativ → einfach addieren
+  const nettoumsatz    = sumErtrag(["ER_UMSATZ","ER_EIGENLEISTUNG","ER_BESTAND"]);
+  const material       = sumAufw(["ER_MATERIAL"]);
+  const bruttogewinn   = nettoumsatz + material;
+  const personal       = sumAufw(["ER_PERSONAL"]);
+  const betrieb        = sumAufw(["ER_BETRIEB"]);
+  const ebitda         = bruttogewinn + personal + betrieb;
+  const abschr         = sumAufw(["ER_ABSCHR"]);
+  const ebit           = ebitda + abschr;
+  const finErtrag      = sumErtrag(["ER_FINANZ_ERTRAG","ER_LIEGENSCHAFTEN"]);
+  const finAufw        = sumAufw(["ER_FINANZ_AUFW"]);
+  const finanzergebnis = finErtrag + finAufw;
+  const ebt            = ebit + finanzergebnis;
+  const fremdErtrag    = sumErtrag(["ER_FREMD_ERTRAG","ER_AO_ERTRAG"]);
+  const fremdAufw      = sumAufw(["ER_FREMD_AUFW","ER_AO_AUFW"]);
+  const steuern        = sumAufw(["ER_STEUERN"]);
+  const jahresergebnis = ebt + fremdErtrag + fremdAufw + steuern;
 
   const props = { accent, headingC, subC };
 
@@ -1470,9 +1478,9 @@ function ErfolgsrechnungTab({ konten, accent, headingC, subC, panelBg, panelBdr,
         </div>
 
         <ERSeparator label="Betriebsertrag" subC={subC} />
-        <ERRow label="Nettoumsatzerlöse" value={sumByIds(["ER_UMSATZ"])} indent {...props} />
-        <ERRow label="Eigenleistungen" value={sumByIds(["ER_EIGENLEISTUNG"])} indent {...props} />
-        <ERRow label="Bestandesveränderungen" value={sumByIds(["ER_BESTAND"])} indent {...props} />
+        <ERRow label="Nettoumsatzerlöse" value={sumErtrag(["ER_UMSATZ"])} indent {...props} />
+        <ERRow label="Eigenleistungen" value={sumErtrag(["ER_EIGENLEISTUNG"])} indent {...props} />
+        <ERRow label="Bestandesveränderungen" value={sumErtrag(["ER_BESTAND"])} indent {...props} />
         <ERRow label="Nettoumsatz Total" value={nettoumsatz} isSubtotal {...props} />
 
         <ERSeparator label="Betriebsaufwand" subC={subC} />
