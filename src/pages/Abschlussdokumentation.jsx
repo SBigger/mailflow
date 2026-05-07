@@ -812,29 +812,30 @@ function BelegeSection({ arbeitspapier, onSave, customerId, selectedYear, accent
     return () => document.removeEventListener("mousedown", handler);
   }, [showPicker]);
 
-  // Docs zurücksetzen wenn Jahr/Kunde wechselt → erzwingt Neuladen
-  useEffect(() => { setDocs([]); }, [customerId, selectedYear]);
+  // Docs zurücksetzen wenn Kunde wechselt → erzwingt Neuladen
+  useEffect(() => { setDocs([]); }, [customerId]);
 
-  // Dokumente laden wenn Picker öffnet
+  // Dokumente laden wenn Picker öffnet — immer das neueste Jahr mit Daten
   useEffect(() => {
     if (!showPicker || !customerId || docs.length > 0) return;
     setLoading(true);
-    // Separate Query-Funktion damit kein Builder-Muations-Bug entsteht
-    const mkQuery = (withYear) => {
-      let q = supabase.from("dokumente")
-        .select("id, name, filename, storage_path, category, year, file_type")
-        .eq("customer_id", customerId)
-        .order("created_at", { ascending: false })
-        .limit(200);
-      if (withYear && selectedYear) q = q.eq("year", selectedYear);
-      return q;
-    };
-    mkQuery(true).then(({ data }) => {
-      if (data?.length > 0) { setDocs(data); setLoading(false); return; }
-      // Kein Resultat mit Jahresfilter → alle Jahre laden
-      mkQuery(false).then(({ data: all }) => { setDocs(all || []); setLoading(false); });
-    });
-  }, [showPicker, customerId, selectedYear]);
+    // Neuestes Jahr ermitteln, dann alle Dokumente dieses Jahres laden
+    supabase.from("dokumente")
+      .select("year")
+      .eq("customer_id", customerId)
+      .order("year", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+      .then(({ data: yr }) => {
+        let q = supabase.from("dokumente")
+          .select("id, name, filename, storage_path, category, year, file_type")
+          .eq("customer_id", customerId)
+          .order("created_at", { ascending: false })
+          .limit(200);
+        if (yr?.year) q = q.eq("year", yr.year);
+        q.then(({ data }) => { setDocs(data || []); setLoading(false); });
+      });
+  }, [showPicker, customerId]);
 
   const linkedIds = new Set(belege.map(b => b.id));
 
