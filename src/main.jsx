@@ -1,3 +1,19 @@
+// process-Polyfill für pdfkit/swissqrbill (nutzt process.nextTick u.a.)
+// Muss VOR allen anderen Imports laufen, damit pdfkit-Chunks process.nextTick finden.
+if (typeof window !== 'undefined') {
+  if (!window.process) window.process = {};
+  if (!window.process.env) window.process.env = {};
+  if (!window.process.nextTick) {
+    window.process.nextTick = (cb, ...args) => queueMicrotask(() => cb(...args));
+  }
+  if (!window.process.cwd) window.process.cwd = () => '/';
+  if (!window.process.platform) window.process.platform = 'browser';
+  if (!window.process.browser) window.process.browser = true;
+  if (!window.process.version) window.process.version = '';
+  if (!window.process.versions) window.process.versions = { node: '0.0.0' };
+  if (!globalThis.process) globalThis.process = window.process;
+}
+
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from '@/App.jsx'
