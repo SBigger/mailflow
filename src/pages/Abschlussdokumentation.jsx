@@ -815,26 +815,17 @@ function BelegeSection({ arbeitspapier, onSave, customerId, selectedYear, accent
   // Docs zurücksetzen wenn Kunde wechselt → erzwingt Neuladen
   useEffect(() => { setDocs([]); }, [customerId]);
 
-  // Dokumente laden wenn Picker öffnet — immer das neueste Jahr mit Daten
+  // Dokumente laden wenn Picker öffnet — alle Dokumente des Mandanten
   useEffect(() => {
     if (!showPicker || !customerId || docs.length > 0) return;
     setLoading(true);
-    // Neuestes Jahr ermitteln, dann alle Dokumente dieses Jahres laden
     supabase.from("dokumente")
-      .select("year")
+      .select("id, name, filename, storage_path, category, year, file_type")
       .eq("customer_id", customerId)
       .order("year", { ascending: false })
-      .limit(1)
-      .maybeSingle()
-      .then(({ data: yr }) => {
-        let q = supabase.from("dokumente")
-          .select("id, name, filename, storage_path, category, year, file_type")
-          .eq("customer_id", customerId)
-          .order("created_at", { ascending: false })
-          .limit(200);
-        if (yr?.year) q = q.eq("year", yr.year);
-        q.then(({ data }) => { setDocs(data || []); setLoading(false); });
-      });
+      .order("created_at", { ascending: false })
+      .limit(500)
+      .then(({ data }) => { setDocs(data || []); setLoading(false); });
   }, [showPicker, customerId]);
 
   const linkedIds = new Set(belege.map(b => b.id));
