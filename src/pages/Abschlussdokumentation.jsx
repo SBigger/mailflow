@@ -643,11 +643,27 @@ function MiniExcel({ data, onSave, accent, headingC, subC, panelBdr }) {
   };
 
   // ── Cell edit ────────────────────────────────────────────────────────────
-  const commitCell = () => {
+  const commitCell = (nextCell) => {
     if (!editCell) return;
     const newRows = rows.map(r => r.id === editCell.rowId
       ? { ...r, cells: { ...r.cells, [editCell.colId]: editVal } } : r);
-    setRows(newRows); setEditCell(null); save(cols, newRows);
+    setRows(newRows); save(cols, newRows);
+    if (nextCell) { setEditCell(nextCell); setEditVal(newRows.find(r => r.id === nextCell.rowId)?.cells?.[nextCell.colId] || ""); }
+    else setEditCell(null);
+  };
+
+  // ── Tab-Navigation ───────────────────────────────────────────────────────
+  const tabToNext = (e, shift) => {
+    e.preventDefault();
+    if (!editCell) return;
+    const colIdx = cols.findIndex(c => c.id === editCell.colId);
+    const rowIdx = rows.findIndex(r => r.id === editCell.rowId);
+    let nextColIdx = shift ? colIdx - 1 : colIdx + 1;
+    let nextRowIdx = rowIdx;
+    if (nextColIdx >= cols.length) { nextColIdx = 0; nextRowIdx = rowIdx + 1; }
+    if (nextColIdx < 0) { nextColIdx = cols.length - 1; nextRowIdx = rowIdx - 1; }
+    if (nextRowIdx < 0 || nextRowIdx >= rows.length) return commitCell(null);
+    commitCell({ rowId: rows[nextRowIdx].id, colId: cols[nextColIdx].id });
   };
 
   // ── Column label edit ────────────────────────────────────────────────────
@@ -745,8 +761,12 @@ function MiniExcel({ data, onSave, accent, headingC, subC, panelBdr }) {
                       onClick={() => !isEd && (setEditCell({ rowId: row.id, colId: col.id }), setEditVal(val))}>
                       {isEd
                         ? <input autoFocus value={editVal} onChange={e => setEditVal(e.target.value)}
-                            onBlur={commitCell}
-                            onKeyDown={e => { if (e.key === "Enter") commitCell(); if (e.key === "Escape") setEditCell(null); if (e.key === "Tab") commitCell(); }}
+                            onBlur={() => commitCell(null)}
+                            onKeyDown={e => {
+                              if (e.key === "Tab") { tabToNext(e, e.shiftKey); }
+                              else if (e.key === "Enter") commitCell(null);
+                              else if (e.key === "Escape") setEditCell(null);
+                            }}
                             style={{ width: "100%", fontSize: 12, padding: "3px 5px", border: `1px solid ${accent}`, borderRadius: 3, outline: "none", color: "#111" }} />
                         : <span style={{ display: "block", padding: "3px 5px", minHeight: 22, color: val ? headingC : subC + "60", cursor: "text", whiteSpace: "pre-wrap", wordBreak: "break-word", overflow: "hidden" }}>
                             {val || "—"}
