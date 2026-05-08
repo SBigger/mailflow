@@ -33,6 +33,10 @@ const C = {
   inputBg: '#f8faf8',
 };
 
+// Stabile Empty-Referenz, damit `byYear[jahr] || EMPTY_FELDER` keinen
+// Infinite-Render in JahrZeile.useEffect ausloest.
+const EMPTY_FELDER = {};
+
 function fmtCHF(val) {
   if (val == null || val === '') return '–';
   const n = parseFloat(val);
@@ -448,7 +452,7 @@ function KundeMatrix({ kunde }) {
               key={jahr}
               kunde={kunde}
               steuerjahr={jahr}
-              jahresFelder={byYear[jahr] || {}}
+              jahresFelder={byYear[jahr] || EMPTY_FELDER}
               kantone={kantone}
               onSave={handleSave}
               isOpen={openYear === jahr}
