@@ -53,11 +53,13 @@ function displayName(kunde) {
 function labelsFor(kunde, kanton) {
   const np = isPrivatperson(kunde);
   return {
-    gewinnLabel:    np ? 'Definitiv veranlagtes Einkommen (CHF)' : 'Definitiv veranlagter Gewinn (CHF)',
-    kapitalLabel:   np ? 'Definitiv veranlagtes Vermögen (CHF)'  : 'Definitiv veranlagtes Kapital (CHF)',
-    gewinnShort:    np ? 'Eink.'                                  : 'Gewinn',
-    kapitalShort:   np ? 'Verm.'                                  : 'Kapital',
-    showKapital:    kanton !== 'Bund',  // Bund hat keine Vermoegens-/Kapitalsteuer
+    gewinnLabel:      np ? 'Definitiv veranlagtes Einkommen (CHF)' : 'Definitiv veranlagter Gewinn (CHF)',
+    kapitalLabel:     np ? 'Definitiv veranlagtes Vermögen (CHF)'  : 'Definitiv veranlagtes Kapital (CHF)',
+    provKapitalLabel: np ? 'Provisorisch steuerbares Vermögen (CHF)' : 'Provisorisch steuerbares Kapital (CHF)',
+    gewinnShort:      np ? 'Eink.'                                  : 'Gewinn',
+    kapitalShort:     np ? 'Verm.'                                  : 'Kapital',
+    provKapitalShort: np ? 'p.Verm.'                                : 'p.Kap.',
+    showKapital:      kanton !== 'Bund',  // Bund hat keine Vermoegens-/Kapitalsteuer
   };
 }
 
@@ -166,6 +168,15 @@ function KantonEditor({ kunde, steuerjahr, kanton, eintrag, onChange, onClose })
           {numInput('prov_steuer')}
         </div>
 
+        {lbl.showKapital && (
+          <div>
+            <label className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: C.muted }}>
+              {lbl.provKapitalLabel}
+            </label>
+            {numInput('prov_kapital')}
+          </div>
+        )}
+
         <div>
           <label className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: C.muted }}>
             {lbl.gewinnLabel}
@@ -256,8 +267,9 @@ function JahrZeile({ kunde, steuerjahr, jahresFelder, kantone, onSave, isOpen, o
             const aktiv   = isOpen && openKanton === kt;
             const lbl     = labelsFor(kunde, kt);
             const hatDaten = eintrag.stand || eintrag.datum
-              || eintrag.prov_steuer != null || eintrag.def_gewinn != null
-              || eintrag.def_kapital != null || (eintrag.belege?.length > 0);
+              || eintrag.prov_steuer != null || eintrag.prov_kapital != null
+              || eintrag.def_gewinn != null || eintrag.def_kapital != null
+              || (eintrag.belege?.length > 0);
             return (
               <button
                 key={kt}
@@ -284,6 +296,11 @@ function JahrZeile({ kunde, steuerjahr, jahresFelder, kantone, onSave, isOpen, o
                   {eintrag.prov_steuer != null && eintrag.prov_steuer !== '' && (
                     <span title="Provisorische Rechnung">
                       prov. <span style={{ color: C.heading, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{fmtCHF(eintrag.prov_steuer)}</span>
+                    </span>
+                  )}
+                  {lbl.showKapital && eintrag.prov_kapital != null && eintrag.prov_kapital !== '' && (
+                    <span title={lbl.provKapitalLabel}>
+                      {lbl.provKapitalShort} <span style={{ color: C.heading, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{fmtCHF(eintrag.prov_kapital)}</span>
                     </span>
                   )}
                   {eintrag.def_gewinn != null && eintrag.def_gewinn !== '' && (
