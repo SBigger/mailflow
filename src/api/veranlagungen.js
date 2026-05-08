@@ -14,18 +14,50 @@
 import { supabase } from '@/api/supabaseClient';
 
 const KANTON_KEY = '_VERANLAGUNG';
+// Reservierter Steuerjahr-Wert fuer Meta-Daten (Kantonsliste, Spalten-
+// reihenfolge etc.). Echte Jahres-Eintraege haben steuerjahr >= 1900.
+const META_YEAR = 1;
 
 export const veranlagungen = {
-  // Alle Jahres-Eintraege fuer einen Kunden
+  // Alle Jahres-Eintraege fuer einen Kunden (ohne Meta-Row)
   async listForCustomer(customerId) {
     const { data, error } = await supabase
       .from('steuerdaten')
       .select('id, steuerjahr, felder, updated_at')
       .eq('customer_id', customerId)
       .eq('kanton', KANTON_KEY)
+      .gte('steuerjahr', 1900)
       .order('steuerjahr', { ascending: false });
     if (error) throw new Error(error.message);
     return data || [];
+  },
+
+  // Kantonsliste pro Kunde (persistente Spalten-Konfiguration)
+  async getKantone(customerId) {
+    const { data, error } = await supabase
+      .from('steuerdaten')
+      .select('felder')
+      .eq('customer_id', customerId)
+      .eq('kanton', KANTON_KEY)
+      .eq('steuerjahr', META_YEAR)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    return data?.felder?.kantone || null;
+  },
+
+  async setKantone(customerId, kantone) {
+    const { data: { user } } = await supabase.auth.getUser();
+    const { error } = await supabase
+      .from('steuerdaten')
+      .upsert({
+        customer_id: customerId,
+        kanton:      KANTON_KEY,
+        steuerjahr:  META_YEAR,
+        felder:      { kantone },
+        updated_at:  new Date().toISOString(),
+        created_by:  user?.id,
+      }, { onConflict: 'customer_id,kanton,steuerjahr' });
+    if (error) throw new Error(error.message);
   },
 
   // Eintrag fuer (Kunde, Jahr) — gibt felder-Map zurueck, ggf. {}

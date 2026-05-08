@@ -18,7 +18,7 @@ import {
 } from '@/api/veranlagungen';
 import {
   Search, Building2, User2, Plus, ChevronRight, X, Save, Trash2,
-  Receipt, Edit3, Check, Calendar, FileText,
+  Receipt, Edit3, Check, Calendar, FileText, GripVertical,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import BelegePicker from '@/components/BelegePicker';
@@ -348,14 +348,54 @@ function KundeMatrix({ kunde }) {
   const [openKanton, setOpenKanton] = useState(null);
   const [neuesJahr, setNeuesJahr] = useState(false);
   const [zusatzJahr, setZusatzJahr] = useState(CY - 5);
-  const [kantone, setKantone] = useState(STANDARD_KANTONE);
   const [showAddKanton, setShowAddKanton] = useState(false);
+  const [dragIdx, setDragIdx] = useState(null);
 
   // Daten laden
   const { data: alle = [], isLoading } = useQuery({
     queryKey: ['veranlagungen_kunde', kunde.id],
     queryFn:  () => db.listForCustomer(kunde.id),
   });
+
+  // Kantonsliste pro Kunde laden (Default = Wohnsitz/Sitz-Kanton + Bund)
+  const { data: dbKantone } = useQuery({
+    queryKey: ['veranlagungen_kantone', kunde.id],
+    queryFn:  () => db.getKantone(kunde.id),
+  });
+  // Lokale Kantonsliste — initialisiert aus DB oder Default
+  const [kantone, setKantone] = useState(null);
+  useEffect(() => {
+    if (kantone !== null) return; // schon initialisiert
+    if (dbKantone === undefined) return; // noch nicht geladen
+    if (dbKantone && dbKantone.length > 0) {
+      setKantone(dbKantone);
+    } else {
+      // Default: Sitz-Kanton + Bund (falls Sitz vorhanden)
+      const def = kunde.kanton ? [kunde.kanton, 'Bund'] : ['Bund'];
+      setKantone(def);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dbKantone, kunde.id]);
+
+  // Wenn Kunde wechselt: Kantonsliste reset
+  useEffect(() => {
+    setKantone(null);
+    setOpenYear(null);
+    setOpenKanton(null);
+  }, [kunde.id]);
+
+  // Speichern der Kantonsliste
+  const kantoneSave = useMutation({
+    mutationFn: (newList) => db.setKantone(kunde.id, newList),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['veranlagungen_kantone', kunde.id] });
+    },
+    onError: e => toast.error('Spalten konnten nicht gespeichert werden: ' + e.message),
+  });
+  function applyKantone(neueListe) {
+    setKantone(neueListe);
+    kantoneSave.mutate(neueListe);
+  }
 
   const byYear = useMemo(() => {
     const m = {};
@@ -384,7 +424,16 @@ function KundeMatrix({ kunde }) {
   }, [byYear]);
   const angezeigteJahre = [...JAHRE, ...zusatzJahre].sort((a, b) => b - a);
 
-  const verfuegbareKantone = ALLE_KANTONE_PLUS_BUND.filter(k => !kantone.includes(k));
+  const verfuegbareKantone = ALLE_KANTONE_PLUS_BUND.filter(k => !(kantone || []).includes(k));
+
+  // Solange Kantonsliste noch nicht initialisiert (DB-Read pendant)
+  if (kantone === null) {
+    return (
+      <main className="flex-1 flex items-center justify-center" style={{ color: C.muted, fontSize: 13 }}>
+        Lädt…
+      </main>
+    );
+  }
 
   return (
     <main className="flex-1 flex flex-col overflow-hidden">
@@ -424,7 +473,7 @@ function KundeMatrix({ kunde }) {
                 ) : verfuegbareKantone.map(k => (
                   <button
                     key={k}
-                    onClick={() => { setKantone(prev => [...prev, k]); setShowAddKanton(false); }}
+                    onClick={() => { applyKantone([...(kantone || []), k]); setShowAddKanton(false); }}
                     className="w-full text-left px-3 py-2 text-xs"
                     style={{ color: C.heading }}
                     onMouseEnter={e => e.currentTarget.style.backgroundColor = C.rowHov}
@@ -467,18 +516,48 @@ function KundeMatrix({ kunde }) {
         </div>
       </div>
 
-      {/* Spaltenkopf */}
+      {/* Spaltenkopf — Drag-and-Drop Reordering via HTML5 native */}
       <div style={{ display: 'flex', alignItems: 'stretch', borderBottom: `1px solid ${C.panelBdr}`, backgroundColor: C.accentBg }}>
         <div style={{ width: 90, flexShrink: 0, padding: '8px 12px', borderRight: `1px solid ${C.panelBdr}`, fontSize: 11, fontWeight: 700, color: C.accent, letterSpacing: '0.04em' }}>JAHR</div>
         <div className="flex-1 flex">
-          {kantone.map(kt => (
-            <div key={kt} style={{ flex: 1, minWidth: 160, padding: '8px 12px', borderRight: `1px solid ${C.panelBdr}`, fontSize: 11, fontWeight: 700, color: C.accent, letterSpacing: '0.04em', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span>{kt === 'Bund' ? 'BUND (DBSt)' : kt.toUpperCase()}</span>
-              {!STANDARD_KANTONE.includes(kt) && (
-                <button onClick={() => setKantone(prev => prev.filter(x => x !== kt))} title="Spalte entfernen" style={{ color: C.muted, opacity: 0.5 }}>
-                  <X className="w-3 h-3" />
-                </button>
-              )}
+          {kantone.map((kt, idx) => (
+            <div
+              key={kt}
+              draggable
+              onDragStart={() => setDragIdx(idx)}
+              onDragOver={e => e.preventDefault()}
+              onDrop={() => {
+                if (dragIdx == null || dragIdx === idx) return;
+                const next = [...kantone];
+                const [moved] = next.splice(dragIdx, 1);
+                next.splice(idx, 0, moved);
+                applyKantone(next);
+                setDragIdx(null);
+              }}
+              onDragEnd={() => setDragIdx(null)}
+              style={{
+                flex: 1, minWidth: 160, padding: '8px 12px',
+                borderRight: `1px solid ${C.panelBdr}`,
+                fontSize: 11, fontWeight: 700, color: C.accent, letterSpacing: '0.04em',
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                cursor: 'grab',
+                opacity: dragIdx === idx ? 0.4 : 1,
+                backgroundColor: dragIdx != null && dragIdx !== idx ? C.accent + '22' : 'transparent',
+                transition: 'background 0.1s, opacity 0.1s',
+              }}
+              title="Per Drag & Drop verschieben"
+            >
+              <div className="flex items-center gap-1">
+                <GripVertical className="w-3 h-3" style={{ color: C.muted, opacity: 0.6 }} />
+                <span>{kt === 'Bund' ? 'BUND (DBSt)' : kt.toUpperCase()}</span>
+              </div>
+              <button
+                onClick={() => applyKantone(kantone.filter(x => x !== kt))}
+                title="Spalte entfernen"
+                style={{ color: C.muted, opacity: 0.5 }}
+              >
+                <X className="w-3 h-3" />
+              </button>
             </div>
           ))}
         </div>
@@ -516,7 +595,9 @@ export default function Veranlagungen() {
   const [pendingIds, setPendingIds] = useState(new Set());
   const [addingNew, setAddingNew] = useState(false);
   const [addSearch, setAddSearch] = useState('');
+  const [addHighlight, setAddHighlight] = useState(0); // Index fuer ArrowKey-Nav
   const addRef = useRef(null);
+  const highlightRef = useRef(null); // gehoeriges DOM-Element zum Auto-Scroll
 
   // Schliessen, wenn aussen geklickt
   useEffect(() => {
@@ -527,6 +608,16 @@ export default function Veranlagungen() {
     document.addEventListener('mousedown', handle);
     return () => document.removeEventListener('mousedown', handle);
   }, [addingNew]);
+
+  // Highlight-Index zuruecksetzen, wenn Suchbegriff sich aendert
+  useEffect(() => { setAddHighlight(0); }, [addSearch, addingNew]);
+
+  // Aktiv markierten Eintrag in den sichtbaren Bereich scrollen
+  useEffect(() => {
+    if (highlightRef.current?.scrollIntoView) {
+      highlightRef.current.scrollIntoView({ block: 'nearest' });
+    }
+  }, [addHighlight]);
 
   // ALLE Kunden (juristische + natuerliche Personen)
   const { data: alleKunden = [] } = useQuery({
@@ -600,7 +691,22 @@ export default function Veranlagungen() {
                         autoFocus
                         value={addSearch}
                         onChange={e => setAddSearch(e.target.value)}
-                        placeholder="Firma suchen…"
+                        onKeyDown={e => {
+                          if (e.key === 'ArrowDown') {
+                            e.preventDefault();
+                            setAddHighlight(i => Math.min(verfuegbarGefiltert.length - 1, i + 1));
+                          } else if (e.key === 'ArrowUp') {
+                            e.preventDefault();
+                            setAddHighlight(i => Math.max(0, i - 1));
+                          } else if (e.key === 'Enter') {
+                            e.preventDefault();
+                            const pick = verfuegbarGefiltert[addHighlight];
+                            if (pick) addKunde(pick);
+                          } else if (e.key === 'Escape') {
+                            setAddingNew(false);
+                          }
+                        }}
+                        placeholder="Firma suchen… (↑↓ Enter)"
                         className="w-full rounded-lg pl-7 pr-3 py-1.5 text-xs outline-none"
                         style={{ backgroundColor: C.inputBg, border: `1px solid ${C.panelBdr}`, color: C.heading }}
                       />
@@ -609,22 +715,28 @@ export default function Veranlagungen() {
                   <div style={{ maxHeight: 220, overflowY: 'auto' }}>
                     {verfuegbarGefiltert.length === 0 ? (
                       <div className="px-3 py-3 text-xs text-center" style={{ color: C.muted }}>Keine weiteren Firmen</div>
-                    ) : verfuegbarGefiltert.map(k => (
-                      <button
-                        key={k.id}
-                        onClick={() => addKunde(k)}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs"
-                        style={{ color: C.heading }}
-                        onMouseEnter={e => e.currentTarget.style.backgroundColor = C.rowHov}
-                        onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
-                      >
-                        {isPrivatperson(k)
-                          ? <User2 className="w-3 h-3 flex-shrink-0" style={{ color: '#92400e' }} />
-                          : <Building2 className="w-3 h-3 flex-shrink-0" style={{ color: C.muted }} />}
-                        <span className="flex-1 truncate">{displayName(k)}</span>
-                        {k.ort && <span className="text-[9px]" style={{ color: C.muted }}>{k.ort}</span>}
-                      </button>
-                    ))}
+                    ) : verfuegbarGefiltert.map((k, idx) => {
+                      const focused = idx === addHighlight;
+                      return (
+                        <button
+                          key={k.id}
+                          ref={focused ? highlightRef : null}
+                          onClick={() => addKunde(k)}
+                          onMouseEnter={() => setAddHighlight(idx)}
+                          className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs"
+                          style={{
+                            color: C.heading,
+                            backgroundColor: focused ? C.accent + '20' : 'transparent',
+                          }}
+                        >
+                          {isPrivatperson(k)
+                            ? <User2 className="w-3 h-3 flex-shrink-0" style={{ color: '#92400e' }} />
+                            : <Building2 className="w-3 h-3 flex-shrink-0" style={{ color: C.muted }} />}
+                          <span className="flex-1 truncate">{displayName(k)}</span>
+                          {k.ort && <span className="text-[9px]" style={{ color: C.muted }}>{k.ort}</span>}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               )}
