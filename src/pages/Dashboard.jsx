@@ -418,7 +418,7 @@ export default function Dashboard() {
                 <div className={`flex items-center gap-1 text-xs ${isOverdue ? 'text-red-500' : ''}`}
                   style={!isOverdue ? { color: textMuted } : {}}>
                   <Clock className="h-3 w-3" />
-                  {format(new Date(task.due_date), 'dd.MM.yyyy', { locale: de })}
+                  {fmtDate(task.due_date)}
                 </div>
               )}
             </div>
@@ -444,6 +444,10 @@ export default function Dashboard() {
   const formatTime = (iso) => {
     if (!iso) return '';
     try { return format(new Date(iso), 'HH:mm'); } catch { return ''; }
+  };
+  const fmtDate = (iso, fmt = 'dd.MM.yyyy') => {
+    if (!iso) return '—';
+    try { const d = new Date(iso); if (isNaN(d.getTime())) return '—'; return format(d, fmt, { locale: de }); } catch { return '—'; }
   };
 
   const containerPadding = isMobile ? 'p-3' : 'p-6';
@@ -837,7 +841,7 @@ export default function Dashboard() {
                               <div className="flex items-center gap-2 mt-2">
                                 <div className="flex items-center gap-1 text-xs" style={{ color: textMuted }}>
                                   <Clock className="h-3 w-3" />
-                                  {format(new Date(mail.received_date), 'dd.MM.yyyy HH:mm', { locale: de })}
+                                  {fmtDate(mail.received_date, 'dd.MM.yyyy HH:mm')}
                                 </div>
                               </div>
                             </div>
@@ -981,7 +985,7 @@ export default function Dashboard() {
                                 {u.created_at && (
                                   <div className="flex items-center gap-1 text-xs mt-2" style={{ color: textMuted }}>
                                     <Clock className="h-3 w-3" />
-                                    {format(new Date(u.created_at), 'dd.MM.yyyy HH:mm', { locale: de })}
+                                    {fmtDate(u.created_at, 'dd.MM.yyyy HH:mm')}
                                   </div>
                                 )}
                               </div>
