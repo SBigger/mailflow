@@ -8,7 +8,7 @@ export const FAVORITEN_IDS = new Set([
   // Veranlagung
   'veranlagungsstand', 'veranlagungsdatum',
   'prov_steuer_bund', 'definitiver_gewinn_bund',
-  'bemerkung_veranlagung',
+  'bemerkung_veranlagung', 'veranlagung_belege',
 ]);
 
 export const ESTV_19 = {
@@ -72,6 +72,7 @@ export const ESTV_19 = {
         { id: 'prov_steuer_bund',      label: 'Provisorische Steuer Bund (CHF)', typ: 'betrag', pflicht: false },
         { id: 'definitiver_gewinn_bund', label: 'Definitiv veranlagter Gewinn Bund (CHF)', typ: 'betrag', pflicht: false },
         { id: 'bemerkung_veranlagung', label: 'Bemerkung Veranlagung', typ: 'textarea', pflicht: false },
+        { id: 'veranlagung_belege',    label: 'Verknüpfte Veranlagungs-Dokumente', typ: 'belege', pflicht: false, kategorie: 'steuern' },
       ],
     },
   ],

@@ -38,7 +38,7 @@ export const FAVORITEN_IDS = new Set([
   'veranlagungsstand', 'veranlagungsdatum',
   'prov_steuer_kt', 'prov_steuer_bund',
   'definitiver_gewinn_kt', 'definitiver_gewinn_bund',
-  'bemerkung_veranlagung',
+  'bemerkung_veranlagung', 'veranlagung_belege',
 ]);
 
 export const SG_JP1B = {
@@ -144,6 +144,7 @@ export const SG_JP1B = {
         { id: 'definitiver_gewinn_kt', label: 'Definitiv veranlagter Gewinn Kanton (CHF)', typ: 'betrag', pflicht: false },
         { id: 'definitiver_gewinn_bund', label: 'Definitiv veranlagter Gewinn Bund (CHF)',   typ: 'betrag', pflicht: false },
         { id: 'bemerkung_veranlagung', label: 'Bemerkung Veranlagung', typ: 'textarea', pflicht: false },
+        { id: 'veranlagung_belege',    label: 'Verknüpfte Veranlagungs-Dokumente', typ: 'belege', pflicht: false, kategorie: 'steuern' },
       ],
     },
   ],
