@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { motion } from "framer-motion";
-import { format } from "date-fns";
+import { format, isValid } from "date-fns";
 import { de } from "date-fns/locale";
 import { entities, functions, auth, supabase, uploadFile } from "@/api/supabaseClient";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -512,10 +512,10 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }) {
             </div>
           )}
 
-          {task.created_date && (
+          {task.created_date && isValid(new Date(task.created_date)) && (
             <div className="text-xs pt-4 border-t space-y-1" style={{ color: mutedText, borderColor: headerBorder }}>
               <div>Erstellt: {format(new Date(task.created_date), "dd.MM.yyyy HH:mm", { locale: de })}</div>
-              {task.completed && task.updated_date && (
+              {task.completed && task.updated_date && isValid(new Date(task.updated_date)) && (
                 <div style={{ color: '#16a34a' }}>Abgeschlossen: {format(new Date(task.updated_date), "dd.MM.yyyy HH:mm", { locale: de })}</div>
               )}
             </div>
@@ -540,7 +540,7 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }) {
                     </div>
                     <div className={`max-w-[80%] flex flex-col gap-0.5 ${isMe ? 'items-end' : 'items-start'}`}>
                       <div className="text-xs" style={{ color: mutedText }}>
-                        {isMe ? 'Du' : (comment.user_name || comment.user_email)} · {format(new Date(comment.created_at), "dd.MM. HH:mm", { locale: de })}
+                        {isMe ? 'Du' : (comment.user_name || comment.user_email)}{comment.created_at && isValid(new Date(comment.created_at)) ? ` · ${format(new Date(comment.created_at), "dd.MM. HH:mm", { locale: de })}` : ''}
                       </div>
                       <div className="text-sm px-3 py-2" style={{
                         backgroundColor: isMe ? accentColor : inputBg,

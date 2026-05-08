@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { ChevronDown, ChevronRight, ChevronUp, Circle, CheckCircle2, Clock, Building2, AlertTriangle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { format } from "date-fns";
+import { format, isValid } from "date-fns";
 import { de } from "date-fns/locale";
 import { useQuery } from "@tanstack/react-query";
 import { entities, functions, auth } from "@/api/supabaseClient";
@@ -56,7 +56,7 @@ function renderCell(key, task, priority, customer, user, theme, verantwortlichUs
         </div>
       ) : <span className="text-xs" style={{ color: secondaryText }}>—</span>;
     case "due_date":
-      return task.due_date ? (
+      return task.due_date && isValid(new Date(task.due_date)) ? (
         <div className="flex items-center gap-1 text-xs whitespace-nowrap" style={{ color: primaryText }}>
           <Clock className="h-3 w-3" />
           {format(new Date(task.due_date), "dd.MM.yyyy", { locale: de })}

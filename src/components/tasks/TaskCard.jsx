@@ -2,7 +2,7 @@ import React, { useState, useEffect, useContext } from "react";
 import { Draggable } from "@hello-pangea/dnd";
 import { Clock, AlertTriangle, User, Mail, CheckCircle2, Circle, GripVertical } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { format } from "date-fns";
+import { format, isValid } from "date-fns";
 import { de } from "date-fns/locale";
 import { entities, supabase } from "@/api/supabaseClient";
 import { useMutation } from "@tanstack/react-query";
@@ -191,7 +191,7 @@ export default function TaskCard({ task, index, onClick, onToggleComplete, curre
                   </Badge>
                 )}
 
-                {task.due_date && (
+                {task.due_date && isValid(new Date(task.due_date)) && (
                   <Badge variant="outline" className="text-xs gap-1" style={{ backgroundColor: isArtis ? '#f4f7f4' : isLight ? '#ebebf4' : 'rgba(39,39,42,0.5)', borderColor: isArtis ? '#e0e0e0' : isLight ? '#d4d4e8' : '#3f3f46', color: mutedColor }}>
                     <Clock className="h-3 w-3" />
                     {format(new Date(task.due_date), "dd.MM", { locale: de })}
