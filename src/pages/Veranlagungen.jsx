@@ -17,7 +17,7 @@ import {
   ALLE_KANTONE_PLUS_BUND,
 } from '@/api/veranlagungen';
 import {
-  Search, Building2, Plus, ChevronRight, X, Save, Trash2,
+  Search, Building2, User2, Plus, ChevronRight, X, Save, Trash2,
   Receipt, Edit3, Check, Calendar, FileText,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -36,6 +36,30 @@ const C = {
 // Stabile Empty-Referenz, damit `byYear[jahr] || EMPTY_FELDER` keinen
 // Infinite-Render in JahrZeile.useEffect ausloest.
 const EMPTY_FELDER = {};
+
+// ── Person-Typ-Helfer ────────────────────────────────────────────────────────
+function isPrivatperson(kunde) {
+  return kunde?.person_type === 'privatperson' || kunde?.person_type === 'privatperson_partner';
+}
+function displayName(kunde) {
+  if (!kunde) return '';
+  if (isPrivatperson(kunde)) {
+    const np = [kunde.vorname, kunde.nachname].filter(Boolean).join(' ');
+    return np || kunde.company_name || '–';
+  }
+  return kunde.company_name || '–';
+}
+// Liefert die richtigen Labels je Person-Typ + Steuerstelle (Kanton vs Bund)
+function labelsFor(kunde, kanton) {
+  const np = isPrivatperson(kunde);
+  return {
+    gewinnLabel:    np ? 'Definitiv veranlagtes Einkommen (CHF)' : 'Definitiv veranlagter Gewinn (CHF)',
+    kapitalLabel:   np ? 'Definitiv veranlagtes Vermögen (CHF)'  : 'Definitiv veranlagtes Kapital (CHF)',
+    gewinnShort:    np ? 'Eink.'                                  : 'Gewinn',
+    kapitalShort:   np ? 'Verm.'                                  : 'Kapital',
+    showKapital:    kanton !== 'Bund',  // Bund hat keine Vermoegens-/Kapitalsteuer
+  };
+}
 
 function fmtCHF(val) {
   if (val == null || val === '') return '–';
@@ -60,7 +84,23 @@ function standBadge(stand) {
 // ── Editor fuer einen Kanton-Eintrag ─────────────────────────────────────────
 function KantonEditor({ kunde, steuerjahr, kanton, eintrag, onChange, onClose }) {
   const isBund = kanton === 'Bund';
-  const set = (key, val) => onChange({ ...eintrag, [key]: val });
+  const lbl   = labelsFor(kunde, kanton);
+  const set   = (key, val) => onChange({ ...eintrag, [key]: val });
+
+  const numInput = (key, placeholder = '0.00') => (
+    <input
+      type="number" step="0.01"
+      value={eintrag[key] ?? ''}
+      onChange={e => set(key, e.target.value === '' ? '' : parseFloat(e.target.value))}
+      placeholder={placeholder}
+      style={{
+        width: '100%', height: 32, padding: '5px 10px',
+        fontSize: 12, color: C.heading, textAlign: 'right',
+        backgroundColor: C.inputBg, border: `1px solid ${C.panelBdr}`,
+        borderRadius: 6, marginTop: 4, fontVariantNumeric: 'tabular-nums',
+      }}
+    />
+  );
 
   return (
     <div style={{
@@ -71,7 +111,7 @@ function KantonEditor({ kunde, steuerjahr, kanton, eintrag, onChange, onClose })
         <div className="flex items-center gap-2">
           <Edit3 className="w-4 h-4" style={{ color: C.accent }} />
           <span style={{ fontSize: 13, fontWeight: 700, color: C.heading }}>
-            {kanton === 'Bund' ? 'Direkte Bundessteuer' : `Kanton ${kanton}`} – {steuerjahr}
+            {isBund ? 'Direkte Bundessteuer' : `Kanton ${kanton}`} – {steuerjahr}
           </span>
         </div>
         <button onClick={onClose} title="Schliessen" style={{ color: C.muted }}>
@@ -121,39 +161,26 @@ function KantonEditor({ kunde, steuerjahr, kanton, eintrag, onChange, onClose })
 
         <div>
           <label className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: C.muted }}>
-            Provisorische Steuer (CHF)
+            Provisorische Rechnung {isBund ? 'Bund' : 'Kanton'} (CHF)
           </label>
-          <input
-            type="number" step="0.01"
-            value={eintrag.prov_steuer ?? ''}
-            onChange={e => set('prov_steuer', e.target.value === '' ? '' : parseFloat(e.target.value))}
-            placeholder="0.00"
-            style={{
-              width: '100%', height: 32, padding: '5px 10px',
-              fontSize: 12, color: C.heading, textAlign: 'right',
-              backgroundColor: C.inputBg, border: `1px solid ${C.panelBdr}`,
-              borderRadius: 6, marginTop: 4, fontVariantNumeric: 'tabular-nums',
-            }}
-          />
+          {numInput('prov_steuer')}
         </div>
 
         <div>
           <label className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: C.muted }}>
-            Definitiv veranlagter Gewinn (CHF)
+            {lbl.gewinnLabel}
           </label>
-          <input
-            type="number" step="0.01"
-            value={eintrag.def_gewinn ?? ''}
-            onChange={e => set('def_gewinn', e.target.value === '' ? '' : parseFloat(e.target.value))}
-            placeholder="0.00"
-            style={{
-              width: '100%', height: 32, padding: '5px 10px',
-              fontSize: 12, color: C.heading, textAlign: 'right',
-              backgroundColor: C.inputBg, border: `1px solid ${C.panelBdr}`,
-              borderRadius: 6, marginTop: 4, fontVariantNumeric: 'tabular-nums',
-            }}
-          />
+          {numInput('def_gewinn')}
         </div>
+
+        {lbl.showKapital && (
+          <div>
+            <label className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: C.muted }}>
+              {lbl.kapitalLabel}
+            </label>
+            {numInput('def_kapital')}
+          </div>
+        )}
 
         <div className="col-span-2">
           <label className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: C.muted }}>
@@ -227,7 +254,10 @@ function JahrZeile({ kunde, steuerjahr, jahresFelder, kantone, onSave, isOpen, o
           {kantone.map(kt => {
             const eintrag = draft[kt] || {};
             const aktiv   = isOpen && openKanton === kt;
-            const hatDaten = eintrag.stand || eintrag.datum || eintrag.prov_steuer != null || eintrag.def_gewinn != null || (eintrag.belege?.length > 0);
+            const lbl     = labelsFor(kunde, kt);
+            const hatDaten = eintrag.stand || eintrag.datum
+              || eintrag.prov_steuer != null || eintrag.def_gewinn != null
+              || eintrag.def_kapital != null || (eintrag.belege?.length > 0);
             return (
               <button
                 key={kt}
@@ -250,15 +280,20 @@ function JahrZeile({ kunde, steuerjahr, jahresFelder, kantone, onSave, isOpen, o
                     <span style={{ fontSize: 10, color: C.muted }}>–</span>
                   )}
                 </div>
-                <div className="flex items-center gap-3" style={{ fontSize: 11, color: C.sub }}>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1" style={{ fontSize: 11, color: C.sub }}>
                   {eintrag.prov_steuer != null && eintrag.prov_steuer !== '' && (
-                    <span title="Provisorische Steuer">
+                    <span title="Provisorische Rechnung">
                       prov. <span style={{ color: C.heading, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{fmtCHF(eintrag.prov_steuer)}</span>
                     </span>
                   )}
                   {eintrag.def_gewinn != null && eintrag.def_gewinn !== '' && (
-                    <span title="Definitiver Gewinn">
-                      Gewinn <span style={{ color: C.heading, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{fmtCHF(eintrag.def_gewinn)}</span>
+                    <span title={lbl.gewinnLabel}>
+                      {lbl.gewinnShort} <span style={{ color: C.heading, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{fmtCHF(eintrag.def_gewinn)}</span>
+                    </span>
+                  )}
+                  {lbl.showKapital && eintrag.def_kapital != null && eintrag.def_kapital !== '' && (
+                    <span title={lbl.kapitalLabel}>
+                      {lbl.kapitalShort} <span style={{ color: C.heading, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{fmtCHF(eintrag.def_kapital)}</span>
                     </span>
                   )}
                   {eintrag.datum && (
@@ -357,7 +392,15 @@ function KundeMatrix({ kunde }) {
       <div className="flex-shrink-0 px-5 py-3 flex items-center justify-between"
         style={{ borderBottom: `1px solid ${C.panelBdr}`, backgroundColor: C.panelBg }}>
         <div>
-          <h2 className="text-base font-bold" style={{ color: C.heading }}>{kunde.company_name}</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-base font-bold" style={{ color: C.heading }}>{displayName(kunde)}</h2>
+            <span style={{
+              fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 8,
+              backgroundColor: isPrivatperson(kunde) ? '#fef3c7' : C.accentBg,
+              color: isPrivatperson(kunde) ? '#92400e' : C.accent,
+              letterSpacing: '0.04em',
+            }}>{isPrivatperson(kunde) ? 'NP' : 'JP'}</span>
+          </div>
           <p className="text-xs" style={{ color: C.sub }}>
             {[kunde.plz, kunde.ort].filter(Boolean).join(' ')}
             {kunde.kanton ? ` · ${kunde.kanton}` : ''}
@@ -485,15 +528,13 @@ export default function Veranlagungen() {
     return () => document.removeEventListener('mousedown', handle);
   }, [addingNew]);
 
-  // Alle Unternehmenskunden
+  // ALLE Kunden (juristische + natuerliche Personen)
   const { data: alleKunden = [] } = useQuery({
-    queryKey: ['customers_all'],
+    queryKey: ['customers_all_veranlagungen'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('customers')
-        .select('id, company_name, ort, plz, strasse, kanton, person_type, aktiv')
-        .neq('person_type', 'privatperson')
-        .neq('person_type', 'privatperson_partner')
+        .select('id, company_name, vorname, nachname, ort, plz, strasse, kanton, person_type, aktiv')
         .order('company_name');
       if (error) throw new Error(error.message);
       return (data || []).filter(k => k.aktiv !== false);
@@ -508,11 +549,11 @@ export default function Veranlagungen() {
   const mitDatenSet = new Set(mitDaten);
 
   const listeKunden = alleKunden.filter(k => mitDatenSet.has(k.id) || pendingIds.has(k.id));
-  const gefiltert = listeKunden.filter(k => !search || k.company_name?.toLowerCase().includes(search.toLowerCase()));
+  const gefiltert = listeKunden.filter(k => !search || displayName(k).toLowerCase().includes(search.toLowerCase()));
 
   const verfuegbar = alleKunden.filter(k => !mitDatenSet.has(k.id) && !pendingIds.has(k.id));
   const verfuegbarGefiltert = verfuegbar.filter(k =>
-    !addSearch || k.company_name?.toLowerCase().includes(addSearch.toLowerCase())
+    !addSearch || displayName(k).toLowerCase().includes(addSearch.toLowerCase())
   );
 
   function selectKunde(k) {
@@ -577,8 +618,10 @@ export default function Veranlagungen() {
                         onMouseEnter={e => e.currentTarget.style.backgroundColor = C.rowHov}
                         onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
                       >
-                        <Building2 className="w-3 h-3 flex-shrink-0" style={{ color: C.muted }} />
-                        <span className="flex-1 truncate">{k.company_name}</span>
+                        {isPrivatperson(k)
+                          ? <User2 className="w-3 h-3 flex-shrink-0" style={{ color: '#92400e' }} />
+                          : <Building2 className="w-3 h-3 flex-shrink-0" style={{ color: C.muted }} />}
+                        <span className="flex-1 truncate">{displayName(k)}</span>
                         {k.ort && <span className="text-[9px]" style={{ color: C.muted }}>{k.ort}</span>}
                       </button>
                     ))}
@@ -626,9 +669,9 @@ export default function Veranlagungen() {
               >
                 <span style={{
                   width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
-                  backgroundColor: isPending ? C.muted + '60' : C.accent + '99',
-                }} />
-                <span className="flex-1 truncate">{k.company_name}</span>
+                  backgroundColor: isPending ? C.muted + '60' : (isPrivatperson(k) ? '#f59e0b' : C.accent + '99'),
+                }} title={isPrivatperson(k) ? 'Natürliche Person' : 'Juristische Person'} />
+                <span className="flex-1 truncate">{displayName(k)}</span>
                 {k.ort && <span className="text-[9px] truncate max-w-[55px]" style={{ color: C.muted }}>{k.ort}</span>}
                 {isActive && <ChevronRight className="w-3 h-3 flex-shrink-0" style={{ color: C.accent }} />}
               </button>
