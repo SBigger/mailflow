@@ -37,6 +37,7 @@ const Abschlussdokumentation = lazy(() => import('./pages/Abschlussdokumentation
 const Whiteboard            = lazy(() => import('./pages/Whiteboard'));
 const Auswertungen          = lazy(() => import('./pages/Auswertungen'));
 const Steuern               = lazy(() => import('./pages/Steuern'));
+const Veranlagungen         = lazy(() => import('./pages/Veranlagungen'));
 const Login                 = lazy(() => import('./pages/Login'));
 const ResetPassword         = lazy(() => import('./pages/ResetPassword'));
 const MFASetup              = lazy(() => import("./pages/MFASetup.jsx"));
@@ -109,6 +110,7 @@ function AuthenticatedApp() {
             <Route path="/Whiteboard" element={<Whiteboard />} />
             <Route path="/Auswertungen" element={<Auswertungen />} />
             <Route path="/Steuern" element={<Steuern />} />
+            <Route path="/Veranlagungen" element={<Veranlagungen />} />
             <Route path="/Promptvorlagen" element={<Promptvorlagen />} />
             <Route path="/TelefonDashboard" element={<TelefonDashboard />} />
             <Route path="/Jahresplanung" element={<Jahresplanung />} />

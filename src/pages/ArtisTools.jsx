@@ -1,7 +1,7 @@
 import React, { useContext } from "react";
 import { useNavigate } from "react-router-dom";
 import { ThemeContext } from "@/Layout";
-import { BookOpen, Car, FileText, UserCog, ChevronRight, Wrench, PenLine, Presentation, FileSpreadsheet, Sparkles, Phone, CalendarRange, CalendarDays, Scale } from "lucide-react";
+import { BookOpen, Car, FileText, UserCog, ChevronRight, Wrench, PenLine, Presentation, FileSpreadsheet, Sparkles, Phone, CalendarRange, CalendarDays, Scale, Receipt } from "lucide-react";
 
 const TOOLS = [
   {
@@ -57,6 +57,15 @@ const TOOLS = [
     color: "#8a3b5b",
     bg: "#f5e0ea",
     route: "/Steuern",
+  },
+  {
+    id: "veranlagungen",
+    title: "Veranlagungen",
+    description: "Veranlagungsstand, provisorische Steuern & definitiver Gewinn pro Kunde, Jahr und Kanton — mit Verknüpfung zu Veranlagungs-Dokumenten",
+    icon: Receipt,
+    color: "#2e6b8a",
+    bg: "#dde9f3",
+    route: "/Veranlagungen",
   },
   {
     id: "whiteboard",

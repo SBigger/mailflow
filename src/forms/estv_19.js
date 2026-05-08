@@ -5,10 +5,6 @@ export const FAVORITEN_IDS = new Set([
   'firma_name', 'uid', 'gj_von', 'gj_bis',
   'beteiligung_1_name', 'beteiligung_1_quote', 'beteiligung_1_bw', 'beteiligung_1_ertrag',
   'bruttoertrag_total', 'beteiligungsabzug_chf',
-  // Veranlagung
-  'veranlagungsstand', 'veranlagungsdatum',
-  'prov_steuer_bund', 'definitiver_gewinn_bund',
-  'bemerkung_veranlagung', 'veranlagung_belege',
 ]);
 
 export const ESTV_19 = {
@@ -60,19 +56,6 @@ export const ESTV_19 = {
         { id: 'reingewinn_vor_abzug',      label: 'Steuerbarer Reingewinn vor Beteiligungsabzug',   typ: 'betrag', pflicht: false, acroField: 'ReingewinnVorAbzug' },
         { id: 'beteiligungsabzug_chf',     label: 'Beteiligungsabzug (CHF)',                        typ: 'betrag', pflicht: false, acroField: 'Beteiligungsabzug' },
         { id: 'reingewinn_nach_abzug',     label: 'Steuerbarer Reingewinn nach Beteiligungsabzug',  typ: 'betrag', pflicht: false, acroField: 'ReingewinnNachAbzug' },
-      ],
-    },
-    {
-      id: 'veranlagung',
-      titel: 'Veranlagung & Provisorische Steuern',
-      felder: [
-        { id: 'veranlagungsstand',     label: 'Veranlagungsstand', typ: 'select', pflicht: false,
-          optionen: ['offen', 'provisorisch', 'definitiv veranlagt', 'Einsprache', 'Rekurs'] },
-        { id: 'veranlagungsdatum',     label: 'Veranlagungsdatum', typ: 'datum',  pflicht: false },
-        { id: 'prov_steuer_bund',      label: 'Provisorische Steuer Bund (CHF)', typ: 'betrag', pflicht: false },
-        { id: 'definitiver_gewinn_bund', label: 'Definitiv veranlagter Gewinn Bund (CHF)', typ: 'betrag', pflicht: false },
-        { id: 'bemerkung_veranlagung', label: 'Bemerkung Veranlagung', typ: 'textarea', pflicht: false },
-        { id: 'veranlagung_belege',    label: 'Verknüpfte Veranlagungs-Dokumente', typ: 'belege', pflicht: false, kategorie: 'steuern' },
       ],
     },
   ],

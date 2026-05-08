@@ -11,11 +11,6 @@ export const FAVORITEN_IDS = new Set([
   'bilanz_dividende', 'bilanz_tantiemen',
   'bilanz_gesetzl_gewinnres', 'bilanz_freiw_gewinnres',
   'bilanz_kapitaleinlagen', 'bilanz_vortrag_neu', 'bilanz_total',
-  // Veranlagung
-  'veranlagungsstand', 'veranlagungsdatum',
-  'prov_steuer_kt', 'prov_steuer_bund',
-  'definitiver_gewinn_kt', 'definitiver_gewinn_bund',
-  'bemerkung_veranlagung', 'veranlagung_belege',
 ]);
 
 export const TG_50I = {
@@ -99,21 +94,6 @@ export const TG_50I = {
       titel: 'Diverses',
       felder: [
         { id: 'beteiligungsabzug_ja',  label: 'Beteiligungsabzug beantragt',       typ: 'checkbox', pflicht: false, acroField: 'beteiligung.check' },
-      ],
-    },
-    {
-      id: 'veranlagung',
-      titel: 'Veranlagung & Provisorische Steuern',
-      felder: [
-        { id: 'veranlagungsstand',     label: 'Veranlagungsstand', typ: 'select', pflicht: false,
-          optionen: ['offen', 'provisorisch', 'definitiv veranlagt', 'Einsprache', 'Rekurs'] },
-        { id: 'veranlagungsdatum',     label: 'Veranlagungsdatum', typ: 'datum',  pflicht: false },
-        { id: 'prov_steuer_kt',        label: 'Provisorische Steuer Kanton (CHF)', typ: 'betrag', pflicht: false },
-        { id: 'prov_steuer_bund',      label: 'Provisorische Steuer Bund (CHF)',   typ: 'betrag', pflicht: false },
-        { id: 'definitiver_gewinn_kt', label: 'Definitiv veranlagter Gewinn Kanton (CHF)', typ: 'betrag', pflicht: false },
-        { id: 'definitiver_gewinn_bund', label: 'Definitiv veranlagter Gewinn Bund (CHF)',   typ: 'betrag', pflicht: false },
-        { id: 'bemerkung_veranlagung', label: 'Bemerkung Veranlagung', typ: 'textarea', pflicht: false },
-        { id: 'veranlagung_belege',    label: 'Verknüpfte Veranlagungs-Dokumente', typ: 'belege', pflicht: false, kategorie: 'steuern' },
       ],
     },
   ],

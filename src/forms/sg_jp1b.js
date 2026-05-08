@@ -34,11 +34,6 @@ export const FAVORITEN_IDS = new Set([
   'verlust_jahr_6', 'verlust_betrag_6',
   'verlust_jahr_7', 'verlust_betrag_7',
   'verlustvortrag_beginn', 'verlust_laufendes_j', 'verlustvortrag_ende',
-  // Veranlagung
-  'veranlagungsstand', 'veranlagungsdatum',
-  'prov_steuer_kt', 'prov_steuer_bund',
-  'definitiver_gewinn_kt', 'definitiver_gewinn_bund',
-  'bemerkung_veranlagung', 'veranlagung_belege',
 ]);
 
 export const SG_JP1B = {
@@ -130,21 +125,6 @@ export const SG_JP1B = {
         { id: 'verlustvortrag_beginn', label: 'Zwischentotal (Summe Vorjahresverluste)', typ: 'betrag', pflicht: false, overlay: { formSeite: 4, x: 440, y: 530.5, groesse: 9, alsoAt: [{ x: 515, y: 530.5 }] } },
         { id: 'verlust_laufendes_j',   label: 'Abzüglich bereits verrechnete Verluste',  typ: 'betrag', pflicht: false, overlay: { formSeite: 4, x: 440, y: 515.5, groesse: 9, alsoAt: [{ x: 515, y: 515.5 }] } },
         { id: 'verlustvortrag_ende',   label: 'Verrechenbarer Verlust (Code 150)',       typ: 'betrag', pflicht: false, overlay: { formSeite: 4, x: 440, y: 500.9, groesse: 9, alsoAt: [{ x: 515, y: 500.9 }] } },
-      ],
-    },
-    {
-      id: 'veranlagung',
-      titel: 'Veranlagung & Provisorische Steuern',
-      felder: [
-        { id: 'veranlagungsstand',     label: 'Veranlagungsstand', typ: 'select', pflicht: false,
-          optionen: ['offen', 'provisorisch', 'definitiv veranlagt', 'Einsprache', 'Rekurs'] },
-        { id: 'veranlagungsdatum',     label: 'Veranlagungsdatum', typ: 'datum',  pflicht: false },
-        { id: 'prov_steuer_kt',        label: 'Provisorische Steuer Kanton (CHF)', typ: 'betrag', pflicht: false },
-        { id: 'prov_steuer_bund',      label: 'Provisorische Steuer Bund (CHF)',   typ: 'betrag', pflicht: false },
-        { id: 'definitiver_gewinn_kt', label: 'Definitiv veranlagter Gewinn Kanton (CHF)', typ: 'betrag', pflicht: false },
-        { id: 'definitiver_gewinn_bund', label: 'Definitiv veranlagter Gewinn Bund (CHF)',   typ: 'betrag', pflicht: false },
-        { id: 'bemerkung_veranlagung', label: 'Bemerkung Veranlagung', typ: 'textarea', pflicht: false },
-        { id: 'veranlagung_belege',    label: 'Verknüpfte Veranlagungs-Dokumente', typ: 'belege', pflicht: false, kategorie: 'steuern' },
       ],
     },
   ],
