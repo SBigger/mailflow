@@ -2810,14 +2810,15 @@ export default function Abschlussdokumentation() {
       const existingMap = new Map((existing || []).map(k => [String(k.kontonummer), k]));
       const newNrSet    = new Set(newKonten.map(k => String(k.kontonummer)));
 
-      // 2. Bestehende Konten: nur Salden + Name aktualisieren, alles Manuelle bleibt
+      // 2. Bestehende Konten: NUR Salden aktualisieren – Kontoname und alle
+      //    manuellen Daten (position_id, notiz, arbeitspapier) bleiben unberührt
       const toUpdate = newKonten.filter(k => existingMap.has(String(k.kontonummer)));
       for (const k of toUpdate) {
         const ex = existingMap.get(String(k.kontonummer));
         const { error } = await supabase.from("abschluss_konten").update({
-          kontoname:     k.kontoname,
           saldo_ist:     k.saldo_ist,
           saldo_vorjahr: k.saldo_vorjahr,
+          // kontoname bewusst NICHT aktualisiert → manuelle Umbenennungen bleiben
         }).eq("id", ex.id);
         if (error) throw new Error(error.message);
       }
