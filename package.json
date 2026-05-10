@@ -43,6 +43,7 @@
     "date-fns": "^3.6.0",
     "framer-motion": "^11.16.4",
     "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.7",
     "jsqr": "^1.4.0",
     "jszip": "^3.10.1",
     "konva": "^10.2.5",

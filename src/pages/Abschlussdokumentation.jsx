@@ -112,6 +112,251 @@ function evalExpr(str) {
   } catch { return null; }
 }
 
+// ── PDF Generator ─────────────────────────────────────────────────────────────
+async function generateAbschlussPDF({ konten, einstellungen, customerName, selectedYear }) {
+  const { jsPDF } = await import("jspdf");
+  const { default: autoTable } = await import("jspdf-autotable");
+
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+
+  // Farben
+  const BLUE = [29, 78, 216]; const PINK = [157, 23, 77];
+  const GREEN = [22, 163, 74]; const RED = [220, 38, 38];
+  const GRAY = [107, 114, 128]; const DARK = [55, 65, 81];
+
+  const signFlipPassiven = einstellungen?.sign_flip_passiven ?? false;
+  const signFlipER       = einstellungen?.sign_flip_er       ?? false;
+  const pSign = signFlipPassiven ? -1 : 1;
+  const eSign = signFlipER ? 1 : -1;
+
+  const sumByIds = (ids) => konten.filter(k => ids.includes(k.position_id))
+    .reduce((s, k) => s + (parseFloat(k.saldo_ist) || 0), 0);
+  const sumVJByIds = (ids) => konten.filter(k => ids.includes(k.position_id))
+    .reduce((s, k) => s + (parseFloat(k.saldo_vorjahr) || 0), 0);
+  const sumER = (ids) => konten.filter(k => ids.includes(k.position_id))
+    .reduce((s, k) => s + (parseFloat(k.saldo_ist) || 0), 0) * eSign;
+
+  const fmtN = (v) => v == null || isNaN(v) ? "—"
+    : Number(v).toLocaleString("de-CH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmtPct = (ist, vj) => (!vj || Math.abs(vj) < 0.01) ? ""
+    : ((ist - vj) / Math.abs(vj) * 100 > 0 ? "+" : "") + ((ist - vj) / Math.abs(vj) * 100).toFixed(1) + "%";
+  const pctColor = (pct) => !pct ? GRAY : pct.startsWith("+") ? GREEN : RED;
+
+  // Logo laden
+  let logoData = null; let logoW = 0; let logoH = 0;
+  if (einstellungen?.logo_url) {
+    try {
+      const img = await new Promise((res, rej) => {
+        const i = new Image(); i.crossOrigin = "anonymous";
+        i.onload = () => res(i); i.onerror = rej; i.src = einstellungen.logo_url;
+      });
+      const cv = document.createElement("canvas"); cv.width = img.width; cv.height = img.height;
+      cv.getContext("2d").drawImage(img, 0, 0);
+      logoData = cv.toDataURL("image/png");
+      const ratio = Math.min(48 / img.width, 18 / img.height);
+      logoW = img.width * ratio; logoH = img.height * ratio;
+    } catch { /* kein Logo */ }
+  }
+
+  // ── Header Helfer ──
+  const addPageHeader = (pageTitle) => {
+    if (logoData) doc.addImage(logoData, "PNG", 15, 10, logoW, logoH);
+    const hx = logoData ? 15 + logoW + 4 : 15;
+    doc.setFontSize(14); doc.setFont("helvetica", "bold"); doc.setTextColor(...DARK);
+    doc.text(customerName || "Jahresabschluss", hx, 15);
+    doc.setFontSize(9); doc.setFont("helvetica", "normal"); doc.setTextColor(...GRAY);
+    doc.text(`${pageTitle} · Geschäftsjahr ${selectedYear}`, hx, 20);
+    doc.setFontSize(8);
+    doc.text(new Date().toLocaleDateString("de-CH"), 195, 15, { align: "right" });
+    doc.setDrawColor(...GRAY); doc.setLineWidth(0.3);
+    doc.line(15, 23, 195, 23);
+    return 27; // startY
+  };
+
+  // ── Row-Builder für autotable ──
+  const makeRows = (sections) => {
+    const rows = [];
+    for (const s of sections) {
+      if (s.type === "section") {
+        rows.push([{ content: s.label, colSpan: 4,
+          styles: { fontStyle: "bold", fontSize: 8, fillColor: s.fillColor || [245, 247, 250],
+            textColor: s.color || DARK, cellPadding: { top: 3, bottom: 1, left: 3, right: 3 } } }]);
+      } else {
+        const pct = fmtPct(s.ist, s.vj);
+        rows.push([
+          { content: s.label, styles: { fontSize: s.isTotal ? 9 : 8, fontStyle: s.isTotal || s.isSubtotal ? "bold" : "normal",
+            cellPadding: { top: s.isTotal ? 2.5 : 1.5, bottom: s.isTotal ? 2.5 : 1.5, left: s.indent ? 8 : 3, right: 2 } } },
+          { content: fmtN(s.ist), styles: { halign: "right", fontSize: s.isTotal ? 9 : 8,
+            fontStyle: s.isTotal || s.isSubtotal ? "bold" : "normal", textColor: s.isTotal ? (s.ist >= 0 ? s.color || DARK : RED) : DARK } },
+          { content: s.vj != null ? fmtN(s.vj) : "", styles: { halign: "right", fontSize: 7, textColor: GRAY } },
+          { content: pct, styles: { halign: "right", fontSize: 7, textColor: pctColor(pct) } },
+        ]);
+      }
+    }
+    return rows;
+  };
+
+  // ── BILANZ IDs ──
+  const UV_IDS = ["UV_FLUESSIG","UV_WERTSCHRIFTEN","UV_FORD_LL","UV_FORD_LL_NAHE","UV_FORD_SONST","UV_FORD_SONST_NAHE","UV_VORRAETE","UV_ABGRENZUNG"];
+  const AV_IDS = ["AV_FINANZ","AV_FINANZ_NAHE","AV_MOBIL","AV_IMMOBIL","AV_IMMATERIELL"];
+  const FK_KURZ_IDS = ["FK_KURZ_LL","FK_KURZ_LL_NAHE","FK_KURZ_BANK","FK_KURZ_VERZ_NAHE","FK_KURZ_SONST","FK_KURZ_SONST_NAHE","FK_KURZ_ABGRENZUNG"];
+  const FK_LANG_IDS = ["FK_LANG_BANK","FK_LANG_VERZ_NAHE","FK_LANG_SONST","FK_LANG_SONST_NAHE","FK_RUECKSTELLUNGEN"];
+  const EK_IDS = ["EK_KAPITAL","EK_KAP_RESERVE","EK_GES_RESERVE","EK_FREIE_RESERVE","EK_RESERVEN","EK_VORTRAG","EK_JAHRESERGEBNIS"];
+
+  const buildBilanzSection = (ids, flip = false) => {
+    const rows = [];
+    for (const id of ids) {
+      const pos = KONTENRAHMEN_POSITIONEN.find(p => p.id === id);
+      const ist = sumByIds([id]) * (flip ? pSign : 1);
+      const vj  = sumVJByIds([id]) * (flip ? pSign : 1);
+      if (ist === 0 && vj === 0) continue;
+      rows.push({ label: (pos?.level === 3 ? "  ↳ " : "  ") + (pos?.label || id), ist, vj, indent: true });
+    }
+    return rows;
+  };
+
+  const uvTotal = sumByIds(UV_IDS); const uvTotalVJ = sumVJByIds(UV_IDS);
+  const avTotal = sumByIds(AV_IDS); const avTotalVJ = sumVJByIds(AV_IDS);
+  const aktivenTotal = uvTotal + avTotal; const aktivenTotalVJ = uvTotalVJ + avTotalVJ;
+
+  const fkKurzTotal = sumByIds(FK_KURZ_IDS) * pSign; const fkKurzTotalVJ = sumVJByIds(FK_KURZ_IDS) * pSign;
+  const fkLangTotal = sumByIds(FK_LANG_IDS) * pSign; const fkLangTotalVJ = sumVJByIds(FK_LANG_IDS) * pSign;
+  const ekTotal     = sumByIds(EK_IDS) * pSign;      const ekTotalVJ    = sumVJByIds(EK_IDS) * pSign;
+  const passivenTotal = fkKurzTotal + fkLangTotal + ekTotal;
+  const passivenTotalVJ = fkKurzTotalVJ + fkLangTotalVJ + ekTotalVJ;
+
+  const aktivenSections = [
+    { type: "section", label: "UMLAUFVERMÖGEN", fillColor: [219, 234, 254], color: BLUE },
+    ...buildBilanzSection(UV_IDS),
+    { label: "Total Umlaufvermögen", ist: uvTotal, vj: uvTotalVJ, isSubtotal: true },
+    { type: "section", label: "ANLAGEVERMÖGEN", fillColor: [219, 234, 254], color: BLUE },
+    ...buildBilanzSection(AV_IDS),
+    { label: "Total Anlagevermögen", ist: avTotal, vj: avTotalVJ, isSubtotal: true },
+    { label: "TOTAL AKTIVEN", ist: aktivenTotal, vj: aktivenTotalVJ, isTotal: true, color: BLUE },
+  ];
+
+  const passivenSections = [
+    { type: "section", label: "KURZFRISTIGES FREMDKAPITAL", fillColor: [252, 231, 243], color: PINK },
+    ...buildBilanzSection(FK_KURZ_IDS, true),
+    { label: "Total Kurzfristiges FK", ist: fkKurzTotal, vj: fkKurzTotalVJ, isSubtotal: true },
+    { type: "section", label: "LANGFRISTIGES FREMDKAPITAL", fillColor: [252, 231, 243], color: PINK },
+    ...buildBilanzSection(FK_LANG_IDS, true),
+    { label: "Total Langfristiges FK", ist: fkLangTotal, vj: fkLangTotalVJ, isSubtotal: true },
+    { type: "section", label: "EIGENKAPITAL", fillColor: [252, 231, 243], color: PINK },
+    ...buildBilanzSection(EK_IDS, true),
+    { label: "Total Eigenkapital", ist: ekTotal, vj: ekTotalVJ, isSubtotal: true },
+    { label: "TOTAL PASSIVEN", ist: passivenTotal, vj: passivenTotalVJ, isTotal: true, color: PINK },
+  ];
+
+  // ── Seite 1: Bilanz ──
+  const bilanzStartY = addPageHeader("Bilanz");
+  const tableOpts = (margin, headColor, headText) => ({
+    startY: bilanzStartY,
+    head: [[
+      { content: headText, colSpan: 2, styles: { fillColor: headColor, textColor: headColor === [219,234,254] ? BLUE : PINK, fontStyle: "bold", fontSize: 9 } },
+      { content: `${selectedYear}`, styles: { fillColor: headColor, halign: "right", fontSize: 8, textColor: GRAY } },
+      { content: `${selectedYear - 1}`, styles: { fillColor: headColor, halign: "right", fontSize: 8, textColor: GRAY } },
+      { content: "Δ%", styles: { fillColor: headColor, halign: "right", fontSize: 8, textColor: GRAY } },
+    ]],
+    columnStyles: { 0: { cellWidth: 65 }, 1: { cellWidth: 22, halign: "right" }, 2: { cellWidth: 20, halign: "right" }, 3: { cellWidth: 12, halign: "right" } },
+    margin, styles: { fontSize: 8, cellPadding: 1.5 }, theme: "plain",
+  });
+
+  autoTable(doc, { ...tableOpts({ left: 12, right: 107 }, [219, 234, 254], "AKTIVEN"), body: makeRows(aktivenSections) });
+  const aktivenEndY = doc.lastAutoTable.finalY;
+  autoTable(doc, { ...tableOpts({ left: 107, right: 12 }, [252, 231, 243], "PASSIVEN"), body: makeRows(passivenSections) });
+  const passivenEndY = doc.lastAutoTable.finalY;
+  const bilanzEndY = Math.max(aktivenEndY, passivenEndY);
+
+  // Differenz
+  const diff = aktivenTotal - passivenTotal;
+  doc.setFontSize(8);
+  if (Math.abs(diff) < 0.01) {
+    doc.setTextColor(...GREEN); doc.text("✓ Bilanz ausgeglichen", 12, bilanzEndY + 5);
+  } else {
+    doc.setTextColor(...RED); doc.text(`Differenz: CHF ${fmtN(diff)}`, 12, bilanzEndY + 5);
+  }
+
+  // ── Seite 2: Erfolgsrechnung ──
+  doc.addPage();
+  const erStartY = addPageHeader("Erfolgsrechnung");
+
+  const nettoumsatz = sumER(["ER_UMSATZ","ER_EIGENLEISTUNG","ER_BESTAND"]);
+  const material    = sumER(["ER_MATERIAL"]);
+  const bgI         = nettoumsatz + material;
+  const personal    = sumER(["ER_PERSONAL"]);
+  const bgII        = bgI + personal;
+  const betriebItems = [["Raumaufwand","ER_RAUM"],["Unterhalt & Reparaturen","ER_UNTERHALT"],
+    ["Fahrzeug- & Transportaufw.","ER_FAHRZEUG"],["Sachversicherungen & Abgaben","ER_VERSICHERUNG"],
+    ["Energie & Entsorgung","ER_ENERGIE"],["Verwaltungs- & Informatikaufw.","ER_VERWALTUNG"],
+    ["Werbe- & Akquisitionsaufw.","ER_WERBUNG"],["Übriger Betriebsaufwand","ER_BETRIEB"]];
+  const betriebTotal = betriebItems.reduce((s, [, id]) => s + sumER([id]), 0);
+  const ebitda = bgII + betriebTotal;
+  const abschr = sumER(["ER_ABSCHR"]); const ebit = ebitda + abschr;
+  const finErtrag = sumER(["ER_FINANZ_ERTRAG","ER_LIEGENSCHAFTEN"]);
+  const finAufw = sumER(["ER_FINANZ_AUFW"]);
+  const ebt = ebit + finErtrag + finAufw;
+  const fremdErtrag = sumER(["ER_FREMD_ERTRAG","ER_AO_ERTRAG"]);
+  const fremdAufw = sumER(["ER_FREMD_AUFW","ER_AO_AUFW"]);
+  const steuern = sumER(["ER_STEUERN"]);
+  const jahresergebnis = ebt + fremdErtrag + fremdAufw + steuern;
+
+  const erSec = (label, fillColor, color) => [{ content: label, colSpan: 2,
+    styles: { fontStyle: "bold", fontSize: 8, fillColor, textColor: color, cellPadding: { top: 3, bottom: 1, left: 3, right: 3 } } }];
+  const erRow = (label, val, opts = {}) => [
+    { content: label, styles: { fontSize: opts.isTotal ? 10 : 8, fontStyle: opts.isTotal || opts.isSub ? "bold" : "normal",
+      cellPadding: { top: opts.isTotal ? 3 : 1.5, bottom: opts.isTotal ? 3 : 1.5, left: opts.indent ? 8 : 3, right: 2 } } },
+    { content: fmtN(val), styles: { halign: "right", fontSize: opts.isTotal ? 10 : 8,
+      fontStyle: opts.isTotal || opts.isSub ? "bold" : "normal",
+      textColor: opts.isTotal || opts.isSub ? (val >= 0 ? GREEN : RED) : DARK } },
+  ];
+
+  const erBody = [
+    erSec("ERLÖS", [240, 253, 244], GREEN),
+    ...(sumER(["ER_UMSATZ"]) !== 0 ? [erRow("  Nettoumsatzerlöse", sumER(["ER_UMSATZ"]), { indent: true })] : []),
+    ...(sumER(["ER_EIGENLEISTUNG"]) !== 0 ? [erRow("  Eigenleistungen", sumER(["ER_EIGENLEISTUNG"]), { indent: true })] : []),
+    ...(sumER(["ER_BESTAND"]) !== 0 ? [erRow("  Bestandesveränderungen", sumER(["ER_BESTAND"]), { indent: true })] : []),
+    erRow("Nettoumsatz Total", nettoumsatz, { isSub: true }),
+    erRow("  − Warenaufwand", material, { indent: true }),
+    erRow("= Bruttogewinn I (Rohergebnis)", bgI, { isTotal: true }),
+    erRow("  − Personalaufwand", personal, { indent: true }),
+    erRow("= Bruttogewinn II", bgII, { isTotal: true }),
+    erSec("BETRIEBSKOSTEN", [255, 251, 235], [146, 64, 14]),
+    ...betriebItems.filter(([, id]) => sumER([id]) !== 0).map(([l, id]) => erRow(`  − ${l}`, sumER([id]), { indent: true })),
+    erRow("= EBITDA", ebitda, { isTotal: true }),
+    erSec("ABSCHREIBUNGEN & FINANZERGEBNIS", [245, 247, 250], DARK),
+    erRow("  − Abschreibungen", abschr, { indent: true }),
+    erRow("= EBIT", ebit, { isTotal: true }),
+    erRow("  + Finanzertrag", finErtrag, { indent: true }),
+    erRow("  − Finanzaufwand", finAufw, { indent: true }),
+    erRow("= EBT", ebt, { isTotal: true }),
+    erSec("SONDERERGEBNIS & STEUERN", [245, 247, 250], DARK),
+    ...(fremdErtrag !== 0 ? [erRow("  + Betriebsfremder/AO Ertrag", fremdErtrag, { indent: true })] : []),
+    ...(fremdAufw !== 0 ? [erRow("  − Betriebsfremder/AO Aufwand", fremdAufw, { indent: true })] : []),
+    ...(steuern !== 0 ? [erRow("  − Ertragssteuern", steuern, { indent: true })] : []),
+    erRow("JAHRESERGEBNIS", jahresergebnis, { isTotal: true }),
+  ];
+
+  autoTable(doc, {
+    startY: erStartY, body: erBody,
+    columnStyles: { 0: { cellWidth: 140 }, 1: { cellWidth: 45, halign: "right" } },
+    margin: { left: 12, right: 12 }, styles: { fontSize: 8, cellPadding: 1.8 }, theme: "plain",
+  });
+
+  // ── Footer alle Seiten ──
+  const pageCount = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    doc.setFontSize(7); doc.setTextColor(...GRAY);
+    doc.setDrawColor(...GRAY); doc.setLineWidth(0.2);
+    doc.line(12, 286, 198, 286);
+    doc.text(`${customerName || ""} · Jahresabschluss ${selectedYear}`, 12, 290);
+    doc.text(`Seite ${i} / ${pageCount}`, 198, 290, { align: "right" });
+  }
+
+  doc.save(`Jahresabschluss_${(customerName || "").replace(/[^a-zA-Z0-9äöüÄÖÜ]/g, "_")}_${selectedYear}.pdf`);
+}
+
 function todayStr() {
   return new Date().toLocaleDateString("de-CH");
 }
@@ -939,8 +1184,9 @@ function MiniExcel({ data, onSave, accent, headingC, subC, panelBdr }) {
   // ── Cell edit ────────────────────────────────────────────────────────────
   const commitCell = (nextCell) => {
     if (!editCell) return;
+    const cleanVal = editVal.replace(/[\r\n]+/g, "");   // kein Enter-Zeichen speichern
     const newRows = rows.map(r => r.id === editCell.rowId
-      ? { ...r, cells: { ...r.cells, [editCell.colId]: editVal } } : r);
+      ? { ...r, cells: { ...r.cells, [editCell.colId]: cleanVal } } : r);
     setRows(newRows); save(cols, newRows);
     if (nextCell) { setEditCell(nextCell); setEditVal(newRows.find(r => r.id === nextCell.rowId)?.cells?.[nextCell.colId] || ""); }
     else setEditCell(null);
@@ -1050,11 +1296,19 @@ function MiniExcel({ data, onSave, accent, headingC, subC, panelBdr }) {
                 {cols.map(col => {
                   const isEd = editCell?.rowId === row.id && editCell?.colId === col.id;
                   const val = row.cells[col.id] || "";
+                  // Formel-Auswertung: startet mit = → evalExpr → fmtCHF
+                  const displayVal = (() => {
+                    if (!val) return "—";
+                    const raw = val.startsWith("=") ? val.slice(1) : val;
+                    const num = evalExpr(raw);
+                    return num !== null ? fmtCHF(num) : val;
+                  })();
+                  const isFormula = val.startsWith("=") && displayVal !== val;
                   return (
                     <td key={col.id} style={{ padding: "1px 4px", borderRight: `1px solid ${bdr}`, width: col.width, maxWidth: col.width }}
                       onClick={() => !isEd && (setEditCell({ rowId: row.id, colId: col.id }), setEditVal(val))}>
                       {isEd
-                        ? <input autoFocus value={editVal} onChange={e => setEditVal(e.target.value)}
+                        ? <input autoFocus value={editVal} onChange={e => setEditVal(e.target.value.replace(/[\r\n]/g, ""))}
                             onBlur={() => commitCell(null)}
                             onKeyDown={e => {
                               if (e.key === "Tab") { tabToNext(e, e.shiftKey); }
@@ -1062,8 +1316,12 @@ function MiniExcel({ data, onSave, accent, headingC, subC, panelBdr }) {
                               else if (e.key === "Escape") setEditCell(null);
                             }}
                             style={{ width: "100%", fontSize: 12, padding: "3px 5px", border: `1px solid ${accent}`, borderRadius: 3, outline: "none", color: "#111" }} />
-                        : <span style={{ display: "block", padding: "3px 5px", minHeight: 22, color: val ? headingC : subC + "60", cursor: "text", whiteSpace: "pre-wrap", wordBreak: "break-word", overflow: "hidden" }}>
-                            {val || "—"}
+                        : <span style={{ display: "block", padding: "3px 5px", minHeight: 22,
+                            color: val ? headingC : subC + "60", cursor: "text",
+                            fontFamily: isFormula ? "monospace" : "inherit",
+                            textAlign: isFormula ? "right" : "left", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+                            title={isFormula ? val : undefined}>
+                            {displayVal}
                           </span>}
                     </td>);
                 })}
@@ -1631,16 +1889,18 @@ function KontenplanTab({ konten, onUpdateKonto, customerId, selectedYear, accent
 }
 
 // ── Bilanz Tab ────────────────────────────────────────────────────────────────
-function BilanzkennzahlRow({ label, value, valueVJ, isSubtotal, isTotal, indent, accent, subC, headingC }) {
+function BilanzkennzahlRow({ label, value, valueVJ, bilanzsumme, bilanzsummeVJ, isSubtotal, isTotal, accent, subC, headingC }) {
   const fontW = isTotal ? 800 : isSubtotal ? 700 : 400;
   const borderTop = isTotal ? `2px solid ${accent}40` : isSubtotal ? `1px solid ${accent}20` : "none";
   const bg = isTotal ? accent + "08" : "transparent";
-  const pct = (valueVJ != null && Math.abs(valueVJ) > 0.01 && value != null)
-    ? ((value - valueVJ) / Math.abs(valueVJ) * 100) : null;
-  const pctColor = pct === null ? subC : pct > 0 ? "#16a34a" : pct < 0 ? "#dc2626" : subC;
+  const pctIS = (bilanzsumme && Math.abs(bilanzsumme) > 0.01 && value != null && value !== 0)
+    ? (value / bilanzsumme * 100) : null;
+  const pctVJ = (bilanzsummeVJ && Math.abs(bilanzsummeVJ) > 0.01 && valueVJ != null && valueVJ !== 0)
+    ? (valueVJ / bilanzsummeVJ * 100) : null;
+  const fmtP = (p) => p === null ? "" : Math.abs(p).toFixed(1) + "%";
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 120px 120px 60px",
-      alignItems: "center", padding: `${isTotal ? 8 : 5}px ${indent ? 28 : 12}px`, borderTop, backgroundColor: bg }}>
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 95px 40px 95px 40px",
+      alignItems: "center", padding: `${isTotal ? 8 : 5}px 12px`, borderTop, backgroundColor: bg }}>
       <span style={{ fontSize: isTotal ? 13 : 12, fontWeight: fontW, color: isTotal ? accent : headingC }}>
         {label}
       </span>
@@ -1648,11 +1908,14 @@ function BilanzkennzahlRow({ label, value, valueVJ, isSubtotal, isTotal, indent,
         color: isTotal ? accent : headingC, textAlign: "right" }}>
         {value === null || value === undefined ? "—" : fmtCHF(value)}
       </span>
+      <span style={{ fontSize: 10, color: subC + "cc", textAlign: "right", paddingRight: 2 }}>
+        {fmtP(pctIS)}
+      </span>
       <span style={{ fontSize: 11, fontFamily: "monospace", color: subC, textAlign: "right" }}>
         {valueVJ === null || valueVJ === undefined ? "" : fmtCHF(valueVJ)}
       </span>
-      <span style={{ fontSize: 10, fontWeight: pct !== null ? 600 : 400, color: pctColor, textAlign: "right", paddingRight: 4 }}>
-        {pct !== null ? (pct > 0 ? "+" : "") + pct.toFixed(1) + "%" : ""}
+      <span style={{ fontSize: 10, color: subC + "99", textAlign: "right", paddingRight: 4 }}>
+        {fmtP(pctVJ)}
       </span>
     </div>
   );
@@ -1704,12 +1967,13 @@ function BilanzTab({ konten, accent, headingC, subC, panelBg, panelBdr, tableBdr
   };
 
   const colHeader = (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 120px 120px 60px",
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 95px 40px 95px 40px",
       padding: "3px 12px", borderBottom: `1px solid ${panelBdr}` }}>
-      <span style={{ fontSize: 9, fontWeight: 700, color: subC, textTransform: "uppercase", letterSpacing: "0.06em" }}></span>
+      <span />
       <span style={{ fontSize: 9, fontWeight: 700, color: subC, textTransform: "uppercase", letterSpacing: "0.06em", textAlign: "right" }}>IST</span>
+      <span style={{ fontSize: 9, fontWeight: 700, color: subC, textTransform: "uppercase", letterSpacing: "0.06em", textAlign: "right" }}>%</span>
       <span style={{ fontSize: 9, fontWeight: 700, color: subC, textTransform: "uppercase", letterSpacing: "0.06em", textAlign: "right" }}>VORJAHR</span>
-      <span style={{ fontSize: 9, fontWeight: 700, color: subC, textTransform: "uppercase", letterSpacing: "0.06em", textAlign: "right", paddingRight: 4 }}>Δ%</span>
+      <span style={{ fontSize: 9, fontWeight: 700, color: subC, textTransform: "uppercase", letterSpacing: "0.06em", textAlign: "right", paddingRight: 4 }}>%</span>
     </div>
   );
 
@@ -1738,7 +2002,7 @@ function BilanzTab({ konten, accent, headingC, subC, panelBg, panelBdr, tableBdr
     const displayVal = val !== 0 ? val : null;
     return (
       <React.Fragment key={id}>
-        <BilanzkennzahlRow label={isNahe ? `↳ ${label}` : label} value={displayVal} valueVJ={valVJ !== 0 ? valVJ : null} indent headingC={isNahe ? subC : headingC} subC={subC} accent={accent} />
+        <BilanzkennzahlRow label={isNahe ? `↳ ${label}` : label} value={displayVal} valueVJ={valVJ !== 0 ? valVJ : null} bilanzsumme={aktivenTotal} bilanzsummeVJ={aktivenTotalVJ} headingC={isNahe ? subC : headingC} subC={subC} accent={accent} />
         {showDetails && posKonten.length > 0 && (
           <div style={{ margin: "1px 12px 3px 32px", borderRadius: 5, overflow: "hidden", border: `1px solid ${panelBdr}`, backgroundColor: panelBg }}>
             {posKonten.map((k, i) => (
@@ -1788,13 +2052,13 @@ function BilanzTab({ konten, accent, headingC, subC, panelBg, panelBdr, tableBdr
           Umlaufvermögen
         </div>
         {UV_IDS.map(id => renderPos(id))}
-        <BilanzkennzahlRow label="Total Umlaufvermögen" value={uvTotal} valueVJ={uvTotalVJ} isSubtotal headingC={headingC} subC={subC} accent={accent} />
+        <BilanzkennzahlRow label="Total Umlaufvermögen" value={uvTotal} valueVJ={uvTotalVJ} bilanzsumme={aktivenTotal} bilanzsummeVJ={aktivenTotalVJ} isSubtotal headingC={headingC} subC={subC} accent={accent} />
         <div style={{ padding: "8px 12px 0", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: subC, marginTop: 4 }}>
           Anlagevermögen
         </div>
         {AV_IDS.map(id => renderPos(id))}
-        <BilanzkennzahlRow label="Total Anlagevermögen" value={avTotal} valueVJ={avTotalVJ} isSubtotal headingC={headingC} subC={subC} accent={accent} />
-        <BilanzkennzahlRow label="TOTAL AKTIVEN" value={aktivenTotal} valueVJ={aktivenTotalVJ} isTotal headingC={headingC} subC={subC} accent={accent} />
+        <BilanzkennzahlRow label="Total Anlagevermögen" value={avTotal} valueVJ={avTotalVJ} bilanzsumme={aktivenTotal} bilanzsummeVJ={aktivenTotalVJ} isSubtotal headingC={headingC} subC={subC} accent={accent} />
+        <BilanzkennzahlRow label="TOTAL AKTIVEN" value={aktivenTotal} valueVJ={aktivenTotalVJ} bilanzsumme={aktivenTotal} bilanzsummeVJ={aktivenTotalVJ} isTotal headingC={headingC} subC={subC} accent={accent} />
       </div>
 
       {/* PASSIVEN */}
@@ -1808,18 +2072,18 @@ function BilanzTab({ konten, accent, headingC, subC, panelBg, panelBdr, tableBdr
           Kurzfristiges Fremdkapital
         </div>
         {FK_KURZ_IDS.map(id => renderPos(id, true))}
-        <BilanzkennzahlRow label="Total Kurzfristiges FK" value={fkKurzTotal} valueVJ={fkKurzTotalVJ} isSubtotal headingC={headingC} subC={subC} accent={accent} />
+        <BilanzkennzahlRow label="Total Kurzfristiges FK" value={fkKurzTotal} valueVJ={fkKurzTotalVJ} bilanzsumme={aktivenTotal} bilanzsummeVJ={aktivenTotalVJ} isSubtotal headingC={headingC} subC={subC} accent={accent} />
         <div style={{ padding: "8px 12px 0", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: subC, marginTop: 4 }}>
           Langfristiges Fremdkapital
         </div>
         {FK_LANG_IDS.map(id => renderPos(id, true))}
-        <BilanzkennzahlRow label="Total Langfristiges FK" value={fkLangTotal} valueVJ={fkLangTotalVJ} isSubtotal headingC={headingC} subC={subC} accent={accent} />
+        <BilanzkennzahlRow label="Total Langfristiges FK" value={fkLangTotal} valueVJ={fkLangTotalVJ} bilanzsumme={aktivenTotal} bilanzsummeVJ={aktivenTotalVJ} isSubtotal headingC={headingC} subC={subC} accent={accent} />
         <div style={{ padding: "8px 12px 0", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: subC, marginTop: 4 }}>
           Eigenkapital
         </div>
         {EK_IDS.map(id => renderPos(id, true))}
-        <BilanzkennzahlRow label="Total Eigenkapital" value={ekTotal} valueVJ={ekTotalVJ} isSubtotal headingC={headingC} subC={subC} accent={accent} />
-        <BilanzkennzahlRow label="TOTAL PASSIVEN" value={passivenTotal} valueVJ={passivenTotalVJ} isTotal headingC={headingC} subC={subC} accent={accent} />
+        <BilanzkennzahlRow label="Total Eigenkapital" value={ekTotal} valueVJ={ekTotalVJ} bilanzsumme={aktivenTotal} bilanzsummeVJ={aktivenTotalVJ} isSubtotal headingC={headingC} subC={subC} accent={accent} />
+        <BilanzkennzahlRow label="TOTAL PASSIVEN" value={passivenTotal} valueVJ={passivenTotalVJ} bilanzsumme={aktivenTotal} bilanzsummeVJ={aktivenTotalVJ} isTotal headingC={headingC} subC={subC} accent={accent} />
       </div>
     </div>
 
@@ -1946,21 +2210,31 @@ function BilanzTab({ konten, accent, headingC, subC, panelBg, panelBdr, tableBdr
 }
 
 // ── Erfolgsrechnung Tab ───────────────────────────────────────────────────────
-function ERRow({ label, value, isSubtotal, isTotal, isNegative, indent, accent, headingC, subC, highlightGreen }) {
+function ERRow({ label, value, valueVJ, nettoerloes, nettoerloesVJ, isSubtotal, isTotal, isNegative, accent, headingC, subC, highlightGreen }) {
   const fontW = isTotal ? 800 : isSubtotal ? 700 : 400;
   const color = isTotal && highlightGreen ? "#16a34a" : isTotal ? accent : isNegative && value < 0 ? "#dc2626" : headingC;
+  const pctIS = (nettoerloes && Math.abs(nettoerloes) > 0.01 && value != null)
+    ? (value / nettoerloes * 100) : null;
+  const pctVJ = (nettoerloesVJ && Math.abs(nettoerloesVJ) > 0.01 && valueVJ != null)
+    ? (valueVJ / nettoerloesVJ * 100) : null;
+  const fmtP = (p) => p === null ? "" : p.toFixed(1) + "%";
   return (
     <div style={{
-      display: "flex", justifyContent: "space-between", alignItems: "center",
-      padding: `${isTotal ? 9 : 5}px ${indent ? 24 : 12}px`,
-      borderTop: isTotal ? `2px solid ${isTotal && highlightGreen ? "#bbf7d0" : accent + "40"}` : "none",
+      display: "grid", gridTemplateColumns: "1fr 95px 40px 95px 40px", alignItems: "center",
+      padding: `${isTotal ? 9 : 5}px 12px`,
+      borderTop: isTotal ? `2px solid ${highlightGreen ? "#bbf7d0" : accent + "40"}` : "none",
       backgroundColor: isTotal && highlightGreen ? "#f0fdf4" : isTotal ? accent + "06" : "transparent",
       borderRadius: isTotal ? 4 : 0,
     }}>
       <span style={{ fontSize: isTotal ? 13 : 12, fontWeight: fontW, color }}>{label}</span>
-      <span style={{ fontSize: isTotal ? 13 : 12, fontWeight: fontW, fontFamily: "monospace", color, minWidth: 130, textAlign: "right" }}>
-        {value === null ? "—" : fmtCHF(value)}
+      <span style={{ fontSize: isTotal ? 13 : 12, fontWeight: fontW, fontFamily: "monospace", color, textAlign: "right" }}>
+        {value === null || value === undefined ? "—" : fmtCHF(value)}
       </span>
+      <span style={{ fontSize: 10, color: subC + "cc", textAlign: "right", paddingRight: 2 }}>{fmtP(pctIS)}</span>
+      <span style={{ fontSize: 11, fontFamily: "monospace", color: subC, textAlign: "right" }}>
+        {valueVJ === null || valueVJ === undefined ? "" : fmtCHF(valueVJ)}
+      </span>
+      <span style={{ fontSize: 10, color: subC + "99", textAlign: "right", paddingRight: 4 }}>{fmtP(pctVJ)}</span>
     </div>
   );
 }
@@ -1977,12 +2251,16 @@ function ErfolgsrechnungTab({ konten, accent, headingC, subC, panelBg, panelBdr,
   const rawSum = (ids) => konten
     .filter(k => ids.includes(k.position_id))
     .reduce((s, k) => s + (parseFloat(k.saldo_ist) || 0), 0);
+  const rawSumVJ = (ids) => konten
+    .filter(k => ids.includes(k.position_id))
+    .reduce((s, k) => s + (parseFloat(k.saldo_vorjahr) || 0), 0);
 
   // Buchhalterische Standardkonvention: Umsatz = Haben = negativ, Aufwand = Soll = positiv
   // → Standard: Vorzeichen drehen (eSign = -1), damit ER korrekt positiv ist
   // → Flip-Button gedrückt: Rohdaten belassen (eSign = 1), für Exporte die bereits gedreht sind
   const eSign = signFlipER ? 1 : -1;
-  const sumByIds = (ids) => rawSum(ids) * eSign;
+  const sumByIds   = (ids) => rawSum(ids) * eSign;
+  const sumVJByIds = (ids) => rawSumVJ(ids) * eSign;
 
   if (konten.length === 0) {
     return (
@@ -2020,10 +2298,48 @@ function ErfolgsrechnungTab({ konten, accent, headingC, subC, panelBg, panelBdr,
   const steuern        = sumByIds(["ER_STEUERN"]);
   const jahresergebnis = ebt + fremdErtrag + fremdAufw + steuern;
 
-  const props = { accent, headingC, subC };
+  // VJ-Werte
+  const nettoumsatzVJ    = sumVJByIds(["ER_UMSATZ","ER_EIGENLEISTUNG","ER_BESTAND"]);
+  const materialVJ       = sumVJByIds(["ER_MATERIAL"]);
+  const bruttogewinnIVJ  = nettoumsatzVJ + materialVJ;
+  const personalVJ       = sumVJByIds(["ER_PERSONAL"]);
+  const bruttogewinnIIVJ = bruttogewinnIVJ + personalVJ;
+  const raumVJ           = sumVJByIds(["ER_RAUM"]);
+  const unterhaltVJ      = sumVJByIds(["ER_UNTERHALT"]);
+  const fahrzeugVJ       = sumVJByIds(["ER_FAHRZEUG"]);
+  const versicherungVJ   = sumVJByIds(["ER_VERSICHERUNG"]);
+  const energieVJ        = sumVJByIds(["ER_ENERGIE"]);
+  const verwaltungVJ     = sumVJByIds(["ER_VERWALTUNG"]);
+  const werbungVJ        = sumVJByIds(["ER_WERBUNG"]);
+  const betriebVJ        = sumVJByIds(["ER_BETRIEB"]);
+  const betriebTotalVJ   = raumVJ + unterhaltVJ + fahrzeugVJ + versicherungVJ + energieVJ + verwaltungVJ + werbungVJ + betriebVJ;
+  const ebitdaVJ         = bruttogewinnIIVJ + betriebTotalVJ;
+  const abschrVJ         = sumVJByIds(["ER_ABSCHR"]);
+  const ebitVJ           = ebitdaVJ + abschrVJ;
+  const finErtragVJ      = sumVJByIds(["ER_FINANZ_ERTRAG","ER_LIEGENSCHAFTEN"]);
+  const finAufwVJ        = sumVJByIds(["ER_FINANZ_AUFW"]);
+  const finanzergebnisVJ = finErtragVJ + finAufwVJ;
+  const ebtVJ            = ebitVJ + finanzergebnisVJ;
+  const fremdErtragVJ    = sumVJByIds(["ER_FREMD_ERTRAG","ER_AO_ERTRAG"]);
+  const fremdAufwVJ      = sumVJByIds(["ER_FREMD_AUFW","ER_AO_AUFW"]);
+  const steuernVJ        = sumVJByIds(["ER_STEUERN"]);
+  const jahresergebnisVJ = ebtVJ + fremdErtragVJ + fremdAufwVJ + steuernVJ;
+
+  const props = { accent, headingC, subC, nettoerloes: nettoumsatz, nettoerloesVJ: nettoumsatzVJ };
+
+  const erColHeader = (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 95px 40px 95px 40px",
+      padding: "3px 12px", borderBottom: `1px solid ${panelBdr}` }}>
+      <span />
+      <span style={{ fontSize: 9, fontWeight: 700, color: subC, textTransform: "uppercase", letterSpacing: "0.06em", textAlign: "right" }}>IST</span>
+      <span style={{ fontSize: 9, fontWeight: 700, color: subC, textTransform: "uppercase", letterSpacing: "0.06em", textAlign: "right" }}>%</span>
+      <span style={{ fontSize: 9, fontWeight: 700, color: subC, textTransform: "uppercase", letterSpacing: "0.06em", textAlign: "right" }}>VORJAHR</span>
+      <span style={{ fontSize: 9, fontWeight: 700, color: subC, textTransform: "uppercase", letterSpacing: "0.06em", textAlign: "right", paddingRight: 4 }}>%</span>
+    </div>
+  );
 
   return (
-    <div style={{ maxWidth: 560 }}>
+    <div style={{ maxWidth: 660 }}>
       <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${panelBdr}`, boxShadow: "0 2px 8px rgba(0,0,0,0.05)" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", backgroundColor: "#dcfce7", borderBottom: `1px solid ${panelBdr}` }}>
           <span style={{ fontWeight: 800, fontSize: 13, color: "#15803d", letterSpacing: "0.03em" }}>ERFOLGSRECHNUNG</span>
@@ -2034,50 +2350,52 @@ function ErfolgsrechnungTab({ konten, accent, headingC, subC, panelBg, panelBdr,
             color: signFlipER ? "#15803d" : "#15803d99",
           }}>± Vorzeichen</button>
         </div>
+        {erColHeader}
 
         <ERSeparator label="Erlös" subC={subC} />
-        <ERRow label="Nettoumsatzerlöse" value={sumByIds(["ER_UMSATZ"])} indent {...props} />
-        <ERRow label="Eigenleistungen" value={sumByIds(["ER_EIGENLEISTUNG"])} indent {...props} />
-        <ERRow label="Bestandesveränderungen" value={sumByIds(["ER_BESTAND"])} indent {...props} />
-        <ERRow label="Nettoumsatz Total" value={nettoumsatz} isSubtotal {...props} />
+        <ERRow label="Nettoumsatzerlöse"      value={sumByIds(["ER_UMSATZ"])}        valueVJ={sumVJByIds(["ER_UMSATZ"])}        {...props} />
+        <ERRow label="Eigenleistungen"        value={sumByIds(["ER_EIGENLEISTUNG"])} valueVJ={sumVJByIds(["ER_EIGENLEISTUNG"])} {...props} />
+        <ERRow label="Bestandesveränderungen" value={sumByIds(["ER_BESTAND"])}       valueVJ={sumVJByIds(["ER_BESTAND"])}       {...props} />
+        <ERRow label="Nettoumsatz Total"      value={nettoumsatz}  valueVJ={nettoumsatzVJ}  isSubtotal {...props} />
 
-        <ERRow label="− Warenaufwand" value={material} isNegative indent {...props} />
-        <ERRow label="= Bruttogewinn I (Rohergebnis)" value={bruttogewinnI} isTotal
-          highlightGreen={bruttogewinnI >= 0} {...props} />
+        <ERRow label="− Warenaufwand"         value={material}     valueVJ={materialVJ}     isNegative {...props} />
+        <ERRow label="= Bruttogewinn I (Rohergebnis)" value={bruttogewinnI} valueVJ={bruttogewinnIVJ}
+          isTotal highlightGreen={bruttogewinnI >= 0} {...props} />
 
-        <ERRow label="− Personalaufwand" value={personal} isNegative indent {...props} />
-        <ERRow label="= Bruttogewinn II" value={bruttogewinnII} isTotal
-          highlightGreen={bruttogewinnII >= 0} {...props} />
+        <ERRow label="− Personalaufwand"      value={personal}     valueVJ={personalVJ}     isNegative {...props} />
+        <ERRow label="= Bruttogewinn II"      value={bruttogewinnII} valueVJ={bruttogewinnIIVJ}
+          isTotal highlightGreen={bruttogewinnII >= 0} {...props} />
 
         <ERSeparator label="Betriebskosten" subC={subC} />
-        {raum       !== 0 && <ERRow label="− Raumaufwand"                      value={raum}         isNegative indent {...props} />}
-        {unterhalt  !== 0 && <ERRow label="− Unterhalt & Reparaturen"          value={unterhalt}    isNegative indent {...props} />}
-        {fahrzeug   !== 0 && <ERRow label="− Fahrzeug- & Transportaufwand"     value={fahrzeug}     isNegative indent {...props} />}
-        {versicherung!==0 && <ERRow label="− Sachversicherungen & Abgaben"     value={versicherung} isNegative indent {...props} />}
-        {energie    !== 0 && <ERRow label="− Energie & Entsorgung"             value={energie}      isNegative indent {...props} />}
-        {verwaltung !== 0 && <ERRow label="− Verwaltungs- & Informatikaufw."   value={verwaltung}   isNegative indent {...props} />}
-        {werbung    !== 0 && <ERRow label="− Werbe- & Akquisitionsaufwand"     value={werbung}      isNegative indent {...props} />}
-        {betrieb    !== 0 && <ERRow label="− Übriger Betriebsaufwand"          value={betrieb}      isNegative indent {...props} />}
-        <ERRow label="= EBITDA" value={ebitda} isTotal highlightGreen={ebitda >= 0} {...props} />
+        {(raum       !== 0 || raumVJ       !== 0) && <ERRow label="− Raumaufwand"                    value={raum}         valueVJ={raumVJ}         isNegative {...props} />}
+        {(unterhalt  !== 0 || unterhaltVJ  !== 0) && <ERRow label="− Unterhalt & Reparaturen"        value={unterhalt}    valueVJ={unterhaltVJ}    isNegative {...props} />}
+        {(fahrzeug   !== 0 || fahrzeugVJ   !== 0) && <ERRow label="− Fahrzeug- & Transportaufwand"   value={fahrzeug}     valueVJ={fahrzeugVJ}     isNegative {...props} />}
+        {(versicherung!==0 || versicherungVJ!==0) && <ERRow label="− Sachversicherungen & Abgaben"   value={versicherung} valueVJ={versicherungVJ} isNegative {...props} />}
+        {(energie    !== 0 || energieVJ    !== 0) && <ERRow label="− Energie & Entsorgung"           value={energie}      valueVJ={energieVJ}      isNegative {...props} />}
+        {(verwaltung !== 0 || verwaltungVJ !== 0) && <ERRow label="− Verwaltungs- & Informatikaufw." value={verwaltung}   valueVJ={verwaltungVJ}   isNegative {...props} />}
+        {(werbung    !== 0 || werbungVJ    !== 0) && <ERRow label="− Werbe- & Akquisitionsaufwand"   value={werbung}      valueVJ={werbungVJ}      isNegative {...props} />}
+        {(betrieb    !== 0 || betriebVJ    !== 0) && <ERRow label="− Übriger Betriebsaufwand"        value={betrieb}      valueVJ={betriebVJ}      isNegative {...props} />}
+        <ERRow label="= EBITDA" value={ebitda} valueVJ={ebitdaVJ} isTotal highlightGreen={ebitda >= 0} {...props} />
 
         <ERSeparator label="Abschreibungen" subC={subC} />
-        <ERRow label="− Abschreibungen" value={abschr} isNegative indent {...props} />
-        <ERRow label="= EBIT" value={ebit} isTotal highlightGreen={ebit >= 0} {...props} />
+        <ERRow label="− Abschreibungen" value={abschr} valueVJ={abschrVJ} isNegative {...props} />
+        <ERRow label="= EBIT" value={ebit} valueVJ={ebitVJ} isTotal highlightGreen={ebit >= 0} {...props} />
 
         <ERSeparator label="Finanzergebnis" subC={subC} />
-        <ERRow label="+ Finanzertrag" value={finErtrag} indent {...props} />
-        <ERRow label="− Finanzaufwand" value={finAufw} isNegative indent {...props} />
-        <ERRow label="+/− Finanzergebnis" value={finanzergebnis} isSubtotal {...props} />
-        <ERRow label="= EBT (vor Sonderergebnis)" value={ebt} isTotal highlightGreen={ebt >= 0} {...props} />
+        <ERRow label="+ Finanzertrag"      value={finErtrag}      valueVJ={finErtragVJ}      {...props} />
+        <ERRow label="− Finanzaufwand"     value={finAufw}        valueVJ={finAufwVJ}        isNegative {...props} />
+        <ERRow label="+/− Finanzergebnis"  value={finanzergebnis} valueVJ={finanzergebnisVJ} isSubtotal {...props} />
+        <ERRow label="= EBT (vor Sonderergebnis)" value={ebt} valueVJ={ebtVJ} isTotal highlightGreen={ebt >= 0} {...props} />
 
         <ERSeparator label="Sonderergebnis & Steuern" subC={subC} />
-        <ERRow label="+ Betriebsfremder/AO Ertrag" value={fremdErtrag} indent {...props} />
-        <ERRow label="− Betriebsfremder/AO Aufwand" value={fremdAufw} isNegative indent {...props} />
-        <ERRow label="− Ertragssteuern" value={steuern} isNegative indent {...props} />
+        <ERRow label="+ Betriebsfremder/AO Ertrag" value={fremdErtrag} valueVJ={fremdErtragVJ} {...props} />
+        <ERRow label="− Betriebsfremder/AO Aufwand" value={fremdAufw}  valueVJ={fremdAufwVJ}  isNegative {...props} />
+        <ERRow label="− Ertragssteuern"             value={steuern}    valueVJ={steuernVJ}    isNegative {...props} />
 
         <div style={{ margin: "8px 8px 8px", borderRadius: 8, overflow: "hidden", border: `2px solid ${jahresergebnis >= 0 ? "#bbf7d0" : "#fecaca"}` }}>
-          <ERRow label="JAHRESERGEBNIS" value={jahresergebnis} isTotal highlightGreen={jahresergebnis >= 0}
-            accent={jahresergebnis >= 0 ? "#16a34a" : "#dc2626"} headingC={headingC} subC={subC} />
+          <ERRow label="JAHRESERGEBNIS" value={jahresergebnis} valueVJ={jahresergebnisVJ} isTotal highlightGreen={jahresergebnis >= 0}
+            accent={jahresergebnis >= 0 ? "#16a34a" : "#dc2626"} headingC={headingC} subC={subC}
+            nettoerloes={nettoumsatz} nettoerloesVJ={nettoumsatzVJ} />
         </div>
       </div>
     </div>
@@ -2622,12 +2940,12 @@ export default function Abschlussdokumentation() {
                 }} />
             </label>
 
-            {/* PDF Drucken */}
-            <button onClick={() => window.print()}
+            {/* PDF Download */}
+            <button onClick={() => generateAbschlussPDF({ konten, einstellungen, customerName, selectedYear })}
               style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 600,
                 padding: "4px 10px", borderRadius: 6, cursor: "pointer",
-                border: `1px solid ${panelBdr}`, color: headingC, backgroundColor: panelBg }}>
-              🖨 Drucken
+                border: `1px solid ${accent}60`, color: accent, backgroundColor: accent + "15" }}>
+              📄 PDF
             </button>
           </div>
         </div>
