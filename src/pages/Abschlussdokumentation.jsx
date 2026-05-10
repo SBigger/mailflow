@@ -1241,6 +1241,122 @@ function BelegeSection({ arbeitspapier, onSave, customerId, selectedYear, accent
   );
 }
 
+// ── Notiz-Popup mit Formatierung ──────────────────────────────────────────────
+function NotizPopup({ value, onChange, accent, headingC, subC, panelBg, panelBdr }) {
+  const [open, setOpen] = useState(false);
+  const [popPos, setPopPos] = useState({ top: 0, left: 0 });
+  const editorRef = useRef(null);
+  const triggerRef = useRef(null);
+
+  const plainText = value ? value.replace(/<[^>]*>/g, "").trim() : "";
+  const hasContent = plainText.length > 0;
+
+  const openPopup = () => {
+    if (!triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    const top = rect.bottom + 6;
+    const left = Math.min(rect.left, window.innerWidth - 310);
+    setPopPos({ top: Math.min(top, window.innerHeight - 290), left });
+    setOpen(true);
+  };
+
+  useEffect(() => {
+    if (open && editorRef.current) {
+      editorRef.current.innerHTML = value || "";
+      // Cursor ans Ende
+      const range = document.createRange();
+      const sel = window.getSelection();
+      range.selectNodeContents(editorRef.current);
+      range.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(range);
+      editorRef.current.focus();
+    }
+  }, [open]);
+
+  const execCmd = (cmd) => {
+    document.execCommand(cmd, false, null);
+    editorRef.current?.focus();
+  };
+
+  const save = () => {
+    const html = editorRef.current?.innerHTML || "";
+    // Leerer Editor → leeren String speichern
+    onChange(html.replace(/<br\s*\/?>/gi, "").trim() === "" ? "" : html);
+    setOpen(false);
+  };
+
+  const TOOLS = [
+    { label: "B", cmd: "bold",      style: { fontWeight: 700 } },
+    { label: "I", cmd: "italic",    style: { fontStyle: "italic" } },
+    { label: "U", cmd: "underline", style: { textDecoration: "underline" } },
+  ];
+
+  return (
+    <>
+      {/* Trigger – Klick öffnet Popup */}
+      <div ref={triggerRef} onClick={openPopup}
+        title={hasContent ? plainText : "Notiz hinzufügen…"}
+        style={{ cursor: "pointer", minWidth: 100, maxWidth: 200, padding: "3px 7px", borderRadius: 5,
+          border: `1px solid ${hasContent ? accent + "50" : "transparent"}`,
+          fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+          color: hasContent ? headingC : subC, fontStyle: hasContent ? "normal" : "italic",
+          transition: "border-color 0.15s" }}
+        onMouseEnter={e => { if (!open) e.currentTarget.style.borderColor = accent + "40"; }}
+        onMouseLeave={e => { if (!open) e.currentTarget.style.borderColor = hasContent ? accent + "50" : "transparent"; }}>
+        {hasContent ? plainText.substring(0, 28) + (plainText.length > 28 ? "…" : "") : "Notiz…"}
+      </div>
+
+      {/* Popup Portal */}
+      {open && createPortal(
+        <>
+          {/* Backdrop */}
+          <div style={{ position: "fixed", inset: 0, zIndex: 99990 }} onMouseDown={save} />
+          {/* Popup */}
+          <div onMouseDown={e => e.stopPropagation()}
+            style={{ position: "fixed", top: popPos.top, left: popPos.left, width: 300, zIndex: 99999,
+              backgroundColor: panelBg, border: `1px solid ${panelBdr}`, borderRadius: 10,
+              boxShadow: "0 8px 28px rgba(0,0,0,0.18)", overflow: "hidden" }}>
+            {/* Toolbar */}
+            <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "6px 8px",
+              borderBottom: `1px solid ${panelBdr}`, backgroundColor: panelBdr + "25" }}>
+              {TOOLS.map(({ label, cmd, style }) => (
+                <button key={cmd} onMouseDown={e => { e.preventDefault(); execCmd(cmd); }}
+                  style={{ ...style, width: 26, height: 24, fontSize: 12, border: `1px solid ${panelBdr}`,
+                    borderRadius: 4, cursor: "pointer", backgroundColor: panelBg, color: headingC }}>
+                  {label}
+                </button>
+              ))}
+              <span style={{ flex: 1 }} />
+              <span style={{ fontSize: 10, color: subC }}>Enter = neue Zeile</span>
+            </div>
+            {/* Contenteditable Editor */}
+            <div ref={editorRef} contentEditable suppressContentEditableWarning
+              onKeyDown={e => { if (e.key === "Escape") save(); }}
+              style={{ minHeight: 80, maxHeight: 180, overflowY: "auto", padding: "8px 10px",
+                fontSize: 13, color: headingC, outline: "none", lineHeight: 1.65 }} />
+            {/* Footer */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
+              padding: "6px 8px", borderTop: `1px solid ${panelBdr}` }}>
+              <button onMouseDown={e => { e.stopPropagation(); onChange(""); setOpen(false); }}
+                style={{ fontSize: 11, padding: "3px 8px", borderRadius: 5, border: `1px solid ${panelBdr}`,
+                  cursor: "pointer", backgroundColor: "transparent", color: subC }}>
+                Löschen
+              </button>
+              <button onMouseDown={e => { e.stopPropagation(); save(); }}
+                style={{ fontSize: 11, fontWeight: 700, padding: "4px 14px", borderRadius: 5,
+                  border: `1px solid ${accent}`, cursor: "pointer", backgroundColor: accent, color: "#fff" }}>
+                OK
+              </button>
+            </div>
+          </div>
+        </>,
+        document.body
+      )}
+    </>
+  );
+}
+
 // ── Kontenplan Tab ────────────────────────────────────────────────────────────
 function KontenplanTab({ konten, onUpdateKonto, customerId, selectedYear, accent, theme, headingC, subC, panelBg, panelBdr, tableBdr, rowHover }) {
   const isArtis = theme === "artis";
@@ -1458,18 +1574,12 @@ function KontenplanTab({ konten, onUpdateKonto, customerId, selectedYear, accent
                         </div>
                       </td>
                       {/* Notiz */}
-                      <td style={{ padding: "7px 12px", minWidth: 160 }}>
-                        <input
+                      <td style={{ padding: "4px 12px", minWidth: 120 }}>
+                        <NotizPopup
                           value={konto.notiz || ""}
-                          onChange={e => onUpdateKonto(konto.id, { notiz: e.target.value })}
-                          placeholder="Notiz…"
-                          style={{
-                            width: "100%", fontSize: 12, padding: "3px 6px", borderRadius: 5,
-                            border: `1px solid transparent`, outline: "none",
-                            backgroundColor: "transparent", color: headingC,
-                          }}
-                          onFocus={e => e.target.style.border = `1px solid ${accent}60`}
-                          onBlur={e => e.target.style.border = "1px solid transparent"}
+                          onChange={val => onUpdateKonto(konto.id, { notiz: val })}
+                          accent={accent} headingC={headingC} subC={subC}
+                          panelBg={panelBg} panelBdr={panelBdr}
                         />
                       </td>
                     </tr>
