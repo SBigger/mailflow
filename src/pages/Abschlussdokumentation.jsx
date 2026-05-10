@@ -2797,22 +2797,73 @@ export default function Abschlussdokumentation() {
     updateKontoMut.mutate({ id, ...fields });
   }
 
-  // ── Konten importieren ────────────────────────────────────────────────────
+  // ── Konten importieren (Merge: Salden aktualisieren, manuelle Daten behalten) ──
   const importKontenMut = useMutation({
     mutationFn: async (newKonten) => {
-      // Delete existing konten for this abschluss
-      const { error: delErr } = await supabase.from("abschluss_konten").delete().eq("abschluss_id", abschlussId);
-      if (delErr) throw new Error(delErr.message);
-      // Insert new konten in batches of 100
-      const rows = newKonten.map(k => ({ ...k, abschluss_id: abschlussId }));
-      for (let i = 0; i < rows.length; i += 100) {
-        const { error: insErr } = await supabase.from("abschluss_konten").insert(rows.slice(i, i + 100));
-        if (insErr) throw new Error(insErr.message);
+      // 1. Bestehende Konten laden (position_id, notiz, arbeitspapier bleiben erhalten)
+      const { data: existing, error: fetchErr } = await supabase
+        .from("abschluss_konten")
+        .select("id, kontonummer, position_id, notiz, arbeitspapier")
+        .eq("abschluss_id", abschlussId);
+      if (fetchErr) throw new Error(fetchErr.message);
+
+      const existingMap = new Map((existing || []).map(k => [String(k.kontonummer), k]));
+      const newNrSet    = new Set(newKonten.map(k => String(k.kontonummer)));
+
+      // 2. Bestehende Konten: nur Salden + Name aktualisieren, alles Manuelle bleibt
+      const toUpdate = newKonten.filter(k => existingMap.has(String(k.kontonummer)));
+      for (const k of toUpdate) {
+        const ex = existingMap.get(String(k.kontonummer));
+        const { error } = await supabase.from("abschluss_konten").update({
+          kontoname:     k.kontoname,
+          saldo_ist:     k.saldo_ist,
+          saldo_vorjahr: k.saldo_vorjahr,
+        }).eq("id", ex.id);
+        if (error) throw new Error(error.message);
       }
+
+      // 3. Neue Konten einfügen (bisher nicht vorhanden)
+      const toInsert = newKonten
+        .filter(k => !existingMap.has(String(k.kontonummer)))
+        .map(k => ({ ...k, abschluss_id: abschlussId }));
+      for (let i = 0; i < toInsert.length; i += 100) {
+        const { error } = await supabase.from("abschluss_konten").insert(toInsert.slice(i, i + 100));
+        if (error) throw new Error(error.message);
+      }
+
+      // 4. Weggefallene Konten: nur löschen wenn KEINE manuellen Daten vorhanden
+      //    (mit Zuweisung/Notiz/Arbeitspapier → Saldo auf 0 setzen statt löschen)
+      const removed = (existing || []).filter(ex => !newNrSet.has(String(ex.kontonummer)));
+      const hasManual = (ex) => ex.position_id ||
+        ex.notiz ||
+        (ex.arbeitspapier?.rows?.length > 0) ||
+        (ex.arbeitspapier?.belege?.length > 0);
+
+      const toDelete  = removed.filter(ex => !hasManual(ex));
+      const toZero    = removed.filter(ex =>  hasManual(ex));
+
+      if (toDelete.length > 0) {
+        const { error } = await supabase.from("abschluss_konten")
+          .delete().in("id", toDelete.map(k => k.id));
+        if (error) throw new Error(error.message);
+      }
+      for (const ex of toZero) {
+        // Konto hat manuelle Daten → Saldo nullen, aber Zuweisung/Notiz/AP behalten
+        await supabase.from("abschluss_konten")
+          .update({ saldo_ist: 0, saldo_vorjahr: 0 }).eq("id", ex.id);
+      }
+
+      return { updated: toUpdate.length, inserted: toInsert.length,
+               deleted: toDelete.length, zeroed: toZero.length };
     },
-    onSuccess: () => {
+    onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ["abschluss_konten", abschlussId] });
-      toast.success("Kontenplan importiert");
+      const parts = [];
+      if (res.updated)  parts.push(`${res.updated} aktualisiert`);
+      if (res.inserted) parts.push(`${res.inserted} neu`);
+      if (res.zeroed)   parts.push(`${res.zeroed} auf 0 gesetzt (manuelle Daten behalten)`);
+      if (res.deleted)  parts.push(`${res.deleted} gelöscht`);
+      toast.success("Kontenplan neu eingelesen – " + parts.join(", "));
       setShowImport(false);
     },
     onError: (e) => toast.error("Import fehlgeschlagen: " + e.message),
