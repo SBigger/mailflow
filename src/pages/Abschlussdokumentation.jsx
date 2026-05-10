@@ -1534,6 +1534,7 @@ function BilanzkennzahlRow({ label, value, isSubtotal, isTotal, indent, accent, 
 function BilanzTab({ konten, accent, headingC, subC, panelBg, panelBdr, tableBdr,
                       signFlipPassiven, onFlipPassiven, diffAnpassungen, onSaveDiffAnpassungen }) {
   const [editAnp, setEditAnp] = useState(null); // { idx, bezeichnung, betrag }
+  const [showDetails, setShowDetails] = useState(false);
 
   const sumByIds = (ids) => konten
     .filter(k => ids.includes(k.position_id))
@@ -1577,6 +1578,31 @@ function BilanzTab({ konten, accent, headingC, subC, panelBg, panelBdr, tableBdr
     }}>± Vorzeichen</button>
   );
 
+  // Hilfsfunktion: Position + optional Einzel-Konten
+  const renderPos = (id, flip = false) => {
+    const { label, val } = makePos(id, flip);
+    const posKonten = konten.filter(k => k.position_id === id);
+    if (val === 0 && posKonten.length === 0) return null;
+    const displayVal = val !== 0 ? val : null;
+    return (
+      <React.Fragment key={id}>
+        <BilanzkennzahlRow label={label} value={displayVal} indent headingC={headingC} subC={subC} accent={accent} />
+        {showDetails && posKonten.length > 0 && (
+          <div style={{ margin: "1px 12px 3px 32px", borderRadius: 5, overflow: "hidden", border: `1px solid ${panelBdr}`, backgroundColor: panelBg }}>
+            {posKonten.map((k, i) => (
+              <div key={k.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "2px 8px",
+                fontSize: 11, borderBottom: i < posKonten.length - 1 ? `1px solid ${panelBdr}` : "none" }}>
+                <span style={{ color: subC, fontWeight: 600, flexShrink: 0, width: 36, fontFamily: "monospace" }}>{k.kontonummer}</span>
+                <span style={{ flex: 1, color: headingC, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{k.kontoname}</span>
+                <span style={{ fontFamily: "monospace", color: headingC, flexShrink: 0 }}>{fmtCHF(parseFloat(k.saldo_ist) * (flip ? pSign : 1))}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </React.Fragment>
+    );
+  };
+
   if (konten.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center">
@@ -1587,7 +1613,19 @@ function BilanzTab({ konten, accent, headingC, subC, panelBg, panelBdr, tableBdr
   }
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, maxWidth: 1000 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 1000 }}>
+      {/* Toggle-Button */}
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <button onClick={() => setShowDetails(v => !v)}
+          style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 600, padding: "5px 12px", borderRadius: 7, cursor: "pointer",
+            backgroundColor: showDetails ? accent + "18" : "transparent",
+            border: `1px solid ${showDetails ? accent : panelBdr}`,
+            color: showDetails ? accent : headingC, transition: "all 0.15s" }}>
+          {showDetails ? "▲ Einklappen" : "▼ Details anzeigen"}
+        </button>
+      </div>
+
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
       {/* AKTIVEN */}
       <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${panelBdr}`, boxShadow: "0 2px 8px rgba(0,0,0,0.05)" }}>
         <div style={{ padding: "12px 14px", backgroundColor: "#dbeafe", borderBottom: `1px solid ${panelBdr}` }}>
@@ -1596,12 +1634,12 @@ function BilanzTab({ konten, accent, headingC, subC, panelBg, panelBdr, tableBdr
         <div style={{ padding: "8px 12px 0", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: subC }}>
           Umlaufvermögen
         </div>
-        {UV_IDS.map(id => { const { label, val } = makePos(id); return val !== 0 ? <BilanzkennzahlRow key={id} label={label} value={val} indent headingC={headingC} subC={subC} accent={accent} /> : null; })}
+        {UV_IDS.map(id => renderPos(id))}
         <BilanzkennzahlRow label="Total Umlaufvermögen" value={uvTotal} isSubtotal headingC={headingC} subC={subC} accent={accent} />
         <div style={{ padding: "8px 12px 0", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: subC, marginTop: 4 }}>
           Anlagevermögen
         </div>
-        {AV_IDS.map(id => { const { label, val } = makePos(id); return val !== 0 ? <BilanzkennzahlRow key={id} label={label} value={val} indent headingC={headingC} subC={subC} accent={accent} /> : null; })}
+        {AV_IDS.map(id => renderPos(id))}
         <BilanzkennzahlRow label="Total Anlagevermögen" value={avTotal} isSubtotal headingC={headingC} subC={subC} accent={accent} />
         <BilanzkennzahlRow label="TOTAL AKTIVEN" value={aktivenTotal} isTotal headingC={headingC} subC={subC} accent={accent} />
       </div>
@@ -1615,24 +1653,25 @@ function BilanzTab({ konten, accent, headingC, subC, panelBg, panelBdr, tableBdr
         <div style={{ padding: "8px 12px 0", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: subC }}>
           Kurzfristiges Fremdkapital
         </div>
-        {FK_KURZ_IDS.map(id => { const { label, val } = makePos(id, true); return val !== 0 ? <BilanzkennzahlRow key={id} label={label} value={val} indent headingC={headingC} subC={subC} accent={accent} /> : null; })}
+        {FK_KURZ_IDS.map(id => renderPos(id, true))}
         <BilanzkennzahlRow label="Total Kurzfristiges FK" value={fkKurzTotal} isSubtotal headingC={headingC} subC={subC} accent={accent} />
         <div style={{ padding: "8px 12px 0", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: subC, marginTop: 4 }}>
           Langfristiges Fremdkapital
         </div>
-        {FK_LANG_IDS.map(id => { const { label, val } = makePos(id, true); return val !== 0 ? <BilanzkennzahlRow key={id} label={label} value={val} indent headingC={headingC} subC={subC} accent={accent} /> : null; })}
+        {FK_LANG_IDS.map(id => renderPos(id, true))}
         <BilanzkennzahlRow label="Total Langfristiges FK" value={fkLangTotal} isSubtotal headingC={headingC} subC={subC} accent={accent} />
         <div style={{ padding: "8px 12px 0", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: subC, marginTop: 4 }}>
           Eigenkapital
         </div>
-        {EK_IDS.map(id => { const { label, val } = makePos(id, true); return val !== 0 ? <BilanzkennzahlRow key={id} label={label} value={val} indent headingC={headingC} subC={subC} accent={accent} /> : null; })}
+        {EK_IDS.map(id => renderPos(id, true))}
         <BilanzkennzahlRow label="Total Eigenkapital" value={ekTotal} isSubtotal headingC={headingC} subC={subC} accent={accent} />
         <BilanzkennzahlRow label="TOTAL PASSIVEN" value={passivenTotal} isTotal headingC={headingC} subC={subC} accent={accent} />
       </div>
+    </div>
 
       {/* Differenz */}
       {!balanced && (
-        <div className="col-span-2 rounded-xl overflow-hidden" style={{ border: "1px solid #fecaca", backgroundColor: "#fef2f2" }}>
+        <div className="rounded-xl overflow-hidden" style={{ border: "1px solid #fecaca", backgroundColor: "#fef2f2" }}>
           {/* Header */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderBottom: "1px solid #fecaca" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -1743,7 +1782,7 @@ function BilanzTab({ konten, accent, headingC, subC, panelBg, panelBdr, tableBdr
         </div>
       )}
       {balanced && konten.length > 0 && (
-        <div className="col-span-2 flex items-center gap-3 px-4 py-3 rounded-xl" style={{ backgroundColor: "#f0fdf4", border: "1px solid #bbf7d0" }}>
+        <div className="flex items-center gap-3 px-4 py-3 rounded-xl" style={{ backgroundColor: "#f0fdf4", border: "1px solid #bbf7d0" }}>
           <CheckCircle2 className="w-4 h-4 flex-shrink-0" style={{ color: "#16a34a" }} />
           <span className="text-sm font-medium" style={{ color: "#16a34a" }}>Bilanz ausgeglichen</span>
         </div>
