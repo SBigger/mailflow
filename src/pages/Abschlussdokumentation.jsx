@@ -2403,34 +2403,71 @@ function ErfolgsrechnungTab({ konten, accent, headingC, subC, panelBg, panelBdr,
 }
 
 // ── Anhang Tab ────────────────────────────────────────────────────────────────
+// Vorlagen gemäss neuem schweizerischem Rechnungslegungsrecht (OR 957 ff., in Kraft seit 1.1.2015)
+// Brandversicherungswert: war im alten OR Art. 663b, im neuen OR NICHT mehr gefordert → entfernt
 const OR_VORLAGEN = [
-  { id: "bewertung",       titel: "1. Bewertungsgrundsätze (Art. 959c)",
-    inhalt: "Die Jahresrechnung wurde in Übereinstimmung mit den Vorschriften des Schweizerischen Obligationenrechts (Art. 957–963b OR) erstellt.\n\nBewertungsgrundsätze:\n– Flüssige Mittel: zu Nominalwerten\n– Forderungen: zu Nominalwerten, abzüglich Wertberichtigungen\n– Vorräte: zum niedrigeren Wert aus Anschaffungs-/Herstellungskosten und Nettoveräusserungswert\n– Sachanlagen: zu Anschaffungskosten abzüglich planmässiger Abschreibungen\n– Verbindlichkeiten: zu Nominalwerten" },
-  { id: "vollzeit",        titel: "2. Anzahl Vollzeitstellen (Art. 959c Abs. 1 Ziff. 6)",
-    inhalt: "Im Jahresdurchschnitt waren folgende Vollzeitstellen beschäftigt:\n\nGeschäftsjahr: __ Vollzeitstellen\nVorjahr:       __ Vollzeitstellen" },
-  { id: "anteilsinhaber",  titel: "3. Anteilsinhaber > 5% Stimmrechte (Art. 959c Abs. 1 Ziff. 5)",
-    inhalt: "Folgende Personen oder Gesellschaften halten direkt oder indirekt mehr als 5% der Stimmrechte:\n\n[Name], [Ort]: __% der Aktien/Stammanteile\n[Name], [Ort]: __% der Aktien/Stammanteile" },
-  { id: "buergschaft",     titel: "4. Bürgschaften, Garantien & Pfandbestellungen (Art. 959c Abs. 2)",
-    inhalt: "Per Bilanzstichtag bestehen folgende Bürgschaften, Garantieverpflichtungen und Pfandbestellungen zugunsten Dritter:\n\n[Beschreibung, Betrag, Begünstigter]\n\nTotal: CHF __\n\n(Falls keine: Es bestehen keine Bürgschaften oder Garantieverpflichtungen zugunsten Dritter.)" },
-  { id: "leasing",         titel: "5. Leasingverbindlichkeiten (Art. 959c Abs. 2 Ziff. 4)",
-    inhalt: "Nicht in der Bilanz enthaltene Leasingverbindlichkeiten:\n\nFällig innerhalb 1 Jahr:  CHF __\nFällig in 1–5 Jahren:     CHF __\nFällig nach 5 Jahren:     CHF __\n\nTotal: CHF __" },
-  { id: "brandversicherung",titel: "6. Brandversicherungswert Sachanlagen (Art. 959c Abs. 2 Ziff. 2)",
-    inhalt: "Der Brandversicherungswert der Sachanlagen beträgt per Bilanzstichtag:\n\nMaschinen und Einrichtungen: CHF __\nFahrzeuge:                    CHF __\nIT-Infrastruktur:             CHF __\n\nTotal Brandversicherungswert: CHF __" },
-  { id: "pensionskasse",   titel: "7. Verbindlichkeiten gegenüber Vorsorgeeinrichtungen (Art. 959c)",
-    inhalt: "Die Verbindlichkeiten gegenüber den Vorsorgeeinrichtungen (Pensionskasse) betragen per Bilanzstichtag CHF __.\n\nEs bestehen keine wirtschaftlichen Verpflichtungen / Vorteile gegenüber der Pensionskasse im Sinne von Swiss GAAP FER 16." },
-  { id: "nahestehende",    titel: "8. Transaktionen mit nahestehenden Personen (Art. 959c)",
-    inhalt: "Im Geschäftsjahr wurden folgende wesentliche Transaktionen mit nahestehenden Personen durchgeführt:\n\n[Name / Beziehung]: [Beschreibung], CHF __\n\nAlle Transaktionen erfolgten zu marktüblichen Konditionen (at arm's length)." },
-  { id: "ereignisse",      titel: "9. Ereignisse nach dem Bilanzstichtag",
-    inhalt: "Nach dem Bilanzstichtag sind keine wesentlichen Ereignisse eingetreten, welche die Vermögens-, Finanz- und Ertragslage der Gesellschaft wesentlich beeinflussen." },
-  { id: "eventualverb",    titel: "10. Eventualverbindlichkeiten",
-    inhalt: "Per Bilanzstichtag bestehen folgende Eventualverbindlichkeiten:\n\n[Beschreibung und Betrag]\n\nTotal Eventualverbindlichkeiten: CHF __\n\n(Falls keine: Es bestehen keine wesentlichen Eventualverbindlichkeiten.)" },
-  { id: "eigenkapital",    titel: "11. Entwicklung Eigenkapital",
-    inhalt: "Aktienkapital/Stammkapital per 01.01.: CHF __\nGewinnvortrag per 01.01.:             CHF __\nJahresergebnis:                        CHF __\n\nEigenkapital per 31.12.:              CHF __" },
-  { id: "schulden_lang",   titel: "12. Langfristige verzinsliche Verbindlichkeiten (Art. 961a)",
-    inhalt: "Langfristige verzinsliche Verbindlichkeiten (Laufzeit > 5 Jahre):\n\nBetrag: CHF __\nZinssatz: __% p.a.\nFälligkeit: __.__.__\n\nLangfristige verzinsliche Verbindlichkeiten (Laufzeit 1–5 Jahre):\n\nBetrag: CHF __" },
-  { id: "revisionshonorar",titel: "13. Revisionshonorar (Art. 961a Abs. 2)",
-    inhalt: "Honorar der Revisionsstelle im Geschäftsjahr:\n\nOrdentliche Revision: CHF __\nWeitere Dienstleistungen (Steuer/Beratung): CHF __\n\nGesamthonorare Revisionsstelle: CHF __" },
-  { id: "freitext",        titel: "Freier Anhangspunkt", inhalt: "" },
+  // ── PFLICHT für alle (Art. 959c Abs. 1) ─────────────────────────────────
+  { id: "bewertung",
+    titel: "1. Bewertungsgrundsätze (Art. 959c Abs. 1 Ziff. 1) ★ Pflicht",
+    inhalt: "Die Jahresrechnung wurde in Übereinstimmung mit den Vorschriften des Schweizerischen Obligationenrechts (Art. 957–963b OR) erstellt.\n\nBewertungsgrundsätze:\n– Flüssige Mittel: zu Nominalwerten\n– Forderungen: zu Nominalwerten, abzüglich notwendiger Wertberichtigungen\n– Vorräte: zum niedrigeren Wert aus Anschaffungs-/Herstellungskosten und Nettoveräusserungswert\n– Sachanlagen: zu Anschaffungs- oder Herstellungskosten, abzüglich planmässiger Abschreibungen\n– Verbindlichkeiten: zu Nominalwerten\n– Fremdwährungen: Bilanzpositionen zum Tageskurs per Bilanzstichtag; Kursdifferenzen erfolgswirksam" },
+
+  { id: "vollzeit",
+    titel: "2. Vollzeitstellen (Art. 959c Abs. 1 Ziff. 6) ★ Pflicht",
+    inhalt: "Im Jahresdurchschnitt waren folgende Vollzeitstellen beschäftigt:\n\nGeschäftsjahr __: __ Vollzeitstellen\nVorjahr __:       __ Vollzeitstellen\n\nHinweis: Bis 10 Vollzeitstellen im Jahresdurchschnitt ist eine vereinfachte Buchführung (nur Einnahmen-/Ausgabenrechnung und Vermögensnachweis) nach Art. 957 Abs. 2 OR zulässig." },
+
+  { id: "anteilsinhaber",
+    titel: "3. Anteilsinhaber > 5% Stimmrechte (Art. 959c Abs. 1 Ziff. 5) ★ Pflicht AG/GmbH",
+    inhalt: "Folgende Personen oder Gesellschaften halten direkt oder indirekt mehr als 5% der Stimmrechte:\n\n[Name], [Ort]: __% der Stimmrechte (__  Aktien/Stammanteile à CHF __)\n[Name], [Ort]: __% der Stimmrechte (__ Aktien/Stammanteile à CHF __)\n\nAktienkapital/Stammkapital total: CHF __ (__ Aktien/Stammanteile à CHF __ Nennwert)\n\n(Falls keine: Es bestehen keine Aktionäre/Gesellschafter mit mehr als 5% der Stimmrechte.)" },
+
+  { id: "beteiligungen",
+    titel: "4. Beteiligungen ≥ 10% (Art. 959c Abs. 1 Ziff. 4) ★ Pflicht wenn vorhanden",
+    inhalt: "Die Gesellschaft hält folgende wesentliche Beteiligungen (≥ 10% des Kapitals oder der Stimmen):\n\nFirma:           [Name der Beteiligungsgesellschaft]\nRechtsform:      [AG / GmbH / Genossenschaft / …]\nSitz:            [Ort, Land]\nKapitalanteil:   __% | Stimmrechte: __%\nEigenkapital per 31.12.__: CHF __\nJahresergebnis __:          CHF __\n\n(Falls keine: Die Gesellschaft hält keine direkten oder indirekten Beteiligungen von mindestens 10% des Kapitals oder der Stimmen an anderen Unternehmen.)" },
+
+  { id: "stille_reserven",
+    titel: "5. Stille Reserven (Art. 959c Abs. 1 Ziff. 3) ★ Pflicht wenn relevant",
+    inhalt: "Im Geschäftsjahr __ wurden stille Reserven in folgendem Ausmass aufgelöst bzw. neu gebildet:\n\nAuflösung stiller Reserven: CHF __\nNeubildung stiller Reserven: CHF __\nNettoveränderung (Auflösung ./. Neubildung): CHF __\n\nDie Nettoauflösung stiller Reserven hat den Jahresgewinn um mehr als 5% erhöht.\n\n(Dieser Anhangspunkt ist nur erforderlich, wenn die Auflösung oder Bildung stiller Reserven das Jahresergebnis um mehr als 5% beeinflusst hat. Andernfalls entfällt dieser Punkt.)" },
+
+  // ── PFLICHT für grössere Unternehmen (Art. 961 / ordentliche Revision) ──
+  { id: "buergschaft",
+    titel: "6. Bürgschaften, Garantien & Pfandbestellungen (Art. 961a Abs. 1 Ziff. 1)",
+    inhalt: "Per Bilanzstichtag bestehen folgende Bürgschaften, Garantieverpflichtungen und Pfandbestellungen zugunsten Dritter:\n\n[Art der Verpflichtung]: CHF __ (Begünstigte/r: [Name])\n\nTotal: CHF __\n\n(Falls keine: Es bestehen per Bilanzstichtag keine Bürgschaften, Garantieverpflichtungen oder Pfandbestellungen zugunsten Dritter.)" },
+
+  { id: "pensionskasse",
+    titel: "7. Verbindlichkeiten gegenüber Vorsorgeeinrichtungen (Art. 961a Abs. 1 Ziff. 2)",
+    inhalt: "Die Verbindlichkeiten gegenüber den Vorsorgeeinrichtungen (Pensionskasse) betragen per Bilanzstichtag:\n\n[Name der Vorsorgeeinrichtung]: CHF __\n\nTotal Verbindlichkeiten gegenüber Vorsorgeeinrichtungen: CHF __\n\n(Falls keine: Es bestehen per Bilanzstichtag keine offenen Verbindlichkeiten gegenüber Vorsorgeeinrichtungen.)" },
+
+  { id: "nahestehende",
+    titel: "8. Forderungen/Verbindl. gegenüber Nahestehenden (Art. 961a Abs. 1 Ziff. 3)",
+    inhalt: "Forderungen und Verbindlichkeiten gegenüber direkten und indirekten Beteiligungen sowie gegenüber Organen, soweit nicht gesondert in der Bilanz ausgewiesen:\n\nForderungen gegenüber Organen (VR/GL): CHF __\nVerbindlichkeiten gegenüber Organen (VR/GL): CHF __\nForderungen gegenüber Beteiligungen: CHF __\nVerbindlichkeiten gegenüber Beteiligungen: CHF __\n\nAlle Transaktionen mit nahestehenden Personen und Gesellschaften erfolgten zu marktüblichen Konditionen (at arm's length)." },
+
+  { id: "schulden_lang",
+    titel: "9. Langfristige verzinsliche Verbindlichkeiten (Art. 959c Abs. 2 Ziff. 1)",
+    inhalt: "Langfristige verzinsliche Verbindlichkeiten per Bilanzstichtag:\n\nFällig innerhalb 1–5 Jahren:        CHF __\nFällig nach mehr als 5 Jahren:      CHF __\n\nDinglich gesicherte Verbindlichkeiten: CHF __ (Sicherungsart: [Grundpfand / Faustpfand / …])\n\nWesentliche Einzelverbindlichkeit:\n– Gläubiger: [Bank / Person]\n– Betrag: CHF __ | Zinssatz: __% p.a. | Fälligkeit: __.__.__" },
+
+  { id: "leasing",
+    titel: "10. Leasingverbindlichkeiten (Art. 959c Abs. 2)",
+    inhalt: "Nicht aktivierte Verbindlichkeiten aus Operating-Leasingverträgen (nicht in der Bilanz enthalten):\n\nFällig innerhalb 1 Jahr:      CHF __\nFällig in 1–5 Jahren:         CHF __\nFällig nach mehr als 5 Jahren: CHF __\n\nTotal Leasingverbindlichkeiten: CHF __\n\nWesentliche Leasingverträge betreffen: [Fahrzeuge / Maschinen / IT-Infrastruktur / Liegenschaften]" },
+
+  { id: "revisionshonorar",
+    titel: "11. Revisionshonorar (Art. 959c Abs. 2 Ziff. 2)",
+    inhalt: "Honorar der Revisionsstelle im Geschäftsjahr __:\n\nOrdentliche Revision:                    CHF __\nWeitere Prüfungsleistungen:              CHF __\nSteuer- und Beratungsleistungen:         CHF __\n\nTotal Honorare Revisionsstelle:          CHF __\n\nRevisionsstelle: [Firma, Ort]" },
+
+  // ── Empfohlen / Best Practice ────────────────────────────────────────────
+  { id: "ereignisse",
+    titel: "12. Ereignisse nach dem Bilanzstichtag",
+    inhalt: "Nach dem Bilanzstichtag sind keine wesentlichen Ereignisse eingetreten, welche die Vermögens-, Finanz- und Ertragslage der Gesellschaft wesentlich beeinflussen oder zusätzliche Angaben erfordern würden.\n\n(Falls vorhanden: [Beschreibung des Ereignisses und dessen finanzielle Auswirkung auf die Gesellschaft])" },
+
+  { id: "eventualverb",
+    titel: "13. Eventualverbindlichkeiten",
+    inhalt: "Per Bilanzstichtag bestehen folgende Eventualverbindlichkeiten:\n\n[Art der Verpflichtung, z.B. laufende Rechtsstreitigkeiten, Garantiezusagen]: CHF __\n\nTotal Eventualverbindlichkeiten: CHF __\n\n(Falls keine: Es bestehen per Bilanzstichtag keine wesentlichen Eventualverbindlichkeiten.)" },
+
+  { id: "eigenkapital",
+    titel: "14. Entwicklung Eigenkapital",
+    inhalt: "Entwicklung des Eigenkapitals im Geschäftsjahr __:\n\nStand 1. Januar __:                CHF __\n+ Jahresergebnis:                  CHF __\n− Dividenden / Kapitalrückzahlung: CHF __\n+/− Kapitalveränderungen:          CHF __\n\nStand 31. Dezember __:            CHF __\n\nDavon: Aktienkapital/Stammkapital: CHF __\n       Gesetzliche Reserven:        CHF __\n       Gewinnvortrag:               CHF __" },
+
+  { id: "freitext",
+    titel: "Freier Anhangspunkt",
+    inhalt: "" },
 ];
 
 function AnhangTab({ einstellungen, onSaveEinstellungen, accent, headingC, subC, panelBg, panelBdr, selectedYear, customerName }) {
