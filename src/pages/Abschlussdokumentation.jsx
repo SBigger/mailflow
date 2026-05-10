@@ -120,227 +120,253 @@ async function generateAbschlussPDF({ konten, einstellungen, customerName, selec
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
 
   // Farben
-  const BLUE = [29, 78, 216]; const PINK = [157, 23, 77];
-  const GREEN = [22, 163, 74]; const RED = [220, 38, 38];
-  const GRAY = [107, 114, 128]; const DARK = [55, 65, 81];
+  const BLUE  = [29, 78, 216];   const PINK  = [157, 23, 77];
+  const GREEN = [22, 163, 74];   const RED   = [220, 38, 38];
+  const GRAY  = [120, 120, 130]; const DARK  = [40, 40, 50];
+  const LBLUE = [219, 234, 254]; const LPINK = [252, 231, 243];
+  const LGRN  = [240, 253, 244]; const LYEL  = [255, 251, 235];
+  const LGRAY = [245, 247, 250];
 
   const signFlipPassiven = einstellungen?.sign_flip_passiven ?? false;
   const signFlipER       = einstellungen?.sign_flip_er       ?? false;
   const pSign = signFlipPassiven ? -1 : 1;
   const eSign = signFlipER ? 1 : -1;
 
-  const sumByIds = (ids) => konten.filter(k => ids.includes(k.position_id))
-    .reduce((s, k) => s + (parseFloat(k.saldo_ist) || 0), 0);
-  const sumVJByIds = (ids) => konten.filter(k => ids.includes(k.position_id))
+  const sumI  = (ids) => konten.filter(k => ids.includes(k.position_id))
+    .reduce((s, k) => s + (parseFloat(k.saldo_ist)     || 0), 0);
+  const sumVJ = (ids) => konten.filter(k => ids.includes(k.position_id))
     .reduce((s, k) => s + (parseFloat(k.saldo_vorjahr) || 0), 0);
-  const sumER = (ids) => konten.filter(k => ids.includes(k.position_id))
-    .reduce((s, k) => s + (parseFloat(k.saldo_ist) || 0), 0) * eSign;
+  const sumER  = (ids) => sumI(ids) * eSign;
+  const sumERV = (ids) => sumVJ(ids) * eSign;
 
-  const fmtN = (v) => v == null || isNaN(v) ? "—"
+  const N = (v) => v == null || isNaN(v) ? "—"
     : Number(v).toLocaleString("de-CH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const fmtPct = (ist, vj) => (!vj || Math.abs(vj) < 0.01) ? ""
-    : ((ist - vj) / Math.abs(vj) * 100 > 0 ? "+" : "") + ((ist - vj) / Math.abs(vj) * 100).toFixed(1) + "%";
-  const pctColor = (pct) => !pct ? GRAY : pct.startsWith("+") ? GREEN : RED;
+  const pct = (ist, vj) => (!vj || Math.abs(vj) < 0.01) ? ""
+    : ((ist - vj) / Math.abs(vj) * 100 > 0 ? "+" : "")
+      + ((ist - vj) / Math.abs(vj) * 100).toFixed(1) + "%";
+  const pctC = (p) => !p ? GRAY : p.startsWith("+") ? GREEN : RED;
 
-  // Logo laden
-  let logoData = null; let logoW = 0; let logoH = 0;
+  // ── Logo laden ──
+  let logoData = null, logoW = 0, logoH = 0;
   if (einstellungen?.logo_url) {
     try {
       const img = await new Promise((res, rej) => {
         const i = new Image(); i.crossOrigin = "anonymous";
         i.onload = () => res(i); i.onerror = rej; i.src = einstellungen.logo_url;
       });
-      const cv = document.createElement("canvas"); cv.width = img.width; cv.height = img.height;
+      const cv = document.createElement("canvas");
+      cv.width = img.width; cv.height = img.height;
       cv.getContext("2d").drawImage(img, 0, 0);
       logoData = cv.toDataURL("image/png");
-      const ratio = Math.min(48 / img.width, 18 / img.height);
-      logoW = img.width * ratio; logoH = img.height * ratio;
+      const r = Math.min(44 / img.width, 16 / img.height);
+      logoW = img.width * r; logoH = img.height * r;
     } catch { /* kein Logo */ }
   }
 
-  // ── Header Helfer ──
-  const addPageHeader = (pageTitle) => {
-    if (logoData) doc.addImage(logoData, "PNG", 15, 10, logoW, logoH);
-    const hx = logoData ? 15 + logoW + 4 : 15;
-    doc.setFontSize(14); doc.setFont("helvetica", "bold"); doc.setTextColor(...DARK);
+  // ── Seitenheader ──
+  const addHeader = (title) => {
+    if (logoData) doc.addImage(logoData, "PNG", 14, 9, logoW, logoH);
+    const hx = logoData ? 14 + logoW + 4 : 14;
+    doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.setTextColor(...DARK);
     doc.text(customerName || "Jahresabschluss", hx, 15);
-    doc.setFontSize(9); doc.setFont("helvetica", "normal"); doc.setTextColor(...GRAY);
-    doc.text(`${pageTitle} · Geschäftsjahr ${selectedYear}`, hx, 20);
-    doc.setFontSize(8);
-    doc.text(new Date().toLocaleDateString("de-CH"), 195, 15, { align: "right" });
-    doc.setDrawColor(...GRAY); doc.setLineWidth(0.3);
-    doc.line(15, 23, 195, 23);
-    return 27; // startY
+    doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(...GRAY);
+    doc.text(`${title}  ·  Geschäftsjahr ${selectedYear}`, hx, 20);
+    doc.text(new Date().toLocaleDateString("de-CH"), 196, 15, { align: "right" });
+    doc.setDrawColor(...GRAY); doc.setLineWidth(0.25);
+    doc.line(14, 23, 196, 23);
+    return 26;
   };
 
-  // ── Row-Builder für autotable ──
-  const makeRows = (sections) => {
-    const rows = [];
-    for (const s of sections) {
-      if (s.type === "section") {
-        rows.push([{ content: s.label, colSpan: 4,
-          styles: { fontStyle: "bold", fontSize: 8, fillColor: s.fillColor || [245, 247, 250],
-            textColor: s.color || DARK, cellPadding: { top: 3, bottom: 1, left: 3, right: 3 } } }]);
-      } else {
-        const pct = fmtPct(s.ist, s.vj);
-        rows.push([
-          { content: s.label, styles: { fontSize: s.isTotal ? 9 : 8, fontStyle: s.isTotal || s.isSubtotal ? "bold" : "normal",
-            cellPadding: { top: s.isTotal ? 2.5 : 1.5, bottom: s.isTotal ? 2.5 : 1.5, left: s.indent ? 8 : 3, right: 2 } } },
-          { content: fmtN(s.ist), styles: { halign: "right", fontSize: s.isTotal ? 9 : 8,
-            fontStyle: s.isTotal || s.isSubtotal ? "bold" : "normal", textColor: s.isTotal ? (s.ist >= 0 ? s.color || DARK : RED) : DARK } },
-          { content: s.vj != null ? fmtN(s.vj) : "", styles: { halign: "right", fontSize: 7, textColor: GRAY } },
-          { content: pct, styles: { halign: "right", fontSize: 7, textColor: pctColor(pct) } },
-        ]);
-      }
-    }
-    return rows;
+  // ── Bilanz-Zeilen bauen ──
+  // cols: Label (100) | IST (28) | VJ (28) | Δ% (16) → 172mm
+  const CP = { top: 1.5, bottom: 1.5, left: 3, right: 2 };
+  const CPT = { top: 3, bottom: 3, left: 3, right: 2 };
+
+  const bSec = (label, fill, col) => [{
+    content: label, colSpan: 4,
+    styles: { fillColor: fill, textColor: col, fontStyle: "bold", fontSize: 8,
+      cellPadding: { top: 3, bottom: 1, left: 4, right: 3 } }
+  }];
+
+  const bRow = (label, ist, vj, { total = false, sub = false, indent = false } = {}) => {
+    const p = pct(ist, vj);
+    const fw = total || sub ? "bold" : "normal";
+    const fs = total ? 9 : 8;
+    const tc = total ? DARK : DARK;
+    return [
+      { content: label,    styles: { fontSize: fs, fontStyle: fw, textColor: tc,
+          cellPadding: { ...( total ? CPT : CP), left: indent ? 7 : 3 } } },
+      { content: N(ist),   styles: { halign: "right", fontSize: fs, fontStyle: fw, textColor: tc } },
+      { content: vj != null ? N(vj) : "", styles: { halign: "right", fontSize: 7, textColor: GRAY } },
+      { content: p,        styles: { halign: "right", fontSize: 7, textColor: pctC(p) } },
+    ];
   };
+
+  const colHead = (title, fill, col) => [[
+    { content: title,           styles: { fillColor: fill, textColor: col, fontStyle: "bold", fontSize: 9, cellPadding: { top: 3, bottom: 3, left: 4, right: 2 } } },
+    { content: String(selectedYear),   styles: { fillColor: fill, textColor: GRAY, halign: "right", fontSize: 8 } },
+    { content: String(selectedYear-1), styles: { fillColor: fill, textColor: GRAY, halign: "right", fontSize: 8 } },
+    { content: "Δ%",            styles: { fillColor: fill, textColor: GRAY, halign: "right", fontSize: 8 } },
+  ]];
+
+  const COL = { 0: { cellWidth: 102 }, 1: { cellWidth: 28, halign: "right" },
+                2: { cellWidth: 28, halign: "right" }, 3: { cellWidth: 16, halign: "right" } };
+  const MARG = { left: 14, right: 14 };
 
   // ── BILANZ IDs ──
-  const UV_IDS = ["UV_FLUESSIG","UV_WERTSCHRIFTEN","UV_FORD_LL","UV_FORD_LL_NAHE","UV_FORD_SONST","UV_FORD_SONST_NAHE","UV_VORRAETE","UV_ABGRENZUNG"];
-  const AV_IDS = ["AV_FINANZ","AV_FINANZ_NAHE","AV_MOBIL","AV_IMMOBIL","AV_IMMATERIELL"];
+  const UV_IDS      = ["UV_FLUESSIG","UV_WERTSCHRIFTEN","UV_FORD_LL","UV_FORD_LL_NAHE","UV_FORD_SONST","UV_FORD_SONST_NAHE","UV_VORRAETE","UV_ABGRENZUNG"];
+  const AV_IDS      = ["AV_FINANZ","AV_FINANZ_NAHE","AV_MOBIL","AV_IMMOBIL","AV_IMMATERIELL"];
   const FK_KURZ_IDS = ["FK_KURZ_LL","FK_KURZ_LL_NAHE","FK_KURZ_BANK","FK_KURZ_VERZ_NAHE","FK_KURZ_SONST","FK_KURZ_SONST_NAHE","FK_KURZ_ABGRENZUNG"];
   const FK_LANG_IDS = ["FK_LANG_BANK","FK_LANG_VERZ_NAHE","FK_LANG_SONST","FK_LANG_SONST_NAHE","FK_RUECKSTELLUNGEN"];
-  const EK_IDS = ["EK_KAPITAL","EK_KAP_RESERVE","EK_GES_RESERVE","EK_FREIE_RESERVE","EK_RESERVEN","EK_VORTRAG","EK_JAHRESERGEBNIS"];
+  const EK_IDS      = ["EK_KAPITAL","EK_KAP_RESERVE","EK_GES_RESERVE","EK_FREIE_RESERVE","EK_RESERVEN","EK_VORTRAG","EK_JAHRESERGEBNIS"];
 
-  const buildBilanzSection = (ids, flip = false) => {
-    const rows = [];
-    for (const id of ids) {
-      const pos = KONTENRAHMEN_POSITIONEN.find(p => p.id === id);
-      const ist = sumByIds([id]) * (flip ? pSign : 1);
-      const vj  = sumVJByIds([id]) * (flip ? pSign : 1);
-      if (ist === 0 && vj === 0) continue;
-      rows.push({ label: (pos?.level === 3 ? "  ↳ " : "  ") + (pos?.label || id), ist, vj, indent: true });
-    }
-    return rows;
-  };
-
-  const uvTotal = sumByIds(UV_IDS); const uvTotalVJ = sumVJByIds(UV_IDS);
-  const avTotal = sumByIds(AV_IDS); const avTotalVJ = sumVJByIds(AV_IDS);
-  const aktivenTotal = uvTotal + avTotal; const aktivenTotalVJ = uvTotalVJ + avTotalVJ;
-
-  const fkKurzTotal = sumByIds(FK_KURZ_IDS) * pSign; const fkKurzTotalVJ = sumVJByIds(FK_KURZ_IDS) * pSign;
-  const fkLangTotal = sumByIds(FK_LANG_IDS) * pSign; const fkLangTotalVJ = sumVJByIds(FK_LANG_IDS) * pSign;
-  const ekTotal     = sumByIds(EK_IDS) * pSign;      const ekTotalVJ    = sumVJByIds(EK_IDS) * pSign;
-  const passivenTotal = fkKurzTotal + fkLangTotal + ekTotal;
-  const passivenTotalVJ = fkKurzTotalVJ + fkLangTotalVJ + ekTotalVJ;
-
-  const aktivenSections = [
-    { type: "section", label: "UMLAUFVERMÖGEN", fillColor: [219, 234, 254], color: BLUE },
-    ...buildBilanzSection(UV_IDS),
-    { label: "Total Umlaufvermögen", ist: uvTotal, vj: uvTotalVJ, isSubtotal: true },
-    { type: "section", label: "ANLAGEVERMÖGEN", fillColor: [219, 234, 254], color: BLUE },
-    ...buildBilanzSection(AV_IDS),
-    { label: "Total Anlagevermögen", ist: avTotal, vj: avTotalVJ, isSubtotal: true },
-    { label: "TOTAL AKTIVEN", ist: aktivenTotal, vj: aktivenTotalVJ, isTotal: true, color: BLUE },
-  ];
-
-  const passivenSections = [
-    { type: "section", label: "KURZFRISTIGES FREMDKAPITAL", fillColor: [252, 231, 243], color: PINK },
-    ...buildBilanzSection(FK_KURZ_IDS, true),
-    { label: "Total Kurzfristiges FK", ist: fkKurzTotal, vj: fkKurzTotalVJ, isSubtotal: true },
-    { type: "section", label: "LANGFRISTIGES FREMDKAPITAL", fillColor: [252, 231, 243], color: PINK },
-    ...buildBilanzSection(FK_LANG_IDS, true),
-    { label: "Total Langfristiges FK", ist: fkLangTotal, vj: fkLangTotalVJ, isSubtotal: true },
-    { type: "section", label: "EIGENKAPITAL", fillColor: [252, 231, 243], color: PINK },
-    ...buildBilanzSection(EK_IDS, true),
-    { label: "Total Eigenkapital", ist: ekTotal, vj: ekTotalVJ, isSubtotal: true },
-    { label: "TOTAL PASSIVEN", ist: passivenTotal, vj: passivenTotalVJ, isTotal: true, color: PINK },
-  ];
-
-  // ── Seite 1: Bilanz ──
-  const bilanzStartY = addPageHeader("Bilanz");
-  const tableOpts = (margin, headColor, headText) => ({
-    startY: bilanzStartY,
-    head: [[
-      { content: headText, colSpan: 2, styles: { fillColor: headColor, textColor: headColor === [219,234,254] ? BLUE : PINK, fontStyle: "bold", fontSize: 9 } },
-      { content: `${selectedYear}`, styles: { fillColor: headColor, halign: "right", fontSize: 8, textColor: GRAY } },
-      { content: `${selectedYear - 1}`, styles: { fillColor: headColor, halign: "right", fontSize: 8, textColor: GRAY } },
-      { content: "Δ%", styles: { fillColor: headColor, halign: "right", fontSize: 8, textColor: GRAY } },
-    ]],
-    columnStyles: { 0: { cellWidth: 65 }, 1: { cellWidth: 22, halign: "right" }, 2: { cellWidth: 20, halign: "right" }, 3: { cellWidth: 12, halign: "right" } },
-    margin, styles: { fontSize: 8, cellPadding: 1.5 }, theme: "plain",
+  const posRows = (ids, flip = false) => ids.flatMap(id => {
+    const pos = KONTENRAHMEN_POSITIONEN.find(p => p.id === id);
+    const ist = sumI([id]) * (flip ? pSign : 1);
+    const vj  = sumVJ([id]) * (flip ? pSign : 1);
+    if (ist === 0 && vj === 0) return [];
+    const lbl = (pos?.level === 3 ? "  ↳ " : "  ") + (pos?.label || id);
+    return [bRow(lbl, ist, vj, { indent: true })];
   });
 
-  autoTable(doc, { ...tableOpts({ left: 12, right: 107 }, [219, 234, 254], "AKTIVEN"), body: makeRows(aktivenSections) });
-  const aktivenEndY = doc.lastAutoTable.finalY;
-  autoTable(doc, { ...tableOpts({ left: 107, right: 12 }, [252, 231, 243], "PASSIVEN"), body: makeRows(passivenSections) });
-  const passivenEndY = doc.lastAutoTable.finalY;
-  const bilanzEndY = Math.max(aktivenEndY, passivenEndY);
+  const uvI = sumI(UV_IDS),  uvV = sumVJ(UV_IDS);
+  const avI = sumI(AV_IDS),  avV = sumVJ(AV_IDS);
+  const akI = uvI + avI,     akV = uvV + avV;
+  const fkKI = sumI(FK_KURZ_IDS)*pSign, fkKV = sumVJ(FK_KURZ_IDS)*pSign;
+  const fkLI = sumI(FK_LANG_IDS)*pSign, fkLV = sumVJ(FK_LANG_IDS)*pSign;
+  const ekI  = sumI(EK_IDS)*pSign,      ekV  = sumVJ(EK_IDS)*pSign;
+  const paI  = fkKI + fkLI + ekI,       paV  = fkKV + fkLV + ekV;
 
-  // Differenz
-  const diff = aktivenTotal - passivenTotal;
-  doc.setFontSize(8);
-  if (Math.abs(diff) < 0.01) {
-    doc.setTextColor(...GREEN); doc.text("✓ Bilanz ausgeglichen", 12, bilanzEndY + 5);
-  } else {
-    doc.setTextColor(...RED); doc.text(`Differenz: CHF ${fmtN(diff)}`, 12, bilanzEndY + 5);
-  }
+  // ── Seite 1: AKTIVEN ──
+  let y = addHeader("Bilanz – Aktiven");
+  autoTable(doc, {
+    startY: y, head: colHead("AKTIVEN", LBLUE, BLUE), body: [
+      ...bSec("UMLAUFVERMÖGEN", LBLUE, BLUE),
+      ...posRows(UV_IDS),
+      bRow("Total Umlaufvermögen", uvI, uvV, { sub: true }),
+      ...bSec("ANLAGEVERMÖGEN", LBLUE, BLUE),
+      ...posRows(AV_IDS),
+      bRow("Total Anlagevermögen", avI, avV, { sub: true }),
+      bRow("TOTAL AKTIVEN", akI, akV, { total: true }),
+    ],
+    columnStyles: COL, margin: MARG, styles: { fontSize: 8, cellPadding: CP }, theme: "plain",
+  });
 
-  // ── Seite 2: Erfolgsrechnung ──
+  // Differenz-Hinweis klein unter Aktiven
+  const diff = akI - paI;
+  y = doc.lastAutoTable.finalY + 3;
+  doc.setFontSize(7); doc.setTextColor(...(Math.abs(diff) < 0.01 ? GREEN : RED));
+  doc.text(Math.abs(diff) < 0.01 ? "Bilanz ausgeglichen" : `Differenz: CHF ${N(diff)}`, 14, y);
+
+  // ── Seite 2: PASSIVEN ──
   doc.addPage();
-  const erStartY = addPageHeader("Erfolgsrechnung");
+  y = addHeader("Bilanz – Passiven");
+  autoTable(doc, {
+    startY: y, head: colHead("PASSIVEN", LPINK, PINK), body: [
+      ...bSec("KURZFRISTIGES FREMDKAPITAL", LPINK, PINK),
+      ...posRows(FK_KURZ_IDS, true),
+      bRow("Total Kurzfristiges FK", fkKI, fkKV, { sub: true }),
+      ...bSec("LANGFRISTIGES FREMDKAPITAL", LPINK, PINK),
+      ...posRows(FK_LANG_IDS, true),
+      bRow("Total Langfristiges FK", fkLI, fkLV, { sub: true }),
+      ...bSec("EIGENKAPITAL", LPINK, PINK),
+      ...posRows(EK_IDS, true),
+      bRow("Total Eigenkapital", ekI, ekV, { sub: true }),
+      bRow("TOTAL PASSIVEN", paI, paV, { total: true }),
+    ],
+    columnStyles: COL, margin: MARG, styles: { fontSize: 8, cellPadding: CP }, theme: "plain",
+  });
 
-  const nettoumsatz = sumER(["ER_UMSATZ","ER_EIGENLEISTUNG","ER_BESTAND"]);
-  const material    = sumER(["ER_MATERIAL"]);
-  const bgI         = nettoumsatz + material;
-  const personal    = sumER(["ER_PERSONAL"]);
-  const bgII        = bgI + personal;
-  const betriebItems = [["Raumaufwand","ER_RAUM"],["Unterhalt & Reparaturen","ER_UNTERHALT"],
-    ["Fahrzeug- & Transportaufw.","ER_FAHRZEUG"],["Sachversicherungen & Abgaben","ER_VERSICHERUNG"],
-    ["Energie & Entsorgung","ER_ENERGIE"],["Verwaltungs- & Informatikaufw.","ER_VERWALTUNG"],
-    ["Werbe- & Akquisitionsaufw.","ER_WERBUNG"],["Übriger Betriebsaufwand","ER_BETRIEB"]];
-  const betriebTotal = betriebItems.reduce((s, [, id]) => s + sumER([id]), 0);
-  const ebitda = bgII + betriebTotal;
-  const abschr = sumER(["ER_ABSCHR"]); const ebit = ebitda + abschr;
-  const finErtrag = sumER(["ER_FINANZ_ERTRAG","ER_LIEGENSCHAFTEN"]);
-  const finAufw = sumER(["ER_FINANZ_AUFW"]);
-  const ebt = ebit + finErtrag + finAufw;
-  const fremdErtrag = sumER(["ER_FREMD_ERTRAG","ER_AO_ERTRAG"]);
-  const fremdAufw = sumER(["ER_FREMD_AUFW","ER_AO_AUFW"]);
-  const steuern = sumER(["ER_STEUERN"]);
-  const jahresergebnis = ebt + fremdErtrag + fremdAufw + steuern;
+  // ── Seite 3: ERFOLGSRECHNUNG ──
+  doc.addPage();
+  y = addHeader("Erfolgsrechnung");
 
-  const erSec = (label, fillColor, color) => [{ content: label, colSpan: 2,
-    styles: { fontStyle: "bold", fontSize: 8, fillColor, textColor: color, cellPadding: { top: 3, bottom: 1, left: 3, right: 3 } } }];
-  const erRow = (label, val, opts = {}) => [
-    { content: label, styles: { fontSize: opts.isTotal ? 10 : 8, fontStyle: opts.isTotal || opts.isSub ? "bold" : "normal",
-      cellPadding: { top: opts.isTotal ? 3 : 1.5, bottom: opts.isTotal ? 3 : 1.5, left: opts.indent ? 8 : 3, right: 2 } } },
-    { content: fmtN(val), styles: { halign: "right", fontSize: opts.isTotal ? 10 : 8,
-      fontStyle: opts.isTotal || opts.isSub ? "bold" : "normal",
-      textColor: opts.isTotal || opts.isSub ? (val >= 0 ? GREEN : RED) : DARK } },
+  const nuI = sumER(["ER_UMSATZ","ER_EIGENLEISTUNG","ER_BESTAND"]);
+  const nuV = sumERV(["ER_UMSATZ","ER_EIGENLEISTUNG","ER_BESTAND"]);
+  const matI = sumER(["ER_MATERIAL"]),  matV = sumERV(["ER_MATERIAL"]);
+  const bgI_I = nuI + matI,             bgI_V = nuV + matV;
+  const perI = sumER(["ER_PERSONAL"]),  perV = sumERV(["ER_PERSONAL"]);
+  const bgII_I = bgI_I + perI,          bgII_V = bgI_V + perV;
+
+  const betItems = [
+    ["− Raumaufwand",                    "ER_RAUM"],
+    ["− Unterhalt & Reparaturen",        "ER_UNTERHALT"],
+    ["− Fahrzeug- & Transportaufwand",   "ER_FAHRZEUG"],
+    ["− Sachversicherungen & Abgaben",   "ER_VERSICHERUNG"],
+    ["− Energie & Entsorgung",           "ER_ENERGIE"],
+    ["− Verwaltungs- & Informatikaufw.", "ER_VERWALTUNG"],
+    ["− Werbe- & Akquisitionsaufw.",     "ER_WERBUNG"],
+    ["− Übriger Betriebsaufwand",        "ER_BETRIEB"],
   ];
+  const btI = betItems.reduce((s,[,id]) => s + sumER([id]), 0);
+  const btV = betItems.reduce((s,[,id]) => s + sumERV([id]), 0);
+  const edI = bgII_I + btI,  edV = bgII_V + btV;
+  const abI = sumER(["ER_ABSCHR"]),  abV = sumERV(["ER_ABSCHR"]);
+  const ebI = edI + abI,             ebV = edV + abV;
+  const feI = sumER(["ER_FINANZ_ERTRAG","ER_LIEGENSCHAFTEN"]);
+  const feV = sumERV(["ER_FINANZ_ERTRAG","ER_LIEGENSCHAFTEN"]);
+  const faI = sumER(["ER_FINANZ_AUFW"]),  faV = sumERV(["ER_FINANZ_AUFW"]);
+  const ebtI = ebI + feI + faI,           ebtV = ebV + feV + faV;
+  const frEI = sumER(["ER_FREMD_ERTRAG","ER_AO_ERTRAG"]);
+  const frEV = sumERV(["ER_FREMD_ERTRAG","ER_AO_ERTRAG"]);
+  const frAI = sumER(["ER_FREMD_AUFW","ER_AO_AUFW"]);
+  const frAV = sumERV(["ER_FREMD_AUFW","ER_AO_AUFW"]);
+  const stI = sumER(["ER_STEUERN"]),  stV = sumERV(["ER_STEUERN"]);
+  const jeI = ebtI + frEI + frAI + stI;
+  const jeV = ebtV + frEV + frAV + stV;
+
+  // ER-Zeile: 4 Spalten Label | IST | VJ | Δ%
+  const eRow = (lbl, ist, vj, { total = false, sub = false } = {}) => {
+    const p = pct(ist, vj); const fw = total || sub ? "bold" : "normal"; const fs = total ? 9 : 8;
+    return [
+      { content: lbl, styles: { fontSize: fs, fontStyle: fw, textColor: DARK,
+          cellPadding: { ...(total ? CPT : CP) } } },
+      { content: N(ist), styles: { halign: "right", fontSize: fs, fontStyle: fw,
+          textColor: total ? (ist >= 0 ? GREEN : RED) : DARK } },
+      { content: vj != null ? N(vj) : "", styles: { halign: "right", fontSize: 7, textColor: GRAY } },
+      { content: p, styles: { halign: "right", fontSize: 7, textColor: pctC(p) } },
+    ];
+  };
+  const eSec = (lbl, fill, col) => [{
+    content: lbl, colSpan: 4,
+    styles: { fillColor: fill, textColor: col, fontStyle: "bold", fontSize: 8,
+      cellPadding: { top: 3, bottom: 1, left: 4, right: 3 } }
+  }];
 
   const erBody = [
-    erSec("ERLÖS", [240, 253, 244], GREEN),
-    ...(sumER(["ER_UMSATZ"]) !== 0 ? [erRow("  Nettoumsatzerlöse", sumER(["ER_UMSATZ"]), { indent: true })] : []),
-    ...(sumER(["ER_EIGENLEISTUNG"]) !== 0 ? [erRow("  Eigenleistungen", sumER(["ER_EIGENLEISTUNG"]), { indent: true })] : []),
-    ...(sumER(["ER_BESTAND"]) !== 0 ? [erRow("  Bestandesveränderungen", sumER(["ER_BESTAND"]), { indent: true })] : []),
-    erRow("Nettoumsatz Total", nettoumsatz, { isSub: true }),
-    erRow("  − Warenaufwand", material, { indent: true }),
-    erRow("= Bruttogewinn I (Rohergebnis)", bgI, { isTotal: true }),
-    erRow("  − Personalaufwand", personal, { indent: true }),
-    erRow("= Bruttogewinn II", bgII, { isTotal: true }),
-    erSec("BETRIEBSKOSTEN", [255, 251, 235], [146, 64, 14]),
-    ...betriebItems.filter(([, id]) => sumER([id]) !== 0).map(([l, id]) => erRow(`  − ${l}`, sumER([id]), { indent: true })),
-    erRow("= EBITDA", ebitda, { isTotal: true }),
-    erSec("ABSCHREIBUNGEN & FINANZERGEBNIS", [245, 247, 250], DARK),
-    erRow("  − Abschreibungen", abschr, { indent: true }),
-    erRow("= EBIT", ebit, { isTotal: true }),
-    erRow("  + Finanzertrag", finErtrag, { indent: true }),
-    erRow("  − Finanzaufwand", finAufw, { indent: true }),
-    erRow("= EBT", ebt, { isTotal: true }),
-    erSec("SONDERERGEBNIS & STEUERN", [245, 247, 250], DARK),
-    ...(fremdErtrag !== 0 ? [erRow("  + Betriebsfremder/AO Ertrag", fremdErtrag, { indent: true })] : []),
-    ...(fremdAufw !== 0 ? [erRow("  − Betriebsfremder/AO Aufwand", fremdAufw, { indent: true })] : []),
-    ...(steuern !== 0 ? [erRow("  − Ertragssteuern", steuern, { indent: true })] : []),
-    erRow("JAHRESERGEBNIS", jahresergebnis, { isTotal: true }),
+    ...eSec("ERLÖS", LGRN, GREEN),
+    eRow("  Nettoumsatzerlöse",      sumER(["ER_UMSATZ"]),        sumERV(["ER_UMSATZ"])),
+    ...(sumER(["ER_EIGENLEISTUNG"]) || sumERV(["ER_EIGENLEISTUNG"])
+      ? [eRow("  Eigenleistungen",   sumER(["ER_EIGENLEISTUNG"]), sumERV(["ER_EIGENLEISTUNG"]))] : []),
+    ...(sumER(["ER_BESTAND"]) || sumERV(["ER_BESTAND"])
+      ? [eRow("  Bestandesveränderungen", sumER(["ER_BESTAND"]), sumERV(["ER_BESTAND"]))] : []),
+    eRow("Nettoumsatz Total", nuI, nuV, { sub: true }),
+    eRow("  − Warenaufwand",  matI, matV),
+    eRow("= Bruttogewinn I (Rohergebnis)", bgI_I, bgI_V, { total: true }),
+    eRow("  − Personalaufwand", perI, perV),
+    eRow("= Bruttogewinn II",  bgII_I, bgII_V, { total: true }),
+    ...eSec("BETRIEBSKOSTEN", LYEL, [146, 64, 14]),
+    ...betItems.flatMap(([lbl, id]) =>
+      (sumER([id]) || sumERV([id])) ? [eRow("  " + lbl, sumER([id]), sumERV([id]))] : []),
+    eRow("= EBITDA", edI, edV, { total: true }),
+    ...eSec("ABSCHREIBUNGEN", LGRAY, DARK),
+    eRow("  − Abschreibungen", abI, abV),
+    eRow("= EBIT", ebI, ebV, { total: true }),
+    ...eSec("FINANZERGEBNIS", LGRAY, DARK),
+    eRow("  + Finanzertrag",  feI, feV),
+    eRow("  − Finanzaufwand", faI, faV),
+    eRow("= EBT", ebtI, ebtV, { total: true }),
+    ...eSec("SONDERERGEBNIS & STEUERN", LGRAY, DARK),
+    ...(frEI || frEV ? [eRow("  + Betriebsfremder/AO Ertrag",  frEI, frEV)] : []),
+    ...(frAI || frAV ? [eRow("  − Betriebsfremder/AO Aufwand", frAI, frAV)] : []),
+    ...(stI  || stV  ? [eRow("  − Ertragssteuern",             stI,  stV)] : []),
+    eRow("JAHRESERGEBNIS", jeI, jeV, { total: true }),
   ];
 
   autoTable(doc, {
-    startY: erStartY, body: erBody,
-    columnStyles: { 0: { cellWidth: 140 }, 1: { cellWidth: 45, halign: "right" } },
-    margin: { left: 12, right: 12 }, styles: { fontSize: 8, cellPadding: 1.8 }, theme: "plain",
+    startY: y, head: colHead("ERFOLGSRECHNUNG", LGRN, GREEN),
+    body: erBody, columnStyles: COL, margin: MARG,
+    styles: { fontSize: 8, cellPadding: CP }, theme: "plain",
   });
 
   // ── Footer alle Seiten ──
@@ -349,9 +375,9 @@ async function generateAbschlussPDF({ konten, einstellungen, customerName, selec
     doc.setPage(i);
     doc.setFontSize(7); doc.setTextColor(...GRAY);
     doc.setDrawColor(...GRAY); doc.setLineWidth(0.2);
-    doc.line(12, 286, 198, 286);
-    doc.text(`${customerName || ""} · Jahresabschluss ${selectedYear}`, 12, 290);
-    doc.text(`Seite ${i} / ${pageCount}`, 198, 290, { align: "right" });
+    doc.line(14, 286, 196, 286);
+    doc.text(`${customerName || ""}  ·  Jahresabschluss ${selectedYear}`, 14, 290);
+    doc.text(`Seite ${i} / ${pageCount}`, 196, 290, { align: "right" });
   }
 
   doc.save(`Jahresabschluss_${(customerName || "").replace(/[^a-zA-Z0-9äöüÄÖÜ]/g, "_")}_${selectedYear}.pdf`);
