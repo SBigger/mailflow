@@ -1521,19 +1521,28 @@ function KontenplanTab({ konten, onUpdateKonto, customerId, selectedYear, accent
 }
 
 // ── Bilanz Tab ────────────────────────────────────────────────────────────────
-function BilanzkennzahlRow({ label, value, isSubtotal, isTotal, indent, accent, subC, headingC }) {
+function BilanzkennzahlRow({ label, value, valueVJ, isSubtotal, isTotal, indent, accent, subC, headingC }) {
   const fontW = isTotal ? 800 : isSubtotal ? 700 : 400;
   const borderTop = isTotal ? `2px solid ${accent}40` : isSubtotal ? `1px solid ${accent}20` : "none";
   const bg = isTotal ? accent + "08" : "transparent";
+  const pct = (valueVJ != null && Math.abs(valueVJ) > 0.01 && value != null)
+    ? ((value - valueVJ) / Math.abs(valueVJ) * 100) : null;
+  const pctColor = pct === null ? subC : pct > 0 ? "#16a34a" : pct < 0 ? "#dc2626" : subC;
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
-      padding: `${isTotal ? 8 : 5}px ${indent ? 28 : 12}px`, borderTop, backgroundColor: bg }}>
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 120px 120px 60px",
+      alignItems: "center", padding: `${isTotal ? 8 : 5}px ${indent ? 28 : 12}px`, borderTop, backgroundColor: bg }}>
       <span style={{ fontSize: isTotal ? 13 : 12, fontWeight: fontW, color: isTotal ? accent : headingC }}>
         {label}
       </span>
       <span style={{ fontSize: isTotal ? 13 : 12, fontWeight: fontW, fontFamily: "monospace",
-        color: isTotal ? accent : headingC, minWidth: 110, textAlign: "right" }}>
-        {value === null ? "—" : fmtCHF(value)}
+        color: isTotal ? accent : headingC, textAlign: "right" }}>
+        {value === null || value === undefined ? "—" : fmtCHF(value)}
+      </span>
+      <span style={{ fontSize: 11, fontFamily: "monospace", color: subC, textAlign: "right" }}>
+        {valueVJ === null || valueVJ === undefined ? "" : fmtCHF(valueVJ)}
+      </span>
+      <span style={{ fontSize: 10, fontWeight: pct !== null ? 600 : 400, color: pctColor, textAlign: "right", paddingRight: 4 }}>
+        {pct !== null ? (pct > 0 ? "+" : "") + pct.toFixed(1) + "%" : ""}
       </span>
     </div>
   );
@@ -1547,6 +1556,10 @@ function BilanzTab({ konten, accent, headingC, subC, panelBg, panelBdr, tableBdr
   const sumByIds = (ids) => konten
     .filter(k => ids.includes(k.position_id))
     .reduce((s, k) => s + (parseFloat(k.saldo_ist) || 0), 0);
+
+  const sumVJByIds = (ids) => konten
+    .filter(k => ids.includes(k.position_id))
+    .reduce((s, k) => s + (parseFloat(k.saldo_vorjahr) || 0), 0);
 
   const pSign = signFlipPassiven ? -1 : 1;
 
@@ -1565,11 +1578,30 @@ function BilanzTab({ konten, accent, headingC, subC, panelBg, panelBdr, tableBdr
   const ekTotal = sumByIds(EK_IDS) * pSign;
   const passivenTotal = fkKurzTotal + fkLangTotal + ekTotal;
 
+  const uvTotalVJ = sumVJByIds(UV_IDS);
+  const avTotalVJ = sumVJByIds(AV_IDS);
+  const aktivenTotalVJ = uvTotalVJ + avTotalVJ;
+  const fkKurzTotalVJ = sumVJByIds(FK_KURZ_IDS) * pSign;
+  const fkLangTotalVJ = sumVJByIds(FK_LANG_IDS) * pSign;
+  const ekTotalVJ = sumVJByIds(EK_IDS) * pSign;
+  const passivenTotalVJ = fkKurzTotalVJ + fkLangTotalVJ + ekTotalVJ;
+
   const makePos = (id, flip = false) => {
     const pos = POSITION_MAP[id];
     const val = sumByIds([id]) * (flip ? pSign : 1);
-    return { label: pos?.label || id, val };
+    const valVJ = sumVJByIds([id]) * (flip ? pSign : 1);
+    return { label: pos?.label || id, val, valVJ };
   };
+
+  const colHeader = (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 120px 120px 60px",
+      padding: "3px 12px", borderBottom: `1px solid ${panelBdr}` }}>
+      <span style={{ fontSize: 9, fontWeight: 700, color: subC, textTransform: "uppercase", letterSpacing: "0.06em" }}></span>
+      <span style={{ fontSize: 9, fontWeight: 700, color: subC, textTransform: "uppercase", letterSpacing: "0.06em", textAlign: "right" }}>IST</span>
+      <span style={{ fontSize: 9, fontWeight: 700, color: subC, textTransform: "uppercase", letterSpacing: "0.06em", textAlign: "right" }}>VORJAHR</span>
+      <span style={{ fontSize: 9, fontWeight: 700, color: subC, textTransform: "uppercase", letterSpacing: "0.06em", textAlign: "right", paddingRight: 4 }}>Δ%</span>
+    </div>
+  );
 
   const diff = aktivenTotal - passivenTotal;
   const anpTotal = (diffAnpassungen || []).reduce((s, a) => s + (parseFloat(a.betrag) || 0), 0);
@@ -1588,7 +1620,7 @@ function BilanzTab({ konten, accent, headingC, subC, panelBg, panelBdr, tableBdr
 
   // Hilfsfunktion: Position + optional Einzel-Konten
   const renderPos = (id, flip = false) => {
-    const { label, val } = makePos(id, flip);
+    const { label, val, valVJ } = makePos(id, flip);
     const pos = POSITION_MAP[id];
     const isNahe = pos?.level === 3; // Nahestehende = eingerückte Sub-Position
     const posKonten = konten.filter(k => k.position_id === id);
@@ -1596,7 +1628,7 @@ function BilanzTab({ konten, accent, headingC, subC, panelBg, panelBdr, tableBdr
     const displayVal = val !== 0 ? val : null;
     return (
       <React.Fragment key={id}>
-        <BilanzkennzahlRow label={isNahe ? `↳ ${label}` : label} value={displayVal} indent headingC={isNahe ? subC : headingC} subC={subC} accent={accent} />
+        <BilanzkennzahlRow label={isNahe ? `↳ ${label}` : label} value={displayVal} valueVJ={valVJ !== 0 ? valVJ : null} indent headingC={isNahe ? subC : headingC} subC={subC} accent={accent} />
         {showDetails && posKonten.length > 0 && (
           <div style={{ margin: "1px 12px 3px 32px", borderRadius: 5, overflow: "hidden", border: `1px solid ${panelBdr}`, backgroundColor: panelBg }}>
             {posKonten.map((k, i) => (
@@ -1623,7 +1655,7 @@ function BilanzTab({ konten, accent, headingC, subC, panelBg, panelBdr, tableBdr
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 1000 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 1300 }}>
       {/* Toggle-Button */}
       <div style={{ display: "flex", justifyContent: "flex-end" }}>
         <button onClick={() => setShowDetails(v => !v)}
@@ -1641,17 +1673,18 @@ function BilanzTab({ konten, accent, headingC, subC, panelBg, panelBdr, tableBdr
         <div style={{ padding: "12px 14px", backgroundColor: "#dbeafe", borderBottom: `1px solid ${panelBdr}` }}>
           <span style={{ fontWeight: 800, fontSize: 13, color: "#1d4ed8", letterSpacing: "0.03em" }}>AKTIVEN</span>
         </div>
+        {colHeader}
         <div style={{ padding: "8px 12px 0", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: subC }}>
           Umlaufvermögen
         </div>
         {UV_IDS.map(id => renderPos(id))}
-        <BilanzkennzahlRow label="Total Umlaufvermögen" value={uvTotal} isSubtotal headingC={headingC} subC={subC} accent={accent} />
+        <BilanzkennzahlRow label="Total Umlaufvermögen" value={uvTotal} valueVJ={uvTotalVJ} isSubtotal headingC={headingC} subC={subC} accent={accent} />
         <div style={{ padding: "8px 12px 0", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: subC, marginTop: 4 }}>
           Anlagevermögen
         </div>
         {AV_IDS.map(id => renderPos(id))}
-        <BilanzkennzahlRow label="Total Anlagevermögen" value={avTotal} isSubtotal headingC={headingC} subC={subC} accent={accent} />
-        <BilanzkennzahlRow label="TOTAL AKTIVEN" value={aktivenTotal} isTotal headingC={headingC} subC={subC} accent={accent} />
+        <BilanzkennzahlRow label="Total Anlagevermögen" value={avTotal} valueVJ={avTotalVJ} isSubtotal headingC={headingC} subC={subC} accent={accent} />
+        <BilanzkennzahlRow label="TOTAL AKTIVEN" value={aktivenTotal} valueVJ={aktivenTotalVJ} isTotal headingC={headingC} subC={subC} accent={accent} />
       </div>
 
       {/* PASSIVEN */}
@@ -1660,22 +1693,23 @@ function BilanzTab({ konten, accent, headingC, subC, panelBg, panelBdr, tableBdr
           <span style={{ fontWeight: 800, fontSize: 13, color: "#9d174d", letterSpacing: "0.03em" }}>PASSIVEN</span>
           {flipBtn(onFlipPassiven, signFlipPassiven)}
         </div>
+        {colHeader}
         <div style={{ padding: "8px 12px 0", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: subC }}>
           Kurzfristiges Fremdkapital
         </div>
         {FK_KURZ_IDS.map(id => renderPos(id, true))}
-        <BilanzkennzahlRow label="Total Kurzfristiges FK" value={fkKurzTotal} isSubtotal headingC={headingC} subC={subC} accent={accent} />
+        <BilanzkennzahlRow label="Total Kurzfristiges FK" value={fkKurzTotal} valueVJ={fkKurzTotalVJ} isSubtotal headingC={headingC} subC={subC} accent={accent} />
         <div style={{ padding: "8px 12px 0", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: subC, marginTop: 4 }}>
           Langfristiges Fremdkapital
         </div>
         {FK_LANG_IDS.map(id => renderPos(id, true))}
-        <BilanzkennzahlRow label="Total Langfristiges FK" value={fkLangTotal} isSubtotal headingC={headingC} subC={subC} accent={accent} />
+        <BilanzkennzahlRow label="Total Langfristiges FK" value={fkLangTotal} valueVJ={fkLangTotalVJ} isSubtotal headingC={headingC} subC={subC} accent={accent} />
         <div style={{ padding: "8px 12px 0", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: subC, marginTop: 4 }}>
           Eigenkapital
         </div>
         {EK_IDS.map(id => renderPos(id, true))}
-        <BilanzkennzahlRow label="Total Eigenkapital" value={ekTotal} isSubtotal headingC={headingC} subC={subC} accent={accent} />
-        <BilanzkennzahlRow label="TOTAL PASSIVEN" value={passivenTotal} isTotal headingC={headingC} subC={subC} accent={accent} />
+        <BilanzkennzahlRow label="Total Eigenkapital" value={ekTotal} valueVJ={ekTotalVJ} isSubtotal headingC={headingC} subC={subC} accent={accent} />
+        <BilanzkennzahlRow label="TOTAL PASSIVEN" value={passivenTotal} valueVJ={passivenTotalVJ} isTotal headingC={headingC} subC={subC} accent={accent} />
       </div>
     </div>
 
@@ -1940,6 +1974,182 @@ function ErfolgsrechnungTab({ konten, accent, headingC, subC, panelBg, panelBdr,
   );
 }
 
+// ── Anhang Tab ────────────────────────────────────────────────────────────────
+const OR_VORLAGEN = [
+  { id: "bewertung",       titel: "1. Bewertungsgrundsätze (Art. 959c)",
+    inhalt: "Die Jahresrechnung wurde in Übereinstimmung mit den Vorschriften des Schweizerischen Obligationenrechts (Art. 957–963b OR) erstellt.\n\nBewertungsgrundsätze:\n– Flüssige Mittel: zu Nominalwerten\n– Forderungen: zu Nominalwerten, abzüglich Wertberichtigungen\n– Vorräte: zum niedrigeren Wert aus Anschaffungs-/Herstellungskosten und Nettoveräusserungswert\n– Sachanlagen: zu Anschaffungskosten abzüglich planmässiger Abschreibungen\n– Verbindlichkeiten: zu Nominalwerten" },
+  { id: "vollzeit",        titel: "2. Anzahl Vollzeitstellen (Art. 959c Abs. 1 Ziff. 6)",
+    inhalt: "Im Jahresdurchschnitt waren folgende Vollzeitstellen beschäftigt:\n\nGeschäftsjahr: __ Vollzeitstellen\nVorjahr:       __ Vollzeitstellen" },
+  { id: "anteilsinhaber",  titel: "3. Anteilsinhaber > 5% Stimmrechte (Art. 959c Abs. 1 Ziff. 5)",
+    inhalt: "Folgende Personen oder Gesellschaften halten direkt oder indirekt mehr als 5% der Stimmrechte:\n\n[Name], [Ort]: __% der Aktien/Stammanteile\n[Name], [Ort]: __% der Aktien/Stammanteile" },
+  { id: "buergschaft",     titel: "4. Bürgschaften, Garantien & Pfandbestellungen (Art. 959c Abs. 2)",
+    inhalt: "Per Bilanzstichtag bestehen folgende Bürgschaften, Garantieverpflichtungen und Pfandbestellungen zugunsten Dritter:\n\n[Beschreibung, Betrag, Begünstigter]\n\nTotal: CHF __\n\n(Falls keine: Es bestehen keine Bürgschaften oder Garantieverpflichtungen zugunsten Dritter.)" },
+  { id: "leasing",         titel: "5. Leasingverbindlichkeiten (Art. 959c Abs. 2 Ziff. 4)",
+    inhalt: "Nicht in der Bilanz enthaltene Leasingverbindlichkeiten:\n\nFällig innerhalb 1 Jahr:  CHF __\nFällig in 1–5 Jahren:     CHF __\nFällig nach 5 Jahren:     CHF __\n\nTotal: CHF __" },
+  { id: "brandversicherung",titel: "6. Brandversicherungswert Sachanlagen (Art. 959c Abs. 2 Ziff. 2)",
+    inhalt: "Der Brandversicherungswert der Sachanlagen beträgt per Bilanzstichtag:\n\nMaschinen und Einrichtungen: CHF __\nFahrzeuge:                    CHF __\nIT-Infrastruktur:             CHF __\n\nTotal Brandversicherungswert: CHF __" },
+  { id: "pensionskasse",   titel: "7. Verbindlichkeiten gegenüber Vorsorgeeinrichtungen (Art. 959c)",
+    inhalt: "Die Verbindlichkeiten gegenüber den Vorsorgeeinrichtungen (Pensionskasse) betragen per Bilanzstichtag CHF __.\n\nEs bestehen keine wirtschaftlichen Verpflichtungen / Vorteile gegenüber der Pensionskasse im Sinne von Swiss GAAP FER 16." },
+  { id: "nahestehende",    titel: "8. Transaktionen mit nahestehenden Personen (Art. 959c)",
+    inhalt: "Im Geschäftsjahr wurden folgende wesentliche Transaktionen mit nahestehenden Personen durchgeführt:\n\n[Name / Beziehung]: [Beschreibung], CHF __\n\nAlle Transaktionen erfolgten zu marktüblichen Konditionen (at arm's length)." },
+  { id: "ereignisse",      titel: "9. Ereignisse nach dem Bilanzstichtag",
+    inhalt: "Nach dem Bilanzstichtag sind keine wesentlichen Ereignisse eingetreten, welche die Vermögens-, Finanz- und Ertragslage der Gesellschaft wesentlich beeinflussen." },
+  { id: "eventualverb",    titel: "10. Eventualverbindlichkeiten",
+    inhalt: "Per Bilanzstichtag bestehen folgende Eventualverbindlichkeiten:\n\n[Beschreibung und Betrag]\n\nTotal Eventualverbindlichkeiten: CHF __\n\n(Falls keine: Es bestehen keine wesentlichen Eventualverbindlichkeiten.)" },
+  { id: "eigenkapital",    titel: "11. Entwicklung Eigenkapital",
+    inhalt: "Aktienkapital/Stammkapital per 01.01.: CHF __\nGewinnvortrag per 01.01.:             CHF __\nJahresergebnis:                        CHF __\n\nEigenkapital per 31.12.:              CHF __" },
+  { id: "schulden_lang",   titel: "12. Langfristige verzinsliche Verbindlichkeiten (Art. 961a)",
+    inhalt: "Langfristige verzinsliche Verbindlichkeiten (Laufzeit > 5 Jahre):\n\nBetrag: CHF __\nZinssatz: __% p.a.\nFälligkeit: __.__.__\n\nLangfristige verzinsliche Verbindlichkeiten (Laufzeit 1–5 Jahre):\n\nBetrag: CHF __" },
+  { id: "revisionshonorar",titel: "13. Revisionshonorar (Art. 961a Abs. 2)",
+    inhalt: "Honorar der Revisionsstelle im Geschäftsjahr:\n\nOrdentliche Revision: CHF __\nWeitere Dienstleistungen (Steuer/Beratung): CHF __\n\nGesamthonorare Revisionsstelle: CHF __" },
+  { id: "freitext",        titel: "Freier Anhangspunkt", inhalt: "" },
+];
+
+function AnhangTab({ einstellungen, onSaveEinstellungen, accent, headingC, subC, panelBg, panelBdr, selectedYear, customerName }) {
+  const blocks = einstellungen?.anhang_blocks || [];
+  const [editId, setEditId] = useState(null);
+  const [editTitel, setEditTitel] = useState("");
+  const [editInhalt, setEditInhalt] = useState("");
+  const [showVorlagen, setShowVorlagen] = useState(false);
+
+  const saveBlocks = (newBlocks) => onSaveEinstellungen({ anhang_blocks: newBlocks });
+
+  const selectBlock = (b) => { setEditId(b.id); setEditTitel(b.titel); setEditInhalt(b.inhalt); };
+
+  const commitEdit = () => {
+    if (!editId) return;
+    saveBlocks(blocks.map(b => b.id === editId ? { ...b, titel: editTitel, inhalt: editInhalt } : b));
+  };
+
+  const addVorlage = (v) => {
+    const newBlock = { id: crypto.randomUUID(), vorlagenId: v.id, titel: v.titel, inhalt: v.inhalt };
+    const newBlocks = [...blocks, newBlock];
+    saveBlocks(newBlocks);
+    selectBlock(newBlock);
+    setShowVorlagen(false);
+  };
+
+  const moveBlock = (idx, dir) => {
+    const arr = [...blocks];
+    const swapIdx = idx + dir;
+    if (swapIdx < 0 || swapIdx >= arr.length) return;
+    [arr[idx], arr[swapIdx]] = [arr[swapIdx], arr[idx]];
+    saveBlocks(arr);
+  };
+
+  const deleteBlock = (id) => {
+    if (editId === id) { setEditId(null); }
+    saveBlocks(blocks.filter(b => b.id !== id));
+  };
+
+  const selectedBlock = blocks.find(b => b.id === editId);
+
+  return (
+    <div style={{ display: "flex", gap: 20, minHeight: 600 }}>
+      {/* Left: Block-Liste */}
+      <div style={{ width: 300, flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: headingC }}>Anhangspunkte</span>
+          <div style={{ position: "relative" }}>
+            <button onClick={() => setShowVorlagen(v => !v)}
+              style={{ fontSize: 11, fontWeight: 600, padding: "4px 10px", borderRadius: 6, cursor: "pointer",
+                backgroundColor: accent + "18", border: `1px solid ${accent}`, color: accent }}>
+              + Vorlage
+            </button>
+            {showVorlagen && (
+              <div style={{ position: "absolute", right: 0, top: "110%", width: 320, backgroundColor: panelBg,
+                border: `1px solid ${panelBdr}`, borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.14)", zIndex: 9999, overflow: "hidden" }}>
+                <div style={{ padding: "8px 12px", borderBottom: `1px solid ${panelBdr}`, fontSize: 11, fontWeight: 700, color: subC, textTransform: "uppercase" }}>
+                  OR-Vorlagen auswählen
+                </div>
+                <div style={{ maxHeight: 380, overflowY: "auto" }}>
+                  {OR_VORLAGEN.map(v => (
+                    <div key={v.id} onClick={() => addVorlage(v)}
+                      style={{ padding: "8px 12px", cursor: "pointer", fontSize: 12, color: headingC,
+                        borderBottom: `1px solid ${panelBdr}20` }}
+                      onMouseEnter={e => e.currentTarget.style.backgroundColor = accent + "12"}
+                      onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
+                      {v.titel}
+                    </div>
+                  ))}
+                </div>
+                <div style={{ padding: 6, borderTop: `1px solid ${panelBdr}` }}>
+                  <button onClick={() => setShowVorlagen(false)}
+                    style={{ width: "100%", fontSize: 11, padding: "4px", border: "none", background: "none", cursor: "pointer", color: subC }}>
+                    Schliessen
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {blocks.length === 0 ? (
+          <div style={{ padding: "20px 12px", border: `2px dashed ${panelBdr}`, borderRadius: 8, textAlign: "center", fontSize: 12, color: subC }}>
+            Noch keine Anhangspunkte.<br />Vorlage hinzufügen ↑
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {blocks.map((b, idx) => (
+              <div key={b.id}
+                onClick={() => selectBlock(b)}
+                style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 10px", borderRadius: 7, cursor: "pointer",
+                  border: `1px solid ${b.id === editId ? accent : panelBdr}`,
+                  backgroundColor: b.id === editId ? accent + "10" : panelBg }}>
+                <span style={{ flex: 1, fontSize: 11, fontWeight: 600, color: b.id === editId ? accent : headingC,
+                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {b.titel || "(Ohne Titel)"}
+                </span>
+                <div style={{ display: "flex", gap: 2, flexShrink: 0 }}>
+                  <button onClick={e => { e.stopPropagation(); moveBlock(idx, -1); }}
+                    disabled={idx === 0}
+                    style={{ background: "none", border: "none", cursor: idx === 0 ? "default" : "pointer", color: subC, fontSize: 12, opacity: idx === 0 ? 0.3 : 1, padding: "1px 3px" }}>↑</button>
+                  <button onClick={e => { e.stopPropagation(); moveBlock(idx, 1); }}
+                    disabled={idx === blocks.length - 1}
+                    style={{ background: "none", border: "none", cursor: idx === blocks.length - 1 ? "default" : "pointer", color: subC, fontSize: 12, opacity: idx === blocks.length - 1 ? 0.3 : 1, padding: "1px 3px" }}>↓</button>
+                  <button onClick={e => { e.stopPropagation(); deleteBlock(b.id); }}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: "#fca5a5", fontSize: 14, padding: "1px 3px", lineHeight: 1 }}>×</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Right: Editor */}
+      <div style={{ flex: 1 }}>
+        {!editId ? (
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", color: subC, fontSize: 13 }}>
+            <FileText className="w-10 h-10 mb-3" style={{ opacity: 0.3 }} />
+            Anhangspunkt auswählen oder Vorlage hinzufügen
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, height: "100%" }}>
+            <input value={editTitel}
+              onChange={e => setEditTitel(e.target.value)}
+              onBlur={commitEdit}
+              placeholder="Titel des Anhangspunktes…"
+              style={{ fontSize: 14, fontWeight: 700, color: headingC, border: `1px solid ${panelBdr}`,
+                borderRadius: 7, padding: "8px 12px", outline: "none", backgroundColor: panelBg, width: "100%" }} />
+            <textarea value={editInhalt}
+              onChange={e => setEditInhalt(e.target.value)}
+              onBlur={commitEdit}
+              placeholder="Inhalt des Anhangspunktes… (Platzhalter mit __ ersetzen)"
+              rows={20}
+              style={{ fontSize: 13, color: headingC, border: `1px solid ${panelBdr}`, borderRadius: 7,
+                padding: "10px 12px", outline: "none", backgroundColor: panelBg, resize: "vertical",
+                lineHeight: 1.7, fontFamily: "inherit", flex: 1, width: "100%" }} />
+            <div style={{ fontSize: 11, color: subC }}>
+              Tipp: Platzhalter wie <code style={{ backgroundColor: panelBdr + "40", borderRadius: 3, padding: "1px 4px" }}>__</code> oder <code style={{ backgroundColor: panelBdr + "40", borderRadius: 3, padding: "1px 4px" }}>[Name]</code> durch effektive Werte ersetzen.
+              Änderungen werden beim Verlassen des Feldes automatisch gespeichert.
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Hauptkomponente ───────────────────────────────────────────────────────────
 export default function Abschlussdokumentation() {
   const navigate = useNavigate();
@@ -2155,12 +2365,21 @@ export default function Abschlussdokumentation() {
     { id: "kontenplan",       label: "Kontenplan",         icon: FileSpreadsheet },
     { id: "bilanz",           label: "Bilanz",             icon: BarChart2 },
     { id: "erfolgsrechnung",  label: "Erfolgsrechnung",    icon: TrendingUp },
+    { id: "anhang",           label: "Anhang",             icon: FileText },
   ];
 
   const tabProps = { konten, accent, headingC, subC, panelBg, panelBdr, tableBdr, rowHover, theme, customerId: selectedCid, selectedYear };
 
   return (
     <div className="flex flex-col h-full overflow-hidden" style={{ backgroundColor: pageBg }}>
+      <style>{`
+        @media print {
+          body > * { display: none !important; }
+          body > div:last-child { display: block !important; }
+          .no-print { display: none !important; }
+          .print-only { display: block !important; }
+        }
+      `}</style>
 
       {/* ── Breadcrumb ─────────────────────────────────────────────────────── */}
       <div className="flex items-center gap-2 px-6 py-3 flex-shrink-0"
@@ -2273,6 +2492,33 @@ export default function Abschlussdokumentation() {
               <Download className="w-3.5 h-3.5" />
               Export CSV
             </button>
+
+            {/* Logo */}
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600,
+              padding: "4px 10px", borderRadius: 6, cursor: "pointer",
+              border: `1px solid ${panelBdr}`, color: headingC, backgroundColor: panelBg }}>
+              {einstellungen.logo_url
+                ? <img src={einstellungen.logo_url} alt="Logo" style={{ height: 20, objectFit: "contain" }} />
+                : <span>🖼 Logo</span>}
+              <input type="file" accept="image/*" style={{ display: "none" }}
+                onChange={async (e) => {
+                  const file = e.target.files[0];
+                  if (!file) return;
+                  const ext = file.name.split('.').pop();
+                  const path = `${selectedCid}/logo.${ext}`;
+                  await supabase.storage.from("abschluss-logos").upload(path, file, { upsert: true });
+                  const { data } = supabase.storage.from("abschluss-logos").getPublicUrl(path);
+                  updateEinstellungenMut.mutate({ logo_url: data.publicUrl });
+                }} />
+            </label>
+
+            {/* PDF Drucken */}
+            <button onClick={() => window.print()}
+              style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 600,
+                padding: "4px 10px", borderRadius: 6, cursor: "pointer",
+                border: `1px solid ${panelBdr}`, color: headingC, backgroundColor: panelBg }}>
+              🖨 Drucken
+            </button>
           </div>
         </div>
       </div>
@@ -2347,6 +2593,19 @@ export default function Abschlussdokumentation() {
                     <ErfolgsrechnungTab {...tabProps}
                       signFlipER={signFlipER}
                       onFlipER={() => updateEinstellungenMut.mutate({ sign_flip_er: !signFlipER })}
+                    />
+                  )}
+                  {activeTab === "anhang" && (
+                    <AnhangTab
+                      einstellungen={einstellungen}
+                      onSaveEinstellungen={(patch) => updateEinstellungenMut.mutate(patch)}
+                      accent={accent}
+                      headingC={headingC}
+                      subC={subC}
+                      panelBg={panelBg}
+                      panelBdr={panelBdr}
+                      selectedYear={selectedYear}
+                      customerName={selectedCustomer ? (selectedCustomer.company_name || [selectedCustomer.anrede, selectedCustomer.nachname, selectedCustomer.vorname].filter(Boolean).join(" ")) : ""}
                     />
                   )}
                 </>
