@@ -16,22 +16,30 @@ const KONTENRAHMEN_POSITIONEN = [
   // BILANZ – AKTIVEN
   { id: "UV_FLUESSIG",      label: "Flüssige Mittel",                  typ: "bilanz", seite: "aktiven",  gruppe: "Umlaufvermögen",    von: 1000, bis: 1059, level: 2 },
   { id: "UV_WERTSCHRIFTEN", label: "Wertschriften UV",                 typ: "bilanz", seite: "aktiven",  gruppe: "Umlaufvermögen",    von: 1060, bis: 1099, level: 2 },
-  { id: "UV_FORD_LL",       label: "Forderungen aus L+L",              typ: "bilanz", seite: "aktiven",  gruppe: "Umlaufvermögen",    von: 1100, bis: 1109, level: 2 },
-  { id: "UV_FORD_SONST",    label: "Übrige Forderungen",               typ: "bilanz", seite: "aktiven",  gruppe: "Umlaufvermögen",    von: 1110, bis: 1179, level: 2 },
-  { id: "UV_VORRAETE",      label: "Warenvorräte",                     typ: "bilanz", seite: "aktiven",  gruppe: "Umlaufvermögen",    von: 1200, bis: 1269, level: 2 },
-  { id: "UV_ABGRENZUNG",    label: "Aktive Rechnungsabgrenzung",       typ: "bilanz", seite: "aktiven",  gruppe: "Umlaufvermögen",    von: 1300, bis: 1309, level: 2 },
-  { id: "AV_FINANZ",        label: "Finanzanlagen",                    typ: "bilanz", seite: "aktiven",  gruppe: "Anlagevermögen",    von: 1400, bis: 1479, level: 2 },
+  { id: "UV_FORD_LL",         label: "Forderungen aus L+L",                    typ: "bilanz", seite: "aktiven",  gruppe: "Umlaufvermögen",    von: 1100, bis: 1100, level: 2 },
+  { id: "UV_FORD_LL_NAHE",   label: "Forderungen aus L+L Nahestehende",       typ: "bilanz", seite: "aktiven",  gruppe: "Umlaufvermögen",    von: 1101, bis: 1109, level: 3 },
+  { id: "UV_FORD_SONST",     label: "Übrige Forderungen",                      typ: "bilanz", seite: "aktiven",  gruppe: "Umlaufvermögen",    von: 1110, bis: 1139, level: 2 },
+  { id: "UV_FORD_SONST_NAHE",label: "Übrige Forderungen Nahestehende",         typ: "bilanz", seite: "aktiven",  gruppe: "Umlaufvermögen",    von: 1140, bis: 1179, level: 3 },
+  { id: "UV_VORRAETE",       label: "Warenvorräte",                            typ: "bilanz", seite: "aktiven",  gruppe: "Umlaufvermögen",    von: 1200, bis: 1269, level: 2 },
+  { id: "UV_ABGRENZUNG",     label: "Aktive Rechnungsabgrenzung",              typ: "bilanz", seite: "aktiven",  gruppe: "Umlaufvermögen",    von: 1300, bis: 1309, level: 2 },
+  { id: "AV_FINANZ",         label: "Finanzanlagen",                           typ: "bilanz", seite: "aktiven",  gruppe: "Anlagevermögen",    von: 1400, bis: 1459, level: 2 },
+  { id: "AV_FINANZ_NAHE",    label: "Finanzanlagen Nahestehende",              typ: "bilanz", seite: "aktiven",  gruppe: "Anlagevermögen",    von: 1460, bis: 1479, level: 3 },
   { id: "AV_MOBIL",         label: "Mobile Sachanlagen",               typ: "bilanz", seite: "aktiven",  gruppe: "Anlagevermögen",    von: 1500, bis: 1599, level: 2 },
   { id: "AV_IMMOBIL",       label: "Immobile Sachanlagen",             typ: "bilanz", seite: "aktiven",  gruppe: "Anlagevermögen",    von: 1600, bis: 1699, level: 2 },
   { id: "AV_IMMATERIELL",   label: "Immaterielle Werte",               typ: "bilanz", seite: "aktiven",  gruppe: "Anlagevermögen",    von: 1700, bis: 1799, level: 2 },
   // BILANZ – PASSIVEN
-  { id: "FK_KURZ_LL",         label: "Verbindlichkeiten aus L+L",          typ: "bilanz", seite: "passiven", gruppe: "Kurzfristiges FK",   von: 2000, bis: 2009, level: 2 },
-  { id: "FK_KURZ_BANK",       label: "Kurzfristige Bankverbindlichkeiten", typ: "bilanz", seite: "passiven", gruppe: "Kurzfristiges FK",   von: 2010, bis: 2069, level: 2 },
-  { id: "FK_KURZ_SONST",      label: "Übrige kurzfristige Verbindlichkeiten", typ: "bilanz", seite: "passiven", gruppe: "Kurzfristiges FK", von: 2070, bis: 2299, level: 2 },
-  { id: "FK_KURZ_ABGRENZUNG", label: "Passive Rechnungsabgrenzung",        typ: "bilanz", seite: "passiven", gruppe: "Kurzfristiges FK",   von: 2300, bis: 2399, level: 2 },
-  { id: "FK_LANG_BANK",        label: "Langfristige Bankverbindlichkeiten", typ: "bilanz", seite: "passiven", gruppe: "Langfristiges FK",   von: 2400, bis: 2499, level: 2 },
-  { id: "FK_LANG_SONST",       label: "Übrige langfristige Verbindlichkeiten", typ: "bilanz", seite: "passiven", gruppe: "Langfristiges FK", von: 2500, bis: 2599, level: 2 },
-  { id: "FK_RUECKSTELLUNGEN",  label: "Rückstellungen",                     typ: "bilanz", seite: "passiven", gruppe: "Langfristiges FK",   von: 2600, bis: 2799, level: 2 },
+  { id: "FK_KURZ_LL",          label: "Verbindlichkeiten aus L+L",                      typ: "bilanz", seite: "passiven", gruppe: "Kurzfristiges FK",  von: 2000, bis: 2000, level: 2 },
+  { id: "FK_KURZ_LL_NAHE",    label: "Verbindlichkeiten aus L+L Nahestehende",         typ: "bilanz", seite: "passiven", gruppe: "Kurzfristiges FK",  von: 2001, bis: 2009, level: 3 },
+  { id: "FK_KURZ_BANK",        label: "Kurzfristige Bankverbindlichkeiten",             typ: "bilanz", seite: "passiven", gruppe: "Kurzfristiges FK",  von: 2010, bis: 2039, level: 2 },
+  { id: "FK_KURZ_VERZ_NAHE",  label: "Kurzfristige verzinsliche Verbindl. Nahesteh.",  typ: "bilanz", seite: "passiven", gruppe: "Kurzfristiges FK",  von: 2040, bis: 2069, level: 3 },
+  { id: "FK_KURZ_SONST",       label: "Übrige kurzfristige Verbindlichkeiten",          typ: "bilanz", seite: "passiven", gruppe: "Kurzfristiges FK",  von: 2070, bis: 2099, level: 2 },
+  { id: "FK_KURZ_SONST_NAHE", label: "Übrige kurzfristige Verbindl. Nahestehende",     typ: "bilanz", seite: "passiven", gruppe: "Kurzfristiges FK",  von: 2100, bis: 2299, level: 3 },
+  { id: "FK_KURZ_ABGRENZUNG",  label: "Passive Rechnungsabgrenzung",                   typ: "bilanz", seite: "passiven", gruppe: "Kurzfristiges FK",  von: 2300, bis: 2399, level: 2 },
+  { id: "FK_LANG_BANK",        label: "Langfristige Bankverbindlichkeiten",             typ: "bilanz", seite: "passiven", gruppe: "Langfristiges FK",  von: 2400, bis: 2449, level: 2 },
+  { id: "FK_LANG_VERZ_NAHE",  label: "Langfristige verzinsliche Verbindl. Nahesteh.",  typ: "bilanz", seite: "passiven", gruppe: "Langfristiges FK",  von: 2450, bis: 2499, level: 3 },
+  { id: "FK_LANG_SONST",       label: "Übrige langfristige Verbindlichkeiten",          typ: "bilanz", seite: "passiven", gruppe: "Langfristiges FK",  von: 2500, bis: 2549, level: 2 },
+  { id: "FK_LANG_SONST_NAHE", label: "Übrige langfristige Verbindl. Nahestehende",     typ: "bilanz", seite: "passiven", gruppe: "Langfristiges FK",  von: 2550, bis: 2599, level: 3 },
+  { id: "FK_RUECKSTELLUNGEN",  label: "Rückstellungen",                                 typ: "bilanz", seite: "passiven", gruppe: "Langfristiges FK",  von: 2600, bis: 2799, level: 2 },
   // EIGENKAPITAL – Mindestgliederung OR 959a / Swiss KMU Kontenrahmen
   { id: "EK_KAPITAL",          label: "Aktien-/Stammkapital",               typ: "bilanz", seite: "passiven", gruppe: "Eigenkapital", von: 2800, bis: 2809, level: 2 },
   { id: "EK_KAP_RESERVE",      label: "Gesetzliche Kapitalreserve",         typ: "bilanz", seite: "passiven", gruppe: "Eigenkapital", von: 2810, bis: 2819, level: 2 },
@@ -1542,10 +1550,10 @@ function BilanzTab({ konten, accent, headingC, subC, panelBg, panelBdr, tableBdr
 
   const pSign = signFlipPassiven ? -1 : 1;
 
-  const UV_IDS = ["UV_FLUESSIG","UV_WERTSCHRIFTEN","UV_FORD_LL","UV_FORD_SONST","UV_VORRAETE","UV_ABGRENZUNG"];
-  const AV_IDS = ["AV_FINANZ","AV_MOBIL","AV_IMMOBIL","AV_IMMATERIELL"];
-  const FK_KURZ_IDS = ["FK_KURZ_LL","FK_KURZ_BANK","FK_KURZ_SONST","FK_KURZ_ABGRENZUNG"];
-  const FK_LANG_IDS = ["FK_LANG_BANK","FK_LANG_SONST","FK_RUECKSTELLUNGEN"];
+  const UV_IDS = ["UV_FLUESSIG","UV_WERTSCHRIFTEN","UV_FORD_LL","UV_FORD_LL_NAHE","UV_FORD_SONST","UV_FORD_SONST_NAHE","UV_VORRAETE","UV_ABGRENZUNG"];
+  const AV_IDS = ["AV_FINANZ","AV_FINANZ_NAHE","AV_MOBIL","AV_IMMOBIL","AV_IMMATERIELL"];
+  const FK_KURZ_IDS = ["FK_KURZ_LL","FK_KURZ_LL_NAHE","FK_KURZ_BANK","FK_KURZ_VERZ_NAHE","FK_KURZ_SONST","FK_KURZ_SONST_NAHE","FK_KURZ_ABGRENZUNG"];
+  const FK_LANG_IDS = ["FK_LANG_BANK","FK_LANG_VERZ_NAHE","FK_LANG_SONST","FK_LANG_SONST_NAHE","FK_RUECKSTELLUNGEN"];
   const EK_IDS = ["EK_KAPITAL","EK_KAP_RESERVE","EK_GES_RESERVE","EK_FREIE_RESERVE","EK_RESERVEN","EK_VORTRAG","EK_JAHRESERGEBNIS"];
 
   const uvTotal = sumByIds(UV_IDS);
@@ -1581,12 +1589,14 @@ function BilanzTab({ konten, accent, headingC, subC, panelBg, panelBdr, tableBdr
   // Hilfsfunktion: Position + optional Einzel-Konten
   const renderPos = (id, flip = false) => {
     const { label, val } = makePos(id, flip);
+    const pos = POSITION_MAP[id];
+    const isNahe = pos?.level === 3; // Nahestehende = eingerückte Sub-Position
     const posKonten = konten.filter(k => k.position_id === id);
     if (val === 0 && posKonten.length === 0) return null;
     const displayVal = val !== 0 ? val : null;
     return (
       <React.Fragment key={id}>
-        <BilanzkennzahlRow label={label} value={displayVal} indent headingC={headingC} subC={subC} accent={accent} />
+        <BilanzkennzahlRow label={isNahe ? `↳ ${label}` : label} value={displayVal} indent headingC={isNahe ? subC : headingC} subC={subC} accent={accent} />
         {showDetails && posKonten.length > 0 && (
           <div style={{ margin: "1px 12px 3px 32px", borderRadius: 5, overflow: "hidden", border: `1px solid ${panelBdr}`, backgroundColor: panelBg }}>
             {posKonten.map((k, i) => (
@@ -1842,8 +1852,9 @@ function ErfolgsrechnungTab({ konten, accent, headingC, subC, panelBg, panelBdr,
   // Algebraische Addition: nach dem Flip sind Ertrag + und Aufwand −
   const nettoumsatz    = sumByIds(["ER_UMSATZ","ER_EIGENLEISTUNG","ER_BESTAND"]);
   const material       = sumByIds(["ER_MATERIAL"]);
-  const bruttogewinn   = nettoumsatz + material;
+  const bruttogewinnI  = nettoumsatz + material;          // Erlös − Warenaufwand
   const personal       = sumByIds(["ER_PERSONAL"]);
+  const bruttogewinnII = bruttogewinnI + personal;        // BGI − Personalaufwand
   const raum           = sumByIds(["ER_RAUM"]);
   const unterhalt      = sumByIds(["ER_UNTERHALT"]);
   const fahrzeug       = sumByIds(["ER_FAHRZEUG"]);
@@ -1853,7 +1864,7 @@ function ErfolgsrechnungTab({ konten, accent, headingC, subC, panelBg, panelBdr,
   const werbung        = sumByIds(["ER_WERBUNG"]);
   const betrieb        = sumByIds(["ER_BETRIEB"]); // compat / übrige
   const betriebTotal   = raum + unterhalt + fahrzeug + versicherung + energie + verwaltung + werbung + betrieb;
-  const ebitda         = bruttogewinn + personal + betriebTotal;
+  const ebitda         = bruttogewinnII + betriebTotal;   // BGII − Betriebskosten
   const abschr         = sumByIds(["ER_ABSCHR"]);
   const ebit           = ebitda + abschr;
   const finErtrag      = sumByIds(["ER_FINANZ_ERTRAG","ER_LIEGENSCHAFTEN"]);
@@ -1880,27 +1891,29 @@ function ErfolgsrechnungTab({ konten, accent, headingC, subC, panelBg, panelBdr,
           }}>± Vorzeichen</button>
         </div>
 
-        <ERSeparator label="Betriebsertrag" subC={subC} />
+        <ERSeparator label="Erlös" subC={subC} />
         <ERRow label="Nettoumsatzerlöse" value={sumByIds(["ER_UMSATZ"])} indent {...props} />
         <ERRow label="Eigenleistungen" value={sumByIds(["ER_EIGENLEISTUNG"])} indent {...props} />
         <ERRow label="Bestandesveränderungen" value={sumByIds(["ER_BESTAND"])} indent {...props} />
         <ERRow label="Nettoumsatz Total" value={nettoumsatz} isSubtotal {...props} />
 
-        <ERSeparator label="Betriebsaufwand" subC={subC} />
-        <ERRow label="− Materialaufwand" value={material} isNegative indent {...props} />
-        <ERRow label="= Bruttogewinn (Rohergebnis)" value={bruttogewinn} isTotal
-          highlightGreen={bruttogewinn >= 0} {...props} />
+        <ERRow label="− Warenaufwand" value={material} isNegative indent {...props} />
+        <ERRow label="= Bruttogewinn I (Rohergebnis)" value={bruttogewinnI} isTotal
+          highlightGreen={bruttogewinnI >= 0} {...props} />
+
+        <ERRow label="− Personalaufwand" value={personal} isNegative indent {...props} />
+        <ERRow label="= Bruttogewinn II" value={bruttogewinnII} isTotal
+          highlightGreen={bruttogewinnII >= 0} {...props} />
 
         <ERSeparator label="Betriebskosten" subC={subC} />
-        <ERRow label="− Personalaufwand" value={personal} isNegative indent {...props} />
-        {raum       !== 0 && <ERRow label="− Raumaufwand"                      value={raum}        isNegative indent {...props} />}
-        {unterhalt  !== 0 && <ERRow label="− Unterhalt & Reparaturen"          value={unterhalt}   isNegative indent {...props} />}
-        {fahrzeug   !== 0 && <ERRow label="− Fahrzeug- & Transportaufwand"     value={fahrzeug}    isNegative indent {...props} />}
-        {versicherung!==0 && <ERRow label="− Sachversicherungen & Abgaben"     value={versicherung}isNegative indent {...props} />}
-        {energie    !== 0 && <ERRow label="− Energie & Entsorgung"             value={energie}     isNegative indent {...props} />}
-        {verwaltung !== 0 && <ERRow label="− Verwaltungs- & Informatikaufw."   value={verwaltung}  isNegative indent {...props} />}
-        {werbung    !== 0 && <ERRow label="− Werbe- & Akquisitionsaufwand"      value={werbung}     isNegative indent {...props} />}
-        {betrieb    !== 0 && <ERRow label="− Übriger Betriebsaufwand"          value={betrieb}     isNegative indent {...props} />}
+        {raum       !== 0 && <ERRow label="− Raumaufwand"                      value={raum}         isNegative indent {...props} />}
+        {unterhalt  !== 0 && <ERRow label="− Unterhalt & Reparaturen"          value={unterhalt}    isNegative indent {...props} />}
+        {fahrzeug   !== 0 && <ERRow label="− Fahrzeug- & Transportaufwand"     value={fahrzeug}     isNegative indent {...props} />}
+        {versicherung!==0 && <ERRow label="− Sachversicherungen & Abgaben"     value={versicherung} isNegative indent {...props} />}
+        {energie    !== 0 && <ERRow label="− Energie & Entsorgung"             value={energie}      isNegative indent {...props} />}
+        {verwaltung !== 0 && <ERRow label="− Verwaltungs- & Informatikaufw."   value={verwaltung}   isNegative indent {...props} />}
+        {werbung    !== 0 && <ERRow label="− Werbe- & Akquisitionsaufwand"     value={werbung}      isNegative indent {...props} />}
+        {betrieb    !== 0 && <ERRow label="− Übriger Betriebsaufwand"          value={betrieb}      isNegative indent {...props} />}
         <ERRow label="= EBITDA" value={ebitda} isTotal highlightGreen={ebitda >= 0} {...props} />
 
         <ERSeparator label="Abschreibungen" subC={subC} />
