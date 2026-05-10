@@ -91,6 +91,19 @@ function fmtCHFshort(val) {
   return "CHF\u00a0" + fmtCHF(val);
 }
 
+// Sicherer Formel-Evaluator: erlaubt nur Ziffern + - * / . ( ) '
+function evalExpr(str) {
+  if (str === null || str === undefined || str === "") return null;
+  // Normalisieren: Leerzeichen, CH-Apostroph, Komma → Punkt
+  const s = String(str).replace(/\s+/g, "").replace(/'/g, "").replace(/,/g, ".");
+  if (!/^[-+*/.()\d]+$/.test(s)) return null;
+  try {
+    // eslint-disable-next-line no-new-func
+    const r = new Function("return (" + s + ")")();
+    return typeof r === "number" && isFinite(r) ? Math.round(r * 100) / 100 : null;
+  } catch { return null; }
+}
+
 function todayStr() {
   return new Date().toLocaleDateString("de-CH");
 }
@@ -1226,6 +1239,13 @@ function KontenplanTab({ konten, onUpdateKonto, customerId, selectedYear, accent
   const isLight = theme === "light";
   const [collapsed, setCollapsed] = useState({});
   const [expandedKonten, setExpandedKonten] = useState(new Set());
+  // Inline-Edit für Saldo IST / Saldo VJ per Doppelklick
+  const [editSaldo, setEditSaldo] = useState(null); // { kontoId, field: "saldo_ist"|"saldo_vorjahr", expr }
+  const commitSaldo = (kontoId, field, expr, nextEdit) => {
+    const result = evalExpr(expr);
+    if (result !== null) onUpdateKonto(kontoId, { [field]: result });
+    setEditSaldo(nextEdit || null);
+  };
   const toggleKonto = (id) => setExpandedKonten(prev => {
     const next = new Set(prev);
     if (next.has(id)) next.delete(id); else next.add(id);
@@ -1361,13 +1381,41 @@ function KontenplanTab({ konten, onUpdateKonto, customerId, selectedYear, accent
                       <td style={{ padding: "7px 12px", color: headingC }}>
                         {konto.kontoname || <span style={{ color: subC, fontStyle: "italic" }}>—</span>}
                       </td>
-                      {/* Saldo IST */}
-                      <td style={{ padding: "7px 12px", textAlign: "right", fontFamily: "monospace", color: headingC, whiteSpace: "nowrap" }}>
-                        {fmtCHF(konto.saldo_ist)}
+                      {/* Saldo IST – doppelklick editierbar */}
+                      <td style={{ padding: editSaldo?.kontoId === konto.id && editSaldo?.field === "saldo_ist" ? "2px 4px" : "7px 12px", textAlign: "right", fontFamily: "monospace", color: headingC, whiteSpace: "nowrap", minWidth: 110 }}
+                        onDoubleClick={() => setEditSaldo({ kontoId: konto.id, field: "saldo_ist", expr: String(konto.saldo_ist ?? "") })}>
+                        {editSaldo?.kontoId === konto.id && editSaldo?.field === "saldo_ist" ? (
+                          <input autoFocus value={editSaldo.expr}
+                            onChange={e => setEditSaldo(v => ({ ...v, expr: e.target.value }))}
+                            onKeyDown={e => {
+                              if (e.key === "Enter") { e.preventDefault(); commitSaldo(konto.id, "saldo_ist", editSaldo.expr); }
+                              if (e.key === "Tab")   { e.preventDefault(); commitSaldo(konto.id, "saldo_ist", editSaldo.expr, { kontoId: konto.id, field: "saldo_vorjahr", expr: String(konto.saldo_vorjahr ?? "") }); }
+                              if (e.key === "Escape") setEditSaldo(null);
+                            }}
+                            onBlur={() => commitSaldo(konto.id, "saldo_ist", editSaldo.expr)}
+                            title="Rechnung möglich: z.B. 1000+500 oder 2*630.50"
+                            style={{ width: "100%", textAlign: "right", fontFamily: "monospace", fontSize: 12, border: "1.5px solid #60a5fa", borderRadius: 4, padding: "3px 6px", outline: "none", backgroundColor: "#eff6ff" }} />
+                        ) : (
+                          <span title="Doppelklick zum Bearbeiten" style={{ cursor: "default" }}>{fmtCHF(konto.saldo_ist)}</span>
+                        )}
                       </td>
-                      {/* Saldo VJ */}
-                      <td style={{ padding: "7px 12px", textAlign: "right", fontFamily: "monospace", color: subC, whiteSpace: "nowrap" }}>
-                        {fmtCHF(konto.saldo_vorjahr)}
+                      {/* Saldo VJ – doppelklick editierbar */}
+                      <td style={{ padding: editSaldo?.kontoId === konto.id && editSaldo?.field === "saldo_vorjahr" ? "2px 4px" : "7px 12px", textAlign: "right", fontFamily: "monospace", color: subC, whiteSpace: "nowrap", minWidth: 110 }}
+                        onDoubleClick={() => setEditSaldo({ kontoId: konto.id, field: "saldo_vorjahr", expr: String(konto.saldo_vorjahr ?? "") })}>
+                        {editSaldo?.kontoId === konto.id && editSaldo?.field === "saldo_vorjahr" ? (
+                          <input autoFocus value={editSaldo.expr}
+                            onChange={e => setEditSaldo(v => ({ ...v, expr: e.target.value }))}
+                            onKeyDown={e => {
+                              if (e.key === "Enter")  { e.preventDefault(); commitSaldo(konto.id, "saldo_vorjahr", editSaldo.expr); }
+                              if (e.key === "Tab")    { e.preventDefault(); commitSaldo(konto.id, "saldo_vorjahr", editSaldo.expr); }
+                              if (e.key === "Escape") setEditSaldo(null);
+                            }}
+                            onBlur={() => commitSaldo(konto.id, "saldo_vorjahr", editSaldo.expr)}
+                            title="Rechnung möglich: z.B. 1000+500 oder 2*630.50"
+                            style={{ width: "100%", textAlign: "right", fontFamily: "monospace", fontSize: 12, border: "1.5px solid #a78bfa", borderRadius: 4, padding: "3px 6px", outline: "none", backgroundColor: "#f5f3ff" }} />
+                        ) : (
+                          <span title="Doppelklick zum Bearbeiten" style={{ cursor: "default" }}>{fmtCHF(konto.saldo_vorjahr)}</span>
+                        )}
                       </td>
                       {/* Abweichung */}
                       <td style={{ padding: "7px 12px", textAlign: "right", whiteSpace: "nowrap" }}>
