@@ -518,6 +518,36 @@ export default function Anlagebuchhaltung() {
     onError: (e) => toast.error("Jahreswechsel: " + e.message),
   });
 
+  // ── PDF-Vorschau editieren (manuelle Anpassungen vor Import) ────────────────
+  const updatePdfRow = (idx, field, value) => {
+    setImportDialog(d => {
+      if (!d || d.mode !== "pdf") return d;
+      const rows = [...d.pdfAnlagen];
+      rows[idx] = { ...rows[idx], [field]: value };
+      return { ...d, pdfAnlagen: rows };
+    });
+  };
+  const removePdfRow = (idx) => {
+    setImportDialog(d => {
+      if (!d || d.mode !== "pdf") return d;
+      return { ...d, pdfAnlagen: d.pdfAnlagen.filter((_, i) => i !== idx) };
+    });
+  };
+  const addPdfRow = () => {
+    setImportDialog(d => {
+      if (!d || d.mode !== "pdf") return d;
+      return {
+        ...d, pdfAnlagen: [...d.pdfAnlagen, {
+          kontonummer: "", beschreibung: "", kategorie_name: null, sub_kategorie: "",
+          saldovortrag: 0, saldoEnde: 0, abschrPct: null, abschrSumme: 0,
+          korrekturSumme: 0, zugaenge: 0, abgaenge: 0, beschaffungskosten: 0,
+          beschaffungJahr: selectedYear, beschaffungMonat: null,
+          lieferant: null, buchungsTexte: [],
+        }],
+      };
+    });
+  };
+
   // ── PDF-Import: BlueOffice Kontoblatt-Format ────────────────────────────────
   async function handlePdfImport(file) {
     if (!abschlussId) { toast.error("Erst Mandant und Jahr wählen"); return; }
@@ -1148,39 +1178,81 @@ export default function Anlagebuchhaltung() {
             </div>
             <div style={{ overflow: "auto", padding: "10px 18px" }}>
               {importDialog.mode === "pdf" ? (
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
-                  <thead>
-                    <tr style={{ backgroundColor: accent + "08" }}>
-                      <th style={{ padding: "6px 8px", textAlign: "left", color: subC, fontWeight: 700, borderBottom: `1px solid ${panelBdr}` }}>Kto</th>
-                      <th style={{ padding: "6px 8px", textAlign: "left", color: subC, fontWeight: 700, borderBottom: `1px solid ${panelBdr}` }}>Beschreibung</th>
-                      <th style={{ padding: "6px 8px", textAlign: "left", color: subC, fontWeight: 700, borderBottom: `1px solid ${panelBdr}` }}>Kategorie</th>
-                      <th style={{ padding: "6px 8px", textAlign: "right", color: subC, fontWeight: 700, borderBottom: `1px solid ${panelBdr}` }}>BW Anf.</th>
-                      <th style={{ padding: "6px 8px", textAlign: "right", color: subC, fontWeight: 700, borderBottom: `1px solid ${panelBdr}` }}>Zugang</th>
-                      <th style={{ padding: "6px 8px", textAlign: "center", color: subC, fontWeight: 700, borderBottom: `1px solid ${panelBdr}` }}>Abschr%</th>
-                      <th style={{ padding: "6px 8px", textAlign: "right", color: subC, fontWeight: 700, borderBottom: `1px solid ${panelBdr}` }}>BW Ende</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {importDialog.pdfAnlagen.slice(0, 20).map((a, i) => (
-                      <tr key={i} style={{ borderBottom: `1px solid ${panelBdr}50` }}>
-                        <td style={{ padding: "4px 8px", fontFamily: "monospace", color: headingC, fontWeight: 600 }}>{a.kontonummer}</td>
-                        <td style={{ padding: "4px 8px", color: headingC }}>{a.beschreibung.slice(0, 32)}</td>
-                        <td style={{ padding: "4px 8px", color: a.kategorie_name ? accent : "#dc2626" }}>{a.kategorie_name || "?"}</td>
-                        <td style={{ padding: "4px 8px", textAlign: "right", fontFamily: "monospace", color: headingC }}>{fmtCHF(a.saldovortrag)}</td>
-                        <td style={{ padding: "4px 8px", textAlign: "right", fontFamily: "monospace", color: a.zugaenge > 0 ? "#16a34a" : subC }}>
-                          {a.zugaenge > 0 ? fmtCHF(a.zugaenge) : "—"}
-                        </td>
-                        <td style={{ padding: "4px 8px", textAlign: "center", color: subC }}>{a.abschrPct != null ? a.abschrPct + "%" : "—"}</td>
-                        <td style={{ padding: "4px 8px", textAlign: "right", fontFamily: "monospace", color: headingC, fontWeight: 600 }}>{fmtCHF(a.saldoEnde)}</td>
+                <>
+                  <div style={{ fontSize: 11, color: subC, marginBottom: 8, fontStyle: "italic" }}>
+                    Tipp: alle Felder können vor dem Import angepasst werden (Kategorie, Werte, Abschr.%).
+                    Eine zusätzliche leere Zeile am Ende für manuelle Ergänzungen.
+                  </div>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                    <thead>
+                      <tr style={{ backgroundColor: accent + "08" }}>
+                        <th style={pdfHdr(subC, panelBdr, "left", 55)}>Kto</th>
+                        <th style={pdfHdr(subC, panelBdr, "left", 0)}>Beschreibung</th>
+                        <th style={pdfHdr(subC, panelBdr, "left", 110)}>Kategorie</th>
+                        <th style={pdfHdr(subC, panelBdr, "right", 95)}>BW Anf.</th>
+                        <th style={pdfHdr(subC, panelBdr, "right", 95)}>Zugang</th>
+                        <th style={pdfHdr(subC, panelBdr, "center", 70)}>Abschr%</th>
+                        <th style={pdfHdr(subC, panelBdr, "right", 95)}>BW Ende</th>
+                        <th style={pdfHdr(subC, panelBdr, "center", 30)}></th>
                       </tr>
-                    ))}
-                    {importDialog.pdfAnlagen.length > 20 && (
-                      <tr><td colSpan={7} style={{ padding: "8px", textAlign: "center", color: subC, fontSize: 10, fontStyle: "italic" }}>
-                        … und {importDialog.pdfAnlagen.length - 20} weitere Konten
-                      </td></tr>
-                    )}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {importDialog.pdfAnlagen.map((a, i) => (
+                        <tr key={i} style={{ borderBottom: `1px solid ${panelBdr}50` }}>
+                          <td style={{ padding: "3px 4px" }}>
+                            <input value={a.kontonummer || ""}
+                              onChange={e => updatePdfRow(i, "kontonummer", e.target.value)}
+                              style={inpStyle("right", panelBdr, headingC, panelBg, true)} />
+                          </td>
+                          <td style={{ padding: "3px 4px" }}>
+                            <input value={a.beschreibung || ""}
+                              onChange={e => updatePdfRow(i, "beschreibung", e.target.value)}
+                              style={inpStyle("left", panelBdr, headingC, panelBg)} />
+                          </td>
+                          <td style={{ padding: "3px 4px" }}>
+                            <select value={a.kategorie_name || ""}
+                              onChange={e => updatePdfRow(i, "kategorie_name", e.target.value || null)}
+                              style={{ ...inpStyle("left", panelBdr, a.kategorie_name ? accent : "#dc2626", panelBg), padding: "3px 4px" }}>
+                              <option value="">— wählen —</option>
+                              {[...new Set([...kategorien.map(k => k.name), ...DEFAULT_KATEGORIEN.map(k => k.name)])].map(n =>
+                                <option key={n} value={n}>{n}</option>
+                              )}
+                            </select>
+                          </td>
+                          <td style={{ padding: "3px 4px" }}>
+                            <input value={a.saldovortrag ?? ""} type="number" step="0.01"
+                              onChange={e => updatePdfRow(i, "saldovortrag", parseFloat(e.target.value) || 0)}
+                              style={inpStyle("right", panelBdr, headingC, panelBg, true)} />
+                          </td>
+                          <td style={{ padding: "3px 4px" }}>
+                            <input value={a.zugaenge ?? ""} type="number" step="0.01"
+                              onChange={e => updatePdfRow(i, "zugaenge", parseFloat(e.target.value) || 0)}
+                              style={inpStyle("right", panelBdr, a.zugaenge > 0 ? "#16a34a" : headingC, panelBg, true)} />
+                          </td>
+                          <td style={{ padding: "3px 4px" }}>
+                            <input value={a.abschrPct ?? ""} type="number" step="0.01"
+                              onChange={e => updatePdfRow(i, "abschrPct", parseFloat(e.target.value) || null)}
+                              style={inpStyle("center", panelBdr, headingC, panelBg, true)} />
+                          </td>
+                          <td style={{ padding: "3px 4px" }}>
+                            <input value={a.saldoEnde ?? ""} type="number" step="0.01"
+                              onChange={e => updatePdfRow(i, "saldoEnde", parseFloat(e.target.value) || 0)}
+                              style={inpStyle("right", panelBdr, headingC, panelBg, true)} />
+                          </td>
+                          <td style={{ padding: "3px 4px", textAlign: "center" }}>
+                            <button onClick={() => removePdfRow(i)} title="Zeile entfernen"
+                              style={{ background: "none", border: "none", cursor: "pointer", color: "#dc2626", fontSize: 14, lineHeight: 1, opacity: 0.5 }}>×</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <button onClick={addPdfRow}
+                    style={{ marginTop: 8, fontSize: 11, fontWeight: 600, padding: "5px 12px", borderRadius: 6,
+                      cursor: "pointer", border: `1px dashed ${accent}50`, color: accent, backgroundColor: accent + "08" }}>
+                    + Zeile manuell hinzufügen
+                  </button>
+                </>
               ) : (
                 <>
                   <div style={{ fontSize: 11, color: subC, marginBottom: 8 }}>
@@ -1960,6 +2032,19 @@ function ZusammenfassungTab({ anlagen, kategorien, selectedYear, accent, heading
     </div>
   );
 }
+
+// PDF-Vorschau Helper-Styles
+const pdfHdr = (subC, panelBdr, ta, w) => ({
+  padding: "6px 8px", textAlign: ta, color: subC, fontSize: 10, fontWeight: 700,
+  borderBottom: `1px solid ${panelBdr}`, ...(w ? { width: w } : {}),
+  textTransform: "uppercase", letterSpacing: "0.04em",
+});
+const inpStyle = (ta, panelBdr, color, panelBg, mono) => ({
+  width: "100%", padding: "3px 6px", fontSize: 11,
+  border: `1px solid ${panelBdr}`, borderRadius: 4, outline: "none",
+  textAlign: ta, color, backgroundColor: panelBg,
+  fontFamily: mono ? "monospace" : "inherit",
+});
 
 const hdrStyle = (subC, tableBdr, ta, w) => ({
   padding: "8px 8px", textAlign: ta, color: subC, fontSize: 9, fontWeight: 700,
