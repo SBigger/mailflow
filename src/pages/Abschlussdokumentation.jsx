@@ -1670,7 +1670,7 @@ function KontenplanTab({ konten, onUpdateKonto, onAddKonto, customerId, selected
   // Anpassungszeilen-Edit
   const [editAnp, setEditAnp] = useState(null); // { idx, bezeichnung, betrag }
   // Resizable column widths: [Konto-Nr, Kontoname, Saldo IST, Saldo VJ, Abw., Position, Notiz]
-  const DEFAULT_COL_WIDTHS = [80, 200, 110, 110, 95, 160, 140];
+  const DEFAULT_COL_WIDTHS = [78, 200, 135, 135, 115, 160, 130];
   const [colWidths, setColWidths] = useState(DEFAULT_COL_WIDTHS);
   const colWidthsRef = useRef(DEFAULT_COL_WIDTHS);
 
@@ -1792,7 +1792,7 @@ function KontenplanTab({ konten, onUpdateKonto, onAddKonto, customerId, selected
                   style={{ width: "100%", fontSize: 12, padding: "4px 8px", borderRadius: 4,
                     border: `1px solid ${accent}40`, outline: "none", backgroundColor: panelBg, color: headingC }} />
               </td>
-              <td style={{ padding: "4px 6px", textAlign: "right" }}>
+              <td style={{ padding: "4px 12px", textAlign: "right" }}>
                 <input value={newRow.saldo_ist}
                   onChange={e => setNewRow(v => ({ ...v, saldo_ist: e.target.value }))}
                   onKeyDown={e => { if (e.key === "Enter") submitNewRow(); }}
@@ -1802,7 +1802,7 @@ function KontenplanTab({ konten, onUpdateKonto, onAddKonto, customerId, selected
                     padding: "4px 6px", borderRadius: 4, border: `1px solid ${accent}40`,
                     outline: "none", backgroundColor: panelBg, color: headingC }} />
               </td>
-              <td style={{ padding: "4px 6px", textAlign: "right" }}>
+              <td style={{ padding: "4px 12px", textAlign: "right" }}>
                 <input value={newRow.saldo_vorjahr}
                   onChange={e => setNewRow(v => ({ ...v, saldo_vorjahr: e.target.value }))}
                   onKeyDown={e => { if (e.key === "Enter") submitNewRow(); }}
@@ -1866,10 +1866,10 @@ function KontenplanTab({ konten, onUpdateKonto, onAddKonto, customerId, selected
                         )}
                     </div>
                   </td>
-                  <td style={{ padding: "8px 12px", textAlign: "right", fontWeight: 700, fontSize: 12, color: headingC, fontFamily: "monospace" }}>
+                  <td style={{ padding: "8px 12px", textAlign: "right", fontWeight: 700, fontSize: 12, color: headingC, fontFamily: "monospace", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                     {fmtCHF(groupTotal)}
                   </td>
-                  <td style={{ padding: "8px 12px", textAlign: "right", fontWeight: 700, fontSize: 12, color: headingC, fontFamily: "monospace" }}>
+                  <td style={{ padding: "8px 12px", textAlign: "right", fontWeight: 700, fontSize: 12, color: headingC, fontFamily: "monospace", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                     {fmtCHF(groupTotalVJ)}
                   </td>
                   <td colSpan={3} style={{ padding: "8px 12px" }} />
@@ -1907,7 +1907,7 @@ function KontenplanTab({ konten, onUpdateKonto, onAddKonto, customerId, selected
                         {konto.kontoname || <span style={{ color: subC, fontStyle: "italic" }}>—</span>}
                       </td>
                       {/* Saldo IST – doppelklick editierbar */}
-                      <td style={{ padding: editSaldo?.kontoId === konto.id && editSaldo?.field === "saldo_ist" ? "2px 4px" : "7px 12px", textAlign: "right", fontFamily: "monospace", color: headingC, whiteSpace: "nowrap", minWidth: 110 }}
+                      <td style={{ padding: editSaldo?.kontoId === konto.id && editSaldo?.field === "saldo_ist" ? "2px 4px" : "7px 12px", textAlign: "right", fontFamily: "monospace", color: headingC, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
                         onDoubleClick={() => setEditSaldo({ kontoId: konto.id, field: "saldo_ist", expr: String(konto.saldo_ist ?? "") })}>
                         {editSaldo?.kontoId === konto.id && editSaldo?.field === "saldo_ist" ? (
                           <input autoFocus value={editSaldo.expr}
@@ -1925,7 +1925,7 @@ function KontenplanTab({ konten, onUpdateKonto, onAddKonto, customerId, selected
                         )}
                       </td>
                       {/* Saldo VJ – doppelklick editierbar */}
-                      <td style={{ padding: editSaldo?.kontoId === konto.id && editSaldo?.field === "saldo_vorjahr" ? "2px 4px" : "7px 12px", textAlign: "right", fontFamily: "monospace", color: subC, whiteSpace: "nowrap", minWidth: 110 }}
+                      <td style={{ padding: editSaldo?.kontoId === konto.id && editSaldo?.field === "saldo_vorjahr" ? "2px 4px" : "7px 12px", textAlign: "right", fontFamily: "monospace", color: subC, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
                         onDoubleClick={() => setEditSaldo({ kontoId: konto.id, field: "saldo_vorjahr", expr: String(konto.saldo_vorjahr ?? "") })}>
                         {editSaldo?.kontoId === konto.id && editSaldo?.field === "saldo_vorjahr" ? (
                           <input autoFocus value={editSaldo.expr}
@@ -1943,7 +1943,7 @@ function KontenplanTab({ konten, onUpdateKonto, onAddKonto, customerId, selected
                         )}
                       </td>
                       {/* Abweichung */}
-                      <td style={{ padding: "7px 12px", textAlign: "right", whiteSpace: "nowrap" }}>
+                      <td style={{ padding: "7px 12px", textAlign: "right", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                         {konto.saldo_ist !== null && konto.saldo_vorjahr !== null ? (
                           <span style={{ color: abw > 0 ? "#16a34a" : abw < 0 ? "#dc2626" : subC, fontSize: 12 }}>
                             {abw > 0 ? "+" : ""}{fmtCHF(abw)}
@@ -2013,10 +2013,10 @@ function KontenplanTab({ konten, onUpdateKonto, onAddKonto, customerId, selected
                     <td colSpan={2} style={{ padding: "6px 12px 6px 32px", fontSize: 11, fontWeight: 600, color: subC }}>
                       Total {pos?.label || "Ohne Mapping"}
                     </td>
-                    <td style={{ padding: "6px 12px", textAlign: "right", fontWeight: 700, fontSize: 12, color: headingC, fontFamily: "monospace" }}>
+                    <td style={{ padding: "6px 12px", textAlign: "right", fontWeight: 700, fontSize: 12, color: headingC, fontFamily: "monospace", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                       {fmtCHF(groupTotal)}
                     </td>
-                    <td style={{ padding: "6px 12px", textAlign: "right", fontWeight: 600, fontSize: 12, color: subC, fontFamily: "monospace" }}>
+                    <td style={{ padding: "6px 12px", textAlign: "right", fontWeight: 600, fontSize: 12, color: subC, fontFamily: "monospace", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                       {fmtCHF(groupTotalVJ)}
                     </td>
                     <td colSpan={3} />
@@ -2046,15 +2046,18 @@ function KontenplanTab({ konten, onUpdateKonto, onAddKonto, customerId, selected
                   JAHRESERGEBNIS
                 </td>
                 <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 800, fontSize: 13,
-                  fontFamily: "monospace", color: isGewinn ? "#15803d" : "#dc2626" }}>
+                  fontFamily: "monospace", color: isGewinn ? "#15803d" : "#dc2626",
+                  whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                   {fmtCHF(jeIST)}
                 </td>
                 <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600, fontSize: 12,
-                  fontFamily: "monospace", color: subC }}>
+                  fontFamily: "monospace", color: subC,
+                  whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                   {fmtCHF(jeVJ)}
                 </td>
                 <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600, fontSize: 11,
-                  fontFamily: "monospace", color: abw > 0 ? "#16a34a" : abw < 0 ? "#dc2626" : subC }}>
+                  fontFamily: "monospace", color: abw > 0 ? "#16a34a" : abw < 0 ? "#dc2626" : subC,
+                  whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                   {abw !== 0 ? (abw > 0 ? "+" : "") + fmtCHF(abw) : ""}
                 </td>
                 <td colSpan={2} />
