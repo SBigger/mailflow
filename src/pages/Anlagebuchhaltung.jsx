@@ -1729,8 +1729,10 @@ function AnlagekarteiTab({ anlagen, kategorien, onUpdateAnlage, onAddAnlage, onD
                         </span>
                         {!isNone && kat && onApplyKategorieND && (
                           editKatND?.kategorieId === kat.id ? (
-                            <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                              <span style={{ fontSize: 10, color: subC, fontWeight: 400 }}>linear</span>
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 6,
+                              padding: "3px 8px", backgroundColor: accent + "15", borderRadius: 6,
+                              border: `1.5px solid ${accent}` }}>
+                              <span style={{ fontSize: 11, color: subC, fontWeight: 600 }}>Standard linear</span>
                               <input autoFocus type="number" min="1" value={editKatND.val}
                                 onChange={e => setEditKatND(v => ({ ...v, val: e.target.value }))}
                                 onKeyDown={e => {
@@ -1745,20 +1747,47 @@ function AnlagekarteiTab({ anlagen, kategorien, onUpdateAnlage, onAddAnlage, onD
                                     setEditKatND(null);
                                   }
                                 }}
-                                onBlur={() => setEditKatND(null)}
-                                style={{ width: 50, padding: "2px 6px", fontSize: 11, fontWeight: 700,
+                                onBlur={() => {
+                                  // kleines Delay damit Click auf Anwenden-Button greifen kann
+                                  setTimeout(() => setEditKatND(null), 200);
+                                }}
+                                style={{ width: 55, padding: "3px 8px", fontSize: 13, fontWeight: 700,
                                   border: `1.5px solid ${accent}`, borderRadius: 4, outline: "none",
-                                  textAlign: "center", backgroundColor: accent + "10", color: accent }} />
-                              <span style={{ fontSize: 10, color: subC, fontWeight: 400 }}>J · Enter zum Anwenden</span>
+                                  textAlign: "center", backgroundColor: "#fff", color: accent }} />
+                              <span style={{ fontSize: 11, color: subC, fontWeight: 600 }}>J</span>
+                              <button
+                                onMouseDown={e => { e.preventDefault(); }}
+                                onClick={() => {
+                                  const newND = parseInt(editKatND.val);
+                                  if (newND > 0) {
+                                    if (window.confirm(`Standard-Nutzungsdauer für "${kat.name}" auf ${newND} Jahre setzen?\n\nAlle ${rows.length} Anlagen werden auf diesen Wert umgestellt und Abschreibung GJ + BW Ende neu berechnet.`)) {
+                                      onApplyKategorieND(kat.id, newND);
+                                    }
+                                  }
+                                  setEditKatND(null);
+                                }}
+                                style={{ padding: "3px 10px", fontSize: 11, fontWeight: 700, borderRadius: 4,
+                                  border: "none", cursor: "pointer", backgroundColor: accent, color: "#fff" }}>
+                                ✓ Anwenden
+                              </button>
+                              <button
+                                onMouseDown={e => { e.preventDefault(); setEditKatND(null); }}
+                                style={{ padding: "3px 8px", fontSize: 11, fontWeight: 600, borderRadius: 4,
+                                  border: `1px solid ${subC}40`, cursor: "pointer", backgroundColor: "transparent", color: subC }}>
+                                Abbrechen
+                              </button>
                             </span>
                           ) : (
-                            <span
+                            <button
                               onClick={() => setEditKatND({ kategorieId: kat.id, val: String(kat.default_anbu_nutzungsdauer_j ?? "") })}
-                              title={`Standard für ${kat.name} ändern – wird auf alle ${rows.length} Anlagen angewendet`}
-                              style={{ fontSize: 10, fontWeight: 400, color: subC, cursor: "pointer",
-                                padding: "1px 6px", borderRadius: 4, border: `1px dashed ${subC}40` }}>
-                              linear {kat.default_anbu_nutzungsdauer_j ?? "—"}J ✎
-                            </span>
+                              title={`Standard-Nutzungsdauer für ${kat.name} ändern – wird auf alle ${rows.length} Anlagen angewendet`}
+                              onMouseEnter={e => { e.currentTarget.style.backgroundColor = accent + "20"; e.currentTarget.style.borderColor = accent; }}
+                              onMouseLeave={e => { e.currentTarget.style.backgroundColor = accent + "0a"; e.currentTarget.style.borderColor = accent + "60"; }}
+                              style={{ fontSize: 11, fontWeight: 600, color: accent, cursor: "pointer",
+                                padding: "3px 10px", borderRadius: 5, border: `1px solid ${accent}60`,
+                                backgroundColor: accent + "0a", transition: "all 0.15s" }}>
+                              Standard: linear {kat.default_anbu_nutzungsdauer_j ?? "—"} J ✎ ändern
+                            </button>
                           )
                         )}
                       </span>
@@ -1837,7 +1866,17 @@ function NewRowBar({ newRow, setNewRow, kategorien, onSubmit, accent, headingC, 
       {inp("beschaffung_jahr", 65, "JJJJ", "number")}
       {inp("fibu_konto", 70, "FIBU-Kto")}
       <select value={newRow.kategorie_id}
-        onChange={e => setNewRow(v => ({ ...v, kategorie_id: e.target.value }))}
+        onChange={e => {
+          const newKatId = e.target.value;
+          const kat = kategorien.find(k => k.id === newKatId);
+          setNewRow(v => ({
+            ...v,
+            kategorie_id: newKatId,
+            // ND aus Kategorie-Default vorbelegen wenn noch leer
+            anbu_nutzungsdauer_j: v.anbu_nutzungsdauer_j
+              || (kat?.default_anbu_nutzungsdauer_j ? String(kat.default_anbu_nutzungsdauer_j) : ""),
+          }));
+        }}
         style={{ padding: "6px 8px", fontSize: 12, borderRadius: 6, border: `1px solid ${panelBdr}`,
           backgroundColor: panelBg, color: headingC, minWidth: 140 }}>
         <option value="">Kategorie wählen…</option>
