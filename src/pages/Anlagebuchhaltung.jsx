@@ -50,6 +50,40 @@ function evalExpr(str) {
 
 function currentYear() { return new Date().getFullYear(); }
 
+// ── Auto-Mapping FIBU-Kontonummer → Kategorie-Name (CH Swiss KMU + BlueOffice) ─
+// Pro Bilanzkonto-Bereich die passende Default-Kategorie
+const KONTO_RANGE_MAP = [
+  // Liegenschaften / Immobilien
+  { from: 1100, to: 1199, kategorie: "Immobilien" },
+  // Maschinen (incl. Werkzeuge, einzelne Maschinen)
+  { from: 1200, to: 1229, kategorie: "Maschinen" },
+  // Werkzeuge
+  { from: 1230, to: 1259, kategorie: "Werkzeuge" },
+  // Mobiliar / Einrichtungen
+  { from: 1260, to: 1269, kategorie: "Mobiliar" },
+  // EDV
+  { from: 1270, to: 1279, kategorie: "EDV" },
+  // Einrichtungen
+  { from: 1280, to: 1299, kategorie: "Einrichtungen" },
+  // Fahrzeuge
+  { from: 1300, to: 1399, kategorie: "Fahrzeuge" },
+  // Immaterielles + sonstiges
+  { from: 1400, to: 1499, kategorie: "EDV" },
+];
+function autoMapKontoToKategorie(kontonummer) {
+  const nr = parseInt(kontonummer);
+  if (!nr) return null;
+  return KONTO_RANGE_MAP.find(r => nr >= r.from && nr <= r.to)?.kategorie || null;
+}
+
+// CHF-Number-Parser: "1'234.56" / "-1'234.56" / "1234,56" → 1234.56
+function parseChNum(s) {
+  if (s == null || s === "") return null;
+  const cleaned = String(s).replace(/[' ]/g, "").replace(",", ".");
+  const n = parseFloat(cleaned);
+  return isNaN(n) ? null : n;
+}
+
 // ── Mandanten-Dropdown (identisch zu Abschlussdokumentation) ─────────────────
 function MandantDropdown({ kunden, selectedCid, onChange, panelBg, panelBdr, headingC, subC, accent, withAnbuSet }) {
   const [open, setOpen] = useState(false);
@@ -484,6 +518,224 @@ export default function Anlagebuchhaltung() {
     onError: (e) => toast.error("Jahreswechsel: " + e.message),
   });
 
+  // ── PDF-Import: BlueOffice Kontoblatt-Format ────────────────────────────────
+  async function handlePdfImport(file) {
+    if (!abschlussId) { toast.error("Erst Mandant und Jahr wählen"); return; }
+    const pdfjsLib = await import("pdfjs-dist");
+    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+      "pdfjs-dist/build/pdf.worker.min.js", import.meta.url
+    ).toString();
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    // Volltext: Items pro Seite gruppieren nach y-Position (Zeilen)
+    let fullText = "";
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      const items = content.items.map(it => ({ x: it.transform[4], y: it.transform[5], text: it.str }));
+      const lines = [];
+      for (const item of items) {
+        const y = Math.round(item.y);
+        let line = lines.find(l => Math.abs(l.y - y) < 3);
+        if (!line) { line = { y, parts: [] }; lines.push(line); }
+        line.parts.push(item);
+      }
+      lines.sort((a, b) => b.y - a.y);
+      for (const line of lines) {
+        line.parts.sort((a, b) => a.x - b.x);
+        fullText += line.parts.map(p => p.text).join(" ") + "\n";
+      }
+    }
+
+    // Sections pro Bilanzkonto trennen
+    // Pattern: "1230 Werkzeuge CHF" – Start einer Section
+    const sectionRe = /^\s*(1[0-9]{3})\s+([A-ZÄÖÜa-zäöü][^\n]{2,80}?)\s+CHF\s*$/gm;
+    const sections = [];
+    let m;
+    const text = fullText;
+    const matches = [...text.matchAll(sectionRe)];
+    for (let i = 0; i < matches.length; i++) {
+      const start = matches[i].index;
+      const end = i < matches.length - 1 ? matches[i + 1].index : text.length;
+      const body = text.slice(start, end);
+      sections.push({ kontonummer: matches[i][1], beschreibung: matches[i][2].trim(), body });
+    }
+    if (sections.length === 0) {
+      toast.error("Keine Bilanzkonten erkannt — ist das ein BlueOffice-Kontoblatt-PDF?");
+      return;
+    }
+
+    // Pro Section: Daten extrahieren
+    const anlagen = [];
+    for (const s of sections) {
+      const lines = s.body.split("\n");
+      let saldovortrag = null;
+      let saldoEnde = null;
+      let abschrPct = null;
+      let abschrSumme = 0;
+      let korrekturSumme = 0;
+      let zugaenge = 0;     // Soll-Buchungen ohne Saldovortrag
+      let abgaenge = 0;     // Haben-Buchungen ohne Abschreibung/Überabschreibung
+      let lieferanten = [];
+      let buchungsTexte = [];
+      let buchungsJahr = null;
+      let buchungsMonat = null;
+
+      for (const line of lines) {
+        const l = line.trim();
+        if (!l) continue;
+        // Saldovortrag
+        const sv = l.match(/Saldovortrag\s+([-]?[\d'.]+)\s*$/);
+        if (sv) { saldovortrag = parseChNum(sv[1]); continue; }
+        // Saldo am Ende
+        const se = l.match(/^Saldo\s+([-]?[\d'.]+)\s*$/);
+        if (se) { saldoEnde = parseChNum(se[1]); continue; }
+        // Abschr. X%
+        const ab = l.match(/Abschr\.\s*(\d+(?:[.,]\d+)?)\s*%\s+([-]?[\d'.]+)\s+([-]?[\d'.]+)\s*$/);
+        if (ab) {
+          abschrPct = parseFloat(String(ab[1]).replace(",", "."));
+          abschrSumme += parseChNum(ab[2]) || 0;
+          continue;
+        }
+        // Überabschreibung
+        const ueb = l.match(/Überabschreibung\s+([-]?[\d'.]+)\s+([-]?[\d'.]+)\s*$/);
+        if (ueb) {
+          korrekturSumme += parseChNum(ueb[1]) || 0;
+          continue;
+        }
+        // Buchungs-Zeile: DD.MM.YYYY ... Soll Haben Saldo
+        // Format: "06.03.2024 H 2721 3552 2000  E.... Gama AG Photovoltaik 14'736.49 ... 959'936.49"
+        const bu = l.match(/^(\d{2})\.(\d{2})\.(\d{4})\s+[HS]\s+\d+\s+\d+\s+\d+\s+(.+?)\s+([-]?[\d'.]+)\s+([-]?[\d'.]+)\s*$/);
+        if (bu) {
+          const dd = parseInt(bu[1]), mm = parseInt(bu[2]), yyyy = parseInt(bu[3]);
+          const txt = bu[4].trim();
+          const v1 = parseChNum(bu[5]) || 0;
+          // bu[6] ist Saldo – nicht weiter benötigt
+          if (txt.match(/Abschr|Überabschreibung|Umbuchung|Umb\./i)) {
+            // Bei Umbuchung kann es ein Verkauf/Entnahme sein (Haben)
+            if (txt.match(/Verkauf|Entnahme/i)) abgaenge += v1;
+          } else {
+            // Echter Zugang / Aktivierung (Soll-Buchung)
+            zugaenge += v1;
+            if (!buchungsJahr) { buchungsJahr = yyyy; buchungsMonat = mm; }
+            // Lieferant aus Text: nach "E.YYYYNNNNN " kommt der Lieferant
+            const lf = txt.match(/^E\.\d+\s+(.+)$/);
+            const lieferant = lf ? lf[1].trim() : txt;
+            lieferanten.push(lieferant);
+            buchungsTexte.push(`${bu[1]}.${bu[2]}.${bu[3]}: ${lieferant} CHF ${bu[5]}`);
+          }
+          continue;
+        }
+        // Buchungs-Zeile mit nur Saldo (Verkäufe etc.)
+        const bu2 = l.match(/^(\d{2})\.(\d{2})\.(\d{4})\s+[HS]\s+\d+\s+\d+\s+\d+\s+(.+?)\s+([-]?[\d'.]+)\s*$/);
+        if (bu2 && bu2[4].match(/Verkauf|Entnahme/i)) {
+          abgaenge += parseChNum(bu2[5]) || 0;
+        }
+      }
+
+      // Beschaffungskosten = aktueller Buchwert Anfang + Zugänge im Jahr
+      // (echte Anschaffungskosten unbekannt aus PDF, Saldovortrag ist beste Approximation)
+      const beschaffungskosten = (saldovortrag || 0) + zugaenge;
+
+      anlagen.push({
+        kontonummer: s.kontonummer,
+        beschreibung: s.beschreibung,
+        kategorie_name: autoMapKontoToKategorie(s.kontonummer),
+        sub_kategorie: s.beschreibung,
+        saldovortrag: saldovortrag || 0,
+        saldoEnde: saldoEnde || 0,
+        abschrPct,
+        abschrSumme,
+        korrekturSumme,
+        zugaenge,
+        abgaenge,
+        beschaffungskosten,
+        beschaffungJahr: buchungsJahr,
+        beschaffungMonat: buchungsMonat,
+        lieferant: lieferanten[0] || null,
+        buchungsTexte,
+      });
+    }
+
+    // Nur Konten mit irgendeinem Wert importieren
+    const filtered = anlagen.filter(a =>
+      Math.abs(a.saldovortrag) > 0.01 || Math.abs(a.saldoEnde) > 0.01 || a.zugaenge > 0
+    );
+
+    if (filtered.length === 0) {
+      toast.error("Keine Konten mit Bewegung gefunden");
+      return;
+    }
+
+    setImportDialog({
+      filename: file.name,
+      sheetName: "PDF-Kontoblatt",
+      mode: "pdf",
+      pdfAnlagen: filtered,
+    });
+  }
+
+  // PDF-Import-Mutation
+  const importPdfMut = useMutation({
+    mutationFn: async (pdfAnlagen) => {
+      // Kategorien auflösen
+      const kategorieMap = new Map(kategorien.map(k => [k.name.toLowerCase(), k.id]));
+      const neueKat = new Set();
+      for (const a of pdfAnlagen) {
+        if (a.kategorie_name && !kategorieMap.has(a.kategorie_name.toLowerCase())) neueKat.add(a.kategorie_name);
+      }
+      if (neueKat.size > 0) {
+        const start = (Math.max(0, ...kategorien.map(k => k.reihenfolge)) || 0) + 10;
+        const newKats = Array.from(neueKat).map((name, i) => ({
+          customer_id: selectedCid, name, reihenfolge: start + i * 10,
+        }));
+        const { data: inserted, error } = await supabase.from("anbu_kategorie").insert(newKats).select();
+        if (error) throw new Error(error.message);
+        for (const k of inserted || []) kategorieMap.set(k.name.toLowerCase(), k.id);
+      }
+      const rows = pdfAnlagen.map((a, idx) => ({
+        abschluss_id: abschlussId,
+        beschreibung: a.beschreibung,
+        lieferant: a.lieferant,
+        typ: "Kauf",
+        menge: 1,
+        aktiviert: true,
+        beschaffung_monat: a.beschaffungMonat,
+        beschaffung_jahr: a.beschaffungJahr,
+        beschaffungskosten_netto: a.beschaffungskosten,
+        fibu_konto: a.kontonummer,
+        kategorie_id: a.kategorie_name ? kategorieMap.get(a.kategorie_name.toLowerCase()) : null,
+        sub_kategorie: a.sub_kategorie,
+        notiz: a.buchungsTexte.length > 0 ? a.buchungsTexte.join("\n") : null,
+        // ANBU: gleicher Buchwert wie FIBU (User passt später an)
+        anbu_nutzungsdauer_j: null,
+        anbu_buchwert_anfang: a.saldovortrag,
+        anbu_abschreibung_gj: 0,
+        anbu_korrektur: 0,
+        anbu_buchwert_ende: a.saldovortrag,
+        // FIBU aus PDF
+        fibu_abschreibung_pct: a.abschrPct,
+        fibu_buchwert_anfang: a.saldovortrag,
+        fibu_abschreibung_gj: a.abschrSumme,
+        fibu_korrektur: a.korrekturSumme,
+        fibu_buchwert_ende: a.saldoEnde,
+        sortierung: idx,
+      }));
+      for (let i = 0; i < rows.length; i += 50) {
+        const { error } = await supabase.from("anbu_anlage").insert(rows.slice(i, i + 50));
+        if (error) throw new Error(error.message);
+      }
+      return rows.length;
+    },
+    onSuccess: (cnt) => {
+      qc.invalidateQueries({ queryKey: ["anbu_anlagen", abschlussId] });
+      qc.invalidateQueries({ queryKey: ["anbu_kategorien", selectedCid] });
+      toast.success(`${cnt} Konten aus PDF importiert`);
+      setImportDialog(null);
+    },
+    onError: (e) => toast.error("PDF-Import: " + e.message),
+  });
+
   // ── Excel-Import: Anlagekartei-Format einlesen ──────────────────────────────
   async function handleExcelImport(file) {
     if (!abschlussId) { toast.error("Erst Mandant und Jahr wählen"); return; }
@@ -784,15 +1036,22 @@ export default function Anlagebuchhaltung() {
 
           {/* Toolbar rechts */}
           <div className="flex items-end gap-2">
-            <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }}
-              onChange={e => { const f = e.target.files[0]; if (f) handleExcelImport(f); e.target.value = ""; }} />
+            <input ref={fileRef} type="file" accept=".xlsx,.xls,.pdf" style={{ display: "none" }}
+              onChange={e => {
+                const f = e.target.files[0];
+                if (!f) return;
+                if (f.name.toLowerCase().endsWith(".pdf")) handlePdfImport(f);
+                else handleExcelImport(f);
+                e.target.value = "";
+              }} />
             <button disabled={!abschlussId}
               onClick={() => fileRef.current?.click()}
+              title="Excel (.xlsx) oder PDF (BlueOffice Kontoblatt)"
               style={{ display: "flex", alignItems: "center", gap: 6, height: 36, fontSize: 13, fontWeight: 600,
                 padding: "0 14px", borderRadius: 8, cursor: abschlussId ? "pointer" : "not-allowed",
                 backgroundColor: accent + "14", color: accent, border: `1px solid ${accent}40`,
                 opacity: abschlussId ? 1 : 0.4 }}>
-              <Upload className="w-3.5 h-3.5" /> Excel-Import
+              <Upload className="w-3.5 h-3.5" /> Import (Excel/PDF)
             </button>
             <button disabled={anlagen.length === 0}
               onClick={handleExcelExport}
@@ -868,53 +1127,96 @@ export default function Anlagebuchhaltung() {
           style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", zIndex: 100,
             display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
           <div onClick={e => e.stopPropagation()}
-            style={{ backgroundColor: panelBg, borderRadius: 14, maxWidth: 720, width: "100%",
+            style={{ backgroundColor: panelBg, borderRadius: 14, maxWidth: 820, width: "100%",
               maxHeight: "85vh", overflow: "hidden", display: "flex", flexDirection: "column",
               boxShadow: "0 10px 30px rgba(0,0,0,0.35)" }}>
             <div style={{ padding: "14px 18px", borderBottom: `1px solid ${panelBdr}`,
               display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div>
-                <div style={{ fontSize: 14, fontWeight: 700, color: headingC }}>Excel-Import vorschauen</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: headingC }}>
+                  {importDialog.mode === "pdf" ? "PDF-Kontoblatt Import" : "Excel-Import vorschauen"}
+                </div>
                 <div style={{ fontSize: 11, color: subC, marginTop: 2 }}>
-                  {importDialog.filename} · {importDialog.rows.length} Zeilen erkannt · Blatt: {importDialog.sheetName}
+                  {importDialog.filename} ·{" "}
+                  {importDialog.mode === "pdf"
+                    ? `${importDialog.pdfAnlagen.length} Bilanzkonten mit Bewegung erkannt`
+                    : `${importDialog.rows.length} Zeilen erkannt · Blatt: ${importDialog.sheetName}`}
                 </div>
               </div>
               <button onClick={() => setImportDialog(null)}
                 style={{ background: "none", border: "none", cursor: "pointer", color: subC, fontSize: 22 }}>×</button>
             </div>
             <div style={{ overflow: "auto", padding: "10px 18px" }}>
-              <div style={{ fontSize: 11, color: subC, marginBottom: 8 }}>
-                Erkannte Spalten:&nbsp;
-                {Object.entries(importDialog.cols).filter(([_, v]) => v >= 0)
-                  .map(([k, v]) => `${k}=${String.fromCharCode(65 + v)}`).join(" · ") || "—"}
-              </div>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
-                <thead>
-                  <tr style={{ backgroundColor: accent + "08" }}>
-                    <th style={{ padding: "6px 8px", textAlign: "left", color: subC, fontWeight: 700, borderBottom: `1px solid ${panelBdr}` }}>Beschreibung</th>
-                    <th style={{ padding: "6px 8px", textAlign: "left", color: subC, fontWeight: 700, borderBottom: `1px solid ${panelBdr}` }}>Kategorie</th>
-                    <th style={{ padding: "6px 8px", textAlign: "right", color: subC, fontWeight: 700, borderBottom: `1px solid ${panelBdr}` }}>Kosten</th>
-                    <th style={{ padding: "6px 8px", textAlign: "right", color: subC, fontWeight: 700, borderBottom: `1px solid ${panelBdr}` }}>ND</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {importDialog.rows.slice(0, 10).map((r, i) => (
-                    <tr key={i} style={{ borderBottom: `1px solid ${panelBdr}50` }}>
-                      <td style={{ padding: "5px 8px", color: headingC }}>{String(r[importDialog.cols.beschreibung] || "").trim().slice(0, 40)}</td>
-                      <td style={{ padding: "5px 8px", color: subC }}>{String(r[importDialog.cols.kategorie] || "").trim()}</td>
-                      <td style={{ padding: "5px 8px", textAlign: "right", fontFamily: "monospace", color: headingC }}>
-                        {fmtCHF(parseFloat(String(r[importDialog.cols.kosten] || "0").replace(/'/g, "").replace(/,/g, ".")))}
-                      </td>
-                      <td style={{ padding: "5px 8px", textAlign: "right", color: subC }}>{r[importDialog.cols.nutzungsdauer] || "—"}</td>
+              {importDialog.mode === "pdf" ? (
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                  <thead>
+                    <tr style={{ backgroundColor: accent + "08" }}>
+                      <th style={{ padding: "6px 8px", textAlign: "left", color: subC, fontWeight: 700, borderBottom: `1px solid ${panelBdr}` }}>Kto</th>
+                      <th style={{ padding: "6px 8px", textAlign: "left", color: subC, fontWeight: 700, borderBottom: `1px solid ${panelBdr}` }}>Beschreibung</th>
+                      <th style={{ padding: "6px 8px", textAlign: "left", color: subC, fontWeight: 700, borderBottom: `1px solid ${panelBdr}` }}>Kategorie</th>
+                      <th style={{ padding: "6px 8px", textAlign: "right", color: subC, fontWeight: 700, borderBottom: `1px solid ${panelBdr}` }}>BW Anf.</th>
+                      <th style={{ padding: "6px 8px", textAlign: "right", color: subC, fontWeight: 700, borderBottom: `1px solid ${panelBdr}` }}>Zugang</th>
+                      <th style={{ padding: "6px 8px", textAlign: "center", color: subC, fontWeight: 700, borderBottom: `1px solid ${panelBdr}` }}>Abschr%</th>
+                      <th style={{ padding: "6px 8px", textAlign: "right", color: subC, fontWeight: 700, borderBottom: `1px solid ${panelBdr}` }}>BW Ende</th>
                     </tr>
-                  ))}
-                  {importDialog.rows.length > 10 && (
-                    <tr><td colSpan={4} style={{ padding: "8px", textAlign: "center", color: subC, fontSize: 10, fontStyle: "italic" }}>
-                      … und {importDialog.rows.length - 10} weitere Zeilen
-                    </td></tr>
-                  )}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {importDialog.pdfAnlagen.slice(0, 20).map((a, i) => (
+                      <tr key={i} style={{ borderBottom: `1px solid ${panelBdr}50` }}>
+                        <td style={{ padding: "4px 8px", fontFamily: "monospace", color: headingC, fontWeight: 600 }}>{a.kontonummer}</td>
+                        <td style={{ padding: "4px 8px", color: headingC }}>{a.beschreibung.slice(0, 32)}</td>
+                        <td style={{ padding: "4px 8px", color: a.kategorie_name ? accent : "#dc2626" }}>{a.kategorie_name || "?"}</td>
+                        <td style={{ padding: "4px 8px", textAlign: "right", fontFamily: "monospace", color: headingC }}>{fmtCHF(a.saldovortrag)}</td>
+                        <td style={{ padding: "4px 8px", textAlign: "right", fontFamily: "monospace", color: a.zugaenge > 0 ? "#16a34a" : subC }}>
+                          {a.zugaenge > 0 ? fmtCHF(a.zugaenge) : "—"}
+                        </td>
+                        <td style={{ padding: "4px 8px", textAlign: "center", color: subC }}>{a.abschrPct != null ? a.abschrPct + "%" : "—"}</td>
+                        <td style={{ padding: "4px 8px", textAlign: "right", fontFamily: "monospace", color: headingC, fontWeight: 600 }}>{fmtCHF(a.saldoEnde)}</td>
+                      </tr>
+                    ))}
+                    {importDialog.pdfAnlagen.length > 20 && (
+                      <tr><td colSpan={7} style={{ padding: "8px", textAlign: "center", color: subC, fontSize: 10, fontStyle: "italic" }}>
+                        … und {importDialog.pdfAnlagen.length - 20} weitere Konten
+                      </td></tr>
+                    )}
+                  </tbody>
+                </table>
+              ) : (
+                <>
+                  <div style={{ fontSize: 11, color: subC, marginBottom: 8 }}>
+                    Erkannte Spalten:&nbsp;
+                    {Object.entries(importDialog.cols).filter(([_, v]) => v >= 0)
+                      .map(([k, v]) => `${k}=${String.fromCharCode(65 + v)}`).join(" · ") || "—"}
+                  </div>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                    <thead>
+                      <tr style={{ backgroundColor: accent + "08" }}>
+                        <th style={{ padding: "6px 8px", textAlign: "left", color: subC, fontWeight: 700, borderBottom: `1px solid ${panelBdr}` }}>Beschreibung</th>
+                        <th style={{ padding: "6px 8px", textAlign: "left", color: subC, fontWeight: 700, borderBottom: `1px solid ${panelBdr}` }}>Kategorie</th>
+                        <th style={{ padding: "6px 8px", textAlign: "right", color: subC, fontWeight: 700, borderBottom: `1px solid ${panelBdr}` }}>Kosten</th>
+                        <th style={{ padding: "6px 8px", textAlign: "right", color: subC, fontWeight: 700, borderBottom: `1px solid ${panelBdr}` }}>ND</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {importDialog.rows.slice(0, 10).map((r, i) => (
+                        <tr key={i} style={{ borderBottom: `1px solid ${panelBdr}50` }}>
+                          <td style={{ padding: "5px 8px", color: headingC }}>{String(r[importDialog.cols.beschreibung] || "").trim().slice(0, 40)}</td>
+                          <td style={{ padding: "5px 8px", color: subC }}>{String(r[importDialog.cols.kategorie] || "").trim()}</td>
+                          <td style={{ padding: "5px 8px", textAlign: "right", fontFamily: "monospace", color: headingC }}>
+                            {fmtCHF(parseFloat(String(r[importDialog.cols.kosten] || "0").replace(/'/g, "").replace(/,/g, ".")))}
+                          </td>
+                          <td style={{ padding: "5px 8px", textAlign: "right", color: subC }}>{r[importDialog.cols.nutzungsdauer] || "—"}</td>
+                        </tr>
+                      ))}
+                      {importDialog.rows.length > 10 && (
+                        <tr><td colSpan={4} style={{ padding: "8px", textAlign: "center", color: subC, fontSize: 10, fontStyle: "italic" }}>
+                          … und {importDialog.rows.length - 10} weitere Zeilen
+                        </td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </>
+              )}
             </div>
             <div style={{ padding: "12px 18px", borderTop: `1px solid ${panelBdr}`, display: "flex", justifyContent: "flex-end", gap: 8 }}>
               <button onClick={() => setImportDialog(null)}
@@ -922,12 +1224,21 @@ export default function Anlagebuchhaltung() {
                   border: `1px solid ${panelBdr}`, backgroundColor: panelBg, color: headingC, cursor: "pointer" }}>
                 Abbrechen
               </button>
-              <button disabled={importMut.isPending}
-                onClick={() => importMut.mutate({ rows: importDialog.rows, cols: importDialog.cols })}
-                style={{ padding: "8px 18px", fontSize: 13, fontWeight: 700, borderRadius: 8, border: "none",
-                  backgroundColor: accent, color: "#fff", cursor: "pointer", opacity: importMut.isPending ? 0.6 : 1 }}>
-                {importMut.isPending ? "Importiere…" : `${importDialog.rows.length} Anlagen importieren`}
-              </button>
+              {importDialog.mode === "pdf" ? (
+                <button disabled={importPdfMut.isPending}
+                  onClick={() => importPdfMut.mutate(importDialog.pdfAnlagen)}
+                  style={{ padding: "8px 18px", fontSize: 13, fontWeight: 700, borderRadius: 8, border: "none",
+                    backgroundColor: accent, color: "#fff", cursor: "pointer", opacity: importPdfMut.isPending ? 0.6 : 1 }}>
+                  {importPdfMut.isPending ? "Importiere…" : `${importDialog.pdfAnlagen.length} Konten importieren`}
+                </button>
+              ) : (
+                <button disabled={importMut.isPending}
+                  onClick={() => importMut.mutate({ rows: importDialog.rows, cols: importDialog.cols })}
+                  style={{ padding: "8px 18px", fontSize: 13, fontWeight: 700, borderRadius: 8, border: "none",
+                    backgroundColor: accent, color: "#fff", cursor: "pointer", opacity: importMut.isPending ? 0.6 : 1 }}>
+                  {importMut.isPending ? "Importiere…" : `${importDialog.rows.length} Anlagen importieren`}
+                </button>
+              )}
             </div>
           </div>
         </div>
