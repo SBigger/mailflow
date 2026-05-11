@@ -34,6 +34,7 @@ const Fahrzeugliste         = lazy(() => import('./pages/Fahrzeugliste'));
 const Aktienbuch            = lazy(() => import('./pages/Aktienbuch'));
 const Unterschriften        = lazy(() => import('./pages/Unterschriften'));
 const Abschlussdokumentation = lazy(() => import('./pages/Abschlussdokumentation'));
+const Anlagebuchhaltung     = lazy(() => import('./pages/Anlagebuchhaltung'));
 const Whiteboard            = lazy(() => import('./pages/Whiteboard'));
 const Auswertungen          = lazy(() => import('./pages/Auswertungen'));
 const Steuern               = lazy(() => import('./pages/Steuern'));
@@ -107,6 +108,7 @@ function AuthenticatedApp() {
             <Route path="/Aktienbuch" element={<Aktienbuch />} />
             <Route path="/Unterschriften" element={<Unterschriften />} />
             <Route path="/Abschlussdokumentation" element={<Abschlussdokumentation />} />
+            <Route path="/Anlagebuchhaltung" element={<Anlagebuchhaltung />} />
             <Route path="/Whiteboard" element={<Whiteboard />} />
             <Route path="/Auswertungen" element={<Auswertungen />} />
             <Route path="/Steuern" element={<Steuern />} />

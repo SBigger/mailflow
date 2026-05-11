@@ -1,7 +1,7 @@
 import React, { useContext } from "react";
 import { useNavigate } from "react-router-dom";
 import { ThemeContext } from "@/Layout";
-import { BookOpen, Car, FileText, UserCog, ChevronRight, Wrench, PenLine, Presentation, FileSpreadsheet, Sparkles, Phone, CalendarRange, CalendarDays, Scale, Receipt } from "lucide-react";
+import { BookOpen, Car, FileText, UserCog, ChevronRight, Wrench, PenLine, Presentation, FileSpreadsheet, Sparkles, Phone, CalendarRange, CalendarDays, Scale, Receipt, Building2 } from "lucide-react";
 
 const TOOLS = [
   {
@@ -48,6 +48,15 @@ const TOOLS = [
     color: "#6a5b8a",
     bg: "#eeeaf5",
     route: "/Abschlussdokumentation",
+  },
+  {
+    id: "anlagebuchhaltung",
+    title: "Anlagebuchhaltung",
+    description: "ANBU & FIBU pro Anlage: Nutzungsdauer linear vs. degressiv %, stille Reserven, Über-/Unterbewertung pro FIBU-Konto",
+    icon: Building2,
+    color: "#7a5b3b",
+    bg: "#f5ece0",
+    route: "/Anlagebuchhaltung",
   },
   {
     id: "steuern",
