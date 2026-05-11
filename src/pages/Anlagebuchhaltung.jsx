@@ -1024,11 +1024,11 @@ export default function Anlagebuchhaltung() {
     accent, theme, headingC, subC, panelBg, panelBdr, tableBdr, rowHover,
   };
 
-  // Years for selector: 5 Jahre zurück + nächstes Jahr + alle vorhandenen
+  // Years for selector: 10 Jahre zurück + nächstes Jahr + alle vorhandenen
   const yearOptions = useMemo(() => {
     const y = currentYear();
     const base = new Set();
-    for (let i = y - 5; i <= y + 1; i++) base.add(i);
+    for (let i = y - 10; i <= y + 1; i++) base.add(i);
     vorhandeneJahre.forEach(j => base.add(j));
     return Array.from(base).sort((a, b) => b - a);
   }, [vorhandeneJahre]);
