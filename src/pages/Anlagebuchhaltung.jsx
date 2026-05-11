@@ -346,17 +346,28 @@ export default function Anlagebuchhaltung() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["anbu_abschluss", selectedCid, selectedYear] });
       qc.invalidateQueries({ queryKey: ["anbu_cids"] });
+      qc.invalidateQueries({ queryKey: ["anbu_jahre", selectedCid] });
+      toast.success(`Geschäftsjahr ${selectedYear} eröffnet`);
     },
     onError: (e) => toast.error("Fehler: " + e.message),
   });
 
-  useEffect(() => {
-    if (selectedCid && !abschlussLoading && abschluss === null && !createAbschlussMut.isPending) {
-      createAbschlussMut.mutate();
-    }
-  }, [selectedCid, selectedYear, abschluss, abschlussLoading]);
-
   const abschlussId = abschluss?.id;
+
+  // Liste aller bereits eröffneten Jahre für diesen Mandanten
+  const { data: vorhandeneJahre = [] } = useQuery({
+    queryKey: ["anbu_jahre", selectedCid],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("anbu_jahresabschluss")
+        .select("geschaeftsjahr")
+        .eq("customer_id", selectedCid)
+        .order("geschaeftsjahr");
+      if (error) throw new Error(error.message);
+      return (data || []).map(r => r.geschaeftsjahr);
+    },
+    enabled: !!selectedCid,
+  });
 
   // ── Kategorien laden + Default-Seed ─────────────────────────────────────────
   const { data: kategorien = [] } = useQuery({
@@ -512,6 +523,7 @@ export default function Anlagebuchhaltung() {
       qc.invalidateQueries({ queryKey: ["anbu_cids"] });
       qc.invalidateQueries({ queryKey: ["anbu_abschluss"] });
       qc.invalidateQueries({ queryKey: ["anbu_anlagen"] });
+      qc.invalidateQueries({ queryKey: ["anbu_jahre", selectedCid] });
       toast.success(`Jahreswechsel auf ${newYear} durchgeführt`);
       setSelectedYear(newYear);
     },
@@ -984,11 +996,14 @@ export default function Anlagebuchhaltung() {
     accent, theme, headingC, subC, panelBg, panelBdr, tableBdr, rowHover,
   };
 
-  // Years for selector
+  // Years for selector: vorhandene Jahre + ein paar zukünftige
   const yearOptions = useMemo(() => {
     const y = currentYear();
-    return [y - 2, y - 1, y, y + 1];
-  }, []);
+    const base = new Set([y - 2, y - 1, y, y + 1]);
+    vorhandeneJahre.forEach(j => base.add(j));
+    return Array.from(base).sort((a, b) => b - a);
+  }, [vorhandeneJahre]);
+  const isOpen = vorhandeneJahre.includes(selectedYear);
 
   return (
     <div className="h-full flex flex-col" style={{ backgroundColor: pageBg }}>
@@ -1034,12 +1049,16 @@ export default function Anlagebuchhaltung() {
                 border: `1px solid ${panelBdr}`, backgroundColor: panelBg, color: headingC,
                 outline: "none", cursor: "pointer", minWidth: 90,
               }}>
-              {yearOptions.map(y => <option key={y} value={y}>{y}</option>)}
+              {yearOptions.map(y => (
+                <option key={y} value={y}>
+                  {vorhandeneJahre.includes(y) ? "● " : "○ "}{y}
+                </option>
+              ))}
             </select>
           </div>
 
-          {/* Jahreswechsel */}
-          {abschlussId && anlagen.length > 0 && (
+          {/* Jahreswechsel - nur wenn Folgejahr noch NICHT eröffnet ist */}
+          {abschlussId && anlagen.length > 0 && !vorhandeneJahre.includes(selectedYear + 1) && (
             <div>
               <label className="text-xs font-semibold uppercase tracking-wider mb-1.5 block" style={{ color: subC }}>
                 &nbsp;
@@ -1105,6 +1124,51 @@ export default function Anlagebuchhaltung() {
               Wählen Sie einen Mandanten und ein Geschäftsjahr aus, um die Anlagebuchhaltung anzuzeigen.
             </div>
           </div>
+        ) : abschlussLoading ? (
+          <div style={{ padding: "60px 0", textAlign: "center", color: subC }}>Wird geladen…</div>
+        ) : !abschluss ? (
+          <div className="flex flex-col items-center justify-center py-24 text-center">
+            <Building2 className="w-14 h-14 mb-4" style={{ color: isArtis ? "#ccd8cc" : "#d1d5db" }} />
+            <div className="text-lg font-semibold mb-2" style={{ color: headingC }}>
+              Geschäftsjahr {selectedYear} noch nicht eröffnet
+            </div>
+            <div className="text-sm mb-5" style={{ color: subC, maxWidth: 480 }}>
+              Für <strong style={{ color: headingC }}>{customerName}</strong> ist das Geschäftsjahr {selectedYear} noch nicht eröffnet.
+              {vorhandeneJahre.length > 0 && (
+                <> Vorhandene Jahre: {vorhandeneJahre.join(", ")}.</>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                disabled={createAbschlussMut.isPending}
+                onClick={() => createAbschlussMut.mutate()}
+                style={{ display: "flex", alignItems: "center", gap: 6, height: 38, fontSize: 13, fontWeight: 700,
+                  padding: "0 18px", borderRadius: 8, cursor: "pointer", border: "none",
+                  backgroundColor: accent, color: "#fff",
+                  opacity: createAbschlussMut.isPending ? 0.6 : 1 }}>
+                <Plus className="w-4 h-4" />
+                Geschäftsjahr {selectedYear} eröffnen
+              </button>
+              {/* Wenn Vorjahr existiert → Jahreswechsel direkt anbieten */}
+              {vorhandeneJahre.includes(selectedYear - 1) && (
+                <button
+                  disabled={jahreswechselMut.isPending}
+                  onClick={async () => {
+                    if (window.confirm(`${selectedYear} als Folgejahr aus ${selectedYear - 1} eröffnen?\n\nBuchwerte Ende ${selectedYear - 1} → Anfang ${selectedYear}, Abschr./Korr. = 0.`)) {
+                      setSelectedYear(selectedYear - 1);
+                      // Kurze Verzögerung damit anlagen geladen sind
+                      setTimeout(() => jahreswechselMut.mutate(), 300);
+                    }
+                  }}
+                  style={{ display: "flex", alignItems: "center", gap: 6, height: 38, fontSize: 13, fontWeight: 600,
+                    padding: "0 14px", borderRadius: 8, cursor: "pointer",
+                    border: `1px solid ${accent}40`, color: accent, backgroundColor: accent + "10" }}>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                  Aus {selectedYear - 1} übernehmen
+                </button>
+              )}
+            </div>
+          </div>
         ) : (
           <>
             {/* Tabs */}
@@ -1126,7 +1190,7 @@ export default function Anlagebuchhaltung() {
             </div>
 
             <div className="p-6">
-              {abschlussLoading || anlagenLoading ? (
+              {anlagenLoading ? (
                 <div style={{ padding: "60px 0", textAlign: "center", color: subC }}>Wird geladen…</div>
               ) : (
                 <>
