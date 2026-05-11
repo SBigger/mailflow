@@ -2268,16 +2268,16 @@ function ZusammenfassungTab({ anlagen, kategorien, selectedYear, accent, heading
             <tr style={{ backgroundColor: isArtis ? "#e8f2e8" : isLight ? "#f1f5f9" : "#2f2f35" }}>
               <th style={hdrStyle(subC, tableBdr, "left", 60)}>FIBU Kto</th>
               <th style={hdrStyle(subC, tableBdr, "left", 200)}>Bezeichnung</th>
-              <th style={hdrStyle(subC, tableBdr, "right", 95)}>Bestand FIBU\nAnfang</th>
+              <th style={hdrStyle(subC, tableBdr, "right", 95)}>{"Bestand FIBU\nAnfang"}</th>
               <th style={hdrStyle(subC, tableBdr, "right", 70)}>Zugang</th>
-              <th style={hdrStyle(subC, tableBdr, "right", 95)}>Bestand ANBU\nAnfang</th>
-              <th style={hdrStyle(subC, tableBdr, "right", 95)}>Stille Res.\nAnfang</th>
-              <th style={hdrStyle(subC, tableBdr, "right", 95)}>Abschr.\nFIBU</th>
-              <th style={hdrStyle(subC, tableBdr, "right", 95)}>Abschr.\nANBU</th>
-              <th style={hdrStyle(subC, tableBdr, "right", 95)}>Bestand FIBU\nEnde</th>
-              <th style={hdrStyle(subC, tableBdr, "right", 95)}>Bestand ANBU\nEnde</th>
-              <th style={hdrStyle(subC, tableBdr, "right", 95)}>Stille Res.\nEnde</th>
-              <th style={hdrStyle(subC, tableBdr, "right", 95)}>Veränderung\nstille Res.</th>
+              <th style={hdrStyle(subC, tableBdr, "right", 95)}>{"Bestand ANBU\nAnfang"}</th>
+              <th style={hdrStyle(subC, tableBdr, "right", 95)}>{"Stille Res.\nAnfang"}</th>
+              <th style={hdrStyle(subC, tableBdr, "right", 95)}>{"Abschr.\nFIBU"}</th>
+              <th style={hdrStyle(subC, tableBdr, "right", 95)}>{"Abschr.\nANBU"}</th>
+              <th style={hdrStyle(subC, tableBdr, "right", 95)}>{"Bestand FIBU\nEnde"}</th>
+              <th style={hdrStyle(subC, tableBdr, "right", 95)}>{"Bestand ANBU\nEnde"}</th>
+              <th style={hdrStyle(subC, tableBdr, "right", 95)}>{"Stille Res.\nEnde"}</th>
+              <th style={hdrStyle(subC, tableBdr, "right", 95)}>{"Veränderung\nstille Res."}</th>
             </tr>
           </thead>
           <tbody>
