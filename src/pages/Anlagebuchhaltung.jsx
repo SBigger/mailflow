@@ -1092,11 +1092,49 @@ export default function Anlagebuchhaltung() {
   }
 
   // ── Gemeinsame Props für Tabs ───────────────────────────────────────────────
+  // Kategorie-ND ändern + alle Anlagen ohne Override neu rechnen
+  const applyKategorieNdMut = useMutation({
+    mutationFn: async ({ kategorieId, newND }) => {
+      // 1. Kategorie-Default updaten
+      const { error: e1 } = await supabase.from("anbu_kategorie")
+        .update({ default_anbu_nutzungsdauer_j: newND }).eq("id", kategorieId);
+      if (e1) throw new Error(e1.message);
+      // 2. Alle Anlagen dieser Kategorie holen — die mit eigener Override behalten ihren Wert,
+      //    die ohne (oder == altem Default) bekommen den neuen Wert. Pragmatisch: alle in der
+      //    Kategorie auf newND setzen (User hat explizit den Standard für die ganze Gruppe geändert).
+      const inKat = anlagen.filter(a => a.kategorie_id === kategorieId);
+      for (const a of inKat) {
+        const bwAnfang = parseFloat(a.anbu_buchwert_anfang) || 0;
+        const kosten = parseFloat(a.beschaffungskosten_netto) || 0;
+        const abschr = newND ? calcAnbuAbschreibungLinear({
+          beschaffungskosten_netto: kosten,
+          anbu_nutzungsdauer_j: newND,
+          anbu_buchwert_anfang: bwAnfang,
+        }) : 0;
+        const bwEnde = Math.max(0, bwAnfang - abschr - (parseFloat(a.anbu_korrektur) || 0));
+        const { error } = await supabase.from("anbu_anlage").update({
+          anbu_nutzungsdauer_j: newND,
+          anbu_abschreibung_gj: abschr,
+          anbu_buchwert_ende: bwEnde,
+        }).eq("id", a.id);
+        if (error) throw new Error(error.message);
+      }
+      return { count: inKat.length, newND };
+    },
+    onSuccess: ({ count, newND }) => {
+      qc.invalidateQueries({ queryKey: ["anbu_anlagen", abschlussId] });
+      qc.invalidateQueries({ queryKey: ["anbu_kategorien", selectedCid] });
+      toast.success(`${count} Anlagen auf ${newND} Jahre linear umgestellt`);
+    },
+    onError: (e) => toast.error("Fehler: " + e.message),
+  });
+
   const tabProps = {
     anlagen, kategorien, abschlussId, selectedYear, customerName,
     onUpdateAnlage: (id, fields) => updateAnlageMut.mutate({ id, ...fields }),
     onAddAnlage: (row) => insertAnlageMut.mutate(row),
     onDeleteAnlage: (id) => deleteAnlageMut.mutate(id),
+    onApplyKategorieND: (kategorieId, newND) => applyKategorieNdMut.mutate({ kategorieId, newND }),
     accent, theme, headingC, subC, panelBg, panelBdr, tableBdr, rowHover,
   };
 
@@ -1523,10 +1561,12 @@ export default function Anlagebuchhaltung() {
 // ── Anlagekartei-Tab (ANBU, linear) ─────────────────────────────────────────
 // ════════════════════════════════════════════════════════════════════════════
 function AnlagekarteiTab({ anlagen, kategorien, onUpdateAnlage, onAddAnlage, onDeleteAnlage,
+                          onApplyKategorieND,
                           accent, headingC, subC, panelBg, panelBdr, tableBdr, rowHover, theme }) {
   const isArtis = theme === "artis";
   const isLight = theme === "light";
   const [editCell, setEditCell] = useState(null); // { id, field, val }
+  const [editKatND, setEditKatND] = useState(null); // { kategorieId, val }
   const [newRow, setNewRow] = useState({
     beschreibung: "", lieferant: "", beschaffung_monat: "", beschaffung_jahr: currentYear(),
     fibu_konto: "", kategorie_id: "", sub_kategorie: "",
@@ -1682,10 +1722,45 @@ function AnlagekarteiTab({ anlagen, kategorien, onUpdateAnlage, onAddAnlage, onD
                 <React.Fragment key={kid}>
                   <tr style={{ backgroundColor: isArtis ? "#f0f5f0" : isLight ? "#f8fafc" : "#2c2c32", borderTop: `2px solid ${tableBdr}` }}>
                     <td colSpan={12} style={{ padding: "8px 12px", fontWeight: 700, fontSize: 12, color: isNone ? "#dc2626" : accent, letterSpacing: "0.04em" }}>
-                      {isNone ? "Ohne Kategorie" : kat?.name || "—"}
-                      <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 400, color: subC }}>
-                        ({rows.length} {rows.length === 1 ? "Anlage" : "Anlagen"}
-                        {!isNone && kat?.default_anbu_nutzungsdauer_j ? ` · linear ${kat.default_anbu_nutzungsdauer_j}J` : ""})
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                        <span>{isNone ? "Ohne Kategorie" : kat?.name || "—"}</span>
+                        <span style={{ fontSize: 10, fontWeight: 400, color: subC }}>
+                          ({rows.length} {rows.length === 1 ? "Anlage" : "Anlagen"})
+                        </span>
+                        {!isNone && kat && onApplyKategorieND && (
+                          editKatND?.kategorieId === kat.id ? (
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                              <span style={{ fontSize: 10, color: subC, fontWeight: 400 }}>linear</span>
+                              <input autoFocus type="number" min="1" value={editKatND.val}
+                                onChange={e => setEditKatND(v => ({ ...v, val: e.target.value }))}
+                                onKeyDown={e => {
+                                  if (e.key === "Escape") setEditKatND(null);
+                                  if (e.key === "Enter") {
+                                    const newND = parseInt(editKatND.val);
+                                    if (newND > 0) {
+                                      if (window.confirm(`Standard-Nutzungsdauer für "${kat.name}" auf ${newND} Jahre setzen?\n\nAlle ${rows.length} Anlagen werden auf diesen Wert umgestellt und Abschreibung GJ + BW Ende neu berechnet.`)) {
+                                        onApplyKategorieND(kat.id, newND);
+                                      }
+                                    }
+                                    setEditKatND(null);
+                                  }
+                                }}
+                                onBlur={() => setEditKatND(null)}
+                                style={{ width: 50, padding: "2px 6px", fontSize: 11, fontWeight: 700,
+                                  border: `1.5px solid ${accent}`, borderRadius: 4, outline: "none",
+                                  textAlign: "center", backgroundColor: accent + "10", color: accent }} />
+                              <span style={{ fontSize: 10, color: subC, fontWeight: 400 }}>J · Enter zum Anwenden</span>
+                            </span>
+                          ) : (
+                            <span
+                              onClick={() => setEditKatND({ kategorieId: kat.id, val: String(kat.default_anbu_nutzungsdauer_j ?? "") })}
+                              title={`Standard für ${kat.name} ändern – wird auf alle ${rows.length} Anlagen angewendet`}
+                              style={{ fontSize: 10, fontWeight: 400, color: subC, cursor: "pointer",
+                                padding: "1px 6px", borderRadius: 4, border: `1px dashed ${subC}40` }}>
+                              linear {kat.default_anbu_nutzungsdauer_j ?? "—"}J ✎
+                            </span>
+                          )
+                        )}
                       </span>
                     </td>
                   </tr>
