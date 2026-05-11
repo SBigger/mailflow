@@ -354,6 +354,16 @@ export default function Anlagebuchhaltung() {
 
   const abschlussId = abschluss?.id;
 
+  // Garantiert, dass ein Abschluss existiert. Returnt die abschluss_id.
+  // Eröffnet das Jahr automatisch wenn noch nicht da (nach Bestätigung).
+  async function ensureAbschluss() {
+    if (abschlussId) return abschlussId;
+    if (!selectedCid) { toast.error("Erst Mandant wählen"); return null; }
+    if (!window.confirm(`Geschäftsjahr ${selectedYear} ist noch nicht eröffnet.\n\nJetzt eröffnen und fortfahren?`)) return null;
+    const newAbs = await createAbschlussMut.mutateAsync();
+    return newAbs?.id || null;
+  }
+
   // Liste aller bereits eröffneten Jahre für diesen Mandanten
   const { data: vorhandeneJahre = [] } = useQuery({
     queryKey: ["anbu_jahre", selectedCid],
@@ -562,7 +572,8 @@ export default function Anlagebuchhaltung() {
 
   // ── PDF-Import: BlueOffice Kontoblatt-Format ────────────────────────────────
   async function handlePdfImport(file) {
-    if (!abschlussId) { toast.error("Erst Mandant und Jahr wählen"); return; }
+    const abId = await ensureAbschluss();
+    if (!abId) return;
     const pdfjsLib = await import("pdfjs-dist");
     pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
       "pdfjs-dist/build/pdf.worker.min.js", import.meta.url
@@ -714,12 +725,14 @@ export default function Anlagebuchhaltung() {
       sheetName: "PDF-Kontoblatt",
       mode: "pdf",
       pdfAnlagen: filtered,
+      abId,
     });
   }
 
   // PDF-Import-Mutation
   const importPdfMut = useMutation({
-    mutationFn: async (pdfAnlagen) => {
+    mutationFn: async ({ pdfAnlagen, abId }) => {
+      const useAbId = abId || abschlussId;
       // Kategorien auflösen
       const kategorieMap = new Map(kategorien.map(k => [k.name.toLowerCase(), k.id]));
       const neueKat = new Set();
@@ -736,7 +749,7 @@ export default function Anlagebuchhaltung() {
         for (const k of inserted || []) kategorieMap.set(k.name.toLowerCase(), k.id);
       }
       const rows = pdfAnlagen.map((a, idx) => ({
-        abschluss_id: abschlussId,
+        abschluss_id: useAbId,
         beschreibung: a.beschreibung,
         lieferant: a.lieferant,
         typ: "Kauf",
@@ -770,7 +783,7 @@ export default function Anlagebuchhaltung() {
       return rows.length;
     },
     onSuccess: (cnt) => {
-      qc.invalidateQueries({ queryKey: ["anbu_anlagen", abschlussId] });
+      qc.invalidateQueries({ queryKey: ["anbu_anlagen"] });
       qc.invalidateQueries({ queryKey: ["anbu_kategorien", selectedCid] });
       toast.success(`${cnt} Konten aus PDF importiert`);
       setImportDialog(null);
@@ -780,7 +793,8 @@ export default function Anlagebuchhaltung() {
 
   // ── Excel-Import: Anlagekartei-Format einlesen ──────────────────────────────
   async function handleExcelImport(file) {
-    if (!abschlussId) { toast.error("Erst Mandant und Jahr wählen"); return; }
+    const abId = await ensureAbschluss();
+    if (!abId) return;
     const XLSX = await import("xlsx");
     const data = new Uint8Array(await file.arrayBuffer());
     const wb = XLSX.read(data, { type: "array" });
@@ -821,11 +835,12 @@ export default function Anlagebuchhaltung() {
       r.some(c => String(c).trim()) && r[cols.beschreibung] && String(r[cols.beschreibung]).trim()
     );
     if (dataRows.length === 0) { toast.error("Keine Datenzeilen gefunden"); return; }
-    setImportDialog({ rows: dataRows, cols, filename: file.name, sheetName: wb.SheetNames[0] });
+    setImportDialog({ rows: dataRows, cols, filename: file.name, sheetName: wb.SheetNames[0], abId });
   }
 
   const importMut = useMutation({
-    mutationFn: async ({ rows, cols }) => {
+    mutationFn: async ({ rows, cols, abId }) => {
+      const useAbId = abId || abschlussId;
       const num = (v) => {
         if (v === "" || v == null) return 0;
         const n = parseFloat(String(v).replace(/'/g, "").replace(/,/g, "."));
@@ -860,7 +875,7 @@ export default function Anlagebuchhaltung() {
         const katName = String(r[cols.kategorie] || "").trim();
         const katId = katName ? kategorieMap.get(katName.toLowerCase()) : null;
         return {
-          abschluss_id: abschlussId,
+          abschluss_id: useAbId,
           beschreibung: String(r[cols.beschreibung] || "").trim(),
           lieferant: cols.lieferant >= 0 ? (String(r[cols.lieferant] || "").trim() || null) : null,
           typ: cols.typ >= 0 ? (String(r[cols.typ] || "Kauf").trim() || "Kauf") : "Kauf",
@@ -996,10 +1011,11 @@ export default function Anlagebuchhaltung() {
     accent, theme, headingC, subC, panelBg, panelBdr, tableBdr, rowHover,
   };
 
-  // Years for selector: vorhandene Jahre + ein paar zukünftige
+  // Years for selector: 5 Jahre zurück + nächstes Jahr + alle vorhandenen
   const yearOptions = useMemo(() => {
     const y = currentYear();
-    const base = new Set([y - 2, y - 1, y, y + 1]);
+    const base = new Set();
+    for (let i = y - 5; i <= y + 1; i++) base.add(i);
     vorhandeneJahre.forEach(j => base.add(j));
     return Array.from(base).sort((a, b) => b - a);
   }, [vorhandeneJahre]);
@@ -1093,13 +1109,13 @@ export default function Anlagebuchhaltung() {
                 else handleExcelImport(f);
                 e.target.value = "";
               }} />
-            <button disabled={!abschlussId}
+            <button disabled={!selectedCid}
               onClick={() => fileRef.current?.click()}
-              title="Excel (.xlsx) oder PDF (BlueOffice Kontoblatt)"
+              title="Excel (.xlsx) oder PDF (BlueOffice Kontoblatt). Eröffnet das Jahr automatisch nach Bestätigung."
               style={{ display: "flex", alignItems: "center", gap: 6, height: 36, fontSize: 13, fontWeight: 600,
-                padding: "0 14px", borderRadius: 8, cursor: abschlussId ? "pointer" : "not-allowed",
+                padding: "0 14px", borderRadius: 8, cursor: selectedCid ? "pointer" : "not-allowed",
                 backgroundColor: accent + "14", color: accent, border: `1px solid ${accent}40`,
-                opacity: abschlussId ? 1 : 0.4 }}>
+                opacity: selectedCid ? 1 : 0.4 }}>
               <Upload className="w-3.5 h-3.5" /> Import (Excel/PDF)
             </button>
             <button disabled={anlagen.length === 0}
@@ -1362,14 +1378,14 @@ export default function Anlagebuchhaltung() {
               </button>
               {importDialog.mode === "pdf" ? (
                 <button disabled={importPdfMut.isPending}
-                  onClick={() => importPdfMut.mutate(importDialog.pdfAnlagen)}
+                  onClick={() => importPdfMut.mutate({ pdfAnlagen: importDialog.pdfAnlagen, abId: importDialog.abId })}
                   style={{ padding: "8px 18px", fontSize: 13, fontWeight: 700, borderRadius: 8, border: "none",
                     backgroundColor: accent, color: "#fff", cursor: "pointer", opacity: importPdfMut.isPending ? 0.6 : 1 }}>
                   {importPdfMut.isPending ? "Importiere…" : `${importDialog.pdfAnlagen.length} Konten importieren`}
                 </button>
               ) : (
                 <button disabled={importMut.isPending}
-                  onClick={() => importMut.mutate({ rows: importDialog.rows, cols: importDialog.cols })}
+                  onClick={() => importMut.mutate({ rows: importDialog.rows, cols: importDialog.cols, abId: importDialog.abId })}
                   style={{ padding: "8px 18px", fontSize: 13, fontWeight: 700, borderRadius: 8, border: "none",
                     backgroundColor: accent, color: "#fff", cursor: "pointer", opacity: importMut.isPending ? 0.6 : 1 }}>
                   {importMut.isPending ? "Importiere…" : `${importDialog.rows.length} Anlagen importieren`}
