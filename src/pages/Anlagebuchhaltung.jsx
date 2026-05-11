@@ -2017,6 +2017,8 @@ function FibuTab({ anlagen, kategorien, onUpdateAnlage, accent, headingC, subC, 
   const isArtis = theme === "artis";
   const isLight = theme === "light";
   const [editCell, setEditCell] = useState(null);
+  // Verteilungs-Eingaben pro FIBU-Konto: { "1200": { abschr: "287070.55", korr: "0" } }
+  const [verteilenInput, setVerteilenInput] = useState({});
 
   const grouped = useMemo(() => {
     const g = {};
@@ -2027,6 +2029,51 @@ function FibuTab({ anlagen, kategorien, onUpdateAnlage, accent, headingC, subC, 
     }
     return g;
   }, [anlagen]);
+
+  // Verteile Total auf alle Anlagen einer FIBU-Konto-Gruppe proportional zu BW Anfang
+  const verteilen = (ktoKey, anlagenInGroup) => {
+    const inp = verteilenInput[ktoKey] || {};
+    const totalAbschr = parseFloat(String(inp.abschr || "").replace(",", ".")) || 0;
+    const totalKorr   = parseFloat(String(inp.korr   || "").replace(",", ".")) || 0;
+    if (!totalAbschr && !totalKorr) {
+      toast.error("Bitte mindestens Abschreibung-Total oder Korrektur eingeben");
+      return;
+    }
+    const sumBwAnfang = anlagenInGroup.reduce((s, a) => s + (parseFloat(a.fibu_buchwert_anfang) || 0), 0);
+    if (sumBwAnfang <= 0) {
+      // Kein BW Anfang vorhanden → gleichmässig verteilen
+      const share = 1 / anlagenInGroup.length;
+      for (const a of anlagenInGroup) {
+        const abschr = Math.round(totalAbschr * share * 100) / 100;
+        const korr   = Math.round(totalKorr   * share * 100) / 100;
+        const bwEnde = Math.max(0, (parseFloat(a.fibu_buchwert_anfang) || 0) - abschr - korr);
+        onUpdateAnlage(a.id, {
+          fibu_abschreibung_gj: abschr,
+          fibu_korrektur: korr,
+          fibu_buchwert_ende: bwEnde,
+        });
+      }
+    } else {
+      let restAbschr = totalAbschr, restKorr = totalKorr;
+      anlagenInGroup.forEach((a, idx) => {
+        const bw = parseFloat(a.fibu_buchwert_anfang) || 0;
+        const isLast = idx === anlagenInGroup.length - 1;
+        // Letzte Anlage bekommt den Rest, damit die Summe exakt aufgeht (Rundungsfehler vermeiden)
+        const abschr = isLast ? Math.round(restAbschr * 100) / 100 : Math.round(totalAbschr * bw / sumBwAnfang * 100) / 100;
+        const korr   = isLast ? Math.round(restKorr   * 100) / 100 : Math.round(totalKorr   * bw / sumBwAnfang * 100) / 100;
+        restAbschr -= abschr;
+        restKorr   -= korr;
+        const bwEnde = Math.max(0, bw - abschr - korr);
+        onUpdateAnlage(a.id, {
+          fibu_abschreibung_gj: abschr,
+          fibu_korrektur: korr,
+          fibu_buchwert_ende: bwEnde,
+        });
+      });
+    }
+    toast.success(`Konto ${ktoKey}: CHF ${fmtCHF(totalAbschr)} Abschr. + CHF ${fmtCHF(totalKorr)} Korr. auf ${anlagenInGroup.length} Anlagen verteilt`);
+    setVerteilenInput(p => ({ ...p, [ktoKey]: { abschr: "", korr: "" } }));
+  };
 
   const startEdit = (id, field, val) => setEditCell({ id, field, val: String(val ?? "") });
   const commitEdit = () => {
@@ -2127,39 +2174,101 @@ function FibuTab({ anlagen, kategorien, onUpdateAnlage, accent, headingC, subC, 
             const tAb = rows.reduce((s, r) => s + (parseFloat(r.fibu_abschreibung_gj) || 0), 0);
             const tKo = rows.reduce((s, r) => s + (parseFloat(r.fibu_korrektur) || 0), 0);
             const tBwE = rows.reduce((s, r) => s + (parseFloat(r.fibu_buchwert_ende) || 0), 0);
+
+            // Sub-Gruppierung nach FIBU-Konto
+            const byKto = {};
+            for (const a of rows) {
+              const k = a.fibu_konto || "(ohne Kto)";
+              if (!byKto[k]) byKto[k] = [];
+              byKto[k].push(a);
+            }
+            const ktoKeys = Object.keys(byKto).sort();
+
             return (
               <React.Fragment key={kid}>
                 <tr style={{ backgroundColor: isArtis ? "#f0f5f0" : isLight ? "#f8fafc" : "#2c2c32", borderTop: `2px solid ${tableBdr}` }}>
                   <td colSpan={9} style={{ padding: "8px 12px", fontWeight: 700, fontSize: 12, color: isNone ? "#dc2626" : accent }}>
                     {isNone ? "Ohne Kategorie" : kat?.name}
                     <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 400, color: subC }}>
-                      ({rows.length} Anlagen{!isNone && kat?.default_fibu_abschreibung_pct ? ` · degressiv ${kat.default_fibu_abschreibung_pct}%` : ""})
+                      ({rows.length} Anlagen · {ktoKeys.length} FIBU-Konten{!isNone && kat?.default_fibu_abschreibung_pct ? ` · degressiv ${kat.default_fibu_abschreibung_pct}%` : ""})
                     </span>
                   </td>
                 </tr>
-                {rows.map(a => (
-                  <tr key={a.id} onMouseEnter={e => e.currentTarget.style.backgroundColor = rowHover}
-                    onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
-                    <td style={{ padding: "5px 10px", borderBottom: `1px solid ${tableBdr}80`, color: headingC }}>
-                      {a.beschreibung}
-                      {a.lieferant && <span style={{ color: subC, marginLeft: 6, fontSize: 11 }}>· {a.lieferant}</span>}
-                    </td>
-                    <td style={{ padding: "5px 10px", borderBottom: `1px solid ${tableBdr}80`, textAlign: "center", fontSize: 11, color: subC }}>
-                      {a.beschaffung_monat ? String(a.beschaffung_monat).padStart(2, "0") + "." : ""}{a.beschaffung_jahr || "—"}
-                    </td>
-                    <td style={{ padding: "5px 10px", borderBottom: `1px solid ${tableBdr}80`, color: headingC }}>{a.fibu_konto || "—"}</td>
-                    <td style={{ padding: "5px 10px", borderBottom: `1px solid ${tableBdr}80`, textAlign: "right", fontFamily: "monospace", color: subC }}>
-                      {fmtCHF(a.beschaffungskosten_netto)}
-                    </td>
-                    <td style={{ padding: "5px 10px", borderBottom: `1px solid ${tableBdr}80` }}>{inlinePct(a)}</td>
-                    <td style={{ padding: "5px 10px", borderBottom: `1px solid ${tableBdr}80` }}>{inlineNum(a, "fibu_buchwert_anfang")}</td>
-                    <td style={{ padding: "5px 10px", borderBottom: `1px solid ${tableBdr}80` }}>{inlineNum(a, "fibu_abschreibung_gj", "#dc2626", "#fef2f2")}</td>
-                    <td style={{ padding: "5px 10px", borderBottom: `1px solid ${tableBdr}80` }}>{inlineNum(a, "fibu_korrektur", subC)}</td>
-                    <td style={{ padding: "5px 10px", borderBottom: `1px solid ${tableBdr}80`, textAlign: "right", fontFamily: "monospace", fontWeight: 600, color: headingC }}>
-                      {fmtCHF(a.fibu_buchwert_ende)}
-                    </td>
-                  </tr>
-                ))}
+                {ktoKeys.map(kto => {
+                  const ktoRows = byKto[kto];
+                  const ktoAbschrIst = ktoRows.reduce((s, r) => s + (parseFloat(r.fibu_abschreibung_gj) || 0), 0);
+                  const ktoKorrIst   = ktoRows.reduce((s, r) => s + (parseFloat(r.fibu_korrektur) || 0), 0);
+                  const ktoBwA       = ktoRows.reduce((s, r) => s + (parseFloat(r.fibu_buchwert_anfang) || 0), 0);
+                  const inp = verteilenInput[kto] || {};
+                  return (
+                    <React.Fragment key={kid + "_" + kto}>
+                      {/* FIBU-Konto Sub-Header mit Verteilungs-Panel */}
+                      <tr style={{ backgroundColor: isArtis ? "#e8f2e8" : isLight ? "#fafbfc" : "#262629" }}>
+                        <td colSpan={9} style={{ padding: "8px 14px", borderTop: `1px dashed ${tableBdr}` }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: headingC, fontFamily: "monospace" }}>
+                              Konto {kto}
+                            </span>
+                            <span style={{ fontSize: 10, color: subC }}>
+                              {ktoRows.length} {ktoRows.length === 1 ? "Anlage" : "Anlagen"} · BW Anfang Σ {fmtCHF(ktoBwA)}
+                            </span>
+                            <span style={{ fontSize: 10, color: subC }}>
+                              Aktuell verteilt: Abschr. <strong style={{ color: "#dc2626", fontFamily: "monospace" }}>{fmtCHF(ktoAbschrIst)}</strong>
+                              {ktoKorrIst !== 0 && <> · Korr. <strong style={{ fontFamily: "monospace" }}>{fmtCHF(ktoKorrIst)}</strong></>}
+                            </span>
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, marginLeft: "auto" }}>
+                              <span style={{ fontSize: 10, color: subC }}>Total Abschr.</span>
+                              <input value={inp.abschr ?? ""}
+                                onChange={e => setVerteilenInput(p => ({ ...p, [kto]: { ...(p[kto] || {}), abschr: e.target.value } }))}
+                                onKeyDown={e => { if (e.key === "Enter") verteilen(kto, ktoRows); }}
+                                placeholder="0.00" type="number" step="0.01"
+                                style={{ width: 100, padding: "3px 6px", fontSize: 11, fontFamily: "monospace",
+                                  border: `1px solid ${panelBdr}`, borderRadius: 4, textAlign: "right",
+                                  backgroundColor: panelBg, color: headingC }} />
+                              <span style={{ fontSize: 10, color: subC }}>Korr.</span>
+                              <input value={inp.korr ?? ""}
+                                onChange={e => setVerteilenInput(p => ({ ...p, [kto]: { ...(p[kto] || {}), korr: e.target.value } }))}
+                                onKeyDown={e => { if (e.key === "Enter") verteilen(kto, ktoRows); }}
+                                placeholder="0.00" type="number" step="0.01"
+                                style={{ width: 80, padding: "3px 6px", fontSize: 11, fontFamily: "monospace",
+                                  border: `1px solid ${panelBdr}`, borderRadius: 4, textAlign: "right",
+                                  backgroundColor: panelBg, color: headingC }} />
+                              <button onClick={() => verteilen(kto, ktoRows)}
+                                title={`Total proportional zu BW Anfang auf ${ktoRows.length} Anlage(n) verteilen`}
+                                style={{ fontSize: 10, fontWeight: 700, padding: "4px 10px", borderRadius: 4,
+                                  cursor: "pointer", border: "none", backgroundColor: accent, color: "#fff" }}>
+                                ⚖ Verteilen
+                              </button>
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                      {ktoRows.map(a => (
+                        <tr key={a.id} onMouseEnter={e => e.currentTarget.style.backgroundColor = rowHover}
+                          onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
+                          <td style={{ padding: "5px 10px", borderBottom: `1px solid ${tableBdr}80`, color: headingC }}>
+                            {a.beschreibung}
+                            {a.lieferant && <span style={{ color: subC, marginLeft: 6, fontSize: 11 }}>· {a.lieferant}</span>}
+                          </td>
+                          <td style={{ padding: "5px 10px", borderBottom: `1px solid ${tableBdr}80`, textAlign: "center", fontSize: 11, color: subC }}>
+                            {a.beschaffung_monat ? String(a.beschaffung_monat).padStart(2, "0") + "." : ""}{a.beschaffung_jahr || "—"}
+                          </td>
+                          <td style={{ padding: "5px 10px", borderBottom: `1px solid ${tableBdr}80`, color: headingC, fontFamily: "monospace", fontSize: 11 }}>{a.fibu_konto || "—"}</td>
+                          <td style={{ padding: "5px 10px", borderBottom: `1px solid ${tableBdr}80`, textAlign: "right", fontFamily: "monospace", color: subC }}>
+                            {fmtCHF(a.beschaffungskosten_netto)}
+                          </td>
+                          <td style={{ padding: "5px 10px", borderBottom: `1px solid ${tableBdr}80` }}>{inlinePct(a)}</td>
+                          <td style={{ padding: "5px 10px", borderBottom: `1px solid ${tableBdr}80` }}>{inlineNum(a, "fibu_buchwert_anfang")}</td>
+                          <td style={{ padding: "5px 10px", borderBottom: `1px solid ${tableBdr}80` }}>{inlineNum(a, "fibu_abschreibung_gj", "#dc2626", "#fef2f2")}</td>
+                          <td style={{ padding: "5px 10px", borderBottom: `1px solid ${tableBdr}80` }}>{inlineNum(a, "fibu_korrektur", subC)}</td>
+                          <td style={{ padding: "5px 10px", borderBottom: `1px solid ${tableBdr}80`, textAlign: "right", fontFamily: "monospace", fontWeight: 600, color: headingC }}>
+                            {fmtCHF(a.fibu_buchwert_ende)}
+                          </td>
+                        </tr>
+                      ))}
+                    </React.Fragment>
+                  );
+                })}
                 <tr style={{ backgroundColor: isArtis ? "#e8f2e8" : isLight ? "#f1f5f9" : "#2c2c32", borderBottom: `2px solid ${tableBdr}` }}>
                   <td colSpan={3} style={{ padding: "6px 12px", fontSize: 11, fontWeight: 700, color: subC, textAlign: "right" }}>
                     Total {isNone ? "Ohne Kategorie" : kat?.name}
