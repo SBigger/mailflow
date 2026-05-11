@@ -630,6 +630,7 @@ export default function Anlagebuchhaltung() {
       const lines = s.body.split("\n");
       let saldovortrag = null;
       let saldoEnde = null;
+      let umsatzSoll = 0, umsatzHaben = 0;   // für Konten ohne Saldovortrag
       let abschrPct = null;
       let abschrSumme = 0;
       let korrekturSumme = 0;
@@ -646,6 +647,13 @@ export default function Anlagebuchhaltung() {
         // Saldovortrag
         const sv = l.match(/Saldovortrag\s+([-]?[\d'.]+)\s*$/);
         if (sv) { saldovortrag = parseChNum(sv[1]); continue; }
+        // Umsatz-Zeile: "Umsatz 0.00 44'800.00 -44'800.00" (Soll, Haben, Veränderung)
+        const um = l.match(/^Umsatz\s+([-]?[\d'.]+)\s+([-]?[\d'.]+)\s+([-]?[\d'.]+)\s*$/);
+        if (um) {
+          umsatzSoll = parseChNum(um[1]) || 0;
+          umsatzHaben = parseChNum(um[2]) || 0;
+          continue;
+        }
         // Saldo am Ende
         const se = l.match(/^Saldo\s+([-]?[\d'.]+)\s*$/);
         if (se) { saldoEnde = parseChNum(se[1]); continue; }
@@ -697,6 +705,13 @@ export default function Anlagebuchhaltung() {
           abgaenge += parseChNum(bu2[5]) || 0;
           buchungsTexte.push(`${bu2[1]}.${bu2[2]}.${bu2[3]}: − ${bu2[4].trim()} (CHF ${bu2[5]})`);
         }
+      }
+
+      // Wenn kein Saldovortrag im PDF (Konto ohne Bewegung), aus Saldo Ende ableiten:
+      //   BW Anfang = BW Ende - (Soll - Haben)  [Veränderung im Jahr]
+      // Bei Konten ganz ohne Bewegung ergibt das BW Anfang = BW Ende (z.B. unverändertes Grundstück).
+      if (saldovortrag === null && saldoEnde !== null) {
+        saldovortrag = saldoEnde - (umsatzSoll - umsatzHaben);
       }
 
       // Beschaffungskosten = aktueller Buchwert Anfang + Zugänge im Jahr
