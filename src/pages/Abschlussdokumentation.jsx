@@ -3193,6 +3193,18 @@ export default function Abschlussdokumentation() {
 
           {/* Buttons */}
           <div className="flex items-end gap-2">
+            {/* + Anpassungszeile – nur im Kontenplan-Tab sichtbar */}
+            {activeTab === "kontenplan" && abschlussId && (
+              <button
+                onClick={() => {
+                  const rows = [...(diffAnpassungen || []), { id: crypto.randomUUID(), bezeichnung: "", betrag: 0 }];
+                  updateEinstellungenMut.mutate({ differenz_anpassungen: rows });
+                }}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold"
+                style={{ backgroundColor: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", cursor: "pointer" }}>
+                + Anpassungszeile
+              </button>
+            )}
             <button
               disabled={!abschlussId}
               onClick={() => setShowImport(true)}
