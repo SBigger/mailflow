@@ -1908,6 +1908,42 @@ function KontenplanTab({ konten, onUpdateKonto, customerId, selectedYear, accent
               </React.Fragment>
             );
           })}
+
+          {/* ── JAHRESERGEBNIS Summe (nur wenn ER-Konten vorhanden) ── */}
+          {(() => {
+            const erKonten = sortedKonten.filter(k => POSITION_MAP[k.position_id]?.typ === "er");
+            if (erKonten.length === 0) return null;
+            const jeIST = erKonten.reduce((s, k) => s + (parseFloat(k.saldo_ist)     || 0), 0);
+            const jeVJ  = erKonten.reduce((s, k) => s + (parseFloat(k.saldo_vorjahr) || 0), 0);
+            const abw   = jeIST - jeVJ;
+            const isGewinn = jeIST >= 0;
+            return (
+              <tr style={{
+                backgroundColor: isGewinn ? "#f0fdf4" : "#fef2f2",
+                borderTop: `2px solid ${isGewinn ? "#16a34a" : "#dc2626"}`,
+              }}>
+                <td colSpan={2} style={{
+                  padding: "10px 12px", fontWeight: 800, fontSize: 13,
+                  color: isGewinn ? "#15803d" : "#dc2626", letterSpacing: "0.02em",
+                }}>
+                  JAHRESERGEBNIS
+                </td>
+                <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 800, fontSize: 13,
+                  fontFamily: "monospace", color: isGewinn ? "#15803d" : "#dc2626" }}>
+                  {fmtCHF(jeIST)}
+                </td>
+                <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600, fontSize: 12,
+                  fontFamily: "monospace", color: subC }}>
+                  {fmtCHF(jeVJ)}
+                </td>
+                <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600, fontSize: 11,
+                  fontFamily: "monospace", color: abw > 0 ? "#16a34a" : abw < 0 ? "#dc2626" : subC }}>
+                  {abw !== 0 ? (abw > 0 ? "+" : "") + fmtCHF(abw) : ""}
+                </td>
+                <td colSpan={2} />
+              </tr>
+            );
+          })()}
         </tbody>
       </table>
     </div>
