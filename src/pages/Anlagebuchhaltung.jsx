@@ -430,6 +430,49 @@ export default function Anlagebuchhaltung() {
     enabled: !!abschlussId,
   });
 
+  // ── Auto-Apply Default-ND aus Kategorie für Anlagen ohne eigene ND ──────────
+  const autoNdAppliedRef = useRef(new Set());
+  useEffect(() => {
+    if (!abschlussId || !anlagen.length || !kategorien.length) return;
+    const key = abschlussId;
+    if (autoNdAppliedRef.current.has(key)) return;
+    // Anlagen finden die einen Default brauchen + keinen Override haben
+    const toUpdate = [];
+    for (const a of anlagen) {
+      if (a.anbu_nutzungsdauer_j != null) continue;
+      const kat = kategorien.find(k => k.id === a.kategorie_id);
+      const defND = kat?.default_anbu_nutzungsdauer_j;
+      if (!defND) continue;
+      const bwAnfang = parseFloat(a.anbu_buchwert_anfang) || 0;
+      const kosten = parseFloat(a.beschaffungskosten_netto) || 0;
+      const abschr = calcAnbuAbschreibungLinear({
+        beschaffungskosten_netto: kosten,
+        anbu_nutzungsdauer_j: defND,
+        anbu_buchwert_anfang: bwAnfang,
+      });
+      const bwEnde = Math.max(0, bwAnfang - abschr - (parseFloat(a.anbu_korrektur) || 0));
+      toUpdate.push({
+        id: a.id,
+        anbu_nutzungsdauer_j: defND,
+        anbu_abschreibung_gj: abschr,
+        anbu_buchwert_ende: bwEnde,
+      });
+    }
+    if (toUpdate.length === 0) {
+      autoNdAppliedRef.current.add(key);
+      return;
+    }
+    autoNdAppliedRef.current.add(key);
+    (async () => {
+      for (const u of toUpdate) {
+        const { id, ...fields } = u;
+        await supabase.from("anbu_anlage").update(fields).eq("id", id);
+      }
+      qc.invalidateQueries({ queryKey: ["anbu_anlagen", abschlussId] });
+      toast.success(`${toUpdate.length} Anlagen mit Standard-Nutzungsdauer aktualisiert`);
+    })();
+  }, [abschlussId, anlagen, kategorien, qc]);
+
   // ── Anlage Update / Insert / Delete ─────────────────────────────────────────
   const updateAnlageMut = useMutation({
     mutationFn: async ({ id, ...fields }) => {
