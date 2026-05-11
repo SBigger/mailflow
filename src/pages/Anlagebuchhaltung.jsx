@@ -380,7 +380,7 @@ export default function Anlagebuchhaltung() {
   });
 
   // ── Kategorien laden + Default-Seed ─────────────────────────────────────────
-  const { data: kategorien = [] } = useQuery({
+  const { data: kategorien = [], isSuccess: kategorienLoaded } = useQuery({
     queryKey: ["anbu_kategorien", selectedCid],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -396,19 +396,25 @@ export default function Anlagebuchhaltung() {
   const seedKategorienMut = useMutation({
     mutationFn: async () => {
       const rows = DEFAULT_KATEGORIEN.map(k => ({ ...k, customer_id: selectedCid }));
-      const { error } = await supabase.from("anbu_kategorie").insert(rows);
+      // upsert mit onConflict → duplicate-key wird ignoriert
+      const { error } = await supabase.from("anbu_kategorie")
+        .upsert(rows, { onConflict: "customer_id,name", ignoreDuplicates: true });
       if (error) throw new Error(error.message);
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["anbu_kategorien", selectedCid] }),
     onError: (e) => toast.error("Kategorien-Seed: " + e.message),
   });
 
-  // Auto-seed beim allerersten Mandanten-Öffnen
+  // Auto-seed nur wenn Query erfolgreich geladen und WIRKLICH leer
+  // (verhindert Race wo initial-empty-array auto-seed triggert während Daten kommen)
+  const seedTriedRef = useRef(new Set());
   useEffect(() => {
-    if (selectedCid && kategorien.length === 0 && !seedKategorienMut.isPending) {
+    if (selectedCid && kategorienLoaded && kategorien.length === 0
+        && !seedKategorienMut.isPending && !seedTriedRef.current.has(selectedCid)) {
+      seedTriedRef.current.add(selectedCid);
       seedKategorienMut.mutate();
     }
-  }, [selectedCid, kategorien.length]);
+  }, [selectedCid, kategorienLoaded, kategorien.length]);
 
   // ── Anlagen laden ────────────────────────────────────────────────────────────
   const { data: anlagen = [], isLoading: anlagenLoading } = useQuery({
@@ -660,29 +666,36 @@ export default function Anlagebuchhaltung() {
         // Format: "06.03.2024 H 2721 3552 2000  E.... Gama AG Photovoltaik 14'736.49 ... 959'936.49"
         const bu = l.match(/^(\d{2})\.(\d{2})\.(\d{4})\s+[HS]\s+\d+\s+\d+\s+\d+\s+(.+?)\s+([-]?[\d'.]+)\s+([-]?[\d'.]+)\s*$/);
         if (bu) {
-          const dd = parseInt(bu[1]), mm = parseInt(bu[2]), yyyy = parseInt(bu[3]);
+          const yyyy = parseInt(bu[3]);
+          const mm   = parseInt(bu[2]);
           const txt = bu[4].trim();
           const v1 = parseChNum(bu[5]) || 0;
-          // bu[6] ist Saldo – nicht weiter benötigt
-          if (txt.match(/Abschr|Überabschreibung|Umbuchung|Umb\./i)) {
-            // Bei Umbuchung kann es ein Verkauf/Entnahme sein (Haben)
-            if (txt.match(/Verkauf|Entnahme/i)) abgaenge += v1;
+          // Klassifizieren: Abschreibung / Verkauf-Entnahme / Umbuchung / Zugang
+          if (txt.match(/^Abschr|Überabschreibung/i)) {
+            // Schon oben separat erfasst — überspringen
+          } else if (txt.match(/Verkauf|Entnahme/i)) {
+            // Verkauf/Entnahme: Abgang im Jahr
+            abgaenge += v1;
+            buchungsTexte.push(`${bu[1]}.${bu[2]}.${bu[3]}: − ${txt} (CHF ${bu[5]})`);
+          } else if (txt.match(/Umbuchung|Umb\./i)) {
+            // Umbuchung: kein Zugang/Abgang, nur als Notiz
+            buchungsTexte.push(`${bu[1]}.${bu[2]}.${bu[3]}: ↔ ${txt} (CHF ${bu[5]})`);
           } else {
             // Echter Zugang / Aktivierung (Soll-Buchung)
             zugaenge += v1;
             if (!buchungsJahr) { buchungsJahr = yyyy; buchungsMonat = mm; }
-            // Lieferant aus Text: nach "E.YYYYNNNNN " kommt der Lieferant
             const lf = txt.match(/^E\.\d+\s+(.+)$/);
             const lieferant = lf ? lf[1].trim() : txt;
             lieferanten.push(lieferant);
-            buchungsTexte.push(`${bu[1]}.${bu[2]}.${bu[3]}: ${lieferant} CHF ${bu[5]}`);
+            buchungsTexte.push(`${bu[1]}.${bu[2]}.${bu[3]}: + ${lieferant} CHF ${bu[5]}`);
           }
           continue;
         }
-        // Buchungs-Zeile mit nur Saldo (Verkäufe etc.)
-        const bu2 = l.match(/^(\d{2})\.(\d{2})\.(\d{4})\s+[HS]\s+\d+\s+\d+\s+\d+\s+(.+?)\s+([-]?[\d'.]+)\s*$/);
+        // Buchungs-Zeile mit nur Saldo (Verkäufe ohne Gegenkonto, z.B. "Entnahme FZ gem. Eurotax")
+        const bu2 = l.match(/^(\d{2})\.(\d{2})\.(\d{4})\s+[HS]?\s*\S*\s*\d*\s*\d*\s*\S*\s+(.+?)\s+([-]?[\d'.]+)\s*$/);
         if (bu2 && bu2[4].match(/Verkauf|Entnahme/i)) {
           abgaenge += parseChNum(bu2[5]) || 0;
+          buchungsTexte.push(`${bu2[1]}.${bu2[2]}.${bu2[3]}: − ${bu2[4].trim()} (CHF ${bu2[5]})`);
         }
       }
 
@@ -1269,10 +1282,12 @@ export default function Anlagebuchhaltung() {
                         <th style={pdfHdr(subC, panelBdr, "left", 55)}>Kto</th>
                         <th style={pdfHdr(subC, panelBdr, "left", 0)}>Beschreibung</th>
                         <th style={pdfHdr(subC, panelBdr, "left", 110)}>Kategorie</th>
-                        <th style={pdfHdr(subC, panelBdr, "right", 95)}>BW Anf.</th>
-                        <th style={pdfHdr(subC, panelBdr, "right", 95)}>Zugang</th>
-                        <th style={pdfHdr(subC, panelBdr, "center", 70)}>Abschr%</th>
-                        <th style={pdfHdr(subC, panelBdr, "right", 95)}>BW Ende</th>
+                        <th style={pdfHdr(subC, panelBdr, "right", 90)}>BW Anf.</th>
+                        <th style={pdfHdr(subC, panelBdr, "right", 85)}>Zugang</th>
+                        <th style={pdfHdr(subC, panelBdr, "right", 85)}>Abgang</th>
+                        <th style={pdfHdr(subC, panelBdr, "center", 65)}>%</th>
+                        <th style={pdfHdr(subC, panelBdr, "right", 85)}>Abschr.</th>
+                        <th style={pdfHdr(subC, panelBdr, "right", 90)}>BW Ende</th>
                         <th style={pdfHdr(subC, panelBdr, "center", 30)}></th>
                       </tr>
                     </thead>
@@ -1310,9 +1325,19 @@ export default function Anlagebuchhaltung() {
                               style={inpStyle("right", panelBdr, a.zugaenge > 0 ? "#16a34a" : headingC, panelBg, true)} />
                           </td>
                           <td style={{ padding: "3px 4px" }}>
+                            <input value={a.abgaenge ?? ""} type="number" step="0.01"
+                              onChange={e => updatePdfRow(i, "abgaenge", parseFloat(e.target.value) || 0)}
+                              style={inpStyle("right", panelBdr, a.abgaenge > 0 ? "#dc2626" : headingC, panelBg, true)} />
+                          </td>
+                          <td style={{ padding: "3px 4px" }}>
                             <input value={a.abschrPct ?? ""} type="number" step="0.01"
                               onChange={e => updatePdfRow(i, "abschrPct", parseFloat(e.target.value) || null)}
                               style={inpStyle("center", panelBdr, headingC, panelBg, true)} />
+                          </td>
+                          <td style={{ padding: "3px 4px" }}>
+                            <input value={a.abschrSumme ?? ""} type="number" step="0.01"
+                              onChange={e => updatePdfRow(i, "abschrSumme", parseFloat(e.target.value) || 0)}
+                              style={inpStyle("right", panelBdr, a.abschrSumme > 0 ? "#dc2626" : headingC, panelBg, true)} />
                           </td>
                           <td style={{ padding: "3px 4px" }}>
                             <input value={a.saldoEnde ?? ""} type="number" step="0.01"
