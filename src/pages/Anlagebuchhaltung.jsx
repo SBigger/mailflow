@@ -1781,7 +1781,47 @@ function AnlageRow({ a, kategorien, editCell, startEdit, commitEdit, setEditCell
       <td style={{ ...td }}>{renderCell("sub_kategorie", a.sub_kategorie, { placeholder: "—" })}</td>
       <td style={{ ...td }}>{renderCell("beschaffungskosten_netto", a.beschaffungskosten_netto, { align: "right", mono: true, format: fmtCHF })}</td>
       <td style={{ ...td, textAlign: "center" }}>
-        {renderCell("anbu_nutzungsdauer_j", a.anbu_nutzungsdauer_j, { align: "center" })}
+        {(() => {
+          const kat = kategorien.find(k => k.id === a.kategorie_id);
+          const defaultND = kat?.default_anbu_nutzungsdauer_j;
+          const isEditing = editCell?.id === a.id && editCell?.field === "anbu_nutzungsdauer_j";
+          if (isEditing) {
+            return (
+              <input autoFocus value={editCell.val}
+                onChange={e => setEditCell(v => ({ ...v, val: e.target.value }))}
+                onKeyDown={e => {
+                  if (e.key === "Enter") commitEdit();
+                  if (e.key === "Escape") setEditCell(null);
+                }}
+                onBlur={commitEdit}
+                placeholder={defaultND ? String(defaultND) : ""}
+                style={{ width: "100%", padding: "3px 6px", fontSize: 12, textAlign: "center",
+                  border: `1.5px solid ${accent}`, borderRadius: 4, outline: "none",
+                  backgroundColor: accent + "10" }} />
+            );
+          }
+          // Wert vorhanden → normal anzeigen. Sonst: Default aus Kategorie (gedämpft).
+          if (a.anbu_nutzungsdauer_j != null) {
+            return (
+              <span onDoubleClick={() => startEdit(a.id, "anbu_nutzungsdauer_j", a.anbu_nutzungsdauer_j)}
+                title="Doppelklick zum Bearbeiten (eigener Wert für diese Anlage)"
+                style={{ cursor: "default", display: "block", textAlign: "center", color: headingC, fontWeight: 600 }}>
+                {a.anbu_nutzungsdauer_j}
+              </span>
+            );
+          }
+          // Default aus Kategorie zeigen
+          return (
+            <span onDoubleClick={() => startEdit(a.id, "anbu_nutzungsdauer_j", defaultND ?? "")}
+              title={defaultND
+                ? `Default aus Kategorie "${kat?.name}" (${defaultND} J) – Doppelklick zum Überschreiben`
+                : "Keine Kategorie / Default – Doppelklick zum Erfassen"}
+              style={{ cursor: "default", display: "block", textAlign: "center",
+                color: subC, fontStyle: "italic", opacity: 0.7 }}>
+              {defaultND ?? "—"}
+            </span>
+          );
+        })()}
       </td>
       <td style={{ ...td }}>{renderCell("anbu_buchwert_anfang", a.anbu_buchwert_anfang, { align: "right", mono: true, format: fmtCHF })}</td>
       <td style={{ ...td }}>
