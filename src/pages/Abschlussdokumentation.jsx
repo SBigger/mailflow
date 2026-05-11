@@ -1642,13 +1642,31 @@ function NotizPopup({ value, onChange, accent, headingC, subC, panelBg, panelBdr
 }
 
 // ── Kontenplan Tab ────────────────────────────────────────────────────────────
-function KontenplanTab({ konten, onUpdateKonto, customerId, selectedYear, accent, theme, headingC, subC, panelBg, panelBdr, tableBdr, rowHover, diffAnpassungen, onSaveDiffAnpassungen }) {
+function KontenplanTab({ konten, onUpdateKonto, onAddKonto, customerId, selectedYear, accent, theme, headingC, subC, panelBg, panelBdr, tableBdr, rowHover, diffAnpassungen, onSaveDiffAnpassungen }) {
   const isArtis = theme === "artis";
   const isLight = theme === "light";
   const [collapsed, setCollapsed] = useState({});
   const [expandedKonten, setExpandedKonten] = useState(new Set());
   // Inline-Edit für Saldo IST / Saldo VJ per Doppelklick
   const [editSaldo, setEditSaldo] = useState(null); // { kontoId, field: "saldo_ist"|"saldo_vorjahr", expr }
+  // Neue Konto-Zeile (Inline-Erfassung oben in der Tabelle)
+  const [newRow, setNewRow] = useState({ kontonummer: "", kontoname: "", saldo_ist: "", saldo_vorjahr: "", position_id: null });
+  const submitNewRow = () => {
+    if (!onAddKonto) return;
+    const nr = String(newRow.kontonummer || "").trim();
+    if (!nr) { toast.error("Konto-Nr. erforderlich"); return; }
+    if (konten.some(k => String(k.kontonummer) === nr)) { toast.error("Konto-Nr. existiert bereits"); return; }
+    const sIst = evalExpr(newRow.saldo_ist) ?? 0;
+    const sVj  = evalExpr(newRow.saldo_vorjahr) ?? 0;
+    onAddKonto({
+      kontonummer: nr,
+      kontoname: newRow.kontoname.trim(),
+      saldo_ist: sIst,
+      saldo_vorjahr: sVj,
+      position_id: newRow.position_id,
+    });
+    setNewRow({ kontonummer: "", kontoname: "", saldo_ist: "", saldo_vorjahr: "", position_id: null });
+  };
   // Anpassungszeilen-Edit
   const [editAnp, setEditAnp] = useState(null); // { idx, bezeichnung, betrag }
   // Resizable column widths: [Konto-Nr, Kontoname, Saldo IST, Saldo VJ, Abw., Position, Notiz]
@@ -1754,6 +1772,65 @@ function KontenplanTab({ konten, onUpdateKonto, customerId, selectedYear, accent
           </tr>
         </thead>
         <tbody>
+          {/* ── Inline-Eingabezeile für manuelles Hinzufügen ── */}
+          {onAddKonto && (
+            <tr style={{ backgroundColor: accent + "0a", borderBottom: `2px solid ${accent}40` }}>
+              <td style={{ padding: "4px 6px 4px 12px" }}>
+                <input value={newRow.kontonummer}
+                  onChange={e => setNewRow(v => ({ ...v, kontonummer: e.target.value }))}
+                  onKeyDown={e => { if (e.key === "Enter") submitNewRow(); }}
+                  placeholder="Nr."
+                  style={{ width: "100%", fontSize: 12, fontFamily: "monospace", fontWeight: 600,
+                    padding: "4px 6px", borderRadius: 4, border: `1px solid ${accent}40`,
+                    outline: "none", backgroundColor: panelBg, color: headingC }} />
+              </td>
+              <td style={{ padding: "4px 6px" }}>
+                <input value={newRow.kontoname}
+                  onChange={e => setNewRow(v => ({ ...v, kontoname: e.target.value }))}
+                  onKeyDown={e => { if (e.key === "Enter") submitNewRow(); }}
+                  placeholder="Kontoname"
+                  style={{ width: "100%", fontSize: 12, padding: "4px 8px", borderRadius: 4,
+                    border: `1px solid ${accent}40`, outline: "none", backgroundColor: panelBg, color: headingC }} />
+              </td>
+              <td style={{ padding: "4px 6px", textAlign: "right" }}>
+                <input value={newRow.saldo_ist}
+                  onChange={e => setNewRow(v => ({ ...v, saldo_ist: e.target.value }))}
+                  onKeyDown={e => { if (e.key === "Enter") submitNewRow(); }}
+                  placeholder="0.00"
+                  title="Rechnung möglich: 1000+500 oder 2*630.50"
+                  style={{ width: "100%", fontSize: 12, fontFamily: "monospace", textAlign: "right",
+                    padding: "4px 6px", borderRadius: 4, border: `1px solid ${accent}40`,
+                    outline: "none", backgroundColor: panelBg, color: headingC }} />
+              </td>
+              <td style={{ padding: "4px 6px", textAlign: "right" }}>
+                <input value={newRow.saldo_vorjahr}
+                  onChange={e => setNewRow(v => ({ ...v, saldo_vorjahr: e.target.value }))}
+                  onKeyDown={e => { if (e.key === "Enter") submitNewRow(); }}
+                  placeholder="0.00"
+                  title="Rechnung möglich: 1000+500"
+                  style={{ width: "100%", fontSize: 12, fontFamily: "monospace", textAlign: "right",
+                    padding: "4px 6px", borderRadius: 4, border: `1px solid ${accent}40`,
+                    outline: "none", backgroundColor: panelBg, color: subC }} />
+              </td>
+              <td style={{ padding: "4px 6px", textAlign: "center" }}>
+                <button onClick={submitNewRow}
+                  title="Hinzufügen (Enter)"
+                  style={{ fontSize: 14, fontWeight: 800, lineHeight: 1, padding: "4px 10px",
+                    borderRadius: 5, border: "none", cursor: "pointer",
+                    backgroundColor: accent, color: "#fff" }}>+</button>
+              </td>
+              <td style={{ padding: "4px 6px" }}>
+                <PositionSelector
+                  value={newRow.position_id}
+                  onChange={(pid) => setNewRow(v => ({ ...v, position_id: pid }))}
+                  subC={subC} panelBg={panelBg} panelBdr={panelBdr} headingC={headingC} accent={accent}
+                />
+              </td>
+              <td style={{ padding: "4px 12px", fontSize: 11, color: subC, fontStyle: "italic" }}>
+                Neue Zeile · Enter zum Hinzufügen
+              </td>
+            </tr>
+          )}
           {groupOrder.map(groupKey => {
             const rows = grouped[groupKey];
             if (!rows) return null;
@@ -3005,6 +3082,31 @@ export default function Abschlussdokumentation() {
     updateKontoMut.mutate({ id, ...fields });
   }
 
+  // ── Manuelles Konto hinzufügen (Inline-Eingabe im Kontenplan) ──────────────
+  const addKontoMut = useMutation({
+    mutationFn: async ({ kontonummer, kontoname, saldo_ist, saldo_vorjahr, position_id }) => {
+      const { error } = await supabase.from("abschluss_konten").insert({
+        abschluss_id: abschlussId,
+        kontonummer: String(kontonummer),
+        kontoname: kontoname || "",
+        saldo_ist: saldo_ist ?? 0,
+        saldo_vorjahr: saldo_vorjahr ?? 0,
+        position_id: position_id || autoMapKonto(kontonummer),
+        position_override: !!position_id,
+      });
+      if (error) throw new Error(error.message);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["abschluss_konten", abschlussId] });
+      toast.success("Konto hinzugefügt");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  function handleAddKonto(data) {
+    if (!abschlussId) return;
+    addKontoMut.mutate(data);
+  }
+
   // ── Konten importieren (Merge: Salden aktualisieren, manuelle Daten behalten) ──
   const importKontenMut = useMutation({
     mutationFn: async (newKonten) => {
@@ -3193,18 +3295,6 @@ export default function Abschlussdokumentation() {
 
           {/* Buttons */}
           <div className="flex items-end gap-2">
-            {/* + Anpassungszeile – nur im Kontenplan-Tab sichtbar */}
-            {activeTab === "kontenplan" && abschlussId && (
-              <button
-                onClick={() => {
-                  const rows = [...(diffAnpassungen || []), { id: crypto.randomUUID(), bezeichnung: "", betrag: 0 }];
-                  updateEinstellungenMut.mutate({ differenz_anpassungen: rows });
-                }}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold"
-                style={{ backgroundColor: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", cursor: "pointer" }}>
-                + Anpassungszeile
-              </button>
-            )}
             <button
               disabled={!abschlussId}
               onClick={() => setShowImport(true)}
@@ -3316,6 +3406,7 @@ export default function Abschlussdokumentation() {
                   {activeTab === "kontenplan" && (
                     <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${panelBdr}`, backgroundColor: panelBg, boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
                       <KontenplanTab {...tabProps} onUpdateKonto={handleUpdateKonto}
+                        onAddKonto={handleAddKonto}
                         diffAnpassungen={diffAnpassungen}
                         onSaveDiffAnpassungen={(rows) => updateEinstellungenMut.mutate({ differenz_anpassungen: rows })}
                       />
