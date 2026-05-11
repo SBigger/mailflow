@@ -1642,13 +1642,38 @@ function NotizPopup({ value, onChange, accent, headingC, subC, panelBg, panelBdr
 }
 
 // ── Kontenplan Tab ────────────────────────────────────────────────────────────
-function KontenplanTab({ konten, onUpdateKonto, customerId, selectedYear, accent, theme, headingC, subC, panelBg, panelBdr, tableBdr, rowHover }) {
+function KontenplanTab({ konten, onUpdateKonto, customerId, selectedYear, accent, theme, headingC, subC, panelBg, panelBdr, tableBdr, rowHover, diffAnpassungen, onSaveDiffAnpassungen }) {
   const isArtis = theme === "artis";
   const isLight = theme === "light";
   const [collapsed, setCollapsed] = useState({});
   const [expandedKonten, setExpandedKonten] = useState(new Set());
   // Inline-Edit für Saldo IST / Saldo VJ per Doppelklick
   const [editSaldo, setEditSaldo] = useState(null); // { kontoId, field: "saldo_ist"|"saldo_vorjahr", expr }
+  // Anpassungszeilen-Edit
+  const [editAnp, setEditAnp] = useState(null); // { idx, bezeichnung, betrag }
+  // Resizable column widths: [Konto-Nr, Kontoname, Saldo IST, Saldo VJ, Abw., Position, Notiz]
+  const DEFAULT_COL_WIDTHS = [80, 200, 110, 110, 95, 160, 140];
+  const [colWidths, setColWidths] = useState(DEFAULT_COL_WIDTHS);
+  const colWidthsRef = useRef(DEFAULT_COL_WIDTHS);
+
+  const startResize = (e, ci) => {
+    e.preventDefault();
+    const sx = e.clientX;
+    const sw = colWidthsRef.current[ci];
+    const minW = [50, 80, 80, 80, 60, 80, 80][ci] ?? 60;
+    const move = (me) => {
+      const newW = Math.max(minW, sw + me.clientX - sx);
+      const next = colWidthsRef.current.map((w, i) => i === ci ? newW : w);
+      colWidthsRef.current = next;
+      setColWidths([...next]);
+    };
+    const up = () => {
+      document.removeEventListener("mousemove", move);
+      document.removeEventListener("mouseup", up);
+    };
+    document.addEventListener("mousemove", move);
+    document.addEventListener("mouseup", up);
+  };
   const commitSaldo = (kontoId, field, expr, nextEdit) => {
     const result = evalExpr(expr);
     if (result !== null) onUpdateKonto(kontoId, { [field]: result });
@@ -1699,17 +1724,32 @@ function KontenplanTab({ konten, onUpdateKonto, customerId, selectedYear, accent
     );
   }
 
+  const COL_HEADERS = ["Konto-Nr", "Kontoname", "Saldo IST", "Saldo VJ", "Abw.", "Position", "Notiz"];
+  const COL_ALIGN = [false, false, true, true, true, false, false];
+
   return (
     <div className="overflow-x-auto">
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+      <table style={{ tableLayout: "fixed", width: COL_HEADERS.reduce((s, _, i) => s + colWidths[i], 0) + "px", borderCollapse: "collapse", fontSize: 13 }}>
+        <colgroup>
+          {colWidths.map((w, i) => <col key={i} style={{ width: w }} />)}
+        </colgroup>
         <thead style={{ position: "sticky", top: 0, zIndex: 10 }}>
           <tr style={{ backgroundColor: isArtis ? "#e8f2e8" : isLight ? "#f1f5f9" : "#2f2f35" }}>
-            {["Konto-Nr", "Kontoname", "Saldo IST", "Saldo VJ", "Abw.", "Position", "Notiz"].map(h => (
+            {COL_HEADERS.map((h, ci) => (
               <th key={h} style={{
-                padding: "9px 12px", textAlign: h === "Saldo IST" || h === "Saldo VJ" || h === "Abw." ? "right" : "left",
+                position: "relative",
+                padding: "9px 12px", textAlign: COL_ALIGN[ci] ? "right" : "left",
                 fontWeight: 700, fontSize: 11, letterSpacing: "0.04em", textTransform: "uppercase",
                 color: subC, borderBottom: `2px solid ${tableBdr}`, whiteSpace: "nowrap",
-              }}>{h}</th>
+                userSelect: "none", overflow: "hidden",
+              }}>
+                {h}
+                {/* Resize handle */}
+                <div onMouseDown={e => startResize(e, ci)} style={{
+                  position: "absolute", right: 0, top: 0, bottom: 0, width: 5,
+                  cursor: "col-resize", zIndex: 2,
+                }} />
+              </th>
             ))}
           </tr>
         </thead>
@@ -1946,6 +1986,112 @@ function KontenplanTab({ konten, onUpdateKonto, customerId, selectedYear, accent
           })()}
         </tbody>
       </table>
+
+      {/* ── Anpassungszeilen ── */}
+      {onSaveDiffAnpassungen && (
+        <div style={{ borderTop: `2px solid ${panelBdr}`, marginTop: 4 }}>
+          {/* Header */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px" }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: headingC, letterSpacing: "0.03em" }}>
+              Anpassungszeilen
+              {(diffAnpassungen || []).length > 0 && (
+                <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 400, color: subC }}>
+                  ({(diffAnpassungen || []).length} Zeilen · Total CHF {fmtCHF((diffAnpassungen || []).reduce((s, a) => s + (parseFloat(a.betrag) || 0), 0))})
+                </span>
+              )}
+            </span>
+            <button
+              onClick={() => {
+                const rows = [...(diffAnpassungen || []), { id: crypto.randomUUID(), bezeichnung: "", betrag: 0 }];
+                onSaveDiffAnpassungen(rows);
+                setEditAnp({ idx: rows.length - 1, bezeichnung: "", betrag: "" });
+              }}
+              style={{ fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 5, cursor: "pointer",
+                backgroundColor: accent + "14", border: `1px solid ${accent}40`, color: accent }}>
+              + Anpassungszeile
+            </button>
+          </div>
+          {/* Zeilen-Tabelle */}
+          {(diffAnpassungen || []).length > 0 && (
+            <div style={{ padding: "0 14px 12px" }}>
+              <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ color: subC, fontWeight: 700, fontSize: 11, borderBottom: `1px solid ${panelBdr}` }}>
+                    <th style={{ textAlign: "left", padding: "4px 0", width: "55%" }}>Bezeichnung</th>
+                    <th style={{ textAlign: "right", padding: "4px 8px", width: "35%" }}>Betrag CHF</th>
+                    <th style={{ width: "10%" }} />
+                  </tr>
+                </thead>
+                <tbody>
+                  {(diffAnpassungen || []).map((a, idx) => {
+                    const isEditing = editAnp?.idx === idx;
+                    const saveAnpRow = () => {
+                      if (!editAnp || editAnp.idx !== idx) return;
+                      const rows = (diffAnpassungen || []).map((r, i) =>
+                        i === idx ? { ...r, bezeichnung: editAnp.bezeichnung, betrag: parseFloat(editAnp.betrag) || 0 } : r
+                      );
+                      onSaveDiffAnpassungen(rows);
+                      setEditAnp(null);
+                    };
+                    return (
+                      <tr key={a.id} style={{ borderBottom: `1px solid ${panelBdr}40` }}>
+                        <td style={{ padding: "4px 0" }}>
+                          {isEditing ? (
+                            <input autoFocus value={editAnp.bezeichnung}
+                              onChange={e => setEditAnp(v => ({ ...v, bezeichnung: e.target.value }))}
+                              onKeyDown={e => {
+                                if (e.key === "Tab")    { e.preventDefault(); document.getElementById(`kanp-betrag-${idx}`)?.focus(); document.getElementById(`kanp-betrag-${idx}`)?.select(); }
+                                if (e.key === "Escape") setEditAnp(null);
+                                if (e.key === "Enter")  { document.getElementById(`kanp-betrag-${idx}`)?.focus(); document.getElementById(`kanp-betrag-${idx}`)?.select(); }
+                              }}
+                              style={{ width: "100%", fontSize: 12, padding: "3px 8px", borderRadius: 4, border: `1px solid ${accent}80`, outline: "none" }} />
+                          ) : (
+                            <span onClick={() => setEditAnp({ idx, bezeichnung: a.bezeichnung, betrag: String(a.betrag) })}
+                              style={{ cursor: "text", color: a.bezeichnung ? headingC : subC, fontStyle: a.bezeichnung ? "normal" : "italic" }}>
+                              {a.bezeichnung || "Bezeichnung eingeben…"}
+                            </span>
+                          )}
+                        </td>
+                        <td style={{ padding: "4px 8px", textAlign: "right" }}>
+                          {isEditing ? (
+                            <input id={`kanp-betrag-${idx}`} value={editAnp.betrag} type="number" step="0.01"
+                              onChange={e => setEditAnp(v => ({ ...v, betrag: e.target.value }))}
+                              onKeyDown={e => {
+                                if (e.key === "Enter")  saveAnpRow();
+                                if (e.key === "Escape") setEditAnp(null);
+                                if (e.key === "Tab")    { e.preventDefault(); saveAnpRow(); }
+                              }}
+                              onBlur={saveAnpRow}
+                              style={{ width: "100%", fontSize: 12, padding: "3px 8px", borderRadius: 4, border: `1px solid ${accent}80`, outline: "none", textAlign: "right" }} />
+                          ) : (
+                            <span onClick={() => setEditAnp({ idx, bezeichnung: a.bezeichnung, betrag: String(a.betrag) })}
+                              style={{ cursor: "text", fontFamily: "monospace", color: headingC }}>
+                              {fmtCHF(a.betrag)}
+                            </span>
+                          )}
+                        </td>
+                        <td style={{ textAlign: "right", padding: "4px 0" }}>
+                          {isEditing
+                            ? <button onMouseDown={e => { e.preventDefault(); saveAnpRow(); }}
+                                style={{ background: "none", border: "none", cursor: "pointer", color: "#16a34a", fontSize: 16, lineHeight: 1, fontWeight: 700 }}>✓</button>
+                            : <button onClick={() => onSaveDiffAnpassungen((diffAnpassungen || []).filter((_, i) => i !== idx))}
+                                style={{ background: "none", border: "none", cursor: "pointer", color: subC, fontSize: 14, lineHeight: 1, opacity: 0.5 }}>×</button>
+                          }
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {(diffAnpassungen || []).length === 0 && (
+            <div style={{ padding: "4px 14px 12px", fontSize: 12, color: subC, fontStyle: "italic" }}>
+              Noch keine Anpassungszeilen erfasst.
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -3157,7 +3303,10 @@ export default function Abschlussdokumentation() {
                 <>
                   {activeTab === "kontenplan" && (
                     <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${panelBdr}`, backgroundColor: panelBg, boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
-                      <KontenplanTab {...tabProps} onUpdateKonto={handleUpdateKonto} />
+                      <KontenplanTab {...tabProps} onUpdateKonto={handleUpdateKonto}
+                        diffAnpassungen={diffAnpassungen}
+                        onSaveDiffAnpassungen={(rows) => updateEinstellungenMut.mutate({ differenz_anpassungen: rows })}
+                      />
                     </div>
                   )}
                   {activeTab === "bilanz" && (
