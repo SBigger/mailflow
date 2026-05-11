@@ -569,6 +569,7 @@ export default function Anlagebuchhaltung() {
           kontonummer: "", beschreibung: "", kategorie_name: null, sub_kategorie: "",
           saldovortrag: 0, saldoEnde: 0, abschrPct: null, abschrSumme: 0,
           korrekturSumme: 0, zugaenge: 0, abgaenge: 0, beschaffungskosten: 0,
+          nutzungsdauer: null,
           beschaffungJahr: selectedYear, beschaffungMonat: null,
           lieferant: null, buchungsTexte: [],
         }],
@@ -718,10 +719,16 @@ export default function Anlagebuchhaltung() {
       // (echte Anschaffungskosten unbekannt aus PDF, Saldovortrag ist beste Approximation)
       const beschaffungskosten = (saldovortrag || 0) + zugaenge;
 
+      const katName = autoMapKontoToKategorie(s.kontonummer);
+      // Default Nutzungsdauer aus Kategorie (vorhandene oder Default)
+      const matchedKat = kategorien.find(k => k.name.toLowerCase() === (katName || "").toLowerCase())
+        || DEFAULT_KATEGORIEN.find(k => k.name.toLowerCase() === (katName || "").toLowerCase());
+      const defaultND = matchedKat?.default_anbu_nutzungsdauer_j ?? null;
+
       anlagen.push({
         kontonummer: s.kontonummer,
         beschreibung: s.beschreibung,
-        kategorie_name: autoMapKontoToKategorie(s.kontonummer),
+        kategorie_name: katName,
         sub_kategorie: s.beschreibung,
         saldovortrag: saldovortrag || 0,
         saldoEnde: saldoEnde || 0,
@@ -731,6 +738,7 @@ export default function Anlagebuchhaltung() {
         zugaenge,
         abgaenge,
         beschaffungskosten,
+        nutzungsdauer: defaultND,
         beschaffungJahr: buchungsJahr,
         beschaffungMonat: buchungsMonat,
         lieferant: lieferanten[0] || null,
@@ -776,7 +784,16 @@ export default function Anlagebuchhaltung() {
         if (error) throw new Error(error.message);
         for (const k of inserted || []) kategorieMap.set(k.name.toLowerCase(), k.id);
       }
-      const rows = pdfAnlagen.map((a, idx) => ({
+      const rows = pdfAnlagen.map((a, idx) => {
+        // ANBU: Nutzungsdauer aus Vorschau (oder Kategorie-Default) → lineare Abschreibung
+        const nutz = a.nutzungsdauer ? parseInt(a.nutzungsdauer) : null;
+        const anbuAbschr = nutz ? calcAnbuAbschreibungLinear({
+          beschaffungskosten_netto: a.beschaffungskosten,
+          anbu_nutzungsdauer_j: nutz,
+          anbu_buchwert_anfang: a.saldovortrag,
+        }) : 0;
+        const anbuBwEnde = Math.max(0, (a.saldovortrag || 0) - anbuAbschr);
+        return {
         abschluss_id: useAbId,
         beschreibung: a.beschreibung,
         lieferant: a.lieferant,
@@ -790,12 +807,12 @@ export default function Anlagebuchhaltung() {
         kategorie_id: a.kategorie_name ? kategorieMap.get(a.kategorie_name.toLowerCase()) : null,
         sub_kategorie: a.sub_kategorie,
         notiz: a.buchungsTexte.length > 0 ? a.buchungsTexte.join("\n") : null,
-        // ANBU: gleicher Buchwert wie FIBU (User passt später an)
-        anbu_nutzungsdauer_j: null,
+        // ANBU: aus Vorschau (Default-ND aus Kategorie, vom User editierbar)
+        anbu_nutzungsdauer_j: nutz,
         anbu_buchwert_anfang: a.saldovortrag,
-        anbu_abschreibung_gj: 0,
+        anbu_abschreibung_gj: anbuAbschr,
         anbu_korrektur: 0,
-        anbu_buchwert_ende: a.saldovortrag,
+        anbu_buchwert_ende: anbuBwEnde,
         // FIBU aus PDF
         fibu_abschreibung_pct: a.abschrPct,
         fibu_buchwert_anfang: a.saldovortrag,
@@ -803,7 +820,8 @@ export default function Anlagebuchhaltung() {
         fibu_korrektur: a.korrekturSumme,
         fibu_buchwert_ende: a.saldoEnde,
         sortierung: idx,
-      }));
+      };
+      });
       for (let i = 0; i < rows.length; i += 50) {
         const { error } = await supabase.from("anbu_anlage").insert(rows.slice(i, i + 50));
         if (error) throw new Error(error.message);
@@ -1298,10 +1316,11 @@ export default function Anlagebuchhaltung() {
                         <th style={pdfHdr(subC, panelBdr, "left", 0)}>Beschreibung</th>
                         <th style={pdfHdr(subC, panelBdr, "left", 110)}>Kategorie</th>
                         <th style={pdfHdr(subC, panelBdr, "right", 90)}>BW Anf.</th>
-                        <th style={pdfHdr(subC, panelBdr, "right", 85)}>Zugang</th>
-                        <th style={pdfHdr(subC, panelBdr, "right", 85)}>Abgang</th>
-                        <th style={pdfHdr(subC, panelBdr, "center", 65)}>%</th>
-                        <th style={pdfHdr(subC, panelBdr, "right", 85)}>Abschr.</th>
+                        <th style={pdfHdr(subC, panelBdr, "right", 80)}>Zugang</th>
+                        <th style={pdfHdr(subC, panelBdr, "right", 80)}>Abgang</th>
+                        <th style={pdfHdr(subC, panelBdr, "center", 50)} title="Nutzungsdauer ANBU (linear)">ND J</th>
+                        <th style={pdfHdr(subC, panelBdr, "center", 60)} title="Abschreibung % FIBU">%</th>
+                        <th style={pdfHdr(subC, panelBdr, "right", 80)}>Abschr.</th>
                         <th style={pdfHdr(subC, panelBdr, "right", 90)}>BW Ende</th>
                         <th style={pdfHdr(subC, panelBdr, "center", 30)}></th>
                       </tr>
@@ -1321,7 +1340,18 @@ export default function Anlagebuchhaltung() {
                           </td>
                           <td style={{ padding: "3px 4px" }}>
                             <select value={a.kategorie_name || ""}
-                              onChange={e => updatePdfRow(i, "kategorie_name", e.target.value || null)}
+                              onChange={e => {
+                                const newKat = e.target.value || null;
+                                updatePdfRow(i, "kategorie_name", newKat);
+                                // Wenn keine ND gesetzt, Default aus neuer Kategorie übernehmen
+                                if (!a.nutzungsdauer && newKat) {
+                                  const k = kategorien.find(k => k.name.toLowerCase() === newKat.toLowerCase())
+                                    || DEFAULT_KATEGORIEN.find(k => k.name.toLowerCase() === newKat.toLowerCase());
+                                  if (k?.default_anbu_nutzungsdauer_j) {
+                                    updatePdfRow(i, "nutzungsdauer", k.default_anbu_nutzungsdauer_j);
+                                  }
+                                }
+                              }}
                               style={{ ...inpStyle("left", panelBdr, a.kategorie_name ? accent : "#dc2626", panelBg), padding: "3px 4px" }}>
                               <option value="">— wählen —</option>
                               {[...new Set([...kategorien.map(k => k.name), ...DEFAULT_KATEGORIEN.map(k => k.name)])].map(n =>
@@ -1343,6 +1373,13 @@ export default function Anlagebuchhaltung() {
                             <input value={a.abgaenge ?? ""} type="number" step="0.01"
                               onChange={e => updatePdfRow(i, "abgaenge", parseFloat(e.target.value) || 0)}
                               style={inpStyle("right", panelBdr, a.abgaenge > 0 ? "#dc2626" : headingC, panelBg, true)} />
+                          </td>
+                          <td style={{ padding: "3px 4px" }}>
+                            <input value={a.nutzungsdauer ?? ""} type="number" step="1" min="1"
+                              placeholder="—"
+                              title="Nutzungsdauer ANBU in Jahren (linear)"
+                              onChange={e => updatePdfRow(i, "nutzungsdauer", parseInt(e.target.value) || null)}
+                              style={inpStyle("center", panelBdr, a.nutzungsdauer ? accent : headingC, panelBg, true)} />
                           </td>
                           <td style={{ padding: "3px 4px" }}>
                             <input value={a.abschrPct ?? ""} type="number" step="0.01"
