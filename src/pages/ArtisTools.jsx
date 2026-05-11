@@ -54,8 +54,8 @@ const TOOLS = [
     title: "Anlagebuchhaltung",
     description: "ANBU & FIBU pro Anlage: Nutzungsdauer linear vs. degressiv %, stille Reserven, Über-/Unterbewertung pro FIBU-Konto",
     icon: Building2,
-    color: "#7a5b3b",
-    bg: "#f5ece0",
+    color: "#5b8a5b",
+    bg: "#e8f2e8",
     route: "/Anlagebuchhaltung",
   },
   {

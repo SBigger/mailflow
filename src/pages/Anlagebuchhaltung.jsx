@@ -1,4 +1,5 @@
-import React, { useState, useContext, useEffect, useMemo, useRef } from "react";
+import React, { useState, useContext, useEffect, useMemo, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { ThemeContext } from "@/Layout";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -7,7 +8,7 @@ import { toast } from "sonner";
 import {
   Building2, FileSpreadsheet, Upload, Download, Plus, Trash2,
   ArrowRight, Calculator, Layers, Settings as SettingsIcon, Search,
-  TrendingUp, TrendingDown, AlertCircle, ChevronDown, ChevronUp,
+  TrendingUp, TrendingDown, AlertCircle, ChevronDown, ChevronUp, ChevronRight, Wrench,
 } from "lucide-react";
 
 // ── Default-Kategorien CH-Treuhand (werden pro Mandant beim ersten Mal angelegt) ──
@@ -49,6 +50,166 @@ function evalExpr(str) {
 
 function currentYear() { return new Date().getFullYear(); }
 
+// ── Mandanten-Dropdown (identisch zu Abschlussdokumentation) ─────────────────
+function MandantDropdown({ kunden, selectedCid, onChange, panelBg, panelBdr, headingC, subC, accent, withAnbuSet }) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [dropPos, setDropPos] = useState({ top: 0, left: 0, width: 0 });
+  const [highlightIdx, setHighlightIdx] = useState(-1);
+  const triggerRef = useRef(null);
+  const inputRef = useRef(null);
+  const listRef = useRef(null);
+
+  const getLabel = (c) => c.person_type === "privatperson"
+    ? [c.anrede, c.nachname, c.vorname].filter(Boolean).join(" ") + (c.ort ? ` · ${c.ort}` : "")
+    : c.company_name + (c.ort ? ` · ${c.ort}` : "");
+
+  const selected = kunden.find(c => c.id === selectedCid);
+
+  const calcPos = useCallback(() => {
+    if (!triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const top = spaceBelow >= 320 ? rect.bottom + 4 : rect.top - 320 - 4;
+    setDropPos({ top, left: rect.left, width: rect.width });
+  }, []);
+
+  useEffect(() => {
+    if (!open) { setSearch(""); setHighlightIdx(-1); return; }
+    calcPos();
+    setTimeout(() => inputRef.current?.focus(), 30);
+    const onClose = (e) => { if (!triggerRef.current?.contains(e.target)) setOpen(false); };
+    const onScroll = () => calcPos();
+    document.addEventListener("mousedown", onClose);
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", calcPos);
+    return () => {
+      document.removeEventListener("mousedown", onClose);
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", calcPos);
+    };
+  }, [open, calcPos]);
+
+  const q = search.trim().toLowerCase();
+  const filtered = kunden.filter(c => !q || getLabel(c).toLowerCase().includes(q));
+  const unternehmen = filtered.filter(c => c.person_type !== "privatperson");
+  const privatpersonen = filtered.filter(c => c.person_type === "privatperson");
+  const flatList = [...unternehmen, ...privatpersonen];
+
+  const handleKeyDown = (e) => {
+    if (e.key === "Escape") { setOpen(false); return; }
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setHighlightIdx(i => { const next = Math.min(i + 1, flatList.length - 1); scrollToItem(next); return next; });
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHighlightIdx(i => { const next = Math.max(i - 1, 0); scrollToItem(next); return next; });
+    } else if (e.key === "Enter" && highlightIdx >= 0 && flatList[highlightIdx]) {
+      onChange(flatList[highlightIdx].id); setOpen(false);
+    }
+  };
+  const scrollToItem = (idx) => {
+    if (!listRef.current) return;
+    const el = listRef.current.querySelector(`[data-idx="${idx}"]`);
+    el?.scrollIntoView({ block: "nearest" });
+  };
+
+  const renderRow = (c, globalIdx) => {
+    const hasAnbu = withAnbuSet?.has(c.id);
+    const isActive = c.id === selectedCid;
+    const isHighlighted = globalIdx === highlightIdx;
+    return (
+      <div key={c.id}
+        data-idx={globalIdx}
+        onMouseDown={e => e.stopPropagation()}
+        onClick={() => { onChange(c.id); setOpen(false); }}
+        onMouseEnter={() => setHighlightIdx(globalIdx)}
+        style={{
+          display: "flex", alignItems: "center", gap: 8,
+          padding: "8px 12px", cursor: "pointer", fontSize: 13, color: headingC,
+          backgroundColor: isHighlighted ? accent + "20" : isActive ? accent + "14" : "transparent",
+        }}>
+        <span style={{
+          width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
+          backgroundColor: hasAnbu ? "#22c55e" : "transparent",
+          border: hasAnbu ? "none" : `1.5px solid ${panelBdr}`,
+          display: "inline-block",
+        }} />
+        <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{getLabel(c)}</span>
+      </div>
+    );
+  };
+
+  const dropdown = open && createPortal(
+    <div onMouseDown={e => e.stopPropagation()} style={{
+      position: "fixed", top: dropPos.top, left: dropPos.left, width: dropPos.width,
+      backgroundColor: panelBg, border: `1px solid ${panelBdr}`, borderRadius: 10,
+      boxShadow: "0 8px 28px rgba(0,0,0,0.16)", zIndex: 999999, overflow: "hidden",
+    }}>
+      <div style={{ padding: "8px 10px", borderBottom: `1px solid ${panelBdr}`, display: "flex", alignItems: "center", gap: 6 }}>
+        <Search size={13} style={{ color: subC, flexShrink: 0 }} />
+        <input ref={inputRef} value={search}
+          onChange={e => { setSearch(e.target.value); setHighlightIdx(-1); }}
+          onKeyDown={handleKeyDown}
+          placeholder="Mandant suchen…"
+          style={{ flex: 1, border: "none", outline: "none", fontSize: 13, background: "transparent", color: headingC }} />
+        {search && <button onClick={() => setSearch("")} style={{ background: "none", border: "none", cursor: "pointer", color: subC, fontSize: 16, padding: 0 }}>&times;</button>}
+      </div>
+      <div ref={listRef} style={{ maxHeight: 300, overflowY: "auto" }}>
+        {!q && (
+          <div onClick={() => { onChange(""); setOpen(false); }}
+            style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", cursor: "pointer", fontSize: 13, color: subC }}
+            onMouseEnter={e => e.currentTarget.style.backgroundColor = accent + "14"}
+            onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
+            <span style={{ width: 8, height: 8, display: "inline-block" }} />
+            – Mandant auswählen –
+          </div>
+        )}
+        {unternehmen.length > 0 && (
+          <>
+            <div style={{ padding: "5px 12px 3px", fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", color: subC, borderTop: `1px solid ${panelBdr}`, textTransform: "uppercase" }}>Unternehmen</div>
+            {unternehmen.map((c, i) => renderRow(c, i))}
+          </>
+        )}
+        {privatpersonen.length > 0 && (
+          <>
+            <div style={{ padding: "5px 12px 3px", fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", color: subC, borderTop: `1px solid ${panelBdr}`, textTransform: "uppercase" }}>Privatpersonen</div>
+            {privatpersonen.map((c, i) => renderRow(c, unternehmen.length + i))}
+          </>
+        )}
+        {filtered.length === 0 && (
+          <div style={{ padding: 12, fontSize: 12, color: subC, textAlign: "center" }}>Keine Treffer</div>
+        )}
+      </div>
+    </div>,
+    document.body
+  );
+
+  return (
+    <div ref={triggerRef} style={{ flex: 1, maxWidth: 380 }}>
+      <button type="button" onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-2 w-full rounded-lg border text-sm px-3 py-2 focus:outline-none text-left"
+        style={{ backgroundColor: panelBg, borderColor: open ? accent : panelBdr, color: headingC, cursor: "pointer", transition: "border-color 0.15s", height: 36 }}>
+        {selected && (
+          <span style={{
+            width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
+            backgroundColor: withAnbuSet?.has(selectedCid) ? "#22c55e" : "transparent",
+            border: withAnbuSet?.has(selectedCid) ? "none" : `1.5px solid ${panelBdr}`,
+            display: "inline-block",
+          }} />
+        )}
+        <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {selected ? getLabel(selected) : "– Mandant auswählen –"}
+        </span>
+        <svg width="12" height="12" viewBox="0 0 12 12" style={{ flexShrink: 0, color: subC, transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}>
+          <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      {dropdown}
+    </div>
+  );
+}
+
 // ANBU linear: Beschaffungskosten / Nutzungsdauer (gleichbleibend bis Buchwert = 0)
 function calcAnbuAbschreibungLinear({ beschaffungskosten_netto, anbu_nutzungsdauer_j, anbu_buchwert_anfang }) {
   if (!anbu_nutzungsdauer_j || anbu_nutzungsdauer_j <= 0) return 0;
@@ -73,19 +234,20 @@ export default function Anlagebuchhaltung() {
   const isArtis = theme === "artis";
   const qc = useQueryClient();
 
-  const accent    = isArtis ? "#7a5b3b" : isLight ? "#7a5b3b" : "#c89a6b";
-  const panelBg   = isArtis ? "#ffffff" : isLight ? "#ffffff" : "#27272a";
-  const panelBdr  = isArtis ? "#e6d5c0" : isLight ? "#e5e7eb" : "#3f3f46";
-  const tableBdr  = isArtis ? "#ead8c2" : isLight ? "#e5e7eb" : "#3f3f46";
-  const rowHover  = accent + "0a";
-  const headingC  = isArtis ? "#3a2a1a" : isLight ? "#1e293b" : "#e4e4e7";
-  const subC      = isArtis ? "#7a6a5a" : isLight ? "#64748b" : "#a1a1aa";
-  const pageBg    = isArtis ? "#f5efe8" : isLight ? "#f4f4f8" : "#2a2a2f";
+  // Farbpalette identisch zu Abschlussdokumentation (Artis-grün)
+  const pageBg   = isLight ? "#f4f4f8" : isArtis ? "#f2f5f2" : "#2a2a2f";
+  const panelBg  = isLight ? "#ffffff" : isArtis ? "#ffffff" : "#27272a";
+  const panelBdr = isLight ? "#e2e2ec" : isArtis ? "#ccd8cc" : "#3f3f46";
+  const headingC = isLight ? "#1e293b" : isArtis ? "#1a3a1a" : "#e4e4e7";
+  const subC     = isLight ? "#64748b" : isArtis ? "#4a6a4a" : "#a1a1aa";
+  const accent   = isArtis ? "#5b8a5b" : isLight ? "#3b6a8a" : "#3b82f6";
+  const accentL  = isArtis ? "#7a9b7a" : isLight ? "#5b8aaa" : "#60a5fa";
+  const rowHover = isLight ? "#f8f8fc" : isArtis ? "#f0f5f0" : "#2f2f35";
+  const tableBdr = isLight ? "#e8e8f0" : isArtis ? "#d4e4d4" : "#3f3f46";
 
   const [selectedCid, setSelectedCid] = useState("");
   const [selectedYear, setSelectedYear] = useState(currentYear());
   const [activeTab, setActiveTab] = useState("anlagekartei");
-  const [searchKunde, setSearchKunde] = useState("");
   const [importDialog, setImportDialog] = useState(null); // { rows, mapping, filename }
   const fileRef = useRef(null);
 
@@ -102,13 +264,7 @@ export default function Anlagebuchhaltung() {
   });
   const unternehmen   = allKunden.filter(c => c.person_type !== "privatperson");
   const privatpersonen = allKunden.filter(c => c.person_type === "privatperson");
-  const sortedKunden  = [...unternehmen, ...privatpersonen]
-    .filter(c => {
-      const q = searchKunde.trim().toLowerCase();
-      if (!q) return true;
-      const n = c.company_name || [c.anrede, c.nachname, c.vorname].filter(Boolean).join(" ");
-      return (n || "").toLowerCase().includes(q);
-    });
+  const sortedKunden  = [...unternehmen, ...privatpersonen];
 
   const selectedCustomer = allKunden.find(c => c.id === selectedCid);
   const customerName = selectedCustomer
@@ -554,44 +710,58 @@ export default function Anlagebuchhaltung() {
 
   return (
     <div className="h-full flex flex-col" style={{ backgroundColor: pageBg }}>
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <div style={{ borderBottom: `1px solid ${panelBdr}`, backgroundColor: panelBg }}>
-        <div className="flex items-end justify-between px-6 py-3 gap-4 flex-wrap">
-          <div className="flex items-end gap-3 flex-wrap">
-            {/* Mandant */}
+      {/* ── Breadcrumb ─────────────────────────────────────────────────────── */}
+      <div className="flex items-center gap-2 px-6 py-3 flex-shrink-0"
+        style={{ borderBottom: `1px solid ${panelBdr}`, backgroundColor: panelBg }}>
+        <Wrench className="w-4 h-4" style={{ color: accentL }} />
+        <button onClick={() => navigate("/ArtisTools")} className="text-sm hover:underline"
+          style={{ color: subC, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+          Artis Tools
+        </button>
+        <ChevronRight className="w-3 h-3" style={{ color: subC }} />
+        <Building2 className="w-4 h-4" style={{ color: accent }} />
+        <span className="text-sm font-semibold" style={{ color: headingC }}>Anlagebuchhaltung</span>
+      </div>
+
+      {/* ── Toolbar ────────────────────────────────────────────────────────── */}
+      <div className="flex-shrink-0 px-6 py-4" style={{ borderBottom: `1px solid ${panelBdr}`, backgroundColor: panelBg }}>
+        <div className="flex flex-wrap items-end gap-4">
+
+          {/* Mandant */}
+          <div className="flex-1" style={{ minWidth: 260, maxWidth: 380 }}>
+            <label className="text-xs font-semibold uppercase tracking-wider mb-1.5 block" style={{ color: subC }}>
+              Mandant
+            </label>
+            <MandantDropdown
+              kunden={sortedKunden}
+              selectedCid={selectedCid}
+              onChange={setSelectedCid}
+              panelBg={panelBg} panelBdr={panelBdr} headingC={headingC} subC={subC} accent={accent}
+              withAnbuSet={withAnbuSet}
+            />
+          </div>
+
+          {/* Geschäftsjahr */}
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-wider mb-1.5 block" style={{ color: subC }}>
+              Geschäftsjahr
+            </label>
+            <select value={selectedYear} onChange={e => setSelectedYear(Number(e.target.value))}
+              style={{
+                height: 36, padding: "0 10px", borderRadius: 8, fontSize: 13, fontWeight: 600,
+                border: `1px solid ${panelBdr}`, backgroundColor: panelBg, color: headingC,
+                outline: "none", cursor: "pointer", minWidth: 90,
+              }}>
+              {yearOptions.map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
+          </div>
+
+          {/* Jahreswechsel */}
+          {abschlussId && anlagen.length > 0 && (
             <div>
-              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: subC, marginBottom: 3 }}>Mandant</div>
-              <div style={{ position: "relative" }}>
-                <select value={selectedCid} onChange={(e) => setSelectedCid(e.target.value)}
-                  style={{ minWidth: 280, padding: "7px 30px 7px 30px", borderRadius: 8, border: `1px solid ${panelBdr}`,
-                    backgroundColor: panelBg, color: headingC, fontSize: 14, fontWeight: 600, appearance: "none",
-                    backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='${encodeURIComponent(subC)}' stroke-width='2'%3e%3cpolyline points='6 9 12 15 18 9'/%3e%3c/svg%3e")`,
-                    backgroundRepeat: "no-repeat", backgroundPosition: "right 10px center", cursor: "pointer",
-                  }}>
-                  <option value="">— wählen —</option>
-                  {sortedKunden.map(c => {
-                    const name = c.company_name || [c.anrede, c.nachname, c.vorname].filter(Boolean).join(" ");
-                    const dot = withAnbuSet.has(c.id) ? "● " : "○ ";
-                    return <option key={c.id} value={c.id}>{dot}{name}</option>;
-                  })}
-                </select>
-                <Building2 className="w-4 h-4" style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", color: accent, pointerEvents: "none" }} />
-              </div>
-            </div>
-            {/* Geschäftsjahr */}
-            <div>
-              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: subC, marginBottom: 3 }}>Geschäftsjahr</div>
-              <select value={selectedYear} onChange={(e) => setSelectedYear(parseInt(e.target.value))}
-                style={{ width: 100, padding: "7px 24px 7px 12px", borderRadius: 8, border: `1px solid ${panelBdr}`,
-                  backgroundColor: panelBg, color: headingC, fontSize: 14, fontWeight: 600, appearance: "none",
-                  backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='${encodeURIComponent(subC)}' stroke-width='2'%3e%3cpolyline points='6 9 12 15 18 9'/%3e%3c/svg%3e")`,
-                  backgroundRepeat: "no-repeat", backgroundPosition: "right 8px center", cursor: "pointer",
-                }}>
-                {yearOptions.map(y => <option key={y} value={y}>{y}</option>)}
-              </select>
-            </div>
-            {/* Jahreswechsel */}
-            {abschlussId && anlagen.length > 0 && (
+              <label className="text-xs font-semibold uppercase tracking-wider mb-1.5 block" style={{ color: subC }}>
+                &nbsp;
+              </label>
               <button
                 disabled={jahreswechselMut.isPending}
                 onClick={() => {
@@ -600,31 +770,35 @@ export default function Anlagebuchhaltung() {
                   }
                 }}
                 title="Anlagen ins nächste Geschäftsjahr übernehmen"
-                style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600,
-                  padding: "7px 12px", borderRadius: 8, cursor: "pointer",
+                style={{ display: "flex", alignItems: "center", gap: 6, height: 36, fontSize: 12, fontWeight: 600,
+                  padding: "0 12px", borderRadius: 8, cursor: "pointer",
                   border: `1px solid ${accent}40`, color: accent, backgroundColor: accent + "10" }}>
                 <ArrowRight className="w-3.5 h-3.5" />
                 Jahreswechsel → {selectedYear + 1}
               </button>
-            )}
-          </div>
+            </div>
+          )}
+
+          {/* Spacer */}
+          <div className="flex-1" />
+
           {/* Toolbar rechts */}
           <div className="flex items-end gap-2">
             <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }}
               onChange={e => { const f = e.target.files[0]; if (f) handleExcelImport(f); e.target.value = ""; }} />
             <button disabled={!abschlussId}
               onClick={() => fileRef.current?.click()}
-              style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600,
-                padding: "8px 14px", borderRadius: 8, cursor: abschlussId ? "pointer" : "not-allowed",
+              style={{ display: "flex", alignItems: "center", gap: 6, height: 36, fontSize: 13, fontWeight: 600,
+                padding: "0 14px", borderRadius: 8, cursor: abschlussId ? "pointer" : "not-allowed",
                 backgroundColor: accent + "14", color: accent, border: `1px solid ${accent}40`,
                 opacity: abschlussId ? 1 : 0.4 }}>
               <Upload className="w-3.5 h-3.5" /> Excel-Import
             </button>
             <button disabled={anlagen.length === 0}
               onClick={handleExcelExport}
-              style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600,
-                padding: "8px 14px", borderRadius: 8, cursor: anlagen.length > 0 ? "pointer" : "not-allowed",
-                backgroundColor: accent, color: "#fff",
+              style={{ display: "flex", alignItems: "center", gap: 6, height: 36, fontSize: 13, fontWeight: 600,
+                padding: "0 14px", borderRadius: 8, cursor: anlagen.length > 0 ? "pointer" : "not-allowed",
+                backgroundColor: accent, color: "#fff", border: "none",
                 opacity: anlagen.length > 0 ? 1 : 0.4 }}>
               <Download className="w-3.5 h-3.5" /> Excel-Export
             </button>
@@ -636,34 +810,10 @@ export default function Anlagebuchhaltung() {
       <div className="flex-1 overflow-y-auto">
         {!selectedCid ? (
           <div className="flex flex-col items-center justify-center py-24 text-center">
-            <Building2 className="w-14 h-14 mb-4" style={{ color: isArtis ? "#e6d5c0" : "#d1d5db" }} />
+            <Building2 className="w-14 h-14 mb-4" style={{ color: isArtis ? "#ccd8cc" : "#d1d5db" }} />
             <div className="text-lg font-semibold mb-2" style={{ color: headingC }}>Mandant auswählen</div>
             <div className="text-sm" style={{ color: subC }}>
               Wählen Sie einen Mandanten und ein Geschäftsjahr aus, um die Anlagebuchhaltung anzuzeigen.
-            </div>
-            {/* Kunden-Suche */}
-            <div style={{ marginTop: 24, width: 380, maxWidth: "90%" }}>
-              <div style={{ position: "relative" }}>
-                <Search className="w-4 h-4" style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: subC }} />
-                <input value={searchKunde} onChange={e => setSearchKunde(e.target.value)} placeholder="Mandant suchen…"
-                  style={{ width: "100%", padding: "8px 12px 8px 34px", borderRadius: 8, border: `1px solid ${panelBdr}`,
-                    backgroundColor: panelBg, color: headingC, fontSize: 13 }} />
-              </div>
-              {searchKunde && (
-                <div style={{ marginTop: 8, maxHeight: 300, overflowY: "auto", border: `1px solid ${panelBdr}`, borderRadius: 8, backgroundColor: panelBg }}>
-                  {sortedKunden.slice(0, 20).map(c => {
-                    const name = c.company_name || [c.anrede, c.nachname, c.vorname].filter(Boolean).join(" ");
-                    return (
-                      <button key={c.id} onClick={() => { setSelectedCid(c.id); setSearchKunde(""); }}
-                        style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 12px",
-                          fontSize: 13, color: headingC, backgroundColor: "transparent",
-                          borderBottom: `1px solid ${panelBdr}`, cursor: "pointer", border: "none" }}>
-                        {withAnbuSet.has(c.id) ? "● " : "○ "}{name}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
             </div>
           </div>
         ) : (
@@ -891,7 +1041,7 @@ function AnlagekarteiTab({ anlagen, kategorien, onUpdateAnlage, onAddAnlage, onD
         <NewRowBar newRow={newRow} setNewRow={setNewRow} kategorien={kategorien} onSubmit={submitNewRow}
           accent={accent} headingC={headingC} subC={subC} panelBg={panelBg} panelBdr={panelBdr} />
         <div className="flex flex-col items-center justify-center py-20 text-center mt-6">
-          <Building2 className="w-12 h-12 mb-3" style={{ color: isArtis ? "#e6d5c0" : "#d1d5db" }} />
+          <Building2 className="w-12 h-12 mb-3" style={{ color: isArtis ? "#ccd8cc" : "#d1d5db" }} />
           <div className="text-base font-medium mb-1" style={{ color: headingC }}>Noch keine Anlagen erfasst</div>
           <div className="text-sm" style={{ color: subC }}>Füge oben eine Anlage hinzu oder importiere eine Excel-Datei.</div>
         </div>
@@ -913,7 +1063,7 @@ function AnlagekarteiTab({ anlagen, kategorien, onUpdateAnlage, onAddAnlage, onD
       <div style={{ marginTop: 12, border: `1px solid ${panelBdr}`, borderRadius: 12, overflow: "hidden", backgroundColor: panelBg }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
           <thead>
-            <tr style={{ backgroundColor: isArtis ? "#f0e6d8" : isLight ? "#f1f5f9" : "#2f2f35" }}>
+            <tr style={{ backgroundColor: isArtis ? "#e8f2e8" : isLight ? "#f1f5f9" : "#2f2f35" }}>
               {[
                 ["Beschreibung", "left", 220],
                 ["Lieferant", "left", 130],
@@ -947,7 +1097,7 @@ function AnlagekarteiTab({ anlagen, kategorien, onUpdateAnlage, onAddAnlage, onD
               const totBwEnde    = rows.reduce((s, r) => s + (parseFloat(r.anbu_buchwert_ende) || 0), 0);
               return (
                 <React.Fragment key={kid}>
-                  <tr style={{ backgroundColor: isArtis ? "#faf3eb" : isLight ? "#f8fafc" : "#2c2c32", borderTop: `2px solid ${tableBdr}` }}>
+                  <tr style={{ backgroundColor: isArtis ? "#f0f5f0" : isLight ? "#f8fafc" : "#2c2c32", borderTop: `2px solid ${tableBdr}` }}>
                     <td colSpan={12} style={{ padding: "8px 12px", fontWeight: 700, fontSize: 12, color: isNone ? "#dc2626" : accent, letterSpacing: "0.04em" }}>
                       {isNone ? "Ohne Kategorie" : kat?.name || "—"}
                       <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 400, color: subC }}>
@@ -963,7 +1113,7 @@ function AnlagekarteiTab({ anlagen, kategorien, onUpdateAnlage, onAddAnlage, onD
                       accent={accent} headingC={headingC} subC={subC} tableBdr={tableBdr} rowHover={rowHover}
                     />
                   ))}
-                  <tr style={{ backgroundColor: isArtis ? "#f5ece0" : isLight ? "#f1f5f9" : "#2c2c32", borderBottom: `2px solid ${tableBdr}` }}>
+                  <tr style={{ backgroundColor: isArtis ? "#e8f2e8" : isLight ? "#f1f5f9" : "#2c2c32", borderBottom: `2px solid ${tableBdr}` }}>
                     <td colSpan={5} style={{ padding: "6px 12px", fontSize: 11, fontWeight: 700, color: subC, textAlign: "right" }}>
                       Total {isNone ? "Ohne Kategorie" : kat?.name}
                     </td>
@@ -1211,7 +1361,7 @@ function FibuTab({ anlagen, kategorien, onUpdateAnlage, accent, headingC, subC, 
     <div style={{ border: `1px solid ${panelBdr}`, borderRadius: 12, overflow: "hidden", backgroundColor: panelBg }}>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
         <thead>
-          <tr style={{ backgroundColor: isArtis ? "#f0e6d8" : isLight ? "#f1f5f9" : "#2f2f35" }}>
+          <tr style={{ backgroundColor: isArtis ? "#e8f2e8" : isLight ? "#f1f5f9" : "#2f2f35" }}>
             {[
               ["Beschreibung", "left", 240],
               ["Datum", "center", 70],
@@ -1242,7 +1392,7 @@ function FibuTab({ anlagen, kategorien, onUpdateAnlage, accent, headingC, subC, 
             const tBwE = rows.reduce((s, r) => s + (parseFloat(r.fibu_buchwert_ende) || 0), 0);
             return (
               <React.Fragment key={kid}>
-                <tr style={{ backgroundColor: isArtis ? "#faf3eb" : isLight ? "#f8fafc" : "#2c2c32", borderTop: `2px solid ${tableBdr}` }}>
+                <tr style={{ backgroundColor: isArtis ? "#f0f5f0" : isLight ? "#f8fafc" : "#2c2c32", borderTop: `2px solid ${tableBdr}` }}>
                   <td colSpan={9} style={{ padding: "8px 12px", fontWeight: 700, fontSize: 12, color: isNone ? "#dc2626" : accent }}>
                     {isNone ? "Ohne Kategorie" : kat?.name}
                     <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 400, color: subC }}>
@@ -1273,7 +1423,7 @@ function FibuTab({ anlagen, kategorien, onUpdateAnlage, accent, headingC, subC, 
                     </td>
                   </tr>
                 ))}
-                <tr style={{ backgroundColor: isArtis ? "#f5ece0" : isLight ? "#f1f5f9" : "#2c2c32", borderBottom: `2px solid ${tableBdr}` }}>
+                <tr style={{ backgroundColor: isArtis ? "#e8f2e8" : isLight ? "#f1f5f9" : "#2c2c32", borderBottom: `2px solid ${tableBdr}` }}>
                   <td colSpan={3} style={{ padding: "6px 12px", fontSize: 11, fontWeight: 700, color: subC, textAlign: "right" }}>
                     Total {isNone ? "Ohne Kategorie" : kat?.name}
                   </td>
@@ -1378,7 +1528,7 @@ function ZusammenfassungTab({ anlagen, kategorien, selectedYear, accent, heading
       <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
           <thead>
-            <tr style={{ backgroundColor: isArtis ? "#f0e6d8" : isLight ? "#f1f5f9" : "#2f2f35" }}>
+            <tr style={{ backgroundColor: isArtis ? "#e8f2e8" : isLight ? "#f1f5f9" : "#2f2f35" }}>
               <th style={hdrStyle(subC, tableBdr, "left", 60)}>FIBU Kto</th>
               <th style={hdrStyle(subC, tableBdr, "left", 200)}>Bezeichnung</th>
               <th style={hdrStyle(subC, tableBdr, "right", 95)}>Bestand FIBU\nAnfang</th>
@@ -1420,7 +1570,7 @@ function ZusammenfassungTab({ anlagen, kategorien, selectedYear, accent, heading
 
               return (
                 <React.Fragment key={kid}>
-                  <tr style={{ backgroundColor: isArtis ? "#faf3eb" : isLight ? "#f8fafc" : "#2c2c32", borderTop: `2px solid ${tableBdr}` }}>
+                  <tr style={{ backgroundColor: isArtis ? "#f0f5f0" : isLight ? "#f8fafc" : "#2c2c32", borderTop: `2px solid ${tableBdr}` }}>
                     <td colSpan={12} style={{ padding: "7px 12px", fontWeight: 700, fontSize: 11, color: isNone ? "#dc2626" : accent, letterSpacing: "0.04em" }}>
                       {isNone ? "Ohne Kategorie" : kat?.name}
                     </td>
@@ -1453,7 +1603,7 @@ function ZusammenfassungTab({ anlagen, kategorien, selectedYear, accent, heading
                     );
                   })}
                   {/* Kategorie-Total */}
-                  <tr style={{ backgroundColor: isArtis ? "#f5ece0" : isLight ? "#f1f5f9" : "#2c2c32" }}>
+                  <tr style={{ backgroundColor: isArtis ? "#e8f2e8" : isLight ? "#f1f5f9" : "#2c2c32" }}>
                     <td colSpan={2} style={{ padding: "7px 10px", fontWeight: 700, fontSize: 11, color: subC, textAlign: "right", borderBottom: `1px solid ${tableBdr}` }}>
                       Total {isNone ? "Ohne Kategorie" : kat?.name}
                     </td>
@@ -1574,7 +1724,7 @@ function KategorienTab({ kategorien, anlagen, onUpdate, onAdd, onDelete,
       <div style={{ border: `1px solid ${panelBdr}`, borderRadius: 12, overflow: "hidden", backgroundColor: panelBg }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
           <thead>
-            <tr style={{ backgroundColor: "#f8f5ef" }}>
+            <tr style={{ backgroundColor: "#f0f5f0" }}>
               <th style={{ padding: "10px 12px", textAlign: "left", fontSize: 11, fontWeight: 700, color: subC, textTransform: "uppercase", letterSpacing: "0.04em", borderBottom: `2px solid ${tableBdr}`, width: 60 }}>Pos.</th>
               <th style={{ padding: "10px 12px", textAlign: "left", fontSize: 11, fontWeight: 700, color: subC, textTransform: "uppercase", letterSpacing: "0.04em", borderBottom: `2px solid ${tableBdr}` }}>Kategorie</th>
               <th style={{ padding: "10px 12px", textAlign: "right", fontSize: 11, fontWeight: 700, color: subC, textTransform: "uppercase", letterSpacing: "0.04em", borderBottom: `2px solid ${tableBdr}`, width: 110 }}>ND Jahre (linear)</th>
