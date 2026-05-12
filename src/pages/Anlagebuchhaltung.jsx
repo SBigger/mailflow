@@ -1734,16 +1734,13 @@ function AnlagekarteiTab({ anlagen, kategorien, onUpdateAnlage, onAddAnlage, onD
                         <span>{isNone ? "Ohne Kategorie" : kat?.name || "—"}</span>
                         {(() => {
                           const ktoSet = [...new Set(rows.map(r => r.fibu_konto).filter(Boolean))].sort();
-                          return ktoSet.length > 0 && (
-                            <span style={{ fontSize: 10, fontWeight: 600, color: headingC, fontFamily: "monospace",
-                              padding: "1px 8px", borderRadius: 4, backgroundColor: panelBg, border: `1px solid ${tableBdr}` }}>
-                              Konten: {ktoSet.join(", ")}
+                          return (
+                            <span style={{ fontSize: 10, fontWeight: 400, color: subC }}>
+                              ({rows.length} {rows.length === 1 ? "Anlage" : "Anlagen"}
+                              {ktoSet.length > 0 && ` · ${ktoSet.length} FIBU-${ktoSet.length === 1 ? "Konto" : "Konten"}`})
                             </span>
                           );
                         })()}
-                        <span style={{ fontSize: 10, fontWeight: 400, color: subC }}>
-                          ({rows.length} {rows.length === 1 ? "Anlage" : "Anlagen"})
-                        </span>
                         {!isNone && kat && onApplyKategorieND && (
                           editKatND?.kategorieId === kat.id ? (
                             <span style={{ display: "inline-flex", alignItems: "center", gap: 6,
@@ -1810,13 +1807,60 @@ function AnlagekarteiTab({ anlagen, kategorien, onUpdateAnlage, onAddAnlage, onD
                       </span>
                     </td>
                   </tr>
-                  {rows.map(a => (
-                    <AnlageRow key={a.id} a={a} kategorien={kategorien}
-                      editCell={editCell} startEdit={startEdit} commitEdit={commitEdit}
-                      setEditCell={setEditCell} onUpdateAnlage={onUpdateAnlage} onDeleteAnlage={onDeleteAnlage}
-                      accent={accent} headingC={headingC} subC={subC} tableBdr={tableBdr} rowHover={rowHover}
-                    />
-                  ))}
+                  {/* Sub-Gruppierung nach FIBU-Konto */}
+                  {(() => {
+                    const byKto = {};
+                    for (const a of rows) {
+                      const k = a.fibu_konto || "(ohne Kto)";
+                      if (!byKto[k]) byKto[k] = [];
+                      byKto[k].push(a);
+                    }
+                    const ktoKeys = Object.keys(byKto).sort();
+                    return ktoKeys.map(kto => {
+                      const ktoRows = byKto[kto];
+                      const ktoBwA = ktoRows.reduce((s, r) => s + (parseFloat(r.anbu_buchwert_anfang) || 0), 0);
+                      const ktoBwE = ktoRows.reduce((s, r) => s + (parseFloat(r.anbu_buchwert_ende) || 0), 0);
+                      const ktoAb  = ktoRows.reduce((s, r) => s + (parseFloat(r.anbu_abschreibung_gj) || 0), 0);
+                      const ktoZu  = ktoRows.reduce((s, r) => s + (parseFloat(r.beschaffungskosten_netto) || 0), 0);
+                      return (
+                        <React.Fragment key={kid + "_" + kto}>
+                          <tr style={{ backgroundColor: isArtis ? "#e8f2e8" : isLight ? "#fafbfc" : "#262629" }}>
+                            <td colSpan={12} style={{ padding: "5px 14px 5px 24px", borderTop: `1px dashed ${tableBdr}` }}>
+                              <span style={{ display: "inline-flex", alignItems: "center", gap: 12, fontSize: 10 }}>
+                                <span style={{ fontWeight: 700, color: headingC, fontFamily: "monospace", fontSize: 11 }}>
+                                  Konto {kto}
+                                </span>
+                                <span style={{ color: subC }}>
+                                  {ktoRows.length} {ktoRows.length === 1 ? "Anlage" : "Anlagen"}
+                                </span>
+                                <span style={{ color: subC }}>
+                                  BW Anf. Σ <strong style={{ fontFamily: "monospace", color: headingC }}>{fmtCHF(ktoBwA)}</strong>
+                                </span>
+                                <span style={{ color: subC }}>
+                                  BW Ende Σ <strong style={{ fontFamily: "monospace", color: headingC }}>{fmtCHF(ktoBwE)}</strong>
+                                </span>
+                                <span style={{ color: subC }}>
+                                  Abschr. <strong style={{ fontFamily: "monospace", color: "#dc2626" }}>{fmtCHF(ktoAb)}</strong>
+                                </span>
+                                {ktoZu > 0 && (
+                                  <span style={{ color: subC }}>
+                                    Zugang <strong style={{ fontFamily: "monospace", color: "#16a34a" }}>{fmtCHF(ktoZu)}</strong>
+                                  </span>
+                                )}
+                              </span>
+                            </td>
+                          </tr>
+                          {ktoRows.map(a => (
+                            <AnlageRow key={a.id} a={a} kategorien={kategorien}
+                              editCell={editCell} startEdit={startEdit} commitEdit={commitEdit}
+                              setEditCell={setEditCell} onUpdateAnlage={onUpdateAnlage} onDeleteAnlage={onDeleteAnlage}
+                              accent={accent} headingC={headingC} subC={subC} tableBdr={tableBdr} rowHover={rowHover}
+                            />
+                          ))}
+                        </React.Fragment>
+                      );
+                    });
+                  })()}
                   <tr style={{ backgroundColor: isArtis ? "#e8f2e8" : isLight ? "#f1f5f9" : "#2c2c32", borderBottom: `2px solid ${tableBdr}` }}>
                     <td colSpan={5} style={{ padding: "6px 12px", fontSize: 11, fontWeight: 700, color: subC, textAlign: "right" }}>
                       Total {isNone ? "Ohne Kategorie" : kat?.name}
