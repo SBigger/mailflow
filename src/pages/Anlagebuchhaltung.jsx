@@ -244,12 +244,19 @@ function MandantDropdown({ kunden, selectedCid, onChange, panelBg, panelBdr, hea
   );
 }
 
-// ANBU linear: Beschaffungskosten / Nutzungsdauer (gleichbleibend bis Buchwert = 0)
+// ANBU linear: (BW Anfang + Neuzugang) / Nutzungsdauer (Basis = aktuelle Anlagensubstanz)
+// "Beschaffungskosten netto" = nur Wert des Neuzugangs im GJ (Aktivierung ohne MwSt).
+// Bei reinen Bestandsanlagen ohne Zugang: Basis = BW Anfang.
+// Bei Neuanschaffung im GJ: BW Anfang = 0, Basis = Beschaffung.
+// Bei Bestand + Zugang: Basis = beides zusammen.
 function calcAnbuAbschreibungLinear({ beschaffungskosten_netto, anbu_nutzungsdauer_j, anbu_buchwert_anfang }) {
   if (!anbu_nutzungsdauer_j || anbu_nutzungsdauer_j <= 0) return 0;
-  const linear = (parseFloat(beschaffungskosten_netto) || 0) / anbu_nutzungsdauer_j;
-  // Nicht mehr abschreiben als Buchwert vorhanden (Restbetrag im letzten Jahr)
-  const cap = Math.max(0, parseFloat(anbu_buchwert_anfang) || 0);
+  const beschaffung = parseFloat(beschaffungskosten_netto) || 0;
+  const bwAnfang    = parseFloat(anbu_buchwert_anfang)     || 0;
+  const basis = beschaffung + bwAnfang;
+  const linear = basis / anbu_nutzungsdauer_j;
+  // Cap: nie mehr abschreiben als zusammen vorhanden ist (Restbetrag-Schutz)
+  const cap = Math.max(0, basis);
   return Math.round(Math.min(linear, cap) * 100) / 100;
 }
 
@@ -758,9 +765,10 @@ export default function Anlagebuchhaltung() {
         saldovortrag = saldoEnde - (umsatzSoll - umsatzHaben);
       }
 
-      // Beschaffungskosten = aktueller Buchwert Anfang + Zugänge im Jahr
-      // (echte Anschaffungskosten unbekannt aus PDF, Saldovortrag ist beste Approximation)
-      const beschaffungskosten = (saldovortrag || 0) + zugaenge;
+      // Beschaffungskosten netto = NUR der Neuzugang im GJ (Aktivierung ohne MwSt).
+      // BW Anfang trägt die historische Substanz. Bei reiner Bestandsanlage ist
+      // Beschaffung = 0; bei Neuanschaffung = Zugang; bei Bestand + Zugang = nur der Zugang.
+      const beschaffungskosten = zugaenge;
 
       const katName = autoMapKontoToKategorie(s.kontonummer);
       // Default Nutzungsdauer aus Kategorie (vorhandene oder Default)
@@ -1722,8 +1730,17 @@ function AnlagekarteiTab({ anlagen, kategorien, onUpdateAnlage, onAddAnlage, onD
                 <React.Fragment key={kid}>
                   <tr style={{ backgroundColor: isArtis ? "#f0f5f0" : isLight ? "#f8fafc" : "#2c2c32", borderTop: `2px solid ${tableBdr}` }}>
                     <td colSpan={12} style={{ padding: "8px 12px", fontWeight: 700, fontSize: 12, color: isNone ? "#dc2626" : accent, letterSpacing: "0.04em" }}>
-                      <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                         <span>{isNone ? "Ohne Kategorie" : kat?.name || "—"}</span>
+                        {(() => {
+                          const ktoSet = [...new Set(rows.map(r => r.fibu_konto).filter(Boolean))].sort();
+                          return ktoSet.length > 0 && (
+                            <span style={{ fontSize: 10, fontWeight: 600, color: headingC, fontFamily: "monospace",
+                              padding: "1px 8px", borderRadius: 4, backgroundColor: panelBg, border: `1px solid ${tableBdr}` }}>
+                              Konten: {ktoSet.join(", ")}
+                            </span>
+                          );
+                        })()}
                         <span style={{ fontSize: 10, fontWeight: 400, color: subC }}>
                           ({rows.length} {rows.length === 1 ? "Anlage" : "Anlagen"})
                         </span>
