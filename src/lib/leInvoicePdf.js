@@ -31,9 +31,7 @@ import {
 // versucht, fontkit's `fs.readFileSync` aufzulösen.
 async function loadSwissqrbill() {
   try {
-    const mod = await import(
-      /* @vite-ignore */ 'swissqrbill/lib/browser/esm/browser/pdf.js'
-    );
+    const mod = await import('@swissqrbill-pdf');
     const PDF = mod.PDF || mod.default?.PDF || mod;
     if (typeof PDF !== 'function') {
       throw new Error('PDF-Klasse nicht gefunden in swissqrbill-Browser-Bundle (keys: ' + Object.keys(mod).join(', ') + ')');

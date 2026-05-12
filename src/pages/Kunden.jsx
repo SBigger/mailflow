@@ -82,8 +82,7 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
         const data = JSON.parse(ev.target.result);
         const items = Array.isArray(data) ? data : (data.customers || []);
         if (!Array.isArray(items) || items.length === 0) {
-          toast.error("Ungültiges Backup-Format oder keine Kunden gefunden");
-          return;
+          throw new Error("Ungültiges Backup-Format oder keine Kunden gefunden");
         }
         let created = 0;
         for (const rec of items) {

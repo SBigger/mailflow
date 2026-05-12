@@ -90,6 +90,14 @@ export default function TaskCard({ task, index, onClick, onToggleComplete, curre
   const mutedColor = isArtis ? '#6b826b' : isLight ? '#7a7a9a' : '#71717a';
   const gripColor = isArtis ? '#c8d8c8' : isLight ? '#c8c8dc' : '#3f3f46';
 
+  function formatDate(date) {
+    try {
+      return format(new Date(date), "dd.MM", {locale: de})
+    } catch (e){
+      console.error(e);
+    }
+  }
+
   return (
     <Draggable draggableId={task.id} index={index}>
       {(provided, snapshot) => (
@@ -194,7 +202,7 @@ export default function TaskCard({ task, index, onClick, onToggleComplete, curre
                 {task.due_date && isValid(new Date(task.due_date)) && (
                   <Badge variant="outline" className="text-xs gap-1" style={{ backgroundColor: isArtis ? '#f4f7f4' : isLight ? '#ebebf4' : 'rgba(39,39,42,0.5)', borderColor: isArtis ? '#e0e0e0' : isLight ? '#d4d4e8' : '#3f3f46', color: mutedColor }}>
                     <Clock className="h-3 w-3" />
-                    {format(new Date(task.due_date), "dd.MM", { locale: de })}
+                    {formatDate(task.due_date)}
                   </Badge>
                 )}
 

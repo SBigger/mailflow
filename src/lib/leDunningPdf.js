@@ -23,9 +23,7 @@ import {
 
 async function loadSwissqrbill() {
   try {
-    const mod = await import(
-      /* @vite-ignore */ 'swissqrbill/lib/browser/esm/browser/pdf.js'
-    );
+    const mod = await import('@swissqrbill-pdf');
     const PDF = mod.PDF || mod.default?.PDF || mod;
     const blobStreamMod = await import('blob-stream');
     const BlobStream = blobStreamMod.default || blobStreamMod;

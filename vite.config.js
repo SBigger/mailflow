@@ -42,20 +42,11 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './src'),
-        // fontkit-Stub: verhindert das Laden der schweren CJS-Dep-Kette
-        // (unicode-trie, brotli, restructure, …) – wir nutzen nur Helvetica (eingebaut).
         'fontkit': path.resolve(__dirname, './src/lib/fontkitStub.js'),
-        // fs-Shim: pdfkit.es5.js liest AFM-Fontdaten via fs.readFileSync.
-        // Der Standard-Polyfill aus node-stdlib-browser ist `null` → Crash.
-        // Unser Shim liefert alle 14 Standard-AFM-Dateien inline via ?raw-Imports.
         'fs': path.resolve(__dirname, './src/lib/fsPdfkitShim.js'),
-        // zlib-Shim: pdfkit importiert 'zlib' → vite-plugin-node-polyfills würde via
-        // Plugin-Hook zu browserify-zlib (CJS) umleiten, was on-demand pre-bundling +
-        // Seiten-Reload auslöst. Alias läuft vor Plugin-Hooks → wir importieren direkt
-        // aus dem pre-gebundelten browserify-zlib (ESM). Kein Reload.
         'zlib': path.resolve(__dirname, './src/lib/zlibShim.js'),
-        // stream-Shim: gleiche Logik wie zlib, 'stream' → stream-browserify (pre-bundled)
         'stream': path.resolve(__dirname, './src/lib/streamShim.js'),
+        '@swissqrbill-pdf': path.resolve(__dirname, 'node_modules/swissqrbill/lib/esm/pdf')
       },
       // Wichtig für swissqrbill v3: nutze die "browser" conditional export
       conditions: ['browser', 'module', 'import', 'default'],
@@ -98,25 +89,24 @@ export default defineConfig(({ mode }) => {
       // MIT Pre-Bundling konvertiert Vite es sauber auf ES-Module — named/namespace imports funktionieren.
       include: [
         'pdfjs-dist',
-        // WICHTIG: pdfkit ist NICHT hier – es läuft durch Vite's Transform-Pipeline (nicht esbuild).
-        // Dadurch greifen resolve.alias (fs→fsPdfkitShim, zlib→zlibShim, etc.) korrekt.
-        // esbuild würde die node-polyfills-Aliases (fs→empty.js/null) bevorzugen → Crash.
-        // Alle pdfkit-Deps werden aber pre-gebundelt, damit kein on-demand-Reload ausgelöst wird:
+        'jspdf-autotable',
         'linebreak', 'browserify-zlib', 'stream-browserify', 'events',
         'blob-stream', 'crypto-js', 'svgpath',
-        // vite-plugin-node-polyfills shims für Buffer/global
         'vite-plugin-node-polyfills/shims/buffer',
         'vite-plugin-node-polyfills/shims/global',
       ],
-      // swissqrbill: lazy via dynamic import mit @vite-ignore → aus pre-bundling raus
       // pdfkit: MUSS draussen bleiben → Vite Transform-Pipeline statt esbuild (→ alias greift)
-      exclude: ['swissqrbill', 'pdfkit'],
+      exclude: ['pdfkit'],
     },
     build: {
       rollupOptions: {
         // fontkit ist per Alias gestubbt; pdfkit ist ESM – kein external nötig.
         // swissqrbill wird via @vite-ignore-Import zur Laufzeit geladen (lazy chunk).
       },
+      commonjsOptions: {
+        include: [/jspdf-autotable/, /node_modules/],
+        transformMixedEsModules: true,
+      }
     },
   };
 });
