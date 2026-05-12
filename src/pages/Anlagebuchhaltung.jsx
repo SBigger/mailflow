@@ -2358,7 +2358,43 @@ function FibuTab({ anlagen, kategorien, onUpdateAnlage, accent, headingC, subC, 
 // ════════════════════════════════════════════════════════════════════════════
 // ── Zusammenfassungs-Tab (Stille Reserven pro FIBU-Konto) ──────────────────
 // ════════════════════════════════════════════════════════════════════════════
-function ZusammenfassungTab({ anlagen, kategorien, selectedYear, accent, headingC, subC, panelBg, panelBdr, tableBdr, theme }) {
+function ZusammenfassungTab({ anlagen, kategorien, selectedYear, onUpdateAnlage,
+                              accent, headingC, subC, panelBg, panelBdr, tableBdr, theme }) {
+  const [editStilleResAnfang, setEditStilleResAnfang] = useState(null); // { kontoKey, val }
+
+  // Setzt Stille Reserve Anfang für ein FIBU-Konto: passt ANBU BW Anfang aller Anlagen
+  // proportional zu FIBU BW Anfang an + rechnet ANBU Abschr/BW Ende neu durch.
+  const applyStilleResAnfang = (anlagenInKto, newStilleRes) => {
+    const sumBwFibu = anlagenInKto.reduce((s, a) => s + (parseFloat(a.fibu_buchwert_anfang) || 0), 0);
+    if (sumBwFibu === 0) {
+      // Gleichmässig verteilen wenn keine FIBU-BW da
+      const share = newStilleRes / anlagenInKto.length;
+      for (const a of anlagenInKto) {
+        const bwAnfang = (parseFloat(a.fibu_buchwert_anfang) || 0) + share;
+        const abschr = a.anbu_nutzungsdauer_j ? calcAnbuAbschreibungLinear({
+          beschaffungskosten_netto: a.beschaffungskosten_netto, anbu_nutzungsdauer_j: a.anbu_nutzungsdauer_j, anbu_buchwert_anfang: bwAnfang,
+        }) : 0;
+        const bwEnde = Math.max(0, bwAnfang - abschr - (parseFloat(a.anbu_korrektur) || 0));
+        onUpdateAnlage(a.id, { anbu_buchwert_anfang: bwAnfang, anbu_abschreibung_gj: abschr, anbu_buchwert_ende: bwEnde });
+      }
+    } else {
+      let rest = newStilleRes;
+      anlagenInKto.forEach((a, idx) => {
+        const isLast = idx === anlagenInKto.length - 1;
+        const fibuBw = parseFloat(a.fibu_buchwert_anfang) || 0;
+        const share = isLast ? Math.round(rest * 100) / 100 : Math.round(newStilleRes * fibuBw / sumBwFibu * 100) / 100;
+        rest -= share;
+        const bwAnfang = fibuBw + share;
+        const abschr = a.anbu_nutzungsdauer_j ? calcAnbuAbschreibungLinear({
+          beschaffungskosten_netto: a.beschaffungskosten_netto, anbu_nutzungsdauer_j: a.anbu_nutzungsdauer_j, anbu_buchwert_anfang: bwAnfang,
+        }) : 0;
+        const bwEnde = Math.max(0, bwAnfang - abschr - (parseFloat(a.anbu_korrektur) || 0));
+        onUpdateAnlage(a.id, { anbu_buchwert_anfang: bwAnfang, anbu_abschreibung_gj: abschr, anbu_buchwert_ende: bwEnde });
+      });
+    }
+    toast.success(`Stille Reserve Anfang CHF ${fmtCHF(newStilleRes)} auf ${anlagenInKto.length} Anlagen verteilt`);
+  };
+
   const isArtis = theme === "artis";
   const isLight = theme === "light";
 
@@ -2411,7 +2447,8 @@ function ZusammenfassungTab({ anlagen, kategorien, selectedYear, accent, heading
         <div>
           <div style={{ fontSize: 13, fontWeight: 700, color: accent }}>Zusammenfassung & Stille Reserven · GJ {selectedYear}</div>
           <div style={{ fontSize: 11, color: subC, marginTop: 2 }}>
-            Stille Reserven = Bestand ANBU − Bestand FIBU · Überbewertung = negativ (FIBU &gt; ANBU)
+            Stille Reserven = Bestand ANBU − Bestand FIBU · Überbewertung = negativ (FIBU &gt; ANBU) ·{" "}
+            <strong>Doppelklick auf «Stille Res. Anfang»</strong> setzt die historische Reserve eines Kontos
           </div>
         </div>
         <div style={{ display: "flex", gap: 12, fontSize: 11 }}>
@@ -2473,6 +2510,8 @@ function ZusammenfassungTab({ anlagen, kategorien, selectedYear, accent, heading
                     const stilleA = k.bestand_anbu_anfang - k.bestand_fibu_anfang;
                     const stilleE = k.bestand_anbu_ende - k.bestand_fibu_ende;
                     const veraend = stilleE - stilleA;
+                    const editKey = (kid || "x") + "_" + k.fibu_konto;
+                    const isEditing = editStilleResAnfang?.kontoKey === editKey;
                     return (
                       <tr key={kid + "_" + k.fibu_konto + "_" + i}>
                         <td style={cellStyle(tableBdr)}>{k.fibu_konto}</td>
@@ -2480,8 +2519,29 @@ function ZusammenfassungTab({ anlagen, kategorien, selectedYear, accent, heading
                         <td style={numCell(tableBdr)}>{fmtCHF(k.bestand_fibu_anfang)}</td>
                         <td style={{ ...numCell(tableBdr), color: k.zugang > 0 ? "#16a34a" : subC }}>{k.zugang > 0 ? fmtCHF(k.zugang) : "—"}</td>
                         <td style={numCell(tableBdr)}>{fmtCHF(k.bestand_anbu_anfang)}</td>
-                        <td style={{ ...numCell(tableBdr), color: stilleA > 0 ? "#16a34a" : stilleA < 0 ? "#dc2626" : subC, fontWeight: 600 }}>
-                          {fmtCHF(stilleA)}
+                        <td style={{ ...numCell(tableBdr), color: stilleA > 0 ? "#16a34a" : stilleA < 0 ? "#dc2626" : subC, fontWeight: 600, position: "relative" }}>
+                          {isEditing && onUpdateAnlage ? (
+                            <input autoFocus type="number" step="0.01" value={editStilleResAnfang.val}
+                              onChange={e => setEditStilleResAnfang(v => ({ ...v, val: e.target.value }))}
+                              onKeyDown={e => {
+                                if (e.key === "Escape") setEditStilleResAnfang(null);
+                                if (e.key === "Enter") {
+                                  const newRes = parseFloat(editStilleResAnfang.val) || 0;
+                                  applyStilleResAnfang(k.anlagen, newRes);
+                                  setEditStilleResAnfang(null);
+                                }
+                              }}
+                              onBlur={() => setEditStilleResAnfang(null)}
+                              style={{ width: "100%", padding: "2px 4px", fontSize: 11, fontFamily: "monospace",
+                                textAlign: "right", border: `1.5px solid ${accent}`, borderRadius: 3, outline: "none",
+                                backgroundColor: accent + "10" }} />
+                          ) : (
+                            <span onDoubleClick={() => onUpdateAnlage && setEditStilleResAnfang({ kontoKey: editKey, val: String(stilleA) })}
+                              title={onUpdateAnlage ? "Doppelklick: historische Stille Reserve setzen (passt ANBU BW Anfang an)" : ""}
+                              style={{ cursor: onUpdateAnlage ? "default" : "auto" }}>
+                              {fmtCHF(stilleA)}
+                            </span>
+                          )}
                         </td>
                         <td style={{ ...numCell(tableBdr), color: "#dc2626" }}>{fmtCHF(k.abschreibung_fibu)}</td>
                         <td style={{ ...numCell(tableBdr), color: "#dc2626" }}>{fmtCHF(k.abschreibung_anbu)}</td>
