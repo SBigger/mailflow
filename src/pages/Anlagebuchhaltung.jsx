@@ -2442,20 +2442,74 @@ function ZusammenfassungTab({ anlagen, kategorien, selectedYear, onUpdateAnlage,
   return (
     <div style={{ border: `1px solid ${panelBdr}`, borderRadius: 12, overflow: "hidden", backgroundColor: panelBg }}>
       {/* Legende */}
-      <div style={{ padding: "10px 16px", borderBottom: `1px solid ${panelBdr}`, backgroundColor: accent + "08",
-        display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-        <div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: accent }}>Zusammenfassung & Stille Reserven · GJ {selectedYear}</div>
-          <div style={{ fontSize: 11, color: subC, marginTop: 2 }}>
-            Stille Reserven = Bestand ANBU − Bestand FIBU · Überbewertung = negativ (FIBU &gt; ANBU) ·{" "}
-            <strong>Doppelklick auf «Stille Res. Anfang»</strong> setzt die historische Reserve eines Kontos
+      {/* Header */}
+      <div style={{ padding: "10px 16px", borderBottom: `1px solid ${panelBdr}`, backgroundColor: accent + "08" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: accent }}>Zusammenfassung & Stille Reserven · GJ {selectedYear}</div>
+            <div style={{ fontSize: 11, color: subC, marginTop: 2 }}>
+              Stille Reserven = Bestand ANBU − Bestand FIBU · Überbewertung = negativ (FIBU &gt; ANBU) ·{" "}
+              <strong>Doppelklick auf «Stille Res. Anfang»</strong> setzt die historische Reserve eines Kontos
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 12, fontSize: 11 }}>
+            <span style={{ color: "#16a34a" }}>● Stille Reserve</span>
+            <span style={{ color: "#dc2626" }}>● Überbewertung</span>
           </div>
         </div>
-        <div style={{ display: "flex", gap: 12, fontSize: 11 }}>
-          <span style={{ color: "#16a34a" }}>● Stille Reserve</span>
-          <span style={{ color: "#dc2626" }}>● Überbewertung</span>
-        </div>
       </div>
+
+      {/* KPI-Banner: Veränderung Stille Reserven im GJ — Bildung / Auflösung / Netto */}
+      {(() => {
+        let bildung = 0, aufloesung = 0, sumAnfang = 0, sumEnde = 0;
+        for (const ktoObj of Object.values(summary)) {
+          for (const k of Object.values(ktoObj)) {
+            const sA = (k.bestand_anbu_anfang||0) - (k.bestand_fibu_anfang||0);
+            const sE = (k.bestand_anbu_ende||0)   - (k.bestand_fibu_ende||0);
+            const v = sE - sA;
+            sumAnfang += sA; sumEnde += sE;
+            if (v > 0) bildung += v;
+            else if (v < 0) aufloesung += v;
+          }
+        }
+        const netto = bildung + aufloesung;
+        const cardStyle = (bg, fg) => ({
+          flex: "1 1 180px", padding: "12px 14px", borderRadius: 10, backgroundColor: bg,
+          border: `1px solid ${fg}30`, display: "flex", flexDirection: "column", gap: 4,
+        });
+        const labelStyle = { fontSize: 10, fontWeight: 700, letterSpacing: "0.05em",
+          textTransform: "uppercase", color: subC };
+        const valStyle = (fg) => ({ fontSize: 18, fontWeight: 800, fontFamily: "monospace", color: fg });
+        return (
+          <div style={{ padding: "12px 16px", borderBottom: `1px solid ${panelBdr}`,
+            display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <div style={cardStyle("#dcfce7", "#16a34a")}>
+              <div style={labelStyle}>Bildung Stille Res.</div>
+              <div style={valStyle("#16a34a")}>+{fmtCHF(bildung)}</div>
+              <div style={{ fontSize: 10, color: subC }}>Wo ANBU stärker steigt als FIBU</div>
+            </div>
+            <div style={cardStyle("#fee2e2", "#dc2626")}>
+              <div style={labelStyle}>Auflösung Stille Res.</div>
+              <div style={valStyle("#dc2626")}>{fmtCHF(aufloesung)}</div>
+              <div style={{ fontSize: 10, color: subC }}>Wo FIBU stärker abschreibt als ANBU</div>
+            </div>
+            <div style={cardStyle(netto >= 0 ? "#dcfce7" : "#fef3c7", netto >= 0 ? "#16a34a" : "#f59e0b")}>
+              <div style={labelStyle}>Netto-Veränderung</div>
+              <div style={valStyle(netto >= 0 ? "#16a34a" : "#dc2626")}>{netto >= 0 ? "+" : ""}{fmtCHF(netto)}</div>
+              <div style={{ fontSize: 10, color: subC }}>
+                {netto > 0 ? "Stille Reserven aufgebaut" : netto < 0 ? "Stille Reserven verbraucht" : "keine Veränderung"}
+              </div>
+            </div>
+            <div style={cardStyle(accent + "12", accent)}>
+              <div style={labelStyle}>Bestand Anfang → Ende</div>
+              <div style={{ fontSize: 13, fontWeight: 700, fontFamily: "monospace", color: subC }}>
+                {fmtCHF(sumAnfang)}
+              </div>
+              <div style={valStyle(sumEnde >= 0 ? "#16a34a" : "#dc2626")}>{fmtCHF(sumEnde)}</div>
+            </div>
+          </div>
+        );
+      })()}
       <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
           <thead>
