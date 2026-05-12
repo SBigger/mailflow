@@ -2033,13 +2033,38 @@ function FibuTab({ anlagen, kategorien, onUpdateAnlage, accent, headingC, subC, 
   // Verteile Total auf alle Anlagen einer FIBU-Konto-Gruppe proportional zu BW Anfang
   const verteilen = (ktoKey, anlagenInGroup) => {
     const inp = verteilenInput[ktoKey] || {};
-    const totalAbschr = parseFloat(String(inp.abschr || "").replace(",", ".")) || 0;
-    const totalKorr   = parseFloat(String(inp.korr   || "").replace(",", ".")) || 0;
+    let totalAbschr = parseFloat(String(inp.abschr || "").replace(",", ".")) || 0;
+    let totalKorr   = parseFloat(String(inp.korr   || "").replace(",", ".")) || 0;
+    const sollSaldoEnde = inp.saldoEnde !== "" && inp.saldoEnde != null
+      ? parseFloat(String(inp.saldoEnde).replace(",", "."))
+      : null;
+    const sumBwAnfang = anlagenInGroup.reduce((s, a) => s + (parseFloat(a.fibu_buchwert_anfang) || 0), 0);
+    // Wenn Saldo Ende gegeben aber Abschr leer → rückwärts rechnen: Abschr = BW Anf − Saldo Ende − Korr
+    if (sollSaldoEnde != null && !isNaN(sollSaldoEnde) && !totalAbschr) {
+      totalAbschr = Math.round((sumBwAnfang - sollSaldoEnde - totalKorr) * 100) / 100;
+      if (totalAbschr < 0) totalAbschr = 0;
+    }
+    // Validierung: Σ BW Ende = sumBwAnfang - totalAbschr - totalKorr, muss = sollSaldoEnde sein
+    if (sollSaldoEnde != null && !isNaN(sollSaldoEnde)) {
+      const expectedEnde = sumBwAnfang - totalAbschr - totalKorr;
+      const diff = Math.abs(expectedEnde - sollSaldoEnde);
+      if (diff > 0.5) {
+        if (!window.confirm(
+          `⚠️ Inkonsistenz für Konto ${ktoKey}:\n\n` +
+          `BW Anfang Σ:    ${fmtCHF(sumBwAnfang)}\n` +
+          `− Abschr.:      ${fmtCHF(totalAbschr)}\n` +
+          `− Korr.:        ${fmtCHF(totalKorr)}\n` +
+          `= BW Ende rechn.: ${fmtCHF(expectedEnde)}\n\n` +
+          `Saldo Ende lt. FIBU: ${fmtCHF(sollSaldoEnde)}\n` +
+          `Differenz: ${fmtCHF(expectedEnde - sollSaldoEnde)}\n\n` +
+          `Trotzdem verteilen?`
+        )) return;
+      }
+    }
     if (!totalAbschr && !totalKorr) {
-      toast.error("Bitte mindestens Abschreibung-Total oder Korrektur eingeben");
+      toast.error("Bitte Abschreibung, Korrektur oder Saldo Ende eingeben");
       return;
     }
-    const sumBwAnfang = anlagenInGroup.reduce((s, a) => s + (parseFloat(a.fibu_buchwert_anfang) || 0), 0);
     if (sumBwAnfang <= 0) {
       // Kein BW Anfang vorhanden → gleichmässig verteilen
       const share = 1 / anlagenInGroup.length;
@@ -2072,7 +2097,7 @@ function FibuTab({ anlagen, kategorien, onUpdateAnlage, accent, headingC, subC, 
       });
     }
     toast.success(`Konto ${ktoKey}: CHF ${fmtCHF(totalAbschr)} Abschr. + CHF ${fmtCHF(totalKorr)} Korr. auf ${anlagenInGroup.length} Anlagen verteilt`);
-    setVerteilenInput(p => ({ ...p, [ktoKey]: { abschr: "", korr: "" } }));
+    setVerteilenInput(p => ({ ...p, [ktoKey]: { abschr: "", korr: "", saldoEnde: "" } }));
   };
 
   const startEdit = (id, field, val) => setEditCell({ id, field, val: String(val ?? "") });
@@ -2199,7 +2224,14 @@ function FibuTab({ anlagen, kategorien, onUpdateAnlage, accent, headingC, subC, 
                   const ktoAbschrIst = ktoRows.reduce((s, r) => s + (parseFloat(r.fibu_abschreibung_gj) || 0), 0);
                   const ktoKorrIst   = ktoRows.reduce((s, r) => s + (parseFloat(r.fibu_korrektur) || 0), 0);
                   const ktoBwA       = ktoRows.reduce((s, r) => s + (parseFloat(r.fibu_buchwert_anfang) || 0), 0);
+                  const ktoBwE       = ktoRows.reduce((s, r) => s + (parseFloat(r.fibu_buchwert_ende) || 0), 0);
                   const inp = verteilenInput[kto] || {};
+                  const sollSaldoEnde = inp.saldoEnde !== "" && inp.saldoEnde != null
+                    ? parseFloat(String(inp.saldoEnde).replace(",", "."))
+                    : null;
+                  const diff = sollSaldoEnde != null && !isNaN(sollSaldoEnde)
+                    ? ktoBwE - sollSaldoEnde : null;
+                  const diffOk = diff != null && Math.abs(diff) < 0.5;
                   return (
                     <React.Fragment key={kid + "_" + kto}>
                       {/* FIBU-Konto Sub-Header mit Verteilungs-Panel */}
@@ -2210,19 +2242,35 @@ function FibuTab({ anlagen, kategorien, onUpdateAnlage, accent, headingC, subC, 
                               Konto {kto}
                             </span>
                             <span style={{ fontSize: 10, color: subC }}>
-                              {ktoRows.length} {ktoRows.length === 1 ? "Anlage" : "Anlagen"} · BW Anfang Σ {fmtCHF(ktoBwA)}
-                            </span>
-                            <span style={{ fontSize: 10, color: subC }}>
-                              Aktuell verteilt: Abschr. <strong style={{ color: "#dc2626", fontFamily: "monospace" }}>{fmtCHF(ktoAbschrIst)}</strong>
+                              {ktoRows.length} {ktoRows.length === 1 ? "Anlage" : "Anlagen"} · BW Anf. Σ <strong style={{ fontFamily: "monospace", color: headingC }}>{fmtCHF(ktoBwA)}</strong>
+                              {" · "}BW Ende Σ <strong style={{ fontFamily: "monospace", color: diff != null ? (diffOk ? "#16a34a" : "#dc2626") : headingC }}>{fmtCHF(ktoBwE)}</strong>
+                              {" · Abschr. "}<strong style={{ color: "#dc2626", fontFamily: "monospace" }}>{fmtCHF(ktoAbschrIst)}</strong>
                               {ktoKorrIst !== 0 && <> · Korr. <strong style={{ fontFamily: "monospace" }}>{fmtCHF(ktoKorrIst)}</strong></>}
+                              {diff != null && !diffOk && (
+                                <span style={{ marginLeft: 6, color: "#dc2626", fontWeight: 700 }}>
+                                  Δ {fmtCHF(diff)}
+                                </span>
+                              )}
+                              {diff != null && diffOk && (
+                                <span style={{ marginLeft: 6, color: "#16a34a", fontWeight: 700 }}>✓ stimmt</span>
+                              )}
                             </span>
-                            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, marginLeft: "auto" }}>
-                              <span style={{ fontSize: 10, color: subC }}>Total Abschr.</span>
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, marginLeft: "auto", flexWrap: "wrap" }}>
+                              <span style={{ fontSize: 10, color: subC, fontWeight: 700 }}>Saldo Ende lt. FIBU</span>
+                              <input value={inp.saldoEnde ?? ""}
+                                onChange={e => setVerteilenInput(p => ({ ...p, [kto]: { ...(p[kto] || {}), saldoEnde: e.target.value } }))}
+                                onKeyDown={e => { if (e.key === "Enter") verteilen(kto, ktoRows); }}
+                                placeholder="0.00" type="number" step="0.01"
+                                title="Wenn gesetzt: Abschr. wird auto-rückwärts gerechnet (falls leer), oder Validierung gegen Soll."
+                                style={{ width: 100, padding: "3px 6px", fontSize: 11, fontFamily: "monospace",
+                                  border: `1.5px solid ${accent}80`, borderRadius: 4, textAlign: "right",
+                                  backgroundColor: panelBg, color: headingC }} />
+                              <span style={{ fontSize: 10, color: subC }}>Abschr.</span>
                               <input value={inp.abschr ?? ""}
                                 onChange={e => setVerteilenInput(p => ({ ...p, [kto]: { ...(p[kto] || {}), abschr: e.target.value } }))}
                                 onKeyDown={e => { if (e.key === "Enter") verteilen(kto, ktoRows); }}
-                                placeholder="0.00" type="number" step="0.01"
-                                style={{ width: 100, padding: "3px 6px", fontSize: 11, fontFamily: "monospace",
+                                placeholder="auto" type="number" step="0.01"
+                                style={{ width: 90, padding: "3px 6px", fontSize: 11, fontFamily: "monospace",
                                   border: `1px solid ${panelBdr}`, borderRadius: 4, textAlign: "right",
                                   backgroundColor: panelBg, color: headingC }} />
                               <span style={{ fontSize: 10, color: subC }}>Korr.</span>
@@ -2230,11 +2278,11 @@ function FibuTab({ anlagen, kategorien, onUpdateAnlage, accent, headingC, subC, 
                                 onChange={e => setVerteilenInput(p => ({ ...p, [kto]: { ...(p[kto] || {}), korr: e.target.value } }))}
                                 onKeyDown={e => { if (e.key === "Enter") verteilen(kto, ktoRows); }}
                                 placeholder="0.00" type="number" step="0.01"
-                                style={{ width: 80, padding: "3px 6px", fontSize: 11, fontFamily: "monospace",
+                                style={{ width: 70, padding: "3px 6px", fontSize: 11, fontFamily: "monospace",
                                   border: `1px solid ${panelBdr}`, borderRadius: 4, textAlign: "right",
                                   backgroundColor: panelBg, color: headingC }} />
                               <button onClick={() => verteilen(kto, ktoRows)}
-                                title={`Total proportional zu BW Anfang auf ${ktoRows.length} Anlage(n) verteilen`}
+                                title={`Proportional zu BW Anfang auf ${ktoRows.length} Anlage(n) verteilen — wenn Saldo Ende gesetzt: Abschr. wird rückwärts gerechnet.`}
                                 style={{ fontSize: 10, fontWeight: 700, padding: "4px 10px", borderRadius: 4,
                                   cursor: "pointer", border: "none", backgroundColor: accent, color: "#fff" }}>
                                 ⚖ Verteilen
