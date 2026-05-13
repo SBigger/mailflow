@@ -717,12 +717,17 @@ export default function Anlagebuchhaltung() {
       return;
     }
 
+    // Saldovortrag nur im ALLER-ersten Jahr eines Mandanten erfassen — danach
+    // kommen die Bestände aus dem Jahreswechsel.
+    const previousYears = vorhandeneJahre.filter(j => j < selectedYear);
+    const istErstesJahr = previousYears.length === 0;
+
     // Pro Section eine oder mehrere Anlagen extrahieren:
-    //   - 1 Saldovortrag-Anlage pro Konto (wenn Saldovortrag > 0)
+    //   - 1 Saldovortrag-Anlage pro Konto (nur im allerersten Jahr eines Mandanten!)
     //   - 1 Anlage pro Zugang-Buchung (Aktivierung im Jahr)
     //   - Umbuchungen werden in der Notiz dokumentiert
     //   - Verkäufe/Entnahmen → kommen in Notiz (User kann manuell Anlage löschen)
-    //   - FIBU-Abschreibung des Kontos wird in der Notiz des Saldovortrag-Eintrags vermerkt
+    //   - FIBU-Abschreibung des Kontos wird auf alle Anlagen anteilig verteilt
     const anlagen = [];
     for (const s of sections) {
       const katName = autoMapKontoToKategorie(s.kontonummer);
@@ -795,8 +800,8 @@ export default function Anlagebuchhaltung() {
         saldovortrag = saldoEnde - (umsatzSoll - umsatzHaben);
       }
 
-      // 1) Saldovortrag-Anlage (Bestand am Anfang des GJ)
-      if (saldovortrag != null && Math.abs(saldovortrag) > 0.01) {
+      // 1) Saldovortrag-Anlage (Bestand am Anfang des GJ) — NUR im ersten Jahr
+      if (istErstesJahr && saldovortrag != null && Math.abs(saldovortrag) > 0.01) {
         anlagen.push({
           // Identifikation
           kontonummer: s.kontonummer,
@@ -843,8 +848,8 @@ export default function Anlagebuchhaltung() {
         });
       }
 
-      // 3) Wenn weder Saldovortrag noch Zugang, aber Saldo Ende existiert (Konto ohne Bewegung):
-      if (saldovortrag === null && saldoEnde != null && Math.abs(saldoEnde) > 0.01 && zugaenge.length === 0) {
+      // 3) Wenn weder Saldovortrag noch Zugang, aber Saldo Ende existiert (Konto ohne Bewegung) — auch nur im 1. Jahr:
+      if (istErstesJahr && saldovortrag === null && saldoEnde != null && Math.abs(saldoEnde) > 0.01 && zugaenge.length === 0) {
         anlagen.push({
           kontonummer: s.kontonummer,
           beschreibung: `${s.beschreibung} – Bestand 01.01.${selectedYear}`,
@@ -897,6 +902,7 @@ export default function Anlagebuchhaltung() {
       mode: "pdf",
       pdfAnlagen: filtered,
       abId,
+      istErstesJahr,
     });
   }
 
@@ -1506,8 +1512,9 @@ export default function Anlagebuchhaltung() {
               {importDialog.mode === "pdf" ? (
                 <>
                   <div style={{ fontSize: 11, color: subC, marginBottom: 8, fontStyle: "italic" }}>
-                    Pro Aktivierung eine Anlage: 1× Saldovortrag (BW per 1.1.) + N× Einzel-Käufe.
-                    Alle Felder können angepasst werden. ND vom Kategorie-Default vorbelegt.
+                    {importDialog.istErstesJahr
+                      ? <>Pro Aktivierung eine Anlage: <strong>1× Saldovortrag</strong> (BW per 1.1.) + N× Einzel-Käufe. ND vom Kategorie-Default.</>
+                      : <>Folge-Jahr: <strong>kein Saldovortrag</strong> mehr — Bestände kommen aus Jahreswechsel. Nur neue Käufe des Jahres werden importiert.</>}
                   </div>
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
                     <thead>
