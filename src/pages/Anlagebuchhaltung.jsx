@@ -244,20 +244,33 @@ function MandantDropdown({ kunden, selectedCid, onChange, panelBg, panelBdr, hea
   );
 }
 
-// ANBU linear: (BW Anfang + Neuzugang) / Nutzungsdauer (Basis = aktuelle Anlagensubstanz)
-// "Beschaffungskosten netto" = nur Wert des Neuzugangs im GJ (Aktivierung ohne MwSt).
-// Bei reinen Bestandsanlagen ohne Zugang: Basis = BW Anfang.
-// Bei Neuanschaffung im GJ: BW Anfang = 0, Basis = Beschaffung.
-// Bei Bestand + Zugang: Basis = beides zusammen.
+// ANBU linear: Beschaffungskosten / Nutzungsdauer (jährlich gleichbleibend)
+// "Beschaffungskosten netto" = historische Anschaffungskosten dieser einzelnen Aktivierung
+// (= das was netto bezahlt wurde, einmalig fix). Beispiel: Maschine 2018 für 50'000 gekauft
+// mit ND 10 → Kalk. Abschr. = 5'000/Jahr für 10 Jahre.
+// Cap auf aktuellen BW Anfang (Restbetrag-Schutz im letzten Abschreibungsjahr).
 function calcAnbuAbschreibungLinear({ beschaffungskosten_netto, anbu_nutzungsdauer_j, anbu_buchwert_anfang }) {
   if (!anbu_nutzungsdauer_j || anbu_nutzungsdauer_j <= 0) return 0;
   const beschaffung = parseFloat(beschaffungskosten_netto) || 0;
-  const bwAnfang    = parseFloat(anbu_buchwert_anfang)     || 0;
-  const basis = beschaffung + bwAnfang;
-  const linear = basis / anbu_nutzungsdauer_j;
-  // Cap: nie mehr abschreiben als zusammen vorhanden ist (Restbetrag-Schutz)
-  const cap = Math.max(0, basis);
+  if (beschaffung <= 0) return 0;
+  const linear = beschaffung / anbu_nutzungsdauer_j;
+  const cap = Math.max(0, parseFloat(anbu_buchwert_anfang) || 0);
   return Math.round(Math.min(linear, cap) * 100) / 100;
+}
+
+// Abschreibungs-periode = Anzahl Jahre seit Aktivierung (inkl. aktuellem GJ)
+function calcAbschreibungsPeriode(beschaffung_jahr, geschaeftsjahr) {
+  if (!beschaffung_jahr || !geschaeftsjahr) return null;
+  const p = geschaeftsjahr - beschaffung_jahr + 1;
+  return p > 0 ? p : null;
+}
+
+// Kalkulatorische jährliche Abschreibung (read-only Anzeige) = Beschaffung / ND
+function calcKalkAbschreibung(beschaffung, nd) {
+  const b = parseFloat(beschaffung) || 0;
+  const n = parseInt(nd) || 0;
+  if (b <= 0 || n <= 0) return 0;
+  return Math.round(b / n * 100) / 100;
 }
 
 // FIBU degressiv: Buchwert × %  (typisch CH-Tax: 3%, 8%, 20%, 30%, 40%)
@@ -765,10 +778,12 @@ export default function Anlagebuchhaltung() {
         saldovortrag = saldoEnde - (umsatzSoll - umsatzHaben);
       }
 
-      // Beschaffungskosten netto = NUR der Neuzugang im GJ (Aktivierung ohne MwSt).
-      // BW Anfang trägt die historische Substanz. Bei reiner Bestandsanlage ist
-      // Beschaffung = 0; bei Neuanschaffung = Zugang; bei Bestand + Zugang = nur der Zugang.
-      const beschaffungskosten = zugaenge;
+      // Beschaffungskosten netto = historische Anschaffungskosten dieser Aktivierung.
+      // Beim PDF-Erstimport haben wir nur Saldovortrag + Zugang als Approximation
+      // (der echte historische AK ist im PDF nicht ersichtlich, weil das Sammelkonto
+      // bereits über Jahre abgeschrieben wurde). User kann den Wert im Vorschau-Dialog
+      // anpassen, falls echte AK bekannt.
+      const beschaffungskosten = (saldovortrag || 0) + zugaenge;
 
       const katName = autoMapKontoToKategorie(s.kontonummer);
       // Default Nutzungsdauer aus Kategorie (vorhandene oder Default)
@@ -1569,7 +1584,7 @@ export default function Anlagebuchhaltung() {
 // ── Anlagekartei-Tab (ANBU, linear) ─────────────────────────────────────────
 // ════════════════════════════════════════════════════════════════════════════
 function AnlagekarteiTab({ anlagen, kategorien, onUpdateAnlage, onAddAnlage, onDeleteAnlage,
-                          onApplyKategorieND,
+                          onApplyKategorieND, selectedYear,
                           accent, headingC, subC, panelBg, panelBdr, tableBdr, rowHover, theme }) {
   const isArtis = theme === "artis";
   const isLight = theme === "light";
@@ -1696,18 +1711,20 @@ function AnlagekarteiTab({ anlagen, kategorien, onUpdateAnlage, onAddAnlage, onD
           <thead>
             <tr style={{ backgroundColor: isArtis ? "#e8f2e8" : isLight ? "#f1f5f9" : "#2f2f35" }}>
               {[
-                ["Beschreibung", "left", 220],
-                ["Lieferant", "left", 130],
-                ["Datum", "center", 70],
-                ["FIBU-Kto", "left", 75],
-                ["Sub-Kategorie", "left", 150],
-                ["Beschaffung netto", "right", 110],
-                ["Nutzungs-\ndauer (J)", "center", 70],
-                ["BW Anfang", "right", 105],
-                ["Abschr. GJ", "right", 105],
-                ["Korrektur", "right", 90],
-                ["BW Ende", "right", 105],
-                ["", "center", 35],
+                ["Beschreibung", "left", 200],
+                ["Lieferant", "left", 120],
+                ["Datum", "center", 65],
+                ["FIBU-Kto", "left", 70],
+                ["Sub-Kategorie", "left", 130],
+                ["Beschaffung\nnetto", "right", 100],
+                ["ND\n(J)", "center", 50],
+                ["Periode\n(J)", "center", 55],
+                ["Kalk.\nAbschr.", "right", 95],
+                ["BW Anfang", "right", 100],
+                ["Abschr. GJ", "right", 100],
+                ["Korrektur", "right", 85],
+                ["BW Ende", "right", 100],
+                ["", "center", 30],
               ].map(([h, ta, w]) => (
                 <th key={h+w} style={{ padding: "8px 10px", textAlign: ta, color: subC,
                   fontSize: 10, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase",
@@ -1729,7 +1746,7 @@ function AnlagekarteiTab({ anlagen, kategorien, onUpdateAnlage, onAddAnlage, onD
               return (
                 <React.Fragment key={kid}>
                   <tr style={{ backgroundColor: isArtis ? "#f0f5f0" : isLight ? "#f8fafc" : "#2c2c32", borderTop: `2px solid ${tableBdr}` }}>
-                    <td colSpan={12} style={{ padding: "8px 12px", fontWeight: 700, fontSize: 12, color: isNone ? "#dc2626" : accent, letterSpacing: "0.04em" }}>
+                    <td colSpan={14} style={{ padding: "8px 12px", fontWeight: 700, fontSize: 12, color: isNone ? "#dc2626" : accent, letterSpacing: "0.04em" }}>
                       <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                         <span>{isNone ? "Ohne Kategorie" : kat?.name || "—"}</span>
                         {(() => {
@@ -1825,7 +1842,7 @@ function AnlagekarteiTab({ anlagen, kategorien, onUpdateAnlage, onAddAnlage, onD
                       return (
                         <React.Fragment key={kid + "_" + kto}>
                           <tr style={{ backgroundColor: isArtis ? "#e8f2e8" : isLight ? "#fafbfc" : "#262629" }}>
-                            <td colSpan={12} style={{ padding: "5px 14px 5px 24px", borderTop: `1px dashed ${tableBdr}` }}>
+                            <td colSpan={14} style={{ padding: "5px 14px 5px 24px", borderTop: `1px dashed ${tableBdr}` }}>
                               <span style={{ display: "inline-flex", alignItems: "center", gap: 12, fontSize: 10 }}>
                                 <span style={{ fontWeight: 700, color: headingC, fontFamily: "monospace", fontSize: 11 }}>
                                   Konto {kto}
@@ -1851,7 +1868,7 @@ function AnlagekarteiTab({ anlagen, kategorien, onUpdateAnlage, onAddAnlage, onD
                             </td>
                           </tr>
                           {ktoRows.map(a => (
-                            <AnlageRow key={a.id} a={a} kategorien={kategorien}
+                            <AnlageRow key={a.id} a={a} kategorien={kategorien} selectedYear={selectedYear}
                               editCell={editCell} startEdit={startEdit} commitEdit={commitEdit}
                               setEditCell={setEditCell} onUpdateAnlage={onUpdateAnlage} onDeleteAnlage={onDeleteAnlage}
                               accent={accent} headingC={headingC} subC={subC} tableBdr={tableBdr} rowHover={rowHover}
@@ -1861,18 +1878,25 @@ function AnlagekarteiTab({ anlagen, kategorien, onUpdateAnlage, onAddAnlage, onD
                       );
                     });
                   })()}
+                  {(() => {
+                    const totKalk = rows.reduce((s, r) => s + calcKalkAbschreibung(r.beschaffungskosten_netto, r.anbu_nutzungsdauer_j), 0);
+                    return (
                   <tr style={{ backgroundColor: isArtis ? "#e8f2e8" : isLight ? "#f1f5f9" : "#2c2c32", borderBottom: `2px solid ${tableBdr}` }}>
                     <td colSpan={5} style={{ padding: "6px 12px", fontSize: 11, fontWeight: 700, color: subC, textAlign: "right" }}>
                       Total {isNone ? "Ohne Kategorie" : kat?.name}
                     </td>
                     <td style={{ padding: "6px 10px", textAlign: "right", fontWeight: 700, fontFamily: "monospace", color: headingC }}>{fmtCHF(totBeschaffung)}</td>
                     <td />
+                    <td />
+                    <td style={{ padding: "6px 10px", textAlign: "right", fontWeight: 700, fontFamily: "monospace", color: subC }}>{fmtCHF(totKalk)}</td>
                     <td style={{ padding: "6px 10px", textAlign: "right", fontWeight: 700, fontFamily: "monospace", color: headingC }}>{fmtCHF(totBwAnfang)}</td>
                     <td style={{ padding: "6px 10px", textAlign: "right", fontWeight: 700, fontFamily: "monospace", color: "#dc2626" }}>{fmtCHF(totAbschr)}</td>
                     <td style={{ padding: "6px 10px", textAlign: "right", fontWeight: 700, fontFamily: "monospace", color: subC }}>{fmtCHF(totKorr)}</td>
                     <td style={{ padding: "6px 10px", textAlign: "right", fontWeight: 700, fontFamily: "monospace", color: headingC }}>{fmtCHF(totBwEnde)}</td>
                     <td />
                   </tr>
+                    );
+                  })()}
                 </React.Fragment>
               );
             })}
@@ -1883,6 +1907,7 @@ function AnlagekarteiTab({ anlagen, kategorien, onUpdateAnlage, onAddAnlage, onD
               const tAb = anlagen.reduce((s, r) => s + (parseFloat(r.anbu_abschreibung_gj) || 0), 0);
               const tKo = anlagen.reduce((s, r) => s + (parseFloat(r.anbu_korrektur) || 0), 0);
               const tBwE = anlagen.reduce((s, r) => s + (parseFloat(r.anbu_buchwert_ende) || 0), 0);
+              const tKalk = anlagen.reduce((s, r) => s + calcKalkAbschreibung(r.beschaffungskosten_netto, r.anbu_nutzungsdauer_j), 0);
               return (
                 <tr style={{ backgroundColor: accent + "12", borderTop: `2px solid ${accent}` }}>
                   <td colSpan={5} style={{ padding: "10px 12px", fontSize: 12, fontWeight: 800, color: accent, textAlign: "right", letterSpacing: "0.04em" }}>
@@ -1890,6 +1915,8 @@ function AnlagekarteiTab({ anlagen, kategorien, onUpdateAnlage, onAddAnlage, onD
                   </td>
                   <td style={{ padding: "10px 10px", textAlign: "right", fontWeight: 800, fontFamily: "monospace", color: accent }}>{fmtCHF(tB)}</td>
                   <td />
+                  <td />
+                  <td style={{ padding: "10px 10px", textAlign: "right", fontWeight: 800, fontFamily: "monospace", color: subC }}>{fmtCHF(tKalk)}</td>
                   <td style={{ padding: "10px 10px", textAlign: "right", fontWeight: 800, fontFamily: "monospace", color: accent }}>{fmtCHF(tBwA)}</td>
                   <td style={{ padding: "10px 10px", textAlign: "right", fontWeight: 800, fontFamily: "monospace", color: "#dc2626" }}>{fmtCHF(tAb)}</td>
                   <td style={{ padding: "10px 10px", textAlign: "right", fontWeight: 800, fontFamily: "monospace", color: subC }}>{fmtCHF(tKo)}</td>
@@ -1957,7 +1984,7 @@ function NewRowBar({ newRow, setNewRow, kategorien, onSubmit, accent, headingC, 
 }
 
 // ── Einzelne Anlagezeile ────────────────────────────────────────────────────
-function AnlageRow({ a, kategorien, editCell, startEdit, commitEdit, setEditCell, onUpdateAnlage,
+function AnlageRow({ a, kategorien, selectedYear, editCell, startEdit, commitEdit, setEditCell, onUpdateAnlage,
                     onDeleteAnlage, accent, headingC, subC, tableBdr, rowHover }) {
   const renderCell = (field, value, opts = {}) => {
     const isEditing = editCell?.id === a.id && editCell?.field === field;
@@ -2039,6 +2066,21 @@ function AnlageRow({ a, kategorien, editCell, startEdit, commitEdit, setEditCell
               {defaultND ?? "—"}
             </span>
           );
+        })()}
+      </td>
+      {/* Periode (J): aktuelles GJ - B-Jahr + 1 */}
+      <td style={{ ...td, textAlign: "center", fontFamily: "monospace", color: subC }}>
+        {(() => {
+          const p = calcAbschreibungsPeriode(a.beschaffung_jahr, selectedYear);
+          return p ? p : <span style={{ color: subC, fontStyle: "italic" }}>—</span>;
+        })()}
+      </td>
+      {/* Kalk. Abschreibung = AK / ND (read-only) */}
+      <td style={{ ...td, textAlign: "right", fontFamily: "monospace", color: subC }}>
+        {(() => {
+          const eff_nd = a.anbu_nutzungsdauer_j ?? kategorien.find(k => k.id === a.kategorie_id)?.default_anbu_nutzungsdauer_j;
+          const kalk = calcKalkAbschreibung(a.beschaffungskosten_netto, eff_nd);
+          return kalk > 0 ? fmtCHF(kalk) : <span style={{ color: subC, fontStyle: "italic" }}>—</span>;
         })()}
       </td>
       <td style={{ ...td }}>{renderCell("anbu_buchwert_anfang", a.anbu_buchwert_anfang, { align: "right", mono: true, format: fmtCHF })}</td>
