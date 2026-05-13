@@ -515,6 +515,22 @@ export default function Anlagebuchhaltung() {
     onError: (e) => toast.error(e.message),
   });
 
+  // Alle Anlagen dieses Jahres löschen (Reset für Neu-Import)
+  const resetAnlagenMut = useMutation({
+    mutationFn: async () => {
+      if (!abschlussId) return 0;
+      const { error, count } = await supabase
+        .from("anbu_anlage").delete({ count: "exact" }).eq("abschluss_id", abschlussId);
+      if (error) throw new Error(error.message);
+      return count || 0;
+    },
+    onSuccess: (cnt) => {
+      qc.invalidateQueries({ queryKey: ["anbu_anlagen", abschlussId] });
+      toast.success(`${cnt} Anlagen gelöscht — bereit für Neu-Import`);
+    },
+    onError: (e) => toast.error("Reset: " + e.message),
+  });
+
   const deleteAnlageMut = useMutation({
     mutationFn: async (id) => {
       const { error } = await supabase.from("anbu_anlage").delete().eq("id", id);
@@ -1287,6 +1303,29 @@ export default function Anlagebuchhaltung() {
                   border: `1px solid ${accent}40`, color: accent, backgroundColor: accent + "10" }}>
                 <ArrowRight className="w-3.5 h-3.5" />
                 Jahreswechsel → {selectedYear + 1}
+              </button>
+            </div>
+          )}
+
+          {/* Reset / Anlagen löschen */}
+          {abschlussId && anlagen.length > 0 && (
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wider mb-1.5 block" style={{ color: subC }}>
+                &nbsp;
+              </label>
+              <button
+                disabled={resetAnlagenMut.isPending}
+                onClick={() => {
+                  if (window.confirm(`Alle ${anlagen.length} Anlagen des Geschäftsjahrs ${selectedYear} werden gelöscht.\n\nDanach kannst du das PDF/Excel sauber neu importieren. Diese Aktion kann nicht rückgängig gemacht werden.\n\nFortfahren?`)) {
+                    resetAnlagenMut.mutate();
+                  }
+                }}
+                title={`Alle ${anlagen.length} Anlagen löschen (für Neu-Import)`}
+                style={{ display: "flex", alignItems: "center", gap: 6, height: 36, fontSize: 12, fontWeight: 600,
+                  padding: "0 12px", borderRadius: 8, cursor: "pointer",
+                  border: `1px solid #dc262640`, color: "#dc2626", backgroundColor: "#dc262610" }}>
+                <Trash2 className="w-3.5 h-3.5" />
+                Anlagen löschen
               </button>
             </div>
           )}
