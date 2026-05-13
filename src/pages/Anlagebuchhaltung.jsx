@@ -2480,7 +2480,9 @@ function FibuTab({ anlagen, kategorien, fibuKontoOverrides, onUpdateFibuKonto,
 // ── Zusammenfassungs-Tab (Stille Reserven pro FIBU-Konto) ──────────────────
 // ════════════════════════════════════════════════════════════════════════════
 function ZusammenfassungTab({ anlagen, kategorien, selectedYear, onUpdateAnlage,
+                              fibuKontoOverrides, onUpdateFibuKonto,
                               accent, headingC, subC, panelBg, panelBdr, tableBdr, theme }) {
+  const fkOv = fibuKontoOverrides || {};
   const [editStilleResAnfang, setEditStilleResAnfang] = useState(null); // { kontoKey, val }
   // Generisches Edit für die anderen Spalten: { kontoKey, field, val }
   const [editCell, setEditCell] = useState(null);
@@ -2524,22 +2526,21 @@ function ZusammenfassungTab({ anlagen, kategorien, selectedYear, onUpdateAnlage,
     });
   };
 
-  const commitEditCell = (anlagenInKto) => {
+  const commitEditCell = (anlagenInKto, fibu_konto) => {
     if (!editCell) return;
     const val = parseFloat(String(editCell.val).replace(",", "."));
     if (isNaN(val)) { setEditCell(null); return; }
     const field = editCell.field;
-    if (field === "bestand_fibu_anfang") {
-      verteilenAufAnlagen(anlagenInKto, val, "fibu_buchwert_anfang", "fibu_buchwert_anfang", "fibu_buchwert_ende");
-    } else if (field === "bestand_fibu_ende") {
-      // Rückwärts: BW Ende vorgegeben → Abschr = BW Anfang - BW Ende - Korr
-      const sumBwA = anlagenInKto.reduce((s, a) => s + (parseFloat(a.fibu_buchwert_anfang) || 0), 0);
-      const sumKorr = anlagenInKto.reduce((s, a) => s + (parseFloat(a.fibu_korrektur) || 0), 0);
-      const totalAbschr = Math.max(0, Math.round((sumBwA - val - sumKorr) * 100) / 100);
-      verteilenAufAnlagen(anlagenInKto, totalAbschr, "fibu_abschreibung_gj", "fibu_buchwert_anfang", "fibu_buchwert_ende");
-    } else if (field === "abschreibung_fibu") {
-      verteilenAufAnlagen(anlagenInKto, val, "fibu_abschreibung_gj", "fibu_buchwert_anfang", "fibu_buchwert_ende");
-    } else if (field === "bestand_anbu_anfang") {
+    // FIBU-Felder → direkt in einstellungen.fibu_konto speichern (eine FIBU-Buchung pro Konto)
+    if (field === "bestand_fibu_anfang" && onUpdateFibuKonto) {
+      onUpdateFibuKonto(fibu_konto, { bw_anfang: val });
+    } else if (field === "bestand_fibu_ende" && onUpdateFibuKonto) {
+      onUpdateFibuKonto(fibu_konto, { bw_ende: val });
+    } else if (field === "abschreibung_fibu" && onUpdateFibuKonto) {
+      onUpdateFibuKonto(fibu_konto, { abschr: val });
+    }
+    // ANBU-Felder → weiterhin auf einzelne Anlagen verteilen
+    else if (field === "bestand_anbu_anfang") {
       verteilenAufAnlagen(anlagenInKto, val, "anbu_buchwert_anfang", "fibu_buchwert_anfang", "anbu_buchwert_ende");
     } else if (field === "bestand_anbu_ende") {
       const sumBwA = anlagenInKto.reduce((s, a) => s + (parseFloat(a.anbu_buchwert_anfang) || 0), 0);
@@ -2553,22 +2554,25 @@ function ZusammenfassungTab({ anlagen, kategorien, selectedYear, onUpdateAnlage,
   };
 
   // Helper-Komponente: editierbare Zelle
-  const EditableNumCell = ({ kontoKey, field, value, anlagenInKto, color, style = {} }) => {
+  const EditableNumCell = ({ kontoKey, field, value, anlagenInKto, fibuKonto, color, style = {}, isOverride }) => {
     const isE = editCell?.kontoKey === kontoKey && editCell?.field === field;
+    const isFibuField = field.startsWith("bestand_fibu") || field === "abschreibung_fibu";
     return isE ? (
       <input autoFocus type="number" step="0.01" value={editCell.val}
         onChange={e => setEditCell(v => ({ ...v, val: e.target.value }))}
         onKeyDown={e => {
-          if (e.key === "Enter") commitEditCell(anlagenInKto);
+          if (e.key === "Enter") commitEditCell(anlagenInKto, fibuKonto);
           if (e.key === "Escape") setEditCell(null);
         }}
-        onBlur={() => commitEditCell(anlagenInKto)}
+        onBlur={() => commitEditCell(anlagenInKto, fibuKonto)}
         style={{ width: "100%", padding: "2px 4px", fontSize: 11, textAlign: "right", fontFamily: "monospace",
           border: `1.5px solid ${accent}`, borderRadius: 3, outline: "none", backgroundColor: accent + "10", ...style }} />
     ) : (
       <span onDoubleClick={() => onUpdateAnlage && setEditCell({ kontoKey, field, val: String(value) })}
-        title={onUpdateAnlage ? "Doppelklick: Total für ganzes FIBU-Konto setzen (wird verteilt)" : ""}
-        style={{ cursor: onUpdateAnlage ? "default" : "auto", ...style }}>
+        title={isFibuField ? "Doppelklick: FIBU-Konto-Total setzen (Buchhaltungs-Buchung, nicht verteilt)" : "Doppelklick: Total für ganzes FIBU-Konto setzen (auf Anlagen verteilt)"}
+        style={{ cursor: onUpdateAnlage ? "default" : "auto",
+          fontWeight: isOverride ? 700 : 400, fontStyle: isOverride === false ? "italic" : "normal",
+          opacity: isOverride === false ? 0.7 : 1, ...style }}>
         {fmtCHF(value)}
       </span>
     );
@@ -2610,7 +2614,10 @@ function ZusammenfassungTab({ anlagen, kategorien, selectedYear, onUpdateAnlage,
   const isArtis = theme === "artis";
   const isLight = theme === "light";
 
-  // Gruppieren nach Kategorie → dann pro FIBU-Konto
+  // Gruppieren nach Kategorie → dann pro FIBU-Konto.
+  // FIBU-Werte: bevorzugt aus fibuKontoOverrides (= echte Buchhaltungs-Buchung
+  // pro Konto), sonst Fallback auf Σ aus Anlagen.
+  // ANBU-Werte: immer aus Anlagen-Σ (lineare Abschreibung pro Aktivierung).
   const summary = useMemo(() => {
     const byKat = {};
     for (const a of anlagen) {
@@ -2620,29 +2627,45 @@ function ZusammenfassungTab({ anlagen, kategorien, selectedYear, onUpdateAnlage,
       if (!byKat[kid][kto]) byKat[kid][kto] = {
         fibu_konto: kto,
         beschreibung: a.sub_kategorie || a.beschreibung,
-        bestand_fibu_anfang: 0, bestand_fibu_ende: 0,
+        // Anlagen-Summen (für ANBU + Fallback FIBU)
+        _sum_fibu_anfang: 0, _sum_fibu_ende: 0,
+        _sum_fibu_abschr: 0, _sum_fibu_korr: 0,
         bestand_anbu_anfang: 0, bestand_anbu_ende: 0,
-        abschreibung_fibu: 0, abschreibung_anbu: 0,
-        korrektur_fibu: 0, korrektur_anbu: 0,
+        abschreibung_anbu: 0, korrektur_anbu: 0,
         zugang: 0,
         anlagen: [],
       };
       const row = byKat[kid][kto];
-      row.bestand_fibu_anfang += parseFloat(a.fibu_buchwert_anfang) || 0;
-      row.bestand_fibu_ende   += parseFloat(a.fibu_buchwert_ende) || 0;
+      row._sum_fibu_anfang += parseFloat(a.fibu_buchwert_anfang) || 0;
+      row._sum_fibu_ende   += parseFloat(a.fibu_buchwert_ende) || 0;
+      row._sum_fibu_abschr += parseFloat(a.fibu_abschreibung_gj) || 0;
+      row._sum_fibu_korr   += parseFloat(a.fibu_korrektur) || 0;
       row.bestand_anbu_anfang += parseFloat(a.anbu_buchwert_anfang) || 0;
       row.bestand_anbu_ende   += parseFloat(a.anbu_buchwert_ende) || 0;
-      row.abschreibung_fibu   += parseFloat(a.fibu_abschreibung_gj) || 0;
       row.abschreibung_anbu   += parseFloat(a.anbu_abschreibung_gj) || 0;
-      row.korrektur_fibu      += parseFloat(a.fibu_korrektur) || 0;
       row.korrektur_anbu      += parseFloat(a.anbu_korrektur) || 0;
       if (a.beschaffung_jahr === selectedYear) {
         row.zugang += parseFloat(a.beschaffungskosten_netto) || 0;
       }
       row.anlagen.push(a);
     }
+    // FIBU-Werte: Override aus einstellungen oder Σ
+    for (const ktoObj of Object.values(byKat)) {
+      for (const row of Object.values(ktoObj)) {
+        const o = fkOv[row.fibu_konto] || {};
+        const bwA = o.bw_anfang != null ? parseFloat(o.bw_anfang) : row._sum_fibu_anfang;
+        const ab  = o.abschr    != null ? parseFloat(o.abschr)    : row._sum_fibu_abschr;
+        const ko  = o.korr      != null ? parseFloat(o.korr)      : row._sum_fibu_korr;
+        const bwE = o.bw_ende   != null ? parseFloat(o.bw_ende)   : Math.max(0, bwA - ab - ko);
+        row.bestand_fibu_anfang = bwA;
+        row.abschreibung_fibu = ab;
+        row.korrektur_fibu = ko;
+        row.bestand_fibu_ende = bwE;
+        row._isOverrideFibu = (o.abschr != null || o.bw_anfang != null || o.bw_ende != null || o.korr != null);
+      }
+    }
     return byKat;
-  }, [anlagen, selectedYear]);
+  }, [anlagen, selectedYear, fkOv]);
 
   if (anlagen.length === 0) {
     return <div style={{ padding: "40px 0", textAlign: "center", color: subC }}>Keine Anlagen — Anlagekartei zuerst befüllen.</div>;
@@ -2783,11 +2806,13 @@ function ZusammenfassungTab({ anlagen, kategorien, selectedYear, onUpdateAnlage,
                         <td style={cellStyle(tableBdr)}>{k.fibu_konto}</td>
                         <td style={cellStyle(tableBdr)}>{k.beschreibung}</td>
                         <td style={numCell(tableBdr)}>
-                          <EditableNumCell kontoKey={editKey} field="bestand_fibu_anfang" value={k.bestand_fibu_anfang} anlagenInKto={k.anlagen} color={headingC} />
+                          <EditableNumCell kontoKey={editKey} field="bestand_fibu_anfang" value={k.bestand_fibu_anfang}
+                            anlagenInKto={k.anlagen} fibuKonto={k.fibu_konto} color={headingC}
+                            isOverride={(fkOv[k.fibu_konto] || {}).bw_anfang != null} />
                         </td>
                         <td style={{ ...numCell(tableBdr), color: k.zugang > 0 ? "#16a34a" : subC }}>{k.zugang > 0 ? fmtCHF(k.zugang) : "—"}</td>
                         <td style={numCell(tableBdr)}>
-                          <EditableNumCell kontoKey={editKey} field="bestand_anbu_anfang" value={k.bestand_anbu_anfang} anlagenInKto={k.anlagen} color={headingC} />
+                          <EditableNumCell kontoKey={editKey} field="bestand_anbu_anfang" value={k.bestand_anbu_anfang} anlagenInKto={k.anlagen} fibuKonto={k.fibu_konto} color={headingC} />
                         </td>
                         <td style={{ ...numCell(tableBdr), color: stilleA > 0 ? "#16a34a" : stilleA < 0 ? "#dc2626" : subC, fontWeight: 600, position: "relative" }}>
                           {isEditing && onUpdateAnlage ? (
@@ -2814,16 +2839,20 @@ function ZusammenfassungTab({ anlagen, kategorien, selectedYear, onUpdateAnlage,
                           )}
                         </td>
                         <td style={{ ...numCell(tableBdr), color: "#dc2626" }}>
-                          <EditableNumCell kontoKey={editKey} field="abschreibung_fibu" value={k.abschreibung_fibu} anlagenInKto={k.anlagen} color="#dc2626" />
+                          <EditableNumCell kontoKey={editKey} field="abschreibung_fibu" value={k.abschreibung_fibu}
+                            anlagenInKto={k.anlagen} fibuKonto={k.fibu_konto} color="#dc2626"
+                            isOverride={(fkOv[k.fibu_konto] || {}).abschr != null} />
                         </td>
                         <td style={{ ...numCell(tableBdr), color: "#dc2626" }}>
-                          <EditableNumCell kontoKey={editKey} field="abschreibung_anbu" value={k.abschreibung_anbu} anlagenInKto={k.anlagen} color="#dc2626" />
+                          <EditableNumCell kontoKey={editKey} field="abschreibung_anbu" value={k.abschreibung_anbu} anlagenInKto={k.anlagen} fibuKonto={k.fibu_konto} color="#dc2626" />
                         </td>
                         <td style={numCell(tableBdr)}>
-                          <EditableNumCell kontoKey={editKey} field="bestand_fibu_ende" value={k.bestand_fibu_ende} anlagenInKto={k.anlagen} color={headingC} />
+                          <EditableNumCell kontoKey={editKey} field="bestand_fibu_ende" value={k.bestand_fibu_ende}
+                            anlagenInKto={k.anlagen} fibuKonto={k.fibu_konto} color={headingC}
+                            isOverride={(fkOv[k.fibu_konto] || {}).bw_ende != null} />
                         </td>
                         <td style={numCell(tableBdr)}>
-                          <EditableNumCell kontoKey={editKey} field="bestand_anbu_ende" value={k.bestand_anbu_ende} anlagenInKto={k.anlagen} color={headingC} />
+                          <EditableNumCell kontoKey={editKey} field="bestand_anbu_ende" value={k.bestand_anbu_ende} anlagenInKto={k.anlagen} fibuKonto={k.fibu_konto} color={headingC} />
                         </td>
                         <td style={{ ...numCell(tableBdr), color: stilleE > 0 ? "#16a34a" : stilleE < 0 ? "#dc2626" : subC, fontWeight: 700 }}>
                           {fmtCHF(stilleE)}
