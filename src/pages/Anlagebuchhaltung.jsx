@@ -2464,6 +2464,97 @@ function FibuTab({ anlagen, kategorien, onUpdateAnlage, accent, headingC, subC, 
 function ZusammenfassungTab({ anlagen, kategorien, selectedYear, onUpdateAnlage,
                               accent, headingC, subC, panelBg, panelBdr, tableBdr, theme }) {
   const [editStilleResAnfang, setEditStilleResAnfang] = useState(null); // { kontoKey, val }
+  // Generisches Edit für die anderen Spalten: { kontoKey, field, val }
+  const [editCell, setEditCell] = useState(null);
+
+  // Verteilt einen neuen Total-Wert proportional zu einer Basis auf alle Anlagen.
+  // basisField: Feld nach dessen Werten verteilt wird (z.B. fibu_buchwert_anfang)
+  // targetField: Feld das auf der Anlage gesetzt wird
+  const verteilenAufAnlagen = (anlagenInKto, total, targetField, basisField = "fibu_buchwert_anfang", recalcBwField = null) => {
+    const sumBasis = anlagenInKto.reduce((s, a) => s + (parseFloat(a[basisField]) || 0), 0);
+    let rest = total;
+    if (sumBasis <= 0) {
+      const share = 1 / anlagenInKto.length;
+      anlagenInKto.forEach((a, idx) => {
+        const isLast = idx === anlagenInKto.length - 1;
+        const v = isLast ? Math.round(rest * 100) / 100 : Math.round(total * share * 100) / 100;
+        rest -= v;
+        const patch = { [targetField]: v };
+        if (recalcBwField) {
+          const up = { ...a, ...patch };
+          patch[recalcBwField] = recalcBwField === "fibu_buchwert_ende"
+            ? Math.max(0, (parseFloat(up.fibu_buchwert_anfang) || 0) - (parseFloat(up.fibu_abschreibung_gj) || 0) - (parseFloat(up.fibu_korrektur) || 0))
+            : Math.max(0, (parseFloat(up.anbu_buchwert_anfang) || 0) - (parseFloat(up.anbu_abschreibung_gj) || 0) - (parseFloat(up.anbu_korrektur) || 0));
+        }
+        onUpdateAnlage(a.id, patch);
+      });
+      return;
+    }
+    anlagenInKto.forEach((a, idx) => {
+      const isLast = idx === anlagenInKto.length - 1;
+      const bw = parseFloat(a[basisField]) || 0;
+      const v = isLast ? Math.round(rest * 100) / 100 : Math.round(total * bw / sumBasis * 100) / 100;
+      rest -= v;
+      const patch = { [targetField]: v };
+      if (recalcBwField) {
+        const up = { ...a, ...patch };
+        patch[recalcBwField] = recalcBwField === "fibu_buchwert_ende"
+          ? Math.max(0, (parseFloat(up.fibu_buchwert_anfang) || 0) - (parseFloat(up.fibu_abschreibung_gj) || 0) - (parseFloat(up.fibu_korrektur) || 0))
+          : Math.max(0, (parseFloat(up.anbu_buchwert_anfang) || 0) - (parseFloat(up.anbu_abschreibung_gj) || 0) - (parseFloat(up.anbu_korrektur) || 0));
+      }
+      onUpdateAnlage(a.id, patch);
+    });
+  };
+
+  const commitEditCell = (anlagenInKto) => {
+    if (!editCell) return;
+    const val = parseFloat(String(editCell.val).replace(",", "."));
+    if (isNaN(val)) { setEditCell(null); return; }
+    const field = editCell.field;
+    if (field === "bestand_fibu_anfang") {
+      verteilenAufAnlagen(anlagenInKto, val, "fibu_buchwert_anfang", "fibu_buchwert_anfang", "fibu_buchwert_ende");
+    } else if (field === "bestand_fibu_ende") {
+      // Rückwärts: BW Ende vorgegeben → Abschr = BW Anfang - BW Ende - Korr
+      const sumBwA = anlagenInKto.reduce((s, a) => s + (parseFloat(a.fibu_buchwert_anfang) || 0), 0);
+      const sumKorr = anlagenInKto.reduce((s, a) => s + (parseFloat(a.fibu_korrektur) || 0), 0);
+      const totalAbschr = Math.max(0, Math.round((sumBwA - val - sumKorr) * 100) / 100);
+      verteilenAufAnlagen(anlagenInKto, totalAbschr, "fibu_abschreibung_gj", "fibu_buchwert_anfang", "fibu_buchwert_ende");
+    } else if (field === "abschreibung_fibu") {
+      verteilenAufAnlagen(anlagenInKto, val, "fibu_abschreibung_gj", "fibu_buchwert_anfang", "fibu_buchwert_ende");
+    } else if (field === "bestand_anbu_anfang") {
+      verteilenAufAnlagen(anlagenInKto, val, "anbu_buchwert_anfang", "fibu_buchwert_anfang", "anbu_buchwert_ende");
+    } else if (field === "bestand_anbu_ende") {
+      const sumBwA = anlagenInKto.reduce((s, a) => s + (parseFloat(a.anbu_buchwert_anfang) || 0), 0);
+      const sumKorr = anlagenInKto.reduce((s, a) => s + (parseFloat(a.anbu_korrektur) || 0), 0);
+      const totalAbschr = Math.max(0, Math.round((sumBwA - val - sumKorr) * 100) / 100);
+      verteilenAufAnlagen(anlagenInKto, totalAbschr, "anbu_abschreibung_gj", "anbu_buchwert_anfang", "anbu_buchwert_ende");
+    } else if (field === "abschreibung_anbu") {
+      verteilenAufAnlagen(anlagenInKto, val, "anbu_abschreibung_gj", "anbu_buchwert_anfang", "anbu_buchwert_ende");
+    }
+    setEditCell(null);
+  };
+
+  // Helper-Komponente: editierbare Zelle
+  const EditableNumCell = ({ kontoKey, field, value, anlagenInKto, color, style = {} }) => {
+    const isE = editCell?.kontoKey === kontoKey && editCell?.field === field;
+    return isE ? (
+      <input autoFocus type="number" step="0.01" value={editCell.val}
+        onChange={e => setEditCell(v => ({ ...v, val: e.target.value }))}
+        onKeyDown={e => {
+          if (e.key === "Enter") commitEditCell(anlagenInKto);
+          if (e.key === "Escape") setEditCell(null);
+        }}
+        onBlur={() => commitEditCell(anlagenInKto)}
+        style={{ width: "100%", padding: "2px 4px", fontSize: 11, textAlign: "right", fontFamily: "monospace",
+          border: `1.5px solid ${accent}`, borderRadius: 3, outline: "none", backgroundColor: accent + "10", ...style }} />
+    ) : (
+      <span onDoubleClick={() => onUpdateAnlage && setEditCell({ kontoKey, field, val: String(value) })}
+        title={onUpdateAnlage ? "Doppelklick: Total für ganzes FIBU-Konto setzen (wird verteilt)" : ""}
+        style={{ cursor: onUpdateAnlage ? "default" : "auto", ...style }}>
+        {fmtCHF(value)}
+      </span>
+    );
+  };
 
   // Setzt Stille Reserve Anfang für ein FIBU-Konto: passt ANBU BW Anfang aller Anlagen
   // proportional zu FIBU BW Anfang an + rechnet ANBU Abschr/BW Ende neu durch.
@@ -2552,7 +2643,7 @@ function ZusammenfassungTab({ anlagen, kategorien, selectedYear, onUpdateAnlage,
             <div style={{ fontSize: 13, fontWeight: 700, color: accent }}>Zusammenfassung & Stille Reserven · GJ {selectedYear}</div>
             <div style={{ fontSize: 11, color: subC, marginTop: 2 }}>
               Stille Reserven = Bestand ANBU − Bestand FIBU · Überbewertung = negativ (FIBU &gt; ANBU) ·{" "}
-              <strong>Doppelklick auf «Stille Res. Anfang»</strong> setzt die historische Reserve eines Kontos
+              <strong>Doppelklick auf jede Zahl-Spalte</strong> setzt das FIBU-Konto-Total und verteilt auf alle Anlagen
             </div>
           </div>
           <div style={{ display: "flex", gap: 12, fontSize: 11 }}>
@@ -2673,9 +2764,13 @@ function ZusammenfassungTab({ anlagen, kategorien, selectedYear, onUpdateAnlage,
                       <tr key={kid + "_" + k.fibu_konto + "_" + i}>
                         <td style={cellStyle(tableBdr)}>{k.fibu_konto}</td>
                         <td style={cellStyle(tableBdr)}>{k.beschreibung}</td>
-                        <td style={numCell(tableBdr)}>{fmtCHF(k.bestand_fibu_anfang)}</td>
+                        <td style={numCell(tableBdr)}>
+                          <EditableNumCell kontoKey={editKey} field="bestand_fibu_anfang" value={k.bestand_fibu_anfang} anlagenInKto={k.anlagen} color={headingC} />
+                        </td>
                         <td style={{ ...numCell(tableBdr), color: k.zugang > 0 ? "#16a34a" : subC }}>{k.zugang > 0 ? fmtCHF(k.zugang) : "—"}</td>
-                        <td style={numCell(tableBdr)}>{fmtCHF(k.bestand_anbu_anfang)}</td>
+                        <td style={numCell(tableBdr)}>
+                          <EditableNumCell kontoKey={editKey} field="bestand_anbu_anfang" value={k.bestand_anbu_anfang} anlagenInKto={k.anlagen} color={headingC} />
+                        </td>
                         <td style={{ ...numCell(tableBdr), color: stilleA > 0 ? "#16a34a" : stilleA < 0 ? "#dc2626" : subC, fontWeight: 600, position: "relative" }}>
                           {isEditing && onUpdateAnlage ? (
                             <input autoFocus type="number" step="0.01" value={editStilleResAnfang.val}
@@ -2700,10 +2795,18 @@ function ZusammenfassungTab({ anlagen, kategorien, selectedYear, onUpdateAnlage,
                             </span>
                           )}
                         </td>
-                        <td style={{ ...numCell(tableBdr), color: "#dc2626" }}>{fmtCHF(k.abschreibung_fibu)}</td>
-                        <td style={{ ...numCell(tableBdr), color: "#dc2626" }}>{fmtCHF(k.abschreibung_anbu)}</td>
-                        <td style={numCell(tableBdr)}>{fmtCHF(k.bestand_fibu_ende)}</td>
-                        <td style={numCell(tableBdr)}>{fmtCHF(k.bestand_anbu_ende)}</td>
+                        <td style={{ ...numCell(tableBdr), color: "#dc2626" }}>
+                          <EditableNumCell kontoKey={editKey} field="abschreibung_fibu" value={k.abschreibung_fibu} anlagenInKto={k.anlagen} color="#dc2626" />
+                        </td>
+                        <td style={{ ...numCell(tableBdr), color: "#dc2626" }}>
+                          <EditableNumCell kontoKey={editKey} field="abschreibung_anbu" value={k.abschreibung_anbu} anlagenInKto={k.anlagen} color="#dc2626" />
+                        </td>
+                        <td style={numCell(tableBdr)}>
+                          <EditableNumCell kontoKey={editKey} field="bestand_fibu_ende" value={k.bestand_fibu_ende} anlagenInKto={k.anlagen} color={headingC} />
+                        </td>
+                        <td style={numCell(tableBdr)}>
+                          <EditableNumCell kontoKey={editKey} field="bestand_anbu_ende" value={k.bestand_anbu_ende} anlagenInKto={k.anlagen} color={headingC} />
+                        </td>
                         <td style={{ ...numCell(tableBdr), color: stilleE > 0 ? "#16a34a" : stilleE < 0 ? "#dc2626" : subC, fontWeight: 700 }}>
                           {fmtCHF(stilleE)}
                         </td>
