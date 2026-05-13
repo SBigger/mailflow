@@ -578,34 +578,46 @@ export default function Anlagebuchhaltung() {
         .insert({ customer_id: selectedCid, geschaeftsjahr: newYear })
         .select().single();
       if (e1) throw new Error(e1.message);
-      // 2. Anlagen kopieren: Buchwert Ende → Buchwert Anfang, Abschr. = 0, Korrektur = 0
-      const neueAnlagen = anlagen.map(a => ({
-        abschluss_id: newAbs.id,
-        inv_nr: a.inv_nr,
-        beschreibung: a.beschreibung,
-        lieferant: a.lieferant,
-        typ: a.typ,
-        menge: a.menge,
-        aktiviert: a.aktiviert,
-        beschaffung_monat: a.beschaffung_monat,
-        beschaffung_jahr: a.beschaffung_jahr,
-        beschaffungskosten_netto: a.beschaffungskosten_netto,
-        fibu_konto: a.fibu_konto,
-        kategorie_id: a.kategorie_id,
-        sub_kategorie: a.sub_kategorie,
-        notiz: a.notiz,
-        anbu_nutzungsdauer_j: a.anbu_nutzungsdauer_j,
-        anbu_buchwert_anfang: a.anbu_buchwert_ende,
-        anbu_abschreibung_gj: 0,
-        anbu_korrektur: 0,
-        anbu_buchwert_ende: a.anbu_buchwert_ende,
-        fibu_abschreibung_pct: a.fibu_abschreibung_pct,
-        fibu_buchwert_anfang: a.fibu_buchwert_ende,
-        fibu_abschreibung_gj: 0,
-        fibu_korrektur: 0,
-        fibu_buchwert_ende: a.fibu_buchwert_ende,
-        sortierung: a.sortierung,
-      }));
+      // 2. Anlagen kopieren: BW Ende → BW Anfang. ANBU-Abschr. automatisch linear
+      //    fortgeführt (Beschaffung / ND, capped auf BW Anfang). FIBU bleibt 0 -
+      //    der User trägt FIBU im neuen Jahr ein wenn das PDF dort ist.
+      const neueAnlagen = anlagen.map(a => {
+        const newAnbuBwA = parseFloat(a.anbu_buchwert_ende) || 0;
+        const anbuAbschr = a.anbu_nutzungsdauer_j ? calcAnbuAbschreibungLinear({
+          beschaffungskosten_netto: a.beschaffungskosten_netto,
+          anbu_nutzungsdauer_j: a.anbu_nutzungsdauer_j,
+          anbu_buchwert_anfang: newAnbuBwA,
+        }) : 0;
+        const newAnbuBwE = Math.max(0, newAnbuBwA - anbuAbschr);
+        const newFibuBwA = parseFloat(a.fibu_buchwert_ende) || 0;
+        return {
+          abschluss_id: newAbs.id,
+          inv_nr: a.inv_nr,
+          beschreibung: a.beschreibung,
+          lieferant: a.lieferant,
+          typ: a.typ,
+          menge: a.menge,
+          aktiviert: a.aktiviert,
+          beschaffung_monat: a.beschaffung_monat,
+          beschaffung_jahr: a.beschaffung_jahr,
+          beschaffungskosten_netto: a.beschaffungskosten_netto,
+          fibu_konto: a.fibu_konto,
+          kategorie_id: a.kategorie_id,
+          sub_kategorie: a.sub_kategorie,
+          notiz: a.notiz,
+          anbu_nutzungsdauer_j: a.anbu_nutzungsdauer_j,
+          anbu_buchwert_anfang: newAnbuBwA,
+          anbu_abschreibung_gj: anbuAbschr,
+          anbu_korrektur: 0,
+          anbu_buchwert_ende: newAnbuBwE,
+          fibu_abschreibung_pct: a.fibu_abschreibung_pct,
+          fibu_buchwert_anfang: newFibuBwA,
+          fibu_abschreibung_gj: 0,
+          fibu_korrektur: 0,
+          fibu_buchwert_ende: newFibuBwA,
+          sortierung: a.sortierung,
+        };
+      });
       if (neueAnlagen.length > 0) {
         for (let i = 0; i < neueAnlagen.length; i += 100) {
           const { error } = await supabase.from("anbu_anlage").insert(neueAnlagen.slice(i, i + 100));
