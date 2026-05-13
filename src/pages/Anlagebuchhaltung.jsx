@@ -572,12 +572,31 @@ export default function Anlagebuchhaltung() {
   const jahreswechselMut = useMutation({
     mutationFn: async () => {
       const newYear = selectedYear + 1;
-      // 1. Neuen Jahresabschluss anlegen
-      const { data: newAbs, error: e1 } = await supabase
+      // 1. Folgejahr holen oder anlegen (upsert by unique)
+      let newAbs;
+      const { data: existing } = await supabase
         .from("anbu_jahresabschluss")
-        .insert({ customer_id: selectedCid, geschaeftsjahr: newYear })
-        .select().single();
-      if (e1) throw new Error(e1.message);
+        .select("*")
+        .eq("customer_id", selectedCid)
+        .eq("geschaeftsjahr", newYear)
+        .maybeSingle();
+      if (existing) {
+        newAbs = existing;
+        // Prüfen ob Anlagen drin sind
+        const { count: existingCount } = await supabase
+          .from("anbu_anlage").select("id", { count: "exact", head: true })
+          .eq("abschluss_id", newAbs.id);
+        if (existingCount && existingCount > 0) {
+          throw new Error(`Geschäftsjahr ${newYear} hat bereits ${existingCount} Anlagen. Bitte zuerst über "Anlagen löschen" leeren.`);
+        }
+      } else {
+        const { data: created, error: e1 } = await supabase
+          .from("anbu_jahresabschluss")
+          .insert({ customer_id: selectedCid, geschaeftsjahr: newYear })
+          .select().single();
+        if (e1) throw new Error(e1.message);
+        newAbs = created;
+      }
       // 2. Anlagen kopieren: BW Ende → BW Anfang. ANBU-Abschr. automatisch linear
       //    fortgeführt (Beschaffung / ND, capped auf BW Anfang). FIBU bleibt 0 -
       //    der User trägt FIBU im neuen Jahr ein wenn das PDF dort ist.
@@ -1302,8 +1321,8 @@ export default function Anlagebuchhaltung() {
             </select>
           </div>
 
-          {/* Jahreswechsel - nur wenn Folgejahr noch NICHT eröffnet ist */}
-          {abschlussId && anlagen.length > 0 && !vorhandeneJahre.includes(selectedYear + 1) && (
+          {/* Jahreswechsel - immer zeigen wenn Anlagen vorhanden; im Confirm-Dialog wird bei Konflikt gewarnt */}
+          {abschlussId && anlagen.length > 0 && (
             <div>
               <label className="text-xs font-semibold uppercase tracking-wider mb-1.5 block" style={{ color: subC }}>
                 &nbsp;
