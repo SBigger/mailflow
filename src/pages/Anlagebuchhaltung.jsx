@@ -2214,9 +2214,8 @@ function AnlageRow({ a, kategorien, selectedYear, editCell, startEdit, commitEdi
 function FibuTab({ anlagen, kategorien, onUpdateAnlage, accent, headingC, subC, panelBg, panelBdr, tableBdr, rowHover, theme }) {
   const isArtis = theme === "artis";
   const isLight = theme === "light";
-  const [editCell, setEditCell] = useState(null);
-  // Verteilungs-Eingaben pro FIBU-Konto: { "1200": { abschr: "287070.55", korr: "0" } }
-  const [verteilenInput, setVerteilenInput] = useState({});
+  // Editier-State pro Konto: { ktoKey: { field, val } }
+  const [editKonto, setEditKonto] = useState(null); // { kto, field: 'abschr'|'korr'|'bw_ende', val }
 
   const grouped = useMemo(() => {
     const g = {};
@@ -2228,100 +2227,58 @@ function FibuTab({ anlagen, kategorien, onUpdateAnlage, accent, headingC, subC, 
     return g;
   }, [anlagen]);
 
-  // Verteile Total auf alle Anlagen einer FIBU-Konto-Gruppe proportional zu BW Anfang
-  const verteilen = (ktoKey, anlagenInGroup) => {
-    const inp = verteilenInput[ktoKey] || {};
-    let totalAbschr = parseFloat(String(inp.abschr || "").replace(",", ".")) || 0;
-    let totalKorr   = parseFloat(String(inp.korr   || "").replace(",", ".")) || 0;
-    const sollSaldoEnde = inp.saldoEnde !== "" && inp.saldoEnde != null
-      ? parseFloat(String(inp.saldoEnde).replace(",", "."))
-      : null;
-    const sumBwAnfang = anlagenInGroup.reduce((s, a) => s + (parseFloat(a.fibu_buchwert_anfang) || 0), 0);
-    // Wenn Saldo Ende gegeben aber Abschr leer → rückwärts rechnen: Abschr = BW Anf − Saldo Ende − Korr
-    if (sollSaldoEnde != null && !isNaN(sollSaldoEnde) && !totalAbschr) {
-      totalAbschr = Math.round((sumBwAnfang - sollSaldoEnde - totalKorr) * 100) / 100;
-      if (totalAbschr < 0) totalAbschr = 0;
-    }
-    // Validierung: Σ BW Ende = sumBwAnfang - totalAbschr - totalKorr, muss = sollSaldoEnde sein
-    if (sollSaldoEnde != null && !isNaN(sollSaldoEnde)) {
-      const expectedEnde = sumBwAnfang - totalAbschr - totalKorr;
-      const diff = Math.abs(expectedEnde - sollSaldoEnde);
-      if (diff > 0.5) {
-        if (!window.confirm(
-          `⚠️ Inkonsistenz für Konto ${ktoKey}:\n\n` +
-          `BW Anfang Σ:    ${fmtCHF(sumBwAnfang)}\n` +
-          `− Abschr.:      ${fmtCHF(totalAbschr)}\n` +
-          `− Korr.:        ${fmtCHF(totalKorr)}\n` +
-          `= BW Ende rechn.: ${fmtCHF(expectedEnde)}\n\n` +
-          `Saldo Ende lt. FIBU: ${fmtCHF(sollSaldoEnde)}\n` +
-          `Differenz: ${fmtCHF(expectedEnde - sollSaldoEnde)}\n\n` +
-          `Trotzdem verteilen?`
-        )) return;
-      }
-    }
-    if (!totalAbschr && !totalKorr) {
-      toast.error("Bitte Abschreibung, Korrektur oder Saldo Ende eingeben");
-      return;
-    }
-    if (sumBwAnfang <= 0) {
-      // Kein BW Anfang vorhanden → gleichmässig verteilen
+  // Verteilt einen Konto-Total proportional zu BW Anfang auf alle Anlagen des Kontos
+  const verteilen = (anlagenInGroup, field, totalValue, optionsLog = "") => {
+    const total = parseFloat(String(totalValue).replace(",", ".")) || 0;
+    const sumBw = anlagenInGroup.reduce((s, a) => s + (parseFloat(a.fibu_buchwert_anfang) || 0), 0);
+    if (sumBw <= 0) {
       const share = 1 / anlagenInGroup.length;
       for (const a of anlagenInGroup) {
-        const abschr = Math.round(totalAbschr * share * 100) / 100;
-        const korr   = Math.round(totalKorr   * share * 100) / 100;
-        const bwEnde = Math.max(0, (parseFloat(a.fibu_buchwert_anfang) || 0) - abschr - korr);
-        onUpdateAnlage(a.id, {
-          fibu_abschreibung_gj: abschr,
-          fibu_korrektur: korr,
-          fibu_buchwert_ende: bwEnde,
-        });
+        const v = Math.round(total * share * 100) / 100;
+        const patch = { [field]: v };
+        // BW Ende neu rechnen
+        const updated = { ...a, ...patch };
+        patch.fibu_buchwert_ende = Math.max(0,
+          (parseFloat(updated.fibu_buchwert_anfang) || 0)
+          - (parseFloat(updated.fibu_abschreibung_gj) || 0)
+          - (parseFloat(updated.fibu_korrektur) || 0));
+        onUpdateAnlage(a.id, patch);
       }
     } else {
-      let restAbschr = totalAbschr, restKorr = totalKorr;
+      let rest = total;
       anlagenInGroup.forEach((a, idx) => {
-        const bw = parseFloat(a.fibu_buchwert_anfang) || 0;
         const isLast = idx === anlagenInGroup.length - 1;
-        // Letzte Anlage bekommt den Rest, damit die Summe exakt aufgeht (Rundungsfehler vermeiden)
-        const abschr = isLast ? Math.round(restAbschr * 100) / 100 : Math.round(totalAbschr * bw / sumBwAnfang * 100) / 100;
-        const korr   = isLast ? Math.round(restKorr   * 100) / 100 : Math.round(totalKorr   * bw / sumBwAnfang * 100) / 100;
-        restAbschr -= abschr;
-        restKorr   -= korr;
-        const bwEnde = Math.max(0, bw - abschr - korr);
-        onUpdateAnlage(a.id, {
-          fibu_abschreibung_gj: abschr,
-          fibu_korrektur: korr,
-          fibu_buchwert_ende: bwEnde,
-        });
+        const bw = parseFloat(a.fibu_buchwert_anfang) || 0;
+        const v = isLast ? Math.round(rest * 100) / 100 : Math.round(total * bw / sumBw * 100) / 100;
+        rest -= v;
+        const patch = { [field]: v };
+        const updated = { ...a, ...patch };
+        patch.fibu_buchwert_ende = Math.max(0,
+          (parseFloat(updated.fibu_buchwert_anfang) || 0)
+          - (parseFloat(updated.fibu_abschreibung_gj) || 0)
+          - (parseFloat(updated.fibu_korrektur) || 0));
+        onUpdateAnlage(a.id, patch);
       });
     }
-    toast.success(`Konto ${ktoKey}: CHF ${fmtCHF(totalAbschr)} Abschr. + CHF ${fmtCHF(totalKorr)} Korr. auf ${anlagenInGroup.length} Anlagen verteilt`);
-    setVerteilenInput(p => ({ ...p, [ktoKey]: { abschr: "", korr: "", saldoEnde: "" } }));
   };
 
-  const startEdit = (id, field, val) => setEditCell({ id, field, val: String(val ?? "") });
-  const commitEdit = () => {
-    if (!editCell) return;
-    const a = anlagen.find(x => x.id === editCell.id);
-    if (!a) { setEditCell(null); return; }
-    const raw = editCell.val.replace(/[\r\n]+/g, "").trim();
-    const v = evalExpr(raw) ?? 0;
-    const patch = { [editCell.field]: v };
-    if (["fibu_buchwert_anfang", "fibu_abschreibung_pct"].includes(editCell.field)) {
-      const upd = { ...a, ...patch };
-      const abschr = calcFibuAbschreibungDegressiv({
-        fibu_buchwert_anfang: upd.fibu_buchwert_anfang,
-        fibu_abschreibung_pct: upd.fibu_abschreibung_pct,
-      });
-      patch.fibu_abschreibung_gj = abschr;
-      patch.fibu_buchwert_ende = Math.max(0, (parseFloat(upd.fibu_buchwert_anfang) || 0) - abschr - (parseFloat(upd.fibu_korrektur) || 0));
+  const commitEditKonto = (anlagenInGroup) => {
+    if (!editKonto) return;
+    const raw = String(editKonto.val).replace(",", ".").trim();
+    const val = parseFloat(raw);
+    if (isNaN(val)) { setEditKonto(null); return; }
+    if (editKonto.field === "abschr") {
+      verteilen(anlagenInGroup, "fibu_abschreibung_gj", val);
+    } else if (editKonto.field === "korr") {
+      verteilen(anlagenInGroup, "fibu_korrektur", val);
+    } else if (editKonto.field === "bw_ende") {
+      // Rückwärts: Σ BW Anfang − BW Ende − Korr → wird Abschr.
+      const sumBwA = anlagenInGroup.reduce((s, a) => s + (parseFloat(a.fibu_buchwert_anfang) || 0), 0);
+      const sumKorr = anlagenInGroup.reduce((s, a) => s + (parseFloat(a.fibu_korrektur) || 0), 0);
+      const totalAbschr = Math.max(0, Math.round((sumBwA - val - sumKorr) * 100) / 100);
+      verteilen(anlagenInGroup, "fibu_abschreibung_gj", totalAbschr);
     }
-    if (["fibu_abschreibung_gj", "fibu_korrektur"].includes(editCell.field)) {
-      const upd = { ...a, ...patch };
-      patch.fibu_buchwert_ende = Math.max(0, (parseFloat(upd.fibu_buchwert_anfang) || 0)
-        - (parseFloat(upd.fibu_abschreibung_gj) || 0) - (parseFloat(upd.fibu_korrektur) || 0));
-    }
-    onUpdateAnlage(editCell.id, patch);
-    setEditCell(null);
+    setEditKonto(null);
   };
 
   if (anlagen.length === 0) {
@@ -2330,60 +2287,44 @@ function FibuTab({ anlagen, kategorien, onUpdateAnlage, accent, headingC, subC, 
 
   const orderedKidList = [...kategorien.map(k => k.id), ...(grouped["__none__"] ? ["__none__"] : [])];
 
-  const inlineNum = (a, field, color = headingC, bg = accent + "10") => {
-    const isE = editCell?.id === a.id && editCell?.field === field;
+  // Helper: inline-editable Konto-Wert (Anzeige Σ, beim Edit Eingabe für Total → verteilt)
+  const KontoEditableCell = ({ ktoRows, kto, field, value, color, ariaLabel }) => {
+    const isE = editKonto?.kto === kto && editKonto?.field === field;
     return isE ? (
-      <input autoFocus value={editCell.val}
-        onChange={e => setEditCell(v => ({ ...v, val: e.target.value }))}
-        onKeyDown={e => { if (e.key === "Enter") commitEdit(); if (e.key === "Escape") setEditCell(null); }}
-        onBlur={commitEdit}
-        style={{ width: "100%", padding: "3px 6px", fontSize: 12, textAlign: "right", fontFamily: "monospace",
-          border: `1.5px solid ${accent}`, borderRadius: 4, outline: "none", backgroundColor: bg }} />
-    ) : (
-      <span onDoubleClick={() => startEdit(a.id, field, a[field])}
-        style={{ display: "block", textAlign: "right", fontFamily: "monospace", color, cursor: "default" }}>
-        {fmtCHF(a[field])}
-      </span>
-    );
-  };
-
-  const inlinePct = (a) => {
-    const isE = editCell?.id === a.id && editCell?.field === "fibu_abschreibung_pct";
-    return isE ? (
-      <input autoFocus value={editCell.val}
-        onChange={e => setEditCell(v => ({ ...v, val: e.target.value }))}
-        onKeyDown={e => { if (e.key === "Enter") commitEdit(); if (e.key === "Escape") setEditCell(null); }}
-        onBlur={commitEdit}
+      <input autoFocus type="number" step="0.01" value={editKonto.val}
+        onChange={e => setEditKonto(v => ({ ...v, val: e.target.value }))}
+        onKeyDown={e => {
+          if (e.key === "Enter") commitEditKonto(ktoRows);
+          if (e.key === "Escape") setEditKonto(null);
+        }}
+        onBlur={() => commitEditKonto(ktoRows)}
         style={{ width: "100%", padding: "3px 6px", fontSize: 12, textAlign: "right", fontFamily: "monospace",
           border: `1.5px solid ${accent}`, borderRadius: 4, outline: "none", backgroundColor: accent + "10" }} />
     ) : (
-      <span onDoubleClick={() => startEdit(a.id, "fibu_abschreibung_pct", a.fibu_abschreibung_pct)}
-        style={{ display: "block", textAlign: "center", fontFamily: "monospace", color: headingC, cursor: "default" }}>
-        {a.fibu_abschreibung_pct != null ? a.fibu_abschreibung_pct + " %" : <span style={{ color: subC }}>—</span>}
+      <span onDoubleClick={() => setEditKonto({ kto, field, val: String(value) })}
+        title={ariaLabel}
+        style={{ display: "block", textAlign: "right", fontFamily: "monospace", color, cursor: "default" }}>
+        {fmtCHF(value)}
       </span>
     );
   };
 
   return (
     <div style={{ border: `1px solid ${panelBdr}`, borderRadius: 12, overflow: "hidden", backgroundColor: panelBg }}>
+      <div style={{ padding: "8px 14px", borderBottom: `1px solid ${panelBdr}`, fontSize: 11, color: subC, fontStyle: "italic", backgroundColor: accent + "06" }}>
+        Eine Zeile pro FIBU-Konto. Doppelklick auf <strong>Abschr. GJ</strong>, <strong>Korrektur</strong> oder <strong>BW Ende</strong> → Total eingeben, wird proportional auf die Einzel-Anlagen verteilt (Details in Anlagekartei).
+      </div>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
         <thead>
           <tr style={{ backgroundColor: isArtis ? "#e8f2e8" : isLight ? "#f1f5f9" : "#2f2f35" }}>
-            {[
-              ["Beschreibung", "left", 240],
-              ["Datum", "center", 70],
-              ["FIBU-Kto", "left", 75],
-              ["Beschaffung netto", "right", 110],
-              ["Abschr. %", "center", 75],
-              ["BW Anfang", "right", 110],
-              ["Abschr. GJ", "right", 110],
-              ["Korrektur", "right", 100],
-              ["BW Ende", "right", 110],
-            ].map(([h, ta, w]) => (
-              <th key={h+w} style={{ padding: "8px 10px", textAlign: ta, color: subC, fontSize: 10,
-                fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase",
-                borderBottom: `2px solid ${tableBdr}`, width: w }}>{h}</th>
-            ))}
+            <th style={{ padding: "8px 10px", textAlign: "left", color: subC, fontSize: 10, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", borderBottom: `2px solid ${tableBdr}`, width: 80 }}>FIBU-Kto</th>
+            <th style={{ padding: "8px 10px", textAlign: "left", color: subC, fontSize: 10, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", borderBottom: `2px solid ${tableBdr}` }}>Bezeichnung</th>
+            <th style={{ padding: "8px 10px", textAlign: "center", color: subC, fontSize: 10, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", borderBottom: `2px solid ${tableBdr}`, width: 70 }}>Anlagen</th>
+            <th style={{ padding: "8px 10px", textAlign: "right", color: subC, fontSize: 10, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", borderBottom: `2px solid ${tableBdr}`, width: 110 }}>BW Anfang</th>
+            <th style={{ padding: "8px 10px", textAlign: "center", color: subC, fontSize: 10, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", borderBottom: `2px solid ${tableBdr}`, width: 70 }}>Satz %</th>
+            <th style={{ padding: "8px 10px", textAlign: "right", color: subC, fontSize: 10, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", borderBottom: `2px solid ${tableBdr}`, width: 120 }}>Abschr. GJ</th>
+            <th style={{ padding: "8px 10px", textAlign: "right", color: subC, fontSize: 10, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", borderBottom: `2px solid ${tableBdr}`, width: 110 }}>Korrektur</th>
+            <th style={{ padding: "8px 10px", textAlign: "right", color: subC, fontSize: 10, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", borderBottom: `2px solid ${tableBdr}`, width: 120 }}>BW Ende</th>
           </tr>
         </thead>
         <tbody>
@@ -2392,11 +2333,6 @@ function FibuTab({ anlagen, kategorien, onUpdateAnlage, accent, headingC, subC, 
             if (!rows || rows.length === 0) return null;
             const kat = kategorien.find(k => k.id === kid);
             const isNone = kid === "__none__";
-            const tB = rows.reduce((s, r) => s + (parseFloat(r.beschaffungskosten_netto) || 0), 0);
-            const tBwA = rows.reduce((s, r) => s + (parseFloat(r.fibu_buchwert_anfang) || 0), 0);
-            const tAb = rows.reduce((s, r) => s + (parseFloat(r.fibu_abschreibung_gj) || 0), 0);
-            const tKo = rows.reduce((s, r) => s + (parseFloat(r.fibu_korrektur) || 0), 0);
-            const tBwE = rows.reduce((s, r) => s + (parseFloat(r.fibu_buchwert_ende) || 0), 0);
 
             // Sub-Gruppierung nach FIBU-Konto
             const byKto = {};
@@ -2407,121 +2343,73 @@ function FibuTab({ anlagen, kategorien, onUpdateAnlage, accent, headingC, subC, 
             }
             const ktoKeys = Object.keys(byKto).sort();
 
+            // Kategorie-Totals
+            const tBwA = rows.reduce((s, r) => s + (parseFloat(r.fibu_buchwert_anfang) || 0), 0);
+            const tAb  = rows.reduce((s, r) => s + (parseFloat(r.fibu_abschreibung_gj) || 0), 0);
+            const tKo  = rows.reduce((s, r) => s + (parseFloat(r.fibu_korrektur) || 0), 0);
+            const tBwE = rows.reduce((s, r) => s + (parseFloat(r.fibu_buchwert_ende) || 0), 0);
+
             return (
               <React.Fragment key={kid}>
                 <tr style={{ backgroundColor: isArtis ? "#f0f5f0" : isLight ? "#f8fafc" : "#2c2c32", borderTop: `2px solid ${tableBdr}` }}>
-                  <td colSpan={9} style={{ padding: "8px 12px", fontWeight: 700, fontSize: 12, color: isNone ? "#dc2626" : accent }}>
+                  <td colSpan={8} style={{ padding: "8px 12px", fontWeight: 700, fontSize: 12, color: isNone ? "#dc2626" : accent }}>
                     {isNone ? "Ohne Kategorie" : kat?.name}
                     <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 400, color: subC }}>
-                      ({rows.length} Anlagen · {ktoKeys.length} FIBU-Konten{!isNone && kat?.default_fibu_abschreibung_pct ? ` · degressiv ${kat.default_fibu_abschreibung_pct}%` : ""})
+                      ({ktoKeys.length} {ktoKeys.length === 1 ? "FIBU-Konto" : "FIBU-Konten"}{!isNone && kat?.default_fibu_abschreibung_pct ? ` · degressiv ${kat.default_fibu_abschreibung_pct}%` : ""})
                     </span>
                   </td>
                 </tr>
                 {ktoKeys.map(kto => {
                   const ktoRows = byKto[kto];
-                  const ktoAbschrIst = ktoRows.reduce((s, r) => s + (parseFloat(r.fibu_abschreibung_gj) || 0), 0);
-                  const ktoKorrIst   = ktoRows.reduce((s, r) => s + (parseFloat(r.fibu_korrektur) || 0), 0);
-                  const ktoBwA       = ktoRows.reduce((s, r) => s + (parseFloat(r.fibu_buchwert_anfang) || 0), 0);
-                  const ktoBwE       = ktoRows.reduce((s, r) => s + (parseFloat(r.fibu_buchwert_ende) || 0), 0);
-                  const inp = verteilenInput[kto] || {};
-                  const sollSaldoEnde = inp.saldoEnde !== "" && inp.saldoEnde != null
-                    ? parseFloat(String(inp.saldoEnde).replace(",", "."))
-                    : null;
-                  const diff = sollSaldoEnde != null && !isNaN(sollSaldoEnde)
-                    ? ktoBwE - sollSaldoEnde : null;
-                  const diffOk = diff != null && Math.abs(diff) < 0.5;
+                  const ktoBwA = ktoRows.reduce((s, r) => s + (parseFloat(r.fibu_buchwert_anfang) || 0), 0);
+                  const ktoAb  = ktoRows.reduce((s, r) => s + (parseFloat(r.fibu_abschreibung_gj) || 0), 0);
+                  const ktoKo  = ktoRows.reduce((s, r) => s + (parseFloat(r.fibu_korrektur) || 0), 0);
+                  const ktoBwE = ktoRows.reduce((s, r) => s + (parseFloat(r.fibu_buchwert_ende) || 0), 0);
+                  // Konto-Bezeichnung: nutze Sub-Kategorie der ersten Anlage (Saldovortrag bevorzugt)
+                  const sv = ktoRows.find(r => r.typ === "Saldovortrag");
+                  const bezeichnung = sv?.sub_kategorie || ktoRows[0]?.sub_kategorie || kat?.name || "—";
+                  const fibuPctDefault = kat?.default_fibu_abschreibung_pct;
                   return (
-                    <React.Fragment key={kid + "_" + kto}>
-                      {/* FIBU-Konto Sub-Header mit Verteilungs-Panel */}
-                      <tr style={{ backgroundColor: isArtis ? "#e8f2e8" : isLight ? "#fafbfc" : "#262629" }}>
-                        <td colSpan={9} style={{ padding: "8px 14px", borderTop: `1px dashed ${tableBdr}` }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-                            <span style={{ fontSize: 11, fontWeight: 700, color: headingC, fontFamily: "monospace" }}>
-                              Konto {kto}
-                            </span>
-                            <span style={{ fontSize: 10, color: subC }}>
-                              {ktoRows.length} {ktoRows.length === 1 ? "Anlage" : "Anlagen"} · BW Anf. Σ <strong style={{ fontFamily: "monospace", color: headingC }}>{fmtCHF(ktoBwA)}</strong>
-                              {" · "}BW Ende Σ <strong style={{ fontFamily: "monospace", color: diff != null ? (diffOk ? "#16a34a" : "#dc2626") : headingC }}>{fmtCHF(ktoBwE)}</strong>
-                              {" · Abschr. "}<strong style={{ color: "#dc2626", fontFamily: "monospace" }}>{fmtCHF(ktoAbschrIst)}</strong>
-                              {ktoKorrIst !== 0 && <> · Korr. <strong style={{ fontFamily: "monospace" }}>{fmtCHF(ktoKorrIst)}</strong></>}
-                              {diff != null && !diffOk && (
-                                <span style={{ marginLeft: 6, color: "#dc2626", fontWeight: 700 }}>
-                                  Δ {fmtCHF(diff)}
-                                </span>
-                              )}
-                              {diff != null && diffOk && (
-                                <span style={{ marginLeft: 6, color: "#16a34a", fontWeight: 700 }}>✓ stimmt</span>
-                              )}
-                            </span>
-                            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, marginLeft: "auto", flexWrap: "wrap" }}>
-                              <span style={{ fontSize: 10, color: subC, fontWeight: 700 }}>Saldo Ende lt. FIBU</span>
-                              <input value={inp.saldoEnde ?? ""}
-                                onChange={e => setVerteilenInput(p => ({ ...p, [kto]: { ...(p[kto] || {}), saldoEnde: e.target.value } }))}
-                                onKeyDown={e => { if (e.key === "Enter") verteilen(kto, ktoRows); }}
-                                placeholder="0.00" type="number" step="0.01"
-                                title="Wenn gesetzt: Abschr. wird auto-rückwärts gerechnet (falls leer), oder Validierung gegen Soll."
-                                style={{ width: 100, padding: "3px 6px", fontSize: 11, fontFamily: "monospace",
-                                  border: `1.5px solid ${accent}80`, borderRadius: 4, textAlign: "right",
-                                  backgroundColor: panelBg, color: headingC }} />
-                              <span style={{ fontSize: 10, color: subC }}>Abschr.</span>
-                              <input value={inp.abschr ?? ""}
-                                onChange={e => setVerteilenInput(p => ({ ...p, [kto]: { ...(p[kto] || {}), abschr: e.target.value } }))}
-                                onKeyDown={e => { if (e.key === "Enter") verteilen(kto, ktoRows); }}
-                                placeholder="auto" type="number" step="0.01"
-                                style={{ width: 90, padding: "3px 6px", fontSize: 11, fontFamily: "monospace",
-                                  border: `1px solid ${panelBdr}`, borderRadius: 4, textAlign: "right",
-                                  backgroundColor: panelBg, color: headingC }} />
-                              <span style={{ fontSize: 10, color: subC }}>Korr.</span>
-                              <input value={inp.korr ?? ""}
-                                onChange={e => setVerteilenInput(p => ({ ...p, [kto]: { ...(p[kto] || {}), korr: e.target.value } }))}
-                                onKeyDown={e => { if (e.key === "Enter") verteilen(kto, ktoRows); }}
-                                placeholder="0.00" type="number" step="0.01"
-                                style={{ width: 70, padding: "3px 6px", fontSize: 11, fontFamily: "monospace",
-                                  border: `1px solid ${panelBdr}`, borderRadius: 4, textAlign: "right",
-                                  backgroundColor: panelBg, color: headingC }} />
-                              <button onClick={() => verteilen(kto, ktoRows)}
-                                title={`Proportional zu BW Anfang auf ${ktoRows.length} Anlage(n) verteilen — wenn Saldo Ende gesetzt: Abschr. wird rückwärts gerechnet.`}
-                                style={{ fontSize: 10, fontWeight: 700, padding: "4px 10px", borderRadius: 4,
-                                  cursor: "pointer", border: "none", backgroundColor: accent, color: "#fff" }}>
-                                ⚖ Verteilen
-                              </button>
-                            </span>
-                          </div>
-                        </td>
-                      </tr>
-                      {ktoRows.map(a => (
-                        <tr key={a.id} onMouseEnter={e => e.currentTarget.style.backgroundColor = rowHover}
-                          onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
-                          <td style={{ padding: "5px 10px", borderBottom: `1px solid ${tableBdr}80`, color: headingC }}>
-                            {a.beschreibung}
-                            {a.lieferant && <span style={{ color: subC, marginLeft: 6, fontSize: 11 }}>· {a.lieferant}</span>}
-                          </td>
-                          <td style={{ padding: "5px 10px", borderBottom: `1px solid ${tableBdr}80`, textAlign: "center", fontSize: 11, color: subC }}>
-                            {a.beschaffung_monat ? String(a.beschaffung_monat).padStart(2, "0") + "." : ""}{a.beschaffung_jahr || "—"}
-                          </td>
-                          <td style={{ padding: "5px 10px", borderBottom: `1px solid ${tableBdr}80`, color: headingC, fontFamily: "monospace", fontSize: 11 }}>{a.fibu_konto || "—"}</td>
-                          <td style={{ padding: "5px 10px", borderBottom: `1px solid ${tableBdr}80`, textAlign: "right", fontFamily: "monospace", color: subC }}>
-                            {fmtCHF(a.beschaffungskosten_netto)}
-                          </td>
-                          <td style={{ padding: "5px 10px", borderBottom: `1px solid ${tableBdr}80` }}>{inlinePct(a)}</td>
-                          <td style={{ padding: "5px 10px", borderBottom: `1px solid ${tableBdr}80` }}>{inlineNum(a, "fibu_buchwert_anfang")}</td>
-                          <td style={{ padding: "5px 10px", borderBottom: `1px solid ${tableBdr}80` }}>{inlineNum(a, "fibu_abschreibung_gj", "#dc2626", "#fef2f2")}</td>
-                          <td style={{ padding: "5px 10px", borderBottom: `1px solid ${tableBdr}80` }}>{inlineNum(a, "fibu_korrektur", subC)}</td>
-                          <td style={{ padding: "5px 10px", borderBottom: `1px solid ${tableBdr}80`, textAlign: "right", fontFamily: "monospace", fontWeight: 600, color: headingC }}>
-                            {fmtCHF(a.fibu_buchwert_ende)}
-                          </td>
-                        </tr>
-                      ))}
-                    </React.Fragment>
+                    <tr key={kid + "_" + kto}
+                      onMouseEnter={e => e.currentTarget.style.backgroundColor = rowHover}
+                      onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
+                      <td style={{ padding: "7px 10px", borderBottom: `1px solid ${tableBdr}80`, fontFamily: "monospace", fontWeight: 600, color: headingC }}>
+                        {kto}
+                      </td>
+                      <td style={{ padding: "7px 10px", borderBottom: `1px solid ${tableBdr}80`, color: headingC }}>
+                        {bezeichnung}
+                      </td>
+                      <td style={{ padding: "7px 10px", borderBottom: `1px solid ${tableBdr}80`, textAlign: "center", color: subC, fontSize: 11 }}>
+                        {ktoRows.length}
+                      </td>
+                      <td style={{ padding: "7px 10px", borderBottom: `1px solid ${tableBdr}80`, textAlign: "right", fontFamily: "monospace", color: headingC }}>
+                        {fmtCHF(ktoBwA)}
+                      </td>
+                      <td style={{ padding: "7px 10px", borderBottom: `1px solid ${tableBdr}80`, textAlign: "center", color: subC, fontFamily: "monospace", fontSize: 11 }}>
+                        {fibuPctDefault != null ? fibuPctDefault + "%" : "—"}
+                      </td>
+                      <td style={{ padding: "7px 10px", borderBottom: `1px solid ${tableBdr}80` }}>
+                        <KontoEditableCell ktoRows={ktoRows} kto={kto} field="abschr" value={ktoAb}
+                          color="#dc2626" ariaLabel="Doppelklick: Total Abschr. GJ eingeben, wird proportional verteilt" />
+                      </td>
+                      <td style={{ padding: "7px 10px", borderBottom: `1px solid ${tableBdr}80` }}>
+                        <KontoEditableCell ktoRows={ktoRows} kto={kto} field="korr" value={ktoKo}
+                          color={subC} ariaLabel="Doppelklick: Total Korrektur eingeben (z.B. Überabschreibung)" />
+                      </td>
+                      <td style={{ padding: "7px 10px", borderBottom: `1px solid ${tableBdr}80` }}>
+                        <KontoEditableCell ktoRows={ktoRows} kto={kto} field="bw_ende" value={ktoBwE}
+                          color={headingC} ariaLabel="Doppelklick: Saldo Ende lt. FIBU eingeben, Abschr. wird rückwärts gerechnet" />
+                      </td>
+                    </tr>
                   );
                 })}
+                {/* Kategorie-Total */}
                 <tr style={{ backgroundColor: isArtis ? "#e8f2e8" : isLight ? "#f1f5f9" : "#2c2c32", borderBottom: `2px solid ${tableBdr}` }}>
                   <td colSpan={3} style={{ padding: "6px 12px", fontSize: 11, fontWeight: 700, color: subC, textAlign: "right" }}>
                     Total {isNone ? "Ohne Kategorie" : kat?.name}
                   </td>
-                  <td style={{ padding: "6px 10px", textAlign: "right", fontWeight: 700, fontFamily: "monospace", color: subC }}>{fmtCHF(tB)}</td>
-                  <td />
                   <td style={{ padding: "6px 10px", textAlign: "right", fontWeight: 700, fontFamily: "monospace", color: headingC }}>{fmtCHF(tBwA)}</td>
+                  <td />
                   <td style={{ padding: "6px 10px", textAlign: "right", fontWeight: 700, fontFamily: "monospace", color: "#dc2626" }}>{fmtCHF(tAb)}</td>
                   <td style={{ padding: "6px 10px", textAlign: "right", fontWeight: 700, fontFamily: "monospace", color: subC }}>{fmtCHF(tKo)}</td>
                   <td style={{ padding: "6px 10px", textAlign: "right", fontWeight: 700, fontFamily: "monospace", color: headingC }}>{fmtCHF(tBwE)}</td>
@@ -2530,17 +2418,15 @@ function FibuTab({ anlagen, kategorien, onUpdateAnlage, accent, headingC, subC, 
             );
           })}
           {(() => {
-            const tB = anlagen.reduce((s, r) => s + (parseFloat(r.beschaffungskosten_netto) || 0), 0);
             const tBwA = anlagen.reduce((s, r) => s + (parseFloat(r.fibu_buchwert_anfang) || 0), 0);
-            const tAb = anlagen.reduce((s, r) => s + (parseFloat(r.fibu_abschreibung_gj) || 0), 0);
-            const tKo = anlagen.reduce((s, r) => s + (parseFloat(r.fibu_korrektur) || 0), 0);
+            const tAb  = anlagen.reduce((s, r) => s + (parseFloat(r.fibu_abschreibung_gj) || 0), 0);
+            const tKo  = anlagen.reduce((s, r) => s + (parseFloat(r.fibu_korrektur) || 0), 0);
             const tBwE = anlagen.reduce((s, r) => s + (parseFloat(r.fibu_buchwert_ende) || 0), 0);
             return (
               <tr style={{ backgroundColor: accent + "12", borderTop: `2px solid ${accent}` }}>
                 <td colSpan={3} style={{ padding: "10px 12px", fontWeight: 800, color: accent, textAlign: "right" }}>GESAMT-TOTAL FIBU</td>
-                <td style={{ padding: "10px 10px", textAlign: "right", fontWeight: 800, fontFamily: "monospace", color: accent }}>{fmtCHF(tB)}</td>
-                <td />
                 <td style={{ padding: "10px 10px", textAlign: "right", fontWeight: 800, fontFamily: "monospace", color: accent }}>{fmtCHF(tBwA)}</td>
+                <td />
                 <td style={{ padding: "10px 10px", textAlign: "right", fontWeight: 800, fontFamily: "monospace", color: "#dc2626" }}>{fmtCHF(tAb)}</td>
                 <td style={{ padding: "10px 10px", textAlign: "right", fontWeight: 800, fontFamily: "monospace", color: subC }}>{fmtCHF(tKo)}</td>
                 <td style={{ padding: "10px 10px", textAlign: "right", fontWeight: 800, fontFamily: "monospace", color: accent }}>{fmtCHF(tBwE)}</td>
