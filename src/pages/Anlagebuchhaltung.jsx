@@ -630,11 +630,12 @@ export default function Anlagebuchhaltung() {
       return {
         ...d, pdfAnlagen: [...d.pdfAnlagen, {
           kontonummer: "", beschreibung: "", kategorie_name: null, sub_kategorie: "",
-          saldovortrag: 0, saldoEnde: 0, abschrPct: null, abschrSumme: 0,
-          korrekturSumme: 0, zugaenge: 0, abgaenge: 0, beschaffungskosten: 0,
-          nutzungsdauer: null,
+          lieferant: null, typ: "Kauf",
+          beschaffungskosten: 0, nutzungsdauer: null,
           beschaffungJahr: selectedYear, beschaffungMonat: null,
-          lieferant: null, buchungsTexte: [],
+          saldovortrag: 0,
+          fibuAbschrPct: null, fibuBwAnfang: 0, fibuAbschrGj: 0, fibuKorrektur: 0, fibuBwEnde: 0,
+          notiz: null, istSaldovortrag: false,
         }],
       };
     });
@@ -688,139 +689,179 @@ export default function Anlagebuchhaltung() {
       return;
     }
 
-    // Pro Section: Daten extrahieren
+    // Pro Section eine oder mehrere Anlagen extrahieren:
+    //   - 1 Saldovortrag-Anlage pro Konto (wenn Saldovortrag > 0)
+    //   - 1 Anlage pro Zugang-Buchung (Aktivierung im Jahr)
+    //   - Umbuchungen werden in der Notiz dokumentiert
+    //   - Verkäufe/Entnahmen → kommen in Notiz (User kann manuell Anlage löschen)
+    //   - FIBU-Abschreibung des Kontos wird in der Notiz des Saldovortrag-Eintrags vermerkt
     const anlagen = [];
     for (const s of sections) {
+      const katName = autoMapKontoToKategorie(s.kontonummer);
+      const matchedKat = kategorien.find(k => k.name.toLowerCase() === (katName || "").toLowerCase())
+        || DEFAULT_KATEGORIEN.find(k => k.name.toLowerCase() === (katName || "").toLowerCase());
+      const defaultND = matchedKat?.default_anbu_nutzungsdauer_j ?? null;
+      const defaultFibuPct = matchedKat?.default_fibu_abschreibung_pct ?? null;
+
       const lines = s.body.split("\n");
       let saldovortrag = null;
       let saldoEnde = null;
-      let umsatzSoll = 0, umsatzHaben = 0;   // für Konten ohne Saldovortrag
+      let umsatzSoll = 0, umsatzHaben = 0;
       let abschrPct = null;
       let abschrSumme = 0;
       let korrekturSumme = 0;
-      let zugaenge = 0;     // Soll-Buchungen ohne Saldovortrag
-      let abgaenge = 0;     // Haben-Buchungen ohne Abschreibung/Überabschreibung
-      let lieferanten = [];
-      let buchungsTexte = [];
-      let buchungsJahr = null;
-      let buchungsMonat = null;
+      const zugaenge = [];    // Array von { datum, jahr, monat, lieferant, betrag, beschreibung }
+      const sonstigeBuchungen = [];   // Umbuchungen + Verkäufe für Notiz
 
       for (const line of lines) {
         const l = line.trim();
         if (!l) continue;
-        // Saldovortrag
         const sv = l.match(/Saldovortrag\s+([-]?[\d'.]+)\s*$/);
         if (sv) { saldovortrag = parseChNum(sv[1]); continue; }
-        // Umsatz-Zeile: "Umsatz 0.00 44'800.00 -44'800.00" (Soll, Haben, Veränderung)
         const um = l.match(/^Umsatz\s+([-]?[\d'.]+)\s+([-]?[\d'.]+)\s+([-]?[\d'.]+)\s*$/);
         if (um) {
           umsatzSoll = parseChNum(um[1]) || 0;
           umsatzHaben = parseChNum(um[2]) || 0;
           continue;
         }
-        // Saldo am Ende
         const se = l.match(/^Saldo\s+([-]?[\d'.]+)\s*$/);
         if (se) { saldoEnde = parseChNum(se[1]); continue; }
-        // Abschr. X%
         const ab = l.match(/Abschr\.\s*(\d+(?:[.,]\d+)?)\s*%\s+([-]?[\d'.]+)\s+([-]?[\d'.]+)\s*$/);
         if (ab) {
           abschrPct = parseFloat(String(ab[1]).replace(",", "."));
           abschrSumme += parseChNum(ab[2]) || 0;
           continue;
         }
-        // Überabschreibung
         const ueb = l.match(/Überabschreibung\s+([-]?[\d'.]+)\s+([-]?[\d'.]+)\s*$/);
-        if (ueb) {
-          korrekturSumme += parseChNum(ueb[1]) || 0;
-          continue;
-        }
-        // Buchungs-Zeile: DD.MM.YYYY ... Soll Haben Saldo
-        // Format: "06.03.2024 H 2721 3552 2000  E.... Gama AG Photovoltaik 14'736.49 ... 959'936.49"
+        if (ueb) { korrekturSumme += parseChNum(ueb[1]) || 0; continue; }
+
+        // Buchungs-Zeile: DD.MM.YYYY H ... Konto ... Text Betrag Saldo
         const bu = l.match(/^(\d{2})\.(\d{2})\.(\d{4})\s+[HS]\s+\d+\s+\d+\s+\d+\s+(.+?)\s+([-]?[\d'.]+)\s+([-]?[\d'.]+)\s*$/);
         if (bu) {
-          const yyyy = parseInt(bu[3]);
-          const mm   = parseInt(bu[2]);
+          const dd = bu[1], mm = bu[2], yyyy = parseInt(bu[3]);
           const txt = bu[4].trim();
-          const v1 = parseChNum(bu[5]) || 0;
-          // Klassifizieren: Abschreibung / Verkauf-Entnahme / Umbuchung / Zugang
+          const betrag = parseChNum(bu[5]) || 0;
           if (txt.match(/^Abschr|Überabschreibung/i)) {
-            // Schon oben separat erfasst — überspringen
+            // bereits oben erfasst — überspringen
           } else if (txt.match(/Verkauf|Entnahme/i)) {
-            // Verkauf/Entnahme: Abgang im Jahr
-            abgaenge += v1;
-            buchungsTexte.push(`${bu[1]}.${bu[2]}.${bu[3]}: − ${txt} (CHF ${bu[5]})`);
+            sonstigeBuchungen.push(`${dd}.${mm}.${bu[3]}: − ${txt} (CHF ${bu[5]})`);
           } else if (txt.match(/Umbuchung|Umb\./i)) {
-            // Umbuchung: kein Zugang/Abgang, nur als Notiz
-            buchungsTexte.push(`${bu[1]}.${bu[2]}.${bu[3]}: ↔ ${txt} (CHF ${bu[5]})`);
+            sonstigeBuchungen.push(`${dd}.${mm}.${bu[3]}: ↔ ${txt} (CHF ${bu[5]})`);
           } else {
-            // Echter Zugang / Aktivierung (Soll-Buchung)
-            zugaenge += v1;
-            if (!buchungsJahr) { buchungsJahr = yyyy; buchungsMonat = mm; }
+            // Echter Zugang / Aktivierung → eigene Anlage
             const lf = txt.match(/^E\.\d+\s+(.+)$/);
-            const lieferant = lf ? lf[1].trim() : txt;
-            lieferanten.push(lieferant);
-            buchungsTexte.push(`${bu[1]}.${bu[2]}.${bu[3]}: + ${lieferant} CHF ${bu[5]}`);
+            const lieferant = lf ? lf[1].trim() : null;
+            const beschreibung = lieferant
+              ? `${s.beschreibung} – ${lieferant}`
+              : `${s.beschreibung} – ${txt}`;
+            zugaenge.push({
+              monat: parseInt(mm), jahr: yyyy, lieferant, betrag, beschreibung,
+              text: txt, datumStr: `${dd}.${mm}.${bu[3]}`,
+            });
           }
           continue;
         }
-        // Buchungs-Zeile mit nur Saldo (Verkäufe ohne Gegenkonto, z.B. "Entnahme FZ gem. Eurotax")
-        const bu2 = l.match(/^(\d{2})\.(\d{2})\.(\d{4})\s+[HS]?\s*\S*\s*\d*\s*\d*\s*\S*\s+(.+?)\s+([-]?[\d'.]+)\s*$/);
-        if (bu2 && bu2[4].match(/Verkauf|Entnahme/i)) {
-          abgaenge += parseChNum(bu2[5]) || 0;
-          buchungsTexte.push(`${bu2[1]}.${bu2[2]}.${bu2[3]}: − ${bu2[4].trim()} (CHF ${bu2[5]})`);
-        }
       }
 
-      // Wenn kein Saldovortrag im PDF (Konto ohne Bewegung), aus Saldo Ende ableiten:
-      //   BW Anfang = BW Ende - (Soll - Haben)  [Veränderung im Jahr]
-      // Bei Konten ganz ohne Bewegung ergibt das BW Anfang = BW Ende (z.B. unverändertes Grundstück).
       if (saldovortrag === null && saldoEnde !== null) {
         saldovortrag = saldoEnde - (umsatzSoll - umsatzHaben);
       }
 
-      // Beschaffungskosten netto = historische Anschaffungskosten dieser Aktivierung.
-      // Beim PDF-Erstimport haben wir nur Saldovortrag + Zugang als Approximation
-      // (der echte historische AK ist im PDF nicht ersichtlich, weil das Sammelkonto
-      // bereits über Jahre abgeschrieben wurde). User kann den Wert im Vorschau-Dialog
-      // anpassen, falls echte AK bekannt.
-      const beschaffungskosten = (saldovortrag || 0) + zugaenge;
+      // 1) Saldovortrag-Anlage (Bestand am Anfang des GJ)
+      if (saldovortrag != null && Math.abs(saldovortrag) > 0.01) {
+        anlagen.push({
+          // Identifikation
+          kontonummer: s.kontonummer,
+          beschreibung: `${s.beschreibung} – Bestand 01.01.${selectedYear}`,
+          kategorie_name: katName,
+          sub_kategorie: s.beschreibung,
+          lieferant: "Saldovortrag",
+          typ: "Saldovortrag",
+          // Werte
+          beschaffungskosten: saldovortrag,
+          nutzungsdauer: defaultND,
+          beschaffungJahr: selectedYear,   // Default: aktuelles Jahr; user kann historisches B-Jahr setzen
+          beschaffungMonat: 1,
+          saldovortrag,                     // für Vorschau-Anzeige
+          fibuAbschrPct: defaultFibuPct,
+          fibuBwAnfang: saldovortrag,
+          fibuAbschrGj: 0,
+          fibuBwEnde: saldovortrag,
+          notiz: sonstigeBuchungen.length > 0 ? sonstigeBuchungen.join("\n") : null,
+          istSaldovortrag: true,
+        });
+      }
 
-      const katName = autoMapKontoToKategorie(s.kontonummer);
-      // Default Nutzungsdauer aus Kategorie (vorhandene oder Default)
-      const matchedKat = kategorien.find(k => k.name.toLowerCase() === (katName || "").toLowerCase())
-        || DEFAULT_KATEGORIEN.find(k => k.name.toLowerCase() === (katName || "").toLowerCase());
-      const defaultND = matchedKat?.default_anbu_nutzungsdauer_j ?? null;
+      // 2) Pro Zugang eine eigene Anlage
+      for (const z of zugaenge) {
+        anlagen.push({
+          kontonummer: s.kontonummer,
+          beschreibung: z.beschreibung,
+          kategorie_name: katName,
+          sub_kategorie: s.beschreibung,
+          lieferant: z.lieferant,
+          typ: "Kauf",
+          beschaffungskosten: z.betrag,
+          nutzungsdauer: defaultND,
+          beschaffungJahr: z.jahr,
+          beschaffungMonat: z.monat,
+          saldovortrag: 0,
+          fibuAbschrPct: defaultFibuPct,
+          fibuBwAnfang: 0,            // Neuzugang → BW Anfang = 0
+          fibuAbschrGj: 0,
+          fibuBwEnde: z.betrag,
+          notiz: `Aktivierung ${z.datumStr}` + (z.lieferant ? ` · ${z.lieferant}` : ""),
+          istSaldovortrag: false,
+        });
+      }
 
-      anlagen.push({
-        kontonummer: s.kontonummer,
-        beschreibung: s.beschreibung,
-        kategorie_name: katName,
-        sub_kategorie: s.beschreibung,
-        saldovortrag: saldovortrag || 0,
-        saldoEnde: saldoEnde || 0,
-        abschrPct,
-        abschrSumme,
-        korrekturSumme,
-        zugaenge,
-        abgaenge,
-        beschaffungskosten,
-        nutzungsdauer: defaultND,
-        beschaffungJahr: buchungsJahr,
-        beschaffungMonat: buchungsMonat,
-        lieferant: lieferanten[0] || null,
-        buchungsTexte,
-      });
+      // 3) Wenn weder Saldovortrag noch Zugang, aber Saldo Ende existiert (Konto ohne Bewegung):
+      if (saldovortrag === null && saldoEnde != null && Math.abs(saldoEnde) > 0.01 && zugaenge.length === 0) {
+        anlagen.push({
+          kontonummer: s.kontonummer,
+          beschreibung: `${s.beschreibung} – Bestand 01.01.${selectedYear}`,
+          kategorie_name: katName,
+          sub_kategorie: s.beschreibung,
+          lieferant: "Saldovortrag",
+          typ: "Saldovortrag",
+          beschaffungskosten: saldoEnde,
+          nutzungsdauer: defaultND,
+          beschaffungJahr: selectedYear,
+          beschaffungMonat: 1,
+          saldovortrag: saldoEnde,
+          fibuAbschrPct: defaultFibuPct,
+          fibuBwAnfang: saldoEnde,
+          fibuAbschrGj: 0,
+          fibuBwEnde: saldoEnde,
+          notiz: null,
+          istSaldovortrag: true,
+        });
+      }
+
+      // FIBU-Abschreibung des Kontos proportional auf alle Anlagen dieses Kontos verteilen
+      const ktoAnlagen = anlagen.filter(a => a.kontonummer === s.kontonummer);
+      if (abschrSumme > 0 && ktoAnlagen.length > 0) {
+        const sumBwAnfFibu = ktoAnlagen.reduce((sum, a) => sum + (a.fibuBwAnfang || 0), 0);
+        if (sumBwAnfFibu > 0) {
+          let rest = abschrSumme, restK = korrekturSumme;
+          ktoAnlagen.forEach((a, idx) => {
+            const isLast = idx === ktoAnlagen.length - 1;
+            const share = a.fibuBwAnfang / sumBwAnfFibu;
+            a.fibuAbschrGj = isLast ? Math.round(rest * 100) / 100 : Math.round(abschrSumme * share * 100) / 100;
+            const korr  = isLast ? Math.round(restK * 100) / 100 : Math.round(korrekturSumme * share * 100) / 100;
+            rest -= a.fibuAbschrGj; restK -= korr;
+            a.fibuKorrektur = korr;
+            a.fibuBwEnde = Math.max(0, (a.fibuBwAnfang || 0) - a.fibuAbschrGj - korr);
+          });
+        }
+      }
     }
 
-    // Nur Konten mit irgendeinem Wert importieren
-    const filtered = anlagen.filter(a =>
-      Math.abs(a.saldovortrag) > 0.01 || Math.abs(a.saldoEnde) > 0.01 || a.zugaenge > 0
-    );
-
-    if (filtered.length === 0) {
-      toast.error("Keine Konten mit Bewegung gefunden");
+    if (anlagen.length === 0) {
+      toast.error("Keine Anlagen aus dem PDF extrahiert");
       return;
     }
+    const filtered = anlagen;
 
     setImportDialog({
       filename: file.name,
@@ -851,42 +892,46 @@ export default function Anlagebuchhaltung() {
         for (const k of inserted || []) kategorieMap.set(k.name.toLowerCase(), k.id);
       }
       const rows = pdfAnlagen.map((a, idx) => {
-        // ANBU: Nutzungsdauer aus Vorschau (oder Kategorie-Default) → lineare Abschreibung
+        // ANBU: Pro Anlage 1 Zeile - Beschaffungskosten = historische AK dieser Aktivierung
         const nutz = a.nutzungsdauer ? parseInt(a.nutzungsdauer) : null;
-        const anbuAbschr = nutz ? calcAnbuAbschreibungLinear({
+        // BW Anfang ANBU: Saldovortrag-Anlage → saldovortrag; Kauf im GJ → 0
+        const anbuBwAnfang = a.istSaldovortrag ? (a.saldovortrag || a.beschaffungskosten) : 0;
+        // Abschreibung im Jahr: Kalk. Abschreibung (capped auf BW)
+        const kalkAbschr = nutz ? calcAnbuAbschreibungLinear({
           beschaffungskosten_netto: a.beschaffungskosten,
           anbu_nutzungsdauer_j: nutz,
-          anbu_buchwert_anfang: a.saldovortrag,
+          anbu_buchwert_anfang: a.istSaldovortrag ? anbuBwAnfang : a.beschaffungskosten,
         }) : 0;
-        const anbuBwEnde = Math.max(0, (a.saldovortrag || 0) - anbuAbschr);
+        const anbuBwEnde = Math.max(0,
+          (a.istSaldovortrag ? anbuBwAnfang : a.beschaffungskosten) - kalkAbschr);
         return {
-        abschluss_id: useAbId,
-        beschreibung: a.beschreibung,
-        lieferant: a.lieferant,
-        typ: "Kauf",
-        menge: 1,
-        aktiviert: true,
-        beschaffung_monat: a.beschaffungMonat,
-        beschaffung_jahr: a.beschaffungJahr,
-        beschaffungskosten_netto: a.beschaffungskosten,
-        fibu_konto: a.kontonummer,
-        kategorie_id: a.kategorie_name ? kategorieMap.get(a.kategorie_name.toLowerCase()) : null,
-        sub_kategorie: a.sub_kategorie,
-        notiz: a.buchungsTexte.length > 0 ? a.buchungsTexte.join("\n") : null,
-        // ANBU: aus Vorschau (Default-ND aus Kategorie, vom User editierbar)
-        anbu_nutzungsdauer_j: nutz,
-        anbu_buchwert_anfang: a.saldovortrag,
-        anbu_abschreibung_gj: anbuAbschr,
-        anbu_korrektur: 0,
-        anbu_buchwert_ende: anbuBwEnde,
-        // FIBU aus PDF
-        fibu_abschreibung_pct: a.abschrPct,
-        fibu_buchwert_anfang: a.saldovortrag,
-        fibu_abschreibung_gj: a.abschrSumme,
-        fibu_korrektur: a.korrekturSumme,
-        fibu_buchwert_ende: a.saldoEnde,
-        sortierung: idx,
-      };
+          abschluss_id: useAbId,
+          beschreibung: a.beschreibung,
+          lieferant: a.lieferant,
+          typ: a.typ || "Kauf",
+          menge: 1,
+          aktiviert: true,
+          beschaffung_monat: a.beschaffungMonat,
+          beschaffung_jahr: a.beschaffungJahr,
+          beschaffungskosten_netto: a.beschaffungskosten,
+          fibu_konto: a.kontonummer,
+          kategorie_id: a.kategorie_name ? kategorieMap.get(a.kategorie_name.toLowerCase()) : null,
+          sub_kategorie: a.sub_kategorie,
+          notiz: a.notiz || null,
+          // ANBU
+          anbu_nutzungsdauer_j: nutz,
+          anbu_buchwert_anfang: anbuBwAnfang,
+          anbu_abschreibung_gj: kalkAbschr,
+          anbu_korrektur: 0,
+          anbu_buchwert_ende: anbuBwEnde,
+          // FIBU (anteilig pro Anlage aus PDF berechnet im Parser)
+          fibu_abschreibung_pct: a.fibuAbschrPct ?? null,
+          fibu_buchwert_anfang: a.fibuBwAnfang ?? 0,
+          fibu_abschreibung_gj: a.fibuAbschrGj ?? 0,
+          fibu_korrektur: a.fibuKorrektur ?? 0,
+          fibu_buchwert_ende: a.fibuBwEnde ?? 0,
+          sortierung: idx,
+        };
       });
       for (let i = 0; i < rows.length; i += 50) {
         const { error } = await supabase.from("anbu_anlage").insert(rows.slice(i, i + 50));
@@ -1399,7 +1444,7 @@ export default function Anlagebuchhaltung() {
                 <div style={{ fontSize: 11, color: subC, marginTop: 2 }}>
                   {importDialog.filename} ·{" "}
                   {importDialog.mode === "pdf"
-                    ? `${importDialog.pdfAnlagen.length} Bilanzkonten mit Bewegung erkannt`
+                    ? `${importDialog.pdfAnlagen.length} Anlagen (Saldovortrag + jede Aktivierung) erkannt`
                     : `${importDialog.rows.length} Zeilen erkannt · Blatt: ${importDialog.sheetName}`}
                 </div>
               </div>
@@ -1410,32 +1455,38 @@ export default function Anlagebuchhaltung() {
               {importDialog.mode === "pdf" ? (
                 <>
                   <div style={{ fontSize: 11, color: subC, marginBottom: 8, fontStyle: "italic" }}>
-                    Tipp: alle Felder können vor dem Import angepasst werden (Kategorie, Werte, Abschr.%).
-                    Eine zusätzliche leere Zeile am Ende für manuelle Ergänzungen.
+                    Pro Aktivierung eine Anlage: 1× Saldovortrag (BW per 1.1.) + N× Einzel-Käufe.
+                    Alle Felder können angepasst werden. ND vom Kategorie-Default vorbelegt.
                   </div>
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
                     <thead>
                       <tr style={{ backgroundColor: accent + "08" }}>
                         <th style={pdfHdr(subC, panelBdr, "left", 55)}>Kto</th>
-                        <th style={pdfHdr(subC, panelBdr, "left", 0)}>Beschreibung</th>
+                        <th style={pdfHdr(subC, panelBdr, "left", 75)}>Typ</th>
+                        <th style={pdfHdr(subC, panelBdr, "left", 0)}>Beschreibung / Lieferant</th>
                         <th style={pdfHdr(subC, panelBdr, "left", 110)}>Kategorie</th>
-                        <th style={pdfHdr(subC, panelBdr, "right", 90)}>BW Anf.</th>
-                        <th style={pdfHdr(subC, panelBdr, "right", 80)}>Zugang</th>
-                        <th style={pdfHdr(subC, panelBdr, "right", 80)}>Abgang</th>
+                        <th style={pdfHdr(subC, panelBdr, "center", 80)}>Datum</th>
+                        <th style={pdfHdr(subC, panelBdr, "right", 110)} title="Anschaffungskosten netto">AK netto</th>
                         <th style={pdfHdr(subC, panelBdr, "center", 50)} title="Nutzungsdauer ANBU (linear)">ND J</th>
-                        <th style={pdfHdr(subC, panelBdr, "center", 60)} title="Abschreibung % FIBU">%</th>
-                        <th style={pdfHdr(subC, panelBdr, "right", 80)}>Abschr.</th>
-                        <th style={pdfHdr(subC, panelBdr, "right", 90)}>BW Ende</th>
+                        <th style={pdfHdr(subC, panelBdr, "right", 100)} title="FIBU-Abschreibung im GJ (anteilig)">FIBU Abschr.</th>
+                        <th style={pdfHdr(subC, panelBdr, "right", 100)} title="FIBU BW Ende GJ">FIBU BW Ende</th>
                         <th style={pdfHdr(subC, panelBdr, "center", 30)}></th>
                       </tr>
                     </thead>
                     <tbody>
                       {importDialog.pdfAnlagen.map((a, i) => (
-                        <tr key={i} style={{ borderBottom: `1px solid ${panelBdr}50` }}>
+                        <tr key={i} style={{ borderBottom: `1px solid ${panelBdr}50`, backgroundColor: a.istSaldovortrag ? accent + "06" : "transparent" }}>
                           <td style={{ padding: "3px 4px" }}>
                             <input value={a.kontonummer || ""}
                               onChange={e => updatePdfRow(i, "kontonummer", e.target.value)}
                               style={inpStyle("right", panelBdr, headingC, panelBg, true)} />
+                          </td>
+                          <td style={{ padding: "3px 4px" }}>
+                            <span style={{ display: "block", padding: "3px 6px", fontSize: 10, fontWeight: 700,
+                              color: a.istSaldovortrag ? accent : "#16a34a",
+                              letterSpacing: "0.04em", textTransform: "uppercase" }}>
+                              {a.istSaldovortrag ? "SV 1.1." : (a.typ || "Kauf")}
+                            </span>
                           </td>
                           <td style={{ padding: "3px 4px" }}>
                             <input value={a.beschreibung || ""}
@@ -1447,7 +1498,6 @@ export default function Anlagebuchhaltung() {
                               onChange={e => {
                                 const newKat = e.target.value || null;
                                 updatePdfRow(i, "kategorie_name", newKat);
-                                // Wenn keine ND gesetzt, Default aus neuer Kategorie übernehmen
                                 if (!a.nutzungsdauer && newKat) {
                                   const k = kategorien.find(k => k.name.toLowerCase() === newKat.toLowerCase())
                                     || DEFAULT_KATEGORIEN.find(k => k.name.toLowerCase() === newKat.toLowerCase());
@@ -1463,41 +1513,28 @@ export default function Anlagebuchhaltung() {
                               )}
                             </select>
                           </td>
+                          <td style={{ padding: "3px 4px", textAlign: "center", fontSize: 11, color: subC, fontFamily: "monospace" }}>
+                            {a.beschaffungMonat ? String(a.beschaffungMonat).padStart(2, "0") + "." : ""}{a.beschaffungJahr || "—"}
+                          </td>
                           <td style={{ padding: "3px 4px" }}>
-                            <input value={a.saldovortrag ?? ""} type="number" step="0.01"
-                              onChange={e => updatePdfRow(i, "saldovortrag", parseFloat(e.target.value) || 0)}
+                            <input value={a.beschaffungskosten ?? ""} type="number" step="0.01"
+                              onChange={e => updatePdfRow(i, "beschaffungskosten", parseFloat(e.target.value) || 0)}
                               style={inpStyle("right", panelBdr, headingC, panelBg, true)} />
-                          </td>
-                          <td style={{ padding: "3px 4px" }}>
-                            <input value={a.zugaenge ?? ""} type="number" step="0.01"
-                              onChange={e => updatePdfRow(i, "zugaenge", parseFloat(e.target.value) || 0)}
-                              style={inpStyle("right", panelBdr, a.zugaenge > 0 ? "#16a34a" : headingC, panelBg, true)} />
-                          </td>
-                          <td style={{ padding: "3px 4px" }}>
-                            <input value={a.abgaenge ?? ""} type="number" step="0.01"
-                              onChange={e => updatePdfRow(i, "abgaenge", parseFloat(e.target.value) || 0)}
-                              style={inpStyle("right", panelBdr, a.abgaenge > 0 ? "#dc2626" : headingC, panelBg, true)} />
                           </td>
                           <td style={{ padding: "3px 4px" }}>
                             <input value={a.nutzungsdauer ?? ""} type="number" step="1" min="1"
                               placeholder="—"
-                              title="Nutzungsdauer ANBU in Jahren (linear)"
                               onChange={e => updatePdfRow(i, "nutzungsdauer", parseInt(e.target.value) || null)}
                               style={inpStyle("center", panelBdr, a.nutzungsdauer ? accent : headingC, panelBg, true)} />
                           </td>
                           <td style={{ padding: "3px 4px" }}>
-                            <input value={a.abschrPct ?? ""} type="number" step="0.01"
-                              onChange={e => updatePdfRow(i, "abschrPct", parseFloat(e.target.value) || null)}
-                              style={inpStyle("center", panelBdr, headingC, panelBg, true)} />
+                            <input value={a.fibuAbschrGj ?? ""} type="number" step="0.01"
+                              onChange={e => updatePdfRow(i, "fibuAbschrGj", parseFloat(e.target.value) || 0)}
+                              style={inpStyle("right", panelBdr, (a.fibuAbschrGj || 0) > 0 ? "#dc2626" : headingC, panelBg, true)} />
                           </td>
                           <td style={{ padding: "3px 4px" }}>
-                            <input value={a.abschrSumme ?? ""} type="number" step="0.01"
-                              onChange={e => updatePdfRow(i, "abschrSumme", parseFloat(e.target.value) || 0)}
-                              style={inpStyle("right", panelBdr, a.abschrSumme > 0 ? "#dc2626" : headingC, panelBg, true)} />
-                          </td>
-                          <td style={{ padding: "3px 4px" }}>
-                            <input value={a.saldoEnde ?? ""} type="number" step="0.01"
-                              onChange={e => updatePdfRow(i, "saldoEnde", parseFloat(e.target.value) || 0)}
+                            <input value={a.fibuBwEnde ?? ""} type="number" step="0.01"
+                              onChange={e => updatePdfRow(i, "fibuBwEnde", parseFloat(e.target.value) || 0)}
                               style={inpStyle("right", panelBdr, headingC, panelBg, true)} />
                           </td>
                           <td style={{ padding: "3px 4px", textAlign: "center" }}>
