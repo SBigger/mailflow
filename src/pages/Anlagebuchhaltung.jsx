@@ -373,6 +373,23 @@ export default function Anlagebuchhaltung() {
   });
 
   const abschlussId = abschluss?.id;
+  const fibuKontoOverrides = abschluss?.einstellungen?.fibu_konto || {};
+
+  // Update einstellungen.fibu_konto[konto] = { abschr, korr, bw_ende }
+  const updateFibuKontoMut = useMutation({
+    mutationFn: async ({ konto, patch }) => {
+      if (!abschlussId) return;
+      const existingEin = abschluss?.einstellungen || {};
+      const existingFK = existingEin.fibu_konto || {};
+      const newFK = { ...existingFK, [konto]: { ...(existingFK[konto] || {}), ...patch } };
+      const newEin = { ...existingEin, fibu_konto: newFK };
+      const { error } = await supabase.from("anbu_jahresabschluss")
+        .update({ einstellungen: newEin }).eq("id", abschlussId);
+      if (error) throw new Error(error.message);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["anbu_abschluss", selectedCid, selectedYear] }),
+    onError: (e) => toast.error("FIBU-Konto: " + e.message),
+  });
 
   // Garantiert, dass ein Abschluss existiert. Returnt die abschluss_id.
   // Eröffnet das Jahr automatisch wenn noch nicht da (nach Bestätigung).
@@ -1252,7 +1269,9 @@ export default function Anlagebuchhaltung() {
 
   const tabProps = {
     anlagen, kategorien, abschlussId, selectedYear, customerName,
+    fibuKontoOverrides,
     onUpdateAnlage: (id, fields) => updateAnlageMut.mutate({ id, ...fields }),
+    onUpdateFibuKonto: (konto, patch) => updateFibuKontoMut.mutate({ konto, patch }),
     onAddAnlage: (row) => insertAnlageMut.mutate(row),
     onDeleteAnlage: (id) => deleteAnlageMut.mutate(id),
     onApplyKategorieND: (kategorieId, newND) => applyKategorieNdMut.mutate({ kategorieId, newND }),
@@ -2230,11 +2249,13 @@ function AnlageRow({ a, kategorien, selectedYear, editCell, startEdit, commitEdi
 // ════════════════════════════════════════════════════════════════════════════
 // ── FIBU-Tab (degressiv %) ──────────────────────────────────────────────────
 // ════════════════════════════════════════════════════════════════════════════
-function FibuTab({ anlagen, kategorien, onUpdateAnlage, accent, headingC, subC, panelBg, panelBdr, tableBdr, rowHover, theme }) {
+function FibuTab({ anlagen, kategorien, fibuKontoOverrides, onUpdateFibuKonto,
+                  accent, headingC, subC, panelBg, panelBdr, tableBdr, rowHover, theme }) {
   const isArtis = theme === "artis";
   const isLight = theme === "light";
-  // Editier-State pro Konto: { ktoKey: { field, val } }
-  const [editKonto, setEditKonto] = useState(null); // { kto, field: 'abschr'|'korr'|'bw_ende', val }
+  const overrides = fibuKontoOverrides || {};
+  // Editier-State pro Konto: { kto, field, val }
+  const [editKonto, setEditKonto] = useState(null);
 
   const grouped = useMemo(() => {
     const g = {};
@@ -2246,58 +2267,21 @@ function FibuTab({ anlagen, kategorien, onUpdateAnlage, accent, headingC, subC, 
     return g;
   }, [anlagen]);
 
-  // Verteilt einen Konto-Total proportional zu BW Anfang auf alle Anlagen des Kontos
-  const verteilen = (anlagenInGroup, field, totalValue, optionsLog = "") => {
-    const total = parseFloat(String(totalValue).replace(",", ".")) || 0;
-    const sumBw = anlagenInGroup.reduce((s, a) => s + (parseFloat(a.fibu_buchwert_anfang) || 0), 0);
-    if (sumBw <= 0) {
-      const share = 1 / anlagenInGroup.length;
-      for (const a of anlagenInGroup) {
-        const v = Math.round(total * share * 100) / 100;
-        const patch = { [field]: v };
-        // BW Ende neu rechnen
-        const updated = { ...a, ...patch };
-        patch.fibu_buchwert_ende = Math.max(0,
-          (parseFloat(updated.fibu_buchwert_anfang) || 0)
-          - (parseFloat(updated.fibu_abschreibung_gj) || 0)
-          - (parseFloat(updated.fibu_korrektur) || 0));
-        onUpdateAnlage(a.id, patch);
-      }
-    } else {
-      let rest = total;
-      anlagenInGroup.forEach((a, idx) => {
-        const isLast = idx === anlagenInGroup.length - 1;
-        const bw = parseFloat(a.fibu_buchwert_anfang) || 0;
-        const v = isLast ? Math.round(rest * 100) / 100 : Math.round(total * bw / sumBw * 100) / 100;
-        rest -= v;
-        const patch = { [field]: v };
-        const updated = { ...a, ...patch };
-        patch.fibu_buchwert_ende = Math.max(0,
-          (parseFloat(updated.fibu_buchwert_anfang) || 0)
-          - (parseFloat(updated.fibu_abschreibung_gj) || 0)
-          - (parseFloat(updated.fibu_korrektur) || 0));
-        onUpdateAnlage(a.id, patch);
-      });
-    }
-  };
-
-  const commitEditKonto = (anlagenInGroup) => {
-    if (!editKonto) return;
+  // Speichert Konto-Total direkt in einstellungen.fibu_konto (KEINE Verteilung auf Anlagen)
+  const commitEditKonto = (kto) => {
+    if (!editKonto || !onUpdateFibuKonto) return;
     const raw = String(editKonto.val).replace(",", ".").trim();
     const val = parseFloat(raw);
     if (isNaN(val)) { setEditKonto(null); return; }
-    if (editKonto.field === "abschr") {
-      verteilen(anlagenInGroup, "fibu_abschreibung_gj", val);
-    } else if (editKonto.field === "korr") {
-      verteilen(anlagenInGroup, "fibu_korrektur", val);
-    } else if (editKonto.field === "bw_ende") {
-      // Rückwärts: Σ BW Anfang − BW Ende − Korr → wird Abschr.
-      const sumBwA = anlagenInGroup.reduce((s, a) => s + (parseFloat(a.fibu_buchwert_anfang) || 0), 0);
-      const sumKorr = anlagenInGroup.reduce((s, a) => s + (parseFloat(a.fibu_korrektur) || 0), 0);
-      const totalAbschr = Math.max(0, Math.round((sumBwA - val - sumKorr) * 100) / 100);
-      verteilen(anlagenInGroup, "fibu_abschreibung_gj", totalAbschr);
-    }
+    onUpdateFibuKonto(kto, { [editKonto.field]: val });
     setEditKonto(null);
+  };
+
+  // Helper: Effektiver Wert pro Konto - Override aus einstellungen oder Σ aus Anlagen
+  const eff = (kto, anlagenInGroup, field, anlagenField) => {
+    const o = overrides[kto];
+    if (o && o[field] != null) return parseFloat(o[field]);
+    return anlagenInGroup.reduce((s, a) => s + (parseFloat(a[anlagenField]) || 0), 0);
   };
 
   if (anlagen.length === 0) {
@@ -2306,23 +2290,27 @@ function FibuTab({ anlagen, kategorien, onUpdateAnlage, accent, headingC, subC, 
 
   const orderedKidList = [...kategorien.map(k => k.id), ...(grouped["__none__"] ? ["__none__"] : [])];
 
-  // Helper: inline-editable Konto-Wert (Anzeige Σ, beim Edit Eingabe für Total → verteilt)
-  const KontoEditableCell = ({ ktoRows, kto, field, value, color, ariaLabel }) => {
+  // Helper: inline-editable Konto-Wert (direkt in einstellungen.fibu_konto gespeichert)
+  const KontoEditableCell = ({ kto, field, value, color, ariaLabel, isOverride }) => {
     const isE = editKonto?.kto === kto && editKonto?.field === field;
     return isE ? (
       <input autoFocus type="number" step="0.01" value={editKonto.val}
         onChange={e => setEditKonto(v => ({ ...v, val: e.target.value }))}
         onKeyDown={e => {
-          if (e.key === "Enter") commitEditKonto(ktoRows);
+          if (e.key === "Enter") commitEditKonto(kto);
           if (e.key === "Escape") setEditKonto(null);
         }}
-        onBlur={() => commitEditKonto(ktoRows)}
+        onBlur={() => commitEditKonto(kto)}
         style={{ width: "100%", padding: "3px 6px", fontSize: 12, textAlign: "right", fontFamily: "monospace",
           border: `1.5px solid ${accent}`, borderRadius: 4, outline: "none", backgroundColor: accent + "10" }} />
     ) : (
       <span onDoubleClick={() => setEditKonto({ kto, field, val: String(value) })}
-        title={ariaLabel}
-        style={{ display: "block", textAlign: "right", fontFamily: "monospace", color, cursor: "default" }}>
+        title={ariaLabel || (isOverride ? "Konto-Total (manuell gesetzt) – Doppelklick zum Ändern" : "Doppelklick zum Setzen des Konto-Totals")}
+        style={{ display: "block", textAlign: "right", fontFamily: "monospace",
+          color, cursor: "default",
+          fontWeight: isOverride ? 700 : 400,
+          textDecoration: isOverride ? "none" : "none",
+          fontStyle: isOverride ? "normal" : "italic", opacity: isOverride ? 1 : 0.7 }}>
         {fmtCHF(value)}
       </span>
     );
@@ -2331,7 +2319,8 @@ function FibuTab({ anlagen, kategorien, onUpdateAnlage, accent, headingC, subC, 
   return (
     <div style={{ border: `1px solid ${panelBdr}`, borderRadius: 12, overflow: "hidden", backgroundColor: panelBg }}>
       <div style={{ padding: "8px 14px", borderBottom: `1px solid ${panelBdr}`, fontSize: 11, color: subC, fontStyle: "italic", backgroundColor: accent + "06" }}>
-        Eine Zeile pro FIBU-Konto. Doppelklick auf <strong>Abschr. GJ</strong>, <strong>Korrektur</strong> oder <strong>BW Ende</strong> → Total eingeben, wird proportional auf die Einzel-Anlagen verteilt (Details in Anlagekartei).
+        Eine Zeile pro FIBU-Konto = eine Buchung in der FIBU. Doppelklick auf jede Zahl-Spalte → Konto-Total eingeben (entspricht direkt der Buchhaltung,
+        wird NICHT auf einzelne Anlagen verteilt). <strong>Fett</strong> = manueller Override, <em>kursiv</em> = noch aus Anlagen-Σ berechnet.
       </div>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
         <thead>
@@ -2362,11 +2351,20 @@ function FibuTab({ anlagen, kategorien, onUpdateAnlage, accent, headingC, subC, 
             }
             const ktoKeys = Object.keys(byKto).sort();
 
-            // Kategorie-Totals
-            const tBwA = rows.reduce((s, r) => s + (parseFloat(r.fibu_buchwert_anfang) || 0), 0);
-            const tAb  = rows.reduce((s, r) => s + (parseFloat(r.fibu_abschreibung_gj) || 0), 0);
-            const tKo  = rows.reduce((s, r) => s + (parseFloat(r.fibu_korrektur) || 0), 0);
-            const tBwE = rows.reduce((s, r) => s + (parseFloat(r.fibu_buchwert_ende) || 0), 0);
+            // Kategorie-Totals - mit Override-Werten pro Konto
+            let tBwA = 0, tAb = 0, tKo = 0, tBwE = 0;
+            for (const kto of ktoKeys) {
+              const ktoR = byKto[kto];
+              const o = overrides[kto] || {};
+              tBwA += eff(kto, ktoR, "bw_anfang", "fibu_buchwert_anfang");
+              tAb  += o.abschr  != null ? parseFloat(o.abschr)  : ktoR.reduce((s, r) => s + (parseFloat(r.fibu_abschreibung_gj) || 0), 0);
+              tKo  += o.korr    != null ? parseFloat(o.korr)    : ktoR.reduce((s, r) => s + (parseFloat(r.fibu_korrektur) || 0), 0);
+              const e = o.bw_ende != null ? parseFloat(o.bw_ende) : Math.max(0,
+                eff(kto, ktoR, "bw_anfang", "fibu_buchwert_anfang")
+                - (o.abschr != null ? parseFloat(o.abschr) : ktoR.reduce((s, r) => s + (parseFloat(r.fibu_abschreibung_gj) || 0), 0))
+                - (o.korr != null ? parseFloat(o.korr) : ktoR.reduce((s, r) => s + (parseFloat(r.fibu_korrektur) || 0), 0)));
+              tBwE += e;
+            }
 
             return (
               <React.Fragment key={kid}>
@@ -2380,10 +2378,17 @@ function FibuTab({ anlagen, kategorien, onUpdateAnlage, accent, headingC, subC, 
                 </tr>
                 {ktoKeys.map(kto => {
                   const ktoRows = byKto[kto];
-                  const ktoBwA = ktoRows.reduce((s, r) => s + (parseFloat(r.fibu_buchwert_anfang) || 0), 0);
-                  const ktoAb  = ktoRows.reduce((s, r) => s + (parseFloat(r.fibu_abschreibung_gj) || 0), 0);
-                  const ktoKo  = ktoRows.reduce((s, r) => s + (parseFloat(r.fibu_korrektur) || 0), 0);
-                  const ktoBwE = ktoRows.reduce((s, r) => s + (parseFloat(r.fibu_buchwert_ende) || 0), 0);
+                  // Konto-Werte: Override aus einstellungen ODER Σ aus Anlagen
+                  const o = overrides[kto] || {};
+                  const ktoBwA = eff(kto, ktoRows, "bw_anfang", "fibu_buchwert_anfang");
+                  const ktoAb  = o.abschr != null ? parseFloat(o.abschr) : ktoRows.reduce((s, r) => s + (parseFloat(r.fibu_abschreibung_gj) || 0), 0);
+                  const ktoKo  = o.korr   != null ? parseFloat(o.korr)   : ktoRows.reduce((s, r) => s + (parseFloat(r.fibu_korrektur) || 0), 0);
+                  // BW Ende: Override ODER berechnet
+                  const ktoBwE = o.bw_ende != null ? parseFloat(o.bw_ende) : Math.max(0, ktoBwA - ktoAb - ktoKo);
+                  // Markierung ob Override aktiv (für visuelle Unterscheidung)
+                  const isAbschrOverride = o.abschr != null;
+                  const isKorrOverride = o.korr != null;
+                  const isBwEndeOverride = o.bw_ende != null;
                   // Konto-Bezeichnung: nutze Sub-Kategorie der ersten Anlage (Saldovortrag bevorzugt)
                   const sv = ktoRows.find(r => r.typ === "Saldovortrag");
                   const bezeichnung = sv?.sub_kategorie || ktoRows[0]?.sub_kategorie || kat?.name || "—";
@@ -2401,23 +2406,28 @@ function FibuTab({ anlagen, kategorien, onUpdateAnlage, accent, headingC, subC, 
                       <td style={{ padding: "7px 10px", borderBottom: `1px solid ${tableBdr}80`, textAlign: "center", color: subC, fontSize: 11 }}>
                         {ktoRows.length}
                       </td>
-                      <td style={{ padding: "7px 10px", borderBottom: `1px solid ${tableBdr}80`, textAlign: "right", fontFamily: "monospace", color: headingC }}>
-                        {fmtCHF(ktoBwA)}
+                      <td style={{ padding: "7px 10px", borderBottom: `1px solid ${tableBdr}80` }}>
+                        <KontoEditableCell kto={kto} field="bw_anfang" value={ktoBwA}
+                          color={headingC} isOverride={o.bw_anfang != null}
+                          ariaLabel="Konto-Total BW Anfang lt. FIBU (Buchhaltung)" />
                       </td>
                       <td style={{ padding: "7px 10px", borderBottom: `1px solid ${tableBdr}80`, textAlign: "center", color: subC, fontFamily: "monospace", fontSize: 11 }}>
                         {fibuPctDefault != null ? fibuPctDefault + "%" : "—"}
                       </td>
                       <td style={{ padding: "7px 10px", borderBottom: `1px solid ${tableBdr}80` }}>
-                        <KontoEditableCell ktoRows={ktoRows} kto={kto} field="abschr" value={ktoAb}
-                          color="#dc2626" ariaLabel="Doppelklick: Total Abschr. GJ eingeben, wird proportional verteilt" />
+                        <KontoEditableCell kto={kto} field="abschr" value={ktoAb}
+                          color="#dc2626" isOverride={isAbschrOverride}
+                          ariaLabel="FIBU-Abschreibungsbuchung pro Konto (Buchhaltungswert)" />
                       </td>
                       <td style={{ padding: "7px 10px", borderBottom: `1px solid ${tableBdr}80` }}>
-                        <KontoEditableCell ktoRows={ktoRows} kto={kto} field="korr" value={ktoKo}
-                          color={subC} ariaLabel="Doppelklick: Total Korrektur eingeben (z.B. Überabschreibung)" />
+                        <KontoEditableCell kto={kto} field="korr" value={ktoKo}
+                          color={subC} isOverride={isKorrOverride}
+                          ariaLabel="Korrektur / Überabschreibung pro Konto" />
                       </td>
                       <td style={{ padding: "7px 10px", borderBottom: `1px solid ${tableBdr}80` }}>
-                        <KontoEditableCell ktoRows={ktoRows} kto={kto} field="bw_ende" value={ktoBwE}
-                          color={headingC} ariaLabel="Doppelklick: Saldo Ende lt. FIBU eingeben, Abschr. wird rückwärts gerechnet" />
+                        <KontoEditableCell kto={kto} field="bw_ende" value={ktoBwE}
+                          color={headingC} isOverride={isBwEndeOverride}
+                          ariaLabel="Saldo Ende 31.12. lt. FIBU - bei Eingabe direkter Override" />
                       </td>
                     </tr>
                   );
@@ -2437,10 +2447,18 @@ function FibuTab({ anlagen, kategorien, onUpdateAnlage, accent, headingC, subC, 
             );
           })}
           {(() => {
-            const tBwA = anlagen.reduce((s, r) => s + (parseFloat(r.fibu_buchwert_anfang) || 0), 0);
-            const tAb  = anlagen.reduce((s, r) => s + (parseFloat(r.fibu_abschreibung_gj) || 0), 0);
-            const tKo  = anlagen.reduce((s, r) => s + (parseFloat(r.fibu_korrektur) || 0), 0);
-            const tBwE = anlagen.reduce((s, r) => s + (parseFloat(r.fibu_buchwert_ende) || 0), 0);
+            // Pro Konto effektive Werte (Override oder Σ Anlagen) aufsummieren
+            const ktoSet = new Set(anlagen.map(a => a.fibu_konto || "(ohne Kto)"));
+            let tBwA = 0, tAb = 0, tKo = 0, tBwE = 0;
+            for (const kto of ktoSet) {
+              const ktoR = anlagen.filter(a => (a.fibu_konto || "(ohne Kto)") === kto);
+              const o = overrides[kto] || {};
+              const bwA = eff(kto, ktoR, "bw_anfang", "fibu_buchwert_anfang");
+              const ab  = o.abschr != null ? parseFloat(o.abschr) : ktoR.reduce((s, r) => s + (parseFloat(r.fibu_abschreibung_gj) || 0), 0);
+              const ko  = o.korr   != null ? parseFloat(o.korr)   : ktoR.reduce((s, r) => s + (parseFloat(r.fibu_korrektur) || 0), 0);
+              const bwE = o.bw_ende != null ? parseFloat(o.bw_ende) : Math.max(0, bwA - ab - ko);
+              tBwA += bwA; tAb += ab; tKo += ko; tBwE += bwE;
+            }
             return (
               <tr style={{ backgroundColor: accent + "12", borderTop: `2px solid ${accent}` }}>
                 <td colSpan={3} style={{ padding: "10px 12px", fontWeight: 800, color: accent, textAlign: "right" }}>GESAMT-TOTAL FIBU</td>
