@@ -70,11 +70,11 @@ ALTER TABLE fibu_bank_transaktionen ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS bank_imports_access ON fibu_bank_imports;
 CREATE POLICY bank_imports_access ON fibu_bank_imports
-  USING (mandant_id IN (SELECT fibu_mandant_ids_for_user()));
+  USING (mandant_id = ANY(fibu_mandant_ids_for_user()));
 
 DROP POLICY IF EXISTS bank_tx_access ON fibu_bank_transaktionen;
 CREATE POLICY bank_tx_access ON fibu_bank_transaktionen
-  USING (mandant_id IN (SELECT fibu_mandant_ids_for_user()));
+  USING (mandant_id = ANY(fibu_mandant_ids_for_user()));
 
 -- RPC: Match bestätigen + Kreditoren-Beleg als bezahlt markieren
 CREATE OR REPLACE FUNCTION fibu_bank_match_kreditor(
