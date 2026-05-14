@@ -93,16 +93,28 @@ async function scanQrInFile(file) {
   }
 }
 
+/**
+ * Brutto-Methode (Abacus-kompatibel): Eingabe = zu zahlender Betrag (inkl. MWST).
+ * Netto und Vorsteuer werden rückgerechnet.
+ */
 function calcPosition(pos, mwstMap) {
-  const satz = mwstMap[pos.mwst_code] ?? 0;
-  const netto = parseFloat(pos.betrag_netto) || 0;
-  const mwst  = Math.round(netto * satz) / 100;
-  return { ...pos, mwst_satz: satz, betrag_mwst: mwst, betrag_brutto: netto + mwst };
+  const satz   = mwstMap[pos.mwst_code] ?? 0;
+  const brutto = parseFloat(pos.betrag_brutto) || 0;
+  let netto, mwst;
+  if (satz > 0) {
+    // MWST aus Brutto herausrechnen (÷ 1.0X)
+    netto = Math.round(brutto / (1 + satz / 100) * 100) / 100;
+    mwst  = Math.round((brutto - netto) * 100) / 100;
+  } else {
+    netto = brutto;
+    mwst  = 0;
+  }
+  return { ...pos, mwst_satz: satz, betrag_netto: netto, betrag_mwst: mwst };
 }
 
 const emptyPos = (defaultCode = 'M81') => ({
   _key: Math.random(), konto_nr: '', bezeichnung: '',
-  mwst_code: defaultCode, betrag_netto: '', betrag_mwst: 0, betrag_brutto: 0, mwst_satz: 0,
+  mwst_code: defaultCode, betrag_brutto: '', betrag_netto: 0, betrag_mwst: 0, mwst_satz: 0,
 });
 
 export default function RechnungErfassen() {
@@ -251,8 +263,12 @@ export default function RechnungErfassen() {
   };
 
   const totals = positionen.reduce(
-    (s, p) => ({ netto: s.netto + (parseFloat(p.betrag_netto) || 0), mwst: s.mwst + (p.betrag_mwst || 0), brutto: s.brutto + (p.betrag_brutto || 0) }),
-    { netto: 0, mwst: 0, brutto: 0 }
+    (s, p) => ({
+      brutto: s.brutto + (parseFloat(p.betrag_brutto) || 0),  // Eingabefeld
+      mwst:   s.mwst   + (p.betrag_mwst  || 0),               // berechnet
+      netto:  s.netto  + (p.betrag_netto  || 0),               // berechnet
+    }),
+    { brutto: 0, mwst: 0, netto: 0 }
   );
 
   // ── QR-Scan Logik ───────────────────────────────────────────────
@@ -297,23 +313,16 @@ export default function RechnungErfassen() {
         };
       });
 
-      // Betrag übernehmen wenn vorhanden
+      // Betrag übernehmen wenn vorhanden (QR liefert immer Brutto → direkt setzen)
       if (spc.betrag && spc.betrag > 0) {
         const defaultCode = matched?.mwst_code ?? 'M81';
-        const satz = mwstMap[defaultCode] ?? 0;
-        // Brutto → Netto
-        const netto = satz > 0
-          ? Math.round(spc.betrag / (1 + satz / 100) * 100) / 100
-          : spc.betrag;
         setPositionen([calcPosition({
           _key: Math.random(),
           konto_nr: matched?.standard_konto_nr ?? '',
           bezeichnung: spc.mitteilung || '',
           mwst_code: defaultCode,
-          betrag_netto: CHF(netto),
-          betrag_mwst: 0,
-          betrag_brutto: 0,
-          mwst_satz: satz,
+          betrag_brutto: CHF(spc.betrag),   // QR-Betrag IST der Brutto-Betrag
+          betrag_netto: 0, betrag_mwst: 0, mwst_satz: 0,
         }, mwstMap)]);
       }
     } catch (e) {
@@ -337,7 +346,7 @@ export default function RechnungErfassen() {
     setSaving(true);
     try {
       const belegNr = await kreditorenApi.nextBelegNr(mandant.id);
-      const pos = positionen.filter(p => parseFloat(p.betrag_netto) > 0).map(p => ({
+      const pos = positionen.filter(p => parseFloat(p.betrag_brutto) > 0).map(p => ({
         konto_nr: p.konto_nr || '6800',
         bezeichnung: p.bezeichnung,
         mwst_code: p.mwst_code,
@@ -620,15 +629,18 @@ export default function RechnungErfassen() {
                 <th style={{ ...hdrTd, width: 28 }}>#</th>
                 <th style={{ ...hdrTd, width: 170 }}>Aufwandskonto *</th>
                 <th style={hdrTd}>Bezeichnung</th>
-                <th style={{ ...hdrTd, width: 110 }}>MWST-Code</th>
-                <th style={{ ...hdrTd, width: 110, textAlign: 'right' }}>Netto CHF *</th>
-                <th style={{ ...hdrTd, width: 100, textAlign: 'right' }}>MWST CHF</th>
-                <th style={{ ...hdrTd, width: 110, textAlign: 'right' }}>Brutto CHF</th>
+                <th style={{ ...hdrTd, width: 120 }}>MWST-Code</th>
+                <th style={{ ...hdrTd, width: 120, textAlign: 'right', color: '#1a1a2e' }}>
+                  Brutto CHF *
+                  <span style={{ fontWeight: 400, fontSize: 9.5, marginLeft: 4, color: '#94a394' }}>inkl. MWST</span>
+                </th>
+                <th style={{ ...hdrTd, width: 90, textAlign: 'right', color: '#2e4a7d' }}>MWST</th>
+                <th style={{ ...hdrTd, width: 100, textAlign: 'right' }}>Netto</th>
                 <th style={{ ...hdrTd, width: 28 }}></th>
               </tr></thead>
               <tbody>
                 {positionen.map((p, i) => (
-                  <tr key={p._key}>
+                  <tr key={p._key} style={{ background: i % 2 === 0 ? '#fff' : '#fafcfa' }}>
                     <td style={{ ...cellTd, color: '#94a394', fontSize: 11, textAlign: 'center' }}>{i + 1}</td>
                     <td style={cellTd}>
                       <select style={{ ...inp, padding: '4px 8px', fontSize: 12 }} value={p.konto_nr} onChange={e => updatePos(i, 'konto_nr', e.target.value)}>
@@ -637,7 +649,7 @@ export default function RechnungErfassen() {
                       </select>
                     </td>
                     <td style={cellTd}>
-                      <input style={{ ...inp, padding: '4px 8px', fontSize: 12 }} value={p.bezeichnung} onChange={e => updatePos(i, 'bezeichnung', e.target.value)} />
+                      <input style={{ ...inp, padding: '4px 8px', fontSize: 12 }} value={p.bezeichnung} onChange={e => updatePos(i, 'bezeichnung', e.target.value)} placeholder="Bezeichnung" />
                     </td>
                     <td style={cellTd}>
                       <select style={{ ...inp, padding: '4px 8px', fontSize: 12 }} value={p.mwst_code} onChange={e => updatePos(i, 'mwst_code', e.target.value)}>
@@ -651,21 +663,30 @@ export default function RechnungErfassen() {
                               <option value="M81">M81 (8.1%)</option>
                               <option value="M26">M26 (2.6%)</option>
                               <option value="M38">M38 (3.8%)</option>
+                              <option value="I81">I81 (8.1% Inv.)</option>
                               <option value="M0">M0 (befreit)</option>
                             </>
                         }
                       </select>
                     </td>
+                    {/* ← Eingabefeld: zu zahlender Betrag (Brutto) */}
                     <td style={cellTd}>
                       <input
-                        type="number" step="0.05"
-                        style={{ ...inp, padding: '4px 8px', fontSize: 12, textAlign: 'right' }}
-                        value={p.betrag_netto}
-                        onChange={e => updatePos(i, 'betrag_netto', e.target.value)}
+                        type="number" step="0.05" min="0"
+                        style={{ ...inp, padding: '4px 8px', fontSize: 13, textAlign: 'right', fontWeight: 600,
+                          background: '#f0f7f0', borderColor: '#7a9b7f' }}
+                        value={p.betrag_brutto}
+                        onChange={e => updatePos(i, 'betrag_brutto', e.target.value)}
+                        placeholder="0.00"
                       />
                     </td>
-                    <td style={{ ...cellTd, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: '#2e4a7d', fontSize: 12 }}>{CHF(p.betrag_mwst)}</td>
-                    <td style={{ ...cellTd, textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums', fontSize: 12 }}>{CHF(p.betrag_brutto)}</td>
+                    {/* → Berechnete Felder (read-only) */}
+                    <td style={{ ...cellTd, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: '#2e4a7d', fontSize: 12 }}>
+                      {p.betrag_mwst ? CHF(p.betrag_mwst) : <span style={{ color: '#ccc' }}>—</span>}
+                    </td>
+                    <td style={{ ...cellTd, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: '#6b826b', fontSize: 12 }}>
+                      {p.betrag_netto ? CHF(p.betrag_netto) : <span style={{ color: '#ccc' }}>—</span>}
+                    </td>
                     <td style={cellTd}>
                       <button
                         onClick={() => setPositionen(prev => prev.filter((_, j) => j !== i))}
@@ -677,15 +698,19 @@ export default function RechnungErfassen() {
               </tbody>
             </table>
           </div>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 24, padding: '12px 16px', borderTop: '1px solid #e4e9e4', background: '#fafcfa' }}>
-            {[['Netto', totals.netto], ['MWST', totals.mwst], ['Brutto', totals.brutto]].map(([k, v]) => (
-              <div key={k} style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#94a394' }}>{k}</div>
-                <div style={{ fontWeight: k === 'Brutto' ? 700 : 500, fontSize: k === 'Brutto' ? 14 : 12.5, color: k === 'MWST' ? '#2e4a7d' : '#1a1a2e', marginTop: 2 }}>
-                  {head.waehrung} {CHF(v)}
-                </div>
-              </div>
-            ))}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 24, padding: '12px 16px', borderTop: '1px solid #e4e9e4', background: '#fafcfa' }}>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#94a394' }}>Netto</div>
+              <div style={{ fontWeight: 500, fontSize: 12.5, color: '#6b826b', marginTop: 2 }}>{head.waehrung} {CHF(totals.netto)}</div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#2e4a7d' }}>Vorsteuer</div>
+              <div style={{ fontWeight: 600, fontSize: 12.5, color: '#2e4a7d', marginTop: 2 }}>{head.waehrung} {CHF(totals.mwst)}</div>
+            </div>
+            <div style={{ textAlign: 'right', paddingLeft: 12, borderLeft: '2px solid #e4e9e4' }}>
+              <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#3d6641' }}>Zu zahlen (Brutto)</div>
+              <div style={{ fontWeight: 700, fontSize: 16, color: '#1a1a2e', marginTop: 2 }}>{head.waehrung} {CHF(totals.brutto)}</div>
+            </div>
           </div>
         </div>
       </div>

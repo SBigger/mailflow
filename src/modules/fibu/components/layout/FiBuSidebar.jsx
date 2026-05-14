@@ -35,6 +35,7 @@ const NAV = [
       { to: null, label: 'Kontoblätter',     icon: 'table',     disabled: true },
       { to: null, label: 'Bilanz & ER',      icon: 'balance',   disabled: true },
       { to: 'mwst/abrechnung', label: 'MWST-Abrechnung', icon: 'doc-text' },
+      { label: 'Bankabstimmung', icon: 'bank', newWindow: true },
     ],
   },
 ];
@@ -57,6 +58,8 @@ function Icon({ name, className = '' }) {
     case 'logout':     return <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>;
     case 'percent':    return <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>;
     case 'inbox':      return <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>;
+    case 'bank':       return <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/><line x1="3" y1="9" x2="21" y2="9"/></svg>;
+    case 'extern':     return <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>;
     default:           return null;
   }
 }
@@ -153,6 +156,21 @@ export default function FiBuSidebar() {
                       <span className="ml-auto text-xs" style={{ color: '#94a394', fontSize: 10 }}>bald</span>
                     )}
                   </div>
+                );
+              }
+              if (item.newWindow) {
+                return (
+                  <button
+                    key={item.label}
+                    className="w-full flex items-center gap-2.5 px-2.5 py-1.5 mx-1.5 rounded-lg transition-colors hover:bg-[#edf2ed]"
+                    style={{ fontSize: 12.5, color: '#4a5a4a', marginBottom: 1, width: 'calc(100% - 12px)' }}
+                    onClick={() => window.open(`/fibu/bank/${mandant?.id}`, '_blank', 'width=1600,height=900')}
+                    title="Öffnet in neuem Fenster"
+                  >
+                    <Icon name={item.icon} />
+                    <span className="flex-1 text-left">{item.label}</span>
+                    <Icon name="extern" className="w-[11px] h-[11px] opacity-50" />
+                  </button>
                 );
               }
               return (
