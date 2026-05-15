@@ -163,14 +163,20 @@ export default function FiBuSidebar() {
           title="Zurück zu MailFlow"
           onClick={() => navigate('/Dashboard')}
           style={{
-            width: 36, height: 28, borderRadius: 6, border: 'none', cursor: 'pointer',
-            background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: '#7a9a7f', fontSize: 13, marginBottom: 10,
+            width: 40, borderRadius: 7, border: 'none', cursor: 'pointer',
+            background: 'transparent', display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center', gap: 2,
+            color: '#a8c8a8', marginBottom: 10, padding: '5px 0',
             transition: 'background .15s',
           }}
-          onMouseOver={e => e.currentTarget.style.background = '#2e4a2e'}
-          onMouseOut={e => e.currentTarget.style.background = 'transparent'}
-        >←</button>
+          onMouseOver={e => { e.currentTarget.style.background = '#2e4a2e'; e.currentTarget.style.color = '#fff'; }}
+          onMouseOut={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#a8c8a8'; }}
+        >
+          <svg style={{ width: 13, height: 13 }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
+          <span style={{ fontSize: 8, fontWeight: 700, letterSpacing: '.04em', lineHeight: 1 }}>MF</span>
+        </button>
 
         <div style={{ width: 28, height: 1, background: '#2e4a2e', marginBottom: 8 }} />
 
