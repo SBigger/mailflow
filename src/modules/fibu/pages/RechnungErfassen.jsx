@@ -186,10 +186,18 @@ export default function RechnungErfassen() {
       const blob = await resp.blob();
       const file = new File([blob], item.pdf_name || 'rechnung.pdf', { type: blob.type });
       setScanFile(file);
-      // Kurz warten bis lieferanten geladen
       setScanStatus('idle');
     })();
   }, [inboxId, mandant?.id]);
+
+  // Auto-Scan sobald Inbox-PDF geladen ist UND Lieferanten verfügbar sind
+  const autoScannedRef = useRef(false);
+  useEffect(() => {
+    if (!inboxId || !scanFile || lieferanten.length === 0 || autoScannedRef.current) return;
+    if (scanStatus !== 'idle') return;
+    autoScannedRef.current = true;
+    handleScan();
+  }, [inboxId, scanFile, lieferanten.length, scanStatus, handleScan]);
 
   const handleLieferantChange = (id) => {
     const l = lieferanten.find(x => x.id === id);

@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useMandant } from '../../contexts/MandantContext';
+import { supabase } from '@/api/supabaseClient';
 
 const NAV = [
   {
@@ -72,6 +73,28 @@ export default function FiBuSidebar() {
   const { mandant, mandanten, switchMandant } = useMandant();
   const navigate = useNavigate();
   const [mandantOpen, setMandantOpen] = useState(false);
+  const [inboxPending, setInboxPending] = useState(0);
+
+  // Pending-Count für Eingangspostfach laden
+  useEffect(() => {
+    if (!mandant?.id) return;
+    let cancelled = false;
+    const load = async () => {
+      const { count } = await supabase
+        .from('fibu_rechnung_inbox')
+        .select('*', { count: 'exact', head: true })
+        .eq('mandant_id', mandant.id)
+        .eq('status', 'pending');
+      if (!cancelled) setInboxPending(count ?? 0);
+    };
+    load();
+    // Realtime-Subscription für sofortige Updates
+    const channel = supabase
+      .channel(`inbox-count-${mandant.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'fibu_rechnung_inbox', filter: `mandant_id=eq.${mandant.id}` }, load)
+      .subscribe();
+    return () => { cancelled = true; supabase.removeChannel(channel); };
+  }, [mandant?.id]);
 
   const base = `/fibu/${mandant?.id}`;
 
@@ -177,6 +200,9 @@ export default function FiBuSidebar() {
                   </button>
                 );
               }
+              const badge = item.to === 'kreditoren/inbox' && inboxPending > 0
+                ? inboxPending
+                : null;
               return (
                 <NavLink
                   key={item.label}
@@ -196,7 +222,14 @@ export default function FiBuSidebar() {
                   })}
                 >
                   <Icon name={item.icon} />
-                  {item.label}
+                  <span className="flex-1">{item.label}</span>
+                  {badge !== null && (
+                    <span style={{
+                      background: '#e85a3a', color: '#fff',
+                      borderRadius: 10, fontSize: 9.5, fontWeight: 700,
+                      padding: '1px 5px', minWidth: 16, textAlign: 'center', lineHeight: '14px',
+                    }}>{badge > 99 ? '99+' : badge}</span>
+                  )}
                 </NavLink>
               );
             })}
