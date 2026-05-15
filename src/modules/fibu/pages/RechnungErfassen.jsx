@@ -318,9 +318,16 @@ export default function RechnungErfassen() {
       const matched = lieferanten.find(l => l.iban && l.iban.replace(/\s+/g, '').toUpperCase() === normalIban);
       setScanMatch(matched ?? null);
 
-      // Wenn kein Match → Schnell-Anlage vorbereiten (IBAN + Name aus QR)
+      // Wenn kein Match → Schnell-Anlage vorbereiten (alle QR-Felder)
       if (!matched && spc.iban) {
-        setQuickLief({ name: spc.name ?? '', iban: spc.iban });
+        setQuickLief({
+          name:    spc.name ?? '',
+          iban:    spc.iban,
+          strasse: spc.strasse ?? '',
+          plz:     spc.plz ?? '',
+          ort:     spc.ort ?? '',
+          land:    spc.land ?? 'CH',
+        });
       }
 
       // Formular befüllen
@@ -372,10 +379,14 @@ export default function RechnungErfassen() {
     try {
       const nr = await lieferantenApi.nextNr(mandant.id);
       const neu = await lieferantenApi.create(mandant.id, {
-        name:  quickLief.name,
+        name:    quickLief.name,
         nr,
-        iban:  quickLief.iban,  // IBAN → Stammdaten
-        aktiv: true,
+        iban:    quickLief.iban,     // IBAN → Stammdaten
+        strasse: quickLief.strasse || null,
+        plz:     quickLief.plz     || null,
+        ort:     quickLief.ort     || null,
+        land:    quickLief.land    || 'CH',
+        aktiv:   true,
       });
       // Neue Liste aktualisieren + Lieferant im Formular setzen
       setLieferanten(prev => [...prev, neu].sort((a, b) => a.name.localeCompare(b.name)));

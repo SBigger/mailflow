@@ -38,7 +38,7 @@ const NAV = [
       { to: null, label: 'Bilanz & ER',      icon: 'balance',   disabled: true },
       { to: 'mwst/abrechnung', label: 'MWST-Abrechnung', icon: 'doc-text' },
       { to: 'jahresabschluss', label: 'Jahresabschluss', icon: 'calendar' },
-      { label: 'Bankabstimmung', icon: 'bank', newWindow: true },
+      { to: 'bankabstimmung', label: 'Bankabstimmung', icon: 'bank', newWindowFallback: true },
     ],
   },
 ];
@@ -68,6 +68,11 @@ function Icon({ name, className = '' }) {
     default:           return null;
   }
 }
+
+// Erkennt Electron / Tauri Desktop-Client → Bankabstimmung intern öffnen
+const isNativeApp = () =>
+  typeof window !== 'undefined' &&
+  (!!window.__TAURI__ || /electron/i.test(navigator.userAgent));
 
 export default function FiBuSidebar() {
   const { mandant, mandanten, switchMandant } = useMandant();
@@ -185,19 +190,33 @@ export default function FiBuSidebar() {
                   </div>
                 );
               }
-              if (item.newWindow) {
+              if (item.newWindow || item.newWindowFallback) {
+                // In Electron/Tauri: intern navigieren; im Browser: neues Fenster
+                const openIntern = item.newWindowFallback && isNativeApp();
                 return (
-                  <button
+                  <NavLink
                     key={item.label}
-                    className="w-full flex items-center gap-2.5 px-2.5 py-1.5 mx-1.5 rounded-lg transition-colors hover:bg-[#edf2ed]"
-                    style={{ fontSize: 12.5, color: '#4a5a4a', marginBottom: 1, width: 'calc(100% - 12px)' }}
-                    onClick={() => window.open(`/fibu/bank/${mandant?.id}`, '_blank', 'width=1600,height=900')}
-                    title="Öffnet in neuem Fenster"
+                    to={`${base}/${item.to}`}
+                    className={({ isActive }) => [
+                      'flex items-center gap-2.5 px-2.5 py-1.5 mx-1.5 rounded-lg transition-colors',
+                      isActive ? 'font-medium' : 'hover:bg-[#edf2ed]',
+                    ].join(' ')}
+                    style={({ isActive }) => ({
+                      fontSize: 12.5,
+                      color: isActive ? '#fff' : '#4a5a4a',
+                      background: isActive ? '#7a9b7f' : undefined,
+                      marginBottom: 1,
+                    })}
+                    onClick={openIntern ? undefined : (e) => {
+                      e.preventDefault();
+                      window.open(`/fibu/bank/${mandant?.id}`, '_blank', 'width=1600,height=900');
+                    }}
+                    title={openIntern ? undefined : 'Öffnet in neuem Fenster'}
                   >
                     <Icon name={item.icon} />
-                    <span className="flex-1 text-left">{item.label}</span>
-                    <Icon name="extern" className="w-[11px] h-[11px] opacity-50" />
-                  </button>
+                    <span className="flex-1">{item.label}</span>
+                    {!openIntern && <Icon name="extern" className="w-[11px] h-[11px] opacity-50" />}
+                  </NavLink>
                 );
               }
               const badge = item.to === 'kreditoren/inbox' && inboxPending > 0
