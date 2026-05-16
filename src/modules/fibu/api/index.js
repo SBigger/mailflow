@@ -132,7 +132,7 @@ export const kreditorenApi = {
   listOffen: async (mandantId) => {
     const { data, error } = await supabase
       .from('fibu_kreditoren_belege')
-      .select('*, lieferant:fibu_lieferanten(id,name,nr)')
+      .select('*, lieferant:fibu_lieferanten(id,name,nr,iban,bank_name,adresse,plz,ort,land)')
       .eq('mandant_id', mandantId)
       .in('status', ['offen', 'teilbezahlt'])
       .order('faelligkeit');
