@@ -20,6 +20,9 @@ export default function OpListe() {
   const [filter, setFilter] = useState('alle');
   const [verrechnenGs, setVerrechnenGs] = useState(null);
   const [verrProcessing, setVerrProcessing] = useState(false);
+  const [stornoBeleg, setStornoBeleg] = useState(null);
+  const [stornoDatum, setStornoDatum] = useState(toISO(new Date()));
+  const [stornoProcessing, setStornoProcessing] = useState(false);
 
   const load = (date) => {
     if (!mandant) return;
@@ -78,6 +81,19 @@ export default function OpListe() {
     } catch (e) {
       alert('Verrechnung fehlgeschlagen: ' + e.message);
     } finally { setVerrProcessing(false); }
+  };
+
+  const openStorno = (b) => { setStornoBeleg(b); setStornoDatum(toISO(new Date())); };
+  const handleStorno = async () => {
+    if (!stornoBeleg || !stornoDatum) return;
+    setStornoProcessing(true);
+    try {
+      await kreditorenApi.storno(stornoBeleg.id, stornoDatum);
+      setStornoBeleg(null);
+      load(stichtag);
+    } catch (e) {
+      alert('Storno fehlgeschlagen: ' + e.message);
+    } finally { setStornoProcessing(false); }
   };
 
   const PRESETS = [
@@ -200,9 +216,18 @@ export default function OpListe() {
                           <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, fontWeight: 500, background: '#e4e4ea', color: '#4a4a5a' }}>verrechnet</span>
                         )
                       ) : (
-                        <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, fontWeight: 500, background: isOver ? '#fde7e7' : isFaellig ? '#fef0c7' : '#e4e4ea', color: isOver ? '#8a2d2d' : isFaellig ? '#8a5a00' : '#4a4a5a' }}>
-                          {isOver ? `überfällig +${diff}` : isFaellig ? 'fällig' : 'offen'}
-                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, fontWeight: 500, background: isOver ? '#fde7e7' : isFaellig ? '#fef0c7' : '#e4e4ea', color: isOver ? '#8a2d2d' : isFaellig ? '#8a5a00' : '#4a4a5a' }}>
+                            {isOver ? `überfällig +${diff}` : isFaellig ? 'fällig' : 'offen'}
+                          </span>
+                          {(b.betrag_bezahlt || 0) === 0 && (
+                            <button
+                              onClick={() => openStorno(b)}
+                              title="Rechnung stornieren"
+                              style={{ padding: '3px 9px', borderRadius: 6, border: '1px solid #e0c0c0', background: '#fff', color: '#8a2d2d', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+                            >⊗ Storno</button>
+                          )}
+                        </div>
                       )}
                     </td>
                   </tr>
@@ -293,6 +318,42 @@ export default function OpListe() {
                   color: '#fff', fontSize: 12.5, fontWeight: 600,
                   cursor: verrechnungPreview.alloc.length === 0 ? 'not-allowed' : 'pointer' }}>
                 {verrProcessing ? 'Verrechnet…' : 'Verrechnen'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Storno-Dialog ── */}
+      {stornoBeleg && (
+        <div onClick={() => !stornoProcessing && setStornoBeleg(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(26,26,46,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 20 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background: '#fff', borderRadius: 14, width: 480, maxWidth: '96vw', boxShadow: '0 16px 48px rgba(0,0,0,.25)' }}>
+            <div style={{ padding: '14px 18px', borderBottom: '1px solid #e4e9e4', fontWeight: 700, fontSize: 14 }}>
+              Rechnung stornieren
+            </div>
+            <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div style={{ fontSize: 12.5, color: '#4a5a4a' }}>
+                Rechnung <strong>{stornoBeleg.beleg_nr}</strong> · {stornoBeleg.lieferant?.name}
+                <span style={{ marginLeft: 8, fontWeight: 700 }}>CHF {CHF(stornoBeleg.betrag_brutto)}</span>
+              </div>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 600, color: '#6b826b', marginBottom: 4, display: 'block' }}>Storno-Datum</label>
+                <input type="date" value={stornoDatum} onChange={e => setStornoDatum(e.target.value)}
+                  style={{ background: '#f7faf7', border: '1px solid #d4dcd4', borderRadius: 7, padding: '6px 10px', fontSize: 12.5, outline: 'none' }} />
+              </div>
+              <div style={{ fontSize: 11.5, color: '#6b826b', background: '#fdf4f4', border: '1px solid #f0d8d8', borderRadius: 8, padding: '8px 12px' }}>
+                Es wird eine Storno-Gutschrift mit Gegenbuchung per Storno-Datum erstellt – die Originalrechnung
+                bleibt erhalten und wird als „storniert" markiert. Buchhalterisch wird die Rechnung damit ausgebucht.
+              </div>
+            </div>
+            <div style={{ padding: '12px 18px', borderTop: '1px solid #e4e9e4', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button onClick={() => setStornoBeleg(null)} disabled={stornoProcessing}
+                style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #d4dcd4', background: '#fff', fontSize: 12.5, cursor: 'pointer' }}>Abbrechen</button>
+              <button onClick={handleStorno} disabled={stornoProcessing || !stornoDatum}
+                style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: '#8a2d2d', color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
+                {stornoProcessing ? 'Storniert…' : 'Rechnung stornieren'}
               </button>
             </div>
           </div>

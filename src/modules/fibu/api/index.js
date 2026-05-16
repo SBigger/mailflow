@@ -231,6 +231,15 @@ export const kreditorenApi = {
     return data;   // verrechneter Gesamtbetrag
   },
 
+  // Rechnung stornieren – erzeugt eine Storno-Gutschrift per Storno-Datum
+  storno: async (belegId, stornoDatum) => {
+    const { data, error } = await supabase.rpc('fibu_kreditoren_storno', {
+      p_beleg_id: belegId, p_storno_datum: stornoDatum,
+    });
+    if (error) throw error;
+    return data;   // id der Storno-Gutschrift
+  },
+
   markBezahlt: async (id, betrag, bezahltAm) => {
     const { data: beleg } = await supabase
       .from('fibu_kreditoren_belege')
@@ -568,6 +577,38 @@ export const saldovortragApi = {
   speichern: async (mandantId, jahr, salden) => {
     const { data, error } = await supabase.rpc('fibu_saldovortrag_speichern', {
       p_mandant_id: mandantId, p_jahr: jahr, p_salden: salden,
+    });
+    if (error) throw error;
+    return data;
+  },
+};
+
+// ── Wechselkurse (ESTV/BAZG) ─────────────────────────────────────
+export const wechselkurseApi = {
+  // neueste Kurse eines Typs ('monat' | 'tag')
+  list: async (typ) => {
+    const { data: d } = await supabase
+      .from('fibu_wechselkurse')
+      .select('datum')
+      .eq('typ', typ)
+      .order('datum', { ascending: false })
+      .limit(1);
+    if (!d || d.length === 0) return { datum: null, kurse: [] };
+    const datum = d[0].datum;
+    const { data, error } = await supabase
+      .from('fibu_wechselkurse')
+      .select('*')
+      .eq('typ', typ)
+      .eq('datum', datum)
+      .order('waehrung');
+    if (error) throw error;
+    return { datum, kurse: data ?? [] };
+  },
+
+  // Import von der ESTV/BAZG anstossen (Edge Function)
+  importNow: async (typ = 'beide') => {
+    const { data, error } = await supabase.functions.invoke('fibu-wechselkurse-import', {
+      body: { typ },
     });
     if (error) throw error;
     return data;

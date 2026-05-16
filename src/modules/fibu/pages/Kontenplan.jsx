@@ -14,6 +14,8 @@ const KLASSEN = [
   { nr: '9', label: 'Klasse 9 – Abschlusskonten' },
 ];
 
+const WAEHRUNGEN = ['CHF', 'EUR', 'USD', 'GBP', 'JPY', 'AUD', 'CAD', 'SEK', 'NOK', 'DKK', 'CNY'];
+
 const TYP_COLORS = {
   aktiv:      { bg: '#e8f4fd', color: '#1e6fa8' },
   passiv:     { bg: '#fdf0e8', color: '#a85a1e' },
@@ -75,6 +77,12 @@ export default function Kontenplan() {
     setKonten(prev => prev.map(k => k.id === konto.id ? { ...k, aktiv: neu } : k));
     await supabase.from('fibu_konten').update({ aktiv: neu }).eq('id', konto.id);
     setSaving(s => ({ ...s, [konto.id]: false }));
+  }
+
+  async function handleWaehrung(konto, waehrung) {
+    if (!canWrite) return;
+    setKonten(prev => prev.map(k => k.id === konto.id ? { ...k, waehrung } : k));
+    await supabase.from('fibu_konten').update({ waehrung }).eq('id', konto.id);
   }
 
   async function handleSeed() {
@@ -200,6 +208,7 @@ export default function Kontenplan() {
                         <th style={s.th}>Konto-Nr</th>
                         <th style={s.th}>Bezeichnung</th>
                         <th style={s.th}>Typ</th>
+                        <th style={s.th}>Währung</th>
                         <th style={s.th}>MWST-Code</th>
                         <th style={{ ...s.th, textAlign: 'right' }}>Aktiv</th>
                       </tr>
@@ -210,6 +219,23 @@ export default function Kontenplan() {
                           <td style={{ ...s.td, ...s.nrCell }}>{k.konto_nr}</td>
                           <td style={s.td}>{k.bezeichnung}</td>
                           <td style={s.td}><span style={s.typBadge(k.konto_typ)}>{k.konto_typ}</span></td>
+                          <td style={s.td}>
+                            <select
+                              value={k.waehrung ?? 'CHF'}
+                              disabled={!canWrite}
+                              onChange={e => handleWaehrung(k, e.target.value)}
+                              style={{
+                                border: '1px solid #d4dcd4', borderRadius: 6, padding: '3px 6px',
+                                fontSize: 12, background: (k.waehrung && k.waehrung !== 'CHF') ? '#fff7ed' : '#fff',
+                                color: (k.waehrung && k.waehrung !== 'CHF') ? '#9a3412' : '#1a1a2e',
+                                fontWeight: (k.waehrung && k.waehrung !== 'CHF') ? 600 : 400, outline: 'none',
+                              }}
+                            >
+                              {[...new Set([k.waehrung ?? 'CHF', ...WAEHRUNGEN])].map(w => (
+                                <option key={w} value={w}>{w}</option>
+                              ))}
+                            </select>
+                          </td>
                           <td style={s.td}>
                             {k.mwst_code
                               ? <span style={s.mwstBadge}>{k.mwst_code}</span>
