@@ -6,6 +6,13 @@ import { useNavigate } from 'react-router-dom';
 const N2 = (n) => n == null ? '—' : Number(n).toLocaleString('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('de-CH') : '—';
 
+// Beleg-Nr. kurz: "RE-2024-000420" → "420"
+const shortBeleg = (ref) => {
+  if (!ref) return null;
+  const m = ref.match(/(\d+)$/);
+  return m ? String(parseInt(m[1], 10)) : ref;
+};
+
 const TYP_COLOR = {
   aktiv:    { bg: '#dbeafe', color: '#1e40af' },
   passiv:   { bg: '#ffedd5', color: '#9a3412' },
@@ -254,121 +261,144 @@ export default function Kontoblaetter() {
         ) : loading ? (
           <div style={{ padding: 60, textAlign: 'center', color: '#94a394', fontSize: 13 }}>Lädt…</div>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
             <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
               <tr style={{ background: '#fafcfa' }}>
-                <th style={th}>Datum</th>
-                <th style={th}>Buchungs-Nr.</th>
+                <th style={th}>BelDatum</th>
+                <th style={{ ...th, minWidth: 200 }}>Text</th>
                 <th style={th}>Gegenkonto</th>
-                <th style={{ ...th, flex: 1 }}>Buchungstext / Beleg</th>
-                <th style={{ ...th, textAlign: 'right' }}>MWST</th>
+                <th style={th}>Beleg</th>
                 <th style={{ ...th, textAlign: 'right' }}>Soll</th>
                 <th style={{ ...th, textAlign: 'right' }}>Haben</th>
                 <th style={{ ...th, textAlign: 'right' }}>Saldo</th>
               </tr>
             </thead>
             <tbody>
-              {/* ── Eröffnungssaldo-Zeile ── */}
+              {/* ── Saldovortrag ── */}
               <tr style={{ background: '#e8f0e8' }}>
-                <td style={{ ...td, fontWeight: 600, color: '#3d6641', fontSize: 11.5 }} colSpan={3}>
-                  Eröffnungssaldo {von}
-                </td>
+                <td style={{ ...td, fontStyle: 'italic', color: '#6b826b', fontSize: 12 }}>Saldovortrag</td>
+                <td style={td} />
+                <td style={td} />
                 <td style={td} />
                 <td style={tdR} />
                 <td style={tdR} />
-                <td style={tdR} />
-                <td style={{ ...tdR, fontWeight: 700, color: '#1a1a2e' }}>
-                  CHF {N2(eroeff)}
-                </td>
+                <td style={{ ...tdR, fontWeight: 700 }}>{N2(eroeff)}</td>
               </tr>
 
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={8} style={{ padding: '24px 16px', textAlign: 'center', color: '#94a394', fontSize: 12.5 }}>
+                  <td colSpan={7} style={{ padding: '24px 16px', textAlign: 'center', color: '#94a394', fontSize: 12.5 }}>
                     Keine Buchungen in diesem Zeitraum
                   </td>
                 </tr>
               )}
 
-              {rows.map((r, i) => (
-                <React.Fragment key={r.buchungs_nr ?? i}>
-                  {/* ── Zeile 1: Hauptbuchung ── */}
-                  <tr style={{ background: i % 2 === 0 ? '#fff' : '#fafcfa' }}>
-                    <td style={{ ...td, color: '#6b826b', whiteSpace: 'nowrap', fontSize: 12 }}>
-                      {fmtDate(r.buchungsdatum)}
-                    </td>
-                    <td style={{ ...tdMono, fontSize: 11.5, color: '#3d6641' }}>
-                      {r.buchungs_nr}
-                    </td>
-                    <td style={{ ...tdMono, fontSize: 11.5 }}>
-                      <span style={{ fontWeight: 600 }}>{r.gegenkonto}</span>
-                      {r.gegenkonto_bez && (
-                        <span style={{ fontSize: 10.5, color: '#94a394', marginLeft: 4 }}>{r.gegenkonto_bez}</span>
-                      )}
-                    </td>
-                    <td style={{ ...td, fontSize: 12.5, color: '#1a1a2e', maxWidth: 280 }}>
-                      <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {rows.map((r, i) => {
+                const bg1 = i % 2 === 0 ? '#fff' : '#fafcfa';
+                const bg2 = i % 2 === 0 ? '#f7fbf7' : '#f2f7f2';
+                const bel = shortBeleg(r.beleg_ref);
+                const hasMwst = r.mwst_betrag && Math.abs(r.mwst_betrag) > 0.005 && r.konto_vorsteuer;
+                return (
+                  <React.Fragment key={r.buchungs_nr ?? i}>
+                    {/* ── Zeile 1: Hauptbuchung ─────────────────────── */}
+                    <tr style={{ background: bg1 }}>
+                      {/* BelDatum */}
+                      <td style={{ ...td, color: '#6b826b', whiteSpace: 'nowrap', fontSize: 12, verticalAlign: 'top', paddingTop: 8 }}>
+                        {fmtDate(r.buchungsdatum)}
+                      </td>
+                      {/* Text (Buchungstext) */}
+                      <td style={{ ...td, color: '#1a1a2e', verticalAlign: 'top', paddingTop: 8 }}>
                         {r.buch_text || '—'}
-                      </span>
-                    </td>
-                    {/* MWST-Code + Betrag in Hauptzeile */}
-                    <td style={{ ...tdR, whiteSpace: 'nowrap', verticalAlign: 'middle' }}>
-                      {r.mwst_code && (
-                        <span style={{ display: 'flex', alignItems: 'center', gap: 3, justifyContent: 'flex-end' }}>
-                          {mwstBadge(r.mwst_code)}
-                          <span style={{ fontSize: 11, color: '#94a394', fontVariantNumeric: 'tabular-nums' }}>
-                            {N2(r.mwst_betrag)}
-                          </span>
-                        </span>
-                      )}
-                    </td>
-                    <td style={{ ...tdR, color: r.soll > 0 ? '#1a1a2e' : '#d1d5db', fontWeight: r.soll > 0 ? 500 : 400 }}>
-                      {r.soll > 0 ? N2(r.soll) : '—'}
-                    </td>
-                    <td style={{ ...tdR, color: r.haben > 0 ? '#1a1a2e' : '#d1d5db', fontWeight: r.haben > 0 ? 500 : 400 }}>
-                      {r.haben > 0 ? N2(r.haben) : '—'}
-                    </td>
-                    <td style={{ ...tdR, fontWeight: 600, color: r.saldo_lfd < 0 ? '#991b1b' : '#1a1a2e' }}>
-                      {N2(r.saldo_lfd)}
-                    </td>
-                  </tr>
-
-                  {/* ── Zeile 2: Beleg-Referenz (nur wenn vorhanden) ── */}
-                  {r.beleg_ref && (
-                    <tr style={{ background: i % 2 === 0 ? '#fafcfa' : '#f4f8f4' }}>
-                      <td style={{ ...td2, paddingTop: 1, paddingBottom: 5 }} />
-                      <td style={{ ...td2, paddingTop: 1, paddingBottom: 5 }} />
-                      <td colSpan={2} style={{ ...td2, paddingTop: 1, paddingBottom: 5 }}>
+                      </td>
+                      {/* Gegenkonto */}
+                      <td style={{ ...tdMono, fontWeight: 600, color: '#1a1a2e', verticalAlign: 'top', paddingTop: 8 }}>
+                        {r.gegenkonto}
+                      </td>
+                      {/* Beleg kurz + 📎 Pin wenn Beleg anhängt */}
+                      <td style={{ ...tdMono, color: '#4a5a4a', verticalAlign: 'top', paddingTop: 8 }}>
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                          <span style={{ fontSize: 10, color: '#94a394', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em' }}>Beleg</span>
-                          <span style={{ fontSize: 11, color: '#2e4a7d', fontFamily: 'monospace' }}>{r.beleg_ref}</span>
                           {r.quelle_id && (
                             <button
                               onClick={() => navigate(`../kreditoren/erfassen/${r.quelle_id}`)}
                               title="Beleg öffnen"
-                              style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#94a394', fontSize: 11, padding: '0 1px', lineHeight: 1 }}
-                            >↗</button>
+                              style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, padding: '0', lineHeight: 1, color: '#94a394' }}
+                            >📎</button>
                           )}
+                          <span style={{ fontVariantNumeric: 'tabular-nums' }}>{bel}</span>
                         </span>
                       </td>
-                      <td colSpan={4} style={{ ...td2, paddingTop: 1, paddingBottom: 5 }} />
+                      {/* Soll */}
+                      <td style={{ ...tdR, fontVariantNumeric: 'tabular-nums', verticalAlign: 'top', paddingTop: 8,
+                        color: r.soll > 0 ? '#1a1a2e' : '#d1d5db' }}>
+                        {r.soll > 0 ? N2(r.soll) : ''}
+                      </td>
+                      {/* Haben */}
+                      <td style={{ ...tdR, fontVariantNumeric: 'tabular-nums', verticalAlign: 'top', paddingTop: 8,
+                        color: r.haben > 0 ? '#1a1a2e' : '#d1d5db' }}>
+                        {r.haben > 0 ? N2(r.haben) : ''}
+                      </td>
+                      {/* Saldo */}
+                      <td style={{ ...tdR, fontWeight: 600, verticalAlign: 'top', paddingTop: 8,
+                        color: r.saldo_lfd < 0 ? '#991b1b' : '#1a1a2e' }}>
+                        {N2(r.saldo_lfd)}
+                      </td>
                     </tr>
-                  )}
-                </React.Fragment>
-              ))}
 
-              {/* ── Schluss-Totalen-Zeile ── */}
+                    {/* ── Zeile 2: MWST-Sub-Zeile ───────────────────── */}
+                    {/* Zeigt: 📎 Beleg-Nr | | konto_vorsteuer | | MWST-Betrag | | (Saldo unverändert) */}
+                    {hasMwst && (
+                      <tr style={{ background: bg2, borderBottom: `1px solid #e8ede8` }}>
+                        {/* BelDatum: leer */}
+                        <td style={{ ...td2 }} />
+                        {/* Text: leer */}
+                        <td style={{ ...td2 }} />
+                        {/* Gegenkonto: konto_vorsteuer (z.B. "1172") */}
+                        <td style={{ ...td2, fontFamily: 'monospace', fontWeight: 600, color: '#4a5a8a' }}>
+                          {r.konto_vorsteuer}
+                        </td>
+                        {/* Beleg: 📎 + Nr – klickbar */}
+                        <td style={{ ...td2 }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, color: '#6b826b', fontFamily: 'monospace', fontSize: 11 }}>
+                            📎 {bel}
+                          </span>
+                        </td>
+                        {/* Soll: MWST-Betrag (informativ) */}
+                        <td style={{ ...tdR, fontSize: 11.5, color: '#4a5a8a', fontVariantNumeric: 'tabular-nums', paddingTop: 3, paddingBottom: 5 }}>
+                          {N2(r.mwst_betrag)}
+                        </td>
+                        <td style={{ ...td2 }} />
+                        {/* Saldo: gleich wie Zeile 1 (informativ) */}
+                        <td style={{ ...tdR, fontSize: 11.5, color: '#94a394', fontVariantNumeric: 'tabular-nums', paddingTop: 3, paddingBottom: 5 }}>
+                          {N2(r.saldo_lfd)}
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+
+              {/* ── Perioden-Total ── */}
               {rows.length > 0 && (
-                <tr style={{ background: '#e4ede4', fontWeight: 700 }}>
-                  <td colSpan={3} style={{ ...td, fontWeight: 700, fontSize: 12, color: '#3d6641' }}>
-                    Total Periode {von} – {bis}
-                  </td>
-                  <td style={td} />
-                  <td style={tdR} />
-                  <td style={{ ...tdR, fontWeight: 700 }}>CHF {N2(totalSoll)}</td>
-                  <td style={{ ...tdR, fontWeight: 700 }}>CHF {N2(totalHaben)}</td>
-                  <td style={{ ...tdR, fontWeight: 700, color: schluss < 0 ? '#991b1b' : '#166534' }}>CHF {N2(schluss)}</td>
-                </tr>
+                <>
+                  <tr style={{ background: '#e4ede4', borderTop: '2px solid #c5cfc5' }}>
+                    <td colSpan={2} style={{ ...td, fontWeight: 600, fontSize: 12, color: '#3d6641' }}>
+                      Saldo {von} – {bis}
+                    </td>
+                    <td style={td} />
+                    <td style={td} />
+                    <td style={{ ...tdR, fontWeight: 700 }}>{N2(totalSoll)}</td>
+                    <td style={{ ...tdR, fontWeight: 700 }}>{N2(totalHaben)}</td>
+                    <td style={{ ...tdR, fontWeight: 700, color: schluss < 0 ? '#991b1b' : '#1a1a2e' }}>{N2(schluss)}</td>
+                  </tr>
+                  <tr style={{ background: '#e8f0e8' }}>
+                    <td colSpan={6} style={{ ...td, fontStyle: 'italic', color: '#6b826b', fontSize: 12 }}>Saldovortrag</td>
+                    <td style={{ ...tdR, fontWeight: 600, color: '#6b826b' }}>{N2(eroeff)}</td>
+                  </tr>
+                  <tr style={{ background: '#d4e4d4' }}>
+                    <td colSpan={6} style={{ ...td, fontWeight: 700, color: '#1a1a2e', fontSize: 12 }}>Saldo Buchungsjahr</td>
+                    <td style={{ ...tdR, fontWeight: 800, color: schluss < 0 ? '#991b1b' : '#166534' }}>{N2(schluss)}</td>
+                  </tr>
+                </>
               )}
             </tbody>
           </table>
