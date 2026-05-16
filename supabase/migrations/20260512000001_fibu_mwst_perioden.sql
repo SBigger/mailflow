@@ -154,6 +154,8 @@ END;
 $$;
 
 -- 6. fibu_mwst_detail erweitert: buchungs_nr als Editier-Key + quelle_id für Beleg-Link
+-- DROP zuerst wegen geändertem Return-Type (quelle_id UUID neu hinzu)
+DROP FUNCTION IF EXISTS fibu_mwst_detail(UUID, DATE, DATE);
 CREATE OR REPLACE FUNCTION fibu_mwst_detail(
   p_mandant_id UUID,
   p_von        DATE,

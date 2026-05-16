@@ -3,6 +3,8 @@
 -- Ermöglicht die Anzeige "1172 K+" als zweite Informationszeile
 -- =====================================================================
 
+-- DROP wegen geändertem Return-Type (konto_vorsteuer TEXT neu hinzu)
+DROP FUNCTION IF EXISTS fibu_kontoblatt(UUID, TEXT, DATE, DATE);
 CREATE OR REPLACE FUNCTION fibu_kontoblatt(
   p_mandant_id UUID,
   p_konto_nr   TEXT,
