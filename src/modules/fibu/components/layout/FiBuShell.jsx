@@ -27,6 +27,7 @@ const Saldovortraege       = React.lazy(() => import('../../pages/Saldovortraege
 const Budget               = React.lazy(() => import('../../pages/Budget'));
 const Wechselkurse         = React.lazy(() => import('../../pages/Wechselkurse'));
 const Einstellungen        = React.lazy(() => import('../../pages/Einstellungen'));
+const LieferantenKonto     = React.lazy(() => import('../../pages/LieferantenKonto'));
 
 const Spinner = () => (
   <div className="flex-1 flex items-center justify-center">
@@ -51,6 +52,7 @@ function FiBuContent() {
         <Route path="kreditoren"                   element={<KreditorenDashboard />} />
         <Route path="kreditoren/lieferanten"        element={<Lieferanten />} />
         <Route path="kreditoren/lieferanten/:lieferantId" element={<Lieferanten />} />
+        <Route path="kreditoren/lieferanten-konto" element={<LieferantenKonto />} />
         <Route path="kreditoren/erfassen"           element={<RechnungErfassen />} />
         <Route path="kreditoren/erfassen/:belegId"  element={<RechnungErfassen />} />
         <Route path="kreditoren/opliste"            element={<OpListe />} />

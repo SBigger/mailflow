@@ -21,6 +21,7 @@ const SECTIONS = [
       { to: 'kreditoren/massen-import', label: 'Massen-Import',  icon: 'upload' },
       { divider: true },
       { to: 'kreditoren/lieferanten', label: 'Lieferanten',      icon: 'users' },
+      { to: 'kreditoren/lieferanten-konto', label: 'Lieferanten-Konto', icon: 'doc-text' },
       { to: 'kreditoren/opliste',     label: 'OP-Liste',          icon: 'check-list' },
       { to: 'kreditoren/zahlungslauf', label: 'Zahlungslauf',    icon: 'credit-card' },
     ],
