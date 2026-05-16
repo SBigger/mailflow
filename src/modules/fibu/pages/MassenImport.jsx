@@ -8,7 +8,7 @@
  *  4. Rechts: PDF-Vorschau des selektierten Rows
  *  5. „Alle buchen" → kreditorenApi.create für jeden fertigen Row
  */
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import { useMandant } from '../contexts/MandantContext';
 import { lieferantenApi, kontenApi, mwstCodesApi, kreditorenApi } from '../api';
@@ -21,16 +21,20 @@ function parseSpc(text) {
   const lines = text.split(/\r?\n/).map(l => l.trim());
   if (lines[0] !== 'SPC') return null;
   const addrType = lines[4] ?? 'S';
-  let plz = '', ort = '';
-  if (addrType === 'S') { plz = lines[8] ?? ''; ort = lines[9] ?? ''; }
-  else {
+  let plz = '', ort = '', strasse = '';
+  if (addrType === 'S') {
+    strasse = [lines[6], lines[7]].filter(Boolean).join(' ').trim();
+    plz = lines[8] ?? ''; ort = lines[9] ?? '';
+  } else {
+    strasse = (lines[6] ?? '').trim();
     const m = (lines[7] ?? '').match(/^(\d{4,5})\s+(.+)/);
     if (m) { plz = m[1]; ort = m[2]; }
   }
   return {
     iban:       (lines[3] ?? '').replace(/\s+/g, ''),
     name:       lines[5] ?? '',
-    plz, ort,
+    strasse, plz, ort,
+    land:       (lines[10] ?? '').trim() || 'CH',
     betrag:     lines[18] ? parseFloat(lines[18]) || null : null,
     referenz:   (lines[28] ?? '').replace(/\s+/g, ''),
     mitteilung: lines[29] ?? '',
@@ -94,14 +98,21 @@ function makeRow(file) {
   };
 }
 
+// Welche Pflichtfelder fehlen noch, damit der Beleg gebucht werden kann?
+function missingFields(row) {
+  const m = [];
+  if (!row.lieferant_id)                     m.push('Lieferant');
+  if (!row.belegdatum)                       m.push('Belegdatum');
+  if (!row.faelligkeit)                      m.push('Fälligkeit');
+  if (!(parseFloat(row.betrag_brutto) > 0))  m.push('Betrag');
+  if (!row.konto_nr)                         m.push('Konto');
+  if (!row.mwst_code)                        m.push('MWST-Code');
+  return m;
+}
+
 function isComplete(row) {
   return (
-    row.lieferant_id &&
-    row.belegdatum &&
-    row.faelligkeit &&
-    parseFloat(row.betrag_brutto) > 0 &&
-    row.konto_nr &&
-    row.mwst_code &&
+    missingFields(row).length === 0 &&
     row.status !== 'saving' &&
     row.status !== 'saved'
   );
@@ -130,9 +141,13 @@ function StatusIcon({ row }) {
     );
   }
   if (isComplete(row)) {
-    return <span style={{ fontSize: 14, color: '#5a7aaa' }}>◉</span>;
+    return <span style={{ fontSize: 14, color: '#5a7aaa' }} title="Bereit zum Buchen">◉</span>;
   }
-  return <span style={{ fontSize: 14, color: '#c4893a' }}>◎</span>;
+  const fehlt = missingFields(row);
+  return (
+    <span style={{ fontSize: 14, color: '#c4893a' }}
+      title={fehlt.length ? 'Fehlt noch: ' + fehlt.join(', ') : 'Unvollständig'}>◎</span>
+  );
 }
 
 // ── Inline-Cell Styles ────────────────────────────────────────────
@@ -150,7 +165,7 @@ const cellInpFocus = {
 };
 
 // ── Lieferant-Combobox in Grid-Zeile ─────────────────────────────
-function LiefCell({ row, lieferanten, onChange }) {
+function LiefCell({ row, lieferanten, onChange, onCreateNew }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState(row.lieferant_search || '');
   const wrapRef = useRef(null);
@@ -193,13 +208,27 @@ function LiefCell({ row, lieferanten, onChange }) {
           setTimeout(() => setOpen(false), 150);
         }}
       />
-      {open && filtered.length > 0 && (
+      {open && (filtered.length > 0 || query.trim().length >= 2) && (
         <div style={{
           position: 'absolute', top: '100%', left: 0, zIndex: 50,
           background: '#fff', border: '1px solid #d4dcd4', borderRadius: 6,
-          boxShadow: '0 4px 12px rgba(0,0,0,0.12)', minWidth: 200, maxHeight: 220,
+          boxShadow: '0 4px 12px rgba(0,0,0,0.12)', minWidth: 220, maxHeight: 240,
           overflowY: 'auto',
         }}>
+          {query.trim().length >= 2
+            && !lieferanten.some(l => l.name.trim().toLowerCase() === query.trim().toLowerCase())
+            && (
+            <button
+              type="button"
+              onMouseDown={() => { onCreateNew?.(query.trim()); setOpen(false); }}
+              style={{
+                display: 'block', width: '100%', textAlign: 'left',
+                padding: '7px 10px', fontSize: 11.5, border: 'none',
+                borderBottom: '1px solid #eef2ee', background: '#f0f7f0',
+                cursor: 'pointer', color: '#3d6641', fontWeight: 600,
+              }}
+            >+ Neuer Lieferant: «{query.trim()}»</button>
+          )}
           {filtered.map(l => (
             <button
               key={l.id}
@@ -228,9 +257,91 @@ function LiefCell({ row, lieferanten, onChange }) {
           ))}
         </div>
       )}
-      {!row.lieferant_id && query.length >= 1 && (
-        <div style={{ fontSize: 9, color: '#c4893a', padding: '1px 4px' }}>nicht zugeordnet</div>
+      {!row.lieferant_id && query.trim().length >= 1 && (
+        <button
+          type="button"
+          onClick={() => onCreateNew?.(query.trim())}
+          style={{ fontSize: 9, color: '#c4893a', padding: '1px 4px', border: 'none',
+            background: 'none', cursor: 'pointer', textAlign: 'left' }}
+        >⚠ nicht zugeordnet · anlegen</button>
       )}
+    </div>
+  );
+}
+
+// ── Modal: neuen Lieferant erfassen ───────────────────────────────
+function NeuerLieferantModal({ init, onSave, onClose, saving }) {
+  const [f, setF] = useState({
+    name:      init?.name || '',
+    uid:       init?.uid || '',
+    adresse:   init?.strasse || '',
+    plz:       init?.plz || '',
+    ort:       init?.ort || '',
+    land:      init?.land || 'CH',
+    iban:      init?.iban || '',
+    bank_name: init?.bank_name || '',
+  });
+  const set = (k, v) => setF(p => ({ ...p, [k]: v }));
+  const canSave = f.name.trim().length > 0 && !saving;
+
+  const lbl = { fontSize: 11, fontWeight: 600, color: '#6b826b', marginBottom: 3, display: 'block' };
+  const inp = { background: '#f7faf7', border: '1px solid #d4dcd4', borderRadius: 7, padding: '6px 9px', fontSize: 12.5, color: '#1a1a2e', outline: 'none', width: '100%', boxSizing: 'border-box' };
+
+  return (
+    <div onClick={() => !saving && onClose()}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(26,26,46,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 20 }}>
+      <div onClick={e => e.stopPropagation()}
+        style={{ background: '#fff', borderRadius: 14, width: 480, maxWidth: '96vw', boxShadow: '0 16px 48px rgba(0,0,0,.25)' }}>
+        <div style={{ padding: '14px 18px', borderBottom: '1px solid #e4e9e4', fontWeight: 700, fontSize: 14 }}>
+          Neuen Lieferant erfassen
+        </div>
+        <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div>
+            <label style={lbl}>Name *</label>
+            <input style={inp} value={f.name} autoFocus onChange={e => set('name', e.target.value)} placeholder="Firmenname" />
+          </div>
+          {/* Adresse */}
+          <div style={{ background: '#f7faf7', border: '1px solid #e4e9e4', borderRadius: 9, padding: 12 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#94a394', marginBottom: 8 }}>Adresse</div>
+            <div style={{ marginBottom: 8 }}>
+              <label style={lbl}>Strasse / Nr.</label>
+              <input style={inp} value={f.adresse} onChange={e => set('adresse', e.target.value)} placeholder="z.B. Bahnhofstrasse 1" />
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <div style={{ width: 90 }}>
+                <label style={lbl}>PLZ</label>
+                <input style={inp} value={f.plz} onChange={e => set('plz', e.target.value)} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={lbl}>Ort</label>
+                <input style={inp} value={f.ort} onChange={e => set('ort', e.target.value)} />
+              </div>
+              <div style={{ width: 64 }}>
+                <label style={lbl}>Land</label>
+                <input style={inp} value={f.land} onChange={e => set('land', e.target.value.toUpperCase().slice(0, 2))} />
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ flex: 1 }}>
+              <label style={lbl}>IBAN</label>
+              <input style={{ ...inp, fontFamily: 'monospace', fontSize: 11.5 }} value={f.iban} onChange={e => set('iban', e.target.value)} placeholder="CH.." />
+            </div>
+            <div style={{ width: 130 }}>
+              <label style={lbl}>UID</label>
+              <input style={inp} value={f.uid} onChange={e => set('uid', e.target.value)} placeholder="CHE-..." />
+            </div>
+          </div>
+        </div>
+        <div style={{ padding: '12px 18px', borderTop: '1px solid #e4e9e4', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <button onClick={onClose} disabled={saving}
+            style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #d4dcd4', background: '#fff', fontSize: 12.5, cursor: 'pointer' }}>Abbrechen</button>
+          <button onClick={() => canSave && onSave(f)} disabled={!canSave}
+            style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: canSave ? '#7a9b7f' : '#c5cdc5', color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: canSave ? 'pointer' : 'not-allowed' }}>
+            {saving ? 'Speichert…' : 'Lieferant anlegen'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -247,6 +358,8 @@ export default function MassenImport() {
   const [saving, setSaving]           = useState(false);
   const [nrCounter, setNrCounter]     = useState(0);
   const [dragOver, setDragOver]       = useState(false);
+  const [liefModal, setLiefModal]     = useState(null);   // { init, targetName }
+  const [liefSaving, setLiefSaving]   = useState(false);
   const fileInputRef = useRef(null);
   const parseQueueRef = useRef([]);
   const parsingRef    = useRef(false);
@@ -293,6 +406,11 @@ export default function MassenImport() {
               zahlungsreferenz: spc.referenz ?? '',
               konto_nr:         lief?.standard_konto_nr ?? r.konto_nr,
               mwst_code:        lief?.mwst_code ?? r.mwst_code,
+              // QR-Kreditordaten für die Schnellerfassung eines Lieferanten
+              qr: {
+                name:    spc.name, iban: spc.iban,
+                strasse: spc.strasse, plz: spc.plz, ort: spc.ort, land: spc.land,
+              },
             };
           }
           return { ...r, status: 'manual' };
@@ -393,6 +511,72 @@ export default function MassenImport() {
   const savedCount   = rows.filter(r => r.status === 'saved').length;
   const aufwandKonten = konten.filter(k => k.konto_typ === 'aufwand');
 
+  // ── Noch nicht erfasste Lieferanten (eindeutige Namen) ──────────
+  const offeneLieferanten = useMemo(() => {
+    const map = new Map();
+    rows.forEach(r => {
+      if (r.lieferant_id) return;
+      if (['saved', 'saving', 'parsing'].includes(r.status)) return;
+      const nm = (r.lieferant_search || r.qr?.name || '').trim();
+      if (!nm) return;
+      const key = nm.toLowerCase();
+      if (!map.has(key)) map.set(key, { name: nm, row: r, count: 0 });
+      map.get(key).count++;
+    });
+    return [...map.values()];
+  }, [rows]);
+
+  // Schnellerfassung eines Lieferanten öffnen (mit QR-Adressdaten)
+  const openLiefModal = (row, name) => {
+    const qr = row?.qr || {};
+    setLiefModal({
+      init: { name: name || qr.name || '', strasse: qr.strasse || '',
+              plz: qr.plz || '', ort: qr.ort || '', land: qr.land || 'CH',
+              iban: qr.iban || '' },
+      targetName: (name || qr.name || '').trim().toLowerCase(),
+    });
+  };
+
+  // Lieferant anlegen und allen passenden Belegen zuordnen
+  const handleSaveLieferant = async (form) => {
+    if (!mandant) return;
+    setLiefSaving(true);
+    try {
+      const nr = await lieferantenApi.nextNr(mandant.id);
+      const neu = await lieferantenApi.create(mandant.id, {
+        nr,
+        name:      form.name.trim(),
+        uid:       form.uid.trim() || null,
+        adresse:   form.adresse.trim() || null,
+        plz:       form.plz.trim() || null,
+        ort:       form.ort.trim() || null,
+        land:      (form.land || 'CH').trim().toUpperCase() || 'CH',
+        iban:      form.iban.replace(/\s+/g, '') || null,
+        bank_name: form.bank_name?.trim() || null,
+      });
+      const updated = [...lieferantenRef.current, neu].sort((a, b) => a.name.localeCompare(b.name));
+      lieferantenRef.current = updated;
+      setLieferanten(updated);
+
+      const tgt = liefModal?.targetName;
+      setRows(prev => prev.map(r => {
+        if (r.lieferant_id) return r;
+        const nm = (r.lieferant_search || r.qr?.name || '').trim().toLowerCase();
+        if (nm !== tgt) return r;
+        return {
+          ...r,
+          lieferant_id:     neu.id,
+          lieferant_search: neu.name,
+          konto_nr:         r.konto_nr || neu.standard_konto_nr || '',
+          mwst_code:        neu.mwst_code || r.mwst_code,
+        };
+      }));
+      setLiefModal(null);
+    } catch (e) {
+      alert('Lieferant konnte nicht angelegt werden: ' + e.message);
+    } finally { setLiefSaving(false); }
+  };
+
   // ── Render ──────────────────────────────────────────────────────
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', background: '#f2f5f2' }}>
@@ -443,6 +627,22 @@ export default function MassenImport() {
           onChange={e => { addFiles(e.target.files); e.target.value = ''; }}
         />
       </div>
+
+      {/* Banner: noch nicht erfasste Lieferanten zuerst anlegen */}
+      {offeneLieferanten.length > 0 && (
+        <div style={{ flexShrink: 0, padding: '9px 20px', background: '#fdf6ec', borderBottom: '1px solid #f0e0c4', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: '#8a5a00' }}>
+            ⚠ {offeneLieferanten.length} Lieferant{offeneLieferanten.length !== 1 ? 'en' : ''} noch nicht erfasst – zuerst anlegen, dann können die Belege gebucht werden:
+          </span>
+          {offeneLieferanten.map(o => (
+            <button key={o.name}
+              onClick={() => openLiefModal(o.row, o.name)}
+              style={{ padding: '3px 10px', borderRadius: 12, border: '1px solid #e0c98a', background: '#fff', color: '#8a5a00', fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}>
+              + {o.name}{o.count > 1 ? ` (${o.count})` : ''}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Body */}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
@@ -585,7 +785,9 @@ export default function MassenImport() {
                           <td style={{ padding: '2px 4px', verticalAlign: 'middle' }} onClick={e => e.stopPropagation()}>
                             {isSaved
                               ? <span style={{ fontSize: 11.5, color: '#4a5a4a', padding: '2px 4px' }}>{row.lieferant_search}</span>
-                              : <LiefCell row={row} lieferanten={lieferanten} onChange={patch => updateRow(row._id, patch)} />
+                              : <LiefCell row={row} lieferanten={lieferanten}
+                                  onChange={patch => updateRow(row._id, patch)}
+                                  onCreateNew={name => openLiefModal(row, name)} />
                             }
                           </td>
 
@@ -785,6 +987,15 @@ export default function MassenImport() {
           )}
         </div>
       </div>
+
+      {liefModal && (
+        <NeuerLieferantModal
+          init={liefModal.init}
+          saving={liefSaving}
+          onSave={handleSaveLieferant}
+          onClose={() => setLiefModal(null)}
+        />
+      )}
     </div>
   );
 }
