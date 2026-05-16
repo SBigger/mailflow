@@ -78,7 +78,62 @@ function SectionHeader({ children }) {
 }
 
 // ── Tab: Offizielle Abrechnung ────────────────────────────────────
-function TabAbrechnung({ summary, mandant, period }) {
+// ── Modal: MWST-Methode wählen ────────────────────────────────────
+function MethodeModal({ methode, sss, saving, onSave, onClose }) {
+  const [m, setM] = useState(methode || 'effektiv');
+  const [s, setS] = useState(sss ? String(sss) : '');
+  const inp = { background: '#f7faf7', border: '1px solid #d4dcd4', borderRadius: 7, padding: '6px 9px', fontSize: 12.5, outline: 'none' };
+  return (
+    <div onClick={() => !saving && onClose()}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(26,26,46,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 20 }}>
+      <div onClick={e => e.stopPropagation()}
+        style={{ background: '#fff', borderRadius: 14, width: 440, maxWidth: '96vw', boxShadow: '0 16px 48px rgba(0,0,0,.25)' }}>
+        <div style={{ padding: '14px 18px', borderBottom: '1px solid #e4e9e4', fontWeight: 700, fontSize: 14 }}>
+          MWST-Abrechnungsmethode
+        </div>
+        <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {[
+            { v: 'effektiv', t: '📊 Effektive Methode', d: 'Umsatzsteuer minus Vorsteuer · quartalsweise Abrechnung' },
+            { v: 'saldosteuersatz', t: '⚡ Saldosteuersatz-Methode', d: 'Pauschalsatz auf dem Bruttoumsatz · kein Vorsteuerabzug · halbjährliche Abrechnung' },
+          ].map(o => (
+            <label key={o.v} style={{ display: 'flex', gap: 9, padding: 10, borderRadius: 9, cursor: 'pointer',
+              border: `1px solid ${m === o.v ? '#7a9b7f' : '#e4e9e4'}`, background: m === o.v ? '#f0f7f0' : '#fff' }}>
+              <input type="radio" checked={m === o.v} onChange={() => setM(o.v)} style={{ marginTop: 2 }} />
+              <div>
+                <div style={{ fontSize: 12.5, fontWeight: 600 }}>{o.t}</div>
+                <div style={{ fontSize: 11, color: '#6b826b', marginTop: 2 }}>{o.d}</div>
+              </div>
+            </label>
+          ))}
+          {m === 'saldosteuersatz' && (
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, color: '#6b826b', marginBottom: 3, display: 'block' }}>
+                Saldosteuersatz (von der ESTV bewilligt) *
+              </label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <input type="number" step="0.1" min="0" max="10" value={s} autoFocus
+                  onChange={e => setS(e.target.value)} placeholder="z.B. 6.2" style={{ ...inp, width: 100, textAlign: 'right' }} />
+                <span style={{ fontSize: 13, fontWeight: 600 }}>%</span>
+              </div>
+            </div>
+          )}
+        </div>
+        <div style={{ padding: '12px 18px', borderTop: '1px solid #e4e9e4', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <button onClick={onClose} disabled={saving}
+            style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #d4dcd4', background: '#fff', fontSize: 12.5, cursor: 'pointer' }}>Abbrechen</button>
+          <button
+            onClick={() => onSave(m, m === 'saldosteuersatz' ? (parseFloat(s) || 0) : 0)}
+            disabled={saving || (m === 'saldosteuersatz' && !(parseFloat(s) > 0))}
+            style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: '#7a9b7f', color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
+            {saving ? 'Speichert…' : 'Übernehmen'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TabAbrechnung({ summary, mandant, period, umsatzBrutto = 0 }) {
   const byCode = Object.fromEntries(summary.map(s => [s.mwst_code, s]));
   const waehrung = mandant?.waehrung ?? 'CHF';
 
@@ -108,7 +163,9 @@ function TabAbrechnung({ summary, mandant, period }) {
 
   if (mandant?.mwst_methode === 'saldosteuersatz') {
     const sss = mandant.saldosteuersatz_prozent ?? 0;
-    const steuer = gesamtumsatz * sss / 100;
+    // Bruttoumsatz aus den Ertragskonten (SSS-Buchung erfolgt brutto)
+    const umsatz = umsatzBrutto || gesamtumsatz;
+    const steuer = Math.round(umsatz * sss) / 100;
     return (
       <div style={{ padding: 20, maxWidth: 600 }}>
         <div style={{ marginBottom: 16, padding: '12px 16px', background: '#fef3c7', border: '1px solid #fde68a', borderRadius: 8, fontSize: 12, color: '#92400e' }}>
@@ -116,13 +173,15 @@ function TabAbrechnung({ summary, mandant, period }) {
         </div>
         <div style={{ background: '#fff', border: '1px solid #e4e9e4', borderRadius: 10, overflow: 'hidden' }}>
           <SectionHeader>Saldosteuersatz-Abrechnung (Formular 533a)</SectionHeader>
-          <Ziffer nr="200" label="Gesamtumsatz (inkl. MWST)" value={gesamtumsatz} currency={waehrung} />
+          <Ziffer nr="200" label="Gesamtumsatz (inkl. MWST) – Ertragskonten" value={umsatz} currency={waehrung} />
           <Ziffer nr="900" label={`Saldosteuersatz: ${sss}%`} value={steuer} currency={waehrung} />
           <div style={{ height: 8 }} />
           <Ziffer nr="500" label="Zu zahlende Steuer" value={steuer} currency={waehrung} highlight bold color={steuer > 0 ? 'red' : 'green'} />
         </div>
         <div style={{ marginTop: 12, fontSize: 11.5, color: '#94a394', lineHeight: 1.6 }}>
-          Hinweis: Bei der Saldosteuersatz-Methode entfällt der Vorsteuerabzug. Die Steuer berechnet sich auf dem Gesamtumsatz.
+          Hinweis: Bei der Saldosteuersatz-Methode entfällt der Vorsteuerabzug. Die Steuer berechnet sich
+          pauschal auf dem Bruttoumsatz (Summe der Ertragskonten der Periode).
+          {sss === 0 && ' ⚠ Kein Saldosteuersatz hinterlegt – über „Methode" oben erfassen.'}
         </div>
       </div>
     );
@@ -603,10 +662,18 @@ export default function MwstAbrechnung() {
   const [periodeErr,     setPeriodeErr]     = useState('');
   const [periodeConfirm, setPeriodeConfirm] = useState(null);   // 'zurueck' | null
 
-  // Methode aus Mandant lesen (default: effektiv, Quartal)
-  const methode    = mandant?.mwst_methode ?? 'effektiv';
+  // Methode aus Mandant lesen (default: effektiv, Quartal) – lokal überschreibbar
+  const [methodeOverride, setMethodeOverride] = useState(null);
+  const [sssOverride,     setSssOverride]     = useState(null);
+  const [umsatzBrutto,    setUmsatzBrutto]    = useState(0);
+  const [methodeModal,    setMethodeModal]    = useState(false);
+  const [methodeSaving,   setMethodeSaving]   = useState(false);
+
+  const methode    = methodeOverride ?? mandant?.mwst_methode ?? 'effektiv';
+  const sssProzent = sssOverride    ?? mandant?.saldosteuersatz_prozent ?? 0;
   const isSaldo    = methode === 'saldosteuersatz';
   const period     = getPeriodRange(year, quarter, methode);
+  const mandantEff = mandant ? { ...mandant, mwst_methode: methode, saldosteuersatz_prozent: sssProzent } : mandant;
 
   const quarters = isSaldo
     ? [{ v: 1, l: 'S1 (Jan–Jun)' }, { v: 2, l: 'S2 (Jul–Dez)' }]
@@ -629,10 +696,23 @@ export default function MwstAbrechnung() {
       setDetail(d.data ?? []);
       setPeriode(p.data?.[0] ?? null);
       setAllCodes(c.data ?? []);
+
+      // Saldosteuersatz: Bruttoumsatz aus den Ertragskonten ermitteln
+      if (isSaldo) {
+        const er = await supabase.rpc('fibu_erfolgsrechnung', {
+          p_mandant_id: mandant.id, p_von: period.von, p_bis: period.bis,
+        });
+        const umsatz = (er.data ?? [])
+          .filter(r => r.konto_typ === 'ertrag')
+          .reduce((sum, r) => sum + Math.abs(Number(r.saldo) || 0), 0);
+        setUmsatzBrutto(umsatz);
+      } else {
+        setUmsatzBrutto(0);
+      }
     } finally {
       setLoading(false);
     }
-  }, [mandant?.id, period.von, period.bis]);
+  }, [mandant?.id, period.von, period.bis, isSaldo]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -657,6 +737,24 @@ export default function MwstAbrechnung() {
       setPeriodeLoading(false);
       setPeriodeConfirm(null);
     }
+  };
+
+  // MWST-Methode des Mandanten speichern
+  const handleSaveMethode = async (m, sss) => {
+    if (!mandant) return;
+    setMethodeSaving(true);
+    try {
+      const { error } = await supabase.rpc('fibu_mandant_mwst_methode_setzen', {
+        p_mandant_id: mandant.id, p_methode: m, p_sss: sss || null,
+      });
+      if (error) throw error;
+      setMethodeOverride(m);
+      setSssOverride(sss || 0);
+      setMethodeModal(false);
+      loadData();
+    } catch (e) {
+      alert('Fehler: ' + e.message);
+    } finally { setMethodeSaving(false); }
   };
 
   const periodeStatus  = periode?.status ?? 'offen';
@@ -688,9 +786,13 @@ export default function MwstAbrechnung() {
             {quarters.map(q => <option key={q.v} value={q.v}>{q.l}</option>)}
           </select>
 
-          <div style={{ padding: '4px 10px', borderRadius: 6, fontSize: 11.5, fontWeight: 600, background: isSaldo ? '#fef3c7' : '#dbeafe', color: isSaldo ? '#92400e' : '#1e40af' }}>
-            {isSaldo ? '⚡ Saldosteuersatz' : '📊 Effektive Methode'}
-          </div>
+          <button
+            onClick={() => setMethodeModal(true)}
+            title="MWST-Methode ändern"
+            style={{ padding: '4px 10px', borderRadius: 6, fontSize: 11.5, fontWeight: 600, border: 'none', cursor: 'pointer',
+              background: isSaldo ? '#fef3c7' : '#dbeafe', color: isSaldo ? '#92400e' : '#1e40af' }}>
+            {isSaldo ? `⚡ Saldosteuersatz ${sssProzent || '?'}%` : '📊 Effektive Methode'} ⚙
+          </button>
           <span style={{ fontSize: 12, color: '#6b826b' }}>{period.von} – {period.bis}</span>
 
           <div style={{ flex: 1 }} />
@@ -808,7 +910,7 @@ export default function MwstAbrechnung() {
           <div style={{ padding: 48, textAlign: 'center', color: '#94a394', fontSize: 12.5 }}>Lädt…</div>
         ) : (
           <>
-            {tab === 'abrechnung' && <TabAbrechnung summary={summary} mandant={mandant} period={period} />}
+            {tab === 'abrechnung' && <TabAbrechnung summary={summary} mandant={mandantEff} period={period} umsatzBrutto={umsatzBrutto} />}
             {tab === 'code'       && <TabNachCode summary={summary} />}
             {tab === 'konto'      && <TabNachKonto byKonto={byKonto} />}
             {tab === 'detail'     && <TabDetail detail={detail} allCodes={allCodes} locked={isLocked} mandantId={mandant?.id} onReload={loadData} />}
@@ -816,6 +918,16 @@ export default function MwstAbrechnung() {
           </>
         )}
       </div>
+
+      {methodeModal && (
+        <MethodeModal
+          methode={methode}
+          sss={sssProzent}
+          saving={methodeSaving}
+          onSave={handleSaveMethode}
+          onClose={() => setMethodeModal(false)}
+        />
+      )}
     </div>
   );
 }
