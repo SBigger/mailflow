@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useMandant } from '../contexts/MandantContext';
-import { kreditorenApi, zahlungslaufApi } from '../api';
+import { kreditorenApi, zahlungslaufApi, zahlstellenApi } from '../api';
 import {
   generatePain001, validatePayment, paymentType,
   normIban, isValidIban, isQrIban,
@@ -36,6 +37,7 @@ const DATETIME = (s) => s ? new Date(s).toLocaleString('de-CH', { dateStyle: 'sh
 
 export default function Zahlungslauf() {
   const { mandant, canWrite } = useMandant();
+  const navigate = useNavigate();
   const [belege, setBelege] = useState([]);
   const [selected, setSelected] = useState(new Set());
   const [step, setStep] = useState(0);
@@ -44,6 +46,8 @@ export default function Zahlungslauf() {
   const [zahlungsKontoNr, setZahlungsKontoNr] = useState('1020');
   const [zahlungsKontoIban, setZahlungsKontoIban] = useState('');
   const [zahlungsKontoBic, setZahlungsKontoBic] = useState('');
+  const [zahlstellen, setZahlstellen] = useState([]);
+  const [zahlstelleId, setZahlstelleId] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [view, setView] = useState('wizard');        // 'wizard' | 'historie'
@@ -80,6 +84,31 @@ export default function Zahlungslauf() {
       })
       .finally(() => setLoading(false));
   }, [mandant?.id]);
+
+  // Firmenzahlstellen laden + Standard vorauswählen
+  useEffect(() => {
+    if (!mandant) return;
+    zahlstellenApi.listAktiv(mandant.id).then(zs => {
+      setZahlstellen(zs);
+      const std = zs.find(z => z.ist_standard) ?? zs[0];
+      if (std) {
+        setZahlstelleId(std.id);
+        setZahlungsKontoNr(std.konto_nr ?? '');
+        setZahlungsKontoIban(std.iban ?? '');
+        setZahlungsKontoBic(std.bic ?? '');
+      }
+    });
+  }, [mandant?.id]);
+
+  const selectZahlstelle = (id) => {
+    setZahlstelleId(id);
+    const z = zahlstellen.find(x => x.id === id);
+    if (z) {
+      setZahlungsKontoNr(z.konto_nr ?? '');
+      setZahlungsKontoIban(z.iban ?? '');
+      setZahlungsKontoBic(z.bic ?? '');
+    }
+  };
 
   const toggle = (id) => setSelected(prev => {
     const next = new Set(prev);
@@ -434,18 +463,37 @@ export default function Zahlungslauf() {
           <div style={{ flexShrink: 0, width: 280, overflowY: 'auto', background: '#fff', padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div style={{ fontWeight: 600, fontSize: 13 }}>Zahlungsdetails</div>
             <div>
-              <label style={{ fontSize: 11, fontWeight: 600, color: '#6b826b', marginBottom: 3, display: 'block' }}>Zahlungskonto-Nr. (Fibu)</label>
-              <input style={inp} value={zahlungsKontoNr} onChange={e => setZahlungsKontoNr(e.target.value)} placeholder="z.B. 1020" />
+              <label style={{ fontSize: 11, fontWeight: 600, color: '#6b826b', marginBottom: 3, display: 'block' }}>Belastungskonto</label>
+              {zahlstellen.length === 0 ? (
+                <div style={{ background: '#fdf6ec', border: '1px solid #e8d4a8', borderRadius: 8, padding: '10px 12px', fontSize: 11.5, color: '#8a6d2d' }}>
+                  Keine Firmenzahlstelle erfasst.
+                  <button
+                    onClick={() => navigate('../zahlstellen')}
+                    style={{ display: 'block', marginTop: 6, padding: '4px 10px', borderRadius: 6, border: '1px solid #d9b061', background: '#fff', fontSize: 11.5, cursor: 'pointer', color: '#8a6d2d', fontWeight: 600 }}
+                  >→ In Stammdaten anlegen</button>
+                </div>
+              ) : (
+                <select style={inp} value={zahlstelleId} onChange={e => selectZahlstelle(e.target.value)}>
+                  {zahlstellen.map(z => (
+                    <option key={z.id} value={z.id}>
+                      {z.bezeichnung}{z.ist_standard ? ' ★' : ''}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
-            <div>
-              <label style={{ fontSize: 11, fontWeight: 600, color: '#6b826b', marginBottom: 3, display: 'block' }}>IBAN Belastungskonto</label>
-              <input style={{ ...inp, fontFamily: 'monospace', fontSize: 12, borderColor: zahlungsKontoIban && !debtorIbanOk ? '#e0b8b8' : '#d4dcd4' }} value={zahlungsKontoIban} onChange={e => setZahlungsKontoIban(e.target.value)} placeholder="CH00 0000 0000 0000 0000 0" />
-              {zahlungsKontoIban && !debtorIbanOk && <div style={{ fontSize: 10.5, color: '#8a2d2d', marginTop: 3 }}>IBAN ungültig (Prüfziffer)</div>}
-            </div>
-            <div>
-              <label style={{ fontSize: 11, fontWeight: 600, color: '#6b826b', marginBottom: 3, display: 'block' }}>BIC Belastungsbank <span style={{ color: '#94a394', fontWeight: 400 }}>(optional)</span></label>
-              <input style={{ ...inp, fontFamily: 'monospace', fontSize: 12 }} value={zahlungsKontoBic} onChange={e => setZahlungsKontoBic(e.target.value)} placeholder="z.B. POFICHBEXXX" />
-            </div>
+            {zahlstelleId && (
+              <div style={{ background: debtorIbanOk ? '#f0f7f0' : '#fdf0f0', border: `1px solid ${debtorIbanOk ? '#b8d4b8' : '#e0b8b8'}`, borderRadius: 8, padding: '8px 11px', fontSize: 11.5, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <div style={{ fontFamily: 'monospace', color: debtorIbanOk ? '#3d6641' : '#8a2d2d', fontSize: 11.5 }}>
+                  {fmtIban(zahlungsKontoIban)} {debtorIbanOk ? '✓' : '⚠'}
+                </div>
+                <div style={{ color: '#6b826b', display: 'flex', gap: 10 }}>
+                  <span>Fibu-Konto: <strong>{zahlungsKontoNr || '—'}</strong></span>
+                  {zahlungsKontoBic && <span>BIC: <strong>{zahlungsKontoBic}</strong></span>}
+                </div>
+                {!debtorIbanOk && <div style={{ color: '#8a2d2d' }}>IBAN dieser Zahlstelle ist ungültig.</div>}
+              </div>
+            )}
             <div>
               <label style={{ fontSize: 11, fontWeight: 600, color: '#6b826b', marginBottom: 3, display: 'block' }}>Valutadatum</label>
               <input type="date" style={inp} value={valuta} onChange={e => setValuta(e.target.value)} />

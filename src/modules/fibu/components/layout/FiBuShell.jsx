@@ -21,6 +21,7 @@ const MassenImport        = React.lazy(() => import('../../pages/MassenImport'))
 const BankAbstimmungIntern = React.lazy(() => import('../../pages/BankAbstimmung'));
 const Kontoblaetter        = React.lazy(() => import('../../pages/Kontoblaetter'));
 const Bilanz               = React.lazy(() => import('../../pages/Bilanz'));
+const Zahlstellen          = React.lazy(() => import('../../pages/Zahlstellen'));
 
 const Spinner = () => (
   <div className="flex-1 flex items-center justify-center">
@@ -59,6 +60,7 @@ function FiBuContent() {
         <Route path="bankabstimmung"               element={<BankAbstimmungIntern />} />
         <Route path="kontoblaetter"                element={<Kontoblaetter />} />
         <Route path="bilanz"                       element={<Bilanz />} />
+        <Route path="zahlstellen"                  element={<Zahlstellen />} />
         <Route path="*" element={<Navigate to="kreditoren" replace />} />
       </Routes>
     </Suspense>

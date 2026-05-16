@@ -55,10 +55,11 @@ const SECTIONS = [
     id:    'stammdaten',
     short: '⚙',
     label: 'Stammdaten',
-    paths: ['kontenplan', 'mwstcodes'],
+    paths: ['kontenplan', 'mwstcodes', 'zahlstellen'],
     items: [
-      { to: 'kontenplan',  label: 'Kontenplan',  icon: 'table' },
-      { to: 'mwstcodes',   label: 'MWST-Codes',  icon: 'percent' },
+      { to: 'kontenplan',  label: 'Kontenplan',        icon: 'table' },
+      { to: 'mwstcodes',   label: 'MWST-Codes',        icon: 'percent' },
+      { to: 'zahlstellen', label: 'Firmenzahlstellen', icon: 'bank' },
     ],
   },
 ];

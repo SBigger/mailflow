@@ -396,3 +396,66 @@ export const zahlungslaufApi = {
     return data;
   },
 };
+
+// ── Firmenzahlstellen (eigene Bankkonten des Mandanten) ──────────
+export const zahlstellenApi = {
+  list: async (mandantId) => {
+    const { data, error } = await supabase
+      .from('fibu_zahlstellen')
+      .select('*')
+      .eq('mandant_id', mandantId)
+      .order('ist_standard', { ascending: false })
+      .order('sortierung')
+      .order('bezeichnung');
+    if (error) throw error;
+    return data ?? [];
+  },
+
+  listAktiv: async (mandantId) => {
+    const { data, error } = await supabase
+      .from('fibu_zahlstellen')
+      .select('*')
+      .eq('mandant_id', mandantId)
+      .eq('aktiv', true)
+      .order('ist_standard', { ascending: false })
+      .order('sortierung')
+      .order('bezeichnung');
+    if (error) throw error;
+    return data ?? [];
+  },
+
+  create: async (mandantId, payload) => {
+    const { data, error } = await supabase
+      .from('fibu_zahlstellen')
+      .insert({ ...payload, mandant_id: mandantId })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  update: async (id, payload) => {
+    const { data, error } = await supabase
+      .from('fibu_zahlstellen')
+      .update(payload)
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  remove: async (id) => {
+    const { error } = await supabase
+      .from('fibu_zahlstellen')
+      .delete()
+      .eq('id', id);
+    if (error) throw error;
+  },
+
+  setStandard: async (id) => {
+    const { error } = await supabase
+      .rpc('fibu_zahlstelle_set_standard', { p_id: id });
+    if (error) throw error;
+  },
+};
