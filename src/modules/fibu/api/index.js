@@ -598,6 +598,51 @@ export const saldovortragApi = {
   },
 };
 
+// ── Wiederkehrende Kreditoren-Rechnungen (Dauerbelege) ───────────
+export const dauerbelegApi = {
+  list: async (mandantId) => {
+    const { data, error } = await supabase
+      .from('fibu_kreditoren_dauerbelege')
+      .select('*, lieferant:fibu_lieferanten(id,name,nr)')
+      .eq('mandant_id', mandantId)
+      .order('aktiv', { ascending: false })
+      .order('naechstes_belegdatum');
+    if (error) throw error;
+    return data ?? [];
+  },
+  create: async (mandantId, payload) => {
+    const { data, error } = await supabase
+      .from('fibu_kreditoren_dauerbelege')
+      .insert({ ...payload, mandant_id: mandantId })
+      .select().single();
+    if (error) throw error;
+    return data;
+  },
+  update: async (id, payload) => {
+    const { error } = await supabase
+      .from('fibu_kreditoren_dauerbelege')
+      .update({ ...payload, updated_at: new Date().toISOString() })
+      .eq('id', id);
+    if (error) throw error;
+  },
+  remove: async (id) => {
+    const { error } = await supabase.from('fibu_kreditoren_dauerbelege').delete().eq('id', id);
+    if (error) throw error;
+  },
+  erzeugen: async (id) => {
+    const { data, error } = await supabase.rpc('fibu_dauerbeleg_erzeugen', { p_id: id });
+    if (error) throw error;
+    return data;
+  },
+  faelligeErzeugen: async (mandantId, bis) => {
+    const { data, error } = await supabase.rpc('fibu_dauerbelege_faellige_erzeugen', {
+      p_mandant_id: mandantId, p_bis: bis,
+    });
+    if (error) throw error;
+    return data;   // Anzahl erzeugter Belege
+  },
+};
+
 // ── Wechselkurse (ESTV/BAZG) ─────────────────────────────────────
 export const wechselkurseApi = {
   // neueste Kurse eines Typs ('monat' | 'tag')

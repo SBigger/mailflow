@@ -19,6 +19,7 @@ const SECTIONS = [
       { to: 'kreditoren/inbox',       label: 'Eingangspostfach', icon: 'inbox',      badge: 'inbox' },
       { to: 'kreditoren/erfassen',    label: 'Rechnung erfassen', icon: 'plus-doc' },
       { to: 'kreditoren/massen-import', label: 'Massen-Import',  icon: 'upload' },
+      { to: 'kreditoren/dauerbelege', label: 'Wiederkehrend',   icon: 'calendar' },
       { divider: true },
       { to: 'kreditoren/lieferanten', label: 'Lieferanten',      icon: 'users' },
       { to: 'kreditoren/lieferanten-konto', label: 'Lieferanten-Konto', icon: 'doc-text' },

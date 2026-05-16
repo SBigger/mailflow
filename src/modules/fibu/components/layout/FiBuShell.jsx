@@ -28,6 +28,7 @@ const Budget               = React.lazy(() => import('../../pages/Budget'));
 const Wechselkurse         = React.lazy(() => import('../../pages/Wechselkurse'));
 const Einstellungen        = React.lazy(() => import('../../pages/Einstellungen'));
 const LieferantenKonto     = React.lazy(() => import('../../pages/LieferantenKonto'));
+const Dauerbelege          = React.lazy(() => import('../../pages/Dauerbelege'));
 
 const Spinner = () => (
   <div className="flex-1 flex items-center justify-center">
@@ -64,6 +65,7 @@ function FiBuContent() {
         <Route path="mwst/abrechnung"               element={<MwstAbrechnung />} />
         <Route path="jahresabschluss"               element={<Jahresabschluss />} />
         <Route path="kreditoren/massen-import"      element={<MassenImport />} />
+        <Route path="kreditoren/dauerbelege"        element={<Dauerbelege />} />
         <Route path="bankabstimmung"               element={<BankAbstimmungIntern />} />
         <Route path="kontoblaetter"                element={<Kontoblaetter />} />
         <Route path="bilanz"                       element={<Bilanz />} />
