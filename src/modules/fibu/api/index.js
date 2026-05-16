@@ -222,6 +222,15 @@ export const kreditorenApi = {
     return data;
   },
 
+  // Gutschrift gegen offene Rechnungen desselben Lieferanten verrechnen (FIFO)
+  gutschriftVerrechnen: async (mandantId, gutschriftId) => {
+    const { data, error } = await supabase.rpc('fibu_gutschrift_verrechnen', {
+      p_mandant_id: mandantId, p_gutschrift_id: gutschriftId,
+    });
+    if (error) throw error;
+    return data;   // verrechneter Gesamtbetrag
+  },
+
   markBezahlt: async (id, betrag, bezahltAm) => {
     const { data: beleg } = await supabase
       .from('fibu_kreditoren_belege')

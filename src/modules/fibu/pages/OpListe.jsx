@@ -18,6 +18,8 @@ export default function OpListe() {
   const [raw, setRaw] = useState([]);
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState('alle');
+  const [verrechnenGs, setVerrechnenGs] = useState(null);
+  const [verrProcessing, setVerrProcessing] = useState(false);
 
   const load = (date) => {
     if (!mandant) return;
@@ -42,6 +44,41 @@ export default function OpListe() {
   const überfällig      = belege.filter(b => daysDiff(b.faelligkeit, stichtag) > 0);
   const totalFällig     = fällig.reduce((s, b) => s + (b.betrag_brutto - b.betrag_bezahlt), 0);
   const totalÜberfällig = überfällig.reduce((s, b) => s + (b.betrag_brutto - b.betrag_bezahlt), 0);
+
+  // FIFO-Vorschau für die Verrechnung der gewählten Gutschrift
+  const verrechnungPreview = useMemo(() => {
+    if (!verrechnenGs) return null;
+    const gsOffen = Math.abs(verrechnenGs.betrag_brutto) - Math.abs(verrechnenGs.betrag_bezahlt || 0);
+    const rechnungen = raw
+      .filter(b => b.belegtyp !== 'gutschrift'
+        && b.lieferant_id === verrechnenGs.lieferant_id
+        && ['offen', 'teilbezahlt'].includes(b.status))
+      .sort((a, b) => (a.belegdatum < b.belegdatum ? -1 : a.belegdatum > b.belegdatum ? 1
+        : (a.beleg_nr || '').localeCompare(b.beleg_nr || '')));
+    let rest = gsOffen;
+    const alloc = [];
+    for (const r of rechnungen) {
+      if (rest <= 0.005) break;
+      const rRest = r.betrag_brutto - (r.betrag_bezahlt || 0);
+      if (rRest <= 0.005) continue;
+      const x = Math.min(rRest, rest);
+      alloc.push({ beleg: r, rRest, x });
+      rest -= x;
+    }
+    return { gsOffen, alloc, applied: gsOffen - rest, restGs: rest };
+  }, [verrechnenGs, raw]);
+
+  const handleVerrechnen = async () => {
+    if (!verrechnenGs) return;
+    setVerrProcessing(true);
+    try {
+      await kreditorenApi.gutschriftVerrechnen(mandant.id, verrechnenGs.id);
+      setVerrechnenGs(null);
+      load(stichtag);
+    } catch (e) {
+      alert('Verrechnung fehlgeschlagen: ' + e.message);
+    } finally { setVerrProcessing(false); }
+  };
 
   const PRESETS = [
     { label: 'Heute', value: toISO(new Date()) },
@@ -153,9 +190,20 @@ export default function OpListe() {
                     <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: '#94a394' }}>{b.betrag_bezahlt > 0 ? CHF(b.betrag_bezahlt) : '—'}</td>
                     <td style={{ ...td, textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: isOver ? '#8a2d2d' : isFaellig ? '#8a5a00' : undefined }}>{CHF(offen)}</td>
                     <td style={td}>
-                      <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, fontWeight: 500, background: isOver ? '#fde7e7' : isFaellig ? '#fef0c7' : '#e4e4ea', color: isOver ? '#8a2d2d' : isFaellig ? '#8a5a00' : '#4a4a5a' }}>
-                        {isOver ? `überfällig +${diff}` : isFaellig ? 'fällig' : 'offen'}
-                      </span>
+                      {istGS ? (
+                        Math.abs(offen) > 0.005 ? (
+                          <button
+                            onClick={() => setVerrechnenGs(b)}
+                            style={{ padding: '3px 10px', borderRadius: 6, border: '1px solid #f0c8dc', background: '#fdf4f8', color: '#9d174d', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+                          >↹ Verrechnen</button>
+                        ) : (
+                          <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, fontWeight: 500, background: '#e4e4ea', color: '#4a4a5a' }}>verrechnet</span>
+                        )
+                      ) : (
+                        <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, fontWeight: 500, background: isOver ? '#fde7e7' : isFaellig ? '#fef0c7' : '#e4e4ea', color: isOver ? '#8a2d2d' : isFaellig ? '#8a5a00' : '#4a4a5a' }}>
+                          {isOver ? `überfällig +${diff}` : isFaellig ? 'fällig' : 'offen'}
+                        </span>
+                      )}
                     </td>
                   </tr>
                 );
@@ -178,6 +226,78 @@ export default function OpListe() {
           </table>
         )}
       </div>
+
+      {/* ── Verrechnungs-Dialog ── */}
+      {verrechnenGs && verrechnungPreview && (
+        <div onClick={() => !verrProcessing && setVerrechnenGs(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(26,26,46,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 20 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background: '#fff', borderRadius: 14, width: 560, maxWidth: '96vw', boxShadow: '0 16px 48px rgba(0,0,0,.25)' }}>
+            <div style={{ padding: '14px 18px', borderBottom: '1px solid #e4e9e4', fontWeight: 700, fontSize: 14 }}>
+              Gutschrift verrechnen
+            </div>
+            <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ fontSize: 12.5, color: '#4a5a4a' }}>
+                Gutschrift <strong>{verrechnenGs.beleg_nr}</strong> · {verrechnenGs.lieferant?.name}
+                <span style={{ marginLeft: 8, color: '#9d174d', fontWeight: 700 }}>
+                  CHF {CHF(verrechnungPreview.gsOffen)} offen
+                </span>
+              </div>
+
+              {verrechnungPreview.alloc.length === 0 ? (
+                <div style={{ fontSize: 12.5, color: '#8a2d2d', background: '#fdf0f0', border: '1px solid #e0b8b8', borderRadius: 8, padding: '10px 12px' }}>
+                  Keine offenen Rechnungen dieses Lieferanten – Verrechnung nicht möglich.
+                </div>
+              ) : (
+                <>
+                  <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: '#94a394' }}>
+                    Verrechnung gegen offene Rechnungen (FIFO)
+                  </div>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                    <thead><tr>
+                      <th style={{ textAlign: 'left', padding: '4px 6px', color: '#6b826b', fontSize: 10.5, fontWeight: 700, borderBottom: '1px solid #e4e9e4' }}>Rechnung</th>
+                      <th style={{ textAlign: 'right', padding: '4px 6px', color: '#6b826b', fontSize: 10.5, fontWeight: 700, borderBottom: '1px solid #e4e9e4' }}>Offen</th>
+                      <th style={{ textAlign: 'right', padding: '4px 6px', color: '#6b826b', fontSize: 10.5, fontWeight: 700, borderBottom: '1px solid #e4e9e4' }}>Verrechnet</th>
+                      <th style={{ textAlign: 'right', padding: '4px 6px', color: '#6b826b', fontSize: 10.5, fontWeight: 700, borderBottom: '1px solid #e4e9e4' }}>Neu offen</th>
+                    </tr></thead>
+                    <tbody>
+                      {verrechnungPreview.alloc.map(a => (
+                        <tr key={a.beleg.id}>
+                          <td style={{ padding: '5px 6px', fontFamily: 'monospace', borderBottom: '1px solid #f0f3f0' }}>{a.beleg.beleg_nr}</td>
+                          <td style={{ padding: '5px 6px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', borderBottom: '1px solid #f0f3f0' }}>{CHF(a.rRest)}</td>
+                          <td style={{ padding: '5px 6px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: '#9d174d', fontWeight: 600, borderBottom: '1px solid #f0f3f0' }}>−{CHF(a.x)}</td>
+                          <td style={{ padding: '5px 6px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', borderBottom: '1px solid #f0f3f0' }}>{CHF(a.rRest - a.x)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div style={{ fontSize: 12, color: '#4a5a4a', background: '#f0f7f0', borderRadius: 8, padding: '8px 12px' }}>
+                    Total verrechnet: <strong>CHF {CHF(verrechnungPreview.applied)}</strong>
+                    {verrechnungPreview.restGs > 0.005 && (
+                      <span style={{ color: '#8a5a00' }}> · Gutschrift-Rest CHF {CHF(verrechnungPreview.restGs)} bleibt offen</span>
+                    )}
+                    <div style={{ fontSize: 11, color: '#6b826b', marginTop: 4 }}>
+                      Buchhalterisch neutral – gleicht nur die Offenen Posten aus. Der Zahlungslauf zahlt danach automatisch nur die Differenz.
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+            <div style={{ padding: '12px 18px', borderTop: '1px solid #e4e9e4', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button onClick={() => setVerrechnenGs(null)} disabled={verrProcessing}
+                style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #d4dcd4', background: '#fff', fontSize: 12.5, cursor: 'pointer' }}>Abbrechen</button>
+              <button onClick={handleVerrechnen}
+                disabled={verrProcessing || verrechnungPreview.alloc.length === 0}
+                style={{ padding: '7px 16px', borderRadius: 8, border: 'none',
+                  background: verrechnungPreview.alloc.length === 0 ? '#c5cdc5' : '#9d174d',
+                  color: '#fff', fontSize: 12.5, fontWeight: 600,
+                  cursor: verrechnungPreview.alloc.length === 0 ? 'not-allowed' : 'pointer' }}>
+                {verrProcessing ? 'Verrechnet…' : 'Verrechnen'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
