@@ -22,8 +22,13 @@ function getKlasse(kontoNr) {
 }
 
 // ── Abschnitt-Tabelle (Aktiven / Passiven / Ertrag / Aufwand) ────
-function KontoTable({ title, rows, colorScheme, totalLabel, invertSign = false }) {
+function KontoTable({ title, rows, colorScheme, totalLabel, budgetMap }) {
   const [collapsed, setCollapsed] = useState({});
+  const withBudget = !!budgetMap && Object.keys(budgetMap).length > 0;
+  const kontoTyp   = rows[0]?.konto_typ;
+
+  const ist = (r) => Math.abs(r.saldo ?? 0);
+  const bud = (r) => Math.abs(budgetMap?.[r.konto_nr] ?? 0);
 
   const grouped = useMemo(() => {
     const g = {};
@@ -35,7 +40,29 @@ function KontoTable({ title, rows, colorScheme, totalLabel, invertSign = false }
     return Object.values(g).sort((a, b) => a.kl.localeCompare(b.kl));
   }, [rows]);
 
-  const total = rows.reduce((s, r) => s + Math.abs(r.saldo ?? 0), 0);
+  const total    = rows.reduce((s, r) => s + ist(r), 0);
+  const totalBud = rows.reduce((s, r) => s + bud(r), 0);
+
+  // günstige Abweichung: Ertrag über Budget / Aufwand unter Budget
+  const abwColor = (abw) => {
+    if (Math.abs(abw) < 0.005) return '#94a394';
+    const guenstig = kontoTyp === 'ertrag' ? abw > 0 : abw < 0;
+    return guenstig ? '#166534' : '#991b1b';
+  };
+  const NUM = { fontSize: 13, fontVariantNumeric: 'tabular-nums', minWidth: withBudget ? 108 : 130, textAlign: 'right' };
+  const NUMs = { ...NUM, fontSize: 12.5 };
+
+  // Zahlen-Zellen (Ist / Budget / Abweichung) einer Zeile
+  const Cells = ({ i, b, bold }) => {
+    const abw = i - b;
+    return (
+      <>
+        <span style={{ ...NUM, fontWeight: bold ? 700 : 500, color: Math.abs(i) < 0.005 ? '#d1d5db' : '#1a1a2e' }}>{CHF(i)}</span>
+        {withBudget && <span style={{ ...NUM, fontWeight: bold ? 700 : 400, color: '#6b826b' }}>{b > 0 ? CHF(b) : '—'}</span>}
+        {withBudget && <span style={{ ...NUM, fontWeight: bold ? 700 : 500, color: abwColor(abw) }}>{b > 0 ? (abw >= 0 ? '+' : '−') + N2(Math.abs(abw)) : '—'}</span>}
+      </>
+    );
+  };
 
   return (
     <div style={{
@@ -61,7 +88,20 @@ function KontoTable({ title, rows, colorScheme, totalLabel, invertSign = false }
         </div>
       ) : (
         <>
-          {grouped.map(grp => (
+          {/* Spalten-Beschriftung bei Budget-Vergleich */}
+          {withBudget && (
+            <div style={{ display: 'flex', alignItems: 'center', padding: '4px 16px', background: '#fafcfa', borderBottom: `1px solid ${colorScheme.border}` }}>
+              <span style={{ flex: 1 }} />
+              {['Ist', 'Budget', 'Abw.'].map(h => (
+                <span key={h} style={{ minWidth: 108, textAlign: 'right', fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: '#94a394' }}>{h}</span>
+              ))}
+            </div>
+          )}
+
+          {grouped.map(grp => {
+            const gIst = grp.rows.reduce((s, r) => s + ist(r), 0);
+            const gBud = grp.rows.reduce((s, r) => s + bud(r), 0);
+            return (
             <React.Fragment key={grp.kl}>
               {/* Klassen-Header */}
               <div
@@ -79,9 +119,9 @@ function KontoTable({ title, rows, colorScheme, totalLabel, invertSign = false }
                 <span style={{ fontSize: 11, fontWeight: 700, color: colorScheme.groupColor, textTransform: 'uppercase', letterSpacing: '.06em', flex: 1 }}>
                   {grp.label}
                 </span>
-                <span style={{ fontSize: 12.5, fontVariantNumeric: 'tabular-nums', color: colorScheme.groupColor, fontWeight: 600 }}>
-                  {CHF(grp.rows.reduce((s, r) => s + Math.abs(r.saldo ?? 0), 0))}
-                </span>
+                <span style={{ ...NUMs, color: colorScheme.groupColor, fontWeight: 600 }}>{CHF(gIst)}</span>
+                {withBudget && <span style={{ ...NUMs, color: colorScheme.groupColor, fontWeight: 500 }}>{gBud > 0 ? CHF(gBud) : '—'}</span>}
+                {withBudget && <span style={{ ...NUMs, color: abwColor(gIst - gBud), fontWeight: 600 }}>{gBud > 0 ? ((gIst - gBud) >= 0 ? '+' : '−') + N2(Math.abs(gIst - gBud)) : '—'}</span>}
               </div>
 
               {/* Konto-Zeilen */}
@@ -99,27 +139,19 @@ function KontoTable({ title, rows, colorScheme, totalLabel, invertSign = false }
                     {r.konto_nr}
                   </span>
                   <span style={{ flex: 1, fontSize: 12.5, color: '#1a1a2e' }}>{r.bezeichnung}</span>
-                  <span style={{
-                    fontSize: 13, fontVariantNumeric: 'tabular-nums', fontWeight: 500,
-                    color: Math.abs(r.saldo) < 0.005 ? '#d1d5db' : '#1a1a2e',
-                    minWidth: 130, textAlign: 'right',
-                  }}>
-                    {CHF(Math.abs(r.saldo ?? 0))}
-                  </span>
+                  <Cells i={ist(r)} b={bud(r)} />
                 </div>
               ))}
             </React.Fragment>
-          ))}
+          );})}
 
           {/* Total-Zeile */}
           <div style={{
-            display: 'flex', padding: '10px 16px',
+            display: 'flex', alignItems: 'center', padding: '10px 16px',
             background: colorScheme.totalBg, borderTop: `2px solid ${colorScheme.border}`,
           }}>
             <span style={{ flex: 1, fontSize: 12.5, fontWeight: 700, color: colorScheme.totalColor }}>{totalLabel}</span>
-            <span style={{ fontSize: 14, fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: colorScheme.totalColor }}>
-              {CHF(total)}
-            </span>
+            <Cells i={total} b={totalBud} bold />
           </div>
         </>
       )}
@@ -163,12 +195,14 @@ export default function Bilanz() {
 
   const [bilanzRows, setBilanzRows] = useState([]);
   const [erRows,     setErRows]     = useState([]);
+  const [budgetMap,  setBudgetMap]  = useState({});
 
   const load = useCallback(async () => {
     if (!mandant) return;
     setLoading(true);
     try {
-      const [b, er] = await Promise.all([
+      const erJahr = new Date(bisER).getFullYear();
+      const [b, er, bg] = await Promise.all([
         supabase.rpc('fibu_bilanz', {
           p_mandant_id: mandant.id,
           p_stichtag:   stichtag,
@@ -178,9 +212,16 @@ export default function Bilanz() {
           p_von:        vonER,
           p_bis:        bisER,
         }),
+        supabase.from('fibu_budget')
+          .select('konto_nr,betrag')
+          .eq('mandant_id', mandant.id)
+          .eq('jahr', erJahr),
       ]);
       setBilanzRows(b.data ?? []);
       setErRows(er.data ?? []);
+      const bm = {};
+      (bg.data ?? []).forEach(x => { if (Number(x.betrag) !== 0) bm[x.konto_nr] = Number(x.betrag); });
+      setBudgetMap(bm);
     } finally {
       setLoading(false);
     }
@@ -200,6 +241,12 @@ export default function Bilanz() {
   const totalAufwand  = aufwand.reduce((s, r) => s + Math.abs(r.saldo ?? 0), 0);
   const jahresergebnis = totalErtrag - totalAufwand;
   const bilanzDiff     = totalAktiven - totalPassiven;
+
+  // Budget-Vergleich Erfolgsrechnung
+  const hasBudget       = Object.keys(budgetMap).length > 0;
+  const budgetErtrag    = ertrag.reduce((s, r) => s + Math.abs(budgetMap[r.konto_nr] ?? 0), 0);
+  const budgetAufwand   = aufwand.reduce((s, r) => s + Math.abs(budgetMap[r.konto_nr] ?? 0), 0);
+  const budgetErgebnis  = budgetErtrag - budgetAufwand;
 
   const inpSel = {
     background: '#fff', border: '1px solid #d4dcd4', borderRadius: 7,
@@ -297,17 +344,19 @@ export default function Bilanz() {
               rows={ertrag}
               colorScheme={SCHEMES.ertrag}
               totalLabel="Total Ertrag"
+              budgetMap={budgetMap}
             />
             <KontoTable
               title="AUFWAND"
               rows={aufwand}
               colorScheme={SCHEMES.aufwand}
               totalLabel="Total Aufwand"
+              budgetMap={budgetMap}
             />
 
             {/* Jahresergebnis */}
             <div style={{
-              display: 'flex', alignItems: 'center',
+              display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8,
               padding: '14px 20px',
               background: jahresergebnis >= 0 ? '#dcfce7' : '#fee2e2',
               border: `2px solid ${jahresergebnis >= 0 ? '#86efac' : '#fca5a5'}`,
@@ -316,6 +365,17 @@ export default function Bilanz() {
               <span style={{ flex: 1, fontSize: 14, fontWeight: 700, color: jahresergebnis >= 0 ? '#14532d' : '#7f1d1d' }}>
                 {jahresergebnis >= 0 ? '✅ Jahresgewinn' : '❌ Jahresverlust'}
               </span>
+              {hasBudget && (() => {
+                const abw = jahresergebnis - budgetErgebnis;
+                return (
+                  <span style={{ fontSize: 11.5, color: '#4a5a4a', textAlign: 'right', marginRight: 14 }}>
+                    Budget: <strong style={{ fontVariantNumeric: 'tabular-nums' }}>{CHF(budgetErgebnis)}</strong>
+                    <span style={{ marginLeft: 8, fontWeight: 700, color: abw >= 0 ? '#166534' : '#991b1b' }}>
+                      Abw. {abw >= 0 ? '+' : '−'}{N2(Math.abs(abw))}
+                    </span>
+                  </span>
+                );
+              })()}
               <span style={{ fontSize: 20, fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: jahresergebnis >= 0 ? '#166534' : '#991b1b' }}>
                 {CHF(Math.abs(jahresergebnis))}
               </span>
