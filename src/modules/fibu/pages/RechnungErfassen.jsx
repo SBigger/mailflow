@@ -201,15 +201,6 @@ export default function RechnungErfassen() {
     })();
   }, [inboxId, mandant?.id]);
 
-  // Auto-Scan sobald Inbox-PDF geladen ist UND Lieferanten verfügbar sind
-  const autoScannedRef = useRef(false);
-  useEffect(() => {
-    if (!inboxId || !scanFile || lieferanten.length === 0 || autoScannedRef.current) return;
-    if (scanStatus !== 'idle') return;
-    autoScannedRef.current = true;
-    handleScan();
-  }, [inboxId, scanFile, lieferanten.length, scanStatus, handleScan]);
-
   const handleLieferantChange = (id) => {
     const l = lieferanten.find(x => x.id === id);
     setHead(prev => ({
@@ -361,6 +352,17 @@ export default function RechnungErfassen() {
       setScanStatus('error');
     }
   }, [scanFile, lieferanten, mwstMap]);
+
+  // Auto-Scan sobald Inbox-PDF geladen ist UND Lieferanten verfügbar sind.
+  // MUSS nach handleScan stehen – sonst Temporal-Dead-Zone-ReferenceError
+  // beim Aufbau des Dependency-Arrays → Komponente crasht (weisse Seite).
+  const autoScannedRef = useRef(false);
+  useEffect(() => {
+    if (!inboxId || !scanFile || lieferanten.length === 0 || autoScannedRef.current) return;
+    if (scanStatus !== 'idle') return;
+    autoScannedRef.current = true;
+    handleScan();
+  }, [inboxId, scanFile, lieferanten.length, scanStatus, handleScan]);
 
   const handleFileChange = (e) => {
     const f = e.target.files[0];
