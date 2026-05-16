@@ -40,6 +40,7 @@ export default function Zahlungslauf() {
   const navigate = useNavigate();
   const [belege, setBelege] = useState([]);
   const [selected, setSelected] = useState(new Set());
+  const [amounts, setAmounts] = useState({});   // belegId → erfasster Zahlbetrag (Teilzahlung)
   const [step, setStep] = useState(0);
   const [fälligBis, setFälligBis] = useState(addDays(7));
   const [valuta, setValuta] = useState(addDays(2));
@@ -116,14 +117,21 @@ export default function Zahlungslauf() {
     return next;
   });
 
+  // Restbetrag der Rechnung bzw. erfasster (Teil-)Zahlbetrag
+  const restBetrag = (b) => (b.betrag_brutto ?? 0) - (b.betrag_bezahlt ?? 0);
+  const zahlbetrag = (b) => {
+    const v = amounts[b.id];
+    return (v != null && v !== '') ? (parseFloat(v) || 0) : restBetrag(b);
+  };
+
   const selectedBelege = belege.filter(b => selected.has(b.id));
-  const totalBetrag = selectedBelege.reduce((s, b) => s + (b.betrag_brutto - b.betrag_bezahlt), 0);
+  const totalBetrag = selectedBelege.reduce((s, b) => s + zahlbetrag(b), 0);
 
   // ── Zahlungspositionen aufbereiten (für pain.001 + Prüfung) ──
   const payments = useMemo(() => selectedBelege.map(b => ({
     beleg:        b,
     endToEndId:   b.beleg_nr,
-    amount:       b.betrag_brutto - b.betrag_bezahlt,
+    amount:       zahlbetrag(b),
     currency:     b.waehrung || mandant?.waehrung || 'CHF',
     creditorName: b.lieferant?.name,
     creditorAddr: {
@@ -135,11 +143,16 @@ export default function Zahlungslauf() {
     creditorIban: b.lieferant?.iban,
     reference:    b.zahlungsreferenz,
     message:      b.lieferant_beleg_nr || b.beleg_nr,
-  })), [selectedBelege, mandant?.waehrung]);
+  })), [selectedBelege, amounts, mandant?.waehrung]);
 
   // ── Validierung ──
   const validations = useMemo(
-    () => payments.map(p => ({ p, errs: validatePayment(p) })),
+    () => payments.map(p => {
+      const errs = validatePayment(p);
+      const rest = (p.beleg.betrag_brutto ?? 0) - (p.beleg.betrag_bezahlt ?? 0);
+      if (p.amount > rest + 0.005) errs.push('Betrag übersteigt den Restbetrag');
+      return { p, errs };
+    }),
     [payments],
   );
   const errorCount  = validations.filter(v => v.errs.length > 0).length;
@@ -317,7 +330,7 @@ export default function Zahlungslauf() {
             </table>
           )}
           <div style={{ padding: '10px 20px', fontSize: 11, color: '#94a394' }}>
-            Rückmeldung = Anzahl Belege, die per Bankabstimmung (camt.053) als bezahlt zurückgemeldet wurden. Status „Verbucht" sobald alle Zahlungen abgeglichen sind.
+            Rückmeldung = Anzahl Zahlungen, die per Bankabstimmung (camt.053) zurückgemeldet wurden. Status „Verbucht" sobald alle Zahlungen des Laufs abgeglichen sind.
           </div>
         </div>
       ) : step === 2 ? (
@@ -397,7 +410,14 @@ export default function Zahlungslauf() {
                       </span>
                     </td>
                     <td style={{ ...td, fontFamily: 'monospace', fontSize: 11, color: '#6b826b' }}>{p.reference || '—'}</td>
-                    <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>{CHF(p.amount)}</td>
+                    <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
+                      {CHF(p.amount)}
+                      {p.amount < ((p.beleg.betrag_brutto ?? 0) - (p.beleg.betrag_bezahlt ?? 0)) - 0.005 && (
+                        <div style={{ fontSize: 9.5, fontWeight: 600, color: '#b9802e' }}>
+                          Teilzahlung · Rest {CHF((p.beleg.betrag_brutto ?? 0) - (p.beleg.betrag_bezahlt ?? 0) - p.amount)}
+                        </div>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
@@ -437,13 +457,36 @@ export default function Zahlungslauf() {
                     {belege.map(b => {
                       const isOver = b.faelligkeit < toISO(new Date());
                       const hasIban = !!b.lieferant?.iban;
+                      const sel  = selected.has(b.id);
+                      const rest = restBetrag(b);
+                      const amt  = zahlbetrag(b);
+                      const teil = sel && amt < rest - 0.005;
                       return (
-                        <tr key={b.id} style={{ background: selected.has(b.id) ? '#f0f7f0' : undefined, cursor: 'pointer' }} onClick={() => toggle(b.id)}>
-                          <td style={{ ...td, textAlign: 'center' }}><input type="checkbox" checked={selected.has(b.id)} onChange={() => toggle(b.id)} onClick={e => e.stopPropagation()} /></td>
+                        <tr key={b.id} style={{ background: sel ? '#f0f7f0' : undefined, cursor: 'pointer' }} onClick={() => toggle(b.id)}>
+                          <td style={{ ...td, textAlign: 'center' }}><input type="checkbox" checked={sel} onChange={() => toggle(b.id)} onClick={e => e.stopPropagation()} /></td>
                           <td style={{ ...td, fontFamily: 'monospace', fontSize: 12 }}>{b.beleg_nr}</td>
                           <td style={{ ...td, fontWeight: 500 }}>{b.lieferant?.name}</td>
                           <td style={{ ...td, color: isOver ? '#8a2d2d' : undefined, fontWeight: isOver ? 500 : undefined }}>{DATE(b.faelligkeit)}{isOver ? ' ⚠' : ''}</td>
-                          <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 500, color: isOver ? '#8a2d2d' : undefined }}>{CHF(b.betrag_brutto - b.betrag_bezahlt)}</td>
+                          <td style={{ ...td, textAlign: 'right' }} onClick={e => sel && e.stopPropagation()}>
+                            {sel ? (
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
+                                <input
+                                  type="number" step="0.05" min="0"
+                                  value={amounts[b.id] ?? String(rest)}
+                                  onChange={e => setAmounts(a => ({ ...a, [b.id]: e.target.value }))}
+                                  style={{ width: 100, textAlign: 'right', padding: '3px 6px', borderRadius: 6,
+                                    border: `1px solid ${teil ? '#d9b061' : (amt > rest + 0.005 ? '#e0b8b8' : '#d4dcd4')}`,
+                                    fontSize: 12, fontVariantNumeric: 'tabular-nums',
+                                    background: teil ? '#fdf6ec' : '#fff' }}
+                                />
+                                {teil
+                                  ? <span style={{ fontSize: 9.5, color: '#b9802e' }}>Teilzahlung · Rest {CHF(rest - amt)}</span>
+                                  : <span style={{ fontSize: 9.5, color: '#c5cdc5' }}>von {CHF(rest)}</span>}
+                              </div>
+                            ) : (
+                              <span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 500, color: isOver ? '#8a2d2d' : undefined }}>{CHF(rest)}</span>
+                            )}
+                          </td>
                           <td style={{ ...td, fontFamily: 'monospace', fontSize: 11, color: hasIban ? '#94a394' : '#c08a8a' }}>
                             {hasIban ? fmtIban(b.lieferant.iban) : '⚠ keine IBAN'}
                           </td>
