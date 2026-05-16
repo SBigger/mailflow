@@ -127,6 +127,182 @@ function KontoSelector({ konten, value, onChange }) {
   );
 }
 
+// ── PDF Export ────────────────────────────────────────────────────
+async function exportKontoblattPDF({ rows, eroeff, kontoNr, currentKonto, von, bis, mandantName }) {
+  const { jsPDF }            = await import('jspdf');
+  const { default: autoTable } = await import('jspdf-autotable');
+
+  const doc  = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const DARK = [26, 26, 46];
+  const GRAY = [120, 130, 120];
+  const GRN  = [61, 102, 65];
+  const LGRN = [232, 240, 232];
+  const LGRN2= [212, 228, 212];
+  const BLUE = [74, 90, 138];
+
+  const N2l  = (v) => v == null ? '—' : Number(v).toLocaleString('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const dFmt = (d) => d ? new Date(d).toLocaleDateString('de-CH') : '—';
+  const sBel = (ref) => { if (!ref) return ''; const m = ref.match(/(\d+)$/); return m ? String(parseInt(m[1], 10)) : ref; };
+
+  const totalSoll  = rows.reduce((s, r) => s + (r.soll  ?? 0), 0);
+  const totalHaben = rows.reduce((s, r) => s + (r.haben ?? 0), 0);
+  const schluss    = rows.length > 0 ? rows[rows.length - 1].saldo_lfd : (eroeff ?? 0);
+
+  // ── Seitenheader ──
+  const addPageHeader = () => {
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(...DARK);
+    doc.text('Kontoblatt', 14, 14);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(...GRN);
+    doc.text(`${kontoNr}  ${currentKonto?.bezeichnung ?? ''}`, 14, 20.5);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(...GRAY);
+    doc.text(`Periode ${dFmt(von)} – ${dFmt(bis)}`, 14, 26);
+    if (mandantName) doc.text(mandantName, 14, 30.5);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(...GRAY);
+    doc.text(new Date().toLocaleDateString('de-CH'), 196, 14, { align: 'right' });
+    doc.setDrawColor(...GRAY); doc.setLineWidth(0.2); doc.line(14, 33, 196, 33);
+  };
+
+  addPageHeader();
+
+  // ── KPI-Zeile ──
+  const kpis = [
+    ['Eröffnungssaldo', N2l(eroeff)],
+    ['Total Soll',      N2l(totalSoll)],
+    ['Total Haben',     N2l(totalHaben)],
+    ['Schlusssaldo',    N2l(schluss)],
+  ];
+  const kW = (196 - 14) / 4;
+  kpis.forEach(([lbl, val], i) => {
+    const x = 14 + i * kW;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); doc.setTextColor(...GRAY);
+    doc.text(lbl, x, 38);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...DARK);
+    doc.text(`CHF ${val}`, x, 43);
+  });
+  doc.setDrawColor(...GRAY); doc.setLineWidth(0.2); doc.line(14, 46, 196, 46);
+
+  // ── Tabellenzeilen bauen ──
+  const body = [];
+
+  // Saldovortrag
+  body.push([
+    { content: 'Saldovortrag', colSpan: 6, styles: { fontStyle: 'italic', textColor: GRAY, fillColor: [232, 240, 232] } },
+    { content: N2l(eroeff), styles: { halign: 'right', fontStyle: 'bold', fillColor: [232, 240, 232] } },
+  ]);
+
+  rows.forEach(r => {
+    const bel     = sBel(r.beleg_ref);
+    const hasAtt  = !!r.quelle_id;
+    const hasMwst = r.mwst_betrag && Math.abs(r.mwst_betrag) > 0.005 && r.konto_vorsteuer;
+
+    // Hauptzeile
+    body.push([
+      { content: dFmt(r.buchungsdatum), styles: { textColor: GRAY } },
+      r.buch_text || '—',
+      { content: r.gegenkonto || '', styles: { fontStyle: 'bold' } },
+      // _att-Flag für didDrawCell
+      { content: bel || '', _att: hasAtt, styles: { cellPadding: hasAtt ? { top: 2, bottom: 2, left: 7, right: 2 } : { top: 2, bottom: 2, left: 3, right: 2 } } },
+      { content: r.soll > 0 ? N2l(r.soll) : '', styles: { halign: 'right' } },
+      { content: r.haben > 0 ? N2l(r.haben) : '', styles: { halign: 'right' } },
+      { content: N2l(r.saldo_lfd), styles: { halign: 'right', fontStyle: 'bold', textColor: r.saldo_lfd < 0 ? [153, 27, 27] : DARK } },
+    ]);
+
+    // MWST-Sub-Zeile
+    if (hasMwst) {
+      body.push([
+        { content: '', _isMwst: true, styles: { fillColor: [244, 248, 244] } },
+        { content: '', styles: { fillColor: [244, 248, 244] } },
+        { content: r.konto_vorsteuer, styles: { fontStyle: 'bold', textColor: BLUE, fillColor: [244, 248, 244] } },
+        { content: bel || '', _att: true, _isMwst: true, styles: { textColor: BLUE, fillColor: [244, 248, 244], cellPadding: { top: 1, bottom: 1, left: 7, right: 2 } } },
+        { content: N2l(r.mwst_betrag), styles: { halign: 'right', textColor: BLUE, fillColor: [244, 248, 244] } },
+        { content: '', styles: { fillColor: [244, 248, 244] } },
+        { content: N2l(r.saldo_lfd), styles: { halign: 'right', textColor: GRAY, fillColor: [244, 248, 244] } },
+      ]);
+    }
+  });
+
+  // Footer
+  if (rows.length > 0) {
+    body.push([
+      { content: `Saldo  ${dFmt(von)} – ${dFmt(bis)}`, colSpan: 4,
+        styles: { fontStyle: 'bold', fillColor: LGRN, fontSize: 8 } },
+      { content: N2l(totalSoll),  styles: { halign: 'right', fontStyle: 'bold', fillColor: LGRN } },
+      { content: N2l(totalHaben), styles: { halign: 'right', fontStyle: 'bold', fillColor: LGRN } },
+      { content: N2l(schluss),    styles: { halign: 'right', fontStyle: 'bold', fillColor: LGRN,
+        textColor: schluss < 0 ? [153, 27, 27] : DARK } },
+    ]);
+    body.push([
+      { content: 'Saldovortrag', colSpan: 6, styles: { fontStyle: 'italic', textColor: GRAY } },
+      { content: N2l(eroeff), styles: { halign: 'right', textColor: GRAY } },
+    ]);
+    body.push([
+      { content: 'Saldo Buchungsjahr', colSpan: 6,
+        styles: { fontStyle: 'bold', fillColor: LGRN2 } },
+      { content: N2l(schluss), styles: { halign: 'right', fontStyle: 'bold', fillColor: LGRN2,
+        textColor: schluss < 0 ? [153, 27, 27] : [22, 101, 52] } },
+    ]);
+  }
+
+  autoTable(doc, {
+    startY: 49,
+    head: [['BelDatum', 'Text', 'Gegenkonto', 'Beleg', 'Soll', 'Haben', 'Saldo']],
+    body,
+    columnStyles: {
+      0: { cellWidth: 20 },
+      1: { cellWidth: 'auto' },
+      2: { cellWidth: 20 },
+      3: { cellWidth: 20 },
+      4: { cellWidth: 26, halign: 'right' },
+      5: { cellWidth: 26, halign: 'right' },
+      6: { cellWidth: 28, halign: 'right' },
+    },
+    headStyles: { fillColor: GRN, textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7.5,
+      cellPadding: { top: 3, bottom: 3, left: 3, right: 2 } },
+    bodyStyles: { fontSize: 8, cellPadding: { top: 2, bottom: 2, left: 3, right: 2 } },
+    alternateRowStyles: { fillColor: [248, 251, 248] },
+    // Keine alternierenden Farben für MWST-Sub-Zeilen (die setzen ihr eigenes fillColor)
+    didParseCell: (data) => {
+      if (data.row.raw[0]?._isMwst) {
+        data.cell.styles.fontSize = 7.5;
+      }
+    },
+    // 📎 Anhang-Punkt: kleines grünes Rechteck links im Beleg-Cell
+    didDrawCell: (data) => {
+      if (data.column.index === 3 && data.section === 'body') {
+        const cell = data.row.raw[3];
+        if (cell?._att) {
+          const cx = data.cell.x + 1.8;
+          const cy = data.cell.y + data.cell.height / 2 - 1.2;
+          doc.setFillColor(...GRN);
+          doc.roundedRect(cx, cy, 3.2, 2.4, 0.6, 0.6, 'F');
+        }
+      }
+    },
+    didDrawPage: (d) => {
+      // Seiten-Fusszeile
+      doc.setFontSize(7); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GRAY);
+      doc.text(`${kontoNr} ${currentKonto?.bezeichnung ?? ''}  ·  Seite ${d.pageNumber}`,
+        14, doc.internal.pageSize.height - 8);
+      doc.text(new Date().toLocaleDateString('de-CH'),
+        196, doc.internal.pageSize.height - 8, { align: 'right' });
+      // Horizontale Linie oben auf Folgeseiten
+      if (d.pageNumber > 1) {
+        doc.setDrawColor(...GRAY); doc.setLineWidth(0.2); doc.line(14, 10, 196, 10);
+      }
+    },
+  });
+
+  // Legende unter der Tabelle
+  const finalY = doc.lastAutoTable.finalY + 4;
+  doc.setFontSize(7); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GRAY);
+  doc.setFillColor(...GRN);
+  doc.roundedRect(14, finalY - 1.2, 3.2, 2.4, 0.6, 0.6, 'F');
+  doc.text('= Originalbeleg vorhanden', 19, finalY + 0.5);
+
+  const fname = `Kontoblatt_${kontoNr}_${von}_${bis}.pdf`;
+  doc.save(fname);
+}
+
 // ── Hauptkomponente ───────────────────────────────────────────────
 export default function Kontoblaetter() {
   const { mandant } = useMandant();
@@ -136,7 +312,8 @@ export default function Kontoblaetter() {
   const [kontoNr,  setKontoNr]  = useState('');
   const [von,      setVon]      = useState(`${currentYear}-01-01`);
   const [bis,      setBis]      = useState(`${currentYear}-12-31`);
-  const [loading,  setLoading]  = useState(false);
+  const [loading,    setLoading]    = useState(false);
+  const [pdfLoading, setPdfLoading] = useState(false);
   const [konten,   setKonten]   = useState([]);      // alle Konten mit Bewegungen im Jahr
   const [rows,     setRows]     = useState([]);      // Kontoblatt-Zeilen
   const [eroeff,   setEroeff]   = useState(null);    // Eröffnungssaldo
@@ -213,6 +390,27 @@ export default function Kontoblaetter() {
           >{loading ? '⏳' : '↻'} Laden</button>
 
           <div style={{ flex: 1 }} />
+          <button
+            disabled={!kontoNr || rows.length === 0 || pdfLoading}
+            onClick={async () => {
+              setPdfLoading(true);
+              try {
+                await exportKontoblattPDF({
+                  rows, eroeff, kontoNr,
+                  currentKonto: konten.find(k => k.konto_nr === kontoNr),
+                  von, bis,
+                  mandantName: mandant?.name,
+                });
+              } finally { setPdfLoading(false); }
+            }}
+            style={{
+              padding: '5px 13px', borderRadius: 7, border: 'none',
+              background: (!kontoNr || rows.length === 0) ? '#e4e9e4' : '#7a9b7f',
+              color: (!kontoNr || rows.length === 0) ? '#94a394' : '#fff',
+              fontSize: 12, fontWeight: 500, cursor: (!kontoNr || rows.length === 0) ? 'default' : 'pointer',
+              display: 'flex', alignItems: 'center', gap: 5,
+            }}
+          >{pdfLoading ? '⏳' : '📄'} PDF Export</button>
           <button
             onClick={() => window.print()}
             style={{ padding: '5px 12px', borderRadius: 7, border: '1px solid #d4dcd4', background: '#fff', fontSize: 12, cursor: 'pointer', color: '#4a5a4a' }}
