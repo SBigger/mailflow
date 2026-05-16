@@ -137,6 +137,7 @@ export const kreditorenApi = {
       .eq('mandant_id', mandantId)
       .in('status', ['offen', 'teilbezahlt'])
       .neq('belegtyp', 'gutschrift')
+      .eq('freigabe_status', 'freigegeben')
       .order('faelligkeit');
     if (error) throw error;
     return data ?? [];
@@ -245,6 +246,12 @@ export const kreditorenApi = {
     const { error } = await supabase.rpc('fibu_skonto_buchen', {
       p_beleg_id: belegId, p_skonto_betrag: skontoBetrag, p_datum: datum,
     });
+    if (error) throw error;
+  },
+
+  // Beleg freigeben (Belegfreigabe-Workflow)
+  freigeben: async (belegId) => {
+    const { error } = await supabase.rpc('fibu_beleg_freigeben', { p_beleg_id: belegId });
     if (error) throw error;
   },
 

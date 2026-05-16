@@ -105,6 +105,15 @@ export default function OpListe() {
     } finally { setVerrProcessing(false); }
   };
 
+  const handleFreigeben = async (belegId) => {
+    try {
+      await kreditorenApi.freigeben(belegId);
+      load(stichtag);
+    } catch (e) {
+      alert('Freigabe fehlgeschlagen: ' + e.message);
+    }
+  };
+
   const openStorno = (b) => { setStornoBeleg(b); setStornoDatum(toISO(new Date())); };
   const handleStorno = async () => {
     if (!stornoBeleg || !stornoDatum) return;
@@ -248,10 +257,20 @@ export default function OpListe() {
                           <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, fontWeight: 500, background: '#e4e4ea', color: '#4a4a5a' }}>verrechnet</span>
                         )
                       ) : (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                           <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, fontWeight: 500, background: isOver ? '#fde7e7' : isFaellig ? '#fef0c7' : '#e4e4ea', color: isOver ? '#8a2d2d' : isFaellig ? '#8a5a00' : '#4a4a5a' }}>
                             {isOver ? `überfällig +${diff}` : isFaellig ? 'fällig' : 'offen'}
                           </span>
+                          {b.freigabe_status === 'ausstehend' && (
+                            <>
+                              <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: '#fef3c7', color: '#92400e' }}>⏳ Freigabe offen</span>
+                              <button
+                                onClick={() => handleFreigeben(b.id)}
+                                title="Beleg freigeben"
+                                style={{ padding: '3px 9px', borderRadius: 6, border: '1px solid #b8d4b8', background: '#f0f7f0', color: '#3d6641', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+                              >✓ Freigeben</button>
+                            </>
+                          )}
                           {(b.betrag_bezahlt || 0) === 0 && (
                             <button
                               onClick={() => openStorno(b)}

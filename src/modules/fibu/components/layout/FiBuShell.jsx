@@ -26,6 +26,7 @@ const ManuelleBuchungen    = React.lazy(() => import('../../pages/ManuelleBuchun
 const Saldovortraege       = React.lazy(() => import('../../pages/Saldovortraege'));
 const Budget               = React.lazy(() => import('../../pages/Budget'));
 const Wechselkurse         = React.lazy(() => import('../../pages/Wechselkurse'));
+const Einstellungen        = React.lazy(() => import('../../pages/Einstellungen'));
 
 const Spinner = () => (
   <div className="flex-1 flex items-center justify-center">
@@ -69,6 +70,7 @@ function FiBuContent() {
         <Route path="saldovortraege"               element={<Saldovortraege />} />
         <Route path="budget"                       element={<Budget />} />
         <Route path="wechselkurse"                 element={<Wechselkurse />} />
+        <Route path="einstellungen"                element={<Einstellungen />} />
         <Route path="*" element={<Navigate to="kreditoren" replace />} />
       </Routes>
     </Suspense>

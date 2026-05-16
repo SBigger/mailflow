@@ -66,12 +66,13 @@ const SECTIONS = [
     id:    'stammdaten',
     short: '⚙',
     label: 'Stammdaten',
-    paths: ['kontenplan', 'mwstcodes', 'zahlstellen', 'wechselkurse'],
+    paths: ['kontenplan', 'mwstcodes', 'zahlstellen', 'wechselkurse', 'einstellungen'],
     items: [
-      { to: 'kontenplan',   label: 'Kontenplan',        icon: 'table' },
-      { to: 'mwstcodes',    label: 'MWST-Codes',        icon: 'percent' },
-      { to: 'zahlstellen',  label: 'Firmenzahlstellen', icon: 'bank' },
-      { to: 'wechselkurse', label: 'Wechselkurse',      icon: 'percent' },
+      { to: 'kontenplan',    label: 'Kontenplan',        icon: 'table' },
+      { to: 'mwstcodes',     label: 'MWST-Codes',        icon: 'percent' },
+      { to: 'zahlstellen',   label: 'Firmenzahlstellen', icon: 'bank' },
+      { to: 'wechselkurse',  label: 'Wechselkurse',      icon: 'percent' },
+      { to: 'einstellungen', label: 'Einstellungen',     icon: 'grid' },
     ],
   },
 ];
