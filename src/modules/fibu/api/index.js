@@ -133,7 +133,7 @@ export const kreditorenApi = {
     // Gutschriften ausgeschlossen – sie können nicht "gezahlt" werden
     const { data, error } = await supabase
       .from('fibu_kreditoren_belege')
-      .select('*, lieferant:fibu_lieferanten(id,name,nr,iban,bank_name,adresse,plz,ort,land)')
+      .select('*, lieferant:fibu_lieferanten(id,name,nr,iban,bank_name,adresse,plz,ort,land,skonto_prozent,skonto_tage)')
       .eq('mandant_id', mandantId)
       .in('status', ['offen', 'teilbezahlt'])
       .neq('belegtyp', 'gutschrift')
@@ -238,6 +238,14 @@ export const kreditorenApi = {
     });
     if (error) throw error;
     return data;   // id der Storno-Gutschrift
+  },
+
+  // Skonto-Abzug einer Kreditoren-Zahlung verbuchen
+  skontoBuchen: async (belegId, skontoBetrag, datum) => {
+    const { error } = await supabase.rpc('fibu_skonto_buchen', {
+      p_beleg_id: belegId, p_skonto_betrag: skontoBetrag, p_datum: datum,
+    });
+    if (error) throw error;
   },
 
   markBezahlt: async (id, betrag, bezahltAm) => {

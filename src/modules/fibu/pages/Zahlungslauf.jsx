@@ -41,6 +41,7 @@ export default function Zahlungslauf() {
   const [belege, setBelege] = useState([]);
   const [selected, setSelected] = useState(new Set());
   const [amounts, setAmounts] = useState({});   // belegId → erfasster Zahlbetrag (Teilzahlung)
+  const [skonti, setSkonti] = useState(new Set());   // belegIds mit Skonto-Abzug
   const [step, setStep] = useState(0);
   const [fälligBis, setFälligBis] = useState(addDays(7));
   const [valuta, setValuta] = useState(addDays(2));
@@ -117,6 +118,12 @@ export default function Zahlungslauf() {
     return next;
   });
 
+  const toggleSkonto = (id) => setSkonti(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+
   // Restbetrag der Rechnung bzw. erfasster (Teil-)Zahlbetrag
   const restBetrag = (b) => (b.betrag_brutto ?? 0) - (b.betrag_bezahlt ?? 0);
   const zahlbetrag = (b) => {
@@ -124,14 +131,33 @@ export default function Zahlungslauf() {
     return (v != null && v !== '') ? (parseFloat(v) || 0) : restBetrag(b);
   };
 
+  // ── Skonto ──────────────────────────────────────────────────────
+  const skontoFrist = (b) => {
+    const tage = b.lieferant?.skonto_tage;
+    if (tage == null || !b.belegdatum) return null;
+    const d = new Date(b.belegdatum + 'T00:00:00');
+    d.setDate(d.getDate() + tage);
+    return d.toISOString().slice(0, 10);
+  };
+  const skontoFaehig = (b) => {
+    const p = b.lieferant?.skonto_prozent;
+    const frist = skontoFrist(b);
+    return !!p && p > 0 && frist != null && valuta <= frist;
+  };
+  const skontoBetrag = (b) =>
+    skontoFaehig(b) ? Math.round(restBetrag(b) * b.lieferant.skonto_prozent) / 100 : 0;
+  // tatsächlich zu zahlender Betrag (Skonto schlägt Teilzahlung)
+  const effektiverBetrag = (b) =>
+    skonti.has(b.id) ? restBetrag(b) - skontoBetrag(b) : zahlbetrag(b);
+
   const selectedBelege = belege.filter(b => selected.has(b.id));
-  const totalBetrag = selectedBelege.reduce((s, b) => s + zahlbetrag(b), 0);
+  const totalBetrag = selectedBelege.reduce((s, b) => s + effektiverBetrag(b), 0);
 
   // ── Zahlungspositionen aufbereiten (für pain.001 + Prüfung) ──
   const payments = useMemo(() => selectedBelege.map(b => ({
     beleg:        b,
     endToEndId:   b.beleg_nr,
-    amount:       zahlbetrag(b),
+    amount:       effektiverBetrag(b),
     currency:     b.waehrung || mandant?.waehrung || 'CHF',
     creditorName: b.lieferant?.name,
     creditorAddr: {
@@ -143,7 +169,7 @@ export default function Zahlungslauf() {
     creditorIban: b.lieferant?.iban,
     reference:    b.zahlungsreferenz,
     message:      b.lieferant_beleg_nr || b.beleg_nr,
-  })), [selectedBelege, amounts, mandant?.waehrung]);
+  })), [selectedBelege, amounts, skonti, valuta, mandant?.waehrung]);
 
   // ── Validierung ──
   const validations = useMemo(
@@ -195,6 +221,17 @@ export default function Zahlungslauf() {
         exportiert_am:      new Date().toISOString(),
       };
       await zahlungslaufApi.create(mandant.id, lauf, positionen);
+
+      // Skonto-Abzüge verbuchen
+      for (const b of selectedBelege) {
+        if (skonti.has(b.id) && skontoBetrag(b) > 0) {
+          try {
+            await kreditorenApi.skontoBuchen(b.id, skontoBetrag(b), valuta);
+          } catch (e) {
+            console.error('Skonto-Buchung fehlgeschlagen für', b.beleg_nr, e);
+          }
+        }
+      }
 
       // Download XML
       const blob = new Blob([xml], { type: 'application/xml;charset=utf-8' });
@@ -412,11 +449,20 @@ export default function Zahlungslauf() {
                     <td style={{ ...td, fontFamily: 'monospace', fontSize: 11, color: '#6b826b' }}>{p.reference || '—'}</td>
                     <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
                       {CHF(p.amount)}
-                      {p.amount < ((p.beleg.betrag_brutto ?? 0) - (p.beleg.betrag_bezahlt ?? 0)) - 0.005 && (
-                        <div style={{ fontSize: 9.5, fontWeight: 600, color: '#b9802e' }}>
-                          Teilzahlung · Rest {CHF((p.beleg.betrag_brutto ?? 0) - (p.beleg.betrag_bezahlt ?? 0) - p.amount)}
-                        </div>
-                      )}
+                      {(() => {
+                        const rest = (p.beleg.betrag_brutto ?? 0) - (p.beleg.betrag_bezahlt ?? 0);
+                        if (skonti.has(p.beleg.id)) {
+                          return <div style={{ fontSize: 9.5, fontWeight: 600, color: '#166534' }}>
+                            inkl. {CHF(skontoBetrag(p.beleg))} Skonto
+                          </div>;
+                        }
+                        if (p.amount < rest - 0.005) {
+                          return <div style={{ fontSize: 9.5, fontWeight: 600, color: '#b9802e' }}>
+                            Teilzahlung · Rest {CHF(rest - p.amount)}
+                          </div>;
+                        }
+                        return null;
+                      })()}
                     </td>
                   </tr>
                 );
@@ -461,6 +507,9 @@ export default function Zahlungslauf() {
                       const rest = restBetrag(b);
                       const amt  = zahlbetrag(b);
                       const teil = sel && amt < rest - 0.005;
+                      const skoElig = skontoFaehig(b);
+                      const skoOn   = skonti.has(b.id);
+                      const skoBtr  = skontoBetrag(b);
                       return (
                         <tr key={b.id} style={{ background: sel ? '#f0f7f0' : undefined, cursor: 'pointer' }} onClick={() => toggle(b.id)}>
                           <td style={{ ...td, textAlign: 'center' }}><input type="checkbox" checked={sel} onChange={() => toggle(b.id)} onClick={e => e.stopPropagation()} /></td>
@@ -470,18 +519,33 @@ export default function Zahlungslauf() {
                           <td style={{ ...td, textAlign: 'right' }} onClick={e => sel && e.stopPropagation()}>
                             {sel ? (
                               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
-                                <input
-                                  type="number" step="0.05" min="0"
-                                  value={amounts[b.id] ?? String(rest)}
-                                  onChange={e => setAmounts(a => ({ ...a, [b.id]: e.target.value }))}
-                                  style={{ width: 100, textAlign: 'right', padding: '3px 6px', borderRadius: 6,
-                                    border: `1px solid ${teil ? '#d9b061' : (amt > rest + 0.005 ? '#e0b8b8' : '#d4dcd4')}`,
-                                    fontSize: 12, fontVariantNumeric: 'tabular-nums',
-                                    background: teil ? '#fdf6ec' : '#fff' }}
-                                />
-                                {teil
-                                  ? <span style={{ fontSize: 9.5, color: '#b9802e' }}>Teilzahlung · Rest {CHF(rest - amt)}</span>
-                                  : <span style={{ fontSize: 9.5, color: '#c5cdc5' }}>von {CHF(rest)}</span>}
+                                {skoOn ? (
+                                  <div style={{ textAlign: 'right' }}>
+                                    <div style={{ fontSize: 12.5, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{CHF(rest - skoBtr)}</div>
+                                    <div style={{ fontSize: 9.5, color: '#166534' }}>{rest > 0 ? CHF(rest) : '0'} − {CHF(skoBtr)} Skonto</div>
+                                  </div>
+                                ) : (
+                                  <>
+                                    <input
+                                      type="number" step="0.05" min="0"
+                                      value={amounts[b.id] ?? String(rest)}
+                                      onChange={e => setAmounts(a => ({ ...a, [b.id]: e.target.value }))}
+                                      style={{ width: 100, textAlign: 'right', padding: '3px 6px', borderRadius: 6,
+                                        border: `1px solid ${teil ? '#d9b061' : (amt > rest + 0.005 ? '#e0b8b8' : '#d4dcd4')}`,
+                                        fontSize: 12, fontVariantNumeric: 'tabular-nums',
+                                        background: teil ? '#fdf6ec' : '#fff' }}
+                                    />
+                                    {teil
+                                      ? <span style={{ fontSize: 9.5, color: '#b9802e' }}>Teilzahlung · Rest {CHF(rest - amt)}</span>
+                                      : <span style={{ fontSize: 9.5, color: '#c5cdc5' }}>von {CHF(rest)}</span>}
+                                  </>
+                                )}
+                                {skoElig && (
+                                  <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 9.5, color: '#166534', cursor: 'pointer' }}>
+                                    <input type="checkbox" checked={skoOn} onChange={() => toggleSkonto(b.id)} style={{ margin: 0 }} />
+                                    {b.lieferant.skonto_prozent}% Skonto − {CHF(skoBtr)}
+                                  </label>
+                                )}
                               </div>
                             ) : (
                               <span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 500, color: isOver ? '#8a2d2d' : undefined }}>{CHF(rest)}</span>
