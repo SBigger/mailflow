@@ -19,6 +19,8 @@ const MwstAbrechnung      = React.lazy(() => import('../../pages/MwstAbrechnung'
 const Jahresabschluss     = React.lazy(() => import('../../pages/Jahresabschluss'));
 const MassenImport        = React.lazy(() => import('../../pages/MassenImport'));
 const BankAbstimmungIntern = React.lazy(() => import('../../pages/BankAbstimmung'));
+const Kontoblaetter        = React.lazy(() => import('../../pages/Kontoblaetter'));
+const Bilanz               = React.lazy(() => import('../../pages/Bilanz'));
 
 const Spinner = () => (
   <div className="flex-1 flex items-center justify-center">
@@ -55,6 +57,8 @@ function FiBuContent() {
         <Route path="jahresabschluss"               element={<Jahresabschluss />} />
         <Route path="kreditoren/massen-import"      element={<MassenImport />} />
         <Route path="bankabstimmung"               element={<BankAbstimmungIntern />} />
+        <Route path="kontoblaetter"                element={<Kontoblaetter />} />
+        <Route path="bilanz"                       element={<Bilanz />} />
         <Route path="*" element={<Navigate to="kreditoren" replace />} />
       </Routes>
     </Suspense>

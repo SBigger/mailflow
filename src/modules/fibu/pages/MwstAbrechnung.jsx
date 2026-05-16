@@ -1,6 +1,7 @@
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { useMandant } from '../contexts/MandantContext';
 import { supabase } from '@/api/supabaseClient';
+import { useNavigate } from 'react-router-dom';
 
 // ── Helpers ──────────────────────────────────────────────────────
 const N2  = (n) => (n == null ? '—' : Number(n).toLocaleString('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
@@ -310,9 +311,15 @@ function TabNachKonto({ byKonto }) {
   );
 }
 
-// ── Tab: Detailliert pro Buchung ──────────────────────────────────
-function TabDetail({ detail }) {
-  const [search, setSearch] = useState('');
+// ── Tab: Detailliert pro Buchung (mit MWST-Edit + Beleg-Link) ────────
+function TabDetail({ detail, allCodes, locked, mandantId, onReload }) {
+  const navigate = useNavigate();
+  const [search,     setSearch]     = useState('');
+  const [editingNr,  setEditingNr]  = useState(null); // buchungs_nr currently editing
+  const [editCode,   setEditCode]   = useState('');
+  const [editSaving, setEditSaving] = useState(false);
+  const [editErr,    setEditErr]    = useState('');
+
   const filtered = useMemo(() => {
     if (!search) return detail;
     const q = search.toLowerCase();
@@ -324,6 +331,33 @@ function TabDetail({ detail }) {
       d.text?.toLowerCase().includes(q)
     );
   }, [detail, search]);
+
+  const startEdit = (d) => {
+    if (locked) return;
+    setEditingNr(d.buchungs_nr);
+    setEditCode(d.mwst_code ?? '');
+    setEditErr('');
+  };
+
+  const saveEdit = async () => {
+    setEditSaving(true);
+    setEditErr('');
+    try {
+      const { error } = await supabase.rpc('fibu_buchung_mwst_code_aendern', {
+        p_mandant_id:  mandantId,
+        p_buchungs_nr: editingNr,
+        p_mwst_code:   editCode,
+      });
+      if (error) throw error;
+      setEditingNr(null);
+      onReload();
+    } catch (e) {
+      const msg = e.message ?? '';
+      setEditErr(msg.includes('MWST_PERIODE_GESPERRT') ? 'Periode gesperrt' : 'Fehler beim Speichern');
+    } finally {
+      setEditSaving(false);
+    }
+  };
 
   if (!detail.length) {
     return <div style={{ padding: 48, textAlign: 'center', color: '#94a394', fontSize: 12.5 }}>Keine Buchungen in diesem Zeitraum</div>;
@@ -338,6 +372,7 @@ function TabDetail({ detail }) {
           style={{ padding: '5px 10px', borderRadius: 7, border: '1px solid #d4dcd4', fontSize: 12.5, outline: 'none', background: '#f7faf7', color: '#1a1a2e', width: 260 }}
         />
         <span style={{ fontSize: 12, color: '#94a394' }}>{filtered.length} Buchungen</span>
+        {locked && <span style={{ fontSize: 11.5, color: '#92400e', background: '#fef3c7', padding: '3px 10px', borderRadius: 6, fontWeight: 600 }}>🔒 Periode gesperrt – MWST-Code nicht editierbar</span>}
       </div>
       <div style={{ flex: 1, overflowY: 'auto' }}>
         <table style={styles.table}>
@@ -346,7 +381,7 @@ function TabDetail({ detail }) {
             <th style={styles.th}>Buchungs-Nr.</th>
             <th style={styles.th}>Beleg</th>
             <th style={styles.th}>Konto Soll</th>
-            <th style={styles.th}>Code</th>
+            <th style={styles.th}>Code ✎</th>
             <th style={{ ...styles.thR }}>Satz</th>
             <th style={{ ...styles.thR }}>Netto</th>
             <th style={{ ...styles.thR, color: '#2e4a7d' }}>MWST dekl.</th>
@@ -357,15 +392,56 @@ function TabDetail({ detail }) {
           <tbody>
             {filtered.map((d, i) => {
               const diffOk = Math.abs(d.differenz ?? 0) <= 0.05;
+              const isEditing = editingNr === d.buchungs_nr;
               return (
                 <tr key={d.buchungs_nr ?? i} style={{ background: i % 2 === 0 ? '#fff' : '#fafcfa' }}>
                   <td style={{ ...styles.td, fontSize: 12, color: '#6b826b', whiteSpace: 'nowrap' }}>
                     {d.buchungsdatum ? new Date(d.buchungsdatum).toLocaleDateString('de-CH') : '—'}
                   </td>
                   <td style={styles.tdMono}>{d.buchungs_nr}</td>
-                  <td style={{ ...styles.tdMono, color: '#2e4a7d' }}>{d.beleg_ref}</td>
+                  {/* Beleg-Link */}
+                  <td style={{ ...styles.tdMono }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      <span style={{ color: '#2e4a7d' }}>{d.beleg_ref}</span>
+                      {d.quelle_id && (
+                        <button
+                          onClick={() => navigate(`../kreditoren/erfassen/${d.quelle_id}`)}
+                          title="Beleg öffnen"
+                          style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#94a394', padding: '0 2px', fontSize: 12, lineHeight: 1 }}
+                        >↗</button>
+                      )}
+                    </span>
+                  </td>
                   <td style={styles.tdMono}>{d.konto_soll} <span style={{ fontSize: 11, color: '#94a394' }}>{d.konto_soll_bez}</span></td>
-                  <td style={styles.td}>{codeBadge(d.mwst_code)}</td>
+                  {/* MWST-Code inline edit */}
+                  <td style={styles.td}>
+                    {isEditing ? (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                        <select
+                          value={editCode}
+                          onChange={e => setEditCode(e.target.value)}
+                          autoFocus
+                          style={{ fontSize: 11.5, padding: '2px 4px', borderRadius: 5, border: '1px solid #7a9b7f', outline: 'none' }}
+                        >
+                          {allCodes.map(c => <option key={c.code} value={c.code}>{c.code} – {c.bezeichnung}</option>)}
+                        </select>
+                        <button onClick={saveEdit} disabled={editSaving} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#166534', fontSize: 13 }}>✓</button>
+                        <button onClick={() => setEditingNr(null)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#6b7280', fontSize: 13 }}>✕</button>
+                        {editErr && <span style={{ fontSize: 10.5, color: '#991b1b' }}>{editErr}</span>}
+                      </span>
+                    ) : (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        {codeBadge(d.mwst_code)}
+                        {!locked && (
+                          <button
+                            onClick={() => startEdit(d)}
+                            title="MWST-Code ändern"
+                            style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#94a394', fontSize: 11, padding: '0 2px' }}
+                          >✎</button>
+                        )}
+                      </span>
+                    )}
+                  </td>
                   <td style={styles.tdR}>{d.mwst_satz != null ? `${d.mwst_satz}%` : '—'}</td>
                   <td style={styles.tdR}>{N2(d.betrag_netto)}</td>
                   <td style={{ ...styles.tdR, fontWeight: 600, color: '#2e4a7d' }}>{N2(d.mwst_betrag)}</td>
@@ -519,6 +595,13 @@ export default function MwstAbrechnung() {
   const [summary, setSummary] = useState([]);
   const [byKonto, setByKonto] = useState([]);
   const [detail,  setDetail]  = useState([]);
+  const [allCodes, setAllCodes] = useState([]);
+
+  // Perioden-Status
+  const [periode,        setPeriode]        = useState(null);   // row aus fibu_mwst_abrechnungsperioden
+  const [periodeLoading, setPeriodeLoading] = useState(false);
+  const [periodeErr,     setPeriodeErr]     = useState('');
+  const [periodeConfirm, setPeriodeConfirm] = useState(null);   // 'zurueck' | null
 
   // Methode aus Mandant lesen (default: effektiv, Quartal)
   const methode    = mandant?.mwst_methode ?? 'effektiv';
@@ -532,21 +615,52 @@ export default function MwstAbrechnung() {
   const loadData = useCallback(async () => {
     if (!mandant) return;
     setLoading(true);
+    setPeriodeErr('');
     try {
-      const [s, k, d] = await Promise.all([
-        supabase.rpc('fibu_mwst_summary',  { p_mandant_id: mandant.id, p_von: period.von, p_bis: period.bis }),
-        supabase.rpc('fibu_mwst_by_konto', { p_mandant_id: mandant.id, p_von: period.von, p_bis: period.bis }),
-        supabase.rpc('fibu_mwst_detail',   { p_mandant_id: mandant.id, p_von: period.von, p_bis: period.bis }),
+      const [s, k, d, p, c] = await Promise.all([
+        supabase.rpc('fibu_mwst_summary',    { p_mandant_id: mandant.id, p_von: period.von, p_bis: period.bis }),
+        supabase.rpc('fibu_mwst_by_konto',   { p_mandant_id: mandant.id, p_von: period.von, p_bis: period.bis }),
+        supabase.rpc('fibu_mwst_detail',     { p_mandant_id: mandant.id, p_von: period.von, p_bis: period.bis }),
+        supabase.rpc('fibu_mwst_periode_get',{ p_mandant_id: mandant.id, p_von: period.von, p_bis: period.bis }),
+        supabase.from('fibu_mwst_codes').select('code,bezeichnung,satz,typ').eq('mandant_id', mandant.id).eq('aktiv', true).order('sortierung'),
       ]);
       setSummary(s.data ?? []);
       setByKonto(k.data ?? []);
       setDetail(d.data ?? []);
+      setPeriode(p.data?.[0] ?? null);
+      setAllCodes(c.data ?? []);
     } finally {
       setLoading(false);
     }
   }, [mandant?.id, period.von, period.bis]);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  // Periode abschliessen / zurücksetzen
+  const handlePeriodeStatus = async (newStatus) => {
+    if (!mandant) return;
+    setPeriodeLoading(true);
+    setPeriodeErr('');
+    try {
+      const { error } = await supabase.rpc('fibu_mwst_periode_abschliessen', {
+        p_mandant_id: mandant.id,
+        p_von:        period.von,
+        p_bis:        period.bis,
+        p_status:     newStatus,
+        p_zahllast:   newStatus !== 'offen' ? zahllast : null,
+      });
+      if (error) throw error;
+      await loadData();
+    } catch (e) {
+      setPeriodeErr(e.message ?? 'Fehler');
+    } finally {
+      setPeriodeLoading(false);
+      setPeriodeConfirm(null);
+    }
+  };
+
+  const periodeStatus  = periode?.status ?? 'offen';
+  const isLocked       = periodeStatus === 'eingereicht' || periodeStatus === 'abgerechnet';
 
   // KPIs für Header
   const vorsteuerTotal = summary.filter(s => s.typ === 'vorsteuer').reduce((s, r) => s + (r.sum_mwst ?? 0), 0);
@@ -580,6 +694,41 @@ export default function MwstAbrechnung() {
           <span style={{ fontSize: 12, color: '#6b826b' }}>{period.von} – {period.bis}</span>
 
           <div style={{ flex: 1 }} />
+
+          {/* ── Perioden-Status-Buttons ── */}
+          {!loading && (
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              {periodeStatus === 'offen' && (
+                <button
+                  onClick={() => handlePeriodeStatus('eingereicht')}
+                  disabled={periodeLoading}
+                  style={{ padding: '5px 12px', borderRadius: 7, border: 'none', background: '#f59e0b', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                >📤 Einreichen</button>
+              )}
+              {periodeStatus === 'eingereicht' && (
+                <>
+                  <button
+                    onClick={() => handlePeriodeStatus('abgerechnet')}
+                    disabled={periodeLoading}
+                    style={{ padding: '5px 12px', borderRadius: 7, border: 'none', background: '#166534', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                  >✅ Abgerechnet</button>
+                  <button
+                    onClick={() => setPeriodeConfirm('zurueck')}
+                    disabled={periodeLoading}
+                    style={{ padding: '5px 12px', borderRadius: 7, border: '1px solid #d4dcd4', background: '#fff', fontSize: 12, cursor: 'pointer', color: '#6b826b' }}
+                  >↩ Zurücksetzen</button>
+                </>
+              )}
+              {periodeStatus === 'abgerechnet' && (
+                <button
+                  onClick={() => setPeriodeConfirm('zurueck')}
+                  disabled={periodeLoading}
+                  style={{ padding: '5px 12px', borderRadius: 7, border: '1px solid #d4dcd4', background: '#fff', fontSize: 12, cursor: 'pointer', color: '#6b826b' }}
+                >🔓 Entsperren</button>
+              )}
+            </span>
+          )}
+
           <button
             onClick={loadData}
             style={{ padding: '5px 12px', borderRadius: 7, border: '1px solid #d4dcd4', background: '#fff', fontSize: 12, cursor: 'pointer', color: '#4a5a4a' }}
@@ -589,6 +738,33 @@ export default function MwstAbrechnung() {
             style={{ padding: '5px 12px', borderRadius: 7, border: 'none', background: '#7a9b7f', color: '#fff', fontSize: 12, fontWeight: 500, cursor: 'pointer' }}
           >🖨 Drucken</button>
         </div>
+
+        {/* ── Perioden-Status-Banner ── */}
+        {!loading && periodeStatus !== 'offen' && (
+          <div style={{
+            padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 10,
+            background: periodeStatus === 'abgerechnet' ? '#166534' : '#92400e',
+            color: '#fff', fontSize: 12.5, fontWeight: 500,
+          }}>
+            <span style={{ fontSize: 16 }}>🔒</span>
+            <span>
+              {periodeStatus === 'eingereicht'
+                ? `Periode eingereicht am ${periode?.eingereicht_am ? new Date(periode.eingereicht_am).toLocaleDateString('de-CH') : '—'} — Buchungen sind gesperrt`
+                : `Periode abgerechnet am ${periode?.abgerechnet_am ? new Date(periode.abgerechnet_am).toLocaleDateString('de-CH') : '—'} — abgeschlossen`
+              }
+            </span>
+            {periodeErr && <span style={{ marginLeft: 8, background: '#991b1b', borderRadius: 5, padding: '2px 8px' }}>{periodeErr}</span>}
+          </div>
+        )}
+
+        {/* ── Bestätigungs-Dialog Zurücksetzen ── */}
+        {periodeConfirm === 'zurueck' && (
+          <div style={{ padding: '10px 16px', background: '#fef3c7', borderBottom: '1px solid #fde68a', display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 12.5, color: '#92400e', fontWeight: 500 }}>⚠ Periode wirklich auf «Offen» zurücksetzen? Buchungen werden wieder editierbar.</span>
+            <button onClick={() => handlePeriodeStatus('offen')} style={{ padding: '4px 12px', borderRadius: 6, border: 'none', background: '#f59e0b', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Ja, zurücksetzen</button>
+            <button onClick={() => setPeriodeConfirm(null)} style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #d4dcd4', background: '#fff', fontSize: 12, cursor: 'pointer' }}>Abbrechen</button>
+          </div>
+        )}
 
         {/* KPI-Leiste */}
         {!loading && (
@@ -635,7 +811,7 @@ export default function MwstAbrechnung() {
             {tab === 'abrechnung' && <TabAbrechnung summary={summary} mandant={mandant} period={period} />}
             {tab === 'code'       && <TabNachCode summary={summary} />}
             {tab === 'konto'      && <TabNachKonto byKonto={byKonto} />}
-            {tab === 'detail'     && <TabDetail detail={detail} />}
+            {tab === 'detail'     && <TabDetail detail={detail} allCodes={allCodes} locked={isLocked} mandantId={mandant?.id} onReload={loadData} />}
             {tab === 'verprobung' && <TabVerprobung detail={detail} summary={summary} />}
           </>
         )}
