@@ -156,7 +156,9 @@ export default function RechnungErfassen() {
     belegdatum: today, faelligkeit: '',
     zahlungsbedingung_tage: 30, waehrung: 'CHF',
     zahlungsreferenz: '', notiz: '',
+    belegtyp: 'rechnung',
   });
+  const istGutschrift = head.belegtyp === 'gutschrift';
   const [positionen, setPositionen] = useState([emptyPos()]);
 
   // MWST-Code → Satz Map für Berechnungen
@@ -421,12 +423,15 @@ export default function RechnungErfassen() {
         betrag_mwst: p.betrag_mwst,
         betrag_brutto: p.betrag_brutto,
       }));
+      // Gutschrift: Beleg-Beträge negativ (Positionen bleiben positiv –
+      // die Verbuchungs-RPC dreht die Buchungsrichtung anhand belegtyp)
+      const sign = istGutschrift ? -1 : 1;
       const beleg = await kreditorenApi.create(mandant.id, {
         ...head,
         beleg_nr: belegNr,
-        betrag_netto: totals.netto,
-        betrag_mwst: totals.mwst,
-        betrag_brutto: totals.brutto,
+        betrag_netto:  sign * totals.netto,
+        betrag_mwst:   sign * totals.mwst,
+        betrag_brutto: sign * totals.brutto,
       }, pos);
 
       // Inbox-Eintrag als verarbeitet markieren
@@ -455,9 +460,26 @@ export default function RechnungErfassen() {
       <div style={{ flex: 1, overflowY: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 16, borderRight: '1px solid #e4e9e4' }}>
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span style={{ fontWeight: 600, fontSize: 13.5 }}>
-            {belegId ? 'Rechnung bearbeiten' : 'Neue Kreditoren-Rechnung'}
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span style={{ fontWeight: 600, fontSize: 13.5 }}>
+              {belegId ? 'Beleg bearbeiten' : (istGutschrift ? 'Neue Lieferanten-Gutschrift' : 'Neue Kreditoren-Rechnung')}
+            </span>
+            {!belegId && (
+              <div style={{ display: 'flex', gap: 2, background: '#eef2ee', borderRadius: 8, padding: 2 }}>
+                {[['rechnung', 'Rechnung'], ['gutschrift', 'Gutschrift']].map(([v, l]) => (
+                  <button key={v}
+                    onClick={() => setHead(h => ({ ...h, belegtyp: v }))}
+                    style={{
+                      padding: '4px 12px', borderRadius: 6, border: 'none', cursor: 'pointer',
+                      fontSize: 11.5, fontWeight: 600,
+                      background: head.belegtyp === v ? '#fff' : 'transparent',
+                      color: head.belegtyp === v ? (v === 'gutschrift' ? '#9d174d' : '#3d6641') : '#6b826b',
+                      boxShadow: head.belegtyp === v ? '0 1px 3px rgba(0,0,0,.1)' : 'none',
+                    }}>{l}</button>
+                ))}
+              </div>
+            )}
+          </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button
               onClick={() => navigate(`/fibu/${mandant?.id}/kreditoren`)}
@@ -791,7 +813,7 @@ export default function RechnungErfassen() {
               <div style={{ fontWeight: 600, fontSize: 12.5, color: '#2e4a7d', marginTop: 2 }}>{head.waehrung} {CHF(totals.mwst)}</div>
             </div>
             <div style={{ textAlign: 'right', paddingLeft: 12, borderLeft: '2px solid #e4e9e4' }}>
-              <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#3d6641' }}>Zu zahlen (Brutto)</div>
+              <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#3d6641' }}>{istGutschrift ? 'Gutschrift-Betrag' : 'Zu zahlen (Brutto)'}</div>
               <div style={{ fontWeight: 700, fontSize: 16, color: '#1a1a2e', marginTop: 2 }}>{head.waehrung} {CHF(totals.brutto)}</div>
             </div>
           </div>

@@ -133,12 +133,16 @@ export default function OpListe() {
               {belege.map(b => {
                 const diff = daysDiff(b.faelligkeit, stichtag);
                 const offen = b.betrag_brutto - b.betrag_bezahlt;
-                const isOver = diff > 0;
-                const isFaellig = diff >= 0 && diff <= 7;
-                const rowBg = isOver ? '#fff8f8' : undefined;
+                const istGS = b.belegtyp === 'gutschrift';
+                const isOver = diff > 0 && !istGS;
+                const isFaellig = diff >= 0 && diff <= 7 && !istGS;
+                const rowBg = istGS ? '#fdf4f8' : (isOver ? '#fff8f8' : undefined);
                 return (
                   <tr key={b.id} style={{ background: rowBg }}>
-                    <td style={{ ...td, fontFamily: 'monospace', fontSize: 12 }}>{b.beleg_nr}</td>
+                    <td style={{ ...td, fontFamily: 'monospace', fontSize: 12 }}>
+                      {b.beleg_nr}
+                      {istGS && <span style={{ marginLeft: 6, fontFamily: "'Inter',system-ui", fontSize: 9.5, fontWeight: 700, padding: '1px 6px', borderRadius: 4, background: '#fce7f3', color: '#9d174d' }}>Gutschrift</span>}
+                    </td>
                     <td style={{ ...td, fontWeight: 500 }}>{b.lieferant?.name}</td>
                     <td style={td}>{DATE(b.belegdatum)}</td>
                     <td style={{ ...td, color: isOver ? '#8a2d2d' : isFaellig ? '#8a5a00' : undefined, fontWeight: isOver || isFaellig ? 500 : undefined }}>{DATE(b.faelligkeit)}</td>
