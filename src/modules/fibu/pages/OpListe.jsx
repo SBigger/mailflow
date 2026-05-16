@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useMandant } from '../contexts/MandantContext';
-import { kreditorenApi } from '../api';
+import { kreditorenApi, wechselkurseApi } from '../api';
 
 const CHF = (n) => n == null ? '—' : new Intl.NumberFormat('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 const DATE = (s) => s ? new Date(s + 'T00:00:00').toLocaleDateString('de-CH') : '—';
@@ -23,6 +23,17 @@ export default function OpListe() {
   const [stornoBeleg, setStornoBeleg] = useState(null);
   const [stornoDatum, setStornoDatum] = useState(toISO(new Date()));
   const [stornoProcessing, setStornoProcessing] = useState(false);
+  const [kursMap, setKursMap] = useState({});
+
+  useEffect(() => {
+    wechselkurseApi.list('monat')
+      .then(({ kurse }) => {
+        const m = {};
+        (kurse || []).forEach(k => { m[k.waehrung] = Number(k.kurs); });
+        setKursMap(m);
+      })
+      .catch(() => {});
+  }, []);
 
   const load = (date) => {
     if (!mandant) return;
@@ -42,11 +53,22 @@ export default function OpListe() {
     });
   }, [raw, filter, stichtag]);
 
-  const totalOffen      = belege.reduce((s, b) => s + (b.betrag_brutto - b.betrag_bezahlt), 0);
+  // ── Fremdwährung → CHF ──────────────────────────────────────────
+  const isFW   = (b) => b.waehrung && b.waehrung !== 'CHF';
+  const kursOf = (w) => (!w || w === 'CHF') ? 1 : (kursMap[w] ?? null);
+  const offenFW  = (b) => (b.betrag_brutto - b.betrag_bezahlt);
+  const offenCHF = (b) => {
+    const k = kursOf(b.waehrung);
+    return k == null ? null : offenFW(b) * k;
+  };
+  // Anzeige Betrag + Währungscode (CHF ohne Suffix)
+  const AMT = (b, v) => isFW(b) ? `${CHF(v)} ${b.waehrung}` : CHF(v);
+
+  const totalOffen      = belege.reduce((s, b) => s + (offenCHF(b) ?? offenFW(b)), 0);
   const fällig          = belege.filter(b => { const d = daysDiff(b.faelligkeit, stichtag); return d >= 0 && d <= 7; });
   const überfällig      = belege.filter(b => daysDiff(b.faelligkeit, stichtag) > 0);
-  const totalFällig     = fällig.reduce((s, b) => s + (b.betrag_brutto - b.betrag_bezahlt), 0);
-  const totalÜberfällig = überfällig.reduce((s, b) => s + (b.betrag_brutto - b.betrag_bezahlt), 0);
+  const totalFällig     = fällig.reduce((s, b) => s + (offenCHF(b) ?? offenFW(b)), 0);
+  const totalÜberfällig = überfällig.reduce((s, b) => s + (offenCHF(b) ?? offenFW(b)), 0);
 
   // FIFO-Vorschau für die Verrechnung der gewählten Gutschrift
   const verrechnungPreview = useMemo(() => {
@@ -106,10 +128,11 @@ export default function OpListe() {
   const td  = { padding: '9px 12px', borderBottom: '1px solid #f0f3f0', fontSize: 12.5, verticalAlign: 'middle' };
 
   const exportCsv = () => {
-    const rows = [['Beleg-Nr.','Lieferant','Belegdatum','Fälligkeit','Tage','Brutto CHF','Bezahlt CHF','Offen CHF','Status']];
+    const rows = [['Beleg-Nr.','Lieferant','Belegdatum','Fälligkeit','Tage','Währung','Brutto','Bezahlt','Offen','Offen CHF','Status']];
     belege.forEach(b => {
       const diff = daysDiff(b.faelligkeit, stichtag);
-      rows.push([b.beleg_nr, b.lieferant?.name, DATE(b.belegdatum), DATE(b.faelligkeit), diff > 0 ? `+${diff}` : diff < 0 ? diff : '0', CHF(b.betrag_brutto), CHF(b.betrag_bezahlt), CHF(b.betrag_brutto - b.betrag_bezahlt), b.status]);
+      const oCHF = offenCHF(b);
+      rows.push([b.beleg_nr, b.lieferant?.name, DATE(b.belegdatum), DATE(b.faelligkeit), diff > 0 ? `+${diff}` : diff < 0 ? diff : '0', b.waehrung || 'CHF', CHF(b.betrag_brutto), CHF(b.betrag_bezahlt), CHF(offenFW(b)), oCHF == null ? '' : CHF(oCHF), b.status]);
     });
     const csv = rows.map(r => r.map(c => `"${c}"`).join(';')).join('\n');
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
@@ -177,8 +200,9 @@ export default function OpListe() {
               <th style={hdr}>Beleg-Nr.</th><th style={hdr}>Lieferant</th>
               <th style={hdr}>Belegdatum</th><th style={hdr}>Fälligkeit</th>
               <th style={{ ...hdr, textAlign: 'right' }}>Tage</th>
-              <th style={{ ...hdr, textAlign: 'right' }}>Brutto CHF</th>
-              <th style={{ ...hdr, textAlign: 'right' }}>Bezahlt CHF</th>
+              <th style={{ ...hdr, textAlign: 'right' }}>Brutto</th>
+              <th style={{ ...hdr, textAlign: 'right' }}>Bezahlt</th>
+              <th style={{ ...hdr, textAlign: 'right' }}>Offen</th>
               <th style={{ ...hdr, textAlign: 'right' }}>Offen CHF</th>
               <th style={hdr}>Status</th>
             </tr></thead>
@@ -202,9 +226,17 @@ export default function OpListe() {
                     <td style={{ ...td, textAlign: 'right', color: isOver ? '#8a2d2d' : diff < 0 ? '#94a394' : '#8a5a00', fontWeight: isOver ? 600 : undefined }}>
                       {isOver ? `+${diff}` : diff === 0 ? '0' : diff}
                     </td>
-                    <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{CHF(b.betrag_brutto)}</td>
-                    <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: '#94a394' }}>{b.betrag_bezahlt > 0 ? CHF(b.betrag_bezahlt) : '—'}</td>
-                    <td style={{ ...td, textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: isOver ? '#8a2d2d' : isFaellig ? '#8a5a00' : undefined }}>{CHF(offen)}</td>
+                    <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{AMT(b, b.betrag_brutto)}</td>
+                    <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: '#94a394' }}>{b.betrag_bezahlt > 0 || b.betrag_bezahlt < 0 ? AMT(b, b.betrag_bezahlt) : '—'}</td>
+                    <td style={{ ...td, textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: isOver ? '#8a2d2d' : isFaellig ? '#8a5a00' : undefined }}>{AMT(b, offen)}</td>
+                    <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
+                      {offenCHF(b) == null
+                        ? <span style={{ color: '#c08a8a', fontSize: 11 }}>Kurs fehlt</span>
+                        : <>
+                            {CHF(offenCHF(b))}
+                            {isFW(b) && <div style={{ fontSize: 9.5, color: '#94a394', fontWeight: 400 }}>Kurs {kursOf(b.waehrung).toFixed(4)}</div>}
+                          </>}
+                    </td>
                     <td style={td}>
                       {istGS ? (
                         Math.abs(offen) > 0.005 ? (
@@ -234,16 +266,14 @@ export default function OpListe() {
                 );
               })}
               {belege.length === 0 && (
-                <tr><td colSpan={9} style={{ padding: 40, textAlign: 'center', color: '#94a394', fontSize: 12.5 }}>Keine offenen Posten per {DATE(stichtag)}</td></tr>
+                <tr><td colSpan={10} style={{ padding: 40, textAlign: 'center', color: '#94a394', fontSize: 12.5 }}>Keine offenen Posten per {DATE(stichtag)}</td></tr>
               )}
             </tbody>
             {belege.length > 0 && (
               <tfoot>
                 <tr>
-                  <td colSpan={5} style={{ ...td, fontWeight: 700, background: '#f7faf7', borderTop: '2px solid #d4dcd4' }}>Total CHF</td>
-                  <td style={{ ...td, textAlign: 'right', fontWeight: 700, background: '#f7faf7', borderTop: '2px solid #d4dcd4', fontVariantNumeric: 'tabular-nums' }}>{CHF(belege.reduce((s, b) => s + b.betrag_brutto, 0))}</td>
-                  <td style={{ ...td, textAlign: 'right', fontWeight: 700, background: '#f7faf7', borderTop: '2px solid #d4dcd4', fontVariantNumeric: 'tabular-nums', color: '#94a394' }}>{CHF(belege.reduce((s, b) => s + b.betrag_bezahlt, 0))}</td>
-                  <td style={{ ...td, textAlign: 'right', fontWeight: 700, background: '#f7faf7', borderTop: '2px solid #d4dcd4', fontVariantNumeric: 'tabular-nums' }}>{CHF(totalOffen)}</td>
+                  <td colSpan={8} style={{ ...td, fontWeight: 700, background: '#f7faf7', borderTop: '2px solid #d4dcd4' }}>Total offen in CHF</td>
+                  <td style={{ ...td, textAlign: 'right', fontWeight: 800, background: '#f7faf7', borderTop: '2px solid #d4dcd4', fontVariantNumeric: 'tabular-nums' }}>{CHF(totalOffen)}</td>
                   <td style={{ ...td, background: '#f7faf7', borderTop: '2px solid #d4dcd4' }}></td>
                 </tr>
               </tfoot>

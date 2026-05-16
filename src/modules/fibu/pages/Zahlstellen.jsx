@@ -5,9 +5,11 @@ import { isValidIban, isQrIban, normIban } from '../utils/pain001';
 
 const fmtIban = (s) => normIban(s).replace(/(.{4})/g, '$1 ').trim();
 
+const WAEHRUNGEN = ['CHF', 'EUR', 'USD', 'GBP', 'JPY', 'AUD', 'CAD', 'SEK', 'NOK', 'DKK', 'CNY'];
+
 const emptyForm = () => ({
   bezeichnung: '', bank_name: '', iban: '', bic: '',
-  konto_nr: '', ist_standard: false, aktiv: true, sortierung: 0,
+  konto_nr: '', waehrung: 'CHF', ist_standard: false, aktiv: true, sortierung: 0,
 });
 
 export default function Zahlstellen() {
@@ -33,6 +35,7 @@ export default function Zahlstellen() {
     setForm({
       bezeichnung: r.bezeichnung ?? '', bank_name: r.bank_name ?? '',
       iban: r.iban ?? '', bic: r.bic ?? '', konto_nr: r.konto_nr ?? '',
+      waehrung: r.waehrung ?? 'CHF',
       ist_standard: !!r.ist_standard, aktiv: !!r.aktiv, sortierung: r.sortierung ?? 0,
     });
     setEditing(r); setErr(null);
@@ -52,6 +55,7 @@ export default function Zahlstellen() {
         iban:        normIban(form.iban),
         bic:         form.bic.trim().toUpperCase() || null,
         konto_nr:    form.konto_nr.trim() || null,
+        waehrung:    form.waehrung || 'CHF',
         aktiv:       form.aktiv,
         sortierung:  parseInt(form.sortierung, 10) || 0,
       };
@@ -128,6 +132,7 @@ export default function Zahlstellen() {
               <th style={hdr}>IBAN</th>
               <th style={hdr}>BIC</th>
               <th style={hdr}>Fibu-Konto</th>
+              <th style={hdr}>Währung</th>
               <th style={hdr}>Standard</th>
               <th style={hdr}>Status</th>
               <th style={{ ...hdr, textAlign: 'right' }}>Aktionen</th>
@@ -145,6 +150,13 @@ export default function Zahlstellen() {
                     </td>
                     <td style={{ ...td, fontFamily: 'monospace', fontSize: 11.5, color: '#6b826b' }}>{r.bic || '—'}</td>
                     <td style={{ ...td, fontFamily: 'monospace' }}>{r.konto_nr || '—'}</td>
+                    <td style={td}>
+                      <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 7px', borderRadius: 4,
+                        background: (r.waehrung && r.waehrung !== 'CHF') ? '#fff7ed' : '#eef2ee',
+                        color: (r.waehrung && r.waehrung !== 'CHF') ? '#9a3412' : '#3d6641' }}>
+                        {r.waehrung || 'CHF'}
+                      </span>
+                    </td>
                     <td style={td}>
                       {r.ist_standard
                         ? <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 4, background: '#dcfce7', color: '#166534' }}>★ Standard</span>
@@ -201,11 +213,20 @@ export default function Zahlstellen() {
                     onChange={e => setForm(f => ({ ...f, bank_name: e.target.value }))}
                     placeholder="z.B. UBS Switzerland AG" />
                 </div>
-                <div style={{ width: 120 }}>
+                <div style={{ width: 110 }}>
                   <label style={lbl}>Fibu-Konto</label>
                   <input style={{ ...inp, fontFamily: 'monospace' }} value={form.konto_nr}
                     onChange={e => setForm(f => ({ ...f, konto_nr: e.target.value }))}
                     placeholder="1020" />
+                </div>
+                <div style={{ width: 90 }}>
+                  <label style={lbl}>Währung</label>
+                  <select style={inp} value={form.waehrung}
+                    onChange={e => setForm(f => ({ ...f, waehrung: e.target.value }))}>
+                    {[...new Set([form.waehrung, ...WAEHRUNGEN])].map(w => (
+                      <option key={w} value={w}>{w}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
               <div>
