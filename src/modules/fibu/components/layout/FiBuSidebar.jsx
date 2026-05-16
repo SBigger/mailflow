@@ -386,7 +386,7 @@ export default function FiBuSidebar() {
                   transition: 'background .12s',
                 })}
                 onMouseOver={e => { if (!e.currentTarget.classList.contains('active')) e.currentTarget.style.background = '#dde5dd'; }}
-                onMouseOut={e => { if (!e.currentTarget.style.background?.includes('5a8a5a')) e.currentTarget.style.background = 'transparent'; }}
+                onMouseOut={e => { if (!e.currentTarget.classList.contains('active')) e.currentTarget.style.background = 'transparent'; }}
               >
                 <Icon name={item.icon} />
                 <span style={{ flex: 1 }}>{item.label}</span>

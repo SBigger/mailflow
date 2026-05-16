@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMandant } from '../contexts/MandantContext';
 import { lieferantenApi, kontenApi, kreditorenApi, mwstCodesApi, kiVorschlagApi } from '../api';
+import NeuerLieferantModal from '../components/NeuerLieferantModal';
 import { supabase } from '@/api/supabaseClient';
 import * as pdfjsLib from 'pdfjs-dist';
 // Worker aus public/ – funktioniert in Vite ohne ?url-Trick
@@ -40,10 +41,12 @@ function parseSpc(text) {
   return {
     iban:        (lines[3] ?? '').replace(/\s+/g, ''),
     name:        lines[5] ?? '',
-    strasse:     addrType === 'S' ? (lines[6] ?? '') : (lines[6] ?? ''),
+    strasse:     addrType === 'S'
+                   ? [lines[6], lines[7]].filter(Boolean).join(' ').trim()
+                   : (lines[6] ?? '').trim(),
     plz,
     ort,
-    land:        lines[10] ?? 'CH',
+    land:        (lines[10] ?? '').trim() || 'CH',
     betrag:      lines[18] ? parseFloat(lines[18]) || null : null,
     waehrung:    lines[19] ?? 'CHF',
     referenzTyp: lines[27] ?? '',
@@ -140,6 +143,7 @@ export default function RechnungErfassen() {
   const [pdfBlobUrl, setPdfBlobUrl] = useState(null);          // stabile Blob-URL für Vorschau
   const [quickLief, setQuickLief]   = useState(null);          // {name, iban} für Schnell-Anlage
   const [quickLiefSaving, setQuickLiefSaving] = useState(false);
+  const [liefModal, setLiefModal]   = useState(null);          // { init } – Lieferant-Erfassungs-Dialog
   const fileRef = useRef();
 
   // Blob-URL erzeugen/freigeben wenn Datei wechselt
@@ -376,31 +380,33 @@ export default function RechnungErfassen() {
     setQuickLief(null);
   };
 
-  // Lieferant direkt aus QR-Daten anlegen
-  const handleQuickLiefCreate = async () => {
-    if (!quickLief || !mandant) return;
+  // Lieferant über den Erfassungs-Dialog anlegen (mit Adressfeldern)
+  const handleSaveLief = async (form) => {
+    if (!mandant) return;
     setQuickLiefSaving(true);
     try {
       const nr = await lieferantenApi.nextNr(mandant.id);
       const neu = await lieferantenApi.create(mandant.id, {
-        name:    quickLief.name,
         nr,
-        iban:    quickLief.iban,     // IBAN → Stammdaten
-        strasse: quickLief.strasse || null,
-        plz:     quickLief.plz     || null,
-        ort:     quickLief.ort     || null,
-        land:    quickLief.land    || 'CH',
-        aktiv:   true,
+        name:      form.name.trim(),
+        uid:       form.uid.trim() || null,
+        adresse:   form.adresse.trim() || null,
+        plz:       form.plz.trim() || null,
+        ort:       form.ort.trim() || null,
+        land:      (form.land || 'CH').trim().toUpperCase() || 'CH',
+        iban:      form.iban.replace(/\s+/g, '') || null,
+        bank_name: form.bank_name?.trim() || null,
+        aktiv:     true,
       });
-      // Neue Liste aktualisieren + Lieferant im Formular setzen
       setLieferanten(prev => [...prev, neu].sort((a, b) => a.name.localeCompare(b.name)));
       setScanMatch(neu);
       setHead(prev => ({
         ...prev,
         lieferant_id: neu.id,
-        faelligkeit:  addDays(prev.belegdatum, 30),
+        faelligkeit:  prev.faelligkeit || addDays(prev.belegdatum, 30),
       }));
       setQuickLief(null);
+      setLiefModal(null);
     } catch (e) {
       alert('Fehler beim Anlegen: ' + e.message);
     } finally {
@@ -558,18 +564,11 @@ export default function RechnungErfassen() {
                       : <>
                           <span style={{ marginLeft: 4, color: '#92400e' }}>— IBAN nicht in Stammdaten</span>
                           {quickLief && (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto', flexWrap: 'wrap' }}>
-                              <input
-                                value={quickLief.name}
-                                placeholder="Name des Lieferanten"
-                                style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid #fca5a5', fontSize: 11.5, background: '#fff', width: 180 }}
-                                onChange={e => setQuickLief(q => ({ ...q, name: e.target.value }))}
-                              />
+                            <div style={{ marginLeft: 'auto' }}>
                               <button
-                                onClick={handleQuickLiefCreate}
-                                disabled={quickLiefSaving || !quickLief.name.trim()}
+                                onClick={() => setLiefModal({ init: { ...quickLief } })}
                                 style={{ padding: '4px 12px', borderRadius: 6, border: 'none', background: '#7a9b7f', color: '#fff', fontSize: 11.5, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
-                              >{quickLiefSaving ? '…' : '+ Lieferant anlegen'}</button>
+                              >+ Lieferant anlegen («{quickLief.name || 'neu'}»)</button>
                             </div>
                           )}
                         </>
@@ -609,12 +608,22 @@ export default function RechnungErfassen() {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
               <label style={lbl}>Lieferant *</label>
-              <select style={inp} value={head.lieferant_id} onChange={e => handleLieferantChange(e.target.value)}>
-                <option value="">— wählen —</option>
-                {lieferanten.filter(l => l.aktiv).map(l => (
-                  <option key={l.id} value={l.id}>{l.name} ({l.nr})</option>
-                ))}
-              </select>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <select style={{ ...inp, flex: 1 }} value={head.lieferant_id} onChange={e => handleLieferantChange(e.target.value)}>
+                  <option value="">— wählen —</option>
+                  {lieferanten.filter(l => l.aktiv).map(l => (
+                    <option key={l.id} value={l.id}>{l.name} ({l.nr})</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setLiefModal({ init: scanData
+                    ? { name: scanData.name, strasse: scanData.strasse, plz: scanData.plz, ort: scanData.ort, land: scanData.land, iban: scanData.iban }
+                    : {} })}
+                  title="Neuen Lieferant erfassen"
+                  style={{ flexShrink: 0, padding: '0 12px', borderRadius: 8, border: '1px solid #b8d4b8', background: '#f0f7f0', color: '#3d6641', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}
+                >+ Neu</button>
+              </div>
             </div>
             <div>
               <label style={lbl}>Beleg-Nr. Lieferant</label>
@@ -863,6 +872,15 @@ export default function RechnungErfassen() {
           )}
         </div>
       </div>
+
+      {liefModal && (
+        <NeuerLieferantModal
+          init={liefModal.init}
+          saving={quickLiefSaving}
+          onSave={handleSaveLief}
+          onClose={() => setLiefModal(null)}
+        />
+      )}
     </div>
   );
 }
