@@ -459,3 +459,123 @@ export const zahlstellenApi = {
     if (error) throw error;
   },
 };
+
+// ── Manuelle Buchungen / Hauptbuch ───────────────────────────────
+export const manuelleBuchungApi = {
+  // Beleg-Liste (Kopf) mit optionalem Zeitraum
+  listeBelege: async (mandantId, von, bis) => {
+    let q = supabase
+      .from('fibu_buchung_belege')
+      .select('*')
+      .eq('mandant_id', mandantId)
+      .order('buchungsdatum', { ascending: false })
+      .order('beleg_nr', { ascending: false });
+    if (von) q = q.gte('buchungsdatum', von);
+    if (bis) q = q.lte('buchungsdatum', bis);
+    const { data, error } = await q;
+    if (error) throw error;
+    return data ?? [];
+  },
+
+  // Buchungssätze eines Belegs
+  zeilen: async (belegId) => {
+    const { data, error } = await supabase
+      .from('fibu_buchungen')
+      .select('*')
+      .eq('quelle_id', belegId)
+      .order('buchungs_nr');
+    if (error) throw error;
+    return data ?? [];
+  },
+
+  erstellen: async ({ mandantId, datum, text, pdfPath, pdfName, zeilen }) => {
+    const { data, error } = await supabase.rpc('fibu_manuelle_buchung_erstellen', {
+      p_mandant_id: mandantId, p_datum: datum, p_text: text,
+      p_pdf_path: pdfPath ?? null, p_pdf_name: pdfName ?? null,
+      p_art: 'normal', p_zeilen: zeilen,
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  korrigieren: async ({ belegId, datum, text, pdfPath, pdfName, zeilen }) => {
+    const { data, error } = await supabase.rpc('fibu_manuelle_buchung_korrigieren', {
+      p_beleg_id: belegId, p_datum: datum, p_text: text,
+      p_pdf_path: pdfPath ?? null, p_pdf_name: pdfName ?? null, p_zeilen: zeilen,
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  stornieren: async (belegId, stornoDatum) => {
+    const { data, error } = await supabase.rpc('fibu_manuelle_buchung_stornieren', {
+      p_beleg_id: belegId, p_storno_datum: stornoDatum,
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  // PDF in den Bucket fibu-belege hochladen → gibt den Pfad zurück
+  uploadPdf: async (mandantId, file) => {
+    const ext  = (file.name.split('.').pop() || 'pdf').toLowerCase();
+    const path = `${mandantId}/${crypto.randomUUID()}.${ext}`;
+    const { error } = await supabase.storage
+      .from('fibu-belege')
+      .upload(path, file, { contentType: file.type, upsert: false });
+    if (error) throw error;
+    return { path, name: file.name };
+  },
+
+  signedPdfUrl: async (path) => {
+    const { data, error } = await supabase.storage
+      .from('fibu-belege')
+      .createSignedUrl(path, 300);
+    if (error) throw error;
+    return data?.signedUrl ?? null;
+  },
+};
+
+// ── Buchungssperre ───────────────────────────────────────────────
+export const buchungssperreApi = {
+  setzen: async (mandantId, datum) => {
+    const { error } = await supabase.rpc('fibu_buchungssperre_setzen', {
+      p_mandant_id: mandantId, p_datum: datum,
+    });
+    if (error) throw error;
+  },
+};
+
+// ── Saldovorträge ────────────────────────────────────────────────
+export const saldovortragApi = {
+  lesen: async (mandantId, jahr) => {
+    const { data, error } = await supabase.rpc('fibu_saldovortrag_lesen', {
+      p_mandant_id: mandantId, p_jahr: jahr,
+    });
+    if (error) throw error;
+    return data ?? [];
+  },
+  speichern: async (mandantId, jahr, salden) => {
+    const { data, error } = await supabase.rpc('fibu_saldovortrag_speichern', {
+      p_mandant_id: mandantId, p_jahr: jahr, p_salden: salden,
+    });
+    if (error) throw error;
+    return data;
+  },
+};
+
+// ── Budget ───────────────────────────────────────────────────────
+export const budgetApi = {
+  uebersicht: async (mandantId, jahr) => {
+    const { data, error } = await supabase.rpc('fibu_budget_uebersicht', {
+      p_mandant_id: mandantId, p_jahr: jahr,
+    });
+    if (error) throw error;
+    return data ?? [];
+  },
+  speichern: async (mandantId, jahr, zeilen) => {
+    const { error } = await supabase.rpc('fibu_budget_speichern', {
+      p_mandant_id: mandantId, p_jahr: jahr, p_zeilen: zeilen,
+    });
+    if (error) throw error;
+  },
+};

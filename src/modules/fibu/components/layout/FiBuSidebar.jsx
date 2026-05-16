@@ -52,6 +52,17 @@ const SECTIONS = [
     ],
   },
   {
+    id:    'hauptbuch',
+    short: 'HB',
+    label: 'Hauptbuch',
+    paths: ['manuelle-buchungen', 'saldovortraege', 'budget'],
+    items: [
+      { to: 'manuelle-buchungen', label: 'Manuelle Buchungen', icon: 'plus-doc' },
+      { to: 'saldovortraege',     label: 'Saldovorträge',      icon: 'balance' },
+      { to: 'budget',             label: 'Budget',             icon: 'doc-text' },
+    ],
+  },
+  {
     id:    'stammdaten',
     short: '⚙',
     label: 'Stammdaten',

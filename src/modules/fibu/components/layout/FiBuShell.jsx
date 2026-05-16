@@ -22,6 +22,9 @@ const BankAbstimmungIntern = React.lazy(() => import('../../pages/BankAbstimmung
 const Kontoblaetter        = React.lazy(() => import('../../pages/Kontoblaetter'));
 const Bilanz               = React.lazy(() => import('../../pages/Bilanz'));
 const Zahlstellen          = React.lazy(() => import('../../pages/Zahlstellen'));
+const ManuelleBuchungen    = React.lazy(() => import('../../pages/ManuelleBuchungen'));
+const Saldovortraege       = React.lazy(() => import('../../pages/Saldovortraege'));
+const Budget               = React.lazy(() => import('../../pages/Budget'));
 
 const Spinner = () => (
   <div className="flex-1 flex items-center justify-center">
@@ -61,6 +64,9 @@ function FiBuContent() {
         <Route path="kontoblaetter"                element={<Kontoblaetter />} />
         <Route path="bilanz"                       element={<Bilanz />} />
         <Route path="zahlstellen"                  element={<Zahlstellen />} />
+        <Route path="manuelle-buchungen"           element={<ManuelleBuchungen />} />
+        <Route path="saldovortraege"               element={<Saldovortraege />} />
+        <Route path="budget"                       element={<Budget />} />
         <Route path="*" element={<Navigate to="kreditoren" replace />} />
       </Routes>
     </Suspense>
