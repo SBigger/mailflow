@@ -25,6 +25,15 @@ const TYP_BADGE = {
   '3': { bg: '#dcfce7', color: '#166534' },
 };
 
+const STATUS_BADGE = {
+  entwurf:     { label: 'Entwurf',     bg: '#e4e9e4', color: '#6b826b' },
+  freigegeben: { label: 'Freigegeben', bg: '#dbeafe', color: '#1e40af' },
+  exportiert:  { label: 'Exportiert',  bg: '#fef3c7', color: '#92400e' },
+  verbucht:    { label: 'Verbucht',    bg: '#dcfce7', color: '#166534' },
+};
+
+const DATETIME = (s) => s ? new Date(s).toLocaleString('de-CH', { dateStyle: 'short', timeStyle: 'short' }) : '—';
+
 export default function Zahlungslauf() {
   const { mandant, canWrite } = useMandant();
   const [belege, setBelege] = useState([]);
@@ -37,6 +46,28 @@ export default function Zahlungslauf() {
   const [zahlungsKontoBic, setZahlungsKontoBic] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [view, setView] = useState('wizard');        // 'wizard' | 'historie'
+  const [historie, setHistorie] = useState([]);
+  const [histLoading, setHistLoading] = useState(false);
+
+  const loadHistorie = async () => {
+    if (!mandant) return;
+    setHistLoading(true);
+    try {
+      setHistorie(await zahlungslaufApi.historie(mandant.id));
+    } finally { setHistLoading(false); }
+  };
+
+  const downloadXml = async (laufId) => {
+    const row = await zahlungslaufApi.getXml(laufId);
+    if (!row?.pain001_xml) return;
+    const blob = new Blob([row.pain001_xml], { type: 'application/xml;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `pain001_${row.lauf_nr}_${row.valutadatum}.xml`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
 
   useEffect(() => {
     if (!mandant) return;
@@ -140,41 +171,127 @@ export default function Zahlungslauf() {
   const td  = { padding: '9px 12px', borderBottom: '1px solid #f0f3f0', fontSize: 12.5, verticalAlign: 'middle' };
   const inp = { background: '#f7faf7', border: '1px solid #d4dcd4', borderRadius: 7, padding: '6px 10px', fontSize: 12.5, outline: 'none', width: '100%', boxSizing: 'border-box' };
 
+  const tabStyle = (active) => ({
+    padding: '5px 12px', borderRadius: 6, border: 'none', fontSize: 12, fontWeight: 600,
+    cursor: 'pointer', background: active ? '#fff' : 'transparent',
+    color: active ? '#3d6641' : '#6b826b',
+    boxShadow: active ? '0 1px 3px rgba(0,0,0,.1)' : 'none',
+  });
+
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      {/* Stepper */}
+      {/* Stepper / Header */}
       <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8, padding: '12px 20px', background: '#fff', borderBottom: '1px solid #e4e9e4' }}>
-        {STEP_LABELS.map((label, i) => (
-          <React.Fragment key={i}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-              <div style={{ width: 26, height: 26, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0, background: i < step ? '#7a9b7f' : i === step ? '#fff' : '#e4e9e4', border: i === step ? '2px solid #7a9b7f' : 'none', color: i < step ? '#fff' : i === step ? '#3d6641' : '#94a394' }}>
-                {i < step ? '✓' : i + 1}
-              </div>
-              <span style={{ fontSize: 12, fontWeight: 600, color: i === step ? '#3d6641' : '#94a394' }}>{label}</span>
-            </div>
-            {i < STEP_LABELS.length - 1 && <div style={{ flex: 0, width: 50, height: 2, background: i < step ? '#7a9b7f' : '#e4e9e4' }} />}
-          </React.Fragment>
-        ))}
-        <div style={{ flex: 1 }} />
-        {step > 0 && step < 2 && <button onClick={() => setStep(s => s - 1)} style={{ padding: '5px 12px', borderRadius: 8, border: '1px solid #d4dcd4', background: '#fff', fontSize: 12, cursor: 'pointer' }}>Zurück</button>}
-        {step === 0 && (
-          <button
-            onClick={() => setStep(1)}
-            disabled={payments.length === 0}
-            style={{ padding: '5px 14px', borderRadius: 8, border: 'none', background: '#7a9b7f', color: '#fff', fontSize: 12, fontWeight: 500, cursor: 'pointer', opacity: payments.length === 0 ? .5 : 1 }}
-          >Weiter →</button>
-        )}
-        {step === 1 && (
-          <button
-            onClick={handleExport}
-            disabled={!canExport || saving}
-            title={!canExport ? 'Bitte zuerst alle Fehler beheben' : ''}
-            style={{ padding: '5px 14px', borderRadius: 8, border: 'none', background: canExport ? '#7a9b7f' : '#c5b0b0', color: '#fff', fontSize: 12, fontWeight: 500, cursor: canExport ? 'pointer' : 'not-allowed' }}
-          >{saving ? 'Exportiert…' : '↓ pain.001 exportieren'}</button>
+        {/* View-Umschalter */}
+        <div style={{ display: 'flex', gap: 3, background: '#f0f3f0', borderRadius: 8, padding: 3 }}>
+          <button onClick={() => setView('wizard')} style={tabStyle(view === 'wizard')}>＋ Neuer Lauf</button>
+          <button onClick={() => { setView('historie'); loadHistorie(); }} style={tabStyle(view === 'historie')}>📋 Historie</button>
+        </div>
+        <div style={{ width: 1, height: 18, background: '#d4dcd4' }} />
+
+        {view === 'wizard' ? (
+          <>
+            {STEP_LABELS.map((label, i) => (
+              <React.Fragment key={i}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                  <div style={{ width: 26, height: 26, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0, background: i < step ? '#7a9b7f' : i === step ? '#fff' : '#e4e9e4', border: i === step ? '2px solid #7a9b7f' : 'none', color: i < step ? '#fff' : i === step ? '#3d6641' : '#94a394' }}>
+                    {i < step ? '✓' : i + 1}
+                  </div>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: i === step ? '#3d6641' : '#94a394' }}>{label}</span>
+                </div>
+                {i < STEP_LABELS.length - 1 && <div style={{ flex: 0, width: 50, height: 2, background: i < step ? '#7a9b7f' : '#e4e9e4' }} />}
+              </React.Fragment>
+            ))}
+            <div style={{ flex: 1 }} />
+            {step > 0 && step < 2 && <button onClick={() => setStep(s => s - 1)} style={{ padding: '5px 12px', borderRadius: 8, border: '1px solid #d4dcd4', background: '#fff', fontSize: 12, cursor: 'pointer' }}>Zurück</button>}
+            {step === 0 && (
+              <button
+                onClick={() => setStep(1)}
+                disabled={payments.length === 0}
+                style={{ padding: '5px 14px', borderRadius: 8, border: 'none', background: '#7a9b7f', color: '#fff', fontSize: 12, fontWeight: 500, cursor: 'pointer', opacity: payments.length === 0 ? .5 : 1 }}
+              >Weiter →</button>
+            )}
+            {step === 1 && (
+              <button
+                onClick={handleExport}
+                disabled={!canExport || saving}
+                title={!canExport ? 'Bitte zuerst alle Fehler beheben' : ''}
+                style={{ padding: '5px 14px', borderRadius: 8, border: 'none', background: canExport ? '#7a9b7f' : '#c5b0b0', color: '#fff', fontSize: 12, fontWeight: 500, cursor: canExport ? 'pointer' : 'not-allowed' }}
+              >{saving ? 'Exportiert…' : '↓ pain.001 exportieren'}</button>
+            )}
+          </>
+        ) : (
+          <>
+            <span style={{ fontSize: 13, fontWeight: 700, color: '#1a1a2e' }}>Zahlungslauf-Historie</span>
+            <div style={{ flex: 1 }} />
+            <button onClick={loadHistorie} style={{ padding: '5px 12px', borderRadius: 8, border: '1px solid #d4dcd4', background: '#fff', fontSize: 12, cursor: 'pointer' }}>{histLoading ? '⏳' : '↻'} Aktualisieren</button>
+          </>
         )}
       </div>
 
-      {step === 2 ? (
+      {view === 'historie' ? (
+        /* ── Historie-Ansicht ── */
+        <div style={{ flex: 1, overflowY: 'auto', background: '#f7faf7' }}>
+          {histLoading ? (
+            <div style={{ padding: 32, textAlign: 'center', color: '#94a394', fontSize: 12.5 }}>Lädt…</div>
+          ) : historie.length === 0 ? (
+            <div style={{ padding: 48, textAlign: 'center', color: '#94a394', fontSize: 13 }}>Noch keine Zahlungsläufe vorhanden</div>
+          ) : (
+            <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
+              <thead><tr>
+                <th style={hdr}>Lauf-Nr.</th>
+                <th style={hdr}>Erstellt</th>
+                <th style={hdr}>Valuta</th>
+                <th style={hdr}>Konto</th>
+                <th style={{ ...hdr, textAlign: 'right' }}>Zahlungen</th>
+                <th style={{ ...hdr, textAlign: 'right' }}>Total CHF</th>
+                <th style={hdr}>Rückmeldung</th>
+                <th style={hdr}>Status</th>
+                <th style={{ ...hdr, textAlign: 'right' }}>pain.001</th>
+              </tr></thead>
+              <tbody>
+                {historie.map(z => {
+                  const sb = STATUS_BADGE[z.status] ?? STATUS_BADGE.entwurf;
+                  const bezahlt = Number(z.anzahl_bezahlt ?? 0);
+                  const total = Number(z.anzahl_zahlungen ?? 0);
+                  const vollstaendig = total > 0 && bezahlt >= total;
+                  return (
+                    <tr key={z.id}>
+                      <td style={{ ...td, fontFamily: 'monospace', fontWeight: 600 }}>{z.lauf_nr}</td>
+                      <td style={{ ...td, color: '#6b826b' }}>{DATETIME(z.created_at)}</td>
+                      <td style={td}>{DATE(z.valutadatum)}</td>
+                      <td style={{ ...td, fontFamily: 'monospace', fontSize: 12 }}>{z.zahlungskonto_nr}</td>
+                      <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{total}</td>
+                      <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>{CHF(z.total_betrag)}</td>
+                      <td style={td}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: vollstaendig ? '#166534' : '#92400e' }}>
+                            {bezahlt}/{total}
+                          </span>
+                          <span style={{ width: 56, height: 6, borderRadius: 3, background: '#eef2ee', overflow: 'hidden', display: 'inline-block' }}>
+                            <span style={{ display: 'block', height: '100%', width: `${total > 0 ? (bezahlt / total) * 100 : 0}%`, background: vollstaendig ? '#7a9b7f' : '#d9b061' }} />
+                          </span>
+                        </span>
+                      </td>
+                      <td style={td}>
+                        <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 4, background: sb.bg, color: sb.color }}>{sb.label}</span>
+                      </td>
+                      <td style={{ ...td, textAlign: 'right' }}>
+                        {z.hat_xml ? (
+                          <button onClick={() => downloadXml(z.id)} style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #d4dcd4', background: '#fff', fontSize: 11.5, cursor: 'pointer', color: '#3d6641' }}>↓ XML</button>
+                        ) : <span style={{ color: '#c5cdc5', fontSize: 11.5 }}>—</span>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+          <div style={{ padding: '10px 20px', fontSize: 11, color: '#94a394' }}>
+            Rückmeldung = Anzahl Belege, die per Bankabstimmung (camt.053) als bezahlt zurückgemeldet wurden. Status „Verbucht" sobald alle Zahlungen abgeglichen sind.
+          </div>
+        </div>
+      ) : step === 2 ? (
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12 }}>
           <div style={{ fontSize: 40 }}>✅</div>
           <div style={{ fontWeight: 700, fontSize: 14 }}>Zahlungslauf exportiert</div>

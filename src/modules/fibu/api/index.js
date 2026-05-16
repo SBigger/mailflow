@@ -366,6 +366,25 @@ export const zahlungslaufApi = {
     return data ?? [];
   },
 
+  // Historie inkl. Rückmelde-Fortschritt (wie viele Belege schon bezahlt)
+  historie: async (mandantId) => {
+    const { data, error } = await supabase
+      .rpc('fibu_zahlungslauf_historie', { p_mandant_id: mandantId });
+    if (error) throw error;
+    return data ?? [];
+  },
+
+  // pain.001-XML eines Laufs nachladen (für erneuten Download)
+  getXml: async (laufId) => {
+    const { data, error } = await supabase
+      .from('fibu_zahlungslaeufe')
+      .select('lauf_nr, valutadatum, pain001_xml')
+      .eq('id', laufId)
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
   update: async (id, payload) => {
     const { data, error } = await supabase
       .from('fibu_zahlungslaeufe')
