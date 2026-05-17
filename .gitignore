@@ -34,3 +34,7 @@ supabase/.temp
 electron-dist/
 
 .vercel
+.env.playwright
+tests/setup/.auth-state.json
+test-results/
+playwright-report/
