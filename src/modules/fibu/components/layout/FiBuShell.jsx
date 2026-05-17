@@ -29,6 +29,7 @@ const Wechselkurse         = React.lazy(() => import('../../pages/Wechselkurse')
 const Einstellungen        = React.lazy(() => import('../../pages/Einstellungen'));
 const LieferantenKonto     = React.lazy(() => import('../../pages/LieferantenKonto'));
 const Dauerbelege          = React.lazy(() => import('../../pages/Dauerbelege'));
+const Kontierungsregeln    = React.lazy(() => import('../../pages/Kontierungsregeln'));
 
 const Spinner = () => (
   <div className="flex-1 flex items-center justify-center">
@@ -75,6 +76,7 @@ function FiBuContent() {
         <Route path="budget"                       element={<Budget />} />
         <Route path="wechselkurse"                 element={<Wechselkurse />} />
         <Route path="einstellungen"                element={<Einstellungen />} />
+        <Route path="kontierungsregeln"            element={<Kontierungsregeln />} />
         <Route path="*" element={<Navigate to="kreditoren" replace />} />
       </Routes>
     </Suspense>

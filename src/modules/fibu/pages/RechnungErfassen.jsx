@@ -1,8 +1,9 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMandant } from '../contexts/MandantContext';
-import { lieferantenApi, kontenApi, kreditorenApi, mwstCodesApi, kiVorschlagApi } from '../api';
+import { lieferantenApi, kontenApi, kreditorenApi, mwstCodesApi, kiVorschlagApi, kontierungsregelnApi } from '../api';
 import NeuerLieferantModal from '../components/NeuerLieferantModal';
+import { findKontoVorschlag, istEigeneFirma } from '../utils/kontierung';
 import { supabase } from '@/api/supabaseClient';
 import * as pdfjsLib from 'pdfjs-dist';
 // Worker aus public/ – funktioniert in Vite ohne ?url-Trick
@@ -130,6 +131,7 @@ export default function RechnungErfassen() {
   const [lieferanten, setLieferanten] = useState([]);
   const [konten, setKonten]           = useState([]);
   const [mwstCodes, setMwstCodes]     = useState([]);
+  const [regeln, setRegeln]           = useState([]);   // Kontierungsregeln
   const [saving, setSaving]           = useState(false);
 
   // QR-Scanner State
@@ -167,6 +169,11 @@ export default function RechnungErfassen() {
 
   // MWST-Code → Satz Map für Berechnungen
   const mwstMap = Object.fromEntries(mwstCodes.map(c => [c.code, c.satz ?? 0]));
+
+  useEffect(() => {
+    if (!mandant) return;
+    kontierungsregelnApi.list(mandant.id).then(setRegeln).catch(() => {});
+  }, [mandant?.id]);
 
   useEffect(() => {
     if (!mandant) return;
@@ -315,8 +322,11 @@ export default function RechnungErfassen() {
       const matched = lieferanten.find(l => l.iban && l.iban.replace(/\s+/g, '').toUpperCase() === normalIban);
       setScanMatch(matched ?? null);
 
+      // Eigene Firma (Rechnungsempfänger) erkennen → nicht als Lieferant
+      const eigen = istEigeneFirma(spc.name, mandant);
+
       // Wenn kein Match → Schnell-Anlage vorbereiten (alle QR-Felder)
-      if (!matched && spc.iban) {
+      if (!matched && spc.iban && !eigen) {
         setQuickLief({
           name:    spc.name ?? '',
           iban:    spc.iban,
@@ -343,10 +353,14 @@ export default function RechnungErfassen() {
 
       // Betrag übernehmen wenn vorhanden (QR liefert immer Brutto → direkt setzen)
       if (spc.betrag && spc.betrag > 0) {
-        const defaultCode = matched?.mwst_code ?? 'M81';
+        // Konto: gelerntes Standardkonto des Lieferanten, sonst Kontovorschlag
+        const vorschlag = matched?.standard_konto_nr
+          ? null
+          : findKontoVorschlag([scanFile?.name, spc.mitteilung, spc.name], regeln);
+        const defaultCode = matched?.mwst_code ?? vorschlag?.mwst_code ?? 'M81';
         setPositionen([calcPosition({
           _key: Math.random(),
-          konto_nr: matched?.standard_konto_nr ?? '',
+          konto_nr: matched?.standard_konto_nr ?? vorschlag?.konto_nr ?? '',
           bezeichnung: spc.mitteilung || '',
           mwst_code: defaultCode,
           betrag_brutto: CHF(spc.betrag),   // QR-Betrag IST der Brutto-Betrag
@@ -357,7 +371,7 @@ export default function RechnungErfassen() {
       console.error('QR-Scan Fehler:', e);
       setScanStatus('error');
     }
-  }, [scanFile, lieferanten, mwstMap]);
+  }, [scanFile, lieferanten, mwstMap, regeln, mandant]);
 
   // Auto-Scan sobald Inbox-PDF geladen ist UND Lieferanten verfügbar sind.
   // MUSS nach handleScan stehen – sonst Temporal-Dead-Zone-ReferenceError

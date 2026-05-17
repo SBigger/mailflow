@@ -598,6 +598,36 @@ export const saldovortragApi = {
   },
 };
 
+// ── Kontierungsregeln (Kontovorschlag) ───────────────────────────
+export const kontierungsregelnApi = {
+  list: async (mandantId) => {
+    const { data, error } = await supabase
+      .from('fibu_kontierungsregeln')
+      .select('*')
+      .eq('mandant_id', mandantId)
+      .order('sortierung')
+      .order('stichwort');
+    if (error) throw error;
+    return data ?? [];
+  },
+  create: async (mandantId, payload) => {
+    const { data, error } = await supabase
+      .from('fibu_kontierungsregeln')
+      .insert({ ...payload, mandant_id: mandantId })
+      .select().single();
+    if (error) throw error;
+    return data;
+  },
+  update: async (id, payload) => {
+    const { error } = await supabase.from('fibu_kontierungsregeln').update(payload).eq('id', id);
+    if (error) throw error;
+  },
+  remove: async (id) => {
+    const { error } = await supabase.from('fibu_kontierungsregeln').delete().eq('id', id);
+    if (error) throw error;
+  },
+};
+
 // ── Wiederkehrende Kreditoren-Rechnungen (Dauerbelege) ───────────
 export const dauerbelegApi = {
   list: async (mandantId) => {

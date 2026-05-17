@@ -11,8 +11,9 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import { useMandant } from '../contexts/MandantContext';
-import { lieferantenApi, kontenApi, mwstCodesApi, kreditorenApi } from '../api';
+import { lieferantenApi, kontenApi, mwstCodesApi, kreditorenApi, kontierungsregelnApi } from '../api';
 import NeuerLieferantModal from '../components/NeuerLieferantModal';
+import { findKontoVorschlag, istEigeneFirma } from '../utils/kontierung';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js';
 
@@ -288,14 +289,18 @@ export default function MassenImport() {
   const parseQueueRef = useRef([]);
   const parsingRef    = useRef(false);
   const lieferantenRef = useRef([]);
+  const regelnRef      = useRef([]);
+  const mandantRef     = useRef(null);
 
   // Master-Daten laden
   useEffect(() => {
     if (!mandant?.id) return;
+    mandantRef.current = mandant;
     lieferantenApi.list(mandant.id).then(data => {
       setLieferanten(data);
       lieferantenRef.current = data;
     }).catch(console.error);
+    kontierungsregelnApi.list(mandant.id).then(r => { regelnRef.current = r; }).catch(console.error);
     kontenApi.list(mandant.id).then(setKonten).catch(console.error);
     mwstCodesApi.listAktiv(mandant.id).then(codes => {
       setMwstCodes(codes);
@@ -321,23 +326,36 @@ export default function MassenImport() {
           if (r._id !== rowId) return r;
           if (spc) {
             const lief = lieferantenRef.current.find(l => l.iban && l.iban.replace(/\s/g,'') === spc.iban);
+            // Eigene Firma (Rechnungsempfänger) nie als Lieferant übernehmen
+            const eigen = istEigeneFirma(spc.name, mandantRef.current);
+            // Kontovorschlag, falls Lieferant kein gelerntes Standardkonto hat
+            let konto = lief?.standard_konto_nr ?? r.konto_nr;
+            let mcode = lief?.mwst_code ?? r.mwst_code;
+            if (!konto) {
+              const v = findKontoVorschlag([r.fileName, spc.name, spc.mitteilung], regelnRef.current);
+              if (v) { konto = v.konto_nr; if (v.mwst_code) mcode = v.mwst_code; }
+            }
             return {
               ...r,
               status:           'manual',
               lieferant_id:     lief?.id ?? '',
-              lieferant_search: lief?.name ?? spc.name,
+              lieferant_search: lief?.name ?? (eigen ? '' : spc.name),
               betrag_brutto:    spc.betrag != null ? String(spc.betrag) : r.betrag_brutto,
               zahlungsreferenz: spc.referenz ?? '',
-              konto_nr:         lief?.standard_konto_nr ?? r.konto_nr,
-              mwst_code:        lief?.mwst_code ?? r.mwst_code,
+              konto_nr:         konto,
+              mwst_code:        mcode,
               // QR-Kreditordaten für die Schnellerfassung eines Lieferanten
-              qr: {
+              qr: eigen ? null : {
                 name:    spc.name, iban: spc.iban,
                 strasse: spc.strasse, plz: spc.plz, ort: spc.ort, land: spc.land,
               },
             };
           }
-          return { ...r, status: 'manual' };
+          // kein QR – Kontovorschlag aus dem Dateinamen
+          const v = findKontoVorschlag([r.fileName], regelnRef.current);
+          return { ...r, status: 'manual',
+            konto_nr:  r.konto_nr || v?.konto_nr || '',
+            mwst_code: (!r.konto_nr && v?.mwst_code) ? v.mwst_code : r.mwst_code };
         }));
       } catch {
         setRows(prev => prev.map(r => r._id === rowId ? { ...r, status: 'manual' } : r));

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useMandant } from '../contexts/MandantContext';
 import { supabase } from '@/api/supabaseClient';
+import { mandantenApi } from '../api';
 
 function Toggle({ value, onChange, disabled }) {
   return (
@@ -27,6 +28,34 @@ export default function Einstellungen() {
   const [belegfreigabe, setBelegfreigabe] = useState(!!mandant?.belegfreigabe_aktiv);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
+
+  const [firma, setFirma] = useState({
+    name:    mandant?.name    ?? '',
+    uid:     mandant?.uid     ?? '',
+    adresse: mandant?.adresse ?? '',
+    plz:     mandant?.plz     ?? '',
+    ort:     mandant?.ort     ?? '',
+    land:    mandant?.land    ?? 'CH',
+  });
+  const [firmaSaving, setFirmaSaving] = useState(false);
+
+  const saveFirma = async () => {
+    if (!canWrite || !mandant) return;
+    setFirmaSaving(true); setMsg(null);
+    try {
+      await mandantenApi.update(mandant.id, {
+        name:    firma.name.trim(),
+        uid:     firma.uid.trim() || null,
+        adresse: firma.adresse.trim() || null,
+        plz:     firma.plz.trim() || null,
+        ort:     firma.ort.trim() || null,
+        land:    (firma.land || 'CH').trim().toUpperCase() || 'CH',
+      });
+      setMsg({ type: 'ok', text: 'Firmenangaben gespeichert.' });
+    } catch (e) {
+      setMsg({ type: 'err', text: e.message });
+    } finally { setFirmaSaving(false); }
+  };
 
   const setBelegfreigabeAktiv = async (aktiv) => {
     if (!canWrite || !mandant) return;
@@ -67,6 +96,62 @@ export default function Einstellungen() {
             {msg.text}
           </div>
         )}
+
+        {/* Firma */}
+        <div style={card}>
+          <div style={cardHdr}>Firma / Mandant</div>
+          <div style={{ padding: '14px 16px' }}>
+            <div style={{ fontSize: 12, color: '#6b826b', marginBottom: 10, lineHeight: 1.5 }}>
+              Die Firmenadresse erscheint als Auftraggeber im Zahlungslauf (pain.001) und hilft beim
+              Scan, die eigene Firma als Rechnungsempfänger zu erkennen (≠ Lieferant).
+            </div>
+            {(() => {
+              const lbl = { fontSize: 11, fontWeight: 600, color: '#6b826b', marginBottom: 3, display: 'block' };
+              const inp = { background: '#f7faf7', border: '1px solid #d4dcd4', borderRadius: 7, padding: '6px 9px', fontSize: 12.5, outline: 'none', width: '100%', boxSizing: 'border-box' };
+              const set = (k, v) => setFirma(f => ({ ...f, [k]: v }));
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 460 }}>
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    <div style={{ flex: 1 }}>
+                      <label style={lbl}>Firmenname</label>
+                      <input style={inp} value={firma.name} disabled={!canWrite} onChange={e => set('name', e.target.value)} />
+                    </div>
+                    <div style={{ width: 150 }}>
+                      <label style={lbl}>UID</label>
+                      <input style={inp} value={firma.uid} disabled={!canWrite} onChange={e => set('uid', e.target.value)} placeholder="CHE-..." />
+                    </div>
+                  </div>
+                  <div>
+                    <label style={lbl}>Strasse / Nr.</label>
+                    <input style={inp} value={firma.adresse} disabled={!canWrite} onChange={e => set('adresse', e.target.value)} />
+                  </div>
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    <div style={{ width: 90 }}>
+                      <label style={lbl}>PLZ</label>
+                      <input style={inp} value={firma.plz} disabled={!canWrite} onChange={e => set('plz', e.target.value)} />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <label style={lbl}>Ort</label>
+                      <input style={inp} value={firma.ort} disabled={!canWrite} onChange={e => set('ort', e.target.value)} />
+                    </div>
+                    <div style={{ width: 64 }}>
+                      <label style={lbl}>Land</label>
+                      <input style={inp} value={firma.land} disabled={!canWrite} onChange={e => set('land', e.target.value.toUpperCase().slice(0, 2))} />
+                    </div>
+                  </div>
+                  {canWrite && (
+                    <div>
+                      <button onClick={saveFirma} disabled={firmaSaving}
+                        style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: '#7a9b7f', color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
+                        {firmaSaving ? 'Speichert…' : 'Firmenangaben speichern'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+        </div>
 
         <div style={card}>
           <div style={cardHdr}>Kreditoren</div>
