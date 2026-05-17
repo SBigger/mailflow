@@ -643,6 +643,17 @@ export const buchungSerieApi = {
   },
 };
 
+// ── Fremdwährungs-Kursbewertung ──────────────────────────────────
+export const kursbewertungApi = {
+  buchen: async (mandantId, stichtag, konto, betrag) => {
+    const { data, error } = await supabase.rpc('fibu_kursbewertung_buchen', {
+      p_mandant_id: mandantId, p_stichtag: stichtag, p_konto: konto, p_betrag: betrag,
+    });
+    if (error) throw error;
+    return data;
+  },
+};
+
 // ── Kassenbuch (OCR / Handschrift-Erkennung) ─────────────────────
 export const kassenbuchApi = {
   // Kassenbeleg-Foto per Vision-KI auslesen (auch handschriftlich)

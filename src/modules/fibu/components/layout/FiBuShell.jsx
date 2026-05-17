@@ -32,6 +32,7 @@ const Dauerbelege          = React.lazy(() => import('../../pages/Dauerbelege'))
 const Kontierungsregeln    = React.lazy(() => import('../../pages/Kontierungsregeln'));
 const WiederkehrendeBuchungen = React.lazy(() => import('../../pages/WiederkehrendeBuchungen'));
 const Kassenbuch           = React.lazy(() => import('../../pages/Kassenbuch'));
+const Kursbewertung        = React.lazy(() => import('../../pages/Kursbewertung'));
 
 const Spinner = () => (
   <div className="flex-1 flex items-center justify-center">
@@ -76,6 +77,7 @@ function FiBuContent() {
         <Route path="manuelle-buchungen"           element={<ManuelleBuchungen />} />
         <Route path="wiederkehrende-buchungen"     element={<WiederkehrendeBuchungen />} />
         <Route path="kassenbuch"                   element={<Kassenbuch />} />
+        <Route path="kursbewertung"                element={<Kursbewertung />} />
         <Route path="saldovortraege"               element={<Saldovortraege />} />
         <Route path="budget"                       element={<Budget />} />
         <Route path="wechselkurse"                 element={<Wechselkurse />} />

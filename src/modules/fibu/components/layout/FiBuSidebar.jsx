@@ -42,7 +42,7 @@ const SECTIONS = [
     id:    'auswertungen',
     short: '📊',
     label: 'Auswertungen',
-    paths: ['journal', 'kontoblaetter', 'bilanz', 'mwst', 'jahresabschluss', 'bankabstimmung', 'kreditoren/journal'],
+    paths: ['journal', 'kontoblaetter', 'bilanz', 'mwst', 'jahresabschluss', 'kursbewertung', 'bankabstimmung', 'kreditoren/journal'],
     items: [
       { to: 'kreditoren/journal',   label: 'Belegjournal',     icon: 'list' },
       { to: 'kontoblaetter',        label: 'Kontoblätter',     icon: 'table' },
@@ -50,6 +50,7 @@ const SECTIONS = [
       { divider: true },
       { to: 'mwst/abrechnung',      label: 'MWST-Abrechnung',  icon: 'doc-text' },
       { to: 'jahresabschluss',      label: 'Jahresabschluss',  icon: 'calendar' },
+      { to: 'kursbewertung',        label: 'FW-Kursbewertung', icon: 'percent' },
       { to: 'bankabstimmung',       label: 'Bankabstimmung',   icon: 'bank', newWindowFallback: true },
     ],
   },
