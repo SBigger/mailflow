@@ -251,7 +251,12 @@ export async function generateInvoicePdf({ invoice, company }) {
     resetText(pdf);
   }
 
-  // ---- 6. Footer auf allen Seiten + QR-Bill ----
+  // ---- 6. Beiblatt mit Detail-Buchungen (wenn time_entries vorhanden) ----
+  if (Array.isArray(invoice.time_entries) && invoice.time_entries.length > 0) {
+    drawBeiblatt(pdf, invoice, customer, company);
+  }
+
+  // ---- 7. Footer auf allen Seiten + QR-Bill ----
   drawFooter(pdf, company);
   pdf.addQRBill();
   pdf.end();
@@ -273,6 +278,180 @@ export async function generateInvoicePdf({ invoice, company }) {
   }
   const { data: pub } = supabase.storage.from('invoices').getPublicUrl(path);
   return { url: pub.publicUrl, path, blob };
+}
+
+// ---- Beiblatt-Renderer ----------------------------------------------------
+// Listet alle einzelnen Time-Entries einer Rechnung gruppiert nach Leistungsart
+// (Service-Type) auf. Kulant-Einträge werden separat markiert mit
+// durchgestrichenem Betrag und "(kulant)"-Hinweis.
+function drawBeiblatt(pdf, invoice, customer, company) {
+  pdf.addPage();
+  let y = 50;
+
+  // Header
+  pdf.font('Helvetica-Bold').fontSize(14).fillColor(ARTIS_GREEN_DARK)
+     .text(`Beilage zur Rechnung ${invoice.invoice_no || '(Entwurf)'} vom ${fmtDate(invoice.issue_date)}`, 50, y);
+  resetText(pdf);
+  y += 22;
+
+  pdf.font('Helvetica').fontSize(10).fillColor(MUTED_TEXT);
+  if (customer?.company_name) {
+    pdf.text(`${customer.company_name}${customer.city ? ' – ' + customer.city : ''}`, 50, y);
+    y += 14;
+  }
+  if (invoice.period_from || invoice.period_to) {
+    pdf.text(`Rechnungsperiode: ${fmtDate(invoice.period_from)} – ${fmtDate(invoice.period_to)}`, 50, y);
+    y += 14;
+  }
+  resetText(pdf);
+  y += 8;
+
+  // Tabellen-Header
+  const cols = { date: 50, ma: 100, desc: 135, qty: 360, unit: 395, rate: 425, amount: 480 };
+  drawBeiblattHeader(pdf, y, cols);
+  y += 18;
+
+  // Gruppieren nach service_type (Name)
+  const entries = invoice.time_entries || [];
+  const groups = new Map();
+  for (const e of entries) {
+    const key = e.service_type?.id || 'unbekannt';
+    if (!groups.has(key)) {
+      groups.set(key, {
+        name: e.service_type?.name || 'Sonstiges',
+        entries: [],
+        billableSum: 0,
+        kulantSum: 0,
+      });
+    }
+    const g = groups.get(key);
+    g.entries.push(e);
+    const wert = Number(e.hours_internal || 0) * Number(e.rate_snapshot || 0);
+    if (e.status === 'kulant_abgerechnet' || e.status === 'kulant') {
+      g.kulantSum += wert;
+    } else {
+      g.billableSum += wert;
+    }
+  }
+
+  let totalHonorar = 0;
+  let totalKulant = 0;
+
+  for (const [, g] of groups) {
+    // Einträge der Gruppe nach Datum
+    const sorted = g.entries.slice().sort((a, b) => String(a.entry_date).localeCompare(String(b.entry_date)));
+    for (const e of sorted) {
+      // Page-Break: lasse Platz für Subtotal + Total-Block
+      if (y > 720) {
+        pdf.addPage();
+        y = 50;
+        drawBeiblattHeader(pdf, y, cols);
+        y += 18;
+      }
+      const isKulant = e.status === 'kulant_abgerechnet' || e.status === 'kulant';
+      const wert = Number(e.hours_internal || 0) * Number(e.rate_snapshot || 0);
+
+      pdf.font('Helvetica').fontSize(9).fillColor(isKulant ? '#4d2995' : '#000000');
+      pdf.text(fmtDate(e.entry_date), cols.date, y, { width: cols.ma - cols.date - 2 });
+      pdf.text(e.employee?.short_code || '', cols.ma, y, { width: cols.desc - cols.ma - 2 });
+
+      const descText = (e.description || '') + (isKulant ? ' (kulant)' : '');
+      const descH = pdf.heightOfString(descText, { width: cols.qty - cols.desc - 5 });
+      pdf.text(descText, cols.desc, y, { width: cols.qty - cols.desc - 5 });
+
+      pdf.text(fmtChf(e.hours_internal), cols.qty, y, { width: cols.unit - cols.qty - 2, align: 'right' });
+      pdf.text('STD', cols.unit, y, { width: cols.rate - cols.unit - 2, align: 'right' });
+      pdf.text(fmtChf(e.rate_snapshot), cols.rate, y, { width: cols.amount - cols.rate - 2, align: 'right' });
+
+      pdf.fillColor(isKulant ? '#4d2995' : '#000000');
+      pdf.text(fmtChf(wert), cols.amount, y, { width: 65, align: 'right' });
+      // Strike-through bei kulant
+      if (isKulant) {
+        const tw = 65;
+        pdf.lineWidth(0.5).strokeColor('#4d2995')
+           .moveTo(cols.amount, y + 5).lineTo(cols.amount + tw, y + 5).stroke();
+        pdf.lineWidth(1).strokeColor('#000000');
+      }
+
+      y += Math.max(descH + 2, 12);
+    }
+
+    // Subtotal pro Service-Typ
+    if (y > 730) { pdf.addPage(); y = 50; }
+    pdf.lineWidth(0.4).strokeColor('#cccccc')
+       .moveTo(cols.desc, y).lineTo(545, y).stroke();
+    pdf.lineWidth(1).strokeColor('#000000');
+    y += 3;
+
+    pdf.font('Helvetica-Bold').fontSize(9).fillColor('#333333');
+    pdf.text(g.name, cols.desc, y, { width: cols.amount - cols.desc - 5 });
+    pdf.text(fmtChf(g.billableSum), cols.amount, y, { width: 65, align: 'right' });
+    if (g.kulantSum > 0) {
+      pdf.font('Helvetica').fontSize(8).fillColor('#4d2995');
+      pdf.text(`+ kulant CHF ${fmtChf(g.kulantSum)} (nicht verrechnet)`, cols.desc, y + 11, { width: 300 });
+    }
+    resetText(pdf);
+    y += g.kulantSum > 0 ? 22 : 14;
+
+    totalHonorar += g.billableSum;
+    totalKulant  += g.kulantSum;
+  }
+
+  // ---- Total-Block am Ende ----
+  if (y > 700) { pdf.addPage(); y = 50; }
+  y += 8;
+  pdf.lineWidth(0.5).strokeColor(ARTIS_GREEN_BORDER)
+     .moveTo(50, y).lineTo(545, y).stroke();
+  pdf.lineWidth(1).strokeColor('#000000');
+  y += 6;
+
+  pdf.font('Helvetica-Bold').fontSize(10).fillColor('#333333');
+  pdf.text('Total Honorar', cols.desc, y, { width: cols.amount - cols.desc - 5 });
+  pdf.text(fmtChf(totalHonorar), cols.amount, y, { width: 65, align: 'right' });
+  y += 14;
+
+  // Rabatt
+  const discount = (Number(invoice.subtotal || 0) * (Number(invoice.discount_pct || 0) / 100))
+    + Number(invoice.discount_amount || 0);
+  if (discount > 0) {
+    pdf.font('Helvetica').fontSize(10).fillColor('#000000');
+    pdf.text('Rabatt', cols.desc, y, { width: cols.amount - cols.desc - 5 });
+    pdf.text(`-${fmtChf(discount)}`, cols.amount, y, { width: 65, align: 'right' });
+    y += 14;
+  }
+
+  // Total ohne MWST
+  pdf.font('Helvetica-Bold').fontSize(10).fillColor(ARTIS_GREEN_DARK);
+  pdf.text('Total ohne Mehrwertsteuer', cols.desc, y, { width: cols.amount - cols.desc - 5 });
+  pdf.text(fmtChf(invoice.subtotal), cols.amount, y, { width: 65, align: 'right' });
+  resetText(pdf);
+  y += 14;
+
+  // Kulant-Hinweis
+  if (totalKulant > 0) {
+    y += 6;
+    pdf.font('Helvetica-Oblique').fontSize(9).fillColor('#4d2995');
+    pdf.text(
+      `Hinweis: Zusätzlich wurden CHF ${fmtChf(totalKulant)} kulant erbracht und nicht verrechnet.`,
+      50, y, { width: 495 }
+    );
+    resetText(pdf);
+  }
+}
+
+function drawBeiblattHeader(pdf, y, cols) {
+  pdf.font('Helvetica-Bold').fontSize(9).fillColor(ARTIS_GREEN_DARK);
+  pdf.text('Datum', cols.date, y);
+  pdf.text('MA', cols.ma, y);
+  pdf.text('Bezeichnung', cols.desc, y);
+  pdf.text('Anz.', cols.qty, y, { width: cols.unit - cols.qty - 2, align: 'right' });
+  pdf.text('Eht.', cols.unit, y, { width: cols.rate - cols.unit - 2, align: 'right' });
+  pdf.text('Ansatz', cols.rate, y, { width: cols.amount - cols.rate - 2, align: 'right' });
+  pdf.text('CHF', cols.amount, y, { width: 65, align: 'right' });
+  resetText(pdf);
+  pdf.lineWidth(0.5).strokeColor(ARTIS_GREEN_BORDER)
+     .moveTo(50, y + 12).lineTo(545, y + 12).stroke();
+  pdf.lineWidth(1).strokeColor('#000000');
 }
 
 // Hilfs-Download – im Browser sichtbar machen

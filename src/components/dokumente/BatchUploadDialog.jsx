@@ -604,7 +604,7 @@ export default function BatchUploadDialog({ preCustomerId, onClose }) {
           .from("dokumente").upload(path, cleanFile);
         if (uploadError) throw uploadError;
         const displayName = item.file.name.replace(/\.[^.]+$/, "");
-        await entities.Dokument.create({
+        const newDoc = await entities.Dokument.create({
           customer_id:  item.fields.customer_id,
           category:     item.fields.category,
           year:         parseInt(item.fields.year) || new Date().getFullYear(),
@@ -617,6 +617,10 @@ export default function BatchUploadDialog({ preCustomerId, onClose }) {
           notes:        item.fields.notes || "",
           content_text: item.contentText || "",
         });
+        // Server-seitige Volltext-Indexierung als Sicherheitsnetz (no-op falls content_text bereits gefüllt)
+        if (newDoc?.id) {
+          supabase.functions.invoke("index-document", { body: { doc_id: newDoc.id } }).catch(() => {});
+        }
         setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: "done" } : i));
         successCount++;
       } catch (err) {

@@ -316,7 +316,7 @@ function InvoiceRow({ inv, onOpen, onSend, onPay, onCancel, onRemove, sending })
               try {
                 const company = await leCompany.get();
                 if (!company) { toast.error('Firmen-Settings fehlen.'); return; }
-                const fresh = await leInvoice.get(inv.id);
+                const fresh = await leInvoice.getWithEntries(inv.id); // pdf-with-beiblatt
                 const result = await generateInvoicePdf({ invoice: fresh, company });
                 if (result.blob) triggerDownload(result.blob, `Rechnung-${fresh.invoice_no || 'Entwurf'}.pdf`);
                 toast.success('PDF erzeugt');

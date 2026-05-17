@@ -130,11 +130,14 @@ export const lieferantenApi = {
 // ── Kreditoren-Belege ────────────────────────────────────────────
 export const kreditorenApi = {
   listOffen: async (mandantId) => {
+    // Gutschriften ausgeschlossen – sie können nicht "gezahlt" werden
     const { data, error } = await supabase
       .from('fibu_kreditoren_belege')
-      .select('*, lieferant:fibu_lieferanten(id,name,nr)')
+      .select('*, lieferant:fibu_lieferanten(id,name,nr,iban,bank_name,adresse,plz,ort,land,skonto_prozent,skonto_tage)')
       .eq('mandant_id', mandantId)
       .in('status', ['offen', 'teilbezahlt'])
+      .neq('belegtyp', 'gutschrift')
+      .eq('freigabe_status', 'freigegeben')
       .order('faelligkeit');
     if (error) throw error;
     return data ?? [];
@@ -218,6 +221,38 @@ export const kreditorenApi = {
       .single();
     if (error) throw error;
     return data;
+  },
+
+  // Gutschrift gegen offene Rechnungen desselben Lieferanten verrechnen (FIFO)
+  gutschriftVerrechnen: async (mandantId, gutschriftId) => {
+    const { data, error } = await supabase.rpc('fibu_gutschrift_verrechnen', {
+      p_mandant_id: mandantId, p_gutschrift_id: gutschriftId,
+    });
+    if (error) throw error;
+    return data;   // verrechneter Gesamtbetrag
+  },
+
+  // Rechnung stornieren – erzeugt eine Storno-Gutschrift per Storno-Datum
+  storno: async (belegId, stornoDatum) => {
+    const { data, error } = await supabase.rpc('fibu_kreditoren_storno', {
+      p_beleg_id: belegId, p_storno_datum: stornoDatum,
+    });
+    if (error) throw error;
+    return data;   // id der Storno-Gutschrift
+  },
+
+  // Skonto-Abzug einer Kreditoren-Zahlung verbuchen
+  skontoBuchen: async (belegId, skontoBetrag, datum) => {
+    const { error } = await supabase.rpc('fibu_skonto_buchen', {
+      p_beleg_id: belegId, p_skonto_betrag: skontoBetrag, p_datum: datum,
+    });
+    if (error) throw error;
+  },
+
+  // Beleg freigeben (Belegfreigabe-Workflow)
+  freigeben: async (belegId) => {
+    const { error } = await supabase.rpc('fibu_beleg_freigeben', { p_beleg_id: belegId });
+    if (error) throw error;
   },
 
   markBezahlt: async (id, betrag, bezahltAm) => {
@@ -366,6 +401,25 @@ export const zahlungslaufApi = {
     return data ?? [];
   },
 
+  // Historie inkl. Rückmelde-Fortschritt (wie viele Belege schon bezahlt)
+  historie: async (mandantId) => {
+    const { data, error } = await supabase
+      .rpc('fibu_zahlungslauf_historie', { p_mandant_id: mandantId });
+    if (error) throw error;
+    return data ?? [];
+  },
+
+  // pain.001-XML eines Laufs nachladen (für erneuten Download)
+  getXml: async (laufId) => {
+    const { data, error } = await supabase
+      .from('fibu_zahlungslaeufe')
+      .select('lauf_nr, valutadatum, pain001_xml')
+      .eq('id', laufId)
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
   update: async (id, payload) => {
     const { data, error } = await supabase
       .from('fibu_zahlungslaeufe')
@@ -375,5 +429,265 @@ export const zahlungslaufApi = {
       .single();
     if (error) throw error;
     return data;
+  },
+};
+
+// ── Firmenzahlstellen (eigene Bankkonten des Mandanten) ──────────
+export const zahlstellenApi = {
+  list: async (mandantId) => {
+    const { data, error } = await supabase
+      .from('fibu_zahlstellen')
+      .select('*')
+      .eq('mandant_id', mandantId)
+      .order('ist_standard', { ascending: false })
+      .order('sortierung')
+      .order('bezeichnung');
+    if (error) throw error;
+    return data ?? [];
+  },
+
+  listAktiv: async (mandantId) => {
+    const { data, error } = await supabase
+      .from('fibu_zahlstellen')
+      .select('*')
+      .eq('mandant_id', mandantId)
+      .eq('aktiv', true)
+      .order('ist_standard', { ascending: false })
+      .order('sortierung')
+      .order('bezeichnung');
+    if (error) throw error;
+    return data ?? [];
+  },
+
+  create: async (mandantId, payload) => {
+    const { data, error } = await supabase
+      .from('fibu_zahlstellen')
+      .insert({ ...payload, mandant_id: mandantId })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  update: async (id, payload) => {
+    const { data, error } = await supabase
+      .from('fibu_zahlstellen')
+      .update(payload)
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  remove: async (id) => {
+    const { error } = await supabase
+      .from('fibu_zahlstellen')
+      .delete()
+      .eq('id', id);
+    if (error) throw error;
+  },
+
+  setStandard: async (id) => {
+    const { error } = await supabase
+      .rpc('fibu_zahlstelle_set_standard', { p_id: id });
+    if (error) throw error;
+  },
+};
+
+// ── Manuelle Buchungen / Hauptbuch ───────────────────────────────
+export const manuelleBuchungApi = {
+  // Beleg-Liste (Kopf) mit optionalem Zeitraum
+  listeBelege: async (mandantId, von, bis) => {
+    let q = supabase
+      .from('fibu_buchung_belege')
+      .select('*')
+      .eq('mandant_id', mandantId)
+      .order('buchungsdatum', { ascending: false })
+      .order('beleg_nr', { ascending: false });
+    if (von) q = q.gte('buchungsdatum', von);
+    if (bis) q = q.lte('buchungsdatum', bis);
+    const { data, error } = await q;
+    if (error) throw error;
+    return data ?? [];
+  },
+
+  // Buchungssätze eines Belegs
+  zeilen: async (belegId) => {
+    const { data, error } = await supabase
+      .from('fibu_buchungen')
+      .select('*')
+      .eq('quelle_id', belegId)
+      .order('buchungs_nr');
+    if (error) throw error;
+    return data ?? [];
+  },
+
+  erstellen: async ({ mandantId, datum, text, pdfPath, pdfName, zeilen }) => {
+    const { data, error } = await supabase.rpc('fibu_manuelle_buchung_erstellen', {
+      p_mandant_id: mandantId, p_datum: datum, p_text: text,
+      p_pdf_path: pdfPath ?? null, p_pdf_name: pdfName ?? null,
+      p_art: 'normal', p_zeilen: zeilen,
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  korrigieren: async ({ belegId, datum, text, pdfPath, pdfName, zeilen }) => {
+    const { data, error } = await supabase.rpc('fibu_manuelle_buchung_korrigieren', {
+      p_beleg_id: belegId, p_datum: datum, p_text: text,
+      p_pdf_path: pdfPath ?? null, p_pdf_name: pdfName ?? null, p_zeilen: zeilen,
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  stornieren: async (belegId, stornoDatum) => {
+    const { data, error } = await supabase.rpc('fibu_manuelle_buchung_stornieren', {
+      p_beleg_id: belegId, p_storno_datum: stornoDatum,
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  // PDF in den Bucket fibu-belege hochladen → gibt den Pfad zurück
+  uploadPdf: async (mandantId, file) => {
+    const ext  = (file.name.split('.').pop() || 'pdf').toLowerCase();
+    const path = `${mandantId}/${crypto.randomUUID()}.${ext}`;
+    const { error } = await supabase.storage
+      .from('fibu-belege')
+      .upload(path, file, { contentType: file.type, upsert: false });
+    if (error) throw error;
+    return { path, name: file.name };
+  },
+
+  signedPdfUrl: async (path) => {
+    const { data, error } = await supabase.storage
+      .from('fibu-belege')
+      .createSignedUrl(path, 300);
+    if (error) throw error;
+    return data?.signedUrl ?? null;
+  },
+};
+
+// ── Buchungssperre ───────────────────────────────────────────────
+export const buchungssperreApi = {
+  setzen: async (mandantId, datum) => {
+    const { error } = await supabase.rpc('fibu_buchungssperre_setzen', {
+      p_mandant_id: mandantId, p_datum: datum,
+    });
+    if (error) throw error;
+  },
+};
+
+// ── Saldovorträge ────────────────────────────────────────────────
+export const saldovortragApi = {
+  lesen: async (mandantId, jahr) => {
+    const { data, error } = await supabase.rpc('fibu_saldovortrag_lesen', {
+      p_mandant_id: mandantId, p_jahr: jahr,
+    });
+    if (error) throw error;
+    return data ?? [];
+  },
+  speichern: async (mandantId, jahr, salden) => {
+    const { data, error } = await supabase.rpc('fibu_saldovortrag_speichern', {
+      p_mandant_id: mandantId, p_jahr: jahr, p_salden: salden,
+    });
+    if (error) throw error;
+    return data;
+  },
+};
+
+// ── Wiederkehrende Kreditoren-Rechnungen (Dauerbelege) ───────────
+export const dauerbelegApi = {
+  list: async (mandantId) => {
+    const { data, error } = await supabase
+      .from('fibu_kreditoren_dauerbelege')
+      .select('*, lieferant:fibu_lieferanten(id,name,nr)')
+      .eq('mandant_id', mandantId)
+      .order('aktiv', { ascending: false })
+      .order('naechstes_belegdatum');
+    if (error) throw error;
+    return data ?? [];
+  },
+  create: async (mandantId, payload) => {
+    const { data, error } = await supabase
+      .from('fibu_kreditoren_dauerbelege')
+      .insert({ ...payload, mandant_id: mandantId })
+      .select().single();
+    if (error) throw error;
+    return data;
+  },
+  update: async (id, payload) => {
+    const { error } = await supabase
+      .from('fibu_kreditoren_dauerbelege')
+      .update({ ...payload, updated_at: new Date().toISOString() })
+      .eq('id', id);
+    if (error) throw error;
+  },
+  remove: async (id) => {
+    const { error } = await supabase.from('fibu_kreditoren_dauerbelege').delete().eq('id', id);
+    if (error) throw error;
+  },
+  erzeugen: async (id) => {
+    const { data, error } = await supabase.rpc('fibu_dauerbeleg_erzeugen', { p_id: id });
+    if (error) throw error;
+    return data;
+  },
+  faelligeErzeugen: async (mandantId, bis) => {
+    const { data, error } = await supabase.rpc('fibu_dauerbelege_faellige_erzeugen', {
+      p_mandant_id: mandantId, p_bis: bis,
+    });
+    if (error) throw error;
+    return data;   // Anzahl erzeugter Belege
+  },
+};
+
+// ── Wechselkurse (ESTV/BAZG) ─────────────────────────────────────
+export const wechselkurseApi = {
+  // neueste Kurse eines Typs ('monat' | 'tag')
+  list: async (typ) => {
+    const { data: d } = await supabase
+      .from('fibu_wechselkurse')
+      .select('datum')
+      .eq('typ', typ)
+      .order('datum', { ascending: false })
+      .limit(1);
+    if (!d || d.length === 0) return { datum: null, kurse: [] };
+    const datum = d[0].datum;
+    const { data, error } = await supabase
+      .from('fibu_wechselkurse')
+      .select('*')
+      .eq('typ', typ)
+      .eq('datum', datum)
+      .order('waehrung');
+    if (error) throw error;
+    return { datum, kurse: data ?? [] };
+  },
+
+  // Import von der ESTV/BAZG anstossen (Edge Function)
+  importNow: async (typ = 'beide') => {
+    const { data, error } = await supabase.functions.invoke('fibu-wechselkurse-import', {
+      body: { typ },
+    });
+    if (error) throw error;
+    return data;
+  },
+};
+
+// ── Budget ───────────────────────────────────────────────────────
+export const budgetApi = {
+  uebersicht: async (mandantId, jahr) => {
+    const { data, error } = await supabase.rpc('fibu_budget_uebersicht', {
+      p_mandant_id: mandantId, p_jahr: jahr,
+    });
+    if (error) throw error;
+    return data ?? [];
+  },
+  speichern: async (mandantId, jahr, zeilen) => {
+    const { error } = await supabase.rpc('fibu_budget_speichern', {
+      p_mandant_id: mandantId, p_jahr: jahr, p_zeilen: zeilen,
+    });
+    if (error) throw error;
   },
 };

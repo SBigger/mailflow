@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useMandant } from '../contexts/MandantContext';
 import { supabase } from '@/api/supabaseClient';
 
@@ -47,6 +47,72 @@ function SatzBadge({ satz }) {
       background: c.bg, color: c.color, letterSpacing: '.01em',
     }}>
       {parseFloat(satz).toFixed(1)} %
+    </span>
+  );
+}
+
+// ── Inline Konto-Edit ─────────────────────────────────────────────
+function KontoEdit({ value, field, codeId, canWrite, onSaved }) {
+  const [editing, setEditing] = useState(false);
+  const [draft,   setDraft]   = useState(value ?? '');
+  const [saving,  setSaving]  = useState(false);
+  const inputRef = useRef(null);
+
+  const start = () => {
+    if (!canWrite) return;
+    setDraft(value ?? '');
+    setEditing(true);
+    setTimeout(() => inputRef.current?.select(), 30);
+  };
+
+  const save = async () => {
+    setSaving(true);
+    const val = draft.trim() || null;
+    await supabase.from('fibu_mwst_codes').update({ [field]: val }).eq('id', codeId);
+    onSaved(field, val);
+    setEditing(false);
+    setSaving(false);
+  };
+
+  const cancel = () => { setEditing(false); setDraft(value ?? ''); };
+
+  if (!editing) return (
+    <span
+      onClick={start}
+      title={canWrite ? 'Klicken zum Bearbeiten' : ''}
+      style={{
+        fontSize: 11.5, color: value ? '#3d6641' : '#c0c8c0',
+        cursor: canWrite ? 'pointer' : 'default',
+        padding: '2px 6px', borderRadius: 5,
+        background: value ? '#e8f0e8' : 'transparent',
+        border: '1px solid transparent',
+        minWidth: 52, display: 'inline-block', textAlign: 'center',
+        transition: 'border-color .1s',
+      }}
+      onMouseEnter={e => canWrite && (e.currentTarget.style.borderColor = '#c5cfc5')}
+      onMouseLeave={e => (e.currentTarget.style.borderColor = 'transparent')}
+    >
+      {value ? value : <span style={{ color: '#d1d5db' }}>—</span>}
+    </span>
+  );
+
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+      <input
+        ref={inputRef}
+        value={draft}
+        onChange={e => setDraft(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') cancel(); }}
+        style={{
+          width: 60, fontSize: 12, padding: '2px 6px', borderRadius: 5,
+          border: '1px solid #7a9b7f', outline: 'none', background: '#fff',
+          fontVariantNumeric: 'tabular-nums',
+        }}
+        maxLength={6}
+        placeholder="z.B. 1170"
+      />
+      <button onClick={save} disabled={saving} style={{ fontSize: 13, border: 'none', background: 'none', cursor: 'pointer', color: '#166534', padding: '0 2px' }}>✓</button>
+      <button onClick={cancel} style={{ fontSize: 13, border: 'none', background: 'none', cursor: 'pointer', color: '#6b7280', padding: '0 2px' }}>✕</button>
     </span>
   );
 }
@@ -133,7 +199,8 @@ export default function MwstCodes() {
       flexShrink: 0,
     },
     bezeichnung: { flex: 1, fontSize: 13, color: '#1a1a2e' },
-    konto: { fontSize: 11.5, color: '#94a394', minWidth: 120 },
+    kontoGroup: { display: 'flex', alignItems: 'center', gap: 10, minWidth: 260 },
+    kontoLabel:  { fontSize: 10.5, color: '#94a394', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em', minWidth: 68 },
     empty: { fontSize: 12, color: '#94a394', padding: '12px 16px' },
   };
 
@@ -176,11 +243,34 @@ export default function MwstCodes() {
                     <span style={s.codeBadge}>{c.code}</span>
                     <span style={s.bezeichnung}>{c.bezeichnung}</span>
                     <SatzBadge satz={c.satz} />
-                    <span style={s.konto}>
-                      {c.konto_vorsteuer && <span title="Vorsteuerkonto">Kto {c.konto_vorsteuer}</span>}
-                      {c.konto_umsatz && <span title="Umsatzsteuerkonto">Kto {c.konto_umsatz}</span>}
-                      {!c.konto_vorsteuer && !c.konto_umsatz && '—'}
-                    </span>
+                    <div style={s.kontoGroup}>
+                      {/* Vorsteuerkonto */}
+                      {(c.typ === 'vorsteuer' || c.typ === 'steuerbefreit') && (
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <span style={s.kontoLabel}>Vorsteuer</span>
+                          <KontoEdit
+                            value={c.konto_vorsteuer}
+                            field="konto_vorsteuer"
+                            codeId={c.id}
+                            canWrite={canWrite}
+                            onSaved={(f, v) => setCodes(prev => prev.map(x => x.id === c.id ? { ...x, [f]: v } : x))}
+                          />
+                        </span>
+                      )}
+                      {/* UST-Konto */}
+                      {(c.typ === 'umsatzsteuer' || c.typ === 'steuerbefreit') && (
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <span style={s.kontoLabel}>UST-Konto</span>
+                          <KontoEdit
+                            value={c.konto_umsatz}
+                            field="konto_umsatz"
+                            codeId={c.id}
+                            canWrite={canWrite}
+                            onSaved={(f, v) => setCodes(prev => prev.map(x => x.id === c.id ? { ...x, [f]: v } : x))}
+                          />
+                        </span>
+                      )}
+                    </div>
                     <Toggle
                       value={c.aktiv}
                       onChange={() => handleToggle(c)}

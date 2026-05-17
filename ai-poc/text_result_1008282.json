@@ -1,0 +1,34 @@
+{
+  "lieferant_name": "Artis Treuhand GmbH",
+  "lieferant_uid": "CHE-352.115.333 MWST",
+  "rechnungsnummer": "1008282",
+  "rechnungsdatum": "30.04.2026",
+  "faelligkeitsdatum": "30.04.2026",
+  "betrag_brutto": 602.65,
+  "betrag_netto": 557.5,
+  "mwst_satz": 8.1,
+  "mwst_betrag": 45.15,
+  "waehrung": "CHF",
+  "positionen": [
+    {
+      "beschreibung": "M-Files Cloud-Service",
+      "total": 397.5
+    },
+    {
+      "beschreibung": "Kundenportal",
+      "total": 160.0
+    },
+    {
+      "beschreibung": "M-Files Cloud: Benutzer",
+      "total": 360.0
+    },
+    {
+      "beschreibung": "M-Files Cloud: Zusätzlicher Datenspeicher",
+      "total": 37.5
+    },
+    {
+      "beschreibung": "M-Files Kundenportal",
+      "total": 160.0
+    }
+  ]
+}

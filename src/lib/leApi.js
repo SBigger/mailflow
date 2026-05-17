@@ -332,6 +332,17 @@ export const leInvoice = {
     if (error) throw error;
     return data;
   },
+  // Wie .get(), aber inkl. allen verlinkten Time-Entries (für PDF-Beiblatt).
+  getWithEntries: async (id) => {
+    const inv = await leInvoice.get(id);
+    const { data: timeEntries, error } = await supabase
+      .from('le_time_entry')
+      .select('id, entry_date, hours_internal, rate_snapshot, description, status, service_type:le_service_type(id, code, name, default_section, billable), employee:le_employee(id, short_code, full_name)')
+      .eq('invoice_id', id)
+      .order('entry_date');
+    if (error) throw error;
+    return { ...inv, time_entries: timeEntries ?? [] };
+  },
   create: async (payload) => {
     const { data, error } = await supabase.from('le_invoice').insert(payload).select().single();
     if (error) throw error;

@@ -251,12 +251,16 @@ export default function DokUploadDialog({ preFile, preCustomerId, onClose }) {
       const cleanFile   = new File([file], fileName, { type: file.type });
       const { data: uploadData, error: uploadError } = await supabase.storage.from(BUCKET).upload(path, cleanFile);
       if (uploadError) throw uploadError;
-      await entities.Dokument.create({
+      const newDoc = await entities.Dokument.create({
         customer_id: custId, category, year: parseInt(year),
         name: name.trim(), filename: file.name,
         storage_path: uploadData.path, file_size: file.size, file_type: file.type,
         tag_ids: tagIds, notes, content_text: contentText,
       });
+      // Server-seitige Volltext-Indexierung als Sicherheitsnetz (no-op falls content_text bereits gefüllt)
+      if (newDoc?.id) {
+        supabase.functions.invoke("index-document", { body: { doc_id: newDoc.id } }).catch(() => {});
+      }
       toast.success("Dokument hochgeladen ✓", { closeButton: true });
       queryClient.invalidateQueries({ queryKey: ["dokumente"] });
       onClose();

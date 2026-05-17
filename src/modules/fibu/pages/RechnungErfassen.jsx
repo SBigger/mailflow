@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMandant } from '../contexts/MandantContext';
 import { lieferantenApi, kontenApi, kreditorenApi, mwstCodesApi, kiVorschlagApi } from '../api';
+import NeuerLieferantModal from '../components/NeuerLieferantModal';
 import { supabase } from '@/api/supabaseClient';
 import * as pdfjsLib from 'pdfjs-dist';
 // Worker aus public/ – funktioniert in Vite ohne ?url-Trick
@@ -40,10 +41,12 @@ function parseSpc(text) {
   return {
     iban:        (lines[3] ?? '').replace(/\s+/g, ''),
     name:        lines[5] ?? '',
-    strasse:     addrType === 'S' ? (lines[6] ?? '') : (lines[6] ?? ''),
+    strasse:     addrType === 'S'
+                   ? [lines[6], lines[7]].filter(Boolean).join(' ').trim()
+                   : (lines[6] ?? '').trim(),
     plz,
     ort,
-    land:        lines[10] ?? 'CH',
+    land:        (lines[10] ?? '').trim() || 'CH',
     betrag:      lines[18] ? parseFloat(lines[18]) || null : null,
     waehrung:    lines[19] ?? 'CHF',
     referenzTyp: lines[27] ?? '',
@@ -137,7 +140,19 @@ export default function RechnungErfassen() {
   const [inboxItem, setInboxItem]   = useState(null);          // Inbox-Eintrag (wenn aus Inbox geöffnet)
   const [kiLoading, setKiLoading]   = useState(false);         // KI-Vorschlag lädt
   const [kiVorschlag, setKiVorschlag] = useState(null);        // {vorschlaege, lieferant_kategorie, quelle}
+  const [pdfBlobUrl, setPdfBlobUrl] = useState(null);          // stabile Blob-URL für Vorschau
+  const [quickLief, setQuickLief]   = useState(null);          // {name, iban} für Schnell-Anlage
+  const [quickLiefSaving, setQuickLiefSaving] = useState(false);
+  const [liefModal, setLiefModal]   = useState(null);          // { init } – Lieferant-Erfassungs-Dialog
   const fileRef = useRef();
+
+  // Blob-URL erzeugen/freigeben wenn Datei wechselt
+  useEffect(() => {
+    if (!scanFile) { setPdfBlobUrl(null); return; }
+    const url = URL.createObjectURL(scanFile);
+    setPdfBlobUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [scanFile]);
 
   const today = new Date().toISOString().slice(0, 10);
   const [head, setHead] = useState({
@@ -145,7 +160,9 @@ export default function RechnungErfassen() {
     belegdatum: today, faelligkeit: '',
     zahlungsbedingung_tage: 30, waehrung: 'CHF',
     zahlungsreferenz: '', notiz: '',
+    belegtyp: 'rechnung',
   });
+  const istGutschrift = head.belegtyp === 'gutschrift';
   const [positionen, setPositionen] = useState([emptyPos()]);
 
   // MWST-Code → Satz Map für Berechnungen
@@ -186,7 +203,6 @@ export default function RechnungErfassen() {
       const blob = await resp.blob();
       const file = new File([blob], item.pdf_name || 'rechnung.pdf', { type: blob.type });
       setScanFile(file);
-      // Kurz warten bis lieferanten geladen
       setScanStatus('idle');
     })();
   }, [inboxId, mandant?.id]);
@@ -299,6 +315,18 @@ export default function RechnungErfassen() {
       const matched = lieferanten.find(l => l.iban && l.iban.replace(/\s+/g, '').toUpperCase() === normalIban);
       setScanMatch(matched ?? null);
 
+      // Wenn kein Match → Schnell-Anlage vorbereiten (alle QR-Felder)
+      if (!matched && spc.iban) {
+        setQuickLief({
+          name:    spc.name ?? '',
+          iban:    spc.iban,
+          strasse: spc.strasse ?? '',
+          plz:     spc.plz ?? '',
+          ort:     spc.ort ?? '',
+          land:    spc.land ?? 'CH',
+        });
+      }
+
       // Formular befüllen
       setHead(prev => {
         const l = matched ?? null;
@@ -331,6 +359,17 @@ export default function RechnungErfassen() {
     }
   }, [scanFile, lieferanten, mwstMap]);
 
+  // Auto-Scan sobald Inbox-PDF geladen ist UND Lieferanten verfügbar sind.
+  // MUSS nach handleScan stehen – sonst Temporal-Dead-Zone-ReferenceError
+  // beim Aufbau des Dependency-Arrays → Komponente crasht (weisse Seite).
+  const autoScannedRef = useRef(false);
+  useEffect(() => {
+    if (!inboxId || !scanFile || lieferanten.length === 0 || autoScannedRef.current) return;
+    if (scanStatus !== 'idle') return;
+    autoScannedRef.current = true;
+    handleScan();
+  }, [inboxId, scanFile, lieferanten.length, scanStatus, handleScan]);
+
   const handleFileChange = (e) => {
     const f = e.target.files[0];
     if (!f) return;
@@ -338,6 +377,41 @@ export default function RechnungErfassen() {
     setScanStatus('idle');
     setScanData(null);
     setScanMatch(null);
+    setQuickLief(null);
+  };
+
+  // Lieferant über den Erfassungs-Dialog anlegen (mit Adressfeldern)
+  const handleSaveLief = async (form) => {
+    if (!mandant) return;
+    setQuickLiefSaving(true);
+    try {
+      const nr = await lieferantenApi.nextNr(mandant.id);
+      const neu = await lieferantenApi.create(mandant.id, {
+        nr,
+        name:      form.name.trim(),
+        uid:       form.uid.trim() || null,
+        adresse:   form.adresse.trim() || null,
+        plz:       form.plz.trim() || null,
+        ort:       form.ort.trim() || null,
+        land:      (form.land || 'CH').trim().toUpperCase() || 'CH',
+        iban:      form.iban.replace(/\s+/g, '') || null,
+        bank_name: form.bank_name?.trim() || null,
+        aktiv:     true,
+      });
+      setLieferanten(prev => [...prev, neu].sort((a, b) => a.name.localeCompare(b.name)));
+      setScanMatch(neu);
+      setHead(prev => ({
+        ...prev,
+        lieferant_id: neu.id,
+        faelligkeit:  prev.faelligkeit || addDays(prev.belegdatum, 30),
+      }));
+      setQuickLief(null);
+      setLiefModal(null);
+    } catch (e) {
+      alert('Fehler beim Anlegen: ' + e.message);
+    } finally {
+      setQuickLiefSaving(false);
+    }
   };
 
   // ── Speichern ───────────────────────────────────────────────────
@@ -355,12 +429,15 @@ export default function RechnungErfassen() {
         betrag_mwst: p.betrag_mwst,
         betrag_brutto: p.betrag_brutto,
       }));
+      // Gutschrift: Beleg-Beträge negativ (Positionen bleiben positiv –
+      // die Verbuchungs-RPC dreht die Buchungsrichtung anhand belegtyp)
+      const sign = istGutschrift ? -1 : 1;
       const beleg = await kreditorenApi.create(mandant.id, {
         ...head,
         beleg_nr: belegNr,
-        betrag_netto: totals.netto,
-        betrag_mwst: totals.mwst,
-        betrag_brutto: totals.brutto,
+        betrag_netto:  sign * totals.netto,
+        betrag_mwst:   sign * totals.mwst,
+        betrag_brutto: sign * totals.brutto,
       }, pos);
 
       // Inbox-Eintrag als verarbeitet markieren
@@ -389,9 +466,26 @@ export default function RechnungErfassen() {
       <div style={{ flex: 1, overflowY: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 16, borderRight: '1px solid #e4e9e4' }}>
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span style={{ fontWeight: 600, fontSize: 13.5 }}>
-            {belegId ? 'Rechnung bearbeiten' : 'Neue Kreditoren-Rechnung'}
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span style={{ fontWeight: 600, fontSize: 13.5 }}>
+              {belegId ? 'Beleg bearbeiten' : (istGutschrift ? 'Neue Lieferanten-Gutschrift' : 'Neue Kreditoren-Rechnung')}
+            </span>
+            {!belegId && (
+              <div style={{ display: 'flex', gap: 2, background: '#eef2ee', borderRadius: 8, padding: 2 }}>
+                {[['rechnung', 'Rechnung'], ['gutschrift', 'Gutschrift']].map(([v, l]) => (
+                  <button key={v}
+                    onClick={() => setHead(h => ({ ...h, belegtyp: v }))}
+                    style={{
+                      padding: '4px 12px', borderRadius: 6, border: 'none', cursor: 'pointer',
+                      fontSize: 11.5, fontWeight: 600,
+                      background: head.belegtyp === v ? '#fff' : 'transparent',
+                      color: head.belegtyp === v ? (v === 'gutschrift' ? '#9d174d' : '#3d6641') : '#6b826b',
+                      boxShadow: head.belegtyp === v ? '0 1px 3px rgba(0,0,0,.1)' : 'none',
+                    }}>{l}</button>
+                ))}
+              </div>
+            )}
+          </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button
               onClick={() => navigate(`/fibu/${mandant?.id}/kreditoren`)}
@@ -463,11 +557,21 @@ export default function RechnungErfassen() {
               )}
               {scanStatus === 'found' && scanData && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#166534', background: '#dcfce7', padding: '8px 12px', borderRadius: 7, border: '1px solid #86efac' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#166534', background: '#dcfce7', padding: '8px 12px', borderRadius: 7, border: '1px solid #86efac', flexWrap: 'wrap' }}>
                     <span>✅ QR-Zahlschein erkannt</span>
                     {scanMatch
-                      ? <span style={{ marginLeft: 4, fontWeight: 600 }}>— Lieferant gefunden: <em>{scanMatch.name}</em></span>
-                      : <span style={{ marginLeft: 4, color: '#92400e' }}>— IBAN nicht in Lieferantenstamm. Bitte Lieferant manuell wählen oder neu erfassen.</span>
+                      ? <span style={{ marginLeft: 4, fontWeight: 600 }}>— Lieferant: <em>{scanMatch.name}</em></span>
+                      : <>
+                          <span style={{ marginLeft: 4, color: '#92400e' }}>— IBAN nicht in Stammdaten</span>
+                          {quickLief && (
+                            <div style={{ marginLeft: 'auto' }}>
+                              <button
+                                onClick={() => setLiefModal({ init: { ...quickLief } })}
+                                style={{ padding: '4px 12px', borderRadius: 6, border: 'none', background: '#7a9b7f', color: '#fff', fontSize: 11.5, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                              >+ Lieferant anlegen («{quickLief.name || 'neu'}»)</button>
+                            </div>
+                          )}
+                        </>
                     }
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, fontSize: 11.5 }}>
@@ -504,12 +608,22 @@ export default function RechnungErfassen() {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
               <label style={lbl}>Lieferant *</label>
-              <select style={inp} value={head.lieferant_id} onChange={e => handleLieferantChange(e.target.value)}>
-                <option value="">— wählen —</option>
-                {lieferanten.filter(l => l.aktiv).map(l => (
-                  <option key={l.id} value={l.id}>{l.name} ({l.nr})</option>
-                ))}
-              </select>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <select style={{ ...inp, flex: 1 }} value={head.lieferant_id} onChange={e => handleLieferantChange(e.target.value)}>
+                  <option value="">— wählen —</option>
+                  {lieferanten.filter(l => l.aktiv).map(l => (
+                    <option key={l.id} value={l.id}>{l.name} ({l.nr})</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setLiefModal({ init: scanData
+                    ? { name: scanData.name, strasse: scanData.strasse, plz: scanData.plz, ort: scanData.ort, land: scanData.land, iban: scanData.iban }
+                    : {} })}
+                  title="Neuen Lieferant erfassen"
+                  style={{ flexShrink: 0, padding: '0 12px', borderRadius: 8, border: '1px solid #b8d4b8', background: '#f0f7f0', color: '#3d6641', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}
+                >+ Neu</button>
+              </div>
             </div>
             <div>
               <label style={lbl}>Beleg-Nr. Lieferant</label>
@@ -708,7 +822,7 @@ export default function RechnungErfassen() {
               <div style={{ fontWeight: 600, fontSize: 12.5, color: '#2e4a7d', marginTop: 2 }}>{head.waehrung} {CHF(totals.mwst)}</div>
             </div>
             <div style={{ textAlign: 'right', paddingLeft: 12, borderLeft: '2px solid #e4e9e4' }}>
-              <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#3d6641' }}>Zu zahlen (Brutto)</div>
+              <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#3d6641' }}>{istGutschrift ? 'Gutschrift-Betrag' : 'Zu zahlen (Brutto)'}</div>
               <div style={{ fontWeight: 700, fontSize: 16, color: '#1a1a2e', marginTop: 2 }}>{head.waehrung} {CHF(totals.brutto)}</div>
             </div>
           </div>
@@ -723,36 +837,32 @@ export default function RechnungErfassen() {
             <span style={{ fontSize: 11, color: '#94a394' }}>— {scanFile.name}</span>
           )}
         </div>
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, overflowY: 'auto' }}>
-          {scanFile && scanFile.type.startsWith('image/') ? (
-            <img
-              src={URL.createObjectURL(scanFile)}
-              alt="Beleg"
-              style={{ maxWidth: '100%', borderRadius: 6, boxShadow: '0 2px 8px rgba(0,0,0,.12)' }}
-            />
-          ) : scanFile && scanFile.type === 'application/pdf' ? (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, color: '#6b826b', textAlign: 'center' }}>
-              <svg style={{ width: 56, height: 56, stroke: '#7a9b7f' }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1}>
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                <polyline points="14 2 14 8 20 8"/>
-                <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
-                <polyline points="10 9 9 9 8 9"/>
-              </svg>
-              <div style={{ fontSize: 12.5, fontWeight: 500, color: '#4a5a4a' }}>{scanFile.name}</div>
-              <div style={{ fontSize: 11, color: '#94a394' }}>({(scanFile.size / 1024).toFixed(0)} KB)</div>
+        <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
+          {pdfBlobUrl && scanFile?.type === 'application/pdf' ? (
+            <>
+              <iframe
+                src={pdfBlobUrl}
+                title={scanFile.name}
+                style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
+              />
+              {/* QR-Status Overlay unten */}
               {scanStatus === 'found' && (
-                <div style={{ marginTop: 8, fontSize: 11.5, color: '#166534', background: '#dcfce7', padding: '8px 14px', borderRadius: 8, border: '1px solid #86efac' }}>
-                  ✅ QR-Zahlschein<br/>erfolgreich gelesen
+                <div style={{ position: 'absolute', bottom: 10, left: '50%', transform: 'translateX(-50%)', background: 'rgba(22,101,52,0.92)', color: '#fff', borderRadius: 8, padding: '5px 14px', fontSize: 11.5, fontWeight: 600, pointerEvents: 'none', whiteSpace: 'nowrap' }}>
+                  ✅ QR erkannt
                 </div>
               )}
-              {scanStatus === 'idle' && (
-                <div style={{ fontSize: 11, color: '#6b826b' }}>
-                  Klicken Sie «QR scannen»<br/>zum Lesen des Zahlscheins
+              {scanStatus === 'scanning' && (
+                <div style={{ position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, color: '#2e4a7d' }}>
+                  Scannt QR…
                 </div>
               )}
+            </>
+          ) : pdfBlobUrl && scanFile?.type.startsWith('image/') ? (
+            <div style={{ height: '100%', overflowY: 'auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 12 }}>
+              <img src={pdfBlobUrl} alt="Beleg" style={{ maxWidth: '100%', borderRadius: 6, boxShadow: '0 2px 8px rgba(0,0,0,.12)' }} />
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, color: '#bbb' }}>
+            <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, color: '#bbb' }}>
               <svg style={{ width: 48, height: 48, stroke: '#d4dcd4' }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1}>
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
                 <polyline points="14 2 14 8 20 8"/>
@@ -762,6 +872,15 @@ export default function RechnungErfassen() {
           )}
         </div>
       </div>
+
+      {liefModal && (
+        <NeuerLieferantModal
+          init={liefModal.init}
+          saving={quickLiefSaving}
+          onSave={handleSaveLief}
+          onClose={() => setLiefModal(null)}
+        />
+      )}
     </div>
   );
 }

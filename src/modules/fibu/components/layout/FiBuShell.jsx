@@ -17,6 +17,18 @@ const MwstCodes           = React.lazy(() => import('../../pages/MwstCodes'));
 const RechnungInbox       = React.lazy(() => import('../../pages/RechnungInbox'));
 const MwstAbrechnung      = React.lazy(() => import('../../pages/MwstAbrechnung'));
 const Jahresabschluss     = React.lazy(() => import('../../pages/Jahresabschluss'));
+const MassenImport        = React.lazy(() => import('../../pages/MassenImport'));
+const BankAbstimmungIntern = React.lazy(() => import('../../pages/BankAbstimmung'));
+const Kontoblaetter        = React.lazy(() => import('../../pages/Kontoblaetter'));
+const Bilanz               = React.lazy(() => import('../../pages/Bilanz'));
+const Zahlstellen          = React.lazy(() => import('../../pages/Zahlstellen'));
+const ManuelleBuchungen    = React.lazy(() => import('../../pages/ManuelleBuchungen'));
+const Saldovortraege       = React.lazy(() => import('../../pages/Saldovortraege'));
+const Budget               = React.lazy(() => import('../../pages/Budget'));
+const Wechselkurse         = React.lazy(() => import('../../pages/Wechselkurse'));
+const Einstellungen        = React.lazy(() => import('../../pages/Einstellungen'));
+const LieferantenKonto     = React.lazy(() => import('../../pages/LieferantenKonto'));
+const Dauerbelege          = React.lazy(() => import('../../pages/Dauerbelege'));
 
 const Spinner = () => (
   <div className="flex-1 flex items-center justify-center">
@@ -41,6 +53,7 @@ function FiBuContent() {
         <Route path="kreditoren"                   element={<KreditorenDashboard />} />
         <Route path="kreditoren/lieferanten"        element={<Lieferanten />} />
         <Route path="kreditoren/lieferanten/:lieferantId" element={<Lieferanten />} />
+        <Route path="kreditoren/lieferanten-konto" element={<LieferantenKonto />} />
         <Route path="kreditoren/erfassen"           element={<RechnungErfassen />} />
         <Route path="kreditoren/erfassen/:belegId"  element={<RechnungErfassen />} />
         <Route path="kreditoren/opliste"            element={<OpListe />} />
@@ -51,6 +64,17 @@ function FiBuContent() {
         <Route path="kreditoren/inbox"              element={<RechnungInbox />} />
         <Route path="mwst/abrechnung"               element={<MwstAbrechnung />} />
         <Route path="jahresabschluss"               element={<Jahresabschluss />} />
+        <Route path="kreditoren/massen-import"      element={<MassenImport />} />
+        <Route path="kreditoren/dauerbelege"        element={<Dauerbelege />} />
+        <Route path="bankabstimmung"               element={<BankAbstimmungIntern />} />
+        <Route path="kontoblaetter"                element={<Kontoblaetter />} />
+        <Route path="bilanz"                       element={<Bilanz />} />
+        <Route path="zahlstellen"                  element={<Zahlstellen />} />
+        <Route path="manuelle-buchungen"           element={<ManuelleBuchungen />} />
+        <Route path="saldovortraege"               element={<Saldovortraege />} />
+        <Route path="budget"                       element={<Budget />} />
+        <Route path="wechselkurse"                 element={<Wechselkurse />} />
+        <Route path="einstellungen"                element={<Einstellungen />} />
         <Route path="*" element={<Navigate to="kreditoren" replace />} />
       </Routes>
     </Suspense>

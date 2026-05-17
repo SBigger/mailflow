@@ -485,13 +485,17 @@ function UploadDialog({ customers, preCustomer, preFile, allTags, onCancel, onUp
       if (uploadError) {
         throw uploadError;
       }
-      await entities.Dokument.create({
+      const newDoc = await entities.Dokument.create({
         customer_id: custId, category, year: parseInt(year),
         name: name.trim(), filename: file.name,
         storage_path: uploadData.path, file_size: file.size, file_type: file.type,
         tag_ids: tagIds, notes,
         content_text: contentText,
       });
+      // Server-seitige Volltext-Indexierung als Sicherheitsnetz (no-op falls content_text bereits gefüllt)
+      if (newDoc?.id) {
+        supabase.functions.invoke("index-document", { body: { doc_id: newDoc.id } }).catch(() => {});
+      }
       toast.success("Dokument hochgeladen", {closeButton: true});
       onUpload();
     } catch (err) {
@@ -1216,7 +1220,8 @@ export default function Dokumente() {
               const cust = customers.find(c => c.id === doc.customer_id);
               return (
                 <div key={doc.id}
-                  onClick={() => { setFtSearch(""); setFtResults(null); setSelCustomerId(doc.customer_id); setSelCat(doc.category); setSelYear(doc.year || null); }}
+                  onClick={() => downloadDoc(doc)}
+                  title="Öffnen"
                   style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "10px 14px", background: s.cardBg,
                     border: "1px solid " + border, borderRadius: 8, cursor: "pointer", transition: "border 0.15s" }}
                   onMouseEnter={e => e.currentTarget.style.borderColor = accent}
