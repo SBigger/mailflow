@@ -33,6 +33,7 @@ const Kontierungsregeln    = React.lazy(() => import('../../pages/Kontierungsreg
 const WiederkehrendeBuchungen = React.lazy(() => import('../../pages/WiederkehrendeBuchungen'));
 const Kassenbuch           = React.lazy(() => import('../../pages/Kassenbuch'));
 const Kursbewertung        = React.lazy(() => import('../../pages/Kursbewertung'));
+const SetupAssistent       = React.lazy(() => import('../../pages/SetupAssistent'));
 
 const Spinner = () => (
   <div className="flex-1 flex items-center justify-center">
@@ -83,6 +84,7 @@ function FiBuContent() {
         <Route path="wechselkurse"                 element={<Wechselkurse />} />
         <Route path="einstellungen"                element={<Einstellungen />} />
         <Route path="kontierungsregeln"            element={<Kontierungsregeln />} />
+        <Route path="setup"                        element={<SetupAssistent />} />
         <Route path="*" element={<Navigate to="kreditoren" replace />} />
       </Routes>
     </Suspense>

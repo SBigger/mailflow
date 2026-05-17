@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMandant } from '../contexts/MandantContext';
-import { kreditorenApi } from '../api';
+import { kreditorenApi, kontenApi } from '../api';
 
 const CHF = (n) => n == null ? '—' : new Intl.NumberFormat('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 const DATE = (s) => s ? new Date(s).toLocaleDateString('de-CH') : '—';
@@ -44,14 +44,18 @@ function faelligStatus(faelligkeit) {
 export default function KreditorenDashboard() {
   const { mandant } = useMandant();
   const navigate = useNavigate();
-  const [belege, setBelege] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [belege, setBelege]       = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [kontenCount, setKontenCount] = useState(null); // null = noch nicht geprüft
 
   useEffect(() => {
     if (!mandant) return;
     setLoading(true);
-    kreditorenApi.listOffen(mandant.id)
-      .then(setBelege)
+    Promise.all([
+      kreditorenApi.listOffen(mandant.id),
+      kontenApi.list(mandant.id).then(k => setKontenCount(k.length)).catch(() => setKontenCount(0)),
+    ])
+      .then(([b]) => setBelege(b))
       .finally(() => setLoading(false));
   }, [mandant?.id]);
 
@@ -71,6 +75,36 @@ export default function KreditorenDashboard() {
 
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+      {/* Setup-CTA: nur wenn Kontenplan noch leer */}
+      {kontenCount === 0 && !loading && (
+        <div style={{
+          background: 'linear-gradient(135deg, #f0f7f0 0%, #e8f5e8 100%)',
+          border: '1px solid #b8d4b8', borderRadius: 12, padding: '18px 22px',
+          display: 'flex', alignItems: 'center', gap: 18,
+        }}>
+          <div style={{ fontSize: 36 }}>🚀</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 700, fontSize: 14.5, color: '#1a3a1a', marginBottom: 4 }}>
+              Buchhaltung noch nicht eingerichtet
+            </div>
+            <div style={{ fontSize: 13, color: '#4a6a4a', lineHeight: 1.5 }}>
+              Kontenplan, MWST-Codes, Zahlstellen und Saldovorträge in wenigen Minuten einrichten.
+            </div>
+          </div>
+          <button
+            onClick={() => navigate(`${base}/setup`)}
+            style={{
+              padding: '10px 22px', borderRadius: 9, border: 'none', cursor: 'pointer',
+              background: '#5a8a5a', color: '#fff', fontSize: 13.5, fontWeight: 700,
+              whiteSpace: 'nowrap', flexShrink: 0,
+            }}
+          >
+            Setup starten →
+          </button>
+        </div>
+      )}
+
       {/* KPI */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
         <KpiCard label="Offene Rechnungen" value={`CHF ${CHF(totalOffen)}`} sub={`${belege.length} Beleg${belege.length !== 1 ? 'e' : ''} ausstehend`} />

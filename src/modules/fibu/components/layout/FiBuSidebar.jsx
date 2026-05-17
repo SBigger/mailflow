@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useMandant } from '../../contexts/MandantContext';
 import { supabase } from '@/api/supabaseClient';
+import { useSetupProgress, SETUP_TOTAL } from '../../hooks/useSetupProgress';
 
 // ── Erkennt Electron / Tauri Desktop-Client ───────────────────────
 const isNativeApp = () =>
@@ -71,8 +72,10 @@ const SECTIONS = [
     id:    'stammdaten',
     short: '⚙',
     label: 'Stammdaten',
-    paths: ['kontenplan', 'mwstcodes', 'zahlstellen', 'wechselkurse', 'kontierungsregeln', 'einstellungen'],
+    paths: ['kontenplan', 'mwstcodes', 'zahlstellen', 'wechselkurse', 'kontierungsregeln', 'einstellungen', 'setup'],
     items: [
+      { to: 'setup',         label: '🚀 Setup-Assistent', icon: 'grid', badge: 'setup' },
+      { divider: true },
       { to: 'kontenplan',    label: 'Kontenplan',        icon: 'table' },
       { to: 'mwstcodes',     label: 'MWST-Codes',        icon: 'percent' },
       { to: 'zahlstellen',   label: 'Firmenzahlstellen', icon: 'bank' },
@@ -126,6 +129,7 @@ export default function FiBuSidebar() {
 
   const [mandantOpen, setMandantOpen] = useState(false);
   const [inboxPending, setInboxPending] = useState(0);
+  const { doneCount: setupDone } = useSetupProgress(mandant?.id, mandant);
 
   // Aktive Sektion: aus URL ermitteln, manueller Override möglich
   const urlSection = useMemo(() => detectSection(location.pathname), [location.pathname]);
@@ -349,8 +353,9 @@ export default function FiBuSidebar() {
               );
             }
 
-            // Badge (Inbox-Pending-Count)
+            // Badge (Inbox-Pending-Count oder Setup-Progress)
             const badge = item.badge === 'inbox' && inboxPending > 0 ? inboxPending : null;
+            const setupBadge = item.badge === 'setup' ? `${setupDone}/${SETUP_TOTAL}` : null;
 
             // Bankabstimmung: intern in native app, sonst neues Fenster
             if (item.newWindowFallback) {
@@ -403,6 +408,14 @@ export default function FiBuSidebar() {
                     fontSize: 9, fontWeight: 700, padding: '1px 5px',
                     minWidth: 15, textAlign: 'center', lineHeight: '14px',
                   }}>{badge > 99 ? '99+' : badge}</span>
+                )}
+                {setupBadge !== null && (
+                  <span style={{
+                    background: setupDone >= SETUP_TOTAL ? '#7a9b7f' : '#e8a435',
+                    color: '#fff', borderRadius: 10,
+                    fontSize: 9, fontWeight: 700, padding: '1px 5px',
+                    minWidth: 22, textAlign: 'center', lineHeight: '14px',
+                  }}>{setupBadge}</span>
                 )}
               </NavLink>
             );

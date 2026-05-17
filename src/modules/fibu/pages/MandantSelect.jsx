@@ -26,7 +26,7 @@ export default function MandantSelect() {
     setErr(null);
     try {
       const m = await mandantenApi.create(form);
-      navigate(`/fibu/${m.id}/kreditoren`);
+      navigate(`/fibu/${m.id}/setup`);
     } catch (e) {
       setErr(e?.message ?? 'Unbekannter Fehler');
     } finally {
