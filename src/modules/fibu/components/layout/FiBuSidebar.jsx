@@ -57,10 +57,11 @@ const SECTIONS = [
     id:    'hauptbuch',
     short: 'HB',
     label: 'Hauptbuch',
-    paths: ['manuelle-buchungen', 'wiederkehrende-buchungen', 'saldovortraege', 'budget'],
+    paths: ['manuelle-buchungen', 'wiederkehrende-buchungen', 'kassenbuch', 'saldovortraege', 'budget'],
     items: [
       { to: 'manuelle-buchungen',      label: 'Manuelle Buchungen', icon: 'plus-doc' },
       { to: 'wiederkehrende-buchungen', label: 'Wiederkehrend',     icon: 'calendar' },
+      { to: 'kassenbuch',              label: 'Kassenbuch',         icon: 'credit-card' },
       { to: 'saldovortraege',          label: 'Saldovorträge',      icon: 'balance' },
       { to: 'budget',                  label: 'Budget',             icon: 'doc-text' },
     ],

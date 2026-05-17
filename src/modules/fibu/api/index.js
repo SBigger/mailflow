@@ -643,6 +643,18 @@ export const buchungSerieApi = {
   },
 };
 
+// ── Kassenbuch (OCR / Handschrift-Erkennung) ─────────────────────
+export const kassenbuchApi = {
+  // Kassenbeleg-Foto per Vision-KI auslesen (auch handschriftlich)
+  ocr: async (imageBase64, mimeType) => {
+    const { data, error } = await supabase.functions.invoke('fibu-kassenbeleg-ocr', {
+      body: { image: imageBase64, mimeType },
+    });
+    if (error) throw error;
+    return data;
+  },
+};
+
 // ── Kontierungsregeln (Kontovorschlag) ───────────────────────────
 export const kontierungsregelnApi = {
   list: async (mandantId) => {
