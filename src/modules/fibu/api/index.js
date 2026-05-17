@@ -598,6 +598,51 @@ export const saldovortragApi = {
   },
 };
 
+// ── Wiederkehrende manuelle Buchungen (Buchungsserien) ───────────
+export const buchungSerieApi = {
+  list: async (mandantId) => {
+    const { data, error } = await supabase
+      .from('fibu_buchung_serien')
+      .select('*')
+      .eq('mandant_id', mandantId)
+      .order('aktiv', { ascending: false })
+      .order('naechstes_datum');
+    if (error) throw error;
+    return data ?? [];
+  },
+  create: async (mandantId, payload) => {
+    const { data, error } = await supabase
+      .from('fibu_buchung_serien')
+      .insert({ ...payload, mandant_id: mandantId })
+      .select().single();
+    if (error) throw error;
+    return data;
+  },
+  update: async (id, payload) => {
+    const { error } = await supabase
+      .from('fibu_buchung_serien')
+      .update({ ...payload, updated_at: new Date().toISOString() })
+      .eq('id', id);
+    if (error) throw error;
+  },
+  remove: async (id) => {
+    const { error } = await supabase.from('fibu_buchung_serien').delete().eq('id', id);
+    if (error) throw error;
+  },
+  erzeugen: async (id) => {
+    const { data, error } = await supabase.rpc('fibu_buchung_serie_erzeugen', { p_id: id });
+    if (error) throw error;
+    return data;
+  },
+  faelligeErzeugen: async (mandantId, bis) => {
+    const { data, error } = await supabase.rpc('fibu_buchung_serien_faellige_erzeugen', {
+      p_mandant_id: mandantId, p_bis: bis,
+    });
+    if (error) throw error;
+    return data;
+  },
+};
+
 // ── Kontierungsregeln (Kontovorschlag) ───────────────────────────
 export const kontierungsregelnApi = {
   list: async (mandantId) => {
