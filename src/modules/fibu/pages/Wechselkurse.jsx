@@ -1,11 +1,14 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { wechselkurseApi } from '../api';
+import { useMandant } from '../contexts/MandantContext';
 
 const DATE = (s) => s ? new Date(s + 'T00:00:00').toLocaleDateString('de-CH') : '—';
 const MONAT = (s) => s ? new Date(s + 'T00:00:00').toLocaleDateString('de-CH', { month: 'long', year: 'numeric' }) : '—';
 const K6 = (n) => Number(n).toLocaleString('de-CH', { minimumFractionDigits: 4, maximumFractionDigits: 6 });
 
 export default function Wechselkurse() {
+  const { mandant } = useMandant();
+  const buchungsTyp = mandant?.fw_buchungskurs ?? 'monat';
   const [typ, setTyp]         = useState('monat');     // 'monat' | 'tag'
   const [datum, setDatum]     = useState(null);
   const [kurse, setKurse]     = useState([]);
@@ -66,8 +69,8 @@ export default function Wechselkurse() {
           <div style={{ fontSize: 11.5, color: '#94a394' }}>Offizielle Fremdwährungskurse der ESTV / BAZG</div>
         </div>
         <div style={{ display: 'flex', gap: 3, background: '#f0f3f0', borderRadius: 8, padding: 3, marginLeft: 8 }}>
-          <button onClick={() => setTyp('monat')} style={tab(typ === 'monat')}>Monatsmittelkurs</button>
-          <button onClick={() => setTyp('tag')}   style={tab(typ === 'tag')}>Tageskurs</button>
+          <button onClick={() => setTyp('monat')} style={tab(typ === 'monat')}>Monatsmittelkurs{buchungsTyp === 'monat' ? ' ★' : ''}</button>
+          <button onClick={() => setTyp('tag')}   style={tab(typ === 'tag')}>Tageskurs{buchungsTyp === 'tag' ? ' ★' : ''}</button>
         </div>
         <div style={{ flex: 1 }} />
         <span style={{ fontSize: 12, color: '#6b826b' }}>
@@ -121,6 +124,7 @@ export default function Wechselkurse() {
         <div style={{ padding: '10px 16px', fontSize: 11, color: '#94a394' }}>
           Quelle: Eidg. Steuerverwaltung / Bundesamt für Zoll und Grenzsicherheit (backend-rates.bazg.admin.ch).
           Monatsmittelkurs = Mittel der Tageskurse 25. – 24., publiziert am 25. des Folgemonats.
+          {' '}★ = aktueller Buchungskurs des Mandanten (umstellbar unter Stammdaten › Einstellungen).
         </div>
       </div>
     </div>

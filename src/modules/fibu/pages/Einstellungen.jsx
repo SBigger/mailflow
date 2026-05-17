@@ -39,6 +39,23 @@ export default function Einstellungen() {
   });
   const [firmaSaving, setFirmaSaving] = useState(false);
 
+  const [fwBuchung,   setFwBuchung]   = useState(mandant?.fw_buchungskurs   ?? 'monat');
+  const [fwBewertung, setFwBewertung] = useState(mandant?.fw_bewertungskurs ?? 'tag');
+  const [fwSaving,    setFwSaving]    = useState(false);
+
+  const saveFw = async (feld, wert) => {
+    if (!canWrite || !mandant) return;
+    if (feld === 'fw_buchungskurs')   setFwBuchung(wert);
+    if (feld === 'fw_bewertungskurs') setFwBewertung(wert);
+    setFwSaving(true); setMsg(null);
+    try {
+      await mandantenApi.update(mandant.id, { [feld]: wert });
+      setMsg({ type: 'ok', text: 'Fremdwährungs-Einstellung gespeichert.' });
+    } catch (e) {
+      setMsg({ type: 'err', text: e.message });
+    } finally { setFwSaving(false); }
+  };
+
   const saveFirma = async () => {
     if (!canWrite || !mandant) return;
     setFirmaSaving(true); setMsg(null);
@@ -168,8 +185,44 @@ export default function Einstellungen() {
           </div>
         </div>
 
+        {/* Fremdwährung */}
+        <div style={card}>
+          <div style={cardHdr}>Fremdwährung</div>
+          <div style={{ padding: '14px 16px' }}>
+            <div style={{ fontSize: 12, color: '#6b826b', marginBottom: 12, lineHeight: 1.5 }}>
+              Welcher offizielle ESTV-Kurs verwendet wird. Die einmal gewählte Methode für
+              Buchungen muss pro Steuerperiode beibehalten werden (MWST-Vorgabe).
+            </div>
+            {(() => {
+              const lbl = { fontSize: 11, fontWeight: 600, color: '#6b826b', marginBottom: 3, display: 'block' };
+              const inp = { background: '#f7faf7', border: '1px solid #d4dcd4', borderRadius: 7, padding: '6px 9px', fontSize: 12.5, outline: 'none', minWidth: 280 };
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  <div>
+                    <label style={lbl}>Buchungskurs <span style={{ color: '#94a394', fontWeight: 400 }}>– Umrechnung von FW-Belegen ins CHF-Hauptbuch</span></label>
+                    <select style={inp} value={fwBuchung} disabled={fwSaving || !canWrite}
+                      onChange={e => saveFw('fw_buchungskurs', e.target.value)}>
+                      <option value="monat">ESTV Monatsmittelkurs</option>
+                      <option value="tag">ESTV Tageskurs</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={lbl}>Bewertungskurs <span style={{ color: '#94a394', fontWeight: 400 }}>– FW-Kursbewertung per Bilanzstichtag</span></label>
+                    <select style={inp} value={fwBewertung} disabled={fwSaving || !canWrite}
+                      onChange={e => saveFw('fw_bewertungskurs', e.target.value)}>
+                      <option value="tag">ESTV Tageskurs (Stichtag)</option>
+                      <option value="monat">ESTV Monatsmittelkurs</option>
+                    </select>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+
         <div style={{ fontSize: 11, color: '#94a394' }}>
-          Weitere Einstellungen: MWST-Methode → MWST-Abrechnung · Buchungssperre → Manuelle Buchungen
+          Weitere Einstellungen: MWST-Methode → MWST-Abrechnung · Buchungssperre → Manuelle Buchungen ·
+          Wechselkurse → Stammdaten › Wechselkurse
         </div>
       </div>
     </div>

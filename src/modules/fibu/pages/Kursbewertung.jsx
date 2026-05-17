@@ -10,6 +10,8 @@ const DATE = (s) => s ? new Date(s + 'T00:00:00').toLocaleDateString('de-CH') : 
 export default function Kursbewertung() {
   const { mandant, canWrite } = useMandant();
   const jahr = new Date().getFullYear();
+  const bewKursTyp = mandant?.fw_bewertungskurs ?? 'tag';
+  const bewKursLabel = bewKursTyp === 'tag' ? 'ESTV Tageskurs' : 'ESTV Monatsmittelkurs';
 
   const [stichtag, setStichtag] = useState(`${jahr}-12-31`);
   const [belege, setBelege]     = useState([]);
@@ -43,7 +45,7 @@ export default function Kursbewertung() {
           .lte('belegdatum', stichtag),
         supabase.from('fibu_wechselkurse')
           .select('waehrung, kurs, datum')
-          .eq('typ', 'monat')
+          .eq('typ', bewKursTyp)
           .lte('datum', stichtag)
           .order('datum', { ascending: false }),
       ]);
@@ -53,7 +55,7 @@ export default function Kursbewertung() {
       setKurse(map);
     } finally { setLoading(false); }
   };
-  useEffect(() => { load(); }, [mandant?.id, stichtag]);
+  useEffect(() => { load(); }, [mandant?.id, stichtag, bewKursTyp]);
 
   const rows = useMemo(() => belege.map(b => {
     const fwOffen   = (b.betrag_brutto ?? 0) - (b.betrag_bezahlt ?? 0);
@@ -91,7 +93,7 @@ export default function Kursbewertung() {
         <div style={{ width: 34, height: 34, borderRadius: 9, background: '#7a9b7f', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 15 }}>💱</div>
         <div>
           <div style={{ fontWeight: 700, fontSize: 16, color: '#1a1a2e' }}>FW-Kursbewertung</div>
-          <div style={{ fontSize: 11.5, color: '#94a394' }}>Offene Fremdwährungs-Kreditoren zum Stichtagskurs bewerten</div>
+          <div style={{ fontSize: 11.5, color: '#94a394' }}>Offene Fremdwährungs-Kreditoren bewerten · Bewertungskurs: {bewKursLabel}</div>
         </div>
         <div style={{ flex: 1 }} />
         <label style={{ fontSize: 12, color: '#6b826b' }}>Stichtag</label>
