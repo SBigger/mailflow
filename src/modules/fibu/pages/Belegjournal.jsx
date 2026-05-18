@@ -1,20 +1,28 @@
 import React, { useEffect, useState } from 'react';
 import { useMandant } from '../contexts/MandantContext';
-import { kreditorenApi } from '../api';
+import { kreditorenApi, lieferantenApi } from '../api';
 
 const CHF = (n) => n == null ? '—' : new Intl.NumberFormat('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
-const DATE = (s) => s ? new Date(s + 'T00:00:00').toLocaleDateString('de-CH') : '—';
+// Immer TT.MM.JJJJ
+const DATE = (s) => {
+  if (!s) return '—';
+  const [y, m, d] = String(s).slice(0, 10).split('-');
+  return `${d.padStart(2,'0')}.${m.padStart(2,'0')}.${y}`;
+};
 
 const toISO = (d) => d instanceof Date ? d.toISOString().slice(0, 10) : d;
 const firstOfYear = () => `${new Date().getFullYear()}-01-01`;
 
 export default function Belegjournal() {
   const { mandant } = useMandant();
-  const [belege, setBelege] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [von, setVon] = useState(firstOfYear());
-  const [bis, setBis] = useState(toISO(new Date()));
-  const [search, setSearch] = useState('');
+  const [belege,     setBelege]     = useState([]);
+  const [lieferanten, setLieferanten] = useState([]);
+  const [loading,    setLoading]    = useState(true);
+  const [von,        setVon]        = useState(firstOfYear());
+  const [bis,        setBis]        = useState(toISO(new Date()));
+  const [search,     setSearch]     = useState('');
+  const [statusF,    setStatusF]    = useState('alle');
+  const [liefF,      setLiefF]      = useState('');
 
   const load = () => {
     if (!mandant) return;
@@ -24,12 +32,24 @@ export default function Belegjournal() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { if (mandant) load(); }, [mandant?.id]);
+  useEffect(() => {
+    if (!mandant) return;
+    load();
+    lieferantenApi.list(mandant.id).then(setLieferanten).catch(() => {});
+  }, [mandant?.id]);
 
   const filtered = belege.filter(b => {
-    if (!search) return true;
-    const q = search.toLowerCase();
-    return b.beleg_nr?.toLowerCase().includes(q) || b.lieferant?.name?.toLowerCase().includes(q) || b.lieferant_beleg_nr?.toLowerCase().includes(q) || b.notiz?.toLowerCase().includes(q);
+    if (statusF !== 'alle' && b.status !== statusF) return false;
+    if (liefF && b.lieferant_id !== liefF) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      const hit = b.beleg_nr?.toLowerCase().includes(q)
+        || b.lieferant?.name?.toLowerCase().includes(q)
+        || b.lieferant_beleg_nr?.toLowerCase().includes(q)
+        || b.notiz?.toLowerCase().includes(q);
+      if (!hit) return false;
+    }
+    return true;
   });
 
   const exportCsv = () => {
@@ -52,10 +72,27 @@ export default function Belegjournal() {
       <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', background: '#fff', borderBottom: '1px solid #e4e9e4', flexWrap: 'wrap' }}>
         <span style={{ fontWeight: 600, fontSize: 13 }}>Belegjournal Kreditoren</span>
         <div style={{ width: 1, height: 18, background: '#e4e9e4', margin: '0 4px' }} />
+        {/* Zeitraum */}
         <input type="date" value={von} onChange={e => setVon(e.target.value)} style={inp} />
         <span style={{ color: '#94a394', fontSize: 12 }}>bis</span>
         <input type="date" value={bis} onChange={e => setBis(e.target.value)} style={inp} />
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Suche…" style={{ ...inp, width: 180 }} />
+        {/* Status-Filter */}
+        <select value={statusF} onChange={e => setStatusF(e.target.value)}
+          style={{ ...inp, padding: '5px 8px', cursor: 'pointer' }}>
+          <option value="alle">Alle Status</option>
+          <option value="offen">Offen</option>
+          <option value="teilbezahlt">Teilbezahlt</option>
+          <option value="bezahlt">Bezahlt</option>
+          <option value="storniert">Storniert</option>
+        </select>
+        {/* Lieferant-Filter */}
+        <select value={liefF} onChange={e => setLiefF(e.target.value)}
+          style={{ ...inp, padding: '5px 8px', cursor: 'pointer', maxWidth: 180 }}>
+          <option value="">Alle Lieferanten</option>
+          {lieferanten.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+        </select>
+        {/* Suche */}
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Suche…" style={{ ...inp, width: 160 }} />
         <div style={{ flex: 1 }} />
         <button onClick={exportCsv} style={{ padding: '5px 12px', borderRadius: 7, border: '1px solid #d4dcd4', background: '#fff', fontSize: 11.5, cursor: 'pointer' }}>↓ Export CSV</button>
         <button onClick={load} style={{ padding: '5px 14px', borderRadius: 7, border: 'none', background: '#7a9b7f', color: '#fff', fontSize: 12, fontWeight: 500, cursor: 'pointer' }}>Anwenden</button>

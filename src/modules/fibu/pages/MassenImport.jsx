@@ -81,6 +81,20 @@ function addDays(d, n) {
 const today = () => new Date().toISOString().slice(0, 10);
 const CHF = n => (parseFloat(n) || 0).toLocaleString('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+// Kurztext aus OCR/Mitteilung ableiten (max 12 Zeichen)
+function deriveBelegtext(mitteilung, name, fileName) {
+  const raw = (mitteilung || name || fileName || '').trim();
+  // Entferne Dateiendung, Zahlen-Referenzen, Sonderzeichen
+  const clean = raw
+    .replace(/\.[a-z]{2,4}$/i, '')          // Dateiendung
+    .replace(/\b\d{6,}\b/g, '')             // lange Zahlen (Referenzen)
+    .replace(/[_\-]{2,}/g, ' ')             // mehrere Trennzeichen
+    .replace(/[^\wäöüÄÖÜ\s]/g, '')         // Sonderzeichen
+    .replace(/\s+/g, ' ').trim();
+  // Ersten sinnvollen Teil nehmen (12 Zeichen)
+  return clean.slice(0, 12).trim();
+}
+
 function makeRow(file) {
   return {
     _id:              Math.random().toString(36).slice(2),
@@ -97,6 +111,9 @@ function makeRow(file) {
     konto_nr:         '',
     mwst_code:        'M81',
     betrag_brutto:    '',
+    belegreferenz:    '',
+    gruppe:           '',
+    belegtext:        deriveBelegtext('', '', file.name),
     errorMsg:         '',
   };
 }
@@ -342,6 +359,7 @@ export default function MassenImport() {
               zahlungsreferenz: spc.referenz ?? '',
               konto_nr:         konto,
               mwst_code:        mcode,
+              belegtext: deriveBelegtext(spc.mitteilung, spc.name, r.fileName),
               // QR-Kreditordaten für die Schnellerfassung eines Lieferanten
               qr: eigen ? null : {
                 name:    spc.name, iban: spc.iban,
@@ -427,6 +445,9 @@ export default function MassenImport() {
             betrag_mwst:      mwst,
             waehrung:         'CHF',
             status:           'offen',
+            belegreferenz:    row.belegreferenz || null,
+            gruppe:           row.gruppe || null,
+            belegtext:        row.belegtext || null,
           },
           [{
             konto_nr:      row.konto_nr,

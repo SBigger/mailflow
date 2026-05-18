@@ -163,6 +163,7 @@ export default function RechnungErfassen() {
     zahlungsbedingung_tage: 30, waehrung: 'CHF',
     zahlungsreferenz: '', notiz: '',
     belegtyp: 'rechnung',
+    belegreferenz: '', gruppe: '', belegtext: '',
   });
   const istGutschrift = head.belegtyp === 'gutschrift';
   const [positionen, setPositionen] = useState([emptyPos()]);
@@ -688,6 +689,34 @@ export default function RechnungErfassen() {
             <div>
               <label style={lbl}>Interne Notiz</label>
               <input style={inp} value={head.notiz} onChange={e => setHead(p => ({ ...p, notiz: e.target.value }))} />
+            </div>
+            <div>
+              <label style={lbl}>
+                Belegreferenz
+                <span style={{ fontWeight: 400, color: '#94a394', marginLeft: 4, fontSize: 10.5 }}>Projekt, Vertrag, o.ä.</span>
+              </label>
+              <input style={inp} value={head.belegreferenz} onChange={e => setHead(p => ({ ...p, belegreferenz: e.target.value }))} placeholder="z.B. PRJ-2026-001" />
+            </div>
+            <div>
+              <label style={lbl}>
+                Gruppe
+                <span style={{ fontWeight: 400, color: '#94a394', marginLeft: 4, fontSize: 10.5 }}>Freies Gruppierungsfeld</span>
+              </label>
+              <input style={inp} value={head.gruppe} onChange={e => setHead(p => ({ ...p, gruppe: e.target.value }))} placeholder="z.B. IT, Marketing, Infrastruktur" />
+            </div>
+            <div>
+              <label style={lbl}>
+                Belegtext
+                <span style={{ fontWeight: 400, color: '#94a394', marginLeft: 4, fontSize: 10.5 }}>max. 12 Zeichen (Kurztext)</span>
+              </label>
+              <input style={inp} value={head.belegtext} maxLength={80}
+                onChange={e => setHead(p => ({ ...p, belegtext: e.target.value }))}
+                placeholder="z.B. Jan-Mär 26" />
+              {head.belegtext && (
+                <div style={{ fontSize: 10, color: '#94a394', marginTop: 2 }}>
+                  Anzeige: «{head.belegtext.slice(0, 12)}{head.belegtext.length > 12 ? '…' : ''}»
+                </div>
+              )}
             </div>
           </div>
         </div>

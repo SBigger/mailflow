@@ -4,7 +4,13 @@ import { supabase } from '@/api/supabaseClient';
 import { useNavigate } from 'react-router-dom';
 
 const N2 = (n) => n == null ? '—' : Number(n).toLocaleString('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const fmtDate = (d) => d ? new Date(d).toLocaleDateString('de-CH') : '—';
+// Immer TT.MM.JJJJ – unabhängig von Browser-Locale
+const fmtDate = (d) => {
+  if (!d) return '—';
+  const s = typeof d === 'string' ? d : (d instanceof Date ? d.toISOString() : String(d));
+  const [y, m, day] = s.slice(0, 10).split('-');
+  return `${day.padStart(2,'0')}.${m.padStart(2,'0')}.${y}`;
+};
 
 // Beleg-Nr. kurz: "RE-2024-000420" → "420"
 const shortBeleg = (ref) => {
@@ -417,35 +423,14 @@ export default function Kontoblaetter() {
           >🖨 Drucken</button>
         </div>
 
-        {/* ── Konto-Info + KPIs ── */}
+        {/* ── Konto-Info (kompakt) ── */}
         {currentKonto && (
-          <div style={{ display: 'flex', gap: 0, borderTop: '1px solid #f0f3f0' }}>
-            <div style={{ padding: '8px 16px', flex: 2, borderRight: '1px solid #f0f3f0' }}>
-              <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#94a394', marginBottom: 2 }}>Konto</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 16, fontWeight: 800, color: '#3d6641', fontVariantNumeric: 'tabular-nums' }}>{currentKonto.konto_nr}</span>
-                <span style={{ fontSize: 13, color: '#1a1a2e' }}>{currentKonto.bezeichnung}</span>
-                {currentKonto.konto_typ && (
-                  <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 4, ...TYP_COLOR[currentKonto.konto_typ] }}>{currentKonto.konto_typ}</span>
-                )}
-              </div>
-            </div>
-            {[
-              { label: 'Eröffnungssaldo', value: eroeff, mono: true },
-              { label: 'Total Soll',      value: totalSoll },
-              { label: 'Total Haben',     value: totalHaben },
-              { label: 'Schlusssaldo',    value: schluss, bold: true },
-            ].map((k, i) => (
-              <div key={i} style={{ padding: '8px 16px', flex: 1, borderRight: i < 3 ? '1px solid #f0f3f0' : 'none' }}>
-                <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#94a394', marginBottom: 2 }}>{k.label}</div>
-                <div style={{
-                  fontSize: 14, fontWeight: k.bold ? 700 : 500, fontVariantNumeric: 'tabular-nums',
-                  color: k.value == null ? '#94a394' : (k.value < 0 ? '#991b1b' : '#1a1a2e'),
-                }}>
-                  {k.value == null ? '—' : `CHF ${N2(k.value)}`}
-                </div>
-              </div>
-            ))}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 16px', borderTop: '1px solid #f0f3f0' }}>
+            <span style={{ fontSize: 15, fontWeight: 800, color: '#3d6641', fontVariantNumeric: 'tabular-nums' }}>{currentKonto.konto_nr}</span>
+            <span style={{ fontSize: 13, color: '#1a1a2e' }}>{currentKonto.bezeichnung}</span>
+            {currentKonto.konto_typ && (
+              <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 4, ...TYP_COLOR[currentKonto.konto_typ] }}>{currentKonto.konto_typ}</span>
+            )}
           </div>
         )}
       </div>
@@ -495,7 +480,8 @@ export default function Kontoblaetter() {
                 const bg1 = i % 2 === 0 ? '#fff' : '#fafcfa';
                 const bg2 = i % 2 === 0 ? '#f7fbf7' : '#f2f7f2';
                 const bel = shortBeleg(r.beleg_ref);
-                const hasMwst = r.mwst_betrag && Math.abs(r.mwst_betrag) > 0.005 && r.konto_vorsteuer;
+                // Boolean() verhindert dass "0" als React-Text gerendert wird
+                const hasMwst = Boolean(r.mwst_betrag && Math.abs(r.mwst_betrag) > 0.005 && r.konto_vorsteuer);
                 return (
                   <React.Fragment key={r.buchungs_nr ?? i}>
                     {/* ── Zeile 1: Hauptbuchung ─────────────────────── */}

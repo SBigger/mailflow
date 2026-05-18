@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useMandant } from '../../contexts/MandantContext';
 import { supabase } from '@/api/supabaseClient';
@@ -133,6 +133,44 @@ export default function FiBuSidebar() {
   const [inboxPending, setInboxPending] = useState(0);
   const { doneCount: setupDone } = useSetupProgress(mandant?.id, mandant);
 
+  // ── Resizable sidebar ─────────────────────────────────────────
+  const NAV_MIN = 140; const NAV_MAX = 340;
+  const [navWidth, setNavWidth] = useState(() => {
+    const stored = localStorage.getItem('fibu-sidebar-width');
+    return stored ? Math.max(NAV_MIN, Math.min(NAV_MAX, parseInt(stored, 10))) : 185;
+  });
+  const dragging = useRef(false);
+  const startX   = useRef(0);
+  const startW   = useRef(0);
+
+  const onDragStart = useCallback((e) => {
+    dragging.current = true;
+    startX.current   = e.clientX;
+    startW.current   = navWidth;
+    e.preventDefault();
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }, [navWidth]);
+
+  useEffect(() => {
+    const onMove = (e) => {
+      if (!dragging.current) return;
+      const delta = e.clientX - startX.current;
+      const w = Math.max(NAV_MIN, Math.min(NAV_MAX, startW.current + delta));
+      setNavWidth(w);
+    };
+    const onUp = () => {
+      if (!dragging.current) return;
+      dragging.current = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      localStorage.setItem('fibu-sidebar-width', String(navWidth));
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+  }, [navWidth]);
+
   // Aktive Sektion: aus URL ermitteln, manueller Override möglich
   const urlSection = useMemo(() => detectSection(location.pathname), [location.pathname]);
   const [activeSection, setActiveSection] = useState(urlSection);
@@ -265,10 +303,10 @@ export default function FiBuSidebar() {
 
       {/* ── Kontext-Sidebar (hell) ───────────────────────────── */}
       <div style={{
-        width: 185, background: '#e8ede8',
-        borderRight: '1px solid #bfcfbf',
+        width: navWidth, background: '#e8ede8',
         display: 'flex', flexDirection: 'column',
-        overflow: 'hidden',
+        overflow: 'hidden', position: 'relative',
+        flexShrink: 0,
       }}>
         {/* Mandant-Selector */}
         <div style={{ padding: '12px 10px 8px', borderBottom: '1px solid #bfcfbf', flexShrink: 0 }}>
@@ -423,6 +461,20 @@ export default function FiBuSidebar() {
             );
           })}
         </nav>
+
+        {/* ── Resize-Handle ───────────────────────────────── */}
+        <div
+          onMouseDown={onDragStart}
+          style={{
+            position: 'absolute', top: 0, right: 0, bottom: 0,
+            width: 4, cursor: 'col-resize', zIndex: 10,
+            background: 'transparent',
+            transition: 'background 0.15s',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background = '#7a9b7f55'; }}
+          onMouseLeave={e => { if (!dragging.current) e.currentTarget.style.background = 'transparent'; }}
+          title="Sidebar breite ziehen"
+        />
       </div>
     </aside>
   );
