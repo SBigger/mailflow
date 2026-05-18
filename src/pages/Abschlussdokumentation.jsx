@@ -113,7 +113,25 @@ function evalExpr(str) {
 }
 
 // ── PDF Generator ─────────────────────────────────────────────────────────────
-async function generateAbschlussPDF({ konten, einstellungen, customerName, selectedYear }) {
+function safeFileName(name) {
+  return (name || "").replace(/[^a-zA-Z0-9äöüÄÖÜ]/g, "_").replace(/_+/g, "_");
+}
+
+function addAbschlussFooters(doc, customerName, selectedYear, label = "Jahresabschluss") {
+  const GRAY = [120, 120, 130];
+  const pageCount = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7); doc.setTextColor(...GRAY);
+    doc.setDrawColor(...GRAY); doc.setLineWidth(0.2);
+    doc.line(14, 286, 196, 286);
+    doc.text(`${customerName || ""}  ·  ${label} ${selectedYear}`, 14, 290);
+    doc.text(`Seite ${i} / ${pageCount}`, 196, 290, { align: "right" });
+  }
+}
+
+async function generateAbschlussPDF({ konten, einstellungen, customerName, selectedYear, returnDoc = false }) {
   const { jsPDF } = await import("jspdf");
   const { default: autoTable } = await import("jspdf-autotable");
 
@@ -369,18 +387,242 @@ async function generateAbschlussPDF({ konten, einstellungen, customerName, selec
     styles: { fontSize: 8, cellPadding: CP }, theme: "plain",
   });
 
+  // Bei returnDoc: doc + autoTable an Aufrufer zurückgeben (für Revisions-Dossier)
+  if (returnDoc) return { doc, autoTable };
+
   // ── Footer alle Seiten ──
-  const pageCount = doc.internal.getNumberOfPages();
-  for (let i = 1; i <= pageCount; i++) {
-    doc.setPage(i);
-    doc.setFontSize(7); doc.setTextColor(...GRAY);
-    doc.setDrawColor(...GRAY); doc.setLineWidth(0.2);
-    doc.line(14, 286, 196, 286);
-    doc.text(`${customerName || ""}  ·  Jahresabschluss ${selectedYear}`, 14, 290);
-    doc.text(`Seite ${i} / ${pageCount}`, 196, 290, { align: "right" });
+  addAbschlussFooters(doc, customerName, selectedYear);
+  doc.save(`Jahresabschluss_${safeFileName(customerName)}_${selectedYear}.pdf`);
+}
+
+// ── Revisions-Dossier (ZIP: Haupt-PDF + Belege pro Konto) ─────────────────────
+async function generateRevisionsDossier({ konten, einstellungen, customerName, selectedYear, onProgress }) {
+  const log = (m) => { try { onProgress?.(m); } catch { /* noop */ } };
+  const DARK = [40, 40, 50], GRAY = [120, 120, 130], BLUE = [29, 78, 216];
+  const GREEN = [22, 120, 80], LGRAY = [245, 247, 250], LGRN = [240, 250, 244];
+  const N = (v) => v == null || isNaN(v) ? "—"
+    : Number(v).toLocaleString("de-CH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  log("Erstelle Bilanz, Erfolgsrechnung …");
+  const { doc, autoTable } = await generateAbschlussPDF({
+    konten, einstellungen, customerName, selectedYear, returnDoc: true,
+  });
+
+  // ── Zusatz-Seitenkopf ──
+  const pageHeader = (title) => {
+    doc.addPage();
+    doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.setTextColor(...DARK);
+    doc.text(customerName || "Jahresabschluss", 14, 15);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(...GRAY);
+    doc.text(`${title}  ·  Geschäftsjahr ${selectedYear}`, 14, 20);
+    doc.setDrawColor(...GRAY); doc.setLineWidth(0.25); doc.line(14, 23, 196, 23);
+    return 29;
+  };
+
+  // ── Beleg-Nummerierung pro Konto ({Kontonr}-{lfd. Nr}) ──
+  const sorted = [...konten].sort((a, b) =>
+    (parseInt(a.kontonummer) || 0) - (parseInt(b.kontonummer) || 0));
+  const belegList = [];          // { ref, kontonummer, kontoname, beleg }
+  const belegRefByKonto = {};    // kontoId → ["1024-1", "1024-2"]
+  for (const k of sorted) {
+    const belege = k.arbeitspapier?.belege || [];
+    belege.forEach((b, i) => {
+      const ref = `${k.kontonummer}-${i + 1}`;
+      belegList.push({ ref, kontonummer: k.kontonummer, kontoname: k.kontoname, beleg: b });
+      (belegRefByKonto[k.id] = belegRefByKonto[k.id] || []).push(ref);
+    });
   }
 
-  doc.save(`Jahresabschluss_${(customerName || "").replace(/[^a-zA-Z0-9äöüÄÖÜ]/g, "_")}_${selectedYear}.pdf`);
+  // ── Anhang-Seiten ──
+  const blocks = einstellungen?.anhang_blocks || [];
+  if (blocks.length) {
+    log("Anhang …");
+    let y = pageHeader("Anhang zur Jahresrechnung");
+    blocks.forEach((b, bi) => {
+      if (y > 255) y = pageHeader("Anhang zur Jahresrechnung (Forts.)");
+      doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(...DARK);
+      const tl = doc.splitTextToSize(`${bi + 1}.  ${b.titel || "Anhangspunkt"}`, 182);
+      doc.text(tl, 14, y); y += tl.length * 5 + 1.5;
+      doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(60, 60, 70);
+      const lines = doc.splitTextToSize(b.inhalt || "—", 182);
+      for (const line of lines) {
+        if (y > 282) y = pageHeader("Anhang zur Jahresrechnung (Forts.)");
+        doc.text(line, 14, y); y += 4.6;
+      }
+      y += 7;
+    });
+  }
+
+  // ── Kontenplan-Detail mit Notizen & Beleg-Referenzen ──
+  log("Kontenplan-Detail …");
+  const posOrder = KONTENRAHMEN_POSITIONEN.map(p => p.id);
+  const grouped = {};
+  for (const k of sorted) {
+    const key = k.position_id || "__KEIN_MAPPING__";
+    (grouped[key] = grouped[key] || []).push(k);
+  }
+  const groupKeys = [
+    ...posOrder.filter(id => grouped[id]),
+    ...Object.keys(grouped).filter(k => !posOrder.includes(k)),
+  ];
+
+  const kpBody = [];
+  for (const gk of groupKeys) {
+    const rows = grouped[gk];
+    const pos = POSITION_MAP[gk];
+    const gLabel = pos?.label || "Ohne Mapping";
+    kpBody.push([{
+      content: gLabel.toUpperCase(), colSpan: 6,
+      styles: { fillColor: LGRAY, textColor: BLUE, fontStyle: "bold", fontSize: 8,
+        cellPadding: { top: 2.6, bottom: 2, left: 3, right: 2 } },
+    }]);
+    let gIst = 0, gVj = 0;
+    for (const k of rows) {
+      const ist = parseFloat(k.saldo_ist) || 0;
+      const vj  = parseFloat(k.saldo_vorjahr) || 0;
+      gIst += ist; gVj += vj;
+      const refs = (belegRefByKonto[k.id] || []).join(", ");
+      kpBody.push([
+        { content: String(k.kontonummer || ""), styles: { fontStyle: "bold", textColor: DARK } },
+        { content: k.kontoname || "", styles: { textColor: DARK } },
+        { content: N(ist), styles: { halign: "right", textColor: DARK } },
+        { content: N(vj),  styles: { halign: "right", textColor: GRAY } },
+        { content: k.notiz || "", styles: { textColor: [70, 70, 80], fontSize: 7 } },
+        { content: refs, styles: { halign: "center", textColor: GREEN, fontSize: 7, fontStyle: "bold" } },
+      ]);
+    }
+    kpBody.push([
+      { content: `Total ${gLabel}`, colSpan: 2,
+        styles: { fontStyle: "bold", textColor: DARK, fontSize: 8 } },
+      { content: N(gIst), styles: { halign: "right", fontStyle: "bold", textColor: DARK } },
+      { content: N(gVj),  styles: { halign: "right", fontStyle: "bold", textColor: GRAY } },
+      { content: "", colSpan: 2 },
+    ]);
+  }
+
+  let yk = pageHeader("Kontenplan-Detail mit Notizen & Belegen");
+  autoTable(doc, {
+    startY: yk,
+    head: [[
+      { content: "Konto-Nr", styles: { halign: "left" } },
+      { content: "Kontoname" },
+      { content: `Saldo ${selectedYear}`, styles: { halign: "right" } },
+      { content: `Saldo ${selectedYear - 1}`, styles: { halign: "right" } },
+      { content: "Notiz / Bemerkung" },
+      { content: "Belege", styles: { halign: "center" } },
+    ]],
+    body: kpBody,
+    columnStyles: {
+      0: { cellWidth: 18 }, 1: { cellWidth: 52 }, 2: { cellWidth: 27 },
+      3: { cellWidth: 27 }, 4: { cellWidth: 40 }, 5: { cellWidth: 18 },
+    },
+    margin: { left: 14, right: 14, top: 12 },
+    styles: { fontSize: 7.5, cellPadding: { top: 1.6, bottom: 1.6, left: 3, right: 2 }, overflow: "linebreak" },
+    headStyles: { fillColor: [235, 240, 248], textColor: DARK, fontStyle: "bold", fontSize: 7.5 },
+    theme: "grid",
+    didDrawPage: () => {
+      doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.setTextColor(...DARK);
+      doc.text(customerName || "Jahresabschluss", 14, 15);
+      doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(...GRAY);
+      doc.text(`Kontenplan-Detail mit Notizen & Belegen  ·  Geschäftsjahr ${selectedYear}`, 14, 20);
+      doc.setDrawColor(...GRAY); doc.setLineWidth(0.25); doc.line(14, 23, 196, 23);
+    },
+  });
+
+  // ── Arbeitspapiere (pro Konto mit nicht-leerem Arbeitspapier) ──
+  const apKonten = sorted.filter(k => {
+    const ap = k.arbeitspapier;
+    return ap?.rows?.length && ap?.columns?.length
+      && ap.rows.some(r => Object.values(r.cells || {}).some(v => String(v).trim()));
+  });
+  if (apKonten.length) {
+    log("Arbeitspapiere …");
+    let ya = pageHeader("Arbeitspapiere");
+    for (const k of apKonten) {
+      const ap = k.arbeitspapier;
+      if (ya > 250) ya = pageHeader("Arbeitspapiere (Forts.)");
+      doc.setFont("helvetica", "bold"); doc.setFontSize(9.5); doc.setTextColor(...DARK);
+      doc.text(`Konto ${k.kontonummer}  ${k.kontoname || ""}`, 14, ya);
+      ya += 2;
+      autoTable(doc, {
+        startY: ya + 1,
+        head: [ap.columns.map(c => ({ content: c.label || "", styles: { halign: "left" } }))],
+        body: ap.rows.map(r => ap.columns.map(c => {
+          const raw = r.cells?.[c.id] ?? "";
+          const expr = String(raw).startsWith("=") ? String(raw).slice(1) : null;
+          const num = expr != null ? evalExpr(expr) : null;
+          return num !== null ? fmtCHF(num) : String(raw);
+        })),
+        margin: { left: 14, right: 14 },
+        styles: { fontSize: 7.5, cellPadding: 1.6, overflow: "linebreak" },
+        headStyles: { fillColor: LGRN, textColor: GREEN, fontStyle: "bold", fontSize: 7.5 },
+        theme: "grid",
+      });
+      ya = doc.lastAutoTable.finalY + 9;
+    }
+  }
+
+  // ── Beleg-Verzeichnis-Seite ──
+  if (belegList.length) {
+    let yv = pageHeader("Beleg-Verzeichnis");
+    autoTable(doc, {
+      startY: yv,
+      head: [["Beleg-Nr", "Konto", "Dokument"]],
+      body: belegList.map(b => [
+        b.ref,
+        `${b.kontonummer}  ${b.kontoname || ""}`,
+        b.beleg.name || b.beleg.filename || "—",
+      ]),
+      columnStyles: { 0: { cellWidth: 24, fontStyle: "bold" }, 1: { cellWidth: 70 }, 2: { cellWidth: 88 } },
+      margin: { left: 14, right: 14 },
+      styles: { fontSize: 8, cellPadding: 2, overflow: "linebreak" },
+      headStyles: { fillColor: [235, 240, 248], textColor: DARK, fontStyle: "bold" },
+      theme: "grid",
+    });
+  }
+
+  // ── Footer auf alle Seiten ──
+  addAbschlussFooters(doc, customerName, selectedYear, "Revisions-Dossier");
+
+  // ── ZIP zusammenstellen ──
+  log("Belege werden geladen …");
+  const JSZip = (await import("jszip")).default;
+  const zip = new JSZip();
+  const baseName = `Revisions-Dossier_${safeFileName(customerName)}_${selectedYear}`;
+
+  zip.file(`${baseName}.pdf`, doc.output("arraybuffer"));
+
+  // Belege herunterladen und unter Beleg-Nr ablegen
+  const belegFolder = zip.folder("Belege");
+  let okCount = 0, failCount = 0;
+  for (let i = 0; i < belegList.length; i++) {
+    const item = belegList[i];
+    log(`Beleg ${i + 1} / ${belegList.length} …`);
+    try {
+      const { data, error } = await supabase.storage
+        .from(BUCKET).createSignedUrl(item.beleg.storage_path, 3600);
+      if (error || !data?.signedUrl) { failCount++; continue; }
+      const resp = await fetch(data.signedUrl);
+      if (!resp.ok) { failCount++; continue; }
+      const buf = await resp.arrayBuffer();
+      const orig = item.beleg.filename || item.beleg.name || "beleg";
+      const ext = orig.includes(".") ? orig.split(".").pop() : "pdf";
+      const cleanBase = safeFileName(orig.replace(/\.[^.]+$/, "")).slice(0, 60);
+      belegFolder.file(`${item.ref}_${cleanBase}.${ext}`, buf);
+      okCount++;
+    } catch { failCount++; }
+  }
+
+  log("ZIP wird gepackt …");
+  const blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = `${baseName}.zip`;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+
+  return { belegOk: okCount, belegFail: failCount, belegTotal: belegList.length };
 }
 
 function todayStr() {
@@ -2925,6 +3167,7 @@ export default function Abschlussdokumentation() {
   const [selectedYear, setSelectedYear] = useState(currentYear());
   const [activeTab, setActiveTab] = useState("kontenplan");
   const [showImport, setShowImport] = useState(false);
+  const [dossierStatus, setDossierStatus] = useState(null); // null | Fortschrittstext
 
   // ── Auto-Jahr: neuestes Jahr das wirklich Konten hat ────────────────────────
   useEffect(() => {
@@ -3108,6 +3351,27 @@ export default function Abschlussdokumentation() {
   function handleAddKonto(data) {
     if (!abschlussId) return;
     addKontoMut.mutate(data);
+  }
+
+  // ── Revisions-Dossier (ZIP) erstellen ─────────────────────────────────────
+  async function handleRevisionsDossier() {
+    if (!konten.length) { toast.error("Keine Konten vorhanden"); return; }
+    if (dossierStatus) return; // läuft bereits
+    setDossierStatus("Wird vorbereitet …");
+    try {
+      const res = await generateRevisionsDossier({
+        konten, einstellungen, customerName, selectedYear,
+        onProgress: (m) => setDossierStatus(m),
+      });
+      toast.success(
+        `Revisions-Dossier erstellt — ${res.belegOk}/${res.belegTotal} Belege beigelegt`
+        + (res.belegFail ? ` · ${res.belegFail} nicht ladbar` : "")
+      );
+    } catch (e) {
+      toast.error("Dossier fehlgeschlagen: " + (e?.message || e));
+    } finally {
+      setDossierStatus(null);
+    }
   }
 
   // ── Konten importieren (Merge: Salden aktualisieren, manuelle Daten behalten) ──
@@ -3348,6 +3612,20 @@ export default function Abschlussdokumentation() {
                 padding: "4px 10px", borderRadius: 6, cursor: "pointer",
                 border: `1px solid ${accent}60`, color: accent, backgroundColor: accent + "15" }}>
               📄 PDF
+            </button>
+
+            {/* Revisions-Dossier (ZIP) */}
+            <button onClick={handleRevisionsDossier}
+              disabled={!!dossierStatus || konten.length === 0}
+              title="Komplettes Dossier für den Revisor: PDF (Bilanz, ER, Anhang, Kontenplan mit Notizen) + alle Belege als ZIP"
+              style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 700,
+                padding: "4px 12px", borderRadius: 6,
+                cursor: dossierStatus || konten.length === 0 ? "not-allowed" : "pointer",
+                opacity: dossierStatus || konten.length === 0 ? 0.6 : 1,
+                border: "none", color: "#ffffff", backgroundColor: accent }}>
+              {dossierStatus
+                ? <span style={{ fontSize: 11, fontWeight: 600 }}>⏳ {dossierStatus}</span>
+                : <span>📦 Revisions-Dossier</span>}
             </button>
           </div>
         </div>
