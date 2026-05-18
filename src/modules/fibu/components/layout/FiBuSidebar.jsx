@@ -288,7 +288,7 @@ export default function FiBuSidebar() {
               </span>
               <Icon name="chevron" />
             </button>
-            {mandantOpen && mandanten.length > 1 && (
+            {mandantOpen && (
               <div style={{
                 position: 'absolute', left: 0, right: 0, top: '100%', zIndex: 50, marginTop: 2,
                 background: '#fff', border: '1px solid #d4dcd4', borderRadius: 8,
@@ -312,9 +312,9 @@ export default function FiBuSidebar() {
                 ))}
                 <div style={{ borderTop: '1px solid #e4e9e4' }}>
                   <button
-                    style={{ width: '100%', textAlign: 'left', padding: '6px 10px', fontSize: 11, border: 'none', background: 'none', cursor: 'pointer', color: '#7a9b7f', fontWeight: 500 }}
+                    style={{ width: '100%', textAlign: 'left', padding: '8px 10px', fontSize: 12, border: 'none', background: 'none', cursor: 'pointer', color: '#7a9b7f', fontWeight: 600 }}
                     onClick={() => { navigate('/fibu'); setMandantOpen(false); }}
-                  >+ Mandant wechseln / neu</button>
+                  >+ Neuer Mandant anlegen</button>
                 </div>
               </div>
             )}
