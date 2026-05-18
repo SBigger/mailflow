@@ -91,6 +91,7 @@ function makeRow(file) {
     lieferant_id:     '',
     lieferant_search: '',
     belegdatum:       today(),
+    buchungsdatum:    today(),    // Verbuchungsdatum, Standard = heute
     faelligkeit:      addDays(today(), 30),
     zahlungsreferenz: '',
     konto_nr:         '',
@@ -418,6 +419,7 @@ export default function MassenImport() {
             lieferant_id:     row.lieferant_id || null,
             beleg_nr:         belegNr,
             belegdatum:       row.belegdatum,
+            buchungsdatum:    row.buchungsdatum || row.belegdatum,
             faelligkeit:      row.faelligkeit,
             zahlungsreferenz: row.zahlungsreferenz || null,
             betrag_brutto:    brutto,
@@ -650,13 +652,14 @@ export default function MassenImport() {
                   <colgroup>
                     <col style={{ width: 28 }} />
                     <col style={{ width: 30 }} />
+                    <col style={{ width: '15%' }} />
                     <col style={{ width: '18%' }} />
-                    <col style={{ width: '20%' }} />
-                    <col style={{ width: '14%' }} />
-                    <col style={{ width: 100 }} />
-                    <col style={{ width: 100 }} />
+                    <col style={{ width: '12%' }} />
                     <col style={{ width: 90 }} />
-                    <col style={{ width: 80 }} />
+                    <col style={{ width: 90 }} />
+                    <col style={{ width: 90 }} />
+                    <col style={{ width: 85 }} />
+                    <col style={{ width: 70 }} />
                     <col style={{ width: 28 }} />
                   </colgroup>
                   <thead>
@@ -666,7 +669,8 @@ export default function MassenImport() {
                       <th style={{ padding: '6px 8px', textAlign: 'left' }}>Datei</th>
                       <th style={{ padding: '6px 4px', textAlign: 'left' }}>Lieferant</th>
                       <th style={{ padding: '6px 4px', textAlign: 'left' }}>Konto</th>
-                      <th style={{ padding: '6px 4px', textAlign: 'left' }}>Datum</th>
+                      <th style={{ padding: '6px 4px', textAlign: 'left' }}>Belegdatum</th>
+                      <th style={{ padding: '6px 4px', textAlign: 'left' }}>Buchungsdatum</th>
                       <th style={{ padding: '6px 4px', textAlign: 'left' }}>Fälligkeit</th>
                       <th style={{ padding: '6px 4px', textAlign: 'right' }}>Brutto CHF</th>
                       <th style={{ padding: '6px 4px', textAlign: 'left' }}>MWST</th>
@@ -760,7 +764,28 @@ export default function MassenImport() {
                                   type="date"
                                   value={row.belegdatum}
                                   style={{ ...cellInp, fontSize: 11 }}
-                                  onChange={e => updateRow(row._id, { belegdatum: e.target.value })}
+                                  onChange={e => {
+                                    const val = e.target.value;
+                                    // Buchungsdatum mitziehen wenn noch synchron
+                                    const patch = { belegdatum: val };
+                                    if (row.buchungsdatum === row.belegdatum) patch.buchungsdatum = val;
+                                    updateRow(row._id, patch);
+                                  }}
+                                />
+                              )
+                            }
+                          </td>
+
+                          {/* Buchungsdatum */}
+                          <td style={{ padding: '2px 4px', verticalAlign: 'middle' }} onClick={e => e.stopPropagation()}>
+                            {isSaved
+                              ? <span style={{ fontSize: 11.5, color: '#4a5a4a', padding: '2px 4px' }}>{row.buchungsdatum}</span>
+                              : (
+                                <input
+                                  type="date"
+                                  value={row.buchungsdatum}
+                                  style={{ ...cellInp, fontSize: 11, borderBottom: row.buchungsdatum !== row.belegdatum ? '1px solid #7a5aaa' : undefined }}
+                                  onChange={e => updateRow(row._id, { buchungsdatum: e.target.value })}
                                 />
                               )
                             }

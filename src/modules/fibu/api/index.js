@@ -156,13 +156,15 @@ export const kreditorenApi = {
   },
 
   listAll: async (mandantId, von, bis) => {
+    // Filtert auf buchungsdatum (Verbuchungsjahr), fallback auf belegdatum
     let q = supabase
       .from('fibu_kreditoren_belege')
       .select('*, lieferant:fibu_lieferanten(id,name,nr)')
       .eq('mandant_id', mandantId)
-      .order('belegdatum', { ascending: false });
-    if (von) q = q.gte('belegdatum', von);
-    if (bis) q = q.lte('belegdatum', bis);
+      .order('buchungsdatum', { ascending: false, nullsFirst: false })
+      .order('belegdatum',    { ascending: false });
+    if (von) q = q.or(`buchungsdatum.gte.${von},and(buchungsdatum.is.null,belegdatum.gte.${von})`);
+    if (bis) q = q.or(`buchungsdatum.lte.${bis},and(buchungsdatum.is.null,belegdatum.lte.${bis})`);
     const { data, error } = await q;
     if (error) throw error;
     return data ?? [];
@@ -284,19 +286,21 @@ export const kreditorenApi = {
     return `KR-${year}-${String(last + 1).padStart(4, '0')}`;
   },
 
-  // Vorsteuer für ein Quartal
+  // Vorsteuer für ein Quartal — Stichtag ist das Buchungsdatum (nicht Belegdatum)
   vorsteuerQuartal: async (mandantId, quartal, jahr) => {
     const monat = (quartal - 1) * 3 + 1;
     const von = `${jahr}-${String(monat).padStart(2, '0')}-01`;
     const bis = `${jahr}-${String(monat + 2).padStart(2, '0')}-31`;
+    // buchungsdatum steuert MWST-Perioden; fallback auf belegdatum für ältere Belege
     const { data, error } = await supabase
       .from('fibu_kreditoren_positionen')
-      .select('betrag_mwst, beleg:fibu_kreditoren_belege!inner(mandant_id, belegdatum)')
-      .eq('fibu_kreditoren_belege.mandant_id', mandantId)
-      .gte('fibu_kreditoren_belege.belegdatum', von)
-      .lte('fibu_kreditoren_belege.belegdatum', bis);
+      .select('betrag_mwst, beleg:fibu_kreditoren_belege!inner(mandant_id, buchungsdatum, belegdatum)')
+      .eq('fibu_kreditoren_belege.mandant_id', mandantId);
     if (error) throw error;
-    return (data ?? []).reduce((s, r) => s + (r.betrag_mwst ?? 0), 0);
+    return (data ?? []).filter(r => {
+      const d = r.beleg?.buchungsdatum || r.beleg?.belegdatum || '';
+      return d >= von && d <= bis;
+    }).reduce((s, r) => s + (r.betrag_mwst ?? 0), 0);
   },
 };
 

@@ -159,7 +159,7 @@ export default function RechnungErfassen() {
   const today = new Date().toISOString().slice(0, 10);
   const [head, setHead] = useState({
     lieferant_id: '', lieferant_beleg_nr: '',
-    belegdatum: today, faelligkeit: '',
+    belegdatum: today, buchungsdatum: today, faelligkeit: '',
     zahlungsbedingung_tage: 30, waehrung: 'CHF',
     zahlungsreferenz: '', notiz: '',
     belegtyp: 'rechnung',
@@ -232,7 +232,13 @@ export default function RechnungErfassen() {
   };
 
   const handleBelegdatumChange = (val) => {
-    setHead(prev => ({ ...prev, belegdatum: val, faelligkeit: addDays(val, prev.zahlungsbedingung_tage) }));
+    setHead(prev => ({
+      ...prev,
+      belegdatum: val,
+      // Buchungsdatum mitziehen wenn es noch dem Belegdatum entsprach
+      buchungsdatum: prev.buchungsdatum === prev.belegdatum ? val : prev.buchungsdatum,
+      faelligkeit: addDays(val, prev.zahlungsbedingung_tage),
+    }));
   };
 
   // ── KI-Vorschlag abrufen ────────────────────────────────────────
@@ -646,6 +652,20 @@ export default function RechnungErfassen() {
             <div>
               <label style={lbl}>Belegdatum *</label>
               <input type="date" style={inp} value={head.belegdatum} onChange={e => handleBelegdatumChange(e.target.value)} />
+            </div>
+            <div>
+              <label style={lbl}>
+                Buchungsdatum *
+                <span style={{ fontWeight: 400, color: '#94a394', marginLeft: 4, fontSize: 10.5 }}>steuert Verbuchungsjahr</span>
+              </label>
+              <input type="date" style={{ ...inp, borderColor: head.buchungsdatum !== head.belegdatum ? '#7a5aaa' : undefined }}
+                value={head.buchungsdatum}
+                onChange={e => setHead(p => ({ ...p, buchungsdatum: e.target.value }))} />
+              {head.buchungsdatum !== head.belegdatum && (
+                <div style={{ fontSize: 10.5, color: '#7a5aaa', marginTop: 3 }}>
+                  ※ Buchungsdatum weicht vom Belegdatum ab
+                </div>
+              )}
             </div>
             <div>
               <label style={lbl}>Fälligkeit *</label>

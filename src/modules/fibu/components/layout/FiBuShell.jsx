@@ -34,6 +34,7 @@ const WiederkehrendeBuchungen = React.lazy(() => import('../../pages/Wiederkehre
 const Kassenbuch           = React.lazy(() => import('../../pages/Kassenbuch'));
 const Kursbewertung        = React.lazy(() => import('../../pages/Kursbewertung'));
 const SetupAssistent       = React.lazy(() => import('../../pages/SetupAssistent'));
+const RechnungsUebersicht  = React.lazy(() => import('../../pages/RechnungsUebersicht'));
 
 const Spinner = () => (
   <div className="flex-1 flex items-center justify-center">
@@ -66,6 +67,7 @@ function FiBuContent() {
         <Route path="kreditoren/journal"            element={<Belegjournal />} />
         <Route path="kontenplan"                    element={<Kontenplan />} />
         <Route path="mwstcodes"                     element={<MwstCodes />} />
+        <Route path="kreditoren/uebersicht"         element={<RechnungsUebersicht />} />
         <Route path="kreditoren/inbox"              element={<RechnungInbox />} />
         <Route path="mwst/abrechnung"               element={<MwstAbrechnung />} />
         <Route path="jahresabschluss"               element={<Jahresabschluss />} />

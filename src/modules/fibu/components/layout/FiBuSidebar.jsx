@@ -17,6 +17,8 @@ const SECTIONS = [
     label: 'Kreditoren',
     paths: ['kreditoren'],
     items: [
+      { to: 'kreditoren/uebersicht',  label: 'Rechnungsübersicht', icon: 'list' },
+      { divider: true },
       { to: 'kreditoren/inbox',       label: 'Eingangspostfach', icon: 'inbox',      badge: 'inbox' },
       { to: 'kreditoren/erfassen',    label: 'Rechnung erfassen', icon: 'plus-doc' },
       { to: 'kreditoren/massen-import', label: 'Massen-Import',  icon: 'upload' },
