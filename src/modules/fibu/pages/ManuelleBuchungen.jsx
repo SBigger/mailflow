@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { useMandant } from '../contexts/MandantContext';
 import { manuelleBuchungApi, buchungssperreApi, kontenApi, mwstCodesApi } from '../api';
 
@@ -14,6 +14,149 @@ const ART_BADGE = {
 
 const emptyZeile = () => ({ _k: Math.random(), konto_soll: '', konto_haben: '', betrag: '', mwst_code: '', text: '' });
 
+// ── Konto-Combobox: Typeahead-Suche, vollständig tastatursteuerbar ──
+function KontoCombobox({ value, onChange, konten, placeholder, fwdRef, onTab, style = {} }) {
+  const [open, setOpen]   = useState(false);
+  const [query, setQuery] = useState('');
+  const [hi, setHi]       = useState(0);
+  const internalRef       = useRef(null);
+  const ref               = fwdRef || internalRef;
+  const listRef           = useRef(null);
+
+  const selected = konten.find(k => k.konto_nr === value);
+
+  const filtered = useMemo(() => {
+    if (!query) return konten.slice(0, 60);
+    const q = query.toLowerCase();
+    // Kontonummer-Prefix hat Priorität
+    const byNr   = konten.filter(k => k.konto_nr.startsWith(query));
+    const byName = konten.filter(k => !k.konto_nr.startsWith(query) && k.bezeichnung.toLowerCase().includes(q));
+    return [...byNr, ...byName].slice(0, 14);
+  }, [query, konten]);
+
+  // Scroll highlighted item ins Sichtfeld
+  useEffect(() => {
+    if (!listRef.current) return;
+    const item = listRef.current.children[hi];
+    item?.scrollIntoView({ block: 'nearest' });
+  }, [hi]);
+
+  const doSelect = (konto) => {
+    onChange(konto.konto_nr);
+    setOpen(false);
+    setQuery('');
+  };
+
+  const handleFocus = () => {
+    setQuery(value || '');   // Vorbelegung mit aktueller Nr. → sofort nachtippen möglich
+    setOpen(true);
+    setHi(0);
+  };
+
+  const handleBlur = () => {
+    // Kurze Verzögerung damit onMouseDown auf Listeneintrag noch feuern kann
+    setTimeout(() => { setOpen(false); setQuery(''); }, 180);
+  };
+
+  const handleChange = (e) => {
+    setQuery(e.target.value);
+    setHi(0);
+    if (!open) setOpen(true);
+  };
+
+  const handleKeyDown = (e) => {
+    if (!open) {
+      if (e.key === 'ArrowDown' || e.key === 'Enter') { e.preventDefault(); setOpen(true); setHi(0); }
+      return;
+    }
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        setHi(h => Math.min(h + 1, filtered.length - 1));
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        setHi(h => Math.max(h - 1, 0));
+        break;
+      case 'Enter':
+        e.preventDefault();
+        if (filtered[hi]) doSelect(filtered[hi]);
+        break;
+      case 'Tab':
+        if (filtered[hi]) doSelect(filtered[hi]);
+        // kein preventDefault → Tab bewegt natürlich weiter
+        onTab?.(e);
+        break;
+      case 'Escape':
+        e.preventDefault();
+        setOpen(false);
+        setQuery('');
+        break;
+      default: break;
+    }
+  };
+
+  const displayValue = open
+    ? query
+    : (selected ? `${selected.konto_nr} ${selected.bezeichnung}` : '');
+
+  const inp = {
+    background: '#f7faf7', border: '1px solid #d4dcd4', borderRadius: 7,
+    padding: '5px 7px', fontSize: 12.5, color: '#1a1a2e', outline: 'none',
+    width: '100%', boxSizing: 'border-box',
+    ...style,
+  };
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <input
+        ref={ref}
+        value={displayValue}
+        placeholder={selected ? undefined : placeholder}
+        onFocus={handleFocus}
+        onBlur={handleBlur}
+        onChange={handleChange}
+        onKeyDown={handleKeyDown}
+        autoComplete="off"
+        spellCheck={false}
+        style={inp}
+      />
+      {open && filtered.length > 0 && (
+        <div
+          ref={listRef}
+          style={{
+            position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 200,
+            background: '#fff', border: '1px solid #c5d0c5', borderRadius: 8,
+            boxShadow: '0 6px 20px rgba(0,0,0,.14)', maxHeight: 230, overflowY: 'auto',
+            marginTop: 2,
+          }}
+        >
+          {filtered.map((k, i) => (
+            <div
+              key={k.konto_nr}
+              onMouseDown={() => doSelect(k)}
+              style={{
+                padding: '6px 10px', cursor: 'pointer', fontSize: 12,
+                background: i === hi ? '#e8f4e8' : '#fff',
+                display: 'flex', gap: 8, alignItems: 'baseline',
+                borderBottom: i < filtered.length - 1 ? '1px solid #f0f3f0' : 'none',
+              }}
+            >
+              <span style={{ fontWeight: 700, color: '#4a7a4a', width: 36, flexShrink: 0, fontFamily: 'monospace', fontSize: 12 }}>
+                {k.konto_nr}
+              </span>
+              <span style={{ color: '#1a2a1a', flex: 1 }}>{k.bezeichnung}</span>
+              <span style={{ fontSize: 10, color: '#94a394', flexShrink: 0 }}>
+                {k.konto_typ === 'aktiv' ? 'A' : k.konto_typ === 'passiv' ? 'P' : k.konto_typ === 'ertrag' ? 'E' : 'K'}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ManuelleBuchungen() {
   const { mandant, canWrite } = useMandant();
   const jahr = new Date().getFullYear();
@@ -28,13 +171,17 @@ export default function ManuelleBuchungen() {
   const [gesperrtBis, setGesperrtBis] = useState(mandant?.gesperrt_bis ?? null);
   const [sperrInput, setSperrInput]   = useState('');
 
-  const [expanded, setExpanded] = useState(null);
+  const [expanded, setExpanded]       = useState(null);
   const [zeilenCache, setZeilenCache] = useState({});
 
-  const [editing, setEditing] = useState(null);   // null | 'new' | belegObj (Korrektur)
+  const [editing, setEditing] = useState(null);
   const [form, setForm]       = useState(null);
   const [saving, setSaving]   = useState(false);
   const [err, setErr]         = useState(null);
+
+  // Ref für Autofokus auf neue Zeile
+  const newRowSollRef = useRef(null);
+  const [pendingFocusNewRow, setPendingFocusNewRow] = useState(false);
 
   useEffect(() => { setGesperrtBis(mandant?.gesperrt_bis ?? null); }, [mandant?.gesperrt_bis]);
 
@@ -52,6 +199,14 @@ export default function ManuelleBuchungen() {
     kontenApi.list(mandant.id).then(k => setKonten(k.filter(x => x.aktiv)));
     mwstCodesApi.listAktiv(mandant.id).then(setMwst);
   }, [mandant?.id]);
+
+  // Fokus auf neue Zeile nach Render
+  useEffect(() => {
+    if (pendingFocusNewRow && newRowSollRef.current) {
+      newRowSollRef.current.focus();
+      setPendingFocusNewRow(false);
+    }
+  }, [pendingFocusNewRow, form?.zeilen?.length]);
 
   const kontoLabel = (nr) => {
     const k = konten.find(x => x.konto_nr === nr);
@@ -100,12 +255,34 @@ export default function ManuelleBuchungen() {
 
   const updateZeile = (k, field, value) =>
     setForm(f => ({ ...f, zeilen: f.zeilen.map(z => z._k === k ? { ...z, [field]: value } : z) }));
-  const addZeile    = () => setForm(f => ({ ...f, zeilen: [...f.zeilen, emptyZeile()] }));
+
+  const addZeile = useCallback(() =>
+    setForm(f => ({ ...f, zeilen: [...f.zeilen, emptyZeile()] })), []);
+
+  const addZeileAndFocus = useCallback(() => {
+    addZeile();
+    setPendingFocusNewRow(true);
+  }, [addZeile]);
+
   const removeZeile = (k) => setForm(f => ({ ...f, zeilen: f.zeilen.filter(z => z._k !== k) }));
 
   const validZeilen = form?.zeilen.filter(z => z.konto_soll && z.konto_haben && parseFloat(z.betrag) > 0) ?? [];
   const formTotal   = validZeilen.reduce((s, z) => s + parseFloat(z.betrag || 0), 0);
   const canSave     = form?.datum && validZeilen.length > 0 && !saving;
+
+  // ── Keyboard-Shortcuts für Modal ────────────────────────────────
+  useEffect(() => {
+    if (!editing) return;
+    const handler = (e) => {
+      if (e.key === 'Escape') { close(); }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        if (canSave) handleSave();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [editing, canSave]);
 
   const handleSave = async () => {
     if (!canSave) return;
@@ -293,76 +470,162 @@ export default function ManuelleBuchungen() {
 
       {/* ── Erfassungs-/Korrektur-Modal ── */}
       {editing && form && (
-        <div onClick={close} style={{ position: 'fixed', inset: 0, background: 'rgba(26,26,46,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 20 }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 14, width: 820, maxWidth: '96vw', maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 16px 48px rgba(0,0,0,.25)' }}>
-            <div style={{ padding: '14px 18px', borderBottom: '1px solid #e4e9e4', fontWeight: 700, fontSize: 14 }}>
-              {editing === 'new' ? 'Neue manuelle Buchung' : `Beleg ${editing.beleg_nr} korrigieren`}
-              {editing !== 'new' && <span style={{ marginLeft: 8, fontSize: 11.5, fontWeight: 400, color: '#8a6d2d' }}>· Original wird storniert, Korrektur als neuer Beleg gebucht</span>}
+        <div
+          onClick={close}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(26,26,46,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 20 }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{ background: '#fff', borderRadius: 14, width: 900, maxWidth: '96vw', maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 16px 48px rgba(0,0,0,.25)' }}
+          >
+            {/* Titel */}
+            <div style={{ padding: '14px 18px', borderBottom: '1px solid #e4e9e4', fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span>
+                {editing === 'new' ? 'Neue manuelle Buchung' : `Beleg ${editing.beleg_nr} korrigieren`}
+                {editing !== 'new' && <span style={{ marginLeft: 8, fontSize: 11.5, fontWeight: 400, color: '#8a6d2d' }}>· Original wird storniert, Korrektur als neuer Beleg gebucht</span>}
+              </span>
+              <button onClick={close} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#94a394', fontSize: 18, lineHeight: 1, padding: '0 4px' }} title="Schliessen (Esc)">✕</button>
             </div>
 
-            <div style={{ padding: 18, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {/* Body */}
+            <div style={{ padding: 18, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+              {/* Datum + Text */}
               <div style={{ display: 'flex', gap: 12 }}>
                 <div style={{ width: 160 }}>
                   <label style={lbl}>Buchungsdatum *</label>
-                  <input type="date" style={inp} value={form.datum} onChange={e => setForm(f => ({ ...f, datum: e.target.value }))} />
+                  {/* autoFocus auf Datum beim Öffnen */}
+                  <input
+                    type="date"
+                    style={inp}
+                    value={form.datum}
+                    onChange={e => setForm(f => ({ ...f, datum: e.target.value }))}
+                    autoFocus
+                  />
                 </div>
                 <div style={{ flex: 1 }}>
                   <label style={lbl}>Buchungstext</label>
-                  <input style={inp} value={form.text} onChange={e => setForm(f => ({ ...f, text: e.target.value }))} placeholder="z.B. Lohnzahlung März, Abschreibung Mobiliar …" />
+                  <input
+                    style={inp}
+                    value={form.text}
+                    onChange={e => setForm(f => ({ ...f, text: e.target.value }))}
+                    placeholder="z.B. Lohnzahlung März, Abschreibung Mobiliar …"
+                  />
                 </div>
               </div>
 
-              {/* Zeilen */}
+              {/* Buchungssätze */}
               <div>
                 <label style={lbl}>Buchungssätze (jede Zeile = ein Soll-an-Haben-Satz)</label>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead><tr>
-                    <th style={{ ...hdr, fontSize: 9.5 }}>Soll-Konto</th>
-                    <th style={{ ...hdr, fontSize: 9.5 }}>Haben-Konto</th>
-                    <th style={{ ...hdr, fontSize: 9.5 }}>Text</th>
-                    <th style={{ ...hdr, fontSize: 9.5, width: 90 }}>MWST</th>
-                    <th style={{ ...hdr, fontSize: 9.5, width: 110, textAlign: 'right' }}>Betrag</th>
-                    <th style={{ ...hdr, fontSize: 9.5, width: 30 }}></th>
-                  </tr></thead>
+                  <thead>
+                    <tr>
+                      <th style={{ ...hdr, fontSize: 9.5 }}>Soll-Konto</th>
+                      <th style={{ ...hdr, fontSize: 9.5 }}>Haben-Konto</th>
+                      <th style={{ ...hdr, fontSize: 9.5 }}>Text</th>
+                      <th style={{ ...hdr, fontSize: 9.5, width: 100 }}>MWST</th>
+                      <th style={{ ...hdr, fontSize: 9.5, width: 120, textAlign: 'right' }}>Betrag CHF</th>
+                      <th style={{ ...hdr, fontSize: 9.5, width: 28 }}></th>
+                    </tr>
+                  </thead>
                   <tbody>
-                    {form.zeilen.map(z => (
-                      <tr key={z._k}>
-                        <td style={{ ...td, padding: '4px 4px' }}>
-                          <select style={{ ...inp, padding: '5px 6px', fontSize: 12 }} value={z.konto_soll} onChange={e => updateZeile(z._k, 'konto_soll', e.target.value)}>
-                            <option value="">— Soll —</option>
-                            {konten.map(k => <option key={k.id} value={k.konto_nr}>{k.konto_nr} {k.bezeichnung}</option>)}
-                          </select>
-                        </td>
-                        <td style={{ ...td, padding: '4px 4px' }}>
-                          <select style={{ ...inp, padding: '5px 6px', fontSize: 12 }} value={z.konto_haben} onChange={e => updateZeile(z._k, 'konto_haben', e.target.value)}>
-                            <option value="">— Haben —</option>
-                            {konten.map(k => <option key={k.id} value={k.konto_nr}>{k.konto_nr} {k.bezeichnung}</option>)}
-                          </select>
-                        </td>
-                        <td style={{ ...td, padding: '4px 4px' }}>
-                          <input style={{ ...inp, padding: '5px 6px', fontSize: 12 }} value={z.text} onChange={e => updateZeile(z._k, 'text', e.target.value)} placeholder="optional" />
-                        </td>
-                        <td style={{ ...td, padding: '4px 4px' }}>
-                          <select style={{ ...inp, padding: '5px 6px', fontSize: 12 }} value={z.mwst_code} onChange={e => updateZeile(z._k, 'mwst_code', e.target.value)}>
-                            <option value="">—</option>
-                            {mwst.map(m => <option key={m.code} value={m.code}>{m.code}</option>)}
-                          </select>
-                        </td>
-                        <td style={{ ...td, padding: '4px 4px' }}>
-                          <input type="number" step="0.05" min="0" style={{ ...inp, padding: '5px 6px', fontSize: 12.5, textAlign: 'right', fontWeight: 600 }} value={z.betrag} onChange={e => updateZeile(z._k, 'betrag', e.target.value)} placeholder="0.00" />
-                        </td>
-                        <td style={{ ...td, padding: '4px 4px', textAlign: 'center' }}>
-                          {form.zeilen.length > 1 && (
-                            <button onClick={() => removeZeile(z._k)} style={{ border: 'none', background: 'none', color: '#c00', cursor: 'pointer', fontSize: 14 }}>✕</button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
+                    {form.zeilen.map((z, i) => {
+                      const isLastRow = i === form.zeilen.length - 1;
+                      return (
+                        <tr key={z._k}>
+                          {/* Soll-Konto */}
+                          <td style={{ ...td, padding: '3px 4px' }}>
+                            <KontoCombobox
+                              value={z.konto_soll}
+                              onChange={v => updateZeile(z._k, 'konto_soll', v)}
+                              konten={konten}
+                              placeholder="Soll-Konto"
+                              fwdRef={isLastRow && pendingFocusNewRow ? newRowSollRef : undefined}
+                            />
+                          </td>
+                          {/* Haben-Konto */}
+                          <td style={{ ...td, padding: '3px 4px' }}>
+                            <KontoCombobox
+                              value={z.konto_haben}
+                              onChange={v => updateZeile(z._k, 'konto_haben', v)}
+                              konten={konten}
+                              placeholder="Haben-Konto"
+                            />
+                          </td>
+                          {/* Positions-Text */}
+                          <td style={{ ...td, padding: '3px 4px' }}>
+                            <input
+                              style={{ ...inp, padding: '5px 7px', fontSize: 12.5 }}
+                              value={z.text}
+                              onChange={e => updateZeile(z._k, 'text', e.target.value)}
+                              placeholder="optional"
+                            />
+                          </td>
+                          {/* MWST */}
+                          <td style={{ ...td, padding: '3px 4px' }}>
+                            <select
+                              style={{ ...inp, padding: '5px 6px', fontSize: 12.5 }}
+                              value={z.mwst_code}
+                              onChange={e => updateZeile(z._k, 'mwst_code', e.target.value)}
+                            >
+                              <option value="">—</option>
+                              {mwst.map(m => (
+                                <option key={m.code} value={m.code}>{m.code} {m.satz}%</option>
+                              ))}
+                            </select>
+                          </td>
+                          {/* Betrag */}
+                          <td style={{ ...td, padding: '3px 4px' }}>
+                            <input
+                              type="number"
+                              step="0.05"
+                              min="0"
+                              style={{ ...inp, padding: '5px 7px', fontSize: 13, textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}
+                              value={z.betrag}
+                              onChange={e => updateZeile(z._k, 'betrag', e.target.value)}
+                              placeholder="0.00"
+                              onKeyDown={e => {
+                                // Tab auf letzter Zeile → neue Zeile + Fokus
+                                if (e.key === 'Tab' && !e.shiftKey && isLastRow) {
+                                  e.preventDefault();
+                                  addZeileAndFocus();
+                                }
+                                // Enter → neue Zeile
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  addZeileAndFocus();
+                                }
+                              }}
+                            />
+                          </td>
+                          {/* Löschen */}
+                          <td style={{ ...td, padding: '3px 4px', textAlign: 'center' }}>
+                            {form.zeilen.length > 1 && (
+                              <button
+                                onClick={() => removeZeile(z._k)}
+                                tabIndex={-1}
+                                style={{ border: 'none', background: 'none', color: '#ccc', cursor: 'pointer', fontSize: 14, lineHeight: 1 }}
+                                title="Zeile entfernen"
+                              >✕</button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
+
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
-                  <button onClick={addZeile} style={{ padding: '4px 10px', borderRadius: 7, border: 'none', background: 'transparent', color: '#7a9b7f', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>+ Zeile</button>
-                  <div style={{ fontSize: 12.5, color: '#4a5a4a' }}>Total: <strong style={{ fontVariantNumeric: 'tabular-nums' }}>CHF {CHF(formTotal)}</strong></div>
+                  <button
+                    onClick={addZeileAndFocus}
+                    style={{ padding: '4px 10px', borderRadius: 7, border: 'none', background: 'transparent', color: '#7a9b7f', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                    tabIndex={-1}
+                  >
+                    + Zeile <span style={{ fontWeight: 400, color: '#94a394', fontSize: 11 }}>(oder Tab/Enter im Betrag-Feld)</span>
+                  </button>
+                  <div style={{ fontSize: 13, color: '#4a5a4a' }}>
+                    Total: <strong style={{ fontVariantNumeric: 'tabular-nums' }}>CHF {CHF(formTotal)}</strong>
+                  </div>
                 </div>
               </div>
 
@@ -376,13 +639,36 @@ export default function ManuelleBuchungen() {
                 </div>
               </div>
 
-              {err && <div style={{ fontSize: 12, color: '#8a2d2d', background: '#fdf0f0', border: '1px solid #e0b8b8', borderRadius: 7, padding: '8px 11px' }}>{err}</div>}
+              {err && (
+                <div style={{ fontSize: 12, color: '#8a2d2d', background: '#fdf0f0', border: '1px solid #e0b8b8', borderRadius: 7, padding: '8px 11px' }}>{err}</div>
+              )}
             </div>
 
-            <div style={{ padding: '12px 18px', borderTop: '1px solid #e4e9e4', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-              <button onClick={close} style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #d4dcd4', background: '#fff', fontSize: 12.5, cursor: 'pointer' }}>Abbrechen</button>
-              <button onClick={handleSave} disabled={!canSave}
-                style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: canSave ? '#7a9b7f' : '#c5cdc5', color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: canSave ? 'pointer' : 'not-allowed' }}>
+            {/* Footer */}
+            <div style={{ padding: '10px 18px', borderTop: '1px solid #e4e9e4', display: 'flex', alignItems: 'center', gap: 8 }}>
+              {/* Tastatur-Hinweise */}
+              <div style={{ flex: 1, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                {[
+                  ['↑↓', 'Konto navigieren'],
+                  ['Enter/Tab', 'Konto wählen'],
+                  ['Tab im Betrag', 'Neue Zeile'],
+                  ['Ctrl+Enter', 'Buchen'],
+                  ['Esc', 'Abbrechen'],
+                ].map(([k, v]) => (
+                  <span key={k} style={{ fontSize: 10.5, color: '#94a394' }}>
+                    <kbd style={{ background: '#f0f3f0', border: '1px solid #d4dcd4', borderRadius: 3, padding: '1px 4px', fontSize: 10, fontFamily: 'monospace', color: '#4a5a4a' }}>{k}</kbd>
+                    {' '}{v}
+                  </span>
+                ))}
+              </div>
+              <button onClick={close} style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #d4dcd4', background: '#fff', fontSize: 12.5, cursor: 'pointer' }}>
+                Abbrechen
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={!canSave}
+                style={{ padding: '7px 18px', borderRadius: 8, border: 'none', background: canSave ? '#7a9b7f' : '#c5cdc5', color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: canSave ? 'pointer' : 'not-allowed' }}
+              >
                 {saving ? 'Speichert…' : (editing === 'new' ? 'Buchen' : 'Korrektur buchen')}
               </button>
             </div>
