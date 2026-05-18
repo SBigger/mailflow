@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { mandantenApi } from '../api';
 
 export default function MandantSelect() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [mandanten, setMandanten] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showNew, setShowNew] = useState(false);
@@ -12,10 +13,14 @@ export default function MandantSelect() {
   const [form, setForm] = useState({ name: '', uid: '', mwst_nr: '', ort: '' });
 
   useEffect(() => {
+    const wantsNew = location.state?.showNew;
     mandantenApi.list()
       .then(data => {
         setMandanten(data);
-        if (data.length === 1) navigate(`/fibu/${data[0].id}/kreditoren`, { replace: true });
+        // Auto-redirect only if navigated here normally (not via "Neuer Mandant anlegen")
+        if (data.length === 1 && !wantsNew) navigate(`/fibu/${data[0].id}/kreditoren`, { replace: true });
+        // Pre-open the create form if coming from sidebar "Neuer Mandant anlegen"
+        if (wantsNew) setShowNew(true);
       })
       .finally(() => setLoading(false));
   }, []);

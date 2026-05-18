@@ -313,7 +313,7 @@ export default function FiBuSidebar() {
                 <div style={{ borderTop: '1px solid #e4e9e4' }}>
                   <button
                     style={{ width: '100%', textAlign: 'left', padding: '8px 10px', fontSize: 12, border: 'none', background: 'none', cursor: 'pointer', color: '#7a9b7f', fontWeight: 600 }}
-                    onClick={() => { navigate('/fibu'); setMandantOpen(false); }}
+                    onClick={() => { navigate('/fibu', { state: { showNew: true } }); setMandantOpen(false); }}
                   >+ Neuer Mandant anlegen</button>
                 </div>
               </div>

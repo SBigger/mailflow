@@ -210,27 +210,13 @@ function LiefCell({ row, lieferanten, onChange, onCreateNew }) {
           setTimeout(() => setOpen(false), 150);
         }}
       />
-      {open && (filtered.length > 0 || query.trim().length >= 2) && (
+      {open && (
         <div style={{
           position: 'absolute', top: '100%', left: 0, zIndex: 50,
           background: '#fff', border: '1px solid #d4dcd4', borderRadius: 6,
           boxShadow: '0 4px 12px rgba(0,0,0,0.12)', minWidth: 220, maxHeight: 240,
           overflowY: 'auto',
         }}>
-          {query.trim().length >= 2
-            && !lieferanten.some(l => l.name.trim().toLowerCase() === query.trim().toLowerCase())
-            && (
-            <button
-              type="button"
-              onMouseDown={() => { onCreateNew?.(query.trim()); setOpen(false); }}
-              style={{
-                display: 'block', width: '100%', textAlign: 'left',
-                padding: '7px 10px', fontSize: 11.5, border: 'none',
-                borderBottom: '1px solid #eef2ee', background: '#f0f7f0',
-                cursor: 'pointer', color: '#3d6641', fontWeight: 600,
-              }}
-            >+ Neuer Lieferant: «{query.trim()}»</button>
-          )}
           {filtered.map(l => (
             <button
               key={l.id}
@@ -257,15 +243,26 @@ function LiefCell({ row, lieferanten, onChange, onCreateNew }) {
               {l.nr && <span style={{ color: '#94a394', marginLeft: 6, fontSize: 10.5 }}>#{l.nr}</span>}
             </button>
           ))}
+          {/* Always-visible "Neuer Lieferant" button at the bottom */}
+          {!lieferanten.some(l => l.name.trim().toLowerCase() === query.trim().toLowerCase()) && (
+            <button
+              type="button"
+              onMouseDown={() => { onCreateNew?.(query.trim()); setOpen(false); }}
+              style={{
+                display: 'block', width: '100%', textAlign: 'left',
+                padding: '7px 10px', fontSize: 11.5, border: 'none',
+                borderTop: filtered.length > 0 ? '1px solid #eef2ee' : 'none',
+                background: '#f0f7f0',
+                cursor: 'pointer', color: '#3d6641', fontWeight: 600,
+              }}
+            >
+              {query.trim()
+                ? `+ Neuer Lieferant: «${query.trim()}»`
+                : '+ Neuer Lieferant anlegen'
+              }
+            </button>
+          )}
         </div>
-      )}
-      {!row.lieferant_id && query.trim().length >= 1 && (
-        <button
-          type="button"
-          onClick={() => onCreateNew?.(query.trim())}
-          style={{ fontSize: 9, color: '#c4893a', padding: '1px 4px', border: 'none',
-            background: 'none', cursor: 'pointer', textAlign: 'left' }}
-        >⚠ nicht zugeordnet · anlegen</button>
       )}
     </div>
   );
