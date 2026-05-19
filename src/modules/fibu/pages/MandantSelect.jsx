@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { mandantenApi } from '../api';
+import { supabase } from '@/api/supabaseClient';
 
 export default function MandantSelect() {
   const navigate = useNavigate();
@@ -14,6 +15,8 @@ export default function MandantSelect() {
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState(null);
   const [form, setForm] = useState({ name: '', uid: '', mwst_nr: '', ort: '' });
+  const [deleting, setDeleting] = useState(null); // mandant.id das gerade gelöscht wird
+  const [hovered, setHovered] = useState(null);   // mandant.id über dem der Mauszeiger ist
 
   useEffect(() => {
     const wantsNew = location.state?.showNew;
@@ -27,6 +30,21 @@ export default function MandantSelect() {
       })
       .finally(() => setLoading(false));
   }, []);
+
+  const handleDelete = async (m, e) => {
+    e.stopPropagation();
+    if (!window.confirm(`Mandant „${m.name}" wirklich löschen?\n\nAlle Daten (Konten, Buchungen, Belege, Lieferanten) werden unwiderruflich gelöscht.`)) return;
+    setDeleting(m.id);
+    try {
+      const { error } = await supabase.rpc('fibu_delete_mandant', { p_mandant_id: m.id });
+      if (error) throw error;
+      setMandanten(prev => prev.filter(x => x.id !== m.id));
+    } catch (e) {
+      alert('Fehler: ' + e.message);
+    } finally {
+      setDeleting(null);
+    }
+  };
 
   const handleCreate = async () => {
     if (!form.name) return;
@@ -122,22 +140,41 @@ export default function MandantSelect() {
                       <div style={{ padding: '14px 18px', color: '#94a394', fontSize: 13 }}>Keine Treffer</div>
                     ) : (
                       filtered.map((m, i) => (
-                        <button
+                        <div
                           key={m.id}
-                          onClick={() => { navigate(`/fibu/${m.id}/kreditoren`); setDropOpen(false); }}
-                          style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', padding: '12px 16px', background: '#fff', border: 'none', borderTop: i > 0 ? '1px solid #f0f3f0' : 'none', cursor: 'pointer', textAlign: 'left' }}
-                          onMouseEnter={e => e.currentTarget.style.background = '#f7faf7'}
-                          onMouseLeave={e => e.currentTarget.style.background = '#fff'}
+                          style={{ display: 'flex', alignItems: 'center', borderTop: i > 0 ? '1px solid #f0f3f0' : 'none', background: hovered === m.id ? '#f7faf7' : '#fff', transition: 'background .1s' }}
+                          onMouseEnter={() => setHovered(m.id)}
+                          onMouseLeave={() => setHovered(null)}
                         >
-                          <div style={{ width: 34, height: 34, borderRadius: 9, background: '#e6ede6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 13, color: '#3d6641', flexShrink: 0 }}>
-                            {m.name.slice(0, 2).toUpperCase()}
-                          </div>
-                          <div style={{ flex: 1 }}>
-                            <div style={{ fontWeight: 600, fontSize: 13, color: '#1a1a2e' }}>{m.name}</div>
-                            <div style={{ fontSize: 11, color: '#94a394' }}>{[m.uid, m.ort].filter(Boolean).join(' · ') || 'FiBu-Mandant'}</div>
-                          </div>
-                          <span style={{ color: '#7a9b7f', fontSize: 16 }}>›</span>
-                        </button>
+                          <button
+                            onClick={() => { navigate(`/fibu/${m.id}/kreditoren`); setDropOpen(false); }}
+                            style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, padding: '12px 16px', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+                          >
+                            <div style={{ width: 34, height: 34, borderRadius: 9, background: '#e6ede6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 13, color: '#3d6641', flexShrink: 0 }}>
+                              {m.name.slice(0, 2).toUpperCase()}
+                            </div>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontWeight: 600, fontSize: 13, color: '#1a1a2e' }}>{m.name}</div>
+                              <div style={{ fontSize: 11, color: '#94a394' }}>{[m.uid, m.ort].filter(Boolean).join(' · ') || 'FiBu-Mandant'}</div>
+                            </div>
+                            <span style={{ color: '#7a9b7f', fontSize: 16 }}>›</span>
+                          </button>
+                          {/* Löschen-Button — nur beim Hover sichtbar */}
+                          <button
+                            onClick={(e) => handleDelete(m, e)}
+                            disabled={deleting === m.id}
+                            title="Mandant löschen"
+                            style={{
+                              padding: '0 14px', height: 58, border: 'none', background: 'transparent',
+                              color: hovered === m.id ? '#dc2626' : 'transparent',
+                              fontSize: 15, cursor: 'pointer', flexShrink: 0,
+                              transition: 'color .15s',
+                              opacity: deleting === m.id ? 0.4 : 1,
+                            }}
+                          >
+                            {deleting === m.id ? '…' : '🗑'}
+                          </button>
+                        </div>
                       ))
                     )}
                   </div>

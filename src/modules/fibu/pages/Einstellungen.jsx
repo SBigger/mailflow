@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useMandant } from '../contexts/MandantContext';
 import { supabase } from '@/api/supabaseClient';
 import { mandantenApi } from '../api';
@@ -24,7 +25,8 @@ function Toggle({ value, onChange, disabled }) {
 }
 
 export default function Einstellungen() {
-  const { mandant, canWrite } = useMandant();
+  const { mandant, canWrite, isAdmin } = useMandant();
+  const navigate = useNavigate();
   const [belegfreigabe, setBelegfreigabe] = useState(!!mandant?.belegfreigabe_aktiv);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
@@ -42,6 +44,10 @@ export default function Einstellungen() {
   const [fwBuchung,   setFwBuchung]   = useState(mandant?.fw_buchungskurs   ?? 'monat');
   const [fwBewertung, setFwBewertung] = useState(mandant?.fw_bewertungskurs ?? 'tag');
   const [fwSaving,    setFwSaving]    = useState(false);
+
+  // Mandant löschen
+  const [delConfirm, setDelConfirm] = useState('');
+  const [deleting,   setDeleting]   = useState(false);
 
   const saveFw = async (feld, wert) => {
     if (!canWrite || !mandant) return;
@@ -224,6 +230,58 @@ export default function Einstellungen() {
           Weitere Einstellungen: MWST-Methode → MWST-Abrechnung · Buchungssperre → Manuelle Buchungen ·
           Wechselkurse → Stammdaten › Wechselkurse
         </div>
+
+        {/* ── Danger Zone ──────────────────────────────────────── */}
+        {isAdmin && (
+          <div style={{ ...card, border: '1px solid #fca5a5', marginTop: 24 }}>
+            <div style={{ ...cardHdr, color: '#991b1b', background: '#fff5f5', borderBottom: '1px solid #fca5a5' }}>
+              ⚠ Gefahrenzone
+            </div>
+            <div style={{ padding: '16px 16px' }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a2e', marginBottom: 6 }}>
+                Mandant «{mandant?.name}» löschen
+              </div>
+              <div style={{ fontSize: 12, color: '#6b826b', marginBottom: 14, lineHeight: 1.6 }}>
+                Löscht diesen Mandanten <strong>unwiderruflich</strong> inkl. aller Daten:
+                Buchungen, Belege, Lieferanten, Kontenplan, MWST-Codes, Zahlstellen, Saldovorträge.
+                Diese Aktion kann nicht rückgängig gemacht werden.
+              </div>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                <input
+                  value={delConfirm}
+                  onChange={e => setDelConfirm(e.target.value)}
+                  placeholder={`Zur Bestätigung «${mandant?.name}» eingeben`}
+                  style={{ background: '#fff5f5', border: '1px solid #fca5a5', borderRadius: 7, padding: '7px 11px', fontSize: 12.5, outline: 'none', flex: 1, minWidth: 220, color: '#1a1a2e' }}
+                />
+                <button
+                  disabled={delConfirm !== mandant?.name || deleting}
+                  onClick={async () => {
+                    if (delConfirm !== mandant?.name) return;
+                    setDeleting(true);
+                    setMsg(null);
+                    try {
+                      const { error } = await supabase.rpc('fibu_delete_mandant', { p_mandant_id: mandant.id });
+                      if (error) throw error;
+                      navigate('/fibu', { replace: true });
+                    } catch (e) {
+                      setMsg({ type: 'err', text: e.message });
+                      setDeleting(false);
+                    }
+                  }}
+                  style={{
+                    padding: '7px 18px', borderRadius: 8, border: 'none', fontSize: 12.5, fontWeight: 600,
+                    background: delConfirm === mandant?.name ? '#dc2626' : '#e5e7eb',
+                    color: delConfirm === mandant?.name ? '#fff' : '#9ca3af',
+                    cursor: delConfirm === mandant?.name ? 'pointer' : 'not-allowed',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {deleting ? 'Löscht…' : 'Mandant löschen'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
