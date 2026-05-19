@@ -96,7 +96,8 @@ export default function Belegjournal() {
   const td  = { padding: '9px 12px', borderBottom: '1px solid #f0f3f0', fontSize: 12.5, verticalAlign: 'middle' };
   const inp = { background: '#f7faf7', border: '1px solid #d4dcd4', borderRadius: 7, padding: '5px 10px', fontSize: 12.5, outline: 'none' };
 
-  const STATUS = { offen: ['#e4e4ea','#4a4a5a'], ausstehend: ['#fef3c7','#92400e'], ebanking: ['#dbeafe','#1e40af'], teilbezahlt: ['#efe4f8','#5f3a9c'], bezahlt: ['#e3eaf5','#2e4a7d'], storniert: ['#fde7e7','#8a2d2d'] };
+  const STATUS       = { offen: ['#e4e4ea','#4a4a5a'], ausstehend: ['#fef3c7','#92400e'], ebanking: ['#dbeafe','#1e40af'], teilbezahlt: ['#efe4f8','#5f3a9c'], bezahlt: ['#e3eaf5','#2e4a7d'], storniert: ['#fde7e7','#8a2d2d'] };
+  const STATUS_LABEL = { ebanking: 'DSP' };
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -167,7 +168,7 @@ export default function Belegjournal() {
                     <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: '#2e4a7d' }}>{CHF(b.betrag_mwst)}</td>
                     <td style={{ ...td, textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{CHF(b.betrag_brutto)}</td>
                     <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: '#94a394' }}>{b.betrag_bezahlt > 0 ? CHF(b.betrag_bezahlt) : '—'}</td>
-                    <td style={td}><span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, fontWeight: 500, background: bg, color }}>{b.status}</span></td>
+                    <td style={td}><span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, fontWeight: 500, background: bg, color }}>{STATUS_LABEL[b.status] ?? b.status}</span></td>
                     <td style={{ ...td, fontSize: 12, color: '#94a394', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.notiz ?? ''}</td>
                     <td style={{ ...td, whiteSpace: 'nowrap' }}>
                       {b.status !== 'storniert' && b.status !== 'bezahlt' && (

@@ -260,7 +260,7 @@ export default function OpListe() {
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                           {b.status === 'ebanking' ? (
                             <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, fontWeight: 600, background: '#dbeafe', color: '#1e40af' }}>
-                              🏦 E-Banking
+                              DSP
                             </span>
                           ) : (
                             <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, fontWeight: 500, background: isOver ? '#fde7e7' : isFaellig ? '#fef0c7' : '#e4e4ea', color: isOver ? '#8a2d2d' : isFaellig ? '#8a5a00' : '#4a4a5a' }}>

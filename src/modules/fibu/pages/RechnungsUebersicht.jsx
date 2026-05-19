@@ -18,7 +18,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 const STATUS_META = {
   offen:       { bg: '#e4e4ea', color: '#4a4a5a', label: 'offen' },
   ausstehend:  { bg: '#fef3c7', color: '#92400e', label: 'ausstehend' },
-  ebanking:    { bg: '#dbeafe', color: '#1e40af', label: 'E-Banking' },
+  ebanking:    { bg: '#dbeafe', color: '#1e40af', label: 'DSP' },
   teilbezahlt: { bg: '#efe4f8', color: '#5f3a9c', label: 'teilbez.' },
   bezahlt:     { bg: '#e3eaf5', color: '#2e4a7d', label: 'bezahlt' },
   storniert:   { bg: '#fde7e7', color: '#8a2d2d', label: 'storniert' },
