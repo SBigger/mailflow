@@ -96,7 +96,7 @@ export default function Belegjournal() {
   const td  = { padding: '9px 12px', borderBottom: '1px solid #f0f3f0', fontSize: 12.5, verticalAlign: 'middle' };
   const inp = { background: '#f7faf7', border: '1px solid #d4dcd4', borderRadius: 7, padding: '5px 10px', fontSize: 12.5, outline: 'none' };
 
-  const STATUS = { offen: ['#e4e4ea','#4a4a5a'], teilbezahlt: ['#efe4f8','#5f3a9c'], bezahlt: ['#e3eaf5','#2e4a7d'], storniert: ['#fde7e7','#8a2d2d'] };
+  const STATUS = { offen: ['#e4e4ea','#4a4a5a'], ausstehend: ['#fef3c7','#92400e'], ebanking: ['#dbeafe','#1e40af'], teilbezahlt: ['#efe4f8','#5f3a9c'], bezahlt: ['#e3eaf5','#2e4a7d'], storniert: ['#fde7e7','#8a2d2d'] };
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -177,7 +177,7 @@ export default function Belegjournal() {
                           style={{ fontSize: 11.5, padding: '3px 10px', borderRadius: 6, border: '1px solid #f0c0b0', background: '#fff8f5', color: '#8a4a2a', cursor: 'pointer' }}
                         >Storno</button>
                       )}
-                      {!['bezahlt','teilbezahlt'].includes(b.status) && !b.mwst_abgerechnet && (b.betrag_bezahlt || 0) === 0 && (
+                      {!['bezahlt','teilbezahlt','ebanking'].includes(b.status) && !b.mwst_abgerechnet && (b.betrag_bezahlt || 0) === 0 && (
                         <button
                           onClick={() => handleDelete(b)}
                           title="Beleg löschen"

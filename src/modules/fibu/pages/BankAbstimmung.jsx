@@ -354,7 +354,7 @@ export default function BankAbstimmung() {
       .from('fibu_kreditoren_belege')
       .select('id, beleg_nr, belegdatum, faelligkeit, betrag_brutto, betrag_bezahlt, status, lieferant_id')
       .eq('mandant_id', mandantId)
-      .in('status', ['offen', 'teilbezahlt', 'bezahlt'])
+      .in('status', ['offen', 'ausstehend', 'ebanking', 'teilbezahlt', 'bezahlt'])
       .order('faelligkeit', { ascending: true });
 
     if (kredErr) console.warn('BankAbstimmung: Kreditoren-Query Fehler', kredErr);

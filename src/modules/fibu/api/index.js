@@ -149,7 +149,7 @@ export const kreditorenApi = {
       .select('*, lieferant:fibu_lieferanten(id,name,nr)')
       .eq('mandant_id', mandantId)
       .lte('belegdatum', stichtag)
-      .or(`status.in.(offen,teilbezahlt),and(status.eq.bezahlt,bezahlt_am.gt.${stichtag})`)
+      .or(`status.in.(offen,ausstehend,ebanking,teilbezahlt),and(status.eq.bezahlt,bezahlt_am.gt.${stichtag})`)
       .order('faelligkeit');
     if (error) throw error;
     return data ?? [];

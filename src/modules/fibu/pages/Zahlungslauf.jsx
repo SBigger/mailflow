@@ -238,6 +238,15 @@ export default function Zahlungslauf() {
       };
       await zahlungslaufApi.create(mandant.id, lauf, positionen);
 
+      // Belege auf "ebanking" setzen – warten auf CAMT-Bestätigung
+      for (const b of selectedBelege) {
+        try {
+          await kreditorenApi.update(b.id, { status: 'ebanking' });
+        } catch (e) {
+          console.error('Status-Update ebanking fehlgeschlagen für', b.beleg_nr, e);
+        }
+      }
+
       // Skonto-Abzüge verbuchen
       for (const b of selectedBelege) {
         if (skonti.has(b.id) && skontoBetrag(b) > 0) {

@@ -17,6 +17,8 @@ const today = () => new Date().toISOString().slice(0, 10);
 
 const STATUS_META = {
   offen:       { bg: '#e4e4ea', color: '#4a4a5a', label: 'offen' },
+  ausstehend:  { bg: '#fef3c7', color: '#92400e', label: 'ausstehend' },
+  ebanking:    { bg: '#dbeafe', color: '#1e40af', label: 'E-Banking' },
   teilbezahlt: { bg: '#efe4f8', color: '#5f3a9c', label: 'teilbez.' },
   bezahlt:     { bg: '#e3eaf5', color: '#2e4a7d', label: 'bezahlt' },
   storniert:   { bg: '#fde7e7', color: '#8a2d2d', label: 'storniert' },
@@ -666,7 +668,7 @@ export default function RechnungsUebersicht() {
                             style={{ marginLeft: 4, fontSize: 11.5, padding: '3px 10px', borderRadius: 6, border: '1px solid #f0c0b0', background: '#fff8f5', color: '#8a4a2a', cursor: 'pointer' }}
                           >Storno</button>
                         )}
-                        {!['bezahlt','teilbezahlt'].includes(b.status) && !b.mwst_abgerechnet && (b.betrag_bezahlt || 0) === 0 && (
+                        {!['bezahlt','teilbezahlt','ebanking'].includes(b.status) && !b.mwst_abgerechnet && (b.betrag_bezahlt || 0) === 0 && (
                           <button
                             onClick={e => { e.stopPropagation(); handleDelete(b); }}
                             title="Beleg löschen"

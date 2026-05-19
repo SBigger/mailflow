@@ -258,9 +258,15 @@ export default function OpListe() {
                         )
                       ) : (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                          <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, fontWeight: 500, background: isOver ? '#fde7e7' : isFaellig ? '#fef0c7' : '#e4e4ea', color: isOver ? '#8a2d2d' : isFaellig ? '#8a5a00' : '#4a4a5a' }}>
-                            {isOver ? `überfällig +${diff}` : isFaellig ? 'fällig' : 'offen'}
-                          </span>
+                          {b.status === 'ebanking' ? (
+                            <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, fontWeight: 600, background: '#dbeafe', color: '#1e40af' }}>
+                              🏦 E-Banking
+                            </span>
+                          ) : (
+                            <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, fontWeight: 500, background: isOver ? '#fde7e7' : isFaellig ? '#fef0c7' : '#e4e4ea', color: isOver ? '#8a2d2d' : isFaellig ? '#8a5a00' : '#4a4a5a' }}>
+                              {isOver ? `überfällig +${diff}` : isFaellig ? 'fällig' : 'offen'}
+                            </span>
+                          )}
                           {b.freigabe_status === 'ausstehend' && (
                             <>
                               <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: '#fef3c7', color: '#92400e' }}>⏳ Freigabe offen</span>
@@ -271,7 +277,7 @@ export default function OpListe() {
                               >✓ Freigeben</button>
                             </>
                           )}
-                          {(b.betrag_bezahlt || 0) === 0 && (
+                          {b.status !== 'ebanking' && (b.betrag_bezahlt || 0) === 0 && (
                             <button
                               onClick={() => openStorno(b)}
                               title="Rechnung stornieren"
