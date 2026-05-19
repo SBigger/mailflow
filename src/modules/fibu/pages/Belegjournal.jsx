@@ -177,7 +177,7 @@ export default function Belegjournal() {
                           style={{ fontSize: 11.5, padding: '3px 10px', borderRadius: 6, border: '1px solid #f0c0b0', background: '#fff8f5', color: '#8a4a2a', cursor: 'pointer' }}
                         >Storno</button>
                       )}
-                      {b.status !== 'bezahlt' && !b.mwst_abgerechnet && (b.betrag_bezahlt || 0) === 0 && (
+                      {!['bezahlt','teilbezahlt'].includes(b.status) && !b.mwst_abgerechnet && (b.betrag_bezahlt || 0) === 0 && (
                         <button
                           onClick={() => handleDelete(b)}
                           title="Beleg löschen"
