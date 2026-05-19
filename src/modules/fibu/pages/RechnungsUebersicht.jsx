@@ -127,7 +127,7 @@ function EditModal({ beleg, konten, mwstCodes, lieferanten, onSave, onClose }) {
     }
   };
 
-  const fmtN = n => (parseFloat(n) || 0).toFixed(2);
+  const fmtN = n => (n == null ? '—' : Number(n).toLocaleString('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 
   // Kompakter Stil für Positions-Tabelle
   const piS  = { ...inp, fontSize: 11.5, padding: '3px 6px' };
@@ -363,6 +363,11 @@ export default function RechnungsUebersicht() {
   const [loading,    setLoading]    = useState(true);
   const [editBeleg,  setEditBeleg]  = useState(null);
 
+  // Storno-State
+  const [stornoBeleg,      setStornoBeleg]      = useState(null);
+  const [stornoDatum,      setStornoDatum]      = useState('');
+  const [stornoProcessing, setStornoProcessing] = useState(false);
+
   // Filter
   const curYear = new Date().getFullYear();
   const [vonFilter,    setVonFilter]    = useState(`${curYear}-01-01`);
@@ -402,6 +407,31 @@ export default function RechnungsUebersicht() {
   }, [mandant?.id]);
 
   useEffect(() => { load(); }, [load]);
+
+  const handleStorno = async () => {
+    if (!stornoBeleg || !stornoDatum) return;
+    setStornoProcessing(true);
+    try {
+      await kreditorenApi.storno(stornoBeleg.id, stornoDatum);
+      setStornoBeleg(null);
+      setStornoDatum('');
+      await load();
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setStornoProcessing(false);
+    }
+  };
+
+  const handleDelete = async (b) => {
+    if (!window.confirm(`Beleg ${b.beleg_nr} wirklich löschen?\n\nDiese Aktion kann nicht rückgängig gemacht werden.`)) return;
+    try {
+      await kreditorenApi.deleteBeleg(b.id);
+      await load();
+    } catch (e) {
+      alert(e.message);
+    }
+  };
 
   // Belege mit Positionen für Edit-Modal laden
   const openEdit = async (b) => {
@@ -624,11 +654,25 @@ export default function RechnungsUebersicht() {
                         {b.status === 'bezahlt' || b.status === 'storniert' ? '—' : CHF(offen)}
                       </td>
                       <td style={td}><StatusChip status={b.status} /></td>
-                      <td style={td}>
+                      <td style={{ ...td, whiteSpace: 'nowrap' }}>
                         <button
                           onClick={e => { e.stopPropagation(); openEdit(b); }}
                           style={{ fontSize: 11.5, padding: '3px 10px', borderRadius: 6, border: '1px solid #d4dcd4', background: '#fff', cursor: 'pointer' }}
                         >Bearbeiten</button>
+                        {b.status !== 'storniert' && b.status !== 'bezahlt' && (
+                          <button
+                            onClick={e => { e.stopPropagation(); setStornoBeleg(b); setStornoDatum(today()); }}
+                            title="Beleg stornieren"
+                            style={{ marginLeft: 4, fontSize: 11.5, padding: '3px 10px', borderRadius: 6, border: '1px solid #f0c0b0', background: '#fff8f5', color: '#8a4a2a', cursor: 'pointer' }}
+                          >Storno</button>
+                        )}
+                        {(b.status === 'offen' || b.status === 'ausstehend') && !b.mwst_abgerechnet && (b.betrag_bezahlt || 0) === 0 && (
+                          <button
+                            onClick={e => { e.stopPropagation(); handleDelete(b); }}
+                            title="Beleg löschen"
+                            style={{ marginLeft: 4, fontSize: 13, padding: '2px 7px', borderRadius: 6, border: '1px solid #f0b0b0', background: '#fff5f5', color: '#c0302a', cursor: 'pointer', lineHeight: 1.2 }}
+                          >🗑</button>
+                        )}
                       </td>
                     </tr>
                   );
@@ -662,6 +706,38 @@ export default function RechnungsUebersicht() {
           onSave={handleSave}
           onClose={() => setEditBeleg(null)}
         />
+      )}
+
+      {/* ── Storno-Dialog ── */}
+      {stornoBeleg && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={e => { if (e.target === e.currentTarget) { setStornoBeleg(null); setStornoDatum(''); } }}>
+          <div style={{ background: '#fff', borderRadius: 14, width: 420, boxShadow: '0 20px 60px rgba(0,0,0,0.25)', border: '1px solid #f0c0b0' }}>
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid #f0e4e4', background: 'linear-gradient(135deg, #fff8f5 0%, #fef2ee 100%)', borderRadius: '14px 14px 0 0' }}>
+              <div style={{ fontWeight: 700, fontSize: 14, color: '#8a2d2d' }}>Beleg stornieren</div>
+              <div style={{ fontSize: 12, color: '#6b826b', marginTop: 2 }}>{stornoBeleg.beleg_nr} — {stornoBeleg.lieferant?.name}</div>
+            </div>
+            <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div style={{ fontSize: 12.5, color: '#4a4a5a' }}>
+                Es wird eine Storno-Gutschrift erstellt. Der Beleg wird als «storniert» markiert.
+              </div>
+              <div>
+                <label style={lbl}>Storno-Datum</label>
+                <input type="date" style={inp} value={stornoDatum} onChange={e => setStornoDatum(e.target.value)} />
+              </div>
+            </div>
+            <div style={{ padding: '14px 20px', borderTop: '1px solid #f0e4e4', display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={() => { setStornoBeleg(null); setStornoDatum(''); }}
+                style={{ padding: '8px 18px', borderRadius: 8, border: '1px solid #d4dcd4', background: '#fff', fontSize: 12.5, cursor: 'pointer' }}>
+                Abbrechen
+              </button>
+              <button onClick={handleStorno} disabled={stornoProcessing || !stornoDatum}
+                style={{ padding: '8px 20px', borderRadius: 8, border: 'none', background: '#c0402a', color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', opacity: (stornoProcessing || !stornoDatum) ? .6 : 1 }}>
+                {stornoProcessing ? 'Storniert…' : 'Stornieren'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

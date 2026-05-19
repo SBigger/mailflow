@@ -243,6 +243,14 @@ export const kreditorenApi = {
     return data;   // id der Storno-Gutschrift
   },
 
+  // Beleg löschen (nur Status offen/ausstehend, kein Bezahlt, keine MWST-Abrechnung)
+  deleteBeleg: async (belegId) => {
+    const { error } = await supabase.rpc('fibu_delete_kreditoren_beleg', {
+      p_beleg_id: belegId,
+    });
+    if (error) throw error;
+  },
+
   // Skonto-Abzug einer Kreditoren-Zahlung verbuchen
   skontoBuchen: async (belegId, skontoBetrag, datum) => {
     const { error } = await supabase.rpc('fibu_skonto_buchen', {

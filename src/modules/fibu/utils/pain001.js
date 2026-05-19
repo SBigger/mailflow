@@ -168,15 +168,14 @@ export function generatePain001(input) {
   L.push('      <DbtrAcct>');
   L.push(`        <Id><IBAN>${xmlEsc(normIban(debtorIban))}</IBAN></Id>`);
   L.push('      </DbtrAcct>');
-  L.push('      <DbtrAgt>');
-  L.push('        <FinInstnId>');
   if (debtorBic && debtorBic.trim()) {
+    L.push('      <DbtrAgt>');
+    L.push('        <FinInstnId>');
     L.push(`          <BICFI>${xmlEsc(debtorBic.trim().toUpperCase())}</BICFI>`);
-  } else {
-    L.push('          <Othr><Id>NOTPROVIDED</Id></Othr>');
+    L.push('        </FinInstnId>');
+    L.push('      </DbtrAgt>');
   }
-  L.push('        </FinInstnId>');
-  L.push('      </DbtrAgt>');
+  // Kein DbtrAgt ohne BIC – Bank routet via Debtor-IBAN (SIX SPS 2025)
   L.push('      <ChrgBr>SLEV</ChrgBr>');
 
   // ── Einzeltransaktionen ──

@@ -24,6 +24,11 @@ export default function Belegjournal() {
   const [statusF,    setStatusF]    = useState('alle');
   const [liefF,      setLiefF]      = useState('');
 
+  // Storno-State
+  const [stornoBeleg,      setStornoBeleg]      = useState(null);
+  const [stornoDatum,      setStornoDatum]      = useState('');
+  const [stornoProcessing, setStornoProcessing] = useState(false);
+
   const load = () => {
     if (!mandant) return;
     setLoading(true);
@@ -51,6 +56,33 @@ export default function Belegjournal() {
     }
     return true;
   });
+
+  const handleStorno = async () => {
+    if (!stornoBeleg || !stornoDatum) return;
+    setStornoProcessing(true);
+    try {
+      await kreditorenApi.storno(stornoBeleg.id, stornoDatum);
+      setStornoBeleg(null);
+      setStornoDatum('');
+      load();
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setStornoProcessing(false);
+    }
+  };
+
+  const handleDelete = async (b) => {
+    if (!window.confirm(`Beleg ${b.beleg_nr} wirklich löschen?\n\nDiese Aktion kann nicht rückgängig gemacht werden.`)) return;
+    try {
+      await kreditorenApi.deleteBeleg(b.id);
+      load();
+    } catch (e) {
+      alert(e.message);
+    }
+  };
+
+  const today = () => new Date().toISOString().slice(0, 10);
 
   const exportCsv = () => {
     const rows = [['Buchungs-Nr.','Beleg-Nr.','Lieferant','Lieferant-Beleg-Nr.','Belegdatum','Fälligkeit','Brutto CHF','MWST CHF','Status','Notiz']];
@@ -116,6 +148,7 @@ export default function Belegjournal() {
               <th style={{ ...hdr, textAlign: 'right' }}>Bezahlt CHF</th>
               <th style={hdr}>Status</th>
               <th style={hdr}>Notiz</th>
+              <th style={hdr}></th>
             </tr></thead>
             <tbody>
               {filtered.map(b => {
@@ -136,11 +169,27 @@ export default function Belegjournal() {
                     <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: '#94a394' }}>{b.betrag_bezahlt > 0 ? CHF(b.betrag_bezahlt) : '—'}</td>
                     <td style={td}><span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, fontWeight: 500, background: bg, color }}>{b.status}</span></td>
                     <td style={{ ...td, fontSize: 12, color: '#94a394', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.notiz ?? ''}</td>
+                    <td style={{ ...td, whiteSpace: 'nowrap' }}>
+                      {b.status !== 'storniert' && b.status !== 'bezahlt' && (
+                        <button
+                          onClick={() => { setStornoBeleg(b); setStornoDatum(today()); }}
+                          title="Beleg stornieren"
+                          style={{ fontSize: 11.5, padding: '3px 10px', borderRadius: 6, border: '1px solid #f0c0b0', background: '#fff8f5', color: '#8a4a2a', cursor: 'pointer' }}
+                        >Storno</button>
+                      )}
+                      {(b.status === 'offen' || b.status === 'ausstehend') && !b.mwst_abgerechnet && (b.betrag_bezahlt || 0) === 0 && (
+                        <button
+                          onClick={() => handleDelete(b)}
+                          title="Beleg löschen"
+                          style={{ marginLeft: 4, fontSize: 13, padding: '2px 7px', borderRadius: 6, border: '1px solid #f0b0b0', background: '#fff5f5', color: '#c0302a', cursor: 'pointer', lineHeight: 1.2 }}
+                        >🗑</button>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
               {filtered.length === 0 && (
-                <tr><td colSpan={11} style={{ padding: 40, textAlign: 'center', color: '#94a394', fontSize: 12.5 }}>Keine Belege für diesen Zeitraum</td></tr>
+                <tr><td colSpan={12} style={{ padding: 40, textAlign: 'center', color: '#94a394', fontSize: 12.5 }}>Keine Belege für diesen Zeitraum</td></tr>
               )}
             </tbody>
             {filtered.length > 0 && (
@@ -150,12 +199,44 @@ export default function Belegjournal() {
                 <td style={{ ...td, textAlign: 'right', fontWeight: 700, background: '#f7faf7', borderTop: '2px solid #d4dcd4', fontVariantNumeric: 'tabular-nums', color: '#2e4a7d' }}>{CHF(filtered.reduce((s,b)=>s+b.betrag_mwst,0))}</td>
                 <td style={{ ...td, textAlign: 'right', fontWeight: 700, background: '#f7faf7', borderTop: '2px solid #d4dcd4', fontVariantNumeric: 'tabular-nums' }}>{CHF(filtered.reduce((s,b)=>s+b.betrag_brutto,0))}</td>
                 <td style={{ ...td, textAlign: 'right', fontWeight: 700, background: '#f7faf7', borderTop: '2px solid #d4dcd4', fontVariantNumeric: 'tabular-nums', color: '#94a394' }}>{CHF(filtered.reduce((s,b)=>s+b.betrag_bezahlt,0))}</td>
-                <td colSpan={2} style={{ ...td, background: '#f7faf7', borderTop: '2px solid #d4dcd4' }}></td>
+                <td colSpan={3} style={{ ...td, background: '#f7faf7', borderTop: '2px solid #d4dcd4' }}></td>
               </tr></tfoot>
             )}
           </table>
         )}
       </div>
+
+      {/* ── Storno-Dialog ── */}
+      {stornoBeleg && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={e => { if (e.target === e.currentTarget) { setStornoBeleg(null); setStornoDatum(''); } }}>
+          <div style={{ background: '#fff', borderRadius: 14, width: 420, boxShadow: '0 20px 60px rgba(0,0,0,0.25)', border: '1px solid #f0c0b0' }}>
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid #f0e4e4', background: 'linear-gradient(135deg, #fff8f5 0%, #fef2ee 100%)', borderRadius: '14px 14px 0 0' }}>
+              <div style={{ fontWeight: 700, fontSize: 14, color: '#8a2d2d' }}>Beleg stornieren</div>
+              <div style={{ fontSize: 12, color: '#6b826b', marginTop: 2 }}>{stornoBeleg.beleg_nr} — {stornoBeleg.lieferant?.name}</div>
+            </div>
+            <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div style={{ fontSize: 12.5, color: '#4a4a5a' }}>
+                Es wird eine Storno-Gutschrift erstellt. Der Beleg wird als «storniert» markiert.
+              </div>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 600, color: '#6b826b', marginBottom: 3, display: 'block' }}>Storno-Datum</label>
+                <input type="date" style={inp} value={stornoDatum} onChange={e => setStornoDatum(e.target.value)} />
+              </div>
+            </div>
+            <div style={{ padding: '14px 20px', borderTop: '1px solid #f0e4e4', display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={() => { setStornoBeleg(null); setStornoDatum(''); }}
+                style={{ padding: '8px 18px', borderRadius: 8, border: '1px solid #d4dcd4', background: '#fff', fontSize: 12.5, cursor: 'pointer' }}>
+                Abbrechen
+              </button>
+              <button onClick={handleStorno} disabled={stornoProcessing || !stornoDatum}
+                style={{ padding: '8px 20px', borderRadius: 8, border: 'none', background: '#c0402a', color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', opacity: (stornoProcessing || !stornoDatum) ? .6 : 1 }}>
+                {stornoProcessing ? 'Storniert…' : 'Stornieren'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
