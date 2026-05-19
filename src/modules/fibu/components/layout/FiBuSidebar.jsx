@@ -82,7 +82,7 @@ const SECTIONS = [
     id:    'stammdaten',
     short: '⚙',
     label: 'Stammdaten',
-    paths: ['kontenplan', 'mwstcodes', 'zahlstellen', 'wechselkurse', 'kontierungsregeln', 'einstellungen', 'setup'],
+    paths: ['kontenplan', 'mwstcodes', 'zahlstellen', 'wechselkurse', 'kontierungsregeln', 'einstellungen', 'setup', 'benutzerverwaltung'],
     items: [
       { to: 'setup',         label: '🚀 Setup-Assistent', icon: 'grid', badge: 'setup' },
       { divider: true },
@@ -92,6 +92,8 @@ const SECTIONS = [
       { to: 'wechselkurse',  label: 'Wechselkurse',      icon: 'percent' },
       { to: 'kontierungsregeln', label: 'Kontierungsregeln', icon: 'list' },
       { to: 'einstellungen', label: 'Einstellungen',     icon: 'grid' },
+      { divider: true },
+      { to: 'benutzerverwaltung', label: 'Benutzerverwaltung', icon: 'users' },
     ],
   },
 ];
