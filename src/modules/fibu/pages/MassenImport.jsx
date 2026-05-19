@@ -17,6 +17,10 @@ import { findKontoVorschlag, istEigeneFirma } from '../utils/kontierung';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js';
 
+// ── Zeilen-Cache: überlebt React-Navigation (kein Page-Reload) ────
+let _rowCache = [];
+let _rowCacheMandantId = null;
+
 // ── Swiss SPC QR-Rechnung Parser ──────────────────────────────────
 function parseSpc(text) {
   if (!text || !text.startsWith('SPC')) return null;
@@ -80,6 +84,71 @@ function addDays(d, n) {
 }
 const today = () => new Date().toISOString().slice(0, 10);
 const CHF = n => (parseFloat(n) || 0).toLocaleString('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// ── PDF-Text extrahieren (erste 3 Seiten, für Datum + Rechnungsnr) ──
+async function extractPdfText(file) {
+  if (file.type !== 'application/pdf') return '';
+  try {
+    const buf = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
+    let text = '';
+    for (let i = 1; i <= Math.min(pdf.numPages, 3); i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      text += content.items.map(it => it.str).join(' ') + '\n';
+    }
+    return text.trim();
+  } catch { return ''; }
+}
+
+// ── Rechnungsnummer aus Text extrahieren ──────────────────────────
+function extractInvoiceNr(text) {
+  if (!text) return '';
+  const patterns = [
+    /(?:Rechnungs(?:nummer|[-\s]?nr\.?|[-\s]?#?))\s*[:\s#]*([A-Z0-9][\w\-\/\.]{1,20})/i,
+    /(?:Beleg(?:nummer|[-\s]?nr\.?))\s*[:\s#]*([A-Z0-9][\w\-\/\.]{1,20})/i,
+    /(?:Invoice\s*(?:No\.?|Number|#?))\s*[:\s]*([A-Z0-9][\w\-\/\.]{1,20})/i,
+    /(?:Faktura(?:nr\.?|nummer)?)\s*[:\s#]*([A-Z0-9][\w\-\/\.]{1,20})/i,
+    /\bNr\.\s+([A-Z0-9][\w\-\/\.]{3,20})/,
+  ];
+  for (const p of patterns) {
+    const m = text.match(p);
+    if (m?.[1] && m[1].length >= 2 && m[1].length <= 25) return m[1].trim();
+  }
+  return '';
+}
+
+// ── Belegdatum aus Text extrahieren ──────────────────────────────
+function extractBelegdatum(text) {
+  if (!text) return '';
+  // Suche Datum nahe an Label-Wörtern
+  const labeled = text.match(/(?:Datum|Rechnungsdatum|Invoice\s*Date|Ausstellungsdatum)[:\s]*(\d{1,2}[\.\/]\d{1,2}[\.\/]20\d{2})/i);
+  const raw = labeled?.[1] || text.match(/\b(\d{1,2})\.(\d{1,2})\.(20\d{2})\b/)?.[0];
+  if (!raw) return '';
+  const m = raw.match(/(\d{1,2})[\.\/](\d{1,2})[\.\/](20\d{2})/);
+  if (!m) return '';
+  const d = m[1].padStart(2,'0'), mo = m[2].padStart(2,'0'), y = m[3];
+  // Sanity check: Monat 1-12, Tag 1-31
+  if (parseInt(mo) < 1 || parseInt(mo) > 12 || parseInt(d) < 1 || parseInt(d) > 31) return '';
+  return `${y}-${mo}-${d}`;
+}
+
+// ── Lieferant per Name matchen (Fallback wenn kein IBAN-Match) ───
+function matchLieferantByName(name, lieferanten) {
+  if (!name || !lieferanten?.length) return null;
+  const n = name.toLowerCase().trim();
+  // 1. Exakter Match
+  let found = lieferanten.find(l => l.name.toLowerCase().trim() === n);
+  if (found) return found;
+  // 2. Einer enthält den anderen (mind. 6 Zeichen)
+  if (n.length >= 6) {
+    found = lieferanten.find(l => {
+      const ln = l.name.toLowerCase().trim();
+      return ln.length >= 6 && (n.includes(ln) || ln.includes(n));
+    });
+  }
+  return found || null;
+}
 
 // Kurztext aus OCR/Mitteilung ableiten (max 12 Zeichen)
 function deriveBelegtext(mitteilung, name, fileName) {
@@ -191,8 +260,8 @@ function LiefCell({ row, lieferanten, onChange, onCreateNew }) {
   const wrapRef = useRef(null);
 
   const filtered = query.length >= 1
-    ? lieferanten.filter(l => l.name.toLowerCase().includes(query.toLowerCase())).slice(0, 8)
-    : lieferanten.slice(0, 8);
+    ? lieferanten.filter(l => l.name.toLowerCase().includes(query.toLowerCase()))
+    : lieferanten;
 
   useEffect(() => {
     setQuery(row.lieferant_search || '');
@@ -310,6 +379,11 @@ export default function MassenImport() {
   // Master-Daten laden
   useEffect(() => {
     if (!mandant?.id) return;
+    // Zeilen wiederherstellen falls gleicher Mandant
+    if (_rowCacheMandantId === mandant.id && _rowCache.length > 0) {
+      setRows(_rowCache.filter(r => r.status !== 'saving')); // saving-Status zurücksetzen
+      if (!selectedId) setSelectedId(_rowCache[0]?._id ?? null);
+    }
     mandantRef.current = mandant;
     lieferantenApi.list(mandant.id).then(data => {
       setLieferanten(data);
@@ -328,6 +402,13 @@ export default function MassenImport() {
     }).catch(console.error);
   }, [mandant?.id]);
 
+  useEffect(() => {
+    if (mandant?.id) {
+      _rowCache = rows;
+      _rowCacheMandantId = mandant.id;
+    }
+  }, [rows, mandant?.id]);
+
   // Sequenzielle QR-Parse-Queue
   const processQueue = useCallback(async () => {
     if (parsingRef.current) return;
@@ -335,15 +416,30 @@ export default function MassenImport() {
     while (parseQueueRef.current.length > 0) {
       const { rowId, file } = parseQueueRef.current.shift();
       try {
+        // 1. QR scannen
         const qrText = await scanQrInFile(file);
         const spc = qrText ? parseSpc(qrText) : null;
+
+        // 2. PDF-Text extrahieren (für Datum + Rechnungsnr., parallel zum QR-Scan)
+        const pdfText = await extractPdfText(file);
+
+        // 3. Rechnungsnummer + Datum aus Text
+        const invoiceNr = extractInvoiceNr(spc?.mitteilung || pdfText);
+        const rawDatum  = extractBelegdatum(pdfText);
+
         setRows(prev => prev.map(r => {
           if (r._id !== rowId) return r;
+          const datumPatch = rawDatum ? {
+            belegdatum:    rawDatum,
+            buchungsdatum: rawDatum,
+            faelligkeit:   addDays(rawDatum, 30),
+          } : {};
+
           if (spc) {
-            const lief = lieferantenRef.current.find(l => l.iban && l.iban.replace(/\s/g,'') === spc.iban);
-            // Eigene Firma (Rechnungsempfänger) nie als Lieferant übernehmen
+            // Lieferant: erst per IBAN, dann per Name
+            const liefByIban = lieferantenRef.current.find(l => l.iban && l.iban.replace(/\s/g,'') === spc.iban);
             const eigen = istEigeneFirma(spc.name, mandantRef.current);
-            // Kontovorschlag, falls Lieferant kein gelerntes Standardkonto hat
+            const lief  = liefByIban ?? (!eigen ? matchLieferantByName(spc.name, lieferantenRef.current) : null);
             let konto = lief?.standard_konto_nr ?? r.konto_nr;
             let mcode = lief?.mwst_code ?? r.mwst_code;
             if (!konto) {
@@ -352,26 +448,32 @@ export default function MassenImport() {
             }
             return {
               ...r,
+              ...datumPatch,
               status:           'manual',
               lieferant_id:     lief?.id ?? '',
               lieferant_search: lief?.name ?? (eigen ? '' : spc.name),
               betrag_brutto:    spc.betrag != null ? String(spc.betrag) : r.betrag_brutto,
               zahlungsreferenz: spc.referenz ?? '',
+              belegreferenz:    spc.mitteilung || invoiceNr || r.belegreferenz,
               konto_nr:         konto,
               mwst_code:        mcode,
-              belegtext: deriveBelegtext(spc.mitteilung, spc.name, r.fileName),
-              // QR-Kreditordaten für die Schnellerfassung eines Lieferanten
+              belegtext:        deriveBelegtext(spc.mitteilung, spc.name, r.fileName),
               qr: eigen ? null : {
-                name:    spc.name, iban: spc.iban,
+                name: spc.name, iban: spc.iban,
                 strasse: spc.strasse, plz: spc.plz, ort: spc.ort, land: spc.land,
               },
             };
           }
-          // kein QR – Kontovorschlag aus dem Dateinamen
+          // Kein QR: Kontovorschlag + Datum + Rechnungsnr. aus Text
           const v = findKontoVorschlag([r.fileName], regelnRef.current);
-          return { ...r, status: 'manual',
-            konto_nr:  r.konto_nr || v?.konto_nr || '',
-            mwst_code: (!r.konto_nr && v?.mwst_code) ? v.mwst_code : r.mwst_code };
+          return {
+            ...r,
+            ...datumPatch,
+            status:       'manual',
+            belegreferenz: invoiceNr || r.belegreferenz,
+            konto_nr:     r.konto_nr || v?.konto_nr || '',
+            mwst_code:    (!r.konto_nr && v?.mwst_code) ? v.mwst_code : r.mwst_code,
+          };
         }));
       } catch {
         setRows(prev => prev.map(r => r._id === rowId ? { ...r, status: 'manual' } : r));
@@ -674,14 +776,15 @@ export default function MassenImport() {
                   <colgroup>
                     <col style={{ width: 28 }} />
                     <col style={{ width: 30 }} />
-                    <col style={{ width: '15%' }} />
-                    <col style={{ width: '18%' }} />
-                    <col style={{ width: '12%' }} />
-                    <col style={{ width: 90 }} />
-                    <col style={{ width: 90 }} />
-                    <col style={{ width: 90 }} />
-                    <col style={{ width: 85 }} />
-                    <col style={{ width: 70 }} />
+                    <col style={{ width: '13%' }} />
+                    <col style={{ width: '16%' }} />
+                    <col style={{ width: '10%' }} />
+                    <col style={{ width: '11%' }} />
+                    <col style={{ width: 80 }} />
+                    <col style={{ width: 80 }} />
+                    <col style={{ width: 80 }} />
+                    <col style={{ width: 80 }} />
+                    <col style={{ width: 60 }} />
                     <col style={{ width: 28 }} />
                   </colgroup>
                   <thead>
@@ -690,6 +793,7 @@ export default function MassenImport() {
                       <th style={{ padding: '6px 4px', textAlign: 'center' }}></th>
                       <th style={{ padding: '6px 8px', textAlign: 'left' }}>Datei</th>
                       <th style={{ padding: '6px 4px', textAlign: 'left' }}>Lieferant</th>
+                      <th style={{ padding: '6px 4px', textAlign: 'left' }}>Rechnungsnr.</th>
                       <th style={{ padding: '6px 4px', textAlign: 'left' }}>Konto</th>
                       <th style={{ padding: '6px 4px', textAlign: 'left' }}>Belegdatum</th>
                       <th style={{ padding: '6px 4px', textAlign: 'left' }}>Buchungsdatum</th>
@@ -753,6 +857,21 @@ export default function MassenImport() {
                               : <LiefCell row={row} lieferanten={lieferanten}
                                   onChange={patch => updateRow(row._id, patch)}
                                   onCreateNew={name => openLiefModal(row, name)} />
+                            }
+                          </td>
+
+                          {/* Belegreferenz */}
+                          <td style={{ padding: '2px 4px', verticalAlign: 'middle' }} onClick={e => e.stopPropagation()}>
+                            {isSaved
+                              ? <span style={{ fontSize: 11, color: '#4a5a4a', padding: '2px 4px' }}>{row.belegreferenz}</span>
+                              : (
+                                <input
+                                  value={row.belegreferenz || ''}
+                                  placeholder="Rechnungsnr."
+                                  style={{ ...cellInp, fontSize: 10.5 }}
+                                  onChange={e => updateRow(row._id, { belegreferenz: e.target.value })}
+                                />
+                              )
                             }
                           </td>
 

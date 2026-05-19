@@ -262,7 +262,7 @@ export function normalizeText(s) {
 
 export function findUidInText(text) {
   if (!text) return null;
-  const m = text.match(/CHE[-\s]*\d{3}[.\s-]*\d{3}[.\s-]*\d{3}/i);
+  const m = text.match(/CHE[-\s]*\d{3}[.,\s-]*\d{3}[.,\s-]*\d{3}/i);
   if (!m) return null;
   const digits = m[0].replace(/[^0-9]/g, "");
   if (digits.length !== 9) return null;
