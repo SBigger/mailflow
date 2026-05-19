@@ -133,6 +133,7 @@ export default function RechnungErfassen() {
   const [mwstCodes, setMwstCodes]     = useState([]);
   const [regeln, setRegeln]           = useState([]);   // Kontierungsregeln
   const [saving, setSaving]           = useState(false);
+  const [showExtra, setShowExtra]     = useState(false); // "Weitere Felder" einklappbar
 
   // QR-Scanner State
   const [scanFile, setScanFile]     = useState(null);          // hochgeladene Datei
@@ -353,8 +354,9 @@ export default function RechnungErfassen() {
           waehrung: spc.waehrung ?? prev.waehrung,
           zahlungsbedingung_tage: l?.zahlungsbedingung_tage ?? prev.zahlungsbedingung_tage,
           faelligkeit: addDays(prev.belegdatum, l?.zahlungsbedingung_tage ?? prev.zahlungsbedingung_tage),
-          zahlungsreferenz: spc.referenz ?? prev.zahlungsreferenz,
-          notiz: spc.mitteilung ? spc.mitteilung : prev.notiz,
+          zahlungsreferenz:   spc.referenz ?? prev.zahlungsreferenz,
+          // Mitteilung = Rechnungsreferenz des Lieferanten → Beleg-Nr. Lieferant
+          lieferant_beleg_nr: spc.mitteilung ? spc.mitteilung.trim() : prev.lieferant_beleg_nr,
         };
       });
 
@@ -409,15 +411,16 @@ export default function RechnungErfassen() {
       const nr = await lieferantenApi.nextNr(mandant.id);
       const neu = await lieferantenApi.create(mandant.id, {
         nr,
-        name:      form.name.trim(),
-        uid:       form.uid.trim() || null,
-        adresse:   form.adresse.trim() || null,
-        plz:       form.plz.trim() || null,
-        ort:       form.ort.trim() || null,
-        land:      (form.land || 'CH').trim().toUpperCase() || 'CH',
-        iban:      form.iban.replace(/\s+/g, '') || null,
-        bank_name: form.bank_name?.trim() || null,
-        aktiv:     true,
+        name:               form.name.trim(),
+        uid:                form.uid.trim() || null,
+        adresse:            form.adresse.trim() || null,
+        plz:                form.plz.trim() || null,
+        ort:                form.ort.trim() || null,
+        land:               (form.land || 'CH').trim().toUpperCase() || 'CH',
+        iban:               form.iban.replace(/\s+/g, '') || null,
+        bank_name:          form.bank_name?.trim() || null,
+        standard_konto_nr:  form.standard_konto_nr?.trim() || '6800',
+        aktiv:              true,
       });
       setLieferanten(prev => [...prev, neu].sort((a, b) => a.name.localeCompare(b.name)));
       setScanMatch(neu);
@@ -686,39 +689,68 @@ export default function RechnungErfassen() {
               <label style={lbl}>Zahlungsreferenz / QR-Ref.</label>
               <input style={{ ...inp, fontFamily: 'monospace', fontSize: 11.5 }} value={head.zahlungsreferenz} onChange={e => setHead(p => ({ ...p, zahlungsreferenz: e.target.value }))} placeholder="Optionale Referenznummer" />
             </div>
-            <div>
-              <label style={lbl}>Interne Notiz</label>
-              <input style={inp} value={head.notiz} onChange={e => setHead(p => ({ ...p, notiz: e.target.value }))} />
-            </div>
-            <div>
-              <label style={lbl}>
-                Belegreferenz
-                <span style={{ fontWeight: 400, color: '#94a394', marginLeft: 4, fontSize: 10.5 }}>Projekt, Vertrag, o.ä.</span>
-              </label>
-              <input style={inp} value={head.belegreferenz} onChange={e => setHead(p => ({ ...p, belegreferenz: e.target.value }))} placeholder="z.B. PRJ-2026-001" />
-            </div>
-            <div>
-              <label style={lbl}>
-                Gruppe
-                <span style={{ fontWeight: 400, color: '#94a394', marginLeft: 4, fontSize: 10.5 }}>Freies Gruppierungsfeld</span>
-              </label>
-              <input style={inp} value={head.gruppe} onChange={e => setHead(p => ({ ...p, gruppe: e.target.value }))} placeholder="z.B. IT, Marketing, Infrastruktur" />
-            </div>
-            <div>
-              <label style={lbl}>
-                Belegtext
-                <span style={{ fontWeight: 400, color: '#94a394', marginLeft: 4, fontSize: 10.5 }}>max. 12 Zeichen (Kurztext)</span>
-              </label>
-              <input style={inp} value={head.belegtext} maxLength={80}
-                onChange={e => setHead(p => ({ ...p, belegtext: e.target.value }))}
-                placeholder="z.B. Jan-Mär 26" />
-              {head.belegtext && (
-                <div style={{ fontSize: 10, color: '#94a394', marginTop: 2 }}>
-                  Anzeige: «{head.belegtext.slice(0, 12)}{head.belegtext.length > 12 ? '…' : ''}»
-                </div>
-              )}
-            </div>
           </div>
+
+          {/* ── Weitere Felder Toggle ── */}
+          <div style={{ gridColumn: '1 / -1', marginTop: 4 }}>
+            <button
+              type="button"
+              onClick={() => setShowExtra(s => !s)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                background: 'none', border: 'none', cursor: 'pointer',
+                fontSize: 11.5, color: '#7a9b7f', fontWeight: 600, padding: '4px 0',
+              }}
+            >
+              <span style={{
+                display: 'inline-block', transition: 'transform .2s',
+                transform: showExtra ? 'rotate(90deg)' : 'rotate(0deg)',
+                fontSize: 10,
+              }}>▶</span>
+              {showExtra ? 'Weitere Felder ausblenden' : 'Weitere Felder (Notiz, Referenz, Gruppe…)'}
+              {/* Dot-Indikator wenn Felder befüllt aber eingeklappt */}
+              {!showExtra && (head.notiz || head.belegreferenz || head.gruppe || head.belegtext) && (
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#7a9b7f', display: 'inline-block' }} title="Felder befüllt" />
+              )}
+            </button>
+          </div>
+
+          {showExtra && (
+            <div style={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, paddingTop: 4, borderTop: '1px dashed #e4e9e4', marginTop: 2 }}>
+              <div>
+                <label style={lbl}>Interne Notiz</label>
+                <input style={inp} value={head.notiz} onChange={e => setHead(p => ({ ...p, notiz: e.target.value }))} />
+              </div>
+              <div>
+                <label style={lbl}>
+                  Belegreferenz
+                  <span style={{ fontWeight: 400, color: '#94a394', marginLeft: 4, fontSize: 10.5 }}>Projekt, Vertrag, o.ä.</span>
+                </label>
+                <input style={inp} value={head.belegreferenz} onChange={e => setHead(p => ({ ...p, belegreferenz: e.target.value }))} placeholder="z.B. PRJ-2026-001" />
+              </div>
+              <div>
+                <label style={lbl}>
+                  Gruppe
+                  <span style={{ fontWeight: 400, color: '#94a394', marginLeft: 4, fontSize: 10.5 }}>Freies Gruppierungsfeld</span>
+                </label>
+                <input style={inp} value={head.gruppe} onChange={e => setHead(p => ({ ...p, gruppe: e.target.value }))} placeholder="z.B. IT, Marketing, Infrastruktur" />
+              </div>
+              <div>
+                <label style={lbl}>
+                  Belegtext
+                  <span style={{ fontWeight: 400, color: '#94a394', marginLeft: 4, fontSize: 10.5 }}>max. 12 Zeichen (Kurztext)</span>
+                </label>
+                <input style={inp} value={head.belegtext} maxLength={80}
+                  onChange={e => setHead(p => ({ ...p, belegtext: e.target.value }))}
+                  placeholder="z.B. Jan-Mär 26" />
+                {head.belegtext && (
+                  <div style={{ fontSize: 10, color: '#94a394', marginTop: 2 }}>
+                    Anzeige: «{head.belegtext.slice(0, 12)}{head.belegtext.length > 12 ? '…' : ''}»
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ── Buchungspositionen ── */}

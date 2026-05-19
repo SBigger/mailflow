@@ -507,14 +507,15 @@ export default function MassenImport() {
       const nr = await lieferantenApi.nextNr(mandant.id);
       const neu = await lieferantenApi.create(mandant.id, {
         nr,
-        name:      form.name.trim(),
-        uid:       form.uid.trim() || null,
-        adresse:   form.adresse.trim() || null,
-        plz:       form.plz.trim() || null,
-        ort:       form.ort.trim() || null,
-        land:      (form.land || 'CH').trim().toUpperCase() || 'CH',
-        iban:      form.iban.replace(/\s+/g, '') || null,
-        bank_name: form.bank_name?.trim() || null,
+        name:              form.name.trim(),
+        uid:               form.uid.trim() || null,
+        adresse:           form.adresse.trim() || null,
+        plz:               form.plz.trim() || null,
+        ort:               form.ort.trim() || null,
+        land:              (form.land || 'CH').trim().toUpperCase() || 'CH',
+        iban:              form.iban.replace(/\s+/g, '') || null,
+        bank_name:         form.bank_name?.trim() || null,
+        standard_konto_nr: form.standard_konto_nr?.trim() || '6800',
       });
       const updated = [...lieferantenRef.current, neu].sort((a, b) => a.name.localeCompare(b.name));
       lieferantenRef.current = updated;

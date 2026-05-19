@@ -11,14 +11,15 @@ import React, { useState } from 'react';
  */
 export default function NeuerLieferantModal({ init, saving, onSave, onClose }) {
   const [f, setF] = useState({
-    name:      init?.name || '',
-    uid:       init?.uid || '',
-    adresse:   init?.strasse || init?.adresse || '',
-    plz:       init?.plz || '',
-    ort:       init?.ort || '',
-    land:      init?.land || 'CH',
-    iban:      init?.iban || '',
-    bank_name: init?.bank_name || '',
+    name:             init?.name || '',
+    uid:              init?.uid || '',
+    adresse:          init?.strasse || init?.adresse || '',
+    plz:              init?.plz || '',
+    ort:              init?.ort || '',
+    land:             init?.land || 'CH',
+    iban:             init?.iban || '',
+    bank_name:        init?.bank_name || '',
+    standard_konto_nr: init?.standard_konto_nr || '6800',
   });
   const set = (k, v) => setF(p => ({ ...p, [k]: v }));
   const canSave = f.name.trim().length > 0 && !saving;
@@ -68,6 +69,20 @@ export default function NeuerLieferantModal({ init, saving, onSave, onClose }) {
             <div style={{ width: 130 }}>
               <label style={lbl}>UID</label>
               <input style={inp} value={f.uid} onChange={e => set('uid', e.target.value)} placeholder="CHE-..." />
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+            <div style={{ width: 110 }}>
+              <label style={lbl}>FiBu-Konto *</label>
+              <input
+                style={{ ...inp, fontFamily: 'monospace' }}
+                value={f.standard_konto_nr}
+                onChange={e => set('standard_konto_nr', e.target.value)}
+                placeholder="z.B. 6800"
+              />
+            </div>
+            <div style={{ flex: 1, fontSize: 11, color: '#94a394', paddingBottom: 7, lineHeight: 1.4 }}>
+              Aufwandkonto für Buchungsvorschläge (Standard: 6800)
             </div>
           </div>
         </div>

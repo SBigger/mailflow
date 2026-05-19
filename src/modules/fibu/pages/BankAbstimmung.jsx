@@ -8,13 +8,14 @@
  * Alternativ: Bank-Kachel klicken (markiert), dann OP klicken
  */
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import {
   DndContext, DragOverlay, closestCenter,
   useDraggable, useDroppable, PointerSensor, useSensor, useSensors,
 } from '@dnd-kit/core';
 import { supabase } from '@/api/supabaseClient';
 import { parseCamt053 } from '../utils/camtParser';
+import { parseCsvBank } from '../utils/csvBankParser';
 import { autoMatch, scoreMatch, confidenceInfo } from '../utils/matchingEngine';
 
 // ── Farben ──────────────────────────────────────────────────────────
@@ -104,19 +105,38 @@ function TxCard({ tx, match, selected, onClick, dragging }) {
       </div>
 
       {/* Zeile 2: Gegenpartei */}
-      <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 3 }}>
-        {abbr(tx.gegenpartei_name ?? tx.verwendungszweck ?? '— Unbekannt —', 40)}
-      </div>
-
-      {/* Zeile 3: Referenz / Verwendungszweck */}
-      {tx.referenz_nr && (
-        <div style={{ fontSize: 11, color: C.muted, fontFamily: 'monospace', marginBottom: 3 }}>
-          QRR: {tx.referenz_nr.substring(0, 10)}…{tx.referenz_nr.substring(20)}
+      {tx.gegenpartei_name && (
+        <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 2 }}>
+          {abbr(tx.gegenpartei_name, 50)}
         </div>
       )}
-      {!tx.referenz_nr && tx.verwendungszweck && (
-        <div style={{ fontSize: 11, color: C.muted, marginBottom: 3 }}>
-          {abbr(tx.verwendungszweck, 55)}
+
+      {/* Zeile 3: Verwendungszweck (immer anzeigen wenn vorhanden) */}
+      {tx.verwendungszweck && tx.verwendungszweck !== tx.gegenpartei_name && (
+        <div style={{ fontSize: 11.5, color: C.muted, marginBottom: 2, lineHeight: 1.4 }}>
+          {abbr(tx.verwendungszweck, 80)}
+        </div>
+      )}
+
+      {/* Zeile 4: QR-Referenz */}
+      {tx.referenz_nr && (
+        <div style={{ fontSize: 10.5, color: '#0369a1', fontFamily: 'monospace', marginBottom: 2 }}>
+          QRR: {tx.referenz_nr}
+        </div>
+      )}
+
+      {/* Zeile 5: Zusatzinfo (CAMT: Avisierungstext etc.) */}
+      {tx.zusatzinfo && tx.zusatzinfo !== tx.verwendungszweck && (
+        <div style={{ fontSize: 10.5, color: C.muted, marginBottom: 2, fontStyle: 'italic' }}>
+          {abbr(tx.zusatzinfo, 80)}
+        </div>
+      )}
+
+      {/* Zeile 6: IBAN + Waehrung falls nicht CHF */}
+      {(tx.gegenpartei_iban || (tx.waehrung && tx.waehrung !== 'CHF')) && (
+        <div style={{ fontSize: 10, color: C.muted, fontFamily: 'monospace', marginBottom: 2 }}>
+          {tx.gegenpartei_iban && abbr(tx.gegenpartei_iban, 30)}
+          {tx.waehrung && tx.waehrung !== 'CHF' && <span style={{ marginLeft: 6, color: '#d97706', fontWeight: 600 }}>{tx.waehrung}</span>}
         </div>
       )}
 
@@ -171,14 +191,26 @@ function OpCard({ op, match, selectedTxId, onDrop, onManualMatch, onRemoveMatch 
         boxShadow: isOver ? '0 0 0 3px #bbf7d0' : '0 1px 3px #0001',
       }}
     >
-      {/* Zeile 1: Typ-Badge + Beleg-Nr + Betrag */}
+      {/* Zeile 1: Typ-Badge + Status + Beleg-Nr + Betrag */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap' }}>
           <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 8,
             background: isDebitor ? '#dbeafe' : '#fef3c7',
             color: isDebitor ? '#1d4ed8' : '#92400e' }}>
             {isDebitor ? 'DEB' : 'KRED'}
           </span>
+          {op.status === 'bezahlt' && (
+            <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 8,
+              background: '#dcfce7', color: '#166534', border: '1px solid #bbf7d0' }}>
+              ✓ bezahlt
+            </span>
+          )}
+          {op.status === 'teilbezahlt' && (
+            <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 8,
+              background: '#fef9c3', color: '#854d0e', border: '1px solid #fde047' }}>
+              ½ teilbezahlt
+            </span>
+          )}
           <span style={{ fontSize: 12, fontWeight: 700, color: C.text }}>{op.beleg_nr}</span>
         </div>
         <span style={{ fontWeight: 700, fontSize: 14, color: C.text }}>CHF {fmt(op.betrag_offen ?? op.betrag_brutto)}</span>
@@ -254,11 +286,14 @@ function TxDragOverlay({ tx }) {
 // ── Haupt-Komponente ─────────────────────────────────────────────────
 export default function BankAbstimmung() {
   const { mandantId } = useParams();
-  const fileRef = useRef();
+  const navigate = useNavigate();
+  const fileRef    = useRef();
+  const csvFileRef = useRef();
 
   const [mandant,      setMandant]      = useState(null);
   const [transactions, setTransactions] = useState([]);   // DB + lokal
   const [openItems,    setOpenItems]    = useState([]);   // Kred. + Deb. OPs
+  const [opLoadErr,    setOpLoadErr]   = useState(null); // Fehler beim Laden
   const [matches,      setMatches]      = useState({});   // { [txId]: { opId, score, method, tx, op } }
   const [selectedTx,   setSelectedTx]  = useState(null); // für Click-to-Match
   const [activeDrag,   setActiveDrag]  = useState(null); // für DnD Overlay
@@ -267,6 +302,23 @@ export default function BankAbstimmung() {
   const [importing,    setImporting]   = useState(false);
   const [autoRunning,  setAutoRunning] = useState(false);
   const [toast,        setToast]       = useState(null);
+  // CSV-Import Dialog
+  const [csvDialog,    setCsvDialog]   = useState(false);  // Dialog offen?
+  const [csvIban,      setCsvIban]     = useState('');     // IBAN für CSV
+  // Kontierungsregeln
+  const [kontierungsregeln, setKontierungsregeln] = useState([]);
+  const [regelDialog,  setRegelDialog] = useState(null);  // { tx } — Neue Regel erstellen
+  const [regelNeu,     setRegelNeu]    = useState({ stichwort: '', konto_nr: '', mwst_code: '' });
+  const [konten,       setKonten]      = useState([]);
+  const [zahlstellen,  setZahlstellen] = useState([]);
+  const [direktBuch,   setDirektBuch]  = useState(null);  // { tx, regel } — direkt buchen Dialog
+  // CAMT-Import Dialog: zeigt Bank+Sammelkonto vor Import
+  const [camtDialog,   setCamtDialog]  = useState(null);  // null | { files, parsedGroups: [{kontoIban, txList}] }
+  const [camtBankKonto,   setCamtBankKonto]   = useState('');
+  const [camtSammelkonto, setCamtSammelkonto] = useState(() =>
+    localStorage.getItem(`fibu-sammelkonto-${mandantId}`) ?? ''
+  );
+  const [camtCreateBuch, setCamtCreateBuch]   = useState(true);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
@@ -276,6 +328,9 @@ export default function BankAbstimmung() {
     loadMandant();
     loadTransactions();
     loadOpenItems();
+    loadKontierungsregeln();
+    loadKonten();
+    loadZahlstellen();
   }, [mandantId]);
 
   async function loadMandant() {
@@ -293,25 +348,46 @@ export default function BankAbstimmung() {
   }
 
   async function loadOpenItems() {
-    // Kreditoren OPs
-    const { data: kred } = await supabase
+    // ── Kreditoren OPs — zwei separate Queries (kein Join, 100% zuverlässig) ──
+    // Alle Status inkl. 'bezahlt', damit bezahlte Rechnungen abgeglichen werden können.
+    const { data: kred, error: kredErr } = await supabase
       .from('fibu_kreditoren_belege')
-      .select('id, beleg_nr, belegdatum, faelligkeit, betrag_brutto, betrag_bezahlt, lieferant:fibu_lieferanten(name, iban, qr_referenz)')
+      .select('id, beleg_nr, belegdatum, faelligkeit, betrag_brutto, betrag_bezahlt, status, lieferant_id')
       .eq('mandant_id', mandantId)
-      .in('status', ['offen', 'teilbezahlt']);
+      .in('status', ['offen', 'teilbezahlt', 'bezahlt'])
+      .order('faelligkeit', { ascending: true });
 
-    const kredItems = (kred ?? []).map(b => ({
-      id:            b.id,
-      typ:           'kreditor',
-      beleg_nr:      b.beleg_nr,
-      belegdatum:    b.belegdatum,
-      faelligkeit:   b.faelligkeit,
-      name:          b.lieferant?.name ?? '—',
-      iban:          b.lieferant?.iban ?? null,
-      qr_referenz:   b.lieferant?.qr_referenz ?? null,
-      betrag_brutto: b.betrag_brutto,
-      betrag_offen:  Math.max(0, (b.betrag_brutto ?? 0) - (b.betrag_bezahlt ?? 0)),
-    }));
+    if (kredErr) console.warn('BankAbstimmung: Kreditoren-Query Fehler', kredErr);
+
+    // Lieferanten separat laden (keine FK-Join-Abhängigkeit)
+    let liefMap = {};
+    const liefIds = [...new Set((kred ?? []).map(b => b.lieferant_id).filter(Boolean))];
+    if (liefIds.length > 0) {
+      const { data: lief, error: liefErr } = await supabase
+        .from('fibu_lieferanten')
+        .select('id, name, iban, qr_referenz')
+        .in('id', liefIds);
+      if (liefErr) console.warn('BankAbstimmung: Lieferanten-Query Fehler', liefErr);
+      (lief ?? []).forEach(l => { liefMap[l.id] = l; });
+    }
+
+    const kredItems = (kred ?? []).map(b => {
+      const lief = liefMap[b.lieferant_id] ?? null;
+      const offen = Math.max(0, (b.betrag_brutto ?? 0) - (b.betrag_bezahlt ?? 0));
+      return {
+        id:            b.id,
+        typ:           'kreditor',
+        beleg_nr:      b.beleg_nr,
+        belegdatum:    b.belegdatum,
+        faelligkeit:   b.faelligkeit,
+        status:        b.status,
+        name:          lief?.name ?? '—',
+        iban:          lief?.iban ?? null,
+        qr_referenz:   lief?.qr_referenz ?? null,
+        betrag_brutto: b.betrag_brutto,
+        betrag_offen:  offen,
+      };
+    });
 
     // Debitoren OPs (Tabelle existiert ggf. noch nicht → graceful)
     let debItems = [];
@@ -335,22 +411,178 @@ export default function BankAbstimmung() {
       }));
     } catch (_) { /* Debitoren-Modul noch nicht vorhanden */ }
 
-    setOpenItems([...debItems, ...kredItems]);
+    // FiBu Buchungen (Hauptbuchungen — manuell erfasste Buchungen)
+    let buchItems = [];
+    const { data: belege, error: buchErr } = await supabase
+      .from('fibu_buchung_belege')
+      .select('id, beleg_nr, buchungsdatum, text, art')
+      .eq('mandant_id', mandantId)
+      .neq('art', 'saldovortrag')
+      .order('buchungsdatum', { ascending: false })
+      .limit(300);
+    if (!buchErr) {
+      buchItems = (belege ?? []).map(b => ({
+        id:            b.id,
+        typ:           'buchung',
+        beleg_nr:      b.beleg_nr,
+        belegdatum:    b.buchungsdatum,
+        faelligkeit:   null,
+        name:          b.text || b.beleg_nr,
+        iban:          null,
+        qr_referenz:   null,
+        betrag_brutto: null,
+        betrag_offen:  null,
+      }));
+    } else {
+      console.warn('BankAbstimmung: Buchungen-Query Fehler', buchErr);
+    }
+
+    const all = [...debItems, ...kredItems, ...buchItems];
+    console.log(`BankAbstimmung loadOpenItems: ${kredItems.length} Kred, ${debItems.length} Deb, ${buchItems.length} Buch, mandantId=${mandantId}`);
+    setOpLoadErr(kredErr ? kredErr.message : null);
+    setOpenItems(all);
   }
 
-  // ── camt.053 Import ──────────────────────────────────────────────
+  async function loadKontierungsregeln() {
+    const { data } = await supabase
+      .from('fibu_kontierungsregeln')
+      .select('*')
+      .eq('mandant_id', mandantId)
+      .order('sortierung');
+    setKontierungsregeln(data ?? []);
+  }
+
+  async function loadKonten() {
+    const { data } = await supabase
+      .from('fibu_konten')
+      .select('konto_nr, bezeichnung, konto_typ')
+      .eq('mandant_id', mandantId)
+      .eq('aktiv', true)
+      .order('konto_nr');
+    setKonten(data ?? []);
+  }
+
+  async function loadZahlstellen() {
+    const { data } = await supabase
+      .from('fibu_zahlstellen')
+      .select('id, bezeichnung, iban, konto_nr')
+      .eq('mandant_id', mandantId)
+      .eq('aktiv', true);
+    setZahlstellen(data ?? []);
+  }
+
+  // ── Direkt buchen via Kontierungsregel ────────────────────────────
+  async function handleDirektBuchen(tx, regel) {
+    // Bankkonto ermitteln: 1. Konto mit Typ "aktiv" und Nr. ~102x, 2. Fallback "1020"
+    const bankKonto = (
+      konten.find(k => /^102\d$/.test(k.konto_nr))       // 4-stellig exakt: 1020, 1021…
+      ?? konten.find(k => k.konto_nr.startsWith('102'))   // startsWith 102
+      ?? konten.find(k => k.konto_nr.startsWith('10'))    // breiter: alle 10xx
+    )?.konto_nr ?? '1020';
+
+    const isEingang = tx.richtung === 'eingang';
+    const buchText  = [tx.gegenpartei_name, tx.verwendungszweck].filter(Boolean).join(' · ').slice(0, 200) || `Bankabstimmung ${tx.buchungsdatum}`;
+    const zeile = isEingang
+      ? { konto_soll: bankKonto,        konto_haben: regel.konto_nr, betrag: tx.betrag, mwst_code: regel.mwst_code || null, text: buchText }
+      : { konto_soll: regel.konto_nr,   konto_haben: bankKonto,      betrag: tx.betrag, mwst_code: regel.mwst_code || null, text: buchText };
+
+    try {
+      // ① Hauptbuch-Buchung erstellen
+      const { error: buchErr } = await supabase.rpc('fibu_manuelle_buchung_erstellen', {
+        p_mandant_id: mandantId,
+        p_datum:      tx.buchungsdatum,
+        p_text:       buchText,
+        p_pdf_path:   null,
+        p_pdf_name:   null,
+        p_art:        'normal',
+        p_zeilen:     [zeile],
+      });
+      if (buchErr) throw new Error(buchErr.message ?? JSON.stringify(buchErr));
+
+      // ② Banktransaktion als gematcht markieren
+      const { error: txErr } = await supabase
+        .from('fibu_bank_transaktionen')
+        .update({ status: 'gematcht', match_methode: 'REGEL', match_confidence: 1 })
+        .eq('id', tx.id);
+      if (txErr) console.warn('Transaktion-Status-Update Fehler:', txErr);
+
+      showToast(`✓ Buchung ${isEingang ? 'Eingang' : 'Ausgang'} auf ${kontoLabel(regel.konto_nr)} erfasst`, 'success');
+      setDirektBuch(null);
+      setSelectedTx(null);
+      await Promise.all([loadTransactions(), loadOpenItems()]);
+    } catch (e) {
+      console.error('handleDirektBuchen Fehler:', e);
+      showToast('Buchungsfehler: ' + (e.message ?? String(e)), 'error');
+    }
+  }
+
+  // ── Neue Kontierungsregel speichern ──────────────────────────────
+  async function handleSaveRegel() {
+    if (!regelNeu.stichwort || !regelNeu.konto_nr) return;
+    const { error } = await supabase.from('fibu_kontierungsregeln').insert({
+      mandant_id: mandantId,
+      stichwort:  regelNeu.stichwort.trim(),
+      konto_nr:   regelNeu.konto_nr,
+      mwst_code:  regelNeu.mwst_code || null,
+      sortierung: kontierungsregeln.length,
+    });
+    if (error) { showToast('Fehler: ' + error.message, 'error'); return; }
+    showToast(`Regel „${regelNeu.stichwort}" gespeichert`, 'success');
+    setRegelDialog(null);
+    setRegelNeu({ stichwort: '', konto_nr: '', mwst_code: '' });
+    await loadKontierungsregeln();
+  }
+
+  // ── camt.053: Dateien lesen → Dialog öffnen ─────────────────────
   async function handleFileImport(e) {
     const files = Array.from(e.target.files ?? []);
     if (!files.length) return;
-    setImporting(true);
-    let totalImported = 0;
+    e.target.value = '';
 
+    // Alle CAMTs parsen — Iban aus erstem File für Zahlstellen-Match
+    const parsedGroups = [];
     for (const file of files) {
       try {
         const xml = await file.text();
-        const { transactions: parsed, kontoIban } = parseCamt053(xml);
+        const { transactions: txList, kontoIban } = parseCamt053(xml);
+        parsedGroups.push({ file, txList, kontoIban });
+      } catch (err) {
+        showToast(`Parse-Fehler ${file.name}: ${err.message}`, 'error');
+      }
+    }
+    if (!parsedGroups.length) return;
 
-        // App-seitiges Dedup: Fingerprints bereits importierter Transaktionen laden
+    // Bank-Konto aus Zahlstellen-Match vorbelegen
+    const firstIban = parsedGroups[0].kontoIban;
+    const zs = zahlstellen.find(z =>
+      z.iban && z.iban.replace(/\s/g, '').toUpperCase() === (firstIban ?? '').replace(/\s/g, '').toUpperCase()
+    );
+    const autoBank = zs?.konto_nr
+      ?? konten.find(k => /^102/.test(k.konto_nr))?.konto_nr
+      ?? '';
+    setCamtBankKonto(autoBank);
+
+    // Sammelkonto aus localStorage (mandant-spezifisch)
+    const savedSk = localStorage.getItem(`fibu-sammelkonto-${mandantId}`) ?? '';
+    setCamtSammelkonto(savedSk);
+    setCamtDialog({ parsedGroups });
+  }
+
+  // ── camt.053: Bestätigen & Importieren (nach Dialog) ─────────────
+  async function handleCamtConfirm() {
+    if (!camtDialog) return;
+    setImporting(true);
+    setCamtDialog(null);
+
+    // Sammelkonto-Präferenz speichern
+    if (camtSammelkonto) localStorage.setItem(`fibu-sammelkonto-${mandantId}`, camtSammelkonto);
+
+    let totalImported = 0;
+    let totalBuchungen = 0;
+
+    for (const { file, txList: parsed, kontoIban } of camtDialog.parsedGroups) {
+      try {
+        // Dedup
         const minDate = parsed.reduce((m, t) => (!m || t.buchungsdatum < m) ? t.buchungsdatum : m, null);
         const { data: existing } = await supabase
           .from('fibu_bank_transaktionen')
@@ -373,14 +605,114 @@ export default function BankAbstimmung() {
           continue;
         }
 
-        // Import-Record anlegen
+        // Import-Record
         const { data: importRec } = await supabase
           .from('fibu_bank_imports')
           .insert({ mandant_id: mandantId, dateiname: file.name, konto_iban: kontoIban,
             anzahl_transaktionen: newTx.length })
           .select().single();
 
-        // Neue Transaktionen einfügen (Dedup bereits app-seitig erledigt)
+        // Transaktionen einfügen
+        const rows = newTx.map(tx => ({ ...tx, mandant_id: mandantId, import_id: importRec?.id }));
+        const { data: inserted, error: insertErr } = await supabase
+          .from('fibu_bank_transaktionen').insert(rows).select('id');
+        if (insertErr) throw new Error(insertErr.message);
+        totalImported += (inserted?.length ?? newTx.length);
+
+        // ── FiBu-Buchungen (Bank + Sammelkonto) ──────────────────
+        if (camtCreateBuch && camtBankKonto && camtSammelkonto) {
+          const buchPromises = newTx.map(tx => {
+            const isEin = tx.richtung === 'eingang';
+            const text  = [tx.gegenpartei_name, tx.verwendungszweck].filter(Boolean).join(' · ').slice(0, 200)
+                          || `Bankbewegung ${tx.buchungsdatum}`;
+            const zeile = isEin
+              ? { konto_soll: camtBankKonto, konto_haben: camtSammelkonto, betrag: tx.betrag, mwst_code: null, text }
+              : { konto_soll: camtSammelkonto, konto_haben: camtBankKonto, betrag: tx.betrag, mwst_code: null, text };
+            return supabase.rpc('fibu_manuelle_buchung_erstellen', {
+              p_mandant_id: mandantId,
+              p_datum:      tx.buchungsdatum,
+              p_text:       text,
+              p_pdf_path:   null,
+              p_pdf_name:   null,
+              p_art:        'normal',
+              p_zeilen:     [zeile],
+            });
+          });
+          // In Batches von 10 um DB nicht zu überlasten
+          for (let i = 0; i < buchPromises.length; i += 10) {
+            const results = await Promise.all(buchPromises.slice(i, i + 10));
+            totalBuchungen += results.filter(r => !r.error).length;
+          }
+        }
+
+      } catch (err) {
+        showToast(`Fehler bei ${file.name}: ${err.message}`, 'error');
+      }
+    }
+
+    await Promise.all([loadTransactions(), loadOpenItems()]);
+    const msg = totalBuchungen > 0
+      ? `${totalImported} Transaktionen + ${totalBuchungen} FiBu-Buchungen importiert`
+      : `${totalImported} neue Transaktionen importiert`;
+    if (totalImported > 0) showToast(msg, 'success');
+    setImporting(false);
+  }
+
+  // ── CSV-Import ───────────────────────────────────────────────────
+  async function handleCsvImport(e) {
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length) return;
+
+    const iban = csvIban.replace(/\s+/g, '').toUpperCase() || null;
+    setImporting(true);
+    let totalImported = 0;
+
+    for (const file of files) {
+      try {
+        const text = await file.text();
+        const { transactions: parsed, warnings } = parseCsvBank(text);
+
+        if (warnings.length > 0) {
+          showToast(`${file.name}: ${warnings[0]}`, 'info');
+        }
+        if (parsed.length === 0) {
+          showToast(`${file.name}: Keine Transaktionen erkannt`, 'error');
+          continue;
+        }
+
+        // IBAN auf alle Transaktionen setzen
+        const withIban = parsed.map(tx => ({ ...tx, konto_iban: iban }));
+
+        // App-seitiges Dedup basierend auf Datum + Betrag + Richtung + Verwendungszweck
+        const minDate = withIban.reduce((m, t) => (!m || t.buchungsdatum < m) ? t.buchungsdatum : m, null);
+        const { data: existing } = await supabase
+          .from('fibu_bank_transaktionen')
+          .select('buchungsdatum, betrag, richtung, verwendungszweck')
+          .eq('mandant_id', mandantId)
+          .gte('buchungsdatum', minDate ?? '2000-01-01');
+
+        const existingKeys = new Set((existing ?? []).map(t =>
+          `${t.buchungsdatum}|${t.betrag}|${t.richtung}|${(t.verwendungszweck ?? '').slice(0, 40)}`
+        ));
+
+        const newTx = withIban.filter(tx => {
+          const key = `${tx.buchungsdatum}|${tx.betrag}|${tx.richtung}|${(tx.verwendungszweck ?? '').slice(0, 40)}`;
+          return !existingKeys.has(key);
+        });
+
+        if (newTx.length === 0) {
+          showToast(`${file.name}: Alle ${parsed.length} Transaktionen bereits vorhanden`, 'info');
+          continue;
+        }
+
+        // Import-Record anlegen
+        const { data: importRec } = await supabase
+          .from('fibu_bank_imports')
+          .insert({ mandant_id: mandantId, dateiname: file.name, konto_iban: iban,
+            anzahl_transaktionen: newTx.length })
+          .select().single();
+
+        // Neue Transaktionen einfügen
         const rows = newTx.map(tx => ({ ...tx, mandant_id: mandantId, import_id: importRec?.id }));
         const { data: inserted, error: insertErr } = await supabase
           .from('fibu_bank_transaktionen')
@@ -396,8 +728,9 @@ export default function BankAbstimmung() {
     }
 
     await loadTransactions();
-    if (totalImported > 0) showToast(`${totalImported} neue Transaktionen importiert`, 'success');
+    if (totalImported > 0) showToast(`${totalImported} neue Transaktionen aus CSV importiert`, 'success');
     setImporting(false);
+    setCsvDialog(false);
     e.target.value = '';
   }
 
@@ -457,8 +790,14 @@ export default function BankAbstimmung() {
             p_confidence: m.score,
             p_methode:    m.method,
           });
+        } else if (m.op.typ === 'buchung') {
+          // FiBu-Buchung abgleichen
+          await supabase.from('fibu_bank_transaktionen').update({
+            status: 'gematcht', matched_beleg_id: m.opId, matched_typ: 'buchung',
+            match_confidence: m.score ?? 1, match_methode: m.method ?? 'MANUAL',
+          }).eq('id', txId);
         } else {
-          // Debitoren-Buchung (später implementieren)
+          // Debitoren-Buchung
           await supabase.from('fibu_bank_transaktionen').update({
             status: 'gematcht', matched_beleg_id: m.opId, matched_typ: m.op.typ,
             match_confidence: m.score, match_methode: m.method,
@@ -509,8 +848,20 @@ export default function BankAbstimmung() {
   const visibleOp = openItems.filter(op => {
     if (opFilter === 'debitoren')  return op.typ === 'debitor';
     if (opFilter === 'kreditoren') return op.typ === 'kreditor';
+    if (opFilter === 'buchungen')  return op.typ === 'buchung';
     return true;
   });
+
+  // Kontierungsregeln die zur ausgewählten Transaktion passen
+  const selectedTxData = selectedTx ? transactions.find(t => t.id === selectedTx) : null;
+  const matchingRegeln = selectedTxData
+    ? kontierungsregeln.filter(r => {
+        const haystack = [selectedTxData.verwendungszweck, selectedTxData.gegenpartei_name]
+          .filter(Boolean).join(' ').toLowerCase();
+        return r.stichwort && haystack.includes(r.stichwort.toLowerCase());
+      })
+    : [];
+  const kontoLabel = (nr) => { const k = konten.find(x => x.konto_nr === nr); return k ? `${nr} ${k.bezeichnung}` : nr; };
 
   // ── Stats ────────────────────────────────────────────────────────
   const txOffen    = transactions.filter(t => t.status === 'offen' && !matchedTxIds.has(t.id)).length;
@@ -523,17 +874,14 @@ export default function BankAbstimmung() {
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter}
       onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100vh',
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%',
         background: C.bg, fontFamily: "'Inter', system-ui, sans-serif", color: C.text, overflow: 'hidden' }}>
 
         {/* ── Header ────────────────────────────────────────────── */}
         <header style={{ background: C.header, color: '#fff', padding: '0 20px',
           height: 56, display: 'flex', alignItems: 'center', gap: 16, flexShrink: 0,
           boxShadow: '0 2px 8px #0004' }}>
-          <div style={{ fontWeight: 700, fontSize: 15, letterSpacing: '-0.3px' }}>
-            Artis FiBu
-          </div>
-          <div style={{ width: 1, height: 20, background: '#ffffff30' }} />
+          <div style={{ width: 32, height: 32, borderRadius: 8, background: '#ffffff20', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 17 }}>🏦</div>
           <div style={{ fontWeight: 600, fontSize: 14 }}>
             Bankabstimmung
             {mandant && <span style={{ fontWeight: 400, opacity: 0.75, marginLeft: 8 }}>— {mandant.name}</span>}
@@ -560,11 +908,19 @@ export default function BankAbstimmung() {
           {/* Aktionen */}
           <input ref={fileRef} type="file" accept=".xml" multiple style={{ display: 'none' }}
             onChange={handleFileImport} />
+          <input ref={csvFileRef} type="file" accept=".csv,.txt" multiple style={{ display: 'none' }}
+            onChange={handleCsvImport} />
           <button onClick={() => fileRef.current?.click()} disabled={importing}
             style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #ffffff40',
               background: importing ? '#ffffff20' : '#ffffff25', color: '#fff',
               cursor: importing ? 'wait' : 'pointer', fontSize: 13, fontWeight: 600 }}>
-            {importing ? '⏳ Importiere…' : '📂 camt.053 importieren'}
+            {importing ? '⏳ Importiere…' : '📂 CAMT importieren'}
+          </button>
+          <button onClick={() => setCsvDialog(true)} disabled={importing}
+            style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #ffffff40',
+              background: '#ffffff25', color: '#fff',
+              cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
+            📊 CSV importieren
           </button>
 
           <button onClick={runAutoMatch} disabled={autoRunning || transactions.length === 0}
@@ -582,7 +938,9 @@ export default function BankAbstimmung() {
             </button>
           )}
 
-          <button onClick={() => window.close()} title="Fenster schliessen"
+          <button
+            onClick={() => { if (window.opener) window.close(); else navigate(-1); }}
+            title="Schliessen"
             style={{ padding: '4px 10px', borderRadius: 8, border: '1px solid #ffffff30',
               background: 'transparent', color: '#fff', cursor: 'pointer', fontSize: 13 }}>
             ✕
@@ -662,8 +1020,8 @@ export default function BankAbstimmung() {
                 )}
               </div>
               {/* Filter-Tabs */}
-              <div style={{ display: 'flex', gap: 4 }}>
-                {[['alle','Alle'], ['kreditoren','Kreditoren'], ['debitoren','Debitoren']].map(([val, lbl]) => (
+              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                {[['alle','Alle'], ['kreditoren','Kreditoren'], ['debitoren','Debitoren'], ['buchungen','Buchungen']].map(([val, lbl]) => (
                   <button key={val} onClick={() => setOpFilter(val)}
                     style={{ padding: '3px 10px', borderRadius: 20, fontSize: 12, border: 'none',
                       cursor: 'pointer', fontWeight: opFilter === val ? 700 : 400,
@@ -674,6 +1032,60 @@ export default function BankAbstimmung() {
                 ))}
               </div>
             </div>
+
+            {/* Kontierungsregeln-Vorschläge (wenn Transaktion ausgewählt) */}
+            {selectedTxData && (
+              <div style={{ flexShrink: 0, borderBottom: `1px solid ${C.border}`,
+                background: '#f0f9ff', padding: '8px 14px' }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#0369a1', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '.06em' }}>
+                  ⚡ Kontierungsregeln
+                </div>
+                {matchingRegeln.length > 0 ? (
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {matchingRegeln.map(r => (
+                      <button key={r.id}
+                        onClick={() => setDirektBuch({ tx: selectedTxData, regel: r })}
+                        style={{ fontSize: 11.5, padding: '4px 10px', borderRadius: 8,
+                          border: '1px solid #bae6fd', background: '#e0f2fe', color: '#0c4a6e',
+                          cursor: 'pointer', fontWeight: 500,
+                          display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <span>📐</span>
+                        <strong>{r.stichwort}</strong>
+                        <span style={{ opacity: 0.7 }}>→ {kontoLabel(r.konto_nr)}</span>
+                        {r.mwst_code && <span style={{ background: '#dbeafe', padding: '1px 5px', borderRadius: 4, fontSize: 10 }}>{r.mwst_code}</span>}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 11.5, color: '#0369a1', opacity: 0.7 }}>Keine passende Regel — </span>
+                    <button
+                      onClick={() => {
+                        const txt = selectedTxData.verwendungszweck ?? selectedTxData.gegenpartei_name ?? '';
+                        setRegelNeu({ stichwort: txt.slice(0, 40), konto_nr: '', mwst_code: '' });
+                        setRegelDialog({ tx: selectedTxData });
+                      }}
+                      style={{ fontSize: 11.5, padding: '3px 10px', borderRadius: 8,
+                        border: '1px solid #bae6fd', background: '#fff', color: '#0369a1',
+                        cursor: 'pointer', fontWeight: 600 }}>
+                      + Neue Regel erstellen
+                    </button>
+                  </div>
+                )}
+                {matchingRegeln.length > 0 && (
+                  <button
+                    onClick={() => {
+                      const txt = selectedTxData.verwendungszweck ?? selectedTxData.gegenpartei_name ?? '';
+                      setRegelNeu({ stichwort: txt.slice(0, 40), konto_nr: '', mwst_code: '' });
+                      setRegelDialog({ tx: selectedTxData });
+                    }}
+                    style={{ fontSize: 10.5, color: '#0369a1', background: 'none', border: 'none',
+                      cursor: 'pointer', marginTop: 4, padding: 0, textDecoration: 'underline' }}>
+                    + Neue Regel erstellen
+                  </button>
+                )}
+              </div>
+            )}
 
             {/* OP-Liste — 2-spaltig */}
             <div style={{ flex: 1, overflowY: 'auto', padding: 12,
@@ -703,10 +1115,23 @@ export default function BankAbstimmung() {
                 </div>
               ))}
 
-              {visibleOp.length === 0 && (
+              {opLoadErr && (
+                <div style={{ gridColumn: '1/-1', margin: '12px 4px', padding: '10px 14px',
+                  background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: 8, fontSize: 12, color: '#991b1b' }}>
+                  ⚠ Kreditoren-Ladefehler: {opLoadErr}
+                </div>
+              )}
+              {visibleOp.length === 0 && !opLoadErr && (
                 <div style={{ gridColumn: '1/-1', textAlign: 'center', color: C.muted,
                   padding: '40px 20px', fontSize: 13 }}>
-                  Keine offenen Posten vorhanden.
+                  {openItems.length === 0
+                    ? <>Keine offenen Posten in Kreditoren/Debitoren vorhanden.<br/>
+                        <span style={{ fontSize: 11, marginTop: 4, display: 'block' }}>
+                          Rechnungen unter Kreditoren erfassen, damit sie hier erscheinen.
+                        </span>
+                      </>
+                    : 'Keine Posten in diesem Filter.'
+                  }
                 </div>
               )}
             </div>
@@ -725,6 +1150,245 @@ export default function BankAbstimmung() {
             color: '#fff', padding: '10px 20px', borderRadius: 10, fontSize: 13, fontWeight: 600,
             boxShadow: '0 4px 20px #0004', zIndex: 9999, pointerEvents: 'none' }}>
             {toast.msg}
+          </div>
+        )}
+
+        {/* ── Direkt-Buchen Dialog (via Kontierungsregel) ──────── */}
+        {direktBuch && (
+          <div style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(0,0,0,0.5)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            onClick={e => { if (e.target === e.currentTarget) setDirektBuch(null); }}>
+            <div style={{ background: '#fff', borderRadius: 14, width: 460, boxShadow: '0 20px 60px #0004', overflow: 'hidden' }}>
+              <div style={{ padding: '14px 18px', background: C.header, color: '#fff', fontWeight: 700, fontSize: 14 }}>
+                ⚡ Direkt buchen — Kontierungsregel
+              </div>
+              <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ background: '#f0f9ff', borderRadius: 8, padding: '10px 14px', fontSize: 12.5 }}>
+                  <div style={{ fontWeight: 600, color: '#0c4a6e', marginBottom: 4 }}>Banktransaktion</div>
+                  <div>{fmtDate(direktBuch.tx.buchungsdatum)} · CHF {fmt(direktBuch.tx.betrag)} · {direktBuch.tx.richtung === 'eingang' ? '↑ Eingang' : '↓ Ausgang'}</div>
+                  <div style={{ color: '#6b7a6b', marginTop: 2 }}>{direktBuch.tx.verwendungszweck || direktBuch.tx.gegenpartei_name || '—'}</div>
+                </div>
+                <div style={{ background: '#f0fdf4', borderRadius: 8, padding: '10px 14px', fontSize: 12.5 }}>
+                  <div style={{ fontWeight: 600, color: '#166534', marginBottom: 4 }}>Kontierungsregel</div>
+                  <div>Stichwort: <strong>{direktBuch.regel.stichwort}</strong></div>
+                  <div>Konto: <strong>{kontoLabel(direktBuch.regel.konto_nr)}</strong></div>
+                  {direktBuch.regel.mwst_code && <div>MWST: <strong>{direktBuch.regel.mwst_code}</strong></div>}
+                </div>
+                <div style={{ fontSize: 11.5, color: '#6b7a6b', background: '#f7f7f7', borderRadius: 7, padding: '8px 12px' }}>
+                  Buchung: {direktBuch.tx.richtung === 'eingang'
+                    ? <>Soll <strong>{konten.find(k => /^102/.test(k.konto_nr))?.konto_nr ?? '1020'}</strong> / Haben <strong>{kontoLabel(direktBuch.regel.konto_nr)}</strong></>
+                    : <>Soll <strong>{kontoLabel(direktBuch.regel.konto_nr)}</strong> / Haben <strong>{konten.find(k => /^102/.test(k.konto_nr))?.konto_nr ?? '1020'}</strong></>
+                  } · CHF {fmt(direktBuch.tx.betrag)}
+                </div>
+              </div>
+              <div style={{ padding: '12px 18px', borderTop: '1px solid #e4e9e4', display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button onClick={() => setDirektBuch(null)} style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #d4dcd4', background: '#fff', cursor: 'pointer', fontSize: 12.5 }}>Abbrechen</button>
+                <button onClick={() => handleDirektBuchen(direktBuch.tx, direktBuch.regel)}
+                  style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: C.green, color: '#fff', cursor: 'pointer', fontSize: 12.5, fontWeight: 700 }}>
+                  ✓ Buchen & abschliessen
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── CAMT-Import Dialog ───────────────────────────────── */}
+        {camtDialog && (
+          <div style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(0,0,0,0.5)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            onClick={e => { if (e.target === e.currentTarget) setCamtDialog(null); }}>
+            <div style={{ background: '#fff', borderRadius: 14, width: 480, boxShadow: '0 20px 60px #0004', overflow: 'hidden' }}>
+              <div style={{ padding: '14px 18px', background: C.header, color: '#fff', fontWeight: 700, fontSize: 14 }}>
+                📂 CAMT-Import — Kontierung
+              </div>
+              <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {/* Dateien-Übersicht */}
+                <div style={{ background: '#f4f8ff', borderRadius: 8, padding: '8px 12px', fontSize: 12 }}>
+                  {camtDialog.parsedGroups.map(g => (
+                    <div key={g.file.name} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>📄 {g.file.name}</span>
+                      <span style={{ color: C.muted }}>{g.txList.length} Transaktionen · IBAN: {g.kontoIban?.slice(-8)}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Bank-Konto */}
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 700, color: '#3d6641', display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '.06em' }}>
+                    Bank-Konto (Haben/Soll)
+                  </label>
+                  <select value={camtBankKonto} onChange={e => setCamtBankKonto(e.target.value)}
+                    style={{ width: '100%', padding: '7px 10px', borderRadius: 7, border: '1px solid #d4dcd4', fontSize: 13, outline: 'none', background: '#fff' }}>
+                    <option value="">— Konto wählen —</option>
+                    {konten.filter(k => ['aktiv','passiv'].includes(k.konto_typ)).map(k => (
+                      <option key={k.konto_nr} value={k.konto_nr}>{k.konto_nr} {k.bezeichnung}</option>
+                    ))}
+                  </select>
+                  <div style={{ fontSize: 10.5, color: C.muted, marginTop: 3 }}>Bankkonto aus den Zahlstellen — z.B. 1020 Postbank</div>
+                </div>
+
+                {/* Sammelkonto */}
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 700, color: '#0369a1', display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '.06em' }}>
+                    Sammelkonto (Gegenkonto)
+                  </label>
+                  <select value={camtSammelkonto} onChange={e => setCamtSammelkonto(e.target.value)}
+                    style={{ width: '100%', padding: '7px 10px', borderRadius: 7, border: '1px solid #bae6fd', fontSize: 13, outline: 'none', background: '#f0f9ff' }}>
+                    <option value="">— Konto wählen —</option>
+                    {konten.map(k => (
+                      <option key={k.konto_nr} value={k.konto_nr}>{k.konto_nr} {k.bezeichnung}</option>
+                    ))}
+                  </select>
+                  <div style={{ fontSize: 10.5, color: C.muted, marginTop: 3 }}>Transitorisches Konto, z.B. 1090 oder 1099 Durchlaufkonto</div>
+                </div>
+
+                {/* FiBu-Buchungen Toggle */}
+                <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer',
+                  padding: '10px 12px', borderRadius: 8,
+                  background: camtCreateBuch ? '#f0fdf4' : '#f7f7f7',
+                  border: `1px solid ${camtCreateBuch ? '#bbf7d0' : '#e4e9e4'}` }}>
+                  <input type="checkbox" checked={camtCreateBuch} onChange={e => setCamtCreateBuch(e.target.checked)}
+                    style={{ width: 16, height: 16, accentColor: '#16a34a', cursor: 'pointer' }} />
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: camtCreateBuch ? '#166534' : '#4a5a4a' }}>
+                      FiBu-Buchungen automatisch erstellen
+                    </div>
+                    <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
+                      Eingang: Soll {camtBankKonto||'Bank'} / Haben {camtSammelkonto||'Sammelkonto'} · Ausgang: umgekehrt
+                    </div>
+                  </div>
+                </label>
+
+                {camtCreateBuch && (!camtBankKonto || !camtSammelkonto) && (
+                  <div style={{ fontSize: 11.5, color: '#92400e', background: '#fef9c3', padding: '7px 12px', borderRadius: 7, border: '1px solid #fde68a' }}>
+                    ⚠ Bitte Bank-Konto und Sammelkonto auswählen um Buchungen zu erstellen.
+                  </div>
+                )}
+              </div>
+              <div style={{ padding: '12px 18px', borderTop: '1px solid #e4e9e4', display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button onClick={() => setCamtDialog(null)}
+                  style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #d4dcd4', background: '#fff', cursor: 'pointer', fontSize: 12.5 }}>
+                  Abbrechen
+                </button>
+                <button
+                  onClick={handleCamtConfirm}
+                  disabled={camtCreateBuch && (!camtBankKonto || !camtSammelkonto)}
+                  style={{ padding: '7px 16px', borderRadius: 8, border: 'none',
+                    background: (camtCreateBuch && (!camtBankKonto || !camtSammelkonto)) ? '#c5cdc5' : C.green,
+                    color: '#fff', cursor: 'pointer', fontSize: 12.5, fontWeight: 700 }}>
+                  {camtCreateBuch ? '✓ Importieren & Buchen' : '📥 Nur importieren'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Neue Regel erstellen Dialog ───────────────────────── */}
+        {regelDialog && (
+          <div style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(0,0,0,0.5)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            onClick={e => { if (e.target === e.currentTarget) setRegelDialog(null); }}>
+            <div style={{ background: '#fff', borderRadius: 14, width: 440, boxShadow: '0 20px 60px #0004', overflow: 'hidden' }}>
+              <div style={{ padding: '14px 18px', background: '#0369a1', color: '#fff', fontWeight: 700, fontSize: 14 }}>
+                📐 Neue Kontierungsregel erstellen
+              </div>
+              <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ fontSize: 11.5, color: '#6b7a6b' }}>
+                  Wenn ein Buchungstext dieses Stichwort enthält, wird das Konto automatisch vorgeschlagen.
+                </div>
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 600, color: '#4a5a4a', display: 'block', marginBottom: 4 }}>Stichwort *</label>
+                  <input value={regelNeu.stichwort} onChange={e => setRegelNeu(r => ({ ...r, stichwort: e.target.value }))}
+                    style={{ width: '100%', boxSizing: 'border-box', padding: '7px 10px', borderRadius: 7, border: '1px solid #d4dcd4', fontSize: 13, outline: 'none' }}
+                    placeholder="z.B. Swisscom, Miete, Versicherung…" />
+                </div>
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 600, color: '#4a5a4a', display: 'block', marginBottom: 4 }}>Konto *</label>
+                  <select value={regelNeu.konto_nr} onChange={e => setRegelNeu(r => ({ ...r, konto_nr: e.target.value }))}
+                    style={{ width: '100%', padding: '7px 10px', borderRadius: 7, border: '1px solid #d4dcd4', fontSize: 13, outline: 'none', background: '#fff' }}>
+                    <option value="">— Konto wählen —</option>
+                    {konten.filter(k => ['aufwand','ertrag'].includes(k.konto_typ)).map(k => (
+                      <option key={k.konto_nr} value={k.konto_nr}>{k.konto_nr} {k.bezeichnung}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div style={{ padding: '12px 18px', borderTop: '1px solid #e4e9e4', display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button onClick={() => setRegelDialog(null)} style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #d4dcd4', background: '#fff', cursor: 'pointer', fontSize: 12.5 }}>Abbrechen</button>
+                <button onClick={handleSaveRegel} disabled={!regelNeu.stichwort || !regelNeu.konto_nr}
+                  style={{ padding: '7px 16px', borderRadius: 8, border: 'none',
+                    background: regelNeu.stichwort && regelNeu.konto_nr ? '#0369a1' : '#c5cdc5',
+                    color: '#fff', cursor: regelNeu.stichwort && regelNeu.konto_nr ? 'pointer' : 'not-allowed', fontSize: 12.5, fontWeight: 700 }}>
+                  Regel speichern
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── CSV-Import Dialog ─────────────────────────────────── */}
+        {csvDialog && (
+          <div style={{
+            position: 'fixed', inset: 0, zIndex: 200,
+            background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+            onClick={e => { if (e.target === e.currentTarget) setCsvDialog(false); }}
+          >
+            <div style={{
+              background: '#fff', borderRadius: 14, width: 440,
+              boxShadow: '0 20px 60px rgba(0,0,0,0.3)', overflow: 'hidden',
+            }}>
+              {/* Dialog-Header */}
+              <div style={{ padding: '16px 20px', background: C.header, color: '#fff', display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: 18 }}>📊</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 700, fontSize: 14 }}>CSV-Kontoauszug importieren</div>
+                  <div style={{ fontSize: 11.5, opacity: 0.8, marginTop: 1 }}>PostFinance, UBS, Raiffeisen, ZKB und weitere</div>
+                </div>
+                <button onClick={() => setCsvDialog(false)} style={{ border: 'none', background: 'none', color: '#fff', fontSize: 18, cursor: 'pointer', opacity: 0.8 }}>✕</button>
+              </div>
+
+              {/* Dialog-Body */}
+              <div style={{ padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div>
+                  <label style={{ fontSize: 11.5, fontWeight: 600, color: '#4a5a4a', display: 'block', marginBottom: 5 }}>
+                    Bank-IBAN (Kontonummer)
+                    <span style={{ fontWeight: 400, color: '#9aa0a0', marginLeft: 4 }}>— optional, für Zuordnung</span>
+                  </label>
+                  <input
+                    value={csvIban}
+                    onChange={e => setCsvIban(e.target.value)}
+                    placeholder="CH56 0483 5012 3456 7800 9"
+                    style={{ width: '100%', boxSizing: 'border-box', padding: '8px 11px', borderRadius: 8, border: '1px solid #d4dcd4', fontSize: 13, fontFamily: 'monospace', outline: 'none', background: '#f7faf7' }}
+                  />
+                </div>
+
+                <div style={{ padding: '12px 14px', background: '#f7faf7', borderRadius: 8, border: '1px solid #e4e9e4', fontSize: 12, color: '#6b7a6b', lineHeight: 1.7 }}>
+                  <strong style={{ color: '#2d4a30' }}>Unterstützte Formate:</strong><br />
+                  • <strong>PostFinance / ZKB / Raiffeisen:</strong> Buchungsdatum; Buchungstext; Betrag<br />
+                  • <strong>UBS / Credit Suisse:</strong> Valutadatum; Buchungsdatum; Text; Belastung; Gutschrift<br />
+                  • <strong>Generisch:</strong> Spalte 0=Datum, 1=Text, 2=Betrag (pos/neg)<br />
+                  <span style={{ color: '#9aa0a0', fontSize: 11 }}>Separator: Semikolon oder Komma — wird automatisch erkannt</span>
+                </div>
+
+                <button
+                  onClick={() => csvFileRef.current?.click()}
+                  disabled={importing}
+                  style={{
+                    padding: '11px 18px', borderRadius: 9, border: 'none',
+                    background: C.header, color: '#fff', fontSize: 13, fontWeight: 700,
+                    cursor: importing ? 'wait' : 'pointer', opacity: importing ? 0.7 : 1,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                  }}
+                >
+                  <span style={{ fontSize: 16 }}>📂</span>
+                  {importing ? 'Importiere…' : 'CSV-Datei wählen & importieren'}
+                </button>
+                <div style={{ fontSize: 11, color: '#9aa0a0', textAlign: 'center' }}>
+                  Mehrere Dateien gleichzeitig auswählbar. Duplikate werden automatisch erkannt.
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </div>

@@ -2,7 +2,7 @@
 // Schritt-für-Schritt Einrichtungsassistent für einen neuen FiBu-Mandanten
 // Schritte: Firmendaten → Kontenplan → MWST → Zahlstellen → Saldovorträge → Fertig
 
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMandant } from '../contexts/MandantContext';
 import { supabase } from '@/api/supabaseClient';
@@ -174,79 +174,201 @@ function StepFirmendaten({ mandant, onDone }) {
   );
 }
 
-// ── Step 1: Kontenplan ────────────────────────────────────────────
-function StepKontenplan({ mandant, onDone }) {
-  const [status, setStatus] = useState(null);
-  const [msg, setMsg]       = useState('');
-  const [count, setCount]   = useState(null);
+// ── Kleiner Toggle-Schalter ───────────────────────────────────────
+function Toggle({ on, onChange, disabled }) {
+  return (
+    <button
+      type="button"
+      onClick={onChange}
+      disabled={disabled}
+      style={{
+        width: 34, height: 18, borderRadius: 9,
+        background: on ? G : '#d0d8d0',
+        border: 'none', cursor: disabled ? 'default' : 'pointer',
+        position: 'relative', padding: 0, flexShrink: 0,
+        transition: 'background .15s', outline: 'none',
+        opacity: disabled ? 0.6 : 1,
+      }}
+    >
+      <span style={{
+        position: 'absolute', top: 2,
+        left: on ? 16 : 2,
+        width: 14, height: 14, borderRadius: '50%',
+        background: '#fff', transition: 'left .15s',
+        boxShadow: '0 1px 2px rgba(0,0,0,.25)',
+        display: 'block',
+      }} />
+    </button>
+  );
+}
 
-  useEffect(() => {
-    kontenApi.list(mandant.id).then(k => setCount(k.length));
+// ── Step 1: Kontenplan ────────────────────────────────────────────
+const KLASSEN_LABEL = {
+  '1': 'Aktiven',
+  '2': 'Passiven',
+  '3': 'Betriebsertrag',
+  '4': 'Material- / Warenaufwand',
+  '5': 'Personalaufwand',
+  '6': 'Übriger Betriebsaufwand',
+  '7': 'Nebenbetrieb / Liegenschaften',
+  '8': 'Ausserordentliches',
+  '9': 'Abschlusskonten',
+};
+
+function StepKontenplan({ mandant, onDone }) {
+  const [seedStatus, setSeedStatus] = useState(null);   // null | 'loading' | 'ok' | 'err'
+  const [seedMsg, setSeedMsg]       = useState('');
+  const [konten, setKonten]         = useState(null);   // null = noch nicht geladen
+  const [toggling, setToggling]     = useState(new Set());
+
+  const loadKonten = useCallback(async () => {
+    const all = await kontenApi.list(mandant.id, false); // nurAktiv=false → alle
+    setKonten(all);
+    if (all.length > 0) onDone();
   }, [mandant.id]);
 
+  useEffect(() => { loadKonten(); }, [loadKonten]);
+
   const seed = async () => {
-    setStatus('loading'); setMsg('');
+    setSeedStatus('loading'); setSeedMsg('');
     try {
       const { error } = await supabase.rpc('fibu_seed_kontenplan_ch_kmu', { p_mandant_id: mandant.id });
       if (error) throw error;
-      const k = await kontenApi.list(mandant.id);
-      setCount(k.length);
-      setStatus('ok');
-      setMsg(`✓ ${k.length} Konten geladen (Schweizer KMU-Kontenrahmen nach OR 2013)`);
-      onDone();
+      await loadKonten();
+      setSeedStatus('ok');
+      setSeedMsg('✓ Standard-Kontenplan geladen (Schweizer KMU-Kontenrahmen nach OR 2013)');
     } catch (e) {
-      setStatus('err');
-      setMsg(e.message);
+      setSeedStatus('err');
+      setSeedMsg(e.message);
     }
   };
+
+  const handleToggle = async (konto) => {
+    if (toggling.has(konto.id)) return;
+    setToggling(s => new Set([...s, konto.id]));
+    const next = !konto.aktiv;
+    // optimistic update
+    setKonten(prev => prev.map(k => k.id === konto.id ? { ...k, aktiv: next } : k));
+    try {
+      await kontenApi.toggleAktiv(konto.id, next);
+    } catch {
+      // revert
+      setKonten(prev => prev.map(k => k.id === konto.id ? { ...k, aktiv: !next } : k));
+    } finally {
+      setToggling(s => { const n = new Set(s); n.delete(konto.id); return n; });
+    }
+  };
+
+  // Gruppierung nach Klasse (1. Ziffer)
+  const grouped = useMemo(() => {
+    if (!konten || konten.length === 0) return [];
+    const map = {};
+    for (const k of konten) {
+      const cls = k.konto_nr[0] ?? '?';
+      if (!map[cls]) map[cls] = [];
+      map[cls].push(k);
+    }
+    return Object.entries(map).sort(([a], [b]) => a.localeCompare(b));
+  }, [konten]);
+
+  const aktiveCount = konten ? konten.filter(k => k.aktiv).length : 0;
+  const totalCount  = konten ? konten.length : 0;
 
   return (
     <div>
       <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 6 }}>📒 Kontenplan</h2>
-      <p style={{ fontSize: 13.5, color: '#4a5a4a', marginBottom: 20, lineHeight: 1.6 }}>
-        Der Schweizer KMU-Kontenrahmen (nach OR 2013) enthält alle Standardkonten.
-        Bereits vorhandene Konten werden nicht überschrieben.
+      <p style={{ fontSize: 13.5, color: '#4a5a4a', marginBottom: 16, lineHeight: 1.6 }}>
+        Schweizer KMU-Kontenrahmen (nach OR 2013). Bereits vorhandene Konten werden nicht überschrieben.
+        Einzelne Konten können per Schieberegler aktiviert oder deaktiviert werden.
       </p>
 
-      {count !== null && (
-        <div style={{ ...card, background: count > 0 ? OK.bg : GL, borderColor: count > 0 ? '#86efac' : '#c5d4ea', marginBottom: 16 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: count > 0 ? OK.color : '#2e4a7d' }}>
-            {count > 0 ? `✓ ${count} Konten bereits vorhanden` : '⚠ Noch keine Konten — Standard-Kontenplan empfohlen'}
-          </div>
-          {count > 0 && <div style={{ fontSize: 12, color: '#4a6b4a', marginTop: 4 }}>
-            Ergänzen lädt fehlende Konten nach, bestehende bleiben unverändert.
-          </div>}
-        </div>
-      )}
-
-      <button style={btn('dark')} onClick={seed} disabled={status === 'loading'}>
-        {status === 'loading' ? '⏳ Lädt…' : count > 0 ? '⟳ Konten ergänzen' : '⟳ Standard-Kontenplan laden'}
-      </button>
-
-      {msg && (
-        <div style={{ marginTop: 12, padding: '10px 14px', borderRadius: 8, fontSize: 13, background: status === 'ok' ? OK.bg : ER.bg, color: status === 'ok' ? OK.color : ER.color }}>
-          {msg}
-        </div>
-      )}
-
-      <div style={{ marginTop: 20, padding: '14px 16px', borderRadius: 10, background: '#f7faf7', border: '1px solid #e4e9e4' }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: '#6b826b', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '.07em' }}>Enthaltene Klassen</div>
-        {[
-          ['1', 'Aktiven (Umlauf- & Anlagevermögen)'],
-          ['2', 'Passiven (Verbindlichkeiten & Eigenkapital)'],
-          ['3', 'Betriebsertrag'],
-          ['4', 'Material- / Warenaufwand'],
-          ['5', 'Personalaufwand'],
-          ['6', 'Übriger Betriebsaufwand'],
-          ['8', 'Ausserordentliches'],
-          ['9', 'Abschlusskonten'],
-        ].map(([nr, label]) => (
-          <div key={nr} style={{ display: 'flex', gap: 10, fontSize: 12.5, padding: '3px 0', color: '#3a4a3a' }}>
-            <span style={{ fontWeight: 700, color: G, width: 18 }}>{nr}</span>
-            <span>{label}</span>
-          </div>
-        ))}
+      {/* Status + Seed-Button */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+        <button style={btn('dark')} onClick={seed} disabled={seedStatus === 'loading'}>
+          {seedStatus === 'loading' ? '⏳ Lädt…' : totalCount > 0 ? '⟳ Konten ergänzen' : '⟳ Standard-Kontenplan laden'}
+        </button>
+        {totalCount > 0 && (
+          <span style={{ fontSize: 12.5, color: '#6b826b', fontWeight: 500 }}>
+            {aktiveCount} / {totalCount} Konten aktiv
+          </span>
+        )}
       </div>
+
+      {seedMsg && (
+        <div style={{ marginBottom: 14, padding: '9px 14px', borderRadius: 8, fontSize: 13, background: seedStatus === 'ok' ? OK.bg : ER.bg, color: seedStatus === 'ok' ? OK.color : ER.color }}>
+          {seedMsg}
+        </div>
+      )}
+
+      {/* Konten-Liste mit Toggles */}
+      {konten === null && (
+        <div style={{ color: '#94a394', fontSize: 13 }}>Lädt…</div>
+      )}
+      {konten !== null && konten.length === 0 && (
+        <div style={{ padding: '14px 16px', borderRadius: 10, background: '#fef3c7', border: '1px solid #fde68a', fontSize: 13, color: '#92400e' }}>
+          ⚠ Noch keine Konten — bitte Standard-Kontenplan laden.
+        </div>
+      )}
+      {grouped.length > 0 && (
+        <div style={{ border: '1px solid #e4e9e4', borderRadius: 10, overflow: 'hidden', maxHeight: 420, overflowY: 'auto' }}>
+          {grouped.map(([cls, accounts]) => (
+            <div key={cls}>
+              {/* Klassen-Header */}
+              <div style={{
+                background: '#f0f4f0', padding: '5px 12px',
+                fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase',
+                letterSpacing: '.08em', color: '#5a7b5f',
+                position: 'sticky', top: 0, zIndex: 1,
+                borderBottom: '1px solid #e4e9e4',
+                display: 'flex', alignItems: 'center', gap: 8,
+              }}>
+                <span style={{ color: G, fontVariantNumeric: 'tabular-nums' }}>{cls}</span>
+                <span>{KLASSEN_LABEL[cls] || `Klasse ${cls}`}</span>
+                <span style={{ marginLeft: 'auto', fontWeight: 500, color: '#94a394', textTransform: 'none', fontSize: 11 }}>
+                  {accounts.filter(k => k.aktiv).length}/{accounts.length}
+                </span>
+              </div>
+              {/* Konten-Zeilen */}
+              {accounts.map((k, i) => (
+                <div
+                  key={k.id}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '5px 12px',
+                    borderBottom: i < accounts.length - 1 ? '1px solid #f4f7f4' : 'none',
+                    background: k.aktiv ? '#fff' : '#fafbfa',
+                    transition: 'background .1s',
+                  }}
+                >
+                  <span style={{
+                    width: 40, flexShrink: 0,
+                    fontFamily: 'monospace', fontSize: 12, fontWeight: 700,
+                    color: k.aktiv ? G : '#c0c8c0',
+                  }}>
+                    {k.konto_nr}
+                  </span>
+                  <span style={{
+                    flex: 1, fontSize: 12.5, lineHeight: 1.3,
+                    color: k.aktiv ? '#2a3a2a' : '#b0b8b0',
+                  }}>
+                    {k.bezeichnung}
+                  </span>
+                  {k.mwst_code && (
+                    <span style={{ fontSize: 10.5, padding: '1px 6px', borderRadius: 5, background: '#f0f4f8', color: '#4a6b8a', fontWeight: 600, flexShrink: 0 }}>
+                      {k.mwst_code}
+                    </span>
+                  )}
+                  <Toggle
+                    on={k.aktiv}
+                    onChange={() => handleToggle(k)}
+                    disabled={toggling.has(k.id)}
+                  />
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

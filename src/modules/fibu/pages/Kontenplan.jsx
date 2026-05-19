@@ -215,9 +215,14 @@ export default function Kontenplan() {
                     </thead>
                     <tbody>
                       {list.map(k => (
-                        <tr key={k.id} style={{ opacity: k.aktiv ? 1 : .5 }}>
+                        <tr key={k.id} style={{ background: !k.aktiv ? '#faf5ff' : undefined }}>
                           <td style={{ ...s.td, ...s.nrCell }}>{k.konto_nr}</td>
-                          <td style={s.td}>{k.bezeichnung}</td>
+                          <td style={s.td}>
+                            {k.bezeichnung}
+                            {!k.aktiv && (
+                              <span style={{ marginLeft: 8, fontSize: 10.5, fontWeight: 600, padding: '2px 7px', borderRadius: 5, background: '#ede4ff', color: '#6b3aaa' }}>inaktiv</span>
+                            )}
+                          </td>
                           <td style={s.td}><span style={s.typBadge(k.konto_typ)}>{k.konto_typ}</span></td>
                           <td style={s.td}>
                             <select

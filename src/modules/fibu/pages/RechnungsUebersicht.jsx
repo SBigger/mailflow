@@ -42,32 +42,96 @@ const lbl = { fontSize: 11, fontWeight: 600, color: '#6b826b', marginBottom: 3, 
 function EditModal({ beleg, konten, mwstCodes, lieferanten, onSave, onClose }) {
   const mwstAbgerechnet = beleg.mwst_abgerechnet;
   const aufwandKonten   = konten.filter(k => k.konto_typ === 'aufwand');
+  const vorsteuerCodes  = mwstCodes.filter(c => c.typ === 'vorsteuer' || c.typ === 'steuerbefreit');
+  const mwstMap         = Object.fromEntries(mwstCodes.map(c => [c.code, c.satz ?? 0]));
+
+  const calcMwst = (brutto, code) => {
+    const satz = mwstMap[code] ?? 0;
+    const b = parseFloat(brutto) || 0;
+    const netto = satz > 0 ? Math.round(b / (1 + satz / 100) * 100) / 100 : b;
+    return { betrag_netto: netto, betrag_mwst: Math.round((b - netto) * 100) / 100 };
+  };
 
   const [form, setForm] = useState({
-    belegdatum:        beleg.belegdatum ?? '',
-    buchungsdatum:     beleg.buchungsdatum ?? beleg.belegdatum ?? '',
-    faelligkeit:       beleg.faelligkeit ?? '',
-    lieferant_id:      beleg.lieferant_id ?? '',
+    belegdatum:         beleg.belegdatum ?? '',
+    buchungsdatum:      beleg.buchungsdatum ?? beleg.belegdatum ?? '',
+    faelligkeit:        beleg.faelligkeit ?? '',
+    lieferant_id:       beleg.lieferant_id ?? '',
     lieferant_beleg_nr: beleg.lieferant_beleg_nr ?? '',
-    zahlungsreferenz:  beleg.zahlungsreferenz ?? '',
-    notiz:             beleg.notiz ?? '',
+    zahlungsreferenz:   beleg.zahlungsreferenz ?? '',
+    notiz:              beleg.notiz ?? '',
   });
 
-  // Konto-Änderung direkt auf Positionen (erste Position)
-  const [konto, setKonto] = useState(beleg.positionen?.[0]?.konto_nr ?? '');
-  const [saving, setSaving] = useState(false);
+  // Positionen – aus Beleg vorbelegen oder Einzel-Position aus Beleg-Totals erzeugen
+  const [positionen, setPositionen] = useState(() => {
+    const pos = beleg.positionen ?? [];
+    const dfltCode = vorsteuerCodes[0]?.code ?? 'M81';
+    if (pos.length === 0) {
+      const brutto = String(Math.abs(beleg.betrag_brutto ?? 0));
+      return [{
+        _key: Math.random(), konto_nr: '', bezeichnung: '',
+        mwst_code: dfltCode, betrag_brutto: brutto,
+        ...calcMwst(brutto, dfltCode),
+      }];
+    }
+    return pos.map(p => ({
+      ...p, _key: p.id ?? Math.random(),
+      betrag_brutto: String(Math.abs(p.betrag_brutto ?? 0)),
+      betrag_netto:  Math.abs(p.betrag_netto ?? 0),
+      betrag_mwst:   Math.abs(p.betrag_mwst  ?? 0),
+    }));
+  });
 
+  const [saving, setSaving] = useState(false);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const updatePos = (idx, field, val) => {
+    setPositionen(prev => {
+      const next = [...prev];
+      const p = { ...next[idx], [field]: val };
+      if (field === 'betrag_brutto' || field === 'mwst_code') {
+        Object.assign(p, calcMwst(p.betrag_brutto, p.mwst_code));
+      }
+      next[idx] = p;
+      return next;
+    });
+  };
+
+  const addPos = () => {
+    const code = vorsteuerCodes[0]?.code ?? 'M81';
+    setPositionen(prev => [...prev, {
+      _key: Math.random(), konto_nr: '', bezeichnung: '',
+      mwst_code: code, betrag_brutto: '', betrag_netto: 0, betrag_mwst: 0,
+    }]);
+  };
+
+  const removePos = (idx) => {
+    if (positionen.length <= 1) return;
+    setPositionen(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const totalBrutto = positionen.reduce((s, p) => s + (parseFloat(p.betrag_brutto) || 0), 0);
+  const multiPos    = positionen.length > 1;
 
   const handleSave = async () => {
     setSaving(true);
     try {
-      await onSave(beleg.id, form, konto);
+      const enriched = positionen.map(p => ({
+        ...p, ...calcMwst(p.betrag_brutto, p.mwst_code),
+        betrag_brutto: parseFloat(p.betrag_brutto) || 0,
+      }));
+      await onSave(beleg.id, form, enriched);
       onClose();
     } finally {
       setSaving(false);
     }
   };
+
+  const fmtN = n => (parseFloat(n) || 0).toFixed(2);
+
+  // Kompakter Stil für Positions-Tabelle
+  const piS  = { ...inp, fontSize: 11.5, padding: '3px 6px' };
+  const piSD = { ...inpDis, fontSize: 11.5, padding: '3px 6px' };
 
   return (
     <div style={{
@@ -77,7 +141,7 @@ function EditModal({ beleg, konten, mwstCodes, lieferanten, onSave, onClose }) {
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div style={{
-        background: '#fff', borderRadius: 14, width: 640, maxHeight: '90vh',
+        background: '#fff', borderRadius: 14, width: 720, maxHeight: '92vh',
         overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
         border: mwstAbgerechnet ? '2px solid #c9b8f0' : '1px solid #e4e9e4',
       }}>
@@ -111,7 +175,7 @@ function EditModal({ beleg, konten, mwstCodes, lieferanten, onSave, onClose }) {
           {mwstAbgerechnet && (
             <div style={{ background: '#f3eeff', border: '1px solid #c9b8f0', borderRadius: 9, padding: '10px 14px', fontSize: 12, color: '#5f3a9c' }}>
               ⚠ Dieser Beleg ist in der MWST-Abrechnung <strong>{beleg.mwst_abrechnung_ref}</strong> enthalten.
-              MWST-Code und Beträge können nicht mehr geändert werden. Das Buchungskonto bleibt anpassbar.
+              Beträge und MWST-Code sind gesperrt. Das Buchungskonto bleibt anpassbar.
             </div>
           )}
 
@@ -147,43 +211,105 @@ function EditModal({ beleg, konten, mwstCodes, lieferanten, onSave, onClose }) {
             </div>
           </div>
 
-          {/* Buchungskonto — immer änderbar */}
-          <div>
-            <label style={lbl}>
-              Buchungskonto (Aufwand)
-              {mwstAbgerechnet && (
-                <span style={{ marginLeft: 6, fontWeight: 400, color: '#7a5aaa', fontSize: 10.5 }}>auch nach MWST-Abrechnung änderbar</span>
+          {/* ── Buchungskonten / Aufteilung ── */}
+          <div style={{ border: '1px solid #e4e9e4', borderRadius: 9, overflow: 'hidden' }}>
+            {/* Abschnitt-Header */}
+            <div style={{
+              display: 'flex', alignItems: 'center', padding: '8px 12px',
+              background: multiPos ? '#fff8f0' : '#fafcfa',
+              borderBottom: '1px solid #e4e9e4',
+            }}>
+              <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#6b826b' }}>
+                {multiPos
+                  ? `⊞ Kontoaufteilung — ${positionen.length} Zeilen`
+                  : 'Buchungskonto'}
+                {mwstAbgerechnet && <span style={{ fontWeight: 400, color: '#7a5aaa', marginLeft: 6, fontSize: 10.5, textTransform: 'none' }}>auch nach MWST-Abrechnung änderbar</span>}
+              </span>
+              <span style={{ flex: 1 }} />
+              {!mwstAbgerechnet && (
+                <button onClick={addPos}
+                  style={{ fontSize: 11.5, fontWeight: 500, color: '#7a9b7f', border: 'none', background: 'none', cursor: 'pointer', padding: '2px 4px' }}
+                  title="Zusätzliche Konto-Zeile für Aufteilung">
+                  + Aufteilungszeile
+                </button>
               )}
-            </label>
-            <select style={inp} value={konto} onChange={e => setKonto(e.target.value)}>
-              <option value="">— Konto wählen —</option>
-              {aufwandKonten.map(k => (
-                <option key={k.konto_nr} value={k.konto_nr}>{k.konto_nr} {k.bezeichnung}</option>
-              ))}
-            </select>
-          </div>
+            </div>
 
-          {/* MWST-Info — gesperrt wenn abgerechnet */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-            <div>
-              <label style={lbl}>MWST-Code</label>
-              {mwstAbgerechnet
-                ? <input style={inpDis} value={beleg.positionen?.[0]?.mwst_code ?? '—'} readOnly />
-                : (
-                  <select style={inp} disabled>
-                    <option>{beleg.positionen?.[0]?.mwst_code ?? '—'}</option>
-                  </select>
-                )
-              }
+            {/* Spalten-Header */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 65px 68px 22px', gap: 4, padding: '4px 10px 3px', background: '#f7faf7', borderBottom: '1px solid #eff3ef' }}>
+              {['Konto (Aufwand)', 'Brutto CHF', 'MWST', 'Netto CHF', ''].map((h, i) => (
+                <span key={i} style={{ fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: '#94a394', paddingLeft: i === 0 ? 2 : (i === 1 || i === 3) ? 0 : 2, textAlign: (i === 1 || i === 3) ? 'right' : 'left' }}>{h}</span>
+              ))}
             </div>
-            <div>
-              <label style={lbl}>Betrag netto</label>
-              <input style={inpDis} value={CHF(beleg.betrag_netto)} readOnly />
-            </div>
-            <div>
-              <label style={lbl}>Betrag brutto</label>
-              <input style={inpDis} value={CHF(beleg.betrag_brutto)} readOnly />
-            </div>
+
+            {/* Positions-Zeilen */}
+            {positionen.map((p, idx) => (
+              <div key={p._key ?? idx} style={{
+                display: 'grid', gridTemplateColumns: '1fr 80px 65px 68px 22px',
+                gap: 4, padding: '5px 10px', alignItems: 'center',
+                borderBottom: idx < positionen.length - 1 ? '1px solid #f5f7f5' : 'none',
+                background: idx % 2 === 0 ? '#fff' : '#fafcfa',
+              }}>
+                {/* Konto — immer editierbar */}
+                <select style={piS} value={p.konto_nr} onChange={e => updatePos(idx, 'konto_nr', e.target.value)}>
+                  <option value="">— Konto wählen —</option>
+                  {aufwandKonten.map(k => (
+                    <option key={k.konto_nr} value={k.konto_nr}>{k.konto_nr} {k.bezeichnung}</option>
+                  ))}
+                </select>
+
+                {/* Brutto CHF — gesperrt wenn mwst_abgerechnet */}
+                <input type="number" step="0.01"
+                  style={{ ...((mwstAbgerechnet) ? piSD : piS), textAlign: 'right' }}
+                  value={p.betrag_brutto}
+                  onChange={e => updatePos(idx, 'betrag_brutto', e.target.value)}
+                  disabled={mwstAbgerechnet}
+                  placeholder="0.00"
+                />
+
+                {/* MWST-Code — gesperrt wenn mwst_abgerechnet */}
+                {mwstAbgerechnet
+                  ? <input style={piSD} value={p.mwst_code ?? '—'} readOnly />
+                  : (
+                    <select style={piS} value={p.mwst_code} onChange={e => updatePos(idx, 'mwst_code', e.target.value)}>
+                      {vorsteuerCodes.map(c => (
+                        <option key={c.code} value={c.code}>{c.code}{c.satz > 0 ? ` ${c.satz}%` : ''}</option>
+                      ))}
+                    </select>
+                  )
+                }
+
+                {/* Netto — immer read-only (berechnet) */}
+                <span style={{ textAlign: 'right', fontSize: 12, color: '#4a5a4a', fontVariantNumeric: 'tabular-nums', paddingRight: 2 }}>
+                  {fmtN(p.betrag_netto)}
+                </span>
+
+                {/* Löschen — nur wenn >1 Position */}
+                <button
+                  onClick={() => removePos(idx)}
+                  disabled={positionen.length <= 1}
+                  title="Zeile entfernen"
+                  style={{
+                    border: 'none', background: 'none', cursor: positionen.length > 1 ? 'pointer' : 'default',
+                    color: positionen.length > 1 ? '#c0726a' : '#e0e4e0',
+                    fontSize: 13, padding: '0 2px', lineHeight: 1,
+                  }}>✕</button>
+              </div>
+            ))}
+
+            {/* Total-Zeile — nur bei Aufteilung */}
+            {multiPos && (
+              <div style={{
+                display: 'flex', justifyContent: 'flex-end', alignItems: 'center',
+                padding: '6px 36px 6px 12px', background: '#f7faf7',
+                borderTop: '2px solid #e4e9e4', gap: 16,
+              }}>
+                <span style={{ fontSize: 11.5, color: '#6b826b' }}>Total Brutto:</span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: '#1a1a2e', fontVariantNumeric: 'tabular-nums', minWidth: 70, textAlign: 'right' }}>
+                  CHF {fmtN(totalBrutto)}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Referenz + Notiz */}
@@ -206,7 +332,12 @@ function EditModal({ beleg, konten, mwstCodes, lieferanten, onSave, onClose }) {
         </div>
 
         {/* Footer */}
-        <div style={{ padding: '14px 20px', borderTop: '1px solid #e4e9e4', display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+        <div style={{ padding: '14px 20px', borderTop: '1px solid #e4e9e4', display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'center' }}>
+          {multiPos && (
+            <span style={{ fontSize: 11.5, color: '#6b826b', marginRight: 'auto' }}>
+              {positionen.length} Buchungskonten — Total CHF {fmtN(totalBrutto)}
+            </span>
+          )}
           <button onClick={onClose} style={{ padding: '8px 18px', borderRadius: 8, border: '1px solid #d4dcd4', background: '#fff', fontSize: 12.5, cursor: 'pointer' }}>
             Abbrechen
           </button>
@@ -278,24 +409,56 @@ export default function RechnungsUebersicht() {
     setEditBeleg(full);
   };
 
-  const handleSave = async (id, form, konto) => {
+  const handleSave = async (id, form, positionen) => {
+    // 1. Beleg-Kopffelder aktualisieren
     await kreditorenApi.update(id, {
-      belegdatum:        form.belegdatum,
-      buchungsdatum:     form.buchungsdatum,
-      faelligkeit:       form.faelligkeit,
-      lieferant_id:      form.lieferant_id,
+      belegdatum:         form.belegdatum,
+      buchungsdatum:      form.buchungsdatum,
+      faelligkeit:        form.faelligkeit,
+      lieferant_id:       form.lieferant_id,
       lieferant_beleg_nr: form.lieferant_beleg_nr,
-      zahlungsreferenz:  form.zahlungsreferenz,
-      notiz:             form.notiz,
+      zahlungsreferenz:   form.zahlungsreferenz,
+      notiz:              form.notiz,
     });
-    // Konto auf erste Position schreiben
-    if (konto && editBeleg?.positionen?.[0]?.id) {
-      const { supabase } = await import('@/api/supabaseClient');
-      await supabase
-        .from('fibu_kreditoren_positionen')
-        .update({ konto_nr: konto })
-        .eq('id', editBeleg.positionen[0].id);
+
+    // 2. Positionen ersetzen (Delete + Insert)
+    const validPos = (positionen ?? []).filter(p => (p.betrag_brutto ?? 0) > 0);
+    if (validPos.length > 0 && editBeleg?.mandant_id) {
+      const { supabase: sb } = await import('@/api/supabaseClient');
+
+      // Alle bisherigen Positionen löschen
+      await sb.from('fibu_kreditoren_positionen').delete().eq('beleg_id', id);
+
+      // Neue Positionen einfügen
+      await sb.from('fibu_kreditoren_positionen').insert(
+        validPos.map((p, i) => ({
+          beleg_id:      id,
+          mandant_id:    editBeleg.mandant_id,
+          position:      i + 1,
+          konto_nr:      p.konto_nr || null,
+          bezeichnung:   p.bezeichnung || null,
+          mwst_code:     p.mwst_code,
+          mwst_satz:     mwstCodes.find(c => c.code === p.mwst_code)?.satz ?? 0,
+          betrag_netto:  Math.round((p.betrag_netto  ?? 0) * 100) / 100,
+          betrag_mwst:   Math.round((p.betrag_mwst   ?? 0) * 100) / 100,
+          betrag_brutto: Math.round((p.betrag_brutto ?? 0) * 100) / 100,
+        }))
+      );
+
+      // Beleg-Totals aus Positionen neu berechnen
+      const tot = validPos.reduce((a, p) => ({
+        netto:  a.netto  + (p.betrag_netto  ?? 0),
+        mwst:   a.mwst   + (p.betrag_mwst   ?? 0),
+        brutto: a.brutto + (p.betrag_brutto  ?? 0),
+      }), { netto: 0, mwst: 0, brutto: 0 });
+
+      await sb.from('fibu_kreditoren_belege').update({
+        betrag_netto:  Math.round(tot.netto  * 100) / 100,
+        betrag_mwst:   Math.round(tot.mwst   * 100) / 100,
+        betrag_brutto: Math.round(tot.brutto * 100) / 100,
+      }).eq('id', id);
     }
+
     await load();
   };
 

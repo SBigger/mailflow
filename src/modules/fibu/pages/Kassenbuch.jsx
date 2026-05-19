@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useMandant } from '../contexts/MandantContext';
 import { supabase } from '@/api/supabaseClient';
-import { kontenApi, manuelleBuchungApi, kassenbuchApi } from '../api';
+import { kontenApi, manuelleBuchungApi, kassenbuchApi, mwstCodesApi } from '../api';
 
 const CHF  = (n) => n == null ? '—' : new Intl.NumberFormat('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 const DATE = (s) => s ? new Date(s).toLocaleDateString('de-CH') : '—';
@@ -14,7 +14,7 @@ const fileToBase64 = (file) => new Promise((res, rej) => {
   r.readAsDataURL(file);
 });
 
-const emptyForm = () => ({ datum: today(), typ: 'ausgabe', betrag: '', beschreibung: '', gegenkonto: '', file: null });
+const emptyForm = () => ({ datum: today(), typ: 'ausgabe', betrag: '', beschreibung: '', gegenkonto: '', mwst_code: '', file: null });
 
 export default function Kassenbuch() {
   const { mandant, canWrite } = useMandant();
@@ -32,6 +32,7 @@ export default function Kassenbuch() {
   const [ocrBusy, setOcrBusy] = useState(false);
   const [ocrMsg, setOcrMsg]   = useState(null);
   const [saving, setSaving]   = useState(false);
+  const [mwstCodes, setMwstCodes] = useState([]);
 
   useEffect(() => {
     if (!mandant) return;
@@ -42,6 +43,7 @@ export default function Kassenbuch() {
         ?? akt.find(x => /kasse/i.test(x.bezeichnung || ''));
       if (kasseKonto) setKasse(kasseKonto.konto_nr);
     }).catch(() => {});
+    mwstCodesApi.listAktiv(mandant.id).then(setMwstCodes).catch(() => {});
   }, [mandant?.id]);
 
   const load = async () => {
@@ -101,9 +103,10 @@ export default function Kassenbuch() {
         pdfPath = up.path; pdfName = up.name;
       }
       const betrag = parseFloat(form.betrag);
+      const mwst_code = form.mwst_code || null;
       const zeile = form.typ === 'einnahme'
-        ? { konto_soll: kasse, konto_haben: form.gegenkonto, betrag, text: form.beschreibung }
-        : { konto_soll: form.gegenkonto, konto_haben: kasse, betrag, text: form.beschreibung };
+        ? { konto_soll: kasse, konto_haben: form.gegenkonto, betrag, mwst_code, text: form.beschreibung }
+        : { konto_soll: form.gegenkonto, konto_haben: kasse, betrag, mwst_code, text: form.beschreibung };
       await manuelleBuchungApi.erstellen({
         mandantId: mandant.id, datum: form.datum,
         text: form.beschreibung || 'Kassenbuchung',
@@ -224,7 +227,7 @@ export default function Kassenbuch() {
                   <label style={lbl}>Art *</label>
                   <div style={{ display: 'flex', gap: 4, background: '#eef2ee', borderRadius: 8, padding: 3 }}>
                     {[['ausgabe', 'Ausgabe'], ['einnahme', 'Einnahme']].map(([v, l]) => (
-                      <button key={v} onClick={() => setForm(f => ({ ...f, typ: v }))}
+                      <button key={v} onClick={() => setForm(f => ({ ...f, typ: v, mwst_code: '' }))}
                         style={{ flex: 1, padding: '5px 8px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600,
                           background: form.typ === v ? '#fff' : 'transparent',
                           color: form.typ === v ? (v === 'einnahme' ? '#166534' : '#991b1b') : '#6b826b',
@@ -247,6 +250,15 @@ export default function Kassenbuch() {
                   <select style={inp} value={form.gegenkonto} onChange={e => setForm(f => ({ ...f, gegenkonto: e.target.value }))}>
                     <option value="">— wählen —</option>
                     {gegenkonten.map(k => <option key={k.konto_nr} value={k.konto_nr}>{k.konto_nr} {k.bezeichnung}</option>)}
+                  </select>
+                </div>
+                <div style={{ width: 120 }}>
+                  <label style={lbl}>MWST-Code</label>
+                  <select style={inp} value={form.mwst_code} onChange={e => setForm(f => ({ ...f, mwst_code: e.target.value }))}>
+                    <option value="">— kein —</option>
+                    {mwstCodes
+                      .filter(m => form.typ === 'einnahme' ? m.typ === 'umsatzsteuer' : m.typ === 'vorsteuer')
+                      .map(m => <option key={m.code} value={m.code}>{m.code} ({m.satz}%)</option>)}
                   </select>
                 </div>
               </div>

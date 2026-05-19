@@ -43,7 +43,6 @@ export default function Zahlungslauf() {
   const [amounts, setAmounts] = useState({});   // belegId → erfasster Zahlbetrag (Teilzahlung)
   const [skonti, setSkonti] = useState(new Set());   // belegIds mit Skonto-Abzug
   const [step, setStep] = useState(0);
-  const [fälligBis, setFälligBis] = useState(addDays(7));
   const [valuta, setValuta] = useState(addDays(2));
   const [zahlungsKontoNr, setZahlungsKontoNr] = useState('1020');
   const [zahlungsKontoIban, setZahlungsKontoIban] = useState('');
@@ -55,6 +54,8 @@ export default function Zahlungslauf() {
   const [view, setView] = useState('wizard');        // 'wizard' | 'historie'
   const [historie, setHistorie] = useState([]);
   const [histLoading, setHistLoading] = useState(false);
+  const [zusatz, setZusatz] = useState(new Set());   // manuell hinzugefügte nicht-fällige Belege
+  const [showHinzufügen, setShowHinzufügen] = useState(false);
 
   const loadHistorie = async () => {
     if (!mandant) return;
@@ -75,13 +76,16 @@ export default function Zahlungslauf() {
     URL.revokeObjectURL(a.href);
   };
 
+  const today = toISO(new Date());
+
   useEffect(() => {
     if (!mandant) return;
     setLoading(true);
     kreditorenApi.listOffen(mandant.id)
       .then(data => {
         setBelege(data);
-        const auto = new Set(data.filter(b => b.faelligkeit <= fälligBis).map(b => b.id));
+        // Nur fällige (faelligkeit <= heute) automatisch auswählen
+        const auto = new Set(data.filter(b => b.faelligkeit <= today).map(b => b.id));
         setSelected(auto);
       })
       .finally(() => setLoading(false));
@@ -149,6 +153,18 @@ export default function Zahlungslauf() {
   // tatsächlich zu zahlender Betrag (Skonto schlägt Teilzahlung)
   const effektiverBetrag = (b) =>
     skonti.has(b.id) ? restBetrag(b) - skontoBetrag(b) : zahlbetrag(b);
+
+  // Belege die standardmässig angezeigt werden (fällig) + manuell hinzugefügte
+  const nichtFällige   = belege.filter(b => b.faelligkeit > today);
+  const anzeigeBelege  = belege.filter(b => b.faelligkeit <= today || zusatz.has(b.id));
+
+  const toggleZusatz = (id) => {
+    setZusatz(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
 
   const selectedBelege = belege.filter(b => selected.has(b.id));
   const totalBetrag = selectedBelege.reduce((s, b) => s + effektiverBetrag(b), 0);
@@ -479,13 +495,18 @@ export default function Zahlungslauf() {
           {/* Invoice list */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRight: '1px solid #e4e9e4' }}>
             <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', background: '#fff', borderBottom: '1px solid #e4e9e4' }}>
-              <span style={{ fontWeight: 600, fontSize: 13 }}>Rechnungen auswählen</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 16 }}>
-                <span style={{ fontSize: 11.5, color: '#6b826b' }}>Fällig bis:</span>
-                <input type="date" value={fälligBis} onChange={e => setFälligBis(e.target.value)} style={{ ...inp, width: 140, padding: '4px 8px' }} />
-              </div>
+              <span style={{ fontWeight: 600, fontSize: 13 }}>Fällige Rechnungen</span>
+              {nichtFällige.length > 0 && (
+                <button
+                  onClick={() => setShowHinzufügen(true)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 7, border: '1px solid #b8d4b8', background: '#f0f7f0', fontSize: 12, fontWeight: 600, color: '#3d6641', cursor: 'pointer' }}
+                >
+                  <span style={{ fontSize: 14, lineHeight: 1 }}>+</span> Hinzufügen
+                  <span style={{ fontSize: 10.5, fontWeight: 400, color: '#7a9b7f' }}>({nichtFällige.length})</span>
+                </button>
+              )}
               <div style={{ flex: 1 }} />
-              <span style={{ fontSize: 11.5, color: '#94a394' }}>{selected.size} von {belege.length} ausgewählt · CHF {CHF(totalBetrag)}</span>
+              <span style={{ fontSize: 11.5, color: '#94a394' }}>{selected.size} von {anzeigeBelege.length} ausgewählt · CHF {CHF(totalBetrag)}</span>
             </div>
             <div style={{ flex: 1, overflowY: 'auto' }}>
               {loading ? (
@@ -493,14 +514,14 @@ export default function Zahlungslauf() {
               ) : (
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead><tr>
-                    <th style={{ ...hdr, width: 36 }}><input type="checkbox" checked={selected.size === belege.length && belege.length > 0} onChange={e => setSelected(e.target.checked ? new Set(belege.map(b => b.id)) : new Set())} /></th>
+                    <th style={{ ...hdr, width: 36 }}><input type="checkbox" checked={anzeigeBelege.length > 0 && anzeigeBelege.every(b => selected.has(b.id))} onChange={e => setSelected(prev => { const next = new Set(prev); if (e.target.checked) anzeigeBelege.forEach(b => next.add(b.id)); else anzeigeBelege.forEach(b => next.delete(b.id)); return next; })} /></th>
                     <th style={hdr}>Beleg-Nr.</th><th style={hdr}>Lieferant</th>
                     <th style={hdr}>Fälligkeit</th>
                     <th style={{ ...hdr, textAlign: 'right' }}>Betrag CHF</th>
                     <th style={hdr}>IBAN</th>
                   </tr></thead>
                   <tbody>
-                    {belege.map(b => {
+                    {anzeigeBelege.map(b => {
                       const isOver = b.faelligkeit < toISO(new Date());
                       const hasIban = !!b.lieferant?.iban;
                       const sel  = selected.has(b.id);
@@ -514,7 +535,16 @@ export default function Zahlungslauf() {
                         <tr key={b.id} style={{ background: sel ? '#f0f7f0' : undefined, cursor: 'pointer' }} onClick={() => toggle(b.id)}>
                           <td style={{ ...td, textAlign: 'center' }}><input type="checkbox" checked={sel} onChange={() => toggle(b.id)} onClick={e => e.stopPropagation()} /></td>
                           <td style={{ ...td, fontFamily: 'monospace', fontSize: 12 }}>{b.beleg_nr}</td>
-                          <td style={{ ...td, fontWeight: 500 }}>{b.lieferant?.name}</td>
+                          <td style={{ ...td, fontWeight: 500 }}>
+                            {b.lieferant?.name}
+                            {zusatz.has(b.id) && (
+                              <span
+                                title="Manuell hinzugefügt – klicken zum Entfernen"
+                                onClick={e => { e.stopPropagation(); toggleZusatz(b.id); setSelected(prev => { const next = new Set(prev); next.delete(b.id); return next; }); }}
+                                style={{ marginLeft: 6, fontSize: 9.5, fontWeight: 600, padding: '1px 5px', borderRadius: 3, background: '#dbeafe', color: '#1e40af', cursor: 'pointer' }}
+                              >+hinzugefügt ✕</span>
+                            )}
+                          </td>
                           <td style={{ ...td, color: isOver ? '#8a2d2d' : undefined, fontWeight: isOver ? 500 : undefined }}>{DATE(b.faelligkeit)}{isOver ? ' ⚠' : ''}</td>
                           <td style={{ ...td, textAlign: 'right' }} onClick={e => sel && e.stopPropagation()}>
                             {sel ? (
@@ -557,8 +587,10 @@ export default function Zahlungslauf() {
                         </tr>
                       );
                     })}
-                    {belege.length === 0 && (
-                      <tr><td colSpan={6} style={{ padding: 32, textAlign: 'center', color: '#94a394', fontSize: 12.5 }}>Keine offenen Rechnungen</td></tr>
+                    {anzeigeBelege.length === 0 && (
+                      <tr><td colSpan={6} style={{ padding: 32, textAlign: 'center', color: '#94a394', fontSize: 12.5 }}>
+                        {belege.length === 0 ? 'Keine offenen Rechnungen' : 'Keine fälligen Rechnungen – klick auf «+ Hinzufügen» um weitere einzuschliessen'}
+                      </td></tr>
                     )}
                   </tbody>
                 </table>
@@ -616,6 +648,69 @@ export default function Zahlungslauf() {
               </div>
             </div>
             <div style={{ fontSize: 11, color: '#94a394', textAlign: 'center' }}>ISO 20022 pain.001.001.09 · Swiss Payment Standards 2026</div>
+          </div>
+        </div>
+      )}
+      {/* ── Modal: nicht-fällige Rechnungen hinzufügen ── */}
+      {showHinzufügen && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.35)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setShowHinzufügen(false)}>
+          <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 8px 40px rgba(0,0,0,.18)', width: 680, maxHeight: '80vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid #e4e9e4', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 700, fontSize: 14, color: '#1a1a2e' }}>Weitere Rechnungen hinzufügen</div>
+                <div style={{ fontSize: 11.5, color: '#94a394', marginTop: 2 }}>Noch nicht fällige offene Rechnungen</div>
+              </div>
+              <button onClick={() => setShowHinzufügen(false)} style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid #e4e9e4', background: '#f7faf7', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6b826b' }}>✕</button>
+            </div>
+            {/* Tabelle */}
+            <div style={{ flex: 1, overflowY: 'auto' }}>
+              {nichtFällige.length === 0 ? (
+                <div style={{ padding: 40, textAlign: 'center', color: '#94a394', fontSize: 13 }}>Alle Rechnungen sind bereits angezeigt</div>
+              ) : (
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead><tr>
+                    <th style={{ ...hdr, width: 36 }}></th>
+                    <th style={hdr}>Beleg-Nr.</th>
+                    <th style={hdr}>Lieferant</th>
+                    <th style={hdr}>Fälligkeit</th>
+                    <th style={{ ...hdr, textAlign: 'right' }}>Betrag CHF</th>
+                  </tr></thead>
+                  <tbody>
+                    {nichtFällige.map(b => {
+                      const inZusatz = zusatz.has(b.id);
+                      const rest = restBetrag(b);
+                      const daysUntil = Math.round((new Date(b.faelligkeit + 'T00:00:00') - new Date()) / 86400000);
+                      return (
+                        <tr key={b.id} style={{ background: inZusatz ? '#f0f7f0' : undefined, cursor: 'pointer' }}
+                          onClick={() => {
+                            toggleZusatz(b.id);
+                            if (!inZusatz) setSelected(prev => { const next = new Set(prev); next.add(b.id); return next; });
+                            else setSelected(prev => { const next = new Set(prev); next.delete(b.id); return next; });
+                          }}>
+                          <td style={{ ...td, textAlign: 'center' }}>
+                            <input type="checkbox" checked={inZusatz} readOnly />
+                          </td>
+                          <td style={{ ...td, fontFamily: 'monospace', fontSize: 12 }}>{b.beleg_nr}</td>
+                          <td style={{ ...td, fontWeight: 500 }}>{b.lieferant?.name}</td>
+                          <td style={td}>
+                            <span style={{ fontSize: 12 }}>{DATE(b.faelligkeit)}</span>
+                            {daysUntil >= 0 && <span style={{ marginLeft: 6, fontSize: 10.5, color: '#7a9b7f' }}>in {daysUntil}d</span>}
+                          </td>
+                          <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 500 }}>{CHF(rest)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            {/* Footer */}
+            <div style={{ padding: '12px 20px', borderTop: '1px solid #e4e9e4', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button onClick={() => setShowHinzufügen(false)} style={{ padding: '6px 16px', borderRadius: 8, border: 'none', background: '#7a9b7f', color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
+                {zusatz.size > 0 ? `${zusatz.size} hinzugefügt ✓` : 'Schliessen'}
+              </button>
+            </div>
           </div>
         </div>
       )}

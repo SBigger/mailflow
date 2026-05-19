@@ -25,8 +25,6 @@ const SECTIONS = [
       { to: 'kreditoren/dauerbelege', label: 'Wiederkehrend',   icon: 'calendar' },
       { divider: true },
       { to: 'kreditoren/lieferanten', label: 'Lieferanten',      icon: 'users' },
-      { to: 'kreditoren/lieferanten-konto', label: 'Lieferanten-Konto', icon: 'doc-text' },
-      { to: 'kreditoren/opliste',     label: 'OP-Liste',          icon: 'check-list' },
       { to: 'kreditoren/zahlungslauf', label: 'Zahlungslauf',    icon: 'credit-card' },
     ],
   },
@@ -42,19 +40,29 @@ const SECTIONS = [
     ],
   },
   {
+    id:    'ebanking',
+    short: '🏦',
+    label: 'Electronic Banking',
+    paths: ['bankabstimmung'],
+    items: [
+      { to: 'bankabstimmung', label: 'Bankabstimmung',   icon: 'bank' },
+    ],
+  },
+  {
     id:    'auswertungen',
     short: '📊',
     label: 'Auswertungen',
-    paths: ['journal', 'kontoblaetter', 'bilanz', 'mwst', 'jahresabschluss', 'kursbewertung', 'bankabstimmung', 'kreditoren/journal'],
+    paths: ['journal', 'kontoblaetter', 'bilanz', 'mwst', 'jahresabschluss', 'kursbewertung', 'kreditoren/journal', 'kreditoren/lieferanten-konto', 'kreditoren/opliste'],
     items: [
-      { to: 'kreditoren/journal',   label: 'Belegjournal',     icon: 'list' },
+      { to: 'kreditoren/journal',           label: 'Belegjournal',       icon: 'list' },
+      { to: 'kreditoren/lieferanten-konto', label: 'Lieferanten-Konto',  icon: 'doc-text' },
+      { to: 'kreditoren/opliste',           label: 'OP-Liste',           icon: 'check-list' },
       { to: 'kontoblaetter',        label: 'Kontoblätter',     icon: 'table' },
       { to: 'bilanz',               label: 'Bilanz & ER',      icon: 'balance' },
       { divider: true },
       { to: 'mwst/abrechnung',      label: 'MWST-Abrechnung',  icon: 'doc-text' },
       { to: 'jahresabschluss',      label: 'Jahresabschluss',  icon: 'calendar' },
       { to: 'kursbewertung',        label: 'FW-Kursbewertung', icon: 'percent' },
-      { to: 'bankabstimmung',       label: 'Bankabstimmung',   icon: 'bank', newWindowFallback: true },
     ],
   },
   {
@@ -116,11 +124,19 @@ function Icon({ name, className = '' }) {
 }
 
 // ── Sektion aus aktuellem Pfad erkennen ──────────────────────────
+// Längste Übereinstimmung gewinnt (spezifischere Pfade vor allgemeinen)
 function detectSection(pathname) {
+  let best = null;
+  let bestLen = 0;
   for (const sec of SECTIONS) {
-    if (sec.paths.some(p => pathname.includes(p))) return sec.id;
+    for (const p of sec.paths) {
+      if (pathname.includes(p) && p.length > bestLen) {
+        bestLen = p.length;
+        best = sec.id;
+      }
+    }
   }
-  return 'kreditoren';
+  return best ?? 'kreditoren';
 }
 
 // ── Hauptkomponente ──────────────────────────────────────────────

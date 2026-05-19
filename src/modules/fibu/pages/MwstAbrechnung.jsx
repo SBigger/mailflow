@@ -37,8 +37,8 @@ const codeBadge = (code) => {
   const colors = {
     M81: ['#dbeafe','#1e40af'], M26: ['#fef9c3','#854d0e'], M38: ['#fce7f3','#9d174d'],
     I81: ['#ede9fe','#5b21b6'], M0: ['#f3f4f6','#374151'],
-    V81: ['#dcfce7','#166534'], V26: ['#fef3c7','#92400e'], V38: ['#fce7f3','#9d174d'],
-    V0:  ['#f3f4f6','#374151'],
+    U81: ['#dcfce7','#166534'], U26: ['#fef3c7','#92400e'], U38: ['#fce7f3','#9d174d'],
+    U0:  ['#f3f4f6','#374151'],
   };
   const [bg, color] = colors[code] ?? ['#f3f4f6','#374151'];
   return <span style={{ fontSize: 10.5, fontWeight: 600, padding: '2px 7px', borderRadius: 5, background: bg, color }}>{code}</span>;
@@ -145,16 +145,16 @@ function TabAbrechnung({ summary, mandant, period, umsatzBrutto = 0 }) {
   const vorsteuer_total = vs_normal + vs_reduced + vs_hotel + vs_invest;
 
   // Umsatzsteuer-Summen (aus Debitoren, Phase 2)
-  const us_normal = byCode['V81']?.sum_mwst ?? 0;
-  const us_reduced = byCode['V26']?.sum_mwst ?? 0;
-  const us_hotel  = byCode['V38']?.sum_mwst ?? 0;
+  const us_normal = byCode['U81']?.sum_mwst ?? 0;
+  const us_reduced = byCode['U26']?.sum_mwst ?? 0;
+  const us_hotel  = byCode['U38']?.sum_mwst ?? 0;
   const umsatz_total = us_normal + us_reduced + us_hotel;
 
   // Netto-Umsätze
-  const umsatz_netto_81 = byCode['V81']?.sum_netto ?? 0;
-  const umsatz_netto_26 = byCode['V26']?.sum_netto ?? 0;
-  const umsatz_netto_38 = byCode['V38']?.sum_netto ?? 0;
-  const umsatz_netto_befreit = byCode['V0']?.sum_netto ?? 0;
+  const umsatz_netto_81 = byCode['U81']?.sum_netto ?? 0;
+  const umsatz_netto_26 = byCode['U26']?.sum_netto ?? 0;
+  const umsatz_netto_38 = byCode['U38']?.sum_netto ?? 0;
+  const umsatz_netto_befreit = byCode['U0']?.sum_netto ?? 0;
   const gesamtumsatz = umsatz_netto_81 + umsatz_netto_26 + umsatz_netto_38 + umsatz_netto_befreit;
   const total_abzuege = umsatz_netto_befreit;  // Ziff. 289: Von der Steuer ausgenommene Leistungen
   const steuerbarer_umsatz = umsatz_netto_81 + umsatz_netto_26 + umsatz_netto_38; // Ziff. 299

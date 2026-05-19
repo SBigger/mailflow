@@ -30,7 +30,7 @@ const TYP_COLOR = {
 const MWST_COLORS = {
   M81:['#dbeafe','#1e40af'], M26:['#fef9c3','#854d0e'], M38:['#fce7f3','#9d174d'],
   I81:['#ede9fe','#5b21b6'], M0: ['#f3f4f6','#374151'],
-  V81:['#dcfce7','#166534'], V26:['#fef3c7','#92400e'], V0: ['#f3f4f6','#374151'],
+  U81:['#dcfce7','#166534'], U26:['#fef3c7','#92400e'], U38:['#fce7f3','#9d174d'], U0: ['#f3f4f6','#374151'],
 };
 const mwstBadge = (code) => {
   if (!code) return null;
@@ -156,36 +156,23 @@ async function exportKontoblattPDF({ rows, eroeff, kontoNr, currentKonto, von, b
 
   // ── Seitenheader ──
   const addPageHeader = () => {
+    // Titel: "Kontoblatt" links + Mandantname rechts, gleiche Zeile
     doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(...DARK);
     doc.text('Kontoblatt', 14, 14);
+    if (mandantName) {
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(...GRAY);
+      doc.text(mandantName, 196, 14, { align: 'right' });
+    }
     doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(...GRN);
     doc.text(`${kontoNr}  ${currentKonto?.bezeichnung ?? ''}`, 14, 20.5);
     doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(...GRAY);
     doc.text(`Periode ${dFmt(von)} – ${dFmt(bis)}`, 14, 26);
-    if (mandantName) doc.text(mandantName, 14, 30.5);
     doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(...GRAY);
-    doc.text(new Date().toLocaleDateString('de-CH'), 196, 14, { align: 'right' });
-    doc.setDrawColor(...GRAY); doc.setLineWidth(0.2); doc.line(14, 33, 196, 33);
+    doc.text(new Date().toLocaleDateString('de-CH'), 196, 26, { align: 'right' });
+    doc.setDrawColor(...GRAY); doc.setLineWidth(0.2); doc.line(14, 29, 196, 29);
   };
 
   addPageHeader();
-
-  // ── KPI-Zeile ──
-  const kpis = [
-    ['Eröffnungssaldo', N2l(eroeff)],
-    ['Total Soll',      N2l(totalSoll)],
-    ['Total Haben',     N2l(totalHaben)],
-    ['Schlusssaldo',    N2l(schluss)],
-  ];
-  const kW = (196 - 14) / 4;
-  kpis.forEach(([lbl, val], i) => {
-    const x = 14 + i * kW;
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); doc.setTextColor(...GRAY);
-    doc.text(lbl, x, 38);
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...DARK);
-    doc.text(`CHF ${val}`, x, 43);
-  });
-  doc.setDrawColor(...GRAY); doc.setLineWidth(0.2); doc.line(14, 46, 196, 46);
 
   // ── Tabellenzeilen bauen ──
   const body = [];
@@ -201,10 +188,15 @@ async function exportKontoblattPDF({ rows, eroeff, kontoNr, currentKonto, von, b
     const hasAtt  = !!r.quelle_id;
     const hasMwst = r.mwst_betrag && Math.abs(r.mwst_betrag) > 0.005 && r.konto_vorsteuer;
 
+    // Textinhalt: Lieferantenname (fett, Zeile 1) + Buchungstext (Zeile 2)
+    const textContent = r.lieferant_name
+      ? { content: `${r.lieferant_name}${r.buch_text ? `\n${r.buch_text}` : ''}`, styles: { cellWidth: 'auto' }, _hasLieferant: true }
+      : (r.buch_text || '—');
+
     // Hauptzeile
     body.push([
       { content: dFmt(r.buchungsdatum), styles: { textColor: GRAY } },
-      r.buch_text || '—',
+      textContent,
       { content: r.gegenkonto || '', styles: { fontStyle: 'bold' } },
       // _att-Flag für didDrawCell
       { content: bel || '', _att: hasAtt, styles: { cellPadding: hasAtt ? { top: 2, bottom: 2, left: 7, right: 2 } : { top: 2, bottom: 2, left: 3, right: 2 } } },
@@ -227,7 +219,7 @@ async function exportKontoblattPDF({ rows, eroeff, kontoNr, currentKonto, von, b
     }
   });
 
-  // Footer
+  // Footer (nur Schlusssaldo-Zeile, ohne Saldovortrag/Buchungsjahr-Wiederholung)
   if (rows.length > 0) {
     body.push([
       { content: `Saldo  ${dFmt(von)} – ${dFmt(bis)}`, colSpan: 4,
@@ -237,20 +229,10 @@ async function exportKontoblattPDF({ rows, eroeff, kontoNr, currentKonto, von, b
       { content: N2l(schluss),    styles: { halign: 'right', fontStyle: 'bold', fillColor: LGRN,
         textColor: schluss < 0 ? [153, 27, 27] : DARK } },
     ]);
-    body.push([
-      { content: 'Saldovortrag', colSpan: 6, styles: { fontStyle: 'italic', textColor: GRAY } },
-      { content: N2l(eroeff), styles: { halign: 'right', textColor: GRAY } },
-    ]);
-    body.push([
-      { content: 'Saldo Buchungsjahr', colSpan: 6,
-        styles: { fontStyle: 'bold', fillColor: LGRN2 } },
-      { content: N2l(schluss), styles: { halign: 'right', fontStyle: 'bold', fillColor: LGRN2,
-        textColor: schluss < 0 ? [153, 27, 27] : [22, 101, 52] } },
-    ]);
   }
 
   autoTable(doc, {
-    startY: 49,
+    startY: 33,
     head: [['BelDatum', 'Text', 'Gegenkonto', 'Beleg', 'Soll', 'Haben', 'Saldo']],
     body,
     columnStyles: {
@@ -270,6 +252,11 @@ async function exportKontoblattPDF({ rows, eroeff, kontoNr, currentKonto, von, b
     didParseCell: (data) => {
       if (data.row.raw[0]?._isMwst) {
         data.cell.styles.fontSize = 7.5;
+      }
+      // Textspalte: Lieferantenname fett (erste Zeile im mehrzeiligen Content)
+      if (data.column.index === 1 && data.section === 'body' && data.row.raw[1]?._hasLieferant) {
+        // jsPDF-autotable unterstützt kein partielles Fett; wir erhöhen nur die Zellhöhe leicht
+        data.cell.styles.cellPadding = { top: 2, bottom: 3, left: 3, right: 2 };
       }
     },
     // 📎 Anhang-Punkt: kleines grünes Rechteck links im Beleg-Cell
@@ -323,6 +310,9 @@ export default function Kontoblaetter() {
   const [konten,   setKonten]   = useState([]);      // alle Konten mit Bewegungen im Jahr
   const [rows,     setRows]     = useState([]);      // Kontoblatt-Zeilen
   const [eroeff,   setEroeff]   = useState(null);    // Eröffnungssaldo
+  // Inline-Text-Bearbeitung: { [buchungsNr]: string }
+  const [editingText, setEditingText] = useState({});
+  const [savingText,  setSavingText]  = useState({});
 
   // Konten mit Bewegungen laden (Dropdown)
   useEffect(() => {
@@ -359,6 +349,22 @@ export default function Kontoblaetter() {
   }, [mandant?.id, kontoNr, von, bis]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Text inline speichern
+  const saveText = useCallback(async (buchungsNr, newText) => {
+    setSavingText(s => ({ ...s, [buchungsNr]: true }));
+    try {
+      await supabase.from('fibu_buchungen')
+        .update({ text: newText.trim() || null })
+        .eq('mandant_id', mandant.id)
+        .eq('buchungs_nr', buchungsNr);
+      // Lokal aktualisieren
+      setRows(prev => prev.map(r => r.buchungs_nr === buchungsNr ? { ...r, buch_text: newText.trim() || null } : r));
+    } finally {
+      setSavingText(s => { const n = { ...s }; delete n[buchungsNr]; return n; });
+      setEditingText(s => { const n = { ...s }; delete n[buchungsNr]; return n; });
+    }
+  }, [mandant?.id]);
 
   // Summen
   const totalSoll  = rows.reduce((s, r) => s + (r.soll  ?? 0), 0);
@@ -490,9 +496,48 @@ export default function Kontoblaetter() {
                       <td style={{ ...td, color: '#6b826b', whiteSpace: 'nowrap', fontSize: 12, verticalAlign: 'top', paddingTop: 8 }}>
                         {fmtDate(r.buchungsdatum)}
                       </td>
-                      {/* Text (Buchungstext) */}
-                      <td style={{ ...td, color: '#1a1a2e', verticalAlign: 'top', paddingTop: 8 }}>
-                        {r.buch_text || '—'}
+                      {/* Text: Lieferantenname (fett, oben) + Buchungstext (klein, unten) */}
+                      <td style={{ ...td, color: '#1a1a2e', verticalAlign: 'top', paddingTop: 6, paddingBottom: 6 }}>
+                        {/* Lieferantenname — immer oben, wenn vorhanden */}
+                        {r.lieferant_name && (
+                          <div style={{ fontWeight: 600, fontSize: 12.5, color: '#1a1a2e', lineHeight: 1.3, marginBottom: r.buch_text ? 2 : 0 }}>
+                            {r.lieferant_name}
+                          </div>
+                        )}
+                        {/* Buchungstext — inline editierbar */}
+                        {editingText[r.buchungs_nr] !== undefined ? (
+                          <input
+                            autoFocus
+                            value={editingText[r.buchungs_nr]}
+                            onChange={e => setEditingText(s => ({ ...s, [r.buchungs_nr]: e.target.value }))}
+                            onBlur={() => saveText(r.buchungs_nr, editingText[r.buchungs_nr])}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') { e.preventDefault(); saveText(r.buchungs_nr, editingText[r.buchungs_nr]); }
+                              if (e.key === 'Escape') { setEditingText(s => { const n = { ...s }; delete n[r.buchungs_nr]; return n; }); }
+                            }}
+                            style={{ width: '100%', border: '1px solid #7a9b7f', borderRadius: 5, padding: '3px 7px', fontSize: r.lieferant_name ? 11.5 : 12.5, outline: 'none', boxSizing: 'border-box', background: '#f7fff7' }}
+                          />
+                        ) : (
+                          <span
+                            title="Klicken zum Bearbeiten"
+                            onClick={() => setEditingText(s => ({ ...s, [r.buchungs_nr]: r.buch_text ?? '' }))}
+                            style={{ cursor: 'text', display: 'block', minHeight: r.lieferant_name ? 0 : 20, borderRadius: 4, padding: '1px 3px',
+                              fontSize: r.lieferant_name ? 11.5 : 12.5,
+                              color: r.buch_text ? (r.lieferant_name ? '#6b826b' : '#1a1a2e') : '#c0c8c0',
+                              transition: 'background .1s',
+                            }}
+                            onMouseEnter={e => e.currentTarget.style.background = '#f0f7f0'}
+                            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                          >
+                            {savingText[r.buchungs_nr]
+                              ? <span style={{ color: '#7a9b7f', fontSize: 11 }}>Speichert…</span>
+                              : (r.buch_text
+                                  ? r.buch_text
+                                  : (!r.lieferant_name ? <span style={{ color: '#c0c8c0', fontStyle: 'italic' }}>—</span> : null)
+                                )
+                            }
+                          </span>
+                        )}
                       </td>
                       {/* Gegenkonto */}
                       <td style={{ ...tdMono, fontWeight: 600, color: '#1a1a2e', verticalAlign: 'top', paddingTop: 8 }}>

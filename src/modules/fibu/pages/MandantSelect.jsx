@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { mandantenApi } from '../api';
 
@@ -8,6 +8,9 @@ export default function MandantSelect() {
   const [mandanten, setMandanten] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showNew, setShowNew] = useState(false);
+  const [search, setSearch]   = useState('');
+  const [dropOpen, setDropOpen] = useState(false);
+  const dropRef = useRef(null);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState(null);
   const [form, setForm] = useState({ name: '', uid: '', mwst_nr: '', ort: '' });
@@ -41,6 +44,24 @@ export default function MandantSelect() {
 
   const inp = { background: '#f7faf7', border: '1px solid #d4dcd4', borderRadius: 7, padding: '7px 10px', fontSize: 13, outline: 'none', width: '100%' };
 
+  // Click-Outside Dropdown schliessen
+  useEffect(() => {
+    if (!dropOpen) return;
+    const fn = (e) => { if (!dropRef.current?.contains(e.target)) setDropOpen(false); };
+    document.addEventListener('mousedown', fn);
+    return () => document.removeEventListener('mousedown', fn);
+  }, [dropOpen]);
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return mandanten;
+    const q = search.toLowerCase();
+    return mandanten.filter(m =>
+      m.name.toLowerCase().includes(q) ||
+      (m.ort ?? '').toLowerCase().includes(q) ||
+      (m.uid ?? '').toLowerCase().includes(q)
+    );
+  }, [mandanten, search]);
+
   return (
     <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f2f5f2', fontFamily: "'Inter', system-ui, sans-serif" }}>
       <div style={{ width: 460, display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -55,25 +76,72 @@ export default function MandantSelect() {
         ) : (
           <>
             {mandanten.length > 0 && (
-              <div style={{ background: '#fff', border: '1px solid #e4e9e4', borderRadius: 12, overflow: 'hidden' }}>
-                {mandanten.map((m, i) => (
+              <div ref={dropRef} style={{ position: 'relative' }}>
+                {/* ── Suchfeld + Dropdown-Button ── */}
+                <div
+                  style={{
+                    display: 'flex', alignItems: 'center',
+                    background: '#fff', border: `1px solid ${dropOpen ? '#7a9b7f' : '#d4dcd4'}`,
+                    borderRadius: dropOpen ? '10px 10px 0 0' : 10,
+                    boxShadow: dropOpen ? '0 0 0 3px #7a9b7f22' : 'none',
+                    transition: 'all .15s', overflow: 'hidden',
+                  }}
+                >
+                  <input
+                    value={search}
+                    onChange={e => { setSearch(e.target.value); setDropOpen(true); }}
+                    onFocus={() => setDropOpen(true)}
+                    placeholder="Mandant suchen oder auswählen…"
+                    style={{
+                      flex: 1, padding: '12px 14px', fontSize: 13.5, border: 'none',
+                      outline: 'none', background: 'transparent', color: '#1a1a2e',
+                    }}
+                  />
                   <button
-                    key={m.id}
-                    onClick={() => navigate(`/fibu/${m.id}/kreditoren`)}
-                    style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', padding: '14px 18px', background: '#fff', border: 'none', borderTop: i > 0 ? '1px solid #f0f3f0' : 'none', cursor: 'pointer', textAlign: 'left' }}
-                    onMouseEnter={e => e.currentTarget.style.background = '#f7faf7'}
-                    onMouseLeave={e => e.currentTarget.style.background = '#fff'}
-                  >
-                    <div style={{ width: 36, height: 36, borderRadius: 10, background: '#e6ede6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 14, color: '#3d6641', flexShrink: 0 }}>
-                      {m.name.slice(0, 2).toUpperCase()}
-                    </div>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 600, fontSize: 13.5, color: '#1a1a2e' }}>{m.name}</div>
-                      <div style={{ fontSize: 11.5, color: '#94a394' }}>{[m.uid, m.ort].filter(Boolean).join(' · ') || 'FiBu-Mandant'}</div>
-                    </div>
-                    <span style={{ color: '#7a9b7f', fontSize: 18 }}>›</span>
-                  </button>
-                ))}
+                    onClick={() => setDropOpen(o => !o)}
+                    style={{
+                      padding: '0 16px', height: '100%', border: 'none', background: 'none',
+                      cursor: 'pointer', color: '#7a9b7f', fontSize: 18, display: 'flex',
+                      alignItems: 'center',
+                      transform: dropOpen ? 'rotate(180deg)' : 'none',
+                      transition: 'transform .2s',
+                    }}
+                  >▾</button>
+                </div>
+
+                {/* ── Dropdown-Liste ── */}
+                {dropOpen && (
+                  <div style={{
+                    position: 'absolute', left: 0, right: 0, zIndex: 50,
+                    background: '#fff', border: '1px solid #d4dcd4', borderTop: 'none',
+                    borderRadius: '0 0 10px 10px', overflow: 'hidden',
+                    boxShadow: '0 8px 24px rgba(0,0,0,.12)',
+                    maxHeight: 320, overflowY: 'auto',
+                  }}>
+                    {filtered.length === 0 ? (
+                      <div style={{ padding: '14px 18px', color: '#94a394', fontSize: 13 }}>Keine Treffer</div>
+                    ) : (
+                      filtered.map((m, i) => (
+                        <button
+                          key={m.id}
+                          onClick={() => { navigate(`/fibu/${m.id}/kreditoren`); setDropOpen(false); }}
+                          style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', padding: '12px 16px', background: '#fff', border: 'none', borderTop: i > 0 ? '1px solid #f0f3f0' : 'none', cursor: 'pointer', textAlign: 'left' }}
+                          onMouseEnter={e => e.currentTarget.style.background = '#f7faf7'}
+                          onMouseLeave={e => e.currentTarget.style.background = '#fff'}
+                        >
+                          <div style={{ width: 34, height: 34, borderRadius: 9, background: '#e6ede6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 13, color: '#3d6641', flexShrink: 0 }}>
+                            {m.name.slice(0, 2).toUpperCase()}
+                          </div>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: 600, fontSize: 13, color: '#1a1a2e' }}>{m.name}</div>
+                            <div style={{ fontSize: 11, color: '#94a394' }}>{[m.uid, m.ort].filter(Boolean).join(' · ') || 'FiBu-Mandant'}</div>
+                          </div>
+                          <span style={{ color: '#7a9b7f', fontSize: 16 }}>›</span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
