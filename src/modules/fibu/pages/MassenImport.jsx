@@ -369,12 +369,60 @@ export default function MassenImport() {
   const [dragOver, setDragOver]       = useState(false);
   const [liefModal, setLiefModal]     = useState(null);   // { init, targetName }
   const [liefSaving, setLiefSaving]   = useState(false);
+  // ── Preview panel state ──
+  const [previewVisible, setPreviewVisible] = useState(true);
+  const [previewWidth, setPreviewWidth]     = useState(380);
+  // ── PDF zoom / page state ──
+  const [pdfZoom, setPdfZoom]         = useState(1.0);
+  const [pdfPageNum, setPdfPageNum]   = useState(1);
+  const [pdfTotalPages, setPdfTotalPages] = useState(1);
+  const pdfCanvasRef  = useRef(null);
+  const pdfDocRef     = useRef(null);
+  const renderTaskRef = useRef(null);
   const fileInputRef = useRef(null);
   const parseQueueRef = useRef([]);
   const parsingRef    = useRef(false);
   const lieferantenRef = useRef([]);
   const regelnRef      = useRef([]);
   const mandantRef     = useRef(null);
+
+  // ── PDF canvas rendering ──────────────────────────────────────────
+  const renderPdfPage = useCallback(async (doc, pageNum, zoom) => {
+    if (!pdfCanvasRef.current) return;
+    if (renderTaskRef.current) { renderTaskRef.current.cancel(); renderTaskRef.current = null; }
+    const page = await doc.getPage(pageNum);
+    const viewport = page.getViewport({ scale: zoom });
+    const canvas = pdfCanvasRef.current;
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    const ctx = canvas.getContext('2d');
+    const task = page.render({ canvasContext: ctx, viewport });
+    renderTaskRef.current = task;
+    try { await task.promise; } catch (e) { if (e?.name !== 'RenderingCancelledException') console.error(e); }
+  }, []);
+
+  // Load PDF doc when selected row changes
+  useEffect(() => {
+    const row = rows.find(r => r._id === selectedId);
+    if (!row?.file) { pdfDocRef.current = null; setPdfTotalPages(1); setPdfPageNum(1); return; }
+    if (row.file.type !== 'application/pdf') { pdfDocRef.current = null; return; }
+    let cancelled = false;
+    (async () => {
+      const buf = await row.file.arrayBuffer();
+      const doc = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
+      if (cancelled) return;
+      pdfDocRef.current = doc;
+      setPdfTotalPages(doc.numPages);
+      setPdfPageNum(1);
+      await renderPdfPage(doc, 1, pdfZoom);
+    })();
+    return () => { cancelled = true; };
+  }, [selectedId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Re-render when zoom or page changes
+  useEffect(() => {
+    if (pdfDocRef.current) renderPdfPage(pdfDocRef.current, pdfPageNum, pdfZoom);
+  }, [pdfZoom, pdfPageNum, renderPdfPage]);
 
   // Master-Daten laden
   useEffect(() => {
@@ -1021,74 +1069,173 @@ export default function MassenImport() {
           )}
         </div>
 
+        {/* ── Resize Divider + Toggle ── */}
+        <div
+          style={{
+            width: 14, flexShrink: 0, display: 'flex', flexDirection: 'column',
+            alignItems: 'center', position: 'relative', background: 'transparent',
+          }}
+        >
+          {/* Drag handle strip */}
+          <div
+            onMouseDown={e => {
+              e.preventDefault();
+              const startX = e.clientX;
+              const startW = previewWidth;
+              const onMove = mv => setPreviewWidth(Math.max(200, Math.min(800, startW - (mv.clientX - startX))));
+              const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+              window.addEventListener('mousemove', onMove);
+              window.addEventListener('mouseup', onUp);
+            }}
+            style={{
+              position: 'absolute', top: 0, bottom: 0, left: 5, width: 4,
+              cursor: 'col-resize', background: '#d4dcd4', transition: 'background 0.1s',
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = '#7a9b7f'}
+            onMouseLeave={e => e.currentTarget.style.background = '#d4dcd4'}
+          />
+          {/* Toggle button */}
+          <button
+            onClick={() => setPreviewVisible(v => !v)}
+            title={previewVisible ? 'Vorschau ausblenden' : 'Vorschau einblenden'}
+            style={{
+              marginTop: 12, zIndex: 1, background: '#f2f5f2', border: '1px solid #d4dcd4',
+              borderRadius: 4, cursor: 'pointer', fontSize: 13, color: '#7a9a7f',
+              lineHeight: 1, padding: '3px 2px', width: 20,
+            }}
+          >
+            {previewVisible ? '◧' : '◨'}
+          </button>
+        </div>
+
         {/* ── Rechte Seite: PDF-Vorschau ── */}
-        <div style={{ width: 380, flexShrink: 0, display: 'flex', flexDirection: 'column', background: '#fff', overflow: 'hidden' }}>
-          <div style={{ padding: '10px 14px 8px', borderBottom: '1px solid #e8eee8', flexShrink: 0 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: '#7a9a7f', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-              PDF Vorschau
-            </div>
-            {selectedRow && (
-              <div style={{ fontSize: 11, color: '#94a394', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {selectedRow.fileName}
-              </div>
-            )}
-          </div>
-
-          <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
-            {selectedRow ? (
-              <iframe
-                key={selectedRow._id}
-                src={selectedRow.fileUrl}
-                title={selectedRow.fileName}
-                style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
-              />
-            ) : (
-              <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                <svg style={{ width: 40, height: 40, color: '#d4dcd4' }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.2}>
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                  <polyline points="14 2 14 8 20 8"/>
-                  <line x1="9" y1="13" x2="15" y2="13"/>
-                  <line x1="9" y1="17" x2="13" y2="17"/>
-                </svg>
-                <span style={{ fontSize: 12, color: '#bfcfbf' }}>Zeile anklicken für Vorschau</span>
-              </div>
-            )}
-          </div>
-
-          {/* Quick-Edit Panel für selektierten Row */}
-          {selectedRow && selectedRow.status !== 'saved' && (
-            <div style={{ borderTop: '1px solid #e8eee8', padding: '10px 14px', flexShrink: 0, background: '#fafcfa' }}>
-              <div style={{ fontSize: 10.5, fontWeight: 700, color: '#7a9a7f', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                Zahlungsreferenz
-              </div>
-              <input
-                type="text"
-                placeholder="QR-Referenz / Mitteilung (optional)"
-                value={selectedRow.zahlungsreferenz}
-                style={{
-                  width: '100%', boxSizing: 'border-box',
-                  background: '#f7faf7', border: '1px solid #d4dcd4',
-                  borderRadius: 6, padding: '5px 8px', fontSize: 11.5, color: '#1a1a2e', outline: 'none',
-                }}
-                onChange={e => updateRow(selectedRow._id, { zahlungsreferenz: e.target.value })}
-              />
-
-              {/* MWST-Vorschau */}
-              {parseFloat(selectedRow.betrag_brutto) > 0 && (
-                <div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 4 }}>
-                  {[
-                    { label: 'Netto', val: (() => { const b = parseFloat(selectedRow.betrag_brutto)||0; const s = mwstMap[selectedRow.mwst_code]??0; return s > 0 ? Math.round(b/(1+s/100)*100)/100 : b; })() },
-                    { label: 'MWST',  val: (() => { const b = parseFloat(selectedRow.betrag_brutto)||0; const s = mwstMap[selectedRow.mwst_code]??0; if (!s) return 0; const n = Math.round(b/(1+s/100)*100)/100; return Math.round((b-n)*100)/100; })() },
-                    { label: 'Brutto', val: parseFloat(selectedRow.betrag_brutto)||0 },
-                  ].map(({ label, val }) => (
-                    <div key={label} style={{ background: '#fff', border: '1px solid #e8eee8', borderRadius: 5, padding: '5px 6px', textAlign: 'center' }}>
-                      <div style={{ fontSize: 9.5, color: '#94a394', marginBottom: 2 }}>{label}</div>
-                      <div style={{ fontSize: 11.5, fontWeight: 600, color: label === 'Brutto' ? '#3d6641' : '#1a1a2e' }}>{CHF(val)}</div>
+        <div style={{
+          width: previewVisible ? previewWidth : 0,
+          flexShrink: 0, display: 'flex', flexDirection: 'column',
+          background: '#fff', overflow: 'hidden',
+          transition: 'width 0.2s',
+        }}>
+          {previewVisible && (
+            <>
+              <div style={{ padding: '10px 14px 8px', borderBottom: '1px solid #e8eee8', flexShrink: 0, display: 'flex', alignItems: 'center', minWidth: 0 }}>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: '#7a9a7f', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    PDF Vorschau
+                  </div>
+                  {selectedRow && (
+                    <div style={{ fontSize: 11, color: '#94a394', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {selectedRow.fileName}
                     </div>
-                  ))}
+                  )}
+                </div>
+                <button
+                  onClick={() => setPreviewVisible(v => !v)}
+                  title="Vorschau ausblenden"
+                  style={{ marginLeft: 8, background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, color: '#94a394', lineHeight: 1, flexShrink: 0 }}
+                >
+                  ◧
+                </button>
+              </div>
+
+              <div style={{ flex: 1, overflow: 'hidden', position: 'relative', display: 'flex', flexDirection: 'column' }}>
+                {selectedRow ? (
+                  selectedRow.file?.type === 'application/pdf' ? (
+                    <div style={{ flex: 1, overflow: 'auto', background: '#525659', display: 'flex', flexDirection: 'column' }}>
+                      {/* Zoom + Seiten-Toolbar */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: '#3c3f41', flexShrink: 0 }}>
+                        <button
+                          onClick={() => setPdfPageNum(p => Math.max(1, p - 1))}
+                          disabled={pdfPageNum <= 1}
+                          style={{ background: 'none', border: 'none', color: pdfPageNum <= 1 ? '#666' : '#ccc', cursor: pdfPageNum <= 1 ? 'default' : 'pointer', fontSize: 14, padding: '0 4px' }}
+                        >‹</button>
+                        <span style={{ fontSize: 11, color: '#ccc', minWidth: 60, textAlign: 'center' }}>
+                          {pdfPageNum} / {pdfTotalPages}
+                        </span>
+                        <button
+                          onClick={() => setPdfPageNum(p => Math.min(pdfTotalPages, p + 1))}
+                          disabled={pdfPageNum >= pdfTotalPages}
+                          style={{ background: 'none', border: 'none', color: pdfPageNum >= pdfTotalPages ? '#666' : '#ccc', cursor: pdfPageNum >= pdfTotalPages ? 'default' : 'pointer', fontSize: 14, padding: '0 4px' }}
+                        >›</button>
+                        <div style={{ flex: 1 }} />
+                        <button
+                          onClick={() => setPdfZoom(z => Math.max(0.3, +(z - 0.25).toFixed(2)))}
+                          style={{ background: '#555', border: 'none', color: '#fff', cursor: 'pointer', borderRadius: 4, padding: '2px 8px', fontSize: 13, fontWeight: 700 }}
+                        >−</button>
+                        <span style={{ fontSize: 11, color: '#ccc', minWidth: 42, textAlign: 'center' }}>{Math.round(pdfZoom * 100)}%</span>
+                        <button
+                          onClick={() => setPdfZoom(z => Math.min(4, +(z + 0.25).toFixed(2)))}
+                          style={{ background: '#555', border: 'none', color: '#fff', cursor: 'pointer', borderRadius: 4, padding: '2px 8px', fontSize: 13, fontWeight: 700 }}
+                        >+</button>
+                        <button
+                          onClick={() => setPdfZoom(1.0)}
+                          title="100% zurücksetzen"
+                          style={{ background: 'none', border: '1px solid #666', color: '#aaa', cursor: 'pointer', borderRadius: 4, padding: '2px 6px', fontSize: 10, marginLeft: 4 }}
+                        >⊡</button>
+                      </div>
+                      {/* Canvas */}
+                      <div style={{ flex: 1, overflow: 'auto', display: 'flex', justifyContent: 'center', padding: 12 }}>
+                        <canvas ref={pdfCanvasRef} style={{ display: 'block', boxShadow: '0 2px 12px rgba(0,0,0,0.4)', background: '#fff' }} />
+                      </div>
+                    </div>
+                  ) : (
+                    /* Bilder: img-Tag mit Zoom */
+                    <div style={{ flex: 1, overflow: 'auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', background: '#525659', padding: 12 }}>
+                      <img
+                        src={selectedRow.fileUrl}
+                        alt={selectedRow.fileName}
+                        style={{ maxWidth: '100%', boxShadow: '0 2px 12px rgba(0,0,0,0.4)', transform: `scale(${pdfZoom})`, transformOrigin: 'top center', transition: 'transform 0.15s' }}
+                      />
+                    </div>
+                  )
+                ) : (
+                  <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                    <svg style={{ width: 40, height: 40, color: '#d4dcd4' }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.2}>
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                      <polyline points="14 2 14 8 20 8"/>
+                      <line x1="9" y1="13" x2="15" y2="13"/>
+                      <line x1="9" y1="17" x2="13" y2="17"/>
+                    </svg>
+                    <span style={{ fontSize: 12, color: '#bfcfbf' }}>Zeile anklicken für Vorschau</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Quick-Edit Panel für selektierten Row */}
+              {selectedRow && selectedRow.status !== 'saved' && (
+                <div style={{ borderTop: '1px solid #e8eee8', padding: '10px 14px', flexShrink: 0, background: '#fafcfa' }}>
+                  <div style={{ fontSize: 10.5, fontWeight: 700, color: '#7a9a7f', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    Zahlungsreferenz
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="QR-Referenz / Mitteilung (optional)"
+                    value={selectedRow.zahlungsreferenz}
+                    style={{
+                      width: '100%', boxSizing: 'border-box',
+                      background: '#f7faf7', border: '1px solid #d4dcd4',
+                      borderRadius: 6, padding: '5px 8px', fontSize: 11.5, color: '#1a1a2e', outline: 'none',
+                    }}
+                    onChange={e => updateRow(selectedRow._id, { zahlungsreferenz: e.target.value })}
+                  />
+
+                  {/* MWST-Vorschau */}
+                  {parseFloat(selectedRow.betrag_brutto) > 0 && (
+                    <div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 4 }}>
+                      {[
+                        { label: 'Netto', val: (() => { const b = parseFloat(selectedRow.betrag_brutto)||0; const s = mwstMap[selectedRow.mwst_code]??0; return s > 0 ? Math.round(b/(1+s/100)*100)/100 : b; })() },
+                        { label: 'MWST',  val: (() => { const b = parseFloat(selectedRow.betrag_brutto)||0; const s = mwstMap[selectedRow.mwst_code]??0; if (!s) return 0; const n = Math.round(b/(1+s/100)*100)/100; return Math.round((b-n)*100)/100; })() },
+                        { label: 'Brutto', val: parseFloat(selectedRow.betrag_brutto)||0 },
+                      ].map(({ label, val }) => (
+                        <div key={label} style={{ background: '#fff', border: '1px solid #e8eee8', borderRadius: 5, padding: '5px 6px', textAlign: 'center' }}>
+                          <div style={{ fontSize: 9.5, color: '#94a394', marginBottom: 2 }}>{label}</div>
+                          <div style={{ fontSize: 11.5, fontWeight: 600, color: label === 'Brutto' ? '#3d6641' : '#1a1a2e' }}>{CHF(val)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
-            </div>
+            </>
           )}
         </div>
       </div>
