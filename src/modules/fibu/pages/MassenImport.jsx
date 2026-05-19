@@ -14,6 +14,7 @@ import { useMandant } from '../contexts/MandantContext';
 import { lieferantenApi, kontenApi, mwstCodesApi, kreditorenApi, kontierungsregelnApi } from '../api';
 import NeuerLieferantModal from '../components/NeuerLieferantModal';
 import { findKontoVorschlag, istEigeneFirma } from '../utils/kontierung';
+import { supabase } from '@/api/supabaseClient';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js';
 
@@ -104,17 +105,65 @@ async function extractPdfText(file) {
 // ── Rechnungsnummer aus Text extrahieren ──────────────────────────
 function extractInvoiceNr(text) {
   if (!text) return '';
-  const patterns = [
-    /(?:Rechnungs(?:nummer|[-\s]?nr\.?|[-\s]?#?))\s*[:\s#]*([A-Z0-9][\w\-\/\.]{1,20})/i,
-    /(?:Beleg(?:nummer|[-\s]?nr\.?))\s*[:\s#]*([A-Z0-9][\w\-\/\.]{1,20})/i,
-    /(?:Invoice\s*(?:No\.?|Number|#?))\s*[:\s]*([A-Z0-9][\w\-\/\.]{1,20})/i,
-    /(?:Faktura(?:nr\.?|nummer)?)\s*[:\s#]*([A-Z0-9][\w\-\/\.]{1,20})/i,
-    /\bNr\.\s+([A-Z0-9][\w\-\/\.]{3,20})/,
+
+  // pdfjs konkateniert Text oft ohne Leerzeichen – wir normalisieren kurz
+  // (ersetzt Bindestriche/Schrägstriche NICHT – die sind Teil von Rechnungsnummern)
+  const t = text.replace(/\r\n/g, '\n');
+
+  // ── 1. Label-basierte Extraktion ──────────────────────────────────
+  // Reihenfolge: spezifischste zuerst
+  const labelPatterns = [
+    // Deutsch
+    /Rechnungs[-\s]?(?:nummer|nr\.?|#|No\.?)\s*[:\s\-#]*([A-Za-z0-9][\w\-\/\.]{1,30})/i,
+    /Beleg[-\s]?(?:nummer|nr\.?)\s*[:\s\-#]*([A-Za-z0-9][\w\-\/\.]{1,30})/i,
+    /Rg\.?[-\s]?Nr\.?\s*[:\s\-#]*([A-Za-z0-9][\w\-\/\.]{1,30})/i,
+    /R\.?[-\s]?Nr\.?\s*[:\s\-#]*([A-Za-z0-9][\w\-\/\.]{1,30})/i,
+    /Referenz(?:nummer|nr\.?)?\s*[:\s\-#]*([A-Za-z0-9][\w\-\/\.]{1,30})/i,
+    /Ref\.?\s*[:\s\-#]+([A-Za-z0-9][\w\-\/\.]{2,30})/i,
+    /Dok\.?(?:ument)?[-\s]?Nr\.?\s*[:\s\-#]*([A-Za-z0-9][\w\-\/\.]{1,30})/i,
+    // Englisch
+    /Invoice\s*(?:No\.?|Number|#|ID)\s*[:\s\-#]*([A-Za-z0-9][\w\-\/\.]{1,30})/i,
+    /Inv\.?\s*(?:No\.?|#)\s*[:\s\-#]*([A-Za-z0-9][\w\-\/\.]{1,30})/i,
+    /Bill\s*(?:No\.?|Number|#)\s*[:\s\-#]*([A-Za-z0-9][\w\-\/\.]{1,30})/i,
+    /Order\s*(?:No\.?|Number|#)\s*[:\s\-#]*([A-Za-z0-9][\w\-\/\.]{2,30})/i,
+    // Französisch
+    /(?:N°|No\.?|Nº)\s*(?:de\s*)?(?:facture|commande)\s*[:\s\-#]*([A-Za-z0-9][\w\-\/\.]{1,30})/i,
+    /Facture\s*(?:N°|No\.?|Nº|Nr\.?)\s*[:\s\-#]*([A-Za-z0-9][\w\-\/\.]{1,30})/i,
+    // Italienisch
+    /Fattura\s*(?:N\.?|Nr\.?|No\.?|Nº)\s*[:\s\-#]*([A-Za-z0-9][\w\-\/\.]{1,30})/i,
+    // Generisch "Nr."
+    /\bNr\.?\s+([A-Za-z0-9][\w\-\/\.]{3,30})/,
+    // Nummer: / No: Muster
+    /\b(?:Nummer|Number)\s*[:\s]+([A-Za-z0-9][\w\-\/\.]{2,30})/i,
   ];
-  for (const p of patterns) {
-    const m = text.match(p);
-    if (m?.[1] && m[1].length >= 2 && m[1].length <= 25) return m[1].trim();
+
+  for (const p of labelPatterns) {
+    const m = t.match(p);
+    if (m?.[1]) {
+      const val = m[1].trim().replace(/[.,;:]+$/, ''); // trailing Satzzeichen entfernen
+      // Filter: kein reines Jahr, keine kurzen generischen Tokens
+      if (val.length >= 2 && val.length <= 30 && !/^(20\d{2}|19\d{2})$/.test(val)) {
+        return val;
+      }
+    }
   }
+
+  // ── 2. Strukturierte Präfix-Muster (ohne Label) ───────────────────
+  // Typische CH/DE/AT Rechnungsnummern: RE-2026-001, INV-001, KR2026-0001, F2026001 usw.
+  const prefixPatterns = [
+    /\b((?:RE|RG|RN|INV|KR|AR|DR|VR|DN|GS|CR|AV|FA|FR|FT|AUT|BEL|DOC|FACT|RECH|BILL)\s*[-\/]?\s*(?:20\d{2}\s*[-\/]?\s*)?\d{3,8})\b/i,
+    /\b((?:20\d{2})\s*[-\/]\s*\d{3,6})\b/, // 2026-001 Format
+    /\b(\d{3,6}\s*[-\/]\s*(?:20\d{2}))\b/,  // 001-2026 Format
+  ];
+
+  for (const p of prefixPatterns) {
+    const m = t.match(p);
+    if (m?.[1]) {
+      const val = m[1].trim().replace(/\s+/g, '');
+      if (val.length >= 4 && val.length <= 25) return val;
+    }
+  }
+
   return '';
 }
 
@@ -134,20 +183,50 @@ function extractBelegdatum(text) {
 }
 
 // ── Lieferant per Name matchen (Fallback wenn kein IBAN-Match) ───
+function normLiefName(s) {
+  return (s || '')
+    .toLowerCase()
+    // Rechtsformen entfernen
+    .replace(/\b(ag|gmbh|sarl|sàrl|sa|ltd|inc|co\.?|cie\.?|kag|ohg|kg|eg|llc|bv|nv|plc|srl|spa)\b\.?/g, '')
+    // Sonderzeichen → Leerzeichen
+    .replace(/[^a-zäöüàáéèêëïîôùûüß0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function matchLieferantByName(name, lieferanten) {
   if (!name || !lieferanten?.length) return null;
-  const n = name.toLowerCase().trim();
-  // 1. Exakter Match
-  let found = lieferanten.find(l => l.name.toLowerCase().trim() === n);
+  const n = normLiefName(name);
+  if (!n || n.length < 3) return null;
+
+  // 1. Exakter Match (normalisiert)
+  let found = lieferanten.find(l => normLiefName(l.name) === n);
   if (found) return found;
-  // 2. Einer enthält den anderen (mind. 6 Zeichen)
-  if (n.length >= 6) {
+
+  // 2. Einer enthält den anderen (mind. 5 Zeichen)
+  if (n.length >= 5) {
     found = lieferanten.find(l => {
-      const ln = l.name.toLowerCase().trim();
-      return ln.length >= 6 && (n.includes(ln) || ln.includes(n));
+      const ln = normLiefName(l.name);
+      return ln.length >= 5 && (n.includes(ln) || ln.includes(n));
     });
+    if (found) return found;
   }
-  return found || null;
+
+  // 3. Wort-Overlap-Score: Mehrheit der signifikanten Wörter (≥4 Zeichen) übereinstimmt
+  const words = n.split(' ').filter(w => w.length >= 4);
+  if (words.length >= 2) {
+    let best = null, bestScore = 0;
+    for (const l of lieferanten) {
+      const lwords = normLiefName(l.name).split(' ').filter(w => w.length >= 4);
+      if (!lwords.length) continue;
+      const matches = words.filter(w => lwords.some(lw => lw.includes(w) || w.includes(lw))).length;
+      const score = matches / Math.max(words.length, lwords.length);
+      if (score >= 0.65 && score > bestScore) { best = l; bestScore = score; }
+    }
+    if (best) return best;
+  }
+
+  return null;
 }
 
 // Kurztext aus OCR/Mitteilung ableiten (max 12 Zeichen)
@@ -162,6 +241,22 @@ function deriveBelegtext(mitteilung, name, fileName) {
     .replace(/\s+/g, ' ').trim();
   // Ersten sinnvollen Teil nehmen (12 Zeichen)
   return clean.slice(0, 12).trim();
+}
+
+// ── Duplikat-Prüfung gegen bestehende Belege ─────────────────────
+async function checkDuplicate(mandantId, lieferantId, belegreferenz) {
+  if (!mandantId || !lieferantId || !belegreferenz || belegreferenz.trim().length < 3) return null;
+  try {
+    const { data } = await supabase
+      .from('fibu_kreditoren_belege')
+      .select('id, beleg_nr, belegdatum, betrag_brutto')
+      .eq('mandant_id', mandantId)
+      .eq('lieferant_id', lieferantId)
+      .ilike('belegreferenz', belegreferenz.trim())
+      .not('status', 'eq', 'storniert')
+      .limit(1);
+    return data?.[0] ?? null;
+  } catch { return null; }
 }
 
 function makeRow(file) {
@@ -184,6 +279,7 @@ function makeRow(file) {
     gruppe:           '',
     belegtext:        deriveBelegtext('', '', file.name),
     errorMsg:         '',
+    duplicate:        null,   // { id, beleg_nr, belegdatum, betrag_brutto } | null
   };
 }
 
@@ -523,6 +619,21 @@ export default function MassenImport() {
             mwst_code:    (!r.konto_nr && v?.mwst_code) ? v.mwst_code : r.mwst_code,
           };
         }));
+        // Duplikat-Check (nach setRows, Werte aus der Row direkt verwenden)
+        const finalLiefId = spc
+          ? (lieferantenRef.current.find(l => l.iban && l.iban.replace(/\s/g,'') === spc.iban)?.id
+             ?? matchLieferantByName(spc.name, lieferantenRef.current)?.id)
+          : null;
+        const finalBelegref = spc
+          ? (spc.mitteilung || invoiceNr || '')
+          : (invoiceNr || '');
+
+        if (finalLiefId && finalBelegref && mandantRef.current?.id) {
+          const dup = await checkDuplicate(mandantRef.current.id, finalLiefId, finalBelegref);
+          if (dup) {
+            setRows(prev => prev.map(r => r._id === rowId ? { ...r, duplicate: dup } : r));
+          }
+        }
       } catch {
         setRows(prev => prev.map(r => r._id === rowId ? { ...r, status: 'manual' } : r));
       }
@@ -860,7 +971,9 @@ export default function MassenImport() {
                         ? '#f0f8f0'
                         : isSelected
                           ? '#edf5f0'
-                          : idx % 2 === 0 ? '#fff' : '#fafcfa';
+                          : row.duplicate
+                            ? (idx % 2 === 0 ? '#fff8f0' : '#fdf5ec')
+                            : idx % 2 === 0 ? '#fff' : '#fafcfa';
 
                       return (
                         <tr
@@ -877,6 +990,12 @@ export default function MassenImport() {
                           {/* Status */}
                           <td style={{ padding: '4px 4px', textAlign: 'center', verticalAlign: 'middle' }}>
                             <StatusIcon row={row} />
+                            {row.duplicate && (
+                              <div title={`⚠ Mögliches Duplikat: ${row.duplicate.beleg_nr} vom ${row.duplicate.belegdatum}`}
+                                style={{ fontSize: 9, color: '#c05a00', fontWeight: 700, lineHeight: 1, marginTop: 2, cursor: 'default' }}>
+                                DUP
+                              </div>
+                            )}
                           </td>
 
                           {/* Zeilen-Nr */}
@@ -1037,6 +1156,13 @@ export default function MassenImport() {
 
                           {/* Entfernen */}
                           <td style={{ padding: '2px 4px', textAlign: 'center', verticalAlign: 'middle' }}>
+                            {row.duplicate && !isSaved && (
+                              <span
+                                title={`Mögliches Duplikat!\nBeleg ${row.duplicate.beleg_nr} · ${row.duplicate.belegdatum} · CHF ${(row.duplicate.betrag_brutto||0).toLocaleString('de-CH',{minimumFractionDigits:2,maximumFractionDigits:2})}\n\nFalls korrekt: Beleg trotzdem buchen.`}
+                                style={{ display: 'block', fontSize: 10, background: '#fff3e0', color: '#c05a00', border: '1px solid #ffb74d', borderRadius: 4, padding: '1px 5px', cursor: 'help', fontWeight: 700, marginBottom: 2 }}>
+                                ⚠ DUP
+                              </span>
+                            )}
                             {!isSaved && (
                               <button
                                 type="button"
