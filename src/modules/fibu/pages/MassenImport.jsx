@@ -31,11 +31,18 @@ function parseSpc(text) {
   let plz = '', ort = '', strasse = '';
   if (addrType === 'S') {
     strasse = [lines[6], lines[7]].filter(Boolean).join(' ').trim();
-    plz = lines[8] ?? ''; ort = lines[9] ?? '';
+    plz = (lines[8] ?? '').trim(); ort = (lines[9] ?? '').trim();
   } else {
+    // K-Adresstyp: Zeile 6 = Strasse+Nr, Zeile 7 = PLZ Ort
     strasse = (lines[6] ?? '').trim();
     const m = (lines[7] ?? '').match(/^(\d{4,5})\s+(.+)/);
-    if (m) { plz = m[1]; ort = m[2]; }
+    if (m) { plz = m[1]; ort = m[2].trim(); }
+    else {
+      // Fallback: PLZ+Ort zusammen aus Zeile 7, oder aus Zeile 6 wenn Zeile 7 leer
+      const fallback = (lines[7] ?? lines[6] ?? '').trim();
+      const fm = fallback.match(/(\d{4,5})\s+(.+)/);
+      if (fm) { plz = fm[1]; ort = fm[2].trim(); strasse = strasse || ''; }
+    }
   }
   return {
     iban:       (lines[3] ?? '').replace(/\s+/g, ''),
@@ -67,12 +74,17 @@ async function scanQrInFile(file) {
     }
     return null;
   } else {
-    await new Promise((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => { canvas.width = img.width; canvas.height = img.height; ctx.drawImage(img, 0, 0); resolve(); };
-      img.onerror = reject;
-      img.src = URL.createObjectURL(file);
-    });
+    const blobUrl = URL.createObjectURL(file);
+    try {
+      await new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => { canvas.width = img.width; canvas.height = img.height; ctx.drawImage(img, 0, 0); resolve(); };
+        img.onerror = reject;
+        img.src = blobUrl;
+      });
+    } finally {
+      URL.revokeObjectURL(blobUrl);
+    }
     const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     return jsQR(imgData.data, imgData.width, imgData.height)?.data ?? null;
   }
@@ -86,15 +98,22 @@ function addDays(d, n) {
 const today = () => new Date().toISOString().slice(0, 10);
 const CHF = n => (parseFloat(n) || 0).toLocaleString('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-// ── PDF-Text extrahieren (erste 3 Seiten, für Datum + Rechnungsnr) ──
+// ── PDF-Text extrahieren (erste 5 Seiten + letzte Seite, für Datum + Rechnungsnr) ──
 async function extractPdfText(file) {
   if (file.type !== 'application/pdf') return '';
   try {
     const buf = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
     let text = '';
-    for (let i = 1; i <= Math.min(pdf.numPages, 3); i++) {
+    const maxFirst = Math.min(pdf.numPages, 5);
+    for (let i = 1; i <= maxFirst; i++) {
       const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      text += content.items.map(it => it.str).join(' ') + '\n';
+    }
+    // Letzte Seite zusätzlich (falls Zahlungsbedingungen / Rechnungsnr. am Ende)
+    if (pdf.numPages > maxFirst) {
+      const page = await pdf.getPage(pdf.numPages);
       const content = await page.getTextContent();
       text += content.items.map(it => it.str).join(' ') + '\n';
     }
@@ -141,8 +160,8 @@ function extractInvoiceNr(text) {
     const m = t.match(p);
     if (m?.[1]) {
       const val = m[1].trim().replace(/[.,;:]+$/, ''); // trailing Satzzeichen entfernen
-      // Filter: kein reines Jahr, keine kurzen generischen Tokens
-      if (val.length >= 2 && val.length <= 30 && !/^(20\d{2}|19\d{2})$/.test(val)) {
+      // Filter: kein reines Jahr, keine kurzen generischen Tokens, keine ESR/QR-Referenzen (≥15 Stellen rein numerisch)
+      if (val.length >= 2 && val.length <= 30 && !/^(20\d{2}|19\d{2})$/.test(val) && !/^\d{15,}$/.test(val)) {
         return val;
       }
     }
@@ -168,18 +187,63 @@ function extractInvoiceNr(text) {
 }
 
 // ── Belegdatum aus Text extrahieren ──────────────────────────────
+const MONAT_MAP = {
+  januar:1,  february:1, janvier:1, gennaio:1, jan:1,
+  februar:2, february:2, février:2, febbraio:2, feb:2,
+  märz:3,    march:3,    mars:3,    marzo:3,    mär:3, mar:3,
+  april:4,   avril:4,    aprile:4,  apr:4,
+  mai:5,     may:5,      maggio:5,
+  juni:6,    june:6,     juin:6,    giugno:6,   jun:6,
+  juli:7,    july:7,     juillet:7, luglio:7,   jul:7,
+  august:8,  août:8,     agosto:8,  aug:8,
+  september:9, septembre:9, settembre:9, sep:9, sept:9,
+  oktober:10, october:10, octobre:10, ottobre:10, okt:10, oct:10,
+  november:11, novembre:11, nov:11,
+  dezember:12, december:12, décembre:12, dicembre:12, dez:12, dec:12,
+};
+
 function extractBelegdatum(text) {
   if (!text) return '';
-  // Suche Datum nahe an Label-Wörtern
-  const labeled = text.match(/(?:Datum|Rechnungsdatum|Invoice\s*Date|Ausstellungsdatum)[:\s]*(\d{1,2}[\.\/]\d{1,2}[\.\/]20\d{2})/i);
-  const raw = labeled?.[1] || text.match(/\b(\d{1,2})\.(\d{1,2})\.(20\d{2})\b/)?.[0];
-  if (!raw) return '';
-  const m = raw.match(/(\d{1,2})[\.\/](\d{1,2})[\.\/](20\d{2})/);
-  if (!m) return '';
-  const d = m[1].padStart(2,'0'), mo = m[2].padStart(2,'0'), y = m[3];
-  // Sanity check: Monat 1-12, Tag 1-31
-  if (parseInt(mo) < 1 || parseInt(mo) > 12 || parseInt(d) < 1 || parseInt(d) > 31) return '';
-  return `${y}-${mo}-${d}`;
+
+  function toIso(d, mo, y) {
+    const ds = String(d).padStart(2,'0'), ms = String(mo).padStart(2,'0');
+    if (parseInt(ms) < 1 || parseInt(ms) > 12 || parseInt(ds) < 1 || parseInt(ds) > 31) return '';
+    return `${y}-${ms}-${ds}`;
+  }
+
+  // 1. Label-basiert: DD.MM.YYYY / DD/MM/YYYY
+  const labelDMY = text.match(/(?:Datum|Rechnungsdatum|Invoice\s*Date|Ausstellungsdatum|Date|Date\s*de\s*facture|Data)[:\s]*(\d{1,2})[\.\/](\d{1,2})[\.\/](20\d{2})/i);
+  if (labelDMY) return toIso(labelDMY[1], labelDMY[2], labelDMY[3]);
+
+  // 2. Label-basiert: ISO YYYY-MM-DD
+  const labelISO = text.match(/(?:Datum|Rechnungsdatum|Invoice\s*Date|Ausstellungsdatum|Date)[:\s]*(20\d{2})-(\d{2})-(\d{2})/i);
+  if (labelISO) return toIso(labelISO[3], labelISO[2], labelISO[1]);
+
+  // 3. Label-basiert: Wortmonat (19. Mai 2026 / 19 mai 2026 / May 19, 2026)
+  const labelWord = text.match(/(?:Datum|Rechnungsdatum|Invoice\s*Date|Ausstellungsdatum|Date)[:\s]*(?:(\d{1,2})\.?\s+([A-ZÄÖÜa-zäöü]{3,10})\.?\s+(20\d{2})|([A-ZÄÖÜa-zäöü]{3,10})\s+(\d{1,2}),?\s+(20\d{2}))/i);
+  if (labelWord) {
+    const [,d1,m1,y1,m2,d2,y2] = labelWord;
+    if (d1 && m1 && y1) { const mo = MONAT_MAP[m1.toLowerCase()]; if (mo) return toIso(d1, mo, y1); }
+    if (m2 && d2 && y2) { const mo = MONAT_MAP[m2.toLowerCase()]; if (mo) return toIso(d2, mo, y2); }
+  }
+
+  // 4. Ohne Label: ISO YYYY-MM-DD (erstes Vorkommen)
+  const isoM = text.match(/\b(20\d{2})-(0[1-9]|1[0-2])-(\d{2})\b/);
+  if (isoM) return toIso(isoM[3], isoM[2], isoM[1]);
+
+  // 5. Ohne Label: DD.MM.YYYY (erstes Vorkommen)
+  const dmyM = text.match(/\b(\d{1,2})\.(\d{1,2})\.(20\d{2})\b/);
+  if (dmyM) return toIso(dmyM[1], dmyM[2], dmyM[3]);
+
+  // 6. Ohne Label: Wortmonat "19. Mai 2026" oder "19 mai 2026"
+  const wordM = text.match(/\b(\d{1,2})\.?\s+([A-ZÄÖÜa-zäöüàáéèêëïîôùûüß]{3,10})\.?\s+(20\d{2})\b/);
+  if (wordM) { const mo = MONAT_MAP[wordM[2].toLowerCase()]; if (mo) return toIso(wordM[1], mo, wordM[3]); }
+
+  // 7. Englisch: "May 19, 2026" / "19 May 2026"
+  const wordEN = text.match(/\b([A-Za-z]{3,10})\s+(\d{1,2}),?\s+(20\d{2})\b/);
+  if (wordEN) { const mo = MONAT_MAP[wordEN[1].toLowerCase()]; if (mo) return toIso(wordEN[2], mo, wordEN[3]); }
+
+  return '';
 }
 
 // ── Lieferant per Name matchen (Fallback wenn kein IBAN-Match) ───
@@ -203,11 +267,11 @@ function matchLieferantByName(name, lieferanten) {
   let found = lieferanten.find(l => normLiefName(l.name) === n);
   if (found) return found;
 
-  // 2. Einer enthält den anderen (mind. 5 Zeichen)
-  if (n.length >= 5) {
+  // 2. Einer enthält den anderen (mind. 8 Zeichen – verhindert Kurzname-Kollisionen)
+  if (n.length >= 8) {
     found = lieferanten.find(l => {
       const ln = normLiefName(l.name);
-      return ln.length >= 5 && (n.includes(ln) || ln.includes(n));
+      return ln.length >= 8 && (n.includes(ln) || ln.includes(n));
     });
     if (found) return found;
   }
@@ -244,18 +308,39 @@ function deriveBelegtext(mitteilung, name, fileName) {
 }
 
 // ── Duplikat-Prüfung gegen bestehende Belege ─────────────────────
-async function checkDuplicate(mandantId, lieferantId, belegreferenz) {
-  if (!mandantId || !lieferantId || !belegreferenz || belegreferenz.trim().length < 3) return null;
+// Prüft: gleicher Lieferant + gleiche Belegreferenz (case-insensitive)
+// Fallback (ohne Referenz): gleicher Lieferant + gleiches Datum + Betrag ±0.05 CHF
+async function checkDuplicate(mandantId, lieferantId, belegreferenz, belegdatum, betrag) {
+  if (!mandantId || !lieferantId) return null;
   try {
-    const { data } = await supabase
-      .from('fibu_kreditoren_belege')
-      .select('id, beleg_nr, belegdatum, betrag_brutto')
-      .eq('mandant_id', mandantId)
-      .eq('lieferant_id', lieferantId)
-      .ilike('belegreferenz', belegreferenz.trim())
-      .not('status', 'eq', 'storniert')
-      .limit(1);
-    return data?.[0] ?? null;
+    // Primär: Referenz-Match
+    if (belegreferenz && belegreferenz.trim().length >= 3) {
+      const { data } = await supabase
+        .from('fibu_kreditoren_belege')
+        .select('id, beleg_nr, belegdatum, betrag_brutto')
+        .eq('mandant_id', mandantId)
+        .eq('lieferant_id', lieferantId)
+        .ilike('belegreferenz', belegreferenz.trim())
+        .not('status', 'eq', 'storniert')
+        .limit(1);
+      if (data?.[0]) return data[0];
+    }
+    // Fallback: Datum + Betrag-Toleranz ±0.05 CHF
+    if (belegdatum && betrag && parseFloat(betrag) > 0) {
+      const br = parseFloat(betrag);
+      const { data } = await supabase
+        .from('fibu_kreditoren_belege')
+        .select('id, beleg_nr, belegdatum, betrag_brutto')
+        .eq('mandant_id', mandantId)
+        .eq('lieferant_id', lieferantId)
+        .eq('belegdatum', belegdatum)
+        .gte('betrag_brutto', br - 0.05)
+        .lte('betrag_brutto', br + 0.05)
+        .not('status', 'eq', 'storniert')
+        .limit(1);
+      if (data?.[0]) return data[0];
+    }
+    return null;
   } catch { return null; }
 }
 
@@ -525,7 +610,10 @@ export default function MassenImport() {
     if (!mandant?.id) return;
     // Zeilen wiederherstellen falls gleicher Mandant
     if (_rowCacheMandantId === mandant.id && _rowCache.length > 0) {
-      setRows(_rowCache.filter(r => r.status !== 'saving')); // saving-Status zurücksetzen
+      // 'saving' und 'parsing' zurücksetzen – Prozesse laufen nicht mehr nach Navigation
+      setRows(_rowCache.map(r =>
+        (r.status === 'saving' || r.status === 'parsing') ? { ...r, status: 'manual' } : r
+      ));
       if (!selectedId) setSelectedId(_rowCache[0]?._id ?? null);
     }
     mandantRef.current = mandant;
@@ -553,23 +641,36 @@ export default function MassenImport() {
     }
   }, [rows, mandant?.id]);
 
-  // Sequenzielle QR-Parse-Queue
+  // Memory-Leak Prevention: alle Object-URLs beim Unmount freigeben
+  useEffect(() => {
+    return () => {
+      _rowCache.forEach(r => { if (r.fileUrl) URL.revokeObjectURL(r.fileUrl); });
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sequenzielle QR-Parse-Queue (QR + PDF-Text parallel per Promise.all)
   const processQueue = useCallback(async () => {
     if (parsingRef.current) return;
     parsingRef.current = true;
     while (parseQueueRef.current.length > 0) {
       const { rowId, file } = parseQueueRef.current.shift();
       try {
-        // 1. QR scannen
-        const qrText = await scanQrInFile(file);
+        // 1. QR-Scan und PDF-Text PARALLEL
+        const [qrText, pdfText] = await Promise.all([
+          scanQrInFile(file).catch(() => null),
+          extractPdfText(file).catch(() => ''),
+        ]);
         const spc = qrText ? parseSpc(qrText) : null;
 
-        // 2. PDF-Text extrahieren (für Datum + Rechnungsnr., parallel zum QR-Scan)
-        const pdfText = await extractPdfText(file);
-
-        // 3. Rechnungsnummer + Datum aus Text
-        const invoiceNr = extractInvoiceNr(spc?.mitteilung || pdfText);
+        // 2. Rechnungsnummer + Datum aus Text
+        // Bei QR: mitteilung als primärer Text; Datum immer aus PDF-Text
+        const invoiceNr = extractInvoiceNr(pdfText || spc?.mitteilung || '');
         const rawDatum  = extractBelegdatum(pdfText);
+
+        let finalLiefId = null;
+        let finalBelegref = '';
+        let finalDatum = rawDatum;
+        let finalBetrag = null;
 
         setRows(prev => prev.map(r => {
           if (r._id !== rowId) return r;
@@ -584,12 +685,15 @@ export default function MassenImport() {
             const liefByIban = lieferantenRef.current.find(l => l.iban && l.iban.replace(/\s/g,'') === spc.iban);
             const eigen = istEigeneFirma(spc.name, mandantRef.current);
             const lief  = liefByIban ?? (!eigen ? matchLieferantByName(spc.name, lieferantenRef.current) : null);
+            finalLiefId = lief?.id ?? null;
             let konto = lief?.standard_konto_nr ?? r.konto_nr;
             let mcode = lief?.mwst_code ?? r.mwst_code;
             if (!konto) {
               const v = findKontoVorschlag([r.fileName, spc.name, spc.mitteilung], regelnRef.current);
               if (v) { konto = v.konto_nr; if (v.mwst_code) mcode = v.mwst_code; }
             }
+            finalBelegref = spc.mitteilung || invoiceNr || '';
+            finalBetrag = spc.betrag;
             return {
               ...r,
               ...datumPatch,
@@ -609,7 +713,8 @@ export default function MassenImport() {
             };
           }
           // Kein QR: Kontovorschlag + Datum + Rechnungsnr. aus Text
-          const v = findKontoVorschlag([r.fileName], regelnRef.current);
+          const v = findKontoVorschlag([r.fileName, pdfText.slice(0, 200)], regelnRef.current);
+          finalBelegref = invoiceNr || '';
           return {
             ...r,
             ...datumPatch,
@@ -619,22 +724,19 @@ export default function MassenImport() {
             mwst_code:    (!r.konto_nr && v?.mwst_code) ? v.mwst_code : r.mwst_code,
           };
         }));
-        // Duplikat-Check (nach setRows, Werte aus der Row direkt verwenden)
-        const finalLiefId = spc
-          ? (lieferantenRef.current.find(l => l.iban && l.iban.replace(/\s/g,'') === spc.iban)?.id
-             ?? matchLieferantByName(spc.name, lieferantenRef.current)?.id)
-          : null;
-        const finalBelegref = spc
-          ? (spc.mitteilung || invoiceNr || '')
-          : (invoiceNr || '');
 
-        if (finalLiefId && finalBelegref && mandantRef.current?.id) {
-          const dup = await checkDuplicate(mandantRef.current.id, finalLiefId, finalBelegref);
+        // Duplikat-Check (nach setRows, mit Datum + Betrag als Fallback)
+        if (finalLiefId && mandantRef.current?.id) {
+          const dup = await checkDuplicate(
+            mandantRef.current.id, finalLiefId, finalBelegref,
+            finalDatum, finalBetrag
+          );
           if (dup) {
             setRows(prev => prev.map(r => r._id === rowId ? { ...r, duplicate: dup } : r));
           }
         }
-      } catch {
+      } catch (e) {
+        console.error('[MassenImport] processQueue Fehler:', e);
         setRows(prev => prev.map(r => r._id === rowId ? { ...r, status: 'manual' } : r));
       }
     }
@@ -668,6 +770,8 @@ export default function MassenImport() {
 
   const removeRow = useCallback((id) => {
     setRows(prev => {
+      const target = prev.find(r => r._id === id);
+      if (target?.fileUrl) URL.revokeObjectURL(target.fileUrl);
       const rest = prev.filter(r => r._id !== id);
       if (selectedId === id) setSelectedId(rest[0]?._id ?? null);
       return rest;
@@ -678,6 +782,15 @@ export default function MassenImport() {
   const bookAll = async () => {
     const ready = rows.filter(isComplete);
     if (!ready.length || saving) return;
+
+    // MWST-Code-Validierung vor dem Buchen
+    const invalidMwst = ready.filter(r => r.mwst_code && !(r.mwst_code in mwstMap));
+    if (invalidMwst.length > 0) {
+      const names = invalidMwst.map(r => `${r.fileName} (Code: ${r.mwst_code})`).join('\n');
+      alert(`Unbekannte MWST-Codes – bitte korrigieren:\n${names}`);
+      return;
+    }
+
     setSaving(true);
     let counter = nrCounter;
     const year = new Date().getFullYear();
@@ -783,10 +896,14 @@ export default function MassenImport() {
       setLieferanten(updated);
 
       const tgt = liefModal?.targetName;
+      const neuIban = (form.iban || '').replace(/\s+/g, '').toUpperCase();
       setRows(prev => prev.map(r => {
         if (r.lieferant_id) return r;
+        // IBAN-Match hat Vorrang (eindeutig), danach Name-Match
+        const rowIban = (r.qr?.iban || '').replace(/\s+/g, '').toUpperCase();
+        const ibanMatch = neuIban && rowIban && neuIban === rowIban;
         const nm = (r.lieferant_search || r.qr?.name || '').trim().toLowerCase();
-        if (nm !== tgt) return r;
+        if (!ibanMatch && nm !== tgt) return r;
         return {
           ...r,
           lieferant_id:     neu.id,

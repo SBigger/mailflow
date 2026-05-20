@@ -25,7 +25,11 @@ export function findKontoVorschlag(texte, regeln) {
   const sorted = [...regeln].sort((a, b) => (a.sortierung ?? 0) - (b.sortierung ?? 0));
   for (const r of sorted) {
     const sw = norm(r.stichwort);
-    if (sw && hay.includes(sw)) {
+    if (!sw) continue;
+    // Wortgrenzen-Matching: Stichwort muss als ganzes Wort vorkommen
+    // Verhindert Falsch-Matches wie "port" in "transport" oder "it" in "miete"
+    const re = new RegExp(`(?<![a-z0-9])${sw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![a-z0-9])`, 'i');
+    if (re.test(hay)) {
       return { konto_nr: r.konto_nr, mwst_code: r.mwst_code || null };
     }
   }
