@@ -441,13 +441,22 @@ export default function RechnungsUebersicht() {
     );
     if (!stornierte.length) return;
     if (!window.confirm(`${stornierte.length} stornierte Belege (inkl. Storno-Gegenbuchungen) wirklich löschen?\n\nDiese Aktion kann nicht rückgängig gemacht werden.`)) return;
-    let errors = 0;
-    for (const b of stornierte) {
+    const errs = [];
+    // Reihenfolge: zuerst die -S Storno-Belege (die auf Originale zeigen),
+    // dann die Originale. Heuristik: storno_beleg_id NULL = Storno-Beleg selbst.
+    const sorted = [...stornierte].sort((a, b) => {
+      const aIsStorno = (a.beleg_nr || '').endsWith('-S');
+      const bIsStorno = (b.beleg_nr || '').endsWith('-S');
+      return (bIsStorno ? 1 : 0) - (aIsStorno ? 1 : 0);
+    });
+    for (const b of sorted) {
       try { await kreditorenApi.deleteBeleg(b.id); }
-      catch { errors++; }
+      catch (e) { errs.push(`${b.beleg_nr}: ${e.message}`); }
     }
     await load();
-    if (errors > 0) alert(`${errors} Beleg(e) konnten nicht gelöscht werden.`);
+    if (errs.length > 0) {
+      alert(`${errs.length} Beleg(e) konnten nicht gelöscht werden:\n\n${errs.slice(0, 5).join('\n')}${errs.length > 5 ? `\n…und ${errs.length - 5} weitere` : ''}`);
+    }
   };
 
   // Belege mit Positionen für Edit-Modal laden
