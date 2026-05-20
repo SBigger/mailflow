@@ -435,6 +435,21 @@ export default function RechnungsUebersicht() {
     }
   };
 
+  const handleDeleteAllStorniert = async () => {
+    const stornierte = belege.filter(b =>
+      b.status === 'storniert' && !b.mwst_abgerechnet && (b.betrag_bezahlt || 0) === 0
+    );
+    if (!stornierte.length) return;
+    if (!window.confirm(`${stornierte.length} stornierte Belege (inkl. Storno-Gegenbuchungen) wirklich löschen?\n\nDiese Aktion kann nicht rückgängig gemacht werden.`)) return;
+    let errors = 0;
+    for (const b of stornierte) {
+      try { await kreditorenApi.deleteBeleg(b.id); }
+      catch { errors++; }
+    }
+    await load();
+    if (errors > 0) alert(`${errors} Beleg(e) konnten nicht gelöscht werden.`);
+  };
+
   // Belege mit Positionen für Edit-Modal laden
   const openEdit = async (b) => {
     const full = await kreditorenApi.get(b.id);
@@ -535,10 +550,21 @@ export default function RechnungsUebersicht() {
             Alle Kreditoren-Belege — bearbeitbar
           </div>
         </div>
-        <button
-          onClick={() => navigate(`/fibu/${mandant?.id}/kreditoren/erfassen`)}
-          style={{ padding: '8px 18px', borderRadius: 9, border: 'none', background: '#7a9b7f', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
-        >+ Neue Rechnung</button>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {belege.filter(b => b.status === 'storniert' && !b.mwst_abgerechnet && (b.betrag_bezahlt||0)===0).length > 0 && (
+            <button
+              onClick={handleDeleteAllStorniert}
+              title="Alle stornierten Belege (inkl. Gegenbuchungen) löschen"
+              style={{ padding: '8px 14px', borderRadius: 9, border: '1px solid #f0b0b0', background: '#fff5f5', color: '#c0302a', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}
+            >
+              🗑 {belege.filter(b => b.status === 'storniert' && !b.mwst_abgerechnet && (b.betrag_bezahlt||0)===0).length} Stornierte löschen
+            </button>
+          )}
+          <button
+            onClick={() => navigate(`/fibu/${mandant?.id}/kreditoren/erfassen`)}
+            style={{ padding: '8px 18px', borderRadius: 9, border: 'none', background: '#7a9b7f', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+          >+ Neue Rechnung</button>
+        </div>
       </div>
 
       {/* ── Filter-Zeile ── */}

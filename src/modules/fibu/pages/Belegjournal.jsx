@@ -82,6 +82,21 @@ export default function Belegjournal() {
     }
   };
 
+  const handleDeleteAllStorniert = async () => {
+    const stornierte = belege.filter(b =>
+      b.status === 'storniert' && !b.mwst_abgerechnet && (b.betrag_bezahlt || 0) === 0
+    );
+    if (!stornierte.length) return;
+    if (!window.confirm(`${stornierte.length} stornierte Belege (inkl. Storno-Gegenbuchungen) wirklich löschen?\n\nDiese Aktion kann nicht rückgängig gemacht werden.`)) return;
+    let errors = 0;
+    for (const b of stornierte) {
+      try { await kreditorenApi.deleteBeleg(b.id); }
+      catch { errors++; }
+    }
+    load();
+    if (errors > 0) alert(`${errors} Beleg(e) konnten nicht gelöscht werden.`);
+  };
+
   const today = () => new Date().toISOString().slice(0, 10);
 
   const exportCsv = () => {
@@ -127,6 +142,12 @@ export default function Belegjournal() {
         {/* Suche */}
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Suche…" style={{ ...inp, width: 160 }} />
         <div style={{ flex: 1 }} />
+        {belege.filter(b => b.status === 'storniert' && !b.mwst_abgerechnet && (b.betrag_bezahlt||0)===0).length > 0 && (
+          <button onClick={handleDeleteAllStorniert}
+            style={{ padding: '5px 12px', borderRadius: 7, border: '1px solid #f0b0b0', background: '#fff5f5', fontSize: 11.5, color: '#c0302a', fontWeight: 600, cursor: 'pointer' }}>
+            🗑 {belege.filter(b => b.status === 'storniert' && !b.mwst_abgerechnet && (b.betrag_bezahlt||0)===0).length} Stornierte löschen
+          </button>
+        )}
         <button onClick={exportCsv} style={{ padding: '5px 12px', borderRadius: 7, border: '1px solid #d4dcd4', background: '#fff', fontSize: 11.5, cursor: 'pointer' }}>↓ Export CSV</button>
         <button onClick={load} style={{ padding: '5px 14px', borderRadius: 7, border: 'none', background: '#7a9b7f', color: '#fff', fontSize: 12, fontWeight: 500, cursor: 'pointer' }}>Anwenden</button>
       </div>
