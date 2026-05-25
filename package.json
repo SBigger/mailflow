@@ -12,7 +12,9 @@
     "db dump public": "supabase db dump --schema \"public\" -f full_public_schema.sql",
     "db dump auth": "supabase db dump --schema \"auth\" -f full_public_auth.sql",
     "db dump storage": "supabase db dump --schema \"storage\" -f full_public_storage.sql",
-    "desktop:build": "npx @tauri-apps/cli build"
+    "desktop:build": "npx @tauri-apps/cli build",
+    "electron:dev": "electron electron/main.cjs",
+    "electron:build": "electron-builder --win --config electron-builder.json"
   },
   "dependencies": {
     "@azure/msal-browser": "^5.7.0",
@@ -87,6 +89,8 @@
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
     "dotenv": "^17.4.2",
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8",
     "postcss": "^8.5.3",
     "supabase": "^2.98.2",
     "tailwindcss": "^3.4.17",
