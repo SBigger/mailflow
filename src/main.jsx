@@ -1,5 +1,8 @@
 // process-Polyfill für pdfkit/swissqrbill (nutzt process.nextTick u.a.)
 // Muss VOR allen anderen Imports laufen, damit pdfkit-Chunks process.nextTick finden.
+
+import {initSupabase} from "./api/supabaseClient.js";
+
 if (typeof window !== 'undefined') {
   if (!window.process) window.process = {};
   if (!window.process.env) window.process.env = {};
@@ -17,8 +20,10 @@ if (typeof window !== 'undefined') {
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from '@/App.jsx'
+import { invoke } from '@tauri-apps/api/core';
 import '@/index.css'
 import { registerSW } from 'virtual:pwa-register'
+
 if (typeof window !== 'undefined' && window.__TAURI__) {
   const origOpen = window.open.bind(window)
   const oauthHosts = /login\.microsoftonline\.com|login\.live\.com|login\.microsoft\.com|login\.windows\.net/
@@ -26,8 +31,8 @@ if (typeof window !== 'undefined' && window.__TAURI__) {
     try {
       if (typeof url === 'string' && oauthHosts.test(url)) {
         window.__TAURI__.core
-          .invoke('open_oauth_window', { url })
-          .catch((e) => console.error('[Smartis] OAuth-Popup fehlgeschlagen:', e))
+            .invoke('open_oauth_window', { url })
+            .catch((e) => console.error('[Smartis] OAuth-Popup fehlgeschlagen:', e))
         // Dummy-Window für Libraries die window.open().closed prüfen (z.B. MSAL)
         return { closed: false, close() {}, focus() {}, postMessage() {} }
       }
@@ -65,6 +70,36 @@ registerSW({
   },
 })
 
-ReactDOM.createRoot(document.getElementById('root')).render(
-  <App />
-)
+async function initApp() {
+  let config = {
+    API_URL: '',
+    KEY1: '',
+    CUSTOMER: ''
+  };
+  let url = null;
+
+  try {
+    const customer = await invoke('get_customer_config');
+    config.CUSTOMER = customer;
+    config.API_URL = `https://api-${customer}.sm-artis.ch`
+    url = `https://${customer}.sm-artis.ch/`
+
+  } catch (error) {
+    url = window.location.href
+    config.CUSTOMER = url.replace('https://', '').split('/')[0].split('.')[0];
+    const domain = url.replace('https://', '').split('/')[0];
+    config.API_URL = `https://api-${domain}`;
+    url = `https://${domain}/`;
+  }
+
+  initSupabase();
+
+  // 2. Jetzt starten wir React und geben die Config als Prop an die App weiter
+  ReactDOM.createRoot(document.getElementById('root')).render(
+      <React.StrictMode>
+        <App/>
+      </React.StrictMode>
+  );
+}
+
+initApp();

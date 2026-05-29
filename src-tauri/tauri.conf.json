@@ -1,11 +1,11 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Smartis",
-  "version": "1.0.12",
-  "identifier": "ch.artis.smartis",
+  "version": "2.0.0",
+  "identifier": "smartis.ch",
   "build": {
     "beforeDevCommand": "npm run dev",
-    "frontendDist": "../dist/tauri",
+    "frontendDist": "../dist",
     "devUrl": "http://localhost:3000"
   },
   "app": {

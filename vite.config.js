@@ -100,8 +100,7 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       rollupOptions: {
-        // fontkit ist per Alias gestubbt; pdfkit ist ESM – kein external nötig.
-        // swissqrbill wird via @vite-ignore-Import zur Laufzeit geladen (lazy chunk).
+        external: ['/config.js']
       },
       commonjsOptions: {
         include: [/jspdf-autotable/, /node_modules/],

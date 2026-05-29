@@ -1,15 +1,22 @@
 import { createClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+let supabase = null;
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY,{
-  realtime: {
-    params: {
-      eventsPerSecond: 10,
+export function initSupabase() {
+  const SUPABASE_URL = window.env?.API_URL || import.meta.env.VITE_SUPABASE_URL;
+  const SUPABASE_ANON_KEY = window.env?.KEY1 || import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+  supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    realtime: {
+      params: {
+        eventsPerSecond: 10,
+      },
     },
-  },
-});
+  });
+  return supabase;
+}
+
+export { supabase };
 
 // ============================================
 // ENTITIES API - Drop-in Replacement für Base44

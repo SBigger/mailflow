@@ -1,0 +1,19 @@
+# 1. Alles komplett ignorieren
+*
+
+# 2. Die Ausnahmen definieren (das "Include")
+!package.json
+!public/
+!src/
+!index.html
+!tailwind.config.js
+!vite.config.js
+!tailwind.config.js
+!postcss.config.js
+
+# 3. Apps
+!artis_agent/dist/sm-artis-agent.exe
+!src-tauri/target/release/smartis.exe
+
+# 4. Docker-eigene Dateien erlauben
+!docker_files

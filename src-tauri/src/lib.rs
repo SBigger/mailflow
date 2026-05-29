@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use tokio::net::TcpListener;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use std::env;
 
 // ── Datenstrukturen ────────────────────────────────────────────────────────────
 
@@ -310,6 +311,24 @@ fn open_embedded_window(
     Ok(())
 }
 
+#[tauri::command]
+fn get_customer_from_filename() -> String {
+    if let Ok(current_exe) = env::current_exe() {
+        if let Some(file_name) = current_exe.file_name() {
+            let name_str = file_name.to_string_lossy();
+            // Wenn der Dateiname ein "_" enthält, schneiden wir den Kunden-Teil heraus
+            if name_str.contains('_') {
+                let parts: Vec<&str> = name_str.split('_').collect();
+                return parts.get(0)
+                            .map(|s| s.to_string())
+                           .unwrap_or_else(|| "default".to_string());
+            }
+        }
+    }
+    "default".to_string() // Rückfalloption, falls kein "_" im Namen ist
+}
+
+
 // ── Excel-Upload-Server (localhost:7788) ───────────────────────────────────────
 
 async fn excel_upload_server(app: AppHandle) {
@@ -407,8 +426,15 @@ pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
             use tauri::{WebviewUrl, WebviewWindowBuilder};
+            let customer = get_customer_from_filename();
+            let url_string = format!("https://{}.sm-artis.ch", customer);
 
-            let url = tauri::Url::parse("https://smartis.me").map_err(|e| e.to_string())?;
+            // Hilfreich für das Debugging in der Konsole:
+            println!("Erkannter Kunde: {}", customer);
+            println!("Starte Webview mit URL: {}", url_string);
+
+            // 3. URL parsen
+            let url = tauri::Url::parse(&url_string).map_err(|e| e.to_string())?;
             WebviewWindowBuilder::new(app.handle(), "main", WebviewUrl::External(url))
                 .title("Smartis by Artis Treuhand")
                 .inner_size(1400.0, 900.0)
@@ -455,6 +481,7 @@ pub fn run() {
             open_embedded_window,
             open_external_url,
             disable_tracking_prevention,
+            get_customer_from_filename
         ])
         .run(tauri::generate_context!())
         .expect("Fehler beim Starten von Smartis");

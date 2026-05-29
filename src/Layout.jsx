@@ -18,9 +18,7 @@ import {
   CloudUpload,
   BarChart3,
   Clock,
-  BookMarked,
-  CalendarDays,
-  CalendarRange
+  BookMarked
 } from "lucide-react";
 import { FEATURE_LEISTUNGSERFASSUNG } from "@/lib/featureFlags";
 import VoiceAssistant from "@/components/voice/VoiceAssistant";

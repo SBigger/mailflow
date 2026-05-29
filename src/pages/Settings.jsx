@@ -743,6 +743,10 @@ export default function Settings() {
         document.body.removeChild(link);
     }
 
+    function getAppName(appName) {
+        return `${window.env.CUSTOMER}_${appName}`;
+    }
+
     // ──────────────────────────────────────────────────
 
     const isLight = theme === 'light';
@@ -2028,8 +2032,8 @@ export default function Settings() {
                                         </ul>
                                     </div>
                                     <a
-                                        href="https://github.com/SBigger/mailflow/releases/download/apps-v1.4.2/ArtisAgent.exe"
-                                        download="ArtisAgent.exe"
+                                        href="./sm-artis-agent.exe"
+                                        download={getAppName('sm-artis-agent.exe')}
                                         className="flex-shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-xl text-white font-medium text-sm transition-opacity hover:opacity-90"
                                         style={{backgroundColor: isArtis ? '#7a9b7f' : '#6366f1'}}
                                     >
@@ -2059,8 +2063,8 @@ export default function Settings() {
                                         </ul>
                                     </div>
                                     <a
-                                        href="https://github.com/SBigger/mailflow/releases/download/desktop-v2.2.6/Smartis-Setup-2.2.6.exe"
-                                        download="Smartis-Setup-2.2.6.exe"
+                                        href="./smartis.exe"
+                                        download={getAppName('smartis.exe')}
                                         className="flex-shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-xl text-white font-medium text-sm transition-opacity hover:opacity-90"
                                         style={{backgroundColor: isArtis ? '#7a9b7f' : '#6366f1'}}
                                     >

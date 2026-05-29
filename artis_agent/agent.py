@@ -1,19 +1,19 @@
 """
-Artis Agent - Dokument-Manager
+Smartis Agent - Dokument-Manager
 Version: 1.0.0
 
 Workflow:
-  1. Web-App ruft  artis-open://checkout?doc_id=...&jwt=...&item_id=...&filename=...
+  1. Web-App ruft  smartis-open://checkout?doc_id=...&jwt=...&item_id=...&filename=...
   2. Agent lädt Datei herunter  →  öffnet in Word/Excel/Acrobat
   3. Watchdog erkennt Saves  →  lädt Draft auf SharePoint hoch
   4. App geschlossen  →  Dialog: Einchecken / Verwerfen
   5. Einchecken  →  finale Version hochladen, Sperre in DB aufheben
 
 Installation (einmalig, als normaler User):
-  artis_agent.exe          →  registriert URI-Schema + zeigt Bestätigung
+  smartis_agent.exe          →  registriert URI-Schema + zeigt Bestätigung
 
 Aufruf durch Browser:
-  artis_agent.exe "artis-open://checkout?doc_id=...&jwt=...&item_id=...&filename=..."
+  smartis_agent.exe "smartis-open://checkout?doc_id=...&jwt=...&item_id=...&filename=..."
 """
 
 import sys
@@ -25,6 +25,22 @@ import urllib.parse
 import ctypes
 import winreg
 import requests
+
+def get_dynamic_api_url():
+    default_url = "sm-artis.ch"
+    try:
+        executable_path = sys.argv[0]
+        executable_name = os.path.basename(executable_path)
+
+        if "_" in executable_name:
+            customer = executable_name.split("_")[0]
+            dynamic_url = f"https://api-{customer}.{default_url}"
+            return dynamic_url
+
+    except Exception as e:
+        print(f"Fehler beim Ermitteln des Namens: {e}")
+
+    return default_url
 
 # ── Watchdog (optional – nur wenn installiert) ────────────────────────────────
 try:
@@ -44,14 +60,13 @@ except ImportError:
     HAS_PYSTRAY = False
 
 # ── Konfiguration ─────────────────────────────────────────────────────────────
-SUPABASE_URL = "https://uawgpxcihixqxqxxbjak.supabase.co"
-SPFILES      = f"{SUPABASE_URL}/functions/v1/sharepoint-files"
+SPFILES      = f"{get_dynamic_api_url()}/functions/v1/sharepoint-files"
 WORKSPACE    = os.path.join(
     os.environ.get('LOCALAPPDATA', os.path.expanduser('~')),
-    'ArtisAgent', 'Workspace'
+    'SmartisAgent', 'Workspace'
 )
-APP_NAME     = "Artis Agent"
-APP_VERSION  = "2.0.0"
+APP_NAME     = "Smartis Agent"
+APP_VERSION  = "3.0.0"
 DRAFT_INTERVAL = 60   # Sekunden zwischen Draft-Uploads
 FILE_OPEN_TIMEOUT = 8 * 60 * 60  # 8 Stunden max Bearbeitung
 
@@ -231,7 +246,7 @@ def make_tray_icon(label: str, on_checkin, on_discard):
         MenuItem('Jetzt einchecken',       lambda i, it: (i.stop(), on_checkin())),
         MenuItem('Checkout verwerfen',     lambda i, it: (i.stop(), on_discard())),
     )
-    icon = pystray.Icon(f"artis_{id(label)}", img, f"Artis: {label[:40]}", menu)
+    icon = pystray.Icon(f"smartis_{id(label)}", img, f"Smartis: {label[:40]}", menu)
     icon.run_detached()
     return icon
 
@@ -311,7 +326,7 @@ def checkout_workflow(doc_id: str, jwt: str, item_id: str, filename: str):
         def update_tray(msg):
             if icon:
                 try:
-                    icon.title = f"Artis: {msg[:40]}"
+                    icon.title = f"Smartis: {msg[:40]}"
                 except Exception:
                     pass
 
@@ -414,7 +429,7 @@ def _safe_discard(doc_id: str, jwt: str, draft_item_id: str | None):
 # ── URI-Schema registrieren ───────────────────────────────────────────────────
 
 def register_uri_scheme() -> bool:
-    """Registriert artis-open:// im Windows-Registry (HKCU)."""
+    """Registriert smartis-open:// im Windows-Registry (HKCU)."""
     if getattr(sys, 'frozen', False):
         exe = sys.executable
         cmd = f'"{exe}" "%1"'
@@ -424,8 +439,8 @@ def register_uri_scheme() -> bool:
 
     try:
         with winreg.CreateKey(winreg.HKEY_CURRENT_USER,
-                              r'Software\Classes\artis-open') as k:
-            winreg.SetValue(k, '', winreg.REG_SZ, 'URL:Artis Open Protocol')
+                              r'Software\Classes\smartis-open') as k:
+            winreg.SetValue(k, '', winreg.REG_SZ, 'URL:Smartis Open Protocol')
             winreg.SetValueEx(k, 'URL Protocol', 0, winreg.REG_SZ, '')
             with winreg.CreateKey(k, r'shell\open\command') as ck:
                 winreg.SetValue(ck, '', winreg.REG_SZ, cmd)
@@ -439,7 +454,7 @@ def register_uri_scheme() -> bool:
 def is_registered() -> bool:
     try:
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
-                            r'Software\Classes\artis-open'):
+                            r'Software\Classes\Smartis-open'):
             return True
     except FileNotFoundError:
         return False
@@ -449,13 +464,13 @@ def is_registered() -> bool:
 
 def main():
     # Ohne URI-Argument → Installationsmodus
-    if len(sys.argv) < 2 or not sys.argv[1].startswith('artis-open://'):
+    if len(sys.argv) < 2 or not sys.argv[1].startswith('Smartis-open://'):
         ok = register_uri_scheme()
         os.makedirs(WORKSPACE, exist_ok=True)
         if ok:
             msgbox(
-                f"Artis Agent v{APP_VERSION} wurde erfolgreich installiert.\n\n"
-                f"Das Programm öffnet automatisch Dokumente aus der Artis App\n"
+                f"smartis Agent v{APP_VERSION} wurde erfolgreich installiert.\n\n"
+                f"Das Programm öffnet automatisch Dokumente aus der smartis App\n"
                 f"und checkt sie nach der Bearbeitung automatisch ein.\n\n"
                 f"Arbeitsordner:\n{WORKSPACE}",
                 style=MB_OK | MB_ICONINFORMATION
