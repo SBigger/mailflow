@@ -81,8 +81,8 @@ export default function MandantSelect() {
   }, [mandanten, search]);
 
   return (
-    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f2f5f2', fontFamily: "'Inter', system-ui, sans-serif" }}>
-      <div style={{ width: 460, display: 'flex', flexDirection: 'column', gap: 20 }}>
+    <div className="min-h-screen flex items-center justify-center p-4" style={{background: '#f2f5f2', fontFamily: "'Inter', system-ui, sans-serif" }}>
+      <div className="rounded-2xl p-7 shadow-sm border" style={{ backgroundColor: '#ffffff', borderColor: '#ccd8cc', width: 460, display: 'flex', flexDirection: 'column', gap: 20 }}>
         <div style={{ textAlign: 'center' }}>
           <div style={{ width: 48, height: 48, borderRadius: 14, background: '#7a9b7f', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: 22, margin: '0 auto 12px' }}>A</div>
           <div style={{ fontWeight: 700, fontSize: 18, color: '#1a1a2e' }}>Artis FiBu</div>
