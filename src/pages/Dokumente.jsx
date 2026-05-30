@@ -1127,6 +1127,7 @@ export default function Dokumente() {
         await entities.Dokument.update(doc.id, {
           sharepoint_item_id: sp.item_id, sharepoint_web_url: sp.web_url,
           storage_path: '', filename: file.name, file_size: file.size, file_type: file.type,
+          updated_at: new Date().toISOString(),
           checked_out_by: null, checked_out_by_name: null, checked_out_at: null,
         });
         setSignedUrls(prev => { const n = { ...prev }; delete n[doc.id]; return n; });
@@ -1673,12 +1674,15 @@ export default function Dokumente() {
                     </div>
                     {/* Jahr */}
                     {doc.year && <span style={{ fontSize: 11, color: s.textMuted, background: s.sidebarBg, border: "1px solid " + border, borderRadius: 6, padding: "2px 7px", flexShrink: 0 }}>{doc.year}</span>}
-                    {/* Groesse + Upload-Datum */}
+                    {/* Groesse + Datum (zuletzt gespeichert, sonst hochgeladen) */}
                     <span style={{ fontSize: 11, color: s.textMuted, flexShrink: 0, width: 55, textAlign: "right" }}>{formatBytes(doc.file_size)}</span>
-                    {doc.created_at && (
-                      <span title={"Hochgeladen: " + new Date(doc.created_at).toLocaleString("de-CH")}
+                    {(doc.updated_at || doc.created_at) && (
+                      <span title={
+                          (doc.created_at ? "Hochgeladen: " + new Date(doc.created_at).toLocaleString("de-CH") : "") +
+                          (doc.updated_at ? "\nZuletzt gespeichert: " + new Date(doc.updated_at).toLocaleString("de-CH") : "")
+                        }
                         style={{ fontSize: 10, color: s.textMuted, flexShrink: 0, whiteSpace: "nowrap", minWidth: 58, textAlign: "right" }}>
-                        {new Date(doc.created_at).toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit", year: "2-digit" })}
+                        {new Date(doc.updated_at || doc.created_at).toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit", year: "2-digit" })}
                       </span>
                     )}
                     {/* Checkout / Checkin */}

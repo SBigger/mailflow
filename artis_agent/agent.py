@@ -1,46 +1,31 @@
 """
-Smartis Agent - Dokument-Manager
+Artis Agent - Dokument-Manager
 Version: 1.0.0
 
 Workflow:
-  1. Web-App ruft  smartis-open://checkout?doc_id=...&jwt=...&item_id=...&filename=...
+  1. Web-App ruft  artis-open://checkout?doc_id=...&jwt=...&item_id=...&filename=...
   2. Agent lädt Datei herunter  →  öffnet in Word/Excel/Acrobat
   3. Watchdog erkennt Saves  →  lädt Draft auf SharePoint hoch
   4. App geschlossen  →  Dialog: Einchecken / Verwerfen
   5. Einchecken  →  finale Version hochladen, Sperre in DB aufheben
 
 Installation (einmalig, als normaler User):
-  smartis_agent.exe          →  registriert URI-Schema + zeigt Bestätigung
+  artis_agent.exe          →  registriert URI-Schema + zeigt Bestätigung
 
 Aufruf durch Browser:
-  smartis_agent.exe "smartis-open://checkout?doc_id=...&jwt=...&item_id=...&filename=..."
+  artis_agent.exe "artis-open://checkout?doc_id=...&jwt=...&item_id=...&filename=..."
 """
 
 import sys
 print(sys.executable)
 import os
+import json
 import time
 import threading
 import urllib.parse
 import ctypes
 import winreg
 import requests
-
-def get_dynamic_api_url():
-    default_url = "sm-artis.ch"
-    try:
-        executable_path = sys.argv[0]
-        executable_name = os.path.basename(executable_path)
-
-        if "_" in executable_name:
-            customer = executable_name.split("_")[0]
-            dynamic_url = f"https://api-{customer}.{default_url}"
-            return dynamic_url
-
-    except Exception as e:
-        print(f"Fehler beim Ermitteln des Namens: {e}")
-
-    return default_url
 
 # ── Watchdog (optional – nur wenn installiert) ────────────────────────────────
 try:
@@ -60,13 +45,112 @@ except ImportError:
     HAS_PYSTRAY = False
 
 # ── Konfiguration ─────────────────────────────────────────────────────────────
-SPFILES      = f"{get_dynamic_api_url()}/functions/v1/sharepoint-files"
+APP_NAME     = "Artis Agent"
+APP_VERSION  = "2.1.0"
+
+# Backend-URL ist konfigurierbar: bei einem Backend-Umzug genügt es, in
+# %APPDATA%\ArtisAgent\config.json den Wert "supabase_url" anzupassen –
+# kein Rebuild der EXE nötig. Ohne Config-Datei wird der Default verwendet.
+DEFAULT_SUPABASE_URL = "https://uawgpxcihixqxqxxbjak.supabase.co"
+CONFIG_DIR  = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), 'ArtisAgent')
+CONFIG_PATH = os.path.join(CONFIG_DIR, 'config.json')
+
+
+def load_config() -> dict:
+    """Liest config.json (falls vorhanden). Fehler werden still ignoriert."""
+    try:
+        with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def ensure_default_config() -> None:
+    """Schreibt eine Default-config.json, falls noch keine existiert."""
+    try:
+        os.makedirs(CONFIG_DIR, exist_ok=True)
+        if not os.path.exists(CONFIG_PATH):
+            with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
+                json.dump({"supabase_url": DEFAULT_SUPABASE_URL}, f, indent=2)
+    except Exception:
+        pass
+
+
+_cfg = load_config()
+SUPABASE_URL = (_cfg.get('supabase_url') or DEFAULT_SUPABASE_URL).rstrip('/')
+SPFILES      = f"{SUPABASE_URL}/functions/v1/sharepoint-files"
+
+# Multi-Backend: smartis.me (alte Cloud, Entwicklung/Test) und api-artis (neu,
+# Produktiv) nutzen unterschiedliche Supabase-Instanzen. Da ein ausgechecktes
+# Dokument nur in EINEM Backend liegt, probiert der Agent beim Einchecken alle
+# bekannten Backends durch und nimmt jenes, in dem das Dokument existiert.
+# Überschreibbar in config.json via "backends": ["https://...", "https://..."].
+_DEFAULT_BACKENDS = [
+    "https://uawgpxcihixqxqxxbjak.supabase.co",
+    "https://api-artis.sm-artis.ch",
+]
+_cfg_backends = _cfg.get('backends') if isinstance(_cfg.get('backends'), list) else []
+BACKENDS = [str(b).rstrip('/') for b in _cfg_backends if b] or \
+           ([SUPABASE_URL] + [b for b in _DEFAULT_BACKENDS if b != SUPABASE_URL])
+if SUPABASE_URL in BACKENDS:
+    BACKENDS = [SUPABASE_URL] + [b for b in BACKENDS if b != SUPABASE_URL]
+
+# JWT-Algorithmus → Backend-Zuordnung. Verhindert, dass ein migriertes Dokument
+# (gleiche UUID in alter UND neuer DB) im falschen Backend eingecheckt wird:
+#   HS256 → neues System (api-artis, self-hosted, symmetrischer JWT-Secret)
+#   ES256 → alte Cloud (uawgpxcihixqxqxxbjak, asymmetrische JWT-Signing-Keys)
+_ALG_BACKEND = {
+    "HS256": "https://api-artis.sm-artis.ch",
+    "ES256": "https://uawgpxcihixqxqxxbjak.supabase.co",
+}
+
+
+def _jwt_alg(jwt: str) -> str:
+    """Liest 'alg' aus dem JWT-Header (erstes Segment). '' bei Fehler."""
+    try:
+        import base64
+        seg = jwt.split('.')[0]
+        seg += '=' * ((4 - len(seg) % 4) % 4)
+        return str(json.loads(base64.urlsafe_b64decode(seg)).get('alg', ''))
+    except Exception:
+        return ''
+
+
+def backends_for(jwt: str) -> list:
+    """Backend-Reihenfolge passend zum JWT: das vom Token-Aussteller bevorzugt,
+    der Rest als Fallback. Bei unbekanntem alg → unveränderte BACKENDS-Liste."""
+    preferred = _ALG_BACKEND.get(_jwt_alg(jwt))
+    if not preferred or preferred not in BACKENDS:
+        return list(BACKENDS)
+    return [preferred] + [b for b in BACKENDS if b != preferred]
+
+
 WORKSPACE    = os.path.join(
     os.environ.get('LOCALAPPDATA', os.path.expanduser('~')),
-    'SmartisAgent', 'Workspace'
+    'ArtisAgent', 'Workspace'
 )
-APP_NAME     = "Smartis Agent"
-APP_VERSION  = "3.0.0"
+# Fester Installationsort. Egal von wo die EXE gestartet wird (Downloads, USB,
+# Netzlaufwerk) – sie kopiert sich hierher und registriert DIESEN Pfad. So bleibt
+# der URI-Handler stabil, auch wenn die heruntergeladene Datei gelöscht wird.
+INSTALL_DIR = os.path.join(
+    os.environ.get('LOCALAPPDATA', os.path.expanduser('~')),
+    'ArtisAgent', 'bin'
+)
+INSTALL_EXE = os.path.join(INSTALL_DIR, 'ArtisAgent.exe')
+LOG_PATH = os.path.join(CONFIG_DIR, 'agent.log')
+
+
+def applog(msg: str) -> None:
+    """Schreibt eine Zeile ins Logfile (für Diagnose). Fehler werden ignoriert."""
+    try:
+        os.makedirs(CONFIG_DIR, exist_ok=True)
+        with open(LOG_PATH, 'a', encoding='utf-8') as f:
+            f.write(time.strftime('%Y-%m-%d %H:%M:%S') + '  ' + msg + '\n')
+    except Exception:
+        pass
+
+
+applog(f"=== Agent geladen | SUPABASE_URL={SUPABASE_URL} | exe={getattr(sys, 'executable', '?')} ===")
 DRAFT_INTERVAL = 60   # Sekunden zwischen Draft-Uploads
 FILE_OPEN_TIMEOUT = 8 * 60 * 60  # 8 Stunden max Bearbeitung
 
@@ -91,15 +175,18 @@ def msgbox(text: str, title: str = APP_NAME, style: int = MB_OK | MB_ICONINFORMA
 
 # ── HTTP-Helfer ───────────────────────────────────────────────────────────────
 
-def sp_call(jwt: str, body: dict, timeout: int = 30) -> dict:
+def sp_call(jwt: str, body: dict, timeout: int = 30, url: str | None = None) -> dict:
     """JSON-Aufruf der sharepoint-files Edge Function."""
+    endpoint = url or SPFILES
+    applog(f"sp_call POST {endpoint} action={body.get('action')}")
     r = requests.post(
-        SPFILES,
+        endpoint,
         headers={"Authorization": f"Bearer {jwt}", "Content-Type": "application/json"},
         json=body,
         timeout=timeout
     )
     data = r.json() if r.content else {}
+    applog(f"sp_call <- HTTP {r.status_code} body={str(data)[:200]}")
     if not r.ok:
         raise RuntimeError(data.get('error') or f"HTTP {r.status_code}")
     return data
@@ -108,21 +195,24 @@ def sp_call(jwt: str, body: dict, timeout: int = 30) -> dict:
 def sp_upload_multipart(jwt: str, action: str, doc_id: str,
                         local_path: str, filename: str,
                         extra_fields: dict | None = None,
-                        timeout: int = 300) -> dict:
+                        timeout: int = 300, url: str | None = None) -> dict:
     """Multipart-Upload an die Edge Function (checkin-save oder upload-draft)."""
+    endpoint = url or SPFILES
     with open(local_path, 'rb') as f:
         file_bytes = f.read()
     fields = {"action": action, "doc_id": doc_id}
     if extra_fields:
         fields.update(extra_fields)
+    applog(f"upload_multipart POST {endpoint} action={action} doc_id={doc_id} bytes={len(file_bytes)}")
     r = requests.post(
-        SPFILES,
+        endpoint,
         headers={"Authorization": f"Bearer {jwt}"},
         files={"file": (filename, file_bytes, "application/octet-stream")},
         data=fields,
         timeout=timeout
     )
     data = r.json() if r.content else {}
+    applog(f"upload_multipart <- HTTP {r.status_code} body={str(data)[:200]}")
     if not r.ok:
         raise RuntimeError(data.get('error') or f"HTTP {r.status_code}")
     return data
@@ -246,7 +336,7 @@ def make_tray_icon(label: str, on_checkin, on_discard):
         MenuItem('Jetzt einchecken',       lambda i, it: (i.stop(), on_checkin())),
         MenuItem('Checkout verwerfen',     lambda i, it: (i.stop(), on_discard())),
     )
-    icon = pystray.Icon(f"smartis_{id(label)}", img, f"Smartis: {label[:40]}", menu)
+    icon = pystray.Icon(f"artis_{id(label)}", img, f"Artis: {label[:40]}", menu)
     icon.run_detached()
     return icon
 
@@ -288,10 +378,12 @@ def checkout_workflow(doc_id: str, jwt: str, item_id: str, filename: str):
                 return
             try:
                 log("Lade Draft hoch...")
+                _draft_base = backends_for(jwt)[0]
                 res = sp_upload_multipart(
                     jwt, 'upload-draft', doc_id, local_path, filename,
                     extra_fields={"prev_draft_item_id": draft_item_id[0] or ""},
-                    timeout=120
+                    timeout=120,
+                    url=f"{_draft_base}/functions/v1/sharepoint-files"
                 )
                 draft_item_id[0] = res.get('draft_item_id')
                 log(f"Draft hochgeladen: {draft_item_id[0]}")
@@ -326,7 +418,7 @@ def checkout_workflow(doc_id: str, jwt: str, item_id: str, filename: str):
         def update_tray(msg):
             if icon:
                 try:
-                    icon.title = f"Smartis: {msg[:40]}"
+                    icon.title = f"Artis: {msg[:40]}"
                 except Exception:
                     pass
 
@@ -357,6 +449,15 @@ def checkout_workflow(doc_id: str, jwt: str, item_id: str, filename: str):
 
         if was_modified:
             do_checkin(doc_id, jwt, local_path, filename, draft_item_id[0])
+        else:
+            # Datei unverändert geschlossen → Sperre freigeben (kein Dialog).
+            # Erst ohne Upload versuchen (checkin-discard, alle Backends). Kennt
+            # kein Backend die Aktion, wird als Fallback der unveränderte Inhalt
+            # re-hochgeladen, damit die Sperre sicher gelöst wird.
+            log("Keine Änderung – Checkout wird freigegeben")
+            if not try_release_lock(doc_id, jwt):
+                applog("checkin-discard nirgends moeglich -> Fallback Re-Upload")
+                do_checkin(doc_id, jwt, local_path, filename, draft_item_id[0])
 
     except Exception as e:
         log(f"FEHLER: {e}")
@@ -387,23 +488,51 @@ def checkout_workflow(doc_id: str, jwt: str, item_id: str, filename: str):
 
 def do_checkin(doc_id: str, jwt: str, local_path: str,
                filename: str, draft_item_id: str | None):
-    """Lädt die finale Version hoch und hebt die Sperre auf."""
-    try:
-        print(f"[{filename}] Einchecken...")
-        sp_upload_multipart(jwt, 'checkin-save', doc_id, local_path, filename, timeout=300)
-        # Draft löschen (falls vorhanden)
-        if draft_item_id:
-            try:
-                sp_call(jwt, {"action": "delete", "item_id": draft_item_id}, timeout=15)
-            except Exception:
-                pass
-        #msgbox(f"'{filename}'\n\nErfolgreich eingecheckt ✓", style=MB_OK | MB_ICONINFORMATION)
-    except Exception as e:
-        msgbox(
-            f"Fehler beim Einchecken von '{filename}':\n\n{e}\n\n"
-            "Die Datei bleibt lokal. Bitte manuell in der Web-App einchecken.",
-            style=MB_OK | MB_ICONSTOP
-        )
+    """Lädt die finale Version hoch und hebt die Sperre auf.
+
+    Probiert alle bekannten Backends durch (smartis.me / api-artis) und nimmt
+    jenes, in dem das Dokument liegt. Liefert das richtige Backend 'Dokument
+    nicht gefunden', wird das nächste versucht."""
+    last_err = None
+    for base in backends_for(jwt):
+        endpoint = f"{base}/functions/v1/sharepoint-files"
+        try:
+            print(f"[{filename}] Einchecken via {base}...")
+            sp_upload_multipart(jwt, 'checkin-save', doc_id, local_path, filename,
+                                timeout=300, url=endpoint)
+            applog(f"checkin-save OK auf {base}")
+            if draft_item_id:
+                try:
+                    sp_call(jwt, {"action": "delete", "item_id": draft_item_id},
+                            timeout=15, url=endpoint)
+                except Exception:
+                    pass
+            return True
+        except Exception as e:
+            applog(f"checkin-save fehlgeschlagen auf {base}: {e}")
+            last_err = e
+            continue
+    msgbox(
+        f"Fehler beim Einchecken von '{filename}':\n\n{last_err}\n\n"
+        "Die Datei bleibt lokal. Bitte manuell in der Web-App einchecken.",
+        style=MB_OK | MB_ICONSTOP
+    )
+    return False
+
+
+def try_release_lock(doc_id: str, jwt: str) -> bool:
+    """Hebt die Checkout-Sperre OHNE Upload auf (checkin-discard), über alle
+    Backends. True, sobald ein Backend die Freigabe akzeptiert."""
+    for base in backends_for(jwt):
+        endpoint = f"{base}/functions/v1/sharepoint-files"
+        try:
+            sp_call(jwt, {"action": "checkin-discard", "doc_id": doc_id},
+                    timeout=15, url=endpoint)
+            applog(f"checkin-discard OK auf {base}")
+            return True
+        except Exception as e:
+            applog(f"checkin-discard fehlgeschlagen auf {base}: {e}")
+    return False
 
 
 def do_discard(doc_id: str, jwt: str, filename: str, draft_item_id: str | None):
@@ -414,24 +543,45 @@ def do_discard(doc_id: str, jwt: str, filename: str, draft_item_id: str | None):
 
 
 def _safe_discard(doc_id: str, jwt: str, draft_item_id: str | None):
-    """Interne Hilfsfunktion: Sperre aufheben + Draft löschen, keine Dialoge."""
-    try:
-        sp_call(jwt, {"action": "checkin-discard", "doc_id": doc_id}, timeout=15)
-    except Exception as e:
-        print(f"checkin-discard Fehler: {e}")
+    """Interne Hilfsfunktion: Sperre aufheben (alle Backends), keine Dialoge."""
+    try_release_lock(doc_id, jwt)
     if draft_item_id:
-        try:
-            sp_call(jwt, {"action": "delete", "item_id": draft_item_id}, timeout=15)
-        except Exception:
-            pass
+        for base in backends_for(jwt):
+            try:
+                sp_call(jwt, {"action": "delete", "item_id": draft_item_id},
+                        timeout=15, url=f"{base}/functions/v1/sharepoint-files")
+                break
+            except Exception:
+                pass
 
 
 # ── URI-Schema registrieren ───────────────────────────────────────────────────
 
-def register_uri_scheme() -> bool:
-    """Registriert smartis-open:// im Windows-Registry (HKCU)."""
+def self_install() -> str:
+    """Kopiert die laufende EXE an den festen Installationsort (INSTALL_EXE) und
+    gibt dessen Pfad zurück. Nur im frozen-Modus. Läuft die EXE bereits aus dem
+    Zielordner, wird nicht kopiert. Bei Fehlern wird der aktuelle Pfad
+    zurückgegeben, damit die Installation trotzdem klappt."""
+    if not getattr(sys, 'frozen', False):
+        return sys.executable
+    try:
+        cur = os.path.abspath(sys.executable)
+        if os.path.normcase(cur) == os.path.normcase(INSTALL_EXE):
+            return INSTALL_EXE
+        os.makedirs(INSTALL_DIR, exist_ok=True)
+        import shutil
+        shutil.copy2(cur, INSTALL_EXE)
+        applog(f"self_install: kopiert {cur} -> {INSTALL_EXE}")
+        return INSTALL_EXE
+    except Exception as e:
+        applog(f"self_install Fehler (nutze aktuellen Pfad): {e}")
+        return sys.executable
+
+
+def register_uri_scheme(exe_path: str | None = None) -> bool:
+    """Registriert artis-open:// im Windows-Registry (HKCU)."""
     if getattr(sys, 'frozen', False):
-        exe = sys.executable
+        exe = exe_path or sys.executable
         cmd = f'"{exe}" "%1"'
     else:
         script = os.path.abspath(__file__)
@@ -439,8 +589,8 @@ def register_uri_scheme() -> bool:
 
     try:
         with winreg.CreateKey(winreg.HKEY_CURRENT_USER,
-                              r'Software\Classes\smartis-open') as k:
-            winreg.SetValue(k, '', winreg.REG_SZ, 'URL:Smartis Open Protocol')
+                              r'Software\Classes\artis-open') as k:
+            winreg.SetValue(k, '', winreg.REG_SZ, 'URL:Artis Open Protocol')
             winreg.SetValueEx(k, 'URL Protocol', 0, winreg.REG_SZ, '')
             with winreg.CreateKey(k, r'shell\open\command') as ck:
                 winreg.SetValue(ck, '', winreg.REG_SZ, cmd)
@@ -454,7 +604,7 @@ def register_uri_scheme() -> bool:
 def is_registered() -> bool:
     try:
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
-                            r'Software\Classes\Smartis-open'):
+                            r'Software\Classes\artis-open'):
             return True
     except FileNotFoundError:
         return False
@@ -464,15 +614,21 @@ def is_registered() -> bool:
 
 def main():
     # Ohne URI-Argument → Installationsmodus
-    if len(sys.argv) < 2 or not sys.argv[1].startswith('Smartis-open://'):
-        ok = register_uri_scheme()
+    if len(sys.argv) < 2 or not sys.argv[1].startswith('artis-open://'):
+        installed = self_install()
+        ok = register_uri_scheme(installed)
         os.makedirs(WORKSPACE, exist_ok=True)
+        ensure_default_config()
         if ok:
             msgbox(
-                f"smartis Agent v{APP_VERSION} wurde erfolgreich installiert.\n\n"
-                f"Das Programm öffnet automatisch Dokumente aus der smartis App\n"
+                f"Artis Agent v{APP_VERSION} wurde erfolgreich installiert.\n\n"
+                f"Das Programm öffnet automatisch Dokumente aus der Artis App\n"
                 f"und checkt sie nach der Bearbeitung automatisch ein.\n\n"
-                f"Arbeitsordner:\n{WORKSPACE}",
+                f"Backend: {SUPABASE_URL}\n"
+                f"(änderbar in: {CONFIG_PATH})\n\n"
+                f"Installiert nach:\n{installed}\n\n"
+                f"Arbeitsordner:\n{WORKSPACE}\n\n"
+                f"Die heruntergeladene Datei kann jetzt gelöscht werden.",
                 style=MB_OK | MB_ICONINFORMATION
             )
         else:
@@ -486,6 +642,7 @@ def main():
     # URI-Aufruf vom Browser
     uri = sys.argv[1]
     print(f"URI: {uri}")
+    applog(f"main() URI empfangen: {uri[:90]}... | SUPABASE_URL={SUPABASE_URL}")
 
     try:
         parsed = urllib.parse.urlparse(uri)

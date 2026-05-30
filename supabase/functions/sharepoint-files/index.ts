@@ -106,6 +106,7 @@ serve(async (req) => {
             if (storErr) throw new Error('Storage Upload: ' + storErr.message)
             await supabase.from('dokumente').update({
               storage_path: `dokumente/${uploadKey}`, file_size: fileData.length,
+              updated_at: new Date().toISOString(),
               checked_out_by: null, checked_out_by_name: null, checked_out_at: null,
             }).eq('id', docId)
           }
@@ -147,6 +148,7 @@ serve(async (req) => {
           await supabase.from('dokumente').update({
             storage_path: `dokumente/${uploadKey}`,
             file_size: fileData.length,
+            updated_at: new Date().toISOString(),
             checked_out_by: null, checked_out_by_name: null, checked_out_at: null,
           }).eq('id', docId)
 
@@ -247,9 +249,44 @@ serve(async (req) => {
       if (storErr) throw new Error('Storage Upload: ' + storErr.message)
       await supabase.from('dokumente').update({
         storage_path: `dokumente/${uploadKey}`, filename: cleanName, file_size: fileData.length,
+        updated_at: new Date().toISOString(),
         checked_out_by: null, checked_out_by_name: null, checked_out_at: null,
       }).eq('id', docId)
       return ok({ ok: true })
+    }
+
+    // ── checkin-discard: Checkout freigeben ohne Upload ──────────────────────
+    if (action === 'checkin-discard') {
+      const docId = validateUUID(body.doc_id, 'doc_id')
+      const { data: doc } = await supabase.from('dokumente')
+        .select('id, checked_out_by').eq('id', docId).single()
+      if (!doc) throw new Error('Dokument nicht gefunden')
+      if (doc.checked_out_by === authUser.id) {
+        await supabase.from('dokumente').update({
+          checked_out_by: null, checked_out_by_name: null, checked_out_at: null,
+        }).eq('id', docId)
+      }
+      return ok({ ok: true })
+    }
+
+    // ── upload-draft: Zwischenstand speichern (Datei noch offen) ────────────
+    if (action === 'upload-draft') {
+      const docId = validateUUID(body.doc_id, 'doc_id')
+      const file  = body.file as File
+      if (!file) throw new Error('Keine Datei angegeben')
+      const { data: doc } = await supabase.from('dokumente')
+        .select('id, checked_out_by, storage_path, filename').eq('id', docId).single()
+      if (!doc) throw new Error('Dokument nicht gefunden')
+      if (doc.checked_out_by !== null && doc.checked_out_by !== authUser.id)
+        throw new Error('Dokument nicht von dir ausgecheckt')
+      const fileData = new Uint8Array(await file.arrayBuffer())
+      if (fileData.length === 0) throw new Error('Datei ist leer')
+      if (fileData.length > MAX_FILE_SIZE) throw new Error('Datei zu gross')
+      const uploadKey = `${docId}/draft-${Date.now()}-${safeName(file.name || doc.filename)}`
+      const { error: storErr } = await supabase.storage
+        .from('dokumente').upload(uploadKey, fileData, { upsert: true, contentType: 'application/octet-stream' })
+      if (storErr) throw new Error('Storage Upload: ' + storErr.message)
+      return ok({ ok: true, draft_id: docId })
     }
 
     return err(`Unbekannte Aktion: ${action}`)
