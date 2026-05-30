@@ -3,8 +3,6 @@
 const { app, BrowserWindow, ipcMain, shell, Notification, globalShortcut, Tray, Menu, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { registerIpcHandlers } = require('./commands.cjs');
-const { startExcelServer } = require('./excel-server.cjs');
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0';
@@ -20,8 +18,7 @@ function getConfigPath() {
 
 function readConfig() {
   try {
-    const raw = fs.readFileSync(getConfigPath(), 'utf8');
-    return JSON.parse(raw);
+    return JSON.parse(fs.readFileSync(getConfigPath(), 'utf8'));
   } catch {
     return {};
   }
@@ -62,7 +59,6 @@ function openSetupWindow(currentUrl) {
 
   const query = currentUrl ? `?current=${encodeURIComponent(currentUrl)}` : '';
   setupWindow.loadFile(path.join(__dirname, 'setup.html'), { search: query });
-
   setupWindow.on('closed', () => { setupWindow = null; });
 }
 
@@ -87,6 +83,12 @@ function createMainWindow(smartisUrl) {
   mainWindow.setMenuBarVisibility(false);
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    // artis-open:// → System-Handler (öffnet ArtisAgent für Dokument-Checkout)
+    if (url.startsWith('artis-open://')) {
+      shell.openExternal(url);
+      return { action: 'deny' };
+    }
+
     const isMicrosoftAuth = /login\.(microsoftonline|live|microsoft|windows)\.(com|net)/.test(url);
     const isPowerBi = /(^|\.)powerbi\.(com|microsoft\.com)/.test(url);
     const isHttp = url.startsWith('http://') || url.startsWith('https://');
@@ -117,7 +119,6 @@ function createMainWindow(smartisUrl) {
 
   mainWindow.webContents.setUserAgent(UA);
   mainWindow.loadURL(smartisUrl, { userAgent: UA });
-
   mainWindow.on('closed', () => { mainWindow = null; });
 }
 
@@ -129,7 +130,7 @@ function createTray(smartisUrl) {
 
   const menu = Menu.buildFromTemplate([
     {
-      label: `Smartis öffnen (${smartisUrl})`,
+      label: `Smartis öffnen`,
       click: () => { if (mainWindow) { mainWindow.show(); mainWindow.focus(); } },
     },
     { type: 'separator' },
@@ -138,10 +139,7 @@ function createTray(smartisUrl) {
       click: () => openSetupWindow(smartisUrl),
     },
     { type: 'separator' },
-    {
-      label: 'Beenden',
-      click: () => app.quit(),
-    },
+    { label: 'Beenden', click: () => app.quit() },
   ]);
 
   tray.setContextMenu(menu);
@@ -155,20 +153,15 @@ app.whenReady().then(() => {
   const { session } = require('electron');
   session.defaultSession.setUserAgent(UA);
 
-  registerIpcHandlers(ipcMain, () => mainWindow);
-  startExcelServer(() => mainWindow);
-
-  // IPC: Setup-Fenster meldet gespeicherte URL zurück
+  // IPC: URL aus Setup-Fenster speichern
   ipcMain.handle('smartis:save-url', (_e, url) => {
     saveSmartisUrl(url);
     if (setupWindow) { setupWindow.close(); setupWindow = null; }
 
     if (mainWindow) {
-      // URL live neu laden
       mainWindow.loadURL(url, { userAgent: UA });
       mainWindow.show();
       mainWindow.focus();
-      // Tray neu aufbauen
       if (tray) { tray.destroy(); tray = null; }
       createTray(url);
     } else {
@@ -177,10 +170,16 @@ app.whenReady().then(() => {
     }
   });
 
+  // Native Notification
+  ipcMain.handle('smartis:notify', (_e, { title, body }) => {
+    if (Notification.isSupported()) {
+      new Notification({ title: title || 'Smartis', body: body || '' }).show();
+    }
+  });
+
   const savedUrl = getSmartisUrl();
 
   if (!savedUrl) {
-    // Erster Start → Setup anzeigen
     openSetupWindow(null);
   } else {
     createMainWindow(savedUrl);
@@ -206,11 +205,4 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   globalShortcut.unregisterAll();
   if (process.platform !== 'darwin') app.quit();
-});
-
-// Native Notification API
-ipcMain.handle('smartis:notify', (_e, { title, body }) => {
-  if (Notification.isSupported()) {
-    new Notification({ title: title || 'Smartis', body: body || '' }).show();
-  }
 });
