@@ -695,6 +695,7 @@ export default function Dokumente() {
   const [expandedC,     setExpandedC]     = useState({});
   const [expandedCat,   setExpandedCat]   = useState({});
   const [custSearch,    setCustSearch]    = useState("");
+  const [typeaheadBuf,  setTypeaheadBuf]  = useState("");  // Tastatur-Schnellsuche
   const [fileSearch,    setFileSearch]    = useState("");
   const [ftSearch,    setFtSearch]    = useState("");
   const [ftResults,   setFtResults]   = useState(null);
@@ -833,6 +834,54 @@ export default function Dokumente() {
     allDoks.filter(d => d.checked_out_by && d.checked_out_by === user?.id),
     [allDoks, user]
   );
+
+  // ── Tastatur-Typeahead: tippen ohne ins Suchfeld zu klicken ──────────────
+  // Du klickst irgendwo in die Dateiverwaltung und tippst "martin" -- die
+  // Sidebar springt zum ersten Kunden, dessen Name das enthält.
+  // ESC leert den Buffer, 1.5s Inaktivität auch. Tippen im Input wird ignoriert.
+  useEffect(() => {
+    if (pageTab !== 'alle' || ftResults) return;
+    let timer = null;
+    const onKey = (e) => {
+      // ignoriere wenn fokussiert in Input/Textarea/contenteditable
+      const t = e.target;
+      const tag = (t?.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || t?.isContentEditable) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key === 'Escape') { setTypeaheadBuf(""); return; }
+      if (e.key === 'Backspace') { setTypeaheadBuf(b => b.slice(0, -1)); e.preventDefault(); return; }
+      // nur Buchstaben/Zahlen/Umlaute/Bindestrich/Leerzeichen
+      if (e.key.length !== 1) return;
+      if (!/[a-zA-Z0-9äöüÄÖÜß\- ]/.test(e.key)) return;
+      setTypeaheadBuf(b => b + e.key);
+      e.preventDefault();
+    };
+    window.addEventListener('keydown', onKey);
+    if (typeaheadBuf) {
+      // Buffer nach 1.5s leeren
+      timer = setTimeout(() => setTypeaheadBuf(""), 1500);
+    }
+    return () => { window.removeEventListener('keydown', onKey); if (timer) clearTimeout(timer); };
+  }, [pageTab, ftResults, typeaheadBuf]);
+
+  // Buffer → custSearch synchronisieren und ersten Treffer auswählen
+  useEffect(() => {
+    if (!typeaheadBuf) return;
+    setCustSearch(typeaheadBuf);
+    const q = typeaheadBuf.toLowerCase();
+    const hit = customers.find(c =>
+      (c.company_name || '').toLowerCase().includes(q) &&
+      allDoks.some(d => d.customer_id === c.id)
+    );
+    if (hit) {
+      setSelCustomerId(hit.id);
+      // sanft in den Viewport scrollen
+      setTimeout(() => {
+        const el = document.querySelector(`[data-cust-id="${hit.id}"]`);
+        if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }, 50);
+    }
+  }, [typeaheadBuf]);
 
   // Tag-Resolver
   const getTag   = (id) => allTags.find(t => t.id === id);
@@ -1323,8 +1372,14 @@ export default function Dokumente() {
         <div style={{ width: 260, flexShrink: 0, borderRight: "1px solid " + border, background: s.sidebarBg, display: "flex", flexDirection: "column", overflow: "hidden" }}>
           <div style={{ padding: "8px 10px", borderBottom: "1px solid " + border, position: "relative" }}>
             <Search size={13} style={{ position: "absolute", left: 18, top: "50%", transform: "translateY(-50%)", color: s.textMuted, pointerEvents: "none" }} />
-            <input value={custSearch} onChange={e => setCustSearch(e.target.value)} placeholder="Kunde suchen..."
+            <input value={custSearch} onChange={e => setCustSearch(e.target.value)} placeholder="Kunde suchen... (oder einfach lostippen)"
               style={{ background: s.inputBg, border: "1px solid " + border, color: s.textMain, borderRadius: 6, padding: "4px 8px 4px 24px", fontSize: 12, width: "100%", outline: "none" }} />
+            {typeaheadBuf && (
+              <div title="Tastatur-Schnellsuche (ESC zum Loeschen)"
+                style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", background: accent, color: "#fff", fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 10, pointerEvents: "none", letterSpacing: 0.3 }}>
+                {typeaheadBuf}
+              </div>
+            )}
           </div>
 
           {/* "Alle" Root */}
@@ -1342,7 +1397,7 @@ export default function Dokumente() {
                 const isCustSel = selCustomerId === cust.id && !selCat;
                 const isExp     = expandedC[cust.id];
                 return (
-                  <div key={cust.id} style={{ margin: "1px 6px" }}>
+                  <div key={cust.id} data-cust-id={cust.id} style={{ margin: "1px 6px" }}>
                     <div onClick={() => selectCustomer(cust.id)}
                       style={{ ...treeItem, background: selCustomerId === cust.id ? s.selBg + (isCustSel ? "" : "88") : "transparent", color: selCustomerId === cust.id ? accent : s.textMain, fontWeight: selCustomerId === cust.id ? 600 : 400 }}>
                       <span onClick={e => { e.stopPropagation(); setExpandedC(p => ({ ...p, [cust.id]: !p[cust.id] })); }}
