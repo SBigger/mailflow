@@ -188,7 +188,7 @@ function extractInvoiceNr(text) {
 
 // ── Belegdatum aus Text extrahieren ──────────────────────────────
 const MONAT_MAP = {
-  januar:1,  february:1, janvier:1, gennaio:1, jan:1,
+  januar:1,  january:1, janvier:1, gennaio:1, jan:1,
   februar:2, february:2, février:2, febbraio:2, feb:2,
   märz:3,    march:3,    mars:3,    marzo:3,    mär:3, mar:3,
   april:4,   avril:4,    aprile:4,  apr:4,

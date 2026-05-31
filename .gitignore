@@ -38,3 +38,10 @@ electron-dist/
 tests/setup/.auth-state.json
 test-results/
 playwright-report/
+
+apps/src-tauri/target
+apps/artis_agent/build
+apps/artis_agent/dist
+
+public/smartis.exe
+public/sm-artis-agent.exe

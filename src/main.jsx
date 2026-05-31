@@ -74,22 +74,35 @@ async function initApp() {
   let config = {
     API_URL: '',
     KEY1: '',
-    CUSTOMER: ''
+    CUSTOMER: '',
+    APP_TYPE: ''
   };
   let url = null;
 
   try {
-    const customer = await invoke('get_customer_config');
-    config.CUSTOMER = customer;
-    config.API_URL = `https://api-${customer}.sm-artis.ch`
-    url = `https://${customer}.sm-artis.ch/`
+    try{
+      const customer = await invoke('get_customer_config');
+      config.APP_TYPE= "Tauri App";
+      config.CUSTOMER = customer;
+      config.API_URL = `https://api-${customer}.sm-artis.ch`
+      url = `https://${customer}.sm-artis.ch/`
+    } catch (e) {
+      config.APP_TYPE= "Web App";
+      url = window.location.href
+      config.CUSTOMER = url.replace('https://', '').split('/')[0].split('.')[0];
+      const domain = url.replace('https://', '').split('/')[0];
+      config.API_URL = `https://api-${domain}`;
+      url = `https://${domain}/`;
+    }
+
+    const response = await fetch(`/config.json`);
+    const json = await response.json();
+    config.KEY1 = json.KEY1;
 
   } catch (error) {
-    url = window.location.href
-    config.CUSTOMER = url.replace('https://', '').split('/')[0].split('.')[0];
-    const domain = url.replace('https://', '').split('/')[0];
-    config.API_URL = `https://api-${domain}`;
-    url = `https://${domain}/`;
+    console.log("init error: ", error);
+  } finally {
+    window.env = config;
   }
 
   initSupabase();

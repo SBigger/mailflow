@@ -1077,7 +1077,7 @@ export default function Dokumente() {
       queryClient.invalidateQueries({ queryKey: ["dokumente-all"] });
 
       const uri = [
-          'artis-open://checkout',
+          'smartis-open://checkout',
           '?doc_id=',   encodeURIComponent(doc.id),
           '&jwt=',      encodeURIComponent(jwt),
           '&item_id=',  encodeURIComponent(fileUrl),

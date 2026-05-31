@@ -49,7 +49,7 @@ export default function Login() {
         {/* Logo */}
         <div className="text-center mb-8">
           <img src={artisLogo} alt="Artis Treuhand" className="w-24 h-24 mb-4 mx-auto object-contain" />
-          <h1 className="text-2xl font-bold" style={{ color: '#2d3a2d' }}>Artis MailFlow</h1>
+          <h1 className="text-2xl font-bold capitalize" style={{ color: '#2d3a2d' }}>{window.env?.CUSTOMER} Mailflow</h1>
           <p className="text-sm mt-1" style={{ color: '#6b826b' }}>Intelligentes E-Mail & Task Management</p>
         </div>
 

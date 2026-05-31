@@ -1,7 +1,7 @@
 {
   "name": "mailflow",
   "private": true,
-  "version": "3.0.0",
+  "version": "3.0.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,8 +9,8 @@
     "preview": "vite preview",
     "supabase": "npx supabase start && npx supabase functions serve --env-file .env.local",
     "supabase debug": "supabase start && supabase functions serve --env-file .env.local --inspect-mode brk",
-    "tauri build": "npx @tauri-apps/cli build",
-    "app Docker build": "docker build -f .\\docker_files\\app_image\\Dockerfile -t brsoftswiss/smartis:1.5.0 .",
+    "tauri build": "npx @tauri-apps/cli build --config ./apps/src-tauri/tauri.conf.json",
+    "app Docker build": "docker build -f .\\docker_files\\app_image\\Dockerfile -t brsoftswiss/smartis:1.5.4 .",
     "dump schema": "supabase db dump --db-url \"postgres://postgres.uawgpxcihixqxqxxbjak:[Passwort]@aws-1-eu-central-1.pooler.supabase.com:6543/postgres\" -f supabase/backups/schema_safe.sql"
   },
   "dependencies": {
@@ -84,6 +84,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",
+    "@tauri-apps/cli": "^2.11.2",
     "@types/react": "^18.2.66",
     "@types/react-dom": "^18.2.22",
     "@vitejs/plugin-react": "^4.3.4",

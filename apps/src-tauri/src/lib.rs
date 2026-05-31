@@ -430,8 +430,8 @@ pub fn run() {
             let url_string = format!("https://{}.sm-artis.ch", customer);
 
             // Hilfreich für das Debugging in der Konsole:
-            println!("Erkannter Kunde: {}", customer);
-            println!("Starte Webview mit URL: {}", url_string);
+            log::info!("Erkannter Kunde: {}", customer);
+            log::info!("Starte Webview mit URL: {}", url_string);
 
             // 3. URL parsen
             let url = tauri::Url::parse(&url_string).map_err(|e| e.to_string())?;
@@ -462,8 +462,8 @@ pub fn run() {
             Ok(())
         })
         .plugin(tauri_plugin_log::Builder::default()
-            .level(log::LevelFilter::Info)
-            .build())
+                    .level(log::LevelFilter::Info)
+                    .build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())

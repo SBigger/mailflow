@@ -231,11 +231,13 @@ function KBDialog({ entry, theme, onClose, onSaved }) {
     }
     setPdfLoading(true);
     try {
-      // pdf.js dynamisch laden
-      const pdfjsLib = await import("https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js")
-        .catch(() => null);
+      // 1. If it's not already on the window, try loading it dynamically
+      if (!window.pdfjsLib) {
+        await import("https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js")
+            .catch(() => null);
+      }
 
-      // Fallback: direkt via CDN script tag
+      // 2. Fallback: If it's STILL not on the window, inject a hard script tag
       if (!window.pdfjsLib) {
         await new Promise((resolve, reject) => {
           const script = document.createElement("script");
@@ -244,10 +246,18 @@ function KBDialog({ entry, theme, onClose, onSaved }) {
           script.onerror = reject;
           document.head.appendChild(script);
         });
-        window.pdfjsLib.GlobalWorkerOptions.workerSrc =
-          "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
       }
 
+      // 3. Double check that it's globally accessible now
+      if (!window.pdfjsLib) {
+        throw new Error("PDF.js Engine konnte nicht im Window-Scope gefunden werden.");
+      }
+
+      // 4. Set the worker safely directly on the window reference
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+          "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+      // 5. Process the file
       const arrayBuffer = await file.arrayBuffer();
       const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
 

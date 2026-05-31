@@ -1,10 +1,16 @@
 # Stage 1: Build
 FROM node:20-alpine AS build
+
+RUN apk update && apk add --no-cache --upgrade curl
+
 WORKDIR /app
 
 COPY package.json package-lock.json* ./
 RUN npm install --no-audit
 COPY . .
+
+RUN ls -la
+
 RUN npm run build
 
 # Stage 2: Serve via Nginx

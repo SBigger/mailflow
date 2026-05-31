@@ -2019,7 +2019,7 @@ export default function Settings() {
                                         <h3 className="text-base font-semibold mb-1 flex items-center gap-2"
                                             style={{color: headingColor}}>
                                             <HardDrive className="h-4 w-4"/> ArtisAgent <span
-                                            className="text-xs font-normal opacity-50">v1.0.0</span>
+                                            className="text-xs font-normal opacity-50">v3.0.1</span>
                                         </h3>
                                         <p className="text-sm mb-3" style={{color: textMuted}}>
                                             Öffnet und bearbeitet Dokumente direkt aus der Dateiablage. Ermöglicht
@@ -2050,7 +2050,7 @@ export default function Settings() {
                                         <h3 className="text-base font-semibold mb-1 flex items-center gap-2"
                                             style={{color: headingColor}}>
                                             <HardDrive className="h-4 w-4"/> Smartis Desktop <span
-                                            className="text-xs font-normal opacity-50">v2.2.6</span>
+                                            className="text-xs font-normal opacity-50">Tauri v3.0.0</span>
                                         </h3>
                                         <p className="text-sm mb-3" style={{color: textMuted}}>
                                             Smartis als eigenständige Desktop-App für Windows. Läuft unabhängig vom Browser mit nativer Drag &amp; Drop Unterstützung.
