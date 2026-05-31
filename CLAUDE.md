@@ -7,7 +7,8 @@ Produktiv (scharfe Daten): https://artis.sm-artis.ch (Backend `api-artis.sm-arti
 ## Commit-/Push-Freigabe (Stand 2026-05-31)
 - **smartis.me (Branch `master`, Vercel-Auto-Deploy):** Commits + Pushes **erlaubt** ohne extra Rückfrage.
   smartis.me ist die Test-/Spielwiese; Vercel deployt automatisch nach jedem Push auf master.
-- **api-artis (artis.sm-artis.ch, produktiv):** scharfe Daten, nur **sporadisch** ändern, immer **mit Bestätigung**.
+- **api-artis (artis.sm-artis.ch, produktiv):** scharfe Daten — **sporadisch bis gar nicht** ändern,
+  und wenn überhaupt nur **mit ausdrücklicher Bestätigung**. Default: nicht anfassen.
   Roger übernimmt Code-Änderungen von smartis.me nach artis.sm-artis.ch.
 
 ## Tabu / Hands-off
