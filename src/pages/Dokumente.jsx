@@ -761,9 +761,22 @@ export default function Dokumente() {
     queryKey: ["customers"],
     queryFn:  () => entities.Customer.list("company_name"),
   });
+  // Schlanker Select (OHNE content_text + search_vector) -- spart ~14 MB / ~7 Sek
+  // bei jedem Aufruf. content_text wird in der Liste nirgends gelesen, nur das
+  // Auto-Indexing braucht die Info ob es leer ist -- das macht eine separate
+  // kleine Query weiter unten.
+  const DOK_LIST_FIELDS = 'id,customer_id,category,year,name,filename,storage_path,file_size,file_type,notes,created_by,created_at,updated_at,tag_ids,checked_out_by,checked_out_by_name,checked_out_at,sharepoint_item_id,sharepoint_web_url';
   const { data: allDoks = [], isLoading } = useQuery({
     queryKey: ["dokumente-all"],
-    queryFn:  () => entities.Dokument.list("-created_at", 5000),
+    queryFn:  async () => {
+      const { data, error } = await supabase
+        .from('dokumente')
+        .select(DOK_LIST_FIELDS)
+        .order('created_at', { ascending: false })
+        .limit(5000);
+      if (error) throw new Error(error.message);
+      return data || [];
+    },
   });
   const { data: allTags = [] } = useQuery({
     queryKey: ["dok_tags"],
@@ -776,11 +789,20 @@ export default function Dokumente() {
   const autoIndexRef = useRef(false);
   useEffect(() => {
     if (autoIndexRef.current) return;            // bereits gestartet
-    const toIndex = allDoks.filter(d => !d.content_text && d.storage_path);
-    if (!toIndex.length) return;
+    if (!allDoks.length) return;                 // warte bis allDoks geladen sind
     autoIndexRef.current = true;
 
     (async () => {
+      // Hole nur die Docs, die noch keinen Volltext haben (separate, schlanke Query —
+      // content_text steckt nicht mehr im Haupt-allDoks-Select, das spart die 14 MB).
+      const { data: toIndex } = await supabase
+        .from('dokumente')
+        .select('id,filename,name,file_type,storage_path')
+        .or('content_text.is.null,content_text.eq.')
+        .not('storage_path', 'is', null)
+        .limit(500);
+      if (!toIndex || !toIndex.length) return;
+
       let done = 0;
       for (const doc of toIndex) {
         try {
