@@ -770,13 +770,23 @@ export default function Dokumente() {
   const { data: allDoks = [], isLoading } = useQuery({
     queryKey: ["dokumente-all"],
     queryFn:  async () => {
-      const { data, error } = await supabase
-        .from('dokumente')
-        .select(DOK_LIST_FIELDS)
-        .order('created_at', { ascending: false })
-        .limit(5000);
-      if (error) throw new Error(error.message);
-      return data || [];
+      // Paginiert laden: PostgREST kappt server-seitig bei db-max-rows (typ. 1000).
+      // Wir holen 1000er-Pakete bis nichts mehr kommt (Sicherheits-Cap: 500'000).
+      const PAGE = 1000;
+      const HARD_CAP = 500000;
+      const all = [];
+      for (let offset = 0; offset < HARD_CAP; offset += PAGE) {
+        const { data, error } = await supabase
+          .from('dokumente')
+          .select(DOK_LIST_FIELDS)
+          .order('created_at', { ascending: false })
+          .range(offset, offset + PAGE - 1);
+        if (error) throw new Error(error.message);
+        if (!data || data.length === 0) break;
+        all.push(...data);
+        if (data.length < PAGE) break;
+      }
+      return all;
     },
   });
   const { data: allTags = [] } = useQuery({
