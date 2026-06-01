@@ -1064,14 +1064,49 @@ export default function Dokumente() {
   };
 
   const downloadDoc = async (doc) => {
-    const { data } = await supabase
+    if (!doc) return;
+    try {
+      // 1) SharePoint-Pfad bevorzugen wenn vorhanden (Online-Anzeige im neuen Tab)
+      if (doc.sharepoint_web_url) {
+        window.open(doc.sharepoint_web_url, '_blank');
+        return;
+      }
+
+      // 2) Storage-Pfad-Check (rein-SharePoint-Docs ohne lokale Kopie)
+      if (!doc.storage_path) {
+        toast.error('Keine Datei verfügbar für ' + (doc.filename || doc.name || 'dieses Dokument'));
+        return;
+      }
+
+      // 3) Signed URL holen mit download-Hint
+      //    → Supabase Storage setzt Content-Disposition: attachment; filename=…
+      //    Browser bietet dann den Speichern-Dialog an, statt PDF inline zu zeigen.
+      const { data, error } = await supabase
         .storage
         .from(BUCKET)
-        .createSignedUrl(doc.storage_path, 360);
+        .createSignedUrl(doc.storage_path, 360, {
+          download: doc.filename || true,
+        });
 
-    const fileUrl = data.signedUrl;
+      if (error || !data?.signedUrl) {
+        toast.error('Download-URL konnte nicht erstellt werden: ' + (error?.message || 'unbekannt'));
+        return;
+      }
 
-    window.open(fileUrl, '_blank');
+      // 4) Anchor mit download-Attribut programmgesteuert klicken
+      //    Umgeht Popup-Blocker (window.open aus async-Callback wird oft blockiert)
+      //    und triggert echten Browser-Download.
+      const a = document.createElement('a');
+      a.href = data.signedUrl;
+      a.download = doc.filename || 'download';
+      a.rel = 'noopener';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch (e) {
+      console.error('Download fehlgeschlagen', e);
+      toast.error('Download fehlgeschlagen: ' + e.message);
+    }
   }
 
   // ── URL-Parameter ?open=<doc_id> → Dokument direkt öffnen (von VoxDrop / Smartis) ──
