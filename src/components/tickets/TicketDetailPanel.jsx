@@ -16,6 +16,25 @@ import { toast } from "sonner";
 // Helper: Bild/PDF in Bucket "ticket-attachments" hochladen
 // Gibt {url, mime, filename} zurück.
 // ──────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────
+// Author-Farben für die 3-Wege-Kollab: Sascha (blau), Claude (grün), Roger (gelb)
+// Erkennung via Email-Pattern und KI-Marker.
+// ──────────────────────────────────────────────────────────────
+function detectAuthor({ msg, sender }) {
+  // Claude: KI-Vorschlag-Flag ODER Body beginnt mit Roboter-Emoji
+  if (msg?.is_ai_suggestion) return "claude";
+  if (typeof msg?.body === "string" && msg.body.trimStart().startsWith("🤖")) return "claude";
+
+  const email = (sender?.email || "").toLowerCase();
+  const name  = (sender?.full_name || "").toLowerCase();
+  if (email.includes("roger") || name.startsWith("roger")) return "roger";
+  if (email.includes("claude") || name === "claude") return "claude";
+  if (email.includes("sascha") || name.startsWith("sascha")) return "sascha";
+
+  if (msg?.sender_type === "customer") return "customer";
+  return "staff"; // sonstiger Mitarbeiter
+}
+
 const ATTACH_BUCKET = "ticket-attachments";
 async function uploadTicketAttachment(file, ticketId) {
   const ext = (file.name?.split(".").pop() || "png").toLowerCase();
@@ -411,6 +430,7 @@ export default function TicketDetailPanel({ ticket, onClose, currentUser, users 
             senderLabel={localTicket.from_name || localTicket.from_email}
             time={localTicket.created_at}
             theme={theme}
+            author={detectAuthor({ msg: { body: localTicket.body, sender_type: "customer" }, sender: { email: localTicket.from_email, full_name: localTicket.from_name } })}
           />
         )}
 
@@ -436,6 +456,7 @@ export default function TicketDetailPanel({ ticket, onClose, currentUser, users 
                 time={msg.created_at}
                 theme={theme}
                 isAi={msg.is_ai_suggestion}
+                author={detectAuthor({ msg, sender })}
               />
             );
           })
@@ -629,23 +650,26 @@ function stripSignature(text) {
 }
 
 // Chat Bubble Komponente
-function ChatBubble({ text, side, senderLabel, time, theme, isAi = false }) {
+function ChatBubble({ text, side, senderLabel, time, theme, isAi = false, author = null }) {
   const isLight = theme === "light";
   const isArtis = theme === "artis";
 
   const isLeft = side === "left";
 
-  const bubbleBg = isAi
-    ? (isArtis ? "#f0f7f0" : "#f5f3ff")
-    : isLeft
-      ? (isArtis ? "#e6ede6" : isLight ? "#ebebf4" : "rgba(63,63,70,0.4)")
-      : (isArtis ? "#7a9b7f" : isLight ? "#6366f1" : "#6366f1");
+  // ── Farb-Palette pro Author (3-Wege-Kollab) ───────────────────
+  // Sascha = blau, Claude = grün, Roger = gelb, Kunde/Sonstige = neutral
+  const palette = {
+    sascha:   { bg: "#dbeafe", text: "#1e3a8a", label: "Sascha"   },
+    claude:   { bg: "#d1fae5", text: "#065f46", label: "Claude 🤖" },
+    roger:    { bg: "#fef3c7", text: "#78350f", label: "Roger"    },
+    customer: { bg: isArtis ? "#e6ede6" : isLight ? "#ebebf4" : "rgba(63,63,70,0.4)",
+                text: isArtis ? "#2d3a2d" : isLight ? "#1a1a2e" : "#e4e4e7" },
+    staff:    { bg: isArtis ? "#7a9b7f" : "#6366f1", text: "#ffffff" },
+  };
+  const tone = palette[author] || (isLeft ? palette.customer : palette.staff);
 
-  const bubbleText = isLeft && !isAi
-    ? (isArtis ? "#2d3a2d" : isLight ? "#1a1a2e" : "#e4e4e7")
-    : isAi
-      ? (isArtis ? "#4a7a50" : "#5b21b6")
-      : "#ffffff";
+  const bubbleBg   = isAi && !author ? (isArtis ? "#f0f7f0" : "#f5f3ff") : tone.bg;
+  const bubbleText = isAi && !author ? (isArtis ? "#4a7a50" : "#5b21b6") : tone.text;
 
   const textMuted = isArtis ? "#6b826b" : isLight ? "#9090b8" : "#71717a";
 
