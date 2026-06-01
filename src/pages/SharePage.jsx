@@ -316,8 +316,8 @@ export default function SharePage() {
 
             {/* Footer */}
             <div style={{ marginTop: 32, textAlign: "center", color: FG2, fontSize: 12 }}>
-              Dieser Link wurde von Artis Treuhand GmbH geteilt via{" "}
-              <a href="https://smartis.me" style={{ color: ACC }}>smartis.me</a>
+              Dieser Link wurde von <span className="capitalize">{window.env?.CUSTOMER} Mailflow</span> geteilt via{" "}
+              <a href={`https://${window.location.hostname}`} rel="noreferrer" target="_blank" style={{ color: ACC }}>{window.location.hostname}</a>
             </div>
           </div>
         )}
