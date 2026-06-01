@@ -6,10 +6,52 @@ import { format, differenceInDays } from "date-fns";
 import { de } from "date-fns/locale";
 import {
   X, Sparkles, Send, Mail, FileText, MessageSquare,
-  User, ChevronDown, Loader2, Trash2, CheckCircle2
+  User, ChevronDown, Loader2, Trash2, CheckCircle2,
+  Image as ImageIcon, Paperclip
 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
+
+// ──────────────────────────────────────────────────────────────
+// Helper: Bild/PDF in Bucket "ticket-attachments" hochladen
+// Gibt {url, mime, filename} zurück.
+// ──────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────
+// Author-Farben für die 3-Wege-Kollab: Sascha (blau), Claude (grün), Roger (gelb)
+// Erkennung via Email-Pattern und KI-Marker.
+// ──────────────────────────────────────────────────────────────
+function detectAuthor({ msg, sender }) {
+  // Claude: KI-Vorschlag-Flag ODER Body beginnt mit Roboter-Emoji
+  if (msg?.is_ai_suggestion) return "claude";
+  if (typeof msg?.body === "string" && msg.body.trimStart().startsWith("🤖")) return "claude";
+
+  const email = (sender?.email || "").toLowerCase();
+  const name  = (sender?.full_name || "").toLowerCase();
+  if (email.includes("roger") || name.startsWith("roger")) return "roger";
+  if (email.includes("claude") || name === "claude") return "claude";
+  if (email.includes("sascha") || name.startsWith("sascha")) return "sascha";
+
+  if (msg?.sender_type === "customer") return "customer";
+  return "staff"; // sonstiger Mitarbeiter
+}
+
+const ATTACH_BUCKET = "ticket-attachments";
+async function uploadTicketAttachment(file, ticketId) {
+  const ext = (file.name?.split(".").pop() || "png").toLowerCase();
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const safeName = (file.name || `screenshot.${ext}`).replace(/[^a-zA-Z0-9._-]/g, "_");
+  const path = `${ticketId || "no-ticket"}/${stamp}-${safeName}`;
+  const { error } = await supabase.storage
+    .from(ATTACH_BUCKET)
+    .upload(path, file, {
+      cacheControl: "3600",
+      contentType: file.type || "application/octet-stream",
+      upsert: false,
+    });
+  if (error) throw error;
+  const { data: { publicUrl } } = supabase.storage.from(ATTACH_BUCKET).getPublicUrl(path);
+  return { url: publicUrl, mime: file.type, filename: file.name || safeName };
+}
 
 export default function TicketDetailPanel({ ticket, onClose, currentUser, users = [] }) {
   const { theme } = useContext(ThemeContext);
@@ -20,6 +62,8 @@ export default function TicketDetailPanel({ ticket, onClose, currentUser, users 
   const [replyText, setReplyText]     = useState("");
   const [aiLoading, setAiLoading]     = useState(false);
   const [sending, setSending]         = useState(false);
+  const [uploadingAttach, setUploadingAttach] = useState(false);
+  const fileInputRef = useRef(null);
   const [localTicket, setLocalTicket] = useState(ticket);
   const [replyHeight, setReplyHeight] = useState(120);
   const messagesEndRef = useRef(null);
@@ -155,6 +199,54 @@ export default function TicketDetailPanel({ ticket, onClose, currentUser, users 
     } finally {
       setAiLoading(false);
     }
+  };
+
+  // ── Attachment-Upload (Paste, Drop, Datei-Button) ───────────────
+  const insertAttachmentMarkdown = (att) => {
+    const isImg = (att.mime || "").startsWith("image/");
+    const md = isImg
+      ? `\n![${att.filename || "Screenshot"}](${att.url})\n`
+      : `\n[${att.filename || "Datei"}](${att.url})\n`;
+    setReplyText(prev => (prev || "") + md);
+  };
+
+  const handleFiles = async (files) => {
+    if (!files?.length || !ticket?.id) return;
+    setUploadingAttach(true);
+    try {
+      for (const f of files) {
+        try {
+          const att = await uploadTicketAttachment(f, ticket.id);
+          insertAttachmentMarkdown(att);
+        } catch (e) {
+          toast.error(`Upload "${f.name}" fehlgeschlagen: ${e.message}`);
+        }
+      }
+    } finally {
+      setUploadingAttach(false);
+    }
+  };
+
+  const handlePaste = async (e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const imgs = [];
+    for (const it of items) {
+      if (it.kind === "file") {
+        const blob = it.getAsFile();
+        if (blob) imgs.push(blob);
+      }
+    }
+    if (imgs.length === 0) return; // normales Text-Paste
+    e.preventDefault();
+    await handleFiles(imgs);
+  };
+
+  const handleDrop = async (e) => {
+    e.preventDefault();
+    const files = Array.from(e.dataTransfer?.files || []);
+    if (!files.length) return;
+    await handleFiles(files);
   };
 
   // Antwort senden
@@ -338,6 +430,7 @@ export default function TicketDetailPanel({ ticket, onClose, currentUser, users 
             senderLabel={localTicket.from_name || localTicket.from_email}
             time={localTicket.created_at}
             theme={theme}
+            author={detectAuthor({ msg: { body: localTicket.body, sender_type: "customer" }, sender: { email: localTicket.from_email, full_name: localTicket.from_name } })}
           />
         )}
 
@@ -363,6 +456,7 @@ export default function TicketDetailPanel({ ticket, onClose, currentUser, users 
                 time={msg.created_at}
                 theme={theme}
                 isAi={msg.is_ai_suggestion}
+                author={detectAuthor({ msg, sender })}
               />
             );
           })
@@ -398,31 +492,62 @@ export default function TicketDetailPanel({ ticket, onClose, currentUser, users 
             color: textMain,
             height: `${replyHeight}px`,
           }}
-          placeholder="Antwort schreiben…"
+          placeholder="Antwort schreiben… (Bild via Strg+V einfügen oder reinziehen)"
           value={replyText}
           onChange={e => setReplyText(e.target.value)}
+          onPaste={handlePaste}
+          onDrop={handleDrop}
+          onDragOver={e => e.preventDefault()}
           onKeyDown={e => {
             if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) handleSend();
           }}
         />
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*,application/pdf"
+          multiple
+          style={{ display: "none" }}
+          onChange={e => { handleFiles(Array.from(e.target.files || [])); e.target.value = ""; }}
+        />
         <div className="flex items-center justify-between mt-2 gap-2">
-          <button
-            onClick={handleAiSuggest}
-            disabled={aiLoading}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors"
-            style={{
-              backgroundColor: isArtis ? "#f0f7f0" : "#f5f3ff",
-              color: isArtis ? "#4a7a50" : "#7c3aed",
-              borderColor: isArtis ? "#b8d4bb" : "#c4b5fd",
-              opacity: aiLoading ? 0.6 : 1,
-            }}
-          >
-            {aiLoading
-              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              : <Sparkles className="h-3.5 w-3.5" />
-            }
-            {aiLoading ? "Generiere…" : "KI-Antwort"}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleAiSuggest}
+              disabled={aiLoading}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors"
+              style={{
+                backgroundColor: isArtis ? "#f0f7f0" : "#f5f3ff",
+                color: isArtis ? "#4a7a50" : "#7c3aed",
+                borderColor: isArtis ? "#b8d4bb" : "#c4b5fd",
+                opacity: aiLoading ? 0.6 : 1,
+              }}
+            >
+              {aiLoading
+                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                : <Sparkles className="h-3.5 w-3.5" />
+              }
+              {aiLoading ? "Generiere…" : "KI-Antwort"}
+            </button>
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploadingAttach || !ticket?.id}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors"
+              style={{
+                backgroundColor: isArtis ? "#f0f7f0" : "#eef2ff",
+                color: isArtis ? "#4a7a50" : "#4f46e5",
+                borderColor: isArtis ? "#b8d4bb" : "#c7d2fe",
+                opacity: uploadingAttach ? 0.6 : 1,
+              }}
+              title="Bild oder PDF anhängen (oder Strg+V im Textfeld)"
+            >
+              {uploadingAttach
+                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                : <Paperclip className="h-3.5 w-3.5" />
+              }
+              {uploadingAttach ? "Lädt…" : "Anhang"}
+            </button>
+          </div>
 
           <button
             onClick={handleSend}
@@ -448,6 +573,50 @@ export default function TicketDetailPanel({ ticket, onClose, currentUser, users 
       </div>
     </div>
   );
+}
+
+// ──────────────────────────────────────────────────────────────
+// Bubble-Inhalt rendern: Markdown-Bilder ![alt](url) und Links [name](url)
+// werden als <img> bzw. <a> dargestellt, Rest bleibt Plaintext.
+// Bewusst MVP: keine volle Markdown-Engine, nur das was Paste-Upload
+// einfügt + http(s)-Links.
+// ──────────────────────────────────────────────────────────────
+function renderBubbleContent(text) {
+  if (!text) return null;
+  // Regex matches ![alt](url)  ODER  [name](url)  ODER  nackte http(s)-URL
+  const re = /!\[([^\]]*)\]\((https?:\/\/[^)\s]+)\)|\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)|(https?:\/\/[^\s)]+)/g;
+  const parts = [];
+  let last = 0, m, key = 0;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) parts.push(text.slice(last, m.index));
+    if (m[2]) {
+      // Bild
+      parts.push(
+        <a key={`a${key++}`} href={m[2]} target="_blank" rel="noopener noreferrer">
+          <img
+            src={m[2]}
+            alt={m[1] || "Bild"}
+            style={{ maxWidth: "100%", maxHeight: 360, borderRadius: 8, display: "block", marginTop: 4, marginBottom: 4, cursor: "zoom-in" }}
+          />
+        </a>
+      );
+    } else if (m[4]) {
+      parts.push(
+        <a key={`l${key++}`} href={m[4]} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "underline" }}>
+          {m[3]}
+        </a>
+      );
+    } else if (m[5]) {
+      parts.push(
+        <a key={`u${key++}`} href={m[5]} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "underline" }}>
+          {m[5]}
+        </a>
+      );
+    }
+    last = re.lastIndex;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return parts;
 }
 
 // Signatur aus E-Mail-Text entfernen
@@ -481,23 +650,26 @@ function stripSignature(text) {
 }
 
 // Chat Bubble Komponente
-function ChatBubble({ text, side, senderLabel, time, theme, isAi = false }) {
+function ChatBubble({ text, side, senderLabel, time, theme, isAi = false, author = null }) {
   const isLight = theme === "light";
   const isArtis = theme === "artis";
 
   const isLeft = side === "left";
 
-  const bubbleBg = isAi
-    ? (isArtis ? "#f0f7f0" : "#f5f3ff")
-    : isLeft
-      ? (isArtis ? "#e6ede6" : isLight ? "#ebebf4" : "rgba(63,63,70,0.4)")
-      : (isArtis ? "#7a9b7f" : isLight ? "#6366f1" : "#6366f1");
+  // ── Farb-Palette pro Author (3-Wege-Kollab) ───────────────────
+  // Sascha = blau, Claude = grün, Roger = gelb, Kunde/Sonstige = neutral
+  const palette = {
+    sascha:   { bg: "#dbeafe", text: "#1e3a8a", label: "Sascha"   },
+    claude:   { bg: "#d1fae5", text: "#065f46", label: "Claude 🤖" },
+    roger:    { bg: "#fef3c7", text: "#78350f", label: "Roger"    },
+    customer: { bg: isArtis ? "#e6ede6" : isLight ? "#ebebf4" : "rgba(63,63,70,0.4)",
+                text: isArtis ? "#2d3a2d" : isLight ? "#1a1a2e" : "#e4e4e7" },
+    staff:    { bg: isArtis ? "#7a9b7f" : "#6366f1", text: "#ffffff" },
+  };
+  const tone = palette[author] || (isLeft ? palette.customer : palette.staff);
 
-  const bubbleText = isLeft && !isAi
-    ? (isArtis ? "#2d3a2d" : isLight ? "#1a1a2e" : "#e4e4e7")
-    : isAi
-      ? (isArtis ? "#4a7a50" : "#5b21b6")
-      : "#ffffff";
+  const bubbleBg   = isAi && !author ? (isArtis ? "#f0f7f0" : "#f5f3ff") : tone.bg;
+  const bubbleText = isAi && !author ? (isArtis ? "#4a7a50" : "#5b21b6") : tone.text;
 
   const textMuted = isArtis ? "#6b826b" : isLight ? "#9090b8" : "#71717a";
 
@@ -528,7 +700,7 @@ function ChatBubble({ text, side, senderLabel, time, theme, isAi = false }) {
             borderColor: isAi ? (isArtis ? "#b8d4bb" : "#c4b5fd") : "transparent",
           }}
         >
-          {stripSignature(text)}
+          {renderBubbleContent(stripSignature(text))}
         </div>
       </div>
     </div>
