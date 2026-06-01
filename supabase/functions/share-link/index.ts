@@ -17,7 +17,7 @@ serve(async (req) => {
     const action = url.searchParams.get("action") || "info"; // info | download | create | deactivate
 
     const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_PUBLIC_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 

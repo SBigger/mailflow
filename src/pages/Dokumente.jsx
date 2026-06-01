@@ -804,11 +804,13 @@ export default function Dokumente() {
     autoIndexRef.current = true;
 
     (async () => {
+      // Hole nur die Docs, die noch keinen Volltext haben (separate, schlanke Query —
+      // content_text steckt nicht mehr im Haupt-allDoks-Select, das spart die 14 MB).
       const { data: toIndex } = await supabase
-          .from('dokumente')
-          .select('id,filename,name,file_type,storage_path')
-          .is('content_text', null)
-          .not('storage_path','is',null);
+        .from('dokumente')
+        .select('id,filename,name,file_type,storage_path')
+        .or('content_text.is.null,content_text.eq.')
+        .not('storage_path', 'is', null)
       if (!toIndex || !toIndex.length) return;
 
       let done = 0;
@@ -1058,37 +1060,15 @@ export default function Dokumente() {
   };
 
   const downloadDoc = async (doc) => {
-    if (!doc) return;
-    try {
-      if (!doc.storage_path) {
-        toast.error('Keine Datei verfügbar für ' + (doc.filename || doc.name));
-        return;
-      }
+    const { data } = await supabase
+        .storage
+        .from(BUCKET)
+        .createSignedUrl(doc.storage_path, 360);
 
-      const { data, error } = await supabase
-          .storage
-          .from(BUCKET)
-          .createSignedUrl(doc.storage_path, 360, {
-            download: doc.filename || true,    // ← entscheidend: Server setzt Content-Disposition
-          });
+    const fileUrl = data.signedUrl;
 
-      if (error || !data?.signedUrl) {
-        toast.error('Download-URL konnte nicht erstellt werden: ' + (error?.message || 'unbekannt'));
-        return;
-      }
-
-      const a = document.createElement('a');
-      a.href = data.signedUrl;
-      a.download = doc.filename || 'download';
-      a.rel = 'noopener';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-    } catch (e) {
-      console.error('Download fehlgeschlagen', e);
-      toast.error('Download fehlgeschlagen: ' + e.message);
-    }
-  };
+    window.open(fileUrl, '_blank');
+  }
 
   // ── URL-Parameter ?open=<doc_id> → Dokument direkt öffnen (von VoxDrop / Smartis) ──
   useEffect(() => {

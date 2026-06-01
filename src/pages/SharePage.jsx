@@ -85,7 +85,7 @@ export default function SharePage() {
         const a = document.createElement("a");
         a.href = data.url;
         a.download = docName || "download";
-        a.target = "_blank";
+        //a.target = "_blank";
         a.click();
       } else {
         alert(data.error || "Download fehlgeschlagen");
