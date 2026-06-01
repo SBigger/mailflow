@@ -16,8 +16,10 @@ import {
   Copy,
   CheckCheck,
   FolderOpen,
-  Library
+  Library,
+  History as HistoryIcon
 } from "lucide-react";
+import VersionsDialog from "@/components/dokumente/VersionsDialog";
 import * as _pdfjsNs from "pdfjs-dist";
 import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.js?url";
 // pdfjs-dist 3.11 ist UMD → je nach Vite-Mode liegt getDocument direkt oder unter .default
@@ -752,6 +754,7 @@ export default function Dokumente() {
   const [openFolders,   setOpenFolders]   = useState(new Set());
   const [showSortMenu,  setShowSortMenu]  = useState(false);
   const [editDoc,        setEditDoc]        = useState(null);
+  const [versionsDoc,    setVersionsDoc]    = useState(null);
   const [checkinDoc,     setCheckinDoc]     = useState(null);  // wird nicht mehr benoetigt, bleibt fuer Compat
   const [signedUrls,    setSignedUrls]    = useState({});
   const [pageTab,       setPageTab]       = useState('alle');
@@ -1695,6 +1698,7 @@ export default function Dokumente() {
                                   {isMyCheckout && <button onClick={() => openCheckin(doc)} title="Einchecken" style={{ background: "none", border: "none", cursor: "pointer", color: accent, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}><Lock size={13} /></button>}
                                   {lockedByOther && isAdmin && <button onClick={() => handleCheckin(doc, null)} title="Sperre aufheben" style={{ background: "none", border: "none", cursor: "pointer", color: "#ef4444", display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}><ShieldAlert size={13} /></button>}
                                   <button onClick={() => setEditDoc(doc)} title="Bearbeiten" style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}><Pencil size={13} /></button>
+                                  <button onClick={() => setVersionsDoc(doc)} title="Versionen" style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}><HistoryIcon size={13} /></button>
                                   <button onClick={() => { animateBtn(`dl-${doc.id}`); downloadDoc(doc); }} title="Herunterladen" style={{ background: "none", border: "none", cursor: "pointer", color: accent, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0, transition: "transform 0.15s", transform: clickedBtns[`dl-${doc.id}`] ? "scale(0.75)" : "scale(1)" }}><Download size={14} /></button>
                                   <button onClick={() => { animateBtn(`sh-${doc.id}`); setShareDialog({ type: 'doc', doc_id: doc.id, name: doc.name, customer_id: doc.customer_id }); }} title="Link erstellen" style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}><Link2 size={14} /></button>
                                   <button onClick={() => !lockedByOther && handleDelete(doc)} title={lockedByOther ? "Gesperrt" : "Löschen"} style={{ background: "none", border: "none", cursor: lockedByOther ? "not-allowed" : "pointer", color: lockedByOther ? s.textMuted + "44" : "#ef4444", display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}><Trash2 size={14} /></button>
@@ -1843,6 +1847,9 @@ export default function Dokumente() {
           s={s} border={border} accent={accent} />
       )}
       {/* CheckinDialog ersetzt durch direktes handleCheckin */}
+      {versionsDoc && (
+        <VersionsDialog doc={versionsDoc} onClose={() => setVersionsDoc(null)} />
+      )}
 
       {/* Share-Link Dialog */}
       {shareDialog && (
