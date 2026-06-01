@@ -102,7 +102,9 @@ async function initApp() {
   } catch (error) {
     console.log("init error: ", error);
   } finally {
-    window.env = config;
+    if(!import.meta.env.DEV) {
+      window.env = config;
+    }
   }
 
   initSupabase();

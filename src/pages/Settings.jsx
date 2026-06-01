@@ -2096,8 +2096,8 @@ export default function Settings() {
                                         </ul>
                                     </div>
                                     <a
-                                        href="https://github.com/SBigger/mailflow/releases/download/voxdrop-v1.7.0/VoxDrop-Setup-v1.7.0.exe"
-                                        download="VoxDrop-Setup-v1.7.0.exe"
+                                        href="./VoxDrop-Setup-v1.7.0.exe"
+                                        download={getAppName('VoxDrop.exe')}
                                         className="flex-shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-xl text-white font-medium text-sm transition-opacity hover:opacity-90"
                                         style={{backgroundColor: isArtis ? '#7a9b7f' : '#6366f1'}}
                                     >
@@ -2129,8 +2129,8 @@ export default function Settings() {
                                         </ul>
                                     </div>
                                     <a
-                                        href="/SmartisBar-Setup.exe"
-                                        download="SmartisBar-Setup.exe"
+                                        href="./SmartisBar-Setup.exe"
+                                        download={getAppName('SmartisBar-Setup.exe')}
                                         className="flex-shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-xl text-white font-medium text-sm transition-opacity hover:opacity-90"
                                         style={{backgroundColor: isArtis ? '#7a9b7f' : '#6366f1'}}
                                     >

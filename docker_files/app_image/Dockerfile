@@ -1,7 +1,5 @@
 # Stage 1: Build
-FROM node:20-alpine AS build
-
-RUN apk update && apk add --no-cache --upgrade curl
+FROM node:20.18.0-alpine AS build
 
 WORKDIR /app
 
@@ -15,6 +13,9 @@ RUN npm run build
 
 # Stage 2: Serve via Nginx
 FROM nginx:stable-alpine
+
+# 🛡️ REMOVE curl entirely to eliminate the attack surface and clear the scanner
+RUN apk del curl libcurl
 
 # Copy the compiled static assets
 COPY --from=build /app/dist /usr/share/nginx/html
