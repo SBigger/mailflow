@@ -205,8 +205,7 @@ export default function VoiceAssistant({ open, onClose }) {
       const token = session?.access_token;
       if (!token) throw new Error('Nicht angemeldet');
 
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const res = await fetch(`${supabaseUrl}/functions/v1/voice-assistant`, {
+      const res = await fetch(`${window.env.API_URL}/functions/v1/voice-assistant`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

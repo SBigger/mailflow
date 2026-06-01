@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { Download, FileText, Folder, AlertCircle, Clock, CheckCircle2, Loader2, ChevronDown, ChevronRight } from "lucide-react";
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const SHARE_FN = `${SUPABASE_URL}/functions/v1/share-link`;
+const SUPABASE_ANON = window.env.KEY1;
+const SHARE_FN = `${window.env.API_URL}/functions/v1/share-link`;
 
 import { CATEGORIES } from "@/lib/categories";
 

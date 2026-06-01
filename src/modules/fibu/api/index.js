@@ -362,8 +362,7 @@ export const kiVorschlagApi = {
   suggest: async ({ mandantId, lieferantId, lieferantName, kontextText, konten, mwstCodes, waehrung, betragBrutto }) => {
     const session = await supabase.auth.getSession();
     const token = session.data?.session?.access_token;
-    const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-    const resp = await fetch(`${SUPABASE_URL}/functions/v1/fibu-suggest-buchung`, {
+    const resp = await fetch(`${window.env.API_URL}/functions/v1/fibu-suggest-buchung`, {
       method: 'POST',
       headers: {
         'Content-Type':  'application/json',

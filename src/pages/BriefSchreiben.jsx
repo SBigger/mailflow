@@ -433,7 +433,7 @@ export default function BriefSchreiben() {
       const jwt = session?.access_token;
 
       const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/skribble-proxy`,
+        `${window.env.API_URL}/functions/v1/skribble-proxy`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json", "Authorization": `Bearer ${jwt}` },

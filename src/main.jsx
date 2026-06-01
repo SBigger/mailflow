@@ -77,7 +77,6 @@ async function initApp() {
     CUSTOMER: '',
     APP_TYPE: ''
   };
-  let url = null;
 
   try {
     try{
@@ -85,14 +84,12 @@ async function initApp() {
       config.APP_TYPE= "Tauri App";
       config.CUSTOMER = customer;
       config.API_URL = `https://api-${customer}.sm-artis.ch`
-      url = `https://${customer}.sm-artis.ch/`
     } catch (e) {
       config.APP_TYPE= "Web App";
-      url = window.location.href
+      const url = window.location.href
       config.CUSTOMER = url.replace('https://', '').split('/')[0].split('.')[0];
       const domain = url.replace('https://', '').split('/')[0];
       config.API_URL = `https://api-${domain}`;
-      url = `https://${domain}/`;
     }
 
     const response = await fetch(`/config.json`);
@@ -102,9 +99,13 @@ async function initApp() {
   } catch (error) {
     console.log("init error: ", error);
   } finally {
-    if(!import.meta.env.DEV) {
-      window.env = config;
+    if(import.meta.env.DEV) {
+      config.API_URL = import.meta.env.VITE_SUPABASE_URL;
+      config.KEY1 = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      config.CUSTOMER = "DEVELOPMENT"
     }
+
+    window.env = config;
   }
 
   initSupabase();

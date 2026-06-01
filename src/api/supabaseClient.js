@@ -3,10 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 let supabase = null;
 
 export function initSupabase() {
-  const SUPABASE_URL = window.env?.API_URL || import.meta.env.VITE_SUPABASE_URL;
-  const SUPABASE_ANON_KEY = window.env?.KEY1 || import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-  supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  supabase = createClient(window.env.API_URL, window.env.KEY1, {
     realtime: {
       params: {
         eventsPerSecond: 10,

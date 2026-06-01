@@ -92,7 +92,7 @@ import { useAuth } from "@/lib/AuthContext";
 const BUCKET   = "dokumente";
 
 // ─── SharePoint Helper ───────────────────────────────────────────────────────
-const SPFILES = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sharepoint-files`;
+const SPFILES = `${window.env.API_URL}/functions/v1/sharepoint-files`;
 
 async function spCall(jwt, body) {
   const res = await fetch(SPFILES, {
@@ -145,7 +145,7 @@ function formatBytes(bytes) {
 }
 
 // ─── Share-Link Dialog ─────────────────────────────────────────────────────
-const SHARE_FN = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/share-link`;
+const SHARE_FN = `${window.env.API_URL}/functions/v1/share-link`;
 
 function ShareLinkDialog({ info, accent, s, border, onClose }) {
   const [expiry,   setExpiry]   = useState("30");
@@ -772,7 +772,7 @@ export default function Dokumente() {
     queryFn:  async () => {
       // Paginiert laden: PostgREST kappt server-seitig bei db-max-rows (typ. 1000).
       // Wir holen 1000er-Pakete bis nichts mehr kommt (Sicherheits-Cap: 500'000).
-      const PAGE = 1000;
+      const PAGE = 100000;
       const HARD_CAP = 500000;
       const all = [];
       for (let offset = 0; offset < HARD_CAP; offset += PAGE) {
@@ -804,14 +804,11 @@ export default function Dokumente() {
     autoIndexRef.current = true;
 
     (async () => {
-      // Hole nur die Docs, die noch keinen Volltext haben (separate, schlanke Query —
-      // content_text steckt nicht mehr im Haupt-allDoks-Select, das spart die 14 MB).
       const { data: toIndex } = await supabase
-        .from('dokumente')
-        .select('id,filename,name,file_type,storage_path')
-        .or('content_text.is.null,content_text.eq.')
-        .not('storage_path', 'is', null)
-        .limit(500);
+          .from('dokumente')
+          .select('id,filename,name,file_type,storage_path')
+          .is('content_text', null)
+          .not('storage_path','is',null);
       if (!toIndex || !toIndex.length) return;
 
       let done = 0;
@@ -1061,15 +1058,37 @@ export default function Dokumente() {
   };
 
   const downloadDoc = async (doc) => {
-    const { data } = await supabase
-        .storage
-        .from(BUCKET)
-        .createSignedUrl(doc.storage_path, 360);
+    if (!doc) return;
+    try {
+      if (!doc.storage_path) {
+        toast.error('Keine Datei verfügbar für ' + (doc.filename || doc.name));
+        return;
+      }
 
-    const fileUrl = data.signedUrl;
+      const { data, error } = await supabase
+          .storage
+          .from(BUCKET)
+          .createSignedUrl(doc.storage_path, 360, {
+            download: doc.filename || true,    // ← entscheidend: Server setzt Content-Disposition
+          });
 
-    window.open(fileUrl, '_blank');
-  }
+      if (error || !data?.signedUrl) {
+        toast.error('Download-URL konnte nicht erstellt werden: ' + (error?.message || 'unbekannt'));
+        return;
+      }
+
+      const a = document.createElement('a');
+      a.href = data.signedUrl;
+      a.download = doc.filename || 'download';
+      a.rel = 'noopener';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch (e) {
+      console.error('Download fehlgeschlagen', e);
+      toast.error('Download fehlgeschlagen: ' + e.message);
+    }
+  };
 
   // ── URL-Parameter ?open=<doc_id> → Dokument direkt öffnen (von VoxDrop / Smartis) ──
   useEffect(() => {

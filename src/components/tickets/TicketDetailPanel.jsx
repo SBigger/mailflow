@@ -109,13 +109,13 @@ export default function TicketDetailPanel({ ticket, onClose, currentUser, users 
       }
 
       const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/suggest-ticket-reply`,
+        `${window.env.API_URL}/functions/v1/suggest-ticket-reply`,
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             "Authorization": `Bearer ${token}`,
-            "apikey": import.meta.env.VITE_SUPABASE_ANON_KEY,
+            "apikey": window.env.KEY1,
           },
           body: JSON.stringify({ ticket_id: ticket.id }),
         }
