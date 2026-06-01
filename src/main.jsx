@@ -103,6 +103,10 @@ async function initApp() {
       config.API_URL = import.meta.env.VITE_SUPABASE_URL;
       config.KEY1 = import.meta.env.VITE_SUPABASE_ANON_KEY;
       config.CUSTOMER = "DEVELOPMENT"
+    } else if(window.location.href.includes('https://smartis.me')) {
+      config.API_URL = import.meta.env.VITE_SUPABASE_URL;
+      config.KEY1 = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      config.CUSTOMER = "artis"
     }
 
     window.env = config;
