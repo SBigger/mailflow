@@ -1,13 +1,13 @@
-import React, { useState, useContext } from "react";
+import React, { useState, useContext, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { entities } from "@/api/supabaseClient";
+import { entities, supabase } from "@/api/supabaseClient";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ThemeContext } from "@/Layout";
-import { FileText, MessageSquare } from "lucide-react";
+import { FileText, MessageSquare, Users } from "lucide-react";
 
 export default function AddTicketDialog({ open, onClose, defaultColumnId }) {
   const { theme } = useContext(ThemeContext);
@@ -33,6 +33,27 @@ export default function AddTicketDialog({ open, onClose, defaultColumnId }) {
     queryKey: ["customers"],
     queryFn: () => entities.Customer.list("company_name"),
   });
+
+  // Aktuellen User holen fuer Auto-Fill bei internen Tickets
+  const { data: me } = useQuery({
+    queryKey: ["addTicketDialogMe"],
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return null;
+      // Profil-Tabelle fuer full_name falls vorhanden
+      const { data: prof } = await supabase
+        .from("user_profiles").select("full_name").eq("id", user.id).maybeSingle();
+      return { id: user.id, email: user.email, full_name: prof?.full_name || user.email };
+    },
+  });
+
+  // Bei Wechsel auf "internal" Felder automatisch fuellen
+  useEffect(() => {
+    if (ticketType === "internal" && me) {
+      if (!fromEmail) setFromEmail(me.email);
+      if (!fromName)  setFromName(me.full_name || "");
+    }
+  }, [ticketType, me]);
 
   const labelColor  = isArtis ? "#4a5e4a" : isLight ? "#4b4b80" : "#a1a1aa";
   const inputBg     = isArtis ? "#ffffff" : isLight ? "#ffffff" : "rgba(24,24,27,0.6)";
@@ -119,7 +140,25 @@ export default function AddTicketDialog({ open, onClose, defaultColumnId }) {
                 <FileText className="h-4 w-4" />
                 Unterlagen
               </button>
+              <button
+                onClick={() => setTicketType("internal")}
+                className="flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg border text-sm font-medium transition-colors"
+                style={{
+                  backgroundColor: ticketType === "internal" ? "#10b981" : inputBg,
+                  color: ticketType === "internal" ? "#fff" : labelColor,
+                  borderColor: ticketType === "internal" ? "#10b981" : inputBorder,
+                }}
+                title="Internes Dev-Thema -- Sascha/Roger/Claude. E-Mail wird automatisch gesetzt."
+              >
+                <Users className="h-4 w-4" />
+                Intern
+              </button>
             </div>
+            {ticketType === "internal" && (
+              <div style={{ fontSize: "0.7rem", color: labelColor, marginTop: 6 }}>
+                Internes Dev-Thema -- E-Mail/Name werden automatisch mit deinem Account gefuellt.
+              </div>
+            )}
           </div>
 
           {/* Von */}
