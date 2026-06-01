@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { Download, FileText, Folder, AlertCircle, Clock, CheckCircle2, Loader2, ChevronDown, ChevronRight } from "lucide-react";
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
+// Multi-Tenant: window.env.* (Runtime, Docker-Inject) hat Vorrang
+// über import.meta.env.* (Build-Time, Vercel). SharePage ist PUBLIC,
+// daher beide Pfade nötig je nach Deployment.
+const SUPABASE_URL  = (typeof window !== "undefined" && window.env?.API_URL) || import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON = (typeof window !== "undefined" && window.env?.KEY1)    || import.meta.env.VITE_SUPABASE_ANON_KEY;
 const SHARE_FN = `${SUPABASE_URL}/functions/v1/share-link`;
 
 import { CATEGORIES } from "@/lib/categories";
