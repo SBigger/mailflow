@@ -64,6 +64,8 @@ export default function TicketDetailPanel({ ticket, onClose, currentUser, users 
   const [sending, setSending]         = useState(false);
   const [uploadingAttach, setUploadingAttach] = useState(false);
   const fileInputRef = useRef(null);
+  // Mail-Versand: default OFF bei internal, ON bei Kunden-Tickets
+  const [sendMail, setSendMail] = useState(ticket?.ticket_type !== "internal");
   const [localTicket, setLocalTicket] = useState(ticket);
   const [replyHeight, setReplyHeight] = useState(120);
   const messagesEndRef = useRef(null);
@@ -91,6 +93,7 @@ export default function TicketDetailPanel({ ticket, onClose, currentUser, users 
   useEffect(() => {
     setLocalTicket(ticket);
     setReplyText("");
+    setSendMail(ticket?.ticket_type !== "internal");
   }, [ticket?.id]);
 
   // Nachrichten laden
@@ -253,8 +256,8 @@ export default function TicketDetailPanel({ ticket, onClose, currentUser, users 
   const handleSend = async () => {
     if (!replyText.trim() || !ticket?.id) return;
     setSending(true);
-    // Bei internen Tickets keinen Mail-Versand, kein Auto-Move nach "Warten"
-    const isInternal = localTicket?.ticket_type === "internal";
+    // Mail-Versand jetzt per Toggle steuerbar (default off bei internal, on bei Kunden)
+    const willSendMail = !!sendMail;
     try {
       await entities.TicketMessage.create({
         ticket_id: ticket.id,
@@ -269,10 +272,10 @@ export default function TicketDetailPanel({ ticket, onClose, currentUser, users 
       qc.invalidateQueries({ queryKey: ["ticketMessages", ticket.id] });
       qc.invalidateQueries({ queryKey: ["tickets"] });
 
-      if (isInternal) {
+      if (!willSendMail) {
         toast.success("Notiz gespeichert");
       } else {
-        // E-Mail an Kunden senden (nur fuer Kunden-Tickets)
+        // E-Mail an Empfaenger senden
         try {
           await functions.invoke("send-ticket-reply", { ticket_id: ticket.id, message_body: replyText.trim() });
           toast.success("Antwort gespeichert und E-Mail gesendet");
@@ -280,7 +283,7 @@ export default function TicketDetailPanel({ ticket, onClose, currentUser, users 
           console.warn("E-Mail konnte nicht gesendet werden:", emailErr);
           toast.success("Antwort gespeichert (E-Mail-Versand fehlgeschlagen)");
         }
-        // Nach Senden -> Ticket zu "Warten auf Antwort" verschieben (nur Kunden-Tickets)
+        // Nach Mail-Versand -> Ticket zu "Warten auf Antwort" verschieben
         const wartenCol = columns.find(c => c.name.toLowerCase().includes("warten"));
         if (wartenCol && localTicket.column_id !== wartenCol.id) {
           setLocalTicket(prev => ({ ...prev, column_id: wartenCol.id }));
@@ -555,29 +558,42 @@ export default function TicketDetailPanel({ ticket, onClose, currentUser, users 
             </button>
           </div>
 
-          <button
-            onClick={handleSend}
-            disabled={!replyText.trim() || sending}
-            className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium transition-colors"
-            style={{
-              backgroundColor: replyText.trim() && !sending ? accent : (isArtis ? "#ccd8cc" : "#a1a1aa"),
-              color: "#fff",
-              opacity: (!replyText.trim() || sending) ? 0.6 : 1,
-            }}
-          >
-            {sending
-              ? <Loader2 className="h-4 w-4 animate-spin" />
-              : (localTicket?.ticket_type === "internal"
-                  ? <MessageSquare className="h-4 w-4" />
-                  : <Mail className="h-4 w-4" />)
-            }
-            {localTicket?.ticket_type === "internal" ? "Notiz speichern" : "Senden"}
-          </button>
+          <div className="flex items-center gap-3">
+            <label
+              className="inline-flex items-center gap-1.5 text-xs cursor-pointer select-none"
+              style={{ color: textMuted }}
+              title="Wenn aktiv: nach Speichern wird E-Mail an Absender geschickt"
+            >
+              <input
+                type="checkbox"
+                checked={sendMail}
+                onChange={e => setSendMail(e.target.checked)}
+                style={{ cursor: "pointer" }}
+              />
+              Mail senden
+            </label>
+            <button
+              onClick={handleSend}
+              disabled={!replyText.trim() || sending}
+              className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium transition-colors"
+              style={{
+                backgroundColor: replyText.trim() && !sending ? accent : (isArtis ? "#ccd8cc" : "#a1a1aa"),
+                color: "#fff",
+                opacity: (!replyText.trim() || sending) ? 0.6 : 1,
+              }}
+            >
+              {sending
+                ? <Loader2 className="h-4 w-4 animate-spin" />
+                : (sendMail ? <Mail className="h-4 w-4" /> : <MessageSquare className="h-4 w-4" />)
+              }
+              {sendMail ? "Senden + Mail" : "Nur speichern"}
+            </button>
+          </div>
         </div>
         <div className="text-xs mt-1.5" style={{ color: textMuted }}>
-          {localTicket?.ticket_type === "internal"
-            ? "Ctrl+Enter zum Speichern — interne Notiz, kein E-Mail-Versand"
-            : "Ctrl+Enter zum Senden – Kunde erhält E-Mail von support@artis-gmbh.ch"}
+          {sendMail
+            ? "Ctrl+Enter zum Senden — Empfaenger erhaelt E-Mail von support@artis-gmbh.ch"
+            : "Ctrl+Enter zum Speichern — nur Notiz, kein E-Mail-Versand"}
         </div>
         </div>{/* end p-3 */}
       </div>
