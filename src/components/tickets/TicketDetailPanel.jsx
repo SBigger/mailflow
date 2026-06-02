@@ -253,6 +253,8 @@ export default function TicketDetailPanel({ ticket, onClose, currentUser, users 
   const handleSend = async () => {
     if (!replyText.trim() || !ticket?.id) return;
     setSending(true);
+    // Bei internen Tickets keinen Mail-Versand, kein Auto-Move nach "Warten"
+    const isInternal = localTicket?.ticket_type === "internal";
     try {
       await entities.TicketMessage.create({
         ticket_id: ticket.id,
@@ -267,24 +269,28 @@ export default function TicketDetailPanel({ ticket, onClose, currentUser, users 
       qc.invalidateQueries({ queryKey: ["ticketMessages", ticket.id] });
       qc.invalidateQueries({ queryKey: ["tickets"] });
 
-      // E-Mail an Kunden senden
-      try {
-        await functions.invoke("send-ticket-reply", { ticket_id: ticket.id, message_body: replyText.trim() });
-        toast.success("Antwort gespeichert und E-Mail gesendet");
-      } catch (emailErr) {
-        console.warn("E-Mail konnte nicht gesendet werden:", emailErr);
-        toast.success("Antwort gespeichert (E-Mail-Versand fehlgeschlagen)");
-      }
-      // Nach Senden → Ticket zu "Warten auf Antwort" verschieben
-      const wartenCol = columns.find(c => c.name.toLowerCase().includes("warten"));
-      if (wartenCol && localTicket.column_id !== wartenCol.id) {
-        setLocalTicket(prev => ({ ...prev, column_id: wartenCol.id }));
-        await entities.Ticket.update(ticket.id, { column_id: wartenCol.id });
-        qc.invalidateQueries({ queryKey: ["tickets"] });
+      if (isInternal) {
+        toast.success("Notiz gespeichert");
+      } else {
+        // E-Mail an Kunden senden (nur fuer Kunden-Tickets)
+        try {
+          await functions.invoke("send-ticket-reply", { ticket_id: ticket.id, message_body: replyText.trim() });
+          toast.success("Antwort gespeichert und E-Mail gesendet");
+        } catch (emailErr) {
+          console.warn("E-Mail konnte nicht gesendet werden:", emailErr);
+          toast.success("Antwort gespeichert (E-Mail-Versand fehlgeschlagen)");
+        }
+        // Nach Senden -> Ticket zu "Warten auf Antwort" verschieben (nur Kunden-Tickets)
+        const wartenCol = columns.find(c => c.name.toLowerCase().includes("warten"));
+        if (wartenCol && localTicket.column_id !== wartenCol.id) {
+          setLocalTicket(prev => ({ ...prev, column_id: wartenCol.id }));
+          await entities.Ticket.update(ticket.id, { column_id: wartenCol.id });
+          qc.invalidateQueries({ queryKey: ["tickets"] });
+        }
       }
     } catch (e) {
       console.error(e);
-      toast.error("Fehler beim Senden: " + e.message);
+      toast.error("Fehler beim Speichern: " + e.message);
     } finally {
       setSending(false);
     }
@@ -561,13 +567,17 @@ export default function TicketDetailPanel({ ticket, onClose, currentUser, users 
           >
             {sending
               ? <Loader2 className="h-4 w-4 animate-spin" />
-              : <Mail className="h-4 w-4" />
+              : (localTicket?.ticket_type === "internal"
+                  ? <MessageSquare className="h-4 w-4" />
+                  : <Mail className="h-4 w-4" />)
             }
-            Senden
+            {localTicket?.ticket_type === "internal" ? "Notiz speichern" : "Senden"}
           </button>
         </div>
         <div className="text-xs mt-1.5" style={{ color: textMuted }}>
-          Ctrl+Enter zum Senden – Kunde erhält E-Mail von support@artis-gmbh.ch
+          {localTicket?.ticket_type === "internal"
+            ? "Ctrl+Enter zum Speichern — interne Notiz, kein E-Mail-Versand"
+            : "Ctrl+Enter zum Senden – Kunde erhält E-Mail von support@artis-gmbh.ch"}
         </div>
         </div>{/* end p-3 */}
       </div>
