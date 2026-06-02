@@ -364,23 +364,50 @@ function TicketColumn({ column, tickets, users, theme, onTicketClick, onAddTicke
       {/* Cards */}
       {!collapsed && (
         <Droppable droppableId={column.id}>
-          {(provided, snapshot) => (
+          {(provided, snapshot) => {
+            const colColor = column.color || "#6366f1";
+            return (
             <div
               ref={provided.innerRef}
               {...provided.droppableProps}
-              className="flex-1 overflow-y-auto p-2"
+              className="flex-1 overflow-y-auto p-2 rounded-lg"
               style={{
                 backgroundColor: snapshot.isDraggingOver
-                  ? (isArtis ? "#e6ede6" : isLight ? "#ebebf4" : "rgba(63,63,70,0.3)")
+                  ? colColor + "1a"
                   : "transparent",
-                transition: "background-color 0.15s",
-                minHeight: "60px",
+                border: snapshot.isDraggingOver
+                  ? `2px dashed ${colColor}`
+                  : "2px dashed transparent",
+                transition: "background-color 0.2s ease, border-color 0.2s ease",
+                minHeight: "120px",
+                margin: snapshot.isDraggingOver ? "0 4px" : "0 6px",
               }}
             >
-              {tickets.length === 0 && !snapshot.isDraggingOver && (
-                <div className="flex flex-col items-center justify-center py-8 gap-2">
-                  <Inbox className="h-6 w-6" style={{ color: textMuted, opacity: 0.4 }} />
-                  <span className="text-xs" style={{ color: textMuted }}>Keine Tickets</span>
+              {tickets.length === 0 && (
+                <div
+                  className="flex flex-col items-center justify-center py-10 gap-2"
+                  style={{
+                    transition: "all 0.2s ease",
+                    transform: snapshot.isDraggingOver ? "scale(1.08)" : "scale(1)",
+                  }}
+                >
+                  <Inbox
+                    className="h-7 w-7"
+                    style={{
+                      color: snapshot.isDraggingOver ? colColor : textMuted,
+                      opacity: snapshot.isDraggingOver ? 0.85 : 0.4,
+                      transition: "all 0.2s ease",
+                    }}
+                  />
+                  <span
+                    className="text-xs font-medium"
+                    style={{
+                      color: snapshot.isDraggingOver ? colColor : textMuted,
+                      transition: "color 0.2s ease",
+                    }}
+                  >
+                    {snapshot.isDraggingOver ? "Hier ablegen…" : "Keine Tickets"}
+                  </span>
                 </div>
               )}
               {tickets.map((ticket, idx) => (
@@ -394,7 +421,8 @@ function TicketColumn({ column, tickets, users, theme, onTicketClick, onAddTicke
               ))}
               {provided.placeholder}
             </div>
-          )}
+            );
+          }}
         </Droppable>
       )}
 

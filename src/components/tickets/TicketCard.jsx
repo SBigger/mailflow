@@ -28,21 +28,36 @@ export default function TicketCard({ ticket, index, onClick, users = [] }) {
 
   return (
     <Draggable draggableId={ticket.id} index={index}>
-      {(provided, snapshot) => (
+      {(provided, snapshot) => {
+        // Bei drag: leicht drehen + skalieren, sonst neutral
+        const baseTransform = provided.draggableProps.style?.transform || "";
+        const rotateTransform = snapshot.isDragging ? " rotate(2.5deg) scale(1.03)" : "";
+        return (
         <div
           ref={provided.innerRef}
           {...provided.draggableProps}
           {...provided.dragHandleProps}
-          onClick={() => onClick(ticket)}
-          className="rounded-lg border cursor-pointer transition-shadow mb-2"
+          onClick={() => { if (!snapshot.isDragging) onClick(ticket); }}
+          className="rounded-lg border mb-2"
           style={{
-            backgroundColor: cardBg,
+            ...provided.draggableProps.style,
+            transform: baseTransform + rotateTransform,
+            backgroundColor: snapshot.isDragging ? (isArtis ? "#f8faf8" : "#fafafe") : cardBg,
             borderColor: snapshot.isDragging ? accentLeft : borderCol,
+            borderWidth: snapshot.isDragging ? "2px" : "1px",
             borderLeftWidth: "4px",
             borderLeftColor: accentLeft,
             boxShadow: snapshot.isDragging
-              ? "0 8px 24px rgba(0,0,0,0.18)"
+              ? `0 20px 40px -10px rgba(0,0,0,0.25), 0 0 0 4px ${accentLeft}22`
               : "0 1px 3px rgba(0,0,0,0.06)",
+            cursor: snapshot.isDragging ? "grabbing" : "grab",
+            // Snap-Back smooth wenn nicht gedragged, schnell wenn dragging (für smooth follow)
+            transition: snapshot.isDragging
+              ? "box-shadow 0.18s ease, transform 0.05s linear, background-color 0.18s ease, border-color 0.18s ease"
+              : "all 0.22s cubic-bezier(0.34, 1.56, 0.64, 1)",
+            opacity: snapshot.isDragging ? 0.96 : 1,
+            zIndex: snapshot.isDragging ? 100 : "auto",
+            userSelect: "none",
           }}
         >
           <div className="p-3">
@@ -121,7 +136,8 @@ export default function TicketCard({ ticket, index, onClick, users = [] }) {
             </div>
           </div>
         </div>
-      )}
+      );
+      }}
     </Draggable>
   );
 }
