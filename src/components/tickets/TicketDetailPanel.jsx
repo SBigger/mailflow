@@ -259,13 +259,18 @@ export default function TicketDetailPanel({ ticket, onClose, currentUser, users 
     // Mail-Versand jetzt per Toggle steuerbar (default off bei internal, on bei Kunden)
     const willSendMail = !!sendMail;
     try {
-      await entities.TicketMessage.create({
-        ticket_id: ticket.id,
-        body: replyText.trim(),
-        sender_type: "staff",
-        sender_id: currentUser?.id || null,
-        is_ai_suggestion: false,
-      });
+      // Direkt-Insert (Wrapper waere kaputt: entities.create fuegt created_by ein,
+      // aber ticket_messages hat diese Spalte nicht)
+      const { error: insErr } = await supabase
+        .from("ticket_messages")
+        .insert({
+          ticket_id: ticket.id,
+          body: replyText.trim(),
+          sender_type: "staff",
+          sender_id: currentUser?.id || null,
+          is_ai_suggestion: false,
+        });
+      if (insErr) throw new Error(insErr.message);
       // updated_at aktualisieren
       await entities.Ticket.update(ticket.id, { updated_at: new Date().toISOString() });
       setReplyText("");
