@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { Download, FileText, Folder, AlertCircle, Clock, CheckCircle2, Loader2, ChevronDown, ChevronRight } from "lucide-react";
+import { Download, FileText, Folder, AlertCircle, Clock, CheckCircle2, Loader2, ChevronDown, ChevronRight, Archive } from "lucide-react";
+import JSZip from "jszip";
 
 const SUPABASE_ANON = window.env.KEY1;
 const SHARE_FN = `${window.env.API_URL}/functions/v1/share-link`;
@@ -40,6 +41,7 @@ export default function SharePage() {
   const [pwInput,       setPwInput]       = useState("");
   const [pwError,       setPwError]       = useState(false);
   const [expanded,      setExpanded]      = useState({});
+  const [zipState,      setZipState]      = useState({ active: false, done: 0, total: 0, label: "" });
 
   function fetchInfo(password = "") {
     if (!token) { setError("Kein Token in der URL gefunden."); setLoading(false); return; }
@@ -94,6 +96,65 @@ export default function SharePage() {
       alert("Download fehlgeschlagen");
     } finally {
       setDownloading(p => ({ ...p, [docId]: false }));
+    }
+  }
+
+  // Alle Dateien als ZIP herunterladen (parallel mit 4er-Pool)
+  async function downloadAllAsZip() {
+    if (!info?.docs?.length) return;
+    const docs = info.docs;
+    setZipState({ active: true, done: 0, total: docs.length, label: "Sammle Dateien…" });
+    const zip = new JSZip();
+    const pwParam = pwInput.trim() ? `&password=${encodeURIComponent(pwInput.trim())}` : "";
+    let done = 0;
+    const failures = [];
+
+    // Helper: 1 Datei holen und in ZIP packen
+    const fetchOne = async (doc) => {
+      try {
+        const res = await fetch(`${SHARE_FN}?token=${token}&action=download&doc_id=${doc.id}${pwParam}`, {
+          headers: { apikey: SUPABASE_ANON },
+        });
+        const meta = await res.json();
+        if (!meta?.url) throw new Error(meta?.error || "URL fehlt");
+        const fileRes = await fetch(meta.url);
+        if (!fileRes.ok) throw new Error("HTTP " + fileRes.status);
+        const blob = await fileRes.blob();
+        // Ordnerstruktur: <Kategorie>/<Jahr>/<Filename>
+        const safe = s => (s || "").replace(/[\\/:*?"<>|]/g, "_").trim() || "_";
+        const catFolder = doc.category ? safe(catLabel(doc.category).replace(/^[^\w]+\s/, "")) : "Ohne Kategorie";
+        const yearFolder = doc.year || "Ohne Jahr";
+        const path = `${catFolder}/${yearFolder}/${safe(doc.filename || doc.name || "datei")}`;
+        zip.file(path, blob);
+      } catch (e) {
+        failures.push({ name: doc.filename || doc.name, error: e.message });
+      } finally {
+        done++;
+        setZipState(p => ({ ...p, done, label: `${done} / ${docs.length} geladen…` }));
+      }
+    };
+
+    // 4-Pool: max 4 parallel downloads
+    const queue = [...docs];
+    const workers = Array.from({ length: 4 }, async () => {
+      while (queue.length) {
+        const d = queue.shift();
+        if (d) await fetchOne(d);
+      }
+    });
+    await Promise.all(workers);
+
+    setZipState(p => ({ ...p, label: "Erstelle ZIP…" }));
+    const blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE", compressionOptions: { level: 5 } });
+    const fileName = ((info.name || "dokumente") + ".zip").replace(/[\\/:*?"<>|]/g, "_");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = fileName;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    setZipState({ active: false, done: 0, total: 0, label: "" });
+    if (failures.length) {
+      alert(`ZIP erstellt mit ${docs.length - failures.length}/${docs.length} Dateien. ${failures.length} fehlgeschlagen:\n` + failures.slice(0, 5).map(f => "- " + f.name).join("\n"));
     }
   }
 
@@ -239,11 +300,39 @@ export default function SharePage() {
                 </div>
               </div>
 
-              <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, color: FG2, fontSize: 13 }}>
                   <FileText size={14} />
                   {info.docs.length} Datei{info.docs.length !== 1 ? "en" : ""}
                 </div>
+                {info.docs.length > 0 && (
+                  <button
+                    onClick={downloadAllAsZip}
+                    disabled={zipState.active}
+                    style={{
+                      background: zipState.active ? "#1e293b" : ACC,
+                      color: "#fff",
+                      border: "none",
+                      borderRadius: 8,
+                      padding: "6px 14px",
+                      cursor: zipState.active ? "not-allowed" : "pointer",
+                      fontSize: 13,
+                      fontWeight: 600,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                      transition: "all 0.15s",
+                    }}
+                    title="Alle Dateien in einem ZIP-Archiv herunterladen"
+                  >
+                    {zipState.active
+                      ? <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />
+                      : <Archive size={14} />}
+                    {zipState.active
+                      ? zipState.label
+                      : `Alle als ZIP (${info.docs.length})`}
+                  </button>
+                )}
                 {info.download_count > 0 && (
                   <div style={{ display: "flex", alignItems: "center", gap: 6, color: FG2, fontSize: 13 }}>
                     <CheckCircle2 size={14} />
