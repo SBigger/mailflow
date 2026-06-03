@@ -623,7 +623,20 @@ function EditDialog({ doc, allTags, customers = [], onCancel, onSave, s, border,
     setSaving(true);
     try {
       if (isCopy) {
-        // Neuer Eintrag: zeigt auf gleiche Storage-Datei wie das Original (kein doppelter Upload)
+        // Echte Datei-Kopie: storage-Object physisch duplizieren
+        let newStoragePath = doc.storage_path;
+        if (doc.storage_path) {
+          // Neuen eindeutigen Pfad bilden: <originalPath>.copy-<ts>.<ext>
+          const stamp = Date.now();
+          const dot = doc.storage_path.lastIndexOf(".");
+          newStoragePath = dot > doc.storage_path.lastIndexOf("/")
+            ? `${doc.storage_path.slice(0, dot)}.copy-${stamp}${doc.storage_path.slice(dot)}`
+            : `${doc.storage_path}.copy-${stamp}`;
+          const { error: copyErr } = await supabase.storage
+            .from(BUCKET)
+            .copy(doc.storage_path, newStoragePath);
+          if (copyErr) throw new Error("Storage-Copy: " + copyErr.message);
+        }
         await entities.Dokument.create({
           customer_id: customerId,
           name: name.trim(),
@@ -631,14 +644,13 @@ function EditDialog({ doc, allTags, customers = [], onCancel, onSave, s, border,
           year: parseInt(year),
           tag_ids: tagIds,
           notes,
-          // Original-Dateieigenschaften uebernehmen
           filename: doc.filename,
-          storage_path: doc.storage_path,
+          storage_path: newStoragePath,     // <-- neuer Pfad
           file_size: doc.file_size,
           file_type: doc.file_type,
           sharepoint_web_url: doc.sharepoint_web_url || null,
         });
-        toast.success("Kopie angelegt", {closeButton: true});
+        toast.success("Kopie angelegt (Datei physisch dupliziert)", {closeButton: true});
       } else {
         await entities.Dokument.update(doc.id, { customer_id: customerId, name: name.trim(), category, year: parseInt(year), tag_ids: tagIds, notes });
         toast.success("Gespeichert", {closeButton: true});
@@ -657,7 +669,7 @@ function EditDialog({ doc, allTags, customers = [], onCancel, onSave, s, border,
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <h3 style={{ color: s.textMain, fontSize: 14, fontWeight: 700 }}>
             {isCopy ? "Dokument kopieren" : "Dokument bearbeiten"}
-            {isCopy && <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 500, color: s.textMuted, background: s.sidebarBg, padding: "2px 7px", borderRadius: 6 }}>verweist auf gleiche Datei</span>}
+            {isCopy && <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 500, color: s.textMuted, background: s.sidebarBg, padding: "2px 7px", borderRadius: 6 }}>Datei wird physisch dupliziert</span>}
           </h3>
           <button onClick={onCancel} style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted }}><X size={18} /></button>
         </div>
