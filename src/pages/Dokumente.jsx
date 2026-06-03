@@ -631,26 +631,36 @@ function EditDialog({ doc, allTags, customers = [], onCancel, onSave, s, border,
         // Echte Datei-Kopie: storage-Object physisch duplizieren
         let newStoragePath = doc.storage_path;
         if (doc.storage_path) {
-          // Neuen eindeutigen Pfad bilden: <originalPath>.copy-<ts>.<ext>
-          const stamp = Date.now();
-          const dot = doc.storage_path.lastIndexOf(".");
-          newStoragePath = dot > doc.storage_path.lastIndexOf("/")
-            ? `${doc.storage_path.slice(0, dot)}.copy-${stamp}${doc.storage_path.slice(dot)}`
-            : `${doc.storage_path}.copy-${stamp}`;
+          // Hinweis: viele DB-Zeilen haben "dokumente/" als Prefix im storage_path
+          // gespeichert -- der EIGENTLICHE Pfad im Bucket ist ohne diesen Prefix.
+          // Wir stripen drum fuer alle Storage-Calls, behalten den Prefix aber im
+          // DB-Schreiben, damit's konsistent zu den bestehenden 633 Zeilen ist.
+          const stripBucketPrefix = (p) => p.startsWith(BUCKET + "/") ? p.slice(BUCKET.length + 1) : p;
+          const srcPath = stripBucketPrefix(doc.storage_path);
 
-          // 1) Versuch: native storage.copy() (schnellster Weg)
+          // Neuen Storage-Pfad bilden: <srcPath>.copy-<ts>.<ext>
+          const stamp = Date.now();
+          const dot = srcPath.lastIndexOf(".");
+          const newSrcPath = dot > srcPath.lastIndexOf("/")
+            ? `${srcPath.slice(0, dot)}.copy-${stamp}${srcPath.slice(dot)}`
+            : `${srcPath}.copy-${stamp}`;
+
+          // Was wir in DB schreiben (mit gleichem Prefix-Schema wie das Original)
+          newStoragePath = doc.storage_path.startsWith(BUCKET + "/")
+            ? `${BUCKET}/${newSrcPath}`
+            : newSrcPath;
+
+          // 1) Versuch: native storage.copy()
           const { error: copyErr } = await supabase.storage
             .from(BUCKET)
-            .copy(doc.storage_path, newStoragePath);
+            .copy(srcPath, newSrcPath);
 
           if (copyErr) {
             // 2) Fallback: Signed-URL -> Blob -> Re-Upload
-            //    (passiert oft bei Files die per Skript hochgeladen wurden -
-            //     storage.copy() greift bei manchen Pfaden nicht)
             console.warn("storage.copy() fehlgeschlagen, Fallback via download+upload:", copyErr.message);
             const { data: urlData, error: urlErr } = await supabase.storage
               .from(BUCKET)
-              .createSignedUrl(doc.storage_path, 60);
+              .createSignedUrl(srcPath, 60);
             if (urlErr || !urlData?.signedUrl) {
               throw new Error("Originaldatei nicht zugreifbar: " + (urlErr?.message || "keine URL"));
             }
@@ -659,7 +669,7 @@ function EditDialog({ doc, allTags, customers = [], onCancel, onSave, s, border,
             const blob = await blobRes.blob();
             const { error: upErr } = await supabase.storage
               .from(BUCKET)
-              .upload(newStoragePath, blob, {
+              .upload(newSrcPath, blob, {
                 contentType: doc.file_type || blob.type || "application/octet-stream",
                 upsert: false,
               });
