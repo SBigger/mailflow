@@ -14,6 +14,7 @@ import {
   RefreshCw,
   Link2,
   Copy,
+  CopyPlus,
   CheckCheck,
   FolderOpen,
   Library,
@@ -577,8 +578,12 @@ function UploadDialog({ customers, preCustomer, preFile, allTags, onCancel, onUp
 }
 
 // ─── Edit-Dialog ───────────────────────────────────────────────────────────
-function EditDialog({ doc, allTags, customers = [], onCancel, onSave, s, border, accent }) {
-  const [name,       setName]       = useState(doc.name || "");
+function EditDialog({ doc, allTags, customers = [], onCancel, onSave, s, border, accent, mode = "edit" }) {
+  // mode: "edit"  -> bestehendes Dokument updaten
+  //       "copy"  -> neues Dokument mit gleichem storage_path anlegen
+  const isCopy = mode === "copy";
+  const [name,       setName]       = useState(isCopy ? ((doc.name || "") + " (Kopie)") : (doc.name || ""));
+  const [text,       setText]       = useState("");           // Freitext fuer Auto-Filename
   const [customerId, setCustomerId] = useState(doc.customer_id || "");
   const [category,   setCategory]   = useState(doc.category || "steuern");
   const [year,       setYear]       = useState(String(doc.year || CUR_YEAR));
@@ -595,6 +600,29 @@ function EditDialog({ doc, allTags, customers = [], onCancel, onSave, s, border,
     setTagIds(prev => prev.filter(id => validIds.has(id)));
   }, [filteredTags]);
 
+  // Vorschau-Name aus Tags + Text
+  const suggestedName = useMemo(() => {
+    const tagNames = (tagIds || [])
+      .map(id => (allTags.find(t => t.id === id)?.name || "").trim())
+      .filter(Boolean);
+    const parts = [...tagNames];
+    if (text.trim()) parts.push(text.trim());
+    return parts.join(" - ");
+  }, [tagIds, text, allTags]);
+
+  // Live-Update: sobald Zusatztext getippt wird, Name automatisch synchronisieren
+  // (User kann den Namen danach noch manuell ueberschreiben)
+  useEffect(() => {
+    if (text.trim() && suggestedName) {
+      setName(suggestedName);
+    }
+  }, [text, tagIds, suggestedName]);
+
+  const applyAutoName = () => {
+    if (!suggestedName) { toast.error("Erst Tags auswaehlen oder Text eingeben"); return; }
+    setName(suggestedName);
+  };
+
   const inp = { background: s.inputBg, border: "1px solid " + (s.inputBorder || border), color: s.textMain, borderRadius: 6, padding: "5px 8px", fontSize: 13, width: "100%", outline: "none" };
 
   const handleSave = async () => {
@@ -602,8 +630,73 @@ function EditDialog({ doc, allTags, customers = [], onCancel, onSave, s, border,
     if (!customerId) { toast.error("Bitte einen Kunden auswählen"); return; }
     setSaving(true);
     try {
-      await entities.Dokument.update(doc.id, { customer_id: customerId, name: name.trim(), category, year: parseInt(year), tag_ids: tagIds, notes });
-      toast.success("Gespeichert", {closeButton: true});
+      if (isCopy) {
+        // Echte Datei-Kopie: storage-Object physisch duplizieren
+        let newStoragePath = doc.storage_path;
+        if (doc.storage_path) {
+          // Hinweis: viele DB-Zeilen haben "dokumente/" als Prefix im storage_path
+          // gespeichert -- der EIGENTLICHE Pfad im Bucket ist ohne diesen Prefix.
+          // Wir stripen drum fuer alle Storage-Calls, behalten den Prefix aber im
+          // DB-Schreiben, damit's konsistent zu den bestehenden 633 Zeilen ist.
+          const stripBucketPrefix = (p) => p.startsWith(BUCKET + "/") ? p.slice(BUCKET.length + 1) : p;
+          const srcPath = stripBucketPrefix(doc.storage_path);
+
+          // Neuen Storage-Pfad bilden: <srcPath>.copy-<ts>.<ext>
+          const stamp = Date.now();
+          const dot = srcPath.lastIndexOf(".");
+          const newSrcPath = dot > srcPath.lastIndexOf("/")
+            ? `${srcPath.slice(0, dot)}.copy-${stamp}${srcPath.slice(dot)}`
+            : `${srcPath}.copy-${stamp}`;
+
+          // Was wir in DB schreiben (mit gleichem Prefix-Schema wie das Original)
+          newStoragePath = doc.storage_path.startsWith(BUCKET + "/")
+            ? `${BUCKET}/${newSrcPath}`
+            : newSrcPath;
+
+          // 1) Versuch: native storage.copy()
+          const { error: copyErr } = await supabase.storage
+            .from(BUCKET)
+            .copy(srcPath, newSrcPath);
+
+          if (copyErr) {
+            // 2) Fallback: Signed-URL -> Blob -> Re-Upload
+            console.warn("storage.copy() fehlgeschlagen, Fallback via download+upload:", copyErr.message);
+            const { data: urlData, error: urlErr } = await supabase.storage
+              .from(BUCKET)
+              .createSignedUrl(srcPath, 60);
+            if (urlErr || !urlData?.signedUrl) {
+              throw new Error("Originaldatei nicht zugreifbar: " + (urlErr?.message || "keine URL"));
+            }
+            const blobRes = await fetch(urlData.signedUrl);
+            if (!blobRes.ok) throw new Error("Download fehlgeschlagen: HTTP " + blobRes.status);
+            const blob = await blobRes.blob();
+            const { error: upErr } = await supabase.storage
+              .from(BUCKET)
+              .upload(newSrcPath, blob, {
+                contentType: doc.file_type || blob.type || "application/octet-stream",
+                upsert: false,
+              });
+            if (upErr) throw new Error("Re-Upload fehlgeschlagen: " + upErr.message);
+          }
+        }
+        await entities.Dokument.create({
+          customer_id: customerId,
+          name: name.trim(),
+          category,
+          year: parseInt(year),
+          tag_ids: tagIds,
+          notes,
+          filename: doc.filename,
+          storage_path: newStoragePath,     // <-- neuer Pfad
+          file_size: doc.file_size,
+          file_type: doc.file_type,
+          sharepoint_web_url: doc.sharepoint_web_url || null,
+        });
+        toast.success("Kopie angelegt (Datei physisch dupliziert)", {closeButton: true});
+      } else {
+        await entities.Dokument.update(doc.id, { customer_id: customerId, name: name.trim(), category, year: parseInt(year), tag_ids: tagIds, notes });
+        toast.success("Gespeichert", {closeButton: true});
+      }
       onSave();
     } catch (e) {
       toast.error("Fehler: " + e.message);
@@ -616,7 +709,10 @@ function EditDialog({ doc, allTags, customers = [], onCancel, onSave, s, border,
     <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ background: s.cardBg, border: "1px solid " + border, borderRadius: 12, padding: 28, width: 660, maxWidth: "95vw", maxHeight: "90vh", overflowY: "auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-          <h3 style={{ color: s.textMain, fontSize: 14, fontWeight: 700 }}>Dokument bearbeiten</h3>
+          <h3 style={{ color: s.textMain, fontSize: 14, fontWeight: 700 }}>
+            {isCopy ? "Dokument kopieren" : "Dokument bearbeiten"}
+            {isCopy && <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 500, color: s.textMuted, background: s.sidebarBg, padding: "2px 7px", borderRadius: 6 }}>Datei wird physisch dupliziert</span>}
+          </h3>
           <button onClick={onCancel} style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted }}><X size={18} /></button>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -637,6 +733,38 @@ function EditDialog({ doc, allTags, customers = [], onCancel, onSave, s, border,
           <div>
             <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Anzeigename *</label>
             <input value={name} onChange={e => setName(e.target.value)} style={inp} />
+            <div style={{ display: "flex", gap: 6, marginTop: 6, alignItems: "stretch" }}>
+              <input
+                value={text}
+                onChange={e => setText(e.target.value)}
+                placeholder="Zusatztext fuer Auto-Name (optional)"
+                style={{ ...inp, flex: 1, fontSize: 12 }}
+              />
+              <button
+                type="button"
+                onClick={applyAutoName}
+                disabled={!suggestedName}
+                title="Name aus ausgewaehlten Tags und Zusatztext bilden"
+                style={{
+                  background: suggestedName ? accent : s.sidebarBg,
+                  color: suggestedName ? "#fff" : s.textMuted,
+                  border: "1px solid " + (suggestedName ? accent : border),
+                  borderRadius: 6,
+                  padding: "5px 10px",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: suggestedName ? "pointer" : "not-allowed",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                🪄 Aus Tags + Text
+              </button>
+            </div>
+            {suggestedName && suggestedName !== name && (
+              <div style={{ fontSize: 11, color: s.textMuted, marginTop: 4, fontStyle: "italic" }}>
+                Vorschlag: <span style={{ color: s.textMain }}>{suggestedName}</span>
+              </div>
+            )}
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <div>
@@ -662,7 +790,7 @@ function EditDialog({ doc, allTags, customers = [], onCancel, onSave, s, border,
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 16 }}>
           <Button variant="outline" onClick={onCancel} style={{ color: s.textMuted, borderColor: border }}>Abbrechen</Button>
           <Button onClick={handleSave} disabled={saving} style={{ background: accent, color: "#fff" }}>
-            {saving ? "Speichert..." : "Speichern"}
+            {saving ? "Speichert..." : (isCopy ? "Kopie anlegen" : "Speichern")}
           </Button>
         </div>
       </div>
@@ -706,7 +834,6 @@ export default function Dokumente() {
   const [highlightDocId, setHighlightDocId] = useState(null);
   const [shareDialog,   setShareDialog]   = useState(null); // { type: 'doc'|'folder', doc?, customer_id?, category?, year?, name? }
   const [showShareLinks, setShowShareLinks] = useState(false);
-  const [downloading, setDownloading] = useState(false);
 
   // Volltext-Suche via Supabase RPC (PostgreSQL GIN-Index)
   useEffect(() => {
@@ -755,6 +882,7 @@ export default function Dokumente() {
   const [openFolders,   setOpenFolders]   = useState(new Set());
   const [showSortMenu,  setShowSortMenu]  = useState(false);
   const [editDoc,        setEditDoc]        = useState(null);
+  const [copyDoc,        setCopyDoc]        = useState(null);
   const [versionsDoc,    setVersionsDoc]    = useState(null);
   const [checkinDoc,     setCheckinDoc]     = useState(null);  // wird nicht mehr benoetigt, bleibt fuer Compat
   const [signedUrls,    setSignedUrls]    = useState({});
@@ -1066,20 +1194,41 @@ export default function Dokumente() {
   const downloadDoc = async (doc, showNotification=false) => {
     if (!doc) return;
     try {
+      // 1) SharePoint-Pfad bevorzugen
+      if (doc.sharepoint_web_url) {
+        window.open(doc.sharepoint_web_url, '_blank');
+        return;
+      }
       if (!doc.storage_path) {
-        toast.error('Keine Datei verfügbar für ' + (doc.filename || doc.name));
+        toast.error('Keine Datei verfuegbar fuer ' + (doc.filename || doc.name || 'dieses Dokument'));
         return;
       }
 
+      // 2) Hueschen Dateinamen bilden: Anzeigename + Original-Extension
+      //    Sonderzeichen sanitiert fuer Windows/macOS-Kompatibilitaet
+      const origExt = (doc.filename || "").includes(".")
+        ? doc.filename.slice(doc.filename.lastIndexOf("."))
+        : "";
+      const sanitizedName = (doc.name || "download")
+        .replace(/[\\/:*?"<>|]/g, "_")
+        .trim() || "download";
+      const prettyFilename = sanitizedName.endsWith(origExt)
+        ? sanitizedName
+        : sanitizedName + origExt;
+
+      // 3) storage_path normalisieren (DB hat oft 'dokumente/' Prefix, Storage nicht)
+      const srcPath = doc.storage_path.startsWith(BUCKET + "/")
+        ? doc.storage_path.slice(BUCKET.length + 1)
+        : doc.storage_path;
+
+      // 4) Signed URL mit download-Hint -> Content-Disposition: attachment; filename=<prettyFilename>
       const { data, error } = await supabase
-          .storage
-          .from(BUCKET)
-          .createSignedUrl(doc.storage_path, 360, {
-            download: doc.filename || true,    // ← entscheidend: Server setzt Content-Disposition
-          });
+        .storage
+        .from(BUCKET)
+        .createSignedUrl(srcPath, 360, { download: prettyFilename });
 
       if (error || !data?.signedUrl) {
-        toast.error('Download-URL konnte nicht erstellt werden: ' + (error?.message || 'unbekannt'));
+        toast.error('Download-URL fehlgeschlagen: ' + (error?.message || 'unbekannt'));
         return;
       }
 
@@ -1087,9 +1236,10 @@ export default function Dokumente() {
         toast.info('Datei wird herunter geladen');
       }
 
+      // 5) Anchor-Klick fuer echten Download (umgeht Popup-Blocker)
       const a = document.createElement('a');
       a.href = data.signedUrl;
-      a.download = doc.filename || 'download';
+      a.download = prettyFilename;
       a.rel = 'noopener';
       document.body.appendChild(a);
       a.click();
@@ -1098,7 +1248,7 @@ export default function Dokumente() {
       console.error('Download fehlgeschlagen', e);
       toast.error('Download fehlgeschlagen: ' + e.message);
     }
-  };
+  }
 
   // ── URL-Parameter ?open=<doc_id> → Dokument direkt öffnen (von VoxDrop / Smartis) ──
   useEffect(() => {
@@ -1724,6 +1874,7 @@ export default function Dokumente() {
                                   {isMyCheckout && <button onClick={() => openCheckin(doc)} title="Einchecken" style={{ background: "none", border: "none", cursor: "pointer", color: accent, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}><Lock size={13} /></button>}
                                   {lockedByOther && isAdmin && <button onClick={() => handleCheckin(doc, null)} title="Sperre aufheben" style={{ background: "none", border: "none", cursor: "pointer", color: "#ef4444", display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}><ShieldAlert size={13} /></button>}
                                   <button onClick={() => setEditDoc(doc)} title="Bearbeiten" style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}><Pencil size={13} /></button>
+                                  <button onClick={() => setCopyDoc(doc)} title="Kopieren (neu verschlagworten)" style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}><CopyPlus size={13} /></button>
                                   <button onClick={() => setVersionsDoc(doc)} title="Versionsverlauf" style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}><HistoryIcon size={13} /></button>
                                   <button onClick={() => { animateBtn(`dl-${doc.id}`); downloadDoc(doc, true); }} title="Herunterladen" style={{ background: "none", border: "none", cursor: "pointer", color: accent, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0, transition: "transform 0.15s", transform: clickedBtns[`dl-${doc.id}`] ? "scale(0.75)" : "scale(1)" }}><Download size={14} /></button>
                                   <button onClick={() => { animateBtn(`sh-${doc.id}`); setShareDialog({ type: 'doc', doc_id: doc.id, name: doc.name, customer_id: doc.customer_id }); }} title="Link erstellen" style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}><Link2 size={14} /></button>
@@ -1826,6 +1977,11 @@ export default function Dokumente() {
                       style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}>
                       <Pencil size={14} />
                     </button>
+                    {/* Kopieren */}
+                    <button onClick={() => setCopyDoc(doc)} title="Kopieren (neu verschlagworten)"
+                      style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}>
+                      <CopyPlus size={14} />
+                    </button>
                     {/* Versionsverlauf */}
                     <button onClick={() => setVersionsDoc(doc)} title="Versionsverlauf"
                       style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}>
@@ -1873,6 +2029,13 @@ export default function Dokumente() {
       )}
       {versionsDoc && (
         <VersionsDialog doc={versionsDoc} onClose={() => setVersionsDoc(null)} />
+      )}
+      {copyDoc && (
+        <EditDialog doc={copyDoc} allTags={allTags} customers={customers}
+          mode="copy"
+          onCancel={() => setCopyDoc(null)}
+          onSave={() => { queryClient.invalidateQueries({ queryKey: ["dokumente-all"] }); setCopyDoc(null); }}
+          s={s} border={border} accent={accent} />
       )}
       {editDoc && (
         <EditDialog doc={editDoc} allTags={allTags} customers={customers}
