@@ -14,6 +14,7 @@ import {
   RefreshCw,
   Link2,
   Copy,
+  CopyPlus,
   CheckCheck,
   FolderOpen,
   Library,
@@ -577,8 +578,12 @@ function UploadDialog({ customers, preCustomer, preFile, allTags, onCancel, onUp
 }
 
 // ─── Edit-Dialog ───────────────────────────────────────────────────────────
-function EditDialog({ doc, allTags, customers = [], onCancel, onSave, s, border, accent }) {
-  const [name,       setName]       = useState(doc.name || "");
+function EditDialog({ doc, allTags, customers = [], onCancel, onSave, s, border, accent, mode = "edit" }) {
+  // mode: "edit"  -> bestehendes Dokument updaten
+  //       "copy"  -> neues Dokument mit gleichem storage_path anlegen
+  const isCopy = mode === "copy";
+  const [name,       setName]       = useState(isCopy ? ((doc.name || "") + " (Kopie)") : (doc.name || ""));
+  const [text,       setText]       = useState("");           // Freitext fuer Auto-Filename
   const [customerId, setCustomerId] = useState(doc.customer_id || "");
   const [category,   setCategory]   = useState(doc.category || "steuern");
   const [year,       setYear]       = useState(String(doc.year || CUR_YEAR));
@@ -595,6 +600,21 @@ function EditDialog({ doc, allTags, customers = [], onCancel, onSave, s, border,
     setTagIds(prev => prev.filter(id => validIds.has(id)));
   }, [filteredTags]);
 
+  // Vorschau-Name aus Tags + Text
+  const suggestedName = useMemo(() => {
+    const tagNames = (tagIds || [])
+      .map(id => (allTags.find(t => t.id === id)?.name || "").trim())
+      .filter(Boolean);
+    const parts = [...tagNames];
+    if (text.trim()) parts.push(text.trim());
+    return parts.join(" - ");
+  }, [tagIds, text, allTags]);
+
+  const applyAutoName = () => {
+    if (!suggestedName) { toast.error("Erst Tags auswaehlen oder Text eingeben"); return; }
+    setName(suggestedName);
+  };
+
   const inp = { background: s.inputBg, border: "1px solid " + (s.inputBorder || border), color: s.textMain, borderRadius: 6, padding: "5px 8px", fontSize: 13, width: "100%", outline: "none" };
 
   const handleSave = async () => {
@@ -602,8 +622,27 @@ function EditDialog({ doc, allTags, customers = [], onCancel, onSave, s, border,
     if (!customerId) { toast.error("Bitte einen Kunden auswählen"); return; }
     setSaving(true);
     try {
-      await entities.Dokument.update(doc.id, { customer_id: customerId, name: name.trim(), category, year: parseInt(year), tag_ids: tagIds, notes });
-      toast.success("Gespeichert", {closeButton: true});
+      if (isCopy) {
+        // Neuer Eintrag: zeigt auf gleiche Storage-Datei wie das Original (kein doppelter Upload)
+        await entities.Dokument.create({
+          customer_id: customerId,
+          name: name.trim(),
+          category,
+          year: parseInt(year),
+          tag_ids: tagIds,
+          notes,
+          // Original-Dateieigenschaften uebernehmen
+          filename: doc.filename,
+          storage_path: doc.storage_path,
+          file_size: doc.file_size,
+          file_type: doc.file_type,
+          sharepoint_web_url: doc.sharepoint_web_url || null,
+        });
+        toast.success("Kopie angelegt", {closeButton: true});
+      } else {
+        await entities.Dokument.update(doc.id, { customer_id: customerId, name: name.trim(), category, year: parseInt(year), tag_ids: tagIds, notes });
+        toast.success("Gespeichert", {closeButton: true});
+      }
       onSave();
     } catch (e) {
       toast.error("Fehler: " + e.message);
@@ -616,7 +655,10 @@ function EditDialog({ doc, allTags, customers = [], onCancel, onSave, s, border,
     <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ background: s.cardBg, border: "1px solid " + border, borderRadius: 12, padding: 28, width: 660, maxWidth: "95vw", maxHeight: "90vh", overflowY: "auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-          <h3 style={{ color: s.textMain, fontSize: 14, fontWeight: 700 }}>Dokument bearbeiten</h3>
+          <h3 style={{ color: s.textMain, fontSize: 14, fontWeight: 700 }}>
+            {isCopy ? "Dokument kopieren" : "Dokument bearbeiten"}
+            {isCopy && <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 500, color: s.textMuted, background: s.sidebarBg, padding: "2px 7px", borderRadius: 6 }}>verweist auf gleiche Datei</span>}
+          </h3>
           <button onClick={onCancel} style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted }}><X size={18} /></button>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -637,6 +679,38 @@ function EditDialog({ doc, allTags, customers = [], onCancel, onSave, s, border,
           <div>
             <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Anzeigename *</label>
             <input value={name} onChange={e => setName(e.target.value)} style={inp} />
+            <div style={{ display: "flex", gap: 6, marginTop: 6, alignItems: "stretch" }}>
+              <input
+                value={text}
+                onChange={e => setText(e.target.value)}
+                placeholder="Zusatztext fuer Auto-Name (optional)"
+                style={{ ...inp, flex: 1, fontSize: 12 }}
+              />
+              <button
+                type="button"
+                onClick={applyAutoName}
+                disabled={!suggestedName}
+                title="Name aus ausgewaehlten Tags und Zusatztext bilden"
+                style={{
+                  background: suggestedName ? accent : s.sidebarBg,
+                  color: suggestedName ? "#fff" : s.textMuted,
+                  border: "1px solid " + (suggestedName ? accent : border),
+                  borderRadius: 6,
+                  padding: "5px 10px",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: suggestedName ? "pointer" : "not-allowed",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                🪄 Aus Tags + Text
+              </button>
+            </div>
+            {suggestedName && suggestedName !== name && (
+              <div style={{ fontSize: 11, color: s.textMuted, marginTop: 4, fontStyle: "italic" }}>
+                Vorschlag: <span style={{ color: s.textMain }}>{suggestedName}</span>
+              </div>
+            )}
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <div>
@@ -662,7 +736,7 @@ function EditDialog({ doc, allTags, customers = [], onCancel, onSave, s, border,
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 16 }}>
           <Button variant="outline" onClick={onCancel} style={{ color: s.textMuted, borderColor: border }}>Abbrechen</Button>
           <Button onClick={handleSave} disabled={saving} style={{ background: accent, color: "#fff" }}>
-            {saving ? "Speichert..." : "Speichern"}
+            {saving ? "Speichert..." : (isCopy ? "Kopie anlegen" : "Speichern")}
           </Button>
         </div>
       </div>
@@ -754,6 +828,7 @@ export default function Dokumente() {
   const [openFolders,   setOpenFolders]   = useState(new Set());
   const [showSortMenu,  setShowSortMenu]  = useState(false);
   const [editDoc,        setEditDoc]        = useState(null);
+  const [copyDoc,        setCopyDoc]        = useState(null);
   const [versionsDoc,    setVersionsDoc]    = useState(null);
   const [checkinDoc,     setCheckinDoc]     = useState(null);  // wird nicht mehr benoetigt, bleibt fuer Compat
   const [signedUrls,    setSignedUrls]    = useState({});
@@ -1697,6 +1772,7 @@ export default function Dokumente() {
                                   {isMyCheckout && <button onClick={() => openCheckin(doc)} title="Einchecken" style={{ background: "none", border: "none", cursor: "pointer", color: accent, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}><Lock size={13} /></button>}
                                   {lockedByOther && isAdmin && <button onClick={() => handleCheckin(doc, null)} title="Sperre aufheben" style={{ background: "none", border: "none", cursor: "pointer", color: "#ef4444", display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}><ShieldAlert size={13} /></button>}
                                   <button onClick={() => setEditDoc(doc)} title="Bearbeiten" style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}><Pencil size={13} /></button>
+                                  <button onClick={() => setCopyDoc(doc)} title="Kopieren (neu verschlagworten)" style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}><CopyPlus size={13} /></button>
                                   <button onClick={() => setVersionsDoc(doc)} title="Versionsverlauf" style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}><HistoryIcon size={13} /></button>
                                   <button onClick={() => { animateBtn(`dl-${doc.id}`); downloadDoc(doc); }} title="Herunterladen" style={{ background: "none", border: "none", cursor: "pointer", color: accent, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0, transition: "transform 0.15s", transform: clickedBtns[`dl-${doc.id}`] ? "scale(0.75)" : "scale(1)" }}><Download size={14} /></button>
                                   <button onClick={() => { animateBtn(`sh-${doc.id}`); setShareDialog({ type: 'doc', doc_id: doc.id, name: doc.name, customer_id: doc.customer_id }); }} title="Link erstellen" style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}><Link2 size={14} /></button>
@@ -1799,6 +1875,11 @@ export default function Dokumente() {
                       style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}>
                       <Pencil size={14} />
                     </button>
+                    {/* Kopieren */}
+                    <button onClick={() => setCopyDoc(doc)} title="Kopieren (neu verschlagworten)"
+                      style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}>
+                      <CopyPlus size={14} />
+                    </button>
                     {/* Versionsverlauf */}
                     <button onClick={() => setVersionsDoc(doc)} title="Versionsverlauf"
                       style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}>
@@ -1846,6 +1927,13 @@ export default function Dokumente() {
       )}
       {versionsDoc && (
         <VersionsDialog doc={versionsDoc} onClose={() => setVersionsDoc(null)} />
+      )}
+      {copyDoc && (
+        <EditDialog doc={copyDoc} allTags={allTags} customers={customers}
+          mode="copy"
+          onCancel={() => setCopyDoc(null)}
+          onSave={() => { queryClient.invalidateQueries({ queryKey: ["dokumente-all"] }); setCopyDoc(null); }}
+          s={s} border={border} accent={accent} />
       )}
       {editDoc && (
         <EditDialog doc={editDoc} allTags={allTags} customers={customers}
