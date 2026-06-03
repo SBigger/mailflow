@@ -10,7 +10,6 @@ tools/
 apps/
 .env.functions
 .env.local
-.env.production
 
 # 2. Die Ausnahmen definieren (das "Include")
 !package.json

@@ -78,6 +78,7 @@ async function initApp() {
     APP_TYPE: ''
   };
 
+  console.log("window.__TAURI__: ", window.__TAURI__);
   try {
     try{
       const customer = await invoke('get_customer_config');

@@ -706,6 +706,7 @@ export default function Dokumente() {
   const [highlightDocId, setHighlightDocId] = useState(null);
   const [shareDialog,   setShareDialog]   = useState(null); // { type: 'doc'|'folder', doc?, customer_id?, category?, year?, name? }
   const [showShareLinks, setShowShareLinks] = useState(false);
+  const [downloading, setDownloading] = useState(false);
 
   // Volltext-Suche via Supabase RPC (PostgreSQL GIN-Index)
   useEffect(() => {
@@ -1062,16 +1063,42 @@ export default function Dokumente() {
     }
   };
 
-  const downloadDoc = async (doc) => {
-    const { data } = await supabase
-        .storage
-        .from(BUCKET)
-        .createSignedUrl(doc.storage_path, 360);
+  const downloadDoc = async (doc, showNotification=false) => {
+    if (!doc) return;
+    try {
+      if (!doc.storage_path) {
+        toast.error('Keine Datei verfügbar für ' + (doc.filename || doc.name));
+        return;
+      }
 
-    const fileUrl = data.signedUrl;
+      const { data, error } = await supabase
+          .storage
+          .from(BUCKET)
+          .createSignedUrl(doc.storage_path, 360, {
+            download: doc.filename || true,    // ← entscheidend: Server setzt Content-Disposition
+          });
 
-    window.open(fileUrl, '_blank');
-  }
+      if (error || !data?.signedUrl) {
+        toast.error('Download-URL konnte nicht erstellt werden: ' + (error?.message || 'unbekannt'));
+        return;
+      }
+
+      if(showNotification) {
+        toast.info('Datei wird herunter geladen');
+      }
+
+      const a = document.createElement('a');
+      a.href = data.signedUrl;
+      a.download = doc.filename || 'download';
+      a.rel = 'noopener';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch (e) {
+      console.error('Download fehlgeschlagen', e);
+      toast.error('Download fehlgeschlagen: ' + e.message);
+    }
+  };
 
   // ── URL-Parameter ?open=<doc_id> → Dokument direkt öffnen (von VoxDrop / Smartis) ──
   useEffect(() => {
@@ -1698,7 +1725,7 @@ export default function Dokumente() {
                                   {lockedByOther && isAdmin && <button onClick={() => handleCheckin(doc, null)} title="Sperre aufheben" style={{ background: "none", border: "none", cursor: "pointer", color: "#ef4444", display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}><ShieldAlert size={13} /></button>}
                                   <button onClick={() => setEditDoc(doc)} title="Bearbeiten" style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}><Pencil size={13} /></button>
                                   <button onClick={() => setVersionsDoc(doc)} title="Versionsverlauf" style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}><HistoryIcon size={13} /></button>
-                                  <button onClick={() => { animateBtn(`dl-${doc.id}`); downloadDoc(doc); }} title="Herunterladen" style={{ background: "none", border: "none", cursor: "pointer", color: accent, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0, transition: "transform 0.15s", transform: clickedBtns[`dl-${doc.id}`] ? "scale(0.75)" : "scale(1)" }}><Download size={14} /></button>
+                                  <button onClick={() => { animateBtn(`dl-${doc.id}`); downloadDoc(doc, true); }} title="Herunterladen" style={{ background: "none", border: "none", cursor: "pointer", color: accent, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0, transition: "transform 0.15s", transform: clickedBtns[`dl-${doc.id}`] ? "scale(0.75)" : "scale(1)" }}><Download size={14} /></button>
                                   <button onClick={() => { animateBtn(`sh-${doc.id}`); setShareDialog({ type: 'doc', doc_id: doc.id, name: doc.name, customer_id: doc.customer_id }); }} title="Link erstellen" style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}><Link2 size={14} /></button>
                                   <button onClick={() => !lockedByOther && handleDelete(doc)} title={lockedByOther ? "Gesperrt" : "Löschen"} style={{ background: "none", border: "none", cursor: lockedByOther ? "not-allowed" : "pointer", color: lockedByOther ? s.textMuted + "44" : "#ef4444", display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}><Trash2 size={14} /></button>
                                 </div>
@@ -1805,7 +1832,7 @@ export default function Dokumente() {
                       <HistoryIcon size={14} />
                     </button>
                     {/* Download */}
-                    <button onClick={() => { animateBtn(`dl-${doc.id}`); downloadDoc(doc); }}
+                    <button onClick={() => { animateBtn(`dl-${doc.id}`); downloadDoc(doc, true); }}
                       title="Herunterladen" style={{ background: "none", border: "none", cursor: "pointer", color: accent, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0, transition: "transform 0.15s", transform: clickedBtns[`dl-${doc.id}`] ? "scale(0.75)" : "scale(1)" }}>
                       <Download size={15} />
                     </button>

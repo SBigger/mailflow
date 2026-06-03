@@ -2019,7 +2019,7 @@ export default function Settings() {
                                         <h3 className="text-base font-semibold mb-1 flex items-center gap-2"
                                             style={{color: headingColor}}>
                                             <HardDrive className="h-4 w-4"/> ArtisAgent <span
-                                            className="text-xs font-normal opacity-50">v3.0.1</span>
+                                            className="text-xs font-normal opacity-50">v3.0.2</span>
                                         </h3>
                                         <p className="text-sm mb-3" style={{color: textMuted}}>
                                             Öffnet und bearbeitet Dokumente direkt aus der Dateiablage. Ermöglicht
@@ -2031,8 +2031,9 @@ export default function Settings() {
                                             <li>✓ Check-in nach dem Speichern</li>
                                         </ul>
                                     </div>
-                                    <a
-                                        href="./sm-artis-agent.exe"
+                                    <a  onClick={()=>{toast.info('Datei wird herunter geladen')}}
+                                        href="https://sm-artis.ch/apps/sm-artis-agent.exe"
+                                        rel="noopener"
                                         download={getAppName('sm-artis-agent.exe')}
                                         className="flex-shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-xl text-white font-medium text-sm transition-opacity hover:opacity-90"
                                         style={{backgroundColor: isArtis ? '#7a9b7f' : '#6366f1'}}
@@ -2063,7 +2064,9 @@ export default function Settings() {
                                         </ul>
                                     </div>
                                     <a
-                                        href="./smartis.exe"
+                                        onClick={()=>{toast.info('Datei wird herunter geladen')}}
+                                        href="https://sm-artis.ch/apps/smartis.exe"
+                                        rel="noopener"
                                         download={getAppName('smartis.exe')}
                                         className="flex-shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-xl text-white font-medium text-sm transition-opacity hover:opacity-90"
                                         style={{backgroundColor: isArtis ? '#7a9b7f' : '#6366f1'}}
@@ -2095,8 +2098,9 @@ export default function Settings() {
                                             <li>✓ Läuft im Hintergrund, startet mit Windows</li>
                                         </ul>
                                     </div>
-                                    <a
-                                        href="./VoxDrop-Setup-v1.7.0.exe"
+                                    <a  onClick={()=>{toast.info('Datei wird herunter geladen')}}
+                                        href="https://sm-artis.ch/apps/VoxDrop-Setup-v1.7.0.exe"
+                                        rel="noopener"
                                         download={getAppName('VoxDrop.exe')}
                                         className="flex-shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-xl text-white font-medium text-sm transition-opacity hover:opacity-90"
                                         style={{backgroundColor: isArtis ? '#7a9b7f' : '#6366f1'}}
@@ -2128,8 +2132,9 @@ export default function Settings() {
                                             <li>✓ Startet automatisch mit Windows</li>
                                         </ul>
                                     </div>
-                                    <a
-                                        href="./SmartisBar-Setup.exe"
+                                    <a  onClick={()=>{toast.info('Datei wird herunter geladen')}}
+                                        href="https://sm-artis.ch/apps/SmartisBar-Setup.exe"
+                                        rel="noopener"
                                         download={getAppName('SmartisBar-Setup.exe')}
                                         className="flex-shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-xl text-white font-medium text-sm transition-opacity hover:opacity-90"
                                         style={{backgroundColor: isArtis ? '#7a9b7f' : '#6366f1'}}
