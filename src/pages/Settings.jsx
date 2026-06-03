@@ -753,8 +753,7 @@ export default function Settings() {
         }
 
         const a = document.createElement('a');
-        a.href = `https://www.sm-artis.ch/apps/${appName}`;
-        a.download = `${window.env.CUSTOMER}_${appName}`;
+        a.href = `https://www.sm-artis.ch/apps/${window.env.CUSTOMER}_${appName}`;
         a.rel = 'noopener';
         document.body.appendChild(a);
         a.click();
@@ -2103,7 +2102,7 @@ export default function Settings() {
                                             <li>✓ Läuft im Hintergrund, startet mit Windows</li>
                                         </ul>
                                     </div>
-                                    <button onClick={()=>{showDownloadInfo("VoxDrop.exe")}}
+                                    <button onClick={()=>{showDownloadInfo("voxDrop.exe")}}
                                         className="flex-shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-xl text-white font-medium text-sm transition-opacity hover:opacity-90"
                                         style={{backgroundColor: isArtis ? '#7a9b7f' : '#6366f1'}}>
                                         <Download className="h-4 w-4"/> Download
