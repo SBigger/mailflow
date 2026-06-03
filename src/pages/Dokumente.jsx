@@ -612,7 +612,12 @@ function EditDialog({ doc, allTags, customers = [], onCancel, onSave, s, border,
 
   const applyAutoName = () => {
     if (!suggestedName) { toast.error("Erst Tags auswaehlen oder Text eingeben"); return; }
+    if (suggestedName === name) {
+      toast.info("Name ist bereits identisch mit dem Vorschlag");
+      return;
+    }
     setName(suggestedName);
+    toast.success("Name uebernommen: " + suggestedName, { closeButton: true });
   };
 
   const inp = { background: s.inputBg, border: "1px solid " + (s.inputBorder || border), color: s.textMain, borderRadius: 6, padding: "5px 8px", fontSize: 13, width: "100%", outline: "none" };
@@ -632,10 +637,34 @@ function EditDialog({ doc, allTags, customers = [], onCancel, onSave, s, border,
           newStoragePath = dot > doc.storage_path.lastIndexOf("/")
             ? `${doc.storage_path.slice(0, dot)}.copy-${stamp}${doc.storage_path.slice(dot)}`
             : `${doc.storage_path}.copy-${stamp}`;
+
+          // 1) Versuch: native storage.copy() (schnellster Weg)
           const { error: copyErr } = await supabase.storage
             .from(BUCKET)
             .copy(doc.storage_path, newStoragePath);
-          if (copyErr) throw new Error("Storage-Copy: " + copyErr.message);
+
+          if (copyErr) {
+            // 2) Fallback: Signed-URL -> Blob -> Re-Upload
+            //    (passiert oft bei Files die per Skript hochgeladen wurden -
+            //     storage.copy() greift bei manchen Pfaden nicht)
+            console.warn("storage.copy() fehlgeschlagen, Fallback via download+upload:", copyErr.message);
+            const { data: urlData, error: urlErr } = await supabase.storage
+              .from(BUCKET)
+              .createSignedUrl(doc.storage_path, 60);
+            if (urlErr || !urlData?.signedUrl) {
+              throw new Error("Originaldatei nicht zugreifbar: " + (urlErr?.message || "keine URL"));
+            }
+            const blobRes = await fetch(urlData.signedUrl);
+            if (!blobRes.ok) throw new Error("Download fehlgeschlagen: HTTP " + blobRes.status);
+            const blob = await blobRes.blob();
+            const { error: upErr } = await supabase.storage
+              .from(BUCKET)
+              .upload(newStoragePath, blob, {
+                contentType: doc.file_type || blob.type || "application/octet-stream",
+                upsert: false,
+              });
+            if (upErr) throw new Error("Re-Upload fehlgeschlagen: " + upErr.message);
+          }
         }
         await entities.Dokument.create({
           customer_id: customerId,
