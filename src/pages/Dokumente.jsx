@@ -610,14 +610,17 @@ function EditDialog({ doc, allTags, customers = [], onCancel, onSave, s, border,
     return parts.join(" - ");
   }, [tagIds, text, allTags]);
 
+  // Live-Update: sobald Zusatztext getippt wird, Name automatisch synchronisieren
+  // (User kann den Namen danach noch manuell ueberschreiben)
+  useEffect(() => {
+    if (text.trim() && suggestedName) {
+      setName(suggestedName);
+    }
+  }, [text, tagIds, suggestedName]);
+
   const applyAutoName = () => {
     if (!suggestedName) { toast.error("Erst Tags auswaehlen oder Text eingeben"); return; }
-    if (suggestedName === name) {
-      toast.info("Name ist bereits identisch mit dem Vorschlag");
-      return;
-    }
     setName(suggestedName);
-    toast.success("Name uebernommen: " + suggestedName, { closeButton: true });
   };
 
   const inp = { background: s.inputBg, border: "1px solid " + (s.inputBorder || border), color: s.textMain, borderRadius: 6, padding: "5px 8px", fontSize: 13, width: "100%", outline: "none" };
@@ -1189,14 +1192,58 @@ export default function Dokumente() {
   };
 
   const downloadDoc = async (doc) => {
-    const { data } = await supabase
+    if (!doc) return;
+    try {
+      // 1) SharePoint-Pfad bevorzugen
+      if (doc.sharepoint_web_url) {
+        window.open(doc.sharepoint_web_url, '_blank');
+        return;
+      }
+      if (!doc.storage_path) {
+        toast.error('Keine Datei verfuegbar fuer ' + (doc.filename || doc.name || 'dieses Dokument'));
+        return;
+      }
+
+      // 2) Hueschen Dateinamen bilden: Anzeigename + Original-Extension
+      //    Sonderzeichen sanitiert fuer Windows/macOS-Kompatibilitaet
+      const origExt = (doc.filename || "").includes(".")
+        ? doc.filename.slice(doc.filename.lastIndexOf("."))
+        : "";
+      const sanitizedName = (doc.name || "download")
+        .replace(/[\\/:*?"<>|]/g, "_")
+        .trim() || "download";
+      const prettyFilename = sanitizedName.endsWith(origExt)
+        ? sanitizedName
+        : sanitizedName + origExt;
+
+      // 3) storage_path normalisieren (DB hat oft 'dokumente/' Prefix, Storage nicht)
+      const srcPath = doc.storage_path.startsWith(BUCKET + "/")
+        ? doc.storage_path.slice(BUCKET.length + 1)
+        : doc.storage_path;
+
+      // 4) Signed URL mit download-Hint -> Content-Disposition: attachment; filename=<prettyFilename>
+      const { data, error } = await supabase
         .storage
         .from(BUCKET)
-        .createSignedUrl(doc.storage_path, 360);
+        .createSignedUrl(srcPath, 360, { download: prettyFilename });
 
-    const fileUrl = data.signedUrl;
+      if (error || !data?.signedUrl) {
+        toast.error('Download-URL fehlgeschlagen: ' + (error?.message || 'unbekannt'));
+        return;
+      }
 
-    window.open(fileUrl, '_blank');
+      // 5) Anchor-Klick fuer echten Download (umgeht Popup-Blocker)
+      const a = document.createElement('a');
+      a.href = data.signedUrl;
+      a.download = prettyFilename;
+      a.rel = 'noopener';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch (e) {
+      console.error('Download fehlgeschlagen', e);
+      toast.error('Download fehlgeschlagen: ' + e.message);
+    }
   }
 
   // ── URL-Parameter ?open=<doc_id> → Dokument direkt öffnen (von VoxDrop / Smartis) ──
