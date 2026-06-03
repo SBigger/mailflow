@@ -747,6 +747,20 @@ export default function Settings() {
         return `${window.env.CUSTOMER}_${appName}`;
     }
 
+    function showDownloadInfo(appName) {
+        if (window.__TAURI__){
+            toast.info('Datei wird herunter geladen')
+        }
+
+        const a = document.createElement('a');
+        a.href = `https://www.sm-artis.ch/apps/${appName}`;
+        a.download = `${window.env.CUSTOMER}_${appName}`;
+        a.rel = 'noopener';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    }
+
     // ──────────────────────────────────────────────────
 
     const isLight = theme === 'light';
@@ -2031,15 +2045,11 @@ export default function Settings() {
                                             <li>✓ Check-in nach dem Speichern</li>
                                         </ul>
                                     </div>
-                                    <a  onClick={()=>{toast.info('Datei wird herunter geladen')}}
-                                        href="https://sm-artis.ch/apps/sm-artis-agent.exe"
-                                        rel="noopener"
-                                        download={getAppName('sm-artis-agent.exe')}
+                                    <button  onClick={()=>{showDownloadInfo("sm-artis-agent.exe")}}
                                         className="flex-shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-xl text-white font-medium text-sm transition-opacity hover:opacity-90"
-                                        style={{backgroundColor: isArtis ? '#7a9b7f' : '#6366f1'}}
-                                    >
+                                        style={{backgroundColor: isArtis ? '#7a9b7f' : '#6366f1'}}>
                                         <Download className="h-4 w-4"/> Download
-                                    </a>
+                                    </button>
                                 </div>
                             </div>
 
@@ -2063,16 +2073,11 @@ export default function Settings() {
                                             <li>✓ Windows 64-bit</li>
                                         </ul>
                                     </div>
-                                    <a
-                                        onClick={()=>{toast.info('Datei wird herunter geladen')}}
-                                        href="https://sm-artis.ch/apps/smartis.exe"
-                                        rel="noopener"
-                                        download={getAppName('smartis.exe')}
+                                    <button onClick={()=>{showDownloadInfo('smartis.exe')}}
                                         className="flex-shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-xl text-white font-medium text-sm transition-opacity hover:opacity-90"
-                                        style={{backgroundColor: isArtis ? '#7a9b7f' : '#6366f1'}}
-                                    >
+                                        style={{backgroundColor: isArtis ? '#7a9b7f' : '#6366f1'}}>
                                         <Download className="h-4 w-4"/> Download
-                                    </a>
+                                    </button>
                                 </div>
                             </div>
 
@@ -2098,15 +2103,11 @@ export default function Settings() {
                                             <li>✓ Läuft im Hintergrund, startet mit Windows</li>
                                         </ul>
                                     </div>
-                                    <a  onClick={()=>{toast.info('Datei wird herunter geladen')}}
-                                        href="https://sm-artis.ch/apps/VoxDrop-Setup-v1.7.0.exe"
-                                        rel="noopener"
-                                        download={getAppName('VoxDrop.exe')}
+                                    <button onClick={()=>{showDownloadInfo("VoxDrop.exe")}}
                                         className="flex-shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-xl text-white font-medium text-sm transition-opacity hover:opacity-90"
-                                        style={{backgroundColor: isArtis ? '#7a9b7f' : '#6366f1'}}
-                                    >
+                                        style={{backgroundColor: isArtis ? '#7a9b7f' : '#6366f1'}}>
                                         <Download className="h-4 w-4"/> Download
-                                    </a>
+                                    </button>
                                 </div>
                             </div>
 
@@ -2132,15 +2133,11 @@ export default function Settings() {
                                             <li>✓ Startet automatisch mit Windows</li>
                                         </ul>
                                     </div>
-                                    <a  onClick={()=>{toast.info('Datei wird herunter geladen')}}
-                                        href="https://sm-artis.ch/apps/SmartisBar-Setup.exe"
-                                        rel="noopener"
-                                        download={getAppName('SmartisBar-Setup.exe')}
+                                    <button  onClick={()=>{showDownloadInfo("smartisBar.exe")}}
                                         className="flex-shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-xl text-white font-medium text-sm transition-opacity hover:opacity-90"
-                                        style={{backgroundColor: isArtis ? '#7a9b7f' : '#6366f1'}}
-                                    >
+                                        style={{backgroundColor: isArtis ? '#7a9b7f' : '#6366f1'}}>
                                         <Download className="h-4 w-4"/> Download
-                                    </a>
+                                    </button>
                                 </div>
                             </div>
                         </div>

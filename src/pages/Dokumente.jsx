@@ -1083,7 +1083,7 @@ export default function Dokumente() {
         return;
       }
 
-      if(showNotification) {
+      if(showNotification && window.__TAURI__) {
         toast.info('Datei wird herunter geladen');
       }
 
