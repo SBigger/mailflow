@@ -138,15 +138,63 @@ function renderChart() {
 }
 
 // ── Foto-Upload ──
+// Aufnahmedatum aus den EXIF-Daten des Originalfotos lesen.
+async function readExifDate(file) {
+  try {
+    if (typeof exifr === 'undefined') return null;
+    const ex = await exifr.parse(file, ['DateTimeOriginal', 'CreateDate', 'ModifyDate']);
+    const d = ex?.DateTimeOriginal || ex?.CreateDate || ex?.ModifyDate;
+    if (d instanceof Date && !isNaN(d)) return d;
+  } catch {
+    /* kein EXIF */
+  }
+  return null;
+}
+
+// Foto im Browser verkleinern: schnellerer Upload und sicher unter dem
+// Vercel-Limit (4,5 MB pro Anfrage). Für die Display-Erkennung reicht das locker.
+async function compressImage(file, maxDim = 1600, quality = 0.85) {
+  if (!file.type || !file.type.startsWith('image/')) return file;
+  try {
+    const dataUrl = await new Promise((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onload = () => resolve(fr.result);
+      fr.onerror = reject;
+      fr.readAsDataURL(file);
+    });
+    const img = await new Promise((resolve, reject) => {
+      const im = new Image();
+      im.onload = () => resolve(im);
+      im.onerror = reject;
+      im.src = dataUrl;
+    });
+    const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+    const w = Math.round(img.width * scale);
+    const h = Math.round(img.height * scale);
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality));
+    return blob || file;
+  } catch {
+    return file; // im Zweifel das Original schicken
+  }
+}
+
 async function uploadPhoto(file) {
   const status = $('uploadStatus');
   status.hidden = false;
   status.className = 'status loading';
   status.innerHTML = '<span class="spinner"></span>Foto wird ausgelesen …';
 
-  const fd = new FormData();
-  fd.append('photo', file);
   try {
+    const exifDate = await readExifDate(file);
+    const photo = await compressImage(file);
+    const fd = new FormData();
+    fd.append('photo', photo, 'foto.jpg');
+    if (exifDate) fd.append('measured_at', exifDate.toISOString());
+
     const res = await fetch('/api/readings/upload', { method: 'POST', body: fd });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Upload fehlgeschlagen');

@@ -1,9 +1,9 @@
 {
   "name": "blutdruck-tracker",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
-  "description": "Blutdruck-Tracker: Foto -> KI-Auslesung -> SQL-Datenbank -> Auswertung & Excel-Export",
+  "description": "Blutdruck-Tracker: Foto -> KI-Auslesung -> Supabase-Datenbank -> Auswertung & Excel-Export (Hosting: Vercel)",
   "engines": {
     "node": ">=20"
   },
@@ -11,7 +11,7 @@
     "start": "node server.js"
   },
   "dependencies": {
-    "better-sqlite3": "^11.8.1",
+    "@supabase/supabase-js": "^2.45.4",
     "dotenv": "^16.4.7",
     "exceljs": "^4.4.0",
     "exifr": "^7.1.3",

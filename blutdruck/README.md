@@ -4,35 +4,58 @@ Eine kleine, eigenständige App, um Blutdruckwerte per **Foto** zu erfassen.
 Du fotografierst dein Messgerät (z. B. Omron) mit dem Handy – eine KI liest
 **oberen Blutdruck (SYS)**, **unteren Blutdruck (DIA)**, **Puls** und ein
 eventuelles **Herzrhythmusstörungs-Symbol** aus und speichert alles zusammen
-mit dem **Aufnahmedatum des Fotos** in einer kleinen SQL-Datenbank.
+mit dem **Aufnahmedatum des Fotos**.
 
-Komplett unabhängig vom MailFlow-Projekt.
+**Technik:** Hosting auf **Vercel** (serverlos), Daten & Fotos in **Supabase**
+(Postgres + Storage). Komplett getrennt vom MailFlow-/Firmen-Projekt – eigenes
+Supabase- und Vercel-Projekt.
 
 ## Funktionen
 - 📷 Foto aufnehmen/hochladen → Werte werden automatisch erkannt und **direkt gespeichert**
-- 🗓️ Datum kommt aus den **EXIF-Daten des Fotos**
+- 🗓️ Datum kommt aus den **EXIF-Daten des Fotos** (im Browser ausgelesen)
+- 🗜️ Foto wird vor dem Upload **im Browser verkleinert** (schnell & datensparsam)
 - ✏️ Jeder Eintrag lässt sich nachträglich **korrigieren** (Datum, Werte, Rhythmusstörung, Notiz)
 - 📊 Grafische Auswertung (Verlauf SYS/DIA/Puls + markierte Rhythmusstörungen)
 - 🧮 Durchschnitt, letzter Wert, Anzahl Messungen, Farbcodierung nach Blutdruck-Kategorie
 - ⬇️ **Excel-Export** aller Werte
 - 📱 Handytauglich (mobile-first Weboberfläche)
-- 🗄️ Daten in einer **SQLite-Datenbank** (`data/blutdruck.db`)
 
-## Schnellstart (lokal)
+---
 
-```bash
-cd blutdruck
-cp .env.example .env      # mindestens EINEN KI-Schlüssel eintragen
-npm install
-npm start
-```
+## 🚀 Einrichtung (einmalig, ohne Programmierkenntnisse)
 
-Dann im Browser (oder Handy im selben WLAN) öffnen: `http://localhost:8080`
-bzw. `http://<PC-IP>:8080`.
+### Schritt 1 – Supabase-Projekt anlegen (Datenbank)
+1. Auf [supabase.com](https://supabase.com) anmelden → **„New project"**.
+   Name z. B. `mini-apps`, Region **Frankfurt (EU)**. Passwort merken.
+2. Links im Menü **„SQL Editor"** öffnen → **„New query"**.
+3. Den Inhalt der Datei [`supabase-setup.sql`](./supabase-setup.sql) hineinkopieren
+   und **„Run"** klicken. (Legt die Tabelle `readings` + den Foto-Bucket an.)
+4. Unter **Project Settings → API** diese zwei Werte kopieren (für Schritt 2):
+   - **Project URL** → `SUPABASE_URL`
+   - **service_role**-Schlüssel (geheim!) → `SUPABASE_SERVICE_ROLE_KEY`
+
+### Schritt 2 – Auf Vercel veröffentlichen (Hosting)
+1. Auf [vercel.com](https://vercel.com) mit GitHub anmelden → **„Add New… → Project"**.
+2. Dieses Repository wählen. Bei **„Root Directory"** auf **`blutdruck`** stellen.
+3. Vor dem Deploy unter **„Environment Variables"** eintragen:
+
+   | Name | Wert |
+   |------|------|
+   | `SUPABASE_URL` | (aus Supabase, Schritt 1.4) |
+   | `SUPABASE_SERVICE_ROLE_KEY` | (aus Supabase, Schritt 1.4 – geheim) |
+   | `GEMINI_API_KEY` | dein Google-Gemini-Schlüssel *(oder OpenAI/Anthropic)* |
+
+4. **„Deploy"** klicken. Nach ~1 Minute bekommst du eine feste Adresse wie
+   `https://blutdruck-tracker.vercel.app` – diese am Handy öffnen, fertig. 🎉
+
+> Ohne KI-Schlüssel funktioniert die App trotzdem – das Foto wird gespeichert
+> und du trägst die Werte manuell ein.
+
+---
 
 ## KI-Schlüssel
-Trage in `.env` mindestens einen Schlüssel ein – die App nimmt automatisch den
-verfügbaren Anbieter (Reihenfolge: Gemini → OpenAI → Anthropic):
+Mindestens **einen** Anbieter hinterlegen (die App nimmt automatisch den
+verfügbaren, Reihenfolge: Gemini → OpenAI → Anthropic):
 
 | Anbieter | Variable | Standard-Modell |
 |----------|----------|-----------------|
@@ -40,46 +63,31 @@ verfügbaren Anbieter (Reihenfolge: Gemini → OpenAI → Anthropic):
 | OpenAI | `OPENAI_API_KEY` | `gpt-4.1-mini` |
 | Anthropic Claude | `ANTHROPIC_API_KEY` | `claude-haiku-4-5-20251001` |
 
-> Ohne KI-Schlüssel funktioniert die App trotzdem – das Foto wird gespeichert
-> und du trägst die Werte manuell ein.
-
-## Deployment (von überall erreichbar)
-Da die App eine SQLite-Datei nutzt, braucht sie einen Host mit **persistentem
-Speicher** (kein reines „Serverless"). Bewährt: ein kleiner Docker-Host
-(Render, Railway, Fly.io, eigener Server/VPS).
-
-### Render (per Blueprint, am einfachsten)
-Im Repo-Root liegt `render.yaml`. Auf [render.com](https://render.com):
-**„New +" → „Blueprint" → dieses Repo wählen.** Render richtet Web-Dienst und
-persistente Festplatte (`/data`) automatisch ein. Danach im Dashboard einen
-KI-Schlüssel (z. B. `GEMINI_API_KEY`) eintragen. Hinweis: Die persistente
-Festplatte erfordert den bezahlten „Starter"-Plan (~7 USD/Monat).
-
-### Docker (eigener Host)
-Datenbank und Fotos liegen unter `/data` – diesen Pfad als Volume mounten,
-damit beim Neustart nichts verloren geht.
-
+## Lokal testen (optional)
 ```bash
-docker build -t blutdruck .
-docker run -d -p 8080:8080 \
-  -e GEMINI_API_KEY=dein_key \
-  -v $(pwd)/bp-data:/data \
-  --name blutdruck blutdruck
+cd blutdruck
+cp .env.example .env      # Supabase-Werte + einen KI-Schlüssel eintragen
+npm install
+npm start                 # http://localhost:8080
 ```
 
 ## Datenbank
-Tabelle `readings`:
+Tabelle `readings` (siehe `supabase-setup.sql`):
 
 | Spalte | Bedeutung |
 |--------|-----------|
-| `measured_at` | Messzeitpunkt (ISO, aus Foto-EXIF) |
+| `measured_at` | Messzeitpunkt (aus Foto-EXIF) |
 | `systolic` | oberer Blutdruck (SYS) |
 | `diastolic` | unterer Blutdruck (DIA) |
 | `pulse` | Puls |
-| `arrhythmia` | Herzrhythmusstörung (1 = ja, 0 = nein) |
+| `arrhythmia` | Herzrhythmusstörung (true/false) |
 | `note` | freie Notiz |
-| `photo` | Dateiname des Fotos |
+| `photo` | Dateiname des Fotos im Storage-Bucket |
 | `source` | `foto` oder `manuell` |
+
+## Weitere Mini-Apps
+Künftige kleine Apps können **dasselbe Supabase-Projekt** mitbenutzen – einfach
+je eine eigene Tabelle anlegen. So bleibt es bei *einer* Datenbank für alles.
 
 ## Hinweis
 Die automatische Auslesung ist eine Hilfe, kein Medizinprodukt. Kontrolliere
