@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#b91c1c" />
+  <title>Blutdruck-Tracker</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>❤️</text></svg>" />
+</head>
+<body>
+  <header>
+    <h1>❤️ Blutdruck-Tracker</h1>
+    <p class="sub">Foto aufnehmen – Werte werden automatisch erkannt und gespeichert.</p>
+  </header>
+
+  <main>
+    <!-- Foto-Upload -->
+    <section class="card upload-card">
+      <label class="upload-btn" id="uploadLabel">
+        <input type="file" id="fileInput" accept="image/*" capture="environment" hidden />
+        <span class="upload-icon">📷</span>
+        <span id="uploadText">Foto aufnehmen / hochladen</span>
+      </label>
+      <button class="link-btn" id="manualBtn">oder Werte manuell eingeben</button>
+      <div id="uploadStatus" class="status" hidden></div>
+    </section>
+
+    <!-- Statistik-Kacheln -->
+    <section class="stats" id="stats" hidden></section>
+
+    <!-- Diagramm -->
+    <section class="card chart-card" id="chartCard" hidden>
+      <div class="card-head">
+        <h2>Verlauf</h2>
+        <select id="rangeSelect">
+          <option value="0">Alle</option>
+          <option value="7">7 Tage</option>
+          <option value="30" selected>30 Tage</option>
+          <option value="90">90 Tage</option>
+        </select>
+      </div>
+      <canvas id="chart" height="220"></canvas>
+    </section>
+
+    <!-- Tabelle -->
+    <section class="card">
+      <div class="card-head">
+        <h2>Messwerte</h2>
+        <a class="btn-export" href="/api/export.xlsx">⬇︎ Excel</a>
+      </div>
+      <div class="table-wrap">
+        <table id="table">
+          <thead>
+            <tr>
+              <th>Datum / Zeit</th>
+              <th>Oben<br /><small>SYS</small></th>
+              <th>Unten<br /><small>DIA</small></th>
+              <th>Puls</th>
+              <th>Rhythmus&shy;störung</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+        <p id="emptyHint" class="empty" hidden>Noch keine Messwerte. Nimm dein erstes Foto auf! 📷</p>
+      </div>
+    </section>
+  </main>
+
+  <!-- Bearbeiten / Manuell-Dialog -->
+  <dialog id="editDialog">
+    <form method="dialog" id="editForm">
+      <h3 id="editTitle">Eintrag bearbeiten</h3>
+      <input type="hidden" id="editId" />
+      <div id="photoPreviewWrap" hidden>
+        <img id="photoPreview" alt="Foto" />
+      </div>
+      <label>Datum &amp; Zeit
+        <input type="datetime-local" id="editDate" required />
+      </label>
+      <div class="row3">
+        <label>Oben (SYS)<input type="number" id="editSys" min="40" max="300" inputmode="numeric" /></label>
+        <label>Unten (DIA)<input type="number" id="editDia" min="20" max="200" inputmode="numeric" /></label>
+        <label>Puls<input type="number" id="editPulse" min="20" max="250" inputmode="numeric" /></label>
+      </div>
+      <label class="check">
+        <input type="checkbox" id="editArr" /> Herzrhythmusstörung (ja)
+      </label>
+      <label>Notiz
+        <input type="text" id="editNote" placeholder="optional" />
+      </label>
+      <div class="dialog-actions">
+        <button type="button" class="btn-ghost" id="cancelEdit">Abbrechen</button>
+        <button type="submit" class="btn-primary" id="saveEdit">Speichern</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
