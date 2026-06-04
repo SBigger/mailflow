@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { insertReading, listReadings, getReading, updateReading, deleteReading, dbConfigured } from './db.js';
 import { savePhoto, loadPhoto, removePhoto } from './storage.js';
 import { analyzeImage, aiConfigured } from './ai.js';
+import { requireAuth, getPublicConfig } from './auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -18,6 +19,14 @@ app.use(express.json());
 // Lokal (npm start) bedient Express auch das Frontend. Auf Vercel werden die
 // Dateien in /public direkt von Vercel ausgeliefert – dort greift das nicht.
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Öffentliche Frontend-Konfiguration (anon-/publishable-Key ist für den Browser bestimmt).
+app.get('/api/config', (_req, res) => {
+  res.json({ ...getPublicConfig(), aiConfigured: aiConfigured() });
+});
+
+// Ab hier sind alle Datenendpunkte nur nach Anmeldung (gültiger Token) erreichbar.
+app.use(['/api/readings', '/api/export.xlsx'], requireAuth);
 
 const upload = multer({
   storage: multer.memoryStorage(),

@@ -4,6 +4,9 @@ let readings = [];
 let chart = null;
 let aiConfigured = true;
 
+let sb = null; // Supabase-Client (Browser)
+let accessToken = null; // Zugriffs-Token der aktuellen Sitzung
+
 const $ = (id) => document.getElementById(id);
 
 // ── Blutdruck-Kategorien (nach europäischer Einteilung, ESC/ESH) ──
@@ -30,12 +33,97 @@ function toLocalInput(iso) {
   return new Date(d.getTime() - off * 60000).toISOString().slice(0, 16);
 }
 
+// ── Authentifizierter API-Aufruf ──
+// Hängt den Token an und schickt bei abgelaufener Sitzung zurück zum Login.
+async function apiFetch(url, opts = {}) {
+  const headers = { ...(opts.headers || {}) };
+  if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+  const res = await fetch(url, { ...opts, headers });
+  if (res.status === 401) {
+    showLogin();
+    throw new Error('Bitte neu anmelden.');
+  }
+  return res;
+}
+
+// ── Anmeldung ──
+function showLogin() {
+  $('appView').hidden = true;
+  $('logoutBtn').hidden = true;
+  $('loginView').hidden = false;
+}
+
+function showApp() {
+  $('loginView').hidden = true;
+  $('appView').hidden = false;
+  $('logoutBtn').hidden = false;
+}
+
+async function initAuth() {
+  let cfg;
+  try {
+    cfg = await (await fetch('/api/config')).json();
+  } catch {
+    showLogin();
+    showLoginError('Server nicht erreichbar.');
+    return;
+  }
+  aiConfigured = cfg.aiConfigured;
+  if (!cfg.supabaseUrl || !cfg.supabaseAnonKey) {
+    showLogin();
+    showLoginError('Login ist serverseitig noch nicht konfiguriert (SUPABASE_URL / SUPABASE_ANON_KEY).');
+    return;
+  }
+  sb = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
+  const { data: { session } } = await sb.auth.getSession();
+  sb.auth.onAuthStateChange((_event, s) => { accessToken = s?.access_token || null; });
+  if (session) {
+    accessToken = session.access_token;
+    showApp();
+    load();
+  } else {
+    showLogin();
+  }
+}
+
+function showLoginError(msg) {
+  const el = $('loginError');
+  el.textContent = '✗ ' + msg;
+  el.hidden = false;
+}
+
+async function doLogin(e) {
+  e.preventDefault();
+  $('loginError').hidden = true;
+  const btn = $('loginBtn');
+  btn.disabled = true;
+  try {
+    const email = $('loginEmail').value.trim();
+    const password = $('loginPassword').value;
+    const { data, error } = await sb.auth.signInWithPassword({ email, password });
+    if (error) { showLoginError(error.message); return; }
+    accessToken = data.session.access_token;
+    $('loginPassword').value = '';
+    showApp();
+    await load();
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function doLogout() {
+  try { if (sb) await sb.auth.signOut(); } catch { /* egal */ }
+  accessToken = null;
+  readings = [];
+  showLogin();
+}
+
 // ── Daten laden ──
 async function load() {
-  const res = await fetch('/api/readings');
+  const res = await apiFetch('/api/readings');
   const data = await res.json();
   readings = data.readings || [];
-  aiConfigured = data.aiConfigured;
+  if ('aiConfigured' in data) aiConfigured = data.aiConfigured;
   render();
 }
 
@@ -195,7 +283,7 @@ async function uploadPhoto(file) {
     fd.append('photo', photo, 'foto.jpg');
     if (exifDate) fd.append('measured_at', exifDate.toISOString());
 
-    const res = await fetch('/api/readings/upload', { method: 'POST', body: fd });
+    const res = await apiFetch('/api/readings/upload', { method: 'POST', body: fd });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Upload fehlgeschlagen');
 
@@ -217,6 +305,20 @@ async function uploadPhoto(file) {
 }
 
 // ── Bearbeiten / Manuell ──
+async function showPhoto(id) {
+  const wrap = $('photoPreviewWrap');
+  try {
+    const res = await apiFetch(`/api/readings/${id}/photo`);
+    if (!res.ok) throw new Error('kein Foto');
+    const blob = await res.blob();
+    $('photoPreview').src = URL.createObjectURL(blob);
+    wrap.hidden = false;
+  } catch {
+    wrap.hidden = true;
+    $('photoPreview').removeAttribute('src');
+  }
+}
+
 function openEdit(id) {
   const r = id ? readings.find((x) => x.id === id) : null;
   $('editId').value = r ? r.id : '';
@@ -229,13 +331,10 @@ function openEdit(id) {
   $('editNote').value = r?.note ?? '';
 
   const wrap = $('photoPreviewWrap');
-  if (r?.photo) {
-    wrap.hidden = false;
-    $('photoPreview').src = `/api/readings/${r.id}/photo`;
-  } else {
-    wrap.hidden = true;
-    $('photoPreview').removeAttribute('src');
-  }
+  wrap.hidden = true;
+  $('photoPreview').removeAttribute('src');
+  if (r?.photo) showPhoto(r.id);
+
   $('editDialog').showModal();
 }
 
@@ -252,18 +351,38 @@ async function saveEdit(e) {
   };
   const url = id ? `/api/readings/${id}` : '/api/readings';
   const method = id ? 'PATCH' : 'POST';
-  await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+  await apiFetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
   $('editDialog').close();
   await load();
 }
 
 async function del(id) {
   if (!confirm('Diesen Eintrag wirklich löschen?')) return;
-  await fetch(`/api/readings/${id}`, { method: 'DELETE' });
+  await apiFetch(`/api/readings/${id}`, { method: 'DELETE' });
   await load();
 }
 
+// ── Excel-Export (mit Token, daher als Blob herunterladen) ──
+async function exportXlsx() {
+  try {
+    const res = await apiFetch('/api/export.xlsx');
+    if (!res.ok) throw new Error('Export fehlgeschlagen');
+    const blob = await res.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `blutdruck_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(a.href);
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
 // ── Events ──
+$('loginForm').addEventListener('submit', doLogin);
+$('logoutBtn').addEventListener('click', doLogout);
 $('fileInput').addEventListener('change', (e) => {
   const f = e.target.files[0];
   if (f) uploadPhoto(f);
@@ -273,5 +392,6 @@ $('manualBtn').addEventListener('click', () => openEdit(null));
 $('editForm').addEventListener('submit', saveEdit);
 $('cancelEdit').addEventListener('click', () => $('editDialog').close());
 $('rangeSelect').addEventListener('change', renderChart);
+$('exportBtn').addEventListener('click', exportXlsx);
 
-load();
+initAuth();

@@ -11,6 +11,7 @@ mit dem **Aufnahmedatum des Fotos**.
 Supabase- und Vercel-Projekt.
 
 ## Funktionen
+- 🔒 **Login** (E-Mail + Passwort via Supabase Auth) – Daten nur nach Anmeldung sichtbar
 - 📷 Foto aufnehmen/hochladen → Werte werden automatisch erkannt und **direkt gespeichert**
 - 🗓️ Datum kommt aus den **EXIF-Daten des Fotos** (im Browser ausgelesen)
 - 🗜️ Foto wird vor dem Upload **im Browser verkleinert** (schnell & datensparsam)
@@ -30,9 +31,18 @@ Supabase- und Vercel-Projekt.
 2. Links im Menü **„SQL Editor"** öffnen → **„New query"**.
 3. Den Inhalt der Datei [`supabase-setup.sql`](./supabase-setup.sql) hineinkopieren
    und **„Run"** klicken. (Legt die Tabelle `readings` + den Foto-Bucket an.)
-4. Unter **Project Settings → API** diese zwei Werte kopieren (für Schritt 2):
+4. Unter **Project Settings → API** diese drei Werte kopieren (für Schritt 2):
    - **Project URL** → `SUPABASE_URL`
    - **service_role**-Schlüssel (geheim!) → `SUPABASE_SERVICE_ROLE_KEY`
+   - **anon**/publishable-Schlüssel (öffentlich) → `SUPABASE_ANON_KEY`
+5. **Login einrichten** unter **Authentication**:
+   - **Providers → Email** aktivieren.
+   - **Providers → Email**: „Confirm email" ausschalten *oder* den Nutzer in Schritt b
+     direkt bestätigt anlegen.
+   - Empfehlung **Sign Ups deaktivieren** (Authentication → Settings → „Allow new users
+     to sign up" aus) → niemand kann sich selbst registrieren.
+   - **Users → Add user** → deine E-Mail + Passwort, Häkchen **„Auto Confirm User"**.
+     Mit diesen Daten meldest du dich später in der App an.
 
 ### Schritt 2 – Auf Vercel veröffentlichen (Hosting)
 1. Auf [vercel.com](https://vercel.com) mit GitHub anmelden → **„Add New… → Project"**.
@@ -43,6 +53,7 @@ Supabase- und Vercel-Projekt.
    |------|------|
    | `SUPABASE_URL` | (aus Supabase, Schritt 1.4) |
    | `SUPABASE_SERVICE_ROLE_KEY` | (aus Supabase, Schritt 1.4 – geheim) |
+   | `SUPABASE_ANON_KEY` | (aus Supabase, Schritt 1.4 – „anon"/publishable, öffentlich) |
    | `GEMINI_API_KEY` | dein Google-Gemini-Schlüssel *(oder OpenAI/Anthropic)* |
 
 4. **„Deploy"** klicken. Nach ~1 Minute bekommst du eine feste Adresse wie
