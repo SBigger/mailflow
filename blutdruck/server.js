@@ -12,7 +12,10 @@ import { insertReading, listReadings, getReading, updateReading, deleteReading }
 import { analyzeImage, aiConfigured } from './ai.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const UPLOAD_DIR = path.join(__dirname, 'uploads');
+// Datenbank und Fotos liegen im selben Verzeichnis (per DATA_DIR steuerbar),
+// damit beim Hosting eine einzige persistente Festplatte ausreicht.
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
+const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const app = express();

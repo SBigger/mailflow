@@ -10,8 +10,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends python3 make g+
 
 COPY . .
 
-# Datenbank + Fotos liegen hier – als Volume mounten, damit nichts verloren geht.
-VOLUME ["/app/data", "/app/uploads"]
+# Datenbank + Fotos liegen unter DATA_DIR (=/data) – dort die persistente Platte mounten.
+ENV DATA_DIR=/data
+VOLUME ["/data"]
 
 ENV PORT=8080
 EXPOSE 8080

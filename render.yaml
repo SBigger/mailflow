@@ -1,0 +1,30 @@
+# Render Blueprint für den Blutdruck-Tracker (eigenständige App im Ordner blutdruck/).
+# Nutzung: auf render.com -> "New +" -> "Blueprint" -> dieses GitHub-Repo auswählen.
+# Render liest diese Datei und richtet Web-Dienst + persistente Festplatte automatisch ein.
+services:
+  - type: web
+    name: blutdruck-tracker
+    runtime: docker
+    region: frankfurt            # nächstgelegene EU-Region zur Schweiz
+    plan: starter                # persistente Festplatte erfordert einen bezahlten Plan (~7 USD/Monat)
+    branch: claude/blood-pressure-tracker-app-EanUn
+    rootDir: blutdruck
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/readings
+    envVars:
+      - key: AI_PROVIDER
+        value: auto
+      - key: DATA_DIR
+        value: /data
+      # KI-Schlüssel: einen davon im Render-Dashboard eintragen (Wert bleibt geheim).
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+    disk:
+      name: blutdruck-data       # Datenbank + Fotos liegen hier und bleiben dauerhaft erhalten
+      mountPath: /data
+      sizeGB: 1

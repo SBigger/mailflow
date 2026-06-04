@@ -48,16 +48,24 @@ Da die App eine SQLite-Datei nutzt, braucht sie einen Host mit **persistentem
 Speicher** (kein reines „Serverless"). Bewährt: ein kleiner Docker-Host
 (Render, Railway, Fly.io, eigener Server/VPS).
 
+### Render (per Blueprint, am einfachsten)
+Im Repo-Root liegt `render.yaml`. Auf [render.com](https://render.com):
+**„New +" → „Blueprint" → dieses Repo wählen.** Render richtet Web-Dienst und
+persistente Festplatte (`/data`) automatisch ein. Danach im Dashboard einen
+KI-Schlüssel (z. B. `GEMINI_API_KEY`) eintragen. Hinweis: Die persistente
+Festplatte erfordert den bezahlten „Starter"-Plan (~7 USD/Monat).
+
+### Docker (eigener Host)
+Datenbank und Fotos liegen unter `/data` – diesen Pfad als Volume mounten,
+damit beim Neustart nichts verloren geht.
+
 ```bash
 docker build -t blutdruck .
 docker run -d -p 8080:8080 \
   -e GEMINI_API_KEY=dein_key \
-  -v $(pwd)/data:/app/data -v $(pwd)/uploads:/app/uploads \
+  -v $(pwd)/bp-data:/data \
   --name blutdruck blutdruck
 ```
-
-Die Volumes `data/` (Datenbank) und `uploads/` (Fotos) unbedingt mounten,
-damit beim Neustart nichts verloren geht.
 
 ## Datenbank
 Tabelle `readings`:
