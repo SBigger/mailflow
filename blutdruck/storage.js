@@ -1,12 +1,10 @@
-// Foto-Speicher über Supabase Storage (privater Bucket).
-// Auf Vercel gibt es keine persistente Festplatte – die Bilder liegen
-// deshalb im selben Supabase-Projekt wie die Datenbank.
-import { getClient } from './db.js';
-
+// Foto-Speicher über Supabase Storage (privater Bucket), immer mit dem
+// user-spezifischen Client (`sb`) – RLS-Policies sorgen dafür, dass nur die
+// eigenen Fotos les-/schreibbar sind.
 const BUCKET = process.env.SUPABASE_BUCKET || 'blutdruck-fotos';
 
-export async function savePhoto(filename, buffer, contentType) {
-  const { error } = await getClient().storage.from(BUCKET).upload(filename, buffer, {
+export async function savePhoto(sb, filename, buffer, contentType) {
+  const { error } = await sb.storage.from(BUCKET).upload(filename, buffer, {
     contentType: contentType || 'image/jpeg',
     upsert: false,
   });
@@ -14,14 +12,14 @@ export async function savePhoto(filename, buffer, contentType) {
   return filename;
 }
 
-export async function loadPhoto(filename) {
-  const { data, error } = await getClient().storage.from(BUCKET).download(filename);
+export async function loadPhoto(sb, filename) {
+  const { data, error } = await sb.storage.from(BUCKET).download(filename);
   if (error || !data) return null;
   const buffer = Buffer.from(await data.arrayBuffer());
   return { buffer, contentType: data.type || 'image/jpeg' };
 }
 
-export async function removePhoto(filename) {
+export async function removePhoto(sb, filename) {
   if (!filename) return;
-  await getClient().storage.from(BUCKET).remove([filename]);
+  await sb.storage.from(BUCKET).remove([filename]);
 }

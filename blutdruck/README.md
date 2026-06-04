@@ -7,8 +7,12 @@ eventuelles **Herzrhythmusstörungs-Symbol** aus und speichert alles zusammen
 mit dem **Aufnahmedatum des Fotos**.
 
 **Technik:** Hosting auf **Vercel** (serverlos), Daten & Fotos in **Supabase**
-(Postgres + Storage). Komplett getrennt vom MailFlow-/Firmen-Projekt – eigenes
-Supabase- und Vercel-Projekt.
+(Postgres + Storage), Anmeldung über **Supabase Auth**. Es wird **kein**
+Admin-/`service_role`-Schlüssel verwendet – der Zugriff läuft über den anon-Key
++ den angemeldeten Nutzer, und **Row-Level-Security** sorgt dafür, dass die App
+nur ihre eigene Tabelle/ihre eigenen Zeilen sieht. Dadurch ist es **sicher, das
+Supabase-Projekt mit anderem zu teilen** (z. B. Graphia) – fremde Daten bleiben
+unerreichbar.
 
 ## Funktionen
 - 🔒 **Login** (E-Mail + Passwort via Supabase Auth) – Daten nur nach Anmeldung sichtbar
@@ -31,10 +35,10 @@ Supabase- und Vercel-Projekt.
 2. Links im Menü **„SQL Editor"** öffnen → **„New query"**.
 3. Den Inhalt der Datei [`supabase-setup.sql`](./supabase-setup.sql) hineinkopieren
    und **„Run"** klicken. (Legt die Tabelle `readings` + den Foto-Bucket an.)
-4. Unter **Project Settings → API** diese drei Werte kopieren (für Schritt 2):
+4. Unter **Project Settings → API** diese zwei Werte kopieren (für Schritt 2):
    - **Project URL** → `SUPABASE_URL`
-   - **service_role**-Schlüssel (geheim!) → `SUPABASE_SERVICE_ROLE_KEY`
-   - **anon**/publishable-Schlüssel (öffentlich) → `SUPABASE_ANON_KEY`
+   - **anon**/publishable-Schlüssel → `SUPABASE_ANON_KEY`
+   *(Den `service_role`-Schlüssel brauchst du **nicht** – die App nutzt ihn bewusst nicht.)*
 5. **Login einrichten** unter **Authentication**:
    - **Providers → Email** aktivieren.
    - **Providers → Email**: „Confirm email" ausschalten *oder* den Nutzer in Schritt b
@@ -52,9 +56,12 @@ Supabase- und Vercel-Projekt.
    | Name | Wert |
    |------|------|
    | `SUPABASE_URL` | (aus Supabase, Schritt 1.4) |
-   | `SUPABASE_SERVICE_ROLE_KEY` | (aus Supabase, Schritt 1.4 – geheim) |
-   | `SUPABASE_ANON_KEY` | (aus Supabase, Schritt 1.4 – „anon"/publishable, öffentlich) |
+   | `SUPABASE_ANON_KEY` | (aus Supabase, Schritt 1.4 – „anon"/publishable) |
    | `GEMINI_API_KEY` | dein Google-Gemini-Schlüssel *(oder OpenAI/Anthropic)* |
+
+   > Es wird **bewusst kein** `service_role`-Schlüssel verwendet – so hat die App
+   > nur eingeschränkten Zugriff (anon-Key) und sieht dank RLS nur ihre eigenen
+   > Daten. Das macht das **Teilen eines Projekts** (z. B. mit Graphia) sicher.
 
 4. **„Deploy"** klicken. Nach ~1 Minute bekommst du eine feste Adresse wie
    `https://blutdruck-tracker.vercel.app` – diese am Handy öffnen, fertig. 🎉

@@ -7,10 +7,10 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { insertReading, listReadings, getReading, updateReading, deleteReading, dbConfigured } from './db.js';
+import { insertReading, listReadings, getReading, updateReading, deleteReading } from './db.js';
 import { savePhoto, loadPhoto, removePhoto } from './storage.js';
 import { analyzeImage, aiConfigured } from './ai.js';
-import { requireAuth, getPublicConfig } from './auth.js';
+import { requireAuth, getPublicConfig, authConfigured } from './auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -26,6 +26,7 @@ app.get('/api/config', (_req, res) => {
 });
 
 // Ab hier sind alle Datenendpunkte nur nach Anmeldung (gültiger Token) erreichbar.
+// Jeder Zugriff läuft als der angemeldete Nutzer (req.sb), RLS schützt die Daten.
 app.use(['/api/readings', '/api/export.xlsx'], requireAuth);
 
 const upload = multer({
@@ -53,7 +54,7 @@ app.post('/api/readings/upload', upload.single('photo'), async (req, res) => {
     const mime = req.file.mimetype || 'image/jpeg';
     const ext = (mime.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
     const filename = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}.${ext}`;
-    await savePhoto(filename, req.file.buffer, mime);
+    await savePhoto(req.sb, filename, req.file.buffer, mime);
 
     // Messzeitpunkt: vom Browser gelesenes EXIF-Datum hat Vorrang, dann Server-EXIF.
     let measuredAt = null;
@@ -79,7 +80,7 @@ app.post('/api/readings/upload', upload.single('photo'), async (req, res) => {
     if (!measuredAt && ai?.date) measuredAt = new Date(ai.date + 'T12:00:00');
     if (!measuredAt) measuredAt = new Date();
 
-    const reading = await insertReading({
+    const reading = await insertReading(req.sb, {
       measured_at: measuredAt.toISOString(),
       systolic: ai?.systolic ?? null,
       diastolic: ai?.diastolic ?? null,
@@ -102,7 +103,7 @@ app.post('/api/readings', async (req, res) => {
   try {
     const b = req.body || {};
     const measuredAt = b.measured_at ? new Date(b.measured_at) : new Date();
-    const reading = await insertReading({
+    const reading = await insertReading(req.sb, {
       measured_at: measuredAt.toISOString(),
       systolic: b.systolic ?? null,
       diastolic: b.diastolic ?? null,
@@ -118,9 +119,9 @@ app.post('/api/readings', async (req, res) => {
   }
 });
 
-app.get('/api/readings', async (_req, res) => {
+app.get('/api/readings', async (req, res) => {
   try {
-    res.json({ readings: await listReadings(), aiConfigured: aiConfigured() });
+    res.json({ readings: await listReadings(req.sb), aiConfigured: aiConfigured() });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
@@ -130,13 +131,13 @@ app.get('/api/readings', async (_req, res) => {
 app.patch('/api/readings/:id', async (req, res) => {
   try {
     const id = Number(req.params.id);
-    if (!(await getReading(id))) return res.status(404).json({ error: 'Nicht gefunden.' });
+    if (!(await getReading(req.sb, id))) return res.status(404).json({ error: 'Nicht gefunden.' });
     const b = req.body || {};
     const fields = {};
     for (const k of ['systolic', 'diastolic', 'pulse', 'note']) if (k in b) fields[k] = b[k];
     if ('arrhythmia' in b) fields.arrhythmia = !!b.arrhythmia;
     if ('measured_at' in b && b.measured_at) fields.measured_at = new Date(b.measured_at).toISOString();
-    res.json({ reading: await updateReading(id, fields) });
+    res.json({ reading: await updateReading(req.sb, id, fields) });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
@@ -146,9 +147,9 @@ app.patch('/api/readings/:id', async (req, res) => {
 app.delete('/api/readings/:id', async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const row = await deleteReading(id);
+    const row = await deleteReading(req.sb, id);
     if (row?.photo) {
-      try { await removePhoto(row.photo); } catch { /* egal */ }
+      try { await removePhoto(req.sb, row.photo); } catch { /* egal */ }
     }
     res.json({ ok: true });
   } catch (err) {
@@ -160,9 +161,9 @@ app.delete('/api/readings/:id', async (req, res) => {
 // Foto eines Eintrags anzeigen (aus Supabase Storage gestreamt).
 app.get('/api/readings/:id/photo', async (req, res) => {
   try {
-    const row = await getReading(Number(req.params.id));
+    const row = await getReading(req.sb, Number(req.params.id));
     if (!row?.photo) return res.status(404).end();
-    const file = await loadPhoto(row.photo);
+    const file = await loadPhoto(req.sb, row.photo);
     if (!file) return res.status(404).end();
     res.setHeader('Content-Type', file.contentType);
     res.setHeader('Cache-Control', 'private, max-age=3600');
@@ -174,7 +175,7 @@ app.get('/api/readings/:id/photo', async (req, res) => {
 });
 
 // Excel-Export aller Werte.
-app.get('/api/export.xlsx', async (_req, res) => {
+app.get('/api/export.xlsx', async (req, res) => {
   try {
     const wb = new ExcelJS.Workbook();
     wb.creator = 'Blutdruck-Tracker';
@@ -189,7 +190,7 @@ app.get('/api/export.xlsx', async (_req, res) => {
       { header: 'Notiz', key: 'note', width: 30 },
     ];
     ws.getRow(1).font = { bold: true };
-    for (const r of await listReadings()) {
+    for (const r of await listReadings(req.sb)) {
       const d = new Date(r.measured_at);
       ws.addRow({
         datum: d.toLocaleDateString('de-CH'),
@@ -218,7 +219,7 @@ if (isRunDirectly) {
   const PORT = process.env.PORT || 8080;
   app.listen(PORT, () => {
     console.log(`Blutdruck-Tracker läuft auf http://localhost:${PORT}`);
-    console.log(`Datenbank (Supabase): ${dbConfigured() ? 'konfiguriert' : 'NICHT konfiguriert'}`);
+    console.log(`Login/Supabase: ${authConfigured() ? 'konfiguriert' : 'NICHT konfiguriert'}`);
     console.log(`KI-Auslesung: ${aiConfigured() ? 'aktiv' : 'NICHT konfiguriert (nur manuelle Eingabe)'}`);
   });
 }
