@@ -937,7 +937,7 @@ function PositionSelector({ value, onChange, subC, panelBg, panelBdr, headingC, 
 }
 
 // ── Import Dialog ─────────────────────────────────────────────────────────────
-function ImportDialog({ onClose, onImport, accent, theme }) {
+function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = false, initialFlipER = false }) {
   const isLight = theme === "light";
   const isArtis = theme === "artis";
   const panelBg  = isArtis ? "#ffffff" : isLight ? "#ffffff" : "#27272a";
@@ -952,6 +952,8 @@ function ImportDialog({ onClose, onImport, accent, theme }) {
   const [preview, setPreview] = useState([]);
   const [headers, setHeaders] = useState([]);
   const [pdfLoading, setPdfLoading] = useState(false);
+  const [flipPassiven, setFlipPassiven] = useState(initialFlipPassiven);
+  const [flipER, setFlipER] = useState(initialFlipER);
   // Sheet-Picker: wenn Excel mehrere Blätter hat
   const [sheetPicker, setSheetPicker] = useState(null); // { wb, filename, sheetNames }
   const [selectedSheets, setSelectedSheets] = useState([]);
@@ -1227,7 +1229,7 @@ function ImportDialog({ onClose, onImport, accent, theme }) {
       });
 
     if (konten.length === 0) { toast.error("Keine Konten gefunden – Spalten-Zuordnung prüfen"); return; }
-    onImport(konten);
+    onImport(konten, { sign_flip_passiven: flipPassiven, sign_flip_er: flipER });
   }
 
   const iStyle = {
@@ -1361,6 +1363,28 @@ function ImportDialog({ onClose, onImport, accent, theme }) {
                       </select>
                     </div>
                   ))}
+                </div>
+              </div>
+
+              {/* Vorzeichen-Optionen */}
+              <div>
+                <div className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: subC }}>Vorzeichen beim Einlesen</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "10px 12px", borderRadius: 8, border: `1px solid ${panelBdr}`, backgroundColor: pageBg }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", fontSize: 12.5, color: headingC }}>
+                    <input type="checkbox" checked={flipPassiven}
+                      onChange={e => setFlipPassiven(e.target.checked)}
+                      style={{ width: 15, height: 15, accentColor: accent, flexShrink: 0 }} />
+                    <span><strong>Passiven</strong> umkehren <span style={{ color: subC, fontWeight: 400 }}>— wenn Passiven im Export als negative Werte stehen</span></span>
+                  </label>
+                  <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", fontSize: 12.5, color: headingC }}>
+                    <input type="checkbox" checked={flipER}
+                      onChange={e => setFlipER(e.target.checked)}
+                      style={{ width: 15, height: 15, accentColor: accent, flexShrink: 0 }} />
+                    <span><strong>Erfolgsrechnung</strong> umkehren <span style={{ color: subC, fontWeight: 400 }}>— wenn Erträge im Export negativ sind</span></span>
+                  </label>
+                  <div style={{ fontSize: 10.5, color: subC, marginTop: 2, fontStyle: "italic" }}>
+                    Kann später auch in den Tabs Bilanz / Erfolgsrechnung über den ± Vorzeichen-Button geändert werden.
+                  </div>
                 </div>
               </div>
 
@@ -3447,9 +3471,18 @@ export default function Abschlussdokumentation() {
     onError: (e) => toast.error("Import fehlgeschlagen: " + e.message),
   });
 
-  function handleImport(kontenData) {
+  function handleImport(kontenData, flipFlags) {
     if (!abschlussId) { toast.error("Abschluss nicht bereit"); return; }
     importKontenMut.mutate(kontenData);
+    if (flipFlags && (
+      flipFlags.sign_flip_passiven !== signFlipPassiven ||
+      flipFlags.sign_flip_er       !== signFlipER
+    )) {
+      updateEinstellungenMut.mutate({
+        sign_flip_passiven: !!flipFlags.sign_flip_passiven,
+        sign_flip_er:       !!flipFlags.sign_flip_er,
+      });
+    }
   }
 
   const status = abschluss?.status || "in_arbeit";
@@ -3734,6 +3767,8 @@ export default function Abschlussdokumentation() {
           onImport={handleImport}
           accent={accent}
           theme={theme}
+          initialFlipPassiven={signFlipPassiven}
+          initialFlipER={signFlipER}
         />
       )}
     </div>
