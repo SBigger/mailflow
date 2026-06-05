@@ -16,7 +16,8 @@ unerreichbar.
 
 ## Funktionen
 - 🔒 **Login** (E-Mail + Passwort via Supabase Auth) – Daten nur nach Anmeldung sichtbar
-- 📷 Foto aufnehmen/hochladen → Werte werden automatisch erkannt und **direkt gespeichert**
+- 📲 **Als App installierbar** (PWA: „Zum Startbildschirm hinzufügen" auf Android/iOS)
+- 📷 Foto **aufnehmen** *oder* 🖼️ **aus Galerie/Datei** wählen → Werte werden automatisch erkannt und **direkt gespeichert**
 - 🗓️ Datum kommt aus den **EXIF-Daten des Fotos** (im Browser ausgelesen)
 - 🗜️ Foto wird vor dem Upload **im Browser verkleinert** (schnell & datensparsam)
 - ✏️ Jeder Eintrag lässt sich nachträglich **korrigieren** (Datum, Werte, Rhythmusstörung, Notiz)

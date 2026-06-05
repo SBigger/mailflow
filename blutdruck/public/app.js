@@ -383,15 +383,24 @@ async function exportXlsx() {
 // ── Events ──
 $('loginForm').addEventListener('submit', doLogin);
 $('logoutBtn').addEventListener('click', doLogout);
-$('fileInput').addEventListener('change', (e) => {
+function onPickFile(e) {
   const f = e.target.files[0];
   if (f) uploadPhoto(f);
   e.target.value = '';
-});
+}
+$('fileInput').addEventListener('change', onPickFile);
+$('cameraInput').addEventListener('change', onPickFile);
 $('manualBtn').addEventListener('click', () => openEdit(null));
 $('editForm').addEventListener('submit', saveEdit);
 $('cancelEdit').addEventListener('click', () => $('editDialog').close());
 $('rangeSelect').addEventListener('change', renderChart);
 $('exportBtn').addEventListener('click', exportXlsx);
+
+// Service-Worker registrieren (macht die App auf dem Handy installierbar).
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => { /* egal, App läuft auch ohne */ });
+  });
+}
 
 initAuth();
