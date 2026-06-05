@@ -319,6 +319,19 @@ export default function TicketDetailPanel({ ticket, onClose, currentUser, users 
     qc.invalidateQueries({ queryKey: ["tickets"] });
   };
 
+  // Prioritaeten laden + Wechsel
+  const { data: priorities = [] } = useQuery({
+    queryKey: ["priorities"],
+    queryFn: () => entities.Priority.list("level"),
+  });
+  const currentPriority = priorities.find(p => p.id === localTicket.priority_id);
+  const handlePriorityChange = async (pid) => {
+    const newPid = pid === "__none__" ? null : pid;
+    setLocalTicket(prev => ({ ...prev, priority_id: newPid }));
+    await entities.Ticket.update(ticket.id, { priority_id: newPid });
+    qc.invalidateQueries({ queryKey: ["tickets"] });
+  };
+
   // Ticket löschen
   const handleDelete = async () => {
     if (!confirm("Ticket wirklich löschen?")) return;
@@ -408,6 +421,39 @@ export default function TicketDetailPanel({ ticket, onClose, currentUser, users 
                   <div className="flex items-center gap-2">
                     <span className="h-2 w-2 rounded-full" style={{ backgroundColor: col.color }} />
                     {col.name}
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Prioritaet */}
+          <Select value={localTicket.priority_id || "__none__"} onValueChange={handlePriorityChange}>
+            <SelectTrigger
+              className="h-7 text-xs px-2 rounded-full border"
+              style={{
+                backgroundColor: currentPriority?.color ? currentPriority.color + "22" : (isArtis ? "#f0f4f0" : "#f3f0ff"),
+                borderColor: currentPriority?.color || border,
+                color: currentPriority?.color || textMuted,
+                width: "auto",
+                minWidth: "110px",
+              }}
+              title="Prioritaet setzen"
+            >
+              <div className="flex items-center gap-1">
+                {currentPriority?.color && (
+                  <span className="h-2 w-2 rounded-full flex-shrink-0" style={{ backgroundColor: currentPriority.color }} />
+                )}
+                <SelectValue placeholder="Prioritaet" />
+              </div>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__">— Keine —</SelectItem>
+              {priorities.map(p => (
+                <SelectItem key={p.id} value={p.id}>
+                  <div className="flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: p.color }} />
+                    {p.name}
                   </div>
                 </SelectItem>
               ))}
