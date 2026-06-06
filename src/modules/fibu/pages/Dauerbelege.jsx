@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useMandant } from '../contexts/MandantContext';
 import { dauerbelegApi, lieferantenApi, kontenApi, mwstCodesApi } from '../api';
+import LieferantLink from '../components/LieferantLink';
 
 const CHF  = (n) => new Intl.NumberFormat('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0);
 const DATE = (s) => s ? new Date(s + 'T00:00:00').toLocaleDateString('de-CH') : '—';
@@ -168,7 +169,7 @@ export default function Dauerbelege() {
                       {r.bezeichnung}
                       {!r.aktiv && <span style={{ marginLeft: 6, fontSize: 9.5, fontWeight: 700, padding: '1px 6px', borderRadius: 4, background: '#e4e4ea', color: '#4a4a5a' }}>inaktiv</span>}
                     </td>
-                    <td style={td}>{r.lieferant?.name ?? '—'}</td>
+                    <td style={td}><LieferantLink id={r.lieferant_id} name={r.lieferant?.name} /></td>
                     <td style={td}>{intLabel(r.intervall)}</td>
                     <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>{r.waehrung} {CHF(r.betrag_brutto)}</td>
                     <td style={{ ...td, color: faellig ? '#8a5a00' : undefined, fontWeight: faellig ? 600 : 400 }}>

@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMandant } from '../contexts/MandantContext';
 import { kreditorenApi, zahlungslaufApi, zahlstellenApi } from '../api';
+import LieferantLink from '../components/LieferantLink';
 import {
   generatePain001, validatePayment, paymentType,
   normIban, isValidIban, isQrIban,
@@ -545,7 +546,7 @@ export default function Zahlungslauf() {
                           <td style={{ ...td, textAlign: 'center' }}><input type="checkbox" checked={sel} onChange={() => toggle(b.id)} onClick={e => e.stopPropagation()} /></td>
                           <td style={{ ...td, fontFamily: 'monospace', fontSize: 12 }}>{b.beleg_nr}</td>
                           <td style={{ ...td, fontWeight: 500 }}>
-                            {b.lieferant?.name}
+                            <LieferantLink id={b.lieferant_id} name={b.lieferant?.name} />
                             {zusatz.has(b.id) && (
                               <span
                                 title="Manuell hinzugefügt – klicken zum Entfernen"

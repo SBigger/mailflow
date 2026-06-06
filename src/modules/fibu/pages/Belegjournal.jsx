@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useMandant } from '../contexts/MandantContext';
 import { kreditorenApi, lieferantenApi } from '../api';
+import LieferantLink from '../components/LieferantLink';
 
 const CHF = (n) => n == null ? '—' : new Intl.NumberFormat('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 // Immer TT.MM.JJJJ
@@ -190,7 +191,7 @@ export default function Belegjournal() {
                   >
                     <td style={{ ...td, fontFamily: 'monospace', fontSize: 12 }}>{b.beleg_nr}</td>
                     <td style={td}>{DATE(b.belegdatum)}</td>
-                    <td style={{ ...td, fontWeight: 500 }}>{b.lieferant?.name}</td>
+                    <td style={{ ...td, fontWeight: 500 }}><LieferantLink id={b.lieferant_id} name={b.lieferant?.name} /></td>
                     <td style={{ ...td, fontSize: 12, color: '#6b826b' }}>{b.lieferant_beleg_nr ?? '—'}</td>
                     <td style={td}>{DATE(b.faelligkeit)}</td>
                     <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{CHF(b.betrag_netto)}</td>

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMandant } from '../contexts/MandantContext';
 import { kreditorenApi, kontenApi } from '../api';
+import LieferantLink from '../components/LieferantLink';
 
 const CHF = (n) => n == null ? '—' : new Intl.NumberFormat('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 const DATE = (s) => s ? new Date(s).toLocaleDateString('de-CH') : '—';
@@ -151,7 +152,7 @@ export default function KreditorenDashboard() {
                           onMouseLeave={e => e.currentTarget.querySelectorAll('td').forEach(td => td.style.background = '')}
                       >
                         <td style={{ ...td, fontFamily: 'monospace', fontSize: 12 }}>{b.beleg_nr}</td>
-                        <td style={{ ...td, fontWeight: 500 }}>{b.lieferant?.name}</td>
+                        <td style={{ ...td, fontWeight: 500 }}><LieferantLink id={b.lieferant_id} name={b.lieferant?.name} /></td>
                         <td style={{ ...td, color: fs.color, fontWeight: 500 }}>{DATE(b.faelligkeit)}</td>
                         <td style={{ ...td, textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: fs.color === '#8a2d2d' ? '#8a2d2d' : undefined }}>{CHF(offen)}</td>
                         <td style={td}><span style={{ display: 'inline-flex', fontSize: 11, padding: '2px 8px', borderRadius: 6, fontWeight: 500, background: fs.bg, color: fs.color }}>{fs.label}</span></td>

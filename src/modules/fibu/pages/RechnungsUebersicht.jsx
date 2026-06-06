@@ -8,6 +8,7 @@
  */
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import LieferantLink from '../components/LieferantLink';
 import { useMandant } from '../contexts/MandantContext';
 import { kreditorenApi, lieferantenApi, kontenApi, mwstCodesApi } from '../api';
 
@@ -676,7 +677,7 @@ export default function RechnungsUebersicht() {
                           </span>
                         )}
                       </td>
-                      <td style={{ ...td, fontWeight: 500 }}>{b.lieferant?.name ?? '—'}</td>
+                      <td style={{ ...td, fontWeight: 500 }}><LieferantLink id={b.lieferant_id} name={b.lieferant?.name} /></td>
                       <td style={td}>{DATE(b.belegdatum)}</td>
                       <td style={{ ...td, color: b.buchungsdatum !== b.belegdatum ? '#5f3a9c' : '#4a5a4a', fontWeight: b.buchungsdatum !== b.belegdatum ? 600 : 400 }}>
                         {DATE(b.buchungsdatum || b.belegdatum)}
