@@ -402,9 +402,17 @@ export const zahlungslaufApi = {
       .single();
     if (error) throw error;
     if (positionen?.length) {
-      await supabase.from('fibu_zahlungslauf_positionen').insert(
+      // DB-Trigger trg_fibu_zlp_no_double blockiert Belege, die bereits in einem
+      // aktiven Lauf stecken (Doppelzahlungsschutz). Fehler sauber melden + Orphan entfernen.
+      const { error: posErr } = await supabase.from('fibu_zahlungslauf_positionen').insert(
         positionen.map(p => ({ ...p, mandant_id: mandantId, zahlungslauf_id: data.id }))
       );
+      if (posErr) {
+        await supabase.from('fibu_zahlungslaeufe').delete().eq('id', data.id);
+        if (/aktiven Zahlungslauf|unique|duplicate/i.test(posErr.message || ''))
+          throw new Error('Mindestens ein Beleg ist bereits in einem aktiven Zahlungslauf – Doppelzahlung verhindert.');
+        throw posErr;
+      }
     }
     return data;
   },
@@ -447,6 +455,29 @@ export const zahlungslaufApi = {
       .single();
     if (error) throw error;
     return data;
+  },
+
+  // Positionen eines Laufs inkl. Status (für die Rückmelde-Ansicht)
+  positionen: async (laufId) => {
+    const { data, error } = await supabase
+      .rpc('fibu_zahlungslauf_positionen_get', { p_lauf_id: laufId });
+    if (error) throw error;
+    return data ?? [];
+  },
+
+  // Rückmeldung: pro Position ausgeführt | storniert
+  // positionen = [{ position_id, status: 'ausgefuehrt' | 'storniert' }]
+  rueckmelden: async (laufId, positionen) => {
+    const { error } = await supabase
+      .rpc('fibu_zahlungslauf_rueckmelden', { p_lauf_id: laufId, p_positionen: positionen });
+    if (error) throw error;
+  },
+
+  // Ganzen Lauf zurücknehmen: Belege wieder offen, ggf. Buchungen gegenbuchen
+  stornieren: async (laufId, datum) => {
+    const { error } = await supabase
+      .rpc('fibu_zahlungslauf_stornieren', { p_lauf_id: laufId, p_datum: datum });
+    if (error) throw error;
   },
 };
 
