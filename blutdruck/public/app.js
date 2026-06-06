@@ -181,8 +181,11 @@ function renderStats() {
 function renderTable() {
   const tbody = $('tbody');
   $('emptyHint').hidden = readings.length > 0;
-  // neueste zuerst in der Tabelle
-  const rows = [...readings].reverse();
+  // neueste Messung immer zuoberst (nach Messdatum, dann nach Eintrags-ID)
+  const rows = [...readings].sort((a, b) => {
+    const d = new Date(b.measured_at) - new Date(a.measured_at);
+    return d !== 0 ? d : (b.id - a.id);
+  });
   tbody.innerHTML = rows.map((r) => {
     const cat = categorize(r.systolic, r.diastolic);
     return `<tr>
