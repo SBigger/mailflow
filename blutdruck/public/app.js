@@ -9,6 +9,29 @@ let accessToken = null; // Zugriffs-Token der aktuellen Sitzung
 
 const $ = (id) => document.getElementById(id);
 
+// ── Schwere Bibliotheken erst bei Bedarf nachladen (schnellerer Start am Handy) ──
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = src;
+    s.async = true;
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error('Ladefehler: ' + src));
+    document.head.appendChild(s);
+  });
+}
+let _exifrPromise, _chartPromise;
+function ensureExifr() {
+  if (typeof exifr !== 'undefined') return Promise.resolve();
+  _exifrPromise = _exifrPromise || loadScript('https://cdn.jsdelivr.net/npm/exifr@7.1.3/dist/lite.umd.js');
+  return _exifrPromise;
+}
+function ensureChart() {
+  if (typeof Chart !== 'undefined') return Promise.resolve();
+  _chartPromise = _chartPromise || loadScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js');
+  return _chartPromise;
+}
+
 // ── Blutdruck-Kategorien (nach europäischer Einteilung, ESC/ESH) ──
 function categorize(sys, dia) {
   if (sys == null || dia == null) return { label: '–', color: '#9ca3af' };
@@ -182,9 +205,10 @@ function renderTable() {
 }
 
 // ── Diagramm ──
-function renderChart() {
+async function renderChart() {
   const card = $('chartCard');
-  if (!readings.length || typeof Chart === 'undefined') { card.hidden = true; return; }
+  if (!readings.length) { card.hidden = true; return; }
+  try { await ensureChart(); } catch { card.hidden = true; return; }
   card.hidden = false;
 
   const days = Number($('rangeSelect').value);
@@ -229,7 +253,7 @@ function renderChart() {
 // Aufnahmedatum aus den EXIF-Daten des Originalfotos lesen.
 async function readExifDate(file) {
   try {
-    if (typeof exifr === 'undefined') return null;
+    await ensureExifr();
     const ex = await exifr.parse(file, ['DateTimeOriginal', 'CreateDate', 'ModifyDate']);
     const d = ex?.DateTimeOriginal || ex?.CreateDate || ex?.ModifyDate;
     if (d instanceof Date && !isNaN(d)) return d;

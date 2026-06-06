@@ -1,8 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
 import multer from 'multer';
-import exifr from 'exifr';
-import ExcelJS from 'exceljs';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -37,6 +35,7 @@ const upload = multer({
 // Datum aus den EXIF-Daten des Fotos lesen (Fallback; primär liefert es der Browser mit).
 async function exifDate(buffer) {
   try {
+    const { default: exifr } = await import('exifr'); // erst bei Bedarf laden (schnellerer Cold-Start)
     const ex = await exifr.parse(buffer, ['DateTimeOriginal', 'CreateDate', 'ModifyDate']);
     const d = ex?.DateTimeOriginal || ex?.CreateDate || ex?.ModifyDate;
     if (d instanceof Date && !isNaN(d)) return d;
@@ -177,6 +176,7 @@ app.get('/api/readings/:id/photo', async (req, res) => {
 // Excel-Export aller Werte.
 app.get('/api/export.xlsx', async (req, res) => {
   try {
+    const { default: ExcelJS } = await import('exceljs'); // schwere Lib nur beim Export laden
     const wb = new ExcelJS.Workbook();
     wb.creator = 'Blutdruck-Tracker';
     const ws = wb.addWorksheet('Blutdruck');
