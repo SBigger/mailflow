@@ -212,6 +212,17 @@ label.check input { width: 18px; height: 18px; }
 
 /* Export-Button sieht aus wie zuvor der Link */
 .btn-export { border: none; cursor: pointer; }
+.card-actions { display: flex; gap: 8px; align-items: center; }
+.btn-import {
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  padding: 7px 12px;
+  border-radius: 9px;
+  font-size: .85rem;
+  font-weight: 600;
+}
 
 /* Anmeldung */
 .header-logout {

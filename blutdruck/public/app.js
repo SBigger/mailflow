@@ -402,6 +402,27 @@ async function del(id) {
   await load();
 }
 
+// ── Import (Excel/CSV) ──
+async function importFile(file) {
+  const status = $('uploadStatus');
+  status.hidden = false;
+  status.className = 'status loading';
+  status.innerHTML = '<span class="spinner"></span>Datei wird importiert …';
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await apiFetch('/api/readings/import', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Import fehlgeschlagen');
+    await load();
+    status.className = 'status ok';
+    status.textContent = `✓ Import fertig: ${data.imported} übernommen${data.skipped ? `, ${data.skipped} übersprungen` : ''}.`;
+  } catch (err) {
+    status.className = 'status err';
+    status.textContent = '✗ ' + err.message;
+  }
+}
+
 // ── Excel-Export (mit Token, daher als Blob herunterladen) ──
 async function exportXlsx() {
   try {
@@ -435,6 +456,12 @@ $('editForm').addEventListener('submit', saveEdit);
 $('cancelEdit').addEventListener('click', () => $('editDialog').close());
 $('rangeSelect').addEventListener('change', renderChart);
 $('exportBtn').addEventListener('click', exportXlsx);
+$('importBtn').addEventListener('click', () => $('importInput').click());
+$('importInput').addEventListener('change', (e) => {
+  const f = e.target.files[0];
+  if (f) importFile(f);
+  e.target.value = '';
+});
 
 // Service-Worker registrieren (macht die App auf dem Handy installierbar).
 if ('serviceWorker' in navigator) {
