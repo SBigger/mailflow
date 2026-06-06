@@ -62,10 +62,17 @@ export const mandantenApi = {
   },
 
   getUserRole: async (mandantId) => {
+    // Nur die EIGENE Zugriffszeile lesen. Sonst liefert RLS bei Mandanten mit
+    // mehreren Benutzern >1 Zeile → .maybeSingle() schlägt fehl → role bliebe null
+    // → canWrite=false (Buchen / Zahlungslauf-Export wären fälschlich gesperrt).
+    const { data: auth } = await supabase.auth.getUser();
+    const uid = auth?.user?.id;
+    if (!uid) return null;
     const { data } = await supabase
       .from('fibu_user_mandant_access')
       .select('role')
       .eq('mandant_id', mandantId)
+      .eq('user_id', uid)
       .maybeSingle();
     return data?.role ?? null;
   },
