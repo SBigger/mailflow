@@ -9,11 +9,10 @@ Felder:
 - "systolic":  oberer Blutdruck (die GROSSE Zahl ganz oben, Label "SYS", Einheit mmHg). Ganzzahl.
 - "diastolic": unterer Blutdruck (mittlere Zahl, Label "DIA", Einheit mmHg). Ganzzahl.
 - "pulse":     Puls (untere Zahl, Label "PULSE", Einheit /min). Ganzzahl.
-- "arrhythmia": true, wenn das Symbol für unregelmässigen Herzschlag / Herzrhythmusstörung
-                angezeigt wird, sonst false.
-                Lage des Symbols bei diesem Omron-Gerät: RECHTS NEBEN der DIA-Zahl
-                (unterer Blutdruck), etwas HÖHER versetzt – es sieht aus wie ZWEI leicht
-                gegeneinander verschobene kleine Herzchen. Nur dann true setzen.
+- "arrhythmia": true, wenn RECHTS NEBEN der DIA-Zahl (unterer Blutdruck) ein
+                HERZ-Symbol (♥) angezeigt wird. Bei diesem Omron-Gerät ist dieses Herz
+                die Anzeige für einen unregelmässigen Herzschlag / eine Herzrhythmusstörung.
+                Ist dort KEIN Herz-Symbol zu sehen, setze false.
 - "date":      falls auf dem Display ein Datum sichtbar ist, im Format "YYYY-MM-DD", sonst null.
 
 Wichtig:
