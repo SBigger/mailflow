@@ -28,11 +28,12 @@ import { useIsMobile } from "@/components/mobile/useIsMobile";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import { useAuth } from '@/lib/AuthContext';
 import * as packageJson from "../package.json";
+import { Outlet } from 'react-router-dom';
 
 // Theme context for global access if needed elsewhere
 export const ThemeContext = createContext({ theme: 'dark', setTheme: () => {} });
 
-export default function Layout({ children, currentPageName }) {
+export default function Layout({ currentPageName }) {
   const { signOut, profile, loading } = useAuth();
   const navigate = useNavigate();
   const isMobile = useIsMobile();
@@ -256,7 +257,7 @@ export default function Layout({ children, currentPageName }) {
 
           {/* Main Content Area */}
           <main className="flex-1 overflow-hidden relative" style={{ paddingBottom: isMobile && !isTaskUser ? 56 : 0 }}>
-            {children}
+            <Outlet />
           </main>
 
           {/* Mobile Navigation */}

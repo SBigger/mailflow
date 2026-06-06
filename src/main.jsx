@@ -57,7 +57,7 @@ registerSW({
             await registration.update()
           } catch { /* ignorieren falls offline */ }
         }
-      }, 60 * 1000)
+      }, 5 * 60 * 1000)
     }
   },
   onNeedRefresh() {

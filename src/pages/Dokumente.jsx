@@ -834,6 +834,7 @@ export default function Dokumente() {
   const [highlightDocId, setHighlightDocId] = useState(null);
   const [shareDialog,   setShareDialog]   = useState(null); // { type: 'doc'|'folder', doc?, customer_id?, category?, year?, name? }
   const [showShareLinks, setShowShareLinks] = useState(false);
+  const [seconds, setSeconds] = useState(0);
 
   // Volltext-Suche via Supabase RPC (PostgreSQL GIN-Index)
   useEffect(() => {
@@ -929,46 +930,6 @@ export default function Dokumente() {
   // ── Stilles Auto-Indexing (wie M-Files Background Service) ──────────────
   // Läuft automatisch im Hintergrund wenn allDoks geladen sind.
   // Kein Button, kein Spinner – transparent für den User.
-  const autoIndexRef = useRef(false);
-  useEffect(() => {
-    if (autoIndexRef.current) return;            // bereits gestartet
-    if (!allDoks.length) return;                 // warte bis allDoks geladen sind
-    autoIndexRef.current = true;
-
-    (async () => {
-      // Hole nur die Docs, die noch keinen Volltext haben (separate, schlanke Query —
-      // content_text steckt nicht mehr im Haupt-allDoks-Select, das spart die 14 MB).
-      const { data: toIndex } = await supabase
-        .from('dokumente')
-        .select('id,filename,name,file_type,storage_path')
-        .or('content_text.is.null,content_text.eq.')
-        .not('storage_path', 'is', null)
-      if (!toIndex || !toIndex.length) return;
-
-      let done = 0;
-      for (const doc of toIndex) {
-        try {
-          const { data } = await supabase.storage.from(BUCKET).createSignedUrl(doc.storage_path, 120);
-          if (!data?.signedUrl) continue;
-          const resp = await fetch(data.signedUrl);
-          if (!resp.ok) continue;
-          const blob = await resp.blob();
-          const file = new File([blob], doc.filename || doc.name || "doc", { type: doc.file_type || "" });
-          const text = await extractDocumentText(file);
-          if (text) {
-            await entities.Dokument.update(doc.id, { content_text: text });
-            done++;
-          }
-        } catch (e) {
-          console.warn("[AutoIndex] Fehler bei", doc.id, e);
-        }
-      }
-      if (done > 0) {
-        queryClient.invalidateQueries(["dokumente-all"]);
-        console.info(`[AutoIndex] ${done} Dokumente im Hintergrund indexiert`);
-      }
-    })();
-  }, [allDoks]);
 
   // Von aktuellem User ausgecheckte Dokumente
   const myCheckedOutDocs = useMemo(() =>
@@ -1402,6 +1363,26 @@ export default function Dokumente() {
     queryClient.invalidateQueries({ queryKey: ["dokumente-all"] });
   };
 
+  const [ms, setMs] = useState(0);
+
+  useEffect(() => {
+    let interval;
+
+    if (isLoading) {
+      const startTime = Date.now(); // Startzeitpunkt in Millisekunden festhalten
+      setMs(0);
+
+      // Aktualisiert die Anzeige alle 50 Millisekunden für ein flüssiges Bild
+      interval = setInterval(() => {
+        const elapsedTime = Date.now() - startTime;
+        setMs(elapsedTime);
+      }, 50);
+    } else {
+      clearInterval(interval);
+    }
+
+    return () => clearInterval(interval);
+  }, [isLoading]);
 
 
   const selectCustomer = (id) => { setSelCustomerId(id); setSelCat(null); setSelYear(null); setExpandedC(p => ({ ...p, [id]: true })); };
@@ -1580,7 +1561,9 @@ export default function Dokumente() {
           </div>
 
           <div style={{ flex: 1, overflowY: "auto", paddingBottom: 8 }}>
-            {isLoading ? <div style={{ padding: 16, color: s.textMuted, fontSize: 12 }}>Laedt...</div>
+            {isLoading ? <div style={{ padding: 16, color: s.textMuted, fontSize: 12 }}>
+                  Lädt seit {ms} ms...
+                </div>
               : tree.length === 0 ? <div style={{ padding: 16, color: s.textMuted, fontSize: 12 }}>Keine Dokumente</div>
               : tree.map(cust => {
                 const isCustSel = selCustomerId === cust.id && !selCat;

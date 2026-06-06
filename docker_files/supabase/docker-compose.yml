@@ -61,6 +61,11 @@ services:
       - 'KONG_STORAGE_READ_TIMEOUT=${KONG_STORAGE_READ_TIMEOUT:-3600}'
       - 'KONG_STORAGE_REQUEST_BUFFERING=${KONG_STORAGE_REQUEST_BUFFERING:-false}'
       - 'KONG_STORAGE_RESPONSE_BUFFERING=${KONG_STORAGE_RESPONSE_BUFFERING:-false}'
+      - KONG_NGINX_HTTP_GZIP=on
+      - KONG_NGINX_HTTP_GZIP_MIN_LENGTH=256
+      - 'KONG_NGINX_HTTP_GZIP_TYPES=application/json text/html text/plain application/javascript text/css'
+      - KONG_NGINX_HTTP_GZIP_PROXIED=any
+      - KONG_NGINX_HTTP_GZIP_VARY=on
     volumes:
       -
         type: bind

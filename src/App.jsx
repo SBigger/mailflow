@@ -78,55 +78,56 @@ function AuthenticatedApp() {
     if (requiresMfa) return <MFALogin/>;
 
     return (
-        <Suspense fallback={<PageLoader/>}>
+        // Ein einziger Suspense-Wrapper fängt alle darunter liegenden Lazy-Komponenten ab
+        <Suspense fallback={<PageLoader />}>
             <Routes>
                 {/* FiBu: eigene Shell, kein MailFlow-Layout */}
-                <Route path="/fibu/*" element={<FiBuRouter/>}/>
+                <Route path="/fibu/*" element={<FiBuRouter />} />
 
-                {/* MailFlow: bestehender Layout-Wrapper */}
-                <Route path="*" element={
-                    <Layout>
-                        <Suspense fallback={<PageLoader/>}>
-                            <Routes>
-                                <Route path="/" element={<Navigate to="/Dashboard" replace/>}/>
-                                <Route path="/Dashboard" element={<Dashboard/>}/>
-                                <Route path="/MailKanban" element={<MailKanban/>}/>
-                                <Route path="/TaskBoard" element={<TaskBoard/>}/>
-                                <Route path="/Settings" element={<Settings/>}/>
-                                <Route path="/Kunden" element={<Kunden/>}/>
-                                <Route path="/Personen" element={<Personen/>}/>
-                                <Route path="/Fristen" element={<Fristen/>}/>
-                                <Route path="/ReminderBoard" element={<ReminderBoard/>}/>
-                                <Route path="/TicketBoard" element={<TicketBoard/>}/>
-                                <Route path="/KnowledgeBase" element={<KnowledgeBase/>}/>
-                                <Route path="/Dokumente" element={<Dokumente/>}/>
-                                <Route path="/Posteingang" element={<Posteingang/>}/>
-                                <Route path="/UserManagement" element={<UserManagement/>}/>
-                                <Route path="/ArtisTools" element={<ArtisTools/>}/>
-                                <Route path="/BriefSchreiben" element={<BriefSchreiben/>}/>
-                                <Route path="/Fahrzeugliste" element={<Fahrzeugliste/>}/>
-                                <Route path="/Aktienbuch" element={<Aktienbuch/>}/>
-                                <Route path="/Unterschriften" element={<Unterschriften/>}/>
-                                <Route path="/Abschlussdokumentation" element={<Abschlussdokumentation/>}/>
-                                <Route path="/Anlagebuchhaltung" element={<Anlagebuchhaltung/>}/>
-                                <Route path="/Whiteboard" element={<Whiteboard/>}/>
-                                <Route path="/Auswertungen" element={<Auswertungen/>}/>
-                                <Route path="/Steuern" element={<Steuern/>}/>
-                                <Route path="/Veranlagungen" element={<Veranlagungen/>}/>
-                                <Route path="/Promptvorlagen" element={<Promptvorlagen/>}/>
-                                <Route path="/TelefonDashboard" element={<TelefonDashboard/>}/>
-                                <Route path="/Jahresplanung" element={<Jahresplanung/>}/>
-                                <Route path="/Monatsplanung" element={<Monatsplanung/>}/>
-                                <Route path="/Kalender" element={<Kalender/>}/>
-                                <Route path="/Steuerausscheidung" element={<Steuerausscheidung/>}/>
-                                {FEATURE_LEISTUNGSERFASSUNG && (
-                                    <Route path="/Leistungserfassung" element={<Leistungserfassung/>}/>
-                                )}
-                                <Route path="*" element={<Navigate to="/Dashboard" replace/>}/>
-                            </Routes>
-                        </Suspense>
-                    </Layout>
-                }/>
+                {/* MailFlow: Layout als Wrapper-Route (Layout muss im Inneren ein <Outlet /> nutzen!) */}
+                <Route element={<Layout />}>
+                    <Route path="/" element={<Navigate to="/Dashboard" replace />} />
+                    <Route path="/Dashboard" element={<Dashboard />} />
+                    <Route path="/MailKanban" element={<MailKanban />} />
+                    <Route path="/TaskBoard" element={<TaskBoard />} />
+                    <Route path="/Settings" element={<Settings />} />
+                    <Route path="/Kunden" element={<Kunden />} />
+                    <Route path="/Personen" element={<Personen />} />
+                    <Route path="/Fristen" element={<Fristen />} />
+                    <Route path="/ReminderBoard" element={<ReminderBoard />} />
+                    <Route path="/TicketBoard" element={<TicketBoard />} />
+                    <Route path="/KnowledgeBase" element={<KnowledgeBase />} />
+                    <Route path="/Dokumente" element={<Dokumente />} />
+                    <Route path="/Posteingang" element={<Posteingang />} />
+                    <Route path="/UserManagement" element={<UserManagement />} />
+                    <Route path="/ArtisTools" element={<ArtisTools />} />
+                    <Route path="/BriefSchreiben" element={<BriefSchreiben />} />
+                    <Route path="/Fahrzeugliste" element={<Fahrzeugliste />} />
+                    <Route path="/Aktienbuch" element={<Aktienbuch />} />
+                    <Route path="/Unterschriften" element={<Unterschriften />} />
+                    <Route path="/Abschlussdokumentation" element={<Abschlussdokumentation />} />
+                    <Route path="/Anlagebuchhaltung" element={<Anlagebuchhaltung />} />
+                    <Route path="/Whiteboard" element={<Whiteboard />} />
+                    <Route path="/Auswertungen" element={<Auswertungen />} />
+                    <Route path="/Steuern" element={<Steuern />} />
+                    <Route path="/Veranlagungen" element={<Veranlagungen />} />
+                    <Route path="/Promptvorlagen" element={<Promptvorlagen />} />
+                    <Route path="/TelefonDashboard" element={<TelefonDashboard />} />
+                    <Route path="/Jahresplanung" element={<Jahresplanung />} />
+                    <Route path="/Monatsplanung" element={<Monatsplanung />} />
+                    <Route path="/Kalender" element={<Kalender />} />
+                    <Route path="/Steuerausscheidung" element={<Steuerausscheidung />} />
+
+                    {FEATURE_LEISTUNGSERFASSUNG && (
+                        <Route path="/Leistungserfassung" element={<Leistungserfassung />} />
+                    )}
+
+                    {/* Fängt falsche URLs innerhalb des Layouts ab */}
+                    <Route path="*" element={<Navigate to="/Dashboard" replace />} />
+                </Route>
+
+                {/* Fängt völlig unbekannte URLs außerhalb des Layouts ab */}
+                <Route path="*" element={<Navigate to="/Dashboard" replace />} />
             </Routes>
         </Suspense>
     );
