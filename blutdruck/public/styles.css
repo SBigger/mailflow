@@ -175,6 +175,10 @@ tbody tr:last-child td { border-bottom: none; }
   background: #fff;
 }
 
+/* Fester Rahmen fürs Diagramm – verhindert Endlos-Wachsen/Flimmern */
+.chart-wrap { position: relative; height: 240px; }
+.chart-wrap canvas { position: absolute; inset: 0; }
+
 /* Dialog */
 dialog {
   border: none;
