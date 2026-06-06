@@ -5,6 +5,7 @@ import { Loader2 } from 'lucide-react';
 const MandantSelect  = React.lazy(() => import('./pages/MandantSelect'));
 const FiBuShell      = React.lazy(() => import('./components/layout/FiBuShell'));
 const BankAbstimmung = React.lazy(() => import('./pages/BankAbstimmung'));
+const MassenImportFenster = React.lazy(() => import('./pages/MassenImportFenster'));
 
 const Spinner = () => (
   <div style={{ position: 'fixed', inset: 0, background: '#f2f5f2', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -20,8 +21,9 @@ export default function FiBuRouter() {
     <Suspense fallback={<Spinner />}>
       <Routes>
         <Route index element={<MandantSelect />} />
-        {/* Standalone full-screen window — no FiBuShell shell/sidebar */}
+        {/* Standalone full-screen windows — no FiBuShell shell/sidebar */}
         <Route path="bank/:mandantId" element={<BankAbstimmung />} />
+        <Route path="massen-import/:mandantId" element={<MassenImportFenster />} />
         <Route path=":mandantId/*" element={<FiBuShell />} />
       </Routes>
     </Suspense>

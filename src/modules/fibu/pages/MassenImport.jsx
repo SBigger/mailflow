@@ -688,7 +688,7 @@ function LiefCell({ row, lieferanten, onChange, onCreateNew }) {
 }
 
 // ── Hauptkomponente ───────────────────────────────────────────────
-export default function MassenImport() {
+export default function MassenImport({ standalone = false }) {
   const { mandant } = useMandant();
   const [rows, setRows]             = useState([]);
   const [selectedId, setSelectedId] = useState(null);
@@ -1008,6 +1008,16 @@ export default function MassenImport() {
     setSaving(false);
   };
 
+  // In separatem Vollbild-Fenster öffnen (mehr Platz, z.B. zweiter Monitor)
+  const openInWindow = () => {
+    if (!mandant?.id) return;
+    window.open(
+      `/fibu/massen-import/${mandant.id}`,
+      `massenimport-${mandant.id}`,   // benannt → erneuter Klick fokussiert dasselbe Fenster
+      'width=1600,height=950,menubar=no,toolbar=no,location=no,status=no'
+    );
+  };
+
   const selectedRow  = rows.find(r => r._id === selectedId);
   const readyCount   = rows.filter(isComplete).length;
   const savedCount   = rows.filter(r => r.status === 'saved').length;
@@ -1094,6 +1104,7 @@ export default function MassenImport() {
           <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1a2e' }}>Massen-Import</div>
           <div style={{ fontSize: 11.5, color: '#7a9a7f', marginTop: 1 }}>
             Kreditoren-Rechnungen hochladen, prüfen und buchen
+            {standalone && mandant?.name && <span style={{ color: '#3d6641', fontWeight: 600 }}> · {mandant.name}</span>}
           </div>
         </div>
 
@@ -1102,6 +1113,26 @@ export default function MassenImport() {
             <span style={{ fontSize: 11.5, color: '#3d6641', background: '#e8f5e8', padding: '4px 10px', borderRadius: 12 }}>
               ✓ {savedCount} gebucht
             </span>
+          )}
+          {!standalone && (
+            <button
+              onClick={openInWindow}
+              disabled={!mandant?.id}
+              title="In separatem Fenster öffnen – mehr Platz (z.B. zweiter Monitor)"
+              style={{
+                display: 'flex', alignItems: 'center', gap: 5,
+                padding: '7px 12px', borderRadius: 7, fontSize: 12, fontWeight: 500,
+                background: '#fff', border: '1px solid #bfcfbf', color: '#4a5a4a',
+                cursor: mandant?.id ? 'pointer' : 'default',
+              }}
+            >
+              <svg style={{ width: 13, height: 13 }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                <polyline points="15 3 21 3 21 9"/>
+                <line x1="10" y1="14" x2="21" y2="3"/>
+              </svg>
+              Neues Fenster
+            </button>
           )}
           <button
             onClick={() => fileInputRef.current?.click()}
