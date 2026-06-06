@@ -244,7 +244,7 @@ export default function Belegjournal() {
           <div style={{ background: '#fff', borderRadius: 14, width: 420, boxShadow: '0 20px 60px rgba(0,0,0,0.25)', border: '1px solid #f0c0b0' }}>
             <div style={{ padding: '16px 20px', borderBottom: '1px solid #f0e4e4', background: 'linear-gradient(135deg, #fff8f5 0%, #fef2ee 100%)', borderRadius: '14px 14px 0 0' }}>
               <div style={{ fontWeight: 700, fontSize: 14, color: '#8a2d2d' }}>Beleg stornieren</div>
-              <div style={{ fontSize: 12, color: '#6b826b', marginTop: 2 }}>{stornoBeleg.beleg_nr} — {stornoBeleg.lieferant?.name}</div>
+              <div style={{ fontSize: 12, color: '#6b826b', marginTop: 2 }}>{stornoBeleg.beleg_nr} — <LieferantLink id={stornoBeleg.lieferant_id} name={stornoBeleg.lieferant?.name} /></div>
             </div>
             <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div style={{ fontSize: 12.5, color: '#4a4a5a' }}>

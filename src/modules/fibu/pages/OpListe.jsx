@@ -391,7 +391,7 @@ export default function OpListe() {
             </div>
             <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div style={{ fontSize: 12.5, color: '#4a5a4a' }}>
-                Rechnung <strong>{stornoBeleg.beleg_nr}</strong> · {stornoBeleg.lieferant?.name}
+                Rechnung <strong>{stornoBeleg.beleg_nr}</strong> · <LieferantLink id={stornoBeleg.lieferant_id} name={stornoBeleg.lieferant?.name} />
                 <span style={{ marginLeft: 8, fontWeight: 700 }}>CHF {CHF(stornoBeleg.betrag_brutto)}</span>
               </div>
               <div>
