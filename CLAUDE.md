@@ -38,7 +38,7 @@ Produktiv (scharfe Daten): https://artis.sm-artis.ch (Backend `api-artis.sm-arti
 - Empfänger-Kontext mitgeben: „Rechnung an «[Mandant]» – das ist Empfänger, NICHT Lieferant".
 - Plausi-Checks im Code (Datum/Betrag wörtlich im Belegtext?), nicht KI alles raten lassen.
 
-### Bekannter Bug (offen)
-`src/lib/batchAiSuggest.js`, `findUidInText()` (~Z. 265): UID-Regex erlaubt nur
-`[.\s-]` als Trenner. OCR macht aus "." oft "," → `CHE-116.303,292` wird NICHT erkannt.
-Fix: Trennzeichen-Klasse auf `[.,\s-]` erweitern.
+### UID-OCR-Erkennung (erledigt)
+`src/lib/batchAiSuggest.js`, `findUidInText()` (~Z. 267): Die UID-Regex ist OCR-tolerant –
+die Trennzeichen-Klasse ist `[.,\s-]` (inkl. Komma), und sie läuft auf dem rohen Text.
+`CHE-116.303,292` (OCR macht aus "." oft ",") wird korrekt erkannt. Kein offener Bug mehr.
