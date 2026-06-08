@@ -138,12 +138,19 @@ async function generateAbschlussPDF({ konten, einstellungen, customerName, selec
 
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
 
-  // Farben
-  const BLUE  = [29, 78, 216];   const PINK  = [157, 23, 77];
-  const GREEN = [22, 163, 74];   const RED   = [220, 38, 38];
+  // Farben — Treuhand-Grün-Palette (konsistent mit FiBu-Modul #3d6641)
+  // BLUE/PINK/GREEN sind Aliase auf denselben Hauptton, damit die bestehende
+  // Logik (Aktiven=BLUE, Passiven=PINK, ER=GREEN) erhalten bleibt, der Druck
+  // aber durchgehend in Grüntönen kommt. Sub-Hintergründe variieren leicht.
+  const DGRN  = [61, 102, 65];   // #3d6641 — Treuhand-Hauptton
+  const MGRN  = [122, 155, 127]; // #7a9b7f — mittelgrün
+  const LGRN_BG = [232, 240, 232]; // #e8f0e8 — heller Hintergrund
+  const SAND  = [246, 248, 240]; // sehr helles Beige-Grün
+  const BLUE  = DGRN;            const PINK  = DGRN;
+  const GREEN = DGRN;            const RED   = [220, 38, 38];
   const GRAY  = [120, 120, 130]; const DARK  = [40, 40, 50];
-  const LBLUE = [219, 234, 254]; const LPINK = [252, 231, 243];
-  const LGRN  = [240, 253, 244]; const LYEL  = [255, 251, 235];
+  const LBLUE = LGRN_BG;         const LPINK = LGRN_BG;
+  const LGRN  = LGRN_BG;         const LYEL  = SAND;
   const LGRAY = [245, 247, 250];
 
   const signFlipPassiven = einstellungen?.sign_flip_passiven ?? false;
@@ -364,7 +371,7 @@ async function generateAbschlussPDF({ konten, einstellungen, customerName, selec
     eRow("= Bruttogewinn I (Rohergebnis)", bgI_I, bgI_V, { total: true }),
     eRow("  − Personalaufwand", perI, perV),
     eRow("= Bruttogewinn II",  bgII_I, bgII_V, { total: true }),
-    ...eSec("BETRIEBSKOSTEN", LYEL, [146, 64, 14]),
+    ...eSec("BETRIEBSKOSTEN", LYEL, MGRN),
     ...betItems.flatMap(([lbl, id]) =>
       (sumER([id]) || sumERV([id])) ? [eRow("  " + lbl, sumER([id]), sumERV([id]))] : []),
     eRow("= EBITDA", edI, edV, { total: true }),
@@ -399,8 +406,11 @@ async function generateAbschlussPDF({ konten, einstellungen, customerName, selec
 // ── Revisions-Dossier (ZIP: Haupt-PDF + Belege pro Konto) ─────────────────────
 async function generateRevisionsDossier({ konten, einstellungen, customerName, selectedYear, onProgress }) {
   const log = (m) => { try { onProgress?.(m); } catch { /* noop */ } };
-  const DARK = [40, 40, 50], GRAY = [120, 120, 130], BLUE = [29, 78, 216];
-  const GREEN = [22, 120, 80], LGRAY = [245, 247, 250], LGRN = [240, 250, 244];
+  // Treuhand-Grün-Palette (konsistent mit generateAbschlussPDF + FiBu-Modul)
+  const DARK = [40, 40, 50], GRAY = [120, 120, 130];
+  const BLUE = [61, 102, 65];                 // Section-Header in Kontenplan-Detail (war reines Blau, jetzt Treuhand-Grün)
+  const GREEN = [61, 102, 65];                // Beleg-Ref-Akzent + Arbeitspapier-Header
+  const LGRAY = [245, 247, 250], LGRN = [232, 240, 232];
   const N = (v) => v == null || isNaN(v) ? "—"
     : Number(v).toLocaleString("de-CH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -457,9 +467,12 @@ async function generateRevisionsDossier({ konten, einstellungen, customerName, s
   // ── Kontenplan-Detail mit Notizen & Beleg-Referenzen ──
   log("Kontenplan-Detail …");
   const posOrder = KONTENRAHMEN_POSITIONEN.map(p => p.id);
+  // Vom Export ausgeschlossene Positionen (technische Hilfsgruppen, nicht im Abschluss-PDF gewünscht)
+  const EXCLUDED_POSITIONS = new Set(["ABSCHLUSS", "__KEIN_MAPPING__"]);
   const grouped = {};
   for (const k of sorted) {
     const key = k.position_id || "__KEIN_MAPPING__";
+    if (EXCLUDED_POSITIONS.has(key)) continue; // OHNE MAPPING + Abschlusskonten überspringen
     (grouped[key] = grouped[key] || []).push(k);
   }
   const groupKeys = [
@@ -501,6 +514,11 @@ async function generateRevisionsDossier({ konten, einstellungen, customerName, s
     ]);
   }
 
+  // Sammelt die Beleg-Zell-Positionen im Kontenplan-Detail (page/x/y/w/h + refs)
+  // → werden später mit den Ziel-Positionen aus dem Beleg-Verzeichnis verlinkt.
+  const linkSources = [];
+  const linkTargets = {}; // ref → { page, y }
+
   let yk = pageHeader("Kontenplan-Detail mit Notizen & Belegen");
   autoTable(doc, {
     startY: yk,
@@ -519,8 +537,21 @@ async function generateRevisionsDossier({ konten, einstellungen, customerName, s
     },
     margin: { left: 14, right: 14, top: 12 },
     styles: { fontSize: 7.5, cellPadding: { top: 1.6, bottom: 1.6, left: 3, right: 2 }, overflow: "linebreak" },
-    headStyles: { fillColor: [235, 240, 248], textColor: DARK, fontStyle: "bold", fontSize: 7.5 },
+    headStyles: { fillColor: LGRN, textColor: DARK, fontStyle: "bold", fontSize: 7.5 },
     theme: "grid",
+    didDrawCell: (data) => {
+      // Belege-Spalte (Index 5) in Body-Zeilen: Position für späteren Hyperlink merken
+      if (data.column.index === 5 && data.row.section === "body") {
+        const raw = (data.cell.raw && data.cell.raw.content) || "";
+        const refs = String(raw).split(",").map(s => s.trim()).filter(Boolean);
+        if (refs.length === 0) return;
+        linkSources.push({
+          page: doc.internal.getCurrentPageInfo().pageNumber,
+          x: data.cell.x, y: data.cell.y, w: data.cell.width, h: data.cell.height,
+          refs,
+        });
+      }
+    },
     didDrawPage: () => {
       doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.setTextColor(...DARK);
       doc.text(customerName || "Jahresabschluss", 14, 15);
@@ -577,9 +608,31 @@ async function generateRevisionsDossier({ konten, einstellungen, customerName, s
       columnStyles: { 0: { cellWidth: 24, fontStyle: "bold" }, 1: { cellWidth: 70 }, 2: { cellWidth: 88 } },
       margin: { left: 14, right: 14 },
       styles: { fontSize: 8, cellPadding: 2, overflow: "linebreak" },
-      headStyles: { fillColor: [235, 240, 248], textColor: DARK, fontStyle: "bold" },
+      headStyles: { fillColor: LGRN, textColor: DARK, fontStyle: "bold" },
       theme: "grid",
+      didDrawCell: (data) => {
+        // Beleg-Nr-Spalte (Index 0) in Body: Ziel-Position für interne Links merken
+        if (data.column.index === 0 && data.row.section === "body") {
+          const ref = String((data.cell.raw && data.cell.raw) || "").trim();
+          if (!ref) return;
+          linkTargets[ref] = {
+            page: doc.internal.getCurrentPageInfo().pageNumber,
+            y: data.cell.y,
+          };
+        }
+      },
     });
+
+    // ── Interne Hyperlinks setzen: Kontenplan-Detail-Belege-Zelle → Beleg-Verzeichnis-Zeile ──
+    for (const src of linkSources) {
+      const firstRef = src.refs[0];
+      const target = firstRef && linkTargets[firstRef];
+      if (!target) continue;
+      doc.setPage(src.page);
+      // Kleine Y-Korrektur, damit der Sprung etwas oberhalb der Zeile landet (bessere Sichtbarkeit)
+      const topY = Math.max(0, target.y - 4);
+      doc.link(src.x, src.y, src.w, src.h, { pageNumber: target.page, top: topY });
+    }
   }
 
   // ── Footer auf alle Seiten ──
