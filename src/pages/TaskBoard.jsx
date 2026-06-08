@@ -3,7 +3,7 @@ import { entities, functions, auth, supabase } from "@/api/supabaseClient";
 import { ThemeContext } from "@/Layout";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { DragDropContext, Droppable } from "@hello-pangea/dnd";
-import { Plus, RefreshCw, Palette, Users, Search, X, ChevronsLeftRight, Mic, LayoutList, LayoutDashboard, MoreHorizontal, Bell } from "lucide-react";
+import { Plus, RefreshCw, Palette, Users, Search, X, ChevronsLeftRight, Mic, LayoutList, LayoutDashboard, MoreHorizontal, Bell, Image as ImageIcon } from "lucide-react";
 import { useIsMobile } from "@/components/mobile/useIsMobile";
 import MobileColumnNav from "@/components/mobile/MobileColumnNav";
 import { Button } from "@/components/ui/button";
@@ -26,6 +26,7 @@ import UserFilterSelect from "../components/tasks/UserFilterSelect";
 import VoiceTaskDialog from "../components/tasks/VoiceTaskDialog";
 import TaskGlobalListView from "../components/tasks/TaskGlobalListView";
 import TaskCard from "../components/tasks/TaskCard";
+import TaskCardMonday from "../components/tasks/TaskCardMonday";
 
 export default function TaskBoard() {
   const { theme } = useContext(ThemeContext);
@@ -51,6 +52,18 @@ export default function TaskBoard() {
    const [verantwortlichFilter, setVerantwortlichFilter] = useState('all');
    const [searchQuery, setSearchQuery] = useState("");
   const [globalListView, setGlobalListView] = useState(false);
+  // Kachel-Variante: 'standard' (bestehend) oder 'monday' (Foto-Kacheln) – pro Gerät gespeichert
+  const [cardStyle, setCardStyle] = useState(() => {
+    try { return localStorage.getItem('taskboard-card-style') || 'standard'; } catch { return 'standard'; }
+  });
+  const toggleCardStyle = () => {
+    setCardStyle(prev => {
+      const next = prev === 'monday' ? 'standard' : 'monday';
+      try { localStorage.setItem('taskboard-card-style', next); } catch { /* ignore */ }
+      return next;
+    });
+  };
+  const MobileCard = cardStyle === 'monday' ? TaskCardMonday : TaskCard;
   const [mobileColumnIndex, setMobileColumnIndex] = useState(0);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const isMobile = useIsMobile();
@@ -321,6 +334,10 @@ export default function TaskBoard() {
                   style={{ color: globalListView ? '#7c3aed' : mutedText }}>
                   {globalListView ? <LayoutDashboard className="h-4 w-4" /> : <LayoutList className="h-4 w-4" />}
                 </Button>
+                <Button variant="ghost" size="icon" onClick={toggleCardStyle} className="h-9 w-9 touch-manipulation"
+                  style={{ color: cardStyle === 'monday' ? '#7c3aed' : mutedText }}>
+                  <ImageIcon className="h-4 w-4" />
+                </Button>
                 <Button variant="ghost" size="icon" onClick={() => setShowMobileFilters(v => !v)} className="h-9 w-9 touch-manipulation"
                   style={{ color: showMobileFilters ? '#7c3aed' : mutedText }}>
                   <MoreHorizontal className="h-4 w-4" />
@@ -473,6 +490,10 @@ export default function TaskBoard() {
                 className={`h-9 w-9 ${globalListView ? "text-violet-400 bg-violet-500/10" : ""}`} style={!globalListView ? { color: mutedText } : {}}>
                 {globalListView ? <LayoutDashboard className="h-4 w-4" /> : <LayoutList className="h-4 w-4" />}
               </Button>
+              <Button variant="ghost" size="icon" title={cardStyle === 'monday' ? "Standard-Kacheln" : "Foto-Kacheln (Monday)"} onClick={toggleCardStyle}
+                className={`h-9 w-9 ${cardStyle === 'monday' ? "text-violet-400 bg-violet-500/10" : ""}`} style={cardStyle !== 'monday' ? { color: mutedText } : {}}>
+                <ImageIcon className="h-4 w-4" />
+              </Button>
               <Button variant="ghost" size="icon" title={allCollapsed ? "Alle aufklappen" : "Alle einklappen"}
                 onClick={() => { if (allCollapsed) { setCollapsedColumns(new Set()); } else { setCollapsedColumns(new Set(columns.map(c => c.id))); } setAllCollapsed(!allCollapsed); }}
                 className="h-9 w-9" style={{ color: mutedText }}>
@@ -555,7 +576,7 @@ export default function TaskBoard() {
                      {(provided) => (
                        <div ref={provided.innerRef} {...provided.droppableProps} className="space-y-2">
                          {filteredAndSortedTasks.filter(t => t.column_id === columns[mobileColumnIndex].id && !t.completed).map((task, idx) => (
-                           <TaskCard
+                           <MobileCard
                              key={task.id}
                              task={task}
                              index={idx}
@@ -601,6 +622,7 @@ export default function TaskBoard() {
                       onToggleComplete={(task) => updateTaskMutation.mutate({ id: task.id, data: { completed: !task.completed } })}
                       currentUser={currentUser}
                       priorities={priorities}
+                      cardStyle={cardStyle}
                     />
                   ))}
                   {provided.placeholder}

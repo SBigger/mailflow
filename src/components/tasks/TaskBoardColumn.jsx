@@ -13,10 +13,12 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { entities, functions, auth } from "@/api/supabaseClient";
 import TaskCard from "./TaskCard";
+import TaskCardMonday from "./TaskCardMonday";
 
 import TaskListViewOverlay from "./TaskListViewOverlay";
 
-export default function TaskBoardColumn({ column, index, tasks, onRename, onDelete, onChangeColor, onTaskClick, onToggleComplete, isCollapsed, onToggleCollapse, currentUser, priorities = [] }) {
+export default function TaskBoardColumn({ column, index, tasks, onRename, onDelete, onChangeColor, onTaskClick, onToggleComplete, isCollapsed, onToggleCollapse, currentUser, priorities = [], cardStyle = 'standard' }) {
+  const CardComponent = cardStyle === 'monday' ? TaskCardMonday : TaskCard;
   const { theme } = useContext(ThemeContext);
   const isLight = theme === 'light';
   const isArtis = theme === 'artis';
@@ -180,7 +182,7 @@ export default function TaskBoardColumn({ column, index, tasks, onRename, onDele
                 {activeTasks.map((task, idx) => {
                   const assigneeUser = allUsers.find(u => u.email === task.assignee);
                   return (
-                    <TaskCard
+                    <CardComponent
                       key={task.id}
                       task={task}
                       index={idx}
@@ -207,7 +209,7 @@ export default function TaskBoardColumn({ column, index, tasks, onRename, onDele
                       {showCompleted && completedTasks.length > 0 && completedTasks.map((task, idx) => {
                       const assigneeUser = allUsers.find(u => u.email === task.assignee);
                       return (
-                        <TaskCard
+                        <CardComponent
                           key={task.id}
                           task={task}
                           index={activeTasks.length + idx}
