@@ -39,7 +39,9 @@ export default function OpListe() {
   const load = (date) => {
     if (!mandant) return;
     setLoading(true);
-    kreditorenApi.listPerStichtag(mandant.id, date)
+    // Echte Stichtags-Rekonstruktion: offener Betrag PER STICHTAG aus den
+    // datierten Zahlungs-/Verrechnungs-Ereignissen (nicht aktueller Saldo).
+    kreditorenApi.opListeStichtag(mandant.id, date)
       .then(setRaw)
       .finally(() => setLoading(false));
   };

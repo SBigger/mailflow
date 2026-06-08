@@ -232,6 +232,31 @@ export const kreditorenApi = {
     return data;
   },
 
+  // Beleg bearbeiten: Kopf + Positionen ersetzen und SAUBER neu verbuchen
+  // (entfernt alte GL-Buchungen, kein Doppel-Beleg). Lieferant/Belegtyp fix;
+  // bezahlte/MWST-abgerechnete/stornierte Belege werden serverseitig gesperrt.
+  bearbeiten: async (belegId, beleg, positionen) => {
+    const { error } = await supabase.rpc('fibu_kreditoren_bearbeiten', {
+      p_beleg_id:   belegId,
+      p_beleg:      beleg,
+      p_positionen: positionen ?? [],
+    });
+    if (error) throw error;
+  },
+
+  // Offene Posten PER STICHTAG (echte Rekonstruktion aus datierten Zahlungen)
+  opListeStichtag: async (mandantId, stichtag) => {
+    const { data, error } = await supabase.rpc('fibu_op_liste_kreditoren', {
+      p_mandant_id: mandantId, p_stichtag: stichtag,
+    });
+    if (error) throw error;
+    // Form an die Tabellen-Komponente angleichen (geschachteltes lieferant-Objekt)
+    return (data ?? []).map(r => ({
+      ...r,
+      lieferant: { id: r.lieferant_id, name: r.lieferant_name, nr: r.lieferant_nr },
+    }));
+  },
+
   // Gutschrift gegen offene Rechnungen desselben Lieferanten verrechnen (FIFO)
   gutschriftVerrechnen: async (mandantId, gutschriftId) => {
     const { data, error } = await supabase.rpc('fibu_gutschrift_verrechnen', {

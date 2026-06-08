@@ -265,6 +265,9 @@ export default function Zahlungslauf() {
         lieferant_id:       p.beleg.lieferant_id,
         iban:               normIban(p.creditorIban),
         betrag:             p.amount,
+        // geplanter Skonto-Abzug – wird erst bei der CAMT-Bestätigung
+        // (fibu_bank_match_kreditor) verbucht, nicht schon beim Export.
+        skonto_betrag:      skonti.has(p.beleg.id) ? skontoBetrag(p.beleg) : 0,
         zahlungsreferenz:   p.reference,
         zahlungsmitteilung: p.message,
       }));
@@ -290,16 +293,10 @@ export default function Zahlungslauf() {
         }
       }
 
-      // Skonto-Abzüge verbuchen
-      for (const b of selectedBelege) {
-        if (skonti.has(b.id) && skontoBetrag(b) > 0) {
-          try {
-            await kreditorenApi.skontoBuchen(b.id, skontoBetrag(b), valuta);
-          } catch (e) {
-            console.error('Skonto-Buchung fehlgeschlagen für', b.beleg_nr, e);
-          }
-        }
-      }
+      // Skonto wird NICHT mehr hier gebucht. Der geplante Skonto-Abzug
+      // steckt als skonto_betrag in der Zahlungslauf-Position und wird
+      // erst bei der tatsächlichen Bank-Bestätigung (camt.053) verbucht –
+      // so entsteht kein Skonto-Aufwand für eine nie ausgeführte Zahlung.
 
       // Download XML
       const blob = new Blob([xml], { type: 'application/xml;charset=utf-8' });
