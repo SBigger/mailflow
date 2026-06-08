@@ -5,7 +5,7 @@ module.exports = {
   theme: {
   	extend: {
   		fontFamily: {
-  			sans: ['Inter', 'system-ui', '-apple-system', 'Segoe UI', 'sans-serif'],
+  			sans: ['"Century Gothic Std"', '"Century Gothic"', 'Inter', 'system-ui', '-apple-system', 'Segoe UI', 'sans-serif'],
   		},
   		borderRadius: {
   			lg: 'var(--radius)',

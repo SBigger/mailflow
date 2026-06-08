@@ -2868,16 +2868,38 @@ function BilanzTab({ konten, accent, headingC, subC, panelBg, panelBdr, tableBdr
       <React.Fragment key={id}>
         <BilanzkennzahlRow label={isNahe ? `↳ ${label}` : label} value={displayVal} valueVJ={valVJ !== 0 ? valVJ : null} bilanzsumme={aktivenTotal} bilanzsummeVJ={aktivenTotalVJ} headingC={isNahe ? subC : headingC} subC={subC} accent={accent} />
         {showDetails && posKonten.length > 0 && (
-          <div style={{ margin: "1px 12px 3px 32px", borderRadius: 5, overflow: "hidden", border: `1px solid ${panelBdr}`, backgroundColor: panelBg }}>
-            {posKonten.map((k, i) => (
-              <div key={k.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "2px 8px",
-                fontSize: 11, borderBottom: i < posKonten.length - 1 ? `1px solid ${panelBdr}` : "none" }}>
-                <span style={{ color: subC, fontWeight: 600, flexShrink: 0, width: 36, fontFamily: "monospace" }}>{k.kontonummer}</span>
-                <span style={{ flex: 1, color: headingC, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{k.kontoname}</span>
-                <span style={{ fontFamily: "monospace", color: headingC, flexShrink: 0 }}>{fmtCHF(parseFloat(k.saldo_ist) * (flip ? pSign : 1))}</span>
-              </div>
-            ))}
-          </div>
+          <div>
+            {posKonten.map((k, i) => {
+              const kIst = parseFloat(k.saldo_ist) * (flip ? pSign : 1);
+              const kVj  = parseFloat(k.saldo_vorjahr || 0) * (flip ? pSign : 1);
+              return (
+                <div key={k.id} style={{
+                  // SELBES 5-Spalten-Grid wie BilanzkennzahlRow → Beträge richtig ausgerichtet
+                  display: "grid", gridTemplateColumns: "1fr 95px 40px 95px 40px",
+                  alignItems: "center", padding: "3px 12px",
+                  fontSize: 11, color: subC,
+                  borderBottom: i < posKonten.length - 1 ? `1px solid ${panelBdr}40` : `1px solid ${panelBdr}80`,
+                  backgroundColor: panelBg,
+                }}>
+                  {/* Label: eingerückt, Kontonummer + Name */}
+                  <span style={{ paddingLeft: 24, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <span style={{ fontFamily: "monospace", fontWeight: 600, marginRight: 8, color: subC }}>{k.kontonummer}</span>
+                    <span style={{ color: headingC }}>{k.kontoname}</span>
+                  </span>
+                  {/* IST */}
+                  <span style={{ fontFamily: "monospace", textAlign: "right", color: headingC }}>
+                    {kIst === 0 ? "" : fmtCHF(kIst)}
+                  </span>
+                  {/* % leer (Sub-Konten haben keinen eigenen Bilanzsumme-Anteil) */}
+                  <span />
+                  {/* Vorjahr */}
+                  <span style={{ fontFamily: "monospace", textAlign: "right", color: subC }}>
+                    {kVj === 0 ? "" : fmtCHF(kVj)}
+                  </span>
+                  <span />
+                </div>
+              );
+            })}
         )}
       </React.Fragment>
     );
