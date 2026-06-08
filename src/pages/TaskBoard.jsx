@@ -3,7 +3,7 @@ import { entities, functions, auth, supabase } from "@/api/supabaseClient";
 import { ThemeContext } from "@/Layout";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { DragDropContext, Droppable } from "@hello-pangea/dnd";
-import { Plus, RefreshCw, Palette, Users, Search, X, ChevronsLeftRight, Mic, LayoutList, LayoutDashboard, MoreHorizontal, Bell, Image as ImageIcon } from "lucide-react";
+import { Plus, RefreshCw, Palette, Users, Search, X, ChevronsLeftRight, Mic, LayoutList, LayoutDashboard, MoreHorizontal, Bell, Image as ImageIcon, AppWindow } from "lucide-react";
 import { useIsMobile } from "@/components/mobile/useIsMobile";
 import MobileColumnNav from "@/components/mobile/MobileColumnNav";
 import { Button } from "@/components/ui/button";
@@ -64,6 +64,17 @@ export default function TaskBoard() {
     });
   };
   const MobileCard = cardStyle === 'monday' ? TaskCardMonday : TaskCard;
+  // Detail-Darstellung: 'panel' (rechts eingeblendet) oder 'modal' (zentriertes Popup) – pro Gerät
+  const [detailStyle, setDetailStyle] = useState(() => {
+    try { return localStorage.getItem('taskboard-detail-style') || 'panel'; } catch { return 'panel'; }
+  });
+  const toggleDetailStyle = () => {
+    setDetailStyle(prev => {
+      const next = prev === 'modal' ? 'panel' : 'modal';
+      try { localStorage.setItem('taskboard-detail-style', next); } catch { /* ignore */ }
+      return next;
+    });
+  };
   const [mobileColumnIndex, setMobileColumnIndex] = useState(0);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const isMobile = useIsMobile();
@@ -494,6 +505,10 @@ export default function TaskBoard() {
                 className={`h-9 w-9 ${cardStyle === 'monday' ? "text-violet-400 bg-violet-500/10" : ""}`} style={cardStyle !== 'monday' ? { color: mutedText } : {}}>
                 <ImageIcon className="h-4 w-4" />
               </Button>
+              <Button variant="ghost" size="icon" title={detailStyle === 'modal' ? "Detail als Seitenpanel" : "Detail als Popup"} onClick={toggleDetailStyle}
+                className={`h-9 w-9 ${detailStyle === 'modal' ? "text-violet-400 bg-violet-500/10" : ""}`} style={detailStyle !== 'modal' ? { color: mutedText } : {}}>
+                <AppWindow className="h-4 w-4" />
+              </Button>
               <Button variant="ghost" size="icon" title={allCollapsed ? "Alle aufklappen" : "Alle einklappen"}
                 onClick={() => { if (allCollapsed) { setCollapsedColumns(new Set()); } else { setCollapsedColumns(new Set(columns.map(c => c.id))); } setAllCollapsed(!allCollapsed); }}
                 className="h-9 w-9" style={{ color: mutedText }}>
@@ -636,6 +651,7 @@ export default function TaskBoard() {
       {selectedTask && (
         <TaskDetailPanel
           task={selectedTask}
+          presentation={detailStyle}
           onClose={() => setSelectedTask(null)}
           onUpdate={(data) => {
             updateTaskMutation.mutate({ id: selectedTask.id, data });
