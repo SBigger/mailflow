@@ -123,7 +123,7 @@ async function extractDocumentText(file) {
  *  • Erst Dateiname, dann Textinhalt
  *  Gibt Array von Tag-IDs zurück (max. 3 Treffer).
  */
-async function autoDetectTags(file, allTags) {
+async function autoDetectTags(file, allTags, extraText = "") {
   if (!file || !allTags.length) return [];
 
   // Suchreihenfolge: Abschlussunterlagen-Kinder zuerst, dann alle anderen Kinder
@@ -143,15 +143,15 @@ async function autoDetectTags(file, allTags) {
     return searchOrder.filter(t => t.name && lower.includes(t.name.toLowerCase()));
   };
 
-  // 1. Dateiname (ohne Erweiterung)
+  // 1. Dateiname (ohne Erweiterung) + optional Konto-Kontext
   const baseName = file.name.replace(/\.[^.]+$/, "");
-  const fromName = matchIn(baseName);
+  const fromName = matchIn(baseName + " " + (extraText || ""));
   if (fromName.length > 0) return fromName.slice(0, 3).map(t => t.id);
 
   // 2. Textinhalt
   const text = await extractDocumentText(file);
   if (!text) return [];
-  const fromText = matchIn(text);
+  const fromText = matchIn(text + " " + (extraText || ""));
   return fromText.slice(0, 3).map(t => t.id);
 }
 
@@ -163,8 +163,12 @@ async function autoDetectTags(file, allTags) {
  * @param {func}   onClose         – Dialog schliessen
  * @param {func}   onUploaded      – (optional) Callback mit dem neu erstellten Dokument-Objekt
  *                                    nach erfolgreichem Upload. Wird VOR onClose gerufen.
+ * @param {number|string} preYear  – (optional) Jahr vorbelegen (überschreibt detectYear)
+ * @param {string} preNotes        – (optional) Notiz vorbelegen
+ * @param {string} extraDetectText – (optional) Zusätzlicher Text, der bei Auto-Tag-Erkennung
+ *                                    nach Tag-Treffern durchsucht wird (z.B. Konto-Kontext).
  */
-export default function DokUploadDialog({ preFile, preCustomerId, onClose, onUploaded }) {
+export default function DokUploadDialog({ preFile, preCustomerId, onClose, onUploaded, preYear, preNotes, extraDetectText }) {
   const { theme } = useContext(ThemeContext);
   const isArtis = theme === "artis";
   const isLight = theme === "light";
@@ -199,11 +203,12 @@ export default function DokUploadDialog({ preFile, preCustomerId, onClose, onUpl
   const [name,      setName]      = useState(() => preFile ? preFile.name.replace(/\.[^.]+$/, "") : "");
   const [category,  setCategory]  = useState("");
   const [year,      setYear]      = useState(() => {
+    if (preYear) return String(preYear);
     const y = detectYear(preFile?.name);
     return y ? String(y) : String(CUR_YEAR);
   });
   const [tagIds,    setTagIds]    = useState([]);
-  const [notes,     setNotes]     = useState("");
+  const [notes,     setNotes]     = useState(preNotes || "");
   const [uploading, setUploading] = useState(false);
   const [detecting, setDetecting] = useState(false);
   const [errors,    setErrors]    = useState({});
@@ -222,7 +227,7 @@ export default function DokUploadDialog({ preFile, preCustomerId, onClose, onUpl
     if (!file || !allTags.length || autoDetectedRef.current) return;
     autoDetectedRef.current = true;
     setDetecting(true);
-    autoDetectTags(file, allTags).then(ids => {
+    autoDetectTags(file, allTags, extraDetectText || "").then(ids => {
       if (ids.length > 0) {
         setTagIds(ids);
         // Kategorie aus dem ersten erkannten Tag ableiten
@@ -234,7 +239,7 @@ export default function DokUploadDialog({ preFile, preCustomerId, onClose, onUpl
       }
       setDetecting(false);
     });
-  }, [file, allTags]);
+  }, [file, allTags, extraDetectText]);
 
   const handleUpload = async () => {
     const errs = {};

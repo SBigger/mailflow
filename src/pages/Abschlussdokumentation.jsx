@@ -1641,7 +1641,14 @@ function MiniExcel({ data, onSave, accent, headingC, subC, panelBdr }) {
 // ── Belege-Verknüpfung pro Konto ─────────────────────────────────────────────
 const BUCKET = "dokumente";
 
-function BelegeSection({ arbeitspapier, onSave, customerId, selectedYear, accent, headingC, subC, panelBdr }) {
+function BelegeSection({ arbeitspapier, onSave, customerId, selectedYear, accent, headingC, subC, panelBdr,
+  kontonummer, kontoname, positionId }) {
+  // Konto-Kontext für Upload-Vorbelegung (Notiz, Auto-Tag-Hinweis)
+  const positionLabel = positionId ? (POSITION_MAP[positionId]?.label || "") : "";
+  const uploadNotes = kontonummer
+    ? `Beleg zu Konto ${kontonummer}${kontoname ? " – " + kontoname : ""} (Geschäftsjahr ${selectedYear || "—"})`
+    : "";
+  const uploadDetectText = [kontonummer, kontoname, positionLabel].filter(Boolean).join(" ");
   // selectedYear wird von KontenplanTab übergeben (= aktuelles Geschäftsjahr)
   const belege = arbeitspapier?.belege || [];
   const [showPicker, setShowPicker] = useState(false);
@@ -1841,6 +1848,9 @@ function BelegeSection({ arbeitspapier, onSave, customerId, selectedYear, accent
         <DokUploadDialog
           preFile={uploadFile}
           preCustomerId={customerId}
+          preYear={selectedYear}
+          preNotes={uploadNotes}
+          extraDetectText={uploadDetectText}
           onClose={() => setUploadFile(null)}
           onUploaded={handleUploaded}
         />
@@ -2354,6 +2364,9 @@ function KontenplanTab({ konten, onUpdateKonto, onAddKonto, customerId, selected
                             onSave={d => onUpdateKonto(konto.id, { arbeitspapier: d })}
                             customerId={customerId}
                             selectedYear={selectedYear}
+                            kontonummer={konto.kontonummer}
+                            kontoname={konto.kontoname}
+                            positionId={konto.position_id}
                             accent={accent} headingC={headingC} subC={subC} panelBdr={tableBdr}
                           />
                         </td>
