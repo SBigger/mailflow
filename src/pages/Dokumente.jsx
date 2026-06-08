@@ -473,9 +473,6 @@ function UploadDialog({ customers, preCustomer, preFile, allTags, onCancel, onUp
     setErrors({});
     setUploading(true);
     try {
-      // Text extrahieren (PDF, Excel, Word, etc.) für Volltext-Suche
-      const contentText = await extractDocumentText(file);
-
       const fileExt = file.name.split('.').pop();
       const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExt}`;
       const path = `${custId}/${fileName}`;
@@ -489,15 +486,19 @@ function UploadDialog({ customers, preCustomer, preFile, allTags, onCancel, onUp
         throw uploadError;
       }
       const newDoc = await entities.Dokument.create({
+        storage_object_id: uploadData.id,
         customer_id: custId, category, year: parseInt(year),
         name: name.trim(), filename: file.name,
         storage_path: uploadData.path, file_size: file.size, file_type: file.type,
-        tag_ids: tagIds, notes,
-        content_text: contentText,
+        tag_ids: tagIds, notes
       });
-      // Server-seitige Volltext-Indexierung als Sicherheitsnetz (no-op falls content_text bereits gefüllt)
+      // Server-seitige Volltext-Indexierung und Vector
       if (newDoc?.id) {
-        supabase.functions.invoke("index-document", { body: { doc_id: newDoc.id } }).catch(() => {});
+        await supabase.functions.invoke("process-document", {
+          body: {
+            rec: uploadData
+          }
+        }).catch((error) => {console.log("indexierung Failed: ", error)});
       }
       toast.success("Dokument hochgeladen", {closeButton: true});
       onUpload();
@@ -835,21 +836,36 @@ export default function Dokumente() {
   const [shareDialog,   setShareDialog]   = useState(null); // { type: 'doc'|'folder', doc?, customer_id?, category?, year?, name? }
   const [showShareLinks, setShowShareLinks] = useState(false);
   const [seconds, setSeconds] = useState(0);
+  const [highestScore, setHighestScore] = useState(false);
 
   // Volltext-Suche via Supabase RPC (PostgreSQL GIN-Index)
   useEffect(() => {
     const q = ftSearch.trim();
-    if (q.length < 2) { setFtResults(null); return; }
+    if (q.length < 3) { setFtResults(null); return; }
     const timer = setTimeout(async () => {
       setFtSearching(true);
       try {
-        const { data, error } = await supabase.rpc("search_dokumente", {
-          p_query:       q,
-          p_customer_id: selCustomerId || null,
-          p_limit:       100,
+        const { data, error: functionError } = await supabase.functions.invoke('search-documents', {
+          body: {
+            searchQuery: q.trim(),
+            limit: 5
+          },
         });
-        if (error) throw error;
-        setFtResults(data || []);
+
+        if (functionError) throw functionError;
+
+        setHighestScore(data.results[0]?.combined_score || 1);
+
+        const UIResults = data.results.map(item => {
+          // Berechne, wie viel Prozent des Top-Treffers dieses Dokument erreicht
+          const relevancePercentage = Math.round((item.combined_score / highestScore) * 100);
+
+          return {
+            ...item,
+            relevanceDisplay: `${relevancePercentage}% Übereinstimmung`
+          };
+        });
+        setFtResults(UIResults || []);
       } catch (e) { toast.error("Suche fehlgeschlagen: " + e.message); setFtResults([]); }
       finally { setFtSearching(false); }
     }, 350);
@@ -1457,40 +1473,57 @@ export default function Dokumente() {
           )}
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {ftResults.map(doc => {
-              const fi   = getFileInfo(doc.file_type, doc.filename);
+              const fi   = getFileInfo(doc.file_type, doc.dokument_name);
               const cat  = CATEGORIES.find(c => c.key === doc.category);
               const cust = customers.find(c => c.id === doc.customer_id);
+
+              {/* 2. Prozentwert berechnen relativ zum besten Treffer */}
+              const relevancePercentage = Math.round((doc.combined_score / highestScore) * 100);
+
               return (
-                <div key={doc.id}
-                  onClick={() => downloadDoc(doc)}
-                  title="Öffnen"
-                  style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "10px 14px", background: s.cardBg,
-                    border: "1px solid " + border, borderRadius: 8, cursor: "pointer", transition: "border 0.15s" }}
-                  onMouseEnter={e => e.currentTarget.style.borderColor = accent}
-                  onMouseLeave={e => e.currentTarget.style.borderColor = border}>
-                  <span style={{ background: fi.color, color: "#fff", borderRadius: 4, padding: "2px 6px", fontSize: 10, fontWeight: 700, flexShrink: 0, minWidth: 36, textAlign: "center", marginTop: 2 }}>{fi.label}</span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, color: s.textMain, fontWeight: 600 }}>{doc.name}</div>
-                    {doc.headline && (
-                      <div style={{ fontSize: 11, color: s.textMuted, marginTop: 2, fontStyle: "italic" }}
-                        dangerouslySetInnerHTML={{ __html: doc.headline.replace(/<b>/g, `<b style="color:${accent};font-style:normal">`).replace(/<\/b>/g, "</b>") }} />
-                    )}
-                    <div style={{ fontSize: 11, color: s.textMuted, marginTop: 3, display: "flex", gap: 8 }}>
-                      {cust && <span style={{ color: accent, fontWeight: 500 }}>{cust.company_name}</span>}
-                      {cat && <span>{cat.icon} {cat.label}</span>}
-                      {doc.year && <span>{doc.year}</span>}
+                  <div key={doc.id}
+                       onClick={() => downloadDoc(doc)}
+                       title="Öffnen"
+                       style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "10px 14px", background: s.cardBg,
+                         border: "1px solid " + border, borderRadius: 8, cursor: "pointer", transition: "border 0.15s" }}
+                       onMouseEnter={e => e.currentTarget.style.borderColor = accent}
+                       onMouseLeave={e => e.currentTarget.style.borderColor = border}>
+
+                    <span style={{ background: fi.color, color: "#fff", borderRadius: 4, padding: "2px 6px", fontSize: 10, fontWeight: 700, flexShrink: 0, minWidth: 36, textAlign: "center", marginTop: 2 }}>{fi.label}</span>
+
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, color: s.textMain, fontWeight: 600 }}>{doc.dokument_name}</div>
+                      <div style={{ fontSize: 11, color: s.textMuted, marginTop: 3, display: "flex", gap: 8 }}>
+                        {cust && <span style={{ color: accent, fontWeight: 500 }}>{cust.company_name}</span>}
+                        {cat && <span>{cat.icon} {cat.label}</span>}
+                        {doc.year && <span>{doc.year}</span>}
+                      </div>
                     </div>
+
+                    {/* Relevanz-Spalte ganz rechts (Punkte + %-Anzeige) */}
+                    <div style={{ flexShrink: 0, alignSelf: "center", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+
+                      {/* Die 5 Punkte passend zu den Prozenten einfärben */}
+                      <div style={{ display: "flex", gap: 2 }}>
+                        {[1,2,3,4,5].map(i => {
+                          // Jeder Punkt entspricht 20% (Punkt 1 bei >=10%, Punkt 2 bei >=30% etc. durch die Abrundungsgrenze)
+                          const filled = relevancePercentage >= (i * 20 - 10);
+                          return <div key={i} style={{ width: 6, height: 6, borderRadius: "50%", background: filled ? accent : border }} />;
+                        })}
+                      </div>
+
+                      {/* Neue Prozentanzeige direkt unter den Punkten */}
+                      <span style={{ fontSize: 10, color: s.textMuted, fontWeight: 600, fontFamily: "sans-serif" }}>
+              {relevancePercentage}%
+            </span>
+
+                    </div>
+
                   </div>
-                  <div style={{ flexShrink: 0, alignSelf: "center", display: "flex", gap: 2 }}>
-                    {[1,2,3,4,5].map(i => {
-                      const filled = (doc.rank || 0) >= i * 0.06;
-                      return <div key={i} style={{ width: 6, height: 6, borderRadius: "50%", background: filled ? accent : border }} />;
-                    })}
-                  </div>
-                </div>
               );
             })}
           </div>
+
         </div>
       )}
 
