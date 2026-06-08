@@ -1,9 +1,9 @@
 import React, { useState, useContext } from "react";
-import { functions, auth, supabase } from "@/api/supabaseClient";
+import { functions, auth, supabase, uploadAvatar } from "@/api/supabaseClient";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Users, Mail, UserPlus, Trash2, Shield, User as UserIcon, CheckSquare, Pencil, Check, X, KeyRound, Eye, EyeOff, Phone } from "lucide-react";
+import { Users, Mail, UserPlus, Trash2, Shield, User as UserIcon, CheckSquare, Pencil, Check, X, KeyRound, Eye, EyeOff, Phone, Camera, ImageOff, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { ThemeContext } from "@/Layout";
 import {
@@ -64,6 +64,11 @@ export default function UserManagement() {
   const [phoneEditUserId, setPhoneEditUserId] = useState(null);
   const [phoneEditValue,  setPhoneEditValue]  = useState("");
   const [phoneSaving,     setPhoneSaving]     = useState(false);
+
+  // Avatar/Foto upload state
+  const [avatarTargetUserId, setAvatarTargetUserId] = useState(null);
+  const [avatarUploadingId,  setAvatarUploadingId]  = useState(null);
+  const avatarInputRef = React.useRef(null);
 
   const queryClient = useQueryClient();
 
@@ -160,6 +165,48 @@ export default function UserManagement() {
     }
   };
 
+  // Foto-Upload auslösen (verstecktes File-Input klicken)
+  const triggerAvatarUpload = (userId) => {
+    setAvatarTargetUserId(userId);
+    requestAnimationFrame(() => avatarInputRef.current?.click());
+  };
+
+  const handleAvatarFile = async (e) => {
+    const file = e.target.files?.[0];
+    const userId = avatarTargetUserId;
+    e.target.value = ''; // Reset → gleiches File kann erneut gewählt werden
+    if (!file || !userId) return;
+    if (!file.type.startsWith('image/')) { toast.error('Bitte ein Bild auswählen'); return; }
+    if (file.size > 5 * 1024 * 1024) { toast.error('Bild zu gross (max. 5 MB)'); return; }
+    setAvatarUploadingId(userId);
+    try {
+      const url = await uploadAvatar(file, userId);
+      await functions.invoke('updateUserProfile', { user_id: userId, avatar_url: url });
+      toast.success('Foto gespeichert');
+      queryClient.invalidateQueries({ queryKey: ['allUsers'] });
+      queryClient.invalidateQueries({ queryKey: ['currentUser'] });
+    } catch (err) {
+      toast.error('Fehler: ' + err.message);
+    } finally {
+      setAvatarUploadingId(null);
+      setAvatarTargetUserId(null);
+    }
+  };
+
+  const handleRemoveAvatar = async (userId) => {
+    setAvatarUploadingId(userId);
+    try {
+      await functions.invoke('updateUserProfile', { user_id: userId, avatar_url: null });
+      toast.success('Foto entfernt');
+      queryClient.invalidateQueries({ queryKey: ['allUsers'] });
+      queryClient.invalidateQueries({ queryKey: ['currentUser'] });
+    } catch (err) {
+      toast.error('Fehler: ' + err.message);
+    } finally {
+      setAvatarUploadingId(null);
+    }
+  };
+
   const handleSetPassword = async (userId) => {
     if (!pwEditValue.trim()) { toast.error("Bitte Passwort eingeben"); return; }
     if (pwEditValue.trim().length < 8) { toast.error("Passwort muss mindestens 8 Zeichen haben"); return; }
@@ -202,6 +249,14 @@ export default function UserManagement() {
 
   return (
     <div className="min-h-screen p-6" style={{ backgroundColor: bg }}>
+      {/* Verstecktes File-Input für Foto-Upload (für alle Benutzerzeilen) */}
+      <input
+        ref={avatarInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleAvatarFile}
+      />
       <div className="max-w-3xl mx-auto">
         {/* Header */}
         <div className="flex items-center gap-3 mb-8">
@@ -270,9 +325,24 @@ export default function UserManagement() {
                 <div key={user.id} style={{ borderBottom: i < users.length - 1 ? `1px solid ${cardBorder}` : 'none' }}>
                 <div className="flex items-center justify-between p-4">
                   <div className="flex items-center gap-3 flex-1 min-w-0">
-                    <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-semibold text-white flex-shrink-0" style={{ backgroundColor: accentBg }}>
-                      {(editingUserId === user.id ? editingName : user.full_name)?.charAt(0)?.toUpperCase() || user.email?.charAt(0)?.toUpperCase()}
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => triggerAvatarUpload(user.id)}
+                      title="Foto ändern"
+                      className="group/av w-9 h-9 rounded-full overflow-hidden flex items-center justify-center text-sm font-semibold text-white flex-shrink-0 relative"
+                      style={{ backgroundColor: accentBg }}
+                    >
+                      {user.avatar_url ? (
+                        <img src={user.avatar_url} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <span>{(editingUserId === user.id ? editingName : user.full_name)?.charAt(0)?.toUpperCase() || user.email?.charAt(0)?.toUpperCase()}</span>
+                      )}
+                      <span className="absolute inset-0 bg-black/45 opacity-0 group-hover/av:opacity-100 transition-opacity flex items-center justify-center">
+                        {avatarUploadingId === user.id
+                          ? <Loader2 className="h-4 w-4 animate-spin text-white" />
+                          : <Camera className="h-4 w-4 text-white" />}
+                      </span>
+                    </button>
                     <div className="flex-1 min-w-0">
                       {editingUserId === user.id ? (
                         /* ── Inline Edit Mode ── */
@@ -368,6 +438,22 @@ export default function UserManagement() {
                             <Phone className="h-4 w-4 mr-2" />
                             Direktnummer bearbeiten
                           </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => triggerAvatarUpload(user.id)}
+                            style={{ color: textPrimary }}
+                          >
+                            <Camera className="h-4 w-4 mr-2" />
+                            Foto {user.avatar_url ? 'ändern' : 'hochladen'}
+                          </DropdownMenuItem>
+                          {user.avatar_url && (
+                            <DropdownMenuItem
+                              onClick={() => handleRemoveAvatar(user.id)}
+                              style={{ color: textPrimary }}
+                            >
+                              <ImageOff className="h-4 w-4 mr-2" />
+                              Foto entfernen
+                            </DropdownMenuItem>
+                          )}
                           <DropdownMenuSeparator style={{ backgroundColor: cardBorder }} />
                           <DropdownMenuItem onClick={() => setUserToDelete(user)} style={{ color: '#ef4444' }}>
                             <Trash2 className="h-4 w-4 mr-2" />

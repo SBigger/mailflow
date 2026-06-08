@@ -15,7 +15,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ThemeContext } from "@/Layout";
 
-export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }) {
+export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete, presentation = 'panel' }) {
   const isMobile = useIsMobile();
   const { theme } = useContext(ThemeContext);
   const isArtis = theme === 'artis';
@@ -580,6 +580,28 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete }) {
             onMouseLeave={e => e.currentTarget.style.backgroundColor = accentColor}>
             Änderungen speichern
           </Button>
+        </div>
+      </>
+    );
+  }
+
+  // Popup-/Modal-Variante: zentriert statt rechts eingeblendet (zum Testen umschaltbar)
+  if (presentation === 'modal') {
+    return (
+      <>
+        {/* Abgedunkelter Backdrop — Klick schliesst */}
+        <div className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+          <motion.div
+            initial={{ scale: 0.96, opacity: 0, y: 8 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0.96, opacity: 0 }}
+            transition={{ type: "spring", damping: 26, stiffness: 320 }}
+            className="pointer-events-auto w-full max-w-2xl max-h-[88vh] flex flex-col rounded-2xl shadow-2xl border overflow-hidden"
+            style={{ backgroundColor: bg, borderColor }}
+          >
+            {renderContent()}
+          </motion.div>
         </div>
       </>
     );

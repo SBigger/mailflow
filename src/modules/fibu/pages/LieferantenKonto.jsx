@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useMandant } from '../contexts/MandantContext';
 import { supabase } from '@/api/supabaseClient';
 import { lieferantenApi } from '../api';
@@ -10,8 +11,9 @@ export default function LieferantenKonto() {
   const { mandant } = useMandant();
   const jahr = new Date().getFullYear();
 
+  const [searchParams, setSearchParams] = useSearchParams();
   const [lieferanten, setLieferanten] = useState([]);
-  const [lieferantId, setLieferantId] = useState('');
+  const [lieferantId, setLieferantId] = useState(searchParams.get('l') || '');
   const [von, setVon]   = useState(`${jahr}-01-01`);
   const [bis, setBis]   = useState(`${jahr}-12-31`);
   const [belege, setBelege]   = useState([]);
@@ -21,6 +23,12 @@ export default function LieferantenKonto() {
     if (!mandant) return;
     lieferantenApi.list(mandant.id).then(setLieferanten).catch(() => {});
   }, [mandant?.id]);
+
+  // URL-Param ?l=<id> → Lieferant vorselektieren (Verlinkung von anderen Seiten)
+  useEffect(() => {
+    const l = searchParams.get('l');
+    if (l && l !== lieferantId) setLieferantId(l);
+  }, [searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!mandant || !lieferantId) { setBelege([]); return; }
@@ -67,7 +75,7 @@ export default function LieferantenKonto() {
       <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: '#fff', borderBottom: '1px solid #e4e9e4', flexWrap: 'wrap' }}>
         <div style={{ width: 34, height: 34, borderRadius: 9, background: '#7a9b7f', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 15 }}>📇</div>
         <span style={{ fontWeight: 700, fontSize: 16, color: '#1a1a2e' }}>Lieferanten-Kontoauszug</span>
-        <select value={lieferantId} onChange={e => setLieferantId(e.target.value)} style={{ ...inp, minWidth: 240 }}>
+        <select value={lieferantId} onChange={e => { setLieferantId(e.target.value); setSearchParams(e.target.value ? { l: e.target.value } : {}); }} style={{ ...inp, minWidth: 240 }}>
           <option value="">— Lieferant wählen —</option>
           {lieferanten.map(l => <option key={l.id} value={l.id}>{l.name} ({l.nr})</option>)}
         </select>

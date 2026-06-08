@@ -134,6 +134,9 @@ export default function RechnungErfassen() {
   const [regeln, setRegeln]           = useState([]);   // Kontierungsregeln
   const [saving, setSaving]           = useState(false);
   const [showExtra, setShowExtra]     = useState(false); // "Weitere Felder" einklappbar
+  const [loadingBeleg, setLoadingBeleg] = useState(false); // bestehenden Beleg laden (Edit)
+  const [editLocked, setEditLocked]   = useState(false);   // verbuchter Beleg nicht editierbar
+  const [editLockReason, setEditLockReason] = useState(''); // Grund für die Sperre
 
   // QR-Scanner State
   const [scanFile, setScanFile]     = useState(null);          // hochgeladene Datei
@@ -215,6 +218,56 @@ export default function RechnungErfassen() {
       setScanStatus('idle');
     })();
   }, [inboxId, mandant?.id]);
+
+  // ── Bestehenden Beleg laden (Bearbeiten-Modus via :belegId) ──────
+  // Vorher lud das Formular im Edit-Modus NICHTS und "Speichern" legte
+  // einen DUPLIKAT-Beleg an + verbuchte erneut. Jetzt: Daten laden, und
+  // gespeichert wird über fibu_kreditoren_bearbeiten (Update + sauberes
+  // Neu-Verbuchen, kein zweiter Beleg).
+  useEffect(() => {
+    if (!belegId || !mandant) return;
+    setLoadingBeleg(true);
+    kreditorenApi.get(belegId).then(b => {
+      if (!b) return;
+      setHead(prev => ({
+        ...prev,
+        lieferant_id:           b.lieferant_id ?? '',
+        lieferant_beleg_nr:     b.lieferant_beleg_nr ?? '',
+        belegdatum:             b.belegdatum ?? prev.belegdatum,
+        buchungsdatum:          b.buchungsdatum ?? b.belegdatum ?? prev.buchungsdatum,
+        faelligkeit:            b.faelligkeit ?? '',
+        zahlungsbedingung_tage: b.zahlungsbedingung_tage ?? 30,
+        waehrung:               b.waehrung ?? 'CHF',
+        zahlungsreferenz:       b.zahlungsreferenz ?? '',
+        notiz:                  b.notiz ?? '',
+        belegtyp:               b.belegtyp ?? 'rechnung',
+        belegreferenz:          b.belegreferenz ?? '',
+        gruppe:                 b.gruppe ?? '',
+        belegtext:              b.belegtext ?? '',
+      }));
+      const pos = [...(b.positionen ?? [])].sort((a, c) => (a.position ?? 0) - (c.position ?? 0));
+      if (pos.length) {
+        setPositionen(pos.map(p => ({
+          _key:          Math.random(),
+          konto_nr:      p.konto_nr ?? '',
+          bezeichnung:   p.bezeichnung ?? '',
+          mwst_code:     p.mwst_code ?? 'M81',
+          mwst_satz:     p.mwst_satz ?? 0,
+          betrag_netto:  p.betrag_netto ?? 0,
+          betrag_mwst:   p.betrag_mwst ?? 0,
+          betrag_brutto: p.betrag_brutto != null ? String(p.betrag_brutto) : '',
+        })));
+      }
+      // Editierbar nur solange offen, unbezahlt und MWST nicht abgerechnet
+      let reason = '';
+      if (b.status === 'storniert')             reason = 'Dieser Beleg ist storniert und kann nicht bearbeitet werden.';
+      else if (b.status === 'ebanking')         reason = 'Beleg ist in einem aktiven Zahlungslauf (Zahlung läuft) – Bearbeiten nicht möglich.';
+      else if ((b.betrag_bezahlt || 0) !== 0)   reason = 'Beleg ist bereits (teil)bezahlt oder verrechnet – bitte zuerst die Zahlung zurücknehmen.';
+      else if (b.mwst_abgerechnet)              reason = 'Die MWST dieses Belegs ist bereits abgerechnet – keine Änderung möglich.';
+      setEditLocked(!!reason);
+      setEditLockReason(reason);
+    }).finally(() => setLoadingBeleg(false));
+  }, [belegId, mandant?.id]);
 
   const handleLieferantChange = (id) => {
     const l = lieferanten.find(x => x.id === id);
@@ -441,9 +494,9 @@ export default function RechnungErfassen() {
   // ── Speichern ───────────────────────────────────────────────────
   const handleSave = async () => {
     if (!head.lieferant_id || !head.belegdatum || !head.faelligkeit) return;
+    if (belegId && editLocked) return;   // verbuchter/bezahlter Beleg: kein Speichern
     setSaving(true);
     try {
-      const belegNr = await kreditorenApi.nextBelegNr(mandant.id);
       const pos = positionen.filter(p => parseFloat(p.betrag_brutto) > 0).map(p => ({
         konto_nr: p.konto_nr || '6800',
         bezeichnung: p.bezeichnung,
@@ -456,12 +509,38 @@ export default function RechnungErfassen() {
       // Gutschrift: Beleg-Beträge negativ (Positionen bleiben positiv –
       // die Verbuchungs-RPC dreht die Buchungsrichtung anhand belegtyp)
       const sign = istGutschrift ? -1 : 1;
-      const beleg = await kreditorenApi.create(mandant.id, {
-        ...head,
-        beleg_nr: belegNr,
+      const betraege = {
         betrag_netto:  sign * totals.netto,
         betrag_mwst:   sign * totals.mwst,
         betrag_brutto: sign * totals.brutto,
+      };
+
+      // ── Bearbeiten: Update + sauberes Neu-Verbuchen (KEIN neuer Beleg) ──
+      if (belegId) {
+        await kreditorenApi.bearbeiten(belegId, {
+          lieferant_beleg_nr:     head.lieferant_beleg_nr,
+          belegdatum:             head.belegdatum,
+          buchungsdatum:          head.buchungsdatum,
+          faelligkeit:            head.faelligkeit,
+          zahlungsbedingung_tage: head.zahlungsbedingung_tage,
+          waehrung:               head.waehrung,
+          zahlungsreferenz:       head.zahlungsreferenz,
+          notiz:                  head.notiz,
+          belegreferenz:          head.belegreferenz,
+          gruppe:                 head.gruppe,
+          belegtext:              head.belegtext,
+          ...betraege,
+        }, pos);
+        navigate(`/fibu/${mandant.id}/kreditoren`);
+        return;
+      }
+
+      // ── Neu erfassen ──
+      const belegNr = await kreditorenApi.nextBelegNr(mandant.id);
+      const beleg = await kreditorenApi.create(mandant.id, {
+        ...head,
+        beleg_nr: belegNr,
+        ...betraege,
       }, pos);
 
       // Inbox-Eintrag als verarbeitet markieren
@@ -473,6 +552,8 @@ export default function RechnungErfassen() {
       }
 
       navigate(`/fibu/${mandant.id}/kreditoren`);
+    } catch (e) {
+      alert('Speichern fehlgeschlagen: ' + (e.message || e));
     } finally {
       setSaving(false);
     }
@@ -517,11 +598,30 @@ export default function RechnungErfassen() {
             >Abbrechen</button>
             <button
               onClick={handleSave}
-              disabled={!canWrite || saving || !head.lieferant_id || !head.faelligkeit}
-              style={{ padding: '6px 14px', borderRadius: 8, border: 'none', background: '#7a9b7f', color: '#fff', fontSize: 12.5, fontWeight: 500, cursor: 'pointer', opacity: (!canWrite || saving || !head.lieferant_id || !head.faelligkeit) ? .5 : 1 }}
-            >{saving ? 'Speichert…' : 'Speichern & Buchen'}</button>
+              disabled={!canWrite || saving || !head.lieferant_id || !head.faelligkeit || (belegId && editLocked)}
+              title={belegId && editLocked ? editLockReason : ''}
+              style={{ padding: '6px 14px', borderRadius: 8, border: 'none', background: '#7a9b7f', color: '#fff', fontSize: 12.5, fontWeight: 500, cursor: 'pointer', opacity: (!canWrite || saving || !head.lieferant_id || !head.faelligkeit || (belegId && editLocked)) ? .5 : 1 }}
+            >{saving ? 'Speichert…' : (belegId ? 'Änderungen speichern' : 'Speichern & Buchen')}</button>
           </div>
         </div>
+
+        {/* ── Bearbeiten: Sperr-Hinweis (verbuchter/bezahlter Beleg) ── */}
+        {belegId && editLocked && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 10, background: '#fdf4f4', border: '1px solid #f0d8d8' }}>
+            <span style={{ fontSize: 16 }}>🔒</span>
+            <div style={{ fontSize: 12, color: '#8a2d2d' }}>
+              <strong>Nur Ansicht:</strong> {editLockReason}
+            </div>
+          </div>
+        )}
+        {belegId && !editLocked && !loadingBeleg && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 10, background: '#f0f7ff', border: '1px solid #c5d4ea' }}>
+            <span style={{ fontSize: 16 }}>✏️</span>
+            <div style={{ fontSize: 12, color: '#1e3a6e' }}>
+              <strong>Beleg bearbeiten:</strong> Beim Speichern werden die bestehenden Buchungen ersetzt (neu verbucht) – es entsteht kein zweiter Beleg. Lieferant bleibt unverändert.
+            </div>
+          </div>
+        )}
 
         {/* ── Inbox-Banner ── */}
         {inboxItem && (
@@ -631,22 +731,27 @@ export default function RechnungErfassen() {
           <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.1em', color: '#94a394', marginBottom: 12 }}>Belegkopf</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
-              <label style={lbl}>Lieferant *</label>
+              <label style={lbl}>Lieferant *{belegId && <span style={{ fontWeight: 400, color: '#94a394', marginLeft: 4, fontSize: 10.5 }}>beim Bearbeiten nicht änderbar</span>}</label>
               <div style={{ display: 'flex', gap: 6 }}>
-                <select style={{ ...inp, flex: 1 }} value={head.lieferant_id} onChange={e => handleLieferantChange(e.target.value)}>
+                <select style={{ ...inp, flex: 1, background: belegId ? '#eef1ee' : inp.background, cursor: belegId ? 'not-allowed' : 'pointer' }}
+                  value={head.lieferant_id}
+                  disabled={!!belegId}
+                  onChange={e => handleLieferantChange(e.target.value)}>
                   <option value="">— wählen —</option>
-                  {lieferanten.filter(l => l.aktiv).map(l => (
+                  {lieferanten.filter(l => l.aktiv || l.id === head.lieferant_id).map(l => (
                     <option key={l.id} value={l.id}>{l.name} ({l.nr})</option>
                   ))}
                 </select>
-                <button
-                  type="button"
-                  onClick={() => setLiefModal({ init: scanData
-                    ? { name: scanData.name, strasse: scanData.strasse, plz: scanData.plz, ort: scanData.ort, land: scanData.land, iban: scanData.iban }
-                    : {} })}
-                  title="Neuen Lieferant erfassen"
-                  style={{ flexShrink: 0, padding: '0 12px', borderRadius: 8, border: '1px solid #b8d4b8', background: '#f0f7f0', color: '#3d6641', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}
-                >+ Neu</button>
+                {!belegId && (
+                  <button
+                    type="button"
+                    onClick={() => setLiefModal({ init: scanData
+                      ? { name: scanData.name, strasse: scanData.strasse, plz: scanData.plz, ort: scanData.ort, land: scanData.land, iban: scanData.iban }
+                      : {} })}
+                    title="Neuen Lieferant erfassen"
+                    style={{ flexShrink: 0, padding: '0 12px', borderRadius: 8, border: '1px solid #b8d4b8', background: '#f0f7f0', color: '#3d6641', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}
+                  >+ Neu</button>
+                )}
               </div>
             </div>
             <div>

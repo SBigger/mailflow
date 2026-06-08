@@ -22,11 +22,17 @@ export default function AddTicketDialog({ open, onClose, defaultColumnId }) {
   const [ticketType, setTicketType] = useState("regular");
   const [columnId, setColumnId]     = useState(defaultColumnId || "");
   const [customerId, setCustomerId] = useState("");
+  const [priorityId, setPriorityId] = useState("");
   const [loading, setLoading]       = useState(false);
 
   const { data: columns = [] } = useQuery({
     queryKey: ["ticketColumns"],
     queryFn: () => entities.TicketColumn.list("order"),
+  });
+
+  const { data: priorities = [] } = useQuery({
+    queryKey: ["priorities"],
+    queryFn: () => entities.Priority.list("level"),
   });
 
   const { data: customers = [] } = useQuery({
@@ -73,6 +79,7 @@ export default function AddTicketDialog({ open, onClose, defaultColumnId }) {
         ticket_type: ticketType,
         column_id: targetColumn,
         customer_id: (customerId && customerId !== "__none__") ? customerId : null,
+        priority_id: priorityId || null,
         is_read: true,
       });
       qc.invalidateQueries({ queryKey: ["tickets"] });
@@ -92,6 +99,7 @@ export default function AddTicketDialog({ open, onClose, defaultColumnId }) {
     setTicketType("regular");
     setColumnId(defaultColumnId || "");
     setCustomerId("");
+    setPriorityId("");
     onClose();
   };
 
@@ -204,6 +212,27 @@ export default function AddTicketDialog({ open, onClose, defaultColumnId }) {
               rows={4}
               style={inputStyle}
             />
+          </div>
+
+          {/* Prioritaet */}
+          <div>
+            <div style={LabelStyle}>Prioritaet</div>
+            <Select value={priorityId || "__none__"} onValueChange={v => setPriorityId(v === "__none__" ? "" : v)}>
+              <SelectTrigger style={inputStyle}>
+                <SelectValue placeholder="Keine Prioritaet" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">— Keine —</SelectItem>
+                {priorities.map(p => (
+                  <SelectItem key={p.id} value={p.id}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ width: 8, height: 8, borderRadius: 99, backgroundColor: p.color, display: "inline-block" }} />
+                      {p.name}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           {/* Spalte + Kunde */}

@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useMandant } from '../contexts/MandantContext';
 import { kreditorenApi, wechselkurseApi } from '../api';
+import LieferantLink from '../components/LieferantLink';
 
 const CHF = (n) => n == null ? '—' : new Intl.NumberFormat('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 const DATE = (s) => s ? new Date(s + 'T00:00:00').toLocaleDateString('de-CH') : '—';
@@ -38,7 +39,9 @@ export default function OpListe() {
   const load = (date) => {
     if (!mandant) return;
     setLoading(true);
-    kreditorenApi.listPerStichtag(mandant.id, date)
+    // Echte Stichtags-Rekonstruktion: offener Betrag PER STICHTAG aus den
+    // datierten Zahlungs-/Verrechnungs-Ereignissen (nicht aktueller Saldo).
+    kreditorenApi.opListeStichtag(mandant.id, date)
       .then(setRaw)
       .finally(() => setLoading(false));
   };
@@ -229,7 +232,7 @@ export default function OpListe() {
                       {b.beleg_nr}
                       {istGS && <span style={{ marginLeft: 6, fontFamily: "'Inter',system-ui", fontSize: 9.5, fontWeight: 700, padding: '1px 6px', borderRadius: 4, background: '#fce7f3', color: '#9d174d' }}>Gutschrift</span>}
                     </td>
-                    <td style={{ ...td, fontWeight: 500 }}>{b.lieferant?.name}</td>
+                    <td style={{ ...td, fontWeight: 500 }}><LieferantLink id={b.lieferant_id} name={b.lieferant?.name} /></td>
                     <td style={td}>{DATE(b.belegdatum)}</td>
                     <td style={{ ...td, color: isOver ? '#8a2d2d' : isFaellig ? '#8a5a00' : undefined, fontWeight: isOver || isFaellig ? 500 : undefined }}>{DATE(b.faelligkeit)}</td>
                     <td style={{ ...td, textAlign: 'right', color: isOver ? '#8a2d2d' : diff < 0 ? '#94a394' : '#8a5a00', fontWeight: isOver ? 600 : undefined }}>
@@ -390,7 +393,7 @@ export default function OpListe() {
             </div>
             <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div style={{ fontSize: 12.5, color: '#4a5a4a' }}>
-                Rechnung <strong>{stornoBeleg.beleg_nr}</strong> · {stornoBeleg.lieferant?.name}
+                Rechnung <strong>{stornoBeleg.beleg_nr}</strong> · <LieferantLink id={stornoBeleg.lieferant_id} name={stornoBeleg.lieferant?.name} />
                 <span style={{ marginLeft: 8, fontWeight: 700 }}>CHF {CHF(stornoBeleg.betrag_brutto)}</span>
               </div>
               <div>

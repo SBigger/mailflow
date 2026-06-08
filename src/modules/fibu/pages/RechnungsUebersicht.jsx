@@ -8,6 +8,7 @@
  */
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import LieferantLink from '../components/LieferantLink';
 import { useMandant } from '../contexts/MandantContext';
 import { kreditorenApi, lieferantenApi, kontenApi, mwstCodesApi } from '../api';
 
@@ -18,7 +19,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 const STATUS_META = {
   offen:       { bg: '#e4e4ea', color: '#4a4a5a', label: 'offen' },
   ausstehend:  { bg: '#fef3c7', color: '#92400e', label: 'ausstehend' },
-  ebanking:    { bg: '#dbeafe', color: '#1e40af', label: 'DSP' },
+  ebanking:    { bg: '#dbeafe', color: '#1e40af', label: 'Zahlung läuft' },
   teilbezahlt: { bg: '#efe4f8', color: '#5f3a9c', label: 'teilbez.' },
   bezahlt:     { bg: '#e3eaf5', color: '#2e4a7d', label: 'bezahlt' },
   storniert:   { bg: '#fde7e7', color: '#8a2d2d', label: 'storniert' },
@@ -593,6 +594,7 @@ export default function RechnungsUebersicht() {
           style={{ fontSize: 12, border: '1px solid #d4dcd4', borderRadius: 6, padding: '4px 8px', outline: 'none' }}>
           <option value="alle">Alle Status</option>
           <option value="offen">Offen</option>
+          <option value="ebanking">Zahlung läuft (an Bank)</option>
           <option value="teilbezahlt">Teilbezahlt</option>
           <option value="bezahlt">Bezahlt</option>
           <option value="storniert">Storniert</option>
@@ -676,7 +678,7 @@ export default function RechnungsUebersicht() {
                           </span>
                         )}
                       </td>
-                      <td style={{ ...td, fontWeight: 500 }}>{b.lieferant?.name ?? '—'}</td>
+                      <td style={{ ...td, fontWeight: 500 }}><LieferantLink id={b.lieferant_id} name={b.lieferant?.name} /></td>
                       <td style={td}>{DATE(b.belegdatum)}</td>
                       <td style={{ ...td, color: b.buchungsdatum !== b.belegdatum ? '#5f3a9c' : '#4a5a4a', fontWeight: b.buchungsdatum !== b.belegdatum ? 600 : 400 }}>
                         {DATE(b.buchungsdatum || b.belegdatum)}
@@ -752,7 +754,7 @@ export default function RechnungsUebersicht() {
           <div style={{ background: '#fff', borderRadius: 14, width: 420, boxShadow: '0 20px 60px rgba(0,0,0,0.25)', border: '1px solid #f0c0b0' }}>
             <div style={{ padding: '16px 20px', borderBottom: '1px solid #f0e4e4', background: 'linear-gradient(135deg, #fff8f5 0%, #fef2ee 100%)', borderRadius: '14px 14px 0 0' }}>
               <div style={{ fontWeight: 700, fontSize: 14, color: '#8a2d2d' }}>Beleg stornieren</div>
-              <div style={{ fontSize: 12, color: '#6b826b', marginTop: 2 }}>{stornoBeleg.beleg_nr} — {stornoBeleg.lieferant?.name}</div>
+              <div style={{ fontSize: 12, color: '#6b826b', marginTop: 2 }}>{stornoBeleg.beleg_nr} — <LieferantLink id={stornoBeleg.lieferant_id} name={stornoBeleg.lieferant?.name} /></div>
             </div>
             <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div style={{ fontSize: 12.5, color: '#4a4a5a' }}>

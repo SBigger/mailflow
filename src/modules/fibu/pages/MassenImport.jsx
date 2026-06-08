@@ -246,6 +246,148 @@ function extractBelegdatum(text) {
   return '';
 }
 
+// ── Schweizer Betrag parsen (1'234.50 / 1.234,50 / 1234.50 / 1 234,50) ──
+// Letztes Trennzeichen (. oder ,) = Dezimalpunkt, alles davor = Ganzzahl-Teil.
+function parseSwissAmount(raw) {
+  if (raw == null) return null;
+  const s = String(raw).replace(/[^\d.,]/g, '');   // nur Ziffern, Punkt, Komma (Apostroph/Space = Tausender → weg)
+  if (!s) return null;
+  const dec = Math.max(s.lastIndexOf('.'), s.lastIndexOf(','));
+  if (dec === -1) { const n = parseInt(s, 10); return Number.isFinite(n) ? n : null; }
+  const intPart  = s.slice(0, dec).replace(/[.,]/g, '');
+  const fracPart = s.slice(dec + 1).replace(/[.,]/g, '');
+  const n = parseFloat(`${intPart || '0'}.${fracPart}`);
+  return Number.isFinite(n) ? n : null;
+}
+
+// ── Bruttobetrag aus PDF-Text extrahieren (Fallback wenn kein/offener QR) ──
+// Geldbetrag-Token: Tausender mit ' . , Space, immer exakt 2 Dezimalstellen.
+const MONEY_TOK = String.raw`(?:\d{1,3}(?:[.'’ ]\d{3})+|\d+)[.,]\d{2}(?!\d)`;
+const CUR_TOK   = String.raw`(?:CHF|Fr\.?|EUR|€)?`;
+
+function extractBetrag(text) {
+  if (!text) return null;
+  const t = text.replace(/ /g, ' ');
+
+  const grab = (lbl) => {
+    // bis zu 15 Nicht-Ziffern-Zeichen zwischen Label und Betrag (Währung, Wörter wie „à payer", „fattura")
+    const re = new RegExp(String.raw`${lbl}[^\d]{0,15}(${MONEY_TOK})`, 'i');
+    const m = t.match(re);
+    return m ? parseSwissAmount(m[1]) : null;
+  };
+
+  // 1. Eindeutige „zu bezahlen"-Labels = Brutto, höchste Priorität
+  const payLabels = [
+    String.raw`Zu\s*bezahlen(?:er\s*Betrag)?`, String.raw`Zahlbetrag`, String.raw`Fälliger\s*Betrag`,
+    String.raw`Net\s*à\s*payer`, String.raw`À\s*payer`, String.raw`Da\s*pagare`,
+    String.raw`Amount\s*due`, String.raw`Balance\s*due`, String.raw`Total\s*due`,
+    String.raw`Rechnungstotal`, String.raw`Rechnungsbetrag`, String.raw`Gesamtbetrag`, String.raw`Endbetrag`,
+    String.raw`Total\s*(?:inkl\.?|incl\.?)[^\d]{0,18}`, String.raw`Total\s*TTC`,
+  ];
+  for (const lbl of payLabels) { const v = grab(lbl); if (v && v > 0) return v; }
+
+  // 2. Generische Total-Labels: nimm den GRÖSSTEN Wert (Brutto > Netto/Zwischensumme)
+  const totalLabels = [
+    String.raw`Total\s*CHF`, String.raw`Totale`, String.raw`Grand\s*total`,
+    String.raw`Montant\s*total`, String.raw`Gesamt`, String.raw`\bTotal\b`,
+  ];
+  let best = null;
+  for (const lbl of totalLabels) {
+    const re = new RegExp(String.raw`${lbl}[^\d]{0,15}(${MONEY_TOK})`, 'ig');
+    let m;
+    while ((m = re.exec(t)) !== null) {
+      const v = parseSwissAmount(m[1]);
+      if (v && v > 0 && (best == null || v > best)) best = v;
+    }
+  }
+  if (best != null) return best;
+
+  // 3. Letzter Fallback: größter Geldbetrag direkt neben CHF / Fr.
+  let fallback = null;
+  const reCur = new RegExp(String.raw`(?:CHF|Fr\.?)\s*(${MONEY_TOK})|(${MONEY_TOK})\s*(?:CHF|Fr\.?)`, 'ig');
+  let mm;
+  while ((mm = reCur.exec(t)) !== null) {
+    const v = parseSwissAmount(mm[1] || mm[2]);
+    if (v && v > 0 && (fallback == null || v > fallback)) fallback = v;
+  }
+  return fallback;
+}
+
+// ── MWST-Code aus PDF-Text erkennen (Satz oder Befreiung) ──────────
+// Mappt erkannten Satz auf den Vorsteuer-Code des Mandanten (mwstMap: code → satz).
+const RATE_TO_CURRENT = { 7.7: 8.1, 2.5: 2.6, 3.7: 3.8 };  // alte CH-Sätze → aktuelle Codes
+function extractMwstCode(text, mwstMap) {
+  if (!text || !mwstMap) return null;
+  const codeForRate = (rate) => {
+    const keys = Object.keys(mwstMap).filter(k => Math.abs((mwstMap[k] ?? -1) - rate) < 0.001);
+    if (!keys.length) return null;
+    // Kreditoren = Vorsteuer: 'M' bevorzugen, dann 'I'; Umsatzsteuer 'V' meiden
+    return keys.find(k => /^M/i.test(k)) || keys.find(k => /^I/i.test(k))
+        || keys.find(k => !/^V/i.test(k)) || keys[0];
+  };
+
+  const resolve = (r) => codeForRate(r) ?? codeForRate(RATE_TO_CURRENT[r] ?? r);
+
+  // 1. Satz im MWST-Kontext (Schlüsselwort in der Nähe, UID-Nummern dazwischen erlaubt)
+  for (const r of [8.1, 7.7, 3.8, 3.7, 2.6, 2.5]) {
+    const rs = String(r).replace('.', '[.,]') + '0?';   // erlaubt „8.1%" und „8.10%"
+    const re = new RegExp(
+      String.raw`(?:mwst|mehrwertsteuer|tva|iva|vat|ust)[^%\n]{0,40}` + rs + String.raw`\s*%`
+      + '|' + rs + String.raw`\s*%[^%\n]{0,25}(?:mwst|mehrwertsteuer|tva|iva|vat|ust)`,
+      'i'
+    );
+    if (re.test(text)) { const c = resolve(r); if (c) return c; }
+  }
+
+  // 2. Eindeutige CH-Sätze als blosses Token (8.1/7.7/3.8/3.7/2.6 %) –
+  //    diese Werte sind quasi MWST-Fingerabdrücke (Skonto/Rabatt nutzen sie praktisch nie)
+  for (const r of [8.1, 7.7, 3.8, 3.7, 2.6]) {
+    const rs = String(r).replace('.', '[.,]') + '0?';   // erlaubt „8.1%" und „8.10%"
+    const re = new RegExp(String.raw`(?<![\d.,])` + rs + String.raw`\s*%`, 'i');
+    if (re.test(text)) { const c = resolve(r); if (c) return c; }
+  }
+
+  // 3. Explizite Befreiung → 0 %-Code (z.B. Versicherungen, Spitex, Spenden)
+  if (/(?:mwst|mehrwertsteuer|tva|iva|vat)[^.\n]{0,40}(?:befreit|ausgenommen|exonér|esente|exempt)/i.test(text)
+   || /\b(?:ohne|keine)\s+(?:mwst|mehrwertsteuer|tva|vat)\b/i.test(text)
+   || /\bnicht\s+mwst[- ]?pflichtig/i.test(text)) {
+    const c = codeForRate(0);
+    if (c) return c;
+  }
+
+  return null;
+}
+
+// ── Dokumenttyp erkennen: rechnung | mahnung | kein_beleg ──────────
+// Dateinamen sind unzuverlässig (PEAX nennt Mahnungen oft „Rechnung").
+// Klassifizierung daher rein nach Beleg-Inhalt.
+function classifyDocType(text, fileName) {
+  const t   = (text || '').toLowerCase().replace(/\s+/g, ' ');
+  const hay = t + ' ' + (fileName || '').toLowerCase();
+
+  // Mahnstufe / „2. Mahnung" / „Letzte Mahnung" / „Mahnung -" / „Erinnerung -" / Zahlungserinnerung
+  const hasMahnung =
+       /mahnstufe/.test(hay) || /\b[1-9]\.\s*mahnung/.test(hay) || /letzte\s+mahnung/.test(hay)
+    || /zahlungserinnerung/.test(hay) || /\bmahnung\s*[-:]/.test(hay) || /\berinnerung\s*[-:]/.test(hay);
+
+  // Zahlungs-/Rechnungsbezug (NICHT bloss ein Währungsbetrag – sonst triggert z.B. „Busse bis Fr. 1'000")
+  const hasZahlung =
+       /offene[nr]?\s+(?:rechnung|posten|forderung|beträge|betrag)/.test(hay)
+    || /(?:zahlbar|fällig)\s*bis/.test(hay) || /einzahlung|zahlteil|qr-rechnung/.test(hay)
+    || /mahngebühr|mahnspesen|mahnbetrag/.test(hay) || /\brechnung\b|rechnungsbetrag|rechnungsnr/.test(hay)
+    || /honorarnote|leistungsabrechnung|\bfaktura\b/.test(hay) || /ausstehend/.test(hay);
+
+  // Nicht zahlbar: Patientenkopie / „zur Orientierung" / direkt mit Krankenkasse abgerechnet
+  const keinBelegMarker =
+       /patientenkopie/.test(hay) || /zur\s+orientierung/.test(hay)
+    || /rechnen\s+wir\s+direkt\s+mit\s+der\s+kranken/.test(hay);
+
+  if (hasMahnung && hasZahlung) return 'mahnung';      // Zahlungs-Mahnung → orange
+  if (keinBelegMarker)          return 'kein_beleg';   // Kopie/Info → grau
+  if (hasZahlung)               return 'rechnung';     // echte Rechnung
+  return 'kein_beleg';                                 // u.a. „Mahnung zum Einreichen" (kein Geldbezug) → grau
+}
+
 // ── Lieferant per Name matchen (Fallback wenn kein IBAN-Match) ───
 function normLiefName(s) {
   return (s || '')
@@ -351,6 +493,7 @@ function makeRow(file) {
     fileUrl:          URL.createObjectURL(file),
     fileName:         file.name,
     status:           'parsing',  // parsing | manual | ready | saving | saved | error
+    docType:          'rechnung', // rechnung | mahnung | kein_beleg (Auto-Klassifizierung, manuell änderbar)
     lieferant_id:     '',
     lieferant_search: '',
     belegdatum:       today(),
@@ -369,18 +512,26 @@ function makeRow(file) {
 }
 
 // Welche Pflichtfelder fehlen noch, damit der Beleg gebucht werden kann?
-function missingFields(row) {
+const FIELD_LABELS = {
+  lieferant: 'Lieferant', betrag: 'Betrag', konto: 'Konto',
+  belegdatum: 'Belegdatum', faelligkeit: 'Fälligkeit', mwst: 'MWST',
+};
+function missingKeys(row) {
   const m = [];
-  if (!row.lieferant_id)                     m.push('Lieferant');
-  if (!row.belegdatum)                       m.push('Belegdatum');
-  if (!row.faelligkeit)                      m.push('Fälligkeit');
-  if (!(parseFloat(row.betrag_brutto) > 0))  m.push('Betrag');
-  if (!row.konto_nr)                         m.push('Konto');
-  if (!row.mwst_code)                        m.push('MWST-Code');
+  if (!row.lieferant_id)                    m.push('lieferant');
+  if (!(parseFloat(row.betrag_brutto) > 0)) m.push('betrag');
+  if (!row.konto_nr)                        m.push('konto');
+  if (!row.belegdatum)                      m.push('belegdatum');
+  if (!row.faelligkeit)                     m.push('faelligkeit');
+  if (!row.mwst_code)                       m.push('mwst');
   return m;
+}
+function missingFields(row) {
+  return missingKeys(row).map(k => FIELD_LABELS[k]);
 }
 
 function isComplete(row) {
+  if (row.docType === 'kein_beleg') return false;   // Nicht-Belege werden nie gebucht
   return (
     missingFields(row).length === 0 &&
     row.status !== 'saving' &&
@@ -537,7 +688,7 @@ function LiefCell({ row, lieferanten, onChange, onCreateNew }) {
 }
 
 // ── Hauptkomponente ───────────────────────────────────────────────
-export default function MassenImport() {
+export default function MassenImport({ standalone = false }) {
   const { mandant } = useMandant();
   const [rows, setRows]             = useState([]);
   const [selectedId, setSelectedId] = useState(null);
@@ -566,6 +717,7 @@ export default function MassenImport() {
   const lieferantenRef = useRef([]);
   const regelnRef      = useRef([]);
   const mandantRef     = useRef(null);
+  const mwstMapRef     = useRef({});
 
   // ── PDF canvas rendering ──────────────────────────────────────────
   const renderPdfPage = useCallback(async (doc, pageNum, zoom) => {
@@ -627,6 +779,7 @@ export default function MassenImport() {
       setMwstCodes(codes);
       const m = {}; codes.forEach(c => { m[c.code] = c.satz; });
       setMwstMap(m);
+      mwstMapRef.current = m;
     }).catch(console.error);
     kreditorenApi.nextBelegNr(mandant.id).then(nr => {
       const n = parseInt(nr.split('-')[2] ?? '0', 10);
@@ -666,6 +819,10 @@ export default function MassenImport() {
         // Bei QR: mitteilung als primärer Text; Datum immer aus PDF-Text
         const invoiceNr = extractInvoiceNr(pdfText || spc?.mitteilung || '');
         const rawDatum  = extractBelegdatum(pdfText);
+        const rawBetrag = extractBetrag(pdfText);
+        const rawMwst   = extractMwstCode(pdfText, mwstMapRef.current);
+        // Dokumenttyp nur bei vorhandenem Text klassifizieren (Scans/Bilder bleiben „rechnung")
+        const docType   = pdfText ? classifyDocType(pdfText, file.name) : 'rechnung';
 
         let finalLiefId = null;
         let finalBelegref = '';
@@ -692,15 +849,18 @@ export default function MassenImport() {
               const v = findKontoVorschlag([r.fileName, spc.name, spc.mitteilung], regelnRef.current);
               if (v) { konto = v.konto_nr; if (v.mwst_code) mcode = v.mwst_code; }
             }
+            if (rawMwst) mcode = rawMwst;   // Beleg-Text hat Vorrang (tatsächlich berechnete MwSt)
             finalBelegref = spc.mitteilung || invoiceNr || '';
-            finalBetrag = spc.betrag;
+            finalBetrag = spc.betrag ?? rawBetrag;
             return {
               ...r,
               ...datumPatch,
               status:           'manual',
+              docType,
               lieferant_id:     lief?.id ?? '',
               lieferant_search: lief?.name ?? (eigen ? '' : spc.name),
-              betrag_brutto:    spc.betrag != null ? String(spc.betrag) : r.betrag_brutto,
+              betrag_brutto:    spc.betrag != null ? String(spc.betrag)
+                                : (rawBetrag != null ? String(rawBetrag) : r.betrag_brutto),
               zahlungsreferenz: spc.referenz ?? '',
               belegreferenz:    spc.mitteilung || invoiceNr || r.belegreferenz,
               konto_nr:         konto,
@@ -712,16 +872,19 @@ export default function MassenImport() {
               },
             };
           }
-          // Kein QR: Kontovorschlag + Datum + Rechnungsnr. aus Text
+          // Kein QR: Kontovorschlag + Datum + Rechnungsnr. + Betrag aus Text
           const v = findKontoVorschlag([r.fileName, pdfText.slice(0, 200)], regelnRef.current);
           finalBelegref = invoiceNr || '';
+          finalBetrag = rawBetrag;
           return {
             ...r,
             ...datumPatch,
             status:       'manual',
+            docType,
             belegreferenz: invoiceNr || r.belegreferenz,
+            betrag_brutto: r.betrag_brutto || (rawBetrag != null ? String(rawBetrag) : ''),
             konto_nr:     r.konto_nr || v?.konto_nr || '',
-            mwst_code:    (!r.konto_nr && v?.mwst_code) ? v.mwst_code : r.mwst_code,
+            mwst_code:    rawMwst || ((!r.konto_nr && v?.mwst_code) ? v.mwst_code : r.mwst_code),
           };
         }));
 
@@ -783,19 +946,22 @@ export default function MassenImport() {
     const ready = rows.filter(isComplete);
     if (!ready.length || saving) return;
 
-    // MWST-Code-Validierung vor dem Buchen
-    const invalidMwst = ready.filter(r => r.mwst_code && !(r.mwst_code in mwstMap));
-    if (invalidMwst.length > 0) {
-      const names = invalidMwst.map(r => `${r.fileName} (Code: ${r.mwst_code})`).join('\n');
-      alert(`Unbekannte MWST-Codes – bitte korrigieren:\n${names}`);
-      return;
+    // MWST-Code-Validierung: ungültige Codes rot markieren statt Sammel-Alert
+    const invalidIds = new Set(
+      ready.filter(r => r.mwst_code && !(r.mwst_code in mwstMap)).map(r => r._id)
+    );
+    if (invalidIds.size > 0) {
+      setRows(prev => prev.map(r => invalidIds.has(r._id)
+        ? { ...r, status: 'error', errorMsg: `Unbekannter MWST-Code «${r.mwst_code}»` } : r));
     }
+    const toBook = ready.filter(r => !invalidIds.has(r._id));
+    if (!toBook.length) return;
 
     setSaving(true);
     let counter = nrCounter;
     const year = new Date().getFullYear();
 
-    for (const row of ready) {
+    for (const row of toBook) {
       updateRow(row._id, { status: 'saving' });
       try {
         counter++;
@@ -840,6 +1006,16 @@ export default function MassenImport() {
     }
     setNrCounter(counter);
     setSaving(false);
+  };
+
+  // In separatem Vollbild-Fenster öffnen (mehr Platz, z.B. zweiter Monitor)
+  const openInWindow = () => {
+    if (!mandant?.id) return;
+    window.open(
+      `/fibu/massen-import/${mandant.id}`,
+      `massenimport-${mandant.id}`,   // benannt → erneuter Klick fokussiert dasselbe Fenster
+      'width=1600,height=950,menubar=no,toolbar=no,location=no,status=no'
+    );
   };
 
   const selectedRow  = rows.find(r => r._id === selectedId);
@@ -928,6 +1104,7 @@ export default function MassenImport() {
           <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1a2e' }}>Massen-Import</div>
           <div style={{ fontSize: 11.5, color: '#7a9a7f', marginTop: 1 }}>
             Kreditoren-Rechnungen hochladen, prüfen und buchen
+            {standalone && mandant?.name && <span style={{ color: '#3d6641', fontWeight: 600 }}> · {mandant.name}</span>}
           </div>
         </div>
 
@@ -936,6 +1113,26 @@ export default function MassenImport() {
             <span style={{ fontSize: 11.5, color: '#3d6641', background: '#e8f5e8', padding: '4px 10px', borderRadius: 12 }}>
               ✓ {savedCount} gebucht
             </span>
+          )}
+          {!standalone && (
+            <button
+              onClick={openInWindow}
+              disabled={!mandant?.id}
+              title="In separatem Fenster öffnen – mehr Platz (z.B. zweiter Monitor)"
+              style={{
+                display: 'flex', alignItems: 'center', gap: 5,
+                padding: '7px 12px', borderRadius: 7, fontSize: 12, fontWeight: 500,
+                background: '#fff', border: '1px solid #bfcfbf', color: '#4a5a4a',
+                cursor: mandant?.id ? 'pointer' : 'default',
+              }}
+            >
+              <svg style={{ width: 13, height: 13 }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                <polyline points="15 3 21 3 21 9"/>
+                <line x1="10" y1="14" x2="21" y2="3"/>
+              </svg>
+              Neues Fenster
+            </button>
           )}
           <button
             onClick={() => fileInputRef.current?.click()}
@@ -1084,6 +1281,33 @@ export default function MassenImport() {
                       const isSelected = row._id === selectedId;
                       const complete   = isComplete(row);
                       const isSaved    = row.status === 'saved';
+                      const isParsing    = row.status === 'parsing';
+                      const isError      = row.status === 'error';
+                      const dt           = row.docType || 'rechnung';
+                      const isMahnung    = dt === 'mahnung';
+                      const isKeinBeleg  = dt === 'kein_beleg';
+                      // Fehlende Pflichtfelder (für rote Zellen + Statuszeile; bei kein_beleg irrelevant)
+                      const miss    = (isSaved || isParsing || isKeinBeleg) ? [] : missingKeys(row);
+                      const missSet = new Set(miss);
+                      const cellBg  = (key) => missSet.has(key) ? '#fdecea' : undefined;
+                      const fehltTxt = miss.length ? ' · fehlt: ' + miss.map(k => FIELD_LABELS[k]).join(', ') : '';
+                      // Farbiger Zeilenrand: grün=bereit · rot=unvollständig · orange=Mahnung · grau=kein Beleg
+                      const edgeColor = isSaved      ? '#5a9bd4'
+                                      : isParsing    ? '#bfcfbf'
+                                      : isKeinBeleg  ? '#9aa3a9'
+                                      : isMahnung    ? '#e08a1e'
+                                      : isError      ? '#c0392b'
+                                      : complete     ? '#3d6641'
+                                      :                '#d9534f';
+                      // Statuszeile unter dem Dateinamen
+                      let statusText = '', statusColor = '#94a394';
+                      if (isParsing)        { statusText = 'analysiert…';                    statusColor = '#7a9a7f'; }
+                      else if (isSaved)     { statusText = '✓ gebucht';                       statusColor = '#3d6641'; }
+                      else if (isKeinBeleg) { statusText = '🚫 kein Beleg – wird nicht gebucht'; statusColor = '#7a828a'; }
+                      else if (isError)     { statusText = '✗ ' + (row.errorMsg || 'Fehler'); statusColor = '#c0392b'; }
+                      else if (isMahnung)   { statusText = '⚠ Mahnung' + (miss.length ? fehltTxt : ' · prüfen'); statusColor = '#c47a1e'; }
+                      else if (complete)    { statusText = '✓ bereit zum Buchen';             statusColor = '#3d6641'; }
+                      else                  { statusText = '⚠ fehlt: ' + miss.map(k => FIELD_LABELS[k]).join(', '); statusColor = '#c0392b'; }
                       const rowBg      = isSaved
                         ? '#f0f8f0'
                         : isSelected
@@ -1100,6 +1324,7 @@ export default function MassenImport() {
                             background: rowBg,
                             cursor: 'pointer',
                             borderBottom: '1px solid #e8eee8',
+                            borderLeft: `3px solid ${edgeColor}`,
                             outline: isSelected ? '2px solid #7a9b7f' : 'none',
                             outlineOffset: -1,
                           }}
@@ -1132,10 +1357,30 @@ export default function MassenImport() {
                                 {row.fileName.replace(/\.[^.]+$/, '')}
                               </span>
                             </div>
+                            <div style={{ marginTop: 2, fontSize: 9.5, fontWeight: 600, lineHeight: 1.25, color: statusColor,
+                              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                              title={statusText}>
+                              {statusText}
+                            </div>
+                            {!isSaved && !isParsing && (
+                              <select
+                                value={dt}
+                                onClick={e => e.stopPropagation()}
+                                onChange={e => updateRow(row._id, { docType: e.target.value })}
+                                title="Dokumenttyp – bei Fehlklassifizierung hier ändern"
+                                style={{ marginTop: 3, fontSize: 9.5, padding: '1px 2px', maxWidth: '100%',
+                                  border: '1px solid #d4dcd4', borderRadius: 4, background: '#fff',
+                                  color: '#6b826b', cursor: 'pointer' }}
+                              >
+                                <option value="rechnung">Rechnung</option>
+                                <option value="mahnung">Mahnung</option>
+                                <option value="kein_beleg">kein Beleg</option>
+                              </select>
+                            )}
                           </td>
 
                           {/* Lieferant */}
-                          <td style={{ padding: '2px 4px', verticalAlign: 'middle' }} onClick={e => e.stopPropagation()}>
+                          <td style={{ padding: '2px 4px', verticalAlign: 'middle', background: cellBg('lieferant') }} onClick={e => e.stopPropagation()}>
                             {isSaved
                               ? <span style={{ fontSize: 11.5, color: '#4a5a4a', padding: '2px 4px' }}>{row.lieferant_search}</span>
                               : <LiefCell row={row} lieferanten={lieferanten}
@@ -1160,7 +1405,7 @@ export default function MassenImport() {
                           </td>
 
                           {/* Konto */}
-                          <td style={{ padding: '2px 4px', verticalAlign: 'middle' }} onClick={e => e.stopPropagation()}>
+                          <td style={{ padding: '2px 4px', verticalAlign: 'middle', background: cellBg('konto') }} onClick={e => e.stopPropagation()}>
                             {isSaved
                               ? <span style={{ fontSize: 11.5, color: '#4a5a4a', padding: '2px 4px' }}>{row.konto_nr}</span>
                               : (
@@ -1181,7 +1426,7 @@ export default function MassenImport() {
                           </td>
 
                           {/* Belegdatum */}
-                          <td style={{ padding: '2px 4px', verticalAlign: 'middle' }} onClick={e => e.stopPropagation()}>
+                          <td style={{ padding: '2px 4px', verticalAlign: 'middle', background: cellBg('belegdatum') }} onClick={e => e.stopPropagation()}>
                             {isSaved
                               ? <span style={{ fontSize: 11.5, color: '#4a5a4a', padding: '2px 4px' }}>{row.belegdatum}</span>
                               : (
@@ -1217,7 +1462,7 @@ export default function MassenImport() {
                           </td>
 
                           {/* Fälligkeit */}
-                          <td style={{ padding: '2px 4px', verticalAlign: 'middle' }} onClick={e => e.stopPropagation()}>
+                          <td style={{ padding: '2px 4px', verticalAlign: 'middle', background: cellBg('faelligkeit') }} onClick={e => e.stopPropagation()}>
                             {isSaved
                               ? <span style={{ fontSize: 11.5, color: '#4a5a4a', padding: '2px 4px' }}>{row.faelligkeit}</span>
                               : (
@@ -1232,7 +1477,7 @@ export default function MassenImport() {
                           </td>
 
                           {/* Brutto */}
-                          <td style={{ padding: '2px 4px', verticalAlign: 'middle' }} onClick={e => e.stopPropagation()}>
+                          <td style={{ padding: '2px 4px', verticalAlign: 'middle', background: cellBg('betrag') }} onClick={e => e.stopPropagation()}>
                             {isSaved
                               ? <span style={{ fontSize: 11.5, color: '#3d6641', padding: '2px 4px', display: 'block', textAlign: 'right' }}>
                                   {CHF(row.betrag_brutto)}
@@ -1296,17 +1541,26 @@ export default function MassenImport() {
                 </table>
 
                 {/* Legende */}
-                {rows.length > 0 && (
-                  <div style={{ marginTop: 12, display: 'flex', gap: 16, fontSize: 10.5, color: '#94a394' }}>
-                    <span>◎ fehlende Felder</span>
-                    <span>◉ bereit zum Buchen</span>
-                    <span>✓ gebucht</span>
-                    <span style={{ marginLeft: 'auto' }}>
-                      {rows.filter(r => r.status !== 'parsing').length} / {rows.length} analysiert
-                      {readyCount > 0 && ` · ${readyCount} bereit`}
-                    </span>
-                  </div>
-                )}
+                {rows.length > 0 && (() => {
+                  const mahnungCount   = rows.filter(r => r.docType === 'mahnung'    && r.status !== 'saved').length;
+                  const keinBelegCount = rows.filter(r => r.docType === 'kein_beleg').length;
+                  const dot = (c) => <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: c, marginRight: 4, verticalAlign: 'middle' }} />;
+                  return (
+                    <div style={{ marginTop: 12, display: 'flex', gap: 14, fontSize: 10.5, color: '#94a394', flexWrap: 'wrap', alignItems: 'center' }}>
+                      <span>{dot('#3d6641')}bereit</span>
+                      <span>{dot('#d9534f')}unvollständig</span>
+                      <span>{dot('#e08a1e')}Mahnung</span>
+                      <span>{dot('#9aa3a9')}kein Beleg</span>
+                      <span>{dot('#5a9bd4')}gebucht</span>
+                      <span style={{ marginLeft: 'auto' }}>
+                        {rows.filter(r => r.status !== 'parsing').length} / {rows.length} analysiert
+                        {readyCount > 0      && ` · ${readyCount} bereit`}
+                        {mahnungCount > 0    && ` · ${mahnungCount} Mahnung${mahnungCount !== 1 ? 'en' : ''}`}
+                        {keinBelegCount > 0  && ` · ${keinBelegCount} kein Beleg`}
+                      </span>
+                    </div>
+                  );
+                })()}
               </div>
             </>
           )}

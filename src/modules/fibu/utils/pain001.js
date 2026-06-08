@@ -168,14 +168,19 @@ export function generatePain001(input) {
   L.push('      <DbtrAcct>');
   L.push(`        <Id><IBAN>${xmlEsc(normIban(debtorIban))}</IBAN></Id>`);
   L.push('      </DbtrAcct>');
+  // DbtrAgt ist in pain.001.001.09 PFLICHT und muss VOR ChrgBr stehen.
+  // Mit BIC → BICFI; ohne BIC → Platzhalter "NOTPROVIDED" (SIX SPS:
+  // Bank routet dann via Debtor-IBAN). Fehlt DbtrAgt ganz, lehnt das
+  // E-Banking die Datei ab ("ChrgBr found, DbtrAgt expected").
+  L.push('      <DbtrAgt>');
+  L.push('        <FinInstnId>');
   if (debtorBic && debtorBic.trim()) {
-    L.push('      <DbtrAgt>');
-    L.push('        <FinInstnId>');
     L.push(`          <BICFI>${xmlEsc(debtorBic.trim().toUpperCase())}</BICFI>`);
-    L.push('        </FinInstnId>');
-    L.push('      </DbtrAgt>');
+  } else {
+    L.push('          <Othr><Id>NOTPROVIDED</Id></Othr>');
   }
-  // Kein DbtrAgt ohne BIC – Bank routet via Debtor-IBAN (SIX SPS 2025)
+  L.push('        </FinInstnId>');
+  L.push('      </DbtrAgt>');
   L.push('      <ChrgBr>SLEV</ChrgBr>');
 
   // ── Einzeltransaktionen ──

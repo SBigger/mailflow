@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMandant } from '../contexts/MandantContext';
 import { kreditorenApi, zahlungslaufApi, zahlstellenApi } from '../api';
+import LieferantLink from '../components/LieferantLink';
 import {
   generatePain001, validatePayment, paymentType,
   normIban, isValidIban, isQrIban,
@@ -27,10 +28,12 @@ const TYP_BADGE = {
 };
 
 const STATUS_BADGE = {
-  entwurf:     { label: 'Entwurf',     bg: '#e4e9e4', color: '#6b826b' },
-  freigegeben: { label: 'Freigegeben', bg: '#dbeafe', color: '#1e40af' },
-  exportiert:  { label: 'Exportiert',  bg: '#fef3c7', color: '#92400e' },
-  verbucht:    { label: 'Verbucht',    bg: '#dcfce7', color: '#166534' },
+  entwurf:      { label: 'Entwurf',      bg: '#e4e9e4', color: '#6b826b' },
+  freigegeben:  { label: 'Freigegeben',  bg: '#dbeafe', color: '#1e40af' },
+  exportiert:   { label: 'Exportiert',   bg: '#fef3c7', color: '#92400e' },
+  teilverbucht: { label: 'Teilverbucht', bg: '#fef3c7', color: '#92400e' },
+  verbucht:     { label: 'Verbucht',     bg: '#dcfce7', color: '#166534' },
+  storniert:    { label: 'Zurückgenommen', bg: '#f3e4e4', color: '#8a2d2d' },
 };
 
 const DATETIME = (s) => s ? new Date(s).toLocaleString('de-CH', { dateStyle: 'short', timeStyle: 'short' }) : '—';
@@ -54,6 +57,11 @@ export default function Zahlungslauf() {
   const [view, setView] = useState('wizard');        // 'wizard' | 'historie'
   const [historie, setHistorie] = useState([]);
   const [histLoading, setHistLoading] = useState(false);
+  // Rückmeldung-Dialog
+  const [rueckLauf, setRueckLauf]           = useState(null);   // Lauf-Objekt wenn Dialog offen
+  const [rueckPositionen, setRueckPositionen] = useState([]);
+  const [rueckLoading, setRueckLoading]     = useState(false);
+  const [rueckSaving, setRueckSaving]       = useState(false);
   const [zusatz, setZusatz] = useState(new Set());   // manuell hinzugefügte nicht-fällige Belege
   const [showHinzufügen, setShowHinzufügen] = useState(false);
 
@@ -74,6 +82,41 @@ export default function Zahlungslauf() {
     a.download = `pain001_${row.lauf_nr}_${row.valutadatum}.xml`;
     a.click();
     URL.revokeObjectURL(a.href);
+  };
+
+  // ── Rückmeldung: Positionen laden + pro Position ausgeführt/storniert ──
+  const openRueckmeldung = async (z) => {
+    setRueckLauf(z); setRueckLoading(true); setRueckPositionen([]);
+    try {
+      const pos = await zahlungslaufApi.positionen(z.id);
+      setRueckPositionen(pos.map(p => ({ ...p, choice: p.status === 'storniert' ? 'storniert' : 'ausgefuehrt' })));
+    } catch (e) { alert('Fehler: ' + e.message); setRueckLauf(null); }
+    finally { setRueckLoading(false); }
+  };
+  const setChoice = (posId, choice) =>
+    setRueckPositionen(prev => prev.map(p => p.id === posId ? { ...p, choice } : p));
+  const saveRueckmeldung = async () => {
+    if (!rueckLauf) return;
+    setRueckSaving(true);
+    try {
+      await zahlungslaufApi.rueckmelden(rueckLauf.id, rueckPositionen.map(p => ({ position_id: p.id, status: p.choice })));
+      setRueckLauf(null);
+      await loadHistorie();
+    } catch (e) { alert('Fehler: ' + e.message); }
+    finally { setRueckSaving(false); }
+  };
+
+  // ── Ganzen Lauf zurücknehmen ──
+  const stornierenLauf = async (z) => {
+    if (!window.confirm(
+      `Zahlungslauf ${z.lauf_nr} zurücknehmen?\n\n` +
+      `Alle enthaltenen Rechnungen werden wieder offen/zahlbar. ` +
+      `Bereits per Bankabgleich verbuchte Zahlungen werden gegengebucht.`
+    )) return;
+    try {
+      await zahlungslaufApi.stornieren(z.id, toISO(new Date()));
+      await loadHistorie();
+    } catch (e) { alert('Fehler: ' + e.message); }
   };
 
   const today = toISO(new Date());
@@ -222,6 +265,9 @@ export default function Zahlungslauf() {
         lieferant_id:       p.beleg.lieferant_id,
         iban:               normIban(p.creditorIban),
         betrag:             p.amount,
+        // geplanter Skonto-Abzug – wird erst bei der CAMT-Bestätigung
+        // (fibu_bank_match_kreditor) verbucht, nicht schon beim Export.
+        skonto_betrag:      skonti.has(p.beleg.id) ? skontoBetrag(p.beleg) : 0,
         zahlungsreferenz:   p.reference,
         zahlungsmitteilung: p.message,
       }));
@@ -247,16 +293,10 @@ export default function Zahlungslauf() {
         }
       }
 
-      // Skonto-Abzüge verbuchen
-      for (const b of selectedBelege) {
-        if (skonti.has(b.id) && skontoBetrag(b) > 0) {
-          try {
-            await kreditorenApi.skontoBuchen(b.id, skontoBetrag(b), valuta);
-          } catch (e) {
-            console.error('Skonto-Buchung fehlgeschlagen für', b.beleg_nr, e);
-          }
-        }
-      }
+      // Skonto wird NICHT mehr hier gebucht. Der geplante Skonto-Abzug
+      // steckt als skonto_betrag in der Zahlungslauf-Position und wird
+      // erst bei der tatsächlichen Bank-Bestätigung (camt.053) verbucht –
+      // so entsteht kein Skonto-Aufwand für eine nie ausgeführte Zahlung.
 
       // Download XML
       const blob = new Blob([xml], { type: 'application/xml;charset=utf-8' });
@@ -352,6 +392,7 @@ export default function Zahlungslauf() {
                 <th style={hdr}>Rückmeldung</th>
                 <th style={hdr}>Status</th>
                 <th style={{ ...hdr, textAlign: 'right' }}>pain.001</th>
+                <th style={{ ...hdr, textAlign: 'right' }}>Aktionen</th>
               </tr></thead>
               <tbody>
                 {historie.map(z => {
@@ -385,6 +426,20 @@ export default function Zahlungslauf() {
                           <button onClick={() => downloadXml(z.id)} style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #d4dcd4', background: '#fff', fontSize: 11.5, cursor: 'pointer', color: '#3d6641' }}>↓ XML</button>
                         ) : <span style={{ color: '#c5cdc5', fontSize: 11.5 }}>—</span>}
                       </td>
+                      <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        {canWrite && z.status !== 'storniert' ? (
+                          <>
+                            <button onClick={() => openRueckmeldung(z)}
+                              style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #d4dcd4', background: '#fff', fontSize: 11.5, cursor: 'pointer', color: '#3d6641', marginRight: 6 }}>
+                              Rückmeldung
+                            </button>
+                            <button onClick={() => stornierenLauf(z)}
+                              style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #e0c0c0', background: '#fff', fontSize: 11.5, cursor: 'pointer', color: '#8a2d2d' }}>
+                              Zurücknehmen
+                            </button>
+                          </>
+                        ) : <span style={{ color: '#c5cdc5', fontSize: 11.5 }}>—</span>}
+                      </td>
                     </tr>
                   );
                 })}
@@ -392,7 +447,7 @@ export default function Zahlungslauf() {
             </table>
           )}
           <div style={{ padding: '10px 20px', fontSize: 11, color: '#94a394' }}>
-            Rückmeldung = Anzahl Zahlungen, die per Bankabstimmung (camt.053) zurückgemeldet wurden. Status „Verbucht" sobald alle Zahlungen des Laufs abgeglichen sind.
+            Rückmeldung = per Bankabstimmung (camt.053) verbuchte Zahlungen; Status „Verbucht", sobald alle abgeglichen sind. · <strong>Rückmeldung</strong>: pro Zahlung ausgeführt/storniert markieren (storniert → Rechnung wieder offen). · <strong>Zurücknehmen</strong>: ganzen Lauf rückgängig machen, Rechnungen werden wieder zahlbar.
           </div>
         </div>
       ) : step === 2 ? (
@@ -545,7 +600,7 @@ export default function Zahlungslauf() {
                           <td style={{ ...td, textAlign: 'center' }}><input type="checkbox" checked={sel} onChange={() => toggle(b.id)} onClick={e => e.stopPropagation()} /></td>
                           <td style={{ ...td, fontFamily: 'monospace', fontSize: 12 }}>{b.beleg_nr}</td>
                           <td style={{ ...td, fontWeight: 500 }}>
-                            {b.lieferant?.name}
+                            <LieferantLink id={b.lieferant_id} name={b.lieferant?.name} />
                             {zusatz.has(b.id) && (
                               <span
                                 title="Manuell hinzugefügt – klicken zum Entfernen"
@@ -719,6 +774,69 @@ export default function Zahlungslauf() {
               <button onClick={() => setShowHinzufügen(false)} style={{ padding: '6px 16px', borderRadius: 8, border: 'none', background: '#7a9b7f', color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
                 {zusatz.size > 0 ? `${zusatz.size} hinzugefügt ✓` : 'Schliessen'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: Rückmeldung (pro Position ausgeführt / storniert) ── */}
+      {rueckLauf && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(26,26,46,.45)', zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center' }} onClick={() => !rueckSaving && setRueckLauf(null)}>
+          <div style={{ background:'#fff', borderRadius:14, width:660, maxWidth:'94vw', maxHeight:'82vh', display:'flex', flexDirection:'column', overflow:'hidden', boxShadow:'0 16px 48px rgba(0,0,0,.25)' }} onClick={e => e.stopPropagation()}>
+            <div style={{ padding:'14px 18px', borderBottom:'1px solid #e4e9e4' }}>
+              <div style={{ fontWeight:700, fontSize:14 }}>Rückmeldung · {rueckLauf.lauf_nr}</div>
+              <div style={{ fontSize:11.5, color:'#94a394', marginTop:2 }}>Welche Zahlungen wurden ausgeführt, welche storniert? Stornierte Rechnungen werden wieder offen/zahlbar.</div>
+            </div>
+            <div style={{ flex:1, overflowY:'auto' }}>
+              {rueckLoading ? (
+                <div style={{ padding:32, textAlign:'center', color:'#94a394', fontSize:12.5 }}>Lädt…</div>
+              ) : (
+                <table style={{ width:'100%', borderCollapse:'collapse' }}>
+                  <thead><tr>
+                    <th style={hdr}>Beleg-Nr.</th>
+                    <th style={hdr}>Lieferant</th>
+                    <th style={{ ...hdr, textAlign:'right' }}>Betrag CHF</th>
+                    <th style={{ ...hdr, textAlign:'center' }}>Rückmeldung</th>
+                  </tr></thead>
+                  <tbody>
+                    {rueckPositionen.map(p => (
+                      <tr key={p.id}>
+                        <td style={{ ...td, fontFamily:'monospace', fontSize:12 }}>{p.beleg_nr}</td>
+                        <td style={{ ...td, fontWeight:500 }}>{p.lieferant_name}</td>
+                        <td style={{ ...td, textAlign:'right', fontVariantNumeric:'tabular-nums' }}>{CHF(p.betrag)}</td>
+                        <td style={{ ...td, textAlign:'center', whiteSpace:'nowrap' }}>
+                          <div style={{ display:'inline-flex', border:'1px solid #d4dcd4', borderRadius:7, overflow:'hidden' }}>
+                            <button onClick={() => setChoice(p.id, 'ausgefuehrt')}
+                              style={{ padding:'4px 10px', border:'none', fontSize:11.5, cursor:'pointer',
+                                background: p.choice==='ausgefuehrt' ? '#7a9b7f' : '#fff',
+                                color: p.choice==='ausgefuehrt' ? '#fff' : '#6b826b', fontWeight:600 }}>
+                              ✓ Ausgeführt
+                            </button>
+                            <button onClick={() => setChoice(p.id, 'storniert')}
+                              style={{ padding:'4px 10px', border:'none', borderLeft:'1px solid #d4dcd4', fontSize:11.5, cursor:'pointer',
+                                background: p.choice==='storniert' ? '#c0392b' : '#fff',
+                                color: p.choice==='storniert' ? '#fff' : '#8a2d2d', fontWeight:600 }}>
+                              ✕ Storniert
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            <div style={{ padding:'12px 18px', borderTop:'1px solid #e4e9e4', display:'flex', justifyContent:'space-between', alignItems:'center', gap:8 }}>
+              <span style={{ fontSize:11.5, color:'#94a394' }}>
+                {rueckPositionen.filter(p=>p.choice==='ausgefuehrt').length} ausgeführt · {rueckPositionen.filter(p=>p.choice==='storniert').length} storniert
+              </span>
+              <span style={{ display:'flex', gap:8 }}>
+                <button onClick={() => setRueckLauf(null)} disabled={rueckSaving} style={{ padding:'7px 14px', borderRadius:8, border:'1px solid #d4dcd4', background:'#fff', fontSize:12.5, cursor:'pointer' }}>Abbrechen</button>
+                <button onClick={saveRueckmeldung} disabled={rueckSaving || rueckLoading || rueckPositionen.length===0}
+                  style={{ padding:'7px 16px', borderRadius:8, border:'none', background:'#3d6641', color:'#fff', fontSize:12.5, fontWeight:600, cursor: rueckSaving ? 'default':'pointer' }}>
+                  {rueckSaving ? 'Speichert…' : 'Rückmeldung speichern'}
+                </button>
+              </span>
             </div>
           </div>
         </div>

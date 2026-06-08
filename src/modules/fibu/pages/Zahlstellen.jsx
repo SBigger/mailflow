@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useMandant } from '../contexts/MandantContext';
-import { zahlstellenApi } from '../api';
+import { zahlstellenApi, kontenApi } from '../api';
 import { isValidIban, isQrIban, normIban } from '../utils/pain001';
 
 const fmtIban = (s) => normIban(s).replace(/(.{4})/g, '$1 ').trim();
@@ -15,6 +15,7 @@ const emptyForm = () => ({
 export default function Zahlstellen() {
   const { mandant, canWrite } = useMandant();
   const [rows, setRows]       = useState([]);
+  const [konten, setKonten]   = useState([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null);   // null | 'new' | row-Objekt
   const [form, setForm]       = useState(emptyForm());
@@ -29,6 +30,13 @@ export default function Zahlstellen() {
     } finally { setLoading(false); }
   };
   useEffect(() => { load(); }, [mandant?.id]);
+  useEffect(() => {
+    if (!mandant) return;
+    kontenApi.list(mandant.id).then(setKonten).catch(() => {});
+  }, [mandant?.id]);
+
+  // Liquiditätskonten (Kasse/Bank 1000–1099) als Belastungskonto-Auswahl
+  const bankKonten = konten.filter(k => /^10\d\d$/.test(k.konto_nr || ''));
 
   const openNew  = () => { setForm(emptyForm()); setEditing('new'); setErr(null); };
   const openEdit = (r) => {
@@ -213,13 +221,7 @@ export default function Zahlstellen() {
                     onChange={e => setForm(f => ({ ...f, bank_name: e.target.value }))}
                     placeholder="z.B. UBS Switzerland AG" />
                 </div>
-                <div style={{ width: 110 }}>
-                  <label style={lbl}>Fibu-Konto</label>
-                  <input style={{ ...inp, fontFamily: 'monospace' }} value={form.konto_nr}
-                    onChange={e => setForm(f => ({ ...f, konto_nr: e.target.value }))}
-                    placeholder="1020" />
-                </div>
-                <div style={{ width: 90 }}>
+                <div style={{ width: 100 }}>
                   <label style={lbl}>Währung</label>
                   <select style={inp} value={form.waehrung}
                     onChange={e => setForm(f => ({ ...f, waehrung: e.target.value }))}>
@@ -228,6 +230,22 @@ export default function Zahlstellen() {
                     ))}
                   </select>
                 </div>
+              </div>
+              <div>
+                <label style={lbl}>Fibu-Konto (Belastungskonto)</label>
+                <select style={{ ...inp, fontFamily: 'monospace' }} value={form.konto_nr}
+                  onChange={e => setForm(f => ({ ...f, konto_nr: e.target.value }))}>
+                  <option value="">— kein Konto —</option>
+                  {form.konto_nr && !bankKonten.some(k => k.konto_nr === form.konto_nr) && (
+                    <option value={form.konto_nr}>{form.konto_nr}</option>
+                  )}
+                  {bankKonten.map(k => (
+                    <option key={k.konto_nr} value={k.konto_nr}>{k.konto_nr} {k.bezeichnung}</option>
+                  ))}
+                </select>
+                {!form.konto_nr
+                  ? <div style={{ fontSize: 10.5, color: '#9a6a00', marginTop: 3 }}>Ohne Fibu-Konto kann die Zahlung beim Bankabgleich nicht verbucht werden.</div>
+                  : <div style={{ fontSize: 10.5, color: '#6b826b', marginTop: 3 }}>Gegenkonto (Haben) bei der Zahlungs-Verbuchung.</div>}
               </div>
               <div>
                 <label style={lbl}>IBAN *</label>

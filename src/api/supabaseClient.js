@@ -180,6 +180,20 @@ export async function uploadFile(file, bucket = 'dokumente', folder = '') {
   return publicUrl;
 }
 
+// ─── Mitarbeiter-Foto (Avatar) hochladen ─────────────────────────────────────
+// Lädt ein Profilfoto in den öffentlichen 'avatars'-Bucket und gibt die URL zurück.
+// Timestamp im Pfad → kein CDN-Cache-Problem beim Ersetzen des Fotos.
+export async function uploadAvatar(file, userId) {
+  const ext = (file.name.includes('.') ? file.name.split('.').pop() : 'jpg').toLowerCase();
+  const path = `${userId}/avatar_${Date.now()}.${ext}`;
+  const { error } = await supabase.storage
+    .from('avatars')
+    .upload(path, file, { upsert: true, contentType: file.type, cacheControl: '3600' });
+  if (error) throw new Error(error.message);
+  const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path);
+  return publicUrl;
+}
+
 // Functions - werden Supabase Edge Functions
 export const functions = {
   async invoke(name, payload = {}) {

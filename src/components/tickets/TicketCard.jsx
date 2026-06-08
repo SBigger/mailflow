@@ -1,11 +1,18 @@
 import React, { useContext } from "react";
 import { Draggable } from "@hello-pangea/dnd";
+import { useQuery } from "@tanstack/react-query";
+import { entities } from "@/api/supabaseClient";
 import { ThemeContext } from "@/Layout";
 import { formatDistanceToNow, differenceInDays } from "date-fns";
 import { de } from "date-fns/locale";
-import { FileText, Clock, User } from "lucide-react";
+import { FileText, Clock, User, AlertTriangle } from "lucide-react";
 
 export default function TicketCard({ ticket, index, onClick, users = [] }) {
+  const { data: priorities = [] } = useQuery({
+    queryKey: ["priorities"],
+    queryFn: () => entities.Priority.list("level"),
+  });
+  const ticketPriority = priorities.find(p => p.id === ticket.priority_id);
   const { theme } = useContext(ThemeContext);
   const isLight = theme === "light";
   const isArtis = theme === "artis";
@@ -23,6 +30,7 @@ export default function TicketCard({ ticket, index, onClick, users = [] }) {
   let accentLeft = isArtis ? "#7a9b7f" : isLight ? "#7c3aed" : "#6366f1"; // standard
   if (isDocOnly)  accentLeft = "#3b82f6"; // blau
   if (isUrgent)   accentLeft = "#ef4444"; // rot (überschreibt)
+  if (ticketPriority) accentLeft = ticketPriority.color; // User-Prio gewinnt
 
   const assignee = users.find(u => u.id === ticket.assigned_to);
 
@@ -70,7 +78,17 @@ export default function TicketCard({ ticket, index, onClick, users = [] }) {
                   Unterlagen
                 </span>
               )}
-              {isUrgent && (
+              {ticketPriority ? (
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium"
+                  style={{
+                    backgroundColor: ticketPriority.color + "22",
+                    color: ticketPriority.color,
+                    border: "1px solid " + ticketPriority.color + "55",
+                  }}>
+                  {ticketPriority.level === 1 && <AlertTriangle className="h-3 w-3" />}
+                  {ticketPriority.name}
+                </span>
+              ) : isUrgent && (
                 <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium"
                   style={{ backgroundColor: "#fee2e2", color: "#dc2626" }}>
                   <Clock className="h-3 w-3" />
