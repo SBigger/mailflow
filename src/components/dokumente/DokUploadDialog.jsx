@@ -161,8 +161,10 @@ async function autoDetectTags(file, allTags) {
  * @param {File}   preFile         – Datei direkt öffnen (z.B. Mail-Anhang)
  * @param {string} preCustomerId   – Kunden-ID vorauswählen
  * @param {func}   onClose         – Dialog schliessen
+ * @param {func}   onUploaded      – (optional) Callback mit dem neu erstellten Dokument-Objekt
+ *                                    nach erfolgreichem Upload. Wird VOR onClose gerufen.
  */
-export default function DokUploadDialog({ preFile, preCustomerId, onClose }) {
+export default function DokUploadDialog({ preFile, preCustomerId, onClose, onUploaded }) {
   const { theme } = useContext(ThemeContext);
   const isArtis = theme === "artis";
   const isLight = theme === "light";
@@ -263,6 +265,10 @@ export default function DokUploadDialog({ preFile, preCustomerId, onClose }) {
       }
       toast.success("Dokument hochgeladen ✓", { closeButton: true });
       queryClient.invalidateQueries({ queryKey: ["dokumente"] });
+      queryClient.invalidateQueries({ queryKey: ["dokumente-all"] });
+      if (typeof onUploaded === "function" && newDoc) {
+        try { onUploaded(newDoc); } catch (cbErr) { console.warn("onUploaded callback error", cbErr); }
+      }
       onClose();
     } catch (err) {
       console.error("Upload error:", err);

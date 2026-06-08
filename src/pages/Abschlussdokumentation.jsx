@@ -10,6 +10,7 @@ import {
   Lock, Unlock, CheckCircle2, AlertCircle, TrendingUp, TrendingDown,
   Search, ChevronDown, ChevronUp, X, FileText, BarChart2, RotateCcw,
 } from "lucide-react";
+import DokUploadDialog from "@/components/dokumente/DokUploadDialog";
 
 // ── Swiss Kontenrahmen KMU ────────────────────────────────────────────────────
 const KONTENRAHMEN_POSITIONEN = [
@@ -1647,22 +1648,53 @@ function BelegeSection({ arbeitspapier, onSave, customerId, selectedYear, accent
   const [search, setSearch] = useState("");
   const [docs, setDocs] = useState([]);
   const [loading, setLoading] = useState(false);
+  // Volltextsuche (RPC search_dokumente) – aktiv ab >=2 Zeichen
+  const [ftResults, setFtResults] = useState(null);
+  const [ftSearching, setFtSearching] = useState(false);
+  // Upload-Dialog: wenn Beleg noch nicht in der Ablage. uploadFile = die zu uploadende Datei.
+  const [uploadFile, setUploadFile] = useState(null);
+  const fileInputRef = useRef(null);
 
   // Docs zurücksetzen wenn Kunde oder Jahr wechselt → erzwingt Neuladen
-  useEffect(() => { setDocs([]); }, [customerId, selectedYear]);
+  useEffect(() => { setDocs([]); setFtResults(null); }, [customerId, selectedYear]);
 
   // Dokumente laden wenn Picker öffnet — nur das gewählte Geschäftsjahr
   useEffect(() => {
     if (!showPicker || !customerId || docs.length > 0) return;
     setLoading(true);
     let q = supabase.from("dokumente")
-      .select("id, name, filename, storage_path, category, year, file_type")
+      .select("id, name, filename, storage_path, category, year, file_type, tag_ids")
       .eq("customer_id", customerId)
       .order("created_at", { ascending: false })
       .limit(500);
     if (selectedYear) q = q.eq("year", selectedYear);
     q.then(({ data }) => { setDocs(data || []); setLoading(false); });
   }, [showPicker, customerId, selectedYear]);
+
+  // Volltextsuche debouncen – greift ab 2 Zeichen, sucht im ganzen Kunden
+  useEffect(() => {
+    if (!showPicker) return;
+    const q = search.trim();
+    if (q.length < 2) { setFtResults(null); return; }
+    const timer = setTimeout(async () => {
+      setFtSearching(true);
+      try {
+        const { data, error } = await supabase.rpc("search_dokumente", {
+          p_query: q,
+          p_customer_id: customerId || null,
+          p_limit: 100,
+        });
+        if (error) throw error;
+        setFtResults(data || []);
+      } catch (e) {
+        console.warn("Volltextsuche fehlgeschlagen", e);
+        setFtResults([]);
+      } finally {
+        setFtSearching(false);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search, showPicker, customerId]);
 
   const linkedIds = new Set(belege.map(b => b.id));
 
@@ -1674,7 +1706,26 @@ function BelegeSection({ arbeitspapier, onSave, customerId, selectedYear, accent
       category: doc.category, file_type: doc.file_type,
     }];
     onSave({ ...(arbeitspapier || {}), belege: newBelege });
-    setShowPicker(false); setSearch("");
+    setShowPicker(false); setSearch(""); setFtResults(null);
+  };
+
+  // Neu hochgeladen → sofort als Beleg verknüpfen, Caches leeren
+  const handleUploaded = (newDoc) => {
+    if (!newDoc?.id) return;
+    addBeleg(newDoc);
+    setDocs([]); // Liste neu laden beim nächsten Picker-Open
+  };
+
+  // Upload-Button geklickt → File-Picker öffnen
+  const startUpload = () => {
+    fileInputRef.current?.click();
+  };
+  const onFileChosen = (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setUploadFile(f);
+    // Input zurücksetzen, damit dieselbe Datei nochmal gewählt werden kann
+    e.target.value = "";
   };
 
   const removeBeleg = (id) => {
@@ -1687,10 +1738,15 @@ function BelegeSection({ arbeitspapier, onSave, customerId, selectedYear, accent
     else toast.error("Dokument konnte nicht geöffnet werden");
   };
 
-  const filtered = docs.filter(d => !search ||
-    d.name?.toLowerCase().includes(search.toLowerCase()) ||
-    d.filename?.toLowerCase().includes(search.toLowerCase())
-  );
+  // Anzeige-Liste: bei aktiver Volltextsuche → FTS-Ergebnisse (alle Jahre, ganze DB des Kunden);
+  // sonst lokale Doc-Liste mit client-seitigem Filter über name+filename.
+  const useFts = search.trim().length >= 2 && ftResults !== null;
+  const filtered = useFts
+    ? ftResults
+    : docs.filter(d => !search ||
+        d.name?.toLowerCase().includes(search.toLowerCase()) ||
+        d.filename?.toLowerCase().includes(search.toLowerCase())
+      );
 
   const fileLabel = (ft, fn) => {
     if (ft?.includes("pdf")) return { label: "PDF", bg: "#fee2e2", col: "#dc2626" };
@@ -1705,21 +1761,42 @@ function BelegeSection({ arbeitspapier, onSave, customerId, selectedYear, accent
         {/* Header */}
         <div style={{ padding: "14px 18px", borderBottom: `1px solid ${panelBdr}`, display: "flex", alignItems: "center", gap: 12 }}>
           <span style={{ fontSize: 14, fontWeight: 700, color: "#111", flex: 1 }}>📎 Beleg verknüpfen</span>
-          <span style={{ fontSize: 12, color: subC }}>{selectedYear ? `Jahr ${selectedYear}` : "Alle Jahre"} · {filtered.length} Dokumente</span>
+          <button onClick={startUpload}
+            title="Neue Datei in die Ablage hochladen (mit Tags + Volltext-Index) und direkt als Beleg verknüpfen"
+            style={{ fontSize: 11, fontWeight: 700, padding: "5px 11px", borderRadius: 6, cursor: "pointer",
+              border: `1px solid ${accent}`, color: "#fff", backgroundColor: accent, display: "flex", alignItems: "center", gap: 5 }}>
+            <Upload size={12} /> Neu hochladen
+          </button>
+          <span style={{ fontSize: 12, color: subC }}>
+            {useFts
+              ? `Volltext · ${ftSearching ? "…" : filtered.length} Treffer`
+              : `${selectedYear ? `Jahr ${selectedYear}` : "Alle Jahre"} · ${filtered.length} Dokumente`}
+          </span>
           <button onClick={() => setShowPicker(false)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 20, color: subC, lineHeight: 1, padding: "0 4px" }}>×</button>
         </div>
         {/* Suche */}
         <div style={{ padding: "10px 18px", borderBottom: `1px solid ${panelBdr}` }}>
           <input autoFocus value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Dokument suchen…"
+            placeholder="Name, Dateiname oder Volltext suchen (ab 2 Zeichen)…"
             style={{ width: "100%", fontSize: 13, padding: "7px 12px", borderRadius: 8, border: `1px solid ${panelBdr}`, outline: "none", boxSizing: "border-box" }} />
+          <div style={{ fontSize: 10.5, color: subC, marginTop: 5, fontStyle: "italic" }}>
+            {useFts
+              ? "🔍 Volltextsuche aktiv — durchsucht Inhalt aller Dokumente dieses Kunden (alle Jahre)."
+              : `Lokale Suche auf den letzten 500 Dokumenten${selectedYear ? ` aus ${selectedYear}` : ""}. Tippe 2+ Zeichen für Volltextsuche im gesamten Bestand.`}
+          </div>
         </div>
         {/* Liste */}
         <div style={{ overflowY: "auto", flex: 1 }}>
-          {loading
-            ? <div style={{ padding: 32, textAlign: "center", fontSize: 13, color: subC }}>Lädt…</div>
+          {(loading || (useFts && ftSearching))
+            ? <div style={{ padding: 32, textAlign: "center", fontSize: 13, color: subC }}>{useFts ? "Volltextsuche läuft…" : "Lädt…"}</div>
             : filtered.length === 0
-              ? <div style={{ padding: 32, textAlign: "center", fontSize: 13, color: subC }}>Keine Dokumente gefunden</div>
+              ? <div style={{ padding: 32, textAlign: "center", fontSize: 13, color: subC }}>
+                  Keine Dokumente gefunden
+                  {search.trim() && <div style={{ marginTop: 8, fontSize: 12 }}>
+                    Tipp: Datei ist noch nicht in der Ablage? <button onClick={startUpload}
+                      style={{ background: "none", border: "none", color: accent, fontWeight: 700, cursor: "pointer", textDecoration: "underline", padding: 0, fontSize: 12 }}>Jetzt hochladen →</button>
+                  </div>}
+                </div>
               : filtered.map(doc => {
                   const fl = fileLabel(doc.file_type, doc.filename);
                   const already = linkedIds.has(doc.id);
@@ -1731,9 +1808,13 @@ function BelegeSection({ arbeitspapier, onSave, customerId, selectedYear, accent
                       <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 7px", borderRadius: 4, backgroundColor: fl.bg, color: fl.col, flexShrink: 0, minWidth: 36, textAlign: "center" }}>{fl.label}</span>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 13, color: "#111", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{doc.name}</div>
-                        <div style={{ fontSize: 11, color: subC, marginTop: 2 }}>
+                        <div style={{ fontSize: 11, color: subC, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                           {doc.filename}
                         </div>
+                        {useFts && doc.headline && (
+                          <div style={{ fontSize: 10.5, color: subC, marginTop: 3, fontStyle: "italic", lineHeight: 1.4 }}
+                            dangerouslySetInnerHTML={{ __html: "…" + doc.headline + "…" }} />
+                        )}
                       </div>
                       <div style={{ flexShrink: 0, textAlign: "right" }}>
                         {doc.year && <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 10, backgroundColor: accent + "15", color: accent }}>{doc.year}</span>}
@@ -1755,6 +1836,15 @@ function BelegeSection({ arbeitspapier, onSave, customerId, selectedYear, accent
   return (
     <div style={{ padding: "8px 8px 10px 32px", borderTop: `1px dashed ${panelBdr}` }}>
       {pickerModal}
+      <input ref={fileInputRef} type="file" style={{ display: "none" }} onChange={onFileChosen} />
+      {uploadFile && (
+        <DokUploadDialog
+          preFile={uploadFile}
+          preCustomerId={customerId}
+          onClose={() => setUploadFile(null)}
+          onUploaded={handleUploaded}
+        />
+      )}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
         <span style={{ fontSize: 10, fontWeight: 700, color: subC, letterSpacing: "0.06em", textTransform: "uppercase" }}>
           📎 Belege
