@@ -1,115 +1,194 @@
 /**
- * Rechnungsübersicht (Debitoren) — Liste aller Ausgangsrechnungen + KPIs.
- * Entwürfe können gestellt (verbucht) werden.
+ * Debitoren-Dashboard / Rechnungsübersicht — optisch identisch zum KreditorenDashboard.
  */
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMandant } from '../contexts/MandantContext';
 import { debitorenApi } from '../api';
 
-const CHF = n => (parseFloat(n) || 0).toLocaleString('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const today = () => new Date().toISOString().slice(0, 10);
+const CHF = (n) => n == null ? '—' : new Intl.NumberFormat('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
+const DATE = (s) => s ? new Date(s).toLocaleDateString('de-CH') : '—';
 
-const STATUS_META = {
+function KpiCard({ label, value, sub, color }) {
+  return (
+    <div style={{ background: '#fff', border: '1px solid #e4e9e4', borderRadius: 10, padding: '16px 18px', position: 'relative', overflow: 'hidden' }}>
+      <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: '#94a394' }}>{label}</div>
+      <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-.03em', lineHeight: 1, margin: '6px 0 3px', color: color ?? '#1a1a2e' }}>{value}</div>
+      {sub && <div style={{ fontSize: 11.5, color: '#6b826b' }}>{sub}</div>}
+    </div>
+  );
+}
+
+const STATUS_CHIP = {
   entwurf:     { bg: '#eceef0', color: '#5a6470', label: 'Entwurf' },
   offen:       { bg: '#e4e4ea', color: '#4a4a5a', label: 'offen' },
-  teilbezahlt: { bg: '#efe4f8', color: '#5f3a9c', label: 'teilbezahlt' },
+  teilbezahlt: { bg: '#efe4f8', color: '#5f3a9c', label: 'teilbez.' },
   bezahlt:     { bg: '#e3eaf5', color: '#2e4a7d', label: 'bezahlt' },
   storniert:   { bg: '#fde7e7', color: '#8a2d2d', label: 'storniert' },
 };
 
+function faelligStatus(faelligkeit) {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const f = new Date(faelligkeit); f.setHours(0, 0, 0, 0);
+  const diff = Math.round((f - today) / 86400000);
+  if (diff < 0) return { label: `überfällig +${Math.abs(diff)}`, bg: '#fde7e7', color: '#8a2d2d' };
+  if (diff <= 7)  return { label: 'fällig',   bg: '#fef0c7', color: '#8a5a00' };
+  return { label: 'offen', bg: '#e4e4ea', color: '#4a4a5a' };
+}
+
 export default function DebitorenUebersicht() {
   const { mandant } = useMandant();
   const navigate = useNavigate();
-  const [belege, setBelege] = useState([]);
+  const [belege, setBelege]   = useState([]);
   const [loading, setLoading] = useState(true);
-  const base = `/fibu/${mandant?.id}/debitoren`;
 
-  const load = useCallback(() => {
-    if (!mandant?.id) return;
+  useEffect(() => {
+    if (!mandant) return;
     setLoading(true);
     debitorenApi.list(mandant.id).then(setBelege).catch(console.error).finally(() => setLoading(false));
   }, [mandant?.id]);
-  useEffect(load, [load]);
 
-  const stellen = async (b) => {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const in7  = new Date(today.getTime() + 7 * 86400000);
+
+  const offeneListe = belege.filter(b => ['offen', 'teilbezahlt'].includes(b.status));
+  const aktiv       = belege.filter(b => ['entwurf', 'offen', 'teilbezahlt'].includes(b.status));
+  const restOf      = b => (b.betrag_brutto - (b.betrag_bezahlt || 0));
+  const totalOffen     = offeneListe.reduce((s, b) => s + restOf(b), 0);
+  const fälligWoche    = offeneListe.filter(b => new Date(b.faelligkeit) <= in7 && new Date(b.faelligkeit) >= today);
+  const überfällig     = offeneListe.filter(b => new Date(b.faelligkeit) < today);
+  const totalFällig    = fälligWoche.reduce((s, b) => s + restOf(b), 0);
+  const totalÜberfällig = überfällig.reduce((s, b) => s + restOf(b), 0);
+  const entwürfe       = belege.filter(b => b.status === 'entwurf');
+
+  const base = `/fibu/${mandant?.id}`;
+
+  const stellen = async (b, e) => {
+    e.stopPropagation();
     if (!confirm(`Rechnung ${b.beleg_nr} stellen und verbuchen?`)) return;
-    try { await debitorenApi.stellen(b.id); load(); }
-    catch (e) { alert('Fehler: ' + e.message); }
+    try { await debitorenApi.stellen(b.id); debitorenApi.list(mandant.id).then(setBelege); }
+    catch (err) { alert('Fehler: ' + err.message); }
   };
 
-  const offenSum = belege.filter(b => ['offen', 'teilbezahlt'].includes(b.status))
-    .reduce((s, b) => s + (b.betrag_brutto - (b.betrag_bezahlt || 0)), 0);
-  const ueberfaellig = belege.filter(b => ['offen', 'teilbezahlt'].includes(b.status) && b.faelligkeit < today())
-    .reduce((s, b) => s + (b.betrag_brutto - (b.betrag_bezahlt || 0)), 0);
-  const entwuerfe = belege.filter(b => b.status === 'entwurf').length;
-
-  const KPI = ({ label, val, color }) => (
-    <div style={{ background: '#fff', border: '1px solid #d4dcd4', borderRadius: 12, padding: '14px 16px', flex: 1 }}>
-      <div style={{ fontSize: 11, color: '#7a9a7f', fontWeight: 600 }}>{label}</div>
-      <div style={{ fontSize: 20, fontWeight: 800, marginTop: 4, color: color || '#1a1a2e' }}>{val}</div>
-    </div>
-  );
+  const hdr = { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: '#6b826b', padding: '9px 12px', borderBottom: '2px solid #e4e9e4', textAlign: 'left', whiteSpace: 'nowrap', background: '#fff' };
+  const td  = { padding: '9px 12px', borderBottom: '1px solid #f0f3f0', fontSize: 12.5, verticalAlign: 'middle' };
 
   return (
-    <div style={{ flex: 1, overflow: 'auto', background: '#f2f5f2' }}>
-      <div style={{ display: 'flex', alignItems: 'center', padding: '14px 24px', background: '#fff', borderBottom: '1px solid #d4dcd4' }}>
-        <div>
-          <div style={{ fontSize: 16, fontWeight: 700 }}>Rechnungen</div>
-          <div style={{ fontSize: 11.5, color: '#7a9a7f' }}>Debitoren · Ausgangsrechnungen</div>
-        </div>
-        <button onClick={() => navigate(`${base}/erfassen`)} style={{ marginLeft: 'auto', padding: '8px 16px', borderRadius: 8, border: 'none', background: '#3d6641', color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
-          + Neue Rechnung
-        </button>
+    <div style={{ flex: 1, overflowY: 'auto', padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+      {/* KPI */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
+        <KpiCard label="Offene Rechnungen" value={`CHF ${CHF(totalOffen)}`} sub={`${offeneListe.length} Beleg${offeneListe.length !== 1 ? 'e' : ''} ausstehend`} />
+        <KpiCard label="Fällig diese Woche" value={`CHF ${CHF(totalFällig)}`} sub={`${fälligWoche.length} Rechnungen bis ${in7.toLocaleDateString('de-CH')}`} color={totalFällig > 0 ? '#8a5a00' : undefined} />
+        <KpiCard label="Überfällig" value={`CHF ${CHF(totalÜberfällig)}`} sub={`${überfällig.length} Rechnung${überfällig.length !== 1 ? 'en' : ''}`} color={totalÜberfällig > 0 ? '#8a2d2d' : undefined} />
+        <KpiCard label="Entwürfe" value={entwürfe.length} sub="noch nicht gestellt" color={entwürfe.length > 0 ? '#8a5a00' : undefined} />
       </div>
 
-      <div style={{ padding: 24 }}>
-        <div style={{ display: 'flex', gap: 14, marginBottom: 18 }}>
-          <KPI label="Offen total" val={`CHF ${CHF(offenSum)}`} />
-          <KPI label="Überfällig" val={`CHF ${CHF(ueberfaellig)}`} color={ueberfaellig > 0 ? '#c0392b' : undefined} />
-          <KPI label="Entwürfe" val={entwuerfe} color={entwuerfe > 0 ? '#c47a1e' : undefined} />
-          <KPI label="Rechnungen total" val={belege.length} />
+      {/* Table + Actions */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 14 }}>
+        {/* Aktive Rechnungen */}
+        <div style={{ background: '#fff', border: '1px solid #e4e9e4', borderRadius: 12, overflow: 'hidden' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderBottom: '1px solid #e4e9e4' }}>
+            <span style={{ fontWeight: 600, fontSize: 13.5 }}>Offene Debitoren-Rechnungen</span>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {überfällig.length > 0 && <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, fontWeight: 500, background: '#fde7e7', color: '#8a2d2d' }}>{überfällig.length} überfällig</span>}
+              {entwürfe.length > 0 && <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, fontWeight: 500, background: '#eceef0', color: '#5a6470' }}>{entwürfe.length} Entwurf</span>}
+            </div>
+          </div>
+          {loading ? (
+            <div style={{ padding: 32, textAlign: 'center', color: '#94a394', fontSize: 12.5 }}>Lädt…</div>
+          ) : aktiv.length === 0 ? (
+            <div style={{ padding: 32, textAlign: 'center', color: '#94a394', fontSize: 12.5 }}>Keine offenen Rechnungen</div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={hdr}>Beleg-Nr.</th>
+                    <th style={hdr}>Kunde</th>
+                    <th style={hdr}>Fälligkeit</th>
+                    <th style={{ ...hdr, textAlign: 'right' }}>Offen CHF</th>
+                    <th style={hdr}>Status</th>
+                    <th style={hdr}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {aktiv.slice(0, 10).map(b => {
+                    const isEntwurf = b.status === 'entwurf';
+                    const fs = faelligStatus(b.faelligkeit);
+                    const sc = STATUS_CHIP[b.status] ?? STATUS_CHIP.offen;
+                    return (
+                      <tr key={b.id} style={{ cursor: 'pointer' }}
+                          onMouseEnter={e => e.currentTarget.querySelectorAll('td').forEach(t => t.style.background = '#f7faf7')}
+                          onMouseLeave={e => e.currentTarget.querySelectorAll('td').forEach(t => t.style.background = '')}
+                      >
+                        <td style={{ ...td, fontFamily: 'monospace', fontSize: 12 }}>{b.beleg_nr}</td>
+                        <td style={{ ...td, fontWeight: 500 }}>{b.kunde?.name || '—'}</td>
+                        <td style={{ ...td, color: isEntwurf ? '#94a394' : fs.color, fontWeight: 500 }}>{DATE(b.faelligkeit)}</td>
+                        <td style={{ ...td, textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{CHF(restOf(b))}</td>
+                        <td style={td}><span style={{ display: 'inline-flex', fontSize: 11, padding: '2px 8px', borderRadius: 6, fontWeight: 500, background: isEntwurf ? sc.bg : fs.bg, color: isEntwurf ? sc.color : fs.color }}>{isEntwurf ? 'Entwurf' : fs.label}</span></td>
+                        <td style={td}>
+                          {isEntwurf && (
+                            <button
+                              style={{ fontSize: 11.5, padding: '4px 10px', borderRadius: 7, border: '1px solid #3d6641', background: '#fff', color: '#3d6641', cursor: 'pointer', fontWeight: 600 }}
+                              onClick={(e) => stellen(b, e)}
+                            >Stellen</button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                {offeneListe.length > 0 && (
+                  <tfoot>
+                    <tr>
+                      <td colSpan={3} style={{ ...td, fontWeight: 700, background: '#f7faf7', borderTop: '2px solid #d4dcd4' }}>Total offen</td>
+                      <td style={{ ...td, textAlign: 'right', fontWeight: 700, background: '#f7faf7', borderTop: '2px solid #d4dcd4', fontVariantNumeric: 'tabular-nums' }}>CHF {CHF(totalOffen)}</td>
+                      <td colSpan={2} style={{ ...td, background: '#f7faf7', borderTop: '2px solid #d4dcd4' }}></td>
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+          )}
         </div>
 
-        <div style={{ background: '#fff', border: '1px solid #d4dcd4', borderRadius: 12, overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-            <thead>
-              <tr style={{ background: '#f7faf7', color: '#6b826b', fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.06em' }}>
-                <th style={{ textAlign: 'left', padding: '9px 12px' }}>Nr.</th>
-                <th style={{ textAlign: 'left', padding: '9px 12px' }}>Kunde</th>
-                <th style={{ textAlign: 'left', padding: '9px 12px' }}>Titel</th>
-                <th style={{ textAlign: 'left', padding: '9px 12px' }}>Datum</th>
-                <th style={{ textAlign: 'left', padding: '9px 12px' }}>Fällig</th>
-                <th style={{ textAlign: 'right', padding: '9px 12px' }}>Betrag</th>
-                <th style={{ textAlign: 'left', padding: '9px 12px' }}>Status</th>
-                <th style={{ width: 90 }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading && <tr><td colSpan={8} style={{ padding: 20, color: '#94a394' }}>Lädt…</td></tr>}
-              {!loading && belege.length === 0 && <tr><td colSpan={8} style={{ padding: 20, color: '#94a394' }}>Noch keine Rechnungen — erstelle die erste.</td></tr>}
-              {belege.map(b => {
-                const m = STATUS_META[b.status] ?? STATUS_META.offen;
-                const ueber = ['offen', 'teilbezahlt'].includes(b.status) && b.faelligkeit < today();
-                return (
-                  <tr key={b.id} style={{ borderTop: '1px solid #f0f3f0' }}>
-                    <td style={{ padding: '9px 12px', fontVariantNumeric: 'tabular-nums', color: '#6b826b' }}>{b.beleg_nr}</td>
-                    <td style={{ padding: '9px 12px', fontWeight: 600 }}>{b.kunde?.name || '—'}</td>
-                    <td style={{ padding: '9px 12px', color: '#6b826b' }}>{b.titel || '—'}</td>
-                    <td style={{ padding: '9px 12px' }}>{b.belegdatum}</td>
-                    <td style={{ padding: '9px 12px', color: ueber ? '#c0392b' : undefined, fontWeight: ueber ? 600 : 400 }}>{b.faelligkeit}</td>
-                    <td style={{ padding: '9px 12px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{CHF(b.betrag_brutto)}</td>
-                    <td style={{ padding: '9px 12px' }}><span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, fontWeight: 600, background: m.bg, color: m.color }}>{ueber ? 'überfällig' : m.label}</span></td>
-                    <td style={{ padding: '9px 12px', textAlign: 'right' }}>
-                      {b.status === 'entwurf' && (
-                        <button onClick={() => stellen(b)} style={{ fontSize: 11.5, padding: '4px 10px', borderRadius: 6, border: '1px solid #3d6641', background: '#fff', color: '#3d6641', fontWeight: 600, cursor: 'pointer' }}>Stellen</button>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        {/* Right panel */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ background: '#fff', border: '1px solid #e4e9e4', borderRadius: 10, padding: 16 }}>
+            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12 }}>Schnellaktionen</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {[
+                { label: 'Neue Rechnung erstellen', path: 'debitoren/erfassen', primary: true },
+                { label: 'Kunden verwalten',        path: 'debitoren/kunden' },
+                { label: 'Produktstamm',            path: 'debitoren/artikel' },
+                { label: 'MWST-Abrechnung',         path: 'mwst/abrechnung' },
+              ].map(a => (
+                <button
+                  key={a.label}
+                  onClick={() => navigate(`${base}/${a.path}`)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px',
+                    borderRadius: 8, border: a.primary ? 'none' : '1px solid #d4dcd4',
+                    background: a.primary ? '#7a9b7f' : '#fff',
+                    color: a.primary ? '#fff' : '#4a5a4a',
+                    fontSize: 12.5, fontWeight: 500, cursor: 'pointer', width: '100%',
+                    textAlign: 'left',
+                  }}
+                >{a.label}</button>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ background: '#fff', border: '1px solid #e4e9e4', borderRadius: 10, padding: 16 }}>
+            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12 }}>Mandant</div>
+            <div style={{ fontSize: 12, color: '#4a5a4a', display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div><span style={{ color: '#94a394' }}>Name: </span>{mandant?.name}</div>
+              {mandant?.uid && <div><span style={{ color: '#94a394' }}>UID: </span>{mandant.uid}</div>}
+              {mandant?.mwst_nr && <div><span style={{ color: '#94a394' }}>MWST-Nr: </span>{mandant.mwst_nr}</div>}
+              <div><span style={{ color: '#94a394' }}>Währung: </span>{mandant?.waehrung}</div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
