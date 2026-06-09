@@ -36,6 +36,10 @@ const Kursbewertung        = React.lazy(() => import('../../pages/Kursbewertung'
 const SetupAssistent       = React.lazy(() => import('../../pages/SetupAssistent'));
 const RechnungsUebersicht  = React.lazy(() => import('../../pages/RechnungsUebersicht'));
 const Benutzerverwaltung   = React.lazy(() => import('../../pages/Benutzerverwaltung'));
+const Kunden               = React.lazy(() => import('../../pages/Kunden'));
+const Artikel              = React.lazy(() => import('../../pages/Artikel'));
+const DebitorenRechnung    = React.lazy(() => import('../../pages/DebitorenRechnung'));
+const DebitorenUebersicht  = React.lazy(() => import('../../pages/DebitorenUebersicht'));
 
 const Spinner = () => (
   <div className="flex-1 flex items-center justify-center">
@@ -73,6 +77,12 @@ function FiBuContent() {
         <Route path="mwst/abrechnung"               element={<MwstAbrechnung />} />
         <Route path="jahresabschluss"               element={<Jahresabschluss />} />
         <Route path="kreditoren/massen-import"      element={<MassenImport />} />
+        {/* ── Debitoren / Fakturierung ── */}
+        <Route path="debitoren"                     element={<Navigate to="uebersicht" replace />} />
+        <Route path="debitoren/uebersicht"          element={<DebitorenUebersicht />} />
+        <Route path="debitoren/erfassen"            element={<DebitorenRechnung />} />
+        <Route path="debitoren/kunden"              element={<Kunden />} />
+        <Route path="debitoren/artikel"             element={<Artikel />} />
         <Route path="kreditoren/dauerbelege"        element={<Dauerbelege />} />
         <Route path="bankabstimmung"               element={<BankAbstimmungIntern />} />
         <Route path="kontoblaetter"                element={<Kontoblaetter />} />

@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Artis Fakturierung – Mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Inter', system-ui, sans-serif; background: #f2f5f2; color: #1a1a2e; font-size: 13px; }
+  .app { display: flex; min-height: 100vh; }
+  /* ── Sidebar ── */
+  .rail { width: 52px; background: #243824; display: flex; flex-direction: column; align-items: center; padding-top: 12px; gap: 10px; flex-shrink: 0; }
+  .rail .logo { width: 30px; height: 30px; border-radius: 8px; background: #7a9b7f; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 800; }
+  .rail .ico { width: 34px; height: 34px; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #9cb39c; font-size: 15px; }
+  .rail .ico.active { background: #355236; color: #fff; }
+  .nav { width: 210px; background: #fff; border-right: 1px solid #d4dcd4; flex-shrink: 0; padding: 14px 10px; }
+  .nav .mandant { font-size: 13px; font-weight: 700; padding: 6px 8px; }
+  .nav .mandant small { color: #94a394; font-weight: 500; }
+  .nav .grp { font-size: 10px; font-weight: 700; letter-spacing: .08em; color: #94a394; text-transform: uppercase; margin: 14px 8px 4px; }
+  .nav a { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 7px; color: #4a5a4a; text-decoration: none; font-size: 12.5px; }
+  .nav a.active { background: #e8f0e8; color: #2d4a30; font-weight: 600; }
+  .nav a .d { width: 6px; height: 6px; border-radius: 50%; background: #c4d0c4; }
+  /* ── Main ── */
+  .main { flex: 1; padding: 0 0 60px; }
+  .topbar { display: flex; align-items: center; padding: 14px 24px; background: #fff; border-bottom: 1px solid #d4dcd4; gap: 12px; }
+  .topbar h1 { font-size: 16px; }
+  .topbar .sub { font-size: 11.5px; color: #7a9a7f; }
+  .spacer { margin-left: auto; }
+  .btn { padding: 8px 16px; border-radius: 8px; font-size: 12.5px; font-weight: 600; border: 1px solid #bfcfbf; background: #fff; color: #4a5a4a; cursor: pointer; }
+  .btn.primary { background: #3d6641; border: none; color: #fff; }
+  .sect { padding: 22px 24px; }
+  .sect h2 { font-size: 13px; font-weight: 700; color: #2d4a30; margin-bottom: 12px; letter-spacing: .02em; }
+  .card { background: #fff; border: 1px solid #d4dcd4; border-radius: 12px; padding: 18px 20px; }
+  /* KPIs */
+  .kpis { display: grid; grid-template-columns: repeat(4,1fr); gap: 14px; margin-bottom: 6px; }
+  .kpi { background: #fff; border: 1px solid #d4dcd4; border-radius: 12px; padding: 14px 16px; }
+  .kpi .lbl { font-size: 11px; color: #7a9a7f; font-weight: 600; }
+  .kpi .val { font-size: 22px; font-weight: 800; color: #1a1a2e; margin-top: 4px; }
+  .kpi .val.green { color: #3d6641; } .kpi .val.red { color: #c0392b; } .kpi .val.amber { color: #c47a1e; }
+  /* form */
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .fld label { display: block; font-size: 11px; font-weight: 600; color: #6b826b; margin-bottom: 4px; }
+  .fld .inp, .fld select { width: 100%; padding: 8px 10px; border: 1px solid #d4dcd4; border-radius: 8px; font-size: 12.5px; background: #f7faf7; font-family: inherit; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  thead th { text-align: left; font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #6b826b; padding: 9px 10px; border-bottom: 2px solid #e4e9e4; background: #f7faf7; }
+  tbody td { padding: 9px 10px; border-bottom: 1px solid #f0f3f0; vertical-align: middle; }
+  td.r, th.r { text-align: right; }
+  .pill { font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 8px; }
+  .pill.dl { background: #e8f0fb; color: #1e40af; } .pill.mat { background: #fdf0e6; color: #b45309; }
+  .pill.entwurf { background: #eceef0; color: #5a6470; } .pill.offen { background: #e4e4ea; color: #4a4a5a; }
+  .pill.bezahlt { background: #e3eaf5; color: #2e4a7d; } .pill.ueberf { background: #fde7e7; color: #b03030; }
+  .mut { color: #94a394; } .mono { font-variant-numeric: tabular-nums; }
+  .addrow { color: #3d6641; font-weight: 600; font-size: 12px; cursor: pointer; padding: 8px 10px; }
+  .totbox { margin-left: auto; width: 280px; }
+  .totbox .l { display: flex; justify-content: space-between; padding: 5px 0; font-size: 12.5px; color: #4a5a4a; }
+  .totbox .l.big { border-top: 2px solid #e4e9e4; margin-top: 4px; padding-top: 8px; font-size: 15px; font-weight: 800; color: #1a1a2e; }
+  .qr { width: 150px; height: 150px; border: 2px solid #243824; border-radius: 8px; display: grid; place-items: center; background: repeating-conic-gradient(#243824 0% 25%, #fff 0% 50%) 0 / 14px 14px; }
+  .qrwrap { display: flex; gap: 16px; align-items: center; background: #f7faf7; border: 1px dashed #bfcfbf; border-radius: 10px; padding: 16px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="rail">
+    <div class="logo">A</div>
+    <div class="ico">MF</div>
+    <div class="ico active">KR</div>
+    <div class="ico">DB</div>
+    <div class="ico">HB</div>
+  </div>
+  <div class="nav">
+    <div class="mandant">Bigger Ivo <small>· GJ 2026</small></div>
+    <div class="grp">Debitoren · Fakturierung</div>
+    <a class="active"><span class="d" style="background:#7a9b7f"></span> Rechnung erstellen</a>
+    <a><span class="d"></span> Offene Rechnungen</a>
+    <a><span class="d"></span> Kundenstamm</a>
+    <a><span class="d"></span> Produktstamm</a>
+    <a><span class="d"></span> Mahnwesen</a>
+    <div class="grp">Kreditoren</div>
+    <a><span class="d"></span> Eingangspostfach</a>
+    <a><span class="d"></span> Zahlungslauf</a>
+  </div>
+
+  <div class="main">
+    <div class="topbar">
+      <div><h1>Neue Rechnung</h1><div class="sub">Debitoren · Ausgangsrechnung erstellen</div></div>
+      <div class="spacer"></div>
+      <button class="btn">Entwurf speichern</button>
+      <button class="btn primary">↓ QR-Rechnung erstellen &amp; buchen</button>
+    </div>
+
+    <!-- KPI -->
+    <div class="sect" style="padding-bottom:6px">
+      <div class="kpis">
+        <div class="kpi"><div class="lbl">Offen total</div><div class="val">CHF 18'420.00</div></div>
+        <div class="kpi"><div class="lbl">Überfällig</div><div class="val red">CHF 3'250.00</div></div>
+        <div class="kpi"><div class="lbl">Umsatz YTD</div><div class="val green">CHF 142'900.00</div></div>
+        <div class="kpi"><div class="lbl">Entwürfe</div><div class="val amber">4</div></div>
+      </div>
+    </div>
+
+    <!-- Rechnung erstellen -->
+    <div class="sect" style="padding-top:8px">
+      <div class="card">
+        <div class="row2" style="margin-bottom:16px">
+          <div class="fld"><label>Kunde</label><select><option>Müller Treuhand AG, 8000 Zürich</option><option>Beispiel GmbH</option><option>+ Neuer Kunde…</option></select></div>
+          <div class="fld"><label>Rechnungstitel</label><input class="inp" value="Beratung &amp; Material Q2 2026" /></div>
+          <div class="fld"><label>Belegdatum</label><input class="inp" value="09.06.2026" /></div>
+          <div class="fld"><label>Fällig (30 Tage)</label><input class="inp" value="09.07.2026" /></div>
+        </div>
+
+        <table>
+          <thead><tr>
+            <th style="width:34%">Artikel / Position</th><th class="r" style="width:9%">Menge</th>
+            <th style="width:8%">Einheit</th><th class="r" style="width:13%">Einzelpreis</th>
+            <th style="width:9%">Konto</th><th style="width:9%">MWST</th><th class="r" style="width:14%">Betrag</th><th></th>
+          </tr></thead>
+          <tbody>
+            <tr>
+              <td><span class="pill dl">Dienstleistung</span> Beratung Buchhaltung</td>
+              <td class="r mono">12.00</td><td>Std</td><td class="r mono">140.00</td>
+              <td class="mono">3400</td><td>V81 · 8.1%</td><td class="r mono">1'680.00</td><td class="mut">✕</td>
+            </tr>
+            <tr>
+              <td><span class="pill dl">Dienstleistung</span> Jahresabschluss-Erstellung</td>
+              <td class="r mono">1.00</td><td>Pausch.</td><td class="r mono">2'400.00</td>
+              <td class="mono">3400</td><td>V81 · 8.1%</td><td class="r mono">2'400.00</td><td class="mut">✕</td>
+            </tr>
+            <tr>
+              <td><span class="pill mat">Material</span> Ordner &amp; Register (Set)</td>
+              <td class="r mono">3.00</td><td>Stk</td><td class="r mono">28.50</td>
+              <td class="mono">3200</td><td>V81 · 8.1%</td><td class="r mono">85.50</td><td class="mut">✕</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="addrow">+ Position aus Produktstamm hinzufügen</div>
+
+        <div style="display:flex; gap:24px; margin-top:14px; align-items:flex-start">
+          <div class="qrwrap">
+            <div class="qr"></div>
+            <div>
+              <div style="font-weight:700; font-size:12px; color:#2d4a30">Swiss QR-Rechnung</div>
+              <div class="mut" style="font-size:11.5px; margin-top:4px; line-height:1.6">
+                QR-IBAN automatisch · QR-Referenz<br><span class="mono">21 00000 00000 00000 00041 73</span><br>
+                PDF mit Einzahlungsschein wird generiert
+              </div>
+            </div>
+          </div>
+          <div class="totbox">
+            <div class="l"><span>Netto</span><span class="mono">CHF 4'165.50</span></div>
+            <div class="l"><span>MWST 8.1%</span><span class="mono">CHF 337.40</span></div>
+            <div class="l big"><span>Total</span><span class="mono">CHF 4'502.90</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Produktstamm -->
+    <div class="sect">
+      <h2>Produktstamm (Dienstleistungen + Material)</h2>
+      <div class="card" style="padding:0">
+        <table>
+          <thead><tr><th style="width:10%">Nr.</th><th style="width:14%">Typ</th><th>Bezeichnung</th><th>Einheit</th><th class="r">VK-Preis</th><th>MWST</th><th>Ertragskonto</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">D-001</td><td><span class="pill dl">Dienstleistung</span></td><td>Beratung Buchhaltung</td><td>Std</td><td class="r mono">140.00</td><td>V81</td><td class="mono">3400</td></tr>
+            <tr><td class="mono">D-002</td><td><span class="pill dl">Dienstleistung</span></td><td>Jahresabschluss-Erstellung</td><td>Pausch.</td><td class="r mono">2'400.00</td><td>V81</td><td class="mono">3400</td></tr>
+            <tr><td class="mono">M-001</td><td><span class="pill mat">Material</span></td><td>Ordner &amp; Register (Set)</td><td>Stk</td><td class="r mono">28.50</td><td>V81</td><td class="mono">3200</td></tr>
+            <tr><td class="mono">M-002</td><td><span class="pill mat">Material</span></td><td>Toner-Kartusche HP 207A</td><td>Stk</td><td class="r mono">89.00</td><td>V81</td><td class="mono">3200</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Offene Rechnungen + Kundenstamm -->
+    <div class="sect" style="display:grid; grid-template-columns:1.3fr 1fr; gap:20px">
+      <div>
+        <h2>Offene Rechnungen</h2>
+        <div class="card" style="padding:0">
+          <table>
+            <thead><tr><th>Nr.</th><th>Kunde</th><th class="r">Betrag</th><th>Fällig</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">DR-2026-0041</td><td>Müller Treuhand AG</td><td class="r mono">4'502.90</td><td>09.07.26</td><td><span class="pill entwurf">Entwurf</span></td></tr>
+              <tr><td class="mono">DR-2026-0040</td><td>Beispiel GmbH</td><td class="r mono">1'290.00</td><td>22.06.26</td><td><span class="pill offen">offen</span></td></tr>
+              <tr><td class="mono">DR-2026-0037</td><td>Alpina AG</td><td class="r mono">3'250.00</td><td>15.05.26</td><td><span class="pill ueberf">überfällig</span></td></tr>
+              <tr><td class="mono">DR-2026-0035</td><td>Seetal GmbH</td><td class="r mono">980.00</td><td>—</td><td><span class="pill bezahlt">bezahlt</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div>
+        <h2>Kundenstamm</h2>
+        <div class="card" style="padding:0">
+          <table>
+            <thead><tr><th>Nr.</th><th>Kunde</th><th>Ort</th><th>Zahlungsfrist</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">K-1001</td><td>Müller Treuhand AG</td><td>8000 Zürich</td><td>30 Tage</td></tr>
+              <tr><td class="mono">K-1002</td><td>Beispiel GmbH</td><td>6300 Zug</td><td>30 Tage</td></tr>
+              <tr><td class="mono">K-1003</td><td>Alpina AG</td><td>7000 Chur</td><td>10 Tage</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

@@ -34,9 +34,11 @@ const SECTIONS = [
     label: 'Debitoren',
     paths: ['debitoren'],
     items: [
-      { label: 'Rechnungen & Zahlungen', icon: 'mail',     disabled: true, note: 'Phase 2' },
-      { label: 'Kunden',                 icon: 'users',    disabled: true, note: 'Phase 2' },
-      { label: 'OP-Liste',               icon: 'check-list', disabled: true, note: 'Phase 2' },
+      { to: 'debitoren/uebersicht', label: 'Rechnungen',       icon: 'list' },
+      { to: 'debitoren/erfassen',   label: 'Rechnung erstellen', icon: 'plus-doc' },
+      { divider: true },
+      { to: 'debitoren/kunden',     label: 'Kunden',           icon: 'users' },
+      { to: 'debitoren/artikel',    label: 'Produktstamm',     icon: 'grid' },
     ],
   },
   {
@@ -266,7 +268,7 @@ export default function FiBuSidebar() {
         {SECTIONS.map(sec => {
           const isActive  = sec.id === activeSection;
           const hasBadge  = sec.id === 'kreditoren' && inboxPending > 0;
-          const isDisabled = sec.id === 'debitoren';
+          const isDisabled = false;
           return (
             <button
               key={sec.id}
