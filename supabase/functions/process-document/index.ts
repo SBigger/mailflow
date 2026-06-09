@@ -63,19 +63,32 @@ async function extractPdfText(arrayBuffer: ArrayBuffer): Promise<string> {
   }
 }
 
-function chunkText(text: string, chunkSize = 1500, overlap = 200): string[] {
+function chunkTextWithMetadata(
+    text: string,
+    fileName: string,
+    fileType: string,
+    chunkSize = 1500,
+    overlap = 200
+): string[] {
   const chunks: string[] = [];
   let i = 0;
+
+  // Format a clean, descriptive header for the model
+  const metadataHeader = `Dokumentenname: ${fileName}\nDateityp: ${fileType}\nInhalt:\n`;
+
   while (i < text.length) {
-    chunks.push(text.substring(i, i + chunkSize));
+    const rawChunk = text.substring(i, i + chunkSize);
+
+    // Prepend the metadata header to the actual chunk text!
+    const chunkWithContext = `${metadataHeader}${rawChunk}`;
+
+    chunks.push(chunkWithContext);
     i += chunkSize - overlap;
   }
   return chunks;
 }
 
 Deno.serve(async (req) => {
-  console.log("👉 Function process-document triggered!");
-
   // Always handle CORS preflight first
   if (req.method === 'OPTIONS') {
     return new Response('ok', {
@@ -89,7 +102,6 @@ Deno.serve(async (req) => {
   try {
     // 1. Parse the top-level body wrapper
     const body = await req.json();
-    console.log("Raw Incoming Body:", JSON.stringify(body));
 
     // 2. Destructure 'rec' out of the body safely
     const { rec } = body;
@@ -106,7 +118,7 @@ Deno.serve(async (req) => {
 
     const [bucketId, ...rest] = rec.fullPath.split('/');
     const filePath = rest.join('/');
-    const fileName = rest[rest.length - 1];
+    const fileName = rec.name;
 
     console.log(`Attempting download - Bucket: ${bucketId}, Path: ${filePath}`);
 
@@ -119,15 +131,11 @@ Deno.serve(async (req) => {
       throw downloadError;
     }
 
-    // CRITICAL DEBUG LOGS: Check the size of the file downloaded
-    console.log(`Download successful! MimeType: ${fileData.type}, Size: ${fileData.size} bytes`);
-
     if (fileData.size === 0) {
       throw new Error(`The downloaded file from storage is empty (0 bytes). Check if the path '${filePath}' is correct.`);
     }
 
     const arrayBuffer = await fileData.arrayBuffer();
-    console.log(`ArrayBuffer byteLength: ${arrayBuffer.byteLength}`);
 
     // 2. Text extrahieren basierend auf dem Dateityp
     let extractedText = "";
@@ -149,9 +157,8 @@ Deno.serve(async (req) => {
     }
 
     // 3. Text chunking
-    const textChunks = chunkText(extractedText, 1500, 200);
-
-    console.log(`Processing ${textChunks.length} chunks in parallel...`);
+    const fileType = mimeType.split('/').pop() || 'unknown';
+    const textChunks = chunkTextWithMetadata(extractedText, fileName, fileType, 1500, 200);
 
     // 4. Map chunks into an array of embedding promises to run them simultaneously
     const embeddingPromises = textChunks.map(async (chunk) => {
@@ -189,13 +196,23 @@ Deno.serve(async (req) => {
     // Filter out any chunks that failed to get an embedding
     const validRows = completedRows.filter(row => row !== null);
 
-    // 5. Bulk insert everything into Supabase in a single database round-trip!
+    const storageIdsToDelete = completedRows.map(doc => doc.storage_object_id).filter(id => id !== null);
+
     if (validRows.length > 0) {
+      const { error: bulkDeleteError } = await supabase
+          .from('documents_content')
+          .delete()
+          .in('storage_object_id', storageIdsToDelete);
+
+      if (bulkDeleteError ) {
+        console.error("Bulk Delete Error:", bulkDeleteError);
+      }
+
       const { error: insertError } = await supabase
           .from('documents_content')
           .insert(validRows); // Passing the array inserts everything at once
 
-      if (insertError) {
+      if (insertError ) {
         console.error("Bulk Insert Error:", insertError);
         throw insertError;
       }

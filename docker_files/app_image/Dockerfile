@@ -20,6 +20,8 @@ RUN apk del curl libcurl
 # Copy the compiled static assets
 COPY --from=build /app/dist /usr/share/nginx/html
 
+COPY ./docker_files/app_image/nginx.conf /etc/nginx/conf.d/default.conf
+
 # Copy our configuration template into Nginx's template folder
 COPY ./docker_files/app_image/config.template.json /etc/nginx/templates/config.json.template
 

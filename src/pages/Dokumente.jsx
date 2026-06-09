@@ -11,78 +11,15 @@ import {
   Lock,
   LockOpen,
   ShieldAlert,
-  RefreshCw,
   Link2,
   Copy,
   CopyPlus,
   CheckCheck,
-  FolderOpen,
   Library,
-  History as HistoryIcon
+  History as HistoryIcon, FerrisWheel
 } from "lucide-react";
 import VersionsDialog from "@/components/dokumente/VersionsDialog";
-import * as _pdfjsNs from "pdfjs-dist";
-import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.js?url";
-// pdfjs-dist 3.11 ist UMD → je nach Vite-Mode liegt getDocument direkt oder unter .default
-const pdfjsLib = (_pdfjsNs && typeof _pdfjsNs.getDocument === "function") ? _pdfjsNs : (_pdfjsNs?.default || _pdfjsNs);
-if (pdfjsLib?.GlobalWorkerOptions) pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
-// ─── Dokument-Textextraktion für Volltext-Suche ──────────────────────────────
-async function extractDocumentText(file) {
-  if (!file) return "";
-  const name = file.name?.toLowerCase() || "";
-  const type = file.type || "";
-
-  try {
-    // PDF → pdfjs-dist
-    if (type === "application/pdf" || name.endsWith(".pdf")) {
-      const buf = await file.arrayBuffer();
-      const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
-      let text = "";
-      for (let i = 1; i <= Math.min(pdf.numPages, 100); i++) {
-        const page = await pdf.getPage(i);
-        const content = await page.getTextContent();
-        text += content.items.map(it => it.str).join(" ") + "\n";
-      }
-      return text.trim().slice(0, 100000);
-    }
-
-    // Excel (.xlsx, .xls, .csv) → xlsx library
-    if (name.endsWith(".xlsx") || name.endsWith(".xls") || name.endsWith(".csv")) {
-      const { read, utils } = await import("xlsx");
-      const buf = await file.arrayBuffer();
-      const wb  = read(new Uint8Array(buf), { type: "array" });
-      let text  = "";
-      for (const sheetName of wb.SheetNames) {
-        const ws   = wb.Sheets[sheetName];
-        const rows = utils.sheet_to_json(ws, { header: 1, defval: "" });
-        text += rows.map(r => r.join(" ")).join("\n") + "\n";
-      }
-      return text.trim().slice(0, 100000);
-    }
-
-    // Word (.docx) → XML aus ZIP extrahieren
-    if (name.endsWith(".docx")) {
-      const { default: JSZip } = await import("jszip");
-      const buf  = await file.arrayBuffer();
-      const zip  = await JSZip.loadAsync(buf);
-      const xml  = await zip.file("word/document.xml")?.async("text") || "";
-      const text = xml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-      return text.slice(0, 100000);
-    }
-
-    // Plaintext (.txt, .md, .csv ohne Extension-Match)
-    if (type.startsWith("text/") || name.endsWith(".txt") || name.endsWith(".md")) {
-      const text = await file.text();
-      return text.slice(0, 100000);
-    }
-
-    return "";
-  } catch (e) {
-    console.warn("Textextraktion fehlgeschlagen für", name, e);
-    return "";
-  }
-}
 import { Button } from "@/components/ui/button";
 import { ThemeContext } from "@/Layout";
 import { supabase, entities } from "@/api/supabaseClient";
@@ -90,6 +27,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import TagSelectWidget from "@/components/dokumente/TagSelectWidget";
 import BatchUploadDialog from "@/components/dokumente/BatchUploadDialog";
+import HighlightedText from "../components/dokumente/HighlightedText.tsx";
 import { useAuth } from "@/lib/AuthContext";
 
 const BUCKET   = "dokumente";
@@ -496,7 +434,11 @@ function UploadDialog({ customers, preCustomer, preFile, allTags, onCancel, onUp
       if (newDoc?.id) {
         await supabase.functions.invoke("process-document", {
           body: {
-            rec: uploadData
+            rec: {
+              id: uploadData.id,
+              name: file.name,
+              fullPath: uploadData.fullPath
+            }
           }
         }).catch((error) => {console.log("indexierung Failed: ", error)});
       }
@@ -848,7 +790,9 @@ export default function Dokumente() {
         const { data, error: functionError } = await supabase.functions.invoke('search-documents', {
           body: {
             searchQuery: q.trim(),
-            limit: 5
+            limit: 5,
+            full_text_weight: 5.0,
+            vector_weight: 0.2
           },
         });
 
@@ -1330,6 +1274,26 @@ export default function Dokumente() {
     }
   };
 
+
+  const startBatchProcessing = async () => {
+    try {
+      // Wir rufen die Funktion auf, ohne lange auf das Ende der Schleife zu warten
+      const { data, error } = await supabase.functions.invoke('cron-process-documents', {
+        // Optionale Headers, um der Funktion zu sagen, sie soll im Hintergrund laufen
+        headers: {
+          'Prefer': 'return=minimal' // Sagt Supabase, dass wir nicht auf die volle Ausführung warten müssen
+        }
+      });
+
+      if (error) throw error;
+
+      console.log('🚀 Batch-Verarbeitung wurde im Hintergrund gestartet!');
+    } catch (err) {
+      console.error(err);
+      console.log(`❌ Fehler: ${err.message || 'Konnte Funktion nicht starten.'}`);
+    }
+  };
+
   const openCheckin = (doc) => { handleCheckin(doc, null); };
 
   const handleCheckin = async (doc, file) => {
@@ -1400,7 +1364,6 @@ export default function Dokumente() {
     return () => clearInterval(interval);
   }, [isLoading]);
 
-
   const selectCustomer = (id) => { setSelCustomerId(id); setSelCat(null); setSelYear(null); setExpandedC(p => ({ ...p, [id]: true })); };
   const selectCat      = (cid, ck) => { setSelCustomerId(cid); setSelCat(ck); setSelYear(null); setExpandedCat(p => ({ ...p, [cid + "_" + ck]: true })); };
 
@@ -1452,6 +1415,11 @@ export default function Dokumente() {
           style={{ background: "transparent", color: accent, border: "1px solid " + accent, fontSize: 12, height: 32, display: "flex", alignItems: "center", gap: 5 }}>
           <Library size={13} /> Massenablage
         </Button>
+        <Button onClick={() => startBatchProcessing()}
+                title="process documents"
+                style={{ background: "transparent", color: accent, border: "1px solid " + accent, fontSize: 12, height: 32, display: "flex", alignItems: "center", gap: 5 }}>
+          <FerrisWheel size={13} /> Process Documents
+        </Button>
       </div>
 
       {/* ── Volltext-Suchergebnisse (überlagert normale Ansicht) ── */}
@@ -1481,7 +1449,7 @@ export default function Dokumente() {
               const relevancePercentage = Math.round((doc.combined_score / highestScore) * 100);
 
               return (
-                  <div key={doc.id}
+                  <div key={doc.chunk_id}
                        onClick={() => downloadDoc(doc)}
                        title="Öffnen"
                        style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "10px 14px", background: s.cardBg,
@@ -1499,6 +1467,13 @@ export default function Dokumente() {
                         {doc.year && <span>{doc.year}</span>}
                       </div>
                     </div>
+
+                    <p className="text-sm text-gray-600 bg-gray-50 p-3 rounded border-l-4 border-indigo-500 whitespace-pre-wrap leading-relaxed">
+                      <HighlightedText
+                          text={doc.extracted_text}
+                          searchQuery={ftSearch}
+                      />
+                    </p>
 
                     {/* Relevanz-Spalte ganz rechts (Punkte + %-Anzeige) */}
                     <div style={{ flexShrink: 0, alignSelf: "center", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>

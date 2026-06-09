@@ -11,7 +11,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { searchQuery, limit = 5 } = await req.json();
+    const { searchQuery, limit = 5, full_text_weight = 1.0, vector_weight = 1.0} = await req.json();
 
     if (!searchQuery) {
       return new Response(JSON.stringify({ error: "Missing 'searchQuery'" }), { status: 400 });
@@ -44,7 +44,9 @@ Deno.serve(async (req) => {
     const { data: results, error: searchError } = await supabase.rpc('match_documents_hybrid', {
       query_text: searchQuery.replace('*', ':*'),
       query_embedding: queryEmbedding,
-      match_count: limit
+      match_count: limit,
+      full_text_weight: full_text_weight,
+      vector_weight: vector_weight
     });
 
     if (searchError) {
