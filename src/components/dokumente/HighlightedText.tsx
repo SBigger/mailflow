@@ -1,5 +1,3 @@
-// src/components/HighlightedText.tsx
-import React from 'react';
 
 interface HighlightedTextProps {
     text: string;
@@ -9,7 +7,7 @@ interface HighlightedTextProps {
 export default function HighlightedText({ text, searchQuery }: HighlightedTextProps) {
     if (!searchQuery.trim() || !text) return <>{text};</>;
 
-    const cleanText = text.replace(/^Dokumentenname:.*?\nDateityp:.*?\nInhalt:\n/is, '');
+    const cleanText = text.replace(/^Dokumentenname:[\s\S]*?\nDateityp:[\s\S]*?\nInhalt:\n/i, '');
     // 1. Get individual clean search terms (ignoring short fill words)
     const searchTerms = searchQuery
         .split(/\s+/)

@@ -10,6 +10,7 @@ import {
   Lock, Unlock, CheckCircle2, AlertCircle, TrendingUp, TrendingDown,
   Search, ChevronDown, ChevronUp, X, FileText, BarChart2, RotateCcw,
 } from "lucide-react";
+import DokUploadDialog from "@/components/dokumente/DokUploadDialog";
 
 // ── Swiss Kontenrahmen KMU ────────────────────────────────────────────────────
 const KONTENRAHMEN_POSITIONEN = [
@@ -131,18 +132,25 @@ function addAbschlussFooters(doc, customerName, selectedYear, label = "Jahresabs
   }
 }
 
-async function generateAbschlussPDF({ konten, einstellungen, customerName, selectedYear, returnDoc = false }) {
+async function generateAbschlussPDF({ konten, einstellungen, customerName, selectedYear, returnDoc = false, mode = "mindest" }) {
   const { jsPDF } = await import("jspdf");
   const { default: autoTable } = await import("jspdf-autotable");
 
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
 
-  // Farben
-  const BLUE  = [29, 78, 216];   const PINK  = [157, 23, 77];
-  const GREEN = [22, 163, 74];   const RED   = [220, 38, 38];
+  // Farben — Treuhand-Grün-Palette (konsistent mit FiBu-Modul #3d6641)
+  // BLUE/PINK/GREEN sind Aliase auf denselben Hauptton, damit die bestehende
+  // Logik (Aktiven=BLUE, Passiven=PINK, ER=GREEN) erhalten bleibt, der Druck
+  // aber durchgehend in Grüntönen kommt. Sub-Hintergründe variieren leicht.
+  const DGRN  = [61, 102, 65];   // #3d6641 — Treuhand-Hauptton
+  const MGRN  = [122, 155, 127]; // #7a9b7f — mittelgrün
+  const LGRN_BG = [232, 240, 232]; // #e8f0e8 — heller Hintergrund
+  const SAND  = [246, 248, 240]; // sehr helles Beige-Grün
+  const BLUE  = DGRN;            const PINK  = DGRN;
+  const GREEN = DGRN;            const RED   = [220, 38, 38];
   const GRAY  = [120, 120, 130]; const DARK  = [40, 40, 50];
-  const LBLUE = [219, 234, 254]; const LPINK = [252, 231, 243];
-  const LGRN  = [240, 253, 244]; const LYEL  = [255, 251, 235];
+  const LBLUE = LGRN_BG;         const LPINK = LGRN_BG;
+  const LGRN  = LGRN_BG;         const LYEL  = SAND;
   const LGRAY = [245, 247, 250];
 
   const signFlipPassiven = einstellungen?.sign_flip_passiven ?? false;
@@ -238,13 +246,39 @@ async function generateAbschlussPDF({ konten, einstellungen, customerName, selec
   const FK_LANG_IDS = ["FK_LANG_BANK","FK_LANG_VERZ_NAHE","FK_LANG_SONST","FK_LANG_SONST_NAHE","FK_RUECKSTELLUNGEN"];
   const EK_IDS      = ["EK_KAPITAL","EK_KAP_RESERVE","EK_GES_RESERVE","EK_FREIE_RESERVE","EK_RESERVEN","EK_VORTRAG","EK_JAHRESERGEBNIS"];
 
+  // Hilfszelle: einzelne Konto-Zeile im Detail-Modus (etwas kleiner + grauer, eingerückt)
+  const kRow = (label, ist, vj) => {
+    const p = pct(ist, vj);
+    return [
+      { content: label, styles: { fontSize: 7, fontStyle: "normal", textColor: [90, 90, 100],
+          cellPadding: { top: 0.8, bottom: 0.8, left: 12, right: 2 } } },
+      { content: N(ist), styles: { halign: "right", fontSize: 7, textColor: [90, 90, 100] } },
+      { content: vj != null ? N(vj) : "", styles: { halign: "right", fontSize: 7, textColor: GRAY } },
+      { content: p, styles: { halign: "right", fontSize: 6.5, textColor: GRAY } },
+    ];
+  };
+
   const posRows = (ids, flip = false) => ids.flatMap(id => {
     const pos = KONTENRAHMEN_POSITIONEN.find(p => p.id === id);
     const ist = sumI([id]) * (flip ? pSign : 1);
     const vj  = sumVJ([id]) * (flip ? pSign : 1);
     if (ist === 0 && vj === 0) return [];
     const lbl = (pos?.level === 3 ? "  ↳ " : "  ") + (pos?.label || id);
-    return [bRow(lbl, ist, vj, { indent: true })];
+    const out = [bRow(lbl, ist, vj, { indent: true })];
+    if (mode === "detail") {
+      // Einzelkonten dieser Position einrücken (vor dem Sub-Total)
+      const kontenInPos = konten
+        .filter(k => k.position_id === id)
+        .sort((a, b) => (parseInt(a.kontonummer) || 0) - (parseInt(b.kontonummer) || 0));
+      for (const k of kontenInPos) {
+        const kIst = (parseFloat(k.saldo_ist) || 0) * (flip ? pSign : 1);
+        const kVj  = (parseFloat(k.saldo_vorjahr) || 0) * (flip ? pSign : 1);
+        if (kIst === 0 && kVj === 0) continue;
+        const kLbl = `    ${k.kontonummer}  ${k.kontoname || ""}`;
+        out.push(kRow(kLbl, kIst, kVj));
+      }
+    }
+    return out;
   });
 
   const uvI = sumI(UV_IDS),  uvV = sumVJ(UV_IDS);
@@ -351,33 +385,53 @@ async function generateAbschlussPDF({ konten, einstellungen, customerName, selec
       cellPadding: { top: 3, bottom: 1, left: 4, right: 3 } }
   }];
 
+  // Detail-Helper für ER: gibt die Position-Zeile + (wenn mode==="detail") die Einzelkonten zurück.
+  // posIds = Array von position_id Strings, die zur gegebenen ER-Position gehören.
+  const erWithDetail = (label, posIds, opts = {}) => {
+    const ist = sumER(posIds), vj = sumERV(posIds);
+    const out = [eRow(label, ist, vj, opts)];
+    if (mode === "detail") {
+      const kontenInPos = konten
+        .filter(k => posIds.includes(k.position_id))
+        .sort((a, b) => (parseInt(a.kontonummer) || 0) - (parseInt(b.kontonummer) || 0));
+      for (const k of kontenInPos) {
+        const kIst = (parseFloat(k.saldo_ist) || 0) * eSign;
+        const kVj  = (parseFloat(k.saldo_vorjahr) || 0) * eSign;
+        if (kIst === 0 && kVj === 0) continue;
+        const kLbl = `      ${k.kontonummer}  ${k.kontoname || ""}`;
+        out.push(kRow(kLbl, kIst, kVj));
+      }
+    }
+    return out;
+  };
+
   const erBody = [
     ...eSec("ERLÖS", LGRN, GREEN),
-    eRow("  Nettoumsatzerlöse",      sumER(["ER_UMSATZ"]),        sumERV(["ER_UMSATZ"])),
+    ...erWithDetail("  Nettoumsatzerlöse", ["ER_UMSATZ"]),
     ...(sumER(["ER_EIGENLEISTUNG"]) || sumERV(["ER_EIGENLEISTUNG"])
-      ? [eRow("  Eigenleistungen",   sumER(["ER_EIGENLEISTUNG"]), sumERV(["ER_EIGENLEISTUNG"]))] : []),
+      ? erWithDetail("  Eigenleistungen", ["ER_EIGENLEISTUNG"]) : []),
     ...(sumER(["ER_BESTAND"]) || sumERV(["ER_BESTAND"])
-      ? [eRow("  Bestandesveränderungen", sumER(["ER_BESTAND"]), sumERV(["ER_BESTAND"]))] : []),
+      ? erWithDetail("  Bestandesveränderungen", ["ER_BESTAND"]) : []),
     eRow("Nettoumsatz Total", nuI, nuV, { sub: true }),
-    eRow("  − Warenaufwand",  matI, matV),
+    ...erWithDetail("  − Warenaufwand", ["ER_MATERIAL"]),
     eRow("= Bruttogewinn I (Rohergebnis)", bgI_I, bgI_V, { total: true }),
-    eRow("  − Personalaufwand", perI, perV),
+    ...erWithDetail("  − Personalaufwand", ["ER_PERSONAL"]),
     eRow("= Bruttogewinn II",  bgII_I, bgII_V, { total: true }),
-    ...eSec("BETRIEBSKOSTEN", LYEL, [146, 64, 14]),
+    ...eSec("BETRIEBSKOSTEN", LYEL, MGRN),
     ...betItems.flatMap(([lbl, id]) =>
-      (sumER([id]) || sumERV([id])) ? [eRow("  " + lbl, sumER([id]), sumERV([id]))] : []),
+      (sumER([id]) || sumERV([id])) ? erWithDetail("  " + lbl, [id]) : []),
     eRow("= EBITDA", edI, edV, { total: true }),
     ...eSec("ABSCHREIBUNGEN", LGRAY, DARK),
-    eRow("  − Abschreibungen", abI, abV),
+    ...erWithDetail("  − Abschreibungen", ["ER_ABSCHR"]),
     eRow("= EBIT", ebI, ebV, { total: true }),
     ...eSec("FINANZERGEBNIS", LGRAY, DARK),
-    eRow("  + Finanzertrag",  feI, feV),
-    eRow("  − Finanzaufwand", faI, faV),
+    ...erWithDetail("  + Finanzertrag", ["ER_FINANZ_ERTRAG", "ER_LIEGENSCHAFTEN"]),
+    ...erWithDetail("  − Finanzaufwand", ["ER_FINANZ_AUFW"]),
     eRow("= EBT", ebtI, ebtV, { total: true }),
     ...eSec("SONDERERGEBNIS & STEUERN", LGRAY, DARK),
-    ...(frEI || frEV ? [eRow("  + Betriebsfremder/AO Ertrag",  frEI, frEV)] : []),
-    ...(frAI || frAV ? [eRow("  − Betriebsfremder/AO Aufwand", frAI, frAV)] : []),
-    ...(stI  || stV  ? [eRow("  − Ertragssteuern",             stI,  stV)] : []),
+    ...(frEI || frEV ? erWithDetail("  + Betriebsfremder/AO Ertrag",  ["ER_FREMD_ERTRAG", "ER_AO_ERTRAG"]) : []),
+    ...(frAI || frAV ? erWithDetail("  − Betriebsfremder/AO Aufwand", ["ER_FREMD_AUFW", "ER_AO_AUFW"]) : []),
+    ...(stI  || stV  ? erWithDetail("  − Ertragssteuern",             ["ER_STEUERN"]) : []),
     eRow("JAHRESERGEBNIS", jeI, jeV, { total: true }),
   ];
 
@@ -396,16 +450,19 @@ async function generateAbschlussPDF({ konten, einstellungen, customerName, selec
 }
 
 // ── Revisions-Dossier (ZIP: Haupt-PDF + Belege pro Konto) ─────────────────────
-async function generateRevisionsDossier({ konten, einstellungen, customerName, selectedYear, onProgress }) {
+async function generateRevisionsDossier({ konten, einstellungen, customerName, selectedYear, onProgress, mode = "mindest" }) {
   const log = (m) => { try { onProgress?.(m); } catch { /* noop */ } };
-  const DARK = [40, 40, 50], GRAY = [120, 120, 130], BLUE = [29, 78, 216];
-  const GREEN = [22, 120, 80], LGRAY = [245, 247, 250], LGRN = [240, 250, 244];
+  // Treuhand-Grün-Palette (konsistent mit generateAbschlussPDF + FiBu-Modul)
+  const DARK = [40, 40, 50], GRAY = [120, 120, 130];
+  const BLUE = [61, 102, 65];                 // Section-Header in Kontenplan-Detail (war reines Blau, jetzt Treuhand-Grün)
+  const GREEN = [61, 102, 65];                // Beleg-Ref-Akzent + Arbeitspapier-Header
+  const LGRAY = [245, 247, 250], LGRN = [232, 240, 232];
   const N = (v) => v == null || isNaN(v) ? "—"
     : Number(v).toLocaleString("de-CH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   log("Erstelle Bilanz, Erfolgsrechnung …");
   const { doc, autoTable } = await generateAbschlussPDF({
-    konten, einstellungen, customerName, selectedYear, returnDoc: true,
+    konten, einstellungen, customerName, selectedYear, returnDoc: true, mode,
   });
 
   // ── Zusatz-Seitenkopf ──
@@ -420,15 +477,21 @@ async function generateRevisionsDossier({ konten, einstellungen, customerName, s
   };
 
   // ── Beleg-Nummerierung pro Konto ({Kontonr}-{lfd. Nr}) ──
+  // filePath = relativer Pfad im ZIP — identisch mit dem Pfad, der unten beim
+  // ZIP-Aufbau geschrieben wird. So zeigen Links im PDF auf die Datei nebenan.
   const sorted = [...konten].sort((a, b) =>
     (parseInt(a.kontonummer) || 0) - (parseInt(b.kontonummer) || 0));
-  const belegList = [];          // { ref, kontonummer, kontoname, beleg }
+  const belegList = [];          // { ref, kontonummer, kontoname, beleg, filePath }
   const belegRefByKonto = {};    // kontoId → ["1024-1", "1024-2"]
   for (const k of sorted) {
     const belege = k.arbeitspapier?.belege || [];
     belege.forEach((b, i) => {
       const ref = `${k.kontonummer}-${i + 1}`;
-      belegList.push({ ref, kontonummer: k.kontonummer, kontoname: k.kontoname, beleg: b });
+      const orig = b.filename || b.name || "beleg";
+      const ext = orig.includes(".") ? orig.split(".").pop() : "pdf";
+      const cleanBase = safeFileName(orig.replace(/\.[^.]+$/, "")).slice(0, 60);
+      const filePath = `Belege/${ref}_${cleanBase}.${ext}`;
+      belegList.push({ ref, kontonummer: k.kontonummer, kontoname: k.kontoname, beleg: b, filePath });
       (belegRefByKonto[k.id] = belegRefByKonto[k.id] || []).push(ref);
     });
   }
@@ -456,9 +519,12 @@ async function generateRevisionsDossier({ konten, einstellungen, customerName, s
   // ── Kontenplan-Detail mit Notizen & Beleg-Referenzen ──
   log("Kontenplan-Detail …");
   const posOrder = KONTENRAHMEN_POSITIONEN.map(p => p.id);
+  // Vom Export ausgeschlossene Positionen (technische Hilfsgruppen, nicht im Abschluss-PDF gewünscht)
+  const EXCLUDED_POSITIONS = new Set(["ABSCHLUSS", "__KEIN_MAPPING__"]);
   const grouped = {};
   for (const k of sorted) {
     const key = k.position_id || "__KEIN_MAPPING__";
+    if (EXCLUDED_POSITIONS.has(key)) continue; // OHNE MAPPING + Abschlusskonten überspringen
     (grouped[key] = grouped[key] || []).push(k);
   }
   const groupKeys = [
@@ -500,6 +566,11 @@ async function generateRevisionsDossier({ konten, einstellungen, customerName, s
     ]);
   }
 
+  // Sammelt die Beleg-Zell-Positionen im Kontenplan-Detail (page/x/y/w/h + refs)
+  // → werden später mit den Ziel-Positionen aus dem Beleg-Verzeichnis verlinkt.
+  const linkSources = [];
+  const linkTargets = {}; // ref → { page, y }
+
   let yk = pageHeader("Kontenplan-Detail mit Notizen & Belegen");
   autoTable(doc, {
     startY: yk,
@@ -518,8 +589,21 @@ async function generateRevisionsDossier({ konten, einstellungen, customerName, s
     },
     margin: { left: 14, right: 14, top: 12 },
     styles: { fontSize: 7.5, cellPadding: { top: 1.6, bottom: 1.6, left: 3, right: 2 }, overflow: "linebreak" },
-    headStyles: { fillColor: [235, 240, 248], textColor: DARK, fontStyle: "bold", fontSize: 7.5 },
+    headStyles: { fillColor: LGRN, textColor: DARK, fontStyle: "bold", fontSize: 7.5 },
     theme: "grid",
+    didDrawCell: (data) => {
+      // Belege-Spalte (Index 5) in Body-Zeilen: Position für späteren Hyperlink merken
+      if (data.column.index === 5 && data.row.section === "body") {
+        const raw = (data.cell.raw && data.cell.raw.content) || "";
+        const refs = String(raw).split(",").map(s => s.trim()).filter(Boolean);
+        if (refs.length === 0) return;
+        linkSources.push({
+          page: doc.internal.getCurrentPageInfo().pageNumber,
+          x: data.cell.x, y: data.cell.y, w: data.cell.width, h: data.cell.height,
+          refs,
+        });
+      }
+    },
     didDrawPage: () => {
       doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.setTextColor(...DARK);
       doc.text(customerName || "Jahresabschluss", 14, 15);
@@ -576,9 +660,44 @@ async function generateRevisionsDossier({ konten, einstellungen, customerName, s
       columnStyles: { 0: { cellWidth: 24, fontStyle: "bold" }, 1: { cellWidth: 70 }, 2: { cellWidth: 88 } },
       margin: { left: 14, right: 14 },
       styles: { fontSize: 8, cellPadding: 2, overflow: "linebreak" },
-      headStyles: { fillColor: [235, 240, 248], textColor: DARK, fontStyle: "bold" },
+      headStyles: { fillColor: LGRN, textColor: DARK, fontStyle: "bold" },
       theme: "grid",
+      didDrawCell: (data) => {
+        if (data.row.section !== "body") return;
+        const item = belegList[data.row.index];
+        if (!item) return;
+        // Beleg-Nr-Spalte: Ziel-Position für interne Sprünge aus Kontenplan-Detail merken
+        if (data.column.index === 0) {
+          linkTargets[item.ref] = {
+            page: doc.internal.getCurrentPageInfo().pageNumber,
+            y: data.cell.y,
+          };
+        }
+        // Dokumentname-Spalte: relativer Datei-Link auf Belege/{ref}_{filename}.{ext}
+        if (data.column.index === 2 && item.filePath) {
+          doc.link(data.cell.x, data.cell.y, data.cell.width, data.cell.height, { url: item.filePath });
+        }
+      },
     });
+
+    // ── Hyperlinks setzen: Kontenplan-Detail-Belege-Zelle → Beleg-Datei oder Verzeichnis-Zeile ──
+    // Bevorzugt File-Link (öffnet die Beleg-Datei direkt aus dem Belege/-Unterordner der ZIP).
+    // Fallback: interner Sprung zum Beleg-Verzeichnis.
+    const filePathByRef = Object.fromEntries(belegList.map(b => [b.ref, b.filePath]));
+    for (const src of linkSources) {
+      const firstRef = src.refs[0];
+      if (!firstRef) continue;
+      doc.setPage(src.page);
+      const filePath = filePathByRef[firstRef];
+      if (filePath) {
+        doc.link(src.x, src.y, src.w, src.h, { url: filePath });
+      } else {
+        const target = linkTargets[firstRef];
+        if (!target) continue;
+        const topY = Math.max(0, target.y - 4);
+        doc.link(src.x, src.y, src.w, src.h, { pageNumber: target.page, top: topY });
+      }
+    }
   }
 
   // ── Footer auf alle Seiten ──
@@ -592,7 +711,8 @@ async function generateRevisionsDossier({ konten, einstellungen, customerName, s
 
   zip.file(`${baseName}.pdf`, doc.output("arraybuffer"));
 
-  // Belege herunterladen und unter Beleg-Nr ablegen
+  // Belege herunterladen und unter dem im belegList vorbereiteten filePath ablegen
+  // (selber Pfad wie die Links im PDF — sonst funktionieren die nicht).
   const belegFolder = zip.folder("Belege");
   let okCount = 0, failCount = 0;
   for (let i = 0; i < belegList.length; i++) {
@@ -605,10 +725,9 @@ async function generateRevisionsDossier({ konten, einstellungen, customerName, s
       const resp = await fetch(data.signedUrl);
       if (!resp.ok) { failCount++; continue; }
       const buf = await resp.arrayBuffer();
-      const orig = item.beleg.filename || item.beleg.name || "beleg";
-      const ext = orig.includes(".") ? orig.split(".").pop() : "pdf";
-      const cleanBase = safeFileName(orig.replace(/\.[^.]+$/, "")).slice(0, 60);
-      belegFolder.file(`${item.ref}_${cleanBase}.${ext}`, buf);
+      // item.filePath beginnt mit "Belege/" — wir speichern den Rest im Sub-Folder
+      const filename = item.filePath.replace(/^Belege\//, "");
+      belegFolder.file(filename, buf);
       okCount++;
     } catch { failCount++; }
   }
@@ -1436,6 +1555,95 @@ function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = 
   );
 }
 
+// ── Export-Modus Dialog (Mindestgliederung / Detailliert) ────────────────────
+function ExportModeDialog({ target, defaultMode, accent, headingC, subC, panelBg, panelBdr, onClose, onExport }) {
+  const [mode, setMode] = useState(defaultMode === "detail" ? "detail" : "mindest");
+  const [remember, setRemember] = useState(false);
+  const isPdf = target === "pdf";
+  const title = isPdf ? "PDF Export — Bilanz & Erfolgsrechnung" : "Revisions-Dossier (ZIP) — Bilanz, ER, Belege";
+
+  const optionStyle = (active) => ({
+    display: "flex", flexDirection: "column", gap: 4, padding: "12px 14px",
+    borderRadius: 10, cursor: "pointer",
+    border: `2px solid ${active ? accent : panelBdr}`,
+    backgroundColor: active ? accent + "12" : "transparent",
+    transition: "all 0.12s",
+  });
+
+  return createPortal(
+    <div style={{ position: "fixed", inset: 0, zIndex: 9999, backgroundColor: "rgba(0,0,0,0.5)",
+      display: "flex", alignItems: "center", justifyContent: "center" }}
+      onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{ backgroundColor: panelBg, border: `1px solid ${panelBdr}`, borderRadius: 14,
+        width: "min(540px, 94vw)", boxShadow: "0 24px 64px rgba(0,0,0,0.22)", overflow: "hidden" }}>
+        {/* Header */}
+        <div style={{ padding: "14px 18px", borderBottom: `1px solid ${panelBdr}`,
+          display: "flex", alignItems: "center", gap: 12 }}>
+          <span style={{ fontSize: 16 }}>{isPdf ? "📄" : "📦"}</span>
+          <span style={{ fontSize: 14, fontWeight: 700, color: headingC, flex: 1 }}>{title}</span>
+          <button onClick={onClose} style={{ background: "none", border: "none",
+            cursor: "pointer", fontSize: 20, color: subC, lineHeight: 1, padding: "0 4px" }}>×</button>
+        </div>
+
+        {/* Body */}
+        <div style={{ padding: "16px 18px", display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ fontSize: 12.5, color: subC }}>
+            Wie soll die Bilanz und Erfolgsrechnung dargestellt werden?
+          </div>
+
+          {/* Mindestgliederung */}
+          <label style={optionStyle(mode === "mindest")} onClick={() => setMode("mindest")}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <input type="radio" checked={mode === "mindest"} onChange={() => setMode("mindest")}
+                style={{ accentColor: accent }} />
+              <span style={{ fontWeight: 700, fontSize: 13.5, color: headingC }}>Mindestgliederung</span>
+            </div>
+            <div style={{ fontSize: 11.5, color: subC, marginLeft: 24, lineHeight: 1.5 }}>
+              Nur Bilanz- und ER-Positionen mit Sub-Totalen. Kompakt, gut für Übersicht & Geschäftsbericht.
+            </div>
+          </label>
+
+          {/* Detailliert */}
+          <label style={optionStyle(mode === "detail")} onClick={() => setMode("detail")}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <input type="radio" checked={mode === "detail"} onChange={() => setMode("detail")}
+                style={{ accentColor: accent }} />
+              <span style={{ fontWeight: 700, fontSize: 13.5, color: headingC }}>Detailliert</span>
+            </div>
+            <div style={{ fontSize: 11.5, color: subC, marginLeft: 24, lineHeight: 1.5 }}>
+              Wie Jahresauswertung: zusätzlich unter jeder Position die Einzelkonten mit Kontonr., Name und Saldo.
+            </div>
+          </label>
+
+          {/* Default merken */}
+          <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4,
+            fontSize: 12, color: subC, cursor: "pointer" }}>
+            <input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)}
+              style={{ accentColor: accent }} />
+            Diese Wahl als Standard für diesen Abschluss merken
+          </label>
+        </div>
+
+        {/* Footer */}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, padding: "12px 18px",
+          borderTop: `1px solid ${panelBdr}` }}>
+          <button onClick={onClose}
+            style={{ padding: "8px 18px", fontSize: 13, borderRadius: 7, cursor: "pointer",
+              border: `1px solid ${panelBdr}`, color: subC, backgroundColor: "transparent" }}>
+            Abbrechen
+          </button>
+          <button onClick={() => onExport(target, mode, remember)}
+            style={{ padding: "8px 20px", fontSize: 13, fontWeight: 700, borderRadius: 7,
+              cursor: "pointer", border: "none", color: "#fff", backgroundColor: accent }}>
+            {isPdf ? "PDF erstellen" : "Dossier erstellen"}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 // ── MiniExcel (Arbeitspapier pro Konto) ──────────────────────────────────────
 const MINI_DEFAULT_COLS = [
   { id: "dc0", label: "Beschreibung", width: 220 },
@@ -1640,29 +1848,67 @@ function MiniExcel({ data, onSave, accent, headingC, subC, panelBdr }) {
 // ── Belege-Verknüpfung pro Konto ─────────────────────────────────────────────
 const BUCKET = "dokumente";
 
-function BelegeSection({ arbeitspapier, onSave, customerId, selectedYear, accent, headingC, subC, panelBdr }) {
+function BelegeSection({ arbeitspapier, onSave, customerId, selectedYear, accent, headingC, subC, panelBdr,
+  kontonummer, kontoname, positionId }) {
+  // Konto-Kontext für Upload-Vorbelegung (Notiz, Auto-Tag-Hinweis)
+  const positionLabel = positionId ? (POSITION_MAP[positionId]?.label || "") : "";
+  const uploadNotes = kontonummer
+    ? `Beleg zu Konto ${kontonummer}${kontoname ? " – " + kontoname : ""} (Geschäftsjahr ${selectedYear || "—"})`
+    : "";
+  const uploadDetectText = [kontonummer, kontoname, positionLabel].filter(Boolean).join(" ");
   // selectedYear wird von KontenplanTab übergeben (= aktuelles Geschäftsjahr)
   const belege = arbeitspapier?.belege || [];
   const [showPicker, setShowPicker] = useState(false);
   const [search, setSearch] = useState("");
   const [docs, setDocs] = useState([]);
   const [loading, setLoading] = useState(false);
+  // Volltextsuche (RPC search_dokumente) – aktiv ab >=2 Zeichen
+  const [ftResults, setFtResults] = useState(null);
+  const [ftSearching, setFtSearching] = useState(false);
+  // Upload-Dialog: wenn Beleg noch nicht in der Ablage. uploadFile = die zu uploadende Datei.
+  const [uploadFile, setUploadFile] = useState(null);
+  const fileInputRef = useRef(null);
 
   // Docs zurücksetzen wenn Kunde oder Jahr wechselt → erzwingt Neuladen
-  useEffect(() => { setDocs([]); }, [customerId, selectedYear]);
+  useEffect(() => { setDocs([]); setFtResults(null); }, [customerId, selectedYear]);
 
   // Dokumente laden wenn Picker öffnet — nur das gewählte Geschäftsjahr
   useEffect(() => {
     if (!showPicker || !customerId || docs.length > 0) return;
     setLoading(true);
     let q = supabase.from("dokumente")
-      .select("id, name, filename, storage_path, category, year, file_type")
+      .select("id, name, filename, storage_path, category, year, file_type, tag_ids")
       .eq("customer_id", customerId)
       .order("created_at", { ascending: false })
       .limit(500);
     if (selectedYear) q = q.eq("year", selectedYear);
     q.then(({ data }) => { setDocs(data || []); setLoading(false); });
   }, [showPicker, customerId, selectedYear]);
+
+  // Volltextsuche debouncen – greift ab 2 Zeichen, sucht im ganzen Kunden
+  useEffect(() => {
+    if (!showPicker) return;
+    const q = search.trim();
+    if (q.length < 2) { setFtResults(null); return; }
+    const timer = setTimeout(async () => {
+      setFtSearching(true);
+      try {
+        const { data, error } = await supabase.rpc("search_dokumente", {
+          p_query: q,
+          p_customer_id: customerId || null,
+          p_limit: 100,
+        });
+        if (error) throw error;
+        setFtResults(data || []);
+      } catch (e) {
+        console.warn("Volltextsuche fehlgeschlagen", e);
+        setFtResults([]);
+      } finally {
+        setFtSearching(false);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search, showPicker, customerId]);
 
   const linkedIds = new Set(belege.map(b => b.id));
 
@@ -1674,7 +1920,26 @@ function BelegeSection({ arbeitspapier, onSave, customerId, selectedYear, accent
       category: doc.category, file_type: doc.file_type,
     }];
     onSave({ ...(arbeitspapier || {}), belege: newBelege });
-    setShowPicker(false); setSearch("");
+    setShowPicker(false); setSearch(""); setFtResults(null);
+  };
+
+  // Neu hochgeladen → sofort als Beleg verknüpfen, Caches leeren
+  const handleUploaded = (newDoc) => {
+    if (!newDoc?.id) return;
+    addBeleg(newDoc);
+    setDocs([]); // Liste neu laden beim nächsten Picker-Open
+  };
+
+  // Upload-Button geklickt → File-Picker öffnen
+  const startUpload = () => {
+    fileInputRef.current?.click();
+  };
+  const onFileChosen = (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setUploadFile(f);
+    // Input zurücksetzen, damit dieselbe Datei nochmal gewählt werden kann
+    e.target.value = "";
   };
 
   const removeBeleg = (id) => {
@@ -1687,10 +1952,15 @@ function BelegeSection({ arbeitspapier, onSave, customerId, selectedYear, accent
     else toast.error("Dokument konnte nicht geöffnet werden");
   };
 
-  const filtered = docs.filter(d => !search ||
-    d.name?.toLowerCase().includes(search.toLowerCase()) ||
-    d.filename?.toLowerCase().includes(search.toLowerCase())
-  );
+  // Anzeige-Liste: bei aktiver Volltextsuche → FTS-Ergebnisse (alle Jahre, ganze DB des Kunden);
+  // sonst lokale Doc-Liste mit client-seitigem Filter über name+filename.
+  const useFts = search.trim().length >= 2 && ftResults !== null;
+  const filtered = useFts
+    ? ftResults
+    : docs.filter(d => !search ||
+        d.name?.toLowerCase().includes(search.toLowerCase()) ||
+        d.filename?.toLowerCase().includes(search.toLowerCase())
+      );
 
   const fileLabel = (ft, fn) => {
     if (ft?.includes("pdf")) return { label: "PDF", bg: "#fee2e2", col: "#dc2626" };
@@ -1705,21 +1975,42 @@ function BelegeSection({ arbeitspapier, onSave, customerId, selectedYear, accent
         {/* Header */}
         <div style={{ padding: "14px 18px", borderBottom: `1px solid ${panelBdr}`, display: "flex", alignItems: "center", gap: 12 }}>
           <span style={{ fontSize: 14, fontWeight: 700, color: "#111", flex: 1 }}>📎 Beleg verknüpfen</span>
-          <span style={{ fontSize: 12, color: subC }}>{selectedYear ? `Jahr ${selectedYear}` : "Alle Jahre"} · {filtered.length} Dokumente</span>
+          <button onClick={startUpload}
+            title="Neue Datei in die Ablage hochladen (mit Tags + Volltext-Index) und direkt als Beleg verknüpfen"
+            style={{ fontSize: 11, fontWeight: 700, padding: "5px 11px", borderRadius: 6, cursor: "pointer",
+              border: `1px solid ${accent}`, color: "#fff", backgroundColor: accent, display: "flex", alignItems: "center", gap: 5 }}>
+            <Upload size={12} /> Neu hochladen
+          </button>
+          <span style={{ fontSize: 12, color: subC }}>
+            {useFts
+              ? `Volltext · ${ftSearching ? "…" : filtered.length} Treffer`
+              : `${selectedYear ? `Jahr ${selectedYear}` : "Alle Jahre"} · ${filtered.length} Dokumente`}
+          </span>
           <button onClick={() => setShowPicker(false)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 20, color: subC, lineHeight: 1, padding: "0 4px" }}>×</button>
         </div>
         {/* Suche */}
         <div style={{ padding: "10px 18px", borderBottom: `1px solid ${panelBdr}` }}>
           <input autoFocus value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Dokument suchen…"
+            placeholder="Name, Dateiname oder Volltext suchen (ab 2 Zeichen)…"
             style={{ width: "100%", fontSize: 13, padding: "7px 12px", borderRadius: 8, border: `1px solid ${panelBdr}`, outline: "none", boxSizing: "border-box" }} />
+          <div style={{ fontSize: 10.5, color: subC, marginTop: 5, fontStyle: "italic" }}>
+            {useFts
+              ? "🔍 Volltextsuche aktiv — durchsucht Inhalt aller Dokumente dieses Kunden (alle Jahre)."
+              : `Lokale Suche auf den letzten 500 Dokumenten${selectedYear ? ` aus ${selectedYear}` : ""}. Tippe 2+ Zeichen für Volltextsuche im gesamten Bestand.`}
+          </div>
         </div>
         {/* Liste */}
         <div style={{ overflowY: "auto", flex: 1 }}>
-          {loading
-            ? <div style={{ padding: 32, textAlign: "center", fontSize: 13, color: subC }}>Lädt…</div>
+          {(loading || (useFts && ftSearching))
+            ? <div style={{ padding: 32, textAlign: "center", fontSize: 13, color: subC }}>{useFts ? "Volltextsuche läuft…" : "Lädt…"}</div>
             : filtered.length === 0
-              ? <div style={{ padding: 32, textAlign: "center", fontSize: 13, color: subC }}>Keine Dokumente gefunden</div>
+              ? <div style={{ padding: 32, textAlign: "center", fontSize: 13, color: subC }}>
+                  Keine Dokumente gefunden
+                  {search.trim() && <div style={{ marginTop: 8, fontSize: 12 }}>
+                    Tipp: Datei ist noch nicht in der Ablage? <button onClick={startUpload}
+                      style={{ background: "none", border: "none", color: accent, fontWeight: 700, cursor: "pointer", textDecoration: "underline", padding: 0, fontSize: 12 }}>Jetzt hochladen →</button>
+                  </div>}
+                </div>
               : filtered.map(doc => {
                   const fl = fileLabel(doc.file_type, doc.filename);
                   const already = linkedIds.has(doc.id);
@@ -1731,9 +2022,13 @@ function BelegeSection({ arbeitspapier, onSave, customerId, selectedYear, accent
                       <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 7px", borderRadius: 4, backgroundColor: fl.bg, color: fl.col, flexShrink: 0, minWidth: 36, textAlign: "center" }}>{fl.label}</span>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 13, color: "#111", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{doc.name}</div>
-                        <div style={{ fontSize: 11, color: subC, marginTop: 2 }}>
+                        <div style={{ fontSize: 11, color: subC, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                           {doc.filename}
                         </div>
+                        {useFts && doc.headline && (
+                          <div style={{ fontSize: 10.5, color: subC, marginTop: 3, fontStyle: "italic", lineHeight: 1.4 }}
+                            dangerouslySetInnerHTML={{ __html: "…" + doc.headline + "…" }} />
+                        )}
                       </div>
                       <div style={{ flexShrink: 0, textAlign: "right" }}>
                         {doc.year && <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 10, backgroundColor: accent + "15", color: accent }}>{doc.year}</span>}
@@ -1755,6 +2050,18 @@ function BelegeSection({ arbeitspapier, onSave, customerId, selectedYear, accent
   return (
     <div style={{ padding: "8px 8px 10px 32px", borderTop: `1px dashed ${panelBdr}` }}>
       {pickerModal}
+      <input ref={fileInputRef} type="file" style={{ display: "none" }} onChange={onFileChosen} />
+      {uploadFile && (
+        <DokUploadDialog
+          preFile={uploadFile}
+          preCustomerId={customerId}
+          preYear={selectedYear}
+          preNotes={uploadNotes}
+          extraDetectText={uploadDetectText}
+          onClose={() => setUploadFile(null)}
+          onUploaded={handleUploaded}
+        />
+      )}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
         <span style={{ fontSize: 10, fontWeight: 700, color: subC, letterSpacing: "0.06em", textTransform: "uppercase" }}>
           📎 Belege
@@ -2264,6 +2571,9 @@ function KontenplanTab({ konten, onUpdateKonto, onAddKonto, customerId, selected
                             onSave={d => onUpdateKonto(konto.id, { arbeitspapier: d })}
                             customerId={customerId}
                             selectedYear={selectedYear}
+                            kontonummer={konto.kontonummer}
+                            kontoname={konto.kontoname}
+                            positionId={konto.position_id}
                             accent={accent} headingC={headingC} subC={subC} panelBdr={tableBdr}
                           />
                         </td>
@@ -2558,16 +2868,38 @@ function BilanzTab({ konten, accent, headingC, subC, panelBg, panelBdr, tableBdr
       <React.Fragment key={id}>
         <BilanzkennzahlRow label={isNahe ? `↳ ${label}` : label} value={displayVal} valueVJ={valVJ !== 0 ? valVJ : null} bilanzsumme={aktivenTotal} bilanzsummeVJ={aktivenTotalVJ} headingC={isNahe ? subC : headingC} subC={subC} accent={accent} />
         {showDetails && posKonten.length > 0 && (
-          <div style={{ margin: "1px 12px 3px 32px", borderRadius: 5, overflow: "hidden", border: `1px solid ${panelBdr}`, backgroundColor: panelBg }}>
-            {posKonten.map((k, i) => (
-              <div key={k.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "2px 8px",
-                fontSize: 11, borderBottom: i < posKonten.length - 1 ? `1px solid ${panelBdr}` : "none" }}>
-                <span style={{ color: subC, fontWeight: 600, flexShrink: 0, width: 36, fontFamily: "monospace" }}>{k.kontonummer}</span>
-                <span style={{ flex: 1, color: headingC, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{k.kontoname}</span>
-                <span style={{ fontFamily: "monospace", color: headingC, flexShrink: 0 }}>{fmtCHF(parseFloat(k.saldo_ist) * (flip ? pSign : 1))}</span>
-              </div>
-            ))}
-          </div>
+          <div>
+            {posKonten.map((k, i) => {
+              const kIst = parseFloat(k.saldo_ist) * (flip ? pSign : 1);
+              const kVj  = parseFloat(k.saldo_vorjahr || 0) * (flip ? pSign : 1);
+              return (
+                <div key={k.id} style={{
+                  // SELBES 5-Spalten-Grid wie BilanzkennzahlRow → Beträge richtig ausgerichtet
+                  display: "grid", gridTemplateColumns: "1fr 95px 40px 95px 40px",
+                  alignItems: "center", padding: "3px 12px",
+                  fontSize: 11, color: subC,
+                  borderBottom: i < posKonten.length - 1 ? `1px solid ${panelBdr}40` : `1px solid ${panelBdr}80`,
+                  backgroundColor: panelBg,
+                }}>
+                  {/* Label: eingerückt, Kontonummer + Name */}
+                  <span style={{ paddingLeft: 24, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <span style={{ fontFamily: "monospace", fontWeight: 600, marginRight: 8, color: subC }}>{k.kontonummer}</span>
+                    <span style={{ color: headingC }}>{k.kontoname}</span>
+                  </span>
+                  {/* IST */}
+                  <span style={{ fontFamily: "monospace", textAlign: "right", color: headingC }}>
+                    {kIst === 0 ? "" : fmtCHF(kIst)}
+                  </span>
+                  {/* % leer (Sub-Konten haben keinen eigenen Bilanzsumme-Anteil) */}
+                  <span />
+                  {/* Vorjahr */}
+                  <span style={{ fontFamily: "monospace", textAlign: "right", color: subC }}>
+                    {kVj === 0 ? "" : fmtCHF(kVj)}
+                  </span>
+                  <span />
+                </div>
+              );
+            })}
         )}
       </React.Fragment>
     );
@@ -3192,6 +3524,7 @@ export default function Abschlussdokumentation() {
   const [activeTab, setActiveTab] = useState("kontenplan");
   const [showImport, setShowImport] = useState(false);
   const [dossierStatus, setDossierStatus] = useState(null); // null | Fortschrittstext
+  const [exportDialog, setExportDialog] = useState(null);   // null | "pdf" | "dossier"
 
   // ── Auto-Jahr: neuestes Jahr das wirklich Konten hat ────────────────────────
   useEffect(() => {
@@ -3378,7 +3711,7 @@ export default function Abschlussdokumentation() {
   }
 
   // ── Revisions-Dossier (ZIP) erstellen ─────────────────────────────────────
-  async function handleRevisionsDossier() {
+  async function handleRevisionsDossier(mode) {
     if (!konten.length) { toast.error("Keine Konten vorhanden"); return; }
     if (dossierStatus) return; // läuft bereits
     setDossierStatus("Wird vorbereitet …");
@@ -3386,6 +3719,7 @@ export default function Abschlussdokumentation() {
       const res = await generateRevisionsDossier({
         konten, einstellungen, customerName, selectedYear,
         onProgress: (m) => setDossierStatus(m),
+        mode,
       });
       toast.success(
         `Revisions-Dossier erstellt — ${res.belegOk}/${res.belegTotal} Belege beigelegt`
@@ -3395,6 +3729,19 @@ export default function Abschlussdokumentation() {
       toast.error("Dossier fehlgeschlagen: " + (e?.message || e));
     } finally {
       setDossierStatus(null);
+    }
+  }
+
+  // ── Export starten (nach Modus-Wahl im Dialog) ────────────────────────────
+  function runExport(target, mode, rememberAsDefault) {
+    if (rememberAsDefault) {
+      updateEinstellungenMut.mutate({ export_mode: mode });
+    }
+    setExportDialog(null);
+    if (target === "pdf") {
+      generateAbschlussPDF({ konten, einstellungen, customerName, selectedYear, mode });
+    } else if (target === "dossier") {
+      handleRevisionsDossier(mode);
     }
   }
 
@@ -3640,15 +3987,18 @@ export default function Abschlussdokumentation() {
             </label>
 
             {/* PDF Download */}
-            <button onClick={() => generateAbschlussPDF({ konten, einstellungen, customerName, selectedYear })}
+            <button onClick={() => setExportDialog("pdf")}
+              disabled={konten.length === 0}
               style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 600,
-                padding: "4px 10px", borderRadius: 6, cursor: "pointer",
+                padding: "4px 10px", borderRadius: 6,
+                cursor: konten.length === 0 ? "not-allowed" : "pointer",
+                opacity: konten.length === 0 ? 0.5 : 1,
                 border: `1px solid ${accent}60`, color: accent, backgroundColor: accent + "15" }}>
               📄 PDF
             </button>
 
             {/* Revisions-Dossier (ZIP) */}
-            <button onClick={handleRevisionsDossier}
+            <button onClick={() => setExportDialog("dossier")}
               disabled={!!dossierStatus || konten.length === 0}
               title="Komplettes Dossier für den Revisor: PDF (Bilanz, ER, Anhang, Kontenplan mit Notizen) + alle Belege als ZIP"
               style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 700,
@@ -3769,6 +4119,21 @@ export default function Abschlussdokumentation() {
           theme={theme}
           initialFlipPassiven={signFlipPassiven}
           initialFlipER={signFlipER}
+        />
+      )}
+
+      {/* ── Export Modus Dialog ──────────────────────────────────────────── */}
+      {exportDialog && (
+        <ExportModeDialog
+          target={exportDialog}
+          defaultMode={einstellungen.export_mode || "mindest"}
+          accent={accent}
+          headingC={headingC}
+          subC={subC}
+          panelBg={panelBg}
+          panelBdr={panelBdr}
+          onClose={() => setExportDialog(null)}
+          onExport={runExport}
         />
       )}
     </div>
