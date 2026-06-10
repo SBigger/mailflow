@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="de-CH">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Anleitung – Dateiverwaltung &amp; Aufgabenverwaltung</title>
+<style>
+  :root {
+    --accent: #4a7a4f;
+    --accent-light: #e6ede6;
+    --accent-soft: #f2f5f2;
+    --text: #2d3a2d;
+    --muted: #6b826b;
+    --border: #ccd8cc;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    color: var(--text);
+    background: #fafcfa;
+    margin: 0;
+    line-height: 1.6;
+  }
+  .page {
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 40px 32px 64px;
+    background: #fff;
+  }
+  header.doc-header {
+    border-bottom: 3px solid var(--accent);
+    padding-bottom: 18px;
+    margin-bottom: 28px;
+  }
+  h1 { font-size: 28px; margin: 0 0 6px; color: var(--accent); }
+  .subtitle { color: var(--muted); font-size: 15px; margin: 0; }
+  h2 {
+    font-size: 22px;
+    color: #fff;
+    background: var(--accent);
+    padding: 10px 16px;
+    border-radius: 8px;
+    margin-top: 48px;
+  }
+  h3 {
+    font-size: 17px;
+    color: var(--accent);
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 6px;
+    margin-top: 36px;
+  }
+  ol.steps { padding-left: 22px; }
+  ol.steps li { margin-bottom: 8px; }
+  .ui {
+    background: var(--accent-light);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 1px 7px;
+    font-size: 0.92em;
+    font-weight: 600;
+    color: var(--accent);
+    white-space: nowrap;
+  }
+  .screenshot {
+    background: var(--accent-soft);
+    border: 2px dashed var(--border);
+    border-radius: 10px;
+    padding: 28px 16px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 14px;
+    margin: 16px 0;
+  }
+  .tips {
+    background: var(--accent-soft);
+    border-left: 5px solid var(--accent);
+    border-radius: 0 10px 10px 0;
+    padding: 16px 20px;
+    margin: 32px 0;
+  }
+  .tips h4 { margin: 0 0 8px; color: var(--accent); font-size: 15px; }
+  .tips ul { margin: 0; padding-left: 20px; }
+  .tips li { margin-bottom: 5px; font-size: 14.5px; }
+  nav.toc {
+    background: var(--accent-soft);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 22px;
+    margin-bottom: 8px;
+  }
+  nav.toc strong { color: var(--accent); }
+  nav.toc ul { margin: 8px 0 0; padding-left: 20px; }
+  nav.toc a { color: var(--accent); text-decoration: none; }
+  nav.toc a:hover { text-decoration: underline; }
+  footer { margin-top: 56px; color: var(--muted); font-size: 12.5px; border-top: 1px solid var(--border); padding-top: 14px; }
+  @media print {
+    body { background: #fff; }
+    .page { max-width: none; padding: 0; }
+    h2 { break-after: avoid; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    h3 { break-after: avoid; }
+    .screenshot, .tips { break-inside: avoid; }
+    a { color: inherit; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="doc-header">
+  <h1>Benutzeranleitung</h1>
+  <p class="subtitle">Dateiverwaltung &amp; Aufgabenverwaltung – Schritt für Schritt erklärt</p>
+</header>
+
+<nav class="toc">
+  <strong>Inhalt</strong>
+  <ul>
+    <li><a href="#dateien">1. Dateiverwaltung</a> – Hochladen, Suchen, Bearbeiten, Versionen, Posteingang, Upload-Link für Kunden</li>
+    <li><a href="#aufgaben">2. Aufgabenverwaltung</a> – Aufgaben erstellen, bearbeiten, verschieben, abschliessen, Anhänge, Kommentare, Erinnerungen</li>
+  </ul>
+</nav>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<h2 id="dateien">1. Dateiverwaltung</h2>
+
+<p>Die Dateiverwaltung besteht aus zwei Bereichen: der Seite <span class="ui">Dokumente</span> (die zentrale Dateiablage, geordnet nach Kunden, Kategorien und Jahren) und der Seite <span class="ui">Posteingang</span> (hier landen Dateien, die Kunden über einen Upload-Link einreichen, bevor sie definitiv abgelegt werden).</p>
+
+<div class="screenshot">📷 Screenshot: Seite «Dokumente» mit Kundenbaum links und Dokumentliste rechts</div>
+
+<h3>Dokument hochladen</h3>
+<ol class="steps">
+  <li>Öffnen Sie die Seite <span class="ui">Dokumente</span> und klicken Sie oben rechts auf <span class="ui">Hochladen</span>.</li>
+  <li>Wählen Sie im Dialog eine Datei aus oder ziehen Sie sie in das Feld <span class="ui">Datei auswählen oder hierher ziehen</span>.</li>
+  <li>Das System erkennt passende <span class="ui">Tags</span> automatisch aus dem Dateinamen oder dem Dateiinhalt (Anzeige <em>«Erkenne Tags…»</em>). Prüfen Sie die Vorschläge und passen Sie sie bei Bedarf an.</li>
+  <li>Füllen Sie die Pflichtfelder aus: <span class="ui">Anzeigename *</span>, <span class="ui">Kunde *</span>, <span class="ui">Kategorie *</span> (z.&nbsp;B. «01 - Rechnungswesen», «02 - Steuern») und <span class="ui">Jahr *</span>. Das Jahr wird, falls möglich, aus dem Dateinamen vorbefüllt.</li>
+  <li>Erfassen Sie bei Bedarf eine <span class="ui">Notiz (optional)</span>.</li>
+  <li>Klicken Sie auf <span class="ui">Hochladen</span>. Nach erfolgreichem Upload erscheint die Meldung <em>«Dokument hochgeladen»</em>.</li>
+</ol>
+<p>Für viele Dateien auf einmal steht zusätzlich die <span class="ui">Massenablage</span> (Beta) zur Verfügung: mehrere Dateien gleichzeitig hochladen, die Zuordnung übernimmt die KI als Vorschlag.</p>
+
+<div class="screenshot">📷 Screenshot: Dialog «In Ablage hochladen» mit ausgefüllten Feldern und erkannten Tags</div>
+
+<h3>Dokument suchen</h3>
+<ol class="steps">
+  <li><strong>Volltext-Suche:</strong> Tippen Sie oben in das Suchfeld <span class="ui">Volltext-Suche über alle Dokumente…</span>. Durchsucht werden nicht nur Dateinamen, sondern auch der Inhalt der Dokumente (PDF, Word, Excel usw.).</li>
+  <li>Ist links ein Kunde ausgewählt, sucht das Feld nur innerhalb dieses Kunden (<span class="ui">Volltext-Suche (dieser Kunde)…</span>).</li>
+  <li><strong>Im Kundenbaum blättern:</strong> Suchen Sie links den Kunden über das Feld <span class="ui">Kunde suchen… (oder einfach lostippen)</span> – Sie können auch direkt lostippen (Tastatur-Schnellsuche, <span class="ui">ESC</span> löscht die Eingabe).</li>
+  <li>Klappen Sie den Kunden auf und navigieren Sie über Kategorie und Jahr zur gewünschten Ablage.</li>
+  <li>In der Dokumentliste rechts können Sie zusätzlich mit dem Feld <span class="ui">Suchen…</span> filtern und über den Sortier-Knopf nach <span class="ui">Datum</span>, <span class="ui">Name</span> oder <span class="ui">Jahr</span> sortieren.</li>
+  <li>Über den Tab <span class="ui">Ausgecheckt</span> sehen Sie alle Dokumente, die Sie aktuell zur Bearbeitung ausgecheckt haben.</li>
+</ol>
+
+<div class="screenshot">📷 Screenshot: Volltext-Suche mit Suchergebnissen über alle Kunden</div>
+
+<h3>Dokument bearbeiten, kopieren, herunterladen, löschen</h3>
+<ol class="steps">
+  <li>Fahren Sie in der Dokumentliste über ein Dokument – rechts erscheinen die Aktions-Symbole.</li>
+  <li><span class="ui">Bearbeiten</span> (Stift): Anzeigename, Kunde, Tags, Kategorie, Jahr und Notiz nachträglich ändern, dann <span class="ui">Speichern</span>.</li>
+  <li><span class="ui">Kopieren (neu verschlagworten)</span>: legt eine physische Kopie an, die Sie z.&nbsp;B. einem anderen Jahr oder einer anderen Kategorie zuordnen können – mit <span class="ui">Kopie anlegen</span> bestätigen.</li>
+  <li><strong>Herunterladen:</strong> einzelne Dateien direkt aus der Liste; ganze Ordner oder Jahre über die Symbole im Kundenbaum (<span class="ui">Ordner herunterladen</span> bzw. <span class="ui">Alle Dokumente als ZIP herunterladen</span>) – die Dateien werden als ZIP gepackt.</li>
+  <li><span class="ui">Löschen</span> (Papierkorb): entfernt das Dokument. Von anderen Benutzern ausgecheckte (gesperrte) Dokumente können nicht gelöscht werden.</li>
+  <li><span class="ui">Link erstellen</span>: erstellt einen Freigabe-Link, um ein einzelnes Dokument extern zu teilen. Über <span class="ui">Links</span> oben rechts verwalten Sie alle bestehenden Freigabe-Links (kopieren, <span class="ui">Deaktivieren</span>/<span class="ui">Aktivieren</span>, löschen).</li>
+</ol>
+
+<h3>Versionsverlauf nutzen</h3>
+<ol class="steps">
+  <li>Klicken Sie beim gewünschten Dokument auf das Symbol <span class="ui">Versionsverlauf</span>.</li>
+  <li>Zuoberst sehen Sie die <span class="ui">Aktuelle Version</span>, darunter alle älteren Versionen. Versionen entstehen automatisch bei jedem Checkin bzw. Update.</li>
+  <li>Mit <span class="ui">Herunterladen</span> öffnen Sie eine ältere Version, mit <em>Wiederherstellen</em> machen Sie sie wieder zur aktuellen Version – die bisherige aktuelle Version wird dabei automatisch archiviert.</li>
+</ol>
+
+<div class="screenshot">📷 Screenshot: Dialog «Versionsverlauf» mit aktueller und älteren Versionen</div>
+
+<h3>Posteingang: Dokument einem Kunden zuweisen</h3>
+<p>Im <span class="ui">Posteingang</span> sammeln sich Dateien, die Kunden über einen Upload-Link hochgeladen haben. Von dort weisen Sie sie der definitiven Dateiablage zu.</p>
+<ol class="steps">
+  <li>Öffnen Sie die Seite <span class="ui">Posteingang</span>. Links sehen Sie die Kundenordner mit der Anzahl Dokumente, rechts die Dateiliste. Mit <span class="ui">Volltext-Suche…</span> filtern Sie nach Dateiname oder Kategorie.</li>
+  <li>Klicken Sie beim gewünschten Dokument auf das Zuweisungs-Symbol (Person mit Dokument). Der Dialog <span class="ui">Dokument Kunde zuweisen</span> öffnet sich.</li>
+  <li>Wählen Sie den <span class="ui">Kunde *</span>, prüfen Sie den <span class="ui">Anzeigename *</span> und wählen Sie passende <span class="ui">Tags</span> – die Kategorie wird daraus automatisch vorgeschlagen.</li>
+  <li>Kontrollieren Sie <span class="ui">Kategorie *</span> und <span class="ui">Jahr *</span> und ergänzen Sie bei Bedarf eine <span class="ui">Notiz (optional)</span>.</li>
+  <li>Klicken Sie auf <span class="ui">zuweisen</span>. Das Dokument wird in die Dateiablage verschoben und aus dem Posteingang entfernt (Meldung <em>«Dokument zugewiesen»</em>).</li>
+</ol>
+
+<div class="screenshot">📷 Screenshot: Posteingang mit Dialog «Dokument Kunde zuweisen»</div>
+
+<h3>Upload-Link für Kunden erstellen</h3>
+<p>Damit Kunden Ihnen Unterlagen sicher zustellen können, erstellen Sie eine persönliche Upload-Seite.</p>
+<ol class="steps">
+  <li>Klicken Sie auf der Seite <span class="ui">Posteingang</span> oben rechts auf <span class="ui">Uploadseite für Kunde</span>.</li>
+  <li>Wählen Sie im Dialog <span class="ui">Kunden Link für Dateiupload erstellen</span> den <span class="ui">Kunde *</span> aus.</li>
+  <li>Legen Sie <span class="ui">Kategorie</span> und <span class="ui">Steuerjahr *</span> fest – diese Angaben werden den hochgeladenen Dateien automatisch mitgegeben.</li>
+  <li>Setzen Sie das Datum <span class="ui">Link gültig bis *</span> (Standard: 14 Tage). Nach diesem Datum kann der Kunde keine Dateien mehr über diesen Link hochladen.</li>
+  <li>Klicken Sie auf <span class="ui">Link erstellen</span>. Der Link wird automatisch in die Zwischenablage kopiert und in einem neuen Tab geöffnet – Sie können ihn direkt per E-Mail an den Kunden senden.</li>
+</ol>
+<p><strong>So sieht es der Kunde:</strong> Die Seite <span class="ui">Dokumenten-Upload</span> zeigt die Gültigkeit des Links an. Der Kunde klickt auf <span class="ui">Klicken oder Dateien hierher ziehen</span>, wählt eine oder mehrere Dateien und sendet sie mit <span class="ui">Dokumente senden</span>. Die Dateien erscheinen anschliessend in Ihrem Posteingang.</p>
+
+<div class="screenshot">📷 Screenshot: Kunden-Uploadseite «Dokumenten-Upload» mit Datei-Ablagefeld</div>
+
+<div class="tips">
+  <h4>💡 Tipps zur Dateiverwaltung</h4>
+  <ul>
+    <li>Benennen Sie Dateien sprechend (inkl. Jahreszahl) – das Jahr und passende Tags werden dann beim Hochladen automatisch erkannt.</li>
+    <li>Die Volltext-Suche findet auch Begriffe <em>im Inhalt</em> von PDFs, Word- und Excel-Dateien – nicht nur im Dateinamen.</li>
+    <li>Wählen Sie zuerst die Tags: Die Kategorie wird daraus automatisch übernommen, und der Cursor springt direkt ins Jahresfeld.</li>
+    <li>Nutzen Sie das Ablaufdatum der Upload-Links bewusst kurz – nach Ablauf ist der Link automatisch gesperrt.</li>
+    <li>Ganze Kundenordner laden Sie am schnellsten als ZIP herunter (Symbol im Kundenbaum).</li>
+  </ul>
+</div>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<h2 id="aufgaben">2. Aufgabenverwaltung</h2>
+
+<p>Das Task-Board organisiert Aufgaben in Spalten (Kanban-Prinzip). Jede Aufgabe hat einen Titel, eine Beschreibung, Verantwortliche, ein Fälligkeitsdatum und optional Priorität, Kunde, Tags und Anhänge. Alternativ zur Kanban-Ansicht steht eine Listenansicht zur Verfügung.</p>
+
+<div class="screenshot">📷 Screenshot: Task-Board in der Kanban-Ansicht mit mehreren Spalten</div>
+
+<h3>Aufgabe erstellen</h3>
+<ol class="steps">
+  <li>Klicken Sie oben rechts auf <span class="ui">Neuer Task</span>.</li>
+  <li>Erfassen Sie den <span class="ui">Titel *</span> und unter <span class="ui">Bezeichnung *</span> die Details zur Aufgabe.</li>
+  <li>Wählen Sie die <span class="ui">Spalte *</span>, in der die Aufgabe starten soll, und optional eine <span class="ui">Priorität</span>.</li>
+  <li>Setzen Sie das Datum <span class="ui">Fällig am *</span>.</li>
+  <li>Bestimmen Sie <span class="ui">Zugewiesen an *</span> (wer die Aufgabe ausführt) und <span class="ui">Verantwortlich *</span> (wer sie verantwortet). Standardmässig sind Sie selbst vorausgewählt.</li>
+  <li>Verknüpfen Sie optional einen <span class="ui">Kunde</span> (einfach im Feld <span class="ui">Kunde suchen…</span> tippen) und fügen Sie <span class="ui">Tags</span> hinzu.</li>
+  <li>Unter <span class="ui">Anhänge</span> können Sie über <span class="ui">Dateien hochladen</span> eine oder mehrere Dateien anhängen.</li>
+  <li>Klicken Sie auf <span class="ui">Erstellen</span> – die Aufgabe erscheint in der gewählten Spalte.</li>
+</ol>
+
+<div class="screenshot">📷 Screenshot: Dialog «Neuer Task» mit ausgefüllten Feldern</div>
+
+<h3>Aufgabe bearbeiten</h3>
+<ol class="steps">
+  <li>Klicken Sie auf eine Aufgabenkarte – das Detailpanel öffnet sich (je nach Einstellung rechts als Seitenpanel oder als Popup).</li>
+  <li>Passen Sie Titel, Beschreibung, <span class="ui">Spalte</span>, Priorität, <span class="ui">Fällig am</span>, <span class="ui">Zugewiesen an</span>, <span class="ui">Verantwortlich</span>, Kunde und Tags an.</li>
+  <li>Fügen Sie unter <span class="ui">Anhänge</span> weitere Dateien hinzu (<span class="ui">Dateien hochladen</span>) oder laden Sie bestehende Anhänge per Klick herunter.</li>
+  <li>Unter <span class="ui">Kommentare</span> tauschen Sie sich im Team aus: Nachricht in <span class="ui">Kommentar schreiben… (Enter)</span> eingeben und mit Enter senden. Neue Kommentare anderer Benutzer werden Ihnen über das Glocken-Symbol im Board-Kopf gemeldet.</li>
+  <li>Klicken Sie zum Schluss auf <span class="ui">Änderungen speichern</span>.</li>
+</ol>
+
+<div class="screenshot">📷 Screenshot: Task-Detailpanel mit Anhängen und Kommentaren</div>
+
+<h3>Aufgabe verschieben</h3>
+<ol class="steps">
+  <li>Ziehen Sie die Aufgabenkarte per Drag-and-drop in eine andere Spalte (z.&nbsp;B. von «Offen» nach «In Arbeit»).</li>
+  <li>Alternativ öffnen Sie die Aufgabe und ändern im Detailpanel das Feld <span class="ui">Spalte</span>, danach <span class="ui">Änderungen speichern</span>.</li>
+  <li>Innerhalb einer Spalte können Sie Karten ebenfalls per Drag-and-drop umsortieren.</li>
+</ol>
+
+<h3>Aufgabe abschliessen</h3>
+<ol class="steps">
+  <li>Fahren Sie über die Aufgabenkarte und klicken Sie auf den Kreis <span class="ui">Als erledigt markieren</span>.</li>
+  <li>Die Aufgabe wird durchgestrichen und ausgegraut dargestellt; im Detail sehen Sie das Abschlussdatum (<em>«Abgeschlossen: …»</em>).</li>
+  <li>Versehentlich abgeschlossen? Mit erneutem Klick (<span class="ui">Als offen markieren</span>) ist die Aufgabe wieder aktiv.</li>
+</ol>
+
+<h3>Suchen, filtern und Ansichten</h3>
+<ol class="steps">
+  <li>Nutzen Sie das Suchfeld <span class="ui">Tasks suchen…</span>, um Aufgaben nach Stichwort zu finden.</li>
+  <li>Über den Filter <span class="ui">Verantwortlich</span> schalten Sie zwischen <span class="ui">Ich verantwortlich</span> und <span class="ui">Alle Verantwortlichen</span> um.</li>
+  <li>Mit dem Knopf <span class="ui">Prioritäten</span> filtern Sie nach Prioritätsstufen oder aktivieren <span class="ui">Nach Priorität sortieren</span>; <span class="ui">Filter zurücksetzen</span> hebt den Filter wieder auf.</li>
+  <li>Über die Symbolknöpfe wechseln Sie zwischen <span class="ui">Kanban-Ansicht</span> und <span class="ui">Listenansicht</span>, zwischen Standard- und Foto-Kacheln sowie zwischen Detail-Seitenpanel und Popup. Mit <span class="ui">Alle einklappen</span> verschaffen Sie sich Übersicht.</li>
+</ol>
+
+<h3>Erinnerungen</h3>
+<ol class="steps">
+  <li>Wird eine Aufgabe fällig, erscheint automatisch ein Erinnerungs-Popup (<span class="ui">Erinnerung</span> bzw. <span class="ui">Aufgabe überfällig</span>) – zusätzlich als Browser-Benachrichtigung, sofern erlaubt.</li>
+  <li>Mit <span class="ui">Öffnen</span> springen Sie direkt zur Aufgabe.</li>
+  <li>Mit <span class="ui">Snooze</span> verschieben Sie die Erinnerung um eine wählbare Zeitspanne.</li>
+  <li>Mit <span class="ui">Verwerfen</span> blenden Sie die Erinnerung aus.</li>
+</ol>
+
+<div class="screenshot">📷 Screenshot: Erinnerungs-Popup mit den Knöpfen «Snooze», «Öffnen» und «Verwerfen»</div>
+
+<div class="tips">
+  <h4>💡 Tipps zur Aufgabenverwaltung</h4>
+  <ul>
+    <li>Setzen Sie immer ein Datum <span class="ui">Fällig am</span> – nur so funktionieren die automatischen Erinnerungen.</li>
+    <li>Unterscheiden Sie bewusst: <span class="ui">Zugewiesen an</span> = wer arbeitet, <span class="ui">Verantwortlich</span> = wer den Abschluss verantwortet.</li>
+    <li>Verknüpfen Sie Aufgaben mit einem Kunden – so behalten Sie alle Pendenzen pro Mandat im Blick.</li>
+    <li>Das Glocken-Symbol zeigt ungelesene Kommentare: ein Klick darauf führt direkt zur betreffenden Aufgabe.</li>
+    <li>Die Listenansicht eignet sich gut für die schnelle Tagesübersicht, das Kanban-Board für die Arbeit im Team.</li>
+  </ul>
+</div>
+
+<footer>
+  Stand: Juni 2026 · Diese Anleitung beschreibt die Funktionen der Dateiverwaltung (Dokumente &amp; Posteingang) und der Aufgabenverwaltung (Task-Board).
+</footer>
+
+</div>
+</body>
+</html>
