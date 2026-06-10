@@ -39,6 +39,7 @@ const SECTIONS = [
       { divider: true },
       { to: 'debitoren/kunden',     label: 'Kunden',           icon: 'users' },
       { to: 'debitoren/artikel',    label: 'Produktstamm',     icon: 'grid' },
+      { to: 'debitoren/einstellungen', label: 'Rechnungs-Einstellungen', icon: 'grid' },
     ],
   },
   {

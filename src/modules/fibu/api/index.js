@@ -1,4 +1,5 @@
 import { supabase } from '@/api/supabaseClient';
+import { buildQrReference } from '../utils/pain001';
 
 // ── Mandanten ────────────────────────────────────────────────────
 export const mandantenApi = {
@@ -964,9 +965,11 @@ export const debitorenApi = {
       if (ne) throw ne;
       beleg_nr = nr;
     }
+    // QR-Referenz (27-stellig) generieren, falls noch keine gesetzt – für QR-Rechnung
+    const zahlungsreferenz = beleg.zahlungsreferenz || buildQrReference(beleg_nr, beleg_nr);
     const { data, error } = await supabase
       .from('fibu_debitoren_belege')
-      .insert({ ...beleg, beleg_nr, mandant_id: mandantId }).select().single();
+      .insert({ ...beleg, beleg_nr, zahlungsreferenz, mandant_id: mandantId }).select().single();
     if (error) throw error;
     if (positionen?.length) {
       const pos = positionen.map((p, i) => ({ ...p, mandant_id: mandantId, beleg_id: data.id, position: i + 1 }));
