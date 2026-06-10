@@ -74,7 +74,7 @@ function drawHead(pdf, vorlage, mandant, logoBuf) {
  * @param {Object} a.zahlstelle  fibu_zahlstellen (qr_iban/iban)
  * @returns {Promise<{url:string|null, path:string|null, blob:Blob}>}
  */
-export async function generateDebitorenPdf({ beleg, positionen = [], kunde = {}, mandant = {}, zahlstelle = {} }) {
+export async function generateDebitorenPdf({ beleg, positionen = [], kunde = {}, mandant = {}, zahlstelle = {}, upload = true }) {
   const { PDF, BlobStream } = await loadSwissqrbill();
   const vorlage = mandant.rechnung_vorlage || 'klassisch';
   const logoBuf = await loadImageBuffer(mandant.rechnung_logo_url).catch(() => null);
@@ -198,6 +198,8 @@ export async function generateDebitorenPdf({ beleg, positionen = [], kunde = {},
   const blob = await new Promise((resolve) => {
     stream.on('finish', () => resolve(stream.toBlob('application/pdf')));
   });
+
+  if (!upload) return { url: null, path: null, blob };   // Vorschau-Modus
 
   const path = `debitoren/${beleg.id}.pdf`;
   const up = await supabase.storage.from('invoices').upload(path, blob, { upsert: true, contentType: 'application/pdf' });

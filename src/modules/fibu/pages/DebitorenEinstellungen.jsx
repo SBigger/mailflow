@@ -6,7 +6,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useMandant } from '../contexts/MandantContext';
 import { mandantenApi, zahlstellenApi } from '../api';
-import { isQrIban } from '../utils/pain001';
+import { isQrIban, buildQrReference } from '../utils/pain001';
+import { generateDebitorenPdf } from '../utils/debitorenInvoicePdf';
 import { supabase } from '@/api/supabaseClient';
 
 const card = { background: '#fff', border: '1px solid #d4dcd4', borderRadius: 12, padding: 20 };
@@ -66,6 +67,36 @@ export default function DebitorenEinstellungen() {
       setMsg({ ok: true, text: 'Logo hochgeladen – nicht vergessen zu speichern.' });
     } catch (err) { setMsg({ ok: false, text: 'Upload fehlgeschlagen: ' + err.message }); }
     finally { setUploading(false); if (fileRef.current) fileRef.current.value = ''; }
+  };
+
+  const [previewBusy, setPreviewBusy] = useState(null);
+  const previewVorlage = async (vorlageId) => {
+    setPreviewBusy(vorlageId); setMsg(null);
+    try {
+      const zs = zahlstellen.find(z => z.id === m.rechnung_zahlstelle_id) || zahlstellen[0]
+        || { qr_iban: 'CH4431999123000889012' };
+      const beleg = {
+        id: 'preview', beleg_nr: 'MUSTER', titel: 'Beratung & Material (Vorschau)',
+        belegdatum: new Date().toISOString().slice(0, 10),
+        faelligkeit: new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10),
+        waehrung: 'CHF', betrag_netto: 1405, betrag_mwst: 113.81, betrag_brutto: 1518.81,
+        zahlungsreferenz: buildQrReference('1001', 'MUSTER2026'),
+      };
+      const positionen = [
+        { bezeichnung: 'Beratung Buchhaltung', menge: 8, einheit: 'Std', einzelpreis: 140, betrag_brutto: 1210.72 },
+        { bezeichnung: 'Ordner & Register (Set)', menge: 10, einheit: 'Stk', einzelpreis: 28.5, betrag_brutto: 308.09 },
+      ];
+      const kunde = { name: 'Muster Kunde AG', nr: 'K-1001', adresse: 'Beispielweg 12', plz: '8000', ort: 'Zürich', land: 'CH' };
+      const mandant = {
+        ...m,
+        name: m.name || 'Muster Treuhand AG',
+        adresse: m.adresse || 'Musterstrasse 1', plz: m.plz || '8000', ort: m.ort || 'Zürich',
+        rechnung_vorlage: vorlageId,
+      };
+      const { blob } = await generateDebitorenPdf({ beleg, positionen, kunde, mandant, zahlstelle: zs, upload: false });
+      window.open(URL.createObjectURL(blob), '_blank');
+    } catch (e) { setMsg({ ok: false, text: 'Vorschau fehlgeschlagen: ' + e.message }); }
+    finally { setPreviewBusy(null); }
   };
 
   if (!m) return <div style={{ flex: 1, padding: 24, color: '#94a394' }}>Lädt…</div>;
@@ -143,17 +174,23 @@ export default function DebitorenEinstellungen() {
             {VORLAGEN.map(v => {
               const active = (m.rechnung_vorlage || 'klassisch') === v.id;
               return (
-                <button key={v.id} onClick={() => set({ rechnung_vorlage: v.id })}
+                <div key={v.id} onClick={() => set({ rechnung_vorlage: v.id })}
                   style={{ textAlign: 'left', padding: 14, borderRadius: 10, cursor: 'pointer',
+                    display: 'flex', flexDirection: 'column',
                     border: active ? '2px solid #3d6641' : '1px solid #d4dcd4',
                     background: active ? '#f0f7f0' : '#fff' }}>
                   <div style={{ fontWeight: 700, fontSize: 12.5, color: active ? '#3d6641' : '#1a1a2e' }}>{active ? '● ' : '○ '}{v.name}</div>
-                  <div style={{ fontSize: 11, color: '#6b826b', marginTop: 4, lineHeight: 1.4 }}>{v.desc}</div>
-                </button>
+                  <div style={{ fontSize: 11, color: '#6b826b', marginTop: 4, lineHeight: 1.4, flex: 1 }}>{v.desc}</div>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); previewVorlage(v.id); }}
+                    disabled={previewBusy === v.id}
+                    style={{ marginTop: 10, padding: '5px 10px', borderRadius: 7, border: '1px solid #bfcfbf', background: '#fff', color: '#3d6641', fontSize: 11.5, fontWeight: 600, cursor: 'pointer', alignSelf: 'flex-start' }}
+                  >{previewBusy === v.id ? 'erzeugt…' : '👁 Vorschau'}</button>
+                </div>
               );
             })}
           </div>
-          <div style={{ fontSize: 10.5, color: '#94a394', marginTop: 10 }}>Die PDF-Generierung mit diesen Vorlagen folgt im nächsten Schritt; die Auswahl wird bereits gespeichert.</div>
+          <div style={{ fontSize: 10.5, color: '#94a394', marginTop: 10 }}>„👁 Vorschau" erzeugt ein Muster-PDF der jeweiligen Vorlage (mit deinem Logo/Briefkopf). Die gewählte Vorlage wird für neue Rechnungen verwendet.</div>
         </div>
       </div>
     </div>
