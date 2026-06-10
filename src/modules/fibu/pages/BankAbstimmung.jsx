@@ -301,6 +301,7 @@ export default function BankAbstimmung() {
   const [opFilter,     setOpFilter]    = useState('alle');   // 'alle'|'debitoren'|'kreditoren'
   const [importing,    setImporting]   = useState(false);
   const [autoRunning,  setAutoRunning] = useState(false);
+  const [autoLog,      setAutoLog]     = useState(null);  // { booked, skonto, partial, errors }
   const [toast,        setToast]       = useState(null);
   // CSV-Import Dialog
   const [csvDialog,    setCsvDialog]   = useState(false);  // Dialog offen?
@@ -326,8 +327,9 @@ export default function BankAbstimmung() {
   useEffect(() => {
     if (!mandantId) return;
     loadMandant();
-    loadTransactions();
-    loadOpenItems();
+    Promise.all([loadTransactions(), loadOpenItems()]).then(([txs, ops]) => {
+      if (txs && ops) runAutoBook(txs, ops);
+    });
     loadKontierungsregeln();
     loadKonten();
     loadZahlstellen();
@@ -345,6 +347,7 @@ export default function BankAbstimmung() {
       .eq('mandant_id', mandantId)
       .order('buchungsdatum', { ascending: false });
     if (data) setTransactions(data);
+    return data ?? [];
   }
 
   async function loadOpenItems() {
@@ -441,6 +444,7 @@ export default function BankAbstimmung() {
     console.log(`BankAbstimmung loadOpenItems: ${kredItems.length} Kred, ${debItems.length} Deb, ${buchItems.length} Buch, mandantId=${mandantId}`);
     setOpLoadErr(kredErr ? kredErr.message : null);
     setOpenItems(all);
+    return all;
   }
 
   async function loadKontierungsregeln() {
@@ -734,7 +738,87 @@ export default function BankAbstimmung() {
     e.target.value = '';
   }
 
-  // ── Auto-Match ───────────────────────────────────────────────────
+  // ── Vollautomatische Buchung (Score ≥ 0.95, beim Laden) ─────────
+  async function runAutoBook(txs, ops) {
+    const offen = (txs ?? transactions).filter(tx => tx.status === 'offen');
+    const items = ops ?? openItems;
+    if (!offen.length || !items.length) return;
+
+    const suggestions = autoMatch(offen, items).filter(s => s.autoApply);
+    if (!suggestions.length) return;
+
+    const log = { booked: [], skonto: [], partial: [], errors: [] };
+
+    for (const s of suggestions) {
+      const tx = offen.find(t => t.id === s.tx_id);
+      const op = items.find(o => o.id === s.op_id);
+      if (!tx || !op) continue;
+
+      try {
+        if (op.typ === 'kreditor' && op.betrag_offen != null) {
+          const diff = op.betrag_offen - tx.betrag;  // positiv = Bankbetrag kleiner
+          const ratio = diff / op.betrag_offen;
+
+          if (Math.abs(diff) <= 0.005) {
+            // Exakter Match (Rundung)
+            await supabase.rpc('fibu_bank_match_kreditor', {
+              p_tx_id: tx.id, p_beleg_id: op.id,
+              p_betrag: tx.betrag, p_datum: tx.buchungsdatum,
+              p_confidence: s.score, p_methode: s.method,
+            });
+            log.booked.push(`${op.beleg_nr} · CHF ${tx.betrag.toFixed(2)}`);
+
+          } else if (ratio > 0 && ratio <= 0.02) {
+            // Skonto ≤ 2%: match + Skonto buchen
+            await supabase.rpc('fibu_bank_match_kreditor', {
+              p_tx_id: tx.id, p_beleg_id: op.id,
+              p_betrag: tx.betrag, p_datum: tx.buchungsdatum,
+              p_confidence: s.score, p_methode: s.method,
+            });
+            await supabase.rpc('fibu_skonto_buchen', {
+              p_beleg_id: op.id, p_skonto_betrag: diff, p_datum: tx.buchungsdatum,
+            });
+            log.skonto.push(`${op.beleg_nr} · Skonto CHF ${diff.toFixed(2)}`);
+
+          } else if (ratio > 0 && ratio > 0.02) {
+            // Teilzahlung — match mit aktuellem Betrag, Restbetrag bleibt offen
+            await supabase.rpc('fibu_bank_match_kreditor', {
+              p_tx_id: tx.id, p_beleg_id: op.id,
+              p_betrag: tx.betrag, p_datum: tx.buchungsdatum,
+              p_confidence: s.score, p_methode: s.method,
+            });
+            log.partial.push(`${op.beleg_nr} · Teilzahlung CHF ${tx.betrag.toFixed(2)}, Rest CHF ${diff.toFixed(2)}`);
+
+          } else {
+            // Überzahlung: trotzdem buchen (Überzahlung als Hinweis)
+            await supabase.rpc('fibu_bank_match_kreditor', {
+              p_tx_id: tx.id, p_beleg_id: op.id,
+              p_betrag: tx.betrag, p_datum: tx.buchungsdatum,
+              p_confidence: s.score, p_methode: s.method,
+            });
+            log.booked.push(`${op.beleg_nr} · CHF ${tx.betrag.toFixed(2)} (Überzahlung)`);
+          }
+        } else {
+          // Debitoren oder Buchung: einfacher Match
+          await supabase.from('fibu_bank_transaktionen').update({
+            status: 'gematcht', matched_beleg_id: op.id, matched_typ: op.typ,
+            match_confidence: s.score, match_methode: s.method,
+          }).eq('id', tx.id);
+          log.booked.push(`${op.beleg_nr} · CHF ${tx.betrag?.toFixed(2) ?? '—'}`);
+        }
+      } catch (err) {
+        log.errors.push(`${op.beleg_nr}: ${err.message}`);
+      }
+    }
+
+    if (log.booked.length || log.skonto.length || log.partial.length || log.errors.length) {
+      setAutoLog(log);
+      await loadTransactions();
+      await loadOpenItems();
+    }
+  }
+
+  // ── Auto-Match (Vorschläge, manuell ausgelöst) ───────────────────
   async function runAutoMatch() {
     setAutoRunning(true);
     const offen = transactions.filter(tx => tx.status === 'offen');
@@ -876,6 +960,30 @@ export default function BankAbstimmung() {
       onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%',
         background: C.bg, fontFamily: "'Inter', system-ui, sans-serif", color: C.text, overflow: 'hidden' }}>
+
+        {/* ── Auto-Book Log Banner ─────────────────────────────── */}
+        {autoLog && (
+          <div style={{ background: '#f0fdf4', borderBottom: '1px solid #bbf7d0', padding: '10px 20px', flexShrink: 0, fontSize: 13 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+              <div style={{ flex: 1 }}>
+                <span style={{ fontWeight: 700, color: '#15803d', marginRight: 10 }}>⚡ Automatisch verbucht beim Laden:</span>
+                {autoLog.booked.length > 0 && (
+                  <span style={{ marginRight: 12 }}>✓ {autoLog.booked.length} gebucht: {autoLog.booked.join(' · ')}</span>
+                )}
+                {autoLog.skonto.length > 0 && (
+                  <span style={{ marginRight: 12, color: '#0369a1' }}>% Skonto: {autoLog.skonto.join(' · ')}</span>
+                )}
+                {autoLog.partial.length > 0 && (
+                  <span style={{ marginRight: 12, color: '#92400e' }}>⚠ Teilzahlung: {autoLog.partial.join(' · ')}</span>
+                )}
+                {autoLog.errors.length > 0 && (
+                  <span style={{ color: '#dc2626' }}>✗ Fehler: {autoLog.errors.join(' · ')}</span>
+                )}
+              </div>
+              <button onClick={() => setAutoLog(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6b7280', fontSize: 16, lineHeight: 1 }}>✕</button>
+            </div>
+          </div>
+        )}
 
         {/* ── Header ────────────────────────────────────────────── */}
         <header style={{ background: C.header, color: '#fff', padding: '0 20px',
