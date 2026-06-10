@@ -3,7 +3,7 @@ import { entities, functions, auth, supabase } from "@/api/supabaseClient";
 import { ThemeContext } from "@/Layout";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { DragDropContext, Droppable } from "@hello-pangea/dnd";
-import { Plus, RefreshCw, Palette, Users, Search, X, ChevronsLeftRight, Mic, LayoutList, LayoutDashboard, MoreHorizontal, Bell, Image as ImageIcon, AppWindow } from "lucide-react";
+import { Plus, RefreshCw, Palette, Users, Search, X, ChevronsLeftRight, Mic, LayoutList, LayoutDashboard, MoreHorizontal, Bell, Image as ImageIcon, AppWindow, Tag as TagIcon } from "lucide-react";
 import { useIsMobile } from "@/components/mobile/useIsMobile";
 import MobileColumnNav from "@/components/mobile/MobileColumnNav";
 import { Button } from "@/components/ui/button";
@@ -48,6 +48,7 @@ export default function TaskBoard() {
   const [editingColumnColor, setEditingColumnColor] = useState(null);
   const [sortByPriority, setSortByPriority] = useState(false);
    const [filterPriorityIds, setFilterPriorityIds] = useState([]);
+  const [filterTags, setFilterTags] = useState([]);
    const [userFilter, setUserFilter] = useState('me');
    const [verantwortlichFilter, setVerantwortlichFilter] = useState('all');
    const [searchQuery, setSearchQuery] = useState("");
@@ -130,6 +131,12 @@ export default function TaskBoard() {
     queryFn: () => entities.Priority.list("level"),
   });
 
+  const { data: allTaskTags = [] } = useQuery({
+    queryKey: ["taskTags", currentUser?.id],
+    queryFn: () => entities.Tag.filter({ created_by: currentUser.id }),
+    enabled: !!currentUser,
+  });
+
   const { data: unreadComments = [] } = useQuery({
     queryKey: ["unread_comments", currentUser?.email],
     queryFn: async () => {
@@ -202,6 +209,13 @@ export default function TaskBoard() {
     }
 
     // Search filter
+    // Filter by tags
+    if (filterTags.length > 0) {
+      result = result.filter(t =>
+        filterTags.every(tag => (t.tags || []).includes(tag))
+      );
+    }
+
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       result = result.filter(t =>
@@ -211,7 +225,7 @@ export default function TaskBoard() {
     }
 
     return result;
-  }, [tasks, filterPriorityIds, sortByPriority, priorities, currentUser, userFilter, verantwortlichFilter, searchQuery, allUsers]);
+  }, [tasks, filterPriorityIds, filterTags, sortByPriority, priorities, currentUser, userFilter, verantwortlichFilter, searchQuery, allUsers]);
 
   const createTaskMutation = useMutation({
     mutationFn: (data) => entities.Task.create(data),
@@ -308,10 +322,18 @@ export default function TaskBoard() {
 
 
   const togglePriorityFilter = (priorityId) => {
-    setFilterPriorityIds(prev => 
-      prev.includes(priorityId) 
+    setFilterPriorityIds(prev =>
+      prev.includes(priorityId)
         ? prev.filter(id => id !== priorityId)
         : [...prev, priorityId]
+    );
+  };
+
+  const toggleTagFilter = (tagName) => {
+    setFilterTags(prev =>
+      prev.includes(tagName)
+        ? prev.filter(t => t !== tagName)
+        : [...prev, tagName]
     );
   };
 
@@ -408,6 +430,36 @@ export default function TaskBoard() {
                         <>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem onClick={() => setFilterPriorityIds([])} className="text-red-500">Filter zurücksetzen</DropdownMenuItem>
+                        </>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  {/* Tag-Filter Mobile */}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm" className="gap-2 h-9 flex-1"
+                        style={{ backgroundColor: inputBg, borderColor: inputBorder, color: inputText }}>
+                        <TagIcon className="h-4 w-4" />
+                        Tags
+                        {filterTags.length > 0 && (
+                          <span className="bg-indigo-500 text-white text-xs px-1.5 py-0.5 rounded-full">{filterTags.length}</span>
+                        )}
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-48">
+                      {allTaskTags.length === 0 ? (
+                        <div className="px-3 py-4 text-xs text-center text-gray-400">Keine Tags vorhanden</div>
+                      ) : (
+                        allTaskTags.map(tag => (
+                          <DropdownMenuCheckboxItem key={tag.id} checked={filterTags.includes(tag.name)} onCheckedChange={() => toggleTagFilter(tag.name)}>
+                            {tag.name}
+                          </DropdownMenuCheckboxItem>
+                        ))
+                      )}
+                      {filterTags.length > 0 && (
+                        <>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem onClick={() => setFilterTags([])} className="text-red-500">Filter zurücksetzen</DropdownMenuItem>
                         </>
                       )}
                     </DropdownMenuContent>
@@ -542,6 +594,36 @@ export default function TaskBoard() {
                     <>
                       <DropdownMenuSeparator className="bg-gray-200" />
                       <DropdownMenuItem onClick={() => setFilterPriorityIds([])} className="text-red-400">Filter zurücksetzen</DropdownMenuItem>
+                    </>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              {/* Tag-Filter Desktop */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="gap-2 h-9"
+                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: isLight ? '#3a3a5a' : '#d4d4d8' }}>
+                    <TagIcon className="h-4 w-4" />
+                    Tags
+                    {filterTags.length > 0 && (
+                      <span className="bg-indigo-500 text-white text-xs px-1.5 py-0.5 rounded-full">{filterTags.length}</span>
+                    )}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="bg-white border-gray-200 w-48">
+                  {allTaskTags.length === 0 ? (
+                    <div className="px-3 py-4 text-xs text-center text-gray-400">Keine Tags vorhanden</div>
+                  ) : (
+                    allTaskTags.map(tag => (
+                      <DropdownMenuCheckboxItem key={tag.id} checked={filterTags.includes(tag.name)} onCheckedChange={() => toggleTagFilter(tag.name)} className="text-gray-700">
+                        {tag.name}
+                      </DropdownMenuCheckboxItem>
+                    ))
+                  )}
+                  {filterTags.length > 0 && (
+                    <>
+                      <DropdownMenuSeparator className="bg-gray-200" />
+                      <DropdownMenuItem onClick={() => setFilterTags([])} className="text-red-400">Filter zurücksetzen</DropdownMenuItem>
                     </>
                   )}
                 </DropdownMenuContent>
