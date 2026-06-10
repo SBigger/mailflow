@@ -990,6 +990,10 @@ export const debitorenApi = {
     const { error: ve } = await supabase.rpc('fibu_debitoren_verbuchen', { p_beleg_id: id });
     if (ve) throw ve;
   },
+  update: async (id, payload) => {
+    const { error } = await supabase.from('fibu_debitoren_belege').update(payload).eq('id', id);
+    if (error) throw error;
+  },
   remove: async (id) => {
     const { error } = await supabase.from('fibu_debitoren_belege').delete().eq('id', id);
     if (error) throw error;

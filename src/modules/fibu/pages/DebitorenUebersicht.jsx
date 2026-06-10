@@ -4,7 +4,8 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMandant } from '../contexts/MandantContext';
-import { debitorenApi } from '../api';
+import { debitorenApi, mandantenApi, zahlstellenApi } from '../api';
+import { generateDebitorenPdf, triggerDownload } from '../utils/debitorenInvoicePdf';
 
 const CHF = (n) => n == null ? '—' : new Intl.NumberFormat('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 const DATE = (s) => s ? new Date(s).toLocaleDateString('de-CH') : '—';
@@ -41,12 +42,34 @@ export default function DebitorenUebersicht() {
   const navigate = useNavigate();
   const [belege, setBelege]   = useState([]);
   const [loading, setLoading] = useState(true);
+  const [pdfBusy, setPdfBusy] = useState(null);   // beleg.id während Generierung
+  const [mSettings, setMSettings] = useState(null);
+  const [zahlstellen, setZahlstellen] = useState([]);
 
   useEffect(() => {
     if (!mandant) return;
     setLoading(true);
     debitorenApi.list(mandant.id).then(setBelege).catch(console.error).finally(() => setLoading(false));
+    mandantenApi.get(mandant.id).then(setMSettings).catch(console.error);
+    zahlstellenApi.list(mandant.id).then(setZahlstellen).catch(console.error);
   }, [mandant?.id]);
+
+  const makePdf = async (b, e) => {
+    e.stopPropagation();
+    setPdfBusy(b.id);
+    try {
+      const full = await debitorenApi.get(b.id);
+      const zs = zahlstellen.find(z => z.id === mSettings?.rechnung_zahlstelle_id) || zahlstellen[0] || {};
+      const { url, blob } = await generateDebitorenPdf({
+        beleg: full, positionen: full.positionen || [], kunde: full.kunde || {},
+        mandant: mSettings || mandant, zahlstelle: zs,
+      });
+      if (url) await debitorenApi.update(b.id, { pdf_url: url }).catch(() => {});
+      triggerDownload(blob, `${b.beleg_nr}.pdf`);
+      debitorenApi.list(mandant.id).then(setBelege);
+    } catch (err) { alert('PDF-Erzeugung fehlgeschlagen: ' + err.message); }
+    finally { setPdfBusy(null); }
+  };
 
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const in7  = new Date(today.getTime() + 7 * 86400000);
@@ -127,12 +150,20 @@ export default function DebitorenUebersicht() {
                         <td style={{ ...td, color: isEntwurf ? '#94a394' : fs.color, fontWeight: 500 }}>{DATE(b.faelligkeit)}</td>
                         <td style={{ ...td, textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{CHF(restOf(b))}</td>
                         <td style={td}><span style={{ display: 'inline-flex', fontSize: 11, padding: '2px 8px', borderRadius: 6, fontWeight: 500, background: isEntwurf ? sc.bg : fs.bg, color: isEntwurf ? sc.color : fs.color }}>{isEntwurf ? 'Entwurf' : fs.label}</span></td>
-                        <td style={td}>
+                        <td style={{ ...td, whiteSpace: 'nowrap', textAlign: 'right' }}>
                           {isEntwurf && (
                             <button
-                              style={{ fontSize: 11.5, padding: '4px 10px', borderRadius: 7, border: '1px solid #3d6641', background: '#fff', color: '#3d6641', cursor: 'pointer', fontWeight: 600 }}
+                              style={{ fontSize: 11.5, padding: '4px 10px', borderRadius: 7, border: '1px solid #3d6641', background: '#fff', color: '#3d6641', cursor: 'pointer', fontWeight: 600, marginRight: 6 }}
                               onClick={(e) => stellen(b, e)}
                             >Stellen</button>
+                          )}
+                          {b.status !== 'storniert' && (
+                            <button
+                              style={{ fontSize: 11.5, padding: '4px 10px', borderRadius: 7, border: '1px solid #d4dcd4', background: '#fff', color: '#4a5a4a', cursor: pdfBusy === b.id ? 'wait' : 'pointer', fontWeight: 500 }}
+                              disabled={pdfBusy === b.id}
+                              onClick={(e) => makePdf(b, e)}
+                              title="QR-Rechnung als PDF erzeugen & herunterladen"
+                            >{pdfBusy === b.id ? '…' : '↓ PDF'}</button>
                           )}
                         </td>
                       </tr>
