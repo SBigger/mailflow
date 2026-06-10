@@ -2900,6 +2900,7 @@ function BilanzTab({ konten, accent, headingC, subC, panelBg, panelBdr, tableBdr
                 </div>
               );
             })}
+          </div>
         )}
       </React.Fragment>
     );
