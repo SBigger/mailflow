@@ -21,6 +21,7 @@ import {
   History as HistoryIcon
 } from "lucide-react";
 import VersionsDialog from "@/components/dokumente/VersionsDialog";
+import DOMPurify from "dompurify";
 import * as _pdfjsNs from "pdfjs-dist";
 import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.js?url";
 // pdfjs-dist 3.11 ist UMD → je nach Vite-Mode liegt getDocument direkt oder unter .default
@@ -1488,7 +1489,7 @@ export default function Dokumente() {
                     <div style={{ fontSize: 13, color: s.textMain, fontWeight: 600 }}>{doc.name}</div>
                     {doc.headline && (
                       <div style={{ fontSize: 11, color: s.textMuted, marginTop: 2, fontStyle: "italic" }}
-                        dangerouslySetInnerHTML={{ __html: doc.headline.replace(/<b>/g, `<b style="color:${accent};font-style:normal">`).replace(/<\/b>/g, "</b>") }} />
+                        dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(doc.headline, { ALLOWED_TAGS: ["b"] }).replace(/<b>/g, `<b style="color:${accent};font-style:normal">`) }} />
                     )}
                     <div style={{ fontSize: 11, color: s.textMuted, marginTop: 3, display: "flex", gap: 8 }}>
                       {cust && <span style={{ color: accent, fontWeight: 500 }}>{cust.company_name}</span>}

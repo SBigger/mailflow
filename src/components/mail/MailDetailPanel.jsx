@@ -8,6 +8,7 @@ import { format } from "date-fns";
 import { de } from "date-fns/locale";
 import { motion, AnimatePresence } from "framer-motion";
 import { entities, functions, auth } from "@/api/supabaseClient";
+import DOMPurify from "dompurify";
 import { toast } from "sonner";
 import {
   DropdownMenu,
@@ -307,7 +308,7 @@ export default function MailDetailPanel({ mail, onClose, onReply, onDelete, onEd
             }}
           >
             {mail.body ? (
-              <div dangerouslySetInnerHTML={{ __html: mail.body.replace(/\n/g, "<br/>") }} />
+              <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(mail.body.replace(/\n/g, "<br/>")) }} />
             ) : mail.body_preview ? (
               <p style={{ color: textMuted, fontStyle: 'italic' }}>{mail.body_preview}</p>
             ) : (

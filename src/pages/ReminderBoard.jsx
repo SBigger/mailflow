@@ -53,7 +53,9 @@ export default function ReminderBoard() {
         soon.push(mail);
       } else {
         const date = new Date(mail.reminder_date);
-        if (isPast(date) || isToday(date)) {
+        if (isToday(date)) {
+          today.push(mail);
+        } else if (isPast(date)) {
           overdue.push(mail);
         } else if (isThisWeek(date) || isTomorrow(date) || (date <= addDays(startOfDay(now), 3))) {
           soon.push(mail);

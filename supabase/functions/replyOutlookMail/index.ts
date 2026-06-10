@@ -54,11 +54,19 @@ serve(async (req) => {
   const { data: { user: authUser } } = await supabase.auth.getUser(token)
   if (!authUser) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders })
 
-  // 2. Request-Body auslesen (Empfänger, Betreff, Inhalt)
+  // 2. Request-Body auslesen
   const body = await req.json()
   const { mail_id, reply_text, tag, reminder } = body
-  if (!to_email || !subject || !reply_text) {
-    return new Response(JSON.stringify({ error: 'to_email, subject and reply_text required' }), { status: 400, headers: corsHeaders })
+  if (!mail_id || !reply_text) {
+    return new Response(JSON.stringify({ error: 'mail_id and reply_text required' }), { status: 400, headers: corsHeaders })
+  }
+
+  // Mail laden (nur eigene Mails)
+  const { data: mailItem } = await supabase.from('mail_items')
+    .select('outlook_id, sender_email, subject, tags')
+    .eq('id', mail_id).eq('created_by', authUser.id).single()
+  if (!mailItem) {
+    return new Response(JSON.stringify({ error: 'Mail not found' }), { status: 404, headers: corsHeaders })
   }
 
   // 3. Microsoft Profil laden & Token holen
@@ -68,35 +76,33 @@ serve(async (req) => {
   const accessToken = await getAccessToken(supabase, authUser, profile)
   if (!accessToken) return new Response(JSON.stringify({ error: 'Nicht mit Outlook verbunden' }), { status: 400, headers: corsHeaders })
 
-  // 4. E-Mail über Microsoft Graph senden
-  const microsoftGraphUrl = 'https://graph.microsoft.com/v1.0/me/sendMail'
-
-  const emailPayload = {
-    message: {
-      subject: subject,
-      body: {
-        contentType: 'HTML', // Kann auf 'Text' geändert werden, falls kein HTML gewünscht ist
-        content: reply_text
-      },
-      toRecipients: [
-        {
-          emailAddress: {
-            address: to_email
-          }
-        }
-      ]
-    },
-    saveToSentItems: 'true' // Speichert die Mail automatisch im "Gesendet"-Ordner des Nutzers
+  // 4. Antwort über Microsoft Graph senden
+  let res: Response
+  if (mailItem.outlook_id) {
+    // Echte Antwort auf die Original-Mail (Thread bleibt erhalten, landet im Gesendet-Ordner)
+    res = await fetch(`https://graph.microsoft.com/v1.0/me/messages/${mailItem.outlook_id}/reply`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ comment: reply_text })
+    })
+  } else {
+    // Fallback ohne outlook_id: neue Mail an den Absender
+    if (!mailItem.sender_email) {
+      return new Response(JSON.stringify({ error: 'Mail hat keine Absender-Adresse' }), { status: 400, headers: corsHeaders })
+    }
+    res = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: {
+          subject: mailItem.subject?.startsWith('Re:') ? mailItem.subject : `Re: ${mailItem.subject || ''}`,
+          body: { contentType: 'HTML', content: reply_text },
+          toRecipients: [{ emailAddress: { address: mailItem.sender_email } }]
+        },
+        saveToSentItems: 'true'
+      })
+    })
   }
-
-  const res = await fetch(microsoftGraphUrl, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${accessToken}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(emailPayload)
-  })
 
   // Microsoft Graph gibt bei Erfolg einen 202 (Accepted) Statuscode ohne Body zurück
   if (!res.ok) {
@@ -105,7 +111,13 @@ serve(async (req) => {
     return new Response(JSON.stringify({ error: `Outlook-Versand fehlgeschlagen: ${res.status}` }), { status: 500, headers: corsHeaders })
   }
 
-  // optional: Hier könntest du die gesendete Mail noch in deiner `mail_items` Tabelle protokollieren.
+  // 5. Tag/Reminder auf der Mail speichern, falls mitgegeben
+  const updates: Record<string, unknown> = {}
+  if (tag) updates.tags = [...new Set([...(mailItem.tags || []), tag])]
+  if (reminder) updates.reminder_date = reminder
+  if (Object.keys(updates).length > 0) {
+    await supabase.from('mail_items').update(updates).eq('id', mail_id).eq('created_by', authUser.id)
+  }
 
   return new Response(JSON.stringify({ success: true }), {
     headers: { ...corsHeaders, 'Content-Type': 'application/json' }

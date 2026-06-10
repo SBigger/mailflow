@@ -32,9 +32,9 @@ export default function AssignDialog({ customers, preCustomerId, doc, onClose, o
         queryFn:  () => entities.DokTag.list("sort_order"),
     });
 
-    async function extractDocumentText(file) {
+    async function extractDocumentText(file, fileName) {
         if (!file) return "";
-        const name = file.name?.toLowerCase() || "";
+        const name = (fileName || file.name || "").toLowerCase();
         const type = file.type || "";
 
         try {
@@ -106,17 +106,27 @@ export default function AssignDialog({ customers, preCustomerId, doc, onClose, o
             if (uploadError) {
                 throw uploadError;
             }
+            // Datei-Inhalt für Volltext-Indexierung herunterladen (doc ist nur Storage-Metadata, kein File)
+            let contentText = "";
+            const { data: blob, error: dlError } = await supabase.storage.from(BUCKET).download(doc.storage_path);
+            if (!dlError && blob) {
+                contentText = await extractDocumentText(blob, doc.fileName || doc.name);
+            }
+
             await entities.Dokument.create({
                 customer_id: custId,
                 category: cat,
                 year: parseInt(ye),
                 name: name.trim(), filename: doc.name,
-                storage_path: uploadData.path, file_size: doc.size, file_type: doc.type,
+                storage_path: uploadData.path,
+                file_size: doc.metadata?.size ?? doc.size,
+                file_type: doc.metadata?.mimetype ?? doc.type,
                 tag_ids: tagIds, notes,
-                content_text: await extractDocumentText(doc)
+                content_text: contentText
             });
 
-            const { data , error} = await supabase.storage.from(BUCKET).remove([doc.storage_path])
+            const { error: removeError } = await supabase.storage.from(BUCKET).remove([doc.storage_path])
+            if (removeError) console.warn("Original im Posteingang konnte nicht gelöscht werden:", removeError);
 
             toast.success("Dokument zugewiesen", {closeButton: true});
             onClose();

@@ -47,8 +47,7 @@ function num(val) {
 }
 
 function ccy(amtNode) {
-  if (!amtNode) return 'CHF';
-  return amtNode['@_Ccy'] ?? 'CHF';
+  return amtNode?.['@_Ccy'] ?? null;
 }
 
 function dateStr(node) {
@@ -162,7 +161,7 @@ function gpIban(parties, isEin) {
 // ── Einzelne Ntry-Entry parsen ───────────────────────────────────────
 function parseSingleEntry(ntry, kontoIban) {
   const ntryBetrag = num(ntry?.Amt);
-  const ntryWaehrung = ccy(ntry?.Amt);
+  const ntryWaehrung = ccy(ntry?.Amt) ?? 'CHF';
   const buchDatum  = dateStr(ntry?.BookgDt);
   const valDatum   = dateStr(ntry?.ValDt);
   const zusatz     = str(ntry?.AddtlNtryInf);
