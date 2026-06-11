@@ -1475,9 +1475,11 @@ export default function Dokumente() {
               const fi   = getFileInfo(doc.file_type, doc.filename);
               const cat  = CATEGORIES.find(c => c.key === doc.category);
               const cust = customers.find(c => c.id === doc.customer_id);
+              // RPC liefert schlanke Felder -- fuer Edit/Copy den vollen Datensatz nehmen
+              const fullDoc = allDoks.find(d => d.id === doc.id) || doc;
               return (
                 <div key={doc.id}
-                  onClick={() => downloadDoc(doc)}
+                  onClick={() => downloadDoc(fullDoc)}
                   title="Öffnen"
                   style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "10px 14px", background: s.cardBg,
                     border: "1px solid " + border, borderRadius: 8, cursor: "pointer", transition: "border 0.15s" }}
@@ -1496,11 +1498,21 @@ export default function Dokumente() {
                       {doc.year && <span>{doc.year}</span>}
                     </div>
                   </div>
-                  <div style={{ flexShrink: 0, alignSelf: "center", display: "flex", gap: 2 }}>
-                    {[1,2,3,4,5].map(i => {
-                      const filled = (doc.rank || 0) >= i * 0.06;
-                      return <div key={i} style={{ width: 6, height: 6, borderRadius: "50%", background: filled ? accent : border }} />;
-                    })}
+                  {/* Action-Buttons (gleich wie Listen-Ansicht) */}
+                  <div style={{ flexShrink: 0, alignSelf: "center", display: "flex", gap: 2, alignItems: "center" }}
+                       onClick={e => e.stopPropagation()}>
+                    <button onClick={() => setEditDoc(fullDoc)} title="Bearbeiten" style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4 }}><Pencil size={13} /></button>
+                    <button onClick={() => setCopyDoc(fullDoc)} title="Kopieren (neu verschlagworten)" style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4 }}><CopyPlus size={13} /></button>
+                    <button onClick={() => setVersionsDoc(fullDoc)} title="Versionsverlauf" style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4 }}><HistoryIcon size={13} /></button>
+                    <button onClick={() => downloadDoc(fullDoc)} title="Herunterladen" style={{ background: "none", border: "none", cursor: "pointer", color: accent, display: "flex", alignItems: "center", padding: 4, borderRadius: 4 }}><Download size={14} /></button>
+                    <button onClick={() => setShareDialog({ type: 'doc', doc_id: fullDoc.id, name: fullDoc.name, customer_id: fullDoc.customer_id })} title="Link erstellen" style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4 }}><Link2 size={14} /></button>
+                    <button onClick={() => handleDelete(fullDoc)} title="Löschen" style={{ background: "none", border: "none", cursor: "pointer", color: "#ef4444", display: "flex", alignItems: "center", padding: 4, borderRadius: 4 }}><Trash2 size={14} /></button>
+                    <div style={{ display: "flex", gap: 2, marginLeft: 6 }}>
+                      {[1,2,3,4,5].map(i => {
+                        const filled = (doc.rank || 0) >= i * 0.06;
+                        return <div key={i} style={{ width: 6, height: 6, borderRadius: "50%", background: filled ? accent : border }} />;
+                      })}
+                    </div>
                   </div>
                 </div>
               );
