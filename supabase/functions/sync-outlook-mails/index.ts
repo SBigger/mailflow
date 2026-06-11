@@ -119,29 +119,47 @@ Deno.serve(async (req) => {
       for (const c of (customers || [])) customerMap.set(c.id, c.company_name)
 
       // Batch von Microsoft holen
-      const response = await fetch(currentUrl, {headers: {Authorization: `Bearer ${accessToken}`}})
-      if (!response.ok) {
-        const errText = await response.text()
-        if (response.status === 410 || errText.includes('syncStateNotFound')) {
-          await supabase.from('profiles').update({microsoft_delta_link: ''}).eq('id', profile.id)
-          results.push({email: profile.email, error: `[ERROR] Delta-Token abgelaufen`})
-          continue;
+      let allMessages = [];
+      let newDeltaLink = null;
+      let hasError = false;
+
+      while (currentUrl) {
+        const response = await fetch(currentUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
+
+        if (!response.ok) {
+          const errText = await response.text();
+          if (response.status === 410 || errText.includes('syncStateNotFound')) {
+            await supabase.from('profiles').update({ microsoft_delta_link: '' }).eq('id', profile.id);
+            results.push({ email: profile.email, error: `[ERROR] Delta-Token abgelaufen` });
+          } else {
+            results.push({ email: profile.email, error: `[ERROR] MS Graph Error ${response.status}: ${errText}` });
+          }
+          hasError = true;
+          break;
         }
-        results.push({email: profile.email, error: `[ERROR] MS Graph Error ${response.status}`})
-        continue;
+
+        const data = await response.json();
+        const messages = data.value || [];
+        allMessages.push(...messages);
+
+        const hasNext = !!data['@odata.nextLink'];
+        currentUrl = data['@odata.nextLink'] || null;
+
+        newDeltaLink = data['@odata.deltaLink'] || null;
       }
 
-      const data = await response.json()
-      const messages = data.value || []
-      const nextLink = data['@odata.nextLink'] || null
-      const newDeltaLink = data['@odata.deltaLink'] || null
+      if (!hasError) {
+        console.log(`[SYNC FERTIG] Insgesamt ${allMessages.length} Mails für ${profile.email} geladen.`);
 
-      console.log(`[SYNC] ${messages.length} msgs, nextLink=${!!nextLink}, deltaLink=${!!newDeltaLink}`)
+        if (newDeltaLink) {
+          await supabase.from('profiles').update({ microsoft_delta_link: newDeltaLink }).eq('id', profile.id);
+        }
+      }
 
       const toInsert: any[] = []
       const toUpdate: any[] = []
 
-      for (const msg of messages) {
+      for (const msg of allMessages) {
         if (msg['@removed']) {
           // Mail aus Outlook gelöscht → in Supabase behalten, nur als archiviert markieren
           const existing = existingMap.get(msg.id)

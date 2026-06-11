@@ -63,26 +63,35 @@ async function extractPdfText(arrayBuffer: ArrayBuffer): Promise<string> {
   }
 }
 
+interface ChunkResult {
+  textForDatabase: string;    // Der saubere Textabschnitt
+  textForEmbedding: string;   // Text + Header (nur für die KI)
+}
+
 function chunkTextWithMetadata(
     text: string,
     fileName: string,
     fileType: string,
     chunkSize = 1500,
     overlap = 200
-): string[] {
-  const chunks: string[] = [];
+): ChunkResult[] {
+  const chunks: ChunkResult[] = [];
   let i = 0;
 
-  // Format a clean, descriptive header for the model
   const metadataHeader = `Dokumentenname: ${fileName}\nDateityp: ${fileType}\nInhalt:\n`;
 
   while (i < text.length) {
+    // 1. Hole den reinen Text-Chunk
     const rawChunk = text.substring(i, i + chunkSize);
 
-    // Prepend the metadata header to the actual chunk text!
+    // 2. Erstelle die Version mit Metadaten für das Embedding-Modell
     const chunkWithContext = `${metadataHeader}${rawChunk}`;
 
-    chunks.push(chunkWithContext);
+    chunks.push({
+      textForDatabase: rawChunk,       // <-- Das speicherst du in `extracted_text`
+      textForEmbedding: chunkWithContext // <-- Das schickst du an den Infinity-Server für den Vektor
+    });
+
     i += chunkSize - overlap;
   }
   return chunks;
@@ -160,14 +169,14 @@ Deno.serve(async (req) => {
     const fileType = mimeType.split('/').pop() || 'unknown';
     const textChunks = chunkTextWithMetadata(extractedText, fileName, fileType, 1500, 200);
 
-    // 4. Map chunks into an array of embedding promises to run them simultaneously
-    const embeddingPromises = textChunks.map(async (chunk) => {
+// 1. Promises für alle Chunks parallel starten
+    const embeddingPromises = textChunks.map(async (chunkObj) => {
       try {
         const response = await fetch("http://192.168.5.10:7997/embeddings", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            input: [chunk],
+            input: [chunkObj.textForEmbedding],
             model: "BAAI/bge-small-en-v1.5"
           })
         });
@@ -177,11 +186,10 @@ Deno.serve(async (req) => {
         const json = await response.json();
         const embedding = json.data[0].embedding;
 
-        // Return the constructed database row object
         return {
           storage_object_id: rec.id,
           file_name: fileName,
-          extracted_text: chunk,
+          extracted_text: chunkObj.textForDatabase,
           embedding: embedding
         };
       } catch (e) {
@@ -189,30 +197,33 @@ Deno.serve(async (req) => {
         return null;
       }
     });
-
-    // Fire off ALL embedding API requests at the exact same time
+  
+    // 2. ALLE API-Anfragen GLEICHZEITIG auflösen (Nur einmal aufrufen!)
     const completedRows = await Promise.all(embeddingPromises);
 
-    // Filter out any chunks that failed to get an embedding
+    // 3. Fehlgeschlagene Chunks (null) sauber ausfiltern
     const validRows = completedRows.filter(row => row !== null);
 
-    const storageIdsToDelete = completedRows.map(doc => doc.storage_object_id).filter(id => id !== null);
-
+    // 4. Datenbank-Aktionen ausführen, wenn wir valide Daten haben
     if (validRows.length > 0) {
+
+      // Erst alte Chunks DIESES EINEN Dokuments löschen, um Duplikate zu vermeiden
+      // Wir nutzen direkt rec.id, statt ein künstliches Array aus completedRows zu bauen
       const { error: bulkDeleteError } = await supabase
           .from('documents_content')
           .delete()
-          .in('storage_object_id', storageIdsToDelete);
+          .eq('storage_object_id', rec.id); // .eq() ist sicherer und sauberer als .in() mit Duplikaten
 
-      if (bulkDeleteError ) {
+      if (bulkDeleteError) {
         console.error("Bulk Delete Error:", bulkDeleteError);
       }
 
+      // Die neuen, sauberen Chunks gesammelt einfügen
       const { error: insertError } = await supabase
           .from('documents_content')
-          .insert(validRows); // Passing the array inserts everything at once
+          .insert(validRows);
 
-      if (insertError ) {
+      if (insertError) {
         console.error("Bulk Insert Error:", insertError);
         throw insertError;
       }

@@ -2,6 +2,31 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ──────────────────────────────────────────────────────────────
+   ARTIS — Century Gothic Std (Monotype) als Hauptschrift
+   ────────────────────────────────────────────────────────────── */
+@font-face {
+  font-family: "Century Gothic Std";
+  src: url("/fonts/CenturyGothicStd.otf") format("opentype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Century Gothic Std";
+  src: url("/fonts/CenturyGothicStd-Bold.otf") format("opentype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Default-Schriftart für das gesamte UI. Monospace-Klassen
+   und explizite fontFamily-Inline-Styles bleiben unberührt. */
+html, body {
+  font-family: "Century Gothic Std", "Century Gothic", "Inter",
+    system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;

@@ -1,4 +1,5 @@
 import { supabase } from '@/api/supabaseClient';
+import { buildQrReference } from '../utils/pain001';
 
 // ── Mandanten ────────────────────────────────────────────────────
 export const mandantenApi = {
@@ -860,6 +861,141 @@ export const budgetApi = {
     const { error } = await supabase.rpc('fibu_budget_speichern', {
       p_mandant_id: mandantId, p_jahr: jahr, p_zeilen: zeilen,
     });
+    if (error) throw error;
+  },
+};
+
+// ── Kundenstamm (Debitoren) ──────────────────────────────────────
+export const kundenApi = {
+  list: async (mandantId) => {
+    const { data, error } = await supabase
+      .from('fibu_kunden').select('*').eq('mandant_id', mandantId).order('name');
+    if (error) throw error;
+    return data ?? [];
+  },
+  create: async (mandantId, payload) => {
+    const { data, error } = await supabase
+      .from('fibu_kunden').insert({ ...payload, mandant_id: mandantId }).select().single();
+    if (error) throw error;
+    return data;
+  },
+  update: async (id, payload) => {
+    const { data, error } = await supabase
+      .from('fibu_kunden').update(payload).eq('id', id).select().single();
+    if (error) throw error;
+    return data;
+  },
+  remove: async (id) => {
+    const { error } = await supabase.from('fibu_kunden').delete().eq('id', id);
+    if (error) throw error;
+  },
+  nextNr: async (mandantId) => {
+    const { data } = await supabase
+      .from('fibu_kunden').select('nr').eq('mandant_id', mandantId)
+      .order('nr', { ascending: false }).limit(1).maybeSingle();
+    const last = parseInt(String(data?.nr ?? '1000').replace(/\D/g, ''), 10);
+    return 'K-' + String(isNaN(last) ? 1001 : last + 1);
+  },
+};
+
+// ── Produktstamm (Artikel: Dienstleistung + Material) ────────────
+export const artikelApi = {
+  list: async (mandantId) => {
+    const { data, error } = await supabase
+      .from('fibu_artikel').select('*').eq('mandant_id', mandantId).order('nr');
+    if (error) throw error;
+    return data ?? [];
+  },
+  create: async (mandantId, payload) => {
+    const { data, error } = await supabase
+      .from('fibu_artikel').insert({ ...payload, mandant_id: mandantId }).select().single();
+    if (error) throw error;
+    return data;
+  },
+  update: async (id, payload) => {
+    const { data, error } = await supabase
+      .from('fibu_artikel').update(payload).eq('id', id).select().single();
+    if (error) throw error;
+    return data;
+  },
+  remove: async (id) => {
+    const { error } = await supabase.from('fibu_artikel').delete().eq('id', id);
+    if (error) throw error;
+  },
+  nextNr: async (mandantId, typ) => {
+    const prefix = typ === 'material' ? 'M-' : 'D-';
+    const { data } = await supabase
+      .from('fibu_artikel').select('nr').eq('mandant_id', mandantId)
+      .like('nr', prefix + '%').order('nr', { ascending: false }).limit(1).maybeSingle();
+    const last = parseInt(String(data?.nr ?? '').replace(/\D/g, ''), 10);
+    return prefix + String((isNaN(last) ? 0 : last) + 1).padStart(3, '0');
+  },
+};
+
+// ── Debitoren-Belege (Ausgangsrechnungen) ────────────────────────
+export const debitorenApi = {
+  list: async (mandantId) => {
+    const { data, error } = await supabase
+      .from('fibu_debitoren_belege')
+      .select('*, kunde:fibu_kunden(id,name,nr,ort)')
+      .eq('mandant_id', mandantId)
+      .order('belegdatum', { ascending: false });
+    if (error) throw error;
+    return data ?? [];
+  },
+  get: async (id) => {
+    const { data, error } = await supabase
+      .from('fibu_debitoren_belege')
+      .select('*, kunde:fibu_kunden(*), positionen:fibu_debitoren_positionen(*)')
+      .eq('id', id).single();
+    if (error) throw error;
+    return data;
+  },
+  nextBelegNr: async (mandantId) => {
+    const { data, error } = await supabase.rpc('fibu_next_debitoren_nr', { p_mandant_id: mandantId });
+    if (error) throw error;
+    return data;
+  },
+  // beleg: Kopf (ohne beleg_nr -> wird generiert), positionen: Zeilen.
+  // Wenn status !== 'entwurf' wird direkt ins Hauptbuch gebucht.
+  create: async (mandantId, beleg, positionen) => {
+    let beleg_nr = beleg.beleg_nr;
+    if (!beleg_nr) {
+      const { data: nr, error: ne } = await supabase.rpc('fibu_next_debitoren_nr', { p_mandant_id: mandantId });
+      if (ne) throw ne;
+      beleg_nr = nr;
+    }
+    // QR-Referenz (27-stellig) generieren, falls noch keine gesetzt – für QR-Rechnung
+    const zahlungsreferenz = beleg.zahlungsreferenz || buildQrReference(beleg_nr, beleg_nr);
+    const { data, error } = await supabase
+      .from('fibu_debitoren_belege')
+      .insert({ ...beleg, beleg_nr, zahlungsreferenz, mandant_id: mandantId }).select().single();
+    if (error) throw error;
+    if (positionen?.length) {
+      const pos = positionen.map((p, i) => ({ ...p, mandant_id: mandantId, beleg_id: data.id, position: i + 1 }));
+      const { error: pe } = await supabase.from('fibu_debitoren_positionen').insert(pos);
+      if (pe) throw pe;
+    }
+    if (beleg.status && beleg.status !== 'entwurf') {
+      const { error: ve } = await supabase.rpc('fibu_debitoren_verbuchen', { p_beleg_id: data.id });
+      if (ve) throw ve;
+    }
+    return data;
+  },
+  // Entwurf -> gestellt (offen) + ins Hauptbuch buchen
+  stellen: async (id) => {
+    const { error: ue } = await supabase
+      .from('fibu_debitoren_belege').update({ status: 'offen' }).eq('id', id);
+    if (ue) throw ue;
+    const { error: ve } = await supabase.rpc('fibu_debitoren_verbuchen', { p_beleg_id: id });
+    if (ve) throw ve;
+  },
+  update: async (id, payload) => {
+    const { error } = await supabase.from('fibu_debitoren_belege').update(payload).eq('id', id);
+    if (error) throw error;
+  },
+  remove: async (id) => {
+    const { error } = await supabase.from('fibu_debitoren_belege').delete().eq('id', id);
     if (error) throw error;
   },
 };

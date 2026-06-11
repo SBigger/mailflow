@@ -39,10 +39,12 @@ Deno.serve(async (req) => {
         Deno.env.get('SUPABASE_URL')!,
         Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     );
+    const t = searchQuery.trim().split(/\s+/).join(' & ').replace('*', ':*');
+    console.log("query: ", t);
 
     // 3. Perform Hybrid RPC search
     const { data: results, error: searchError } = await supabase.rpc('match_documents_hybrid', {
-      query_text: searchQuery.replace('*', ':*'),
+      query_text: searchQuery.trim().split(/\s+/).join(' & ').replace('*', ':*'),
       query_embedding: queryEmbedding,
       match_count: limit,
       full_text_weight: full_text_weight,
@@ -63,7 +65,7 @@ Deno.serve(async (req) => {
     console.error("Error during search function processing:", error);
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" }
+      headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" }
     });
   }
 });

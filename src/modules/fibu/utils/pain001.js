@@ -258,3 +258,20 @@ export function validatePayment(p) {
   }
   return errs;
 }
+
+// ── QR-Referenz erzeugen (27-stellig, rekursive Mod-10-Prüfziffer) ──
+// Für Ausgangsrechnungen mit QR-IBAN. Basis = Kunden-Nr + Belegnummer.
+function mod10CheckDigit(numeric) {
+  const table = [0, 9, 4, 6, 8, 2, 7, 1, 3, 5];
+  let carry = 0;
+  for (const ch of String(numeric).replace(/\D/g, '')) {
+    carry = table[(carry + parseInt(ch, 10)) % 10];
+  }
+  return String((10 - carry) % 10);
+}
+export function buildQrReference(refA, refB) {
+  const a = String(refA || '').replace(/\D/g, '').slice(0, 8).padStart(8, '0');
+  const b = String(refB || '').replace(/\D/g, '').slice(0, 18).padStart(18, '0');
+  const base = (a + b).slice(0, 26);
+  return base + mod10CheckDigit(base);
+}

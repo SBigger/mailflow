@@ -8,7 +8,7 @@ const fmtIban = (s) => normIban(s).replace(/(.{4})/g, '$1 ').trim();
 const WAEHRUNGEN = ['CHF', 'EUR', 'USD', 'GBP', 'JPY', 'AUD', 'CAD', 'SEK', 'NOK', 'DKK', 'CNY'];
 
 const emptyForm = () => ({
-  bezeichnung: '', bank_name: '', iban: '', bic: '',
+  bezeichnung: '', bank_name: '', iban: '', qr_iban: '', bic: '',
   konto_nr: '', waehrung: 'CHF', ist_standard: false, aktiv: true, sortierung: 0,
 });
 
@@ -42,7 +42,7 @@ export default function Zahlstellen() {
   const openEdit = (r) => {
     setForm({
       bezeichnung: r.bezeichnung ?? '', bank_name: r.bank_name ?? '',
-      iban: r.iban ?? '', bic: r.bic ?? '', konto_nr: r.konto_nr ?? '',
+      iban: r.iban ?? '', qr_iban: r.qr_iban ?? '', bic: r.bic ?? '', konto_nr: r.konto_nr ?? '',
       waehrung: r.waehrung ?? 'CHF',
       ist_standard: !!r.ist_standard, aktiv: !!r.aktiv, sortierung: r.sortierung ?? 0,
     });
@@ -61,6 +61,7 @@ export default function Zahlstellen() {
         bezeichnung: form.bezeichnung.trim(),
         bank_name:   form.bank_name.trim() || null,
         iban:        normIban(form.iban),
+        qr_iban:     normIban(form.qr_iban) || null,
         bic:         form.bic.trim().toUpperCase() || null,
         konto_nr:    form.konto_nr.trim() || null,
         waehrung:    form.waehrung || 'CHF',
@@ -256,6 +257,17 @@ export default function Zahlstellen() {
                   placeholder="CH00 0000 0000 0000 0000 0" />
                 {form.iban && !ibanOk && <div style={{ fontSize: 10.5, color: '#8a2d2d', marginTop: 3 }}>IBAN ungültig (Prüfziffer stimmt nicht)</div>}
                 {ibanOk && isQrIban(form.iban) && <div style={{ fontSize: 10.5, color: '#1e40af', marginTop: 3 }}>QR-IBAN erkannt</div>}
+              </div>
+              <div>
+                <label style={lbl}>QR-IBAN (für QR-Rechnung an Kunden)</label>
+                <input
+                  style={{ ...inp, fontFamily: 'monospace' }}
+                  value={form.qr_iban}
+                  onChange={e => setForm(f => ({ ...f, qr_iban: e.target.value }))}
+                  placeholder="CH44 3199 9123 0008 8901 2" />
+                {form.qr_iban && !isQrIban(form.qr_iban)
+                  ? <div style={{ fontSize: 10.5, color: '#9a6a00', marginTop: 3 }}>Keine QR-IBAN (IID 30000–31999). Für QR-Referenz-Rechnungen QR-IBAN der Bank verwenden.</div>
+                  : form.qr_iban && <div style={{ fontSize: 10.5, color: '#1e40af', marginTop: 3 }}>✓ QR-IBAN — wird als Empfänger-Konto auf der Ausgangsrechnung gedruckt</div>}
               </div>
               <div style={{ display: 'flex', gap: 10 }}>
                 <div style={{ flex: 1 }}>

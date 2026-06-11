@@ -26,7 +26,7 @@ Deno.serve(async (req) => {
         .from('dokumente')
         .select('id, storage_object_id, storage_path, name')
         .is('status', null)
-        .limit(10);
+        .limit(1000);
 
     if (fetchError) {
       console.error("Fehler beim Abrufen der Dokumente:", fetchError);
