@@ -1479,8 +1479,8 @@ export default function Dokumente() {
               const fullDoc = allDoks.find(d => d.id === doc.id) || doc;
               return (
                 <div key={doc.id}
-                  onClick={() => downloadDoc(fullDoc)}
-                  title="Öffnen"
+                  onClick={() => handleCheckout(fullDoc)}
+                  title="Auschecken (zum Bearbeiten öffnen)"
                   style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "10px 14px", background: s.cardBg,
                     border: "1px solid " + border, borderRadius: 8, cursor: "pointer", transition: "border 0.15s" }}
                   onMouseEnter={e => e.currentTarget.style.borderColor = accent}
@@ -1501,6 +1501,7 @@ export default function Dokumente() {
                   {/* Action-Buttons (gleich wie Listen-Ansicht) */}
                   <div style={{ flexShrink: 0, alignSelf: "center", display: "flex", gap: 2, alignItems: "center" }}
                        onClick={e => e.stopPropagation()}>
+                    <button onClick={() => handleCheckout(fullDoc)} title="Auschecken" style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4 }}><LockOpen size={13} /></button>
                     <button onClick={() => setEditDoc(fullDoc)} title="Bearbeiten" style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4 }}><Pencil size={13} /></button>
                     <button onClick={() => setCopyDoc(fullDoc)} title="Kopieren (neu verschlagworten)" style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4 }}><CopyPlus size={13} /></button>
                     <button onClick={() => setVersionsDoc(fullDoc)} title="Versionsverlauf" style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4 }}><HistoryIcon size={13} /></button>
