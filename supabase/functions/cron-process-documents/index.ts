@@ -26,14 +26,12 @@ Deno.serve(async (req) => {
         .from('dokumente')
         .select('id, storage_object_id, storage_path, name')
         .is('status', null)
-        .limit(1000);
+        .limit(1);
 
     if (fetchError) {
       console.error("Fehler beim Abrufen der Dokumente:", fetchError);
       throw fetchError;
     }
-
-    console.log(`📋 ${pendingDocs?.length || 0} Dokumente mit Status 'NULL' gefunden.`);
 
     if (!pendingDocs || pendingDocs.length === 0) {
       return new Response(JSON.stringify({
@@ -62,6 +60,10 @@ Deno.serve(async (req) => {
 
         if (storageError || !storageObj) {
           console.error(`Skipping: Storage-Objekt für Dokument ${doc.name} (${doc.id}) nicht gefunden.`);
+          const { error } = await supabase
+              .from('dokumente')
+              .update({ status: 'doc_not_found', storage_object_id: doc.id })
+              .eq('id', doc.id);
           failedCount++;
           continue;
         }
@@ -75,8 +77,6 @@ Deno.serve(async (req) => {
             fullPath: `${storageObj.bucket_id}/${storageObj.name}`
           }
         };
-
-        console.log(`Processing: Sende '${doc.name}' an die Pipeline...`);
 
         // 4. Deine bestehende 'process-document' Edge Function per HTTP aufrufen
         // (Alternativ kannst du den Code aus deiner ersten Funktion auch direkt hier importieren)
@@ -92,19 +92,19 @@ Deno.serve(async (req) => {
         if (!processResponse.ok) {
           const errText = await processResponse.text();
           throw new Error(`Pipeline-Fehler: ${errText}`);
-        }
-
-        // 5. Nach erfolgreicher Vektorisierung den Status in 'dokumente' updaten,
-        // damit es beim nächsten Scan nicht wieder mitgenommen wird.
-        const { error: updateError } = await supabase
-            .from('dokumente')
-            .update({ status: 'processed', storage_object_id: storageObj.id })
-            .eq('id', doc.id);
-
-        if (updateError) {
-          console.error(`Fehler beim Aktualisieren des Status für ${doc.name}:`, updateError);
         } else {
-          processedCount++;
+          // 5. Nach erfolgreicher Vektorisierung den Status in 'dokumente' updaten,
+          // damit es beim nächsten Scan nicht wieder mitgenommen wird.
+          const {error: updateError} = await supabase
+              .from('dokumente')
+              .update({status: 'processed', storage_object_id: storageObj.id})
+              .eq('id', doc.id);
+
+          if (updateError) {
+            console.error(`Fehler beim Aktualisieren des Status für ${doc.name}:`, updateError);
+          } else {
+            processedCount++;
+          }
         }
 
       } catch (docError) {
@@ -113,7 +113,7 @@ Deno.serve(async (req) => {
         // Optional: Setze den Status auf 'error', damit es nicht in einer Endlosschleife hängen bleibt
         await supabase
             .from('dokumente')
-            .update({ status: 'error' })
+            .update({ status: `error: ${docError.message}` })
             .eq('id', doc.id);
 
         failedCount++;

@@ -11,9 +11,7 @@ const corsHeaders = {
 
 async function extractWordText(arrayBuffer: ArrayBuffer): Promise<string> {
   try {
-    // Now 'Buffer' is cleanly defined via the "node:buffer" import above!
     const nodeBuffer = Buffer.from(arrayBuffer);
-
     const result = await mammoth.extractRawText({ buffer: nodeBuffer });
     return result.value;
   } catch (error) {
@@ -37,10 +35,11 @@ async function extractExcelText(arrayBuffer: ArrayBuffer): Promise<string> {
 
 async function extractPdfText(arrayBuffer: ArrayBuffer): Promise<string> {
   try {
-    // With npm:pdfjs-dist, we pass the Uint8Array directly into the document builder
     const loadingTask = pdfjs.getDocument({
       data: new Uint8Array(arrayBuffer),
-      useWorkerFetch: false // Disables external network worker requests inside the Edge isolate
+      useWorkerFetch: false,
+      standardFontDataUrl: "https://unpkg.com/pdfjs-dist@4.0.379/standard_fonts/",
+      useSystemFonts: true
     });
 
     const pdf = await loadingTask.promise;
@@ -64,8 +63,8 @@ async function extractPdfText(arrayBuffer: ArrayBuffer): Promise<string> {
 }
 
 interface ChunkResult {
-  textForDatabase: string;    // Der saubere Textabschnitt
-  textForEmbedding: string;   // Text + Header (nur für die KI)
+  textForDatabase: string;
+  textForEmbedding: string;
 }
 
 function chunkTextWithMetadata(
@@ -81,15 +80,12 @@ function chunkTextWithMetadata(
   const metadataHeader = `Dokumentenname: ${fileName}\nDateityp: ${fileType}\nInhalt:\n`;
 
   while (i < text.length) {
-    // 1. Hole den reinen Text-Chunk
     const rawChunk = text.substring(i, i + chunkSize);
-
-    // 2. Erstelle die Version mit Metadaten für das Embedding-Modell
     const chunkWithContext = `${metadataHeader}${rawChunk}`;
 
     chunks.push({
-      textForDatabase: rawChunk,       // <-- Das speicherst du in `extracted_text`
-      textForEmbedding: chunkWithContext // <-- Das schickst du an den Infinity-Server für den Vektor
+      textForDatabase: rawChunk,
+      textForEmbedding: chunkWithContext
     });
 
     i += chunkSize - overlap;
@@ -98,28 +94,18 @@ function chunkTextWithMetadata(
 }
 
 Deno.serve(async (req) => {
-  // Always handle CORS preflight first
   if (req.method === 'OPTIONS') {
-    return new Response('ok', {
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-      }
-    });
+    return new Response('ok', { headers: corsHeaders });
   }
 
   try {
-    // 1. Parse the top-level body wrapper
     const body = await req.json();
-
-    // 2. Destructure 'rec' out of the body safely
     const { rec } = body;
 
     if (!rec) {
       throw new Error("Payload key 'rec' was not found in the request body");
     }
 
-    // 3. Initialize your service-role client
     const supabase = createClient(
         Deno.env.get('SUPABASE_URL')!,
         Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -129,7 +115,7 @@ Deno.serve(async (req) => {
     const filePath = rest.join('/');
     const fileName = rec.name;
 
-    console.log(`Attempting download - Bucket: ${bucketId}, Path: ${filePath}`);
+    console.log(`📥 Starte Download - Bucket: ${bucketId}, Path: ${filePath}`);
 
     const { data: fileData, error: downloadError } = await supabase.storage
         .from(bucketId)
@@ -141,15 +127,14 @@ Deno.serve(async (req) => {
     }
 
     if (fileData.size === 0) {
-      throw new Error(`The downloaded file from storage is empty (0 bytes). Check if the path '${filePath}' is correct.`);
+      throw new Error(`Die heruntergeladene Datei ist leer (0 Bytes). Pfad: '${filePath}'`);
     }
 
     const arrayBuffer = await fileData.arrayBuffer();
-
-    // 2. Text extrahieren basierend auf dem Dateityp
     let extractedText = "";
     const mimeType = fileData.type;
 
+    // 1. Text-Extraktion basierend auf MimeType
     if (mimeType === "application/pdf") {
       extractedText = await extractPdfText(arrayBuffer);
     } else if (mimeType.includes("wordprocessingml.document") || filePath.endsWith(".docx")) {
@@ -160,65 +145,78 @@ Deno.serve(async (req) => {
       extractedText = new TextDecoder().decode(arrayBuffer);
     }
 
-    // Falls die Datei leer war, überspringen
     if (!extractedText.trim()) {
-      return new Response(JSON.stringify({ message: "Kein Text gefunden" }), { status: 200 })
+      return new Response(JSON.stringify({ message: "Kein Text gefunden", databaseEntry: false }), { status: 500, headers: corsHeaders });
     }
 
-    // 3. Text chunking
+    // 2. Text-Chunking
     const fileType = mimeType.split('/').pop() || 'unknown';
     const textChunks = chunkTextWithMetadata(extractedText, fileName, fileType, 1500, 200);
 
-// 1. Promises für alle Chunks parallel starten
-    const embeddingPromises = textChunks.map(async (chunkObj) => {
-      try {
-        const response = await fetch("http://192.168.5.10:7997/embeddings", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            input: [chunkObj.textForEmbedding],
-            model: "BAAI/bge-small-en-v1.5"
-          })
-        });
+    if (textChunks.length > 40) {
+      console.log(`⚠️ Dokument ist viel zu groß (${textChunks.length} Chunks). Kappe auf die ersten 40 Chunks zum Schutz der Sandbox.`);
+      textChunks.length = 40; // Schneidet das Array hart bei Index 40 ab
+    }
 
-        if (!response.ok) return null;
+    // 3. WORKER-POOL FÜR KONTROLLIERTE EMBEDDING-GENERIERUNG
+    const CONCURRENCY_LIMIT = 5; // Maximal 5 parallele Requests an Infinity
+    const validRows: any[] = [];
+    const chunkQueue = [...textChunks];
 
-        const json = await response.json();
-        const embedding = json.data[0].embedding;
+    const worker = async () => {
+      while (chunkQueue.length > 0) {
+        const chunkObj = chunkQueue.shift();
+        if (!chunkObj) continue;
 
-        return {
-          storage_object_id: rec.id,
-          file_name: fileName,
-          extracted_text: chunkObj.textForDatabase,
-          embedding: embedding
-        };
-      } catch (e) {
-        console.error("Error generating embedding for chunk:", e);
-        return null;
+        try {
+          const response = await fetch("http://192.168.5.10:7997/embeddings", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              input: [chunkObj.textForEmbedding],
+              model: "BAAI/bge-small-en-v1.5"
+            })
+          });
+
+          if (!response.ok) {
+            console.error(`❌ Infinity meldete Fehler-Status: ${response.status}`);
+            continue;
+          }
+
+          const json = await response.json();
+          // Hier bricht nichts mehr ab, da wir die Struktur sauber auslesen:
+          const embedding = json.data[0].embedding;
+
+          validRows.push({
+            storage_object_id: rec.id,
+            file_name: fileName,
+            extracted_text: chunkObj.textForDatabase,
+            embedding: embedding
+          });
+
+        } catch (e) {
+          console.error(`❌ Netzwerkfehler bei Chunk-Embedding für '${fileName}':`, e.message);
+        }
       }
-    });
-  
-    // 2. ALLE API-Anfragen GLEICHZEITIG auflösen (Nur einmal aufrufen!)
-    const completedRows = await Promise.all(embeddingPromises);
+    };
 
-    // 3. Fehlgeschlagene Chunks (null) sauber ausfiltern
-    const validRows = completedRows.filter(row => row !== null);
+    // Alle Worker gleichzeitig starten (sie teilen sich die queue im Hintergrund)
+    const workers = Array(CONCURRENCY_LIMIT).fill(null).map(worker);
+    await Promise.all(workers);
 
-    // 4. Datenbank-Aktionen ausführen, wenn wir valide Daten haben
+    // 4. DATENBANK-BATCH-INSERT
     if (validRows.length > 0) {
-
-      // Erst alte Chunks DIESES EINEN Dokuments löschen, um Duplikate zu vermeiden
-      // Wir nutzen direkt rec.id, statt ein künstliches Array aus completedRows zu bauen
+      // Lösche alte Chunks dieses spezifischen Dokuments, falls ein Re-Run stattfindet
       const { error: bulkDeleteError } = await supabase
           .from('documents_content')
           .delete()
-          .eq('storage_object_id', rec.id); // .eq() ist sicherer und sauberer als .in() mit Duplikaten
+          .eq('storage_object_id', rec.id);
 
       if (bulkDeleteError) {
         console.error("Bulk Delete Error:", bulkDeleteError);
       }
 
-      // Die neuen, sauberen Chunks gesammelt einfügen
+      // Alle validen Chunks gesammelt in die DB schreiben
       const { error: insertError } = await supabase
           .from('documents_content')
           .insert(validRows);
@@ -227,12 +225,20 @@ Deno.serve(async (req) => {
         console.error("Bulk Insert Error:", insertError);
         throw insertError;
       }
+
+      console.log(`💾 ${validRows.length} Chunks erfolgreich in 'documents_content' gespeichert.`);
     }
 
-    return new Response(JSON.stringify({ success: true, chunksProcessed: validRows.length }), { status: 200 })
+    return new Response(JSON.stringify({ success: true, chunksProcessed: validRows.length }), {
+      status: 200,
+      headers: { ...corsHeaders, "Content-Type": "application/json" }
+    });
 
   } catch (error) {
-    console.log("error: ", error);
-    return new Response(JSON.stringify({ error: error.message }), { status: 500 })
+    console.error("🔴 Kritischer Fehler in der Pipeline:", error);
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" }
+    });
   }
-})
+});
