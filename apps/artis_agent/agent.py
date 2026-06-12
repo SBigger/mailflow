@@ -80,7 +80,7 @@ WORKSPACE    = os.path.join(
     'SmartisAgent', 'Workspace'
 )
 APP_NAME     = "Smartis Agent"
-APP_VERSION  = "3.0.1"
+APP_VERSION  = "3.1.0"
 DRAFT_INTERVAL = 60   # Sekunden zwischen Draft-Uploads
 FILE_OPEN_TIMEOUT = 8 * 60 * 60  # 8 Stunden max Bearbeitung
 
@@ -476,20 +476,41 @@ def is_registered() -> bool:
 # ── Einstiegspunkt ────────────────────────────────────────────────────────────
 
 def main():
+    # Tray-Modus (Dauerbetrieb): PDF-Capture per Hotkey Alt+Shift+S
+    if len(sys.argv) >= 2 and sys.argv[1] == '--tray':
+        import pdf_capture
+        pdf_capture.run_tray()
+        return
+
     # Ohne URI-Argument → Installationsmodus
     if len(sys.argv) < 2 or not sys.argv[1].startswith('smartis-open://'):
         ok = register_uri_scheme()
         os.makedirs(WORKSPACE, exist_ok=True)
         if ok:
+            import pdf_capture
+            autostart_ok = pdf_capture.register_autostart()
             msgbox(
                 f"smartis Agent v{APP_VERSION} wurde erfolgreich installiert.\n\n"
                 f"Das Programm öffnet automatisch Dokumente aus der smartis App\n"
                 f"und checkt sie nach der Bearbeitung automatisch ein.\n\n"
+                f"NEU: Mit {pdf_capture.HOTKEY_TEXT} speichern Sie das aktive PDF\n"
+                f"(Foxit, Edge, Chrome) direkt in die Smartis-Dateiablage.\n"
+                f"Autostart: {'aktiviert' if autostart_ok else 'FEHLER'}\n\n"
                 f"Backend: {API}\n"
                 f"Arbeitsordner:\n{WORKSPACE}\n\n"
                 f"Die heruntergeladene Datei kann jetzt gelöscht werden.",
                 style=MB_OK | MB_ICONINFORMATION
             )
+            # Tray-Instanz direkt starten (falls noch keine läuft)
+            try:
+                import subprocess
+                if getattr(sys, 'frozen', False):
+                    subprocess.Popen([sys.executable, '--tray'], close_fds=True)
+                else:
+                    subprocess.Popen([sys.executable, os.path.abspath(__file__), '--tray'],
+                                     close_fds=True)
+            except Exception as e:
+                print(f"Tray-Start-Fehler: {e}")
         else:
             msgbox(
                 "Fehler bei der Installation.\n\n"
