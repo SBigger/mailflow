@@ -1,0 +1,15 @@
+# VoxDrop by Artis – Konfiguration
+# ─────────────────────────────────────────────────────────────
+# Modus: 'stream-deepgram' (empfohlen, beste DE-Qualität),
+#        'stream-scribe' (ElevenLabs, ~150ms), 'lokal' (offline)
+MODUS=stream-deepgram
+
+# Lokales Modell (nur relevant wenn MODUS=lokal)
+# tiny / base / small / medium / large-v3
+MODELL=small
+
+# Deepgram API-Key (deepgram.com – $200 Gratis-Guthaben)
+DEEPGRAM_API_KEY=
+
+# ElevenLabs API-Key (elevenlabs.io – Scribe v2 Realtime)
+ELEVENLABS_API_KEY=

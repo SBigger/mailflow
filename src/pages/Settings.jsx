@@ -2081,7 +2081,7 @@ export default function Settings() {
                                         <h3 className="text-base font-semibold mb-1 flex items-center gap-2"
                                             style={{color: headingColor}}>
                                             <Inbox className="h-4 w-4"/> VoxDrop <span
-                                            className="text-xs font-normal opacity-50">v1.7.0</span>
+                                            className="text-xs font-normal opacity-50">v1.7.1</span>
                                         </h3>
                                         <p className="text-sm mb-3" style={{color: textMuted}}>
                                             Sprache direkt in Text umwandeln — Ctrl+Q drücken, sprechen, nochmals Ctrl+Q
@@ -2096,7 +2096,7 @@ export default function Settings() {
                                         </ul>
                                     </div>
                                     <a
-                                        href="./VoxDrop-Setup-v1.7.0.exe"
+                                        href="./VoxDrop-Setup-v1.7.1.exe"
                                         download={getAppName('VoxDrop.exe')}
                                         className="flex-shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-xl text-white font-medium text-sm transition-opacity hover:opacity-90"
                                         style={{backgroundColor: isArtis ? '#7a9b7f' : '#6366f1'}}

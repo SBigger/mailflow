@@ -1,0 +1,20 @@
+# VoxDrop by Artis – Konfiguration
+# ─────────────────────────────────────────────────────────────
+# OpenAI API-Key hier eintragen (beginnt mit sk-)
+# Key erstellen auf: https://platform.openai.com/api-keys
+# ─────────────────────────────────────────────────────────────
+
+OPENAI_API_KEY=
+
+# Startmodus: online oder lokal
+# online = OpenAI Whisper API (schnell, beste Qualität, braucht Internet)
+# lokal  = faster-whisper auf deinem PC (kein Internet, langsamer)
+MODUS=premium
+
+# Lokales Modell (nur relevant wenn MODUS=lokal)
+# tiny / base / small / medium / large-v3
+MODELL=tiny
+
+# Groq API-Key (für Modus "groq" – ~0.4s, kostenlos)
+# Key erstellen auf: https://console.groq.com/keys
+GROQ_API_KEY=
