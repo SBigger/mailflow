@@ -36,12 +36,12 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ error: 'Es ist noch kein Benutzer mit Outlook verbunden!' }), { status: 404, headers: corsHeaders })
   }
   const results = [];
+
   for(const profile of profiles) {
     try {
       // Token refresh
       let accessToken = profile.microsoft_access_token
       const tokenExpiry = profile.microsoft_token_expiry || 0
-      // Cache: customer_id → kanban column_id (wird bei Bedarf erstellt)
       const customerColumnCache = new Map<string, string>()
 
       if (!accessToken || Date.now() > tokenExpiry - 60000) {
@@ -142,18 +142,19 @@ Deno.serve(async (req) => {
         const messages = data.value || [];
         allMessages.push(...messages);
 
-        const hasNext = !!data['@odata.nextLink'];
+        // Nächste URL für die Schleife setzen
         currentUrl = data['@odata.nextLink'] || null;
-
         newDeltaLink = data['@odata.deltaLink'] || null;
       }
 
-      if (!hasError) {
-        console.log(`[SYNC FERTIG] Insgesamt ${allMessages.length} Mails für ${profile.email} geladen.`);
+      if (hasError) continue;
 
-        if (newDeltaLink) {
-          await supabase.from('profiles').update({ microsoft_delta_link: newDeltaLink }).eq('id', profile.id);
-        }
+      if(allMessages.length > 0 ) {
+        console.log(`[SYNC FERTIG] Insgesamt ${allMessages.length} Mails für ${profile.email} geladen.`);
+      }
+
+      if (newDeltaLink) {
+        await supabase.from('profiles').update({ microsoft_delta_link: newDeltaLink }).eq('id', profile.id);
       }
 
       const toInsert: any[] = []
@@ -161,7 +162,6 @@ Deno.serve(async (req) => {
 
       for (const msg of allMessages) {
         if (msg['@removed']) {
-          // Mail aus Outlook gelöscht → in Supabase behalten, nur als archiviert markieren
           const existing = existingMap.get(msg.id)
           if (existing?.id) {
             await supabase.from('mail_items').update({is_archived: true}).eq('id', existing.id)
@@ -193,7 +193,6 @@ Deno.serve(async (req) => {
             toUpdate.push({id: existing.id, is_read: newIsRead, body_preview: msg.bodyPreview || ''})
           }
         } else {
-          // Kunden-Spalte zuweisen wenn Domain-Regel mit customer_id gefunden
           let targetColumnId = outlookCol.id
           if (matchedCustomerId) {
             targetColumnId = await getOrCreateCustomerColumn(matchedCustomerId, customerColumnCache, customerMap, outlookCol, profile.id)
@@ -222,13 +221,13 @@ Deno.serve(async (req) => {
         updated++
       }
 
-      const hasMore = !!nextLink
-      if (newDeltaLink) await supabase.from('profiles').update({microsoft_delta_link: newDeltaLink}).eq('id', profile.id)
-      else if (nextLink) await supabase.from('profiles').update({microsoft_delta_link: nextLink}).eq('id', profile.id)
+      // --- KORREKTUR: 'nextLink' und redundantes Update entfernt ---
+      // Das Delta-Update wurde bereits weiter oben nach der while-Schleife durchgeführt.
 
       // Direkt-Abgleich letzte 24h: fängt Mails ab, die Graph Delta auslässt
       let catchupInserted = 0
-      if (isDelta && !hasMore) {
+      // Wenn wir im Delta-Modus sind und KEINEN Folgelink mehr haben (also mit der Queue fertig sind)
+      if (isDelta && !currentUrl) {
         const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
         const catchupRes = await fetch(
             `https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$select=id,receivedDateTime,subject,from,hasAttachments,isRead,importance,bodyPreview&$filter=receivedDateTime+ge+${since}&$top=50`,
@@ -274,7 +273,11 @@ Deno.serve(async (req) => {
           }
         }
       }
-    }catch (e) {
+      if(inserted > 0 || updated > 0 || catchupInserted > 0) {
+        results.push({email: profile.email, success: true, inserted, updated, catchupInserted});
+      }
+
+    } catch (e) {
       results.push({ email: profile.email, error: e.message })
     }
   }
@@ -284,7 +287,6 @@ Deno.serve(async (req) => {
     const customerName = customerMap.get(customerId)
     if (!customerName) return outlookCol.id
 
-    // Existierende Spalte mit gleichem Namen suchen
     const {data: existingCol} = await supabase.from('kanban_columns')
         .select('id').eq('created_by', profileId).eq('name', customerName).maybeSingle()
     if (existingCol) {
@@ -292,7 +294,6 @@ Deno.serve(async (req) => {
       return existingCol.id
     }
 
-    // Neue Kunden-Spalte erstellen
     const {data: lastCol} = await supabase.from('kanban_columns')
         .select('order').eq('created_by', profileId).order('order', {ascending: false}).limit(1)
     const nextOrder = ((lastCol?.[0] as any)?.order ?? 0) + 1

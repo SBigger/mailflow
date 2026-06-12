@@ -3,6 +3,8 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import mammoth from "npm:mammoth"
 import * as XLSX from "https://unpkg.com/xlsx/xlsx.mjs"
 import * as pdfjs from "npm:pdfjs-dist@4.0.379"
+import MsgReader from "npm:msgreader";
+import { docToText } from "npm:doc-to-text";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -39,7 +41,8 @@ async function extractPdfText(arrayBuffer: ArrayBuffer): Promise<string> {
       data: new Uint8Array(arrayBuffer),
       useWorkerFetch: false,
       standardFontDataUrl: "https://unpkg.com/pdfjs-dist@4.0.379/standard_fonts/",
-      useSystemFonts: true
+      useSystemFonts: true,
+      verbosity: 0
     });
 
     const pdf = await loadingTask.promise;
@@ -58,6 +61,53 @@ async function extractPdfText(arrayBuffer: ArrayBuffer): Promise<string> {
     return fullText;
   } catch (error) {
     console.error("Fehler beim Parsen des PDFs:", error);
+    return "";
+  }
+}
+
+async function extractOutlookMsgText(arrayBuffer: ArrayBuffer): Promise<string> {
+  try {
+    const buffer = new Uint8Array(arrayBuffer);
+    const reader = new MsgReader(buffer);
+    const fileData = reader.getFileData();
+
+    if (!fileData) {
+      throw new Error("Konnte MSG-Inhalt nicht parsen.");
+    }
+
+    // Wir extrahieren die wichtigsten Metadaten und den E-Mail-Body
+    const sender = fileData.fromName || fileData.senderEmail || "Unbekannt";
+    const subject = fileData.subject || "(Kein Betreff)";
+    const body = fileData.body || ""; // Enthält den Plain-Text der E-Mail
+
+    let fullText = `[E-Mail von: ${sender}]\n[Betreff: ${subject}]\n[Inhalt]:\n${body}\n`;
+
+    // Optional: Falls du auch die Namen der Anhänge im Text-Index haben willst
+    if (fileData.attachments && fileData.attachments.length > 0) {
+      fullText += "\n[Anhänge]:\n";
+      for (const att of fileData.attachments) {
+        fullText += `- ${att.fileName || "Unbekannte Datei"}\n`;
+      }
+    }
+
+    return fullText;
+  } catch (error) {
+    console.error("Fehler beim Parsen der Outlook MSG-Datei:", error);
+    return "";
+  }
+}
+
+async function extractOldWordText(arrayBuffer: ArrayBuffer): Promise<string> {
+  try {
+    const uint8Array = new Uint8Array(arrayBuffer);
+
+    // docToText versucht das binäre OLE-Format zu parsen und
+    // den Plaintext herauszufiltern
+    const text = await docToText(uint8Array);
+
+    return text || "";
+  } catch (error) {
+    console.error("Fehler beim Parsen der alten Word-Datei (.doc):", error);
     return "";
   }
 }
@@ -133,16 +183,34 @@ Deno.serve(async (req) => {
     const arrayBuffer = await fileData.arrayBuffer();
     let extractedText = "";
     const mimeType = fileData.type;
-
     // 1. Text-Extraktion basierend auf MimeType
     if (mimeType === "application/pdf") {
       extractedText = await extractPdfText(arrayBuffer);
+      if (!extractedText.trim() && false) {
+        console.log("⚠️ PDF ist ein Scan (Bild). Starte lokales OCR...");
+        const formData = new FormData();
+        formData.append("file", new Blob([arrayBuffer]), fileName);
+
+        const ocrResponse = await fetch("http://192.168.5.10:8080/api/v1/ocr/pdf-to-text", {
+          method: "POST",
+          body: formData
+        });
+
+        if (ocrResponse.ok) {
+          extractedText = await ocrResponse.text();
+          console.log("✅ OCR-Erkennung erfolgreich abgeschlossen!");
+        }
+      }
     } else if (mimeType.includes("wordprocessingml.document") || filePath.endsWith(".docx")) {
       extractedText = await extractWordText(arrayBuffer);
     } else if (mimeType.includes("spreadsheetml.sheet") || filePath.endsWith(".xlsx")) {
       extractedText = await extractExcelText(arrayBuffer);
     } else if (mimeType === "text/plain") {
       extractedText = new TextDecoder().decode(arrayBuffer);
+    } else if (mimeType === "application/vnd.ms-outlook" || filePath.endsWith(".msg")) {
+      extractedText = await extractOutlookMsgText(arrayBuffer);
+    } else if (mimeType === "application/msword" || filePath.endsWith(".doc")) {
+      extractedText = await extractOldWordText(arrayBuffer);
     }
 
     if (!extractedText.trim()) {
@@ -153,13 +221,14 @@ Deno.serve(async (req) => {
     const fileType = mimeType.split('/').pop() || 'unknown';
     const textChunks = chunkTextWithMetadata(extractedText, fileName, fileType, 1500, 200);
 
+    // Schutz vor CPU-Limit-Sprengung (Notbremse)
     if (textChunks.length > 40) {
       console.log(`⚠️ Dokument ist viel zu groß (${textChunks.length} Chunks). Kappe auf die ersten 40 Chunks zum Schutz der Sandbox.`);
-      textChunks.length = 40; // Schneidet das Array hart bei Index 40 ab
+      textChunks.length = 40;
     }
 
     // 3. WORKER-POOL FÜR KONTROLLIERTE EMBEDDING-GENERIERUNG
-    const CONCURRENCY_LIMIT = 5; // Maximal 5 parallele Requests an Infinity
+    const CONCURRENCY_LIMIT = 5;
     const validRows: any[] = [];
     const chunkQueue = [...textChunks];
 
@@ -184,7 +253,6 @@ Deno.serve(async (req) => {
           }
 
           const json = await response.json();
-          // Hier bricht nichts mehr ab, da wir die Struktur sauber auslesen:
           const embedding = json.data[0].embedding;
 
           validRows.push({
@@ -200,13 +268,11 @@ Deno.serve(async (req) => {
       }
     };
 
-    // Alle Worker gleichzeitig starten (sie teilen sich die queue im Hintergrund)
     const workers = Array(CONCURRENCY_LIMIT).fill(null).map(worker);
     await Promise.all(workers);
 
     // 4. DATENBANK-BATCH-INSERT
     if (validRows.length > 0) {
-      // Lösche alte Chunks dieses spezifischen Dokuments, falls ein Re-Run stattfindet
       const { error: bulkDeleteError } = await supabase
           .from('documents_content')
           .delete()
@@ -216,7 +282,6 @@ Deno.serve(async (req) => {
         console.error("Bulk Delete Error:", bulkDeleteError);
       }
 
-      // Alle validen Chunks gesammelt in die DB schreiben
       const { error: insertError } = await supabase
           .from('documents_content')
           .insert(validRows);

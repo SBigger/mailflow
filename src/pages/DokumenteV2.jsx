@@ -1998,20 +1998,6 @@ export default function Dokumente() {
                         }}>
                     <Library size={13}/> Massenablage
                 </Button>
-                <Button onClick={() => startBatchProcessing()}
-                        title="process documents"
-                        style={{
-                            background: "transparent",
-                            color: accent,
-                            border: "1px solid " + accent,
-                            fontSize: 12,
-                            height: 32,
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 5
-                        }}>
-                    <FerrisWheel size={13}/> Process Documents
-                </Button>
             </div>
 
             {/* ── Volltext-Suchergebnisse (überlagert normale Ansicht) ── */}
