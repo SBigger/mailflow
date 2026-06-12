@@ -40,8 +40,9 @@ async function extractPdfText(arrayBuffer: ArrayBuffer): Promise<string> {
     const loadingTask = pdfjs.getDocument({
       data: new Uint8Array(arrayBuffer),
       useWorkerFetch: false,
-      standardFontDataUrl: "https://unpkg.com/pdfjs-dist@4.0.379/standard_fonts/",
-      useSystemFonts: true,
+      standardFontDataUrl: "",
+      useSystemFonts: false,
+      disableFontFace: true,
       verbosity: 0
     });
 
@@ -58,9 +59,32 @@ async function extractPdfText(arrayBuffer: ArrayBuffer): Promise<string> {
       fullText += pageText + "\n";
     }
 
-    return fullText;
+    if (fullText.trim().length > 0) {
+      return fullText;
+    }
+
+    // --- ANPASSUNG AN DAS MODERNE V2-IMAGE ---
+    console.log("⚠️ PDF enthält keinen digitalen Text (Scan vermutet). Starte lokales OCR...");
+
+    const formData = new FormData();
+    formData.append("file", new Blob([arrayBuffer], { type: "application/pdf" }), "document.pdf");
+    formData.append("language", "deu");
+
+    const ocrResponse = await fetch("http://192.168.5.10:7996/ocr", {
+      method: "POST",
+      body: formData
+    });
+
+    if (!ocrResponse.ok) {
+      console.error(`❌ OCR-Container meldete Fehler: ${ocrResponse.status}`);
+      return "";
+    }
+
+    const ocrJson = await ocrResponse.json();
+    return ocrJson.text || "";
+
   } catch (error) {
-    console.error("Fehler beim Parsen des PDFs:", error);
+    console.error("Fehler beim Parsen/OCR des PDFs:", error);
     return "";
   }
 }
@@ -186,21 +210,6 @@ Deno.serve(async (req) => {
     // 1. Text-Extraktion basierend auf MimeType
     if (mimeType === "application/pdf") {
       extractedText = await extractPdfText(arrayBuffer);
-      if (!extractedText.trim() && false) {
-        console.log("⚠️ PDF ist ein Scan (Bild). Starte lokales OCR...");
-        const formData = new FormData();
-        formData.append("file", new Blob([arrayBuffer]), fileName);
-
-        const ocrResponse = await fetch("http://192.168.5.10:8080/api/v1/ocr/pdf-to-text", {
-          method: "POST",
-          body: formData
-        });
-
-        if (ocrResponse.ok) {
-          extractedText = await ocrResponse.text();
-          console.log("✅ OCR-Erkennung erfolgreich abgeschlossen!");
-        }
-      }
     } else if (mimeType.includes("wordprocessingml.document") || filePath.endsWith(".docx")) {
       extractedText = await extractWordText(arrayBuffer);
     } else if (mimeType.includes("spreadsheetml.sheet") || filePath.endsWith(".xlsx")) {

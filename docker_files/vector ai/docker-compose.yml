@@ -1,0 +1,29 @@
+version: '3.8'
+services:
+  infinity:
+    image: 'michaelf34/infinity:0.0.77-cpu'
+    container_name: supabase-infinity-api
+    ports:
+      - '7997:7997'
+    environment:
+      - INFINITY_MODEL_ID=BAAI/bge-small-en-v1.5
+      - INFINITY_PORT=7997
+    volumes:
+      - 'infinity_model_cache:/app/.cache'
+    restart: always
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - '-f'
+        - 'http://localhost:7997/health'
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+volumes:
+  infinity_model_cache: null
+
+networks:
+  coolify:
+    external: true
