@@ -19,6 +19,7 @@ Aufruf durch Browser:
 import sys
 print(sys.executable)
 import os
+import json
 import time
 import threading
 import urllib.parse
@@ -42,6 +43,18 @@ def get_dynamic_api_url():
 
     return default_url
 
+def safe_delete_file(path: str, retries: int = 5, delay: float = 0.5):
+    """Attempts to delete a file multiple times to bypass temporary OS locks."""
+    if not os.path.exists(path):
+        return
+    for _ in range(retries):
+        try:
+            os.remove(path)
+            return # Success!
+        except (PermissionError, OSError):
+            time.sleep(delay)
+    print(f"Warnung: Konnte Datei nach {retries} Versuchen nicht loeschen: {path}")
+
 # ── Watchdog (optional – nur wenn installiert) ────────────────────────────────
 try:
     from watchdog.observers import Observer
@@ -60,7 +73,8 @@ except ImportError:
     HAS_PYSTRAY = False
 
 # ── Konfiguration ─────────────────────────────────────────────────────────────
-SPFILES      = f"{get_dynamic_api_url()}/functions/v1/sharepoint-files"
+API = get_dynamic_api_url()
+SPFILES      = f"{API}/functions/v1/sharepoint-files"
 WORKSPACE    = os.path.join(
     os.environ.get('LOCALAPPDATA', os.path.expanduser('~')),
     'SmartisAgent', 'Workspace'
@@ -138,7 +152,6 @@ def download_file(url: str, dest: str):
 
 
 # ── Datei-Lock-Erkennung ──────────────────────────────────────────────────────
-
 def is_file_locked(path: str) -> bool:
     """Prüft ob die Datei von einem anderen Prozess gesperrt ist."""
     try:
@@ -357,6 +370,8 @@ def checkout_workflow(doc_id: str, jwt: str, item_id: str, filename: str):
 
         if was_modified:
             do_checkin(doc_id, jwt, local_path, filename, draft_item_id[0])
+        else:
+            _safe_discard(doc_id, jwt,draft_item_id[0])
 
     except Exception as e:
         log(f"FEHLER: {e}")
@@ -387,7 +402,6 @@ def checkout_workflow(doc_id: str, jwt: str, item_id: str, filename: str):
 
 def do_checkin(doc_id: str, jwt: str, local_path: str,
                filename: str, draft_item_id: str | None):
-    """Lädt die finale Version hoch und hebt die Sperre auf."""
     try:
         print(f"[{filename}] Einchecken...")
         sp_upload_multipart(jwt, 'checkin-save', doc_id, local_path, filename, timeout=300)
@@ -414,7 +428,6 @@ def do_discard(doc_id: str, jwt: str, filename: str, draft_item_id: str | None):
 
 
 def _safe_discard(doc_id: str, jwt: str, draft_item_id: str | None):
-    """Interne Hilfsfunktion: Sperre aufheben + Draft löschen, keine Dialoge."""
     try:
         sp_call(jwt, {"action": "checkin-discard", "doc_id": doc_id}, timeout=15)
     except Exception as e:
@@ -472,7 +485,9 @@ def main():
                 f"smartis Agent v{APP_VERSION} wurde erfolgreich installiert.\n\n"
                 f"Das Programm öffnet automatisch Dokumente aus der smartis App\n"
                 f"und checkt sie nach der Bearbeitung automatisch ein.\n\n"
-                f"Arbeitsordner:\n{WORKSPACE}",
+                f"Backend: {API}\n"
+                f"Arbeitsordner:\n{WORKSPACE}\n\n"
+                f"Die heruntergeladene Datei kann jetzt gelöscht werden.",
                 style=MB_OK | MB_ICONINFORMATION
             )
         else:
