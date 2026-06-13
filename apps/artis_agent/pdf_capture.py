@@ -293,14 +293,14 @@ class SmartisAPI:
 
 # ── Aktives PDF-Fenster erkennen ──────────────────────────────────────────────
 
+# Bekannte PDF-Viewer (schnelle Erkennung). Unbekannte Programme werden
+# zusätzlich erkannt, wenn der Fenstertitel ein .pdf nennt (siehe unten).
 PDF_VIEWERS = {
     "foxitpdfreader.exe", "foxitreader.exe", "foxitpdfeditor.exe",
-    "msedge.exe", "chrome.exe",
+    "pdfxedit.exe", "pdfxcview.exe",            # PDF-XChange Editor / Viewer
     "acrobat.exe", "acrord32.exe",
-}
-CMDLINE_VIEWERS = {
-    "foxitpdfreader.exe", "foxitreader.exe", "foxitpdfeditor.exe",
-    "acrobat.exe", "acrord32.exe",
+    "sumatrapdf.exe", "nitropdf.exe", "niteditor.exe", "drawboard.exe",
+    "msedge.exe", "chrome.exe", "firefox.exe", "brave.exe", "opera.exe",
 }
 
 
@@ -406,19 +406,24 @@ def detect_foreground_pdf() -> dict:
     user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
     info['process'] = os.path.basename(_process_image(pid.value)).lower()
 
-    if info['process'] not in PDF_VIEWERS:
-        return info
-
+    # Dateiname aus dem Fenstertitel (falls ein .pdf erwähnt ist)
     m = re.search(r'([^\\/:*?"<>|\r\n]+?\.pdf)', info['title'], re.IGNORECASE)
     if m:
         info['filename'] = m.group(1).strip()
 
-    if info['process'] in CMDLINE_VIEWERS:
-        path = _pdf_from_cmdline(_process_cmdline(pid.value))
-        if path and (not info['filename']
-                     or os.path.basename(path).casefold() == info['filename'].casefold()):
-            info['path'] = path
+    # Erkennung versuchen, wenn es ein bekannter Viewer ist ODER der Titel auf
+    # ein PDF hindeutet. So werden auch unbekannte PDF-Programme erkannt
+    # (z.B. PDF-XChange Editor = PDFXEdit.exe), ohne jeden Namen zu kennen.
+    if info['process'] not in PDF_VIEWERS and not info['filename']:
+        return info
 
+    # 1) Pfad aus der Prozess-Kommandozeile (Desktop-Viewer öffnen mit Pfad)
+    path = _pdf_from_cmdline(_process_cmdline(pid.value))
+    if path and (not info['filename']
+                 or os.path.basename(path).casefold() == info['filename'].casefold()):
+        info['path'] = path
+
+    # 2) sonst lokal suchen (z.B. Browser, die den Pfad nicht übergeben)
     if not info['path'] and info['filename']:
         info['path'] = _find_local_pdf(info['filename'])
 
