@@ -382,16 +382,22 @@ def _process_image(pid: int) -> str:
 
 
 def _process_cmdline(pid: int) -> str:
-    """Kommandozeile eines Prozesses via PowerShell/CIM (versteckt)."""
+    """Kommandozeile eines Prozesses via PowerShell/CIM (versteckt).
+
+    Wichtig: explizit UTF-8 anfordern und dekodieren, sonst zerschiesst die
+    Standard-Codepage Umlaute in Pfaden (z.B. «Kontoblätter» → «Kontobl?tter»),
+    wodurch os.path.isfile() den Pfad nicht mehr findet.
+    """
     try:
         CREATE_NO_WINDOW = 0x08000000
         out = subprocess.run(
-            ["powershell", "-NoProfile", "-Command",
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command",
+             "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; "
              f"(Get-CimInstance Win32_Process -Filter \"ProcessId={pid}\").CommandLine"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True, timeout=10,
             creationflags=CREATE_NO_WINDOW,
         )
-        return (out.stdout or "").strip()
+        return out.stdout.decode('utf-8', errors='replace').strip()
     except Exception:
         return ""
 
