@@ -697,17 +697,14 @@ def _capture_flow(icon, capture: dict):
             _notify(icon, f"«{filename}» an Smartis übergeben – bitte verschlagworten.")
             return
 
-        # 3. Desktop-App läuft nicht → klare Anweisung statt stillem Upload.
-        #    (Browser-Fallback über den Transfer-Bereich ist als Funktion
-        #    vorhanden – _browser_fallback – aber bewusst NICHT automatisch
-        #    aktiv, damit ein echtes Dokument nicht versehentlich im falschen
-        #    Backend landet. Die Desktop-App ist der korrekte Zielort.)
-        log.info("Desktop-App (Port %d) nicht erreichbar – Hinweis an Nutzer", DESKTOP_PORT)
-        msgbox(
-            "Die Smartis-App ist nicht geöffnet.\n\n"
-            "Bitte zuerst die Smartis-Desktop-App starten und dann erneut\n"
-            f"{HOTKEY_TEXT} drücken.",
-            style=MB_OK | MB_ICONWARNING)
+        # 3. Kein Client offen → Browser-Weg: PDF in die Ablage laden und die
+        #    Web-Oberfläche im Browser öffnen. So funktioniert es für Client-
+        #    UND reine Browser-Nutzer mit demselben Agent. Das Ziel-Backend
+        #    bestimmt die Agent-Konfiguration (= artis in der Produktion, aus
+        #    dem Exe-Namen bzw. der einmaligen Anmeldung). _browser_fallback
+        #    zeigt eigene Fehlermeldungen.
+        log.info("Kein Client auf Port %d erreichbar → Browser-Weg", DESKTOP_PORT)
+        _browser_fallback(icon, path, filename)
     except Exception:
         log.exception("Unerwarteter Fehler im Capture-Flow")
     finally:
