@@ -858,6 +858,7 @@ export default function Dokumente() {
   const [showUpload,    setShowUpload]    = useState(false);
   const [showBatch,     setShowBatch]     = useState(false);
   const [dropFile,      setDropFile]      = useState(null);
+  const [inboxPath,     setInboxPath]     = useState(null);  // Transfer-Objekt vom Smartis Agent (PDF-Capture)
   const [dragOver,      setDragOver]      = useState(false);
 
   // Excel Add-in Integration: Tauri-Desktop injiziert window.__SMARTIS_EXCEL_UPLOAD__
@@ -876,6 +877,33 @@ export default function Dokumente() {
       } catch (e) { console.error("Excel-Upload Fehler:", e); }
     }, 500);
     return () => clearInterval(check);
+  }, []);
+
+  // Smartis Agent (PDF-Capture): ?inbox=<storage-key>&filename=<name>
+  // Der Agent lädt das aktive PDF in den Transfer-Bereich (_inbox/) und öffnet
+  // diese Seite. Hier laden wir die Datei und öffnen den normalen Hochladen-Dialog.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const inbox  = params.get("inbox");
+    if (!inbox) return;
+    const fname = params.get("filename") || "dokument.pdf";
+    window.history.replaceState({}, "", "/Dokumente");
+    (async () => {
+      try {
+        const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(inbox, 600);
+        if (error || !data?.signedUrl) throw error || new Error("Transfer-Datei nicht gefunden");
+        const resp = await fetch(data.signedUrl);
+        if (!resp.ok) throw new Error("Download fehlgeschlagen (HTTP " + resp.status + ")");
+        const blob = await resp.blob();
+        const file = new File([blob], fname, { type: blob.type || "application/pdf" });
+        setDropFile(file);
+        setInboxPath(inbox);
+        setShowUpload(true);
+      } catch (e) {
+        console.error("PDF-Transfer (inbox) Fehler:", e);
+        toast.error("PDF-Übergabe fehlgeschlagen: " + (e?.message || e));
+      }
+    })();
   }, []);
   const [sortBy,        setSortBy]        = useState("-created_at"); // "-created_at" | "name" | "year"
   const [viewMode,      setViewMode]      = useState("normal");      // "normal" | "abschluss"
@@ -2026,8 +2054,8 @@ export default function Dokumente() {
       {/* Dialoge */}
       {showUpload && (
         <UploadDialog customers={customers} preCustomer={selCustomer} preFile={dropFile} allTags={allTags}
-          onCancel={() => { setShowUpload(false); setDropFile(null); }}
-          onUpload={() => { queryClient.invalidateQueries({ queryKey: ["dokumente-all"] }); setShowUpload(false); setDropFile(null); }}
+          onCancel={() => { setShowUpload(false); setDropFile(null); if (inboxPath) { supabase.storage.from(BUCKET).remove([inboxPath]).catch(() => {}); setInboxPath(null); } }}
+          onUpload={() => { queryClient.invalidateQueries({ queryKey: ["dokumente-all"] }); setShowUpload(false); setDropFile(null); if (inboxPath) { supabase.storage.from(BUCKET).remove([inboxPath]).catch(() => {}); setInboxPath(null); } }}
           s={s} border={border} accent={accent} />
       )}
       {showBatch && (
