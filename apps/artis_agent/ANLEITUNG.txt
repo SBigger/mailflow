@@ -1,0 +1,64 @@
+====================================================
+ Artis Smartis-Agent  -  PDF in die Ablage (PDF-Capture)
+====================================================
+
+WIE ES FUNKTIONIERT
+-------------------
+Der Agent laeuft im Hintergrund (Tray-Symbol unten rechts).
+Du oeffnest ein PDF (Abacus-Bilanz, Kontoblatt, ...) in einem
+beliebigen Viewer (Foxit, Edge, Chrome, Adobe) und druckst:
+
+        Alt + Shift + S
+
+Der Agent erkennt das aktive PDF und uebergibt es an die offene
+Smartis-Desktop-App - genau wie der "In Ablage hochladen"-Button
+in Excel. Die Smartis-App kommt in den Vordergrund und oeffnet
+ihren gewohnten Hochladen-Dialog mit der Datei schon drin.
+Dort: Kunde / Tag / Jahr waehlen -> Hochladen.
+
+Es wird DIESELBE Oberflaeche wie im Web genutzt - kein Nachbau.
+
+
+VORAUSSETZUNG
+-------------
+Die Smartis-Desktop-App muss GEOEFFNET sein (sie empfaengt die
+Datei auf Port 7788, wie beim Excel-Add-in).
+
+WICHTIG - Test vs. Produktiv:
+  Welche Ablage befuellt wird, bestimmt die laufende Desktop-App
+  (sie laedt https://<kunde>.sm-artis.ch). Fuer die PRODUKTIVE
+  Ablage muss die "artis"-Desktop-App offen sein, nicht die
+  Test-Version. Es kann immer nur EINE Smartis-Desktop-App
+  gleichzeitig Uploads empfangen (Port 7788).
+
+
+INSTALLATION (pro PC, einmal)
+-----------------------------
+1. "INSTALLIEREN - Doppelklick.bat" doppelklicken
+   (kopiert artis_agent.exe nach %LOCALAPPDATA%\SmartisAgent
+    und richtet Autostart + URI-Schema ein)
+2. Bestaetigung abwarten - der Agent startet im Tray
+   und laeuft ab jetzt bei jedem Windows-Start automatisch mit.
+
+
+VERWENDUNG
+----------
+1. Smartis-Desktop-App oeffnen (muss laufen)
+2. PDF oeffnen (Foxit/Edge/Chrome/Adobe)
+3. Alt+Shift+S druecken
+   -> Smartis kommt nach vorne, Dialog mit PDF geht auf
+4. Kunde / Tag / Jahr -> Hochladen
+
+Kein aktives PDF erkannt? Dann oeffnet sich eine Dateiauswahl.
+
+
+PROBLEME / PROTOKOLL
+--------------------
+Tray-Symbol -> Rechtsklick -> "Protokoll oeffnen"
+oder Datei:  %LOCALAPPDATA%\SmartisAgent\agent.log
+
+Meldung "Smartis-App ist nicht geoeffnet":
+  -> Die Smartis-Desktop-App war nicht offen. Starten und erneut
+     Alt+Shift+S druecken.
+
+====================================================

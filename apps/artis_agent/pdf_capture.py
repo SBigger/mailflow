@@ -580,7 +580,7 @@ def push_to_desktop(file_path: str, timeout: float = 5.0) -> bool:
     """
     body = json.dumps({"filepath": os.path.abspath(file_path)}).encode('utf-8')
     head = (
-        f"POST / HTTP/1.1\r\n"
+        f"POST /upload HTTP/1.1\r\n"   # identischer Pfad wie das Excel-Add-in
         f"Host: 127.0.0.1:{DESKTOP_PORT}\r\n"
         f"Content-Type: application/json\r\n"
         f"Content-Length: {len(body)}\r\n"
