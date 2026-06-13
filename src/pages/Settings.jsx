@@ -2019,7 +2019,7 @@ export default function Settings() {
                                         <h3 className="text-base font-semibold mb-1 flex items-center gap-2"
                                             style={{color: headingColor}}>
                                             <HardDrive className="h-4 w-4"/> ArtisAgent <span
-                                            className="text-xs font-normal opacity-50">v3.0.1</span>
+                                            className="text-xs font-normal opacity-50">v3.2.1</span>
                                         </h3>
                                         <p className="text-sm mb-3" style={{color: textMuted}}>
                                             Öffnet und bearbeitet Dokumente direkt aus der Dateiablage. Ermöglicht
@@ -2028,7 +2028,8 @@ export default function Settings() {
                                         <ul className="text-xs space-y-1" style={{color: textMuted}}>
                                             <li>✓ Direkt-Öffnen von Dokumenten aus dem Browser</li>
                                             <li>✓ Automatisches Check-out beim Öffnen</li>
-                                            <li>✓ Check-in nach dem Speichern</li>
+                                            <li>✓ Check-in nach dem Speichern (auch unverändert geschlossen)</li>
+                                            <li>✓ PDF per Alt+Shift+S direkt in die Ablage</li>
                                         </ul>
                                     </div>
                                     <a
