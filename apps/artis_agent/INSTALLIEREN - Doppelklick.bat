@@ -1,32 +1,34 @@
 @echo off
 REM ============================================================
-REM  Artis Smartis-Agent - Installation (PDF-Capture)
-REM  Kopiert artis_agent.exe nach %LOCALAPPDATA%\SmartisAgent
-REM  und startet ihn einmal: registriert Autostart + URI-Schema
-REM  und legt das Tray-Symbol an.
+REM  Artis Smartis-Agent - Installation (Ordner-Variante / onedir)
+REM  Kopiert den Ordner "artis_agent" (EXE + _internal) nach
+REM  %LOCALAPPDATA%\SmartisAgent\app und startet ihn einmal:
+REM  registriert Autostart + URI-Schema und legt das Tray-Symbol an.
+REM  Ordner-Variante = robust gegen Virenscanner (kein Temp-Entpacken).
 REM ============================================================
 setlocal
-set "DEST=%LOCALAPPDATA%\SmartisAgent"
-set "SRC=%~dp0artis_agent.exe"
+set "DEST=%LOCALAPPDATA%\SmartisAgent\app"
+set "SRC=%~dp0artis_agent"
 
-if not exist "%SRC%" (
-    echo FEHLER: artis_agent.exe nicht gefunden neben dieser Datei.
-    echo   Erwartet: %SRC%
+if not exist "%SRC%\artis_agent.exe" (
+    echo FEHLER: Ordner "artis_agent" mit artis_agent.exe nicht gefunden.
+    echo Bitte das ZIP zuerst ENTPACKEN ^(nicht aus dem ZIP heraus starten^)
+    echo und diese .bat im entpackten Ordner doppelklicken.
     pause & exit /b 1
 )
 
-REM Laufende Instanz beenden, damit die EXE ueberschrieben werden kann
+REM Laufende Instanz beenden, damit Dateien ueberschrieben werden koennen
 taskkill /IM artis_agent.exe /F >nul 2>&1
 
 if not exist "%DEST%" mkdir "%DEST%"
-copy /Y "%SRC%" "%DEST%\artis_agent.exe" >nul
+echo Kopiere Agent nach %DEST% ...
+xcopy /E /I /Y "%SRC%\*" "%DEST%\" >nul
 if errorlevel 1 (
     echo FEHLER beim Kopieren nach %DEST%
     pause & exit /b 1
 )
 
-echo Agent installiert nach: %DEST%\artis_agent.exe
-echo Starte Agent (Autostart + Tray werden eingerichtet)...
+echo Starte Agent ^(Autostart + Tray werden eingerichtet^) ...
 start "" "%DEST%\artis_agent.exe"
 
 echo.

@@ -36,8 +36,9 @@ WICHTIG - Test vs. Produktiv
 
 INSTALLATION (pro PC, einmal)
 -----------------------------
-1. "INSTALLIEREN - Doppelklick.bat" doppelklicken
-   (kopiert artis_agent.exe nach %LOCALAPPDATA%\SmartisAgent
+1. ZIP zuerst ENTPACKEN (Rechtsklick -> Alle extrahieren).
+2. "INSTALLIEREN - Doppelklick.bat" doppelklicken
+   (kopiert den Agent-Ordner nach %LOCALAPPDATA%\SmartisAgent\app
     und richtet Autostart + URI-Schema ein)
 2. Bestaetigung abwarten - der Agent startet im Tray
    und laeuft ab jetzt bei jedem Windows-Start automatisch mit.
