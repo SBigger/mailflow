@@ -80,7 +80,7 @@ WORKSPACE    = os.path.join(
     'SmartisAgent', 'Workspace'
 )
 APP_NAME     = "Smartis Agent"
-APP_VERSION  = "3.1.0"
+APP_VERSION  = "3.2.0"
 DRAFT_INTERVAL = 60   # Sekunden zwischen Draft-Uploads
 FILE_OPEN_TIMEOUT = 8 * 60 * 60  # 8 Stunden max Bearbeitung
 
@@ -428,10 +428,29 @@ def do_discard(doc_id: str, jwt: str, filename: str, draft_item_id: str | None):
 
 
 def _safe_discard(doc_id: str, jwt: str, draft_item_id: str | None):
-    try:
-        sp_call(jwt, {"action": "checkin-discard", "doc_id": doc_id}, timeout=15)
-    except Exception as e:
-        print(f"checkin-discard Fehler: {e}")
+    """Hebt die Sperre auf (checkin-discard) und löscht den Draft.
+
+    Mit Retry: ein stilles Fehlschlagen würde das Dokument dauerhaft als
+    «ausgecheckt» zurücklassen (genau das Symptom: unverändert geschlossenes
+    PDF wird nicht freigegeben). Klappt es endgültig nicht, weist eine Meldung
+    den Nutzer darauf hin, in der Web-App manuell einzuchecken.
+    """
+    last_err = None
+    for attempt in range(3):
+        try:
+            sp_call(jwt, {"action": "checkin-discard", "doc_id": doc_id}, timeout=20)
+            last_err = None
+            break
+        except Exception as e:
+            last_err = e
+            print(f"checkin-discard Versuch {attempt + 1}/3 fehlgeschlagen: {e}")
+            time.sleep(2)
+    if last_err is not None:
+        msgbox(
+            f"Checkout konnte nicht automatisch aufgehoben werden:\n\n{last_err}\n\n"
+            "Bitte das Dokument in der Web-App manuell einchecken.",
+            style=MB_OK | MB_ICONWARNING
+        )
     if draft_item_id:
         try:
             sp_call(jwt, {"action": "delete", "item_id": draft_item_id}, timeout=15)
