@@ -30,6 +30,7 @@ import winreg
 import logging
 import logging.handlers
 import mimetypes
+import socket
 import tempfile
 import threading
 import subprocess
@@ -61,7 +62,8 @@ CONFIG_PATH = os.path.join(CONFIG_DIR, 'config.json')
 LOG_PATH    = os.path.join(CONFIG_DIR, 'agent.log')
 
 BUCKET       = "dokumente"
-INBOX_PREFIX = "_inbox"   # Transfer-Bereich im Bucket
+INBOX_PREFIX = "_inbox"   # Transfer-Bereich im Bucket (Browser-Fallback)
+DESKTOP_PORT = 7788       # Upload-Server der Smartis-Desktop-App (wie Excel-Add-in)
 
 MB_OK              = 0x00
 MB_ICONINFORMATION = 0x40
@@ -561,36 +563,122 @@ def show_login_dialog(api: SmartisAPI) -> bool:
     return result['ok']
 
 
+# ── Übergabe an die Smartis-Desktop-App (wie das Excel-Add-in) ───────────────
+
+def push_to_desktop(file_path: str, timeout: float = 5.0) -> bool:
+    """Übergibt die Datei an die laufende Smartis-Desktop-App.
+
+    Identischer Weg wie das Excel-Add-in: POST {"filepath": ...} an den
+    lokalen Upload-Server (127.0.0.1:7788). Die Desktop-App liest die Datei,
+    holt sich den Fokus und öffnet ihren normalen Hochladen-Dialog.
+    Kein Login und kein Deploy nötig – der Empfänger-Code ist bereits live.
+
+    Wichtig: Der Server liest die Anfrage in EINEM read(). Wir senden Header
+    und Body deshalb in einem einzigen sendall() (wie das VBA-Add-in), sonst
+    sieht der Server u.U. nur die Header und der Body fehlt.
+    Gibt True bei Erfolg zurück, False wenn die App nicht läuft / ablehnt.
+    """
+    body = json.dumps({"filepath": os.path.abspath(file_path)}).encode('utf-8')
+    head = (
+        f"POST / HTTP/1.1\r\n"
+        f"Host: 127.0.0.1:{DESKTOP_PORT}\r\n"
+        f"Content-Type: application/json\r\n"
+        f"Content-Length: {len(body)}\r\n"
+        f"Connection: close\r\n\r\n"
+    ).encode('ascii')
+
+    resp = b""
+    try:
+        with socket.create_connection(("127.0.0.1", DESKTOP_PORT), timeout=timeout) as s:
+            s.sendall(head + body)
+            s.settimeout(timeout)
+            try:
+                while True:
+                    chunk = s.recv(4096)
+                    if not chunk:
+                        break
+                    resp += chunk
+            except socket.timeout:
+                pass
+    except OSError as e:
+        log.info("Desktop-App (Port %d) nicht erreichbar: %s",
+                 DESKTOP_PORT, e.__class__.__name__)
+        return False
+
+    text = resp.decode('utf-8', 'replace')
+    pos = text.find("\r\n\r\n")
+    try:
+        data = json.loads(text[pos + 4:]) if pos >= 0 else {}
+    except Exception:
+        data = {}
+    if text.startswith("HTTP/1.1 200") and data.get('ok'):
+        log.info("An Desktop-App übergeben: %s", os.path.basename(file_path))
+        return True
+    log.warning("Desktop-App antwortete unerwartet: %r", text[:200])
+    return False
+
+
 # ── Capture-Workflow ──────────────────────────────────────────────────────────
 
 _dialog_lock = threading.Lock()
 
 
+def _notify(icon, text: str):
+    if icon is not None:
+        try:
+            icon.notify(text, APP_NAME)
+            return
+        except Exception:
+            pass
+    # Kein Tray-Icon (z.B. direkter Aufruf) → unaufdringlicher Hinweis weglassen
+
+
+def _browser_fallback(icon, path: str, filename: str) -> bool:
+    """Optionaler Weg ohne Desktop-App: PDF in den Transfer-Bereich laden und
+    die Web-Ablage im Browser öffnen (benötigt den deployten ?inbox-Handler
+    und ein konfiguriertes Backend). Wird derzeit NICHT automatisch aufgerufen
+    (siehe _capture_flow), steht aber für eine reine Browser-Nutzung bereit.
+    """
+    api = SmartisAPI()
+    try:
+        if not api.is_configured():
+            raise NeedsLogin()
+        api.ensure_token()
+    except NeedsLogin:
+        if not show_login_dialog(api):
+            return False
+        try:
+            api.ensure_token()
+        except Exception as e:
+            log.exception("Token nach Anmeldung ungültig")
+            msgbox(f"Anmeldung fehlgeschlagen:\n\n{e}", style=MB_OK | MB_ICONSTOP)
+            return False
+    except Exception as e:
+        log.exception("Verbindungs-/Token-Fehler")
+        msgbox(f"Verbindungsfehler:\n\n{e}", style=MB_OK | MB_ICONSTOP)
+        return False
+
+    try:
+        object_key = api.upload_to_inbox(path)
+    except Exception as e:
+        log.exception("Inbox-Upload-Fehler")
+        msgbox(f"Hochladen fehlgeschlagen:\n\n{e}\n\nDetails: {LOG_PATH}",
+               style=MB_OK | MB_ICONSTOP)
+        return False
+
+    url = build_inbox_url(api.cfg.get('app_url') or derive_app_url(), object_key, filename)
+    log.info("Öffne Browser: %s", url)
+    try:
+        os.startfile(url)
+    except Exception:
+        webbrowser.open(url)
+    _notify(icon, f"«{filename}» an Smartis übergeben (Browser) – bitte verschlagworten.")
+    return True
+
+
 def _capture_flow(icon, capture: dict):
     try:
-        api = SmartisAPI()
-        # 1. Sicherstellen, dass ein gültiger Token vorhanden ist
-        try:
-            if not api.is_configured():
-                raise NeedsLogin()
-            api.ensure_token()
-        except NeedsLogin:
-            log.info("Kein gültiger Token – Anmeldung erforderlich")
-            if not show_login_dialog(api):
-                log.info("Anmeldung abgebrochen")
-                return
-            try:
-                api.ensure_token()
-            except Exception as e:
-                log.exception("Token nach Anmeldung ungültig")
-                msgbox(f"Anmeldung fehlgeschlagen:\n\n{e}", style=MB_OK | MB_ICONSTOP)
-                return
-        except Exception as e:
-            log.exception("Verbindungs-/Token-Fehler")
-            msgbox(f"Verbindungsfehler:\n\n{e}", style=MB_OK | MB_ICONSTOP)
-            return
-
-        # 2. Datei bestimmen (erkannt oder per Auswahl)
+        # 1. Datei bestimmen (erkannt oder per Auswahl)
         path = capture.get('path')
         if not path or not os.path.isfile(path):
             log.info("Kein PDF-Pfad erkannt (title=%r, process=%r) – Dateiauswahl",
@@ -601,32 +689,25 @@ def _capture_flow(icon, capture: dict):
                 return
 
         filename = os.path.basename(path)
-        log.info("Übergabe an Smartis: %s", filename)
+        log.info("Übergabe: %s", filename)
 
-        # 3. In Transfer-Bereich hochladen
-        try:
-            object_key = api.upload_to_inbox(path)
-        except Exception as e:
-            log.exception("Inbox-Upload-Fehler")
-            msgbox(f"Hochladen fehlgeschlagen:\n\n{e}\n\n"
-                   f"Details siehe Protokoll:\n{LOG_PATH}",
-                   style=MB_OK | MB_ICONSTOP)
+        # 2. Primär: an die laufende Smartis-Desktop-App übergeben (wie Excel).
+        #    Keine Anmeldung, kein Deploy – öffnet direkt den gewohnten Dialog.
+        if push_to_desktop(path):
+            _notify(icon, f"«{filename}» an Smartis übergeben – bitte verschlagworten.")
             return
 
-        # 4. Echte Ablage im Browser öffnen
-        url = build_inbox_url(api.cfg.get('app_url') or derive_app_url(), object_key, filename)
-        log.info("Öffne Browser: %s", url)
-        try:
-            os.startfile(url)
-        except Exception:
-            webbrowser.open(url)
-
-        if icon is not None:
-            try:
-                icon.notify(f"«{filename}» an Smartis übergeben – "
-                            "bitte im Browser verschlagworten.", APP_NAME)
-            except Exception:
-                pass
+        # 3. Desktop-App läuft nicht → klare Anweisung statt stillem Upload.
+        #    (Browser-Fallback über den Transfer-Bereich ist als Funktion
+        #    vorhanden – _browser_fallback – aber bewusst NICHT automatisch
+        #    aktiv, damit ein echtes Dokument nicht versehentlich im falschen
+        #    Backend landet. Die Desktop-App ist der korrekte Zielort.)
+        log.info("Desktop-App (Port %d) nicht erreichbar – Hinweis an Nutzer", DESKTOP_PORT)
+        msgbox(
+            "Die Smartis-App ist nicht geöffnet.\n\n"
+            "Bitte zuerst die Smartis-Desktop-App starten und dann erneut\n"
+            f"{HOTKEY_TEXT} drücken.",
+            style=MB_OK | MB_ICONWARNING)
     except Exception:
         log.exception("Unerwarteter Fehler im Capture-Flow")
     finally:
