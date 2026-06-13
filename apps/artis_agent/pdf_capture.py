@@ -297,7 +297,7 @@ class SmartisAPI:
 # zusätzlich erkannt, wenn der Fenstertitel ein .pdf nennt (siehe unten).
 PDF_VIEWERS = {
     "foxitpdfreader.exe", "foxitreader.exe", "foxitpdfeditor.exe",
-    "pdfxedit.exe", "pdfxcview.exe",            # PDF-XChange Editor / Viewer
+    "pxceditor.exe", "pdfxedit.exe", "pdfxcview.exe",   # PDF-XChange Editor / Viewer
     "acrobat.exe", "acrord32.exe",
     "sumatrapdf.exe", "nitropdf.exe", "niteditor.exe", "drawboard.exe",
     "msedge.exe", "chrome.exe", "firefox.exe", "brave.exe", "opera.exe",
@@ -419,6 +419,8 @@ def detect_foreground_pdf() -> dict:
 
     # 1) Pfad aus der Prozess-Kommandozeile (Desktop-Viewer öffnen mit Pfad)
     path = _pdf_from_cmdline(_process_cmdline(pid.value))
+    log.info("detect: process=%s titel_pdf=%r cmdline_pdf=%r",
+             info['process'], info['filename'], path)
     if path and (not info['filename']
                  or os.path.basename(path).casefold() == info['filename'].casefold()):
         info['path'] = path
