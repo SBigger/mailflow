@@ -1,17 +1,21 @@
 """
 Smartis Agent – PDF-Capture-Modul
-Version: 1.0.0
+Version: 2.0.0
 
 Dauerbetrieb im Tray:  sm-artis-agent.exe --tray
   - Globaler Hotkey Alt+Shift+S
   - Erkennt das aktive PDF-Fenster (Foxit, Edge, Chrome, Acrobat)
   - Findet die lokale Datei (Prozess-Kommandozeile bzw. Downloads/Temp/Desktop)
-  - Dialog: Kunde, Anzeigename, Kategorie, Jahr, Tags, Notiz
-  - Upload: Storage-Bucket 'dokumente' + Insert Tabelle 'dokumente'
-    + Edge Function 'index-document' (Volltext-Indexierung)
+  - Lädt die PDF in den Transfer-Bereich von Supabase (Bucket «dokumente»,
+    reservierter Prefix «_inbox/») und öffnet danach im Browser die ECHTE
+    smartis.me-Ablage:  {app}/Dokumente?inbox=<pfad>&filename=<name>
+  - Die Verschlagwortung (Kunde, Kategorie, Jahr, Tags) macht der Nutzer im
+    gewohnten Hochladen-Dialog der Web-App. Kein nachgebauter Dialog mehr.
 
 Login: einmalig per E-Mail/Passwort (Supabase Auth). Der Refresh-Token wird
 DPAPI-verschlüsselt in %LOCALAPPDATA%\\SmartisAgent\\config.json gespeichert.
+
+Fehlerprotokoll:  %LOCALAPPDATA%\\SmartisAgent\\agent.log  (rotierend)
 """
 
 import os
@@ -23,11 +27,13 @@ import uuid
 import base64
 import ctypes
 import winreg
-import queue
+import logging
+import logging.handlers
 import mimetypes
 import tempfile
 import threading
 import subprocess
+import webbrowser
 import urllib.parse
 from ctypes import wintypes
 
@@ -46,42 +52,43 @@ kernel32 = ctypes.windll.kernel32
 crypt32  = ctypes.windll.crypt32
 
 APP_NAME    = "Smartis Agent"
+APP_VERSION = "2.0.0"
 HOTKEY_TEXT = "Alt+Shift+S"
 
 CONFIG_DIR  = os.path.join(
     os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), 'SmartisAgent')
 CONFIG_PATH = os.path.join(CONFIG_DIR, 'config.json')
+LOG_PATH    = os.path.join(CONFIG_DIR, 'agent.log')
 
-BUCKET = "dokumente"
-
-# Muss inhaltlich src/lib/categories.js entsprechen
-CATEGORIES = [
-    ("rechnungswesen", "01 - Rechnungswesen"),
-    ("steuern",        "02 - Steuern"),
-    ("mwst",           "03 - Mehrwertsteuer"),
-    ("revision",       "04 - Revision"),
-    ("rechtsberatung", "05 - Rechtsberatung"),
-    ("personal",       "06 - Personal"),
-    ("korrespondenz",  "09 - Korrespondenz"),
-]
-
-# Prozessnamen der unterstützten PDF-Viewer (lowercase)
-PDF_VIEWERS = {
-    "foxitpdfreader.exe", "foxitreader.exe", "foxitpdfeditor.exe",
-    "msedge.exe", "chrome.exe",
-    "acrobat.exe", "acrord32.exe",
-}
-# Viewer, bei denen der Dateipfad in der Kommandozeile steht
-CMDLINE_VIEWERS = {
-    "foxitpdfreader.exe", "foxitreader.exe", "foxitpdfeditor.exe",
-    "acrobat.exe", "acrord32.exe",
-}
+BUCKET       = "dokumente"
+INBOX_PREFIX = "_inbox"   # Transfer-Bereich im Bucket
 
 MB_OK              = 0x00
 MB_ICONINFORMATION = 0x40
 MB_ICONWARNING     = 0x30
 MB_ICONSTOP        = 0x10
 MB_TOPMOST         = 0x40000
+
+
+# ── Fehlerprotokoll ───────────────────────────────────────────────────────────
+
+def _setup_logging() -> logging.Logger:
+    os.makedirs(CONFIG_DIR, exist_ok=True)
+    logger = logging.getLogger('smartis_agent')
+    logger.setLevel(logging.INFO)
+    if not logger.handlers:
+        try:
+            h = logging.handlers.RotatingFileHandler(
+                LOG_PATH, maxBytes=512 * 1024, backupCount=3, encoding='utf-8')
+            h.setFormatter(logging.Formatter(
+                '%(asctime)s  %(levelname)-7s %(message)s', '%Y-%m-%d %H:%M:%S'))
+            logger.addHandler(h)
+        except Exception:
+            pass
+    return logger
+
+
+log = _setup_logging()
 
 
 def msgbox(text: str, title: str = APP_NAME, style: int = MB_OK | MB_ICONINFORMATION) -> int:
@@ -174,13 +181,20 @@ def resolve_backend(app_url: str) -> tuple[str, str]:
     return api_url, anon_key
 
 
-# ── Smartis-API (Supabase: Auth, REST, Storage, Functions) ───────────────────
+def build_inbox_url(app_url: str, object_key: str, filename: str) -> str:
+    """Browser-URL zur echten Ablage mit Transfer-Referenz."""
+    base = (app_url or derive_app_url()).strip().rstrip('/')
+    if not base.startswith('http'):
+        base = 'https://' + base
+    q = urllib.parse.urlencode({"inbox": object_key, "filename": filename})
+    return f"{base}/Dokumente?{q}"
+
+
+# ── Smartis-API (Supabase: Auth, Storage) ────────────────────────────────────
 
 class SmartisAPI:
     def __init__(self):
         self.cfg = load_config()
-
-    # -- Auth ------------------------------------------------------------
 
     @property
     def api_url(self) -> str:
@@ -205,6 +219,7 @@ class SmartisAPI:
             raise RuntimeError(data.get('error_description') or data.get('msg')
                                or f"Login fehlgeschlagen (HTTP {r.status_code})")
         self._store_session(data, email=email)
+        log.info("Login erfolgreich: %s", email)
 
     def _store_session(self, data: dict, email: str | None = None):
         self.cfg['access_token']  = _encrypt(data['access_token'])
@@ -225,8 +240,10 @@ class SmartisAPI:
             timeout=30,
         )
         if not r.ok:
+            log.warning("Token-Refresh fehlgeschlagen (HTTP %s) – Neu-Login nötig", r.status_code)
             raise NeedsLogin()
         self._store_session(r.json())
+        log.info("Token erneuert")
 
     def ensure_token(self) -> str:
         if not self.api_url or not self.anon_key:
@@ -245,119 +262,45 @@ class SmartisAPI:
             h.update(extra)
         return h
 
-    # -- Stammdaten --------------------------------------------------------
-
-    def get_customers(self) -> list[dict]:
-        r = requests.get(
-            f"{self.api_url}/rest/v1/customers",
-            params={"select": "id,company_name,anrede,vorname,nachname",
-                    "order": "company_name"},
-            headers=self._headers(), timeout=30,
-        )
-        r.raise_for_status()
-        return r.json()
-
-    def get_tags(self) -> list[dict]:
-        r = requests.get(
-            f"{self.api_url}/rest/v1/dok_tags",
-            params={"select": "id,name,color,category,parent_id,sort_order",
-                    "order": "sort_order"},
-            headers=self._headers(), timeout=30,
-        )
-        r.raise_for_status()
-        return r.json()
-
-    # -- Upload (entspricht handleUpload in src/pages/Dokumente.jsx) -------
-
-    def upload_document(self, file_path: str, customer_id: str, name: str,
-                        category: str, year: int, tag_ids: list[str],
-                        notes: str = "") -> dict:
+    def upload_to_inbox(self, file_path: str) -> str:
+        """Lädt die Datei in den Transfer-Bereich und gibt den Objekt-Key zurück."""
         with open(file_path, 'rb') as f:
-            file_bytes = f.read()
+            data = f.read()
         original = os.path.basename(file_path)
         ext = original.rsplit('.', 1)[-1].lower() if '.' in original else 'pdf'
         mime = mimetypes.guess_type(original)[0] or 'application/pdf'
+        object_key = f"{INBOX_PREFIX}/{uuid.uuid4().hex}.{ext}"
 
-        # Bereinigter Objektname (ohne Umlaute) wie im Frontend
-        object_name  = f"{int(time.time() * 1000)}-{uuid.uuid4().hex[:10]}.{ext}"
-        storage_path = f"{customer_id}/{object_name}"
-
+        url = f"{self.api_url}/storage/v1/object/{BUCKET}/{object_key}"
+        log.info("Inbox-Upload startet → %s (%d Bytes, %s)", object_key, len(data), mime)
         r = requests.post(
-            f"{self.api_url}/storage/v1/object/{BUCKET}/{storage_path}",
+            url,
             headers=self._headers({"Content-Type": mime, "x-upsert": "false"}),
-            data=file_bytes, timeout=300,
+            data=data, timeout=300,
         )
         if not r.ok:
-            err = r.json().get('message', '') if r.content else ''
-            raise RuntimeError(f"Storage-Upload fehlgeschlagen: {err or r.status_code}")
-
-        body = {
-            "customer_id":  customer_id,
-            "category":     category,
-            "year":         int(year),
-            "name":         name.strip(),
-            "filename":     original,
-            "storage_path": storage_path,
-            "file_size":    len(file_bytes),
-            "file_type":    mime,
-            "tag_ids":      tag_ids,
-            "notes":        notes,
-        }
-        r = requests.post(
-            f"{self.api_url}/rest/v1/dokumente",
-            headers=self._headers({"Content-Type": "application/json",
-                                   "Prefer": "return=representation"}),
-            json=body, timeout=60,
-        )
-        if not r.ok:
-            # Verwaiste Storage-Datei wieder entfernen
             try:
-                requests.delete(
-                    f"{self.api_url}/storage/v1/object/{BUCKET}/{storage_path}",
-                    headers=self._headers(), timeout=30)
+                detail = r.json().get('message') or r.text
             except Exception:
-                pass
-            err = r.json().get('message', '') if r.content else ''
-            raise RuntimeError(f"Dokument-Eintrag fehlgeschlagen: {err or r.status_code}")
-
-        doc = r.json()[0]
-
-        # Volltext-Indexierung serverseitig anstossen (best effort)
-        try:
-            requests.post(
-                f"{self.api_url}/functions/v1/index-document",
-                headers=self._headers({"Content-Type": "application/json"}),
-                json={"doc_id": doc.get('id')}, timeout=60,
-            )
-        except Exception:
-            pass
-        return doc
-
-
-# ── Tag-Filterung (entspricht filterTagsByCategory in Dokumente.jsx) ─────────
-
-def filter_tags_by_category(all_tags: list[dict], category: str) -> list[dict]:
-    if not category:
-        return all_tags
-    parents = [t for t in all_tags if not t.get('parent_id') and t.get('category') == category]
-    if not parents:
-        return all_tags
-    pids = {t['id'] for t in parents}
-    return [t for t in all_tags if t['id'] in pids or t.get('parent_id') in pids]
-
-
-def customer_display(c: dict) -> str:
-    if c.get('company_name'):
-        return c['company_name']
-    return " ".join(x for x in [c.get('anrede'), c.get('vorname'), c.get('nachname')] if x) or c.get('id', '?')
-
-
-def detect_year(filename: str) -> int:
-    m = re.search(r'(20\d{2})', filename or '')
-    return int(m.group(1)) if m else time.localtime().tm_year
+                detail = r.text
+            log.error("Inbox-Upload fehlgeschlagen: HTTP %s – %s", r.status_code, detail)
+            raise RuntimeError(f"Upload abgelehnt (HTTP {r.status_code}): {detail}")
+        log.info("Inbox-Upload OK: %s", object_key)
+        return object_key
 
 
 # ── Aktives PDF-Fenster erkennen ──────────────────────────────────────────────
+
+PDF_VIEWERS = {
+    "foxitpdfreader.exe", "foxitreader.exe", "foxitpdfeditor.exe",
+    "msedge.exe", "chrome.exe",
+    "acrobat.exe", "acrord32.exe",
+}
+CMDLINE_VIEWERS = {
+    "foxitpdfreader.exe", "foxitreader.exe", "foxitpdfeditor.exe",
+    "acrobat.exe", "acrord32.exe",
+}
+
 
 def _window_title(hwnd) -> str:
     n = user32.GetWindowTextLengthW(hwnd)
@@ -451,10 +394,7 @@ def _find_local_pdf(filename: str) -> str | None:
 
 
 def detect_foreground_pdf() -> dict:
-    """
-    Liefert {'title', 'process', 'filename', 'path'} für das aktive Fenster.
-    'path' ist None, wenn die Datei nicht lokal gefunden wurde.
-    """
+    """{'title','process','filename','path'} für das aktive Fenster."""
     info = {'title': '', 'process': '', 'filename': None, 'path': None}
     hwnd = user32.GetForegroundWindow()
     if not hwnd:
@@ -489,10 +429,12 @@ def hotkey_loop(callback):
     MOD_ALT, MOD_SHIFT, MOD_NOREPEAT = 0x1, 0x4, 0x4000
     WM_HOTKEY = 0x0312
     if not user32.RegisterHotKey(None, 1, MOD_ALT | MOD_SHIFT | MOD_NOREPEAT, ord('S')):
+        log.error("Hotkey %s konnte nicht registriert werden", HOTKEY_TEXT)
         msgbox(f"Hotkey {HOTKEY_TEXT} konnte nicht registriert werden\n"
                "(evtl. von einem anderen Programm belegt).",
                style=MB_OK | MB_ICONWARNING)
         return
+    log.info("Hotkey %s registriert", HOTKEY_TEXT)
     msg = wintypes.MSG()
     while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) != 0:
         if msg.message == WM_HOTKEY:
@@ -508,8 +450,25 @@ def _center(win, w, h):
     win.geometry(f"{w}x{h}+{x}+{y}")
 
 
+def ask_for_file() -> str | None:
+    """Datei-Auswahl als Fallback, wenn kein aktives PDF erkannt wurde."""
+    import tkinter as tk
+    from tkinter import filedialog
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes('-topmost', True)
+    try:
+        p = filedialog.askopenfilename(
+            parent=root, title="PDF für Smartis auswählen",
+            initialdir=os.path.join(os.path.expanduser('~'), 'Downloads'),
+            filetypes=[("PDF-Dateien", "*.pdf"), ("Alle Dateien", "*.*")])
+    finally:
+        root.destroy()
+    return p or None
+
+
 def show_login_dialog(api: SmartisAPI) -> bool:
-    """Zeigt den Anmelde-Dialog. Gibt True zurück, wenn der Login geklappt hat."""
+    """Anmelde-Dialog. True, wenn der Login geklappt hat."""
     import tkinter as tk
     from tkinter import ttk
 
@@ -534,7 +493,6 @@ def show_login_dialog(api: SmartisAPI) -> bool:
     e_pass = ttk.Entry(frm, width=42, show='•')
     e_pass.grid(row=5, column=0, columnspan=2, sticky='we', pady=(0, 8))
 
-    # Erweitert: direkte API-Angaben (falls /config.json nicht verfügbar, z.B. smartis.me)
     adv = tk.BooleanVar(value=bool(api.cfg.get('api_url_manual')))
     adv_frame = ttk.Frame(frm)
     ttk.Label(adv_frame, text="API-URL").grid(row=0, column=0, sticky='w')
@@ -553,7 +511,7 @@ def show_login_dialog(api: SmartisAPI) -> bool:
         else:
             adv_frame.grid_forget()
 
-    ttk.Checkbutton(frm, text="Erweiterte Einstellungen (API-URL/Key manuell)",
+    ttk.Checkbutton(frm, text="Erweitert (API-URL/Key manuell)",
                     variable=adv, command=toggle_adv).grid(row=6, column=0, columnspan=2, sticky='w')
     toggle_adv()
 
@@ -586,6 +544,7 @@ def show_login_dialog(api: SmartisAPI) -> bool:
                 result['ok'] = True
                 root.after(0, root.destroy)
             except Exception as ex:
+                log.exception("Login-Fehler")
                 root.after(0, lambda: (status.config(text=f"Fehler: {ex}", foreground='#b91c1c'),
                                        btn.config(state='normal')))
 
@@ -596,270 +555,99 @@ def show_login_dialog(api: SmartisAPI) -> bool:
     frm.columnconfigure(0, weight=1)
     root.bind('<Return>', lambda e: do_login())
 
-    _center(root, 400, 420)
-    e_pass.focus_set() if e_mail.get() else e_mail.focus_set()
+    _center(root, 400, 360)
+    (e_pass if e_mail.get() else e_mail).focus_set()
     root.mainloop()
     return result['ok']
 
 
-def show_capture_dialog(api: SmartisAPI, capture: dict, notify):
-    """Upload-Dialog: Datei + Kunde + Name + Kategorie + Jahr + Tags + Notiz."""
-    import tkinter as tk
-    from tkinter import ttk, filedialog
-
-    try:
-        customers = api.get_customers()
-        all_tags  = api.get_tags()
-    except Exception as e:
-        msgbox(f"Stammdaten konnten nicht geladen werden:\n\n{e}",
-               style=MB_OK | MB_ICONSTOP)
-        return
-
-    root = tk.Tk()
-    root.title(f"{APP_NAME} – In Smartis speichern")
-    root.attributes('-topmost', True)
-    frm = ttk.Frame(root, padding=16)
-    frm.pack(fill='both', expand=True)
-    row = 0
-
-    # ── Datei ────────────────────────────────────────────────────────────
-    file_var = tk.StringVar(value=capture.get('path') or '')
-
-    ttk.Label(frm, text="Datei *").grid(row=row, column=0, sticky='w'); row += 1
-    file_frame = ttk.Frame(frm)
-    file_frame.grid(row=row, column=0, columnspan=2, sticky='we', pady=(0, 2)); row += 1
-    file_label = ttk.Label(file_frame, textvariable=file_var, width=52,
-                           relief='sunken', padding=4)
-    file_label.pack(side='left', fill='x', expand=True)
-
-    def on_file_change(*_):
-        p = file_var.get()
-        if p:
-            base = os.path.basename(p)
-            if not e_name.get().strip():
-                e_name.delete(0, 'end')
-                e_name.insert(0, base.rsplit('.', 1)[0])
-            e_year.delete(0, 'end')
-            e_year.insert(0, str(detect_year(base)))
-
-    def browse():
-        start = os.path.dirname(file_var.get()) if file_var.get() else \
-            os.path.join(os.path.expanduser('~'), 'Downloads')
-        p = filedialog.askopenfilename(
-            parent=root, initialdir=start,
-            filetypes=[("PDF-Dateien", "*.pdf"), ("Alle Dateien", "*.*")])
-        if p:
-            file_var.set(p)
-            on_file_change()
-
-    ttk.Button(file_frame, text="Durchsuchen…", command=browse).pack(side='left', padx=(6, 0))
-
-    hint = ""
-    if capture.get('path'):
-        hint = f"Erkannt aus: {capture.get('process')} – {capture.get('filename')}"
-    elif capture.get('filename'):
-        hint = (f"PDF «{capture['filename']}» erkannt, Datei aber nicht lokal gefunden – "
-                "bitte über «Durchsuchen…» wählen.")
-    else:
-        hint = "Kein PDF-Fenster erkannt – bitte Datei über «Durchsuchen…» wählen."
-    ttk.Label(frm, text=hint, foreground='#6b7280', wraplength=480)\
-        .grid(row=row, column=0, columnspan=2, sticky='w', pady=(0, 8)); row += 1
-
-    # ── Kunde ────────────────────────────────────────────────────────────
-    customers_sorted = sorted(customers, key=lambda c: customer_display(c).casefold())
-    cust_names = [customer_display(c) for c in customers_sorted]
-    ttk.Label(frm, text="Kunde *").grid(row=row, column=0, sticky='w'); row += 1
-    cb_cust = ttk.Combobox(frm, values=cust_names, state='readonly', width=50)
-    cb_cust.grid(row=row, column=0, columnspan=2, sticky='we', pady=(0, 8)); row += 1
-
-    # ── Anzeigename ──────────────────────────────────────────────────────
-    ttk.Label(frm, text="Anzeigename *").grid(row=row, column=0, sticky='w'); row += 1
-    e_name = ttk.Entry(frm, width=52)
-    e_name.grid(row=row, column=0, columnspan=2, sticky='we', pady=(0, 8)); row += 1
-
-    # ── Kategorie + Jahr ─────────────────────────────────────────────────
-    ttk.Label(frm, text="Kategorie *").grid(row=row, column=0, sticky='w')
-    ttk.Label(frm, text="Jahr *").grid(row=row, column=1, sticky='w'); row += 1
-    cb_cat = ttk.Combobox(frm, values=[label for _, label in CATEGORIES],
-                          state='readonly', width=28)
-    cb_cat.grid(row=row, column=0, sticky='we', padx=(0, 8), pady=(0, 8))
-    e_year = ttk.Entry(frm, width=10)
-    e_year.grid(row=row, column=1, sticky='w', pady=(0, 8)); row += 1
-
-    # ── Tags ─────────────────────────────────────────────────────────────
-    ttk.Label(frm, text="Tags * (Mehrfachauswahl mit Strg/Klick)")\
-        .grid(row=row, column=0, columnspan=2, sticky='w'); row += 1
-    tag_frame = ttk.Frame(frm)
-    tag_frame.grid(row=row, column=0, columnspan=2, sticky='nswe', pady=(0, 8)); row += 1
-    lb_tags = tk.Listbox(tag_frame, selectmode='multiple', height=8, exportselection=False)
-    sb = ttk.Scrollbar(tag_frame, orient='vertical', command=lb_tags.yview)
-    lb_tags.configure(yscrollcommand=sb.set)
-    lb_tags.pack(side='left', fill='both', expand=True)
-    sb.pack(side='left', fill='y')
-
-    visible_tags: list[dict] = []
-
-    def rebuild_tags(*_):
-        nonlocal visible_tags
-        idx = cb_cat.current()
-        category = CATEGORIES[idx][0] if idx >= 0 else ""
-        filtered = filter_tags_by_category(all_tags, category)
-        # Eltern zuerst, Kinder eingerückt darunter
-        parents  = [t for t in filtered if not t.get('parent_id')]
-        children = [t for t in filtered if t.get('parent_id')]
-        ordered  = []
-        for p in parents:
-            ordered.append(p)
-            ordered.extend(c for c in children if c.get('parent_id') == p['id'])
-        ordered.extend(c for c in children
-                       if all(c.get('parent_id') != p['id'] for p in parents))
-        visible_tags = ordered
-        lb_tags.delete(0, 'end')
-        for t in ordered:
-            prefix = "    └ " if t.get('parent_id') else ""
-            lb_tags.insert('end', f"{prefix}{t.get('name', '?')}")
-
-    cb_cat.bind('<<ComboboxSelected>>', rebuild_tags)
-    rebuild_tags()
-
-    # ── Notiz + Optionen ─────────────────────────────────────────────────
-    ttk.Label(frm, text="Notiz (optional)").grid(row=row, column=0, sticky='w'); row += 1
-    e_notes = ttk.Entry(frm, width=52)
-    e_notes.grid(row=row, column=0, columnspan=2, sticky='we', pady=(0, 8)); row += 1
-
-    del_var = tk.BooleanVar(value=False)
-    ttk.Checkbutton(frm, text="Lokale Datei nach Upload löschen", variable=del_var)\
-        .grid(row=row, column=0, columnspan=2, sticky='w'); row += 1
-
-    status = ttk.Label(frm, text="", foreground='#b91c1c', wraplength=480)
-    status.grid(row=row, column=0, columnspan=2, sticky='w', pady=(4, 0)); row += 1
-
-    # ── Vorbelegung ──────────────────────────────────────────────────────
-    if file_var.get():
-        e_name.insert(0, os.path.basename(file_var.get()).rsplit('.', 1)[0])
-        e_year.insert(0, str(detect_year(os.path.basename(file_var.get()))))
-    elif capture.get('filename'):
-        e_name.insert(0, capture['filename'].rsplit('.', 1)[0])
-        e_year.insert(0, str(detect_year(capture['filename'])))
-    else:
-        e_year.insert(0, str(time.localtime().tm_year))
-
-    # ── Speichern ────────────────────────────────────────────────────────
-    ui_queue: queue.Queue = queue.Queue()
-
-    def poll_queue():
-        try:
-            while True:
-                fn = ui_queue.get_nowait()
-                fn()
-        except queue.Empty:
-            pass
-        try:
-            root.after(100, poll_queue)
-        except tk.TclError:
-            pass
-
-    def do_save():
-        path = file_var.get()
-        if not path or not os.path.isfile(path):
-            status.config(text="Bitte eine gültige Datei wählen."); return
-        if cb_cust.current() < 0:
-            status.config(text="Bitte einen Kunden wählen."); return
-        if not e_name.get().strip():
-            status.config(text="Bitte einen Anzeigenamen eingeben."); return
-        if cb_cat.current() < 0:
-            status.config(text="Bitte eine Kategorie wählen."); return
-        if not e_year.get().strip().isdigit():
-            status.config(text="Bitte ein gültiges Jahr eingeben."); return
-        sel = lb_tags.curselection()
-        if not sel:
-            status.config(text="Bitte mindestens einen Tag wählen."); return
-
-        customer = customers_sorted[cb_cust.current()]
-        category = CATEGORIES[cb_cat.current()][0]
-        tag_ids  = [visible_tags[i]['id'] for i in sel]
-        name     = e_name.get().strip()
-        year     = int(e_year.get().strip())
-        notes    = e_notes.get().strip()
-        delete_after = del_var.get()
-
-        btn_save.config(state='disabled')
-        status.config(text="Lade hoch...", foreground='#374151')
-
-        def work():
-            try:
-                api.upload_document(path, customer['id'], name, category,
-                                    year, tag_ids, notes)
-                if delete_after:
-                    try:
-                        os.remove(path)
-                    except Exception:
-                        pass
-
-                def done():
-                    root.destroy()
-                    notify(f"«{name}» wurde in Smartis gespeichert.")
-                ui_queue.put(done)
-            except Exception as ex:
-                def fail(ex=ex):
-                    status.config(text=f"Fehler: {ex}", foreground='#b91c1c')
-                    btn_save.config(state='normal')
-                ui_queue.put(fail)
-
-        threading.Thread(target=work, daemon=True).start()
-
-    btn_frame = ttk.Frame(frm)
-    btn_frame.grid(row=row, column=0, columnspan=2, sticky='e', pady=(10, 0))
-    ttk.Button(btn_frame, text="Abbrechen", command=root.destroy).pack(side='left', padx=(0, 8))
-    btn_save = ttk.Button(btn_frame, text="In Smartis speichern", command=do_save)
-    btn_save.pack(side='left')
-
-    frm.columnconfigure(0, weight=1)
-    on_file_change()
-    poll_queue()
-    _center(root, 560, 640)
-    root.mainloop()
-
-
-# ── Tray-Hauptprogramm ────────────────────────────────────────────────────────
+# ── Capture-Workflow ──────────────────────────────────────────────────────────
 
 _dialog_lock = threading.Lock()
 
 
 def _capture_flow(icon, capture: dict):
-    """Login (falls nötig) + Upload-Dialog. Läuft in eigenem Thread."""
     try:
         api = SmartisAPI()
+        # 1. Sicherstellen, dass ein gültiger Token vorhanden ist
         try:
+            if not api.is_configured():
+                raise NeedsLogin()
             api.ensure_token()
         except NeedsLogin:
+            log.info("Kein gültiger Token – Anmeldung erforderlich")
             if not show_login_dialog(api):
+                log.info("Anmeldung abgebrochen")
+                return
+            try:
+                api.ensure_token()
+            except Exception as e:
+                log.exception("Token nach Anmeldung ungültig")
+                msgbox(f"Anmeldung fehlgeschlagen:\n\n{e}", style=MB_OK | MB_ICONSTOP)
                 return
         except Exception as e:
+            log.exception("Verbindungs-/Token-Fehler")
             msgbox(f"Verbindungsfehler:\n\n{e}", style=MB_OK | MB_ICONSTOP)
             return
 
-        def notify(text):
-            if icon is not None:
-                try:
-                    icon.notify(text, APP_NAME)
-                    return
-                except Exception:
-                    pass
-            msgbox(text)
+        # 2. Datei bestimmen (erkannt oder per Auswahl)
+        path = capture.get('path')
+        if not path or not os.path.isfile(path):
+            log.info("Kein PDF-Pfad erkannt (title=%r, process=%r) – Dateiauswahl",
+                     capture.get('title'), capture.get('process'))
+            path = ask_for_file()
+            if not path:
+                log.info("Dateiauswahl abgebrochen")
+                return
 
-        show_capture_dialog(api, capture, notify)
-    except Exception as e:
-        msgbox(f"Unerwarteter Fehler:\n\n{e}", style=MB_OK | MB_ICONSTOP)
+        filename = os.path.basename(path)
+        log.info("Übergabe an Smartis: %s", filename)
+
+        # 3. In Transfer-Bereich hochladen
+        try:
+            object_key = api.upload_to_inbox(path)
+        except Exception as e:
+            log.exception("Inbox-Upload-Fehler")
+            msgbox(f"Hochladen fehlgeschlagen:\n\n{e}\n\n"
+                   f"Details siehe Protokoll:\n{LOG_PATH}",
+                   style=MB_OK | MB_ICONSTOP)
+            return
+
+        # 4. Echte Ablage im Browser öffnen
+        url = build_inbox_url(api.cfg.get('app_url') or derive_app_url(), object_key, filename)
+        log.info("Öffne Browser: %s", url)
+        try:
+            os.startfile(url)
+        except Exception:
+            webbrowser.open(url)
+
+        if icon is not None:
+            try:
+                icon.notify(f"«{filename}» an Smartis übergeben – "
+                            "bitte im Browser verschlagworten.", APP_NAME)
+            except Exception:
+                pass
+    except Exception:
+        log.exception("Unerwarteter Fehler im Capture-Flow")
     finally:
-        _dialog_lock.release()
+        try:
+            _dialog_lock.release()
+        except RuntimeError:
+            pass
 
 
 def _start_capture(icon, with_detection: bool):
     if not _dialog_lock.acquire(blocking=False):
-        return  # Dialog ist bereits offen
-    capture = detect_foreground_pdf() if with_detection else \
-        {'title': '', 'process': '', 'filename': None, 'path': None}
+        log.info("Capture bereits aktiv – Aufruf ignoriert")
+        return
+    try:
+        capture = detect_foreground_pdf() if with_detection else \
+            {'title': '', 'process': '', 'filename': None, 'path': None}
+    except Exception:
+        log.exception("Fehler bei der Fenster-Erkennung")
+        capture = {'title': '', 'process': '', 'filename': None, 'path': None}
+    log.info("Auslöser: detection=%s → process=%r filename=%r path=%r",
+             with_detection, capture.get('process'), capture.get('filename'), capture.get('path'))
     threading.Thread(target=_capture_flow, args=(icon, capture), daemon=True).start()
 
 
@@ -871,10 +659,15 @@ def _tray_login(icon):
         try:
             show_login_dialog(SmartisAPI())
         finally:
-            _dialog_lock.release()
+            try:
+                _dialog_lock.release()
+            except RuntimeError:
+                pass
 
     threading.Thread(target=flow, daemon=True).start()
 
+
+# ── Tray-Hauptprogramm ────────────────────────────────────────────────────────
 
 def _create_icon_image():
     size = 64
@@ -903,18 +696,28 @@ def register_autostart() -> bool:
                             r'Software\Microsoft\Windows\CurrentVersion\Run',
                             0, winreg.KEY_SET_VALUE) as k:
             winreg.SetValueEx(k, 'SmartisAgent', 0, winreg.REG_SZ, cmd)
+        log.info("Autostart registriert: %s", cmd)
         return True
-    except Exception as e:
-        print(f"Autostart-Fehler: {e}")
+    except Exception:
+        log.exception("Autostart-Fehler")
         return False
 
 
+def _open_log(icon=None, item=None):
+    try:
+        os.startfile(LOG_PATH)
+    except Exception:
+        log.exception("Protokoll konnte nicht geöffnet werden")
+
+
 def run_tray():
+    log.info("=== Tray-Start v%s (PID %s) ===", APP_VERSION, os.getpid())
     if not HAS_PYSTRAY:
         msgbox("pystray/Pillow fehlt – Tray-Modus nicht verfügbar.",
                style=MB_OK | MB_ICONSTOP)
         return
     if _already_running():
+        log.info("Bereits eine Tray-Instanz aktiv – Abbruch")
         msgbox(f"{APP_NAME} läuft bereits (Tray-Symbol unten rechts).",
                style=MB_OK | MB_ICONINFORMATION)
         return
@@ -929,10 +732,11 @@ def run_tray():
     menu = Menu(
         MenuItem(f"PDF speichern  ({HOTKEY_TEXT})",
                  lambda i, it: _start_capture(i, with_detection=True), default=True),
-        MenuItem("Dokument hochladen…",
+        MenuItem("PDF auswählen…",
                  lambda i, it: _start_capture(i, with_detection=False)),
         Menu.SEPARATOR,
         MenuItem("Anmelden…", lambda i, it: _tray_login(i)),
+        MenuItem("Protokoll öffnen", _open_log),
         Menu.SEPARATOR,
         MenuItem("Beenden", lambda i, it: i.stop()),
     )
