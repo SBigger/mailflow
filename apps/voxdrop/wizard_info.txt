@@ -1,0 +1,29 @@
+VoxDrop – Sprache direkt in Text
+================================
+
+Hotkey: Strg+Q halten → sprechen → loslassen
+Text erscheint sofort an der Cursor-Position – in jedem Programm.
+
+MODI
+----
+  Premium      Beste Qualität (OpenAI gpt-4o)
+  Groq Smart   Schnell + gut (Groq + GPT-4o-mini)  [Standard]
+  Groq         Schnellste (~0.4s, nur Groq)
+  Lokal        Kein Internet nötig
+
+SPRACHBEFEHLE
+-------------
+  "neue Zeile"           → Zeilenumbruch
+  "Absatz"               → Doppelter Abstand
+  "Klammer auf/zu"       → ( )
+  "Aufzählungszeichen"   → •
+  "Spiegelstrich"        → -
+  "erstens/zweitens"     → 1.  2.
+
+ERSTE SCHRITTE
+--------------
+Nach der Installation öffnen sich automatisch die Einstellungen.
+Dort API-Schlüssel eingeben und bevorzugten Modus wählen.
+
+Einstellungen jederzeit aufrufen:
+  Rechtsklick auf das Tray-Icon → Einstellungen

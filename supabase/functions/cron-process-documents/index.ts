@@ -24,8 +24,10 @@ Deno.serve(async (req) => {
     // Wichtig: Wir brauchen die 'storage_object_id', um das File zu verarbeiten
     const { data: pendingDocs, error: fetchError } = await supabase
         .from('dokumente')
-        .select('id, storage_object_id, storage_path, name')
-        .is('status', null)
+        .select('id, storage_object_id, storage_path, name, filename')
+        .ilike('status', '%message":"Kein Text gefunden%')
+        .ilike('file_type', '%pdf%')
+        .lt('file_size', 1000000)
         .limit(1);
 
     if (fetchError) {
@@ -74,7 +76,8 @@ Deno.serve(async (req) => {
           rec: {
             id: storageObj.id,
             name:doc.name,
-            fullPath: `${storageObj.bucket_id}/${storageObj.name}`
+            fullPath: `${storageObj.bucket_id}/${storageObj.name}`,
+            filename: doc.filename
           }
         };
 

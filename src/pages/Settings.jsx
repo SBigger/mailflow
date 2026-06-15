@@ -2041,7 +2041,7 @@ export default function Settings() {
                                         <ul className="text-xs space-y-1" style={{color: textMuted}}>
                                             <li>✓ Direkt-Öffnen von Dokumenten aus dem Browser</li>
                                             <li>✓ Automatisches Check-out beim Öffnen</li>
-                                            <li>✓ Check-in nach dem Speichern</li>
+                                            <li>✓ Check-in nach dem Speichern (auch unverändert geschlossen)</li>
                                         </ul>
                                     </div>
                                     <button  onClick={()=>{showDownloadInfo("sm-artis-agent.exe")}}

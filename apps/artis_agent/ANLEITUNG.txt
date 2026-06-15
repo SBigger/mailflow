@@ -1,0 +1,63 @@
+====================================================
+ Artis Smartis-Agent  -  PDF in die Ablage (PDF-Capture)
+====================================================
+
+WIE ES FUNKTIONIERT
+-------------------
+Der Agent laeuft im Hintergrund (Tray-Symbol unten rechts).
+Du oeffnest ein PDF (Abacus-Bilanz, Kontoblatt, ...) in einem
+beliebigen Viewer (Foxit, Edge, Chrome, Adobe) und druckst:
+
+        Alt + Shift + S
+
+Der Agent erkennt das aktive PDF und uebergibt es an Smartis -
+und zwar automatisch auf dem passenden Weg:
+
+  - Ist die Smartis-DESKTOP-APP offen, landet das PDF direkt
+    dort (genau wie der Excel-Button "In Ablage hochladen").
+  - Ist KEIN Client offen, oeffnet der Agent die Ablage im
+    BROWSER mit der Datei schon vorgeladen.
+
+In beiden Faellen erscheint DERSELBE gewohnte Hochladen-Dialog:
+Kunde / Tag / Jahr waehlen -> Hochladen. Kein Nachbau, dieselbe
+Oberflaeche wie immer.
+
+
+WICHTIG - Test vs. Produktiv
+----------------------------
+- DESKTOP-Weg: Welche Ablage befuellt wird, bestimmt die laufende
+  Desktop-App (sie laedt https://<kunde>.sm-artis.ch). Fuer die
+  PRODUKTIVE Ablage muss die "artis"-Desktop-App offen sein, nicht
+  die Test-Version. Es kann immer nur EINE Desktop-App gleichzeitig
+  Uploads empfangen (Port 7788).
+- BROWSER-Weg: Das Ziel bestimmt die einmalige Anmeldung des Agents
+  (Tray -> "Anmelden..."). Fuer Produktion: bei artis anmelden.
+
+
+INSTALLATION (pro PC, einmal)
+-----------------------------
+1. ZIP zuerst ENTPACKEN (Rechtsklick -> Alle extrahieren).
+2. "INSTALLIEREN - Doppelklick.bat" doppelklicken
+   (kopiert den Agent-Ordner nach %LOCALAPPDATA%\SmartisAgent\app
+    und richtet Autostart + URI-Schema ein)
+2. Bestaetigung abwarten - der Agent startet im Tray
+   und laeuft ab jetzt bei jedem Windows-Start automatisch mit.
+
+
+VERWENDUNG
+----------
+1. PDF oeffnen (Foxit/Edge/Chrome/Adobe)
+2. Alt+Shift+S druecken
+   -> Client offen: Smartis kommt nach vorne, Dialog mit PDF geht auf
+   -> sonst: die Ablage oeffnet sich im Browser mit der Datei
+3. Kunde / Tag / Jahr -> Hochladen
+
+Kein aktives PDF erkannt? Dann oeffnet sich eine Dateiauswahl.
+
+
+PROBLEME / PROTOKOLL
+--------------------
+Tray-Symbol -> Rechtsklick -> "Protokoll oeffnen"
+oder Datei:  %LOCALAPPDATA%\SmartisAgent\agent.log
+
+====================================================

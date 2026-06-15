@@ -19,13 +19,28 @@ Aufruf durch Browser:
 import sys
 print(sys.executable)
 import os
-import json
 import time
 import threading
 import urllib.parse
 import ctypes
 import winreg
 import requests
+import logging.handlers
+
+# ── Fehlerprotokoll (gleiche Datei wie der Tray/PDF-Teil) ─────────────────────
+_LOG_DIR = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), 'SmartisAgent')
+flog = logging.getLogger('smartis_agent_checkout')
+flog.setLevel(logging.INFO)
+try:
+    os.makedirs(_LOG_DIR, exist_ok=True)
+    if not flog.handlers:
+        _h = logging.handlers.RotatingFileHandler(
+            os.path.join(_LOG_DIR, 'agent.log'), maxBytes=512 * 1024, backupCount=3, encoding='utf-8')
+        _h.setFormatter(logging.Formatter('%(asctime)s  %(levelname)-7s [checkout] %(message)s', '%Y-%m-%d %H:%M:%S'))
+        flog.addHandler(_h)
+except Exception:
+    pass
+
 
 def get_dynamic_api_url():
     default_url = "sm-artis.ch"
@@ -80,7 +95,7 @@ WORKSPACE    = os.path.join(
     'SmartisAgent', 'Workspace'
 )
 APP_NAME     = "Smartis Agent"
-APP_VERSION  = "3.0.1"
+APP_VERSION  = "3.2.3"
 DRAFT_INTERVAL = 60   # Sekunden zwischen Draft-Uploads
 FILE_OPEN_TIMEOUT = 8 * 60 * 60  # 8 Stunden max Bearbeitung
 
@@ -189,8 +204,15 @@ def wait_for_file_close(path: str, status_cb=None) -> bool:
             break
         time.sleep(1)
 
+    flog.info("[wait] Phase1: als geoeffnet erkannt=%s (locked=%s, officelock=%s)",
+              opened, is_file_locked(path), has_office_lockfile(path))
+
     if not opened:
-        return True  # Datei wurde nicht geöffnet (evtl. sofort geschlossen)
+        # Viewer sperrt die Datei evtl. nicht (z.B. mancher PDF-Viewer) → wir
+        # können das Schliessen nicht über die Sperre erkennen. Trotzdem als
+        # geschlossen behandeln, damit die Freigabe stattfindet.
+        flog.info("[wait] Datei nie als geoeffnet erkannt → gilt als geschlossen")
+        return True
 
     if status_cb:
         status_cb("Datei geöffnet – warte auf Schliessen...")
@@ -198,9 +220,11 @@ def wait_for_file_close(path: str, status_cb=None) -> bool:
     # Phase 2: Warten bis geschlossen
     while time.time() < deadline:
         if not is_open_by_app(path):
+            flog.info("[wait] Phase2: Datei wieder geschlossen")
             return True
         time.sleep(2)
 
+    flog.info("[wait] Phase2: TIMEOUT (max. 8h)")
     return False  # Timeout
 
 
@@ -276,7 +300,7 @@ def checkout_workflow(doc_id: str, jwt: str, item_id: str, filename: str):
     done_event   = threading.Event()  # verhindert Doppel-Checkin
 
     def log(msg: str):
-        print(f"[{filename}] {msg}")
+        flog.info("[%s] %s", filename, msg)
 
     try:
         os.makedirs(WORKSPACE, exist_ok=True)
@@ -344,8 +368,10 @@ def checkout_workflow(doc_id: str, jwt: str, item_id: str, filename: str):
                     pass
 
         closed = wait_for_file_close(local_path, status_cb=update_tray)
+        log(f"wait_for_file_close → closed={closed}")
 
         if done_event.is_set():
+            log("done_event bereits gesetzt (Tray-Menü) → Ende")
             return  # Bereits über Tray-Menü erledigt
 
         if not closed:
@@ -362,6 +388,7 @@ def checkout_workflow(doc_id: str, jwt: str, item_id: str, filename: str):
         # ── 7. Einchecken-Dialog ─────────────────────────────────────────────
         current_mtime  = os.path.getmtime(local_path)
         was_modified   = abs(current_mtime - original_mtime) > 0.5
+        log(f"was_modified={was_modified} (orig_mtime={original_mtime:.1f}, now={current_mtime:.1f})")
 
         if done_event.is_set():
             return
@@ -369,9 +396,12 @@ def checkout_workflow(doc_id: str, jwt: str, item_id: str, filename: str):
         done_event.set()
 
         if was_modified:
+            log("Aktion: einchecken (checkin-save)")
             do_checkin(doc_id, jwt, local_path, filename, draft_item_id[0])
         else:
-            _safe_discard(doc_id, jwt,draft_item_id[0])
+            log("Aktion: freigeben ohne Upload (checkin-discard)")
+            _safe_discard(doc_id, jwt, draft_item_id[0])
+        log("Workflow fertig")
 
     except Exception as e:
         log(f"FEHLER: {e}")
@@ -403,8 +433,9 @@ def checkout_workflow(doc_id: str, jwt: str, item_id: str, filename: str):
 def do_checkin(doc_id: str, jwt: str, local_path: str,
                filename: str, draft_item_id: str | None):
     try:
-        print(f"[{filename}] Einchecken...")
+        flog.info("[%s] checkin-save startet...", filename)
         sp_upload_multipart(jwt, 'checkin-save', doc_id, local_path, filename, timeout=300)
+        flog.info("[%s] checkin-save OK", filename)
         # Draft löschen (falls vorhanden)
         if draft_item_id:
             try:
@@ -413,6 +444,7 @@ def do_checkin(doc_id: str, jwt: str, local_path: str,
                 pass
         #msgbox(f"'{filename}'\n\nErfolgreich eingecheckt ✓", style=MB_OK | MB_ICONINFORMATION)
     except Exception as e:
+        flog.exception("[%s] checkin-save FEHLER", filename)
         msgbox(
             f"Fehler beim Einchecken von '{filename}':\n\n{e}\n\n"
             "Die Datei bleibt lokal. Bitte manuell in der Web-App einchecken.",
@@ -428,10 +460,31 @@ def do_discard(doc_id: str, jwt: str, filename: str, draft_item_id: str | None):
 
 
 def _safe_discard(doc_id: str, jwt: str, draft_item_id: str | None):
-    try:
-        sp_call(jwt, {"action": "checkin-discard", "doc_id": doc_id}, timeout=15)
-    except Exception as e:
-        print(f"checkin-discard Fehler: {e}")
+    """Hebt die Sperre auf (checkin-discard) und löscht den Draft.
+
+    Mit Retry: ein stilles Fehlschlagen würde das Dokument dauerhaft als
+    «ausgecheckt» zurücklassen (genau das Symptom: unverändert geschlossenes
+    PDF wird nicht freigegeben). Klappt es endgültig nicht, weist eine Meldung
+    den Nutzer darauf hin, in der Web-App manuell einzuchecken.
+    """
+    last_err = None
+    for attempt in range(3):
+        try:
+            sp_call(jwt, {"action": "checkin-discard", "doc_id": doc_id}, timeout=20)
+            last_err = None
+            flog.info("checkin-discard OK (Versuch %d)", attempt + 1)
+            break
+        except Exception as e:
+            last_err = e
+            flog.warning("checkin-discard Versuch %d/3 fehlgeschlagen: %s", attempt + 1, e)
+            time.sleep(2)
+    if last_err is not None:
+        flog.error("checkin-discard endgueltig fehlgeschlagen: %s", last_err)
+        msgbox(
+            f"Checkout konnte nicht automatisch aufgehoben werden:\n\n{last_err}\n\n"
+            "Bitte das Dokument in der Web-App manuell einchecken.",
+            style=MB_OK | MB_ICONWARNING
+        )
     if draft_item_id:
         try:
             sp_call(jwt, {"action": "delete", "item_id": draft_item_id}, timeout=15)
@@ -476,20 +529,41 @@ def is_registered() -> bool:
 # ── Einstiegspunkt ────────────────────────────────────────────────────────────
 
 def main():
+    # Tray-Modus (Dauerbetrieb): PDF-Capture per Hotkey Alt+Shift+S
+    if len(sys.argv) >= 2 and sys.argv[1] == '--tray':
+        import pdf_capture
+        pdf_capture.run_tray()
+        return
+
     # Ohne URI-Argument → Installationsmodus
     if len(sys.argv) < 2 or not sys.argv[1].startswith('smartis-open://'):
         ok = register_uri_scheme()
         os.makedirs(WORKSPACE, exist_ok=True)
         if ok:
+            import pdf_capture
+            autostart_ok = pdf_capture.register_autostart()
             msgbox(
                 f"smartis Agent v{APP_VERSION} wurde erfolgreich installiert.\n\n"
                 f"Das Programm öffnet automatisch Dokumente aus der smartis App\n"
                 f"und checkt sie nach der Bearbeitung automatisch ein.\n\n"
+                f"NEU: Mit {pdf_capture.HOTKEY_TEXT} speichern Sie das aktive PDF\n"
+                f"(Foxit, Edge, Chrome) direkt in die Smartis-Dateiablage.\n"
+                f"Autostart: {'aktiviert' if autostart_ok else 'FEHLER'}\n\n"
                 f"Backend: {API}\n"
                 f"Arbeitsordner:\n{WORKSPACE}\n\n"
                 f"Die heruntergeladene Datei kann jetzt gelöscht werden.",
                 style=MB_OK | MB_ICONINFORMATION
             )
+            # Tray-Instanz direkt starten (falls noch keine läuft)
+            try:
+                import subprocess
+                if getattr(sys, 'frozen', False):
+                    subprocess.Popen([sys.executable, '--tray'], close_fds=True)
+                else:
+                    subprocess.Popen([sys.executable, os.path.abspath(__file__), '--tray'],
+                                     close_fds=True)
+            except Exception as e:
+                print(f"Tray-Start-Fehler: {e}")
         else:
             msgbox(
                 "Fehler bei der Installation.\n\n"
@@ -501,6 +575,7 @@ def main():
     # URI-Aufruf vom Browser
     uri = sys.argv[1]
     print(f"URI: {uri}")
+    flog.info("=== Checkout-Aufruf, Backend (SPFILES)=%s ===", SPFILES)
 
     try:
         parsed = urllib.parse.urlparse(uri)

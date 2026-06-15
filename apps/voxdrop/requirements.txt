@@ -1,0 +1,11 @@
+faster-whisper
+sounddevice
+numpy
+pyperclip
+pyautogui
+pynput
+pystray
+Pillow
+openai
+deepgram-sdk
+google-genai

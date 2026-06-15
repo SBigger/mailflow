@@ -39,17 +39,28 @@ serve(async (req) => {
     }
 
     const body = await req.json()
-    const { user_id, full_name } = body
-    if (!user_id || full_name === undefined) {
-      return new Response(JSON.stringify({ error: 'user_id and full_name required' }), {
+    const { user_id, full_name, avatar_url } = body
+    if (!user_id) {
+      return new Response(JSON.stringify({ error: 'user_id required' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
-    // Update full_name in profiles table (bypasses RLS via service role)
+    // Nur übergebene Felder aktualisieren (full_name und/oder avatar_url).
+    // avatar_url darf bewusst null sein (Foto entfernen) → daher !== undefined.
+    const updates: Record<string, unknown> = {}
+    if (full_name  !== undefined) updates.full_name  = full_name
+    if (avatar_url !== undefined) updates.avatar_url = avatar_url
+    if (Object.keys(updates).length === 0) {
+      return new Response(JSON.stringify({ error: 'No fields to update' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    // Update in profiles table (bypasses RLS via service role)
     const { error } = await adminClient
       .from('profiles')
-      .update({ full_name })
+      .update(updates)
       .eq('id', user_id)
 
     if (error) throw error

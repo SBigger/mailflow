@@ -4,7 +4,6 @@ import mammoth from "npm:mammoth"
 import * as XLSX from "https://unpkg.com/xlsx/xlsx.mjs"
 import * as pdfjs from "npm:pdfjs-dist@4.0.379"
 import MsgReader from "npm:msgreader";
-import { docToText } from "npm:doc-to-text";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -121,17 +120,25 @@ async function extractOutlookMsgText(arrayBuffer: ArrayBuffer): Promise<string> 
   }
 }
 
-async function extractOldWordText(arrayBuffer: ArrayBuffer): Promise<string> {
+async function extractOldWordText(arrayBuffer: ArrayBuffer, fileName: string): Promise<string> {
   try {
-    const uint8Array = new Uint8Array(arrayBuffer);
+    const formData = new FormData();
+    formData.append("file", new Blob([arrayBuffer]), fileName);
 
-    // docToText versucht das binäre OLE-Format zu parsen und
-    // den Plaintext herauszufiltern
-    const text = await docToText(uint8Array);
+    const ocrResponse = await fetch("http://192.168.5.10:7996/ocr", {
+      method: "POST",
+      body: formData
+    });
 
-    return text || "";
+    if (!ocrResponse.ok) {
+      console.error(`❌ OCR-Container meldete Fehler bei .doc: ${ocrResponse.status}`);
+      return "";
+    }
+
+    const ocrJson = await ocrResponse.json();
+    return ocrJson.text || "";
   } catch (error) {
-    console.error("Fehler beim Parsen der alten Word-Datei (.doc):", error);
+    console.error("Fehler beim Parsen der alten Word-Datei über Python-API:", error);
     return "";
   }
 }
@@ -219,7 +226,7 @@ Deno.serve(async (req) => {
     } else if (mimeType === "application/vnd.ms-outlook" || filePath.endsWith(".msg")) {
       extractedText = await extractOutlookMsgText(arrayBuffer);
     } else if (mimeType === "application/msword" || filePath.endsWith(".doc")) {
-      extractedText = await extractOldWordText(arrayBuffer);
+      extractedText = await extractOldWordText(arrayBuffer, rec.filename);
     }
 
     if (!extractedText.trim()) {
