@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "artis": {
+      "command": "node",
+      "args": ["C:\\Users\\DEINNAME\\mailflow\\apps\\mcp-server\\dist\\index.js"],
+      "env": {
+        "SUPABASE_URL": "https://DEINPROJEKT.supabase.co",
+        "SUPABASE_SERVICE_ROLE_KEY": "DEIN_SERVICE_ROLE_KEY",
+        "CUSTOMER_ID": "",
+        "MANDANT_ID": "",
+        "MCP_ALLOW_WRITES": "false"
+      }
+    }
+  }
+}
