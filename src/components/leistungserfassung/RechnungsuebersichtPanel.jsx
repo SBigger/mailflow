@@ -9,7 +9,7 @@ import {
   FileText, Send, CheckCircle2, X as XIcon, Trash2, Eye, Search, Calendar, FileDown,
   ChevronRight, ChevronDown,
 } from 'lucide-react';
-import { leInvoice, leCompany, sendInvoiceViaMs365 } from '@/lib/leApi';
+import { leInvoice, leCompany, sendInvoiceViaMs365, createCreditFromInvoice } from '@/lib/leApi';
 import { generateInvoicePdf, triggerDownload } from '@/lib/leInvoicePdf';
 import {
   Card, Chip, IconBtn, Input, Select, Field,
@@ -118,9 +118,15 @@ export default function RechnungsuebersichtPanel() {
   });
 
   const cancelMut = useMutation({
-    mutationFn: (id) => leInvoice.storno(id),
-    onSuccess: () => {
-      toast.success('Rechnung storniert');
+    // definitiv (noch nicht versendet) -> reiner Storno; versendet/bezahlt ->
+    // buchhalterisch korrekt eine Gutschrift erzeugen (Beleg). Beide geben die
+    // zugrunde liegenden Buchungen wieder frei (releaseInvoiceEntries).
+    mutationFn: async (inv) => {
+      if (inv.status === 'definitiv') return leInvoice.storno(inv.id);
+      return createCreditFromInvoice(inv.id, { reason: 'Storno' });
+    },
+    onSuccess: (_res, inv) => {
+      toast.success(inv.status === 'definitiv' ? 'Rechnung storniert' : 'Gutschrift erstellt – Rechnung storniert');
       invalidate();
     },
     onError: (e) => toast.error('Fehler: ' + (e?.message ?? e)),
@@ -256,7 +262,7 @@ export default function RechnungsuebersichtPanel() {
             onOpen={(inv) => setDetailInvoice(inv)}
             onSend={(inv) => sendMut.mutate(inv.id)}
             onPay={(inv) => setPayInvoice(inv)}
-            onCancel={(inv) => { if (window.confirm('Rechnung wirklich stornieren?')) cancelMut.mutate(inv.id); }}
+            onCancel={(inv) => { if (window.confirm(inv.status === 'definitiv' ? 'Rechnung wirklich stornieren?' : 'Rechnung stornieren? Es wird eine Gutschrift erstellt.')) cancelMut.mutate(inv); }}
             onRemove={(inv) => { if (window.confirm('Entwurf wirklich löschen? Alle Rapporte werden wieder freigegeben.')) removeMut.mutate(inv.id); }}
             sendMutVariables={sendMut.isPending ? sendMut.variables : null}
           />
@@ -277,8 +283,8 @@ export default function RechnungsuebersichtPanel() {
             setDetailInvoice(null);
           }}
           onCancel={() => {
-            if (window.confirm('Rechnung wirklich stornieren?')) {
-              cancelMut.mutate(detailInvoice.id);
+            if (window.confirm(detailInvoice.status === 'definitiv' ? 'Rechnung wirklich stornieren?' : 'Rechnung stornieren? Es wird eine Gutschrift erstellt.')) {
+              cancelMut.mutate(detailInvoice);
               setDetailInvoice(null);
             }
           }}

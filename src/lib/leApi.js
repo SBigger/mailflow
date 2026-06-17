@@ -532,6 +532,9 @@ export async function releaseInvoiceEntries(invoiceId) {
 // Gutschrift aus existierender Rechnung erstellen (negative Beträge, eigene Nummer)
 export async function createCreditFromInvoice(originalInvoiceId, { reason } = {}) {
   const orig = await leInvoice.get(originalInvoiceId);
+  if (!orig) throw new Error('Rechnung nicht gefunden.');
+  if (orig.status === 'storniert') throw new Error('Rechnung ist bereits storniert.');
+  if (orig.invoice_type === 'gutschrift') throw new Error('Eine Gutschrift kann nicht gutgeschrieben werden.');
   // Neue Gutschriftsnummer aus le_number_sequence (kind='credit')
   const { data: seq } = await supabase.from('le_number_sequence').select('*').eq('kind', 'credit').single();
   let creditNo = null;
