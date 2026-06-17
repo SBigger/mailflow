@@ -1,4 +1,4 @@
-import React, { useState, useContext, useEffect } from "react";
+import React, { useState, useContext, useEffect, useRef } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,7 +7,29 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { entities, supabase } from "@/api/supabaseClient";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ThemeContext } from "@/Layout";
-import { FileText, MessageSquare, Users } from "lucide-react";
+import { FileText, MessageSquare, Users, ImagePlus, Loader2 } from "lucide-react";
+import { toast } from "sonner";
+
+// Helper: Bild/PDF in Bucket "ticket-attachments" hochladen (identisch zu TicketDetailPanel).
+// Beim Erstellen existiert noch keine ticket.id -> wir legen unter einem Draft-Ordner ab;
+// die eingebettete Public-URL bleibt nach dem Erstellen gueltig.
+const ATTACH_BUCKET = "ticket-attachments";
+async function uploadTicketAttachment(file, folder) {
+  const ext = (file.name?.split(".").pop() || "png").toLowerCase();
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const safeName = (file.name || `screenshot.${ext}`).replace(/[^a-zA-Z0-9._-]/g, "_");
+  const path = `${folder || "no-ticket"}/${stamp}-${safeName}`;
+  const { error } = await supabase.storage
+    .from(ATTACH_BUCKET)
+    .upload(path, file, {
+      cacheControl: "3600",
+      contentType: file.type || "application/octet-stream",
+      upsert: false,
+    });
+  if (error) throw error;
+  const { data: { publicUrl } } = supabase.storage.from(ATTACH_BUCKET).getPublicUrl(path);
+  return { url: publicUrl, mime: file.type, filename: file.name || safeName };
+}
 
 export default function AddTicketDialog({ open, onClose, defaultColumnId }) {
   const { theme } = useContext(ThemeContext);
@@ -24,6 +46,10 @@ export default function AddTicketDialog({ open, onClose, defaultColumnId }) {
   const [customerId, setCustomerId] = useState("");
   const [priorityId, setPriorityId] = useState("");
   const [loading, setLoading]       = useState(false);
+  const [uploadingAttach, setUploadingAttach] = useState(false);
+  const fileInputRef = useRef(null);
+  // Stabiler Draft-Ordner pro Dialog-Sitzung fuer die Screenshot-Ablage
+  const draftFolderRef = useRef(`draft-${(globalThis.crypto?.randomUUID?.() || Date.now())}`);
 
   const { data: columns = [] } = useQuery({
     queryKey: ["ticketColumns"],
@@ -64,6 +90,54 @@ export default function AddTicketDialog({ open, onClose, defaultColumnId }) {
   const labelColor  = isArtis ? "#4a5e4a" : isLight ? "#4b4b80" : "#a1a1aa";
   const inputBg     = isArtis ? "#ffffff" : isLight ? "#ffffff" : "rgba(24,24,27,0.6)";
   const inputBorder = isArtis ? "#ccd8cc" : isLight ? "#d4d4e8" : "rgba(63,63,70,0.6)";
+
+  // ── Screenshot/Datei in die Beschreibung einfuegen (Paste, Drop, Button) ──
+  const insertAttachmentMarkdown = (att) => {
+    const isImg = (att.mime || "").startsWith("image/");
+    const md = isImg
+      ? `\n![${att.filename || "Screenshot"}](${att.url})\n`
+      : `\n[${att.filename || "Datei"}](${att.url})\n`;
+    setBody(prev => (prev || "") + md);
+  };
+
+  const handleFiles = async (files) => {
+    if (!files?.length) return;
+    setUploadingAttach(true);
+    try {
+      for (const f of files) {
+        try {
+          const att = await uploadTicketAttachment(f, draftFolderRef.current);
+          insertAttachmentMarkdown(att);
+        } catch (e) {
+          toast.error(`Upload "${f.name}" fehlgeschlagen: ${e.message}`);
+        }
+      }
+    } finally {
+      setUploadingAttach(false);
+    }
+  };
+
+  const handlePaste = async (e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const imgs = [];
+    for (const it of items) {
+      if (it.kind === "file") {
+        const blob = it.getAsFile();
+        if (blob) imgs.push(blob);
+      }
+    }
+    if (imgs.length === 0) return; // normales Text-Paste
+    e.preventDefault();
+    await handleFiles(imgs);
+  };
+
+  const handleDrop = async (e) => {
+    e.preventDefault();
+    const files = Array.from(e.dataTransfer?.files || []);
+    if (!files.length) return;
+    await handleFiles(files);
+  };
 
   const handleCreate = async () => {
     if (!fromEmail.trim() || !title.trim()) return;
@@ -206,12 +280,42 @@ export default function AddTicketDialog({ open, onClose, defaultColumnId }) {
           <div>
             <div style={LabelStyle}>Nachricht</div>
             <Textarea
-              placeholder="Inhalt der Anfrage..."
+              placeholder="Inhalt der Anfrage… (Screenshot via Strg+V einfügen oder reinziehen)"
               value={body}
               onChange={e => setBody(e.target.value)}
+              onPaste={handlePaste}
+              onDrop={handleDrop}
+              onDragOver={e => e.preventDefault()}
               rows={4}
               style={inputStyle}
             />
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*,application/pdf"
+              multiple
+              hidden
+              onChange={e => { handleFiles(Array.from(e.target.files || [])); e.target.value = ""; }}
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploadingAttach}
+              title="Bild oder PDF anhängen (oder Strg+V im Textfeld)"
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 6, marginTop: 6,
+                fontSize: "0.75rem", fontWeight: 600, color: labelColor,
+                background: "transparent", border: `1px solid ${inputBorder}`,
+                borderRadius: 8, padding: "4px 10px",
+                cursor: uploadingAttach ? "default" : "pointer",
+                opacity: uploadingAttach ? 0.6 : 1,
+              }}
+            >
+              {uploadingAttach
+                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                : <ImagePlus className="h-3.5 w-3.5" />}
+              {uploadingAttach ? "Lädt…" : "Screenshot / Anhang"}
+            </button>
           </div>
 
           {/* Prioritaet */}
