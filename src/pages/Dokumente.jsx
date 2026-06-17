@@ -1080,15 +1080,29 @@ export default function Dokumente() {
   const tagLabel = (id) => { const t = getTag(id); if (!t) return null; const p = t.parent_id ? getTag(t.parent_id) : null; return p ? `${p.name} / ${t.name}` : t.name; };
   const tagColor = (id) => { const t = getTag(id); if (!t) return accent; return (t.parent_id ? getTag(t.parent_id)?.color : null) || t.color || accent; };
 
+  // Dokumente in EINEM Durchgang nach Kunde gruppieren – O(Docs) statt O(Kunden×Docs).
+  // Ohne das rechnet der Kundenbaum bei jedem Realtime-Update ~1 Sek. synchron neu
+  // (sichtbares Einfrieren / kurz schwarzer Bildschirm), obwohl ein Check-in/-out die
+  // Kundenzählung gar nicht ändert.
+  const docsByCustomer = useMemo(() => {
+    const m = new Map();
+    for (const d of allDoks) {
+      let arr = m.get(d.customer_id);
+      if (!arr) { arr = []; m.set(d.customer_id, arr); }
+      arr.push(d);
+    }
+    return m;
+  }, [allDoks]);
+
   // Baum
   const tree = useMemo(() => {
     const q = custSearch.toLowerCase();
     return customers.filter(c => {
-      const has    = allDoks.some(d => d.customer_id === c.id);
+      const has    = docsByCustomer.has(c.id);
       const match  = !q || c.company_name.toLowerCase().includes(q);
       return has && match;
     }).map(c => {
-      const docs = allDoks.filter(d => d.customer_id === c.id);
+      const docs = docsByCustomer.get(c.id) || [];
       const cats = CATEGORIES.map(cat => {
         const cd = docs.filter(d => d.category === cat.key);
         if (!cd.length) return null;
@@ -1098,7 +1112,7 @@ export default function Dokumente() {
       }).filter(Boolean);
       return { ...c, docCount: docs.length, cats };
     });
-  }, [customers, allDoks, custSearch]);
+  }, [customers, docsByCustomer, custSearch]);
 
   // Rechts: gefilterte Docs
   const selCustomer = customers.find(c => c.id === selCustomerId) || null;
