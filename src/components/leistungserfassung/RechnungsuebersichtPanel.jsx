@@ -9,7 +9,7 @@ import {
   FileText, Send, CheckCircle2, X as XIcon, Trash2, Eye, Search, Calendar, FileDown,
   ChevronRight, ChevronDown,
 } from 'lucide-react';
-import { leInvoice, leCompany } from '@/lib/leApi';
+import { leInvoice, leCompany, sendInvoiceViaMs365 } from '@/lib/leApi';
 import { generateInvoicePdf, triggerDownload } from '@/lib/leInvoicePdf';
 import {
   Card, Chip, IconBtn, Input, Select, Field,
@@ -76,16 +76,35 @@ export default function RechnungsuebersichtPanel() {
 
   // --- Mutations -----------------------------------------------------------
   const sendMut = useMutation({
-    // TODO: Später: echte Mail via MS365/MailFlow-Versand anbinden
-    mutationFn: (id) => leInvoice.update(id, {
-      status: 'versendet',
-      sent_at: new Date().toISOString(),
-    }),
+    // Echter Versand: PDF erzeugen -> Empfänger prüfen -> per MS365 mit Anhang mailen
+    // -> erst bei Erfolg als 'versendet' markieren (kein "versendet" ohne echte Mail).
+    mutationFn: async (id) => {
+      const company = await leCompany.get();
+      if (!company) throw new Error('Firmen-Settings fehlen.');
+      const fresh = await leInvoice.getWithEntries(id); // inkl. Kunde + Lines + Beiblatt
+      const customerEmail = fresh.customer?.billing_email;
+      if (!customerEmail) throw new Error('Kunde hat keine Rechnungs-E-Mail-Adresse hinterlegt.');
+      // PDF generieren (lädt es gleichzeitig in den 'invoices'-Bucket hoch)
+      const result = await generateInvoicePdf({ invoice: fresh, company });
+      if (!result.url) throw new Error('PDF konnte nicht hochgeladen werden – Versand nicht möglich.');
+      // Mail mit PDF-Anhang via MS365 (gleiche Edge Function wie der Mahn-Pfad)
+      const subject = `Rechnung ${fresh.invoice_no || ''} – ${company.company_name || ''}`.trim();
+      const html = `<p>Sehr geehrte Damen und Herren</p><p>Anbei erhalten Sie unsere Rechnung${fresh.invoice_no ? ' Nr. ' + fresh.invoice_no : ''}.</p><p>Mit freundlichen Grüssen<br>${company.company_name || ''}</p>`;
+      await sendInvoiceViaMs365({
+        to: customerEmail,
+        subject,
+        html,
+        attachmentUrl: result.url,
+        attachmentFilename: `Rechnung-${fresh.invoice_no || 'Entwurf'}.pdf`,
+      });
+      // Erst NACH erfolgreichem Mailversand als versendet markieren
+      return leInvoice.update(id, { status: 'versendet', sent_at: new Date().toISOString() });
+    },
     onSuccess: () => {
-      toast.info('Rechnung versendet (Mail-Integration folgt)');
+      toast.success('Rechnung als PDF per Mail versendet');
       invalidate();
     },
-    onError: (e) => toast.error('Fehler: ' + (e?.message ?? e)),
+    onError: (e) => toast.error('Versand-Fehler: ' + (e?.message ?? e)),
   });
 
   const payMut = useMutation({
