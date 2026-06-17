@@ -374,11 +374,17 @@ export const leInvoice = {
     let carry = 0;
     for (const ch of base.replace(/\D/g, '')) carry = table[(carry + parseInt(ch, 10)) % 10];
     const qrRef = base + ((10 - carry) % 10);
+    // Ausstellungs- + Fälligkeitsdatum setzen. Ohne due_date greifen Debitoren-Aging
+    // und Mahnwesen (due_date < heute) NIE. +30 Tage = gleicher Default wie Direkt-Rechnung.
+    const issue = new Date();
+    const issueIso = issue.toISOString().slice(0, 10);
+    const due = new Date(issue); due.setDate(due.getDate() + 30);
     return leInvoice.update(id, {
       invoice_no: no,
       qr_reference: qrRef,
       status: 'definitiv',
-      issue_date: new Date().toISOString().slice(0, 10),
+      issue_date: issueIso,
+      due_date: due.toISOString().slice(0, 10),
     });
   },
   // Entwurf löschen + alle verknüpften Time-Entries / Spesen wieder freigeben.
