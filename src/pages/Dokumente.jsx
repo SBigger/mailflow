@@ -954,6 +954,29 @@ export default function Dokumente() {
     queryFn:  () => entities.DokTag.list("sort_order"),
   });
 
+  // ── Live-Update ohne F5 ───────────────────────────────────────────────
+  // Wenn jemand anderes eine Datei eincheckt/auscheckt/hochlädt, soll der
+  // neue Stand bei allen offenen Clients sofort erscheinen. Realtime-Abo auf
+  // die dokumente-Tabelle (gleiches Muster wie MailKanban/FiBuSidebar).
+  // Bei UPDATE nur die betroffene Zeile im Cache patchen — ein voller Refetch
+  // waere bei 18k+ Dokumenten teuer; Insert/Delete invalidiert die Liste.
+  useEffect(() => {
+    const channel = supabase
+      .channel(`realtime-dokumente-${Date.now()}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'dokumente' }, (payload) => {
+        const row = payload.new;
+        if (payload.eventType === 'UPDATE' && row?.id) {
+          queryClient.setQueryData(["dokumente-all"], (prev) =>
+            Array.isArray(prev) ? prev.map(d => (d.id === row.id ? { ...d, ...row } : d)) : prev
+          );
+        } else {
+          queryClient.invalidateQueries({ queryKey: ["dokumente-all"] });
+        }
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [queryClient]);
+
   // ── Stilles Auto-Indexing (wie M-Files Background Service) ──────────────
   // Läuft automatisch im Hintergrund wenn allDoks geladen sind.
   // Kein Button, kein Spinner – transparent für den User.
