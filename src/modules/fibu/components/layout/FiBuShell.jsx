@@ -41,6 +41,7 @@ const Artikel              = React.lazy(() => import('../../pages/Artikel'));
 const DebitorenRechnung    = React.lazy(() => import('../../pages/DebitorenRechnung'));
 const DebitorenUebersicht  = React.lazy(() => import('../../pages/DebitorenUebersicht'));
 const DebitorenEinstellungen = React.lazy(() => import('../../pages/DebitorenEinstellungen'));
+const Mahnwesen            = React.lazy(() => import('../../pages/Mahnwesen'));
 
 const Spinner = () => (
   <div className="flex-1 flex items-center justify-center">
@@ -82,6 +83,8 @@ function FiBuContent() {
         <Route path="debitoren"                     element={<Navigate to="uebersicht" replace />} />
         <Route path="debitoren/uebersicht"          element={<DebitorenUebersicht />} />
         <Route path="debitoren/erfassen"            element={<DebitorenRechnung />} />
+        <Route path="debitoren/erfassen/:belegId"   element={<DebitorenRechnung />} />
+        <Route path="debitoren/mahnwesen"           element={<Mahnwesen />} />
         <Route path="debitoren/kunden"              element={<Kunden />} />
         <Route path="debitoren/artikel"             element={<Artikel />} />
         <Route path="debitoren/einstellungen"       element={<DebitorenEinstellungen />} />

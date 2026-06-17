@@ -157,7 +157,11 @@ function TabAbrechnung({ summary, mandant, period, umsatzBrutto = 0 }) {
   const umsatz_netto_befreit = byCode['U0']?.sum_netto ?? 0;
   const gesamtumsatz = umsatz_netto_81 + umsatz_netto_26 + umsatz_netto_38 + umsatz_netto_befreit;
   const total_abzuege = umsatz_netto_befreit;  // Ziff. 289: Von der Steuer ausgenommene Leistungen
-  const steuerbarer_umsatz = umsatz_netto_81 + umsatz_netto_26 + umsatz_netto_38; // Ziff. 299
+  const steuerbarer_umsatz = umsatz_netto_81 + umsatz_netto_26 + umsatz_netto_38; // Ziff. 299 (netto-Basis)
+  // Form 533: Ziff. 200/299 werden brutto (inkl. MWST) deklariert → Netto + geschuldete Steuer.
+  // 200 − 289 = 299 bleibt erhalten (befreite Umsätze tragen keine MWST).
+  const gesamtumsatz_brutto       = gesamtumsatz + umsatz_total;
+  const steuerbarer_umsatz_brutto = steuerbarer_umsatz + umsatz_total;
 
   const zahllast = umsatz_total - vorsteuer_total;
 
@@ -198,11 +202,11 @@ function TabAbrechnung({ summary, mandant, period, umsatzBrutto = 0 }) {
         {/* Abschnitt I: Umsatz */}
         <div style={{ background: '#fff', border: '1px solid #e4e9e4', borderRadius: 10, overflow: 'hidden' }}>
           <SectionHeader>I — Umsatz und geschuldete Steuer</SectionHeader>
-          <Ziffer nr="200" label="Vereinbarte/vereinnahmte Entgelte (Gesamtumsatz inkl. MWST)" value={gesamtumsatz || null} currency={waehrung} />
+          <Ziffer nr="200" label="Vereinbarte/vereinnahmte Entgelte (Gesamtumsatz inkl. MWST)" value={gesamtumsatz_brutto || null} currency={waehrung} />
           <div style={{ padding: '4px 12px 2px', fontSize: 10.5, color: '#94a394', background: '#fafcfa', fontStyle: 'italic' }}>Abzüge:</div>
           <Ziffer nr="220" label="Von der Steuer ausgenommene Leistungen (Art. 21 MWSTG)" value={umsatz_netto_befreit || null} currency={waehrung} indent />
           <Ziffer nr="289" label="Total der Abzüge (Ziff. 220 + 221 + 225 + 230)" value={total_abzuege || null} currency={waehrung} indent bold />
-          <Ziffer nr="299" label="Steuerbarer Umsatz (Ziff. 200 minus Ziff. 289)" value={steuerbarer_umsatz || null} currency={waehrung} bold />
+          <Ziffer nr="299" label="Steuerbarer Umsatz (Ziff. 200 minus Ziff. 289)" value={steuerbarer_umsatz_brutto || null} currency={waehrung} bold />
           <div style={{ padding: '6px 12px', fontSize: 11, color: '#94a394', background: '#fafcfa', fontStyle: 'italic' }}>Steuer auf dem steuerbaren Umsatz (ab 01.01.2024):</div>
           <Ziffer nr="303" label={`Zum Normalsatz von 8.1% auf CHF ${N2(umsatz_netto_81)}`} value={us_normal || null} currency={waehrung} indent />
           <Ziffer nr="312" label={`Zum Sondersatz von 3.8% (Beherbergung) auf CHF ${N2(umsatz_netto_38)}`} value={us_hotel || null} currency={waehrung} indent />

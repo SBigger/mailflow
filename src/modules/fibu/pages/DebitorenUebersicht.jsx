@@ -142,6 +142,7 @@ export default function DebitorenUebersicht() {
                     const sc = STATUS_CHIP[b.status] ?? STATUS_CHIP.offen;
                     return (
                       <tr key={b.id} style={{ cursor: 'pointer' }}
+                          onClick={() => navigate(`${base}/debitoren/erfassen/${b.id}`)}
                           onMouseEnter={e => e.currentTarget.querySelectorAll('td').forEach(t => t.style.background = '#f7faf7')}
                           onMouseLeave={e => e.currentTarget.querySelectorAll('td').forEach(t => t.style.background = '')}
                       >
@@ -191,6 +192,7 @@ export default function DebitorenUebersicht() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {[
                 { label: 'Neue Rechnung erstellen', path: 'debitoren/erfassen', primary: true },
+                { label: 'Mahnwesen',               path: 'debitoren/mahnwesen' },
                 { label: 'Kunden verwalten',        path: 'debitoren/kunden' },
                 { label: 'Produktstamm',            path: 'debitoren/artikel' },
                 { label: 'MWST-Abrechnung',         path: 'mwst/abrechnung' },

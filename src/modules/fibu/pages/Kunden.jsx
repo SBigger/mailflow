@@ -10,7 +10,7 @@ const inp  = { width: '100%', padding: '8px 10px', border: '1px solid #d4dcd4', 
 const lbl  = { display: 'block', fontSize: 11, fontWeight: 600, color: '#6b826b', marginBottom: 4 };
 
 const EMPTY = { name: '', uid: '', adresse: '', plz: '', ort: '', land: 'CH', email: '',
-  zahlungsbedingung_tage: 30, standard_konto_nr: '', mwst_code: 'V81', notiz: '', aktiv: true };
+  zahlungsbedingung_tage: 30, standard_konto_nr: '', mwst_code: 'U81', notiz: '', aktiv: true };
 
 export default function Kunden() {
   const { mandant } = useMandant();

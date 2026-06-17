@@ -36,6 +36,7 @@ const SECTIONS = [
     items: [
       { to: 'debitoren/uebersicht', label: 'Rechnungen',       icon: 'list' },
       { to: 'debitoren/erfassen',   label: 'Rechnung erstellen', icon: 'plus-doc' },
+      { to: 'debitoren/mahnwesen',  label: 'Mahnwesen',        icon: 'doc-text' },
       { divider: true },
       { to: 'debitoren/kunden',     label: 'Kunden',           icon: 'users' },
       { to: 'debitoren/artikel',    label: 'Produktstamm',     icon: 'grid' },
