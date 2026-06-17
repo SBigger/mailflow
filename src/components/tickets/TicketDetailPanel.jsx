@@ -53,6 +53,27 @@ async function uploadTicketAttachment(file, ticketId) {
   return { url: publicUrl, mime: file.type, filename: file.name || safeName };
 }
 
+// Anhang -> Markdown (Bild: ![alt](url), sonst Link). Wird in body gespeichert.
+function attachmentMarkdown(att) {
+  const isImg = (att.mime || "").startsWith("image/");
+  return isImg
+    ? `![${att.filename || "Screenshot"}](${att.url})`
+    : `[${att.filename || "Datei"}](${att.url})`;
+}
+
+// Markdown (nur das, was wir einfuegen) -> HTML fuer den Mail-Versand, damit
+// eingefuegte Screenshots beim Empfaenger als Bild ankommen statt als Code.
+// Originaltext wird HTML-escaped, danach werden unsere Muster zu Tags.
+function markdownToEmailHtml(text) {
+  if (!text) return "";
+  let html = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  html = html.replace(/!\[([^\]]*)\]\((https?:\/\/[^)\s]+)\)/g,
+    (_, alt, url) => `<img src="${url}" alt="${alt || "Bild"}" style="max-width:100%;border-radius:8px;" />`);
+  html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,
+    (_, t, url) => `<a href="${url}">${t}</a>`);
+  return html;
+}
+
 export default function TicketDetailPanel({ ticket, onClose, currentUser, users = [] }) {
   const { theme } = useContext(ThemeContext);
   const isLight = theme === "light";
@@ -63,6 +84,7 @@ export default function TicketDetailPanel({ ticket, onClose, currentUser, users 
   const [aiLoading, setAiLoading]     = useState(false);
   const [sending, setSending]         = useState(false);
   const [uploadingAttach, setUploadingAttach] = useState(false);
+  const [pendingAttachments, setPendingAttachments] = useState([]); // {url, mime, filename}
   const fileInputRef = useRef(null);
   // Mail-Versand: default OFF bei internal, ON bei Kunden-Tickets
   const [sendMail, setSendMail] = useState(ticket?.ticket_type !== "internal");
@@ -205,14 +227,9 @@ export default function TicketDetailPanel({ ticket, onClose, currentUser, users 
   };
 
   // ── Attachment-Upload (Paste, Drop, Datei-Button) ───────────────
-  const insertAttachmentMarkdown = (att) => {
-    const isImg = (att.mime || "").startsWith("image/");
-    const md = isImg
-      ? `\n![${att.filename || "Screenshot"}](${att.url})\n`
-      : `\n[${att.filename || "Datei"}](${att.url})\n`;
-    setReplyText(prev => (prev || "") + md);
-  };
-
+  // Hochgeladene Dateien werden als Thumbnail-Chips unter dem Textfeld gezeigt
+  // (nicht als roher Markdown-Code ins Textfeld geschrieben). Beim Senden wird
+  // der Markdown an den Notiz-Text angehaengt.
   const handleFiles = async (files) => {
     if (!files?.length || !ticket?.id) return;
     setUploadingAttach(true);
@@ -220,7 +237,7 @@ export default function TicketDetailPanel({ ticket, onClose, currentUser, users 
       for (const f of files) {
         try {
           const att = await uploadTicketAttachment(f, ticket.id);
-          insertAttachmentMarkdown(att);
+          setPendingAttachments(prev => [...prev, att]);
         } catch (e) {
           toast.error(`Upload "${f.name}" fehlgeschlagen: ${e.message}`);
         }
@@ -229,6 +246,9 @@ export default function TicketDetailPanel({ ticket, onClose, currentUser, users 
       setUploadingAttach(false);
     }
   };
+
+  const removePendingAttachment = (idx) =>
+    setPendingAttachments(prev => prev.filter((_, i) => i !== idx));
 
   const handlePaste = async (e) => {
     const items = e.clipboardData?.items;
@@ -254,7 +274,10 @@ export default function TicketDetailPanel({ ticket, onClose, currentUser, users 
 
   // Antwort senden
   const handleSend = async () => {
-    if (!replyText.trim() || !ticket?.id) return;
+    // Notiz-Text + angehaengte Bilder/Dateien als Markdown zusammenfuehren.
+    const attachMd = pendingAttachments.map(attachmentMarkdown);
+    const finalBody = [replyText.trim(), ...attachMd].filter(Boolean).join("\n\n");
+    if (!finalBody || !ticket?.id) return;
     setSending(true);
     // Mail-Versand jetzt per Toggle steuerbar (default off bei internal, on bei Kunden)
     const willSendMail = !!sendMail;
@@ -265,7 +288,7 @@ export default function TicketDetailPanel({ ticket, onClose, currentUser, users 
         .from("ticket_messages")
         .insert({
           ticket_id: ticket.id,
-          body: replyText.trim(),
+          body: finalBody,
           sender_type: "staff",
           sender_id: currentUser?.id || null,
           is_ai_suggestion: false,
@@ -274,15 +297,18 @@ export default function TicketDetailPanel({ ticket, onClose, currentUser, users 
       // updated_at aktualisieren
       await entities.Ticket.update(ticket.id, { updated_at: new Date().toISOString() });
       setReplyText("");
+      setPendingAttachments([]);
       qc.invalidateQueries({ queryKey: ["ticketMessages", ticket.id] });
       qc.invalidateQueries({ queryKey: ["tickets"] });
 
       if (!willSendMail) {
         toast.success("Notiz gespeichert");
       } else {
-        // E-Mail an Empfaenger senden
+        // E-Mail an Empfaenger senden. Markdown -> HTML im Frontend wandeln, damit
+        // eingefuegte Screenshots als Bild ankommen (die MS365-Mail-Edge-Function
+        // bleibt unangetastet — sie injiziert message_body direkt ins HTML).
         try {
-          await functions.invoke("send-ticket-reply", { ticket_id: ticket.id, message_body: replyText.trim() });
+          await functions.invoke("send-ticket-reply", { ticket_id: ticket.id, message_body: markdownToEmailHtml(finalBody) });
           toast.success("Antwort gespeichert und E-Mail gesendet");
         } catch (emailErr) {
           console.warn("E-Mail konnte nicht gesendet werden:", emailErr);
@@ -570,6 +596,40 @@ export default function TicketDetailPanel({ ticket, onClose, currentUser, users 
           style={{ display: "none" }}
           onChange={e => { handleFiles(Array.from(e.target.files || [])); e.target.value = ""; }}
         />
+        {pendingAttachments.length > 0 && (
+          <div className="flex flex-wrap gap-2 mt-2">
+            {pendingAttachments.map((att, i) => {
+              const isImg = (att.mime || "").startsWith("image/");
+              return (
+                <div
+                  key={i}
+                  style={{
+                    position: "relative", display: "flex", alignItems: "center", gap: 6,
+                    border: `1px solid ${border}`, borderRadius: 8, padding: 4,
+                    background: inputBg, maxWidth: 180,
+                  }}
+                >
+                  {isImg
+                    ? <img src={att.url} alt={att.filename} style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 4 }} />
+                    : <Paperclip className="h-4 w-4" style={{ color: textMuted, flexShrink: 0 }} />}
+                  <span style={{ fontSize: 11, color: textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {att.filename || "Anhang"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => removePendingAttachment(i)}
+                    title="Entfernen"
+                    style={{
+                      position: "absolute", top: -7, right: -7, width: 18, height: 18,
+                      borderRadius: 99, border: "none", background: "#ef4444", color: "#fff",
+                      fontSize: 12, lineHeight: "18px", textAlign: "center", cursor: "pointer", padding: 0,
+                    }}
+                  >×</button>
+                </div>
+              );
+            })}
+          </div>
+        )}
         <div className="flex items-center justify-between mt-2 gap-2">
           <div className="flex items-center gap-2">
             <button
@@ -625,12 +685,12 @@ export default function TicketDetailPanel({ ticket, onClose, currentUser, users 
             </label>
             <button
               onClick={handleSend}
-              disabled={!replyText.trim() || sending}
+              disabled={(!replyText.trim() && !pendingAttachments.length) || sending}
               className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium transition-colors"
               style={{
-                backgroundColor: replyText.trim() && !sending ? accent : (isArtis ? "#ccd8cc" : "#a1a1aa"),
+                backgroundColor: (replyText.trim() || pendingAttachments.length) && !sending ? accent : (isArtis ? "#ccd8cc" : "#a1a1aa"),
                 color: "#fff",
-                opacity: (!replyText.trim() || sending) ? 0.6 : 1,
+                opacity: ((!replyText.trim() && !pendingAttachments.length) || sending) ? 0.6 : 1,
               }}
             >
               {sending

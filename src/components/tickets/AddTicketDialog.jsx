@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { entities, supabase } from "@/api/supabaseClient";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ThemeContext } from "@/Layout";
-import { FileText, MessageSquare, Users, ImagePlus, Loader2 } from "lucide-react";
+import { FileText, MessageSquare, Users, ImagePlus, Loader2, Paperclip } from "lucide-react";
 import { toast } from "sonner";
 
 // Helper: Bild/PDF in Bucket "ticket-attachments" hochladen (identisch zu TicketDetailPanel).
@@ -31,6 +31,14 @@ async function uploadTicketAttachment(file, folder) {
   return { url: publicUrl, mime: file.type, filename: file.name || safeName };
 }
 
+// Anhang -> Markdown (Bild: ![alt](url), sonst Link). Wird beim Erstellen in body gespeichert.
+function attachmentMarkdown(att) {
+  const isImg = (att.mime || "").startsWith("image/");
+  return isImg
+    ? `![${att.filename || "Screenshot"}](${att.url})`
+    : `[${att.filename || "Datei"}](${att.url})`;
+}
+
 export default function AddTicketDialog({ open, onClose, defaultColumnId }) {
   const { theme } = useContext(ThemeContext);
   const isLight = theme === "light";
@@ -47,6 +55,7 @@ export default function AddTicketDialog({ open, onClose, defaultColumnId }) {
   const [priorityId, setPriorityId] = useState("");
   const [loading, setLoading]       = useState(false);
   const [uploadingAttach, setUploadingAttach] = useState(false);
+  const [pendingAttachments, setPendingAttachments] = useState([]); // {url, mime, filename}
   const fileInputRef = useRef(null);
   // Stabiler Draft-Ordner pro Dialog-Sitzung fuer die Screenshot-Ablage
   const draftFolderRef = useRef(`draft-${(globalThis.crypto?.randomUUID?.() || Date.now())}`);
@@ -91,15 +100,8 @@ export default function AddTicketDialog({ open, onClose, defaultColumnId }) {
   const inputBg     = isArtis ? "#ffffff" : isLight ? "#ffffff" : "rgba(24,24,27,0.6)";
   const inputBorder = isArtis ? "#ccd8cc" : isLight ? "#d4d4e8" : "rgba(63,63,70,0.6)";
 
-  // ── Screenshot/Datei in die Beschreibung einfuegen (Paste, Drop, Button) ──
-  const insertAttachmentMarkdown = (att) => {
-    const isImg = (att.mime || "").startsWith("image/");
-    const md = isImg
-      ? `\n![${att.filename || "Screenshot"}](${att.url})\n`
-      : `\n[${att.filename || "Datei"}](${att.url})\n`;
-    setBody(prev => (prev || "") + md);
-  };
-
+  // ── Screenshot/Datei einfuegen (Paste, Drop, Button) ──
+  // Als Thumbnail-Chip unter dem Feld zeigen, beim Erstellen an body anhaengen.
   const handleFiles = async (files) => {
     if (!files?.length) return;
     setUploadingAttach(true);
@@ -107,7 +109,7 @@ export default function AddTicketDialog({ open, onClose, defaultColumnId }) {
       for (const f of files) {
         try {
           const att = await uploadTicketAttachment(f, draftFolderRef.current);
-          insertAttachmentMarkdown(att);
+          setPendingAttachments(prev => [...prev, att]);
         } catch (e) {
           toast.error(`Upload "${f.name}" fehlgeschlagen: ${e.message}`);
         }
@@ -116,6 +118,9 @@ export default function AddTicketDialog({ open, onClose, defaultColumnId }) {
       setUploadingAttach(false);
     }
   };
+
+  const removePendingAttachment = (idx) =>
+    setPendingAttachments(prev => prev.filter((_, i) => i !== idx));
 
   const handlePaste = async (e) => {
     const items = e.clipboardData?.items;
@@ -145,11 +150,14 @@ export default function AddTicketDialog({ open, onClose, defaultColumnId }) {
     try {
       // Erste Spalte als Default wenn nichts gewählt
       const targetColumn = columnId || columns[0]?.id;
+      // Beschreibung + angehaengte Screenshots/Dateien als Markdown zusammenfuehren
+      const attachMd = pendingAttachments.map(attachmentMarkdown);
+      const finalBody = [body.trim(), ...attachMd].filter(Boolean).join("\n\n") || null;
       await entities.Ticket.create({
         from_email: fromEmail.trim(),
         from_name: fromName.trim() || null,
         title: title.trim(),
-        body: body.trim() || null,
+        body: finalBody,
         ticket_type: ticketType,
         column_id: targetColumn,
         customer_id: (customerId && customerId !== "__none__") ? customerId : null,
@@ -170,6 +178,7 @@ export default function AddTicketDialog({ open, onClose, defaultColumnId }) {
     setFromName("");
     setTitle("");
     setBody("");
+    setPendingAttachments([]);
     setTicketType("regular");
     setColumnId(defaultColumnId || "");
     setCustomerId("");
@@ -316,6 +325,40 @@ export default function AddTicketDialog({ open, onClose, defaultColumnId }) {
                 : <ImagePlus className="h-3.5 w-3.5" />}
               {uploadingAttach ? "Lädt…" : "Screenshot / Anhang"}
             </button>
+            {pendingAttachments.length > 0 && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+                {pendingAttachments.map((att, i) => {
+                  const isImg = (att.mime || "").startsWith("image/");
+                  return (
+                    <div
+                      key={i}
+                      style={{
+                        position: "relative", display: "flex", alignItems: "center", gap: 6,
+                        border: `1px solid ${inputBorder}`, borderRadius: 8, padding: 4,
+                        background: inputBg, maxWidth: 180,
+                      }}
+                    >
+                      {isImg
+                        ? <img src={att.url} alt={att.filename} style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 4 }} />
+                        : <Paperclip className="h-4 w-4" style={{ color: labelColor, flexShrink: 0 }} />}
+                      <span style={{ fontSize: 11, color: labelColor, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {att.filename || "Anhang"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => removePendingAttachment(i)}
+                        title="Entfernen"
+                        style={{
+                          position: "absolute", top: -7, right: -7, width: 18, height: 18,
+                          borderRadius: 99, border: "none", background: "#ef4444", color: "#fff",
+                          fontSize: 12, lineHeight: "18px", textAlign: "center", cursor: "pointer", padding: 0,
+                        }}
+                      >×</button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Prioritaet */}
