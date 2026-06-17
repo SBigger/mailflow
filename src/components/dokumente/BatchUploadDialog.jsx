@@ -565,9 +565,17 @@ export default function BatchUploadDialog({ preCustomerId, onClose }) {
   }, [items.length]);
 
   const updateField = useCallback((id, patch) => {
-    setItems(prev => prev.map(i =>
-      i.id === id ? { ...i, fields: { ...i.fields, ...patch } } : i
-    ));
+    setItems(prev => prev.map(i => {
+      if (i.id !== id) return i;
+      const fields = { ...i.fields, ...patch };
+      let status = i.status;
+      // "parked" heisst nur "kein Kunde erkannt" – sobald der User manuell
+      // einen Kunden setzt (oder wieder entfernt), Status neu ableiten.
+      if ("customer_id" in patch && (i.status === "parked" || i.status === "ready")) {
+        status = fields.customer_id ? "ready" : "parked";
+      }
+      return { ...i, fields, status };
+    }));
   }, []);
 
   // Nutzer hat ein KI-Feld überschrieben → gelber Rahmen weg
