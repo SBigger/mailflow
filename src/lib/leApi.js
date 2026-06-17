@@ -1021,6 +1021,10 @@ export async function createInvoiceDraftsFromEntries({
     const vatAmount = Math.round(subtotal * vatPct) / 100;
     const total = subtotal + vatAmount;
 
+    // Keine 0-CHF-Rechnung erzeugen (z.B. nur 0-Stunden/0-Satz-Einträge) – ausser
+    // es gibt Kulant-Positionen, die mitgeführt werden sollen.
+    if (subtotal <= 0 && !(includeKulant && kulant.length)) continue;
+
     const invoicePayload = {
       project_id: projectId,
       customer_id: proj?.customer_id ?? null,
@@ -1082,10 +1086,13 @@ export async function createInvoiceDraftsFromEntries({
       .filter(e => e.status !== 'kulant')
       .map(e => e.id);
     if (billableIds.length) {
+      // .is('invoice_id', null): nur noch nicht verrechnete Einträge beanspruchen –
+      // verhindert Doppelverrechnung, falls ein paralleler Durchlauf sie schon nahm.
       const { error: upErr } = await supabase
         .from('le_time_entry')
         .update({ invoice_id: inv.id, status: 'verrechnet' })
-        .in('id', billableIds);
+        .in('id', billableIds)
+        .is('invoice_id', null);
       if (upErr) throw upErr;
     }
     if (includeKulant && kulant.length) {
@@ -1093,7 +1100,8 @@ export async function createInvoiceDraftsFromEntries({
       const { error: kErr } = await supabase
         .from('le_time_entry')
         .update({ invoice_id: inv.id, status: 'kulant_abgerechnet' })
-        .in('id', kulantIds);
+        .in('id', kulantIds)
+        .is('invoice_id', null);
       if (kErr) throw kErr;
     }
 
