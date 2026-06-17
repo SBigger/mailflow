@@ -99,7 +99,7 @@ export default function RechnungsuebersichtPanel() {
   });
 
   const cancelMut = useMutation({
-    mutationFn: (id) => leInvoice.update(id, { status: 'storniert' }),
+    mutationFn: (id) => leInvoice.storno(id),
     onSuccess: () => {
       toast.success('Rechnung storniert');
       invalidate();

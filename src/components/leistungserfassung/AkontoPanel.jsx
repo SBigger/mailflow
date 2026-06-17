@@ -463,7 +463,7 @@ function UebersichtTab() {
   });
 
   const cancelMut = useMutation({
-    mutationFn: (id) => leInvoice.update(id, { status: 'storniert' }),
+    mutationFn: (id) => leInvoice.storno(id),
     onSuccess: () => { toast.success('Akonto storniert'); invalidate(); },
     onError: (e) => toast.error('Fehler: ' + (e?.message ?? e)),
   });

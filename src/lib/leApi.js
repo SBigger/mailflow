@@ -389,26 +389,21 @@ export const leInvoice = {
     if (inv.status !== 'entwurf') {
       throw new Error('Nur Entwürfe können gelöscht werden – diese Rechnung ist bereits "' + inv.status + '". Bitte stattdessen stornieren (Gutschrift).');
     }
-    // Time-Entries: 'verrechnet' → 'erfasst', 'kulant_abgerechnet' → 'kulant'
-    await supabase.from('le_time_entry')
-      .update({ invoice_id: null, status: 'erfasst' })
-      .eq('invoice_id', id).eq('status', 'verrechnet');
-    await supabase.from('le_time_entry')
-      .update({ invoice_id: null, status: 'kulant' })
-      .eq('invoice_id', id).eq('status', 'kulant_abgerechnet');
-    // Falls Einträge wegen Status-Änderungen noch verknüpft sind: invoice_id löschen
-    await supabase.from('le_time_entry')
-      .update({ invoice_id: null })
-      .eq('invoice_id', id);
-    // Spesen: invoiced_invoice_id zurücksetzen
-    await supabase.from('le_expense')
-      .update({ invoiced_invoice_id: null, status: 'genehmigt' })
-      .eq('invoiced_invoice_id', id);
+    // Time-Entries + Spesen wieder freigeben (verrechnet→erfasst, kulant_abgerechnet→kulant)
+    await releaseInvoiceEntries(id);
     // Akonto-Verlinkungen entfernen
     await supabase.from('le_invoice_akonto_link').delete().eq('schluss_invoice_id', id);
     // Rechnung löschen (lines kaskadieren via FK)
     const { error } = await supabase.from('le_invoice').delete().eq('id', id);
     if (error) throw error;
+  },
+  // Definitive/versendete Rechnung stornieren: Status → 'storniert' UND die
+  // zugrunde liegenden Buchungen/Spesen wieder freigeben, damit sie neu
+  // verrechnet werden können (sonst bleiben die Stunden für immer gesperrt).
+  storno: async (id) => {
+    const updated = await leInvoice.update(id, { status: 'storniert' });
+    await releaseInvoiceEntries(id);
+    return updated;
   },
 };
 
@@ -507,6 +502,27 @@ export async function createAkontoInvoice({ projectId, customerId, amountNet, va
   return inv;
 }
 
+// Gibt alle Time-Entries + Spesen einer Rechnung wieder frei (fakturierbar).
+// Mirror der Reset-Logik aus deleteDraft – wird auch beim Storno/Gutschrift genutzt,
+// damit stornierte Stunden neu verrechnet werden können (DB-Trigger erlaubt
+// den Übergang verrechnet→erfasst bzw. kulant_abgerechnet→kulant).
+export async function releaseInvoiceEntries(invoiceId) {
+  await supabase.from('le_time_entry')
+    .update({ invoice_id: null, status: 'erfasst' })
+    .eq('invoice_id', invoiceId).eq('status', 'verrechnet');
+  await supabase.from('le_time_entry')
+    .update({ invoice_id: null, status: 'kulant' })
+    .eq('invoice_id', invoiceId).eq('status', 'kulant_abgerechnet');
+  // Sicherheits-Netz: alle übrigen Verknüpfungen lösen
+  await supabase.from('le_time_entry')
+    .update({ invoice_id: null })
+    .eq('invoice_id', invoiceId);
+  // Spesen wieder als 'genehmigt' freigeben
+  await supabase.from('le_expense')
+    .update({ invoiced_invoice_id: null, status: 'genehmigt' })
+    .eq('invoiced_invoice_id', invoiceId);
+}
+
 // Gutschrift aus existierender Rechnung erstellen (negative Beträge, eigene Nummer)
 export async function createCreditFromInvoice(originalInvoiceId, { reason } = {}) {
   const orig = await leInvoice.get(originalInvoiceId);
@@ -565,8 +581,10 @@ export async function createCreditFromInvoice(originalInvoiceId, { reason } = {}
     if (linesErr) throw linesErr;
   }
 
-  // Original auf 'storniert' setzen
+  // Original auf 'storniert' setzen UND die zugrunde liegenden Buchungen/Spesen
+  // wieder freigeben (neu verrechenbar). Vorher: Stunden blieben für immer gesperrt.
   await supabase.from('le_invoice').update({ status: 'storniert' }).eq('id', orig.id);
+  await releaseInvoiceEntries(orig.id);
   return credit;
 }
 
