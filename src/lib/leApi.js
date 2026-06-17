@@ -611,11 +611,42 @@ export const lePayment = {
   create: async (payload) => {
     const { data, error } = await supabase.from('le_payment').insert(payload).select().single();
     if (error) throw error;
+    if (data?.invoice_id) await lePayment.recomputeInvoice(data.invoice_id);
     return data;
   },
   remove: async (id) => {
+    const { data: pay } = await supabase.from('le_payment').select('invoice_id').eq('id', id).single();
     const { error } = await supabase.from('le_payment').delete().eq('id', id);
     if (error) throw error;
+    if (pay?.invoice_id) await lePayment.recomputeInvoice(pay.invoice_id);
+  },
+  // Setzt paid_amount + Status einer Rechnung NEU aus der Summe ALLER Zahlungen
+  // (single source of truth). Behebt: prev+amt verlor beim Löschen den Saldo und
+  // liess die Rechnung faelschlich auf 'bezahlt'.
+  recomputeInvoice: async (invoiceId) => {
+    if (!invoiceId) return;
+    const { data: pays } = await supabase.from('le_payment').select('amount, paid_at').eq('invoice_id', invoiceId);
+    const list = pays ?? [];
+    const paid = list.reduce((s, p) => s + Number(p.amount || 0), 0);
+    const { data: inv } = await supabase.from('le_invoice').select('total, status, sent_at').eq('id', invoiceId).single();
+    if (!inv) return;
+    const total = Number(inv.total || 0);
+    const patch = { paid_amount: paid };
+    if (total > 0 && paid + 0.005 >= total) {
+      patch.status = 'bezahlt';
+      patch.paid_at = list.map(p => p.paid_at).filter(Boolean).sort().slice(-1)[0] || null;
+    } else if (inv.status === 'bezahlt') {
+      // wieder offen (z.B. Zahlung geloescht / zu niedrig): zurueck auf versendet/definitiv
+      patch.status = inv.sent_at ? 'versendet' : 'definitiv';
+      patch.paid_at = null;
+    }
+    await supabase.from('le_invoice').update(patch).eq('id', invoiceId);
+  },
+  // Doppel-Import verhindern: gibt es schon eine Zahlung mit dieser Bank-Transaktionsref?
+  existsByBankRef: async (bankRef) => {
+    if (!bankRef) return false;
+    const { data } = await supabase.from('le_payment').select('id').eq('bank_ref', bankRef).limit(1);
+    return !!(data && data.length);
   },
 };
 

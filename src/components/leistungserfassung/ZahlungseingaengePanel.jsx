@@ -175,16 +175,8 @@ function ManuellTab() {
         notes:        notes || null,
       });
 
-      // 2) Invoice ggf. auf "bezahlt" setzen
-      const prevPaid = Number(selectedInvoice.paid_amount ?? 0);
-      const newPaid = prevPaid + amt;
-      const total = Number(selectedInvoice.total ?? 0);
-      const patch = { paid_amount: newPaid };
-      if (newPaid + 0.01 >= total) {
-        patch.status = 'bezahlt';
-        patch.paid_at = paidAt;
-      }
-      await leInvoice.update(selectedInvoice.id, patch);
+      // paid_amount + Status (bezahlt/teilbezahlt) werden in lePayment.create
+      // automatisch aus der Summe aller Zahlungen neu berechnet.
     },
     onSuccess: () => {
       toast.success('Zahlung erfasst');
@@ -410,8 +402,12 @@ function CamtImportTab() {
 
       let matchedCount = 0;
       let totalAmount = 0;
+      let skipped = 0;
 
       for (const it of chosen) {
+        // Doppel-Import verhindern: gleiche Bank-Transaktion (bank_ref) schon erfasst?
+        if (it.bankRef && await lePayment.existsByBankRef(it.bankRef)) { skipped += 1; continue; }
+
         const overrideId = overrideInv[it.tempId] || null;
         const inv = overrideId
           ? openInvoices.find((i) => i.id === overrideId)
@@ -434,19 +430,8 @@ function CamtImportTab() {
 
         totalAmount += Number(it.amount) || 0;
 
-        // Falls einer Rechnung zugeordnet → ggf. auf "bezahlt" setzen
-        if (inv) {
-          matchedCount += 1;
-          const prevPaid = Number(inv.paid_amount ?? 0);
-          const newPaid = prevPaid + Number(it.amount);
-          const total = Number(inv.total ?? 0);
-          const patch = { paid_amount: newPaid };
-          if (newPaid + 0.01 >= total) {
-            patch.status = 'bezahlt';
-            patch.paid_at = it.bookingDate ?? it.valueDate ?? todayIso();
-          }
-          await leInvoice.update(inv.id, patch);
-        }
+        // paid_amount + Status werden in lePayment.create automatisch neu berechnet.
+        if (inv) matchedCount += 1;
       }
 
       // Audit
@@ -456,9 +441,10 @@ function CamtImportTab() {
         matched_count: matchedCount,
         total_amount:  Number(totalAmount.toFixed(2)),
       });
+      return { skipped };
     },
-    onSuccess: () => {
-      toast.success('Zahlungen importiert');
+    onSuccess: (res) => {
+      toast.success(res?.skipped ? `Zahlungen importiert (${res.skipped} Duplikate übersprungen)` : 'Zahlungen importiert');
       qc.invalidateQueries({ queryKey: ['le', 'invoice'] });
       qc.invalidateQueries({ queryKey: ['le', 'payment'] });
       qc.invalidateQueries({ queryKey: ['le', 'camt-import'] });
@@ -809,7 +795,7 @@ function HistorieTab() {
                               danger
                               title="Löschen"
                               onClick={() => {
-                                if (window.confirm('Zahlung wirklich löschen? Status der Rechnung bleibt unverändert.')) {
+                                if (window.confirm('Zahlung wirklich löschen? Saldo und Status der Rechnung werden neu berechnet.')) {
                                   removeMut.mutate(p.id);
                                 }
                               }}
