@@ -1006,6 +1006,10 @@ export async function createInvoiceDraftsFromEntries({
   const due = new Date(today); due.setDate(due.getDate() + 30);
   const dueIso = due.toISOString().slice(0, 10);
 
+  // MwSt-Satz aus den Firmen-Settings (konfigurierbar) statt hart kodiert; Default 8.1 %.
+  const company = await leCompany.get();
+  const vatPct = Number(company?.vat_default_pct ?? 8.1) || 8.1;
+
   for (const [projectId, projEntries] of byProject) {
     const proj = projEntries[0].project;
     // Splitting: billable (erfasst/freigegeben + service.billable) vs. kulant
@@ -1017,7 +1021,6 @@ export async function createInvoiceDraftsFromEntries({
 
     // Subtotal NUR aus billable
     const subtotal = billable.reduce((s, e) => s + Number(e.hours_internal || 0) * Number(e.rate_snapshot || 0), 0);
-    const vatPct = 8.1;
     const vatAmount = Math.round(subtotal * vatPct) / 100;
     const total = subtotal + vatAmount;
 
