@@ -668,7 +668,7 @@ export const leDunning = {
   list: async ({ status } = {}) => {
     let q = supabase
       .from('le_dunning')
-      .select('*, invoice:le_invoice(id, invoice_no, total, due_date, customer_id, project_id), customer:customers(id, company_name, street, building_number, zip, city, country, billing_email)')
+      .select('*, invoice:le_invoice(id, invoice_no, total, status, paid_amount, due_date, customer_id, project_id), customer:customers(id, company_name, street, building_number, zip, city, country, billing_email)')
       .order('dunning_date', { ascending: false });
     if (status) q = q.eq('status', status);
     const { data, error } = await q;

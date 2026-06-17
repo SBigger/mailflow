@@ -659,6 +659,9 @@ function DunningRow({ dun, onSend, onPay, onEscalate, sending }) {
                 const company = await leCompany.get();
                 if (!company) { toast.error('Firmen-Settings fehlen.'); return; }
                 const fullInv = await leInvoice.get(dun.invoice_id);
+                // Keine Mahnung für stornierte/bezahlte Rechnungen versenden
+                if (fullInv?.status === 'storniert') { toast.error('Rechnung ist storniert – keine Mahnung möglich.'); return; }
+                if (fullInv?.status === 'bezahlt') { toast.error('Rechnung ist bereits bezahlt – keine Mahnung nötig.'); return; }
                 const result = await generateDunningPdf({
                   dunning: dun, invoice: fullInv,
                   customer: fullInv.customer, company,
