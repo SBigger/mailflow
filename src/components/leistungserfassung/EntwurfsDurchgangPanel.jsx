@@ -264,7 +264,7 @@ function DraftEditor({ invoice, onSaved, onFinalized, onDirtyChange }) {
   const [lines, setLines] = useState(() =>
     (invoice.lines ?? [])
       .slice()
-      .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
+      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
       .map((l) => ({ ...l, _original: { ...l } })),
   );
 
@@ -297,15 +297,19 @@ function DraftEditor({ invoice, onSaved, onFinalized, onDirtyChange }) {
   };
 
   const addLine = () => {
-    setLines((arr) => [...arr, {
-      id: null,
-      invoice_id: invoice.id,
-      position: arr.length + 1,
-      description: '',
-      hours: 0,
-      rate: 0,
-      amount: 0,
-    }]);
+    setLines((arr) => {
+      // sort_order der neuen Zeile höher als alle bestehenden → landet hinten
+      const maxSort = arr.reduce((m, l) => Math.max(m, num(l.sort_order)), 0);
+      return [...arr, {
+        id: null,
+        invoice_id: invoice.id,
+        sort_order: maxSort + 10,
+        description: '',
+        hours: 0,
+        rate: 0,
+        amount: 0,
+      }];
+    });
     markDirty();
   };
 
@@ -343,7 +347,7 @@ function DraftEditor({ invoice, onSaved, onFinalized, onDirtyChange }) {
         if (l.id == null) {
           await leInvoiceLine.create({
             invoice_id: invoice.id,
-            position: l.position,
+            sort_order: l.sort_order,
             description: l.description || '',
             hours: num(l.hours),
             rate: num(l.rate),
@@ -351,7 +355,7 @@ function DraftEditor({ invoice, onSaved, onFinalized, onDirtyChange }) {
           });
         } else {
           const orig = l._original || {};
-          const changed = ['description', 'hours', 'rate', 'amount', 'position']
+          const changed = ['description', 'hours', 'rate', 'amount', 'sort_order']
             .some((k) => String(orig[k] ?? '') !== String(l[k] ?? ''));
           if (changed) {
             await leInvoiceLine.update(l.id, {
@@ -359,7 +363,7 @@ function DraftEditor({ invoice, onSaved, onFinalized, onDirtyChange }) {
               hours: num(l.hours),
               rate: num(l.rate),
               amount: num(l.amount),
-              position: l.position,
+              sort_order: l.sort_order,
             });
           }
         }
