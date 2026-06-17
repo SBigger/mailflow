@@ -591,7 +591,7 @@ export default function TicketDetailPanel({ ticket, onClose, currentUser, users 
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/*,application/pdf"
+          accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv"
           multiple
           style={{ display: "none" }}
           onChange={e => { handleFiles(Array.from(e.target.files || [])); e.target.value = ""; }}

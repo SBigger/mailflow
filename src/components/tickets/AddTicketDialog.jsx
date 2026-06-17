@@ -301,7 +301,7 @@ export default function AddTicketDialog({ open, onClose, defaultColumnId }) {
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*,application/pdf"
+              accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv"
               multiple
               hidden
               onChange={e => { handleFiles(Array.from(e.target.files || [])); e.target.value = ""; }}
