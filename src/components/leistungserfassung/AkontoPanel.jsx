@@ -17,7 +17,7 @@ import {
   Search, CheckCircle2, Link2,
 } from 'lucide-react';
 import {
-  leInvoice, leProject, leCompany, customersForProjects, createAkontoInvoice,
+  leInvoice, leProject, leCompany, customersForProjects, createAkontoInvoice, sendInvoiceViaMs365,
 } from '@/lib/leApi';
 import { supabase } from '@/api/supabaseClient';
 import { generateInvoicePdf, triggerDownload } from '@/lib/leInvoicePdf';
@@ -454,16 +454,40 @@ function UebersichtTab() {
   });
 
   const sendMut = useMutation({
-    mutationFn: (id) => leInvoice.update(id, {
-      status: 'versendet',
-      sent_at: new Date().toISOString(),
-    }),
-    onSuccess: () => { toast.info('Akonto versendet (Mail-Integration folgt)'); invalidate(); },
-    onError: (e) => toast.error('Fehler: ' + (e?.message ?? e)),
+    // Echter Versand: PDF erzeugen -> Empfänger prüfen -> per MS365 mailen ->
+    // erst bei Erfolg 'versendet' (gleiches Muster wie der Rechnungsversand).
+    mutationFn: async (id) => {
+      const company = await leCompany.get();
+      if (!company) throw new Error('Firmen-Settings fehlen.');
+      const fresh = await leInvoice.getWithEntries(id);
+      const customerEmail = fresh.customer?.billing_email;
+      if (!customerEmail) throw new Error('Kunde hat keine Rechnungs-E-Mail-Adresse hinterlegt.');
+      const result = await generateInvoicePdf({ invoice: fresh, company });
+      if (!result.url) throw new Error('PDF konnte nicht hochgeladen werden – Versand nicht möglich.');
+      const subject = `Akonto-Rechnung ${fresh.invoice_no || ''} – ${company.company_name || ''}`.trim();
+      const html = `<p>Sehr geehrte Damen und Herren</p><p>Anbei erhalten Sie unsere Akonto-Rechnung${fresh.invoice_no ? ' Nr. ' + fresh.invoice_no : ''}.</p><p>Mit freundlichen Grüssen<br>${company.company_name || ''}</p>`;
+      await sendInvoiceViaMs365({
+        to: customerEmail, subject, html,
+        attachmentUrl: result.url,
+        attachmentFilename: `Akonto-${fresh.invoice_no || 'Entwurf'}.pdf`,
+      });
+      return leInvoice.update(id, { status: 'versendet', sent_at: new Date().toISOString() });
+    },
+    onSuccess: () => { toast.success('Akonto als PDF per Mail versendet'); invalidate(); },
+    onError: (e) => toast.error('Versand-Fehler: ' + (e?.message ?? e)),
   });
 
   const cancelMut = useMutation({
-    mutationFn: (id) => leInvoice.storno(id),
+    mutationFn: async (id) => {
+      // Verrechnetes Akonto nicht stornieren – sonst bleibt der Abzug in der
+      // Schlussrechnung stehen. Zuerst dort die Verrechnung entfernen.
+      const { data: links } = await supabase.from('le_invoice_akonto_link')
+        .select('id').eq('akonto_invoice_id', id).limit(1);
+      if (links && links.length) {
+        throw new Error('Akonto ist in einer Schlussrechnung verrechnet – bitte dort zuerst die Verrechnung entfernen.');
+      }
+      return leInvoice.storno(id);
+    },
     onSuccess: () => { toast.success('Akonto storniert'); invalidate(); },
     onError: (e) => toast.error('Fehler: ' + (e?.message ?? e)),
   });
