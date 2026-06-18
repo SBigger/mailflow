@@ -529,12 +529,33 @@ export async function releaseInvoiceEntries(invoiceId) {
     .eq('invoiced_invoice_id', invoiceId);
 }
 
-// Gutschrift aus existierender Rechnung erstellen (negative Beträge, eigene Nummer)
-export async function createCreditFromInvoice(originalInvoiceId, { reason } = {}) {
+// Gutschrift aus existierender Rechnung erstellen (negative Beträge, eigene Nummer).
+//  - VOLL (lines=null): negiert die Original-Summen 1:1 (rundungssicher, inkl. Rabatt),
+//    Original -> 'storniert' und Buchungen werden wieder freigegeben.
+//  - TEIL (lines=[{description, hours, rate, amount, service_type_id}]): nur die
+//    gewählten Positionen gutschreiben; Original bleibt unverändert bestehen.
+export async function createCreditFromInvoice(originalInvoiceId, { reason, lines = null } = {}) {
   const orig = await leInvoice.get(originalInvoiceId);
   if (!orig) throw new Error('Rechnung nicht gefunden.');
   if (orig.status === 'storniert') throw new Error('Rechnung ist bereits storniert.');
   if (orig.invoice_type === 'gutschrift') throw new Error('Eine Gutschrift kann nicht gutgeschrieben werden.');
+
+  const isPartial = Array.isArray(lines) && lines.length > 0;
+  const vatPct = Number(orig.vat_pct ?? 8.1);
+  // Beträge + Positionen: voll = Original-Summen; teil = aus gewählten Positionen.
+  let creditSubtotal, creditVat, creditTotal, srcLines;
+  if (isPartial) {
+    srcLines = lines;
+    creditSubtotal = lines.reduce((s, l) => s + Number(l.amount || 0), 0);
+    creditVat = Math.round(creditSubtotal * vatPct) / 100;
+    creditTotal = creditSubtotal + creditVat;
+  } else {
+    srcLines = orig.lines ?? [];
+    creditSubtotal = Number(orig.subtotal || 0);
+    creditVat = Number(orig.vat_amount || 0);
+    creditTotal = Number(orig.total || 0);
+  }
+
   // Neue Gutschriftsnummer aus le_number_sequence (kind='credit')
   const { data: seq } = await supabase.from('le_number_sequence').select('*').eq('kind', 'credit').single();
   let creditNo = null;
@@ -565,24 +586,25 @@ export async function createCreditFromInvoice(originalInvoiceId, { reason } = {}
     issue_date: new Date().toISOString().slice(0, 10),
     period_from: orig.period_from,
     period_to: orig.period_to,
-    subtotal: -Number(orig.subtotal || 0),
-    vat_pct: orig.vat_pct,
-    vat_amount: -Number(orig.vat_amount || 0),
-    discount_pct: orig.discount_pct,
-    discount_amount: orig.discount_amount,
-    total: -Number(orig.total || 0),
-    notes: reason ? `Gutschrift zu Rechnung ${orig.invoice_no}: ${reason}` : `Gutschrift zu Rechnung ${orig.invoice_no}`,
+    subtotal: -creditSubtotal,
+    vat_pct: vatPct,
+    vat_amount: -creditVat,
+    discount_pct: isPartial ? 0 : orig.discount_pct,
+    discount_amount: isPartial ? 0 : orig.discount_amount,
+    total: -creditTotal,
+    notes: (reason ? `Gutschrift zu Rechnung ${orig.invoice_no}: ${reason}` : `Gutschrift zu Rechnung ${orig.invoice_no}`)
+      + (isPartial ? ' (Teilgutschrift)' : ''),
   }).select().single();
   if (credErr) throw credErr;
 
-  // Lines kopieren mit negativen Beträgen
-  if (orig.lines?.length) {
-    const negLines = orig.lines.map((l, i) => ({
+  // Gewählte Positionen mit negativen Beträgen kopieren
+  if (srcLines.length) {
+    const negLines = srcLines.map((l, i) => ({
       invoice_id: credit.id,
-      service_type_id: l.service_type_id,
+      service_type_id: l.service_type_id ?? null,
       description: l.description,
       hours: -Number(l.hours || 0),
-      rate: l.rate,
+      rate: l.rate ?? 0,
       amount: -Number(l.amount || 0),
       sort_order: (i + 1) * 10,
     }));
@@ -590,10 +612,12 @@ export async function createCreditFromInvoice(originalInvoiceId, { reason } = {}
     if (linesErr) throw linesErr;
   }
 
-  // Original auf 'storniert' setzen UND die zugrunde liegenden Buchungen/Spesen
-  // wieder freigeben (neu verrechenbar). Vorher: Stunden blieben für immer gesperrt.
-  await supabase.from('le_invoice').update({ status: 'storniert' }).eq('id', orig.id);
-  await releaseInvoiceEntries(orig.id);
+  // Nur bei VOLLgutschrift: Original stornieren UND Buchungen/Spesen wieder freigeben.
+  // Bei Teilgutschrift bleibt das Original bestehen (nur der Teil wird gutgeschrieben).
+  if (!isPartial) {
+    await supabase.from('le_invoice').update({ status: 'storniert' }).eq('id', orig.id);
+    await releaseInvoiceEntries(orig.id);
+  }
   return credit;
 }
 

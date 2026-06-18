@@ -55,12 +55,24 @@ export default function DebitorenOPPanel() {
   if (versendetQ.error) return <PanelError error={versendetQ.error} onRetry={versendetQ.refetch} />;
   if (definitivQ.isLoading || versendetQ.isLoading) return <PanelLoader />;
 
-  const allOpen = [...(definitivQ.data ?? []), ...(versendetQ.data ?? [])]
-    // Gutschriften ausblenden – das sind keine Forderungen
+  const allInv = [...(definitivQ.data ?? []), ...(versendetQ.data ?? [])];
+  // (Teil-)Gutschriften je Original-Rechnung summieren (parent_invoice_id),
+  // damit sie den offenen Betrag der Original-Rechnung reduzieren.
+  const creditByParent = new Map();
+  for (const inv of allInv) {
+    if (inv.invoice_type === 'gutschrift' && inv.parent_invoice_id) {
+      creditByParent.set(inv.parent_invoice_id,
+        (creditByParent.get(inv.parent_invoice_id) || 0) + Math.abs(Number(inv.total || 0)));
+    }
+  }
+  const allOpen = allInv
+    // Gutschriften selbst ausblenden – das sind keine Forderungen
     .filter(inv => inv.invoice_type !== 'gutschrift')
-    // Offener Betrag = total − bereits bezahlt; voll bezahlte fallen raus,
-    // teilbezahlte erscheinen nur noch mit dem Restbetrag.
-    .map(inv => ({ ...inv, offen: Math.max(0, Number(inv.total || 0) - Number(inv.paid_amount || 0)) }))
+    // Offen = total − bezahlt − verlinkte Gutschriften; voll gedeckte fallen raus.
+    .map(inv => ({
+      ...inv,
+      offen: Math.max(0, Number(inv.total || 0) - Number(inv.paid_amount || 0) - (creditByParent.get(inv.id) || 0)),
+    }))
     .filter(inv => inv.offen > 0);
 
   // Per-Invoice Bucket
