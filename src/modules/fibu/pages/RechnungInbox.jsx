@@ -161,7 +161,7 @@ export default function RechnungInbox() {
     const { data } = await q;
     setItems(data ?? []);
     setLoading(false);
-    if (mandant.inbox_code) setInboxEmail(`rechnungen+${mandant.inbox_code}@smartis.me`);
+    if (mandant.inbox_code) setInboxEmail(`rechnungen+${mandant.inbox_code}@artis.sm-artis.ch`);
   }, [mandant?.id, filter]);
 
   useEffect(() => { load(); }, [load]);

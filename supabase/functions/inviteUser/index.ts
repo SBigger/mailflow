@@ -44,7 +44,7 @@ Deno.serve(async (req) => {
       })
     }
 
-    const appUrl = Deno.env.get('APP_URL') || 'https://smartis.me'
+    const appUrl = Deno.env.get('APP_URL') || 'https://artis.sm-artis.ch'
 
     // Invite user via Supabase Admin API
     const { data: inviteData, error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(email, {

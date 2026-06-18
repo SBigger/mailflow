@@ -11,8 +11,8 @@
  *
  * E-Mail-Routing:
  *   Jeder Mandant hat einen eigenen inbox_code (8 Zeichen).
- *   Die E-Mail-Adresse lautet: rechnungen+{inbox_code}@smartis.me
- *   Oder: {inbox_code}@rechnungen.smartis.me (je nach DNS-Setup)
+ *   Die E-Mail-Adresse lautet: rechnungen+{inbox_code}@artis.sm-artis.ch
+ *   Oder: {inbox_code}@rechnungen.artis.sm-artis.ch (je nach DNS-Setup)
  *
  * Deployment:
  *   npx supabase functions deploy fibu-inbox-webhook --no-verify-jwt
@@ -169,12 +169,12 @@ interface ParsedEmail {
 }
 
 // ── Inbox-Code aus Empfänger-Adresse extrahieren ─────────────────────────────
-// Format: rechnungen+{code}@smartis.me  oder  {code}@rechnungen.smartis.me
+// Format: rechnungen+{code}@artis.sm-artis.ch  oder  {code}@rechnungen.artis.sm-artis.ch
 function extractInboxCode(recipient: string): string | null {
-  // rechnungen+abc123@smartis.me → abc123
+  // rechnungen+abc123@artis.sm-artis.ch → abc123
   const plus = recipient.match(/\+([a-z0-9]{6,12})@/i)
   if (plus) return plus[1].toLowerCase()
-  // abc123@rechnungen.smartis.me → abc123
+  // abc123@rechnungen.artis.sm-artis.ch → abc123
   const subdomain = recipient.match(/^([a-z0-9]{6,12})@/i)
   if (subdomain) return subdomain[1].toLowerCase()
   return null
