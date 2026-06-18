@@ -3630,14 +3630,27 @@ export default function Abschlussdokumentation() {
       qc.invalidateQueries({ queryKey: ["abschluss_versions", selectedCid, selectedYear] });
       qc.invalidateQueries({ queryKey: ["abschluss_cids"] });
     },
-    onError: (e) => toast.error("Fehler: " + e.message),
+    onError: (e) => {
+      // Zeile existiert bereits (Race mit Auto-Jahr-Effekt) → kein Fehler-Toast,
+      // einfach neu laden. Greift bei altem wie neuem Unique-Constraint.
+      if (/duplicate key|23505|already exists/i.test(e?.message || "")) {
+        qc.invalidateQueries({ queryKey: ["abschluss_versions", selectedCid, selectedYear] });
+        return;
+      }
+      toast.error("Fehler: " + e.message);
+    },
   });
 
-  // Auto-create erste Version, wenn für Kunde+Jahr noch keine existiert
+  // Auto-create erste Version, wenn für Kunde+Jahr noch keine existiert.
+  // Guard pro (Kunde|Jahr) gegen Doppel-Anlage durch das überlappende
+  // Auto-Jahr-Effekt-Timing (sonst "duplicate key"-Fehler, v.a. beim Default-Jahr).
+  const autoCreateKeysRef = useRef(new Set());
   useEffect(() => {
-    if (selectedCid && !abschlussLoading && versions.length === 0 && !createAbschlussMut.isPending) {
-      createAbschlussMut.mutate();
-    }
+    if (!selectedCid || abschlussLoading || versions.length > 0 || createAbschlussMut.isPending) return;
+    const key = `${selectedCid}|${selectedYear}`;
+    if (autoCreateKeysRef.current.has(key)) return;
+    autoCreateKeysRef.current.add(key);
+    createAbschlussMut.mutate();
   }, [selectedCid, selectedYear, versions.length, abschlussLoading]);
 
   const abschlussId = abschluss?.id;
@@ -3730,6 +3743,9 @@ export default function Abschlussdokumentation() {
     },
     onSuccess: () => {
       setSelectedVersion(null);
+      // Guard freigeben, damit beim Löschen der letzten Version wieder
+      // automatisch eine leere V1 angelegt werden kann.
+      autoCreateKeysRef.current.delete(`${selectedCid}|${selectedYear}`);
       qc.invalidateQueries({ queryKey: ["abschluss_versions", selectedCid, selectedYear] });
       qc.invalidateQueries({ queryKey: ["abschluss_cids"] });
       toast.success("Version gelöscht");
