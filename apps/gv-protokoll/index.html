@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GV-Protokoll · Aufnahme & Transkript</title>
+<style>
+  :root{
+    --bg:#0f172a; --panel:#1e293b; --panel2:#172033; --card:#243349;
+    --border:#334155; --fg:#e2e8f0; --muted:#94a3b8; --accent:#3b82f6;
+    --green:#22c55e; --amber:#f59e0b; --red:#ef4444; --violet:#8b5cf6;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;font-family:"Segoe UI",system-ui,sans-serif;background:var(--bg);color:var(--fg)}
+  button{font-family:inherit;cursor:pointer}
+  /* ── Topbar ───────────────────────────────── */
+  header{display:flex;align-items:center;gap:12px;padding:10px 16px;background:var(--panel);
+    border-bottom:1px solid var(--border);position:sticky;top:0;z-index:10}
+  header h1{font-size:16px;margin:0;font-weight:600;letter-spacing:.3px}
+  header .sub{color:var(--muted);font-size:12px;margin-left:-6px}
+  .spacer{flex:1}
+  .btn{background:var(--card);color:var(--fg);border:1px solid var(--border);border-radius:8px;
+    padding:8px 14px;font-size:13px;display:inline-flex;align-items:center;gap:7px;transition:.15s}
+  .btn:hover{background:#2d3e58}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.primary:hover{background:#2563eb}
+  .btn.rec{background:var(--red);border-color:var(--red);color:#fff}
+  .btn.rec:hover{background:#dc2626}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .btn.ghost{background:transparent}
+  .rec-dot{width:10px;height:10px;border-radius:50%;background:#fff;animation:pulse 1s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+  .timer{font-variant-numeric:tabular-nums;font-size:14px;color:var(--muted);min-width:54px}
+  /* ── Layout ───────────────────────────────── */
+  main{display:grid;grid-template-columns:260px 1fr 320px;gap:0;height:calc(100vh - 53px)}
+  .col{display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--border)}
+  .col:last-child{border-right:none}
+  .col-hd{padding:10px 14px;font-size:12px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;
+    color:var(--muted);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px}
+  .col-hd .count{margin-left:auto;background:var(--card);border-radius:20px;padding:1px 9px;font-size:11px}
+  .col-body{flex:1;overflow-y:auto;padding:12px}
+  /* ── Personen ─────────────────────────────── */
+  .person{display:flex;align-items:center;gap:9px;padding:8px 9px;border-radius:8px;margin-bottom:6px;
+    background:var(--card);border:1px solid transparent}
+  .person .dot{width:14px;height:14px;border-radius:50%;flex-shrink:0}
+  .person .name{flex:1;font-size:13px;outline:none}
+  .person .role{font-size:11px;color:var(--muted)}
+  .person .x{color:var(--muted);background:none;border:none;font-size:15px;padding:2px 5px;border-radius:5px}
+  .person .x:hover{color:var(--red);background:#3a2330}
+  .add-row{display:flex;gap:6px;margin-top:8px}
+  .add-row input{flex:1;background:var(--panel2);border:1px solid var(--border);border-radius:7px;
+    color:var(--fg);padding:8px 10px;font-size:13px;outline:none}
+  .add-row input:focus{border-color:var(--accent)}
+  .mini{font-size:11px;color:var(--muted);margin:10px 2px 4px}
+  /* ── Transkript ───────────────────────────── */
+  .seg{display:flex;gap:10px;margin-bottom:12px;animation:fade .25s}
+  @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1}}
+  .seg .av{width:30px;height:30px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;
+    justify-content:center;font-size:12px;font-weight:700;color:#fff}
+  .seg .bubble{flex:1}
+  .seg .who{font-size:12px;font-weight:600;margin-bottom:2px;display:flex;align-items:center;gap:8px}
+  .seg .who select{background:var(--panel2);color:var(--fg);border:1px solid var(--border);
+    border-radius:6px;font-size:11px;padding:2px 6px}
+  .seg .who .ts{color:var(--muted);font-weight:400;font-size:11px}
+  .seg .txt{font-size:14px;line-height:1.5;color:#cbd5e1}
+  .empty{color:var(--muted);text-align:center;margin-top:40px;font-size:13px;line-height:1.6}
+  .empty .big{font-size:34px;display:block;margin-bottom:10px;opacity:.5}
+  .vol{height:4px;background:var(--card);border-radius:3px;overflow:hidden;margin:0 14px}
+  .vol > div{height:100%;width:0;background:var(--green);transition:width .1s}
+  .status{padding:8px 14px;font-size:12px;color:var(--amber);border-bottom:1px solid var(--border);display:none}
+  .status.show{display:block}
+  /* ── Aufgaben / Beschlüsse ────────────────── */
+  .sub-hd{font-size:12px;font-weight:700;color:var(--fg);margin:4px 2px 8px;display:flex;align-items:center;gap:7px}
+  .sub-hd .ic{width:18px;height:18px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:11px}
+  .item{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:9px 10px;margin-bottom:7px;font-size:13px;position:relative}
+  .item .meta{font-size:11px;color:var(--muted);margin-top:5px;display:flex;gap:10px;flex-wrap:wrap}
+  .item .meta b{color:#cbd5e1;font-weight:600}
+  .item .x{position:absolute;top:6px;right:7px;color:var(--muted);background:none;border:none;font-size:14px}
+  .item .x:hover{color:var(--red)}
+  .item[contenteditable]{outline:none}
+  .item.task{border-left:3px solid var(--amber)}
+  .item.decision{border-left:3px solid var(--green)}
+  .addmini{font-size:12px;color:var(--accent);background:none;border:none;padding:3px 2px;margin-bottom:14px}
+  /* ── Summary ──────────────────────────────── */
+  .summary-box{background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:11px 12px;
+    font-size:13px;line-height:1.55;color:#cbd5e1;margin-bottom:12px;white-space:pre-wrap}
+  /* ── Modal ────────────────────────────────── */
+  .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:50}
+  .modal-bg.show{display:flex}
+  .modal{background:var(--panel);border:1px solid var(--border);border-radius:12px;width:520px;max-width:92vw;
+    max-height:88vh;overflow-y:auto;padding:22px}
+  .modal h2{margin:0 0 4px;font-size:17px}
+  .modal p.hint{color:var(--muted);font-size:12px;margin:0 0 18px;line-height:1.5}
+  .fld{margin-bottom:14px}
+  .fld label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px}
+  .fld input,.fld select{width:100%;background:var(--panel2);border:1px solid var(--border);border-radius:8px;
+    color:var(--fg);padding:9px 11px;font-size:13px;outline:none}
+  .fld input:focus,.fld select:focus{border-color:var(--accent)}
+  .fld small{display:block;color:var(--muted);font-size:11px;margin-top:4px}
+  .divider{border:none;border-top:1px solid var(--border);margin:18px 0}
+  .modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:8px}
+  a{color:var(--accent)}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🏛️ GV-Protokoll</h1>
+  <span class="sub">Aufnahme · Transkript · Beschlüsse</span>
+  <div class="spacer"></div>
+  <span class="timer" id="timer">00:00</span>
+  <button class="btn rec" id="recBtn"><span id="recIcon">●</span> <span id="recLbl">Aufnahme</span></button>
+  <button class="btn" id="fileBtn">📁 Audio laden</button>
+  <input type="file" id="fileInput" accept="audio/*,video/webm" style="display:none">
+  <button class="btn primary" id="evalBtn">✨ Auswerten</button>
+  <button class="btn ghost" id="exportBtn" title="Protokoll exportieren">⬇️</button>
+  <button class="btn ghost" id="setBtn" title="Einstellungen">⚙️</button>
+</header>
+
+<div class="vol"><div id="volBar"></div></div>
+<div class="status" id="status"></div>
+
+<main>
+  <!-- LINKS: Personen -->
+  <section class="col">
+    <div class="col-hd">👥 Teilnehmer <span class="count" id="pCount">0</span></div>
+    <div class="col-body">
+      <div id="personList"></div>
+      <div class="add-row">
+        <input id="pName" placeholder="Name" autocomplete="off">
+        <button class="btn primary" id="pAdd">+</button>
+      </div>
+      <div class="mini">Tipp: erst Teilnehmer erfassen, dann erkannte Sprecher in der Mitte zuordnen.</div>
+    </div>
+  </section>
+
+  <!-- MITTE: Transkript -->
+  <section class="col">
+    <div class="col-hd">🎙️ Transkript <span class="count" id="sCount">0</span></div>
+    <div class="col-body" id="transcript">
+      <div class="empty" id="emptyT">
+        <span class="big">🎙️</span>
+        Noch keine Aufnahme.<br>Auf <b>Aufnahme</b> klicken oder eine Audio-Datei laden.<br>
+        ElevenLabs transkribiert und trennt die Sprecher automatisch.
+      </div>
+    </div>
+  </section>
+
+  <!-- RECHTS: Aufgaben & Beschlüsse + Summary -->
+  <section class="col">
+    <div class="col-hd">📋 Ergebnis</div>
+    <div class="col-body">
+      <div class="sub-hd"><span class="ic" style="background:#3a2f1a;color:var(--amber)">📝</span> Zusammenfassung</div>
+      <div id="summaryWrap"><div class="summary-box" style="color:var(--muted)">Noch keine Auswertung. Nach dem Transkript auf „✨ Auswerten" klicken.</div></div>
+
+      <div class="sub-hd"><span class="ic" style="background:#3a2f1a;color:var(--amber)">✔️</span> Aufgaben</div>
+      <div id="taskList"></div>
+      <button class="addmini" data-add="task">+ Aufgabe hinzufügen</button>
+
+      <div class="sub-hd"><span class="ic" style="background:#1c3326;color:var(--green)">⚖️</span> Beschlüsse</div>
+      <div id="decisionList"></div>
+      <button class="addmini" data-add="decision">+ Beschluss hinzufügen</button>
+    </div>
+  </section>
+</main>
+
+<!-- Settings Modal -->
+<div class="modal-bg" id="modal">
+  <div class="modal">
+    <h2>Einstellungen</h2>
+    <p class="hint">Keys werden nur lokal im Browser (localStorage) gespeichert und gehen direkt an den jeweiligen Dienst.</p>
+
+    <div class="fld">
+      <label>ElevenLabs API-Key <span style="color:var(--red)">*</span> (Transkription)</label>
+      <input id="setEleven" type="password" placeholder="sk_...">
+      <small>Modell: <b>scribe_v1</b> (beste Sprecher-Trennung). Key auf <a href="https://elevenlabs.io/app/settings/api-keys" target="_blank">elevenlabs.io</a>.</small>
+    </div>
+    <div class="fld">
+      <label>Sprache</label>
+      <select id="setLang">
+        <option value="deu">Deutsch / Schweizerdeutsch (deu)</option>
+        <option value="">Automatisch erkennen</option>
+      </select>
+      <small>Schweizerdeutsch wird über das Deutsch-Modell verarbeitet.</small>
+    </div>
+    <div class="fld">
+      <label>Mikrofon</label>
+      <select id="setMic"><option value="">Standard-Mikrofon</option></select>
+      <button class="btn ghost" id="micLoad" style="margin-top:7px;font-size:12px">🎤 Zugriff erlauben &amp; Geräte laden (inkl. Bluetooth)</button>
+      <small>Erst Zugriff erlauben, dann erscheinen alle Mikrofone mit Namen.</small>
+    </div>
+
+    <hr class="divider">
+    <p class="hint" style="margin-bottom:12px"><b>KI-Auswertung</b> (Zusammenfassung, Aufgaben, Beschlüsse) – über <b>Claude (Anthropic)</b>.</p>
+    <div class="fld">
+      <label>Claude API-Key</label>
+      <input id="setClaudeKey" type="password" placeholder="sk-ant-...">
+      <small>Key auf <a href="https://console.anthropic.com/settings/keys" target="_blank">console.anthropic.com</a>. Hinweis: Daten gehen an Anthropic (USA).</small>
+    </div>
+    <div class="fld">
+      <label>Claude Modell</label>
+      <select id="setClaudeModel">
+        <option value="claude-opus-4-8">Opus 4.8 (stärkste Qualität)</option>
+        <option value="claude-sonnet-4-6">Sonnet 4.6 (schneller/günstiger)</option>
+        <option value="claude-haiku-4-5">Haiku 4.5 (am günstigsten)</option>
+      </select>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn ghost" id="setCancel">Abbrechen</button>
+      <button class="btn primary" id="setSave">Speichern</button>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+// ════════════════════════════════════════════════════════════════
+//  State & Persistenz
+// ════════════════════════════════════════════════════════════════
+const LS = {
+  get:(k,d)=>{ try{ const v=localStorage.getItem(k); return v===null?d:JSON.parse(v);}catch{ return d; } },
+  set:(k,v)=>localStorage.setItem(k,JSON.stringify(v)),
+};
+const COLORS=["#3b82f6","#22c55e","#f59e0b","#8b5cf6","#ec4899","#06b6d4","#ef4444","#84cc16","#f97316","#14b8a6"];
+
+let cfg = LS.get("gv_cfg", { eleven:"", lang:"deu", claudeKey:"", claudeModel:"claude-opus-4-8", mic:"" });
+let persons = LS.get("gv_persons", []);          // {id,name,color}
+let segments = [];                                // {speaker, text, start, end, personId}
+let speakerMap = LS.get("gv_speakerMap", {});     // speaker_id -> personId
+let tasks = [];                                   // {text, who, due}
+let decisions = [];                               // {text}
+let summaryText = "";
+
+const $=s=>document.querySelector(s);
+const fmtTime=s=>{ s=Math.floor(s||0); const m=String(Math.floor(s/60)).padStart(2,"0"); return m+":"+String(s%60).padStart(2,"0"); };
+function setStatus(msg,show=true){ const el=$("#status"); el.textContent=msg; el.classList.toggle("show",show); }
+
+// ════════════════════════════════════════════════════════════════
+//  Personen (links)
+// ════════════════════════════════════════════════════════════════
+function renderPersons(){
+  const box=$("#personList"); box.innerHTML="";
+  persons.forEach(p=>{
+    const el=document.createElement("div"); el.className="person";
+    el.innerHTML=`<span class="dot" style="background:${p.color}"></span>
+      <span class="name" contenteditable spellcheck="false">${escapeHtml(p.name)}</span>
+      <button class="x" title="Entfernen">✕</button>`;
+    el.querySelector(".name").addEventListener("blur",e=>{ p.name=e.target.textContent.trim()||p.name; save(); renderTranscript(); });
+    el.querySelector(".x").addEventListener("click",()=>{ persons=persons.filter(x=>x.id!==p.id);
+      Object.keys(speakerMap).forEach(k=>{ if(speakerMap[k]===p.id) delete speakerMap[k]; });
+      save(); renderPersons(); renderTranscript(); });
+    box.appendChild(el);
+  });
+  $("#pCount").textContent=persons.length;
+}
+function addPerson(name){
+  name=(name||"").trim(); if(!name) return;
+  persons.push({ id:"p"+Date.now()+Math.floor(persons.length), name, color:COLORS[persons.length%COLORS.length] });
+  save(); renderPersons();
+}
+$("#pAdd").addEventListener("click",()=>{ addPerson($("#pName").value); $("#pName").value=""; $("#pName").focus(); });
+$("#pName").addEventListener("keydown",e=>{ if(e.key==="Enter"){ addPerson($("#pName").value); $("#pName").value=""; } });
+
+// ════════════════════════════════════════════════════════════════
+//  Transkript (Mitte)
+// ════════════════════════════════════════════════════════════════
+function personById(id){ return persons.find(p=>p.id===id); }
+function speakerLabel(spk){
+  const pid=speakerMap[spk]; const p=pid&&personById(pid);
+  return p? p.name : ("Sprecher "+(parseInt(String(spk).replace(/\D/g,""))+1||spk));
+}
+function speakerColor(spk){
+  const pid=speakerMap[spk]; const p=pid&&personById(pid);
+  if(p) return p.color;
+  const n=parseInt(String(spk).replace(/\D/g,""))||0; return COLORS[n%COLORS.length];
+}
+function renderTranscript(){
+  const box=$("#transcript");
+  if(!segments.length){ box.innerHTML=$("#emptyT")?$("#emptyT").outerHTML:""; $("#sCount").textContent=0; return; }
+  box.innerHTML="";
+  const speakers=[...new Set(segments.map(s=>s.speaker))];
+  segments.forEach(seg=>{
+    const col=speakerColor(seg.speaker), lbl=speakerLabel(seg.speaker);
+    const el=document.createElement("div"); el.className="seg";
+    const initials=lbl.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase();
+    let opts=`<option value="">— ${escapeHtml("Sprecher "+(parseInt(String(seg.speaker).replace(/\\D/g,""))+1||seg.speaker))} —</option>`;
+    persons.forEach(p=>{ opts+=`<option value="${p.id}" ${speakerMap[seg.speaker]===p.id?"selected":""}>${escapeHtml(p.name)}</option>`; });
+    el.innerHTML=`<div class="av" style="background:${col}">${initials}</div>
+      <div class="bubble">
+        <div class="who"><span style="color:${col}">${escapeHtml(lbl)}</span>
+          <select data-spk="${seg.speaker}">${opts}</select>
+          <span class="ts">${fmtTime(seg.start)}</span></div>
+        <div class="txt">${escapeHtml(seg.text)}</div>
+      </div>`;
+    el.querySelector("select").addEventListener("change",e=>{
+      const v=e.target.value; if(v) speakerMap[seg.speaker]=v; else delete speakerMap[seg.speaker];
+      save(); renderTranscript();
+    });
+    box.appendChild(el);
+  });
+  $("#sCount").textContent=segments.length;
+}
+
+// ── Audio aufnehmen ──────────────────────────────────────────────
+let mediaRec=null, chunks=[], recStart=0, timerInt=null, audioCtx=null, analyser=null, volRAF=null, stream=null;
+async function startRec(){
+  if(!cfg.eleven){ openModal(); setStatus("Bitte zuerst den ElevenLabs API-Key eintragen.",true); return; }
+  try{
+    const audio={ echoCancellation:true, noiseSuppression:true };
+    if(cfg.mic) audio.deviceId={ exact: cfg.mic };
+    stream=await navigator.mediaDevices.getUserMedia({audio});
+    refreshMics();  // Labels sind jetzt verfügbar
+  }catch(e){ setStatus("Mikrofon-Zugriff verweigert/Gerät nicht verfügbar: "+e.message); return; }
+  chunks=[]; mediaRec=new MediaRecorder(stream,{mimeType:pickMime()});
+  mediaRec.ondataavailable=e=>{ if(e.data.size) chunks.push(e.data); };
+  mediaRec.onstop=async()=>{
+    stopMeter();
+    const blob=new Blob(chunks,{type:mediaRec.mimeType});
+    await transcribe(blob);
+  };
+  mediaRec.start();
+  recStart=Date.now(); timerInt=setInterval(()=>$("#timer").textContent=fmtTime((Date.now()-recStart)/1000),250);
+  startMeter(stream);
+  $("#recBtn").classList.remove("rec"); $("#recBtn").style.background="var(--amber)"; $("#recBtn").style.borderColor="var(--amber)";
+  $("#recLbl").textContent="Stopp"; $("#recIcon").textContent="■";
+  setStatus("🔴 Aufnahme läuft …",true);
+}
+function stopRec(){
+  if(mediaRec&&mediaRec.state!=="inactive") mediaRec.stop();
+  clearInterval(timerInt);
+  if(stream) stream.getTracks().forEach(t=>t.stop());
+  $("#recBtn").classList.add("rec"); $("#recBtn").style.background=""; $("#recBtn").style.borderColor="";
+  $("#recLbl").textContent="Aufnahme"; $("#recIcon").textContent="●";
+}
+function pickMime(){ for(const m of ["audio/webm;codecs=opus","audio/webm","audio/mp4"]) if(MediaRecorder.isTypeSupported(m)) return m; return ""; }
+function startMeter(s){
+  audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+  const src=audioCtx.createMediaStreamSource(s); analyser=audioCtx.createAnalyser(); analyser.fftSize=512; src.connect(analyser);
+  const data=new Uint8Array(analyser.frequencyBinCount);
+  (function loop(){ analyser.getByteTimeDomainData(data);
+    let sum=0; for(const v of data){ const x=(v-128)/128; sum+=x*x; }
+    const rms=Math.sqrt(sum/data.length); $("#volBar").style.width=Math.min(100,rms*260)+"%";
+    volRAF=requestAnimationFrame(loop); })();
+}
+function stopMeter(){ if(volRAF)cancelAnimationFrame(volRAF); if(audioCtx)audioCtx.close().catch(()=>{}); $("#volBar").style.width="0%"; }
+
+$("#recBtn").addEventListener("click",()=>{ if(mediaRec&&mediaRec.state==="recording") stopRec(); else startRec(); });
+$("#fileBtn").addEventListener("click",()=>$("#fileInput").click());
+$("#fileInput").addEventListener("change",e=>{ const f=e.target.files[0]; if(f) transcribe(f); e.target.value=""; });
+
+// ── ElevenLabs Scribe (Batch + Diarization) ──────────────────────
+async function transcribe(blob){
+  if(!cfg.eleven){ openModal(); return; }
+  setStatus("⏳ Transkribiere mit ElevenLabs (scribe_v1) … das kann je nach Länge etwas dauern.",true);
+  const fd=new FormData();
+  fd.append("file", blob, "aufnahme.webm");
+  fd.append("model_id","scribe_v1");
+  fd.append("diarize","true");
+  fd.append("timestamps_granularity","word");
+  fd.append("tag_audio_events","false");
+  if(cfg.lang) fd.append("language_code", cfg.lang);
+  try{
+    const res=await fetch("https://api.elevenlabs.io/v1/speech-to-text",{
+      method:"POST", headers:{ "xi-api-key": cfg.eleven }, body:fd
+    });
+    if(!res.ok){ const t=await res.text(); throw new Error("HTTP "+res.status+" "+t.slice(0,300)); }
+    const data=await res.json();
+    segments=wordsToSegments(data);
+    renderTranscript();
+    setStatus(`✅ Transkript fertig – ${segments.length} Abschnitte, ${new Set(segments.map(s=>s.speaker)).size} Sprecher erkannt. Sprecher links zuordnen, dann „✨ Auswerten".`,true);
+    setTimeout(()=>setStatus("",false),9000);
+  }catch(e){
+    setStatus("❌ Transkription fehlgeschlagen: "+e.message,true);
+  }
+}
+// Wörter (mit speaker_id) → zusammenhängende Sprecher-Abschnitte
+function wordsToSegments(data){
+  const words=data.words||[];
+  if(!words.length && data.text){ return [{speaker:"speaker_0",text:data.text,start:0,end:0}]; }
+  const segs=[]; let cur=null;
+  for(const w of words){
+    if(w.type==="spacing"){ if(cur) cur.text+=(w.text||" "); continue; }
+    const spk=w.speaker_id||"speaker_0";
+    if(!cur||cur.speaker!==spk){ if(cur)cur.text=cur.text.trim().replace(/\s+/g," "); cur={speaker:spk,text:"",start:w.start||0,end:w.end||0}; segs.push(cur); }
+    cur.text+=(w.text||"")+" "; cur.end=w.end||cur.end;
+  }
+  segs.forEach(s=>s.text=s.text.trim().replace(/\s+/g," "));
+  return segs.filter(s=>s.text);
+}
+
+// ════════════════════════════════════════════════════════════════
+//  KI-Auswertung (rechts) – OpenAI-kompatibel
+// ════════════════════════════════════════════════════════════════
+function transcriptPlain(){
+  return segments.map(s=>`${speakerLabel(s.speaker)}: ${s.text}`).join("\n");
+}
+const EVAL_SCHEMA = {
+  type:"object",
+  properties:{
+    zusammenfassung:{type:"string"},
+    aufgaben:{type:"array", items:{type:"object",
+      properties:{text:{type:"string"},verantwortlich:{type:"string"},frist:{type:"string"}},
+      required:["text","verantwortlich","frist"], additionalProperties:false}},
+    beschluesse:{type:"array", items:{type:"object",
+      properties:{text:{type:"string"}}, required:["text"], additionalProperties:false}}
+  },
+  required:["zusammenfassung","aufgaben","beschluesse"], additionalProperties:false
+};
+async function evaluate(){
+  if(!segments.length){ setStatus("Noch kein Transkript zum Auswerten.",true); setTimeout(()=>setStatus("",false),3000); return; }
+  if(!cfg.claudeKey){ openModal(); setStatus("Bitte Claude API-Key für die Auswertung eintragen.",true); return; }
+  setStatus("✨ Claude wertet aus (Zusammenfassung, Aufgaben, Beschlüsse) …",true);
+  const sys=`Du bist Protokollführer einer Generalversammlung (Schweiz). Analysiere das Transkript und fülle das vorgegebene JSON-Schema aus.
+- zusammenfassung: 3-6 Sätze, sachlich, Schweizer Hochdeutsch.
+- aufgaben: konkrete To-dos mit verantwortlicher Person (Name oder leer) und Frist (Datum/Termin oder leer).
+- beschluesse: gefasste Beschlüsse, inkl. Abstimmungsergebnis falls genannt.
+Wenn eine Liste leer ist, gib [] zurück.`;
+  const usr=`Teilnehmer: ${persons.map(p=>p.name).join(", ")||"unbekannt"}\n\nTRANSKRIPT:\n${transcriptPlain()}`;
+  try{
+    const res=await fetch("https://api.anthropic.com/v1/messages",{ method:"POST",
+      headers:{
+        "content-type":"application/json",
+        "x-api-key":cfg.claudeKey,
+        "anthropic-version":"2023-06-01",
+        "anthropic-dangerous-direct-browser-access":"true"
+      },
+      body:JSON.stringify({
+        model: cfg.claudeModel||"claude-opus-4-8",
+        max_tokens: 4096,
+        system: sys,
+        messages:[{role:"user",content:usr}],
+        output_config:{ format:{ type:"json_schema", schema: EVAL_SCHEMA } }
+      }) });
+    if(!res.ok){ const t=await res.text(); throw new Error("HTTP "+res.status+" "+t.slice(0,300)); }
+    const data=await res.json();
+    if(data.stop_reason==="refusal"){ throw new Error("Anfrage wurde von Claude abgelehnt (refusal)."); }
+    const block=(data.content||[]).find(b=>b.type==="text");
+    if(!block){ throw new Error("Keine Textantwort erhalten."); }
+    const obj=JSON.parse(block.text);
+    summaryText=obj.zusammenfassung||"";
+    tasks=(obj.aufgaben||[]).map(t=>({text:t.text||"",who:t.verantwortlich||"",due:t.frist||""}));
+    decisions=(obj.beschluesse||[]).map(d=>({text:d.text||""}));
+    renderResult();
+    setStatus("✅ Auswertung fertig.",true); setTimeout(()=>setStatus("",false),4000);
+  }catch(e){
+    setStatus("❌ Auswertung fehlgeschlagen: "+e.message,true);
+  }
+}
+function renderResult(){
+  $("#summaryWrap").innerHTML = summaryText
+    ? `<div class="summary-box" contenteditable spellcheck="false" id="sumBox">${escapeHtml(summaryText)}</div>`
+    : `<div class="summary-box" style="color:var(--muted)">Noch keine Auswertung.</div>`;
+  if(summaryText){ $("#sumBox").addEventListener("blur",e=>summaryText=e.target.textContent); }
+  // Aufgaben
+  const tl=$("#taskList"); tl.innerHTML="";
+  tasks.forEach((t,i)=>{
+    const el=document.createElement("div"); el.className="item task";
+    el.innerHTML=`<button class="x">✕</button><div contenteditable spellcheck="false">${escapeHtml(t.text)}</div>
+      <div class="meta">${t.who?`<span>👤 <b>${escapeHtml(t.who)}</b></span>`:""}${t.due?`<span>📅 <b>${escapeHtml(t.due)}</b></span>`:""}</div>`;
+    el.querySelector("[contenteditable]").addEventListener("blur",e=>t.text=e.target.textContent);
+    el.querySelector(".x").addEventListener("click",()=>{ tasks.splice(i,1); renderResult(); });
+    tl.appendChild(el);
+  });
+  // Beschlüsse
+  const dl=$("#decisionList"); dl.innerHTML="";
+  decisions.forEach((d,i)=>{
+    const el=document.createElement("div"); el.className="item decision";
+    el.innerHTML=`<button class="x">✕</button><div contenteditable spellcheck="false">${escapeHtml(d.text)}</div>`;
+    el.querySelector("[contenteditable]").addEventListener("blur",e=>d.text=e.target.textContent);
+    el.querySelector(".x").addEventListener("click",()=>{ decisions.splice(i,1); renderResult(); });
+    dl.appendChild(el);
+  });
+}
+document.querySelectorAll("[data-add]").forEach(b=>b.addEventListener("click",()=>{
+  if(b.dataset.add==="task") tasks.push({text:"Neue Aufgabe",who:"",due:""});
+  else decisions.push({text:"Neuer Beschluss"});
+  renderResult();
+}));
+$("#evalBtn").addEventListener("click",evaluate);
+
+// ════════════════════════════════════════════════════════════════
+//  Export
+// ════════════════════════════════════════════════════════════════
+$("#exportBtn").addEventListener("click",()=>{
+  const d=new Date();
+  let md=`# Protokoll Generalversammlung\n\n`;
+  md+=`**Teilnehmer:** ${persons.map(p=>p.name).join(", ")||"—"}\n\n`;
+  if(summaryText) md+=`## Zusammenfassung\n\n${summaryText}\n\n`;
+  if(decisions.length){ md+=`## Beschlüsse\n\n`; decisions.forEach(x=>md+=`- ${x.text}\n`); md+=`\n`; }
+  if(tasks.length){ md+=`## Aufgaben\n\n`; tasks.forEach(t=>md+=`- ${t.text}${t.who?` _(${t.who}${t.due?", "+t.due:""})_`:t.due?` _(${t.due})_`:""}\n`); md+=`\n`; }
+  if(segments.length){ md+=`## Transkript\n\n`; segments.forEach(s=>md+=`**${speakerLabel(s.speaker)}:** ${s.text}\n\n`); }
+  const blob=new Blob([md],{type:"text/markdown"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+  a.download=`GV-Protokoll_${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}.md`;
+  a.click();
+});
+
+// ════════════════════════════════════════════════════════════════
+//  Settings Modal
+// ════════════════════════════════════════════════════════════════
+// ── Mikrofon-Geräte (inkl. Bluetooth) ───────────────────────────
+async function refreshMics(){
+  const sel=$("#setMic"); if(!sel||!navigator.mediaDevices?.enumerateDevices) return;
+  try{
+    const devs=await navigator.mediaDevices.enumerateDevices();
+    const mics=devs.filter(d=>d.kind==="audioinput");
+    sel.innerHTML='<option value="">Standard-Mikrofon</option>';
+    mics.forEach((m,i)=>{ const o=document.createElement("option");
+      o.value=m.deviceId; o.textContent=m.label||("Mikrofon "+(i+1));
+      if(cfg.mic===m.deviceId) o.selected=true; sel.appendChild(o); });
+  }catch(e){}
+}
+if(navigator.mediaDevices) navigator.mediaDevices.addEventListener("devicechange",refreshMics);
+$("#micLoad").addEventListener("click",async()=>{
+  try{ const s=await navigator.mediaDevices.getUserMedia({audio:true}); s.getTracks().forEach(t=>t.stop()); }
+  catch(e){ setStatus("Mikrofon-Zugriff verweigert: "+e.message,true); }
+  refreshMics();
+});
+
+function openModal(){
+  $("#setEleven").value=cfg.eleven; $("#setLang").value=cfg.lang;
+  $("#setClaudeKey").value=cfg.claudeKey; $("#setClaudeModel").value=cfg.claudeModel||"claude-opus-4-8";
+  refreshMics();
+  $("#modal").classList.add("show");
+}
+$("#setBtn").addEventListener("click",openModal);
+$("#setCancel").addEventListener("click",()=>$("#modal").classList.remove("show"));
+$("#setSave").addEventListener("click",()=>{
+  cfg={ eleven:$("#setEleven").value.trim(), lang:$("#setLang").value,
+        claudeKey:$("#setClaudeKey").value.trim(), claudeModel:$("#setClaudeModel").value,
+        mic:$("#setMic").value };
+  LS.set("gv_cfg",cfg); $("#modal").classList.remove("show"); setStatus("Einstellungen gespeichert.",true); setTimeout(()=>setStatus("",false),2500);
+});
+$("#modal").addEventListener("click",e=>{ if(e.target===$("#modal")) $("#modal").classList.remove("show"); });
+
+// ════════════════════════════════════════════════════════════════
+//  Util & Init
+// ════════════════════════════════════════════════════════════════
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function save(){ LS.set("gv_persons",persons); LS.set("gv_speakerMap",speakerMap); }
+renderPersons(); renderTranscript(); renderResult();
+if(!cfg.eleven) setTimeout(openModal,400);
+</script>
+</body>
+</html>
