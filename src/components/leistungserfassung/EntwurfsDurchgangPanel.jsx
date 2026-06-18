@@ -70,6 +70,7 @@ function AkontoVerrechnungCard({ invoice, onLinked }) {
         const vat = Number(a.vat_amount || 0);
         await leInvoiceLine.create({
           invoice_id: invoice.id,
+          akonto_invoice_id: a.id,
           description: `Abzug Akonto ${a.invoice_no} vom ${fmt.date(a.issue_date)}`,
           hours: 0,
           rate: 0,
@@ -100,12 +101,19 @@ function AkontoVerrechnungCard({ invoice, onLinked }) {
   const removeMut = useMutation({
     mutationFn: async ({ link }) => {
       await leInvoiceAkontoLink.remove(link.id);
-      // Zugehörige negative Line suchen und löschen (best-effort)
-      const akNo = link.akonto?.invoice_no;
-      if (akNo) {
+      // Robust: Abzugs-Line(s) gezielt per akonto_invoice_id löschen.
+      const akId = link.akonto_invoice_id ?? link.akonto?.id;
+      let deleted = 0;
+      if (akId) {
+        const { data } = await supabase.from('le_invoice_line')
+          .delete().eq('invoice_id', invoice.id).eq('akonto_invoice_id', akId).select('id');
+        deleted = data?.length || 0;
+      }
+      // Fallback für Alt-Daten ohne akonto_invoice_id: String-Match.
+      if (!deleted) {
+        const akNo = link.akonto?.invoice_no;
         const line = (invoice.lines ?? []).find((l) =>
-          (l.description ?? '').includes(`Abzug Akonto ${akNo}`),
-        );
+          (l.description ?? '').includes(`Abzug Akonto ${akNo}`));
         if (line?.id) {
           try { await leInvoiceLine.remove(line.id); } catch (_) { /* ignore */ }
         }
