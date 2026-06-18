@@ -82,7 +82,13 @@ const POSITION_MAP = Object.fromEntries(KONTENRAHMEN_POSITIONEN.map(p => [p.id, 
 
 // ── Auto-Mapping Funktion ─────────────────────────────────────────────────────
 function autoMapKonto(kontonummer) {
-  const nr = parseInt(kontonummer);
+  // Erste zusammenhängende Ziffernfolge nehmen (z.B. "1000.10" → "1000").
+  const m = String(kontonummer ?? "").match(/\d+/);
+  if (!m) return null;
+  const digits = m[0];
+  // 5- oder 6-stellige Kontonummern (Unterkonten zum KMU-Kontenrahmen): die
+  // ersten 4 Stellen sind für die Zuordnung massgebend, z.B. 10000 / 100050 → 1000.
+  const nr = parseInt(digits.length >= 5 ? digits.slice(0, 4) : digits, 10);
   if (isNaN(nr)) return null;
   return KONTENRAHMEN_POSITIONEN.find(p => nr >= p.von && nr <= p.bis)?.id || null;
 }
