@@ -4153,6 +4153,25 @@ export default function Abschlussdokumentation() {
             <span><strong>Version {abschluss?.version} ist gesperrt</strong> – schreibgeschützt. Zum Bearbeiten oben entsperren oder eine neue Version anlegen.</span>
           </div>
         )}
+        {abschluss && selectedCid && (
+          <div className="mx-6 mt-4">
+            <label className="text-xs font-semibold uppercase tracking-wider mb-1.5 block" style={{ color: subC }}>
+              Versions-Kommentar (V{abschluss.version})
+            </label>
+            <input
+              key={abschlussId}
+              defaultValue={abschluss.notizen || ""}
+              disabled={gesperrt}
+              placeholder="Was wurde in dieser Version gemacht / korrigiert?"
+              onBlur={e => { const v = e.target.value; if (v !== (abschluss.notizen || "")) updateNotizenMut.mutate(v); }}
+              style={{
+                width: "100%", height: 36, padding: "0 12px", borderRadius: 8, fontSize: 13,
+                border: `1px solid ${panelBdr}`, backgroundColor: gesperrt ? pageBg : panelBg, color: headingC,
+                outline: "none", opacity: gesperrt ? 0.6 : 1,
+              }}
+            />
+          </div>
+        )}
         {!selectedCid ? (
           /* Empty state */
           <div className="flex flex-col items-center justify-center py-24 text-center">
