@@ -860,6 +860,8 @@ export default function Dokumente() {
   const [dropFile,      setDropFile]      = useState(null);
   const [inboxPath,     setInboxPath]     = useState(null);  // Transfer-Objekt vom Smartis Agent (PDF-Capture)
   const [dragOver,      setDragOver]      = useState(false);
+  const [dropTargetId,  setDropTargetId]  = useState(null);  // Dokument-Zeile, auf die gerade eine Datei gezogen wird
+  const [replacingId,   setReplacingId]   = useState(null);  // Dokument, das gerade als neue Version ersetzt wird
 
   // Excel Add-in Integration: Tauri-Desktop injiziert window.__SMARTIS_EXCEL_UPLOAD__
   useEffect(() => {
@@ -1463,7 +1465,54 @@ export default function Dokumente() {
     queryClient.invalidateQueries({ queryKey: ["dokumente-all"] });
   };
 
+  // ── Datei per Drag&Drop auf eine bestehende Dokument-Zeile ablegen ────────
+  // Ersetzt die aktuelle Datei durch die neue und legt automatisch eine neue
+  // Version an. Bewusst SEPARAT von handleCheckin/CheckinDialog (hands-off):
+  // nutzt nur den bestehenden Server-Endpoint 'checkin-save', der die Sperre
+  // prueft (blockt bei Fremd-Checkout) und via storage_path-Wechsel den
+  // DB-Versionstrigger ausloest. Kein Vor-Checkout noetig.
+  const replaceDocFile = async (doc, file) => {
+    if (!doc || !file) return;
+    if (doc.checked_out_by && doc.checked_out_by !== user?.id) {
+      toast.error(`Gesperrt – ausgecheckt von ${doc.checked_out_by_name || 'jemand anderem'}.`);
+      return;
+    }
+    if (!window.confirm(`„${doc.name}" mit „${file.name}" überschreiben?\n\nDie bisherige Datei wird als ältere Version archiviert und die neue als aktuelle Version abgelegt.`)) return;
+    setReplacingId(doc.id);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const jwt = session?.access_token || '';
+      const form = new FormData();
+      form.append('action', 'checkin-save');
+      form.append('doc_id', doc.id);
+      form.append('file',   file, file.name);
+      const res = await fetch(SPFILES, {
+        method: 'POST', headers: { Authorization: `Bearer ${jwt}` }, body: form,
+      });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || 'Upload fehlgeschlagen'); }
+      // Volltext neu indexieren (alte content_text ist jetzt veraltet); best-effort.
+      await entities.Dokument.update(doc.id, { content_text: null }).catch(() => {});
+      supabase.functions.invoke('index-document', { body: { doc_id: doc.id } }).catch(() => {});
+      setSignedUrls(prev => { const n = { ...prev }; delete n[doc.id]; return n; });
+      queryClient.invalidateQueries({ queryKey: ["dokumente-all"] });
+      toast.success('Neue Version abgelegt – vorherige Version archiviert.');
+    } catch (err) {
+      toast.error('Ersetzen fehlgeschlagen: ' + err.message);
+    } finally {
+      setReplacingId(null);
+    }
+  };
 
+  // Drag&Drop-Props fuer eine Dokument-Zeile (Datei drauf ziehen = neue Version).
+  const fileDropProps = (doc) => ({
+    onDragOver: e => { e.preventDefault(); e.stopPropagation(); setDragOver(false); if (replacingId !== doc.id) setDropTargetId(doc.id); },
+    onDragLeave: e => { e.preventDefault(); e.stopPropagation(); if (!e.currentTarget.contains(e.relatedTarget)) setDropTargetId(prev => (prev === doc.id ? null : prev)); },
+    onDrop: e => {
+      e.preventDefault(); e.stopPropagation(); setDropTargetId(null); setDragOver(false);
+      const f = e.dataTransfer.files?.[0];
+      if (f) replaceDocFile(doc, f);
+    },
+  });
 
   const selectCustomer = (id) => { setSelCustomerId(id); setSelCat(null); setSelYear(null); setExpandedC(p => ({ ...p, [id]: true })); };
   const selectCat      = (cid, ck) => { setSelCustomerId(cid); setSelCat(ck); setSelYear(null); setExpandedCat(p => ({ ...p, [cid + "_" + ck]: true })); };
@@ -1917,10 +1966,12 @@ export default function Dokumente() {
                               const lockedByOther= isCheckedOut && !isMyCheckout;
                               const isAdmin      = user?.role === 'admin';
                               return (
-                                <div key={doc.id}
+                                <div key={doc.id} {...fileDropProps(doc)}
+                                  title="Neue Datei hierher ziehen = als neue Version ablegen"
                                   style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 16px 6px 54px",
-                                    borderBottom: "1px solid " + border + "33", transition: "background 0.1s" }}
-                                  onMouseEnter={e => e.currentTarget.style.background = s.rowHover}
+                                    borderBottom: "1px solid " + border + "33", transition: "background 0.1s", opacity: replacingId === doc.id ? 0.5 : 1,
+                                    ...(doc.id === dropTargetId ? { boxShadow: "0 0 0 2px #10b981 inset", background: "#10b98114", borderRadius: 6 } : {}) }}
+                                  onMouseEnter={e => { if (doc.id !== dropTargetId) e.currentTarget.style.background = s.rowHover; }}
                                   onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                                   <span onClick={() => { const _u = doc.sharepoint_web_url || signedUrls[doc.id]; if (!doc.checked_out_by) { handleCheckout(doc); } else if (doc.checked_out_by === user?.id) { openCheckin(doc); } else if (_u) { window.open(_u, '_blank'); } else { toast.error('URL nicht verfügbar.'); } }}
                                     style={{ background: fi.color, color: "#fff", borderRadius: 4, padding: "2px 5px", fontSize: 10,
@@ -1973,9 +2024,10 @@ export default function Dokumente() {
                 const lockedByOther = isCheckedOut && !isMyCheckout;
                 const isAdmin       = user?.role === 'admin';
                 return (
-                  <div key={doc.id}
-                    style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 16px", borderBottom: "1px solid " + border + "55", transition: "background 0.1s", ...(doc.id === highlightDocId ? { boxShadow: "0 0 0 2px " + accent + "88 inset", background: accent + "12", borderRadius: 6 } : {}) }}
-                    onMouseEnter={e => e.currentTarget.style.background = s.rowHover}
+                  <div key={doc.id} {...fileDropProps(doc)}
+                    title="Neue Datei hierher ziehen = als neue Version ablegen"
+                    style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 16px", borderBottom: "1px solid " + border + "55", transition: "background 0.1s", opacity: replacingId === doc.id ? 0.5 : 1, ...(doc.id === highlightDocId ? { boxShadow: "0 0 0 2px " + accent + "88 inset", background: accent + "12", borderRadius: 6 } : {}), ...(doc.id === dropTargetId ? { boxShadow: "0 0 0 2px #10b981 inset", background: "#10b98114", borderRadius: 6 } : {}) }}
+                    onMouseEnter={e => { if (doc.id !== dropTargetId) e.currentTarget.style.background = s.rowHover; }}
                     onMouseLeave={e => e.currentTarget.style.background = doc.id === highlightDocId ? accent + "12" : "transparent"}>
                     {/* Typ */}
                     <span onClick={() => { const _u = doc.sharepoint_web_url || signedUrls[doc.id]; if (!doc.checked_out_by) { handleCheckout(doc); } else if (doc.checked_out_by === user?.id) { openCheckin(doc); } else if (_u) { window.open(_u, '_blank'); } else { toast.error('URL nicht verfuegbar.'); } }} style={{ background: fi.color, color: "#fff", borderRadius: 4, padding: "2px 5px", fontSize: 10, fontWeight: 700, flexShrink: 0, minWidth: 36, textAlign: "center", cursor: "pointer" }}>{fi.label}</span>
