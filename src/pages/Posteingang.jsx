@@ -48,7 +48,7 @@ export default function Posteingang() {
   // States
   const [selCustomerId, setSelCustomerId] = useState(null);
   const [custSearch, setCustSearch] = useState("");
-  const [ftSearch, setftSearch] = useState("");
+  const [ftSearch, setFtSearch] = useState("");
   const [showLinkDialog, setShowLinkDialog] = useState(false);
   const [showAssignDialog, setShowAssignDialog] = useState(false);
   const [assignDoc, setAssignDoc] = useState(null);
@@ -114,8 +114,15 @@ export default function Posteingang() {
       const folder = allDoks.find(d => d.customerId === selCustomerId);
       list = folder ? folder.docs : [];
     }
+    const q = ftSearch.trim().toLowerCase();
+    if (q) {
+      list = list.filter(d =>
+        (d.fileName || d.name || "").toLowerCase().includes(q) ||
+        (d.category || "").toLowerCase().includes(q)
+      );
+    }
     return list.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-  }, [allDoks, selCustomerId]);
+  }, [allDoks, selCustomerId, ftSearch]);
 
   const breadcrumb = useMemo(() => {
     const cust = customers.find(c => c.id === selCustomerId);

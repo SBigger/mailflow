@@ -499,12 +499,17 @@ export async function createAkontoInvoice({ projectId, customerId, amountNet, va
   }).select().single();
   if (invErr) throw invErr;
 
-  await supabase.from('le_invoice_line').insert({
+  const { error: lineErr } = await supabase.from('le_invoice_line').insert({
     invoice_id: inv.id,
     description: description || 'Akonto auf Honorar',
     hours: 0, rate: 0, amount: subtotal,
     sort_order: 10,
   });
+  if (lineErr) {
+    // Keine Rechnung ohne Position zurücklassen
+    await supabase.from('le_invoice').delete().eq('id', inv.id);
+    throw lineErr;
+  }
   return inv;
 }
 

@@ -218,7 +218,8 @@ export default function MailKanban() {
     queryKey: ["mailItems", currentUser?.id],
     queryFn: async () => {
       return await entities.MailItem.filter({ created_by: currentUser.id },"created_at",500)
-    }
+    },
+    enabled: !!currentUser,
   });
 
 
@@ -419,8 +420,10 @@ export default function MailKanban() {
         }
       });
     } else if (type === 'MAIL') {
+      // Tags-/Timeline-Ansicht: Droppable-IDs wie "tag-…" / "timeline-…" sind keine Spalten
+      const isRealColumn = columns.some(c => c.id === destination.droppableId);
       const mail = filteredMails.find(m => m.id === draggableId);
-      if (mail && destination.droppableId !== source.droppableId) {
+      if (mail && isRealColumn && destination.droppableId !== source.droppableId) {
         updateMailMutation.mutate({
           id: mail.id,
           mail: mail,

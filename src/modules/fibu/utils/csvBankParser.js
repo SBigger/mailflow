@@ -43,22 +43,19 @@ function parseDate(raw) {
  */
 function parseAmount(raw) {
   if (raw == null || raw.toString().trim() === '') return null;
-  const s = raw.toString().trim()
-    .replace(/'/g, '')    // ' als Tausender-Trennzeichen entfernen
-    .replace(/ /g, '') // non-breaking space
-    .replace(/,(?=\d{3})/g, '') // 1,234.56 → 1234.56
-    .replace(/\./g, '.'); // normalisieren
-  // Falls deutsches Format (1.234,56): Komma als Dezimal
-  const german = raw.toString().trim()
-    .replace(/'/g, '')
-    .replace(/\./g, '')
-    .replace(',', '.');
-  const val = parseFloat(s);
-  if (isNaN(val)) {
-    const val2 = parseFloat(german);
-    return isNaN(val2) ? null : val2;
+  const s = raw.toString().trim().replace(/'/g, '').replace(/\xa0/g, '').replace(/ /g, '');
+
+  // Deutsches Format: Komma als Dezimaltrenner (z.B. "100,50" oder "1.234,56")
+  if (/,\d+$/.test(s) && !/\.\d{1,2}$/.test(s)) {
+    const normalized = s.replace(/\./g, '').replace(',', '.');
+    const val = parseFloat(normalized);
+    return isNaN(val) ? null : val;
   }
-  return val;
+
+  // Englisches / CH-Format: Punkt als Dezimal, Komma als Tausender
+  const normalized = s.replace(/,(?=\d{3}(\.|$))/g, '');
+  const val = parseFloat(normalized);
+  return isNaN(val) ? null : val;
 }
 
 /**

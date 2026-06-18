@@ -43,6 +43,7 @@ export function AuthProvider({ children }) {
           loadProfile(user.id);
         }
       } else {
+        setUser(null);
         setProfile(null);
         setLoading(false);
       }

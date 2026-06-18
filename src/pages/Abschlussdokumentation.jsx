@@ -5,6 +5,7 @@ import { ThemeContext } from "@/Layout";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { entities, supabase } from "@/api/supabaseClient";
 import { toast } from "sonner";
+import DOMPurify from "dompurify";
 import {
   BookCheck, FileSpreadsheet, Upload, Download, ChevronRight, Wrench,
   Lock, Unlock, CheckCircle2, AlertCircle, TrendingUp, TrendingDown,
@@ -2034,7 +2035,7 @@ function BelegeSection({ arbeitspapier, onSave, customerId, selectedYear, accent
                         </div>
                         {useFts && doc.headline && (
                           <div style={{ fontSize: 10.5, color: subC, marginTop: 3, fontStyle: "italic", lineHeight: 1.4 }}
-                            dangerouslySetInnerHTML={{ __html: "…" + doc.headline + "…" }} />
+                            dangerouslySetInnerHTML={{ __html: "…" + DOMPurify.sanitize(doc.headline, { ALLOWED_TAGS: ["b"] }) + "…" }} />
                         )}
                       </div>
                       <div style={{ flexShrink: 0, textAlign: "right" }}>

@@ -7,6 +7,7 @@ import { de } from "date-fns/locale";
 import { Plus, Trash2, Pencil, Check, X, ChevronDown, ChevronRight, Paperclip, Download } from "lucide-react";
 import { ThemeContext } from "@/Layout";
 import { supabase, auth } from "@/api/supabaseClient";
+import DOMPurify from "dompurify";
 import { useQuery } from "@tanstack/react-query";
 
 // Parse notes: handle raw JSON string, array, or legacy plain string
@@ -377,7 +378,7 @@ export default function CustomerNotesTab({ customer, onUpdate }) {
                       <div
                         className="text-sm prose prose-sm max-w-none"
                         style={{ color: textColor }}
-                        dangerouslySetInnerHTML={{ __html: note.text }}
+                        dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(note.text) }}
                       />
                       {attCount > 0 && (
                         <div
