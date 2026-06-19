@@ -3,7 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import mammoth from "npm:mammoth"
 import * as XLSX from "https://unpkg.com/xlsx/xlsx.mjs"
 import * as pdfjs from "npm:pdfjs-dist@4.0.379"
-import MsgReader from "npm:msgreader";
+import { MsgReader } from "npm:@kenjiuno/msgreader-web-ng";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -88,24 +88,24 @@ async function extractPdfText(arrayBuffer: ArrayBuffer): Promise<string> {
   }
 }
 
-async function extractOutlookMsgText(arrayBuffer: ArrayBuffer): Promise<string> {
+export async function extractOutlookMsgText(arrayBuffer: ArrayBuffer): Promise<string> {
   try {
-    const buffer = new Uint8Array(arrayBuffer);
-    const reader = new MsgReader(buffer);
+    // Diese Version akzeptiert das ArrayBuffer direkt ohne Umwege über Buffer oder Uint8Array!
+    const reader = new MsgReader(arrayBuffer);
     const fileData = reader.getFileData();
 
     if (!fileData) {
       throw new Error("Konnte MSG-Inhalt nicht parsen.");
     }
 
-    // Wir extrahieren die wichtigsten Metadaten und den E-Mail-Body
+    // Extraktion der wichtigsten Metadaten und des E-Mail-Bodys
     const sender = fileData.fromName || fileData.senderEmail || "Unbekannt";
     const subject = fileData.subject || "(Kein Betreff)";
     const body = fileData.body || ""; // Enthält den Plain-Text der E-Mail
 
     let fullText = `[E-Mail von: ${sender}]\n[Betreff: ${subject}]\n[Inhalt]:\n${body}\n`;
 
-    // Optional: Falls du auch die Namen der Anhänge im Text-Index haben willst
+    // Falls Anhänge vorhanden sind, deren Namen auflisten
     if (fileData.attachments && fileData.attachments.length > 0) {
       fullText += "\n[Anhänge]:\n";
       for (const att of fileData.attachments) {
