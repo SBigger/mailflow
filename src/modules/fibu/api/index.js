@@ -994,8 +994,105 @@ export const debitorenApi = {
     const { error } = await supabase.from('fibu_debitoren_belege').update(payload).eq('id', id);
     if (error) throw error;
   },
+  // Vollständiges Update eines Entwurfs: Kopf + Positionen (alte ersetzen).
+  // Nur erlaubt solange nicht verbucht (status === 'entwurf').
+  updateFull: async (mandantId, id, beleg, positionen) => {
+    const { error: ue } = await supabase
+      .from('fibu_debitoren_belege').update(beleg).eq('id', id);
+    if (ue) throw ue;
+    const { error: de } = await supabase
+      .from('fibu_debitoren_positionen').delete().eq('beleg_id', id);
+    if (de) throw de;
+    if (positionen?.length) {
+      const pos = positionen.map((p, i) => ({ ...p, mandant_id: mandantId, beleg_id: id, position: i + 1 }));
+      const { error: pe } = await supabase.from('fibu_debitoren_positionen').insert(pos);
+      if (pe) throw pe;
+    }
+  },
+  // Zahlungseingang erfassen (wie Kreditoren markBezahlt – GL bucht die Bankabstimmung).
+  markBezahlt: async (id, betrag, bezahltAm) => {
+    const { data: beleg } = await supabase
+      .from('fibu_debitoren_belege')
+      .select('betrag_brutto, betrag_bezahlt')
+      .eq('id', id)
+      .single();
+    const neuBezahlt = (beleg?.betrag_bezahlt ?? 0) + betrag;
+    const status = neuBezahlt >= beleg?.betrag_brutto ? 'bezahlt' : 'teilbezahlt';
+    const { error } = await supabase.from('fibu_debitoren_belege').update({
+      betrag_bezahlt: neuBezahlt,
+      bezahlt_am: bezahltAm ?? new Date().toISOString().slice(0, 10),
+      status,
+    }).eq('id', id);
+    if (error) throw error;
+  },
+  // Rechnung stornieren → erzeugt eine Storno-Gutschrift per Storno-Datum.
+  storno: async (belegId, stornoDatum) => {
+    const { data, error } = await supabase.rpc('fibu_debitoren_storno', {
+      p_beleg_id: belegId, p_storno_datum: stornoDatum,
+    });
+    if (error) throw error;
+    return data;   // id der Storno-Gutschrift
+  },
   remove: async (id) => {
     const { error } = await supabase.from('fibu_debitoren_belege').delete().eq('id', id);
     if (error) throw error;
+  },
+};
+
+// ── Debitoren-Mahnwesen ──────────────────────────────────────────
+export const mahnungApi = {
+  // Offene/überfällige Rechnungen (für Mahnlauf) – Gutschriften ausgeschlossen.
+  offenePosten: async (mandantId) => {
+    const { data, error } = await supabase
+      .from('fibu_debitoren_belege')
+      .select('*, kunde:fibu_kunden(id,name,nr,ort,email)')
+      .eq('mandant_id', mandantId)
+      .in('status', ['offen', 'teilbezahlt'])
+      .neq('belegtyp', 'gutschrift')
+      .order('faelligkeit', { ascending: true });
+    if (error) throw error;
+    return data ?? [];
+  },
+  // Mahnhistorie eines Belegs.
+  listForBeleg: async (belegId) => {
+    const { data, error } = await supabase
+      .from('fibu_debitoren_mahnungen')
+      .select('*').eq('beleg_id', belegId).order('mahndatum', { ascending: false });
+    if (error) throw error;
+    return data ?? [];
+  },
+  // Mahnung protokollieren + Beleg-Mahnstufe hochsetzen.
+  erstellen: async (mandantId, beleg, { stufe, gebuehr = 0, faelligAm, pdfUrl = null, gesendetAn = null }) => {
+    const offen = (beleg.betrag_brutto || 0) - (beleg.betrag_bezahlt || 0);
+    const { data, error } = await supabase
+      .from('fibu_debitoren_mahnungen')
+      .insert({
+        mandant_id: mandantId, beleg_id: beleg.id, stufe,
+        mahndatum: new Date().toISOString().slice(0, 10),
+        faellig_am: faelligAm ?? null, gebuehr, betrag_offen: offen,
+        pdf_url: pdfUrl, gesendet_an: gesendetAn,
+        gesendet_am: gesendetAn ? new Date().toISOString() : null,
+      })
+      .select().single();
+    if (error) throw error;
+    const { error: ue } = await supabase
+      .from('fibu_debitoren_belege')
+      .update({ mahnstufe: stufe, letzte_mahnung_am: new Date().toISOString().slice(0, 10) })
+      .eq('id', beleg.id);
+    if (ue) throw ue;
+    return data;
+  },
+};
+
+// ── Beleg-Versand per E-Mail (MS365 / Microsoft Graph) ───────────
+// Wiederverwendung der generischen Edge Function `le-send-via-ms365`.
+export const belegMailApi = {
+  send: async ({ to, subject, html, attachmentUrl, attachmentFilename }) => {
+    const { data, error } = await supabase.functions.invoke('le-send-via-ms365', {
+      body: { to, subject, html, attachmentUrl, attachmentFilename },
+    });
+    if (error) throw new Error(error.message);
+    if (data?.error) throw new Error(data.error);
+    return data;
   },
 };

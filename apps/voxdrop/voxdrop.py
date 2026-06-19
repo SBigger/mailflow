@@ -1414,7 +1414,7 @@ def _show_answer_popup(question, answer, sources, data=None):
         for r in range(4):
             grid.rowconfigure(r, weight=1, uniform="row")
 
-        _SMARTIS_BASE = "https://smartis.me"
+        _SMARTIS_BASE = "https://artis.sm-artis.ch"
         _PAGES = {"dokument":"Dokumente","frist":"Fristen","task":"TaskBoard",
                   "mail":"MailKanban","call":"TelefonDashboard",
                   "aktie":"Aktienbuch","fahrzeug":"Fahrzeugliste",

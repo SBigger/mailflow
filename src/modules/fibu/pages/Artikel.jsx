@@ -16,7 +16,7 @@ const TYP_BADGE = {
 };
 
 const EMPTY = { typ: 'dienstleistung', name: '', beschreibung: '', einheit: 'Std',
-  verkaufspreis: 0, waehrung: 'CHF', mwst_code: 'V81', ertragskonto: '3400', aktiv: true };
+  verkaufspreis: 0, waehrung: 'CHF', mwst_code: 'U81', ertragskonto: '3400', aktiv: true };
 
 export default function Artikel() {
   const { mandant } = useMandant();
@@ -41,7 +41,7 @@ export default function Artikel() {
   }, [mandant?.id]);
 
   const ertragKonten = konten.filter(k => k.konto_typ === 'ertrag');
-  const umsatzCodes  = mwstCodes.filter(c => c.typ === 'umsatzsteuer' || c.typ === 'steuerbefreit' || /^V/.test(c.code));
+  const umsatzCodes  = mwstCodes.filter(c => c.typ === 'umsatzsteuer' || c.code === 'U0');
 
   const openNew = async () => {
     const nr = await artikelApi.nextNr(mandant.id, 'dienstleistung').catch(() => '');
@@ -159,7 +159,7 @@ export default function Artikel() {
               <div><label style={lbl}>MWST-Code</label>
                 <select style={inp} value={modal.mwst_code} onChange={e => set({ mwst_code: e.target.value })}>
                   {umsatzCodes.map(c => <option key={c.code} value={c.code}>{c.code} · {c.satz}%</option>)}
-                  {umsatzCodes.length === 0 && <option value="V81">V81 · 8.1%</option>}
+                  {umsatzCodes.length === 0 && <option value="U81">U81 · 8.1%</option>}
                 </select>
               </div>
               <div style={{ gridColumn: '1 / 3' }}><label style={lbl}>Ertragskonto</label>

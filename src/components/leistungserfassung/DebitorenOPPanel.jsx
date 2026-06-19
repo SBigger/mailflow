@@ -55,10 +55,25 @@ export default function DebitorenOPPanel() {
   if (versendetQ.error) return <PanelError error={versendetQ.error} onRetry={versendetQ.refetch} />;
   if (definitivQ.isLoading || versendetQ.isLoading) return <PanelLoader />;
 
-  const allOpen = [...(definitivQ.data ?? []), ...(versendetQ.data ?? [])]
-    // Gutschriften und negative Beträge ausblenden – die sind keine Forderungen
-    .filter(inv => Number(inv.total) > 0)
-    .filter(inv => inv.invoice_type !== 'gutschrift');
+  const allInv = [...(definitivQ.data ?? []), ...(versendetQ.data ?? [])];
+  // (Teil-)Gutschriften je Original-Rechnung summieren (parent_invoice_id),
+  // damit sie den offenen Betrag der Original-Rechnung reduzieren.
+  const creditByParent = new Map();
+  for (const inv of allInv) {
+    if (inv.invoice_type === 'gutschrift' && inv.parent_invoice_id) {
+      creditByParent.set(inv.parent_invoice_id,
+        (creditByParent.get(inv.parent_invoice_id) || 0) + Math.abs(Number(inv.total || 0)));
+    }
+  }
+  const allOpen = allInv
+    // Gutschriften selbst ausblenden – das sind keine Forderungen
+    .filter(inv => inv.invoice_type !== 'gutschrift')
+    // Offen = total − bezahlt − verlinkte Gutschriften; voll gedeckte fallen raus.
+    .map(inv => ({
+      ...inv,
+      offen: Math.max(0, Number(inv.total || 0) - Number(inv.paid_amount || 0) - (creditByParent.get(inv.id) || 0)),
+    }))
+    .filter(inv => inv.offen > 0);
 
   // Per-Invoice Bucket
   const enriched = allOpen.map(inv => ({
@@ -89,7 +104,7 @@ export default function DebitorenOPPanel() {
     return [...m.values()].map(g => {
       const sums = { unfaellig: 0, b1_30: 0, b31_60: 0, b61_90: 0, b90plus: 0, total: 0 };
       for (const inv of g.invoices) {
-        const t = Number(inv.total || 0);
+        const t = Number(inv.offen || 0);
         sums[inv.bucket] += t;
         sums.total += t;
       }
@@ -131,7 +146,7 @@ export default function DebitorenOPPanel() {
           inv.due_date ?? '',
           String(inv.daysOverdue),
           BUCKET_LABELS[inv.bucket],
-          Number(inv.total ?? 0).toFixed(2).replace('.', ','),
+          Number(inv.offen ?? 0).toFixed(2).replace('.', ','),
         ]);
       }
     }
@@ -261,7 +276,7 @@ export default function DebitorenOPPanel() {
                             ) : <span className="text-zinc-300">—</span>}
                           </td>
                           <td className="px-3 py-2"><Chip tone={BUCKET_TONES[inv.bucket]}>{BUCKET_LABELS[inv.bucket]}</Chip></td>
-                          <td className="px-3 py-2 text-right tabular-nums font-medium">{fmt.chf(inv.total)}</td>
+                          <td className="px-3 py-2 text-right tabular-nums font-medium">{fmt.chf(inv.offen)}</td>
                         </tr>
                       ))}
                     </tbody>

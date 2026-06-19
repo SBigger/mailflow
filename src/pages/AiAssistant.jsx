@@ -119,7 +119,7 @@ export default function AiAssistant() {
                         <Bot className="w-6 h-6" style={{ color: accent }} />
                     </div>
                     <div>
-                        <h1 className="text-2xl font-bold" style={{ color: headingColor }}>Artis AI</h1>
+                        <h1 className="text-2xl font-bold" style={{ color: headingColor }}>{window.env?.CUSTOMER} AI</h1>
                         <p className="text-sm" style={{ color: subColor }}>Intelligenter Treuhand-Assistent</p>
                     </div>
                 </div>

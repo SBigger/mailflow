@@ -3,7 +3,7 @@ import * as msal from "@azure/msal-browser";
 // ── Konfiguration ──────────────────────────────────────────────────────────────
 const TENANT_ID  = "cc857d96-3c6e-45ba-afbf-c20d0946d2be"; // Artis Treuhand GmbH
 const CLIENT_ID  = "4e6116e1-9b0b-4f91-8c97-041bf8eb6d87"; // Smartis Power BI App
-const REDIRECT_URI = window.location.origin;                 // https://smartis.me
+const REDIRECT_URI = window.location.origin;                 // https://artis.sm-artis.ch
 
 const msalConfig = {
   auth: {

@@ -18,7 +18,7 @@ import {
   CloudUpload,
   BarChart3,
   Clock,
-  BookMarked, Sparkles
+  BookMarked, Bot
 } from "lucide-react";
 import { FEATURE_LEISTUNGSERFASSUNG } from "@/lib/featureFlags";
 import VoiceAssistant from "@/components/voice/VoiceAssistant";
@@ -92,7 +92,7 @@ export default function Layout({ currentPageName }) {
     { name: 'FiBu',           icon: BookMarked,      label: 'Buchhaltung', href: '/fibu' },
     { name: 'ArtisTools',     icon: Wrench,          label: 'Artis Tools' },
     { name: 'Settings',       icon: SettingsIcon,    label: 'Einstellungen' },
-    { name: 'AiAssistant',   icon: Sparkles,    label: 'AI-Assistant' },
+    { name: 'AiAssistant',   icon: Bot,    label: 'AI-Assistant' },
 
   ], [isTaskUser]);
 

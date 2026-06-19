@@ -96,9 +96,9 @@ export default function GutschriftPanel() {
   // --- Modal-State: Gutschrift-Erstellen-Dialog ---
   const [creditFor, setCreditFor] = useState(null);
 
-  const handleCreateCredit = async (originalId, reason) => {
+  const handleCreateCredit = async (originalId, payload) => {
     try {
-      const credit = await createCreditFromInvoice(originalId, { reason });
+      const credit = await createCreditFromInvoice(originalId, payload);
       toast.success(`Gutschrift ${credit.invoice_no ?? ''} erstellt`);
       invalidate();
       setCreditFor(null);
@@ -186,7 +186,7 @@ export default function GutschriftPanel() {
         <CreateCreditDialog
           original={creditFor}
           onClose={() => setCreditFor(null)}
-          onSubmit={(reason) => handleCreateCredit(creditFor.id, reason)}
+          onSubmit={(payload) => handleCreateCredit(creditFor.id, payload)}
         />
       )}
     </div>
@@ -484,18 +484,43 @@ function UebersichtTab({ loading, credits, allInvoices }) {
 // ---------------------------------------------------------------------------
 
 function CreateCreditDialog({ original, onClose, onSubmit }) {
+  const lines0 = original.lines ?? [];
   const [reason, setReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // Positions-Auswahl für Teilgutschrift (initial alle gewählt, voller Betrag)
+  const [sel, setSel] = useState(() => lines0.map((l) => ({
+    id: l.id, service_type_id: l.service_type_id, description: l.description,
+    hours: l.hours, rate: l.rate, amount: Number(l.amount || 0), checked: true,
+  })));
+  const setLine = (id, patch) => setSel((arr) => arr.map((l) => (l.id === id ? { ...l, ...patch } : l)));
 
-  const subtotal = Number(original.subtotal ?? 0);
-  const vat = vatOf(original);
-  const total = Number(original.total ?? 0);
+  const vatPct = Number(original.vat_pct ?? 8.1);
+  const chosen = sel.filter((l) => l.checked);
+  const allChecked = sel.length > 0 && chosen.length === sel.length;
+  const amountsUnchanged = sel.every((l) =>
+    Math.abs(Number(l.amount || 0) - Number(lines0.find((x) => x.id === l.id)?.amount || 0)) < 0.005);
+  // Voll = alle Positionen gewählt + unveränderte Beträge (oder gar keine Positionen).
+  const isFull = sel.length === 0 || (allChecked && amountsUnchanged);
+  const selSubtotal = chosen.reduce((s, l) => s + Number(l.amount || 0), 0);
+  const subtotal = isFull ? Number(original.subtotal ?? 0) : selSubtotal;
+  const vat = isFull ? vatOf(original) : Math.round(selSubtotal * vatPct) / 100;
+  const total = isFull ? Number(original.total ?? 0) : subtotal + vat;
 
   const handleConfirm = async () => {
-    if (!window.confirm('Original wird storniert. Fortfahren?')) return;
+    if (!isFull && chosen.length === 0) { toast.error('Keine Position gewählt.'); return; }
+    const msg = isFull
+      ? 'Vollgutschrift: Original wird storniert. Fortfahren?'
+      : 'Teilgutschrift erstellen? Das Original bleibt bestehen.';
+    if (!window.confirm(msg)) return;
     setSubmitting(true);
     try {
-      await onSubmit(reason.trim());
+      await onSubmit({
+        reason: reason.trim(),
+        lines: isFull ? null : chosen.map((l) => ({
+          service_type_id: l.service_type_id, description: l.description,
+          hours: l.hours, rate: l.rate, amount: Number(l.amount || 0),
+        })),
+      });
     } finally {
       setSubmitting(false);
     }
@@ -532,10 +557,32 @@ function CreateCreditDialog({ original, onClose, onSubmit }) {
         </div>
 
         <div className="p-5 space-y-4">
+          {/* Positions-Auswahl (Teilgutschrift) */}
+          {lines0.length > 0 && (
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold mb-2">
+                Positionen gutschreiben — abwählen oder Betrag ändern für Teilgutschrift
+              </div>
+              <div className="rounded border divide-y" style={{ borderColor: '#eef0ee' }}>
+                {sel.map((l) => (
+                  <div key={l.id} className="flex items-center gap-2 px-3 py-1.5 text-sm">
+                    <input type="checkbox" checked={l.checked}
+                      onChange={(e) => setLine(l.id, { checked: e.target.checked })} />
+                    <span className="flex-1 truncate" title={l.description}>{l.description || 'Position'}</span>
+                    <input type="number" step="0.05" value={l.amount} disabled={!l.checked}
+                      onChange={(e) => setLine(l.id, { amount: e.target.value })}
+                      className="w-24 text-right border rounded px-1.5 py-0.5 tabular-nums"
+                      style={{ borderColor: '#d9dfd9', opacity: l.checked ? 1 : 0.5 }} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Vorschau invertierter Beträge */}
           <div>
             <div className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold mb-2">
-              Vorschau Gutschrift-Beträge
+              Vorschau {isFull ? 'Vollgutschrift' : 'Teilgutschrift'}
             </div>
             <div
               className="rounded border p-3 space-y-1 text-sm"
@@ -584,14 +631,23 @@ function CreateCreditDialog({ original, onClose, onSubmit }) {
           >
             <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
             <div>
-              <div className="font-semibold">
-                Original-Rechnung wird auf «storniert» gesetzt.
-              </div>
-              <div className="mt-0.5">
-                Diese Aktion kann nicht rückgängig gemacht werden. Die Gutschrift erhält
-                eine eigene Nummer aus der Gutschriftsequenz und enthält die Original-Positionen
-                mit negativen Beträgen.
-              </div>
+              {isFull ? (
+                <>
+                  <div className="font-semibold">Vollgutschrift — Original-Rechnung wird «storniert».</div>
+                  <div className="mt-0.5">
+                    Die zugehörigen Buchungen werden wieder freigegeben (neu verrechenbar). Die
+                    Gutschrift erhält eine eigene Nummer mit den Positionen als negative Beträge.
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="font-semibold">Teilgutschrift — Original bleibt bestehen.</div>
+                  <div className="mt-0.5">
+                    Nur die gewählten Positionen werden gutgeschrieben; der offene Betrag der
+                    Rechnung reduziert sich entsprechend. Keine Stornierung, keine Freigabe von Buchungen.
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>

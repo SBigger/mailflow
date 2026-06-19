@@ -374,11 +374,17 @@ export const leInvoice = {
     let carry = 0;
     for (const ch of base.replace(/\D/g, '')) carry = table[(carry + parseInt(ch, 10)) % 10];
     const qrRef = base + ((10 - carry) % 10);
+    // Ausstellungs- + Fälligkeitsdatum setzen. Ohne due_date greifen Debitoren-Aging
+    // und Mahnwesen (due_date < heute) NIE. +30 Tage = gleicher Default wie Direkt-Rechnung.
+    const issue = new Date();
+    const issueIso = issue.toISOString().slice(0, 10);
+    const due = new Date(issue); due.setDate(due.getDate() + 30);
     return leInvoice.update(id, {
       invoice_no: no,
       qr_reference: qrRef,
       status: 'definitiv',
-      issue_date: new Date().toISOString().slice(0, 10),
+      issue_date: issueIso,
+      due_date: due.toISOString().slice(0, 10),
     });
   },
   // Entwurf löschen + alle verknüpften Time-Entries / Spesen wieder freigeben.
@@ -389,26 +395,21 @@ export const leInvoice = {
     if (inv.status !== 'entwurf') {
       throw new Error('Nur Entwürfe können gelöscht werden – diese Rechnung ist bereits "' + inv.status + '". Bitte stattdessen stornieren (Gutschrift).');
     }
-    // Time-Entries: 'verrechnet' → 'erfasst', 'kulant_abgerechnet' → 'kulant'
-    await supabase.from('le_time_entry')
-      .update({ invoice_id: null, status: 'erfasst' })
-      .eq('invoice_id', id).eq('status', 'verrechnet');
-    await supabase.from('le_time_entry')
-      .update({ invoice_id: null, status: 'kulant' })
-      .eq('invoice_id', id).eq('status', 'kulant_abgerechnet');
-    // Falls Einträge wegen Status-Änderungen noch verknüpft sind: invoice_id löschen
-    await supabase.from('le_time_entry')
-      .update({ invoice_id: null })
-      .eq('invoice_id', id);
-    // Spesen: invoiced_invoice_id zurücksetzen
-    await supabase.from('le_expense')
-      .update({ invoiced_invoice_id: null, status: 'genehmigt' })
-      .eq('invoiced_invoice_id', id);
+    // Time-Entries + Spesen wieder freigeben (verrechnet→erfasst, kulant_abgerechnet→kulant)
+    await releaseInvoiceEntries(id);
     // Akonto-Verlinkungen entfernen
     await supabase.from('le_invoice_akonto_link').delete().eq('schluss_invoice_id', id);
     // Rechnung löschen (lines kaskadieren via FK)
     const { error } = await supabase.from('le_invoice').delete().eq('id', id);
     if (error) throw error;
+  },
+  // Definitive/versendete Rechnung stornieren: Status → 'storniert' UND die
+  // zugrunde liegenden Buchungen/Spesen wieder freigeben, damit sie neu
+  // verrechnet werden können (sonst bleiben die Stunden für immer gesperrt).
+  storno: async (id) => {
+    const updated = await leInvoice.update(id, { status: 'storniert' });
+    await releaseInvoiceEntries(id);
+    return updated;
   },
 };
 
@@ -507,9 +508,54 @@ export async function createAkontoInvoice({ projectId, customerId, amountNet, va
   return inv;
 }
 
-// Gutschrift aus existierender Rechnung erstellen (negative Beträge, eigene Nummer)
-export async function createCreditFromInvoice(originalInvoiceId, { reason } = {}) {
+// Gibt alle Time-Entries + Spesen einer Rechnung wieder frei (fakturierbar).
+// Mirror der Reset-Logik aus deleteDraft – wird auch beim Storno/Gutschrift genutzt,
+// damit stornierte Stunden neu verrechnet werden können (DB-Trigger erlaubt
+// den Übergang verrechnet→erfasst bzw. kulant_abgerechnet→kulant).
+export async function releaseInvoiceEntries(invoiceId) {
+  await supabase.from('le_time_entry')
+    .update({ invoice_id: null, status: 'erfasst' })
+    .eq('invoice_id', invoiceId).eq('status', 'verrechnet');
+  await supabase.from('le_time_entry')
+    .update({ invoice_id: null, status: 'kulant' })
+    .eq('invoice_id', invoiceId).eq('status', 'kulant_abgerechnet');
+  // Sicherheits-Netz: alle übrigen Verknüpfungen lösen
+  await supabase.from('le_time_entry')
+    .update({ invoice_id: null })
+    .eq('invoice_id', invoiceId);
+  // Spesen wieder als 'genehmigt' freigeben
+  await supabase.from('le_expense')
+    .update({ invoiced_invoice_id: null, status: 'genehmigt' })
+    .eq('invoiced_invoice_id', invoiceId);
+}
+
+// Gutschrift aus existierender Rechnung erstellen (negative Beträge, eigene Nummer).
+//  - VOLL (lines=null): negiert die Original-Summen 1:1 (rundungssicher, inkl. Rabatt),
+//    Original -> 'storniert' und Buchungen werden wieder freigegeben.
+//  - TEIL (lines=[{description, hours, rate, amount, service_type_id}]): nur die
+//    gewählten Positionen gutschreiben; Original bleibt unverändert bestehen.
+export async function createCreditFromInvoice(originalInvoiceId, { reason, lines = null } = {}) {
   const orig = await leInvoice.get(originalInvoiceId);
+  if (!orig) throw new Error('Rechnung nicht gefunden.');
+  if (orig.status === 'storniert') throw new Error('Rechnung ist bereits storniert.');
+  if (orig.invoice_type === 'gutschrift') throw new Error('Eine Gutschrift kann nicht gutgeschrieben werden.');
+
+  const isPartial = Array.isArray(lines) && lines.length > 0;
+  const vatPct = Number(orig.vat_pct ?? 8.1);
+  // Beträge + Positionen: voll = Original-Summen; teil = aus gewählten Positionen.
+  let creditSubtotal, creditVat, creditTotal, srcLines;
+  if (isPartial) {
+    srcLines = lines;
+    creditSubtotal = lines.reduce((s, l) => s + Number(l.amount || 0), 0);
+    creditVat = Math.round(creditSubtotal * vatPct) / 100;
+    creditTotal = creditSubtotal + creditVat;
+  } else {
+    srcLines = orig.lines ?? [];
+    creditSubtotal = Number(orig.subtotal || 0);
+    creditVat = Number(orig.vat_amount || 0);
+    creditTotal = Number(orig.total || 0);
+  }
+
   // Neue Gutschriftsnummer aus le_number_sequence (kind='credit')
   const { data: seq } = await supabase.from('le_number_sequence').select('*').eq('kind', 'credit').single();
   let creditNo = null;
@@ -540,24 +586,25 @@ export async function createCreditFromInvoice(originalInvoiceId, { reason } = {}
     issue_date: new Date().toISOString().slice(0, 10),
     period_from: orig.period_from,
     period_to: orig.period_to,
-    subtotal: -Number(orig.subtotal || 0),
-    vat_pct: orig.vat_pct,
-    vat_amount: -Number(orig.vat_amount || 0),
-    discount_pct: orig.discount_pct,
-    discount_amount: orig.discount_amount,
-    total: -Number(orig.total || 0),
-    notes: reason ? `Gutschrift zu Rechnung ${orig.invoice_no}: ${reason}` : `Gutschrift zu Rechnung ${orig.invoice_no}`,
+    subtotal: -creditSubtotal,
+    vat_pct: vatPct,
+    vat_amount: -creditVat,
+    discount_pct: isPartial ? 0 : orig.discount_pct,
+    discount_amount: isPartial ? 0 : orig.discount_amount,
+    total: -creditTotal,
+    notes: (reason ? `Gutschrift zu Rechnung ${orig.invoice_no}: ${reason}` : `Gutschrift zu Rechnung ${orig.invoice_no}`)
+      + (isPartial ? ' (Teilgutschrift)' : ''),
   }).select().single();
   if (credErr) throw credErr;
 
-  // Lines kopieren mit negativen Beträgen
-  if (orig.lines?.length) {
-    const negLines = orig.lines.map((l, i) => ({
+  // Gewählte Positionen mit negativen Beträgen kopieren
+  if (srcLines.length) {
+    const negLines = srcLines.map((l, i) => ({
       invoice_id: credit.id,
-      service_type_id: l.service_type_id,
+      service_type_id: l.service_type_id ?? null,
       description: l.description,
       hours: -Number(l.hours || 0),
-      rate: l.rate,
+      rate: l.rate ?? 0,
       amount: -Number(l.amount || 0),
       sort_order: (i + 1) * 10,
     }));
@@ -565,8 +612,12 @@ export async function createCreditFromInvoice(originalInvoiceId, { reason } = {}
     if (linesErr) throw linesErr;
   }
 
-  // Original auf 'storniert' setzen
-  await supabase.from('le_invoice').update({ status: 'storniert' }).eq('id', orig.id);
+  // Nur bei VOLLgutschrift: Original stornieren UND Buchungen/Spesen wieder freigeben.
+  // Bei Teilgutschrift bleibt das Original bestehen (nur der Teil wird gutgeschrieben).
+  if (!isPartial) {
+    await supabase.from('le_invoice').update({ status: 'storniert' }).eq('id', orig.id);
+    await releaseInvoiceEntries(orig.id);
+  }
   return credit;
 }
 
@@ -587,11 +638,42 @@ export const lePayment = {
   create: async (payload) => {
     const { data, error } = await supabase.from('le_payment').insert(payload).select().single();
     if (error) throw error;
+    if (data?.invoice_id) await lePayment.recomputeInvoice(data.invoice_id);
     return data;
   },
   remove: async (id) => {
+    const { data: pay } = await supabase.from('le_payment').select('invoice_id').eq('id', id).single();
     const { error } = await supabase.from('le_payment').delete().eq('id', id);
     if (error) throw error;
+    if (pay?.invoice_id) await lePayment.recomputeInvoice(pay.invoice_id);
+  },
+  // Setzt paid_amount + Status einer Rechnung NEU aus der Summe ALLER Zahlungen
+  // (single source of truth). Behebt: prev+amt verlor beim Löschen den Saldo und
+  // liess die Rechnung faelschlich auf 'bezahlt'.
+  recomputeInvoice: async (invoiceId) => {
+    if (!invoiceId) return;
+    const { data: pays } = await supabase.from('le_payment').select('amount, paid_at').eq('invoice_id', invoiceId);
+    const list = pays ?? [];
+    const paid = list.reduce((s, p) => s + Number(p.amount || 0), 0);
+    const { data: inv } = await supabase.from('le_invoice').select('total, status, sent_at').eq('id', invoiceId).single();
+    if (!inv) return;
+    const total = Number(inv.total || 0);
+    const patch = { paid_amount: paid };
+    if (total > 0 && paid + 0.005 >= total) {
+      patch.status = 'bezahlt';
+      patch.paid_at = list.map(p => p.paid_at).filter(Boolean).sort().slice(-1)[0] || null;
+    } else if (inv.status === 'bezahlt') {
+      // wieder offen (z.B. Zahlung geloescht / zu niedrig): zurueck auf versendet/definitiv
+      patch.status = inv.sent_at ? 'versendet' : 'definitiv';
+      patch.paid_at = null;
+    }
+    await supabase.from('le_invoice').update(patch).eq('id', invoiceId);
+  },
+  // Doppel-Import verhindern: gibt es schon eine Zahlung mit dieser Bank-Transaktionsref?
+  existsByBankRef: async (bankRef) => {
+    if (!bankRef) return false;
+    const { data } = await supabase.from('le_payment').select('id').eq('bank_ref', bankRef).limit(1);
+    return !!(data && data.length);
   },
 };
 
@@ -613,7 +695,7 @@ export const leDunning = {
   list: async ({ status } = {}) => {
     let q = supabase
       .from('le_dunning')
-      .select('*, invoice:le_invoice(id, invoice_no, total, due_date, customer_id, project_id), customer:customers(id, company_name, street, building_number, zip, city, country, billing_email)')
+      .select('*, invoice:le_invoice(id, invoice_no, total, status, paid_amount, due_date, customer_id, project_id), customer:customers(id, company_name, street, building_number, zip, city, country, billing_email)')
       .order('dunning_date', { ascending: false });
     if (status) q = q.eq('status', status);
     const { data, error } = await q;
@@ -951,6 +1033,10 @@ export async function createInvoiceDraftsFromEntries({
   const due = new Date(today); due.setDate(due.getDate() + 30);
   const dueIso = due.toISOString().slice(0, 10);
 
+  // MwSt-Satz aus den Firmen-Settings (konfigurierbar) statt hart kodiert; Default 8.1 %.
+  const company = await leCompany.get();
+  const vatPct = Number(company?.vat_default_pct ?? 8.1) || 8.1;
+
   for (const [projectId, projEntries] of byProject) {
     const proj = projEntries[0].project;
     // Splitting: billable (erfasst/freigegeben + service.billable) vs. kulant
@@ -962,9 +1048,12 @@ export async function createInvoiceDraftsFromEntries({
 
     // Subtotal NUR aus billable
     const subtotal = billable.reduce((s, e) => s + Number(e.hours_internal || 0) * Number(e.rate_snapshot || 0), 0);
-    const vatPct = 8.1;
     const vatAmount = Math.round(subtotal * vatPct) / 100;
     const total = subtotal + vatAmount;
+
+    // Keine 0-CHF-Rechnung erzeugen (z.B. nur 0-Stunden/0-Satz-Einträge) – ausser
+    // es gibt Kulant-Positionen, die mitgeführt werden sollen.
+    if (subtotal <= 0 && !(includeKulant && kulant.length)) continue;
 
     const invoicePayload = {
       project_id: projectId,
@@ -1027,10 +1116,13 @@ export async function createInvoiceDraftsFromEntries({
       .filter(e => e.status !== 'kulant')
       .map(e => e.id);
     if (billableIds.length) {
+      // .is('invoice_id', null): nur noch nicht verrechnete Einträge beanspruchen –
+      // verhindert Doppelverrechnung, falls ein paralleler Durchlauf sie schon nahm.
       const { error: upErr } = await supabase
         .from('le_time_entry')
         .update({ invoice_id: inv.id, status: 'verrechnet' })
-        .in('id', billableIds);
+        .in('id', billableIds)
+        .is('invoice_id', null);
       if (upErr) throw upErr;
     }
     if (includeKulant && kulant.length) {
@@ -1038,7 +1130,8 @@ export async function createInvoiceDraftsFromEntries({
       const { error: kErr } = await supabase
         .from('le_time_entry')
         .update({ invoice_id: inv.id, status: 'kulant_abgerechnet' })
-        .in('id', kulantIds);
+        .in('id', kulantIds)
+        .is('invoice_id', null);
       if (kErr) throw kErr;
     }
 
