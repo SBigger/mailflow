@@ -1541,7 +1541,8 @@ export default function Dokumente() {
   };
   // Gibt das Augen-Symbol fuer eine Zeile zurueck (nur bei lokal previewbaren Dateien).
   const renderPreviewEye = (doc) => {
-    if (!doc.storage_path || doc.sharepoint_web_url) return null;
+    // Alles liegt in Supabase-Storage; sobald ein storage_path da ist, ist die Datei previewbar.
+    if (!doc.storage_path) return null;
     return (
       <button title="Vorschau (Maus drüberhalten)"
         onMouseEnter={e => openHoverPreview(doc, e.currentTarget)}
