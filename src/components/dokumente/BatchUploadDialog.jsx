@@ -279,8 +279,53 @@ function ExcelViewer({ file }) {
   );
 }
 
+// ─── WordViewer (docx → HTML, komplett lokal via mammoth, keine externen Dienste) ──
+function WordViewer({ file }) {
+  const [state, setState] = useState({ html: null, loading: true, error: null });
+
+  useEffect(() => {
+    if (!file) return;
+    let cancelled = false;
+    setState({ html: null, loading: true, error: null });
+    (async () => {
+      try {
+        const buf = await file.arrayBuffer();
+        const mod = await import("mammoth/mammoth.browser");
+        const mammoth = mod.default || mod;
+        const { value } = await mammoth.convertToHtml({ arrayBuffer: buf });
+        if (!cancelled) setState({ html: value || "", loading: false, error: null });
+      } catch (e) {
+        if (!cancelled) setState({ html: null, loading: false, error: e.message });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [file]);
+
+  if (state.loading) return <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#888", fontSize: 13 }}>Lade Word-Vorschau…</div>;
+  if (state.error)   return <div style={{ padding: 16, color: "#f87171", fontSize: 12 }}>⚠ Word-Vorschau fehlgeschlagen: {state.error}</div>;
+
+  return (
+    <div style={{ width: "100%", height: "100%", overflow: "auto", background: "#2a2a2a", padding: 16 }}>
+      <style>{`
+        .word-preview table { border-collapse: collapse; width: 100%; margin: 10px 0; }
+        .word-preview td, .word-preview th { border: 1px solid #ccc; padding: 4px 8px; font-size: 13px; vertical-align: top; }
+        .word-preview img { max-width: 100%; height: auto; }
+        .word-preview h1, .word-preview h2, .word-preview h3 { margin: 0.7em 0 0.3em; line-height: 1.25; }
+        .word-preview p { margin: 0 0 0.6em; }
+        .word-preview ul, .word-preview ol { margin: 0 0 0.6em 1.2em; }
+        .word-preview a { color: #1d4ed8; }
+      `}</style>
+      <div className="word-preview"
+        style={{ maxWidth: 820, margin: "0 auto", background: "#fff", color: "#1a1a1a",
+          padding: "44px 52px", borderRadius: 4, boxShadow: "0 4px 24px rgba(0,0,0,0.45)",
+          fontFamily: "Calibri, 'Segoe UI', Arial, sans-serif", fontSize: 14, lineHeight: 1.6 }}
+        dangerouslySetInnerHTML={{ __html: state.html || "<p style='color:#888'>Leeres oder bildbasiertes Dokument – keine Textvorschau.</p>" }} />
+    </div>
+  );
+}
+
 // ─── FilePreviewPane ──────────────────────────────────────────────────
-// Routing: Bild / PDF / Excel → ExcelViewer / Text-Fallback
+// Routing: Bild / PDF / Excel → ExcelViewer / Word → WordViewer / Text-Fallback
 function FilePreviewPane({ file, contentText }) {
   const [state,    setState]    = useState({ type: null, loading: true, error: null });
   const [pdfPages, setPdfPages] = useState([]);
@@ -325,6 +370,12 @@ function FilePreviewPane({ file, contentText }) {
         // ── Excel → ExcelViewer übernimmt ────────────────────────────
         if (/\.(xlsx|xls|xlsm|xlsb|xlt|xltx|xltm|ods|csv)$/.test(name)) {
           if (!cancelled) setState({ type: "excel", loading: false });
+          return;
+        }
+        // ── Word (.docx) → WordViewer (mammoth) ──────────────────────
+        // Legacy .doc (Binär) kann mammoth nicht → faellt auf Text-Fallback.
+        if (/\.(docx|docm)$/.test(name)) {
+          if (!cancelled) setState({ type: "word", loading: false });
           return;
         }
         // ── Text-Fallback ─────────────────────────────────────────────
@@ -374,6 +425,8 @@ function FilePreviewPane({ file, contentText }) {
   );
 
   if (state.type === "excel") return <ExcelViewer file={file} />;
+
+  if (state.type === "word") return <WordViewer file={file} />;
 
   // Fallback Text
   return (
