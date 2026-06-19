@@ -922,6 +922,73 @@ export default function Dokumente() {
     queryKey: ["customers"],
     queryFn:  () => entities.Customer.list("company_name"),
   });
+
+  useEffect(() => {
+    // 1. Create the subscription
+    const channel = supabase
+        .channel('schema-db-changes')
+        .on(
+            'postgres_changes',
+            {
+              event: '*', // Listen to INSERT, UPDATE, and DELETE
+              schema: 'public',
+              table: 'dokumente',
+            },
+            (payload) => {
+              //console.log('Change received!', payload)
+              const { eventType, new: newItem, old: oldItem } = payload;
+
+              queryClient.setQueryData(["dokumente-all"], (oldData) => {
+                // Ensure we have a list to work with
+                const currentDocuments = oldData || [];
+
+                switch (eventType) {
+                  case 'INSERT':
+                    // Add new mail to the top (since you sort by received desc)
+                    return [newItem, ...currentDocuments];
+
+                  case 'UPDATE':
+                    // Find the item and update its fields
+                    return currentDocuments.map((item) =>
+                        item.id === newItem.id ? { ...item, ...newItem } : item
+                    );
+
+                  case 'DELETE':
+                    // Remove the item from the list
+                    return currentDocuments.filter((item) => item.id !== oldItem.id);
+
+                  default:
+                    return currentDocuments;
+                }
+              });
+
+              // Also update Kanban columns if the status/folder changed
+              if (eventType === 'UPDATE' && newItem.status !== oldItem.status) {
+                queryClient.invalidateQueries({ queryKey: ["dokumente-all"] });
+              }
+            }
+        )
+        .subscribe((status, err) => {
+          console.log("Realtime Status Dokumente:", status);
+          if (err) console.error("Realtime Error:", err);
+
+          if (status === 'SUBSCRIBED') {
+            console.log('Successfully connected to Realtime!');
+          }
+          if (status === 'CLOSED') {
+            console.log('Connection closed.');
+          }
+          if (status === 'CHANNEL_ERROR') {
+            console.error('Error connecting. Check RLS policies or database settings.');
+          }
+        });
+
+    // 3. Cleanup on unmount
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [queryClient]);
+
   // Schlanker Select (OHNE content_text + search_vector) -- spart ~14 MB / ~7 Sek
   // bei jedem Aufruf. content_text wird in der Liste nirgends gelesen, nur das
   // Auto-Indexing braucht die Info ob es leer ist -- das macht eine separate
