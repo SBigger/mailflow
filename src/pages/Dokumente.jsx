@@ -18,9 +18,11 @@ import {
   CheckCheck,
   FolderOpen,
   Library,
+  Eye,
   History as HistoryIcon
 } from "lucide-react";
 import VersionsDialog from "@/components/dokumente/VersionsDialog";
+import DocHoverPreview from "@/components/dokumente/DocHoverPreview";
 import * as _pdfjsNs from "pdfjs-dist";
 import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.js?url";
 // pdfjs-dist 3.11 ist UMD → je nach Vite-Mode liegt getDocument direkt oder unter .default
@@ -916,6 +918,8 @@ export default function Dokumente() {
   const [versionsDoc,    setVersionsDoc]    = useState(null);
   const [checkinDoc,     setCheckinDoc]     = useState(null);  // wird nicht mehr benoetigt, bleibt fuer Compat
   const [signedUrls,    setSignedUrls]    = useState({});
+  const [hoverPreview,  setHoverPreview]  = useState(null);   // { doc, url, rect } – Hover-Vorschau-Popup
+  const hoverTimer = useRef(null);
   const [pageTab,       setPageTab]       = useState('alle');
   const [deletingIds,   setDeletingIds]   = useState(new Set());
   const [clickedBtns,   setClickedBtns]   = useState({});
@@ -1514,6 +1518,41 @@ export default function Dokumente() {
     },
   });
 
+  // ── Hover-Vorschau: Maus ueber das Augen-Symbol → Popup mit Dateivorschau ──
+  // Nur fuer Supabase-Dateien (Signed-URL abrufbar); SharePoint ist tabu.
+  const openHoverPreview = (doc, el) => {
+    clearTimeout(hoverTimer.current);
+    const rect = el.getBoundingClientRect();
+    hoverTimer.current = setTimeout(async () => {
+      let url = signedUrls[doc.id];
+      if (!url && doc.storage_path) {
+        try {
+          const sp = doc.storage_path.replace(/^dokumente\//, '');
+          const { data } = await supabase.storage.from(BUCKET).createSignedUrl(sp, 600);
+          url = data?.signedUrl;
+        } catch { /* ignore */ }
+      }
+      if (url) setHoverPreview({ doc, url, rect });
+    }, 280);
+  };
+  const closeHoverSoon = () => {
+    clearTimeout(hoverTimer.current);
+    hoverTimer.current = setTimeout(() => setHoverPreview(null), 180);
+  };
+  // Gibt das Augen-Symbol fuer eine Zeile zurueck (nur bei lokal previewbaren Dateien).
+  const renderPreviewEye = (doc) => {
+    if (!doc.storage_path || doc.sharepoint_web_url) return null;
+    return (
+      <button title="Vorschau (Maus drüberhalten)"
+        onMouseEnter={e => openHoverPreview(doc, e.currentTarget)}
+        onMouseLeave={closeHoverSoon}
+        onClick={e => e.stopPropagation()}
+        style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}>
+        <Eye size={13} />
+      </button>
+    );
+  };
+
   const selectCustomer = (id) => { setSelCustomerId(id); setSelCat(null); setSelYear(null); setExpandedC(p => ({ ...p, [id]: true })); };
   const selectCat      = (cid, ck) => { setSelCustomerId(cid); setSelCat(ck); setSelYear(null); setExpandedCat(p => ({ ...p, [cid + "_" + ck]: true })); };
 
@@ -2000,6 +2039,7 @@ export default function Dokumente() {
                                   {lockedByOther && isAdmin && <button onClick={() => handleCheckin(doc, null)} title="Sperre aufheben" style={{ background: "none", border: "none", cursor: "pointer", color: "#ef4444", display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}><ShieldAlert size={13} /></button>}
                                   <button onClick={() => setEditDoc(doc)} title="Bearbeiten" style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}><Pencil size={13} /></button>
                                   <button onClick={() => setCopyDoc(doc)} title="Kopieren (neu verschlagworten)" style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}><CopyPlus size={13} /></button>
+                                  {renderPreviewEye(doc)}
                                   <button onClick={() => setVersionsDoc(doc)} title="Versionsverlauf" style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}><HistoryIcon size={13} /></button>
                                   <button onClick={() => { animateBtn(`dl-${doc.id}`); downloadDoc(doc); }} title="Herunterladen" style={{ background: "none", border: "none", cursor: "pointer", color: accent, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0, transition: "transform 0.15s", transform: clickedBtns[`dl-${doc.id}`] ? "scale(0.75)" : "scale(1)" }}><Download size={14} /></button>
                                   <button onClick={() => { animateBtn(`sh-${doc.id}`); setShareDialog({ type: 'doc', doc_id: doc.id, name: doc.name, customer_id: doc.customer_id }); }} title="Link erstellen" style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}><Link2 size={14} /></button>
@@ -2108,6 +2148,8 @@ export default function Dokumente() {
                       style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}>
                       <CopyPlus size={14} />
                     </button>
+                    {/* Vorschau (Hover) */}
+                    {renderPreviewEye(doc)}
                     {/* Versionsverlauf */}
                     <button onClick={() => setVersionsDoc(doc)} title="Versionsverlauf"
                       style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}>
@@ -2155,6 +2197,15 @@ export default function Dokumente() {
       )}
       {versionsDoc && (
         <VersionsDialog doc={versionsDoc} onClose={() => setVersionsDoc(null)} />
+      )}
+      {hoverPreview && (
+        <DocHoverPreview
+          doc={hoverPreview.doc}
+          url={hoverPreview.url}
+          rect={hoverPreview.rect}
+          onEnter={() => clearTimeout(hoverTimer.current)}
+          onLeave={closeHoverSoon}
+        />
       )}
       {copyDoc && (
         <EditDialog doc={copyDoc} allTags={allTags} customers={customers}
