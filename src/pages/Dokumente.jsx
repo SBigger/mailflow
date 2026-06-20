@@ -1535,18 +1535,16 @@ export default function Dokumente() {
       if (url) setHoverPreview({ doc, url, rect });
     }, 280);
   };
-  const closeHoverSoon = () => {
-    clearTimeout(hoverTimer.current);
-    hoverTimer.current = setTimeout(() => setHoverPreview(null), 180);
-  };
+  // Nur ein noch nicht ausgeloestes Oeffnen abbrechen — ein offenes Fenster bleibt.
+  const cancelHoverOpen = () => { clearTimeout(hoverTimer.current); };
   // Gibt das Augen-Symbol fuer eine Zeile zurueck (nur bei lokal previewbaren Dateien).
   const renderPreviewEye = (doc) => {
     // Alles liegt in Supabase-Storage; sobald ein storage_path da ist, ist die Datei previewbar.
     if (!doc.storage_path) return null;
     return (
-      <button title="Vorschau (Maus drüberhalten)"
+      <button title="Vorschau (Maus drüberhalten — Fenster bleibt, ist verschieb- und größenverstellbar)"
         onMouseEnter={e => openHoverPreview(doc, e.currentTarget)}
-        onMouseLeave={closeHoverSoon}
+        onMouseLeave={cancelHoverOpen}
         onClick={e => e.stopPropagation()}
         style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}>
         <Eye size={13} />
@@ -2204,8 +2202,7 @@ export default function Dokumente() {
           doc={hoverPreview.doc}
           url={hoverPreview.url}
           rect={hoverPreview.rect}
-          onEnter={() => clearTimeout(hoverTimer.current)}
-          onLeave={closeHoverSoon}
+          onClose={() => setHoverPreview(null)}
         />
       )}
       {copyDoc && (
