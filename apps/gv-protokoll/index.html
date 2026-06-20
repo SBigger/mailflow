@@ -65,6 +65,18 @@
   .seg .txt{font-size:14px;line-height:1.5;color:#cbd5e1}
   .empty{color:var(--muted);text-align:center;margin-top:40px;font-size:13px;line-height:1.6}
   .empty .big{font-size:34px;display:block;margin-bottom:10px;opacity:.5}
+  /* Sprecher-Panel (Mitte oben) */
+  #speakerPanel{display:none;border-bottom:1px solid var(--border);background:var(--panel2);padding:9px 12px;max-height:34vh;overflow-y:auto}
+  #speakerPanel.show{display:block}
+  .sp-hd{font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);margin-bottom:7px}
+  .sp-hd .muted{font-weight:400}
+  .sp-row{display:flex;align-items:center;gap:7px;margin-bottom:6px}
+  .av.sm{width:24px;height:24px;font-size:10px}
+  .sp-play{background:var(--card);border:1px solid var(--border);color:var(--fg);border-radius:6px;width:28px;height:28px;flex-shrink:0;font-size:11px}
+  .sp-play:hover{background:#2d3e58}
+  .sp-assign{flex:1;min-width:90px;background:var(--panel2);color:var(--fg);border:1px solid var(--border);border-radius:6px;font-size:12px;padding:5px 7px;outline:none}
+  .sp-assign:focus{border-color:var(--accent)}
+  .sp-merge{background:var(--panel2);color:var(--muted);border:1px solid var(--border);border-radius:6px;font-size:11px;padding:5px 6px;max-width:140px;outline:none}
   .vol{height:4px;background:var(--card);border-radius:3px;overflow:hidden;margin:0 14px}
   .vol > div{height:100%;width:0;background:var(--green);transition:width .1s}
   .status{padding:8px 14px;font-size:12px;color:var(--amber);border-bottom:1px solid var(--border);display:none}
@@ -142,6 +154,8 @@
   <!-- MITTE: Transkript -->
   <section class="col">
     <div class="col-hd">🎙️ Transkript <span class="count" id="sCount">0</span></div>
+    <div id="speakerPanel"></div>
+    <audio id="previewAudio" preload="metadata" style="display:none"></audio>
     <div class="col-body" id="transcript">
       <div class="empty" id="emptyT">
         <span class="big">🎙️</span>
@@ -280,7 +294,64 @@ function speakerColor(spk){
   if(p) return p.color;
   const n=parseInt(String(spk).replace(/\D/g,""))||0; return COLORS[n%COLORS.length];
 }
+function rawSpkLabel(spk){ return "Sprecher "+(parseInt(String(spk).replace(/\D/g,""))+1||spk); }
+function distinctSpeakers(){ const seen=new Set(),out=[]; segments.forEach(s=>{ if(!seen.has(s.speaker)){ seen.add(s.speaker); out.push(s.speaker); } }); return out; }
+
+// ── Audio-Vorhören je Sprecher ───────────────────────────────────
+let lastAudioBlob=null, lastAudioUrl=null, _previewTimer=null;
+function setLastAudio(blob){
+  if(lastAudioUrl){ try{ URL.revokeObjectURL(lastAudioUrl); }catch(e){} lastAudioUrl=null; }
+  lastAudioBlob=blob||null;
+  if(blob){ try{ lastAudioUrl=URL.createObjectURL(blob); }catch(e){ lastAudioUrl=null; } }
+}
+function previewSpeaker(spk){
+  if(!lastAudioUrl) return;
+  const a=$("#previewAudio"); const seg=segments.find(s=>s.speaker===spk); const start=(seg&&seg.start)||0;
+  const go=()=>{ try{ a.currentTime=start; }catch(e){} a.play().catch(()=>{}); };
+  if(a.dataset.src===lastAudioUrl && a.readyState>=1){ go(); }
+  else { a.src=lastAudioUrl; a.dataset.src=lastAudioUrl; a.onloadedmetadata=()=>{ a.onloadedmetadata=null; go(); }; }
+  if(_previewTimer) clearTimeout(_previewTimer);
+  _previewTimer=setTimeout(()=>{ try{ a.pause(); }catch(e){} }, 6000);
+}
+function mergeSpeaker(from,to){
+  if(!from||!to||from===to) return;
+  segments.forEach(s=>{ if(s.speaker===from) s.speaker=to; });
+  delete speakerMap[from];
+  LS.set("gv_segments",segments); save(); renderTranscript();
+}
+function renderSpeakerPanel(){
+  const panel=$("#speakerPanel"); if(!panel) return;
+  const spks=distinctSpeakers();
+  if(!spks.length){ panel.classList.remove("show"); panel.innerHTML=""; return; }
+  panel.classList.add("show");
+  let html=`<div class="sp-hd">🗣️ Sprecher zuordnen <span class="muted">(${spks.length})</span></div>`;
+  spks.forEach(spk=>{
+    const col=speakerColor(spk), lbl=speakerLabel(spk);
+    const initials=lbl.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase();
+    let opts=`<option value="">— ${escapeHtml(rawSpkLabel(spk))} —</option>`;
+    persons.forEach(p=>{ opts+=`<option value="${p.id}" ${speakerMap[spk]===p.id?"selected":""}>${escapeHtml(p.name)}</option>`; });
+    let mergeOpts=`<option value="">⇄ zusammenführen…</option>`;
+    spks.filter(o=>o!==spk).forEach(o=>{ mergeOpts+=`<option value="${o}">→ ${escapeHtml(speakerLabel(o))}</option>`; });
+    html+=`<div class="sp-row">
+      <div class="av sm" style="background:${col}">${initials}</div>
+      ${lastAudioUrl?`<button class="sp-play" title="Stimme anhören" data-play="${spk}">▶</button>`:""}
+      <select class="sp-assign" data-assign="${spk}">${opts}</select>
+      <select class="sp-merge" data-merge="${spk}">${mergeOpts}</select>
+    </div>`;
+  });
+  panel.innerHTML=html;
+  panel.querySelectorAll("[data-assign]").forEach(sel=>sel.addEventListener("change",e=>{
+    const spk=e.target.getAttribute("data-assign"), v=e.target.value;
+    if(v) speakerMap[spk]=v; else delete speakerMap[spk];
+    save(); renderTranscript();
+  }));
+  panel.querySelectorAll("[data-merge]").forEach(sel=>sel.addEventListener("change",e=>{
+    mergeSpeaker(e.target.getAttribute("data-merge"), e.target.value);
+  }));
+  panel.querySelectorAll("[data-play]").forEach(b=>b.addEventListener("click",()=>previewSpeaker(b.getAttribute("data-play"))));
+}
 function renderTranscript(){
+  renderSpeakerPanel();
   const box=$("#transcript");
   if(!segments.length){ box.innerHTML=$("#emptyT")?$("#emptyT").outerHTML:""; $("#sCount").textContent=0; return; }
   box.innerHTML="";
@@ -450,6 +521,7 @@ async function transcribe(blob){
     if(!res.ok){ const t=await res.text(); throw new Error("HTTP "+res.status+" "+t.slice(0,300)); }
     const data=await res.json();
     segments=wordsToSegments(data);
+    setLastAudio(blob);               // fuer Vorhoeren je Sprecher
     LS.set("gv_segments",segments);   // Transkript ueberlebt Reload
     renderTranscript();
     setStatus(`✅ Transkript fertig – ${segments.length} Abschnitte, ${new Set(segments.map(s=>s.speaker)).size} Sprecher erkannt. Sprecher zuordnen, dann „✨ Auswerten".`,true);
