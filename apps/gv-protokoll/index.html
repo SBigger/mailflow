@@ -173,7 +173,7 @@
     <div class="fld">
       <label>ElevenLabs API-Key <span style="color:var(--red)">*</span> (Transkription)</label>
       <input id="setEleven" type="password" placeholder="sk_...">
-      <small>Modell: <b>scribe_v1</b> (beste Sprecher-Trennung). Key auf <a href="https://elevenlabs.io/app/settings/api-keys" target="_blank">elevenlabs.io</a>.</small>
+      <small>Modell: <b>scribe_v2</b> (beste Sprecher-Trennung). Key auf <a href="https://elevenlabs.io/app/settings/api-keys" target="_blank">elevenlabs.io</a>.</small>
     </div>
     <div class="fld">
       <label>Sprache</label>
@@ -352,10 +352,10 @@ $("#fileInput").addEventListener("change",e=>{ const f=e.target.files[0]; if(f) 
 // ── ElevenLabs Scribe (Batch + Diarization) ──────────────────────
 async function transcribe(blob){
   if(!cfg.eleven){ openModal(); return; }
-  setStatus("⏳ Transkribiere mit ElevenLabs (scribe_v1) … das kann je nach Länge etwas dauern.",true);
+  setStatus("⏳ Transkribiere mit ElevenLabs (scribe_v2) … das kann je nach Länge etwas dauern.",true);
   const fd=new FormData();
   fd.append("file", blob, "aufnahme.webm");
-  fd.append("model_id","scribe_v1");
+  fd.append("model_id","scribe_v2");
   fd.append("diarize","true");
   fd.append("timestamps_granularity","word");
   fd.append("tag_audio_events","false");
