@@ -7,7 +7,7 @@ import ChartisPanel from "@/components/chartis/ChartisPanel";
 import { chartisTheme, SEM, AUTHOR, authorKey, initials, isMissed } from "@/lib/chartisTheme";
 import {
   MessageSquare, Plus, Users, User, Lock, AtSign, LayoutGrid, Building2, Clock,
-  PhoneOff, Phone, Mail, Calendar, CheckSquare, X, Search, Check, Loader2, Send, Paperclip,
+  PhoneOff, Phone, Mail, Calendar, CheckSquare, X, Search, Check, Loader2, Send, Paperclip, Video,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -22,6 +22,8 @@ export default function Chartis() {
   const [activeId, setActiveId] = useState(null);
   const [activeCall, setActiveCall] = useState(null);
   const [activeMail, setActiveMail] = useState(null);
+  const [activeEvent, setActiveEvent] = useState(null);
+  const [activeTask, setActiveTask] = useState(null);
   const [search, setSearch] = useState("");
   const [seg, setSeg] = useState("alle");
   const [picker, setPicker] = useState(false);
@@ -77,6 +79,27 @@ export default function Chartis() {
       return data || [];
     },
   });
+  const { data: calendarEvents = [] } = useQuery({
+    queryKey: ["chartisCalendar", me?.id], enabled: !!me?.id, refetchInterval: 60000,
+    queryFn: async () => {
+      const since = new Date(); since.setHours(0, 0, 0, 0);
+      const { data } = await supabase.from("calendar_events")
+        .select("id,subject,start_time,end_time,is_all_day,location,online_meeting_url,organizer_name,customer_id")
+        .eq("created_by", me.id).eq("is_cancelled", false).gte("start_time", since.toISOString())
+        .order("start_time", { ascending: true }).limit(60);
+      return data || [];
+    },
+  });
+  const { data: tasks = [] } = useQuery({
+    queryKey: ["chartisTasks", me?.id], enabled: !!me?.id, refetchInterval: 30000,
+    queryFn: async () => {
+      const ors = [me.email && `assignee.eq.${me.email}`, me.email && `verantwortlich.eq.${me.email}`, `created_by.eq.${me.id}`].filter(Boolean).join(",");
+      const { data } = await supabase.from("tasks")
+        .select("id,title,description,due_date,priority,completed,customer_id,assignee,verantwortlich,created_by")
+        .eq("completed", false).or(ors).order("due_date", { ascending: true }).limit(100);
+      return data || [];
+    },
+  });
   const mentionIds = useMemo(() => new Set(mentions.map(m => m.thread_id)), [mentions]);
   const unseenMentions = mentions.filter(m => !m.seen).length;
   const tablesMissing = thErr && /relation .*chartis|does not exist|thread_type/i.test(thErr.message || "");
@@ -123,6 +146,7 @@ export default function Chartis() {
     erwaehnt: { label: "Erwähnt", icon: AtSign }, kunden: { label: "Kunden-Konversationen", icon: Building2 },
     wartet: { label: "Wartet auf Kunde", icon: Clock }, anrufe: { label: "Entgangene Anrufe", icon: PhoneOff },
     mails: { label: "Mails", icon: Mail },
+    kalender: { label: "Kalender", icon: Calendar }, todos: { label: "Todos", icon: CheckSquare },
   };
 
   const items = useMemo(() => {
@@ -135,6 +159,8 @@ export default function Chartis() {
     else if (scope === "wartet") list = kundenThreads.filter(x => x.status === "wartet_kunde").map(x => ({ type: "thread", x }));
     else if (scope === "anrufe") list = missedCalls.map(c => ({ type: "call", c }));
     else if (scope === "mails") list = mailThreads.map(m => ({ type: "mail", m }));
+    else if (scope === "kalender") list = calendarEvents.map(e => ({ type: "event", e }));
+    else if (scope === "todos") list = tasks.map(k => ({ type: "task", k }));
     else list = [ // Heute
       ...missedCalls.slice(0, 4).map(c => ({ type: "call", c })),
       ...dm.map(x => ({ type: "thread", x })),
@@ -142,13 +168,14 @@ export default function Chartis() {
     ];
     if (seg === "mich") list = list.filter(it => it.type !== "thread" || mentionIds.has(it.x.id));
     const q = search.trim().toLowerCase();
-    if (q) list = list.filter(it => it.type === "call"
-      ? (it.c.caller_name || it.c.caller_number || "").toLowerCase().includes(q)
-      : it.type === "mail"
-      ? ((it.m.subject || "") + " " + (it.m.mails[0]?.sender_name || "")).toLowerCase().includes(q)
+    if (q) list = list.filter(it =>
+      it.type === "call" ? (it.c.caller_name || it.c.caller_number || "").toLowerCase().includes(q)
+      : it.type === "mail" ? ((it.m.subject || "") + " " + (it.m.mails[0]?.sender_name || "")).toLowerCase().includes(q)
+      : it.type === "event" ? (it.e.subject || "").toLowerCase().includes(q)
+      : it.type === "task" ? (it.k.title || "").toLowerCase().includes(q)
       : (title(it.x) + " " + preview(it.x)).toLowerCase().includes(q));
     return list;
-  }, [scope, seg, search, myThreads, objektThreads, missedCalls, mailThreads, mentionIds, me]);
+  }, [scope, seg, search, myThreads, objektThreads, missedCalls, mailThreads, calendarEvents, tasks, mentionIds, me]);
 
   const activeThread = useMemo(() => [...myThreads, ...objektThreads].find(x => x.id === activeId), [activeId, myThreads, objektThreads]);
 
@@ -180,6 +207,7 @@ export default function Chartis() {
   }
   const pickList = users.filter(u => u.id !== me?.id && ((u.full_name || "").toLowerCase().includes(pickSearch.toLowerCase()) || (u.email || "").toLowerCase().includes(pickSearch.toLowerCase())));
 
+  const clearActive = () => { setActiveId(null); setActiveCall(null); setActiveMail(null); setActiveEvent(null); setActiveTask(null); };
   const NavItem = ({ k, icon: Icon, label, count, red }) => (
     <button onClick={() => { setScope(k); setActiveCall(null); }} className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left relative"
       style={{ fontSize: 12, color: scope === k ? t.accent : t.textSecondary, background: scope === k ? t.accentSoft : "transparent", fontWeight: scope === k ? 500 : 400 }}>
@@ -212,11 +240,8 @@ export default function Chartis() {
           <NavItem k="anrufe" icon={PhoneOff} label="Anrufe" count={missedCalls.length} red />
           <div style={{ borderTop: `1px solid ${t.borderSubtle}`, margin: "8px 6px" }} />
           <NavItem k="mails" icon={Mail} label="Mails" />
-          {[["/Kalender", Calendar, "Kalender"], ["/TaskBoard", CheckSquare, "Todos"]].map(([to, Icon, label]) => (
-            <Link key={to} to={to} className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg" style={{ fontSize: 12, color: t.textSecondary, opacity: 0.9 }}>
-              <Icon className="h-4 w-4" /> {label}
-            </Link>
-          ))}
+          <NavItem k="kalender" icon={Calendar} label="Kalender" count={calendarEvents.length} />
+          <NavItem k="todos" icon={CheckSquare} label="Todos" count={tasks.length} />
         </div>
         <div className="p-2">
           <button onClick={() => setPicker(true)} className="w-full inline-flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-lg" style={{ background: t.accentFill, color: "#fff", fontSize: 12, fontWeight: 500 }}>
@@ -249,7 +274,7 @@ export default function Chartis() {
               <div style={{ fontSize: 11 }}>Keine offenen Punkte hier.</div>
             </div>
           ) : items.map((it, i) => it.type === "call" ? (
-            <button key={"c" + it.c.id} onClick={() => { setActiveId(null); setActiveMail(null); setActiveCall(it.c); }}
+            <button key={"c" + it.c.id} onClick={() => { clearActive(); setActiveCall(it.c); }}
               className="w-full flex items-center gap-2.5 px-3 py-2 text-left" style={{ borderBottom: `1px solid ${t.borderSubtle}`, borderLeft: `3px solid ${SEM.missed}`, paddingLeft: 9, background: activeCall?.id === it.c.id ? t.activeRow : "transparent" }}>
               <div className="rounded-full flex items-center justify-center flex-shrink-0" style={{ width: 30, height: 30, background: SEM.missedSoft, color: SEM.missed }}><PhoneOff className="h-4 w-4" /></div>
               <div className="min-w-0 flex-1">
@@ -259,12 +284,15 @@ export default function Chartis() {
               <span style={{ fontSize: 10, color: SEM.missed, flexShrink: 0 }}>{fmtTime(it.c.start_time)}</span>
             </button>
           ) : it.type === "mail" ? (
-            <MailRow key={"m" + it.m.key} m={it.m} t={t} active={activeMail?.key === it.m.key}
-              onClick={() => { setActiveId(null); setActiveCall(null); setActiveMail(it.m); }} />
+            <MailRow key={"m" + it.m.key} m={it.m} t={t} active={activeMail?.key === it.m.key} onClick={() => { clearActive(); setActiveMail(it.m); }} />
+          ) : it.type === "event" ? (
+            <EventRow key={"e" + it.e.id} e={it.e} t={t} active={activeEvent?.id === it.e.id} onClick={() => { clearActive(); setActiveEvent(it.e); }} />
+          ) : it.type === "task" ? (
+            <TaskRow key={"t" + it.k.id} k={it.k} t={t} active={activeTask?.id === it.k.id} onClick={() => { clearActive(); setActiveTask(it.k); }} />
           ) : (
             <ThreadRow key={it.x.id} th={it.x} t={t} active={activeId === it.x.id} mentioned={mentionIds.has(it.x.id)}
               title={title(it.x)} preview={preview(it.x)} av={avatarFor(it.x)} kunde={isKunde(it.x)}
-              onClick={() => { setActiveCall(null); setActiveMail(null); setActiveId(it.x.id); }} />
+              onClick={() => { clearActive(); setActiveId(it.x.id); }} />
           ))}
         </div>
       </div>
@@ -273,6 +301,10 @@ export default function Chartis() {
       <div className="flex-1 min-w-0" style={{ background: t.raised, boxShadow: t.shadow }}>
         {activeMail ? (
           <MailThread m={activeMail} t={t} myEmail={myEmail} customer={custById[activeMail.customer_id]} />
+        ) : activeEvent ? (
+          <EventDetail e={activeEvent} t={t} customer={custById[activeEvent.customer_id]} />
+        ) : activeTask ? (
+          <TaskDetail k={activeTask} t={t} customer={custById[activeTask.customer_id]} />
         ) : activeCall ? (
           <CallDetail c={activeCall} t={t} customer={custById[activeCall.customer_id]} />
         ) : activeThread ? (
@@ -384,6 +416,73 @@ function MailThread({ m, t, myEmail, customer }) {
         })}
       </div>
       <div className="px-4 py-2" style={{ borderTop: `1px solid ${t.borderSubtle}`, fontSize: 11, color: t.textMuted }}>Antworten im Mail-Modul — Chartis zeigt Mails read-only.</div>
+    </div>
+  );
+}
+
+function fmtDateTime(ts, dateOnly) {
+  try { const d = new Date(ts); const base = d.toLocaleDateString("de-CH", { weekday: "short", day: "2-digit", month: "2-digit" });
+    return dateOnly ? base : base + " " + d.toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" }); } catch { return ""; }
+}
+
+function EventRow({ e, t, active, onClick }) {
+  return (
+    <button onClick={onClick} className="w-full flex items-center gap-2.5 px-3 py-2 text-left" style={{ borderBottom: `1px solid ${t.borderSubtle}`, background: active ? t.activeRow : "transparent" }}>
+      <div className="rounded-lg flex items-center justify-center flex-shrink-0" style={{ width: 32, height: 32, background: t.accentSoft, color: t.accent, fontSize: 13, fontWeight: 700 }}>{new Date(e.start_time).getDate()}</div>
+      <div className="min-w-0 flex-1">
+        <div className="truncate" style={{ fontSize: 12, fontWeight: 500, color: t.textPrimary }}>{e.subject || "(ohne Titel)"}</div>
+        <div className="truncate" style={{ fontSize: 11, color: t.textMuted }}>{fmtDateTime(e.start_time, e.is_all_day)}{e.location ? " · " + e.location : ""}</div>
+      </div>
+      {e.online_meeting_url && <Video className="h-3.5 w-3.5 flex-shrink-0" style={{ color: t.accent }} />}
+    </button>
+  );
+}
+
+function EventDetail({ e, t, customer }) {
+  return (
+    <div className="h-full flex flex-col">
+      <div className="px-4 py-3 flex items-center gap-2" style={{ borderBottom: `1px solid ${t.borderSubtle}` }}>
+        <Calendar className="h-4 w-4" style={{ color: t.accent }} />
+        <div className="min-w-0"><div className="truncate" style={{ fontSize: 14, fontWeight: 600 }}>{e.subject || "(ohne Titel)"}</div>
+          <div style={{ fontSize: 11, color: t.textMuted }}>{fmtDateTime(e.start_time, e.is_all_day)}{e.end_time && !e.is_all_day ? " – " + new Date(e.end_time).toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" }) : ""}</div></div>
+      </div>
+      <div className="p-4 space-y-2" style={{ fontSize: 13, color: t.textSecondary }}>
+        {e.location && <Field t={t} label="Ort" value={e.location} />}
+        {e.organizer_name && <Field t={t} label="Organisator" value={e.organizer_name} />}
+        {customer && <Field t={t} label="Kunde" value={customer.company_name} />}
+        {e.online_meeting_url && <a href={e.online_meeting_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg mt-2" style={{ fontSize: 12, background: t.accentFill, color: "#fff" }}><Video className="h-3.5 w-3.5" /> Teams beitreten</a>}
+      </div>
+    </div>
+  );
+}
+
+function TaskRow({ k, t, active, onClick }) {
+  const overdue = k.due_date && new Date(k.due_date) < new Date();
+  return (
+    <button onClick={onClick} className="w-full flex items-center gap-2.5 px-3 py-2 text-left" style={{ borderBottom: `1px solid ${t.borderSubtle}`, background: active ? t.activeRow : "transparent" }}>
+      <div className="rounded-md flex-shrink-0" style={{ width: 16, height: 16, border: `2px solid ${t.borderStrong}` }} />
+      <div className="min-w-0 flex-1">
+        <div className="truncate" style={{ fontSize: 12, fontWeight: 500, color: t.textPrimary }}>{k.title}</div>
+        {k.due_date && <div className="truncate" style={{ fontSize: 11, color: overdue ? SEM.missed : t.textMuted }}>fällig {fmtDateTime(k.due_date, true)}</div>}
+      </div>
+      {k.priority === "high" && <span style={{ width: 7, height: 7, borderRadius: 99, background: SEM.missed, flexShrink: 0 }} />}
+    </button>
+  );
+}
+
+function TaskDetail({ k, t, customer }) {
+  return (
+    <div className="h-full flex flex-col">
+      <div className="px-4 py-3 flex items-center gap-2" style={{ borderBottom: `1px solid ${t.borderSubtle}` }}>
+        <CheckSquare className="h-4 w-4" style={{ color: t.accent }} />
+        <div className="min-w-0"><div className="truncate" style={{ fontSize: 14, fontWeight: 600 }}>{k.title}</div>
+          {k.due_date && <div style={{ fontSize: 11, color: t.textMuted }}>fällig {fmtDateTime(k.due_date, true)}</div>}</div>
+      </div>
+      <div className="p-4 space-y-2" style={{ fontSize: 13, color: t.textSecondary }}>
+        {k.description && <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{k.description}</div>}
+        {customer && <Field t={t} label="Kunde" value={customer.company_name} />}
+        <Link to="/TaskBoard" className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg mt-2" style={{ fontSize: 12, background: t.accentSoft, color: t.accent }}><CheckSquare className="h-3.5 w-3.5" /> Im Task-Board öffnen</Link>
+      </div>
     </div>
   );
 }
