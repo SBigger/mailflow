@@ -33,6 +33,7 @@ export default function Chartis() {
   const [groupName, setGroupName] = useState("");
   const [busy, setBusy] = useState(false);
   const [cmdOpen, setCmdOpen] = useState(false);
+  const [onlineIds, setOnlineIds] = useState(() => new Set());
 
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: () => auth.me() });
   const { data: users = [] } = useQuery({
@@ -75,7 +76,8 @@ export default function Chartis() {
         .select("id,direction,call_type,caller_number,caller_name,artis_user_name,customer_id,start_time,duration_seconds,missed,notes")
         .eq("direction", "incoming").order("start_time", { ascending: false }).limit(120);
       const mine = (data || []).filter(isMissed);
-      const own = mine.filter(c => me?.full_name && c.artis_user_name === me.full_name);
+      const myName = (me?.full_name || "").trim().toLowerCase();
+      const own = mine.filter(c => myName && (c.artis_user_name || "").trim().toLowerCase() === myName);
       return own.length ? own : mine; // Fallback: Namens-Match leer -> teamweit zeigen
     },
   });
@@ -146,7 +148,7 @@ export default function Chartis() {
     if (th.thread_type === "direkt") {
       const other = (th.chartis_participants || []).map(p => p.user_id).find(uid => uid !== me?.id);
       const u = userById[other];
-      return { label: initials(u?.full_name || u?.email), ...AUTHOR[authorKey(u)] };
+      return { label: initials(u?.full_name || u?.email), userId: other, ...AUTHOR[authorKey(u)] };
     }
     return { label: initials(th.subject), ...AUTHOR.staff };
   }
@@ -178,7 +180,7 @@ export default function Chartis() {
     ];
     if (seg === "mich") list = list.filter(it =>
       it.type === "thread" ? mentionIds.has(it.x.id)
-      : it.type === "call" ? (!!me?.full_name && it.c.artis_user_name === me.full_name)
+      : it.type === "call" ? (!!me?.full_name && (it.c.artis_user_name || "").trim().toLowerCase() === me.full_name.trim().toLowerCase())
       : it.type === "task" ? (it.k.assignee === me?.email || it.k.verantwortlich === me?.email)
       : true);
     const q = search.trim().toLowerCase();
@@ -233,6 +235,14 @@ export default function Chartis() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+  // Realtime-Presence: wer ist gerade in Chartis online
+  useEffect(() => {
+    if (!me?.id) return;
+    const ch = supabase.channel("chartis-presence", { config: { presence: { key: me.id } } });
+    ch.on("presence", { event: "sync" }, () => setOnlineIds(new Set(Object.keys(ch.presenceState()))))
+      .subscribe((status) => { if (status === "SUBSCRIBED") ch.track({ at: Date.now() }); });
+    return () => supabase.removeChannel(ch);
+  }, [me?.id]);
   const commands = useMemo(() => {
     const nav = [
       { id: "s-tag", icon: LayoutGrid, label: "Heute", run: () => setScope("tag") },
@@ -350,7 +360,7 @@ export default function Chartis() {
             <TaskRow key={"t" + it.k.id} k={it.k} t={t} active={activeTask?.id === it.k.id} onClick={() => { clearActive(); setActiveTask(it.k); }} />
           ) : (
             <ThreadRow key={it.x.id} th={it.x} t={t} active={activeId === it.x.id} mentioned={mentionIds.has(it.x.id)}
-              title={title(it.x)} preview={preview(it.x)} av={avatarFor(it.x)} kunde={isKunde(it.x)}
+              title={title(it.x)} preview={preview(it.x)} av={avatarFor(it.x)} kunde={isKunde(it.x)} onlineIds={onlineIds}
               onClick={() => { clearActive(); setActiveId(it.x.id); }} />
           ))}
         </div>
@@ -378,7 +388,7 @@ export default function Chartis() {
       </div>
 
       <CommandPalette open={cmdOpen} onClose={() => setCmdOpen(false)} commands={commands} t={t} />
-      {picker && <Picker t={t} list={pickList} pickSearch={pickSearch} setPickSearch={setPickSearch} pickSel={pickSel} setPickSel={setPickSel} groupName={groupName} setGroupName={setGroupName} busy={busy} onDirect={openDirect} onGroup={createGroup} onClose={() => setPicker(false)} />}
+      {picker && <Picker t={t} list={pickList} onlineIds={onlineIds} pickSearch={pickSearch} setPickSearch={setPickSearch} pickSel={pickSel} setPickSel={setPickSel} groupName={groupName} setGroupName={setGroupName} busy={busy} onDirect={openDirect} onGroup={createGroup} onClose={() => setPicker(false)} />}
     </div>
   );
 }
@@ -388,12 +398,16 @@ function fmtTime(ts) {
     return sameDay ? d.toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" }) : d.toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit" }); } catch { return ""; }
 }
 
-function ThreadRow({ th, t, active, mentioned, title, preview, av, kunde, onClick }) {
+function ThreadRow({ th, t, active, mentioned, title, preview, av, kunde, onClick, onlineIds }) {
+  const online = !!av.userId && onlineIds?.has(av.userId);
   return (
     <button onClick={onClick} className="w-full flex items-center gap-2.5 px-3 py-2 text-left relative" style={{ borderBottom: `1px solid ${t.borderSubtle}`, background: active ? t.activeRow : "transparent" }}>
       {mentioned && <span style={{ position: "absolute", left: 0, top: 8, bottom: 8, width: 3, borderRadius: 2, background: t.accentFill }} />}
-      <div className="rounded-full flex items-center justify-center flex-shrink-0" style={{ width: 30, height: 30, background: av.bg, color: av.text, fontSize: 11, fontWeight: 600 }}>
-        {av.icon ? <av.icon className="h-4 w-4" /> : av.label}
+      <div className="relative flex-shrink-0">
+        <div className="rounded-full flex items-center justify-center" style={{ width: 30, height: 30, background: av.bg, color: av.text, fontSize: 11, fontWeight: 600 }}>
+          {av.icon ? <av.icon className="h-4 w-4" /> : av.label}
+        </div>
+        {online && <span style={{ position: "absolute", right: -1, bottom: -1, width: 9, height: 9, borderRadius: 99, background: SEM.presence.online, border: `1.5px solid ${t.base}` }} />}
       </div>
       <div className="min-w-0 flex-1">
         <div className="truncate" style={{ fontSize: 12, fontWeight: mentioned ? 700 : 500, color: t.textPrimary }}>{title}</div>
@@ -454,7 +468,8 @@ function MailRow({ m, t, active, onClick }) {
 }
 
 function MailThread({ m, t, myEmail, customer }) {
-  const mails = [...m.mails].sort((a, b) => new Date(a.received_date) - new Date(b.received_date));
+  const mails = [...m.mails].sort((a, b) => new Date(a.received_date || a.created_at) - new Date(b.received_date || b.created_at));
+  const replyTo = [...mails].reverse().find(x => (x.sender_email || "").toLowerCase() !== myEmail)?.sender_email || mails[mails.length - 1]?.sender_email || "";
   return (
     <div className="h-full flex flex-col">
       <div className="px-4 py-3 flex items-center gap-2" style={{ borderBottom: `1px solid ${t.borderSubtle}` }}>
@@ -475,7 +490,10 @@ function MailThread({ m, t, myEmail, customer }) {
           );
         })}
       </div>
-      <div className="px-4 py-2" style={{ borderTop: `1px solid ${t.borderSubtle}`, fontSize: 11, color: t.textMuted }}>Antworten im Mail-Modul — Chartis zeigt Mails read-only.</div>
+      <div className="px-4 py-2 flex items-center gap-2" style={{ borderTop: `1px solid ${t.borderSubtle}` }}>
+        <a href={`mailto:${replyTo}?subject=${encodeURIComponent("Re: " + (m.subject || ""))}`} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg" style={{ fontSize: 12, background: t.accentFill, color: "#fff" }}><Mail className="h-3.5 w-3.5" /> Antworten</a>
+        <span style={{ fontSize: 10, color: t.textMuted }}>öffnet Outlook · Chartis zeigt Mails read-only</span>
+      </div>
     </div>
   );
 }
@@ -547,7 +565,7 @@ function TaskDetail({ k, t, customer }) {
   );
 }
 
-function Picker({ t, list, pickSearch, setPickSearch, pickSel, setPickSel, groupName, setGroupName, busy, onDirect, onGroup, onClose }) {
+function Picker({ t, list, onlineIds, pickSearch, setPickSearch, pickSel, setPickSel, groupName, setGroupName, busy, onDirect, onGroup, onClose }) {
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 80, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div onClick={e => e.stopPropagation()} style={{ width: 420, maxWidth: "92vw", maxHeight: "80vh", background: t.raised, borderRadius: 14, border: `1px solid ${t.borderStrong}`, boxShadow: t.shadow, display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -567,7 +585,10 @@ function Picker({ t, list, pickSearch, setPickSearch, pickSel, setPickSel, group
             return (
               <div key={u.id} className="flex items-center gap-2 px-2 py-2 rounded-lg" style={{ background: sel ? t.activeRow : "transparent" }}>
                 <button onClick={() => onDirect(u.id)} disabled={busy} className="flex items-center gap-2 flex-1 min-w-0 text-left">
-                  <div className="rounded-full flex items-center justify-center flex-shrink-0" style={{ width: 30, height: 30, background: AUTHOR[authorKey(u)].bg, color: AUTHOR[authorKey(u)].text, fontSize: 11, fontWeight: 600 }}>{initials(u.full_name || u.email)}</div>
+                  <div className="relative flex-shrink-0">
+                    <div className="rounded-full flex items-center justify-center" style={{ width: 30, height: 30, background: AUTHOR[authorKey(u)].bg, color: AUTHOR[authorKey(u)].text, fontSize: 11, fontWeight: 600 }}>{initials(u.full_name || u.email)}</div>
+                    {onlineIds?.has(u.id) && <span style={{ position: "absolute", right: -1, bottom: -1, width: 9, height: 9, borderRadius: 99, background: SEM.presence.online, border: "1.5px solid #fff" }} />}
+                  </div>
                   <div className="min-w-0"><div className="truncate" style={{ fontSize: 13, fontWeight: 500 }}>{u.full_name || u.email}</div><div className="truncate" style={{ fontSize: 11, color: t.textMuted }}>{u.email}</div></div>
                 </button>
                 <button onClick={() => setPickSel(p => sel ? p.filter(x => x !== u.id) : [...p, u.id])} className="rounded-md flex items-center justify-center flex-shrink-0" style={{ width: 24, height: 24, border: `1px solid ${sel ? t.accentFill : t.borderSubtle}`, background: sel ? t.accentFill : "transparent", color: "#fff" }}>{sel && <Check className="h-3.5 w-3.5" />}</button>

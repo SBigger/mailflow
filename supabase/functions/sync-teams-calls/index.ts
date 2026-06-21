@@ -134,6 +134,7 @@ type DbRow = {
   start_time: string | null;
   end_time: string | null;
   duration_seconds: number | null;
+  missed: boolean;
   raw: any;
 };
 
@@ -272,6 +273,15 @@ function buildRow(rec: any, phoneIndex: Map<string, string>, staffPhoneIndex: Ma
       if (!rec.startDateTime || !rec.endDateTime) return null;
       const ms = new Date(rec.endDateTime).getTime() - new Date(rec.startDateTime).getTime();
       return Math.max(0, Math.round(ms / 1000));
+    })(),
+    missed: (() => {
+      if (direction !== 'incoming') return false;
+      const dur = (rec.startDateTime && rec.endDateTime)
+        ? Math.max(0, Math.round((new Date(rec.endDateTime).getTime() - new Date(rec.startDateTime).getTime()) / 1000))
+        : null;
+      if (dur == null || dur < 5) return true;
+      // Graph hat kein verlaessliches missed-Signal -> failureInfo auf Session/Segment als Indikator
+      return sessions.some((s: any) => s?.failureInfo || (Array.isArray(s?.segments) && s.segments.some((seg: any) => seg?.failureInfo)));
     })(),
     raw: rec,
   };
