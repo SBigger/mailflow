@@ -140,9 +140,9 @@ const TOOLS = [
     route: "/Steuerausscheidung",
   },
   {
-    id: "gvprotokoll",
-    title: "GV-Protokoll",
-    description: "Generalversammlungen aufnehmen, automatisch transkribieren (mit Sprecher-Trennung) und Zusammenfassung, Aufgaben & Beschlüsse per KI erstellen – nach Traktanden gegliedert",
+    id: "aktennotiz",
+    title: "Aktennotiz",
+    description: "Besprechungen, Sitzungen & GV aufnehmen, automatisch transkribieren (mit Sprecher-Trennung) und per KI eine Aktennotiz mit Zusammenfassung, Aufgaben & Pendenzen erstellen – pro Kunde",
     icon: Mic,
     color: "#6366f1",
     bg: "#e8e9fb",
