@@ -236,7 +236,7 @@
 <div class="modal-bg" id="modal">
   <div class="modal">
     <h2>Einstellungen</h2>
-    <p class="hint">Keys werden nur lokal im Browser gespeichert (pro Adresse) und gehen direkt an den jeweiligen Dienst.</p>
+    <p class="hint">Online (smartis.me) laufen die Anfragen über einen sicheren <b>Server-Proxy</b> – du brauchst <b>keine</b> Keys. Optional kannst du eigene Keys eintragen (z.&nbsp;B. lokal); sie bleiben nur in diesem Browser und überschreiben dann den Proxy.</p>
     <div class="keystatus" id="keyStatus"></div>
 
     <div class="fld">
@@ -306,6 +306,11 @@ const COLORS=["#3b82f6","#22c55e","#f59e0b","#8b5cf6","#ec4899","#06b6d4","#ef44
 
 let cfg = LS.get("gv_cfg", { eleven:"", lang:"deu", claudeKey:"", claudeModel:"claude-opus-4-8", mic:"", liveInterval:120 });
 if(cfg.liveInterval===undefined) cfg.liveInterval=120;
+// ── Backend-Proxy: Keys liegen serverseitig (Supabase Edge Functions) ──
+const PROXY_BASE = "https://uawgpxcihixqxqxxbjak.supabase.co/functions/v1";
+const PROXY_KEY  = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhd2dweGNpaGl4cXhxeHhiamFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI0MzE5MzYsImV4cCI6MjA4ODAwNzkzNn0.fPbekBh1dO8byD2wxkjzFSKW4jSV0MHIGgci9nch98A";
+const PROXY_ON   = true;   // true: ohne eigenen Key läuft alles über den Server-Proxy
+function proxyHeaders(){ return { "Authorization":"Bearer "+PROXY_KEY, "apikey":PROXY_KEY }; }
 let persons = LS.get("gv_persons", []);          // {id,name,color}
 let segments = [];                                // {speaker, text, start, end, personId}
 let speakerMap = LS.get("gv_speakerMap", {});     // speaker_id -> personId
@@ -471,7 +476,7 @@ let curRecId=null, chunkSeq=0, recMime="", pendingSaves=[];
 let _liveTimer=null, _liveBusy=false, _liveOn=false;
 
 async function startRec(){
-  if(!cfg.eleven){ openModal(); setStatus("Bitte zuerst den ElevenLabs API-Key eintragen.",true); return; }
+  if(!cfg.eleven && !PROXY_ON){ openModal(); setStatus("Bitte zuerst den ElevenLabs API-Key eintragen.",true); return; }
   try{
     const audio={ echoCancellation:true, noiseSuppression:true };
     if(cfg.mic) audio.deviceId={ exact: cfg.mic };
@@ -589,7 +594,7 @@ $("#fileInput").addEventListener("change",e=>{ const f=e.target.files[0]; if(f) 
 
 // ── ElevenLabs Scribe (Batch + Diarization über die ganze Datei) ──
 async function transcribe(blob, isLive){
-  if(!cfg.eleven){ openModal(); return false; }
+  if(!cfg.eleven && !PROXY_ON){ openModal(); return false; }
   setStatus(isLive ? "🟢 Zwischenstand wird transkribiert …"
                    : "⏳ Transkribiere mit ElevenLabs (scribe_v2) … das kann je nach Länge etwas dauern.",true);
   const fd=new FormData();
@@ -600,9 +605,10 @@ async function transcribe(blob, isLive){
   fd.append("tag_audio_events","false");
   if(cfg.lang) fd.append("language_code", cfg.lang);
   try{
-    const res=await fetch("https://api.elevenlabs.io/v1/speech-to-text",{
-      method:"POST", headers:{ "xi-api-key": cfg.eleven }, body:fd
-    });
+    const useProxy = PROXY_ON && !cfg.eleven;
+    const res = useProxy
+      ? await fetch(PROXY_BASE+"/gv-stt",{ method:"POST", headers: proxyHeaders(), body:fd })
+      : await fetch("https://api.elevenlabs.io/v1/speech-to-text",{ method:"POST", headers:{ "xi-api-key": cfg.eleven }, body:fd });
     if(!res.ok){ const t=await res.text(); throw new Error("HTTP "+res.status+" "+t.slice(0,300)); }
     const data=await res.json();
     segments=wordsToSegments(data);
@@ -660,7 +666,7 @@ const EVAL_SCHEMA = {
 };
 async function evaluate(){
   if(!segments.length){ setStatus("Noch kein Transkript zum Auswerten.",true); setTimeout(()=>setStatus("",false),3000); return; }
-  if(!cfg.claudeKey){ openModal(); setStatus("Bitte Claude API-Key für die Auswertung eintragen.",true); return; }
+  if(!cfg.claudeKey && !PROXY_ON){ openModal(); setStatus("Bitte Claude API-Key für die Auswertung eintragen.",true); return; }
   setStatus("✨ Claude wertet aus (Traktanden, Zusammenfassung, Aufgaben, Beschlüsse) …",true);
   const agenda=(($("#agenda")&&$("#agenda").value)||"").trim();
   const sys=`Du bist Protokollführer einer Generalversammlung (Schweiz). Analysiere das Transkript und fülle das JSON-Schema aus. Schweizer Hochdeutsch, sachlich.
@@ -671,13 +677,11 @@ async function evaluate(){
 Leere Listen als [] zurückgeben.`;
   const usr=`Teilnehmer: ${persons.map(p=>p.name).join(", ")||"unbekannt"}\n\nTRAKTANDENLISTE:\n${agenda || "(keine angegeben – bitte selbst sinnvoll gliedern)"}\n\nTRANSKRIPT:\n${transcriptPlain()}`;
   try{
-    const res=await fetch("https://api.anthropic.com/v1/messages",{ method:"POST",
-      headers:{
-        "content-type":"application/json",
-        "x-api-key":cfg.claudeKey,
-        "anthropic-version":"2023-06-01",
-        "anthropic-dangerous-direct-browser-access":"true"
-      },
+    const useProxyC = PROXY_ON && !cfg.claudeKey;
+    const res=await fetch(useProxyC ? PROXY_BASE+"/gv-llm" : "https://api.anthropic.com/v1/messages",{ method:"POST",
+      headers: useProxyC
+        ? { "content-type":"application/json", ...proxyHeaders() }
+        : { "content-type":"application/json", "x-api-key":cfg.claudeKey, "anthropic-version":"2023-06-01", "anthropic-dangerous-direct-browser-access":"true" },
       body:JSON.stringify({
         model: cfg.claudeModel||"claude-opus-4-8",
         max_tokens: 8000,
@@ -782,8 +786,8 @@ function openModal(){
   $("#setLive").value=String(cfg.liveInterval===undefined?120:cfg.liveInterval);
   const ks=$("#keyStatus");
   if(ks) ks.innerHTML =
-    `<span class="keychip ${cfg.eleven?'ok':'no'}">${cfg.eleven?'✓':'○'} ElevenLabs-Key</span>`+
-    `<span class="keychip ${cfg.claudeKey?'ok':'no'}">${cfg.claudeKey?'✓':'○'} Claude-Key</span>`;
+    `<span class="keychip ${(cfg.eleven||PROXY_ON)?'ok':'no'}">${cfg.eleven?'✓ eigener':(PROXY_ON?'✓ Server-Proxy':'○ fehlt')} · ElevenLabs</span>`+
+    `<span class="keychip ${(cfg.claudeKey||PROXY_ON)?'ok':'no'}">${cfg.claudeKey?'✓ eigener':(PROXY_ON?'✓ Server-Proxy':'○ fehlt')} · Claude</span>`;
   refreshMics();
   $("#modal").classList.add("show");
 }
@@ -818,7 +822,7 @@ refreshRecoveryBanner();                // nach Crash/Reload: gesicherte Aufnahm
       if(ch){ LS.set("gv_cfg",cfg); }
     }
   }catch(e){}
-  if(!cfg.eleven) setTimeout(openModal,400);
+  if(!cfg.eleven && !PROXY_ON) setTimeout(openModal,400);
 })();
 </script>
 </body>
