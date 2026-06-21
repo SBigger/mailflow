@@ -5,20 +5,17 @@ import { ThemeContext } from "@/Layout";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
 import {
-  X, Send, Mail, Lock, MessageSquare, FileText, Loader2, Type, AlertTriangle,
+  X, Send, Mail, Lock, MessageSquare, FileText, Loader2, Type, AlertTriangle, Users,
 } from "lucide-react";
 import { toast } from "sonner";
 
 // ──────────────────────────────────────────────────────────────────────────
-// CHARTIS – kontextbezogenes Chat-Panel (an JEDEM Datensatz einbettbar)
+// CHARTIS – kontextbezogenes Chat-Panel (an Objekten ODER als Direkt/Gruppe)
 // Props:
-//   module        chartis_module ('dokument','task','frist',…)
-//   recordId      PK des verknuepften Datensatzes
-//   subject       Basis-Betreff (z.B. Dateiname)
-//   docInfo       optional { filename, onOpen } – verlinkt das Dokument oben
-//   extContactEmail optional – Kundenadresse fuer den E-Mail-Rueckkanal
-//   onClose       Schliessen-Callback
-// Intern = bleibt in der App. Extern = E-Mail an Kunde (gated bis Domain steht).
+//   Variante A (Objekt): module + recordId (+ subject, docInfo, extContactEmail)
+//   Variante B (Direkt/Gruppe): threadId + titleOverride + directMode
+//   onClose   Schliessen-Callback (optional)
+//   embedded  true = ohne eigenen Schliessen-Button (in der Zentrale)
 // ──────────────────────────────────────────────────────────────────────────
 
 const EMAIL_ENABLED = !!(typeof window !== "undefined" && window.env?.CHARTIS_DOMAIN);
@@ -33,7 +30,10 @@ function detectAuthor(user) {
   return "staff";
 }
 
-export default function ChartisPanel({ module, recordId, subject, docInfo, extContactEmail, onClose }) {
+export default function ChartisPanel({
+  module, recordId, subject, docInfo, extContactEmail,
+  threadId, titleOverride, directMode = false, embedded = false, onClose,
+}) {
   const { theme } = useContext(ThemeContext);
   const isLight = theme === "light";
   const isArtis = theme === "artis";
@@ -44,21 +44,26 @@ export default function ChartisPanel({ module, recordId, subject, docInfo, extCo
   const [sending, setSending] = useState(false);
   const [fontPx, setFontPx] = useState(() => Number(localStorage.getItem(FONT_KEY)) || 13);
   const endRef = useRef(null);
+  const showEmail = !directMode;
 
   useEffect(() => { localStorage.setItem(FONT_KEY, String(fontPx)); }, [fontPx]);
 
-  // ── Mitarbeiter (created_by -> Name/Farbe) ────────────────────────────────
   const { data: users = [] } = useQuery({
     queryKey: ["chartisUsers"],
     queryFn: () => entities.User.list("full_name"),
     staleTime: 5 * 60 * 1000,
   });
 
-  // ── Faden finden-oder-anlegen ─────────────────────────────────────────────
+  // ── Faden: per threadId laden ODER per (module,record) finden/anlegen ─────
   const { data: thread, isLoading: threadLoading, error: threadError } = useQuery({
-    queryKey: ["chartisThread", module, recordId],
-    enabled: !!module && !!recordId,
+    queryKey: ["chartisThread", threadId || `${module}:${recordId}`],
+    enabled: !!(threadId || (module && recordId)),
     queryFn: async () => {
+      if (threadId) {
+        const { data, error } = await supabase.from("chartis_threads").select("*").eq("id", threadId).maybeSingle();
+        if (error) throw error;
+        return data;
+      }
       const { data: existing, error: selErr } = await supabase
         .from("chartis_threads").select("*")
         .eq("module", module).eq("record_id", recordId).maybeSingle();
@@ -68,7 +73,7 @@ export default function ChartisPanel({ module, recordId, subject, docInfo, extCo
       const { data: created, error: insErr } = await supabase
         .from("chartis_threads")
         .insert({
-          module, record_id: recordId,
+          module, record_id: recordId, thread_type: "objekt",
           subject: subject || "Chartis",
           ext_contact_email: extContactEmail || null,
           owner_id: user?.id, created_by: user?.id,
@@ -117,14 +122,22 @@ export default function ChartisPanel({ module, recordId, subject, docInfo, extCo
         toast.success("E-Mail an Kunde gesendet");
       } else {
         const { data: { user } } = await supabase.auth.getUser();
-        const { error } = await supabase.from("chartis_messages").insert({
+        const { data: msg, error } = await supabase.from("chartis_messages").insert({
           thread_id: thread.id, mandant_id: thread.mandant_id,
           kind: "intern", body_text: body, created_by: user?.id,
-        });
+        }).select("id").single();
         if (error) throw error;
-        await supabase.from("chartis_threads")
-          .update({ updated_at: new Date().toISOString() }).eq("id", thread.id);
-        toast.success("Interne Notiz gespeichert");
+        // @-Erwaehnungen erfassen (matcht Vorname/Name/E-Mail)
+        const toks = [...body.matchAll(/@([A-Za-zÀ-ÿ]+)/g)].map(m => m[1].toLowerCase());
+        if (toks.length) {
+          const hit = users.filter(u => {
+            const fn = (u.full_name || "").toLowerCase();
+            return u.id !== user?.id && toks.some(t => fn.split(" ")[0] === t || fn.startsWith(t) || (u.email || "").toLowerCase().startsWith(t));
+          });
+          if (hit.length) await supabase.from("chartis_mentions").insert(
+            hit.map(u => ({ message_id: msg.id, thread_id: thread.id, user_id: u.id })));
+        }
+        toast.success("Gesendet");
       }
       setText("");
       qc.invalidateQueries({ queryKey: ["chartisMessages", thread.id] });
@@ -144,45 +157,41 @@ export default function ChartisPanel({ module, recordId, subject, docInfo, extCo
   const inputBg  = isArtis ? "#ffffff" : isLight ? "#ffffff" : "rgba(39,39,42,0.8)";
   const accent   = isArtis ? "#7a9b7f" : "#6366f1";
 
-  const tablesMissing = threadError && /relation .*chartis|does not exist/i.test(threadError.message || "");
+  const tablesMissing = threadError && /relation .*chartis|does not exist|column .*thread_type/i.test(threadError.message || "");
+  const headTitle = titleOverride || (thread?.thread_type === "gruppe" ? thread?.subject : "Chartis");
 
   return (
     <div className="flex flex-col h-full" style={{ backgroundColor: panelBg }}>
       {/* Header */}
       <div className="flex-shrink-0 px-4 py-3 border-b" style={{ backgroundColor: headerBg, borderColor: border }}>
         <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-1.5 text-sm font-bold" style={{ color: accent }}>
-            <MessageSquare className="h-4 w-4" /> Chartis
-            <span className="text-xs font-normal" style={{ color: textMuted }}>· {module}</span>
+          <div className="flex items-center gap-1.5 text-sm font-bold min-w-0" style={{ color: accent }}>
+            {directMode ? <Users className="h-4 w-4 flex-shrink-0" /> : <MessageSquare className="h-4 w-4 flex-shrink-0" />}
+            <span className="truncate">{headTitle}</span>
+            {!titleOverride && module && <span className="text-xs font-normal flex-shrink-0" style={{ color: textMuted }}>· {module}</span>}
           </div>
-          <button onClick={onClose} className="p-1 rounded hover:bg-black/10" style={{ color: textMuted }}>
-            <X className="h-4 w-4" />
-          </button>
+          {!embedded && (
+            <button onClick={onClose} className="p-1 rounded hover:bg-black/10 flex-shrink-0" style={{ color: textMuted }}>
+              <X className="h-4 w-4" />
+            </button>
+          )}
         </div>
 
-        {/* Verlinktes Dokument */}
         {docInfo?.filename && (
-          <button
-            onClick={docInfo.onOpen}
+          <button onClick={docInfo.onOpen}
             className="mt-2 w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg border text-left"
-            style={{ borderColor: border, background: inputBg }}
-            title="Dokument öffnen"
-          >
+            style={{ borderColor: border, background: inputBg }} title="Dokument öffnen">
             <FileText className="h-4 w-4 flex-shrink-0" style={{ color: "#dc2626" }} />
             <span className="text-xs truncate flex-1" style={{ color: textMain }}>{docInfo.filename}</span>
             <span className="text-[10px]" style={{ color: textMuted }}>öffnen</span>
           </button>
         )}
 
-        {/* Schriftgrössen-Regler (pro Mitarbeiter, lokal gespeichert) */}
         <div className="flex items-center gap-2 mt-2.5">
           <Type className="h-3 w-3" style={{ color: textMuted }} />
-          <input
-            type="range" min="11" max="18" step="1" value={fontPx}
+          <input type="range" min="11" max="18" step="1" value={fontPx}
             onChange={e => setFontPx(Number(e.target.value))}
-            className="flex-1 h-1 cursor-pointer" style={{ accentColor: accent }}
-            aria-label="Schriftgrösse"
-          />
+            className="flex-1 h-1 cursor-pointer" style={{ accentColor: accent }} aria-label="Schriftgrösse" />
           <span className="text-[11px] tabular-nums" style={{ color: textMuted, minWidth: 30 }}>{fontPx}px</span>
         </div>
       </div>
@@ -192,30 +201,24 @@ export default function ChartisPanel({ module, recordId, subject, docInfo, extCo
         {tablesMissing ? (
           <div className="flex items-start gap-2 text-xs p-3 rounded-lg" style={{ color: "#92400e", background: "#fef3c7" }}>
             <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
-            <span>Chartis-Tabellen noch nicht angelegt. Migration <code>20260621120000_chartis_core.sql</code> anwenden (<code>supabase db push</code>), dann lädt der Faden.</span>
+            <span>Chartis-Tabellen/Spalten fehlen noch. Bitte die Migration(en) im Supabase-SQL-Editor ausführen.</span>
           </div>
         ) : (threadLoading || msgsLoading) ? (
           <div className="flex justify-center py-4"><Loader2 className="h-4 w-4 animate-spin" style={{ color: textMuted }} /></div>
         ) : messages.length === 0 ? (
           <div className="text-center text-xs py-6" style={{ color: textMuted }}>
-            Noch keine Nachrichten. Starte intern mit dem Team oder schreib dem Kunden.
+            Noch keine Nachrichten. Schreib die erste.
           </div>
         ) : (
           messages.map(msg => {
             const sender = users.find(u => u.id === msg.created_by);
             const isIncoming = msg.kind === "email_in";
             return (
-              <ChartisBubble
-                key={msg.id}
-                text={msg.body_text}
-                kind={msg.kind}
-                side={isIncoming ? "left" : msg.kind === "intern" ? "right" : "right"}
+              <ChartisBubble key={msg.id} text={msg.body_text} kind={msg.kind}
+                side={isIncoming ? "left" : "right"}
                 senderLabel={isIncoming ? (msg.from_addr || "Kunde") : (sender?.full_name || sender?.email || "Mitarbeiter")}
-                time={msg.created_at}
-                author={isIncoming ? "customer" : detectAuthor(sender)}
-                theme={theme}
-                fontPx={fontPx}
-              />
+                time={msg.created_at} author={isIncoming ? "customer" : detectAuthor(sender)}
+                theme={theme} fontPx={fontPx} />
             );
           })
         )}
@@ -224,53 +227,40 @@ export default function ChartisPanel({ module, recordId, subject, docInfo, extCo
 
       {/* Composer */}
       <div className="flex-shrink-0 border-t p-3" style={{ borderColor: border, backgroundColor: headerBg }}>
-        <div className="flex items-center gap-2 mb-2">
-          <button
-            onClick={() => setMode("intern")}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border"
-            style={mode === "intern"
-              ? { backgroundColor: accent, color: "#fff", borderColor: accent }
-              : { backgroundColor: "transparent", color: textMuted, borderColor: border }}
-          >
-            <Lock className="h-3 w-3" /> Intern
-          </button>
-          <button
-            onClick={() => EMAIL_ENABLED ? setMode("email") : toast.info("E-Mail-Rückkanal aktiv, sobald Domain & Postmark stehen")}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border"
-            style={mode === "email"
-              ? { backgroundColor: accent, color: "#fff", borderColor: accent }
-              : { backgroundColor: "transparent", color: EMAIL_ENABLED ? textMuted : "#bbb", borderColor: border, opacity: EMAIL_ENABLED ? 1 : 0.6 }}
-            title={EMAIL_ENABLED ? "E-Mail an Kunde" : "Noch nicht aktiv (Domain fehlt)"}
-          >
-            <Mail className="h-3 w-3" /> E-Mail an Kunde
-          </button>
-          {mode === "email" && (
-            <span className="text-[11px] truncate" style={{ color: textMuted }}>
-              an {extContactEmail || "—"}
-            </span>
-          )}
-        </div>
+        {showEmail && (
+          <div className="flex items-center gap-2 mb-2">
+            <button onClick={() => setMode("intern")}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border"
+              style={mode === "intern"
+                ? { backgroundColor: accent, color: "#fff", borderColor: accent }
+                : { backgroundColor: "transparent", color: textMuted, borderColor: border }}>
+              <Lock className="h-3 w-3" /> Intern
+            </button>
+            <button onClick={() => EMAIL_ENABLED ? setMode("email") : toast.info("E-Mail-Rückkanal aktiv, sobald Domain & Postmark stehen")}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border"
+              style={mode === "email"
+                ? { backgroundColor: accent, color: "#fff", borderColor: accent }
+                : { backgroundColor: "transparent", color: EMAIL_ENABLED ? textMuted : "#bbb", borderColor: border, opacity: EMAIL_ENABLED ? 1 : 0.6 }}
+              title={EMAIL_ENABLED ? "E-Mail an Kunde" : "Noch nicht aktiv (Domain fehlt)"}>
+              <Mail className="h-3 w-3" /> E-Mail an Kunde
+            </button>
+            {mode === "email" && <span className="text-[11px] truncate" style={{ color: textMuted }}>an {extContactEmail || "—"}</span>}
+          </div>
+        )}
 
         <textarea
           className="w-full rounded-lg border p-2.5 resize-none outline-none"
-          style={{ backgroundColor: inputBg, borderColor: border, color: textMain, height: 84, fontSize: `${Math.max(12, fontPx)}px` }}
-          placeholder={mode === "email" ? "E-Mail an den Kunden schreiben…" : "Interne Notiz fürs Team… (@Name erwähnt)"}
-          value={text}
-          onChange={e => setText(e.target.value)}
-          onKeyDown={e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) handleSend(); }}
-        />
+          style={{ backgroundColor: inputBg, borderColor: border, color: textMain, height: 80, fontSize: `${Math.max(12, fontPx)}px` }}
+          placeholder={mode === "email" ? "E-Mail an den Kunden schreiben…" : "Nachricht… (@Name erwähnt)"}
+          value={text} onChange={e => setText(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) handleSend(); }} />
         <div className="flex items-center justify-between mt-2">
           <span className="text-[11px]" style={{ color: textMuted }}>
-            {mode === "email"
-              ? "Antwort des Kunden kommt automatisch hierher zurück"
-              : "Bleibt im Chartis – keine E-Mail. Ctrl+Enter zum Senden"}
+            {mode === "email" ? "Antwort des Kunden kommt automatisch hierher zurück" : "Ctrl+Enter zum Senden"}
           </span>
-          <button
-            onClick={handleSend}
-            disabled={!text.trim() || sending || tablesMissing}
+          <button onClick={handleSend} disabled={!text.trim() || sending || tablesMissing}
             className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium"
-            style={{ backgroundColor: text.trim() && !sending ? accent : "#a1a1aa", color: "#fff", opacity: (!text.trim() || sending || tablesMissing) ? 0.6 : 1 }}
-          >
+            style={{ backgroundColor: text.trim() && !sending ? accent : "#a1a1aa", color: "#fff", opacity: (!text.trim() || sending || tablesMissing) ? 0.6 : 1 }}>
             {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : mode === "email" ? <Mail className="h-4 w-4" /> : <Send className="h-4 w-4" />}
             {mode === "email" ? "Senden + Mail" : "Senden"}
           </button>
@@ -287,9 +277,9 @@ function ChartisBubble({ text, kind, side, senderLabel, time, author, theme, fon
   const isLeft = side === "left";
 
   const palette = {
-    sascha:   { bg: "#dbeafe", text: "#1e3a8a", label: "Sascha" },
-    claude:   { bg: "#d1fae5", text: "#065f46", label: "Claude 🤖" },
-    roger:    { bg: "#fef3c7", text: "#78350f", label: "Roger" },
+    sascha:   { bg: "#dbeafe", text: "#1e3a8a" },
+    claude:   { bg: "#d1fae5", text: "#065f46" },
+    roger:    { bg: "#fef3c7", text: "#78350f" },
     customer: { bg: isArtis ? "#e6ede6" : isLight ? "#ebebf4" : "rgba(63,63,70,0.4)", text: isArtis ? "#2d3a2d" : isLight ? "#1a1a2e" : "#e4e4e7" },
     staff:    { bg: isArtis ? "#7a9b7f" : "#6366f1", text: "#ffffff" },
   };
@@ -305,13 +295,9 @@ function ChartisBubble({ text, kind, side, senderLabel, time, author, theme, fon
           {kind === "intern" && <Lock className="inline h-3 w-3 mr-0.5" />}
           {senderLabel}{time && ` · ${format(new Date(time), "dd.MM. HH:mm", { locale: de })}`}
         </div>
-        <div
-          className="px-3.5 py-2.5 whitespace-pre-wrap break-words"
-          style={{
-            backgroundColor: tone.bg, color: tone.text, fontSize: `${fontPx}px`,
-            borderRadius: isLeft ? "4px 16px 16px 16px" : "16px 4px 16px 16px",
-          }}
-        >
+        <div className="px-3.5 py-2.5 whitespace-pre-wrap break-words"
+          style={{ backgroundColor: tone.bg, color: tone.text, fontSize: `${fontPx}px`,
+            borderRadius: isLeft ? "4px 16px 16px 16px" : "16px 4px 16px 16px" }}>
           {text}
         </div>
       </div>

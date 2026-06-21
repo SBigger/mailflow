@@ -27,6 +27,7 @@ const ReminderBoard = lazy(() => import('./pages/ReminderBoard'));
 const TicketBoard = lazy(() => import('./pages/TicketBoard'));
 const KnowledgeBase = lazy(() => import('./pages/KnowledgeBase'));
 const Dokumente = lazy(() => import('./pages/Dokumente'));
+const Chartis = lazy(() => import('./pages/Chartis'));
 const UserManagement = lazy(() => import('./pages/UserManagement'));
 const ArtisTools = lazy(() => import('./pages/ArtisTools'));
 const BriefSchreiben = lazy(() => import('./pages/BriefSchreiben'));
@@ -100,6 +101,7 @@ function AuthenticatedApp() {
                                 <Route path="/TicketBoard" element={<TicketBoard/>}/>
                                 <Route path="/KnowledgeBase" element={<KnowledgeBase/>}/>
                                 <Route path="/Dokumente" element={<Dokumente/>}/>
+                                <Route path="/Chartis" element={<Chartis/>}/>
                                 <Route path="/Posteingang" element={<Posteingang/>}/>
                                 <Route path="/UserManagement" element={<UserManagement/>}/>
                                 <Route path="/ArtisTools" element={<ArtisTools/>}/>
