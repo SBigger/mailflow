@@ -1,14 +1,14 @@
 /**
  * DocHoverPreview.jsx — Vorschau-Fenster (oeffnet beim Hover ueber das Augen-Symbol).
  *
- * Das Fenster BLEIBT offen (kein Auto-Schliessen), ist per Kopfzeile VERSCHIEBBAR
- * und an der unteren rechten Ecke in der GROESSE verstellbar. Schliessen per ×.
+ * Bleibt offen, per Kopfzeile VERSCHIEBBAR, an der Ecke GROESSENVERSTELLBAR
+ * (Groesse wird in localStorage gemerkt), Schliessen per ×.
  * Rendert KOMPLETT LOKAL (keine externen Dienste, kein SharePoint):
- *   Bild | PDF (1. Seite) | Excel (xlsx) | Word (docx, mammoth) | Text.
+ *   Bild | PDF (alle Seiten, blaetterbar) | Excel (alle Blaetter) | Word (docx) | Text.
  * Laedt die Bytes einmalig (Cache pro doc.id).
  */
 import { useEffect, useRef, useState } from "react";
-import { X } from "lucide-react";
+import { X, ChevronLeft, ChevronRight } from "lucide-react";
 import * as pdfjsLib from "pdfjs-dist";
 
 if (pdfjsLib?.GlobalWorkerOptions) {
@@ -18,8 +18,9 @@ if (pdfjsLib?.GlobalWorkerOptions) {
   ).href;
 }
 
-const MAX_BYTES = 15 * 1024 * 1024;  // ueber 15 MB keine Auto-Vorschau (Bandbreite)
+const MAX_BYTES = 15 * 1024 * 1024;
 const MIN_W = 280, MIN_H = 220;
+const SIZE_KEY = "docPreviewSize";
 
 const blobCache = new Map();  // doc.id -> { url, blob }
 
@@ -33,32 +34,48 @@ async function getBlob(doc, url) {
   return blob;
 }
 
+function loadSize() {
+  try { const s = JSON.parse(localStorage.getItem(SIZE_KEY)); if (s && s.w >= MIN_W && s.h >= MIN_H) return s; } catch { /* ignore */ }
+  return { w: 440, h: 540 };
+}
+function saveSize(w, h) { try { localStorage.setItem(SIZE_KEY, JSON.stringify({ w, h })); } catch { /* ignore */ } }
+
 export default function DocHoverPreview({ doc, url, rect, onClose }) {
   const [st, setSt] = useState({ kind: "loading", payload: null, error: null });
-  const [pdfImg, setPdfImg] = useState(null);
+
+  // PDF-State
+  const pdfDocRef = useRef(null);
+  const [pdfPage, setPdfPage] = useState(1);
+  const [pdfNum, setPdfNum]   = useState(1);
+  const [pdfImg, setPdfImg]   = useState(null);
+
+  // Excel-State
+  const [excel, setExcel] = useState(null);  // { sheets:[{name,rows}], active }
+
   const objUrlRef = useRef(null);
 
-  // ── Fenster-Geometrie (verschiebbar + groessenverstellbar) ──
+  // ── Fenster-Geometrie (verschiebbar + groessenverstellbar, Groesse gemerkt) ──
   const [box, setBox] = useState(() => {
-    const w = 440, h = 540;
+    const { w, h } = loadSize();
     const vw = typeof window !== "undefined" ? window.innerWidth : 1280;
     const vh = typeof window !== "undefined" ? window.innerHeight : 800;
-    let left = (rect?.left ?? 240) - w - 12;            // links neben dem Icon
+    let left = (rect?.left ?? 240) - w - 12;
     if (left < 8) left = Math.min((rect?.right ?? 8) + 12, vw - w - 8);
     left = Math.max(8, Math.min(left, vw - w - 8));
     const top = Math.max(8, Math.min((rect?.top ?? 100) - 30, vh - h - 8));
     return { left, top, w, h };
   });
+  const boxRef = useRef(box);
   const dragRef = useRef(null);
 
   const onHeaderDown = (e) => {
     e.preventDefault();
-    dragRef.current = { mode: "move", sx: e.clientX, sy: e.clientY, box: { ...box } };
+    dragRef.current = { mode: "move", sx: e.clientX, sy: e.clientY, box: { ...boxRef.current } };
     attach();
   };
   const onResizeDown = (e) => {
     e.preventDefault(); e.stopPropagation();
-    dragRef.current = { mode: "resize", sx: e.clientX, sy: e.clientY, box: { ...box } };
+    dragRef.current = { mode: "resize", sx: e.clientX, sy: e.clientY, box: { ...boxRef.current } };
     attach();
   };
   const attach = () => {
@@ -68,29 +85,34 @@ export default function DocHoverPreview({ doc, url, rect, onClose }) {
   const onMove = (ev) => {
     const d = dragRef.current; if (!d) return;
     const dx = ev.clientX - d.sx, dy = ev.clientY - d.sy;
-    if (d.mode === "move") {
-      const vw = window.innerWidth, vh = window.innerHeight;
-      setBox(b => ({ ...b,
-        left: Math.max(8, Math.min(d.box.left + dx, vw - b.w - 8)),
-        top:  Math.max(8, Math.min(d.box.top + dy,  vh - 40)) }));
-    } else {
-      setBox(b => ({ ...b,
-        w: Math.max(MIN_W, d.box.w + dx),
-        h: Math.max(MIN_H, d.box.h + dy) }));
-    }
+    setBox(() => {
+      let nb;
+      if (d.mode === "move") {
+        const vw = window.innerWidth, vh = window.innerHeight;
+        nb = { ...d.box,
+          left: Math.max(8, Math.min(d.box.left + dx, vw - d.box.w - 8)),
+          top:  Math.max(8, Math.min(d.box.top + dy,  vh - 40)) };
+      } else {
+        nb = { ...d.box, w: Math.max(MIN_W, d.box.w + dx), h: Math.max(MIN_H, d.box.h + dy) };
+      }
+      boxRef.current = nb;
+      return nb;
+    });
   };
   const onUp = () => {
+    const d = dragRef.current;
+    if (d && d.mode === "resize") saveSize(boxRef.current.w, boxRef.current.h);
     dragRef.current = null;
     document.removeEventListener("mousemove", onMove);
     document.removeEventListener("mouseup", onUp);
   };
-  useEffect(() => () => onUp(), []);  // Cleanup falls beim Unmount noch gezogen
+  useEffect(() => () => onUp(), []);
 
   // ── Inhalt laden ──
   useEffect(() => {
     let cancelled = false;
     setSt({ kind: "loading", payload: null, error: null });
-    setPdfImg(null);
+    setPdfImg(null); pdfDocRef.current = null; setExcel(null);
     const name = (doc.filename || doc.name || "").toLowerCase();
 
     (async () => {
@@ -111,21 +133,21 @@ export default function DocHoverPreview({ doc, url, rect, onClose }) {
         if (name.endsWith(".pdf") || blob.type === "application/pdf") {
           const buf = await blob.arrayBuffer();
           const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
-          const page = await pdf.getPage(1);
-          const vp = page.getViewport({ scale: 1.5 });
-          const canvas = document.createElement("canvas");
-          canvas.width = vp.width; canvas.height = vp.height;
-          await page.render({ canvasContext: canvas.getContext("2d"), viewport: vp }).promise;
-          if (!cancelled) { setPdfImg(canvas.toDataURL("image/jpeg", 0.85)); setSt({ kind: "pdf", payload: pdf.numPages, error: null }); }
+          if (cancelled) return;
+          pdfDocRef.current = pdf;
+          setPdfNum(pdf.numPages); setPdfPage(1);
+          setSt({ kind: "pdf", payload: null, error: null });
           return;
         }
         if (/\.(xlsx|xls|xlsm|xlsb|ods|csv)$/.test(name)) {
           const { read, utils } = await import("xlsx");
           const buf = await blob.arrayBuffer();
           const wb = read(new Uint8Array(buf), { type: "array", cellDates: true });
-          const ws = wb.Sheets[wb.SheetNames[0]];
-          const rows = utils.sheet_to_json(ws, { header: 1, raw: false, defval: "" }).slice(0, 200);
-          if (!cancelled) setSt({ kind: "excel", payload: { rows, more: wb.SheetNames.length > 1 }, error: null });
+          const sheets = wb.SheetNames.map(nm => ({
+            name: nm,
+            rows: utils.sheet_to_json(wb.Sheets[nm], { header: 1, raw: false, defval: "" }).slice(0, 1000),
+          }));
+          if (!cancelled) { setExcel({ sheets, active: 0 }); setSt({ kind: "excel", payload: null, error: null }); }
           return;
         }
         if (/\.(docx|docm)$/.test(name)) {
@@ -138,7 +160,7 @@ export default function DocHoverPreview({ doc, url, rect, onClose }) {
         }
         if (/\.(txt|md|json|xml|log|csv)$/.test(name) || (blob.type || "").startsWith("text/")) {
           const txt = await blob.text();
-          if (!cancelled) setSt({ kind: "text", payload: txt.slice(0, 8000), error: null });
+          if (!cancelled) setSt({ kind: "text", payload: txt.slice(0, 12000), error: null });
           return;
         }
         if (!cancelled) setSt({ kind: "none", payload: null, error: null });
@@ -149,6 +171,25 @@ export default function DocHoverPreview({ doc, url, rect, onClose }) {
 
     return () => { cancelled = true; if (objUrlRef.current) { URL.revokeObjectURL(objUrlRef.current); objUrlRef.current = null; } };
   }, [doc.id, url]);
+
+  // ── PDF-Seite rendern (bei Seitenwechsel) ──
+  useEffect(() => {
+    if (st.kind !== "pdf" || !pdfDocRef.current) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const page = await pdfDocRef.current.getPage(pdfPage);
+        const vp = page.getViewport({ scale: 1.6 });
+        const canvas = document.createElement("canvas");
+        canvas.width = vp.width; canvas.height = vp.height;
+        await page.render({ canvasContext: canvas.getContext("2d"), viewport: vp }).promise;
+        if (!cancelled) setPdfImg(canvas.toDataURL("image/jpeg", 0.85));
+      } catch { /* ignore */ }
+    })();
+    return () => { cancelled = true; };
+  }, [st.kind, pdfPage]);
+
+  const excelRows = excel?.sheets?.[excel.active]?.rows || [];
 
   return (
     <div style={{
@@ -164,6 +205,16 @@ export default function DocHoverPreview({ doc, url, rect, onClose }) {
         <span style={{ fontSize: 11, fontWeight: 600, color: "#eee", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
           {doc.name || doc.filename}
         </span>
+        {/* PDF-Blaetter-Navigation */}
+        {st.kind === "pdf" && pdfNum > 1 && (
+          <span onMouseDown={e => e.stopPropagation()} style={{ display: "flex", alignItems: "center", gap: 4, marginRight: 4 }}>
+            <button onClick={() => setPdfPage(p => Math.max(1, p - 1))} disabled={pdfPage <= 1}
+              style={navBtn(pdfPage > 1)}><ChevronLeft size={14} /></button>
+            <span style={{ fontSize: 10, color: "#aaa", minWidth: 54, textAlign: "center" }}>{pdfPage} / {pdfNum}</span>
+            <button onClick={() => setPdfPage(p => Math.min(pdfNum, p + 1))} disabled={pdfPage >= pdfNum}
+              style={navBtn(pdfPage < pdfNum)}><ChevronRight size={14} /></button>
+          </span>
+        )}
         <button onClick={onClose} onMouseDown={e => e.stopPropagation()} title="Schließen"
           style={{ background: "none", border: "none", cursor: "pointer", color: "#999", display: "flex", padding: 2, borderRadius: 4 }}
           onMouseEnter={e => e.currentTarget.style.color = "#fff"}
@@ -186,9 +237,10 @@ export default function DocHoverPreview({ doc, url, rect, onClose }) {
         )}
 
         {st.kind === "pdf" && (
-          <div style={{ padding: 10, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-            <img src={pdfImg} alt="" style={{ maxWidth: "100%", borderRadius: 3, boxShadow: "0 2px 12px rgba(0,0,0,0.5)" }} />
-            <span style={{ fontSize: 10, color: "#777" }}>Seite 1 von {st.payload}</span>
+          <div style={{ padding: 10, display: "flex", justifyContent: "center" }}>
+            {pdfImg
+              ? <img src={pdfImg} alt="" style={{ maxWidth: "100%", borderRadius: 3, boxShadow: "0 2px 12px rgba(0,0,0,0.5)" }} />
+              : <span style={{ color: "#777", fontSize: 12, padding: 30 }}>Seite wird gerendert…</span>}
           </div>
         )}
 
@@ -196,17 +248,16 @@ export default function DocHoverPreview({ doc, url, rect, onClose }) {
           <div style={{ overflow: "auto", padding: 4 }}>
             <table style={{ borderCollapse: "collapse", fontSize: 11, color: "#ddd" }}>
               <tbody>
-                {st.payload.rows.map((row, ri) => (
+                {excelRows.map((row, ri) => (
                   <tr key={ri} style={{ background: ri === 0 ? "#252525" : ri % 2 ? "#1b1b1b" : "transparent" }}>
                     {(row.length ? row : [""]).map((c, ci) => (
                       <td key={ci} style={{ border: "1px solid #2c2c2c", padding: "2px 6px", whiteSpace: "nowrap",
-                        maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", fontWeight: ri === 0 ? 600 : 400 }}>{String(c ?? "")}</td>
+                        maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", fontWeight: ri === 0 ? 600 : 400 }}>{String(c ?? "")}</td>
                     ))}
                   </tr>
                 ))}
               </tbody>
             </table>
-            {st.payload.more && <div style={{ fontSize: 9, color: "#666", padding: "4px 6px" }}>weitere Blätter vorhanden…</div>}
           </div>
         )}
 
@@ -230,12 +281,33 @@ export default function DocHoverPreview({ doc, url, rect, onClose }) {
         )}
       </div>
 
+      {/* Excel-Blatt-Tabs */}
+      {st.kind === "excel" && excel && excel.sheets.length > 1 && (
+        <div style={{ flexShrink: 0, display: "flex", borderTop: "1px solid #333", background: "#111", overflowX: "auto" }}>
+          {excel.sheets.map((sh, i) => (
+            <button key={i} onClick={() => setExcel(e => ({ ...e, active: i }))}
+              style={{ padding: "4px 12px", fontSize: 10, border: "none", cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap",
+                borderRight: "1px solid #2a2a2a",
+                background: i === excel.active ? "#252525" : "transparent",
+                color: i === excel.active ? "#fff" : "#888",
+                borderTop: `2px solid ${i === excel.active ? "#4a7a4f" : "transparent"}` }}>
+              {sh.name}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Resize-Griff unten rechts */}
       <div onMouseDown={onResizeDown} title="Größe ziehen"
         style={{ position: "absolute", right: 0, bottom: 0, width: 16, height: 16, cursor: "nwse-resize",
           background: "linear-gradient(135deg, transparent 50%, #555 50%, #555 60%, transparent 60%, transparent 72%, #555 72%, #555 82%, transparent 82%)" }} />
     </div>
   );
+}
+
+function navBtn(enabled) {
+  return { background: "none", border: "none", cursor: enabled ? "pointer" : "default",
+    color: enabled ? "#ccc" : "#555", display: "flex", padding: 2 };
 }
 
 function Centered({ children }) {
