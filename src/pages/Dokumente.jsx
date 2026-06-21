@@ -1664,6 +1664,7 @@ export default function Dokumente() {
                     <button onClick={() => downloadDoc(fullDoc)} title="Herunterladen" style={{ background: "none", border: "none", cursor: "pointer", color: accent, display: "flex", alignItems: "center", padding: 4, borderRadius: 4 }}><Download size={14} /></button>
                     <button onClick={() => setShareDialog({ type: 'doc', doc_id: fullDoc.id, name: fullDoc.name, customer_id: fullDoc.customer_id })} title="Link erstellen" style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4 }}><Link2 size={14} /></button>
                     <button onClick={() => handleDelete(fullDoc)} title="Löschen" style={{ background: "none", border: "none", cursor: "pointer", color: "#ef4444", display: "flex", alignItems: "center", padding: 4, borderRadius: 4 }}><Trash2 size={14} /></button>
+                    <button onClick={() => setChartisDoc(fullDoc)} title="Chartis – Chat zu diesem Dokument" style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4 }}><MessageSquare size={14} /></button>
                     <div style={{ display: "flex", gap: 2, marginLeft: 6 }}>
                       {[1,2,3,4,5].map(i => {
                         const filled = (doc.rank || 0) >= i * 0.06;
@@ -2175,6 +2176,11 @@ export default function Dokumente() {
                     <button onClick={() => !lockedByOther && handleDelete(doc)} title={lockedByOther ? "Gesperrt – kann nicht geloescht werden" : "Loeschen"}
                       style={{ background: clickedBtns[`del-${doc.id}`] ? "#ef444420" : "none", border: "none", cursor: lockedByOther ? "not-allowed" : "pointer", color: lockedByOther ? s.textMuted + "44" : "#ef4444", display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0, transition: "transform 0.15s, background 0.15s", transform: clickedBtns[`del-${doc.id}`] ? "scale(0.75)" : "scale(1)" }}>
                       <Trash2 size={15} />
+                    </button>
+                    {/* Chartis */}
+                    <button onClick={() => setChartisDoc(doc)} title="Chartis – Chat zu diesem Dokument"
+                      style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}>
+                      <MessageSquare size={15} />
                     </button>
                   </div>
                 );
