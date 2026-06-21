@@ -2202,6 +2202,7 @@ export default function Dokumente() {
           doc={hoverPreview.doc}
           url={hoverPreview.url}
           rect={hoverPreview.rect}
+          theme={theme}
           onClose={() => setHoverPreview(null)}
         />
       )}
