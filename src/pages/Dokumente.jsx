@@ -19,10 +19,12 @@ import {
   FolderOpen,
   Library,
   Eye,
-  History as HistoryIcon
+  History as HistoryIcon,
+  MessageSquare
 } from "lucide-react";
 import VersionsDialog from "@/components/dokumente/VersionsDialog";
 import DocHoverPreview from "@/components/dokumente/DocHoverPreview";
+import ChartisPanel from "@/components/chartis/ChartisPanel";
 import * as _pdfjsNs from "pdfjs-dist";
 import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.js?url";
 // pdfjs-dist 3.11 ist UMD → je nach Vite-Mode liegt getDocument direkt oder unter .default
@@ -836,6 +838,7 @@ export default function Dokumente() {
   const [highlightDocId, setHighlightDocId] = useState(null);
   const [shareDialog,   setShareDialog]   = useState(null); // { type: 'doc'|'folder', doc?, customer_id?, category?, year?, name? }
   const [showShareLinks, setShowShareLinks] = useState(false);
+  const [chartisDoc, setChartisDoc] = useState(null); // Chartis-Panel pro Dokument
 
   // Volltext-Suche via Supabase RPC (PostgreSQL GIN-Index)
   useEffect(() => {
@@ -2044,6 +2047,7 @@ export default function Dokumente() {
                                   <button onClick={() => { animateBtn(`dl-${doc.id}`); downloadDoc(doc); }} title="Herunterladen" style={{ background: "none", border: "none", cursor: "pointer", color: accent, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0, transition: "transform 0.15s", transform: clickedBtns[`dl-${doc.id}`] ? "scale(0.75)" : "scale(1)" }}><Download size={14} /></button>
                                   <button onClick={() => { animateBtn(`sh-${doc.id}`); setShareDialog({ type: 'doc', doc_id: doc.id, name: doc.name, customer_id: doc.customer_id }); }} title="Link erstellen" style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}><Link2 size={14} /></button>
                                   <button onClick={() => !lockedByOther && handleDelete(doc)} title={lockedByOther ? "Gesperrt" : "Löschen"} style={{ background: "none", border: "none", cursor: lockedByOther ? "not-allowed" : "pointer", color: lockedByOther ? s.textMuted + "44" : "#ef4444", display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}><Trash2 size={14} /></button>
+                                  <button onClick={() => setChartisDoc(doc)} title="Chartis – Chat zu diesem Dokument" style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}><MessageSquare size={14} /></button>
                                 </div>
                               );
                             })}
@@ -2220,6 +2224,23 @@ export default function Dokumente() {
           onSave={() => { queryClient.invalidateQueries({ queryKey: ["dokumente-all"] });  setEditDoc(null); }}
           s={s} border={border} accent={accent} />
       )}
+      {/* Chartis – Chat-Panel pro Dokument (Slide-over rechts) */}
+      {chartisDoc && (
+        <>
+          <div onClick={() => setChartisDoc(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.25)", zIndex: 70 }} />
+          <div style={{ position: "fixed", top: 0, right: 0, bottom: 0, width: 420, maxWidth: "92vw", zIndex: 71, boxShadow: "-8px 0 30px rgba(0,0,0,0.18)", borderLeft: `1px solid ${border}` }}>
+            <ChartisPanel
+              module="dokument"
+              recordId={chartisDoc.id}
+              subject={chartisDoc.name}
+              docInfo={{ filename: chartisDoc.filename, onOpen: () => downloadDoc(chartisDoc) }}
+              extContactEmail={customers.find(c => c.id === chartisDoc.customer_id)?.email}
+              onClose={() => setChartisDoc(null)}
+            />
+          </div>
+        </>
+      )}
+
       {/* CheckinDialog ersetzt durch direktes handleCheckin */}
 
       {/* Share-Link Dialog */}
