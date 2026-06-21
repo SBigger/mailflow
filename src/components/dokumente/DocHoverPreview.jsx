@@ -20,7 +20,7 @@ if (pdfjsLib?.GlobalWorkerOptions) {
 
 const MAX_BYTES = 15 * 1024 * 1024;
 const MIN_W = 280, MIN_H = 220;
-const SIZE_KEY = "docPreviewSize";
+const PLACE_KEY = "docPreviewPlacement";   // gemerkte Groesse + Position
 
 const blobCache = new Map();  // doc.id -> { url, blob }
 
@@ -34,11 +34,11 @@ async function getBlob(doc, url) {
   return blob;
 }
 
-function loadSize() {
-  try { const s = JSON.parse(localStorage.getItem(SIZE_KEY)); if (s && s.w >= MIN_W && s.h >= MIN_H) return s; } catch { /* ignore */ }
-  return { w: 440, h: 540 };
+function loadPlace() {
+  try { const s = JSON.parse(localStorage.getItem(PLACE_KEY)); if (s && s.w >= MIN_W && s.h >= MIN_H) return s; } catch { /* ignore */ }
+  return null;
 }
-function saveSize(w, h) { try { localStorage.setItem(SIZE_KEY, JSON.stringify({ w, h })); } catch { /* ignore */ } }
+function savePlace(b) { try { localStorage.setItem(PLACE_KEY, JSON.stringify({ w: b.w, h: b.h, left: b.left, top: b.top })); } catch { /* ignore */ } }
 
 export default function DocHoverPreview({ doc, url, rect, onClose }) {
   const [st, setSt] = useState({ kind: "loading", payload: null, error: null });
@@ -56,9 +56,18 @@ export default function DocHoverPreview({ doc, url, rect, onClose }) {
 
   // ── Fenster-Geometrie (verschiebbar + groessenverstellbar, Groesse gemerkt) ──
   const [box, setBox] = useState(() => {
-    const { w, h } = loadSize();
     const vw = typeof window !== "undefined" ? window.innerWidth : 1280;
     const vh = typeof window !== "undefined" ? window.innerHeight : 800;
+    const saved = loadPlace();
+    const w = saved?.w ?? 440, h = saved?.h ?? 540;
+    // Gemerkte Position bevorzugen (in den Viewport geklemmt), sonst neben dem Icon.
+    if (saved && Number.isFinite(saved.left) && Number.isFinite(saved.top)) {
+      return {
+        left: Math.max(8, Math.min(saved.left, vw - w - 8)),
+        top:  Math.max(8, Math.min(saved.top,  vh - 40)),
+        w, h,
+      };
+    }
     let left = (rect?.left ?? 240) - w - 12;
     if (left < 8) left = Math.min((rect?.right ?? 8) + 12, vw - w - 8);
     left = Math.max(8, Math.min(left, vw - w - 8));
@@ -101,7 +110,7 @@ export default function DocHoverPreview({ doc, url, rect, onClose }) {
   };
   const onUp = () => {
     const d = dragRef.current;
-    if (d && d.mode === "resize") saveSize(boxRef.current.w, boxRef.current.h);
+    if (d) savePlace(boxRef.current);   // Groesse UND Position merken (Move + Resize)
     dragRef.current = null;
     document.removeEventListener("mousemove", onMove);
     document.removeEventListener("mouseup", onUp);
