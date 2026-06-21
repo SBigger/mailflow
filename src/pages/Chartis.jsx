@@ -1,13 +1,14 @@
-import React, { useState, useContext, useMemo } from "react";
+import React, { useState, useContext, useMemo, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { entities, supabase, auth } from "@/api/supabaseClient";
 import { ThemeContext } from "@/Layout";
 import ChartisPanel from "@/components/chartis/ChartisPanel";
+import CommandPalette from "@/components/chartis/CommandPalette";
 import { chartisTheme, SEM, AUTHOR, authorKey, initials, isMissed } from "@/lib/chartisTheme";
 import {
   MessageSquare, Plus, Users, User, Lock, AtSign, LayoutGrid, Building2, Clock,
-  PhoneOff, Phone, Mail, Calendar, CheckSquare, X, Search, Check, Loader2, Send, Paperclip, Video,
+  PhoneOff, Phone, Mail, Calendar, CheckSquare, X, Search, Check, Loader2, Send, Paperclip, Video, Command,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -31,6 +32,7 @@ export default function Chartis() {
   const [pickSel, setPickSel] = useState([]);
   const [groupName, setGroupName] = useState("");
   const [busy, setBusy] = useState(false);
+  const [cmdOpen, setCmdOpen] = useState(false);
 
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: () => auth.me() });
   const { data: users = [] } = useQuery({ queryKey: ["chartisUsers"], queryFn: () => entities.User.list("full_name"), staleTime: 300000 });
@@ -207,6 +209,28 @@ export default function Chartis() {
   }
   const pickList = users.filter(u => u.id !== me?.id && ((u.full_name || "").toLowerCase().includes(pickSearch.toLowerCase()) || (u.email || "").toLowerCase().includes(pickSearch.toLowerCase())));
 
+  useEffect(() => {
+    const onKey = (e) => { if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) { e.preventDefault(); setCmdOpen(o => !o); } };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  const commands = useMemo(() => {
+    const nav = [
+      { id: "s-tag", icon: LayoutGrid, label: "Heute", run: () => setScope("tag") },
+      { id: "s-direkt", icon: User, label: "Direkt", run: () => setScope("direkt") },
+      { id: "s-gruppen", icon: Users, label: "Gruppen", run: () => setScope("gruppen") },
+      { id: "s-erwaehnt", icon: AtSign, label: "Erwähnt", run: () => setScope("erwaehnt") },
+      { id: "s-kunden", icon: Building2, label: "Kunden-Konversationen", run: () => setScope("kunden") },
+      { id: "s-anrufe", icon: PhoneOff, label: "Entgangene Anrufe", run: () => setScope("anrufe") },
+      { id: "s-mails", icon: Mail, label: "Mails", run: () => setScope("mails") },
+      { id: "s-kalender", icon: Calendar, label: "Kalender", run: () => setScope("kalender") },
+      { id: "s-todos", icon: CheckSquare, label: "Todos", run: () => setScope("todos") },
+      { id: "neu", icon: Plus, label: "Neuer Chat / Gruppe", run: () => setPicker(true) },
+    ];
+    const people = users.filter(u => u.id !== me?.id).map(u => ({ id: "u-" + u.id, icon: User, label: "Direkt an " + (u.full_name || u.email), sub: "Chat", run: () => openDirect(u.id) }));
+    return [...nav, ...people];
+  }, [users, me]);
+
   const clearActive = () => { setActiveId(null); setActiveCall(null); setActiveMail(null); setActiveEvent(null); setActiveTask(null); };
   const NavItem = ({ k, icon: Icon, label, count, red }) => (
     <button onClick={() => { setScope(k); setActiveCall(null); }} className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left relative"
@@ -225,7 +249,8 @@ export default function Chartis() {
         <div className="flex items-center gap-2 px-3 py-3">
           <div className="rounded-full flex items-center justify-center" style={{ width: 24, height: 24, background: t.accentFill, color: "#fff", fontSize: 11, fontWeight: 700 }}>C</div>
           <span style={{ fontWeight: 600, fontSize: 15, letterSpacing: "-0.01em" }}>Chartis</span>
-          {unseenMentions > 0 && <span style={{ marginLeft: "auto", fontSize: 10, color: "#fff", background: SEM.missed, borderRadius: 9, padding: "0 6px" }}>{unseenMentions}</span>}
+          {unseenMentions > 0 && <span style={{ fontSize: 10, color: "#fff", background: SEM.missed, borderRadius: 9, padding: "0 6px" }}>{unseenMentions}</span>}
+          <button onClick={() => setCmdOpen(true)} title="Befehle (⌘K)" style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 3, fontSize: 10, color: t.textMuted, border: `1px solid ${t.borderSubtle}`, borderRadius: 6, padding: "3px 6px" }}><Command className="h-3 w-3" />K</button>
         </div>
         <div className="px-2 overflow-y-auto flex-1">
           <NavItem k="tag" icon={LayoutGrid} label="Heute" />
@@ -264,6 +289,21 @@ export default function Chartis() {
             <span className="ml-auto" style={{ fontSize: 11, fontWeight: 600 }}>{scopeMeta[scope].label}</span>
           </div>
         </div>
+        {scope === "tag" && !tablesMissing && (
+          <div className="flex gap-2 px-3 py-2.5" style={{ borderBottom: `1px solid ${t.borderSubtle}`, overflowX: "auto" }}>
+            {[
+              { l: "Erwähnt", n: unseenMentions, go: "erwaehnt", red: false },
+              { l: "Anrufe", n: missedCalls.length, go: "anrufe", red: true },
+              { l: "Todos", n: tasks.filter(k => k.due_date && new Date(k.due_date) <= new Date(new Date().setHours(23, 59, 59, 999))).length, go: "todos", red: false },
+              { l: "Termine", n: calendarEvents.filter(e => new Date(e.start_time).toDateString() === new Date().toDateString()).length, go: "kalender", red: false },
+            ].map(c => (
+              <button key={c.l} onClick={() => setScope(c.go)} className="flex flex-col items-start px-2.5 py-1.5 rounded-lg flex-shrink-0" style={{ background: t.sunken, minWidth: 62 }}>
+                <span style={{ fontSize: 18, fontWeight: 700, lineHeight: 1, color: c.red && c.n > 0 ? SEM.missed : t.textPrimary }}>{c.n}</span>
+                <span style={{ fontSize: 10, color: t.textMuted, marginTop: 2 }}>{c.l}</span>
+              </button>
+            ))}
+          </div>
+        )}
         <div className="flex-1 overflow-y-auto">
           {tablesMissing ? (
             <div className="m-3 text-xs p-3 rounded-lg" style={{ color: "#92400e", background: "#fef3c7" }}>Chartis-Tabellen fehlen. Bitte Migrationen im SQL-Editor ausführen.</div>
@@ -318,6 +358,7 @@ export default function Chartis() {
         )}
       </div>
 
+      <CommandPalette open={cmdOpen} onClose={() => setCmdOpen(false)} commands={commands} t={t} />
       {picker && <Picker t={t} list={pickList} pickSearch={pickSearch} setPickSearch={setPickSearch} pickSel={pickSel} setPickSel={setPickSel} groupName={groupName} setGroupName={setGroupName} busy={busy} onDirect={openDirect} onGroup={createGroup} onClose={() => setPicker(false)} />}
     </div>
   );
