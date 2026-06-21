@@ -31,9 +31,16 @@ serve(async (req) => {
   if (!p) return json({ error: 'bad payload' }, 400)
 
   const provider = 'postmark'
-  const externalId: string = p.MessageID || p.Headers?.find?.((h: any) => h?.Name === 'Message-ID')?.Value || crypto.randomUUID()
+  const externalId: string | null = p.MessageID || headerValue(p, 'Message-ID') || null
   const fromEmail: string = (p.FromFull?.Email || p.From || '').toLowerCase()
   const subject: string = p.Subject || '(kein Betreff)'
+
+  // Ohne stabile Message-ID kein deterministischer Dedup-Key (Random wuerde
+  // Retries durchlassen) -> konsistent nach Unrouted parken.
+  if (!externalId) {
+    await supabase.from('chartis_unrouted').insert({ provider, external_message_id: null, from_addr: fromEmail, subject, reason: 'no_message_id' })
+    return json({ success: true, routed: false, reason: 'no_message_id' })
+  }
 
   // ── Idempotenz zuerst: belegen, dass diese Mail bearbeitet wird ──────────
   // upsert + ignoreDuplicates: bei Konflikt kommt 0 Zeilen OHNE Fehler zurueck.
@@ -67,7 +74,8 @@ serve(async (req) => {
   if (!thread) return await toUnrouted('bad_token')
 
   // ── From-Binding: Hijacking-/Stellvertreter-Schutz ──────────────────────
-  if (thread.ext_contact_email && fromEmail && thread.ext_contact_email.toLowerCase() !== fromEmail) {
+  // Leerer Absender darf das From-Binding NICHT umgehen (kein `fromEmail &&`)
+  if (thread.ext_contact_email && thread.ext_contact_email.toLowerCase() !== fromEmail) {
     return await toUnrouted('from_mismatch')
   }
 
@@ -90,15 +98,19 @@ serve(async (req) => {
     .select('id')
     .single()
   if (msgErr) {
-    // Dedup-Eintrag wieder freigeben, damit Postmark-Retry erneut greifen kann
+    // Unique-Verletzung (gefaelschte/duplizierte Message-ID) ist NICHT transient:
+    // Dedup-Guard behalten, sonst Endlos-Retry-Loop (Poison Message).
+    if ((msgErr as { code?: string }).code === '23505') return json({ success: true, duplicate: true })
+    // Nur bei echt transienten Fehlern den Dedup-Eintrag wieder freigeben.
     await supabase.from('chartis_inbound_dedup').delete().match({ provider, external_message_id: externalId })
     return json({ error: 'DB-Fehler', details: msgErr.message }, 500)
   }
 
   await supabase.from('chartis_inbound_dedup')
     .update({ thread_id: thread.id, message_id: msg.id }).match({ provider, external_message_id: externalId })
-  await supabase.from('chartis_threads')
+  const { error: updErr } = await supabase.from('chartis_threads')
     .update({ status: 'aktiv', updated_at: new Date().toISOString() }).eq('id', thread.id)
+  if (updErr) console.error('chartis-inbound: Thread-Status-Update fehlgeschlagen', thread.id, updErr.message)
 
   return json({ success: true, routed: true, thread_id: thread.id, message_id: msg.id })
 })

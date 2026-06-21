@@ -35,7 +35,14 @@ export default function Chartis() {
   const [cmdOpen, setCmdOpen] = useState(false);
 
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: () => auth.me() });
-  const { data: users = [] } = useQuery({ queryKey: ["chartisUsers"], queryFn: () => entities.User.list("full_name"), staleTime: 300000 });
+  const { data: users = [] } = useQuery({
+    queryKey: ["chartisUsers"], staleTime: 300000,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("chartis_list_staff");
+      if (!error && data) return [...data].sort((a, b) => (a.full_name || "").localeCompare(b.full_name || ""));
+      return entities.User.list("full_name"); // Fallback bis RLS-Fix-Migration angewendet
+    },
+  });
   const { data: customers = [] } = useQuery({ queryKey: ["customers"], queryFn: () => entities.Customer.list("company_name"), staleTime: 300000 });
   const userById = useMemo(() => Object.fromEntries(users.map(u => [u.id, u])), [users]);
   const custById = useMemo(() => Object.fromEntries(customers.map(c => [c.id, c])), [customers]);
@@ -76,7 +83,7 @@ export default function Chartis() {
     queryKey: ["chartisMails", me?.id], enabled: !!me?.id, refetchInterval: 30000,
     queryFn: async () => {
       const { data } = await supabase.from("mail_items")
-        .select("id,subject,sender_name,sender_email,recipient_email,received_date,is_read,has_attachments,body_preview,body,customer_id")
+        .select("id,subject,sender_name,sender_email,recipient_email,received_date,created_at,is_read,has_attachments,body_preview,body,customer_id")
         .eq("created_by", me.id).order("received_date", { ascending: false }).limit(200);
       return data || [];
     },
@@ -114,9 +121,10 @@ export default function Chartis() {
     const map = new Map();
     for (const m of mailItems) {
       const key = normSubject(m.subject) + "|" + (custById[m.customer_id]?.company_name || m.sender_email || "");
-      if (!map.has(key)) map.set(key, { key, subject: m.subject, customer_id: m.customer_id, mails: [], last: m.received_date, unread: false });
+      const md = m.received_date || m.created_at;
+      if (!map.has(key)) map.set(key, { key, subject: m.subject, customer_id: m.customer_id, mails: [], last: md, unread: false });
       const g = map.get(key); g.mails.push(m); if (!m.is_read) g.unread = true;
-      if (new Date(m.received_date) > new Date(g.last)) { g.last = m.received_date; g.subject = m.subject; }
+      if (new Date(md) > new Date(g.last)) { g.last = md; g.subject = m.subject; }
     }
     return [...map.values()].sort((a, b) => new Date(b.last) - new Date(a.last));
   }, [mailItems, custById]);
@@ -168,7 +176,11 @@ export default function Chartis() {
       ...dm.map(x => ({ type: "thread", x })),
       ...[...teamObjekt, ...kundenThreads].filter(x => mentionIds.has(x.id) || x.status === "wartet_kunde").map(x => ({ type: "thread", x })),
     ];
-    if (seg === "mich") list = list.filter(it => it.type !== "thread" || mentionIds.has(it.x.id));
+    if (seg === "mich") list = list.filter(it =>
+      it.type === "thread" ? mentionIds.has(it.x.id)
+      : it.type === "call" ? (!!me?.full_name && it.c.artis_user_name === me.full_name)
+      : it.type === "task" ? (it.k.assignee === me?.email || it.k.verantwortlich === me?.email)
+      : true);
     const q = search.trim().toLowerCase();
     if (q) list = list.filter(it =>
       it.type === "call" ? (it.c.caller_name || it.c.caller_number || "").toLowerCase().includes(q)
@@ -184,7 +196,14 @@ export default function Chartis() {
   async function openDirect(otherId) {
     if (!me?.id) return; setBusy(true);
     try {
-      const existing = myThreads.find(x => x.thread_type === "direkt" && (() => { const ids = (x.chartis_participants || []).map(p => p.user_id); return ids.length === 2 && ids.includes(me.id) && ids.includes(otherId); })());
+      // Frischer DB-Check (kein stale-closure auf myThreads) gegen Duplikat-Threads
+      const { data: myP } = await supabase.from("chartis_participants").select("thread_id").eq("user_id", me.id);
+      const pIds = (myP || []).map(r => r.thread_id);
+      let existing = null;
+      if (pIds.length) {
+        const { data: cand } = await supabase.from("chartis_threads").select("id, chartis_participants(user_id)").in("id", pIds).eq("thread_type", "direkt");
+        existing = (cand || []).find(x => { const ids = (x.chartis_participants || []).map(p => p.user_id); return ids.length === 2 && ids.includes(me.id) && ids.includes(otherId); });
+      }
       if (existing) { setActiveCall(null); setActiveId(existing.id); setPicker(false); return; }
       const other = userById[otherId];
       const { data: th, error } = await supabase.from("chartis_threads").insert({ thread_type: "direkt", subject: other?.full_name || "Direkt", created_by: me.id, owner_id: me.id }).select("id").single();

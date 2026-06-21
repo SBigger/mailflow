@@ -78,7 +78,12 @@ export default function ChartisPanel({
   useEffect(() => { localStorage.setItem(FONT_KEY, String(fontPx)); }, [fontPx]);
 
   const { data: users = [] } = useQuery({
-    queryKey: ["chartisUsers"], queryFn: () => entities.User.list("full_name"), staleTime: 300000,
+    queryKey: ["chartisUsers"], staleTime: 300000,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("chartis_list_staff");
+      if (!error && data) return data;
+      return entities.User.list("full_name");
+    },
   });
 
   const { data: thread, isLoading: threadLoading, error: threadError } = useQuery({
@@ -192,7 +197,7 @@ export default function ChartisPanel({
     <div className="flex flex-col h-full" style={{ backgroundColor: panelBg }}>
       <div className="flex-shrink-0 px-4 py-3 border-b" style={{ backgroundColor: headerBg, borderColor: border }}>
         <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-1.5 text-sm font-bold min-w-0" style={{ color: accent }}>
+          <div className="flex items-center gap-1.5 text-sm font-bold min-w-0" style={{ color: isArtis ? "#2d6a4f" : accent }}>
             {directMode ? <Users className="h-4 w-4 flex-shrink-0" /> : <MessageSquare className="h-4 w-4 flex-shrink-0" />}
             <span className="truncate">{headTitle}</span>
             {!titleOverride && module && <span className="text-xs font-normal flex-shrink-0" style={{ color: textMuted }}>· {module}</span>}

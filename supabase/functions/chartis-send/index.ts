@@ -9,7 +9,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import {
-  corsHeaders, env, replyAddress, postmarkSend, CHARTIS_FROM,
+  corsHeaders, env, replyAddress, postmarkSend, CHARTIS_FROM, htmlToText,
 } from '../_shared/chartis.ts'
 
 serve(async (req) => {
@@ -52,8 +52,11 @@ serve(async (req) => {
     const replyTo = replyAddress(thread.reply_token)
     // Signatur aus den Einstellungen (profiles.email_signature) anhaengen
     const sig = String(profile.email_signature || '').trim()
-    const sigHtml = sig ? `<br><br>${/<[a-z][\s\S]*>/i.test(sig) ? sig : sig.replace(/\n/g, '<br>')}` : ''
-    const htmlBody = `<p>${String(body).replace(/\n/g, '<br>')}</p>${sigHtml}`
+    // Nur echte HTML-Tags erkennen (nicht "Name <mail@x>") -> sonst \n->br
+    const sigIsHtml = /<(br|p|div|table|span|a|img|ul|ol|li|strong|em|h[1-6])\b[^>]*>/i.test(sig)
+    const sigHtml = sig ? `<br><br>${sigIsHtml ? sig : sig.replace(/\n/g, '<br>')}` : ''
+    // body kommt bereits als HTML vom Frontend (markdownToEmailHtml) -> NICHT doppelt wrappen
+    const htmlBody = `${String(body)}${sigHtml}`
     const references = prev?.message_id
       ? `${prev.references_h ? prev.references_h + ' ' : ''}${prev.message_id}`.trim()
       : null
@@ -63,7 +66,7 @@ serve(async (req) => {
       to: thread.ext_contact_email,
       subject: thread.subject,
       htmlBody,
-      textBody: sig ? String(body) + '\n\n' + sig.replace(/<[^>]+>/g, '') : String(body),
+      textBody: htmlToText(String(body)) + (sig ? '\n\n' + sig.replace(/<[^>]+>/g, '') : ''),
       replyTo,
       inReplyTo: prev?.message_id || null,
       references,
@@ -77,7 +80,7 @@ serve(async (req) => {
         thread_id,
         mandant_id: thread.mandant_id,
         kind: 'email_out',
-        body_text: String(body),
+        body_text: htmlToText(String(body)),
         body_html: htmlBody,
         from_addr: CHARTIS_FROM,
         to_addr: thread.ext_contact_email,
@@ -90,9 +93,10 @@ serve(async (req) => {
       .single()
     if (msgErr) return json({ error: 'DB-Fehler', details: msgErr.message }, 500)
 
-    await supabase.from('chartis_threads')
+    const { error: updErr } = await supabase.from('chartis_threads')
       .update({ status: 'wartet_kunde', updated_at: new Date().toISOString() })
       .eq('id', thread_id)
+    if (updErr) console.error('chartis-send: Thread-Status-Update fehlgeschlagen', thread_id, updErr.message)
 
     return json({ success: true, message_id: msg.id, postmark_id: sent.messageId })
   } catch (e) {

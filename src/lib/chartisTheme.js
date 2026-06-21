@@ -9,7 +9,7 @@ export function chartisTheme(theme) {
     sunken: "#eef3ee", base: "#f6f9f6", raised: "#ffffff",
     borderSubtle: "#d7e2d7", borderStrong: "#bcccbc",
     textPrimary: "#233323", textSecondary: "#4a6a4a", textMuted: "#6b826b",
-    accent: "#5b8a5b", accentFill: "#7a9b7f", accentSoft: "rgba(91,138,91,.12)",
+    accent: "#2d6a4f", accentFill: "#4e7a52", accentSoft: "rgba(91,138,91,.12)",
     activeRow: "#e6ede6", shadow: "0 2px 10px rgba(40,60,40,.10)",
   };
   if (theme === "light") return {
