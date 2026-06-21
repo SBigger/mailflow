@@ -125,9 +125,20 @@
   .item.decision{border-left:3px solid var(--green)}
   .addmini{font-size:12.5px;font-weight:700;color:var(--accent);background:none;border:none;padding:4px 2px;margin-bottom:16px}
   .addmini:hover{text-decoration:underline}
-  /* ── Summary ──────────────────────────────── */
+  /* ── Traktandenliste (links) ──────────────── */
+  .agenda-box{margin-top:16px;border-top:1px solid var(--border);padding-top:14px}
+  .agenda-lbl{display:block;font-size:12px;font-weight:700;color:var(--fg2);margin-bottom:7px}
+  .agenda-lbl span{font-weight:500;color:var(--muted)}
+  #agenda{width:100%;background:var(--surface-2);border:1px solid var(--border-2);border-radius:10px;color:var(--fg);
+    padding:9px 11px;font-size:12.5px;font-family:inherit;line-height:1.5;outline:none;resize:vertical;transition:.12s}
+  #agenda:focus{border-color:var(--accent);box-shadow:var(--ring);background:#fff}
+  /* ── Summary / Traktanden (rechts) ────────── */
   .summary-box{background:var(--grad-soft);border:1px solid #e0e3fb;border-radius:14px;padding:13px 14px;
     font-size:13.5px;line-height:1.6;color:var(--fg2);margin-bottom:14px;white-space:pre-wrap}
+  .trakt{margin-bottom:10px;border:1px solid var(--border);border-radius:12px;overflow:hidden}
+  .trakt-t{background:var(--grad-soft);color:var(--fg);font-weight:800;font-size:12.5px;padding:8px 12px}
+  .trakt-c{padding:10px 12px;font-size:13px;line-height:1.55;color:var(--fg2);outline:none;white-space:pre-wrap}
+  .trakt-c:empty::before{content:'(nicht besprochen)';color:var(--muted)}
   /* ── Modal ────────────────────────────────── */
   .modal-bg{position:fixed;inset:0;background:rgba(15,21,37,.45);backdrop-filter:blur(6px);display:none;align-items:center;justify-content:center;z-index:50;padding:18px}
   .modal-bg.show{display:flex}
@@ -181,6 +192,11 @@
         <button class="btn primary" id="pAdd">+</button>
       </div>
       <div class="mini">Tipp: erst Teilnehmer erfassen, dann erkannte Sprecher in der Mitte zuordnen.</div>
+      <div class="agenda-box">
+        <label class="agenda-lbl">📋 Traktandenliste <span>(optional)</span></label>
+        <textarea id="agenda" rows="6" placeholder="1. Begrüssung&#10;2. Genehmigung Protokoll&#10;3. Jahresrechnung 2025&#10;4. Wahlen&#10;5. Verschiedenes"></textarea>
+        <div class="mini">Wenn ausgefüllt, gliedert Claude die Zusammenfassung nach diesen Traktanden (gleiche Titel/Reihenfolge). Sonst macht Claude eigene Titel.</div>
+      </div>
     </div>
   </section>
 
@@ -296,6 +312,7 @@ let speakerMap = LS.get("gv_speakerMap", {});     // speaker_id -> personId
 let tasks = [];                                   // {text, who, due}
 let decisions = [];                               // {text}
 let summaryText = "";
+let traktanden = [];                              // {titel, inhalt}
 
 const $=s=>document.querySelector(s);
 const fmtTime=s=>{ s=Math.floor(s||0); const m=String(Math.floor(s/60)).padStart(2,"0"); return m+":"+String(s%60).padStart(2,"0"); };
@@ -630,24 +647,29 @@ const EVAL_SCHEMA = {
   type:"object",
   properties:{
     zusammenfassung:{type:"string"},
+    traktanden:{type:"array", items:{type:"object",
+      properties:{titel:{type:"string"},inhalt:{type:"string"}},
+      required:["titel","inhalt"], additionalProperties:false}},
     aufgaben:{type:"array", items:{type:"object",
       properties:{text:{type:"string"},verantwortlich:{type:"string"},frist:{type:"string"}},
       required:["text","verantwortlich","frist"], additionalProperties:false}},
     beschluesse:{type:"array", items:{type:"object",
       properties:{text:{type:"string"}}, required:["text"], additionalProperties:false}}
   },
-  required:["zusammenfassung","aufgaben","beschluesse"], additionalProperties:false
+  required:["zusammenfassung","traktanden","aufgaben","beschluesse"], additionalProperties:false
 };
 async function evaluate(){
   if(!segments.length){ setStatus("Noch kein Transkript zum Auswerten.",true); setTimeout(()=>setStatus("",false),3000); return; }
   if(!cfg.claudeKey){ openModal(); setStatus("Bitte Claude API-Key für die Auswertung eintragen.",true); return; }
-  setStatus("✨ Claude wertet aus (Zusammenfassung, Aufgaben, Beschlüsse) …",true);
-  const sys=`Du bist Protokollführer einer Generalversammlung (Schweiz). Analysiere das Transkript und fülle das vorgegebene JSON-Schema aus.
-- zusammenfassung: 3-6 Sätze, sachlich, Schweizer Hochdeutsch.
+  setStatus("✨ Claude wertet aus (Traktanden, Zusammenfassung, Aufgaben, Beschlüsse) …",true);
+  const agenda=(($("#agenda")&&$("#agenda").value)||"").trim();
+  const sys=`Du bist Protokollführer einer Generalversammlung (Schweiz). Analysiere das Transkript und fülle das JSON-Schema aus. Schweizer Hochdeutsch, sachlich.
+- zusammenfassung: 2-4 Sätze Gesamtüberblick.
+- traktanden: Gliedere den besprochenen Inhalt in Abschnitte, jeder mit prägnantem TITEL und kurzer Zusammenfassung (inhalt). WENN unten eine Traktandenliste steht, verwende GENAU deren Titel und Reihenfolge (ein Eintrag pro Traktandum; nicht besprochene Punkte: inhalt=""). WENN keine Liste gegeben ist, leite selbst sinnvolle thematische Titel aus dem Gespräch ab.
 - aufgaben: konkrete To-dos mit verantwortlicher Person (Name oder leer) und Frist (Datum/Termin oder leer).
 - beschluesse: gefasste Beschlüsse, inkl. Abstimmungsergebnis falls genannt.
-Wenn eine Liste leer ist, gib [] zurück.`;
-  const usr=`Teilnehmer: ${persons.map(p=>p.name).join(", ")||"unbekannt"}\n\nTRANSKRIPT:\n${transcriptPlain()}`;
+Leere Listen als [] zurückgeben.`;
+  const usr=`Teilnehmer: ${persons.map(p=>p.name).join(", ")||"unbekannt"}\n\nTRAKTANDENLISTE:\n${agenda || "(keine angegeben – bitte selbst sinnvoll gliedern)"}\n\nTRANSKRIPT:\n${transcriptPlain()}`;
   try{
     const res=await fetch("https://api.anthropic.com/v1/messages",{ method:"POST",
       headers:{
@@ -658,7 +680,7 @@ Wenn eine Liste leer ist, gib [] zurück.`;
       },
       body:JSON.stringify({
         model: cfg.claudeModel||"claude-opus-4-8",
-        max_tokens: 4096,
+        max_tokens: 8000,
         system: sys,
         messages:[{role:"user",content:usr}],
         output_config:{ format:{ type:"json_schema", schema: EVAL_SCHEMA } }
@@ -670,6 +692,7 @@ Wenn eine Liste leer ist, gib [] zurück.`;
     if(!block){ throw new Error("Keine Textantwort erhalten."); }
     const obj=JSON.parse(block.text);
     summaryText=obj.zusammenfassung||"";
+    traktanden=(obj.traktanden||[]).map(t=>({titel:t.titel||"",inhalt:t.inhalt||""}));
     tasks=(obj.aufgaben||[]).map(t=>({text:t.text||"",who:t.verantwortlich||"",due:t.frist||""}));
     decisions=(obj.beschluesse||[]).map(d=>({text:d.text||""}));
     renderResult();
@@ -679,10 +702,13 @@ Wenn eine Liste leer ist, gib [] zurück.`;
   }
 }
 function renderResult(){
-  $("#summaryWrap").innerHTML = summaryText
-    ? `<div class="summary-box" contenteditable spellcheck="false" id="sumBox">${escapeHtml(summaryText)}</div>`
-    : `<div class="summary-box" style="color:var(--muted)">Noch keine Auswertung.</div>`;
-  if(summaryText){ $("#sumBox").addEventListener("blur",e=>summaryText=e.target.textContent); }
+  let _sw="";
+  if(summaryText) _sw+=`<div class="summary-box" contenteditable spellcheck="false" id="sumBox">${escapeHtml(summaryText)}</div>`;
+  (traktanden||[]).forEach((t,i)=>{ _sw+=`<div class="trakt"><div class="trakt-t">${escapeHtml(t.titel||("Traktandum "+(i+1)))}</div><div class="trakt-c" contenteditable spellcheck="false" data-tk="${i}">${escapeHtml(t.inhalt||"")}</div></div>`; });
+  if(!_sw) _sw=`<div class="summary-box" style="color:var(--muted)">Noch keine Auswertung. Nach dem Transkript auf „✨ Auswerten" klicken.</div>`;
+  $("#summaryWrap").innerHTML=_sw;
+  if($("#sumBox")) $("#sumBox").addEventListener("blur",e=>summaryText=e.target.textContent);
+  $("#summaryWrap").querySelectorAll("[data-tk]").forEach(el=>el.addEventListener("blur",e=>{ const i=+el.getAttribute("data-tk"); if(traktanden[i]) traktanden[i].inhalt=e.target.textContent; }));
   // Aufgaben
   const tl=$("#taskList"); tl.innerHTML="";
   tasks.forEach((t,i)=>{
@@ -718,6 +744,7 @@ $("#exportBtn").addEventListener("click",()=>{
   let md=`# Protokoll Generalversammlung\n\n`;
   md+=`**Teilnehmer:** ${persons.map(p=>p.name).join(", ")||"—"}\n\n`;
   if(summaryText) md+=`## Zusammenfassung\n\n${summaryText}\n\n`;
+  if(traktanden&&traktanden.length){ md+=`## Traktanden\n\n`; traktanden.forEach((t,i)=>{ md+=`### ${t.titel||("Traktandum "+(i+1))}\n\n${t.inhalt||"—"}\n\n`; }); }
   if(decisions.length){ md+=`## Beschlüsse\n\n`; decisions.forEach(x=>md+=`- ${x.text}\n`); md+=`\n`; }
   if(tasks.length){ md+=`## Aufgaben\n\n`; tasks.forEach(t=>md+=`- ${t.text}${t.who?` _(${t.who}${t.due?", "+t.due:""})_`:t.due?` _(${t.due})_`:""}\n`); md+=`\n`; }
   if(segments.length){ md+=`## Transkript\n\n`; segments.forEach(s=>md+=`**${speakerLabel(s.speaker)}:** ${s.text}\n\n`); }
@@ -778,7 +805,21 @@ function save(){ LS.set("gv_persons",persons); LS.set("gv_speakerMap",speakerMap
 segments = LS.get("gv_segments", []);   // letztes Transkript wiederherstellen
 renderPersons(); renderTranscript(); renderResult();
 refreshRecoveryBanner();                // nach Crash/Reload: gesicherte Aufnahmen anbieten
-if(!cfg.eleven) setTimeout(openModal,400);
+// Traktandenliste merken
+(function(){ const ag=$("#agenda"); if(ag){ ag.value=LS.get("gv_agenda",""); ag.addEventListener("input",()=>LS.set("gv_agenda",ag.value)); } })();
+// Keys dauerhaft aus optionaler config.local.json laden (liegt NICHT im Git, übersteht alles)
+(async function loadFileConfig(){
+  try{
+    const r=await fetch("./config.local.json",{cache:"no-store"});
+    if(r.ok){ const j=await r.json(); let ch=false;
+      const map={ eleven:(j.eleven!==undefined?j.eleven:j.elevenlabs), claudeKey:(j.claudeKey!==undefined?j.claudeKey:j.claude),
+                  claudeModel:j.claudeModel, lang:j.lang, mic:j.mic, liveInterval:j.liveInterval };
+      for(const k in map){ if(map[k]!==undefined && map[k]!=="" && cfg[k]!==map[k]){ cfg[k]=map[k]; ch=true; } }
+      if(ch){ LS.set("gv_cfg",cfg); }
+    }
+  }catch(e){}
+  if(!cfg.eleven) setTimeout(openModal,400);
+})();
 </script>
 </body>
 </html>
