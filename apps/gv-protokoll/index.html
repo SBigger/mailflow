@@ -237,6 +237,17 @@
       <small>Schweizerdeutsch wird über das Deutsch-Modell verarbeitet.</small>
     </div>
     <div class="fld">
+      <label>Laufende Zwischen-Transkription</label>
+      <select id="setLive">
+        <option value="0">Aus (erst beim Stopp)</option>
+        <option value="60">Jede Minute</option>
+        <option value="120">Alle 2 Minuten</option>
+        <option value="180">Alle 3 Minuten</option>
+        <option value="300">Alle 5 Minuten</option>
+      </select>
+      <small>Zeigt das Transkript schon <b>während</b> der Aufnahme (zum frühen Sprecher-Zuordnen). Jede Aktualisierung transkribiert das Bisherige neu → bei langen Sitzungen mehr ElevenLabs-Verbrauch; dann grösseres Intervall wählen.</small>
+    </div>
+    <div class="fld">
       <label>Mikrofon</label>
       <select id="setMic"><option value="">Standard-Mikrofon</option></select>
       <button class="btn ghost" id="micLoad" style="margin-top:7px;font-size:12px">🎤 Zugriff erlauben &amp; Geräte laden (inkl. Bluetooth)</button>
@@ -277,7 +288,8 @@ const LS = {
 };
 const COLORS=["#3b82f6","#22c55e","#f59e0b","#8b5cf6","#ec4899","#06b6d4","#ef4444","#84cc16","#f97316","#14b8a6"];
 
-let cfg = LS.get("gv_cfg", { eleven:"", lang:"deu", claudeKey:"", claudeModel:"claude-opus-4-8", mic:"" });
+let cfg = LS.get("gv_cfg", { eleven:"", lang:"deu", claudeKey:"", claudeModel:"claude-opus-4-8", mic:"", liveInterval:120 });
+if(cfg.liveInterval===undefined) cfg.liveInterval=120;
 let persons = LS.get("gv_persons", []);          // {id,name,color}
 let segments = [];                                // {speaker, text, start, end, personId}
 let speakerMap = LS.get("gv_speakerMap", {});     // speaker_id -> personId
@@ -439,6 +451,7 @@ async function dbDeleteRecording(recId){ const all=await dbGetAll("chunks"); for
 // ── Audio aufnehmen ──────────────────────────────────────────────
 let mediaRec=null, recStart=0, timerInt=null, audioCtx=null, analyser=null, volRAF=null, stream=null;
 let curRecId=null, chunkSeq=0, recMime="", pendingSaves=[];
+let _liveTimer=null, _liveBusy=false, _liveOn=false;
 
 async function startRec(){
   if(!cfg.eleven){ openModal(); setStatus("Bitte zuerst den ElevenLabs API-Key eintragen.",true); return; }
@@ -473,9 +486,29 @@ async function startRec(){
   $("#recBtn").classList.remove("rec"); $("#recBtn").style.background="var(--amber)"; $("#recBtn").style.borderColor="var(--amber)";
   $("#recLbl").textContent="Stopp"; $("#recIcon").textContent="■";
   setStatus("🔴 Aufnahme läuft – wird laufend lokal gesichert (crash-sicher).",true);
+  // Laufende Zwischen-Transkription (erster Stand früh, dann im gewählten Intervall)
+  _liveOn = (cfg.liveInterval>0);
+  if(_liveOn){ if(_liveTimer) clearTimeout(_liveTimer); _liveTimer=setTimeout(liveTick, 45000); }
+}
+// ── Live-/Zwischen-Transkription während der Aufnahme ─────────────
+async function liveTick(){
+  if(!_liveOn) return;
+  await liveTranscribe();
+  if(_liveOn && cfg.liveInterval>0) _liveTimer=setTimeout(liveTick, cfg.liveInterval*1000);
+}
+async function liveTranscribe(){
+  if(_liveBusy || !curRecId) return;
+  let rows; try{ rows=await dbChunksFor(curRecId); }catch(e){ return; }
+  if(!rows.length) return;
+  _liveBusy=true;
+  // Konkatenation aller bisherigen Chunks = gültige Teil-Datei → volle Diarization (konsistente Sprecher)
+  const blob=new Blob(rows.map(c=>c.blob),{type:recMime||"audio/webm"});
+  try{ await transcribe(blob, true); }catch(e){}
+  _liveBusy=false;
 }
 function updateSaved(){ setStatus(`🔴 Aufnahme läuft – 💾 ~${fmtTime(chunkSeq*(CHUNK_MS/1000))} crash-sicher gespeichert.`,true); }
 function stopRec(){
+  _liveOn=false; if(_liveTimer) clearTimeout(_liveTimer);
   if(mediaRec&&mediaRec.state!=="inactive") mediaRec.stop();
   clearInterval(timerInt);
   if(stream) stream.getTracks().forEach(t=>t.stop());
@@ -538,9 +571,10 @@ $("#fileBtn").addEventListener("click",()=>$("#fileInput").click());
 $("#fileInput").addEventListener("change",e=>{ const f=e.target.files[0]; if(f) transcribe(f); e.target.value=""; });
 
 // ── ElevenLabs Scribe (Batch + Diarization über die ganze Datei) ──
-async function transcribe(blob){
+async function transcribe(blob, isLive){
   if(!cfg.eleven){ openModal(); return false; }
-  setStatus("⏳ Transkribiere mit ElevenLabs (scribe_v2) … das kann je nach Länge etwas dauern.",true);
+  setStatus(isLive ? "🟢 Zwischenstand wird transkribiert …"
+                   : "⏳ Transkribiere mit ElevenLabs (scribe_v2) … das kann je nach Länge etwas dauern.",true);
   const fd=new FormData();
   fd.append("file", blob, "aufnahme.webm");
   fd.append("model_id","scribe_v2");
@@ -558,11 +592,16 @@ async function transcribe(blob){
     setLastAudio(blob);               // fuer Vorhoeren je Sprecher
     LS.set("gv_segments",segments);   // Transkript ueberlebt Reload
     renderTranscript();
-    setStatus(`✅ Transkript fertig – ${segments.length} Abschnitte, ${new Set(segments.map(s=>s.speaker)).size} Sprecher erkannt. Sprecher zuordnen, dann „✨ Auswerten".`,true);
-    setTimeout(()=>setStatus("",false),9000);
+    if(isLive){
+      setStatus(`🟢 Live-Transkript aktualisiert – ${segments.length} Abschnitte, ${new Set(segments.map(s=>s.speaker)).size} Sprecher. Du kannst sie schon zuordnen. Aufnahme läuft …`,true);
+    }else{
+      setStatus(`✅ Transkript fertig – ${segments.length} Abschnitte, ${new Set(segments.map(s=>s.speaker)).size} Sprecher erkannt. Sprecher zuordnen, dann „✨ Auswerten".`,true);
+      setTimeout(()=>setStatus("",false),9000);
+    }
     return true;
   }catch(e){
-    setStatus("❌ Transkription fehlgeschlagen: "+e.message+" – Audio bleibt gesichert, du kannst es erneut versuchen.",true);
+    if(isLive) setStatus("⚠ Zwischen-Transkript momentan nicht möglich: "+e.message+" (Aufnahme läuft weiter)",true);
+    else setStatus("❌ Transkription fehlgeschlagen: "+e.message+" – Audio bleibt gesichert, du kannst es erneut versuchen.",true);
     return false;
   }
 }
@@ -713,6 +752,7 @@ $("#micLoad").addEventListener("click",async()=>{
 function openModal(){
   $("#setEleven").value=cfg.eleven; $("#setLang").value=cfg.lang;
   $("#setClaudeKey").value=cfg.claudeKey; $("#setClaudeModel").value=cfg.claudeModel||"claude-opus-4-8";
+  $("#setLive").value=String(cfg.liveInterval===undefined?120:cfg.liveInterval);
   const ks=$("#keyStatus");
   if(ks) ks.innerHTML =
     `<span class="keychip ${cfg.eleven?'ok':'no'}">${cfg.eleven?'✓':'○'} ElevenLabs-Key</span>`+
@@ -725,7 +765,7 @@ $("#setCancel").addEventListener("click",()=>$("#modal").classList.remove("show"
 $("#setSave").addEventListener("click",()=>{
   cfg={ eleven:$("#setEleven").value.trim(), lang:$("#setLang").value,
         claudeKey:$("#setClaudeKey").value.trim(), claudeModel:$("#setClaudeModel").value,
-        mic:$("#setMic").value };
+        mic:$("#setMic").value, liveInterval:parseInt($("#setLive").value)||0 };
   LS.set("gv_cfg",cfg); $("#modal").classList.remove("show"); setStatus("Einstellungen gespeichert.",true); setTimeout(()=>setStatus("",false),2500);
 });
 $("#modal").addEventListener("click",e=>{ if(e.target===$("#modal")) $("#modal").classList.remove("show"); });
