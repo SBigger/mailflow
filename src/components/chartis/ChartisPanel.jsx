@@ -197,6 +197,11 @@ export default function ChartisPanel({
             <span className="truncate">{headTitle}</span>
             {!titleOverride && module && <span className="text-xs font-normal flex-shrink-0" style={{ color: textMuted }}>· {module}</span>}
           </div>
+          <span className="inline-flex items-center gap-1 flex-shrink-0" style={{ fontSize: 10, fontWeight: 500, padding: "3px 8px", borderRadius: 8,
+            background: (!directMode && mode === "email") ? "#fff3e6" : (isArtis ? "rgba(122,155,127,.16)" : "rgba(99,102,241,.10)"),
+            color: (!directMode && mode === "email") ? "#d97706" : accent }}>
+            {(!directMode && mode === "email") ? <><Mail className="h-3 w-3" />Extern · an Kunde</> : <><Lock className="h-3 w-3" />Intern</>}
+          </span>
           {!embedded && <button onClick={onClose} className="p-1 rounded hover:bg-black/10 flex-shrink-0" style={{ color: textMuted }}><X className="h-4 w-4" /></button>}
         </div>
 
@@ -256,6 +261,11 @@ export default function ChartisPanel({
               <Mail className="h-3 w-3" /> E-Mail an Kunde
             </button>
             {mode === "email" && <span className="text-[11px] truncate" style={{ color: textMuted }}>an {extContactEmail || "—"}</span>}
+          </div>
+        )}
+        {showEmail && mode === "email" && (
+          <div className="flex items-center gap-2 mb-2" style={{ fontSize: 10, color: "#b45309", background: "#fff7ed", border: "1px solid #fde0c0", borderRadius: 7, padding: "5px 8px" }}>
+            <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" /> Geht raus an: {extContactEmail || "(keine Adresse hinterlegt)"}
           </div>
         )}
 
