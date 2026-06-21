@@ -7,7 +7,7 @@ import ChartisPanel from "@/components/chartis/ChartisPanel";
 import { chartisTheme, SEM, AUTHOR, authorKey, initials, isMissed } from "@/lib/chartisTheme";
 import {
   MessageSquare, Plus, Users, User, Lock, AtSign, LayoutGrid, Building2, Clock,
-  PhoneOff, Phone, Mail, Calendar, CheckSquare, X, Search, Check, Loader2, Send,
+  PhoneOff, Phone, Mail, Calendar, CheckSquare, X, Search, Check, Loader2, Send, Paperclip,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -21,6 +21,7 @@ export default function Chartis() {
   const [scope, setScope] = useState("tag");
   const [activeId, setActiveId] = useState(null);
   const [activeCall, setActiveCall] = useState(null);
+  const [activeMail, setActiveMail] = useState(null);
   const [search, setSearch] = useState("");
   const [seg, setSeg] = useState("alle");
   const [picker, setPicker] = useState(false);
@@ -67,6 +68,15 @@ export default function Chartis() {
       return own.length ? own : mine; // Fallback: Namens-Match leer -> teamweit zeigen
     },
   });
+  const { data: mailItems = [] } = useQuery({
+    queryKey: ["chartisMails", me?.id], enabled: !!me?.id, refetchInterval: 30000,
+    queryFn: async () => {
+      const { data } = await supabase.from("mail_items")
+        .select("id,subject,sender_name,sender_email,recipient_email,received_date,is_read,has_attachments,body_preview,body,customer_id")
+        .eq("created_by", me.id).order("received_date", { ascending: false }).limit(200);
+      return data || [];
+    },
+  });
   const mentionIds = useMemo(() => new Set(mentions.map(m => m.thread_id)), [mentions]);
   const unseenMentions = mentions.filter(m => !m.seen).length;
   const tablesMissing = thErr && /relation .*chartis|does not exist|thread_type/i.test(thErr.message || "");
@@ -74,6 +84,17 @@ export default function Chartis() {
   const isKunde = (th) => th.thread_type === "objekt" && !!th.ext_contact_email;
   const teamObjekt = objektThreads.filter(th => !isKunde(th));
   const kundenThreads = objektThreads.filter(isKunde);
+  const myEmail = (me?.email || "").toLowerCase();
+  const mailThreads = useMemo(() => {
+    const map = new Map();
+    for (const m of mailItems) {
+      const key = normSubject(m.subject) + "|" + (custById[m.customer_id]?.company_name || m.sender_email || "");
+      if (!map.has(key)) map.set(key, { key, subject: m.subject, customer_id: m.customer_id, mails: [], last: m.received_date, unread: false });
+      const g = map.get(key); g.mails.push(m); if (!m.is_read) g.unread = true;
+      if (new Date(m.received_date) > new Date(g.last)) { g.last = m.received_date; g.subject = m.subject; }
+    }
+    return [...map.values()].sort((a, b) => new Date(b.last) - new Date(a.last));
+  }, [mailItems, custById]);
 
   function title(th) {
     if (th.thread_type === "direkt") {
@@ -101,6 +122,7 @@ export default function Chartis() {
     tag: { label: "Heute", icon: LayoutGrid }, direkt: { label: "Direkt", icon: User }, gruppen: { label: "Gruppen", icon: Users },
     erwaehnt: { label: "Erwähnt", icon: AtSign }, kunden: { label: "Kunden-Konversationen", icon: Building2 },
     wartet: { label: "Wartet auf Kunde", icon: Clock }, anrufe: { label: "Entgangene Anrufe", icon: PhoneOff },
+    mails: { label: "Mails", icon: Mail },
   };
 
   const items = useMemo(() => {
@@ -112,18 +134,21 @@ export default function Chartis() {
     else if (scope === "kunden") list = kundenThreads.map(x => ({ type: "thread", x }));
     else if (scope === "wartet") list = kundenThreads.filter(x => x.status === "wartet_kunde").map(x => ({ type: "thread", x }));
     else if (scope === "anrufe") list = missedCalls.map(c => ({ type: "call", c }));
+    else if (scope === "mails") list = mailThreads.map(m => ({ type: "mail", m }));
     else list = [ // Heute
       ...missedCalls.slice(0, 4).map(c => ({ type: "call", c })),
       ...dm.map(x => ({ type: "thread", x })),
       ...[...teamObjekt, ...kundenThreads].filter(x => mentionIds.has(x.id) || x.status === "wartet_kunde").map(x => ({ type: "thread", x })),
     ];
-    if (seg === "mich") list = list.filter(it => it.type === "call" || mentionIds.has(it.x.id));
+    if (seg === "mich") list = list.filter(it => it.type !== "thread" || mentionIds.has(it.x.id));
     const q = search.trim().toLowerCase();
     if (q) list = list.filter(it => it.type === "call"
       ? (it.c.caller_name || it.c.caller_number || "").toLowerCase().includes(q)
+      : it.type === "mail"
+      ? ((it.m.subject || "") + " " + (it.m.mails[0]?.sender_name || "")).toLowerCase().includes(q)
       : (title(it.x) + " " + preview(it.x)).toLowerCase().includes(q));
     return list;
-  }, [scope, seg, search, myThreads, objektThreads, missedCalls, mentionIds, me]);
+  }, [scope, seg, search, myThreads, objektThreads, missedCalls, mailThreads, mentionIds, me]);
 
   const activeThread = useMemo(() => [...myThreads, ...objektThreads].find(x => x.id === activeId), [activeId, myThreads, objektThreads]);
 
@@ -186,7 +211,8 @@ export default function Chartis() {
           <div style={{ height: 6 }} />
           <NavItem k="anrufe" icon={PhoneOff} label="Anrufe" count={missedCalls.length} red />
           <div style={{ borderTop: `1px solid ${t.borderSubtle}`, margin: "8px 6px" }} />
-          {[["/MailKanban", Mail, "Mails"], ["/Kalender", Calendar, "Kalender"], ["/TaskBoard", CheckSquare, "Todos"]].map(([to, Icon, label]) => (
+          <NavItem k="mails" icon={Mail} label="Mails" />
+          {[["/Kalender", Calendar, "Kalender"], ["/TaskBoard", CheckSquare, "Todos"]].map(([to, Icon, label]) => (
             <Link key={to} to={to} className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg" style={{ fontSize: 12, color: t.textSecondary, opacity: 0.9 }}>
               <Icon className="h-4 w-4" /> {label}
             </Link>
@@ -223,7 +249,7 @@ export default function Chartis() {
               <div style={{ fontSize: 11 }}>Keine offenen Punkte hier.</div>
             </div>
           ) : items.map((it, i) => it.type === "call" ? (
-            <button key={"c" + it.c.id} onClick={() => { setActiveId(null); setActiveCall(it.c); }}
+            <button key={"c" + it.c.id} onClick={() => { setActiveId(null); setActiveMail(null); setActiveCall(it.c); }}
               className="w-full flex items-center gap-2.5 px-3 py-2 text-left" style={{ borderBottom: `1px solid ${t.borderSubtle}`, borderLeft: `3px solid ${SEM.missed}`, paddingLeft: 9, background: activeCall?.id === it.c.id ? t.activeRow : "transparent" }}>
               <div className="rounded-full flex items-center justify-center flex-shrink-0" style={{ width: 30, height: 30, background: SEM.missedSoft, color: SEM.missed }}><PhoneOff className="h-4 w-4" /></div>
               <div className="min-w-0 flex-1">
@@ -232,17 +258,22 @@ export default function Chartis() {
               </div>
               <span style={{ fontSize: 10, color: SEM.missed, flexShrink: 0 }}>{fmtTime(it.c.start_time)}</span>
             </button>
+          ) : it.type === "mail" ? (
+            <MailRow key={"m" + it.m.key} m={it.m} t={t} active={activeMail?.key === it.m.key}
+              onClick={() => { setActiveId(null); setActiveCall(null); setActiveMail(it.m); }} />
           ) : (
             <ThreadRow key={it.x.id} th={it.x} t={t} active={activeId === it.x.id} mentioned={mentionIds.has(it.x.id)}
               title={title(it.x)} preview={preview(it.x)} av={avatarFor(it.x)} kunde={isKunde(it.x)}
-              onClick={() => { setActiveCall(null); setActiveId(it.x.id); }} />
+              onClick={() => { setActiveCall(null); setActiveMail(null); setActiveId(it.x.id); }} />
           ))}
         </div>
       </div>
 
       {/* Pane C — aktiver Faden / Anruf / Leerstaat */}
       <div className="flex-1 min-w-0" style={{ background: t.raised, boxShadow: t.shadow }}>
-        {activeCall ? (
+        {activeMail ? (
+          <MailThread m={activeMail} t={t} myEmail={myEmail} customer={custById[activeMail.customer_id]} />
+        ) : activeCall ? (
           <CallDetail c={activeCall} t={t} customer={custById[activeCall.customer_id]} />
         ) : activeThread ? (
           <ChartisPanel key={activeThread.id} threadId={activeThread.id} titleOverride={title(activeThread)} directMode={activeThread.thread_type !== "objekt"} embedded />
@@ -309,6 +340,52 @@ function CallDetail({ c, t, customer }) {
 }
 function Field({ t, label, value }) {
   return <div className="flex justify-between" style={{ borderBottom: `1px solid ${t.borderSubtle}`, padding: "6px 0" }}><span style={{ color: t.textMuted }}>{label}</span><span>{value}</span></div>;
+}
+
+function normSubject(s) { return String(s || "").replace(/^((re|aw|wg|fwd|fw|antw)\s*:\s*)+/gi, "").trim().toLowerCase(); }
+function stripHtml(s) { return String(s || "").replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "").replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/\s+/g, " ").trim(); }
+
+function MailRow({ m, t, active, onClick }) {
+  const last = m.mails[0];
+  return (
+    <button onClick={onClick} className="w-full flex items-center gap-2.5 px-3 py-2 text-left relative" style={{ borderBottom: `1px solid ${t.borderSubtle}`, background: active ? t.activeRow : "transparent" }}>
+      {m.unread && <span style={{ position: "absolute", left: 0, top: 8, bottom: 8, width: 3, borderRadius: 2, background: t.accentFill }} />}
+      <div className="rounded-full flex items-center justify-center flex-shrink-0" style={{ width: 30, height: 30, background: "#e0e7ff", color: "#3730a3" }}><Mail className="h-4 w-4" /></div>
+      <div className="min-w-0 flex-1">
+        <div className="truncate" style={{ fontSize: 12, fontWeight: m.unread ? 700 : 500, color: t.textPrimary }}>{m.subject || "(Kein Betreff)"}</div>
+        <div className="truncate" style={{ fontSize: 11, color: t.textMuted, marginTop: 1 }}>{last?.sender_name || last?.sender_email}{m.mails.length > 1 ? ` · ${m.mails.length}` : ""}</div>
+      </div>
+      {last?.has_attachments && <Paperclip className="h-3 w-3 flex-shrink-0" style={{ color: t.textMuted }} />}
+      <span style={{ fontSize: 10, color: t.textMuted, flexShrink: 0 }}>{fmtTime(m.last)}</span>
+    </button>
+  );
+}
+
+function MailThread({ m, t, myEmail, customer }) {
+  const mails = [...m.mails].sort((a, b) => new Date(a.received_date) - new Date(b.received_date));
+  return (
+    <div className="h-full flex flex-col">
+      <div className="px-4 py-3 flex items-center gap-2" style={{ borderBottom: `1px solid ${t.borderSubtle}` }}>
+        <Mail className="h-4 w-4" style={{ color: t.accent }} />
+        <div className="min-w-0"><div className="truncate" style={{ fontSize: 13, fontWeight: 600 }}>{m.subject || "(Kein Betreff)"}</div>
+          <div className="truncate" style={{ fontSize: 10, color: t.textMuted }}>{customer?.company_name || mails[0]?.sender_email} · {mails.length} Mail(s)</div></div>
+        <span className="ml-auto inline-flex items-center gap-1 flex-shrink-0" style={{ fontSize: 10, fontWeight: 500, padding: "3px 8px", borderRadius: 8, background: SEM.externSoft, color: SEM.extern }}><Mail className="h-3 w-3" />Mail · read-only</span>
+      </div>
+      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        {mails.map(mail => {
+          const mine = (mail.sender_email || "").toLowerCase() === myEmail;
+          const text = stripHtml(mail.body || mail.body_preview);
+          return (
+            <div key={mail.id} style={{ display: "flex", flexDirection: "column", alignItems: mine ? "flex-end" : "flex-start" }}>
+              <div style={{ fontSize: 9, color: t.textMuted, marginBottom: 2 }}>{mine ? "Du" : (mail.sender_name || mail.sender_email)} · {new Date(mail.received_date).toLocaleString("de-CH")}</div>
+              <div style={{ maxWidth: "86%", background: mine ? t.accentFill : t.base, color: mine ? "#fff" : t.textPrimary, border: mine ? "none" : `1px solid ${t.borderSubtle}`, padding: "8px 11px", fontSize: 12, lineHeight: 1.5, borderRadius: mine ? "14px 4px 14px 14px" : "4px 14px 14px 14px", whiteSpace: "pre-wrap" }}>{text || "(kein Inhalt)"}</div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="px-4 py-2" style={{ borderTop: `1px solid ${t.borderSubtle}`, fontSize: 11, color: t.textMuted }}>Antworten im Mail-Modul — Chartis zeigt Mails read-only.</div>
+    </div>
+  );
 }
 
 function Picker({ t, list, pickSearch, setPickSearch, pickSel, setPickSel, groupName, setGroupName, busy, onDirect, onGroup, onClose }) {
