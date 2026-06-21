@@ -265,7 +265,7 @@ export default function ChartisPanel({
         )}
         {showEmail && mode === "email" && (
           <div className="flex items-center gap-2 mb-2" style={{ fontSize: 10, color: "#b45309", background: "#fff7ed", border: "1px solid #fde0c0", borderRadius: 7, padding: "5px 8px" }}>
-            <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" /> Geht raus an: {extContactEmail || "(keine Adresse hinterlegt)"}
+            <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" /> Geht raus an: {extContactEmail || "(keine Adresse hinterlegt)"} · Signatur aus Einstellungen wird angehängt
           </div>
         )}
 

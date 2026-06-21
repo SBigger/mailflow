@@ -24,7 +24,7 @@ serve(async (req) => {
     const token = (req.headers.get('Authorization') || '').replace('Bearer ', '')
     const { data: { user } } = await supabase.auth.getUser(token)
     if (!user) return json({ error: 'Unauthorized' }, 401)
-    const { data: profile } = await supabase.from('profiles').select('id').eq('id', user.id).maybeSingle()
+    const { data: profile } = await supabase.from('profiles').select('id, email_signature').eq('id', user.id).maybeSingle()
     if (!profile) return json({ error: 'Kein Mitarbeiter-Profil' }, 403)
 
     const { thread_id, body } = await req.json()
@@ -50,7 +50,10 @@ serve(async (req) => {
       .maybeSingle()
 
     const replyTo = replyAddress(thread.reply_token)
-    const htmlBody = `<p>${String(body).replace(/\n/g, '<br>')}</p>`
+    // Signatur aus den Einstellungen (profiles.email_signature) anhaengen
+    const sig = String(profile.email_signature || '').trim()
+    const sigHtml = sig ? `<br><br>${/<[a-z][\s\S]*>/i.test(sig) ? sig : sig.replace(/\n/g, '<br>')}` : ''
+    const htmlBody = `<p>${String(body).replace(/\n/g, '<br>')}</p>${sigHtml}`
     const references = prev?.message_id
       ? `${prev.references_h ? prev.references_h + ' ' : ''}${prev.message_id}`.trim()
       : null
@@ -60,7 +63,7 @@ serve(async (req) => {
       to: thread.ext_contact_email,
       subject: thread.subject,
       htmlBody,
-      textBody: String(body),
+      textBody: sig ? String(body) + '\n\n' + sig.replace(/<[^>]+>/g, '') : String(body),
       replyTo,
       inReplyTo: prev?.message_id || null,
       references,
