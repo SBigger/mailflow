@@ -62,6 +62,12 @@
   .col-hd .count{margin-left:auto;background:var(--grad-soft);color:var(--accent);font-weight:800;
     border-radius:20px;padding:2px 10px;font-size:11px}
   .col-body{flex:1;overflow-y:auto;padding:14px}
+  /* ── Kunde ────────────────────────────────── */
+  .customer-box{margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border)}
+  .cust-lbl{display:block;font-size:12px;font-weight:700;color:var(--fg2);margin-bottom:7px}
+  .cust-lbl span{font-weight:500;color:var(--muted)}
+  .cust-input{width:100%;background:var(--surface-2);border:1px solid var(--border-2);border-radius:10px;color:var(--fg);padding:9px 11px;font-size:13px;outline:none}
+  .cust-input:focus{border-color:var(--accent);box-shadow:var(--ring);background:#fff}
   /* ── Personen ─────────────────────────────── */
   .person{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:12px;margin-bottom:7px;
     background:var(--surface-2);border:1px solid transparent;transition:.12s}
@@ -186,6 +192,7 @@
   <section class="col">
     <div class="col-hd">👥 Teilnehmer <span class="count" id="pCount">0</span></div>
     <div class="col-body">
+      <div id="customerWrap" class="customer-box"></div>
       <div id="personList"></div>
       <div class="add-row">
         <input id="pName" placeholder="Name" autocomplete="off">
@@ -311,6 +318,40 @@ const PROXY_BASE = "https://uawgpxcihixqxqxxbjak.supabase.co/functions/v1";
 const PROXY_KEY  = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhd2dweGNpaGl4cXhxeHhiamFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI0MzE5MzYsImV4cCI6MjA4ODAwNzkzNn0.fPbekBh1dO8byD2wxkjzFSKW4jSV0MHIGgci9nch98A";
 const PROXY_ON   = true;   // true: ohne eigenen Key läuft alles über den Server-Proxy
 function proxyHeaders(){ return { "Authorization":"Bearer "+PROXY_KEY, "apikey":PROXY_KEY }; }
+
+// ── Kunde auswählen (nutzt die MailFlow-Anmeldung, wenn auf smartis.me eingeloggt) ──
+const SUPA_REST = "https://uawgpxcihixqxqxxbjak.supabase.co/rest/v1";
+let customers = [];
+function mailflowToken(){
+  try{ const raw=localStorage.getItem("sb-uawgpxcihixqxqxxbjak-auth-token"); if(!raw) return null;
+    const j=JSON.parse(raw); return j.access_token || (j.currentSession && j.currentSession.access_token) || null;
+  }catch(e){ return null; }
+}
+function customerLabel(c){ return c.person_type==="privatperson" ? [c.anrede,c.nachname,c.vorname].filter(Boolean).join(" ").trim() : (c.company_name||"(ohne Name)"); }
+function currentCustomerName(){ const o=LS.get("gv_customer",{name:""}); return (o&&o.name)||""; }
+async function loadCustomers(){
+  const tok=mailflowToken(); if(!tok) return;   // nur wenn in MailFlow eingeloggt
+  try{
+    const r=await fetch(SUPA_REST+"/customers?select=id,company_name,anrede,nachname,vorname,person_type,aktiv&order=company_name.asc",
+      { headers:{ apikey:PROXY_KEY, Authorization:"Bearer "+tok } });
+    if(!r.ok) return;
+    customers=(await r.json()).filter(c=>c.aktiv!==false);
+    renderCustomerSelect();
+  }catch(e){}
+}
+function renderCustomerSelect(){
+  const wrap=$("#customerWrap"); if(!wrap) return;
+  const saved=LS.get("gv_customer",{id:"",name:""});
+  if(customers.length){
+    let opts=`<option value="">— Kunde wählen —</option>`;
+    customers.forEach(c=>{ opts+=`<option value="${c.id}" ${saved.id===c.id?"selected":""}>${escapeHtml(customerLabel(c))}</option>`; });
+    wrap.innerHTML=`<label class="cust-lbl">👤 Kunde <span>(${customers.length})</span></label><select id="custSelect" class="cust-input">${opts}</select>`;
+    $("#custSelect").addEventListener("change",e=>{ const c=customers.find(x=>x.id===e.target.value); LS.set("gv_customer", c?{id:c.id,name:customerLabel(c)}:{id:"",name:""}); });
+  }else{
+    wrap.innerHTML=`<label class="cust-lbl">👤 Kunde <span>(optional)</span></label><input id="custText" class="cust-input" placeholder="Kundenname" value="${escapeHtml(saved.name||"")}">`;
+    $("#custText").addEventListener("input",e=>LS.set("gv_customer",{id:"",name:e.target.value}));
+  }
+}
 let persons = LS.get("gv_persons", []);          // {id,name,color}
 let segments = [];                                // {speaker, text, start, end, personId}
 let speakerMap = LS.get("gv_speakerMap", {});     // speaker_id -> personId
@@ -675,7 +716,7 @@ async function evaluate(){
 - aufgaben: konkrete To-dos mit verantwortlicher Person (Name oder leer) und Frist (Datum/Termin oder leer).
 - beschluesse: gefasste Beschlüsse, inkl. Abstimmungsergebnis falls genannt.
 Leere Listen als [] zurückgeben.`;
-  const usr=`Teilnehmer: ${persons.map(p=>p.name).join(", ")||"unbekannt"}\n\nTRAKTANDENLISTE:\n${agenda || "(keine angegeben – bitte selbst sinnvoll gliedern)"}\n\nTRANSKRIPT:\n${transcriptPlain()}`;
+  const usr=`Kunde/Mandant: ${currentCustomerName()||"—"}\nTeilnehmer: ${persons.map(p=>p.name).join(", ")||"unbekannt"}\n\nTRAKTANDENLISTE:\n${agenda || "(keine angegeben – bitte selbst sinnvoll gliedern)"}\n\nTRANSKRIPT:\n${transcriptPlain()}`;
   try{
     const useProxyC = PROXY_ON && !cfg.claudeKey;
     const res=await fetch(useProxyC ? PROXY_BASE+"/gv-llm" : "https://api.anthropic.com/v1/messages",{ method:"POST",
@@ -745,7 +786,9 @@ $("#evalBtn").addEventListener("click",evaluate);
 // ════════════════════════════════════════════════════════════════
 $("#exportBtn").addEventListener("click",()=>{
   const d=new Date();
+  const kunde=currentCustomerName();
   let md=`# Protokoll Generalversammlung\n\n`;
+  if(kunde) md+=`**Kunde:** ${kunde}\n\n`;
   md+=`**Teilnehmer:** ${persons.map(p=>p.name).join(", ")||"—"}\n\n`;
   if(summaryText) md+=`## Zusammenfassung\n\n${summaryText}\n\n`;
   if(traktanden&&traktanden.length){ md+=`## Traktanden\n\n`; traktanden.forEach((t,i)=>{ md+=`### ${t.titel||("Traktandum "+(i+1))}\n\n${t.inhalt||"—"}\n\n`; }); }
@@ -754,7 +797,8 @@ $("#exportBtn").addEventListener("click",()=>{
   if(segments.length){ md+=`## Transkript\n\n`; segments.forEach(s=>md+=`**${speakerLabel(s.speaker)}:** ${s.text}\n\n`); }
   const blob=new Blob([md],{type:"text/markdown"});
   const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
-  a.download=`GV-Protokoll_${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}.md`;
+  const kdPrefix=kunde?kunde.replace(/[^a-zA-Z0-9]+/g,"_").replace(/^_|_$/g,"")+"_":"";
+  a.download=`GV-Protokoll_${kdPrefix}${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}.md`;
   a.click();
 });
 
@@ -811,6 +855,7 @@ renderPersons(); renderTranscript(); renderResult();
 refreshRecoveryBanner();                // nach Crash/Reload: gesicherte Aufnahmen anbieten
 // Traktandenliste merken
 (function(){ const ag=$("#agenda"); if(ag){ ag.value=LS.get("gv_agenda",""); ag.addEventListener("input",()=>LS.set("gv_agenda",ag.value)); } })();
+renderCustomerSelect(); loadCustomers();   // Kunde: Freitext-Fallback sofort, Dropdown sobald MailFlow-Login da
 // Keys dauerhaft aus optionaler config.local.json laden (liegt NICHT im Git, übersteht alles)
 (async function loadFileConfig(){
   try{
