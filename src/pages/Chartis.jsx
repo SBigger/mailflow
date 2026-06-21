@@ -1,4 +1,4 @@
-import React, { useState, useContext, useMemo, useEffect } from "react";
+import React, { useState, useContext, useMemo, useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { entities, supabase, auth } from "@/api/supabaseClient";
@@ -34,6 +34,8 @@ export default function Chartis() {
   const [busy, setBusy] = useState(false);
   const [cmdOpen, setCmdOpen] = useState(false);
   const [onlineIds, setOnlineIds] = useState(() => new Set());
+  const [listWidth, setListWidth] = useState(() => Number(localStorage.getItem("chartis_list_w")) || 260);
+  const dragRef = useRef(null);
 
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: () => auth.me() });
   const { data: users = [] } = useQuery({
@@ -93,11 +95,11 @@ export default function Chartis() {
   const { data: calendarEvents = [] } = useQuery({
     queryKey: ["chartisCalendar", me?.id], enabled: !!me?.id, refetchInterval: 60000,
     queryFn: async () => {
-      const since = new Date(); since.setHours(0, 0, 0, 0);
+      const since = new Date(); since.setDate(since.getDate() - 31); since.setHours(0, 0, 0, 0);
       const { data } = await supabase.from("calendar_events")
         .select("id,subject,start_time,end_time,is_all_day,location,online_meeting_url,organizer_name,customer_id")
         .eq("created_by", me.id).eq("is_cancelled", false).gte("start_time", since.toISOString())
-        .order("start_time", { ascending: true }).limit(60);
+        .order("start_time", { ascending: true }).limit(150);
       return data || [];
     },
   });
@@ -243,6 +245,15 @@ export default function Chartis() {
       .subscribe((status) => { if (status === "SUBSCRIBED") ch.track({ at: Date.now() }); });
     return () => supabase.removeChannel(ch);
   }, [me?.id]);
+  // Ziehbarer Trenn-Balken für die Listenbreite
+  useEffect(() => {
+    const onMove = (e) => { if (!dragRef.current) return; setListWidth(Math.max(200, Math.min(640, dragRef.current.w + (e.clientX - dragRef.current.x)))); };
+    const onUp = () => { dragRef.current = null; document.body.style.userSelect = ""; };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    return () => { document.removeEventListener("mousemove", onMove); document.removeEventListener("mouseup", onUp); };
+  }, []);
+  useEffect(() => { localStorage.setItem("chartis_list_w", String(listWidth)); }, [listWidth]);
   const commands = useMemo(() => {
     const nav = [
       { id: "s-tag", icon: LayoutGrid, label: "Heute", run: () => setScope("tag") },
@@ -262,7 +273,7 @@ export default function Chartis() {
 
   const clearActive = () => { setActiveId(null); setActiveCall(null); setActiveMail(null); setActiveEvent(null); setActiveTask(null); };
   const NavItem = ({ k, icon: Icon, label, count, red }) => (
-    <button onClick={() => { setScope(k); setActiveCall(null); }} className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left relative"
+    <button onClick={() => { clearActive(); setScope(k); }} className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left relative"
       style={{ fontSize: 12, color: scope === k ? t.accent : t.textSecondary, background: scope === k ? t.accentSoft : "transparent", fontWeight: scope === k ? 500 : 400 }}>
       {scope === k && <span style={{ position: "absolute", left: 0, top: 6, bottom: 6, width: 3, borderRadius: 2, background: t.accentFill }} />}
       <Icon className="h-4 w-4" style={{ color: red ? SEM.missed : undefined }} />
@@ -305,7 +316,7 @@ export default function Chartis() {
       </div>
 
       {/* Pane B — Liste */}
-      <div className="flex flex-col flex-shrink-0" style={{ width: 250, borderRight: `1px solid ${t.borderSubtle}`, background: t.base }}>
+      <div className="flex flex-col flex-shrink-0" style={{ width: listWidth, borderRight: `1px solid ${t.borderSubtle}`, background: t.base }}>
         <div className="px-3 py-3" style={{ borderBottom: `1px solid ${t.borderSubtle}` }}>
           <div className="flex items-center gap-2 px-2.5 py-2 rounded-lg" style={{ background: t.sunken, border: `1px solid ${t.borderSubtle}` }}>
             <Search className="h-4 w-4" style={{ color: t.textMuted }} />
@@ -366,7 +377,14 @@ export default function Chartis() {
         </div>
       </div>
 
-      {/* Pane C — aktiver Faden / Anruf / Leerstaat */}
+      {/* Ziehbarer Trenn-Balken */}
+      <div onMouseDown={(e) => { dragRef.current = { x: e.clientX, w: listWidth }; document.body.style.userSelect = "none"; e.preventDefault(); }}
+        title="Breite ziehen" className="flex-shrink-0 flex items-center justify-center"
+        style={{ width: 8, cursor: "col-resize" }}>
+        <div style={{ width: 3, height: 34, borderRadius: 2, background: t.borderStrong, opacity: 0.5 }} />
+      </div>
+
+      {/* Pane C — aktiver Faden / Anruf / Kalender / Leerstaat */}
       <div className="flex-1 min-w-0" style={{ background: t.raised, boxShadow: t.shadow }}>
         {activeMail ? (
           <MailThread m={activeMail} t={t} myEmail={myEmail} customer={custById[activeMail.customer_id]} />
@@ -376,6 +394,8 @@ export default function Chartis() {
           <TaskDetail k={activeTask} t={t} customer={custById[activeTask.customer_id]} />
         ) : activeCall ? (
           <CallDetail c={activeCall} t={t} customer={custById[activeCall.customer_id]} />
+        ) : scope === "kalender" ? (
+          <CalendarMonth events={calendarEvents} t={t} onSelect={(e) => { clearActive(); setActiveEvent(e); }} />
         ) : activeThread ? (
           <ChartisPanel key={activeThread.id} threadId={activeThread.id} titleOverride={title(activeThread)} directMode={activeThread.thread_type !== "objekt"} embedded />
         ) : (
@@ -560,6 +580,61 @@ function TaskDetail({ k, t, customer }) {
         {k.description && <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{k.description}</div>}
         {customer && <Field t={t} label="Kunde" value={customer.company_name} />}
         <Link to="/TaskBoard" className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg mt-2" style={{ fontSize: 12, background: t.accentSoft, color: t.accent }}><CheckSquare className="h-3.5 w-3.5" /> Im Task-Board öffnen</Link>
+      </div>
+    </div>
+  );
+}
+
+function CalendarMonth({ events, t, onSelect }) {
+  const [off, setOff] = useState(0);
+  const base = new Date(); base.setDate(1); base.setMonth(base.getMonth() + off);
+  const year = base.getFullYear(), month = base.getMonth();
+  const startDow = (new Date(year, month, 1).getDay() + 6) % 7; // Mo = 0
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const cells = [];
+  for (let i = 0; i < startDow; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+  while (cells.length % 7 !== 0) cells.push(null);
+  const byDay = {};
+  for (const e of events) {
+    const d = new Date(e.start_time);
+    if (d.getFullYear() === year && d.getMonth() === month) (byDay[d.getDate()] = byDay[d.getDate()] || []).push(e);
+  }
+  const today = new Date();
+  const isToday = (d) => d && today.getFullYear() === year && today.getMonth() === month && today.getDate() === d;
+  const monthName = base.toLocaleDateString("de-CH", { month: "long", year: "numeric" });
+  const btn = { fontSize: 12, padding: "4px 9px", borderRadius: 8, border: `1px solid ${t.borderSubtle}`, color: t.textSecondary, background: t.base };
+
+  return (
+    <div className="h-full flex flex-col p-3">
+      <div className="flex items-center gap-2 mb-3">
+        <Calendar className="h-4 w-4" style={{ color: t.accent }} />
+        <span style={{ fontSize: 15, fontWeight: 600, textTransform: "capitalize" }}>{monthName}</span>
+        <div className="ml-auto flex gap-1.5">
+          <button onClick={() => setOff(o => o - 1)} style={btn}>‹</button>
+          <button onClick={() => setOff(0)} style={btn}>Heute</button>
+          <button onClick={() => setOff(o => o + 1)} style={btn}>›</button>
+        </div>
+      </div>
+      <div className="grid" style={{ gridTemplateColumns: "repeat(7,1fr)", gap: 4 }}>
+        {["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"].map(d => (
+          <div key={d} style={{ fontSize: 10, color: t.textMuted, textAlign: "center", padding: "0 0 4px" }}>{d}</div>
+        ))}
+      </div>
+      <div className="grid flex-1" style={{ gridTemplateColumns: "repeat(7,1fr)", gridAutoRows: "minmax(56px,1fr)", gap: 4, minHeight: 0 }}>
+        {cells.map((d, i) => d ? (
+          <div key={i} style={{ border: `1px solid ${t.borderSubtle}`, borderRadius: 8, padding: 4, overflow: "hidden", background: isToday(d) ? t.accentSoft : t.base, display: "flex", flexDirection: "column", minHeight: 0 }}>
+            <div style={{ fontSize: 11, fontWeight: isToday(d) ? 700 : 500, color: isToday(d) ? t.accent : t.textSecondary }}>{d}</div>
+            <div style={{ overflow: "hidden", display: "flex", flexDirection: "column", gap: 2, marginTop: 2 }}>
+              {(byDay[d] || []).slice(0, 3).map(e => (
+                <button key={e.id} onClick={() => onSelect(e)} title={e.subject} style={{ textAlign: "left", fontSize: 9, padding: "1px 4px", borderRadius: 4, background: t.accentFill, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", border: "none", cursor: "pointer" }}>
+                  {!e.is_all_day && new Date(e.start_time).toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" }) + " "}{e.subject || "Termin"}
+                </button>
+              ))}
+              {(byDay[d] || []).length > 3 && <div style={{ fontSize: 9, color: t.textMuted }}>+{(byDay[d]).length - 3} mehr</div>}
+            </div>
+          </div>
+        ) : <div key={i} />)}
       </div>
     </div>
   );
