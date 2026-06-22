@@ -4,14 +4,19 @@ import { registerDocumentTools } from "./modules/documents.ts";
 import { registerCustomerTools } from "./modules/customers.ts";
 import { registerFinanceTools } from "./modules/finance.ts";
 import { registerShareTools } from "./modules/shares.ts";
-import Anthropic from "npm:@anthropic-ai/sdk";
-import { localToolRegistry } from "./tool.ts"; // Importiert die neue lokale Registry
+import Anthropic from "npm:@anthropic-ai/sdk@0.33.1";
+import { zodToJsonSchema } from "npm:zod-to-json-schema";
+import { localToolRegistry } from "./tool.ts";
+import {ToolContext} from "./scope";
 
 async function callClaudeWithMcpTools(
     userPrompt: string
 ): Promise<string> {
 
-  const anthropic = new Anthropic({
+  const _model = "claude-opus-4-8";
+
+
+  const _anthropic = new Anthropic({
     apiKey: Deno.env.get("ANTHROPIC_API_KEY"),
   });
 
@@ -19,18 +24,31 @@ async function callClaudeWithMcpTools(
   const toolsArray = Array.from(localToolRegistry.values());
 
   // 2. Die MCP-Tools in das Format konvertieren, das die Anthropic-API erwartet
-  const claudeTools = toolsArray.map((tool) => ({
-    name: tool.name,
-    description: tool.description,
-    input_schema: tool.inputSchema, // Das ist das vorbereitete ZodObject aus deiner tool.ts
-  }));
+  const claudeTools = toolsArray.map((tool) => {
+    // 1. JSON-Schema aus Zod generieren
+    const fullSchema = zodToJsonSchema(tool.inputSchema) as any;
+
+    // 2. Meta-Felder wie $schema, $ref oder definitions entfernen, die Anthropic verwirren
+    const { $schema, $id, definitions, ...cleanSchema } = fullSchema;
+
+    return {
+      name: tool.name,
+      description: tool.description,
+      input_schema: {
+        type: "object",
+        properties: cleanSchema.properties || {},
+        required: cleanSchema.required || [],
+      },
+    };
+  });
 
   // 3. Erster Aufruf an Claude (mit der Frage und den verfügbaren Werkzeugen)
-  const message = await anthropic.messages.create({
-    model: "claude-3-5-sonnet-20241022",
+  const message = await _anthropic.messages.create({
+    model: _model,
     max_tokens: 4096,
+    system: "Du bist ein Assistent, der Antworten ausschließlich als rohen HTML-Code formatiert (z. B. mit <p>, <ul>, <li>, <strong>, <table>). Nutze niemals Markdown-Code-Blöcke (wie ```html). Gib direkt den renderbaren HTML-Inhalt aus.",
     messages: [{ role: "user", content: userPrompt }],
-    tools: claudeTools,
+    tools: claudeTools
   });
 
   // 4. Prüfen, ob Claude ein Werkzeug aufrufen möchte (z.B. customers_search)
@@ -52,9 +70,10 @@ async function callClaudeWithMcpTools(
         const toolResult = await localTool.handler(toolInput);
 
         // 6. Das Ergebnis zurück an Claude senden, damit er die finale Antwort formuliert
-        const finalMessage = await anthropic.messages.create({
-          model: "claude-3-5-sonnet-20241022",
+        const finalMessage = await _anthropic.messages.create({
+          model: _model,
           max_tokens: 4096,
+          system: "Du bist ein Assistent, der Antworten ausschließlich als rohen HTML-Code formatiert (z. B. mit <p>, <ul>, <li>, <strong>, <table>). Nutze niemals Markdown-Code-Blöcke (wie ```html). Gib direkt den renderbaren HTML-Inhalt aus.",
           messages: [
             { role: "user", content: userPrompt },
             { role: "assistant", content: message.content }, // Der vorherige Claude-Aufruf inkl. Tool-Wunsch
@@ -73,7 +92,7 @@ async function callClaudeWithMcpTools(
               ],
             },
           ],
-          tools: claudeTools, // Falls Claude danach noch ein Tool nutzen will (Chaining)
+          tools: claudeTools
         });
 
         // Gib den finalen Text zurück, den React anzeigen soll
@@ -113,7 +132,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const requestContext = {
+    const requestContext: ToolContext = {
       customerId: customerId || null,
       mandantId: mandantId || null,
       allowWrites: true

@@ -88,7 +88,10 @@ export default function AiAssistant() {
                     "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`
                 },
                 body: JSON.stringify({
-                    message: text,
+                    message: [
+                        ...chatHistory,
+                        text
+                    ],
                     // Optional falls vorhanden: customerId, mandantId
                 }),
             });
@@ -186,15 +189,28 @@ export default function AiAssistant() {
                                     >
                                         {isUser ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
                                     </div>
-                                    <div className="rounded-2xl px-4 py-2.5 text-sm shadow-sm whitespace-pre-wrap leading-relaxed"
-                                         style={{
-                                             backgroundColor: isUser ? bubbleUser : (isDark ? "rgba(255,255,255,0.05)" : "#f1f5f9"),
-                                             color: isUser ? "#ffffff" : headingColor,
-                                             border: isUser ? "none" : `1px solid ${cardBorder}`,
-                                         }}
-                                    >
-                                        {msg.content}
-                                    </div>
+                                    {isUser ? (
+                                        /* 1. Variante für den User: Normaler Text ohne HTML-Gefahr */
+                                        <div className="rounded-2xl px-4 py-2.5 text-sm shadow-sm whitespace-pre-wrap leading-relaxed"
+                                             style={{
+                                                 backgroundColor: bubbleUser,
+                                                 color: "#ffffff",
+                                                 border: "none",
+                                             }}
+                                        >
+                                            {msg.content}
+                                        </div>
+                                    ) : (
+                                        /* 2. Variante für die KI: Rendert das generierte HTML */
+                                        <div className="rounded-2xl px-4 py-2.5 text-sm shadow-sm whitespace-pre-wrap leading-relaxed"
+                                             style={{
+                                                 backgroundColor: isDark ? "rgba(255,255,255,0.05)" : "#f1f5f9",
+                                                 color: headingColor,
+                                                 border: `1px solid ${cardBorder}`,
+                                             }}
+                                             dangerouslySetInnerHTML={{ __html: msg.content }}
+                                        />
+                                    )}
                                 </div>
                             );
                         })}
@@ -204,7 +220,7 @@ export default function AiAssistant() {
                                     <Bot className="w-4 h-4 animate-bounce" style={{ color: accent }} />
                                 </div>
                                 <div className="rounded-2xl px-4 py-2.5 text-sm italic" style={{ backgroundColor: isDark ? "rgba(255,255,255,0.05)" : "#f1f5f9", color: subColor, border: `1px solid ${cardBorder}` }}>
-                                    Artis sucht Daten und generiert Antwort...
+                                    {window.env.CUSTOMER} sucht Daten und generiert Antwort...
                                 </div>
                             </div>
                         )}
