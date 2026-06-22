@@ -585,11 +585,174 @@ function TaskDetail({ k, t, customer }) {
   );
 }
 
+function CalHeader({ t, label, view, setView, onPrev, onToday, onNext }) {
+  const navBtn = { fontSize: 12, padding: "3px 9px", borderRadius: 7, border: `1px solid ${t.borderSubtle}`, color: t.textSecondary, background: t.base, cursor: "pointer" };
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderBottom: `1px solid ${t.borderSubtle}`, flexShrink: 0 }}>
+      <Calendar className="h-4 w-4" style={{ color: t.accent }} />
+      <span style={{ fontSize: 14, fontWeight: 600, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+        <div style={{ display: "flex", borderRadius: 8, overflow: "hidden", border: `1px solid ${t.borderSubtle}` }}>
+          {[["tag", "Tag"], ["woche", "Woche"], ["monat", "Monat"]].map(([k, l]) => (
+            <button key={k} onClick={() => setView(k)} style={{ fontSize: 11, padding: "3px 10px", background: view === k ? t.accentFill : t.base, color: view === k ? "#fff" : t.textSecondary, border: "none", cursor: "pointer", fontWeight: view === k ? 600 : 400 }}>{l}</button>
+          ))}
+        </div>
+        <button onClick={onPrev} style={navBtn}>‹</button>
+        <button onClick={onToday} style={navBtn}>Heute</button>
+        <button onClick={onNext} style={navBtn}>›</button>
+      </div>
+    </div>
+  );
+}
+
 function CalendarMonth({ events, t, onSelect }) {
+  const [view, setView] = useState("monat");
   const [off, setOff] = useState(0);
+  const scrollRef = useRef(null);
+  const today = new Date();
+
+  const HOUR_START = 7, HOUR_END = 21, HOUR_H = 52;
+  const hours = Array.from({ length: HOUR_END - HOUR_START }, (_, i) => HOUR_START + i);
+
+  useEffect(() => {
+    if ((view === "tag" || view === "woche") && scrollRef.current) {
+      scrollRef.current.scrollTop = Math.max(0, (today.getHours() - HOUR_START - 1) * HOUR_H);
+    }
+  }, [view]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // === TAG ===
+  if (view === "tag") {
+    const day = new Date(today); day.setDate(today.getDate() + off); day.setHours(0, 0, 0, 0);
+    const dayLabel = day.toLocaleDateString("de-CH", { weekday: "long", day: "2-digit", month: "long", year: "numeric" });
+    const dayStr = day.toDateString();
+    const dayEvs = events.filter(e => new Date(e.start_time).toDateString() === dayStr);
+    const allDay = dayEvs.filter(e => e.is_all_day);
+    const timed = dayEvs.filter(e => !e.is_all_day);
+    const isToday = day.toDateString() === today.toDateString();
+    const nowH = today.getHours() + today.getMinutes() / 60;
+    return (
+      <div style={{ height: "100%", display: "flex", flexDirection: "column", minHeight: 0 }}>
+        <CalHeader t={t} label={dayLabel} view={view} setView={v => { setView(v); setOff(0); }} onPrev={() => setOff(o => o - 1)} onToday={() => setOff(0)} onNext={() => setOff(o => o + 1)} />
+        {allDay.length > 0 && (
+          <div style={{ padding: "4px 4px 4px 48px", borderBottom: `1px solid ${t.borderSubtle}`, display: "flex", flexWrap: "wrap", gap: 3, flexShrink: 0 }}>
+            {allDay.map(e => <button key={e.id} onClick={() => onSelect(e)} style={{ fontSize: 10, padding: "2px 8px", borderRadius: 5, background: t.accentFill, color: "#fff", border: "none", cursor: "pointer" }}>{e.subject || "Termin"}</button>)}
+          </div>
+        )}
+        <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", minHeight: 0, position: "relative" }}>
+          <div style={{ position: "relative" }}>
+            {hours.map(h => (
+              <div key={h} style={{ height: HOUR_H, display: "flex", borderBottom: `1px solid ${t.borderSubtle}` }}>
+                <div style={{ width: 44, flexShrink: 0, fontSize: 10, color: t.textMuted, paddingTop: 2, textAlign: "right", paddingRight: 8 }}>{String(h).padStart(2, "0")}:00</div>
+                <div style={{ flex: 1 }} />
+              </div>
+            ))}
+            {isToday && nowH >= HOUR_START && nowH <= HOUR_END && (
+              <div style={{ position: "absolute", left: 44, right: 0, top: (nowH - HOUR_START) * HOUR_H, height: 2, background: SEM.missed, zIndex: 3, pointerEvents: "none" }}>
+                <div style={{ width: 8, height: 8, borderRadius: 99, background: SEM.missed, position: "absolute", left: -4, top: -3 }} />
+              </div>
+            )}
+            <div style={{ position: "absolute", top: 0, left: 48, right: 4, bottom: 0, pointerEvents: "none" }}>
+              {timed.map(e => {
+                const st = new Date(e.start_time), et = e.end_time ? new Date(e.end_time) : new Date(st.getTime() + 3600000);
+                const stH = st.getHours() + st.getMinutes() / 60, etH = et.getHours() + et.getMinutes() / 60;
+                const top = Math.max(0, (stH - HOUR_START) * HOUR_H);
+                const height = Math.max(22, (Math.min(etH, HOUR_END) - Math.max(stH, HOUR_START)) * HOUR_H);
+                return (
+                  <button key={e.id} onClick={() => onSelect(e)} style={{ pointerEvents: "all", position: "absolute", left: 0, right: 0, top, height, background: t.accentFill, color: "#fff", borderRadius: 6, fontSize: 11, padding: "3px 8px", textAlign: "left", overflow: "hidden", border: "none", cursor: "pointer", zIndex: 1 }}>
+                    <div style={{ fontWeight: 600, fontSize: 10, opacity: 0.85 }}>{st.toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" })}{e.end_time ? " – " + et.toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" }) : ""}</div>
+                    <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.subject || "Termin"}</div>
+                    {e.location && <div style={{ fontSize: 9, opacity: 0.8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.location}</div>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // === WOCHE ===
+  if (view === "woche") {
+    const weekStart = new Date(today);
+    const dow = (today.getDay() + 6) % 7;
+    weekStart.setDate(today.getDate() - dow + off * 7);
+    weekStart.setHours(0, 0, 0, 0);
+    const days = Array.from({ length: 7 }, (_, i) => { const d = new Date(weekStart); d.setDate(weekStart.getDate() + i); return d; });
+    const weekLabel = days[0].toLocaleDateString("de-CH", { day: "2-digit", month: "short" }) + " – " + days[6].toLocaleDateString("de-CH", { day: "2-digit", month: "short", year: "numeric" });
+    const evForDay = (d) => events.filter(e => new Date(e.start_time).toDateString() === d.toDateString());
+    const nowH = today.getHours() + today.getMinutes() / 60;
+    const DOW = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+    const hasAllDay = days.some(d => evForDay(d).some(e => e.is_all_day));
+    return (
+      <div style={{ height: "100%", display: "flex", flexDirection: "column", minHeight: 0 }}>
+        <CalHeader t={t} label={weekLabel} view={view} setView={v => { setView(v); setOff(0); }} onPrev={() => setOff(o => o - 1)} onToday={() => setOff(0)} onNext={() => setOff(o => o + 1)} />
+        <div style={{ display: "flex", borderBottom: `1px solid ${t.borderStrong}`, flexShrink: 0 }}>
+          <div style={{ width: 44, flexShrink: 0 }} />
+          {days.map((d, i) => {
+            const isT = d.toDateString() === today.toDateString();
+            return (
+              <div key={i} style={{ flex: 1, textAlign: "center", padding: "3px 2px", background: isT ? t.accentSoft : "transparent", borderLeft: i > 0 ? `1px solid ${t.borderSubtle}` : "none" }}>
+                <div style={{ fontSize: 10, color: t.textMuted }}>{DOW[i]}</div>
+                <div style={{ fontSize: 13, fontWeight: isT ? 700 : 400, color: isT ? t.accent : t.textPrimary }}>{d.getDate()}</div>
+              </div>
+            );
+          })}
+        </div>
+        {hasAllDay && (
+          <div style={{ display: "flex", borderBottom: `1px solid ${t.borderSubtle}`, minHeight: 22, flexShrink: 0 }}>
+            <div style={{ width: 44, flexShrink: 0, fontSize: 9, color: t.textMuted, textAlign: "right", paddingRight: 6, paddingTop: 4 }}>ganzt.</div>
+            {days.map((d, i) => (
+              <div key={i} style={{ flex: 1, padding: "2px 1px", borderLeft: i > 0 ? `1px solid ${t.borderSubtle}` : "none" }}>
+                {evForDay(d).filter(e => e.is_all_day).map(e => (
+                  <button key={e.id} onClick={() => onSelect(e)} style={{ display: "block", width: "100%", textAlign: "left", fontSize: 9, padding: "1px 3px", borderRadius: 3, background: t.accentFill, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", border: "none", cursor: "pointer", marginBottom: 1 }}>{e.subject || "Termin"}</button>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
+        <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
+          <div style={{ display: "flex", position: "relative" }}>
+            <div style={{ width: 44, flexShrink: 0 }}>
+              {hours.map(h => (
+                <div key={h} style={{ height: HOUR_H, fontSize: 10, color: t.textMuted, paddingTop: 2, textAlign: "right", paddingRight: 8, borderBottom: `1px solid ${t.borderSubtle}` }}>
+                  {String(h).padStart(2, "0")}:00
+                </div>
+              ))}
+            </div>
+            {days.map((d, di) => {
+              const isT = d.toDateString() === today.toDateString();
+              const dayEvs = evForDay(d).filter(e => !e.is_all_day);
+              return (
+                <div key={di} style={{ flex: 1, position: "relative", borderLeft: `1px solid ${t.borderSubtle}`, background: isT ? t.accentSoft : "transparent" }}>
+                  {hours.map(h => <div key={h} style={{ height: HOUR_H, borderBottom: `1px solid ${t.borderSubtle}` }} />)}
+                  {isT && nowH >= HOUR_START && nowH <= HOUR_END && (
+                    <div style={{ position: "absolute", left: 0, right: 0, top: (nowH - HOUR_START) * HOUR_H, height: 2, background: SEM.missed, zIndex: 3, pointerEvents: "none" }} />
+                  )}
+                  {dayEvs.map(e => {
+                    const st = new Date(e.start_time), et = e.end_time ? new Date(e.end_time) : new Date(st.getTime() + 3600000);
+                    const stH = st.getHours() + st.getMinutes() / 60, etH = et.getHours() + et.getMinutes() / 60;
+                    const top = Math.max(0, (stH - HOUR_START) * HOUR_H);
+                    const height = Math.max(18, (Math.min(etH, HOUR_END) - Math.max(stH, HOUR_START)) * HOUR_H);
+                    return (
+                      <button key={e.id} onClick={() => onSelect(e)} style={{ position: "absolute", left: 2, right: 2, top, height, background: t.accentFill, color: "#fff", borderRadius: 4, fontSize: 9, padding: "1px 4px", textAlign: "left", overflow: "hidden", border: "none", cursor: "pointer", zIndex: 1 }}>
+                        <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600 }}>{st.toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" })} {e.subject || "Termin"}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // === MONAT ===
   const base = new Date(); base.setDate(1); base.setMonth(base.getMonth() + off);
   const year = base.getFullYear(), month = base.getMonth();
-  const startDow = (new Date(year, month, 1).getDay() + 6) % 7; // Mo = 0
+  const startDow = (new Date(year, month, 1).getDay() + 6) % 7;
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const cells = [];
   for (let i = 0; i < startDow; i++) cells.push(null);
@@ -600,41 +763,35 @@ function CalendarMonth({ events, t, onSelect }) {
     const d = new Date(e.start_time);
     if (d.getFullYear() === year && d.getMonth() === month) (byDay[d.getDate()] = byDay[d.getDate()] || []).push(e);
   }
-  const today = new Date();
   const isToday = (d) => d && today.getFullYear() === year && today.getMonth() === month && today.getDate() === d;
   const monthName = base.toLocaleDateString("de-CH", { month: "long", year: "numeric" });
-  const btn = { fontSize: 12, padding: "4px 9px", borderRadius: 8, border: `1px solid ${t.borderSubtle}`, color: t.textSecondary, background: t.base };
 
   return (
-    <div className="h-full flex flex-col p-3">
-      <div className="flex items-center gap-2 mb-3">
-        <Calendar className="h-4 w-4" style={{ color: t.accent }} />
-        <span style={{ fontSize: 15, fontWeight: 600, textTransform: "capitalize" }}>{monthName}</span>
-        <div className="ml-auto flex gap-1.5">
-          <button onClick={() => setOff(o => o - 1)} style={btn}>‹</button>
-          <button onClick={() => setOff(0)} style={btn}>Heute</button>
-          <button onClick={() => setOff(o => o + 1)} style={btn}>›</button>
+    <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+      <CalHeader t={t} label={monthName} view={view} setView={v => { setView(v); setOff(0); }} onPrev={() => setOff(o => o - 1)} onToday={() => setOff(0)} onNext={() => setOff(o => o + 1)} />
+      <div style={{ padding: "8px 12px", flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4 }}>
+          {["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"].map(d => (
+            <div key={d} style={{ fontSize: 10, color: t.textMuted, textAlign: "center", paddingBottom: 4 }}>{d}</div>
+          ))}
         </div>
-      </div>
-      <div className="grid" style={{ gridTemplateColumns: "repeat(7,1fr)", gap: 4 }}>
-        {["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"].map(d => (
-          <div key={d} style={{ fontSize: 10, color: t.textMuted, textAlign: "center", padding: "0 0 4px" }}>{d}</div>
-        ))}
-      </div>
-      <div className="grid flex-1" style={{ gridTemplateColumns: "repeat(7,1fr)", gridAutoRows: "minmax(56px,1fr)", gap: 4, minHeight: 0 }}>
-        {cells.map((d, i) => d ? (
-          <div key={i} style={{ border: `1px solid ${t.borderSubtle}`, borderRadius: 8, padding: 4, overflow: "hidden", background: isToday(d) ? t.accentSoft : t.base, display: "flex", flexDirection: "column", minHeight: 0 }}>
-            <div style={{ fontSize: 11, fontWeight: isToday(d) ? 700 : 500, color: isToday(d) ? t.accent : t.textSecondary }}>{d}</div>
-            <div style={{ overflow: "hidden", display: "flex", flexDirection: "column", gap: 2, marginTop: 2 }}>
-              {(byDay[d] || []).slice(0, 3).map(e => (
-                <button key={e.id} onClick={() => onSelect(e)} title={e.subject} style={{ textAlign: "left", fontSize: 9, padding: "1px 4px", borderRadius: 4, background: t.accentFill, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", border: "none", cursor: "pointer" }}>
-                  {!e.is_all_day && new Date(e.start_time).toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" }) + " "}{e.subject || "Termin"}
-                </button>
-              ))}
-              {(byDay[d] || []).length > 3 && <div style={{ fontSize: 9, color: t.textMuted }}>+{(byDay[d]).length - 3} mehr</div>}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gridAutoRows: "minmax(56px,1fr)", gap: 4, flex: 1, minHeight: 0 }}>
+          {cells.map((d, i) => d ? (
+            <div key={i}
+              onClick={() => { const cd = new Date(year, month, d); const diff = Math.round((cd - new Date(today.getFullYear(), today.getMonth(), today.getDate())) / 86400000); setView("tag"); setOff(diff); }}
+              style={{ border: `1px solid ${t.borderSubtle}`, borderRadius: 8, padding: 4, overflow: "hidden", background: isToday(d) ? t.accentSoft : t.base, display: "flex", flexDirection: "column", minHeight: 0, cursor: "pointer" }}>
+              <div style={{ fontSize: 11, fontWeight: isToday(d) ? 700 : 500, color: isToday(d) ? t.accent : t.textSecondary }}>{d}</div>
+              <div style={{ overflow: "hidden", display: "flex", flexDirection: "column", gap: 2, marginTop: 2 }}>
+                {(byDay[d] || []).slice(0, 3).map(e => (
+                  <button key={e.id} onClick={(ev) => { ev.stopPropagation(); onSelect(e); }} title={e.subject} style={{ textAlign: "left", fontSize: 9, padding: "1px 4px", borderRadius: 4, background: t.accentFill, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", border: "none", cursor: "pointer" }}>
+                    {!e.is_all_day && new Date(e.start_time).toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" }) + " "}{e.subject || "Termin"}
+                  </button>
+                ))}
+                {(byDay[d] || []).length > 3 && <div style={{ fontSize: 9, color: t.textMuted }}>+{(byDay[d]).length - 3} mehr</div>}
+              </div>
             </div>
-          </div>
-        ) : <div key={i} />)}
+          ) : <div key={i} />)}
+        </div>
       </div>
     </div>
   );
