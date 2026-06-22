@@ -1,7 +1,7 @@
 {
   "name": "mailflow",
   "private": true,
-  "version": "3.3.0",
+  "version": "3.3.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,7 +10,7 @@
     "supabase": "npx supabase start && npx supabase functions serve --env-file .env.local",
     "supabase debug": "supabase start && supabase functions serve --env-file .env.local --inspect-mode brk",
     "tauri build": "npx @tauri-apps/cli build --config ./apps/src-tauri/tauri.conf.json",
-    "app Docker build": "docker build --no-cache -f .\\docker_files\\app_image\\Dockerfile -t brsoftswiss/smartis:1.7.0 .",
+    "app Docker build": "docker build --no-cache -f .\\docker_files\\app_image\\Dockerfile -t brsoftswiss/smartis:1.7.1 .",
     "ocr Docker build": "docker build --no-cache -f .\\docker_files\\ocr\\Dockerfile -t brsoftswiss/ocr-smartis:1.1.3 .",
     "dump schema": "supabase db dump --db-url \"postgres://postgres.uawgpxcihixqxqxxbjak:[Passwort]@aws-1-eu-central-1.pooler.supabase.com:6543/postgres\" -f supabase/backups/schema_safe.sql"
   },
