@@ -108,11 +108,19 @@ export default function Chartis() {
     queryFn: async () => {
       const ors = [me.email && `assignee.eq.${me.email}`, me.email && `verantwortlich.eq.${me.email}`, `created_by.eq.${me.id}`].filter(Boolean).join(",");
       const { data } = await supabase.from("tasks")
-        .select("id,title,description,due_date,priority,completed,customer_id,assignee,verantwortlich,created_by")
+        .select("id,title,description,due_date,priority,completed,customer_id,assignee,verantwortlich,created_by,column_id")
         .eq("completed", false).or(ors).order("due_date", { ascending: true }).limit(100);
       return data || [];
     },
   });
+  const { data: taskColumns = [] } = useQuery({
+    queryKey: ["chartisTaskColumns"], staleTime: 300000,
+    queryFn: async () => {
+      const { data } = await supabase.from("task_columns").select("id,name,color,order").order("order");
+      return data || [];
+    },
+  });
+
   const mentionIds = useMemo(() => new Set(mentions.map(m => m.thread_id)), [mentions]);
   const unseenMentions = mentions.filter(m => !m.seen).length;
   const tablesMissing = thErr && /relation .*chartis|does not exist|thread_type/i.test(thErr.message || "");
@@ -197,6 +205,40 @@ export default function Chartis() {
 
   const activeThread = useMemo(() => [...myThreads, ...objektThreads].find(x => x.id === activeId), [activeId, myThreads, objektThreads]);
 
+  const groupedTodos = useMemo(() => {
+    if (scope !== "todos") return null;
+    const q = search.trim().toLowerCase();
+    const filtered = tasks.filter(k => {
+      if (seg === "mich" && k.assignee !== me?.email && k.verantwortlich !== me?.email) return false;
+      if (q && !(k.title || "").toLowerCase().includes(q)) return false;
+      return true;
+    });
+    if (!filtered.length) return [];
+    const colMap = new Map(taskColumns.map(c => [c.id, c]));
+    const byCol = {};
+    const noCol = [];
+    for (const k of filtered) {
+      if (k.column_id && colMap.has(k.column_id)) {
+        (byCol[k.column_id] = byCol[k.column_id] || []).push(k);
+      } else {
+        noCol.push(k);
+      }
+    }
+    const result = [];
+    for (const col of taskColumns) {
+      const ct = byCol[col.id] || [];
+      if (ct.length) {
+        result.push({ type: "header", label: col.name, count: ct.length, color: col.color });
+        ct.forEach(k => result.push({ type: "task", k }));
+      }
+    }
+    if (noCol.length) {
+      result.push({ type: "header", label: "Ohne Spalte", count: noCol.length, color: null });
+      noCol.forEach(k => result.push({ type: "task", k }));
+    }
+    return result;
+  }, [scope, tasks, taskColumns, search, seg, me?.email]);
+
   async function openDirect(otherId) {
     if (!me?.id) return; setBusy(true);
     try {
@@ -270,6 +312,8 @@ export default function Chartis() {
     const people = users.filter(u => u.id !== me?.id).map(u => ({ id: "u-" + u.id, icon: User, label: "Direkt an " + (u.full_name || u.email), sub: "Chat", run: () => openDirect(u.id) }));
     return [...nav, ...people];
   }, [users, me]);
+
+  const displayItems = scope === "todos" ? (groupedTodos || []) : items;
 
   const clearActive = () => { setActiveId(null); setActiveCall(null); setActiveMail(null); setActiveEvent(null); setActiveTask(null); };
   const NavItem = ({ k, icon: Icon, label, count, red }) => (
@@ -347,13 +391,19 @@ export default function Chartis() {
         <div className="flex-1 overflow-y-auto">
           {tablesMissing ? (
             <div className="m-3 text-xs p-3 rounded-lg" style={{ color: "#92400e", background: "#fef3c7" }}>Chartis-Tabellen fehlen. Bitte Migrationen im SQL-Editor ausführen.</div>
-          ) : items.length === 0 ? (
+          ) : displayItems.length === 0 ? (
             <div className="text-center py-10 px-4" style={{ color: t.textMuted }}>
               <Check className="h-8 w-8 mx-auto mb-2" style={{ opacity: 0.3 }} />
               <div style={{ fontSize: 13, fontWeight: 500 }}>Alles erledigt</div>
               <div style={{ fontSize: 11 }}>Keine offenen Punkte hier.</div>
             </div>
-          ) : items.map((it, i) => it.type === "call" ? (
+          ) : displayItems.map((it, i) => it.type === "header" ? (
+            <div key={"h" + i} style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 12px 3px", fontSize: 10, fontWeight: 700, letterSpacing: ".07em", textTransform: "uppercase", color: t.textMuted, borderTop: i > 0 ? `1px solid ${t.borderSubtle}` : "none" }}>
+              {it.color && <span style={{ width: 7, height: 7, borderRadius: 99, background: it.color, flexShrink: 0 }} />}
+              <span className="truncate">{it.label}</span>
+              <span style={{ marginLeft: "auto", fontSize: 10, fontWeight: 500 }}>{it.count}</span>
+            </div>
+          ) : it.type === "call" ? (
             <button key={"c" + it.c.id} onClick={() => { clearActive(); setActiveCall(it.c); }}
               className="w-full flex items-center gap-2.5 px-3 py-2 text-left" style={{ borderBottom: `1px solid ${t.borderSubtle}`, borderLeft: `3px solid ${SEM.missed}`, paddingLeft: 9, background: activeCall?.id === it.c.id ? t.activeRow : "transparent" }}>
               <div className="rounded-full flex items-center justify-center flex-shrink-0" style={{ width: 30, height: 30, background: SEM.missedSoft, color: SEM.missed }}><PhoneOff className="h-4 w-4" /></div>

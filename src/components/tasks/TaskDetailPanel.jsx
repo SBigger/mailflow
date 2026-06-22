@@ -1,6 +1,6 @@
 import React, { useState, useRef, useContext, useCallback, useEffect } from "react";
 import { useIsMobile } from "@/components/mobile/useIsMobile";
-import { X, Trash2, CheckCircle2, Circle, Mail, Tag, Paperclip, Upload, Download, MessageSquare, Send } from "lucide-react";
+import { X, Trash2, CheckCircle2, Circle, Mail, Tag, Paperclip, Upload, Download, MessageSquare, Send, AtSign, Building2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -36,6 +36,8 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete, pre
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
   const [chatMessage, setChatMessage] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
+  const [mentionTarget, setMentionTarget] = useState(null); // {userId, name, email} or null
+  const [showMentionPicker, setShowMentionPicker] = useState(false);
   const chatEndRef = useRef(null);
   const queryClient = useQueryClient();
 
@@ -137,14 +139,38 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete, pre
     if (!chatMessage.trim() || !currentUser) return;
     setSendingMessage(true);
     try {
+      const fullMessage = mentionTarget ? `@${mentionTarget.name}: ${chatMessage.trim()}` : chatMessage.trim();
       await supabase.from('task_comments').insert({
         task_id: task.id,
         user_email: currentUser.email,
         user_name: currentUser.full_name || currentUser.email,
-        message: chatMessage.trim(),
+        message: fullMessage,
         read_by: [currentUser.email],
       });
+      // Chartis-Erwähnung für Mitarbeiter (silent-fail wenn Tabellen noch nicht migriert)
+      if (mentionTarget?.userId) {
+        try {
+          const { data: existingTh } = await supabase.from("chartis_threads")
+            .select("id").eq("module", "task").eq("record_id", task.id).maybeSingle();
+          let threadId = existingTh?.id;
+          if (!threadId) {
+            const { data: newTh } = await supabase.from("chartis_threads")
+              .insert({ module: "task", record_id: String(task.id), thread_type: "objekt", subject: task.title, created_by: currentUser.id, owner_id: currentUser.id })
+              .select("id").single();
+            threadId = newTh?.id;
+          }
+          if (threadId) {
+            const { data: msg } = await supabase.from("chartis_messages")
+              .insert({ thread_id: threadId, author_id: currentUser.id, body: fullMessage, body_text: fullMessage, chartis_kind: "intern" })
+              .select("id").single();
+            if (msg) {
+              await supabase.from("chartis_mentions").insert({ message_id: msg.id, thread_id: threadId, user_id: mentionTarget.userId });
+            }
+          }
+        } catch (_) { /* Chartis-Tabellen noch nicht bereit */ }
+      }
       setChatMessage('');
+      setMentionTarget(null);
       refetchComments();
       queryClient.invalidateQueries({ queryKey: ["unread_comments"] });
     } catch (error) {
@@ -555,12 +581,64 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete, pre
               })}
               <div ref={chatEndRef} />
             </div>
-            <div className="flex gap-2">
+            {mentionTarget && (
+              <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg w-fit" style={{ background: inputBg, border: `1px solid ${inputBorder}` }}>
+                <AtSign className="h-3 w-3" style={{ color: accentColor, flexShrink: 0 }} />
+                <span style={{ fontSize: 12, color: accentColor, fontWeight: 500 }}>{mentionTarget.name}</span>
+                {!mentionTarget.userId && <span style={{ fontSize: 10, color: mutedText }}>(Kunde · kein Chartis)</span>}
+                <button onClick={() => setMentionTarget(null)} style={{ color: mutedText, lineHeight: 0 }}><X className="h-3 w-3" /></button>
+              </div>
+            )}
+            <div className="flex gap-2 relative">
+              <div className="relative flex-shrink-0">
+                <button onClick={() => setShowMentionPicker(v => !v)}
+                  title="Person erwähnen"
+                  className="flex items-center justify-center rounded-lg border"
+                  style={{ width: 36, height: 36, backgroundColor: showMentionPicker ? accentColor : inputBg, borderColor: inputBorder, color: showMentionPicker ? "#fff" : mutedText }}>
+                  <AtSign className="h-4 w-4" />
+                </button>
+                {showMentionPicker && (
+                  <div style={{ position: "absolute", bottom: "calc(100% + 4px)", left: 0, width: 230, maxHeight: 220, overflowY: "auto", background: dropdownBg, border: `1px solid ${inputBorder}`, borderRadius: 10, boxShadow: "0 4px 16px rgba(0,0,0,0.18)", zIndex: 60 }}>
+                    {users.length > 0 && (
+                      <>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: mutedText, padding: "8px 10px 3px", textTransform: "uppercase", letterSpacing: ".07em" }}>Mitarbeiter</div>
+                        {users.map(u => (
+                          <button key={u.id} onClick={() => { setMentionTarget({ userId: u.id, name: u.full_name || u.email, email: u.email }); setShowMentionPicker(false); }}
+                            className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-sm"
+                            style={{ background: "transparent", border: "none", cursor: "pointer", color: textColor }}
+                            onMouseEnter={e => e.currentTarget.style.background = dropdownHover}
+                            onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                            <span style={{ width: 24, height: 24, borderRadius: 99, background: accentColor + "25", color: accentColor, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 600, flexShrink: 0 }}>
+                              {(u.full_name || u.email).charAt(0).toUpperCase()}
+                            </span>
+                            <span className="truncate">{u.full_name || u.email}</span>
+                          </button>
+                        ))}
+                      </>
+                    )}
+                    {customers.length > 0 && (
+                      <>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: mutedText, padding: "8px 10px 3px", textTransform: "uppercase", letterSpacing: ".07em", borderTop: `1px solid ${inputBorder}` }}>Kunden</div>
+                        {customers.slice(0, 15).map(c => (
+                          <button key={c.id} onClick={() => { setMentionTarget({ userId: null, name: c.company_name }); setShowMentionPicker(false); }}
+                            className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-sm"
+                            style={{ background: "transparent", border: "none", cursor: "pointer", color: textColor }}
+                            onMouseEnter={e => e.currentTarget.style.background = dropdownHover}
+                            onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                            <Building2 className="h-3.5 w-3.5 flex-shrink-0" style={{ color: mutedText }} />
+                            <span className="truncate">{c.company_name}</span>
+                          </button>
+                        ))}
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
               <Input
                 value={chatMessage}
                 onChange={e => setChatMessage(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } }}
-                placeholder="Kommentar schreiben... (Enter)"
+                placeholder={mentionTarget ? `Nachricht an @${mentionTarget.name}…` : "Kommentar schreiben... (Enter)"}
                 className="border flex-1 text-sm"
                 style={inputStyle}
               />
