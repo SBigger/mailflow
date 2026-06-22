@@ -1,7 +1,7 @@
 import React, { useContext } from "react";
 import { useNavigate } from "react-router-dom";
 import { ThemeContext } from "@/Layout";
-import { BookOpen, Car, FileText, UserCog, ChevronRight, Wrench, PenLine, Presentation, FileSpreadsheet, Sparkles, Phone, CalendarRange, CalendarDays, Scale, Receipt, Building2 } from "lucide-react";
+import { BookOpen, Car, FileText, UserCog, ChevronRight, Wrench, PenLine, Presentation, FileSpreadsheet, Sparkles, Phone, CalendarRange, CalendarDays, Scale, Receipt, Building2, Mic, ExternalLink } from "lucide-react";
 
 const TOOLS = [
   {
@@ -139,6 +139,16 @@ const TOOLS = [
     bg: "#ece0f5",
     route: "/Steuerausscheidung",
   },
+  {
+    id: "aktennotiz",
+    title: "Aktennotiz",
+    description: "Besprechungen, Sitzungen & GV aufnehmen, automatisch transkribieren (mit Sprecher-Trennung) und per KI eine Aktennotiz mit Zusammenfassung, Aufgaben & Pendenzen erstellen – pro Kunde",
+    icon: Mic,
+    color: "#6366f1",
+    bg: "#e8e9fb",
+    url: "/gv-protokoll/",
+    external: true,
+  },
 ];
 
 export default function ArtisTools() {
@@ -180,15 +190,15 @@ export default function ArtisTools() {
 
       {/* ── Tool-Kacheln ────────────────────────────────────────── */}
       <div className="grid grid-cols-3 gap-4">
-        {TOOLS.map(({ id, title, description, icon: Icon, color, bg, route }) => (
+        {TOOLS.map(({ id, title, description, icon: Icon, color, bg, route, url, external }) => (
           <div
             key={id}
-            onClick={() => route && navigate(route)}
+            onClick={() => { if (external && url) window.open(url, "_blank", "noopener"); else if (route) navigate(route); }}
             className="rounded-2xl p-4 flex flex-col gap-3 transition-all hover:shadow-lg hover:-translate-y-0.5"
             style={{
               backgroundColor: cardBg,
               border: `1px solid ${cardBorder}`,
-              cursor: route ? "pointer" : "default",
+              cursor: (route || external) ? "pointer" : "default",
             }}
           >
             {/* Icon + Badge */}
@@ -201,9 +211,9 @@ export default function ArtisTools() {
               </div>
               <span
                 className="text-xs px-2 py-0.5 rounded-full font-medium"
-                style={{ backgroundColor: badgeBg, color: route ? accent : subColor }}
+                style={{ backgroundColor: badgeBg, color: (route || external) ? accent : subColor }}
               >
-                {route ? "Verfügbar" : "Bald"}
+                {(route || external) ? "Verfügbar" : "Bald"}
               </span>
             </div>
 
@@ -220,7 +230,7 @@ export default function ArtisTools() {
             {/* Footer-Link */}
             <div className="flex items-center gap-1 mt-auto" style={{ color: accent }}>
               <span className="text-xs font-semibold">Öffnen</span>
-              <ChevronRight className="w-3 h-3" />
+              {external ? <ExternalLink className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
             </div>
           </div>
         ))}

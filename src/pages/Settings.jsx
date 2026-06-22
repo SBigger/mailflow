@@ -1753,7 +1753,8 @@ export default function Settings() {
                                             try {
                                                 const {data} = await functions.invoke('inviteUser', {
                                                     email: emailToInvite,
-                                                    role: inviteRole
+                                                    role: inviteRole,
+                                                    appUrl: window.env.HOSTNAME
                                                 });
 
                                                 if (data.success) {

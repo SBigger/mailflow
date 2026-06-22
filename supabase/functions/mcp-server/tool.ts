@@ -39,8 +39,7 @@ export interface ToolDef<S extends ZodRawShape> {
  * Da Deno.serve zustandslos pro Request läuft, leeren wir diese in der index.ts
  * vor jeder Tool-Registrierung via localToolRegistry.clear().
  */
-export const localToolRegistry = new Map<
-    string,
+export const localToolRegistry = new Map<string,
     {
       name: string;
       description: string;

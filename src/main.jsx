@@ -72,6 +72,7 @@ registerSW({
 
 async function initApp() {
   let config = {
+    HOSTNAME: '',
     API_URL: '',
     KEY1: '',
     CUSTOMER: '',
@@ -84,12 +85,14 @@ async function initApp() {
       const customer = await invoke('get_customer_config');
       config.APP_TYPE= "Tauri App";
       config.CUSTOMER = customer;
-      config.API_URL = `https://api-${customer}.sm-artis.ch`
+      config.API_URL = `https://api-${customer}.sm-artis.ch`;
+      config.HOSTNAME = `https://${customer}.sm-artis.ch`;
     } catch (e) {
       config.APP_TYPE= "Web App";
       const url = window.location.href
       config.CUSTOMER = url.replace('https://', '').split('/')[0].split('.')[0];
       const domain = url.replace('https://', '').split('/')[0];
+      config.HOSTNAME = window.location.hostname;
       config.API_URL = `https://api-${domain}`;
     }
 
@@ -107,7 +110,8 @@ async function initApp() {
     } else if(window.location.href.includes('https://smartis.me')) {
       config.API_URL = import.meta.env.VITE_SUPABASE_URL;
       config.KEY1 = import.meta.env.VITE_SUPABASE_ANON_KEY;
-      config.CUSTOMER = "artis"
+      config.CUSTOMER = "artis";
+      config.HOSTNAME = window.location.hostname;
     }
 
     window.env = config;

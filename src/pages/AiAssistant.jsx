@@ -12,7 +12,7 @@ import {
     Calculator,
     MessageSquareQuote
 } from "lucide-react";
-import {supabase} from "@/api/supabaseClient.js";
+import {functions, supabase} from "@/api/supabaseClient.js";
 
 const SUGGESTED_PROMPTS = [
     {
@@ -80,26 +80,26 @@ export default function AiAssistant() {
         setIsLoading(true);
 
         try {
-            // Endpoint-Aufruf zu deiner Supabase Edge Function (Deno Runtime)
-            const response = await fetch(`${window.env.API_URL}/functions/v1/mcp-server`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${window.env.KEY1}`
-                },
-                body: JSON.stringify({
+            const { data, error } = await functions.invoke('mcp-server',
+                JSON.stringify({
                     messages: updatedMessages,
                     customerId: null,
-                    mandantId: null,
-                }),
-            });
+                    mandantId: null
+                })
+            );
 
-            const data = await response.json();
+            if(data && data.response) {
+                setMessages((prev) => [
+                    ...prev,
+                    { id: Date.now() + 1, role: "assistant", content: data.response || "Keine Antwort erhalten." }
+                ]);
+            } else {
+                setMessages((prev) => [
+                    ...prev,
+                    { id: Date.now() + 1, role: "assistant", content: data.error.message || "Keine Antwort erhalten." }
+                ]);
+            }
 
-            setMessages((prev) => [
-                ...prev,
-                { id: Date.now() + 1, role: "assistant", content: data.response || data.error || "Keine Antwort erhalten." }
-            ]);
         } catch (error) {
             setMessages((prev) => [
                 ...prev,

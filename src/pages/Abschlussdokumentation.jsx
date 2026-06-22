@@ -9,6 +9,7 @@ import {
   BookCheck, FileSpreadsheet, Upload, Download, ChevronRight, Wrench,
   Lock, Unlock, CheckCircle2, AlertCircle, TrendingUp, TrendingDown,
   Search, ChevronDown, ChevronUp, X, FileText, BarChart2, RotateCcw,
+  Plus, Trash2,
 } from "lucide-react";
 import DokUploadDialog from "@/components/dokumente/DokUploadDialog";
 
@@ -81,7 +82,13 @@ const POSITION_MAP = Object.fromEntries(KONTENRAHMEN_POSITIONEN.map(p => [p.id, 
 
 // ── Auto-Mapping Funktion ─────────────────────────────────────────────────────
 function autoMapKonto(kontonummer) {
-  const nr = parseInt(kontonummer);
+  // Erste zusammenhängende Ziffernfolge nehmen (z.B. "1000.10" → "1000").
+  const m = String(kontonummer ?? "").match(/\d+/);
+  if (!m) return null;
+  const digits = m[0];
+  // 5- oder 6-stellige Kontonummern (Unterkonten zum KMU-Kontenrahmen): die
+  // ersten 4 Stellen sind für die Zuordnung massgebend, z.B. 10000 / 100050 → 1000.
+  const nr = parseInt(digits.length >= 5 ? digits.slice(0, 4) : digits, 10);
   if (isNaN(nr)) return null;
   return KONTENRAHMEN_POSITIONEN.find(p => nr >= p.von && nr <= p.bis)?.id || null;
 }
@@ -3522,6 +3529,7 @@ export default function Abschlussdokumentation() {
   const qc = useQueryClient();
   const [selectedCid, setSelectedCid] = useState("");
   const [selectedYear, setSelectedYear] = useState(currentYear());
+  const [selectedVersion, setSelectedVersion] = useState(null); // null = neueste Version
   const [activeTab, setActiveTab] = useState("kontenplan");
   const [showImport, setShowImport] = useState(false);
   const [dossierStatus, setDossierStatus] = useState(null); // null | Fortschrittstext
@@ -3585,48 +3593,74 @@ export default function Abschlussdokumentation() {
   });
   const withAbschlussSet = new Set(existingAbschlussIds);
 
-  // ── Abschluss laden / erstellen ───────────────────────────────────────────
-  const { data: abschluss, isLoading: abschlussLoading, refetch: refetchAbschluss } = useQuery({
-    queryKey: ["abschluss", selectedCid, selectedYear],
+  // ── Abschluss-Versionen laden / erstellen ─────────────────────────────────
+  const { data: versions = [], isLoading: abschlussLoading, refetch: refetchAbschluss } = useQuery({
+    queryKey: ["abschluss_versions", selectedCid, selectedYear],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("abschluss")
         .select("*")
         .eq("customer_id", selectedCid)
         .eq("geschaeftsjahr", selectedYear)
-        .maybeSingle();
+        .order("version", { ascending: true });
       if (error) throw new Error(error.message);
-      return data; // null if not exists
+      return data || [];
     },
     enabled: !!selectedCid,
   });
+
+  // Gewählte Version (Default: neueste). selectedVersion = null → neueste.
+  const abschluss = useMemo(() => {
+    if (!versions.length) return null;
+    if (selectedVersion != null) {
+      return versions.find(v => v.version === selectedVersion) || versions[versions.length - 1];
+    }
+    return versions[versions.length - 1];
+  }, [versions, selectedVersion]);
+
+  // Beim Wechsel von Mandant/Jahr immer die neueste Version zeigen
+  useEffect(() => { setSelectedVersion(null); }, [selectedCid, selectedYear]);
 
   // ── Abschluss erstellen falls nicht vorhanden ─────────────────────────────
   const createAbschlussMut = useMutation({
     mutationFn: async () => {
       const { data, error } = await supabase
         .from("abschluss")
-        .insert({ customer_id: selectedCid, geschaeftsjahr: selectedYear, status: "in_arbeit" })
+        .insert({ customer_id: selectedCid, geschaeftsjahr: selectedYear, status: "in_arbeit", version: 1 })
         .select()
         .single();
       if (error) throw new Error(error.message);
       return data;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["abschluss", selectedCid, selectedYear] });
+      qc.invalidateQueries({ queryKey: ["abschluss_versions", selectedCid, selectedYear] });
       qc.invalidateQueries({ queryKey: ["abschluss_cids"] });
     },
-    onError: (e) => toast.error("Fehler: " + e.message),
+    onError: (e) => {
+      // Zeile existiert bereits (Race mit Auto-Jahr-Effekt) → kein Fehler-Toast,
+      // einfach neu laden. Greift bei altem wie neuem Unique-Constraint.
+      if (/duplicate key|23505|already exists/i.test(e?.message || "")) {
+        qc.invalidateQueries({ queryKey: ["abschluss_versions", selectedCid, selectedYear] });
+        return;
+      }
+      toast.error("Fehler: " + e.message);
+    },
   });
 
-  // Auto-create abschluss when customer & year selected but no abschluss exists
+  // Auto-create erste Version, wenn für Kunde+Jahr noch keine existiert.
+  // Guard pro (Kunde|Jahr) gegen Doppel-Anlage durch das überlappende
+  // Auto-Jahr-Effekt-Timing (sonst "duplicate key"-Fehler, v.a. beim Default-Jahr).
+  const autoCreateKeysRef = useRef(new Set());
   useEffect(() => {
-    if (selectedCid && !abschlussLoading && abschluss === null && !createAbschlussMut.isPending) {
-      createAbschlussMut.mutate();
-    }
-  }, [selectedCid, selectedYear, abschluss, abschlussLoading]);
+    if (!selectedCid || abschlussLoading || versions.length > 0 || createAbschlussMut.isPending) return;
+    const key = `${selectedCid}|${selectedYear}`;
+    if (autoCreateKeysRef.current.has(key)) return;
+    autoCreateKeysRef.current.add(key);
+    createAbschlussMut.mutate();
+  }, [selectedCid, selectedYear, versions.length, abschlussLoading]);
 
   const abschlussId = abschluss?.id;
+  const gesperrt = !!abschluss?.gesperrt;
 
   // ── Konten laden ──────────────────────────────────────────────────────────
   const { data: konten = [], isLoading: kontenLoading } = useQuery({
@@ -3651,24 +3685,95 @@ export default function Abschlussdokumentation() {
 
   const updateEinstellungenMut = useMutation({
     mutationFn: async (patch) => {
+      if (gesperrt) { toast.error("Version ist gesperrt"); return; }
       const merged = { ...(abschluss?.einstellungen || {}), ...patch };
       const { error } = await supabase.from("abschluss").update({ einstellungen: merged }).eq("id", abschlussId);
       if (error) throw new Error(error.message);
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["abschluss", selectedCid, selectedYear] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["abschluss_versions", selectedCid, selectedYear] }),
     onError: (e) => toast.error(e.message),
   });
 
   // ── Status aktualisieren ──────────────────────────────────────────────────
   const updateStatusMut = useMutation({
     mutationFn: async (newStatus) => {
+      if (gesperrt) { toast.error("Version ist gesperrt"); return; }
       const { error } = await supabase.from("abschluss").update({ status: newStatus }).eq("id", abschlussId);
       if (error) throw new Error(error.message);
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["abschluss", selectedCid, selectedYear] });
+      qc.invalidateQueries({ queryKey: ["abschluss_versions", selectedCid, selectedYear] });
       toast.success("Status aktualisiert");
     },
+    onError: (e) => toast.error(e.message),
+  });
+
+  // ── Neue (leere) Version anlegen ──────────────────────────────────────────
+  const createVersionMut = useMutation({
+    mutationFn: async () => {
+      const nextV = versions.length ? Math.max(...versions.map(v => v.version || 1)) + 1 : 1;
+      const { data, error } = await supabase
+        .from("abschluss")
+        .insert({ customer_id: selectedCid, geschaeftsjahr: selectedYear, status: "in_arbeit", version: nextV })
+        .select()
+        .single();
+      if (error) throw new Error(error.message);
+      return data;
+    },
+    onSuccess: (data) => {
+      setSelectedVersion(data.version);
+      qc.invalidateQueries({ queryKey: ["abschluss_versions", selectedCid, selectedYear] });
+      toast.success(`Version ${data.version} angelegt – leer, bitte Bilanz/ER importieren`);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  // ── Version sperren / entsperren ──────────────────────────────────────────
+  const toggleLockMut = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.from("abschluss").update({ gesperrt: !gesperrt }).eq("id", abschlussId);
+      if (error) throw new Error(error.message);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["abschluss_versions", selectedCid, selectedYear] });
+      toast.success(gesperrt ? "Version entsperrt" : "Version gesperrt");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  // ── Version löschen (Konten via FK ON DELETE CASCADE) ─────────────────────
+  const deleteVersionMut = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.from("abschluss").delete().eq("id", abschlussId);
+      if (error) throw new Error(error.message);
+    },
+    onSuccess: () => {
+      setSelectedVersion(null);
+      // Guard freigeben, damit beim Löschen der letzten Version wieder
+      // automatisch eine leere V1 angelegt werden kann.
+      autoCreateKeysRef.current.delete(`${selectedCid}|${selectedYear}`);
+      qc.invalidateQueries({ queryKey: ["abschluss_versions", selectedCid, selectedYear] });
+      qc.invalidateQueries({ queryKey: ["abschluss_cids"] });
+      toast.success("Version gelöscht");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  function handleDeleteVersion() {
+    if (!abschlussId) return;
+    if (gesperrt) { toast.error("Gesperrte Version – zuerst entsperren"); return; }
+    if (!window.confirm(`Version ${abschluss?.version} wirklich löschen?\nAlle Konten und Notizen dieser Version gehen verloren.`)) return;
+    deleteVersionMut.mutate();
+  }
+
+  // ── Versions-Kommentar (Feld "notizen") ───────────────────────────────────
+  const updateNotizenMut = useMutation({
+    mutationFn: async (text) => {
+      if (gesperrt) { toast.error("Version ist gesperrt"); return; }
+      const { error } = await supabase.from("abschluss").update({ notizen: text }).eq("id", abschlussId);
+      if (error) throw new Error(error.message);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["abschluss_versions", selectedCid, selectedYear] }),
     onError: (e) => toast.error(e.message),
   });
 
@@ -3683,6 +3788,7 @@ export default function Abschlussdokumentation() {
   });
 
   function handleUpdateKonto(id, fields) {
+    if (gesperrt) { toast.error("Version ist gesperrt"); return; }
     updateKontoMut.mutate({ id, ...fields });
   }
 
@@ -3708,6 +3814,7 @@ export default function Abschlussdokumentation() {
   });
   function handleAddKonto(data) {
     if (!abschlussId) return;
+    if (gesperrt) { toast.error("Version ist gesperrt"); return; }
     addKontoMut.mutate(data);
   }
 
@@ -3821,6 +3928,7 @@ export default function Abschlussdokumentation() {
 
   function handleImport(kontenData, flipFlags) {
     if (!abschlussId) { toast.error("Abschluss nicht bereit"); return; }
+    if (gesperrt) { toast.error("Version ist gesperrt – zuerst entsperren"); return; }
     importKontenMut.mutate(kontenData);
     if (flipFlags && (
       flipFlags.sign_flip_passiven !== signFlipPassiven ||
@@ -3924,16 +4032,58 @@ export default function Abschlussdokumentation() {
                 </span>
                 <select
                   value={status}
+                  disabled={gesperrt}
                   onChange={e => updateStatusMut.mutate(e.target.value)}
                   style={{
                     height: 30, padding: "0 6px", borderRadius: 6, fontSize: 11,
                     border: `1px solid ${panelBdr}`, backgroundColor: pageBg, color: subC,
-                    outline: "none", cursor: "pointer",
+                    outline: "none", cursor: gesperrt ? "not-allowed" : "pointer", opacity: gesperrt ? 0.5 : 1,
                   }}>
                   <option value="in_arbeit">In Arbeit</option>
                   <option value="abgeschlossen">Abgeschlossen</option>
                   <option value="genehmigt">Genehmigt</option>
                 </select>
+              </div>
+            </div>
+          )}
+
+          {/* Version */}
+          {abschluss && (
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wider mb-1.5 block" style={{ color: subC }}>
+                Version
+              </label>
+              <div className="flex items-center gap-1.5">
+                <select
+                  value={abschluss.version}
+                  onChange={e => setSelectedVersion(Number(e.target.value))}
+                  style={{
+                    height: 36, padding: "0 10px", borderRadius: 8, fontSize: 13, fontWeight: 600,
+                    border: `1px solid ${panelBdr}`, backgroundColor: panelBg, color: headingC,
+                    outline: "none", cursor: "pointer", minWidth: 160,
+                  }}>
+                  {versions.map(v => (
+                    <option key={v.id} value={v.version}>
+                      {`V${v.version} · ${(STATUS_CONFIG[v.status] || STATUS_CONFIG.in_arbeit).label}${v.gesperrt ? " 🔒" : ""}`}
+                    </option>
+                  ))}
+                </select>
+                <button onClick={() => createVersionMut.mutate()} title="Neue (leere) Version anlegen"
+                  style={{ height: 36, width: 36, display: "flex", alignItems: "center", justifyContent: "center",
+                    borderRadius: 8, border: `1px solid ${panelBdr}`, backgroundColor: panelBg, color: accent, cursor: "pointer" }}>
+                  <Plus className="w-4 h-4" />
+                </button>
+                <button onClick={() => toggleLockMut.mutate()} title={gesperrt ? "Version entsperren" : "Version sperren (schreibgeschützt)"}
+                  style={{ height: 36, width: 36, display: "flex", alignItems: "center", justifyContent: "center",
+                    borderRadius: 8, border: `1px solid ${panelBdr}`, backgroundColor: panelBg, color: gesperrt ? "#c2410c" : subC, cursor: "pointer" }}>
+                  {gesperrt ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
+                </button>
+                <button onClick={handleDeleteVersion} disabled={gesperrt} title="Version löschen"
+                  style={{ height: 36, width: 36, display: "flex", alignItems: "center", justifyContent: "center",
+                    borderRadius: 8, border: `1px solid ${panelBdr}`, backgroundColor: panelBg, color: "#b91c1c",
+                    opacity: gesperrt ? 0.4 : 1, cursor: gesperrt ? "not-allowed" : "pointer" }}>
+                  <Trash2 className="w-4 h-4" />
+                </button>
               </div>
             </div>
           )}
@@ -3944,13 +4094,14 @@ export default function Abschlussdokumentation() {
           {/* Buttons */}
           <div className="flex items-end gap-2">
             <button
-              disabled={!abschlussId}
+              disabled={!abschlussId || gesperrt}
               onClick={() => setShowImport(true)}
+              title={gesperrt ? "Version ist gesperrt" : "Bilanz/ER importieren"}
               className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-opacity"
               style={{
                 backgroundColor: accent + "14", color: accent,
                 border: `1px solid ${accent}40`,
-                opacity: abschlussId ? 1 : 0.4, cursor: abschlussId ? "pointer" : "not-allowed",
+                opacity: (abschlussId && !gesperrt) ? 1 : 0.4, cursor: (abschlussId && !gesperrt) ? "pointer" : "not-allowed",
               }}>
               <Upload className="w-3.5 h-3.5" />
               Importieren
@@ -4017,6 +4168,32 @@ export default function Abschlussdokumentation() {
 
       {/* ── Content ────────────────────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto">
+        {gesperrt && selectedCid && (
+          <div className="mx-6 mt-4 flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm"
+            style={{ backgroundColor: "#fff7ed", color: "#9a3412", border: "1px solid #fed7aa" }}>
+            <Lock className="w-4 h-4 flex-shrink-0" />
+            <span><strong>Version {abschluss?.version} ist gesperrt</strong> – schreibgeschützt. Zum Bearbeiten oben entsperren oder eine neue Version anlegen.</span>
+          </div>
+        )}
+        {abschluss && selectedCid && (
+          <div className="mx-6 mt-4">
+            <label className="text-xs font-semibold uppercase tracking-wider mb-1.5 block" style={{ color: subC }}>
+              Versions-Kommentar (V{abschluss.version})
+            </label>
+            <input
+              key={abschlussId}
+              defaultValue={abschluss.notizen || ""}
+              disabled={gesperrt}
+              placeholder="Was wurde in dieser Version gemacht / korrigiert?"
+              onBlur={e => { const v = e.target.value; if (v !== (abschluss.notizen || "")) updateNotizenMut.mutate(v); }}
+              style={{
+                width: "100%", height: 36, padding: "0 12px", borderRadius: 8, fontSize: 13,
+                border: `1px solid ${panelBdr}`, backgroundColor: gesperrt ? pageBg : panelBg, color: headingC,
+                outline: "none", opacity: gesperrt ? 0.6 : 1,
+              }}
+            />
+          </div>
+        )}
         {!selectedCid ? (
           /* Empty state */
           <div className="flex flex-col items-center justify-center py-24 text-center">
@@ -4071,7 +4248,7 @@ export default function Abschlussdokumentation() {
                   {activeTab === "kontenplan" && (
                     <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${panelBdr}`, backgroundColor: panelBg, boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
                       <KontenplanTab {...tabProps} onUpdateKonto={handleUpdateKonto}
-                        onAddKonto={handleAddKonto}
+                        onAddKonto={gesperrt ? null : handleAddKonto}
                         diffAnpassungen={diffAnpassungen}
                         onSaveDiffAnpassungen={(rows) => updateEinstellungenMut.mutate({ differenz_anpassungen: rows })}
                       />

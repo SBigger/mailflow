@@ -1,0 +1,8 @@
+{
+  "_hinweis": "Kopiere diese Datei zu 'config.local.json' (ohne .example) und trage deine Keys ein. Dann muss man sie in der App NIE mehr eintragen. Diese Datei mit echten Keys liegt NICHT im Git (siehe .gitignore).",
+  "eleven": "sk_DEIN_ELEVENLABS_KEY",
+  "claude": "sk-ant-DEIN_CLAUDE_KEY",
+  "claudeModel": "claude-opus-4-8",
+  "lang": "deu",
+  "liveInterval": 120
+}

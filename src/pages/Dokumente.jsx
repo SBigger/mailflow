@@ -19,10 +19,12 @@ import {
   FolderOpen,
   Library,
   Eye,
-  History as HistoryIcon
+  History as HistoryIcon,
+  MessageSquare
 } from "lucide-react";
 import VersionsDialog from "@/components/dokumente/VersionsDialog";
 import DocHoverPreview from "@/components/dokumente/DocHoverPreview";
+import ChartisPanel from "@/components/chartis/ChartisPanel";
 import * as _pdfjsNs from "pdfjs-dist";
 import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.js?url";
 // pdfjs-dist 3.11 ist UMD → je nach Vite-Mode liegt getDocument direkt oder unter .default
@@ -836,6 +838,7 @@ export default function Dokumente() {
   const [highlightDocId, setHighlightDocId] = useState(null);
   const [shareDialog,   setShareDialog]   = useState(null); // { type: 'doc'|'folder', doc?, customer_id?, category?, year?, name? }
   const [showShareLinks, setShowShareLinks] = useState(false);
+  const [chartisDoc, setChartisDoc] = useState(null); // Chartis-Panel pro Dokument
 
   // Volltext-Suche via Supabase RPC (PostgreSQL GIN-Index)
   useEffect(() => {
@@ -932,7 +935,7 @@ export default function Dokumente() {
   useEffect(() => {
     // 1. Create the subscription
     const channel = supabase
-        .channel('schema-db-changes')
+        .channel('schema-dokumente-changes')
         .on(
             'postgres_changes',
             {
@@ -975,17 +978,17 @@ export default function Dokumente() {
             }
         )
         .subscribe((status, err) => {
-          console.log("Realtime Status Dokumente:", status);
+          // console.log("Realtime Status Dokumente:", status);
           if (err) console.error("Realtime Error:", err);
 
           if (status === 'SUBSCRIBED') {
-            console.log('Successfully connected to Realtime!');
+            console.log('Successfully connected to Realtime Dokumente!');
           }
           if (status === 'CLOSED') {
-            console.log('Connection closed.');
+            // console.log('Connection closed.');
           }
           if (status === 'CHANNEL_ERROR') {
-            console.error('Error connecting. Check RLS policies or database settings.');
+            // console.error('Error connecting. Check RLS policies or database settings.');
           }
         });
 
@@ -1535,18 +1538,16 @@ export default function Dokumente() {
       if (url) setHoverPreview({ doc, url, rect });
     }, 280);
   };
-  const closeHoverSoon = () => {
-    clearTimeout(hoverTimer.current);
-    hoverTimer.current = setTimeout(() => setHoverPreview(null), 180);
-  };
+  // Nur ein noch nicht ausgeloestes Oeffnen abbrechen — ein offenes Fenster bleibt.
+  const cancelHoverOpen = () => { clearTimeout(hoverTimer.current); };
   // Gibt das Augen-Symbol fuer eine Zeile zurueck (nur bei lokal previewbaren Dateien).
   const renderPreviewEye = (doc) => {
     // Alles liegt in Supabase-Storage; sobald ein storage_path da ist, ist die Datei previewbar.
     if (!doc.storage_path) return null;
     return (
-      <button title="Vorschau (Maus drüberhalten)"
+      <button title="Vorschau (Maus drüberhalten — Fenster bleibt, ist verschieb- und größenverstellbar)"
         onMouseEnter={e => openHoverPreview(doc, e.currentTarget)}
-        onMouseLeave={closeHoverSoon}
+        onMouseLeave={cancelHoverOpen}
         onClick={e => e.stopPropagation()}
         style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}>
         <Eye size={13} />
@@ -1658,10 +1659,12 @@ export default function Dokumente() {
                     <button onClick={() => handleCheckout(fullDoc)} title="Auschecken" style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4 }}><LockOpen size={13} /></button>
                     <button onClick={() => setEditDoc(fullDoc)} title="Bearbeiten" style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4 }}><Pencil size={13} /></button>
                     <button onClick={() => setCopyDoc(fullDoc)} title="Kopieren (neu verschlagworten)" style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4 }}><CopyPlus size={13} /></button>
+                    {renderPreviewEye(fullDoc)}
                     <button onClick={() => setVersionsDoc(fullDoc)} title="Versionsverlauf" style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4 }}><HistoryIcon size={13} /></button>
                     <button onClick={() => downloadDoc(fullDoc)} title="Herunterladen" style={{ background: "none", border: "none", cursor: "pointer", color: accent, display: "flex", alignItems: "center", padding: 4, borderRadius: 4 }}><Download size={14} /></button>
                     <button onClick={() => setShareDialog({ type: 'doc', doc_id: fullDoc.id, name: fullDoc.name, customer_id: fullDoc.customer_id })} title="Link erstellen" style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4 }}><Link2 size={14} /></button>
                     <button onClick={() => handleDelete(fullDoc)} title="Löschen" style={{ background: "none", border: "none", cursor: "pointer", color: "#ef4444", display: "flex", alignItems: "center", padding: 4, borderRadius: 4 }}><Trash2 size={14} /></button>
+                    <button onClick={() => setChartisDoc(fullDoc)} title="Chartis – Chat zu diesem Dokument" style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4 }}><MessageSquare size={14} /></button>
                     <div style={{ display: "flex", gap: 2, marginLeft: 6 }}>
                       {[1,2,3,4,5].map(i => {
                         const filled = (doc.rank || 0) >= i * 0.06;
@@ -2045,6 +2048,7 @@ export default function Dokumente() {
                                   <button onClick={() => { animateBtn(`dl-${doc.id}`); downloadDoc(doc); }} title="Herunterladen" style={{ background: "none", border: "none", cursor: "pointer", color: accent, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0, transition: "transform 0.15s", transform: clickedBtns[`dl-${doc.id}`] ? "scale(0.75)" : "scale(1)" }}><Download size={14} /></button>
                                   <button onClick={() => { animateBtn(`sh-${doc.id}`); setShareDialog({ type: 'doc', doc_id: doc.id, name: doc.name, customer_id: doc.customer_id }); }} title="Link erstellen" style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}><Link2 size={14} /></button>
                                   <button onClick={() => !lockedByOther && handleDelete(doc)} title={lockedByOther ? "Gesperrt" : "Löschen"} style={{ background: "none", border: "none", cursor: lockedByOther ? "not-allowed" : "pointer", color: lockedByOther ? s.textMuted + "44" : "#ef4444", display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}><Trash2 size={14} /></button>
+                                  <button onClick={() => setChartisDoc(doc)} title="Chartis – Chat zu diesem Dokument" style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}><MessageSquare size={14} /></button>
                                 </div>
                               );
                             })}
@@ -2173,6 +2177,11 @@ export default function Dokumente() {
                       style={{ background: clickedBtns[`del-${doc.id}`] ? "#ef444420" : "none", border: "none", cursor: lockedByOther ? "not-allowed" : "pointer", color: lockedByOther ? s.textMuted + "44" : "#ef4444", display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0, transition: "transform 0.15s, background 0.15s", transform: clickedBtns[`del-${doc.id}`] ? "scale(0.75)" : "scale(1)" }}>
                       <Trash2 size={15} />
                     </button>
+                    {/* Chartis */}
+                    <button onClick={() => setChartisDoc(doc)} title="Chartis – Chat zu diesem Dokument"
+                      style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}>
+                      <MessageSquare size={15} />
+                    </button>
                   </div>
                 );
               })
@@ -2204,8 +2213,8 @@ export default function Dokumente() {
           doc={hoverPreview.doc}
           url={hoverPreview.url}
           rect={hoverPreview.rect}
-          onEnter={() => clearTimeout(hoverTimer.current)}
-          onLeave={closeHoverSoon}
+          theme={theme}
+          onClose={() => setHoverPreview(null)}
         />
       )}
       {copyDoc && (
@@ -2221,6 +2230,23 @@ export default function Dokumente() {
           onSave={() => { queryClient.invalidateQueries({ queryKey: ["dokumente-all"] });  setEditDoc(null); }}
           s={s} border={border} accent={accent} />
       )}
+      {/* Chartis – Chat-Panel pro Dokument (Slide-over rechts) */}
+      {chartisDoc && (
+        <>
+          <div onClick={() => setChartisDoc(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.25)", zIndex: 70 }} />
+          <div style={{ position: "fixed", top: 0, right: 0, bottom: 0, width: 420, maxWidth: "92vw", zIndex: 71, boxShadow: "-8px 0 30px rgba(0,0,0,0.18)", borderLeft: `1px solid ${border}` }}>
+            <ChartisPanel
+              module="dokument"
+              recordId={chartisDoc.id}
+              subject={chartisDoc.name}
+              docInfo={{ filename: chartisDoc.filename, onOpen: () => downloadDoc(chartisDoc) }}
+              extContactEmail={customers.find(c => c.id === chartisDoc.customer_id)?.email}
+              onClose={() => setChartisDoc(null)}
+            />
+          </div>
+        </>
+      )}
+
       {/* CheckinDialog ersetzt durch direktes handleCheckin */}
 
       {/* Share-Link Dialog */}

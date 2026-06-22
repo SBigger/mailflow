@@ -18,7 +18,7 @@ import {
   CloudUpload,
   BarChart3,
   Clock,
-  BookMarked, Bot
+  BookMarked, Bot, MessageSquare
 } from "lucide-react";
 import { FEATURE_LEISTUNGSERFASSUNG } from "@/lib/featureFlags";
 import VoiceAssistant from "@/components/voice/VoiceAssistant";
@@ -77,24 +77,43 @@ export default function Layout({ currentPageName }) {
   // --- Navigation Config ---
   const isTaskUser = profile?.role === 'task_user';
 
-  const navItems = useMemo(() => isTaskUser ? [] : [
-    { name: 'Dashboard',      icon: LayoutDashboard, label: 'Dashboard' },
-    { name: 'MailKanban',     icon: Mail,            label: 'Mails' },
-    { name: 'TaskBoard',      icon: CheckSquare,     label: 'Tasks' },
-    { name: 'TicketBoard',    icon: LifeBuoy,        label: 'Tickets' },
-    { name: 'KnowledgeBase',  icon: BookOpen,        label: 'Wissen' },
-    { name: 'Fristen',        icon: CalendarClock,   label: 'Fristen' },
-    { name: 'Kunden',         icon: Building2,       label: 'Kunden' },
-    { name: 'Dokumente',      icon: FolderOpen,      label: 'Dokumente' },
-    { name: 'Posteingang',    icon: CloudUpload,     label: 'Posteingang' },
-    { name: 'Auswertungen',   icon: BarChart3,       label: 'Auswertungen' },
-    ...(FEATURE_LEISTUNGSERFASSUNG ? [{ name: 'Leistungserfassung', icon: Clock, label: 'Leistungserfassung' }] : []),
-    { name: 'FiBu',           icon: BookMarked,      label: 'Buchhaltung', href: '/fibu' },
-    { name: 'ArtisTools',     icon: Wrench,          label: 'Artis Tools' },
-    { name: 'Settings',       icon: SettingsIcon,    label: 'Einstellungen' },
-    { name: 'AiAssistant',   icon: Bot,    label: 'AI-Assistant' },
+  const navItems = useMemo(() => {
+    if (isTaskUser) return [];
 
-  ], [isTaskUser]);
+    // 1. Basis-Routen, die immer da sind
+    const items = [
+      { name: 'Dashboard',      icon: LayoutDashboard, label: 'Dashboard' },
+      { name: 'MailKanban',     icon: Mail,            label: 'Mails' },
+      { name: 'TaskBoard',      icon: CheckSquare,     label: 'Tasks' },
+      /*{ name: 'Chartis',        icon: MessageSquare,   label: 'Chartis' },*/
+      { name: 'TicketBoard',    icon: LifeBuoy,        label: 'Tickets' },
+      { name: 'KnowledgeBase',  icon: BookOpen,        label: 'Wissen' },
+      { name: 'Fristen',        icon: CalendarClock,   label: 'Fristen' },
+      { name: 'Kunden',         icon: Building2,       label: 'Kunden' },
+      { name: 'Dokumente',      icon: FolderOpen,      label: 'Dokumente' },
+      { name: 'Posteingang',    icon: CloudUpload,     label: 'Posteingang' },
+      { name: 'Auswertungen',   icon: BarChart3,       label: 'Auswertungen' },
+    ];
+
+    // 2. Bedingte Routen per .push() hinzufügen
+    if (FEATURE_LEISTUNGSERFASSUNG) {
+      items.push({ name: 'Leistungserfassung', icon: Clock, label: 'Leistungserfassung' });
+    }
+
+    // Standard-Routen nach den Features
+    items.push(
+        { name: 'FiBu',           icon: BookMarked,      label: 'Buchhaltung', href: '/fibu' },
+        { name: 'ArtisTools',     icon: Wrench,          label: 'Artis Tools' },
+        { name: 'Settings',       icon: SettingsIcon,    label: 'Einstellungen' }
+    );
+
+    // AI-Assistant nur pushen, wenn das Modul explizit aktiv ist
+    if (profile?.modules?.ai) {
+      items.push({ name: 'AiAssistant', icon: Bot, label: 'AI-Assistant' });
+    }
+
+    return items;
+  }, [isTaskUser, FEATURE_LEISTUNGSERFASSUNG, profile?.modules?.ai]);
 
   const orderedNavItems = useMemo(() => {
     if (!navOrder || navOrder.length === 0) return navItems;

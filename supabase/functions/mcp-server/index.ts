@@ -8,30 +8,27 @@ import Anthropic from "npm:@anthropic-ai/sdk@0.33.1";
 import { zodToJsonSchema } from "npm:zod-to-json-schema";
 import { localToolRegistry } from "./tool.ts";
 import {ToolContext} from "./scope.ts";
+import {registerMailTools} from "./modules/mails.ts";
 
 
 async function callClaudeWithMcpTools(
-    chatHistory: { role: "user" | "assistant"; content: string; [key: string]: any }[],
-    requestContext: { customerId: string | null; mandantId: string | null; allowWrites: boolean } // <-- NEU: Kontext als Parameter
+    chatHistory: any[],
+    requestContext: ToolContext,
 ): Promise<string> {
 
   const _model = "claude-opus-4-8";
+  const anthropic = new Anthropic({ apiKey: Deno.env.get("ANTHROPIC_API_KEY") });
 
-  const anthropic = new Anthropic({
-    apiKey: Deno.env.get("ANTHROPIC_API_KEY"),
-  });
-
-  const cleanedHistory = chatHistory.map((msg) => ({
-    role: msg.role === "user" ? ("user" as const) : ("assistant" as const),
-    content: msg.content,
+  // 1. Historie von DB-Metadaten bereinigen (nur role und content erlauben)
+  const currentMessages = chatHistory.map((msg) => ({
+    role: msg.role,
+    content: msg.content
   }));
 
   const toolsArray = Array.from(localToolRegistry.values());
-
   const claudeTools = toolsArray.map((tool) => {
     const fullSchema = zodToJsonSchema(tool.inputSchema) as any;
     const { $schema, $id, definitions, ...cleanSchema } = fullSchema;
-
     return {
       name: tool.name,
       description: tool.description,
@@ -45,57 +42,81 @@ async function callClaudeWithMcpTools(
 
   const systemPrompt = "Du bist ein Assistent, der Antworten ausschließlich als rohen, validen HTML-Code formatiert (nutze <p>, <ul>, <li>, <strong>, <table> wo passend). Verwende NIEMALS Markdown-Code-Blöcke (wie ```html ... ```). Gib nur den rohen, renderbaren HTML-Inhalt aus.";
 
+  // Erster API-Call
   const message = await anthropic.messages.create({
     model: _model,
     max_tokens: 4096,
     system: systemPrompt,
-    messages: cleanedHistory,
+    messages: currentMessages,
     tools: claudeTools,
   });
 
+  // 2. Prüfen auf Tool-Nutzung
   if (message.stop_reason === "tool_use") {
-    const toolUseBlock = message.content.find((block) => block.type === "tool_use");
+    // Finde ALLE Tool-Aufrufe in dieser Nachricht
+    const toolUseBlocks = message.content.filter((block) => block.type === "tool_use");
 
-    if (toolUseBlock) {
-      const { name: toolName, input: toolInput, id: toolCallId } = toolUseBlock;
+    if (toolUseBlocks.length > 0) {
+      let hasErrorSignal = false;
 
-      try {
-        const localTool = localToolRegistry.get(toolName);
-        if (!localTool) {
-          throw new Error(`Tool ${toolName} wurde in der lokalen Registry nicht gefunden.`);
-        }
+      // Verarbeite alle Tools parallel
+      const toolResults = await Promise.all(
+          toolUseBlocks.map(async (block) => {
+            const { name: toolName, input: toolInput, id: toolCallId } = block;
 
-        // HIER WAR DER FEHLER: Kontext muss zwingend mitgegeben werden!
-        const toolResult = await localTool.handler(toolInput, requestContext);
+            try {
+              const localTool = localToolRegistry.get(toolName);
+              if (!localTool) {
+                throw new Error(`Tool ${toolName} wurde in der Registry nicht gefunden.`);
+              }
 
-        const finalMessage = await anthropic.messages.create({
-          model: _model,
-          max_tokens: 4096,
-          system: systemPrompt,
-          messages: [
-            ...cleanedHistory,
-            { role: "assistant", content: message.content },
-            {
-              role: "user",
-              content: [
-                {
-                  type: "tool_result",
-                  tool_use_id: toolCallId,
-                  content: toolResult.content,
-                  is_error: toolResult.isError,
-                },
-              ],
-            },
-          ],
-          tools: claudeTools,
-        });
+              const toolResult = await localTool.handler(toolInput, requestContext);
+              if (toolResult.isError) hasErrorSignal = true;
 
+              return {
+                type: "tool_result" as const,
+                tool_use_id: toolCallId,
+                content: toolResult.content,
+                is_error: toolResult.isError,
+              };
+
+            } catch (error) {
+              hasErrorSignal = true;
+              return {
+                type: "tool_result" as const,
+                tool_use_id: toolCallId,
+                content: `Fehler bei der Ausführung des Tools ${toolName}: ${error instanceof Error ? error.message : String(error)}`,
+                is_error: true,
+              };
+            }
+          })
+      );
+
+      // Sende ALLE Ergebnisse gesammelt in einem einzigen User-Block zurück
+      const finalMessage = await anthropic.messages.create({
+        model: _model,
+        max_tokens: 4096,
+        system: systemPrompt,
+        messages: [
+          ...currentMessages,
+          { role: "assistant", content: message.content }, // Der originale Block mit ALLEN tool_use Aufforderungen
+          {
+            role: "user",
+            content: toolResults, // Das Array mit ALLEN tool_results
+          },
+        ],
+        tools: claudeTools,
+      });
+
+      // Optionales Error-Handling fürs Frontend
+      if (hasErrorSignal) {
         const textBlock = finalMessage.content.find((b) => b.type === "text");
-        return textBlock && "text" in textBlock ? textBlock.text : "Ergebnis verarbeitet.";
-
-      } catch (error) {
-        return `<p style="color: #dc2626; font-weight: bold;">Fehler bei der Ausführung des Tools ${toolName}: ${error instanceof Error ? error.message : String(error)}</p>`;
+        const claudeResponse = textBlock && "text" in textBlock ? textBlock.text : "";
+        return `<p style="color: #dc2626; font-weight: bold;">[Hinweis: Ein oder mehrere Tools liefen in einen Fehler]</p> ${claudeResponse}`;
       }
+
+      const textBlock = finalMessage.content.find((b) => b.type === "text");
+      return textBlock && "text" in textBlock ? textBlock.text : "Ergebnis verarbeitet.";
     }
   }
 
@@ -115,6 +136,10 @@ Deno.serve(async (req) => {
     });
   }
 
+  // 1. Authentifizierung prüfen
+  const authHeader = req.headers.get('Authorization')
+  const token = authHeader.replace('Bearer ', '')
+
   try {
     const { messages, customerId, mandantId } = await req.json();
 
@@ -128,7 +153,8 @@ Deno.serve(async (req) => {
     const requestContext: ToolContext = {
       customerId: customerId || null,
       mandantId: mandantId || null,
-      allowWrites: true
+      allowWrites: true,
+      token: token || null
     };
 
     // Registry vor jedem Request leeren
@@ -142,6 +168,7 @@ Deno.serve(async (req) => {
     registerCustomerTools(server, requestContext);
     registerFinanceTools(server, requestContext);
     registerShareTools(server, requestContext);
+    registerMailTools(server, requestContext)
 
     // AI-Aufruf starten
     const aiResponse = await callClaudeWithMcpTools(messages, requestContext);

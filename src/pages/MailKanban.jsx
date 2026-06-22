@@ -171,17 +171,17 @@ export default function MailKanban() {
               }
           )
           .subscribe((status, err) => {
-            console.log("Realtime Status:", status);
+            // console.log("Realtime Status:", status);
             if (err) console.error("Realtime Error:", err);
 
             if (status === 'SUBSCRIBED') {
-              console.log('Successfully connected to Realtime!');
+              console.log('Successfully connected to Realtime Mails!');
             }
             if (status === 'CLOSED') {
-              console.log('Connection closed.');
+              // console.log('Connection closed.');
             }
             if (status === 'CHANNEL_ERROR') {
-              console.error('Error connecting. Check RLS policies or database settings.');
+              // console.error('Error connecting. Check RLS policies or database settings.');
             }
           });
 

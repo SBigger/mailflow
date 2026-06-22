@@ -283,6 +283,15 @@ export function findUidInText(text) {
  * Gibt pro Kunde einen Score, am Ende gewinnt der beste. Jeder Match ergibt
  * zusätzlich Punkte (UID=100, Firmenname=30+, Email=40, Strasse+Ort=25, …).
  */
+// Eigene Entitaet(en): Artis Treuhand erstellt die Dokumente selbst und ist
+// praktisch NIE der Kunde. Solche Treffer beim Massenupload-Abgleich ueberspringen,
+// sonst wird faelschlich "uns" als Kunde erkannt. (normalisierter Substring-Match)
+const SELF_ENTITY_NAMES = ["artis treuhand"];
+function isSelfEntity(c) {
+  const n = normalizeText(c?.company_name || "");
+  return !!n && SELF_ENTITY_NAMES.some(s => n.includes(s));
+}
+
 export function matchCustomer(text, filename, customers) {
   if (!customers?.length) return null;
   const haystack = (text || "") + "\n" + (filename || "");
@@ -292,6 +301,7 @@ export function matchCustomer(text, filename, customers) {
   const uid = findUidInText(haystack);
   if (uid) {
     const byUid = customers.find(c => {
+      if (isSelfEntity(c)) return false;            // Artis Treuhand nie als Kunde
       const cUid = (c.portal_uid || "").trim().toUpperCase().replace(/\s/g, "");
       return cUid === uid;
     });
@@ -309,6 +319,7 @@ export function matchCustomer(text, filename, customers) {
   // ─── 2. Multi-Signal-Scoring ──────────────────────────────────────
   const scored = [];
   for (const c of customers) {
+    if (isSelfEntity(c)) continue;                  // Artis Treuhand (= wir) nie als Kunde matchen
     const signals = [];
     let score = 0;
 
