@@ -12,8 +12,8 @@ import {
     Calculator,
     MessageSquareQuote
 } from "lucide-react";
+import {supabase} from "@/api/supabaseClient.js";
 
-// Stilistisch passende Prompt-Vorschläge im Kachel-Look
 const SUGGESTED_PROMPTS = [
     {
         id: "aktien",
@@ -74,25 +74,23 @@ export default function AiAssistant() {
         const text = textToSend || input;
         if (!text.trim()) return;
 
-        const userMessage = { id: Date.now(), role: "user", content: text };
-        setMessages((prev) => [...prev, userMessage]);
+        const updatedMessages = [...messages, { id: Date.now(), role: "user", content: text }];
+        setMessages(updatedMessages);
         setInput("");
         setIsLoading(true);
 
         try {
             // Endpoint-Aufruf zu deiner Supabase Edge Function (Deno Runtime)
-            const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/mcp-server`, {
+            const response = await fetch(`${window.env.API_URL}/functions/v1/mcp-server`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
-                    "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`
+                    "Authorization": `Bearer ${window.env.KEY1}`
                 },
                 body: JSON.stringify({
-                    message: [
-                        ...chatHistory,
-                        text
-                    ],
-                    // Optional falls vorhanden: customerId, mandantId
+                    messages: updatedMessages,
+                    customerId: null,
+                    mandantId: null,
                 }),
             });
 
