@@ -833,7 +833,7 @@ export default function Fristen() {
             .filter(item => item.login);
 
           // onProgress-Wrapper: UI-Update + automatischer Supabase-PATCH
-          const wrappedOnProgress = async (idx, status, screenshot, note) => {
+          const wrappedOnProgress = async (idx, status, screenshot, note, extra = {}) => {
             params.onProgress(idx, status, screenshot, note);
             if (status === "success" || status === "error") {
               const item = params.items[idx];
@@ -843,6 +843,7 @@ export default function Fristen() {
                 if (note) updateData.einreichen_notiz = note;
                 if (status === "success") updateData.einreichen_datum = params.targetDate;
                 if (screenshot) updateData.einreichen_screenshot = screenshot;
+                Object.assign(updateData, extra); // z.B. neues due_date bei Bewilligung
                 try {
                   await supabase.from("fristen").update(updateData).eq("id", fristId);
                 } catch (e) {
@@ -911,7 +912,13 @@ export default function Fristen() {
 
                 if (data.bewilligt) {
                   const note = `Bewilligt bis ${data.verlaengerungsDatum ?? verlaengerungsDatum}`;
-                  await wrappedOnProgress(pItem.idx, "success", null, note);
+                  // Gewährtes Datum normalisieren (Portal liefert evtl. DD.MM.YYYY)
+                  const g = String(data.verlaengerungsDatum ?? verlaengerungsDatum);
+                  const grantedIso = /^\d{4}-\d{2}-\d{2}/.test(g)
+                    ? g.slice(0, 10)
+                    : (/(\d{2})\.(\d{2})\.(\d{4})/.test(g) ? g.replace(/(\d{2})\.(\d{2})\.(\d{4})/, "$3-$2-$1") : verlaengerungsDatum);
+                  // Bewilligung → neue Einreichefrist als due_date übernehmen
+                  await wrappedOnProgress(pItem.idx, "success", null, note, { due_date: grantedIso });
                 } else {
                   const note = `Abgelehnt: ${data.bemerkung ?? "Unbekannter Fehler"}`;
                   await wrappedOnProgress(pItem.idx, "error", null, note);
