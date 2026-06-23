@@ -48,12 +48,15 @@ export default function CustomerImportDialog({ open, onClose, staff = [], activi
           toast.error("Ungültiges Backup-Format oder keine Kunden gefunden");
           return;
         }
-        let created = 0;
-        for (const rec of items) {
-          await entities.Customer.create(rec);
-          created++;
+        // Upsert per id: vorhandene aktualisieren, neue anlegen (kein Duplizieren)
+        let count = 0;
+        for (let i = 0; i < items.length; i += 100) {
+          const chunk = items.slice(i, i + 100);
+          const { error } = await supabase.from("customers").upsert(chunk, { onConflict: "id" });
+          if (error) throw new Error(error.message);
+          count += chunk.length;
         }
-        setResult({ created, total: items.length });
+        setResult({ created: count, total: items.length });
         setStatus("done");
         onImported();
       } catch (err) {
@@ -87,32 +90,20 @@ export default function CustomerImportDialog({ open, onClose, staff = [], activi
     <Dialog open={open} onOpenChange={(v) => { if (!v) { setStatus(null); setResult(null); onClose(); } }}>
       <DialogContent className="bg-white border-gray-200 text-gray-800 max-w-lg">
         <DialogHeader>
-          <DialogTitle>Kunden importieren (CSV)</DialogTitle>
+          <DialogTitle>Kunden importieren (JSON-Backup)</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
-          <div className="text-xs text-gray-500 bg-gray-100 p-3 rounded-lg font-mono space-y-1">
-            <div className="text-gray-600 font-semibold mb-1">CSV Spalten (semikolon- oder kommagetrennt, mit Header):</div>
-            <div>1. Firmenname</div>
-            <div>2. Strasse</div>
-            <div>3. PLZ</div>
-            <div>4. Ort</div>
-            <div>5. Telefon</div>
-            <div>6. Budget (Zahl)</div>
-            <div>7. Mandatsleiter (Name oder E-Mail)</div>
-            <div>8. Sachbearbeiter (Name oder E-Mail)</div>
-            <div>9. Kanton (z.B. ZH, SG, BE)</div>
-            <div className="text-violet-400">10+. Eine Spalte pro Tätigkeit (1 = erledigt, 0 = offen)</div>
+          <div className="text-xs text-gray-500 bg-gray-100 p-3 rounded-lg space-y-1">
+            <div className="text-gray-600 font-semibold mb-1">Vollständiges Backup (JSON) wiederherstellen</div>
+            <div>Erwartet eine JSON-Datei aus dem Export („Kunden exportieren"). Bestehende Datensätze werden per <b>id</b> aktualisiert, neue angelegt (kein Duplizieren).</div>
+            <div className="text-violet-500">Nur Kontaktpersonen zu Firmen? → Button „Kontakte (Excel)".</div>
           </div>
-
-          <Button variant="outline" size="sm" onClick={downloadTemplate} className="w-full border-gray-300 text-gray-700 hover:text-gray-900 gap-2">
-            <Download className="h-4 w-4" /> CSV-Vorlage herunterladen
-          </Button>
 
           {status === null && (
             <label className="flex flex-col items-center justify-center gap-3 p-8 border-2 border-dashed border-gray-300 rounded-lg hover:border-gray-400 cursor-pointer transition-colors">
               <Upload className="h-8 w-8 text-gray-400" />
-              <span className="text-sm text-gray-500">CSV-Datei auswählen und importieren</span>
-              <input type="file" accept=".csv" onChange={handleFile} className="hidden" />
+              <span className="text-sm text-gray-500">JSON-Backup auswählen und importieren</span>
+              <input type="file" accept=".json" onChange={handleFile} className="hidden" />
             </label>
           )}
 
