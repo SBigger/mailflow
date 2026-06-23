@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Pencil, Archive, RotateCcw, Plus, X, Search } from 'lucide-react';
-import { leProject, leEmployee, leRateGroup, customersForProjects } from '@/lib/leApi';
+import { Pencil, Archive, RotateCcw, Plus, X, Search, Users, ChevronRight, ChevronLeft, Check } from 'lucide-react';
+import { leProject, leEmployee, leRateGroup, customersForProjects, customersWithProjectFlag } from '@/lib/leApi';
 import {
   Chip, Card, IconBtn, Input, Select, Combobox, Field,
   PanelLoader, PanelError, PanelHeader, fmt,
@@ -54,6 +54,7 @@ export default function ProjektePanel() {
   const [customerFilter, setCustomerFilter] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState(null); // null = create, object = edit
+  const [abgleichOpen, setAbgleichOpen] = useState(false);
 
   const projectsQ = useQuery({
     queryKey: ['le', 'project', statusTab],
@@ -162,6 +163,9 @@ export default function ProjektePanel() {
                 </button>
               ))}
             </div>
+            <button className={artisBtn.ghost} style={artisGhostStyle} onClick={() => setAbgleichOpen(true)}>
+              <Users className="w-4 h-4" /> Kunden abgleichen
+            </button>
             <button className={artisBtn.primary} style={artisPrimaryStyle} onClick={openCreate}>
               <Plus className="w-4 h-4" /> Neues Projekt
             </button>
@@ -297,6 +301,232 @@ export default function ProjektePanel() {
           saving={createM.isPending || updateM.isPending}
         />
       )}
+
+      {abgleichOpen && (
+        <KundenAbgleichDialog
+          rateGroups={rateGroupsQ.data ?? []}
+          employees={employeesQ.data ?? []}
+          existingProjects={projectsForNumbering}
+          onClose={() => setAbgleichOpen(false)}
+          onDone={() => {
+            qc.invalidateQueries({ queryKey: ['le', 'project'] });
+            qc.invalidateQueries({ queryKey: ['le', 'customers'] });
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Assistent: Kunden ohne Projekt abgleichen und Projekte eröffnen
+// ---------------------------------------------------------------------------
+const custLabel = (c) =>
+  (c.company_name && c.company_name.trim())
+  || [c.vorname, c.nachname].filter(Boolean).join(' ').trim()
+  || 'Unbenannt';
+
+function KundenAbgleichDialog({ rateGroups, employees, existingProjects, onClose, onDone }) {
+  const [step, setStep] = useState(1); // 1 = Auswahl, 2 = Einstellungen
+  const [search, setSearch] = useState('');
+  const [selected, setSelected] = useState(() => new Set());
+  const [creating, setCreating] = useState(false);
+  const [progress, setProgress] = useState(null);
+  const [cfg, setCfg] = useState({
+    suffix: ', BWL',
+    rate_mode: 'service_type',
+    rate_group_id: rateGroups[0]?.id ?? '',
+    billing_mode: 'effektiv',
+    responsible_employee_id: '',
+  });
+
+  const custQ = useQuery({ queryKey: ['le', 'customers', 'abgleich'], queryFn: customersWithProjectFlag });
+  const missing = useMemo(
+    () => (custQ.data ?? []).filter((c) => !c.hasProject)
+      .sort((a, b) => custLabel(a).localeCompare(custLabel(b), 'de')),
+    [custQ.data],
+  );
+  const visible = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return missing;
+    return missing.filter((c) => custLabel(c).toLowerCase().includes(q));
+  }, [missing, search]);
+
+  const allVisibleChecked = visible.length > 0 && visible.every((c) => selected.has(c.id));
+  const toggle = (id) => setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const toggleAllVisible = () => setSelected((s) => {
+    const n = new Set(s);
+    if (allVisibleChecked) visible.forEach((c) => n.delete(c.id));
+    else visible.forEach((c) => n.add(c.id));
+    return n;
+  });
+
+  const year = new Date().getFullYear();
+  const startMax = useMemo(() => {
+    let m = 0;
+    for (const p of existingProjects ?? []) {
+      const mm = String(p.project_no ?? '').match(/^P-(\d{4})-(\d+)$/);
+      if (mm && Number(mm[1]) === year) m = Math.max(m, Number(mm[2]));
+    }
+    return m;
+  }, [existingProjects, year]);
+
+  const chosen = useMemo(() => missing.filter((c) => selected.has(c.id)), [missing, selected]);
+
+  const handleCreate = async () => {
+    if (!chosen.length) return;
+    setCreating(true);
+    setProgress({ done: 0, total: chosen.length });
+    let ok = 0, fail = 0;
+    for (let i = 0; i < chosen.length; i++) {
+      const c = chosen[i];
+      const project_no = `P-${year}-${String(startMax + 1 + i).padStart(3, '0')}`;
+      try {
+        await leProject.create({
+          project_no,
+          name: `${custLabel(c)}${cfg.suffix}`,
+          customer_id: c.id,
+          rate_mode: cfg.rate_mode,
+          rate_group_id: cfg.rate_mode === 'service_type' ? (cfg.rate_group_id || null) : null,
+          billing_mode: cfg.billing_mode,
+          responsible_employee_id: cfg.responsible_employee_id || null,
+        });
+        ok++;
+      } catch (_) { fail++; }
+      setProgress({ done: i + 1, total: chosen.length });
+    }
+    setCreating(false);
+    if (ok) toast.success(`${ok} Projekt${ok === 1 ? '' : 'e'} eröffnet${fail ? `, ${fail} Fehler` : ''}`);
+    else toast.error('Keine Projekte angelegt' + (fail ? ` (${fail} Fehler)` : ''));
+    onDone?.();
+    onClose();
+  };
+
+  const stepDot = (n, label) => (
+    <div className="flex items-center gap-1.5 text-xs" style={{ color: step >= n ? '#3d4a3d' : '#9aa79a' }}>
+      <span className="inline-flex items-center justify-center w-5 h-5 rounded-full text-[11px] font-semibold"
+        style={{ background: step >= n ? '#7a9b7f' : '#e4ebe4', color: step >= n ? '#fff' : '#6b786b' }}>
+        {step > n ? <Check className="w-3 h-3" /> : n}
+      </span>
+      {label}
+    </div>
+  );
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center p-4 overflow-y-auto"
+      style={{ background: 'rgba(30,40,30,0.35)' }} onClick={onClose}>
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl my-8" style={{ border: '1px solid #e4e7e4' }}
+        onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-3 border-b" style={{ borderColor: '#eef0ee' }}>
+          <h3 className="text-base font-semibold flex items-center gap-2">
+            <Users className="w-4 h-4" style={{ color: '#7a9b7f' }} /> Kunden abgleichen — Projekte eröffnen
+          </h3>
+          <IconBtn title="Schliessen" onClick={onClose}><X className="w-4 h-4" /></IconBtn>
+        </div>
+
+        <div className="flex items-center gap-4 px-5 py-2.5 border-b" style={{ borderColor: '#f0f2f0' }}>
+          {stepDot(1, 'Auswahl')}
+          <ChevronRight className="w-3.5 h-3.5 text-zinc-300" />
+          {stepDot(2, 'Einstellungen')}
+        </div>
+
+        {custQ.isLoading ? (
+          <div className="p-8"><PanelLoader /></div>
+        ) : step === 1 ? (
+          <div className="p-5 space-y-3">
+            <div className="text-xs text-zinc-500">
+              {missing.length} Adresse{missing.length === 1 ? '' : 'n'} (Firmen + Personen) ohne Projekt.
+            </div>
+            <div className="relative">
+              <Search className="w-4 h-4 absolute left-2 top-1/2 -translate-y-1/2 text-zinc-400" />
+              <Input className="pl-7" placeholder="Suche Name…" value={search} onChange={(e) => setSearch(e.target.value)} />
+            </div>
+            <div className="rounded border" style={{ borderColor: '#eef0ee' }}>
+              <label className="flex items-center gap-2 px-3 py-2 border-b text-sm font-medium cursor-pointer"
+                style={{ borderColor: '#f0f2f0', background: '#fafbfa' }}>
+                <input type="checkbox" checked={allVisibleChecked} onChange={toggleAllVisible} />
+                Alle {search ? 'gefilterten ' : ''}auswählen
+              </label>
+              <div className="max-h-[42vh] overflow-y-auto divide-y" style={{ borderColor: '#f4f6f4' }}>
+                {visible.length === 0 ? (
+                  <div className="px-3 py-6 text-center text-sm text-zinc-400">Keine Adressen ohne Projekt.</div>
+                ) : visible.map((c) => (
+                  <label key={c.id} className="flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer hover:bg-zinc-50">
+                    <input type="checkbox" checked={selected.has(c.id)} onChange={() => toggle(c.id)} />
+                    <span className="flex-1 truncate">{custLabel(c)}</span>
+                    <Chip tone={c.person_type === 'unternehmen' ? 'blue' : 'gray'}>
+                      {c.person_type === 'unternehmen' ? 'Firma' : 'Person'}
+                    </Chip>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="p-5 space-y-4">
+            <div className="text-sm">
+              <strong>{chosen.length}</strong> Projekt{chosen.length === 1 ? '' : 'e'} werden eröffnet.
+            </div>
+            <Field label="Projektname-Suffix" hint='Name = Kundenname + Suffix, z.B. "Muster AG, BWL"'>
+              <Input value={cfg.suffix} onChange={(e) => setCfg((s) => ({ ...s, suffix: e.target.value }))} />
+            </Field>
+            <Field label="Tarif-Modus">
+              <Select value={cfg.rate_mode} onChange={(e) => setCfg((s) => ({ ...s, rate_mode: e.target.value }))}>
+                {RATE_MODE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </Select>
+            </Field>
+            {cfg.rate_mode === 'service_type' && (
+              <Field label="Tarifgruppe (Gruppenansätze)">
+                <Select value={cfg.rate_group_id} onChange={(e) => setCfg((s) => ({ ...s, rate_group_id: e.target.value }))}>
+                  <option value="">— keine —</option>
+                  {rateGroups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+                </Select>
+              </Field>
+            )}
+            <Field label="Verrechnungsart">
+              <Select value={cfg.billing_mode} onChange={(e) => setCfg((s) => ({ ...s, billing_mode: e.target.value }))}>
+                <option value="effektiv">Effektiv</option>
+                <option value="pauschal">Pauschal</option>
+              </Select>
+            </Field>
+            <Field label="Verantwortlich (optional)">
+              <Select value={cfg.responsible_employee_id} onChange={(e) => setCfg((s) => ({ ...s, responsible_employee_id: e.target.value }))}>
+                <option value="">— keine —</option>
+                {employees.map((e) => <option key={e.id} value={e.id}>{e.full_name ?? e.short_code}</option>)}
+              </Select>
+            </Field>
+            {chosen[0] && (
+              <div className="text-xs text-zinc-500">
+                Beispiel: «{custLabel(chosen[0])}{cfg.suffix}» · Nr. P-{year}-{String(startMax + 1).padStart(3, '0')}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="px-5 py-3 flex items-center justify-between gap-2 border-t" style={{ borderColor: '#eef0ee' }}>
+          <div className="text-xs text-zinc-500">
+            {creating && progress ? `${progress.done}/${progress.total} angelegt…` : `${chosen.length} ausgewählt`}
+          </div>
+          <div className="flex items-center gap-2">
+            {step === 2 && (
+              <button type="button" className={artisBtn.ghost} style={artisGhostStyle} onClick={() => setStep(1)} disabled={creating}>
+                <ChevronLeft className="w-4 h-4" /> Zurück
+              </button>
+            )}
+            {step === 1 ? (
+              <button type="button" className={artisBtn.primary} style={artisPrimaryStyle}
+                onClick={() => setStep(2)} disabled={chosen.length === 0}>
+                Weiter <ChevronRight className="w-4 h-4" />
+              </button>
+            ) : (
+              <button type="button" className={artisBtn.primary} style={artisPrimaryStyle}
+                onClick={handleCreate} disabled={creating || chosen.length === 0}>
+                <Check className="w-4 h-4" /> {creating ? 'Eröffne…' : `${chosen.length} eröffnen`}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

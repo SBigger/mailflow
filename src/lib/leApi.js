@@ -1162,6 +1162,19 @@ export async function customersForProjects() {
   return data ?? [];
 }
 
+// Alle Adressen (Firmen + Personen) inkl. Flag, ob sie schon ein Projekt haben.
+// Für den "Kunden abgleichen / Projekte eröffnen"-Assistenten.
+export async function customersWithProjectFlag() {
+  const { data: custs, error } = await supabase
+    .from('customers')
+    .select('id, company_name, vorname, nachname, person_type, aktiv');
+  if (error) throw error;
+  const { data: projs, error: pErr } = await supabase.from('le_project').select('customer_id');
+  if (pErr) throw pErr;
+  const withProject = new Set((projs ?? []).map((p) => p.customer_id).filter(Boolean));
+  return (custs ?? []).map((c) => ({ ...c, hasProject: withProject.has(c.id) }));
+}
+
 export function isMissingTableError(err) {
   const msg = String(err?.message ?? err ?? '').toLowerCase();
   return msg.includes('does not exist') || msg.includes('relation') || err?.code === '42p01';
