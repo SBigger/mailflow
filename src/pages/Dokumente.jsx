@@ -98,6 +98,15 @@ import { useAuth } from "@/lib/AuthContext";
 
 const BUCKET   = "dokumente";
 
+// GeBueV-Integritaet: SHA-256 einer Datei als Hex (best-effort, blockiert Upload nie).
+async function sha256Hex(fileOrBlob) {
+  try {
+    const buf  = await fileOrBlob.arrayBuffer();
+    const hash = await crypto.subtle.digest("SHA-256", buf);
+    return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, "0")).join("");
+  } catch { return null; }
+}
+
 // ─── SharePoint Helper ───────────────────────────────────────────────────────
 const SPFILES = `${window.env.API_URL}/functions/v1/sharepoint-files`;
 
@@ -498,6 +507,7 @@ function UploadDialog({ customers, preCustomer, preFile, allTags, onCancel, onUp
         storage_path: uploadData.path, file_size: file.size, file_type: file.type,
         tag_ids: tagIds, notes,
         content_text: contentText,
+        content_hash: await sha256Hex(cleanFile),
       });
       // Server-seitige Volltext-Indexierung als Sicherheitsnetz (no-op falls content_text bereits gefüllt)
       if (newDoc?.id) {
@@ -948,6 +958,7 @@ export default function Dokumente() {
         const { data, error } = await supabase
           .from('dokumente')
           .select(DOK_LIST_FIELDS)
+          .is('deleted_at', null)              // GeBueV: soft-geloeschte ausblenden
           .order('created_at', { ascending: false })
           .range(offset, offset + PAGE - 1);
         if (error) throw new Error(error.message);
@@ -1362,8 +1373,13 @@ export default function Dokumente() {
     // Optimistic: sofort aus Liste entfernen
     setDeletingIds(prev => new Set([...prev, doc.id]));
     try {
-      if (doc.storage_path) await supabase.storage.from(BUCKET).remove([doc.storage_path.replace('dokumente/', '')]);
-      await entities.Dokument.delete(doc.id);
+      // GeBueV-revisionssicher: KEIN physisches Loeschen. Soft-Delete \u2013 Datei +
+      // Versionen bleiben erhalten, das Dokument verschwindet nur aus der Ansicht.
+      const { data: { user: _delUser } } = await supabase.auth.getUser();
+      await entities.Dokument.update(doc.id, {
+        deleted_at: new Date().toISOString(),
+        deleted_by: _delUser?.id || null,
+      });
       queryClient.invalidateQueries(["dokumente-all"]);
       toast.success("Dokument gel\u00f6scht", {closeButton: true});
     } catch (err) {
@@ -1497,8 +1513,8 @@ export default function Dokumente() {
         method: 'POST', headers: { Authorization: `Bearer ${jwt}` }, body: form,
       });
       if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || 'Upload fehlgeschlagen'); }
-      // Volltext neu indexieren (alte content_text ist jetzt veraltet); best-effort.
-      await entities.Dokument.update(doc.id, { content_text: null }).catch(() => {});
+      // Volltext neu indexieren + neuen Integritaets-Hash setzen; best-effort.
+      await entities.Dokument.update(doc.id, { content_text: null, content_hash: await sha256Hex(file) }).catch(() => {});
       supabase.functions.invoke('index-document', { body: { doc_id: doc.id } }).catch(() => {});
       setSignedUrls(prev => { const n = { ...prev }; delete n[doc.id]; return n; });
       queryClient.invalidateQueries({ queryKey: ["dokumente-all"] });

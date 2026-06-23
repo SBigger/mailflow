@@ -38,6 +38,15 @@ function AiBadge() {
   );
 }
 
+// GeBueV-Integritaet: SHA-256 einer Datei als Hex (best-effort, blockiert Upload nie).
+async function sha256Hex(fileOrBlob) {
+  try {
+    const buf  = await fileOrBlob.arrayBuffer();
+    const hash = await crypto.subtle.digest("SHA-256", buf);
+    return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, "0")).join("");
+  } catch { return null; }
+}
+
 function stageLabel(stage) {
   switch (stage) {
     case "extract":      return "Text wird extrahiert…";
@@ -677,6 +686,7 @@ export default function BatchUploadDialog({ preCustomerId, onClose }) {
           tag_ids:      item.fields.tag_ids,
           notes:        item.fields.notes || "",
           content_text: item.contentText || "",
+          content_hash: await sha256Hex(cleanFile),   // GeBueV-Integritaet
         });
         // Server-seitige Volltext-Indexierung als Sicherheitsnetz (no-op falls content_text bereits gefüllt)
         if (newDoc?.id) {
