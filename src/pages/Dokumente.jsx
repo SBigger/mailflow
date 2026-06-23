@@ -94,6 +94,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import TagSelectWidget from "@/components/dokumente/TagSelectWidget";
 import BatchUploadDialog from "@/components/dokumente/BatchUploadDialog";
+import { analyzeFile } from "@/lib/batchAiSuggest";
 import { useAuth } from "@/lib/AuthContext";
 
 const BUCKET   = "dokumente";
@@ -427,8 +428,29 @@ function UploadDialog({ customers, preCustomer, preFile, allTags, onCancel, onUp
   const [notes,      setNotes]      = useState("");
   const [uploading,  setUploading]  = useState(false);
   const [errors,     setErrors]     = useState({});
+  const [aiBusy,     setAiBusy]     = useState(false);
   const fileRef = useRef();
   const yearRef = useRef();
+
+  // KI-Erfassung: Kunde / Kategorie / Jahr / Tags aus dem Dokument vorschlagen.
+  // Nutzt dieselbe Logik wie die Massenablage – Artis Treuhand (= wir) wird dort
+  // bereits via isSelfEntity NIE als Kunde erkannt. Fuellt nur leere Felder.
+  const runAiSuggest = async (f) => {
+    if (!f) return;
+    setAiBusy(true);
+    try {
+      const res = await analyzeFile(f, { customers, allTags });
+      const sug = res?.suggestions || {};
+      if (sug.customer_id && !preCustomer) setCustId(prev => prev || sug.customer_id);
+      if (sug.category)                    setCategory(prev => prev || sug.category);
+      if (sug.year)                        setYear(prev => (prev && prev !== String(CUR_YEAR) ? prev : String(sug.year)));
+      if (sug.tag_ids?.length)             setTagIds(prev => (prev.length ? prev : sug.tag_ids));
+    } catch (e) {
+      console.warn("[Upload] KI-Analyse fehlgeschlagen:", e);
+    } finally {
+      setAiBusy(false);
+    }
+  };
 
   // Per Drag & Drop übergebene Datei direkt einlesen
   useEffect(() => {
@@ -474,6 +496,7 @@ function UploadDialog({ customers, preCustomer, preFile, allTags, onCancel, onUp
     setName(f.name.replace(/\.[^.]+$/, ""));
     const y = detectYear(f.name);
     if (y) setYear(String(y));
+    runAiSuggest(f);                 // KI erkennt Kunde/Kategorie/Tags im Hintergrund
   };
 
   const handleUpload = async () => {
@@ -540,6 +563,11 @@ function UploadDialog({ customers, preCustomer, preFile, allTags, onCancel, onUp
             {file ? `${file.name} (${formatBytes(file.size)})` : "Datei auswaehlen oder hierher ziehen"}
             <input ref={fileRef} type="file" style={{ display: "none" }} onChange={e => e.target.files[0] && pickFile(e.target.files[0])} />
           </div>
+          {aiBusy && (
+            <div style={{ fontSize: 12, color: accent, display: "flex", alignItems: "center", gap: 6 }}>
+              <RefreshCw size={13} style={{ animation: "spin 1s linear infinite" }} /> KI erkennt Kunde, Kategorie &amp; Tags…
+            </div>
+          )}
           {/* Kunde */}
           <div>
             <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Kunde *</label>
