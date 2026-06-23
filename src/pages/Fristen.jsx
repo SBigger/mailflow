@@ -885,7 +885,13 @@ export default function Fristen() {
               if (window.__fristenAutomation?._aborted) break;
 
               try {
-                const apiRes = await fetch("/api/portal-sg-fristeingabe", {
+                // Absolute Vercel-URL statt relativ: in der Desktop-App (Tauri
+                // lädt gebündelt via tauri://, Electron ggf. von artis) gibt es
+                // keine relative /api-Route → Aufruf scheitert. smartis.me
+                // serviert die Funktion (CORS offen); aus dem Web ist das die
+                // gleiche Origin. Die Funktion ist nur ein Portal-Proxy (kein
+                // DB-Schreibzugriff in diesem Pfad).
+                const apiRes = await fetch("https://smartis.me/api/portal-sg-fristeingabe", {
                   method: "POST",
                   headers: {
                     "Content-Type": "application/json",
