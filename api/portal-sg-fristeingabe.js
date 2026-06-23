@@ -70,6 +70,24 @@ export default async function handler(req, res) {
 
     const bewilligt = portalData.entscheid === "BEWILLIGT";
 
+    // Aussagekräftige Begründung bauen, wenn das Portal ablehnt: bisher ging
+    // HTTP-Status + rohe Antwort verloren ("Unbekannter Fehler"). Jetzt sichtbar.
+    let bemerkung = portalData.bemerkung ?? null;
+    if (!bewilligt && !bemerkung) {
+      const snippet = String(portalData.raw ?? "")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 300);
+      if (snippet) {
+        bemerkung = `Portal HTTP ${portalRes.status} – ${snippet}`;
+      } else if (portalRes.status === 401 || portalRes.status === 403) {
+        bemerkung = `Portal HTTP ${portalRes.status} – Login abgelehnt (Registernummer / UID / Login-Typ prüfen)`;
+      } else {
+        bemerkung = `Portal HTTP ${portalRes.status} (keine Rückmeldung)`;
+      }
+    }
+
     // Optional: update Supabase record directly via service key
     if (fristId && SUPABASE_SERVICE_KEY) {
       const updateData = {
@@ -96,7 +114,8 @@ export default async function handler(req, res) {
     return res.status(200).json({
       bewilligt,
       entscheid: portalData.entscheid ?? null,
-      bemerkung: portalData.bemerkung ?? null,
+      bemerkung,
+      portalStatus: portalRes.status,
       companyName: portalData.companyName ?? null,
       verlaengerungsDatum: portalData.verlaengerungsDatum ?? null,
       steuerjahrBegin: portalData.steuerjahrBegin ?? null,
