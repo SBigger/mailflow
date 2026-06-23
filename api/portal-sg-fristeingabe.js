@@ -70,9 +70,9 @@ export default async function handler(req, res) {
 
     const bewilligt = portalData.entscheid === "BEWILLIGT";
 
-    // Aussagekräftige Begründung bauen, wenn das Portal ablehnt: bisher ging
-    // HTTP-Status + rohe Antwort verloren ("Unbekannter Fehler"). Jetzt sichtbar.
-    let bemerkung = portalData.bemerkung ?? null;
+    // Portal-Meldung robust aus möglichen Feldnamen lesen (Portal variiert).
+    let bemerkung = portalData.bemerkung ?? portalData.message ?? portalData.meldung
+      ?? portalData.fehler ?? portalData.error ?? null;
     if (!bewilligt && !bemerkung) {
       const snippet = String(portalData.raw ?? "")
         .replace(/<[^>]+>/g, " ")
