@@ -58,6 +58,8 @@ export default function CustomerMiniList({
 
   const typeFiltered = customers.filter(c => {
     if (c.ist_nebensteuerdomizil === true) return false;
+    if (personTypeFilter === "kontakt") return c.person_type === "kontakt";
+    if (c.person_type === "kontakt") return false; // Kontakte nur im eigenen Tab + Telefonliste
     if (personTypeFilter === "alle") return true;
     if (personTypeFilter === "privatperson") return c.person_type === "privatperson";
     return c.person_type === "unternehmen" || !c.person_type;

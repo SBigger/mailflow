@@ -188,6 +188,8 @@ export default function CustomerTable({
   // ── Filter ──────────────────────────────────────────────────
   const typeFiltered = customers.filter(c => {
     if (c.ist_nebensteuerdomizil === true) return false;
+    if (personTypeFilter === "kontakt") return c.person_type === "kontakt";
+    if (c.person_type === "kontakt") return false; // Kontakte nur im eigenen Tab + Telefonliste
     if (personTypeFilter === "alle") return true;
     if (personTypeFilter === "privatperson") return c.person_type === "privatperson";
     return c.person_type === "unternehmen" || !c.person_type;
@@ -359,6 +361,7 @@ export default function CustomerTable({
                   {q ? "Keine Treffer." :
                     personTypeFilter === "privatperson" ? "Keine Privatpersonen." :
                     personTypeFilter === "unternehmen"  ? "Keine Unternehmen." :
+                    personTypeFilter === "kontakt"      ? "Keine Kontakte." :
                     "Keine Einträge."}
                 </td>
               </tr>

@@ -166,6 +166,14 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
     });
   };
 
+  const handleNewKontakt = () => {
+    createMutation.mutate({
+      company_name: "Neuer Kontakt",
+      person_type: 'kontakt',
+      activities: [], contact_persons: [], tags: [],
+    });
+  };
+
   const currentCustomer = selectedCustomer
     ? (customers.find(c => c.id === selectedCustomer.id) || selectedCustomer)
     : null;
@@ -189,6 +197,7 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
   };
 
   const isPrivatperson  = currentCustomer?.person_type === 'privatperson';
+  const isKontakt       = currentCustomer?.person_type === 'kontakt';
   const isNebendomizil  = currentCustomer?.ist_nebensteuerdomizil === true;
   const hauptdomizil    = isNebendomizil
     ? customers.find(c => c.id === currentCustomer?.hauptdomizil_id) || null
@@ -279,6 +288,7 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
             { key: "alle",         label: "Alle" },
             { key: "unternehmen",  label: "Kunden" },
             { key: "privatperson", label: "Personen" },
+            { key: "kontakt",      label: "Kontakte" },
             { key: "telefonliste", label: "Telefonliste" },
           ].map(({ key, label }) => (
             <button key={key} style={tabStyle(key)} onClick={() => setPersonTypeFilter(key)}>
@@ -347,6 +357,9 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
         </Button>
         <Button onClick={handleNewPrivatperson} size="sm" variant="outline" className="h-7 text-xs" style={{ borderColor, color: textMuted }}>
           + Person
+        </Button>
+        <Button onClick={handleNewKontakt} size="sm" variant="outline" className="h-7 text-xs" style={{ borderColor, color: textMuted }}>
+          + Kontakt
         </Button>
       </div>
     </div>
@@ -453,13 +466,13 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
                             <TabsTrigger value="overview"   className="text-xs">🏠 Übersicht</TabsTrigger>
                             <TabsTrigger value="mails"      className="text-xs">📧 Mails</TabsTrigger>
                             <TabsTrigger value="telefonate" className="text-xs">📞 Telefonate</TabsTrigger>
-                            <TabsTrigger value="tasks"      className="text-xs">✅ Tasks</TabsTrigger>
-                            <TabsTrigger value="fristen"    className="text-xs">📅 Fristen</TabsTrigger>
-                            <TabsTrigger value="activities" className="text-xs">📋 Tätigkeiten</TabsTrigger>
+                            {!isKontakt && <TabsTrigger value="tasks"      className="text-xs">✅ Tasks</TabsTrigger>}
+                            {!isKontakt && <TabsTrigger value="fristen"    className="text-xs">📅 Fristen</TabsTrigger>}
+                            {!isKontakt && <TabsTrigger value="activities" className="text-xs">📋 Tätigkeiten</TabsTrigger>}
                             <TabsTrigger value="contacts"   className="text-xs">👤 Kontakte</TabsTrigger>
                             <TabsTrigger value="notes"      className="text-xs">📝 Notizen</TabsTrigger>
-                            <TabsTrigger value="dokumente"  className="text-xs">📄 Dokumente</TabsTrigger>
-                            {!isPrivatperson && (
+                            {!isKontakt && <TabsTrigger value="dokumente"  className="text-xs">📄 Dokumente</TabsTrigger>}
+                            {!isPrivatperson && !isKontakt && (
                               <TabsTrigger value="aktionaere" className="text-xs">📗 Aktionäre</TabsTrigger>
                             )}
                           </>
