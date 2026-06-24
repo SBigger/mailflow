@@ -6,6 +6,15 @@ const TYP_LABELS = {
   vorsteuer:     { label: 'Vorsteuer (Einkauf)',   color: '#1e6fa8', bg: '#e8f4fd' },
   umsatzsteuer:  { label: 'Umsatzsteuer (Verkauf)', color: '#1ea84f', bg: '#e8fdf0' },
   steuerbefreit: { label: 'Steuerbefreit / Kein MWST', color: '#6b1ea8', bg: '#f0e8fd' },
+  bezugsteuer:   { label: 'Bezugsteuer (Leistungsbezug Ausland)', color: '#a8631e', bg: '#fdf4e8' },
+};
+
+// Gültige ESTV-Abrechnungsziffern je Code-Typ (effektive Methode)
+const ZIFFERN_BY_TYP = {
+  umsatzsteuer:  ['302', '312', '342'],
+  steuerbefreit: ['221', '230'],
+  vorsteuer:     ['400', '405', '410'],
+  bezugsteuer:   ['382'],
 };
 
 const SATZ_COLORS = {
@@ -117,6 +126,41 @@ function KontoEdit({ value, field, codeId, canWrite, onSaved }) {
   );
 }
 
+// ── Inline Abrechnungsziffer-Zuweisung ───────────────────────────
+function ZifferEdit({ value, typ, codeId, canWrite, onSaved }) {
+  const [saving, setSaving] = useState(false);
+  const opts = ZIFFERN_BY_TYP[typ] ?? [];
+
+  const save = async (val) => {
+    const v = val || null;
+    setSaving(true);
+    await supabase.from('fibu_mwst_codes').update({ abrechnung_ziffer: v }).eq('id', codeId);
+    onSaved('abrechnung_ziffer', v);
+    setSaving(false);
+  };
+
+  if (opts.length === 0) {
+    return <span style={{ fontSize: 11, color: '#c0c8c0', minWidth: 70, textAlign: 'center', display: 'inline-block' }}>—</span>;
+  }
+  return (
+    <select
+      value={value ?? ''}
+      disabled={!canWrite || saving}
+      onChange={e => save(e.target.value)}
+      title="MWST-Abrechnungsziffer (ESTV-Formular)"
+      style={{
+        fontSize: 11.5, padding: '3px 6px', borderRadius: 6,
+        border: '1px solid #d4dcd4', background: value ? '#eef4fb' : '#fff',
+        color: value ? '#1e4f7a' : '#94a394', cursor: canWrite ? 'pointer' : 'default',
+        fontVariantNumeric: 'tabular-nums', minWidth: 70,
+      }}
+    >
+      <option value="">— Ziffer —</option>
+      {opts.map(z => <option key={z} value={z}>Ziff. {z}</option>)}
+    </select>
+  );
+}
+
 export default function MwstCodes() {
   const { mandant, canWrite } = useMandant();
   const [codes, setCodes] = useState([]);
@@ -156,6 +200,7 @@ export default function MwstCodes() {
   const grouped = {
     vorsteuer:     codes.filter(c => c.typ === 'vorsteuer'),
     umsatzsteuer:  codes.filter(c => c.typ === 'umsatzsteuer'),
+    bezugsteuer:   codes.filter(c => c.typ === 'bezugsteuer'),
     steuerbefreit: codes.filter(c => c.typ === 'steuerbefreit'),
   };
 
@@ -243,6 +288,16 @@ export default function MwstCodes() {
                     <span style={s.codeBadge}>{c.code}</span>
                     <span style={s.bezeichnung}>{c.bezeichnung}</span>
                     <SatzBadge satz={c.satz} />
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                      <span style={s.kontoLabel}>Abrechnung</span>
+                      <ZifferEdit
+                        value={c.abrechnung_ziffer}
+                        typ={c.typ}
+                        codeId={c.id}
+                        canWrite={canWrite}
+                        onSaved={(f, v) => setCodes(prev => prev.map(x => x.id === c.id ? { ...x, [f]: v } : x))}
+                      />
+                    </span>
                     <div style={s.kontoGroup}>
                       {/* Vorsteuerkonto */}
                       {(c.typ === 'vorsteuer' || c.typ === 'steuerbefreit') && (
