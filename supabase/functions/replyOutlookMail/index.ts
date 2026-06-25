@@ -74,7 +74,6 @@ Deno.serve(async (req) => {
   let body: any
   try {
     body = await req.json()
-    console.log("body", JSON.stringify(body));
   } catch {
     return new Response(JSON.stringify({ error: 'Invalid JSON body' }), { status: 400, headers: jsonHeaders })
   }

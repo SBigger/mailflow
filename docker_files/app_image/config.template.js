@@ -1,3 +1,0 @@
-{
-    KEY1: "${VITE_SUPABASE_ANON_KEY}"
-};

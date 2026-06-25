@@ -94,9 +94,19 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import TagSelectWidget from "@/components/dokumente/TagSelectWidget";
 import BatchUploadDialog from "@/components/dokumente/BatchUploadDialog";
+import { analyzeFile } from "@/lib/batchAiSuggest";
 import { useAuth } from "@/lib/AuthContext";
 
 const BUCKET   = "dokumente";
+
+// GeBueV-Integritaet: SHA-256 einer Datei als Hex (best-effort, blockiert Upload nie).
+async function sha256Hex(fileOrBlob) {
+  try {
+    const buf  = await fileOrBlob.arrayBuffer();
+    const hash = await crypto.subtle.digest("SHA-256", buf);
+    return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, "0")).join("");
+  } catch { return null; }
+}
 
 // ─── SharePoint Helper ───────────────────────────────────────────────────────
 const SPFILES = `${window.env.API_URL}/functions/v1/sharepoint-files`;
@@ -130,6 +140,7 @@ const CUR_YEAR = new Date().getFullYear();
 
 // Kategorien zentral in src/lib/categories.js definiert
 import { CATEGORIES } from "@/lib/categories";
+import HighlightedText from "@/components/dokumente/HighlightedText.tsx";
 
 function getFileInfo(mimeType, filename) {
   const ext = (filename || "").split(".").pop().toLowerCase();
@@ -418,8 +429,29 @@ function UploadDialog({ customers, preCustomer, preFile, allTags, onCancel, onUp
   const [notes,      setNotes]      = useState("");
   const [uploading,  setUploading]  = useState(false);
   const [errors,     setErrors]     = useState({});
+  const [aiBusy,     setAiBusy]     = useState(false);
   const fileRef = useRef();
   const yearRef = useRef();
+
+  // KI-Erfassung: Kunde / Kategorie / Jahr / Tags aus dem Dokument vorschlagen.
+  // Nutzt dieselbe Logik wie die Massenablage – Artis Treuhand (= wir) wird dort
+  // bereits via isSelfEntity NIE als Kunde erkannt. Fuellt nur leere Felder.
+  const runAiSuggest = async (f) => {
+    if (!f) return;
+    setAiBusy(true);
+    try {
+      const res = await analyzeFile(f, { customers, allTags });
+      const sug = res?.suggestions || {};
+      if (sug.customer_id && !preCustomer) setCustId(prev => prev || sug.customer_id);
+      if (sug.category)                    setCategory(prev => prev || sug.category);
+      if (sug.year)                        setYear(prev => (prev && prev !== String(CUR_YEAR) ? prev : String(sug.year)));
+      if (sug.tag_ids?.length)             setTagIds(prev => (prev.length ? prev : sug.tag_ids));
+    } catch (e) {
+      console.warn("[Upload] KI-Analyse fehlgeschlagen:", e);
+    } finally {
+      setAiBusy(false);
+    }
+  };
 
   // Per Drag & Drop übergebene Datei direkt einlesen
   useEffect(() => {
@@ -465,6 +497,7 @@ function UploadDialog({ customers, preCustomer, preFile, allTags, onCancel, onUp
     setName(f.name.replace(/\.[^.]+$/, ""));
     const y = detectYear(f.name);
     if (y) setYear(String(y));
+    runAiSuggest(f);                 // KI erkennt Kunde/Kategorie/Tags im Hintergrund
   };
 
   const handleUpload = async () => {
@@ -498,6 +531,7 @@ function UploadDialog({ customers, preCustomer, preFile, allTags, onCancel, onUp
         storage_path: uploadData.path, file_size: file.size, file_type: file.type,
         tag_ids: tagIds, notes,
         content_text: contentText,
+        content_hash: await sha256Hex(cleanFile),
       });
       // Server-seitige Volltext-Indexierung als Sicherheitsnetz (no-op falls content_text bereits gefüllt)
       if (newDoc?.id) {
@@ -530,6 +564,11 @@ function UploadDialog({ customers, preCustomer, preFile, allTags, onCancel, onUp
             {file ? `${file.name} (${formatBytes(file.size)})` : "Datei auswaehlen oder hierher ziehen"}
             <input ref={fileRef} type="file" style={{ display: "none" }} onChange={e => e.target.files[0] && pickFile(e.target.files[0])} />
           </div>
+          {aiBusy && (
+            <div style={{ fontSize: 12, color: accent, display: "flex", alignItems: "center", gap: 6 }}>
+              <RefreshCw size={13} style={{ animation: "spin 1s linear infinite" }} /> KI erkennt Kunde, Kategorie &amp; Tags…
+            </div>
+          )}
           {/* Kunde */}
           <div>
             <label style={{ fontSize: 12, color: s.textMuted, display: "block", marginBottom: 3 }}>Kunde *</label>
@@ -839,6 +878,7 @@ export default function Dokumente() {
   const [shareDialog,   setShareDialog]   = useState(null); // { type: 'doc'|'folder', doc?, customer_id?, category?, year?, name? }
   const [showShareLinks, setShowShareLinks] = useState(false);
   const [chartisDoc, setChartisDoc] = useState(null); // Chartis-Panel pro Dokument
+  const [highestScore, setHighestScore] = useState(false);
 
   // Volltext-Suche via Supabase RPC (PostgreSQL GIN-Index)
   useEffect(() => {
@@ -850,8 +890,11 @@ export default function Dokumente() {
         const { data, error } = await supabase.rpc("search_dokumente", {
           p_query:       q,
           p_customer_id: selCustomerId || null,
-          p_limit:       100,
+          p_limit:       50,
         });
+
+        setHighestScore(data[0]?.rank || 1);
+
         if (error) throw error;
         setFtResults(data || []);
       } catch (e) { toast.error("Suche fehlgeschlagen: " + e.message); setFtResults([]); }
@@ -931,73 +974,6 @@ export default function Dokumente() {
     queryKey: ["customers"],
     queryFn:  () => entities.Customer.list("company_name"),
   });
-
-  useEffect(() => {
-    // 1. Create the subscription
-    const channel = supabase
-        .channel('schema-dokumente-changes')
-        .on(
-            'postgres_changes',
-            {
-              event: '*', // Listen to INSERT, UPDATE, and DELETE
-              schema: 'public',
-              table: 'dokumente',
-            },
-            (payload) => {
-              //console.log('Change received!', payload)
-              const { eventType, new: newItem, old: oldItem } = payload;
-
-              queryClient.setQueryData(["dokumente-all"], (oldData) => {
-                // Ensure we have a list to work with
-                const currentDocuments = oldData || [];
-
-                switch (eventType) {
-                  case 'INSERT':
-                    // Add new mail to the top (since you sort by received desc)
-                    return [newItem, ...currentDocuments];
-
-                  case 'UPDATE':
-                    // Find the item and update its fields
-                    return currentDocuments.map((item) =>
-                        item.id === newItem.id ? { ...item, ...newItem } : item
-                    );
-
-                  case 'DELETE':
-                    // Remove the item from the list
-                    return currentDocuments.filter((item) => item.id !== oldItem.id);
-
-                  default:
-                    return currentDocuments;
-                }
-              });
-
-              // Also update Kanban columns if the status/folder changed
-              if (eventType === 'UPDATE' && newItem.status !== oldItem.status) {
-                queryClient.invalidateQueries({ queryKey: ["dokumente-all"] });
-              }
-            }
-        )
-        .subscribe((status, err) => {
-          // console.log("Realtime Status Dokumente:", status);
-          if (err) console.error("Realtime Error:", err);
-
-          if (status === 'SUBSCRIBED') {
-            console.log('Successfully connected to Realtime Dokumente!');
-          }
-          if (status === 'CLOSED') {
-            // console.log('Connection closed.');
-          }
-          if (status === 'CHANNEL_ERROR') {
-            // console.error('Error connecting. Check RLS policies or database settings.');
-          }
-        });
-
-    // 3. Cleanup on unmount
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [queryClient]);
-
   // Schlanker Select (OHNE content_text + search_vector) -- spart ~14 MB / ~7 Sek
   // bei jedem Aufruf. content_text wird in der Liste nirgends gelesen, nur das
   // Auto-Indexing braucht die Info ob es leer ist -- das macht eine separate
@@ -1015,6 +991,7 @@ export default function Dokumente() {
         const { data, error } = await supabase
           .from('dokumente')
           .select(DOK_LIST_FIELDS)
+          .is('deleted_at', null)              // GeBueV: soft-geloeschte ausblenden
           .order('created_at', { ascending: false })
           .range(offset, offset + PAGE - 1);
         if (error) throw new Error(error.message);
@@ -1029,6 +1006,73 @@ export default function Dokumente() {
     queryKey: ["dok_tags"],
     queryFn:  () => entities.DokTag.list("sort_order"),
   });
+
+  // ── Live-Update ohne F5 ───────────────────────────────────────────────
+  // Wenn jemand anderes eine Datei eincheckt/auscheckt/hochlädt, soll der
+  // neue Stand bei allen offenen Clients sofort erscheinen. Realtime-Abo auf
+  // die dokumente-Tabelle (gleiches Muster wie MailKanban/FiBuSidebar).
+  // Bei UPDATE nur die betroffene Zeile im Cache patchen — ein voller Refetch
+  // waere bei 18k+ Dokumenten teuer; Insert/Delete invalidiert die Liste.
+  useEffect(() => {
+    const channel = supabase
+      .channel(`realtime-dokumente-${Date.now()}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'dokumente' }, (payload) => {
+        const row = payload.new;
+        if (payload.eventType === 'UPDATE' && row?.id) {
+          queryClient.setQueryData(["dokumente-all"], (prev) =>
+            Array.isArray(prev) ? prev.map(d => (d.id === row.id ? { ...d, ...row } : d)) : prev
+          );
+        } else {
+          queryClient.invalidateQueries({ queryKey: ["dokumente-all"] });
+        }
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [queryClient]);
+
+  // ── Stilles Auto-Indexing (wie M-Files Background Service) ──────────────
+  // Läuft automatisch im Hintergrund wenn allDoks geladen sind.
+  // Kein Button, kein Spinner – transparent für den User.
+  const autoIndexRef = useRef(false);
+  useEffect(() => {
+    if (autoIndexRef.current) return;            // bereits gestartet
+    if (!allDoks.length) return;                 // warte bis allDoks geladen sind
+    autoIndexRef.current = true;
+
+    (async () => {
+      // Hole nur die Docs, die noch keinen Volltext haben (separate, schlanke Query —
+      // content_text steckt nicht mehr im Haupt-allDoks-Select, das spart die 14 MB).
+      const { data: toIndex } = await supabase
+        .from('dokumente')
+        .select('id,filename,name,file_type,storage_path')
+        .or('content_text.is.null,content_text.eq.')
+        .not('storage_path', 'is', null)
+      if (!toIndex || !toIndex.length) return;
+
+      let done = 0;
+      for (const doc of toIndex) {
+        try {
+          const { data } = await supabase.storage.from(BUCKET).createSignedUrl(doc.storage_path, 120);
+          if (!data?.signedUrl) continue;
+          const resp = await fetch(data.signedUrl);
+          if (!resp.ok) continue;
+          const blob = await resp.blob();
+          const file = new File([blob], doc.filename || doc.name || "doc", { type: doc.file_type || "" });
+          const text = await extractDocumentText(file);
+          if (text) {
+            await entities.Dokument.update(doc.id, { content_text: text });
+            done++;
+          }
+        } catch (e) {
+          console.warn("[AutoIndex] Fehler bei", doc.id, e);
+        }
+      }
+      if (done > 0) {
+        queryClient.invalidateQueries(["dokumente-all"]);
+        console.info(`[AutoIndex] ${done} Dokumente im Hintergrund indexiert`);
+      }
+    })();
+  }, [allDoks]);
 
   // Von aktuellem User ausgecheckte Dokumente
   const myCheckedOutDocs = useMemo(() =>
@@ -1362,8 +1406,13 @@ export default function Dokumente() {
     // Optimistic: sofort aus Liste entfernen
     setDeletingIds(prev => new Set([...prev, doc.id]));
     try {
-      if (doc.storage_path) await supabase.storage.from(BUCKET).remove([doc.storage_path.replace('dokumente/', '')]);
-      await entities.Dokument.delete(doc.id);
+      // GeBueV-revisionssicher: KEIN physisches Loeschen. Soft-Delete \u2013 Datei +
+      // Versionen bleiben erhalten, das Dokument verschwindet nur aus der Ansicht.
+      const { data: { user: _delUser } } = await supabase.auth.getUser();
+      await entities.Dokument.update(doc.id, {
+        deleted_at: new Date().toISOString(),
+        deleted_by: _delUser?.id || null,
+      });
       queryClient.invalidateQueries(["dokumente-all"]);
       toast.success("Dokument gel\u00f6scht", {closeButton: true});
     } catch (err) {
@@ -1497,8 +1546,8 @@ export default function Dokumente() {
         method: 'POST', headers: { Authorization: `Bearer ${jwt}` }, body: form,
       });
       if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || 'Upload fehlgeschlagen'); }
-      // Volltext neu indexieren (alte content_text ist jetzt veraltet); best-effort.
-      await entities.Dokument.update(doc.id, { content_text: null }).catch(() => {});
+      // Volltext neu indexieren + neuen Integritaets-Hash setzen; best-effort.
+      await entities.Dokument.update(doc.id, { content_text: null, content_hash: await sha256Hex(file) }).catch(() => {});
       supabase.functions.invoke('index-document', { body: { doc_id: doc.id } }).catch(() => {});
       setSignedUrls(prev => { const n = { ...prev }; delete n[doc.id]; return n; });
       queryClient.invalidateQueries({ queryKey: ["dokumente-all"] });
@@ -1632,20 +1681,21 @@ export default function Dokumente() {
               const cust = customers.find(c => c.id === doc.customer_id);
               // RPC liefert schlanke Felder -- fuer Edit/Copy den vollen Datensatz nehmen
               const fullDoc = allDoks.find(d => d.id === doc.id) || doc;
+              const relevancePercentage = Math.round((doc.rank / highestScore) * 100);
+
               return (
                 <div key={doc.id}
-                  onClick={() => handleCheckout(fullDoc)}
-                  title="Auschecken (zum Bearbeiten öffnen)"
-                  style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "10px 14px", background: s.cardBg,
-                    border: "1px solid " + border, borderRadius: 8, cursor: "pointer", transition: "border 0.15s" }}
+                  style={{ display: "flex", alignItems: "flex-start", justifyContent: "center", gap: 12, padding: "10px 14px", background: s.cardBg,
+                    border: "1px solid " + border, borderRadius: 8, transition: "border 0.15s" }}
                   onMouseEnter={e => e.currentTarget.style.borderColor = accent}
                   onMouseLeave={e => e.currentTarget.style.borderColor = border}>
                   <span style={{ background: fi.color, color: "#fff", borderRadius: 4, padding: "2px 6px", fontSize: 10, fontWeight: 700, flexShrink: 0, minWidth: 36, textAlign: "center", marginTop: 2 }}>{fi.label}</span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ flex: 1, minWidth: 0, cursor: "pointer" }}
+                       onClick={() => handleCheckout(fullDoc)}
+                       title="Auschecken (zum Bearbeiten öffnen)">
                     <div style={{ fontSize: 13, color: s.textMain, fontWeight: 600 }}>{doc.name}</div>
                     {doc.headline && (
-                      <div style={{ fontSize: 11, color: s.textMuted, marginTop: 2, fontStyle: "italic" }}
-                        dangerouslySetInnerHTML={{ __html: doc.headline.replace(/<b>/g, `<b style="color:${accent};font-style:normal">`).replace(/<\/b>/g, "</b>") }} />
+                      <HighlightedText text={doc.headline} searchQuery={ftSearch}/>
                     )}
                     <div style={{ fontSize: 11, color: s.textMuted, marginTop: 3, display: "flex", gap: 8 }}>
                       {cust && <span style={{ color: accent, fontWeight: 500 }}>{cust.company_name}</span>}
@@ -1665,11 +1715,18 @@ export default function Dokumente() {
                     <button onClick={() => setShareDialog({ type: 'doc', doc_id: fullDoc.id, name: fullDoc.name, customer_id: fullDoc.customer_id })} title="Link erstellen" style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4 }}><Link2 size={14} /></button>
                     <button onClick={() => handleDelete(fullDoc)} title="Löschen" style={{ background: "none", border: "none", cursor: "pointer", color: "#ef4444", display: "flex", alignItems: "center", padding: 4, borderRadius: 4 }}><Trash2 size={14} /></button>
                     <button onClick={() => setChartisDoc(fullDoc)} title="Chartis – Chat zu diesem Dokument" style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4 }}><MessageSquare size={14} /></button>
-                    <div style={{ display: "flex", gap: 2, marginLeft: 6 }}>
-                      {[1,2,3,4,5].map(i => {
-                        const filled = (doc.rank || 0) >= i * 0.06;
-                        return <div key={i} style={{ width: 6, height: 6, borderRadius: "50%", background: filled ? accent : border }} />;
-                      })}
+                    <div style={{ flexShrink: 0, alignSelf: "center", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+                      {/* Die 5 Punkte passend zu den Prozenten einfärben */}
+                      <div style={{ display: "flex", gap: 2 }}>
+                        {[1,2,3,4,5].map(i => {
+                          // Jeder Punkt entspricht 20% (Punkt 1 bei >=10%, Punkt 2 bei >=30% etc. durch die Abrundungsgrenze)
+                          const filled = relevancePercentage >= (i * 20 - 10);
+                          return <div key={i} style={{ width: 6, height: 6, borderRadius: "50%", background: filled ? accent : border }} />;
+                        })}
+                      </div>
+
+                      {/* Neue Prozentanzeige direkt unter den Punkten */}
+                      <span style={{ fontSize: 10, color: s.textMuted, fontWeight: 600, fontFamily: "sans-serif" }}>{relevancePercentage}%</span>
                     </div>
                   </div>
                 </div>

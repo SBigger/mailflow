@@ -179,6 +179,7 @@ export default function Fristen() {
   const [showFristenlaufLoeschen, setShowFristenlaufLoeschen] = useState(false);
   const [showEinreichen,          setShowEinreichen]          = useState(false);
   const [showBriefe,             setShowBriefe]             = useState(false);
+  const [showProtokoll,           setShowProtokoll]           = useState(false);
   const [sortCol,          setSortCol]          = useState(null);   // null = Standardsortierung
   const restoreInputRef = useRef(null);
   const [sortDir,          setSortDir]          = useState("asc");
@@ -716,6 +717,17 @@ export default function Fristen() {
             <XCircle className="h-3 w-3" />
             {filterAbgelehnt ? "Abgelehnt ✕" : "Abgelehnt"}
           </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 gap-1 text-xs"
+            onClick={() => setShowProtokoll(true)}
+            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textMain }}
+            title="Einreich-Protokoll: alle Portal-Meldungen mit Grund"
+          >
+            <FileCheck className="h-3 w-3" />
+            Protokoll
+          </Button>
         </div>
 
       </div>
@@ -805,6 +817,83 @@ export default function Fristen() {
         />
       )}
 
+      {showProtokoll && (() => {
+        const rows = fristen
+          .filter(f => f.einreichen_notiz)
+          .map(f => {
+            const c = customers.find(x => x.id === f.customer_id);
+            const name = c ? (c.company_name || [c.vorname, c.nachname].filter(Boolean).join(" ")) : "—";
+            return {
+              id: f.id, name, titel: f.title || "", jahr: f.jahr || "",
+              due: f.due_date || "", eingereicht: f.einreichen_datum || "",
+              bewilligt: !!f.einreichen_datum, meldung: f.einreichen_notiz || "",
+            };
+          })
+          .sort((a, b) => Number(a.bewilligt) - Number(b.bewilligt) || a.name.localeCompare(b.name, "de"));
+        const exportCsv = () => {
+          const head = ["Kunde", "Frist", "Jahr", "Status", "Fristdatum", "Eingereicht", "Portal-Meldung"];
+          const esc = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
+          const csv = "﻿" + [head.map(esc).join(";"), ...rows.map(r =>
+            [r.name, r.titel, r.jahr, r.bewilligt ? "Bewilligt" : "Abgelehnt", r.due, r.eingereicht, r.meldung].map(esc).join(";")
+          )].join("\r\n");
+          const a = document.createElement("a");
+          a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
+          a.download = "Einreich-Protokoll.csv";
+          a.click();
+          URL.revokeObjectURL(a.href);
+        };
+        const th = { textAlign: "left", padding: "8px 10px", color: textMuted, fontWeight: 600, borderBottom: `1px solid ${inputBorder}`, position: "sticky", top: 0, background: inputBg };
+        const td = { padding: "8px 10px", borderBottom: `1px solid ${inputBorder}`, verticalAlign: "top" };
+        return (
+          <div onClick={() => setShowProtokoll(false)}
+            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+            <div onClick={e => e.stopPropagation()}
+              style={{ background: contentBg, color: textMain, borderRadius: 12, border: `1px solid ${inputBorder}`, width: "min(960px, 96vw)", maxHeight: "85vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", borderBottom: `1px solid ${inputBorder}` }}>
+                <div>
+                  <div style={{ fontSize: 15, fontWeight: 600 }}>Einreich-Protokoll</div>
+                  <div style={{ fontSize: 12, color: textMuted }}>Portal-Meldungen aller eingereichten Fristen – inkl. Ablehnungsgrund</div>
+                </div>
+                <button onClick={() => setShowProtokoll(false)} style={{ background: "none", border: "none", color: textMuted, cursor: "pointer" }}><X className="h-5 w-5" /></button>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "8px 18px", fontSize: 12, color: textMuted, borderBottom: `1px solid ${inputBorder}` }}>
+                <span>{rows.length} Einträge</span>
+                <span style={{ color: "#16a34a" }}>{rows.filter(r => r.bewilligt).length} bewilligt</span>
+                <span style={{ color: "#dc2626" }}>{rows.filter(r => !r.bewilligt).length} offen/abgelehnt</span>
+                <Button variant="outline" size="sm" className="h-7 gap-1 text-xs" style={{ marginLeft: "auto", backgroundColor: inputBg, borderColor: inputBorder, color: textMain }} onClick={exportCsv} disabled={!rows.length}>
+                  <Download className="h-3 w-3" /> CSV
+                </Button>
+              </div>
+              <div style={{ overflowY: "auto" }}>
+                {rows.length === 0 ? (
+                  <div style={{ padding: 30, textAlign: "center", color: textMuted }}>Noch keine Einreichungen protokolliert.</div>
+                ) : (
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                    <thead><tr>{["Kunde", "Frist", "Jahr", "Status", "Eingereicht", "Portal-Meldung"].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
+                    <tbody>
+                      {rows.map(r => (
+                        <tr key={r.id}>
+                          <td style={td}>{r.name}</td>
+                          <td style={td}>{r.titel}</td>
+                          <td style={td}>{r.jahr}</td>
+                          <td style={td}>
+                            <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 10, whiteSpace: "nowrap", background: r.bewilligt ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.15)", color: r.bewilligt ? "#16a34a" : "#dc2626" }}>
+                              {r.bewilligt ? "Bewilligt" : "Abgelehnt"}
+                            </span>
+                          </td>
+                          <td style={{ ...td, color: textMuted, whiteSpace: "nowrap" }}>{r.eingereicht || "—"}</td>
+                          <td style={td}>{r.meldung}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       <FristenEinreichenDialog
         open={showEinreichen}
         onClose={() => setShowEinreichen(false)}
@@ -833,7 +922,7 @@ export default function Fristen() {
             .filter(item => item.login);
 
           // onProgress-Wrapper: UI-Update + automatischer Supabase-PATCH
-          const wrappedOnProgress = async (idx, status, screenshot, note) => {
+          const wrappedOnProgress = async (idx, status, screenshot, note, extra = {}) => {
             params.onProgress(idx, status, screenshot, note);
             if (status === "success" || status === "error") {
               const item = params.items[idx];
@@ -843,6 +932,7 @@ export default function Fristen() {
                 if (note) updateData.einreichen_notiz = note;
                 if (status === "success") updateData.einreichen_datum = params.targetDate;
                 if (screenshot) updateData.einreichen_screenshot = screenshot;
+                Object.assign(updateData, extra); // z.B. neues due_date bei Bewilligung
                 try {
                   await supabase.from("fristen").update(updateData).eq("id", fristId);
                 } catch (e) {
@@ -885,7 +975,13 @@ export default function Fristen() {
               if (window.__fristenAutomation?._aborted) break;
 
               try {
-                const apiRes = await fetch("/api/portal-sg-fristeingabe", {
+                // Absolute Vercel-URL statt relativ: in der Desktop-App (Tauri
+                // lädt gebündelt via tauri://, Electron ggf. von artis) gibt es
+                // keine relative /api-Route → Aufruf scheitert. smartis.me
+                // serviert die Funktion (CORS offen); aus dem Web ist das die
+                // gleiche Origin. Die Funktion ist nur ein Portal-Proxy (kein
+                // DB-Schreibzugriff in diesem Pfad).
+                const apiRes = await fetch("https://smartis.me/api/portal-sg-fristeingabe", {
                   method: "POST",
                   headers: {
                     "Content-Type": "application/json",
@@ -905,7 +1001,13 @@ export default function Fristen() {
 
                 if (data.bewilligt) {
                   const note = `Bewilligt bis ${data.verlaengerungsDatum ?? verlaengerungsDatum}`;
-                  await wrappedOnProgress(pItem.idx, "success", null, note);
+                  // Gewährtes Datum normalisieren (Portal liefert evtl. DD.MM.YYYY)
+                  const g = String(data.verlaengerungsDatum ?? verlaengerungsDatum);
+                  const grantedIso = /^\d{4}-\d{2}-\d{2}/.test(g)
+                    ? g.slice(0, 10)
+                    : (/(\d{2})\.(\d{2})\.(\d{4})/.test(g) ? g.replace(/(\d{2})\.(\d{2})\.(\d{4})/, "$3-$2-$1") : verlaengerungsDatum);
+                  // Bewilligung → neue Einreichefrist als due_date übernehmen
+                  await wrappedOnProgress(pItem.idx, "success", null, note, { due_date: grantedIso });
                 } else {
                   const note = `Abgelehnt: ${data.bemerkung ?? "Unbekannter Fehler"}`;
                   await wrappedOnProgress(pItem.idx, "error", null, note);

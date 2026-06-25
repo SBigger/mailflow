@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useContext, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { Check, Trash2, Eye, EyeOff, ChevronDown, X, ArrowUp, ArrowDown, ArrowUpDown, KeyRound, MessageSquare, Copy, Globe } from "lucide-react";
+import { Check, Trash2, Eye, EyeOff, ChevronDown, X, ArrowUp, ArrowDown, ArrowUpDown, KeyRound, MessageSquare, Copy, Globe, AlertTriangle } from "lucide-react";
 import { ThemeContext } from "@/Layout";
 import { supabase } from "@/api/supabaseClient";
 
@@ -600,6 +600,17 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
               title={`Eingereicht am ${frist.einreichen_datum}${frist.einreichen_notiz ? " – " + frist.einreichen_notiz : ""}${frist.einreichen_screenshot ? "\nKlicken für Screenshot" : ""}`}
             >
               <Globe className="h-3.5 w-3.5" />
+            </button>
+          )}
+          {/* Portal-Ablehnung / Meldung (kein Einreichdatum, aber Notiz vorhanden) */}
+          {!frist.einreichen_datum && frist.einreichen_notiz && (
+            <button
+              onClick={() => window.alert(frist.einreichen_notiz)}
+              className="p-1.5 rounded"
+              style={{ color: "#ef4444" }}
+              title={`Portal-Meldung: ${frist.einreichen_notiz}\nKlicken für vollständige Meldung`}
+            >
+              <AlertTriangle className="h-3.5 w-3.5" />
             </button>
           )}
           {/* Bemerkung toggle */}

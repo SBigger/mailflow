@@ -10,9 +10,13 @@ import {
     BrainCircuit,
     FileSearch,
     Calculator,
-    MessageSquareQuote
+    ChevronDown,
+    Search,
+    X,
+    Loader2
 } from "lucide-react";
-import {functions, supabase} from "@/api/supabaseClient.js";
+import {entities, functions, supabase} from "@/api/supabaseClient.js";
+import {useQuery, useQueryClient} from "@tanstack/react-query";
 
 const SUGGESTED_PROMPTS = [
     {
@@ -44,12 +48,152 @@ const SUGGESTED_PROMPTS = [
     },
 ];
 
+// Wiederverwendbare Dropdown-Komponente mit Suchfunktion
+function SearchableDropdown({ label, options, selectedValue, onSelect, themeStyles, disabled, isLoading }) {
+    const [isOpen, setIsOpen] = useState(false);
+    const [searchTerm, setSearchTerm] = useState("");
+    const dropdownRef = useRef(null);
+
+    useEffect(() => {
+        function handleClickOutside(event) {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+                setIsOpen(false);
+            }
+        }
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
+
+    const selectedOption = options.find(o => o.value === selectedValue);
+    const filteredOptions = options.filter(o =>
+        o.label?.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
+    // Das Dropdown soll auch blockiert sein, wenn die Daten noch laden
+    const isDropdownDisabled = disabled || isLoading;
+
+    return (
+        <div className="relative" ref={dropdownRef}>
+            <div
+                className="flex items-center rounded-xl border transition-all min-w-[140px] px-3 py-2"
+                style={{
+                    backgroundColor: themeStyles.cardBg,
+                    borderColor: themeStyles.cardBorder,
+                    opacity: isDropdownDisabled ? 0.4 : 1,
+                    cursor: isDropdownDisabled ? "not-allowed" : "default"
+                }}
+            >
+                {/* Klickbarer Bereich */}
+                <button
+                    type="button"
+                    disabled={isDropdownDisabled}
+                    onClick={() => setIsOpen(!isOpen)}
+                    className="flex-1 flex items-center justify-between gap-2 text-xs font-semibold text-left truncate disabled:cursor-not-allowed"
+                    style={{ color: themeStyles.headingColor }}
+                >
+                    <span className="truncate">
+                        {isLoading ? "Lädt..." : (selectedOption ? selectedOption.label : label)}
+                    </span>
+
+                    {/* Zeigt den Spinner, falls isLoading aktiv ist, andernfalls den Pfeil */}
+                    {isLoading ? (
+                        <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin" style={{ color: themeStyles.accent }} />
+                    ) : (
+                        <ChevronDown className="w-3.5 h-3.5 shrink-0" style={{ color: themeStyles.subColor }} />
+                    )}
+                </button>
+
+                {/* Löschen-Icon (X) */}
+                {selectedValue && !isDropdownDisabled && (
+                    <button
+                        type="button"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onSelect("");
+                        }}
+                        className="ml-1.5 p-0.5 rounded-md hover:bg-black/5 dark:hover:bg-white/10 transition-colors shrink-0"
+                    >
+                        <X className="w-3.5 h-3.5" style={{ color: themeStyles.subColor }} />
+                    </button>
+                )}
+            </div>
+
+            {/* Dropdown Menü-Inhalt */}
+            {isOpen && !isDropdownDisabled && (
+                <div
+                    className="absolute z-50 mt-1 w-56 rounded-xl border p-2 shadow-xl flex flex-col gap-1.5"
+                    style={{
+                        backgroundColor: themeStyles.cardBg === "rgba(255,255,255,0.9)" || themeStyles.cardBg === "rgba(255,255,255,0.85)" ? "#ffffff" : "#222226",
+                        borderColor: themeStyles.cardBorder
+                    }}
+                >
+                    <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg border" style={{ borderColor: themeStyles.cardBorder }}>
+                        <Search className="w-3.5 h-3.5" style={{ color: themeStyles.subColor }} />
+                        <input
+                            type="text"
+                            placeholder="Suchen..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="bg-transparent border-none outline-none text-xs w-full"
+                            style={{ color: themeStyles.headingColor }}
+                        />
+                    </div>
+                    <div className="max-h-40 overflow-y-auto flex flex-col custom-scrollbar">
+                        {filteredOptions.length === 0 ? (
+                            <div className="text-xs p-2 text-center" style={{ color: themeStyles.subColor }}>Keine Resultate</div>
+                        ) : (
+                            filteredOptions.map((opt) => (
+                                <button
+                                    key={opt.value}
+                                    type="button"
+                                    onClick={() => {
+                                        onSelect(opt.value);
+                                        setIsOpen(false);
+                                        setSearchTerm("");
+                                    }}
+                                    className="text-left text-xs px-2 py-1.5 rounded-lg transition-colors hover:opacity-80"
+                                    style={{
+                                        backgroundColor: selectedValue === opt.value ? themeStyles.accent : "transparent",
+                                        color: selectedValue === opt.value ? "#ffffff" : themeStyles.headingColor
+                                    }}
+                                >
+                                    {opt.label}
+                                </button>
+                            ))
+                        )}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
 export default function AiAssistant() {
     const { theme } = useContext(ThemeContext);
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState("");
     const [isLoading, setIsLoading] = useState(false);
     const messagesEndRef = useRef(null);
+
+    // States für ausgewählte Kunden und Mandanten
+    const [selectedCustomer, setSelectedCustomer] = useState("");
+    const [selectedMandant, setSelectedMandant] = useState("");
+
+    const { data: customers = [], isLoading: isLoadingCustomers } = useQuery({
+        queryKey: ["customers"],
+        queryFn: () => entities.Customer.list("company_name"),
+        select: (data) => data.map(c => ({ value: c.id, label: c.company_name }))
+    });
+
+// 2. Mandanten-Query: Mappt 'id' zu 'value' und 'name' zu 'label'
+    const { data: mandanten = [], isLoading: isLoadingMandanten } = useQuery({
+        queryKey: ["fibu_mandanten"],
+        queryFn: () => entities.FibuMandanten.list("name"),
+        select: (data) => data.map(m => ({
+            value: m.id,
+            label: m.name,
+        }))
+    });
 
     const isLight = theme === "light";
     const isArtis = theme === "artis";
@@ -64,6 +208,8 @@ export default function AiAssistant() {
     const accent       = isArtis ? "#7a9b7f"               : isLight  ? "#4f6aab"             : "#7c3aed";
     const headerIconBg = isLight ? "#f0f0fa"           : isArtis ? "#e8f2e8"              : "#3f3f46";
     const bubbleUser   = isArtis ? "#7a9b7f"               : isLight  ? "#4f6aab"             : "#6d28d9";
+
+    const themeStyles = { cardBg, cardBorder, headingColor, subColor, accent };
 
     // Auto-Scroll zu neuesten Nachrichten
     useEffect(() => {
@@ -80,11 +226,12 @@ export default function AiAssistant() {
         setIsLoading(true);
 
         try {
+            // IDs werden jetzt dynamisch aus dem State übergeben
             const { data, error } = await functions.invoke('mcp-server',
                 JSON.stringify({
                     messages: updatedMessages,
-                    customerId: null,
-                    mandantId: null
+                    customerId: selectedCustomer || null,
+                    mandantId: selectedMandant || null
                 })
             );
 
@@ -96,7 +243,7 @@ export default function AiAssistant() {
             } else {
                 setMessages((prev) => [
                     ...prev,
-                    { id: Date.now() + 1, role: "assistant", content: data.error.message || "Keine Antwort erhalten." }
+                    { id: Date.now() + 1, role: "assistant", content: data.error?.message || "Keine Antwort erhalten." }
                 ]);
             }
 
@@ -125,15 +272,32 @@ export default function AiAssistant() {
                     </div>
                 </div>
 
-                {messages.length > 0 && (
+                {/* Dropdowns und "Verlauf leeren" nebeneinander */}
+                <div className="flex items-center gap-3">
+                    <SearchableDropdown
+                        label="Kunde wählen"
+                        options={customers}
+                        selectedValue={selectedCustomer}
+                        onSelect={setSelectedCustomer}
+                        themeStyles={themeStyles}
+                        isLoading={isLoadingCustomers}
+                    />
+                    <SearchableDropdown
+                        label="FiBu Mandant wählen"
+                        options={mandanten}
+                        selectedValue={selectedMandant}
+                        onSelect={setSelectedMandant}
+                        themeStyles={themeStyles}
+                        isLoading={isLoadingMandanten}
+                    />
+
                     <button
                         onClick={() => setMessages([])}
-                        className="flex items-center gap-2 text-xs font-semibold px-3 py-2 rounded-xl border transition-all hover:opacity-80"
-                        style={{ backgroundColor: cardBg, borderColor: cardBorder, color: subColor }}
-                    >
+                        className="flex items-center gap-2 text-xs font-semibold px-3 py-2 rounded-xl border transition-all hover:opacity-80 h-[34px]"
+                        style={{ backgroundColor: cardBg, borderColor: cardBorder, color: subColor }} disabled={messages.length === 0}>
                         <Trash2 className="w-3.5 h-3.5" /> Verlauf leeren
                     </button>
-                )}
+                </div>
             </div>
 
             {/* ── Chat-Bereich / Dashboard ────────────────────────────── */}
@@ -218,7 +382,7 @@ export default function AiAssistant() {
                                     <Bot className="w-4 h-4 animate-bounce" style={{ color: accent }} />
                                 </div>
                                 <div className="rounded-2xl px-4 py-2.5 text-sm italic" style={{ backgroundColor: isDark ? "rgba(255,255,255,0.05)" : "#f1f5f9", color: subColor, border: `1px solid ${cardBorder}` }}>
-                                    {window.env.CUSTOMER} sucht Daten und generiert Antwort...
+                                    {window.env?.CUSTOMER} sucht Daten und generiert Antwort...
                                 </div>
                             </div>
                         )}

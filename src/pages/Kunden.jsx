@@ -1,6 +1,6 @@
 import React, {useState, useContext, useRef} from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { entities, functions, auth } from "@/api/supabaseClient";
+import { entities, functions, auth, supabase } from "@/api/supabaseClient";
 import { ThemeContext } from "@/Layout";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,7 @@ import CustomerNotesTab from "../components/customers/CustomerNotesTab";
 import CustomerContactPersons from "../components/customers/CustomerContactPersons";
 import CustomerImportDialog from "../components/customers/CustomerImportDialog";
 import PrivatpersonImportDialog from "../components/customers/PrivatpersonImportDialog";
+import KontaktImportExport from "../components/customers/KontaktImportExport";
 import CustomerFristenTab from "../components/customers/CustomerFristenTab";
 import CustomerDokumenteTab from "../components/customers/CustomerDokumenteTab";
 import CustomerAktionaereTab from "../components/customers/CustomerAktionaereTab";
@@ -43,6 +44,7 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
   const [selectedCustomer,  setSelectedCustomer]  = useState(null);
   const [showImport,        setShowImport]         = useState(false);
   const [showPersonImport,  setShowPersonImport]   = useState(false);
+  const [showKontaktIE,     setShowKontaktIE]      = useState(false);
   const [personTypeFilter,  setPersonTypeFilter]   = useState(initialPersonTypeFilter); // 'alle' | 'unternehmen' | 'privatperson'
   const [viewMode,          setViewMode]           = useState("tabelle"); // 'tabelle' | 'profil'
   const [activeTab,         setActiveTab]          = useState("overview");
@@ -84,12 +86,16 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
         if (!Array.isArray(items) || items.length === 0) {
           throw new Error("Ungültiges Backup-Format oder keine Kunden gefunden");
         }
-        let created = 0;
-        for (const rec of items) {
-          await entities.Customer.create(rec);
-          created++;
+        // Upsert per id: vorhandene Datensätze werden aktualisiert, neue angelegt
+        // (kein Duplizieren beim Re-Import).
+        let count = 0;
+        for (let i = 0; i < items.length; i += 100) {
+          const chunk = items.slice(i, i + 100);
+          const { error } = await supabase.from("customers").upsert(chunk, { onConflict: "id" });
+          if (error) throw new Error(error.message);
+          count += chunk.length;
         }
-        toast.success(`${created}, total: ${items.length}`);
+        toast.success(`${count} von ${items.length} importiert`);
         setStatus("done");
         queryClient.invalidateQueries({ queryKey: ["customers"] })
       } catch (err) {
@@ -166,6 +172,14 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
     });
   };
 
+  const handleNewKontakt = () => {
+    createMutation.mutate({
+      company_name: "Neuer Kontakt",
+      person_type: 'kontakt',
+      activities: [], contact_persons: [], tags: [],
+    });
+  };
+
   const currentCustomer = selectedCustomer
     ? (customers.find(c => c.id === selectedCustomer.id) || selectedCustomer)
     : null;
@@ -189,6 +203,7 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
   };
 
   const isPrivatperson  = currentCustomer?.person_type === 'privatperson';
+  const isKontakt       = currentCustomer?.person_type === 'kontakt';
   const isNebendomizil  = currentCustomer?.ist_nebensteuerdomizil === true;
   const hauptdomizil    = isNebendomizil
     ? customers.find(c => c.id === currentCustomer?.hauptdomizil_id) || null
@@ -279,6 +294,7 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
             { key: "alle",         label: "Alle" },
             { key: "unternehmen",  label: "Kunden" },
             { key: "privatperson", label: "Personen" },
+            { key: "kontakt",      label: "Kontakte" },
             { key: "telefonliste", label: "Telefonliste" },
           ].map(({ key, label }) => (
             <button key={key} style={tabStyle(key)} onClick={() => setPersonTypeFilter(key)}>
@@ -341,12 +357,19 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
               : <Download className="h-3.5 w-3.5" />}
         </Button>
 
+        <Button onClick={() => setShowKontaktIE(true)} size="sm" variant="outline" className="h-7 text-xs gap-1" style={{ borderColor, color: textMuted }} title="Kontaktpersonen als Excel exportieren / importieren">
+          <Table2 className="h-3.5 w-3.5" /> Kontakte (Excel)
+        </Button>
+
         {/* Neu-Buttons */}
         <Button onClick={handleNew} size="sm" className="bg-violet-600 hover:bg-violet-500 h-7 text-xs">
           + Unternehmen
         </Button>
         <Button onClick={handleNewPrivatperson} size="sm" variant="outline" className="h-7 text-xs" style={{ borderColor, color: textMuted }}>
           + Person
+        </Button>
+        <Button onClick={handleNewKontakt} size="sm" variant="outline" className="h-7 text-xs" style={{ borderColor, color: textMuted }}>
+          + Kontakt
         </Button>
       </div>
     </div>
@@ -453,13 +476,13 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
                             <TabsTrigger value="overview"   className="text-xs">🏠 Übersicht</TabsTrigger>
                             <TabsTrigger value="mails"      className="text-xs">📧 Mails</TabsTrigger>
                             <TabsTrigger value="telefonate" className="text-xs">📞 Telefonate</TabsTrigger>
-                            <TabsTrigger value="tasks"      className="text-xs">✅ Tasks</TabsTrigger>
-                            <TabsTrigger value="fristen"    className="text-xs">📅 Fristen</TabsTrigger>
-                            <TabsTrigger value="activities" className="text-xs">📋 Tätigkeiten</TabsTrigger>
+                            {!isKontakt && <TabsTrigger value="tasks"      className="text-xs">✅ Tasks</TabsTrigger>}
+                            {!isKontakt && <TabsTrigger value="fristen"    className="text-xs">📅 Fristen</TabsTrigger>}
+                            {!isKontakt && <TabsTrigger value="activities" className="text-xs">📋 Tätigkeiten</TabsTrigger>}
                             <TabsTrigger value="contacts"   className="text-xs">👤 Kontakte</TabsTrigger>
                             <TabsTrigger value="notes"      className="text-xs">📝 Notizen</TabsTrigger>
-                            <TabsTrigger value="dokumente"  className="text-xs">📄 Dokumente</TabsTrigger>
-                            {!isPrivatperson && (
+                            {!isKontakt && <TabsTrigger value="dokumente"  className="text-xs">📄 Dokumente</TabsTrigger>}
+                            {!isPrivatperson && !isKontakt && (
                               <TabsTrigger value="aktionaere" className="text-xs">📗 Aktionäre</TabsTrigger>
                             )}
                           </>
@@ -536,6 +559,13 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
         onClose={() => setShowPersonImport(false)}
         staff={appUsers}
         onImported={() => { refetch(); setShowPersonImport(false); }}
+      />
+      <KontaktImportExport
+        open={showKontaktIE}
+        onClose={() => setShowKontaktIE(false)}
+        customers={customers}
+        scopeCustomer={currentCustomer}
+        onImported={() => { refetch(); }}
       />
     </div>
   );

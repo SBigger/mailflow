@@ -38,6 +38,7 @@ export function registerDocumentTools(server: McpServer, context: ToolContext): 
       year: z.number().int().optional(),
       tag_id: z.string().uuid().optional().describe("Filter auf ein dok_tags.id (in tag_ids enthalten)"),
       limit: z.number().int().min(1).max(200).default(50),
+      customerId: z.string().uuid()
     },
     handler: async (args, ctx) => {
       const customerId = requireCustomerId(ctx);
@@ -70,6 +71,7 @@ export function registerDocumentTools(server: McpServer, context: ToolContext): 
     input: {
       id: z.string().uuid(),
       include_content: z.boolean().default(false),
+      customerId: z.string().uuid()
     },
     handler: async (args, ctx) => {
       const customerId = requireCustomerId(ctx);
@@ -95,6 +97,7 @@ export function registerDocumentTools(server: McpServer, context: ToolContext): 
     input: {
       id: z.string().uuid(),
       expires_in_seconds: z.number().int().min(60).max(86400).default(3600),
+      customerId: z.string().uuid()
     },
     handler: async (args, ctx) => {
       const customerId = requireCustomerId(ctx);
@@ -133,6 +136,7 @@ export function registerDocumentTools(server: McpServer, context: ToolContext): 
       notes: z.string().optional(),
       tag_ids: z.array(z.string().uuid()).optional(),
       file_type: z.string().optional().describe("MIME-Type, z.B. application/pdf"),
+      customerId: z.string().uuid()
     },
     handler: async (args, ctx) => {
       requireWritesEnabled(ctx);
@@ -201,6 +205,7 @@ export function registerDocumentTools(server: McpServer, context: ToolContext): 
       id: z.string().uuid(),
       category: z.string().optional(),
       set_tags: z.array(z.string().uuid()).optional().describe("Ersetzt tag_ids vollstaendig"),
+      customerId: z.string().uuid()
     },
     handler: async (args, ctx) => {
       requireWritesEnabled(ctx);

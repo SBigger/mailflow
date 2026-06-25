@@ -85,7 +85,7 @@ export default function Layout({ currentPageName }) {
       { name: 'Dashboard',      icon: LayoutDashboard, label: 'Dashboard' },
       { name: 'MailKanban',     icon: Mail,            label: 'Mails' },
       { name: 'TaskBoard',      icon: CheckSquare,     label: 'Tasks' },
-      /*{ name: 'Chartis',        icon: MessageSquare,   label: 'Chartis' },*/
+      { name: 'Chartis',        icon: MessageSquare,   label: 'Chartis' },
       { name: 'TicketBoard',    icon: LifeBuoy,        label: 'Tickets' },
       { name: 'KnowledgeBase',  icon: BookOpen,        label: 'Wissen' },
       { name: 'Fristen',        icon: CalendarClock,   label: 'Fristen' },
