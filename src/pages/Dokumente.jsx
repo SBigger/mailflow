@@ -429,8 +429,23 @@ function UploadDialog({ customers, preCustomer, preFile, allTags, onCancel, onUp
   const [uploading,  setUploading]  = useState(false);
   const [errors,     setErrors]     = useState({});
   const [aiBusy,     setAiBusy]     = useState(false);
+  const [dup,        setDup]        = useState(null);   // bereits abgelegtes Dokument mit gleichem Hash
   const fileRef = useRef();
   const yearRef = useRef();
+
+  // M-Files-Stil Duplikat-Check: SHA-256 der Datei gegen content_hash in der DB.
+  // Byte-genauer Treffer = Datei wurde schon abgelegt. Sehr schnell (Hash lokal + Index-Query).
+  const checkDuplicate = async (f) => {
+    setDup(null);
+    try {
+      const h = await sha256Hex(f);
+      if (!h) return;
+      const { data } = await supabase.from("dokumente")
+        .select("id,name,customer_id,created_at,year")
+        .eq("content_hash", h).is("deleted_at", null).limit(1);
+      if (data && data.length) setDup(data[0]);
+    } catch { /* ignore */ }
+  };
 
   // KI-Erfassung: Kunde / Kategorie / Jahr / Tags aus dem Dokument vorschlagen.
   // Nutzt dieselbe Logik wie die Massenablage – Artis Treuhand (= wir) wird dort
@@ -497,6 +512,7 @@ function UploadDialog({ customers, preCustomer, preFile, allTags, onCancel, onUp
     const y = detectYear(f.name);
     if (y) setYear(String(y));
     runAiSuggest(f);                 // KI erkennt Kunde/Kategorie/Tags im Hintergrund
+    checkDuplicate(f);               // schneller Duplikat-Check (schon abgelegt?)
   };
 
   const handleUpload = async () => {
@@ -566,6 +582,18 @@ function UploadDialog({ customers, preCustomer, preFile, allTags, onCancel, onUp
           {aiBusy && (
             <div style={{ fontSize: 12, color: accent, display: "flex", alignItems: "center", gap: 6 }}>
               <RefreshCw size={13} style={{ animation: "spin 1s linear infinite" }} /> KI erkennt Kunde, Kategorie &amp; Tags…
+            </div>
+          )}
+          {dup && (
+            <div style={{ fontSize: 12, color: "#92400e", background: "#fef3c7", border: "1px solid #fcd34d", borderRadius: 8, padding: "8px 10px", display: "flex", gap: 8, alignItems: "flex-start" }}>
+              <span style={{ fontSize: 14, lineHeight: 1 }}>⚠️</span>
+              <div>
+                <strong>Diese Datei wurde schon abgelegt.</strong><br />
+                „{dup.name}"
+                {(() => { const c = customers.find(x => x.id === dup.customer_id); return c ? ` · ${c.company_name}` : ""; })()}
+                {dup.year ? ` · ${dup.year}` : ""}
+                {dup.created_at ? ` · ${new Date(dup.created_at).toLocaleDateString("de-CH")}` : ""}. Du kannst trotzdem ablegen.
+              </div>
             </div>
           )}
           {/* Kunde */}
