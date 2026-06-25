@@ -1097,6 +1097,41 @@ export default function Dokumente() {
     })();
   }, [allDoks]);
 
+  // ── Hash-Backfill (Grundlage für den Duplikat-Check) ───────────────────
+  // Trägt content_hash für Altdokumente nach, damit Duplikate auch gegen
+  // bereits abgelegte Dateien erkannt werden. Sanft & einmalig: läuft
+  // sequentiell im Hintergrund, nur Docs OHNE Hash. (Lädt jede Datei einmal.)
+  const hashBackfillRef = useRef(false);
+  useEffect(() => {
+    if (hashBackfillRef.current) return;
+    if (!allDoks.length) return;
+    hashBackfillRef.current = true;
+    (async () => {
+      const { data: toHash } = await supabase
+        .from('dokumente')
+        .select('id,storage_path')
+        .is('content_hash', null)
+        .not('storage_path', 'is', null)
+        .is('deleted_at', null)
+        .limit(5000);
+      if (!toHash || !toHash.length) return;
+      let done = 0;
+      for (const d of toHash) {
+        try {
+          const sp = d.storage_path.replace(/^dokumente\//, '');
+          const { data: urlData } = await supabase.storage.from(BUCKET).createSignedUrl(sp, 120);
+          if (!urlData?.signedUrl) continue;
+          const resp = await fetch(urlData.signedUrl);
+          if (!resp.ok) continue;
+          const blob = await resp.blob();
+          const h = await sha256Hex(blob);
+          if (h) { await entities.Dokument.update(d.id, { content_hash: h }); done++; }
+        } catch { /* einzelne Datei überspringen */ }
+      }
+      if (done > 0) console.info(`[HashBackfill] ${done} Hashes nachgetragen`);
+    })();
+  }, [allDoks]);
+
   // Von aktuellem User ausgecheckte Dokumente
   const myCheckedOutDocs = useMemo(() =>
     allDoks.filter(d => d.checked_out_by && d.checked_out_by === user?.id),
