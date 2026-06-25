@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Smartis Ablage – ins Mail einfügen</title>
+<script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{ --emerald:#10b981; --emerald-d:#0e9d6e; --ink:#0d1b16; --ink2:#5a6b63; --line:#e2efe9; --bg:#f6fbf9; }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Segoe UI',system-ui,sans-serif;color:var(--ink);background:var(--bg);font-size:14px}
+  #app{padding:12px;max-width:520px;margin:0 auto}
+  .row{display:flex;gap:8px;align-items:center}
+  .brand{display:flex;align-items:center;gap:8px;font-weight:700;font-size:16px;margin-bottom:12px}
+  .brand .dot{width:26px;height:26px;border-radius:8px;background:var(--emerald);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700}
+  input,select,button{font:inherit}
+  input,select{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:#fff;outline:none}
+  input:focus,select:focus{border-color:var(--emerald)}
+  label{font-size:12px;color:var(--ink2);display:block;margin:10px 0 4px}
+  button.primary{background:var(--emerald);color:#fff;border:none;border-radius:8px;padding:10px 14px;font-weight:600;cursor:pointer;width:100%}
+  button.primary:hover{background:var(--emerald-d)}
+  button.primary:disabled{opacity:.6;cursor:default}
+  .muted{color:var(--ink2);font-size:12px}
+  .hidden{display:none}
+  .list{margin-top:10px;display:flex;flex-direction:column;gap:6px;max-height:62vh;overflow:auto}
+  .doc{display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer}
+  .doc:hover{border-color:var(--emerald);background:#f0faf6}
+  .doc .ext{flex-shrink:0;min-width:38px;text-align:center;font-size:10px;font-weight:700;color:#fff;background:#7aa37a;border-radius:5px;padding:3px 4px}
+  .doc .meta{min-width:0;flex:1}
+  .doc .nm{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .doc .sub{font-size:11px;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .doc .add{flex-shrink:0;color:var(--emerald-d);font-size:12px;font-weight:600}
+  .toast{position:fixed;left:12px;right:12px;bottom:12px;padding:10px 12px;border-radius:8px;font-size:13px;font-weight:500;text-align:center}
+  .toast.ok{background:#d6f5e7;color:#0e6b4e}
+  .toast.err{background:#fde2e2;color:#a32d2d}
+  .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+  .link{color:var(--emerald-d);font-size:12px;cursor:pointer;background:none;border:none;width:auto;padding:0}
+  .empty{text-align:center;color:var(--ink2);font-size:13px;padding:24px 8px}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="brand"><span class="dot">S</span> Smartis Ablage</div>
+
+  <div id="login">
+    <p class="muted">Mit deinem Smartis-Konto anmelden, um Dateien aus der Ablage einzufügen.</p>
+    <label>E-Mail</label>
+    <input id="email" type="email" autocomplete="username" placeholder="name@artis-gmbh.ch" />
+    <label>Passwort</label>
+    <input id="pw" type="password" autocomplete="current-password" placeholder="••••••••" />
+    <div style="height:12px"></div>
+    <button class="primary" id="loginBtn">Anmelden</button>
+    <p id="loginMsg" class="muted" style="margin-top:8px;color:#a32d2d"></p>
+  </div>
+
+  <div id="main" class="hidden">
+    <div class="top">
+      <span class="muted" id="who"></span>
+      <button class="link" id="logout">Abmelden</button>
+    </div>
+    <label>Kunde (optional)</label>
+    <select id="cust"><option value="">— Alle Kunden —</option></select>
+    <label>Suche</label>
+    <input id="search" type="text" placeholder="Dateiname suchen…" />
+    <div class="list" id="list"><div class="empty">Kunde wählen oder Suchbegriff eingeben.</div></div>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script>
+const SUPABASE_URL = "https://uawgpxcihixqxqxxbjak.supabase.co";
+const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhd2dweGNpaGl4cXhxeHhiamFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI0MzE5MzYsImV4cCI6MjA4ODAwNzkzNn0.fPbekBh1dO8byD2wxkjzFSKW4jSV0MHIGgci9nch98A";
+const BUCKET = "dokumente";
+
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+let custMap = {};
+let searchTimer = null;
+
+const $ = (id) => document.getElementById(id);
+function toast(msg, ok){ const t=$("toast"); t.innerHTML = '<div class="toast '+(ok?'ok':'err')+'">'+msg+'</div>'; setTimeout(()=>{t.innerHTML='';}, ok?2500:4500); }
+function fmtExt(filename){ const e=(filename||'').split('.').pop().toUpperCase(); return e.length<=4?e:'DOC'; }
+
+Office.onReady(function(){ initSession(); });
+
+async function initSession(){
+  const { data } = await sb.auth.getSession();
+  if (data && data.session) showMain(data.session.user);
+}
+
+$("loginBtn").onclick = async function(){
+  const email=$("email").value.trim(), pw=$("pw").value;
+  if(!email||!pw){ $("loginMsg").textContent="Bitte E-Mail und Passwort eingeben."; return; }
+  $("loginBtn").disabled=true; $("loginMsg").textContent="";
+  const { data, error } = await sb.auth.signInWithPassword({ email, password: pw });
+  $("loginBtn").disabled=false;
+  if(error){ $("loginMsg").textContent="Anmeldung fehlgeschlagen: "+error.message; return; }
+  showMain(data.user);
+};
+
+$("logout").onclick = async function(){ await sb.auth.signOut(); location.reload(); };
+
+async function showMain(user){
+  $("login").classList.add("hidden");
+  $("main").classList.remove("hidden");
+  $("who").textContent = user?.email || "";
+  await loadCustomers();
+}
+
+async function loadCustomers(){
+  const { data } = await sb.from("customers").select("id,company_name").order("company_name").limit(2000);
+  const sel=$("cust");
+  (data||[]).forEach(function(c){
+    custMap[c.id]=c.company_name;
+    const o=document.createElement("option"); o.value=c.id; o.textContent=c.company_name||"(ohne Name)"; sel.appendChild(o);
+  });
+}
+
+$("cust").onchange = loadDocs;
+$("search").oninput = function(){ clearTimeout(searchTimer); searchTimer=setTimeout(loadDocs, 300); };
+
+async function loadDocs(){
+  const custId=$("cust").value, q=$("search").value.trim();
+  if(!custId && q.length<2){ $("list").innerHTML='<div class="empty">Kunde wählen oder mind. 2 Zeichen suchen.</div>'; return; }
+  $("list").innerHTML='<div class="empty">Lädt…</div>';
+  let query = sb.from("dokumente")
+    .select("id,name,filename,storage_path,customer_id,year,file_type")
+    .is("deleted_at", null)
+    .not("storage_path","is",null)
+    .order("created_at",{ascending:false})
+    .limit(60);
+  if(custId) query=query.eq("customer_id", custId);
+  if(q.length>=2) query=query.ilike("name", "%"+q+"%");
+  const { data, error } = await query;
+  if(error){ $("list").innerHTML='<div class="empty">Fehler: '+error.message+'</div>'; return; }
+  renderDocs(data||[]);
+}
+
+function renderDocs(docs){
+  if(!docs.length){ $("list").innerHTML='<div class="empty">Keine Dokumente gefunden.</div>'; return; }
+  const list=$("list"); list.innerHTML="";
+  docs.forEach(function(d){
+    const el=document.createElement("div"); el.className="doc";
+    el.innerHTML='<span class="ext">'+fmtExt(d.filename||d.name)+'</span>'+
+      '<div class="meta"><div class="nm">'+(d.name||d.filename||"Dokument")+'</div>'+
+      '<div class="sub">'+(custMap[d.customer_id]||"")+(d.year?' · '+d.year:'')+'</div></div>'+
+      '<span class="add">+ Einfügen</span>';
+    el.onclick=function(){ attachDoc(d, el); };
+    list.appendChild(el);
+  });
+}
+
+async function attachDoc(d, el){
+  const add=el.querySelector(".add"); const prev=add.textContent; add.textContent="…";
+  try{
+    const path=(d.storage_path||"").replace(/^dokumente\//,"");
+    const { data, error } = await sb.storage.from(BUCKET).createSignedUrl(path, 600);
+    if(error||!data?.signedUrl) throw new Error(error?.message||"Keine Datei-URL");
+    const name = d.filename || ((d.name||"dokument") + "." + ((d.storage_path||"").split(".").pop()||"dat"));
+    Office.context.mailbox.item.addFileAttachmentAsync(data.signedUrl, name, function(res){
+      if(res.status===Office.AsyncResultStatus.Succeeded){ toast("„"+name+"“ angehängt", true); add.textContent="✓ angehängt"; }
+      else { toast("Anhängen fehlgeschlagen: "+(res.error?res.error.message:""), false); add.textContent=prev; }
+    });
+  }catch(e){ toast("Fehler: "+e.message, false); add.textContent=prev; }
+}
+</script>
+</body>
+</html>

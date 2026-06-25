@@ -1,0 +1,45 @@
+==================================================================
+ Smartis Ablage – Outlook Add-in (Datei aus der Ablage ins Mail)
+==================================================================
+
+WAS ES MACHT
+------------
+Beim Schreiben einer E-Mail erscheint im Menüband (Tab je nach Outlook)
+die Schaltfläche "Ablage einfügen" (Gruppe "Smartis"). Diese öffnet ein
+Seitenfenster: anmelden -> Kunde wählen oder Dateinamen suchen ->
+Dokument anklicken -> es wird als Anhang an die E-Mail gehängt.
+
+Manifest-URL (gehostet):
+  https://docs.smartis.me/outlook/manifest.xml
+
+
+INSTALLATION – neues Outlook / Outlook im Web (empfohlen)
+---------------------------------------------------------
+1. Outlook im Web öffnen (outlook.office.com) und eine neue E-Mail beginnen.
+2. Menü "..." (Weitere Aktionen) -> "Add-Ins abrufen" / "Apps verwalten".
+3. "Eigenes Add-In" / "Mein Add-In hinzufügen" -> "Aus URL hinzufügen".
+4. URL einfügen:  https://docs.smartis.me/outlook/manifest.xml
+5. Bestätigen. Fertig – beim Verfassen erscheint "Ablage einfügen".
+
+
+INSTALLATION – klassisches Outlook (Desktop)
+--------------------------------------------
+Sideloading über das Exchange-Konto:
+  Datei -> Add-Ins verwalten (öffnet Outlook im Web) ->
+  "Eigene Add-Ins" -> "+" -> "Aus URL hinzufügen" -> Manifest-URL oben.
+(Das Add-In gilt dann für Web UND Desktop desselben Postfachs.)
+
+
+ZENTRAL FÜR ALLE (Admin)
+------------------------
+Microsoft 365 Admin Center -> Einstellungen -> Integrierte Apps /
+"Add-Ins für Outlook" -> "Benutzerdefiniertes Add-In hochladen" ->
+"URL angeben" -> Manifest-URL -> Benutzer/Gruppen zuweisen.
+
+
+ANMELDUNG
+---------
+Im Seitenfenster mit dem normalen Smartis-Konto anmelden
+(gleiche Zugangsdaten wie in der Smartis-App / smartis.me).
+
+Voraussetzung: modernes Outlook mit Mailbox-Anforderungssatz 1.3+.
