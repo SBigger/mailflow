@@ -45,6 +45,8 @@
 
   <div id="login">
     <p class="muted">Mit deinem Smartis-Konto anmelden, um Dateien aus der Ablage einzufügen.</p>
+    <label>Datenquelle</label>
+    <select id="backend"></select>
     <label>E-Mail</label>
     <input id="email" type="email" autocomplete="username" placeholder="name@artis-gmbh.ch" />
     <label>Passwort</label>
@@ -69,11 +71,13 @@
 <div id="toast"></div>
 
 <script>
-const SUPABASE_URL = "https://uawgpxcihixqxqxxbjak.supabase.co";
-const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhd2dweGNpaGl4cXhxeHhiamFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI0MzE5MzYsImV4cCI6MjA4ODAwNzkzNn0.fPbekBh1dO8byD2wxkjzFSKW4jSV0MHIGgci9nch98A";
 const BUCKET = "dokumente";
-
-const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+const BACKENDS = {
+  prod: { label: "Produktiv (artis)", url: "https://api-artis.sm-artis.ch", key: "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJzdXBhYmFzZSIsImlhdCI6MTc3OTEzMjc4MCwiZXhwIjo0OTM0ODA2MzgwLCJyb2xlIjoiYW5vbiJ9.sVdg5d77wLXYbcP_3VEZPwyCzArx8wGnlYhxLVWsg_M" },
+  test: { label: "Test (smartis.me)", url: "https://uawgpxcihixqxqxxbjak.supabase.co", key: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhd2dweGNpaGl4cXhxeHhiamFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI0MzE5MzYsImV4cCI6MjA4ODAwNzkzNn0.fPbekBh1dO8byD2wxkjzFSKW4jSV0MHIGgci9nch98A" },
+};
+let backendKey = localStorage.getItem("smartisBackend") || "prod";
+let sb = window.supabase.createClient(BACKENDS[backendKey].url, BACKENDS[backendKey].key);
 let custMap = {};
 let searchTimer = null;
 
@@ -81,7 +85,20 @@ const $ = (id) => document.getElementById(id);
 function toast(msg, ok){ const t=$("toast"); t.innerHTML = '<div class="toast '+(ok?'ok':'err')+'">'+msg+'</div>'; setTimeout(()=>{t.innerHTML='';}, ok?2500:4500); }
 function fmtExt(filename){ const e=(filename||'').split('.').pop().toUpperCase(); return e.length<=4?e:'DOC'; }
 
-Office.onReady(function(){ initSession(); });
+function buildBackendSelect(){
+  const sel = $("backend"); sel.innerHTML = "";
+  Object.keys(BACKENDS).forEach(function(k){
+    const o = document.createElement("option"); o.value = k; o.textContent = BACKENDS[k].label;
+    if (k === backendKey) o.selected = true; sel.appendChild(o);
+  });
+  sel.onchange = function(){
+    backendKey = sel.value;
+    localStorage.setItem("smartisBackend", backendKey);
+    sb = window.supabase.createClient(BACKENDS[backendKey].url, BACKENDS[backendKey].key);
+  };
+}
+
+Office.onReady(function(){ buildBackendSelect(); initSession(); });
 
 async function initSession(){
   const { data } = await sb.auth.getSession();
@@ -123,15 +140,21 @@ async function loadDocs(){
   const custId=$("cust").value, q=$("search").value.trim();
   if(!custId && q.length<2){ $("list").innerHTML='<div class="empty">Kunde wählen oder mind. 2 Zeichen suchen.</div>'; return; }
   $("list").innerHTML='<div class="empty">Lädt…</div>';
-  let query = sb.from("dokumente")
-    .select("id,name,filename,storage_path,customer_id,year,file_type")
-    .is("deleted_at", null)
-    .not("storage_path","is",null)
-    .order("created_at",{ascending:false})
-    .limit(60);
-  if(custId) query=query.eq("customer_id", custId);
-  if(q.length>=2) query=query.ilike("name", "%"+q+"%");
-  const { data, error } = await query;
+  function build(withDeleted){
+    let query = sb.from("dokumente")
+      .select("id,name,filename,storage_path,customer_id,year,file_type")
+      .not("storage_path","is",null)
+      .order("created_at",{ascending:false})
+      .limit(60);
+    if(withDeleted) query = query.is("deleted_at", null);
+    if(custId) query = query.eq("customer_id", custId);
+    if(q.length>=2) query = query.ilike("name", "%"+q+"%");
+    return query;
+  }
+  let { data, error } = await build(true);
+  if(error && /deleted_at|column/i.test(error.message||"")){
+    ({ data, error } = await build(false));   // Backend ohne deleted_at-Spalte
+  }
   if(error){ $("list").innerHTML='<div class="empty">Fehler: '+error.message+'</div>'; return; }
   renderDocs(data||[]);
 }
