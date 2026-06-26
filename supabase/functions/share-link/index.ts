@@ -17,7 +17,7 @@ serve(async (req) => {
     const action = url.searchParams.get("action") || "info"; // info | download | create | deactivate
 
     const supabase = createClient(
-      Deno.env.get("SUPABASE_PUBLIC_URL")!,
+      Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
@@ -191,16 +191,22 @@ serve(async (req) => {
         });
       }
 
+
       // Signed URL generieren (1 Stunde gültig)
       const storageKey = doc.storage_path.replace(/^dokumente\//, '')
-      const { data: signed } = await supabase.storage
+      const { data: signed, error } = await supabase.storage
         .from("dokumente")
         .createSignedUrl(storageKey, 3600, {
           download: doc.filename || doc.name,
         });
 
-      if (signed?.signedUrl) {
-        return new Response(JSON.stringify({ url: signed.signedUrl }), {
+      const internalUrl = Deno.env.get("SUPABASE_URL")!;
+      const publicUrl = Deno.env.get("SUPABASE_PUBLIC_URL")!;
+
+      const finalSignedUrl = signed.signedUrl.replace(internalUrl, publicUrl);
+
+      if (finalSignedUrl) {
+        return new Response(JSON.stringify({ url: finalSignedUrl }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }

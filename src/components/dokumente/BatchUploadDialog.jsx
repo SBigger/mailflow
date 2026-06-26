@@ -587,6 +587,18 @@ export default function BatchUploadDialog({ preCustomerId, onClose }) {
             aiReason: result.reason,
           };
         }));
+        // Duplikat-Check (byte-genau): Hash gegen content_hash in der DB.
+        try {
+          const h = await sha256Hex(item.file);
+          if (h) {
+            const { data: dupRows } = await supabase.from("dokumente")
+              .select("id,name,customer_id,created_at,year")
+              .eq("content_hash", h).is("deleted_at", null).limit(1);
+            if (dupRows && dupRows.length) {
+              setItems(prev => prev.map(i => i.id === item.id ? { ...i, duplicate: dupRows[0] } : i));
+            }
+          }
+        } catch { /* Duplikat-Check ist best-effort */ }
       } catch (e) {
         console.error("[BatchUpload] Analyse fehlgeschlagen für", item.file.name, e);
         setItems(prev => prev.map(i => i.id === item.id
@@ -827,6 +839,12 @@ export default function BatchUploadDialog({ preCustomerId, onClose }) {
                     <div style={{ fontSize: 10, color: textMuted, display: "flex", gap: 6, alignItems: "center", marginTop: 2, flexWrap: "wrap" }}>
                       <span>{formatBytes(item.file.size)}</span>
                       <StatusBadge status={item.status} confidence={item.confidence} />
+                      {item.duplicate && (
+                        <span title={`Bereits abgelegt: ${item.duplicate.name}${item.duplicate.year ? " · " + item.duplicate.year : ""}${item.duplicate.created_at ? " · " + new Date(item.duplicate.created_at).toLocaleDateString("de-CH") : ""}`}
+                          style={{ background: "#fef3c7", color: "#92400e", padding: "1px 6px", borderRadius: 10, fontSize: 9, fontWeight: 700 }}>
+                          ⚠ Duplikat
+                        </span>
+                      )}
                       {item.contentText != null && (item.status === "ready" || item.status === "parked") && (
                         <span
                           title={item.contentText.length > 0 ? "Text wurde erkannt — klicke auf die Datei und dann rechts auf 'Erkannten Text anzeigen'" : "Kein Text erkannt — OCR ist fehlgeschlagen"}

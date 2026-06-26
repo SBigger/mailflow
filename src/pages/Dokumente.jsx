@@ -430,8 +430,23 @@ function UploadDialog({ customers, preCustomer, preFile, allTags, onCancel, onUp
   const [uploading,  setUploading]  = useState(false);
   const [errors,     setErrors]     = useState({});
   const [aiBusy,     setAiBusy]     = useState(false);
+  const [dup,        setDup]        = useState(null);   // bereits abgelegtes Dokument mit gleichem Hash
   const fileRef = useRef();
   const yearRef = useRef();
+
+  // M-Files-Stil Duplikat-Check: SHA-256 der Datei gegen content_hash in der DB.
+  // Byte-genauer Treffer = Datei wurde schon abgelegt. Sehr schnell (Hash lokal + Index-Query).
+  const checkDuplicate = async (f) => {
+    setDup(null);
+    try {
+      const h = await sha256Hex(f);
+      if (!h) return;
+      const { data } = await supabase.from("dokumente")
+        .select("id,name,customer_id,created_at,year")
+        .eq("content_hash", h).is("deleted_at", null).limit(1);
+      if (data && data.length) setDup(data[0]);
+    } catch { /* ignore */ }
+  };
 
   // KI-Erfassung: Kunde / Kategorie / Jahr / Tags aus dem Dokument vorschlagen.
   // Nutzt dieselbe Logik wie die Massenablage – Artis Treuhand (= wir) wird dort
@@ -498,6 +513,7 @@ function UploadDialog({ customers, preCustomer, preFile, allTags, onCancel, onUp
     const y = detectYear(f.name);
     if (y) setYear(String(y));
     runAiSuggest(f);                 // KI erkennt Kunde/Kategorie/Tags im Hintergrund
+    checkDuplicate(f);               // schneller Duplikat-Check (schon abgelegt?)
   };
 
   const handleUpload = async () => {
@@ -567,6 +583,18 @@ function UploadDialog({ customers, preCustomer, preFile, allTags, onCancel, onUp
           {aiBusy && (
             <div style={{ fontSize: 12, color: accent, display: "flex", alignItems: "center", gap: 6 }}>
               <RefreshCw size={13} style={{ animation: "spin 1s linear infinite" }} /> KI erkennt Kunde, Kategorie &amp; Tags…
+            </div>
+          )}
+          {dup && (
+            <div style={{ fontSize: 12, color: "#92400e", background: "#fef3c7", border: "1px solid #fcd34d", borderRadius: 8, padding: "8px 10px", display: "flex", gap: 8, alignItems: "flex-start" }}>
+              <span style={{ fontSize: 14, lineHeight: 1 }}>⚠️</span>
+              <div>
+                <strong>Diese Datei wurde schon abgelegt.</strong><br />
+                „{dup.name}"
+                {(() => { const c = customers.find(x => x.id === dup.customer_id); return c ? ` · ${c.company_name}` : ""; })()}
+                {dup.year ? ` · ${dup.year}` : ""}
+                {dup.created_at ? ` · ${new Date(dup.created_at).toLocaleDateString("de-CH")}` : ""}. Du kannst trotzdem ablegen.
+              </div>
             </div>
           )}
           {/* Kunde */}
@@ -974,6 +1002,73 @@ export default function Dokumente() {
     queryKey: ["customers"],
     queryFn:  () => entities.Customer.list("company_name"),
   });
+
+  useEffect(() => {
+    // 1. Create the subscription
+    const channel = supabase
+        .channel('schema-dokumente-changes')
+        .on(
+            'postgres_changes',
+            {
+              event: '*', // Listen to INSERT, UPDATE, and DELETE
+              schema: 'public',
+              table: 'dokumente',
+            },
+            (payload) => {
+              //console.log('Change received!', payload)
+              const { eventType, new: newItem, old: oldItem } = payload;
+
+              queryClient.setQueryData(["dokumente-all"], (oldData) => {
+                // Ensure we have a list to work with
+                const currentDocuments = oldData || [];
+
+                switch (eventType) {
+                  case 'INSERT':
+                    // Add new mail to the top (since you sort by received desc)
+                    return [newItem, ...currentDocuments];
+
+                  case 'UPDATE':
+                    // Find the item and update its fields
+                    return currentDocuments.map((item) =>
+                        item.id === newItem.id ? { ...item, ...newItem } : item
+                    );
+
+                  case 'DELETE':
+                    // Remove the item from the list
+                    return currentDocuments.filter((item) => item.id !== oldItem.id);
+
+                  default:
+                    return currentDocuments;
+                }
+              });
+
+              // Also update Kanban columns if the status/folder changed
+              if (eventType === 'UPDATE' && newItem.status !== oldItem.status) {
+                queryClient.invalidateQueries({ queryKey: ["dokumente-all"] });
+              }
+            }
+        )
+        .subscribe((status, err) => {
+          // console.log("Realtime Status Dokumente:", status);
+          if (err) console.error("Realtime Error:", err);
+
+          if (status === 'SUBSCRIBED') {
+            console.log('Successfully connected to Realtime Dokumente!');
+          }
+          if (status === 'CLOSED') {
+            // console.log('Connection closed.');
+          }
+          if (status === 'CHANNEL_ERROR') {
+            // console.error('Error connecting. Check RLS policies or database settings.');
+          }
+        });
+
+    // 3. Cleanup on unmount
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [queryClient]);
+
   // Schlanker Select (OHNE content_text + search_vector) -- spart ~14 MB / ~7 Sek
   // bei jedem Aufruf. content_text wird in der Liste nirgends gelesen, nur das
   // Auto-Indexing braucht die Info ob es leer ist -- das macht eine separate
@@ -1006,73 +1101,6 @@ export default function Dokumente() {
     queryKey: ["dok_tags"],
     queryFn:  () => entities.DokTag.list("sort_order"),
   });
-
-  // ── Live-Update ohne F5 ───────────────────────────────────────────────
-  // Wenn jemand anderes eine Datei eincheckt/auscheckt/hochlädt, soll der
-  // neue Stand bei allen offenen Clients sofort erscheinen. Realtime-Abo auf
-  // die dokumente-Tabelle (gleiches Muster wie MailKanban/FiBuSidebar).
-  // Bei UPDATE nur die betroffene Zeile im Cache patchen — ein voller Refetch
-  // waere bei 18k+ Dokumenten teuer; Insert/Delete invalidiert die Liste.
-  useEffect(() => {
-    const channel = supabase
-      .channel(`realtime-dokumente-${Date.now()}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'dokumente' }, (payload) => {
-        const row = payload.new;
-        if (payload.eventType === 'UPDATE' && row?.id) {
-          queryClient.setQueryData(["dokumente-all"], (prev) =>
-            Array.isArray(prev) ? prev.map(d => (d.id === row.id ? { ...d, ...row } : d)) : prev
-          );
-        } else {
-          queryClient.invalidateQueries({ queryKey: ["dokumente-all"] });
-        }
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [queryClient]);
-
-  // ── Stilles Auto-Indexing (wie M-Files Background Service) ──────────────
-  // Läuft automatisch im Hintergrund wenn allDoks geladen sind.
-  // Kein Button, kein Spinner – transparent für den User.
-  const autoIndexRef = useRef(false);
-  useEffect(() => {
-    if (autoIndexRef.current) return;            // bereits gestartet
-    if (!allDoks.length) return;                 // warte bis allDoks geladen sind
-    autoIndexRef.current = true;
-
-    (async () => {
-      // Hole nur die Docs, die noch keinen Volltext haben (separate, schlanke Query —
-      // content_text steckt nicht mehr im Haupt-allDoks-Select, das spart die 14 MB).
-      const { data: toIndex } = await supabase
-        .from('dokumente')
-        .select('id,filename,name,file_type,storage_path')
-        .or('content_text.is.null,content_text.eq.')
-        .not('storage_path', 'is', null)
-      if (!toIndex || !toIndex.length) return;
-
-      let done = 0;
-      for (const doc of toIndex) {
-        try {
-          const { data } = await supabase.storage.from(BUCKET).createSignedUrl(doc.storage_path, 120);
-          if (!data?.signedUrl) continue;
-          const resp = await fetch(data.signedUrl);
-          if (!resp.ok) continue;
-          const blob = await resp.blob();
-          const file = new File([blob], doc.filename || doc.name || "doc", { type: doc.file_type || "" });
-          const text = await extractDocumentText(file);
-          if (text) {
-            await entities.Dokument.update(doc.id, { content_text: text });
-            done++;
-          }
-        } catch (e) {
-          console.warn("[AutoIndex] Fehler bei", doc.id, e);
-        }
-      }
-      if (done > 0) {
-        queryClient.invalidateQueries(["dokumente-all"]);
-        console.info(`[AutoIndex] ${done} Dokumente im Hintergrund indexiert`);
-      }
-    })();
-  }, [allDoks]);
 
   // Von aktuellem User ausgecheckte Dokumente
   const myCheckedOutDocs = useMemo(() =>
