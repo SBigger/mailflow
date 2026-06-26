@@ -83,7 +83,7 @@ export default function AddTicketDialog({ open, onClose, defaultColumnId }) {
       if (!user) return null;
       // Profil-Tabelle fuer full_name falls vorhanden
       const { data: prof } = await supabase
-        .from("user_profiles").select("full_name").eq("id", user.id).maybeSingle();
+        .from("profiles").select("full_name").eq("id", user.id).maybeSingle();
       return { id: user.id, email: user.email, full_name: prof?.full_name || user.email };
     },
   });
