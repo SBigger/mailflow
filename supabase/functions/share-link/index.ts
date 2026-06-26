@@ -204,9 +204,10 @@ serve(async (req) => {
       const publicUrl = Deno.env.get("SUPABASE_PUBLIC_URL")!;
 
       const finalSignedUrl = signed.signedUrl.replace(internalUrl, publicUrl);
+      const httpsUrl = finalSignedUrl.replace('http:', 'https:');
 
-      if (finalSignedUrl) {
-        return new Response(JSON.stringify({ url: finalSignedUrl }), {
+      if (httpsUrl ) {
+        return new Response(JSON.stringify({ url: httpsUrl }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
