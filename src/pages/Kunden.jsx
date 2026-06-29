@@ -6,7 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import {
   Upload, Trash2, Download, PowerOff, ArrowLeft, Table2, UserSquare2,
-  RefreshCw,
+  RefreshCw, CalendarOff,
 } from "lucide-react";
 import { useIsMobile } from "@/components/mobile/useIsMobile";
 import CustomerMiniList from "../components/customers/CustomerMiniList";
@@ -435,6 +435,16 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
                 <div style={{ position: "relative" }}>
                   <CustomerHeader customer={currentCustomer} staff={appUsers} onUpdate={handleUpdate} />
                   <div style={{ position: "absolute", top: 12, right: 16, display: "flex", gap: 6 }}>
+                    {!isKontakt && (
+                      <button
+                        onClick={() => handleUpdate({ keine_frist: !currentCustomer.keine_frist })}
+                        title={currentCustomer.keine_frist ? "Keine Frist aktiv – wird bei der Fristen-Generierung übersprungen (klicken zum Aufheben)" : "Als „Keine Frist" markieren (von Fristen-Generierung ausschliessen)"}
+                        className="transition-colors rounded p-1"
+                        style={{ color: currentCustomer.keine_frist ? '#c2410c' : (isArtis ? '#8aaa8f' : isLight ? '#b0b0cc' : '#52525b') }}
+                      >
+                        <CalendarOff className="h-4 w-4" />
+                      </button>
+                    )}
                     <button
                       onClick={() => handleUpdate({ aktiv: currentCustomer.aktiv === false ? true : false })}
                       title={currentCustomer.aktiv === false ? "Reaktivieren (aktuell inaktiv)" : "Als inaktiv markieren"}
