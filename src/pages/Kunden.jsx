@@ -438,7 +438,7 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
                     {!isKontakt && (
                       <button
                         onClick={() => handleUpdate({ keine_frist: !currentCustomer.keine_frist })}
-                        title={currentCustomer.keine_frist ? "Keine Frist aktiv – wird bei der Fristen-Generierung übersprungen (klicken zum Aufheben)" : "Als „Keine Frist" markieren (von Fristen-Generierung ausschliessen)"}
+                        title={currentCustomer.keine_frist ? 'Keine Frist aktiv – wird bei der Fristen-Generierung übersprungen (klicken zum Aufheben)' : 'Als «Keine Frist» markieren – von der Fristen-Generierung ausschliessen'}
                         className="transition-colors rounded p-1"
                         style={{ color: currentCustomer.keine_frist ? '#c2410c' : (isArtis ? '#8aaa8f' : isLight ? '#b0b0cc' : '#52525b') }}
                       >
