@@ -89,6 +89,12 @@
   #login-list::-webkit-scrollbar { width: 4px; }
   #login-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
+  .list-footer { padding: 8px 11px; border-top: 1px solid var(--border); display: flex; align-items: center; gap: 7px; flex-shrink: 0; }
+  .footer-btn { background: var(--surf); border: 1px solid var(--border); color: var(--muted); font-size: 11px; font-weight: 600; padding: 5px 10px; border-radius: 6px; transition: color .14s, border-color .14s, background .14s; flex-shrink: 0; }
+  .footer-btn:hover { color: var(--text); border-color: var(--accent); background: var(--surf2); }
+  .footer-btn.on { color: var(--green); border-color: var(--green); background: rgba(34,197,94,.08); }
+  .footer-hint { font-size: 10px; color: var(--muted); flex: 1; text-align: right; }
+
   .empty { text-align: center; color: var(--muted); margin-top: 70px; font-size: 13px; line-height: 1.8; }
   .empty .ico { font-size: 38px; display: block; margin-bottom: 10px; }
 
@@ -192,6 +198,11 @@
     <button class="btn-sm" onclick="openEdit(null,'program')">🖥 Programm</button>
   </div>
   <div id="login-list"></div>
+  <div class="list-footer">
+    <button class="footer-btn" id="autostart-btn" onclick="toggleAutostart()" title="Autostart beim Windows-Start">⚡ Autostart</button>
+    <button class="footer-btn" onclick="doCreateShortcut()" title="Desktop-Verknüpfung erstellen">🔗 Desktop-Link</button>
+    <span class="footer-hint">Tray-Icon zum Minimieren</span>
+  </div>
 </div>
 
 <!-- ══════════════ EDIT ══════════════ -->
@@ -366,6 +377,11 @@ function uid() {
 window.addEventListener('DOMContentLoaded', async () => {
   logins = await window.api.loadLogins();
   renderList();
+  // Autostart-Button-Status
+  const on = await window.api.getAutostart();
+  setAutostartBtn(on);
+  // Vom Tray: Credential-Panel anzeigen (Programm-Login via Tray-Klick)
+  window.api.onShowCredentials(login => showCredPanel(login));
 });
 
 // ── Panel ───────────────────────────────────────────────────────────────────
@@ -626,6 +642,34 @@ function toast(msg, err = false) {
   t.className = 'show' + (err ? ' err' : '');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { t.className = ''; }, 2500);
+}
+
+// ── Autostart ────────────────────────────────────────────────────────────────
+
+function setAutostartBtn(on) {
+  const btn = document.getElementById('autostart-btn');
+  if (!btn) return;
+  btn.textContent = on ? '⚡ Autostart ✓' : '⚡ Autostart';
+  btn.classList.toggle('on', !!on);
+}
+
+async function toggleAutostart() {
+  const current = await window.api.getAutostart();
+  const next    = !current;
+  await window.api.setAutostart(next);
+  setAutostartBtn(next);
+  toast(next ? 'Autostart aktiviert ✓' : 'Autostart deaktiviert');
+}
+
+// ── Desktop-Verknüpfung ───────────────────────────────────────────────────────
+
+async function doCreateShortcut() {
+  const result = await window.api.createShortcut();
+  if (result?.ok) {
+    toast('Desktop-Verknüpfung erstellt ✓');
+  } else {
+    toast('Fehler: ' + (result?.error || 'Unbekannt'), true);
+  }
 }
 </script>
 </body>
