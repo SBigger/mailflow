@@ -444,7 +444,7 @@ pub fn run() {
                 .focused(true)
                 .disable_drag_drop_handler()
                 .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0")
-                .additional_browser_args("--disable-features=TrackingProtection3pcd,TrackingProtectionSettingsPageLaunch,PrivacySandboxSettings4,PartitionedCookies,ThirdPartyStoragePartitioning,BlockThirdPartyCookies,SameSiteByDefaultCookies,CookiesWithoutSameSiteMustBeSecure,msEdgeTrackingProtection,PrivacySandboxAdsAPIs,FedCm --enable-features=SharedArrayBuffer")
+                .additional_browser_args("--disable-features=TrackingProtection3pcd,TrackingProtectionSettingsPageLaunch,PrivacySandboxSettings4,PartitionedCookies,ThirdPartyStoragePartitioning,BlockThirdPartyCookies,SameSiteByDefaultCookies,CookiesWithoutSameSiteMustBeSecure,msEdgeTrackingProtection,PrivacySandboxAdsAPIs,FedCm --enable-features=SharedArrayBuffer --disable-popup-blocking")
                 .initialization_script(IFRAME_POLYFILL)
                 .build()
                 .map_err(|e| e.to_string())?;
