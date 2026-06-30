@@ -168,6 +168,18 @@
   .modal-actions{display:flex;justify-content:flex-end;gap:9px;margin-top:10px}
   a{color:var(--accent);font-weight:600;text-decoration:none}
   a:hover{text-decoration:underline}
+  /* ── Protokoll-Ablage ─────────────────────────── */
+  .proto-actions{display:flex;gap:9px;margin:2px 0 4px}
+  .proto-list{max-height:48vh;overflow-y:auto;margin:2px 0 6px}
+  .pg-empty{color:var(--muted);font-size:13px;padding:16px 4px;text-align:center;line-height:1.5}
+  .pg-cust{font-weight:800;font-size:12.5px;color:var(--fg2);margin:13px 0 5px;display:flex;gap:6px;align-items:center}
+  .pg-cust span{color:var(--muted);font-weight:600}
+  .pg-row{display:flex;align-items:center;gap:8px;padding:7px 9px;border:1px solid var(--border);border-radius:10px;margin-bottom:5px;background:var(--surface-2)}
+  .pg-t{flex:1;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pg-d{font-size:11.5px;color:var(--muted);white-space:nowrap}
+  .pg-btn{border:1px solid var(--border-2);background:var(--surface);border-radius:8px;padding:4px 9px;font-size:12px;font-weight:600;color:var(--fg);cursor:pointer;white-space:nowrap}
+  .pg-btn:hover{border-color:var(--accent);color:var(--accent)}
+  .pg-del:hover{border-color:var(--red);color:var(--red)}
 </style>
 </head>
 <body>
@@ -185,6 +197,7 @@
   <button class="btn primary" id="evalBtn">✨ Auswerten</button>
   <button class="btn ghost" id="wordBtn" title="Als sauber formatiertes Word-Dokument herunterladen">📄 Word</button>
   <button class="btn ghost" id="exportBtn" title="Als Markdown/Text-Datei exportieren">⬇️</button>
+  <button class="btn ghost" id="protoBtn" title="Gespeicherte Protokolle (pro Kunde)">🗂 Protokolle</button>
   <button class="btn ghost" id="setBtn" title="Einstellungen">⚙️</button>
 </header>
 
@@ -313,6 +326,21 @@
       <button class="btn ghost" id="setCancel">Abbrechen</button>
       <button class="btn primary" id="setSave">Speichern</button>
     </div>
+  </div>
+</div>
+
+<!-- Protokolle-Modal (zentrale Ablage pro Kunde) -->
+<div class="modal-bg" id="protoModal">
+  <div class="modal">
+    <h2>🗂 Protokolle</h2>
+    <p class="hint">Zentral in smartis.me gespeichert – <b>pro Kunde</b>, für alle Mitarbeiter sichtbar und von jedem Gerät abrufbar.</p>
+    <div class="proto-actions">
+      <button class="btn" id="protoNew">🆕 Neues Protokoll</button>
+      <button class="btn primary" id="protoSave">💾 Aktuelles speichern</button>
+    </div>
+    <hr class="divider">
+    <div id="protoList" class="proto-list"></div>
+    <div class="modal-actions"><button class="btn ghost" id="protoClose">Schliessen</button></div>
   </div>
 </div>
 
@@ -978,6 +1006,124 @@ function exportWord(){
   a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),4000);
 }
 $("#wordBtn").addEventListener("click",exportWord);
+
+// ════════════════════════════════════════════════════════════════
+//  Protokoll-Ablage – zentral pro Kunde (Supabase, MailFlow-Login)
+// ════════════════════════════════════════════════════════════════
+let _currentProtocolId=null, _currentProtocolTitle="";
+(function(){ const c=LS.get("gv_currentProto",null); if(c){ _currentProtocolId=c.id||null; _currentProtocolTitle=c.title||""; } })();
+function _setCurrentProto(id,title){ _currentProtocolId=id||null; _currentProtocolTitle=title||""; LS.set("gv_currentProto",{id:_currentProtocolId,title:_currentProtocolTitle}); }
+function captureState(){
+  return { persons, speakerMap, segOverrides, segments, summaryText, traktanden, tasks, decisions,
+    agenda:(($("#agenda")&&$("#agenda").value)||""), customer:LS.get("gv_customer",{id:"",name:""}) };
+}
+function restoreState(data){
+  data=data||{};
+  persons=data.persons||[]; speakerMap=data.speakerMap||{}; segOverrides=data.segOverrides||{};
+  segments=data.segments||[]; summaryText=data.summaryText||""; traktanden=data.traktanden||[];
+  tasks=data.tasks||[]; decisions=data.decisions||[];
+  if($("#agenda")) $("#agenda").value=data.agenda||"";
+  LS.set("gv_customer", data.customer||{id:"",name:""});
+  save(); saveEval(); LS.set("gv_segments",segments);
+  renderPersons(); renderCustomerSelect(); renderTranscript(); renderResult();
+}
+function newProtocol(){
+  if((segments.length||summaryText) && !confirm("Neues Protokoll starten?\n\nDas aktuelle Transkript und die Auswertung werden geleert. Wenn du es behalten willst, vorher »💾 Aktuelles speichern«.")) return;
+  persons=[]; speakerMap={}; segOverrides={}; segments=[]; summaryText=""; traktanden=[]; tasks=[]; decisions=[];
+  if($("#agenda")) $("#agenda").value="";
+  ["gv_segments","gv_eval","gv_persons","gv_speakerMap","gv_segOverrides"].forEach(k=>localStorage.removeItem(k));
+  _setCurrentProto(null,"");
+  renderPersons(); renderTranscript(); renderResult();
+  $("#protoModal").classList.remove("show");
+  setStatus("🆕 Neues Protokoll – bereit für die Aufnahme.",true); setTimeout(()=>setStatus("",false),3500);
+}
+async function saveProtocol(){
+  const tok=mailflowToken();
+  if(!tok){ setStatus("Bitte in smartis.me einloggen, um Protokolle zentral zu speichern.",true); return; }
+  if(!segments.length && !summaryText){ setStatus("Nichts zu speichern – erst transkribieren/auswerten.",true); setTimeout(()=>setStatus("",false),3000); return; }
+  const cust=LS.get("gv_customer",{id:"",name:""}); const d=new Date();
+  const dd=`${String(d.getDate()).padStart(2,"0")}.${String(d.getMonth()+1).padStart(2,"0")}.${d.getFullYear()}`;
+  const defTitle=(cust.name?cust.name+" – ":"")+"Sitzung "+dd;
+  const title=prompt("Titel des Protokolls:", _currentProtocolTitle||defTitle);
+  if(title===null) return;
+  const payload={ customer_id:cust.id||null, customer_name:cust.name||null, title:title||defTitle, data:captureState() };
+  setStatus("💾 Protokoll wird gespeichert …",true);
+  try{
+    const upd=!!_currentProtocolId;
+    const url=SUPA_REST+"/gv_protocols"+(upd?"?id=eq."+_currentProtocolId:"");
+    const res=await fetch(url,{ method:upd?"PATCH":"POST",
+      headers:{ apikey:PROXY_KEY, Authorization:"Bearer "+tok, "content-type":"application/json", Prefer:"return=representation" },
+      body:JSON.stringify(upd?{...payload, updated_at:new Date().toISOString()}:payload) });
+    if(!res.ok){ const t=await res.text(); throw new Error("HTTP "+res.status+" "+t.slice(0,200)); }
+    const rows=await res.json(); if(rows&&rows[0]) _setCurrentProto(rows[0].id, rows[0].title);
+    setStatus(upd?"✅ Protokoll aktualisiert.":"✅ Protokoll gespeichert.",true); setTimeout(()=>setStatus("",false),3500);
+    if($("#protoModal").classList.contains("show")) loadProtocolList();
+  }catch(e){ setStatus("❌ Speichern fehlgeschlagen: "+e.message,true); }
+}
+async function loadProtocolList(){
+  const box=$("#protoList"); const tok=mailflowToken();
+  if(!tok){ box.innerHTML=`<div class="pg-empty">Bitte in smartis.me einloggen, um gespeicherte Protokolle zu sehen.</div>`; return; }
+  box.innerHTML=`<div class="pg-empty">Lade …</div>`;
+  try{
+    const r=await fetch(SUPA_REST+"/gv_protocols?select=id,customer_name,title,meeting_date,created_at&order=customer_name.asc,created_at.desc",
+      { headers:{ apikey:PROXY_KEY, Authorization:"Bearer "+tok } });
+    if(!r.ok){ const t=await r.text(); throw new Error("HTTP "+r.status+" "+t.slice(0,160)); }
+    renderProtocolList(await r.json());
+  }catch(e){ box.innerHTML=`<div class="pg-empty">Konnte Protokolle nicht laden: ${escapeHtml(e.message)}<br><small>Existiert die Tabelle gv_protocols schon?</small></div>`; }
+}
+function renderProtocolList(rows){
+  const box=$("#protoList");
+  if(!rows||!rows.length){ box.innerHTML=`<div class="pg-empty">Noch keine gespeicherten Protokolle.</div>`; return; }
+  const groups={}; rows.forEach(r=>{ const k=r.customer_name||"(ohne Kunde)"; (groups[k]=groups[k]||[]).push(r); });
+  let html="";
+  Object.keys(groups).sort((a,b)=>a.localeCompare(b)).forEach(k=>{
+    html+=`<div class="pg-cust">👤 ${escapeHtml(k)} <span>(${groups[k].length})</span></div>`;
+    groups[k].forEach(r=>{
+      const dt=r.meeting_date?String(r.meeting_date).split("-").reverse().join("."):"";
+      html+=`<div class="pg-row"><span class="pg-t" title="${escapeHtml(r.title)}">${escapeHtml(r.title)}</span>`+
+        `<span class="pg-d">${dt}</span>`+
+        `<button class="pg-btn" data-act="open" data-id="${r.id}">Öffnen</button>`+
+        `<button class="pg-btn" data-act="word" data-id="${r.id}" title="Direkt als Word">📄</button>`+
+        `<button class="pg-btn pg-del" data-act="del" data-id="${r.id}" title="Löschen">🗑</button></div>`;
+    });
+  });
+  box.innerHTML=html;
+  box.querySelectorAll(".pg-btn").forEach(b=>b.addEventListener("click",()=>{
+    const id=b.dataset.id, act=b.dataset.act;
+    if(act==="open") openProtocol(id,false);
+    else if(act==="word") openProtocol(id,true);
+    else if(act==="del") deleteProtocol(id);
+  }));
+}
+async function openProtocol(id, thenWord){
+  const tok=mailflowToken(); if(!tok) return;
+  setStatus("Lade Protokoll …",true);
+  try{
+    const r=await fetch(SUPA_REST+"/gv_protocols?id=eq."+id+"&select=*",{ headers:{ apikey:PROXY_KEY, Authorization:"Bearer "+tok } });
+    if(!r.ok) throw new Error("HTTP "+r.status);
+    const rows=await r.json(); const row=rows&&rows[0]; if(!row) throw new Error("nicht gefunden");
+    restoreState(row.data||{}); _setCurrentProto(row.id, row.title);
+    $("#protoModal").classList.remove("show");
+    setStatus(`✅ Protokoll geladen: ${row.title}`,true); setTimeout(()=>setStatus("",false),4000);
+    if(thenWord) setTimeout(exportWord, 250);
+  }catch(e){ setStatus("❌ Laden fehlgeschlagen: "+e.message,true); }
+}
+async function deleteProtocol(id){
+  if(!confirm("Dieses gespeicherte Protokoll endgültig löschen?")) return;
+  const tok=mailflowToken(); if(!tok) return;
+  try{
+    const r=await fetch(SUPA_REST+"/gv_protocols?id=eq."+id,{ method:"DELETE", headers:{ apikey:PROXY_KEY, Authorization:"Bearer "+tok } });
+    if(!r.ok) throw new Error("HTTP "+r.status);
+    if(_currentProtocolId===id) _setCurrentProto(null,"");
+    loadProtocolList();
+  }catch(e){ setStatus("❌ Löschen fehlgeschlagen: "+e.message,true); }
+}
+function openProtoModal(){ $("#protoModal").classList.add("show"); loadProtocolList(); }
+$("#protoBtn").addEventListener("click",openProtoModal);
+$("#protoClose").addEventListener("click",()=>$("#protoModal").classList.remove("show"));
+$("#protoModal").addEventListener("click",e=>{ if(e.target===$("#protoModal")) $("#protoModal").classList.remove("show"); });
+$("#protoNew").addEventListener("click",newProtocol);
+$("#protoSave").addEventListener("click",saveProtocol);
 
 // ════════════════════════════════════════════════════════════════
 //  Settings Modal
