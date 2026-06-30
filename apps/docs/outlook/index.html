@@ -61,7 +61,10 @@
       <span class="muted" id="who"></span>
       <button class="link" id="logout">Abmelden</button>
     </div>
-    <button id="recentBtn" style="width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--emerald-d);font-weight:600;cursor:pointer">🕓 Kürzlich abgelegt</button>
+    <div style="display:flex;gap:6px">
+      <button id="recentBtn" style="flex:1;padding:9px 8px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--emerald-d);font-weight:600;cursor:pointer">🕓 Kürzlich</button>
+      <button id="mineBtn" style="flex:1;padding:9px 8px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--emerald-d);font-weight:600;cursor:pointer">👤 Meine 7 Tage</button>
+    </div>
     <label>Kunde (optional)</label>
     <select id="cust"><option value="">— Alle Kunden —</option></select>
     <label>Suche</label>
@@ -80,6 +83,7 @@ const BACKENDS = {
 let backendKey = localStorage.getItem("smartisBackend") || "prod";
 let sb = window.supabase.createClient(BACKENDS[backendKey].url, BACKENDS[backendKey].key);
 let custMap = {};
+let currentUserId = null;
 let searchTimer = null;
 
 const $ = (id) => document.getElementById(id);
@@ -122,6 +126,7 @@ async function showMain(user){
   $("login").classList.add("hidden");
   $("main").classList.remove("hidden");
   $("who").textContent = user?.email || "";
+  currentUserId = user?.id || null;
   await loadCustomers();
 }
 
@@ -137,6 +142,30 @@ async function loadCustomers(){
 $("cust").onchange = loadDocs;
 $("search").oninput = function(){ clearTimeout(searchTimer); searchTimer=setTimeout(loadDocs, 300); };
 $("recentBtn").onclick = loadRecent;
+$("mineBtn").onclick = loadMine;
+
+async function loadMine(){
+  if(!currentUserId){ $("list").innerHTML='<div class="empty">Nicht angemeldet.</div>'; return; }
+  $("cust").value=""; $("search").value="";
+  $("list").innerHTML='<div class="empty">Lädt…</div>';
+  const weekAgo = new Date(Date.now() - 7*24*3600*1000).toISOString();
+  function build(withDeleted){
+    let query = sb.from("dokumente")
+      .select("id,name,filename,storage_path,customer_id,year,file_type")
+      .eq("created_by", currentUserId)
+      .or("created_at.gte."+weekAgo+",updated_at.gte."+weekAgo)
+      .not("storage_path","is",null)
+      .order("created_at",{ascending:false})
+      .limit(60);
+    if(withDeleted) query = query.is("deleted_at", null);
+    return query;
+  }
+  let { data, error } = await build(true);
+  if(error && /deleted_at|column/i.test(error.message||"")){ ({ data, error } = await build(false)); }
+  if(error){ $("list").innerHTML='<div class="empty">Fehler: '+error.message+'</div>'; return; }
+  if(!data || !data.length){ $("list").innerHTML='<div class="empty">Keine eigenen Dokumente der letzten 7 Tage.</div>'; return; }
+  renderDocs(data);
+}
 
 async function loadRecent(){
   $("cust").value=""; $("search").value="";
