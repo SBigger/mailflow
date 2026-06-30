@@ -181,6 +181,7 @@
   <button class="btn" id="pauseBtn" style="display:none"><span id="pauseIcon">⏸</span> <span id="pauseLbl">Pause</span></button>
   <button class="btn" id="fileBtn">📁 Audio laden</button>
   <input type="file" id="fileInput" accept="audio/*,video/webm" style="display:none">
+  <button class="btn ghost" id="cleanBtn" title="Transkript mit KI bereinigen: Eigennamen und Tippfehler korrigieren, Schweizerdeutsch glätten">🪄 Korrektur</button>
   <button class="btn primary" id="evalBtn">✨ Auswerten</button>
   <button class="btn ghost" id="exportBtn" title="Protokoll exportieren">⬇️</button>
   <button class="btn ghost" id="setBtn" title="Einstellungen">⚙️</button>
@@ -285,6 +286,11 @@
       </label>
       <small>Für Online-Teilnehmer (Teams/Zoom): nimmt zusätzlich den geteilten Ton auf. Beim Aufnahmestart fragt der Browser, was du teilst – wähle das Teams-Fenster bzw. „Gesamter Bildschirm" und aktiviere unten <b>»Audio teilen«</b>. Tipp: Kopfhörer nutzen, sonst nimmt das Mikrofon den Ton doppelt auf (Echo).</small>
     </div>
+    <div class="fld">
+      <label>Anzahl Sprecher (Hinweis für die Sprecher-Trennung)</label>
+      <input id="setNumSpk" type="number" min="0" max="32" placeholder="automatisch (= Anzahl Teilnehmer)">
+      <small>Hilft ElevenLabs, die Stimmen sauber zu trennen – einer der grössten Hebel gegen falsch erkannte Sprecher. Leer/0 = automatisch aus der Teilnehmerliste. Sonst die Anzahl tatsächlich sprechender Personen eintragen.</small>
+    </div>
 
     <hr class="divider">
     <p class="hint" style="margin-bottom:12px"><b>KI-Auswertung</b> (Zusammenfassung, Aufgaben, Beschlüsse) – über <b>Claude (Anthropic)</b>.</p>
@@ -320,7 +326,7 @@ const LS = {
 };
 const COLORS=["#3b82f6","#22c55e","#f59e0b","#8b5cf6","#ec4899","#06b6d4","#ef4444","#84cc16","#f97316","#14b8a6"];
 
-let cfg = LS.get("gv_cfg", { eleven:"", lang:"deu", claudeKey:"", claudeModel:"claude-opus-4-8", mic:"", liveInterval:120, systemAudio:false });
+let cfg = LS.get("gv_cfg", { eleven:"", lang:"deu", claudeKey:"", claudeModel:"claude-opus-4-8", mic:"", liveInterval:120, systemAudio:false, numSpeakers:0 });
 if(cfg.liveInterval===undefined) cfg.liveInterval=120;
 // ── Backend-Proxy: Keys liegen serverseitig (Supabase Edge Functions) ──
 const PROXY_BASE = "https://uawgpxcihixqxqxxbjak.supabase.co/functions/v1";
@@ -541,7 +547,7 @@ function elapsedMs(){ let e=Date.now()-recStart-pausedMs; if(paused) e-=(Date.no
 async function startRec(){
   if(!cfg.eleven && !PROXY_ON){ openModal(); setStatus("Bitte zuerst den ElevenLabs API-Key eintragen.",true); return; }
   try{
-    const audio={ echoCancellation:true, noiseSuppression:true };
+    const audio={ echoCancellation:true, noiseSuppression:true, autoGainControl:true, channelCount:1, sampleRate:48000 };
     if(cfg.mic) audio.deviceId={ exact: cfg.mic };
     stream=await navigator.mediaDevices.getUserMedia({audio});
     refreshMics();  // Labels sind jetzt verfügbar
@@ -569,7 +575,7 @@ async function startRec(){
   recStart=Date.now(); recMime=pickMime(); curRecId="rec_"+recStart; chunkSeq=0; pendingSaves=[]; paused=false; pausedMs=0;
   try{ await dbPut("recordings",{id:curRecId,startedAt:recStart,status:"recording",mimeType:recMime}); }
   catch(e){ setStatus("⚠ Lokale Sicherung nicht möglich ("+e.message+") – Aufnahme NICHT crash-sicher!",true); }
-  mediaRec=new MediaRecorder(recStream,{mimeType:recMime});
+  mediaRec=new MediaRecorder(recStream,{mimeType:recMime, audioBitsPerSecond:128000});
   mediaRec.ondataavailable=e=>{
     if(!e.data||!e.data.size) return;
     const seq=chunkSeq++;
@@ -695,6 +701,18 @@ $("#pauseBtn").addEventListener("click",togglePause);
 $("#fileBtn").addEventListener("click",()=>$("#fileInput").click());
 $("#fileInput").addEventListener("change",e=>{ const f=e.target.files[0]; if(f) transcribe(f); e.target.value=""; });
 
+// Vokabular-Hinweise für ElevenLabs: Eigennamen, Kunde, Traktanden + Treuhand/GV-Begriffe
+// (max 50 Zeichen / max 5 Wörter pro Begriff, max 1000 Begriffe)
+function buildKeyterms(){
+  const set=new Set();
+  const add=v=>{ v=(v||"").trim().replace(/\s+/g," "); if(v && v.length<=50 && v.split(" ").length<=5) set.add(v); };
+  persons.forEach(p=>add(p.name));
+  add(currentCustomerName());
+  const ag=(($("#agenda")&&$("#agenda").value)||"");
+  ag.split(/\r?\n/).forEach(l=>add(l.replace(/^\s*\d+[\.\)]\s*/,"")));   // führende Nummerierung entfernen
+  ["Generalversammlung","Verwaltungsrat","Revisionsstelle","Jahresrechnung","Erfolgsrechnung","Bilanz","Décharge","Traktandum","Aktienkapital","Dividende","Protokoll"].forEach(add);
+  return [...set].slice(0,1000);
+}
 // ── ElevenLabs Scribe (Batch + Diarization über die ganze Datei) ──
 async function transcribe(blob, isLive){
   if(!cfg.eleven && !PROXY_ON){ openModal(); return false; }
@@ -707,6 +725,12 @@ async function transcribe(blob, isLive){
   fd.append("timestamps_granularity","word");
   fd.append("tag_audio_events","false");
   if(cfg.lang) fd.append("language_code", cfg.lang);
+  // Sprecheranzahl-Hinweis -> deutlich bessere Trennung (manuell gesetzt oder = Teilnehmerzahl)
+  const ns=(cfg.numSpeakers&&cfg.numSpeakers>0)?cfg.numSpeakers:persons.length;
+  if(ns>=1 && ns<=32) fd.append("num_speakers", String(ns));
+  // Vokabular-Hinweise (Namen, Kunde, Traktanden, Fachbegriffe) -> richtige Schreibung & Erkennung
+  const kt=buildKeyterms();
+  if(kt.length) fd.append("keyterms", JSON.stringify(kt));
   try{
     const useProxy = PROXY_ON && !cfg.eleven;
     const res = useProxy
@@ -767,6 +791,22 @@ const EVAL_SCHEMA = {
   },
   required:["zusammenfassung","traktanden","aufgaben","beschluesse"], additionalProperties:false
 };
+// Gemeinsamer Claude-Aufruf (Server-Proxy oder eigener Key) – liefert geparstes JSON nach Schema
+async function callClaude(system, user, schema, maxTokens){
+  const useProxyC = PROXY_ON && !cfg.claudeKey;
+  const res=await fetch(useProxyC ? PROXY_BASE+"/gv-llm" : "https://api.anthropic.com/v1/messages",{ method:"POST",
+    headers: useProxyC
+      ? { "content-type":"application/json", ...proxyHeaders() }
+      : { "content-type":"application/json", "x-api-key":cfg.claudeKey, "anthropic-version":"2023-06-01", "anthropic-dangerous-direct-browser-access":"true" },
+    body:JSON.stringify({ model: cfg.claudeModel||"claude-opus-4-8", max_tokens: maxTokens||8000,
+      system, messages:[{role:"user",content:user}], output_config:{ format:{ type:"json_schema", schema } } }) });
+  if(!res.ok){ const t=await res.text(); throw new Error("HTTP "+res.status+" "+t.slice(0,300)); }
+  const data=await res.json();
+  if(data.stop_reason==="refusal"){ throw new Error("Von Claude abgelehnt (refusal)."); }
+  const block=(data.content||[]).find(b=>b.type==="text");
+  if(!block){ throw new Error("Keine Textantwort erhalten."); }
+  return JSON.parse(block.text);
+}
 async function evaluate(){
   if(!segments.length){ setStatus("Noch kein Transkript zum Auswerten.",true); setTimeout(()=>setStatus("",false),3000); return; }
   if(!cfg.claudeKey && !PROXY_ON){ openModal(); setStatus("Bitte Claude API-Key für die Auswertung eintragen.",true); return; }
@@ -780,24 +820,7 @@ async function evaluate(){
 Leere Listen als [] zurückgeben.`;
   const usr=`Kunde/Mandant: ${currentCustomerName()||"—"}\nTeilnehmer: ${persons.map(p=>p.name).join(", ")||"unbekannt"}\n\nTRAKTANDENLISTE:\n${agenda || "(keine angegeben – bitte selbst sinnvoll gliedern)"}\n\nTRANSKRIPT:\n${transcriptPlain()}`;
   try{
-    const useProxyC = PROXY_ON && !cfg.claudeKey;
-    const res=await fetch(useProxyC ? PROXY_BASE+"/gv-llm" : "https://api.anthropic.com/v1/messages",{ method:"POST",
-      headers: useProxyC
-        ? { "content-type":"application/json", ...proxyHeaders() }
-        : { "content-type":"application/json", "x-api-key":cfg.claudeKey, "anthropic-version":"2023-06-01", "anthropic-dangerous-direct-browser-access":"true" },
-      body:JSON.stringify({
-        model: cfg.claudeModel||"claude-opus-4-8",
-        max_tokens: 8000,
-        system: sys,
-        messages:[{role:"user",content:usr}],
-        output_config:{ format:{ type:"json_schema", schema: EVAL_SCHEMA } }
-      }) });
-    if(!res.ok){ const t=await res.text(); throw new Error("HTTP "+res.status+" "+t.slice(0,300)); }
-    const data=await res.json();
-    if(data.stop_reason==="refusal"){ throw new Error("Anfrage wurde von Claude abgelehnt (refusal)."); }
-    const block=(data.content||[]).find(b=>b.type==="text");
-    if(!block){ throw new Error("Keine Textantwort erhalten."); }
-    const obj=JSON.parse(block.text);
+    const obj=await callClaude(sys, usr, EVAL_SCHEMA, 8000);
     summaryText=obj.zusammenfassung||"";
     traktanden=(obj.traktanden||[]).map(t=>({titel:t.titel||"",inhalt:t.inhalt||""}));
     tasks=(obj.aufgaben||[]).map(t=>({text:t.text||"",who:t.verantwortlich||"",due:t.frist||""}));
@@ -807,6 +830,39 @@ Leere Listen als [] zurückgeben.`;
   }catch(e){
     setStatus("❌ Auswertung fehlgeschlagen: "+e.message,true);
   }
+}
+// ── KI-Korrektur des Transkripts (Eigennamen/Tippfehler, Schweizerdeutsch glätten) ──
+// Stapelweise, damit auch lange Sitzungen nicht abgeschnitten werden. Sprecher/Zeitmarken bleiben.
+const CLEAN_SCHEMA={ type:"object", properties:{ zeilen:{ type:"array", items:{ type:"object",
+  properties:{ nr:{type:"integer"}, text:{type:"string"} }, required:["nr","text"], additionalProperties:false } } },
+  required:["zeilen"], additionalProperties:false };
+async function aiCleanup(){
+  if(!segments.length){ setStatus("Noch kein Transkript zum Bereinigen.",true); setTimeout(()=>setStatus("",false),3000); return; }
+  if(!cfg.claudeKey && !PROXY_ON){ openModal(); setStatus("Bitte Claude API-Key für die KI-Korrektur eintragen.",true); return; }
+  const btn=$("#cleanBtn"); if(btn) btn.disabled=true;
+  const sys=`Du bereinigst ein automatisch erstelltes Sitzungs-Transkript (Schweizer Hochdeutsch). Du bekommst nummerierte Zeilen und gibst zu JEDER Nummer den korrigierten Text zurück:
+- Offensichtliche Erkennungs-/Tippfehler korrigieren; Eigennamen korrekt schreiben (siehe Teilnehmer/Kunde).
+- Umgangssprache/Schweizerdeutsch in sauberes Schweizer Hochdeutsch glätten, Sinn und Aussage unverändert lassen.
+- NICHTS hinzufügen oder weglassen, Zeilen NICHT zusammenlegen oder umstellen. Gleiche Nummern, gleiche Anzahl.
+- Bereits korrekte Zeilen unverändert zurückgeben.`;
+  const ctx=`Teilnehmer: ${persons.map(p=>p.name).join(", ")||"unbekannt"}\nKunde/Mandant: ${currentCustomerName()||"—"}`;
+  const BATCH=50; let done=0, failed=0;
+  try{
+    for(let i=0;i<segments.length;i+=BATCH){
+      const slice=segments.slice(i,i+BATCH);
+      const numbered=slice.map((s,j)=>`[${i+j}] ${s.text}`).join("\n");
+      setStatus(`🪄 KI-Korrektur … ${Math.min(i+BATCH,segments.length)}/${segments.length} Abschnitte`,true);
+      try{
+        const obj=await callClaude(sys, ctx+"\n\nTRANSKRIPT (nummeriert):\n"+numbered, CLEAN_SCHEMA, 8000);
+        (obj.zeilen||[]).forEach(z=>{ if(Number.isInteger(z.nr) && z.nr>=0 && z.nr<segments.length && typeof z.text==="string" && z.text.trim()){ segments[z.nr].text=z.text.trim(); done++; } });
+      }catch(e){ failed++; }
+    }
+    LS.set("gv_segments",segments); renderTranscript();
+    setStatus(failed? `🪄 KI-Korrektur fertig – ${done} Abschnitte überarbeitet (${failed} Stapel übersprungen, später erneut versuchbar).`
+                    : `✅ KI-Korrektur fertig – ${done} Abschnitte überarbeitet.`,true);
+    setTimeout(()=>setStatus("",false),6000);
+  }catch(e){ setStatus("❌ KI-Korrektur fehlgeschlagen: "+e.message,true); }
+  finally{ if(btn) btn.disabled=false; }
 }
 function renderResult(){
   let _sw="";
@@ -842,6 +898,7 @@ document.querySelectorAll("[data-add]").forEach(b=>b.addEventListener("click",()
   renderResult();
 }));
 $("#evalBtn").addEventListener("click",evaluate);
+$("#cleanBtn").addEventListener("click",aiCleanup);
 
 // ════════════════════════════════════════════════════════════════
 //  Export
@@ -891,6 +948,7 @@ function openModal(){
   $("#setClaudeKey").value=cfg.claudeKey; $("#setClaudeModel").value=cfg.claudeModel||"claude-opus-4-8";
   $("#setLive").value=String(cfg.liveInterval===undefined?120:cfg.liveInterval);
   $("#setSysAudio").checked=!!cfg.systemAudio;
+  $("#setNumSpk").value=cfg.numSpeakers?String(cfg.numSpeakers):"";
   const ks=$("#keyStatus");
   if(ks) ks.innerHTML =
     `<span class="keychip ${(cfg.eleven||PROXY_ON)?'ok':'no'}">${cfg.eleven?'✓ eigener':(PROXY_ON?'✓ Server-Proxy':'○ fehlt')} · ElevenLabs</span>`+
@@ -903,7 +961,8 @@ $("#setCancel").addEventListener("click",()=>$("#modal").classList.remove("show"
 $("#setSave").addEventListener("click",()=>{
   cfg={ eleven:$("#setEleven").value.trim(), lang:$("#setLang").value,
         claudeKey:$("#setClaudeKey").value.trim(), claudeModel:$("#setClaudeModel").value,
-        mic:$("#setMic").value, liveInterval:parseInt($("#setLive").value)||0, systemAudio:$("#setSysAudio").checked };
+        mic:$("#setMic").value, liveInterval:parseInt($("#setLive").value)||0, systemAudio:$("#setSysAudio").checked,
+        numSpeakers:parseInt($("#setNumSpk").value)||0 };
   LS.set("gv_cfg",cfg); $("#modal").classList.remove("show"); setStatus("Einstellungen gespeichert.",true); setTimeout(()=>setStatus("",false),2500);
 });
 $("#modal").addEventListener("click",e=>{ if(e.target===$("#modal")) $("#modal").classList.remove("show"); });
