@@ -81,9 +81,10 @@ export default function RechnungsuebersichtPanel() {
     mutationFn: async (id) => {
       const company = await leCompany.get();
       if (!company) throw new Error('Firmen-Settings fehlen.');
-      const fresh = await leInvoice.getWithEntries(id); // inkl. Kunde + Lines + Beiblatt
-      const customerEmail = fresh.customer?.billing_email;
-      if (!customerEmail) throw new Error('Kunde hat keine Rechnungs-E-Mail-Adresse hinterlegt.');
+      const fresh = await leInvoice.getWithEntries(id); // inkl. Kunde + Projekt + Lines + Beiblatt
+      // Projekt-Rechnungs-E-Mail hat Vorrang vor der Kunden-E-Mail.
+      const customerEmail = fresh.project?.billing_email || fresh.customer?.billing_email;
+      if (!customerEmail) throw new Error('Weder Projekt noch Kunde hat eine Rechnungs-E-Mail-Adresse hinterlegt.');
       // PDF generieren (lädt es gleichzeitig in den 'invoices'-Bucket hoch)
       const result = await generateInvoicePdf({ invoice: fresh, company });
       if (!result.url) throw new Error('PDF konnte nicht hochgeladen werden – Versand nicht möglich.');

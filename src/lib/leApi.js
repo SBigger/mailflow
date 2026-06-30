@@ -316,7 +316,7 @@ export const leInvoice = {
   list: async ({ status } = {}) => {
     let q = supabase
       .from('le_invoice')
-      .select('*, customer:customers(id, company_name, street, building_number, zip, city, country, billing_email), project:le_project(id, name), lines:le_invoice_line(*)')
+      .select('*, customer:customers(id, company_name, street, building_number, zip, city, country, billing_email), project:le_project(id, name, billing_email), lines:le_invoice_line(*)')
       .order('created_at', { ascending: false });
     if (status) q = q.eq('status', status);
     const { data, error } = await q;
@@ -326,7 +326,7 @@ export const leInvoice = {
   get: async (id) => {
     const { data, error } = await supabase
       .from('le_invoice')
-      .select('*, customer:customers(id, company_name, street, building_number, zip, city, country, billing_email), project:le_project(id, name, billing_mode), lines:le_invoice_line(*)')
+      .select('*, customer:customers(id, company_name, street, building_number, zip, city, country, billing_email), project:le_project(id, name, billing_mode, billing_email), lines:le_invoice_line(*)')
       .eq('id', id)
       .single();
     if (error) throw error;

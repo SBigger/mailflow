@@ -460,8 +460,9 @@ function UebersichtTab() {
       const company = await leCompany.get();
       if (!company) throw new Error('Firmen-Settings fehlen.');
       const fresh = await leInvoice.getWithEntries(id);
-      const customerEmail = fresh.customer?.billing_email;
-      if (!customerEmail) throw new Error('Kunde hat keine Rechnungs-E-Mail-Adresse hinterlegt.');
+      // Projekt-Rechnungs-E-Mail hat Vorrang vor der Kunden-E-Mail.
+      const customerEmail = fresh.project?.billing_email || fresh.customer?.billing_email;
+      if (!customerEmail) throw new Error('Weder Projekt noch Kunde hat eine Rechnungs-E-Mail-Adresse hinterlegt.');
       const result = await generateInvoicePdf({ invoice: fresh, company });
       if (!result.url) throw new Error('PDF konnte nicht hochgeladen werden – Versand nicht möglich.');
       const subject = `Akonto-Rechnung ${fresh.invoice_no || ''} – ${company.company_name || ''}`.trim();
