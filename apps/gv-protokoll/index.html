@@ -94,6 +94,8 @@
     border-radius:7px;font-size:11px;padding:2px 6px;font-weight:600}
   .seg .who .ts{color:var(--muted);font-weight:500;font-size:11px}
   .seg .txt{font-size:14px;line-height:1.55;color:var(--fg2)}
+  .seg .txt[contenteditable]:hover{cursor:text}
+  .seg .txt[contenteditable]:focus{outline:none;background:#fff;box-shadow:var(--ring);border-radius:8px;padding:3px 7px;margin:-3px -7px}
   .empty{color:var(--muted);text-align:center;margin-top:36px;font-size:13.5px;line-height:1.7;padding:0 18px}
   .empty .big{font-size:30px;width:74px;height:74px;display:flex;align-items:center;justify-content:center;
     margin:0 auto 14px;border-radius:22px;background:var(--grad-soft);box-shadow:var(--shadow-sm)}
@@ -277,6 +279,12 @@
       <button class="btn ghost" id="micLoad" style="margin-top:7px;font-size:12px">🎤 Zugriff erlauben &amp; Geräte laden (inkl. Bluetooth)</button>
       <small>Erst Zugriff erlauben, dann erscheinen alle Mikrofone mit Namen.</small>
     </div>
+    <div class="fld">
+      <label style="display:flex;align-items:center;gap:9px;cursor:pointer">
+        <input type="checkbox" id="setSysAudio" style="width:18px;height:18px;flex:0 0 auto;padding:0;box-shadow:none"> 💻 Computer-/Teams-Ton mitschneiden
+      </label>
+      <small>Für Online-Teilnehmer (Teams/Zoom): nimmt zusätzlich den geteilten Ton auf. Beim Aufnahmestart fragt der Browser, was du teilst – wähle das Teams-Fenster bzw. „Gesamter Bildschirm" und aktiviere unten <b>»Audio teilen«</b>. Tipp: Kopfhörer nutzen, sonst nimmt das Mikrofon den Ton doppelt auf (Echo).</small>
+    </div>
 
     <hr class="divider">
     <p class="hint" style="margin-bottom:12px"><b>KI-Auswertung</b> (Zusammenfassung, Aufgaben, Beschlüsse) – über <b>Claude (Anthropic)</b>.</p>
@@ -312,7 +320,7 @@ const LS = {
 };
 const COLORS=["#3b82f6","#22c55e","#f59e0b","#8b5cf6","#ec4899","#06b6d4","#ef4444","#84cc16","#f97316","#14b8a6"];
 
-let cfg = LS.get("gv_cfg", { eleven:"", lang:"deu", claudeKey:"", claudeModel:"claude-opus-4-8", mic:"", liveInterval:120 });
+let cfg = LS.get("gv_cfg", { eleven:"", lang:"deu", claudeKey:"", claudeModel:"claude-opus-4-8", mic:"", liveInterval:120, systemAudio:false });
 if(cfg.liveInterval===undefined) cfg.liveInterval=120;
 // ── Backend-Proxy: Keys liegen serverseitig (Supabase Edge Functions) ──
 const PROXY_BASE = "https://uawgpxcihixqxqxxbjak.supabase.co/functions/v1";
@@ -485,13 +493,14 @@ function renderTranscript(){
         <div class="who"><span style="color:${col}">${escapeHtml(lbl)}</span>
           <select data-spk="${seg.speaker}" title="Sprecher dieses Abschnitts korrigieren">${opts}</select>
           <span class="ts">${fmtTime(seg.start)}</span></div>
-        <div class="txt">${escapeHtml(seg.text)}</div>
+        <div class="txt" contenteditable spellcheck="false">${escapeHtml(seg.text)}</div>
       </div>`;
     el.querySelector("select").addEventListener("change",e=>{
       const v=e.target.value;
       if(v==="__auto__") delete segOverrides[k]; else segOverrides[k]=v;
       save(); renderTranscript();
     });
+    el.querySelector(".txt").addEventListener("blur",e=>{ const v=e.target.textContent; if(v!==seg.text){ seg.text=v; LS.set("gv_segments",segments); } });
     box.appendChild(el);
   });
   $("#sCount").textContent=segments.length;
@@ -524,6 +533,7 @@ async function dbDeleteRecording(recId){ const all=await dbGetAll("chunks"); for
 // ── Audio aufnehmen ──────────────────────────────────────────────
 let mediaRec=null, recStart=0, timerInt=null, audioCtx=null, analyser=null, volRAF=null, stream=null;
 let curRecId=null, chunkSeq=0, recMime="", pendingSaves=[];
+let displayStream=null, mixCtx=null, recStream=null;
 let _liveTimer=null, _liveBusy=false, _liveOn=false;
 let paused=false, pausedMs=0, pauseStart=0;
 function elapsedMs(){ let e=Date.now()-recStart-pausedMs; if(paused) e-=(Date.now()-pauseStart); return Math.max(0,e); }
@@ -536,11 +546,30 @@ async function startRec(){
     stream=await navigator.mediaDevices.getUserMedia({audio});
     refreshMics();  // Labels sind jetzt verfügbar
   }catch(e){ setStatus("Mikrofon-Zugriff verweigert/Gerät nicht verfügbar: "+e.message); return; }
+  // Optional: Computer-/Teams-Ton mitschneiden und mit dem Mikrofon mischen
+  recStream=stream;
+  if(cfg.systemAudio){
+    try{
+      displayStream=await navigator.mediaDevices.getDisplayMedia({ video:true, audio:true });
+      const sysTracks=displayStream.getAudioTracks();
+      if(sysTracks.length){
+        mixCtx=new (window.AudioContext||window.webkitAudioContext)();
+        const dest=mixCtx.createMediaStreamDestination();
+        mixCtx.createMediaStreamSource(stream).connect(dest);
+        mixCtx.createMediaStreamSource(new MediaStream(sysTracks)).connect(dest);
+        recStream=dest.stream;
+        sysTracks[0].addEventListener("ended",()=>setStatus("⚠ Computer-Ton-Freigabe beendet – ab jetzt nur noch Mikrofon.",true));
+      }else{
+        setStatus("⚠ Kein Computer-Ton dabei – beim Teilen unten »Audio teilen« aktivieren. Es läuft nur das Mikrofon.",true);
+      }
+      displayStream.getVideoTracks().forEach(t=>t.stop());   // Video brauchen wir nicht
+    }catch(e){ setStatus("⚠ Computer-Ton nicht freigegeben – nur Mikrofon ("+e.message+").",true); }
+  }
   try{ if(navigator.storage&&navigator.storage.persist) await navigator.storage.persist(); }catch(e){}
   recStart=Date.now(); recMime=pickMime(); curRecId="rec_"+recStart; chunkSeq=0; pendingSaves=[]; paused=false; pausedMs=0;
   try{ await dbPut("recordings",{id:curRecId,startedAt:recStart,status:"recording",mimeType:recMime}); }
   catch(e){ setStatus("⚠ Lokale Sicherung nicht möglich ("+e.message+") – Aufnahme NICHT crash-sicher!",true); }
-  mediaRec=new MediaRecorder(stream,{mimeType:recMime});
+  mediaRec=new MediaRecorder(recStream,{mimeType:recMime});
   mediaRec.ondataavailable=e=>{
     if(!e.data||!e.data.size) return;
     const seq=chunkSeq++;
@@ -557,14 +586,14 @@ async function startRec(){
   };
   mediaRec.start(CHUNK_MS);   // alle 15 s ein Segment -> sofort persistiert
   timerInt=setInterval(()=>$("#timer").textContent=fmtTime(elapsedMs()/1000),250);
-  startMeter(stream);
+  startMeter(recStream);
   $("#recBtn").classList.remove("rec"); $("#recBtn").style.background="var(--amber)"; $("#recBtn").style.borderColor="var(--amber)";
   $("#recLbl").textContent="Stopp"; $("#recIcon").textContent="■";
   $("#pauseBtn").style.display=""; $("#pauseIcon").textContent="⏸"; $("#pauseLbl").textContent="Pause";
-  setStatus("🔴 Aufnahme läuft – wird laufend lokal gesichert (crash-sicher).",true);
+  setStatus(recStream!==stream ? "🔴 Aufnahme inkl. Computer-/Teams-Ton – wird laufend gesichert." : "🔴 Aufnahme läuft – wird laufend lokal gesichert (crash-sicher).",true);
   // Laufende Zwischen-Transkription (erster Stand früh, dann im gewählten Intervall)
   _liveOn = (cfg.liveInterval>0);
-  if(_liveOn){ if(_liveTimer) clearTimeout(_liveTimer); _liveTimer=setTimeout(liveTick, 45000); }
+  if(_liveOn){ if(_liveTimer) clearTimeout(_liveTimer); _liveTimer=setTimeout(liveTick, 20000); }  // erster Zwischenstand früh (~20s)
 }
 // ── Live-/Zwischen-Transkription während der Aufnahme ─────────────
 async function liveTick(){
@@ -588,6 +617,8 @@ function stopRec(){
   if(mediaRec&&mediaRec.state!=="inactive") mediaRec.stop();
   clearInterval(timerInt);
   if(stream) stream.getTracks().forEach(t=>t.stop());
+  if(displayStream){ displayStream.getTracks().forEach(t=>t.stop()); displayStream=null; }
+  if(mixCtx){ mixCtx.close().catch(()=>{}); mixCtx=null; }
   $("#recBtn").classList.add("rec"); $("#recBtn").style.background=""; $("#recBtn").style.borderColor="";
   $("#recLbl").textContent="Aufnahme"; $("#recIcon").textContent="●";
   paused=false; $("#pauseBtn").style.display="none"; $("#pauseIcon").textContent="⏸"; $("#pauseLbl").textContent="Pause";
@@ -859,6 +890,7 @@ function openModal(){
   $("#setEleven").value=cfg.eleven; $("#setLang").value=cfg.lang;
   $("#setClaudeKey").value=cfg.claudeKey; $("#setClaudeModel").value=cfg.claudeModel||"claude-opus-4-8";
   $("#setLive").value=String(cfg.liveInterval===undefined?120:cfg.liveInterval);
+  $("#setSysAudio").checked=!!cfg.systemAudio;
   const ks=$("#keyStatus");
   if(ks) ks.innerHTML =
     `<span class="keychip ${(cfg.eleven||PROXY_ON)?'ok':'no'}">${cfg.eleven?'✓ eigener':(PROXY_ON?'✓ Server-Proxy':'○ fehlt')} · ElevenLabs</span>`+
@@ -871,7 +903,7 @@ $("#setCancel").addEventListener("click",()=>$("#modal").classList.remove("show"
 $("#setSave").addEventListener("click",()=>{
   cfg={ eleven:$("#setEleven").value.trim(), lang:$("#setLang").value,
         claudeKey:$("#setClaudeKey").value.trim(), claudeModel:$("#setClaudeModel").value,
-        mic:$("#setMic").value, liveInterval:parseInt($("#setLive").value)||0 };
+        mic:$("#setMic").value, liveInterval:parseInt($("#setLive").value)||0, systemAudio:$("#setSysAudio").checked };
   LS.set("gv_cfg",cfg); $("#modal").classList.remove("show"); setStatus("Einstellungen gespeichert.",true); setTimeout(()=>setStatus("",false),2500);
 });
 $("#modal").addEventListener("click",e=>{ if(e.target===$("#modal")) $("#modal").classList.remove("show"); });
