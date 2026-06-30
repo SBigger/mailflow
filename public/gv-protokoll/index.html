@@ -176,6 +176,7 @@
   <div class="spacer"></div>
   <span class="timer" id="timer">00:00</span>
   <button class="btn rec" id="recBtn"><span id="recIcon">●</span> <span id="recLbl">Aufnahme</span></button>
+  <button class="btn" id="pauseBtn" style="display:none"><span id="pauseIcon">⏸</span> <span id="pauseLbl">Pause</span></button>
   <button class="btn" id="fileBtn">📁 Audio laden</button>
   <input type="file" id="fileInput" accept="audio/*,video/webm" style="display:none">
   <button class="btn primary" id="evalBtn">✨ Auswerten</button>
@@ -354,7 +355,8 @@ function renderCustomerSelect(){
 }
 let persons = LS.get("gv_persons", []);          // {id,name,color}
 let segments = [];                                // {speaker, text, start, end, personId}
-let speakerMap = LS.get("gv_speakerMap", {});     // speaker_id -> personId
+let speakerMap = LS.get("gv_speakerMap", {});     // speaker_id -> personId (Sammel-Zuordnung)
+let segOverrides = LS.get("gv_segOverrides", {});  // startSek -> personId (Einzel-Korrektur pro Abschnitt)
 let tasks = [];                                   // {text, who, due}
 let decisions = [];                               // {text}
 let summaryText = "";
@@ -405,6 +407,11 @@ function speakerColor(spk){
 }
 function rawSpkLabel(spk){ return "Sprecher "+(parseInt(String(spk).replace(/\D/g,""))+1||spk); }
 function distinctSpeakers(){ const seen=new Set(),out=[]; segments.forEach(s=>{ if(!seen.has(s.speaker)){ seen.add(s.speaker); out.push(s.speaker); } }); return out; }
+// Einzel-Korrektur je Abschnitt (per Startsekunde), überschreibt die Sammel-Zuordnung
+function segKey(seg){ return String(Math.round(seg.start||0)); }
+function segPersonId(seg){ const k=segKey(seg); if(Object.prototype.hasOwnProperty.call(segOverrides,k)) return segOverrides[k]; return speakerMap[seg.speaker]||""; }
+function segLabel(seg){ const pid=segPersonId(seg); const p=pid&&personById(pid); return p?p.name:rawSpkLabel(seg.speaker); }
+function segColor(seg){ const pid=segPersonId(seg); const p=pid&&personById(pid); if(p) return p.color; return speakerColor(seg.speaker); }
 
 // ── Audio-Vorhören je Sprecher ───────────────────────────────────
 let lastAudioBlob=null, lastAudioUrl=null, _previewTimer=null;
@@ -466,20 +473,23 @@ function renderTranscript(){
   box.innerHTML="";
   const speakers=[...new Set(segments.map(s=>s.speaker))];
   segments.forEach(seg=>{
-    const col=speakerColor(seg.speaker), lbl=speakerLabel(seg.speaker);
+    const col=segColor(seg), lbl=segLabel(seg);
+    const k=segKey(seg);
+    const isOv=Object.prototype.hasOwnProperty.call(segOverrides,k);
     const el=document.createElement("div"); el.className="seg";
     const initials=lbl.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase();
-    let opts=`<option value="">— ${escapeHtml("Sprecher "+(parseInt(String(seg.speaker).replace(/\\D/g,""))+1||seg.speaker))} —</option>`;
-    persons.forEach(p=>{ opts+=`<option value="${p.id}" ${speakerMap[seg.speaker]===p.id?"selected":""}>${escapeHtml(p.name)}</option>`; });
+    let opts=`<option value="__auto__" ${!isOv?"selected":""}>↺ auto: ${escapeHtml(rawSpkLabel(seg.speaker))}</option>`;
+    persons.forEach(p=>{ opts+=`<option value="${p.id}" ${isOv&&segOverrides[k]===p.id?"selected":""}>${escapeHtml(p.name)}</option>`; });
     el.innerHTML=`<div class="av" style="background:${col}">${initials}</div>
       <div class="bubble">
         <div class="who"><span style="color:${col}">${escapeHtml(lbl)}</span>
-          <select data-spk="${seg.speaker}">${opts}</select>
+          <select data-spk="${seg.speaker}" title="Sprecher dieses Abschnitts korrigieren">${opts}</select>
           <span class="ts">${fmtTime(seg.start)}</span></div>
         <div class="txt">${escapeHtml(seg.text)}</div>
       </div>`;
     el.querySelector("select").addEventListener("change",e=>{
-      const v=e.target.value; if(v) speakerMap[seg.speaker]=v; else delete speakerMap[seg.speaker];
+      const v=e.target.value;
+      if(v==="__auto__") delete segOverrides[k]; else segOverrides[k]=v;
       save(); renderTranscript();
     });
     box.appendChild(el);
@@ -515,6 +525,8 @@ async function dbDeleteRecording(recId){ const all=await dbGetAll("chunks"); for
 let mediaRec=null, recStart=0, timerInt=null, audioCtx=null, analyser=null, volRAF=null, stream=null;
 let curRecId=null, chunkSeq=0, recMime="", pendingSaves=[];
 let _liveTimer=null, _liveBusy=false, _liveOn=false;
+let paused=false, pausedMs=0, pauseStart=0;
+function elapsedMs(){ let e=Date.now()-recStart-pausedMs; if(paused) e-=(Date.now()-pauseStart); return Math.max(0,e); }
 
 async function startRec(){
   if(!cfg.eleven && !PROXY_ON){ openModal(); setStatus("Bitte zuerst den ElevenLabs API-Key eintragen.",true); return; }
@@ -525,7 +537,7 @@ async function startRec(){
     refreshMics();  // Labels sind jetzt verfügbar
   }catch(e){ setStatus("Mikrofon-Zugriff verweigert/Gerät nicht verfügbar: "+e.message); return; }
   try{ if(navigator.storage&&navigator.storage.persist) await navigator.storage.persist(); }catch(e){}
-  recStart=Date.now(); recMime=pickMime(); curRecId="rec_"+recStart; chunkSeq=0; pendingSaves=[];
+  recStart=Date.now(); recMime=pickMime(); curRecId="rec_"+recStart; chunkSeq=0; pendingSaves=[]; paused=false; pausedMs=0;
   try{ await dbPut("recordings",{id:curRecId,startedAt:recStart,status:"recording",mimeType:recMime}); }
   catch(e){ setStatus("⚠ Lokale Sicherung nicht möglich ("+e.message+") – Aufnahme NICHT crash-sicher!",true); }
   mediaRec=new MediaRecorder(stream,{mimeType:recMime});
@@ -544,10 +556,11 @@ async function startRec(){
     await finalizeRecording(curRecId);
   };
   mediaRec.start(CHUNK_MS);   // alle 15 s ein Segment -> sofort persistiert
-  timerInt=setInterval(()=>$("#timer").textContent=fmtTime((Date.now()-recStart)/1000),250);
+  timerInt=setInterval(()=>$("#timer").textContent=fmtTime(elapsedMs()/1000),250);
   startMeter(stream);
   $("#recBtn").classList.remove("rec"); $("#recBtn").style.background="var(--amber)"; $("#recBtn").style.borderColor="var(--amber)";
   $("#recLbl").textContent="Stopp"; $("#recIcon").textContent="■";
+  $("#pauseBtn").style.display=""; $("#pauseIcon").textContent="⏸"; $("#pauseLbl").textContent="Pause";
   setStatus("🔴 Aufnahme läuft – wird laufend lokal gesichert (crash-sicher).",true);
   // Laufende Zwischen-Transkription (erster Stand früh, dann im gewählten Intervall)
   _liveOn = (cfg.liveInterval>0);
@@ -577,6 +590,7 @@ function stopRec(){
   if(stream) stream.getTracks().forEach(t=>t.stop());
   $("#recBtn").classList.add("rec"); $("#recBtn").style.background=""; $("#recBtn").style.borderColor="";
   $("#recLbl").textContent="Aufnahme"; $("#recIcon").textContent="●";
+  paused=false; $("#pauseBtn").style.display="none"; $("#pauseIcon").textContent="⏸"; $("#pauseLbl").textContent="Pause";
 }
 function pickMime(){ for(const m of ["audio/webm;codecs=opus","audio/webm","audio/mp4"]) if(MediaRecorder.isTypeSupported(m)) return m; return ""; }
 function startMeter(s){
@@ -585,7 +599,7 @@ function startMeter(s){
   const data=new Uint8Array(analyser.frequencyBinCount);
   (function loop(){ analyser.getByteTimeDomainData(data);
     let sum=0; for(const v of data){ const x=(v-128)/128; sum+=x*x; }
-    const rms=Math.sqrt(sum/data.length); $("#volBar").style.width=Math.min(100,rms*260)+"%";
+    const rms=Math.sqrt(sum/data.length); $("#volBar").style.width = paused ? "0%" : Math.min(100,rms*260)+"%";
     volRAF=requestAnimationFrame(loop); })();
 }
 function stopMeter(){ if(volRAF)cancelAnimationFrame(volRAF); if(audioCtx)audioCtx.close().catch(()=>{}); $("#volBar").style.width="0%"; }
@@ -629,7 +643,24 @@ async function downloadRecording(recId){
   a.download="GV-Aufnahme_"+new Date(meta.startedAt||Date.now()).toISOString().slice(0,19).replace(/[:T]/g,"-")+".webm"; a.click();
 }
 
-$("#recBtn").addEventListener("click",()=>{ if(mediaRec&&mediaRec.state==="recording") stopRec(); else startRec(); });
+$("#recBtn").addEventListener("click",()=>{ if(mediaRec&&(mediaRec.state==="recording"||mediaRec.state==="paused")) stopRec(); else startRec(); });
+function togglePause(){
+  if(!mediaRec) return;
+  if(!paused){
+    try{ if(mediaRec.state==="recording") mediaRec.pause(); }catch(e){}
+    paused=true; pauseStart=Date.now();
+    _liveOn=false; if(_liveTimer) clearTimeout(_liveTimer);
+    $("#pauseIcon").textContent="▶"; $("#pauseLbl").textContent="Weiter";
+    setStatus("⏸ Aufnahme pausiert – auf »Weiter« tippen zum Fortsetzen.",true);
+  }else{
+    try{ if(mediaRec.state==="paused") mediaRec.resume(); }catch(e){}
+    pausedMs += Date.now()-pauseStart; paused=false;
+    if(cfg.liveInterval>0){ _liveOn=true; if(_liveTimer) clearTimeout(_liveTimer); _liveTimer=setTimeout(liveTick, cfg.liveInterval*1000); }
+    $("#pauseIcon").textContent="⏸"; $("#pauseLbl").textContent="Pause";
+    setStatus("🔴 Aufnahme läuft weiter – wird laufend gesichert.",true);
+  }
+}
+$("#pauseBtn").addEventListener("click",togglePause);
 $("#fileBtn").addEventListener("click",()=>$("#fileInput").click());
 $("#fileInput").addEventListener("change",e=>{ const f=e.target.files[0]; if(f) transcribe(f); e.target.value=""; });
 
@@ -688,7 +719,7 @@ function wordsToSegments(data){
 //  KI-Auswertung (rechts) – OpenAI-kompatibel
 // ════════════════════════════════════════════════════════════════
 function transcriptPlain(){
-  return segments.map(s=>`${speakerLabel(s.speaker)}: ${s.text}`).join("\n");
+  return segments.map(s=>`${segLabel(s)}: ${s.text}`).join("\n");
 }
 const EVAL_SCHEMA = {
   type:"object",
@@ -794,7 +825,7 @@ $("#exportBtn").addEventListener("click",()=>{
   if(traktanden&&traktanden.length){ md+=`## Traktanden\n\n`; traktanden.forEach((t,i)=>{ md+=`### ${t.titel||("Traktandum "+(i+1))}\n\n${t.inhalt||"—"}\n\n`; }); }
   if(decisions.length){ md+=`## Beschlüsse\n\n`; decisions.forEach(x=>md+=`- ${x.text}\n`); md+=`\n`; }
   if(tasks.length){ md+=`## Aufgaben\n\n`; tasks.forEach(t=>md+=`- ${t.text}${t.who?` _(${t.who}${t.due?", "+t.due:""})_`:t.due?` _(${t.due})_`:""}\n`); md+=`\n`; }
-  if(segments.length){ md+=`## Transkript\n\n`; segments.forEach(s=>md+=`**${speakerLabel(s.speaker)}:** ${s.text}\n\n`); }
+  if(segments.length){ md+=`## Transkript\n\n`; segments.forEach(s=>md+=`**${segLabel(s)}:** ${s.text}\n\n`); }
   const blob=new Blob([md],{type:"text/markdown"});
   const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
   const kdPrefix=kunde?kunde.replace(/[^a-zA-Z0-9]+/g,"_").replace(/^_|_$/g,"")+"_":"";
@@ -849,7 +880,7 @@ $("#modal").addEventListener("click",e=>{ if(e.target===$("#modal")) $("#modal")
 //  Util & Init
 // ════════════════════════════════════════════════════════════════
 function escapeHtml(s){ return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
-function save(){ LS.set("gv_persons",persons); LS.set("gv_speakerMap",speakerMap); }
+function save(){ LS.set("gv_persons",persons); LS.set("gv_speakerMap",speakerMap); LS.set("gv_segOverrides",segOverrides); }
 segments = LS.get("gv_segments", []);   // letztes Transkript wiederherstellen
 renderPersons(); renderTranscript(); renderResult();
 refreshRecoveryBanner();                // nach Crash/Reload: gesicherte Aufnahmen anbieten
