@@ -6,19 +6,19 @@
 <title>LoginPilot</title>
 <style>
   :root {
-    --bg:        #0f172a;
-    --surface:   #1e293b;
-    --surface2:  #263448;
-    --border:    #334155;
-    --text:      #e2e8f0;
-    --muted:     #94a3b8;
-    --accent:    #3b82f6;
-    --accent-h:  #2563eb;
-    --danger:    #ef4444;
-    --success:   #22c55e;
-    --radius:    10px;
+    --bg:       #0f172a;
+    --surf:     #1e293b;
+    --surf2:    #263448;
+    --border:   #334155;
+    --text:     #e2e8f0;
+    --muted:    #94a3b8;
+    --accent:   #3b82f6;
+    --accentH:  #2563eb;
+    --green:    #22c55e;
+    --orange:   #f59e0b;
+    --red:      #ef4444;
+    --r:        9px;
   }
-
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   body {
@@ -29,300 +29,192 @@
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    -webkit-app-region: no-drag;
     user-select: none;
   }
 
-  /* ── Panels ── */
-  #list-panel, #edit-panel {
-    display: flex;
-    flex-direction: column;
-    height: 100vh;
-    transition: transform .22s ease, opacity .22s ease;
-  }
-  #edit-panel {
+  /* ── Panels ─────────────────────────────────────────────────────────── */
+  .panel {
     position: absolute;
     inset: 0;
+    display: flex;
+    flex-direction: column;
     background: var(--bg);
     transform: translateX(100%);
     opacity: 0;
     pointer-events: none;
+    transition: transform .2s ease, opacity .2s ease;
   }
-  #edit-panel.visible {
+  .panel.active {
     transform: translateX(0);
     opacity: 1;
     pointer-events: all;
+    position: relative;
   }
 
-  /* ── Header ── */
-  .header {
+  /* ── Header ─────────────────────────────────────────────────────────── */
+  .hdr {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    padding: 14px 16px 12px;
+    gap: 8px;
+    padding: 13px 14px 11px;
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
   }
-  .header h1 { font-size: 18px; font-weight: 700; letter-spacing: -.3px; }
-  .header h2 { font-size: 16px; font-weight: 600; flex: 1; margin-left: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hdr h1 { font-size: 17px; font-weight: 700; flex: 1; }
+  .hdr h2 { font-size: 15px; font-weight: 600; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-  /* ── Buttons ── */
+  /* ── Buttons ─────────────────────────────────────────────────────────── */
   button { cursor: pointer; border: none; outline: none; font-family: inherit; }
 
-  .btn-primary {
-    background: var(--accent);
-    color: #fff;
-    padding: 8px 16px;
-    border-radius: 7px;
-    font-size: 13px;
-    font-weight: 600;
-    transition: background .15s;
-  }
-  .btn-primary:hover { background: var(--accent-h); }
-  .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+  .btn { background: var(--accent); color: #fff; padding: 7px 15px; border-radius: 7px; font-size: 13px; font-weight: 600; transition: background .14s, transform .1s; }
+  .btn:hover { background: var(--accentH); }
+  .btn:active { transform: scale(.97); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
 
-  .btn-ghost {
-    background: transparent;
-    color: var(--muted);
-    padding: 6px 10px;
-    border-radius: 6px;
-    font-size: 20px;
-    line-height: 1;
-    transition: color .15s, background .15s;
-  }
-  .btn-ghost:hover { color: var(--text); background: var(--surface2); }
+  .btn-ghost { background: transparent; color: var(--muted); padding: 5px 9px; border-radius: 6px; font-size: 19px; line-height: 1; transition: color .14s, background .14s; }
+  .btn-ghost:hover { color: var(--text); background: var(--surf2); }
 
-  .btn-icon {
-    background: transparent;
-    color: var(--muted);
-    padding: 5px 8px;
-    border-radius: 6px;
-    font-size: 15px;
-    line-height: 1;
-    transition: color .15s, background .15s;
-  }
-  .btn-icon:hover { color: var(--text); background: var(--surface2); }
-  .btn-icon.danger:hover { color: var(--danger); background: rgba(239,68,68,.1); }
+  .btn-sm { background: var(--surf2); color: var(--text); padding: 5px 11px; border-radius: 6px; font-size: 12px; font-weight: 600; border: 1px solid var(--border); transition: background .14s, border-color .14s; }
+  .btn-sm:hover { background: var(--border); border-color: var(--accent); }
 
-  /* ── List ── */
-  #login-list {
-    flex: 1;
-    overflow-y: auto;
-    padding: 10px 12px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-  #login-list::-webkit-scrollbar { width: 5px; }
-  #login-list::-webkit-scrollbar-track { background: transparent; }
-  #login-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  .btn-outline { background: transparent; color: var(--text); padding: 8px 14px; border-radius: 7px; font-size: 13px; font-weight: 600; border: 1px solid var(--border); transition: background .14s; }
+  .btn-outline:hover { background: var(--surf2); }
 
-  .empty {
-    text-align: center;
-    color: var(--muted);
-    margin-top: 60px;
-    font-size: 14px;
-    line-height: 1.7;
-  }
-  .empty span { font-size: 40px; display: block; margin-bottom: 10px; }
+  .icon-btn { background: transparent; color: var(--muted); padding: 4px 7px; border-radius: 5px; font-size: 14px; line-height: 1; transition: color .14s, background .14s; }
+  .icon-btn:hover { color: var(--text); background: var(--surf2); }
+  .icon-btn.red:hover { color: var(--red); background: rgba(239,68,68,.1); }
 
-  /* ── Login-Card ── */
-  .card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 12px 14px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    transition: border-color .15s;
-  }
+  /* ── List ────────────────────────────────────────────────────────────── */
+  #login-list { flex: 1; overflow-y: auto; padding: 10px 11px; display: flex; flex-direction: column; gap: 7px; }
+  #login-list::-webkit-scrollbar { width: 4px; }
+  #login-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .empty { text-align: center; color: var(--muted); margin-top: 70px; font-size: 13px; line-height: 1.8; }
+  .empty .ico { font-size: 38px; display: block; margin-bottom: 10px; }
+
+  /* ── Card ────────────────────────────────────────────────────────────── */
+  .card { background: var(--surf); border: 1px solid var(--border); border-radius: var(--r); padding: 11px 12px; display: flex; align-items: center; gap: 10px; transition: border-color .14s; }
   .card:hover { border-color: var(--accent); }
 
-  .card-emoji {
-    font-size: 26px;
-    width: 40px;
-    text-align: center;
-    flex-shrink: 0;
-  }
+  .card-ico { font-size: 24px; width: 36px; text-align: center; flex-shrink: 0; }
 
-  .card-info {
-    flex: 1;
-    min-width: 0;
-  }
-  .card-name {
-    font-size: 14px;
-    font-weight: 600;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .card-url {
-    font-size: 11px;
-    color: var(--muted);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    margin-top: 2px;
-  }
+  .card-info { flex: 1; min-width: 0; }
+  .card-name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card-sub  { font-size: 11px; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 5px; }
 
-  .card-actions {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    flex-shrink: 0;
-  }
+  .badge { font-size: 9px; font-weight: 700; text-transform: uppercase; padding: 1px 5px; border-radius: 3px; flex-shrink: 0; }
+  .badge.web  { background: rgba(59,130,246,.2); color: #60a5fa; }
+  .badge.prog { background: rgba(245,158,11,.2); color: #fbbf24; }
 
-  .btn-login {
-    background: var(--accent);
-    color: #fff;
-    padding: 6px 13px;
-    border-radius: 7px;
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: .2px;
-    transition: background .15s, transform .1s;
-  }
-  .btn-login:hover { background: var(--accent-h); transform: scale(1.03); }
+  .card-actions { display: flex; align-items: center; gap: 3px; flex-shrink: 0; }
+
+  .btn-login { background: var(--accent); color: #fff; padding: 5px 12px; border-radius: 6px; font-size: 12px; font-weight: 700; transition: background .14s, transform .1s; }
+  .btn-login:hover { background: var(--accentH); transform: scale(1.03); }
   .btn-login:active { transform: scale(.97); }
   .btn-login:disabled { opacity: .5; cursor: not-allowed; transform: none; }
-  .btn-login.loading { background: var(--surface2); color: var(--muted); }
+  .btn-login.busy { background: var(--surf2); color: var(--muted); }
 
-  /* ── Edit-Panel ── */
-  #edit-panel .header { padding: 14px 12px 12px; }
+  /* ── Edit-Panel ──────────────────────────────────────────────────────── */
+  .form-scroll { flex: 1; overflow-y: auto; padding: 14px 14px 8px; display: flex; flex-direction: column; gap: 13px; }
+  .form-scroll::-webkit-scrollbar { width: 4px; }
+  .form-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
-  .form-body {
-    flex: 1;
-    overflow-y: auto;
-    padding: 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-  }
-  .form-body::-webkit-scrollbar { width: 5px; }
-  .form-body::-webkit-scrollbar-track { background: transparent; }
-  .form-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-
-  .field { display: flex; flex-direction: column; gap: 5px; }
-  .field label { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
-  .field input, .field select {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 7px;
-    color: var(--text);
-    font-size: 13px;
-    font-family: inherit;
-    padding: 8px 11px;
-    outline: none;
-    transition: border-color .15s;
-    width: 100%;
-  }
-  .field input:focus, .field select:focus { border-color: var(--accent); }
-  .field input[type="password"] { font-family: monospace; letter-spacing: 2px; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+  .field input { background: var(--surf); border: 1px solid var(--border); border-radius: 7px; color: var(--text); font-size: 13px; font-family: inherit; padding: 7px 10px; outline: none; transition: border-color .14s; }
+  .field input:focus { border-color: var(--accent); }
+  .field input.invalid { border-color: var(--red); }
   .field .hint { font-size: 11px; color: var(--muted); line-height: 1.5; }
 
-  .field-row { display: flex; gap: 10px; }
-  .field-row .field { flex: 1; }
+  .row { display: flex; gap: 9px; }
+  .row .field { flex: 1; }
 
-  .section-title {
-    font-size: 11px;
-    font-weight: 700;
-    color: var(--muted);
-    text-transform: uppercase;
-    letter-spacing: .6px;
-    padding: 4px 0 2px;
-    border-bottom: 1px solid var(--border);
-  }
+  .sep { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; padding-bottom: 2px; border-bottom: 1px solid var(--border); }
 
-  .toggle-advanced {
-    background: transparent;
-    border: 1px solid var(--border);
-    color: var(--muted);
-    font-size: 12px;
-    padding: 6px 12px;
-    border-radius: 6px;
-    cursor: pointer;
-    width: 100%;
-    text-align: center;
-    transition: color .15s, border-color .15s;
-  }
-  .toggle-advanced:hover { color: var(--text); border-color: var(--accent); }
+  /* Type-Toggle */
+  .type-toggle { display: flex; background: var(--surf); border: 1px solid var(--border); border-radius: 8px; padding: 3px; gap: 3px; }
+  .type-btn { flex: 1; padding: 6px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; color: var(--muted); background: transparent; transition: background .14s, color .14s; }
+  .type-btn.on { background: var(--accent); color: #fff; }
 
-  .advanced-fields { display: none; flex-direction: column; gap: 14px; }
-  .advanced-fields.open { display: flex; }
+  /* Input + Button combo */
+  .input-row { display: flex; gap: 6px; }
+  .input-row input { flex: 1; }
+  .input-row .btn-sm { flex-shrink: 0; align-self: flex-start; margin-top: 0; padding: 8px 11px; font-size: 12px; }
 
-  .form-footer {
-    padding: 12px 16px;
-    border-top: 1px solid var(--border);
-    display: flex;
-    gap: 10px;
-    flex-shrink: 0;
-  }
-  .form-footer .btn-primary { flex: 1; padding: 10px; font-size: 14px; }
-  .btn-secondary {
-    background: var(--surface2);
-    color: var(--text);
-    padding: 10px 16px;
-    border-radius: 7px;
-    font-size: 13px;
-    font-weight: 600;
-    border: 1px solid var(--border);
-    cursor: pointer;
-    transition: background .15s;
-  }
-  .btn-secondary:hover { background: var(--border); }
+  /* Adv toggle */
+  .adv-toggle { background: transparent; border: 1px dashed var(--border); color: var(--muted); font-size: 12px; padding: 6px; border-radius: 6px; width: 100%; text-align: center; transition: color .14s, border-color .14s; }
+  .adv-toggle:hover { color: var(--text); border-color: var(--accent); }
+  .adv-block { display: none; flex-direction: column; gap: 13px; }
+  .adv-block.open { display: flex; }
 
-  /* ── Toast ── */
-  #toast {
-    position: fixed;
-    bottom: 18px;
-    left: 50%;
-    transform: translateX(-50%) translateY(60px);
-    background: #1a3a1a;
-    border: 1px solid var(--success);
-    color: var(--success);
-    padding: 9px 18px;
-    border-radius: 20px;
-    font-size: 13px;
-    font-weight: 600;
-    pointer-events: none;
-    opacity: 0;
-    transition: transform .2s, opacity .2s;
-    z-index: 999;
-    white-space: nowrap;
-  }
-  #toast.show {
-    transform: translateX(-50%) translateY(0);
-    opacity: 1;
-  }
-  #toast.error {
-    background: #3a1a1a;
-    border-color: var(--danger);
-    color: var(--danger);
-  }
+  .form-footer { padding: 10px 14px; border-top: 1px solid var(--border); display: flex; gap: 8px; flex-shrink: 0; }
+  .form-footer .btn { flex: 1; padding: 9px; font-size: 13px; }
+
+  /* ── Credential-Panel ────────────────────────────────────────────────── */
+  #cred-panel .hdr { background: rgba(34,197,94,.06); border-bottom-color: rgba(34,197,94,.2); }
+  #cred-panel h2 { color: var(--green); }
+
+  .cred-body { flex: 1; overflow-y: auto; padding: 18px 14px; display: flex; flex-direction: column; gap: 12px; }
+
+  .cred-hint { font-size: 12px; color: var(--muted); background: var(--surf); border: 1px solid var(--border); border-radius: 7px; padding: 9px 12px; line-height: 1.6; }
+
+  .cred-field { background: var(--surf); border: 1px solid var(--border); border-radius: var(--r); padding: 11px 13px; display: flex; align-items: center; gap: 10px; cursor: pointer; transition: border-color .14s; position: relative; }
+  .cred-field:hover { border-color: var(--accent); }
+  .cred-field:active { background: var(--surf2); }
+
+  .cred-field-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
+  .cred-field-value { font-size: 14px; font-weight: 600; margin-top: 2px; font-family: monospace; }
+  .cred-field-info { flex: 1; min-width: 0; }
+  .cred-field-value.masked { letter-spacing: 4px; font-size: 16px; color: var(--muted); }
+
+  .cred-copy-icon { color: var(--muted); font-size: 14px; flex-shrink: 0; transition: color .14s; }
+  .cred-field:hover .cred-copy-icon { color: var(--accent); }
+
+  .cred-copied { position: absolute; top: 8px; right: 10px; background: var(--green); color: #fff; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 4px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  .cred-copied.show { opacity: 1; }
+
+  .cred-footer { padding: 10px 14px; border-top: 1px solid var(--border); display: flex; gap: 8px; flex-shrink: 0; }
+  .cred-footer .btn-outline { flex: 1; }
+
+  /* ── Toast ───────────────────────────────────────────────────────────── */
+  #toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%) translateY(50px); background: #1a3a1a; border: 1px solid var(--green); color: var(--green); padding: 7px 16px; border-radius: 18px; font-size: 12px; font-weight: 700; pointer-events: none; opacity: 0; transition: transform .18s, opacity .18s; z-index: 999; white-space: nowrap; }
+  #toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+  #toast.err  { background: #3a1a1a; border-color: var(--red); color: var(--red); }
 </style>
 </head>
 <body>
 
-<!-- ══════════════════ LIST-PANEL ══════════════════ -->
-<div id="list-panel">
-  <div class="header">
+<!-- ══════════════ LIST ══════════════ -->
+<div id="list-panel" class="panel active">
+  <div class="hdr">
     <h1>🔑 LoginPilot</h1>
-    <button class="btn-primary" id="btn-add">+ Neu</button>
+    <button class="btn-sm" onclick="openEdit(null,'website')">🌐 Web</button>
+    <button class="btn-sm" onclick="openEdit(null,'program')">🖥 Programm</button>
   </div>
   <div id="login-list"></div>
 </div>
 
-<!-- ══════════════════ EDIT-PANEL ══════════════════ -->
-<div id="edit-panel">
-  <div class="header">
-    <button class="btn-ghost" id="btn-back">←</button>
-    <h2 id="edit-title">Login bearbeiten</h2>
+<!-- ══════════════ EDIT ══════════════ -->
+<div id="edit-panel" class="panel">
+  <div class="hdr">
+    <button class="btn-ghost" onclick="showPanel('list-panel')">←</button>
+    <h2 id="edit-title">Login erfassen</h2>
   </div>
 
-  <div class="form-body">
-    <div class="field-row">
-      <div class="field" style="flex: 0 0 70px;">
+  <div class="form-scroll">
+
+    <!-- Typ -->
+    <div class="field">
+      <label>Typ</label>
+      <div class="type-toggle">
+        <button class="type-btn on" id="type-web"  onclick="setType('website')">🌐 Webseite</button>
+        <button class="type-btn"    id="type-prog" onclick="setType('program')">🖥 Programm</button>
+      </div>
+    </div>
+
+    <!-- Name + Emoji -->
+    <div class="row">
+      <div class="field" style="flex: 0 0 68px;">
         <label>Emoji</label>
         <input id="f-icon" type="text" placeholder="🌐" maxlength="4">
       </div>
@@ -332,58 +224,123 @@
       </div>
     </div>
 
-    <div class="field">
+    <!-- URL (Webseite) -->
+    <div class="field" id="row-url">
       <label>Login-URL *</label>
       <input id="f-url" type="url" placeholder="https://…">
     </div>
 
-    <div class="section-title">Zugangsdaten</div>
+    <!-- Pfad (Programm) -->
+    <div class="field" id="row-exe" style="display:none">
+      <label>Programm-Pfad *</label>
+      <div class="input-row">
+        <input id="f-exe" type="text" placeholder="C:\Programme\…\app.exe" spellcheck="false">
+        <button class="btn-sm" onclick="pickExe()">Durchsuchen</button>
+      </div>
+    </div>
+
+    <div class="sep">Zugangsdaten</div>
 
     <div class="field">
-      <label>Benutzername / E-Finance-Nr.</label>
-      <input id="f-username" type="text" autocomplete="off" spellcheck="false">
+      <label>Benutzername</label>
+      <input id="f-user" type="text" autocomplete="off" spellcheck="false">
     </div>
 
     <div class="field">
       <label>Passwort</label>
-      <input id="f-password" type="password" autocomplete="off">
-      <div class="hint">Wird verschlüsselt gespeichert (Windows DPAPI / macOS Keychain).</div>
+      <input id="f-pass" type="password" autocomplete="off">
+      <div class="hint">Gespeichert via Windows DPAPI / macOS Keychain.</div>
     </div>
 
-    <!-- Fortgeschrittene Einstellungen -->
-    <button class="toggle-advanced" id="btn-toggle-adv">⚙ Erweiterte Einstellungen anzeigen</button>
+    <!-- Drittes Merkmal -->
+    <div class="sep">Drittes Merkmal <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div>
 
-    <div class="advanced-fields" id="adv-fields">
-      <div class="section-title">CSS-Selektoren (optional)</div>
-
+    <div class="row">
+      <div class="field" style="flex: 0 0 130px;">
+        <label>Bezeichnung</label>
+        <input id="f-extra-label" type="text" placeholder="z. B. Mandant">
+      </div>
       <div class="field">
-        <label>Benutzername-Feld</label>
-        <input id="f-userSel" type="text" placeholder='input[name="login"]' autocomplete="off" spellcheck="false">
-        <div class="hint">Leer lassen → automatisch das erste sichtbare Textfeld.</div>
+        <label>Wert</label>
+        <input id="f-extra-val" type="text" autocomplete="off" spellcheck="false">
       </div>
+    </div>
 
-      <div class="field">
-        <label>Passwort-Feld</label>
-        <input id="f-passSel" type="text" placeholder='input[type="password"]' autocomplete="off" spellcheck="false">
+    <!-- Erweiterte Einstellungen (nur Webseite) -->
+    <div id="adv-wrap">
+      <button class="adv-toggle" id="adv-btn" onclick="toggleAdv()">⚙ Erweiterte Einstellungen (Selektoren)</button>
+      <div class="adv-block" id="adv-block">
+        <div style="height:6px"></div>
+        <div class="field">
+          <label>Benutzername-Selektor</label>
+          <input id="f-userSel" type="text" placeholder='input[name="login"]' spellcheck="false" autocomplete="off">
+          <div class="hint">Leer = automatisch erstes sichtbares Textfeld.</div>
+        </div>
+        <div class="field">
+          <label>Passwort-Selektor</label>
+          <input id="f-passSel" type="text" placeholder='input[type="password"]' spellcheck="false" autocomplete="off">
+        </div>
+        <div class="field">
+          <label>Anmelde-Button-Selektor</label>
+          <input id="f-submitSel" type="text" placeholder='button[type="submit"]' spellcheck="false" autocomplete="off">
+          <div class="hint">Leer = kein Auto-Submit (du drückst Enter).</div>
+        </div>
+        <div class="field" style="max-width:130px">
+          <label>Verzögerung (ms)</label>
+          <input id="f-delay" type="number" min="0" max="15000" step="100" value="1500">
+        </div>
       </div>
+    </div>
 
-      <div class="field">
-        <label>Anmelde-Button</label>
-        <input id="f-submitSel" type="text" placeholder='button[type="submit"]' autocomplete="off" spellcheck="false">
-        <div class="hint">Leer lassen → kein Auto-Submit (du drückst manuell Enter).</div>
-      </div>
+  </div><!-- /form-scroll -->
 
-      <div class="field" style="max-width: 140px;">
-        <label>Verzögerung (ms)</label>
-        <input id="f-delay" type="number" min="0" max="10000" step="100" value="1500">
-        <div class="hint">Wartezeit nach Seitenladung.</div>
+  <div class="form-footer">
+    <button class="btn-outline" onclick="showPanel('list-panel')">Abbrechen</button>
+    <button class="btn" onclick="saveEdit()">Speichern</button>
+  </div>
+</div>
+
+<!-- ══════════════ CREDENTIALS ══════════════ -->
+<div id="cred-panel" class="panel">
+  <div class="hdr">
+    <button class="btn-ghost" onclick="showPanel('list-panel')">←</button>
+    <h2 id="cred-title">Login gestartet</h2>
+  </div>
+
+  <div class="cred-body">
+    <div class="cred-hint" id="cred-hint"></div>
+
+    <div class="cred-field" id="cred-user-row" onclick="copyField('cred-user-val', this)">
+      <div class="cred-field-info">
+        <div class="cred-field-label">Benutzername</div>
+        <div class="cred-field-value" id="cred-user-val"></div>
       </div>
+      <span class="cred-copy-icon">⎘</span>
+      <span class="cred-copied">Kopiert!</span>
+    </div>
+
+    <div class="cred-field" id="cred-pass-row" onclick="copyField('cred-pass-real', this)">
+      <div class="cred-field-info">
+        <div class="cred-field-label">Passwort</div>
+        <div class="cred-field-value masked">••••••••</div>
+        <span id="cred-pass-real" style="display:none"></span>
+      </div>
+      <span class="cred-copy-icon">⎘</span>
+      <span class="cred-copied">Kopiert!</span>
+    </div>
+
+    <div class="cred-field" id="cred-extra-row" onclick="copyField('cred-extra-val', this)">
+      <div class="cred-field-info">
+        <div class="cred-field-label" id="cred-extra-label">Drittes Merkmal</div>
+        <div class="cred-field-value" id="cred-extra-val"></div>
+      </div>
+      <span class="cred-copy-icon">⎘</span>
+      <span class="cred-copied">Kopiert!</span>
     </div>
   </div>
 
-  <div class="form-footer">
-    <button class="btn-secondary" id="btn-cancel">Abbrechen</button>
-    <button class="btn-primary" id="btn-save">Speichern</button>
+  <div class="cred-footer">
+    <button class="btn-outline" onclick="showPanel('list-panel')">← Zurück zur Liste</button>
   </div>
 </div>
 
@@ -391,202 +348,285 @@
 <div id="toast"></div>
 
 <script>
-  'use strict';
+'use strict';
 
-  // ── State ──────────────────────────────────────────────────────────────────
+// ── State ───────────────────────────────────────────────────────────────────
 
-  let logins    = [];
-  let editingId = null;
-  let advOpen   = false;
+let logins    = [];
+let editId    = null;
+let editType  = 'website';
+let advOpen   = false;
 
-  function uid() {
-    return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+function uid() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
+// ── Init ────────────────────────────────────────────────────────────────────
+
+window.addEventListener('DOMContentLoaded', async () => {
+  logins = await window.api.loadLogins();
+  renderList();
+});
+
+// ── Panel ───────────────────────────────────────────────────────────────────
+
+function showPanel(id) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+// ── Render ──────────────────────────────────────────────────────────────────
+
+function renderList() {
+  const el = document.getElementById('login-list');
+
+  if (!logins.length) {
+    el.innerHTML = `<div class="empty">
+      <span class="ico">🔑</span>
+      Noch nichts erfasst.<br>
+      <strong>🌐 Web</strong> für Webseiten,<br>
+      <strong>🖥 Programm</strong> für Desktop-Apps.
+    </div>`;
+    return;
   }
 
-  // ── Init ───────────────────────────────────────────────────────────────────
-
-  window.addEventListener('DOMContentLoaded', async () => {
-    logins = await window.api.loadLogins();
-    renderList();
-  });
-
-  // ── Render ─────────────────────────────────────────────────────────────────
-
-  function renderList() {
-    const el = document.getElementById('login-list');
-
-    if (logins.length === 0) {
-      el.innerHTML = `
-        <div class="empty">
-          <span>🔑</span>
-          Noch keine Logins gespeichert.<br>
-          Klicke auf <strong>+ Neu</strong> um loszulegen.
-        </div>`;
-      return;
-    }
-
-    el.innerHTML = logins.map(l => `
-      <div class="card" id="card-${l.id}">
-        <div class="card-emoji">${escHtml(l.icon || '🌐')}</div>
-        <div class="card-info">
-          <div class="card-name">${escHtml(l.name)}</div>
-          <div class="card-url">${escHtml(stripProto(l.url))}</div>
-        </div>
-        <div class="card-actions">
-          <button class="btn-login" data-id="${l.id}" onclick="doLogin(this)">▶ Login</button>
-          <button class="btn-icon"  onclick="editLogin('${l.id}')" title="Bearbeiten">✏</button>
-          <button class="btn-icon danger" onclick="deleteLogin('${l.id}')" title="Löschen">🗑</button>
+  el.innerHTML = logins.map(l => {
+    const isWeb = l.type !== 'program';
+    const sub   = isWeb ? stripProto(l.url) : (l.exePath ? shortPath(l.exePath) : '—');
+    return `
+    <div class="card">
+      <div class="card-ico">${esc(l.icon || (isWeb ? '🌐' : '🖥'))}</div>
+      <div class="card-info">
+        <div class="card-name">${esc(l.name)}</div>
+        <div class="card-sub">
+          <span class="badge ${isWeb ? 'web' : 'prog'}">${isWeb ? 'Web' : 'App'}</span>
+          ${esc(sub)}
         </div>
       </div>
-    `).join('');
-  }
+      <div class="card-actions">
+        <button class="btn-login" data-id="${l.id}" onclick="doLogin(this)">▶ Start</button>
+        <button class="icon-btn" onclick="openEdit('${l.id}')" title="Bearbeiten">✏</button>
+        <button class="icon-btn red" onclick="delLogin('${l.id}')" title="Löschen">🗑</button>
+      </div>
+    </div>`;
+  }).join('');
+}
 
-  // ── Login starten ──────────────────────────────────────────────────────────
+// ── Login ausführen ──────────────────────────────────────────────────────────
 
-  async function doLogin(btn) {
-    const id    = btn.dataset.id;
-    const login = logins.find(l => l.id === id);
-    if (!login) return;
+async function doLogin(btn) {
+  const id    = btn.dataset.id;
+  const login = logins.find(l => l.id === id);
+  if (!login) return;
 
-    btn.textContent = '⏳ …';
-    btn.disabled = true;
-    btn.classList.add('loading');
+  btn.textContent = '⏳';
+  btn.disabled = true;
+  btn.classList.add('busy');
 
-    const result = await window.api.startLogin(login);
-
-    setTimeout(() => {
-      btn.textContent = '▶ Login';
-      btn.disabled = false;
-      btn.classList.remove('loading');
-    }, 2500);
+  if (login.type === 'program') {
+    const result = await window.api.launchProgram(login.exePath);
+    btn.textContent = '▶ Start';
+    btn.disabled = false;
+    btn.classList.remove('busy');
 
     if (!result?.ok) {
-      showToast('Fehler: ' + (result?.error || 'Unbekannt'), true);
+      toast('Fehler: ' + (result?.error || 'Unbekannt'), true);
+      return;
+    }
+    showCredPanel(login);
+  } else {
+    const result = await window.api.startLogin(login);
+    setTimeout(() => {
+      btn.textContent = '▶ Start';
+      btn.disabled = false;
+      btn.classList.remove('busy');
+    }, 2500);
+    if (!result?.ok) {
+      toast('Fehler: ' + (result?.error || 'Unbekannt'), true);
     }
   }
+}
 
-  // ── Bearbeiten ─────────────────────────────────────────────────────────────
+// ── Credential-Panel (Programme) ─────────────────────────────────────────────
 
-  function editLogin(id) {
-    editingId = id || null;
-    const l = id ? logins.find(x => x.id === id) : null;
+function showCredPanel(login) {
+  document.getElementById('cred-title').textContent = login.name + ' – Credentials';
 
-    document.getElementById('edit-title').textContent = l ? l.name + ' bearbeiten' : 'Neuer Login';
-    document.getElementById('f-icon').value       = l?.icon       || '';
-    document.getElementById('f-name').value       = l?.name       || '';
-    document.getElementById('f-url').value        = l?.url        || '';
-    document.getElementById('f-username').value   = l?.username   || '';
-    document.getElementById('f-password').value   = l?.password   || '';
-    document.getElementById('f-userSel').value    = l?.userSelector   || '';
-    document.getElementById('f-passSel').value    = l?.passSelector   || '';
-    document.getElementById('f-submitSel').value  = l?.submitSelector || '';
-    document.getElementById('f-delay').value      = l?.delay ?? 1500;
+  const hint = document.getElementById('cred-hint');
+  hint.textContent = `${login.name} wurde gestartet. Klicke auf ein Feld um es in die Zwischenablage zu kopieren, dann im Programm einfügen (Ctrl+V).`;
 
-    // Erweiterte Einstellungen: nur öffnen, wenn etwas drin steht
-    const hasAdv = l?.userSelector || l?.passSelector || l?.submitSelector;
-    setAdv(!!hasAdv);
-
-    showEditPanel();
+  // Benutzername
+  const userRow = document.getElementById('cred-user-row');
+  const userVal = document.getElementById('cred-user-val');
+  if (login.username) {
+    userVal.textContent = login.username;
+    userRow.style.display = '';
+  } else {
+    userRow.style.display = 'none';
   }
 
-  function deleteLogin(id) {
-    if (!confirm('Login-Eintrag wirklich löschen?')) return;
-    logins = logins.filter(l => l.id !== id);
-    window.api.saveLogins(logins);
-    renderList();
-    showToast('Gelöscht');
+  // Passwort
+  const passRow  = document.getElementById('cred-pass-row');
+  const passReal = document.getElementById('cred-pass-real');
+  if (login.password) {
+    passReal.textContent = login.password;
+    passRow.style.display = '';
+  } else {
+    passRow.style.display = 'none';
   }
 
-  // ── Speichern ──────────────────────────────────────────────────────────────
+  // Drittes Merkmal
+  const extraRow = document.getElementById('cred-extra-row');
+  const extraLbl = document.getElementById('cred-extra-label');
+  const extraVal = document.getElementById('cred-extra-val');
+  if (login.extraValue) {
+    extraLbl.textContent = login.extraLabel || 'Drittes Merkmal';
+    extraVal.textContent = login.extraValue;
+    extraRow.style.display = '';
+  } else {
+    extraRow.style.display = 'none';
+  }
 
-  document.getElementById('btn-save').addEventListener('click', () => {
-    const name = document.getElementById('f-name').value.trim();
-    const url  = document.getElementById('f-url').value.trim();
+  showPanel('cred-panel');
+}
 
-    if (!name) { shake('f-name'); return; }
-    if (!url)  { shake('f-url');  return; }
-
-    const updated = {
-      id:             editingId || uid(),
-      icon:           document.getElementById('f-icon').value.trim() || '🌐',
-      name,
-      url,
-      username:       document.getElementById('f-username').value,
-      password:       document.getElementById('f-password').value,
-      userSelector:   document.getElementById('f-userSel').value.trim(),
-      passSelector:   document.getElementById('f-passSel').value.trim(),
-      submitSelector: document.getElementById('f-submitSel').value.trim(),
-      delay:          parseInt(document.getElementById('f-delay').value) || 1500,
-    };
-
-    if (editingId) {
-      logins = logins.map(l => l.id === editingId ? updated : l);
-    } else {
-      logins.push(updated);
-    }
-
-    window.api.saveLogins(logins);
-    showListPanel();
-    renderList();
-    showToast('Gespeichert ✓');
+function copyField(valueElemId, row) {
+  const val = document.getElementById(valueElemId).textContent;
+  if (!val) return;
+  navigator.clipboard.writeText(val).then(() => {
+    const badge = row.querySelector('.cred-copied');
+    badge.classList.add('show');
+    setTimeout(() => badge.classList.remove('show'), 1400);
   });
+}
 
-  // ── Panel-Wechsel ──────────────────────────────────────────────────────────
+// ── Edit öffnen ──────────────────────────────────────────────────────────────
 
-  function showEditPanel() {
-    document.getElementById('edit-panel').classList.add('visible');
-  }
-  function showListPanel() {
-    document.getElementById('edit-panel').classList.remove('visible');
-  }
+function openEdit(id, forceType) {
+  editId   = id || null;
+  const l  = id ? logins.find(x => x.id === id) : null;
+  const t  = forceType || l?.type || 'website';
 
-  document.getElementById('btn-add').addEventListener('click', () => editLogin(null));
-  document.getElementById('btn-back').addEventListener('click', showListPanel);
-  document.getElementById('btn-cancel').addEventListener('click', showListPanel);
+  document.getElementById('edit-title').textContent = l ? l.name + ' bearbeiten' : (t === 'program' ? 'Programm erfassen' : 'Webseite erfassen');
 
-  // ── Erweiterte Einstellungen ───────────────────────────────────────────────
+  document.getElementById('f-icon').value       = l?.icon        || '';
+  document.getElementById('f-name').value       = l?.name        || '';
+  document.getElementById('f-url').value        = l?.url         || '';
+  document.getElementById('f-exe').value        = l?.exePath     || '';
+  document.getElementById('f-user').value       = l?.username    || '';
+  document.getElementById('f-pass').value       = l?.password    || '';
+  document.getElementById('f-extra-label').value = l?.extraLabel || '';
+  document.getElementById('f-extra-val').value  = l?.extraValue  || '';
+  document.getElementById('f-userSel').value    = l?.userSelector    || '';
+  document.getElementById('f-passSel').value    = l?.passSelector    || '';
+  document.getElementById('f-submitSel').value  = l?.submitSelector  || '';
+  document.getElementById('f-delay').value      = l?.delay ?? 1500;
 
-  function setAdv(open) {
-    advOpen = open;
-    const fields = document.getElementById('adv-fields');
-    const btn    = document.getElementById('btn-toggle-adv');
-    if (open) {
-      fields.classList.add('open');
-      btn.textContent = '⚙ Erweiterte Einstellungen ausblenden';
-    } else {
-      fields.classList.remove('open');
-      btn.textContent = '⚙ Erweiterte Einstellungen anzeigen';
-    }
-  }
+  setType(t);
+  const hasAdv = l?.userSelector || l?.passSelector || l?.submitSelector;
+  setAdv(!!hasAdv);
 
-  document.getElementById('btn-toggle-adv').addEventListener('click', () => setAdv(!advOpen));
+  showPanel('edit-panel');
+}
 
-  // ── Hilfsfunktionen ────────────────────────────────────────────────────────
+function setType(t) {
+  editType = t;
+  document.getElementById('type-web').classList.toggle('on', t === 'website');
+  document.getElementById('type-prog').classList.toggle('on', t === 'program');
+  document.getElementById('row-url').style.display  = t === 'website' ? '' : 'none';
+  document.getElementById('row-exe').style.display  = t === 'program' ? '' : 'none';
+  document.getElementById('adv-wrap').style.display = t === 'website' ? '' : 'none';
+}
 
-  function escHtml(s) {
-    return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-  }
+async function pickExe() {
+  const path = await window.api.pickExe();
+  if (path) document.getElementById('f-exe').value = path;
+}
 
-  function stripProto(url) {
-    return (url || '').replace(/^https?:\/\//, '');
-  }
+// ── Speichern ────────────────────────────────────────────────────────────────
 
-  function shake(fieldId) {
-    const el = document.getElementById(fieldId);
-    el.style.borderColor = 'var(--danger)';
-    el.style.animation = 'none';
-    el.focus();
-    setTimeout(() => { el.style.borderColor = ''; }, 1500);
-  }
+function saveEdit() {
+  const name = document.getElementById('f-name').value.trim();
+  const url  = document.getElementById('f-url').value.trim();
+  const exe  = document.getElementById('f-exe').value.trim();
 
-  let toastTimer;
-  function showToast(msg, isError = false) {
-    const t = document.getElementById('toast');
-    t.textContent = msg;
-    t.className = 'show' + (isError ? ' error' : '');
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => { t.className = ''; }, 2400);
-  }
+  if (!name) { shake('f-name'); return; }
+  if (editType === 'website' && !url)  { shake('f-url'); return; }
+  if (editType === 'program' && !exe)  { shake('f-exe'); return; }
+
+  const entry = {
+    id:             editId || uid(),
+    type:           editType,
+    icon:           document.getElementById('f-icon').value.trim() || (editType === 'program' ? '🖥' : '🌐'),
+    name,
+    url:            editType === 'website' ? url : '',
+    exePath:        editType === 'program' ? exe : '',
+    username:       document.getElementById('f-user').value,
+    password:       document.getElementById('f-pass').value,
+    extraLabel:     document.getElementById('f-extra-label').value.trim(),
+    extraValue:     document.getElementById('f-extra-val').value,
+    userSelector:   document.getElementById('f-userSel').value.trim(),
+    passSelector:   document.getElementById('f-passSel').value.trim(),
+    submitSelector: document.getElementById('f-submitSel').value.trim(),
+    delay:          parseInt(document.getElementById('f-delay').value) || 1500,
+  };
+
+  logins = editId
+    ? logins.map(l => l.id === editId ? entry : l)
+    : [...logins, entry];
+
+  window.api.saveLogins(logins);
+  showPanel('list-panel');
+  renderList();
+  toast('Gespeichert ✓');
+}
+
+function delLogin(id) {
+  if (!confirm('Eintrag wirklich löschen?')) return;
+  logins = logins.filter(l => l.id !== id);
+  window.api.saveLogins(logins);
+  renderList();
+  toast('Gelöscht');
+}
+
+// ── Erweiterte Einstellungen ──────────────────────────────────────────────────
+
+function setAdv(open) {
+  advOpen = open;
+  document.getElementById('adv-block').classList.toggle('open', open);
+  document.getElementById('adv-btn').textContent = open
+    ? '⚙ Erweiterte Einstellungen ausblenden'
+    : '⚙ Erweiterte Einstellungen (Selektoren)';
+}
+function toggleAdv() { setAdv(!advOpen); }
+
+// ── Hilfsfunktionen ──────────────────────────────────────────────────────────
+
+function esc(s) {
+  return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function stripProto(u) { return (u || '').replace(/^https?:\/\//, ''); }
+function shortPath(p) {
+  if (!p) return '';
+  const parts = p.replace(/\\/g, '/').split('/');
+  return parts.length > 2 ? '…/' + parts.slice(-2).join('/') : p;
+}
+
+function shake(id) {
+  const el = document.getElementById(id);
+  el.classList.add('invalid');
+  el.focus();
+  setTimeout(() => el.classList.remove('invalid'), 1600);
+}
+
+let toastTimer;
+function toast(msg, err = false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'show' + (err ? ' err' : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.className = ''; }, 2500);
+}
 </script>
 </body>
 </html>

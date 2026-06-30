@@ -1,11 +1,12 @@
 // LoginPilot – Hauptprozess
 
-const { app, BrowserWindow, ipcMain, safeStorage, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, safeStorage, dialog, shell } = require('electron');
+const { spawn } = require('child_process');
 const path = require('path');
 const fs   = require('fs');
 
 let mainWindow = null;
-const loginWindows = new Map(); // id → BrowserWindow
+const loginWindows = new Map(); // id → BrowserWindow (Webseiten)
 
 // ── Datenspeicherung ─────────────────────────────────────────────────────────
 
@@ -29,33 +30,61 @@ function decrypt(b64) {
 }
 
 function encrypt(plain) {
-  if (!plain || !safeStorage.isEncryptionAvailable()) return null;
-  return safeStorage.encryptString(plain).toString('base64');
+  if (!safeStorage.isEncryptionAvailable()) return null;
+  return plain ? safeStorage.encryptString(plain).toString('base64') : null;
 }
 
-// ── IPC-Handler ───────────────────────────────────────────────────────────────
+// ── IPC: Logins laden/speichern ───────────────────────────────────────────────
 
 ipcMain.handle('logins:load', () => {
-  return readRaw().map(({ passwordEncrypted, passwordPlain, ...rest }) => ({
+  return readRaw().map(({ passwordEncrypted, passwordPlain, extraEncrypted, extraPlain, ...rest }) => ({
     ...rest,
-    password: decrypt(passwordEncrypted) || passwordPlain || '',
+    password:   decrypt(passwordEncrypted)  || passwordPlain  || '',
+    extraValue: decrypt(extraEncrypted)     || extraPlain     || '',
   }));
 });
 
 ipcMain.handle('logins:save', (_, logins) => {
-  writeRaw(logins.map(({ password, ...rest }) => {
-    const enc = encrypt(password);
-    return enc
-      ? { ...rest, passwordEncrypted: enc }
-      : { ...rest, passwordPlain: password };
+  writeRaw(logins.map(({ password, extraValue, ...rest }) => {
+    const encPw    = encrypt(password);
+    const encExtra = encrypt(extraValue);
+    return {
+      ...rest,
+      ...(encPw    ? { passwordEncrypted: encPw }    : { passwordPlain: password    }),
+      ...(encExtra ? { extraEncrypted: encExtra }     : { extraPlain:   extraValue  }),
+    };
   }));
   return true;
 });
 
-// ── Login ausführen ───────────────────────────────────────────────────────────
+// ── IPC: Datei-Auswahl für Programme ─────────────────────────────────────────
+
+ipcMain.handle('dialog:pick-exe', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Programm auswählen',
+    filters: [
+      { name: 'Programme', extensions: ['exe', 'bat', 'cmd', 'lnk'] },
+      { name: 'Alle Dateien', extensions: ['*'] },
+    ],
+    properties: ['openFile'],
+  });
+  return result.canceled ? null : result.filePaths[0];
+});
+
+// ── IPC: Programm starten ────────────────────────────────────────────────────
+
+ipcMain.handle('program:launch', (_, exePath) => {
+  try {
+    spawn(exePath, [], { detached: true, stdio: 'ignore', shell: true }).unref();
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+// ── IPC: Webseiten-Login ──────────────────────────────────────────────────────
 
 ipcMain.handle('login:start', async (_, login) => {
-  // Bestehendes Fenster für diesen Login in den Vordergrund
   const existing = loginWindows.get(login.id);
   if (existing && !existing.isDestroyed()) {
     existing.focus();
@@ -83,20 +112,17 @@ ipcMain.handle('login:start', async (_, login) => {
   win.webContents.on('did-finish-load', async () => {
     if (filled) return;
 
-    // Nur auf der Ziel-URL ausfüllen, nicht nach Redirect
-    const currentUrl = win.webContents.getURL();
+    // Nur auf der Ziel-Domain ausfüllen
     try {
-      const targetHost = new URL(login.url).hostname;
-      const currentHost = new URL(currentUrl).hostname;
+      const targetHost  = new URL(login.url).hostname;
+      const currentHost = new URL(win.webContents.getURL()).hostname;
       if (!currentHost.endsWith(targetHost.split('.').slice(-2).join('.'))) return;
     } catch { return; }
 
     filled = true;
 
-    const delay = Number(login.delay ?? 1500);
-    await new Promise(r => setTimeout(r, delay));
+    await new Promise(r => setTimeout(r, Number(login.delay ?? 1500)));
 
-    // Selektoren: Konfig überschreibt Auto-Erkennung
     const userSel   = login.userSelector   || 'input[type="email"],input[type="text"]:not([type="search"]):not([type="tel"]):not([type="number"])';
     const passSel   = login.passSelector   || 'input[type="password"]';
     const submitSel = login.submitSelector || '';
@@ -104,13 +130,9 @@ ipcMain.handle('login:start', async (_, login) => {
     const script = `(function() {
       function fillField(selector, value) {
         const all = Array.from(document.querySelectorAll(selector));
-        // Sichtbares Element bevorzugen
         const el = all.find(e => e.offsetParent !== null && !e.disabled) || all[0];
         if (!el) return false;
-        // React/Vue: nativen Setter triggern
-        const setter = Object.getOwnPropertyDescriptor(
-          window.HTMLInputElement.prototype, 'value'
-        )?.set;
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
         if (setter) setter.call(el, value);
         else el.value = value;
         ['input','change','keydown','keyup'].forEach(t =>
@@ -119,28 +141,23 @@ ipcMain.handle('login:start', async (_, login) => {
         el.focus();
         return true;
       }
-
       const userOk = fillField(${JSON.stringify(userSel)}, ${JSON.stringify(login.username || '')});
       const passOk = fillField(${JSON.stringify(passSel)}, ${JSON.stringify(login.password || '')});
-
       if (${JSON.stringify(!!submitSel)}) {
         setTimeout(() => {
           const btn = document.querySelector(${JSON.stringify(submitSel)});
           if (btn) { btn.click(); return; }
-          // Fallback: Enter auf Passwort-Feld
           const pw = document.querySelector(${JSON.stringify(passSel)});
           if (pw) pw.dispatchEvent(new KeyboardEvent('keydown', {
             key: 'Enter', keyCode: 13, bubbles: true, cancelable: true
           }));
         }, 600);
       }
-
       return { userOk, passOk };
     })()`;
 
     try {
-      const result = await win.webContents.executeJavaScript(script);
-      console.log(`[${login.name}] Fill:`, result);
+      await win.webContents.executeJavaScript(script);
     } catch (err) {
       console.error(`[${login.name}] Fill-Fehler:`, err.message);
     }
@@ -149,10 +166,8 @@ ipcMain.handle('login:start', async (_, login) => {
   try {
     await win.loadURL(login.url);
   } catch (err) {
-    console.error('Load-Fehler:', err.message);
     return { ok: false, error: err.message };
   }
-
   return { ok: true };
 });
 
@@ -160,10 +175,10 @@ ipcMain.handle('login:start', async (_, login) => {
 
 app.whenReady().then(() => {
   mainWindow = new BrowserWindow({
-    width:  440,
-    height: 680,
-    minWidth:  360,
-    minHeight: 400,
+    width:  460,
+    height: 700,
+    minWidth:  380,
+    minHeight: 500,
     title: 'LoginPilot',
     autoHideMenuBar: true,
     webPreferences: {
