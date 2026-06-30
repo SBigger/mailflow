@@ -250,12 +250,21 @@ export const leProject = {
     return data ?? [];
   },
   create: async (payload) => {
-    const { data, error } = await supabase.from('le_project').insert(payload).select().single();
+    let { data, error } = await supabase.from('le_project').insert(payload).select().single();
+    // Fallback: falls billing_email noch nicht migriert ist, ohne dieses Feld speichern.
+    if (error && /billing_email/i.test(error.message || '')) {
+      const { billing_email, ...rest } = payload;
+      ({ data, error } = await supabase.from('le_project').insert(rest).select().single());
+    }
     if (error) throw error;
     return data;
   },
   update: async (id, patch) => {
-    const { data, error } = await supabase.from('le_project').update(patch).eq('id', id).select().single();
+    let { data, error } = await supabase.from('le_project').update(patch).eq('id', id).select().single();
+    if (error && /billing_email/i.test(error.message || '')) {
+      const { billing_email, ...rest } = patch;
+      ({ data, error } = await supabase.from('le_project').update(rest).eq('id', id).select().single());
+    }
     if (error) throw error;
     return data;
   },
@@ -316,7 +325,7 @@ export const leInvoice = {
   list: async ({ status } = {}) => {
     let q = supabase
       .from('le_invoice')
-      .select('*, customer:customers(id, company_name, street, building_number, zip, city, country, billing_email), project:le_project(id, name, billing_email), lines:le_invoice_line(*)')
+      .select('*, customer:customers(id, company_name, street, building_number, zip, city, country, billing_email), project:le_project(id, name), lines:le_invoice_line(*)')
       .order('created_at', { ascending: false });
     if (status) q = q.eq('status', status);
     const { data, error } = await q;
@@ -326,7 +335,7 @@ export const leInvoice = {
   get: async (id) => {
     const { data, error } = await supabase
       .from('le_invoice')
-      .select('*, customer:customers(id, company_name, street, building_number, zip, city, country, billing_email), project:le_project(id, name, billing_mode, billing_email), lines:le_invoice_line(*)')
+      .select('*, customer:customers(id, company_name, street, building_number, zip, city, country, billing_email), project:le_project(id, name, billing_mode), lines:le_invoice_line(*)')
       .eq('id', id)
       .single();
     if (error) throw error;
