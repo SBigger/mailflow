@@ -183,7 +183,8 @@
   <input type="file" id="fileInput" accept="audio/*,video/webm" style="display:none">
   <button class="btn ghost" id="cleanBtn" title="Transkript mit KI bereinigen: Eigennamen und Tippfehler korrigieren, Schweizerdeutsch glätten">🪄 Korrektur</button>
   <button class="btn primary" id="evalBtn">✨ Auswerten</button>
-  <button class="btn ghost" id="exportBtn" title="Protokoll exportieren">⬇️</button>
+  <button class="btn ghost" id="wordBtn" title="Als sauber formatiertes Word-Dokument herunterladen">📄 Word</button>
+  <button class="btn ghost" id="exportBtn" title="Als Markdown/Text-Datei exportieren">⬇️</button>
   <button class="btn ghost" id="setBtn" title="Einstellungen">⚙️</button>
 </header>
 
@@ -825,7 +826,7 @@ Leere Listen als [] zurückgeben.`;
     traktanden=(obj.traktanden||[]).map(t=>({titel:t.titel||"",inhalt:t.inhalt||""}));
     tasks=(obj.aufgaben||[]).map(t=>({text:t.text||"",who:t.verantwortlich||"",due:t.frist||""}));
     decisions=(obj.beschluesse||[]).map(d=>({text:d.text||""}));
-    renderResult();
+    renderResult(); saveEval();
     setStatus("✅ Auswertung fertig.",true); setTimeout(()=>setStatus("",false),4000);
   }catch(e){
     setStatus("❌ Auswertung fehlgeschlagen: "+e.message,true);
@@ -870,16 +871,16 @@ function renderResult(){
   (traktanden||[]).forEach((t,i)=>{ _sw+=`<div class="trakt"><div class="trakt-t">${escapeHtml(t.titel||("Traktandum "+(i+1)))}</div><div class="trakt-c" contenteditable spellcheck="false" data-tk="${i}">${escapeHtml(t.inhalt||"")}</div></div>`; });
   if(!_sw) _sw=`<div class="summary-box" style="color:var(--muted)">Noch keine Auswertung. Nach dem Transkript auf „✨ Auswerten" klicken.</div>`;
   $("#summaryWrap").innerHTML=_sw;
-  if($("#sumBox")) $("#sumBox").addEventListener("blur",e=>summaryText=e.target.textContent);
-  $("#summaryWrap").querySelectorAll("[data-tk]").forEach(el=>el.addEventListener("blur",e=>{ const i=+el.getAttribute("data-tk"); if(traktanden[i]) traktanden[i].inhalt=e.target.textContent; }));
+  if($("#sumBox")) $("#sumBox").addEventListener("blur",e=>{ summaryText=e.target.textContent; saveEval(); });
+  $("#summaryWrap").querySelectorAll("[data-tk]").forEach(el=>el.addEventListener("blur",e=>{ const i=+el.getAttribute("data-tk"); if(traktanden[i]) traktanden[i].inhalt=e.target.textContent; saveEval(); }));
   // Aufgaben
   const tl=$("#taskList"); tl.innerHTML="";
   tasks.forEach((t,i)=>{
     const el=document.createElement("div"); el.className="item task";
     el.innerHTML=`<button class="x">✕</button><div contenteditable spellcheck="false">${escapeHtml(t.text)}</div>
       <div class="meta">${t.who?`<span>👤 <b>${escapeHtml(t.who)}</b></span>`:""}${t.due?`<span>📅 <b>${escapeHtml(t.due)}</b></span>`:""}</div>`;
-    el.querySelector("[contenteditable]").addEventListener("blur",e=>t.text=e.target.textContent);
-    el.querySelector(".x").addEventListener("click",()=>{ tasks.splice(i,1); renderResult(); });
+    el.querySelector("[contenteditable]").addEventListener("blur",e=>{ t.text=e.target.textContent; saveEval(); });
+    el.querySelector(".x").addEventListener("click",()=>{ tasks.splice(i,1); saveEval(); renderResult(); });
     tl.appendChild(el);
   });
   // Beschlüsse
@@ -887,15 +888,15 @@ function renderResult(){
   decisions.forEach((d,i)=>{
     const el=document.createElement("div"); el.className="item decision";
     el.innerHTML=`<button class="x">✕</button><div contenteditable spellcheck="false">${escapeHtml(d.text)}</div>`;
-    el.querySelector("[contenteditable]").addEventListener("blur",e=>d.text=e.target.textContent);
-    el.querySelector(".x").addEventListener("click",()=>{ decisions.splice(i,1); renderResult(); });
+    el.querySelector("[contenteditable]").addEventListener("blur",e=>{ d.text=e.target.textContent; saveEval(); });
+    el.querySelector(".x").addEventListener("click",()=>{ decisions.splice(i,1); saveEval(); renderResult(); });
     dl.appendChild(el);
   });
 }
 document.querySelectorAll("[data-add]").forEach(b=>b.addEventListener("click",()=>{
   if(b.dataset.add==="task") tasks.push({text:"Neue Aufgabe",who:"",due:""});
   else decisions.push({text:"Neuer Beschluss"});
-  renderResult();
+  saveEval(); renderResult();
 }));
 $("#evalBtn").addEventListener("click",evaluate);
 $("#cleanBtn").addEventListener("click",aiCleanup);
@@ -920,6 +921,63 @@ $("#exportBtn").addEventListener("click",()=>{
   a.download=`GV-Protokoll_${kdPrefix}${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}.md`;
   a.click();
 });
+
+// ── Word-Export: sauber formatiertes .doc (öffnet direkt in Word) ──
+function exportWord(){
+  const d=new Date();
+  const kunde=currentCustomerName();
+  const esc=escapeHtml;
+  const dateStr=`${String(d.getDate()).padStart(2,"0")}.${String(d.getMonth()+1).padStart(2,"0")}.${d.getFullYear()}`;
+  const inclTr = (segments.length>0) && confirm("Vollständiges Transkript am Schluss anhängen?\n\nOK = mit Transkript   ·   Abbrechen = nur Protokoll (Zusammenfassung, Traktanden, Beschlüsse, Aufgaben)");
+  let b=`<h1>Protokoll</h1>`;
+  if(kunde) b+=`<div class="sub">${esc(kunde)}</div>`;
+  b+=`<table class="meta"><tr><td class="k">Datum</td><td>${dateStr}</td></tr>`+
+     `<tr><td class="k">Teilnehmer</td><td>${esc(persons.map(p=>p.name).join(", ")||"—")}</td></tr></table>`;
+  if(summaryText) b+=`<h2>Zusammenfassung</h2><p>${esc(summaryText).replace(/\n/g,"<br>")}</p>`;
+  if(traktanden&&traktanden.length){
+    b+=`<h2>Traktanden</h2>`;
+    traktanden.forEach((t,i)=>{ b+=`<h3>${i+1}.&nbsp; ${esc(t.titel||("Traktandum "+(i+1)))}</h3>`;
+      if(t.inhalt) b+=`<p>${esc(t.inhalt).replace(/\n/g,"<br>")}</p>`; });
+  }
+  if(decisions.length){ b+=`<h2>Beschlüsse</h2><ul>`; decisions.forEach(x=>b+=`<li>${esc(x.text)}</li>`); b+=`</ul>`; }
+  if(tasks.length){
+    b+=`<h2>Aufgaben &amp; Pendenzen</h2><table class="grid"><tr><th style="width:60%">Aufgabe</th><th>Verantwortlich</th><th>Frist</th></tr>`;
+    tasks.forEach(t=>b+=`<tr><td>${esc(t.text)}</td><td>${esc(t.who||"")}</td><td>${esc(t.due||"")}</td></tr>`);
+    b+=`</table>`;
+  }
+  if(inclTr){
+    b+=`<h2 style="page-break-before:always">Transkript</h2>`;
+    segments.forEach(s=>b+=`<p class="tr"><span class="sp">${esc(segLabel(s))}:</span> ${esc(s.text)}</p>`);
+  }
+  b+=`<p class="foot">Automatisch erstellt am ${dateStr} · Aktennotiz · Artis Treuhand</p>`;
+  const css=`
+    @page{margin:2.2cm 2cm}
+    body{font-family:Calibri,'Segoe UI',Arial,sans-serif;font-size:11pt;color:#1a1a1a;line-height:1.45}
+    h1{font-size:24pt;color:#3730a3;margin:0;font-weight:700}
+    .sub{font-size:13pt;color:#555;margin:1pt 0 14pt;font-weight:600}
+    h2{font-size:14pt;color:#3730a3;border-bottom:1px solid #c7c7e6;padding-bottom:3pt;margin:20pt 0 8pt}
+    h3{font-size:12pt;color:#222;margin:12pt 0 3pt;font-weight:700}
+    p{margin:0 0 8pt}
+    table.meta{border-collapse:collapse;margin:2pt 0 4pt}
+    table.meta td{padding:2pt 12pt 2pt 0;vertical-align:top;font-size:10.5pt}
+    table.meta td.k{color:#666;font-weight:600;white-space:nowrap}
+    ul{margin:2pt 0 8pt 0;padding-left:20pt}
+    li{margin:0 0 3pt}
+    table.grid{border-collapse:collapse;width:100%;margin:4pt 0 10pt;font-size:10.5pt}
+    table.grid th{background:#ede9fe;color:#3730a3;text-align:left;padding:5pt 8pt;border:1px solid #c7c7e6;font-size:10pt}
+    table.grid td{padding:5pt 8pt;border:1px solid #d4d4e4;vertical-align:top}
+    p.tr{margin:0 0 6pt}
+    p.tr .sp{font-weight:700;color:#3730a3}
+    p.foot{margin-top:22pt;color:#999;font-size:8.5pt;border-top:1px solid #e5e5e5;padding-top:6pt}
+  `;
+  const html=`<!DOCTYPE html><html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><title>Protokoll ${esc(kunde||"")}</title><style>${css}</style></head><body>${b}</body></html>`;
+  const blob=new Blob(["﻿",html],{type:"application/msword"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+  const kdPrefix=kunde?kunde.replace(/[^a-zA-Z0-9]+/g,"_").replace(/^_|_$/g,"")+"_":"";
+  a.download=`Protokoll_${kdPrefix}${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}.doc`;
+  a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+}
+$("#wordBtn").addEventListener("click",exportWord);
 
 // ════════════════════════════════════════════════════════════════
 //  Settings Modal
@@ -972,7 +1030,9 @@ $("#modal").addEventListener("click",e=>{ if(e.target===$("#modal")) $("#modal")
 // ════════════════════════════════════════════════════════════════
 function escapeHtml(s){ return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 function save(){ LS.set("gv_persons",persons); LS.set("gv_speakerMap",speakerMap); LS.set("gv_segOverrides",segOverrides); }
+function saveEval(){ LS.set("gv_eval",{summaryText,traktanden,tasks,decisions}); }
 segments = LS.get("gv_segments", []);   // letztes Transkript wiederherstellen
+(function(){ const ev=LS.get("gv_eval",null); if(ev){ summaryText=ev.summaryText||""; traktanden=ev.traktanden||[]; tasks=ev.tasks||[]; decisions=ev.decisions||[]; } })();   // Auswertung wiederherstellen (übersteht Reload)
 renderPersons(); renderTranscript(); renderResult();
 refreshRecoveryBanner();                // nach Crash/Reload: gesicherte Aufnahmen anbieten
 // Traktandenliste merken
