@@ -118,7 +118,7 @@ export default function Kontenplan() {
   const inaktiv = konten.length - aktiv;
 
   const s = {
-    page: { padding: 28, fontFamily: "'Inter', system-ui, sans-serif", maxWidth: 1100 },
+    page: { padding: 28, fontFamily: "'Inter', system-ui, sans-serif" },
     header: { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 6 },
     title: { fontWeight: 700, fontSize: 20, color: '#1a1a2e', margin: 0 },
     kpi: { display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' },
@@ -139,8 +139,19 @@ export default function Kontenplan() {
     klasseHeader: { display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: '#e6ede6', borderRadius: 8, cursor: 'pointer', marginBottom: 2, userSelect: 'none' },
     klasseLabel: { fontWeight: 600, fontSize: 12.5, color: '#3d6641', flex: 1 },
     klasseBadge: { fontSize: 11, color: '#6b826b', background: '#d4dcd4', borderRadius: 10, padding: '1px 7px' },
-    table: { width: '100%', borderCollapse: 'collapse' },
-    th: { fontSize: 11, fontWeight: 600, color: '#94a394', textAlign: 'left', padding: '5px 10px', borderBottom: '1px solid #f0f3f0' },
+    table: { width: '100%', borderCollapse: 'collapse', minWidth: 650 },
+    th: {
+      fontSize: 11,
+      fontWeight: 600,
+      color: '#94a394',
+      textAlign: 'left',
+      padding: '5px 10px',
+      borderBottom: '1px solid #f0f3f0',
+      position: 'sticky',
+      top: 0,
+      background: '#fff',
+      zIndex: 1
+    },
     td: { fontSize: 13, padding: '8px 10px', borderBottom: '1px solid #f7faf7', verticalAlign: 'middle' },
     nrCell: { fontWeight: 600, color: '#3d6641', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' },
     typBadge: (typ) => ({
@@ -184,81 +195,91 @@ export default function Kontenplan() {
         </button>
       </div>
 
-      {loading ? (
-        <div style={{ color: '#94a394', fontSize: 13 }}>Lade Kontenplan…</div>
-      ) : (
-        KLASSEN.map(kl => {
-          const list = byKlasse[kl.nr] ?? [];
-          if (list.length === 0 && search) return null;
-          const open = !collapsed[kl.nr];
-          return (
-            <div key={kl.nr} style={s.klasse}>
-              <div style={s.klasseHeader} onClick={() => setCollapsed(c => ({ ...c, [kl.nr]: !c[kl.nr] }))}>
-                <span style={{ fontSize: 12, color: '#6b826b' }}>{open ? '▾' : '▸'}</span>
-                <span style={s.klasseLabel}>{kl.label}</span>
-                <span style={s.klasseBadge}>{list.length} Konten</span>
-              </div>
-              {open && (
-                list.length === 0 ? (
-                  <div style={s.empty}>Keine Konten in dieser Klasse.</div>
-                ) : (
-                  <table style={s.table}>
-                    <thead>
-                      <tr>
-                        <th style={s.th}>Konto-Nr</th>
-                        <th style={s.th}>Bezeichnung</th>
-                        <th style={s.th}>Typ</th>
-                        <th style={s.th}>Währung</th>
-                        <th style={s.th}>MWST-Code</th>
-                        <th style={{ ...s.th, textAlign: 'right' }}>Aktiv</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {list.map(k => (
-                        <tr key={k.id} style={{ background: !k.aktiv ? '#faf5ff' : undefined }}>
-                          <td style={{ ...s.td, ...s.nrCell }}>{k.konto_nr}</td>
-                          <td style={s.td}>
-                            {k.bezeichnung}
-                            {!k.aktiv && (
-                              <span style={{ marginLeft: 8, fontSize: 10.5, fontWeight: 600, padding: '2px 7px', borderRadius: 5, background: '#ede4ff', color: '#6b3aaa' }}>inaktiv</span>
-                            )}
-                          </td>
-                          <td style={s.td}><span style={s.typBadge(k.konto_typ)}>{k.konto_typ}</span></td>
-                          <td style={s.td}>
-                            <select
-                              value={k.waehrung ?? 'CHF'}
-                              disabled={!canWrite}
-                              onChange={e => handleWaehrung(k, e.target.value)}
-                              style={{
-                                border: '1px solid #d4dcd4', borderRadius: 6, padding: '3px 6px',
-                                fontSize: 12, background: (k.waehrung && k.waehrung !== 'CHF') ? '#fff7ed' : '#fff',
-                                color: (k.waehrung && k.waehrung !== 'CHF') ? '#9a3412' : '#1a1a2e',
-                                fontWeight: (k.waehrung && k.waehrung !== 'CHF') ? 600 : 400, outline: 'none',
-                              }}
-                            >
-                              {[...new Set([k.waehrung ?? 'CHF', ...WAEHRUNGEN])].map(w => (
-                                <option key={w} value={w}>{w}</option>
+      <div style={{
+        overflowX: 'auto',
+        overflowY: 'auto',
+        maxWidth: '100%',
+        width: '100%',
+        maxHeight: 'calc(100vh - 200px)', // Nutzt den verfügbaren Platz im Fenster minus Header/KPIs
+        border: '1px solid #e6ede6',       // Optional: Ein feiner Rahmen zeigt die Box-Grenzen an
+        borderRadius: 8
+      }}>
+        {loading ? (
+            <div style={{ color: '#94a394', fontSize: 13 }}>Lade Kontenplan…</div>
+        ) : (
+            KLASSEN.map(kl => {
+              const list = byKlasse[kl.nr] ?? [];
+              if (list.length === 0 && search) return null;
+              const open = !collapsed[kl.nr];
+              return (
+                  <div key={kl.nr} style={s.klasse}>
+                    <div style={s.klasseHeader} onClick={() => setCollapsed(c => ({ ...c, [kl.nr]: !c[kl.nr] }))}>
+                      <span style={{ fontSize: 12, color: '#6b826b' }}>{open ? '▾' : '▸'}</span>
+                      <span style={s.klasseLabel}>{kl.label}</span>
+                      <span style={s.klasseBadge}>{list.length} Konten</span>
+                    </div>
+                    {open && (
+                        list.length === 0 ? (
+                            <div style={s.empty}>Keine Konten in dieser Klasse.</div>
+                        ) : (
+                            <table style={s.table}>
+                              <thead>
+                              <tr>
+                                <th style={s.th}>Konto-Nr</th>
+                                <th style={s.th}>Bezeichnung</th>
+                                <th style={s.th}>Typ</th>
+                                <th style={s.th}>Währung</th>
+                                <th style={s.th}>MWST-Code</th>
+                                <th style={{ ...s.th, textAlign: 'right' }}>Aktiv</th>
+                              </tr>
+                              </thead>
+                              <tbody>
+                              {list.map(k => (
+                                  <tr key={k.id} style={{ background: !k.aktiv ? '#faf5ff' : undefined }}>
+                                    <td style={{ ...s.td, ...s.nrCell }}>{k.konto_nr}</td>
+                                    <td style={s.td}>
+                                      {k.bezeichnung}
+                                      {!k.aktiv && (
+                                          <span style={{ marginLeft: 8, fontSize: 10.5, fontWeight: 600, padding: '2px 7px', borderRadius: 5, background: '#ede4ff', color: '#6b3aaa' }}>inaktiv</span>
+                                      )}
+                                    </td>
+                                    <td style={s.td}><span style={s.typBadge(k.konto_typ)}>{k.konto_typ}</span></td>
+                                    <td style={s.td}>
+                                      <select
+                                          value={k.waehrung ?? 'CHF'}
+                                          disabled={!canWrite}
+                                          onChange={e => handleWaehrung(k, e.target.value)}
+                                          style={{
+                                            border: '1px solid #d4dcd4', borderRadius: 6, padding: '3px 6px',
+                                            fontSize: 12, background: (k.waehrung && k.waehrung !== 'CHF') ? '#fff7ed' : '#fff',
+                                            color: (k.waehrung && k.waehrung !== 'CHF') ? '#9a3412' : '#1a1a2e',
+                                            fontWeight: (k.waehrung && k.waehrung !== 'CHF') ? 600 : 400, outline: 'none',
+                                          }}
+                                      >
+                                        {[...new Set([k.waehrung ?? 'CHF', ...WAEHRUNGEN])].map(w => (
+                                            <option key={w} value={w}>{w}</option>
+                                        ))}
+                                      </select>
+                                    </td>
+                                    <td style={s.td}>
+                                      {k.mwst_code
+                                          ? <span style={s.mwstBadge}>{k.mwst_code}</span>
+                                          : <span style={{ color: '#d1d5db', fontSize: 11 }}>—</span>}
+                                    </td>
+                                    <td style={{ ...s.td, textAlign: 'right' }}>
+                                      <Toggle value={k.aktiv} onChange={() => handleToggle(k)} disabled={saving[k.id] || !canWrite} />
+                                    </td>
+                                  </tr>
                               ))}
-                            </select>
-                          </td>
-                          <td style={s.td}>
-                            {k.mwst_code
-                              ? <span style={s.mwstBadge}>{k.mwst_code}</span>
-                              : <span style={{ color: '#d1d5db', fontSize: 11 }}>—</span>}
-                          </td>
-                          <td style={{ ...s.td, textAlign: 'right' }}>
-                            <Toggle value={k.aktiv} onChange={() => handleToggle(k)} disabled={saving[k.id] || !canWrite} />
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )
-              )}
-            </div>
-          );
-        })
-      )}
+                              </tbody>
+                            </table>
+                        )
+                    )}
+                  </div>
+              );
+            })
+        )}
+      </div>
     </div>
   );
 }

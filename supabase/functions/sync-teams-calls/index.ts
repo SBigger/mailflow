@@ -20,9 +20,9 @@ const corsHeaders = {
 };
 
 // ── Konfiguration ───────────────────────────────────────────────
-const TENANT_ID     = Deno.env.get('MS_GRAPH_TENANT_ID')!;
-const CLIENT_ID     = Deno.env.get('MS_GRAPH_CLIENT_ID')!;
-const CLIENT_SECRET = Deno.env.get('MS_GRAPH_CLIENT_SECRET')!;
+const CLIENT_ID = Deno.env.get('MICROSOFT_CLIENT_ID')!
+const TENANT_ID = Deno.env.get('MICROSOFT_TENANT_ID')!
+const CLIENT_SECRET = Deno.env.get('MICROSOFT_CLIENT_SECRET')!
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_KEY  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -398,6 +398,8 @@ Deno.serve(async (req) => {
     });
   }
 
+  console.log("isCron:" + isCronCall)
+
   try {
     const supabase = createClient(SUPABASE_URL, SERVICE_KEY, {
       auth: { persistSession: false },
@@ -435,6 +437,8 @@ Deno.serve(async (req) => {
       .select('id, full_name, phone')
       .not('phone', 'is', null);
 
+    console.log(`[SYNC LÄUFT] Insgesamt ${profiles.length} mit Telefonnr. gefunden.`);
+
     // staffPhoneIndex: letzten 9 Ziffern → { staffId, staffName }
     const staffPhoneIndex = new Map<string, { staffId: string; staffName: string }>();
     for (const p of profiles || []) {
@@ -470,6 +474,8 @@ Deno.serve(async (req) => {
 
     // 4) callRecords Liste holen (alle Seiten, ohne expand)
     const listRecords = await fetchCallRecordsList(token, sinceISO);
+
+    console.log(`[SYNC LÄUFT] Insgesamt ${listRecords.length} Calls gefunden.`);
 
     // 4b) Details pro Record nachladen (sessions + segments für Nummern)
     //     Parallelisiert in Batches, damit wir Graph nicht überrennen.

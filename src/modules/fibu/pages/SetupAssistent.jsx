@@ -585,14 +585,18 @@ function StepZahlstellen({ mandant, onDone }) {
             </select>
           </div>
         </div>
-        <button style={btn('dark')} onClick={save} disabled={saving}>
-          {saving ? '⏳ Speichert…' : '+ Zahlstelle hinzufügen'}
-        </button>
-        {msg && (
-          <div style={{ marginTop: 12, padding: '9px 13px', borderRadius: 7, fontSize: 12.5, background: msg.type === 'ok' ? OK.bg : ER.bg, color: msg.type === 'ok' ? OK.color : ER.color }}>
-            {msg.text}
-          </div>
-        )}
+        <div style={{ display: 'flex', flexDirection: 'row', gap: 10 }}>
+          {/* Zeilen-Container */}
+          <button style={{...btn('dark'), maxWidth: '22%', width: '100%'}} onClick={save} disabled={saving}>
+            {saving ? '⏳ Speichert…' : '+ Zahlstelle hinzufügen'}
+          </button>
+
+          {msg && (
+              <div style={{width: '100%', textAlign: 'center', padding: '9px 13px', borderRadius: 7, fontSize: 12.5, background: msg.type === 'ok' ? OK.bg : ER.bg, color: msg.type === 'ok' ? OK.color : ER.color }}>
+                {msg.text}
+              </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -937,7 +941,7 @@ export default function SetupAssistent() {
   const back = () => setStep(s => Math.max(s - 1, 0));
 
   return (
-    <div style={{ height: '100%', overflow: 'auto', padding: '28px 32px', maxWidth: 1060, margin: '0 auto' }}>
+    <div style={{ height: '100%', overflow: 'auto', padding: '28px 32px', margin: '0 auto' }}>
       {/* Header */}
       <div style={{ marginBottom: 28 }}>
         <h1 style={{ fontSize: 22, fontWeight: 800, color: '#1a1a2e', marginBottom: 4 }}>

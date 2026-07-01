@@ -25,12 +25,12 @@ const PLACE_KEY = "docPreviewPlacement";
 const blobCache = new Map();  // doc.id -> { url, blob }
 
 async function getBlob(doc, url) {
-  const c = blobCache.get(doc.id);
+  const c = blobCache.get(doc?.id);
   if (c && c.url === url) return c.blob;
   const resp = await fetch(url);
   if (!resp.ok) throw new Error("Download fehlgeschlagen (" + resp.status + ")");
   const blob = await resp.blob();
-  blobCache.set(doc.id, { url, blob });
+  blobCache.set(doc?.id, { url, blob });
   return blob;
 }
 
@@ -124,11 +124,11 @@ export default function DocHoverPreview({ doc, url, rect, theme, onClose }) {
     let cancelled = false;
     setSt({ kind: "loading", payload: null, error: null });
     setPdfImg(null); pdfDocRef.current = null; setExcel(null);
-    const name = (doc.filename || doc.name || "").toLowerCase();
+    const name = (doc?.filename || doc?.name || "").toLowerCase();
 
     (async () => {
       try {
-        if (doc.file_size && doc.file_size > MAX_BYTES) { if (!cancelled) setSt({ kind: "toobig" }); return; }
+        if (doc?.file_size && doc?.file_size > MAX_BYTES) { if (!cancelled) setSt({ kind: "toobig" }); return; }
         const blob = await getBlob(doc, url);
         if (cancelled) return;
 
@@ -167,7 +167,7 @@ export default function DocHoverPreview({ doc, url, rect, theme, onClose }) {
     })();
 
     return () => { cancelled = true; if (objUrlRef.current) { URL.revokeObjectURL(objUrlRef.current); objUrlRef.current = null; } };
-  }, [doc.id, url]);
+  }, [doc?.id, url]);
 
   // ── PDF-Seite rendern ──
   useEffect(() => {
@@ -200,7 +200,7 @@ export default function DocHoverPreview({ doc, url, rect, theme, onClose }) {
         style={{ flexShrink: 0, padding: "7px 8px 7px 12px", borderBottom: "1px solid " + C.headBorder,
           display: "flex", alignItems: "center", gap: 6, background: C.headBg, cursor: "move", userSelect: "none" }}>
         <span style={{ fontSize: 11, fontWeight: 600, color: C.headFg, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
-          {doc.name || doc.filename}
+          {doc?.name || doc?.filename}
         </span>
         {st.kind === "pdf" && pdfNum > 1 && (
           <span onMouseDown={e => e.stopPropagation()} style={{ display: "flex", alignItems: "center", gap: 4, marginRight: 4 }}>

@@ -1,11 +1,14 @@
 /**
  * Debitoren-Dashboard / Rechnungsübersicht — optisch identisch zum KreditorenDashboard.
  */
-import React, { useEffect, useState } from 'react';
+import React, {useContext, useEffect, useRef, useState} from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMandant } from '../contexts/MandantContext';
 import { debitorenApi, mandantenApi, zahlstellenApi } from '../api';
-import { generateDebitorenPdf, triggerDownload } from '../utils/debitorenInvoicePdf';
+import {Eye} from "lucide-react";
+import DocHoverPreview from "../../../components/dokumente/DocHoverPreview.jsx";
+import {ThemeContext} from "../../../Layout.jsx";
+import {supabase} from "../../../api/supabaseClient.js";
 
 const CHF = (n) => n == null ? '—' : new Intl.NumberFormat('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 const DATE = (s) => s ? new Date(s).toLocaleDateString('de-CH') : '—';
@@ -38,6 +41,7 @@ function faelligStatus(faelligkeit) {
 }
 
 export default function DebitorenUebersicht() {
+  const { theme } = useContext(ThemeContext);
   const { mandant } = useMandant();
   const navigate = useNavigate();
   const [belege, setBelege]   = useState([]);
@@ -45,6 +49,8 @@ export default function DebitorenUebersicht() {
   const [pdfBusy, setPdfBusy] = useState(null);   // beleg.id während Generierung
   const [mSettings, setMSettings] = useState(null);
   const [zahlstellen, setZahlstellen] = useState([]);
+  const [hoverPreview,  setHoverPreview]  = useState(null);
+  const hoverTimer = useRef(null);
 
   useEffect(() => {
     if (!mandant) return;
@@ -54,22 +60,6 @@ export default function DebitorenUebersicht() {
     zahlstellenApi.list(mandant.id).then(setZahlstellen).catch(console.error);
   }, [mandant?.id]);
 
-  const makePdf = async (b, e) => {
-    e.stopPropagation();
-    setPdfBusy(b.id);
-    try {
-      const full = await debitorenApi.get(b.id);
-      const zs = zahlstellen.find(z => z.id === mSettings?.rechnung_zahlstelle_id) || zahlstellen[0] || {};
-      const { url, blob } = await generateDebitorenPdf({
-        beleg: full, positionen: full.positionen || [], kunde: full.kunde || {},
-        mandant: mSettings || mandant, zahlstelle: zs,
-      });
-      if (url) await debitorenApi.update(b.id, { pdf_url: url }).catch(() => {});
-      triggerDownload(blob, `${b.beleg_nr}.pdf`);
-      debitorenApi.list(mandant.id).then(setBelege);
-    } catch (err) { alert('PDF-Erzeugung fehlgeschlagen: ' + err.message); }
-    finally { setPdfBusy(null); }
-  };
 
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const in7  = new Date(today.getTime() + 7 * 86400000);
@@ -91,6 +81,32 @@ export default function DebitorenUebersicht() {
     if (!confirm(`Rechnung ${b.beleg_nr} stellen und verbuchen?`)) return;
     try { await debitorenApi.stellen(b.id); debitorenApi.list(mandant.id).then(setBelege); }
     catch (err) { alert('Fehler: ' + err.message); }
+  };
+
+  // ── Hover-Vorschau: Maus ueber das Augen-Symbol → Popup mit Dateivorschau ──
+  // Nur fuer Supabase-Dateien (Signed-URL abrufbar); SharePoint ist tabu.
+  const openHoverPreview = (beleg, el) => {
+    clearTimeout(hoverTimer.current);
+    const rect = el.getBoundingClientRect();
+    hoverTimer.current = setTimeout(async () => {
+      if (beleg.pdf_url) setHoverPreview({ doc: null, url: beleg.pdf_url, rect });
+    }, 280);
+  };
+  // Nur ein noch nicht ausgeloestes Oeffnen abbrechen — ein offenes Fenster bleibt.
+  const cancelHoverOpen = () => { clearTimeout(hoverTimer.current); };
+  // Gibt das Augen-Symbol fuer eine Zeile zurueck (nur bei lokal previewbaren Dateien).
+  const renderPreviewEye = (beleg) => {
+    // Alles liegt in Supabase-Storage; sobald ein storage_path da ist, ist die Datei previewbar.
+    if (!beleg.pdf_url) return null;
+    return (
+        <button title="Vorschau (Maus drüberhalten — Fenster bleibt, ist verschieb- und größenverstellbar)"
+                onMouseEnter={e => openHoverPreview(beleg, e.currentTarget)}
+                onMouseLeave={cancelHoverOpen}
+                onClick={e => e.stopPropagation()}
+                style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}>
+          <Eye size={13} />
+        </button>
+    );
   };
 
   const hdr = { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: '#6b826b', padding: '9px 12px', borderBottom: '2px solid #e4e9e4', textAlign: 'left', whiteSpace: 'nowrap', background: '#fff' };
@@ -159,12 +175,9 @@ export default function DebitorenUebersicht() {
                             >Stellen</button>
                           )}
                           {b.status !== 'storniert' && (
-                            <button
-                              style={{ fontSize: 11.5, padding: '4px 10px', borderRadius: 7, border: '1px solid #d4dcd4', background: '#fff', color: '#4a5a4a', cursor: pdfBusy === b.id ? 'wait' : 'pointer', fontWeight: 500 }}
-                              disabled={pdfBusy === b.id}
-                              onClick={(e) => makePdf(b, e)}
-                              title="QR-Rechnung als PDF erzeugen & herunterladen"
-                            >{pdfBusy === b.id ? '…' : '↓ PDF'}</button>
+                              <>
+                                {renderPreviewEye(b)}
+                              </>
                           )}
                         </td>
                       </tr>
@@ -224,6 +237,15 @@ export default function DebitorenUebersicht() {
           </div>
         </div>
       </div>
+      {hoverPreview && (
+          <DocHoverPreview
+              doc={hoverPreview.doc}
+              url={hoverPreview.url}
+              rect={hoverPreview.rect}
+              theme={theme}
+              onClose={() => setHoverPreview(null)}
+          />
+      )}
     </div>
   );
 }

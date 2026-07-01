@@ -112,19 +112,20 @@ serve(async (req) => {
 
   if (!response.ok) {
     const errText = await response.text()
+    console.error("[SUPPORT-SYNC] Graph API Error Text:", errText);
     if (response.status === 410 || errText.includes('syncStateNotFound')) {
       await supabase.from('system_settings').upsert(
-        { key: DELTA_KEY, value: '', updated_at: new Date().toISOString() },
-        { onConflict: 'key' }
+          { key: DELTA_KEY, value: '', updated_at: new Date().toISOString() },
+          { onConflict: 'key' }
       )
       return new Response(
-        JSON.stringify({ error: 'Delta-Token abgelaufen, zurueckgesetzt', resetDelta: true }),
-        { status: 200, headers: corsHeaders }
+          JSON.stringify({ error: 'Delta-Token abgelaufen, zurueckgesetzt', resetDelta: true }),
+          { status: 200, headers: corsHeaders }
       )
     }
     return new Response(
-      JSON.stringify({ error: `MS Graph Fehler ${response.status}`, details: errText }),
-      { status: 500, headers: corsHeaders }
+        JSON.stringify({ error: `MS Graph Fehler ${response.status}`, details: errText }),
+        { status: 500, headers: corsHeaders }
     )
   }
 

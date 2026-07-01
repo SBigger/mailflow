@@ -56,7 +56,7 @@ export function AuthProvider({ children }) {
 
   async function loadProfile(userId, user) {
     const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
-    if(data.inviteState === 1) {
+    if(data && data.inviteState === 1) {
       setProfile(null);
       setUser(null);
     } else {
