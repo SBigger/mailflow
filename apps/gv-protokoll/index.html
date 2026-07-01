@@ -180,6 +180,14 @@
   .pg-btn{border:1px solid var(--border-2);background:var(--surface);border-radius:8px;padding:4px 9px;font-size:12px;font-weight:600;color:var(--fg);cursor:pointer;white-space:nowrap}
   .pg-btn:hover{border-color:var(--accent);color:var(--accent)}
   .pg-del:hover{border-color:var(--red);color:var(--red)}
+  .pg-prev{border:1px solid var(--border);border-radius:10px;margin:-2px 2px 8px;padding:9px 11px;background:var(--surface);font-size:12.5px}
+  .pg-ps{margin-bottom:8px}
+  .pg-ps>b{display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--accent);margin-bottom:3px}
+  .pg-tk{margin:1px 0;line-height:1.4}
+  .pg-cnt{color:var(--muted);font-size:11px;font-weight:600}
+  .pg-tr{max-height:34vh;overflow-y:auto;margin-top:3px;padding-right:4px}
+  .pg-tr p{margin:0 0 4px;line-height:1.4}
+  .pg-tr p span{font-weight:700;color:var(--fg2)}
 </style>
 </head>
 <body>
@@ -1082,6 +1090,7 @@ function renderProtocolList(rows){
       const dt=r.meeting_date?String(r.meeting_date).split("-").reverse().join("."):"";
       html+=`<div class="pg-row"><span class="pg-t" title="${escapeHtml(r.title)}">${escapeHtml(r.title)}</span>`+
         `<span class="pg-d">${dt}</span>`+
+        `<button class="pg-btn" data-act="view" data-id="${r.id}" title="Transkript ansehen (ohne zu laden)">👁</button>`+
         `<button class="pg-btn" data-act="open" data-id="${r.id}">Öffnen</button>`+
         `<button class="pg-btn" data-act="word" data-id="${r.id}" title="Direkt als Word">📄</button>`+
         `<button class="pg-btn pg-del" data-act="del" data-id="${r.id}" title="Löschen">🗑</button></div>`;
@@ -1090,10 +1099,48 @@ function renderProtocolList(rows){
   box.innerHTML=html;
   box.querySelectorAll(".pg-btn").forEach(b=>b.addEventListener("click",()=>{
     const id=b.dataset.id, act=b.dataset.act;
-    if(act==="open") openProtocol(id,false);
+    if(act==="view") viewProtocol(id,b);
+    else if(act==="open") openProtocol(id,false);
     else if(act==="word") openProtocol(id,true);
     else if(act==="del") deleteProtocol(id);
   }));
+}
+// Read-only-Vorschau eines gespeicherten Protokolls (Transkript/Zusammenfassung/Traktanden)
+const _protoCache={};
+function _labelFor(data, seg){
+  const ps=data.persons||[], sm=data.speakerMap||{}, ov=data.segOverrides||{};
+  const k=String(Math.round(seg.start||0));
+  const pid=(ov[k]!==undefined?ov[k]:sm[seg.speaker])||"";
+  const p=ps.find(x=>x.id===pid);
+  if(p) return p.name;
+  const n=parseInt(String(seg.speaker||"").replace(/\D/g,"")); return "Sprecher "+((isNaN(n)?0:n)+1);
+}
+async function viewProtocol(id, btn){
+  const row=btn.closest(".pg-row");
+  const nxt=row.nextElementSibling;
+  if(nxt && nxt.classList.contains("pg-prev")){ nxt.remove(); btn.textContent="👁"; return; }
+  document.querySelectorAll("#protoList .pg-prev").forEach(el=>el.remove());
+  document.querySelectorAll('#protoList .pg-btn[data-act="view"]').forEach(el=>el.textContent="👁");
+  btn.textContent="⏳";
+  let data=_protoCache[id];
+  if(!data){
+    const tok=mailflowToken(); if(!tok){ btn.textContent="👁"; return; }
+    try{
+      const r=await fetch(SUPA_REST+"/gv_protocols?id=eq."+id+"&select=data",{ headers:{ apikey:PROXY_KEY, Authorization:"Bearer "+tok } });
+      if(!r.ok) throw new Error("HTTP "+r.status);
+      const rows=await r.json(); data=(rows&&rows[0]&&rows[0].data)||{}; _protoCache[id]=data;
+    }catch(e){ btn.textContent="👁"; setStatus("❌ Vorschau fehlgeschlagen: "+e.message,true); return; }
+  }
+  btn.textContent="🔽";
+  const segs=data.segments||[]; let h="";
+  if(data.summaryText) h+=`<div class="pg-ps"><b>Zusammenfassung</b><div>${escapeHtml(data.summaryText)}</div></div>`;
+  if(data.traktanden&&data.traktanden.length){ h+=`<div class="pg-ps"><b>Traktanden</b>`; data.traktanden.forEach((t,i)=>{ h+=`<div class="pg-tk">${i+1}. ${escapeHtml(t.titel||"")}${t.inhalt?": "+escapeHtml(t.inhalt):""}</div>`; }); h+=`</div>`; }
+  h+=`<div class="pg-ps"><b>Transkript</b> <span class="pg-cnt">(${segs.length} Abschnitte)</span><div class="pg-tr">`;
+  if(segs.length) segs.forEach(s=>{ h+=`<p><span>${escapeHtml(_labelFor(data,s))}:</span> ${escapeHtml(s.text||"")}</p>`; });
+  else h+=`<p class="pg-cnt">Kein Transkript gespeichert.</p>`;
+  h+=`</div></div>`;
+  const prev=document.createElement("div"); prev.className="pg-prev"; prev.innerHTML=h;
+  row.after(prev);
 }
 async function openProtocol(id, thenWord){
   const tok=mailflowToken(); if(!tok) return;
