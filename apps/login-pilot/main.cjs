@@ -130,15 +130,18 @@ async function doWebLogin(login) {
   loginWindows.set(login.id, win);
   win.on('closed', () => loginWindows.delete(login.id));
 
-  let filled = false;
+  let lastRun = '';
   win.webContents.on('did-finish-load', async () => {
-    if (filled) return;
+    let curUrl;
     try {
+      curUrl = win.webContents.getURL();
       const th = new URL(login.url).hostname;
-      const ch = new URL(win.webContents.getURL()).hostname;
+      const ch = new URL(curUrl).hostname;
       if (!ch.endsWith(th.split('.').slice(-2).join('.'))) return;
     } catch { return; }
-    filled = true;
+    // Auf jeder (neuen) Seite derselben Domain ausführen: Portal -> Kachel -> echte Login-Seite
+    if (curUrl === lastRun) return;
+    lastRun = curUrl;
 
     await new Promise(r => setTimeout(r, Number(login.delay ?? 1500)));
 
@@ -149,6 +152,7 @@ async function doWebLogin(login) {
     const auto = login.autoSubmit !== false;   // Standard: automatisch anmelden
 
     const script = `(function(){
+      function vis(e){return e&&e.offsetParent!==null&&!e.disabled;}
       function fill(sel,val){
         const all=Array.from(document.querySelectorAll(sel));
         const el=all.find(e=>e.offsetParent!==null&&!e.disabled)||all[0];
@@ -158,40 +162,43 @@ async function doWebLogin(login) {
         ['input','change','keydown','keyup'].forEach(t=>el.dispatchEvent(new Event(t,{bubbles:true,cancelable:true})));
         el.focus();return true;
       }
+      function label(e){return ((e.innerText||e.value||'')+' '+((e.getAttribute&&(e.getAttribute('aria-label')||e.getAttribute('title')||e.getAttribute('alt')))||'')).trim();}
+      function clickable(el){
+        for(var n=el;n&&n!==document.body;n=n.parentElement){
+          var t=n.tagName.toLowerCase();
+          if(t==='a'||t==='button')return n;
+          if(n.getAttribute&&(n.getAttribute('role')==='button'||n.hasAttribute('onclick')))return n;
+          try{if(getComputedStyle(n).cursor==='pointer')return n;}catch(e){}
+        }
+        return el;
+      }
       var P=${JSON.stringify(pSel)}, S=${JSON.stringify(sSel)}, KW=${JSON.stringify(kw)};
       fill(${JSON.stringify(uSel)},${JSON.stringify(login.username||'')});
       fill(P,${JSON.stringify(login.password||'')});
-      if(${JSON.stringify(auto)}){
-        setTimeout(function(){
-          var pw=document.querySelector(P);
-          var form=pw&&pw.form;
-          var scope=form||document;
-          function label(e){return ((e.innerText||e.value||'')+' '+(e.getAttribute&&(e.getAttribute('aria-label')||e.getAttribute('title'))||'')).trim();}
-          var cands=Array.prototype.slice.call(scope.querySelectorAll('button,input[type=submit],input[type=image],input[type=button],a[role=button]'))
-            .filter(function(e){return e.offsetParent!==null&&!e.disabled;});
-          // 1. Ausdrücklicher Selektor
-          if(S){var b=document.querySelector(S);if(b){b.click();return;}}
-          // 2. Stichwort (vom Benutzer)
-          if(KW){
-            var lk=KW.toLowerCase();
-            var hit=cands.find(function(e){return label(e).toLowerCase().indexOf(lk)!==-1;});
-            if(hit){hit.click();return;}
-          }
-          // 3. Automatisch passenden Anmelde-Button finden
-          var re=/(log ?in|anmeld|sign ?in|einloggen|weiter|continue|next|senden|submit)/i;
-          var btn=cands.find(function(e){
-            var t=(e.type||'').toLowerCase();
-            if(t==='submit'||t==='image')return true;
-            return re.test(label(e));
-          });
-          if(btn){btn.click();return;}
-          // 4. Enter im Passwortfeld
-          if(pw){['keydown','keypress','keyup'].forEach(function(ty){
-            pw.dispatchEvent(new KeyboardEvent(ty,{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true,cancelable:true}));});}
-          // 5. Formular direkt absenden
-          if(form){if(form.requestSubmit)form.requestSubmit();else form.submit();}
-        },700);
-      }
+      if(!${JSON.stringify(auto)})return;
+      setTimeout(function(){
+        // 1. Ausdrücklicher Selektor
+        if(S){var b=document.querySelector(S);if(b){b.click();return;}}
+        // 2. Stichwort – breite Suche (auch Kacheln, Links, Überschriften)
+        if(KW){
+          var lk=KW.toLowerCase();
+          var all=Array.prototype.slice.call(document.querySelectorAll('a,button,[role=button],[onclick],div,li,span,section,article,h1,h2,h3,h4,p,img'));
+          var matches=all.filter(function(e){return vis(e)&&label(e).toLowerCase().indexOf(lk)!==-1;});
+          matches.sort(function(a,b){return label(a).length-label(b).length;});
+          if(matches.length){clickable(matches[0]).click();return;}
+        }
+        // 3. Nur echte Login-Seiten automatisch absenden (Passwortfeld vorhanden)
+        var pw=document.querySelector(P);
+        if(!pw)return;
+        var form=pw.form,scope=form||document;
+        var re=/(log ?in|anmeld|sign ?in|einloggen|weiter|continue|next|senden|submit)/i;
+        var cands=Array.prototype.slice.call(scope.querySelectorAll('button,input[type=submit],input[type=image],input[type=button],a[role=button]')).filter(vis);
+        var btn=cands.find(function(e){var t=(e.type||'').toLowerCase();if(t==='submit'||t==='image')return true;return re.test(label(e));});
+        if(btn){btn.click();return;}
+        ['keydown','keypress','keyup'].forEach(function(ty){
+          pw.dispatchEvent(new KeyboardEvent(ty,{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true,cancelable:true}));});
+        if(form){if(form.requestSubmit)form.requestSubmit();else form.submit();}
+      },700);
     })()`;
     try { await win.webContents.executeJavaScript(script); } catch {}
   });
