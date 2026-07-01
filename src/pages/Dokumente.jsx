@@ -1106,6 +1106,10 @@ export default function Dokumente() {
   // sequentiell im Hintergrund, nur Docs OHNE Hash. (Lädt jede Datei einmal.)
   const hashBackfillRef = useRef(false);
   useEffect(() => {
+    // Standardmaessig AUS: der Backfill laedt jede Datei einmal herunter (Egress)
+    // und kann auf Free-Tier das Kontingent sprengen. Nur laufen, wenn bewusst
+    // aktiviert: im DevTools `window.__SMARTIS_HASH_BACKFILL = true` setzen.
+    if (!window.__SMARTIS_HASH_BACKFILL) return;
     if (hashBackfillRef.current) return;
     if (!allDoks.length) return;
     hashBackfillRef.current = true;
