@@ -1374,6 +1374,57 @@ export default function Dokumente() {
     }
   };
 
+  // ── Abschluss-Ansicht als ZIP exportieren (Ordner = Tag-Hierarchie) ──
+  const exportAbschlussZip = async () => {
+    if (!selCustomer) { toast.error("Bitte zuerst einen Kunden wählen"); return; }
+    if (!abschlussTree.length) { toast.error("Keine Abschluss-Dokumente"); return; }
+    const safe = (str) => ((str || "").replace(/[<>:"/\\|?*]/g, "_").trim() || "Ordner");
+    let total = 0;
+    abschlussTree.forEach(p => p.children.forEach(ch => { total += ch.docs.length; }));
+    if (!total) { toast.error("Keine Dateien zum Exportieren"); return; }
+    const customerName = safe(selCustomer.company_name || "Kunde");
+    const yearLabel = (selYear && selYear !== "__none__") ? " " + selYear : "";
+    toast.info(`${total} Abschluss-Dateien werden als ZIP vorbereitet...`);
+    try {
+      const JSZip = (await import("jszip")).default;
+      const zip = new JSZip();
+      const root = zip.folder(`${customerName} - Abschluss${yearLabel}`);
+      let done = 0;
+      for (const parent of abschlussTree) {
+        const pFolder = root.folder(safe(parent.tag?.name));
+        for (const [, child] of parent.children) {
+          const isDirect = child.tag?.id === "__direct__";
+          const cFolder = isDirect ? pFolder : pFolder.folder(safe(child.tag?.name));
+          for (const doc of child.docs) {
+            if (!doc.storage_path) continue;
+            try {
+              let url = signedUrls[doc.id];
+              if (!url) {
+                const sp = doc.storage_path.replace('dokumente/', '');
+                const { data } = await supabase.storage.from(BUCKET).createSignedUrl(sp, 600);
+                url = data?.signedUrl;
+              }
+              if (!url) continue;
+              const resp = await fetch(url);
+              const blob = await resp.blob();
+              cFolder.file(safe(doc.filename || doc.name || "datei"), blob);
+              done++;
+            } catch (e) { console.warn("ZIP Abschluss:", doc.name, e); }
+          }
+        }
+      }
+      const zipBlob = await zip.generateAsync({ type: "blob", compression: "STORE" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(zipBlob);
+      a.download = `${customerName} - Abschluss${yearLabel}.zip`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      toast.success(`${done} Dateien als ZIP exportiert`);
+    } catch (e) {
+      toast.error("Export fehlgeschlagen: " + e.message);
+    }
+  };
+
   const downloadDoc = async (doc) => {
     if (!doc) return;
     try {
@@ -2090,6 +2141,12 @@ export default function Dokumente() {
                   </button>
                 ))}
               </div>
+              {viewMode === "abschluss" && selCustomerId && (
+                <button onClick={exportAbschlussZip} title="Alle Abschluss-Dokumente als ZIP exportieren (nach Tag-Ordnern)"
+                  style={{ background: s.inputBg, border: "1px solid " + border, color: accent, borderRadius: 6, padding: "3px 9px", fontSize: 11, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+                  <Download size={12} /> Export
+                </button>
+              )}
               {/* Sort-Dropdown */}
               <div style={{ position: "relative" }}>
                 <button onClick={() => setShowSortMenu(m => !m)}
