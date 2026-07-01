@@ -350,7 +350,7 @@
           </div>
           <div class="field" style="max-width:130px">
             <label>Verzögerung (ms)</label>
-            <input id="f-delay" type="number" min="0" max="15000" step="100" value="1500">
+            <input id="f-delay" type="number" min="0" max="15000" step="100" value="600">
           </div>
         </div>
       </div>
@@ -571,7 +571,7 @@ function openEdit(id, forceType) {
   document.getElementById('f-userSel').value     = l?.userSelector   || '';
   document.getElementById('f-passSel').value     = l?.passSelector   || '';
   document.getElementById('f-submitSel').value   = l?.submitSelector || '';
-  document.getElementById('f-delay').value       = l?.delay ?? 1500;
+  document.getElementById('f-delay').value       = l?.delay ?? 600;
   document.getElementById('f-autosubmit').checked = l?.autoSubmit !== false;
   document.getElementById('f-submitKw').value     = l?.submitKeyword || '';
 
@@ -621,7 +621,7 @@ function saveEdit() {
     submitSelector: document.getElementById('f-submitSel').value.trim(),
     autoSubmit:     document.getElementById('f-autosubmit').checked,
     submitKeyword:  document.getElementById('f-submitKw').value.trim(),
-    delay:          parseInt(document.getElementById('f-delay').value) || 1500,
+    delay:          parseInt(document.getElementById('f-delay').value) || 600,
   };
 
   logins = editId ? logins.map(l => l.id === editId ? entry : l) : [...logins, entry];

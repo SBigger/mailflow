@@ -130,7 +130,11 @@ async function doWebLogin(login) {
   loginWindows.set(login.id, win);
   win.on('closed', () => loginWindows.delete(login.id));
 
-  let lastRun = '';
+  let lastRun    = '';
+  let didKeyword = false;   // Stichwort/Kachel nur EINMAL klicken
+  let didSubmit  = false;   // Formular nur EINMAL absenden
+  let runs       = 0;       // Sicherheitsnetz gegen Endlosschlaufen
+
   win.webContents.on('did-finish-load', async () => {
     let curUrl;
     try {
@@ -139,11 +143,12 @@ async function doWebLogin(login) {
       const ch = new URL(curUrl).hostname;
       if (!ch.endsWith(th.split('.').slice(-2).join('.'))) return;
     } catch { return; }
-    // Auf jeder (neuen) Seite derselben Domain ausführen: Portal -> Kachel -> echte Login-Seite
+    // Auf jeder (neuen) Seite derselben Domain: Portal -> Kachel -> echte Login-Seite
     if (curUrl === lastRun) return;
     lastRun = curUrl;
+    if (++runs > 8) return;   // niemals endlos
 
-    await new Promise(r => setTimeout(r, Number(login.delay ?? 1500)));
+    await new Promise(r => setTimeout(r, Number(login.delay ?? 600)));
 
     const uSel = login.userSelector   || 'input[type="email"],input[type="text"]:not([type="search"]):not([type="tel"]):not([type="number"])';
     const pSel = login.passSelector   || 'input[type="password"]';
@@ -173,34 +178,43 @@ async function doWebLogin(login) {
         return el;
       }
       var P=${JSON.stringify(pSel)}, S=${JSON.stringify(sSel)}, KW=${JSON.stringify(kw)};
+      var KWDONE=${didKeyword}, SUBDONE=${didSubmit};
       fill(${JSON.stringify(uSel)},${JSON.stringify(login.username||'')});
       fill(P,${JSON.stringify(login.password||'')});
-      if(!${JSON.stringify(auto)})return;
-      setTimeout(function(){
-        // 1. Ausdrücklicher Selektor
-        if(S){var b=document.querySelector(S);if(b){b.click();return;}}
-        // 2. Stichwort – breite Suche (auch Kacheln, Links, Überschriften)
-        if(KW){
-          var lk=KW.toLowerCase();
-          var all=Array.prototype.slice.call(document.querySelectorAll('a,button,[role=button],[onclick],div,li,span,section,article,h1,h2,h3,h4,p,img'));
-          var matches=all.filter(function(e){return vis(e)&&label(e).toLowerCase().indexOf(lk)!==-1;});
-          matches.sort(function(a,b){return label(a).length-label(b).length;});
-          if(matches.length){clickable(matches[0]).click();return;}
-        }
-        // 3. Nur echte Login-Seiten automatisch absenden (Passwortfeld vorhanden)
-        var pw=document.querySelector(P);
-        if(!pw)return;
-        var form=pw.form,scope=form||document;
-        var re=/(log ?in|anmeld|sign ?in|einloggen|weiter|continue|next|senden|submit)/i;
-        var cands=Array.prototype.slice.call(scope.querySelectorAll('button,input[type=submit],input[type=image],input[type=button],a[role=button]')).filter(vis);
-        var btn=cands.find(function(e){var t=(e.type||'').toLowerCase();if(t==='submit'||t==='image')return true;return re.test(label(e));});
-        if(btn){btn.click();return;}
-        ['keydown','keypress','keyup'].forEach(function(ty){
-          pw.dispatchEvent(new KeyboardEvent(ty,{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true,cancelable:true}));});
-        if(form){if(form.requestSubmit)form.requestSubmit();else form.submit();}
-      },700);
+      if(!${JSON.stringify(auto)})return 'filled';
+      return new Promise(function(resolve){
+        setTimeout(function(){
+          try{
+            // 1. Ausdrücklicher Selektor
+            if(S){var b=document.querySelector(S);if(b){b.click();return resolve('submit');}}
+            // 2. Stichwort – ortsunabhängig nach Text (Kacheln, Links, Überschriften) – nur EINMAL
+            if(KW && !KWDONE){
+              var lk=KW.toLowerCase();
+              var all=Array.prototype.slice.call(document.querySelectorAll('a,button,[role=button],[onclick],div,li,span,section,article,h1,h2,h3,h4,p,img'));
+              var matches=all.filter(function(e){return vis(e)&&label(e).toLowerCase().indexOf(lk)!==-1;});
+              matches.sort(function(a,b){return label(a).length-label(b).length;});
+              if(matches.length){clickable(matches[0]).click();return resolve('keyword');}
+            }
+            // 3. Nur echte Login-Seiten automatisch absenden (Passwortfeld vorhanden) – nur EINMAL
+            var pw=document.querySelector(P);
+            if(!pw||SUBDONE)return resolve('none');
+            var form=pw.form,scope=form||document;
+            var re=/(log ?in|anmeld|sign ?in|einloggen|weiter|continue|next|senden|submit)/i;
+            var cands=Array.prototype.slice.call(scope.querySelectorAll('button,input[type=submit],input[type=image],input[type=button],a[role=button]')).filter(vis);
+            var btn=cands.find(function(e){var t=(e.type||'').toLowerCase();if(t==='submit'||t==='image')return true;return re.test(label(e));});
+            if(btn){btn.click();return resolve('submit');}
+            ['keydown','keypress','keyup'].forEach(function(ty){
+              pw.dispatchEvent(new KeyboardEvent(ty,{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true,cancelable:true}));});
+            if(form){if(form.requestSubmit)form.requestSubmit();else form.submit();}
+            resolve('submit');
+          }catch(e){resolve('none');}
+        },250);
+      });
     })()`;
-    try { await win.webContents.executeJavaScript(script); } catch {}
+    let action = 'none';
+    try { action = await win.webContents.executeJavaScript(script); } catch {}
+    if (action === 'keyword') didKeyword = true;
+    if (action === 'submit')  didSubmit  = true;
   });
 
   try { await win.loadURL(login.url); } catch (err) { return { ok: false, error: err.message }; }
