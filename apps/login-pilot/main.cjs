@@ -195,7 +195,11 @@ ipcMain.handle('create-shortcut', () => {
 // ── Tray ──────────────────────────────────────────────────────────────────────
 
 function createTray() {
-  tray = new Tray(path.join(__dirname, 'icon.ico'));
+  // In gepackten Apps liegt das Icon im app.asar.unpacked-Ordner
+  const iconPath = app.isPackaged
+    ? path.join(process.resourcesPath, 'app.asar.unpacked', 'icon.ico')
+    : path.join(__dirname, 'icon.ico');
+  tray = new Tray(iconPath);
   tray.setToolTip('LoginPilot – Klick zum Öffnen');
   tray.on('click', () => {
     if (!mainWindow) return;

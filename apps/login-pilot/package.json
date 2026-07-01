@@ -10,6 +10,7 @@
   "build": {
     "appId": "ch.artis.loginpilot",
     "productName": "LoginPilot",
+    "forceCodeSigning": false,
     "directories": {
       "output": "dist"
     },
@@ -19,6 +20,7 @@
       "index.html",
       "icon.ico"
     ],
+    "asarUnpack": ["icon.ico"],
     "win": {
       "target": "nsis",
       "icon": "icon.ico"
