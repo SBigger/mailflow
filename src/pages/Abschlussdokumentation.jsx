@@ -721,22 +721,42 @@ async function generateRevisionsDossier({ konten, einstellungen, customerName, s
   // Belege herunterladen und unter dem im belegList vorbereiteten filePath ablegen
   // (selber Pfad wie die Links im PDF — sonst funktionieren die nicht).
   const belegFolder = zip.folder("Belege");
-  let okCount = 0, failCount = 0;
+  let okCount = 0;
+  const failed = [];
   for (let i = 0; i < belegList.length; i++) {
     const item = belegList[i];
     log(`Beleg ${i + 1} / ${belegList.length} …`);
+    // storage_path-Präfix "dokumente/" entfernen — sonst schlägt createSignedUrl fehl
+    const path = (item.beleg.storage_path || "").replace(/^dokumente\//, "");
+    const fail = (reason) => failed.push({
+      kontonummer: item.kontonummer, kontoname: item.kontoname,
+      name: item.beleg.name || item.beleg.filename || "Beleg",
+      filename: item.beleg.filename || "", reason,
+    });
     try {
-      const { data, error } = await supabase.storage
-        .from(BUCKET).createSignedUrl(item.beleg.storage_path, 3600);
-      if (error || !data?.signedUrl) { failCount++; continue; }
+      if (!path) { fail("kein Speicherpfad"); continue; }
+      const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(path, 3600);
+      if (error || !data?.signedUrl) { fail(error?.message || "Datei nicht gefunden"); continue; }
       const resp = await fetch(data.signedUrl);
-      if (!resp.ok) { failCount++; continue; }
+      if (!resp.ok) { fail(`HTTP ${resp.status}`); continue; }
       const buf = await resp.arrayBuffer();
       // item.filePath beginnt mit "Belege/" — wir speichern den Rest im Sub-Folder
       const filename = item.filePath.replace(/^Belege\//, "");
       belegFolder.file(filename, buf);
       okCount++;
-    } catch { failCount++; }
+    } catch (e) { fail(e?.message || "Fehler beim Laden"); }
+  }
+  const failCount = failed.length;
+
+  // Fehlende Belege für den Revisor dokumentieren (Textdatei im ZIP)
+  if (failCount) {
+    const txt = [
+      `NICHT LADBARE BELEGE — ${failCount} von ${belegList.length}`,
+      `Kunde: ${customerName}  ·  Geschäftsjahr: ${selectedYear}  ·  Erstellt: ${todayStr()}`,
+      "",
+      ...failed.map(f => `- Konto ${f.kontonummer || "—"} ${f.kontoname || ""} | ${f.name}${f.filename ? ` (${f.filename})` : ""} — ${f.reason}`),
+    ].join("\r\n");
+    belegFolder.file("_FEHLENDE_BELEGE.txt", txt);
   }
 
   log("ZIP wird gepackt …");
@@ -748,7 +768,7 @@ async function generateRevisionsDossier({ konten, einstellungen, customerName, s
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 4000);
 
-  return { belegOk: okCount, belegFail: failCount, belegTotal: belegList.length };
+  return { belegOk: okCount, belegFail: failCount, belegTotal: belegList.length, failed };
 }
 
 function todayStr() {
@@ -2018,9 +2038,11 @@ function BelegeSection({ arbeitspapier, onSave, customerId, selectedYear, accent
   };
 
   const openDoc = async (beleg) => {
-    const { data } = await supabase.storage.from(BUCKET).createSignedUrl(beleg.storage_path, 3600);
+    const path = (beleg.storage_path || "").replace(/^dokumente\//, "");
+    if (!path) { toast.error("Beleg hat keinen Speicherpfad"); return; }
+    const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(path, 3600);
     if (data?.signedUrl) window.open(data.signedUrl, "_blank");
-    else toast.error("Dokument konnte nicht geöffnet werden");
+    else toast.error("Dokument konnte nicht geöffnet werden" + (error ? ": " + error.message : ""));
   };
 
   // Anzeige-Liste: bei aktiver Volltextsuche → FTS-Ergebnisse (alle Jahre, ganze DB des Kunden);
@@ -3936,6 +3958,18 @@ export default function Abschlussdokumentation() {
         `Revisions-Dossier erstellt — ${res.belegOk}/${res.belegTotal} Belege beigelegt`
         + (res.belegFail ? ` · ${res.belegFail} nicht ladbar` : "")
       );
+      if (res.belegFail && res.failed?.length) {
+        const list = res.failed
+          .map(f => `• Konto ${f.kontonummer || "—"}: ${f.name}${f.reason ? ` — ${f.reason}` : ""}`)
+          .join("\n");
+        toast.error(
+          <div style={{ whiteSpace: "pre-line", fontSize: 12, lineHeight: 1.5 }}>
+            <strong>{res.belegFail} Beleg(e) nicht ladbar:</strong>{"\n"}{list}
+            {"\n"}<span style={{ opacity: 0.75 }}>(auch in Belege/_FEHLENDE_BELEGE.txt im ZIP)</span>
+          </div>,
+          { duration: 15000 }
+        );
+      }
     } catch (e) {
       toast.error("Dossier fehlgeschlagen: " + (e?.message || e));
     } finally {
