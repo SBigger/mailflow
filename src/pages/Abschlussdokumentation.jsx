@@ -3168,7 +3168,7 @@ function BilanzTab({ konten, accent, headingC, subC, panelBg, panelBdr, tableBdr
 }
 
 // ── Erfolgsrechnung Tab ───────────────────────────────────────────────────────
-function ERRow({ label, value, valueVJ, nettoerloes, nettoerloesVJ, isSubtotal, isTotal, isNegative, accent, headingC, subC, highlightGreen }) {
+function ERRow({ label, value, valueVJ, nettoerloes, nettoerloesVJ, isSubtotal, isTotal, isNegative, accent, headingC, subC, highlightGreen, details }) {
   const fontW = isTotal ? 800 : isSubtotal ? 700 : 400;
   const color = isTotal && highlightGreen ? "#16a34a" : isTotal ? accent : isNegative && value < 0 ? "#dc2626" : headingC;
   const pctIS = (nettoerloes && Math.abs(nettoerloes) > 0.01 && value != null)
@@ -3176,7 +3176,7 @@ function ERRow({ label, value, valueVJ, nettoerloes, nettoerloesVJ, isSubtotal, 
   const pctVJ = (nettoerloesVJ && Math.abs(nettoerloesVJ) > 0.01 && valueVJ != null)
     ? (valueVJ / nettoerloesVJ * 100) : null;
   const fmtP = (p) => p === null ? "" : p.toFixed(1) + "%";
-  return (
+  const mainRow = (
     <div style={{
       display: "grid", gridTemplateColumns: "1fr 95px 40px 95px 40px", alignItems: "center",
       padding: `${isTotal ? 9 : 5}px 12px`,
@@ -3194,6 +3194,25 @@ function ERRow({ label, value, valueVJ, nettoerloes, nettoerloesVJ, isSubtotal, 
       </span>
       <span style={{ fontSize: 10, color: subC + "99", textAlign: "right", paddingRight: 4 }}>{fmtP(pctVJ)}</span>
     </div>
+  );
+  if (!details || !details.length) return mainRow;
+  return (
+    <>
+      {mainRow}
+      <div style={{ padding: "1px 12px 5px" }}>
+        {details.map((d, i) => (
+          <div key={(d.nr || "") + "-" + i} style={{ display: "grid", gridTemplateColumns: "1fr 95px 40px 95px 40px", alignItems: "center", padding: "1px 0 1px 18px" }}>
+            <span style={{ fontSize: 11, color: subC, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              <span style={{ fontFamily: "monospace", opacity: 0.75 }}>{d.nr}</span> {d.name}
+            </span>
+            <span style={{ fontSize: 11, fontFamily: "monospace", color: subC, textAlign: "right" }}>{fmtCHF(d.ist)}</span>
+            <span />
+            <span style={{ fontSize: 10.5, fontFamily: "monospace", color: subC + "aa", textAlign: "right" }}>{fmtCHF(d.vj)}</span>
+            <span />
+          </div>
+        ))}
+      </div>
+    </>
   );
 }
 
@@ -3219,6 +3238,18 @@ function ErfolgsrechnungTab({ konten, accent, headingC, subC, panelBg, panelBdr,
   const eSign = signFlipER ? 1 : -1;
   const sumByIds   = (ids) => rawSum(ids) * eSign;
   const sumVJByIds = (ids) => rawSumVJ(ids) * eSign;
+
+  // Details: einzelne Konten pro Position (Nr./Name/IST/VJ, vorzeichenkorrekt)
+  const [showDetails, setShowDetails] = useState(false);
+  const kontenForIds = (ids) => konten
+    .filter(k => ids.includes(k.position_id))
+    .map(k => ({
+      nr: k.kontonummer, name: k.kontoname,
+      ist: (parseFloat(k.saldo_ist) || 0) * eSign,
+      vj:  (parseFloat(k.saldo_vorjahr) || 0) * eSign,
+    }))
+    .sort((a, b) => (parseInt(a.nr) || 0) - (parseInt(b.nr) || 0));
+  const D = (ids) => showDetails ? kontenForIds(ids) : null;
 
   if (konten.length === 0) {
     return (
@@ -3301,54 +3332,62 @@ function ErfolgsrechnungTab({ konten, accent, headingC, subC, panelBg, panelBdr,
       <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${panelBdr}`, boxShadow: "0 2px 8px rgba(0,0,0,0.05)" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", backgroundColor: "#dcfce7", borderBottom: `1px solid ${panelBdr}` }}>
           <span style={{ fontWeight: 800, fontSize: 13, color: "#15803d", letterSpacing: "0.03em" }}>ERFOLGSRECHNUNG</span>
-          <button onClick={onFlipER} title="Vorzeichen umkehren" style={{
-            fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 5, cursor: "pointer",
-            backgroundColor: signFlipER ? "#15803d22" : "transparent",
-            border: `1px solid ${signFlipER ? "#15803d" : "#15803d66"}`,
-            color: signFlipER ? "#15803d" : "#15803d99",
-          }}>± Vorzeichen</button>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <button onClick={() => setShowDetails(v => !v)} title="Einzelne Konten je Position ein-/ausblenden" style={{
+              fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 5, cursor: "pointer",
+              backgroundColor: showDetails ? "#15803d22" : "transparent",
+              border: `1px solid ${showDetails ? "#15803d" : "#15803d66"}`,
+              color: showDetails ? "#15803d" : "#15803d99",
+            }}>{showDetails ? "Details ausblenden" : "Details einblenden"}</button>
+            <button onClick={onFlipER} title="Vorzeichen umkehren" style={{
+              fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 5, cursor: "pointer",
+              backgroundColor: signFlipER ? "#15803d22" : "transparent",
+              border: `1px solid ${signFlipER ? "#15803d" : "#15803d66"}`,
+              color: signFlipER ? "#15803d" : "#15803d99",
+            }}>± Vorzeichen</button>
+          </div>
         </div>
         {erColHeader}
 
         <ERSeparator label="Erlös" subC={subC} />
-        <ERRow label="Nettoumsatzerlöse"      value={sumByIds(["ER_UMSATZ"])}        valueVJ={sumVJByIds(["ER_UMSATZ"])}        {...props} />
-        <ERRow label="Eigenleistungen"        value={sumByIds(["ER_EIGENLEISTUNG"])} valueVJ={sumVJByIds(["ER_EIGENLEISTUNG"])} {...props} />
-        <ERRow label="Bestandesveränderungen" value={sumByIds(["ER_BESTAND"])}       valueVJ={sumVJByIds(["ER_BESTAND"])}       {...props} />
+        <ERRow label="Nettoumsatzerlöse"      value={sumByIds(["ER_UMSATZ"])}        valueVJ={sumVJByIds(["ER_UMSATZ"])}        details={D(["ER_UMSATZ"])} {...props} />
+        <ERRow label="Eigenleistungen"        value={sumByIds(["ER_EIGENLEISTUNG"])} valueVJ={sumVJByIds(["ER_EIGENLEISTUNG"])} details={D(["ER_EIGENLEISTUNG"])} {...props} />
+        <ERRow label="Bestandesveränderungen" value={sumByIds(["ER_BESTAND"])}       valueVJ={sumVJByIds(["ER_BESTAND"])}       details={D(["ER_BESTAND"])} {...props} />
         <ERRow label="Nettoumsatz Total"      value={nettoumsatz}  valueVJ={nettoumsatzVJ}  isSubtotal {...props} />
 
-        <ERRow label="− Warenaufwand"         value={material}     valueVJ={materialVJ}     isNegative {...props} />
+        <ERRow label="− Warenaufwand"         value={material}     valueVJ={materialVJ}     isNegative details={D(["ER_MATERIAL"])} {...props} />
         <ERRow label="= Bruttogewinn I (Rohergebnis)" value={bruttogewinnI} valueVJ={bruttogewinnIVJ}
           isTotal highlightGreen={bruttogewinnI >= 0} {...props} />
 
-        <ERRow label="− Personalaufwand"      value={personal}     valueVJ={personalVJ}     isNegative {...props} />
+        <ERRow label="− Personalaufwand"      value={personal}     valueVJ={personalVJ}     isNegative details={D(["ER_PERSONAL"])} {...props} />
         <ERRow label="= Bruttogewinn II"      value={bruttogewinnII} valueVJ={bruttogewinnIIVJ}
           isTotal highlightGreen={bruttogewinnII >= 0} {...props} />
 
         <ERSeparator label="Betriebskosten" subC={subC} />
-        {(raum       !== 0 || raumVJ       !== 0) && <ERRow label="− Raumaufwand"                    value={raum}         valueVJ={raumVJ}         isNegative {...props} />}
-        {(unterhalt  !== 0 || unterhaltVJ  !== 0) && <ERRow label="− Unterhalt & Reparaturen"        value={unterhalt}    valueVJ={unterhaltVJ}    isNegative {...props} />}
-        {(fahrzeug   !== 0 || fahrzeugVJ   !== 0) && <ERRow label="− Fahrzeug- & Transportaufwand"   value={fahrzeug}     valueVJ={fahrzeugVJ}     isNegative {...props} />}
-        {(versicherung!==0 || versicherungVJ!==0) && <ERRow label="− Sachversicherungen & Abgaben"   value={versicherung} valueVJ={versicherungVJ} isNegative {...props} />}
-        {(energie    !== 0 || energieVJ    !== 0) && <ERRow label="− Energie & Entsorgung"           value={energie}      valueVJ={energieVJ}      isNegative {...props} />}
-        {(verwaltung !== 0 || verwaltungVJ !== 0) && <ERRow label="− Verwaltungs- & Informatikaufw." value={verwaltung}   valueVJ={verwaltungVJ}   isNegative {...props} />}
-        {(werbung    !== 0 || werbungVJ    !== 0) && <ERRow label="− Werbe- & Akquisitionsaufwand"   value={werbung}      valueVJ={werbungVJ}      isNegative {...props} />}
-        {(betrieb    !== 0 || betriebVJ    !== 0) && <ERRow label="− Übriger Betriebsaufwand"        value={betrieb}      valueVJ={betriebVJ}      isNegative {...props} />}
+        {(raum       !== 0 || raumVJ       !== 0) && <ERRow label="− Raumaufwand"                    value={raum}         valueVJ={raumVJ}         isNegative details={D(["ER_RAUM"])} {...props} />}
+        {(unterhalt  !== 0 || unterhaltVJ  !== 0) && <ERRow label="− Unterhalt & Reparaturen"        value={unterhalt}    valueVJ={unterhaltVJ}    isNegative details={D(["ER_UNTERHALT"])} {...props} />}
+        {(fahrzeug   !== 0 || fahrzeugVJ   !== 0) && <ERRow label="− Fahrzeug- & Transportaufwand"   value={fahrzeug}     valueVJ={fahrzeugVJ}     isNegative details={D(["ER_FAHRZEUG"])} {...props} />}
+        {(versicherung!==0 || versicherungVJ!==0) && <ERRow label="− Sachversicherungen & Abgaben"   value={versicherung} valueVJ={versicherungVJ} isNegative details={D(["ER_VERSICHERUNG"])} {...props} />}
+        {(energie    !== 0 || energieVJ    !== 0) && <ERRow label="− Energie & Entsorgung"           value={energie}      valueVJ={energieVJ}      isNegative details={D(["ER_ENERGIE"])} {...props} />}
+        {(verwaltung !== 0 || verwaltungVJ !== 0) && <ERRow label="− Verwaltungs- & Informatikaufw." value={verwaltung}   valueVJ={verwaltungVJ}   isNegative details={D(["ER_VERWALTUNG"])} {...props} />}
+        {(werbung    !== 0 || werbungVJ    !== 0) && <ERRow label="− Werbe- & Akquisitionsaufwand"   value={werbung}      valueVJ={werbungVJ}      isNegative details={D(["ER_WERBUNG"])} {...props} />}
+        {(betrieb    !== 0 || betriebVJ    !== 0) && <ERRow label="− Übriger Betriebsaufwand"        value={betrieb}      valueVJ={betriebVJ}      isNegative details={D(["ER_BETRIEB"])} {...props} />}
         <ERRow label="= EBITDA" value={ebitda} valueVJ={ebitdaVJ} isTotal highlightGreen={ebitda >= 0} {...props} />
 
         <ERSeparator label="Abschreibungen" subC={subC} />
-        <ERRow label="− Abschreibungen" value={abschr} valueVJ={abschrVJ} isNegative {...props} />
+        <ERRow label="− Abschreibungen" value={abschr} valueVJ={abschrVJ} isNegative details={D(["ER_ABSCHR"])} {...props} />
         <ERRow label="= EBIT" value={ebit} valueVJ={ebitVJ} isTotal highlightGreen={ebit >= 0} {...props} />
 
         <ERSeparator label="Finanzergebnis" subC={subC} />
-        <ERRow label="+ Finanzertrag"      value={finErtrag}      valueVJ={finErtragVJ}      {...props} />
-        <ERRow label="− Finanzaufwand"     value={finAufw}        valueVJ={finAufwVJ}        isNegative {...props} />
+        <ERRow label="+ Finanzertrag"      value={finErtrag}      valueVJ={finErtragVJ}      details={D(["ER_FINANZ_ERTRAG","ER_LIEGENSCHAFTEN"])} {...props} />
+        <ERRow label="− Finanzaufwand"     value={finAufw}        valueVJ={finAufwVJ}        isNegative details={D(["ER_FINANZ_AUFW"])} {...props} />
         <ERRow label="+/− Finanzergebnis"  value={finanzergebnis} valueVJ={finanzergebnisVJ} isSubtotal {...props} />
         <ERRow label="= EBT (vor Sonderergebnis)" value={ebt} valueVJ={ebtVJ} isTotal highlightGreen={ebt >= 0} {...props} />
 
         <ERSeparator label="Sonderergebnis & Steuern" subC={subC} />
-        <ERRow label="+ Betriebsfremder/AO Ertrag" value={fremdErtrag} valueVJ={fremdErtragVJ} {...props} />
-        <ERRow label="− Betriebsfremder/AO Aufwand" value={fremdAufw}  valueVJ={fremdAufwVJ}  isNegative {...props} />
-        <ERRow label="− Ertragssteuern"             value={steuern}    valueVJ={steuernVJ}    isNegative {...props} />
+        <ERRow label="+ Betriebsfremder/AO Ertrag" value={fremdErtrag} valueVJ={fremdErtragVJ} details={D(["ER_FREMD_ERTRAG","ER_AO_ERTRAG"])} {...props} />
+        <ERRow label="− Betriebsfremder/AO Aufwand" value={fremdAufw}  valueVJ={fremdAufwVJ}  isNegative details={D(["ER_FREMD_AUFW","ER_AO_AUFW"])} {...props} />
+        <ERRow label="− Ertragssteuern"             value={steuern}    valueVJ={steuernVJ}    isNegative details={D(["ER_STEUERN"])} {...props} />
 
         <div style={{ margin: "8px 8px 8px", borderRadius: 8, overflow: "hidden", border: `2px solid ${jahresergebnis >= 0 ? "#bbf7d0" : "#fecaca"}` }}>
           <ERRow label="JAHRESERGEBNIS" value={jahresergebnis} valueVJ={jahresergebnisVJ} isTotal highlightGreen={jahresergebnis >= 0}
