@@ -177,17 +177,27 @@ async function doWebLogin(login) {
         }
         return el;
       }
-      var P=${JSON.stringify(pSel)}, S=${JSON.stringify(sSel)}, KW=${JSON.stringify(kw)};
+      var U=${JSON.stringify(uSel)}, P=${JSON.stringify(pSel)}, S=${JSON.stringify(sSel)}, KW=${JSON.stringify(kw)};
+      var HASUSER=${JSON.stringify(!!(login.username))};
       var KWDONE=${didKeyword}, SUBDONE=${didSubmit};
-      fill(${JSON.stringify(uSel)},${JSON.stringify(login.username||'')});
+      var re=/(log ?in|anmeld|sign ?in|einloggen|weiter|continue|next|senden|submit)/i;
+      function submitNear(field){
+        var form=field&&field.form, scope=form||document;
+        var cands=Array.prototype.slice.call(scope.querySelectorAll('button,input[type=submit],input[type=image],input[type=button],a[role=button]')).filter(vis);
+        var btn=cands.find(function(e){var t=(e.type||'').toLowerCase();if(t==='submit'||t==='image')return true;return re.test(label(e));});
+        if(btn){btn.click();return;}
+        if(field){['keydown','keypress','keyup'].forEach(function(ty){field.dispatchEvent(new KeyboardEvent(ty,{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true,cancelable:true}));});}
+        if(form){if(form.requestSubmit)form.requestSubmit();else form.submit();}
+      }
+      fill(U,${JSON.stringify(login.username||'')});
       fill(P,${JSON.stringify(login.password||'')});
       if(!${JSON.stringify(auto)})return 'filled';
       return new Promise(function(resolve){
         setTimeout(function(){
           try{
-            // 1. Ausdrücklicher Selektor
+            if(SUBDONE)return resolve('none');                       // nach Passwort-Login: nichts mehr tun
             if(S){var b=document.querySelector(S);if(b){b.click();return resolve('submit');}}
-            // 2. Stichwort – ortsunabhängig nach Text (Kacheln, Links, Überschriften) – nur EINMAL
+            // Stichwort – ortsunabhängig nach Text (Kacheln, Links, Überschriften) – nur EINMAL
             if(KW && !KWDONE){
               var lk=KW.toLowerCase();
               var all=Array.prototype.slice.call(document.querySelectorAll('a,button,[role=button],[onclick],div,li,span,section,article,h1,h2,h3,h4,p,img'));
@@ -195,18 +205,20 @@ async function doWebLogin(login) {
               matches.sort(function(a,b){return label(a).length-label(b).length;});
               if(matches.length){clickable(matches[0]).click();return resolve('keyword');}
             }
-            // 3. Nur echte Login-Seiten automatisch absenden (Passwortfeld vorhanden) – nur EINMAL
+            // Echte Login-Seite (Passwortfeld) -> absenden, danach Stopp
             var pw=document.querySelector(P);
-            if(!pw||SUBDONE)return resolve('none');
-            var form=pw.form,scope=form||document;
-            var re=/(log ?in|anmeld|sign ?in|einloggen|weiter|continue|next|senden|submit)/i;
-            var cands=Array.prototype.slice.call(scope.querySelectorAll('button,input[type=submit],input[type=image],input[type=button],a[role=button]')).filter(vis);
-            var btn=cands.find(function(e){var t=(e.type||'').toLowerCase();if(t==='submit'||t==='image')return true;return re.test(label(e));});
-            if(btn){btn.click();return resolve('submit');}
-            ['keydown','keypress','keyup'].forEach(function(ty){
-              pw.dispatchEvent(new KeyboardEvent(ty,{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true,cancelable:true}));});
-            if(form){if(form.requestSubmit)form.requestSubmit();else form.submit();}
-            resolve('submit');
+            if(pw){submitNear(pw);return resolve('submit');}
+            // Benutzer-zuerst (Feld vorhanden, aber noch kein Passwort) -> "Weiter/Login" klicken, weiter zur nächsten Seite
+            var uField=Array.prototype.slice.call(document.querySelectorAll(U)).find(vis)||null;
+            if(uField && HASUSER){submitNear(uField);return resolve('next');}
+            // Seite ganz ohne Felder (z.B. Startseite): prominenten Login-Einstieg EINMAL anklicken
+            if(!KW && !KWDONE){
+              var lre=/^(login|anmelden|einloggen|e-?finance|zum login|zur anmeldung|jetzt anmelden)$/i;
+              var links=Array.prototype.slice.call(document.querySelectorAll('a,button,[role=button]')).filter(vis);
+              var hit=links.find(function(e){var t=label(e).replace(/\\s+/g,' ').trim();return t.length<24 && lre.test(t);});
+              if(hit){clickable(hit).click();return resolve('keyword');}
+            }
+            resolve('none');
           }catch(e){resolve('none');}
         },250);
       });
