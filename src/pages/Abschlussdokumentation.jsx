@@ -1235,6 +1235,56 @@ function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = 
     }
   }
 
+  // ── Rohzeilen einer Datei lesen (Excel: alle Blätter, CSV: geparst) ───────
+  async function readFileRows(file) {
+    const ext = file.name.split(".").pop().toLowerCase();
+    if (ext === "xlsx" || ext === "xls") {
+      const data = new Uint8Array(await file.arrayBuffer());
+      const XLSX = await import('xlsx');
+      const wb = XLSX.read(data, { type: "array" });
+      let header = null;
+      let dataRows = [];
+      for (const name of wb.SheetNames) {
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: "" });
+        if (rows.length < 2) continue;
+        if (!header) header = rows[0].map(String);
+        dataRows = [...dataRows, ...rows.slice(1).filter(r => r.some(c => String(c).trim()))];
+      }
+      return header ? [header, ...dataRows] : [];
+    }
+    // CSV
+    const text = await file.text();
+    const firstLine = text.split("\n")[0];
+    const sep = firstLine.includes(";") ? ";" : firstLine.includes("\t") ? "\t" : ",";
+    return text.split("\n").map(line =>
+      line.replace(/\r$/, "").split(sep).map(cell => cell.replace(/^"(.*)"$/, "$1").replace(/""/g, '"'))
+    ).filter(r => r.some(c => c.trim()));
+  }
+
+  // ── Mehrere Excel/CSV gleichzeitig (Bilanz + ER) zusammenführen ───────────
+  async function parseMultipleFiles(files) {
+    let header = null;
+    let allData = [];
+    const names = [];
+    for (const f of files) {
+      const rows = await readFileRows(f);
+      if (rows.length < 2) continue;
+      names.push(f.name);
+      if (!header) header = rows[0].map(String);
+      allData = [...allData, ...rows.slice(1)];
+    }
+    if (!header || allData.length === 0) { toast.error("Keine Daten in den Dateien gefunden"); return; }
+    // Duplikate (gleiche Kontonummer) deduplizieren – erstes Vorkommen gewinnt
+    const col0 = header.findIndex(h => /konto|nummer|nr/i.test(h));
+    const seen = new Set();
+    allData = allData.filter(r => {
+      const nr = String(r[col0 >= 0 ? col0 : 0] ?? "").trim();
+      if (!nr || seen.has(nr)) return false;
+      seen.add(nr); return true;
+    });
+    processRows([header, ...allData], names.join(" + "));
+  }
+
   // ── Zweite Datei mergen (für Bilanz+ER in separaten Files) ───────────────
   function handleSecondFile(e) {
     const file = e.target.files[0];
@@ -1308,14 +1358,18 @@ function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = 
     const pdfs = files.filter(f => f.name.toLowerCase().endsWith(".pdf"));
     const others = files.filter(f => !f.name.toLowerCase().endsWith(".pdf"));
     if (pdfs.length > 0) { parsePdfFiles(pdfs.slice(0, 2)); return; }
+    if (others.length > 1) { parseMultipleFiles(others); return; }
     if (others[0]) parseFile(others[0]);
   }
 
   function handleFileChange(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-    if (file.name.toLowerCase().endsWith(".pdf")) { parsePdfFiles([file]); return; }
-    parseFile(file);
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    const pdfs = files.filter(f => f.name.toLowerCase().endsWith(".pdf"));
+    const others = files.filter(f => !f.name.toLowerCase().endsWith(".pdf"));
+    if (pdfs.length > 0) { parsePdfFiles(pdfs.slice(0, 2)); return; }
+    if (others.length > 1) { parseMultipleFiles(others); return; }
+    if (others[0]) parseFile(others[0]);
   }
 
   function handlePdfChange(e) {
@@ -1401,13 +1455,13 @@ function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = 
                       backgroundColor: dragging ? accent + "0a" : pageBg, transition: "all 0.15s",
                     }}>
                     <FileSpreadsheet className="w-10 h-10 mx-auto mb-3" style={{ color: dragging ? accent : subC }} />
-                    <div className="text-sm font-semibold mb-1" style={{ color: headingC }}>Datei hier ablegen</div>
-                    <div className="text-xs" style={{ color: subC }}>CSV, Excel oder PDF · klicken zum Auswählen</div>
-                    <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls,.pdf" className="hidden" onChange={handleFileChange} />
+                    <div className="text-sm font-semibold mb-1" style={{ color: headingC }}>Datei(en) hier ablegen</div>
+                    <div className="text-xs" style={{ color: subC }}>CSV, Excel oder PDF · eine oder zwei (Bilanz + ER) zusammen wählbar</div>
+                    <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls,.pdf" multiple className="hidden" onChange={handleFileChange} />
                   </div>
                   <div style={{ marginTop: 10, padding: "10px 14px", borderRadius: 10, border: `1px solid ${panelBdr}`, backgroundColor: pageBg, display: "flex", alignItems: "center", gap: 10 }}>
                     <span style={{ fontSize: 12, color: subC, flex: 1 }}>
-                      📄 Zwei Dateien (Bilanz + ER)? Beide als PDFs gleichzeitig wählen, oder nacheinander ablegen.
+                      📄 Zwei Dateien (Bilanz + ER)? Beide (Excel/CSV/PDF) oben gleichzeitig wählen bzw. ablegen — oder nacheinander.
                     </span>
                     <button onClick={() => pdfRef.current?.click()}
                       style={{ fontSize: 11, fontWeight: 600, padding: "4px 12px", borderRadius: 6, cursor: "pointer", border: `1px solid ${accent}60`, color: accent, backgroundColor: accent + "10" }}>
