@@ -215,6 +215,59 @@ async function doWebLogin(login) {
     const kw   = (login.submitKeyword || '').trim();
     const auto = login.autoSubmit !== false;   // Standard: automatisch anmelden
 
+    // ── Manuelle Assist-Leiste (im Shadow-DOM -> für die Auto-Erkennung unsichtbar) ──
+    const bar = `(function(){
+      if(document.getElementById('__lp_host'))return;
+      var U=${JSON.stringify(uSel)}, P=${JSON.stringify(pSel)}, S=${JSON.stringify(sSel)};
+      var USER=${JSON.stringify(login.username || '')}, PASS=${JSON.stringify(login.password || '')};
+      function vis(e){return e&&e.offsetParent!==null&&!e.disabled;}
+      function label(e){return ((e.innerText||e.value||'')+' '+((e.getAttribute&&(e.getAttribute('aria-label')||e.getAttribute('title')||e.getAttribute('alt')))||'')).trim();}
+      function fill(sel,val){
+        var all=Array.prototype.slice.call(document.querySelectorAll(sel));
+        var el=all.find(function(e){return vis(e);})||all[0];
+        if(!el)return false;
+        var s=Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set;
+        if(s)s.call(el,val);else el.value=val;
+        ['input','change','keydown','keyup'].forEach(function(t){el.dispatchEvent(new Event(t,{bubbles:true,cancelable:true}));});
+        el.focus();return true;
+      }
+      function submit(){
+        if(S){var b=document.querySelector(S);if(b){b.click();return;}}
+        var pw=document.querySelector(P);var form=pw&&pw.form,scope=form||document;
+        var re=/(log ?in|anmeld|sign ?in|einloggen|weiter|continue|next|senden|submit)/i;
+        var cands=Array.prototype.slice.call(scope.querySelectorAll('button,input[type=submit],input[type=image],input[type=button],a[role=button]')).filter(vis);
+        var btn=cands.find(function(e){var t=(e.type||'').toLowerCase();if(t==='submit'||t==='image')return true;return re.test(label(e));});
+        if(btn){btn.click();return;}
+        var f=pw||document.querySelector(U);
+        if(f){['keydown','keypress','keyup'].forEach(function(ty){f.dispatchEvent(new KeyboardEvent(ty,{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true,cancelable:true}));});}
+        if(form){if(form.requestSubmit)form.requestSubmit();else form.submit();}
+      }
+      var host=document.createElement('div');host.id='__lp_host';
+      host.style.cssText='position:fixed;top:10px;right:10px;z-index:2147483647;';
+      var root=host.attachShadow({mode:'open'});
+      root.innerHTML='<style>'
+        +'*{box-sizing:border-box;font-family:system-ui,Segoe UI,sans-serif}'
+        +'.bar{display:flex;align-items:center;gap:6px;background:#0f172a;border:1px solid #334155;border-radius:12px;padding:6px 8px;box-shadow:0 6px 20px rgba(0,0,0,.35)}'
+        +'.t{color:#93c5fd;font-size:11px;font-weight:700;margin:0 4px 0 2px;white-space:nowrap}'
+        +'button{cursor:pointer;border:0;border-radius:8px;font-size:12px;font-weight:600;padding:6px 9px;color:#fff;background:#1e293b;border:1px solid #334155}'
+        +'button:hover{background:#263448;border-color:#3b82f6}'
+        +'button.go{background:#3b82f6;border-color:#3b82f6}button.go:hover{background:#2563eb}'
+        +'button.x{background:transparent;border:0;color:#94a3b8;padding:6px 6px}'
+        +'</style>'
+        +'<div class="bar"><span class="t">🔑 '+ (${JSON.stringify(login.name || 'Login')}) +'</span>'
+        +(USER?'<button id="u">👤 Benutzer</button>':'')
+        +(PASS?'<button id="p">🔑 Passwort</button>':'')
+        +'<button id="s" class="go">➡ Anmelden</button>'
+        +'<button id="x" class="x" title="Leiste ausblenden">✕</button></div>';
+      document.documentElement.appendChild(host);
+      var q=function(id){return root.getElementById(id);};
+      if(q('u'))q('u').addEventListener('click',function(){fill(U,USER);});
+      if(q('p'))q('p').addEventListener('click',function(){fill(P,PASS);});
+      q('s').addEventListener('click',function(){submit();});
+      q('x').addEventListener('click',function(){host.remove();});
+    })()`;
+    try { await contents.executeJavaScript(bar); } catch {}
+
     const script = `(function(){
       function vis(e){return e&&e.offsetParent!==null&&!e.disabled;}
       function fill(sel,val){
