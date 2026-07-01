@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('api', {
   setAutostart:   (on)      => ipcRenderer.invoke('autostart:set', on),
   createShortcut: ()        => ipcRenderer.invoke('create-shortcut'),
   // Fenster-Steuerung (Dock <-> Verwaltung)
+  getVersion:     ()        => ipcRenderer.invoke('app:version'),
   setHeight:      (h)       => ipcRenderer.invoke('window:height', h),
   hideWindow:     ()        => ipcRenderer.invoke('window:hide'),
   setPin:         (on)      => ipcRenderer.invoke('window:pin', on),

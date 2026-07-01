@@ -85,6 +85,7 @@ ipcMain.handle('window:height', (_, h) => {
   const b = mainWindow.getBounds();
   mainWindow.setBounds({ x: b.x, y: b.y, width: b.width, height: Math.round(h) }, false);
 });
+ipcMain.handle('app:version',   () => app.getVersion());
 ipcMain.handle('window:hide',   () => { mainWindow?.hide(); });
 ipcMain.handle('window:pin',    (_, on) => { mainWindow?.setAlwaysOnTop(!!on); return !!on; });
 ipcMain.handle('window:pinned', () => mainWindow?.isAlwaysOnTop() ?? false);
@@ -414,7 +415,7 @@ function createTray() {
   try {
     tray = new Tray(iconFile());
   } catch { return; }
-  tray.setToolTip('LoginPilot – Klick zum Öffnen');
+  tray.setToolTip('LoginPilot v' + app.getVersion() + ' – Klick zum Öffnen');
   tray.on('click', () => {
     if (!mainWindow) return;
     if (mainWindow.isVisible()) { mainWindow.hide(); }
@@ -434,7 +435,7 @@ function rebuildTray() {
     : [{ label: '(Keine Logins erfasst)', enabled: false }];
 
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: '🔑 LoginPilot', enabled: false },
+    { label: '🔑 LoginPilot  v' + app.getVersion(), enabled: false },
     { type: 'separator' },
     ...loginItems,
     { type: 'separator' },

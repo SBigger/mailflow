@@ -50,6 +50,12 @@
     color: #3b4a63; font-size: 13px; flex-shrink: 0;
     cursor: grab;
   }
+  .ver {
+    -webkit-app-region: no-drag;
+    font-size: 9px; font-weight: 700; color: #64748b;
+    padding: 2px 5px; border: 1px solid var(--border); border-radius: 6px;
+    flex-shrink: 0; white-space: nowrap;
+  }
 
   #dock-icons {
     flex: 1;
@@ -238,6 +244,7 @@
   <div class="grip" title="Verschieben">⠿</div>
   <div id="dock-icons"></div>
   <div class="dock-tools">
+    <span class="ver" id="ver" title="LoginPilot-Version">v?</span>
     <button class="tool accent" title="Login hinzufügen" onclick="openEdit(null,'website')">＋</button>
     <button class="tool" title="Verwalten" onclick="showPanel('list-panel')">⚙</button>
     <button class="tool" id="pin-btn" title="Immer im Vordergrund" onclick="togglePin()">📌</button>
@@ -453,6 +460,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   logins = await window.api.loadLogins();
   renderDock();
   renderList();
+  window.api.getVersion().then(v => { const el = document.getElementById('ver'); if (el) el.textContent = 'v' + v; });
   window.api.getAutostart().then(setAutostartBtn);
   window.api.getPin().then(on => document.getElementById('pin-btn').classList.toggle('on', !!on));
   window.api.onShowCredentials(login => showCredPanel(login));
