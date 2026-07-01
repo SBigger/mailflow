@@ -1,6 +1,6 @@
 // LoginPilot – Hauptprozess (schlank & schneller Start)
 
-const { app, BrowserWindow, ipcMain, safeStorage, dialog, Tray, Menu, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, safeStorage, dialog, Tray, Menu, screen, clipboard } = require('electron');
 const { spawn, execSync } = require('child_process');
 const os   = require('os');
 const path = require('path');
@@ -156,6 +156,8 @@ function launchProgram(login) {
     const exePath = typeof login === 'string' ? login : login.exePath;
     spawn(exePath, [], { detached: true, stdio: 'ignore', shell: true }).unref();
     if (typeof login === 'object' && login.autoType) {
+      // Fallback: Passwort in die Zwischenablage – falls Tippen scheitert, reicht Strg+V
+      try { if (login.password) clipboard.writeText(login.password); } catch {}
       // LoginPilot aus dem Vordergrund nehmen, damit die Tasten im Ziel-Programm landen
       mainWindow?.blur();
       mainWindow?.hide();
@@ -191,11 +193,11 @@ async function doWebLogin(login) {
   let nextCount  = 0;       // "Weiter/Login" höchstens 2×
   let runs       = 0;       // Sicherheitsnetz gegen Endlosschlaufen
 
-  win.webContents.on('did-finish-load', async () => {
+  const runAutofill = async (contents) => {
     if (done) return;
     let curUrl;
     try {
-      curUrl = win.webContents.getURL();
+      curUrl = contents.getURL();
       const th = new URL(login.url).hostname;
       const ch = new URL(curUrl).hostname;
       if (!ch.endsWith(th.split('.').slice(-2).join('.'))) return;
@@ -270,9 +272,9 @@ async function doWebLogin(login) {
             if(uField && HASUSER && NEXTOK){submitNear(uField);return resolve('next');}
             // Seite ganz ohne Felder (z.B. Startseite): prominenten Login-Einstieg EINMAL anklicken
             if(!KW && !KWDONE){
-              var lre=/^(login|anmelden|einloggen|e-?finance|zum login|zur anmeldung|jetzt anmelden)$/i;
+              var lre=/(^|\\s)(login|anmelden|einloggen|e-?finance|e-?banking|zum login|zur anmeldung|jetzt anmelden|anmeldung)(\\s|$)/i;
               var links=Array.prototype.slice.call(document.querySelectorAll('a,button,[role=button]')).filter(vis);
-              var hit=links.find(function(e){var t=label(e).replace(/\\s+/g,' ').trim();return t.length<24 && lre.test(t);});
+              var hit=links.find(function(e){var t=label(e).replace(/\\s+/g,' ').trim();return t.length<26 && lre.test(t);});
               if(hit){clickable(hit).click();return resolve('keyword');}
             }
             resolve('none');
@@ -281,10 +283,24 @@ async function doWebLogin(login) {
       });
     })()`;
     let action = 'none';
-    try { action = await win.webContents.executeJavaScript(script); } catch {}
+    try { action = await contents.executeJavaScript(script); } catch {}
     if (action === 'keyword') didKeyword = true;
     else if (action === 'next') nextCount++;
     else if (action === 'submit') done = true;   // Passwort abgeschickt -> fertig, keine weiteren Klicks
+  };
+
+  // Ausfüllen auf dem Hauptfenster …
+  win.webContents.on('did-finish-load', () => runAutofill(win.webContents));
+
+  // … und auch in Popups/neuen Fenstern (viele Portale öffnen den Login neu)
+  win.webContents.setWindowOpenHandler(() => ({ action: 'allow' }));
+  win.webContents.on('did-create-window', (child) => {
+    try {
+      child.setMenuBarVisibility(false);
+      loginWindows.set(login.id + ':' + runs, child);
+      child.on('closed', () => loginWindows.delete(login.id + ':' + runs));
+      child.webContents.on('did-finish-load', () => runAutofill(child.webContents));
+    } catch {}
   });
 
   try { await win.loadURL(login.url); } catch (err) { return { ok: false, error: err.message }; }
