@@ -122,14 +122,19 @@ function autoTypeProgram(login) {
   if (login.typeEnter !== false) seq += '{ENTER}';
   if (!seq.trim()) return;
 
-  const delay = Math.max(0, Number(login.typeDelay ?? 1200));
-  const title = (login.windowTitle || '').trim();
+  const delay = Math.max(0, Number(login.typeDelay ?? 1500));
+  const title = (login.windowTitle || '').trim().replace(/'/g, "''");
+  // Prozessname aus dem Pfad (ohne .exe) als Fallback fürs Aktivieren
+  const proc  = path.basename(login.exePath || '', path.extname(login.exePath || '')).replace(/'/g, "''");
 
   const ps = [
     'Add-Type -AssemblyName System.Windows.Forms',
-    title ? 'Add-Type -AssemblyName Microsoft.VisualBasic' : '',
+    'Add-Type -AssemblyName Microsoft.VisualBasic',
     'Start-Sleep -Milliseconds ' + delay,
-    title ? `try{[Microsoft.VisualBasic.Interaction]::AppActivate('${title.replace(/'/g, "''")}');Start-Sleep -Milliseconds 250}catch{}` : '',
+    // Zielfenster in den Vordergrund holen: zuerst per Titel, sonst per Prozessname
+    title ? `try{[Microsoft.VisualBasic.Interaction]::AppActivate('${title}')}catch{try{[Microsoft.VisualBasic.Interaction]::AppActivate('${proc}')}catch{}}`
+          : `try{[Microsoft.VisualBasic.Interaction]::AppActivate('${proc}')}catch{}`,
+    'Start-Sleep -Milliseconds 400',
     '[System.Windows.Forms.SendKeys]::SendWait($env:LP_SEQ)',
   ].filter(Boolean).join('; ');
 
@@ -140,7 +145,7 @@ function autoTypeProgram(login) {
       env: { ...process.env, LP_SEQ: seq },
       detached: true, stdio: 'ignore', windowsHide: true,
     }).unref();
-    setTimeout(() => { try { fs.unlinkSync(tmp); } catch {} }, delay + 5000);
+    setTimeout(() => { try { fs.unlinkSync(tmp); } catch {} }, delay + 6000);
   } catch {}
 }
 
@@ -150,7 +155,12 @@ function launchProgram(login) {
   try {
     const exePath = typeof login === 'string' ? login : login.exePath;
     spawn(exePath, [], { detached: true, stdio: 'ignore', shell: true }).unref();
-    if (typeof login === 'object' && login.autoType) autoTypeProgram(login);
+    if (typeof login === 'object' && login.autoType) {
+      // LoginPilot aus dem Vordergrund nehmen, damit die Tasten im Ziel-Programm landen
+      mainWindow?.blur();
+      mainWindow?.hide();
+      autoTypeProgram(login);
+    }
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err.message };
@@ -177,10 +187,12 @@ async function doWebLogin(login) {
 
   let lastRun    = '';
   let didKeyword = false;   // Stichwort/Kachel nur EINMAL klicken
-  let didSubmit  = false;   // Formular nur EINMAL absenden
+  let done       = false;   // nach Passwort-Login: komplett fertig, nichts mehr tun
+  let nextCount  = 0;       // "Weiter/Login" höchstens 2×
   let runs       = 0;       // Sicherheitsnetz gegen Endlosschlaufen
 
   win.webContents.on('did-finish-load', async () => {
+    if (done) return;
     let curUrl;
     try {
       curUrl = win.webContents.getURL();
@@ -191,7 +203,7 @@ async function doWebLogin(login) {
     // Auf jeder (neuen) Seite derselben Domain: Portal -> Kachel -> echte Login-Seite
     if (curUrl === lastRun) return;
     lastRun = curUrl;
-    if (++runs > 8) return;   // niemals endlos
+    if (++runs > 5) return;   // niemals endlos
 
     await new Promise(r => setTimeout(r, Number(login.delay ?? 600)));
 
@@ -224,7 +236,7 @@ async function doWebLogin(login) {
       }
       var U=${JSON.stringify(uSel)}, P=${JSON.stringify(pSel)}, S=${JSON.stringify(sSel)}, KW=${JSON.stringify(kw)};
       var HASUSER=${JSON.stringify(!!(login.username))};
-      var KWDONE=${didKeyword}, SUBDONE=${didSubmit};
+      var KWDONE=${didKeyword}, DONE=${done}, NEXTOK=${nextCount < 2};
       var re=/(log ?in|anmeld|sign ?in|einloggen|weiter|continue|next|senden|submit)/i;
       function submitNear(field){
         var form=field&&field.form, scope=form||document;
@@ -234,13 +246,13 @@ async function doWebLogin(login) {
         if(field){['keydown','keypress','keyup'].forEach(function(ty){field.dispatchEvent(new KeyboardEvent(ty,{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true,cancelable:true}));});}
         if(form){if(form.requestSubmit)form.requestSubmit();else form.submit();}
       }
+      if(DONE)return 'none';                                     // nach Passwort-Login: gar nichts mehr
       fill(U,${JSON.stringify(login.username||'')});
       fill(P,${JSON.stringify(login.password||'')});
       if(!${JSON.stringify(auto)})return 'filled';
       return new Promise(function(resolve){
         setTimeout(function(){
           try{
-            if(SUBDONE)return resolve('none');                       // nach Passwort-Login: nichts mehr tun
             if(S){var b=document.querySelector(S);if(b){b.click();return resolve('submit');}}
             // Stichwort – ortsunabhängig nach Text (Kacheln, Links, Überschriften) – nur EINMAL
             if(KW && !KWDONE){
@@ -250,12 +262,12 @@ async function doWebLogin(login) {
               matches.sort(function(a,b){return label(a).length-label(b).length;});
               if(matches.length){clickable(matches[0]).click();return resolve('keyword');}
             }
-            // Echte Login-Seite (Passwortfeld) -> absenden, danach Stopp
+            // Echte Login-Seite (Passwortfeld) -> absenden, danach KOMPLETT Stopp
             var pw=document.querySelector(P);
             if(pw){submitNear(pw);return resolve('submit');}
-            // Benutzer-zuerst (Feld vorhanden, aber noch kein Passwort) -> "Weiter/Login" klicken, weiter zur nächsten Seite
+            // Benutzer-zuerst (Feld vorhanden, aber noch kein Passwort) -> "Weiter/Login" – höchstens 2×
             var uField=Array.prototype.slice.call(document.querySelectorAll(U)).find(vis)||null;
-            if(uField && HASUSER){submitNear(uField);return resolve('next');}
+            if(uField && HASUSER && NEXTOK){submitNear(uField);return resolve('next');}
             // Seite ganz ohne Felder (z.B. Startseite): prominenten Login-Einstieg EINMAL anklicken
             if(!KW && !KWDONE){
               var lre=/^(login|anmelden|einloggen|e-?finance|zum login|zur anmeldung|jetzt anmelden)$/i;
@@ -271,7 +283,8 @@ async function doWebLogin(login) {
     let action = 'none';
     try { action = await win.webContents.executeJavaScript(script); } catch {}
     if (action === 'keyword') didKeyword = true;
-    if (action === 'submit')  didSubmit  = true;
+    else if (action === 'next') nextCount++;
+    else if (action === 'submit') done = true;   // Passwort abgeschickt -> fertig, keine weiteren Klicks
   });
 
   try { await win.loadURL(login.url); } catch (err) { return { ok: false, error: err.message }; }
