@@ -145,6 +145,8 @@ async function doWebLogin(login) {
     const uSel = login.userSelector   || 'input[type="email"],input[type="text"]:not([type="search"]):not([type="tel"]):not([type="number"])';
     const pSel = login.passSelector   || 'input[type="password"]';
     const sSel = login.submitSelector || '';
+    const kw   = (login.submitKeyword || '').trim();
+    const auto = login.autoSubmit !== false;   // Standard: automatisch anmelden
 
     const script = `(function(){
       function fill(sel,val){
@@ -156,15 +158,39 @@ async function doWebLogin(login) {
         ['input','change','keydown','keyup'].forEach(t=>el.dispatchEvent(new Event(t,{bubbles:true,cancelable:true})));
         el.focus();return true;
       }
+      var P=${JSON.stringify(pSel)}, S=${JSON.stringify(sSel)}, KW=${JSON.stringify(kw)};
       fill(${JSON.stringify(uSel)},${JSON.stringify(login.username||'')});
-      fill(${JSON.stringify(pSel)},${JSON.stringify(login.password||'')});
-      if(${JSON.stringify(!!sSel)}){
-        setTimeout(()=>{
-          const b=document.querySelector(${JSON.stringify(sSel)});
-          if(b)b.click();
-          else{const pw=document.querySelector(${JSON.stringify(pSel)});
-            if(pw)pw.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',keyCode:13,bubbles:true,cancelable:true}));}
-        },600);
+      fill(P,${JSON.stringify(login.password||'')});
+      if(${JSON.stringify(auto)}){
+        setTimeout(function(){
+          var pw=document.querySelector(P);
+          var form=pw&&pw.form;
+          var scope=form||document;
+          function label(e){return ((e.innerText||e.value||'')+' '+(e.getAttribute&&(e.getAttribute('aria-label')||e.getAttribute('title'))||'')).trim();}
+          var cands=Array.prototype.slice.call(scope.querySelectorAll('button,input[type=submit],input[type=image],input[type=button],a[role=button]'))
+            .filter(function(e){return e.offsetParent!==null&&!e.disabled;});
+          // 1. Ausdrücklicher Selektor
+          if(S){var b=document.querySelector(S);if(b){b.click();return;}}
+          // 2. Stichwort (vom Benutzer)
+          if(KW){
+            var lk=KW.toLowerCase();
+            var hit=cands.find(function(e){return label(e).toLowerCase().indexOf(lk)!==-1;});
+            if(hit){hit.click();return;}
+          }
+          // 3. Automatisch passenden Anmelde-Button finden
+          var re=/(log ?in|anmeld|sign ?in|einloggen|weiter|continue|next|senden|submit)/i;
+          var btn=cands.find(function(e){
+            var t=(e.type||'').toLowerCase();
+            if(t==='submit'||t==='image')return true;
+            return re.test(label(e));
+          });
+          if(btn){btn.click();return;}
+          // 4. Enter im Passwortfeld
+          if(pw){['keydown','keypress','keyup'].forEach(function(ty){
+            pw.dispatchEvent(new KeyboardEvent(ty,{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true,cancelable:true}));});}
+          // 5. Formular direkt absenden
+          if(form){if(form.requestSubmit)form.requestSubmit();else form.submit();}
+        },700);
       }
     })()`;
     try { await win.webContents.executeJavaScript(script); } catch {}

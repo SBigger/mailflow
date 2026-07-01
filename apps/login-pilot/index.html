@@ -189,6 +189,9 @@
   .field .hint { font-size: 11px; color: var(--muted); line-height: 1.5; }
   .row { display: flex; gap: 9px; }
   .row .field { flex: 1; }
+  .check { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--text); cursor: pointer; background: var(--surf); border: 1px solid var(--border); border-radius: 7px; padding: 9px 11px; }
+  .check input { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
+  .check .sub { font-size: 11px; font-weight: 400; color: var(--muted); }
   .sep { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; padding-bottom: 2px; border-bottom: 1px solid var(--border); }
   .type-toggle { display: flex; background: var(--surf); border: 1px solid var(--border); border-radius: 8px; padding: 3px; gap: 3px; }
   .type-btn { flex: 1; padding: 6px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; color: var(--muted); background: transparent; transition: background .14s, color .14s; }
@@ -287,6 +290,17 @@
       <div class="field" id="row-url">
         <label>Login-URL *</label>
         <input id="f-url" type="url" placeholder="https://…">
+      </div>
+      <div class="field" id="row-autosubmit">
+        <label class="check">
+          <input id="f-autosubmit" type="checkbox" checked>
+          <span>Automatisch anmelden<br><span class="sub">Button klicken / Enter drücken – nur 2FA bleibt für dich</span></span>
+        </label>
+      </div>
+      <div class="field" id="row-submitkw">
+        <label>Button-Stichwort <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">(optional)</span></label>
+        <input id="f-submitKw" type="text" placeholder="z. B. Anmelden, Login, Weiter" spellcheck="false" autocomplete="off">
+        <div class="hint">Falls die App den Button nicht selbst findet: Text vom Login-Button eintragen.</div>
       </div>
       <div class="field" id="row-exe" style="display:none">
         <label>Programm-Pfad *</label>
@@ -558,6 +572,8 @@ function openEdit(id, forceType) {
   document.getElementById('f-passSel').value     = l?.passSelector   || '';
   document.getElementById('f-submitSel').value   = l?.submitSelector || '';
   document.getElementById('f-delay').value       = l?.delay ?? 1500;
+  document.getElementById('f-autosubmit').checked = l?.autoSubmit !== false;
+  document.getElementById('f-submitKw').value     = l?.submitKeyword || '';
 
   setType(t);
   setAdv(!!(l?.userSelector || l?.passSelector || l?.submitSelector));
@@ -568,9 +584,11 @@ function setType(t) {
   editType = t;
   document.getElementById('type-web').classList.toggle('on', t === 'website');
   document.getElementById('type-prog').classList.toggle('on', t === 'program');
-  document.getElementById('row-url').style.display  = t === 'website' ? '' : 'none';
-  document.getElementById('row-exe').style.display  = t === 'program' ? '' : 'none';
-  document.getElementById('adv-wrap').style.display = t === 'website' ? '' : 'none';
+  document.getElementById('row-url').style.display        = t === 'website' ? '' : 'none';
+  document.getElementById('row-autosubmit').style.display = t === 'website' ? '' : 'none';
+  document.getElementById('row-submitkw').style.display    = t === 'website' ? '' : 'none';
+  document.getElementById('row-exe').style.display        = t === 'program' ? '' : 'none';
+  document.getElementById('adv-wrap').style.display       = t === 'website' ? '' : 'none';
 }
 
 async function pickExe() {
@@ -601,6 +619,8 @@ function saveEdit() {
     userSelector:   document.getElementById('f-userSel').value.trim(),
     passSelector:   document.getElementById('f-passSel').value.trim(),
     submitSelector: document.getElementById('f-submitSel').value.trim(),
+    autoSubmit:     document.getElementById('f-autosubmit').checked,
+    submitKeyword:  document.getElementById('f-submitKw').value.trim(),
     delay:          parseInt(document.getElementById('f-delay').value) || 1500,
   };
 
