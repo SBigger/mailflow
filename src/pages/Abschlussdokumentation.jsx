@@ -1220,18 +1220,31 @@ function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = 
     if (ext === "xlsx" || ext === "xls") {
       loadExcel(file);
     } else {
-      // CSV
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const text = e.target.result;
+      // CSV – Zeichensatz automatisch erkennen (UTF-8 / Windows-1252)
+      readTextSmart(file).then(text => {
         const firstLine = text.split("\n")[0];
         const sep = firstLine.includes(";") ? ";" : firstLine.includes("\t") ? "\t" : ",";
         const rows = text.split("\n").map(line =>
           line.replace(/\r$/, "").split(sep).map(cell => cell.replace(/^"(.*)"$/, "$1").replace(/""/g, '"'))
         ).filter(r => r.some(c => c.trim()));
         processRows(rows, file.name);
-      };
-      reader.readAsText(file, "UTF-8");
+      });
+    }
+  }
+
+  // ── Text robust lesen: Zeichensatz automatisch erkennen ───────────────────
+  // CH-Buchhaltungs-Exporte (Abacus/Topal) sind oft Windows-1252/Latin-1, nicht
+  // UTF-8 → sonst zerschossene ä/ö/ü. UTF-8-BOM beachten; gültiges UTF-8 nehmen,
+  // sonst auf Windows-1252 zurückfallen.
+  async function readTextSmart(file) {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    if (bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) {
+      return new TextDecoder("utf-8").decode(bytes.subarray(3));
+    }
+    try {
+      return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    } catch {
+      return new TextDecoder("windows-1252").decode(bytes);
     }
   }
 
@@ -1253,7 +1266,7 @@ function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = 
       return header ? [header, ...dataRows] : [];
     }
     // CSV
-    const text = await file.text();
+    const text = await readTextSmart(file);
     const firstLine = text.split("\n")[0];
     const sep = firstLine.includes(";") ? ";" : firstLine.includes("\t") ? "\t" : ",";
     return text.split("\n").map(line =>
@@ -1307,17 +1320,14 @@ function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = 
       };
       reader.readAsArrayBuffer(file);
     } else {
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        const text = ev.target.result;
+      readTextSmart(file).then(text => {
         const firstLine = text.split("\n")[0];
         const sep = firstLine.includes(";") ? ";" : firstLine.includes("\t") ? "\t" : ",";
         const rows = text.split("\n").map(line =>
           line.replace(/\r$/, "").split(sep).map(cell => cell.replace(/^"(.*)"$/, "$1").replace(/""/g, '"'))
         ).filter(r => r.some(c => c.trim()));
         mergeExtraRows(rows.slice(1), file.name);
-      };
-      reader.readAsText(file, "UTF-8");
+      });
     }
   }
 
