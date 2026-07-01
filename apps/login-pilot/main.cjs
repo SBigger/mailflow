@@ -103,16 +103,61 @@ ipcMain.handle('dialog:pick-exe', async () => {
   return r.canceled ? null : r.filePaths[0];
 });
 
+// ── Programm-Autotippen (Windows SendKeys) ────────────────────────────────────
+
+// Sonderzeichen für SendKeys maskieren: + ^ % ~ ( ) [ ] { }
+function skEscape(s) {
+  return String(s || '').replace(/[+^%~(){}\[\]]/g, m => '{' + m + '}');
+}
+
+// Tippt Benutzer/Passwort ins zuletzt geöffnete (Vordergrund-)Fenster.
+// Passwort läuft über eine Umgebungsvariable des PowerShell-Kindprozesses –
+// steht also NICHT in der Kommandozeile und NICHT im Klartext auf der Platte.
+function autoTypeProgram(login) {
+  if (process.platform !== 'win32') return;
+
+  let seq = '';
+  if (login.typeUser && login.username) seq += skEscape(login.username) + '{TAB}';
+  seq += skEscape(login.password || '');
+  if (login.typeEnter !== false) seq += '{ENTER}';
+  if (!seq.trim()) return;
+
+  const delay = Math.max(0, Number(login.typeDelay ?? 1200));
+  const title = (login.windowTitle || '').trim();
+
+  const ps = [
+    'Add-Type -AssemblyName System.Windows.Forms',
+    title ? 'Add-Type -AssemblyName Microsoft.VisualBasic' : '',
+    'Start-Sleep -Milliseconds ' + delay,
+    title ? `try{[Microsoft.VisualBasic.Interaction]::AppActivate('${title.replace(/'/g, "''")}');Start-Sleep -Milliseconds 250}catch{}` : '',
+    '[System.Windows.Forms.SendKeys]::SendWait($env:LP_SEQ)',
+  ].filter(Boolean).join('; ');
+
+  const tmp = path.join(os.tmpdir(), 'lp-type.ps1');
+  try {
+    fs.writeFileSync(tmp, ps, 'utf8');
+    spawn('powershell', ['-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', tmp], {
+      env: { ...process.env, LP_SEQ: seq },
+      detached: true, stdio: 'ignore', windowsHide: true,
+    }).unref();
+    setTimeout(() => { try { fs.unlinkSync(tmp); } catch {} }, delay + 5000);
+  } catch {}
+}
+
 // ── IPC: Programm starten ─────────────────────────────────────────────────────
 
-ipcMain.handle('program:launch', (_, exePath) => {
+function launchProgram(login) {
   try {
+    const exePath = typeof login === 'string' ? login : login.exePath;
     spawn(exePath, [], { detached: true, stdio: 'ignore', shell: true }).unref();
+    if (typeof login === 'object' && login.autoType) autoTypeProgram(login);
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err.message };
   }
-});
+}
+
+ipcMain.handle('program:launch', (_, login) => launchProgram(login));
 
 // ── IPC: Webseiten-Login ──────────────────────────────────────────────────────
 
@@ -325,8 +370,9 @@ function rebuildTray() {
 
 async function trayLogin(login) {
   if (login.type === 'program') {
-    try { spawn(login.exePath, [], { detached: true, stdio: 'ignore', shell: true }).unref(); } catch {}
-    if (mainWindow) {
+    launchProgram(login);
+    // Wenn nicht automatisch getippt wird: Zugangsdaten zum Kopieren anzeigen
+    if (!login.autoType && mainWindow) {
       mainWindow.show();
       mainWindow.focus();
       mainWindow.webContents.send('show-credentials', login);

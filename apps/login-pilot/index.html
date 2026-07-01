@@ -330,6 +330,38 @@
           <input id="f-extra-val" type="text" autocomplete="off" spellcheck="false">
         </div>
       </div>
+
+      <!-- Programm-Autotippen (nur Typ Programm) -->
+      <div id="autotype-wrap" style="display:none">
+        <div class="sep">Automatisch ins Programm tippen</div>
+        <div class="field">
+          <label class="check">
+            <input id="f-autotype" type="checkbox" onchange="toggleAutotype()">
+            <span>Zugangsdaten ins Login-Fenster tippen<br><span class="sub">Nach dem Start werden Passwort (und optional Benutzer) ins gerade offene Fenster getippt.</span></span>
+          </label>
+        </div>
+        <div class="adv-block" id="autotype-block">
+          <label class="check">
+            <input id="f-typeuser" type="checkbox">
+            <span>Benutzer zuerst tippen, dann Tab<br><span class="sub">Sonst nur das Passwort (z. B. Master-Passwort).</span></span>
+          </label>
+          <label class="check">
+            <input id="f-typeenter" type="checkbox" checked>
+            <span>Mit Enter bestätigen</span>
+          </label>
+          <div class="row">
+            <div class="field" style="flex:0 0 150px">
+              <label>Wartezeit (ms)</label>
+              <input id="f-typedelay" type="number" min="0" max="15000" step="100" value="1200">
+              <div class="hint">Bis das Login-Fenster offen ist.</div>
+            </div>
+            <div class="field">
+              <label>Fenstertitel (optional)</label>
+              <input id="f-windowtitle" type="text" placeholder="z. B. Password Depot" spellcheck="false" autocomplete="off">
+            </div>
+          </div>
+        </div>
+      </div>
       <div id="adv-wrap">
         <button class="adv-toggle" id="adv-btn" onclick="toggleAdv()">⚙ Erweiterte Einstellungen (Selektoren)</button>
         <div class="adv-block" id="adv-block">
@@ -471,10 +503,11 @@ async function startLogin(id) {
   btn?.classList.add('busy');
 
   if (login.type === 'program') {
-    const r = await window.api.launchProgram(login.exePath);
+    const r = await window.api.launchProgram(login);
     btn?.classList.remove('busy');
     if (!r?.ok) { toast('Fehler: ' + (r?.error || 'Unbekannt'), true); return; }
-    showCredPanel(login);
+    if (login.autoType) toast('Programm gestartet – wird getippt…');
+    else showCredPanel(login);
   } else {
     const r = await window.api.startLogin(login);
     setTimeout(() => btn?.classList.remove('busy'), 2500);
@@ -574,6 +607,12 @@ function openEdit(id, forceType) {
   document.getElementById('f-delay').value       = l?.delay ?? 600;
   document.getElementById('f-autosubmit').checked = l?.autoSubmit !== false;
   document.getElementById('f-submitKw').value     = l?.submitKeyword || '';
+  document.getElementById('f-autotype').checked   = !!l?.autoType;
+  document.getElementById('f-typeuser').checked   = !!l?.typeUser;
+  document.getElementById('f-typeenter').checked  = l?.typeEnter !== false;
+  document.getElementById('f-typedelay').value    = l?.typeDelay ?? 1200;
+  document.getElementById('f-windowtitle').value  = l?.windowTitle || '';
+  toggleAutotype();
 
   setType(t);
   setAdv(!!(l?.userSelector || l?.passSelector || l?.submitSelector));
@@ -589,6 +628,12 @@ function setType(t) {
   document.getElementById('row-submitkw').style.display    = t === 'website' ? '' : 'none';
   document.getElementById('row-exe').style.display        = t === 'program' ? '' : 'none';
   document.getElementById('adv-wrap').style.display       = t === 'website' ? '' : 'none';
+  document.getElementById('autotype-wrap').style.display  = t === 'program' ? '' : 'none';
+}
+
+function toggleAutotype() {
+  const on = document.getElementById('f-autotype').checked;
+  document.getElementById('autotype-block').classList.toggle('open', on);
 }
 
 async function pickExe() {
@@ -622,6 +667,11 @@ function saveEdit() {
     autoSubmit:     document.getElementById('f-autosubmit').checked,
     submitKeyword:  document.getElementById('f-submitKw').value.trim(),
     delay:          parseInt(document.getElementById('f-delay').value) || 600,
+    autoType:       document.getElementById('f-autotype').checked,
+    typeUser:       document.getElementById('f-typeuser').checked,
+    typeEnter:      document.getElementById('f-typeenter').checked,
+    typeDelay:      parseInt(document.getElementById('f-typedelay').value) || 1200,
+    windowTitle:    document.getElementById('f-windowtitle').value.trim(),
   };
 
   logins = editId ? logins.map(l => l.id === editId ? entry : l) : [...logins, entry];
