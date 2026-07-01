@@ -1,15 +1,29 @@
-// LoginPilot – Hauptprozess
+// LoginPilot – Hauptprozess (schlank & schneller Start)
 
-const { app, BrowserWindow, ipcMain, safeStorage, dialog, Tray, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, safeStorage, dialog, Tray, Menu, screen } = require('electron');
 const { spawn, execSync } = require('child_process');
 const os   = require('os');
 const path = require('path');
 const fs   = require('fs');
 
+// ── Ressourcen sparen ───────────────────────────────────────────────────────
+// Kein GPU-Prozess -> deutlich weniger RAM, schnellerer Start.
+app.disableHardwareAcceleration();
+
+// Nur eine Instanz – verhindert doppelte (schwere) Prozesse.
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+  process.exit(0);
+}
+
 let mainWindow   = null;
 let tray         = null;
 let isQuitting   = false;
 let cachedLogins = [];
+
+const DOCK_H   = 64;
+const MANAGE_H = 660;
+const WIN_W    = 560;
 
 const loginWindows = new Map();
 
@@ -64,6 +78,17 @@ ipcMain.handle('logins:save', (_, logins) => {
   return true;
 });
 
+// ── IPC: Fenster-Höhe (Dock <-> Verwaltung) ────────────────────────────────────
+
+ipcMain.handle('window:height', (_, h) => {
+  if (!mainWindow) return;
+  const b = mainWindow.getBounds();
+  mainWindow.setBounds({ x: b.x, y: b.y, width: b.width, height: Math.round(h) }, false);
+});
+ipcMain.handle('window:hide',   () => { mainWindow?.hide(); });
+ipcMain.handle('window:pin',    (_, on) => { mainWindow?.setAlwaysOnTop(!!on); return !!on; });
+ipcMain.handle('window:pinned', () => mainWindow?.isAlwaysOnTop() ?? false);
+
 // ── IPC: Datei-Dialog ─────────────────────────────────────────────────────────
 
 ipcMain.handle('dialog:pick-exe', async () => {
@@ -99,6 +124,7 @@ async function doWebLogin(login) {
     width: 1280, height: 900, minWidth: 800, minHeight: 600,
     title: `${login.name} – Login`,
     autoHideMenuBar: true,
+    backgroundColor: '#ffffff',
     webPreferences: { contextIsolation: true, nodeIntegration: false },
   });
   loginWindows.set(login.id, win);
@@ -164,11 +190,9 @@ ipcMain.handle('autostart:set', (_, enabled) => {
 ipcMain.handle('create-shortcut', () => {
   const desktop  = path.join(os.homedir(), 'Desktop');
   const lnkPath  = path.join(desktop, 'LoginPilot.lnk');
-  const vbs      = path.join(__dirname, 'LoginPilot.vbs');
-  const bat      = path.join(__dirname, 'LoginPilot starten.bat');
-  const iconPath = path.join(__dirname, 'icon.ico');
-  const target   = fs.existsSync(vbs) ? vbs : bat;
-  const workDir  = __dirname;
+  const target   = app.isPackaged ? process.execPath : path.join(__dirname, 'LoginPilot starten.bat');
+  const workDir  = app.isPackaged ? path.dirname(process.execPath) : __dirname;
+  const iconPath = app.isPackaged ? process.execPath : path.join(__dirname, 'icon.ico');
 
   const ps = [
     `$ws = New-Object -ComObject WScript.Shell`,
@@ -194,12 +218,16 @@ ipcMain.handle('create-shortcut', () => {
 
 // ── Tray ──────────────────────────────────────────────────────────────────────
 
-function createTray() {
-  // In gepackten Apps liegt das Icon im app.asar.unpacked-Ordner
-  const iconPath = app.isPackaged
+function iconFile() {
+  return app.isPackaged
     ? path.join(process.resourcesPath, 'app.asar.unpacked', 'icon.ico')
     : path.join(__dirname, 'icon.ico');
-  tray = new Tray(iconPath);
+}
+
+function createTray() {
+  try {
+    tray = new Tray(iconFile());
+  } catch { return; }
   tray.setToolTip('LoginPilot – Klick zum Öffnen');
   tray.on('click', () => {
     if (!mainWindow) return;
@@ -224,7 +252,7 @@ function rebuildTray() {
     { type: 'separator' },
     ...loginItems,
     { type: 'separator' },
-    { label: 'Verwalten…', click: () => { mainWindow?.show(); mainWindow?.focus(); } },
+    { label: 'Verwalten…', click: () => { mainWindow?.show(); mainWindow?.focus(); mainWindow?.webContents.send('open-manage'); } },
     {
       label: 'Mit Windows starten',
       type: 'checkbox',
@@ -251,21 +279,37 @@ async function trayLogin(login) {
 
 // ── App-Lifecycle ─────────────────────────────────────────────────────────────
 
+app.on('second-instance', () => {
+  if (mainWindow) { mainWindow.show(); mainWindow.focus(); }
+});
+
 app.whenReady().then(() => {
   cachedLogins = decryptAll(readRaw());
 
+  const wa = screen.getPrimaryDisplay().workArea;
+
   mainWindow = new BrowserWindow({
-    width: 460, height: 700, minWidth: 380, minHeight: 500,
+    width: WIN_W, height: DOCK_H,
+    x: Math.round(wa.x + (wa.width - WIN_W) / 2),
+    y: wa.y + 6,
+    frame: false,
+    resizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    show: false,
+    backgroundColor: '#0f172a',
     title: 'LoginPilot',
-    autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
+      spellcheck: false,
+      backgroundThrottling: true,
     },
   });
 
   mainWindow.loadFile(path.join(__dirname, 'index.html'));
+  mainWindow.once('ready-to-show', () => mainWindow.show());
 
   // Schliessen → in Tray minimieren
   mainWindow.on('close', (e) => {
