@@ -546,6 +546,8 @@ function renderTranscript(){
   if(!segments.length){ box.innerHTML=_emptyTHtml; $("#sCount").textContent=0; return; }
   box.innerHTML="";
   const speakers=[...new Set(segments.map(s=>s.speaker))];
+  // Während der Aufnahme ersetzen Live-Updates das ganze Transkript -> Text-Edits wären verloren; erst nach Stopp editierbar
+  const canEdit=!(mediaRec&&mediaRec.state!=="inactive");
   segments.forEach(seg=>{
     const col=segColor(seg), lbl=segLabel(seg);
     const k=segKey(seg), kOv=segOvKey(seg);
@@ -559,7 +561,7 @@ function renderTranscript(){
         <div class="who"><span style="color:${col}">${escapeHtml(lbl)}</span>
           <select data-spk="${seg.speaker}" title="Sprecher dieses Abschnitts korrigieren">${opts}</select>
           <span class="ts">${fmtTime(seg.start)}</span></div>
-        <div class="txt" contenteditable spellcheck="false">${escapeHtml(seg.text)}</div>
+        <div class="txt" ${canEdit?`contenteditable`:`title="Text erst nach dem Stopp bearbeiten – Live-Updates würden die Änderung überschreiben"`} spellcheck="false">${escapeHtml(seg.text)}</div>
       </div>`;
     el.querySelector("select").addEventListener("change",e=>{
       const v=e.target.value;
@@ -602,11 +604,15 @@ let mediaRec=null, recStart=0, timerInt=null, audioCtx=null, analyser=null, volR
 let curRecId=null, chunkSeq=0, recMime="", pendingSaves=[];
 let displayStream=null, mixCtx=null, recStream=null;
 let _liveTimer=null, _liveBusy=false, _liveOn=false;
+let _starting=false, _recGen=0;   // Reentry-Schutz + Generation (verwirft Antworten alter Aufnahmen)
 let paused=false, pausedMs=0, pauseStart=0;
 function elapsedMs(){ let e=Date.now()-recStart-pausedMs; if(paused) e-=(Date.now()-pauseStart); return Math.max(0,e); }
 
 async function startRec(){
+  if(_starting || (mediaRec && mediaRec.state!=="inactive")) return;   // Doppelklick während Berechtigungs-Dialog -> zweiter paralleler Recorder
   if(!cfg.eleven && !PROXY_ON){ openModal(); setStatus("Bitte zuerst den ElevenLabs API-Key eintragen.",true); return; }
+  _starting=true; $("#recBtn").disabled=true;
+  try{
   try{
     const audio={ echoCancellation:true, noiseSuppression:true, autoGainControl:true, channelCount:1, sampleRate:48000 };
     if(cfg.mic) audio.deviceId={ exact: cfg.mic };
@@ -632,7 +638,13 @@ async function startRec(){
       displayStream.getVideoTracks().forEach(t=>t.stop());   // Video brauchen wir nicht
     }catch(e){ setStatus("⚠ Computer-Ton nicht freigegeben – nur Mikrofon ("+e.message+").",true); }
   }
+  // Mikrofon-Track kann enden (Bluetooth aus / USB gezogen): sonst friert die Aufnahme STILL ein
+  const micTrack=stream.getAudioTracks()[0];
+  if(micTrack) micTrack.addEventListener("ended",()=>{ if(!curRecId) return;
+    setStatus("❌ Mikrofon getrennt (z.B. Bluetooth aus) – Aufnahme gestoppt. Bisheriges bleibt gesichert und wird transkribiert.",true); stopRec(); });
+  const rb=$("#recovery"); if(rb){ rb.classList.remove("show"); rb.innerHTML=""; }   // Banner weg: nichts Löschbares während laufender Aufnahme anbieten
   try{ if(navigator.storage&&navigator.storage.persist) await navigator.storage.persist(); }catch(e){}
+  _recGen++;
   recStart=Date.now(); recMime=pickMime(); curRecId="rec_"+recStart; chunkSeq=0; pendingSaves=[]; paused=false; pausedMs=0;
   try{ await dbPut("recordings",{id:curRecId,startedAt:recStart,status:"recording",mimeType:recMime}); }
   catch(e){ setStatus("⚠ Lokale Sicherung nicht möglich ("+e.message+") – Aufnahme NICHT crash-sicher!",true); }
@@ -661,12 +673,13 @@ async function startRec(){
   // Laufende Zwischen-Transkription (erster Stand früh, dann im gewählten Intervall)
   _liveOn = (cfg.liveInterval>0);
   if(_liveOn){ if(_liveTimer) clearTimeout(_liveTimer); _liveTimer=setTimeout(liveTick, 20000); }  // erster Zwischenstand früh (~20s)
+  }finally{ _starting=false; $("#recBtn").disabled=false; }
 }
 // ── Live-/Zwischen-Transkription während der Aufnahme ─────────────
 async function liveTick(){
   if(!_liveOn) return;
   await liveTranscribe();
-  if(_liveOn && cfg.liveInterval>0) _liveTimer=setTimeout(liveTick, cfg.liveInterval*1000);
+  if(_liveOn && cfg.liveInterval>0){ if(_liveTimer) clearTimeout(_liveTimer); _liveTimer=setTimeout(liveTick, cfg.liveInterval*1000); }   // alte Kette räumen (Pause/Weiter dupliziert sonst)
 }
 async function liveTranscribe(){
   if(_liveBusy || !curRecId) return;
@@ -680,6 +693,7 @@ async function liveTranscribe(){
 }
 function updateSaved(){ setStatus(`🔴 Aufnahme läuft – 💾 ~${fmtTime(chunkSeq*(CHUNK_MS/1000))} crash-sicher gespeichert.`,true); }
 function stopRec(){
+  _recGen++;   // in-flight Transkriptions-Antworten der alten Aufnahme-Generation verwerfen
   _liveOn=false; if(_liveTimer) clearTimeout(_liveTimer);
   if(mediaRec&&mediaRec.state!=="inactive") mediaRec.stop();
   clearInterval(timerInt);
@@ -719,7 +733,8 @@ async function finalizeRecording(recId){
 async function refreshRecoveryBanner(){
   const banner=$("#recovery"); if(!banner) return;
   let recs=[]; try{ recs=await dbGetAll("recordings"); }catch(e){ return; }
-  const pending=recs.filter(r=>r.status!=="finalized").sort((a,b)=>b.startedAt-a.startedAt);
+  const activeId=(mediaRec && mediaRec.state!=="inactive") ? curRecId : null;   // laufende Aufnahme NIE anbieten (Verwerfen würde ihre Sicherung löschen)
+  const pending=recs.filter(r=>r.status!=="finalized" && r.id!==activeId).sort((a,b)=>b.startedAt-a.startedAt);
   if(!pending.length){ banner.classList.remove("show"); banner.innerHTML=""; return; }
   banner.classList.add("show"); banner.innerHTML="";
   for(const r of pending){
@@ -792,6 +807,7 @@ async function transcribe(blob, isLive){
   // Vokabular-Hinweise (Namen, Kunde, Traktanden, Fachbegriffe) -> richtige Schreibung & Erkennung.
   // WICHTIG: je Begriff ein eigenes Multipart-Feld (wie das offizielle SDK) – ein JSON-String wird abgelehnt (422).
   buildKeyterms().forEach(t=>fd.append("keyterms", t));
+  const gen=_recGen;   // Antworten, die zu einer früheren/neuen Aufnahme gehören, unten verwerfen
   try{
     const useProxy = PROXY_ON && !cfg.eleven;
     const res = useProxy
@@ -800,6 +816,7 @@ async function transcribe(blob, isLive){
     if(!res.ok){ const t=await res.text(); throw new Error("HTTP "+res.status+" "+t.slice(0,300)); }
     const data=await res.json();
     if(isLive && !_liveOn) return false;   // Stopp/Pause kam während des Requests -> Teilstand verwerfen (Finale gewinnt)
+    if(gen!==_recGen && gen>0) return false;   // inzwischen neue Aufnahme gestartet/gestoppt -> alte Antwort verwerfen
     segments=wordsToSegments(data);
     setLastAudio(blob);               // fuer Vorhoeren je Sprecher
     LS.set("gv_segments",segments);   // Transkript ueberlebt Reload
