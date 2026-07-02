@@ -975,29 +975,22 @@ export default function Fristen() {
               if (window.__fristenAutomation?._aborted) break;
 
               try {
-                // Absolute Vercel-URL statt relativ: in der Desktop-App (Tauri
-                // lädt gebündelt via tauri://, Electron ggf. von artis) gibt es
-                // keine relative /api-Route → Aufruf scheitert. smartis.me
-                // serviert die Funktion (CORS offen); aus dem Web ist das die
-                // gleiche Origin. Die Funktion ist nur ein Portal-Proxy (kein
-                // DB-Schreibzugriff in diesem Pfad).
-                const apiRes = await fetch("https://smartis.me/api/portal-sg-fristeingabe", {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${token}`,
-                  },
-                  body: JSON.stringify({
+                const { data, error } = await supabase.functions.invoke('api-sg-fristeingabe', {
+                  method: 'POST',
+                  body: {
                     registernummer: pItem.login,
                     uid: pItem.uid,
                     loginType: pItem.uid ? "UID" : "VEREIN",
                     verlaengerungsDatum,
-                  }),
+                    fristId: pItem.id
+                  },
                 });
 
-                const data = await apiRes.json();
+                if (error) {
+                  // Wenn die Edge Function einen Fehler wirft oder nicht erreichbar ist
+                  throw new Error(error.message || "API-Fehler");
+                }
 
-                if (!apiRes.ok) throw new Error(data.error || "API-Fehler");
 
                 if (data.bewilligt) {
                   const note = `Bewilligt bis ${data.verlaengerungsDatum ?? verlaengerungsDatum}`;
