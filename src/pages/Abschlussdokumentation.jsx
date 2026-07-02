@@ -1183,12 +1183,74 @@ function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = 
   const file2Ref = useRef(null);
   const pdfRef = useRef(null);
 
-  function detectColumn(headers, patterns) {
-    for (const h of headers) {
-      const lc = h.toLowerCase().trim();
-      if (patterns.some(p => lc.includes(p))) return h;
+  // Spalten-Erkennung: Muster in Prioritäts-Reihenfolge (erstes Muster gewinnt),
+  // optional mit Ausschluss-Wörtern (verhindert z.B. "Kontoname" als Kontonummer).
+  function detectColumn(headers, patterns, exclude = []) {
+    for (const p of patterns) {
+      for (const h of headers) {
+        const lc = String(h).toLowerCase().trim();
+        if (!lc || exclude.some(x => lc.includes(x))) continue;
+        if (lc.includes(p)) return h;
+      }
     }
     return "";
+  }
+
+  // ── CSV robust parsen: Separator über mehrere Zeilen erkennen, Anführungs-
+  //    zeichen korrekt behandeln ("Bank; UBS" wird nicht zerrissen) ───────────
+  function parseCsvText(text) {
+    const sample = text.split("\n").slice(0, 20).join("\n");
+    const count = (ch) => (sample.match(new RegExp(ch === "\t" ? "\t" : "\\" + ch, "g")) || []).length;
+    const sep = count(";") >= count("\t") && count(";") >= count(",") ? ";"
+      : count("\t") >= count(",") ? "\t" : ",";
+    const rows = []; let row = [], cell = "", inQ = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (inQ) {
+        if (c === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else inQ = false; }
+        else cell += c;
+      } else if (c === '"') inQ = true;
+      else if (c === sep) { row.push(cell); cell = ""; }
+      else if (c === "\n") { row.push(cell.replace(/\r$/, "")); rows.push(row); row = []; cell = ""; }
+      else cell += c;
+    }
+    if (cell !== "" || row.length) { row.push(cell.replace(/\r$/, "")); rows.push(row); }
+    return rows.filter(r => r.some(c => String(c).trim()));
+  }
+
+  // ── Kopfzeile finden: Exporte haben oft Titel-/Leerzeilen VOR dem Header ──
+  const HDR_HINTS = ["konto", "nummer", "bezeichnung", "saldo", "betrag", "soll", "haben", "vorjahr", "name", "text"];
+  function findHeaderRowIdx(rows) {
+    const limit = Math.min(rows.length, 15);
+    let best = -1, bestScore = 0;
+    for (let i = 0; i < limit; i++) {
+      const cells = rows[i].map(c => String(c).toLowerCase().trim());
+      const hits = cells.filter(c => c && HDR_HINTS.some(h => c.includes(h))).length;
+      // Zeilen, die selbst wie Kontodaten aussehen (Zelle = reine Kontonummer), abwerten
+      const looksLikeData = cells.some(c => /^\d{3,6}$/.test(c));
+      const score = hits * 2 - (looksLikeData ? 3 : 0);
+      if (hits >= 1 && score > bestScore) { best = i; bestScore = score; }
+    }
+    return best >= 0 ? best : 0;
+  }
+
+  // ── Zahl robust parsen: 1'234.56 · 147’650.32 · 133 980.00 · 1.234,56 · -50 ──
+  function parseNumSmart(v) {
+    if (v === null || v === undefined || v === "") return null;
+    if (typeof v === "number") return isNaN(v) ? null : v;
+    let s = String(v).trim().replace(/CHF|EUR|USD/gi, "").trim();
+    const neg = /^\(.*\)$/.test(s) || s.startsWith("-");
+    s = s.replace(/[()]/g, "").replace(/[\s'’]/g, "").replace(/^-/, "");
+    if (s.includes(".") && s.includes(",")) {
+      s = s.lastIndexOf(",") > s.lastIndexOf(".")
+        ? s.replace(/\./g, "").replace(",", ".")   // DE: 1.234,56
+        : s.replace(/,/g, "");                       // EN: 1,234.56
+    } else if (s.includes(",")) {
+      const p = s.split(",");
+      s = p[p.length - 1].length <= 2 ? p.slice(0, -1).join("") + "." + p[p.length - 1] : p.join("");
+    }
+    const n = parseFloat(s);
+    return isNaN(n) ? null : (neg ? -n : n);
   }
 
   // ── PDF Text-Extraktion ───────────────────────────────────────────────────
@@ -1295,8 +1357,9 @@ function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = 
     for (const name of selectedSheets) {
       const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: "" });
       if (rows.length < 2) continue;
-      if (!hdrs) hdrs = rows[0].map(String); // Spaltenköpfe vom ersten Blatt
-      allRows = [...allRows, ...rows.slice(1).filter(r => r.some(c => String(c).trim()))];
+      const hIdx = findHeaderRowIdx(rows);
+      if (!hdrs) hdrs = rows[hIdx].map(String); // Spaltenköpfe vom ersten Blatt
+      allRows = [...allRows, ...rows.slice(hIdx + 1).filter(r => r.some(c => String(c).trim()))];
     }
     if (!hdrs || allRows.length === 0) { toast.error("Keine Daten in gewählten Blättern"); return; }
     // Duplikate (gleiche Kontonummer) deduplizieren
@@ -1316,14 +1379,9 @@ function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = 
     if (ext === "xlsx" || ext === "xls") {
       loadExcel(file);
     } else {
-      // CSV – Zeichensatz automatisch erkennen (UTF-8 / Windows-1252)
+      // CSV – Zeichensatz automatisch erkennen (UTF-8 / Windows-1252), quote-sicher parsen
       readTextSmart(file).then(text => {
-        const firstLine = text.split("\n")[0];
-        const sep = firstLine.includes(";") ? ";" : firstLine.includes("\t") ? "\t" : ",";
-        const rows = text.split("\n").map(line =>
-          line.replace(/\r$/, "").split(sep).map(cell => cell.replace(/^"(.*)"$/, "$1").replace(/""/g, '"'))
-        ).filter(r => r.some(c => c.trim()));
-        processRows(rows, file.name);
+        processRows(parseCsvText(text), file.name);
       });
     }
   }
@@ -1356,18 +1414,17 @@ function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = 
       for (const name of wb.SheetNames) {
         const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: "" });
         if (rows.length < 2) continue;
-        if (!header) header = rows[0].map(String);
-        dataRows = [...dataRows, ...rows.slice(1).filter(r => r.some(c => String(c).trim()))];
+        const hIdx = findHeaderRowIdx(rows);
+        if (!header) header = rows[hIdx].map(String);
+        dataRows = [...dataRows, ...rows.slice(hIdx + 1).filter(r => r.some(c => String(c).trim()))];
       }
       return header ? [header, ...dataRows] : [];
     }
-    // CSV
+    // CSV – quote-sicher parsen, Kopfzeile suchen, ab dort zurückgeben
     const text = await readTextSmart(file);
-    const firstLine = text.split("\n")[0];
-    const sep = firstLine.includes(";") ? ";" : firstLine.includes("\t") ? "\t" : ",";
-    return text.split("\n").map(line =>
-      line.replace(/\r$/, "").split(sep).map(cell => cell.replace(/^"(.*)"$/, "$1").replace(/""/g, '"'))
-    ).filter(r => r.some(c => c.trim()));
+    const rows = parseCsvText(text);
+    const hIdx = findHeaderRowIdx(rows);
+    return rows.slice(hIdx);
   }
 
   // ── Mehrere Excel/CSV gleichzeitig (Bilanz + ER) zusammenführen ───────────
@@ -1406,23 +1463,22 @@ function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = 
         const data = new Uint8Array(ev.target.result);
         const XLSX = await import('xlsx');
         const wb = XLSX.read(data, { type: "array" });
-        // Alle Sheets mergen mit bestehenden Daten
+        // Alle Sheets mergen mit bestehenden Daten (Kopfzeile je Blatt suchen)
         let extra = [];
         for (const name of wb.SheetNames) {
           const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: "" });
-          if (rows.length > 1) extra = [...extra, ...rows.slice(1).filter(r => r.some(c => String(c).trim()))];
+          if (rows.length < 2) continue;
+          const hIdx = findHeaderRowIdx(rows);
+          extra = [...extra, ...rows.slice(hIdx + 1).filter(r => r.some(c => String(c).trim()))];
         }
         mergeExtraRows(extra, file.name);
       };
       reader.readAsArrayBuffer(file);
     } else {
       readTextSmart(file).then(text => {
-        const firstLine = text.split("\n")[0];
-        const sep = firstLine.includes(";") ? ";" : firstLine.includes("\t") ? "\t" : ",";
-        const rows = text.split("\n").map(line =>
-          line.replace(/\r$/, "").split(sep).map(cell => cell.replace(/^"(.*)"$/, "$1").replace(/""/g, '"'))
-        ).filter(r => r.some(c => c.trim()));
-        mergeExtraRows(rows.slice(1), file.name);
+        const rows = parseCsvText(text);
+        const hIdx = findHeaderRowIdx(rows);
+        mergeExtraRows(rows.slice(hIdx + 1), file.name);
       });
     }
   }
@@ -1443,13 +1499,30 @@ function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = 
 
   function processRows(rows, filename) {
     if (rows.length < 2) { toast.error("Datei enthält zu wenig Zeilen"); return; }
-    const hdrs = rows[0].map(String);
-    const dataRows = rows.slice(1).filter(r => r.some(c => String(c).trim()));
+    // Kopfzeile suchen (Exporte haben oft Titel-/Leerzeilen davor)
+    const hIdx = findHeaderRowIdx(rows);
+    let hdrs = rows[hIdx].map(h => String(h).trim());
+    let dataRows = rows.slice(hIdx + 1).filter(r => r.some(c => String(c).trim()));
+
+    // Soll/Haben getrennt (typisch Fibu-Export) und kein Saldo? → Saldo-Spalte synthetisieren
+    const lc = hdrs.map(h => h.toLowerCase());
+    const sollIdx  = lc.findIndex(h => /\bsoll\b/.test(h));
+    const habenIdx = lc.findIndex(h => /\bhaben\b/.test(h));
+    const hasSaldo = lc.some(h => h.includes("saldo") || h.includes("betrag"));
+    if (!hasSaldo && sollIdx >= 0 && habenIdx >= 0) {
+      hdrs = [...hdrs, "Saldo (Soll−Haben)"];
+      dataRows = dataRows.map(r => {
+        const s = parseNumSmart(r[sollIdx]) ?? 0;
+        const h = parseNumSmart(r[habenIdx]) ?? 0;
+        return [...r, s - h];
+      });
+    }
+
     const detected = {
-      kontonummer:   detectColumn(hdrs, ["konto", "kontonummer", "nummer", "nr."]),
-      kontoname:     detectColumn(hdrs, ["bezeichnung", "name", "kontoname", "text", "beschreibung"]),
-      saldo_ist:     detectColumn(hdrs, ["saldo", "betrag", "saldo ist", "ist", "aktuell"]),
-      saldo_vorjahr: detectColumn(hdrs, ["vorjahr", "saldo vj", "vj", "vorperiode"]),
+      kontonummer:   detectColumn(hdrs, ["kontonummer", "konto-nr", "kontonr", "konto nr", "kto", "nummer", "nr.", "konto"], ["name", "bezeich", "text"]),
+      kontoname:     detectColumn(hdrs, ["kontobezeichnung", "bezeichnung", "kontoname", "name", "text", "beschreibung"], ["nummer", "nr"]),
+      saldo_ist:     detectColumn(hdrs, ["saldo (soll−haben)", "schlusssaldo", "endsaldo", "saldo ist", "saldo chf", "saldo", "betrag", "aktuell"], ["vorjahr", "vj", "vorperiode"]),
+      saldo_vorjahr: detectColumn(hdrs, ["saldo vorjahr", "vorjahr", "saldo vj", "vorperiode", "vorjahres"]),
     };
     setHeaders(hdrs);
     setColMap(detected);
@@ -1491,23 +1564,20 @@ function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = 
       const idx = colIdx(col);
       return idx >= 0 ? String(row[idx] ?? "").trim() : "";
     };
-    const parseNum = (v) => {
-      if (!v) return null;
-      // Handle Swiss number format: 1'234.56 or 1.234,56
-      const cleaned = v.replace(/'/g, "").replace(/\s/g, "").replace(",", ".");
-      const n = parseFloat(cleaned);
-      return isNaN(n) ? null : n;
-    };
-
     const konten = rows
-      .filter(row => getCell(row, colMap.kontonummer))
+      // Nur echte Konto-Zeilen: Kontonummer muss Ziffern enthalten
+      // (filtert "Total Aktiven"-/Gruppen-/Leerzeilen aus Exporten)
+      .filter(row => {
+        const nr = getCell(row, colMap.kontonummer);
+        return nr && /\d/.test(nr);
+      })
       .map(row => {
         const nr = getCell(row, colMap.kontonummer);
         return {
           kontonummer: nr,
           kontoname: colMap.kontoname ? getCell(row, colMap.kontoname) : "",
-          saldo_ist: colMap.saldo_ist ? (parseNum(getCell(row, colMap.saldo_ist)) ?? 0) : 0,
-          saldo_vorjahr: colMap.saldo_vorjahr ? parseNum(getCell(row, colMap.saldo_vorjahr)) : null,
+          saldo_ist: colMap.saldo_ist ? (parseNumSmart(getCell(row, colMap.saldo_ist)) ?? 0) : 0,
+          saldo_vorjahr: colMap.saldo_vorjahr ? parseNumSmart(getCell(row, colMap.saldo_vorjahr)) : null,
           position_id: autoMapKonto(nr),   // DB-Spalte: auto-gemappte Position
           position_override: false,          // DB-Spalte: BOOLEAN, manuell überschrieben?
           notiz: "",
