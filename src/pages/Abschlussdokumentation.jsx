@@ -9,7 +9,7 @@ import {
   BookCheck, FileSpreadsheet, Upload, Download, ChevronRight, Wrench,
   Lock, Unlock, CheckCircle2, AlertCircle, TrendingUp, TrendingDown,
   Search, ChevronDown, ChevronUp, X, FileText, BarChart2, RotateCcw,
-  Plus, Trash2,
+  Plus, Trash2, Sparkles,
 } from "lucide-react";
 import DokUploadDialog from "@/components/dokumente/DokUploadDialog";
 
@@ -79,6 +79,65 @@ const KONTENRAHMEN_POSITIONEN = [
 
 // Lookup-Map für schnellen Zugriff
 const POSITION_MAP = Object.fromEntries(KONTENRAHMEN_POSITIONEN.map(p => [p.id, p]));
+
+// Stichwörter je Bilanz-Position für die KI-/Volltext-Belegzuweisung.
+// Steuern die Suche im indexierten Dokumenteninhalt der Dateiablage.
+const AI_BELEG_KEYWORDS = {
+  UV_FLUESSIG:       ["kontoauszug", "bankauszug", "saldobestätigung", "postfinance", "raiffeisen", "kasse", "bank", "saldo"],
+  UV_WERTSCHRIFTEN:  ["depot", "wertschriften", "portfolio", "bankdepot", "kursliste"],
+  UV_FORD_LL:        ["debitoren", "offene posten", "forderungen", "kundenrechnung", "op-liste"],
+  UV_FORD_LL_NAHE:   ["debitoren", "forderung", "nahestehende", "kontokorrent"],
+  UV_FORD_SONST:     ["verrechnungssteuer", "vorsteuer", "guthaben", "mwst", "kaution"],
+  UV_VORRAETE:       ["inventar", "lagerliste", "warenbestand", "vorräte", "bestandesaufnahme", "lagerbestand"],
+  UV_ABGRENZUNG:     ["abgrenzung", "transitorisch", "vorausbezahlt", "trakuap"],
+  AV_FINANZ:         ["darlehen", "beteiligung", "finanzanlage", "bankbestätigung"],
+  AV_MOBIL:          ["anlagespiegel", "anlageverzeichnis", "maschinen", "mobiliar", "fahrzeug", "abschreibung"],
+  AV_IMMOBIL:        ["liegenschaft", "immobilie", "grundstück", "gebäude", "verkehrswert"],
+  AV_IMMATERIELL:    ["goodwill", "software", "patent", "immateriell", "lizenz"],
+  FK_KURZ_LL:        ["kreditoren", "lieferantenrechnung", "verbindlichkeiten", "op-liste kreditoren"],
+  FK_KURZ_BANK:      ["kontokorrent", "bankkredit", "darlehen", "kontoauszug"],
+  FK_KURZ_SONST:     ["mwst", "abrechnung", "verbindlichkeit", "quellensteuer", "sozialversicherung"],
+  FK_KURZ_ABGRENZUNG:["abgrenzung", "transitorisch", "rückstellung"],
+  FK_LANG_BANK:      ["hypothek", "darlehen", "bankkredit", "kreditvertrag", "amortisation"],
+  FK_LANG_SONST:     ["darlehen", "kreditvertrag", "verbindlichkeit"],
+  FK_RUECKSTELLUNGEN:["rückstellung", "garantie", "rückstellungsspiegel"],
+  EK_KAPITAL:        ["aktienkapital", "stammkapital", "handelsregister", "statuten"],
+  EK_KAP_RESERVE:    ["kapitalreserve", "agio", "reserve"],
+  EK_GES_RESERVE:    ["gewinnreserve", "reserve", "generalversammlung"],
+  EK_VORTRAG:        ["gewinnvortrag", "verlustvortrag", "gewinnverwendung", "protokoll", "generalversammlung"],
+  EK_JAHRESERGEBNIS: ["jahresergebnis", "jahresgewinn", "jahresverlust", "erfolgsrechnung"],
+};
+
+// Zahlen aus einem Text extrahieren und auf gerundete Beträge normalisieren.
+// Erkennt CH/DE-Formate: 1'234.56 · 1’234.56 · 1.234,56 · 1234,56 · 1234.56 · 1234
+function extractAmounts(text) {
+  const out = new Set();
+  if (!text) return out;
+  const matches = text.match(/\d[\d'’.\s,]*\d|\d/g) || [];
+  for (const m of matches) {
+    let s = m.replace(/[\s'’]/g, ""); // Tausender-Apostrophe/Leerzeichen weg
+    if (s.includes(".") && s.includes(",")) {
+      s = s.lastIndexOf(",") > s.lastIndexOf(".")
+        ? s.replace(/\./g, "").replace(",", ".")   // DE: 1.234,56
+        : s.replace(/,/g, "");                       // 1,234.56
+    } else if (s.includes(",")) {
+      const p = s.split(",");
+      s = p[p.length - 1].length <= 2 ? p.slice(0, -1).join("") + "." + p[p.length - 1] : p.join("");
+    } else if (s.includes(".")) {
+      const p = s.split(".");
+      s = p[p.length - 1].length === 2 ? p.slice(0, -1).join("") + "." + p[p.length - 1] : p.join("");
+    }
+    const f = parseFloat(s);
+    if (!isNaN(f)) out.add(Math.round(Math.abs(f) * 100) / 100);
+  }
+  return out;
+}
+// Kommt der Saldo-Betrag (2 Nachkommastellen ODER gerundet) im Zahlen-Set vor?
+function amountAppears(amountSet, saldo) {
+  const a = Math.abs(parseFloat(saldo) || 0);
+  if (a < 1) return false; // triviale/0-Beträge ignorieren (zu viele Fehltreffer)
+  return amountSet.has(Math.round(a * 100) / 100) || amountSet.has(Math.round(a));
+}
 
 // ── Auto-Mapping Funktion ─────────────────────────────────────────────────────
 function autoMapKonto(kontonummer) {
@@ -492,13 +551,22 @@ async function generateRevisionsDossier({ konten, einstellungen, customerName, s
   const belegRefByKonto = {};    // kontoId → ["1024-1", "1024-2"]
   for (const k of sorted) {
     const belege = k.arbeitspapier?.belege || [];
+    const posLabel = k.position_id ? (POSITION_MAP[k.position_id]?.label || "") : "";
     belege.forEach((b, i) => {
       const ref = `${k.kontonummer}-${i + 1}`;
       const orig = b.filename || b.name || "beleg";
       const ext = orig.includes(".") ? orig.split(".").pop() : "pdf";
-      const cleanBase = safeFileName(orig.replace(/\.[^.]+$/, "")).slice(0, 60);
-      const filePath = `Belege/${ref}_${cleanBase}.${ext}`;
-      belegList.push({ ref, kontonummer: k.kontonummer, kontoname: k.kontoname, beleg: b, filePath });
+      const cleanBase = safeFileName(orig.replace(/\.[^.]+$/, "")).slice(0, 30);
+      // Sprechender Dateiname: Kontonr_Kontoname_Position_lfdNr_Originalname
+      const nameParts = [
+        k.kontonummer,
+        safeFileName(k.kontoname || "").slice(0, 40),
+        safeFileName(posLabel).slice(0, 40),
+        String(i + 1),
+        cleanBase,
+      ].filter(Boolean);
+      const filePath = `Belege/${nameParts.join("_")}.${ext}`;
+      belegList.push({ ref, kontonummer: k.kontonummer, kontoname: k.kontoname, positionLabel: posLabel, docId: b.id, beleg: b, filePath });
       (belegRefByKonto[k.id] = belegRefByKonto[k.id] || []).push(ref);
     });
   }
@@ -653,6 +721,13 @@ async function generateRevisionsDossier({ konten, einstellungen, customerName, s
     }
   }
 
+  // Link-Ziel: bevorzugt direkter Link ins Online-Dokument (Dateiablage), sonst
+  // relativer Datei-Pfad im ZIP. So führt „Link klicken" direkt aufs Dokument.
+  const appOrigin = (typeof window !== "undefined" && window.location?.origin) || "";
+  const docUrl = (item) => (appOrigin && item?.docId)
+    ? `${appOrigin}/Dokumente?open=${item.docId}`
+    : item?.filePath;
+
   // ── Beleg-Verzeichnis-Seite ──
   if (belegList.length) {
     let yv = pageHeader("Beleg-Verzeichnis");
@@ -680,9 +755,10 @@ async function generateRevisionsDossier({ konten, einstellungen, customerName, s
             y: data.cell.y,
           };
         }
-        // Dokumentname-Spalte: relativer Datei-Link auf Belege/{ref}_{filename}.{ext}
-        if (data.column.index === 2 && item.filePath) {
-          doc.link(data.cell.x, data.cell.y, data.cell.width, data.cell.height, { url: item.filePath });
+        // Dokumentname-Spalte: Link direkt aufs Online-Dokument (Fallback: Datei im ZIP)
+        if (data.column.index === 2) {
+          const url = docUrl(item);
+          if (url) doc.link(data.cell.x, data.cell.y, data.cell.width, data.cell.height, { url });
         }
       },
     });
@@ -690,14 +766,14 @@ async function generateRevisionsDossier({ konten, einstellungen, customerName, s
     // ── Hyperlinks setzen: Kontenplan-Detail-Belege-Zelle → Beleg-Datei oder Verzeichnis-Zeile ──
     // Bevorzugt File-Link (öffnet die Beleg-Datei direkt aus dem Belege/-Unterordner der ZIP).
     // Fallback: interner Sprung zum Beleg-Verzeichnis.
-    const filePathByRef = Object.fromEntries(belegList.map(b => [b.ref, b.filePath]));
+    const belegByRef = Object.fromEntries(belegList.map(b => [b.ref, b]));
     for (const src of linkSources) {
       const firstRef = src.refs[0];
       if (!firstRef) continue;
       doc.setPage(src.page);
-      const filePath = filePathByRef[firstRef];
-      if (filePath) {
-        doc.link(src.x, src.y, src.w, src.h, { url: filePath });
+      const url = docUrl(belegByRef[firstRef]);
+      if (url) {
+        doc.link(src.x, src.y, src.w, src.h, { url });
       } else {
         const target = linkTargets[firstRef];
         if (!target) continue;
@@ -1107,12 +1183,74 @@ function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = 
   const file2Ref = useRef(null);
   const pdfRef = useRef(null);
 
-  function detectColumn(headers, patterns) {
-    for (const h of headers) {
-      const lc = h.toLowerCase().trim();
-      if (patterns.some(p => lc.includes(p))) return h;
+  // Spalten-Erkennung: Muster in Prioritäts-Reihenfolge (erstes Muster gewinnt),
+  // optional mit Ausschluss-Wörtern (verhindert z.B. "Kontoname" als Kontonummer).
+  function detectColumn(headers, patterns, exclude = []) {
+    for (const p of patterns) {
+      for (const h of headers) {
+        const lc = String(h).toLowerCase().trim();
+        if (!lc || exclude.some(x => lc.includes(x))) continue;
+        if (lc.includes(p)) return h;
+      }
     }
     return "";
+  }
+
+  // ── CSV robust parsen: Separator über mehrere Zeilen erkennen, Anführungs-
+  //    zeichen korrekt behandeln ("Bank; UBS" wird nicht zerrissen) ───────────
+  function parseCsvText(text) {
+    const sample = text.split("\n").slice(0, 20).join("\n");
+    const count = (ch) => (sample.match(new RegExp(ch === "\t" ? "\t" : "\\" + ch, "g")) || []).length;
+    const sep = count(";") >= count("\t") && count(";") >= count(",") ? ";"
+      : count("\t") >= count(",") ? "\t" : ",";
+    const rows = []; let row = [], cell = "", inQ = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (inQ) {
+        if (c === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else inQ = false; }
+        else cell += c;
+      } else if (c === '"') inQ = true;
+      else if (c === sep) { row.push(cell); cell = ""; }
+      else if (c === "\n") { row.push(cell.replace(/\r$/, "")); rows.push(row); row = []; cell = ""; }
+      else cell += c;
+    }
+    if (cell !== "" || row.length) { row.push(cell.replace(/\r$/, "")); rows.push(row); }
+    return rows.filter(r => r.some(c => String(c).trim()));
+  }
+
+  // ── Kopfzeile finden: Exporte haben oft Titel-/Leerzeilen VOR dem Header ──
+  const HDR_HINTS = ["konto", "nummer", "bezeichnung", "saldo", "betrag", "soll", "haben", "vorjahr", "name", "text"];
+  function findHeaderRowIdx(rows) {
+    const limit = Math.min(rows.length, 15);
+    let best = -1, bestScore = 0;
+    for (let i = 0; i < limit; i++) {
+      const cells = rows[i].map(c => String(c).toLowerCase().trim());
+      const hits = cells.filter(c => c && HDR_HINTS.some(h => c.includes(h))).length;
+      // Zeilen, die selbst wie Kontodaten aussehen (Zelle = reine Kontonummer), abwerten
+      const looksLikeData = cells.some(c => /^\d{3,6}$/.test(c));
+      const score = hits * 2 - (looksLikeData ? 3 : 0);
+      if (hits >= 1 && score > bestScore) { best = i; bestScore = score; }
+    }
+    return best >= 0 ? best : 0;
+  }
+
+  // ── Zahl robust parsen: 1'234.56 · 147’650.32 · 133 980.00 · 1.234,56 · -50 ──
+  function parseNumSmart(v) {
+    if (v === null || v === undefined || v === "") return null;
+    if (typeof v === "number") return isNaN(v) ? null : v;
+    let s = String(v).trim().replace(/CHF|EUR|USD/gi, "").trim();
+    const neg = /^\(.*\)$/.test(s) || s.startsWith("-");
+    s = s.replace(/[()]/g, "").replace(/[\s'’]/g, "").replace(/^-/, "");
+    if (s.includes(".") && s.includes(",")) {
+      s = s.lastIndexOf(",") > s.lastIndexOf(".")
+        ? s.replace(/\./g, "").replace(",", ".")   // DE: 1.234,56
+        : s.replace(/,/g, "");                       // EN: 1,234.56
+    } else if (s.includes(",")) {
+      const p = s.split(",");
+      s = p[p.length - 1].length <= 2 ? p.slice(0, -1).join("") + "." + p[p.length - 1] : p.join("");
+    }
+    const n = parseFloat(s);
+    return isNaN(n) ? null : (neg ? -n : n);
   }
 
   // ── PDF Text-Extraktion ───────────────────────────────────────────────────
@@ -1219,8 +1357,9 @@ function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = 
     for (const name of selectedSheets) {
       const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: "" });
       if (rows.length < 2) continue;
-      if (!hdrs) hdrs = rows[0].map(String); // Spaltenköpfe vom ersten Blatt
-      allRows = [...allRows, ...rows.slice(1).filter(r => r.some(c => String(c).trim()))];
+      const hIdx = findHeaderRowIdx(rows);
+      if (!hdrs) hdrs = rows[hIdx].map(String); // Spaltenköpfe vom ersten Blatt
+      allRows = [...allRows, ...rows.slice(hIdx + 1).filter(r => r.some(c => String(c).trim()))];
     }
     if (!hdrs || allRows.length === 0) { toast.error("Keine Daten in gewählten Blättern"); return; }
     // Duplikate (gleiche Kontonummer) deduplizieren
@@ -1240,14 +1379,9 @@ function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = 
     if (ext === "xlsx" || ext === "xls") {
       loadExcel(file);
     } else {
-      // CSV – Zeichensatz automatisch erkennen (UTF-8 / Windows-1252)
+      // CSV – Zeichensatz automatisch erkennen (UTF-8 / Windows-1252), quote-sicher parsen
       readTextSmart(file).then(text => {
-        const firstLine = text.split("\n")[0];
-        const sep = firstLine.includes(";") ? ";" : firstLine.includes("\t") ? "\t" : ",";
-        const rows = text.split("\n").map(line =>
-          line.replace(/\r$/, "").split(sep).map(cell => cell.replace(/^"(.*)"$/, "$1").replace(/""/g, '"'))
-        ).filter(r => r.some(c => c.trim()));
-        processRows(rows, file.name);
+        processRows(parseCsvText(text), file.name);
       });
     }
   }
@@ -1280,18 +1414,17 @@ function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = 
       for (const name of wb.SheetNames) {
         const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: "" });
         if (rows.length < 2) continue;
-        if (!header) header = rows[0].map(String);
-        dataRows = [...dataRows, ...rows.slice(1).filter(r => r.some(c => String(c).trim()))];
+        const hIdx = findHeaderRowIdx(rows);
+        if (!header) header = rows[hIdx].map(String);
+        dataRows = [...dataRows, ...rows.slice(hIdx + 1).filter(r => r.some(c => String(c).trim()))];
       }
       return header ? [header, ...dataRows] : [];
     }
-    // CSV
+    // CSV – quote-sicher parsen, Kopfzeile suchen, ab dort zurückgeben
     const text = await readTextSmart(file);
-    const firstLine = text.split("\n")[0];
-    const sep = firstLine.includes(";") ? ";" : firstLine.includes("\t") ? "\t" : ",";
-    return text.split("\n").map(line =>
-      line.replace(/\r$/, "").split(sep).map(cell => cell.replace(/^"(.*)"$/, "$1").replace(/""/g, '"'))
-    ).filter(r => r.some(c => c.trim()));
+    const rows = parseCsvText(text);
+    const hIdx = findHeaderRowIdx(rows);
+    return rows.slice(hIdx);
   }
 
   // ── Mehrere Excel/CSV gleichzeitig (Bilanz + ER) zusammenführen ───────────
@@ -1330,23 +1463,22 @@ function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = 
         const data = new Uint8Array(ev.target.result);
         const XLSX = await import('xlsx');
         const wb = XLSX.read(data, { type: "array" });
-        // Alle Sheets mergen mit bestehenden Daten
+        // Alle Sheets mergen mit bestehenden Daten (Kopfzeile je Blatt suchen)
         let extra = [];
         for (const name of wb.SheetNames) {
           const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: "" });
-          if (rows.length > 1) extra = [...extra, ...rows.slice(1).filter(r => r.some(c => String(c).trim()))];
+          if (rows.length < 2) continue;
+          const hIdx = findHeaderRowIdx(rows);
+          extra = [...extra, ...rows.slice(hIdx + 1).filter(r => r.some(c => String(c).trim()))];
         }
         mergeExtraRows(extra, file.name);
       };
       reader.readAsArrayBuffer(file);
     } else {
       readTextSmart(file).then(text => {
-        const firstLine = text.split("\n")[0];
-        const sep = firstLine.includes(";") ? ";" : firstLine.includes("\t") ? "\t" : ",";
-        const rows = text.split("\n").map(line =>
-          line.replace(/\r$/, "").split(sep).map(cell => cell.replace(/^"(.*)"$/, "$1").replace(/""/g, '"'))
-        ).filter(r => r.some(c => c.trim()));
-        mergeExtraRows(rows.slice(1), file.name);
+        const rows = parseCsvText(text);
+        const hIdx = findHeaderRowIdx(rows);
+        mergeExtraRows(rows.slice(hIdx + 1), file.name);
       });
     }
   }
@@ -1367,13 +1499,30 @@ function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = 
 
   function processRows(rows, filename) {
     if (rows.length < 2) { toast.error("Datei enthält zu wenig Zeilen"); return; }
-    const hdrs = rows[0].map(String);
-    const dataRows = rows.slice(1).filter(r => r.some(c => String(c).trim()));
+    // Kopfzeile suchen (Exporte haben oft Titel-/Leerzeilen davor)
+    const hIdx = findHeaderRowIdx(rows);
+    let hdrs = rows[hIdx].map(h => String(h).trim());
+    let dataRows = rows.slice(hIdx + 1).filter(r => r.some(c => String(c).trim()));
+
+    // Soll/Haben getrennt (typisch Fibu-Export) und kein Saldo? → Saldo-Spalte synthetisieren
+    const lc = hdrs.map(h => h.toLowerCase());
+    const sollIdx  = lc.findIndex(h => /\bsoll\b/.test(h));
+    const habenIdx = lc.findIndex(h => /\bhaben\b/.test(h));
+    const hasSaldo = lc.some(h => h.includes("saldo") || h.includes("betrag"));
+    if (!hasSaldo && sollIdx >= 0 && habenIdx >= 0) {
+      hdrs = [...hdrs, "Saldo (Soll−Haben)"];
+      dataRows = dataRows.map(r => {
+        const s = parseNumSmart(r[sollIdx]) ?? 0;
+        const h = parseNumSmart(r[habenIdx]) ?? 0;
+        return [...r, s - h];
+      });
+    }
+
     const detected = {
-      kontonummer:   detectColumn(hdrs, ["konto", "kontonummer", "nummer", "nr."]),
-      kontoname:     detectColumn(hdrs, ["bezeichnung", "name", "kontoname", "text", "beschreibung"]),
-      saldo_ist:     detectColumn(hdrs, ["saldo", "betrag", "saldo ist", "ist", "aktuell"]),
-      saldo_vorjahr: detectColumn(hdrs, ["vorjahr", "saldo vj", "vj", "vorperiode"]),
+      kontonummer:   detectColumn(hdrs, ["kontonummer", "konto-nr", "kontonr", "konto nr", "kto", "nummer", "nr.", "konto"], ["name", "bezeich", "text"]),
+      kontoname:     detectColumn(hdrs, ["kontobezeichnung", "bezeichnung", "kontoname", "name", "text", "beschreibung"], ["nummer", "nr"]),
+      saldo_ist:     detectColumn(hdrs, ["saldo (soll−haben)", "schlusssaldo", "endsaldo", "saldo ist", "saldo chf", "saldo", "betrag", "aktuell"], ["vorjahr", "vj", "vorperiode"]),
+      saldo_vorjahr: detectColumn(hdrs, ["saldo vorjahr", "vorjahr", "saldo vj", "vorperiode", "vorjahres"]),
     };
     setHeaders(hdrs);
     setColMap(detected);
@@ -1415,23 +1564,20 @@ function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = 
       const idx = colIdx(col);
       return idx >= 0 ? String(row[idx] ?? "").trim() : "";
     };
-    const parseNum = (v) => {
-      if (!v) return null;
-      // Handle Swiss number format: 1'234.56 or 1.234,56
-      const cleaned = v.replace(/'/g, "").replace(/\s/g, "").replace(",", ".");
-      const n = parseFloat(cleaned);
-      return isNaN(n) ? null : n;
-    };
-
     const konten = rows
-      .filter(row => getCell(row, colMap.kontonummer))
+      // Nur echte Konto-Zeilen: Kontonummer muss Ziffern enthalten
+      // (filtert "Total Aktiven"-/Gruppen-/Leerzeilen aus Exporten)
+      .filter(row => {
+        const nr = getCell(row, colMap.kontonummer);
+        return nr && /\d/.test(nr);
+      })
       .map(row => {
         const nr = getCell(row, colMap.kontonummer);
         return {
           kontonummer: nr,
           kontoname: colMap.kontoname ? getCell(row, colMap.kontoname) : "",
-          saldo_ist: colMap.saldo_ist ? (parseNum(getCell(row, colMap.saldo_ist)) ?? 0) : 0,
-          saldo_vorjahr: colMap.saldo_vorjahr ? parseNum(getCell(row, colMap.saldo_vorjahr)) : null,
+          saldo_ist: colMap.saldo_ist ? (parseNumSmart(getCell(row, colMap.saldo_ist)) ?? 0) : 0,
+          saldo_vorjahr: colMap.saldo_vorjahr ? parseNumSmart(getCell(row, colMap.saldo_vorjahr)) : null,
           position_id: autoMapKonto(nr),   // DB-Spalte: auto-gemappte Position
           position_override: false,          // DB-Spalte: BOOLEAN, manuell überschrieben?
           notiz: "",
@@ -2173,9 +2319,10 @@ function BelegeSection({ arbeitspapier, onSave, customerId, selectedYear, accent
               return (
                 <div key={b.id} style={{
                   display: "flex", alignItems: "center", gap: 5, padding: "3px 6px 3px 5px",
-                  borderRadius: 6, backgroundColor: "#f8fafc", border: `1px solid ${panelBdr}`, fontSize: 11,
+                  borderRadius: 6, backgroundColor: b.ki ? "#fefce8" : "#f8fafc", border: `1px solid ${b.ki ? "#fde68a" : panelBdr}`, fontSize: 11,
                 }}>
                   <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 4px", borderRadius: 3, backgroundColor: fl.bg, color: fl.col, flexShrink: 0 }}>{fl.label}</span>
+                  {b.ki && <span title="KI-vorgeschlagen – bitte prüfen" style={{ fontSize: 9, fontWeight: 700, padding: "1px 4px", borderRadius: 3, backgroundColor: "#fef08a", color: "#854d0e", flexShrink: 0 }}>KI</span>}
                   <span style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: headingC }} title={b.name}>{b.name}</span>
                   {b.year && <span style={{ color: subC, fontSize: 10, flexShrink: 0 }}>{b.year}</span>}
                   <button onClick={() => openDoc(b)} title="Öffnen"
@@ -3658,6 +3805,7 @@ export default function Abschlussdokumentation() {
   const [activeTab, setActiveTab] = useState("kontenplan");
   const [showImport, setShowImport] = useState(false);
   const [dossierStatus, setDossierStatus] = useState(null); // null | Fortschrittstext
+  const [aiBusy, setAiBusy] = useState(null); // null | Fortschrittstext der KI-Zuweisung
   const [exportDialog, setExportDialog] = useState(null);   // null | "pdf" | "dossier"
 
   // ── Auto-Jahr: neuestes Jahr das wirklich Konten hat ────────────────────────
@@ -4078,6 +4226,91 @@ export default function Abschlussdokumentation() {
     }
   }
 
+  // ── KI-Belegzuweisung: pro Bilanz-Konto passenden Beleg im Dokumenteninhalt
+  //    (Dateiablage, gewähltes Jahr) suchen und sichere Treffer verknüpfen ──────
+  async function handleAiAssign() {
+    if (!abschlussId || !selectedCid) return;
+    if (gesperrt) { toast.error("Version ist gesperrt – zuerst entsperren"); return; }
+    if (aiBusy) return;
+    // Bilanz-Konten mit Saldo und noch ohne Beleg
+    const targets = konten.filter(k => {
+      const pos = POSITION_MAP[k.position_id];
+      const hasSaldo = Math.abs(parseFloat(k.saldo_ist) || 0) > 0.005;
+      const hasBeleg = ((k.arbeitspapier?.belege) || []).length > 0;
+      return pos?.typ === "bilanz" && hasSaldo && !hasBeleg;
+    });
+    if (!targets.length) { toast.info("Keine offenen Bilanz-Konten (mit Saldo, ohne Beleg) gefunden."); return; }
+    setAiBusy("Suche läuft …");
+    let assigned = 0;
+    const assignedList = [];
+    const amountCache = new Map(); // docId → Set<Betrag> (Inhalt einmal laden/normalisieren)
+    try {
+      for (let i = 0; i < targets.length; i++) {
+        const k = targets[i];
+        setAiBusy(`${i + 1} / ${targets.length} …`);
+        const pos = POSITION_MAP[k.position_id];
+        const kw = AI_BELEG_KEYWORDS[k.position_id] || [];
+        const query = [k.kontoname, ...kw.slice(0, 3)].filter(Boolean).join(" ") || (pos?.label || "");
+        if (!query.trim()) continue;
+        const { data, error } = await supabase.rpc("search_dokumente", {
+          p_query: query, p_customer_id: selectedCid, p_limit: 8,
+        });
+        if (error || !data?.length) continue;
+        // Kandidaten: bevorzugt gleiches Geschäftsjahr
+        const cands = data.filter(d => !selectedYear || d.year === selectedYear || d.year == null);
+        if (!cands.length) continue;
+
+        // Inhalt der Top-Kandidaten laden (für Betrags-Abgleich), pro Dokument gecacht
+        const top = cands.slice(0, 5);
+        const need = top.map(d => d.id).filter(id => !amountCache.has(id));
+        if (need.length) {
+          const { data: cont } = await supabase.from("dokumente").select("id, content_text").in("id", need);
+          const byId = Object.fromEntries((cont || []).map(r => [r.id, r.content_text || ""]));
+          need.forEach(id => amountCache.set(id, extractAmounts(byId[id] || "")));
+        }
+
+        const terms = [String(k.kontoname || "").toLowerCase(), ...kw.map(s => s.toLowerCase())].filter(Boolean);
+        const scored = top.map(d => {
+          const hay = `${d.name || ""} ${d.filename || ""} ${d.headline || ""}`.toLowerCase();
+          const kwHits = terms.filter(t => hay.includes(t)).length;
+          const yearBonus = (selectedYear && d.year === selectedYear) ? 1 : 0;
+          const amtHit = amountAppears(amountCache.get(d.id) || new Set(), k.saldo_ist);
+          return { d, amtHit, score: (d.rank || 0) * 4 + kwHits + yearBonus + (amtHit ? 6 : 0) };
+        }).sort((a, b) => b.score - a.score);
+        const best = scored[0];
+        // Hohe Konfidenz: Betrags-Treffer (sehr stark) ODER Stichwort/Jahr/Rang ausreichend
+        if (!best || (!best.amtHit && best.score < 1.5)) continue;
+        const b = best.d;
+        const matchReason = best.amtHit ? "Betrag" : "Stichwort";
+        const newBeleg = {
+          id: b.id, name: b.name, filename: b.filename, storage_path: b.storage_path,
+          year: b.year, category: b.category, file_type: b.file_type, ki: true, ki_match: matchReason,
+        };
+        const ap = { ...(k.arbeitspapier || {}), belege: [...((k.arbeitspapier?.belege) || []), newBeleg] };
+        const { error: upErr } = await supabase.from("abschluss_konten").update({ arbeitspapier: ap }).eq("id", k.id);
+        if (!upErr) { assigned++; assignedList.push({ konto: `${k.kontonummer} ${k.kontoname}`, doc: b.name, reason: matchReason }); }
+      }
+      qc.invalidateQueries({ queryKey: ["abschluss_konten", abschlussId] });
+      if (assigned) {
+        toast.success(
+          <div style={{ whiteSpace: "pre-line", fontSize: 12, lineHeight: 1.5 }}>
+            <strong>KI-Zuweisung: {assigned} von {targets.length} Konten verknüpft</strong>{"\n"}
+            {assignedList.slice(0, 12).map(a => `• ${a.konto} → ${a.doc} (${a.reason})`).join("\n")}
+            {assignedList.length > 12 ? `\n… und ${assignedList.length - 12} weitere` : ""}
+            {"\n"}<span style={{ opacity: 0.7 }}>Bitte prüfen (gelb „KI") und ggf. entfernen.</span>
+          </div>,
+          { duration: 15000 }
+        );
+      } else {
+        toast.info(`KI-Zuweisung: kein sicherer Treffer bei ${targets.length} Konten. Bitte manuell verknüpfen.`);
+      }
+    } catch (e) {
+      toast.error("KI-Zuweisung fehlgeschlagen: " + (e?.message || e));
+    } finally {
+      setAiBusy(null);
+    }
+  }
+
   const status = abschluss?.status || "in_arbeit";
   const statusCfg = STATUS_CONFIG[status] || STATUS_CONFIG.in_arbeit;
 
@@ -4242,6 +4475,20 @@ export default function Abschlussdokumentation() {
               }}>
               <Upload className="w-3.5 h-3.5" />
               Importieren
+            </button>
+            <button
+              disabled={!abschlussId || gesperrt || konten.length === 0 || !!aiBusy}
+              onClick={handleAiAssign}
+              title={gesperrt ? "Version ist gesperrt" : "Passende Belege aus der Dateiablage automatisch zuweisen (Inhaltssuche im gewählten Jahr)"}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-opacity"
+              style={{
+                backgroundColor: "#f5f3ff", color: "#7c3aed",
+                border: "1px solid #c4b5fd",
+                opacity: (abschlussId && !gesperrt && konten.length && !aiBusy) ? 1 : 0.5,
+                cursor: (abschlussId && !gesperrt && konten.length && !aiBusy) ? "pointer" : "not-allowed",
+              }}>
+              <Sparkles className="w-3.5 h-3.5" />
+              {aiBusy ? `KI-Zuweisung ${aiBusy}` : "KI-Zuweisung"}
             </button>
             <button
               disabled={konten.length === 0}
