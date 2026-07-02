@@ -492,13 +492,22 @@ async function generateRevisionsDossier({ konten, einstellungen, customerName, s
   const belegRefByKonto = {};    // kontoId → ["1024-1", "1024-2"]
   for (const k of sorted) {
     const belege = k.arbeitspapier?.belege || [];
+    const posLabel = k.position_id ? (POSITION_MAP[k.position_id]?.label || "") : "";
     belege.forEach((b, i) => {
       const ref = `${k.kontonummer}-${i + 1}`;
       const orig = b.filename || b.name || "beleg";
       const ext = orig.includes(".") ? orig.split(".").pop() : "pdf";
-      const cleanBase = safeFileName(orig.replace(/\.[^.]+$/, "")).slice(0, 60);
-      const filePath = `Belege/${ref}_${cleanBase}.${ext}`;
-      belegList.push({ ref, kontonummer: k.kontonummer, kontoname: k.kontoname, beleg: b, filePath });
+      const cleanBase = safeFileName(orig.replace(/\.[^.]+$/, "")).slice(0, 30);
+      // Sprechender Dateiname: Kontonr_Kontoname_Position_lfdNr_Originalname
+      const nameParts = [
+        k.kontonummer,
+        safeFileName(k.kontoname || "").slice(0, 40),
+        safeFileName(posLabel).slice(0, 40),
+        String(i + 1),
+        cleanBase,
+      ].filter(Boolean);
+      const filePath = `Belege/${nameParts.join("_")}.${ext}`;
+      belegList.push({ ref, kontonummer: k.kontonummer, kontoname: k.kontoname, positionLabel: posLabel, docId: b.id, beleg: b, filePath });
       (belegRefByKonto[k.id] = belegRefByKonto[k.id] || []).push(ref);
     });
   }
@@ -653,6 +662,13 @@ async function generateRevisionsDossier({ konten, einstellungen, customerName, s
     }
   }
 
+  // Link-Ziel: bevorzugt direkter Link ins Online-Dokument (Dateiablage), sonst
+  // relativer Datei-Pfad im ZIP. So führt „Link klicken" direkt aufs Dokument.
+  const appOrigin = (typeof window !== "undefined" && window.location?.origin) || "";
+  const docUrl = (item) => (appOrigin && item?.docId)
+    ? `${appOrigin}/Dokumente?open=${item.docId}`
+    : item?.filePath;
+
   // ── Beleg-Verzeichnis-Seite ──
   if (belegList.length) {
     let yv = pageHeader("Beleg-Verzeichnis");
@@ -680,9 +696,10 @@ async function generateRevisionsDossier({ konten, einstellungen, customerName, s
             y: data.cell.y,
           };
         }
-        // Dokumentname-Spalte: relativer Datei-Link auf Belege/{ref}_{filename}.{ext}
-        if (data.column.index === 2 && item.filePath) {
-          doc.link(data.cell.x, data.cell.y, data.cell.width, data.cell.height, { url: item.filePath });
+        // Dokumentname-Spalte: Link direkt aufs Online-Dokument (Fallback: Datei im ZIP)
+        if (data.column.index === 2) {
+          const url = docUrl(item);
+          if (url) doc.link(data.cell.x, data.cell.y, data.cell.width, data.cell.height, { url });
         }
       },
     });
@@ -690,14 +707,14 @@ async function generateRevisionsDossier({ konten, einstellungen, customerName, s
     // ── Hyperlinks setzen: Kontenplan-Detail-Belege-Zelle → Beleg-Datei oder Verzeichnis-Zeile ──
     // Bevorzugt File-Link (öffnet die Beleg-Datei direkt aus dem Belege/-Unterordner der ZIP).
     // Fallback: interner Sprung zum Beleg-Verzeichnis.
-    const filePathByRef = Object.fromEntries(belegList.map(b => [b.ref, b.filePath]));
+    const belegByRef = Object.fromEntries(belegList.map(b => [b.ref, b]));
     for (const src of linkSources) {
       const firstRef = src.refs[0];
       if (!firstRef) continue;
       doc.setPage(src.page);
-      const filePath = filePathByRef[firstRef];
-      if (filePath) {
-        doc.link(src.x, src.y, src.w, src.h, { url: filePath });
+      const url = docUrl(belegByRef[firstRef]);
+      if (url) {
+        doc.link(src.x, src.y, src.w, src.h, { url });
       } else {
         const target = linkTargets[firstRef];
         if (!target) continue;
