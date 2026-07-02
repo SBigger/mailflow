@@ -17,6 +17,36 @@ const cors = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
+
+const EVAL_SCHEMA = {
+  type: "object",
+  properties: {
+    zusammenfassung: { type: "string" },
+    traktanden: {
+      type: "array", items: {
+        type: "object",
+        properties: { titel: { type: "string" }, inhalt: { type: "string" } },
+        required: ["titel", "inhalt"], additionalProperties: false
+      }
+    },
+    aufgaben: {
+      type: "array", items: {
+        type: "object",
+        properties: { text: { type: "string" }, verantwortlich: { type: "string" }, frist: { type: "string" } },
+        required: ["text", "verantwortlich", "frist"], additionalProperties: false
+      }
+    },
+    beschluesse: {
+      type: "array", items: {
+        type: "object",
+        properties: { text: { type: "string" } }, required: ["text"], additionalProperties: false
+      }
+    }
+  },
+  required: ["zusammenfassung", "traktanden", "aufgaben", "beschluesse"], additionalProperties: false
+};
+
+
 const jsonResp = (b: object, s = 200) =>
   new Response(JSON.stringify(b), { status: s, headers: { ...cors, "Content-Type": "application/json" } });
 
@@ -28,7 +58,8 @@ serve(async (req) => {
   if (!KEY) return jsonResp({ error: "ANTHROPIC_API_KEY nicht gesetzt (Supabase-Secret fehlt)" }, 500);
 
   try {
-    const body = await req.text();
+    const body = await req.json();
+
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -36,7 +67,11 @@ serve(async (req) => {
         "x-api-key": KEY,
         "anthropic-version": "2023-06-01",
       },
-      body,
+      body: JSON.stringify({
+        model: "claude-opus-4-8", max_tokens: 8000, system: body.sys,
+        messages: [{ role: "user", content: body.usr }],
+        output_config: { format: { type: "json_schema", schema: EVAL_SCHEMA } }
+      }),
     });
     const txt = await r.text();
     return new Response(txt, { status: r.status, headers: { ...cors, "Content-Type": "application/json" } });

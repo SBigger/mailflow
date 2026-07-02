@@ -28,6 +28,7 @@ export function AuthProvider({ children }) {
         if (error) {
           console.error(error);
           setLoading(false);
+          setUser(null);
           return;
         }
 
@@ -39,12 +40,12 @@ export function AuthProvider({ children }) {
         } else {
           // They are fully verified (AAL2) or don't have MFA enabled
           setRequiresMfa(false);
-          setUser(user);
-          loadProfile(user.id);
+          loadProfile(user.id, user);
         }
       } else {
         setProfile(null);
         setLoading(false);
+        setUser(null);
       }
     };
 
@@ -53,9 +54,15 @@ export function AuthProvider({ children }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  async function loadProfile(userId) {
+  async function loadProfile(userId, user) {
     const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
-    setProfile(data);
+    if(data && data.inviteState === 1) {
+      setProfile(null);
+      setUser(null);
+    } else {
+      setProfile(data);
+      setUser(user);
+    }
     setLoading(false);
   }
 

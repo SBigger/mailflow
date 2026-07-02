@@ -111,7 +111,7 @@ export default function Einstellungen() {
         </div>
       </div>
 
-      <div style={{ padding: 20, maxWidth: 720 }}>
+      <div style={{ padding: 20 }}>
         {msg && (
           <div style={{ marginBottom: 14, padding: '9px 13px', borderRadius: 8, fontSize: 12,
             background: msg.type === 'ok' ? '#f0f7f0' : '#fdf0f0',

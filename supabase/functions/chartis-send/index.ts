@@ -24,7 +24,7 @@ serve(async (req) => {
     const token = (req.headers.get('Authorization') || '').replace('Bearer ', '')
     const { data: { user } } = await supabase.auth.getUser(token)
     if (!user) return json({ error: 'Unauthorized' }, 401)
-    const { data: profile } = await supabase.from('profiles').select('id, email_signature').eq('id', user.id).maybeSingle()
+    const { data: profile } = await supabase.from('profiles').select('id, chat_signature').eq('id', user.id).maybeSingle()
     if (!profile) return json({ error: 'Kein Mitarbeiter-Profil' }, 403)
 
     const { thread_id, body } = await req.json()
@@ -50,8 +50,7 @@ serve(async (req) => {
       .maybeSingle()
 
     const replyTo = replyAddress(thread.reply_token)
-    // Signatur aus den Einstellungen (profiles.email_signature) anhaengen
-    const sig = String(profile.email_signature || '').trim()
+    const sig = String(profile.chat_signature || '').trim()
     // Nur echte HTML-Tags erkennen (nicht "Name <mail@x>") -> sonst \n->br
     const sigIsHtml = /<(br|p|div|table|span|a|img|ul|ol|li|strong|em|h[1-6])\b[^>]*>/i.test(sig)
     const sigHtml = sig ? `<br><br>${sigIsHtml ? sig : sig.replace(/\n/g, '<br>')}` : ''

@@ -15,6 +15,7 @@ export default defineConfig(({ mode }) => {
   console.log(`   VITE_SUPABASE_URL: ${env.VITE_SUPABASE_URL || '❌'}`);
 
   return {
+    base: '/',
     plugins: [
       react(),
       // Polyfills für swissqrbill (PDFKit nutzt Node-Builtins: buffer, events, util)

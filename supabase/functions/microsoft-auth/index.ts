@@ -12,22 +12,22 @@ Deno.serve(async (req) => {
   const redirectUri = Deno.env.get('MICROSOFT_REDIRECT_URI')!
 
   // Supabase user token aus state-Parameter lesen und weiterleiten
-  let body = {state: ''};
+  let body: any;
   try {
     body = await req.json();
   } catch (e) {
     console.error("No JSON body provided or invalid format");
   }
-  const state = body.state || ''
+  const {state, forceConsent, mail } = body;
 
-  const forceConsent = body.forceConsent === true
   const params = new URLSearchParams({
     client_id: clientId,
     response_type: 'code',
     redirect_uri: redirectUri,
     scope: 'offline_access Mail.Read Mail.ReadBasic Mail.ReadWrite Mail.Send User.Read Files.ReadWrite.All Sites.ReadWrite.All Calendars.Read',
     response_mode: 'query',
-    state: state,
+    state: state || '',
+    login_hint: mail ,
     ...(forceConsent ? { prompt: 'consent' } : {}),
   })
 

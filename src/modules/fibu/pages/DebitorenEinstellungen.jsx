@@ -20,6 +20,12 @@ const VORLAGEN = [
   { id: 'kompakt',   name: 'Kompakt',   desc: 'Platzsparend, kleine Schrift, QR-Zahlteil unten' },
 ];
 
+const STEUERART = [
+  {id: 1, name: 'inkl. Steuer'},
+  {id: 2, name: 'exkl. Steuer'},
+  {id: 3, name: 'von Steuer befreit'}
+]
+
 export default function DebitorenEinstellungen() {
   const { mandant } = useMandant();
   const [m, setM] = useState(null);
@@ -47,6 +53,7 @@ export default function DebitorenEinstellungen() {
         rechnung_fusszeile:     m.rechnung_fusszeile || null,
         rechnung_vorlage:       m.rechnung_vorlage || 'klassisch',
         rechnung_zahlstelle_id: m.rechnung_zahlstelle_id || null,
+        rechnung_steuerart:     m.rechnung_steuerart || 1,
       });
       setMsg({ ok: true, text: 'Gespeichert.' });
     } catch (e) { setMsg({ ok: false, text: 'Fehler: ' + e.message }); }
@@ -73,28 +80,7 @@ export default function DebitorenEinstellungen() {
   const previewVorlage = async (vorlageId) => {
     setPreviewBusy(vorlageId); setMsg(null);
     try {
-      const zs = zahlstellen.find(z => z.id === m.rechnung_zahlstelle_id) || zahlstellen[0]
-        || { qr_iban: 'CH4431999123000889012' };
-      const beleg = {
-        id: 'preview', beleg_nr: 'MUSTER', titel: 'Beratung & Material (Vorschau)',
-        belegdatum: new Date().toISOString().slice(0, 10),
-        faelligkeit: new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10),
-        waehrung: 'CHF', betrag_netto: 1405, betrag_mwst: 113.81, betrag_brutto: 1518.81,
-        zahlungsreferenz: buildQrReference('1001', 'MUSTER2026'),
-      };
-      const positionen = [
-        { bezeichnung: 'Beratung Buchhaltung', menge: 8, einheit: 'Std', einzelpreis: 140, betrag_brutto: 1210.72 },
-        { bezeichnung: 'Ordner & Register (Set)', menge: 10, einheit: 'Stk', einzelpreis: 28.5, betrag_brutto: 308.09 },
-      ];
-      const kunde = { name: 'Muster Kunde AG', nr: 'K-1001', adresse: 'Beispielweg 12', plz: '8000', ort: 'Zürich', land: 'CH' };
-      const mandant = {
-        ...m,
-        name: m.name || 'Muster Treuhand AG',
-        adresse: m.adresse || 'Musterstrasse 1', plz: m.plz || '8000', ort: m.ort || 'Zürich',
-        rechnung_vorlage: vorlageId,
-      };
-      const { blob } = await generateDebitorenPdf({ beleg, positionen, kunde, mandant, zahlstelle: zs, upload: false });
-      window.open(URL.createObjectURL(blob), '_blank');
+      await generateDebitorenPdf({belegId: 'dummy', vorlageId, mandatenId: m.id});
     } catch (e) { setMsg({ ok: false, text: 'Vorschau fehlgeschlagen: ' + e.message }); }
     finally { setPreviewBusy(null); }
   };
@@ -103,7 +89,7 @@ export default function DebitorenEinstellungen() {
 
   return (
     <div style={{ flex: 1, overflow: 'auto', background: '#f2f5f2' }}>
-      <div style={{ display: 'flex', alignItems: 'center', padding: '14px 24px', background: '#fff', borderBottom: '1px solid #d4dcd4' }}>
+      <div style={{ display: 'flex', alignItems: 'center', padding: '14px 24px', background: '#fff', borderBottom: '1px solid #d4dcd4', position: 'sticky',top: 0, zIndex: 100 }}>
         <div>
           <div style={{ fontSize: 16, fontWeight: 700 }}>Rechnungs-Einstellungen</div>
           <div style={{ fontSize: 11.5, color: '#7a9a7f' }}>Debitoren · Stammdaten fürs Rechnungsformular</div>
@@ -113,7 +99,7 @@ export default function DebitorenEinstellungen() {
         </button>
       </div>
 
-      <div style={{ padding: 24, maxWidth: 760, display: 'flex', flexDirection: 'column', gap: 18 }}>
+      <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 18 }}>
         {msg && <div style={{ padding: '8px 14px', borderRadius: 8, fontSize: 12.5, background: msg.ok ? '#e8f5e8' : '#fde7e7', color: msg.ok ? '#3d6641' : '#8a2d2d' }}>{msg.text}</div>}
 
         {/* Logo */}
@@ -141,7 +127,7 @@ export default function DebitorenEinstellungen() {
           <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 12, color: '#2d4a30' }}>Briefkopf &amp; Fusszeile</div>
           <div style={{ marginBottom: 12 }}>
             <label style={lbl}>Absender / Briefkopf</label>
-            <textarea style={{ ...inp, minHeight: 60, resize: 'vertical' }} value={m.rechnung_absender || ''} placeholder={`${m.name || 'Firma'}\n${m.adresse || ''}\n${m.plz || ''} ${m.ort || ''}`} onChange={e => set({ rechnung_absender: e.target.value })} />
+            <textarea style={{ ...inp, minHeight: 100, resize: 'vertical' }} value={m.rechnung_absender || ''} placeholder={`${m.name || 'Firma'}\n${m.adresse || ''}\n${m.plz || ''} ${m.ort || ''}`} onChange={e => set({ rechnung_absender: e.target.value })} />
           </div>
           <div>
             <label style={lbl}>Fusszeile</label>
@@ -165,6 +151,25 @@ export default function DebitorenEinstellungen() {
             if (!z.qr_iban && !isQrIban(z.iban)) return <div style={{ fontSize: 10.5, color: '#9a6a00', marginTop: 6 }}>Diese Zahlstelle hat keine QR-IBAN → QR-Referenz-Rechnung nicht möglich (nur IBAN-Rechnung).</div>;
             return <div style={{ fontSize: 10.5, color: '#1e40af', marginTop: 6 }}>✓ QR-IBAN vorhanden – QR-Rechnung mit Referenz möglich.</div>;
           })()}
+        </div>
+
+        {/* Steuerart */}
+        <div style={card}>
+          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 12, color: '#2d4a30' }}>Wie soll die Steuer angezeigt werden</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+            {STEUERART.map(v => {
+              const active = (m.rechnung_steuerart || 1) === v.id;
+              return (
+                  <div key={v.id} onClick={() => set({ rechnung_steuerart: v.id })}
+                       style={{ textAlign: 'left', padding: 14, borderRadius: 10, cursor: 'pointer',
+                         display: 'flex', flexDirection: 'column',
+                         border: active ? '2px solid #3d6641' : '1px solid #d4dcd4',
+                         background: active ? '#f0f7f0' : '#fff' }}>
+                    <div style={{ fontWeight: 700, fontSize: 12.5, color: active ? '#3d6641' : '#1a1a2e' }}>{active ? '● ' : '○ '}{v.name}</div>
+                  </div>
+              );
+            })}
+          </div>
         </div>
 
         {/* Vorlage */}

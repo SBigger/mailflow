@@ -205,7 +205,7 @@ export default function MwstCodes() {
   };
 
   const s = {
-    page: { padding: 28, fontFamily: "'Inter', system-ui, sans-serif", maxWidth: 900 },
+    page: { padding: 28, fontFamily: "'Inter', system-ui, sans-serif" },
     header: { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 6 },
     title: { fontWeight: 700, fontSize: 20, color: '#1a1a2e', margin: 0 },
     subtitle: { fontSize: 12, color: '#94a394', marginBottom: 20 },
@@ -270,74 +270,84 @@ export default function MwstCodes() {
         </button>
       </div>
 
-      {loading ? (
-        <div style={{ color: '#94a394', fontSize: 13 }}>Lade MWST-Codes…</div>
-      ) : (
-        Object.entries(grouped).map(([typ, list]) => (
-          <div key={typ} style={s.section}>
-            <div style={s.sectionHeader(typ)}>
-              <span style={s.sectionLabel(typ)}>{TYP_LABELS[typ]?.label ?? typ}</span>
-              <span style={{ fontSize: 11, opacity: .7 }}>{list.filter(c => c.aktiv).length} / {list.length} aktiv</span>
-            </div>
-            <div style={s.card}>
-              {list.length === 0 ? (
-                <div style={s.empty}>Keine Codes — klicke «Standard-Codes ergänzen».</div>
-              ) : (
-                list.map((c, idx) => (
-                  <div key={c.id} style={s.row(idx, c.aktiv)}>
-                    <span style={s.codeBadge}>{c.code}</span>
-                    <span style={s.bezeichnung}>{c.bezeichnung}</span>
-                    <SatzBadge satz={c.satz} />
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-                      <span style={s.kontoLabel}>Abrechnung</span>
-                      <ZifferEdit
-                        value={c.abrechnung_ziffer}
-                        typ={c.typ}
-                        codeId={c.id}
-                        canWrite={canWrite}
-                        onSaved={(f, v) => setCodes(prev => prev.map(x => x.id === c.id ? { ...x, [f]: v } : x))}
+      <div style={{
+        overflowX: 'auto',
+        overflowY: 'auto',
+        maxWidth: '100%',
+        width: '100%',
+        maxHeight: 'calc(100vh - 250px)', // Nutzt den verfügbaren Platz im Fenster minus Header/KPIs
+        border: '1px solid #e6ede6',       // Optional: Ein feiner Rahmen zeigt die Box-Grenzen an
+        borderRadius: 8
+      }}>
+        {loading ? (
+          <div style={{ color: '#94a394', fontSize: 13 }}>Lade MWST-Codes…</div>
+        ) : (
+          Object.entries(grouped).map(([typ, list]) => (
+            <div key={typ} style={s.section}>
+              <div style={s.sectionHeader(typ)}>
+                <span style={s.sectionLabel(typ)}>{TYP_LABELS[typ]?.label ?? typ}</span>
+                <span style={{ fontSize: 11, opacity: .7 }}>{list.filter(c => c.aktiv).length} / {list.length} aktiv</span>
+              </div>
+              <div style={s.card}>
+                {list.length === 0 ? (
+                  <div style={s.empty}>Keine Codes — klicke «Standard-Codes ergänzen».</div>
+                ) : (
+                  list.map((c, idx) => (
+                    <div key={c.id} style={s.row(idx, c.aktiv)}>
+                      <span style={s.codeBadge}>{c.code}</span>
+                      <span style={s.bezeichnung}>{c.bezeichnung}</span>
+                      <SatzBadge satz={c.satz} />
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                        <span style={s.kontoLabel}>Abrechnung</span>
+                        <ZifferEdit
+                          value={c.abrechnung_ziffer}
+                          typ={c.typ}
+                          codeId={c.id}
+                          canWrite={canWrite}
+                          onSaved={(f, v) => setCodes(prev => prev.map(x => x.id === c.id ? { ...x, [f]: v } : x))}
+                        />
+                      </span>
+                      <div style={s.kontoGroup}>
+                        {/* Vorsteuerkonto */}
+                        {(c.typ === 'vorsteuer' || c.typ === 'steuerbefreit') && (
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <span style={s.kontoLabel}>Vorsteuer</span>
+                            <KontoEdit
+                              value={c.konto_vorsteuer}
+                              field="konto_vorsteuer"
+                              codeId={c.id}
+                              canWrite={canWrite}
+                              onSaved={(f, v) => setCodes(prev => prev.map(x => x.id === c.id ? { ...x, [f]: v } : x))}
+                            />
+                          </span>
+                        )}
+                        {/* UST-Konto */}
+                        {(c.typ === 'umsatzsteuer' || c.typ === 'steuerbefreit') && (
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <span style={s.kontoLabel}>UST-Konto</span>
+                            <KontoEdit
+                              value={c.konto_umsatz}
+                              field="konto_umsatz"
+                              codeId={c.id}
+                              canWrite={canWrite}
+                              onSaved={(f, v) => setCodes(prev => prev.map(x => x.id === c.id ? { ...x, [f]: v } : x))}
+                            />
+                          </span>
+                        )}
+                      </div>
+                      <Toggle
+                        value={c.aktiv}
+                        onChange={() => handleToggle(c)}
+                        disabled={saving[c.id] || !canWrite}
                       />
-                    </span>
-                    <div style={s.kontoGroup}>
-                      {/* Vorsteuerkonto */}
-                      {(c.typ === 'vorsteuer' || c.typ === 'steuerbefreit') && (
-                        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                          <span style={s.kontoLabel}>Vorsteuer</span>
-                          <KontoEdit
-                            value={c.konto_vorsteuer}
-                            field="konto_vorsteuer"
-                            codeId={c.id}
-                            canWrite={canWrite}
-                            onSaved={(f, v) => setCodes(prev => prev.map(x => x.id === c.id ? { ...x, [f]: v } : x))}
-                          />
-                        </span>
-                      )}
-                      {/* UST-Konto */}
-                      {(c.typ === 'umsatzsteuer' || c.typ === 'steuerbefreit') && (
-                        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                          <span style={s.kontoLabel}>UST-Konto</span>
-                          <KontoEdit
-                            value={c.konto_umsatz}
-                            field="konto_umsatz"
-                            codeId={c.id}
-                            canWrite={canWrite}
-                            onSaved={(f, v) => setCodes(prev => prev.map(x => x.id === c.id ? { ...x, [f]: v } : x))}
-                          />
-                        </span>
-                      )}
                     </div>
-                    <Toggle
-                      value={c.aktiv}
-                      onChange={() => handleToggle(c)}
-                      disabled={saving[c.id] || !canWrite}
-                    />
-                  </div>
-                ))
-              )}
+                  ))
+                )}
+              </div>
             </div>
-          </div>
-        ))
-      )}
+          ))
+        )}
+      </div>
     </div>
   );
 }

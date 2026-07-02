@@ -9,7 +9,6 @@ import { useNavigate } from 'react-router-dom';
 import { useMandant } from '../contexts/MandantContext';
 import { mahnungApi, debitorenApi, mandantenApi, zahlstellenApi, belegMailApi } from '../api';
 import { generateMahnungPdf } from '../utils/mahnungPdf';
-import { triggerDownload } from '../utils/debitorenInvoicePdf';
 
 const CHF = (n) => (parseFloat(n) || 0).toLocaleString('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const DATE = (s) => s ? new Date(s).toLocaleDateString('de-CH') : '—';
@@ -91,7 +90,11 @@ export default function Mahnwesen() {
         await belegMailApi.send({ to, subject: `${dlg.stufe === 1 ? 'Zahlungserinnerung' : dlg.stufe + '. Mahnung'} – Rechnung ${full.beleg_nr}`, html, attachmentUrl: url, attachmentFilename: `Mahnung-${full.beleg_nr}.pdf` });
         gesendetAn = to;
       } else {
-        triggerDownload(blob, `Mahnung-${full.beleg_nr}-S${dlg.stufe}.pdf`);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = `Mahnung-${full.beleg_nr}-S${dlg.stufe}.pdf`;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
       }
       await mahnungApi.erstellen(mandant.id, full, { stufe: dlg.stufe, gebuehr: parseFloat(dlg.gebuehr) || 0, faelligAm: dlg.frist, pdfUrl: url, gesendetAn });
       setDlg(null);

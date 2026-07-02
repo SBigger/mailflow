@@ -91,6 +91,38 @@ _MODUS_MIGRATE = {
     "gemini-live": "stream-deepgram",   # Gemini Live entfernt → fallback
 }
 
+exe_name = os.path.basename(EXE_PATH)
+prefix = "dummy"
+match = re.match(r"^([a-zA-Z0-9\-]+)_voxdrop", exe_name, re.IGNORECASE)
+
+if match:
+    prefix = match.group(1)
+
+_SMARTIS_BASE = f"https://{prefix}.sm-artis.ch"
+_SUPABASE_URL = f"https://api-{prefix}.sm-artis.ch"
+_SUPABASE_ANON_KEY = ""
+
+def load_remote_config():
+    """Lädt den Anon Key dynamisch aus der config.json von _SMARTIS_BASE."""
+    global _SUPABASE_ANON_KEY
+    config_url = f"{_SMARTIS_BASE}/config.json"
+
+    try:
+        log.info(f"Lade Remote-Konfiguration von {config_url}...")
+        with urllib.request.urlopen(config_url, timeout=10) as resp:
+            config_data = json.loads(resp.read().decode("utf-8"))
+
+            # Key aus dem JSON holen (Erwartetes Format: {"key1": "dein-key"})
+            if "key1" in config_data:
+                _SUPABASE_ANON_KEY = config_data["key1"]
+                log.info("Remote Anon Key erfolgreich geladen.")
+            else:
+                log.error("Feld 'key1' wurde in config.json nicht gefunden!")
+
+    except Exception as e:
+        log.error(f"Fehler beim Laden der Remote-Konfiguration: {e}")
+        # Optionale Sicherheitsvorkehrung / Fallback-Key setzen falls nötig
+
 def ensure_config():
     """Erstellt config.txt beim ersten Start falls nicht vorhanden."""
     if not os.path.exists(CONFIG_FILE):
@@ -235,8 +267,6 @@ _stream_phrases    = 0
 _stream_paste_lock = threading.Lock()
 
 # ── Smartis LLM (Frag Smartis – Ctrl+Shift+Q) ────────────────
-_SUPABASE_URL      = "https://api-artis.sm-artis.ch"
-_SUPABASE_ANON_KEY = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJzdXBhYmFzZSIsImlhdCI6MTc3OTEzMjc4MCwiZXhwIjo0OTM0ODA2MzgwLCJyb2xlIjoiYW5vbiJ9.sVdg5d77wLXYbcP_3VEZPwyCzArx8wGnlYhxLVWsg_M"
 _ask_recording     = False
 _ask_audio_frames  = []
 _ask_lock          = threading.Lock()
@@ -1414,7 +1444,6 @@ def _show_answer_popup(question, answer, sources, data=None):
         for r in range(4):
             grid.rowconfigure(r, weight=1, uniform="row")
 
-        _SMARTIS_BASE = "https://artis.sm-artis.ch"
         _PAGES = {"dokument":"Dokumente","frist":"Fristen","task":"TaskBoard",
                   "mail":"MailKanban","call":"TelefonDashboard",
                   "aktie":"Aktienbuch","fahrzeug":"Fahrzeugliste",

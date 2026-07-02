@@ -99,6 +99,7 @@ export const entities = {
   Task:             makeEntity('tasks'),
   TaskColumn:       makeEntity('task_columns'),
   Customer:         makeEntity('customers'),
+  FibuMandanten:    makeEntity('fibu_mandanten'),
   Tag:              makeEntity('tags'),
   Project:          makeEntity('projects'),
   DomainTagRule:    makeEntity('domain_tag_rules'),

@@ -84,11 +84,16 @@ export default function SharePage() {
       });
       const data = await res.json();
       if (data.url) {
-        const a = document.createElement("a");
-        a.href = data.url;
-        a.download = docName || "download";
-        //a.target = "_blank";
-        a.click();
+        const response = await fetch(data.url);
+        const blob = await response.blob();
+        const blobUrl = window.URL.createObjectURL(blob);
+
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.download = docName || "download";
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
       } else {
         alert(data.error || "Download fehlgeschlagen");
       }

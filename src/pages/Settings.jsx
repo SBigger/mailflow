@@ -29,7 +29,7 @@ import {
     Download,
     Database,
     Inbox,
-    ShieldCheck, Upload, PanelLeft
+    ShieldCheck, Upload, PanelLeft, Loader2
 } from "lucide-react";
 import {ThemeContext} from "@/Layout";
 import DeleteUserDialog from "@/components/settings/DeleteUserDialog";
@@ -194,10 +194,23 @@ export default function Settings() {
         reorderActivityTemplatesMutation.mutate(reordered.map((a, i) => ({...a, order: i})));
     };
 
-    const updateSignatureMutation = useMutation({
+    const { mutate: updateSignatureMutation, isPending: isPendingSignature } = useMutation({
         mutationFn: (data) => auth.updateMe(data),
         onSuccess: () => {
-            toast.success('Signatur gespeichert');
+            queryClient.invalidateQueries({queryKey: ['currentUser']});
+        }
+    });
+
+    const { mutate: updateSyncMutation, isPending: isPendingSync } = useMutation({
+        mutationFn: (data) => auth.updateMe(data),
+        onSuccess: () => {
+            queryClient.invalidateQueries({queryKey: ['currentUser']});
+        }
+    });
+
+    const { mutate: updateMailMutation, isPending: isPendingMail } = useMutation({
+        mutationFn: (data) => auth.updateMe(data),
+        onSuccess: () => {
             queryClient.invalidateQueries({queryKey: ['currentUser']});
         }
     });
@@ -359,7 +372,11 @@ export default function Settings() {
                 toast.error('Nicht eingeloggt');
                 return;
             }
-            const {data} = await functions.invoke('microsoft-auth', {state: session.access_token, forceConsent: true})
+            const {data} = await functions.invoke('microsoft-auth', {
+                state: session.access_token,
+                forceConsent: true,
+                mail: user?.outlook_email |user?.email
+            })
 
             // Popup öffnen (funktioniert in Electron via setWindowOpenHandler + Browser)
             const popup = window.open(data, 'microsoft-oauth', 'width=520,height=720,resizable=yes,scrollbars=yes');
@@ -536,7 +553,7 @@ export default function Settings() {
             // Profiles ohne sensible OAuth-Token
             const {data: profiles} = await supabase
                 .from('profiles')
-                .select('id, email, full_name, titel, role, created_at, theme, sync_days, email_signature, chat_signature, current_mailbox');
+                .select('id, email, full_name, titel, role, created_at, theme, sync_days, email_signature, chat_signature');
             backup.tables.profiles = profiles || [];
 
             // Kanban-Snapshot: outlook_id → column_id für Restore nach Reset
@@ -747,6 +764,19 @@ export default function Settings() {
         return `${window.env.CUSTOMER}_${appName}`;
     }
 
+    function showDownloadInfo(appName) {
+        if (window.__TAURI__){
+            toast.info('Datei wird herunter geladen')
+        }
+
+        const a = document.createElement('a');
+        a.href = `https://www.sm-artis.ch/apps/${window.env.CUSTOMER}_${appName}`;
+        a.rel = 'noopener';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    }
+
     // ──────────────────────────────────────────────────
 
     const isLight = theme === 'light';
@@ -891,10 +921,15 @@ export default function Settings() {
                                 theme="snow"
                             />
                             <Button
-                                onClick={() => updateSignatureMutation.mutate({email_signature: emailSignature})}
+                                onClick={() => updateMailMutation({email_signature: emailSignature})}
                                 className="bg-indigo-600 hover:bg-indigo-500"
                             >
-                                <Save className="h-4 w-4 mr-2"/> E-Mail Signatur speichern
+                                {isPendingMail ? (
+                                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                ) : (
+                                    <Save className="h-4 w-4 mr-2" />
+                                )}
+                                {isPendingMail ? 'Wird gespeichert...' : 'E-Mail Signatur speichern'}
                             </Button>
                         </div>
 
@@ -912,10 +947,15 @@ export default function Settings() {
                                 theme="snow"
                             />
                             <Button
-                                onClick={() => updateSignatureMutation.mutate({chat_signature: chatSignature})}
+                                onClick={() => updateSignatureMutation({chat_signature: chatSignature})}
                                 className="bg-indigo-600 hover:bg-indigo-500"
                             >
-                                <Save className="h-4 w-4 mr-2"/> Chat Signatur speichern
+                                {isPendingSignature ? (
+                                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                ) : (
+                                    <Save className="h-4 w-4 mr-2" />
+                                )}
+                                {isPendingSignature ? 'Wird gespeichert...' : 'Chat Signatur speichern'}
                             </Button>
                         </div>
                     </div>
@@ -937,29 +977,36 @@ export default function Settings() {
                                 <div className="flex gap-2">
                                     <Input
                                         type="email"
-                                        value={user?.current_mailbox || ''}
+                                        value={user?.outlook_email || user?.email}
                                         onChange={(e) => {
                                         }}
-                                        placeholder="z.B. sascha.bigger@artis-gmbh.ch"
                                         style={{backgroundColor: inputBg, borderColor: inputBorder, color: inputColor}}
                                         disabled
                                     />
-                                    <Button
-                                        onClick={() => {
-                                            const email = prompt('Postfach-E-Mail-Adresse:', user?.current_mailbox || '');
-                                            if (email) {
-                                                updateSignatureMutation.mutate({current_mailbox: email.trim()});
-                                            }
-                                        }}
-                                        className="bg-indigo-600 hover:bg-indigo-500 whitespace-nowrap"
-                                    >
-                                        Ändern
-                                    </Button>
+                                    <div
+                                        // Der Tooltip liegt auf dem Wrapper, damit der Browser ihn auch bei "disabled" anzeigt
+                                        title={user?.microsoft_access_token ? "Kann nur geändert werden, wenn Outlook getrennt ist" : undefined}
+                                        className="inline-block">
+                                        <Button
+                                            onClick={() => {
+                                                const email = prompt('Postfach-E-Mail-Adresse:', user?.outlook_email || user?.email);
+                                                if (email) {
+                                                    updateMailMutation({outlook_email: email.trim()});
+                                                }
+                                            }}
+                                            className="bg-indigo-600 hover:bg-indigo-500 whitespace-nowrap"
+                                            disabled={user?.microsoft_access_token}
+                                        >
+                                            {isPendingMail ? (
+                                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                            ) : (
+                                                <Save className="h-4 w-4 mr-2" />
+                                            )}
+                                            {isPendingMail ? 'Wird gespeichert...' : 'Ändern'}
+                                        </Button>
+                                    </div>
+
                                 </div>
-                                {user?.current_mailbox && (
-                                    <p className="text-xs mt-2"
-                                       style={{color: textMuted}}>Aktuell: {user.current_mailbox}</p>
-                                )}
                             </div>
                             <p className="mb-4" style={{color: textMuted}}>
                                 Verbinden oder wechseln Sie Ihr Microsoft Outlook-Konto.
@@ -968,11 +1015,11 @@ export default function Settings() {
                                 {user?.microsoft_access_token ? (
                                     <div className="p-4 bg-green-500/10 border border-green-500/30 rounded-lg">
                                         <p className="text-green-400 text-sm">✓ Mit Outlook verbunden
-                                            als {user.microsoft_outlook_email || user.email}</p>
+                                            als {user.outlook_email || user.email}</p>
                                     </div>
                                 ) : (
                                     <div className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-                                        <p className="text-yellow-400 text-sm">Noch nicht verbunden</p>
+                                        <p className="text-yellow-400 text-sm">Noch nicht verbunden mit {user?.outlook_email || user?.email}</p>
                                     </div>
                                 )}
                                 <div className="flex gap-2">
@@ -1033,10 +1080,15 @@ export default function Settings() {
                                             className="w-32"
                                         />
                                         <Button
-                                            onClick={() => updateSignatureMutation.mutate({sync_days: syncDays})}
+                                            onClick={() => updateSyncMutation({sync_days: syncDays})}
                                             className="bg-indigo-600 hover:bg-indigo-500"
                                         >
-                                            <Save className="h-4 w-4 mr-2"/> Speichern
+                                            {isPendingSync ? (
+                                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                            ) : (
+                                                <Save className="h-4 w-4 mr-2" />
+                                            )}
+                                            {isPendingSync ? 'Wird gespeichert...' : 'Speichern'}
                                         </Button>
                                     </div>
                                 </div>
@@ -1740,7 +1792,8 @@ export default function Settings() {
                                             try {
                                                 const {data} = await functions.invoke('inviteUser', {
                                                     email: emailToInvite,
-                                                    role: inviteRole
+                                                    role: inviteRole,
+                                                    appUrl: window.env.HOSTNAME
                                                 });
 
                                                 if (data.success) {
@@ -2019,7 +2072,7 @@ export default function Settings() {
                                         <h3 className="text-base font-semibold mb-1 flex items-center gap-2"
                                             style={{color: headingColor}}>
                                             <HardDrive className="h-4 w-4"/> ArtisAgent <span
-                                            className="text-xs font-normal opacity-50">v3.2.1</span>
+                                            className="text-xs font-normal opacity-50">v3.0.2</span>
                                         </h3>
                                         <p className="text-sm mb-3" style={{color: textMuted}}>
                                             Öffnet und bearbeitet Dokumente direkt aus der Dateiablage. Ermöglicht
@@ -2032,14 +2085,11 @@ export default function Settings() {
                                             <li>✓ PDF per Alt+Shift+S direkt in die Ablage</li>
                                         </ul>
                                     </div>
-                                    <a
-                                        href="./sm-artis-agent.exe"
-                                        download={getAppName('sm-artis-agent.exe')}
+                                    <button  onClick={()=>{showDownloadInfo("sm-artis-agent.exe")}}
                                         className="flex-shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-xl text-white font-medium text-sm transition-opacity hover:opacity-90"
-                                        style={{backgroundColor: isArtis ? '#7a9b7f' : '#6366f1'}}
-                                    >
+                                        style={{backgroundColor: isArtis ? '#7a9b7f' : '#6366f1'}}>
                                         <Download className="h-4 w-4"/> Download
-                                    </a>
+                                    </button>
                                 </div>
                             </div>
 
@@ -2063,14 +2113,11 @@ export default function Settings() {
                                             <li>✓ Windows 64-bit</li>
                                         </ul>
                                     </div>
-                                    <a
-                                        href="./smartis.exe"
-                                        download={getAppName('smartis.exe')}
+                                    <button onClick={()=>{showDownloadInfo('smartis.exe')}}
                                         className="flex-shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-xl text-white font-medium text-sm transition-opacity hover:opacity-90"
-                                        style={{backgroundColor: isArtis ? '#7a9b7f' : '#6366f1'}}
-                                    >
+                                        style={{backgroundColor: isArtis ? '#7a9b7f' : '#6366f1'}}>
                                         <Download className="h-4 w-4"/> Download
-                                    </a>
+                                    </button>
                                 </div>
                             </div>
 
@@ -2082,7 +2129,7 @@ export default function Settings() {
                                         <h3 className="text-base font-semibold mb-1 flex items-center gap-2"
                                             style={{color: headingColor}}>
                                             <Inbox className="h-4 w-4"/> VoxDrop <span
-                                            className="text-xs font-normal opacity-50">v1.7.1</span>
+                                            className="text-xs font-normal opacity-50">v1.7.0</span>
                                         </h3>
                                         <p className="text-sm mb-3" style={{color: textMuted}}>
                                             Sprache direkt in Text umwandeln — Ctrl+Q drücken, sprechen, nochmals Ctrl+Q
@@ -2096,14 +2143,11 @@ export default function Settings() {
                                             <li>✓ Läuft im Hintergrund, startet mit Windows</li>
                                         </ul>
                                     </div>
-                                    <a
-                                        href="./VoxDrop-Setup-v1.7.1.exe"
-                                        download={getAppName('VoxDrop.exe')}
+                                    <button onClick={()=>{showDownloadInfo("voxDrop.exe")}}
                                         className="flex-shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-xl text-white font-medium text-sm transition-opacity hover:opacity-90"
-                                        style={{backgroundColor: isArtis ? '#7a9b7f' : '#6366f1'}}
-                                    >
+                                        style={{backgroundColor: isArtis ? '#7a9b7f' : '#6366f1'}}>
                                         <Download className="h-4 w-4"/> Download
-                                    </a>
+                                    </button>
                                 </div>
                             </div>
 
@@ -2129,14 +2173,11 @@ export default function Settings() {
                                             <li>✓ Startet automatisch mit Windows</li>
                                         </ul>
                                     </div>
-                                    <a
-                                        href="./SmartisBar-Setup.exe"
-                                        download={getAppName('SmartisBar-Setup.exe')}
+                                    <button  onClick={()=>{showDownloadInfo("smartisBar.exe")}}
                                         className="flex-shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-xl text-white font-medium text-sm transition-opacity hover:opacity-90"
-                                        style={{backgroundColor: isArtis ? '#7a9b7f' : '#6366f1'}}
-                                    >
+                                        style={{backgroundColor: isArtis ? '#7a9b7f' : '#6366f1'}}>
                                         <Download className="h-4 w-4"/> Download
-                                    </a>
+                                    </button>
                                 </div>
                             </div>
                         </div>

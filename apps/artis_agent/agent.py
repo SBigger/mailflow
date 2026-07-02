@@ -19,14 +19,12 @@ Aufruf durch Browser:
 import sys
 print(sys.executable)
 import os
-import json
 import time
 import threading
 import urllib.parse
 import ctypes
 import winreg
 import requests
-import logging
 import logging.handlers
 
 # ── Fehlerprotokoll (gleiche Datei wie der Tray/PDF-Teil) ─────────────────────

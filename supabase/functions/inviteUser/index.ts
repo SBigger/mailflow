@@ -37,18 +37,16 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json()
-    const { email, role = 'user' } = body
+    const { email, role = 'user', appUrl } = body
     if (!email) {
       return new Response(JSON.stringify({ error: 'Email required' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
-    const appUrl = Deno.env.get('APP_URL') || 'https://artis.sm-artis.ch'
-
     // Invite user via Supabase Admin API
     const { data: inviteData, error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(email, {
-      redirectTo: `${appUrl}/set-password`,
+      redirectTo: `https://${appUrl}/set-password`,
     })
     if (inviteError) throw new Error(inviteError.message)
 

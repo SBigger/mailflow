@@ -47,6 +47,6 @@ Deno.serve(async (req) => {
   }).eq('id', authUser.id)
 
   // Zurück zur App
-  const appUrl = Deno.env.get('APP_URL') || 'https://mailflow.vercel.app'
+  const appUrl = Deno.env.get('APP_URL')
   return Response.redirect(`${appUrl}/Settings?outlook=connected`, 302)
 })

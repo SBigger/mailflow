@@ -36,12 +36,12 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ error: 'Es ist noch kein Benutzer mit Outlook verbunden!' }), { status: 404, headers: corsHeaders })
   }
   const results = [];
+
   for(const profile of profiles) {
     try {
       // Token refresh
       let accessToken = profile.microsoft_access_token
       const tokenExpiry = profile.microsoft_token_expiry || 0
-      // Cache: customer_id → kanban column_id (wird bei Bedarf erstellt)
       const customerColumnCache = new Map<string, string>()
 
       if (!accessToken || Date.now() > tokenExpiry - 60000) {
@@ -119,31 +119,49 @@ Deno.serve(async (req) => {
       for (const c of (customers || [])) customerMap.set(c.id, c.company_name)
 
       // Batch von Microsoft holen
-      const response = await fetch(currentUrl, {headers: {Authorization: `Bearer ${accessToken}`}})
-      if (!response.ok) {
-        const errText = await response.text()
-        if (response.status === 410 || errText.includes('syncStateNotFound')) {
-          await supabase.from('profiles').update({microsoft_delta_link: ''}).eq('id', profile.id)
-          results.push({email: profile.email, error: `[ERROR] Delta-Token abgelaufen`})
-          continue;
+      let allMessages = [];
+      let newDeltaLink = null;
+      let hasError = false;
+
+      while (currentUrl) {
+        const response = await fetch(currentUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
+
+        if (!response.ok) {
+          const errText = await response.text();
+          if (response.status === 410 || errText.includes('syncStateNotFound')) {
+            await supabase.from('profiles').update({ microsoft_delta_link: '' }).eq('id', profile.id);
+            results.push({ email: profile.email, error: `[ERROR] Delta-Token abgelaufen` });
+          } else {
+            results.push({ email: profile.email, error: `[ERROR] MS Graph Error ${response.status}: ${errText}` });
+          }
+          hasError = true;
+          break;
         }
-        results.push({email: profile.email, error: `[ERROR] MS Graph Error ${response.status}`})
-        continue;
+
+        const data = await response.json();
+        const messages = data.value || [];
+        allMessages.push(...messages);
+
+        // Nächste URL für die Schleife setzen
+        currentUrl = data['@odata.nextLink'] || null;
+        newDeltaLink = data['@odata.deltaLink'] || null;
       }
 
-      const data = await response.json()
-      const messages = data.value || []
-      const nextLink = data['@odata.nextLink'] || null
-      const newDeltaLink = data['@odata.deltaLink'] || null
+      if (hasError) continue;
 
-      console.log(`[SYNC] ${messages.length} msgs, nextLink=${!!nextLink}, deltaLink=${!!newDeltaLink}`)
+      if(allMessages.length > 0 ) {
+        console.log(`[SYNC FERTIG] Insgesamt ${allMessages.length} Mails für ${profile.email} geladen.`);
+      }
+
+      if (newDeltaLink) {
+        await supabase.from('profiles').update({ microsoft_delta_link: newDeltaLink }).eq('id', profile.id);
+      }
 
       const toInsert: any[] = []
       const toUpdate: any[] = []
 
-      for (const msg of messages) {
+      for (const msg of allMessages) {
         if (msg['@removed']) {
-          // Mail aus Outlook gelöscht → in Supabase behalten, nur als archiviert markieren
           const existing = existingMap.get(msg.id)
           if (existing?.id) {
             await supabase.from('mail_items').update({is_archived: true}).eq('id', existing.id)
@@ -175,7 +193,6 @@ Deno.serve(async (req) => {
             toUpdate.push({id: existing.id, is_read: newIsRead, body_preview: msg.bodyPreview || ''})
           }
         } else {
-          // Kunden-Spalte zuweisen wenn Domain-Regel mit customer_id gefunden
           let targetColumnId = outlookCol.id
           if (matchedCustomerId) {
             targetColumnId = await getOrCreateCustomerColumn(matchedCustomerId, customerColumnCache, customerMap, outlookCol, profile.id)
@@ -204,13 +221,13 @@ Deno.serve(async (req) => {
         updated++
       }
 
-      const hasMore = !!nextLink
-      if (newDeltaLink) await supabase.from('profiles').update({microsoft_delta_link: newDeltaLink}).eq('id', profile.id)
-      else if (nextLink) await supabase.from('profiles').update({microsoft_delta_link: nextLink}).eq('id', profile.id)
+      // --- KORREKTUR: 'nextLink' und redundantes Update entfernt ---
+      // Das Delta-Update wurde bereits weiter oben nach der while-Schleife durchgeführt.
 
       // Direkt-Abgleich letzte 24h: fängt Mails ab, die Graph Delta auslässt
       let catchupInserted = 0
-      if (isDelta && !hasMore) {
+      // Wenn wir im Delta-Modus sind und KEINEN Folgelink mehr haben (also mit der Queue fertig sind)
+      if (isDelta && !currentUrl) {
         const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
         const catchupRes = await fetch(
             `https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$select=id,receivedDateTime,subject,from,hasAttachments,isRead,importance,bodyPreview&$filter=receivedDateTime+ge+${since}&$top=50`,
@@ -256,7 +273,11 @@ Deno.serve(async (req) => {
           }
         }
       }
-    }catch (e) {
+      if(inserted > 0 || updated > 0 || catchupInserted > 0) {
+        results.push({email: profile.email, success: true, inserted, updated, catchupInserted});
+      }
+
+    } catch (e) {
       results.push({ email: profile.email, error: e.message })
     }
   }
@@ -266,7 +287,6 @@ Deno.serve(async (req) => {
     const customerName = customerMap.get(customerId)
     if (!customerName) return outlookCol.id
 
-    // Existierende Spalte mit gleichem Namen suchen
     const {data: existingCol} = await supabase.from('kanban_columns')
         .select('id').eq('created_by', profileId).eq('name', customerName).maybeSingle()
     if (existingCol) {
@@ -274,7 +294,6 @@ Deno.serve(async (req) => {
       return existingCol.id
     }
 
-    // Neue Kunden-Spalte erstellen
     const {data: lastCol} = await supabase.from('kanban_columns')
         .select('order').eq('created_by', profileId).order('order', {ascending: false}).limit(1)
     const nextOrder = ((lastCol?.[0] as any)?.order ?? 0) + 1

@@ -27,6 +27,7 @@ const ReminderBoard = lazy(() => import('./pages/ReminderBoard'));
 const TicketBoard = lazy(() => import('./pages/TicketBoard'));
 const KnowledgeBase = lazy(() => import('./pages/KnowledgeBase'));
 const Dokumente = lazy(() => import('./pages/Dokumente'));
+const DokumenteV2 = lazy(() => import('./pages/DokumenteV2'));
 const Chartis = lazy(() => import('./pages/Chartis'));
 const UserManagement = lazy(() => import('./pages/UserManagement'));
 const ArtisTools = lazy(() => import('./pages/ArtisTools'));
@@ -56,13 +57,15 @@ const Monatsplanung = lazy(() => import("./pages/Monatsplanung.jsx"));
 const Kalender = lazy(() => import("./pages/Kalender.jsx"));
 const Steuerausscheidung = lazy(() => import("./pages/Steuerausscheidung.jsx"));
 const FiBuRouter = lazy(() => import("./modules/fibu/router.jsx"));
+const AiAssistant = lazy(() => import('./pages/AiAssistant.jsx'));
+const GVProtokollApp = lazy(() => import('./modules/gv-protokoll/GVProtokollApp.jsx'));
 
 const queryClient = new QueryClient({
     defaultOptions: {queries: {retry: 1, staleTime: 30000}}
 });
 
 function AuthenticatedApp() {
-    const {user, loading, requiresMfa} = useAuth();
+    const {user, loading, requiresMfa, profile} = useAuth();
     const navigate = useNavigate();
 
     useEffect(() => {
@@ -79,56 +82,62 @@ function AuthenticatedApp() {
     if (requiresMfa) return <MFALogin/>;
 
     return (
-        <Suspense fallback={<PageLoader/>}>
+        // Ein einziger Suspense-Wrapper fängt alle darunter liegenden Lazy-Komponenten ab
+        <Suspense fallback={<PageLoader />}>
             <Routes>
                 {/* FiBu: eigene Shell, kein MailFlow-Layout */}
-                <Route path="/fibu/*" element={<FiBuRouter/>}/>
+                <Route path="/fibu/*" element={<FiBuRouter />} />
 
-                {/* MailFlow: bestehender Layout-Wrapper */}
-                <Route path="*" element={
-                    <Layout>
-                        <Suspense fallback={<PageLoader/>}>
-                            <Routes>
-                                <Route path="/" element={<Navigate to="/Dashboard" replace/>}/>
-                                <Route path="/Dashboard" element={<Dashboard/>}/>
-                                <Route path="/MailKanban" element={<MailKanban/>}/>
-                                <Route path="/TaskBoard" element={<TaskBoard/>}/>
-                                <Route path="/Settings" element={<Settings/>}/>
-                                <Route path="/Kunden" element={<Kunden/>}/>
-                                <Route path="/Personen" element={<Personen/>}/>
-                                <Route path="/Fristen" element={<Fristen/>}/>
-                                <Route path="/ReminderBoard" element={<ReminderBoard/>}/>
-                                <Route path="/TicketBoard" element={<TicketBoard/>}/>
-                                <Route path="/KnowledgeBase" element={<KnowledgeBase/>}/>
-                                <Route path="/Dokumente" element={<Dokumente/>}/>
-                                <Route path="/Chartis" element={<Chartis/>}/>
-                                <Route path="/Posteingang" element={<Posteingang/>}/>
-                                <Route path="/UserManagement" element={<UserManagement/>}/>
-                                <Route path="/ArtisTools" element={<ArtisTools/>}/>
-                                <Route path="/BriefSchreiben" element={<BriefSchreiben/>}/>
-                                <Route path="/Fahrzeugliste" element={<Fahrzeugliste/>}/>
-                                <Route path="/Aktienbuch" element={<Aktienbuch/>}/>
-                                <Route path="/Unterschriften" element={<Unterschriften/>}/>
-                                <Route path="/Abschlussdokumentation" element={<Abschlussdokumentation/>}/>
-                                <Route path="/Anlagebuchhaltung" element={<Anlagebuchhaltung/>}/>
-                                <Route path="/Whiteboard" element={<Whiteboard/>}/>
-                                <Route path="/Auswertungen" element={<Auswertungen/>}/>
-                                <Route path="/Steuern" element={<Steuern/>}/>
-                                <Route path="/Veranlagungen" element={<Veranlagungen/>}/>
-                                <Route path="/Promptvorlagen" element={<Promptvorlagen/>}/>
-                                <Route path="/TelefonDashboard" element={<TelefonDashboard/>}/>
-                                <Route path="/Jahresplanung" element={<Jahresplanung/>}/>
-                                <Route path="/Monatsplanung" element={<Monatsplanung/>}/>
-                                <Route path="/Kalender" element={<Kalender/>}/>
-                                <Route path="/Steuerausscheidung" element={<Steuerausscheidung/>}/>
-                                {FEATURE_LEISTUNGSERFASSUNG && (
-                                    <Route path="/Leistungserfassung" element={<Leistungserfassung/>}/>
-                                )}
-                                <Route path="*" element={<Navigate to="/Dashboard" replace/>}/>
-                            </Routes>
-                        </Suspense>
-                    </Layout>
-                }/>
+                {/* MailFlow: Layout als Wrapper-Route (Layout muss im Inneren ein <Outlet /> nutzen!) */}
+                <Route element={<Layout />}>
+                    <Route path="/" element={<Navigate to="/Dashboard" replace />} />
+                    <Route path="/Dashboard" element={<Dashboard />} />
+                    <Route path="/MailKanban" element={<MailKanban />} />
+                    <Route path="/TaskBoard" element={<TaskBoard />} />
+                    <Route path="/Settings" element={<Settings />} />
+                    <Route path="/Kunden" element={<Kunden />} />
+                    <Route path="/Personen" element={<Personen />} />
+                    <Route path="/Fristen" element={<Fristen />} />
+                    <Route path="/ReminderBoard" element={<ReminderBoard />} />
+                    <Route path="/TicketBoard" element={<TicketBoard />} />
+                    <Route path="/KnowledgeBase" element={<KnowledgeBase />} />
+                    <Route path="/Dokumente" element={<Dokumente />} />
+                    <Route path="/DokumenteV2" element={<DokumenteV2 />} />
+                    <Route path="/Chartis" element={<Chartis/>}/>
+                    <Route path="/Posteingang" element={<Posteingang />} />
+                    <Route path="/UserManagement" element={<UserManagement />} />
+                    <Route path="/ArtisTools" element={<ArtisTools />} />
+                    <Route path="/BriefSchreiben" element={<BriefSchreiben />} />
+                    <Route path="/Fahrzeugliste" element={<Fahrzeugliste />} />
+                    <Route path="/Aktienbuch" element={<Aktienbuch />} />
+                    <Route path="/Unterschriften" element={<Unterschriften />} />
+                    <Route path="/Abschlussdokumentation" element={<Abschlussdokumentation />} />
+                    <Route path="/Anlagebuchhaltung" element={<Anlagebuchhaltung />} />
+                    <Route path="/Whiteboard" element={<Whiteboard />} />
+                    <Route path="/Auswertungen" element={<Auswertungen />} />
+                    <Route path="/Steuern" element={<Steuern />} />
+                    <Route path="/Veranlagungen" element={<Veranlagungen />} />
+                    <Route path="/Promptvorlagen" element={<Promptvorlagen />} />
+                    <Route path="/TelefonDashboard" element={<TelefonDashboard />} />
+                    <Route path="/Jahresplanung" element={<Jahresplanung />} />
+                    <Route path="/Monatsplanung" element={<Monatsplanung />} />
+                    <Route path="/Kalender" element={<Kalender />} />
+                    <Route path="/Steuerausscheidung" element={<Steuerausscheidung />} />
+                    <Route path="/GVProtokollApp" element={<GVProtokollApp/>} />
+                    {profile?.modules?.ai && (
+                        <Route path="/AiAssistant" element={<AiAssistant />} />
+                    )}
+
+                    {FEATURE_LEISTUNGSERFASSUNG && (
+                        <Route path="/Leistungserfassung" element={<Leistungserfassung />} />
+                    )}
+
+                    {/* Fängt falsche URLs innerhalb des Layouts ab */}
+                    <Route path="*" element={<Navigate to="/Dashboard" replace />} />
+                </Route>
+
+                {/* Fängt völlig unbekannte URLs außerhalb des Layouts ab */}
+                <Route path="*" element={<Navigate to="/Dashboard" replace />} />
             </Routes>
         </Suspense>
     );

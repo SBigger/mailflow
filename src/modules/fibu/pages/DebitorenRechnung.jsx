@@ -9,7 +9,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useMandant } from '../contexts/MandantContext';
 import { kundenApi, artikelApi, kontenApi, mwstCodesApi, debitorenApi, mandantenApi, zahlstellenApi, belegMailApi } from '../api';
-import { generateDebitorenPdf, triggerDownload } from '../utils/debitorenInvoicePdf';
+import { generateDebitorenPdf } from '../utils/debitorenInvoicePdf';
 
 const card = { background: '#fff', border: '1px solid #d4dcd4', borderRadius: 12 };
 const inp  = { width: '100%', padding: '7px 9px', border: '1px solid #d4dcd4', borderRadius: 7, fontSize: 12.5, background: '#f7faf7', boxSizing: 'border-box', fontFamily: 'inherit' };
@@ -97,17 +97,55 @@ export default function DebitorenRechnung() {
   const readOnly = mode === 'view';
   const isGutschrift = belegtyp === 'gutschrift';
 
-  const faelligkeit = useMemo(() => addDays(belegdatum, parseInt(zahlungsfrist) || 0), [belegdatum, zahlungsfrist]);
-  const ertragKonten = konten.filter(k => k.konto_typ === 'ertrag');
+    const faelligkeit = useMemo(() => addDays(belegdatum, parseInt(zahlungsfrist) || 0), [belegdatum, zahlungsfrist]);
+    const ertragKonten = konten.filter(k => k.konto_typ === 'ertrag');
 
-  const calc = (row) => {
-    const netto = r2((parseFloat(row.menge) || 0) * (parseFloat(row.einzelpreis) || 0));
-    const satz = mwstMap[row.mwst_code] ?? 0;
-    const mwst = r2(netto * satz / 100);
-    return { netto, mwst, brutto: r2(netto + mwst), satz };
-  };
-  const totals = rows.reduce((t, r) => { const c = calc(r); t.netto += c.netto; t.mwst += c.mwst; return t; }, { netto: 0, mwst: 0 });
-  totals.netto = r2(totals.netto); totals.mwst = r2(totals.mwst); totals.brutto = r2(totals.netto + totals.mwst);
+    // NEU: Berücksichtigung von mSettings.rechnung_steuerart (1=inkl, 2=exkl, 3=ohne)
+    const calc = (row) => {
+        const steuerart = mSettings?.rechnung_steuerart ?? 2; // Fallback auf 2 (exkl.) falls nicht geladen
+        const menge = parseFloat(row.menge) || 0;
+        const einzelpreis = parseFloat(row.einzelpreis) || 0;
+        const basisBetrag = r2(menge * einzelpreis);
+
+        // Wenn Steuerart "ohne" (3), ist der MWST-Satz effektiv 0
+        const satz = steuerart === 3 ? 0 : (mwstMap[row.mwst_code] ?? 0);
+
+        let netto = 0;
+        let mwst = 0;
+        let brutto = 0;
+
+        if (steuerart === 1) {
+            // Inklusive: Einzelpreis enthält bereits die MWST
+            brutto = basisBetrag;
+            netto = r2(brutto / (1 + satz / 100));
+            mwst = r2(brutto - netto);
+        } else if (steuerart === 3) {
+            // Ohne MWST
+            netto = basisBetrag;
+            mwst = 0;
+            brutto = basisBetrag;
+        } else {
+            // Exklusive (Standard, Steuerart 2): MWST kommt oben drauf
+            netto = basisBetrag;
+            mwst = r2(netto * satz / 100);
+            brutto = r2(netto + mwst);
+        }
+
+        return { netto, mwst, brutto, satz };
+    };
+
+    // Anpassung der Gesamt-Summierung, damit Rundungsdifferenzen vermieden werden
+    const totals = rows.reduce((t, r) => {
+        const c = calc(r);
+        t.netto += c.netto;
+        t.mwst += c.mwst;
+        t.brutto += c.brutto; // Brutto wird nun direkt aus den Zeilen summiert
+        return t;
+    }, { netto: 0, mwst: 0, brutto: 0 });
+
+    totals.netto = r2(totals.netto);
+    totals.mwst = r2(totals.mwst);
+    totals.brutto = r2(totals.brutto);
 
   const setRow = (id, patch) => setRows(rs => rs.map(r => r._id === id ? { ...r, ...patch } : r));
   const pickArtikel = (id, artikelId) => {
@@ -182,17 +220,12 @@ export default function DebitorenRechnung() {
   const ensurePdf = async () => {
     const full = loaded?.positionen ? loaded : await debitorenApi.get(belegId);
     const zs = zahlstellen.find(z => z.id === mSettings?.rechnung_zahlstelle_id) || zahlstellen[0] || {};
-    const { url, blob } = await generateDebitorenPdf({
-      beleg: full, positionen: full.positionen || [], kunde: full.kunde || {},
-      mandant: mSettings || mandant, zahlstelle: zs,
-    });
-    if (url && url !== loaded?.pdf_url) await debitorenApi.update(belegId, { pdf_url: url }).catch(() => {});
-    return { url, blob, full };
+    await generateDebitorenPdf({belegId, vorlageId: mandant.rechnung_vorlage, mandatenId: mandant.id, upload: true});
   };
 
   const doPdf = async () => {
     setBusy('pdf');
-    try { const { blob } = await ensurePdf(); triggerDownload(blob, `${loaded.beleg_nr}.pdf`); await reload(); }
+    try { const { blob } = await ensurePdf(); await reload(); }
     catch (e) { alert('PDF-Erzeugung fehlgeschlagen: ' + e.message); }
     finally { setBusy(null); }
   };
@@ -267,7 +300,7 @@ export default function DebitorenRechnung() {
         </div>
       )}
 
-      <div style={{ padding: 24, maxWidth: 1100 }}>
+      <div style={{ padding: 24}}>
         <div style={{ ...card, padding: 20 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 2fr 1fr 1fr', gap: 16, marginBottom: 18 }}>
             <div><label style={lbl}>Belegart</label>
@@ -290,21 +323,23 @@ export default function DebitorenRechnung() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
             <thead>
               <tr style={{ background: '#f7faf7', color: '#6b826b', fontSize: 10, textTransform: 'uppercase', letterSpacing: '.05em' }}>
-                <th style={{ textAlign: 'left', padding: '7px 6px', width: '30%' }}>Artikel / Position</th>
-                <th style={{ textAlign: 'right', padding: '7px 6px', width: 70 }}>Menge</th>
-                <th style={{ textAlign: 'left', padding: '7px 6px', width: 70 }}>Einheit</th>
-                <th style={{ textAlign: 'right', padding: '7px 6px', width: 90 }}>Einzelpreis</th>
-                <th style={{ textAlign: 'left', padding: '7px 6px', width: '16%' }}>Konto</th>
-                <th style={{ textAlign: 'left', padding: '7px 6px', width: 90 }}>MWST</th>
-                <th style={{ textAlign: 'right', padding: '7px 6px', width: 100 }}>Betrag</th>
+                <th style={{ textAlign: 'left', padding: '7px 6px', width: 10 }}>Nr.</th>
+                <th style={{ textAlign: 'left', padding: '7px 6px', width: 'auto' }}>Artikel / Position</th>
+                <th style={{ textAlign: 'center', padding: '7px 6px', width: 70 }}>Menge</th>
+                <th style={{ textAlign: 'left', padding: '7px 6px', width: 65 }}>Einheit</th>
+                <th style={{ textAlign: 'center', padding: '7px 6px', width: 90 }}>Einzelpreis</th>
+                <th style={{ textAlign: 'center', padding: '7px 6px', width: 150 }}>Konto</th>
+                <th style={{ textAlign: 'right', padding: '7px 6px', width: 110 }}>MWST</th>
+                <th style={{ textAlign: 'right', padding: '7px 6px', width: 120 }}>Betrag</th>
                 {!readOnly && <th style={{ width: 28 }}></th>}
               </tr>
             </thead>
             <tbody>
-              {rows.map(row => {
+              {rows.map((row, index) => {
                 const c = calc(row);
                 return (
                   <tr key={row._id} style={{ borderBottom: '1px solid #f0f3f0' }}>
+            <       td style={{textAlign: 'center'}}>{index +1}</td>
                     <td style={{ padding: '3px 6px' }}>
                       {!readOnly && (
                         <select style={{ ...cell, marginBottom: 2 }} value={row.artikel_id} onChange={e => pickArtikel(row._id, e.target.value)}>
@@ -314,14 +349,159 @@ export default function DebitorenRechnung() {
                       )}
                       <input style={cell} value={row.bezeichnung} placeholder="Bezeichnung" onChange={e => setRow(row._id, { bezeichnung: e.target.value })} disabled={readOnly} />
                     </td>
-                    <td style={{ padding: '3px 6px' }}><input type="number" step="0.01" style={{ ...cell, textAlign: 'right' }} value={row.menge} onChange={e => setRow(row._id, { menge: e.target.value })} disabled={readOnly} /></td>
-                    <td style={{ padding: '3px 6px' }}><input style={cell} value={row.einheit} onChange={e => setRow(row._id, { einheit: e.target.value })} disabled={readOnly} /></td>
-                    <td style={{ padding: '3px 6px' }}><input type="number" step="0.05" style={{ ...cell, textAlign: 'right' }} value={row.einzelpreis} onChange={e => setRow(row._id, { einzelpreis: e.target.value })} disabled={readOnly} /></td>
+                    <td style={{ padding: '3px 6px' }}><input type="number" step="1" style={{ ...cell, textAlign: 'center' }} value={row.menge} onChange={e => setRow(row._id, { menge: e.target.value })} disabled={readOnly} /></td>
                     <td style={{ padding: '3px 6px' }}>
-                      <select style={cell} value={row.konto_nr} onChange={e => setRow(row._id, { konto_nr: e.target.value })} disabled={readOnly}>
-                        <option value="">— Konto —</option>
-                        {ertragKonten.map(k => <option key={k.konto_nr} value={k.konto_nr}>{k.konto_nr} {k.bezeichnung}</option>)}
+                      <select
+                          style={cell}
+                          value={row.einheit || 'Stk'}
+                          onChange={e => setRow(row._id, { einheit: e.target.value })}
+                          disabled={readOnly}>
+                        <option value="Stk">Stk</option>
+                        <option value="h">h</option>
                       </select>
+                    </td>
+                    <td style={{ padding: '3px 6px' }}>
+                      <input
+                          id={`preis-${row._id}`} // Eindeutige ID für dieses spezifische Feld
+                          type="number"
+                          step="0.05"
+                          style={{ ...cell, textAlign: 'right' }}
+                          // Wir prüfen, ob die ID des aktuell fokussierten Elements mit diesem Feld übereinstimmt
+                          value={document.activeElement?.id === `preis-${row._id}` ? row.einzelpreis : Number(row.einzelpreis || 0).toFixed(2)}
+                          onChange={e => {
+                            let preis = e.target.value;
+                            setRow(row._id, { einzelpreis: preis });
+                          }}
+                          // Verhindert, dass leere Eingaben beim Verlassen zu "0.00" werden
+                          onBlur={e => {
+                            if (e.target.value !== '') {
+                              setRow(row._id, { einzelpreis: Number(e.target.value).toFixed(2) });
+                            }
+                          }}
+                          disabled={readOnly}
+                      />
+                    </td>
+                    <td style={{ padding: '3px 6px', position: 'relative'}}>
+                      {(() => {
+                        const isFocused = document.activeElement?.id === `search-konto-${row._id}`;
+                        const ausgewähltesKonto = ertragKonten.find(k => k.konto_nr === row.konto_nr);
+
+                        return (
+                            <div style={{ position: 'relative', width: '100%' }}>
+                              {/* Das Such- und Anzeigefeld */}
+                              <div style={{ position: 'relative', width: '100%' }}>
+                                <input
+                                    id={`search-konto-${row._id}`}
+                                    type="text"
+                                    style={{
+                                      ...cell,
+                                      cursor: readOnly ? 'default' : 'pointer',
+                                      backgroundColor: readOnly ? '#f5f5f5' : '#ffffff',
+                                      color: isFocused ? '#000000' : 'transparent',
+                                      caretColor: '#000000'
+                                    }}
+                                    disabled={readOnly}
+                                    // KORREKTUR: Platzhalter ausblenden, wenn eine Option selektiert ist
+                                    placeholder={!isFocused && ausgewähltesKonto ? "" : "— Konto suchen —"}
+                                    value={isFocused ? (row._searchQuery ?? '') : ''}
+                                    onFocus={() => setRow(row._id, { _searchQuery: '' })}
+                                    onChange={e => setRow(row._id, { _searchQuery: e.target.value })}
+                                    onBlur={() => setTimeout(() => setRow(row._id, { _searchQuery: undefined }), 200)}
+                                />
+
+                                {/* NUR IM SELEKTIERTEN (GESCHLOSSENEN) ZUSTAND: Der gekürzte Text mit max 150px */}
+                                {!isFocused && ausgewähltesKonto && (
+                                    <div style={{
+                                      position: 'absolute',
+                                      left: 8,
+                                      top: '50%',
+                                      transform: 'translateY(-50%)',
+                                      display: 'flex',
+                                      flexDirection: 'column', // Richtet die Elemente untereinander aus
+                                      justifyContent: 'center',
+                                      pointerEvents: 'none', // Klicks gehen durch auf das Input-Feld darunter
+                                      lineHeight: '1.2'
+                                    }}>
+                                      {/* Obere Zeile: Konto-Nummer */}
+                                      <span style={{
+                                        fontSize: '10px',
+                                        fontWeight: 'bold',
+                                        color: '#3d6641'
+                                      }}>{ausgewähltesKonto.konto_nr}</span>
+
+                                      {/* Untere Zeile: Bezeichnung (Kürzung auf max 140px mit ...) */}
+                                      <span style={{
+                                        fontSize: '11.5px',
+                                        color: '#333333',
+                                        maxWidth: 140,
+                                        whiteSpace: 'nowrap',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis'
+                                      }}>{ausgewähltesKonto.bezeichnung}</span>
+                                    </div>
+                                )}
+                              </div>
+
+                              {/* Die schwebende Suchergebnis-Liste */}
+                              {isFocused && !readOnly && (
+                                  <div style={{
+                                    position: 'absolute',
+                                    top: '100%',
+                                    left: 0,
+                                    right: 0,
+                                    zIndex: 1000,
+                                    maxHeight: 200,
+                                    overflowY: 'auto',
+                                    overflowX: 'hidden',
+                                    background: '#ffffff',
+                                    border: '1px solid #c8dec8',
+                                    borderRadius: 4,
+                                    boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                                    marginTop: 2
+                                  }}>
+                                    {ertragKonten
+                                        .filter(k => {
+                                          const query = (row._searchQuery || '').toLowerCase();
+                                          return k.konto_nr.toLowerCase().includes(query) || k.bezeichnung.toLowerCase().includes(query);
+                                        })
+                                        .map(k => (
+                                            <div
+                                                key={k.konto_nr}
+                                                onMouseDown={() => setRow(row._id, { konto_nr: k.konto_nr, _searchQuery: undefined })}
+                                                style={{
+                                                  padding: '6px 10px',
+                                                  cursor: 'pointer',
+                                                  borderBottom: '1px solid #f0f3f0',
+                                                  backgroundColor: row.konto_nr === k.konto_nr ? '#e8f0e8' : '#ffffff',
+                                                }}
+                                                onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f4f7f4'}
+                                                onMouseLeave={e => e.currentTarget.style.backgroundColor = row.konto_nr === k.konto_nr ? '#e8f0e8' : '#ffffff'}
+                                            >
+                                              {/* Oben: Konto-Nummer */}
+                                              <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#3d6641' }}>
+                                                {k.konto_nr}
+                                              </div>
+
+                                              {/* Unten: Volle Bezeichnung OHNE Begrenzung in der Liste */}
+                                              <div style={{ fontSize: '12px', color: '#333333' }}>
+                                                {k.bezeichnung}
+                                              </div>
+                                            </div>
+                                        ))}
+
+                                    {ertragKonten.filter(k => {
+                                      const query = (row._searchQuery || '').toLowerCase();
+                                      return k.konto_nr.toLowerCase().includes(query) || k.bezeichnung.toLowerCase().includes(query);
+                                    }).length === 0 && (
+                                        <div style={{ padding: '8px', fontSize: 11.5, color: '#999', textAlign: 'center' }}>
+                                          Keine Konten gefunden
+                                        </div>
+                                    )}
+                                  </div>
+                              )}
+                            </div>
+                        );
+                      })()}
                     </td>
                     <td style={{ padding: '3px 6px' }}>
                       <select style={cell} value={row.mwst_code} onChange={e => setRow(row._id, { mwst_code: e.target.value })} disabled={readOnly}>
@@ -342,13 +522,69 @@ export default function DebitorenRechnung() {
           </table>
           {!readOnly && <button onClick={() => setRows(rs => [...rs, newRow()])} style={{ marginTop: 10, background: 'none', border: 'none', color: '#3d6641', fontWeight: 600, fontSize: 12.5, cursor: 'pointer' }}>+ Position hinzufügen</button>}
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
-            <div style={{ width: 280 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 12.5, color: '#4a5a4a' }}><span>Netto</span><span style={{ fontVariantNumeric: 'tabular-nums' }}>CHF {CHF(totals.netto)}</span></div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 12.5, color: '#4a5a4a' }}><span>MWST</span><span style={{ fontVariantNumeric: 'tabular-nums' }}>CHF {CHF(totals.mwst)}</span></div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '2px solid #e4e9e4', marginTop: 4, paddingTop: 8, fontSize: 15, fontWeight: 800 }}><span>Total</span><span style={{ fontVariantNumeric: 'tabular-nums' }}>CHF {CHF(totals.brutto)}</span></div>
-            </div>
-          </div>
+          {/* NEU: Dynamische Berechnung der Beträge pro MWST-Satz */}
+          {(() => {
+            const mwstGruppen = {};
+
+            rows.forEach(row => {
+              const c = calc(row);
+              // Satz ermitteln (sucht den passenden Prozentsatz aus umsatzCodes oder nutzt den Fallback)
+              const codeObj = umsatzCodes.find(co => co.code === row.mwst_code);
+              const satz = codeObj ? Number(codeObj.satz) : (row.mwst_code === 'U81' ? 8.1 : 0);
+              const key = `${row.mwst_code} (${satz}%)`;
+
+              if (!mwstGruppen[key]) {
+                mwstGruppen[key] = { netto: 0, mwst: 0, brutto: 0 };
+              }
+              mwstGruppen[key].netto += c.netto || 0;
+              mwstGruppen[key].mwst += c.mwst || 0;
+              mwstGruppen[key].brutto += c.brutto || 0;
+            });
+
+            return (
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+                  <div style={{ width: 280 }}>
+
+                    {/* Haupt-Netto */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 12.5, color: '#4a5a4a' }}>
+                      <span>Netto</span>
+                      <span style={{ fontVariantNumeric: 'tabular-nums' }}>CHF {CHF(totals.netto)}</span>
+                    </div>
+
+                    {/* Aufgeteilte MWST-Sätze */}
+                    {Object.entries(mwstGruppen).map(([label, werte]) => (
+                        <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0', fontSize: 11.5, color: '#7a8a7a', paddingLeft: 12 }}>
+                          <span>davon MWST {label}</span>
+                          <span style={{ fontVariantNumeric: 'tabular-nums' }}>CHF {CHF(werte.mwst)}</span>
+                        </div>
+                    ))}
+
+                    {/* Gesamte MWST (optional als Summe, falls gewünscht) */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 12.5, color: '#4a5a4a', marginBottom: 4 }}>
+                      <span>MWST Total</span>
+                      <span style={{ fontVariantNumeric: 'tabular-nums' }}>CHF {CHF(totals.mwst)}</span>
+                    </div>
+
+                    {/* Endtotal */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '2px solid #e4e9e4', marginTop: 6, paddingTop: 8, fontSize: 15, fontWeight: 800 }}>
+                          <span>
+                            Total
+                            <span style={{ fontSize: 12, fontWeight: 500, color: '#7a8a7a', marginLeft: 6 }}>
+                              {(() => {
+                                  const steuerart = mSettings?.rechnung_steuerart ?? 2;
+                                  if (steuerart < 3) return '(inkl. MWST)';
+                                  if (steuerart === 3) return '(steuerbefreit)';
+                                  return '(exkl. MWST)'; // Fallback / Steuerart 2
+                              })()}
+                            </span>
+                          </span>
+                          <span style={{ fontVariantNumeric: 'tabular-nums' }}>CHF {CHF(totals.brutto)}</span>
+                      </div>
+
+                  </div>
+                </div>
+            );
+          })()}
         </div>
         {!readOnly && (
           <div style={{ fontSize: 11.5, color: '#94a394', marginTop: 10 }}>

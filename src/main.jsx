@@ -44,51 +44,63 @@ if (typeof window !== 'undefined' && window.__TAURI__) {
   console.info('[Smartis] OAuth-Popup-Interceptor aktiv')
 }
 
-// Service Worker: automatisches Update beim App-Start
-// Wenn eine neue Version deployed wurde, wird sie sofort aktiviert
 registerSW({
   immediate: true,
   onRegisteredSW(swUrl, registration) {
-    // Alle 60 Sekunden auf Updates prüfen
     if (registration) {
       setInterval(async () => {
-        if (!registration.installing && navigator) {
+        if (!registration.installing && navigator.onLine) {
           try {
-            await registration.update()
-          } catch { /* ignorieren falls offline */ }
+            await registration.update();
+          } catch (error) {
+            console.debug('[SW] Update check failed (likely offline):', error);
+          }
         }
-      }, 60 * 1000)
+      }, 5 * 60 * 1000);
     }
   },
   onNeedRefresh() {
-    // Neue Version verfügbar → sofort neu laden (kein Nutzer-Prompt nötig)
-    window.location.reload()
+    console.info('[SW] New content available, activating...');
+
+    // 1. Tell the waiting service worker to take over immediately
+    // 2. Then reload the page to see the changes
+    if (navigator.serviceWorker) {
+      navigator.serviceWorker.getRegistration().then((reg) => {
+        if (reg && reg.waiting) {
+          reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+        }
+      });
+    }
+    window.location.reload();
   },
   onOfflineReady() {
-    // App ist offline-fähig
-    console.info('[SW] App bereit für Offline-Nutzung')
+    console.info('[SW] App bereit für Offline-Nutzung');
   },
-})
+});
 
 async function initApp() {
   let config = {
+    HOSTNAME: '',
     API_URL: '',
     KEY1: '',
     CUSTOMER: '',
     APP_TYPE: ''
   };
 
+  console.log("window.__TAURI__: ", window.__TAURI__);
   try {
     try{
       const customer = await invoke('get_customer_config');
       config.APP_TYPE= "Tauri App";
       config.CUSTOMER = customer;
-      config.API_URL = `https://api-${customer}.sm-artis.ch`
+      config.API_URL = `https://api-${customer}.sm-artis.ch`;
+      config.HOSTNAME = `https://${customer}.sm-artis.ch`;
     } catch (e) {
       config.APP_TYPE= "Web App";
       const url = window.location.href
       config.CUSTOMER = url.replace('https://', '').split('/')[0].split('.')[0];
       const domain = url.replace('https://', '').split('/')[0];
+      config.HOSTNAME = window.location.hostname;
       config.API_URL = `https://api-${domain}`;
     }
 
@@ -106,7 +118,8 @@ async function initApp() {
     } else if(window.location.href.includes('https://smartis.me')) {
       config.API_URL = import.meta.env.VITE_SUPABASE_URL;
       config.KEY1 = import.meta.env.VITE_SUPABASE_ANON_KEY;
-      config.CUSTOMER = "artis"
+      config.CUSTOMER = "artis";
+      config.HOSTNAME = window.location.hostname;
     }
 
     window.env = config;

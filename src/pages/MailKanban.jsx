@@ -171,17 +171,17 @@ export default function MailKanban() {
               }
           )
           .subscribe((status, err) => {
-            console.log("Realtime Status:", status);
+            // console.log("Realtime Status:", status);
             if (err) console.error("Realtime Error:", err);
 
             if (status === 'SUBSCRIBED') {
-              console.log('Successfully connected to Realtime!');
+              console.log('Successfully connected to Realtime Mails!');
             }
             if (status === 'CLOSED') {
-              console.log('Connection closed.');
+              // console.log('Connection closed.');
             }
             if (status === 'CHANNEL_ERROR') {
-              console.error('Error connecting. Check RLS policies or database settings.');
+              // console.error('Error connecting. Check RLS policies or database settings.');
             }
           });
 
@@ -217,7 +217,7 @@ export default function MailKanban() {
   const { data: mails = [], isLoading: mailLoading } = useQuery({
     queryKey: ["mailItems", currentUser?.id],
     queryFn: async () => {
-      return await entities.MailItem.filter({ created_by: currentUser.id },"created_at",500)
+      return await entities.MailItem.filter({ created_by: currentUser.id },"-created_at")
     }
   });
 
