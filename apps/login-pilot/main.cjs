@@ -1,6 +1,6 @@
 // LoginPilot – Hauptprozess (schlank & schneller Start)
 
-const { app, BrowserWindow, ipcMain, safeStorage, dialog, Tray, Menu, screen, clipboard } = require('electron');
+const { app, BrowserWindow, ipcMain, safeStorage, dialog, Tray, Menu, screen, clipboard, shell } = require('electron');
 const { spawn, execSync } = require('child_process');
 const os   = require('os');
 const path = require('path');
@@ -31,6 +31,12 @@ const loginWindows = new Map();
 
 function dataPath() {
   return path.join(app.getPath('userData'), 'logins.json');
+}
+function diagPath() {
+  return path.join(app.getPath('userData'), 'diagnose.txt');
+}
+function appendDiag(text) {
+  try { fs.appendFileSync(diagPath(), text + '\n', 'utf8'); } catch {}
 }
 function readRaw() {
   try { return JSON.parse(fs.readFileSync(dataPath(), 'utf8')); }
@@ -341,6 +347,22 @@ async function doWebLogin(login) {
     if (action === 'keyword') didKeyword = true;
     else if (action === 'next') nextCount++;
     else if (action === 'submit') done = true;   // Passwort abgeschickt -> fertig, keine weiteren Klicks
+
+    // ── Diagnose: was sieht die App auf dieser Seite? ──
+    const diagScript = `(function(){
+      function vis(e){return !!(e&&e.offsetParent!==null);}
+      function txt(e){return ((e.innerText||e.value||'')+' '+((e.getAttribute&&(e.getAttribute('aria-label')||e.getAttribute('title')))||'')).replace(/\\s+/g,' ').trim().slice(0,40);}
+      var ins=[].slice.call(document.querySelectorAll('input,textarea,[contenteditable=true],[role=textbox]')).map(function(e){
+        return {t:(e.getAttribute&&e.getAttribute('type'))||e.tagName.toLowerCase(),n:e.name||'',id:e.id||'',ac:(e.getAttribute&&e.getAttribute('autocomplete'))||'',ph:e.placeholder||'',v:vis(e)};});
+      var btns=[].slice.call(document.querySelectorAll('button,input[type=submit],input[type=button],input[type=image],a[role=button],[role=button]')).map(function(e){
+        return {x:txt(e),t:(e.getAttribute&&e.getAttribute('type'))||'',v:vis(e)};}).filter(function(b){return b.x||b.t;}).slice(0,25);
+      var frames=[].slice.call(document.querySelectorAll('iframe')).map(function(f){return (f.getAttribute('src')||'(inline)').slice(0,90);});
+      return JSON.stringify({title:document.title.slice(0,60),inputs:ins,buttons:btns,iframes:frames});
+    })()`;
+    let diag = '{}';
+    try { diag = await contents.executeJavaScript(diagScript); } catch (e) { diag = '{err:' + (e && e.message) + '}'; }
+    appendDiag('--- ' + new Date().toISOString() + ' | ' + login.name + ' | run#' + runs +
+      ' | action=' + action + '\nURL: ' + curUrl + '\n' + diag + '\n');
   };
 
   // Ausfüllen auf dem Hauptfenster …
@@ -440,6 +462,7 @@ function rebuildTray() {
     ...loginItems,
     { type: 'separator' },
     { label: 'Verwalten…', click: () => { mainWindow?.show(); mainWindow?.focus(); mainWindow?.webContents.send('open-manage'); } },
+    { label: 'Diagnose-Datei zeigen', click: () => { try { shell.showItemInFolder(diagPath()); } catch {} } },
     {
       label: 'Mit Windows starten',
       type: 'checkbox',
