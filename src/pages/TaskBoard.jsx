@@ -3,7 +3,7 @@ import { entities, functions, auth, supabase } from "@/api/supabaseClient";
 import { ThemeContext } from "@/Layout";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { DragDropContext, Droppable } from "@hello-pangea/dnd";
-import { Plus, RefreshCw, Palette, Users, Search, X, ChevronsLeftRight, Mic, LayoutList, LayoutDashboard, MoreHorizontal, Bell, Image as ImageIcon, AppWindow } from "lucide-react";
+import { Plus, RefreshCw, Palette, Users, Search, X, ChevronsLeftRight, Mic, LayoutList, LayoutDashboard, MoreHorizontal, Bell, Image as ImageIcon, AppWindow, CalendarClock } from "lucide-react";
 import { useIsMobile } from "@/components/mobile/useIsMobile";
 import MobileColumnNav from "@/components/mobile/MobileColumnNav";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,7 @@ import EditColumnColorDialog from "../components/mail/EditColumnColorDialog";
 import UserFilterSelect from "../components/tasks/UserFilterSelect";
 import VoiceTaskDialog from "../components/tasks/VoiceTaskDialog";
 import TaskGlobalListView from "../components/tasks/TaskGlobalListView";
+import TaskDeadlineView from "../components/tasks/TaskDeadlineView";
 import TaskCard from "../components/tasks/TaskCard";
 import TaskCardMonday from "../components/tasks/TaskCardMonday";
 
@@ -52,6 +53,7 @@ export default function TaskBoard() {
    const [verantwortlichFilter, setVerantwortlichFilter] = useState('all');
    const [searchQuery, setSearchQuery] = useState("");
   const [globalListView, setGlobalListView] = useState(false);
+  const [deadlineView, setDeadlineView] = useState(false); // Fristenansicht (nach Fälligkeit gruppiert)
   // Kachel-Variante: 'standard' (bestehend) oder 'monday' (Foto-Kacheln) – pro Gerät gespeichert
   const [cardStyle, setCardStyle] = useState(() => {
     try { return localStorage.getItem('taskboard-card-style') || 'standard'; } catch { return 'standard'; }
@@ -341,9 +343,13 @@ export default function TaskBoard() {
                  </Button>
               </div>
               <div className="flex items-center gap-1">
-                <Button variant="ghost" size="icon" onClick={() => setGlobalListView(v => !v)} className="h-9 w-9 touch-manipulation"
+                <Button variant="ghost" size="icon" onClick={() => { setGlobalListView(v => !v); setDeadlineView(false); }} className="h-9 w-9 touch-manipulation"
                   style={{ color: globalListView ? '#7c3aed' : mutedText }}>
                   {globalListView ? <LayoutDashboard className="h-4 w-4" /> : <LayoutList className="h-4 w-4" />}
+                </Button>
+                <Button variant="ghost" size="icon" onClick={() => { setDeadlineView(v => !v); setGlobalListView(false); }} className="h-9 w-9 touch-manipulation"
+                  style={{ color: deadlineView ? '#f59e0b' : mutedText }}>
+                  <CalendarClock className="h-4 w-4" />
                 </Button>
                 <Button variant="ghost" size="icon" onClick={toggleCardStyle} className="h-9 w-9 touch-manipulation"
                   style={{ color: cardStyle === 'monday' ? '#7c3aed' : mutedText }}>
@@ -497,9 +503,13 @@ export default function TaskBoard() {
                 </DropdownMenuContent>
               </DropdownMenu>
 
-              <Button variant="ghost" size="icon" title={globalListView ? "Kanban-Ansicht" : "Listenansicht"} onClick={() => setGlobalListView(v => !v)}
+              <Button variant="ghost" size="icon" title={globalListView ? "Kanban-Ansicht" : "Listenansicht"} onClick={() => { setGlobalListView(v => !v); setDeadlineView(false); }}
                 className={`h-9 w-9 ${globalListView ? "text-violet-400 bg-violet-500/10" : ""}`} style={!globalListView ? { color: mutedText } : {}}>
                 {globalListView ? <LayoutDashboard className="h-4 w-4" /> : <LayoutList className="h-4 w-4" />}
+              </Button>
+              <Button variant="ghost" size="icon" title={deadlineView ? "Kanban-Ansicht" : "Fristenansicht (nach Fälligkeit)"} onClick={() => { setDeadlineView(v => !v); setGlobalListView(false); }}
+                className={`h-9 w-9 ${deadlineView ? "text-amber-500 bg-amber-500/10" : ""}`} style={!deadlineView ? { color: mutedText } : {}}>
+                <CalendarClock className="h-4 w-4" />
               </Button>
               <Button variant="ghost" size="icon" title={cardStyle === 'monday' ? "Standard-Kacheln" : "Foto-Kacheln (Monday)"} onClick={toggleCardStyle}
                 className={`h-9 w-9 ${cardStyle === 'monday' ? "text-violet-400 bg-violet-500/10" : ""}`} style={cardStyle !== 'monday' ? { color: mutedText } : {}}>
@@ -564,7 +574,14 @@ export default function TaskBoard() {
         )}
       </div>
 
-      {globalListView ? (
+      {deadlineView ? (
+        <TaskDeadlineView
+          columns={columns}
+          tasks={filteredAndSortedTasks}
+          onTaskClick={setSelectedTask}
+          onToggleComplete={(task) => updateTaskMutation.mutate({ id: task.id, data: { completed: !task.completed } })}
+        />
+      ) : globalListView ? (
         <TaskGlobalListView
           columns={columns}
           tasks={filteredAndSortedTasks}
