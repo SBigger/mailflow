@@ -108,6 +108,37 @@ const AI_BELEG_KEYWORDS = {
   EK_JAHRESERGEBNIS: ["jahresergebnis", "jahresgewinn", "jahresverlust", "erfolgsrechnung"],
 };
 
+// Zahlen aus einem Text extrahieren und auf gerundete Beträge normalisieren.
+// Erkennt CH/DE-Formate: 1'234.56 · 1’234.56 · 1.234,56 · 1234,56 · 1234.56 · 1234
+function extractAmounts(text) {
+  const out = new Set();
+  if (!text) return out;
+  const matches = text.match(/\d[\d'’.\s,]*\d|\d/g) || [];
+  for (const m of matches) {
+    let s = m.replace(/[\s'’]/g, ""); // Tausender-Apostrophe/Leerzeichen weg
+    if (s.includes(".") && s.includes(",")) {
+      s = s.lastIndexOf(",") > s.lastIndexOf(".")
+        ? s.replace(/\./g, "").replace(",", ".")   // DE: 1.234,56
+        : s.replace(/,/g, "");                       // 1,234.56
+    } else if (s.includes(",")) {
+      const p = s.split(",");
+      s = p[p.length - 1].length <= 2 ? p.slice(0, -1).join("") + "." + p[p.length - 1] : p.join("");
+    } else if (s.includes(".")) {
+      const p = s.split(".");
+      s = p[p.length - 1].length === 2 ? p.slice(0, -1).join("") + "." + p[p.length - 1] : p.join("");
+    }
+    const f = parseFloat(s);
+    if (!isNaN(f)) out.add(Math.round(Math.abs(f) * 100) / 100);
+  }
+  return out;
+}
+// Kommt der Saldo-Betrag (2 Nachkommastellen ODER gerundet) im Zahlen-Set vor?
+function amountAppears(amountSet, saldo) {
+  const a = Math.abs(parseFloat(saldo) || 0);
+  if (a < 1) return false; // triviale/0-Beträge ignorieren (zu viele Fehltreffer)
+  return amountSet.has(Math.round(a * 100) / 100) || amountSet.has(Math.round(a));
+}
+
 // ── Auto-Mapping Funktion ─────────────────────────────────────────────────────
 function autoMapKonto(kontonummer) {
   // Erste zusammenhängende Ziffernfolge nehmen (z.B. "1000.10" → "1000").
@@ -4142,6 +4173,7 @@ export default function Abschlussdokumentation() {
     setAiBusy("Suche läuft …");
     let assigned = 0;
     const assignedList = [];
+    const amountCache = new Map(); // docId → Set<Betrag> (Inhalt einmal laden/normalisieren)
     try {
       for (let i = 0; i < targets.length; i++) {
         const k = targets[i];
@@ -4157,31 +4189,43 @@ export default function Abschlussdokumentation() {
         // Kandidaten: bevorzugt gleiches Geschäftsjahr
         const cands = data.filter(d => !selectedYear || d.year === selectedYear || d.year == null);
         if (!cands.length) continue;
+
+        // Inhalt der Top-Kandidaten laden (für Betrags-Abgleich), pro Dokument gecacht
+        const top = cands.slice(0, 5);
+        const need = top.map(d => d.id).filter(id => !amountCache.has(id));
+        if (need.length) {
+          const { data: cont } = await supabase.from("dokumente").select("id, content_text").in("id", need);
+          const byId = Object.fromEntries((cont || []).map(r => [r.id, r.content_text || ""]));
+          need.forEach(id => amountCache.set(id, extractAmounts(byId[id] || "")));
+        }
+
         const terms = [String(k.kontoname || "").toLowerCase(), ...kw.map(s => s.toLowerCase())].filter(Boolean);
-        const scored = cands.map(d => {
+        const scored = top.map(d => {
           const hay = `${d.name || ""} ${d.filename || ""} ${d.headline || ""}`.toLowerCase();
           const kwHits = terms.filter(t => hay.includes(t)).length;
           const yearBonus = (selectedYear && d.year === selectedYear) ? 1 : 0;
-          return { d, score: (d.rank || 0) * 4 + kwHits + yearBonus };
+          const amtHit = amountAppears(amountCache.get(d.id) || new Set(), k.saldo_ist);
+          return { d, amtHit, score: (d.rank || 0) * 4 + kwHits + yearBonus + (amtHit ? 6 : 0) };
         }).sort((a, b) => b.score - a.score);
         const best = scored[0];
-        // Hohe Konfidenz: mind. ein Stichwort-Treffer (oder Jahr + guter Rang)
-        if (!best || best.score < 1.5) continue;
+        // Hohe Konfidenz: Betrags-Treffer (sehr stark) ODER Stichwort/Jahr/Rang ausreichend
+        if (!best || (!best.amtHit && best.score < 1.5)) continue;
         const b = best.d;
+        const matchReason = best.amtHit ? "Betrag" : "Stichwort";
         const newBeleg = {
           id: b.id, name: b.name, filename: b.filename, storage_path: b.storage_path,
-          year: b.year, category: b.category, file_type: b.file_type, ki: true,
+          year: b.year, category: b.category, file_type: b.file_type, ki: true, ki_match: matchReason,
         };
         const ap = { ...(k.arbeitspapier || {}), belege: [...((k.arbeitspapier?.belege) || []), newBeleg] };
         const { error: upErr } = await supabase.from("abschluss_konten").update({ arbeitspapier: ap }).eq("id", k.id);
-        if (!upErr) { assigned++; assignedList.push({ konto: `${k.kontonummer} ${k.kontoname}`, doc: b.name }); }
+        if (!upErr) { assigned++; assignedList.push({ konto: `${k.kontonummer} ${k.kontoname}`, doc: b.name, reason: matchReason }); }
       }
       qc.invalidateQueries({ queryKey: ["abschluss_konten", abschlussId] });
       if (assigned) {
         toast.success(
           <div style={{ whiteSpace: "pre-line", fontSize: 12, lineHeight: 1.5 }}>
             <strong>KI-Zuweisung: {assigned} von {targets.length} Konten verknüpft</strong>{"\n"}
-            {assignedList.slice(0, 12).map(a => `• ${a.konto} → ${a.doc}`).join("\n")}
+            {assignedList.slice(0, 12).map(a => `• ${a.konto} → ${a.doc} (${a.reason})`).join("\n")}
             {assignedList.length > 12 ? `\n… und ${assignedList.length - 12} weitere` : ""}
             {"\n"}<span style={{ opacity: 0.7 }}>Bitte prüfen (gelb „KI") und ggf. entfernen.</span>
           </div>,
