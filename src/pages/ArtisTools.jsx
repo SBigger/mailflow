@@ -146,8 +146,7 @@ const TOOLS = [
     icon: Mic,
     color: "#6366f1",
     bg: "#e8e9fb",
-    url: "/GVProtokollApp/",
-    external: true,
+    route: "/GVProtokollApp",
   },
 ];
 

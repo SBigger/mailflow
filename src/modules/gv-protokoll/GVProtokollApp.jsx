@@ -124,7 +124,6 @@ export default function GvProtokollApp() {
         loadCustomers();
         refreshRecoveryBanner();
         refreshMics();
-        loadFileConfig();
     }, []);
 
     const loadCustomers = async () => {
@@ -143,24 +142,6 @@ export default function GvProtokollApp() {
         } catch (err) {
             console.error("Fehler beim Laden der Kunden:", err);
         }
-    };
-
-    const loadFileConfig = async () => {
-        try {
-            const r = await fetch("./config.local.json", { cache: "no-store" });
-            if (r.ok) {
-                const j = await r.json();
-                const updated = {
-                    ...cfg,
-                    eleven: j.eleven || j.elevenlabs || cfg.eleven,
-                    claudeKey: j.claudeKey || j.claude || cfg.claudeKey,
-                    claudeModel: j.claudeModel || cfg.claudeModel,
-                    lang: j.lang || cfg.lang
-                };
-                setCfg(updated);
-                LS.set("gv_cfg", updated);
-            }
-        } catch {}
     };
 
     const refreshRecoveryBanner = async () => {

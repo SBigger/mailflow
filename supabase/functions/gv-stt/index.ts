@@ -29,6 +29,8 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return jsonResp({ error: "Nur POST" }, 405);
 
+  console.log("Function will start::")
+
   const KEY = Deno.env.get("ELEVENLABS_API_KEY");
   if (!KEY) return jsonResp({ error: "ELEVENLABS_API_KEY nicht gesetzt (Supabase-Secret fehlt)" }, 500);
 
@@ -40,7 +42,6 @@ serve(async (req) => {
         "content-type": req.headers.get("content-type") || "multipart/form-data",
       },
       body: req.body,
-      // @ts-ignore: Deno streamt den Body ohne ihn komplett zu puffern
       duplex: "half",
     });
     const txt = await r.text();
