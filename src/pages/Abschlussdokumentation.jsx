@@ -9,7 +9,7 @@ import {
   BookCheck, FileSpreadsheet, Upload, Download, ChevronRight, Wrench,
   Lock, Unlock, CheckCircle2, AlertCircle, TrendingUp, TrendingDown,
   Search, ChevronDown, ChevronUp, X, FileText, BarChart2, RotateCcw,
-  Plus, Trash2,
+  Plus, Trash2, Sparkles,
 } from "lucide-react";
 import DokUploadDialog from "@/components/dokumente/DokUploadDialog";
 
@@ -79,6 +79,34 @@ const KONTENRAHMEN_POSITIONEN = [
 
 // Lookup-Map für schnellen Zugriff
 const POSITION_MAP = Object.fromEntries(KONTENRAHMEN_POSITIONEN.map(p => [p.id, p]));
+
+// Stichwörter je Bilanz-Position für die KI-/Volltext-Belegzuweisung.
+// Steuern die Suche im indexierten Dokumenteninhalt der Dateiablage.
+const AI_BELEG_KEYWORDS = {
+  UV_FLUESSIG:       ["kontoauszug", "bankauszug", "saldobestätigung", "postfinance", "raiffeisen", "kasse", "bank", "saldo"],
+  UV_WERTSCHRIFTEN:  ["depot", "wertschriften", "portfolio", "bankdepot", "kursliste"],
+  UV_FORD_LL:        ["debitoren", "offene posten", "forderungen", "kundenrechnung", "op-liste"],
+  UV_FORD_LL_NAHE:   ["debitoren", "forderung", "nahestehende", "kontokorrent"],
+  UV_FORD_SONST:     ["verrechnungssteuer", "vorsteuer", "guthaben", "mwst", "kaution"],
+  UV_VORRAETE:       ["inventar", "lagerliste", "warenbestand", "vorräte", "bestandesaufnahme", "lagerbestand"],
+  UV_ABGRENZUNG:     ["abgrenzung", "transitorisch", "vorausbezahlt", "trakuap"],
+  AV_FINANZ:         ["darlehen", "beteiligung", "finanzanlage", "bankbestätigung"],
+  AV_MOBIL:          ["anlagespiegel", "anlageverzeichnis", "maschinen", "mobiliar", "fahrzeug", "abschreibung"],
+  AV_IMMOBIL:        ["liegenschaft", "immobilie", "grundstück", "gebäude", "verkehrswert"],
+  AV_IMMATERIELL:    ["goodwill", "software", "patent", "immateriell", "lizenz"],
+  FK_KURZ_LL:        ["kreditoren", "lieferantenrechnung", "verbindlichkeiten", "op-liste kreditoren"],
+  FK_KURZ_BANK:      ["kontokorrent", "bankkredit", "darlehen", "kontoauszug"],
+  FK_KURZ_SONST:     ["mwst", "abrechnung", "verbindlichkeit", "quellensteuer", "sozialversicherung"],
+  FK_KURZ_ABGRENZUNG:["abgrenzung", "transitorisch", "rückstellung"],
+  FK_LANG_BANK:      ["hypothek", "darlehen", "bankkredit", "kreditvertrag", "amortisation"],
+  FK_LANG_SONST:     ["darlehen", "kreditvertrag", "verbindlichkeit"],
+  FK_RUECKSTELLUNGEN:["rückstellung", "garantie", "rückstellungsspiegel"],
+  EK_KAPITAL:        ["aktienkapital", "stammkapital", "handelsregister", "statuten"],
+  EK_KAP_RESERVE:    ["kapitalreserve", "agio", "reserve"],
+  EK_GES_RESERVE:    ["gewinnreserve", "reserve", "generalversammlung"],
+  EK_VORTRAG:        ["gewinnvortrag", "verlustvortrag", "gewinnverwendung", "protokoll", "generalversammlung"],
+  EK_JAHRESERGEBNIS: ["jahresergebnis", "jahresgewinn", "jahresverlust", "erfolgsrechnung"],
+};
 
 // ── Auto-Mapping Funktion ─────────────────────────────────────────────────────
 function autoMapKonto(kontonummer) {
@@ -2190,9 +2218,10 @@ function BelegeSection({ arbeitspapier, onSave, customerId, selectedYear, accent
               return (
                 <div key={b.id} style={{
                   display: "flex", alignItems: "center", gap: 5, padding: "3px 6px 3px 5px",
-                  borderRadius: 6, backgroundColor: "#f8fafc", border: `1px solid ${panelBdr}`, fontSize: 11,
+                  borderRadius: 6, backgroundColor: b.ki ? "#fefce8" : "#f8fafc", border: `1px solid ${b.ki ? "#fde68a" : panelBdr}`, fontSize: 11,
                 }}>
                   <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 4px", borderRadius: 3, backgroundColor: fl.bg, color: fl.col, flexShrink: 0 }}>{fl.label}</span>
+                  {b.ki && <span title="KI-vorgeschlagen – bitte prüfen" style={{ fontSize: 9, fontWeight: 700, padding: "1px 4px", borderRadius: 3, backgroundColor: "#fef08a", color: "#854d0e", flexShrink: 0 }}>KI</span>}
                   <span style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: headingC }} title={b.name}>{b.name}</span>
                   {b.year && <span style={{ color: subC, fontSize: 10, flexShrink: 0 }}>{b.year}</span>}
                   <button onClick={() => openDoc(b)} title="Öffnen"
@@ -3675,6 +3704,7 @@ export default function Abschlussdokumentation() {
   const [activeTab, setActiveTab] = useState("kontenplan");
   const [showImport, setShowImport] = useState(false);
   const [dossierStatus, setDossierStatus] = useState(null); // null | Fortschrittstext
+  const [aiBusy, setAiBusy] = useState(null); // null | Fortschrittstext der KI-Zuweisung
   const [exportDialog, setExportDialog] = useState(null);   // null | "pdf" | "dossier"
 
   // ── Auto-Jahr: neuestes Jahr das wirklich Konten hat ────────────────────────
@@ -4095,6 +4125,78 @@ export default function Abschlussdokumentation() {
     }
   }
 
+  // ── KI-Belegzuweisung: pro Bilanz-Konto passenden Beleg im Dokumenteninhalt
+  //    (Dateiablage, gewähltes Jahr) suchen und sichere Treffer verknüpfen ──────
+  async function handleAiAssign() {
+    if (!abschlussId || !selectedCid) return;
+    if (gesperrt) { toast.error("Version ist gesperrt – zuerst entsperren"); return; }
+    if (aiBusy) return;
+    // Bilanz-Konten mit Saldo und noch ohne Beleg
+    const targets = konten.filter(k => {
+      const pos = POSITION_MAP[k.position_id];
+      const hasSaldo = Math.abs(parseFloat(k.saldo_ist) || 0) > 0.005;
+      const hasBeleg = ((k.arbeitspapier?.belege) || []).length > 0;
+      return pos?.typ === "bilanz" && hasSaldo && !hasBeleg;
+    });
+    if (!targets.length) { toast.info("Keine offenen Bilanz-Konten (mit Saldo, ohne Beleg) gefunden."); return; }
+    setAiBusy("Suche läuft …");
+    let assigned = 0;
+    const assignedList = [];
+    try {
+      for (let i = 0; i < targets.length; i++) {
+        const k = targets[i];
+        setAiBusy(`${i + 1} / ${targets.length} …`);
+        const pos = POSITION_MAP[k.position_id];
+        const kw = AI_BELEG_KEYWORDS[k.position_id] || [];
+        const query = [k.kontoname, ...kw.slice(0, 3)].filter(Boolean).join(" ") || (pos?.label || "");
+        if (!query.trim()) continue;
+        const { data, error } = await supabase.rpc("search_dokumente", {
+          p_query: query, p_customer_id: selectedCid, p_limit: 8,
+        });
+        if (error || !data?.length) continue;
+        // Kandidaten: bevorzugt gleiches Geschäftsjahr
+        const cands = data.filter(d => !selectedYear || d.year === selectedYear || d.year == null);
+        if (!cands.length) continue;
+        const terms = [String(k.kontoname || "").toLowerCase(), ...kw.map(s => s.toLowerCase())].filter(Boolean);
+        const scored = cands.map(d => {
+          const hay = `${d.name || ""} ${d.filename || ""} ${d.headline || ""}`.toLowerCase();
+          const kwHits = terms.filter(t => hay.includes(t)).length;
+          const yearBonus = (selectedYear && d.year === selectedYear) ? 1 : 0;
+          return { d, score: (d.rank || 0) * 4 + kwHits + yearBonus };
+        }).sort((a, b) => b.score - a.score);
+        const best = scored[0];
+        // Hohe Konfidenz: mind. ein Stichwort-Treffer (oder Jahr + guter Rang)
+        if (!best || best.score < 1.5) continue;
+        const b = best.d;
+        const newBeleg = {
+          id: b.id, name: b.name, filename: b.filename, storage_path: b.storage_path,
+          year: b.year, category: b.category, file_type: b.file_type, ki: true,
+        };
+        const ap = { ...(k.arbeitspapier || {}), belege: [...((k.arbeitspapier?.belege) || []), newBeleg] };
+        const { error: upErr } = await supabase.from("abschluss_konten").update({ arbeitspapier: ap }).eq("id", k.id);
+        if (!upErr) { assigned++; assignedList.push({ konto: `${k.kontonummer} ${k.kontoname}`, doc: b.name }); }
+      }
+      qc.invalidateQueries({ queryKey: ["abschluss_konten", abschlussId] });
+      if (assigned) {
+        toast.success(
+          <div style={{ whiteSpace: "pre-line", fontSize: 12, lineHeight: 1.5 }}>
+            <strong>KI-Zuweisung: {assigned} von {targets.length} Konten verknüpft</strong>{"\n"}
+            {assignedList.slice(0, 12).map(a => `• ${a.konto} → ${a.doc}`).join("\n")}
+            {assignedList.length > 12 ? `\n… und ${assignedList.length - 12} weitere` : ""}
+            {"\n"}<span style={{ opacity: 0.7 }}>Bitte prüfen (gelb „KI") und ggf. entfernen.</span>
+          </div>,
+          { duration: 15000 }
+        );
+      } else {
+        toast.info(`KI-Zuweisung: kein sicherer Treffer bei ${targets.length} Konten. Bitte manuell verknüpfen.`);
+      }
+    } catch (e) {
+      toast.error("KI-Zuweisung fehlgeschlagen: " + (e?.message || e));
+    } finally {
+      setAiBusy(null);
+    }
+  }
+
   const status = abschluss?.status || "in_arbeit";
   const statusCfg = STATUS_CONFIG[status] || STATUS_CONFIG.in_arbeit;
 
@@ -4259,6 +4361,20 @@ export default function Abschlussdokumentation() {
               }}>
               <Upload className="w-3.5 h-3.5" />
               Importieren
+            </button>
+            <button
+              disabled={!abschlussId || gesperrt || konten.length === 0 || !!aiBusy}
+              onClick={handleAiAssign}
+              title={gesperrt ? "Version ist gesperrt" : "Passende Belege aus der Dateiablage automatisch zuweisen (Inhaltssuche im gewählten Jahr)"}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-opacity"
+              style={{
+                backgroundColor: "#f5f3ff", color: "#7c3aed",
+                border: "1px solid #c4b5fd",
+                opacity: (abschlussId && !gesperrt && konten.length && !aiBusy) ? 1 : 0.5,
+                cursor: (abschlussId && !gesperrt && konten.length && !aiBusy) ? "pointer" : "not-allowed",
+              }}>
+              <Sparkles className="w-3.5 h-3.5" />
+              {aiBusy ? `KI-Zuweisung ${aiBusy}` : "KI-Zuweisung"}
             </button>
             <button
               disabled={konten.length === 0}
