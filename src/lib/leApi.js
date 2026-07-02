@@ -250,12 +250,21 @@ export const leProject = {
     return data ?? [];
   },
   create: async (payload) => {
-    const { data, error } = await supabase.from('le_project').insert(payload).select().single();
+    let { data, error } = await supabase.from('le_project').insert(payload).select().single();
+    // Fallback: falls billing_email noch nicht migriert ist, ohne dieses Feld speichern.
+    if (error && /billing_email/i.test(error.message || '')) {
+      const { billing_email, ...rest } = payload;
+      ({ data, error } = await supabase.from('le_project').insert(rest).select().single());
+    }
     if (error) throw error;
     return data;
   },
   update: async (id, patch) => {
-    const { data, error } = await supabase.from('le_project').update(patch).eq('id', id).select().single();
+    let { data, error } = await supabase.from('le_project').update(patch).eq('id', id).select().single();
+    if (error && /billing_email/i.test(error.message || '')) {
+      const { billing_email, ...rest } = patch;
+      ({ data, error } = await supabase.from('le_project').update(rest).eq('id', id).select().single());
+    }
     if (error) throw error;
     return data;
   },

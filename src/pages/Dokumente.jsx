@@ -20,7 +20,9 @@ import {
   Library,
   Eye,
   History as HistoryIcon,
-  MessageSquare
+  MessageSquare,
+  Mail,
+  MoreVertical
 } from "lucide-react";
 import VersionsDialog from "@/components/dokumente/VersionsDialog";
 import DocHoverPreview from "@/components/dokumente/DocHoverPreview";
@@ -1102,6 +1104,41 @@ export default function Dokumente() {
     queryFn:  () => entities.DokTag.list("sort_order"),
   });
 
+  const hashBackfillRef = useRef(false);
+  useEffect(() => {
+    // Standardmaessig AUS: der Backfill laedt jede Datei einmal herunter (Egress)
+    // und kann auf Free-Tier das Kontingent sprengen. Nur laufen, wenn bewusst
+    // aktiviert: im DevTools `window.__SMARTIS_HASH_BACKFILL = true` setzen.
+    if (!window.__SMARTIS_HASH_BACKFILL) return;
+    if (hashBackfillRef.current) return;
+    if (!allDoks.length) return;
+    hashBackfillRef.current = true;
+    (async () => {
+      const { data: toHash } = await supabase
+          .from('dokumente')
+          .select('id,storage_path')
+          .is('content_hash', null)
+          .not('storage_path', 'is', null)
+          .is('deleted_at', null)
+          .limit(5000);
+      if (!toHash || !toHash.length) return;
+      let done = 0;
+      for (const d of toHash) {
+        try {
+          const sp = d.storage_path.replace(/^dokumente\//, '');
+          const { data: urlData } = await supabase.storage.from(BUCKET).createSignedUrl(sp, 120);
+          if (!urlData?.signedUrl) continue;
+          const resp = await fetch(urlData.signedUrl);
+          if (!resp.ok) continue;
+          const blob = await resp.blob();
+          const h = await sha256Hex(blob);
+          if (h) { await entities.Dokument.update(d.id, { content_hash: h }); done++; }
+        } catch { /* einzelne Datei überspringen */ }
+      }
+      if (done > 0) console.info(`[HashBackfill] ${done} Hashes nachgetragen`);
+    })();
+  }, [allDoks]);
+
   // Von aktuellem User ausgecheckte Dokumente
   const myCheckedOutDocs = useMemo(() =>
     allDoks.filter(d => d.checked_out_by && d.checked_out_by === user?.id),
@@ -1334,6 +1371,57 @@ export default function Dokumente() {
       toast.success(`${done} Dateien als ZIP heruntergeladen`);
     } catch (e) {
       toast.error("Download fehlgeschlagen: " + e.message);
+    }
+  };
+
+  // ── Abschluss-Ansicht als ZIP exportieren (Ordner = Tag-Hierarchie) ──
+  const exportAbschlussZip = async () => {
+    if (!selCustomer) { toast.error("Bitte zuerst einen Kunden wählen"); return; }
+    if (!abschlussTree.length) { toast.error("Keine Abschluss-Dokumente"); return; }
+    const safe = (str) => ((str || "").replace(/[<>:"/\\|?*]/g, "_").trim() || "Ordner");
+    let total = 0;
+    abschlussTree.forEach(p => p.children.forEach(ch => { total += ch.docs.length; }));
+    if (!total) { toast.error("Keine Dateien zum Exportieren"); return; }
+    const customerName = safe(selCustomer.company_name || "Kunde");
+    const yearLabel = (selYear && selYear !== "__none__") ? " " + selYear : "";
+    toast.info(`${total} Abschluss-Dateien werden als ZIP vorbereitet...`);
+    try {
+      const JSZip = (await import("jszip")).default;
+      const zip = new JSZip();
+      const root = zip.folder(`${customerName} - Abschluss${yearLabel}`);
+      let done = 0;
+      for (const parent of abschlussTree) {
+        const pFolder = root.folder(safe(parent.tag?.name));
+        for (const [, child] of parent.children) {
+          const isDirect = child.tag?.id === "__direct__";
+          const cFolder = isDirect ? pFolder : pFolder.folder(safe(child.tag?.name));
+          for (const doc of child.docs) {
+            if (!doc.storage_path) continue;
+            try {
+              let url = signedUrls[doc.id];
+              if (!url) {
+                const sp = doc.storage_path.replace('dokumente/', '');
+                const { data } = await supabase.storage.from(BUCKET).createSignedUrl(sp, 600);
+                url = data?.signedUrl;
+              }
+              if (!url) continue;
+              const resp = await fetch(url);
+              const blob = await resp.blob();
+              cFolder.file(safe(doc.filename || doc.name || "datei"), blob);
+              done++;
+            } catch (e) { console.warn("ZIP Abschluss:", doc.name, e); }
+          }
+        }
+      }
+      const zipBlob = await zip.generateAsync({ type: "blob", compression: "STORE" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(zipBlob);
+      a.download = `${customerName} - Abschluss${yearLabel}.zip`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      toast.success(`${done} Dateien als ZIP exportiert`);
+    } catch (e) {
+      toast.error("Export fehlgeschlagen: " + e.message);
     }
   };
 
@@ -1632,6 +1720,72 @@ export default function Dokumente() {
     );
   };
 
+  // Per Mail senden: Freigabe-Link (Token) erstellen und ein neues Mail damit oeffnen.
+  // Empfaenger kann den Link ohne Login anklicken (gleicher Mechanismus wie "Link erstellen").
+  const handleMailDoc = async (doc) => {
+    try {
+      const { data, error } = await supabase
+        .from("share_links")
+        .insert({ name: doc.name, doc_id: doc.id, customer_id: doc.customer_id })
+        .select("token")
+        .single();
+      if (error) throw error;
+      const url = `${window.location.origin}/share/${data.token}`;
+      const subject = encodeURIComponent(doc.name || "Dokument");
+      const body = encodeURIComponent(`Guten Tag\n\nanbei der Link zum Dokument „${doc.name || ""}":\n${url}\n\nFreundliche Grüsse`);
+      const a = document.createElement("a");
+      a.href = `mailto:?subject=${subject}&body=${body}`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      toast.success("Mail mit Freigabe-Link geöffnet");
+    } catch (e) {
+      toast.error("Mail konnte nicht erstellt werden: " + e.message);
+    }
+  };
+
+  // Wiederverwendbare Zeilen-Aktionen: haeufige Icons einzeln, Rest im "⋯"-Menue.
+  const iconBtn = { background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 };
+  const renderRowActions = (doc, { isCheckedOut, isMyCheckout, lockedByOther, isAdmin }) => {
+    const mItem = (icon, label, onClick, opts = {}) => (
+      <button onClick={() => { setMenuDocId(null); if (!opts.disabled) onClick(); }} disabled={!!opts.disabled}
+        style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left",
+          background: "none", border: "none", cursor: opts.disabled ? "default" : "pointer",
+          color: opts.disabled ? s.textMuted + "66" : (opts.danger ? "#ef4444" : s.textMain),
+          padding: "7px 10px", borderRadius: 6, fontSize: 13 }}
+        onMouseEnter={e => { if (!opts.disabled) e.currentTarget.style.background = s.rowHover; }}
+        onMouseLeave={e => e.currentTarget.style.background = "none"}>
+        {icon}<span>{label}</span>
+      </button>
+    );
+    return (
+      <>
+        <button onClick={() => handleMailDoc(doc)} title="Per Mail senden (Freigabe-Link)" style={iconBtn}><Mail size={15} /></button>
+        {renderPreviewEye(doc)}
+        <button onClick={() => setCopyDoc(doc)} title="Kopieren (neu verschlagworten)" style={iconBtn}><CopyPlus size={14} /></button>
+        <button onClick={() => { animateBtn(`sh-${doc.id}`); setShareDialog({ type: 'doc', doc_id: doc.id, name: doc.name, customer_id: doc.customer_id }); }} title="Link erstellen" style={iconBtn}><Link2 size={15} /></button>
+        <button onClick={() => setChartisDoc(doc)} title="Chartis – Chat zu diesem Dokument" style={iconBtn}><MessageSquare size={15} /></button>
+        <button onClick={() => { animateBtn(`dl-${doc.id}`); downloadDoc(doc); }} title="Herunterladen" style={{ ...iconBtn, color: accent }}><Download size={15} /></button>
+        <div style={{ position: "relative", display: "flex" }}>
+          <button onClick={(e) => { e.stopPropagation(); setMenuDocId(menuDocId === doc.id ? null : doc.id); }} title="Mehr" style={iconBtn}><MoreVertical size={16} /></button>
+          {menuDocId === doc.id && (
+            <>
+              <div onClick={() => setMenuDocId(null)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
+              <div style={{ position: "absolute", top: "100%", right: 0, marginTop: 4, zIndex: 41,
+                background: s.cardBg, border: "1px solid " + border, borderRadius: 8,
+                boxShadow: "0 8px 28px rgba(0,0,0,0.18)", padding: 4, minWidth: 200, display: "flex", flexDirection: "column" }}>
+                {!isCheckedOut && mItem(<LockOpen size={14} />, "Auschecken", () => handleCheckout(doc))}
+                {isMyCheckout && mItem(<Lock size={14} />, "Einchecken", () => openCheckin(doc))}
+                {lockedByOther && isAdmin && mItem(<ShieldAlert size={14} />, "Sperre aufheben (Admin)", () => handleCheckin(doc, null))}
+                {mItem(<Pencil size={14} />, "Bearbeiten", () => setEditDoc(doc))}
+                {mItem(<HistoryIcon size={14} />, "Versionsverlauf", () => setVersionsDoc(doc))}
+                {mItem(<Trash2 size={14} />, "Löschen", () => handleDelete(doc), { danger: true, disabled: lockedByOther })}
+              </div>
+            </>
+          )}
+        </div>
+      </>
+    );
+  };
+
   const selectCustomer = (id) => { setSelCustomerId(id); setSelCat(null); setSelYear(null); setExpandedC(p => ({ ...p, [id]: true })); };
   const selectCat      = (cid, ck) => { setSelCustomerId(cid); setSelCat(ck); setSelYear(null); setExpandedCat(p => ({ ...p, [cid + "_" + ck]: true })); };
 
@@ -1713,17 +1867,18 @@ export default function Dokumente() {
 
               return (
                 <div key={doc.id}
-                  style={{ display: "flex", alignItems: "flex-start", justifyContent: "center", gap: 12, padding: "10px 14px", background: s.cardBg,
-                    border: "1px solid " + border, borderRadius: 8, transition: "border 0.15s" }}
+                  onClick={() => handleCheckout(fullDoc)}
+                  title="Auschecken (zum Bearbeiten öffnen)"
+                  style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "10px 14px", background: s.cardBg,
+                    border: "1px solid " + border, borderRadius: 8, cursor: "pointer", transition: "border 0.15s" }}
                   onMouseEnter={e => e.currentTarget.style.borderColor = accent}
                   onMouseLeave={e => e.currentTarget.style.borderColor = border}>
                   <span style={{ background: fi.color, color: "#fff", borderRadius: 4, padding: "2px 6px", fontSize: 10, fontWeight: 700, flexShrink: 0, minWidth: 36, textAlign: "center", marginTop: 2 }}>{fi.label}</span>
-                  <div style={{ flex: 1, minWidth: 0, cursor: "pointer" }}
-                       onClick={() => handleCheckout(fullDoc)}
-                       title="Auschecken (zum Bearbeiten öffnen)">
+                  <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 13, color: s.textMain, fontWeight: 600 }}>{doc.name}</div>
                     {doc.headline && (
-                      <HighlightedText text={doc.headline} searchQuery={ftSearch}/>
+                      <div style={{ fontSize: 11, color: s.textMuted, marginTop: 2, fontStyle: "italic" }}
+                        dangerouslySetInnerHTML={{ __html: doc.headline.replace(/<b>/g, `<b style="color:${accent};font-style:normal">`).replace(/<\/b>/g, "</b>") }} />
                     )}
                     <div style={{ fontSize: 11, color: s.textMuted, marginTop: 3, display: "flex", gap: 8 }}>
                       {cust && <span style={{ color: accent, fontWeight: 500 }}>{cust.company_name}</span>}
@@ -1995,6 +2150,12 @@ export default function Dokumente() {
                   </button>
                 ))}
               </div>
+              {viewMode === "abschluss" && selCustomerId && (
+                <button onClick={exportAbschlussZip} title="Alle Abschluss-Dokumente als ZIP exportieren (nach Tag-Ordnern)"
+                  style={{ background: s.inputBg, border: "1px solid " + border, color: accent, borderRadius: 6, padding: "3px 9px", fontSize: 11, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+                  <Download size={12} /> Export
+                </button>
+              )}
               {/* Sort-Dropdown */}
               <div style={{ position: "relative" }}>
                 <button onClick={() => setShowSortMenu(m => !m)}
@@ -2209,64 +2370,7 @@ export default function Dokumente() {
                         {new Date(doc.updated_at || doc.created_at).toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit", year: "2-digit" })}
                       </span>
                     )}
-                    {/* Checkout / Checkin */}
-                    {!isCheckedOut && (
-                      <button onClick={() => handleCheckout(doc)} title="Auschecken"
-                        style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}>
-                        <LockOpen size={14} />
-                      </button>
-                    )}
-                    {isMyCheckout && (
-                      <button onClick={() => openCheckin(doc)} title="Einchecken"
-                        style={{ background: "none", border: "none", cursor: "pointer", color: accent, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}>
-                        <Lock size={14} />
-                      </button>
-                    )}
-                    {lockedByOther && isAdmin && (
-                      <button onClick={() => handleCheckin(doc, null)} title="Sperre aufheben (Admin)"
-                        style={{ background: "none", border: "none", cursor: "pointer", color: "#ef4444", display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}>
-                        <ShieldAlert size={14} />
-                      </button>
-                    )}
-                    {/* Edit */}
-                    <button onClick={() => setEditDoc(doc)} title="Bearbeiten"
-                      style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}>
-                      <Pencil size={14} />
-                    </button>
-                    {/* Kopieren */}
-                    <button onClick={() => setCopyDoc(doc)} title="Kopieren (neu verschlagworten)"
-                      style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}>
-                      <CopyPlus size={14} />
-                    </button>
-                    {/* Vorschau (Hover) */}
-                    {renderPreviewEye(doc)}
-                    {/* Versionsverlauf */}
-                    <button onClick={() => setVersionsDoc(doc)} title="Versionsverlauf"
-                      style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}>
-                      <HistoryIcon size={14} />
-                    </button>
-                    {/* Download */}
-                    <button onClick={() => { animateBtn(`dl-${doc.id}`); downloadDoc(doc); }}
-                      title="Herunterladen" style={{ background: "none", border: "none", cursor: "pointer", color: accent, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0, transition: "transform 0.15s", transform: clickedBtns[`dl-${doc.id}`] ? "scale(0.75)" : "scale(1)" }}>
-                      <Download size={15} />
-                    </button>
-                    {/* Share */}
-                    <button
-                      onClick={() => { animateBtn(`sh-${doc.id}`); setShareDialog({ type: 'doc', doc_id: doc.id, name: doc.name, customer_id: doc.customer_id }); }}
-                      title="Link erstellen"
-                      style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0, transition: "transform 0.15s", transform: clickedBtns[`sh-${doc.id}`] ? "scale(0.75)" : "scale(1)" }}>
-                      <Link2 size={15} />
-                    </button>
-                    {/* Loeschen */}
-                    <button onClick={() => !lockedByOther && handleDelete(doc)} title={lockedByOther ? "Gesperrt – kann nicht geloescht werden" : "Loeschen"}
-                      style={{ background: clickedBtns[`del-${doc.id}`] ? "#ef444420" : "none", border: "none", cursor: lockedByOther ? "not-allowed" : "pointer", color: lockedByOther ? s.textMuted + "44" : "#ef4444", display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0, transition: "transform 0.15s, background 0.15s", transform: clickedBtns[`del-${doc.id}`] ? "scale(0.75)" : "scale(1)" }}>
-                      <Trash2 size={15} />
-                    </button>
-                    {/* Chartis */}
-                    <button onClick={() => setChartisDoc(doc)} title="Chartis – Chat zu diesem Dokument"
-                      style={{ background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 }}>
-                      <MessageSquare size={15} />
-                    </button>
+                    {renderRowActions(doc, { isCheckedOut, isMyCheckout, lockedByOther, isAdmin })}
                   </div>
                 );
               })

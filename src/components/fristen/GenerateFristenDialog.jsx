@@ -150,8 +150,8 @@ export default function GenerateFristenDialog({
 
   // Apply filters to get target customers (always exclude inactive)
   const filteredCustomers = useMemo(() => {
-    if (singleCustomer) return singleCustomer.aktiv === false ? [] : [singleCustomer];
-    let list = baseCustomers.filter(c => c.aktiv !== false); // skip inactive
+    if (singleCustomer) return (singleCustomer.aktiv === false || singleCustomer.keine_frist) ? [] : [singleCustomer];
+    let list = baseCustomers.filter(c => c.aktiv !== false && !c.keine_frist); // skip inactive + "keine Frist"
     if (scopePersonType !== "alle") {
       list = list.filter(c => {
         const isPrivat = c.person_type === 'privatperson';

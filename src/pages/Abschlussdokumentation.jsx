@@ -721,22 +721,42 @@ async function generateRevisionsDossier({ konten, einstellungen, customerName, s
   // Belege herunterladen und unter dem im belegList vorbereiteten filePath ablegen
   // (selber Pfad wie die Links im PDF — sonst funktionieren die nicht).
   const belegFolder = zip.folder("Belege");
-  let okCount = 0, failCount = 0;
+  let okCount = 0;
+  const failed = [];
   for (let i = 0; i < belegList.length; i++) {
     const item = belegList[i];
     log(`Beleg ${i + 1} / ${belegList.length} …`);
+    // storage_path-Präfix "dokumente/" entfernen — sonst schlägt createSignedUrl fehl
+    const path = (item.beleg.storage_path || "").replace(/^dokumente\//, "");
+    const fail = (reason) => failed.push({
+      kontonummer: item.kontonummer, kontoname: item.kontoname,
+      name: item.beleg.name || item.beleg.filename || "Beleg",
+      filename: item.beleg.filename || "", reason,
+    });
     try {
-      const { data, error } = await supabase.storage
-        .from(BUCKET).createSignedUrl(item.beleg.storage_path, 3600);
-      if (error || !data?.signedUrl) { failCount++; continue; }
+      if (!path) { fail("kein Speicherpfad"); continue; }
+      const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(path, 3600);
+      if (error || !data?.signedUrl) { fail(error?.message || "Datei nicht gefunden"); continue; }
       const resp = await fetch(data.signedUrl);
-      if (!resp.ok) { failCount++; continue; }
+      if (!resp.ok) { fail(`HTTP ${resp.status}`); continue; }
       const buf = await resp.arrayBuffer();
       // item.filePath beginnt mit "Belege/" — wir speichern den Rest im Sub-Folder
       const filename = item.filePath.replace(/^Belege\//, "");
       belegFolder.file(filename, buf);
       okCount++;
-    } catch { failCount++; }
+    } catch (e) { fail(e?.message || "Fehler beim Laden"); }
+  }
+  const failCount = failed.length;
+
+  // Fehlende Belege für den Revisor dokumentieren (Textdatei im ZIP)
+  if (failCount) {
+    const txt = [
+      `NICHT LADBARE BELEGE — ${failCount} von ${belegList.length}`,
+      `Kunde: ${customerName}  ·  Geschäftsjahr: ${selectedYear}  ·  Erstellt: ${todayStr()}`,
+      "",
+      ...failed.map(f => `- Konto ${f.kontonummer || "—"} ${f.kontoname || ""} | ${f.name}${f.filename ? ` (${f.filename})` : ""} — ${f.reason}`),
+    ].join("\r\n");
+    belegFolder.file("_FEHLENDE_BELEGE.txt", txt);
   }
 
   log("ZIP wird gepackt …");
@@ -748,7 +768,7 @@ async function generateRevisionsDossier({ konten, einstellungen, customerName, s
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 4000);
 
-  return { belegOk: okCount, belegFail: failCount, belegTotal: belegList.length };
+  return { belegOk: okCount, belegFail: failCount, belegTotal: belegList.length, failed };
 }
 
 function todayStr() {
@@ -1220,19 +1240,82 @@ function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = 
     if (ext === "xlsx" || ext === "xls") {
       loadExcel(file);
     } else {
-      // CSV
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const text = e.target.result;
+      // CSV – Zeichensatz automatisch erkennen (UTF-8 / Windows-1252)
+      readTextSmart(file).then(text => {
         const firstLine = text.split("\n")[0];
         const sep = firstLine.includes(";") ? ";" : firstLine.includes("\t") ? "\t" : ",";
         const rows = text.split("\n").map(line =>
           line.replace(/\r$/, "").split(sep).map(cell => cell.replace(/^"(.*)"$/, "$1").replace(/""/g, '"'))
         ).filter(r => r.some(c => c.trim()));
         processRows(rows, file.name);
-      };
-      reader.readAsText(file, "UTF-8");
+      });
     }
+  }
+
+  // ── Text robust lesen: Zeichensatz automatisch erkennen ───────────────────
+  // CH-Buchhaltungs-Exporte (Abacus/Topal) sind oft Windows-1252/Latin-1, nicht
+  // UTF-8 → sonst zerschossene ä/ö/ü. UTF-8-BOM beachten; gültiges UTF-8 nehmen,
+  // sonst auf Windows-1252 zurückfallen.
+  async function readTextSmart(file) {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    if (bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) {
+      return new TextDecoder("utf-8").decode(bytes.subarray(3));
+    }
+    try {
+      return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    } catch {
+      return new TextDecoder("windows-1252").decode(bytes);
+    }
+  }
+
+  // ── Rohzeilen einer Datei lesen (Excel: alle Blätter, CSV: geparst) ───────
+  async function readFileRows(file) {
+    const ext = file.name.split(".").pop().toLowerCase();
+    if (ext === "xlsx" || ext === "xls") {
+      const data = new Uint8Array(await file.arrayBuffer());
+      const XLSX = await import('xlsx');
+      const wb = XLSX.read(data, { type: "array" });
+      let header = null;
+      let dataRows = [];
+      for (const name of wb.SheetNames) {
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: "" });
+        if (rows.length < 2) continue;
+        if (!header) header = rows[0].map(String);
+        dataRows = [...dataRows, ...rows.slice(1).filter(r => r.some(c => String(c).trim()))];
+      }
+      return header ? [header, ...dataRows] : [];
+    }
+    // CSV
+    const text = await readTextSmart(file);
+    const firstLine = text.split("\n")[0];
+    const sep = firstLine.includes(";") ? ";" : firstLine.includes("\t") ? "\t" : ",";
+    return text.split("\n").map(line =>
+      line.replace(/\r$/, "").split(sep).map(cell => cell.replace(/^"(.*)"$/, "$1").replace(/""/g, '"'))
+    ).filter(r => r.some(c => c.trim()));
+  }
+
+  // ── Mehrere Excel/CSV gleichzeitig (Bilanz + ER) zusammenführen ───────────
+  async function parseMultipleFiles(files) {
+    let header = null;
+    let allData = [];
+    const names = [];
+    for (const f of files) {
+      const rows = await readFileRows(f);
+      if (rows.length < 2) continue;
+      names.push(f.name);
+      if (!header) header = rows[0].map(String);
+      allData = [...allData, ...rows.slice(1)];
+    }
+    if (!header || allData.length === 0) { toast.error("Keine Daten in den Dateien gefunden"); return; }
+    // Duplikate (gleiche Kontonummer) deduplizieren – erstes Vorkommen gewinnt
+    const col0 = header.findIndex(h => /konto|nummer|nr/i.test(h));
+    const seen = new Set();
+    allData = allData.filter(r => {
+      const nr = String(r[col0 >= 0 ? col0 : 0] ?? "").trim();
+      if (!nr || seen.has(nr)) return false;
+      seen.add(nr); return true;
+    });
+    processRows([header, ...allData], names.join(" + "));
   }
 
   // ── Zweite Datei mergen (für Bilanz+ER in separaten Files) ───────────────
@@ -1257,17 +1340,14 @@ function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = 
       };
       reader.readAsArrayBuffer(file);
     } else {
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        const text = ev.target.result;
+      readTextSmart(file).then(text => {
         const firstLine = text.split("\n")[0];
         const sep = firstLine.includes(";") ? ";" : firstLine.includes("\t") ? "\t" : ",";
         const rows = text.split("\n").map(line =>
           line.replace(/\r$/, "").split(sep).map(cell => cell.replace(/^"(.*)"$/, "$1").replace(/""/g, '"'))
         ).filter(r => r.some(c => c.trim()));
         mergeExtraRows(rows.slice(1), file.name);
-      };
-      reader.readAsText(file, "UTF-8");
+      });
     }
   }
 
@@ -1308,14 +1388,18 @@ function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = 
     const pdfs = files.filter(f => f.name.toLowerCase().endsWith(".pdf"));
     const others = files.filter(f => !f.name.toLowerCase().endsWith(".pdf"));
     if (pdfs.length > 0) { parsePdfFiles(pdfs.slice(0, 2)); return; }
+    if (others.length > 1) { parseMultipleFiles(others); return; }
     if (others[0]) parseFile(others[0]);
   }
 
   function handleFileChange(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-    if (file.name.toLowerCase().endsWith(".pdf")) { parsePdfFiles([file]); return; }
-    parseFile(file);
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    const pdfs = files.filter(f => f.name.toLowerCase().endsWith(".pdf"));
+    const others = files.filter(f => !f.name.toLowerCase().endsWith(".pdf"));
+    if (pdfs.length > 0) { parsePdfFiles(pdfs.slice(0, 2)); return; }
+    if (others.length > 1) { parseMultipleFiles(others); return; }
+    if (others[0]) parseFile(others[0]);
   }
 
   function handlePdfChange(e) {
@@ -1401,13 +1485,13 @@ function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = 
                       backgroundColor: dragging ? accent + "0a" : pageBg, transition: "all 0.15s",
                     }}>
                     <FileSpreadsheet className="w-10 h-10 mx-auto mb-3" style={{ color: dragging ? accent : subC }} />
-                    <div className="text-sm font-semibold mb-1" style={{ color: headingC }}>Datei hier ablegen</div>
-                    <div className="text-xs" style={{ color: subC }}>CSV, Excel oder PDF · klicken zum Auswählen</div>
-                    <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls,.pdf" className="hidden" onChange={handleFileChange} />
+                    <div className="text-sm font-semibold mb-1" style={{ color: headingC }}>Datei(en) hier ablegen</div>
+                    <div className="text-xs" style={{ color: subC }}>CSV, Excel oder PDF · eine oder zwei (Bilanz + ER) zusammen wählbar</div>
+                    <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls,.pdf" multiple className="hidden" onChange={handleFileChange} />
                   </div>
                   <div style={{ marginTop: 10, padding: "10px 14px", borderRadius: 10, border: `1px solid ${panelBdr}`, backgroundColor: pageBg, display: "flex", alignItems: "center", gap: 10 }}>
                     <span style={{ fontSize: 12, color: subC, flex: 1 }}>
-                      📄 Zwei Dateien (Bilanz + ER)? Beide als PDFs gleichzeitig wählen, oder nacheinander ablegen.
+                      📄 Zwei Dateien (Bilanz + ER)? Beide (Excel/CSV/PDF) oben gleichzeitig wählen bzw. ablegen — oder nacheinander.
                     </span>
                     <button onClick={() => pdfRef.current?.click()}
                       style={{ fontSize: 11, fontWeight: 600, padding: "4px 12px", borderRadius: 6, cursor: "pointer", border: `1px solid ${accent}60`, color: accent, backgroundColor: accent + "10" }}>
@@ -1954,9 +2038,11 @@ function BelegeSection({ arbeitspapier, onSave, customerId, selectedYear, accent
   };
 
   const openDoc = async (beleg) => {
-    const { data } = await supabase.storage.from(BUCKET).createSignedUrl(beleg.storage_path, 3600);
+    const path = (beleg.storage_path || "").replace(/^dokumente\//, "");
+    if (!path) { toast.error("Beleg hat keinen Speicherpfad"); return; }
+    const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(path, 3600);
     if (data?.signedUrl) window.open(data.signedUrl, "_blank");
-    else toast.error("Dokument konnte nicht geöffnet werden");
+    else toast.error("Dokument konnte nicht geöffnet werden" + (error ? ": " + error.message : ""));
   };
 
   // Anzeige-Liste: bei aktiver Volltextsuche → FTS-Ergebnisse (alle Jahre, ganze DB des Kunden);
@@ -3104,7 +3190,7 @@ function BilanzTab({ konten, accent, headingC, subC, panelBg, panelBdr, tableBdr
 }
 
 // ── Erfolgsrechnung Tab ───────────────────────────────────────────────────────
-function ERRow({ label, value, valueVJ, nettoerloes, nettoerloesVJ, isSubtotal, isTotal, isNegative, accent, headingC, subC, highlightGreen }) {
+function ERRow({ label, value, valueVJ, nettoerloes, nettoerloesVJ, isSubtotal, isTotal, isNegative, accent, headingC, subC, highlightGreen, details }) {
   const fontW = isTotal ? 800 : isSubtotal ? 700 : 400;
   const color = isTotal && highlightGreen ? "#16a34a" : isTotal ? accent : isNegative && value < 0 ? "#dc2626" : headingC;
   const pctIS = (nettoerloes && Math.abs(nettoerloes) > 0.01 && value != null)
@@ -3112,7 +3198,7 @@ function ERRow({ label, value, valueVJ, nettoerloes, nettoerloesVJ, isSubtotal, 
   const pctVJ = (nettoerloesVJ && Math.abs(nettoerloesVJ) > 0.01 && valueVJ != null)
     ? (valueVJ / nettoerloesVJ * 100) : null;
   const fmtP = (p) => p === null ? "" : p.toFixed(1) + "%";
-  return (
+  const mainRow = (
     <div style={{
       display: "grid", gridTemplateColumns: "1fr 95px 40px 95px 40px", alignItems: "center",
       padding: `${isTotal ? 9 : 5}px 12px`,
@@ -3130,6 +3216,25 @@ function ERRow({ label, value, valueVJ, nettoerloes, nettoerloesVJ, isSubtotal, 
       </span>
       <span style={{ fontSize: 10, color: subC + "99", textAlign: "right", paddingRight: 4 }}>{fmtP(pctVJ)}</span>
     </div>
+  );
+  if (!details || !details.length) return mainRow;
+  return (
+    <>
+      {mainRow}
+      <div style={{ padding: "1px 12px 5px" }}>
+        {details.map((d, i) => (
+          <div key={(d.nr || "") + "-" + i} style={{ display: "grid", gridTemplateColumns: "1fr 95px 40px 95px 40px", alignItems: "center", padding: "1px 0 1px 18px" }}>
+            <span style={{ fontSize: 11, color: subC, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              <span style={{ fontFamily: "monospace", opacity: 0.75 }}>{d.nr}</span> {d.name}
+            </span>
+            <span style={{ fontSize: 11, fontFamily: "monospace", color: subC, textAlign: "right" }}>{fmtCHF(d.ist)}</span>
+            <span />
+            <span style={{ fontSize: 10.5, fontFamily: "monospace", color: subC + "aa", textAlign: "right" }}>{fmtCHF(d.vj)}</span>
+            <span />
+          </div>
+        ))}
+      </div>
+    </>
   );
 }
 
@@ -3155,6 +3260,18 @@ function ErfolgsrechnungTab({ konten, accent, headingC, subC, panelBg, panelBdr,
   const eSign = signFlipER ? 1 : -1;
   const sumByIds   = (ids) => rawSum(ids) * eSign;
   const sumVJByIds = (ids) => rawSumVJ(ids) * eSign;
+
+  // Details: einzelne Konten pro Position (Nr./Name/IST/VJ, vorzeichenkorrekt)
+  const [showDetails, setShowDetails] = useState(false);
+  const kontenForIds = (ids) => konten
+    .filter(k => ids.includes(k.position_id))
+    .map(k => ({
+      nr: k.kontonummer, name: k.kontoname,
+      ist: (parseFloat(k.saldo_ist) || 0) * eSign,
+      vj:  (parseFloat(k.saldo_vorjahr) || 0) * eSign,
+    }))
+    .sort((a, b) => (parseInt(a.nr) || 0) - (parseInt(b.nr) || 0));
+  const D = (ids) => showDetails ? kontenForIds(ids) : null;
 
   if (konten.length === 0) {
     return (
@@ -3237,54 +3354,62 @@ function ErfolgsrechnungTab({ konten, accent, headingC, subC, panelBg, panelBdr,
       <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${panelBdr}`, boxShadow: "0 2px 8px rgba(0,0,0,0.05)" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", backgroundColor: "#dcfce7", borderBottom: `1px solid ${panelBdr}` }}>
           <span style={{ fontWeight: 800, fontSize: 13, color: "#15803d", letterSpacing: "0.03em" }}>ERFOLGSRECHNUNG</span>
-          <button onClick={onFlipER} title="Vorzeichen umkehren" style={{
-            fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 5, cursor: "pointer",
-            backgroundColor: signFlipER ? "#15803d22" : "transparent",
-            border: `1px solid ${signFlipER ? "#15803d" : "#15803d66"}`,
-            color: signFlipER ? "#15803d" : "#15803d99",
-          }}>± Vorzeichen</button>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <button onClick={() => setShowDetails(v => !v)} title="Einzelne Konten je Position ein-/ausblenden" style={{
+              fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 5, cursor: "pointer",
+              backgroundColor: showDetails ? "#15803d22" : "transparent",
+              border: `1px solid ${showDetails ? "#15803d" : "#15803d66"}`,
+              color: showDetails ? "#15803d" : "#15803d99",
+            }}>{showDetails ? "Details ausblenden" : "Details einblenden"}</button>
+            <button onClick={onFlipER} title="Vorzeichen umkehren" style={{
+              fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 5, cursor: "pointer",
+              backgroundColor: signFlipER ? "#15803d22" : "transparent",
+              border: `1px solid ${signFlipER ? "#15803d" : "#15803d66"}`,
+              color: signFlipER ? "#15803d" : "#15803d99",
+            }}>± Vorzeichen</button>
+          </div>
         </div>
         {erColHeader}
 
         <ERSeparator label="Erlös" subC={subC} />
-        <ERRow label="Nettoumsatzerlöse"      value={sumByIds(["ER_UMSATZ"])}        valueVJ={sumVJByIds(["ER_UMSATZ"])}        {...props} />
-        <ERRow label="Eigenleistungen"        value={sumByIds(["ER_EIGENLEISTUNG"])} valueVJ={sumVJByIds(["ER_EIGENLEISTUNG"])} {...props} />
-        <ERRow label="Bestandesveränderungen" value={sumByIds(["ER_BESTAND"])}       valueVJ={sumVJByIds(["ER_BESTAND"])}       {...props} />
+        <ERRow label="Nettoumsatzerlöse"      value={sumByIds(["ER_UMSATZ"])}        valueVJ={sumVJByIds(["ER_UMSATZ"])}        details={D(["ER_UMSATZ"])} {...props} />
+        <ERRow label="Eigenleistungen"        value={sumByIds(["ER_EIGENLEISTUNG"])} valueVJ={sumVJByIds(["ER_EIGENLEISTUNG"])} details={D(["ER_EIGENLEISTUNG"])} {...props} />
+        <ERRow label="Bestandesveränderungen" value={sumByIds(["ER_BESTAND"])}       valueVJ={sumVJByIds(["ER_BESTAND"])}       details={D(["ER_BESTAND"])} {...props} />
         <ERRow label="Nettoumsatz Total"      value={nettoumsatz}  valueVJ={nettoumsatzVJ}  isSubtotal {...props} />
 
-        <ERRow label="− Warenaufwand"         value={material}     valueVJ={materialVJ}     isNegative {...props} />
+        <ERRow label="− Warenaufwand"         value={material}     valueVJ={materialVJ}     isNegative details={D(["ER_MATERIAL"])} {...props} />
         <ERRow label="= Bruttogewinn I (Rohergebnis)" value={bruttogewinnI} valueVJ={bruttogewinnIVJ}
           isTotal highlightGreen={bruttogewinnI >= 0} {...props} />
 
-        <ERRow label="− Personalaufwand"      value={personal}     valueVJ={personalVJ}     isNegative {...props} />
+        <ERRow label="− Personalaufwand"      value={personal}     valueVJ={personalVJ}     isNegative details={D(["ER_PERSONAL"])} {...props} />
         <ERRow label="= Bruttogewinn II"      value={bruttogewinnII} valueVJ={bruttogewinnIIVJ}
           isTotal highlightGreen={bruttogewinnII >= 0} {...props} />
 
         <ERSeparator label="Betriebskosten" subC={subC} />
-        {(raum       !== 0 || raumVJ       !== 0) && <ERRow label="− Raumaufwand"                    value={raum}         valueVJ={raumVJ}         isNegative {...props} />}
-        {(unterhalt  !== 0 || unterhaltVJ  !== 0) && <ERRow label="− Unterhalt & Reparaturen"        value={unterhalt}    valueVJ={unterhaltVJ}    isNegative {...props} />}
-        {(fahrzeug   !== 0 || fahrzeugVJ   !== 0) && <ERRow label="− Fahrzeug- & Transportaufwand"   value={fahrzeug}     valueVJ={fahrzeugVJ}     isNegative {...props} />}
-        {(versicherung!==0 || versicherungVJ!==0) && <ERRow label="− Sachversicherungen & Abgaben"   value={versicherung} valueVJ={versicherungVJ} isNegative {...props} />}
-        {(energie    !== 0 || energieVJ    !== 0) && <ERRow label="− Energie & Entsorgung"           value={energie}      valueVJ={energieVJ}      isNegative {...props} />}
-        {(verwaltung !== 0 || verwaltungVJ !== 0) && <ERRow label="− Verwaltungs- & Informatikaufw." value={verwaltung}   valueVJ={verwaltungVJ}   isNegative {...props} />}
-        {(werbung    !== 0 || werbungVJ    !== 0) && <ERRow label="− Werbe- & Akquisitionsaufwand"   value={werbung}      valueVJ={werbungVJ}      isNegative {...props} />}
-        {(betrieb    !== 0 || betriebVJ    !== 0) && <ERRow label="− Übriger Betriebsaufwand"        value={betrieb}      valueVJ={betriebVJ}      isNegative {...props} />}
+        {(raum       !== 0 || raumVJ       !== 0) && <ERRow label="− Raumaufwand"                    value={raum}         valueVJ={raumVJ}         isNegative details={D(["ER_RAUM"])} {...props} />}
+        {(unterhalt  !== 0 || unterhaltVJ  !== 0) && <ERRow label="− Unterhalt & Reparaturen"        value={unterhalt}    valueVJ={unterhaltVJ}    isNegative details={D(["ER_UNTERHALT"])} {...props} />}
+        {(fahrzeug   !== 0 || fahrzeugVJ   !== 0) && <ERRow label="− Fahrzeug- & Transportaufwand"   value={fahrzeug}     valueVJ={fahrzeugVJ}     isNegative details={D(["ER_FAHRZEUG"])} {...props} />}
+        {(versicherung!==0 || versicherungVJ!==0) && <ERRow label="− Sachversicherungen & Abgaben"   value={versicherung} valueVJ={versicherungVJ} isNegative details={D(["ER_VERSICHERUNG"])} {...props} />}
+        {(energie    !== 0 || energieVJ    !== 0) && <ERRow label="− Energie & Entsorgung"           value={energie}      valueVJ={energieVJ}      isNegative details={D(["ER_ENERGIE"])} {...props} />}
+        {(verwaltung !== 0 || verwaltungVJ !== 0) && <ERRow label="− Verwaltungs- & Informatikaufw." value={verwaltung}   valueVJ={verwaltungVJ}   isNegative details={D(["ER_VERWALTUNG"])} {...props} />}
+        {(werbung    !== 0 || werbungVJ    !== 0) && <ERRow label="− Werbe- & Akquisitionsaufwand"   value={werbung}      valueVJ={werbungVJ}      isNegative details={D(["ER_WERBUNG"])} {...props} />}
+        {(betrieb    !== 0 || betriebVJ    !== 0) && <ERRow label="− Übriger Betriebsaufwand"        value={betrieb}      valueVJ={betriebVJ}      isNegative details={D(["ER_BETRIEB"])} {...props} />}
         <ERRow label="= EBITDA" value={ebitda} valueVJ={ebitdaVJ} isTotal highlightGreen={ebitda >= 0} {...props} />
 
         <ERSeparator label="Abschreibungen" subC={subC} />
-        <ERRow label="− Abschreibungen" value={abschr} valueVJ={abschrVJ} isNegative {...props} />
+        <ERRow label="− Abschreibungen" value={abschr} valueVJ={abschrVJ} isNegative details={D(["ER_ABSCHR"])} {...props} />
         <ERRow label="= EBIT" value={ebit} valueVJ={ebitVJ} isTotal highlightGreen={ebit >= 0} {...props} />
 
         <ERSeparator label="Finanzergebnis" subC={subC} />
-        <ERRow label="+ Finanzertrag"      value={finErtrag}      valueVJ={finErtragVJ}      {...props} />
-        <ERRow label="− Finanzaufwand"     value={finAufw}        valueVJ={finAufwVJ}        isNegative {...props} />
+        <ERRow label="+ Finanzertrag"      value={finErtrag}      valueVJ={finErtragVJ}      details={D(["ER_FINANZ_ERTRAG","ER_LIEGENSCHAFTEN"])} {...props} />
+        <ERRow label="− Finanzaufwand"     value={finAufw}        valueVJ={finAufwVJ}        isNegative details={D(["ER_FINANZ_AUFW"])} {...props} />
         <ERRow label="+/− Finanzergebnis"  value={finanzergebnis} valueVJ={finanzergebnisVJ} isSubtotal {...props} />
         <ERRow label="= EBT (vor Sonderergebnis)" value={ebt} valueVJ={ebtVJ} isTotal highlightGreen={ebt >= 0} {...props} />
 
         <ERSeparator label="Sonderergebnis & Steuern" subC={subC} />
-        <ERRow label="+ Betriebsfremder/AO Ertrag" value={fremdErtrag} valueVJ={fremdErtragVJ} {...props} />
-        <ERRow label="− Betriebsfremder/AO Aufwand" value={fremdAufw}  valueVJ={fremdAufwVJ}  isNegative {...props} />
-        <ERRow label="− Ertragssteuern"             value={steuern}    valueVJ={steuernVJ}    isNegative {...props} />
+        <ERRow label="+ Betriebsfremder/AO Ertrag" value={fremdErtrag} valueVJ={fremdErtragVJ} details={D(["ER_FREMD_ERTRAG","ER_AO_ERTRAG"])} {...props} />
+        <ERRow label="− Betriebsfremder/AO Aufwand" value={fremdAufw}  valueVJ={fremdAufwVJ}  isNegative details={D(["ER_FREMD_AUFW","ER_AO_AUFW"])} {...props} />
+        <ERRow label="− Ertragssteuern"             value={steuern}    valueVJ={steuernVJ}    isNegative details={D(["ER_STEUERN"])} {...props} />
 
         <div style={{ margin: "8px 8px 8px", borderRadius: 8, overflow: "hidden", border: `2px solid ${jahresergebnis >= 0 ? "#bbf7d0" : "#fecaca"}` }}>
           <ERRow label="JAHRESERGEBNIS" value={jahresergebnis} valueVJ={jahresergebnisVJ} isTotal highlightGreen={jahresergebnis >= 0}
@@ -3833,6 +3958,18 @@ export default function Abschlussdokumentation() {
         `Revisions-Dossier erstellt — ${res.belegOk}/${res.belegTotal} Belege beigelegt`
         + (res.belegFail ? ` · ${res.belegFail} nicht ladbar` : "")
       );
+      if (res.belegFail && res.failed?.length) {
+        const list = res.failed
+          .map(f => `• Konto ${f.kontonummer || "—"}: ${f.name}${f.reason ? ` — ${f.reason}` : ""}`)
+          .join("\n");
+        toast.error(
+          <div style={{ whiteSpace: "pre-line", fontSize: 12, lineHeight: 1.5 }}>
+            <strong>{res.belegFail} Beleg(e) nicht ladbar:</strong>{"\n"}{list}
+            {"\n"}<span style={{ opacity: 0.75 }}>(auch in Belege/_FEHLENDE_BELEGE.txt im ZIP)</span>
+          </div>,
+          { duration: 15000 }
+        );
+      }
     } catch (e) {
       toast.error("Dossier fehlgeschlagen: " + (e?.message || e));
     } finally {

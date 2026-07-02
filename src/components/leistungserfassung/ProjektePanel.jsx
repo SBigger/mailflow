@@ -23,6 +23,7 @@ const EMPTY_PROJECT = {
   budget_hours: '',
   budget_amount: '',
   started_at: '',
+  billing_email: '',
   note: '',
 };
 
@@ -548,6 +549,7 @@ function ProjektDialog({ editing, customers, employees, rateGroups, projectNoSug
         budget_hours: editing.budget_hours ?? '',
         budget_amount: editing.budget_amount ?? '',
         started_at: editing.started_at ?? '',
+        billing_email: editing.billing_email ?? '',
         note: editing.note ?? '',
       };
     }
@@ -594,6 +596,7 @@ function ProjektDialog({ editing, customers, employees, rateGroups, projectNoSug
       budget_hours: form.budget_hours !== '' ? Number(form.budget_hours) : null,
       budget_amount: form.budget_amount !== '' ? Number(form.budget_amount) : null,
       started_at: form.started_at || null,
+      billing_email: form.billing_email?.trim() || null,
       note: form.note?.trim() || null,
     };
     onSave(payload);
@@ -788,6 +791,15 @@ function ProjektDialog({ editing, customers, employees, rateGroups, projectNoSug
               />
             </Field>
           </div>
+
+          <Field label="Rechnungs-E-Mail (Projekt)" hint="Optional – überschreibt die Kunden-E-Mail beim Rechnungsversand.">
+            <Input
+              type="email"
+              value={form.billing_email ?? ''}
+              onChange={(e) => patch('billing_email', e.target.value)}
+              placeholder="rechnung@kunde.ch (leer = Kunden-E-Mail verwenden)"
+            />
+          </Field>
 
           <Field label="Notiz">
             <textarea

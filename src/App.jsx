@@ -58,6 +58,7 @@ const Kalender = lazy(() => import("./pages/Kalender.jsx"));
 const Steuerausscheidung = lazy(() => import("./pages/Steuerausscheidung.jsx"));
 const FiBuRouter = lazy(() => import("./modules/fibu/router.jsx"));
 const AiAssistant = lazy(() => import('./pages/AiAssistant.jsx'));
+const GVProtokollApp = lazy(() => import('./modules/gv-protokoll/GVProtokollApp.jsx'));
 
 const queryClient = new QueryClient({
     defaultOptions: {queries: {retry: 1, staleTime: 30000}}
@@ -122,6 +123,7 @@ function AuthenticatedApp() {
                     <Route path="/Monatsplanung" element={<Monatsplanung />} />
                     <Route path="/Kalender" element={<Kalender />} />
                     <Route path="/Steuerausscheidung" element={<Steuerausscheidung />} />
+                    <Route path="/GVProtokollApp" element={<GVProtokollApp/>} />
                     {profile?.modules?.ai && (
                         <Route path="/AiAssistant" element={<AiAssistant />} />
                     )}

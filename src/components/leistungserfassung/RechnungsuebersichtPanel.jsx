@@ -10,6 +10,7 @@ import {
   ChevronRight, ChevronDown,
 } from 'lucide-react';
 import { leInvoice, leCompany, sendInvoiceViaMs365, createCreditFromInvoice } from '@/lib/leApi';
+import { supabase } from '@/api/supabaseClient';
 import { generateInvoicePdf, triggerDownload } from '@/lib/leInvoicePdf';
 import {
   Card, Chip, IconBtn, Input, Select, Field,
@@ -81,9 +82,17 @@ export default function RechnungsuebersichtPanel() {
     mutationFn: async (id) => {
       const company = await leCompany.get();
       if (!company) throw new Error('Firmen-Settings fehlen.');
-      const fresh = await leInvoice.getWithEntries(id); // inkl. Kunde + Lines + Beiblatt
-      const customerEmail = fresh.customer?.billing_email;
-      if (!customerEmail) throw new Error('Kunde hat keine Rechnungs-E-Mail-Adresse hinterlegt.');
+      const fresh = await leInvoice.getWithEntries(id); // inkl. Kunde + Projekt + Lines + Beiblatt
+      // Projekt-Rechnungs-E-Mail hat Vorrang. Separate, fehlertolerante Abfrage –
+      // falls die Spalte le_project.billing_email noch nicht migriert ist, bleibt
+      // projectEmail null und es wird die Kunden-E-Mail genutzt (kein Bruch).
+      let projectEmail = null;
+      if (fresh.project?.id) {
+        const { data: pe } = await supabase.from('le_project').select('billing_email').eq('id', fresh.project.id).maybeSingle();
+        projectEmail = pe?.billing_email || null;
+      }
+      const customerEmail = projectEmail || fresh.customer?.billing_email;
+      if (!customerEmail) throw new Error('Weder Projekt noch Kunde hat eine Rechnungs-E-Mail-Adresse hinterlegt.');
       // PDF generieren (lädt es gleichzeitig in den 'invoices'-Bucket hoch)
       const result = await generateInvoicePdf({ invoice: fresh, company });
       if (!result.url) throw new Error('PDF konnte nicht hochgeladen werden – Versand nicht möglich.');
