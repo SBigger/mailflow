@@ -374,15 +374,31 @@ function proxyHeaders(){ return { "Authorization":"Bearer "+PROXY_KEY, "apikey":
 // ── Kunde auswählen (nutzt die MailFlow-Anmeldung, wenn auf smartis.me eingeloggt) ──
 const SUPA_REST = "https://uawgpxcihixqxqxxbjak.supabase.co/rest/v1";
 let customers = [];
-function mailflowToken(){
-  try{ const raw=localStorage.getItem("sb-uawgpxcihixqxqxxbjak-auth-token"); if(!raw) return null;
-    const j=JSON.parse(raw); return j.access_token || (j.currentSession && j.currentSession.access_token) || null;
+async function mailflowToken(){
+  try{
+    const raw=localStorage.getItem("sb-uawgpxcihixqxqxxbjak-auth-token"); if(!raw) return null;
+    const j=JSON.parse(raw); const sess=j.currentSession||j;
+    const tok=sess.access_token||null;
+    // Noch >60s gültig? Direkt verwenden.
+    if(tok && (!sess.expires_at || sess.expires_at*1000-Date.now()>60000)) return tok;
+    // Abgelaufen (z.B. Sitzung >1h ohne offenen MailFlow-Tab): mit dem refresh_token erneuern.
+    // Die erneuerte Session wird zurückgeschrieben – offene MailFlow-Tabs synchronisieren via storage-Event.
+    if(!sess.refresh_token) return tok;
+    const r=await fetch("https://uawgpxcihixqxqxxbjak.supabase.co/auth/v1/token?grant_type=refresh_token",{
+      method:"POST", headers:{ apikey:PROXY_KEY, "content-type":"application/json" },
+      body:JSON.stringify({ refresh_token:sess.refresh_token }) });
+    if(!r.ok) return tok;
+    const s=await r.json();
+    if(!s.expires_at && s.expires_in) s.expires_at=Math.floor(Date.now()/1000)+s.expires_in;
+    const upd=j.currentSession?{...j,currentSession:{...j.currentSession,...s}}:{...j,...s};
+    localStorage.setItem("sb-uawgpxcihixqxqxxbjak-auth-token", JSON.stringify(upd));
+    return s.access_token||tok;
   }catch(e){ return null; }
 }
 function customerLabel(c){ return c.person_type==="privatperson" ? [c.anrede,c.nachname,c.vorname].filter(Boolean).join(" ").trim() : (c.company_name||"(ohne Name)"); }
 function currentCustomerName(){ const o=LS.get("gv_customer",{name:""}); return (o&&o.name)||""; }
 async function loadCustomers(){
-  const tok=mailflowToken(); if(!tok) return;   // nur wenn in MailFlow eingeloggt
+  const tok=await mailflowToken(); if(!tok) return;   // nur wenn in MailFlow eingeloggt
   try{
     const r=await fetch(SUPA_REST+"/customers?select=id,company_name,anrede,nachname,vorname,person_type,aktiv&order=company_name.asc",
       { headers:{ apikey:PROXY_KEY, Authorization:"Bearer "+tok } });
@@ -430,6 +446,7 @@ function renderPersons(){
     el.querySelector(".name").addEventListener("blur",e=>{ p.name=e.target.textContent.trim()||p.name; save(); renderTranscript(); });
     el.querySelector(".x").addEventListener("click",()=>{ persons=persons.filter(x=>x.id!==p.id);
       Object.keys(speakerMap).forEach(k=>{ if(speakerMap[k]===p.id) delete speakerMap[k]; });
+      Object.keys(segOverrides).forEach(k=>{ if(segOverrides[k]===p.id) delete segOverrides[k]; });  // verwaiste Einzel-Korrekturen räumen
       save(); renderPersons(); renderTranscript(); });
     box.appendChild(el);
   });
@@ -458,9 +475,13 @@ function speakerColor(spk){
 }
 function rawSpkLabel(spk){ return "Sprecher "+(parseInt(String(spk).replace(/\D/g,""))+1||spk); }
 function distinctSpeakers(){ const seen=new Set(),out=[]; segments.forEach(s=>{ if(!seen.has(s.speaker)){ seen.add(s.speaker); out.push(s.speaker); } }); return out; }
-// Einzel-Korrektur je Abschnitt (per Startsekunde), überschreibt die Sammel-Zuordnung
-function segKey(seg){ return String(Math.round(seg.start||0)); }
-function segPersonId(seg){ const k=segKey(seg); if(Object.prototype.hasOwnProperty.call(segOverrides,k)) return segOverrides[k]; return speakerMap[seg.speaker]||""; }
+// Einzel-Korrektur je Abschnitt (per Zehntelsekunde – kollisionsfrei bei schnellen Wortwechseln);
+// alte Ganzsekunden-Keys aus früher gespeicherten Protokollen werden weiterhin gelesen.
+function segKey(seg){ return (seg.start||0).toFixed(1); }
+function segKeyOld(seg){ return String(Math.round(seg.start||0)); }
+function segOvKey(seg){ const k=segKey(seg); if(Object.prototype.hasOwnProperty.call(segOverrides,k)) return k;
+  const ko=segKeyOld(seg); if(Object.prototype.hasOwnProperty.call(segOverrides,ko)) return ko; return null; }
+function segPersonId(seg){ const k=segOvKey(seg); if(k!==null) return segOverrides[k]; return speakerMap[seg.speaker]||""; }
 function segLabel(seg){ const pid=segPersonId(seg); const p=pid&&personById(pid); return p?p.name:rawSpkLabel(seg.speaker); }
 function segColor(seg){ const pid=segPersonId(seg); const p=pid&&personById(pid); if(p) return p.color; return speakerColor(seg.speaker); }
 
@@ -517,20 +538,22 @@ function renderSpeakerPanel(){
   }));
   panel.querySelectorAll("[data-play]").forEach(b=>b.addEventListener("click",()=>previewSpeaker(b.getAttribute("data-play"))));
 }
+let _emptyTHtml=null;   // Leer-Hinweis einmalig sichern (das Original-DOM-Element wird beim ersten Rendern entfernt)
 function renderTranscript(){
   renderSpeakerPanel();
   const box=$("#transcript");
-  if(!segments.length){ box.innerHTML=$("#emptyT")?$("#emptyT").outerHTML:""; $("#sCount").textContent=0; return; }
+  if(_emptyTHtml===null) _emptyTHtml=$("#emptyT")?$("#emptyT").outerHTML:"";
+  if(!segments.length){ box.innerHTML=_emptyTHtml; $("#sCount").textContent=0; return; }
   box.innerHTML="";
   const speakers=[...new Set(segments.map(s=>s.speaker))];
   segments.forEach(seg=>{
     const col=segColor(seg), lbl=segLabel(seg);
-    const k=segKey(seg);
-    const isOv=Object.prototype.hasOwnProperty.call(segOverrides,k);
+    const k=segKey(seg), kOv=segOvKey(seg);
+    const isOv=kOv!==null;
     const el=document.createElement("div"); el.className="seg";
     const initials=lbl.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase();
     let opts=`<option value="__auto__" ${!isOv?"selected":""}>↺ auto: ${escapeHtml(rawSpkLabel(seg.speaker))}</option>`;
-    persons.forEach(p=>{ opts+=`<option value="${p.id}" ${isOv&&segOverrides[k]===p.id?"selected":""}>${escapeHtml(p.name)}</option>`; });
+    persons.forEach(p=>{ opts+=`<option value="${p.id}" ${isOv&&segOverrides[kOv]===p.id?"selected":""}>${escapeHtml(p.name)}</option>`; });
     el.innerHTML=`<div class="av" style="background:${col}">${initials}</div>
       <div class="bubble">
         <div class="who"><span style="color:${col}">${escapeHtml(lbl)}</span>
@@ -540,6 +563,7 @@ function renderTranscript(){
       </div>`;
     el.querySelector("select").addEventListener("change",e=>{
       const v=e.target.value;
+      delete segOverrides[segKeyOld(seg)];                       // Alt-Key immer räumen (Kollisionen)
       if(v==="__auto__") delete segOverrides[k]; else segOverrides[k]=v;
       save(); renderTranscript();
     });
@@ -742,7 +766,7 @@ $("#fileInput").addEventListener("change",e=>{ const f=e.target.files[0]; if(f) 
 // (max 50 Zeichen / max 5 Wörter pro Begriff, max 1000 Begriffe)
 function buildKeyterms(){
   const set=new Set();
-  const add=v=>{ v=(v||"").trim().replace(/\s+/g," "); if(v && v.length<=50 && v.split(" ").length<=5) set.add(v); };
+  const add=v=>{ v=(v||"").replace(/[<>{}\[\]\\]/g,"").trim().replace(/\s+/g," "); if(v && v.length<=50 && v.split(" ").length<=5) set.add(v); };  // verbotene Zeichen (ElevenLabs) entfernen
   persons.forEach(p=>add(p.name));
   add(currentCustomerName());
   const ag=(($("#agenda")&&$("#agenda").value)||"");
@@ -765,9 +789,9 @@ async function transcribe(blob, isLive){
   // Sprecheranzahl-Hinweis -> deutlich bessere Trennung (manuell gesetzt oder = Teilnehmerzahl)
   const ns=(cfg.numSpeakers&&cfg.numSpeakers>0)?cfg.numSpeakers:persons.length;
   if(ns>=1 && ns<=32) fd.append("num_speakers", String(ns));
-  // Vokabular-Hinweise (Namen, Kunde, Traktanden, Fachbegriffe) -> richtige Schreibung & Erkennung
-  const kt=buildKeyterms();
-  if(kt.length) fd.append("keyterms", JSON.stringify(kt));
+  // Vokabular-Hinweise (Namen, Kunde, Traktanden, Fachbegriffe) -> richtige Schreibung & Erkennung.
+  // WICHTIG: je Begriff ein eigenes Multipart-Feld (wie das offizielle SDK) – ein JSON-String wird abgelehnt (422).
+  buildKeyterms().forEach(t=>fd.append("keyterms", t));
   try{
     const useProxy = PROXY_ON && !cfg.eleven;
     const res = useProxy
@@ -775,6 +799,7 @@ async function transcribe(blob, isLive){
       : await fetch("https://api.elevenlabs.io/v1/speech-to-text",{ method:"POST", headers:{ "xi-api-key": cfg.eleven }, body:fd });
     if(!res.ok){ const t=await res.text(); throw new Error("HTTP "+res.status+" "+t.slice(0,300)); }
     const data=await res.json();
+    if(isLive && !_liveOn) return false;   // Stopp/Pause kam während des Requests -> Teilstand verwerfen (Finale gewinnt)
     segments=wordsToSegments(data);
     setLastAudio(blob);               // fuer Vorhoeren je Sprecher
     LS.set("gv_segments",segments);   // Transkript ueberlebt Reload
@@ -840,6 +865,7 @@ async function callClaude(system, user, schema, maxTokens){
   if(!res.ok){ const t=await res.text(); throw new Error("HTTP "+res.status+" "+t.slice(0,300)); }
   const data=await res.json();
   if(data.stop_reason==="refusal"){ throw new Error("Von Claude abgelehnt (refusal)."); }
+  if(data.stop_reason==="max_tokens"){ throw new Error("Antwort am Token-Limit abgeschnitten (max_tokens) – Textmenge zu gross."); }
   const block=(data.content||[]).find(b=>b.type==="text");
   if(!block){ throw new Error("Keine Textantwort erhalten."); }
   return JSON.parse(block.text);
@@ -883,21 +909,34 @@ async function aiCleanup(){
 - NICHTS hinzufügen oder weglassen, Zeilen NICHT zusammenlegen oder umstellen. Gleiche Nummern, gleiche Anzahl.
 - Bereits korrekte Zeilen unverändert zurückgeben.`;
   const ctx=`Teilnehmer: ${persons.map(p=>p.name).join(", ")||"unbekannt"}\nKunde/Mandant: ${currentCustomerName()||"—"}`;
-  const BATCH=50; let done=0, failed=0;
+  const segsRef=segments;              // wird das Array zwischenzeitlich ersetzt (Live-Update/Neu/Öffnen) -> abbrechen
+  let done=0, failed=0, lastErr="";
   try{
-    for(let i=0;i<segments.length;i+=BATCH){
-      const slice=segments.slice(i,i+BATCH);
-      const numbered=slice.map((s,j)=>`[${i+j}] ${s.text}`).join("\n");
-      setStatus(`🪄 KI-Korrektur … ${Math.min(i+BATCH,segments.length)}/${segments.length} Abschnitte`,true);
+    // Stapel nach TEXTMENGE bilden (Token-Limit): max 20 Abschnitte ODER ~6000 Zeichen pro Stapel
+    const batches=[]; let cur=[], curChars=0;
+    segsRef.forEach((s,i)=>{ const len=(s.text||"").length;
+      if(cur.length && (cur.length>=20 || curChars+len>6000)){ batches.push(cur); cur=[]; curChars=0; }
+      cur.push(i); curChars+=len; });
+    if(cur.length) batches.push(cur);
+    let doneSegs=0;
+    for(const idxs of batches){
+      if(segments!==segsRef){ setStatus("⚠ KI-Korrektur abgebrochen – das Transkript wurde zwischenzeitlich neu erstellt.",true); return; }
+      const numbered=idxs.map(i=>`[${i}] ${segsRef[i].text}`).join("\n");
+      doneSegs+=idxs.length;
+      setStatus(`🪄 KI-Korrektur … ${doneSegs}/${segsRef.length} Abschnitte`,true);
       try{
         const obj=await callClaude(sys, ctx+"\n\nTRANSKRIPT (nummeriert):\n"+numbered, CLEAN_SCHEMA, 8000);
-        (obj.zeilen||[]).forEach(z=>{ if(Number.isInteger(z.nr) && z.nr>=0 && z.nr<segments.length && typeof z.text==="string" && z.text.trim()){ segments[z.nr].text=z.text.trim(); done++; } });
-      }catch(e){ failed++; }
+        if(segments!==segsRef){ setStatus("⚠ KI-Korrektur abgebrochen – das Transkript wurde zwischenzeitlich neu erstellt.",true); return; }
+        (obj.zeilen||[]).forEach(z=>{ if(Number.isInteger(z.nr) && idxs.includes(z.nr) && typeof z.text==="string" && z.text.trim()){ segsRef[z.nr].text=z.text.trim(); done++; } });
+      }catch(e){ failed++; lastErr=e.message||String(e); }
     }
-    LS.set("gv_segments",segments); renderTranscript();
-    setStatus(failed? `🪄 KI-Korrektur fertig – ${done} Abschnitte überarbeitet (${failed} Stapel übersprungen, später erneut versuchbar).`
-                    : `✅ KI-Korrektur fertig – ${done} Abschnitte überarbeitet.`,true);
-    setTimeout(()=>setStatus("",false),6000);
+    if(segments===segsRef){ LS.set("gv_segments",segments); renderTranscript(); }
+    if(done===0 && failed>0){ setStatus("❌ KI-Korrektur fehlgeschlagen: "+lastErr,true); }
+    else{
+      setStatus(failed? `🪄 KI-Korrektur fertig – ${done} Abschnitte überarbeitet (${failed} Stapel übersprungen: ${lastErr}).`
+                      : `✅ KI-Korrektur fertig – ${done} Abschnitte überarbeitet.`,true);
+      setTimeout(()=>setStatus("",false),8000);
+    }
   }catch(e){ setStatus("❌ KI-Korrektur fehlgeschlagen: "+e.message,true); }
   finally{ if(btn) btn.disabled=false; }
 }
@@ -953,7 +992,7 @@ $("#exportBtn").addEventListener("click",()=>{
   if(segments.length){ md+=`## Transkript\n\n`; segments.forEach(s=>md+=`**${segLabel(s)}:** ${s.text}\n\n`); }
   const blob=new Blob([md],{type:"text/markdown"});
   const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
-  const kdPrefix=kunde?kunde.replace(/[^a-zA-Z0-9]+/g,"_").replace(/^_|_$/g,"")+"_":"";
+  const kdPrefix=kunde?fileSafe(kunde)+"_":"";
   a.download=`GV-Protokoll_${kdPrefix}${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}.md`;
   a.click();
 });
@@ -961,14 +1000,23 @@ $("#exportBtn").addEventListener("click",()=>{
 // ── Word-Export: sauber formatiertes .doc (öffnet direkt in Word) ──
 function exportWord(){
   const d=new Date();
-  const kunde=currentCustomerName();
-  const esc=escapeHtml;
   const dateStr=`${String(d.getDate()).padStart(2,"0")}.${String(d.getMonth()+1).padStart(2,"0")}.${d.getFullYear()}`;
   const inclTr = (segments.length>0) && confirm("Vollständiges Transkript am Schluss anhängen?\n\nOK = mit Transkript   ·   Abbrechen = nur Protokoll (Zusammenfassung, Traktanden, Beschlüsse, Aufgaben)");
+  wordDocFromState({ kunde:currentCustomerName(), dateStr, teilnehmer:persons.map(p=>p.name).join(", ")||"—",
+    summaryText, traktanden, decisions, tasks, segments, label:segLabel, inclTr });
+}
+// Gemeinsamer Word-Builder – arbeitet NUR auf dem übergebenen Zustand
+// (wird auch für gespeicherte Protokolle genutzt, ohne den Arbeitsbereich anzufassen)
+function wordDocFromState(st){
+  const d=new Date();
+  const esc=escapeHtml;
+  const kunde=st.kunde||"", dateStr=st.dateStr, inclTr=st.inclTr;
+  const summaryText=st.summaryText||"", traktanden=st.traktanden||[], decisions=st.decisions||[], tasks=st.tasks||[], segments=st.segments||[];
+  const segLabel=st.label;
   let b=`<h1>Protokoll</h1>`;
   if(kunde) b+=`<div class="sub">${esc(kunde)}</div>`;
   b+=`<table class="meta"><tr><td class="k">Datum</td><td>${dateStr}</td></tr>`+
-     `<tr><td class="k">Teilnehmer</td><td>${esc(persons.map(p=>p.name).join(", ")||"—")}</td></tr></table>`;
+     `<tr><td class="k">Teilnehmer</td><td>${esc(st.teilnehmer||"—")}</td></tr></table>`;
   if(summaryText) b+=`<h2>Zusammenfassung</h2><p>${esc(summaryText).replace(/\n/g,"<br>")}</p>`;
   if(traktanden&&traktanden.length){
     b+=`<h2>Traktanden</h2>`;
@@ -1009,7 +1057,7 @@ function exportWord(){
   const html=`<!DOCTYPE html><html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><title>Protokoll ${esc(kunde||"")}</title><style>${css}</style></head><body>${b}</body></html>`;
   const blob=new Blob(["﻿",html],{type:"application/msword"});
   const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
-  const kdPrefix=kunde?kunde.replace(/[^a-zA-Z0-9]+/g,"_").replace(/^_|_$/g,"")+"_":"";
+  const kdPrefix=kunde?fileSafe(kunde)+"_":"";
   a.download=`Protokoll_${kdPrefix}${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}.doc`;
   a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),4000);
 }
@@ -1031,7 +1079,9 @@ function restoreState(data){
   segments=data.segments||[]; summaryText=data.summaryText||""; traktanden=data.traktanden||[];
   tasks=data.tasks||[]; decisions=data.decisions||[];
   if($("#agenda")) $("#agenda").value=data.agenda||"";
+  LS.set("gv_agenda", data.agenda||"");                 // sonst kehrt die alte Traktandenliste nach Reload zurück
   LS.set("gv_customer", data.customer||{id:"",name:""});
+  setLastAudio(null);                                    // Vorhör-Audio gehört zum vorherigen Transkript
   save(); saveEval(); LS.set("gv_segments",segments);
   renderPersons(); renderCustomerSelect(); renderTranscript(); renderResult();
 }
@@ -1039,14 +1089,15 @@ function newProtocol(){
   if((segments.length||summaryText) && !confirm("Neues Protokoll starten?\n\nDas aktuelle Transkript und die Auswertung werden geleert. Wenn du es behalten willst, vorher »💾 Aktuelles speichern«.")) return;
   persons=[]; speakerMap={}; segOverrides={}; segments=[]; summaryText=""; traktanden=[]; tasks=[]; decisions=[];
   if($("#agenda")) $("#agenda").value="";
-  ["gv_segments","gv_eval","gv_persons","gv_speakerMap","gv_segOverrides"].forEach(k=>localStorage.removeItem(k));
+  ["gv_segments","gv_eval","gv_persons","gv_speakerMap","gv_segOverrides","gv_agenda"].forEach(k=>localStorage.removeItem(k));
+  setLastAudio(null);
   _setCurrentProto(null,"");
   renderPersons(); renderTranscript(); renderResult();
   $("#protoModal").classList.remove("show");
   setStatus("🆕 Neues Protokoll – bereit für die Aufnahme.",true); setTimeout(()=>setStatus("",false),3500);
 }
 async function saveProtocol(){
-  const tok=mailflowToken();
+  const tok=await mailflowToken();
   if(!tok){ setStatus("Bitte in smartis.me einloggen, um Protokolle zentral zu speichern.",true); return; }
   if(!segments.length && !summaryText){ setStatus("Nichts zu speichern – erst transkribieren/auswerten.",true); setTimeout(()=>setStatus("",false),3000); return; }
   const cust=LS.get("gv_customer",{id:"",name:""}); const d=new Date();
@@ -1063,13 +1114,22 @@ async function saveProtocol(){
       headers:{ apikey:PROXY_KEY, Authorization:"Bearer "+tok, "content-type":"application/json", Prefer:"return=representation" },
       body:JSON.stringify(upd?{...payload, updated_at:new Date().toISOString()}:payload) });
     if(!res.ok){ const t=await res.text(); throw new Error("HTTP "+res.status+" "+t.slice(0,200)); }
-    const rows=await res.json(); if(rows&&rows[0]) _setCurrentProto(rows[0].id, rows[0].title);
-    setStatus(upd?"✅ Protokoll aktualisiert.":"✅ Protokoll gespeichert.",true); setTimeout(()=>setStatus("",false),3500);
+    let rows=await res.json(); let recreated=false;
+    if(upd && !(rows&&rows[0])){
+      // PATCH traf 0 Zeilen: Protokoll wurde inzwischen gelöscht (z.B. von einem Kollegen) -> neu anlegen statt stillem No-Op
+      const res2=await fetch(SUPA_REST+"/gv_protocols",{ method:"POST",
+        headers:{ apikey:PROXY_KEY, Authorization:"Bearer "+tok, "content-type":"application/json", Prefer:"return=representation" },
+        body:JSON.stringify(payload) });
+      if(!res2.ok){ const t=await res2.text(); throw new Error("HTTP "+res2.status+" "+t.slice(0,200)); }
+      rows=await res2.json(); recreated=true;
+    }
+    if(rows&&rows[0]){ _setCurrentProto(rows[0].id, rows[0].title); delete _protoCache[rows[0].id]; }
+    setStatus(recreated?"✅ Protokoll neu angelegt (das ursprüngliche war inzwischen gelöscht).":(upd?"✅ Protokoll aktualisiert.":"✅ Protokoll gespeichert."),true); setTimeout(()=>setStatus("",false),4500);
     if($("#protoModal").classList.contains("show")) loadProtocolList();
   }catch(e){ setStatus("❌ Speichern fehlgeschlagen: "+e.message,true); }
 }
 async function loadProtocolList(){
-  const box=$("#protoList"); const tok=mailflowToken();
+  const box=$("#protoList"); const tok=await mailflowToken();
   if(!tok){ box.innerHTML=`<div class="pg-empty">Bitte in smartis.me einloggen, um gespeicherte Protokolle zu sehen.</div>`; return; }
   box.innerHTML=`<div class="pg-empty">Lade …</div>`;
   try{
@@ -1100,8 +1160,8 @@ function renderProtocolList(rows){
   box.querySelectorAll(".pg-btn").forEach(b=>b.addEventListener("click",()=>{
     const id=b.dataset.id, act=b.dataset.act;
     if(act==="view") viewProtocol(id,b);
-    else if(act==="open") openProtocol(id,false);
-    else if(act==="word") openProtocol(id,true);
+    else if(act==="open") openProtocol(id);
+    else if(act==="word") wordProtocol(id);
     else if(act==="del") deleteProtocol(id);
   }));
 }
@@ -1109,8 +1169,8 @@ function renderProtocolList(rows){
 const _protoCache={};
 function _labelFor(data, seg){
   const ps=data.persons||[], sm=data.speakerMap||{}, ov=data.segOverrides||{};
-  const k=String(Math.round(seg.start||0));
-  const pid=(ov[k]!==undefined?ov[k]:sm[seg.speaker])||"";
+  const k1=(seg.start||0).toFixed(1), k0=String(Math.round(seg.start||0));   // neuer Zehntel-Key, dann Alt-Key
+  const pid=(ov[k1]!==undefined?ov[k1]:(ov[k0]!==undefined?ov[k0]:sm[seg.speaker]))||"";
   const p=ps.find(x=>x.id===pid);
   if(p) return p.name;
   const n=parseInt(String(seg.speaker||"").replace(/\D/g,"")); return "Sprecher "+((isNaN(n)?0:n)+1);
@@ -1124,7 +1184,7 @@ async function viewProtocol(id, btn){
   btn.textContent="⏳";
   let data=_protoCache[id];
   if(!data){
-    const tok=mailflowToken(); if(!tok){ btn.textContent="👁"; return; }
+    const tok=await mailflowToken(); if(!tok){ btn.textContent="👁"; return; }
     try{
       const r=await fetch(SUPA_REST+"/gv_protocols?id=eq."+id+"&select=data",{ headers:{ apikey:PROXY_KEY, Authorization:"Bearer "+tok } });
       if(!r.ok) throw new Error("HTTP "+r.status);
@@ -1142,8 +1202,11 @@ async function viewProtocol(id, btn){
   const prev=document.createElement("div"); prev.className="pg-prev"; prev.innerHTML=h;
   row.after(prev);
 }
-async function openProtocol(id, thenWord){
-  const tok=mailflowToken(); if(!tok) return;
+async function openProtocol(id){
+  // Schutz: Öffnen ersetzt den Arbeitsbereich – bei ungespeicherter Arbeit erst nachfragen
+  if((segments.length||summaryText) && _currentProtocolId!==id &&
+     !confirm("Öffnen ersetzt dein aktuelles Transkript und die Auswertung durch das gespeicherte Protokoll.\n\nFortfahren? Zum Sichern zuerst abbrechen und »💾 Aktuelles speichern«.")) return;
+  const tok=await mailflowToken(); if(!tok) return;
   setStatus("Lade Protokoll …",true);
   try{
     const r=await fetch(SUPA_REST+"/gv_protocols?id=eq."+id+"&select=*",{ headers:{ apikey:PROXY_KEY, Authorization:"Bearer "+tok } });
@@ -1152,16 +1215,36 @@ async function openProtocol(id, thenWord){
     restoreState(row.data||{}); _setCurrentProto(row.id, row.title);
     $("#protoModal").classList.remove("show");
     setStatus(`✅ Protokoll geladen: ${row.title}`,true); setTimeout(()=>setStatus("",false),4000);
-    if(thenWord) setTimeout(exportWord, 250);
   }catch(e){ setStatus("❌ Laden fehlgeschlagen: "+e.message,true); }
+}
+// 📄 Word DIREKT aus einem gespeicherten Protokoll – ohne den Arbeitsbereich zu verändern
+async function wordProtocol(id){
+  const tok=await mailflowToken(); if(!tok) return;
+  setStatus("Erzeuge Word aus gespeichertem Protokoll …",true);
+  try{
+    const r=await fetch(SUPA_REST+"/gv_protocols?id=eq."+id+"&select=*",{ headers:{ apikey:PROXY_KEY, Authorization:"Bearer "+tok } });
+    if(!r.ok) throw new Error("HTTP "+r.status);
+    const rows=await r.json(); const row=rows&&rows[0]; if(!row) throw new Error("nicht gefunden");
+    const data=row.data||{};
+    const md=row.meeting_date?String(row.meeting_date).split("-"):null;
+    const dateStr=md&&md.length===3?`${md[2]}.${md[1]}.${md[0]}`:new Date().toLocaleDateString("de-CH");
+    const segs=data.segments||[];
+    const inclTr=(segs.length>0)&&confirm("Vollständiges Transkript am Schluss anhängen?\n\nOK = mit Transkript   ·   Abbrechen = nur Protokoll");
+    wordDocFromState({ kunde:row.customer_name||(data.customer&&data.customer.name)||"", dateStr,
+      teilnehmer:(data.persons||[]).map(p=>p.name).join(", ")||"—",
+      summaryText:data.summaryText||"", traktanden:data.traktanden||[], decisions:data.decisions||[], tasks:data.tasks||[],
+      segments:segs, label:s=>_labelFor(data,s), inclTr });
+    setStatus("✅ Word erstellt – dein aktuelles Protokoll blieb unverändert.",true); setTimeout(()=>setStatus("",false),4000);
+  }catch(e){ setStatus("❌ Word-Export fehlgeschlagen: "+e.message,true); }
 }
 async function deleteProtocol(id){
   if(!confirm("Dieses gespeicherte Protokoll endgültig löschen?")) return;
-  const tok=mailflowToken(); if(!tok) return;
+  const tok=await mailflowToken(); if(!tok) return;
   try{
     const r=await fetch(SUPA_REST+"/gv_protocols?id=eq."+id,{ method:"DELETE", headers:{ apikey:PROXY_KEY, Authorization:"Bearer "+tok } });
     if(!r.ok) throw new Error("HTTP "+r.status);
     if(_currentProtocolId===id) _setCurrentProto(null,"");
+    delete _protoCache[id];
     loadProtocolList();
   }catch(e){ setStatus("❌ Löschen fehlgeschlagen: "+e.message,true); }
 }
@@ -1222,12 +1305,17 @@ $("#modal").addEventListener("click",e=>{ if(e.target===$("#modal")) $("#modal")
 //  Util & Init
 // ════════════════════════════════════════════════════════════════
 function escapeHtml(s){ return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function fileSafe(s){ return String(s).replace(/ä/g,"ae").replace(/ö/g,"oe").replace(/ü/g,"ue").replace(/Ä/g,"Ae").replace(/Ö/g,"Oe").replace(/Ü/g,"Ue").replace(/ß/g,"ss").replace(/[éèê]/g,"e").replace(/[àâ]/g,"a").replace(/[^a-zA-Z0-9]+/g,"_").replace(/^_+|_+$/g,""); }
 function save(){ LS.set("gv_persons",persons); LS.set("gv_speakerMap",speakerMap); LS.set("gv_segOverrides",segOverrides); }
 function saveEval(){ LS.set("gv_eval",{summaryText,traktanden,tasks,decisions}); }
 segments = LS.get("gv_segments", []);   // letztes Transkript wiederherstellen
 (function(){ const ev=LS.get("gv_eval",null); if(ev){ summaryText=ev.summaryText||""; traktanden=ev.traktanden||[]; tasks=ev.tasks||[]; decisions=ev.decisions||[]; } })();   // Auswertung wiederherstellen (übersteht Reload)
 renderPersons(); renderTranscript(); renderResult();
 refreshRecoveryBanner();                // nach Crash/Reload: gesicherte Aufnahmen anbieten
+(async()=>{ try{                        // bereits transkribierte Aufnahmen nach 7 Tagen aus IndexedDB räumen (~60 MB/h!)
+  const cutoff=Date.now()-7*86400000;
+  for(const r of await dbGetAll("recordings")) if(r.status==="finalized" && (r.startedAt||0)<cutoff) await dbDeleteRecording(r.id);
+}catch(e){} })();
 // Traktandenliste merken
 (function(){ const ag=$("#agenda"); if(ag){ ag.value=LS.get("gv_agenda",""); ag.addEventListener("input",()=>LS.set("gv_agenda",ag.value)); } })();
 renderCustomerSelect(); loadCustomers();   // Kunde: Freitext-Fallback sofort, Dropdown sobald MailFlow-Login da
