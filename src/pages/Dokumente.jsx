@@ -1763,12 +1763,31 @@ export default function Dokumente() {
         .single();
       if (error) throw error;
       const url = `${window.location.origin}/share/${data.token}`;
-      const subject = encodeURIComponent(doc.name || "Dokument");
-      const body = encodeURIComponent(`Guten Tag\n\nanbei der Link zum Dokument „${doc.name || ""}":\n${url}\n\nFreundliche Grüsse`);
+      const name = doc.name || "Dokument";
+      // Ein mailto:-Body kann nur reinen Text tragen (kein HTML) – deshalb legen wir den
+      // klickbaren Dateiname-Hyperlink zusaetzlich in die Zwischenablage. Im geoeffneten
+      // Mail fuegt der Nutzer ihn mit Strg+V als Link ein (wie in Outlook). Die nackte URL
+      // bleibt als Fallback im Text.
+      let clipOk = false;
+      try {
+        const esc = (str) => String(str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+        const html = `<a href="${url}">${esc(name)}</a>`;
+        if (navigator.clipboard && window.ClipboardItem) {
+          await navigator.clipboard.write([new window.ClipboardItem({
+            "text/html":  new Blob([html], { type: "text/html" }),
+            "text/plain": new Blob([url],  { type: "text/plain" }),
+          })]);
+          clipOk = true;
+        }
+      } catch { /* ignore */ }
+      const subject = encodeURIComponent(name);
+      const body = encodeURIComponent(`Guten Tag\n\nanbei der Link zum Dokument „${name}":\n${url}\n\nFreundliche Grüsse`);
       const a = document.createElement("a");
       a.href = `mailto:?subject=${subject}&body=${body}`;
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      toast.success("Mail mit Freigabe-Link geöffnet");
+      toast.success(clipOk
+        ? "Mail geöffnet · Dateiname-Link in Zwischenablage – mit Strg+V einfügen"
+        : "Mail mit Freigabe-Link geöffnet");
     } catch (e) {
       toast.error("Mail konnte nicht erstellt werden: " + e.message);
     }
