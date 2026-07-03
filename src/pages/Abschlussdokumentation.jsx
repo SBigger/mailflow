@@ -2482,8 +2482,8 @@ function KontenplanTab({ konten, onUpdateKonto, onAddKonto, customerId, selected
   };
   // Anpassungszeilen-Edit
   const [editAnp, setEditAnp] = useState(null); // { idx, bezeichnung, betrag }
-  // Resizable column widths: [Konto-Nr, Kontoname, Saldo IST, Saldo VJ, Abw., Position, Notiz]
-  const DEFAULT_COL_WIDTHS = [78, 200, 135, 135, 115, 160, 130];
+  // Resizable column widths: [Konto-Nr, Kontoname, Saldo IST, Saldo VJ, Abw., Position, Notiz, Pendent]
+  const DEFAULT_COL_WIDTHS = [78, 200, 135, 135, 115, 160, 130, 84];
   const [colWidths, setColWidths] = useState(DEFAULT_COL_WIDTHS);
   const colWidthsRef = useRef(DEFAULT_COL_WIDTHS);
 
@@ -2491,7 +2491,7 @@ function KontenplanTab({ konten, onUpdateKonto, onAddKonto, customerId, selected
     e.preventDefault();
     const sx = e.clientX;
     const sw = colWidthsRef.current[ci];
-    const minW = [50, 80, 80, 80, 60, 80, 80][ci] ?? 60;
+    const minW = [50, 80, 80, 80, 60, 80, 80, 50][ci] ?? 60;
     const move = (me) => {
       const newW = Math.max(minW, sw + me.clientX - sx);
       const next = colWidthsRef.current.map((w, i) => i === ci ? newW : w);
@@ -2555,8 +2555,12 @@ function KontenplanTab({ konten, onUpdateKonto, onAddKonto, customerId, selected
     );
   }
 
-  const COL_HEADERS = ["Konto-Nr", "Kontoname", "Saldo IST", "Saldo VJ", "Abw.", "Position", "Notiz"];
-  const COL_ALIGN = [false, false, true, true, true, false, false];
+  const COL_HEADERS = ["Konto-Nr", "Kontoname", "Saldo IST", "Saldo VJ", "Abw.", "Position", "Notiz", "Pendent"];
+  const COL_ALIGN = [false, false, true, true, true, false, false, false];
+  // Violett für „pendent"-Zeilen – theme-abhängig, damit Text lesbar bleibt.
+  // Light/Artis: helles Violett + dunkler Text · Dark: halbtransparenter Violett-Overlay + heller Text.
+  const PENDENT_BG       = isArtis ? "#efe9fb" : isLight ? "#ede9fe" : "rgba(139,92,246,0.22)";
+  const PENDENT_BG_HOVER = isArtis ? "#e5dbf7" : isLight ? "#ddd6fe" : "rgba(139,92,246,0.34)";
 
   return (
     <div className="overflow-x-auto">
@@ -2642,6 +2646,7 @@ function KontenplanTab({ konten, onUpdateKonto, onAddKonto, customerId, selected
               <td style={{ padding: "4px 12px", fontSize: 11, color: subC, fontStyle: "italic" }}>
                 Neue Zeile · Enter zum Hinzufügen
               </td>
+              <td />
             </tr>
           )}
           {groupOrder.map(groupKey => {
@@ -2685,7 +2690,7 @@ function KontenplanTab({ konten, onUpdateKonto, onAddKonto, customerId, selected
                   <td style={{ padding: "8px 12px", textAlign: "right", fontWeight: 700, fontSize: 12, color: headingC, fontFamily: "monospace", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                     {fmtCHF(groupTotalVJ)}
                   </td>
-                  <td colSpan={3} style={{ padding: "8px 12px" }} />
+                  <td colSpan={4} style={{ padding: "8px 12px" }} />
                 </tr>
 
                 {/* Rows */}
@@ -2696,14 +2701,15 @@ function KontenplanTab({ konten, onUpdateKonto, onAddKonto, customerId, selected
                   const noMapping = !effectivePos && /^[1-8]/.test(String(konto.kontonummer));
 
                   const isExpanded = expandedKonten.has(konto.id);
+                  const isPendent = !!konto.arbeitspapier?.pendent;
                   return (
                     <React.Fragment key={konto.id}>
                     <tr style={{
                       borderBottom: isExpanded ? "none" : `1px solid ${tableBdr}`,
-                      backgroundColor: noMapping ? "#fef2f250" : "transparent",
+                      backgroundColor: isPendent ? PENDENT_BG : noMapping ? "#fef2f250" : "transparent",
                     }}
-                      onMouseEnter={e => e.currentTarget.style.backgroundColor = noMapping ? "#fef2f2" : rowHover}
-                      onMouseLeave={e => e.currentTarget.style.backgroundColor = isExpanded ? (accent + "08") : noMapping ? "#fef2f250" : "transparent"}>
+                      onMouseEnter={e => e.currentTarget.style.backgroundColor = isPendent ? PENDENT_BG_HOVER : noMapping ? "#fef2f2" : rowHover}
+                      onMouseLeave={e => e.currentTarget.style.backgroundColor = isPendent ? PENDENT_BG : isExpanded ? (accent + "08") : noMapping ? "#fef2f250" : "transparent"}>
 
                       {/* Konto-Nr + Expand Toggle */}
                       <td style={{ padding: "7px 8px 7px 12px", fontWeight: 600, color: headingC, whiteSpace: "nowrap", width: 90 }}>
@@ -2796,11 +2802,21 @@ function KontenplanTab({ konten, onUpdateKonto, onAddKonto, customerId, selected
                           panelBg={panelBg} panelBdr={panelBdr}
                         />
                       </td>
+                      {/* Pendent */}
+                      <td style={{ padding: "4px 12px", textAlign: "center" }}>
+                        <input
+                          type="checkbox"
+                          checked={isPendent}
+                          onChange={e => onUpdateKonto(konto.id, { arbeitspapier: { ...(konto.arbeitspapier || {}), pendent: e.target.checked } })}
+                          title={isPendent ? "Als erledigt markieren" : "Als pendent markieren"}
+                          style={{ width: 16, height: 16, cursor: "pointer", accentColor: "#7c3aed", verticalAlign: "middle" }}
+                        />
+                      </td>
                     </tr>
                     {/* ── Arbeitspapier (MiniExcel) + Belege ── */}
                     {isExpanded && (
                       <tr style={{ borderBottom: `1px solid ${tableBdr}`, backgroundColor: accent + "06" }}>
-                        <td colSpan={7} style={{ padding: 0 }}>
+                        <td colSpan={8} style={{ padding: 0 }}>
                           <MiniExcel
                             data={konto.arbeitspapier}
                             onSave={d => onUpdateKonto(konto.id, { arbeitspapier: { ...(konto.arbeitspapier || {}), ...d } })}
@@ -2835,7 +2851,7 @@ function KontenplanTab({ konten, onUpdateKonto, onAddKonto, customerId, selected
                     <td style={{ padding: "6px 12px", textAlign: "right", fontWeight: 600, fontSize: 12, color: subC, fontFamily: "monospace", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                       {fmtCHF(groupTotalVJ)}
                     </td>
-                    <td colSpan={3} />
+                    <td colSpan={4} />
                   </tr>
                 )}
               </React.Fragment>
@@ -2876,7 +2892,7 @@ function KontenplanTab({ konten, onUpdateKonto, onAddKonto, customerId, selected
                   whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                   {abw !== 0 ? (abw > 0 ? "+" : "") + fmtCHF(abw) : ""}
                 </td>
-                <td colSpan={2} />
+                <td colSpan={3} />
               </tr>
             );
           })()}
