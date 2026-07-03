@@ -2,157 +2,24 @@ import React, { useState, useEffect, useRef, createContext, useCallback } from "
 import { Link, useLocation, useNavigate, Outlet } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import {
-  LayoutDashboard,
-  Mail,
-  CheckSquare,
-  Settings as SettingsIcon,
-  Building2,
-  CalendarClock,
-  CalendarDays,
-  CalendarRange,
-  CalendarCheck,
-  LifeBuoy,
-  BookOpen,
-  FolderOpen,
-  FolderArchive,
   LogOut,
-  Wrench,
   Mic,
-  CloudUpload,
-  BarChart3,
-  Clock,
-  BookMarked,
-  BookText,
-  Bot,
-  MessageSquare,
-  Receipt,
-  FileText,
-  FileCheck,
-  FileSignature,
-  Landmark,
-  Database,
-  Archive,
-  Percent,
-  Scale,
-  PenLine,
-  Presentation,
-  BookUser,
-  Car,
-  Sparkles,
-  ScrollText,
-  PhoneCall,
-  Users,
+  Search,
   PanelLeftClose,
   PanelLeftOpen,
   ChevronDown,
 } from "lucide-react";
-import { FEATURE_LEISTUNGSERFASSUNG } from "@/lib/featureFlags";
 import VoiceAssistant from "@/components/voice/VoiceAssistant";
 import TaskReminderPopup from "@/components/tasks/TaskReminderPopup";
 import BottomNav from "@/components/mobile/BottomNav";
+import AppLauncher from "@/components/navigation/AppLauncher";
+import { NAV_GROUPS, DEFAULT_OPEN, itemHref, visibleItems, recordAppOpen } from "@/components/navigation/appCatalog";
 import { useIsMobile } from "@/components/mobile/useIsMobile";
 import { useAuth } from '@/lib/AuthContext';
 import * as packageJson from "../package.json";
 
 // Theme context for global access if needed elsewhere
 export const ThemeContext = createContext({ theme: 'dark', setTheme: () => {} });
-
-// ── Navigations-Katalog ────────────────────────────────────────────
-// `name`       → MailFlow-Seite (Route /<Name>)
-// `fibu`       → Unterseite im FiBu-Modul, geöffnet mit dem zuletzt benutzten Mandanten
-// `rail`       → erscheint auch in der schmalen Icon-Leiste (eingeklappter Modus)
-// `requiresAi` → nur sichtbar wenn profile.modules.ai aktiv ist
-const NAV_GROUPS = [
-  {
-    id: 'start', label: null, items: [
-      { name: 'Dashboard', label: 'Dashboard', icon: LayoutDashboard, rail: true },
-    ],
-  },
-  {
-    id: 'arbeit', label: 'Arbeit', items: [
-      { name: 'MailKanban', label: 'Mails', icon: Mail, rail: true },
-      { name: 'TaskBoard', label: 'Tasks', icon: CheckSquare, rail: true },
-      { name: 'Chartis', label: 'Chartis', icon: MessageSquare, rail: true },
-      { name: 'TicketBoard', label: 'Tickets', icon: LifeBuoy, rail: true },
-      { name: 'Fristen', label: 'Fristen', icon: CalendarClock, rail: true },
-      { name: 'Kalender', label: 'Kalender', icon: CalendarDays },
-      ...(FEATURE_LEISTUNGSERFASSUNG ? [{ name: 'Leistungserfassung', label: 'Leistungserfassung', icon: Clock, rail: true }] : []),
-    ],
-  },
-  {
-    id: 'kunden', label: 'Kunden', items: [
-      { name: 'Kunden', label: 'Kunden', icon: Building2, rail: true },
-      { name: 'Personen', label: 'Personen', icon: Users },
-      { name: 'Dokumente', label: 'Dokumente', icon: FolderOpen, rail: true },
-      { name: 'DokumenteV2', label: 'Dokumente V2', icon: FolderOpen },
-      { name: 'Posteingang', label: 'Posteingang', icon: CloudUpload, rail: true },
-      { name: 'TelefonDashboard', label: 'Telefon', icon: PhoneCall },
-    ],
-  },
-  {
-    id: 'fibu', label: 'Buchhaltung', items: [
-      { fibu: null, label: 'Mandanten', icon: BookMarked, rail: true },
-      { fibu: 'kreditoren/uebersicht', label: 'Kreditoren', icon: Receipt },
-      { fibu: 'debitoren/uebersicht', label: 'Debitoren', icon: FileText },
-      { fibu: 'bankabstimmung', label: 'E-Banking', icon: Landmark },
-      { fibu: 'kreditoren/journal', label: 'Auswertungen FiBu', icon: BookText },
-      { fibu: 'jahresabschluss', label: 'Jahresabschluss', icon: FolderArchive },
-      { fibu: 'manuelle-buchungen', label: 'Hauptbuch', icon: BookOpen },
-      { fibu: 'kontenplan', label: 'Stammdaten', icon: Database },
-      { name: 'Anlagebuchhaltung', label: 'Anlagebuchhaltung', icon: Archive },
-    ],
-  },
-  {
-    id: 'steuern', label: 'Steuern', items: [
-      { name: 'Steuern', label: 'Steuererklärungen', icon: Percent },
-      { name: 'Veranlagungen', label: 'Veranlagungen', icon: FileCheck },
-      { name: 'Steuerausscheidung', label: 'Steuerausscheidung', icon: Scale },
-    ],
-  },
-  {
-    id: 'planung', label: 'Planung & Auswertung', items: [
-      { name: 'Auswertungen', label: 'Auswertungen', icon: BarChart3, rail: true },
-      { name: 'Jahresplanung', label: 'Jahresplanung', icon: CalendarRange },
-      { name: 'Monatsplanung', label: 'Einsatzplanung', icon: CalendarCheck },
-      { name: 'Abschlussdokumentation', label: 'Abschlussdokumentation', icon: FolderArchive },
-    ],
-  },
-  {
-    id: 'tools', label: 'Tools', items: [
-      { name: 'BriefSchreiben', label: 'Briefe schreiben', icon: PenLine },
-      { name: 'Whiteboard', label: 'Whiteboard', icon: Presentation },
-      { name: 'GVProtokollApp', label: 'GV-Protokoll', icon: ScrollText },
-      { name: 'Aktienbuch', label: 'Aktienbuch', icon: BookUser },
-      { name: 'Fahrzeugliste', label: 'Fahrzeugliste', icon: Car },
-      { name: 'Unterschriften', label: 'Unterschriften', icon: FileSignature },
-      { name: 'Promptvorlagen', label: 'Promptvorlagen', icon: Sparkles },
-      { name: 'ArtisTools', label: 'Alle Tools', icon: Wrench, rail: true },
-    ],
-  },
-  {
-    id: 'system', label: null, items: [
-      { name: 'KnowledgeBase', label: 'Wissen', icon: BookOpen, rail: true },
-      { name: 'AiAssistant', label: 'AI-Assistant', icon: Bot, rail: true, requiresAi: true },
-      { name: 'Settings', label: 'Einstellungen', icon: SettingsIcon, rail: true },
-    ],
-  },
-];
-
-// Gruppen, die beim ersten Start aufgeklappt sind
-const DEFAULT_OPEN = { start: true, arbeit: true, kunden: true, fibu: true, steuern: false, planung: false, tools: false, system: true };
-
-// FiBu-Links öffnen den zuletzt benutzten Mandanten direkt;
-// ohne bekannten Mandanten landet man auf der Mandanten-Auswahl.
-function fibuHref(sub) {
-  const id = localStorage.getItem('fibu_last_mandant');
-  if (!id || !sub) return '/fibu';
-  return `/fibu/${id}/${sub}`;
-}
-
-function itemHref(item) {
-  if (item.name) return item.href ?? createPageUrl(item.name);
-  return fibuHref(item.fibu);
-}
 
 // ── Einzelner Navigations-Eintrag ──────────────────────────────────
 function NavRow({ item, active, collapsed, pal }) {
@@ -162,6 +29,7 @@ function NavRow({ item, active, collapsed, pal }) {
     <Link
       to={itemHref(item)}
       title={collapsed ? item.label : undefined}
+      onClick={() => recordAppOpen(item)}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       style={{
@@ -223,6 +91,7 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
   const isMobile = useIsMobile();
   const [menuOpen, setMenuOpen] = useState(false);
   const [voiceOpen, setVoiceOpen] = useState(false);
+  const [launcherOpen, setLauncherOpen] = useState(false);
   const menuRef = useRef(null);
 
   // Aktive Seite: Prop hat Vorrang, sonst aus der URL abgeleitet (/Dashboard → "Dashboard")
@@ -280,6 +149,19 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
 
   const isTaskUser = profile?.role === 'task_user';
 
+  // --- Launcher-Hotkey: Ctrl/Cmd+K von überall ---
+  useEffect(() => {
+    if (isTaskUser || isMobile) return;
+    const handler = (e) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault();
+        setLauncherOpen(o => !o);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [isTaskUser, isMobile]);
+
   // --- UI Helpers ---
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -320,11 +202,10 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
     faint: isLight ? '#8a97a8' : isArtis ? '#7e917f' : '#71717a',
     hover: isLight ? '#dcdde8' : isArtis ? '#d8e4d8' : 'rgba(63,63,70,.55)',
     active: isArtis ? '#7a9b7f' : '#7c3aed',
+    searchBg: isLight ? '#ffffff' : isArtis ? '#f4f8f4' : 'rgba(63,63,70,.4)',
   };
 
-  // AI-Modul nur anzeigen, wenn freigeschaltet
-  const visibleItems = (items) => items.filter(it => !it.requiresAi || profile?.modules?.ai);
-  const railItems = NAV_GROUPS.flatMap(g => visibleItems(g.items).filter(i => i.rail));
+  const railItems = NAV_GROUPS.flatMap(g => visibleItems(g.items, profile).filter(i => i.rail));
 
   // Prevent flash of content if still loading auth
   if (loading) return <div className="h-screen w-screen flex items-center justify-center" style={{ backgroundColor: pageBg }}>...</div>;
@@ -343,7 +224,7 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
                 <div
                     className="flex items-center flex-shrink-0"
                     style={{
-                      padding: railMode ? '12px 0 8px' : '12px 10px 8px',
+                      padding: railMode ? '12px 0 6px' : '12px 10px 6px',
                       justifyContent: railMode ? 'center' : 'space-between',
                     }}
                 >
@@ -377,6 +258,43 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
                   </button>
                 </div>
 
+                {/* Suche → öffnet den App-Launcher */}
+                {railMode ? (
+                    <button
+                        onClick={() => setLauncherOpen(true)}
+                        title="App suchen (Ctrl+K)"
+                        style={{
+                          width: 40, height: 40, margin: '0 auto 6px', borderRadius: 8,
+                          border: 'none', cursor: 'pointer', background: 'transparent', color: pal.text,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        }}
+                        onMouseOver={e => { e.currentTarget.style.background = pal.hover; }}
+                        onMouseOut={e => { e.currentTarget.style.background = 'transparent'; }}
+                    >
+                      <Search style={{ width: 19, height: 19 }} />
+                    </button>
+                ) : (
+                    <button
+                        onClick={() => setLauncherOpen(true)}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 8,
+                          margin: '2px 8px 6px', padding: '7px 10px', borderRadius: 9,
+                          border: `1px solid ${sidebarBorder}`, cursor: 'pointer',
+                          background: pal.searchBg, color: pal.faint, fontSize: 12.5, textAlign: 'left',
+                        }}
+                        onMouseOver={e => { e.currentTarget.style.borderColor = pal.active; }}
+                        onMouseOut={e => { e.currentTarget.style.borderColor = sidebarBorder; }}
+                    >
+                      <Search style={{ width: 14, height: 14, flexShrink: 0 }} />
+                      <span style={{ flex: 1 }}>App suchen…</span>
+                      <kbd style={{
+                        fontSize: 9.5, fontWeight: 700, fontFamily: 'inherit',
+                        border: `1px solid ${sidebarBorder}`, borderBottomWidth: 2,
+                        borderRadius: 5, padding: '1px 5px',
+                      }}>Ctrl K</kbd>
+                    </button>
+                )}
+
                 {/* Navigation */}
                 <nav className="flex-1 overflow-y-auto overflow-x-hidden" style={{ paddingBottom: 10 }}>
                   {railMode
@@ -390,7 +308,7 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
                           />
                       ))
                       : NAV_GROUPS.map(group => {
-                          const items = visibleItems(group.items);
+                          const items = visibleItems(group.items, profile);
                           if (!items.length) return null;
                           return (
                               <div key={group.id}>
@@ -507,6 +425,16 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
           {/* Mobile Navigation */}
           {isMobile && !isTaskUser && <BottomNav />}
         </div>
+
+        {/* App-Launcher: Ctrl+K oder Klick aufs Suchfeld */}
+        {!isTaskUser && !isMobile && (
+            <AppLauncher
+                open={launcherOpen}
+                onClose={() => setLauncherOpen(false)}
+                profile={profile}
+                dark={!isLight && !isArtis}
+            />
+        )}
 
         {/* Voice Assistant Panel */}
         <VoiceAssistant open={voiceOpen && !isTaskUser && !isMobile} onClose={() => setVoiceOpen(false)} />
