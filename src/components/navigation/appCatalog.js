@@ -47,6 +47,7 @@ import {
 } from "lucide-react";
 import { createPageUrl } from "@/utils";
 import { FEATURE_LEISTUNGSERFASSUNG } from "@/lib/featureFlags";
+import { scheduleNavPrefsSave } from "./navPrefsSync";
 
 export const NAV_GROUPS = [
   {
@@ -204,8 +205,9 @@ function writeFavorites(keys) {
   } catch {
     return;
   }
-  // Dock und Launcher live synchron halten
+  // Dock und Launcher live synchron halten + ins Profil sichern
   window.dispatchEvent(new CustomEvent('smartis:favorites-changed'));
+  scheduleNavPrefsSave();
 }
 
 export function isFavorite(item) {

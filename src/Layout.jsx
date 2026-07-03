@@ -16,6 +16,7 @@ import BottomNav from "@/components/mobile/BottomNav";
 import AppLauncher from "@/components/navigation/AppLauncher";
 import FavoritesDock, { useFavorites } from "@/components/navigation/FavoritesDock";
 import { NAV_GROUPS, DEFAULT_OPEN, itemHref, visibleItems, recordAppOpen, appKey, isFavorite, toggleFavorite } from "@/components/navigation/appCatalog";
+import { hydrateNavPrefs, scheduleNavPrefsSave } from "@/components/navigation/navPrefsSync";
 import { useIsMobile } from "@/components/mobile/useIsMobile";
 import { useAuth } from '@/lib/AuthContext';
 import * as packageJson from "../package.json";
@@ -133,6 +134,7 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
   const toggleRailMode = () => {
     setRailMode(prev => {
       localStorage.setItem("nav_mode", prev ? "wide" : "rail");
+      scheduleNavPrefsSave();
       return !prev;
     });
   };
@@ -150,9 +152,23 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
     setOpenGroups(prev => {
       const next = { ...prev, [id]: !isGroupOpen(id) };
       localStorage.setItem("nav_groups_open", JSON.stringify(next));
+      scheduleNavPrefsSave();
       return next;
     });
   };
+
+  // Beim Start: Einstellungen aus dem Profil übernehmen (falls dort neuer)
+  useEffect(() => {
+    if (!profile) return;
+    if (hydrateNavPrefs(profile)) {
+      try {
+        setOpenGroups(JSON.parse(localStorage.getItem("nav_groups_open")) || {});
+      } catch {
+        setOpenGroups({});
+      }
+      setRailMode(localStorage.getItem("nav_mode") === "rail");
+    }
+  }, [profile]);
 
   // --- Role-Based Access Control & Redirection ---
   useEffect(() => {
