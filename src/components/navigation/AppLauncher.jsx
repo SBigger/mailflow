@@ -1,14 +1,35 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Fuse from 'fuse.js';
-import { Search, Sparkles, CornerDownLeft } from 'lucide-react';
-import { allApps, itemHref, recordAppOpen, frecencyTop, NAV_GROUPS, visibleItems } from './appCatalog';
+import { Search, Sparkles, CornerDownLeft, Star } from 'lucide-react';
+import { allApps, itemHref, recordAppOpen, frecencyTop, NAV_GROUPS, visibleItems, isFavorite, toggleFavorite } from './appCatalog';
 
 // ── Smartis App-Launcher ───────────────────────────────────────────
 // Vollbild-Overlay: oben Suchfeld, darunter erscheinen die Apps.
 // Leer  → "Für dich" (lernt aus deiner Nutzung) + alle Gruppen als Kacheln.
 // Tippen → unscharfe Suche inkl. Kurzformen ("kredi", "debi", "abschluss").
 // Bedienung: Ctrl+K öffnen · ↑↓ wählen · Enter öffnen · Esc schliessen.
+
+function FavStar({ app, visible }) {
+  const fav = isFavorite(app);
+  if (!visible && !fav) return null;
+  return (
+    <span
+      role="button"
+      title={fav ? 'Aus Favoriten entfernen' : 'Zu Favoriten (rechte Leiste) hinzufügen'}
+      onClick={(e) => { e.stopPropagation(); toggleFavorite(app); }}
+      style={{
+        position: 'absolute', top: 7, right: 7,
+        width: 22, height: 22, borderRadius: 7,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        color: fav ? '#e0a93d' : '#a8b2a9',
+        background: 'rgba(255,255,255,.7)', cursor: 'pointer',
+      }}
+    >
+      <Star style={{ width: 13, height: 13, fill: fav ? '#e0a93d' : 'none' }} />
+    </span>
+  );
+}
 
 function AppTile({ app, onOpen, big = false }) {
   const [hover, setHover] = useState(false);
@@ -28,8 +49,10 @@ function AppTile({ app, onOpen, big = false }) {
         transform: hover ? 'translateY(-1px)' : 'none',
         boxShadow: hover ? '0 6px 18px rgba(20,30,22,.10)' : 'none',
         transition: 'all .13s ease',
+        position: 'relative',
       }}
     >
+      <FavStar app={app} visible={hover} />
       <span style={{
         width: big ? 40 : 32, height: big ? 40 : 32, borderRadius: big ? 11 : 9,
         background: `linear-gradient(135deg, ${app.groupColor}, ${app.groupColor}bb)`,
@@ -77,6 +100,20 @@ function ResultRow({ app, selected, onOpen, onHover }) {
         <span style={{ display: 'block', fontSize: 14, fontWeight: 600, color: '#26302a' }}>{app.label}</span>
         <span style={{ display: 'block', fontSize: 11, color: '#7d8a80' }}>{app.groupLabel}</span>
       </span>
+      {(selected || isFavorite(app)) && (
+        <span
+          role="button"
+          title={isFavorite(app) ? 'Aus Favoriten entfernen' : 'Zu Favoriten (rechte Leiste) hinzufügen'}
+          onClick={(e) => { e.stopPropagation(); toggleFavorite(app); }}
+          style={{
+            width: 24, height: 24, borderRadius: 7, flexShrink: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: isFavorite(app) ? '#e0a93d' : '#a8b2a9', cursor: 'pointer',
+          }}
+        >
+          <Star style={{ width: 14, height: 14, fill: isFavorite(app) ? '#e0a93d' : 'none' }} />
+        </span>
+      )}
       {selected && (
         <span style={{
           display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700,
@@ -96,6 +133,14 @@ export default function AppLauncher({ open, onClose, profile, dark = false }) {
   const [sel, setSel] = useState(0);
 
   const apps = useMemo(() => allApps(profile), [profile]);
+
+  // Bei Favoriten-Änderung neu rendern (Sterne + Dock bleiben synchron)
+  const [, setFavTick] = useState(0);
+  useEffect(() => {
+    const bump = () => setFavTick(t => t + 1);
+    window.addEventListener('smartis:favorites-changed', bump);
+    return () => window.removeEventListener('smartis:favorites-changed', bump);
+  }, []);
 
   const fuse = useMemo(() => new Fuse(apps, {
     keys: [

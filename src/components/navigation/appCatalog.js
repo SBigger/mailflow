@@ -185,6 +185,43 @@ export function recordAppOpen(item) {
   }
 }
 
+// ── Favoriten: explizit angepinnte Apps (rechte Dock-Leiste) ───────
+const FAVORITES_KEY = 'app_favorites';
+
+export function getFavoriteKeys() {
+  try {
+    const a = JSON.parse(localStorage.getItem(FAVORITES_KEY));
+    return Array.isArray(a) ? a : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeFavorites(keys) {
+  try {
+    localStorage.setItem(FAVORITES_KEY, JSON.stringify(keys));
+  } catch {
+    return;
+  }
+  // Dock und Launcher live synchron halten
+  window.dispatchEvent(new CustomEvent('smartis:favorites-changed'));
+}
+
+export function isFavorite(item) {
+  return getFavoriteKeys().includes(appKey(item));
+}
+
+export function toggleFavorite(item) {
+  const k = appKey(item);
+  const cur = getFavoriteKeys();
+  writeFavorites(cur.includes(k) ? cur.filter(x => x !== k) : [...cur, k]);
+}
+
+export function favoriteApps(profile) {
+  const map = new Map(allApps(profile).map(a => [appKey(a), a]));
+  return getFavoriteKeys().map(k => map.get(k)).filter(Boolean);
+}
+
 export function frecencyTop(apps, count = 6) {
   const data = readFrecency();
   const now = Date.now();

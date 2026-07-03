@@ -13,6 +13,7 @@ import VoiceAssistant from "@/components/voice/VoiceAssistant";
 import TaskReminderPopup from "@/components/tasks/TaskReminderPopup";
 import BottomNav from "@/components/mobile/BottomNav";
 import AppLauncher from "@/components/navigation/AppLauncher";
+import FavoritesDock from "@/components/navigation/FavoritesDock";
 import { NAV_GROUPS, DEFAULT_OPEN, itemHref, visibleItems, recordAppOpen } from "@/components/navigation/appCatalog";
 import { useIsMobile } from "@/components/mobile/useIsMobile";
 import { useAuth } from '@/lib/AuthContext';
@@ -421,6 +422,16 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
           <main className="flex-1 overflow-hidden relative" style={{ paddingBottom: isMobile && !isTaskUser ? 56 : 0 }}>
             <Outlet />
           </main>
+
+          {/* Favoriten-Dock rechts (Apps anpinnen via Stern im Launcher) */}
+          {!isTaskUser && !isMobile && (
+              <FavoritesDock
+                  profile={profile}
+                  sidebarBg={sidebarBg}
+                  sidebarBorder={sidebarBorder}
+                  faintColor={pal.faint}
+              />
+          )}
 
           {/* Mobile Navigation */}
           {isMobile && !isTaskUser && <BottomNav />}
