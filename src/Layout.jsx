@@ -5,6 +5,7 @@ import {
   LogOut,
   Mic,
   Search,
+  Star,
   PanelLeftClose,
   PanelLeftOpen,
   ChevronDown,
@@ -13,8 +14,8 @@ import VoiceAssistant from "@/components/voice/VoiceAssistant";
 import TaskReminderPopup from "@/components/tasks/TaskReminderPopup";
 import BottomNav from "@/components/mobile/BottomNav";
 import AppLauncher from "@/components/navigation/AppLauncher";
-import FavoritesDock from "@/components/navigation/FavoritesDock";
-import { NAV_GROUPS, DEFAULT_OPEN, itemHref, visibleItems, recordAppOpen } from "@/components/navigation/appCatalog";
+import FavoritesDock, { useFavorites } from "@/components/navigation/FavoritesDock";
+import { NAV_GROUPS, DEFAULT_OPEN, itemHref, visibleItems, recordAppOpen, appKey, isFavorite, toggleFavorite } from "@/components/navigation/appCatalog";
 import { useIsMobile } from "@/components/mobile/useIsMobile";
 import { useAuth } from '@/lib/AuthContext';
 import * as packageJson from "../package.json";
@@ -55,6 +56,20 @@ function NavRow({ item, active, collapsed, pal }) {
       {!collapsed && (
         <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {item.label}
+        </span>
+      )}
+      {!collapsed && (hover || isFavorite(item)) && (
+        <span
+          role="button"
+          title={isFavorite(item) ? 'Aus Favoriten entfernen' : 'Zu Favoriten hinzufügen'}
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleFavorite(item); }}
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            width: 20, height: 20, borderRadius: 6, flexShrink: 0, cursor: 'pointer',
+            color: isFavorite(item) ? '#e0a93d' : active ? 'rgba(255,255,255,.85)' : pal.faint,
+          }}
+        >
+          <Star style={{ width: 12.5, height: 12.5, fill: isFavorite(item) ? '#e0a93d' : 'none' }} />
         </span>
       )}
     </Link>
@@ -211,6 +226,9 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
 
   const railItems = NAV_GROUPS.flatMap(g => visibleItems(g.items, profile).filter(i => i.rail));
 
+  // Favoriten (Sterne) — erscheinen als eigener Block zwischen Dashboard und Arbeit
+  const favApps = useFavorites(profile);
+
   // Prevent flash of content if still loading auth
   if (loading) return <div className="h-screen w-screen flex items-center justify-center" style={{ backgroundColor: pageBg }}>...</div>;
 
@@ -315,25 +333,47 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
                           const items = visibleItems(group.items, profile);
                           if (!items.length) return null;
                           return (
-                              <div key={group.id}>
-                                {group.label && (
-                                    <GroupHeader
-                                        label={group.label}
-                                        open={isGroupOpen(group.id)}
-                                        onToggle={() => toggleGroup(group.id)}
-                                        pal={pal}
-                                    />
+                              <React.Fragment key={group.id}>
+                                <div>
+                                  {group.label && (
+                                      <GroupHeader
+                                          label={group.label}
+                                          open={isGroupOpen(group.id)}
+                                          onToggle={() => toggleGroup(group.id)}
+                                          pal={pal}
+                                      />
+                                  )}
+                                  {(!group.label || isGroupOpen(group.id)) && items.map(item => (
+                                      <NavRow
+                                          key={item.label}
+                                          item={item}
+                                          active={item.name ? currentPageName === item.name : false}
+                                          collapsed={false}
+                                          pal={pal}
+                                      />
+                                  ))}
+                                </div>
+                                {/* Favoriten-Block direkt nach Dashboard */}
+                                {group.id === 'start' && favApps.length > 0 && (
+                                    <div>
+                                      <GroupHeader
+                                          label="★ Favoriten"
+                                          open={isGroupOpen('favoriten')}
+                                          onToggle={() => toggleGroup('favoriten')}
+                                          pal={{ ...pal, faint: '#c9962e' }}
+                                      />
+                                      {isGroupOpen('favoriten') && favApps.map(app => (
+                                          <NavRow
+                                              key={`fav-${appKey(app)}`}
+                                              item={app}
+                                              active={app.name ? currentPageName === app.name : false}
+                                              collapsed={false}
+                                              pal={pal}
+                                          />
+                                      ))}
+                                    </div>
                                 )}
-                                {(!group.label || isGroupOpen(group.id)) && items.map(item => (
-                                    <NavRow
-                                        key={item.label}
-                                        item={item}
-                                        active={item.name ? currentPageName === item.name : false}
-                                        collapsed={false}
-                                        pal={pal}
-                                    />
-                                ))}
-                              </div>
+                              </React.Fragment>
                           );
                       })}
                 </nav>
