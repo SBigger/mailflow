@@ -173,6 +173,7 @@ function ShareLinkDialog({ info, accent, s, border, onClose }) {
   const [loading,  setLoading]  = useState(false);
   const [link,     setLink]     = useState(null);
   const [copied,   setCopied]   = useState(false);
+  const [copiedUrl, setCopiedUrl] = useState(false);
 
   async function createLink() {
     setLoading(true);
@@ -229,6 +230,11 @@ function ShareLinkDialog({ info, accent, s, border, onClose }) {
     } catch {
       try { await navigator.clipboard.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { /* ignore */ }
     }
+  }
+
+  async function copyUrl() {
+    if (!link) return;
+    try { await navigator.clipboard.writeText(link); setCopiedUrl(true); setTimeout(() => setCopiedUrl(false), 2000); } catch { /* ignore */ }
   }
 
   const overlay = { position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 };
@@ -305,7 +311,10 @@ function ShareLinkDialog({ info, accent, s, border, onClose }) {
               <button style={{ ...btn(true), flex: 1, justifyContent: "center" }} onClick={copyLink} title="Fügt den Dateinamen als klickbaren Link ein (z.B. in Outlook)">
                 {copied ? <><CheckCheck size={14} /> Kopiert!</> : <><Copy size={14} /> Als Link kopieren</>}
               </button>
-              <button style={btn(false)} onClick={() => { setLink(null); setCopied(false); setPassword(""); }}>Neu</button>
+              <button style={btn(false)} onClick={copyUrl} title="Nur die reine URL kopieren">
+                {copiedUrl ? <><CheckCheck size={14} /> Kopiert!</> : <><Copy size={14} /> Nur URL</>}
+              </button>
+              <button style={btn(false)} onClick={() => { setLink(null); setCopied(false); setCopiedUrl(false); setPassword(""); }}>Neu</button>
               <button style={btn(false)} onClick={onClose}>Schliessen</button>
             </div>
             <div style={{ color: s.textMuted, fontSize: 11, marginBottom: 10 }}>
