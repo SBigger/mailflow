@@ -204,11 +204,31 @@ function ShareLinkDialog({ info, accent, s, border, onClose }) {
     }
   }
 
-  function copyLink() {
+  // Kopiert einen klickbaren Hyperlink: der Dateiname verlinkt auf die URL.
+  // In die Zwischenablage kommen text/html (<a>) UND text/plain (URL) – so wird
+  // beim Einfügen in Outlook/Word der Dateiname als Link angezeigt, in reinem
+  // Text bleibt die URL.
+  async function copyLink() {
     if (!link) return;
-    navigator.clipboard.writeText(link);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    const esc = (str) => String(str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    const label = info.name || "Dokument";
+    const html = `<a href="${link}">${esc(label)}</a>`;
+    try {
+      if (navigator.clipboard && window.ClipboardItem) {
+        await navigator.clipboard.write([
+          new window.ClipboardItem({
+            "text/html":  new Blob([html], { type: "text/html" }),
+            "text/plain": new Blob([link], { type: "text/plain" }),
+          }),
+        ]);
+      } else {
+        await navigator.clipboard.writeText(link);
+      }
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      try { await navigator.clipboard.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { /* ignore */ }
+    }
   }
 
   const overlay = { position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 };
@@ -282,11 +302,14 @@ function ShareLinkDialog({ info, accent, s, border, onClose }) {
             </div>
 
             <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-              <button style={{ ...btn(true), flex: 1, justifyContent: "center" }} onClick={copyLink}>
-                {copied ? <><CheckCheck size={14} /> Kopiert!</> : <><Copy size={14} /> Link kopieren</>}
+              <button style={{ ...btn(true), flex: 1, justifyContent: "center" }} onClick={copyLink} title="Fügt den Dateinamen als klickbaren Link ein (z.B. in Outlook)">
+                {copied ? <><CheckCheck size={14} /> Kopiert!</> : <><Copy size={14} /> Als Link kopieren</>}
               </button>
               <button style={btn(false)} onClick={() => { setLink(null); setCopied(false); setPassword(""); }}>Neu</button>
               <button style={btn(false)} onClick={onClose}>Schliessen</button>
+            </div>
+            <div style={{ color: s.textMuted, fontSize: 11, marginBottom: 10 }}>
+              Beim Einfügen ins Mail (Outlook/Word) erscheint <strong style={{ color: s.textMain }}>„{info.name}"</strong> als klickbarer Link.
             </div>
 
             <div style={{ color: s.textMuted, fontSize: 11, textAlign: "center" }}>
