@@ -26,6 +26,7 @@ export function useFavorites(profile) {
 function DockTile({ app }) {
   const [hover, setHover] = useState(false);
   const Icon = app.icon;
+  const c = app.color ?? app.groupColor;
   return (
     <div
       style={{ position: 'relative' }}
@@ -39,10 +40,10 @@ function DockTile({ app }) {
         onAuxClick={() => recordAppOpen(app)}
         style={{
           width: 38, height: 38, borderRadius: 11,
-          background: `linear-gradient(135deg, ${app.groupColor}, ${app.groupColor}bb)`,
+          background: `linear-gradient(135deg, ${c}, ${c}bb)`,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           color: '#fff', textDecoration: 'none',
-          boxShadow: hover ? `0 4px 12px ${app.groupColor}66` : `0 2px 6px ${app.groupColor}33`,
+          boxShadow: hover ? `0 4px 12px ${c}66` : `0 2px 6px ${c}33`,
           transform: hover ? 'scale(1.08)' : 'scale(1)',
           transition: 'transform .12s ease, box-shadow .12s ease',
         }}

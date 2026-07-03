@@ -48,7 +48,10 @@ function NavRow({ item, active, collapsed, pal }) {
         transition: 'background .12s',
       }}
     >
-      <Icon style={{ width: collapsed ? 19 : 16, height: collapsed ? 19 : 16, flexShrink: 0 }} />
+      <Icon style={{
+        width: collapsed ? 19 : 16, height: collapsed ? 19 : 16, flexShrink: 0,
+        color: active ? '#fff' : (item.color ?? pal.text),
+      }} />
       {!collapsed && (
         <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {item.label}

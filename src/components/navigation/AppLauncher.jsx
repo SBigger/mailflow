@@ -34,6 +34,7 @@ function FavStar({ app, visible }) {
 function AppTile({ app, onOpen, big = false }) {
   const [hover, setHover] = useState(false);
   const Icon = app.icon;
+  const c = app.color ?? app.groupColor;
   return (
     <button
       onClick={() => onOpen(app)}
@@ -43,11 +44,11 @@ function AppTile({ app, onOpen, big = false }) {
         display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 8,
         padding: big ? '14px 14px 12px' : '11px 12px 10px',
         borderRadius: 14, border: '1px solid',
-        borderColor: hover ? app.groupColor : 'rgba(120,130,120,.18)',
-        background: hover ? `${app.groupColor}14` : 'rgba(255,255,255,.55)',
+        borderColor: hover ? c : `${c}44`,
+        background: hover ? `${c}1e` : `${c}0e`,
         cursor: 'pointer', textAlign: 'left', width: '100%',
         transform: hover ? 'translateY(-1px)' : 'none',
-        boxShadow: hover ? '0 6px 18px rgba(20,30,22,.10)' : 'none',
+        boxShadow: hover ? `0 6px 18px ${c}33` : 'none',
         transition: 'all .13s ease',
         position: 'relative',
       }}
@@ -55,9 +56,9 @@ function AppTile({ app, onOpen, big = false }) {
       <FavStar app={app} visible={hover} />
       <span style={{
         width: big ? 40 : 32, height: big ? 40 : 32, borderRadius: big ? 11 : 9,
-        background: `linear-gradient(135deg, ${app.groupColor}, ${app.groupColor}bb)`,
+        background: `linear-gradient(135deg, ${c}, ${c}bb)`,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        color: '#fff', flexShrink: 0, boxShadow: `0 3px 8px ${app.groupColor}44`,
+        color: '#fff', flexShrink: 0, boxShadow: `0 3px 8px ${c}55`,
       }}>
         <Icon style={{ width: big ? 19 : 15, height: big ? 19 : 15 }} />
       </span>
@@ -76,6 +77,7 @@ function AppTile({ app, onOpen, big = false }) {
 
 function ResultRow({ app, selected, onOpen, onHover }) {
   const Icon = app.icon;
+  const c = app.color ?? app.groupColor;
   return (
     <button
       onClick={() => onOpen(app)}
@@ -83,16 +85,16 @@ function ResultRow({ app, selected, onOpen, onHover }) {
       style={{
         display: 'flex', alignItems: 'center', gap: 12, width: '100%',
         padding: '9px 12px', borderRadius: 12, border: 'none', cursor: 'pointer',
-        background: selected ? `${app.groupColor}1c` : 'transparent',
-        outline: selected ? `2px solid ${app.groupColor}` : 'none',
+        background: selected ? `${c}1c` : 'transparent',
+        outline: selected ? `2px solid ${c}` : 'none',
         outlineOffset: -2, textAlign: 'left', transition: 'background .1s',
       }}
     >
       <span style={{
         width: 36, height: 36, borderRadius: 10, flexShrink: 0,
-        background: `linear-gradient(135deg, ${app.groupColor}, ${app.groupColor}bb)`,
+        background: `linear-gradient(135deg, ${c}, ${c}bb)`,
         display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff',
-        boxShadow: `0 3px 8px ${app.groupColor}44`,
+        boxShadow: `0 3px 8px ${c}55`,
       }}>
         <Icon style={{ width: 17, height: 17 }} />
       </span>
@@ -117,7 +119,7 @@ function ResultRow({ app, selected, onOpen, onHover }) {
       {selected && (
         <span style={{
           display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700,
-          color: app.groupColor, flexShrink: 0,
+          color: c, flexShrink: 0,
         }}>
           öffnen <CornerDownLeft style={{ width: 13, height: 13 }} />
         </span>
@@ -284,7 +286,7 @@ export default function AppLauncher({ open, onClose, profile, dark = false }) {
                   <div key={group.id} style={{ marginBottom: 12 }}>
                     <div style={{
                       display: 'flex', alignItems: 'center', gap: 7, margin: '2px 6px 7px',
-                      fontSize: 10.5, fontWeight: 800, letterSpacing: '.11em', textTransform: 'uppercase', color: '#8a968c',
+                      fontSize: 10.5, fontWeight: 800, letterSpacing: '.11em', textTransform: 'uppercase', color: group.color,
                     }}>
                       <span style={{ width: 8, height: 8, borderRadius: 3, background: group.color, display: 'inline-block' }} />
                       {group.label}
@@ -293,7 +295,7 @@ export default function AppLauncher({ open, onClose, profile, dark = false }) {
                       {items.map(item => (
                         <AppTile
                           key={`${group.id}-${item.label}`}
-                          app={{ ...item, groupColor: group.color, groupLabel: group.label ?? 'Smartis', groupId: group.id }}
+                          app={{ ...item, color: item.color ?? group.color, groupColor: group.color, groupLabel: group.label ?? 'Smartis', groupId: group.id }}
                           onOpen={openApp}
                         />
                       ))}
