@@ -1,261 +1,194 @@
-import React, { useState, useMemo, useEffect } from "react";
+// Auswertungen · natives Reporting-Modul (Power BI-Ersatz)
+// Produktivität (Stunden/Umsatz pro MA nach Projekttyp), Monatsrapport,
+// Angefangene Arbeiten, Debitoren und Projekt-Auswertungen – direkt aus den
+// Smartis-Daten (le_*-Tabellen). Der alte Power BI-Report bleibt während der
+// Übergangszeit als letzter Tab erreichbar.
+import React, { useState, useMemo } from 'react';
 import {
-  BarChart3,
-  FileText,
-  ArrowDownCircle,
-  CreditCard,
-  Users,
-  RefreshCw,
-  ExternalLink,
-  Info,
-  X,
-} from "lucide-react";
-import { useTheme } from "@/components/useTheme";
+  BarChart3, Users, FileText, ArrowDownCircle,
+  FolderKanban, ExternalLink,
+} from 'lucide-react';
+import ProduktivitaetPanel from '@/components/auswertungen/ProduktivitaetPanel';
+import MonatsrapportPanel from '@/components/auswertungen/MonatsrapportPanel';
+import FakturierungPanel from '@/components/auswertungen/FakturierungPanel';
+import DebitorenAuswertungPanel from '@/components/auswertungen/DebitorenAuswertungPanel';
+import ProjekteAuswertungPanel from '@/components/leistungserfassung/AuswertungenPanel';
 
-// ── Power BI Embed-Konfiguration ──────────────────────────────────────────────
-const EMBED_BASE =
-  "https://app.powerbi.com/reportEmbed" +
-  "?reportId=13a220be-5f7c-490e-9d33-c8fe2b57b438" +
-  "&autoAuth=true" +
-  "&ctid=cc857d96-3c6e-45ba-afbf-c20d0946d2be" +
-  "&navContentPaneEnabled=false";
+// ── Power BI (Legacy) ────────────────────────────────────────────────────────
+// Mit eingeschaltetem Nav-Pane, damit alle alten Report-Seiten erreichbar sind.
+const PBI_EMBED =
+  'https://app.powerbi.com/reportEmbed' +
+  '?reportId=13a220be-5f7c-490e-9d33-c8fe2b57b438' +
+  '&autoAuth=true' +
+  '&ctid=cc857d96-3c6e-45ba-afbf-c20d0946d2be' +
+  '&navContentPaneEnabled=true';
+const PBI_DIRECT =
+  'https://app.powerbi.com/groups/a39e904f-2669-4744-bac2-66286edd4221' +
+  '/reports/13a220be-5f7c-490e-9d33-c8fe2b57b438';
 
-const PBI_WORKSPACE =
-  "https://app.powerbi.com/groups/a39e904f-2669-4744-bac2-66286edd4221" +
-  "/reports/13a220be-5f7c-490e-9d33-c8fe2b57b438";
+function PowerBiLegacyPanel() {
+  const isTauri = typeof window !== 'undefined' && !!window.__TAURI__;
+  const openInBrowser = () => {
+    if (isTauri) {
+      window.__TAURI__.core.invoke('open_external_url', { url: PBI_DIRECT }).catch(() => window.open(PBI_DIRECT, '_blank'));
+    } else {
+      window.open(PBI_DIRECT, '_blank');
+    }
+  };
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 text-xs text-zinc-500">
+        <span>
+          Alter Power BI-Report («Artis Auswertungen neu») – wird durch die nativen Auswertungen abgelöst.
+          Zugriff erfordert ein angemeldetes Microsoft-365-Konto mit Viewer-Rechten.
+        </span>
+        <button
+          type="button"
+          onClick={openInBrowser}
+          className="ml-auto inline-flex items-center gap-1 px-2 py-1 rounded border text-xs text-zinc-600 hover:bg-zinc-50 flex-shrink-0"
+          style={{ borderColor: '#d9dfd9', background: '#fff' }}
+        >
+          <ExternalLink className="w-3 h-3" /> In Power BI öffnen
+        </button>
+      </div>
+      <iframe
+        src={PBI_EMBED}
+        title="Power BI – Artis Auswertungen"
+        allowFullScreen
+        referrerPolicy="strict-origin-when-cross-origin"
+        className="w-full rounded-lg"
+        style={{ border: '1px solid #d9e0d9', background: '#fff', height: 'calc(100vh - 210px)', minHeight: 480 }}
+      />
+    </div>
+  );
+}
 
-const SECTIONS = {
-  fakturierung: {
-    label: "Fakturierung",
-    icon: FileText,
-    pages: [
-      { id: "ang",       name: "Angefangene Arbeiten", pageName: "ReportSection" },
-      { id: "aaDetails", name: "AA Details",           pageName: "ReportSectionb57c7090fbced2bf4b8b" },
+// ── Navigation ───────────────────────────────────────────────────────────────
+const NAV = [
+  {
+    id: 'produktivitaet', label: 'Produktivität', icon: Users,
+    sec: [
+      { id: 'uebersicht', label: 'Übersicht', comp: ProduktivitaetPanel },
+      { id: 'monatsrapport', label: 'Monatsrapport', comp: MonatsrapportPanel },
     ],
   },
-  debitoren: {
-    label: "Debitoren",
-    icon: ArrowDownCircle,
-    pages: [
-      { id: "main",      name: "Übersicht",  pageName: "ReportSection41ecb4dae09ce71b8a29" },
-      { id: "mehrjahre", name: "Mehrjahre",  pageName: "ReportSection6c5bfcd7578887cacb06" },
-      { id: "grafisch",  name: "Grafisch",   pageName: "ReportSectionf41f0a4509391882b5c4" },
-      { id: "rg",        name: "Rechnungen", pageName: "ReportSection9ddfa733016d94cb7bdc" },
-    ],
+  {
+    id: 'fakturierung', label: 'Fakturierung', icon: FileText,
+    sec: [{ id: 'aa', label: 'Angefangene Arbeiten', comp: FakturierungPanel }],
   },
-  kreditoren: {
-    label: "Kreditoren",
-    icon: CreditCard,
-    pages: [
-      { id: "jahr",  name: "Jahr",      pageName: "ReportSectionc6d97cbe6c245fa819dd" },
-      { id: "proMt", name: "Pro Monat", pageName: "ReportSection0ad3eeccae7f9d6d46d9" },
-    ],
+  {
+    id: 'debitoren', label: 'Debitoren', icon: ArrowDownCircle,
+    sec: [{ id: 'uebersicht', label: 'Übersicht', comp: DebitorenAuswertungPanel }],
   },
-  produktivitaet: {
-    label: "Produktivität",
-    icon: Users,
-    pages: [
-      { id: "total",           name: "Total Stunden",        pageName: "d0ae6245be0970c4ad57" },
-      { id: "mitarbeiter",     name: "Mitarbeiter",          pageName: "ReportSectionb9bdf5a78773c54c04da" },
-      { id: "mitarbeiterGraf", name: "Mitarbeiter grafisch", pageName: "ReportSection1622be306b42e0d03197" },
-      { id: "stundenMa",       name: "Stunden Ma",           pageName: "ReportSectionade5325710d231962ccc" },
-    ],
+  {
+    id: 'projekte', label: 'Projekte', icon: FolderKanban,
+    sec: [{ id: 'rentabilitaet', label: 'Rentabilität & Budget', comp: ProjekteAuswertungPanel }],
   },
-};
+  {
+    id: 'powerbi', label: 'Power BI (alt)', icon: ExternalLink,
+    sec: [{ id: 'embed', label: 'Report', comp: PowerBiLegacyPanel }],
+  },
+];
 
-const STATE_KEY = "smartis_auswertungen_state_v1";
+const STATE_KEY = 'smartis_auswertungen_state_v2';
 
 export default function Auswertungen() {
-  const { theme } = useTheme();
-  const isDark  = theme === "dark";
-  const isArtis = theme === "artis";
-
-  const pageBg       = isDark ? "#18181b" : isArtis ? "#f2f5f2" : "#f4f4f8";
-  const topbarBg     = isDark ? "rgba(24,24,27,0.7)"    : isArtis ? "rgba(255,255,255,0.55)" : "rgba(255,255,255,0.7)";
-  const subtabBg     = isDark ? "rgba(24,24,27,0.5)"    : isArtis ? "rgba(255,255,255,0.45)" : "rgba(255,255,255,0.55)";
-  const pillBg       = isDark ? "rgba(39,39,42,0.6)"    : isArtis ? "rgba(255,255,255,0.65)" : "rgba(255,255,255,0.75)";
-  const cardBorder   = isDark ? "#3f3f46"               : isArtis ? "#bfcfbf"                : "#d0d0dc";
-  const heading      = isDark ? "#e4e4e7"               : isArtis ? "#1a3a1a"                : "#1e293b";
-  const muted        = isDark ? "#71717a"               : isArtis ? "#5a7a5a"                : "#6b7280";
-  const accent       = isDark ? "#818cf8"               : isArtis ? "#7a9b7f"                : "#7c3aed";
-  const accentDark   = isDark ? "#6366f1"               : isArtis ? "#3a6640"                : "#5b21b6";
-  const hoverBg      = isDark ? "rgba(99,102,241,0.1)"  : isArtis ? "rgba(122,155,127,0.12)" : "rgba(124,58,237,0.08)";
-  const titleIconBg  = isDark ? "rgba(129,140,248,0.15)": isArtis ? "rgba(122,155,127,0.18)" : "rgba(124,58,237,0.1)";
-  const kvRowBg      = isDark ? "rgba(255,255,255,0.04)": isArtis ? "rgba(122,155,127,0.08)" : "rgba(0,0,0,0.03)";
-  const modalBg      = isDark ? "#27272a"               : isArtis ? "#fbfdfb"                : "#ffffff";
-
   const initial = useMemo(() => {
     try {
-      const s = JSON.parse(localStorage.getItem(STATE_KEY) || "{}");
-      const section = SECTIONS[s.section] ? s.section : "fakturierung";
-      const page    = s.page && SECTIONS[section].pages.find(p => p.id === s.page)
-          ? s.page : SECTIONS[section].pages[0].id;
-      return { section, page };
+      const s = JSON.parse(localStorage.getItem(STATE_KEY) || '{}');
+      const nav = NAV.find(n => n.id === s.primary) ? s.primary : 'produktivitaet';
+      const navDef = NAV.find(n => n.id === nav);
+      const sec = navDef.sec.find(x => x.id === s.secondary) ? s.secondary : navDef.sec[0].id;
+      return { primary: nav, secondary: sec };
     } catch {
-      return { section: "fakturierung", page: SECTIONS.fakturierung.pages[0].id };
+      return { primary: 'produktivitaet', secondary: 'uebersicht' };
     }
   }, []);
 
-  const [currentSection, setCurrentSection] = useState(initial.section);
-  const [currentPage, setCurrentPage]       = useState(initial.page);
-  const [infoOpen, setInfoOpen]             = useState(false);
-  const [reloadKey, setReloadKey]           = useState(0);
-  const isTauri = typeof window !== "undefined" && !!window.__TAURI__;
+  const [primary, setPrimary] = useState(initial.primary);
+  const [secondaryMap, setSecondaryMap] = useState(() => {
+    const map = Object.fromEntries(NAV.map(n => [n.id, n.sec[0].id]));
+    map[initial.primary] = initial.secondary;
+    return map;
+  });
 
-  const openInBrowser = (url) => {
-    if (isTauri) {
-      window.__TAURI__.core.invoke("open_external_url", { url }).catch(() => window.open(url, "_blank"));
-    } else {
-      window.open(url, "_blank");
-    }
-  };
+  const primaryDef = NAV.find(n => n.id === primary);
+  const secondaryId = secondaryMap[primary];
+  const secondaryDef = primaryDef.sec.find(s => s.id === secondaryId) || primaryDef.sec[0];
+  const PanelComp = secondaryDef.comp;
 
-  useEffect(() => {
-    localStorage.setItem(STATE_KEY, JSON.stringify({ section: currentSection, page: currentPage }));
-  }, [currentSection, currentPage]);
-
-  const section = SECTIONS[currentSection];
-  const page    = section.pages.find(p => p.id === currentPage) || section.pages[0];
-  const embedUrl  = `${EMBED_BASE}&pageName=${encodeURIComponent(page.pageName)}`;
-  const directUrl = `${PBI_WORKSPACE}/${page.pageName}`;
-
-  const handleSection = (sectionId) => {
-    if (sectionId === currentSection) return;
-    setCurrentSection(sectionId);
-    setCurrentPage(SECTIONS[sectionId].pages[0].id);
-  };
-
-  const iconBtnHandlers = {
-    onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = hoverBg; e.currentTarget.style.color = heading; },
-    onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = muted; },
-  };
+  React.useEffect(() => {
+    try {
+      localStorage.setItem(STATE_KEY, JSON.stringify({ primary, secondary: secondaryId }));
+    } catch { /* ignore */ }
+  }, [primary, secondaryId]);
 
   return (
-    <div className="h-full flex flex-col" style={{ backgroundColor: pageBg }}>
-
-      {/* ── Topbar ─────────────────────────────────────────────────────── */}
-      <div
-        className="flex-shrink-0 flex items-center gap-4 px-4 py-2.5 border-b"
-        style={{ backgroundColor: topbarBg, borderColor: cardBorder, backdropFilter: "blur(10px)" }}
-      >
-        <div className="flex items-center gap-2.5 flex-shrink-0">
-          <div className="w-7 h-7 flex items-center justify-center rounded-lg" style={{ backgroundColor: titleIconBg, color: accentDark }}>
-            <BarChart3 className="w-4 h-4" />
-          </div>
-          <h1 className="text-base font-semibold m-0" style={{ color: heading, letterSpacing: "-0.01em" }}>Auswertungen</h1>
-        </div>
-
-        <div className="flex gap-1 p-0.5 rounded-lg border flex-shrink-0" style={{ backgroundColor: pillBg, borderColor: cardBorder }} role="tablist">
-          {Object.entries(SECTIONS).map(([id, s]) => {
-            const Icon = s.icon;
-            const active = id === currentSection;
-            return (
-              <button key={id} onClick={() => handleSection(id)} role="tab" aria-selected={active}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap transition-all"
-                style={{ backgroundColor: active ? accent : "transparent", color: active ? "white" : muted,
-                  boxShadow: active ? "0 1px 3px rgba(26,58,26,0.12)" : "none", border: "none", cursor: "pointer" }}
-                onMouseEnter={(e) => { if (!active) { e.currentTarget.style.backgroundColor = hoverBg; e.currentTarget.style.color = heading; } }}
-                onMouseLeave={(e) => { if (!active) { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = muted; } }}
-              >
-                <Icon className="w-3.5 h-3.5" />
-                <span className="hidden lg:inline">{s.label}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="flex-1" />
-
-        <button onClick={() => setReloadKey(k => k + 1)} title="Report neu laden"
-          className="w-9 h-9 flex items-center justify-center rounded-lg transition-colors"
-          style={{ color: muted, background: "transparent", border: "none", cursor: "pointer" }} {...iconBtnHandlers}>
-          <RefreshCw className="w-4 h-4" />
-        </button>
-        <button onClick={() => openInBrowser(directUrl)} title="In Power BI öffnen"
-          className="w-9 h-9 flex items-center justify-center rounded-lg transition-colors"
-          style={{ color: muted, background: "transparent", border: "none", cursor: "pointer" }} {...iconBtnHandlers}>
-          <ExternalLink className="w-4 h-4" />
-        </button>
-        <button onClick={() => setInfoOpen(true)} title="Info"
-          className="w-9 h-9 flex items-center justify-center rounded-lg transition-colors"
-          style={{ color: muted, background: "transparent", border: "none", cursor: "pointer" }} {...iconBtnHandlers}>
-          <Info className="w-4 h-4" />
-        </button>
-      </div>
-
-      {/* ── Sub-Tabs ────────────────────────────────────────────────────── */}
-      {section.pages.length > 1 && (
-        <div className="flex-shrink-0 flex gap-1 px-4 pt-1.5 border-b overflow-x-auto"
-          style={{ backgroundColor: subtabBg, borderColor: cardBorder }}>
-          {section.pages.map(p => {
-            const active = p.id === currentPage;
-            return (
-              <button key={p.id} onClick={() => setCurrentPage(p.id)}
-                className="px-3.5 py-1.5 text-sm whitespace-nowrap transition-all"
-                style={{
-                  background: active ? pageBg : "transparent",
-                  border: active ? `1px solid ${cardBorder}` : "1px solid transparent",
-                  borderBottom: "none", borderTopLeftRadius: 8, borderTopRightRadius: 8,
-                  color: active ? accentDark : muted, fontWeight: active ? 600 : 500,
-                  position: "relative", top: 1, cursor: "pointer",
-                }}
-                onMouseEnter={(e) => { if (!active) { e.currentTarget.style.background = "rgba(255,255,255,0.5)"; e.currentTarget.style.color = heading; } }}
-                onMouseLeave={(e) => { if (!active) { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = muted; } }}
-              >
-                {p.name}
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      {/* ── iFrame ──────────────────────────────────────────────────────── */}
-      <div className="flex-1 min-h-0 p-2.5">
-        <iframe
-          key={`${page.pageName}-${reloadKey}`}
-          src={embedUrl}
-          title={`${section.label} – ${page.name}`}
-          allowFullScreen
-          referrerPolicy="strict-origin-when-cross-origin"
-          className="w-full h-full rounded-xl"
-          style={{ border: `1px solid ${cardBorder}`, boxShadow: "0 1px 4px rgba(26,58,26,0.04)", backgroundColor: "white" }}
-        />
-      </div>
-
-      {/* ── Info-Modal ──────────────────────────────────────────────────── */}
-      {infoOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ background: "rgba(26,58,26,0.35)", backdropFilter: "blur(4px)" }}
-          onClick={(e) => { if (e.target === e.currentTarget) setInfoOpen(false); }}>
-          <div className="rounded-2xl p-6 w-full max-w-xl shadow-2xl border" style={{ background: modalBg, borderColor: cardBorder }}>
-            <div className="flex items-start justify-between mb-1">
-              <h2 className="text-lg font-semibold m-0" style={{ color: heading }}>Power BI Report – Info</h2>
-              <button onClick={() => setInfoOpen(false)} className="p-1 rounded"
-                style={{ color: muted, background: "transparent", border: "none", cursor: "pointer" }}
-                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = hoverBg; }}
-                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }}>
-                <X className="w-4 h-4" />
-              </button>
+    <div className="h-full w-full overflow-auto" style={{ background: '#f2f5f2' }}>
+      <div className="px-6 pt-3 pb-2 border-b" style={{ borderColor: '#d9e0d9', background: '#fff' }}>
+        {/* Zeile 1: Titel links, Primary-Tabs rechts */}
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2.5 flex-shrink-0">
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: '#e6ede6', color: '#4d6a50' }}>
+              <BarChart3 className="w-4 h-4" />
             </div>
-            <p className="text-sm mb-4" style={{ color: muted, lineHeight: 1.5 }}>
-              Alle Auswertungen stammen aus dem Power-BI-Report <b>"Artis Auswertungen neu"</b> im Workspace <b>Artis Treuhand GmbH</b>.
-            </p>
-            {[
-              ["Report-ID",     "13a220be-5f7c-490e-9d33-c8fe2b57b438"],
-              ["Workspace-ID",  "a39e904f-2669-4744-bac2-66286edd4221"],
-              ["Tenant (ctid)", "cc857d96-3c6e-45ba-afbf-c20d0946d2be"],
-            ].map(([k, v]) => (
-              <div key={k} className="flex items-center gap-3 mb-2 py-1.5 px-2 rounded-lg" style={{ background: kvRowBg }}>
-                <span className="text-xs flex-shrink-0" style={{ color: muted, minWidth: 130 }}>{k}:</span>
-                <span className="font-mono text-xs break-all" style={{ color: heading }}>{v}</span>
-              </div>
-            ))}
-            <p className="text-sm mt-4" style={{ color: muted, lineHeight: 1.5 }}>
-              <b>Zugriff:</b> Jeder User muss mit seinem Microsoft-365-Konto angemeldet sein und Viewer-Rechte im Workspace "Artis Treuhand GmbH" haben.
-            </p>
+            <div>
+              <h1 className="text-base font-semibold leading-tight">Auswertungen</h1>
+              <p className="text-[10px] text-zinc-500 leading-tight">Produktivität · Fakturierung · Debitoren</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1 overflow-x-auto ml-auto">
+            {NAV.map(n => {
+              const Icon = n.icon;
+              const active = n.id === primary;
+              return (
+                <button
+                  key={n.id}
+                  onClick={() => setPrimary(n.id)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm whitespace-nowrap transition-colors"
+                  style={{
+                    background: active ? '#7a9b7f' : 'transparent',
+                    color: active ? '#fff' : '#3d4a3d',
+                    fontWeight: active ? 600 : 500,
+                  }}
+                >
+                  <Icon className="w-4 h-4" />
+                  {n.label}
+                </button>
+              );
+            })}
           </div>
         </div>
-      )}
+
+        {/* Zeile 2: Secondary Tabs (nur wenn mehrere) */}
+        {primaryDef.sec.length > 1 && (
+          <div className="mt-2 flex items-center gap-1 overflow-x-auto">
+            {primaryDef.sec.map(s => {
+              const active = s.id === secondaryDef.id;
+              return (
+                <button
+                  key={s.id}
+                  onClick={() => setSecondaryMap(m => ({ ...m, [primary]: s.id }))}
+                  className="px-2.5 py-1 rounded text-xs whitespace-nowrap transition-colors"
+                  style={{
+                    background: active ? '#e6ede6' : 'transparent',
+                    color: active ? '#2d5a2d' : '#6a766a',
+                    border: `1px solid ${active ? '#bfd3bf' : 'transparent'}`,
+                    fontWeight: active ? 600 : 500,
+                  }}
+                >
+                  {s.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div className="px-6 py-3">
+        <PanelComp />
+      </div>
     </div>
   );
 }

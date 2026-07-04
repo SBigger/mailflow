@@ -328,6 +328,41 @@ export const leTimeEntry = {
     if (error) throw error;
     return data ?? [];
   },
+  // Wie listForRange, lädt aber seitenweise weiter, bis alles da ist.
+  // Supabase deckelt einzelne Selects bei 1000 Zeilen – ganze Jahre mit
+  // mehreren Mitarbeitern sprengen das Limit sonst unbemerkt.
+  // Liefert zusätzlich project_no + is_internal (Fallback ohne is_internal,
+  // solange die Migration 20260630130000_le_project_internal noch fehlt).
+  listForRangeAll: async (fromIso, toIso, { employeeId, projectId, status } = {}) => {
+    const PAGE = 1000;
+    const selectWith = (withInternal) =>
+      `*, project:le_project(id, name, project_no, billing_mode${withInternal ? ', is_internal' : ''}, customer_id), service_type:le_service_type(id, name, billable), employee:le_employee(id, short_code, full_name)`;
+    let withInternal = true;
+    const all = [];
+    for (let offset = 0; ; offset += PAGE) {
+      let q = supabase
+        .from('le_time_entry')
+        .select(selectWith(withInternal))
+        .gte('entry_date', fromIso)
+        .lte('entry_date', toIso)
+        .order('entry_date', { ascending: true })
+        .order('id', { ascending: true })
+        .range(offset, offset + PAGE - 1);
+      if (employeeId) q = q.eq('employee_id', employeeId);
+      if (projectId) q = q.eq('project_id', projectId);
+      if (status) q = q.eq('status', status);
+      let { data, error } = await q;
+      if (error && withInternal && /is_internal|does not exist|schema cache/i.test(error.message || '')) {
+        withInternal = false;
+        offset -= PAGE; // gleiche Seite ohne is_internal erneut versuchen
+        continue;
+      }
+      if (error) throw error;
+      all.push(...(data ?? []));
+      if (!data || data.length < PAGE) break;
+    }
+    return all;
+  },
   create: async (payload) => {
     const { data, error } = await supabase.from('le_time_entry').insert(payload).select().single();
     if (error) throw error;
@@ -355,6 +390,25 @@ export const leInvoice = {
     const { data, error } = await q;
     if (error) throw error;
     return data ?? [];
+  },
+  // Leichte Liste für Auswertungen: keine Positionen/Adressfelder, dafür
+  // seitenweise ALLE Rechnungen (Mehrjahres-Statistik überschreitet sonst
+  // das 1000-Zeilen-Limit von Supabase).
+  listLightAll: async () => {
+    const PAGE = 1000;
+    const all = [];
+    for (let offset = 0; ; offset += PAGE) {
+      const { data, error } = await supabase
+        .from('le_invoice')
+        .select('id, invoice_no, status, invoice_type, subtotal, total, issue_date, due_date, sent_at, paid_at, paid_amount, period_from, period_to, customer_id, customer:customers(id, company_name)')
+        .order('issue_date', { ascending: true, nullsFirst: false })
+        .order('id', { ascending: true })
+        .range(offset, offset + PAGE - 1);
+      if (error) throw error;
+      all.push(...(data ?? []));
+      if (!data || data.length < PAGE) break;
+    }
+    return all;
   },
   get: async (id) => {
     const { data, error } = await supabase
@@ -1026,19 +1080,37 @@ export async function sendInvoiceViaMs365({ to, subject, html, attachmentUrl, at
 //   (status erfasst|freigegeben|kulant ohne invoice_id).
 // Sonst wird auf den Zeitraum eingegrenzt.
 export async function fakturaVorschlagData({ fromIso, toIso, allOpen = false } = {}) {
-  let q = supabase
-    .from('le_time_entry')
-    .select('id, entry_date, hours_internal, rate_snapshot, project_id, service_type_id, description, employee_id, status, project:le_project(id, name, billing_mode, customer_id, customer:customers(id, company_name, street, building_number, zip, city, country, billing_email)), service_type:le_service_type(id, name, billable, default_section), employee:le_employee(id, short_code, full_name)')
-    .in('status', ['erfasst', 'freigegeben', 'kulant'])
-    .is('invoice_id', null)
-    .order('entry_date');
-  if (!allOpen) {
-    if (fromIso) q = q.gte('entry_date', fromIso);
-    if (toIso) q = q.lte('entry_date', toIso);
+  // Seitenweise laden: Supabase deckelt bei 1000 Zeilen – mit importierten
+  // Vortrags-Buchungen liegen offene Leistungen längst darüber.
+  const PAGE = 1000;
+  const selectWith = (withInternal) =>
+    `id, entry_date, hours_internal, rate_snapshot, project_id, service_type_id, description, employee_id, status, project:le_project(id, name, project_no, billing_mode${withInternal ? ', is_internal' : ''}, customer_id, customer:customers(id, company_name, street, building_number, zip, city, country, billing_email)), service_type:le_service_type(id, name, billable, default_section), employee:le_employee(id, short_code, full_name)`;
+  let withInternal = true;
+  const all = [];
+  for (let offset = 0; ; offset += PAGE) {
+    let q = supabase
+      .from('le_time_entry')
+      .select(selectWith(withInternal))
+      .in('status', ['erfasst', 'freigegeben', 'kulant'])
+      .is('invoice_id', null)
+      .order('entry_date')
+      .order('id', { ascending: true })
+      .range(offset, offset + PAGE - 1);
+    if (!allOpen) {
+      if (fromIso) q = q.gte('entry_date', fromIso);
+      if (toIso) q = q.lte('entry_date', toIso);
+    }
+    const { data, error } = await q;
+    if (error && withInternal && /is_internal|does not exist|schema cache/i.test(error.message || '')) {
+      withInternal = false;
+      offset -= PAGE; // gleiche Seite ohne is_internal erneut versuchen
+      continue;
+    }
+    if (error) throw error;
+    all.push(...(data ?? []));
+    if (!data || data.length < PAGE) break;
   }
-  const { data, error } = await q;
-  if (error) throw error;
-  return data ?? [];
+  return all;
 }
 
 // Rechnungsentwürfe aus ausgewählten Projekten bauen (eine Invoice pro Projekt).

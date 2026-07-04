@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Clock, FileText, Database, BarChart3, Smartphone, Banknote, SlidersHorizontal, Check, RotateCcw } from 'lucide-react';
+import { Clock, FileText, Database, Smartphone, Banknote, SlidersHorizontal, Check, RotateCcw } from 'lucide-react';
 
 import TagesansichtPanel from '@/components/leistungserfassung/TagesansichtPanel';
 import MitarbeiterPanel from '@/components/leistungserfassung/MitarbeiterPanel';
@@ -17,7 +17,6 @@ import ZahlungseingaengePanel from '@/components/leistungserfassung/Zahlungseing
 import SpesenErfassenPanel from '@/components/leistungserfassung/SpesenErfassenPanel';
 import AbwesenheitenPanel from '@/components/leistungserfassung/AbwesenheitenPanel';
 import WiederkehrendePanel from '@/components/leistungserfassung/WiederkehrendePanel';
-import AuswertungenPanel from '@/components/leistungserfassung/AuswertungenPanel';
 import SollzeitenPanel from '@/components/leistungserfassung/SollzeitenPanel';
 import KundenKonditionenPanel from '@/components/leistungserfassung/KundenKonditionenPanel';
 import RechnungsTemplatesPanel from '@/components/leistungserfassung/RechnungsTemplatesPanel';
@@ -88,12 +87,8 @@ const NAV = [
       { id: 'sd-firma',    label: 'Firma',               comp: FirmenSettingsPanel },
     ],
   },
-  {
-    id: 'auswert', label: 'Auswertungen', icon: BarChart3,
-    sec: [
-      { id: 'aw-all',    label: 'Übersicht',           comp: AuswertungenPanel },
-    ],
-  },
+  // «Auswertungen» ist in den eigenen Top-Level-Menüpunkt /Auswertungen umgezogen
+  // (src/pages/Auswertungen.jsx – ersetzt das Power BI-Embed).
   {
     id: 'mobile', label: 'Mobile', icon: Smartphone,
     sec: [{ id: 'mob-overview', label: 'Mobile-Vorschau', comp: MobileVorschauPanel }],
