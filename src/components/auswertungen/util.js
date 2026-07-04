@@ -92,22 +92,38 @@ export const pickProfile = (profiles, dateIso) => {
 
 const HOURS_BY_DAY = ['hours_so', 'hours_mo', 'hours_di', 'hours_mi', 'hours_do', 'hours_fr', 'hours_sa'];
 
-// Soll-Stunden eines einzelnen Tages gemäss gültigem Profil
-export function sollForDay(profiles, dateIso) {
-  const prof = pickProfile(profiles, dateIso);
-  if (!prof) return 0;
+// Feiertags-Set aus le_holiday-Zeilen (Set von ISO-Datumsstrings)
+export function toHolidaySet(holidayRows) {
+  return new Set((holidayRows ?? []).map(h => h.date));
+}
+
+// Soll-Stunden eines einzelnen Tages, zweistufig kaskadiert:
+//   1) Feiertag (le_holiday)                      → 0h, unabhängig vom MA
+//   2) Mitarbeiter-Override für den Wochentag      → fixer Wert
+//   3) sonst Zentral-Plan-Stunden × Pensum-Prozent → geerbt
+// employeeProfiles darf leer sein (= 100% Pensum, alles geerbt).
+export function sollForDay(templates, employeeProfiles, holidaySet, dateIso) {
+  if (holidaySet?.has(dateIso)) return 0;
+  const tmpl = pickProfile(templates, dateIso);
   const day = new Date(dateIso + 'T00:00:00').getDay();
-  return Number(prof[HOURS_BY_DAY[day]] || 0);
+  const dayKey = HOURS_BY_DAY[day];
+  const baseHours = tmpl ? Number(tmpl[dayKey] || 0) : 0;
+
+  const prof = pickProfile(employeeProfiles, dateIso);
+  if (!prof) return baseHours;
+  const override = prof[dayKey];
+  if (override != null) return Number(override);
+  const pensumPct = Number(prof.pensum_pct ?? 100);
+  return baseHours * pensumPct / 100;
 }
 
 // Aggregierte Soll-Stunden über einen Range
-export function calcSollHours(profiles, fromIso, toIsoStr) {
-  if (!profiles?.length) return 0;
+export function calcSollHours(templates, employeeProfiles, holidaySet, fromIso, toIsoStr) {
   let total = 0;
   const d = new Date(fromIso + 'T00:00:00');
   const end = new Date(toIsoStr + 'T00:00:00');
   while (d <= end) {
-    total += sollForDay(profiles, toIso(d));
+    total += sollForDay(templates, employeeProfiles, holidaySet, toIso(d));
     d.setDate(d.getDate() + 1);
   }
   return total;

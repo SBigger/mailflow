@@ -6,7 +6,7 @@ import React, { useMemo, useState } from 'react';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { FileDown, Files } from 'lucide-react';
 import {
-  leTimeEntry, leEmployee, leSollzeitProfile, leAbsence, leCompany,
+  leTimeEntry, leEmployee, leSollzeitProfile, leSollzeitTemplate, leHoliday, leAbsence, leCompany,
 } from '@/lib/leApi';
 import {
   Card, Select, PanelLoader, PanelError, PanelHeader, fmt,
@@ -15,7 +15,7 @@ import {
 import MonthPicker from './MonthPicker';
 import {
   CAT, categoryOf, entryHours, entryValue, monthRange, MONTHS,
-  WEEKDAYS_SHORT, sollForDay, calcSollHours, toIso, fmtDayHours,
+  WEEKDAYS_SHORT, sollForDay, calcSollHours, toHolidaySet, toIso, fmtDayHours,
 } from './util';
 
 // ---------------------------------------------------------------------------
@@ -25,7 +25,7 @@ import {
 // Abwesenheits-Stunden im Monat: pro überlappendem Tag die Soll-Stunden des
 // Profils (Halbtags-Flags halbieren Start-/Endtag). Liegt die Abwesenheit
 // komplett im Monat und hat hours_total, gilt der erfasste Wert.
-function absenceHoursInMonth(absences, profiles, rangeFrom, rangeTo) {
+function absenceHoursInMonth(absences, templates, profiles, holidaySet, rangeFrom, rangeTo) {
   let total = 0;
   for (const a of absences) {
     if (a.status === 'abgelehnt') continue;
@@ -40,7 +40,7 @@ function absenceHoursInMonth(absences, profiles, rangeFrom, rangeTo) {
     const end = new Date(to + 'T00:00:00');
     while (d <= end) {
       const iso = toIso(d);
-      let h = sollForDay(profiles, iso);
+      let h = sollForDay(templates, profiles, holidaySet, iso);
       if (iso === a.date_from && a.half_day_from) h /= 2;
       if (iso === a.date_to && a.half_day_to) h /= 2;
       total += h;
@@ -51,7 +51,7 @@ function absenceHoursInMonth(absences, profiles, rangeFrom, rangeTo) {
 }
 
 // Baut Matrix + Kennzahlen für einen MA aus den Monats-Einträgen.
-function buildReport({ emp, entries, profiles, absences, year, month0 }) {
+function buildReport({ emp, entries, templates, profiles, holidaySet, absences, year, month0 }) {
   const range = monthRange(year, month0);
   const days = range.days;
 
@@ -94,10 +94,10 @@ function buildReport({ emp, entries, profiles, absences, year, month0 }) {
   // Soll pro Tag + Total
   const sollDays = [];
   for (let i = 0; i < days; i++) {
-    sollDays.push(sollForDay(profiles, toIso(new Date(year, month0, i + 1))));
+    sollDays.push(sollForDay(templates, profiles, holidaySet, toIso(new Date(year, month0, i + 1))));
   }
-  const soll = calcSollHours(profiles, range.fromIso, range.toIso);
-  const abs = absenceHoursInMonth(absences, profiles, range.fromIso, range.toIso);
+  const soll = calcSollHours(templates, profiles, holidaySet, range.fromIso, range.toIso);
+  const abs = absenceHoursInMonth(absences, templates, profiles, holidaySet, range.fromIso, range.toIso);
 
   const sollPraesenz = soll - abs;
   const ueberzeit = ist - sollPraesenz;
@@ -242,6 +242,13 @@ export default function MonatsrapportPanel() {
   });
   const absencesQ = useQuery({ queryKey: ['le', 'absences', 'all'], queryFn: () => leAbsence.list({}), staleTime: 5 * 60_000 });
   const companyQ = useQuery({ queryKey: ['le', 'company'], queryFn: leCompany.get, staleTime: 30 * 60_000 });
+  const templatesQ = useQuery({ queryKey: ['le', 'sollzeit-template'], queryFn: leSollzeitTemplate.list, staleTime: 10 * 60_000 });
+  const holidaysQ = useQuery({
+    queryKey: ['le', 'holiday', year],
+    queryFn: () => leHoliday.list({ from: `${year}-01-01`, to: `${year}-12-31` }),
+    staleTime: 10 * 60_000,
+  });
+  const holidaySet = useMemo(() => toHolidaySet(holidaysQ.data), [holidaysQ.data]);
 
   const employees = useMemo(
     () => (employeesQ.data ?? []).filter(e => e.active),
@@ -271,12 +278,14 @@ export default function MonatsrapportPanel() {
     return buildReport({
       emp: selectedEmp,
       entries: entriesQ.data,
+      templates: templatesQ.data || [],
       profiles: profilesById.get(selectedEmp.id) || [],
+      holidaySet,
       absences: absencesFor(selectedEmp.id),
       year, month0,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedEmp, entriesQ.data, absencesQ.data, profilesById, year, month0]);
+  }, [selectedEmp, entriesQ.data, absencesQ.data, profilesById, templatesQ.data, holidaySet, year, month0]);
 
   const handlePdf = async (all) => {
     if (!entriesQ.data) return;
@@ -287,7 +296,9 @@ export default function MonatsrapportPanel() {
         .map(emp => buildReport({
           emp,
           entries: entriesQ.data,
+          templates: templatesQ.data || [],
           profiles: profilesById.get(emp.id) || [],
+          holidaySet,
           absences: absencesFor(emp.id),
           year, month0,
         }))
@@ -299,8 +310,8 @@ export default function MonatsrapportPanel() {
     }
   };
 
-  const isLoading = employeesQ.isLoading || entriesQ.isLoading || absencesQ.isLoading;
-  const error = employeesQ.error || entriesQ.error || absencesQ.error;
+  const isLoading = employeesQ.isLoading || entriesQ.isLoading || absencesQ.isLoading || templatesQ.isLoading || holidaysQ.isLoading;
+  const error = employeesQ.error || entriesQ.error || absencesQ.error || templatesQ.error || holidaysQ.error;
 
   return (
     <div>
@@ -332,7 +343,7 @@ export default function MonatsrapportPanel() {
         </div>
       </div>
 
-      {error && <PanelError error={error} onRetry={() => { employeesQ.refetch(); entriesQ.refetch(); absencesQ.refetch(); }} />}
+      {error && <PanelError error={error} onRetry={() => { employeesQ.refetch(); entriesQ.refetch(); absencesQ.refetch(); templatesQ.refetch(); holidaysQ.refetch(); }} />}
       {!error && isLoading && <PanelLoader />}
 
       {!error && !isLoading && report && (

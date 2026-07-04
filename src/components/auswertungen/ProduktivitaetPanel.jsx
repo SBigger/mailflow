@@ -15,7 +15,7 @@ import {
   XAxis, YAxis, Tooltip, Legend, CartesianGrid,
 } from 'recharts';
 import { Clock, Users, TrendingUp, Banknote, Download } from 'lucide-react';
-import { leTimeEntry, leEmployee, leSollzeitProfile } from '@/lib/leApi';
+import { leTimeEntry, leEmployee, leSollzeitProfile, leSollzeitTemplate, leHoliday } from '@/lib/leApi';
 import {
   Card, Chip, Select, PanelLoader, PanelError, PanelHeader, fmt,
   artisBtn, artisGhostStyle,
@@ -23,7 +23,7 @@ import {
 import PeriodPicker, { periodRange, prevYearPeriod } from './PeriodPicker';
 import {
   CAT, CAT_KEYS, addEntry, emptyCatSums, MONTHS_SHORT,
-  calcSollHours, downloadCsv,
+  calcSollHours, toHolidaySet, downloadCsv,
 } from './util';
 
 const VJ_COLOR = '#8a94a6';
@@ -142,6 +142,19 @@ export default function ProduktivitaetPanel() {
     return map;
   }, [employees, profileQueries]);
 
+  // Zentraler Sollzeit-Plan + Feiertage (für die Soll-Berechnung, s. util.sollForDay)
+  const templatesQ = useQuery({
+    queryKey: ['le', 'sollzeit-template'],
+    queryFn: leSollzeitTemplate.list,
+    staleTime: 10 * 60_000,
+  });
+  const holidaysQ = useQuery({
+    queryKey: ['le', 'holiday', period.year],
+    queryFn: () => leHoliday.list({ from: `${period.year}-01-01`, to: `${period.year}-12-31` }),
+    staleTime: 10 * 60_000,
+  });
+  const holidaySet = useMemo(() => toHolidaySet(holidaysQ.data), [holidaysQ.data]);
+
   // Stornierte Buchungen zählen nirgends mit
   const yearEntries = useMemo(
     () => (entriesQ.data ?? []).filter(e => e.status !== 'storniert'),
@@ -178,7 +191,7 @@ export default function ProduktivitaetPanel() {
       byEmp.set(emp.id, {
         emp,
         sums: emptyCatSums(),
-        soll: calcSollHours(profilesById.get(emp.id) || [], range.fromIso, range.toIso),
+        soll: calcSollHours(templatesQ.data || [], profilesById.get(emp.id) || [], holidaySet, range.fromIso, range.toIso),
         prev: prevByEmp.get(emp.id) || null,
       });
     }
@@ -280,8 +293,8 @@ export default function ProduktivitaetPanel() {
     downloadCsv(`produktivitaet_${range.fromIso}_${range.toIso}.csv`, [header, ...data]);
   };
 
-  const isLoading = employeesQ.isLoading || entriesQ.isLoading || (compare && prevEntriesQ.isLoading);
-  const error = employeesQ.error || entriesQ.error || (compare ? prevEntriesQ.error : null);
+  const isLoading = employeesQ.isLoading || entriesQ.isLoading || templatesQ.isLoading || holidaysQ.isLoading || (compare && prevEntriesQ.isLoading);
+  const error = employeesQ.error || entriesQ.error || templatesQ.error || holidaysQ.error || (compare ? prevEntriesQ.error : null);
   const colSpan = compare ? 13 : 11;
 
   return (
@@ -318,7 +331,7 @@ export default function ProduktivitaetPanel() {
       </div>
 
       {error && (
-        <PanelError error={error} onRetry={() => { employeesQ.refetch(); entriesQ.refetch(); prevEntriesQ.refetch(); }} />
+        <PanelError error={error} onRetry={() => { employeesQ.refetch(); entriesQ.refetch(); prevEntriesQ.refetch(); templatesQ.refetch(); holidaysQ.refetch(); }} />
       )}
       {!error && isLoading && <PanelLoader />}
 

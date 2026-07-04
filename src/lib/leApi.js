@@ -902,7 +902,9 @@ export const leAbsence = {
   reject: async (id) => leAbsence.update(id, { status: 'abgelehnt' }),
 };
 
-// ---------- Sollzeit-Profile ----------
+// ---------- Sollzeit-Profile (Mitarbeiter-Override auf le_sollzeit_template) ----------
+// hours_mo..hours_so sind hier NULLABLE: null = vom Zentral-Plan erben
+// (skaliert mit pensum_pct), gesetzt = fixer Override für diesen Wochentag.
 export const leSollzeitProfile = {
   listForEmployee: async (employeeId) => {
     const { data, error } = await supabase
@@ -918,6 +920,47 @@ export const leSollzeitProfile = {
   },
   remove: async (id) => {
     const { error } = await supabase.from('le_sollzeit_profile').delete().eq('id', id);
+    if (error) throw error;
+  },
+};
+
+// ---------- Sollzeit-Template (zentraler, firmenweiter Plan, versioniert) ----------
+export const leSollzeitTemplate = {
+  list: async () => {
+    const { data, error } = await supabase
+      .from('le_sollzeit_template').select('*')
+      .order('valid_from', { ascending: false });
+    if (error) throw error;
+    return data ?? [];
+  },
+  create: async (payload) => {
+    const { data, error } = await supabase.from('le_sollzeit_template').insert(payload).select().single();
+    if (error) throw error;
+    return data;
+  },
+  remove: async (id) => {
+    const { error } = await supabase.from('le_sollzeit_template').delete().eq('id', id);
+    if (error) throw error;
+  },
+};
+
+// ---------- Feiertage (firmenweit, übersteuern IMMER auf 0h) ----------
+export const leHoliday = {
+  list: async ({ from, to } = {}) => {
+    let q = supabase.from('le_holiday').select('*').order('date');
+    if (from) q = q.gte('date', from);
+    if (to) q = q.lte('date', to);
+    const { data, error } = await q;
+    if (error) throw error;
+    return data ?? [];
+  },
+  create: async (payload) => {
+    const { data, error } = await supabase.from('le_holiday').insert(payload).select().single();
+    if (error) throw error;
+    return data;
+  },
+  remove: async (id) => {
+    const { error } = await supabase.from('le_holiday').delete().eq('id', id);
     if (error) throw error;
   },
 };
