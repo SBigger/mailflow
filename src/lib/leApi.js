@@ -251,9 +251,10 @@ export const leProject = {
   },
   create: async (payload) => {
     let { data, error } = await supabase.from('le_project').insert(payload).select().single();
-    // Fallback: falls billing_email noch nicht migriert ist, ohne dieses Feld speichern.
-    if (error && /billing_email/i.test(error.message || '')) {
-      const { billing_email, ...rest } = payload;
+    // Fallback: falls optionale Spalten (billing_email/is_internal) noch nicht
+    // migriert sind, ohne diese Felder speichern.
+    if (error && /billing_email|is_internal|does not exist|schema cache/i.test(error.message || '')) {
+      const { billing_email, is_internal, ...rest } = payload;
       ({ data, error } = await supabase.from('le_project').insert(rest).select().single());
     }
     if (error) throw error;
@@ -261,8 +262,8 @@ export const leProject = {
   },
   update: async (id, patch) => {
     let { data, error } = await supabase.from('le_project').update(patch).eq('id', id).select().single();
-    if (error && /billing_email/i.test(error.message || '')) {
-      const { billing_email, ...rest } = patch;
+    if (error && /billing_email|is_internal|does not exist|schema cache/i.test(error.message || '')) {
+      const { billing_email, is_internal, ...rest } = patch;
       ({ data, error } = await supabase.from('le_project').update(rest).eq('id', id).select().single());
     }
     if (error) throw error;

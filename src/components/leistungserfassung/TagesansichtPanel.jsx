@@ -719,6 +719,18 @@ function QuickEntryCard({
 
   const project = projects.find((p) => p.id === row.project_id);
 
+  // Interne Leistungsarten (billable=false) nur auf internen Projekten anbieten.
+  const availableServiceTypes = useMemo(
+    () => (project?.is_internal ? serviceTypes : serviceTypes.filter((s) => s.billable !== false)),
+    [serviceTypes, project?.is_internal],
+  );
+  // Ist die gewählte Leistungsart für dieses Projekt nicht (mehr) erlaubt -> zurücksetzen.
+  useEffect(() => {
+    if (row.service_type_id && !availableServiceTypes.some((s) => s.id === row.service_type_id)) {
+      setRow((r) => ({ ...r, service_type_id: '' }));
+    }
+  }, [availableServiceTypes, row.service_type_id]);
+
   // Auto-Satz wenn Projekt/Leistungsart wechselt – nutzt rate_mode des Projekts
   useEffect(() => {
     if (row.rate_touched) return;
@@ -854,8 +866,8 @@ function QuickEntryCard({
             value={row.service_type_id}
             onChange={(id) => setRow({ ...row, service_type_id: id })}
             onKeyDown={onKeyEnter}
-            placeholder="Leistungsart…"
-            options={serviceTypes.map((s) => ({
+            placeholder={project && !project.is_internal ? 'Leistungsart… (nur verrechenbar)' : 'Leistungsart…'}
+            options={availableServiceTypes.map((s) => ({
               id: s.id,
               label: s.name,
               sublabel: s.code,

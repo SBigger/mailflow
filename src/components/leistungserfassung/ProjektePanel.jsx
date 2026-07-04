@@ -23,6 +23,7 @@ const EMPTY_PROJECT = {
   budget_hours: '',
   budget_amount: '',
   started_at: '',
+  is_internal: false,
   billing_email: '',
   note: '',
 };
@@ -549,6 +550,7 @@ function ProjektDialog({ editing, customers, employees, rateGroups, projectNoSug
         budget_hours: editing.budget_hours ?? '',
         budget_amount: editing.budget_amount ?? '',
         started_at: editing.started_at ?? '',
+        is_internal: editing.is_internal ?? false,
         billing_email: editing.billing_email ?? '',
         note: editing.note ?? '',
       };
@@ -596,6 +598,7 @@ function ProjektDialog({ editing, customers, employees, rateGroups, projectNoSug
       budget_hours: form.budget_hours !== '' ? Number(form.budget_hours) : null,
       budget_amount: form.budget_amount !== '' ? Number(form.budget_amount) : null,
       started_at: form.started_at || null,
+      is_internal: !!form.is_internal,
       billing_email: form.billing_email?.trim() || null,
       note: form.note?.trim() || null,
     };
@@ -791,6 +794,19 @@ function ProjektDialog({ editing, customers, employees, rateGroups, projectNoSug
               />
             </Field>
           </div>
+
+          <label className="flex items-start gap-2 text-sm cursor-pointer select-none rounded border px-3 py-2" style={{ borderColor: form.is_internal ? '#bfd3bf' : '#e4e7e4', background: form.is_internal ? '#f2f8f2' : '#fff' }}>
+            <input
+              type="checkbox"
+              checked={!!form.is_internal}
+              onChange={(e) => patch('is_internal', e.target.checked)}
+              className="mt-0.5"
+            />
+            <span>
+              <span className="font-medium">Internes Projekt</span>
+              <span className="block text-[11px] text-zinc-500">Nur interne Projekte dürfen interne Leistungsarten (z.B. Weiterbildung, Intern) verwenden.</span>
+            </span>
+          </label>
 
           <Field label="Rechnungs-E-Mail (Projekt)" hint="Optional – überschreibt die Kunden-E-Mail beim Rechnungsversand.">
             <Input
