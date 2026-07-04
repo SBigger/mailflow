@@ -123,6 +123,35 @@ export default function TagesansichtPanel() {
   useEffect(() => { try { localStorage.setItem('tva_showCal', showCal ? '1' : '0'); } catch { /* ignore */ } }, [showCal]);
   useEffect(() => { try { localStorage.setItem('tva_showMails', showMails ? '1' : '0'); } catch { /* ignore */ } }, [showMails]);
   useEffect(() => { try { localStorage.setItem('tva_panelH', String(panelH)); } catch { /* ignore */ } }, [panelH]);
+
+  // Höhe der Einträge-Tabelle (null = automatisch/wächst mit Inhalt)
+  const [entriesH, setEntriesH] = useState(() => {
+    const v = parseInt(localStorage.getItem('tva_entriesH') || '', 10);
+    return Number.isFinite(v) ? Math.min(1200, Math.max(120, v)) : null;
+  });
+  useEffect(() => {
+    try {
+      if (entriesH == null) localStorage.removeItem('tva_entriesH');
+      else localStorage.setItem('tva_entriesH', String(entriesH));
+    } catch { /* ignore */ }
+  }, [entriesH]);
+  const entriesBodyRef = useRef(null);
+  const startEntriesResize = (e) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    // Von "auto" aus: aktuelle gerenderte Höhe als Startwert nehmen
+    const startH = entriesH ?? entriesBodyRef.current?.offsetHeight ?? 240;
+    const onMove = (ev) => setEntriesH(Math.min(1200, Math.max(120, startH + (ev.clientY - startY))));
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      document.body.style.userSelect = '';
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    document.body.style.userSelect = 'none';
+  };
+
   const startResize = (e) => {
     e.preventDefault();
     const startY = e.clientY;
@@ -345,21 +374,36 @@ export default function TagesansichtPanel() {
             <SummaryStat label="Total CHF" value={fmt.chf(summary.chf)} accent />
           </div>
         </div>
-        {loading ? (
-          <PanelLoader />
-        ) : entries.length === 0 ? (
-          <div className="p-6 text-sm text-zinc-400 text-center">
-            Noch keine Einträge an diesem Tag.
-          </div>
-        ) : (
-          <EntriesTable
-            entries={entries}
-            projects={projects}
-            serviceTypes={serviceTypes}
-            onUpdate={(id, patch) => updateMut.mutateAsync({ id, patch })}
-            onRemove={(id) => removeMut.mutateAsync(id)}
-          />
-        )}
+        <div
+          ref={entriesBodyRef}
+          style={entriesH != null ? { height: entriesH, overflowY: 'auto' } : undefined}
+        >
+          {loading ? (
+            <PanelLoader />
+          ) : entries.length === 0 ? (
+            <div className="p-6 text-sm text-zinc-400 text-center">
+              Noch keine Einträge an diesem Tag.
+            </div>
+          ) : (
+            <EntriesTable
+              entries={entries}
+              projects={projects}
+              serviceTypes={serviceTypes}
+              onUpdate={(id, patch) => updateMut.mutateAsync({ id, patch })}
+              onRemove={(id) => removeMut.mutateAsync(id)}
+            />
+          )}
+        </div>
+        {/* Ziehgriff: Höhe der Einträge-Tabelle anpassen */}
+        <div
+          onMouseDown={startEntriesResize}
+          onDoubleClick={() => setEntriesH(null)}
+          title="Ziehen, um die Höhe anzupassen · Doppelklick = automatisch"
+          className="h-4 flex items-center justify-center cursor-ns-resize select-none border-t hover:bg-zinc-100 transition-colors"
+          style={{ borderColor: '#eef1ee' }}
+        >
+          <GripHorizontal className="w-4 h-4" style={{ color: '#c2ccc2' }} />
+        </div>
       </Card>
 
       {/* ZEILE 3: Kalender + Mails – ein-/ausblendbar, höhenverstellbar */}
