@@ -98,7 +98,7 @@ Deno.serve(async (req) => {
         currentUrl = deltaLink
         console.log(`[CAL-SYNC] DELTA für ${profile.email}`)
       } else {
-        currentUrl = `https://graph.microsoft.com/v1.0/me/calendarView/delta?startDateTime=${startDate.toISOString()}&endDateTime=${endDate.toISOString()}&$select=id,subject,bodyPreview,start,end,isAllDay,location,organizer,responseStatus,isCancelled,onlineMeeting,importance,categories`
+        currentUrl = `https://graph.microsoft.com/v1.0/me/calendarView/delta?startDateTime=${startDate.toISOString()}&endDateTime=${endDate.toISOString()}&$select=id,subject,bodyPreview,start,end,isAllDay,location,organizer,responseStatus,isCancelled,onlineMeeting,importance,categories,seriesMasterId,type`
         console.log(`[CAL-SYNC] INITIAL ${syncDays}d Vergangenheit + 1J Zukunft für ${profile.email}`)
       }
 
@@ -142,6 +142,28 @@ Deno.serve(async (req) => {
       const toInsert: any[] = []
       const toUpdate: any[] = []
 
+      // ── Serienmaster-Cache ──
+      // Graph liefert bei calendarView/delta die Occurrences einer Serie nur
+      // mit Minimaldaten (id, start, end, seriesMasterId, type) — Betreff/Ort
+      // stehen ausschliesslich im seriesMaster. Master aus derselben Antwort
+      // werden gecacht; fehlt er (Delta-Sync), wird er einzeln nachgeladen.
+      const masterCache = new Map<string, any>()
+      const resolveMaster = async (masterId: string) => {
+        if (masterCache.has(masterId)) return masterCache.get(masterId)
+        try {
+          const res = await fetch(
+            `https://graph.microsoft.com/v1.0/me/events/${masterId}?$select=subject,bodyPreview,isAllDay,location,organizer,responseStatus,isCancelled,onlineMeeting,importance,categories`,
+            { headers: { Authorization: `Bearer ${accessToken}` } }
+          )
+          const master = res.ok ? await res.json() : null
+          masterCache.set(masterId, master)
+          return master
+        } catch {
+          masterCache.set(masterId, null)
+          return null
+        }
+      }
+
       for (const event of events) {
         // Gelöschte Events: hard delete (Kalender ≠ Mail)
         if (event['@removed']) {
@@ -150,6 +172,25 @@ Deno.serve(async (req) => {
             await supabase.from('calendar_events').delete().eq('id', existingId)
           }
           continue
+        }
+
+        // Serienmaster: nur cachen, nicht als eigenen Termin speichern —
+        // seine Zeiten sind bloss die erste Instanz der Serie (Duplikat).
+        // Früher gespeicherte Master-Zeilen werden dabei aufgeräumt.
+        if (event.type === 'seriesMaster') {
+          masterCache.set(event.id, event)
+          const existingId = existingMap.get(event.id)
+          if (existingId) {
+            await supabase.from('calendar_events').delete().eq('id', existingId)
+            existingMap.delete(event.id)
+          }
+          continue
+        }
+
+        // Occurrence ohne eigenen Betreff → Daten vom Serienmaster übernehmen
+        let master: any = null
+        if (event.seriesMasterId && (event.type === 'occurrence' || !(event.subject || '').trim())) {
+          master = await resolveMaster(event.seriesMasterId)
         }
 
         // Zeitangaben (Graph liefert UTC wenn Prefer-Header gesetzt)
@@ -163,19 +204,19 @@ Deno.serve(async (req) => {
 
         const eventData = {
           outlook_id:        event.id,
-          subject:           (event.subject || '').trim() || '(Kein Titel)',
-          body_preview:      event.bodyPreview || '',
+          subject:           (event.subject || master?.subject || '').trim() || '(Kein Titel)',
+          body_preview:      event.bodyPreview || master?.bodyPreview || '',
           start_time:        startTime,
           end_time:          endTime,
-          is_all_day:        event.isAllDay || false,
-          location:          event.location?.displayName || null,
-          online_meeting_url: event.onlineMeeting?.joinUrl || null,
-          organizer_name:    event.organizer?.emailAddress?.name || null,
-          organizer_email:   (event.organizer?.emailAddress?.address || '').toLowerCase() || null,
-          response_status:   event.responseStatus?.response || 'none',
-          is_cancelled:      event.isCancelled || false,
-          importance:        event.importance || 'normal',
-          categories:        event.categories || [],
+          is_all_day:        event.isAllDay ?? master?.isAllDay ?? false,
+          location:          event.location?.displayName || master?.location?.displayName || null,
+          online_meeting_url: event.onlineMeeting?.joinUrl || master?.onlineMeeting?.joinUrl || null,
+          organizer_name:    event.organizer?.emailAddress?.name || master?.organizer?.emailAddress?.name || null,
+          organizer_email:   (event.organizer?.emailAddress?.address || master?.organizer?.emailAddress?.address || '').toLowerCase() || null,
+          response_status:   event.responseStatus?.response || master?.responseStatus?.response || 'none',
+          is_cancelled:      event.isCancelled ?? master?.isCancelled ?? false,
+          importance:        event.importance || master?.importance || 'normal',
+          categories:        (event.categories?.length ? event.categories : master?.categories) || [],
           created_by:        profile.id,
           updated_at:        new Date().toISOString(),
         }

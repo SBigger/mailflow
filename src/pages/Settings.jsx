@@ -375,7 +375,7 @@ export default function Settings() {
             const {data} = await functions.invoke('microsoft-auth', {
                 state: session.access_token,
                 forceConsent: true,
-                mail: user?.outlook_email |user?.email
+                mail: user?.outlook_email || user?.email
             })
 
             // Popup öffnen (funktioniert in Electron via setWindowOpenHandler + Browser)
