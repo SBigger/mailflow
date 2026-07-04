@@ -24,8 +24,23 @@ function Kpi({ label, value, hint, icon: Icon, color = '#7a9b7f' }) {
   );
 }
 
+// Sortierwert pro Spalte
+function sortValueOf(r, key) {
+  switch (key) {
+    case 'projekt': return `${r.proj.project_no || ''} ${r.proj.name}`.toLowerCase();
+    case 'kunde':   return (r.proj.customer?.company_name || '').toLowerCase();
+    case 'typ':     return r.proj.billing_mode === 'pauschal' ? 1 : 0;
+    case 'hours':   return r.hours;
+    case 'value':   return r.value;
+    case 'oldest':  return r.oldest || '';
+    default:        return 0;
+  }
+}
+
 export default function FakturierungPanel() {
   const [selectedId, setSelectedId] = useState(null);
+  const [sortKey, setSortKey] = useState('value');
+  const [sortDir, setSortDir] = useState('desc');
 
   const entriesQ = useQuery({
     queryKey: ['ausw', 'aa', 'open'],
@@ -66,11 +81,38 @@ export default function FakturierungPanel() {
     projects: rows.length,
   }), [rows]);
 
+  const sorted = useMemo(() => {
+    const arr = [...rows];
+    arr.sort((a, b) => {
+      const va = sortValueOf(a, sortKey);
+      const vb = sortValueOf(b, sortKey);
+      if (typeof va === 'string') return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+      return sortDir === 'asc' ? va - vb : vb - va;
+    });
+    return arr;
+  }, [rows, sortKey, sortDir]);
+
+  const handleSort = (key) => {
+    if (key === sortKey) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+    else { setSortKey(key); setSortDir(key === 'projekt' || key === 'kunde' ? 'asc' : 'desc'); }
+  };
+
+  const Th = ({ k, children, right }) => (
+    <th
+      className={`px-3 py-2 font-semibold cursor-pointer select-none hover:text-zinc-700 ${right ? 'text-right' : ''}`}
+      onClick={() => handleSort(k)}
+      title="Sortieren"
+    >
+      {children}
+      {sortKey === k && <span className="ml-1 text-zinc-400">{sortDir === 'asc' ? '↑' : '↓'}</span>}
+    </th>
+  );
+
   const selected = rows.find(r => r.proj.id === selectedId) || null;
 
   const exportCsv = () => {
     const header = ['Projekt-Nr', 'Projekt', 'Kunde', 'Typ', 'Offene Std', 'Wert CHF', 'Kulant Std', 'Ältester Eintrag'];
-    const data = rows.map(r => [
+    const data = sorted.map(r => [
       r.proj.project_no || '', r.proj.name,
       r.proj.customer?.company_name || '',
       r.proj.billing_mode === 'pauschal' ? 'Pauschal' : 'Effektiv',
@@ -107,19 +149,19 @@ export default function FakturierungPanel() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-[10px] uppercase tracking-wider text-zinc-500 border-b" style={{ borderColor: '#e4e7e4' }}>
-                    <th className="px-3 py-2 font-semibold">Projekt</th>
-                    <th className="px-3 py-2 font-semibold">Kunde</th>
-                    <th className="px-3 py-2 font-semibold">Typ</th>
-                    <th className="px-3 py-2 font-semibold text-right">Offene Std</th>
-                    <th className="px-3 py-2 font-semibold text-right">Wert CHF</th>
-                    <th className="px-3 py-2 font-semibold text-right">Ältester Eintrag</th>
+                    <Th k="projekt">Projekt</Th>
+                    <Th k="kunde">Kunde</Th>
+                    <Th k="typ">Typ</Th>
+                    <Th k="hours" right>Offene Std</Th>
+                    <Th k="value" right>Wert CHF</Th>
+                    <Th k="oldest" right>Ältester Eintrag</Th>
                   </tr>
                 </thead>
                 <tbody>
                   {rows.length === 0 && (
                     <tr><td colSpan={6} className="px-3 py-4 text-zinc-400 text-xs">Keine offenen Leistungen. Alles fakturiert.</td></tr>
                   )}
-                  {rows.map((r, i) => {
+                  {sorted.map((r, i) => {
                     const active = r.proj.id === selectedId;
                     return (
                       <tr
