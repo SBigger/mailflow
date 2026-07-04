@@ -14,8 +14,40 @@ import { toast } from 'sonner';
 import {
   ChevronLeft, ChevronRight, CalendarDays, CornerDownLeft,
   Pencil, Trash2, Check, X as XIcon, Info, Mail, Calendar, RefreshCw, Plus,
-  Eye, EyeOff, GripHorizontal,
+  Eye, EyeOff, GripHorizontal, GripVertical,
 } from 'lucide-react';
+
+const DEFAULT_ROW_ORDER = ['quick', 'entries', 'panels'];
+
+// Wrapper für einen sortierbaren Block. Modul-level (stabile Identität) -> die
+// enthaltenen Panels bleiben beim Umsortieren gemountet (kein Formstate-Verlust).
+function RowWrap({ id, order, dragRow, setDragRow, onDropRow, children }) {
+  const isDragging = dragRow === id;
+  return (
+    <div
+      style={{ order }}
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => { e.preventDefault(); onDropRow(id); }}
+      className="relative"
+    >
+      <div
+        draggable
+        onDragStart={(e) => { setDragRow(id); if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'; }}
+        onDragEnd={() => setDragRow(null)}
+        title="Ziehen, um die Reihenfolge zu ändern"
+        className="absolute -left-5 top-2.5 z-20 cursor-grab active:cursor-grabbing rounded p-0.5 hover:bg-zinc-100 transition-colors"
+      >
+        <GripVertical className="w-4 h-4" style={{ color: '#aebbae' }} />
+      </div>
+      {dragRow && !isDragging && (
+        <div className="absolute inset-0 rounded-lg pointer-events-none z-10" style={{ outline: '2px dashed #bfd3bf', outlineOffset: 2 }} />
+      )}
+      <div style={{ opacity: isDragging ? 0.4 : 1, transition: 'opacity 0.15s' }}>
+        {children}
+      </div>
+    </div>
+  );
+}
 import {
   leTimeEntry, leProject, leServiceType, leEmployee, currentEmployee,
   leRateGroupRate, leServiceRateHistory, resolveRateFor, leMs365Day,
@@ -150,6 +182,30 @@ export default function TagesansichtPanel() {
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
     document.body.style.userSelect = 'none';
+  };
+
+  // Reihenfolge der 3 Blöcke (persistent, per Drag umsortierbar)
+  const [rowOrder, setRowOrder] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('tva_rowOrder') || 'null');
+      if (Array.isArray(saved)) {
+        const known = saved.filter((id) => DEFAULT_ROW_ORDER.includes(id));
+        return [...known, ...DEFAULT_ROW_ORDER.filter((id) => !known.includes(id))];
+      }
+    } catch { /* ignore */ }
+    return DEFAULT_ROW_ORDER;
+  });
+  useEffect(() => { try { localStorage.setItem('tva_rowOrder', JSON.stringify(rowOrder)); } catch { /* ignore */ } }, [rowOrder]);
+  const [dragRow, setDragRow] = useState(null);
+  const moveRowBefore = (dragId, targetId) => {
+    if (!dragId || dragId === targetId) return;
+    setRowOrder((prev) => {
+      const arr = prev.filter((id) => id !== dragId);
+      const idx = arr.indexOf(targetId);
+      if (idx < 0) return prev;
+      arr.splice(idx, 0, dragId);
+      return arr;
+    });
   };
 
   const startResize = (e) => {
@@ -343,8 +399,10 @@ export default function TagesansichtPanel() {
         </div>
       )}
 
-      {/* ZEILE 1: Schnell-Erfassung volle Breite */}
+      {/* Sortierbare Blöcke – am Ziehgriff (links) per Drag umsortierbar */}
+      <div className="flex flex-col gap-3">
       {!noMasterData && currentEmployeeId && (
+        <RowWrap id="quick" order={rowOrder.indexOf('quick')} dragRow={dragRow} setDragRow={setDragRow} onDropRow={(tid) => { moveRowBefore(dragRow, tid); setDragRow(null); }}>
         <QuickEntryCard
           projects={projects}
           serviceTypes={serviceTypes}
@@ -361,9 +419,11 @@ export default function TagesansichtPanel() {
             ...payload, // payload.status kann 'kulant' überschreiben
           })}
         />
+        </RowWrap>
       )}
 
       {/* ZEILE 2: Tageseinträge volle Breite mit inline-Summary */}
+      <RowWrap id="entries" order={rowOrder.indexOf('entries')} dragRow={dragRow} setDragRow={setDragRow} onDropRow={(tid) => { moveRowBefore(dragRow, tid); setDragRow(null); }}>
       <Card>
         <div className="px-4 py-2 border-b flex items-center justify-between gap-4 flex-wrap" style={{ borderColor: '#e4e7e4' }}>
           <div className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
@@ -405,8 +465,10 @@ export default function TagesansichtPanel() {
           <GripHorizontal className="w-4 h-4" style={{ color: '#c2ccc2' }} />
         </div>
       </Card>
+      </RowWrap>
 
       {/* ZEILE 3: Kalender + Mails – ein-/ausblendbar, höhenverstellbar */}
+      <RowWrap id="panels" order={rowOrder.indexOf('panels')} dragRow={dragRow} setDragRow={setDragRow} onDropRow={(tid) => { moveRowBefore(dragRow, tid); setDragRow(null); }}>
       <div>
         <div className="flex items-center gap-2 mb-1.5">
           <span className="text-[10px] uppercase tracking-wider text-zinc-400 mr-1">Ansicht</span>
@@ -480,6 +542,8 @@ export default function TagesansichtPanel() {
             Beide Panels ausgeblendet – oben wieder einblenden.
           </div>
         )}
+      </div>
+      </RowWrap>
       </div>
     </div>
   );
