@@ -45,3 +45,8 @@ apps/artis_agent/dist
 
 public/smartis.exe
 public/sm-artis-agent.exe
+
+# Vortrag-Import: Rohdaten mit Kundendaten lokal halten, nicht versionieren
+scripts/fakturaliste-full.txt
+scripts/fakturaliste-full.json
+scripts/reconcile-result.json
