@@ -135,6 +135,180 @@ function UploadDropzone({ mandantId, onDone }) {
   );
 }
 
+// ── Dialog SetupImap ──────────────────────────────────────────────
+function SetupIMAP({ isOpen, onClose, mandatenId, mandant})   {
+  if (!isOpen) return null;
+
+  const [isTesting, setIsTesting] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [testResult, setTestResult] = useState({ status: null, message: '' });
+  const [formData, setFormData] = useState({
+    imap_host: mandant?.imap_host || '',
+    imap_port: mandant?.imap_port || '993',
+    imap_user: mandant?.imap_user || '',
+    imap_password: mandant?.imap_password || '',
+    imap_ssl: mandant?.imap_ssl || true
+  });
+
+  const handleChange = (e) => {
+    const { name, value, type, checked } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: type === 'checkbox' ? checked : value
+    }));
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      setIsLoading(true);
+      const { data, error } = await supabase
+          .from("fibu_mandanten")
+          .update(formData)
+          .eq("id", mandatenId)
+
+      if (error) throw error;
+    } catch (e){
+      console.error(e);
+      return;
+    } finally {
+      setIsLoading(false);
+    }
+    onClose();
+  };
+
+  const handleTestConnection = async () => {
+    setIsTesting(true);
+    setTestResult({ status: null, message: '' });
+
+    try {
+      // Aufruf über den Supabase SDK Client
+      const { data, error } = await supabase.functions.invoke('test-imap', {
+        body: formData,
+      });
+
+      if (error) throw error;
+
+      if (data.success) {
+        setTestResult({ status: 'success', message: '✓ ' + data.message });
+      } else {
+        setTestResult({ status: 'error', message: '❌ ' + data.error });
+      }
+    } catch (err) {
+      console.error("Edge Function Fehler:", err);
+      setTestResult({
+        status: 'error',
+        message: '❌ Fehler beim Aufruf des Verbindungstests.'
+      });
+    } finally {
+      setIsTesting(false);
+    }
+  };
+
+  const labelStyle = { display: 'block', fontSize: 11.5, fontWeight: 600, color: '#4b5563', marginBottom: 4 };
+  const inputStyle = { width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #e4e4ea', fontSize: 13, boxSizing: 'border-box', outline: 'none' };
+  const btnSecondaryStyle = { padding: '8px 14px', borderRadius: 6, border: '1px solid #e4e4ea', background: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer' };
+  const btnPrimaryStyle = { padding: '8px 14px', borderRadius: 6, border: 'none', background: '#1a1a2e', color: '#fff', fontSize: 13, fontWeight: 500 };
+
+  return (
+      <div style={{
+        position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+        backgroundColor: 'rgba(0, 0, 0, 0.4)', display: 'flex',
+        justifyContent: 'center', alignItems: 'center', zIndex: 1000
+      }}>
+        <div style={{
+          background: '#ffffff', padding: '24px', borderRadius: 12,
+          width: '100%', maxWidth: '400px', boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
+          boxSizing: 'border-box', fontFamily: 'sans-serif'
+        }}>
+          {/* Header */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: '#1a1a2e' }}>✉ IMAP-Abruf einrichten</h3>
+            <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 18, cursor: 'pointer', color: '#9ca3af' }}>&times;</button>
+          </div>
+
+          <p style={{ fontSize: 12.5, color: '#6b7280', margin: '0 0 20px 0', lineHeight: '1.4' }}>
+            Verbinden Sie Ihr Postfach, um Rechnungen und Belege automatisch importieren zu lassen.
+          </p>
+
+          {/* Formular */}
+          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <div style={{ flex: 3 }}>
+                <label style={labelStyle}>IMAP Server</label>
+                <input type="text" name="imap_host" placeholder="imap.example.com" value={formData.imap_host} onChange={handleChange} required style={inputStyle} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={labelStyle}>Port</label>
+                <input type="text" name="imap_port" placeholder="993" value={formData.imap_port} onChange={handleChange} required style={inputStyle} />
+              </div>
+            </div>
+
+            <div>
+              <label style={labelStyle}>E-Mail-Adresse</label>
+              <input type="email" name="imap_user" placeholder="rechnung@firma.de" value={formData.imap_user} onChange={handleChange} required style={inputStyle} />
+            </div>
+
+            <div>
+              <label style={labelStyle}>Passwort</label>
+              <input type="password" name="imap_password" placeholder="••••••••" value={formData.imap_password} onChange={handleChange} required style={inputStyle} />
+            </div>
+
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: '#1a1a2e', cursor: 'pointer' }}>
+              <input type="checkbox" name="imap_ssl" checked={formData.imap_ssl} onChange={handleChange} />
+              SSL / TLS Verschlüsselung erzwingen
+            </label>
+
+            {/* TEST-RESULTAT ANZEIGEN */}
+            {testResult.message && (
+                <div style={{
+                  fontSize: 12, padding: '8px 10px', borderRadius: 6,
+                  background: testResult.status === 'success' ? '#f0f7f0' : '#fef2f2',
+                  color: testResult.status === 'success' ? '#166534' : '#991b1b',
+                  border: `1px solid ${testResult.status === 'success' ? '#b6d8bc' : '#fca5a5'}`
+                }}>
+                  {testResult.message}
+                </div>
+            )}
+
+            {/* ACTIONS */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10 }}>
+              {/* Test-Button (type="button" verhindert den echten Formular-Submit!) */}
+              <button
+                  type="button"
+                  onClick={handleTestConnection}
+                  disabled={isTesting}
+                  style={{
+                    padding: '8px 14px', borderRadius: 6, border: '1px solid #1a1a2e',
+                    background: 'transparent', color: '#1a1a2e', fontSize: 13,
+                    fontWeight: 500, cursor: isTesting ? 'not-allowed' : 'pointer', opacity: isTesting ? 0.5 : 1
+                  }}
+              >
+                {isTesting ? 'Prüfe...' : 'Verbindung testen'}
+              </button>
+
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button type="button" onClick={onClose} style={btnSecondaryStyle}>Abbrechen</button>
+                {/* Speichern ist nur aktiv/sinnvoll, wenn der Test vorher erfolgreich war */}
+                <button
+                    type="submit"
+                    disabled={testResult.status !== 'success'}
+                    style={{
+                      ...btnPrimaryStyle,
+                      opacity: testResult.status === 'success' ? 1 : 0.5,
+                      cursor: testResult.status === 'success' ? 'pointer' : 'not-allowed'
+                    }}
+                >
+                  {isLoading ? 'speichert...' : 'Speichern'}
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+  );
+}
+
 // ── Hauptkomponente ──────────────────────────────────────────────
 export default function RechnungInbox() {
   const { mandant, canWrite } = useMandant();
@@ -148,6 +322,7 @@ export default function RechnungInbox() {
   const [loadingPdf, setLoadingPdf] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
   const [inboxEmail, setInboxEmail] = useState('');
+  const [isImapOpen, setIsImapOpen] = useState(false);
 
   const load = useCallback(async () => {
     if (!mandant) return;
@@ -172,7 +347,7 @@ export default function RechnungInbox() {
     if (!item.pdf_path) return;
     setLoadingPdf(true);
     try {
-      const { data } = await supabase.storage
+      const { data, error } = await supabase.storage
         .from('fibu-inbox')
         .createSignedUrl(item.pdf_path, 600);
       setPdfUrl(data?.signedUrl ?? null);
@@ -445,24 +620,42 @@ export default function RechnungInbox() {
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, padding: 28 }}>
             <div style={{ fontSize: 44 }}>📬</div>
             <div style={{ fontSize: 13.5, fontWeight: 600, color: '#4a5a4a', textAlign: 'center' }}>Eingangspostfach</div>
-
-            {/* Drei Wege erklärt */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%' }}>
               {[
-                { icon: '↑', title: 'Manueller Upload', desc: 'PDF direkt hochladen — jetzt verfügbar', done: true },
-                { icon: '✉', title: 'IMAP-Abruf', desc: 'Automatisch aus Ihrem Postfach (kommt)', done: false },
-                { icon: '⚡', title: 'E-Mail-Webhook', desc: 'Via Mailgun / Postmark (kommt)', done: false },
-              ].map(item => (
-                <div key={item.title} style={{ display: 'flex', gap: 10, padding: '10px 12px', borderRadius: 8, background: item.done ? '#f0f7f0' : '#f7f7f7', border: `1px solid ${item.done ? '#b6d8bc' : '#e4e4ea'}`, opacity: item.done ? 1 : 0.7 }}>
-                  <span style={{ fontSize: 18, flexShrink: 0 }}>{item.icon}</span>
-                  <div>
-                    <div style={{ fontSize: 12.5, fontWeight: 600, color: '#1a1a2e' }}>{item.title}</div>
-                    <div style={{ fontSize: 11.5, color: '#6b826b', marginTop: 1 }}>{item.desc}</div>
+                  { icon: '↑', title: 'Manueller Upload', desc: 'PDF direkt hochladen — jetzt verfügbar', done: true, show: true },
+                  { icon: '✉', title: 'IMAP-Abruf', desc: 'Automatisch aus Ihrem Postfach (kommt)', done: mandant.imap_host, show: true, action: () => setIsImapOpen(true) },
+                  { icon: '⚡', title: 'E-Mail-Webhook', desc: 'Via Mailgun / Postmark (kommt)', done: false, show: false },
+                ].map(item => (
+                  <div
+                      key={item.title}
+                      onClick={() => item.action && item.action()}
+                      style={{
+                        display: item.show ? 'flex' : 'none',
+                        gap: 10,
+                        padding: '10px 12px',
+                        borderRadius: 8,
+                        background: item.done ? '#f0f7f0' : '#f7f7f7',
+                        border: `1px solid ${item.done ? '#b6d8bc' : '#e4e4ea'}`,
+                        opacity: item.done ? 1 : 0.9,
+                        cursor: item.action ? 'pointer' : 'default',
+                      }}
+                  >
+                    <span style={{ fontSize: 18, flexShrink: 0 }}>{item.icon}</span>
+                    <div>
+                      <div style={{ fontSize: 12.5, fontWeight: 600, color: '#1a1a2e' }}>{item.title}</div>
+                      <div style={{ fontSize: 11.5, color: item.done ? '#6b826b' : '#8a8a93', marginTop: 1 }}>{item.desc}</div>
+                    </div>
+                    {item.done && (
+                        <span style={{ marginLeft: 'auto', fontSize: 10.5, color: '#166534', fontWeight: 600, alignSelf: 'center' }}>
+                          ✓ aktiv
+                        </span>
+                    )}
                   </div>
-                  {item.done && <span style={{ marginLeft: 'auto', fontSize: 10.5, color: '#166534', fontWeight: 600, alignSelf: 'center' }}>✓ aktiv</span>}
-                </div>
               ))}
             </div>
+
+            {/* Das Modal wird hier gerendert */}
+            <SetupIMAP isOpen={isImapOpen} onClose={() => setIsImapOpen(false)} mandatenId={mandant.id} mandant={mandant} />
 
             <div style={{ fontSize: 11.5, color: '#94a394', textAlign: 'center', lineHeight: 1.6 }}>
               Klicken Sie auf einen Eintrag, um ihn anzuzeigen und als Rechnung zu erfassen.

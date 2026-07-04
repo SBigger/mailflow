@@ -941,6 +941,7 @@ export default function Dokumente() {
   const [showShareLinks, setShowShareLinks] = useState(false);
   const [chartisDoc, setChartisDoc] = useState(null); // Chartis-Panel pro Dokument
   const [highestScore, setHighestScore] = useState(false);
+  const [menuDocId, setMenuDocId] = useState(null);
 
   // Volltext-Suche via Supabase RPC (PostgreSQL GIN-Index)
   useEffect(() => {

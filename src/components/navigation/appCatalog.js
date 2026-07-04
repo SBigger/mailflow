@@ -71,7 +71,7 @@ export const NAV_GROUPS = [
       { name: 'Kunden', label: 'Kunden', icon: Building2, rail: true, color: '#d98836', aliases: ['crm', 'mandanten', 'firmen', 'unternehmen'] },
       { name: 'Personen', label: 'Personen', icon: Users, color: '#8a63c9', aliases: ['privatpersonen', 'kontakte'] },
       { name: 'Dokumente', label: 'Dokumente', icon: FolderOpen, rail: true, color: '#caa53d', aliases: ['ablage', 'dateiablage', 'dateien', 'abschlussunterlagen', 'archiv'] },
-      { name: 'DokumenteV2', label: 'Dokumente V2', icon: FolderOpen, color: '#a8862f', aliases: ['ablage neu', 'beta'] },
+      /*{ name: 'DokumenteV2', label: 'Dokumente V2', icon: FolderOpen, color: '#a8862f', aliases: ['ablage neu', 'beta'] },*/
       { name: 'Posteingang', label: 'Posteingang', icon: CloudUpload, rail: true, color: '#4ba3c7', aliases: ['scans', 'upload', 'eingang'] },
       { name: 'TelefonDashboard', label: 'Telefon', icon: PhoneCall, color: '#4fae6b', aliases: ['anrufe', 'telefonliste', 'calls'] },
     ],
@@ -118,7 +118,7 @@ export const NAV_GROUPS = [
   },
   {
     id: 'system', label: null, color: '#7b8794', items: [
-      { name: 'KnowledgeBase', label: 'Wissen', icon: BookOpen, rail: true, color: '#4a9e9a', aliases: ['knowledge', 'wiki', 'anleitungen'] },
+      { name: 'KnowledgeBase', label: 'Wissen', icon: BookOpen, rail: false, color: '#4a9e9a', aliases: ['knowledge', 'wiki', 'anleitungen'] },
       { name: 'AiAssistant', label: 'AI-Assistant', icon: Bot, rail: true, requiresAi: true, color: '#7a5bd4', aliases: ['ki', 'assistent', 'ai'] },
       { name: 'Settings', label: 'Einstellungen', icon: SettingsIcon, rail: true, color: '#7b8794', aliases: ['settings', 'konfiguration', 'optionen'] },
     ],
