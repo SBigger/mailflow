@@ -39,6 +39,9 @@ export default function MandantSelect() {
       const { error } = await supabase.rpc('fibu_delete_mandant', { p_mandant_id: m.id });
       if (error) throw error;
       setMandanten(prev => prev.filter(x => x.id !== m.id));
+      if (localStorage.getItem('fibu_last_mandant') === m.id) {
+        localStorage.removeItem('fibu_last_mandant');
+      }
     } catch (e) {
       alert('Fehler: ' + e.message);
     } finally {

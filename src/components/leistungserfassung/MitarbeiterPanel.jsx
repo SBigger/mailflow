@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Pencil, Trash2, Plus, Archive, ArchiveRestore } from 'lucide-react';
-import { leEmployee, leEmployeeGroup } from '@/lib/leApi';
+import { leEmployee, leEmployeeGroup, leRateGroup } from '@/lib/leApi';
 import {
   Chip,
   Card,
@@ -36,6 +36,7 @@ const EMPTY = {
   cost_rate: '',
   billable_rate: '',
   employee_group_id: '',
+  rate_group_id: '',
   active: true,
 };
 
@@ -56,6 +57,10 @@ export default function MitarbeiterPanel() {
   const { data: groups = [] } = useQuery({
     queryKey: ['le', 'employee_group'],
     queryFn: leEmployeeGroup.list,
+  });
+  const { data: rateGroups = [] } = useQuery({
+    queryKey: ['le', 'rate_group'],
+    queryFn: leRateGroup.list,
   });
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -81,6 +86,7 @@ export default function MitarbeiterPanel() {
       cost_rate: emp.cost_rate ?? '',
       billable_rate: emp.billable_rate ?? '',
       employee_group_id: emp.employee_group_id ?? '',
+      rate_group_id: emp.rate_group_id ?? '',
       active: emp.active ?? true,
     });
     setDialogOpen(true);
@@ -128,6 +134,7 @@ export default function MitarbeiterPanel() {
       cost_rate: form.cost_rate === '' ? null : Number(form.cost_rate),
       billable_rate: form.billable_rate === '' ? null : Number(form.billable_rate),
       employee_group_id: form.employee_group_id || null,
+      rate_group_id: form.rate_group_id || null,
       active: !!form.active,
     };
     if (!payload.short_code || !payload.full_name) {
@@ -360,7 +367,7 @@ export default function MitarbeiterPanel() {
                   placeholder="z.B. 220.00"
                 />
               </Field>
-              <Field label="Mitarbeitergruppe" hint={'Bei Projekten mit Ansatz-Modus „Mitarbeitergruppe"'}>
+              <Field label="Mitarbeitergruppe" hint={'Fallback-Satz (ein Satz je Stufe)'}>
                 <Select
                   value={form.employee_group_id}
                   onChange={(e) => setForm((f) => ({ ...f, employee_group_id: e.target.value }))}
@@ -370,6 +377,19 @@ export default function MitarbeiterPanel() {
                     <option key={g.id} value={g.id}>
                       {g.name}{g.billable_rate ? ` · ${fmt.chf(g.billable_rate)}/h` : ''}
                     </option>
+                  ))}
+                </Select>
+              </Field>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Rolle / Gruppenansatz" hint={'Stufe 1 der automatischen Satz-Kaskade: Rolle × Leistungsart (z.B. Inhaber, Mandatsleiter, Sachbearbeiter)'}>
+                <Select
+                  value={form.rate_group_id}
+                  onChange={(e) => setForm((f) => ({ ...f, rate_group_id: e.target.value }))}
+                >
+                  <option value="">— keine —</option>
+                  {rateGroups.map((g) => (
+                    <option key={g.id} value={g.id}>{g.name}</option>
                   ))}
                 </Select>
               </Field>

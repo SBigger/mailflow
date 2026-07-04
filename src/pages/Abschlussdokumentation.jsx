@@ -2482,8 +2482,8 @@ function KontenplanTab({ konten, onUpdateKonto, onAddKonto, customerId, selected
   };
   // Anpassungszeilen-Edit
   const [editAnp, setEditAnp] = useState(null); // { idx, bezeichnung, betrag }
-  // Resizable column widths: [Konto-Nr, Kontoname, Saldo IST, Saldo VJ, Abw., Position, Notiz]
-  const DEFAULT_COL_WIDTHS = [78, 200, 135, 135, 115, 160, 130];
+  // Resizable column widths: [Konto-Nr, Kontoname, Saldo IST, Saldo VJ, Abw., Position, Notiz, Pendent]
+  const DEFAULT_COL_WIDTHS = [78, 200, 135, 135, 115, 160, 130, 84];
   const [colWidths, setColWidths] = useState(DEFAULT_COL_WIDTHS);
   const colWidthsRef = useRef(DEFAULT_COL_WIDTHS);
 
@@ -2491,7 +2491,7 @@ function KontenplanTab({ konten, onUpdateKonto, onAddKonto, customerId, selected
     e.preventDefault();
     const sx = e.clientX;
     const sw = colWidthsRef.current[ci];
-    const minW = [50, 80, 80, 80, 60, 80, 80][ci] ?? 60;
+    const minW = [50, 80, 80, 80, 60, 80, 80, 50][ci] ?? 60;
     const move = (me) => {
       const newW = Math.max(minW, sw + me.clientX - sx);
       const next = colWidthsRef.current.map((w, i) => i === ci ? newW : w);
@@ -2555,8 +2555,12 @@ function KontenplanTab({ konten, onUpdateKonto, onAddKonto, customerId, selected
     );
   }
 
-  const COL_HEADERS = ["Konto-Nr", "Kontoname", "Saldo IST", "Saldo VJ", "Abw.", "Position", "Notiz"];
-  const COL_ALIGN = [false, false, true, true, true, false, false];
+  const COL_HEADERS = ["Konto-Nr", "Kontoname", "Saldo IST", "Saldo VJ", "Abw.", "Position", "Notiz", "Pendent"];
+  const COL_ALIGN = [false, false, true, true, true, false, false, false];
+  // Violett für „pendent"-Zeilen – theme-abhängig, damit Text lesbar bleibt.
+  // Light/Artis: helles Violett + dunkler Text · Dark: halbtransparenter Violett-Overlay + heller Text.
+  const PENDENT_BG       = isArtis ? "#efe9fb" : isLight ? "#ede9fe" : "rgba(139,92,246,0.22)";
+  const PENDENT_BG_HOVER = isArtis ? "#e5dbf7" : isLight ? "#ddd6fe" : "rgba(139,92,246,0.34)";
 
   return (
     <div className="overflow-x-auto">
@@ -2642,6 +2646,7 @@ function KontenplanTab({ konten, onUpdateKonto, onAddKonto, customerId, selected
               <td style={{ padding: "4px 12px", fontSize: 11, color: subC, fontStyle: "italic" }}>
                 Neue Zeile · Enter zum Hinzufügen
               </td>
+              <td />
             </tr>
           )}
           {groupOrder.map(groupKey => {
@@ -2685,7 +2690,7 @@ function KontenplanTab({ konten, onUpdateKonto, onAddKonto, customerId, selected
                   <td style={{ padding: "8px 12px", textAlign: "right", fontWeight: 700, fontSize: 12, color: headingC, fontFamily: "monospace", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                     {fmtCHF(groupTotalVJ)}
                   </td>
-                  <td colSpan={3} style={{ padding: "8px 12px" }} />
+                  <td colSpan={4} style={{ padding: "8px 12px" }} />
                 </tr>
 
                 {/* Rows */}
@@ -2696,14 +2701,15 @@ function KontenplanTab({ konten, onUpdateKonto, onAddKonto, customerId, selected
                   const noMapping = !effectivePos && /^[1-8]/.test(String(konto.kontonummer));
 
                   const isExpanded = expandedKonten.has(konto.id);
+                  const isPendent = !!konto.arbeitspapier?.pendent;
                   return (
                     <React.Fragment key={konto.id}>
                     <tr style={{
                       borderBottom: isExpanded ? "none" : `1px solid ${tableBdr}`,
-                      backgroundColor: noMapping ? "#fef2f250" : "transparent",
+                      backgroundColor: isPendent ? PENDENT_BG : noMapping ? "#fef2f250" : "transparent",
                     }}
-                      onMouseEnter={e => e.currentTarget.style.backgroundColor = noMapping ? "#fef2f2" : rowHover}
-                      onMouseLeave={e => e.currentTarget.style.backgroundColor = isExpanded ? (accent + "08") : noMapping ? "#fef2f250" : "transparent"}>
+                      onMouseEnter={e => e.currentTarget.style.backgroundColor = isPendent ? PENDENT_BG_HOVER : noMapping ? "#fef2f2" : rowHover}
+                      onMouseLeave={e => e.currentTarget.style.backgroundColor = isPendent ? PENDENT_BG : isExpanded ? (accent + "08") : noMapping ? "#fef2f250" : "transparent"}>
 
                       {/* Konto-Nr + Expand Toggle */}
                       <td style={{ padding: "7px 8px 7px 12px", fontWeight: 600, color: headingC, whiteSpace: "nowrap", width: 90 }}>
@@ -2796,11 +2802,21 @@ function KontenplanTab({ konten, onUpdateKonto, onAddKonto, customerId, selected
                           panelBg={panelBg} panelBdr={panelBdr}
                         />
                       </td>
+                      {/* Pendent */}
+                      <td style={{ padding: "4px 12px", textAlign: "center" }}>
+                        <input
+                          type="checkbox"
+                          checked={isPendent}
+                          onChange={e => onUpdateKonto(konto.id, { arbeitspapier: { ...(konto.arbeitspapier || {}), pendent: e.target.checked } })}
+                          title={isPendent ? "Als erledigt markieren" : "Als pendent markieren"}
+                          style={{ width: 16, height: 16, cursor: "pointer", accentColor: "#7c3aed", verticalAlign: "middle" }}
+                        />
+                      </td>
                     </tr>
                     {/* ── Arbeitspapier (MiniExcel) + Belege ── */}
                     {isExpanded && (
                       <tr style={{ borderBottom: `1px solid ${tableBdr}`, backgroundColor: accent + "06" }}>
-                        <td colSpan={7} style={{ padding: 0 }}>
+                        <td colSpan={8} style={{ padding: 0 }}>
                           <MiniExcel
                             data={konto.arbeitspapier}
                             onSave={d => onUpdateKonto(konto.id, { arbeitspapier: { ...(konto.arbeitspapier || {}), ...d } })}
@@ -2835,7 +2851,7 @@ function KontenplanTab({ konten, onUpdateKonto, onAddKonto, customerId, selected
                     <td style={{ padding: "6px 12px", textAlign: "right", fontWeight: 600, fontSize: 12, color: subC, fontFamily: "monospace", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                       {fmtCHF(groupTotalVJ)}
                     </td>
-                    <td colSpan={3} />
+                    <td colSpan={4} />
                   </tr>
                 )}
               </React.Fragment>
@@ -2876,7 +2892,7 @@ function KontenplanTab({ konten, onUpdateKonto, onAddKonto, customerId, selected
                   whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                   {abw !== 0 ? (abw > 0 ? "+" : "") + fmtCHF(abw) : ""}
                 </td>
-                <td colSpan={2} />
+                <td colSpan={3} />
               </tr>
             );
           })()}
@@ -4227,12 +4243,13 @@ export default function Abschlussdokumentation() {
   }
 
   // ── KI-Belegzuweisung: pro Bilanz-Konto passenden Beleg im Dokumenteninhalt
-  //    (Dateiablage, gewähltes Jahr) suchen und sichere Treffer verknüpfen ──────
+  //    (Dateiablage, gewähltes Jahr) suchen. Reihenfolge: (1) Betrags-Abgleich =
+  //    sofortiger sicherer Treffer, (2) LLM-Rerank für die unsicheren Konten,
+  //    (3) Fallback Stichwort-Heuristik, falls LLM nicht verfügbar. ────────────
   async function handleAiAssign() {
     if (!abschlussId || !selectedCid) return;
     if (gesperrt) { toast.error("Version ist gesperrt – zuerst entsperren"); return; }
     if (aiBusy) return;
-    // Bilanz-Konten mit Saldo und noch ohne Beleg
     const targets = konten.filter(k => {
       const pos = POSITION_MAP[k.position_id];
       const hasSaldo = Math.abs(parseFloat(k.saldo_ist) || 0) > 0.005;
@@ -4240,57 +4257,100 @@ export default function Abschlussdokumentation() {
       return pos?.typ === "bilanz" && hasSaldo && !hasBeleg;
     });
     if (!targets.length) { toast.info("Keine offenen Bilanz-Konten (mit Saldo, ohne Beleg) gefunden."); return; }
+
     setAiBusy("Suche läuft …");
-    let assigned = 0;
     const assignedList = [];
-    const amountCache = new Map(); // docId → Set<Betrag> (Inhalt einmal laden/normalisieren)
+    const contentCache = new Map(); // docId → content_text
+    const docMeta = new Map();      // docId → Kandidaten-Metadaten (für LLM/Link)
+    const assignedKontoIds = new Set();
+
+    const ensureContent = async (ids) => {
+      const need = ids.filter(id => !contentCache.has(id));
+      if (!need.length) return;
+      const { data } = await supabase.from("dokumente").select("id, content_text").in("id", need);
+      const byId = Object.fromEntries((data || []).map(r => [r.id, r.content_text || ""]));
+      need.forEach(id => contentCache.set(id, byId[id] || ""));
+    };
+    const linkBeleg = async (k, d, reason) => {
+      const newBeleg = {
+        id: d.id, name: d.name, filename: d.filename, storage_path: d.storage_path,
+        year: d.year, category: d.category, file_type: d.file_type, ki: true, ki_match: reason,
+      };
+      const ap = { ...(k.arbeitspapier || {}), belege: [...((k.arbeitspapier?.belege) || []), newBeleg] };
+      const { error } = await supabase.from("abschluss_konten").update({ arbeitspapier: ap }).eq("id", k.id);
+      if (!error) { assignedKontoIds.add(k.id); assignedList.push({ konto: `${k.kontonummer} ${k.kontoname}`, doc: d.name, reason }); return true; }
+      return false;
+    };
+
     try {
+      // ── Phase 1: Kandidaten sammeln + Betrags-Treffer sofort verknüpfen ──
+      const pending = []; // { k, cands: [doc…], best }
       for (let i = 0; i < targets.length; i++) {
         const k = targets[i];
-        setAiBusy(`${i + 1} / ${targets.length} …`);
+        setAiBusy(`Analyse ${i + 1} / ${targets.length} …`);
         const pos = POSITION_MAP[k.position_id];
         const kw = AI_BELEG_KEYWORDS[k.position_id] || [];
         const query = [k.kontoname, ...kw.slice(0, 3)].filter(Boolean).join(" ") || (pos?.label || "");
         if (!query.trim()) continue;
-        const { data, error } = await supabase.rpc("search_dokumente", {
-          p_query: query, p_customer_id: selectedCid, p_limit: 8,
-        });
+        const { data, error } = await supabase.rpc("search_dokumente", { p_query: query, p_customer_id: selectedCid, p_limit: 8 });
         if (error || !data?.length) continue;
-        // Kandidaten: bevorzugt gleiches Geschäftsjahr
-        const cands = data.filter(d => !selectedYear || d.year === selectedYear || d.year == null);
+        const cands = data.filter(d => !selectedYear || d.year === selectedYear || d.year == null).slice(0, 5);
         if (!cands.length) continue;
-
-        // Inhalt der Top-Kandidaten laden (für Betrags-Abgleich), pro Dokument gecacht
-        const top = cands.slice(0, 5);
-        const need = top.map(d => d.id).filter(id => !amountCache.has(id));
-        if (need.length) {
-          const { data: cont } = await supabase.from("dokumente").select("id, content_text").in("id", need);
-          const byId = Object.fromEntries((cont || []).map(r => [r.id, r.content_text || ""]));
-          need.forEach(id => amountCache.set(id, extractAmounts(byId[id] || "")));
-        }
+        cands.forEach(d => docMeta.set(d.id, d));
+        await ensureContent(cands.map(d => d.id));
 
         const terms = [String(k.kontoname || "").toLowerCase(), ...kw.map(s => s.toLowerCase())].filter(Boolean);
-        const scored = top.map(d => {
+        const scored = cands.map(d => {
           const hay = `${d.name || ""} ${d.filename || ""} ${d.headline || ""}`.toLowerCase();
           const kwHits = terms.filter(t => hay.includes(t)).length;
           const yearBonus = (selectedYear && d.year === selectedYear) ? 1 : 0;
-          const amtHit = amountAppears(amountCache.get(d.id) || new Set(), k.saldo_ist);
+          const amtHit = amountAppears(extractAmounts(contentCache.get(d.id) || ""), k.saldo_ist);
           return { d, amtHit, score: (d.rank || 0) * 4 + kwHits + yearBonus + (amtHit ? 6 : 0) };
         }).sort((a, b) => b.score - a.score);
         const best = scored[0];
-        // Hohe Konfidenz: Betrags-Treffer (sehr stark) ODER Stichwort/Jahr/Rang ausreichend
-        if (!best || (!best.amtHit && best.score < 1.5)) continue;
-        const b = best.d;
-        const matchReason = best.amtHit ? "Betrag" : "Stichwort";
-        const newBeleg = {
-          id: b.id, name: b.name, filename: b.filename, storage_path: b.storage_path,
-          year: b.year, category: b.category, file_type: b.file_type, ki: true, ki_match: matchReason,
-        };
-        const ap = { ...(k.arbeitspapier || {}), belege: [...((k.arbeitspapier?.belege) || []), newBeleg] };
-        const { error: upErr } = await supabase.from("abschluss_konten").update({ arbeitspapier: ap }).eq("id", k.id);
-        if (!upErr) { assigned++; assignedList.push({ konto: `${k.kontonummer} ${k.kontoname}`, doc: b.name, reason: matchReason }); }
+        if (best?.amtHit) { await linkBeleg(k, best.d, "Betrag"); continue; } // sehr zuverlässig
+        pending.push({ k, cands, best });
       }
+
+      // ── Phase 2: LLM-Rerank für die unsicheren Konten ──
+      const stillOpen = pending.filter(p => !assignedKontoIds.has(p.k.id));
+      let llmAssigned = new Map(); // kontonummer → doc_id
+      if (stillOpen.length) {
+        setAiBusy("KI wertet aus …");
+        const docIds = [...new Set(stillOpen.flatMap(p => p.cands.map(d => d.id)))];
+        const documents = docIds.map(id => {
+          const d = docMeta.get(id) || {};
+          return { id, name: d.name, filename: d.filename, category: d.category, year: d.year, snippet: (contentCache.get(id) || "").slice(0, 500) };
+        });
+        const positions = stillOpen.map(p => ({
+          kontonummer: p.k.kontonummer,
+          kontoname: p.k.kontoname,
+          position: POSITION_MAP[p.k.position_id]?.label || "",
+          saldo: parseFloat(p.k.saldo_ist) || 0,
+        }));
+        try {
+          const { data: llm, error: llmErr } = await supabase.functions.invoke("suggest-abschluss-belege", {
+            body: { provider: "auto", positions, documents },
+          });
+          if (!llmErr && Array.isArray(llm?.assignments)) {
+            for (const a of llm.assignments) {
+              if (a.doc_id && (a.confidence ?? 0) >= 0.6) llmAssigned.set(String(a.kontonummer), a.doc_id);
+            }
+          }
+        } catch (e) {
+          console.warn("[KI-Zuweisung] LLM nicht verfügbar, Fallback auf Heuristik:", e?.message || e);
+        }
+      }
+
+      // ── Phase 3: LLM-Treffer verknüpfen, sonst Stichwort-Fallback ──
+      for (const p of stillOpen) {
+        const llmDocId = llmAssigned.get(String(p.k.kontonummer));
+        if (llmDocId && docMeta.has(llmDocId)) { await linkBeleg(p.k, docMeta.get(llmDocId), "KI"); continue; }
+        if (p.best && p.best.score >= 1.5) await linkBeleg(p.k, p.best.d, "Stichwort");
+      }
+
       qc.invalidateQueries({ queryKey: ["abschluss_konten", abschlussId] });
+      const assigned = assignedList.length;
       if (assigned) {
         toast.success(
           <div style={{ whiteSpace: "pre-line", fontSize: 12, lineHeight: 1.5 }}>

@@ -365,7 +365,7 @@ export default function BankAbstimmung() {
     if (liefIds.length > 0) {
       const { data: lief, error: liefErr } = await supabase
         .from('fibu_lieferanten')
-        .select('id, name, iban, qr_referenz')
+        .select('*')
         .in('id', liefIds);
       if (liefErr) console.warn('BankAbstimmung: Lieferanten-Query Fehler', liefErr);
       (lief ?? []).forEach(l => { liefMap[l.id] = l; });
@@ -394,9 +394,10 @@ export default function BankAbstimmung() {
     try {
       const { data: deb } = await supabase
         .from('fibu_debitoren_belege')
-        .select('id, beleg_nr, belegdatum, faelligkeit, betrag_brutto, betrag_bezahlt, kunde_name, iban, qr_referenz')
+        .select('*')
         .eq('mandant_id', mandantId)
-        .in('status', ['offen', 'teilbezahlt']);
+          .in('status', ['offen', 'teilbezahlt']);
+
       debItems = (deb ?? []).map(b => ({
         id:            b.id,
         typ:           'debitor',
@@ -438,7 +439,6 @@ export default function BankAbstimmung() {
     }
 
     const all = [...debItems, ...kredItems, ...buchItems];
-    console.log(`BankAbstimmung loadOpenItems: ${kredItems.length} Kred, ${debItems.length} Deb, ${buchItems.length} Buch, mandantId=${mandantId}`);
     setOpLoadErr(kredErr ? kredErr.message : null);
     setOpenItems(all);
   }

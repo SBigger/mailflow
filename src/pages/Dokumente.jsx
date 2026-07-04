@@ -173,6 +173,7 @@ function ShareLinkDialog({ info, accent, s, border, onClose }) {
   const [loading,  setLoading]  = useState(false);
   const [link,     setLink]     = useState(null);
   const [copied,   setCopied]   = useState(false);
+  const [copiedUrl, setCopiedUrl] = useState(false);
 
   async function createLink() {
     setLoading(true);
@@ -204,11 +205,36 @@ function ShareLinkDialog({ info, accent, s, border, onClose }) {
     }
   }
 
-  function copyLink() {
+  // Kopiert einen klickbaren Hyperlink: der Dateiname verlinkt auf die URL.
+  // In die Zwischenablage kommen text/html (<a>) UND text/plain (URL) – so wird
+  // beim Einfügen in Outlook/Word der Dateiname als Link angezeigt, in reinem
+  // Text bleibt die URL.
+  async function copyLink() {
     if (!link) return;
-    navigator.clipboard.writeText(link);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    const esc = (str) => String(str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    const label = info.name || "Dokument";
+    const html = `<a href="${link}">${esc(label)}</a>`;
+    try {
+      if (navigator.clipboard && window.ClipboardItem) {
+        await navigator.clipboard.write([
+          new window.ClipboardItem({
+            "text/html":  new Blob([html], { type: "text/html" }),
+            "text/plain": new Blob([link], { type: "text/plain" }),
+          }),
+        ]);
+      } else {
+        await navigator.clipboard.writeText(link);
+      }
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      try { await navigator.clipboard.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { /* ignore */ }
+    }
+  }
+
+  async function copyUrl() {
+    if (!link) return;
+    try { await navigator.clipboard.writeText(link); setCopiedUrl(true); setTimeout(() => setCopiedUrl(false), 2000); } catch { /* ignore */ }
   }
 
   const overlay = { position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 };
@@ -282,11 +308,17 @@ function ShareLinkDialog({ info, accent, s, border, onClose }) {
             </div>
 
             <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-              <button style={{ ...btn(true), flex: 1, justifyContent: "center" }} onClick={copyLink}>
-                {copied ? <><CheckCheck size={14} /> Kopiert!</> : <><Copy size={14} /> Link kopieren</>}
+              <button style={{ ...btn(true), flex: 1, justifyContent: "center" }} onClick={copyLink} title="Fügt den Dateinamen als klickbaren Link ein (z.B. in Outlook)">
+                {copied ? <><CheckCheck size={14} /> Kopiert!</> : <><Copy size={14} /> Als Link kopieren</>}
               </button>
-              <button style={btn(false)} onClick={() => { setLink(null); setCopied(false); setPassword(""); }}>Neu</button>
+              <button style={btn(false)} onClick={copyUrl} title="Nur die reine URL kopieren">
+                {copiedUrl ? <><CheckCheck size={14} /> Kopiert!</> : <><Copy size={14} /> Nur URL</>}
+              </button>
+              <button style={btn(false)} onClick={() => { setLink(null); setCopied(false); setCopiedUrl(false); setPassword(""); }}>Neu</button>
               <button style={btn(false)} onClick={onClose}>Schliessen</button>
+            </div>
+            <div style={{ color: s.textMuted, fontSize: 11, marginBottom: 10 }}>
+              Beim Einfügen ins Mail (Outlook/Word) erscheint <strong style={{ color: s.textMain }}>„{info.name}"</strong> als klickbarer Link.
             </div>
 
             <div style={{ color: s.textMuted, fontSize: 11, textAlign: "center" }}>
@@ -909,6 +941,7 @@ export default function Dokumente() {
   const [showShareLinks, setShowShareLinks] = useState(false);
   const [chartisDoc, setChartisDoc] = useState(null); // Chartis-Panel pro Dokument
   const [highestScore, setHighestScore] = useState(false);
+  const [menuDocId, setMenuDocId] = useState(null);
 
   // Volltext-Suche via Supabase RPC (PostgreSQL GIN-Index)
   useEffect(() => {
@@ -1731,12 +1764,31 @@ export default function Dokumente() {
         .single();
       if (error) throw error;
       const url = `${window.location.origin}/share/${data.token}`;
-      const subject = encodeURIComponent(doc.name || "Dokument");
-      const body = encodeURIComponent(`Guten Tag\n\nanbei der Link zum Dokument „${doc.name || ""}":\n${url}\n\nFreundliche Grüsse`);
+      const name = doc.name || "Dokument";
+      // Ein mailto:-Body kann nur reinen Text tragen (kein HTML) – deshalb legen wir den
+      // klickbaren Dateiname-Hyperlink zusaetzlich in die Zwischenablage. Im geoeffneten
+      // Mail fuegt der Nutzer ihn mit Strg+V als Link ein (wie in Outlook). Die nackte URL
+      // bleibt als Fallback im Text.
+      let clipOk = false;
+      try {
+        const esc = (str) => String(str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+        const html = `<a href="${url}">${esc(name)}</a>`;
+        if (navigator.clipboard && window.ClipboardItem) {
+          await navigator.clipboard.write([new window.ClipboardItem({
+            "text/html":  new Blob([html], { type: "text/html" }),
+            "text/plain": new Blob([url],  { type: "text/plain" }),
+          })]);
+          clipOk = true;
+        }
+      } catch { /* ignore */ }
+      const subject = encodeURIComponent(name);
+      const body = encodeURIComponent(`Guten Tag\n\nanbei der Link zum Dokument „${name}":\n${url}\n\nFreundliche Grüsse`);
       const a = document.createElement("a");
       a.href = `mailto:?subject=${subject}&body=${body}`;
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      toast.success("Mail mit Freigabe-Link geöffnet");
+      toast.success(clipOk
+        ? "Mail geöffnet · Dateiname-Link in Zwischenablage – mit Strg+V einfügen"
+        : "Mail mit Freigabe-Link geöffnet");
     } catch (e) {
       toast.error("Mail konnte nicht erstellt werden: " + e.message);
     }

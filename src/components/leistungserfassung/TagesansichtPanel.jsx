@@ -14,7 +14,40 @@ import { toast } from 'sonner';
 import {
   ChevronLeft, ChevronRight, CalendarDays, CornerDownLeft,
   Pencil, Trash2, Check, X as XIcon, Info, Mail, Calendar, RefreshCw, Plus,
+  Eye, EyeOff, GripHorizontal, GripVertical,
 } from 'lucide-react';
+
+const DEFAULT_ROW_ORDER = ['quick', 'entries', 'panels'];
+
+// Wrapper für einen sortierbaren Block. Modul-level (stabile Identität) -> die
+// enthaltenen Panels bleiben beim Umsortieren gemountet (kein Formstate-Verlust).
+function RowWrap({ id, order, dragRow, setDragRow, onDropRow, children }) {
+  const isDragging = dragRow === id;
+  return (
+    <div
+      style={{ order }}
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => { e.preventDefault(); onDropRow(id); }}
+      className="relative"
+    >
+      <div
+        draggable
+        onDragStart={(e) => { setDragRow(id); if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'; }}
+        onDragEnd={() => setDragRow(null)}
+        title="Ziehen, um die Reihenfolge zu ändern"
+        className="absolute -left-5 top-2.5 z-20 cursor-grab active:cursor-grabbing rounded p-0.5 hover:bg-zinc-100 transition-colors"
+      >
+        <GripVertical className="w-4 h-4" style={{ color: '#aebbae' }} />
+      </div>
+      {dragRow && !isDragging && (
+        <div className="absolute inset-0 rounded-lg pointer-events-none z-10" style={{ outline: '2px dashed #bfd3bf', outlineOffset: 2 }} />
+      )}
+      <div style={{ opacity: isDragging ? 0.4 : 1, transition: 'opacity 0.15s' }}>
+        {children}
+      </div>
+    </div>
+  );
+}
 import {
   leTimeEntry, leProject, leServiceType, leEmployee, currentEmployee,
   leRateGroupRate, leServiceRateHistory, resolveRateFor, leMs365Day,
@@ -111,6 +144,84 @@ export default function TagesansichtPanel() {
 
   // Quick-Form-State (für Inline-Befüllung von Calendar/Mail-Übernahme)
   const [prefill, setPrefill] = useState(null); // { time_from, time_to, project_id, service_type_id, description, ... }
+
+  // --- Flexibles Layout: Panels ein-/ausblenden + Höhe per Ziehgriff (persistent) ---
+  const [showCal, setShowCal] = useState(() => localStorage.getItem('tva_showCal') !== '0');
+  const [showMails, setShowMails] = useState(() => localStorage.getItem('tva_showMails') !== '0');
+  const [panelH, setPanelH] = useState(() => {
+    const v = parseInt(localStorage.getItem('tva_panelH') || '540', 10);
+    return Number.isFinite(v) ? Math.min(1200, Math.max(220, v)) : 540;
+  });
+  useEffect(() => { try { localStorage.setItem('tva_showCal', showCal ? '1' : '0'); } catch { /* ignore */ } }, [showCal]);
+  useEffect(() => { try { localStorage.setItem('tva_showMails', showMails ? '1' : '0'); } catch { /* ignore */ } }, [showMails]);
+  useEffect(() => { try { localStorage.setItem('tva_panelH', String(panelH)); } catch { /* ignore */ } }, [panelH]);
+
+  // Höhe der Einträge-Tabelle (null = automatisch/wächst mit Inhalt)
+  const [entriesH, setEntriesH] = useState(() => {
+    const v = parseInt(localStorage.getItem('tva_entriesH') || '', 10);
+    return Number.isFinite(v) ? Math.min(1200, Math.max(120, v)) : null;
+  });
+  useEffect(() => {
+    try {
+      if (entriesH == null) localStorage.removeItem('tva_entriesH');
+      else localStorage.setItem('tva_entriesH', String(entriesH));
+    } catch { /* ignore */ }
+  }, [entriesH]);
+  const entriesBodyRef = useRef(null);
+  const startEntriesResize = (e) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    // Von "auto" aus: aktuelle gerenderte Höhe als Startwert nehmen
+    const startH = entriesH ?? entriesBodyRef.current?.offsetHeight ?? 240;
+    const onMove = (ev) => setEntriesH(Math.min(1200, Math.max(120, startH + (ev.clientY - startY))));
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      document.body.style.userSelect = '';
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    document.body.style.userSelect = 'none';
+  };
+
+  // Reihenfolge der 3 Blöcke (persistent, per Drag umsortierbar)
+  const [rowOrder, setRowOrder] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('tva_rowOrder') || 'null');
+      if (Array.isArray(saved)) {
+        const known = saved.filter((id) => DEFAULT_ROW_ORDER.includes(id));
+        return [...known, ...DEFAULT_ROW_ORDER.filter((id) => !known.includes(id))];
+      }
+    } catch { /* ignore */ }
+    return DEFAULT_ROW_ORDER;
+  });
+  useEffect(() => { try { localStorage.setItem('tva_rowOrder', JSON.stringify(rowOrder)); } catch { /* ignore */ } }, [rowOrder]);
+  const [dragRow, setDragRow] = useState(null);
+  const moveRowBefore = (dragId, targetId) => {
+    if (!dragId || dragId === targetId) return;
+    setRowOrder((prev) => {
+      const arr = prev.filter((id) => id !== dragId);
+      const idx = arr.indexOf(targetId);
+      if (idx < 0) return prev;
+      arr.splice(idx, 0, dragId);
+      return arr;
+    });
+  };
+
+  const startResize = (e) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = panelH;
+    const onMove = (ev) => setPanelH(Math.min(1200, Math.max(220, startH + (ev.clientY - startY))));
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      document.body.style.userSelect = '';
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    document.body.style.userSelect = 'none';
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -288,8 +399,10 @@ export default function TagesansichtPanel() {
         </div>
       )}
 
-      {/* ZEILE 1: Schnell-Erfassung volle Breite */}
+      {/* Sortierbare Blöcke – am Ziehgriff (links) per Drag umsortierbar */}
+      <div className="flex flex-col gap-3">
       {!noMasterData && currentEmployeeId && (
+        <RowWrap id="quick" order={rowOrder.indexOf('quick')} dragRow={dragRow} setDragRow={setDragRow} onDropRow={(tid) => { moveRowBefore(dragRow, tid); setDragRow(null); }}>
         <QuickEntryCard
           projects={projects}
           serviceTypes={serviceTypes}
@@ -306,9 +419,11 @@ export default function TagesansichtPanel() {
             ...payload, // payload.status kann 'kulant' überschreiben
           })}
         />
+        </RowWrap>
       )}
 
       {/* ZEILE 2: Tageseinträge volle Breite mit inline-Summary */}
+      <RowWrap id="entries" order={rowOrder.indexOf('entries')} dragRow={dragRow} setDragRow={setDragRow} onDropRow={(tid) => { moveRowBefore(dragRow, tid); setDragRow(null); }}>
       <Card>
         <div className="px-4 py-2 border-b flex items-center justify-between gap-4 flex-wrap" style={{ borderColor: '#e4e7e4' }}>
           <div className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
@@ -319,47 +434,116 @@ export default function TagesansichtPanel() {
             <SummaryStat label="Total CHF" value={fmt.chf(summary.chf)} accent />
           </div>
         </div>
-        {loading ? (
-          <PanelLoader />
-        ) : entries.length === 0 ? (
-          <div className="p-6 text-sm text-zinc-400 text-center">
-            Noch keine Einträge an diesem Tag.
-          </div>
-        ) : (
-          <EntriesTable
-            entries={entries}
-            projects={projects}
-            serviceTypes={serviceTypes}
-            onUpdate={(id, patch) => updateMut.mutateAsync({ id, patch })}
-            onRemove={(id) => removeMut.mutateAsync(id)}
-          />
-        )}
+        <div
+          ref={entriesBodyRef}
+          style={entriesH != null ? { height: entriesH, overflowY: 'auto' } : undefined}
+        >
+          {loading ? (
+            <PanelLoader />
+          ) : entries.length === 0 ? (
+            <div className="p-6 text-sm text-zinc-400 text-center">
+              Noch keine Einträge an diesem Tag.
+            </div>
+          ) : (
+            <EntriesTable
+              entries={entries}
+              projects={projects}
+              serviceTypes={serviceTypes}
+              onUpdate={(id, patch) => updateMut.mutateAsync({ id, patch })}
+              onRemove={(id) => removeMut.mutateAsync(id)}
+            />
+          )}
+        </div>
+        {/* Ziehgriff: Höhe der Einträge-Tabelle anpassen */}
+        <div
+          onMouseDown={startEntriesResize}
+          onDoubleClick={() => setEntriesH(null)}
+          title="Ziehen, um die Höhe anzupassen · Doppelklick = automatisch"
+          className="h-4 flex items-center justify-center cursor-ns-resize select-none border-t hover:bg-zinc-100 transition-colors"
+          style={{ borderColor: '#eef1ee' }}
+        >
+          <GripHorizontal className="w-4 h-4" style={{ color: '#c2ccc2' }} />
+        </div>
       </Card>
+      </RowWrap>
 
-      {/* ZEILE 3: Kalender + Mails nebeneinander */}
-      <div className="grid grid-cols-12 gap-3">
-        <div className="col-span-12 lg:col-span-6">
-          <CalendarColumn
-            calendar={ms365Data.calendar}
-            notConnected={ms365Data.notConnected}
-            hint={ms365Data.hint}
-            calendarError={ms365Data.calendarError}
-            loading={ms365Q.isLoading}
-            error={ms365Q.error}
-            onRefresh={() => ms365Q.refetch()}
-            onAdopt={adoptFromCalendar}
-          />
+      {/* ZEILE 3: Kalender + Mails – ein-/ausblendbar, höhenverstellbar */}
+      <RowWrap id="panels" order={rowOrder.indexOf('panels')} dragRow={dragRow} setDragRow={setDragRow} onDropRow={(tid) => { moveRowBefore(dragRow, tid); setDragRow(null); }}>
+      <div>
+        <div className="flex items-center gap-2 mb-1.5">
+          <span className="text-[10px] uppercase tracking-wider text-zinc-400 mr-1">Ansicht</span>
+          <button
+            type="button"
+            onClick={() => setShowCal((v) => !v)}
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium border transition-colors"
+            style={{ background: showCal ? '#eef5ee' : '#fff', color: showCal ? '#2d5a2d' : '#9aa09a', borderColor: showCal ? '#bfd3bf' : '#e0e4e0' }}
+            title={showCal ? 'Kalender ausblenden' : 'Kalender einblenden'}
+          >
+            {showCal ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />} Kalender
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowMails((v) => !v)}
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium border transition-colors"
+            style={{ background: showMails ? '#eef5ee' : '#fff', color: showMails ? '#2d5a2d' : '#9aa09a', borderColor: showMails ? '#bfd3bf' : '#e0e4e0' }}
+            title={showMails ? 'Mails ausblenden' : 'Mails einblenden'}
+          >
+            {showMails ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />} Mails
+          </button>
+          {(showCal || showMails) && (
+            <span className="ml-auto text-[10px] text-zinc-400">Höhe: {panelH}px</span>
+          )}
         </div>
-        <div className="col-span-12 lg:col-span-6">
-          <SentMailsCard
-            sent={ms365Data.sent}
-            notConnected={ms365Data.notConnected}
-            hint={ms365Data.hint}
-            sentError={ms365Data.sentError}
-            loading={ms365Q.isLoading}
-            onAdopt={adoptFromMail}
-          />
-        </div>
+
+        {(showCal || showMails) ? (
+          <>
+            <div className="grid grid-cols-12 gap-3">
+              {showCal && (
+                <div className={showMails ? 'col-span-12 lg:col-span-6' : 'col-span-12'}>
+                  <CalendarColumn
+                    height={panelH}
+                    calendar={ms365Data.calendar}
+                    notConnected={ms365Data.notConnected}
+                    hint={ms365Data.hint}
+                    calendarError={ms365Data.calendarError}
+                    loading={ms365Q.isLoading}
+                    error={ms365Q.error}
+                    onRefresh={() => ms365Q.refetch()}
+                    onAdopt={adoptFromCalendar}
+                  />
+                </div>
+              )}
+              {showMails && (
+                <div className={showCal ? 'col-span-12 lg:col-span-6' : 'col-span-12'}>
+                  <SentMailsCard
+                    height={panelH}
+                    sent={ms365Data.sent}
+                    notConnected={ms365Data.notConnected}
+                    hint={ms365Data.hint}
+                    sentError={ms365Data.sentError}
+                    loading={ms365Q.isLoading}
+                    onAdopt={adoptFromMail}
+                  />
+                </div>
+              )}
+            </div>
+            {/* Ziehgriff: Höhe der Panels anpassen (nach oben/unten ziehen) */}
+            <div
+              onMouseDown={startResize}
+              onDoubleClick={() => setPanelH(540)}
+              title="Ziehen, um die Höhe anzupassen · Doppelklick = Standard"
+              className="mt-1 h-4 flex items-center justify-center cursor-ns-resize select-none rounded hover:bg-zinc-100 transition-colors"
+            >
+              <GripHorizontal className="w-4 h-4" style={{ color: '#c2ccc2' }} />
+            </div>
+          </>
+        ) : (
+          <div className="text-xs text-zinc-400 py-4 text-center border rounded" style={{ borderColor: '#eef1ee' }}>
+            Beide Panels ausgeblendet – oben wieder einblenden.
+          </div>
+        )}
+      </div>
+      </RowWrap>
       </div>
     </div>
   );
@@ -368,7 +552,7 @@ export default function TagesansichtPanel() {
 // ============================================================================
 // Kalender-Spalte (links)
 // ============================================================================
-function CalendarColumn({ calendar, notConnected, hint, calendarError, loading, error, onRefresh, onAdopt }) {
+function CalendarColumn({ calendar, notConnected, hint, calendarError, loading, error, onRefresh, onAdopt, height = 540 }) {
   const totalHours = CAL_END_HOUR - CAL_START_HOUR;
   const hours = Array.from({ length: totalHours + 1 }, (_, i) => CAL_START_HOUR + i);
 
@@ -379,7 +563,7 @@ function CalendarColumn({ calendar, notConnected, hint, calendarError, loading, 
   const nowTop = (nowMins - CAL_START_HOUR * 60) * PX_PER_MIN;
 
   return (
-    <Card className="overflow-hidden flex flex-col" style={{ height: 540 }}>
+    <Card className="overflow-hidden flex flex-col" style={{ height }}>
       <div className="px-3 py-2 border-b flex items-center justify-between" style={{ borderColor: '#e4e7e4', background: '#fafbf9' }}>
         <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-700">
           <Calendar className="w-3.5 h-3.5" /> Outlook-Kalender
@@ -535,6 +719,18 @@ function QuickEntryCard({
 
   const project = projects.find((p) => p.id === row.project_id);
 
+  // Interne Leistungsarten (billable=false) nur auf internen Projekten anbieten.
+  const availableServiceTypes = useMemo(
+    () => (project?.is_internal ? serviceTypes : serviceTypes.filter((s) => s.billable !== false)),
+    [serviceTypes, project?.is_internal],
+  );
+  // Ist die gewählte Leistungsart für dieses Projekt nicht (mehr) erlaubt -> zurücksetzen.
+  useEffect(() => {
+    if (row.service_type_id && !availableServiceTypes.some((s) => s.id === row.service_type_id)) {
+      setRow((r) => ({ ...r, service_type_id: '' }));
+    }
+  }, [availableServiceTypes, row.service_type_id]);
+
   // Auto-Satz wenn Projekt/Leistungsart wechselt – nutzt rate_mode des Projekts
   useEffect(() => {
     if (row.rate_touched) return;
@@ -670,8 +866,8 @@ function QuickEntryCard({
             value={row.service_type_id}
             onChange={(id) => setRow({ ...row, service_type_id: id })}
             onKeyDown={onKeyEnter}
-            placeholder="Leistungsart…"
-            options={serviceTypes.map((s) => ({
+            placeholder={project && !project.is_internal ? 'Leistungsart… (nur verrechenbar)' : 'Leistungsart…'}
+            options={availableServiceTypes.map((s) => ({
               id: s.id,
               label: s.name,
               sublabel: s.code,
@@ -756,9 +952,9 @@ function QuickEntryCard({
 // Gesendete Mails (rechts)
 // ============================================================================
 
-function SentMailsCard({ sent, notConnected, hint, sentError, loading, onAdopt }) {
+function SentMailsCard({ sent, notConnected, hint, sentError, loading, onAdopt, height = 540 }) {
   return (
-    <Card className="overflow-hidden flex flex-col" style={{ height: 540 }}>
+    <Card className="overflow-hidden flex flex-col" style={{ height }}>
       <div className="px-3 py-2 border-b flex items-center justify-between" style={{ borderColor: '#e4e7e4', background: '#fafbf9' }}>
         <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-700">
           <Mail className="w-3.5 h-3.5" /> Gesendete Mails

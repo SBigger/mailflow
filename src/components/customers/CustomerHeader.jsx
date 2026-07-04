@@ -83,7 +83,14 @@ export default function CustomerHeader({ customer, staff, onUpdate }) {
   const isArtis = theme === 'artis';
 
   const isPrivatperson = customer.person_type === 'privatperson';
+  const isKontakt      = customer.person_type === 'kontakt';
   const isInaktiv      = customer.aktiv === false;
+
+  const ABC_KLASSEN = [
+    { key: 'A', color: '#15803d', bg: '#dcfce7' },
+    { key: 'B', color: '#b45309', bg: '#fef3c7' },
+    { key: 'C', color: '#52525b', bg: '#f4f4f5' },
+  ];
 
   // Shared fields
   const [strasse,  setStrasse]  = useState(customer.strasse || "");
@@ -110,17 +117,24 @@ export default function CustomerHeader({ customer, staff, onUpdate }) {
   // Kanton (beide Typen)
   const [kanton, setKanton] = useState(customer.kanton || "");
 
+  // Unternehmen: UID + Rechtsform (Zefix)
+  const [uidNr, setUidNr]         = useState(customer.uid_nr || "");
+  const [rechtsform, setRechtsform] = useState(customer.rechtsform || "");
+
   // Call-Popup
   const [callOpen, setCallOpen] = useState(false);
 
   // Collapsible Sections – default: offen, wenn Daten vorhanden
   const partnerHasData  = !!(customer.partner_name || customer.partner_vorname);
   const adresseHasData  = !!(customer.strasse || customer.plz || customer.ort || customer.kanton);
+  const mandatHasData   = !!(customer.mandatsleiter_id || customer.sachbearbeiter_id || customer.abc_klasse);
   const [partnerOpen,  setPartnerOpen]  = useState(partnerHasData);
   const [adresseOpen,  setAdresseOpen]  = useState(adresseHasData);
+  const [mandatOpen,   setMandatOpen]   = useState(mandatHasData);
   useEffect(() => {
     setPartnerOpen(!!(customer.partner_name || customer.partner_vorname));
     setAdresseOpen(!!(customer.strasse || customer.plz || customer.ort || customer.kanton));
+    setMandatOpen(!!(customer.mandatsleiter_id || customer.sachbearbeiter_id || customer.abc_klasse));
   }, [customer.id]);
 
   function formatBudgetStatic(val) {
@@ -145,6 +159,8 @@ export default function CustomerHeader({ customer, staff, onUpdate }) {
     setPartnerName(customer.partner_name || "");
     setPartnerVorname(customer.partner_vorname || "");
     setKanton(customer.kanton || "");
+    setUidNr(customer.uid_nr || "");
+    setRechtsform(customer.rechtsform || "");
   }, [customer.id]);
 
   const handleBudgetBlur = () => {
@@ -251,6 +267,32 @@ export default function CustomerHeader({ customer, staff, onUpdate }) {
           {isInaktiv ? 'INAKTIV' : 'Aktiv'}
         </button>
       </div>
+
+      {/* ── UID / RECHTSFORM (nur Unternehmen) ───────────────────────────── */}
+      {!isPrivatperson && !isKontakt && (
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <label className="text-[10px] font-medium tracking-wide" style={{ color: labelColor }}>UID</label>
+            <Input
+              value={uidNr}
+              onChange={e => setUidNr(e.target.value)}
+              onBlur={() => { if (uidNr !== (customer.uid_nr || "")) onUpdate({ uid_nr: uidNr || null }); }}
+              placeholder="CHE-xxx.xxx.xxx"
+              {...inp()}
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-medium tracking-wide" style={{ color: labelColor }}>Rechtsform</label>
+            <Input
+              value={rechtsform}
+              onChange={e => setRechtsform(e.target.value)}
+              onBlur={() => { if (rechtsform !== (customer.rechtsform || "")) onUpdate({ rechtsform: rechtsform || null }); }}
+              placeholder="z.B. AG, GmbH"
+              {...inp()}
+            />
+          </div>
+        </div>
+      )}
 
       {/* ── PERSON (nur Privatperson) ─────────────────────────────────────── */}
       {isPrivatperson && (
@@ -467,8 +509,33 @@ export default function CustomerHeader({ customer, staff, onUpdate }) {
 
       {/* ── MANDAT ────────────────────────────────────────────────────────── */}
       <div className="space-y-2.5">
-        <SectionLabel icon={Briefcase} label="Mandat" color={sectionColor} lineColor={lineColor} />
-        <div className="grid grid-cols-2 gap-3">
+        <CollapsibleSectionLabel icon={Briefcase} label="Mandat" color={sectionColor} lineColor={lineColor} open={mandatOpen} onToggle={() => setMandatOpen(o => !o)} />
+
+        {mandatOpen && (
+        <div className={`grid gap-3 items-end ${isKontakt ? 'grid-cols-2' : 'grid-cols-[auto_1fr_1fr]'}`}>
+          {!isKontakt && (
+            <div className="space-y-1">
+              <label className="text-[10px] font-medium tracking-wide" style={{ color: labelColor }}>Klasse</label>
+              <div className="flex items-center h-8 gap-0.5">
+                {ABC_KLASSEN.map(({ key, color, bg }) => {
+                  const active = customer.abc_klasse === key;
+                  return (
+                    <button
+                      key={key}
+                      onClick={() => onUpdate({ abc_klasse: active ? null : key })}
+                      className="h-8 w-8 rounded-md text-xs font-bold border-2 transition-all flex items-center justify-center"
+                      style={active
+                        ? { backgroundColor: bg, color, borderColor: color }
+                        : { backgroundColor: '#ffffff', color: borderColor, borderColor: 'transparent' }}
+                      title={active ? `Klasse ${key} entfernen` : `Klasse ${key}`}
+                    >
+                      {key}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           {[{ label: 'Mandatsleiter', field: 'mandatsleiter_id' }, { label: 'Sachbearbeiter', field: 'sachbearbeiter_id' }].map(({ label, field }) => (
             <div key={field} className="space-y-1">
               <label className="text-[10px] font-medium tracking-wide flex items-center gap-1" style={{ color: labelColor }}>
@@ -493,6 +560,7 @@ export default function CustomerHeader({ customer, staff, onUpdate }) {
             </div>
           ))}
         </div>
+        )}
       </div>
 
       <CallNotePopup

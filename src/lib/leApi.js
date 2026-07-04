@@ -16,12 +16,20 @@ export const leEmployee = {
     return data ?? [];
   },
   create: async (payload) => {
-    const { data, error } = await supabase.from('le_employee').insert(payload).select().single();
+    let { data, error } = await supabase.from('le_employee').insert(payload).select().single();
+    if (error && /rate_group_id|does not exist|schema cache/i.test(error.message || '')) {
+      const { rate_group_id, ...rest } = payload;
+      ({ data, error } = await supabase.from('le_employee').insert(rest).select().single());
+    }
     if (error) throw error;
     return data;
   },
   update: async (id, patch) => {
-    const { data, error } = await supabase.from('le_employee').update(patch).eq('id', id).select().single();
+    let { data, error } = await supabase.from('le_employee').update(patch).eq('id', id).select().single();
+    if (error && /rate_group_id|does not exist|schema cache/i.test(error.message || '')) {
+      const { rate_group_id, ...rest } = patch;
+      ({ data, error } = await supabase.from('le_employee').update(rest).eq('id', id).select().single());
+    }
     if (error) throw error;
     return data;
   },
@@ -195,6 +203,21 @@ export function resolveRateFor({
     return Number(grpRate ?? 0);
   }
 
+  // 'auto' = Kaskade: 1) Tarifgruppe/Rolle des MA × Leistungsart,
+  //                    2) sonst Mitarbeitergruppe, 3) sonst MA-Stundensatz.
+  if (mode === 'auto') {
+    const rgId = employee?.rate_group_id ?? null;
+    if (rgId && serviceTypeId) {
+      const match = rateGroupRates
+        .filter(r => r.service_type_id === serviceTypeId && r.rate_group_id === rgId && r.valid_from <= d)
+        .sort((a, b) => b.valid_from.localeCompare(a.valid_from))[0];
+      if (match) return Number(match.rate);
+    }
+    const grpRate = employee?.employee_group?.billable_rate;
+    if (grpRate != null) return Number(grpRate);
+    return Number(employee?.billable_rate ?? 0);
+  }
+
   // service_type (Default + Fallback)
   if (!serviceTypeId) return 0;
   const rgId = rateGroupId ?? project?.rate_group_id ?? null;
@@ -251,9 +274,10 @@ export const leProject = {
   },
   create: async (payload) => {
     let { data, error } = await supabase.from('le_project').insert(payload).select().single();
-    // Fallback: falls billing_email noch nicht migriert ist, ohne dieses Feld speichern.
-    if (error && /billing_email/i.test(error.message || '')) {
-      const { billing_email, ...rest } = payload;
+    // Fallback: falls optionale Spalten (billing_email/is_internal) noch nicht
+    // migriert sind, ohne diese Felder speichern.
+    if (error && /billing_email|is_internal|does not exist|schema cache/i.test(error.message || '')) {
+      const { billing_email, is_internal, ...rest } = payload;
       ({ data, error } = await supabase.from('le_project').insert(rest).select().single());
     }
     if (error) throw error;
@@ -261,8 +285,8 @@ export const leProject = {
   },
   update: async (id, patch) => {
     let { data, error } = await supabase.from('le_project').update(patch).eq('id', id).select().single();
-    if (error && /billing_email/i.test(error.message || '')) {
-      const { billing_email, ...rest } = patch;
+    if (error && /billing_email|is_internal|does not exist|schema cache/i.test(error.message || '')) {
+      const { billing_email, is_internal, ...rest } = patch;
       ({ data, error } = await supabase.from('le_project').update(rest).eq('id', id).select().single());
     }
     if (error) throw error;
@@ -304,6 +328,51 @@ export const leTimeEntry = {
     if (error) throw error;
     return data ?? [];
   },
+  // Wie listForRange, lädt aber seitenweise weiter, bis alles da ist.
+  // Supabase deckelt einzelne Selects bei 1000 Zeilen – ganze Jahre mit
+  // mehreren Mitarbeitern sprengen das Limit sonst unbemerkt.
+  // Liefert zusätzlich project_no + is_internal (Fallback ohne is_internal,
+  // solange die Migration 20260630130000_le_project_internal noch fehlt).
+  listForRangeAll: async (fromIso, toIso, { employeeId, projectId, status } = {}) => {
+    const PAGE = 1000;
+    const selectWith = (withInternal) =>
+      `*, project:le_project(id, name, project_no, billing_mode${withInternal ? ', is_internal' : ''}, customer_id), service_type:le_service_type(id, name, billable), employee:le_employee(id, short_code, full_name)`;
+    let withInternal = true;
+    const all = [];
+    for (let offset = 0; ; offset += PAGE) {
+      let q = supabase
+        .from('le_time_entry')
+        .select(selectWith(withInternal))
+        .gte('entry_date', fromIso)
+        .lte('entry_date', toIso)
+        .order('entry_date', { ascending: true })
+        .order('id', { ascending: true })
+        .range(offset, offset + PAGE - 1);
+      if (employeeId) q = q.eq('employee_id', employeeId);
+      if (projectId) q = q.eq('project_id', projectId);
+      if (status) q = q.eq('status', status);
+      let { data, error } = await q;
+      if (error && withInternal && /is_internal|does not exist|schema cache/i.test(error.message || '')) {
+        withInternal = false;
+        offset -= PAGE; // gleiche Seite ohne is_internal erneut versuchen
+        continue;
+      }
+      if (error) throw error;
+      all.push(...(data ?? []));
+      if (!data || data.length < PAGE) break;
+    }
+    return all;
+  },
+  // Datum des ältesten Zeiteintrags (für Mehrjahres-Auswertungen)
+  firstEntryDate: async () => {
+    const { data, error } = await supabase
+      .from('le_time_entry')
+      .select('entry_date')
+      .order('entry_date', { ascending: true })
+      .limit(1);
+    if (error) throw error;
+    return data?.[0]?.entry_date ?? null;
+  },
   create: async (payload) => {
     const { data, error } = await supabase.from('le_time_entry').insert(payload).select().single();
     if (error) throw error;
@@ -331,6 +400,25 @@ export const leInvoice = {
     const { data, error } = await q;
     if (error) throw error;
     return data ?? [];
+  },
+  // Leichte Liste für Auswertungen: keine Positionen/Adressfelder, dafür
+  // seitenweise ALLE Rechnungen (Mehrjahres-Statistik überschreitet sonst
+  // das 1000-Zeilen-Limit von Supabase).
+  listLightAll: async () => {
+    const PAGE = 1000;
+    const all = [];
+    for (let offset = 0; ; offset += PAGE) {
+      const { data, error } = await supabase
+        .from('le_invoice')
+        .select('id, invoice_no, status, invoice_type, subtotal, total, issue_date, due_date, sent_at, paid_at, paid_amount, period_from, period_to, customer_id, customer:customers(id, company_name)')
+        .order('issue_date', { ascending: true, nullsFirst: false })
+        .order('id', { ascending: true })
+        .range(offset, offset + PAGE - 1);
+      if (error) throw error;
+      all.push(...(data ?? []));
+      if (!data || data.length < PAGE) break;
+    }
+    return all;
   },
   get: async (id) => {
     const { data, error } = await supabase
@@ -814,7 +902,9 @@ export const leAbsence = {
   reject: async (id) => leAbsence.update(id, { status: 'abgelehnt' }),
 };
 
-// ---------- Sollzeit-Profile ----------
+// ---------- Sollzeit-Profile (Mitarbeiter-Override auf le_sollzeit_template) ----------
+// hours_mo..hours_so sind hier NULLABLE: null = vom Zentral-Plan erben
+// (skaliert mit pensum_pct), gesetzt = fixer Override für diesen Wochentag.
 export const leSollzeitProfile = {
   listForEmployee: async (employeeId) => {
     const { data, error } = await supabase
@@ -830,6 +920,47 @@ export const leSollzeitProfile = {
   },
   remove: async (id) => {
     const { error } = await supabase.from('le_sollzeit_profile').delete().eq('id', id);
+    if (error) throw error;
+  },
+};
+
+// ---------- Sollzeit-Template (zentraler, firmenweiter Plan, versioniert) ----------
+export const leSollzeitTemplate = {
+  list: async () => {
+    const { data, error } = await supabase
+      .from('le_sollzeit_template').select('*')
+      .order('valid_from', { ascending: false });
+    if (error) throw error;
+    return data ?? [];
+  },
+  create: async (payload) => {
+    const { data, error } = await supabase.from('le_sollzeit_template').insert(payload).select().single();
+    if (error) throw error;
+    return data;
+  },
+  remove: async (id) => {
+    const { error } = await supabase.from('le_sollzeit_template').delete().eq('id', id);
+    if (error) throw error;
+  },
+};
+
+// ---------- Feiertage (firmenweit, übersteuern IMMER auf 0h) ----------
+export const leHoliday = {
+  list: async ({ from, to } = {}) => {
+    let q = supabase.from('le_holiday').select('*').order('date');
+    if (from) q = q.gte('date', from);
+    if (to) q = q.lte('date', to);
+    const { data, error } = await q;
+    if (error) throw error;
+    return data ?? [];
+  },
+  create: async (payload) => {
+    const { data, error } = await supabase.from('le_holiday').insert(payload).select().single();
+    if (error) throw error;
+    return data;
+  },
+  remove: async (id) => {
+    const { error } = await supabase.from('le_holiday').delete().eq('id', id);
     if (error) throw error;
   },
 };
@@ -1001,20 +1132,56 @@ export async function sendInvoiceViaMs365({ to, subject, html, attachmentUrl, at
 // allOpen=true ignoriert Zeitfilter und holt ALLE offenen Leistungen
 //   (status erfasst|freigegeben|kulant ohne invoice_id).
 // Sonst wird auf den Zeitraum eingegrenzt.
+// Verrechnete Stunden eines Eintrags: hours_external übersteuert (falls
+// gesetzt und Migration vorhanden), sonst hours_internal.
+export function effectiveHours(e) {
+  return Number(e?.hours_external ?? e?.hours_internal ?? 0);
+}
+
 export async function fakturaVorschlagData({ fromIso, toIso, allOpen = false } = {}) {
-  let q = supabase
-    .from('le_time_entry')
-    .select('id, entry_date, hours_internal, rate_snapshot, project_id, service_type_id, description, employee_id, status, project:le_project(id, name, billing_mode, customer_id, customer:customers(id, company_name, street, building_number, zip, city, country, billing_email)), service_type:le_service_type(id, name, billable, default_section), employee:le_employee(id, short_code, full_name)')
-    .in('status', ['erfasst', 'freigegeben', 'kulant'])
-    .is('invoice_id', null)
-    .order('entry_date');
-  if (!allOpen) {
-    if (fromIso) q = q.gte('entry_date', fromIso);
-    if (toIso) q = q.lte('entry_date', toIso);
+  // Seitenweise laden: Supabase deckelt bei 1000 Zeilen – mit importierten
+  // Vortrags-Buchungen liegen offene Leistungen längst darüber.
+  const PAGE = 1000;
+  // Optionale Spalten mit eigenem Fallback, solange deren Migration fehlt
+  // (is_internal: 20260630130000, hours_external: 20260704210000).
+  let withInternal = true;
+  let withExternal = true;
+  const selectWith = () =>
+    `id, entry_date, hours_internal${withExternal ? ', hours_external' : ''}, rate_snapshot, project_id, service_type_id, description, employee_id, status, project:le_project(id, name, project_no, billing_mode${withInternal ? ', is_internal' : ''}, customer_id, customer:customers(id, company_name, street, building_number, zip, city, country, billing_email)), service_type:le_service_type(id, name, billable, default_section), employee:le_employee(id, short_code, full_name)`;
+  const all = [];
+  for (let offset = 0; ; offset += PAGE) {
+    let q = supabase
+      .from('le_time_entry')
+      .select(selectWith())
+      .in('status', ['erfasst', 'freigegeben', 'kulant'])
+      .is('invoice_id', null)
+      .order('entry_date')
+      .order('id', { ascending: true })
+      .range(offset, offset + PAGE - 1);
+    if (!allOpen) {
+      if (fromIso) q = q.gte('entry_date', fromIso);
+      if (toIso) q = q.lte('entry_date', toIso);
+    }
+    const { data, error } = await q;
+    if (error && /does not exist|schema cache/i.test(error.message || '')) {
+      const msg = error.message || '';
+      if (withExternal && /hours_external/i.test(msg)) {
+        withExternal = false;
+        offset -= PAGE; continue; // gleiche Seite ohne hours_external
+      }
+      if (withInternal && /is_internal/i.test(msg)) {
+        withInternal = false;
+        offset -= PAGE; continue; // gleiche Seite ohne is_internal
+      }
+      // unbekannte Spalte im Fehlertext → beide Fallbacks nacheinander probieren
+      if (withExternal) { withExternal = false; offset -= PAGE; continue; }
+      if (withInternal) { withInternal = false; offset -= PAGE; continue; }
+    }
+    if (error) throw error;
+    all.push(...(data ?? []));
+    if (!data || data.length < PAGE) break;
   }
-  const { data, error } = await q;
-  if (error) throw error;
-  return data ?? [];
+  return all;
 }
 
 // Rechnungsentwürfe aus ausgewählten Projekten bauen (eine Invoice pro Projekt).
@@ -1026,7 +1193,7 @@ export async function fakturaVorschlagData({ fromIso, toIso, allOpen = false } =
 //                        Werden später auf dem Beiblatt zur Info aufgeführt.
 export async function createInvoiceDraftsFromEntries({
   entries, projectIds, periodFrom, periodTo,
-  direct = false, includeKulant = true,
+  direct = false, includeKulant = true, includeExpenses = false,
 }) {
   const created = [];
   const byProject = new Map();
@@ -1034,6 +1201,24 @@ export async function createInvoiceDraftsFromEntries({
     if (!projectIds.includes(e.project_id)) continue;
     if (!byProject.has(e.project_id)) byProject.set(e.project_id, []);
     byProject.get(e.project_id).push(e);
+  }
+
+  // Weiterverrechenbare, genehmigte, noch nicht abgerechnete Spesen je Projekt
+  // (gleiche Konvention wie SpesenAbrechnenPanel: amount_gross als Positionsbetrag).
+  const expensesByProject = new Map();
+  if (includeExpenses && projectIds.length) {
+    const { data: exps, error: expErr } = await supabase
+      .from('le_expense')
+      .select('id, project_id, expense_date, category, description, amount_gross')
+      .in('project_id', projectIds)
+      .eq('rebillable', true)
+      .eq('status', 'genehmigt')
+      .is('invoiced_invoice_id', null);
+    if (expErr) throw expErr;
+    for (const x of exps ?? []) {
+      if (!expensesByProject.has(x.project_id)) expensesByProject.set(x.project_id, []);
+      expensesByProject.get(x.project_id).push(x);
+    }
   }
 
   // Heute/Fälligkeit (für Direkt-Rechnungen)
@@ -1053,10 +1238,13 @@ export async function createInvoiceDraftsFromEntries({
       e.status !== 'kulant' && e.service_type?.billable !== false
     );
     const kulant = projEntries.filter(e => e.status === 'kulant');
-    if (billable.length === 0 && (!includeKulant || kulant.length === 0)) continue;
+    const projExpenses = expensesByProject.get(projectId) ?? [];
+    if (billable.length === 0 && projExpenses.length === 0 && (!includeKulant || kulant.length === 0)) continue;
 
-    // Subtotal NUR aus billable
-    const subtotal = billable.reduce((s, e) => s + Number(e.hours_internal || 0) * Number(e.rate_snapshot || 0), 0);
+    // Subtotal aus billable (verrechnete = externe Stunden) + Spesen
+    const hoursSubtotal = billable.reduce((s, e) => s + effectiveHours(e) * Number(e.rate_snapshot || 0), 0);
+    const expenseSubtotal = projExpenses.reduce((s, x) => s + Number(x.amount_gross || 0), 0);
+    const subtotal = hoursSubtotal + expenseSubtotal;
     const vatAmount = Math.round(subtotal * vatPct) / 100;
     const total = subtotal + vatAmount;
 
@@ -1084,13 +1272,13 @@ export async function createInvoiceDraftsFromEntries({
       .from('le_invoice').insert(invoicePayload).select().single();
     if (invErr) throw invErr;
 
-    // Aggregiere je service_type eine Linie (nur billable)
+    // Aggregiere je service_type eine Linie (nur billable, externe Stunden)
     const groupedByType = new Map();
     for (const e of billable) {
       const key = e.service_type_id ?? 'none';
       if (!groupedByType.has(key)) groupedByType.set(key, { serviceType: e.service_type, hours: 0, amount: 0, rateSum: 0, count: 0 });
       const g = groupedByType.get(key);
-      const h = Number(e.hours_internal || 0);
+      const h = effectiveHours(e);
       const r = Number(e.rate_snapshot || 0);
       g.hours += h;
       g.amount += h * r;
@@ -1113,9 +1301,31 @@ export async function createInvoiceDraftsFromEntries({
       });
       idx += 10;
     }
+    // Spesen als eigene Positionen hintendran
+    for (const x of projExpenses) {
+      linesPayload.push({
+        invoice_id: inv.id,
+        description: `Spesen: ${x.description ?? x.category ?? ''} (${new Date(x.expense_date + 'T00:00:00').toLocaleDateString('de-CH')})`,
+        hours: 0,
+        rate: 0,
+        amount: Math.round(Number(x.amount_gross || 0) * 100) / 100,
+        sort_order: idx,
+      });
+      idx += 10;
+    }
     if (linesPayload.length) {
       const { error: lineErr } = await supabase.from('le_invoice_line').insert(linesPayload);
       if (lineErr) throw lineErr;
+    }
+    // Spesen als abgerechnet markieren (Storno/Löschen gibt sie via
+    // releaseInvoiceEntries wieder frei)
+    if (projExpenses.length) {
+      const { error: expUpErr } = await supabase
+        .from('le_expense')
+        .update({ status: 'abgerechnet', invoiced_invoice_id: inv.id })
+        .in('id', projExpenses.map(x => x.id))
+        .is('invoiced_invoice_id', null);
+      if (expUpErr) throw expUpErr;
     }
 
     // Time-Entries verknüpfen.

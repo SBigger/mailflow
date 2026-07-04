@@ -5,7 +5,7 @@
  * und erstellt Einträge in fibu_rechnung_inbox.
  *
  * Ausführung via Supabase Cron (alle 5–15 Minuten):
- *   SELECT cron.schedule('fibu-imap-sync', '*/10 * * * *',
+ *   SELECT cron.schedule('fibu-imap-sync', /10 * * * *,
  *     $$SELECT net.http_post('https://<project>.supabase.co/functions/v1/fibu-imap-sync',
  *       headers := '{"X-Cron-Secret": "<secret>"}'::jsonb)$$);
  *

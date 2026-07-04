@@ -6,7 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import {
   Upload, Trash2, Download, PowerOff, ArrowLeft, Table2, UserSquare2,
-  RefreshCw, CalendarOff,
+  RefreshCw,
 } from "lucide-react";
 import { useIsMobile } from "@/components/mobile/useIsMobile";
 import CustomerMiniList from "../components/customers/CustomerMiniList";
@@ -27,6 +27,7 @@ import CustomerDokumenteTab from "../components/customers/CustomerDokumenteTab";
 import CustomerAktionaereTab from "../components/customers/CustomerAktionaereTab";
 import MobileCustomerView from "../components/customers/MobileCustomerView";
 import Telefonliste from "./Telefonliste";
+import ZefixAssistent from "../components/customers/ZefixAssistent";
 import {toast} from "sonner";
 
 /**
@@ -45,7 +46,9 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
   const [showImport,        setShowImport]         = useState(false);
   const [showPersonImport,  setShowPersonImport]   = useState(false);
   const [showKontaktIE,     setShowKontaktIE]      = useState(false);
+  const [showZefix,         setShowZefix]          = useState(false);
   const [personTypeFilter,  setPersonTypeFilter]   = useState(initialPersonTypeFilter); // 'alle' | 'unternehmen' | 'privatperson'
+  const [abcFilter,         setAbcFilter]           = useState("alle"); // 'alle' | 'A' | 'B' | 'C'
   const [viewMode,          setViewMode]           = useState("tabelle"); // 'tabelle' | 'profil'
   const [activeTab,         setActiveTab]          = useState("overview");
   const restoreInputRef = useRef(null);
@@ -155,12 +158,11 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
     setSelectedCustomer(prev => ({ ...prev, ...data }));
   };
 
-  const handleNew = () => {
-    createMutation.mutate({
-      company_name: "Neuer Kunde",
-      person_type: 'unternehmen',
-      activities: [], contact_persons: [], tags: [],
-    });
+  const handleNew = () => setShowZefix(true);
+
+  const handleZefixCreate = (data) => {
+    setShowZefix(false);
+    createMutation.mutate(data);
   };
 
   const handleNewPrivatperson = () => {
@@ -302,6 +304,36 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
             </button>
           ))}
         </div>
+
+        {/* ABC-Klasse-Filter */}
+        {personTypeFilter !== "telefonliste" && (
+          <div className="flex gap-1 p-1 rounded-lg" style={{ backgroundColor: isArtis ? 'rgba(0,0,0,0.04)' : isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.05)' }}>
+            {[
+              { key: "alle", label: "Alle" },
+              { key: "A", label: "A", color: '#15803d' },
+              { key: "B", label: "B", color: '#b45309' },
+              { key: "C", label: "C", color: '#52525b' },
+            ].map(({ key, label, color }) => (
+              <button
+                key={key}
+                onClick={() => setAbcFilter(key)}
+                style={{
+                  backgroundColor: abcFilter === key ? (color || (isArtis ? '#7a9b7f' : '#7c3aed')) : 'transparent',
+                  color: abcFilter === key ? '#fff' : textMuted,
+                  fontSize: '11px',
+                  padding: '3px 8px',
+                  borderRadius: '6px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontWeight: '500',
+                  transition: 'all 0.15s',
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="flex items-center gap-2">
@@ -390,6 +422,7 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
             customers={customers}
             onSelect={handleSelectFromTable}
             personTypeFilter={personTypeFilter}
+            abcFilter={abcFilter}
           />
         </div>
       ) : (
@@ -401,6 +434,7 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
               selectedId={currentCustomer?.id}
               onSelect={handleSelectFromMini}
               personTypeFilter={personTypeFilter}
+              abcFilter={abcFilter}
             />
           </div>
 
@@ -435,16 +469,6 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
                 <div style={{ position: "relative" }}>
                   <CustomerHeader customer={currentCustomer} staff={appUsers} onUpdate={handleUpdate} />
                   <div style={{ position: "absolute", top: 12, right: 16, display: "flex", gap: 6 }}>
-                    {!isKontakt && (
-                      <button
-                        onClick={() => handleUpdate({ keine_frist: !currentCustomer.keine_frist })}
-                        title={currentCustomer.keine_frist ? 'Keine Frist aktiv – wird bei der Fristen-Generierung übersprungen (klicken zum Aufheben)' : 'Als «Keine Frist» markieren – von der Fristen-Generierung ausschliessen'}
-                        className="transition-colors rounded p-1"
-                        style={{ color: currentCustomer.keine_frist ? '#c2410c' : (isArtis ? '#8aaa8f' : isLight ? '#b0b0cc' : '#52525b') }}
-                      >
-                        <CalendarOff className="h-4 w-4" />
-                      </button>
-                    )}
                     <button
                       onClick={() => handleUpdate({ aktiv: currentCustomer.aktiv === false ? true : false })}
                       title={currentCustomer.aktiv === false ? "Reaktivieren (aktuell inaktiv)" : "Als inaktiv markieren"}
@@ -474,10 +498,10 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
                 {/* Tabs */}
                 <div className="flex-1 overflow-y-auto">
                   <Tabs key={currentCustomer.id} value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
-                    <div className="px-6 pt-4 border-b" style={{ borderColor }}>
+                    <div className="px-6 pt-4 border-b overflow-x-auto" style={{ borderColor }}>
                       <TabsList
-                        style={{ backgroundColor: isArtis ? '#edf2ed' : isLight ? '#e8e8f0' : 'rgba(24,24,27,0.6)', borderColor: isArtis ? '#ccd8cc' : isLight ? '#d0d0e0' : '#3f3f46' }}
-                        className="border flex-wrap"
+                        style={{ backgroundColor: isArtis ? '#edf2ed' : isLight ? '#e8e8f0' : 'rgba(24,24,27,0.6)', borderColor: isArtis ? '#ccd8cc' : isLight ? '#d0d0e0' : '#3f3f46', flexWrap: 'nowrap' }}
+                        className="border"
                       >
                         {isNebendomizil ? (
                           <TabsTrigger value="fristen" className="text-xs">📅 Fristen</TabsTrigger>
@@ -545,7 +569,7 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
 
                       {/* Fristen: für alle (Haupt- und Nebendomizile) */}
                       <TabsContent value="fristen" className="mt-0">
-                        <CustomerFristenTab customer={currentCustomer} />
+                        <CustomerFristenTab customer={currentCustomer} onUpdate={handleUpdate} />
                       </TabsContent>
                     </div>
                   </Tabs>
@@ -576,6 +600,11 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
         customers={customers}
         scopeCustomer={currentCustomer}
         onImported={() => { refetch(); }}
+      />
+      <ZefixAssistent
+        open={showZefix}
+        onClose={() => setShowZefix(false)}
+        onCreate={handleZefixCreate}
       />
     </div>
   );

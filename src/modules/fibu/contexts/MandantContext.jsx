@@ -28,8 +28,19 @@ export function MandantProvider({ children }) {
       mandantenApi.get(mandantId),
       mandantenApi.getUserRole(mandantId),
     ])
-      .then(([m, r]) => { setMandant(m); setRole(r); })
-      .catch(err => setError(err.message))
+      .then(([m, r]) => {
+        setMandant(m);
+        setRole(r);
+        // Zuletzt benutzten Mandanten merken — die Haupt-Sidebar
+        // verlinkt damit direkt in Kreditoren/Debitoren etc.
+        localStorage.setItem('fibu_last_mandant', mandantId);
+      })
+      .catch(err => {
+        setError(err.message);
+        if (localStorage.getItem('fibu_last_mandant') === mandantId) {
+          localStorage.removeItem('fibu_last_mandant');
+        }
+      })
       .finally(() => setLoading(false));
   }, [mandantId]);
 

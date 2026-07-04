@@ -9,12 +9,13 @@ import {
   Calendar, Filter, TrendingUp, TrendingDown,
 } from 'lucide-react';
 import {
-  leTimeEntry, leEmployee, leProject, leSollzeitProfile, leExpense,
+  leTimeEntry, leEmployee, leProject, leSollzeitProfile, leSollzeitTemplate, leHoliday, leExpense,
 } from '@/lib/leApi';
 import {
   Card, Chip, Select, PanelLoader, PanelError, PanelHeader, fmt,
   artisBtn, artisGhostStyle,
 } from './shared';
+import { calcSollHours, toHolidaySet } from '@/components/auswertungen/util';
 
 // ===========================================================================
 // Date / Range Helpers
@@ -76,38 +77,6 @@ function downloadCsv(filename, rows) {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
-
-// ===========================================================================
-// Soll-Stunden Berechnung (vereinfacht – ohne Feiertage)
-// ===========================================================================
-
-// Wählt das passende Sollzeit-Profil eines Mitarbeiters für ein gegebenes Datum
-const pickProfile = (profiles, dateIso) => {
-  const sorted = [...profiles].sort((a, b) => b.valid_from.localeCompare(a.valid_from));
-  return sorted.find(p =>
-    p.valid_from <= dateIso && (!p.valid_to || p.valid_to >= dateIso)
-  ) || sorted[0] || null;
-};
-
-// Aggregiert Soll-Stunden über den Range. Wenn mehrere Profile pro MA bestehen,
-// wird je Tag das passende Profil eingesetzt. (Vereinfacht – ohne Feiertage.)
-const calcSollHours = (profiles, fromIso, toIsoStr) => {
-  if (!profiles?.length) return 0;
-  let total = 0;
-  const d = new Date(fromIso + 'T00:00:00');
-  const end = new Date(toIsoStr + 'T00:00:00');
-  while (d <= end) {
-    const iso = d.toISOString().slice(0, 10);
-    const prof = pickProfile(profiles, iso);
-    if (prof) {
-      const day = d.getDay(); // 0=So..6=Sa
-      const hoursMap = ['hours_so', 'hours_mo', 'hours_di', 'hours_mi', 'hours_do', 'hours_fr', 'hours_sa'];
-      total += Number(prof[hoursMap[day]] || 0);
-    }
-    d.setDate(d.getDate() + 1);
-  }
-  return total;
-};
 
 // ===========================================================================
 // Style-Helpers
@@ -232,7 +201,7 @@ function Progressbar({ pct, height = 6 }) {
 // Sub-Tab 1: Mitarbeiter-Rapport
 // ===========================================================================
 
-function MitarbeiterRapport({ range, onExportRef, employees, entries }) {
+function MitarbeiterRapport({ range, onExportRef, employees, entries, templates, holidaySet }) {
   // Sollzeit-Profile parallel laden – einmal pro MA
   const profileQueries = useQueries({
     queries: (employees ?? []).map(emp => ({
@@ -260,7 +229,7 @@ function MitarbeiterRapport({ range, onExportRef, employees, entries }) {
         ist: 0,
         billable: 0,
         erloes: 0,
-        soll: calcSollHours(profilesById.get(emp.id) || [], range.fromIso, range.toIso),
+        soll: calcSollHours(templates || [], profilesById.get(emp.id) || [], holidaySet, range.fromIso, range.toIso),
       });
     }
     for (const e of entries ?? []) {
@@ -274,10 +243,11 @@ function MitarbeiterRapport({ range, onExportRef, employees, entries }) {
         row.erloes += h * Number(e.rate_snapshot || 0);
       }
     }
+    // Nur Personen mit erfassten Stunden zeigen (keine 0.00-Zeilen)
     return [...byEmp.values()]
-      .filter(r => r.emp.active || r.ist > 0)
+      .filter(r => r.ist > 0)
       .sort((a, b) => a.emp.full_name.localeCompare(b.emp.full_name));
-  }, [employees, entries, profilesById, range.fromIso, range.toIso]);
+  }, [employees, entries, profilesById, templates, holidaySet, range.fromIso, range.toIso]);
 
   // KPIs
   const totals = useMemo(() => {
@@ -850,8 +820,21 @@ export default function AuswertungenPanel() {
     staleTime: 60_000,
   });
 
-  const isLoading = employeesQ.isLoading || projectsQ.isLoading || entriesQ.isLoading;
-  const error = employeesQ.error || projectsQ.error || entriesQ.error;
+  // Zentraler Sollzeit-Plan + Feiertage für die Soll-Berechnung im Mitarbeiter-Rapport
+  const templatesQ = useQuery({
+    queryKey: ['le', 'sollzeit-template'],
+    queryFn: leSollzeitTemplate.list,
+    staleTime: 10 * 60_000,
+  });
+  const holidaysQ = useQuery({
+    queryKey: ['le', 'holiday', range.fromIso, range.toIso],
+    queryFn: () => leHoliday.list({ from: range.fromIso, to: range.toIso }),
+    staleTime: 10 * 60_000,
+  });
+  const holidaySet = useMemo(() => toHolidaySet(holidaysQ.data), [holidaysQ.data]);
+
+  const isLoading = employeesQ.isLoading || projectsQ.isLoading || entriesQ.isLoading || templatesQ.isLoading || holidaysQ.isLoading;
+  const error = employeesQ.error || projectsQ.error || entriesQ.error || templatesQ.error || holidaysQ.error;
 
   return (
     <div>
@@ -892,7 +875,7 @@ export default function AuswertungenPanel() {
       </div>
 
       {error && <PanelError error={error} onRetry={() => {
-        employeesQ.refetch(); projectsQ.refetch(); entriesQ.refetch();
+        employeesQ.refetch(); projectsQ.refetch(); entriesQ.refetch(); templatesQ.refetch(); holidaysQ.refetch();
       }} />}
 
       {!error && isLoading && <PanelLoader />}
@@ -905,6 +888,8 @@ export default function AuswertungenPanel() {
               onExportRef={exportRef}
               employees={employeesQ.data}
               entries={entriesQ.data}
+              templates={templatesQ.data}
+              holidaySet={holidaySet}
             />
           )}
           {tab === 'projekte' && (

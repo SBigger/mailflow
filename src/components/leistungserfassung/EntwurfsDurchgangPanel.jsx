@@ -563,6 +563,16 @@ function DraftEditor({ invoice, onSaved, onFinalized, onDirtyChange }) {
               onChange={(e) => { setDiscountAmount(e.target.value); markDirty(); }}
             />
           </div>
+          {(subtotalRaw - subtotalNet) > 0.005 && (
+            <div className="flex justify-between text-sm py-1">
+              <span className="text-zinc-600">Rabatt total</span>
+              <span className="font-medium" style={{ color: '#8a2d2d' }}>− CHF {fmt.chf(subtotalRaw - subtotalNet)}</span>
+            </div>
+          )}
+          <div className="flex justify-between text-sm py-1">
+            <span className="text-zinc-600">Netto</span>
+            <span className="font-medium">CHF {fmt.chf(subtotalNet)}</span>
+          </div>
           <div className="flex justify-between items-center text-sm py-1 gap-2">
             <span className="text-zinc-600">MWST %</span>
             <Input
