@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { leServiceType, leServiceRateHistory, leVatRate } from '@/lib/leApi';
+import { supabase } from '@/api/supabaseClient';
 import {
   Chip,
   Card,
@@ -28,6 +29,26 @@ import {
   artisGhostStyle,
 } from './shared';
 
+// Ertragskonten für die Buchung bei Rechnungsversand: fest der Fibu-Mandant "Artis"
+// (Artis Treuhands eigene Buchhaltung), nur aktive Ertragskonten.
+async function fetchErtragskonten() {
+  const { data: mandant, error: mErr } = await supabase
+    .from('fibu_mandanten')
+    .select('id')
+    .eq('name', 'Artis')
+    .single();
+  if (mErr) throw mErr;
+  const { data, error } = await supabase
+    .from('fibu_konten')
+    .select('konto_nr, bezeichnung')
+    .eq('mandant_id', mandant.id)
+    .eq('konto_typ', 'ertrag')
+    .eq('aktiv', true)
+    .order('konto_nr');
+  if (error) throw error;
+  return data ?? [];
+}
+
 // ---------- Panel ----------
 export default function LeistungsartenPanel() {
   const qc = useQueryClient();
@@ -35,6 +56,11 @@ export default function LeistungsartenPanel() {
     queryKey: ['le', 'service_type'],
     queryFn: leServiceType.list,
   });
+  const kontenQ = useQuery({ queryKey: ['fibu', 'ertragskonten', 'Artis'], queryFn: fetchErtragskonten });
+  const kontoByNr = useMemo(
+    () => Object.fromEntries((kontenQ.data ?? []).map((k) => [k.konto_nr, k.bezeichnung])),
+    [kontenQ.data]
+  );
 
   const [editOpen, setEditOpen] = useState(false);
   const [editing, setEditing] = useState(null); // null = neu, sonst Row
@@ -117,6 +143,7 @@ export default function LeistungsartenPanel() {
                   <th className="px-3 py-2 font-semibold">Code</th>
                   <th className="px-3 py-2 font-semibold">Name</th>
                   <th className="px-3 py-2 font-semibold">Abrechenbar</th>
+                  <th className="px-3 py-2 font-semibold">Ertragskonto</th>
                   <th className="px-3 py-2 font-semibold">Reihenfolge</th>
                   <th className="px-3 py-2 font-semibold">Aktiv</th>
                   <th className="px-3 py-2 font-semibold text-right">Aktionen</th>
@@ -125,7 +152,7 @@ export default function LeistungsartenPanel() {
               <tbody>
                 {(data ?? []).length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-3 py-8 text-center text-zinc-400">
+                    <td colSpan={7} className="px-3 py-8 text-center text-zinc-400">
                       Keine Leistungsarten erfasst.
                     </td>
                   </tr>
@@ -138,6 +165,9 @@ export default function LeistungsartenPanel() {
                       {row.billable
                         ? <Chip tone="green">abrechenbar</Chip>
                         : <Chip tone="neutral">intern</Chip>}
+                    </td>
+                    <td className="px-3 py-2 font-mono text-xs" title={kontoByNr[row.ertragskonto] ?? ''}>
+                      {row.ertragskonto ?? '—'}
                     </td>
                     <td className="px-3 py-2 text-zinc-500">{row.sort_order ?? '—'}</td>
                     <td className="px-3 py-2">
@@ -209,6 +239,8 @@ function EditDialog({ open, onOpenChange, initial }) {
     return out;
   }, [ratesQ.data]);
 
+  const kontenQ = useQuery({ queryKey: ['fibu', 'ertragskonten', 'Artis'], queryFn: fetchErtragskonten, enabled: open });
+
   const [form, setForm] = useState(() => defaultForm(initial));
   // reset form on open change
   React.useEffect(() => {
@@ -247,6 +279,7 @@ function EditDialog({ open, onOpenChange, initial }) {
       active: !!form.active,
       default_vat_code: form.default_vat_code || 'STD',
       default_section: form.default_section || 'honorar',
+      ertragskonto: form.ertragskonto || '3400',
     };
     saveMut.mutate(payload);
   };
@@ -311,6 +344,17 @@ function EditDialog({ open, onOpenChange, initial }) {
               </Select>
             </Field>
           </div>
+          <Field label="Ertragskonto" hint="Für die Fibu-Buchung (Mandant Artis) bei Rechnungsversand.">
+            <Select
+              value={form.ertragskonto}
+              onChange={(e) => setForm({ ...form, ertragskonto: e.target.value })}
+            >
+              {kontenQ.data?.length === 0 && <option value="3400">3400</option>}
+              {(kontenQ.data ?? []).map((k) => (
+                <option key={k.konto_nr} value={k.konto_nr}>{k.konto_nr} – {k.bezeichnung}</option>
+              ))}
+            </Select>
+          </Field>
           <div className="flex items-center gap-6 pt-1">
             <label className="inline-flex items-center gap-2 text-sm">
               <input
@@ -363,6 +407,7 @@ function defaultForm(initial) {
     active: initial?.active ?? true,
     default_vat_code: initial?.default_vat_code ?? 'STD',
     default_section: initial?.default_section ?? 'honorar',
+    ertragskonto: initial?.ertragskonto ?? '3400',
   };
 }
 
