@@ -363,6 +363,16 @@ export const leTimeEntry = {
     }
     return all;
   },
+  // Datum des ältesten Zeiteintrags (für Mehrjahres-Auswertungen)
+  firstEntryDate: async () => {
+    const { data, error } = await supabase
+      .from('le_time_entry')
+      .select('entry_date')
+      .order('entry_date', { ascending: true })
+      .limit(1);
+    if (error) throw error;
+    return data?.[0]?.entry_date ?? null;
+  },
   create: async (payload) => {
     const { data, error } = await supabase.from('le_time_entry').insert(payload).select().single();
     if (error) throw error;

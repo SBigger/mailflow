@@ -9,6 +9,7 @@ import {
   FolderKanban, ExternalLink,
 } from 'lucide-react';
 import ProduktivitaetPanel from '@/components/auswertungen/ProduktivitaetPanel';
+import MehrjahrePanel from '@/components/auswertungen/MehrjahrePanel';
 import MonatsrapportPanel from '@/components/auswertungen/MonatsrapportPanel';
 import FakturierungPanel from '@/components/auswertungen/FakturierungPanel';
 import DebitorenAuswertungPanel from '@/components/auswertungen/DebitorenAuswertungPanel';
@@ -69,6 +70,7 @@ const NAV = [
     id: 'produktivitaet', label: 'Produktivität', icon: Users,
     sec: [
       { id: 'uebersicht', label: 'Übersicht', comp: ProduktivitaetPanel },
+      { id: 'mehrjahre', label: 'Mehrjahre', comp: MehrjahrePanel },
       { id: 'monatsrapport', label: 'Monatsrapport', comp: MonatsrapportPanel },
     ],
   },
