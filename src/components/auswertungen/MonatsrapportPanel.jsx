@@ -310,8 +310,11 @@ export default function MonatsrapportPanel() {
     }
   };
 
-  const isLoading = employeesQ.isLoading || entriesQ.isLoading || absencesQ.isLoading || templatesQ.isLoading || holidaysQ.isLoading;
-  const error = employeesQ.error || entriesQ.error || absencesQ.error || templatesQ.error || holidaysQ.error;
+  // Zentral-Plan/Feiertage sind optional (Migration evtl. noch nicht eingespielt):
+  // Fehler dort blocken nur die Soll-Berechnung (fällt auf 0h zurück), nicht das ganze Panel.
+  const isLoading = employeesQ.isLoading || entriesQ.isLoading || absencesQ.isLoading;
+  const error = employeesQ.error || entriesQ.error || absencesQ.error;
+  const sollUnavailable = !!(templatesQ.error || holidaysQ.error);
 
   return (
     <div>
@@ -345,6 +348,12 @@ export default function MonatsrapportPanel() {
 
       {error && <PanelError error={error} onRetry={() => { employeesQ.refetch(); entriesQ.refetch(); absencesQ.refetch(); templatesQ.refetch(); holidaysQ.refetch(); }} />}
       {!error && isLoading && <PanelLoader />}
+
+      {!error && !isLoading && sollUnavailable && (
+        <div className="mb-4 text-xs rounded border px-3 py-2" style={{ borderColor: '#f3d9a4', background: '#fff8e6', color: '#8a5a00' }}>
+          Zentral-Sollzeit-Plan noch nicht eingerichtet (Migration ausstehend) – Soll zeigt vorübergehend 0h.
+        </div>
+      )}
 
       {!error && !isLoading && report && (
         <div className="space-y-4">

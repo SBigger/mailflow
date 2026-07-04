@@ -293,8 +293,11 @@ export default function ProduktivitaetPanel() {
     downloadCsv(`produktivitaet_${range.fromIso}_${range.toIso}.csv`, [header, ...data]);
   };
 
-  const isLoading = employeesQ.isLoading || entriesQ.isLoading || templatesQ.isLoading || holidaysQ.isLoading || (compare && prevEntriesQ.isLoading);
-  const error = employeesQ.error || entriesQ.error || templatesQ.error || holidaysQ.error || (compare ? prevEntriesQ.error : null);
+  // Zentral-Plan/Feiertage sind optional (Migration evtl. noch nicht eingespielt):
+  // Fehler dort blocken nur die Soll-Berechnung (fällt auf 0h zurück), nicht das ganze Panel.
+  const isLoading = employeesQ.isLoading || entriesQ.isLoading || (compare && prevEntriesQ.isLoading);
+  const error = employeesQ.error || entriesQ.error || (compare ? prevEntriesQ.error : null);
+  const sollUnavailable = !!(templatesQ.error || holidaysQ.error);
   const colSpan = compare ? 13 : 11;
 
   return (
@@ -334,6 +337,12 @@ export default function ProduktivitaetPanel() {
         <PanelError error={error} onRetry={() => { employeesQ.refetch(); entriesQ.refetch(); prevEntriesQ.refetch(); templatesQ.refetch(); holidaysQ.refetch(); }} />
       )}
       {!error && isLoading && <PanelLoader />}
+
+      {!error && !isLoading && sollUnavailable && (
+        <div className="mb-4 text-xs rounded border px-3 py-2" style={{ borderColor: '#f3d9a4', background: '#fff8e6', color: '#8a5a00' }}>
+          Zentral-Sollzeit-Plan noch nicht eingerichtet (Migration ausstehend) – Soll zeigt vorübergehend 0h.
+        </div>
+      )}
 
       {!error && !isLoading && (
         <div className="space-y-4">
