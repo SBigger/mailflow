@@ -16,12 +16,20 @@ export const leEmployee = {
     return data ?? [];
   },
   create: async (payload) => {
-    const { data, error } = await supabase.from('le_employee').insert(payload).select().single();
+    let { data, error } = await supabase.from('le_employee').insert(payload).select().single();
+    if (error && /rate_group_id|does not exist|schema cache/i.test(error.message || '')) {
+      const { rate_group_id, ...rest } = payload;
+      ({ data, error } = await supabase.from('le_employee').insert(rest).select().single());
+    }
     if (error) throw error;
     return data;
   },
   update: async (id, patch) => {
-    const { data, error } = await supabase.from('le_employee').update(patch).eq('id', id).select().single();
+    let { data, error } = await supabase.from('le_employee').update(patch).eq('id', id).select().single();
+    if (error && /rate_group_id|does not exist|schema cache/i.test(error.message || '')) {
+      const { rate_group_id, ...rest } = patch;
+      ({ data, error } = await supabase.from('le_employee').update(rest).eq('id', id).select().single());
+    }
     if (error) throw error;
     return data;
   },
@@ -193,6 +201,21 @@ export function resolveRateFor({
   if (mode === 'employee_group') {
     const grpRate = employee?.employee_group?.billable_rate;
     return Number(grpRate ?? 0);
+  }
+
+  // 'auto' = Kaskade: 1) Tarifgruppe/Rolle des MA × Leistungsart,
+  //                    2) sonst Mitarbeitergruppe, 3) sonst MA-Stundensatz.
+  if (mode === 'auto') {
+    const rgId = employee?.rate_group_id ?? null;
+    if (rgId && serviceTypeId) {
+      const match = rateGroupRates
+        .filter(r => r.service_type_id === serviceTypeId && r.rate_group_id === rgId && r.valid_from <= d)
+        .sort((a, b) => b.valid_from.localeCompare(a.valid_from))[0];
+      if (match) return Number(match.rate);
+    }
+    const grpRate = employee?.employee_group?.billable_rate;
+    if (grpRate != null) return Number(grpRate);
+    return Number(employee?.billable_rate ?? 0);
   }
 
   // service_type (Default + Fallback)

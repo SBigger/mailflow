@@ -15,7 +15,7 @@ const EMPTY_PROJECT = {
   customer_id: '',
   responsible_employee_id: '',
   rate_group_id: '',
-  rate_mode: 'service_type',
+  rate_mode: 'auto',
   special_rate: '',
   billing_mode: 'effektiv',
   pauschal_amount: '',
@@ -29,10 +29,9 @@ const EMPTY_PROJECT = {
 };
 
 const RATE_MODE_OPTIONS = [
-  { value: 'service_type',   label: 'Leistungsart',     hint: 'Standard – Ansatz aus Gruppenansatz / Standard-Satz pro Leistungsart' },
-  { value: 'employee',       label: 'Mitarbeiter',      hint: 'Stundenansatz vom Mitarbeiter selbst' },
-  { value: 'employee_group', label: 'Mitarbeitergruppe', hint: 'Junior/Treuhänder/Senior/Partner – Ansatz aus Gruppe' },
-  { value: 'special',        label: 'Spezialsatz',      hint: 'Fester Stundenansatz auf diesem Projekt' },
+  { value: 'auto',         label: 'Automatisch (Gruppenansatz → Gruppe → MA)', hint: 'Empfohlen: Satz = Rolle/Gruppenansatz des erfassenden MA × Leistungsart; sonst Mitarbeitergruppe; sonst MA-Stundensatz' },
+  { value: 'service_type', label: 'Gruppenansatz (Projekt-Tarifgruppe)',       hint: 'Satz = die am Projekt hinterlegte Tarifgruppe × Leistungsart (unabhängig vom MA)' },
+  { value: 'special',      label: 'Spezialsatz (fix)',                         hint: 'Fester Stundenansatz für dieses Projekt' },
 ];
 
 function suggestProjectNo(projects) {
@@ -336,7 +335,7 @@ function KundenAbgleichDialog({ rateGroups, employees, existingProjects, onClose
   const [progress, setProgress] = useState(null);
   const [cfg, setCfg] = useState({
     suffix: ', BWL',
-    rate_mode: 'service_type',
+    rate_mode: 'auto',
     rate_group_id: rateGroups[0]?.id ?? '',
     billing_mode: 'effektiv',
     responsible_employee_id: '',
@@ -542,7 +541,7 @@ function ProjektDialog({ editing, customers, employees, rateGroups, projectNoSug
         customer_id: editing.customer_id ?? '',
         responsible_employee_id: editing.responsible_employee_id ?? '',
         rate_group_id: editing.rate_group_id ?? '',
-        rate_mode: editing.rate_mode ?? 'service_type',
+        rate_mode: editing.rate_mode ?? 'auto',
         special_rate: editing.special_rate ?? '',
         billing_mode: editing.billing_mode ?? 'effektiv',
         pauschal_amount: editing.pauschal_amount ?? '',
