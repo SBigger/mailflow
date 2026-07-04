@@ -1,12 +1,10 @@
-// Auswertungen · natives Reporting-Modul (Power BI-Ersatz)
+// Auswertungen · natives Reporting-Modul (hat das Power BI-Embed abgelöst)
 // Produktivität (Stunden/Umsatz pro MA nach Projekttyp), Monatsrapport,
 // Angefangene Arbeiten, Debitoren und Projekt-Auswertungen – direkt aus den
-// Smartis-Daten (le_*-Tabellen). Der alte Power BI-Report bleibt während der
-// Übergangszeit als letzter Tab erreichbar.
+// Smartis-Daten (le_*-Tabellen).
 import React, { useState, useMemo } from 'react';
 import {
-  BarChart3, Users, FileText, ArrowDownCircle,
-  FolderKanban, ExternalLink,
+  BarChart3, Users, FileText, ArrowDownCircle, FolderKanban,
 } from 'lucide-react';
 import ProduktivitaetPanel from '@/components/auswertungen/ProduktivitaetPanel';
 import MehrjahrePanel from '@/components/auswertungen/MehrjahrePanel';
@@ -14,55 +12,6 @@ import MonatsrapportPanel from '@/components/auswertungen/MonatsrapportPanel';
 import FakturierungPanel from '@/components/auswertungen/FakturierungPanel';
 import DebitorenAuswertungPanel from '@/components/auswertungen/DebitorenAuswertungPanel';
 import ProjekteAuswertungPanel from '@/components/leistungserfassung/AuswertungenPanel';
-
-// ── Power BI (Legacy) ────────────────────────────────────────────────────────
-// Mit eingeschaltetem Nav-Pane, damit alle alten Report-Seiten erreichbar sind.
-const PBI_EMBED =
-  'https://app.powerbi.com/reportEmbed' +
-  '?reportId=13a220be-5f7c-490e-9d33-c8fe2b57b438' +
-  '&autoAuth=true' +
-  '&ctid=cc857d96-3c6e-45ba-afbf-c20d0946d2be' +
-  '&navContentPaneEnabled=true';
-const PBI_DIRECT =
-  'https://app.powerbi.com/groups/a39e904f-2669-4744-bac2-66286edd4221' +
-  '/reports/13a220be-5f7c-490e-9d33-c8fe2b57b438';
-
-function PowerBiLegacyPanel() {
-  const isTauri = typeof window !== 'undefined' && !!window.__TAURI__;
-  const openInBrowser = () => {
-    if (isTauri) {
-      window.__TAURI__.core.invoke('open_external_url', { url: PBI_DIRECT }).catch(() => window.open(PBI_DIRECT, '_blank'));
-    } else {
-      window.open(PBI_DIRECT, '_blank');
-    }
-  };
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2 text-xs text-zinc-500">
-        <span>
-          Alter Power BI-Report («Artis Auswertungen neu») – wird durch die nativen Auswertungen abgelöst.
-          Zugriff erfordert ein angemeldetes Microsoft-365-Konto mit Viewer-Rechten.
-        </span>
-        <button
-          type="button"
-          onClick={openInBrowser}
-          className="ml-auto inline-flex items-center gap-1 px-2 py-1 rounded border text-xs text-zinc-600 hover:bg-zinc-50 flex-shrink-0"
-          style={{ borderColor: '#d9dfd9', background: '#fff' }}
-        >
-          <ExternalLink className="w-3 h-3" /> In Power BI öffnen
-        </button>
-      </div>
-      <iframe
-        src={PBI_EMBED}
-        title="Power BI – Artis Auswertungen"
-        allowFullScreen
-        referrerPolicy="strict-origin-when-cross-origin"
-        className="w-full rounded-lg"
-        style={{ border: '1px solid #d9e0d9', background: '#fff', height: 'calc(100vh - 210px)', minHeight: 480 }}
-      />
-    </div>
-  );
-}
 
 // ── Navigation ───────────────────────────────────────────────────────────────
 const NAV = [
@@ -85,10 +34,6 @@ const NAV = [
   {
     id: 'projekte', label: 'Projekte', icon: FolderKanban,
     sec: [{ id: 'rentabilitaet', label: 'Rentabilität & Budget', comp: ProjekteAuswertungPanel }],
-  },
-  {
-    id: 'powerbi', label: 'Power BI (alt)', icon: ExternalLink,
-    sec: [{ id: 'embed', label: 'Report', comp: PowerBiLegacyPanel }],
   },
 ];
 
