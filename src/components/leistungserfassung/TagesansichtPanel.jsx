@@ -14,6 +14,7 @@ import { toast } from 'sonner';
 import {
   ChevronLeft, ChevronRight, CalendarDays, CornerDownLeft,
   Pencil, Trash2, Check, X as XIcon, Info, Mail, Calendar, RefreshCw, Plus,
+  Eye, EyeOff, GripHorizontal,
 } from 'lucide-react';
 import {
   leTimeEntry, leProject, leServiceType, leEmployee, currentEmployee,
@@ -111,6 +112,31 @@ export default function TagesansichtPanel() {
 
   // Quick-Form-State (für Inline-Befüllung von Calendar/Mail-Übernahme)
   const [prefill, setPrefill] = useState(null); // { time_from, time_to, project_id, service_type_id, description, ... }
+
+  // --- Flexibles Layout: Panels ein-/ausblenden + Höhe per Ziehgriff (persistent) ---
+  const [showCal, setShowCal] = useState(() => localStorage.getItem('tva_showCal') !== '0');
+  const [showMails, setShowMails] = useState(() => localStorage.getItem('tva_showMails') !== '0');
+  const [panelH, setPanelH] = useState(() => {
+    const v = parseInt(localStorage.getItem('tva_panelH') || '540', 10);
+    return Number.isFinite(v) ? Math.min(1200, Math.max(220, v)) : 540;
+  });
+  useEffect(() => { try { localStorage.setItem('tva_showCal', showCal ? '1' : '0'); } catch { /* ignore */ } }, [showCal]);
+  useEffect(() => { try { localStorage.setItem('tva_showMails', showMails ? '1' : '0'); } catch { /* ignore */ } }, [showMails]);
+  useEffect(() => { try { localStorage.setItem('tva_panelH', String(panelH)); } catch { /* ignore */ } }, [panelH]);
+  const startResize = (e) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = panelH;
+    const onMove = (ev) => setPanelH(Math.min(1200, Math.max(220, startH + (ev.clientY - startY))));
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      document.body.style.userSelect = '';
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    document.body.style.userSelect = 'none';
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -336,30 +362,80 @@ export default function TagesansichtPanel() {
         )}
       </Card>
 
-      {/* ZEILE 3: Kalender + Mails nebeneinander */}
-      <div className="grid grid-cols-12 gap-3">
-        <div className="col-span-12 lg:col-span-6">
-          <CalendarColumn
-            calendar={ms365Data.calendar}
-            notConnected={ms365Data.notConnected}
-            hint={ms365Data.hint}
-            calendarError={ms365Data.calendarError}
-            loading={ms365Q.isLoading}
-            error={ms365Q.error}
-            onRefresh={() => ms365Q.refetch()}
-            onAdopt={adoptFromCalendar}
-          />
+      {/* ZEILE 3: Kalender + Mails – ein-/ausblendbar, höhenverstellbar */}
+      <div>
+        <div className="flex items-center gap-2 mb-1.5">
+          <span className="text-[10px] uppercase tracking-wider text-zinc-400 mr-1">Ansicht</span>
+          <button
+            type="button"
+            onClick={() => setShowCal((v) => !v)}
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium border transition-colors"
+            style={{ background: showCal ? '#eef5ee' : '#fff', color: showCal ? '#2d5a2d' : '#9aa09a', borderColor: showCal ? '#bfd3bf' : '#e0e4e0' }}
+            title={showCal ? 'Kalender ausblenden' : 'Kalender einblenden'}
+          >
+            {showCal ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />} Kalender
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowMails((v) => !v)}
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium border transition-colors"
+            style={{ background: showMails ? '#eef5ee' : '#fff', color: showMails ? '#2d5a2d' : '#9aa09a', borderColor: showMails ? '#bfd3bf' : '#e0e4e0' }}
+            title={showMails ? 'Mails ausblenden' : 'Mails einblenden'}
+          >
+            {showMails ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />} Mails
+          </button>
+          {(showCal || showMails) && (
+            <span className="ml-auto text-[10px] text-zinc-400">Höhe: {panelH}px</span>
+          )}
         </div>
-        <div className="col-span-12 lg:col-span-6">
-          <SentMailsCard
-            sent={ms365Data.sent}
-            notConnected={ms365Data.notConnected}
-            hint={ms365Data.hint}
-            sentError={ms365Data.sentError}
-            loading={ms365Q.isLoading}
-            onAdopt={adoptFromMail}
-          />
-        </div>
+
+        {(showCal || showMails) ? (
+          <>
+            <div className="grid grid-cols-12 gap-3">
+              {showCal && (
+                <div className={showMails ? 'col-span-12 lg:col-span-6' : 'col-span-12'}>
+                  <CalendarColumn
+                    height={panelH}
+                    calendar={ms365Data.calendar}
+                    notConnected={ms365Data.notConnected}
+                    hint={ms365Data.hint}
+                    calendarError={ms365Data.calendarError}
+                    loading={ms365Q.isLoading}
+                    error={ms365Q.error}
+                    onRefresh={() => ms365Q.refetch()}
+                    onAdopt={adoptFromCalendar}
+                  />
+                </div>
+              )}
+              {showMails && (
+                <div className={showCal ? 'col-span-12 lg:col-span-6' : 'col-span-12'}>
+                  <SentMailsCard
+                    height={panelH}
+                    sent={ms365Data.sent}
+                    notConnected={ms365Data.notConnected}
+                    hint={ms365Data.hint}
+                    sentError={ms365Data.sentError}
+                    loading={ms365Q.isLoading}
+                    onAdopt={adoptFromMail}
+                  />
+                </div>
+              )}
+            </div>
+            {/* Ziehgriff: Höhe der Panels anpassen (nach oben/unten ziehen) */}
+            <div
+              onMouseDown={startResize}
+              onDoubleClick={() => setPanelH(540)}
+              title="Ziehen, um die Höhe anzupassen · Doppelklick = Standard"
+              className="mt-1 h-4 flex items-center justify-center cursor-ns-resize select-none rounded hover:bg-zinc-100 transition-colors"
+            >
+              <GripHorizontal className="w-4 h-4" style={{ color: '#c2ccc2' }} />
+            </div>
+          </>
+        ) : (
+          <div className="text-xs text-zinc-400 py-4 text-center border rounded" style={{ borderColor: '#eef1ee' }}>
+            Beide Panels ausgeblendet – oben wieder einblenden.
+          </div>
+        )}
       </div>
     </div>
   );
@@ -368,7 +444,7 @@ export default function TagesansichtPanel() {
 // ============================================================================
 // Kalender-Spalte (links)
 // ============================================================================
-function CalendarColumn({ calendar, notConnected, hint, calendarError, loading, error, onRefresh, onAdopt }) {
+function CalendarColumn({ calendar, notConnected, hint, calendarError, loading, error, onRefresh, onAdopt, height = 540 }) {
   const totalHours = CAL_END_HOUR - CAL_START_HOUR;
   const hours = Array.from({ length: totalHours + 1 }, (_, i) => CAL_START_HOUR + i);
 
@@ -379,7 +455,7 @@ function CalendarColumn({ calendar, notConnected, hint, calendarError, loading, 
   const nowTop = (nowMins - CAL_START_HOUR * 60) * PX_PER_MIN;
 
   return (
-    <Card className="overflow-hidden flex flex-col" style={{ height: 540 }}>
+    <Card className="overflow-hidden flex flex-col" style={{ height }}>
       <div className="px-3 py-2 border-b flex items-center justify-between" style={{ borderColor: '#e4e7e4', background: '#fafbf9' }}>
         <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-700">
           <Calendar className="w-3.5 h-3.5" /> Outlook-Kalender
@@ -756,9 +832,9 @@ function QuickEntryCard({
 // Gesendete Mails (rechts)
 // ============================================================================
 
-function SentMailsCard({ sent, notConnected, hint, sentError, loading, onAdopt }) {
+function SentMailsCard({ sent, notConnected, hint, sentError, loading, onAdopt, height = 540 }) {
   return (
-    <Card className="overflow-hidden flex flex-col" style={{ height: 540 }}>
+    <Card className="overflow-hidden flex flex-col" style={{ height }}>
       <div className="px-3 py-2 border-b flex items-center justify-between" style={{ borderColor: '#e4e7e4', background: '#fafbf9' }}>
         <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-700">
           <Mail className="w-3.5 h-3.5" /> Gesendete Mails
