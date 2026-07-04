@@ -11,6 +11,7 @@ import { toast } from 'sonner';
 import { Plus, Trash2, CalendarClock, CalendarDays, Building2, Users as UsersIcon } from 'lucide-react';
 import { leEmployee, leSollzeitProfile, leSollzeitTemplate, leHoliday } from '@/lib/leApi';
 import { pickProfile } from '@/components/auswertungen/util';
+import MonthPicker from '@/components/auswertungen/MonthPicker';
 import {
   Dialog,
   DialogContent,
@@ -24,7 +25,6 @@ import {
   IconBtn,
   Input,
   Field,
-  Select,
   PanelLoader,
   PanelError,
   PanelHeader,
@@ -266,90 +266,55 @@ function ZentralSection() {
 
 // ===========================================================================
 // Feiertage-Tab: firmenweite Datums-Overrides (immer 0h)
+// Kein Formular – Klick auf einen Tag schaltet ihn direkt als Feiertag
+// ein/aus (0h), analog zur Jahresplanung.
 // ===========================================================================
+
+const WEEKDAY_LABEL = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
 
 function FeiertageSection() {
   const qc = useQueryClient();
-  const [year, setYear] = useState(new Date().getFullYear());
+  const today = new Date();
+  const [year, setYear] = useState(today.getFullYear());
+  const [month0, setMonth0] = useState(today.getMonth());
+
   const holidaysQ = useQuery({
     queryKey: ['le', 'holiday', year],
     queryFn: () => leHoliday.list({ from: `${year}-01-01`, to: `${year}-12-31` }),
   });
+  const holidayByDate = useMemo(() => {
+    const map = new Map();
+    (holidaysQ.data ?? []).forEach((h) => map.set(h.date, h));
+    return map;
+  }, [holidaysQ.data]);
 
-  const [newDate, setNewDate] = useState('');
-  const [newName, setNewName] = useState('');
-
-  const createMut = useMutation({
-    mutationFn: (payload) => leHoliday.create(payload),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['le', 'holiday'] });
-      toast.success('Feiertag hinzugefügt');
-      setNewDate(''); setNewName('');
+  const toggleMut = useMutation({
+    mutationFn: async ({ dateIso, existing }) => {
+      if (existing) await leHoliday.remove(existing.id);
+      else await leHoliday.create({ date: dateIso, name: 'Feiertag' });
     },
-    onError: (e) => toast.error('Fehler: ' + (e?.message ?? e)),
-  });
-  const removeMut = useMutation({
-    mutationFn: (id) => leHoliday.remove(id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['le', 'holiday'] });
-      toast.success('Feiertag entfernt');
-    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['le', 'holiday'] }),
     onError: (e) => toast.error('Fehler: ' + (e?.message ?? e)),
   });
 
-  const handleAdd = (e) => {
-    e.preventDefault();
-    if (!newDate) return toast.error('Datum wählen');
-    if (!newName.trim()) return toast.error('Name eingeben');
-    const exists = (holidaysQ.data ?? []).some((h) => h.date === newDate);
-    if (exists) return toast.error('Für dieses Datum existiert bereits ein Feiertag');
-    createMut.mutate({ date: newDate, name: newName.trim() });
-  };
-
-  const yearOptions = useMemo(() => {
-    const cur = new Date().getFullYear();
-    return Array.from({ length: 5 }, (_, i) => cur - 1 + i);
-  }, []);
+  const days = useMemo(() => {
+    const count = new Date(year, month0 + 1, 0).getDate();
+    return Array.from({ length: count }, (_, i) => {
+      const d = new Date(year, month0, i + 1);
+      const iso = `${year}-${String(month0 + 1).padStart(2, '0')}-${String(i + 1).padStart(2, '0')}`;
+      return { iso, weekday: WEEKDAY_LABEL[d.getDay()], dayNum: i + 1, isWeekend: d.getDay() === 0 || d.getDay() === 6 };
+    });
+  }, [year, month0]);
 
   return (
     <div>
       <p className="text-xs text-zinc-500 max-w-xl mb-3">
         Feiertage übersteuern für alle Mitarbeiter das Soll auf 0h – unabhängig von Pensum
-        oder individuellen Wochentag-Overrides.
+        oder individuellen Wochentag-Overrides. Klick auf einen Tag schaltet ihn ein/aus.
       </p>
 
-      <Card className="p-3 mb-4">
-        <form onSubmit={handleAdd} className="flex items-end gap-2 flex-wrap">
-          <div className="w-40">
-            <Field label="Datum">
-              <Input type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} />
-            </Field>
-          </div>
-          <div className="flex-1 min-w-[180px]">
-            <Field label="Bezeichnung">
-              <Input placeholder="z.B. Nationalfeiertag" value={newName} onChange={(e) => setNewName(e.target.value)} />
-            </Field>
-          </div>
-          <button
-            type="submit"
-            disabled={createMut.isPending}
-            className={artisBtn.primary}
-            style={{ ...artisPrimaryStyle, opacity: createMut.isPending ? 0.6 : 1 }}
-          >
-            <Plus className="w-4 h-4" /> Hinzufügen
-          </button>
-        </form>
-      </Card>
-
-      <div className="flex items-center justify-between mb-2">
-        <div className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
-          Feiertage {year}
-        </div>
-        <div className="w-28">
-          <Select value={year} onChange={(e) => setYear(Number(e.target.value))}>
-            {yearOptions.map((y) => <option key={y} value={y}>{y}</option>)}
-          </Select>
-        </div>
+      <div className="flex items-center justify-between mb-3">
+        <MonthPicker year={year} month0={month0} onChange={(y, m) => { setYear(y); setMonth0(m); }} />
       </div>
 
       {holidaysQ.isLoading ? (
@@ -357,26 +322,36 @@ function FeiertageSection() {
       ) : holidaysQ.error ? (
         <PanelError error={holidaysQ.error} onRetry={holidaysQ.refetch} />
       ) : (
-        <Card>
-          {(holidaysQ.data ?? []).length === 0 ? (
-            <div className="p-5 text-sm text-zinc-400 text-center">Keine Feiertage für {year} erfasst.</div>
-          ) : (
-            <table className="w-full text-sm">
-              <tbody>
-                {holidaysQ.data.map((h) => (
-                  <tr key={h.id} className="border-b last:border-b-0" style={{ borderColor: '#eef1ee' }}>
-                    <td className="px-3 py-2 w-32 tabular-nums text-zinc-600">{fmt.date(h.date)}</td>
-                    <td className="px-3 py-2">{h.name}</td>
-                    <td className="px-3 py-2 w-10 text-right">
-                      <IconBtn title="Löschen" danger onClick={() => removeMut.mutate(h.id)}>
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </IconBtn>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+        <Card className="p-2">
+          <div className="space-y-1">
+            {days.map((d) => {
+              const existing = holidayByDate.get(d.iso);
+              const isHoliday = !!existing;
+              return (
+                <button
+                  key={d.iso}
+                  type="button"
+                  disabled={toggleMut.isPending}
+                  onClick={() => toggleMut.mutate({ dateIso: d.iso, existing })}
+                  className="w-full flex items-center justify-between px-3 py-1.5 rounded text-sm transition-colors"
+                  style={{
+                    background: isHoliday ? '#fce4e4' : (d.isWeekend ? '#fafbfa' : 'transparent'),
+                    border: `1px solid ${isHoliday ? '#e8b4b4' : 'transparent'}`,
+                  }}
+                >
+                  <span style={{ color: isHoliday ? '#8a2d2d' : '#3d4a3d' }}>
+                    {String(d.dayNum).padStart(2, '0')}.{String(month0 + 1).padStart(2, '0')}. {d.weekday}
+                    {isHoliday && existing.name && existing.name !== 'Feiertag' && (
+                      <span className="ml-2 text-xs text-[#8a2d2d]">{existing.name}</span>
+                    )}
+                  </span>
+                  <span className="text-xs font-semibold tabular-nums" style={{ color: isHoliday ? '#8a2d2d' : '#a0aca0' }}>
+                    {isHoliday ? 'Feiertag · 0h' : '—'}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </Card>
       )}
     </div>
