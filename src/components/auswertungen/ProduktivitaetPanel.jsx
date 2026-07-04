@@ -117,8 +117,9 @@ export default function ProduktivitaetPanel() {
       const row = byEmp.get(e.employee_id);
       if (row) addEntry(row.sums, e);
     }
+    // Nur Personen mit erfassten Stunden zeigen (keine 0.00-Zeilen)
     return [...byEmp.values()]
-      .filter(r => r.emp.active || r.sums.hours.total > 0)
+      .filter(r => r.sums.hours.total > 0)
       .sort((a, b) => a.emp.full_name.localeCompare(b.emp.full_name));
   }, [employees, monthEntries, profilesById, range.fromIso, range.toIso]);
 

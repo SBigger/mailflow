@@ -274,8 +274,9 @@ function MitarbeiterRapport({ range, onExportRef, employees, entries }) {
         row.erloes += h * Number(e.rate_snapshot || 0);
       }
     }
+    // Nur Personen mit erfassten Stunden zeigen (keine 0.00-Zeilen)
     return [...byEmp.values()]
-      .filter(r => r.emp.active || r.ist > 0)
+      .filter(r => r.ist > 0)
       .sort((a, b) => a.emp.full_name.localeCompare(b.emp.full_name));
   }, [employees, entries, profilesById, range.fromIso, range.toIso]);
 
