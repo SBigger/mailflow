@@ -4,8 +4,9 @@
 // einzelnen Buchungen. Interne Projekte erscheinen nicht (keine Verrechnung).
 import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Download, FolderOpen, Clock, Banknote } from 'lucide-react';
-import { fakturaVorschlagData } from '@/lib/leApi';
+import { useNavigate } from 'react-router-dom';
+import { Download, FolderOpen, Clock, Banknote, Receipt } from 'lucide-react';
+import { fakturaVorschlagData, effectiveHours } from '@/lib/leApi';
 import {
   Card, Chip, PanelLoader, PanelError, PanelHeader, fmt,
   artisBtn, artisGhostStyle,
@@ -41,6 +42,16 @@ export default function FakturierungPanel() {
   const [selectedId, setSelectedId] = useState(null);
   const [sortKey, setSortKey] = useState('value');
   const [sortDir, setSortDir] = useState('desc');
+  const navigate = useNavigate();
+
+  // Sprung in den Faktura-Vorschlag: Projekt vorausgewählt, alle offenen
+  // Leistungen geladen (das AA-Total zeigt ja alles Offene).
+  const gotoFaktura = (projId) => {
+    sessionStorage.setItem('le.fakvor.preselectProject', projId);
+    sessionStorage.setItem('le.fakvor.allOpen', '1');
+    sessionStorage.setItem('le.jump', JSON.stringify({ primary: 'abrechnen', secondary: 'fakvor' }));
+    navigate('/Leistungserfassung');
+  };
 
   const entriesQ = useQuery({
     queryKey: ['ausw', 'aa', 'open'],
@@ -69,7 +80,8 @@ export default function FakturierungPanel() {
       }
       row.hours += h;
       if (e.service_type?.billable !== false) {
-        row.value += h * Number(e.rate_snapshot || 0);
+        // Bewertung mit verrechneten (externen) Stunden
+        row.value += effectiveHours(e) * Number(e.rate_snapshot || 0);
       }
     }
     return [...byProj.values()].sort((a, b) => b.value - a.value);
@@ -155,11 +167,12 @@ export default function FakturierungPanel() {
                     <Th k="hours" right>Offene Std</Th>
                     <Th k="value" right>Wert CHF</Th>
                     <Th k="oldest" right>Ältester Eintrag</Th>
+                    <th className="px-3 py-2" />
                   </tr>
                 </thead>
                 <tbody>
                   {rows.length === 0 && (
-                    <tr><td colSpan={6} className="px-3 py-4 text-zinc-400 text-xs">Keine offenen Leistungen. Alles fakturiert.</td></tr>
+                    <tr><td colSpan={7} className="px-3 py-4 text-zinc-400 text-xs">Keine offenen Leistungen. Alles fakturiert.</td></tr>
                   )}
                   {sorted.map((r, i) => {
                     const active = r.proj.id === selectedId;
@@ -189,6 +202,17 @@ export default function FakturierungPanel() {
                         <td className="px-3 py-2 text-right tabular-nums">{fmt.hours(r.hours)}</td>
                         <td className="px-3 py-2 text-right tabular-nums font-semibold">{fmt.chf(r.value)}</td>
                         <td className="px-3 py-2 text-right tabular-nums text-zinc-500">{fmt.date(r.oldest)}</td>
+                        <td className="px-3 py-2 text-right">
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); gotoFaktura(r.proj.id); }}
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded border text-xs font-medium transition-colors hover:bg-white"
+                            style={{ borderColor: '#bfd3bf', color: '#2d5a2d', background: '#eef4ee' }}
+                            title="Zum Faktura-Vorschlag mit diesem Projekt (dort externe Std anpassen, Spesen einbeziehen, dann Entwurf/Rechnung)"
+                          >
+                            <Receipt className="w-3 h-3" /> Fakturieren
+                          </button>
+                        </td>
                       </tr>
                     );
                   })}
@@ -199,7 +223,7 @@ export default function FakturierungPanel() {
                       <td className="px-3 py-2" colSpan={3}>Total</td>
                       <td className="px-3 py-2 text-right tabular-nums">{fmt.hours(totals.hours)}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{fmt.chf(totals.value)}</td>
-                      <td />
+                      <td colSpan={2} />
                     </tr>
                   </tfoot>
                 )}
@@ -221,7 +245,8 @@ export default function FakturierungPanel() {
                       <th className="px-3 py-2 font-semibold">MA</th>
                       <th className="px-3 py-2 font-semibold">Leistungsart</th>
                       <th className="px-3 py-2 font-semibold">Text</th>
-                      <th className="px-3 py-2 font-semibold text-right">Std</th>
+                      <th className="px-3 py-2 font-semibold text-right" title="Ist-Rapport des Mitarbeiters">Std intern</th>
+                      <th className="px-3 py-2 font-semibold text-right" title="Verrechnete Stunden (im Faktura-Vorschlag anpassbar)">Std extern</th>
                       <th className="px-3 py-2 font-semibold text-right">Ansatz</th>
                       <th className="px-3 py-2 font-semibold text-right">Wert CHF</th>
                     </tr>
@@ -233,7 +258,8 @@ export default function FakturierungPanel() {
                       .map((e) => {
                         const kulant = e.status === 'kulant';
                         const billable = e.service_type?.billable !== false;
-                        const val = (kulant || !billable) ? 0 : Number(e.hours_internal || 0) * Number(e.rate_snapshot || 0);
+                        const val = (kulant || !billable) ? 0 : effectiveHours(e) * Number(e.rate_snapshot || 0);
+                        const overridden = e.hours_external != null;
                         return (
                           <tr key={e.id} className="border-b last:border-b-0" style={{ borderColor: '#f0f0ec' }}>
                             <td className="px-3 py-1.5 tabular-nums">{fmt.date(e.entry_date)}</td>
@@ -245,6 +271,9 @@ export default function FakturierungPanel() {
                             </td>
                             <td className="px-3 py-1.5 text-zinc-600 max-w-[360px] truncate" title={e.description || ''}>{e.description || '—'}</td>
                             <td className="px-3 py-1.5 text-right tabular-nums">{fmt.hours(e.hours_internal)}</td>
+                            <td className="px-3 py-1.5 text-right tabular-nums" style={overridden ? { color: '#a87c2e', fontWeight: 600 } : { color: '#a0aca0' }}>
+                              {overridden ? fmt.hours(e.hours_external) : fmt.hours(e.hours_internal)}
+                            </td>
                             <td className="px-3 py-1.5 text-right tabular-nums text-zinc-500">{fmt.chf(e.rate_snapshot)}</td>
                             <td className="px-3 py-1.5 text-right tabular-nums">{val ? fmt.chf(val) : '—'}</td>
                           </tr>

@@ -1089,18 +1089,27 @@ export async function sendInvoiceViaMs365({ to, subject, html, attachmentUrl, at
 // allOpen=true ignoriert Zeitfilter und holt ALLE offenen Leistungen
 //   (status erfasst|freigegeben|kulant ohne invoice_id).
 // Sonst wird auf den Zeitraum eingegrenzt.
+// Verrechnete Stunden eines Eintrags: hours_external übersteuert (falls
+// gesetzt und Migration vorhanden), sonst hours_internal.
+export function effectiveHours(e) {
+  return Number(e?.hours_external ?? e?.hours_internal ?? 0);
+}
+
 export async function fakturaVorschlagData({ fromIso, toIso, allOpen = false } = {}) {
   // Seitenweise laden: Supabase deckelt bei 1000 Zeilen – mit importierten
   // Vortrags-Buchungen liegen offene Leistungen längst darüber.
   const PAGE = 1000;
-  const selectWith = (withInternal) =>
-    `id, entry_date, hours_internal, rate_snapshot, project_id, service_type_id, description, employee_id, status, project:le_project(id, name, project_no, billing_mode${withInternal ? ', is_internal' : ''}, customer_id, customer:customers(id, company_name, street, building_number, zip, city, country, billing_email)), service_type:le_service_type(id, name, billable, default_section), employee:le_employee(id, short_code, full_name)`;
+  // Optionale Spalten mit eigenem Fallback, solange deren Migration fehlt
+  // (is_internal: 20260630130000, hours_external: 20260704210000).
   let withInternal = true;
+  let withExternal = true;
+  const selectWith = () =>
+    `id, entry_date, hours_internal${withExternal ? ', hours_external' : ''}, rate_snapshot, project_id, service_type_id, description, employee_id, status, project:le_project(id, name, project_no, billing_mode${withInternal ? ', is_internal' : ''}, customer_id, customer:customers(id, company_name, street, building_number, zip, city, country, billing_email)), service_type:le_service_type(id, name, billable, default_section), employee:le_employee(id, short_code, full_name)`;
   const all = [];
   for (let offset = 0; ; offset += PAGE) {
     let q = supabase
       .from('le_time_entry')
-      .select(selectWith(withInternal))
+      .select(selectWith())
       .in('status', ['erfasst', 'freigegeben', 'kulant'])
       .is('invoice_id', null)
       .order('entry_date')
@@ -1111,10 +1120,19 @@ export async function fakturaVorschlagData({ fromIso, toIso, allOpen = false } =
       if (toIso) q = q.lte('entry_date', toIso);
     }
     const { data, error } = await q;
-    if (error && withInternal && /is_internal|does not exist|schema cache/i.test(error.message || '')) {
-      withInternal = false;
-      offset -= PAGE; // gleiche Seite ohne is_internal erneut versuchen
-      continue;
+    if (error && /does not exist|schema cache/i.test(error.message || '')) {
+      const msg = error.message || '';
+      if (withExternal && /hours_external/i.test(msg)) {
+        withExternal = false;
+        offset -= PAGE; continue; // gleiche Seite ohne hours_external
+      }
+      if (withInternal && /is_internal/i.test(msg)) {
+        withInternal = false;
+        offset -= PAGE; continue; // gleiche Seite ohne is_internal
+      }
+      // unbekannte Spalte im Fehlertext → beide Fallbacks nacheinander probieren
+      if (withExternal) { withExternal = false; offset -= PAGE; continue; }
+      if (withInternal) { withInternal = false; offset -= PAGE; continue; }
     }
     if (error) throw error;
     all.push(...(data ?? []));
@@ -1132,7 +1150,7 @@ export async function fakturaVorschlagData({ fromIso, toIso, allOpen = false } =
 //                        Werden später auf dem Beiblatt zur Info aufgeführt.
 export async function createInvoiceDraftsFromEntries({
   entries, projectIds, periodFrom, periodTo,
-  direct = false, includeKulant = true,
+  direct = false, includeKulant = true, includeExpenses = false,
 }) {
   const created = [];
   const byProject = new Map();
@@ -1140,6 +1158,24 @@ export async function createInvoiceDraftsFromEntries({
     if (!projectIds.includes(e.project_id)) continue;
     if (!byProject.has(e.project_id)) byProject.set(e.project_id, []);
     byProject.get(e.project_id).push(e);
+  }
+
+  // Weiterverrechenbare, genehmigte, noch nicht abgerechnete Spesen je Projekt
+  // (gleiche Konvention wie SpesenAbrechnenPanel: amount_gross als Positionsbetrag).
+  const expensesByProject = new Map();
+  if (includeExpenses && projectIds.length) {
+    const { data: exps, error: expErr } = await supabase
+      .from('le_expense')
+      .select('id, project_id, expense_date, category, description, amount_gross')
+      .in('project_id', projectIds)
+      .eq('rebillable', true)
+      .eq('status', 'genehmigt')
+      .is('invoiced_invoice_id', null);
+    if (expErr) throw expErr;
+    for (const x of exps ?? []) {
+      if (!expensesByProject.has(x.project_id)) expensesByProject.set(x.project_id, []);
+      expensesByProject.get(x.project_id).push(x);
+    }
   }
 
   // Heute/Fälligkeit (für Direkt-Rechnungen)
@@ -1159,10 +1195,13 @@ export async function createInvoiceDraftsFromEntries({
       e.status !== 'kulant' && e.service_type?.billable !== false
     );
     const kulant = projEntries.filter(e => e.status === 'kulant');
-    if (billable.length === 0 && (!includeKulant || kulant.length === 0)) continue;
+    const projExpenses = expensesByProject.get(projectId) ?? [];
+    if (billable.length === 0 && projExpenses.length === 0 && (!includeKulant || kulant.length === 0)) continue;
 
-    // Subtotal NUR aus billable
-    const subtotal = billable.reduce((s, e) => s + Number(e.hours_internal || 0) * Number(e.rate_snapshot || 0), 0);
+    // Subtotal aus billable (verrechnete = externe Stunden) + Spesen
+    const hoursSubtotal = billable.reduce((s, e) => s + effectiveHours(e) * Number(e.rate_snapshot || 0), 0);
+    const expenseSubtotal = projExpenses.reduce((s, x) => s + Number(x.amount_gross || 0), 0);
+    const subtotal = hoursSubtotal + expenseSubtotal;
     const vatAmount = Math.round(subtotal * vatPct) / 100;
     const total = subtotal + vatAmount;
 
@@ -1190,13 +1229,13 @@ export async function createInvoiceDraftsFromEntries({
       .from('le_invoice').insert(invoicePayload).select().single();
     if (invErr) throw invErr;
 
-    // Aggregiere je service_type eine Linie (nur billable)
+    // Aggregiere je service_type eine Linie (nur billable, externe Stunden)
     const groupedByType = new Map();
     for (const e of billable) {
       const key = e.service_type_id ?? 'none';
       if (!groupedByType.has(key)) groupedByType.set(key, { serviceType: e.service_type, hours: 0, amount: 0, rateSum: 0, count: 0 });
       const g = groupedByType.get(key);
-      const h = Number(e.hours_internal || 0);
+      const h = effectiveHours(e);
       const r = Number(e.rate_snapshot || 0);
       g.hours += h;
       g.amount += h * r;
@@ -1219,9 +1258,31 @@ export async function createInvoiceDraftsFromEntries({
       });
       idx += 10;
     }
+    // Spesen als eigene Positionen hintendran
+    for (const x of projExpenses) {
+      linesPayload.push({
+        invoice_id: inv.id,
+        description: `Spesen: ${x.description ?? x.category ?? ''} (${new Date(x.expense_date + 'T00:00:00').toLocaleDateString('de-CH')})`,
+        hours: 0,
+        rate: 0,
+        amount: Math.round(Number(x.amount_gross || 0) * 100) / 100,
+        sort_order: idx,
+      });
+      idx += 10;
+    }
     if (linesPayload.length) {
       const { error: lineErr } = await supabase.from('le_invoice_line').insert(linesPayload);
       if (lineErr) throw lineErr;
+    }
+    // Spesen als abgerechnet markieren (Storno/Löschen gibt sie via
+    // releaseInvoiceEntries wieder frei)
+    if (projExpenses.length) {
+      const { error: expUpErr } = await supabase
+        .from('le_expense')
+        .update({ status: 'abgerechnet', invoiced_invoice_id: inv.id })
+        .in('id', projExpenses.map(x => x.id))
+        .is('invoiced_invoice_id', null);
+      if (expUpErr) throw expUpErr;
     }
 
     // Time-Entries verknüpfen.

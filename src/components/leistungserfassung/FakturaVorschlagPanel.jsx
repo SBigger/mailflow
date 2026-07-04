@@ -8,7 +8,7 @@ import { toast } from 'sonner';
 import {
   Filter, CheckSquare, Receipt, ChevronDown, ChevronRight, Calendar, Zap,
 } from 'lucide-react';
-import { fakturaVorschlagData, createInvoiceDraftsFromEntries } from '@/lib/leApi';
+import { fakturaVorschlagData, createInvoiceDraftsFromEntries, effectiveHours, leTimeEntry } from '@/lib/leApi';
 import {
   Card, Chip, IconBtn, Input, Field, PanelLoader, PanelError, PanelHeader,
   artisBtn, artisPrimaryStyle, artisGhostStyle, fmt,
@@ -58,14 +58,24 @@ export default function FakturaVorschlagPanel() {
   const [selectedProjectIds, setSelectedProjectIds] = useState(() => new Set());
   const [expandedProjectIds, setExpandedProjectIds] = useState(() => new Set());
 
-  // Cross-Panel: Projekt-Vorauswahl aus Tagesansicht (sessionStorage)
+  // Cross-Panel: Projekt-Vorauswahl aus Tagesansicht / Auswertungen (sessionStorage).
+  // 'le.fakvor.allOpen' schaltet zusätzlich auf "Alle offenen Leistungen" um
+  // (Sprung aus den Angefangenen Arbeiten, die alles Offene zeigen).
   useEffect(() => {
     const id = sessionStorage.getItem('le.fakvor.preselectProject');
+    const wantAllOpen = sessionStorage.getItem('le.fakvor.allOpen') === '1';
+    if (wantAllOpen) {
+      sessionStorage.removeItem('le.fakvor.allOpen');
+      setAllOpen(true);
+      setAppliedRange(r => ({ ...r, allOpen: true }));
+    }
     if (id) {
       sessionStorage.removeItem('le.fakvor.preselectProject');
       setSelectedProjectIds(new Set([id]));
       setExpandedProjectIds(new Set([id]));
-      toast.info('Projekt vorausgewählt – Zeitraum bei Bedarf anpassen');
+      toast.info(wantAllOpen
+        ? 'Projekt vorausgewählt – alle offenen Leistungen geladen'
+        : 'Projekt vorausgewählt – Zeitraum bei Bedarf anpassen');
     }
   }, []);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -98,11 +108,12 @@ export default function FakturaVorschlagPanel() {
       map.get(key).entries.push(e);
     }
     return [...map.values()].map((g) => {
-      // Splitting: billable (erfasst/freigegeben + service.billable) vs. kulant
+      // Splitting: billable (erfasst/freigegeben + service.billable) vs. kulant.
+      // Verrechnet werden die EXTERNEN Stunden (hours_external ?? hours_internal).
       const billable = g.entries.filter((e) => e.status !== 'kulant' && e.service_type?.billable !== false);
       const kulant = g.entries.filter((e) => e.status === 'kulant');
-      const billableHours = billable.reduce((s, e) => s + Number(e.hours_internal || 0), 0);
-      const billableChf = billable.reduce((s, e) => s + Number(e.hours_internal || 0) * Number(e.rate_snapshot || 0), 0);
+      const billableHours = billable.reduce((s, e) => s + effectiveHours(e), 0);
+      const billableChf = billable.reduce((s, e) => s + effectiveHours(e) * Number(e.rate_snapshot || 0), 0);
       const kulantHours = kulant.reduce((s, e) => s + Number(e.hours_internal || 0), 0);
       const kulantChf = kulant.reduce((s, e) => s + Number(e.hours_internal || 0) * Number(e.rate_snapshot || 0), 0);
       const statusSet = new Set(g.entries.map((e) => e.status));
@@ -168,6 +179,7 @@ export default function FakturaVorschlagPanel() {
 
   // --- Mutation: Rechnungen erstellen (Entwurf oder Direkt) ----------------
   const [confirmMode, setConfirmMode] = useState('draft'); // 'draft' | 'direct'
+  const [includeExpenses, setIncludeExpenses] = useState(true);
 
   const createInvoicesMut = useMutation({
     mutationFn: async () => {
@@ -181,6 +193,7 @@ export default function FakturaVorschlagPanel() {
         periodTo: appliedRange.allOpen ? null : appliedRange.toIso,
         direct: confirmMode === 'direct',
         includeKulant: true,
+        includeExpenses,
       });
     },
     onSuccess: (invoices) => {
@@ -444,6 +457,8 @@ export default function FakturaVorschlagPanel() {
           mode={confirmMode}
           summary={selectionSummary}
           loading={createInvoicesMut.isPending}
+          includeExpenses={includeExpenses}
+          onToggleExpenses={setIncludeExpenses}
           onCancel={() => setConfirmOpen(false)}
           onConfirm={() => createInvoicesMut.mutate()}
         />
@@ -454,6 +469,61 @@ export default function FakturaVorschlagPanel() {
 
 // --- Sub-Tabelle: Einträge eines Projekts ----------------------------------
 
+// Editierbare externe (verrechnete) Stunden. Leer = wie intern.
+// Speichert beim Verlassen des Felds bzw. Enter; Wert gleich intern → NULL.
+function ExternHoursInput({ entry }) {
+  const qc = useQueryClient();
+  const [val, setVal] = useState(entry.hours_external ?? '');
+  useEffect(() => { setVal(entry.hours_external ?? ''); }, [entry.id, entry.hours_external]);
+
+  const mut = useMutation({
+    mutationFn: (v) => leTimeEntry.update(entry.id, { hours_external: v }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['le', 'faktura'] }),
+    onError: (e) => {
+      const msg = String(e?.message ?? e);
+      toast.error(/hours_external|schema cache|does not exist/i.test(msg)
+        ? 'Spalte hours_external fehlt – Migration 20260704210000 in Supabase ausführen.'
+        : 'Externe Std nicht gespeichert: ' + msg);
+    },
+  });
+
+  const save = () => {
+    const raw = String(val).replace(',', '.').trim();
+    const num = raw === '' ? null : Number(raw);
+    if (raw !== '' && (!isFinite(num) || num < 0)) {
+      toast.error('Ungültige Stundenzahl');
+      setVal(entry.hours_external ?? '');
+      return;
+    }
+    // Wert gleich intern → NULL speichern (Standard "wie intern")
+    const normalized = (num != null && num === Number(entry.hours_internal || 0)) ? null : num;
+    const currentExt = entry.hours_external == null ? null : Number(entry.hours_external);
+    if (normalized === currentExt) return;
+    mut.mutate(normalized);
+  };
+
+  const overridden = entry.hours_external != null;
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      value={val}
+      placeholder={fmt.hours(entry.hours_internal)}
+      onChange={(e) => setVal(e.target.value)}
+      onBlur={save}
+      onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+      onClick={(e) => e.stopPropagation()}
+      className="w-16 border rounded px-1.5 py-0.5 text-right tabular-nums text-xs"
+      style={{
+        borderColor: overridden ? '#d4a056' : '#d9dfd9',
+        background: overridden ? '#fff8ec' : '#fff',
+        fontWeight: overridden ? 600 : 400,
+      }}
+      title="Verrechnete (externe) Stunden – leer = wie intern"
+    />
+  );
+}
+
 function EntriesSubTable({ entries }) {
   return (
     <div className="px-4 py-3">
@@ -463,7 +533,8 @@ function EntriesSubTable({ entries }) {
             <th className="text-left font-semibold px-2 py-1.5 w-24">Datum</th>
             <th className="text-left font-semibold px-2 py-1.5 w-20">MA</th>
             <th className="text-left font-semibold px-2 py-1.5">Leistungsart</th>
-            <th className="text-right font-semibold px-2 py-1.5 w-16">Std.</th>
+            <th className="text-right font-semibold px-2 py-1.5 w-16" title="Ist-Rapport des Mitarbeiters">Std. intern</th>
+            <th className="text-right font-semibold px-2 py-1.5 w-20" title="Verrechnete Stunden – anpassbar, leer = wie intern">Std. extern</th>
             <th className="text-right font-semibold px-2 py-1.5 w-20">Satz</th>
             <th className="text-right font-semibold px-2 py-1.5 w-24">Wert</th>
             <th className="text-left font-semibold px-2 py-1.5">Beschreibung</th>
@@ -476,7 +547,7 @@ function EntriesSubTable({ entries }) {
             .map((e) => {
               const billable = e.status !== 'kulant' && e.service_type?.billable !== false;
               const isKulant = e.status === 'kulant';
-              const wert = Number(e.hours_internal || 0) * Number(e.rate_snapshot || 0);
+              const wert = effectiveHours(e) * Number(e.rate_snapshot || 0);
               const rowStyle = isKulant
                 ? { borderColor: '#eef1ee', background: '#faf6ff' }
                 : { borderColor: '#eef1ee' };
@@ -492,6 +563,11 @@ function EntriesSubTable({ entries }) {
                     {!isKulant && !billable && <span className="ml-1 text-[10px] text-zinc-400">(nicht abrechenbar)</span>}
                   </td>
                   <td className="px-2 py-1.5 text-right tabular-nums">{fmt.hours(e.hours_internal)}</td>
+                  <td className="px-2 py-1.5 text-right">
+                    {billable
+                      ? <ExternHoursInput entry={e} />
+                      : <span className="text-zinc-300 pr-1.5">—</span>}
+                  </td>
                   <td className="px-2 py-1.5 text-right tabular-nums text-zinc-500">{fmt.chf(e.rate_snapshot)}</td>
                   <td
                     className="px-2 py-1.5 text-right tabular-nums"
@@ -516,7 +592,7 @@ function EntriesSubTable({ entries }) {
 
 // --- Confirmation-Dialog ----------------------------------------------------
 
-function ConfirmDialog({ mode = 'draft', summary, loading, onCancel, onConfirm }) {
+function ConfirmDialog({ mode = 'draft', summary, loading, includeExpenses, onToggleExpenses, onCancel, onConfirm }) {
   const isDirect = mode === 'direct';
   const titleText = isDirect ? 'Direkt-Rechnungen erstellen' : 'Rechnungsentwürfe erstellen';
   const headerStyle = isDirect
@@ -563,10 +639,23 @@ function ConfirmDialog({ mode = 'draft', summary, loading, onCancel, onConfirm }
               </div>
             )}
           </div>
+          <label className="flex items-start gap-2 text-xs cursor-pointer select-none rounded border px-3 py-2" style={{ borderColor: '#eef1ee', background: '#fafbf9' }}>
+            <input
+              type="checkbox"
+              checked={includeExpenses}
+              onChange={(e) => onToggleExpenses?.(e.target.checked)}
+              disabled={loading}
+              style={{ accentColor: '#7a9b7f', marginTop: 2 }}
+            />
+            <span>
+              <b>Weiterverrechenbare Spesen einbeziehen</b><br />
+              <span className="text-zinc-500">Genehmigte, noch nicht abgerechnete Spesen der Projekte werden als eigene Positionen übernommen.</span>
+            </span>
+          </label>
           <p className="text-xs text-zinc-500">
             Verrechnete Einträge → <Chip tone="blue">verrechnet</Chip>
             {summary.kulantHours > 0 && <>, kulante Einträge → <Chip tone="violet">kulant_abgerechnet</Chip></>}.
-            Fortfahren?
+            {!isDirect && <> Rabatt kannst du anschliessend im <b>Entwurfs-Durchgang</b> erfassen.</>} Fortfahren?
           </p>
         </div>
         <div className="px-4 py-3 border-t flex items-center justify-end gap-2" style={{ borderColor: '#e4e7e4' }}>

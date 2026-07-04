@@ -103,11 +103,28 @@ const ComingSoon = ({ title }) => (
   </div>
 );
 
+// Sprungziel aus anderen Seiten (z.B. Auswertungen → «Fakturieren»):
+// sessionStorage 'le.jump' = { primary, secondary } – einmalig beim Öffnen gelesen.
+function readJumpTarget() {
+  try {
+    const j = JSON.parse(sessionStorage.getItem('le.jump') || 'null');
+    sessionStorage.removeItem('le.jump');
+    const nav = NAV.find(n => n.id === j?.primary);
+    if (!nav) return null;
+    return { primary: nav.id, secondary: nav.sec.find(s => s.id === j?.secondary)?.id ?? nav.sec[0].id };
+  } catch {
+    return null;
+  }
+}
+
 export default function Leistungserfassung() {
-  const [primary, setPrimary] = useState('erfassen');
-  const [secondaryMap, setSecondaryMap] = useState(() =>
-    Object.fromEntries(NAV.map(n => [n.id, n.sec[0].id]))
-  );
+  const [jump] = useState(readJumpTarget);
+  const [primary, setPrimary] = useState(jump?.primary ?? 'erfassen');
+  const [secondaryMap, setSecondaryMap] = useState(() => {
+    const map = Object.fromEntries(NAV.map(n => [n.id, n.sec[0].id]));
+    if (jump) map[jump.primary] = jump.secondary;
+    return map;
+  });
 
   // Laschen ein-/ausblenden (persistent, pro Browser). Set aus sec-IDs, die versteckt sind.
   const [hiddenTabs, setHiddenTabs] = useState(() => {
