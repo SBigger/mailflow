@@ -1,7 +1,9 @@
 // ── Apps öffnen: eigenes Fenster wenn möglich ──────────────────────
 // Reihenfolge: Tauri-WebviewWindow (echtes separates Fenster in der
-// Desktop-App) → window.open (neuer Browser-Tab) → gleiches Fenster
-// (Popup-Blocker). Mit Alt-Klick öffnen Aufrufer im gleichen Fenster.
+// Desktop-App) → window.open (neuer Browser-Tab). Das aufrufende
+// Fenster (Hub) bleibt IMMER wo es ist — bei blockiertem Popup gibt es
+// eine Meldung statt Navigation. Alt-Klick öffnet im gleichen Fenster.
+import { toast } from 'sonner';
 import { itemHref, recordAppOpen } from './appCatalog';
 
 export function openApp(item, { sameWindow = false, navigate } = {}) {
@@ -31,10 +33,7 @@ export function openApp(item, { sameWindow = false, navigate } = {}) {
       });
       // Fehlt der Fenster-Berechtigung im Tauri-Build → Browser-Fallback
       if (typeof win.once === 'function') {
-        win.once('tauri://error', () => {
-          const w = window.open(href, '_blank', 'noopener');
-          if (!w) openHere();
-        });
+        win.once('tauri://error', () => openTab(href, item));
       }
       return;
     }
@@ -43,6 +42,15 @@ export function openApp(item, { sameWindow = false, navigate } = {}) {
   }
 
   // 2) Browser: neuer Tab (Session bleibt erhalten)
-  const w = window.open(href, '_blank', 'noopener');
-  if (!w) openHere();
+  openTab(href, item);
+}
+
+// WICHTIG: kein 'noopener'-Feature bei window.open — damit gäbe es IMMER
+// null zurück und ein Erfolg wäre nicht von einem Popup-Blocker
+// unterscheidbar. Und: Das Hub-Fenster wird NIE mitnavigiert.
+function openTab(href, item) {
+  const w = window.open(href, '_blank');
+  if (!w) {
+    toast.error(`«${item.label}» konnte nicht geöffnet werden — bitte Popups für Smartis erlauben.`);
+  }
 }
