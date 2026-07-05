@@ -15,26 +15,24 @@ import {
 } from "@/components/ui/dropdown-menu";
 import DeleteUserDialog from "@/components/settings/DeleteUserDialog";
 
-const ROLES = [
-  { value: 'admin', label: 'Admin', icon: Shield, desc: 'Voller Zugriff + Benutzerverwaltung' },
-  { value: 'user', label: 'Benutzer', icon: UserIcon, desc: 'Mails, Tasks, Kunden' },
-  { value: 'task_user', label: 'Task-Mitarbeiter', icon: CheckSquare, desc: 'Nur Task-Board' },
-];
+// Einheitliches Zugriffsrollen-Modell (getrennt von der Tarifgruppe).
+// Muss zum profiles_role_check-Constraint in der DB passen.
+const ROLE_STYLE = {
+  admin:          { label: 'Administrator',       icon: Shield,      bg: 'rgba(99,102,241,0.15)', fg: '#818cf8', desc: 'Voller Zugriff + Benutzerverwaltung' },
+  mandatsleiter:  { label: 'Mandatsleiter',       icon: Users,       bg: 'rgba(56,132,255,0.15)', fg: '#5b9bff', desc: 'Volle Fachrechte: freigeben, fakturieren, buchen, Stammdaten' },
+  sachbearbeiter: { label: 'Sachbearbeiter',      icon: UserIcon,    bg: 'rgba(113,113,122,0.2)', fg: '#a1a1aa', desc: 'Erfassen & buchen; keine Selbst-Freigabe, keine Stammdaten' },
+  readonly:       { label: 'Nur-Lesen / Revisor', icon: Eye,         bg: 'rgba(180,120,20,0.18)', fg: '#c08a3e', desc: 'Alles lesen, nichts schreiben' },
+  task_user:      { label: 'Task-Mitarbeiter',    icon: CheckSquare, bg: 'rgba(122,155,127,0.15)', fg: '#7a9b7f', desc: 'Nur Task-Board' },
+};
+
+const ROLES = Object.entries(ROLE_STYLE).map(([value, s]) => ({ value, label: s.label, icon: s.icon, desc: s.desc }));
 
 function RoleBadge({ role }) {
-  if (role === 'admin') return (
-    <span className="text-xs px-2 py-1 rounded-md flex items-center gap-1" style={{ backgroundColor: 'rgba(99,102,241,0.15)', color: '#818cf8' }}>
-      <Shield className="h-3 w-3" /> Admin
-    </span>
-  );
-  if (role === 'task_user') return (
-    <span className="text-xs px-2 py-1 rounded-md flex items-center gap-1" style={{ backgroundColor: 'rgba(122,155,127,0.15)', color: '#7a9b7f' }}>
-      <CheckSquare className="h-3 w-3" /> Task-Mitarbeiter
-    </span>
-  );
+  const s = ROLE_STYLE[role] || ROLE_STYLE.sachbearbeiter;
+  const Icon = s.icon;
   return (
-    <span className="text-xs px-2 py-1 rounded-md flex items-center gap-1" style={{ backgroundColor: 'rgba(113,113,122,0.2)', color: '#a1a1aa' }}>
-      <UserIcon className="h-3 w-3" /> Benutzer
+    <span className="text-xs px-2 py-1 rounded-md flex items-center gap-1" style={{ backgroundColor: s.bg, color: s.fg }}>
+      <Icon className="h-3 w-3" /> {s.label}
     </span>
   );
 }
@@ -45,7 +43,7 @@ export default function UserManagement() {
   const isLight = theme === 'light';
 
   const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteRole, setInviteRole] = useState("user");
+  const [inviteRole, setInviteRole] = useState("sachbearbeiter");
   const [inviting, setInviting] = useState(false);
   const [userToDelete, setUserToDelete] = useState(null);
 
@@ -100,13 +98,13 @@ export default function UserManagement() {
     }
   };
 
-  const handleMakeAdmin = async (userId) => {
+  const handleSetRole = async (userId, role) => {
     try {
-      await functions.invoke('makeAdmin', { user_id: userId });
-      toast.success("Rolle auf Admin geändert");
+      await functions.invoke('makeAdmin', { user_id: userId, role });
+      toast.success(`Rolle geändert: ${ROLE_STYLE[role]?.label || role}`);
       queryClient.invalidateQueries({ queryKey: ["allUsers"] });
     } catch (e) {
-      toast.error("Fehler: " + e.message);
+      toast.error("Fehler: " + (e?.message || e));
     }
   };
 
@@ -418,12 +416,22 @@ export default function UserManagement() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
-                          {user.role !== 'admin' && (
-                            <DropdownMenuItem onClick={() => handleMakeAdmin(user.id)} style={{ color: textPrimary }}>
-                              <Shield className="h-4 w-4 mr-2" />
-                              Zum Admin machen
-                            </DropdownMenuItem>
-                          )}
+                          <div className="px-2 py-1.5 text-[11px] uppercase tracking-wide" style={{ color: textSecondary }}>Rolle setzen</div>
+                          {ROLES.map((r) => {
+                            const RIcon = r.icon;
+                            return (
+                              <DropdownMenuItem
+                                key={r.value}
+                                disabled={user.role === r.value}
+                                onClick={() => handleSetRole(user.id, r.value)}
+                                style={{ color: user.role === r.value ? textSecondary : textPrimary }}
+                              >
+                                <RIcon className="h-4 w-4 mr-2" />
+                                {r.label}{user.role === r.value ? ' ✓' : ''}
+                              </DropdownMenuItem>
+                            );
+                          })}
+                          <DropdownMenuSeparator style={{ backgroundColor: cardBorder }} />
                           <DropdownMenuItem
                             onClick={() => { setPwEditUserId(user.id); setPwEditValue(""); setPwShowValue(false); }}
                             style={{ color: textPrimary }}
