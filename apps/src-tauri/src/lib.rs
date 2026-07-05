@@ -351,12 +351,40 @@ async fn excel_upload_server(app: AppHandle) {
 
             let req = String::from_utf8_lossy(&buf[..n]).to_string();
 
+            // Sicherheit: Origin pruefen. Browser koennen den Origin-Header bei
+            // Cross-Origin-Requests nicht faelschen -> eine fremde Webseite (die
+            // ihren Origin mitschickt) wird abgelehnt. Sonst koennte jede besuchte
+            // Seite per fetch beliebige lokale Dateien einlesen lassen.
+            let origin = req.lines()
+                .find(|l| l.to_ascii_lowercase().starts_with("origin:"))
+                .map(|l| l["origin:".len()..].trim().to_string())
+                .unwrap_or_default();
+            let origin_ok = origin.is_empty()
+                || origin == "tauri://localhost"
+                || origin == "https://tauri.localhost"
+                || origin == "https://smartis.me"
+                || origin == "https://artis.sm-artis.ch"
+                || origin.starts_with("http://localhost:")
+                || origin.starts_with("http://127.0.0.1:");
+
             let body_str = if req.starts_with("OPTIONS") {
                 "{\"ok\":true}".to_string()
             } else if let Some(pos) = req.find("\r\n\r\n") {
                 let body = req[pos + 4..].trim_end_matches('\0');
                 if let Ok(json) = serde_json::from_str::<serde_json::Value>(body) {
                     if let Some(filepath) = json["filepath"].as_str() {
+                        // Sicherheit: nur von der eigenen App + nur Excel/CSV lesen
+                        // (verhindert Auslesen beliebiger lokaler Dateien).
+                        let ext_ok = std::path::Path::new(filepath).extension()
+                            .and_then(|e| e.to_str())
+                            .map(|e| matches!(e.to_ascii_lowercase().as_str(),
+                                "xlsx" | "xls" | "xlsm" | "csv"))
+                            .unwrap_or(false);
+                        if !origin_ok {
+                            "{\"error\":\"origin not allowed\"}".to_string()
+                        } else if !ext_ok {
+                            "{\"error\":\"only excel/csv allowed\"}".to_string()
+                        } else {
                         match std::fs::read(filepath) {
                             Ok(bytes) => {
                                 let b64 = BASE64.encode(&bytes);
@@ -380,6 +408,7 @@ async fn excel_upload_server(app: AppHandle) {
                                 "{\"ok\":true}".to_string()
                             },
                             Err(e) => format!("{{\"error\":\"{}\"}}", e),
+                        }
                         }
                     } else { "{\"error\":\"filepath fehlt\"}".to_string() }
                 } else { "{\"error\":\"JSON ungültig\"}".to_string() }
@@ -408,6 +437,7 @@ async fn excel_upload_server(app: AppHandle) {
 // damit defineProperty() findet was es braucht.
 const IFRAME_POLYFILL: &str = r#"
 ;(function(){
+  // __TAURI_INTERNALS__ Polyfill für cross-origin iframes (Power BI etc.)
   try {
     if (typeof window.__TAURI_INTERNALS__ === 'undefined') {
       Object.defineProperty(window, '__TAURI_INTERNALS__', {
@@ -435,6 +465,13 @@ pub fn run() {
 
             // 3. URL parsen
             let url = tauri::Url::parse(&url_string).map_err(|e| e.to_string())?;
+
+            // Navigations-Handler: artis-open:// (Dokument-Checkout) wird vom
+            // Frontend per <a>.click() ausgelöst → das ist eine Navigation, kein
+            // window.open. Wir fangen sie ab und starten den ArtisAgent über den
+            // System-Handler (shell().open → ShellExecute, kein cmd-Parsing →
+            // robust gegen & in der URL). false = Navigation im WebView abbrechen.
+            let nav_handle = app.handle().clone();
             WebviewWindowBuilder::new(app.handle(), "main", WebviewUrl::External(url))
                 .title("Smartis by Artis Treuhand")
                 .inner_size(1400.0, 900.0)
@@ -443,6 +480,14 @@ pub fn run() {
                 .center()
                 .focused(true)
                 .disable_drag_drop_handler()
+                .on_navigation(move |url| {
+                    if url.scheme() == "artis-open" {
+                        use tauri_plugin_shell::ShellExt;
+                        let _ = nav_handle.shell().open(url.as_str(), None);
+                        return false; // Navigation im WebView blockieren
+                    }
+                    true
+                })
                 .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0")
                 .additional_browser_args("--disable-features=TrackingProtection3pcd,TrackingProtectionSettingsPageLaunch,PrivacySandboxSettings4,PartitionedCookies,ThirdPartyStoragePartitioning,BlockThirdPartyCookies,SameSiteByDefaultCookies,CookiesWithoutSameSiteMustBeSecure,msEdgeTrackingProtection,PrivacySandboxAdsAPIs,FedCm --enable-features=SharedArrayBuffer")
                 .initialization_script(IFRAME_POLYFILL)
