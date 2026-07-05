@@ -71,6 +71,10 @@ export default function Chartis() {
     queryKey: ["chartisMentions", me?.id], enabled: !!me?.id, refetchInterval: 12000,
     queryFn: async () => { const { data } = await supabase.from("chartis_mentions").select("thread_id, seen").eq("user_id", me.id); return data || []; },
   });
+  const { data: readState = [] } = useQuery({
+    queryKey: ["chartisReadState", me?.id], enabled: !!me?.id, refetchInterval: 12000,
+    queryFn: async () => { const { data } = await supabase.from("chartis_read_state").select("thread_id, last_read_at").eq("user_id", me.id); return data || []; },
+  });
   const { data: missedCalls = [] } = useQuery({
     queryKey: ["chartisMissedCalls", me?.id], enabled: !!me?.id, refetchInterval: 60000,
     queryFn: async () => {
@@ -125,6 +129,16 @@ export default function Chartis() {
   const unseenMentions = mentions.filter(m => !m.seen).length;
   const tablesMissing = thErr && /relation .*chartis|does not exist|thread_type/i.test(thErr.message || "");
 
+  const lastReadByThread = useMemo(() => Object.fromEntries((readState || []).map(r => [r.thread_id, r.last_read_at])), [readState]);
+  const isUnread = (th) => {
+    if (!th?.last_message_at) return false;
+    if (th.last_message_by && me?.id && th.last_message_by === me.id) return false; // eigene Nachricht ist nie "ungelesen"
+    const lr = lastReadByThread[th.id];
+    return !lr || new Date(th.last_message_at) > new Date(lr);
+  };
+  const unreadDirekt = useMemo(() => myThreads.filter(x => x.thread_type === "direkt" && isUnread(x)).length, [myThreads, lastReadByThread, me]);
+  const unreadGruppen = useMemo(() => myThreads.filter(x => x.thread_type === "gruppe" && isUnread(x)).length, [myThreads, lastReadByThread, me]);
+
   const isKunde = (th) => th.thread_type === "objekt" && !!th.ext_contact_email;
   const teamObjekt = objektThreads.filter(th => !isKunde(th));
   const kundenThreads = objektThreads.filter(isKunde);
@@ -149,6 +163,7 @@ export default function Chartis() {
     return th.subject || (th.thread_type === "gruppe" ? "Gruppe" : "Objekt");
   }
   function preview(th) {
+    if (th.last_message_preview) return th.last_message_preview;
     if (th.thread_type === "direkt") return "Direktnachricht";
     if (th.thread_type === "gruppe") return `Gruppe · ${(th.chartis_participants || []).length} Teilnehmer`;
     return isKunde(th) ? (th.ext_contact_email || "Kunde") : (th.module || "intern");
@@ -316,6 +331,16 @@ export default function Chartis() {
   const displayItems = scope === "todos" ? (groupedTodos || []) : items;
 
   const clearActive = () => { setActiveId(null); setActiveCall(null); setActiveMail(null); setActiveEvent(null); setActiveTask(null); };
+  const openThread = async (id) => {
+    clearActive(); setActiveId(id);
+    // optimistisch als gelesen markieren, damit der Badge sofort verschwindet
+    qc.setQueryData(["chartisReadState", me?.id], (old) => {
+      const now = new Date().toISOString();
+      const arr = Array.isArray(old) ? old.filter(r => r.thread_id !== id) : [];
+      return [...arr, { thread_id: id, last_read_at: now }];
+    });
+    try { await supabase.rpc("chartis_mark_thread_read", { p_thread: id }); } catch { /* read_state ist unkritisch */ }
+  };
   const NavItem = ({ k, icon: Icon, label, count, red }) => (
     <button onClick={() => { clearActive(); setScope(k); }} className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left relative"
       style={{ fontSize: 12, color: scope === k ? t.accent : t.textSecondary, background: scope === k ? t.accentSoft : "transparent", fontWeight: scope === k ? 500 : 400 }}>
@@ -339,8 +364,8 @@ export default function Chartis() {
         <div className="px-2 overflow-y-auto flex-1">
           <NavItem k="tag" icon={LayoutGrid} label="Heute" />
           <div style={{ fontSize: 9, letterSpacing: ".07em", textTransform: "uppercase", color: t.textMuted, padding: "9px 8px 3px" }}>Team · intern</div>
-          <NavItem k="direkt" icon={User} label="Direkt" />
-          <NavItem k="gruppen" icon={Users} label="Gruppen" />
+          <NavItem k="direkt" icon={User} label="Direkt" count={unreadDirekt} />
+          <NavItem k="gruppen" icon={Users} label="Gruppen" count={unreadGruppen} />
           <NavItem k="erwaehnt" icon={AtSign} label="Erwähnt" count={unseenMentions} />
           <div style={{ fontSize: 9, letterSpacing: ".07em", textTransform: "uppercase", color: t.textMuted, padding: "9px 8px 3px" }}>Kunden · extern</div>
           <NavItem k="kunden" icon={Building2} label="Konversationen" count={kundenThreads.length} />
@@ -420,9 +445,9 @@ export default function Chartis() {
           ) : it.type === "task" ? (
             <TaskRow key={"t" + it.k.id} k={it.k} t={t} active={activeTask?.id === it.k.id} onClick={() => { clearActive(); setActiveTask(it.k); }} />
           ) : (
-            <ThreadRow key={it.x.id} th={it.x} t={t} active={activeId === it.x.id} mentioned={mentionIds.has(it.x.id)}
+            <ThreadRow key={it.x.id} th={it.x} t={t} active={activeId === it.x.id} mentioned={mentionIds.has(it.x.id)} unread={isUnread(it.x)}
               title={title(it.x)} preview={preview(it.x)} av={avatarFor(it.x)} kunde={isKunde(it.x)} onlineIds={onlineIds}
-              onClick={() => { clearActive(); setActiveId(it.x.id); }} />
+              onClick={() => openThread(it.x.id)} />
           ))}
         </div>
       </div>
@@ -468,11 +493,12 @@ function fmtTime(ts) {
     return sameDay ? d.toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" }) : d.toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit" }); } catch { return ""; }
 }
 
-function ThreadRow({ th, t, active, mentioned, title, preview, av, kunde, onClick, onlineIds }) {
+function ThreadRow({ th, t, active, mentioned, unread, title, preview, av, kunde, onClick, onlineIds }) {
   const online = !!av.userId && onlineIds?.has(av.userId);
+  const strong = mentioned || unread;
   return (
     <button onClick={onClick} className="w-full flex items-center gap-2.5 px-3 py-2 text-left relative" style={{ borderBottom: `1px solid ${t.borderSubtle}`, background: active ? t.activeRow : "transparent" }}>
-      {mentioned && <span style={{ position: "absolute", left: 0, top: 8, bottom: 8, width: 3, borderRadius: 2, background: t.accentFill }} />}
+      {strong && <span style={{ position: "absolute", left: 0, top: 8, bottom: 8, width: 3, borderRadius: 2, background: t.accentFill }} />}
       <div className="relative flex-shrink-0">
         <div className="rounded-full flex items-center justify-center" style={{ width: 30, height: 30, background: av.bg, color: av.text, fontSize: 11, fontWeight: 600 }}>
           {av.icon ? <av.icon className="h-4 w-4" /> : av.label}
@@ -480,15 +506,19 @@ function ThreadRow({ th, t, active, mentioned, title, preview, av, kunde, onClic
         {online && <span style={{ position: "absolute", right: -1, bottom: -1, width: 9, height: 9, borderRadius: 99, background: SEM.presence.online, border: `1.5px solid ${t.base}` }} />}
       </div>
       <div className="min-w-0 flex-1">
-        <div className="truncate" style={{ fontSize: 12, fontWeight: mentioned ? 700 : 500, color: t.textPrimary }}>{title}</div>
-        <div className="truncate flex items-center gap-1" style={{ fontSize: 11, color: t.textMuted, marginTop: 1 }}>
+        <div className="flex items-center gap-1.5">
+          <div className="truncate flex-1" style={{ fontSize: 12, fontWeight: strong ? 700 : 500, color: t.textPrimary }}>{title}</div>
+          {th.last_message_at && <span style={{ fontSize: 10, color: unread ? t.accent : t.textMuted, flexShrink: 0 }}>{fmtTime(th.last_message_at)}</span>}
+        </div>
+        <div className="truncate flex items-center gap-1" style={{ fontSize: 11, color: unread ? t.textSecondary : t.textMuted, marginTop: 1 }}>
           {kunde
             ? <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 6, background: SEM.externSoft, color: SEM.extern, fontWeight: 500 }}>Kunde</span>
-            : <Lock className="h-2.5 w-2.5" style={{ opacity: 0.6 }} />}
-          <span className="truncate">{preview}</span>
+            : <Lock className="h-2.5 w-2.5" style={{ opacity: 0.6, flexShrink: 0 }} />}
+          <span className="truncate flex-1">{preview}</span>
+          {mentioned ? <AtSign className="h-3.5 w-3.5 flex-shrink-0" style={{ color: t.accent }} />
+            : unread ? <span style={{ width: 8, height: 8, borderRadius: 99, background: t.accentFill, flexShrink: 0 }} /> : null}
         </div>
       </div>
-      {mentioned && <AtSign className="h-3.5 w-3.5 flex-shrink-0" style={{ color: t.accent }} />}
     </button>
   );
 }

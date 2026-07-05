@@ -132,6 +132,14 @@ export default function ChartisPanel({
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages.length]);
 
+  // Faden beim Öffnen (und bei neuer Nachricht während offen) als gelesen markieren
+  useEffect(() => {
+    if (!thread?.id) return;
+    supabase.rpc("chartis_mark_thread_read", { p_thread: thread.id })
+      .then(() => qc.invalidateQueries({ queryKey: ["chartisReadState"] }))
+      .catch(() => { /* read_state ist unkritisch / Migration ggf. noch nicht angewendet */ });
+  }, [thread?.id, messages.length]);
+
   // ── Anhänge ───────────────────────────────────────────────────────────────
   const handleFiles = async (files) => {
     if (!files?.length) return;
