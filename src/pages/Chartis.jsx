@@ -5,7 +5,7 @@ import { entities, supabase, auth } from "@/api/supabaseClient";
 import { ThemeContext } from "@/Layout";
 import ChartisPanel from "@/components/chartis/ChartisPanel";
 import CommandPalette from "@/components/chartis/CommandPalette";
-import { chartisTheme, SEM, AUTHOR, authorKey, initials, isMissed } from "@/lib/chartisTheme";
+import { chartisTheme, SEM, AUTHOR, authorKey, personStyle, initials, isMissed } from "@/lib/chartisTheme";
 import {
   MessageSquare, Plus, Users, User, Lock, AtSign, LayoutGrid, Building2, Clock,
   PhoneOff, Phone, Mail, Calendar, CheckSquare, X, Search, Check, Loader2, Send, Paperclip, Video, Command,
@@ -173,7 +173,7 @@ export default function Chartis() {
     if (th.thread_type === "direkt") {
       const other = (th.chartis_participants || []).map(p => p.user_id).find(uid => uid !== me?.id);
       const u = userById[other];
-      return { label: initials(u?.full_name || u?.email), userId: other, ...AUTHOR[authorKey(u)] };
+      return { label: initials(u?.full_name || u?.email), userId: other, ...personStyle(u) };
     }
     return { label: initials(th.subject), ...AUTHOR.staff };
   }

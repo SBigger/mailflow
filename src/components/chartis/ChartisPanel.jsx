@@ -1,6 +1,7 @@
 import React, { useState, useContext, useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { entities, functions, supabase } from "@/api/supabaseClient";
+import { personStyle } from "@/lib/chartisTheme";
 import { ThemeContext } from "@/Layout";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
@@ -21,15 +22,6 @@ import { toast } from "sonner";
 const EMAIL_ENABLED = !!(typeof window !== "undefined" && window.env?.CHARTIS_DOMAIN);
 const FONT_KEY = "chartis_font_px";
 const ATTACH_BUCKET = "ticket-attachments";
-
-function detectAuthor(user) {
-  const email = (user?.email || "").toLowerCase();
-  const name = (user?.full_name || "").toLowerCase();
-  if (email.includes("claude") || name === "claude") return "claude";
-  if (email.includes("roger") || name.startsWith("roger")) return "roger";
-  if (email.includes("sascha") || name.startsWith("sascha")) return "sascha";
-  return "staff";
-}
 
 async function uploadAttachment(file, threadId) {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
@@ -84,6 +76,10 @@ export default function ChartisPanel({
       if (!error && data) return data;
       return entities.User.list("full_name");
     },
+  });
+  const { data: me } = useQuery({
+    queryKey: ["chartisMe"], staleTime: 300000,
+    queryFn: async () => (await supabase.auth.getUser()).data.user,
   });
 
   const { data: thread, isLoading: threadLoading, error: threadError } = useQuery({
@@ -250,10 +246,13 @@ export default function ChartisPanel({
           messages.map(msg => {
             const sender = users.find(u => u.id === msg.created_by);
             const isIncoming = msg.kind === "email_in";
+            const mine = !isIncoming && me?.id && msg.created_by === me.id;
+            const customerTone = { bg: isArtis ? "#e6ede6" : isLight ? "#ebebf4" : "rgba(63,63,70,0.4)", text: isArtis ? "#2d3a2d" : isLight ? "#1a1a2e" : "#e4e4e7" };
+            const tone = isIncoming ? customerTone : mine ? { bg: accent, text: "#fff" } : personStyle(sender);
             return (
-              <ChartisBubble key={msg.id} text={msg.body_text} kind={msg.kind} side={isIncoming ? "left" : "right"}
+              <ChartisBubble key={msg.id} text={msg.body_text} kind={msg.kind} side={mine ? "right" : "left"}
                 senderLabel={isIncoming ? (msg.from_addr || "Kunde") : (sender?.full_name || sender?.email || "Mitarbeiter")}
-                time={msg.created_at} author={isIncoming ? "customer" : detectAuthor(sender)} theme={theme} fontPx={fontPx} />
+                showLabel={!mine} tone={tone} time={msg.created_at} theme={theme} fontPx={fontPx} />
             );
           })
         )}
@@ -344,19 +343,12 @@ function renderBubbleContent(text) {
   return parts;
 }
 
-function ChartisBubble({ text, kind, side, senderLabel, time, author, theme, fontPx }) {
+function ChartisBubble({ text, kind, side, senderLabel, showLabel = true, tone, time, theme, fontPx }) {
   const isLight = theme === "light";
   const isArtis = theme === "artis";
   const isLeft = side === "left";
-  const palette = {
-    sascha:   { bg: "#dbeafe", text: "#1e3a8a" },
-    claude:   { bg: "#d1fae5", text: "#065f46" },
-    roger:    { bg: "#fef3c7", text: "#78350f" },
-    customer: { bg: isArtis ? "#e6ede6" : isLight ? "#ebebf4" : "rgba(63,63,70,0.4)", text: isArtis ? "#2d3a2d" : isLight ? "#1a1a2e" : "#e4e4e7" },
-    staff:    { bg: isArtis ? "#7a9b7f" : "#6366f1", text: "#ffffff" },
-  };
-  const tone = palette[author] || (isLeft ? palette.customer : palette.staff);
   const textMuted = isArtis ? "#6b826b" : isLight ? "#9090b8" : "#71717a";
+  const timeStr = time ? format(new Date(time), "dd.MM. HH:mm", { locale: de }) : "";
   return (
     <div className={`flex ${isLeft ? "justify-start" : "justify-end"}`}>
       <div className="max-w-[85%]">
@@ -364,7 +356,7 @@ function ChartisBubble({ text, kind, side, senderLabel, time, author, theme, fon
           {kind === "email_in" && <Mail className="inline h-3 w-3 mr-0.5" />}
           {kind === "email_out" && <Mail className="inline h-3 w-3 mr-0.5" />}
           {kind === "intern" && <Lock className="inline h-3 w-3 mr-0.5" />}
-          {senderLabel}{time && ` · ${format(new Date(time), "dd.MM. HH:mm", { locale: de })}`}
+          {showLabel ? `${senderLabel}${timeStr ? " · " : ""}${timeStr}` : timeStr}
         </div>
         <div className="px-3.5 py-2.5 whitespace-pre-wrap break-words"
           style={{ backgroundColor: tone.bg, color: tone.text, fontSize: `${fontPx}px`, borderRadius: isLeft ? "4px 16px 16px 16px" : "16px 4px 16px 16px" }}>
