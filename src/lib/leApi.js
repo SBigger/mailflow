@@ -661,25 +661,10 @@ export async function createCreditFromInvoice(originalInvoiceId, { reason, lines
     creditTotal = Number(orig.total || 0);
   }
 
-  // Neue Gutschriftsnummer aus le_number_sequence (kind='credit')
-  const { data: seq } = await supabase.from('le_number_sequence').select('*').eq('kind', 'credit').single();
-  let creditNo = null;
-  if (seq) {
-    const y = new Date().getFullYear();
-    const resetYearly = !!seq.reset_yearly;
-    const lastYear = seq.last_year ?? y;
-    const newCounter = (resetYearly && lastYear !== y) ? 1 : (seq.current_value + 1);
-    const padded = String(newCounter).padStart(seq.padding_length || 4, '0');
-    creditNo = String(seq.format)
-      .replace('{YYYY}', String(y))
-      .replace('{YY}', String(y).slice(-2))
-      .replace('{MM}', String(new Date().getMonth() + 1).padStart(2, '0'))
-      .replace('{NNNN}', padded);
-    await supabase.from('le_number_sequence').update({
-      current_value: newCounter,
-      last_year: y,
-    }).eq('id', seq.id);
-  }
+  // Neue Gutschriftsnummer ATOMAR aus dem RPC ziehen (FOR UPDATE-Row-Lock im
+  // le_next_credit_no verhindert Doppelnummern bei parallelen Gutschriften).
+  const { data: creditNo, error: noErr } = await supabase.rpc('le_next_credit_no');
+  if (noErr) throw noErr;
 
   const { data: credit, error: credErr } = await supabase.from('le_invoice').insert({
     invoice_no: creditNo,
