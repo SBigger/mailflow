@@ -6,7 +6,7 @@ import { ThemeContext } from "@/Layout";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
 import {
-  X, Send, Mail, Lock, MessageSquare, FileText, Loader2, Type, AlertTriangle, Users, Paperclip,
+  X, Send, Mail, Lock, MessageSquare, FileText, Loader2, Type, AlertTriangle, Users, Paperclip, UserPlus,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -63,6 +63,10 @@ export default function ChartisPanel({
   const [fontPx, setFontPx] = useState(() => Number(localStorage.getItem(FONT_KEY)) || 13);
   const [pending, setPending] = useState([]); // {url, mime, filename}
   const [uploading, setUploading] = useState(false);
+  const [showInvite, setShowInvite] = useState(false);
+  const [extEmail, setExtEmail] = useState("");
+  const [extName, setExtName] = useState("");
+  const [invBusy, setInvBusy] = useState(false);
   const fileRef = useRef(null);
   const endRef = useRef(null);
   const showEmail = !directMode;
@@ -116,6 +120,40 @@ export default function ChartisPanel({
     },
     refetchInterval: 15000,
   });
+
+  const { data: externals = [] } = useQuery({
+    queryKey: ["chartisExternals", thread?.id],
+    enabled: !!thread?.id,
+    queryFn: async () => {
+      const { data, error } = await supabase.from("chartis_thread_externals").select("email, name").eq("thread_id", thread.id).order("added_at");
+      if (error) return []; // Tabelle ggf. noch nicht migriert -> Feature still aus
+      return data || [];
+    },
+  });
+  const hasExternals = externals.length > 0;
+
+  const addExternal = async () => {
+    const email = extEmail.trim().toLowerCase();
+    if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { toast.error("Bitte gültige E-Mail eingeben"); return; }
+    if (!thread?.id) return;
+    setInvBusy(true);
+    try {
+      const { error } = await supabase.from("chartis_thread_externals")
+        .insert({ thread_id: thread.id, email, name: extName.trim() || null, added_by: me?.id });
+      if (error) throw error;
+      setExtEmail(""); setExtName("");
+      qc.invalidateQueries({ queryKey: ["chartisExternals", thread.id] });
+      toast.success(EMAIL_ENABLED ? "Extern eingeladen" : "Extern hinzugefügt (E-Mail-Weg noch nicht aktiv)");
+    } catch (e) { toast.error("Fehler: " + (e?.message || e)); }
+    finally { setInvBusy(false); }
+  };
+  const removeExternal = async (email) => {
+    if (!thread?.id) return;
+    try {
+      await supabase.from("chartis_thread_externals").delete().eq("thread_id", thread.id).eq("email", email);
+      qc.invalidateQueries({ queryKey: ["chartisExternals", thread.id] });
+    } catch (e) { toast.error("Fehler: " + (e?.message || e)); }
+  };
 
   useEffect(() => {
     if (!thread?.id) return;
@@ -178,7 +216,19 @@ export default function ChartisPanel({
           });
           if (hit.length) await supabase.from("chartis_mentions").insert(hit.map(u => ({ message_id: msg.id, thread_id: thread.id, user_id: u.id })));
         }
-        toast.success("Gesendet");
+        // Geteilte Unterhaltung: hat der Faden Externe, geht die Nachricht auch per E-Mail raus
+        if (hasExternals) {
+          if (EMAIL_ENABLED) {
+            try {
+              const { data: fo } = await functions.invoke("chartis-fanout", { thread_id: thread.id, body: markdownToEmailHtml(finalBody) });
+              toast.success(fo?.sent ? `Gesendet · an ${fo.sent} Externe gemailt` : "Gesendet");
+            } catch { toast.success("Gesendet (E-Mail an Externe fehlgeschlagen)"); }
+          } else {
+            toast.success("Gesendet · Externe erhalten es, sobald der Mailweg aktiv ist");
+          }
+        } else {
+          toast.success("Gesendet");
+        }
       }
       setText(""); setPending([]);
       qc.invalidateQueries({ queryKey: ["chartisMessages", thread.id] });
@@ -206,11 +256,18 @@ export default function ChartisPanel({
             <span className="truncate">{headTitle}</span>
             {!titleOverride && module && <span className="text-xs font-normal flex-shrink-0" style={{ color: textMuted }}>· {module}</span>}
           </div>
-          <span className="inline-flex items-center gap-1 flex-shrink-0" style={{ fontSize: 10, fontWeight: 500, padding: "3px 8px", borderRadius: 8,
-            background: (!directMode && mode === "email") ? "#fff3e6" : (isArtis ? "rgba(122,155,127,.16)" : "rgba(99,102,241,.10)"),
-            color: (!directMode && mode === "email") ? "#d97706" : accent }}>
-            {(!directMode && mode === "email") ? <><Mail className="h-3 w-3" />Extern · an Kunde</> : <><Lock className="h-3 w-3" />Intern</>}
-          </span>
+          {(() => {
+            const isExt = (!directMode && mode === "email") || (directMode && hasExternals);
+            return (
+              <span className="inline-flex items-center gap-1 flex-shrink-0" style={{ fontSize: 10, fontWeight: 500, padding: "3px 8px", borderRadius: 8,
+                background: isExt ? "#fff3e6" : (isArtis ? "rgba(122,155,127,.16)" : "rgba(99,102,241,.10)"),
+                color: isExt ? "#d97706" : accent }}>
+                {(!directMode && mode === "email") ? <><Mail className="h-3 w-3" />Extern · an Kunde</>
+                  : (directMode && hasExternals) ? <><Mail className="h-3 w-3" />Geteilt · Extern</>
+                  : <><Lock className="h-3 w-3" />Intern</>}
+              </span>
+            );
+          })()}
           {!embedded && <button onClick={onClose} className="p-1 rounded hover:bg-black/10 flex-shrink-0" style={{ color: textMuted }}><X className="h-4 w-4" /></button>}
         </div>
 
@@ -229,6 +286,47 @@ export default function ChartisPanel({
             className="flex-1 h-1 cursor-pointer" style={{ accentColor: accent }} aria-label="Schriftgrösse" />
           <span className="text-[11px] tabular-nums" style={{ color: textMuted, minWidth: 30 }}>{fontPx}px</span>
         </div>
+
+        {directMode && (
+          <div className="mt-2.5">
+            {hasExternals && (
+              <div className="flex flex-wrap items-center gap-1.5 mb-2">
+                {externals.map(ex => (
+                  <span key={ex.email} className="inline-flex items-center gap-1" title={ex.email}
+                    style={{ fontSize: 11, padding: "2px 4px 2px 7px", borderRadius: 8, background: "#fff3e6", color: "#b45309", border: "1px solid #f0b76a" }}>
+                    <Mail className="h-3 w-3" /> {ex.name || ex.email}
+                    <button onClick={() => removeExternal(ex.email)} title="Entfernen"
+                      style={{ width: 15, height: 15, borderRadius: 99, border: "none", background: "transparent", color: "#b45309", cursor: "pointer", fontSize: 13, lineHeight: "15px", padding: 0 }}>×</button>
+                  </span>
+                ))}
+              </div>
+            )}
+            {showInvite ? (
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <input value={extEmail} onChange={e => setExtEmail(e.target.value)} placeholder="E-Mail" type="email"
+                  onKeyDown={e => { if (e.key === "Enter") addExternal(); }}
+                  className="rounded-md border px-2 py-1 outline-none" style={{ background: inputBg, borderColor: border, color: textMain, fontSize: 12, minWidth: 150 }} />
+                <input value={extName} onChange={e => setExtName(e.target.value)} placeholder="Name (optional)"
+                  onKeyDown={e => { if (e.key === "Enter") addExternal(); }}
+                  className="rounded-md border px-2 py-1 outline-none" style={{ background: inputBg, borderColor: border, color: textMain, fontSize: 12, minWidth: 120 }} />
+                <button onClick={addExternal} disabled={invBusy}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium" style={{ background: accent, color: "#fff", opacity: invBusy ? 0.6 : 1 }}>
+                  {invBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UserPlus className="h-3.5 w-3.5" />} Einladen
+                </button>
+                <button onClick={() => { setShowInvite(false); setExtEmail(""); setExtName(""); }} className="p-1 rounded" style={{ color: textMuted }}><X className="h-3.5 w-3.5" /></button>
+              </div>
+            ) : (
+              <button onClick={() => setShowInvite(true)} className="inline-flex items-center gap-1" style={{ fontSize: 11, color: accent, fontWeight: 500 }}>
+                <UserPlus className="h-3.5 w-3.5" /> Extern einladen
+              </button>
+            )}
+            {hasExternals && (
+              <div className="flex items-start gap-1.5 mt-2" style={{ fontSize: 10, color: "#b45309", background: "#fff7ed", border: "1px solid #fde0c0", borderRadius: 7, padding: "5px 8px" }}>
+                <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" /> Geteilte Unterhaltung — deine Nachrichten gehen auch per E-Mail an die Externen{EMAIL_ENABLED ? "" : " (sobald der Mailweg aktiv ist)"}.
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3" style={{ fontSize: `${fontPx}px` }}
