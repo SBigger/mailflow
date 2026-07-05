@@ -78,7 +78,7 @@ function NavRow({ item, active, collapsed, pal }) {
 }
 
 // ── Gruppen-Überschrift mit Auf-/Zuklappen ─────────────────────────
-function GroupHeader({ label, open, onToggle, pal }) {
+function GroupHeader({ label, open, onToggle, pal, count }) {
   const [hover, setHover] = useState(false);
   return (
     <button
@@ -95,6 +95,12 @@ function GroupHeader({ label, open, onToggle, pal }) {
       }}
     >
       <span style={{ flex: 1 }}>{label}</span>
+      {!open && count > 0 && (
+        <span style={{
+          fontSize: 9.5, fontWeight: 700, letterSpacing: 0,
+          background: pal.hover, borderRadius: 8, padding: '1px 6px',
+        }}>{count}</span>
+      )}
       <ChevronDown style={{
         width: 12, height: 12, flexShrink: 0,
         transform: open ? 'rotate(0deg)' : 'rotate(-90deg)',
@@ -357,6 +363,7 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
                                           open={isGroupOpen(group.id)}
                                           onToggle={() => toggleGroup(group.id)}
                                           pal={pal}
+                                          count={items.length}
                                       />
                                   )}
                                   {(!group.label || isGroupOpen(group.id)) && items.map(item => (
@@ -377,6 +384,7 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
                                           open={isGroupOpen('favoriten')}
                                           onToggle={() => toggleGroup('favoriten')}
                                           pal={{ ...pal, faint: '#c9962e' }}
+                                          count={favApps.length}
                                       />
                                       {isGroupOpen('favoriten') && favApps.map(app => (
                                           <NavRow
