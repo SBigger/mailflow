@@ -117,11 +117,17 @@ export default function FakturaVorschlagPanel() {
       const kulantHours = kulant.reduce((s, e) => s + Number(e.hours_internal || 0), 0);
       const kulantChf = kulant.reduce((s, e) => s + Number(e.hours_internal || 0) * Number(e.rate_snapshot || 0), 0);
       const statusSet = new Set(g.entries.map((e) => e.status));
+      // Pauschal-Projekt: der zu fakturierende Betrag ist der Fixbetrag, NICHT
+      // Stunden × Ansatz. billableChf bleibt als "Aufwand" zum Vergleich erhalten.
+      const isPauschal = g.project?.billing_mode === 'pauschal';
+      const pauschalAmount = Number(g.project?.pauschal_amount || 0);
+      const invoiceChf = isPauschal ? pauschalAmount : billableChf;
       return {
         ...g,
         totalHours: billableHours + kulantHours,
-        totalChf: billableChf,
+        totalChf: invoiceChf,
         billableHours, billableChf,
+        isPauschal, pauschalAmount, invoiceChf,
         kulantHours, kulantChf,
         billableCount: billable.length,
         kulantCount: kulant.length,
@@ -167,12 +173,13 @@ export default function FakturaVorschlagPanel() {
     const entryCount = selected.reduce((s, g) => s + g.entries.length, 0);
     const billableHours = selected.reduce((s, g) => s + g.billableHours, 0);
     const billableChf = selected.reduce((s, g) => s + g.billableChf, 0);
+    const invoiceChf = selected.reduce((s, g) => s + g.invoiceChf, 0);
     const kulantHours = selected.reduce((s, g) => s + g.kulantHours, 0);
     const kulantChf = selected.reduce((s, g) => s + g.kulantChf, 0);
     return {
       projectCount, entryCount,
-      hours: billableHours + kulantHours, chf: billableChf,
-      billableHours, billableChf, kulantHours, kulantChf,
+      hours: billableHours + kulantHours, chf: invoiceChf,
+      billableHours, billableChf, invoiceChf, kulantHours, kulantChf,
       selected,
     };
   }, [grouped, selectedProjectIds]);
@@ -359,7 +366,12 @@ export default function FakturaVorschlagPanel() {
                         <td className="px-3 py-2 text-right tabular-nums">{g.entries.length}</td>
                         <td className="px-3 py-2 text-right tabular-nums">{fmt.hours(g.billableHours)}</td>
                         <td className="px-3 py-2 text-right tabular-nums font-medium" style={{ color: '#2d5a2d' }}>
-                          {fmt.chf(g.billableChf)}
+                          {fmt.chf(g.invoiceChf)}
+                          {g.isPauschal && (
+                            <div className="text-[10px] font-normal text-zinc-400">
+                              Pauschal · Aufwand {fmt.chf(g.billableChf)}
+                            </div>
+                          )}
                         </td>
                         <td className="px-3 py-2 text-right tabular-nums" style={{ color: '#4d2995' }}>
                           {g.kulantCount > 0 ? (
@@ -408,7 +420,7 @@ export default function FakturaVorschlagPanel() {
               <span className="text-zinc-500"> Projekt{selectionSummary.projectCount === 1 ? '' : 'e'} · </span>
               <span className="font-semibold">{fmt.hours(selectionSummary.billableHours)}h</span>
               <span className="text-zinc-300 mx-1">·</span>
-              <span className="font-semibold" style={{ color: '#2d5a2d' }}>CHF {fmt.chf(selectionSummary.billableChf)}</span>
+              <span className="font-semibold" style={{ color: '#2d5a2d' }}>CHF {fmt.chf(selectionSummary.invoiceChf)}</span>
               {selectionSummary.kulantHours > 0 && (
                 <>
                   <span className="text-zinc-300 mx-2">+</span>
