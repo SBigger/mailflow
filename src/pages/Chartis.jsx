@@ -75,6 +75,17 @@ export default function Chartis() {
     queryKey: ["chartisReadState", me?.id], enabled: !!me?.id, refetchInterval: 12000,
     queryFn: async () => { const { data } = await supabase.from("chartis_read_state").select("thread_id, last_read_at").eq("user_id", me.id); return data || []; },
   });
+  const { data: searchRaw = [], isFetching: searching } = useQuery({
+    queryKey: ["chartisSearch", search.trim()], enabled: scope === "suche" && search.trim().length >= 2,
+    queryFn: async () => {
+      const q = search.trim();
+      // RLS begrenzt Treffer automatisch auf sichtbare Fäden (Objekt=Staff, Direkt/Gruppe=Teilnehmer)
+      const { data } = await supabase.from("chartis_messages")
+        .select("id, thread_id, body_text, created_at, kind, chartis_threads!inner(id, thread_type, subject, module, ext_contact_email, updated_at, last_message_at, last_message_preview, chartis_participants(user_id))")
+        .ilike("body_text", `%${q}%`).order("created_at", { ascending: false }).limit(80);
+      return data || [];
+    },
+  });
   const { data: missedCalls = [] } = useQuery({
     queryKey: ["chartisMissedCalls", me?.id], enabled: !!me?.id, refetchInterval: 60000,
     queryFn: async () => {
@@ -155,6 +166,23 @@ export default function Chartis() {
     return [...map.values()].sort((a, b) => new Date(b.last) - new Date(a.last));
   }, [mailItems, custById]);
 
+  const searchResult = useMemo(() => {
+    if (scope !== "suche") return { threads: [], items: [] };
+    const q = search.trim().toLowerCase();
+    if (q.length < 2) return { threads: [], items: [] };
+    const byThread = new Map();
+    for (const m of searchRaw) {
+      const th = m.chartis_threads; if (!th || byThread.has(th.id)) continue;
+      byThread.set(th.id, { x: th, snippet: snippetAround(m.body_text, q) });
+    }
+    for (const th of [...myThreads, ...objektThreads]) {
+      if (byThread.has(th.id)) continue;
+      if ((title(th) + " " + preview(th)).toLowerCase().includes(q)) byThread.set(th.id, { x: th, snippet: th.last_message_preview || "" });
+    }
+    const items = [...byThread.values()].map(v => ({ type: "thread", x: v.x, snippet: v.snippet }));
+    return { threads: items.map(i => i.x), items };
+  }, [scope, search, searchRaw, myThreads, objektThreads, userById]);
+
   function title(th) {
     if (th.thread_type === "direkt") {
       const other = (th.chartis_participants || []).map(p => p.user_id).find(uid => uid !== me?.id);
@@ -184,6 +212,7 @@ export default function Chartis() {
     wartet: { label: "Wartet auf Kunde", icon: Clock }, anrufe: { label: "Entgangene Anrufe", icon: PhoneOff },
     mails: { label: "Mails", icon: Mail },
     kalender: { label: "Kalender", icon: Calendar }, todos: { label: "Todos", icon: CheckSquare },
+    suche: { label: "Suche", icon: Search },
   };
 
   const items = useMemo(() => {
@@ -218,7 +247,7 @@ export default function Chartis() {
     return list;
   }, [scope, seg, search, myThreads, objektThreads, missedCalls, mailThreads, calendarEvents, tasks, mentionIds, me]);
 
-  const activeThread = useMemo(() => [...myThreads, ...objektThreads].find(x => x.id === activeId), [activeId, myThreads, objektThreads]);
+  const activeThread = useMemo(() => [...myThreads, ...objektThreads, ...searchResult.threads].find(x => x.id === activeId), [activeId, myThreads, objektThreads, searchResult]);
 
   const groupedTodos = useMemo(() => {
     if (scope !== "todos") return null;
@@ -322,13 +351,14 @@ export default function Chartis() {
       { id: "s-mails", icon: Mail, label: "Mails", run: () => setScope("mails") },
       { id: "s-kalender", icon: Calendar, label: "Kalender", run: () => setScope("kalender") },
       { id: "s-todos", icon: CheckSquare, label: "Todos", run: () => setScope("todos") },
+      { id: "s-suche", icon: Search, label: "Alle Chats durchsuchen", run: () => { setScope("suche"); setSearch(""); } },
       { id: "neu", icon: Plus, label: "Neuer Chat / Gruppe", run: () => setPicker(true) },
     ];
     const people = users.filter(u => u.id !== me?.id).map(u => ({ id: "u-" + u.id, icon: User, label: "Direkt an " + (u.full_name || u.email), sub: "Chat", run: () => openDirect(u.id) }));
     return [...nav, ...people];
   }, [users, me]);
 
-  const displayItems = scope === "todos" ? (groupedTodos || []) : items;
+  const displayItems = scope === "suche" ? searchResult.items : scope === "todos" ? (groupedTodos || []) : items;
 
   const clearActive = () => { setActiveId(null); setActiveCall(null); setActiveMail(null); setActiveEvent(null); setActiveTask(null); };
   const openThread = async (id) => {
@@ -363,6 +393,7 @@ export default function Chartis() {
         </div>
         <div className="px-2 overflow-y-auto flex-1">
           <NavItem k="tag" icon={LayoutGrid} label="Heute" />
+          <NavItem k="suche" icon={Search} label="Suche" />
           <div style={{ fontSize: 9, letterSpacing: ".07em", textTransform: "uppercase", color: t.textMuted, padding: "9px 8px 3px" }}>Team · intern</div>
           <NavItem k="direkt" icon={User} label="Direkt" count={unreadDirekt} />
           <NavItem k="gruppen" icon={Users} label="Gruppen" count={unreadGruppen} />
@@ -389,7 +420,8 @@ export default function Chartis() {
         <div className="px-3 py-3" style={{ borderBottom: `1px solid ${t.borderSubtle}` }}>
           <div className="flex items-center gap-2 px-2.5 py-2 rounded-lg" style={{ background: t.sunken, border: `1px solid ${t.borderSubtle}` }}>
             <Search className="h-4 w-4" style={{ color: t.textMuted }} />
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder={`${scopeMeta[scope].label} durchsuchen…`} className="flex-1 bg-transparent outline-none" style={{ fontSize: 12, color: t.textPrimary }} />
+            <input value={search} onChange={e => setSearch(e.target.value)} autoFocus={scope === "suche"} placeholder={scope === "suche" ? "Alle Chats & Nachrichten durchsuchen…" : `${scopeMeta[scope].label} durchsuchen…`} className="flex-1 bg-transparent outline-none" style={{ fontSize: 12, color: t.textPrimary }} />
+            {scope === "suche" && searching && <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: t.textMuted }} />}
           </div>
           <div className="flex gap-1.5 mt-2">
             {[["alle", "Alle"], ["mich", "@Mich"]].map(([k, l]) => (
@@ -417,11 +449,19 @@ export default function Chartis() {
           {tablesMissing ? (
             <div className="m-3 text-xs p-3 rounded-lg" style={{ color: "#92400e", background: "#fef3c7" }}>Chartis-Tabellen fehlen. Bitte Migrationen im SQL-Editor ausführen.</div>
           ) : displayItems.length === 0 ? (
-            <div className="text-center py-10 px-4" style={{ color: t.textMuted }}>
-              <Check className="h-8 w-8 mx-auto mb-2" style={{ opacity: 0.3 }} />
-              <div style={{ fontSize: 13, fontWeight: 500 }}>Alles erledigt</div>
-              <div style={{ fontSize: 11 }}>Keine offenen Punkte hier.</div>
-            </div>
+            scope === "suche" ? (
+              <div className="text-center py-10 px-4" style={{ color: t.textMuted }}>
+                <Search className="h-8 w-8 mx-auto mb-2" style={{ opacity: 0.3 }} />
+                <div style={{ fontSize: 13, fontWeight: 500 }}>{search.trim().length < 2 ? "Alle Chats durchsuchen" : "Keine Treffer"}</div>
+                <div style={{ fontSize: 11 }}>{search.trim().length < 2 ? "Tippe mind. 2 Zeichen – sucht in Nachrichten & Titeln." : `Nichts gefunden für „${search.trim()}".`}</div>
+              </div>
+            ) : (
+              <div className="text-center py-10 px-4" style={{ color: t.textMuted }}>
+                <Check className="h-8 w-8 mx-auto mb-2" style={{ opacity: 0.3 }} />
+                <div style={{ fontSize: 13, fontWeight: 500 }}>Alles erledigt</div>
+                <div style={{ fontSize: 11 }}>Keine offenen Punkte hier.</div>
+              </div>
+            )
           ) : displayItems.map((it, i) => it.type === "header" ? (
             <div key={"h" + i} style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 12px 3px", fontSize: 10, fontWeight: 700, letterSpacing: ".07em", textTransform: "uppercase", color: t.textMuted, borderTop: i > 0 ? `1px solid ${t.borderSubtle}` : "none" }}>
               {it.color && <span style={{ width: 7, height: 7, borderRadius: 99, background: it.color, flexShrink: 0 }} />}
@@ -445,8 +485,8 @@ export default function Chartis() {
           ) : it.type === "task" ? (
             <TaskRow key={"t" + it.k.id} k={it.k} t={t} active={activeTask?.id === it.k.id} onClick={() => { clearActive(); setActiveTask(it.k); }} />
           ) : (
-            <ThreadRow key={it.x.id} th={it.x} t={t} active={activeId === it.x.id} mentioned={mentionIds.has(it.x.id)} unread={isUnread(it.x)}
-              title={title(it.x)} preview={preview(it.x)} av={avatarFor(it.x)} kunde={isKunde(it.x)} onlineIds={onlineIds}
+            <ThreadRow key={it.x.id} th={it.x} t={t} active={activeId === it.x.id} mentioned={mentionIds.has(it.x.id)} unread={scope !== "suche" && isUnread(it.x)}
+              title={title(it.x)} preview={it.snippet || preview(it.x)} av={avatarFor(it.x)} kunde={isKunde(it.x)} onlineIds={onlineIds}
               onClick={() => openThread(it.x.id)} />
           ))}
         </div>
@@ -549,6 +589,13 @@ function Field({ t, label, value }) {
 }
 
 function normSubject(s) { return String(s || "").replace(/^((re|aw|wg|fwd|fw|antw)\s*:\s*)+/gi, "").trim().toLowerCase(); }
+function snippetAround(text, q) {
+  const s = String(text || "").replace(/!\[[^\]]*\]\([^)]*\)/g, "[Bild]").replace(/\s+/g, " ").trim();
+  const i = q ? s.toLowerCase().indexOf(q) : -1;
+  if (i < 0) return s.slice(0, 120);
+  const start = Math.max(0, i - 40);
+  return (start > 0 ? "…" : "") + s.slice(start, i + 80) + (s.length > i + 80 ? "…" : "");
+}
 function stripHtml(s) { return String(s || "").replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "").replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/\s+/g, " ").trim(); }
 
 function MailRow({ m, t, active, onClick }) {
