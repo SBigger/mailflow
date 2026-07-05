@@ -239,7 +239,10 @@ export default function MeineRapportePanel() {
   const loading = projectsQ.isLoading || serviceTypesQ.isLoading || entriesQ.isLoading;
 
   // --- Handlers ------------------------------------------------------------
-  const selectableEntries = entries.filter((e) => e.status !== 'verrechnet' && e.status !== 'storniert');
+  // Kulant-Eintraege (Goodwill, sollen NICHT verrechnet werden) und bereits
+  // verrechnete/stornierte aus der Sammel-Freigabe ausschliessen.
+  const NON_SELECTABLE = new Set(['verrechnet', 'storniert', 'kulant', 'kulant_abgerechnet']);
+  const selectableEntries = entries.filter((e) => !NON_SELECTABLE.has(e.status));
   const allSelectable = selectableEntries.length > 0 && selectableEntries.every((e) => selectedIds.has(e.id));
 
   const toggleAll = () => {

@@ -22,10 +22,12 @@ const currentYear = new Date().getFullYear();
 // Default: 30. Juni des aktuellen Jahres (typische Steuerfrist)
 function getDefaultTargetDate() {
   const d = new Date();
-  // Wenn wir schon nach dem 30.06 sind → nächstes Jahr
+  // Wenn wir schon nach dem 30.06 sind → nächstes Jahr.
+  // Datum als String bauen (NICHT via toISOString — das schiebt lokale Mitternacht
+  // CEST auf den UTC-Vortag, also 29.06. statt 30.06.).
   const candidate = new Date(d.getFullYear(), 5, 30); // 30. Juni
-  if (d > candidate) candidate.setFullYear(d.getFullYear() + 1);
-  return candidate.toISOString().split("T")[0]; // YYYY-MM-DD
+  const year = d > candidate ? d.getFullYear() + 1 : d.getFullYear();
+  return `${year}-06-30`;
 }
 
 const STATUS_COLOR = {

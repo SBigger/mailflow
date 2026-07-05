@@ -301,16 +301,16 @@ export default function BriefSchreiben() {
       );
       if (upErr) throw new Error(upErr.message);
 
-      const tagList = ablageTags.split(",").map(t => t.trim()).filter(Boolean);
-      await supabase.from("dokumente").insert({
+      const { error: insErr } = await supabase.from("dokumente").insert({
         customer_id:  customerId || null,
+        name:         `Brief_${safeName}.pdf`,      // NOT NULL in dokumente
         filename:     `Brief_${safeName}.pdf`,
         storage_path: storagePath,
         category:     "Korrespondenz",
         year:         String(year),
-        tags:         tagList,
-        notizen:      `Erstellt via Briefe schreiben`,
+        notes:        "Erstellt via Briefe schreiben",  // Spalte heisst notes, nicht notizen
       });
+      if (insErr) throw new Error(insErr.message);   // sonst stiller Datenverlust trotz Erfolgsmeldung
 
       toast.success("Brief in Dateiablage gespeichert");
     } catch (e) {

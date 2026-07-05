@@ -142,9 +142,11 @@ export default function RechnungsuebersichtPanel() {
   });
 
   const removeMut = useMutation({
-    mutationFn: (id) => leInvoice.remove(id),
+    // deleteDraft gibt zuerst die verknuepften Rapporte/Spesen wieder frei
+    // (releaseInvoiceEntries) statt hart zu loeschen und sie gesperrt zu lassen.
+    mutationFn: (id) => leInvoice.deleteDraft(id),
     onSuccess: () => {
-      toast.success('Entwurf gelöscht');
+      toast.success('Entwurf gelöscht – Rapporte/Spesen wieder freigegeben');
       invalidate();
     },
     onError: (e) => toast.error('Fehler: ' + (e?.message ?? e)),

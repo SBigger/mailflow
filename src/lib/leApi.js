@@ -1354,7 +1354,14 @@ export async function createInvoiceDraftsFromEntries({
       if (kErr) throw kErr;
     }
 
-    created.push(inv);
+    // Direkt-Rechnung: finalisieren, damit fortlaufende Nummer + QR-Referenz gesetzt
+    // werden (MWST verlangt eine Rechnungsnummer; ohne qr_reference kein gueltiger Zahlteil).
+    if (direct) {
+      const finalized = await leInvoice.finalize(inv.id);
+      created.push(finalized ?? inv);
+    } else {
+      created.push(inv);
+    }
   }
   return created;
 }
