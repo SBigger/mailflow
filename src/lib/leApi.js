@@ -1337,11 +1337,12 @@ export async function createInvoiceDraftsFromEntries({
     }
 
     // Time-Entries verknüpfen.
-    // - billable / nicht-billable (aber nicht kulant) → 'verrechnet'
+    // - NUR wirklich abrechenbare Einträge → 'verrechnet' (an die Rechnung gebunden)
     // - kulant (wenn includeKulant) → 'kulant_abgerechnet'
-    const billableIds = projEntries
-      .filter(e => e.status !== 'kulant')
-      .map(e => e.id);
+    // - pauschale / nicht-abrechenbare (service.billable === false) werden NICHT
+    //   verbucht/verrechnet: reine interne Zeiterfassung, kein Rechnungsposten,
+    //   keine Fibu-Buchung. Sie bleiben unverändert.
+    const billableIds = billable.map(e => e.id);
     if (billableIds.length) {
       // .is('invoice_id', null): nur noch nicht verrechnete Einträge beanspruchen –
       // verhindert Doppelverrechnung, falls ein paralleler Durchlauf sie schon nahm.
