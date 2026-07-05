@@ -643,7 +643,15 @@ export async function createCreditFromInvoice(originalInvoiceId, { reason, lines
   let creditSubtotal, creditVat, creditTotal, srcLines;
   if (isPartial) {
     srcLines = lines;
-    creditSubtotal = lines.reduce((s, l) => s + Number(l.amount || 0), 0);
+    const rawSum = lines.reduce((s, l) => s + Number(l.amount || 0), 0);
+    // Effektiven Rabatt der Originalrechnung auf die gewaehlten Positionen anwenden,
+    // sonst wird der Rabattanteil zu viel gutgeschrieben.
+    const origSubtotal = Number(orig.subtotal || 0);
+    let discountedSubtotal = origSubtotal;
+    if (Number(orig.discount_pct))        discountedSubtotal = origSubtotal * (1 - Number(orig.discount_pct) / 100);
+    else if (Number(orig.discount_amount)) discountedSubtotal = origSubtotal - Number(orig.discount_amount);
+    const factor = origSubtotal > 0 ? discountedSubtotal / origSubtotal : 1;
+    creditSubtotal = Math.round(rawSum * factor * 100) / 100;
     creditVat = Math.round(creditSubtotal * vatPct) / 100;
     creditTotal = creditSubtotal + creditVat;
   } else {
