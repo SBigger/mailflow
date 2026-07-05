@@ -67,8 +67,11 @@ export default function ChartisPanel({
   const [extEmail, setExtEmail] = useState("");
   const [extName, setExtName] = useState("");
   const [invBusy, setInvBusy] = useState(false);
+  const [typingUsers, setTypingUsers] = useState({}); // userId -> {name, at}
   const fileRef = useRef(null);
   const endRef = useRef(null);
+  const channelRef = useRef(null);
+  const lastTypingSent = useRef(0);
   const showEmail = !directMode;
 
   useEffect(() => { localStorage.setItem(FONT_KEY, String(fontPx)); }, [fontPx]);
@@ -132,6 +135,18 @@ export default function ChartisPanel({
   });
   const hasExternals = externals.length > 0;
 
+  // Lesebestätigung: Read-State aller Teilnehmer des Fadens (braucht RLS-Policy chartis_read_state_thread)
+  const { data: threadReads = [] } = useQuery({
+    queryKey: ["chartisThreadReads", thread?.id],
+    enabled: !!thread?.id,
+    refetchInterval: 15000,
+    queryFn: async () => {
+      const { data, error } = await supabase.from("chartis_read_state").select("user_id, last_read_at").eq("thread_id", thread.id);
+      if (error) return [];
+      return data || [];
+    },
+  });
+
   const addExternal = async () => {
     const email = extEmail.trim().toLowerCase();
     if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { toast.error("Bitte gültige E-Mail eingeben"); return; }
@@ -157,12 +172,43 @@ export default function ChartisPanel({
 
   useEffect(() => {
     if (!thread?.id) return;
-    const ch = supabase.channel(`chartis-${thread.id}`)
+    const ch = supabase.channel(`chartis-${thread.id}`, { config: { broadcast: { self: false } } })
       .on("postgres_changes", { event: "*", schema: "public", table: "chartis_messages", filter: `thread_id=eq.${thread.id}` },
-        () => qc.invalidateQueries({ queryKey: ["chartisMessages", thread.id] }))
+        () => { qc.invalidateQueries({ queryKey: ["chartisMessages", thread.id] }); qc.invalidateQueries({ queryKey: ["chartisThreadReads", thread.id] }); })
+      .on("broadcast", { event: "typing" }, ({ payload }) => {
+        if (!payload?.userId) return;
+        setTypingUsers(prev => ({ ...prev, [payload.userId]: { name: payload.name, at: Date.now() } }));
+      })
       .subscribe();
-    return () => supabase.removeChannel(ch);
+    channelRef.current = ch;
+    return () => { channelRef.current = null; supabase.removeChannel(ch); };
   }, [thread?.id]);
+
+  // Abgelaufene Tipp-Anzeigen (>4s ohne neues Signal) wegräumen
+  useEffect(() => {
+    const iv = setInterval(() => {
+      setTypingUsers(prev => {
+        const now = Date.now(); let changed = false; const next = {};
+        for (const [id, v] of Object.entries(prev)) { if (now - v.at < 4000) next[id] = v; else changed = true; }
+        return changed ? next : prev;
+      });
+    }, 1500);
+    return () => clearInterval(iv);
+  }, []);
+
+  const broadcastTyping = () => {
+    const now = Date.now();
+    if (now - lastTypingSent.current < 1800 || !channelRef.current || !me) return; // gedrosselt
+    lastTypingSent.current = now;
+    channelRef.current.send({ type: "broadcast", event: "typing", payload: { userId: me.id, name: me.user_metadata?.full_name || me.email || "Jemand" } });
+  };
+  const typingLabel = (() => {
+    const names = Object.entries(typingUsers).filter(([id]) => id !== me?.id).map(([, v]) => (v.name || "Jemand").split(" ")[0]);
+    if (!names.length) return null;
+    if (names.length === 1) return `${names[0]} tippt…`;
+    if (names.length === 2) return `${names[0]} und ${names[1]} tippen…`;
+    return `${names.length} tippen…`;
+  })();
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages.length]);
 
@@ -354,6 +400,20 @@ export default function ChartisPanel({
             );
           })
         )}
+        {(() => {
+          const myLast = [...messages].reverse().find(m => m.kind !== "email_in" && me?.id && m.created_by === me.id);
+          if (!myLast) return null;
+          const readers = threadReads
+            .filter(r => r.user_id !== me?.id && r.last_read_at && new Date(r.last_read_at) >= new Date(myLast.created_at))
+            .map(r => { const u = users.find(x => x.id === r.user_id); return (u?.full_name || u?.email || "").split(" ")[0]; })
+            .filter(Boolean);
+          if (!readers.length) return null;
+          const label = readers.length <= 3 ? `Gelesen von ${readers.join(", ")}` : `Gelesen von ${readers.length}`;
+          return <div className="flex justify-end"><span style={{ fontSize: 10, color: textMuted }}>✓✓ {label}</span></div>;
+        })()}
+        {typingLabel && (
+          <div className="flex justify-start"><span style={{ fontSize: 11, color: textMuted, fontStyle: "italic" }}>{typingLabel}</span></div>
+        )}
         <div ref={endRef} />
       </div>
 
@@ -382,7 +442,7 @@ export default function ChartisPanel({
         <textarea className="w-full rounded-lg border p-2.5 resize-none outline-none"
           style={{ backgroundColor: inputBg, borderColor: border, color: textMain, height: 80, fontSize: `${Math.max(12, fontPx)}px` }}
           placeholder={mode === "email" ? "E-Mail an den Kunden… (Bild via Strg+V)" : "Nachricht… (@Name, Bild via Strg+V oder reinziehen)"}
-          value={text} onChange={e => setText(e.target.value)} onPaste={handlePaste} onDrop={handleDrop} onDragOver={e => e.preventDefault()}
+          value={text} onChange={e => { setText(e.target.value); broadcastTyping(); }} onPaste={handlePaste} onDrop={handleDrop} onDragOver={e => e.preventDefault()}
           onKeyDown={e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) handleSend(); }} />
         <input ref={fileRef} type="file" multiple style={{ display: "none" }}
           accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv"
