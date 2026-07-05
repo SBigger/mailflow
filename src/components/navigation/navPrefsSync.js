@@ -31,6 +31,7 @@ export function hydrateNavPrefs(profile) {
     if (Array.isArray(remote.favorites)) localStorage.setItem('app_favorites', JSON.stringify(remote.favorites));
     if (remote.groups && typeof remote.groups === 'object') localStorage.setItem('nav_groups_open', JSON.stringify(remote.groups));
     if (remote.mode === 'rail' || remote.mode === 'wide') localStorage.setItem('nav_mode', remote.mode);
+    if (remote.layout === 'hub' || remote.layout === 'sidebar') localStorage.setItem('nav_layout', remote.layout);
     localStorage.setItem(TS_KEY, String(remoteTs));
   } catch {
     return false;
@@ -57,6 +58,7 @@ export function scheduleNavPrefsSave() {
           favorites: readJson('app_favorites', []),
           groups: readJson('nav_groups_open', {}),
           mode: localStorage.getItem('nav_mode') || 'wide',
+          layout: localStorage.getItem('nav_layout') || 'sidebar',
         },
       });
     } catch {

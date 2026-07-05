@@ -22,7 +22,11 @@ import { useAuth } from '@/lib/AuthContext';
 import * as packageJson from "../package.json";
 
 // Theme context for global access if needed elsewhere
-export const ThemeContext = createContext({ theme: 'dark', setTheme: () => {} });
+// navLayout: 'sidebar' (Standard, Seitenleiste) oder 'hub' (Start-Hub ohne Seitenleiste)
+export const ThemeContext = createContext({
+  theme: 'dark', setTheme: () => {},
+  navLayout: 'sidebar', setNavLayout: () => {},
+});
 
 // ── Einzelner Navigations-Eintrag ──────────────────────────────────
 function NavRow({ item, active, collapsed, pal }) {
@@ -135,6 +139,16 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
     localStorage.setItem("app_theme", newTheme);
   }, []);
 
+  // --- Navigations-Art: Seitenleiste (Standard) oder Start-Hub ohne Seitenleiste ---
+  const [navLayout, setNavLayoutState] = useState(() =>
+    localStorage.getItem("nav_layout") === "hub" ? "hub" : "sidebar"
+  );
+  const setNavLayout = useCallback((layout) => {
+    setNavLayoutState(layout);
+    localStorage.setItem("nav_layout", layout);
+    scheduleNavPrefsSave();
+  }, []);
+
   // --- Sidebar-Modus: breit (Labels + Gruppen) oder schmale Icon-Leiste ---
   const [railMode, setRailMode] = useState(() => localStorage.getItem("nav_mode") === "rail");
   const toggleRailMode = () => {
@@ -173,6 +187,7 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
         setOpenGroups({});
       }
       setRailMode(localStorage.getItem("nav_mode") === "rail");
+      setNavLayoutState(localStorage.getItem("nav_layout") === "hub" ? "hub" : "sidebar");
     }
   }, [profile]);
 
@@ -189,6 +204,20 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
   }, [profile, loading, currentPageName, navigate, setTheme]);
 
   const isTaskUser = profile?.role === 'task_user';
+
+  // Start-Hub aktiv? (nur Desktop, nicht für Task-User)
+  const hubMode = navLayout === 'hub' && !isTaskUser && !isMobile;
+
+  // Hub-Modus: beim App-Start auf dem Hub landen statt auf dem Dashboard
+  const hubStartDone = useRef(false);
+  useEffect(() => {
+    if (hubStartDone.current || loading) return;
+    hubStartDone.current = true;
+    if (hubMode && (location.pathname === '/' || location.pathname === '/Dashboard')) {
+      navigate('/Hub', { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
 
   // --- Launcher-Hotkey: Ctrl/Cmd+K von überall ---
   useEffect(() => {
@@ -255,11 +284,36 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
   if (loading) return <div className="h-screen w-screen flex items-center justify-center" style={{ backgroundColor: pageBg }}>...</div>;
 
   return (
-      <ThemeContext.Provider value={{ theme, setTheme }}>
+      <ThemeContext.Provider value={{ theme, setTheme, navLayout, setNavLayout }}>
         <div className="flex h-screen overflow-hidden" style={{ backgroundColor: pageBg }}>
 
+          {/* Start-Hub-Modus: schwebender Zurück-zum-Hub-Button statt Seitenleiste */}
+          {hubMode && location.pathname !== '/Hub' && (
+              <Link
+                  to="/Hub"
+                  title="Zurück zum Start-Hub"
+                  style={{
+                    position: 'fixed', top: 12, left: 12, zIndex: 45,
+                    display: 'flex', alignItems: 'center', gap: 7,
+                    padding: '6px 12px 6px 7px', borderRadius: 12, textDecoration: 'none',
+                    background: isLight || isArtis ? 'rgba(255,255,255,.85)' : 'rgba(30,36,32,.85)',
+                    border: `1px solid ${sidebarBorder}`,
+                    boxShadow: '0 6px 20px rgba(20,30,24,.18)',
+                    backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)',
+                    color: pal.text, fontSize: 12.5, fontWeight: 700,
+                  }}
+              >
+                <span style={{
+                  width: 22, height: 22, borderRadius: 7, background: pal.active, color: '#fff',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 11, fontWeight: 800,
+                }}>S</span>
+                Hub
+              </Link>
+          )}
+
           {/* Sidebar - Desktop Only & Not for Task Users */}
-          {!isTaskUser && !isMobile && (
+          {!isTaskUser && !isMobile && !hubMode && (
               <aside
                   className="flex-shrink-0 flex flex-col border-r transition-all duration-200"
                   style={{ width: railMode ? 56 : 232, backgroundColor: sidebarBg, borderColor: sidebarBorder }}
@@ -491,7 +545,7 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
           </main>
 
           {/* Favoriten-Dock rechts (Apps anpinnen via Stern im Launcher) */}
-          {!isTaskUser && !isMobile && (
+          {!isTaskUser && !isMobile && !hubMode && (
               <FavoritesDock
                   profile={profile}
                   sidebarBg={sidebarBg}

@@ -41,7 +41,7 @@ import 'react-quill-new/dist/quill.snow.css';
 
 export default function Settings() {
     const queryClient = useQueryClient();
-    const {theme, setTheme} = useContext(ThemeContext);
+    const {theme, setTheme, navLayout, setNavLayout} = useContext(ThemeContext);
     const [activeTab, setActiveTab] = useState('signature');
     const [emailSignature, setEmailSignature] = useState('');
     const [chatSignature, setChatSignature] = useState('');
@@ -2403,6 +2403,54 @@ export default function Settings() {
                                     </div>
                                 </button>
 
+                            </div>
+                        </div>
+
+                        {/* ── Navigation: Seitenleiste oder Start-Hub ── */}
+                        <div className="rounded-xl p-6 border"
+                             style={{backgroundColor: cardBg, borderColor: cardBorder}}>
+                            <h3 className="text-lg font-semibold mb-1 flex items-center gap-2"
+                                style={{color: headingColor}}>
+                                🧭 Navigation
+                            </h3>
+                            <p className="text-sm mb-6" style={{color: textMuted}}>
+                                Wie möchtest du deine Apps öffnen? Beide Varianten haben Ctrl+K-Suche und Favoriten.
+                            </p>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 max-w-2xl">
+                                <button
+                                    onClick={() => setNavLayout('sidebar')}
+                                    className="text-left rounded-2xl border-2 p-4 transition-all duration-200 hover:scale-[1.01]"
+                                    style={{
+                                        borderColor: navLayout !== 'hub' ? '#7a9b7f' : cardBorder,
+                                        boxShadow: navLayout !== 'hub' ? '0 0 0 3px rgba(122,155,127,0.22)' : 'none',
+                                        backgroundColor: rowBg,
+                                    }}
+                                >
+                                    <div className="font-semibold text-sm mb-1" style={{color: headingColor}}>
+                                        Seitenleiste <span className="text-xs font-normal" style={{color: textMuted}}>(Standard)</span>
+                                    </div>
+                                    <p className="text-xs" style={{color: textMuted}}>
+                                        Alle Apps links in Gruppen, Favoriten-Block und Favoriten-Dock rechts.
+                                        Apps öffnen im gleichen Fenster.
+                                    </p>
+                                </button>
+                                <button
+                                    onClick={() => setNavLayout('hub')}
+                                    className="text-left rounded-2xl border-2 p-4 transition-all duration-200 hover:scale-[1.01]"
+                                    style={{
+                                        borderColor: navLayout === 'hub' ? '#7a9b7f' : cardBorder,
+                                        boxShadow: navLayout === 'hub' ? '0 0 0 3px rgba(122,155,127,0.22)' : 'none',
+                                        backgroundColor: rowBg,
+                                    }}
+                                >
+                                    <div className="font-semibold text-sm mb-1" style={{color: headingColor}}>
+                                        Start-Hub <span className="text-xs font-normal" style={{color: textMuted}}>(neu)</span>
+                                    </div>
+                                    <p className="text-xs" style={{color: textMuted}}>
+                                        Keine Seitenleiste: Startseite mit Suche, Favoriten und allen Apps als Kacheln.
+                                        Apps öffnen in eigenen Fenstern — mehrere gleichzeitig möglich.
+                                    </p>
+                                </button>
                             </div>
                         </div>
                     </div>
