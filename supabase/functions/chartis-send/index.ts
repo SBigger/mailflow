@@ -60,19 +60,10 @@ serve(async (req) => {
       ? `${prev.references_h ? prev.references_h + ' ' : ''}${prev.message_id}`.trim()
       : null
 
-    // ── Versand ────────────────────────────────────────────────────────────
-    const sent = await postmarkSend({
-      to: thread.ext_contact_email,
-      subject: thread.subject,
-      htmlBody,
-      textBody: htmlToText(String(body)) + (sig ? '\n\n' + sig.replace(/<[^>]+>/g, '') : ''),
-      replyTo,
-      inReplyTo: prev?.message_id || null,
-      references,
-    })
-    if (!sent.ok) return json({ error: 'Versand fehlgeschlagen', details: sent.error }, 502)
-
-    // ── Nachricht persistieren + Faden auf "wartet_kunde" ──────────────────
+    // ── Outbox-Muster: ZUERST persistieren, DANN senden ────────────────────
+    // Sonst wuerde ein DB-Fehler NACH dem Versand auftreten -> Mail schon raus,
+    // aber kein Faden-Eintrag; ein Retry versendet doppelt. Jetzt scheitert ein
+    // DB-Fehler VOR dem Versand -> sauberer Retry ohne Doppelmail.
     const { data: msg, error: msgErr } = await supabase
       .from('chartis_messages')
       .insert({
@@ -84,13 +75,32 @@ serve(async (req) => {
         from_addr: CHARTIS_FROM,
         to_addr: thread.ext_contact_email,
         reply_token: thread.reply_token,
-        message_id: sent.messageId || null,
+        message_id: null,
         references_h: references,
         created_by: user.id,
       })
       .select('id')
       .single()
     if (msgErr) return json({ error: 'DB-Fehler', details: msgErr.message }, 500)
+
+    // ── Versand ────────────────────────────────────────────────────────────
+    const sent = await postmarkSend({
+      to: thread.ext_contact_email,
+      subject: thread.subject,
+      htmlBody,
+      textBody: htmlToText(String(body)) + (sig ? '\n\n' + sig.replace(/<[^>]+>/g, '') : ''),
+      replyTo,
+      inReplyTo: prev?.message_id || null,
+      references,
+    })
+    if (!sent.ok) {
+      // Versand fehlgeschlagen -> die eben angelegte Zeile wieder entfernen (kein Waisen-Eintrag)
+      await supabase.from('chartis_messages').delete().eq('id', msg.id)
+      return json({ error: 'Versand fehlgeschlagen', details: sent.error }, 502)
+    }
+
+    // Postmark-message_id nachtragen (fuer Client-Threading der Folgemails)
+    await supabase.from('chartis_messages').update({ message_id: sent.messageId || null }).eq('id', msg.id)
 
     const { error: updErr } = await supabase.from('chartis_threads')
       .update({ status: 'wartet_kunde', updated_at: new Date().toISOString() })
