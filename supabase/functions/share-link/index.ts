@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { requireUser } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -23,12 +24,9 @@ serve(async (req) => {
 
     // ── CREATE: Neuen Share-Link erstellen (authentifiziert) ──────────────────
     if (action === "create") {
-      const authHeader = req.headers.get("Authorization");
-      if (!authHeader) {
-        return new Response(JSON.stringify({ error: "Unauthorized" }), {
-          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
+      // JWT serverseitig verifizieren (nicht nur auf Header-Existenz pruefen)
+      const auth = await requireUser(req, { roles: ["admin", "mandatsleiter", "sachbearbeiter"] });
+      if (auth.response) return auth.response;
 
       const body = await req.json();
       const { doc_id, customer_id, category, year, name, expires_days, password } = body;
@@ -60,12 +58,8 @@ serve(async (req) => {
 
     // ── DEACTIVATE: Link deaktivieren (authentifiziert) ───────────────────────
     if (action === "deactivate") {
-      const authHeader = req.headers.get("Authorization");
-      if (!authHeader) {
-        return new Response(JSON.stringify({ error: "Unauthorized" }), {
-          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
+      const auth = await requireUser(req, { roles: ["admin", "mandatsleiter", "sachbearbeiter"] });
+      if (auth.response) return auth.response;
       const body = await req.json();
       await supabase.from("share_links").update({ is_active: false }).eq("id", body.id);
       return new Response(JSON.stringify({ ok: true }), {
@@ -170,13 +164,31 @@ serve(async (req) => {
 
       const { data: doc } = await supabase
         .from("dokumente")
-        .select("storage_path, filename, name")
+        .select("storage_path, filename, name, customer_id, category, year")
         .eq("id", doc_id_param)
         .single();
 
       if (!doc) {
         return new Response(JSON.stringify({ error: "Dokument nicht gefunden" }), {
           status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // ── IDOR-Schutz: das angeforderte Dokument MUSS zum Umfang des Links gehoeren ──
+      // Ohne diese Pruefung waere ein gueltiger Link ein Generalschluessel fuer beliebige doc_id.
+      let inScope = false;
+      if (link.doc_id) {
+        // Einzeldatei-Link: nur genau dieses Dokument
+        inScope = doc_id_param === link.doc_id;
+      } else if (link.customer_id) {
+        // Ordner-Link: gleicher Kunde (+ optionaler Kategorie-/Jahr-Filter wie im info-Handler)
+        inScope = doc.customer_id === link.customer_id
+          && (!link.category || doc.category === link.category)
+          && (!link.year || doc.year === link.year);
+      }
+      if (!inScope) {
+        return new Response(JSON.stringify({ error: "Dieses Dokument gehört nicht zu diesem Link" }), {
+          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 

@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { requireUser } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -18,42 +18,12 @@ serve(async (req) => {
   }
 
   try {
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      return ok({ suggestion: null, error: "Kein Auth-Header – bitte neu einloggen" });
+    // JWT serverseitig verifizieren (getUser) statt nur zu dekodieren.
+    const auth = await requireUser(req);
+    if (auth.response) {
+      return ok({ suggestion: null, error: "Nicht autorisiert – bitte neu einloggen" });
     }
-
-    const supabaseClient = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
-
-    // Token manuell decoden (Workaround für ES256-Keys).
-    // Function ist mit --no-verify-jwt deployed, wir validieren selbst:
-    // - Ablaufdatum (exp)
-    // - Gültiger sub-claim
-    // - Passender issuer
-    const token = authHeader.replace("Bearer ", "");
-    let userId: string | null = null;
-    try {
-      const parts = token.split(".");
-      if (parts.length !== 3) throw new Error("Token-Format ungültig");
-      const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
-
-      // Ablaufzeit prüfen
-      if (payload.exp && payload.exp * 1000 < Date.now()) {
-        throw new Error("Token abgelaufen");
-      }
-      // Issuer muss zu unserem Supabase-Projekt passen
-      const expectedIssuer = Deno.env.get("SUPABASE_URL") + "/auth/v1";
-      if (payload.iss && payload.iss !== expectedIssuer) {
-        throw new Error("Ungültiger Issuer");
-      }
-      userId = payload.sub || null;
-      if (!userId) throw new Error("kein sub-claim");
-    } catch (e: any) {
-      return ok({ suggestion: null, error: "Token-Prüfung fehlgeschlagen: " + (e?.message || String(e)) });
-    }
+    const supabaseClient = auth.admin!;
 
     const { ticket_id } = await req.json();
     if (!ticket_id) {
