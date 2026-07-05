@@ -32,6 +32,8 @@ export function hydrateNavPrefs(profile) {
     if (remote.groups && typeof remote.groups === 'object') localStorage.setItem('nav_groups_open', JSON.stringify(remote.groups));
     if (remote.mode === 'rail' || remote.mode === 'wide') localStorage.setItem('nav_mode', remote.mode);
     if (remote.layout === 'hub' || remote.layout === 'sidebar') localStorage.setItem('nav_layout', remote.layout);
+    if (remote.widgets_on === true || remote.widgets_on === false) localStorage.setItem('hub_widgets', remote.widgets_on ? '1' : '0');
+    if (Array.isArray(remote.widgets_order)) localStorage.setItem('hub_widgets_order', JSON.stringify(remote.widgets_order));
     localStorage.setItem(TS_KEY, String(remoteTs));
   } catch {
     return false;
@@ -59,6 +61,8 @@ export function scheduleNavPrefsSave() {
           groups: readJson('nav_groups_open', {}),
           mode: localStorage.getItem('nav_mode') || 'wide',
           layout: localStorage.getItem('nav_layout') || 'sidebar',
+          widgets_on: localStorage.getItem('hub_widgets') === '1',
+          widgets_order: readJson('hub_widgets_order', null) ?? undefined,
         },
       });
     } catch {

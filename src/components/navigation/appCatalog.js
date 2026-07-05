@@ -138,7 +138,8 @@ export function fibuHref(sub) {
 }
 
 export function itemHref(item) {
-  if (item.name) return item.href ?? createPageUrl(item.name);
+  if (item.href) return item.href;
+  if (item.name) return createPageUrl(item.name);
   return fibuHref(item.fibu);
 }
 

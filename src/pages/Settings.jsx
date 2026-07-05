@@ -41,7 +41,7 @@ import 'react-quill-new/dist/quill.snow.css';
 
 export default function Settings() {
     const queryClient = useQueryClient();
-    const {theme, setTheme, navLayout, setNavLayout} = useContext(ThemeContext);
+    const {theme, setTheme, navLayout, setNavLayout, hubWidgets, setHubWidgets} = useContext(ThemeContext);
     const [activeTab, setActiveTab] = useState('signature');
     const [emailSignature, setEmailSignature] = useState('');
     const [chatSignature, setChatSignature] = useState('');
@@ -2452,6 +2452,27 @@ export default function Settings() {
                                     </p>
                                 </button>
                             </div>
+
+                            {/* Mini-Dashboard im Hub — pro Benutzer aktivierbar */}
+                            <label className="flex items-start gap-3 mt-5 max-w-2xl rounded-lg border p-4 cursor-pointer"
+                                   style={{backgroundColor: rowBg, borderColor: rowBorder}}>
+                                <input
+                                    type="checkbox"
+                                    checked={!!hubWidgets}
+                                    onChange={e => setHubWidgets(e.target.checked)}
+                                    style={{marginTop: 3, accentColor: '#7a9b7f', width: 15, height: 15}}
+                                />
+                                <span>
+                                    <span className="block font-semibold text-sm" style={{color: headingColor}}>
+                                        Mini-Dashboard im Start-Hub
+                                    </span>
+                                    <span className="block text-xs mt-0.5" style={{color: textMuted}}>
+                                        Zeigt rechts im Hub Kacheln mit Debitoren-/Kreditoren-OPs, den grössten
+                                        angefangenen Projekten und deinen Rückrufen. Gilt nur für dich; die Kacheln
+                                        lassen sich per Ziehen umsortieren.
+                                    </span>
+                                </span>
+                            </label>
                         </div>
                     </div>
                 )}

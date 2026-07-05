@@ -9,6 +9,7 @@ import {
 } from '@/components/navigation/appCatalog';
 import { useFavorites } from '@/components/navigation/FavoritesDock';
 import { openApp } from '@/components/navigation/openApp';
+import HubWidgets from '@/components/navigation/HubWidgets';
 
 // ── Start-Hub: Navigation ohne Seitenleiste ────────────────────────
 // Suche oben, darunter Favoriten, darunter alle Apps als Kacheln.
@@ -25,6 +26,7 @@ function hubPalette(theme) {
     panelFocus: '#7a9b7f', focusRing: 'rgba(122,155,127,.18)',
     tileBg: 'rgba(255,255,255,.75)', tileBorder: 'rgba(120,130,120,.16)',
     tileInk: '#26302a', tileSub: '#7d8a80', kbdBorder: 'rgba(28,36,32,.15)',
+    accentText: '#5f8f6a', rowHover: 'rgba(122,155,127,.10)',
   };
   if (theme === 'light') return {
     bg: 'linear-gradient(150deg,#f4f4fa 0%,#eef0f6 100%)',
@@ -34,15 +36,17 @@ function hubPalette(theme) {
     panelFocus: '#7c3aed', focusRing: 'rgba(124,58,237,.14)',
     tileBg: 'rgba(255,255,255,.8)', tileBorder: 'rgba(110,120,140,.16)',
     tileInk: '#232a3a', tileSub: '#8a92a3', kbdBorder: 'rgba(30,36,51,.15)',
+    accentText: '#7c3aed', rowHover: 'rgba(124,58,237,.08)',
   };
   return { // dark
     bg: '#101413',
     ink: '#eef4ef', sub: '#8a978d', label: '#5f6f64',
     grad: 'linear-gradient(100deg,#8fd3a5,#5fb3d4)',
-    panelBg: 'rgba(223,232,225,.05)', panelBorder: 'rgba(223,232,225,.12)',
+    panelBg: 'rgba(28,34,31,.92)', panelBorder: 'rgba(223,232,225,.12)',
     panelFocus: 'rgba(143,211,165,.6)', focusRing: 'rgba(143,211,165,.12)',
     tileBg: 'rgba(223,232,225,.04)', tileBorder: 'rgba(223,232,225,.09)',
     tileInk: '#eef4ef', tileSub: '#8a978d', kbdBorder: 'rgba(223,232,225,.2)',
+    accentText: '#8fd3a5', rowHover: 'rgba(223,232,225,.06)',
   };
 }
 
@@ -105,13 +109,23 @@ function Tile({ app, pal, big = false, onOpen }) {
 }
 
 export default function Hub() {
-  const { theme } = useContext(ThemeContext);
+  const { theme, hubWidgets } = useContext(ThemeContext);
   const { profile } = useAuth();
   const navigate = useNavigate();
   const pal = hubPalette(theme);
   const inputRef = useRef(null);
   const [query, setQuery] = useState('');
   const [sel, setSel] = useState(0);
+
+  // Widget-Spalte nur auf breiten Fenstern anzeigen
+  const [wide, setWide] = useState(() => window.matchMedia('(min-width: 1080px)').matches);
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1080px)');
+    const fn = (e) => setWide(e.matches);
+    mq.addEventListener('change', fn);
+    return () => mq.removeEventListener('change', fn);
+  }, []);
+  const showWidgets = hubWidgets && wide;
 
   const apps = useMemo(() => allApps(profile), [profile]);
   const favApps = useFavorites(profile);
@@ -163,7 +177,11 @@ export default function Hub() {
   return (
     <div style={{ height: '100%', overflowY: 'auto', background: pal.bg, color: pal.ink }}>
       <div style={{
-        maxWidth: 880, margin: '0 auto', padding: '7vh 24px 60px',
+        maxWidth: showWidgets ? 1250 : 880, margin: '0 auto', padding: '6vh 24px 60px',
+        display: 'flex', gap: 26, alignItems: 'flex-start',
+      }}>
+      <div style={{
+        flex: 1, minWidth: 0,
         display: 'flex', flexDirection: 'column', alignItems: 'center',
       }}>
         <h1 style={{ fontSize: 27, fontWeight: 750, letterSpacing: '-.02em', textAlign: 'center' }}>
@@ -302,6 +320,10 @@ export default function Hub() {
             })}
           </>
         )}
+      </div>
+
+      {/* Mini-Dashboard rechts (pro Benutzer aktivierbar) */}
+      {showWidgets && <HubWidgets pal={pal} navigate={navigate} profile={profile} />}
       </div>
     </div>
   );

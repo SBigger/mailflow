@@ -26,6 +26,7 @@ import * as packageJson from "../package.json";
 export const ThemeContext = createContext({
   theme: 'dark', setTheme: () => {},
   navLayout: 'sidebar', setNavLayout: () => {},
+  hubWidgets: false, setHubWidgets: () => {},
 });
 
 // ── Einzelner Navigations-Eintrag ──────────────────────────────────
@@ -149,6 +150,14 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
     scheduleNavPrefsSave();
   }, []);
 
+  // --- Hub-Widgets (Mini-Dashboard rechts im Hub) — pro Benutzer aktivierbar ---
+  const [hubWidgets, setHubWidgetsState] = useState(() => localStorage.getItem("hub_widgets") === "1");
+  const setHubWidgets = useCallback((on) => {
+    setHubWidgetsState(!!on);
+    localStorage.setItem("hub_widgets", on ? "1" : "0");
+    scheduleNavPrefsSave();
+  }, []);
+
   // --- Sidebar-Modus: breit (Labels + Gruppen) oder schmale Icon-Leiste ---
   const [railMode, setRailMode] = useState(() => localStorage.getItem("nav_mode") === "rail");
   const toggleRailMode = () => {
@@ -188,6 +197,7 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
       }
       setRailMode(localStorage.getItem("nav_mode") === "rail");
       setNavLayoutState(localStorage.getItem("nav_layout") === "hub" ? "hub" : "sidebar");
+      setHubWidgetsState(localStorage.getItem("hub_widgets") === "1");
     }
   }, [profile]);
 
@@ -284,7 +294,7 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
   if (loading) return <div className="h-screen w-screen flex items-center justify-center" style={{ backgroundColor: pageBg }}>...</div>;
 
   return (
-      <ThemeContext.Provider value={{ theme, setTheme, navLayout, setNavLayout }}>
+      <ThemeContext.Provider value={{ theme, setTheme, navLayout, setNavLayout, hubWidgets, setHubWidgets }}>
         <div className="flex h-screen overflow-hidden" style={{ backgroundColor: pageBg }}>
 
           {/* Start-Hub-Modus: schwebender Zurück-zum-Hub-Button statt Seitenleiste */}
