@@ -29,7 +29,28 @@ export function getWidgetOrder() {
 }
 
 // ── Bausteine ──────────────────────────────────────────────────────
-function Widget({ pal, icon: Icon, color, title, sub, onOpen, openLabel, dragHandleProps, children }) {
+// Kleiner Mandanten-Filter im Widget-Kopf ('' = alle Mandanten)
+function MandantSelect({ pal, mandanten, value, onChange }) {
+  return (
+    <select
+      value={value}
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => onChange(e.target.value)}
+      style={{
+        fontSize: 10, color: pal.sub, background: 'transparent', border: 'none',
+        outline: 'none', cursor: 'pointer', padding: 0, maxWidth: 150,
+        fontFamily: 'inherit', appearance: 'auto',
+      }}
+    >
+      <option value="">Alle Mandanten</option>
+      {(mandanten ?? []).map(m => (
+        <option key={m.id} value={m.id}>{m.name}</option>
+      ))}
+    </select>
+  );
+}
+
+function Widget({ pal, icon: Icon, color, title, sub, subNode, onOpen, openLabel, dragHandleProps, children }) {
   return (
     <div style={{
       borderRadius: 16, background: pal.panelBg, border: `1px solid ${pal.panelBorder}`,
@@ -48,7 +69,7 @@ function Widget({ pal, icon: Icon, color, title, sub, onOpen, openLabel, dragHan
         </span>
         <span style={{ flex: 1, minWidth: 0 }}>
           <b style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: pal.tileInk }}>{title}</b>
-          {sub && <small style={{ display: 'block', fontSize: 10, color: pal.sub }}>{sub}</small>}
+          {subNode ?? (sub && <small style={{ display: 'block', fontSize: 10, color: pal.sub }}>{sub}</small>)}
         </span>
         {onOpen && (
           <button
@@ -115,17 +136,25 @@ function Status({ pal, q, emptyText }) {
 }
 
 // ── Die vier Widgets ───────────────────────────────────────────────
-function DebitorenWidget({ pal, navigate, dragHandleProps }) {
+function DebitorenWidget({ pal, navigate, dragHandleProps, mandanten }) {
+  const [mandantId, setMandantId] = useState(() => localStorage.getItem('hub_mandant_deb') || '');
+  const pickMandant = (id) => {
+    setMandantId(id);
+    try { localStorage.setItem('hub_mandant_deb', id); } catch { /* egal */ }
+    scheduleNavPrefsSave();
+  };
   const q = useQuery({
-    queryKey: ['hub-widget', 'debitoren-op'],
+    queryKey: ['hub-widget', 'debitoren-op', mandantId],
     staleTime: 120_000,
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from('fibu_debitoren_belege')
         .select('id, mandant_id, betrag_brutto, betrag_bezahlt, faelligkeit, status, kunde:fibu_kunden(name), mandant:fibu_mandanten(name)')
         .in('status', ['offen', 'teilbezahlt'])
         .order('faelligkeit', { ascending: true })
         .limit(500);
+      if (mandantId) query = query.eq('mandant_id', mandantId);
+      const { data, error } = await query;
       if (error) throw error;
       return data ?? [];
     },
@@ -138,8 +167,12 @@ function DebitorenWidget({ pal, navigate, dragHandleProps }) {
   const tage = (f) => f ? Math.round((Date.now() - new Date(f).getTime()) / 86400000) : 0;
 
   return (
-    <Widget pal={pal} dragHandleProps={dragHandleProps} icon={FileText} color="#3e9b6e" title="Debitoren offen" sub="über alle Mandanten"
-            openLabel="Debitoren" onOpen={() => openApp({ fibu: 'debitoren/uebersicht', label: 'Debitoren', name: 'HubWidgetDebitoren' }, { navigate })}>
+    <Widget pal={pal} dragHandleProps={dragHandleProps} icon={FileText} color="#3e9b6e" title="Debitoren offen"
+            subNode={<MandantSelect pal={pal} mandanten={mandanten} value={mandantId} onChange={pickMandant} />}
+            openLabel="Debitoren"
+            onOpen={() => openApp(mandantId
+              ? { href: `/fibu/${mandantId}/debitoren/uebersicht`, label: 'Debitoren', name: 'HubWidgetDebitoren' }
+              : { fibu: 'debitoren/uebersicht', label: 'Debitoren', name: 'HubWidgetDebitoren' }, { navigate })}>
       {belege.length > 0 && <Kpi pal={pal} value={`CHF ${CHF(total)}`} caption={`${belege.length} Rechn. · ${ueberfaellig.length} überfällig`} />}
       {top.length ? (
         <div style={{ borderTop: `1px solid ${pal.panelBorder}`, padding: '4px 0 6px' }}>
@@ -158,17 +191,25 @@ function DebitorenWidget({ pal, navigate, dragHandleProps }) {
   );
 }
 
-function KreditorenWidget({ pal, navigate, dragHandleProps }) {
+function KreditorenWidget({ pal, navigate, dragHandleProps, mandanten }) {
+  const [mandantId, setMandantId] = useState(() => localStorage.getItem('hub_mandant_kred') || '');
+  const pickMandant = (id) => {
+    setMandantId(id);
+    try { localStorage.setItem('hub_mandant_kred', id); } catch { /* egal */ }
+    scheduleNavPrefsSave();
+  };
   const q = useQuery({
-    queryKey: ['hub-widget', 'kreditoren-op'],
+    queryKey: ['hub-widget', 'kreditoren-op', mandantId],
     staleTime: 120_000,
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from('fibu_kreditoren_belege')
         .select('id, mandant_id, betrag_brutto, betrag_bezahlt, faelligkeit, status, lieferant:fibu_lieferanten(name), mandant:fibu_mandanten(name)')
         .in('status', ['offen', 'ausstehend', 'ebanking', 'teilbezahlt'])
         .order('faelligkeit', { ascending: true })
         .limit(500);
+      if (mandantId) query = query.eq('mandant_id', mandantId);
+      const { data, error } = await query;
       if (error) throw error;
       return data ?? [];
     },
@@ -181,8 +222,12 @@ function KreditorenWidget({ pal, navigate, dragHandleProps }) {
   const top = belege.slice(0, 4);
 
   return (
-    <Widget pal={pal} dragHandleProps={dragHandleProps} icon={Receipt} color="#c9564f" title="Kreditoren offen" sub="über alle Mandanten"
-            openLabel="OP-Liste" onOpen={() => openApp({ fibu: 'kreditoren/opliste', label: 'OP-Liste', name: 'HubWidgetKreditoren' }, { navigate })}>
+    <Widget pal={pal} dragHandleProps={dragHandleProps} icon={Receipt} color="#c9564f" title="Kreditoren offen"
+            subNode={<MandantSelect pal={pal} mandanten={mandanten} value={mandantId} onChange={pickMandant} />}
+            openLabel="OP-Liste"
+            onOpen={() => openApp(mandantId
+              ? { href: `/fibu/${mandantId}/kreditoren/opliste`, label: 'OP-Liste', name: 'HubWidgetKreditoren' }
+              : { fibu: 'kreditoren/opliste', label: 'OP-Liste', name: 'HubWidgetKreditoren' }, { navigate })}>
       {belege.length > 0 && <Kpi pal={pal} value={`CHF ${CHF(total)}`} caption={`${belege.length} Belege · ${faellig.length} fällig ≤ 7 Tage`} />}
       {top.length ? (
         <div style={{ borderTop: `1px solid ${pal.panelBorder}`, padding: '4px 0 6px' }}>
@@ -324,6 +369,17 @@ const WIDGET_MAP = {
 export default function HubWidgets({ pal, navigate, profile }) {
   const [order, setOrder] = useState(getWidgetOrder);
 
+  // Mandantenliste für die Filter in den OP-Widgets (RLS: nur eigene)
+  const mandantenQ = useQuery({
+    queryKey: ['hub-widget', 'mandanten'],
+    staleTime: 600_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('fibu_mandanten').select('id, name').order('name');
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
   const onDragEnd = (result) => {
     if (!result.destination) return;
     const next = Array.from(order);
@@ -354,7 +410,7 @@ export default function HubWidgets({ pal, navigate, profile }) {
                   <Draggable key={id} draggableId={id} index={index}>
                     {(drag) => (
                       <div ref={drag.innerRef} {...drag.draggableProps} style={drag.draggableProps.style}>
-                        <WidgetShell dragHandleProps={drag.dragHandleProps} pal={pal} navigate={navigate} profile={profile} id={id} />
+                        <WidgetShell dragHandleProps={drag.dragHandleProps} pal={pal} navigate={navigate} profile={profile} mandanten={mandantenQ.data ?? []} id={id} />
                       </div>
                     )}
                   </Draggable>

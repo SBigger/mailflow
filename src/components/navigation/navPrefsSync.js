@@ -34,6 +34,10 @@ export function hydrateNavPrefs(profile) {
     if (remote.layout === 'hub' || remote.layout === 'sidebar') localStorage.setItem('nav_layout', remote.layout);
     if (remote.widgets_on === true || remote.widgets_on === false) localStorage.setItem('hub_widgets', remote.widgets_on ? '1' : '0');
     if (Array.isArray(remote.widgets_order)) localStorage.setItem('hub_widgets_order', JSON.stringify(remote.widgets_order));
+    if (remote.widgets_mandant && typeof remote.widgets_mandant === 'object') {
+      if (typeof remote.widgets_mandant.deb === 'string') localStorage.setItem('hub_mandant_deb', remote.widgets_mandant.deb);
+      if (typeof remote.widgets_mandant.kred === 'string') localStorage.setItem('hub_mandant_kred', remote.widgets_mandant.kred);
+    }
     localStorage.setItem(TS_KEY, String(remoteTs));
   } catch {
     return false;
@@ -63,6 +67,10 @@ export function scheduleNavPrefsSave() {
           layout: localStorage.getItem('nav_layout') || 'sidebar',
           widgets_on: localStorage.getItem('hub_widgets') === '1',
           widgets_order: readJson('hub_widgets_order', null) ?? undefined,
+          widgets_mandant: {
+            deb: localStorage.getItem('hub_mandant_deb') || '',
+            kred: localStorage.getItem('hub_mandant_kred') || '',
+          },
         },
       });
     } catch {

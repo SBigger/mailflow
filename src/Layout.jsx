@@ -82,6 +82,80 @@ function NavRow({ item, active, collapsed, pal }) {
   );
 }
 
+// ── Schwebender Hub-Knopf: klickbar UND frei verschiebbar ──────────
+// Position wird pro Gerät gespeichert (hub_chip_pos), damit er nichts verdeckt.
+function HubChip({ pal, sidebarBorder, lightBg }) {
+  const navigate = useNavigate();
+  const [pos, setPos] = useState(() => {
+    try {
+      const p = JSON.parse(localStorage.getItem('hub_chip_pos'));
+      if (p && Number.isFinite(p.x) && Number.isFinite(p.y)) return p;
+    } catch { /* Default */ }
+    return { x: 12, y: 12 };
+  });
+  const posRef = useRef(pos);
+  const dragRef = useRef(null);
+  const movedRef = useRef(false);
+  useEffect(() => { posRef.current = pos; }, [pos]);
+
+  const clamp = (x, y) => ({
+    x: Math.min(Math.max(4, x), window.innerWidth - 90),
+    y: Math.min(Math.max(4, y), window.innerHeight - 44),
+  });
+
+  useEffect(() => {
+    const move = (e) => {
+      const d = dragRef.current;
+      if (!d) return;
+      if (Math.abs(e.clientX - d.startX) + Math.abs(e.clientY - d.startY) > 4) movedRef.current = true;
+      setPos(clamp(d.origX + (e.clientX - d.startX), d.origY + (e.clientY - d.startY)));
+    };
+    const up = () => {
+      if (!dragRef.current) return;
+      dragRef.current = null;
+      document.body.style.userSelect = '';
+      try {
+        localStorage.setItem('hub_chip_pos', JSON.stringify(posRef.current));
+      } catch { /* egal */ }
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+    return () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
+  }, []);
+
+  return (
+    <button
+      title="Zurück zum Start-Hub · Ziehen zum Verschieben"
+      onMouseDown={(e) => {
+        movedRef.current = false;
+        dragRef.current = { startX: e.clientX, startY: e.clientY, origX: posRef.current.x, origY: posRef.current.y };
+        document.body.style.userSelect = 'none';
+      }}
+      onClick={() => {
+        if (movedRef.current) { movedRef.current = false; return; }
+        navigate('/Hub');
+      }}
+      style={{
+        position: 'fixed', left: pos.x, top: pos.y, zIndex: 45,
+        display: 'flex', alignItems: 'center', gap: 7,
+        padding: '6px 12px 6px 7px', borderRadius: 12, border: `1px solid ${sidebarBorder}`,
+        background: lightBg ? 'rgba(255,255,255,.85)' : 'rgba(30,36,32,.85)',
+        boxShadow: '0 6px 20px rgba(20,30,24,.18)',
+        backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)',
+        color: pal.text, fontSize: 12.5, fontWeight: 700,
+        cursor: dragRef.current ? 'grabbing' : 'pointer',
+      }}
+    >
+      <span style={{
+        width: 22, height: 22, borderRadius: 7, background: pal.active, color: '#fff',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 11, fontWeight: 800,
+      }}>S</span>
+      Hub
+    </button>
+  );
+}
+
 // ── Gruppen-Überschrift mit Auf-/Zuklappen ─────────────────────────
 function GroupHeader({ label, open, onToggle, pal, count }) {
   const [hover, setHover] = useState(false);
@@ -297,29 +371,9 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
       <ThemeContext.Provider value={{ theme, setTheme, navLayout, setNavLayout, hubWidgets, setHubWidgets }}>
         <div className="flex h-screen overflow-hidden" style={{ backgroundColor: pageBg }}>
 
-          {/* Start-Hub-Modus: schwebender Zurück-zum-Hub-Button statt Seitenleiste */}
+          {/* Start-Hub-Modus: schwebender, verschiebbarer Zurück-zum-Hub-Knopf */}
           {hubMode && location.pathname !== '/Hub' && (
-              <Link
-                  to="/Hub"
-                  title="Zurück zum Start-Hub"
-                  style={{
-                    position: 'fixed', top: 12, left: 12, zIndex: 45,
-                    display: 'flex', alignItems: 'center', gap: 7,
-                    padding: '6px 12px 6px 7px', borderRadius: 12, textDecoration: 'none',
-                    background: isLight || isArtis ? 'rgba(255,255,255,.85)' : 'rgba(30,36,32,.85)',
-                    border: `1px solid ${sidebarBorder}`,
-                    boxShadow: '0 6px 20px rgba(20,30,24,.18)',
-                    backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)',
-                    color: pal.text, fontSize: 12.5, fontWeight: 700,
-                  }}
-              >
-                <span style={{
-                  width: 22, height: 22, borderRadius: 7, background: pal.active, color: '#fff',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 11, fontWeight: 800,
-                }}>S</span>
-                Hub
-              </Link>
+              <HubChip pal={pal} sidebarBorder={sidebarBorder} lightBg={isLight || isArtis} />
           )}
 
           {/* Sidebar - Desktop Only & Not for Task Users */}
