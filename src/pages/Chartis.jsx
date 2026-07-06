@@ -35,6 +35,7 @@ export default function Chartis() {
   const [cmdOpen, setCmdOpen] = useState(false);
   const [onlineIds, setOnlineIds] = useState(() => new Set());
   const [listWidth, setListWidth] = useState(() => Number(localStorage.getItem("chartis_list_w")) || 260);
+  const [calView, setCalView] = useState(() => localStorage.getItem("chartis_cal_view") || "liste");
   const dragRef = useRef(null);
 
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: () => auth.me() });
@@ -340,6 +341,20 @@ export default function Chartis() {
     return () => { document.removeEventListener("mousemove", onMove); document.removeEventListener("mouseup", onUp); };
   }, []);
   useEffect(() => { localStorage.setItem("chartis_list_w", String(listWidth)); }, [listWidth]);
+  useEffect(() => { localStorage.setItem("chartis_cal_view", calView); }, [calView]);
+
+  async function completeTask(id) {
+    // optimistisch aus der Liste nehmen
+    qc.setQueryData(["chartisTasks", me?.id], (old) => Array.isArray(old) ? old.filter(k => k.id !== id) : old);
+    try {
+      const { error } = await supabase.from("tasks").update({ completed: true }).eq("id", id);
+      if (error) throw error;
+      if (activeTask?.id === id) setActiveTask(null);
+    } catch (e) {
+      toast.error("Konnte nicht abhaken: " + (e?.message || e));
+      qc.invalidateQueries({ queryKey: ["chartisTasks", me?.id] });
+    }
+  }
   const commands = useMemo(() => {
     const nav = [
       { id: "s-tag", icon: LayoutGrid, label: "Heute", run: () => setScope("tag") },
@@ -510,7 +525,11 @@ export default function Chartis() {
         ) : activeCall ? (
           <CallDetail c={activeCall} t={t} customer={custById[activeCall.customer_id]} />
         ) : scope === "kalender" ? (
-          <CalendarMonth events={calendarEvents} t={t} onSelect={(e) => { clearActive(); setActiveEvent(e); }} />
+          calView === "liste"
+            ? <CalendarAgenda events={calendarEvents} t={t} calView={calView} setCalView={setCalView} onSelect={(e) => { clearActive(); setActiveEvent(e); }} />
+            : <CalendarMonth events={calendarEvents} t={t} calView={calView} setCalView={setCalView} onSelect={(e) => { clearActive(); setActiveEvent(e); }} />
+        ) : scope === "todos" ? (
+          <TaskListView groups={groupedTodos} t={t} activeId={activeTask?.id} onComplete={completeTask} onOpen={(k) => { clearActive(); setActiveTask(k); }} />
         ) : activeThread ? (
           <ChartisPanel key={activeThread.id} threadId={activeThread.id} titleOverride={title(activeThread)} directMode={activeThread.thread_type !== "objekt"} embedded />
         ) : (
@@ -712,13 +731,24 @@ function TaskDetail({ k, t, customer }) {
   );
 }
 
-function CalHeader({ t, label, view, setView, onPrev, onToday, onNext }) {
+function CalViewToggle({ t, calView, setCalView }) {
+  return (
+    <div style={{ display: "flex", borderRadius: 8, overflow: "hidden", border: `1px solid ${t.borderSubtle}`, flexShrink: 0 }}>
+      {[["liste", "Liste"], ["grid", "Kalender"]].map(([k, l]) => (
+        <button key={k} onClick={() => setCalView(k)} style={{ fontSize: 11, padding: "3px 10px", background: calView === k ? t.accentFill : t.base, color: calView === k ? "#fff" : t.textSecondary, border: "none", cursor: "pointer", fontWeight: calView === k ? 600 : 400 }}>{l}</button>
+      ))}
+    </div>
+  );
+}
+
+function CalHeader({ t, label, view, setView, onPrev, onToday, onNext, calView, setCalView }) {
   const navBtn = { fontSize: 12, padding: "3px 9px", borderRadius: 7, border: `1px solid ${t.borderSubtle}`, color: t.textSecondary, background: t.base, cursor: "pointer" };
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderBottom: `1px solid ${t.borderSubtle}`, flexShrink: 0 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderBottom: `1px solid ${t.borderSubtle}`, flexShrink: 0, flexWrap: "wrap" }}>
       <Calendar className="h-4 w-4" style={{ color: t.accent }} />
       <span style={{ fontSize: 14, fontWeight: 600, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
       <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+        {setCalView && <CalViewToggle t={t} calView={calView} setCalView={setCalView} />}
         <div style={{ display: "flex", borderRadius: 8, overflow: "hidden", border: `1px solid ${t.borderSubtle}` }}>
           {[["tag", "Tag"], ["woche", "Woche"], ["monat", "Monat"]].map(([k, l]) => (
             <button key={k} onClick={() => setView(k)} style={{ fontSize: 11, padding: "3px 10px", background: view === k ? t.accentFill : t.base, color: view === k ? "#fff" : t.textSecondary, border: "none", cursor: "pointer", fontWeight: view === k ? 600 : 400 }}>{l}</button>
@@ -732,7 +762,114 @@ function CalHeader({ t, label, view, setView, onPrev, onToday, onNext }) {
   );
 }
 
-function CalendarMonth({ events, t, onSelect }) {
+// Kalender als Agenda-Liste (kommende Termine, nach Tag gruppiert)
+function CalendarAgenda({ events, t, calView, setCalView, onSelect }) {
+  const now = new Date();
+  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const upcoming = [...events]
+    .filter(e => new Date(e.start_time) >= startToday || (e.end_time && new Date(e.end_time) >= now))
+    .sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
+  const groups = []; const byKey = new Map();
+  for (const e of upcoming) {
+    const key = new Date(e.start_time).toDateString();
+    if (!byKey.has(key)) { const g = { key, date: new Date(e.start_time), items: [] }; byKey.set(key, g); groups.push(g); }
+    byKey.get(key).items.push(e);
+  }
+  const dayLabel = (d) => {
+    const diff = Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()) - startToday) / 86400000);
+    if (diff === 0) return "Heute";
+    if (diff === 1) return "Morgen";
+    return d.toLocaleDateString("de-CH", { weekday: "long", day: "2-digit", month: "long" });
+  };
+  return (
+    <div style={{ height: "100%", display: "flex", flexDirection: "column", minHeight: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderBottom: `1px solid ${t.borderSubtle}`, flexShrink: 0 }}>
+        <Calendar className="h-4 w-4" style={{ color: t.accent }} />
+        <span style={{ fontSize: 14, fontWeight: 600, flex: 1 }}>Kalender</span>
+        <CalViewToggle t={t} calView={calView} setCalView={setCalView} />
+      </div>
+      <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
+        {groups.length === 0 ? (
+          <div className="text-center py-10 px-4" style={{ color: t.textMuted }}>
+            <Calendar className="h-8 w-8 mx-auto mb-2" style={{ opacity: 0.3 }} />
+            <div style={{ fontSize: 13, fontWeight: 500 }}>Keine kommenden Termine</div>
+          </div>
+        ) : groups.map(g => (
+          <div key={g.key}>
+            <div style={{ position: "sticky", top: 0, zIndex: 1, background: t.raised, padding: "8px 16px 4px", fontSize: 11, fontWeight: 700, letterSpacing: ".04em", color: dayLabel(g.date) === "Heute" ? t.accent : t.textSecondary, borderBottom: `1px solid ${t.borderSubtle}` }}>
+              {dayLabel(g.date)} · {g.date.toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit" })}
+            </div>
+            {g.items.map(e => {
+              const st = new Date(e.start_time);
+              const et = e.end_time ? new Date(e.end_time) : null;
+              const timeStr = e.is_all_day ? "ganztägig"
+                : st.toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" }) + (et ? "–" + et.toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" }) : "");
+              return (
+                <button key={e.id} onClick={() => onSelect(e)} className="w-full flex items-start gap-3 px-4 py-2.5 text-left" style={{ borderBottom: `1px solid ${t.borderSubtle}` }}>
+                  <div style={{ width: 104, flexShrink: 0, fontSize: 12, fontWeight: 600, color: t.textSecondary, fontVariantNumeric: "tabular-nums" }}>{timeStr}</div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate" style={{ fontSize: 13, fontWeight: 500, color: t.textPrimary }}>{e.subject || "(ohne Titel)"}</div>
+                    {(e.location || e.organizer_name) && <div className="truncate" style={{ fontSize: 11, color: t.textMuted, marginTop: 1 }}>{[e.location, e.organizer_name].filter(Boolean).join(" · ")}</div>}
+                  </div>
+                  {e.online_meeting_url && <Video className="h-4 w-4 flex-shrink-0" style={{ color: t.accent, marginTop: 2 }} />}
+                </button>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Aufgaben als Checklisten-Ansicht (gruppiert wie im Task-Board)
+function TaskListView({ groups, t, activeId, onComplete, onOpen }) {
+  if (!groups || !groups.length) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center gap-2" style={{ color: t.textMuted }}>
+        <CheckSquare className="h-10 w-10" style={{ opacity: 0.25 }} />
+        <div style={{ fontSize: 14, fontWeight: 500, color: t.textSecondary }}>Keine offenen Aufgaben</div>
+        <div style={{ fontSize: 12 }}>Alles erledigt.</div>
+      </div>
+    );
+  }
+  return (
+    <div style={{ height: "100%", display: "flex", flexDirection: "column", minHeight: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderBottom: `1px solid ${t.borderSubtle}`, flexShrink: 0 }}>
+        <CheckSquare className="h-4 w-4" style={{ color: t.accent }} />
+        <span style={{ fontSize: 14, fontWeight: 600, flex: 1 }}>Aufgaben</span>
+        <Link to="/TaskBoard" className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg" style={{ fontSize: 11, background: t.accentSoft, color: t.accent }}><CheckSquare className="h-3.5 w-3.5" /> Task-Board</Link>
+      </div>
+      <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
+        {groups.map((it, i) => it.type === "header" ? (
+          <div key={"h" + i} style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 16px 4px", fontSize: 10, fontWeight: 700, letterSpacing: ".07em", textTransform: "uppercase", color: t.textMuted, borderTop: i > 0 ? `1px solid ${t.borderSubtle}` : "none" }}>
+            {it.color && <span style={{ width: 7, height: 7, borderRadius: 99, background: it.color, flexShrink: 0 }} />}
+            <span className="truncate">{it.label}</span>
+            <span style={{ marginLeft: "auto", fontWeight: 500 }}>{it.count}</span>
+          </div>
+        ) : (() => {
+          const k = it.k; const overdue = k.due_date && new Date(k.due_date) < new Date();
+          return (
+            <div key={"t" + k.id} className="w-full flex items-start gap-3 px-4 py-2.5" style={{ borderBottom: `1px solid ${t.borderSubtle}`, background: activeId === k.id ? t.activeRow : "transparent" }}>
+              <button onClick={() => onComplete(k.id)} title="Als erledigt markieren" className="flex-shrink-0 rounded-md flex items-center justify-center hover:opacity-70" style={{ width: 18, height: 18, border: `2px solid ${t.borderStrong}`, marginTop: 1, cursor: "pointer", background: "transparent" }} />
+              <button onClick={() => onOpen(k)} className="min-w-0 flex-1 text-left">
+                <div className="truncate" style={{ fontSize: 13, fontWeight: 500, color: t.textPrimary }}>{k.title}</div>
+                {(k.due_date || k.priority === "high") && (
+                  <div className="flex items-center gap-2" style={{ marginTop: 1 }}>
+                    {k.due_date && <span style={{ fontSize: 11, color: overdue ? SEM.missed : t.textMuted }}>fällig {fmtDateTime(k.due_date, true)}</span>}
+                    {k.priority === "high" && <span style={{ fontSize: 10, color: SEM.missed, fontWeight: 600 }}>· hoch</span>}
+                  </div>
+                )}
+              </button>
+            </div>
+          );
+        })())}
+      </div>
+    </div>
+  );
+}
+
+function CalendarMonth({ events, t, onSelect, calView, setCalView }) {
   const [view, setView] = useState("monat");
   const [off, setOff] = useState(0);
   const scrollRef = useRef(null);
@@ -759,7 +896,7 @@ function CalendarMonth({ events, t, onSelect }) {
     const nowH = today.getHours() + today.getMinutes() / 60;
     return (
       <div style={{ height: "100%", display: "flex", flexDirection: "column", minHeight: 0 }}>
-        <CalHeader t={t} label={dayLabel} view={view} setView={v => { setView(v); setOff(0); }} onPrev={() => setOff(o => o - 1)} onToday={() => setOff(0)} onNext={() => setOff(o => o + 1)} />
+        <CalHeader t={t} label={dayLabel} view={view} setView={v => { setView(v); setOff(0); }} onPrev={() => setOff(o => o - 1)} onToday={() => setOff(0)} onNext={() => setOff(o => o + 1)} calView={calView} setCalView={setCalView} />
         {allDay.length > 0 && (
           <div style={{ padding: "4px 4px 4px 48px", borderBottom: `1px solid ${t.borderSubtle}`, display: "flex", flexWrap: "wrap", gap: 3, flexShrink: 0 }}>
             {allDay.map(e => <button key={e.id} onClick={() => onSelect(e)} style={{ fontSize: 10, padding: "2px 8px", borderRadius: 5, background: t.accentFill, color: "#fff", border: "none", cursor: "pointer" }}>{e.subject || "Termin"}</button>)}
@@ -813,7 +950,7 @@ function CalendarMonth({ events, t, onSelect }) {
     const hasAllDay = days.some(d => evForDay(d).some(e => e.is_all_day));
     return (
       <div style={{ height: "100%", display: "flex", flexDirection: "column", minHeight: 0 }}>
-        <CalHeader t={t} label={weekLabel} view={view} setView={v => { setView(v); setOff(0); }} onPrev={() => setOff(o => o - 1)} onToday={() => setOff(0)} onNext={() => setOff(o => o + 1)} />
+        <CalHeader t={t} label={weekLabel} view={view} setView={v => { setView(v); setOff(0); }} onPrev={() => setOff(o => o - 1)} onToday={() => setOff(0)} onNext={() => setOff(o => o + 1)} calView={calView} setCalView={setCalView} />
         <div style={{ display: "flex", borderBottom: `1px solid ${t.borderStrong}`, flexShrink: 0 }}>
           <div style={{ width: 44, flexShrink: 0 }} />
           {days.map((d, i) => {
@@ -895,7 +1032,7 @@ function CalendarMonth({ events, t, onSelect }) {
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
-      <CalHeader t={t} label={monthName} view={view} setView={v => { setView(v); setOff(0); }} onPrev={() => setOff(o => o - 1)} onToday={() => setOff(0)} onNext={() => setOff(o => o + 1)} />
+      <CalHeader t={t} label={monthName} view={view} setView={v => { setView(v); setOff(0); }} onPrev={() => setOff(o => o - 1)} onToday={() => setOff(0)} onNext={() => setOff(o => o + 1)} calView={calView} setCalView={setCalView} />
       <div style={{ padding: "8px 12px", flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4 }}>
           {["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"].map(d => (
