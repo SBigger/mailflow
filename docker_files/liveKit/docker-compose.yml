@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  livekit:
+    image: livekit/livekit-server:latest
+    container_name: livekit-server
+    # Erstellt die Konfigurationsdatei automatisch aus der Umgebungsvariablen beim Start
+    entrypoint: >
+      /bin/sh -c "echo \"$$LIVEKIT_CONFIG\" > /livekit.yaml && exec /livekit-server --config /livekit.yaml"
+    environment:
+      # Hier wird die gesamte LiveKit-Konfiguration direkt reingeschrieben
+      LIVEKIT_CONFIG: |
+        port: 7880
+        rtc:
+          tcp_port: 7881
+          udp_port: 7882
+          # WICHTIG: Ersetzen Sie dies später im Coolify-Dashboard (Variables) mit Ihrer echten Server-IP!
+          node_ip: ${LIVEKIT_NODE_IP:-127.0.0.1}
+        redis:
+          address: redis:6379
+        keys:
+          ${LIVEKIT_API_KEY:-devkey}: ${LIVEKIT_API_SECRET:-secretkey9876543210}
+    ports:
+      # Diese Ports werden direkt am Host geöffnet (wichtig für WebRTC)
+      - "7881:7881"
+      - "7882:7882/udp"
+    # Diese Labels sagen Coolifys Proxy, dass er den Web-Traffic (Port 7880) managen soll
+    labels:
+      - "coolify.managed=true"
+      - "coolify.proxy.port=7880"
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:7-alpine
+    container_name: livekit-redis
+    command: redis-server --appendonly yes
+    volumes:
+      - livekit_redis_data:/data
+
+volumes:
+  livekit_redis_data:
