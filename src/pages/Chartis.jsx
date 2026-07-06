@@ -5,6 +5,7 @@ import { entities, supabase, auth } from "@/api/supabaseClient";
 import { ThemeContext } from "@/Layout";
 import ChartisPanel from "@/components/chartis/ChartisPanel";
 import CommandPalette from "@/components/chartis/CommandPalette";
+import TaskGlobalListView from "@/components/tasks/TaskGlobalListView";
 import { chartisTheme, SEM, AUTHOR, authorKey, personStyle, initials, isMissed } from "@/lib/chartisTheme";
 import {
   MessageSquare, Plus, Users, User, Lock, AtSign, LayoutGrid, Building2, Clock,
@@ -124,7 +125,7 @@ export default function Chartis() {
     queryFn: async () => {
       const ors = [me.email && `assignee.eq.${me.email}`, me.email && `verantwortlich.eq.${me.email}`, `created_by.eq.${me.id}`].filter(Boolean).join(",");
       const { data } = await supabase.from("tasks")
-        .select("id,title,description,due_date,priority,completed,customer_id,assignee,verantwortlich,created_by,column_id")
+        .select("id,title,description,due_date,priority,priority_id,tags,completed,customer_id,assignee,verantwortlich,created_by,column_id")
         .eq("completed", false).or(ors).order("due_date", { ascending: true }).limit(100);
       return data || [];
     },
@@ -249,6 +250,16 @@ export default function Chartis() {
   }, [scope, seg, search, myThreads, objektThreads, missedCalls, mailThreads, calendarEvents, tasks, mentionIds, me]);
 
   const activeThread = useMemo(() => [...myThreads, ...objektThreads, ...searchResult.threads].find(x => x.id === activeId), [activeId, myThreads, objektThreads, searchResult]);
+
+  // Aufgaben für die Tabellen-Ansicht (Pane C) – nach @Mich + Suche gefiltert
+  const todosFiltered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return tasks.filter(k => {
+      if (seg === "mich" && k.assignee !== me?.email && k.verantwortlich !== me?.email) return false;
+      if (q && !(k.title || "").toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [tasks, search, seg, me?.email]);
 
   const groupedTodos = useMemo(() => {
     if (scope !== "todos") return null;
@@ -529,7 +540,11 @@ export default function Chartis() {
             ? <CalendarAgenda events={calendarEvents} t={t} calView={calView} setCalView={setCalView} onSelect={(e) => { clearActive(); setActiveEvent(e); }} />
             : <CalendarMonth events={calendarEvents} t={t} calView={calView} setCalView={setCalView} onSelect={(e) => { clearActive(); setActiveEvent(e); }} />
         ) : scope === "todos" ? (
-          <TaskListView groups={groupedTodos} t={t} activeId={activeTask?.id} onComplete={completeTask} onOpen={(k) => { clearActive(); setActiveTask(k); }} />
+          <div className="h-full flex flex-col">
+            <TaskGlobalListView columns={taskColumns} tasks={todosFiltered}
+              onTaskClick={(k) => { clearActive(); setActiveTask(k); }}
+              onToggleComplete={(k) => completeTask(k.id)} />
+          </div>
         ) : activeThread ? (
           <ChartisPanel key={activeThread.id} threadId={activeThread.id} titleOverride={title(activeThread)} directMode={activeThread.thread_type !== "objekt"} embedded />
         ) : (
@@ -817,53 +832,6 @@ function CalendarAgenda({ events, t, calView, setCalView, onSelect }) {
             })}
           </div>
         ))}
-      </div>
-    </div>
-  );
-}
-
-// Aufgaben als Checklisten-Ansicht (gruppiert wie im Task-Board)
-function TaskListView({ groups, t, activeId, onComplete, onOpen }) {
-  if (!groups || !groups.length) {
-    return (
-      <div className="h-full flex flex-col items-center justify-center gap-2" style={{ color: t.textMuted }}>
-        <CheckSquare className="h-10 w-10" style={{ opacity: 0.25 }} />
-        <div style={{ fontSize: 14, fontWeight: 500, color: t.textSecondary }}>Keine offenen Aufgaben</div>
-        <div style={{ fontSize: 12 }}>Alles erledigt.</div>
-      </div>
-    );
-  }
-  return (
-    <div style={{ height: "100%", display: "flex", flexDirection: "column", minHeight: 0 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderBottom: `1px solid ${t.borderSubtle}`, flexShrink: 0 }}>
-        <CheckSquare className="h-4 w-4" style={{ color: t.accent }} />
-        <span style={{ fontSize: 14, fontWeight: 600, flex: 1 }}>Aufgaben</span>
-        <Link to="/TaskBoard" className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg" style={{ fontSize: 11, background: t.accentSoft, color: t.accent }}><CheckSquare className="h-3.5 w-3.5" /> Task-Board</Link>
-      </div>
-      <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
-        {groups.map((it, i) => it.type === "header" ? (
-          <div key={"h" + i} style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 16px 4px", fontSize: 10, fontWeight: 700, letterSpacing: ".07em", textTransform: "uppercase", color: t.textMuted, borderTop: i > 0 ? `1px solid ${t.borderSubtle}` : "none" }}>
-            {it.color && <span style={{ width: 7, height: 7, borderRadius: 99, background: it.color, flexShrink: 0 }} />}
-            <span className="truncate">{it.label}</span>
-            <span style={{ marginLeft: "auto", fontWeight: 500 }}>{it.count}</span>
-          </div>
-        ) : (() => {
-          const k = it.k; const overdue = k.due_date && new Date(k.due_date) < new Date();
-          return (
-            <div key={"t" + k.id} className="w-full flex items-start gap-3 px-4 py-2.5" style={{ borderBottom: `1px solid ${t.borderSubtle}`, background: activeId === k.id ? t.activeRow : "transparent" }}>
-              <button onClick={() => onComplete(k.id)} title="Als erledigt markieren" className="flex-shrink-0 rounded-md flex items-center justify-center hover:opacity-70" style={{ width: 18, height: 18, border: `2px solid ${t.borderStrong}`, marginTop: 1, cursor: "pointer", background: "transparent" }} />
-              <button onClick={() => onOpen(k)} className="min-w-0 flex-1 text-left">
-                <div className="truncate" style={{ fontSize: 13, fontWeight: 500, color: t.textPrimary }}>{k.title}</div>
-                {(k.due_date || k.priority === "high") && (
-                  <div className="flex items-center gap-2" style={{ marginTop: 1 }}>
-                    {k.due_date && <span style={{ fontSize: 11, color: overdue ? SEM.missed : t.textMuted }}>fällig {fmtDateTime(k.due_date, true)}</span>}
-                    {k.priority === "high" && <span style={{ fontSize: 10, color: SEM.missed, fontWeight: 600 }}>· hoch</span>}
-                  </div>
-                )}
-              </button>
-            </div>
-          );
-        })())}
       </div>
     </div>
   );
