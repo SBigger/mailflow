@@ -224,12 +224,21 @@ function renderTemplate(html: string, beleg: any) {
 
 function createQrData(beleg: any) {
     const account = normIban(beleg.zahlstelle.qr_iban || beleg.zahlstelle.iban || '');
-    const useQrRef = isQrIban(account) && /^[0-9]{27}$/.test(String(beleg.zahlungsreferenz || ''));
+    const isQr = isQrIban(account);
+    const ref = String(beleg.zahlungsreferenz || '').replace(/\s+/g, '');
+    const hasValidQrRef = /^[0-9]{27}$/.test(ref);
+    // QR-IBAN verlangt zwingend eine gueltige 27-stellige QR-Referenz. Fehlt sie,
+    // klar abbrechen (frueher wurde still eine Dummy-Referenz gesetzt -> ungueltiger,
+    // rechtlich falscher Zahlteil auf produktiven Rechnungen).
+    if (isQr && !hasValidQrRef) {
+        throw new Error(`QR-Rechnung ${beleg.beleg_nr || ''}: QR-IBAN erfordert eine gueltige 27-stellige QR-Referenz, es ist aber keine hinterlegt. Bitte Referenz erfassen oder eine normale IBAN verwenden.`);
+    }
     const mAddr = splitAddr(beleg.fibu_mandanten.adresse);
     return {
         currency: beleg.waehrung || 'CHF',
         amount: Number(beleg.betrag_brutto || 0),
-        reference: useQrRef ? beleg.zahlungsreferenz : '000000000000000012312312316',
+        // Normale IBAN -> KEINE Referenz (Typ NON); QR-IBAN -> die gueltige QR-Referenz.
+        reference: isQr ? ref : undefined,
         message: `Rechnung ${beleg.beleg_nr || ''}`.trim(),
         creditor: {
             name: beleg.fibu_mandanten.name || 'Firma',
