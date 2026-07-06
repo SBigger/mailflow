@@ -125,8 +125,9 @@ export const NAV_GROUPS = [
   },
 ];
 
-// Gruppen, die beim ersten Start in der Sidebar aufgeklappt sind
-export const DEFAULT_OPEN = { start: true, arbeit: true, kunden: true, fibu: true, steuern: false, planung: false, tools: false, system: true };
+// Gruppen, die beim ersten Start in der Sidebar aufgeklappt sind:
+// alle — damit jede App sofort sichtbar ist. Zuklappen bleibt Sache des Nutzers.
+export const DEFAULT_OPEN = { start: true, arbeit: true, kunden: true, fibu: true, steuern: true, planung: true, tools: true, system: true };
 
 // FiBu-Links öffnen den zuletzt benutzten Mandanten direkt;
 // ohne bekannten Mandanten landet man auf der Mandanten-Auswahl.
@@ -137,7 +138,8 @@ export function fibuHref(sub) {
 }
 
 export function itemHref(item) {
-  if (item.name) return item.href ?? createPageUrl(item.name);
+  if (item.href) return item.href;
+  if (item.name) return createPageUrl(item.name);
   return fibuHref(item.fibu);
 }
 

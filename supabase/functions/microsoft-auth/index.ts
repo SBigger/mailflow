@@ -27,7 +27,7 @@ Deno.serve(async (req) => {
     scope: 'offline_access Mail.Read Mail.ReadBasic Mail.ReadWrite Mail.Send User.Read Files.ReadWrite.All Sites.ReadWrite.All Calendars.Read',
     response_mode: 'query',
     state: state || '',
-    login_hint: mail ,
+    ...(mail ? { login_hint: mail } : {}),
     ...(forceConsent ? { prompt: 'consent' } : {}),
   })
 

@@ -40,15 +40,20 @@ const MAX_SIZE = 10 * 1024 * 1024 // 10 MB
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
-  // Webhook-Secret prüfen (verhindert Spam-Injektionen)
+  // Webhook-Secret prüfen (verhindert Spam-Injektionen) — FAIL CLOSED:
+  // Ist kein Secret konfiguriert, wird der Endpoint gesperrt statt offen gelassen.
   const webhookSecret = Deno.env.get('FIBU_INBOX_WEBHOOK_SECRET')
-  if (webhookSecret) {
-    const provided = req.headers.get('X-Webhook-Secret') ?? req.headers.get('X-Mailgun-Signature-V1') ?? ''
-    if (provided !== webhookSecret) {
-      return new Response(JSON.stringify({ error: 'Unauthorized webhook' }), {
-        status: 401, headers: { ...corsHeaders, 'content-type': 'application/json' }
-      })
-    }
+  if (!webhookSecret) {
+    console.error('FIBU_INBOX_WEBHOOK_SECRET ist nicht gesetzt – Webhook gesperrt.')
+    return new Response(JSON.stringify({ error: 'Webhook nicht konfiguriert' }), {
+      status: 503, headers: { ...corsHeaders, 'content-type': 'application/json' }
+    })
+  }
+  const provided = req.headers.get('X-Webhook-Secret') ?? req.headers.get('X-Mailgun-Signature-V1') ?? ''
+  if (provided !== webhookSecret) {
+    return new Response(JSON.stringify({ error: 'Unauthorized webhook' }), {
+      status: 401, headers: { ...corsHeaders, 'content-type': 'application/json' }
+    })
   }
 
   const supabase = createClient(

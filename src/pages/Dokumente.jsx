@@ -22,6 +22,7 @@ import {
   History as HistoryIcon,
   MessageSquare,
   Mail,
+  Clock,
   MoreVertical
 } from "lucide-react";
 import VersionsDialog from "@/components/dokumente/VersionsDialog";
@@ -1178,6 +1179,13 @@ export default function Dokumente() {
     [allDoks, user]
   );
 
+  // Zuletzt verwendete/gespeicherte Dokumente: nach jüngstem Datum (updated_at, sonst
+  // created_at) absteigend, Top 60 — über alle Kunden (unabhängig von Sidebar-Auswahl).
+  const recentDocs = useMemo(() => {
+    const ts = (d) => new Date(d.updated_at || d.created_at || 0).getTime();
+    return [...allDoks].sort((a, b) => ts(b) - ts(a)).slice(0, 60);
+  }, [allDoks]);
+
   // ── Tastatur-Typeahead: tippen ohne ins Suchfeld zu klicken ──────────────
   // Du klickst irgendwo in die Dateiverwaltung und tippst "martin" -- die
   // Sidebar springt zum ersten Kunden, dessen Name das enthält.
@@ -1838,6 +1846,78 @@ export default function Dokumente() {
     );
   };
 
+  // Gemeinsame flache Dokument-Zeile (Normal-View + "Zuletzt"-Tab).
+  // showCustomer=true zeigt zusaetzlich den Kundennamen (nuetzlich im "Zuletzt"-Tab ueber alle Kunden).
+  const renderDocRow = (doc, { showCustomer = false } = {}) => {
+    const fi            = getFileInfo(doc.file_type, doc.filename);
+    const cat           = CATEGORIES.find(c => c.key === doc.category);
+    const ids           = doc.tag_ids || [];
+    const isCheckedOut  = !!doc.checked_out_by;
+    const isMyCheckout  = doc.checked_out_by === user?.id;
+    const lockedByOther = isCheckedOut && !isMyCheckout;
+    const isAdmin       = user?.role === 'admin';
+    const cust          = showCustomer ? customers.find(cx => cx.id === doc.customer_id) : null;
+    const openOrCheckout = () => { const _u = doc.sharepoint_web_url || signedUrls[doc.id]; if (!doc.checked_out_by) { handleCheckout(doc); } else if (doc.checked_out_by === user?.id) { openCheckin(doc); } else if (_u) { window.open(_u, '_blank'); } else { toast.error('URL nicht verfügbar.'); } };
+    return (
+      <div key={doc.id} {...fileDropProps(doc)}
+        title="Neue Datei hierher ziehen = als neue Version ablegen"
+        style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 16px", borderBottom: "1px solid " + border + "55", transition: "background 0.1s", opacity: replacingId === doc.id ? 0.5 : 1, ...(doc.id === highlightDocId ? { boxShadow: "0 0 0 2px " + accent + "88 inset", background: accent + "12", borderRadius: 6 } : {}), ...(doc.id === dropTargetId ? { boxShadow: "0 0 0 2px #10b981 inset", background: "#10b98114", borderRadius: 6 } : {}) }}
+        onMouseEnter={e => { if (doc.id !== dropTargetId) e.currentTarget.style.background = s.rowHover; }}
+        onMouseLeave={e => e.currentTarget.style.background = doc.id === highlightDocId ? accent + "12" : "transparent"}>
+        <span onClick={openOrCheckout} style={{ background: fi.color, color: "#fff", borderRadius: 4, padding: "2px 5px", fontSize: 10, fontWeight: 700, flexShrink: 0, minWidth: 36, textAlign: "center", cursor: "pointer" }}>{fi.label}</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+            <div onClick={openOrCheckout} style={{ fontSize: 13, color: s.textMain, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 500, flex: 1, cursor: "pointer" }}>{doc.name}</div>
+            {isCheckedOut && (
+              <span title={"Ausgecheckt von " + doc.checked_out_by_name + " am " + (doc.checked_out_at ? new Date(doc.checked_out_at).toLocaleDateString("de-CH") : "")}
+                style={{ fontSize: 10, color: isMyCheckout ? accent : "#f59e0b",
+                  background: isMyCheckout ? accent + "18" : "#f59e0b18",
+                  border: "1px solid " + (isMyCheckout ? accent + "44" : "#f59e0b44"),
+                  borderRadius: 8, padding: "1px 6px", flexShrink: 0,
+                  display: "flex", alignItems: "center", gap: 3 }}>
+                <Lock size={9} />
+                {isMyCheckout ? "Ich" : doc.checked_out_by_name}
+              </span>
+            )}
+          </div>
+          <div style={{ display: "flex", gap: 4, marginTop: 2, flexWrap: "wrap", alignItems: "center" }}>
+            {showCustomer && cust && (
+              <span style={{ fontSize: 10, background: accent + "14", color: accent, border: "1px solid " + accent + "33", borderRadius: 8, padding: "1px 6px" }}>{cust.company_name}</span>
+            )}
+            {(showCustomer || !selCat) && cat && (
+              <span style={{ fontSize: 10, background: s.sidebarBg, color: s.textMuted, border: "1px solid " + border, borderRadius: 8, padding: "1px 6px" }}>{cat.icon} {cat.label}</span>
+            )}
+            {ids.slice(0, 4).map(id => {
+              const lbl = tagLabel(id);
+              const col = tagColor(id);
+              if (!lbl) return null;
+              return (
+                <span key={id} style={{ background: col + "22", color: col, border: "1px solid " + col + "55", borderRadius: 8, padding: "1px 7px", fontSize: 10, display: "flex", alignItems: "center", gap: 3 }}>
+                  <span style={{ width: 5, height: 5, borderRadius: "50%", background: col }} />
+                  {lbl}
+                </span>
+              );
+            })}
+            {ids.length > 4 && <span style={{ fontSize: 10, color: s.textMuted }}>+{ids.length - 4}</span>}
+            {doc.notes && <span style={{ fontSize: 10, color: s.textMuted, fontStyle: "italic" }}>{doc.notes}</span>}
+          </div>
+        </div>
+        {doc.year && <span style={{ fontSize: 11, color: s.textMuted, background: s.sidebarBg, border: "1px solid " + border, borderRadius: 6, padding: "2px 7px", flexShrink: 0 }}>{doc.year}</span>}
+        <span style={{ fontSize: 11, color: s.textMuted, flexShrink: 0, width: 55, textAlign: "right" }}>{formatBytes(doc.file_size)}</span>
+        {(doc.updated_at || doc.created_at) && (
+          <span title={
+              (doc.created_at ? "Hochgeladen: " + new Date(doc.created_at).toLocaleString("de-CH") : "") +
+              (doc.updated_at ? "\nZuletzt gespeichert: " + new Date(doc.updated_at).toLocaleString("de-CH") : "")
+            }
+            style={{ fontSize: 10, color: s.textMuted, flexShrink: 0, whiteSpace: "nowrap", minWidth: 58, textAlign: "right" }}>
+            {new Date(doc.updated_at || doc.created_at).toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit", year: "2-digit" })}
+          </span>
+        )}
+        {renderRowActions(doc, { isCheckedOut, isMyCheckout, lockedByOther, isAdmin })}
+      </div>
+    );
+  };
+
   const selectCustomer = (id) => { setSelCustomerId(id); setSelCat(null); setSelYear(null); setExpandedC(p => ({ ...p, [id]: true })); };
   const selectCat      = (cid, ck) => { setSelCustomerId(cid); setSelCat(ck); setSelYear(null); setExpandedCat(p => ({ ...p, [cid + "_" + ck]: true })); };
 
@@ -1851,11 +1931,12 @@ export default function Dokumente() {
         <span style={{ fontSize: 15, fontWeight: 700, color: s.textMain }}>Dokumente</span>
         {/* Tabs */}
         <div style={{ display: "flex", gap: 2, background: s.sidebarBg, border: "1px solid " + border, borderRadius: 8, padding: 3 }}>
-          {[['alle', 'Alle Dokumente'], ['ausgecheckt', 'Ausgecheckt']].map(([key, label]) => (
+          {[['alle', 'Alle Dokumente'], ['ausgecheckt', 'Ausgecheckt'], ['recent', 'Zuletzt']].map(([key, label]) => (
             <button key={key} onClick={() => setPageTab(key)}
               style={{ padding: "4px 14px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 12, fontWeight: pageTab === key ? 600 : 400,
                 background: pageTab === key ? accent : "transparent",
-                color: pageTab === key ? "#fff" : s.textMuted, transition: "all 0.15s" }}>
+                color: pageTab === key ? "#fff" : s.textMuted, transition: "all 0.15s", display: "flex", alignItems: "center", gap: 5 }}>
+              {key === 'recent' && <Clock size={12} />}
               {label}{key === 'ausgecheckt' && myCheckedOutDocs.length > 0 ? ' (' + myCheckedOutDocs.length + ')' : ''}
             </button>
           ))}
@@ -2008,6 +2089,25 @@ export default function Dokumente() {
                 );
               })}
             </div>
+          )}
+        </div>
+      )}
+
+      {pageTab === 'recent' && !ftResults && (
+        <div style={{ flex: 1, overflowY: "auto" }}>
+          <div style={{ padding: "10px 16px", borderBottom: "1px solid " + border, display: "flex", alignItems: "center", gap: 8, position: "sticky", top: 0, background: s.cardBg, zIndex: 1 }}>
+            <Clock size={14} style={{ color: accent }} />
+            <span style={{ fontSize: 13, fontWeight: 600, color: s.textMain }}>Zuletzt verwendet</span>
+            <span style={{ fontSize: 12, color: s.textMuted }}>({recentDocs.length})</span>
+            <span style={{ fontSize: 11, color: s.textMuted, marginLeft: 4 }}>· neu abgelegt oder geändert, über alle Kunden</span>
+          </div>
+          {recentDocs.length === 0 ? (
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "40%", color: s.textMuted, gap: 10 }}>
+              <Clock size={36} />
+              <span style={{ fontSize: 14 }}>Noch keine Dokumente</span>
+            </div>
+          ) : (
+            recentDocs.map(doc => renderDocRow(doc, { showCustomer: true }))
           )}
         </div>
       )}
@@ -2358,74 +2458,7 @@ export default function Dokumente() {
               })
             ) : (
               /* ── Normal-View ── */
-              filtered.map(doc => {
-                const fi            = getFileInfo(doc.file_type, doc.filename);
-                const cat           = CATEGORIES.find(c => c.key === doc.category);
-                const ids           = doc.tag_ids || [];
-                const isCheckedOut  = !!doc.checked_out_by;
-                const isMyCheckout  = doc.checked_out_by === user?.id;
-                const lockedByOther = isCheckedOut && !isMyCheckout;
-                const isAdmin       = user?.role === 'admin';
-                return (
-                  <div key={doc.id} {...fileDropProps(doc)}
-                    title="Neue Datei hierher ziehen = als neue Version ablegen"
-                    style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 16px", borderBottom: "1px solid " + border + "55", transition: "background 0.1s", opacity: replacingId === doc.id ? 0.5 : 1, ...(doc.id === highlightDocId ? { boxShadow: "0 0 0 2px " + accent + "88 inset", background: accent + "12", borderRadius: 6 } : {}), ...(doc.id === dropTargetId ? { boxShadow: "0 0 0 2px #10b981 inset", background: "#10b98114", borderRadius: 6 } : {}) }}
-                    onMouseEnter={e => { if (doc.id !== dropTargetId) e.currentTarget.style.background = s.rowHover; }}
-                    onMouseLeave={e => e.currentTarget.style.background = doc.id === highlightDocId ? accent + "12" : "transparent"}>
-                    {/* Typ */}
-                    <span onClick={() => { const _u = doc.sharepoint_web_url || signedUrls[doc.id]; if (!doc.checked_out_by) { handleCheckout(doc); } else if (doc.checked_out_by === user?.id) { openCheckin(doc); } else if (_u) { window.open(_u, '_blank'); } else { toast.error('URL nicht verfuegbar.'); } }} style={{ background: fi.color, color: "#fff", borderRadius: 4, padding: "2px 5px", fontSize: 10, fontWeight: 700, flexShrink: 0, minWidth: 36, textAlign: "center", cursor: "pointer" }}>{fi.label}</span>
-                    {/* Name + Tags */}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                      <div onClick={() => { const _u = doc.sharepoint_web_url || signedUrls[doc.id]; if (!doc.checked_out_by) { handleCheckout(doc); } else if (doc.checked_out_by === user?.id) { openCheckin(doc); } else if (_u) { window.open(_u, '_blank'); } else { toast.error('URL nicht verfügbar.'); } }} style={{ fontSize: 13, color: s.textMain, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 500, flex: 1, cursor: "pointer" }}>{doc.name}</div>
-                      {isCheckedOut && (
-                        <span title={"Ausgecheckt von " + doc.checked_out_by_name + " am " + (doc.checked_out_at ? new Date(doc.checked_out_at).toLocaleDateString("de-CH") : "")}
-                          style={{ fontSize: 10, color: isMyCheckout ? accent : "#f59e0b",
-                            background: isMyCheckout ? accent + "18" : "#f59e0b18",
-                            border: "1px solid " + (isMyCheckout ? accent + "44" : "#f59e0b44"),
-                            borderRadius: 8, padding: "1px 6px", flexShrink: 0,
-                            display: "flex", alignItems: "center", gap: 3 }}>
-                          <Lock size={9} />
-                          {isMyCheckout ? "Ich" : doc.checked_out_by_name}
-                        </span>
-                      )}
-                    </div>
-                      <div style={{ display: "flex", gap: 4, marginTop: 2, flexWrap: "wrap", alignItems: "center" }}>
-                        {!selCat && cat && (
-                          <span style={{ fontSize: 10, background: s.sidebarBg, color: s.textMuted, border: "1px solid " + border, borderRadius: 8, padding: "1px 6px" }}>{cat.icon} {cat.label}</span>
-                        )}
-                        {ids.slice(0, 4).map(id => {
-                          const lbl = tagLabel(id);
-                          const col = tagColor(id);
-                          if (!lbl) return null;
-                          return (
-                            <span key={id} style={{ background: col + "22", color: col, border: "1px solid " + col + "55", borderRadius: 8, padding: "1px 7px", fontSize: 10, display: "flex", alignItems: "center", gap: 3 }}>
-                              <span style={{ width: 5, height: 5, borderRadius: "50%", background: col }} />
-                              {lbl}
-                            </span>
-                          );
-                        })}
-                        {ids.length > 4 && <span style={{ fontSize: 10, color: s.textMuted }}>+{ids.length - 4}</span>}
-                        {doc.notes && <span style={{ fontSize: 10, color: s.textMuted, fontStyle: "italic" }}>{doc.notes}</span>}
-                      </div>
-                    </div>
-                    {/* Jahr */}
-                    {doc.year && <span style={{ fontSize: 11, color: s.textMuted, background: s.sidebarBg, border: "1px solid " + border, borderRadius: 6, padding: "2px 7px", flexShrink: 0 }}>{doc.year}</span>}
-                    {/* Groesse + Datum (zuletzt gespeichert, sonst hochgeladen) */}
-                    <span style={{ fontSize: 11, color: s.textMuted, flexShrink: 0, width: 55, textAlign: "right" }}>{formatBytes(doc.file_size)}</span>
-                    {(doc.updated_at || doc.created_at) && (
-                      <span title={
-                          (doc.created_at ? "Hochgeladen: " + new Date(doc.created_at).toLocaleString("de-CH") : "") +
-                          (doc.updated_at ? "\nZuletzt gespeichert: " + new Date(doc.updated_at).toLocaleString("de-CH") : "")
-                        }
-                        style={{ fontSize: 10, color: s.textMuted, flexShrink: 0, whiteSpace: "nowrap", minWidth: 58, textAlign: "right" }}>
-                        {new Date(doc.updated_at || doc.created_at).toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit", year: "2-digit" })}
-                      </span>
-                    )}
-                    {renderRowActions(doc, { isCheckedOut, isMyCheckout, lockedByOther, isAdmin })}
-                  </div>
-                );
-              })
+              filtered.map(doc => renderDocRow(doc))
             )}
           </div>
         </div>

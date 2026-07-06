@@ -102,11 +102,13 @@ export default function KundenKonditionenPanel() {
 
   const upsertMut = useMutation({
     mutationFn: async ({ termsPayload, addressPayload, customerId }) => {
-      // Address auf customers updaten (best effort, nur falls FELDER existieren)
-      const addr = await supabase.from('customers').update(addressPayload).eq('id', customerId);
-      if (addr.error) {
-        // Adresse-Felder evtl. nicht migriert? – Konditionen trotzdem speichern.
-        console.warn('Customer-Adresse nicht updatebar:', addr.error.message);
+      // Adresse nur updaten, wenn tatsaechlich Felder gesetzt wurden (sonst kein Clobber)
+      if (addressPayload && Object.keys(addressPayload).length > 0) {
+        const addr = await supabase.from('customers').update(addressPayload).eq('id', customerId);
+        if (addr.error) {
+          // Adresse-Felder evtl. nicht migriert? – Konditionen trotzdem speichern.
+          console.warn('Customer-Adresse nicht updatebar:', addr.error.message);
+        }
       }
       return leCustomerTerms.upsert(termsPayload);
     },
@@ -133,14 +135,15 @@ export default function KundenKonditionenPanel() {
       dunning_disabled: !!form.dunning_disabled,
       notes: form.notes?.trim() || null,
     };
-    const addressPayload = {
-      street: form.street?.trim() || null,
-      building_number: form.building_number?.trim() || null,
-      zip: form.zip?.trim() || null,
-      city: form.city?.trim() || null,
-      country: form.country?.trim() || 'CH',
-      billing_email: form.billing_email?.trim() || null,
-    };
+    // Nur NICHT-leere Adressfelder schreiben. Das Formular startet leer (die Kundenliste
+    // liefert keine Adressdaten), daher wuerde ein pauschales Payload street/zip/city…
+    // im CRM mit NULL ueberschreiben. So bleibt eine bestehende Adresse erhalten, wenn
+    // der Nutzer sie hier nicht bewusst aendert.
+    const addressPayload = {};
+    for (const k of ['street', 'building_number', 'zip', 'city', 'country', 'billing_email']) {
+      const v = form[k]?.trim();
+      if (v) addressPayload[k] = v;
+    }
     upsertMut.mutate({ termsPayload, addressPayload, customerId: form.customer_id });
   };
 

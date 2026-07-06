@@ -54,6 +54,38 @@ export function authorKey(user) {
   return "staff";
 }
 
+// Erweiterte Team-Palette: jede/r Mitarbeiter/in kriegt eine eigene, stabile
+// Farbe (deterministisch aus der User-ID), damit der Chat aufs ganze Team
+// skaliert (hell-Fläche + dunkler Text, theme-unabhängig wie AUTHOR).
+export const AUTHOR_PALETTE = [
+  { bg: "#dbeafe", text: "#1e3a8a" }, // blau
+  { bg: "#d1fae5", text: "#065f46" }, // grün
+  { bg: "#fef3c7", text: "#78350f" }, // amber
+  { bg: "#ede9fe", text: "#5b21b6" }, // violett
+  { bg: "#fce7f3", text: "#9d174d" }, // pink
+  { bg: "#ccfbf1", text: "#115e59" }, // teal
+  { bg: "#ffedd5", text: "#9a3412" }, // orange
+  { bg: "#e0e7ff", text: "#3730a3" }, // indigo
+  { bg: "#fee2e2", text: "#991b1b" }, // rot
+  { bg: "#dcfce7", text: "#166534" }, // smaragd
+  { bg: "#cffafe", text: "#155e75" }, // cyan
+  { bg: "#f5d0fe", text: "#86198f" }, // fuchsia
+];
+
+function hashStr(s) {
+  let h = 0; const str = String(s || "?");
+  for (let i = 0; i < str.length; i++) h = (Math.imul(h, 31) + str.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+
+// Farbe je Person: benannte Kollaborateure (Sascha/Roger/Claude) fix,
+// alle anderen deterministisch aus der Palette.
+export function personStyle(user) {
+  const k = authorKey(user);
+  if (k !== "staff") return AUTHOR[k];
+  return AUTHOR_PALETTE[hashStr(user?.id || user?.email || user?.full_name) % AUTHOR_PALETTE.length];
+}
+
 // Deterministische Initialen + Farbe je User
 export function initials(name) {
   const p = String(name || "?").trim().split(/\s+/);

@@ -1,4 +1,4 @@
-import React, { useState, useContext, useMemo } from "react";
+import React, { useState, useContext, useMemo, useEffect, useRef } from "react";
 import { ThemeContext } from "@/Layout";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { entities } from "@/api/supabaseClient";
@@ -279,6 +279,35 @@ function PeriodeTab({ customer }) {
     const withQuotes = computeQuotes(units, schluessel);
     return computeFaktoren(withQuotes, period);
   }, [units, period, schluessel]);
+
+  // Berechnete Werte in die DB spiegeln, damit Übersicht/Pivot/Excel sie lesen
+  // koennen (die lesen quote_berechnet_pct / steuerbarer_gewinn_eigen /
+  // steuerbares_kapital_eigen; ohne dieses Persistieren zeigten sie 0). Wird nur
+  // geschrieben, wenn sich ein Wert geaendert hat (Signatur-Guard verhindert Loops).
+  const persistedSig = useRef("");
+  useEffect(() => {
+    if (!enrichedUnits.length) return;
+    const r4 = (v) => (v == null ? "" : Number(v).toFixed(4));
+    const r2 = (v) => Number(v || 0).toFixed(2);
+    const sig = enrichedUnits.map((u) => `${u.id}:${r4(u._quote_calc)}:${r2(u._gewinn_eigen)}:${r2(u._kapital_eigen)}`).join("|");
+    if (sig === persistedSig.current) return;
+    persistedSig.current = sig;
+    for (const u of enrichedUnits) {
+      const patch = {
+        quote_berechnet_pct: u._quote_calc != null ? Number(u._quote_calc.toFixed(4)) : null,
+        steuerbarer_gewinn_eigen: Number((u._gewinn_eigen || 0).toFixed(2)),
+        steuerbares_kapital_eigen: Number((u._kapital_eigen || 0).toFixed(2)),
+      };
+      const changed =
+        r4(u.quote_berechnet_pct) !== r4(patch.quote_berechnet_pct) ||
+        r2(u.steuerbarer_gewinn_eigen) !== r2(patch.steuerbarer_gewinn_eigen) ||
+        r2(u.steuerbares_kapital_eigen) !== r2(patch.steuerbares_kapital_eigen);
+      if (changed) {
+        // Fire-and-forget (kein Query-Invalidate -> kein Refetch-Loop)
+        entities.TaxUnit.update(u.id, patch).catch(() => {});
+      }
+    }
+  }, [enrichedUnits]);
 
   // ── Year-List (existierende + aktuelles + nächstes) ─────────────────
   const yearOptions = useMemo(() => {

@@ -1283,6 +1283,7 @@ export default function Dokumente() {
                 const {data, error} = await supabase
                     .from('dokumente')
                     .select(DOK_LIST_FIELDS)
+                    .is('deleted_at', null)   // GeBueV-Soft-Delete ausblenden (wie Dokumente.jsx)
                     .order('created_at', {ascending: false})
                     .range(offset, offset + PAGE - 1);
                 if (error) throw new Error(error.message);
@@ -1671,8 +1672,10 @@ export default function Dokumente() {
         // Optimistic: sofort aus Liste entfernen
         setDeletingIds(prev => new Set([...prev, doc.id]));
         try {
-            if (doc.storage_path) await supabase.storage.from(BUCKET).remove([doc.storage_path.replace('dokumente/', '')]);
-            await entities.Dokument.delete(doc.id);
+            // GeBueV: Soft-Delete (Datei + Versionen bleiben; retention_until sperrt Hard-Delete
+            // ohnehin). Storage NICHT physisch loeschen \u2014 sonst verwaiste Zeile + Dateiverlust.
+            const { data: { user: authUser } } = await supabase.auth.getUser();
+            await entities.Dokument.update(doc.id, { deleted_at: new Date().toISOString(), deleted_by: authUser?.id ?? null });
             queryClient.invalidateQueries(["dokumente-all"]);
             toast.success("Dokument gel\u00f6scht", {closeButton: true});
         } catch (err) {

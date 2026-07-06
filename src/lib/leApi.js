@@ -643,7 +643,15 @@ export async function createCreditFromInvoice(originalInvoiceId, { reason, lines
   let creditSubtotal, creditVat, creditTotal, srcLines;
   if (isPartial) {
     srcLines = lines;
-    creditSubtotal = lines.reduce((s, l) => s + Number(l.amount || 0), 0);
+    const rawSum = lines.reduce((s, l) => s + Number(l.amount || 0), 0);
+    // Effektiven Rabatt der Originalrechnung auf die gewaehlten Positionen anwenden,
+    // sonst wird der Rabattanteil zu viel gutgeschrieben.
+    const origSubtotal = Number(orig.subtotal || 0);
+    let discountedSubtotal = origSubtotal;
+    if (Number(orig.discount_pct))        discountedSubtotal = origSubtotal * (1 - Number(orig.discount_pct) / 100);
+    else if (Number(orig.discount_amount)) discountedSubtotal = origSubtotal - Number(orig.discount_amount);
+    const factor = origSubtotal > 0 ? discountedSubtotal / origSubtotal : 1;
+    creditSubtotal = Math.round(rawSum * factor * 100) / 100;
     creditVat = Math.round(creditSubtotal * vatPct) / 100;
     creditTotal = creditSubtotal + creditVat;
   } else {
@@ -653,25 +661,10 @@ export async function createCreditFromInvoice(originalInvoiceId, { reason, lines
     creditTotal = Number(orig.total || 0);
   }
 
-  // Neue Gutschriftsnummer aus le_number_sequence (kind='credit')
-  const { data: seq } = await supabase.from('le_number_sequence').select('*').eq('kind', 'credit').single();
-  let creditNo = null;
-  if (seq) {
-    const y = new Date().getFullYear();
-    const resetYearly = !!seq.reset_yearly;
-    const lastYear = seq.last_year ?? y;
-    const newCounter = (resetYearly && lastYear !== y) ? 1 : (seq.current_value + 1);
-    const padded = String(newCounter).padStart(seq.padding_length || 4, '0');
-    creditNo = String(seq.format)
-      .replace('{YYYY}', String(y))
-      .replace('{YY}', String(y).slice(-2))
-      .replace('{MM}', String(new Date().getMonth() + 1).padStart(2, '0'))
-      .replace('{NNNN}', padded);
-    await supabase.from('le_number_sequence').update({
-      current_value: newCounter,
-      last_year: y,
-    }).eq('id', seq.id);
-  }
+  // Neue Gutschriftsnummer ATOMAR aus dem RPC ziehen (FOR UPDATE-Row-Lock im
+  // le_next_credit_no verhindert Doppelnummern bei parallelen Gutschriften).
+  const { data: creditNo, error: noErr } = await supabase.rpc('le_next_credit_no');
+  if (noErr) throw noErr;
 
   const { data: credit, error: credErr } = await supabase.from('le_invoice').insert({
     invoice_no: creditNo,
@@ -1147,7 +1140,7 @@ export async function fakturaVorschlagData({ fromIso, toIso, allOpen = false } =
   let withInternal = true;
   let withExternal = true;
   const selectWith = () =>
-    `id, entry_date, hours_internal${withExternal ? ', hours_external' : ''}, rate_snapshot, project_id, service_type_id, description, employee_id, status, project:le_project(id, name, project_no, billing_mode${withInternal ? ', is_internal' : ''}, customer_id, customer:customers(id, company_name, street, building_number, zip, city, country, billing_email)), service_type:le_service_type(id, name, billable, default_section), employee:le_employee(id, short_code, full_name)`;
+    `id, entry_date, hours_internal${withExternal ? ', hours_external' : ''}, rate_snapshot, project_id, service_type_id, description, employee_id, status, project:le_project(id, name, project_no, billing_mode, pauschal_amount, pauschal_cycle${withInternal ? ', is_internal' : ''}, customer_id, customer:customers(id, company_name, street, building_number, zip, city, country, billing_email)), service_type:le_service_type(id, name, billable, default_section), employee:le_employee(id, short_code, full_name)`;
   const all = [];
   for (let offset = 0; ; offset += PAGE) {
     let q = supabase
@@ -1241,8 +1234,14 @@ export async function createInvoiceDraftsFromEntries({
     const projExpenses = expensesByProject.get(projectId) ?? [];
     if (billable.length === 0 && projExpenses.length === 0 && (!includeKulant || kulant.length === 0)) continue;
 
-    // Subtotal aus billable (verrechnete = externe Stunden) + Spesen
-    const hoursSubtotal = billable.reduce((s, e) => s + effectiveHours(e) * Number(e.rate_snapshot || 0), 0);
+    // Pauschal-Projekt: Fixbetrag (pauschal_amount) statt Stunden × Ansatz.
+    // Die Stunden bleiben verknüpft/sichtbar für den Aufwand-Vergleich.
+    const isPauschal = proj?.billing_mode === 'pauschal';
+    const pauschalAmount = Number(proj?.pauschal_amount || 0);
+    // Subtotal aus billable (verrechnete = externe Stunden) bzw. Pauschale + Spesen
+    const hoursSubtotal = isPauschal
+      ? pauschalAmount
+      : billable.reduce((s, e) => s + effectiveHours(e) * Number(e.rate_snapshot || 0), 0);
     const expenseSubtotal = projExpenses.reduce((s, x) => s + Number(x.amount_gross || 0), 0);
     const subtotal = hoursSubtotal + expenseSubtotal;
     const vatAmount = Math.round(subtotal * vatPct) / 100;
@@ -1272,34 +1271,49 @@ export async function createInvoiceDraftsFromEntries({
       .from('le_invoice').insert(invoicePayload).select().single();
     if (invErr) throw invErr;
 
-    // Aggregiere je service_type eine Linie (nur billable, externe Stunden)
-    const groupedByType = new Map();
-    for (const e of billable) {
-      const key = e.service_type_id ?? 'none';
-      if (!groupedByType.has(key)) groupedByType.set(key, { serviceType: e.service_type, hours: 0, amount: 0, rateSum: 0, count: 0 });
-      const g = groupedByType.get(key);
-      const h = effectiveHours(e);
-      const r = Number(e.rate_snapshot || 0);
-      g.hours += h;
-      g.amount += h * r;
-      g.rateSum += r;
-      g.count += 1;
-    }
-
     let idx = 10;
     const linesPayload = [];
-    for (const [, g] of groupedByType) {
-      const avgRate = g.hours > 0 ? g.amount / g.hours : (g.count ? g.rateSum / g.count : 0);
+    if (isPauschal) {
+      // Pauschal-Projekt: eine Fix-Position. Die Stunden erscheinen NICHT als
+      // berechnete Zeilen, bleiben aber verknüpft (verrechnet) und im Vorschlag
+      // zum Aufwand-Vergleich sichtbar.
       linesPayload.push({
         invoice_id: inv.id,
-        service_type_id: g.serviceType?.id ?? null,
-        description: g.serviceType?.name ?? 'Leistung',
-        hours: Math.round(g.hours * 100) / 100,
-        rate: Math.round(avgRate * 100) / 100,
-        amount: Math.round(g.amount * 100) / 100,
+        service_type_id: null,
+        description: (`Pauschale ${proj?.name ?? ''}`).trim() + (proj?.pauschal_cycle ? ` (${proj.pauschal_cycle})` : ''),
+        hours: 0,
+        rate: 0,
+        amount: Math.round(pauschalAmount * 100) / 100,
         sort_order: idx,
       });
       idx += 10;
+    } else {
+      // Aggregiere je service_type eine Linie (nur billable, externe Stunden)
+      const groupedByType = new Map();
+      for (const e of billable) {
+        const key = e.service_type_id ?? 'none';
+        if (!groupedByType.has(key)) groupedByType.set(key, { serviceType: e.service_type, hours: 0, amount: 0, rateSum: 0, count: 0 });
+        const g = groupedByType.get(key);
+        const h = effectiveHours(e);
+        const r = Number(e.rate_snapshot || 0);
+        g.hours += h;
+        g.amount += h * r;
+        g.rateSum += r;
+        g.count += 1;
+      }
+      for (const [, g] of groupedByType) {
+        const avgRate = g.hours > 0 ? g.amount / g.hours : (g.count ? g.rateSum / g.count : 0);
+        linesPayload.push({
+          invoice_id: inv.id,
+          service_type_id: g.serviceType?.id ?? null,
+          description: g.serviceType?.name ?? 'Leistung',
+          hours: Math.round(g.hours * 100) / 100,
+          rate: Math.round(avgRate * 100) / 100,
+          amount: Math.round(g.amount * 100) / 100,
+          sort_order: idx,
+        });
+        idx += 10;
+      }
     }
     // Spesen als eigene Positionen hintendran
     for (const x of projExpenses) {
@@ -1329,11 +1343,12 @@ export async function createInvoiceDraftsFromEntries({
     }
 
     // Time-Entries verknüpfen.
-    // - billable / nicht-billable (aber nicht kulant) → 'verrechnet'
+    // - NUR wirklich abrechenbare Einträge → 'verrechnet' (an die Rechnung gebunden)
     // - kulant (wenn includeKulant) → 'kulant_abgerechnet'
-    const billableIds = projEntries
-      .filter(e => e.status !== 'kulant')
-      .map(e => e.id);
+    // - pauschale / nicht-abrechenbare (service.billable === false) werden NICHT
+    //   verbucht/verrechnet: reine interne Zeiterfassung, kein Rechnungsposten,
+    //   keine Fibu-Buchung. Sie bleiben unverändert.
+    const billableIds = billable.map(e => e.id);
     if (billableIds.length) {
       // .is('invoice_id', null): nur noch nicht verrechnete Einträge beanspruchen –
       // verhindert Doppelverrechnung, falls ein paralleler Durchlauf sie schon nahm.
@@ -1354,7 +1369,14 @@ export async function createInvoiceDraftsFromEntries({
       if (kErr) throw kErr;
     }
 
-    created.push(inv);
+    // Direkt-Rechnung: finalisieren, damit fortlaufende Nummer + QR-Referenz gesetzt
+    // werden (MWST verlangt eine Rechnungsnummer; ohne qr_reference kein gueltiger Zahlteil).
+    if (direct) {
+      const finalized = await leInvoice.finalize(inv.id);
+      created.push(finalized ?? inv);
+    } else {
+      created.push(inv);
+    }
   }
   return created;
 }

@@ -85,6 +85,23 @@ function AkontoVerrechnungCard({ invoice, onLinked }) {
         });
         i++;
       }
+      // Kopfsummen der Schlussrechnung NEU aus ALLEN Zeilen berechnen (inkl. der
+      // eben eingefuegten Akonto-Abzugszeilen). Sonst bleibt invoice.total auf dem
+      // Betrag OHNE Abzug -> QR/PDF fordern den vollen Betrag -> Akonto doppelt bezahlt.
+      // Gleiche Formel wie DraftEditor/saveMut.
+      const { data: allLines } = await supabase
+        .from('le_invoice_line').select('amount').eq('invoice_id', invoice.id);
+      const subtotalRaw = (allLines ?? []).reduce((s, l) => s + Number(l.amount || 0), 0);
+      const pct  = Number(invoice.discount_pct || 0);
+      const dAmt = Number(invoice.discount_amount || 0);
+      const vPct = Number(invoice.vat_pct ?? 8.1);
+      const subtotalNet = Math.max(0, subtotalRaw * (1 - pct / 100) - dAmt);
+      const vatAmount = subtotalNet * vPct / 100;
+      await leInvoice.update(invoice.id, {
+        subtotal: subtotalNet,
+        vat_amount: vatAmount,
+        total: subtotalNet + vatAmount,
+      });
     },
     onSuccess: () => {
       toast.success(`${selectedAkonti.length} Akonto verrechnet`);
@@ -330,6 +347,21 @@ function DraftEditor({ invoice, onSaved, onFinalized, onDirtyChange }) {
     markDirty();
   };
 
+  // Lokalen Stand frisch aus der DB laden (z.B. nachdem eine Akonto-Abzugszeile
+  // extern eingefuegt wurde) – sonst kennt der Editor die Zeile nicht und ein
+  // spaeteres Speichern wuerde die Kopfsummen wieder OHNE Abzug ueberschreiben.
+  const reloadFromDb = async () => {
+    const fresh = await leInvoice.get(invoice.id);
+    if (!fresh) return;
+    setLines((fresh.lines ?? []).slice()
+      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+      .map((l) => ({ ...l, _original: { ...l } })));
+    setDiscountPct(fresh.discount_pct ?? 0);
+    setDiscountAmount(fresh.discount_amount ?? 0);
+    setVatPct(fresh.vat_pct ?? 8.1);
+    setDirty(false);
+  };
+
   // --- Persistieren ---
   const saveMut = useMutation({
     mutationFn: async () => {
@@ -523,7 +555,7 @@ function DraftEditor({ invoice, onSaved, onFinalized, onDirtyChange }) {
       {invoice.customer_id && (invoice.invoice_type === 'normal' || invoice.invoice_type === 'schluss') && (
         <AkontoVerrechnungCard
           invoice={invoice}
-          onLinked={() => onSaved?.()}
+          onLinked={async () => { await reloadFromDb(); onSaved?.(); }}
         />
       )}
 

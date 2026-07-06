@@ -45,7 +45,22 @@ serve(async (req) => {
       })
     }
 
-    // Update role in profiles table
+    // Nur erlaubte Rollen zulassen (muss zum profiles_role_check-Constraint passen)
+    const ALLOWED_ROLES = ['admin', 'mandatsleiter', 'sachbearbeiter', 'readonly', 'task_user']
+    if (!ALLOWED_ROLES.includes(role)) {
+      return new Response(JSON.stringify({ error: `Ungültige Rolle: ${role}` }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    // Ein Admin darf sich nicht selbst degradieren (sonst evtl. kein Admin mehr übrig)
+    if (user_id === user.id && role !== 'admin') {
+      return new Response(JSON.stringify({ error: 'Du kannst deine eigene Admin-Rolle nicht entfernen. Ein anderer Admin muss das tun.' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    // Rolle in profiles setzen (is_admin wird per Trigger aus role abgeleitet)
     const { error } = await adminClient
       .from('profiles')
       .update({ role })

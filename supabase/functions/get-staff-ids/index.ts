@@ -1,18 +1,17 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { requireUser, jsonResponse, corsHeaders } from "../_shared/auth.ts";
 
-// Temporary function - delete after use
+// Liefert die Mitarbeiterliste (id, Name, E-Mail) fuer Zuweisungs-Picker.
+// Nur fuer eingeloggte Mitarbeiter (verhindert anonymes Auslesen aller Nutzer).
 Deno.serve(async (req) => {
-  const cors = { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json' }
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
-  const adminClient = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-  )
-  const { data } = await adminClient
-    .from('profiles')
-    .select('id, full_name, email')
-    .order('full_name')
+  const auth = await requireUser(req);
+  if (auth.response) return auth.response;
 
-  return new Response(JSON.stringify(data), { headers: cors })
-})
+  const { data } = await auth.admin!
+    .from("profiles")
+    .select("id, full_name, email")
+    .order("full_name");
+
+  return jsonResponse(data ?? []);
+});

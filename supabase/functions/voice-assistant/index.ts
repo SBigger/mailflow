@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { requireUser } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -144,30 +145,11 @@ serve(async (req) => {
   }
 
   try {
-    // JWT prüfen
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-    const token = authHeader.replace("Bearer ", "");
-    try {
-      const parts = token.split(".");
-      if (parts.length !== 3) throw new Error("invalid jwt");
-      const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
-      if (!payload.sub && payload.role !== "service_role" && payload.role !== "anon") throw new Error("no sub");
-      if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) throw new Error("expired");
-    } catch {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
+    // JWT serverseitig verifizieren (getUser). Lehnt anon-Key-Aufrufe ab —
+    // vorher wurde das Token nur dekodiert und role="anon" sogar akzeptiert.
+    const auth = await requireUser(req);
+    if (auth.response) return auth.response;
+    const supabase = auth.admin!;
 
     const body = await req.json();
 

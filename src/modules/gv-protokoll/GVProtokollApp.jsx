@@ -40,11 +40,12 @@ export default function GvProtokollApp() {
     const [statusMsg, setStatusMsg] = useState("");
     const [recoveryItems, setRecoveryItems] = useState([]);
     const [showSettings, setShowSettings] = useState(false);
-    const [showProtokolle, setShowProtokolle] = useState(false);
     const [mics, setMics] = useState([]);
     const [volWidth, setVolWidth] = useState("0%");
     const [inputName, setInputName] = useState("");
     const [savedProtocols, setSavedProtocols] = useState([]);
+    const [currentProtocolId, setCurrentProtocolId] = useState(null);
+    const [protocolTitle, setProtocolTitle] = useState("");
 
     // Refs
     const mediaRecRef = useRef(null);
@@ -121,6 +122,16 @@ export default function GvProtokollApp() {
     }, [summaryText, traktanden, tasks, decisions]);
 
     useEffect(() => {
+        LS.set("gv_agenda", agenda);
+        LS.set("gv_segOverrides", segOverrides);
+    }, [agenda, segOverrides]);
+
+    useEffect(() => {
+        LS.set("gv_customer", selectedCustomer);
+        loadProtocols(selectedCustomer);
+    }, [selectedCustomer.id, selectedCustomer.name]);
+
+    useEffect(() => {
         loadCustomers();
         refreshRecoveryBanner();
         refreshMics();
@@ -142,6 +153,114 @@ export default function GvProtokollApp() {
         } catch (err) {
             console.error("Fehler beim Laden der Kunden:", err);
         }
+    };
+
+    // ════════════════════════════════════════════════════════════════
+    //  Protokoll-Ablage (Supabase, pro Kunde)
+    // ════════════════════════════════════════════════════════════════
+    const loadProtocols = async (cust) => {
+        if (!cust?.id && !cust?.name) { setSavedProtocols([]); return; }
+        try {
+            let q = supabase
+                .from('gv_protocols')
+                .select('id, title, meeting_date, updated_at')
+                .order('meeting_date', { ascending: false })
+                .order('updated_at', { ascending: false });
+            q = cust.id ? q.eq('customer_id', cust.id) : q.eq('customer_name', cust.name);
+            const { data, error } = await q;
+            if (error) throw error;
+            setSavedProtocols(data || []);
+        } catch (err) {
+            console.error("Fehler beim Laden der Protokolle:", err);
+        }
+    };
+
+    const saveProtocol = async () => {
+        if (!selectedCustomer.id && !selectedCustomer.name) {
+            setStatusMsg("❌ Bitte zuerst einen Kunden wählen.");
+            return;
+        }
+        const defTitle = protocolTitle || `Protokoll ${new Date().toLocaleDateString("de-CH")}`;
+        const title = window.prompt("Titel des Protokolls:", defTitle);
+        if (title === null) return;
+
+        const payload = {
+            customer_id: selectedCustomer.id || null,
+            customer_name: selectedCustomer.name,
+            title: title.trim() || defTitle,
+            data: { persons, segments, speakerMap, segOverrides, agenda, summaryText, traktanden, tasks, decisions },
+            updated_at: new Date().toISOString(),
+        };
+        try {
+            if (currentProtocolId) {
+                const { error } = await supabase.from('gv_protocols').update(payload).eq('id', currentProtocolId);
+                if (error) throw error;
+            } else {
+                const { data, error } = await supabase.from('gv_protocols').insert(payload).select('id').single();
+                if (error) throw error;
+                setCurrentProtocolId(data.id);
+            }
+            setProtocolTitle(payload.title);
+            setStatusMsg(`💾 „${payload.title}" in der Ablage gespeichert.`);
+            loadProtocols(selectedCustomer);
+        } catch (err) {
+            setStatusMsg("❌ Fehler beim Speichern: " + err.message);
+        }
+    };
+
+    const openProtocol = async (id) => {
+        try {
+            const { data, error } = await supabase.from('gv_protocols').select('*').eq('id', id).single();
+            if (error) throw error;
+            const d = data.data || {};
+            setPersons(d.persons || []);
+            setSegments(d.segments || []);
+            LS.set("gv_segments", d.segments || []);
+            setSpeakerMap(d.speakerMap || {});
+            setSegOverrides(d.segOverrides || {});
+            setAgenda(d.agenda || "");
+            setSummaryText(d.summaryText || "");
+            setTraktanden(d.traktanden || []);
+            setTasks(d.tasks || []);
+            setDecisions(d.decisions || []);
+            setCurrentProtocolId(data.id);
+            setProtocolTitle(data.title);
+            setStatusMsg(`📂 „${data.title}" geladen.`);
+        } catch (err) {
+            setStatusMsg("❌ Fehler beim Öffnen: " + err.message);
+        }
+    };
+
+    const deleteProtocol = async (id, title) => {
+        if (!window.confirm(`Protokoll „${title}" endgültig löschen?`)) return;
+        try {
+            const { error } = await supabase.from('gv_protocols').delete().eq('id', id);
+            if (error) throw error;
+            if (id === currentProtocolId) setCurrentProtocolId(null);
+            loadProtocols(selectedCustomer);
+            setStatusMsg("🗑️ Protokoll gelöscht.");
+        } catch (err) {
+            setStatusMsg("❌ Fehler beim Löschen: " + err.message);
+        }
+    };
+
+    const newProtocol = () => {
+        const hasContent = segments.length || persons.length || summaryText || agenda;
+        if (hasContent && !window.confirm("Neues Protokoll beginnen? Nicht gespeicherte Änderungen gehen verloren.")) return;
+        setPersons([]);
+        setSegments([]);
+        LS.set("gv_segments", []);
+        setSpeakerMap({});
+        setSegOverrides({});
+        setAgenda("");
+        setSummaryText("");
+        setTraktanden([]);
+        setTasks([]);
+        setDecisions([]);
+        setCurrentProtocolId(null);
+        setProtocolTitle("");
+        setTimerText("00:00");
+        setStatusMsg("🆕 Neues Protokoll begonnen.");
     };
 
     const refreshRecoveryBanner = async () => {
@@ -451,6 +570,8 @@ export default function GvProtokollApp() {
                 <div className="spacer"></div>
                 <span className="timer">{timerText}</span>
 
+                <button className="btn" onClick={newProtocol} disabled={isRecording} title="Neues Protokoll beginnen">🆕 Neu</button>
+
                 <button className={`btn ${isRecording ? 'primary' : 'rec'}`} onClick={isRecording ? stopRec : startRec}>
                     <span>{isRecording ? "■" : "●"}</span> <span>{isRecording ? "Stopp" : "Aufnahme"}</span>
                 </button>
@@ -464,6 +585,7 @@ export default function GvProtokollApp() {
                 <input id="fileLoader" type="file" accept="audio/*" style={{ display: "none" }} onChange={e => { if (e.target.files[0]) transcribe(e.target.files[0]); }} />
 
                 <button className="btn primary" onClick={evaluateAI}>✨ Auswerten</button>
+                <button className="btn" onClick={saveProtocol} title="In der Ablage des Kunden speichern">💾 Speichern</button>
                 <button className="btn ghost" onClick={exportMarkdown} title="Exportieren">⬇️</button>
                 <button className="btn ghost" onClick={() => setShowSettings(true)}>⚙️</button>
             </header>
@@ -489,6 +611,21 @@ export default function GvProtokollApp() {
                             ) : (
                                 <input className="cust-input" placeholder="Kundenname..." value={selectedCustomer.name} onChange={e => setSelectedCustomer({ id: "", name: e.target.value })} />
                             )}
+
+                            <div className="ablage-box">
+                                <label className="cust-lbl">🗂️ Ablage <span className="ablage-count">{savedProtocols.length}</span></label>
+                                {(selectedCustomer.id || selectedCustomer.name) ? (
+                                    savedProtocols.length ? savedProtocols.map(p => (
+                                        <div className={"prot-row" + (p.id === currentProtocolId ? " active" : "")} key={p.id}>
+                                            <button className="prot-open" onClick={() => openProtocol(p.id)} title="Protokoll laden">
+                                                <span className="prot-title">{p.title}</span>
+                                                <span className="prot-date">{new Date(p.meeting_date).toLocaleDateString("de-CH")}</span>
+                                            </button>
+                                            <button className="x" onClick={() => deleteProtocol(p.id, p.title)} title="Löschen">✕</button>
+                                        </div>
+                                    )) : <div className="prot-empty">Noch keine Protokolle abgelegt.</div>
+                                ) : <div className="prot-empty">Kunde wählen, um die Ablage zu sehen.</div>}
+                            </div>
                         </div>
 
                         {persons.map(p => (

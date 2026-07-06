@@ -37,9 +37,17 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json()
-    const { email, role = 'user', appUrl } = body
+    const { email, role = 'sachbearbeiter', appUrl } = body
     if (!email) {
       return new Response(JSON.stringify({ error: 'Email required' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    // Nur erlaubte Rollen (muss zum profiles_role_check-Constraint passen)
+    const ALLOWED_ROLES = ['admin', 'mandatsleiter', 'sachbearbeiter', 'readonly', 'task_user']
+    if (!ALLOWED_ROLES.includes(role)) {
+      return new Response(JSON.stringify({ error: `Ungültige Rolle: ${role}` }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }

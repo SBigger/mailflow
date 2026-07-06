@@ -10,6 +10,7 @@ import ProduktivitaetPanel from '@/components/auswertungen/ProduktivitaetPanel';
 import MehrjahrePanel from '@/components/auswertungen/MehrjahrePanel';
 import MonatsrapportPanel from '@/components/auswertungen/MonatsrapportPanel';
 import FakturierungPanel from '@/components/auswertungen/FakturierungPanel';
+import GegenueberstellungPanel from '@/components/auswertungen/GegenueberstellungPanel';
 import DebitorenAuswertungPanel from '@/components/auswertungen/DebitorenAuswertungPanel';
 import ProjekteAuswertungPanel from '@/components/leistungserfassung/AuswertungenPanel';
 
@@ -25,7 +26,10 @@ const NAV = [
   },
   {
     id: 'fakturierung', label: 'Fakturierung', icon: FileText,
-    sec: [{ id: 'aa', label: 'Angefangene Arbeiten', comp: FakturierungPanel }],
+    sec: [
+      { id: 'aa', label: 'Angefangene Arbeiten', comp: FakturierungPanel },
+      { id: 'gegenueber', label: 'Aufwand ↔ Rechnung', comp: GegenueberstellungPanel },
+    ],
   },
   {
     id: 'debitoren', label: 'Debitoren', icon: ArrowDownCircle,

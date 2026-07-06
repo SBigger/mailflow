@@ -22,7 +22,12 @@ import { useAuth } from '@/lib/AuthContext';
 import * as packageJson from "../package.json";
 
 // Theme context for global access if needed elsewhere
-export const ThemeContext = createContext({ theme: 'dark', setTheme: () => {} });
+// navLayout: 'sidebar' (Standard, Seitenleiste) oder 'hub' (Start-Hub ohne Seitenleiste)
+export const ThemeContext = createContext({
+  theme: 'dark', setTheme: () => {},
+  navLayout: 'sidebar', setNavLayout: () => {},
+  hubWidgets: false, setHubWidgets: () => {},
+});
 
 // ── Einzelner Navigations-Eintrag ──────────────────────────────────
 function NavRow({ item, active, collapsed, pal }) {
@@ -77,8 +82,82 @@ function NavRow({ item, active, collapsed, pal }) {
   );
 }
 
+// ── Schwebender Hub-Knopf: klickbar UND frei verschiebbar ──────────
+// Position wird pro Gerät gespeichert (hub_chip_pos), damit er nichts verdeckt.
+function HubChip({ pal, sidebarBorder, lightBg }) {
+  const navigate = useNavigate();
+  const [pos, setPos] = useState(() => {
+    try {
+      const p = JSON.parse(localStorage.getItem('hub_chip_pos'));
+      if (p && Number.isFinite(p.x) && Number.isFinite(p.y)) return p;
+    } catch { /* Default */ }
+    return { x: 12, y: 12 };
+  });
+  const posRef = useRef(pos);
+  const dragRef = useRef(null);
+  const movedRef = useRef(false);
+  useEffect(() => { posRef.current = pos; }, [pos]);
+
+  const clamp = (x, y) => ({
+    x: Math.min(Math.max(4, x), window.innerWidth - 90),
+    y: Math.min(Math.max(4, y), window.innerHeight - 44),
+  });
+
+  useEffect(() => {
+    const move = (e) => {
+      const d = dragRef.current;
+      if (!d) return;
+      if (Math.abs(e.clientX - d.startX) + Math.abs(e.clientY - d.startY) > 4) movedRef.current = true;
+      setPos(clamp(d.origX + (e.clientX - d.startX), d.origY + (e.clientY - d.startY)));
+    };
+    const up = () => {
+      if (!dragRef.current) return;
+      dragRef.current = null;
+      document.body.style.userSelect = '';
+      try {
+        localStorage.setItem('hub_chip_pos', JSON.stringify(posRef.current));
+      } catch { /* egal */ }
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+    return () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
+  }, []);
+
+  return (
+    <button
+      title="Zurück zum Start-Hub · Ziehen zum Verschieben"
+      onMouseDown={(e) => {
+        movedRef.current = false;
+        dragRef.current = { startX: e.clientX, startY: e.clientY, origX: posRef.current.x, origY: posRef.current.y };
+        document.body.style.userSelect = 'none';
+      }}
+      onClick={() => {
+        if (movedRef.current) { movedRef.current = false; return; }
+        navigate('/Hub');
+      }}
+      style={{
+        position: 'fixed', left: pos.x, top: pos.y, zIndex: 45,
+        display: 'flex', alignItems: 'center', gap: 7,
+        padding: '6px 12px 6px 7px', borderRadius: 12, border: `1px solid ${sidebarBorder}`,
+        background: lightBg ? 'rgba(255,255,255,.85)' : 'rgba(30,36,32,.85)',
+        boxShadow: '0 6px 20px rgba(20,30,24,.18)',
+        backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)',
+        color: pal.text, fontSize: 12.5, fontWeight: 700,
+        cursor: dragRef.current ? 'grabbing' : 'pointer',
+      }}
+    >
+      <span style={{
+        width: 22, height: 22, borderRadius: 7, background: pal.active, color: '#fff',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 11, fontWeight: 800,
+      }}>S</span>
+      Hub
+    </button>
+  );
+}
+
 // ── Gruppen-Überschrift mit Auf-/Zuklappen ─────────────────────────
-function GroupHeader({ label, open, onToggle, pal }) {
+function GroupHeader({ label, open, onToggle, pal, count }) {
   const [hover, setHover] = useState(false);
   return (
     <button
@@ -95,6 +174,12 @@ function GroupHeader({ label, open, onToggle, pal }) {
       }}
     >
       <span style={{ flex: 1 }}>{label}</span>
+      {!open && count > 0 && (
+        <span style={{
+          fontSize: 9.5, fontWeight: 700, letterSpacing: 0,
+          background: pal.hover, borderRadius: 8, padding: '1px 6px',
+        }}>{count}</span>
+      )}
       <ChevronDown style={{
         width: 12, height: 12, flexShrink: 0,
         transform: open ? 'rotate(0deg)' : 'rotate(-90deg)',
@@ -127,6 +212,24 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
   const setTheme = useCallback((newTheme) => {
     setThemeState(newTheme);
     localStorage.setItem("app_theme", newTheme);
+  }, []);
+
+  // --- Navigations-Art: Seitenleiste (Standard) oder Start-Hub ohne Seitenleiste ---
+  const [navLayout, setNavLayoutState] = useState(() =>
+    localStorage.getItem("nav_layout") === "hub" ? "hub" : "sidebar"
+  );
+  const setNavLayout = useCallback((layout) => {
+    setNavLayoutState(layout);
+    localStorage.setItem("nav_layout", layout);
+    scheduleNavPrefsSave();
+  }, []);
+
+  // --- Hub-Widgets (Mini-Dashboard rechts im Hub) — pro Benutzer aktivierbar ---
+  const [hubWidgets, setHubWidgetsState] = useState(() => localStorage.getItem("hub_widgets") === "1");
+  const setHubWidgets = useCallback((on) => {
+    setHubWidgetsState(!!on);
+    localStorage.setItem("hub_widgets", on ? "1" : "0");
+    scheduleNavPrefsSave();
   }, []);
 
   // --- Sidebar-Modus: breit (Labels + Gruppen) oder schmale Icon-Leiste ---
@@ -167,6 +270,8 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
         setOpenGroups({});
       }
       setRailMode(localStorage.getItem("nav_mode") === "rail");
+      setNavLayoutState(localStorage.getItem("nav_layout") === "hub" ? "hub" : "sidebar");
+      setHubWidgetsState(localStorage.getItem("hub_widgets") === "1");
     }
   }, [profile]);
 
@@ -183,6 +288,20 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
   }, [profile, loading, currentPageName, navigate, setTheme]);
 
   const isTaskUser = profile?.role === 'task_user';
+
+  // Start-Hub aktiv? (nur Desktop, nicht für Task-User)
+  const hubMode = navLayout === 'hub' && !isTaskUser && !isMobile;
+
+  // Hub-Modus: beim App-Start auf dem Hub landen statt auf dem Dashboard
+  const hubStartDone = useRef(false);
+  useEffect(() => {
+    if (hubStartDone.current || loading) return;
+    hubStartDone.current = true;
+    if (hubMode && (location.pathname === '/' || location.pathname === '/Dashboard')) {
+      navigate('/Hub', { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
 
   // --- Launcher-Hotkey: Ctrl/Cmd+K von überall ---
   useEffect(() => {
@@ -249,11 +368,16 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
   if (loading) return <div className="h-screen w-screen flex items-center justify-center" style={{ backgroundColor: pageBg }}>...</div>;
 
   return (
-      <ThemeContext.Provider value={{ theme, setTheme }}>
+      <ThemeContext.Provider value={{ theme, setTheme, navLayout, setNavLayout, hubWidgets, setHubWidgets }}>
         <div className="flex h-screen overflow-hidden" style={{ backgroundColor: pageBg }}>
 
+          {/* Start-Hub-Modus: schwebender, verschiebbarer Zurück-zum-Hub-Knopf */}
+          {hubMode && location.pathname !== '/Hub' && (
+              <HubChip pal={pal} sidebarBorder={sidebarBorder} lightBg={isLight || isArtis} />
+          )}
+
           {/* Sidebar - Desktop Only & Not for Task Users */}
-          {!isTaskUser && !isMobile && (
+          {!isTaskUser && !isMobile && !hubMode && (
               <aside
                   className="flex-shrink-0 flex flex-col border-r transition-all duration-200"
                   style={{ width: railMode ? 56 : 232, backgroundColor: sidebarBg, borderColor: sidebarBorder }}
@@ -357,6 +481,7 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
                                           open={isGroupOpen(group.id)}
                                           onToggle={() => toggleGroup(group.id)}
                                           pal={pal}
+                                          count={items.length}
                                       />
                                   )}
                                   {(!group.label || isGroupOpen(group.id)) && items.map(item => (
@@ -377,6 +502,7 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
                                           open={isGroupOpen('favoriten')}
                                           onToggle={() => toggleGroup('favoriten')}
                                           pal={{ ...pal, faint: '#c9962e' }}
+                                          count={favApps.length}
                                       />
                                       {isGroupOpen('favoriten') && favApps.map(app => (
                                           <NavRow
@@ -483,7 +609,7 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
           </main>
 
           {/* Favoriten-Dock rechts (Apps anpinnen via Stern im Launcher) */}
-          {!isTaskUser && !isMobile && (
+          {!isTaskUser && !isMobile && !hubMode && (
               <FavoritesDock
                   profile={profile}
                   sidebarBg={sidebarBg}

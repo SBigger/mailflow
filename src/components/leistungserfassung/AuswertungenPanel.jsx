@@ -833,8 +833,12 @@ export default function AuswertungenPanel() {
   });
   const holidaySet = useMemo(() => toHolidaySet(holidaysQ.data), [holidaysQ.data]);
 
-  const isLoading = employeesQ.isLoading || projectsQ.isLoading || entriesQ.isLoading || templatesQ.isLoading || holidaysQ.isLoading;
-  const error = employeesQ.error || projectsQ.error || entriesQ.error || templatesQ.error || holidaysQ.error;
+  // Zentral-Plan/Feiertage sind optional (Migration evtl. noch nicht eingespielt) und
+  // werden nur für den Mitarbeiter-Rapport gebraucht: Fehler dort dürfen Projekt-Rentabilität
+  // und Budget-Warnungen nicht mitblockieren (Soll fällt dann auf 0h zurück).
+  const isLoading = employeesQ.isLoading || projectsQ.isLoading || entriesQ.isLoading;
+  const error = employeesQ.error || projectsQ.error || entriesQ.error;
+  const sollUnavailable = !!(templatesQ.error || holidaysQ.error);
 
   return (
     <div>
@@ -879,6 +883,12 @@ export default function AuswertungenPanel() {
       }} />}
 
       {!error && isLoading && <PanelLoader />}
+
+      {!error && !isLoading && tab === 'mitarbeiter' && sollUnavailable && (
+        <div className="mb-4 text-xs rounded border px-3 py-2" style={{ borderColor: '#f3d9a4', background: '#fff8e6', color: '#8a5a00' }}>
+          Zentral-Sollzeit-Plan noch nicht eingerichtet (Migration ausstehend) – Soll zeigt vorübergehend 0h.
+        </div>
+      )}
 
       {!error && !isLoading && (
         <>

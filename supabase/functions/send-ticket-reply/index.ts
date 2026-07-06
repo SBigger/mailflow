@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { requireUser } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -10,6 +11,10 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
+    // Nur eingeloggte Mitarbeiter mit Schreibrecht duerfen als support@ mailen.
+    const auth = await requireUser(req, { roles: ["admin", "mandatsleiter", "sachbearbeiter"] });
+    if (auth.response) return auth.response;
+
     const { ticket_id, message_body } = await req.json();
     if (!ticket_id || !message_body) {
       return new Response(JSON.stringify({ error: "ticket_id and message_body required" }), {

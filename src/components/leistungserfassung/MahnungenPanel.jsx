@@ -204,8 +204,9 @@ function VorschlaegeTab() {
         const level = inv._recommended;
         const fee = fees[level] ?? 0;
         const newDue = addDaysIso(newDays[level] ?? 10);
-        const interestAmount = computeInterest(inv.total, inv.due_date);
-        const outstanding = Number(inv.total ?? 0);
+        // Offener Betrag = Total minus bereits Bezahltes (Teilzahlungen), nicht der Vollbetrag.
+        const outstanding = Math.max(0, Number(inv.total ?? 0) - Number(inv.paid_amount ?? 0));
+        const interestAmount = computeInterest(outstanding, inv.due_date);
         await leDunning.create({
           invoice_id: inv.id,
           customer_id: inv.customer_id,

@@ -1,15 +1,27 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { requireUser } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// HTML-Escaping gegen Injection in den (nutzergelieferten) Mail-Text
+function esc(v: unknown): string {
+  return String(v ?? "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
+    // Nur eingeloggte Mitarbeiter; Mail geht ausschliesslich an den Aufrufer selbst
+    const auth = await requireUser(req);
+    if (auth.response) return auth.response;
+    const user_email = auth.user!.email;
+
     const {
       frist_id,
       customer_name,
@@ -18,19 +30,15 @@ serve(async (req) => {
       gewuenschte_frist,
       ablehnungsgrund,
       screenshot_base64,
-      user_email,
     } = await req.json();
 
     if (!frist_id || !user_email || !ablehnungsgrund) {
-      return new Response(JSON.stringify({ error: "frist_id, user_email und ablehnungsgrund sind erforderlich" }), {
+      return new Response(JSON.stringify({ error: "frist_id und ablehnungsgrund sind erforderlich" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" }
       });
     }
 
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
+    const supabase = auth.admin!;
 
     // ── 1. Screenshot + Notiz auf der Frist speichern (KEIN einreichen_datum!) ──
     const updateData: Record<string, string> = {
@@ -78,8 +86,11 @@ serve(async (req) => {
     }
 
     // ── Email-Inhalt aufbauen ──
-    const screenshotHtml = screenshot_base64
-      ? `<br><img src="${screenshot_base64}" style="max-width:600px;border:1px solid #ddd;border-radius:4px;" alt="Portal-Screenshot"/>`
+    // Nur echte Bild-Data-URIs zulassen (verhindert Attribut-Ausbruch / javascript:-URIs)
+    const safeShot = typeof screenshot_base64 === "string" && /^data:image\/(png|jpeg|jpg|webp);base64,[A-Za-z0-9+/=]+$/.test(screenshot_base64)
+      ? screenshot_base64 : "";
+    const screenshotHtml = safeShot
+      ? `<br><img src="${safeShot}" style="max-width:600px;border:1px solid #ddd;border-radius:4px;" alt="Portal-Screenshot"/>`
       : "";
 
     const htmlBody = `
@@ -90,13 +101,13 @@ serve(async (req) => {
 
         <table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:20px;">
           <tr><td style="padding:6px 12px;background:#f9fafb;font-weight:600;width:40%">Kunde</td>
-              <td style="padding:6px 12px;border-bottom:1px solid #e5e7eb;">${customer_name || "–"}</td></tr>
+              <td style="padding:6px 12px;border-bottom:1px solid #e5e7eb;">${esc(customer_name) || "–"}</td></tr>
           <tr><td style="padding:6px 12px;background:#f9fafb;font-weight:600;">Kanton / SP-Jahr</td>
-              <td style="padding:6px 12px;border-bottom:1px solid #e5e7eb;">${kanton || "–"} / ${sp_jahr || "–"}</td></tr>
+              <td style="padding:6px 12px;border-bottom:1px solid #e5e7eb;">${esc(kanton) || "–"} / ${esc(sp_jahr) || "–"}</td></tr>
           <tr><td style="padding:6px 12px;background:#f9fafb;font-weight:600;">Gewünschte Frist</td>
-              <td style="padding:6px 12px;border-bottom:1px solid #e5e7eb;">${gewuenschte_frist || "–"}</td></tr>
+              <td style="padding:6px 12px;border-bottom:1px solid #e5e7eb;">${esc(gewuenschte_frist) || "–"}</td></tr>
           <tr><td style="padding:6px 12px;background:#fef2f2;font-weight:600;color:#dc2626;">Ablehnungsgrund</td>
-              <td style="padding:6px 12px;border-bottom:1px solid #e5e7eb;color:#dc2626;">${ablehnungsgrund}</td></tr>
+              <td style="padding:6px 12px;border-bottom:1px solid #e5e7eb;color:#dc2626;">${esc(ablehnungsgrund)}</td></tr>
         </table>
 
         <p style="font-size:13px;color:#6b7280;">

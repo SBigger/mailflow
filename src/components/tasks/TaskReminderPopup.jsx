@@ -78,6 +78,20 @@ function snooze(taskId, minutes) {
 // - nicht erledigt
 // - nicht dismissed
 // - snooze-Zeit abgelaufen
+// Reminder-Zeitpunkt zeitzonensicher bestimmen. Ein reines Fälligkeitsdatum
+// (YYYY-MM-DD bzw. …T00:00:00Z) ist als UTC-Mitternacht gespeichert -> das feuert
+// den Reminder nachts (CH-Zeit). Solche Tasks werden auf LOKAL 09:00 des jeweiligen
+// Kalendertags gelegt; Tasks mit echter Uhrzeit bleiben unverändert.
+function reminderInstant(dueDate) {
+  const s = String(dueDate);
+  const dateOnly = s.length === 10 || /T00:00:00(\.000)?(Z|\+00:00)$/.test(s);
+  if (dateOnly) {
+    const [y, m, d] = s.slice(0, 10).split('-').map(Number);
+    return new Date(y, (m || 1) - 1, d || 1, 9, 0, 0, 0); // lokal 09:00
+  }
+  return new Date(s);
+}
+
 function shouldShowReminder(task) {
   if (!task.due_date || task.completed) return false;
   if (isDismissed(task.id)) return false;
@@ -85,7 +99,7 @@ function shouldShowReminder(task) {
   const snoozedUntil = getSnoozedUntil(task.id);
   if (snoozedUntil && new Date() < snoozedUntil) return false;
 
-  const due = new Date(task.due_date);
+  const due = reminderInstant(task.due_date);
   const now = new Date();
   const diffMs = due - now; // negativ = überfällig
   const diffMin = diffMs / 60000;
@@ -108,10 +122,11 @@ export default function TaskReminderPopup({ currentUser }) {
     if (!currentUser?.email) return;
 
     try {
-      // Tasks laden: fällig in den nächsten 15 Min (UTC), nicht erledigt, zugewiesen an mich
+      // Grob vorfiltern (reine Datums-Tasks liegen als UTC-Mitternacht vor, deshalb
+      // breites Fenster). Die präzise, zeitzonensichere Fälligkeit prüft shouldShowReminder.
       const now = new Date();
-      const windowEnd = new Date(now.getTime() + 15 * 60 * 1000);
-      const windowStart = new Date(now.getTime() - 120 * 60 * 1000);
+      const windowEnd = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+      const windowStart = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
 
       const { data: tasks, error } = await supabase
         .from("tasks")

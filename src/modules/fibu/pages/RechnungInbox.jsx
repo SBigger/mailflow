@@ -164,7 +164,7 @@ function SetupIMAP({ isOpen, onClose, mandatenId, mandant})   {
       setIsLoading(true);
       const { data, error } = await supabase
           .from("fibu_mandanten")
-          .update(formData)
+          .update({...formData, imap_aktiv: true})
           .eq("id", mandatenId)
 
       if (error) throw error;
@@ -321,7 +321,6 @@ export default function RechnungInbox() {
   const [pdfUrl, setPdfUrl]       = useState(null);
   const [loadingPdf, setLoadingPdf] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
-  const [inboxEmail, setInboxEmail] = useState('');
   const [isImapOpen, setIsImapOpen] = useState(false);
 
   const load = useCallback(async () => {
@@ -336,7 +335,6 @@ export default function RechnungInbox() {
     const { data } = await q;
     setItems(data ?? []);
     setLoading(false);
-    if (mandant.inbox_code) setInboxEmail(`rechnungen+${mandant.inbox_code}@artis.sm-artis.ch`);
   }, [mandant?.id, filter]);
 
   useEffect(() => { load(); }, [load]);
@@ -380,19 +378,6 @@ export default function RechnungInbox() {
     <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
       {/* ── Linke Spalte: Liste ── */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRight: '1px solid #e4e9e4' }}>
-
-        {/* Inbox-Email Info */}
-        {inboxEmail && (
-          <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', background: '#f0f7ff', borderBottom: '1px solid #c5d4ea' }}>
-            <svg style={{ width: 14, height: 14, flexShrink: 0 }} viewBox="0 0 24 24" fill="none" stroke="#2e4a7d" strokeWidth={2}>
-              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>
-            </svg>
-            <span style={{ fontSize: 11.5, color: '#1e3a6e' }}>
-              <strong>Später via IMAP:</strong>{' '}Verbindet sich automatisch zu Ihrem Postfach und importiert Rechnungs-PDFs
-            </span>
-            <span style={{ marginLeft: 'auto', fontSize: 10.5, background: '#dbeafe', color: '#1e40af', padding: '2px 7px', borderRadius: 4, fontWeight: 600 }}>bereit zur Konfiguration</span>
-          </div>
-        )}
 
         {/* Toolbar */}
         <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', background: '#fff', borderBottom: '1px solid #e4e9e4', flexWrap: 'wrap' }}>
@@ -623,7 +608,7 @@ export default function RechnungInbox() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%' }}>
               {[
                   { icon: '↑', title: 'Manueller Upload', desc: 'PDF direkt hochladen — jetzt verfügbar', done: true, show: true },
-                  { icon: '✉', title: 'IMAP-Abruf', desc: 'Automatisch aus Ihrem Postfach (kommt)', done: mandant.imap_host, show: true, action: () => setIsImapOpen(true) },
+                  { icon: '✉', title: 'IMAP-Abruf', desc: 'Automatisch aus Ihrem Postfach (kommt)', done: mandant.imap_aktiv, show: true, action: () => setIsImapOpen(true) },
                   { icon: '⚡', title: 'E-Mail-Webhook', desc: 'Via Mailgun / Postmark (kommt)', done: false, show: false },
                 ].map(item => (
                   <div
@@ -655,7 +640,7 @@ export default function RechnungInbox() {
             </div>
 
             {/* Das Modal wird hier gerendert */}
-            <SetupIMAP isOpen={isImapOpen} onClose={() => setIsImapOpen(false)} mandatenId={mandant.id} mandant={mandant} />
+            <SetupIMAP isOpen={isImapOpen} onClose={() => {setIsImapOpen(false); load()}} mandatenId={mandant.id} mandant={mandant} />
 
             <div style={{ fontSize: 11.5, color: '#94a394', textAlign: 'center', lineHeight: 1.6 }}>
               Klicken Sie auf einen Eintrag, um ihn anzuzeigen und als Rechnung zu erfassen.
