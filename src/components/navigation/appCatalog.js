@@ -222,6 +222,15 @@ export function toggleFavorite(item) {
   writeFavorites(cur.includes(k) ? cur.filter(x => x !== k) : [...cur, k]);
 }
 
+// Neue Reihenfolge der Favoriten übernehmen (Drag & Drop im Hub/Dock)
+export function reorderFavorites(orderedKeys) {
+  const known = new Set(getFavoriteKeys());
+  const clean = orderedKeys.filter(k => known.has(k));
+  // fehlende (falls parallel etwas dazu kam) hinten anhängen
+  const rest = [...known].filter(k => !clean.includes(k));
+  writeFavorites([...clean, ...rest]);
+}
+
 export function favoriteApps(profile) {
   const map = new Map(allApps(profile).map(a => [appKey(a), a]));
   return getFavoriteKeys().map(k => map.get(k)).filter(Boolean);

@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useMemo, useRef, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Fuse from 'fuse.js';
+import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { Search, Star, CornerDownLeft } from 'lucide-react';
 import { ThemeContext } from '@/Layout';
 import { useAuth } from '@/lib/AuthContext';
 import {
-  NAV_GROUPS, visibleItems, allApps, isFavorite, toggleFavorite,
+  NAV_GROUPS, visibleItems, allApps, isFavorite, toggleFavorite, reorderFavorites, appKey,
 } from '@/components/navigation/appCatalog';
 import { useFavorites } from '@/components/navigation/FavoritesDock';
 import { openApp } from '@/components/navigation/openApp';
@@ -159,6 +160,15 @@ export default function Hub() {
     openApp(app, { sameWindow: !!e?.altKey, navigate });
   };
 
+  // Favoriten per Drag & Drop umsortieren
+  const handleFavDragEnd = (result) => {
+    if (!result.destination || result.destination.index === result.source.index) return;
+    const keys = favApps.map(a => appKey(a));
+    const [moved] = keys.splice(result.source.index, 1);
+    keys.splice(result.destination.index, 0, moved);
+    reorderFavorites(keys);
+  };
+
   const onKeyDown = (e) => {
     if (!results.length) return;
     if (e.key === 'ArrowDown') { e.preventDefault(); setSel(s => Math.min(results.length - 1, s + 1)); }
@@ -267,7 +277,7 @@ export default function Hub() {
           </div>
         ) : (
           <>
-            {/* Favoriten */}
+            {/* Favoriten — per Drag & Drop umsortierbar */}
             {favApps.length > 0 && (
               <>
                 <div style={{
@@ -276,15 +286,46 @@ export default function Hub() {
                   letterSpacing: '.15em', textTransform: 'uppercase', color: '#c9962e',
                 }}>
                   <Star style={{ width: 12, height: 12, fill: '#c9962e' }} /> Favoriten
+                  {favApps.length > 1 && (
+                    <span style={{ fontWeight: 600, letterSpacing: 0, textTransform: 'none', color: pal.sub, fontSize: 10.5 }}>
+                      · ziehen zum Sortieren
+                    </span>
+                  )}
                 </div>
-                <div style={{
-                  width: '100%', display: 'grid', gap: 10,
-                  gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
-                }}>
-                  {favApps.map(app => (
-                    <Tile key={`fav-${app.groupId}-${app.label}`} app={app} pal={pal} big onOpen={handleOpen} />
-                  ))}
-                </div>
+                <DragDropContext onDragEnd={handleFavDragEnd}>
+                  <Droppable droppableId="hub-favorites" direction="horizontal">
+                    {(dropProvided) => (
+                      <div
+                        ref={dropProvided.innerRef}
+                        {...dropProvided.droppableProps}
+                        style={{
+                          width: '100%', display: 'grid', gap: 10,
+                          gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
+                        }}
+                      >
+                        {favApps.map((app, index) => (
+                          <Draggable key={appKey(app)} draggableId={appKey(app)} index={index}>
+                            {(drag, snapshot) => (
+                              <div
+                                ref={drag.innerRef}
+                                {...drag.draggableProps}
+                                {...drag.dragHandleProps}
+                                style={{
+                                  ...drag.draggableProps.style,
+                                  opacity: snapshot.isDragging ? 0.9 : 1,
+                                  cursor: snapshot.isDragging ? 'grabbing' : undefined,
+                                }}
+                              >
+                                <Tile app={app} pal={pal} big onOpen={handleOpen} />
+                              </div>
+                            )}
+                          </Draggable>
+                        ))}
+                        {dropProvided.placeholder}
+                      </div>
+                    )}
+                  </Droppable>
+                </DragDropContext>
               </>
             )}
 
