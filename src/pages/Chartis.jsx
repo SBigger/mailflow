@@ -298,6 +298,10 @@ export default function Chartis() {
   async function openDirect(otherId) {
     if (!me?.id) return; setBusy(true);
     try {
+      // Live-Session prüfen: bei abgelaufenem Login ist auth.uid() leer -> jeder
+      // Insert scheitert an RLS. Klare Meldung statt kryptischem "row violates".
+      const { data: { user: live } } = await supabase.auth.getUser();
+      if (!live) { toast.error("Sitzung abgelaufen – bitte ab- und wieder anmelden."); return; }
       // Frischer DB-Check (kein stale-closure auf myThreads) gegen Duplikat-Threads
       const { data: myP } = await supabase.from("chartis_participants").select("thread_id").eq("user_id", me.id);
       const pIds = (myP || []).map(r => r.thread_id);
@@ -319,6 +323,8 @@ export default function Chartis() {
   async function createGroup() {
     if (!me?.id || !groupName.trim() || !pickSel.length) { toast.info("Name + mind. 1 Person"); return; } setBusy(true);
     try {
+      const { data: { user: live } } = await supabase.auth.getUser();
+      if (!live) { toast.error("Sitzung abgelaufen – bitte ab- und wieder anmelden."); return; }
       const { data: th, error } = await supabase.from("chartis_threads").insert({ thread_type: "gruppe", subject: groupName.trim(), created_by: me.id, owner_id: me.id }).select("id").single();
       if (error) throw error;
       const ids = [me.id, ...pickSel].filter((v, i, a) => a.indexOf(v) === i);
