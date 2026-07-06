@@ -8,7 +8,7 @@ import CommandPalette from "@/components/chartis/CommandPalette";
 import TaskGlobalListView from "@/components/tasks/TaskGlobalListView";
 import { chartisTheme, SEM, AUTHOR, authorKey, personStyle, initials, isMissed } from "@/lib/chartisTheme";
 import {
-  MessageSquare, Plus, Users, User, Lock, AtSign, LayoutGrid, Building2, Clock,
+  MessageSquare, MessagesSquare, Plus, Users, User, Lock, AtSign, LayoutGrid, Building2, Clock,
   PhoneOff, Phone, Mail, Calendar, CheckSquare, X, Search, Check, Loader2, Send, Paperclip, Video, Command,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -26,6 +26,7 @@ export default function Chartis() {
   const [activeMail, setActiveMail] = useState(null);
   const [activeEvent, setActiveEvent] = useState(null);
   const [activeTask, setActiveTask] = useState(null);
+  const [activeTeamsChat, setActiveTeamsChat] = useState(null);
   const [search, setSearch] = useState("");
   const [seg, setSeg] = useState("alle");
   const [picker, setPicker] = useState(false);
@@ -137,6 +138,15 @@ export default function Chartis() {
       return data || [];
     },
   });
+  // Teams-Chats (read-only, pro Mitarbeiter via RLS owner_id=auth.uid()) — getrennt von Mails
+  const { data: teamsChats = [] } = useQuery({
+    queryKey: ["chartisTeamsChats", me?.id], enabled: !!me?.id, refetchInterval: 60000,
+    queryFn: async () => {
+      const { data, error } = await supabase.from("teams_chats").select("*").order("last_message_at", { ascending: false }).limit(100);
+      if (error) return []; // Tabelle/Feature ggf. noch nicht aktiv
+      return data || [];
+    },
+  });
 
   const mentionIds = useMemo(() => new Set(mentions.map(m => m.thread_id)), [mentions]);
   const unseenMentions = mentions.filter(m => !m.seen).length;
@@ -212,7 +222,7 @@ export default function Chartis() {
     tag: { label: "Heute", icon: LayoutGrid }, direkt: { label: "Direkt", icon: User }, gruppen: { label: "Gruppen", icon: Users },
     erwaehnt: { label: "Erwähnt", icon: AtSign }, kunden: { label: "Kunden-Konversationen", icon: Building2 },
     wartet: { label: "Wartet auf Kunde", icon: Clock }, anrufe: { label: "Entgangene Anrufe", icon: PhoneOff },
-    mails: { label: "Mails", icon: Mail },
+    mails: { label: "Mails", icon: Mail }, teams: { label: "Teams-Chats", icon: MessagesSquare },
     kalender: { label: "Kalender", icon: Calendar }, todos: { label: "Todos", icon: CheckSquare },
     suche: { label: "Suche", icon: Search },
   };
@@ -227,6 +237,7 @@ export default function Chartis() {
     else if (scope === "wartet") list = kundenThreads.filter(x => x.status === "wartet_kunde").map(x => ({ type: "thread", x }));
     else if (scope === "anrufe") list = missedCalls.map(c => ({ type: "call", c }));
     else if (scope === "mails") list = mailThreads.map(m => ({ type: "mail", m }));
+    else if (scope === "teams") list = teamsChats.map(tc => ({ type: "teamschat", tc }));
     else if (scope === "kalender") list = calendarEvents.map(e => ({ type: "event", e }));
     else if (scope === "todos") list = tasks.map(k => ({ type: "task", k }));
     else list = [ // Heute
@@ -245,9 +256,10 @@ export default function Chartis() {
       : it.type === "mail" ? ((it.m.subject || "") + " " + (it.m.mails[0]?.sender_name || "")).toLowerCase().includes(q)
       : it.type === "event" ? (it.e.subject || "").toLowerCase().includes(q)
       : it.type === "task" ? (it.k.title || "").toLowerCase().includes(q)
+      : it.type === "teamschat" ? ((it.tc.topic || "") + " " + (it.tc.member_names || []).join(" ") + " " + (it.tc.last_message_preview || "")).toLowerCase().includes(q)
       : (title(it.x) + " " + preview(it.x)).toLowerCase().includes(q));
     return list;
-  }, [scope, seg, search, myThreads, objektThreads, missedCalls, mailThreads, calendarEvents, tasks, mentionIds, me]);
+  }, [scope, seg, search, myThreads, objektThreads, missedCalls, mailThreads, calendarEvents, tasks, teamsChats, mentionIds, me]);
 
   const activeThread = useMemo(() => [...myThreads, ...objektThreads, ...searchResult.threads].find(x => x.id === activeId), [activeId, myThreads, objektThreads, searchResult]);
 
@@ -381,6 +393,7 @@ export default function Chartis() {
       { id: "s-kunden", icon: Building2, label: "Kunden-Konversationen", run: () => setScope("kunden") },
       { id: "s-anrufe", icon: PhoneOff, label: "Entgangene Anrufe", run: () => setScope("anrufe") },
       { id: "s-mails", icon: Mail, label: "Mails", run: () => setScope("mails") },
+      { id: "s-teams", icon: MessagesSquare, label: "Teams-Chats", run: () => setScope("teams") },
       { id: "s-kalender", icon: Calendar, label: "Kalender", run: () => setScope("kalender") },
       { id: "s-todos", icon: CheckSquare, label: "Todos", run: () => setScope("todos") },
       { id: "s-suche", icon: Search, label: "Alle Chats durchsuchen", run: () => { setScope("suche"); setSearch(""); } },
@@ -392,7 +405,7 @@ export default function Chartis() {
 
   const displayItems = scope === "suche" ? searchResult.items : scope === "todos" ? (groupedTodos || []) : items;
 
-  const clearActive = () => { setActiveId(null); setActiveCall(null); setActiveMail(null); setActiveEvent(null); setActiveTask(null); };
+  const clearActive = () => { setActiveId(null); setActiveCall(null); setActiveMail(null); setActiveEvent(null); setActiveTask(null); setActiveTeamsChat(null); };
   const openThread = async (id) => {
     clearActive(); setActiveId(id);
     // optimistisch als gelesen markieren, damit der Badge sofort verschwindet
@@ -437,6 +450,7 @@ export default function Chartis() {
           <NavItem k="anrufe" icon={PhoneOff} label="Anrufe" count={missedCalls.length} red />
           <div style={{ borderTop: `1px solid ${t.borderSubtle}`, margin: "8px 6px" }} />
           <NavItem k="mails" icon={Mail} label="Mails" />
+          <NavItem k="teams" icon={MessagesSquare} label="Teams" count={teamsChats.length} />
           <NavItem k="kalender" icon={Calendar} label="Kalender" count={calendarEvents.length} />
           <NavItem k="todos" icon={CheckSquare} label="Todos" count={tasks.length} />
         </div>
@@ -512,6 +526,8 @@ export default function Chartis() {
             </button>
           ) : it.type === "mail" ? (
             <MailRow key={"m" + it.m.key} m={it.m} t={t} active={activeMail?.key === it.m.key} onClick={() => { clearActive(); setActiveMail(it.m); }} />
+          ) : it.type === "teamschat" ? (
+            <TeamsRow key={"tc" + it.tc.chat_id} tc={it.tc} t={t} meName={me?.full_name} active={activeTeamsChat?.chat_id === it.tc.chat_id} onClick={() => { clearActive(); setActiveTeamsChat(it.tc); }} />
           ) : it.type === "event" ? (
             <EventRow key={"e" + it.e.id} e={it.e} t={t} active={activeEvent?.id === it.e.id} onClick={() => { clearActive(); setActiveEvent(it.e); }} />
           ) : it.type === "task" ? (
@@ -535,6 +551,8 @@ export default function Chartis() {
       <div className="flex-1 min-w-0" style={{ background: t.raised, boxShadow: t.shadow }}>
         {activeMail ? (
           <MailThread m={activeMail} t={t} myEmail={myEmail} customer={custById[activeMail.customer_id]} />
+        ) : activeTeamsChat ? (
+          <TeamsThread chat={activeTeamsChat} t={t} meName={me?.full_name} />
         ) : activeEvent ? (
           <EventDetail e={activeEvent} t={t} customer={custById[activeEvent.customer_id]} />
         ) : activeTask ? (
@@ -688,6 +706,65 @@ function MailThread({ m, t, myEmail, customer }) {
 function fmtDateTime(ts, dateOnly) {
   try { const d = new Date(ts); const base = d.toLocaleDateString("de-CH", { weekday: "short", day: "2-digit", month: "2-digit" });
     return dateOnly ? base : base + " " + d.toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" }); } catch { return ""; }
+}
+
+// ── Teams-Chats (read-only, aus teams_chats/teams_chat_messages) ─────────────
+function teamsTitle(tc, meName) {
+  if (tc.topic) return tc.topic;
+  const others = (tc.member_names || []).filter(n => n && n !== meName);
+  if (others.length) return others.join(", ");
+  return tc.chat_type === "meeting" ? "Besprechungs-Chat" : "Teams-Chat";
+}
+
+function TeamsRow({ tc, t, meName, active, onClick }) {
+  const isGroup = tc.chat_type === "group" || tc.chat_type === "meeting";
+  return (
+    <button onClick={onClick} className="w-full flex items-center gap-2.5 px-3 py-2 text-left relative" style={{ borderBottom: `1px solid ${t.borderSubtle}`, background: active ? t.activeRow : "transparent" }}>
+      <div className="rounded-full flex items-center justify-center flex-shrink-0" style={{ width: 30, height: 30, background: "#e5edfb", color: "#4b6bb7" }}>
+        {isGroup ? <Users className="h-4 w-4" /> : <MessagesSquare className="h-4 w-4" />}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="truncate" style={{ fontSize: 12, fontWeight: 500, color: t.textPrimary }}>{teamsTitle(tc, meName)}</div>
+        <div className="truncate" style={{ fontSize: 11, color: t.textMuted, marginTop: 1 }}>{tc.last_message_preview || "—"}</div>
+      </div>
+      {tc.last_message_at && <span style={{ fontSize: 10, color: t.textMuted, flexShrink: 0 }}>{fmtTime(tc.last_message_at)}</span>}
+    </button>
+  );
+}
+
+function TeamsThread({ chat, t, meName }) {
+  const { data: msgs = [], isLoading } = useQuery({
+    queryKey: ["chartisTeamsMsgs", chat.chat_id],
+    queryFn: async () => {
+      const { data } = await supabase.from("teams_chat_messages").select("*").eq("chat_id", chat.chat_id).order("created_at", { ascending: true });
+      return data || [];
+    },
+  });
+  return (
+    <div className="h-full flex flex-col">
+      <div className="px-4 py-3 flex items-center gap-2" style={{ borderBottom: `1px solid ${t.borderSubtle}` }}>
+        <MessagesSquare className="h-4 w-4" style={{ color: "#4b6bb7" }} />
+        <div className="min-w-0"><div className="truncate" style={{ fontSize: 13, fontWeight: 600 }}>{teamsTitle(chat, meName)}</div>
+          <div className="truncate" style={{ fontSize: 10, color: t.textMuted }}>{(chat.member_names || []).join(", ") || "Teams"}</div></div>
+        <span className="ml-auto inline-flex items-center gap-1 flex-shrink-0" style={{ fontSize: 10, fontWeight: 500, padding: "3px 8px", borderRadius: 8, background: "#e5edfb", color: "#4b6bb7" }}><MessagesSquare className="h-3 w-3" />Teams · read-only</span>
+      </div>
+      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        {isLoading ? (
+          <div className="flex justify-center py-4"><Loader2 className="h-4 w-4 animate-spin" style={{ color: t.textMuted }} /></div>
+        ) : msgs.length === 0 ? (
+          <div className="text-center text-xs py-6" style={{ color: t.textMuted }}>Keine Nachrichten synchronisiert.</div>
+        ) : msgs.map(m => (
+          <div key={m.msg_id} style={{ display: "flex", flexDirection: "column", alignItems: m.is_mine ? "flex-end" : "flex-start" }}>
+            <div style={{ fontSize: 9, color: t.textMuted, marginBottom: 2 }}>{m.is_mine ? "Du" : (m.from_name || "Teams")}{m.created_at ? " · " + new Date(m.created_at).toLocaleString("de-CH") : ""}</div>
+            <div style={{ maxWidth: "86%", background: m.is_mine ? t.accentFill : t.base, color: m.is_mine ? "#fff" : t.textPrimary, border: m.is_mine ? "none" : `1px solid ${t.borderSubtle}`, padding: "8px 11px", fontSize: 12, lineHeight: 1.5, borderRadius: m.is_mine ? "14px 4px 14px 14px" : "4px 14px 14px 14px", whiteSpace: "pre-wrap" }}>{m.body_text || "(kein Inhalt)"}</div>
+          </div>
+        ))}
+      </div>
+      <div className="px-4 py-2 flex items-center gap-2" style={{ borderTop: `1px solid ${t.borderSubtle}` }}>
+        <span style={{ fontSize: 10, color: t.textMuted }}>Read-only · Antworten in Teams (Antworten aus Chartis folgt später)</span>
+      </div>
+    </div>
+  );
 }
 
 function EventRow({ e, t, active, onClick }) {
