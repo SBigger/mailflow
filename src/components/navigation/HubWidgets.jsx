@@ -314,9 +314,11 @@ function ArbeitenWidget({ pal, navigate, dragHandleProps }) {
 // Normalisiert ü/ö/ä für tolerantes Matching
 const norm = (s) => (s || '').toLowerCase()
   .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue');
-// Erkennt einen Task als Rückruf (Tag oder Titel/Beschreibung)
-const RUECKRUF_RE = /(rueckruf|zurueckruf|anrufen|telefonier|callback)/;
-function istRueckrufTask(t) {
+// Erkennt einen Task als Rückruf: primär über die Kanban-Spalte „Rückruf",
+// zusätzlich über Tag „Rückruf" oder das Wort im Titel/Beschreibung.
+const RUECKRUF_RE = /(rueckruf|zurueckruf)/;
+function istRueckrufTask(t, rueckrufColIds) {
+  if (rueckrufColIds.has(t.column_id)) return true;
   if (Array.isArray(t.tags) && t.tags.some(tag => norm(typeof tag === 'string' ? tag : tag?.name).includes('rueckruf'))) return true;
   return RUECKRUF_RE.test(norm(t.title)) || RUECKRUF_RE.test(norm(t.description));
 }
@@ -331,8 +333,8 @@ function RueckrufeWidget({ pal, navigate, profile, dragHandleProps }) {
     queryKey: ['hub-widget', 'rueckrufe', profile?.email ?? '', profile?.full_name ?? ''],
     staleTime: 60_000,
     queryFn: async () => {
-      // 1) Telefon-Rückrufe (Anruf-Notizen) + 2) Rückruf-Tasks aus dem TaskBoard
-      const [callsRes, tasksRes] = await Promise.all([
+      // 1) Telefon-Rückrufe (Anruf-Notizen) + 2) Rückruf-Tasks + 3) Task-Spalten (für „Rückruf"-Spalte)
+      const [callsRes, tasksRes, colsRes] = await Promise.all([
         supabase
           .from('call_notes_pending')
           .select('id, phone_number, artis_user_name, note_title, clicked_at')
@@ -341,12 +343,19 @@ function RueckrufeWidget({ pal, navigate, profile, dragHandleProps }) {
           .limit(100),
         supabase
           .from('tasks')
-          .select('id, title, description, due_date, assignee, verantwortlich, created_by, tags, customer:customers(company_name)')
+          .select('id, title, description, due_date, assignee, verantwortlich, created_by, tags, column_id, customer:customers(company_name)')
           .eq('completed', false)
           .limit(300),
+        supabase.from('task_columns').select('id, name'),
       ]);
       if (callsRes.error) throw callsRes.error;
       if (tasksRes.error) throw tasksRes.error;
+      if (colsRes.error) throw colsRes.error;
+
+      // IDs aller Spalten, deren Name „Rückruf" enthält
+      const rueckrufColIds = new Set((colsRes.data ?? [])
+        .filter(c => norm(c.name).includes('rueckruf'))
+        .map(c => c.id));
 
       // Telefon-Rückrufe → nur die eigenen (nach Anzeigename)
       const calls = (callsRes.data ?? [])
@@ -365,7 +374,7 @@ function RueckrufeWidget({ pal, navigate, profile, dragHandleProps }) {
         t.verantwortlich === profile?.email ||
         (!t.assignee && t.created_by === profile?.id);
       const tasks = (tasksRes.data ?? [])
-        .filter(mine).filter(istRueckrufTask)
+        .filter(mine).filter(t => istRueckrufTask(t, rueckrufColIds))
         .map(t => ({
           id: 'task-' + t.id, kind: 'task',
           main: t.title || 'Rückruf',
