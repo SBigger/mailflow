@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-import { GripVertical, Receipt, FileText, Clock, PhoneCall, Phone } from 'lucide-react';
+import { GripVertical, Receipt, FileText, Clock, PhoneCall, Phone, CheckSquare } from 'lucide-react';
 import { supabase } from '@/api/supabaseClient';
 import { openApp } from './openApp';
 import { scheduleNavPrefsSave } from './navPrefsSync';
@@ -311,39 +311,96 @@ function ArbeitenWidget({ pal, navigate, dragHandleProps }) {
   );
 }
 
+// Normalisiert ü/ö/ä für tolerantes Matching
+const norm = (s) => (s || '').toLowerCase()
+  .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue');
+// Erkennt einen Task als Rückruf (Tag oder Titel/Beschreibung)
+const RUECKRUF_RE = /(rueckruf|zurueckruf|anrufen|telefonier|callback)/;
+function istRueckrufTask(t) {
+  if (Array.isArray(t.tags) && t.tags.some(tag => norm(typeof tag === 'string' ? tag : tag?.name).includes('rueckruf'))) return true;
+  return RUECKRUF_RE.test(norm(t.title)) || RUECKRUF_RE.test(norm(t.description));
+}
+// Telefonnummer aus einem Text ziehen (für den Direktanruf bei Tasks)
+function findPhone(text) {
+  const m = (text || '').match(/(\+?[0-9][0-9\s'./()-]{7,}[0-9])/);
+  return m ? m[1].replace(/[\s'./()-]/g, '') : null;
+}
+
 function RueckrufeWidget({ pal, navigate, profile, dragHandleProps }) {
   const q = useQuery({
-    queryKey: ['hub-widget', 'rueckrufe', profile?.full_name ?? ''],
+    queryKey: ['hub-widget', 'rueckrufe', profile?.email ?? '', profile?.full_name ?? ''],
     staleTime: 60_000,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('call_notes_pending')
-        .select('id, phone_number, artis_user_name, note_title, note_text, clicked_at')
-        .is('linked_call_id', null)
-        .order('clicked_at', { ascending: false })
-        .limit(100);
-      if (error) throw error;
-      const alle = data ?? [];
-      // Nur die eigenen; falls dem User nichts zugeordnet ist, leer lassen
-      return profile?.full_name ? alle.filter(n => n.artis_user_name === profile.full_name) : alle;
+      // 1) Telefon-Rückrufe (Anruf-Notizen) + 2) Rückruf-Tasks aus dem TaskBoard
+      const [callsRes, tasksRes] = await Promise.all([
+        supabase
+          .from('call_notes_pending')
+          .select('id, phone_number, artis_user_name, note_title, clicked_at')
+          .is('linked_call_id', null)
+          .order('clicked_at', { ascending: false })
+          .limit(100),
+        supabase
+          .from('tasks')
+          .select('id, title, description, due_date, assignee, verantwortlich, created_by, tags, customer:customers(company_name)')
+          .eq('completed', false)
+          .limit(300),
+      ]);
+      if (callsRes.error) throw callsRes.error;
+      if (tasksRes.error) throw tasksRes.error;
+
+      // Telefon-Rückrufe → nur die eigenen (nach Anzeigename)
+      const calls = (callsRes.data ?? [])
+        .filter(n => !profile?.full_name || n.artis_user_name === profile.full_name)
+        .map(n => ({
+          id: 'call-' + n.id, kind: 'call',
+          main: n.note_title || n.phone_number || 'Rückruf',
+          sub: [n.phone_number, n.clicked_at ? new Date(n.clicked_at).toLocaleDateString('de-CH') : null].filter(Boolean).join(' · '),
+          phone: n.phone_number || null,
+          ts: n.clicked_at ? new Date(n.clicked_at).getTime() : 0,
+        }));
+
+      // Rückruf-Tasks → nur meine + nur echte Rückrufe
+      const mine = (t) =>
+        t.assignee === profile?.email ||
+        t.verantwortlich === profile?.email ||
+        (!t.assignee && t.created_by === profile?.id);
+      const tasks = (tasksRes.data ?? [])
+        .filter(mine).filter(istRueckrufTask)
+        .map(t => ({
+          id: 'task-' + t.id, kind: 'task',
+          main: t.title || 'Rückruf',
+          sub: [t.customer?.company_name, t.due_date ? 'fällig ' + new Date(t.due_date).toLocaleDateString('de-CH') : null].filter(Boolean).join(' · '),
+          phone: findPhone(t.description) || findPhone(t.title),
+          ts: t.due_date ? new Date(t.due_date).getTime() : Number.MAX_SAFE_INTEGER,
+        }));
+
+      // Zusammengefasst, dringlichstes zuerst (fällige/älteste oben)
+      const merged = [...tasks, ...calls].sort((a, b) => a.ts - b.ts);
+      return merged;
     },
   });
-  const notes = (q.data ?? []).slice(0, 4);
+  const items = q.data ?? [];
+  const shown = items.slice(0, 5);
 
   return (
-    <Widget pal={pal} dragHandleProps={dragHandleProps} icon={PhoneCall} color="#4fae6b" title="Meine Rückrufe" sub={profile?.full_name ? `für ${profile.full_name.split(' ')[0]}` : 'Telefon-Pendenzen'}
+    <Widget pal={pal} dragHandleProps={dragHandleProps} icon={PhoneCall} color="#4fae6b" title="Meine Rückrufe"
+            sub={`${profile?.full_name ? profile.full_name.split(' ')[0] + ' · ' : ''}Telefon & Tasks${items.length ? ' · ' + items.length : ''}`}
             openLabel="Telefon" onOpen={() => openApp({ name: 'TelefonDashboard', label: 'Telefon' }, { navigate })}>
-      {notes.length ? (
+      {shown.length ? (
         <div style={{ padding: '2px 0 6px' }}>
-          {notes.map(n => (
-            <Row key={n.id} pal={pal}
-                 onClick={() => openApp({ name: 'TelefonDashboard', label: 'Telefon' }, { navigate })}
-                 main={n.note_title || n.phone_number || 'Rückruf'}
-                 subLine={`${n.phone_number ?? ''}${n.clicked_at ? ' · ' + new Date(n.clicked_at).toLocaleDateString('de-CH') : ''}`}
-                 extra={n.phone_number ? (
+          {shown.map(it => (
+            <Row key={it.id} pal={pal}
+                 onClick={() => openApp(it.kind === 'task'
+                   ? { name: 'TaskBoard', label: 'Tasks' }
+                   : { name: 'TelefonDashboard', label: 'Telefon' }, { navigate })}
+                 main={it.main}
+                 subLine={it.sub}
+                 badge={it.kind === 'task' ? 'Task' : 'Anruf'}
+                 badgeKind={it.kind === 'task' ? 'green' : 'amber'}
+                 extra={it.phone ? (
                    <span
-                     title={`${n.phone_number} anrufen`}
-                     onClick={(e) => { e.stopPropagation(); window.location.href = `tel:${n.phone_number}`; }}
+                     title={`${it.phone} anrufen`}
+                     onClick={(e) => { e.stopPropagation(); window.location.href = `tel:${it.phone}`; }}
                      style={{
                        width: 24, height: 24, borderRadius: 8, flexShrink: 0, cursor: 'pointer',
                        display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -352,6 +409,11 @@ function RueckrufeWidget({ pal, navigate, profile, dragHandleProps }) {
                    ><Phone style={{ width: 12, height: 12 }} /></span>
                  ) : null} />
           ))}
+          {items.length > shown.length && (
+            <div style={{ padding: '4px 12px 0', fontSize: 10.5, color: pal.sub }}>
+              + {items.length - shown.length} weitere
+            </div>
+          )}
         </div>
       ) : <Status pal={pal} q={q} emptyText="Keine offenen Rückrufe 🎉" />}
     </Widget>
