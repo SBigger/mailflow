@@ -738,12 +738,19 @@ function TeamsThread({ chat, t, meName }) {
   const [sending, setSending] = useState(false);
   const { data: msgs = [], isLoading } = useQuery({
     queryKey: ["chartisTeamsMsgs", chat.chat_id],
-    refetchInterval: 20000,
     queryFn: async () => {
       const { data } = await supabase.from("teams_chat_messages").select("*").eq("chat_id", chat.chat_id).order("created_at", { ascending: true });
       return data || [];
     },
   });
+  // Realtime (statt Polling): live bei neuen/geänderten Teams-Nachrichten via postgres_changes
+  useEffect(() => {
+    const ch = supabase.channel(`teams-${chat.chat_id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "teams_chat_messages", filter: `chat_id=eq.${chat.chat_id}` },
+        () => qc.invalidateQueries({ queryKey: ["chartisTeamsMsgs", chat.chat_id] }))
+      .subscribe();
+    return () => supabase.removeChannel(ch);
+  }, [chat.chat_id]);
   const sendTeams = async () => {
     const body = text.trim();
     if (!body) return;
