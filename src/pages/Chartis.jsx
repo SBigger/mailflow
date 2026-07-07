@@ -1,7 +1,7 @@
 import React, { useState, useContext, useMemo, useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { entities, supabase, auth } from "@/api/supabaseClient";
+import { entities, supabase, auth, functions } from "@/api/supabaseClient";
 import { ThemeContext } from "@/Layout";
 import ChartisPanel from "@/components/chartis/ChartisPanel";
 import CommandPalette from "@/components/chartis/CommandPalette";
@@ -733,13 +733,29 @@ function TeamsRow({ tc, t, meName, active, onClick }) {
 }
 
 function TeamsThread({ chat, t, meName }) {
+  const qc = useQueryClient();
+  const [text, setText] = useState("");
+  const [sending, setSending] = useState(false);
   const { data: msgs = [], isLoading } = useQuery({
     queryKey: ["chartisTeamsMsgs", chat.chat_id],
+    refetchInterval: 20000,
     queryFn: async () => {
       const { data } = await supabase.from("teams_chat_messages").select("*").eq("chat_id", chat.chat_id).order("created_at", { ascending: true });
       return data || [];
     },
   });
+  const sendTeams = async () => {
+    const body = text.trim();
+    if (!body) return;
+    setSending(true);
+    try {
+      await functions.invoke("chartis-teams-send", { chat_id: chat.chat_id, text: body });
+      setText("");
+      qc.invalidateQueries({ queryKey: ["chartisTeamsMsgs", chat.chat_id] });
+    } catch (e) {
+      toast.error("Senden fehlgeschlagen: " + (e?.message || e));
+    } finally { setSending(false); }
+  };
   return (
     <div className="h-full flex flex-col">
       <div className="px-4 py-3 flex items-center gap-2" style={{ borderBottom: `1px solid ${t.borderSubtle}` }}>
@@ -760,8 +776,20 @@ function TeamsThread({ chat, t, meName }) {
           </div>
         ))}
       </div>
-      <div className="px-4 py-2 flex items-center gap-2" style={{ borderTop: `1px solid ${t.borderSubtle}` }}>
-        <span style={{ fontSize: 10, color: t.textMuted }}>Read-only · Antworten in Teams (Antworten aus Chartis folgt später)</span>
+      <div className="px-3 py-2" style={{ borderTop: `1px solid ${t.borderSubtle}` }}>
+        <div className="flex items-end gap-2">
+          <textarea value={text} onChange={e => setText(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) sendTeams(); }}
+            placeholder="In Teams antworten… (Strg+Enter)" rows={1}
+            className="flex-1 rounded-lg border px-2.5 py-2 resize-none outline-none"
+            style={{ background: t.base, borderColor: t.borderSubtle, color: t.textPrimary, fontSize: 13, maxHeight: 100 }} />
+          <button onClick={sendTeams} disabled={!text.trim() || sending}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium"
+            style={{ background: text.trim() && !sending ? t.accentFill : "#a1a1aa", color: "#fff", opacity: (!text.trim() || sending) ? 0.6 : 1 }}>
+            {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Senden
+          </button>
+        </div>
+        <div style={{ fontSize: 10, color: t.textMuted, marginTop: 3 }}>Geht als Teams-Nachricht raus · aktiv, sobald Chat.Read/ChatMessage.Send freigegeben + MS neu verbunden</div>
       </div>
     </div>
   );
