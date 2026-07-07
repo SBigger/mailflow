@@ -344,8 +344,9 @@ function RueckrufeWidget({ pal, navigate, profile, dragHandleProps }) {
         supabase
           .from('tasks')
           .select('id, title, description, due_date, assignee, verantwortlich, created_by, tags, column_id, customer:customers(company_name)')
-          .eq('completed', false)
-          .limit(300),
+          // „offen" = nicht erledigt: completed = false ODER NULL (viele Tasks haben es nie gesetzt)
+          .not('completed', 'is', true)
+          .limit(500),
         supabase.from('task_columns').select('id, name'),
       ]);
       if (callsRes.error) throw callsRes.error;
