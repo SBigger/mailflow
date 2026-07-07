@@ -14,14 +14,39 @@ export default function ChartisNotifier() {
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: () => auth.me(), staleTime: 300000 });
   const audioCtxRef = useRef(null);
 
-  // Einmalig um Popup-Erlaubnis bitten
+  // Einmalig um Popup-Erlaubnis bitten (Browser + Tauri-Desktop)
   useEffect(() => {
     try {
       if (typeof Notification !== "undefined" && Notification.permission === "default") {
         Notification.requestPermission().catch(() => {});
       }
     } catch { /* WebView ohne Notification-API */ }
+    try {
+      const T = typeof window !== "undefined" ? window.__TAURI__ : null;
+      if (T?.notification?.requestPermission && T?.notification?.isPermissionGranted) {
+        T.notification.isPermissionGranted().then((g) => { if (!g) T.notification.requestPermission().catch(() => {}); }).catch(() => {});
+      }
+    } catch { /* keine Tauri-Notification-API */ }
   }, []);
+
+  // Popup anzeigen: auf dem Desktop nativ via Tauri, sonst Web-Notifications-API
+  const showPopup = async (title, body, tag) => {
+    try {
+      const T = typeof window !== "undefined" ? window.__TAURI__ : null;
+      if (T?.notification?.sendNotification) {
+        let granted = true;
+        if (T.notification.isPermissionGranted) granted = await T.notification.isPermissionGranted();
+        if (!granted && T.notification.requestPermission) granted = (await T.notification.requestPermission()) === "granted";
+        if (granted) { T.notification.sendNotification({ title, body }); return; }
+      }
+    } catch { /* Fallback auf Web-Notification */ }
+    try {
+      if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+        const notif = new Notification(title, { body, icon: "/artis-logo.png", tag });
+        notif.onclick = () => { try { window.focus(); } catch {} notif.close(); };
+      }
+    } catch { /* WebView ohne Notification-API */ }
+  };
 
   useEffect(() => {
     if (!me?.id) return;
@@ -49,12 +74,7 @@ export default function ChartisNotifier() {
           const body = n?.preview || "";
           toast(title, { description: body });
           beep();
-          try {
-            if (typeof Notification !== "undefined" && Notification.permission === "granted") {
-              const notif = new Notification(title, { body, icon: "/artis-logo.png", tag: n?.thread_id || n?.id });
-              notif.onclick = () => { try { window.focus(); } catch {} notif.close(); };
-            }
-          } catch { /* WebView ohne Notification-API */ }
+          showPopup(title, body, n?.thread_id || n?.id);
           // Badges/Listen auffrischen
           qc.invalidateQueries({ queryKey: ["chartisMyThreads"] });
           qc.invalidateQueries({ queryKey: ["chartisMentions"] });
