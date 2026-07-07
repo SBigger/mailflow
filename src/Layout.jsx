@@ -325,7 +325,7 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // --- Electron Hotkey: Shift+Ctrl+S → neuer Task ---
+  // --- Tauri Hotkey: Shift+Ctrl+S → neuer Task ---
   useEffect(() => {
     if (!window.smartis?.onNewTask) return;
     const unsubscribe = window.smartis.onNewTask(() => {

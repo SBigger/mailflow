@@ -7,8 +7,12 @@ import { format } from "date-fns";
 import { de } from "date-fns/locale";
 import {
   X, Send, Mail, Lock, MessageSquare, FileText, Loader2, Type, AlertTriangle, Users, Paperclip, UserPlus,
+  Pencil, Trash2, SmilePlus, Check,
 } from "lucide-react";
 import { toast } from "sonner";
+
+// Schnell-Reaktionen (bewusst kleine, arbeitsplatz-taugliche Auswahl)
+const QUICK_EMOJIS = ["👍", "❤️", "😂", "🎉", "✅", "🙏"];
 
 // ──────────────────────────────────────────────────────────────────────────
 // CHARTIS – Chat-Panel (Objekt ODER Direkt/Gruppe), mit Anhängen
@@ -68,6 +72,8 @@ export default function ChartisPanel({
   const [extName, setExtName] = useState("");
   const [invBusy, setInvBusy] = useState(false);
   const [typingUsers, setTypingUsers] = useState({}); // userId -> {name, at}
+  const [editingId, setEditingId] = useState(null);   // Nachricht wird gerade bearbeitet
+  const [editText, setEditText] = useState("");
   const fileRef = useRef(null);
   const endRef = useRef(null);
   const channelRef = useRef(null);
@@ -135,6 +141,18 @@ export default function ChartisPanel({
   });
   const hasExternals = externals.length > 0;
 
+  // Emoji-Reaktionen aller Nachrichten des Fadens (live via Realtime unten)
+  const { data: reactions = [] } = useQuery({
+    queryKey: ["chartisReactions", thread?.id],
+    enabled: !!thread?.id,
+    queryFn: async () => {
+      const { data, error } = await supabase.from("chartis_reactions")
+        .select("message_id, user_id, emoji").eq("thread_id", thread.id);
+      if (error) return []; // Tabelle ggf. noch nicht migriert -> Feature still aus
+      return data || [];
+    },
+  });
+
   // Lesebestätigung: Read-State aller Teilnehmer des Fadens (braucht RLS-Policy chartis_read_state_thread)
   const { data: threadReads = [] } = useQuery({
     queryKey: ["chartisThreadReads", thread?.id],
@@ -175,6 +193,8 @@ export default function ChartisPanel({
     const ch = supabase.channel(`chartis-${thread.id}`, { config: { broadcast: { self: false } } })
       .on("postgres_changes", { event: "*", schema: "public", table: "chartis_messages", filter: `thread_id=eq.${thread.id}` },
         () => { qc.invalidateQueries({ queryKey: ["chartisMessages", thread.id] }); qc.invalidateQueries({ queryKey: ["chartisThreadReads", thread.id] }); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "chartis_reactions", filter: `thread_id=eq.${thread.id}` },
+        () => qc.invalidateQueries({ queryKey: ["chartisReactions", thread.id] }))
       .on("broadcast", { event: "typing" }, ({ payload }) => {
         if (!payload?.userId) return;
         setTypingUsers(prev => ({ ...prev, [payload.userId]: { name: payload.name, at: Date.now() } }));
@@ -280,6 +300,48 @@ export default function ChartisPanel({
       qc.invalidateQueries({ queryKey: ["chartisMessages", thread.id] });
     } catch (e) { toast.error("Fehler: " + (e?.message || e)); }
     finally { setSending(false); }
+  };
+
+  // ── Bearbeiten / Löschen (soft) / Reagieren ────────────────────────────────
+  const startEdit = (msg) => { setEditingId(msg.id); setEditText(msg.body_text || ""); };
+  const cancelEdit = () => { setEditingId(null); setEditText(""); };
+  const saveEdit = async (msg) => {
+    const body = editText.trim();
+    if (!body) { toast.error("Leere Nachricht — zum Löschen bitte den Papierkorb nutzen"); return; }
+    if (body === (msg.body_text || "")) { cancelEdit(); return; }
+    try {
+      const { error } = await supabase.from("chartis_messages")
+        .update({ body_text: body, edited_at: new Date().toISOString() }).eq("id", msg.id);
+      if (error) throw error;
+      cancelEdit();
+      qc.invalidateQueries({ queryKey: ["chartisMessages", thread.id] });
+    } catch (e) { toast.error("Bearbeiten fehlgeschlagen: " + (e?.message || e)); }
+  };
+  const deleteMsg = async (msg) => {
+    if (!window.confirm("Diese Nachricht löschen?")) return;
+    try {
+      const { error } = await supabase.from("chartis_messages")
+        .update({ deleted_at: new Date().toISOString() }).eq("id", msg.id);
+      if (error) throw error;
+      if (editingId === msg.id) cancelEdit();
+      qc.invalidateQueries({ queryKey: ["chartisMessages", thread.id] });
+    } catch (e) { toast.error("Löschen fehlgeschlagen: " + (e?.message || e)); }
+  };
+  const toggleReaction = async (msg, emoji) => {
+    if (!me?.id || !thread?.id) return;
+    const mineReacted = reactions.some(r => r.message_id === msg.id && r.user_id === me.id && r.emoji === emoji);
+    try {
+      if (mineReacted) {
+        const { error } = await supabase.from("chartis_reactions").delete()
+          .match({ message_id: msg.id, user_id: me.id, emoji });
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("chartis_reactions")
+          .insert({ message_id: msg.id, thread_id: thread.id, user_id: me.id, emoji });
+        if (error) throw error;
+      }
+      qc.invalidateQueries({ queryKey: ["chartisReactions", thread.id] });
+    } catch (e) { toast.error("Reaktion fehlgeschlagen: " + (e?.message || e)); }
   };
 
   const panelBg  = isArtis ? "#f8faf8" : isLight ? "#f8f8fc" : "#18181b";
@@ -391,12 +453,22 @@ export default function ChartisPanel({
             const sender = users.find(u => u.id === msg.created_by);
             const isIncoming = msg.kind === "email_in";
             const mine = !isIncoming && me?.id && msg.created_by === me.id;
+            const deleted = !!msg.deleted_at;
             const customerTone = { bg: isArtis ? "#e6ede6" : isLight ? "#ebebf4" : "rgba(63,63,70,0.4)", text: isArtis ? "#2d3a2d" : isLight ? "#1a1a2e" : "#e4e4e7" };
             const tone = isIncoming ? customerTone : mine ? { bg: accent, text: "#fff" } : personStyle(sender);
+            const agg = Object.values(reactions.filter(r => r.message_id === msg.id).reduce((a, r) => {
+              (a[r.emoji] ||= { emoji: r.emoji, count: 0, mine: false }); a[r.emoji].count++;
+              if (r.user_id === me?.id) a[r.emoji].mine = true; return a;
+            }, {}));
             return (
-              <ChartisBubble key={msg.id} text={msg.body_text} kind={msg.kind} side={mine ? "right" : "left"}
+              <ChartisBubble key={msg.id} msg={msg} text={msg.body_text} kind={msg.kind} side={mine ? "right" : "left"}
                 senderLabel={isIncoming ? (msg.from_addr || "Kunde") : (sender?.full_name || sender?.email || "Mitarbeiter")}
-                showLabel={!mine} tone={tone} time={msg.created_at} theme={theme} fontPx={fontPx} />
+                showLabel={!mine} tone={tone} time={msg.created_at} theme={theme} fontPx={fontPx}
+                deleted={deleted} edited={!!msg.edited_at} canModify={mine && msg.kind === "intern" && !deleted}
+                reactions={agg} onToggleReaction={toggleReaction} quickEmojis={QUICK_EMOJIS}
+                editing={editingId === msg.id} editText={editText} setEditText={setEditText}
+                onStartEdit={startEdit} onSaveEdit={saveEdit} onCancelEdit={cancelEdit} onDelete={deleteMsg}
+                inputBg={inputBg} border={border} accent={accent} />
             );
           })
         )}
@@ -501,25 +573,93 @@ function renderBubbleContent(text) {
   return parts;
 }
 
-function ChartisBubble({ text, kind, side, senderLabel, showLabel = true, tone, time, theme, fontPx }) {
+function ChartisBubble({ msg, text, kind, side, senderLabel, showLabel = true, tone, time, theme, fontPx,
+  deleted = false, edited = false, canModify = false, reactions = [], onToggleReaction, quickEmojis = [],
+  editing = false, editText = "", setEditText, onStartEdit, onSaveEdit, onCancelEdit, onDelete,
+  inputBg = "#fff", border = "#ddd", accent = "#6366f1" }) {
   const isLight = theme === "light";
   const isArtis = theme === "artis";
   const isLeft = side === "left";
+  const [showPicker, setShowPicker] = useState(false);
   const textMuted = isArtis ? "#6b826b" : isLight ? "#9090b8" : "#71717a";
   const timeStr = time ? format(new Date(time), "dd.MM. HH:mm", { locale: de }) : "";
+
+  const pill = (children, onClick, title) => (
+    <button type="button" title={title} onClick={onClick}
+      style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 26, height: 26,
+        borderRadius: 7, border: `1px solid ${border}`, background: inputBg, color: textMuted, cursor: "pointer" }}>
+      {children}
+    </button>
+  );
+
   return (
     <div className={`flex ${isLeft ? "justify-start" : "justify-end"}`}>
-      <div className="max-w-[85%]">
+      <div className="max-w-[85%] group relative">
         <div className={`mb-1 ${isLeft ? "" : "text-right"}`} style={{ color: textMuted, fontSize: Math.max(10, fontPx - 2) }}>
           {kind === "email_in" && <Mail className="inline h-3 w-3 mr-0.5" />}
           {kind === "email_out" && <Mail className="inline h-3 w-3 mr-0.5" />}
           {kind === "intern" && <Lock className="inline h-3 w-3 mr-0.5" />}
           {showLabel ? `${senderLabel}${timeStr ? " · " : ""}${timeStr}` : timeStr}
+          {edited && !deleted && <span style={{ marginLeft: 5, fontStyle: "italic" }}>· bearbeitet</span>}
         </div>
-        <div className="px-3.5 py-2.5 whitespace-pre-wrap break-words"
-          style={{ backgroundColor: tone.bg, color: tone.text, fontSize: `${fontPx}px`, borderRadius: isLeft ? "4px 16px 16px 16px" : "16px 4px 16px 16px" }}>
-          {renderBubbleContent(text)}
-        </div>
+
+        {deleted ? (
+          <div className="px-3.5 py-2.5" style={{ border: `1px dashed ${border}`, color: textMuted, fontStyle: "italic",
+            borderRadius: isLeft ? "4px 16px 16px 16px" : "16px 4px 16px 16px", fontSize: `${fontPx}px` }}>
+            <Trash2 className="inline h-3.5 w-3.5 mr-1" /> Nachricht gelöscht
+          </div>
+        ) : editing ? (
+          <div>
+            <textarea autoFocus value={editText} onChange={e => setEditText(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) onSaveEdit(msg); if (e.key === "Escape") onCancelEdit(); }}
+              className="w-full rounded-lg border p-2 resize-none outline-none"
+              style={{ background: inputBg, borderColor: accent, color: isArtis ? "#2d3a2d" : isLight ? "#1a1a2e" : "#e4e4e7", minHeight: 60, fontSize: `${fontPx}px` }} />
+            <div className="flex items-center gap-2 mt-1" style={{ justifyContent: isLeft ? "flex-start" : "flex-end" }}>
+              <button type="button" onClick={onCancelEdit} className="px-2.5 py-1 rounded-md text-xs" style={{ color: textMuted, border: `1px solid ${border}` }}>Abbrechen</button>
+              <button type="button" onClick={() => onSaveEdit(msg)} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium" style={{ background: accent, color: "#fff" }}><Check className="h-3.5 w-3.5" /> Speichern</button>
+            </div>
+            <div style={{ fontSize: 10, color: textMuted, marginTop: 2, textAlign: isLeft ? "left" : "right" }}>Strg+Enter speichern · Esc abbrechen</div>
+          </div>
+        ) : (
+          <div className="px-3.5 py-2.5 whitespace-pre-wrap break-words"
+            style={{ backgroundColor: tone.bg, color: tone.text, fontSize: `${fontPx}px`, borderRadius: isLeft ? "4px 16px 16px 16px" : "16px 4px 16px 16px" }}>
+            {renderBubbleContent(text)}
+          </div>
+        )}
+
+        {!deleted && reactions.length > 0 && (
+          <div className={`flex flex-wrap gap-1 mt-1 ${isLeft ? "" : "justify-end"}`}>
+            {reactions.map(r => (
+              <button key={r.emoji} type="button" onClick={() => onToggleReaction(msg, r.emoji)} title={r.mine ? "Reaktion entfernen" : "Auch reagieren"}
+                style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "1px 7px", borderRadius: 999, cursor: "pointer",
+                  border: `1px solid ${r.mine ? accent : border}`, background: r.mine ? (isArtis ? "rgba(122,155,127,.16)" : "rgba(99,102,241,.12)") : inputBg,
+                  color: r.mine ? accent : textMuted, fontSize: Math.max(11, fontPx - 1) }}>
+                <span>{r.emoji}</span><span style={{ fontWeight: 500 }}>{r.count}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {!deleted && !editing && (
+          <div className="absolute opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 z-10"
+            style={{ top: 14, [isLeft ? "right" : "left"]: -6, transform: isLeft ? "translateX(100%)" : "translateX(-100%)" }}
+            onMouseLeave={() => setShowPicker(false)}>
+            <div style={{ position: "relative" }}>
+              {pill(<SmilePlus className="h-3.5 w-3.5" />, () => setShowPicker(s => !s), "Reagieren")}
+              {showPicker && (
+                <div style={{ position: "absolute", bottom: "calc(100% + 4px)", [isLeft ? "left" : "right"]: 0, display: "flex", gap: 2, padding: 4,
+                  background: inputBg, border: `1px solid ${border}`, borderRadius: 10, boxShadow: "0 4px 14px rgba(0,0,0,.12)", zIndex: 20 }}>
+                  {quickEmojis.map(e => (
+                    <button key={e} type="button" onClick={() => { onToggleReaction(msg, e); setShowPicker(false); }}
+                      style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: 18, lineHeight: 1, padding: "2px 3px", borderRadius: 6 }}>{e}</button>
+                  ))}
+                </div>
+              )}
+            </div>
+            {canModify && pill(<Pencil className="h-3.5 w-3.5" />, () => onStartEdit(msg), "Bearbeiten")}
+            {canModify && pill(<Trash2 className="h-3.5 w-3.5" />, () => onDelete(msg), "Löschen")}
+          </div>
+        )}
       </div>
     </div>
   );

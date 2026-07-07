@@ -95,7 +95,7 @@ WORKSPACE    = os.path.join(
     'SmartisAgent', 'Workspace'
 )
 APP_NAME     = "Smartis Agent"
-APP_VERSION  = "3.2.3"
+APP_VERSION  = "3.3.0"
 DRAFT_INTERVAL = 60   # Sekunden zwischen Draft-Uploads
 FILE_OPEN_TIMEOUT = 8 * 60 * 60  # 8 Stunden max Bearbeitung
 
@@ -290,6 +290,32 @@ def make_tray_icon(label: str, on_checkin, on_discard):
 
 # ── Checkout-Workflow ─────────────────────────────────────────────────────────
 
+# ── Sicherheit: RCE-Schutz fuer den Checkout ─────────────────────────────────
+# Ein manipulierter smartis-open://-Link koennte sonst eine ausfuehrbare Datei von
+# beliebiger URL herunterladen (item_id IST die Download-URL) und os.startfile()
+# wuerde sie AUSFUEHREN. Daher: nur Dokument-Dateitypen oeffnen + nur von
+# vertrauenswuerdigen Hosts laden.
+ALLOWED_OPEN_EXTS = {
+    '.pdf', '.doc', '.docx', '.docm', '.xls', '.xlsx', '.xlsm', '.ppt', '.pptx',
+    '.txt', '.csv', '.rtf', '.odt', '.ods', '.odp', '.png', '.jpg', '.jpeg',
+    '.gif', '.tif', '.tiff', '.bmp', '.xml', '.eml', '.msg', '.md',
+}
+TRUSTED_DL_HOST_SUFFIXES = (
+ 'sharepoint.com', 'microsoft.com', 'office.com',
+ 'sm-artis.ch',
+)
+
+def _is_trusted_download_url(url: str) -> bool:
+    try:
+        u = urllib.parse.urlparse(url or '')
+    except Exception:
+        return False
+    if u.scheme != 'https' or not u.hostname:
+        return False
+    host = u.hostname.lower()
+    return any(host == s or host.endswith('.' + s) for s in TRUSTED_DL_HOST_SUFFIXES)
+
+
 def checkout_workflow(doc_id: str, jwt: str, item_id: str, filename: str):
     """Vollständiger Checkout-Workflow."""
 
@@ -305,6 +331,14 @@ def checkout_workflow(doc_id: str, jwt: str, item_id: str, filename: str):
     try:
         os.makedirs(WORKSPACE, exist_ok=True)
 
+        # ── 1b. Sicherheit: Dateityp + Download-Quelle pruefen (RCE-Schutz) ──
+        ext = os.path.splitext(filename)[1].lower()
+        if ext not in ALLOWED_OPEN_EXTS:
+            log(f"ABBRUCH (Sicherheit): Dateityp '{ext}' wird nicht geoeffnet.")
+            return
+        if not _is_trusted_download_url(item_id):
+            log("ABBRUCH (Sicherheit): Download-Quelle nicht vertrauenswuerdig.")
+            return
 
         # ── 2. Datei herunterladen ───────────────────────────────────────────
         safe     = filename.replace('/', '_').replace('\\', '_')

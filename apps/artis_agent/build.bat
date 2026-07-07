@@ -3,18 +3,17 @@ REM ============================================================
 REM  Artis Agent - EXE Build Script
 REM  Voraussetzung: pip install -r requirements.txt
 REM ============================================================
-set "PYTHON_PATH=C:\Users\Roger\AppData\Local\Python\bin"
 
 echo Vorab alte Reste wegräumen, falls das Skript hängen blieb
 if exist "build" rd /s /q "build"
 if exist "smartis-agent.spec" del /f /q "smartis-agent.spec"
 
 echo Installiere Abhaengigkeiten...
-"%PYTHON_PATH%\python.exe" -m pip install -r requirements.txt
+py -m pip install -r requirements.txt
 
 echo.
 echo Erstelle EXE...
-"%PYTHON_PATH%\python.exe" -m PyInstaller ^
+py -m PyInstaller ^
   --onefile ^
   --noconsole ^
   --name "sm-artis-agent" ^

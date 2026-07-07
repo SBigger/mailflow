@@ -378,7 +378,7 @@ export default function Settings() {
                 mail: user?.outlook_email || user?.email
             })
 
-            // Popup öffnen (funktioniert in Electron via setWindowOpenHandler + Browser)
+            // Popup öffnen
             const popup = window.open(data, 'microsoft-oauth', 'width=520,height=720,resizable=yes,scrollbars=yes');
 
             if (popup) {

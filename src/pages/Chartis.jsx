@@ -5,9 +5,10 @@ import { entities, supabase, auth } from "@/api/supabaseClient";
 import { ThemeContext } from "@/Layout";
 import ChartisPanel from "@/components/chartis/ChartisPanel";
 import CommandPalette from "@/components/chartis/CommandPalette";
+import TaskGlobalListView from "@/components/tasks/TaskGlobalListView";
 import { chartisTheme, SEM, AUTHOR, authorKey, personStyle, initials, isMissed } from "@/lib/chartisTheme";
 import {
-  MessageSquare, Plus, Users, User, Lock, AtSign, LayoutGrid, Building2, Clock,
+  MessageSquare, MessagesSquare, Plus, Users, User, Lock, AtSign, LayoutGrid, Building2, Clock,
   PhoneOff, Phone, Mail, Calendar, CheckSquare, X, Search, Check, Loader2, Send, Paperclip, Video, Command,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -25,6 +26,7 @@ export default function Chartis() {
   const [activeMail, setActiveMail] = useState(null);
   const [activeEvent, setActiveEvent] = useState(null);
   const [activeTask, setActiveTask] = useState(null);
+  const [activeTeamsChat, setActiveTeamsChat] = useState(null);
   const [search, setSearch] = useState("");
   const [seg, setSeg] = useState("alle");
   const [picker, setPicker] = useState(false);
@@ -35,6 +37,7 @@ export default function Chartis() {
   const [cmdOpen, setCmdOpen] = useState(false);
   const [onlineIds, setOnlineIds] = useState(() => new Set());
   const [listWidth, setListWidth] = useState(() => Number(localStorage.getItem("chartis_list_w")) || 260);
+  const [calView, setCalView] = useState(() => localStorage.getItem("chartis_cal_view") || "liste");
   const dragRef = useRef(null);
 
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: () => auth.me() });
@@ -123,7 +126,7 @@ export default function Chartis() {
     queryFn: async () => {
       const ors = [me.email && `assignee.eq.${me.email}`, me.email && `verantwortlich.eq.${me.email}`, `created_by.eq.${me.id}`].filter(Boolean).join(",");
       const { data } = await supabase.from("tasks")
-        .select("id,title,description,due_date,priority,completed,customer_id,assignee,verantwortlich,created_by,column_id")
+        .select("id,title,description,due_date,priority,priority_id,tags,completed,customer_id,assignee,verantwortlich,created_by,column_id")
         .eq("completed", false).or(ors).order("due_date", { ascending: true }).limit(100);
       return data || [];
     },
@@ -132,6 +135,15 @@ export default function Chartis() {
     queryKey: ["chartisTaskColumns"], staleTime: 300000,
     queryFn: async () => {
       const { data } = await supabase.from("task_columns").select("id,name,color,order").order("order");
+      return data || [];
+    },
+  });
+  // Teams-Chats (read-only, pro Mitarbeiter via RLS owner_id=auth.uid()) — getrennt von Mails
+  const { data: teamsChats = [] } = useQuery({
+    queryKey: ["chartisTeamsChats", me?.id], enabled: !!me?.id, refetchInterval: 60000,
+    queryFn: async () => {
+      const { data, error } = await supabase.from("teams_chats").select("*").order("last_message_at", { ascending: false }).limit(100);
+      if (error) return []; // Tabelle/Feature ggf. noch nicht aktiv
       return data || [];
     },
   });
@@ -210,7 +222,7 @@ export default function Chartis() {
     tag: { label: "Heute", icon: LayoutGrid }, direkt: { label: "Direkt", icon: User }, gruppen: { label: "Gruppen", icon: Users },
     erwaehnt: { label: "Erwähnt", icon: AtSign }, kunden: { label: "Kunden-Konversationen", icon: Building2 },
     wartet: { label: "Wartet auf Kunde", icon: Clock }, anrufe: { label: "Entgangene Anrufe", icon: PhoneOff },
-    mails: { label: "Mails", icon: Mail },
+    mails: { label: "Mails", icon: Mail }, teams: { label: "Teams-Chats", icon: MessagesSquare },
     kalender: { label: "Kalender", icon: Calendar }, todos: { label: "Todos", icon: CheckSquare },
     suche: { label: "Suche", icon: Search },
   };
@@ -225,6 +237,7 @@ export default function Chartis() {
     else if (scope === "wartet") list = kundenThreads.filter(x => x.status === "wartet_kunde").map(x => ({ type: "thread", x }));
     else if (scope === "anrufe") list = missedCalls.map(c => ({ type: "call", c }));
     else if (scope === "mails") list = mailThreads.map(m => ({ type: "mail", m }));
+    else if (scope === "teams") list = teamsChats.map(tc => ({ type: "teamschat", tc }));
     else if (scope === "kalender") list = calendarEvents.map(e => ({ type: "event", e }));
     else if (scope === "todos") list = tasks.map(k => ({ type: "task", k }));
     else list = [ // Heute
@@ -243,11 +256,22 @@ export default function Chartis() {
       : it.type === "mail" ? ((it.m.subject || "") + " " + (it.m.mails[0]?.sender_name || "")).toLowerCase().includes(q)
       : it.type === "event" ? (it.e.subject || "").toLowerCase().includes(q)
       : it.type === "task" ? (it.k.title || "").toLowerCase().includes(q)
+      : it.type === "teamschat" ? ((it.tc.topic || "") + " " + (it.tc.member_names || []).join(" ") + " " + (it.tc.last_message_preview || "")).toLowerCase().includes(q)
       : (title(it.x) + " " + preview(it.x)).toLowerCase().includes(q));
     return list;
-  }, [scope, seg, search, myThreads, objektThreads, missedCalls, mailThreads, calendarEvents, tasks, mentionIds, me]);
+  }, [scope, seg, search, myThreads, objektThreads, missedCalls, mailThreads, calendarEvents, tasks, teamsChats, mentionIds, me]);
 
   const activeThread = useMemo(() => [...myThreads, ...objektThreads, ...searchResult.threads].find(x => x.id === activeId), [activeId, myThreads, objektThreads, searchResult]);
+
+  // Aufgaben für die Tabellen-Ansicht (Pane C) – nach @Mich + Suche gefiltert
+  const todosFiltered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return tasks.filter(k => {
+      if (seg === "mich" && k.assignee !== me?.email && k.verantwortlich !== me?.email) return false;
+      if (q && !(k.title || "").toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [tasks, search, seg, me?.email]);
 
   const groupedTodos = useMemo(() => {
     if (scope !== "todos") return null;
@@ -286,6 +310,10 @@ export default function Chartis() {
   async function openDirect(otherId) {
     if (!me?.id) return; setBusy(true);
     try {
+      // Live-Session prüfen: bei abgelaufenem Login ist auth.uid() leer -> jeder
+      // Insert scheitert an RLS. Klare Meldung statt kryptischem "row violates".
+      const { data: { user: live } } = await supabase.auth.getUser();
+      if (!live) { toast.error("Sitzung abgelaufen – bitte ab- und wieder anmelden."); return; }
       // Frischer DB-Check (kein stale-closure auf myThreads) gegen Duplikat-Threads
       const { data: myP } = await supabase.from("chartis_participants").select("thread_id").eq("user_id", me.id);
       const pIds = (myP || []).map(r => r.thread_id);
@@ -307,6 +335,8 @@ export default function Chartis() {
   async function createGroup() {
     if (!me?.id || !groupName.trim() || !pickSel.length) { toast.info("Name + mind. 1 Person"); return; } setBusy(true);
     try {
+      const { data: { user: live } } = await supabase.auth.getUser();
+      if (!live) { toast.error("Sitzung abgelaufen – bitte ab- und wieder anmelden."); return; }
       const { data: th, error } = await supabase.from("chartis_threads").insert({ thread_type: "gruppe", subject: groupName.trim(), created_by: me.id, owner_id: me.id }).select("id").single();
       if (error) throw error;
       const ids = [me.id, ...pickSel].filter((v, i, a) => a.indexOf(v) === i);
@@ -340,6 +370,20 @@ export default function Chartis() {
     return () => { document.removeEventListener("mousemove", onMove); document.removeEventListener("mouseup", onUp); };
   }, []);
   useEffect(() => { localStorage.setItem("chartis_list_w", String(listWidth)); }, [listWidth]);
+  useEffect(() => { localStorage.setItem("chartis_cal_view", calView); }, [calView]);
+
+  async function completeTask(id) {
+    // optimistisch aus der Liste nehmen
+    qc.setQueryData(["chartisTasks", me?.id], (old) => Array.isArray(old) ? old.filter(k => k.id !== id) : old);
+    try {
+      const { error } = await supabase.from("tasks").update({ completed: true }).eq("id", id);
+      if (error) throw error;
+      if (activeTask?.id === id) setActiveTask(null);
+    } catch (e) {
+      toast.error("Konnte nicht abhaken: " + (e?.message || e));
+      qc.invalidateQueries({ queryKey: ["chartisTasks", me?.id] });
+    }
+  }
   const commands = useMemo(() => {
     const nav = [
       { id: "s-tag", icon: LayoutGrid, label: "Heute", run: () => setScope("tag") },
@@ -349,6 +393,7 @@ export default function Chartis() {
       { id: "s-kunden", icon: Building2, label: "Kunden-Konversationen", run: () => setScope("kunden") },
       { id: "s-anrufe", icon: PhoneOff, label: "Entgangene Anrufe", run: () => setScope("anrufe") },
       { id: "s-mails", icon: Mail, label: "Mails", run: () => setScope("mails") },
+      { id: "s-teams", icon: MessagesSquare, label: "Teams-Chats", run: () => setScope("teams") },
       { id: "s-kalender", icon: Calendar, label: "Kalender", run: () => setScope("kalender") },
       { id: "s-todos", icon: CheckSquare, label: "Todos", run: () => setScope("todos") },
       { id: "s-suche", icon: Search, label: "Alle Chats durchsuchen", run: () => { setScope("suche"); setSearch(""); } },
@@ -360,7 +405,7 @@ export default function Chartis() {
 
   const displayItems = scope === "suche" ? searchResult.items : scope === "todos" ? (groupedTodos || []) : items;
 
-  const clearActive = () => { setActiveId(null); setActiveCall(null); setActiveMail(null); setActiveEvent(null); setActiveTask(null); };
+  const clearActive = () => { setActiveId(null); setActiveCall(null); setActiveMail(null); setActiveEvent(null); setActiveTask(null); setActiveTeamsChat(null); };
   const openThread = async (id) => {
     clearActive(); setActiveId(id);
     // optimistisch als gelesen markieren, damit der Badge sofort verschwindet
@@ -405,6 +450,7 @@ export default function Chartis() {
           <NavItem k="anrufe" icon={PhoneOff} label="Anrufe" count={missedCalls.length} red />
           <div style={{ borderTop: `1px solid ${t.borderSubtle}`, margin: "8px 6px" }} />
           <NavItem k="mails" icon={Mail} label="Mails" />
+          <NavItem k="teams" icon={MessagesSquare} label="Teams" count={teamsChats.length} />
           <NavItem k="kalender" icon={Calendar} label="Kalender" count={calendarEvents.length} />
           <NavItem k="todos" icon={CheckSquare} label="Todos" count={tasks.length} />
         </div>
@@ -480,6 +526,8 @@ export default function Chartis() {
             </button>
           ) : it.type === "mail" ? (
             <MailRow key={"m" + it.m.key} m={it.m} t={t} active={activeMail?.key === it.m.key} onClick={() => { clearActive(); setActiveMail(it.m); }} />
+          ) : it.type === "teamschat" ? (
+            <TeamsRow key={"tc" + it.tc.chat_id} tc={it.tc} t={t} meName={me?.full_name} active={activeTeamsChat?.chat_id === it.tc.chat_id} onClick={() => { clearActive(); setActiveTeamsChat(it.tc); }} />
           ) : it.type === "event" ? (
             <EventRow key={"e" + it.e.id} e={it.e} t={t} active={activeEvent?.id === it.e.id} onClick={() => { clearActive(); setActiveEvent(it.e); }} />
           ) : it.type === "task" ? (
@@ -503,6 +551,8 @@ export default function Chartis() {
       <div className="flex-1 min-w-0" style={{ background: t.raised, boxShadow: t.shadow }}>
         {activeMail ? (
           <MailThread m={activeMail} t={t} myEmail={myEmail} customer={custById[activeMail.customer_id]} />
+        ) : activeTeamsChat ? (
+          <TeamsThread chat={activeTeamsChat} t={t} meName={me?.full_name} />
         ) : activeEvent ? (
           <EventDetail e={activeEvent} t={t} customer={custById[activeEvent.customer_id]} />
         ) : activeTask ? (
@@ -510,7 +560,15 @@ export default function Chartis() {
         ) : activeCall ? (
           <CallDetail c={activeCall} t={t} customer={custById[activeCall.customer_id]} />
         ) : scope === "kalender" ? (
-          <CalendarMonth events={calendarEvents} t={t} onSelect={(e) => { clearActive(); setActiveEvent(e); }} />
+          calView === "liste"
+            ? <CalendarAgenda events={calendarEvents} t={t} calView={calView} setCalView={setCalView} onSelect={(e) => { clearActive(); setActiveEvent(e); }} />
+            : <CalendarMonth events={calendarEvents} t={t} calView={calView} setCalView={setCalView} onSelect={(e) => { clearActive(); setActiveEvent(e); }} />
+        ) : scope === "todos" ? (
+          <div className="h-full flex flex-col">
+            <TaskGlobalListView columns={taskColumns} tasks={todosFiltered}
+              onTaskClick={(k) => { clearActive(); setActiveTask(k); }}
+              onToggleComplete={(k) => completeTask(k.id)} />
+          </div>
         ) : activeThread ? (
           <ChartisPanel key={activeThread.id} threadId={activeThread.id} titleOverride={title(activeThread)} directMode={activeThread.thread_type !== "objekt"} embedded />
         ) : (
@@ -650,6 +708,65 @@ function fmtDateTime(ts, dateOnly) {
     return dateOnly ? base : base + " " + d.toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" }); } catch { return ""; }
 }
 
+// ── Teams-Chats (read-only, aus teams_chats/teams_chat_messages) ─────────────
+function teamsTitle(tc, meName) {
+  if (tc.topic) return tc.topic;
+  const others = (tc.member_names || []).filter(n => n && n !== meName);
+  if (others.length) return others.join(", ");
+  return tc.chat_type === "meeting" ? "Besprechungs-Chat" : "Teams-Chat";
+}
+
+function TeamsRow({ tc, t, meName, active, onClick }) {
+  const isGroup = tc.chat_type === "group" || tc.chat_type === "meeting";
+  return (
+    <button onClick={onClick} className="w-full flex items-center gap-2.5 px-3 py-2 text-left relative" style={{ borderBottom: `1px solid ${t.borderSubtle}`, background: active ? t.activeRow : "transparent" }}>
+      <div className="rounded-full flex items-center justify-center flex-shrink-0" style={{ width: 30, height: 30, background: "#e5edfb", color: "#4b6bb7" }}>
+        {isGroup ? <Users className="h-4 w-4" /> : <MessagesSquare className="h-4 w-4" />}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="truncate" style={{ fontSize: 12, fontWeight: 500, color: t.textPrimary }}>{teamsTitle(tc, meName)}</div>
+        <div className="truncate" style={{ fontSize: 11, color: t.textMuted, marginTop: 1 }}>{tc.last_message_preview || "—"}</div>
+      </div>
+      {tc.last_message_at && <span style={{ fontSize: 10, color: t.textMuted, flexShrink: 0 }}>{fmtTime(tc.last_message_at)}</span>}
+    </button>
+  );
+}
+
+function TeamsThread({ chat, t, meName }) {
+  const { data: msgs = [], isLoading } = useQuery({
+    queryKey: ["chartisTeamsMsgs", chat.chat_id],
+    queryFn: async () => {
+      const { data } = await supabase.from("teams_chat_messages").select("*").eq("chat_id", chat.chat_id).order("created_at", { ascending: true });
+      return data || [];
+    },
+  });
+  return (
+    <div className="h-full flex flex-col">
+      <div className="px-4 py-3 flex items-center gap-2" style={{ borderBottom: `1px solid ${t.borderSubtle}` }}>
+        <MessagesSquare className="h-4 w-4" style={{ color: "#4b6bb7" }} />
+        <div className="min-w-0"><div className="truncate" style={{ fontSize: 13, fontWeight: 600 }}>{teamsTitle(chat, meName)}</div>
+          <div className="truncate" style={{ fontSize: 10, color: t.textMuted }}>{(chat.member_names || []).join(", ") || "Teams"}</div></div>
+        <span className="ml-auto inline-flex items-center gap-1 flex-shrink-0" style={{ fontSize: 10, fontWeight: 500, padding: "3px 8px", borderRadius: 8, background: "#e5edfb", color: "#4b6bb7" }}><MessagesSquare className="h-3 w-3" />Teams · read-only</span>
+      </div>
+      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        {isLoading ? (
+          <div className="flex justify-center py-4"><Loader2 className="h-4 w-4 animate-spin" style={{ color: t.textMuted }} /></div>
+        ) : msgs.length === 0 ? (
+          <div className="text-center text-xs py-6" style={{ color: t.textMuted }}>Keine Nachrichten synchronisiert.</div>
+        ) : msgs.map(m => (
+          <div key={m.msg_id} style={{ display: "flex", flexDirection: "column", alignItems: m.is_mine ? "flex-end" : "flex-start" }}>
+            <div style={{ fontSize: 9, color: t.textMuted, marginBottom: 2 }}>{m.is_mine ? "Du" : (m.from_name || "Teams")}{m.created_at ? " · " + new Date(m.created_at).toLocaleString("de-CH") : ""}</div>
+            <div style={{ maxWidth: "86%", background: m.is_mine ? t.accentFill : t.base, color: m.is_mine ? "#fff" : t.textPrimary, border: m.is_mine ? "none" : `1px solid ${t.borderSubtle}`, padding: "8px 11px", fontSize: 12, lineHeight: 1.5, borderRadius: m.is_mine ? "14px 4px 14px 14px" : "4px 14px 14px 14px", whiteSpace: "pre-wrap" }}>{m.body_text || "(kein Inhalt)"}</div>
+          </div>
+        ))}
+      </div>
+      <div className="px-4 py-2 flex items-center gap-2" style={{ borderTop: `1px solid ${t.borderSubtle}` }}>
+        <span style={{ fontSize: 10, color: t.textMuted }}>Read-only · Antworten in Teams (Antworten aus Chartis folgt später)</span>
+      </div>
+    </div>
+  );
+}
+
 function EventRow({ e, t, active, onClick }) {
   return (
     <button onClick={onClick} className="w-full flex items-center gap-2.5 px-3 py-2 text-left" style={{ borderBottom: `1px solid ${t.borderSubtle}`, background: active ? t.activeRow : "transparent" }}>
@@ -712,13 +829,24 @@ function TaskDetail({ k, t, customer }) {
   );
 }
 
-function CalHeader({ t, label, view, setView, onPrev, onToday, onNext }) {
+function CalViewToggle({ t, calView, setCalView }) {
+  return (
+    <div style={{ display: "flex", borderRadius: 8, overflow: "hidden", border: `1px solid ${t.borderSubtle}`, flexShrink: 0 }}>
+      {[["liste", "Liste"], ["grid", "Kalender"]].map(([k, l]) => (
+        <button key={k} onClick={() => setCalView(k)} style={{ fontSize: 11, padding: "3px 10px", background: calView === k ? t.accentFill : t.base, color: calView === k ? "#fff" : t.textSecondary, border: "none", cursor: "pointer", fontWeight: calView === k ? 600 : 400 }}>{l}</button>
+      ))}
+    </div>
+  );
+}
+
+function CalHeader({ t, label, view, setView, onPrev, onToday, onNext, calView, setCalView }) {
   const navBtn = { fontSize: 12, padding: "3px 9px", borderRadius: 7, border: `1px solid ${t.borderSubtle}`, color: t.textSecondary, background: t.base, cursor: "pointer" };
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderBottom: `1px solid ${t.borderSubtle}`, flexShrink: 0 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderBottom: `1px solid ${t.borderSubtle}`, flexShrink: 0, flexWrap: "wrap" }}>
       <Calendar className="h-4 w-4" style={{ color: t.accent }} />
       <span style={{ fontSize: 14, fontWeight: 600, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
       <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+        {setCalView && <CalViewToggle t={t} calView={calView} setCalView={setCalView} />}
         <div style={{ display: "flex", borderRadius: 8, overflow: "hidden", border: `1px solid ${t.borderSubtle}` }}>
           {[["tag", "Tag"], ["woche", "Woche"], ["monat", "Monat"]].map(([k, l]) => (
             <button key={k} onClick={() => setView(k)} style={{ fontSize: 11, padding: "3px 10px", background: view === k ? t.accentFill : t.base, color: view === k ? "#fff" : t.textSecondary, border: "none", cursor: "pointer", fontWeight: view === k ? 600 : 400 }}>{l}</button>
@@ -732,7 +860,67 @@ function CalHeader({ t, label, view, setView, onPrev, onToday, onNext }) {
   );
 }
 
-function CalendarMonth({ events, t, onSelect }) {
+// Kalender als Agenda-Liste (kommende Termine, nach Tag gruppiert)
+function CalendarAgenda({ events, t, calView, setCalView, onSelect }) {
+  const now = new Date();
+  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const upcoming = [...events]
+    .filter(e => new Date(e.start_time) >= startToday || (e.end_time && new Date(e.end_time) >= now))
+    .sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
+  const groups = []; const byKey = new Map();
+  for (const e of upcoming) {
+    const key = new Date(e.start_time).toDateString();
+    if (!byKey.has(key)) { const g = { key, date: new Date(e.start_time), items: [] }; byKey.set(key, g); groups.push(g); }
+    byKey.get(key).items.push(e);
+  }
+  const dayLabel = (d) => {
+    const diff = Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()) - startToday) / 86400000);
+    if (diff === 0) return "Heute";
+    if (diff === 1) return "Morgen";
+    return d.toLocaleDateString("de-CH", { weekday: "long", day: "2-digit", month: "long" });
+  };
+  return (
+    <div style={{ height: "100%", display: "flex", flexDirection: "column", minHeight: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderBottom: `1px solid ${t.borderSubtle}`, flexShrink: 0 }}>
+        <Calendar className="h-4 w-4" style={{ color: t.accent }} />
+        <span style={{ fontSize: 14, fontWeight: 600, flex: 1 }}>Kalender</span>
+        <CalViewToggle t={t} calView={calView} setCalView={setCalView} />
+      </div>
+      <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
+        {groups.length === 0 ? (
+          <div className="text-center py-10 px-4" style={{ color: t.textMuted }}>
+            <Calendar className="h-8 w-8 mx-auto mb-2" style={{ opacity: 0.3 }} />
+            <div style={{ fontSize: 13, fontWeight: 500 }}>Keine kommenden Termine</div>
+          </div>
+        ) : groups.map(g => (
+          <div key={g.key}>
+            <div style={{ position: "sticky", top: 0, zIndex: 1, background: t.raised, padding: "8px 16px 4px", fontSize: 11, fontWeight: 700, letterSpacing: ".04em", color: dayLabel(g.date) === "Heute" ? t.accent : t.textSecondary, borderBottom: `1px solid ${t.borderSubtle}` }}>
+              {dayLabel(g.date)} · {g.date.toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit" })}
+            </div>
+            {g.items.map(e => {
+              const st = new Date(e.start_time);
+              const et = e.end_time ? new Date(e.end_time) : null;
+              const timeStr = e.is_all_day ? "ganztägig"
+                : st.toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" }) + (et ? "–" + et.toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" }) : "");
+              return (
+                <button key={e.id} onClick={() => onSelect(e)} className="w-full flex items-start gap-3 px-4 py-2.5 text-left" style={{ borderBottom: `1px solid ${t.borderSubtle}` }}>
+                  <div style={{ width: 104, flexShrink: 0, fontSize: 12, fontWeight: 600, color: t.textSecondary, fontVariantNumeric: "tabular-nums" }}>{timeStr}</div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate" style={{ fontSize: 13, fontWeight: 500, color: t.textPrimary }}>{e.subject || "(ohne Titel)"}</div>
+                    {(e.location || e.organizer_name) && <div className="truncate" style={{ fontSize: 11, color: t.textMuted, marginTop: 1 }}>{[e.location, e.organizer_name].filter(Boolean).join(" · ")}</div>}
+                  </div>
+                  {e.online_meeting_url && <Video className="h-4 w-4 flex-shrink-0" style={{ color: t.accent, marginTop: 2 }} />}
+                </button>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CalendarMonth({ events, t, onSelect, calView, setCalView }) {
   const [view, setView] = useState("monat");
   const [off, setOff] = useState(0);
   const scrollRef = useRef(null);
@@ -759,7 +947,7 @@ function CalendarMonth({ events, t, onSelect }) {
     const nowH = today.getHours() + today.getMinutes() / 60;
     return (
       <div style={{ height: "100%", display: "flex", flexDirection: "column", minHeight: 0 }}>
-        <CalHeader t={t} label={dayLabel} view={view} setView={v => { setView(v); setOff(0); }} onPrev={() => setOff(o => o - 1)} onToday={() => setOff(0)} onNext={() => setOff(o => o + 1)} />
+        <CalHeader t={t} label={dayLabel} view={view} setView={v => { setView(v); setOff(0); }} onPrev={() => setOff(o => o - 1)} onToday={() => setOff(0)} onNext={() => setOff(o => o + 1)} calView={calView} setCalView={setCalView} />
         {allDay.length > 0 && (
           <div style={{ padding: "4px 4px 4px 48px", borderBottom: `1px solid ${t.borderSubtle}`, display: "flex", flexWrap: "wrap", gap: 3, flexShrink: 0 }}>
             {allDay.map(e => <button key={e.id} onClick={() => onSelect(e)} style={{ fontSize: 10, padding: "2px 8px", borderRadius: 5, background: t.accentFill, color: "#fff", border: "none", cursor: "pointer" }}>{e.subject || "Termin"}</button>)}
@@ -813,7 +1001,7 @@ function CalendarMonth({ events, t, onSelect }) {
     const hasAllDay = days.some(d => evForDay(d).some(e => e.is_all_day));
     return (
       <div style={{ height: "100%", display: "flex", flexDirection: "column", minHeight: 0 }}>
-        <CalHeader t={t} label={weekLabel} view={view} setView={v => { setView(v); setOff(0); }} onPrev={() => setOff(o => o - 1)} onToday={() => setOff(0)} onNext={() => setOff(o => o + 1)} />
+        <CalHeader t={t} label={weekLabel} view={view} setView={v => { setView(v); setOff(0); }} onPrev={() => setOff(o => o - 1)} onToday={() => setOff(0)} onNext={() => setOff(o => o + 1)} calView={calView} setCalView={setCalView} />
         <div style={{ display: "flex", borderBottom: `1px solid ${t.borderStrong}`, flexShrink: 0 }}>
           <div style={{ width: 44, flexShrink: 0 }} />
           {days.map((d, i) => {
@@ -895,7 +1083,7 @@ function CalendarMonth({ events, t, onSelect }) {
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
-      <CalHeader t={t} label={monthName} view={view} setView={v => { setView(v); setOff(0); }} onPrev={() => setOff(o => o - 1)} onToday={() => setOff(0)} onNext={() => setOff(o => o + 1)} />
+      <CalHeader t={t} label={monthName} view={view} setView={v => { setView(v); setOff(0); }} onPrev={() => setOff(o => o - 1)} onToday={() => setOff(0)} onNext={() => setOff(o => o + 1)} calView={calView} setCalView={setCalView} />
       <div style={{ padding: "8px 12px", flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4 }}>
           {["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"].map(d => (

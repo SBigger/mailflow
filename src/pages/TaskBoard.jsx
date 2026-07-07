@@ -36,7 +36,7 @@ export default function TaskBoard() {
   const [showAddTask, setShowAddTask] = useState(false);
   const [showVoiceTask, setShowVoiceTask] = useState(false);
 
-  // Electron Hotkey Shift+Ctrl+S → Dialog direkt öffnen
+  // Tauri Hotkey Shift+Ctrl+S → Dialog direkt öffnen
   useEffect(() => {
     const handler = () => setShowAddTask(true);
     window.addEventListener('smartis:open-new-task', handler);
