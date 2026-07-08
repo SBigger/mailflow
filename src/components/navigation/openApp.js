@@ -6,8 +6,8 @@
 import { toast } from 'sonner';
 import { itemHref, recordAppOpen } from './appCatalog';
 
-export function openApp(item, { sameWindow = false, navigate } = {}) {
-  recordAppOpen(item);
+export function openApp(item, { sameWindow = false, navigate, record = true } = {}) {
+  if (record) recordAppOpen(item);
   const href = itemHref(item);
 
   const openHere = () => {

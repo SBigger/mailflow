@@ -2,9 +2,10 @@ import React, { useState, useEffect, useMemo, useRef, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Fuse from 'fuse.js';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-import { Search, Star, CornerDownLeft } from 'lucide-react';
+import { Search, Star, CornerDownLeft, FileText } from 'lucide-react';
 import { ThemeContext } from '@/Layout';
 import { useAuth } from '@/lib/AuthContext';
+import { supabase } from '@/api/supabaseClient';
 import {
   NAV_GROUPS, visibleItems, allApps, isFavorite, toggleFavorite, reorderFavorites, appKey,
 } from '@/components/navigation/appCatalog';
@@ -49,6 +50,37 @@ function hubPalette(theme) {
     tileInk: '#eef4ef', tileSub: '#8a978d', kbdBorder: 'rgba(223,232,225,.2)',
     accentText: '#8fd3a5', rowHover: 'rgba(223,232,225,.06)',
   };
+}
+
+// Kleine Gruppen-Überschrift in der Ergebnisliste (Apps / Dokumente)
+function hubGroupLabel(pal) {
+  return {
+    display: 'flex', alignItems: 'center', gap: 6,
+    padding: '9px 16px 5px', fontSize: 10, fontWeight: 800,
+    letterSpacing: '.13em', textTransform: 'uppercase', color: pal.label,
+  };
+}
+
+// Datei-Kürzel für das Badge (aus Dateiname oder MIME-Typ)
+function fileExt(doc) {
+  const fn = doc.filename || doc.name || '';
+  const m = fn.match(/\.([a-z0-9]{1,5})$/i);
+  if (m) return m[1].toUpperCase().slice(0, 4);
+  const ft = (doc.file_type || '').toLowerCase();
+  if (ft.includes('pdf')) return 'PDF';
+  if (ft.includes('word') || ft.includes('doc')) return 'DOC';
+  if (ft.includes('sheet') || ft.includes('excel') || ft.includes('xls')) return 'XLS';
+  if (ft.includes('image')) return 'IMG';
+  return 'DOK';
+}
+
+// Highlight-Snippet der Volltextsuche sicher rendern: alles escapen,
+// dann nur die <b>-Marker der Suche wieder als farbige Hervorhebung zulassen.
+function safeHeadline(h, accent) {
+  const esc = String(h || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return esc
+    .replace(/&lt;b&gt;/g, `<b style="color:${accent};font-style:normal;font-weight:700">`)
+    .replace(/&lt;\/b&gt;/g, '</b>');
 }
 
 function Tile({ app, pal, big = false, onOpen }) {
@@ -156,8 +188,49 @@ export default function Hub() {
     [fuse, query]
   );
 
+  // ── Dokumente-Volltextsuche (dieselbe RPC wie im Dokumente-Modul) ──
+  const [docResults, setDocResults] = useState(null);
+  const [docSearching, setDocSearching] = useState(false);
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 2) { setDocResults(null); setDocSearching(false); return; }
+    setDocSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const { data, error } = await supabase.rpc('search_dokumente', {
+          p_query: q, p_customer_id: null, p_limit: 8,
+        });
+        if (error) throw error;
+        setDocResults(data || []);
+      } catch {
+        setDocResults([]);
+      } finally {
+        setDocSearching(false);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [query]);
+
   const handleOpen = (app, e) => {
     openApp(app, { sameWindow: !!e?.altKey, navigate });
+  };
+
+  // Kunden-Namen für die Dokument-Treffer (lazy, erst bei erster Doksuche)
+  const [custMap, setCustMap] = useState(null);
+  useEffect(() => {
+    if (custMap || !docResults) return;
+    supabase.from('customers').select('id, company_name')
+      .then(({ data }) => setCustMap(new Map((data || []).map(c => [c.id, c.company_name]))))
+      .catch(() => setCustMap(new Map()));
+  }, [docResults, custMap]);
+
+  // Dokument öffnen: Dokumente-Seite mit ?open=<id> (öffnet + lädt es),
+  // in eigenem Fenster; record:false, damit es die App-Statistik nicht verfälscht.
+  const openDoc = (doc, e) => {
+    openApp(
+      { href: `/Dokumente?open=${doc.id}`, label: doc.name || doc.filename || 'Dokument' },
+      { sameWindow: !!e?.altKey, navigate, record: false }
+    );
   };
 
   // Favoriten per Drag & Drop umsortieren
@@ -170,12 +243,17 @@ export default function Hub() {
   };
 
   const onKeyDown = (e) => {
-    if (!results.length) return;
-    if (e.key === 'ArrowDown') { e.preventDefault(); setSel(s => Math.min(results.length - 1, s + 1)); }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); setSel(s => Math.max(0, s - 1)); }
-    else if (e.key === 'Enter') {
+    if (results.length) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setSel(s => Math.min(results.length - 1, s + 1)); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); setSel(s => Math.max(0, s - 1)); }
+      else if (e.key === 'Enter') {
+        e.preventDefault();
+        openApp(results[Math.min(sel, results.length - 1)], { sameWindow: e.altKey, navigate });
+      }
+    } else if (e.key === 'Enter' && docResults && docResults.length) {
+      // Keine App-Treffer, aber Dokumente → obersten Treffer öffnen
       e.preventDefault();
-      openApp(results[Math.min(sel, results.length - 1)], { sameWindow: e.altKey, navigate });
+      openDoc(docResults[0], e);
     }
   };
 
@@ -219,7 +297,7 @@ export default function Hub() {
             value={query}
             onChange={e => { setQuery(e.target.value); setSel(0); }}
             onKeyDown={onKeyDown}
-            placeholder="App suchen… (kredi · abschluss · fristen · le)"
+            placeholder="App oder Dokument suchen… (kredi · fristen · Rechnung Müller)"
             style={{
               flex: 1, background: 'transparent', border: 'none', outline: 'none',
               color: pal.ink, fontSize: 16.5, fontFamily: 'inherit', minWidth: 0,
@@ -231,47 +309,106 @@ export default function Hub() {
           }}>Ctrl K</kbd>
         </label>
 
-        {/* Suchergebnisse */}
+        {/* Suchergebnisse: Apps + Dokumente */}
         {query.trim() ? (
           <div style={{
             width: 'min(660px,100%)', marginTop: 10, borderRadius: 14, overflow: 'hidden',
             background: pal.panelBg, border: `1px solid ${pal.panelBorder}`,
+            maxHeight: '64vh', overflowY: 'auto',
           }}>
-            {results.length ? results.map((app, i) => {
-              const c = app.color ?? app.groupColor;
-              const Icon = app.icon;
-              return (
-                <button
-                  key={`${app.groupId}-${app.label}`}
-                  onClick={(e) => handleOpen(app, e)}
-                  onMouseEnter={() => setSel(i)}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 12, width: '100%',
-                    padding: '10px 16px', textAlign: 'left', cursor: 'pointer',
-                    background: i === sel ? `${c}1a` : 'transparent',
-                  }}
-                >
-                  <span style={{
-                    width: 32, height: 32, borderRadius: 9, flexShrink: 0,
-                    background: `linear-gradient(135deg, ${c}, ${c}bb)`,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff',
-                  }}>
-                    <Icon style={{ width: 15, height: 15 }} />
-                  </span>
-                  <span style={{ flex: 1, minWidth: 0 }}>
-                    <span style={{ display: 'block', fontSize: 14, fontWeight: 600, color: pal.tileInk }}>{app.label}</span>
-                    <span style={{ display: 'block', fontSize: 11, color: pal.tileSub }}>{app.groupLabel}</span>
-                  </span>
-                  {i === sel && (
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, color: c, flexShrink: 0 }}>
-                      öffnen <CornerDownLeft style={{ width: 13, height: 13 }} />
-                    </span>
-                  )}
-                </button>
-              );
-            }) : (
+            {/* Apps */}
+            {results.length > 0 && (
+              <>
+                <div style={hubGroupLabel(pal)}>Apps</div>
+                {results.map((app, i) => {
+                  const c = app.color ?? app.groupColor;
+                  const Icon = app.icon;
+                  return (
+                    <button
+                      key={`${app.groupId}-${app.label}`}
+                      onClick={(e) => handleOpen(app, e)}
+                      onMouseEnter={() => setSel(i)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 12, width: '100%',
+                        padding: '10px 16px', textAlign: 'left', cursor: 'pointer',
+                        background: i === sel ? `${c}1a` : 'transparent',
+                      }}
+                    >
+                      <span style={{
+                        width: 32, height: 32, borderRadius: 9, flexShrink: 0,
+                        background: `linear-gradient(135deg, ${c}, ${c}bb)`,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff',
+                      }}>
+                        <Icon style={{ width: 15, height: 15 }} />
+                      </span>
+                      <span style={{ flex: 1, minWidth: 0 }}>
+                        <span style={{ display: 'block', fontSize: 14, fontWeight: 600, color: pal.tileInk }}>{app.label}</span>
+                        <span style={{ display: 'block', fontSize: 11, color: pal.tileSub }}>{app.groupLabel}</span>
+                      </span>
+                      {i === sel && (
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, color: c, flexShrink: 0 }}>
+                          öffnen <CornerDownLeft style={{ width: 13, height: 13 }} />
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </>
+            )}
+
+            {/* Dokumente (Volltextsuche) */}
+            {query.trim().length >= 2 && (
+              <>
+                <div style={{ ...hubGroupLabel(pal), borderTop: results.length ? `1px solid ${pal.panelBorder}` : 'none' }}>
+                  <FileText style={{ width: 11, height: 11 }} /> Dokumente
+                  {docSearching && <span style={{ fontWeight: 600, letterSpacing: 0, textTransform: 'none' }}>· sucht…</span>}
+                  {!docSearching && docResults && <span style={{ fontWeight: 600, letterSpacing: 0, textTransform: 'none' }}>· {docResults.length}</span>}
+                </div>
+                {docResults && docResults.length > 0 && docResults.map(doc => {
+                  const ext = fileExt(doc);
+                  const cust = custMap?.get(doc.customer_id);
+                  const meta = [cust, doc.year].filter(Boolean).join(' · ');
+                  return (
+                    <button
+                      key={doc.id}
+                      onClick={(e) => openDoc(doc, e)}
+                      style={{
+                        display: 'flex', alignItems: 'flex-start', gap: 12, width: '100%',
+                        padding: '10px 16px', textAlign: 'left', cursor: 'pointer', background: 'transparent',
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.background = pal.rowHover}
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                    >
+                      <span style={{
+                        minWidth: 34, height: 32, padding: '0 5px', borderRadius: 8, flexShrink: 0, marginTop: 1,
+                        background: 'linear-gradient(135deg,#4e79a7,#4e79a7bb)', color: '#fff',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9.5, fontWeight: 800,
+                      }}>{ext}</span>
+                      <span style={{ flex: 1, minWidth: 0 }}>
+                        <span style={{ display: 'block', fontSize: 13.5, fontWeight: 600, color: pal.tileInk, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {doc.name || doc.filename}
+                        </span>
+                        {doc.headline && (
+                          <span
+                            style={{ display: 'block', fontSize: 11, color: pal.tileSub, marginTop: 1, fontStyle: 'italic' }}
+                            dangerouslySetInnerHTML={{ __html: safeHeadline(doc.headline, pal.accentText) }}
+                          />
+                        )}
+                        {meta && <span style={{ display: 'block', fontSize: 10.5, color: pal.accentText, fontWeight: 500, marginTop: 1 }}>{meta}</span>}
+                      </span>
+                    </button>
+                  );
+                })}
+                {docResults && docResults.length === 0 && !docSearching && (
+                  <div style={{ padding: '12px 16px', color: pal.sub, fontSize: 12.5 }}>Keine Dokumente gefunden</div>
+                )}
+              </>
+            )}
+
+            {/* Gesamt-Leerzustand */}
+            {results.length === 0 && !docSearching && (!docResults || docResults.length === 0) && (
               <div style={{ padding: '22px 16px', textAlign: 'center', color: pal.sub, fontSize: 13 }}>
-                Keine App gefunden für „{query.trim()}“
+                Nichts gefunden für „{query.trim()}“
               </div>
             )}
           </div>
