@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Fuse from 'fuse.js';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-import { Search, Star, CornerDownLeft, FileText } from 'lucide-react';
+import { Search, Star, CornerDownLeft, FileText, Building2, CalendarClock, PhoneCall, Mail } from 'lucide-react';
 import { ThemeContext } from '@/Layout';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/api/supabaseClient';
@@ -81,6 +81,52 @@ function safeHeadline(h, accent) {
   return esc
     .replace(/&lt;b&gt;/g, `<b style="color:${accent};font-style:normal;font-weight:700">`)
     .replace(/&lt;\/b&gt;/g, '</b>');
+}
+
+// Farbiges Icon-Quadrat für einen Suchtreffer
+function iconSquare(Icon, color) {
+  return (
+    <span style={{
+      width: 32, height: 32, borderRadius: 9, flexShrink: 0, marginTop: 1,
+      background: `linear-gradient(135deg, ${color}, ${color}bb)`,
+      display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff',
+    }}>
+      <Icon style={{ width: 15, height: 15 }} />
+    </span>
+  );
+}
+
+// Untertitel-Zeile eines Treffers (einzeilig, gekürzt)
+function Sub({ pal, children, color, italic }) {
+  if (children == null || children === '') return null;
+  return (
+    <span style={{
+      display: 'block', fontSize: 11, color: color || pal.tileSub, marginTop: 1,
+      fontStyle: italic ? 'italic' : 'normal',
+      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+    }}>{children}</span>
+  );
+}
+
+// Generische Trefferzeile: Icon links, Titel + beliebiger Untertitel-Inhalt
+function GhostRow({ pal, icon, title, onClick, children }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        display: 'flex', alignItems: 'flex-start', gap: 12, width: '100%',
+        padding: '10px 16px', textAlign: 'left', cursor: 'pointer', background: 'transparent',
+      }}
+      onMouseEnter={e => e.currentTarget.style.background = pal.rowHover}
+      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+    >
+      {icon}
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ display: 'block', fontSize: 13.5, fontWeight: 600, color: pal.tileInk, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</span>
+        {children}
+      </span>
+    </button>
+  );
 }
 
 function Tile({ app, pal, big = false, onOpen }) {
@@ -188,25 +234,49 @@ export default function Hub() {
     [fuse, query]
   );
 
-  // ── Dokumente-Volltextsuche (dieselbe RPC wie im Dokumente-Modul) ──
+  // ── Globale Suche: Dokumente (FTS-RPC) + Kunden/Fristen/Telefonate/Mails (ilike) ──
   const [docResults, setDocResults] = useState(null);
-  const [docSearching, setDocSearching] = useState(false);
+  const [custResults, setCustResults] = useState(null);
+  const [fristResults, setFristResults] = useState(null);
+  const [callResults, setCallResults] = useState(null);
+  const [mailResults, setMailResults] = useState(null);
+  const [searching, setSearching] = useState(false);
+
   useEffect(() => {
     const q = query.trim();
-    if (q.length < 2) { setDocResults(null); setDocSearching(false); return; }
-    setDocSearching(true);
+    if (q.length < 2) {
+      setDocResults(null); setCustResults(null); setFristResults(null);
+      setCallResults(null); setMailResults(null); setSearching(false);
+      return;
+    }
+    setSearching(true);
     const timer = setTimeout(async () => {
-      try {
-        const { data, error } = await supabase.rpc('search_dokumente', {
-          p_query: q, p_customer_id: null, p_limit: 8,
-        });
-        if (error) throw error;
-        setDocResults(data || []);
-      } catch {
-        setDocResults([]);
-      } finally {
-        setDocSearching(false);
-      }
+      // Sonderzeichen entfernen, die den .or()-Filter zerlegen würden
+      const safe = q.replace(/[,()%*]/g, ' ').trim();
+      const orIlike = (cols) => cols.map(c => `${c}.ilike.*${safe}*`).join(',');
+      const val = (r) => (r.status === 'fulfilled' && !r.value?.error ? (r.value.data || []) : []);
+      const [d, cu, fr, ca, ma] = await Promise.allSettled([
+        supabase.rpc('search_dokumente', { p_query: q, p_customer_id: null, p_limit: 8 }),
+        supabase.from('customers')
+          .select('id, company_name, ort, email')
+          .or(orIlike(['company_name', 'ort', 'email']))
+          .limit(6),
+        supabase.from('fristen')
+          .select('id, title, category, kanton, jahr, due_date, status, customer_id')
+          .or(orIlike(['title', 'description', 'category', 'kanton']))
+          .limit(6),
+        supabase.from('call_records')
+          .select('id, caller_name, callee_name, caller_number, callee_number, artis_user_name, direction, start_time')
+          .or(orIlike(['caller_name', 'callee_name', 'caller_number', 'callee_number', 'artis_user_name', 'notes']))
+          .order('start_time', { ascending: false }).limit(6),
+        supabase.from('mail_items')
+          .select('id, subject, sender_name, sender_email, received_date')
+          .or(orIlike(['subject', 'sender_name', 'sender_email', 'body_preview']))
+          .order('received_date', { ascending: false }).limit(6),
+      ]);
+      setDocResults(val(d)); setCustResults(val(cu)); setFristResults(val(fr));
+      setCallResults(val(ca)); setMailResults(val(ma));
+      setSearching(false);
     }, 300);
     return () => clearTimeout(timer);
   }, [query]);
@@ -215,10 +285,10 @@ export default function Hub() {
     openApp(app, { sameWindow: !!e?.altKey, navigate });
   };
 
-  // Kunden-Namen für die Dokument-Treffer (lazy, erst bei erster Doksuche)
+  // Kunden-Namen (id → Firma) für Fristen-Treffer, lazy geladen sobald gesucht wird
   const [custMap, setCustMap] = useState(null);
   useEffect(() => {
-    if (custMap || !docResults) return;
+    if (custMap || docResults === null) return;
     supabase.from('customers').select('id, company_name')
       .then(({ data }) => setCustMap(new Map((data || []).map(c => [c.id, c.company_name]))))
       .catch(() => setCustMap(new Map()));
@@ -231,6 +301,10 @@ export default function Hub() {
       { href: `/Dokumente?open=${doc.id}`, label: doc.name || doc.filename || 'Dokument' },
       { sameWindow: !!e?.altKey, navigate, record: false }
     );
+  };
+  // Modul öffnen (Kunden/Fristen/Telefon/Mails haben noch keinen Datensatz-Deep-Link)
+  const openRoute = (route, label, e) => {
+    openApp({ href: route, label }, { sameWindow: !!e?.altKey, navigate, record: false });
   };
 
   // Favoriten per Drag & Drop umsortieren
@@ -250,17 +324,83 @@ export default function Hub() {
         e.preventDefault();
         openApp(results[Math.min(sel, results.length - 1)], { sameWindow: e.altKey, navigate });
       }
-    } else if (e.key === 'Enter' && docResults && docResults.length) {
-      // Keine App-Treffer, aber Dokumente → obersten Treffer öffnen
+    } else if (e.key === 'Enter') {
+      // Keine App-Treffer → obersten Inhalts-Treffer öffnen (Dokument zuerst)
       e.preventDefault();
-      openDoc(docResults[0], e);
+      if (docResults?.length) openDoc(docResults[0], e);
+      else if (custResults?.length) openRoute('/Kunden', 'Kunden', e);
+      else if (fristResults?.length) openRoute('/Fristen', 'Fristen', e);
+      else if (callResults?.length) openRoute('/TelefonDashboard', 'Telefon', e);
+      else if (mailResults?.length) openRoute('/MailKanban', 'Mails', e);
     }
   };
+
+  // Datum kurz formatieren (leer bei ungültig)
+  const dCH = (x) => { const t = x ? new Date(x) : null; return t && !isNaN(t) ? t.toLocaleDateString('de-CH') : ''; };
+  const dirLabel = (d) => d === 'incoming' ? 'eingehend' : d === 'outgoing' ? 'ausgehend' : 'Anruf';
 
   const heute = new Date().toLocaleDateString('de-CH', {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
   });
   const vorname = (profile?.full_name || '').split(' ')[0] || '';
+
+  // ── Treffer-Bereiche in fester Reihenfolge: Datei zuerst ──
+  const docBadge = (doc) => (
+    <span style={{
+      minWidth: 34, height: 32, padding: '0 5px', borderRadius: 8, flexShrink: 0, marginTop: 1,
+      background: 'linear-gradient(135deg,#4e79a7,#4e79a7bb)', color: '#fff',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9.5, fontWeight: 800,
+    }}>{fileExt(doc)}</span>
+  );
+  const searchSections = [];
+  if (query.trim().length >= 2) {
+    if (docResults?.length) searchSections.push({
+      id: 'docs', icon: FileText, label: 'Dokumente', count: docResults.length,
+      rows: docResults.map(doc => {
+        const meta = [custMap?.get(doc.customer_id), doc.year].filter(Boolean).join(' · ');
+        return (
+          <GhostRow key={'doc-' + doc.id} pal={pal} icon={docBadge(doc)} title={doc.name || doc.filename} onClick={(e) => openDoc(doc, e)}>
+            {doc.headline && <span style={{ display: 'block', fontSize: 11, color: pal.tileSub, marginTop: 1, fontStyle: 'italic', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} dangerouslySetInnerHTML={{ __html: safeHeadline(doc.headline, pal.accentText) }} />}
+            {meta && <Sub pal={pal} color={pal.accentText}>{meta}</Sub>}
+          </GhostRow>
+        );
+      }),
+    });
+    if (custResults?.length) searchSections.push({
+      id: 'kunden', icon: Building2, label: 'Kunden', count: custResults.length,
+      rows: custResults.map(c => (
+        <GhostRow key={'cust-' + c.id} pal={pal} icon={iconSquare(Building2, '#d98836')} title={c.company_name || '(ohne Namen)'} onClick={(e) => openRoute('/Kunden', 'Kunden', e)}>
+          <Sub pal={pal}>{[c.ort, c.email].filter(Boolean).join(' · ')}</Sub>
+        </GhostRow>
+      )),
+    });
+    if (fristResults?.length) searchSections.push({
+      id: 'fristen', icon: CalendarClock, label: 'Fristen', count: fristResults.length,
+      rows: fristResults.map(f => (
+        <GhostRow key={'frist-' + f.id} pal={pal} icon={iconSquare(CalendarClock, '#c94f4f')} title={f.title || f.category || 'Frist'} onClick={(e) => openRoute('/Fristen', 'Fristen', e)}>
+          <Sub pal={pal}>{[custMap?.get(f.customer_id), f.jahr, dCH(f.due_date), f.status].filter(Boolean).join(' · ')}</Sub>
+        </GhostRow>
+      )),
+    });
+    if (callResults?.length) searchSections.push({
+      id: 'calls', icon: PhoneCall, label: 'Telefonate', count: callResults.length,
+      rows: callResults.map(c => (
+        <GhostRow key={'call-' + c.id} pal={pal} icon={iconSquare(PhoneCall, '#4fae6b')}
+          title={c.caller_name || c.callee_name || c.caller_number || c.callee_number || 'Anruf'}
+          onClick={(e) => openRoute('/TelefonDashboard', 'Telefon', e)}>
+          <Sub pal={pal}>{[dirLabel(c.direction), dCH(c.start_time), c.artis_user_name].filter(Boolean).join(' · ')}</Sub>
+        </GhostRow>
+      )),
+    });
+    if (mailResults?.length) searchSections.push({
+      id: 'mails', icon: Mail, label: 'Mails', count: mailResults.length,
+      rows: mailResults.map(m => (
+        <GhostRow key={'mail-' + m.id} pal={pal} icon={iconSquare(Mail, '#4e79a7')} title={m.subject || '(kein Betreff)'} onClick={(e) => openRoute('/MailKanban', 'Mails', e)}>
+          <Sub pal={pal}>{[m.sender_name || m.sender_email, dCH(m.received_date)].filter(Boolean).join(' · ')}</Sub>
+        </GhostRow>
+      )),
+    });
+  }
 
   return (
     <div style={{ height: '100%', overflowY: 'auto', background: pal.bg, color: pal.ink }}>
@@ -297,7 +437,7 @@ export default function Hub() {
             value={query}
             onChange={e => { setQuery(e.target.value); setSel(0); }}
             onKeyDown={onKeyDown}
-            placeholder="App oder Dokument suchen… (kredi · fristen · Rechnung Müller)"
+            placeholder="Alles suchen… App, Dokument, Kunde, Frist, Telefonat, Mail"
             style={{
               flex: 1, background: 'transparent', border: 'none', outline: 'none',
               color: pal.ink, fontSize: 16.5, fontFamily: 'inherit', minWidth: 0,
@@ -309,17 +449,29 @@ export default function Hub() {
           }}>Ctrl K</kbd>
         </label>
 
-        {/* Suchergebnisse: Apps + Dokumente */}
+        {/* Suchergebnisse: Dokumente zuerst, dann Kunden/Fristen/Telefonate/Mails, Apps zuletzt */}
         {query.trim() ? (
           <div style={{
             width: 'min(660px,100%)', marginTop: 10, borderRadius: 14, overflow: 'hidden',
             background: pal.panelBg, border: `1px solid ${pal.panelBorder}`,
-            maxHeight: '64vh', overflowY: 'auto',
+            maxHeight: '66vh', overflowY: 'auto',
           }}>
-            {/* Apps */}
+            {searchSections.map((s, i) => (
+              <React.Fragment key={s.id}>
+                <div style={{ ...hubGroupLabel(pal), borderTop: i > 0 ? `1px solid ${pal.panelBorder}` : 'none' }}>
+                  <s.icon style={{ width: 11, height: 11 }} /> {s.label}
+                  <span style={{ fontWeight: 600, letterSpacing: 0, textTransform: 'none' }}>· {s.count}</span>
+                </div>
+                {s.rows}
+              </React.Fragment>
+            ))}
+
+            {/* Apps zuletzt (Datei zuerst) */}
             {results.length > 0 && (
               <>
-                <div style={hubGroupLabel(pal)}>Apps</div>
+                <div style={{ ...hubGroupLabel(pal), borderTop: searchSections.length ? `1px solid ${pal.panelBorder}` : 'none' }}>
+                  Apps <span style={{ fontWeight: 600, letterSpacing: 0, textTransform: 'none' }}>· {results.length}</span>
+                </div>
                 {results.map((app, i) => {
                   const c = app.color ?? app.groupColor;
                   const Icon = app.icon;
@@ -356,57 +508,11 @@ export default function Hub() {
               </>
             )}
 
-            {/* Dokumente (Volltextsuche) */}
-            {query.trim().length >= 2 && (
-              <>
-                <div style={{ ...hubGroupLabel(pal), borderTop: results.length ? `1px solid ${pal.panelBorder}` : 'none' }}>
-                  <FileText style={{ width: 11, height: 11 }} /> Dokumente
-                  {docSearching && <span style={{ fontWeight: 600, letterSpacing: 0, textTransform: 'none' }}>· sucht…</span>}
-                  {!docSearching && docResults && <span style={{ fontWeight: 600, letterSpacing: 0, textTransform: 'none' }}>· {docResults.length}</span>}
-                </div>
-                {docResults && docResults.length > 0 && docResults.map(doc => {
-                  const ext = fileExt(doc);
-                  const cust = custMap?.get(doc.customer_id);
-                  const meta = [cust, doc.year].filter(Boolean).join(' · ');
-                  return (
-                    <button
-                      key={doc.id}
-                      onClick={(e) => openDoc(doc, e)}
-                      style={{
-                        display: 'flex', alignItems: 'flex-start', gap: 12, width: '100%',
-                        padding: '10px 16px', textAlign: 'left', cursor: 'pointer', background: 'transparent',
-                      }}
-                      onMouseEnter={e => e.currentTarget.style.background = pal.rowHover}
-                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                    >
-                      <span style={{
-                        minWidth: 34, height: 32, padding: '0 5px', borderRadius: 8, flexShrink: 0, marginTop: 1,
-                        background: 'linear-gradient(135deg,#4e79a7,#4e79a7bb)', color: '#fff',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9.5, fontWeight: 800,
-                      }}>{ext}</span>
-                      <span style={{ flex: 1, minWidth: 0 }}>
-                        <span style={{ display: 'block', fontSize: 13.5, fontWeight: 600, color: pal.tileInk, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {doc.name || doc.filename}
-                        </span>
-                        {doc.headline && (
-                          <span
-                            style={{ display: 'block', fontSize: 11, color: pal.tileSub, marginTop: 1, fontStyle: 'italic' }}
-                            dangerouslySetInnerHTML={{ __html: safeHeadline(doc.headline, pal.accentText) }}
-                          />
-                        )}
-                        {meta && <span style={{ display: 'block', fontSize: 10.5, color: pal.accentText, fontWeight: 500, marginTop: 1 }}>{meta}</span>}
-                      </span>
-                    </button>
-                  );
-                })}
-                {docResults && docResults.length === 0 && !docSearching && (
-                  <div style={{ padding: '12px 16px', color: pal.sub, fontSize: 12.5 }}>Keine Dokumente gefunden</div>
-                )}
-              </>
+            {/* Suche läuft / nichts gefunden */}
+            {searching && searchSections.length === 0 && results.length === 0 && (
+              <div style={{ padding: '18px 16px', textAlign: 'center', color: pal.sub, fontSize: 13 }}>Suche läuft…</div>
             )}
-
-            {/* Gesamt-Leerzustand */}
-            {results.length === 0 && !docSearching && (!docResults || docResults.length === 0) && (
+            {!searching && searchSections.length === 0 && results.length === 0 && (
               <div style={{ padding: '22px 16px', textAlign: 'center', color: pal.sub, fontSize: 13 }}>
                 Nichts gefunden für „{query.trim()}“
               </div>
