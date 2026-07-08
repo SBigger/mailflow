@@ -30,6 +30,7 @@ const Dokumente = lazy(() => import('./pages/Dokumente'));
 const DokumenteV2 = lazy(() => import('./pages/DokumenteV2'));
 const Chartis = lazy(() => import('./pages/Chartis'));
 const UserManagement = lazy(() => import('./pages/UserManagement'));
+const Kundenportal = lazy(() => import('./pages/Kundenportal'));
 const ArtisTools = lazy(() => import('./pages/ArtisTools'));
 const BriefSchreiben = lazy(() => import('./pages/BriefSchreiben'));
 const Fahrzeugliste = lazy(() => import('./pages/Fahrzeugliste'));
@@ -49,6 +50,7 @@ const SetPassword = lazy(() => import("./pages/SetPassword.jsx"));
 const DokumentUploadKunden = lazy(() => import("./pages/DokumentUploadKunden.jsx"));
 const Posteingang = lazy(() => import("./pages/Posteingang.jsx"));
 const SharePage = lazy(() => import("./pages/SharePage.jsx"));
+const Portal = lazy(() => import("./pages/Portal.jsx"));
 const Leistungserfassung = lazy(() => import("./pages/Leistungserfassung.jsx"));
 const Promptvorlagen = lazy(() => import("./pages/Promptvorlagen.jsx"));
 const TelefonDashboard = lazy(() => import("./pages/TelefonDashboard.jsx"));
@@ -108,6 +110,7 @@ function AuthenticatedApp() {
                     <Route path="/Chartis" element={<Chartis/>}/>
                     <Route path="/Posteingang" element={<Posteingang />} />
                     <Route path="/UserManagement" element={<UserManagement />} />
+                    <Route path="/Kundenportal" element={<Kundenportal />} />
                     <Route path="/ArtisTools" element={<ArtisTools />} />
                     <Route path="/BriefSchreiben" element={<BriefSchreiben />} />
                     <Route path="/Fahrzeugliste" element={<Fahrzeugliste />} />
@@ -167,6 +170,7 @@ function App() {
                         <Route path="/share/:token"
                                element={<Suspense fallback={<PageLoader/>}><SharePage/></Suspense>}/>
                         <Route path="/share" element={<Suspense fallback={<PageLoader/>}><SharePage/></Suspense>}/>
+                        <Route path="/portal" element={<Suspense fallback={<PageLoader/>}><Portal/></Suspense>}/>
                         <Route path="*" element={<AuthenticatedApp/>}/>
                     </Routes>
                 </Router>

@@ -44,6 +44,7 @@ import {
   ScrollText,
   PhoneCall,
   Users,
+  ShieldCheck,
 } from "lucide-react";
 import { createPageUrl } from "@/utils";
 import { FEATURE_LEISTUNGSERFASSUNG } from "@/lib/featureFlags";
@@ -73,6 +74,7 @@ export const NAV_GROUPS = [
       { name: 'Dokumente', label: 'Dokumente', icon: FolderOpen, rail: true, color: '#caa53d', aliases: ['ablage', 'dateiablage', 'dateien', 'abschlussunterlagen', 'archiv'] },
       /*{ name: 'DokumenteV2', label: 'Dokumente V2', icon: FolderOpen, color: '#a8862f', aliases: ['ablage neu', 'beta'] },*/
       { name: 'Posteingang', label: 'Posteingang', icon: CloudUpload, rail: true, color: '#4ba3c7', aliases: ['scans', 'upload', 'eingang'] },
+      { name: 'Kundenportal', label: 'Kundenportal', icon: ShieldCheck, color: '#0e756a', aliases: ['portal', 'kundenzugang', 'freigabe', 'read-only', 'kundenlogin'] },
       { name: 'TelefonDashboard', label: 'Telefon', icon: PhoneCall, color: '#4fae6b', aliases: ['anrufe', 'telefonliste', 'calls'] },
     ],
   },
