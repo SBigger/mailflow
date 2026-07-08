@@ -449,27 +449,17 @@ export default function Hub() {
           }}>Ctrl K</kbd>
         </label>
 
-        {/* Suchergebnisse: Dokumente zuerst, dann Kunden/Fristen/Telefonate/Mails, Apps zuletzt */}
+        {/* Suchergebnisse: Apps zuerst, dann Dokumente, Kunden/Fristen/Telefonate/Mails */}
         {query.trim() ? (
           <div style={{
             width: 'min(660px,100%)', marginTop: 10, borderRadius: 14, overflow: 'hidden',
             background: pal.panelBg, border: `1px solid ${pal.panelBorder}`,
             maxHeight: '66vh', overflowY: 'auto',
           }}>
-            {searchSections.map((s, i) => (
-              <React.Fragment key={s.id}>
-                <div style={{ ...hubGroupLabel(pal), borderTop: i > 0 ? `1px solid ${pal.panelBorder}` : 'none' }}>
-                  <s.icon style={{ width: 11, height: 11 }} /> {s.label}
-                  <span style={{ fontWeight: 600, letterSpacing: 0, textTransform: 'none' }}>· {s.count}</span>
-                </div>
-                {s.rows}
-              </React.Fragment>
-            ))}
-
-            {/* Apps zuletzt (Datei zuerst) */}
+            {/* Apps zuerst */}
             {results.length > 0 && (
               <>
-                <div style={{ ...hubGroupLabel(pal), borderTop: searchSections.length ? `1px solid ${pal.panelBorder}` : 'none' }}>
+                <div style={hubGroupLabel(pal)}>
                   Apps <span style={{ fontWeight: 600, letterSpacing: 0, textTransform: 'none' }}>· {results.length}</span>
                 </div>
                 {results.map((app, i) => {
@@ -507,6 +497,17 @@ export default function Hub() {
                 })}
               </>
             )}
+
+            {/* Dann Dateien + weitere Inhalte */}
+            {searchSections.map((s, i) => (
+              <React.Fragment key={s.id}>
+                <div style={{ ...hubGroupLabel(pal), borderTop: (results.length > 0 || i > 0) ? `1px solid ${pal.panelBorder}` : 'none' }}>
+                  <s.icon style={{ width: 11, height: 11 }} /> {s.label}
+                  <span style={{ fontWeight: 600, letterSpacing: 0, textTransform: 'none' }}>· {s.count}</span>
+                </div>
+                {s.rows}
+              </React.Fragment>
+            ))}
 
             {/* Suche läuft / nichts gefunden */}
             {searching && searchSections.length === 0 && results.length === 0 && (
