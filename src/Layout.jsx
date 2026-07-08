@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, createContext, useCallback } from "react";
 import { Link, useLocation, useNavigate, Outlet } from "react-router-dom";
 import { createPageUrl } from "@/utils";
+import ChartisNotifier from "@/components/chartis/ChartisNotifier";
 import {
   LogOut,
   Mic,
@@ -369,6 +370,7 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
 
   return (
       <ThemeContext.Provider value={{ theme, setTheme, navLayout, setNavLayout, hubWidgets, setHubWidgets }}>
+        <ChartisNotifier />
         <div className="flex h-screen overflow-hidden" style={{ backgroundColor: pageBg }}>
 
           {/* Start-Hub-Modus: schwebender, verschiebbarer Zurück-zum-Hub-Knopf */}

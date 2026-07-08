@@ -262,44 +262,49 @@ export default function ChartisPanel({
   // ── Senden ────────────────────────────────────────────────────────────────
   const handleSend = async () => {
     const finalBody = [text.trim(), ...pending.map(attachmentMarkdown)].filter(Boolean).join("\n\n");
-    if (!finalBody || !thread?.id) return;
+    if (!finalBody || !thread?.id || sending) return; // harte Doppelsende-Sperre
     setSending(true);
+    const savedText = text, savedPending = pending;
+    const mkey = ["chartisMessages", thread.id];
     try {
       if (mode === "email") {
         await functions.invoke("chartis-send", { thread_id: thread.id, body: markdownToEmailHtml(finalBody) });
         toast.success("E-Mail an Kunde gesendet");
-      } else {
-        const { data: { user } } = await supabase.auth.getUser();
-        const { data: msg, error } = await supabase.from("chartis_messages").insert({
-          thread_id: thread.id, mandant_id: thread.mandant_id, kind: "intern", body_text: finalBody, created_by: user?.id,
-        }).select("id").single();
-        if (error) throw error;
-        const toks = [...finalBody.matchAll(/@([A-Za-zÀ-ÿ]+)/g)].map(m => m[1].toLowerCase());
-        if (toks.length) {
-          const hit = users.filter(u => {
-            const fn = (u.full_name || "").toLowerCase();
-            return u.id !== user?.id && toks.some(t => fn.split(" ")[0] === t || fn.startsWith(t) || (u.email || "").toLowerCase().startsWith(t));
-          });
-          if (hit.length) await supabase.from("chartis_mentions").insert(hit.map(u => ({ message_id: msg.id, thread_id: thread.id, user_id: u.id })));
-        }
-        // Geteilte Unterhaltung: hat der Faden Externe, geht die Nachricht auch per E-Mail raus
-        if (hasExternals) {
-          if (EMAIL_ENABLED) {
-            try {
-              const { data: fo } = await functions.invoke("chartis-fanout", { thread_id: thread.id, body: markdownToEmailHtml(finalBody) });
-              toast.success(fo?.sent ? `Gesendet · an ${fo.sent} Externe gemailt` : "Gesendet");
-            } catch { toast.success("Gesendet (E-Mail an Externe fehlgeschlagen)"); }
-          } else {
-            toast.success("Gesendet · Externe erhalten es, sobald der Mailweg aktiv ist");
-          }
-        } else {
-          toast.success("Gesendet");
-        }
+        setText(""); setPending([]);
+        qc.invalidateQueries({ queryKey: mkey });
+        return;
       }
+      // ── Interne Nachricht: SOFORT optimistisch anzeigen + Feld leeren ──────
+      let uid = me?.id;
+      const tmp = { id: `tmp-${Date.now()}`, thread_id: thread.id, kind: "intern", body_text: finalBody,
+        created_by: uid, created_at: new Date().toISOString(), _optimistic: true };
+      qc.setQueryData(mkey, (old) => Array.isArray(old) ? [...old, tmp] : [tmp]);
       setText(""); setPending([]);
-      qc.invalidateQueries({ queryKey: ["chartisMessages", thread.id] });
-    } catch (e) { toast.error("Fehler: " + (e?.message || e)); }
-    finally { setSending(false); }
+
+      if (!uid) { const { data: { user } } = await supabase.auth.getUser(); uid = user?.id; }
+      const { data: msg, error } = await supabase.from("chartis_messages")
+        .insert({ thread_id: thread.id, mandant_id: thread.mandant_id, kind: "intern", body_text: finalBody, created_by: uid })
+        .select("id").single();
+      if (error) throw error;
+
+      const toks = [...finalBody.matchAll(/@([A-Za-zÀ-ÿ]+)/g)].map(m => m[1].toLowerCase());
+      if (toks.length) {
+        const hit = users.filter(u => {
+          const fn = (u.full_name || "").toLowerCase();
+          return u.id !== uid && toks.some(t => fn.split(" ")[0] === t || fn.startsWith(t) || (u.email || "").toLowerCase().startsWith(t));
+        });
+        if (hit.length) await supabase.from("chartis_mentions").insert(hit.map(u => ({ message_id: msg.id, thread_id: thread.id, user_id: u.id })));
+      }
+      if (hasExternals && EMAIL_ENABLED) {
+        try { const { data: fo } = await functions.invoke("chartis-fanout", { thread_id: thread.id, body: markdownToEmailHtml(finalBody) }); if (fo?.sent) toast.success(`An ${fo.sent} Externe gemailt`); }
+        catch { toast.error("E-Mail an Externe fehlgeschlagen"); }
+      }
+      qc.invalidateQueries({ queryKey: mkey });
+    } catch (e) {
+      toast.error("Fehler: " + (e?.message || e));
+      qc.setQueryData(mkey, (old) => Array.isArray(old) ? old.filter(m => !m._optimistic) : old);
+      setText(savedText); setPending(savedPending);
+    } finally { setSending(false); }
   };
 
   // ── Bearbeiten / Löschen (soft) / Reagieren ────────────────────────────────

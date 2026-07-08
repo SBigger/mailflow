@@ -1466,6 +1466,55 @@ export default function Dokumente() {
     }
   };
 
+  // ── Einzelnen Abschluss-Ordner (z.B. "Jahresabschluss") als ZIP exportieren ──
+  // Zum Weitergeben an Kunden: nur dieser eine Bereich inkl. Unterordner.
+  const exportAbschlussParent = async (parent) => {
+    if (!selCustomer || !parent) return;
+    const safe = (str) => ((str || "").replace(/[<>:"/\\|?*]/g, "_").trim() || "Ordner");
+    let total = 0;
+    parent.children.forEach(ch => { total += ch.docs.filter(d => d.storage_path).length; });
+    if (!total) { toast.error("Keine Dateien in diesem Ordner"); return; }
+    const customerName = safe(selCustomer.company_name || "Kunde");
+    const yearLabel = (selYear && selYear !== "__none__") ? " " + selYear : "";
+    const parentName = safe(parent.tag?.name);
+    toast.info(`${total} Dateien aus „${parent.tag?.name}" werden als ZIP vorbereitet...`);
+    try {
+      const JSZip = (await import("jszip")).default;
+      const zip = new JSZip();
+      const root = zip.folder(`${customerName} - ${parentName}${yearLabel}`);
+      let done = 0;
+      for (const [, child] of parent.children) {
+        const isDirect = child.tag?.id === "__direct__";
+        const cFolder = isDirect ? root : root.folder(safe(child.tag?.name));
+        for (const doc of child.docs) {
+          if (!doc.storage_path) continue;
+          try {
+            let url = signedUrls[doc.id];
+            if (!url) {
+              const sp = doc.storage_path.replace('dokumente/', '');
+              const { data } = await supabase.storage.from(BUCKET).createSignedUrl(sp, 600);
+              url = data?.signedUrl;
+            }
+            if (!url) continue;
+            const resp = await fetch(url);
+            const blob = await resp.blob();
+            cFolder.file(safe(doc.filename || doc.name || "datei"), blob);
+            done++;
+          } catch (e) { console.warn("ZIP Abschluss-Ordner:", doc.name, e); }
+        }
+      }
+      const zipBlob = await zip.generateAsync({ type: "blob", compression: "STORE" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(zipBlob);
+      a.download = `${customerName} - ${parentName}${yearLabel}.zip`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      toast.success(`${done} Dateien als ZIP heruntergeladen`);
+    } catch (e) {
+      toast.error("Export fehlgeschlagen: " + e.message);
+    }
+  };
+
   const downloadDoc = async (doc) => {
     if (!doc) return;
     try {
@@ -2368,6 +2417,13 @@ export default function Dokumente() {
                         : <ChevronRight size={14} style={{ color: s.textMuted, flexShrink: 0 }} />}
                       <span style={{ fontSize: 16, flexShrink: 0 }}>📁</span>
                       <span style={{ fontSize: 13, fontWeight: 700, color: s.textMain, flex: 1 }}>{parent.name}</span>
+                      <span onClick={e => { e.stopPropagation(); exportAbschlussParent({ tag: parent, children }); }}
+                        title={`„${parent.name}" als ZIP herunterladen (für Kunden)`}
+                        style={{ cursor: "pointer", color: s.textMuted, display: "flex", flexShrink: 0, padding: 3, borderRadius: 4 }}
+                        onMouseEnter={e => e.currentTarget.style.color = pColor}
+                        onMouseLeave={e => e.currentTarget.style.color = s.textMuted}>
+                        <Download size={13} />
+                      </span>
                       <span style={{ fontSize: 11, color: s.textMuted, background: s.inputBg, border: "1px solid " + border,
                         borderRadius: 10, padding: "1px 7px" }}>{totalDocs}</span>
                     </div>

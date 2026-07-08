@@ -394,7 +394,10 @@ export const leInvoice = {
   list: async ({ status } = {}) => {
     let q = supabase
       .from('le_invoice')
-      .select('*, customer:customers(id, company_name, street, building_number, zip, city, country, billing_email), project:le_project(id, name), lines:le_invoice_line(*)')
+      .select('*, ' +
+          'customer:customers(id, company_name, street, building_number, zip, city, country, billing_email), ' +
+          'project:le_project(id, name), ' +
+          'lines:le_invoice_line(*)')
       .order('created_at', { ascending: false });
     if (status) q = q.eq('status', status);
     const { data, error } = await q;
@@ -1418,5 +1421,5 @@ export async function customersWithProjectFlag() {
 
 export function isMissingTableError(err) {
   const msg = String(err?.message ?? err ?? '').toLowerCase();
-  return msg.includes('does not exist') || msg.includes('relation') || err?.code === '42p01';
+  return msg.includes('does not exist') || (msg.includes('relation') && err?.code !== 'PGRST201') || err?.code === '42p01';
 }
