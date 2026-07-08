@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
   ShieldCheck, Mail, Search, Folder, Calendar, Tag as TagIcon, Eye, Download,
-  LogOut, Loader2, CheckCircle2, AlertCircle, FileText, ChevronRight, Lock,
+  LogOut, Loader2, CheckCircle2, AlertCircle, FileText, ChevronRight, Lock, Archive, X,
 } from "lucide-react";
 import { CATEGORIES } from "@/lib/categories";
+import JSZip from "jszip";
 
 const API = `${window.env.API_URL}/functions/v1/portal-api`;
 const ANON = window.env.KEY1;
@@ -144,6 +145,23 @@ const CSS = `
 .pp .errbox{margin-top:16px;background:#fbe9e6;border:1px solid var(--danger);color:var(--danger);border-radius:10px;
   padding:12px 14px;font-size:13.5px;display:flex;gap:9px;align-items:flex-start}
 @media (prefers-color-scheme:dark){.pp .errbox{background:#2c1613}}
+.pp .pbtn{border:0;border-radius:8px;padding:9px 13px;font-size:13.5px;font-weight:600;background:var(--accent);color:#fff;
+  cursor:pointer;display:inline-flex;align-items:center;gap:7px;font-family:inherit;white-space:nowrap}
+.pp .pbtn:hover{background:var(--accentStrong)}
+.pp .pbtn:disabled{opacity:.6;cursor:default}
+.pp .overlay{position:fixed;inset:0;background:rgba(10,20,18,.55);z-index:80;display:flex;align-items:center;justify-content:center;padding:24px}
+.pp .modal{width:min(940px,100%);height:min(88vh,920px);background:var(--surface);border-radius:14px;overflow:hidden;
+  display:flex;flex-direction:column;box-shadow:0 24px 70px rgba(0,0,0,.42)}
+.pp .mhead{display:flex;align-items:center;gap:12px;padding:13px 16px;border-bottom:1px solid var(--line)}
+.pp .mbody{flex:1;background:var(--surface2);overflow:auto;display:flex;align-items:center;justify-content:center}
+.pp .mbody iframe{width:100%;height:100%;border:0;background:#fff}
+.pp .mbody img{max-width:100%;max-height:100%;object-fit:contain}
+.pp .fallback{text-align:center;padding:40px 24px}
+.pp .closebtn{width:36px;height:36px;border-radius:8px;border:0;background:transparent;color:var(--muted);
+  display:grid;place-items:center;cursor:pointer}
+.pp .closebtn:hover{background:var(--surface2);color:var(--ink)}
+.pp .ziptoast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--line);
+  border-radius:12px;padding:13px 18px;box-shadow:0 14px 40px rgba(0,0,0,.22);display:flex;gap:12px;align-items:center;z-index:90;width:min(340px,90vw)}
 .pp .loadwrap{min-height:100vh;display:grid;place-items:center;color:var(--muted);gap:12px}
 @media (max-width:720px){.pp .cols{grid-template-columns:1fr}.pp .side{display:none}.pp .frow{grid-template-columns:1fr auto}.pp .fmeta{display:none}}
 `;
@@ -158,6 +176,8 @@ export default function Portal() {
   const [docs, setDocs] = useState([]);
   const [tagMap, setTagMap] = useState({});
   const [busy, setBusy] = useState({});
+  const [preview, setPreview] = useState(null);   // { doc, url, kind }
+  const [zip, setZip] = useState(null);            // { done, total, label }
 
   const [selCat, setSelCat] = useState(null);
   const [selYear, setSelYear] = useState(null);
@@ -216,21 +236,65 @@ export default function Portal() {
     setUser(null); setDocs([]); setPhase("login"); setEmail("");
   }
 
-  async function openDoc(doc, mode) {
+  // Ansehen → Vorschau-Modal (PDF/Bild inline; sonst Download-Hinweis)
+  async function openPreview(doc) {
+    const kind = fileKind(doc.filename || doc.name);
+    if (kind !== "pdf" && kind !== "img") { setPreview({ doc, url: null, kind }); return; }
     setBusy(b => ({ ...b, [doc.id]: true }));
     try {
-      const { url } = await callPortal("download", { doc_id: doc.id, mode });
-      if (mode === "view") {
-        window.open(url, "_blank", "noopener");
-      } else {
-        const a = document.createElement("a");
-        a.href = url; a.download = doc.filename || doc.name; document.body.appendChild(a); a.click(); a.remove();
-      }
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setBusy(b => ({ ...b, [doc.id]: false }));
-    }
+      const { url } = await callPortal("download", { doc_id: doc.id, mode: "view" });
+      setPreview({ doc, url, kind });
+    } catch (e) { setError(e.message); }
+    finally { setBusy(b => ({ ...b, [doc.id]: false })); }
+  }
+
+  // Einzeldatei herunterladen (Blob, damit Dateiname sicher gesetzt wird)
+  async function downloadOne(doc) {
+    setBusy(b => ({ ...b, [doc.id]: true }));
+    try {
+      const { url } = await callPortal("download", { doc_id: doc.id, mode: "download" });
+      const res = await fetch(url);
+      const blob = await res.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = doc.filename || doc.name || "download";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    } catch (e) { setError(e.message); }
+    finally { setBusy(b => ({ ...b, [doc.id]: false })); }
+  }
+
+  // Alle sichtbaren Dokumente als ZIP (Ordner: Kategorie/Jahr/Datei), 4er-Pool
+  async function downloadZip(list, zipName) {
+    if (!list.length) return;
+    setZip({ done: 0, total: list.length, label: "Sammle Dateien…" });
+    const archive = new JSZip();
+    const safe = s => (s || "").replace(/[\\/:*?"<>|]/g, "_").trim() || "_";
+    let done = 0;
+    const fetchOne = async (doc) => {
+      try {
+        const { url } = await callPortal("download", { doc_id: doc.id, mode: "download" });
+        const r = await fetch(url);
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        const blob = await r.blob();
+        const cat = safe(catLabel(doc.category));
+        const year = doc.year || "Ohne Jahr";
+        archive.file(`${cat}/${year}/${safe(doc.filename || doc.name || "datei")}`, blob);
+      } catch { /* einzelne Ausfälle überspringen */ }
+      finally { done++; setZip(z => z && ({ ...z, done, label: `${done} / ${list.length} geladen…` })); }
+    };
+    const queue = [...list];
+    await Promise.all(Array.from({ length: 4 }, async () => {
+      while (queue.length) { const d = queue.shift(); if (d) await fetchOne(d); }
+    }));
+    setZip(z => z && ({ ...z, label: "Erstelle ZIP…" }));
+    const blob = await archive.generateAsync({ type: "blob", compression: "DEFLATE", compressionOptions: { level: 5 } });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = (safe(zipName) || "dokumente") + ".zip";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    setZip(null);
   }
 
   // Ableitungen für die Doku-Ansicht
@@ -356,6 +420,12 @@ export default function Portal() {
             </div>
             <div className="toolbar">
               <div className="search"><Search size={17} className="si" /><input value={q} onChange={e => setQ(e.target.value)} placeholder="In Dokumenten suchen…" /></div>
+              {visibleDocs.length > 1 && (
+                <button className="pbtn" title="Alle sichtbaren Dokumente als ZIP" disabled={!!zip}
+                  onClick={() => downloadZip(visibleDocs, `${customerName} ${selCat ? catLabel(selCat) : ""} ${selYear ?? ""}`.trim())}>
+                  <Archive size={16} /> Alle ({visibleDocs.length})
+                </button>
+              )}
               <span className="readonly"><Lock size={15} /> Nur Ansehen &amp; Download</span>
             </div>
             {catTags.length > 0 && (
@@ -383,10 +453,10 @@ export default function Portal() {
                     <div className="fmeta">{fmtDate(d.updated_at || d.created_at)}</div>
                     <div className="fmeta">{fmtBytes(d.file_size)}</div>
                     <div className="facts">
-                      <button className="iconbtn" title="Ansehen" disabled={busy[d.id]} onClick={() => openDoc(d, "view")}>
+                      <button className="iconbtn" title="Ansehen" disabled={busy[d.id]} onClick={() => openPreview(d)}>
                         {busy[d.id] ? <Loader2 size={16} className="animate-spin" /> : <Eye size={16} />}
                       </button>
-                      <button className="iconbtn" title="Herunterladen" disabled={busy[d.id]} onClick={() => openDoc(d, "download")}>
+                      <button className="iconbtn" title="Herunterladen" disabled={busy[d.id]} onClick={() => downloadOne(d)}>
                         <Download size={16} />
                       </button>
                     </div>
@@ -398,6 +468,48 @@ export default function Portal() {
           </div>
         </div>
       </div>
+
+      {/* Vorschau-Modal */}
+      {preview && (
+        <div className="overlay" onClick={e => { if (e.target.classList.contains("overlay")) setPreview(null); }}>
+          <div className="modal">
+            <div className="mhead">
+              <div className={"ftag " + preview.kind}><FileText size={17} /></div>
+              <div className="t" style={{ minWidth: 0 }}>
+                <b style={{ display: "block", fontSize: 15, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{preview.doc.name || preview.doc.filename}</b>
+                <small style={{ color: "var(--faint)", fontSize: 12.5 }}>{catLabel(preview.doc.category)} · {preview.doc.year || ""} · {fmtBytes(preview.doc.file_size)}</small>
+              </div>
+              <button className="pbtn" style={{ marginLeft: "auto" }} onClick={() => downloadOne(preview.doc)}><Download size={16} /> Herunterladen</button>
+              <button className="closebtn" title="Schliessen" onClick={() => setPreview(null)}><X size={18} /></button>
+            </div>
+            <div className="mbody">
+              {preview.kind === "pdf" && preview.url && <iframe title="Vorschau" src={preview.url} />}
+              {preview.kind === "img" && preview.url && <img src={preview.url} alt={preview.doc.name || "Vorschau"} />}
+              {(preview.kind !== "pdf" && preview.kind !== "img") && (
+                <div className="fallback">
+                  <FileText size={40} style={{ color: "var(--faint)" }} />
+                  <p style={{ margin: "12px 0 4px", fontWeight: 600 }}>Keine Vorschau möglich</p>
+                  <p style={{ margin: 0, color: "var(--muted)", fontSize: 13.5 }}>Dieser Dateityp kann heruntergeladen werden.</p>
+                  <button className="pbtn" style={{ marginTop: 16 }} onClick={() => { downloadOne(preview.doc); setPreview(null); }}><Download size={16} /> Herunterladen</button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ZIP-Fortschritt */}
+      {zip && (
+        <div className="ziptoast">
+          <Loader2 size={18} className="animate-spin" style={{ color: "var(--accent)", flex: "none" }} />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13.5, fontWeight: 600 }}>{zip.label}</div>
+            <div style={{ height: 5, background: "var(--surface3)", borderRadius: 3, marginTop: 7, overflow: "hidden" }}>
+              <div style={{ height: "100%", width: `${zip.total ? Math.round((zip.done / zip.total) * 100) : 0}%`, background: "var(--accent)", transition: "width .2s" }} />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
