@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "ms365": {
+      "command": "bash",
+      "args": [
+        "-c",
+        "MS365_MCP_OAUTH_TOKEN=\"$(node scripts/ms365-token.mjs)\" exec npx -y @softeria/ms-365-mcp-server"
+      ],
+      "env": {
+        "MS365_MCP_CLIENT_ID": "${MS365_MCP_CLIENT_ID}",
+        "MS365_MCP_TENANT_ID": "${MS365_MCP_TENANT_ID}"
+      }
+    }
+  }
+}
