@@ -9,8 +9,9 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import {
-  corsHeaders, env, replyAddress, postmarkSend, CHARTIS_FROM, htmlToText,
+  corsHeaders, env, replyAddress, CHARTIS_FROM, htmlToText,
 } from '../_shared/chartis.ts'
+import { getMailProvider } from '../_shared/mailProvider.ts'
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
@@ -83,8 +84,8 @@ serve(async (req) => {
       .single()
     if (msgErr) return json({ error: 'DB-Fehler', details: msgErr.message }, 500)
 
-    // ── Versand ────────────────────────────────────────────────────────────
-    const sent = await postmarkSend({
+    // ── Versand (Provider hinter Interface: postmark | relay) ───────────────
+    const sent = await getMailProvider().send({
       to: thread.ext_contact_email,
       subject: thread.subject,
       htmlBody,
@@ -99,7 +100,7 @@ serve(async (req) => {
       return json({ error: 'Versand fehlgeschlagen', details: sent.error }, 502)
     }
 
-    // Postmark-message_id nachtragen (fuer Client-Threading der Folgemails)
+    // Provider-message_id nachtragen (fuer Client-Threading der Folgemails)
     await supabase.from('chartis_messages').update({ message_id: sent.messageId || null }).eq('id', msg.id)
 
     const { error: updErr } = await supabase.from('chartis_threads')
