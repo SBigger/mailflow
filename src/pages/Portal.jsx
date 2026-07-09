@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import {
   ShieldCheck, Mail, Search, Folder, Calendar, Tag as TagIcon, Eye, Download,
-  LogOut, Loader2, CheckCircle2, AlertCircle, FileText, ChevronRight, Lock, Archive, X,
+  LogOut, Loader2, CheckCircle2, AlertCircle, FileText, ChevronRight, Lock, Archive, X, Upload,
 } from "lucide-react";
 import { CATEGORIES } from "@/lib/categories";
 import JSZip from "jszip";
@@ -178,6 +178,8 @@ export default function Portal() {
   const [busy, setBusy] = useState({});
   const [preview, setPreview] = useState(null);   // { doc, url, kind }
   const [zip, setZip] = useState(null);            // { done, total, label }
+  const [upload, setUpload] = useState(null);      // { busy, done, total, ok, msg }
+  const fileInputRef = useRef(null);
 
   const [selCat, setSelCat] = useState(null);
   const [selYear, setSelYear] = useState(null);
@@ -298,6 +300,34 @@ export default function Portal() {
     setZip(null);
   }
 
+  // Datei(en) an den Posteingang des Mandanten hochladen (base64 → portal-api)
+  const MAX_UPLOAD = 8 * 1024 * 1024;
+  const fileToB64 = (file) => new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(String(r.result).split(",")[1] || "");
+    r.onerror = rej;
+    r.readAsDataURL(file);
+  });
+  async function handleFiles(fileList) {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+    const tooBig = files.find(f => f.size > MAX_UPLOAD);
+    if (tooBig) { setUpload({ ok: false, msg: `„${tooBig.name}" ist zu gross (max. 8 MB).` }); return; }
+    setUpload({ busy: true, done: 0, total: files.length, msg: "Wird übermittelt…" });
+    let done = 0, failed = 0;
+    for (const file of files) {
+      try {
+        const data = await fileToB64(file);
+        await callPortal("upload", { filename: file.name, content_type: file.type, data });
+      } catch { failed++; }
+      done++; setUpload(u => u && ({ ...u, done }));
+    }
+    setUpload({ ok: failed === 0, msg: failed === 0
+      ? `${files.length} Datei${files.length > 1 ? "en" : ""} an Ihre Treuhänderin übermittelt.`
+      : `${files.length - failed} von ${files.length} übermittelt, ${failed} fehlgeschlagen.` });
+    setTimeout(() => setUpload(u => (u && u.busy ? u : null)), 6000);
+  }
+
   // Ableitungen für die Doku-Ansicht
   const cats = useMemo(() => {
     const known = CATEGORIES.map(c => c.key);
@@ -382,6 +412,12 @@ export default function Portal() {
       <div className="topbar">
         <span className="mk"><ShieldCheck size={20} style={{ color: "var(--accent)" }} /> Smartis <span className="badge">Kundenportal</span></span>
         <div className="who">
+          <input ref={fileInputRef} type="file" multiple style={{ display: "none" }}
+            onChange={e => { handleFiles(e.target.files); e.target.value = ""; }} />
+          <button className="pbtn" title="Dokumente an Ihre Treuhänderin senden"
+            disabled={upload?.busy} onClick={() => fileInputRef.current?.click()}>
+            {upload?.busy ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />} Hochladen
+          </button>
           <div className="nm">{customerName}<small>angemeldet als {user?.vorname} {user?.nachname}</small></div>
           <div className="avatar">{((user?.vorname?.[0] || "") + (user?.nachname?.[0] || "")).toUpperCase()}</div>
           <button className="ghost" onClick={logout}><LogOut size={16} /> Abmelden</button>
@@ -509,6 +545,26 @@ export default function Portal() {
               <div style={{ height: "100%", width: `${zip.total ? Math.round((zip.done / zip.total) * 100) : 0}%`, background: "var(--accent)", transition: "width .2s" }} />
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Upload-Status */}
+      {upload && (
+        <div className="ziptoast">
+          {upload.busy
+            ? <Loader2 size={18} className="animate-spin" style={{ color: "var(--accent)", flex: "none" }} />
+            : upload.ok
+              ? <CheckCircle2 size={18} style={{ color: "var(--accent)", flex: "none" }} />
+              : <AlertCircle size={18} style={{ color: "var(--danger)", flex: "none" }} />}
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13.5, fontWeight: 600 }}>{upload.msg}</div>
+            {upload.busy && (
+              <div style={{ height: 5, background: "var(--surface3)", borderRadius: 3, marginTop: 7, overflow: "hidden" }}>
+                <div style={{ height: "100%", width: `${upload.total ? Math.round((upload.done / upload.total) * 100) : 0}%`, background: "var(--accent)", transition: "width .2s" }} />
+              </div>
+            )}
+          </div>
+          {!upload.busy && <button className="closebtn" style={{ width: 28, height: 28 }} onClick={() => setUpload(null)}><X size={16} /></button>}
         </div>
       )}
     </div>

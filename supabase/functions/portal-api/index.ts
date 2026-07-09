@@ -286,6 +286,34 @@ serve(async (req) => {
       return json({ url: finalUrl });
     }
 
+    // ── upload: Datei in den Posteingang des eigenen Mandanten ────────────────
+    if (action === "upload") {
+      const pu = await resolveSession(supabase, sessionToken);
+      if (!pu) return json({ error: "Nicht angemeldet." }, 401);
+      const dataB64 = String(body.data || "");
+      if (!dataB64) return json({ error: "Keine Datei erhalten." }, 400);
+      if (dataB64.length > 11_500_000) return json({ error: "Datei zu gross (max. 8 MB)." }, 413);
+
+      const rawName = String(body.filename || "datei").split(/[\\/]/).pop() || "datei";
+      const safe = rawName
+        .replace(/[äÄ]/g, "ae").replace(/[öÖ]/g, "oe").replace(/[üÜ]/g, "ue").replace(/ß/g, "ss")
+        .replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120) || "datei";
+
+      let bytes: Uint8Array;
+      try { bytes = Uint8Array.from(atob(dataB64), c => c.charCodeAt(0)); }
+      catch { return json({ error: "Datei konnte nicht gelesen werden." }, 400); }
+
+      // Ziel: posteingang/<customer_id>/<zeitstempel>_<name> → erscheint im Posteingang beim Kunden
+      const path = `${pu.customer_id}/${Date.now()}_${safe}`;
+      const { error } = await supabase.storage
+        .from("posteingang")
+        .upload(path, bytes, { contentType: body.content_type || "application/octet-stream", upsert: false });
+      if (error) return json({ error: "Upload fehlgeschlagen: " + error.message }, 500);
+
+      await audit(supabase, pu, "upload", null, safe, ip);
+      return json({ ok: true });
+    }
+
     return json({ error: "Unbekannte Aktion" }, 400);
   } catch (err: any) {
     console.error("portal-api error:", err);
