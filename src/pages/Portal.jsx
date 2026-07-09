@@ -248,18 +248,19 @@ export default function Portal() {
     finally { setBusy(b => ({ ...b, [doc.id]: false })); }
   }
 
-  // Einzeldatei herunterladen (Blob, damit Dateiname sicher gesetzt wird)
+  // Einzeldatei herunterladen. Die Signed-URL trägt bereits
+  // Content-Disposition: attachment → direktes Laden per verstecktem iframe
+  // vermeidet Cross-Origin-fetch (Datei liegt auf supabase.co, Portal auf smartis.me).
   async function downloadOne(doc) {
     setBusy(b => ({ ...b, [doc.id]: true }));
     try {
       const { url } = await callPortal("download", { doc_id: doc.id, mode: "download" });
-      const res = await fetch(url);
-      const blob = await res.blob();
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = doc.filename || doc.name || "download";
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      if (!url) throw new Error("Kein Download-Link erhalten.");
+      const iframe = document.createElement("iframe");
+      iframe.style.display = "none";
+      iframe.src = url;
+      document.body.appendChild(iframe);
+      setTimeout(() => iframe.remove(), 60000);
     } catch (e) { setError(e.message); }
     finally { setBusy(b => ({ ...b, [doc.id]: false })); }
   }
