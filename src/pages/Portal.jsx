@@ -54,7 +54,7 @@ const CSS = `
   --ink:#e9efed;--muted:#93a39e;--faint:#6d7d78;--line:#232e2b;--accent:#46b6a8;--accentStrong:#74d2c5;
   --accentSoft:#153230;--accentInk:#8fe0d4;--danger:#e0796d}}
 .pp *{box-sizing:border-box}
-.pp .center{max-width:960px;margin:0 auto;padding:0 18px}
+.pp .center{max-width:none;margin:0;padding:0 24px}
 .pp .topbar{display:flex;align-items:center;gap:12px;padding:14px 18px;background:var(--surface);border-bottom:1px solid var(--line)}
 .pp .mk{font-weight:600;font-size:17px;display:flex;align-items:center;gap:9px}
 .pp .mk .badge{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--accentInk);
