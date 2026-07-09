@@ -1977,7 +1977,7 @@ export default function Dokumente() {
 
       {/* Header */}
       <div style={{ padding: "12px 20px", borderBottom: "1px solid " + border, display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-        <span style={{ fontSize: 15, fontWeight: 700, color: s.textMain }}>Dokumente</span>
+        <span style={{ fontSize: 15, fontWeight: 700, color: s.textMain }}>E-Binder</span>
         {/* Tabs */}
         <div style={{ display: "flex", gap: 2, background: s.sidebarBg, border: "1px solid " + border, borderRadius: 8, padding: 3 }}>
           {[['alle', 'Alle Dokumente'], ['ausgecheckt', 'Ausgecheckt'], ['recent', 'Zuletzt']].map(([key, label]) => (
