@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import {
   ShieldCheck, Mail, Search, Folder, Calendar, Tag as TagIcon, Eye, Download,
   LogOut, Loader2, CheckCircle2, AlertCircle, FileText, ChevronRight, Lock, Archive, X, Upload,
+  MessageSquare, Send,
 } from "lucide-react";
 import { CATEGORIES } from "@/lib/categories";
 import JSZip from "jszip";
@@ -31,6 +32,18 @@ function fmtBytes(b) {
 function fmtDate(iso) {
   if (!iso) return "";
   return new Date(iso).toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+// Antworten kommen als E-Mail-HTML — für die Blase auf reinen Text reduzieren
+function stripHtml(html) {
+  if (!html) return "";
+  const d = document.createElement("div");
+  d.innerHTML = html;
+  return (d.textContent || "").replace(/\n{3,}/g, "\n\n").trim();
+}
+function fmtWhen(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return d.toLocaleString("de-CH", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 function catLabel(key) {
   const c = CATEGORIES.find(x => x.key === key);
@@ -160,6 +173,21 @@ const CSS = `
 .pp .closebtn{width:36px;height:36px;border-radius:8px;border:0;background:transparent;color:var(--muted);
   display:grid;place-items:center;cursor:pointer}
 .pp .closebtn:hover{background:var(--surface2);color:var(--ink)}
+.pp .chatpane{width:min(520px,100%);height:min(88vh,860px);margin-left:auto;background:var(--surface);border-radius:14px;
+  overflow:hidden;display:flex;flex-direction:column;box-shadow:0 24px 70px rgba(0,0,0,.42)}
+.pp .chatbody{flex:1;overflow-y:auto;padding:18px;background:var(--surface2);display:flex;flex-direction:column;gap:12px}
+.pp .bubblerow{display:flex}
+.pp .bubblerow.mine{justify-content:flex-end}
+.pp .bubble{max-width:78%;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 13px}
+.pp .bubble.mine{background:var(--accentSoft);border-color:var(--accent)}
+.pp .bubble .who2{font-size:11.5px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;color:var(--faint);margin-bottom:4px}
+.pp .bubble.mine .who2{color:var(--accentInk)}
+.pp .bubble .txt{font-size:14.5px;line-height:1.55;white-space:pre-wrap;word-break:break-word}
+.pp .bubble .when{font-size:11.5px;color:var(--faint);margin-top:6px;font-variant-numeric:tabular-nums}
+.pp .chatfoot{display:flex;gap:10px;align-items:flex-end;padding:12px 14px;border-top:1px solid var(--line);background:var(--surface)}
+.pp .chatinput{flex:1;resize:none;border:1px solid var(--line);background:var(--surface2);color:var(--ink);border-radius:9px;
+  padding:10px 12px;font-size:14.5px;font-family:inherit;outline:none;line-height:1.5}
+.pp .chatinput:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accentSoft)}
 .pp .ziptoast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--line);
   border-radius:12px;padding:13px 18px;box-shadow:0 14px 40px rgba(0,0,0,.22);display:flex;gap:12px;align-items:center;z-index:90;width:min(340px,90vw)}
 .pp .loadwrap{min-height:100vh;display:grid;place-items:center;color:var(--muted);gap:12px}
@@ -180,6 +208,14 @@ export default function Portal() {
   const [zip, setZip] = useState(null);            // { done, total, label }
   const [upload, setUpload] = useState(null);      // { busy, done, total, ok, msg }
   const fileInputRef = useRef(null);
+
+  // Chat (Chartis) — nur email_in/email_out, nie interne Notizen
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatMsgs, setChatMsgs] = useState([]);
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatText, setChatText] = useState("");
+  const [chatBusy, setChatBusy] = useState(false);
+  const chatEndRef = useRef(null);
 
   const [selCat, setSelCat] = useState(null);
   const [selYear, setSelYear] = useState(null);
@@ -328,6 +364,31 @@ export default function Portal() {
     setTimeout(() => setUpload(u => (u && u.busy ? u : null)), 6000);
   }
 
+  // ── Chat ──────────────────────────────────────────────────────────────────
+  const loadChat = useCallback(async () => {
+    setChatLoading(true);
+    try {
+      const data = await callPortal("chat-list");
+      setChatMsgs(data.messages || []);
+    } catch (e) { setError(e.message); }
+    finally { setChatLoading(false); }
+  }, []);
+
+  useEffect(() => { if (chatOpen) loadChat(); }, [chatOpen, loadChat]);
+  useEffect(() => { if (chatOpen) chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatMsgs, chatOpen]);
+
+  async function sendChat() {
+    const text = chatText.trim();
+    if (!text || chatBusy) return;
+    setChatBusy(true);
+    try {
+      await callPortal("chat-send", { text });
+      setChatText("");
+      await loadChat();
+    } catch (e) { setError(e.message); }
+    finally { setChatBusy(false); }
+  }
+
   // Ableitungen für die Doku-Ansicht
   const cats = useMemo(() => {
     const known = CATEGORIES.map(c => c.key);
@@ -414,6 +475,10 @@ export default function Portal() {
         <div className="who">
           <input ref={fileInputRef} type="file" multiple style={{ display: "none" }}
             onChange={e => { handleFiles(e.target.files); e.target.value = ""; }} />
+          <button className="ghost" title="Nachricht an Ihre Treuhänderin"
+            onClick={() => setChatOpen(true)}>
+            <MessageSquare size={16} /> Nachrichten
+          </button>
           <button className="pbtn" title="Dokumente an Ihre Treuhänderin senden"
             disabled={upload?.busy} onClick={() => fileInputRef.current?.click()}>
             {upload?.busy ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />} Hochladen
@@ -543,6 +608,55 @@ export default function Portal() {
             <div style={{ fontSize: 13.5, fontWeight: 600 }}>{zip.label}</div>
             <div style={{ height: 5, background: "var(--surface3)", borderRadius: 3, marginTop: 7, overflow: "hidden" }}>
               <div style={{ height: "100%", width: `${zip.total ? Math.round((zip.done / zip.total) * 100) : 0}%`, background: "var(--accent)", transition: "width .2s" }} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Nachrichten (Chat) */}
+      {chatOpen && (
+        <div className="overlay" onClick={e => { if (e.target.classList.contains("overlay")) setChatOpen(false); }}>
+          <div className="chatpane">
+            <div className="mhead">
+              <MessageSquare size={18} style={{ color: "var(--accent)" }} />
+              <div className="t" style={{ minWidth: 0 }}>
+                <b style={{ display: "block", fontSize: 15, fontWeight: 600 }}>Nachrichten</b>
+                <small style={{ color: "var(--faint)", fontSize: 12.5 }}>mit {customerName}s Treuhänderin</small>
+              </div>
+              <button className="closebtn" style={{ marginLeft: "auto" }} onClick={() => setChatOpen(false)}><X size={18} /></button>
+            </div>
+
+            <div className="chatbody">
+              {chatLoading ? (
+                <div className="empty"><Loader2 size={20} className="animate-spin" /></div>
+              ) : chatMsgs.length === 0 ? (
+                <div className="empty" style={{ padding: "40px 20px" }}>
+                  <MessageSquare size={34} style={{ color: "var(--faint)" }} />
+                  <p style={{ margin: "12px 0 4px", fontWeight: 600, color: "var(--ink)" }}>Noch keine Nachrichten</p>
+                  <p style={{ margin: 0, fontSize: 13.5 }}>Schreiben Sie uns — wir antworten hier im Portal.</p>
+                </div>
+              ) : chatMsgs.map(m => {
+                const mine = m.kind === "email_in";
+                return (
+                  <div key={m.id} className={"bubblerow" + (mine ? " mine" : "")}>
+                    <div className={"bubble" + (mine ? " mine" : "")}>
+                      <div className="who2">{mine ? "Sie" : "Artis Treuhand"}</div>
+                      <div className="txt">{m.body_text || stripHtml(m.body_html)}</div>
+                      <div className="when">{fmtWhen(m.created_at)}</div>
+                    </div>
+                  </div>
+                );
+              })}
+              <div ref={chatEndRef} />
+            </div>
+
+            <div className="chatfoot">
+              <textarea className="chatinput" rows={2} value={chatText} placeholder="Nachricht schreiben…"
+                onChange={e => setChatText(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); } }} />
+              <button className="pbtn" disabled={chatBusy || !chatText.trim()} onClick={sendChat}>
+                {chatBusy ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />} Senden
+              </button>
             </div>
           </div>
         </div>

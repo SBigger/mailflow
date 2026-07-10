@@ -314,6 +314,74 @@ serve(async (req) => {
       return json({ ok: true });
     }
 
+    // ── Chat (Chartis) ────────────────────────────────────────────────────────
+    // Genau EIN Faden pro Kunde: chartis_threads UNIQUE (module, record_id)
+    // mit module='unternehmen', record_id=customer_id.
+    // SICHERHEIT: dem Kunden werden AUSSCHLIESSLICH 'email_in' + 'email_out'
+    // ausgeliefert. Interne Notizen (kind='intern') verlassen das Haus nie.
+    if (action === "chat-list") {
+      const pu = await resolveSession(supabase, sessionToken);
+      if (!pu) return json({ error: "Nicht angemeldet." }, 401);
+
+      const { data: thread } = await supabase.from("chartis_threads")
+        .select("id").eq("module", "unternehmen").eq("record_id", pu.customer_id).maybeSingle();
+      if (!thread) return json({ messages: [] });
+
+      const { data: msgs } = await supabase.from("chartis_messages")
+        .select("id, kind, body_text, body_html, created_at")
+        .eq("thread_id", thread.id)
+        .in("kind", ["email_in", "email_out"])
+        .order("created_at", { ascending: true });
+
+      return json({ messages: msgs || [] });
+    }
+
+    if (action === "chat-send") {
+      const pu = await resolveSession(supabase, sessionToken);
+      if (!pu) return json({ error: "Nicht angemeldet." }, 401);
+      const text = String(body.text || "").trim();
+      if (!text) return json({ error: "Die Nachricht ist leer." }, 400);
+      if (text.length > 5000) return json({ error: "Die Nachricht ist zu lang (max. 5000 Zeichen)." }, 413);
+
+      // Faden holen oder anlegen
+      let { data: thread } = await supabase.from("chartis_threads")
+        .select("id, mandant_id").eq("module", "unternehmen").eq("record_id", pu.customer_id).maybeSingle();
+      if (!thread) {
+        const { data: cust } = await supabase.from("customers")
+          .select("company_name").eq("id", pu.customer_id).single();
+        const { data: created, error: tErr } = await supabase.from("chartis_threads")
+          .insert({
+            module: "unternehmen", record_id: pu.customer_id, thread_type: "objekt",
+            subject: cust?.company_name || "Kundenportal", ext_contact_email: pu.email,
+          })
+          .select("id, mandant_id").single();
+        if (tErr || !created) return json({ error: "Gespräch konnte nicht gestartet werden." }, 500);
+        thread = created;
+      }
+
+      // Portal-Nutzer als Externen im Faden führen (idempotent, ohne onConflict-Annahme)
+      const { data: ext } = await supabase.from("chartis_thread_externals")
+        .select("thread_id").eq("thread_id", thread.id).eq("email", pu.email).maybeSingle();
+      if (!ext) {
+        await supabase.from("chartis_thread_externals").insert({
+          thread_id: thread.id, email: pu.email,
+          name: `${pu.vorname} ${pu.nachname}`.trim() || null,
+        });
+      }
+
+      // Kundennachricht = eingehende Nachricht, genau wie eine Mail vom Kunden
+      const { error } = await supabase.from("chartis_messages").insert({
+        thread_id: thread.id, mandant_id: thread.mandant_id, kind: "email_in",
+        body_text: text, from_addr: pu.email, created_by: null,
+      });
+      if (error) return json({ error: "Nachricht konnte nicht gesendet werden." }, 500);
+
+      await supabase.from("chartis_threads")
+        .update({ status: "aktiv", updated_at: new Date().toISOString() }).eq("id", thread.id);
+      await audit(supabase, pu, "chat-send", null, text.slice(0, 80), ip);
+      return json({ ok: true });
+    }
+
     return json({ error: "Unbekannte Aktion" }, 400);
   } catch (err: any) {
     console.error("portal-api error:", err);
