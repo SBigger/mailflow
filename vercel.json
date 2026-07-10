@@ -3,6 +3,7 @@
     { "source": "/pdf-sg/:path*", "destination": "https://www.sg.ch/:path*" },
     { "source": "/pdf-tg/:path*", "destination": "https://steuerverwaltung.tg.ch/:path*" },
     { "source": "/pdf-estv/:path*", "destination": "https://www.estv.admin.ch/:path*" },
+    { "source": "/shab/:path*", "destination": "https://www.shab.ch/:path*" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
