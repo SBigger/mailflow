@@ -6,7 +6,7 @@ import { VitePWA } from 'vite-plugin-pwa'
 import { nodePolyfills } from 'vite-plugin-node-polyfills'
 
 // Im Dev-Server gibt es keine Vercel-Functions. Dieses Plugin fährt `api/zefix.js`
-// unter derselben URL (/api/zefix), damit die Firmenrecherche lokal identisch läuft.
+// unter derselben URL (/api/zefix), damit die Firmensuche lokal identisch läuft.
 // In Produktion übernimmt Vercel; das Plugin ist dort inaktiv (apply: 'serve').
 function zefixApiDev(secrets) {
   return {
@@ -25,7 +25,8 @@ function zefixApiDev(secrets) {
         };
         try {
           const { default: handler } = await server.ssrLoadModule('/api/zefix.js');
-          await handler({ query: Object.fromEntries(url.searchParams) }, shim);
+          // Headers durchreichen: die Function prüft das Supabase-Token daraus.
+          await handler({ query: Object.fromEntries(url.searchParams), headers: req.headers }, shim);
         } catch (e) {
           shim.status(500).json({ error: String(e?.message ?? e) });
         }
@@ -114,7 +115,7 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           rewrite: p => p.replace(/^\/pdf-estv/, ''),
         },
-        // Für /Firmenrecherche: Das SHAB antwortet mit 403, sobald ein Origin-Header
+        // Für /Firmensuche: Das SHAB antwortet mit 403, sobald ein Origin-Header
         // mitkommt — aus dem Browser also nur über einen Proxy erreichbar.
         // In Produktion macht das der Rewrite in vercel.json.
         '/shab': {

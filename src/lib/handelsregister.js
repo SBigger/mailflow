@@ -12,6 +12,8 @@
 // Was keine der drei Quellen hat: einen NOGA-Branchencode. Branchensuche ist deshalb
 // eine Textsuche im Zweck — jede Trefferzahl ist eine Untergrenze.
 
+import { supabase } from '@/api/supabaseClient'
+
 const LINDAS = 'https://lindas.admin.ch/query'
 const GRAPH = 'https://lindas.admin.ch/foj/zefix'
 const SHAB = '/shab/api/v1/publications'
@@ -94,16 +96,27 @@ export async function sucheFirmen(params) {
   })
 }
 
+/**
+ * Ruft /api/zefix mit dem Supabase-Access-Token auf. Ohne Token antwortet die
+ * Function mit 401 – sie darf kein offener Proxy auf unsere Zefix-Credentials sein.
+ */
+async function zefixFetch(query) {
+  const { data } = await supabase.auth.getSession()
+  const token = data?.session?.access_token
+  if (!token) throw new Error('Nicht angemeldet.')
+  return fetch(`/api/zefix?${query}`, { headers: { Authorization: `Bearer ${token}` } })
+}
+
 /** Detaildatensatz inkl. Revisionsstelle und Kapital – über die Serverless Function. */
 export async function firmenDetail(uid) {
-  const res = await fetch(`/api/zefix?uid=${encodeURIComponent(String(uid).replace(/[^A-Za-z0-9]/g, ''))}`)
+  const res = await zefixFetch(`uid=${encodeURIComponent(String(uid).replace(/[^A-Za-z0-9]/g, ''))}`)
   const json = await res.json()
   if (!res.ok) throw new Error(json.error ?? `Zefix antwortet ${res.status}`)
   return json
 }
 
 export async function gemeindeliste() {
-  const res = await fetch('/api/zefix?gemeinden=1')
+  const res = await zefixFetch('gemeinden=1')
   if (!res.ok) return []
   return res.json()
 }

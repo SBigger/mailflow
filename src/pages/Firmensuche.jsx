@@ -306,7 +306,7 @@ function MandateTab({ onDetail }) {
 }
 
 // ── Seite ─────────────────────────────────────────────────────────────────────
-export default function Firmenrecherche() {
+export default function Firmensuche() {
   const [reiter, setReiter] = useState("suchen");
   const [gemeinden, setGemeinden] = useState([]);
   const [detailUid, setDetailUid] = useState(null);
@@ -323,7 +323,7 @@ export default function Firmenrecherche() {
     <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
       <div className="mb-1 flex items-center gap-2">
         <Building2 className="h-5 w-5 text-slate-400" />
-        <h1 className="text-xl font-semibold">Firmenrecherche</h1>
+        <h1 className="text-xl font-semibold">Firmensuche</h1>
       </div>
       <p className="mb-5 text-sm text-slate-500 dark:text-zinc-400">
         Handelsregister der Schweiz — Suche über LINDAS, Mandate über das SHAB, Details aus Zefix.

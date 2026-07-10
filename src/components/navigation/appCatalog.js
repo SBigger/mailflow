@@ -111,7 +111,7 @@ export const NAV_GROUPS = [
       { name: 'BriefSchreiben', label: 'Briefe schreiben', icon: PenLine, color: '#5b8ac9', aliases: ['brief', 'korrespondenz', 'vorlagen'] },
       { name: 'Whiteboard', label: 'Whiteboard', icon: Presentation, color: '#e0913d', aliases: ['zeichnen', 'skizze', 'board'] },
       { name: 'GVProtokollApp', label: 'GV-Protokoll', icon: ScrollText, color: '#b05b7e', aliases: ['generalversammlung', 'protokoll', 'transkript'] },
-      { name: 'Firmenrecherche', label: 'Firmenrecherche', icon: Building2, color: '#3d7fa6', aliases: ['zefix', 'handelsregister', 'shab', 'uid', 'revisionsstelle', 'revisionsmandate', 'branche', 'firmensuche'] },
+      { name: 'Firmensuche', label: 'Firmensuche', icon: Building2, color: '#3d7fa6', aliases: ['zefix', 'handelsregister', 'shab', 'uid', 'revisionsstelle', 'revisionsmandate', 'branche', 'firmenrecherche'] },
       { name: 'Aktienbuch', label: 'Aktienbuch', icon: BookUser, color: '#7d9b45', aliases: ['aktien', 'aktionäre'] },
       { name: 'Fahrzeugliste', label: 'Fahrzeugliste', icon: Car, color: '#4fa3b8', aliases: ['autos', 'fahrzeuge'] },
       { name: 'Unterschriften', label: 'Unterschriften', icon: FileSignature, color: '#8a63c9', aliases: ['signatur', 'skribble', 'signieren'] },
