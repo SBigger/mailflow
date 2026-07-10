@@ -96,29 +96,43 @@ export async function sucheFirmen(params) {
   })
 }
 
-/**
- * Ruft /api/zefix mit dem Supabase-Access-Token auf. Ohne Token antwortet die
- * Function mit 401 – sie darf kein offener Proxy auf unsere Zefix-Credentials sein.
- */
-async function zefixFetch(query) {
-  const { data } = await supabase.auth.getSession()
-  const token = data?.session?.access_token
-  if (!token) throw new Error('Nicht angemeldet.')
-  return fetch(`/api/zefix?${query}`, { headers: { Authorization: `Bearer ${token}` } })
-}
+// Zefix-Zugriffe laufen über die Edge Function `zefix-search` – wie bei allen anderen
+// Tools. `supabase.functions.invoke` hängt das Access-Token automatisch an, und da die
+// Function nicht in config.toml steht, gilt der Default `verify_jwt = true`:
+// Supabase weist Aufrufe ohne gültiges Token selbst ab.
+//
+// ÜBERGANG: Solange `zefix-search` nicht deployt ist (es fehlt ein `supabase login`),
+// fällt der Aufruf auf die Vercel Function /api/zefix zurück. Sobald deployt:
+// den Fallback und `api/zefix.js` löschen.
+async function zefixInvoke(body, fallbackQuery) {
+  const { data, error } = await supabase.functions.invoke('zefix-search', { body })
+  if (!error) return data
+  if (import.meta.env.DEV) console.warn('zefix-search nicht erreichbar, nutze /api/zefix', error)
 
-/** Detaildatensatz inkl. Revisionsstelle und Kapital – über die Serverless Function. */
-export async function firmenDetail(uid) {
-  const res = await zefixFetch(`uid=${encodeURIComponent(String(uid).replace(/[^A-Za-z0-9]/g, ''))}`)
+  const { data: sess } = await supabase.auth.getSession()
+  const token = sess?.session?.access_token
+  if (!token) throw new Error('Nicht angemeldet.')
+  const res = await fetch(`/api/zefix?${fallbackQuery}`, { headers: { Authorization: `Bearer ${token}` } })
   const json = await res.json()
   if (!res.ok) throw new Error(json.error ?? `Zefix antwortet ${res.status}`)
   return json
 }
 
+/** Detaildatensatz inkl. Revisionsstelle und Kapital. */
+export async function firmenDetail(uid) {
+  const sauber = String(uid).replace(/[^A-Za-z0-9]/g, '')
+  const data = await zefixInvoke({ mode: 'company', query: sauber }, `uid=${encodeURIComponent(sauber)}`)
+  if (data?.error) throw new Error(data.error)
+  return data.firma ?? data // Edge Function kapselt in `firma`, die Vercel-Function nicht.
+}
+
 export async function gemeindeliste() {
-  const res = await zefixFetch('gemeinden=1')
-  if (!res.ok) return []
-  return res.json()
+  try {
+    const data = await zefixInvoke({ mode: 'gemeinden' }, 'gemeinden=1')
+    return data.gemeinden ?? data
+  } catch {
+    return []
+  }
 }
 
 // ── SHAB: Rückwärtssuche nach Revisionsmandaten ───────────────────────────────

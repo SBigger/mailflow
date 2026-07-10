@@ -38,9 +38,53 @@ serve(async (req) => {
 
   try {
     const { query, mode } = await req.json()
-    if (!query || query.trim().length < 3) return err('Mindestens 3 Zeichen erforderlich')
 
     const auth = zefixAuth()
+
+    // Gemeindeliste für die Firmensuche (BFS-Nummer ↔ Name ↔ Kanton).
+    if (mode === 'gemeinden') {
+      const res = await fetch(`${ZEFIX_BASE}/community`, {
+        headers: { 'Authorization': auth, 'Accept': 'application/json' },
+      })
+      if (!res.ok) return err(`Zefix ${res.status}`, 502)
+      const data = await res.json()
+      return ok({ gemeinden: data.map((c: any) => ({ bfsId: c.bfsId, name: c.name, kanton: c.canton })) })
+    }
+
+    // Volldatensatz einer Firma. Nur hier steht die Revisionsstelle – Zefix liefert
+    // sie ausschliesslich im Detailabruf der geprüften Firma, nie in der Suche.
+    if (mode === 'company') {
+      const uid = compactUid(String(query ?? ''))
+      if (!/^CHE\d{9}$/.test(uid)) return err('Ungültige UID')
+      const res = await fetch(`${ZEFIX_BASE}/company/uid/${uid}`, {
+        headers: { 'Authorization': auth, 'Accept': 'application/json' },
+      })
+      if (res.status === 404) return err('Nicht gefunden', 404)
+      if (!res.ok) return err(`Zefix ${res.status}`, 502)
+      const data = await res.json()
+      const c = Array.isArray(data) ? data[0] : data
+      if (!c) return err('Nicht gefunden', 404)
+      return ok({
+        firma: {
+          name: c.name,
+          uid: c.uid,
+          ehraid: c.ehraid,
+          rechtsform: c.legalForm?.shortName?.de ?? null,
+          rechtsform_lang: c.legalForm?.name?.de ?? null,
+          sitz: c.legalSeat,
+          kanton: c.canton,
+          adresse: c.address ?? null,
+          kapital: c.capitalNominal ? { betrag: Number(c.capitalNominal), waehrung: c.capitalCurrency } : null,
+          status: c.status,
+          zweck: c.purpose ?? null,
+          revisionsstellen: (c.auditCompanies ?? []).map((a: any) => ({ name: a.name, sitz: a.legalSeat, uid: a.uid })),
+          auszug_url: c.cantonalExcerptWeb ?? null,
+        },
+      })
+    }
+
+    if (!query || query.trim().length < 3) return err('Mindestens 3 Zeichen erforderlich')
+
     let results: any[] = []
 
     const isUid = /^CHE[.\-\s]?\d/i.test(query.trim())

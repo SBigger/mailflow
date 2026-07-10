@@ -1,3 +1,9 @@
+// ÜBERGANGSLÖSUNG – bitte löschen, sobald die Edge Function `zefix-search` deployt ist.
+// Die Firmensuche ruft primär `supabase.functions.invoke('zefix-search')` auf, wie alle
+// anderen Tools. Diese Function ist nur der Fallback, weil der Supabase-Deploy noch
+// an einem `supabase login` hängt. Danach: diese Datei, den vite-Plugin `zefixApiDev`
+// und die Vercel-Env-Variablen ZEFIX_USER/ZEFIX_PASS entfernen.
+//
 // Vercel Serverless Function: Zefix-Detailabruf.
 //
 // Warum ein Proxy? Die Zefix Public REST API verlangt Basic Auth. Die Zugangsdaten
