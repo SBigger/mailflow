@@ -82,6 +82,14 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           rewrite: p => p.replace(/^\/pdf-estv/, ''),
         },
+        // Für /Firmensuche: Das SHAB antwortet mit 403, sobald ein Origin-Header
+        // mitkommt — aus dem Browser also nur über einen Proxy erreichbar.
+        // In Produktion macht das der Rewrite in vercel.json.
+        '/shab': {
+          target: 'https://www.shab.ch',
+          changeOrigin: true,
+          rewrite: p => p.replace(/^\/shab/, ''),
+        },
       },
     },
     optimizeDeps: {
