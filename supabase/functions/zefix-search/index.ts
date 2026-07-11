@@ -1,4 +1,5 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { requireUser } from '../_shared/auth.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -28,6 +29,13 @@ function compactUid(raw: string): string {
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
+
+  // Aufrufer serverseitig prüfen: verify_jwt allein akzeptiert auch den öffentlichen
+  // anon-Key. requireUser lehnt anon-Aufrufe ab und verlangt ein Mitarbeiterprofil –
+  // sonst wäre dies ein offener Proxy auf unsere (mengenlimitierten) Zefix-Credentials
+  // (analog zur bereits abgesicherten Vercel-Fallback-Function api/zefix.js).
+  const authed = await requireUser(req)
+  if (authed.response) return authed.response
 
   const ok = (body: object) => new Response(JSON.stringify(body), {
     status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },

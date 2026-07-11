@@ -30,29 +30,36 @@ Nichts davon ist ein akuter Daten-GAU, aber alles gehört abgearbeitet.
 
 ### ⚠️ Offene Punkte (nach Priorität)
 
-#### P1 – `zefix-search` Edge Function ohne Aufrufer-Prüfung
-`supabase/functions/zefix-search/index.ts` prüft den Aufrufer **nicht** (kein `requireUser`/`getUser`).
-Sie ist nur durch das Supabase-Gateway (`verify_jwt=true`) geschützt – das akzeptiert aber auch den
-**öffentlichen anon-Key**, der im Frontend für jeden sichtbar ist. Damit ist die Function faktisch ein
+#### P1 – `zefix-search` Edge Function ohne Aufrufer-Prüfung ✅ behoben
+`supabase/functions/zefix-search/index.ts` prüfte den Aufrufer **nicht** (kein `requireUser`/`getUser`).
+Sie war nur durch das Supabase-Gateway (`verify_jwt=true`) geschützt – das akzeptiert aber auch den
+**öffentlichen anon-Key**, der im Frontend für jeden sichtbar ist. Damit war die Function faktisch ein
 offener Proxy auf die (mengenmäßig limitierten) Zefix-Zugangsdaten. Genau dieses Loch wurde beim
-Vercel-Fallback `api/zefix.js` bereits geschlossen – bei der Edge Function fehlt es noch.
-→ **Fix**: `const auth = await requireUser(req); if (auth.response) return auth.response;` am Anfang einbauen.
+Vercel-Fallback `api/zefix.js` bereits geschlossen – bei der Edge Function fehlte es noch.
+→ **Erledigt in diesem PR**: `requireUser(req)` am Handler-Anfang eingebaut (lehnt anon-Aufrufe ab).
 
 #### P1 – Verwundbare npm-Abhängigkeiten (`npm audit`: 37, davon 19 hoch)
-- **`xlsx` (hoch, KEIN Fix verfügbar)**: Prototype Pollution + ReDoS. Wird an mehreren Stellen auf
-  **hochgeladene Dateien** angewendet (`XLSX.read(...)` in `KontaktImportExport.jsx`,
-  `Abschlussdokumentation.jsx`, `Steuerausscheidung.jsx`) → verarbeitet fremde/untrusted Eingaben.
-  → **Maßnahme**: auf die gepflegte SheetJS-Version von `https://cdn.sheetjs.com` umstellen
-  (npm-Registry-`xlsx` ist eingefroren) **oder** auf `exceljs` migrieren; Uploads vorab auf Größe/Typ begrenzen.
-- **`vite`, `ws`, `yaml`, `esbuild` (hoch/moderat, Fix verfügbar)**: überwiegend Dev-Server-/Build-Zeit-Themen.
-  → **Maßnahme**: `npm audit fix`, danach `npm run build` + Smoke-Test.
+- **`vite`, `ws`, `yaml`, `esbuild` u. a. (Fix verfügbar)**: ✅ **behoben in diesem PR** via
+  `npm audit fix --package-lock-only` (nur Lockfile, semver-kompatibel, `package.json` unverändert).
+  Ergebnis: **37 → 13** Vulnerabilities (19 → 5 hoch). Verifikation: der Vercel-Preview-Build des PR
+  (lokal ließ sich `npm install` wegen eines Proxy-Fehlers nicht ausführen).
+- **`xlsx` (hoch, KEIN Fix verfügbar)** – *offen, braucht Migration*: Prototype Pollution + ReDoS.
+  Wird an mehreren Stellen auf **hochgeladene Dateien** angewendet (`XLSX.read(...)` in
+  `KontaktImportExport.jsx`, `Abschlussdokumentation.jsx`, `Steuerausscheidung.jsx`) → verarbeitet
+  fremde/untrusted Eingaben. → **Maßnahme**: auf die gepflegte SheetJS-Version von
+  `https://cdn.sheetjs.com` umstellen (npm-Registry-`xlsx` ist eingefroren) **oder** auf `exceljs`
+  migrieren; Uploads vorab auf Größe/Typ begrenzen.
+- **Verbleibende 5 High brauchen Major-Upgrades** (bewusst NICHT per `--force` erzwungen, da riskant):
+  `pdfjs-dist` 3→4 (Kern der Fibu-PDF-Pipeline – sorgfältig testen), `quill` via `react-quill-new`
+  (Editor), `tar`/`canvas`/`@mapbox/node-pre-gyp` (Build-Kette), `elliptic` via
+  `vite-plugin-node-polyfills` (Build). → einzeln planen und mit Build-Test mergen.
 
-#### P2 – Keine HTTP-Security-Header
-`vercel.json` setzt keine Sicherheits-Header. Die SPA ist damit anfällig für Clickjacking und MIME-Sniffing.
-→ **Maßnahme**: konservativ starten mit `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`,
-`Referrer-Policy: strict-origin-when-cross-origin`, `Strict-Transport-Security`.
-Eine **Content-Security-Policy** ist wünschenswert, aber wegen PowerBI/Supabase/Infomaniak/PDF-Workern
-sorgfältig zu testen (erst `Content-Security-Policy-Report-Only`).
+#### P2 – Keine HTTP-Security-Header ✅ (Basis) behoben
+`vercel.json` setzte keine Sicherheits-Header. Die SPA war damit anfällig für Clickjacking und MIME-Sniffing.
+→ **Erledigt in diesem PR**: `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`,
+`Referrer-Policy: strict-origin-when-cross-origin`, `Strict-Transport-Security`, konservative `Permissions-Policy`.
+→ **Noch offen**: eine **Content-Security-Policy** – wünschenswert, aber wegen PowerBI/Supabase/Infomaniak/PDF-Workern
+sorgfältig zu testen (erst `Content-Security-Policy-Report-Only`, dann scharf schalten).
 
 Beispiel für `vercel.json` (`headers`-Block ergänzen):
 ```json
