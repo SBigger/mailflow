@@ -5,42 +5,10 @@ import path from 'path'
 import { VitePWA } from 'vite-plugin-pwa'
 import { nodePolyfills } from 'vite-plugin-node-polyfills'
 
-// Im Dev-Server gibt es keine Vercel-Functions. Dieses Plugin fährt `api/zefix.js`
-// unter derselben URL (/api/zefix), damit die Firmensuche lokal identisch läuft.
-// In Produktion übernimmt Vercel; das Plugin ist dort inaktiv (apply: 'serve').
-function zefixApiDev(secrets) {
-  return {
-    name: 'zefix-api-dev',
-    apply: 'serve',
-    configureServer(server) {
-      server.middlewares.use('/api/zefix', async (req, res) => {
-        for (const key of ['ZEFIX_USER', 'ZEFIX_PASS']) {
-          if (!process.env[key] && secrets[key]) process.env[key] = secrets[key];
-        }
-        const url = new URL(req.url, 'http://localhost');
-        const shim = {
-          status(code) { res.statusCode = code; return this; },
-          json(body) { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(body)); },
-          setHeader: (k, v) => res.setHeader(k, v),
-        };
-        try {
-          const { default: handler } = await server.ssrLoadModule('/api/zefix.js');
-          // Headers durchreichen: die Function prüft das Supabase-Token daraus.
-          await handler({ query: Object.fromEntries(url.searchParams), headers: req.headers }, shim);
-        } catch (e) {
-          shim.status(500).json({ error: String(e?.message ?? e) });
-        }
-      });
-    },
-  };
-}
-
 export default defineConfig(({ mode }) => {
   // 1. Only load variables prefixed with VITE_ (standard security)
   // Removing the empty string '' ensures only VITE_ variables are loaded
   const env = loadEnv(mode, process.cwd());
-  // Zefix-Credentials sind bewusst NICHT VITE_-präfixiert – sie dürfen nie ins Bundle.
-  const secrets = loadEnv(mode, process.cwd(), 'ZEFIX_');
 
   console.log('🚀 Vite Build Debugging:');
   console.log(`   Modus: ${mode}`);
@@ -50,7 +18,6 @@ export default defineConfig(({ mode }) => {
     base: '/',
     plugins: [
       react(),
-      zefixApiDev(secrets),
       // Polyfills für swissqrbill (PDFKit nutzt Node-Builtins: buffer, events, util)
       // WICHTIG: fs, zlib, stream werden NICHT über nodePolyfills gepolyfilled –
       // wir haben eigene Shims (fsPdfkitShim, zlibShim, streamShim) die via
