@@ -141,3 +141,43 @@ Checkliste zum Abarbeiten. Faustregel: **Automatisieren, was geht** (Dependabot,
 - **Untrusted Input**: alles vom Client (Uploads, Query-Params, JSON-Bodies) ist potenziell bösartig → validieren (`zod` ist bereits im Projekt).
 - **Automatisieren > Erinnern**: Dependabot, CI-Build-Gate und Secret-Scanning fangen mehr als jede Kalender-Erinnerung.
 - **Test-first bei Prod**: Änderungen zuerst auf smartis.me, dann (mit Freigabe) nach artis.sm-artis.ch.
+
+---
+
+## 3. Anhang – Upgrade-Plan verbleibende Vulnerabilities (Stand nach diesem PR: 12, davon 4 hoch)
+
+Diese vier brauchen Major-Upgrades; **je ein eigener Branch/PR mit Build- und Funktionstest**.
+Nicht per `npm audit fix --force` bündeln – das reisst alle vier gleichzeitig hoch und macht Fehler unauffindbar.
+
+### 3.1 `pdfjs-dist` 3.11.174 → 4.x  (hoch, Priorität 1)
+- **Warum kritisch**: pdfjs ist das Herz der Fibu-PDF-Pipeline (digitale PDFs → Text) und wird an vielen
+  Stellen genutzt (Belegerkennung, Abschluss-Import, Dokument-Preview).
+- **Sofort-Mitigation ohne Upgrade** (empfohlen, low-risk): bei jedem `getDocument({ ... })`
+  `isEvalSupported: false` setzen. Der bekannte High-Sev-Bug (Codeausführung via manipuliertes PDF)
+  hängt an `eval`; das Abschalten neutralisiert ihn auch auf v3.
+- **Upgrade v3→v4**: API-/Worker-Setup ändert sich (ESM-Worker, `GlobalWorkerOptions.workerSrc`,
+  ggf. `import 'pdfjs-dist/build/pdf.worker.min.mjs'`). Testfälle: Beleg-OCR, PDF-Text-Extraktion,
+  Vorschau, Abschluss-Import. Erst wenn alle grün → mergen.
+
+### 3.2 `quill` 2.0.3 via `react-quill-new`  (hoch, Priorität 2)
+- **Warum**: XSS-Klasse im Rich-Text-Editor. Betrifft alle Stellen mit Rich-Text
+  (z. B. Ticket-Antworten, Notizen). Nutzer-Eingaben, die als HTML gerendert werden → real relevant.
+- **Plan**: auf eine `react-quill-new`-Version aktualisieren, die gepatchtes quill zieht; Editor-Flows
+  testen (Eingabe, Speichern, Anzeige). Zusätzlich serverseitig/DB-seitig HTML sanitizen (z. B. beim
+  Rendern), nicht nur auf die Editor-Version verlassen.
+
+### 3.3 `tar` / `canvas` / `@mapbox/node-pre-gyp`  (hoch, Priorität 3)
+- **Warum niedriger real**: `tar`-Path-Traversal greift bei **Archiv-Extraktion zur Install-/Build-Zeit**,
+  nicht im Browser-Runtime. `canvas` ist ein transitiver (Build-/Optional-)Dep.
+- **Plan**: prüfen, wer `canvas` zieht (`npm ls canvas`); wenn nur Build/optional → `canvas` bumpen oder
+  entfernen. Kein Produktiv-Runtime-Risiko für die SPA, aber CI/Dev-Hygiene.
+
+### 3.4 `elliptic` via `vite-plugin-node-polyfills`  (hoch, Priorität 3)
+- **Warum niedriger real**: kommt nur über den Node-Polyfill in den Bundle; relevant, falls Client-Code
+  tatsächlich elliptische-Kurven-Signaturen prüft (im Projekt nicht ersichtlich).
+- **Plan**: `vite-plugin-node-polyfills` aktualisieren (zieht gepatchtes `elliptic`); Build testen.
+  Alternativ prüfen, ob der Polyfill überhaupt gebraucht wird.
+
+### 3.5 Nicht per Bump lösbar – laufend beobachten
+- **`xlsx`**: über `@e965/xlsx@0.20.3` erledigt (siehe P1). Falls der Mirror einschläft → auf die
+  offizielle SheetJS-CDN-Quelle wechseln (Ein-Schritt, in P1 dokumentiert).
