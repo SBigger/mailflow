@@ -1022,7 +1022,7 @@ export default function Anlagebuchhaltung() {
   async function handleExcelImport(file) {
     const abId = await ensureAbschluss();
     if (!abId) return;
-    const XLSX = await import("xlsx");
+    const XLSX = await import("@e965/xlsx");
     const data = new Uint8Array(await file.arrayBuffer());
     const wb = XLSX.read(data, { type: "array" });
     // Erste Sheet "Anlagekartei" oder ähnliches bevorzugen
@@ -1145,7 +1145,7 @@ export default function Anlagebuchhaltung() {
   // ── Excel-Export ────────────────────────────────────────────────────────────
   async function handleExcelExport() {
     if (anlagen.length === 0) return;
-    const XLSX = await import("xlsx");
+    const XLSX = await import("@e965/xlsx");
     const wb = XLSX.utils.book_new();
     const katMap = new Map(kategorien.map(k => [k.id, k.name]));
 

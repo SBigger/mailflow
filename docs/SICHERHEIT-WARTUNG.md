@@ -43,16 +43,21 @@ Vercel-Fallback `api/zefix.js` bereits geschlossen – bei der Edge Function feh
   `npm audit fix --package-lock-only` (nur Lockfile, semver-kompatibel, `package.json` unverändert).
   Ergebnis: **37 → 13** Vulnerabilities (19 → 5 hoch). Verifikation: der Vercel-Preview-Build des PR
   (lokal ließ sich `npm install` wegen eines Proxy-Fehlers nicht ausführen).
-- **`xlsx` (hoch, KEIN Fix verfügbar)** – *offen, braucht Migration*: Prototype Pollution + ReDoS.
-  Wird an mehreren Stellen auf **hochgeladene Dateien** angewendet (`XLSX.read(...)` in
-  `KontaktImportExport.jsx`, `Abschlussdokumentation.jsx`, `Steuerausscheidung.jsx`) → verarbeitet
-  fremde/untrusted Eingaben. → **Maßnahme**: auf die gepflegte SheetJS-Version von
-  `https://cdn.sheetjs.com` umstellen (npm-Registry-`xlsx` ist eingefroren) **oder** auf `exceljs`
-  migrieren; Uploads vorab auf Größe/Typ begrenzen.
-- **Verbleibende 5 High brauchen Major-Upgrades** (bewusst NICHT per `--force` erzwungen, da riskant):
+- **`xlsx` (hoch, Prototype Pollution + ReDoS)**: ✅ **behoben in diesem PR**. Die npm-Registry-`xlsx`
+  ist bei 0.18.5 eingefroren (kein Fix mehr), deshalb Umstieg auf **`@e965/xlsx@0.20.3`** – den
+  registry-installierbaren Mirror der gepflegten SheetJS-Version (Prototype Pollution ab 0.19.3, ReDoS
+  ab 0.20.2 behoben). API-identisch → **Drop-in**, nur der Modul-Bezeichner in 14 Import-Stellen (8 Dateien)
+  geändert, keine Logik. Lockfile mit Integrity-Hash gepinnt.
+  → *Alternative/Upgrade-Pfad:* wer die **Original-Quelle** statt des Mirrors will, setzt
+  `"xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"`, ändert die Imports zurück auf `"xlsx"`
+  und führt einmal lokal `npm install` aus (das CDN ist aus dem CI-Container nicht erreichbar).
+  → *Optionale Zusatzhärtung (nicht in diesem PR):* Upload-Größenlimit + `try/catch` an den Parse-Stellen
+  (Defense in Depth gegen client-seitiges DoS; die CVEs selbst sind bereits gefixt).
+- **Verbleibende 4 High brauchen Major-Upgrades** (bewusst NICHT per `--force` erzwungen, da riskant):
   `pdfjs-dist` 3→4 (Kern der Fibu-PDF-Pipeline – sorgfältig testen), `quill` via `react-quill-new`
   (Editor), `tar`/`canvas`/`@mapbox/node-pre-gyp` (Build-Kette), `elliptic` via
   `vite-plugin-node-polyfills` (Build). → einzeln planen und mit Build-Test mergen.
+  Aktueller Stand nach diesem PR: **12 Vulnerabilities (8 low, 4 high)**.
 
 #### P2 – Keine HTTP-Security-Header ✅ (Basis) behoben
 `vercel.json` setzte keine Sicherheits-Header. Die SPA war damit anfällig für Clickjacking und MIME-Sniffing.

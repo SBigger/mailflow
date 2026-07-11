@@ -1334,7 +1334,7 @@ function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = 
   // ── Excel-Datei laden → Sheet-Picker wenn mehrere Blätter ───────────────
   async function loadExcel(file) {
     const data = new Uint8Array(await file.arrayBuffer());
-    const XLSX = await import('xlsx');
+    const XLSX = await import('@e965/xlsx');
     const wb = XLSX.read(data, { type: "array" });
     if (wb.SheetNames.length === 1) {
       // Nur ein Blatt → direkt parsen
@@ -1350,7 +1350,7 @@ function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = 
   // ── Gewählte Sheets zusammenführen und parsen ─────────────────────────────
   async function importSelectedSheets() {
     if (!sheetPicker || selectedSheets.length === 0) return;
-    const XLSX = await import('xlsx');
+    const XLSX = await import('@e965/xlsx');
     const { wb, filename } = sheetPicker;
     let allRows = [];
     let hdrs = null;
@@ -1407,7 +1407,7 @@ function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = 
     const ext = file.name.split(".").pop().toLowerCase();
     if (ext === "xlsx" || ext === "xls") {
       const data = new Uint8Array(await file.arrayBuffer());
-      const XLSX = await import('xlsx');
+      const XLSX = await import('@e965/xlsx');
       const wb = XLSX.read(data, { type: "array" });
       let header = null;
       let dataRows = [];
@@ -1461,7 +1461,7 @@ function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = 
       const reader = new FileReader();
       reader.onload = async (ev) => {
         const data = new Uint8Array(ev.target.result);
-        const XLSX = await import('xlsx');
+        const XLSX = await import('@e965/xlsx');
         const wb = XLSX.read(data, { type: "array" });
         // Alle Sheets mergen mit bestehenden Daten (Kopfzeile je Blatt suchen)
         let extra = [];

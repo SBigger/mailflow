@@ -53,7 +53,7 @@ export default function AssignDialog({ customers, preCustomerId, doc, onClose, o
 
             // Excel (.xlsx, .xls, .csv) → xlsx library
             if (name.endsWith(".xlsx") || name.endsWith(".xls") || name.endsWith(".csv")) {
-                const { read, utils } = await import("xlsx");
+                const { read, utils } = await import("@e965/xlsx");
                 const buf = await file.arrayBuffer();
                 const wb  = read(new Uint8Array(buf), { type: "array" });
                 let text  = "";

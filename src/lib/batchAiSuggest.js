@@ -175,7 +175,7 @@ export async function extractDocumentText(file, { onStage } = {}) {
 
     // ─── Excel / CSV (alle gängigen Formate, SheetJS unterstützt sie alle) ──
     if (/\.(xlsx|xls|xlsm|xlsb|xlt|xltx|xltm|ods|csv)$/.test(name)) {
-      const { read, utils } = await import("xlsx");
+      const { read, utils } = await import("@e965/xlsx");
       const buf = await file.arrayBuffer();
       const wb  = read(new Uint8Array(buf), { type: "array" });
       let text  = "";

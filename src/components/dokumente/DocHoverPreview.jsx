@@ -143,7 +143,7 @@ export default function DocHoverPreview({ doc, url, rect, theme, onClose }) {
           pdfDocRef.current = pdf; setPdfNum(pdf.numPages); setPdfPage(1); setSt({ kind: "pdf" }); return;
         }
         if (/\.(xlsx|xls|xlsm|xlsb|ods|csv)$/.test(name)) {
-          const { read, utils } = await import("xlsx");
+          const { read, utils } = await import("@e965/xlsx");
           const buf = await blob.arrayBuffer();
           const wb = read(new Uint8Array(buf), { type: "array", cellDates: true });
           const sheets = wb.SheetNames.map(nm => ({ name: nm, rows: utils.sheet_to_json(wb.Sheets[nm], { header: 1, raw: false, defval: "" }).slice(0, 1000) }));
