@@ -4,10 +4,10 @@ import { useMandant } from '../../contexts/MandantContext';
 import { supabase } from '@/api/supabaseClient';
 import { useSetupProgress, SETUP_TOTAL } from '../../hooks/useSetupProgress';
 
-// ── Erkennt Electron / Tauri Desktop-Client ───────────────────────
+// ── Erkennt Tauri Desktop-Client ───────────────────────
 const isNativeApp = () =>
   typeof window !== 'undefined' &&
-  (!!window.__TAURI__ || /electron/i.test(navigator.userAgent));
+  (!!window.__TAURI__);
 
 // ── Navigations-Sektionen ─────────────────────────────────────────
 const SECTIONS = [
@@ -422,7 +422,7 @@ export default function FiBuSidebar() {
             // Bankabstimmung: intern in native app, sonst neues Fenster
             if (item.newWindowFallback) {
               if (native) {
-                // In Electron/Tauri → normaler NavLink
+                // In Tauri → normaler NavLink
               } else {
                 return (
                   <button

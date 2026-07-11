@@ -16,7 +16,7 @@ const SNOOZE_OPTIONS = [
 // localStorage-Schlüssel
 const lsKey = (taskId, type) => `task_reminder_${type}_${taskId}`;
 
-// Native Desktop-Notification (Electron) oder Web-Notification (Browser PWA).
+// Native Desktop-Notification Web-Notification (Browser PWA).
 // Deduplikation pro Task via localStorage, damit bei jedem 60s-Poll nicht
 // erneut getoastet wird.
 function fireNativeNotification(task) {
