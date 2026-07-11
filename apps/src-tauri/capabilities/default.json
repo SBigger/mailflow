@@ -1,12 +1,17 @@
-{
-  "$schema": "../gen/schemas/desktop-schema.json",
-  "identifier": "default",
-  "description": "enables the default permissions",
-  "windows": [
-    "main"
-  ],
-  "permissions": [
-    "core:default",
-    "notification:default"
-  ]
-}
+[
+  {
+    "identifier": "custom-app-permissions",
+    "description": "Definiert und erlaubt eigene App Commands",
+    "windows": ["main", "app-*", "oauth-*", "embed-*"],
+    "permissions": [
+      "core:default",
+      "notification:default",
+      "core:webview:allow-create-webview-window",
+      "core:window:allow-create",
+      "opener:default",
+      "allow-open-oauth-window"
+    ],
+    "remote": { "urls": ["https://*.sm-artis.ch"] }
+  }
+]
+

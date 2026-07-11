@@ -1,0 +1,24 @@
+{
+  "permission": [
+    {
+      "identifier": "allow-open-oauth-window",
+      "description": "Erlaubt die eigenen App-Commands",
+      "commands": {
+        "allow": [
+          "download_folder",
+          "open_folder",
+          "get_download_dir",
+          "cache_set",
+          "cache_get",
+          "cache_clear",
+          "get_version",
+          "open_oauth_window",
+          "open_embedded_window",
+          "open_external_url",
+          "disable_tracking_prevention",
+          "get_customer_from_filename"
+        ]
+      }
+    }
+  ]
+}
