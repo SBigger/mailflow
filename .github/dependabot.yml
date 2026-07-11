@@ -1,0 +1,38 @@
+# Automatische Dependency-Updates.
+# Dependabot öffnet wöchentlich PRs für veraltete/verwundbare Pakete.
+# Security-Updates laufen zusätzlich sofort (unabhängig vom Zeitplan).
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: "Europe/Zurich"
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    # Radix/Tanstack/etc. erzeugen viel Rauschen – Minor/Patch bündeln.
+    groups:
+      radix-ui:
+        patterns:
+          - "@radix-ui/*"
+      dev-tooling:
+        patterns:
+          - "vite"
+          - "@vitejs/*"
+          - "eslint*"
+          - "postcss"
+          - "autoprefixer"
+          - "tailwindcss*"
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
