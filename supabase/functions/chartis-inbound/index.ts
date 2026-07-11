@@ -11,9 +11,8 @@
 // ===========================================================================
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import {
-  corsHeaders, env, extractInboundToken, looksLikeBounce, headerValue, htmlToText,
-} from '../_shared/chartis.ts'
+import { corsHeaders, env } from '../_shared/chartis.ts'
+import { getMailProvider } from '../_shared/mailProvider.ts'
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
@@ -30,10 +29,14 @@ serve(async (req) => {
   const p = await req.json().catch(() => null)
   if (!p) return json({ error: 'bad payload' }, 400)
 
-  const provider = 'postmark'
-  const externalId: string | null = p.MessageID || headerValue(p, 'Message-ID') || null
-  const fromEmail: string = (p.FromFull?.Email || p.From || '').toLowerCase()
-  const subject: string = p.Subject || '(kein Betreff)'
+  // Provider hinter Interface: normalisiert das Payload auf kanonische Felder,
+  // egal ob Postmark-JSON oder Rogers self-hosted Relay-JSON.
+  const mp = getMailProvider()
+  const mail = mp.parseInbound(p)
+  const provider = mp.name
+  const externalId: string | null = mail.externalId
+  const fromEmail: string = mail.fromEmail
+  const subject: string = mail.subject
 
   // Ohne stabile Message-ID kein deterministischer Dedup-Key (Random wuerde
   // Retries durchlassen) -> konsistent nach Unrouted parken.
@@ -60,10 +63,10 @@ serve(async (req) => {
   }
 
   // ── Bounce/Autoresponder aussortieren ────────────────────────────────────
-  if (looksLikeBounce(p)) return await toUnrouted('bounce')
+  if (mail.isBounce) return await toUnrouted('bounce')
 
   // ── Token -> Faden ───────────────────────────────────────────────────────
-  const token = extractInboundToken(p)
+  const token = mail.token
   if (!token) return await toUnrouted('no_token')
 
   const { data: thread } = await supabase
@@ -79,8 +82,8 @@ serve(async (req) => {
     return await toUnrouted('from_mismatch')
   }
 
-  // ── Nachricht schreiben (DE-Reply-Stripping via Postmark StrippedTextReply) ─
-  const bodyText = (p.StrippedTextReply || p.TextBody || htmlToText(p.HtmlBody || '')).trim()
+  // ── Nachricht schreiben (Reply-Stripping hat der Provider erledigt) ────────
+  const bodyText = mail.bodyText
   const { data: msg, error: msgErr } = await supabase
     .from('chartis_messages')
     .insert({
@@ -88,12 +91,12 @@ serve(async (req) => {
       mandant_id: thread.mandant_id,
       kind: 'email_in',
       body_text: bodyText,
-      body_html: p.HtmlBody || null,
+      body_html: mail.bodyHtml,
       from_addr: fromEmail,
-      to_addr: p.OriginalRecipient || null,
-      message_id: headerValue(p, 'Message-ID'),
-      in_reply_to: headerValue(p, 'In-Reply-To'),
-      references_h: headerValue(p, 'References'),
+      to_addr: mail.originalRecipient,
+      message_id: mail.messageIdHeader,
+      in_reply_to: mail.inReplyToHeader,
+      references_h: mail.referencesHeader,
     })
     .select('id')
     .single()

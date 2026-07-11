@@ -11,8 +11,9 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import {
-  corsHeaders, env, replyAddress, postmarkSend, CHARTIS_FROM, htmlToText,
+  corsHeaders, env, replyAddress, htmlToText,
 } from '../_shared/chartis.ts'
+import { getMailProvider } from '../_shared/mailProvider.ts'
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
@@ -56,10 +57,11 @@ serve(async (req) => {
     const subject = thread.subject && thread.subject !== 'Direkt' ? thread.subject : 'Nachricht aus Smartis'
 
     // ── An jede/n Externe/n einzeln senden (kein Adress-Leak untereinander) ─
+    const provider = getMailProvider()
     let sent = 0
     const failed: string[] = []
     for (const ex of externals) {
-      const r = await postmarkSend({
+      const r = await provider.send({
         to: ex.email, toName: ex.name || undefined,
         subject, htmlBody, textBody, replyTo,
       })

@@ -6,7 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import {
   Upload, Trash2, Download, PowerOff, ArrowLeft, Table2, UserSquare2,
-  RefreshCw,
+  RefreshCw, Building2,
 } from "lucide-react";
 import { useIsMobile } from "@/components/mobile/useIsMobile";
 import CustomerMiniList from "../components/customers/CustomerMiniList";
@@ -47,6 +47,7 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
   const [showPersonImport,  setShowPersonImport]   = useState(false);
   const [showKontaktIE,     setShowKontaktIE]      = useState(false);
   const [showZefix,         setShowZefix]          = useState(false);
+  const [showZefixFill,     setShowZefixFill]      = useState(false);
   const [personTypeFilter,  setPersonTypeFilter]   = useState(initialPersonTypeFilter); // 'alle' | 'unternehmen' | 'privatperson'
   const [abcFilter,         setAbcFilter]           = useState("alle"); // 'alle' | 'A' | 'B' | 'C'
   const [viewMode,          setViewMode]           = useState("tabelle"); // 'tabelle' | 'profil'
@@ -163,6 +164,23 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
   const handleZefixCreate = (data) => {
     setShowZefix(false);
     createMutation.mutate(data);
+  };
+
+  // Zefix-Daten in ein BESTEHENDES Unternehmen übernehmen.
+  // Firmenname wird bewusst NICHT überschrieben (eure CRM-Bezeichnung bleibt).
+  const handleZefixFill = (data) => {
+    setShowZefixFill(false);
+    const patch = {};
+    if (data.uid_nr)      patch.uid_nr      = data.uid_nr;
+    if (data.rechtsform)  patch.rechtsform  = data.rechtsform;
+    if (data.strasse)     patch.strasse     = data.strasse;
+    if (data.plz)         patch.plz         = data.plz;
+    if (data.ort)         patch.ort         = data.ort;
+    if (data.kanton)      patch.kanton      = data.kanton;
+    if (data.zefix_ehraid) patch.zefix_ehraid = data.zefix_ehraid;
+    if (Object.keys(patch).length === 0) { toast.error("Keine Daten zum Übernehmen gefunden"); return; }
+    handleUpdate(patch);
+    toast.success(`Aus Zefix übernommen: ${Object.keys(patch).join(", ")}`);
   };
 
   const handleNewPrivatperson = () => {
@@ -469,6 +487,16 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
                 <div style={{ position: "relative" }}>
                   <CustomerHeader customer={currentCustomer} staff={appUsers} onUpdate={handleUpdate} />
                   <div style={{ position: "absolute", top: 12, right: 16, display: "flex", gap: 6 }}>
+                    {!isPrivatperson && !isKontakt && (
+                      <button
+                        onClick={() => setShowZefixFill(true)}
+                        title="Aus Zefix abfüllen – Firma suchen und UID, Rechtsform & Adresse übernehmen"
+                        className="transition-colors rounded p-1 hover:text-emerald-600"
+                        style={{ color: isArtis ? '#8aaa8f' : isLight ? '#b0b0cc' : '#52525b' }}
+                      >
+                        <Building2 className="h-4 w-4" />
+                      </button>
+                    )}
                     <button
                       onClick={() => handleUpdate({ aktiv: currentCustomer.aktiv === false ? true : false })}
                       title={currentCustomer.aktiv === false ? "Reaktivieren (aktuell inaktiv)" : "Als inaktiv markieren"}
@@ -605,6 +633,13 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
         open={showZefix}
         onClose={() => setShowZefix(false)}
         onCreate={handleZefixCreate}
+      />
+      <ZefixAssistent
+        open={showZefixFill}
+        onClose={() => setShowZefixFill(false)}
+        onCreate={handleZefixFill}
+        fillMode
+        initialQuery={currentCustomer?.uid_nr || currentCustomer?.company_name || ""}
       />
     </div>
   );

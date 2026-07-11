@@ -44,6 +44,7 @@ import {
   ScrollText,
   PhoneCall,
   Users,
+  ShieldCheck,
 } from "lucide-react";
 import { createPageUrl } from "@/utils";
 import { FEATURE_LEISTUNGSERFASSUNG } from "@/lib/featureFlags";
@@ -70,9 +71,10 @@ export const NAV_GROUPS = [
     id: 'kunden', label: 'Kunden', color: '#d98836', items: [
       { name: 'Kunden', label: 'Kunden', icon: Building2, rail: true, color: '#d98836', aliases: ['crm', 'mandanten', 'firmen', 'unternehmen'] },
       { name: 'Personen', label: 'Personen', icon: Users, color: '#8a63c9', aliases: ['privatpersonen', 'kontakte'] },
-      { name: 'Dokumente', label: 'Dokumente', icon: FolderOpen, rail: true, color: '#caa53d', aliases: ['ablage', 'dateiablage', 'dateien', 'abschlussunterlagen', 'archiv'] },
+      { name: 'Dokumente', label: 'E-Binder', icon: FolderOpen, rail: true, color: '#caa53d', aliases: ['dokumente', 'ablage', 'dateiablage', 'dateien', 'abschlussunterlagen', 'archiv', 'e-binder', 'ebinder'] },
       /*{ name: 'DokumenteV2', label: 'Dokumente V2', icon: FolderOpen, color: '#a8862f', aliases: ['ablage neu', 'beta'] },*/
-      { name: 'Posteingang', label: 'Posteingang', icon: CloudUpload, rail: true, color: '#4ba3c7', aliases: ['scans', 'upload', 'eingang'] },
+      { name: 'Posteingang', label: 'Paperboy', icon: CloudUpload, rail: true, color: '#4ba3c7', aliases: ['posteingang', 'scans', 'upload', 'eingang', 'paperboy'] },
+      { name: 'Kundenportal', label: 'Kundenportal', icon: ShieldCheck, color: '#0e756a', aliases: ['portal', 'kundenzugang', 'freigabe', 'read-only', 'kundenlogin'] },
       { name: 'TelefonDashboard', label: 'Telefon', icon: PhoneCall, color: '#4fae6b', aliases: ['anrufe', 'telefonliste', 'calls'] },
     ],
   },
@@ -109,6 +111,7 @@ export const NAV_GROUPS = [
       { name: 'BriefSchreiben', label: 'Briefe schreiben', icon: PenLine, color: '#5b8ac9', aliases: ['brief', 'korrespondenz', 'vorlagen'] },
       { name: 'Whiteboard', label: 'Whiteboard', icon: Presentation, color: '#e0913d', aliases: ['zeichnen', 'skizze', 'board'] },
       { name: 'GVProtokollApp', label: 'GV-Protokoll', icon: ScrollText, color: '#b05b7e', aliases: ['generalversammlung', 'protokoll', 'transkript'] },
+      { name: 'Firmensuche', label: 'Firmensuche', icon: Building2, color: '#3d7fa6', aliases: ['zefix', 'handelsregister', 'shab', 'uid', 'revisionsstelle', 'revisionsmandate', 'branche', 'firmenrecherche'] },
       { name: 'Aktienbuch', label: 'Aktienbuch', icon: BookUser, color: '#7d9b45', aliases: ['aktien', 'aktionäre'] },
       { name: 'Fahrzeugliste', label: 'Fahrzeugliste', icon: Car, color: '#4fa3b8', aliases: ['autos', 'fahrzeuge'] },
       { name: 'Unterschriften', label: 'Unterschriften', icon: FileSignature, color: '#8a63c9', aliases: ['signatur', 'skribble', 'signieren'] },

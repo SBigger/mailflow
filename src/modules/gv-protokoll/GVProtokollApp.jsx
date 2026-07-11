@@ -496,7 +496,7 @@ export default function GvProtokollApp() {
         const usr = `Kunde: ${selectedCustomer.name}\nTeilnehmer: ${persons.map(p=>p.name).join(", ")}\nTraktandenliste:\n${agenda}\n\nTranskript:\n${transcriptPlain}`;
 
         try {
-            const { data, error } = await supabase.functions.invoke('gv-stt', {
+            const { data, error } = await supabase.functions.invoke('gv-llm', {
                 body: {usr, sys}
             })
             if (error) throw new Error(error.message)

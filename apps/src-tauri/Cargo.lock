@@ -4017,7 +4017,7 @@ checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
 
 [[package]]
 name = "smartis"
-version = "3.1.0"
+version = "3.2.0"
 dependencies = [
  "base64 0.22.1",
  "dirs 5.0.1",
@@ -4034,6 +4034,7 @@ dependencies = [
  "tauri-plugin-http",
  "tauri-plugin-log",
  "tauri-plugin-notification",
+ "tauri-plugin-opener",
  "tauri-plugin-shell",
  "tokio",
  "webview2-com",
@@ -4524,6 +4525,28 @@ dependencies = [
  "thiserror 2.0.18",
  "time",
  "url",
+]
+
+[[package]]
+name = "tauri-plugin-opener"
+version = "2.5.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "17e1bea14edce6b793a04e2417e3fd924b9bc4faae83cdee7d714156cceeed29"
+dependencies = [
+ "dunce",
+ "glob",
+ "objc2-app-kit",
+ "objc2-foundation",
+ "open",
+ "schemars 0.8.22",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-plugin",
+ "thiserror 2.0.18",
+ "url",
+ "windows",
+ "zbus",
 ]
 
 [[package]]

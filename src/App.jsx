@@ -30,6 +30,7 @@ const Dokumente = lazy(() => import('./pages/Dokumente'));
 const DokumenteV2 = lazy(() => import('./pages/DokumenteV2'));
 const Chartis = lazy(() => import('./pages/Chartis'));
 const UserManagement = lazy(() => import('./pages/UserManagement'));
+const Kundenportal = lazy(() => import('./pages/Kundenportal'));
 const ArtisTools = lazy(() => import('./pages/ArtisTools'));
 const BriefSchreiben = lazy(() => import('./pages/BriefSchreiben'));
 const Fahrzeugliste = lazy(() => import('./pages/Fahrzeugliste'));
@@ -38,6 +39,7 @@ const Unterschriften = lazy(() => import('./pages/Unterschriften'));
 const Abschlussdokumentation = lazy(() => import('./pages/Abschlussdokumentation'));
 const Anlagebuchhaltung = lazy(() => import('./pages/Anlagebuchhaltung'));
 const Whiteboard = lazy(() => import('./pages/Whiteboard'));
+const Firmensuche = lazy(() => import('./pages/Firmensuche'));
 const Auswertungen = lazy(() => import('./pages/Auswertungen'));
 const Steuern = lazy(() => import('./pages/Steuern'));
 const Veranlagungen = lazy(() => import('./pages/Veranlagungen'));
@@ -49,6 +51,7 @@ const SetPassword = lazy(() => import("./pages/SetPassword.jsx"));
 const DokumentUploadKunden = lazy(() => import("./pages/DokumentUploadKunden.jsx"));
 const Posteingang = lazy(() => import("./pages/Posteingang.jsx"));
 const SharePage = lazy(() => import("./pages/SharePage.jsx"));
+const Portal = lazy(() => import("./pages/Portal.jsx"));
 const Leistungserfassung = lazy(() => import("./pages/Leistungserfassung.jsx"));
 const Promptvorlagen = lazy(() => import("./pages/Promptvorlagen.jsx"));
 const TelefonDashboard = lazy(() => import("./pages/TelefonDashboard.jsx"));
@@ -108,6 +111,7 @@ function AuthenticatedApp() {
                     <Route path="/Chartis" element={<Chartis/>}/>
                     <Route path="/Posteingang" element={<Posteingang />} />
                     <Route path="/UserManagement" element={<UserManagement />} />
+                    <Route path="/Kundenportal" element={<Kundenportal />} />
                     <Route path="/ArtisTools" element={<ArtisTools />} />
                     <Route path="/BriefSchreiben" element={<BriefSchreiben />} />
                     <Route path="/Fahrzeugliste" element={<Fahrzeugliste />} />
@@ -116,6 +120,7 @@ function AuthenticatedApp() {
                     <Route path="/Abschlussdokumentation" element={<Abschlussdokumentation />} />
                     <Route path="/Anlagebuchhaltung" element={<Anlagebuchhaltung />} />
                     <Route path="/Whiteboard" element={<Whiteboard />} />
+                    <Route path="/Firmensuche" element={<Firmensuche />} />
                     <Route path="/Auswertungen" element={<Auswertungen />} />
                     <Route path="/Steuern" element={<Steuern />} />
                     <Route path="/Veranlagungen" element={<Veranlagungen />} />
@@ -167,6 +172,7 @@ function App() {
                         <Route path="/share/:token"
                                element={<Suspense fallback={<PageLoader/>}><SharePage/></Suspense>}/>
                         <Route path="/share" element={<Suspense fallback={<PageLoader/>}><SharePage/></Suspense>}/>
+                        <Route path="/portal" element={<Suspense fallback={<PageLoader/>}><Portal/></Suspense>}/>
                         <Route path="*" element={<AuthenticatedApp/>}/>
                     </Routes>
                 </Router>

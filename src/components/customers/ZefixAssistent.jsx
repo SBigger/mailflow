@@ -3,7 +3,10 @@ import { supabase } from '@/api/supabaseClient';
 import { ThemeContext } from '@/Layout';
 import { Search, Building2, MapPin, X, Loader2, AlertCircle } from 'lucide-react';
 
-export default function ZefixAssistent({ open, onClose, onCreate }) {
+// fillMode = Daten für ein BESTEHENDES Unternehmen übernehmen (statt neu anlegen).
+// In dem Fall werden person_type/activities/contact_persons/tags NICHT mitgeschickt,
+// damit ein Update nichts überschreibt.
+export default function ZefixAssistent({ open, onClose, onCreate, fillMode = false, initialQuery = '' }) {
   const { theme } = useContext(ThemeContext);
   const isArtis = theme === 'artis';
   const [query, setQuery] = useState('');
@@ -16,13 +19,16 @@ export default function ZefixAssistent({ open, onClose, onCreate }) {
 
   useEffect(() => {
     if (open) {
-      setQuery('');
+      const q = initialQuery || '';
+      setQuery(q);
       setResults([]);
       setError(null);
       setSearched(false);
       setTimeout(() => inputRef.current?.focus(), 100);
+      // Im Abfüll-Modus direkt mit dem Firmennamen suchen
+      if (q.trim().length >= 3) doSearch(q);
     }
-  }, [open]);
+  }, [open, initialQuery]);
 
   const doSearch = async (q) => {
     if (q.trim().length < 3) { setResults([]); setSearched(false); return; }
@@ -60,7 +66,7 @@ export default function ZefixAssistent({ open, onClose, onCreate }) {
   };
 
   const handleSelect = (r) => {
-    onCreate({
+    const base = {
       company_name: r.name,
       uid_nr: r.uid || '',
       rechtsform: r.rechtsform || '',
@@ -69,6 +75,10 @@ export default function ZefixAssistent({ open, onClose, onCreate }) {
       strasse: r.strasse || '',
       kanton: r.kanton || '',
       zefix_ehraid: r.ehraid || null,
+    };
+    if (fillMode) { onCreate(base); return; }
+    onCreate({
+      ...base,
       person_type: 'unternehmen',
       activities: [],
       contact_persons: [],
@@ -109,8 +119,12 @@ export default function ZefixAssistent({ open, onClose, onCreate }) {
         {/* Header */}
         <div style={{ padding: '20px 24px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
-            <div style={{ fontWeight: 700, fontSize: 16, color: '#1a1a2e' }}>Neues Unternehmen erfassen</div>
-            <div style={{ fontSize: 12, color: muted, marginTop: 2 }}>Firmendaten aus dem Handelsregister laden</div>
+            <div style={{ fontWeight: 700, fontSize: 16, color: '#1a1a2e' }}>
+              {fillMode ? 'Daten aus Zefix übernehmen' : 'Neues Unternehmen erfassen'}
+            </div>
+            <div style={{ fontSize: 12, color: muted, marginTop: 2 }}>
+              {fillMode ? 'Firma suchen und UID, Rechtsform & Adresse übernehmen' : 'Firmendaten aus dem Handelsregister laden'}
+            </div>
           </div>
           <button onClick={onClose} style={{
             width: 30, height: 30, borderRadius: 8, border: 'none',
@@ -210,11 +224,13 @@ export default function ZefixAssistent({ open, onClose, onCreate }) {
             padding: '8px 16px', borderRadius: 8, border: `1px solid ${border}`,
             background: '#fff', fontSize: 13, cursor: 'pointer', color: muted,
           }}>Abbrechen</button>
-          <button onClick={handleManual} style={{
-            padding: '8px 16px', borderRadius: 8, border: 'none',
-            background: accent, color: '#fff', fontSize: 13, fontWeight: 500,
-            cursor: 'pointer', opacity: 0.9,
-          }}>Manuell erfassen</button>
+          {!fillMode && (
+            <button onClick={handleManual} style={{
+              padding: '8px 16px', borderRadius: 8, border: 'none',
+              background: accent, color: '#fff', fontSize: 13, fontWeight: 500,
+              cursor: 'pointer', opacity: 0.9,
+            }}>Manuell erfassen</button>
+          )}
         </div>
       </div>
 

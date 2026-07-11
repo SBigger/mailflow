@@ -253,28 +253,28 @@ fn disable_tracking_prevention(webview_window: tauri::WebviewWindow) -> Result<S
 /// Damit Cookies mit dem Haupt-WebView geteilt werden.
 /// Frontend-JS (in main.jsx) fängt window.open() für login.microsoftonline.com ab.
 #[tauri::command]
-fn open_oauth_window(app: AppHandle, url: String) -> Result<(), String> {
-    use tauri::{WebviewUrl, WebviewWindowBuilder};
-
-    let parsed_url = tauri::Url::parse(&url).map_err(|e| e.to_string())?;
-
-    let ts = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0);
-    let label = format!("oauth-{}", ts);
-
-    WebviewWindowBuilder::new(&app, &label, WebviewUrl::External(parsed_url))
-        .title("Anmeldung")
-        .inner_size(520.0, 720.0)
-        .resizable(true)
-        .center()
-        .focused(true)
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0")
-        .build()
-        .map_err(|e| e.to_string())?;
-
-    Ok(())
+async fn open_oauth_window(app: AppHandle, url: String) -> Result<(), String> {
+  use tauri::{WebviewUrl, WebviewWindowBuilder};
+  log::info!("open_oauth_window url = {}", url);
+  let parsed = tauri::Url::parse(&url).map_err(|e| e.to_string())?;
+  let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
+  let label = format!("oauth-{}", ts);
+  let app2 = app.clone();
+  app.run_on_main_thread(move || {
+    if let Some(w) = app2.get_webview_window(&label) { let _ = w.close(); }
+    match WebviewWindowBuilder::new(&app2, &label, WebviewUrl::External(parsed))
+      .title("Anmeldung")
+      .inner_size(520.0, 720.0)
+      .resizable(true)
+      .center()
+      .focused(true)
+      .build()
+    {
+      Ok(_) => log::info!("OAuth-Fenster {} erstellt", label),
+      Err(e) => log::error!("OAuth build() Fehler: {:?}", e),
+    }
+  }).map_err(|e| e.to_string())?;
+  Ok(())
 }
 
 /// Externe URL (z.B. Power BI Embed) in einem EIGENEN Tauri-Fenster als Top-Level-Frame
@@ -322,13 +322,12 @@ fn get_customer_from_filename() -> String {
                 let parts: Vec<&str> = name_str.split('_').collect();
                 return parts.get(0)
                             .map(|s| s.to_string())
-                           .unwrap_or_else(|| "default".to_string());
+                           .unwrap_or_else(|| "artis".to_string());
             }
         }
     }
-    "default".to_string() // Rückfalloption, falls kein "_" im Namen ist
+    "artis".to_string() // Rückfalloption, falls kein "_" im Namen ist
 }
-
 
 // ── Excel-Upload-Server (localhost:7788) ───────────────────────────────────────
 
@@ -458,36 +457,43 @@ pub fn run() {
         .setup(|app| {
             use tauri::{WebviewUrl, WebviewWindowBuilder};
             let customer = get_customer_from_filename();
-            let url_string = format!("https://{}.sm-artis.ch", customer);
+            let base_domain = format!("{}.sm-artis.ch", customer);
+            let url_string = format!("https://{}", base_domain);
 
-            // Hilfreich für das Debugging in der Konsole:
             log::info!("Erkannter Kunde: {}", customer);
             log::info!("Starte Webview mit URL: {}", url_string);
 
-            // 3. URL parsen
             let url = tauri::Url::parse(&url_string).map_err(|e| e.to_string())?;
 
-            // Navigations-Handler: artis-open:// (Dokument-Checkout) wird vom
-            // Frontend per <a>.click() ausgelöst → das ist eine Navigation, kein
-            // window.open. Wir fangen sie ab und starten den ArtisAgent über den
-            // System-Handler (shell().open → ShellExecute, kein cmd-Parsing →
-            // robust gegen & in der URL). false = Navigation im WebView abbrechen.
-            let nav_handle = app.handle().clone();
+            let version = app.package_info().version.to_string();
+            let window_title = format!("Smartis by Artis Treuhand -> v{}", version);
+
+            // 1. Setup the Webview using the Builder pattern
             WebviewWindowBuilder::new(app.handle(), "main", WebviewUrl::External(url))
-                .title("Smartis by Artis Treuhand")
+                .title(&window_title)
                 .inner_size(1400.0, 900.0)
                 .min_inner_size(1024.0, 700.0)
                 .resizable(true)
                 .center()
                 .focused(true)
                 .disable_drag_drop_handler()
+                // --- NAVIGATIONS INTERCEPTION ---
                 .on_navigation(move |url| {
+                    // Custom deep-link handler
                     if url.scheme() == "artis-open" {
-                        use tauri_plugin_shell::ShellExt;
-                        let _ = nav_handle.shell().open(url.as_str(), None);
-                        return false; // Navigation im WebView blockieren
+                        let _ = tauri_plugin_opener::open_url(url.as_str(), None::<&str>);
+                        return false;
                     }
-                    true
+
+                    true // Allow internal navigation on *.sm-artis.ch
+                })
+                // --- WINDOW.OPEN() INTERCEPTION (Tauri v2 API) ---
+                .on_new_window(|url, _features| {
+                    if url.scheme() != "artis-open" {
+                        tauri::webview::NewWindowResponse::Allow
+                    } else {
+                        tauri::webview::NewWindowResponse::Deny
+                    }
                 })
                 .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0")
                 .additional_browser_args("--disable-features=TrackingProtection3pcd,TrackingProtectionSettingsPageLaunch,PrivacySandboxSettings4,PartitionedCookies,ThirdPartyStoragePartitioning,BlockThirdPartyCookies,SameSiteByDefaultCookies,CookiesWithoutSameSiteMustBeSecure,msEdgeTrackingProtection,PrivacySandboxAdsAPIs,FedCm --enable-features=SharedArrayBuffer")
@@ -495,15 +501,16 @@ pub fn run() {
                 .build()
                 .map_err(|e| e.to_string())?;
 
+            // 2. Excel Upload Server
             let handle = app.handle().clone();
-            // Eigener Tokio-Runtime-Thread für den Excel-Upload-Server,
-            // da Tauri's setup() Callback keine aktive Tokio-Runtime hat.
             std::thread::spawn(move || {
                 match tokio::runtime::Runtime::new() {
                     Ok(rt) => rt.block_on(excel_upload_server(handle)),
                     Err(e) => log::error!("Tokio-Runtime konnte nicht erstellt werden: {}", e),
                 }
             });
+
+            // Note: The erroneous main_window.on_new_window block has been removed from here!
 
             Ok(())
         })
@@ -515,6 +522,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             download_folder,
             open_folder,

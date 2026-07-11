@@ -17,7 +17,7 @@ const corsHeaders = {
 
 const CLIENT_ID     = Deno.env.get('MICROSOFT_CLIENT_ID')!;
 const CLIENT_SECRET = Deno.env.get('MICROSOFT_CLIENT_SECRET')!;
-const TENANT_ID     = Deno.env.get('MICROSOFT_TENANT_ID');
+const TENANT_ID     = Deno.env.get('MICROSOFT_TENANT_ID') || 'common';
 const SUPABASE_URL  = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_KEY   = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 

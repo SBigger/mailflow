@@ -144,7 +144,7 @@ export default function Posteingang() {
       <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden", background: s.cardBg, color: s.textMain }}>
         {/* Header */}
         <div style={{padding: "12px 20px", borderBottom: "1px solid " + border, display: "flex", alignItems: "center", gap: 10, flexShrink: 0}}>
-          <span style={{ fontSize: 15, fontWeight: 700 }}>Posteingang</span>
+          <span style={{ fontSize: 15, fontWeight: 700 }}>Paperboy</span>
           <div style={{ position: "relative" }}>
             <Search size={13} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: s.textMuted }} />
             <input
