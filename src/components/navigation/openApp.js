@@ -39,6 +39,11 @@ export function openApp(item, { sameWindow = false, navigate, record = true } = 
         title: 'Smartis — ' + item.label,
         width: 1280,
         height: 860,
+        // MUSS byte-identisch zu additional_browser_args des main-Fensters in
+        // apps/src-tauri/src/lib.rs sein. WebView2 verweigert sonst ein zweites
+        // Environment mit abweichenden Args im selben Profil (0x8007139F
+        // ERROR_INVALID_STATE) → das Fenster blitzt auf und schließt sofort.
+        additionalBrowserArgs: '--disable-features=TrackingProtection3pcd,TrackingProtectionSettingsPageLaunch,PrivacySandboxSettings4,PartitionedCookies,ThirdPartyStoragePartitioning,BlockThirdPartyCookies,SameSiteByDefaultCookies,CookiesWithoutSameSiteMustBeSecure,msEdgeTrackingProtection,PrivacySandboxAdsAPIs,FedCm --enable-features=SharedArrayBuffer',
       });
       // Fehlt der Fenster-Berechtigung im Tauri-Build → Browser-Fallback
       if (typeof win.once === 'function') {
