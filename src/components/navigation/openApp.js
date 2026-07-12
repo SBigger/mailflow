@@ -24,9 +24,18 @@ export function openApp(item, { sameWindow = false, navigate, record = true } = 
   try {
     const WW = window.__TAURI__?.webviewWindow?.WebviewWindow;
     if (WW) {
+      // WICHTIG: relative Route gegen den aktuellen (Remote-)Origin absolut
+      // machen. Sonst hängt Tauri die Route an den lokalen Bundle-Origin
+      // tauri://localhost/ an — ein FREMDER Origin ohne Supabase-Session.
+      // Das neue Fenster wäre dann ausgeloggt, die Dokumentliste bliebe leer
+      // und der ?open=<id>-Handler in Dokumente.jsx fände das Dokument nie.
+      // Absolut → gleicher Origin wie das Hauptfenster → Session/Cookies
+      // werden geteilt und das Dokument öffnet.
+      let winUrl = href;
+      try { winUrl = new URL(href, window.location.origin).toString(); } catch { /* href bleibt */ }
       const label = ('app-' + href + '-' + Date.now()).replace(/[^a-zA-Z0-9-]/g, '-');
       const win = new WW(label, {
-        url: href,
+        url: winUrl,
         title: 'Smartis — ' + item.label,
         width: 1280,
         height: 860,
