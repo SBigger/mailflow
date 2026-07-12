@@ -74,11 +74,25 @@ SELECT ?uid ?name ?formUri ?strasse ?plz ?ort ?kanton ?zweck WHERE {
 LIMIT ${Math.min(Number(limit) || 200, 1000)}`
 }
 
-/** Breite Firmensuche über LINDAS. Direkt aus dem Browser – CORS ist offen. */
-export async function sucheFirmen(params) {
-  const res = await fetch(`${LINDAS}?query=${encodeURIComponent(buildQuery(params))}`, {
-    headers: { Accept: 'application/sparql-results+json' },
-  })
+/**
+ * Breite Firmensuche über LINDAS. Direkt aus dem Browser – CORS ist offen.
+ * `timeoutMs`: bricht ab, wenn LINDAS zu lange braucht. Eine schweizweite Zweck-Suche
+ * ohne Ort-Filter scannt alle ~790'000 Firmen und dauert über eine Minute; mit
+ * Gemeinde/Kanton ist es ~2 Sekunden.
+ */
+export async function sucheFirmen(params, { timeoutMs = 130000 } = {}) {
+  let res
+  try {
+    res = await fetch(`${LINDAS}?query=${encodeURIComponent(buildQuery(params))}`, {
+      headers: { Accept: 'application/sparql-results+json' },
+      signal: AbortSignal.timeout(timeoutMs),
+    })
+  } catch (e) {
+    if (e.name === 'TimeoutError') {
+      throw new Error('Suche zu langsam – bitte Gemeinde oder Kanton eingrenzen.')
+    }
+    throw e
+  }
   if (!res.ok) throw new Error(`LINDAS antwortet ${res.status}`)
   const json = await res.json()
   return json.results.bindings.map((b) => {
