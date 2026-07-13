@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { ThemeContext } from "@/Layout";
 import {
   ShieldCheck, Mail, UserPlus, Search, Building2, Trash2, Ban,
-  CheckCircle2, Send, Clock, Loader2, Lock, X,
+  CheckCircle2, Send, Clock, Loader2, Lock, X, Link as LinkIcon,
 } from "lucide-react";
 
 // ── Kundenportal-Verwaltung ────────────────────────────────────────────────
@@ -155,6 +155,19 @@ export default function Kundenportal() {
     setBusyId(null);
   }
 
+  // Anmeldelink erzeugen und in die Zwischenablage kopieren (zum Weitergeben)
+  async function copyLink(u) {
+    setBusyId(u.id);
+    try {
+      const { data } = await functions.invoke("portal-api", { action: "create-link", portal_user_id: u.id });
+      if (!data?.link) throw new Error(data?.error || "Kein Link erhalten.");
+      try { await navigator.clipboard.writeText(data.link); toast.success("Anmeldelink kopiert (7 Tage gültig)."); }
+      catch { window.prompt("Anmeldelink (7 Tage gültig) — kopieren mit Strg+C:", data.link); }
+    } catch (e) {
+      toast.error(e.message || "Link konnte nicht erstellt werden.");
+    } finally { setBusyId(null); }
+  }
+
   const inp = {
     width: "100%", border: `1px solid ${s.line}`, background: s.surface2, color: s.ink,
     borderRadius: 9, padding: "10px 12px", fontSize: 14, outline: "none",
@@ -235,7 +248,8 @@ export default function Kundenportal() {
                       </td>
                       <td style={{ padding: "12px 16px" }}>
                         <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-                          <IconBtn title="Anmeldelink senden" s={s} busy={busyId === u.id} onClick={() => resend(u)}><Send size={16} /></IconBtn>
+                          <IconBtn title="Anmeldelink kopieren" s={s} busy={busyId === u.id} onClick={() => copyLink(u)}><LinkIcon size={16} /></IconBtn>
+                          <IconBtn title="Anmeldelink per E-Mail senden" s={s} busy={busyId === u.id} onClick={() => resend(u)}><Send size={16} /></IconBtn>
                           <IconBtn title={u.is_active ? "Sperren" : "Freigeben"} s={s} busy={busyId === u.id} onClick={() => toggleActive(u)}>
                             {u.is_active ? <Ban size={16} /> : <CheckCircle2 size={16} />}
                           </IconBtn>

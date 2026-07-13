@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { requireUser } from "../_shared/auth.ts";
 
 // ══════════════════════════════════════════════════════════════════════════
 //  portal-api — Backend des Kundenportals (read-only Dokumentenzugang)
@@ -380,6 +381,30 @@ serve(async (req) => {
         .update({ status: "aktiv", updated_at: new Date().toISOString() }).eq("id", thread.id);
       await audit(supabase, pu, "chat-send", null, text.slice(0, 80), ip);
       return json({ ok: true });
+    }
+
+    // ── create-link: Anmeldelink erzeugen (NUR eingeloggte Mitarbeiter) ───────
+    // Für Weitergabe von Hand (Teams, persönlich) statt/zusätzlich zur Mail.
+    // 7 Tage gültig, einmal verwendbar.
+    if (action === "create-link") {
+      const auth = await requireUser(req);
+      if (auth.response) return auth.response;
+
+      const portalUserId = String(body.portal_user_id || "");
+      if (!portalUserId) return json({ error: "portal_user_id fehlt" }, 400);
+      const { data: pu } = await supabase.from("portal_users")
+        .select("*").eq("id", portalUserId).single();
+      if (!pu) return json({ error: "Portal-Zugang nicht gefunden." }, 404);
+      if (!pu.is_active) return json({ error: "Dieser Zugang ist gesperrt." }, 400);
+
+      const token = randomToken();
+      const expires = new Date(Date.now() + 7 * 86400_000).toISOString();
+      await supabase.from("portal_magic_tokens").insert({
+        portal_user_id: pu.id, token_hash: await sha256Hex(token), expires_at: expires,
+      });
+      const base = Deno.env.get("PORTAL_URL") || "https://smartis.me/portal";
+      await audit(supabase, pu, "link-created", null, auth.user?.email || null, ip);
+      return json({ link: `${base}?token=${token}`, expires_at: expires });
     }
 
     return json({ error: "Unbekannte Aktion" }, 400);
