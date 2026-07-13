@@ -1,6 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { requireUser } from "../_shared/auth.ts";
 
 // ══════════════════════════════════════════════════════════════════════════
 //  portal-api — Backend des Kundenportals (read-only Dokumentenzugang)
@@ -127,6 +126,20 @@ async function resolveSession(supabase: any, sessionToken: string | null) {
   if (!pu || !pu.is_active) return null;
   await supabase.from("portal_sessions").update({ last_seen_at: new Date().toISOString() }).eq("id", sess.id);
   return pu;
+}
+
+// Mitarbeiter-JWT serverseitig prüfen (inline statt _shared/auth.ts, damit der
+// Dashboard-Deploy ohne zusätzliche Dateien auskommt). service_role-Client
+// kann fremde User-JWTs via auth.getUser verifizieren.
+async function requireStaff(req: Request, supabase: any) {
+  const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
+  if (!token) return { ok: false as const, status: 401, error: "Unauthorized" };
+  const { data: { user }, error } = await supabase.auth.getUser(token);
+  if (error || !user) return { ok: false as const, status: 401, error: "Unauthorized" };
+  const { data: profile } = await supabase
+    .from("profiles").select("id, role").eq("id", user.id).maybeSingle();
+  if (!profile) return { ok: false as const, status: 403, error: "Kein Mitarbeiterprofil" };
+  return { ok: true as const, user };
 }
 
 async function audit(supabase: any, pu: any, action: string, doc_id: string | null, detail: string | null, ip: string) {
@@ -387,8 +400,8 @@ serve(async (req) => {
     // Für Weitergabe von Hand (Teams, persönlich) statt/zusätzlich zur Mail.
     // 7 Tage gültig, einmal verwendbar.
     if (action === "create-link") {
-      const auth = await requireUser(req);
-      if (auth.response) return auth.response;
+      const staff = await requireStaff(req, supabase);
+      if (!staff.ok) return json({ error: staff.error }, staff.status);
 
       const portalUserId = String(body.portal_user_id || "");
       if (!portalUserId) return json({ error: "portal_user_id fehlt" }, 400);
@@ -403,7 +416,7 @@ serve(async (req) => {
         portal_user_id: pu.id, token_hash: await sha256Hex(token), expires_at: expires,
       });
       const base = Deno.env.get("PORTAL_URL") || "https://smartis.me/portal";
-      await audit(supabase, pu, "link-created", null, auth.user?.email || null, ip);
+      await audit(supabase, pu, "link-created", null, staff.user?.email || null, ip);
       return json({ link: `${base}?token=${token}`, expires_at: expires });
     }
 
