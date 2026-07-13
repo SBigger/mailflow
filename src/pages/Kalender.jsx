@@ -3,9 +3,13 @@ import { supabase, entities, functions, auth } from '@/api/supabaseClient';
 import { ThemeContext } from '@/Layout';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
+  DndContext, DragOverlay, useDraggable, useDroppable,
+  PointerSensor, useSensor, useSensors,
+} from '@dnd-kit/core';
+import {
   ChevronLeft, ChevronRight, Calendar, Clock, MapPin, Video,
   RefreshCw, List, Grid3X3, ExternalLink, Users, X, Building2,
-  AlertCircle, CheckCircle2, HelpCircle, XCircle
+  AlertCircle, CheckCircle2, HelpCircle, XCircle, ListTodo,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
@@ -14,6 +18,8 @@ import {
   isSameDay, isToday, parseISO, addMonths, subMonths,
 } from 'date-fns';
 import { de } from 'date-fns/locale';
+import TaskSidebar from '@/components/kalender/TaskSidebar';
+import TaskDragOverlay from '@/components/kalender/TaskDragOverlay';
 
 // ── Hilfsfunktionen ──────────────────────────────────────────────────
 
@@ -54,6 +60,8 @@ const HOUR_START = 7;
 const HOUR_END   = 21;
 const HOUR_COUNT = HOUR_END - HOUR_START;
 const SLOT_PX    = 60; // px pro Stunde
+const HOURS = Array.from({ length: HOUR_COUNT }, (_, i) => HOUR_START + i);
+const DEFAULT_TASK_DURATION_MINUTES = 60;
 
 function eventTopPx(startTime) {
   if (!startTime) return 0;
@@ -119,6 +127,12 @@ export default function Kalender() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [filterCustomer, setFilterCustomer] = useState('');
   const [filterStatus, setFilterStatus] = useState('');  // '' | 'accepted' | 'tentativelyAccepted' | 'declined'
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [activeDragTask, setActiveDragTask] = useState(null);
+  const [selectedTaskBlock, setSelectedTaskBlock] = useState(null);
+
+  function openEvent(event) { setSelectedTaskBlock(null); setSelectedEvent(event); }
+  function openTaskBlock(task) { setSelectedEvent(null); setSelectedTaskBlock(task); }
 
   // ── Theme-Variablen ──
   const isLight = theme === 'light';
@@ -160,6 +174,93 @@ export default function Kalender() {
     for (const c of customers) m.set(c.id, c.company_name);
     return m;
   }, [customers]);
+
+  // ── Meine Aufgaben (für Einplanen per Drag & Drop) ──
+  const { data: currentUser } = useQuery({
+    queryKey: ['currentUser'],
+    queryFn: () => auth.me(),
+  });
+
+  const { data: tasks = [] } = useQuery({
+    queryKey: ['tasks', currentUser?.email],
+    queryFn: () => entities.Task.list('order'),
+    enabled: !!currentUser,
+  });
+
+  const { data: priorities = [] } = useQuery({
+    queryKey: ['priorities'],
+    queryFn: () => entities.Priority.list('level'),
+  });
+
+  const priorityMap = useMemo(() => {
+    const m = new Map();
+    for (const p of priorities) m.set(p.id, p);
+    return m;
+  }, [priorities]);
+
+  const myOpenTasks = useMemo(() => tasks.filter(t =>
+    !t.completed &&
+    (t.assignee === currentUser?.email || (!t.assignee && t.created_by === currentUser?.id))
+  ), [tasks, currentUser]);
+
+  function tasksForDay(day) {
+    return myOpenTasks.filter(t => {
+      if (!t.scheduled_start) return false;
+      try { return isSameDay(parseISO(t.scheduled_start), day); } catch { return false; }
+    });
+  }
+
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
+
+  const scheduleTaskMutation = useMutation({
+    mutationFn: ({ id, scheduled_start, scheduled_end }) =>
+      entities.Task.update(id, { scheduled_start, scheduled_end }),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      toast.success(variables.scheduled_start ? 'Aufgabe eingeplant' : 'Aufgabe aus Kalender entfernt');
+      setSelectedTaskBlock(null);
+    },
+    onError: (e) => toast.error('Fehler: ' + e.message),
+  });
+
+  function handleDragStart(event) {
+    const rawId = String(event.active.id).replace(/^task-/, '');
+    setActiveDragTask(myOpenTasks.find(t => t.id === rawId) || null);
+  }
+
+  function handleDragEnd(event) {
+    setActiveDragTask(null);
+    const { active, over } = event;
+    if (!over) return;
+    const taskId = String(active.id).replace(/^task-/, '');
+
+    if (over.id === 'task-sidebar') {
+      scheduleTaskMutation.mutate({ id: taskId, scheduled_start: null, scheduled_end: null });
+      return;
+    }
+
+    const dayMatch = String(over.id).match(/^day-(\d+)$/);
+    if (!dayMatch || !over.rect) return;
+    const dayIndex = Number(dayMatch[1]);
+    const day = weekDays[dayIndex];
+
+    const pointerClientY = event.activatorEvent.clientY + event.delta.y;
+    const offsetY = pointerClientY - over.rect.top;
+    let hourFloat = HOUR_START + offsetY / SLOT_PX;
+    hourFloat = Math.min(HOUR_END, Math.max(HOUR_START, hourFloat));
+    const snappedHour = Math.floor(hourFloat);
+    const snappedMinutes = Math.round(((hourFloat - snappedHour) * 60) / 15) * 15;
+
+    const start = new Date(day);
+    start.setHours(snappedHour, snappedMinutes, 0, 0);
+    const end = new Date(start.getTime() + DEFAULT_TASK_DURATION_MINUTES * 60000);
+
+    scheduleTaskMutation.mutate({
+      id: taskId,
+      scheduled_start: start.toISOString(),
+      scheduled_end: end.toISOString(),
+    });
+  }
 
   // ── Filtern ──
   const filteredEvents = useMemo(() => {
@@ -236,7 +337,7 @@ export default function Kalender() {
     const cancelled = event.is_cancelled;
     return (
       <div
-        onClick={() => setSelectedEvent(event)}
+        onClick={() => openEvent(event)}
         className="cursor-pointer rounded px-1.5 py-0.5 text-xs border-l-2 truncate hover:opacity-90 transition-opacity"
         style={{
           backgroundColor: isDark ? `${cfg.color}18` : `${cfg.color}15`,
@@ -397,9 +498,190 @@ export default function Kalender() {
     );
   }
 
+  // ── Geplanter Task-Block (Wochen-Raster) ─────────────────────────────
+  function TaskCalendarBlock({ task, top, height, leftPct, widthPct, color, onClick }) {
+    const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `task-${task.id}` });
+    return (
+      <div
+        ref={setNodeRef}
+        {...attributes}
+        {...listeners}
+        onClick={onClick}
+        className="absolute rounded px-1 py-0.5 cursor-grab active:cursor-grabbing hover:opacity-90 overflow-hidden"
+        style={{
+          top,
+          height: Math.max(height, 18),
+          left: `calc(${leftPct}% + 2px)`,
+          width: `calc(${widthPct}% - 4px)`,
+          backgroundColor: isDark ? `${color}20` : `${color}18`,
+          borderLeft: `2px dashed ${color}`,
+          opacity: isDragging ? 0.3 : 1,
+          zIndex: 1,
+        }}
+        title={task.title}
+      >
+        <p className="text-xs font-medium leading-tight truncate flex items-center gap-1" style={{ color: headingColor }}>
+          <ListTodo className="h-3 w-3 flex-shrink-0" style={{ color }} />
+          {task.title}
+        </p>
+        {height > 30 && (
+          <p className="text-xs opacity-60 truncate" style={{ color: textMuted }}>
+            {formatTime(task.start_time, false)}
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  // ── Tages-Spalte (Woche-Raster, droppable für Task-Einplanung) ──────
+  function DayColumn({ day, dayIndex }) {
+    const { setNodeRef, isOver } = useDroppable({ id: `day-${dayIndex}` });
+    const dayEvents = eventsForDay(day).filter(e => !e.is_all_day).map(e => ({ ...e, _kind: 'event' }));
+    const dayTasks = tasksForDay(day).map(t => ({
+      ...t,
+      _kind: 'task',
+      start_time: t.scheduled_start,
+      end_time: t.scheduled_end,
+    }));
+    const combined = [...dayEvents, ...dayTasks];
+    const evLayout = computeEventLayout(combined);
+
+    return (
+      <div
+        ref={setNodeRef}
+        className="flex-1 border-l relative"
+        style={{
+          borderColor: gridLine,
+          backgroundColor: isOver ? todayBg : isToday(day) ? todayBg : 'transparent',
+        }}
+      >
+        {/* Stunden-Linien */}
+        {HOURS.map(h => (
+          <div
+            key={h}
+            className="absolute w-full border-t"
+            style={{ top: (h - HOUR_START) * SLOT_PX, borderColor: gridLine }}
+          />
+        ))}
+
+        {/* Events + geplante Aufgaben */}
+        {combined.map(item => {
+          const top = eventTopPx(item.start_time);
+          const height = eventHeightPx(item.start_time, item.end_time);
+          const { col, totalCols = 1 } = evLayout.get(item.id) || {};
+          const leftPct  = (col / totalCols) * 100;
+          const widthPct = (1 / totalCols) * 100;
+
+          if (item._kind === 'task') {
+            const priority = priorityMap.get(item.priority_id);
+            const color = priority?.color || accentColor;
+            return (
+              <TaskCalendarBlock
+                key={`task-${item.id}`}
+                task={item}
+                top={top}
+                height={height}
+                leftPct={leftPct}
+                widthPct={widthPct}
+                color={color}
+                onClick={() => openTaskBlock(item)}
+              />
+            );
+          }
+
+          const cfg = getResponseConfig(item.response_status);
+          return (
+            <div
+              key={item.id}
+              onClick={() => openEvent(item)}
+              className="absolute rounded border-l-2 px-1 py-0.5 cursor-pointer hover:opacity-90 overflow-hidden"
+              style={{
+                top,
+                height: Math.max(height, 18),
+                left: `calc(${leftPct}% + 2px)`,
+                width: `calc(${widthPct}% - 4px)`,
+                backgroundColor: isDark ? `${cfg.color}20` : `${cfg.color}18`,
+                borderLeftColor: cfg.color,
+                zIndex: 1,
+              }}
+              title={item.subject}
+            >
+              <p
+                className="text-xs font-medium leading-tight truncate"
+                style={{
+                  color: headingColor,
+                  textDecoration: item.is_cancelled ? 'line-through' : 'none',
+                  opacity: item.is_cancelled ? 0.6 : 1,
+                }}
+              >
+                {item.subject}
+              </p>
+              {height > 30 && (
+                <p className="text-xs opacity-60 truncate" style={{ color: textMuted }}>
+                  {formatTime(item.start_time, false)}
+                  {item.location ? ` · ${item.location}` : ''}
+                </p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  // ── Aufgaben-Block-Detail (Wochen-Raster Klick) ──────────────────────
+  function TaskBlockDetail({ task, onClose }) {
+    const priority = priorityMap.get(task.priority_id);
+    return (
+      <div
+        className="flex flex-col h-full border-l overflow-y-auto"
+        style={{ backgroundColor: cardBg, borderColor: cardBorder, minWidth: 320, maxWidth: 380 }}
+      >
+        <div className="flex items-start justify-between p-4 pb-3 border-b" style={{ borderColor: cardBorder }}>
+          <div className="flex-1 pr-2 flex items-center gap-2">
+            {priority && <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: priority.color }} />}
+            <h3 className="font-semibold text-sm leading-snug" style={{ color: headingColor }}>
+              {task.title}
+            </h3>
+          </div>
+          <button onClick={onClose} className="text-zinc-400 hover:text-zinc-200 flex-shrink-0">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="flex-1 p-4 space-y-4">
+          <div className="flex items-start gap-2">
+            <Clock className="h-4 w-4 flex-shrink-0 mt-0.5" style={{ color: textMuted }} />
+            <p className="text-sm" style={{ color: headingColor }}>
+              {formatDateRange(task.scheduled_start, task.scheduled_end, false)}
+            </p>
+          </div>
+
+          {task.description && (
+            <div
+              className="rounded-lg p-3 text-xs leading-relaxed"
+              style={{ backgroundColor: rowBg, borderColor: rowBorder, color: textMuted, border: '1px solid' }}
+            >
+              {task.description}
+            </div>
+          )}
+
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => scheduleTaskMutation.mutate({ id: task.id, scheduled_start: null, scheduled_end: null })}
+            className="w-full text-xs"
+          >
+            Aus Kalender entfernen
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   // ── Wochen-Ansicht ─────────────────────────────────────────────────
   function WeekView() {
-    const hours = Array.from({ length: HOUR_COUNT }, (_, i) => HOUR_START + i);
+    const hours = HOURS;
     const allDayEvents = weekDays.map(day =>
       eventsForDay(day).filter(e => e.is_all_day)
     );
@@ -471,72 +753,9 @@ export default function Kalender() {
             </div>
 
             {/* Tages-Spalten */}
-            {weekDays.map((day, di) => {
-              const dayEvents = eventsForDay(day).filter(e => !e.is_all_day);
-              return (
-                <div
-                  key={di}
-                  className="flex-1 border-l relative"
-                  style={{ borderColor: gridLine, backgroundColor: isToday(day) ? todayBg : 'transparent' }}
-                >
-                  {/* Stunden-Linien */}
-                  {hours.map(h => (
-                    <div
-                      key={h}
-                      className="absolute w-full border-t"
-                      style={{ top: (h - HOUR_START) * SLOT_PX, borderColor: gridLine }}
-                    />
-                  ))}
-
-                  {/* Events */}
-                  {(() => {
-                    const evLayout = computeEventLayout(dayEvents);
-                    return dayEvents.map(event => {
-                    const top = eventTopPx(event.start_time);
-                    const height = eventHeightPx(event.start_time, event.end_time);
-                    const cfg = getResponseConfig(event.response_status);
-                    const { col, totalCols = 1 } = evLayout.get(event.id) || {};
-                    const leftPct  = (col / totalCols) * 100;
-                    const widthPct = (1 / totalCols) * 100;
-                    return (
-                      <div
-                        key={event.id}
-                        onClick={() => setSelectedEvent(event)}
-                        className="absolute rounded border-l-2 px-1 py-0.5 cursor-pointer hover:opacity-90 overflow-hidden"
-                        style={{
-                          top,
-                          height: Math.max(height, 18),
-                          left: `calc(${leftPct}% + 2px)`,
-                          width: `calc(${widthPct}% - 4px)`,
-                          backgroundColor: isDark ? `${cfg.color}20` : `${cfg.color}18`,
-                          borderLeftColor: cfg.color,
-                          zIndex: 1,
-                        }}
-                        title={event.subject}
-                      >
-                        <p
-                          className="text-xs font-medium leading-tight truncate"
-                          style={{
-                            color: headingColor,
-                            textDecoration: event.is_cancelled ? 'line-through' : 'none',
-                            opacity: event.is_cancelled ? 0.6 : 1,
-                          }}
-                        >
-                          {event.subject}
-                        </p>
-                        {height > 30 && (
-                          <p className="text-xs opacity-60 truncate" style={{ color: textMuted }}>
-                            {formatTime(event.start_time, false)}
-                            {event.location ? ` · ${event.location}` : ''}
-                          </p>
-                        )}
-                      </div>
-                    );
-                  });
-                })()}
-                </div>
-              );
-            })}
+            {weekDays.map((day, di) => (
+              <DayColumn key={di} day={day} dayIndex={di} />
+            ))}
           </div>
         </div>
       </div>
@@ -582,7 +801,7 @@ export default function Kalender() {
                 return (
                   <div
                     key={event.id}
-                    onClick={() => setSelectedEvent(event)}
+                    onClick={() => openEvent(event)}
                     className="flex items-start gap-3 rounded-lg px-3 py-2.5 cursor-pointer border hover:opacity-90 transition-opacity"
                     style={{
                       backgroundColor: rowBg,
@@ -647,7 +866,12 @@ export default function Kalender() {
   }
 
   // ── Render ──────────────────────────────────────────────────────────
+  const sidebarTheme = {
+    cardBg, cardBorder, headingColor, textMuted, rowBg, rowBorder, accentColor, todayBg,
+  };
+
   return (
+    <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
     <div className="h-screen flex flex-col overflow-hidden" style={{ backgroundColor: pageBg }}>
       {/* Toolbar */}
       <div
@@ -758,6 +982,15 @@ export default function Kalender() {
 
       {/* Hauptbereich */}
       <div className="flex flex-1 overflow-hidden">
+        {/* Aufgaben-Sidebar */}
+        <TaskSidebar
+          tasks={myOpenTasks}
+          priorities={priorities}
+          collapsed={sidebarCollapsed}
+          onToggleCollapse={() => setSidebarCollapsed(v => !v)}
+          theme={sidebarTheme}
+        />
+
         {/* Kalender-Inhalt */}
         <div className="flex-1 overflow-hidden flex flex-col">
           {isLoading ? (
@@ -772,13 +1005,24 @@ export default function Kalender() {
         </div>
 
         {/* Detail-Panel */}
-        {selectedEvent && (
+        {selectedEvent ? (
           <EventDetail
             event={selectedEvent}
             onClose={() => setSelectedEvent(null)}
           />
-        )}
+        ) : selectedTaskBlock ? (
+          <TaskBlockDetail
+            task={selectedTaskBlock}
+            onClose={() => setSelectedTaskBlock(null)}
+          />
+        ) : null}
       </div>
+
+      <DragOverlay>
+        {activeDragTask && (
+          <TaskDragOverlay task={activeDragTask} priority={priorityMap.get(activeDragTask.priority_id)} />
+        )}
+      </DragOverlay>
 
       {/* Event-Zähler */}
       <div
@@ -793,5 +1037,6 @@ export default function Kalender() {
         )}
       </div>
     </div>
+    </DndContext>
   );
 }
