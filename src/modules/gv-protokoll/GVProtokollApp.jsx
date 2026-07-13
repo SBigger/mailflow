@@ -378,7 +378,7 @@ export default function GvProtokollApp() {
     const liveTick = async () => {
         if (mediaRecRef.current?.state !== "recording") return;
         await liveTranscribe();
-        if (cfg.liveInterval > 0) liveTimerRef.current = setTimeout(liveTick, cfg.cfg.liveInterval * 1000);
+        if (cfg.liveInterval > 0) liveTimerRef.current = setTimeout(liveTick, cfg.liveInterval * 1000);
     };
 
     const liveTranscribe = async () => {
