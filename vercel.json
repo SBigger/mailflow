@@ -5,5 +5,17 @@
     { "source": "/pdf-estv/:path*", "destination": "https://www.estv.admin.ch/:path*" },
     { "source": "/shab/:path*", "destination": "https://www.shab.ch/:path*" },
     { "source": "/(.*)", "destination": "/index.html" }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Frame-Options", "value": "DENY" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
+        { "key": "Strict-Transport-Security", "value": "max-age=31536000; includeSubDomains" },
+        { "key": "Permissions-Policy", "value": "geolocation=(), microphone=(self), camera=(self)" }
+      ]
+    }
   ]
 }

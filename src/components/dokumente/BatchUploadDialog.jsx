@@ -126,7 +126,7 @@ function ExcelViewer({ file }) {
     setSheets(null); setActiveIdx(0); setColWidths({});
     (async () => {
       try {
-        const { read, utils } = await import("xlsx");
+        const { read, utils } = await import("@e965/xlsx");
         const buf = await file.arrayBuffer();
         const wb  = read(new Uint8Array(buf), { type: "array", cellDates: true });
         const parsed = wb.SheetNames.map(name => {
