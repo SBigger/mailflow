@@ -28,6 +28,7 @@ export const ThemeContext = createContext({
   theme: 'dark', setTheme: () => {},
   navLayout: 'sidebar', setNavLayout: () => {},
   hubWidgets: false, setHubWidgets: () => {},
+  hubOpenMode: 'same', setHubOpenMode: () => {},
 });
 
 // ── Einzelner Navigations-Eintrag ──────────────────────────────────
@@ -233,6 +234,17 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
     scheduleNavPrefsSave();
   }, []);
 
+  // --- Hub: App-Klick öffnet im gleichen Fenster (schnell) oder neuem Fenster ---
+  const [hubOpenMode, setHubOpenModeState] = useState(() =>
+    localStorage.getItem("hub_open_mode") === "new" ? "new" : "same"
+  );
+  const setHubOpenMode = useCallback((mode) => {
+    const m = mode === "new" ? "new" : "same";
+    setHubOpenModeState(m);
+    localStorage.setItem("hub_open_mode", m);
+    scheduleNavPrefsSave();
+  }, []);
+
   // --- Sidebar-Modus: breit (Labels + Gruppen) oder schmale Icon-Leiste ---
   const [railMode, setRailMode] = useState(() => localStorage.getItem("nav_mode") === "rail");
   const toggleRailMode = () => {
@@ -273,6 +285,7 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
       setRailMode(localStorage.getItem("nav_mode") === "rail");
       setNavLayoutState(localStorage.getItem("nav_layout") === "hub" ? "hub" : "sidebar");
       setHubWidgetsState(localStorage.getItem("hub_widgets") === "1");
+      setHubOpenModeState(localStorage.getItem("hub_open_mode") === "new" ? "new" : "same");
     }
   }, [profile]);
 
@@ -369,7 +382,7 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
   if (loading) return <div className="h-screen w-screen flex items-center justify-center" style={{ backgroundColor: pageBg }}>...</div>;
 
   return (
-      <ThemeContext.Provider value={{ theme, setTheme, navLayout, setNavLayout, hubWidgets, setHubWidgets }}>
+      <ThemeContext.Provider value={{ theme, setTheme, navLayout, setNavLayout, hubWidgets, setHubWidgets, hubOpenMode, setHubOpenMode }}>
         <ChartisNotifier />
         <div className="flex h-screen overflow-hidden" style={{ backgroundColor: pageBg }}>
 

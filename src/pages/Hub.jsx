@@ -139,7 +139,7 @@ function Tile({ app, pal, big = false, onOpen }) {
       onClick={(e) => onOpen(app, e)}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
-      title={`${app.label} · Klick: neues Fenster · Alt+Klick: hier öffnen`}
+      title={app.label}
       style={{
         position: 'relative', display: 'flex', flexDirection: 'column',
         alignItems: 'flex-start', gap: 9, textAlign: 'left', width: '100%',
@@ -188,7 +188,7 @@ function Tile({ app, pal, big = false, onOpen }) {
 }
 
 export default function Hub() {
-  const { theme, hubWidgets } = useContext(ThemeContext);
+  const { theme, hubWidgets, hubOpenMode } = useContext(ThemeContext);
   const { profile } = useAuth();
   const navigate = useNavigate();
   const pal = hubPalette(theme);
@@ -282,7 +282,7 @@ export default function Hub() {
   }, [query]);
 
   const handleOpen = (app, e) => {
-    openApp(app, { sameWindow: !!e?.altKey, navigate });
+    openApp(app, { navigate, event: e });
   };
 
   // Kunden-Namen (id → Firma) für Fristen-Treffer, lazy geladen sobald gesucht wird
@@ -299,12 +299,12 @@ export default function Hub() {
   const openDoc = (doc, e) => {
     openApp(
       { href: `/Dokumente?open=${doc.id}`, label: doc.name || doc.filename || 'Dokument' },
-      { sameWindow: !!e?.altKey, navigate, record: false }
+      { navigate, event: e, record: false }
     );
   };
   // Modul öffnen (Kunden/Fristen/Telefon/Mails haben noch keinen Datensatz-Deep-Link)
   const openRoute = (route, label, e) => {
-    openApp({ href: route, label }, { sameWindow: !!e?.altKey, navigate, record: false });
+    openApp({ href: route, label }, { navigate, event: e, record: false });
   };
 
   // Favoriten per Drag & Drop umsortieren
@@ -322,7 +322,7 @@ export default function Hub() {
       else if (e.key === 'ArrowUp') { e.preventDefault(); setSel(s => Math.max(0, s - 1)); }
       else if (e.key === 'Enter') {
         e.preventDefault();
-        openApp(results[Math.min(sel, results.length - 1)], { sameWindow: e.altKey, navigate });
+        openApp(results[Math.min(sel, results.length - 1)], { navigate, event: e });
       }
     } else if (e.key === 'Enter') {
       // Keine App-Treffer → obersten Inhalts-Treffer öffnen (Dokument zuerst)
@@ -419,7 +419,9 @@ export default function Hub() {
           }}>erledigen</em>{vorname ? `, ${vorname}` : ''}?
         </h1>
         <div style={{ color: pal.sub, fontSize: 13, margin: '7px 0 30px', textAlign: 'center' }}>
-          {heute} · Klick öffnet in neuem Fenster · Alt+Klick hier
+          {heute} · {hubOpenMode === 'new'
+            ? 'Klick öffnet in neuem Fenster'
+            : 'Klick öffnet direkt · Strg-Klick = neues Fenster'}
         </div>
 
         {/* Suche */}

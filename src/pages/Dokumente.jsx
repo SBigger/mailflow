@@ -1570,34 +1570,33 @@ export default function Dokumente() {
     }
   }
 
-  // ── URL-Parameter ?open=<doc_id> → Dokument direkt öffnen (von VoxDrop / Smartis) ──
+  // ── URL-Parameter ?open=<doc_id> → Dokument direkt zum Bearbeiten öffnen ──
+  // (aus Hub-Suche / VoxDrop). Verhält sich exakt wie ein Klick auf die
+  // Dokumentzeile im e-Binder (openOrCheckout): nicht ausgecheckt → auschecken
+  // & lokal öffnen, von mir ausgecheckt → Einchecken-Dialog, fremd → Webansicht.
   useEffect(() => {
     if (isLoading || !allDoks.length) return;
     const params = new URLSearchParams(window.location.search);
     const openId = params.get('open');
     if (!openId) return;
     const doc = allDoks.find(d => d.id === openId);
+    // URL sofort bereinigen, damit ein Re-Render den Checkout nicht erneut auslöst
+    window.history.replaceState({}, '', '/Dokumente');
     if (!doc) return;
-    // Kunden-Filter setzen und Dokument öffnen
+    // Kunden-Filter setzen, Dokument hervorheben
     setSelCustomerId(doc.customer_id);
     setHighlightDocId(doc.id);
-    downloadDoc(doc);
-    // URL bereinigen
-    window.history.replaceState({}, '', '/Dokumente');
-  }, [allDoks, isLoading]);
-
-  // ?open=<doc_id> URL parameter support
-  useEffect(() => {
-    if (isLoading || !allDoks.length) return;
-    const params = new URLSearchParams(window.location.search);
-    const openId = params.get("open");
-    if (!openId) return;
-    const doc = allDoks.find(d => d.id === openId);
-    if (!doc) return;
-    setSelCustomerId(doc.customer_id);
-    setHighlightDocId(doc.id);
-    downloadDoc(doc);
-    window.history.replaceState({}, '', '/Dokumente');
+    // Gleiche Logik wie openOrCheckout in renderDocRow:
+    const url = doc.sharepoint_web_url || signedUrls[doc.id];
+    if (!doc.checked_out_by) {
+      handleCheckout(doc);          // auschecken + lokal öffnen (Artis-Agent)
+    } else if (doc.checked_out_by === user?.id) {
+      openCheckin(doc);             // von mir ausgecheckt → Einchecken-Dialog
+    } else if (url) {
+      window.open(url, '_blank');   // fremd ausgecheckt → nur Webansicht
+    } else {
+      toast.error('URL nicht verfügbar.');
+    }
   }, [allDoks, isLoading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Button-Klick animieren (kurzes Scale-Feedback)

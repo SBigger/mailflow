@@ -41,7 +41,7 @@ import 'react-quill-new/dist/quill.snow.css';
 
 export default function Settings() {
     const queryClient = useQueryClient();
-    const {theme, setTheme, navLayout, setNavLayout, hubWidgets, setHubWidgets} = useContext(ThemeContext);
+    const {theme, setTheme, navLayout, setNavLayout, hubWidgets, setHubWidgets, hubOpenMode, setHubOpenMode} = useContext(ThemeContext);
     const [activeTab, setActiveTab] = useState('signature');
     const [emailSignature, setEmailSignature] = useState('');
     const [chatSignature, setChatSignature] = useState('');
@@ -2473,6 +2473,52 @@ export default function Settings() {
                                     </span>
                                 </span>
                             </label>
+
+                            {/* App-Öffnen: gleiches vs. neues Fenster */}
+                            <div className="mt-5 max-w-2xl">
+                                <div className="text-sm font-semibold mb-1" style={{color: headingColor}}>
+                                    App-Klick im Hub öffnet…
+                                </div>
+                                <p className="text-xs mb-3" style={{color: textMuted}}>
+                                    „Gleiches Fenster" ist deutlich schneller (kein Neustart, wie die Seitenleiste).
+                                    „Neues Fenster" erlaubt mehrere Apps parallel, lädt aber jedes Mal neu.
+                                    Tipp: Strg-Klick öffnet immer ein neues Fenster.
+                                </p>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <button
+                                        onClick={() => setHubOpenMode('same')}
+                                        className="text-left rounded-2xl border-2 p-4 transition-all duration-200 hover:scale-[1.01]"
+                                        style={{
+                                            borderColor: hubOpenMode !== 'new' ? '#7a9b7f' : cardBorder,
+                                            boxShadow: hubOpenMode !== 'new' ? '0 0 0 3px rgba(122,155,127,0.22)' : 'none',
+                                            backgroundColor: rowBg,
+                                        }}
+                                    >
+                                        <div className="font-semibold text-sm mb-1" style={{color: headingColor}}>
+                                            Gleiches Fenster <span className="text-xs font-normal" style={{color: textMuted}}>(schnell · empfohlen)</span>
+                                        </div>
+                                        <p className="text-xs" style={{color: textMuted}}>
+                                            Öffnet sofort im laufenden Programm, ohne Neustart.
+                                        </p>
+                                    </button>
+                                    <button
+                                        onClick={() => setHubOpenMode('new')}
+                                        className="text-left rounded-2xl border-2 p-4 transition-all duration-200 hover:scale-[1.01]"
+                                        style={{
+                                            borderColor: hubOpenMode === 'new' ? '#7a9b7f' : cardBorder,
+                                            boxShadow: hubOpenMode === 'new' ? '0 0 0 3px rgba(122,155,127,0.22)' : 'none',
+                                            backgroundColor: rowBg,
+                                        }}
+                                    >
+                                        <div className="font-semibold text-sm mb-1" style={{color: headingColor}}>
+                                            Neues Fenster
+                                        </div>
+                                        <p className="text-xs" style={{color: textMuted}}>
+                                            Jede App in eigenem Fenster — mehrere parallel, aber langsamer.
+                                        </p>
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 )}

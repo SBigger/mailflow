@@ -169,7 +169,13 @@ function SuchenTab({ gemeinden, onDetail }) {
     const params = { zweck: f.zweck.trim(), name: f.name.trim(), kanton: f.kanton.trim(), form: f.form, bfsId: gem?.bfsId };
     if (!Object.values(params).some(Boolean)) return toast.error("Mindestens ein Filter nötig.");
 
-    setLaeuft(true); setMeldung("Suche läuft …");
+    // Ohne Ort-Filter durchsucht LINDAS die ganze Schweiz im Volltext (~1 Min).
+    // Mit Gemeinde oder Kanton sind es ~2 Sekunden.
+    const schweizweit = !gem && !params.kanton;
+    setLaeuft(true);
+    setMeldung(schweizweit
+      ? "Schweizweite Volltextsuche – das dauert bis zu 2 Minuten. Tipp: Gemeinde oder Kanton eingeben macht es sofort schnell."
+      : "Suche läuft …");
     try {
       const treffer = await sucheFirmen(params);
       setRows(treffer);
@@ -201,7 +207,7 @@ function SuchenTab({ gemeinden, onDetail }) {
         </Feld></div>
         <Feld label="Name enthält"><input className={inputCls} value={f.name} onChange={setzen("name")} onKeyDown={(e) => e.key === "Enter" && suchen()} /></Feld>
         <Feld label="Gemeinde">
-          <input className={inputCls} list="gemeindeliste" value={f.gemeinde} onChange={setzen("gemeinde")} placeholder="Arbon" />
+          <input className={inputCls} list="gemeindeliste" value={f.gemeinde} onChange={setzen("gemeinde")} placeholder="Rorschach" />
           <datalist id="gemeindeliste">
             {gemeinden.map((g) => <option key={g.bfsId} value={g.name}>{g.kanton}</option>)}
           </datalist>
