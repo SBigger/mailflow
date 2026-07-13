@@ -6,9 +6,19 @@
 import { toast } from 'sonner';
 import { itemHref, recordAppOpen } from './appCatalog';
 
-export function openApp(item, { sameWindow = false, navigate, record = true } = {}) {
+export function openApp(item, { sameWindow, navigate, record = true, event } = {}) {
   if (record) recordAppOpen(item);
   const href = itemHref(item);
+
+  // Öffnen-Modus: explizit (sameWindow) hat Vorrang; sonst aus der Einstellung
+  // (hub_open_mode, Standard 'same' = schnell im gleichen Fenster). Strg/Cmd/
+  // Shift/Mittelklick erzwingt IMMER ein neues Fenster.
+  if (sameWindow === undefined) {
+    let mode = 'same';
+    try { mode = localStorage.getItem('hub_open_mode') || 'same'; } catch { /* Standard */ }
+    const forceNew = !!(event && (event.ctrlKey || event.metaKey || event.shiftKey || event.button === 1));
+    sameWindow = mode === 'same' && !forceNew;
+  }
 
   const openHere = () => {
     if (navigate) navigate(href);
