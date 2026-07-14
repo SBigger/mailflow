@@ -38,6 +38,17 @@ const STATUS_BADGE = {
 
 const DATETIME = (s) => s ? new Date(s).toLocaleString('de-CH', { dateStyle: 'short', timeStyle: 'short' }) : '—';
 
+// Belegstatus, bei denen die Zahlung bereits per Bankabgleich verbucht ist –
+// die lassen sich nicht per Rückmeldung zurückholen, nur über «Lauf zurücknehmen».
+const VERBUCHT = new Set(['bezahlt', 'teilbezahlt']);
+
+const BELEG_STATUS_LABEL = {
+  offen:      'offen (OP)',
+  ebanking:   'im E-Banking – nicht verbucht',
+  teilbezahlt:'teilbezahlt (verbucht)',
+  bezahlt:    'bezahlt (verbucht)',
+};
+
 export default function Zahlungslauf() {
   const { mandant, canWrite } = useMandant();
   const navigate = useNavigate();
@@ -54,6 +65,7 @@ export default function Zahlungslauf() {
   const [zahlstelleId, setZahlstelleId] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [exportError, setExportError] = useState(null);
   const [view, setView] = useState('wizard');        // 'wizard' | 'historie'
   const [historie, setHistorie] = useState([]);
   const [histLoading, setHistLoading] = useState(false);
@@ -99,9 +111,12 @@ export default function Zahlungslauf() {
     if (!rueckLauf) return;
     setRueckSaving(true);
     try {
-      await zahlungslaufApi.rueckmelden(rueckLauf.id, rueckPositionen.map(p => ({ position_id: p.id, status: p.choice })));
+      // Nur Positionen, deren Beleg noch nicht per Bank verbucht ist, sind änderbar.
+      const aenderbar = rueckPositionen.filter(p => !VERBUCHT.has(p.beleg_status));
+      await zahlungslaufApi.rueckmelden(rueckLauf.id, aenderbar.map(p => ({ position_id: p.id, status: p.choice })));
       setRueckLauf(null);
       await loadHistorie();
+      await loadBelege();   // stornierte Belege sind wieder OP → Auswahl aktualisieren
     } catch (e) { alert('Fehler: ' + e.message); }
     finally { setRueckSaving(false); }
   };
@@ -121,18 +136,31 @@ export default function Zahlungslauf() {
 
   const today = toISO(new Date());
 
-  useEffect(() => {
+  // Offene Belege (neu) laden und fällige vorauswählen
+  const loadBelege = async () => {
     if (!mandant) return;
     setLoading(true);
-    kreditorenApi.listOffen(mandant.id)
-      .then(data => {
-        setBelege(data);
-        // Nur fällige (faelligkeit <= heute) automatisch auswählen
-        const auto = new Set(data.filter(b => b.faelligkeit <= today).map(b => b.id));
-        setSelected(auto);
-      })
-      .finally(() => setLoading(false));
-  }, [mandant?.id]);
+    try {
+      const data = await kreditorenApi.listOffen(mandant.id);
+      setBelege(data);
+      setSelected(new Set(data.filter(b => b.faelligkeit <= today).map(b => b.id)));
+    } finally { setLoading(false); }
+  };
+
+  // Wizard komplett zurücksetzen – sonst hängt nach einem Export der alte
+  // Stand (Step 2, bereits exportierte Belege) und «Neuer Lauf» tut nichts.
+  const neuerLauf = () => {
+    setView('wizard');
+    setStep(0);
+    setAmounts({});
+    setSkonti(new Set());
+    setZusatz(new Set());
+    setExportError(null);
+    setValuta(addDays(2));
+    loadBelege();
+  };
+
+  useEffect(() => { loadBelege(); }, [mandant?.id]);
 
   // Firmenzahlstellen laden + Standard vorauswählen
   useEffect(() => {
@@ -247,6 +275,7 @@ export default function Zahlungslauf() {
   const handleExport = async () => {
     if (!canExport) return;
     setSaving(true);
+    setExportError(null);
     try {
       const laufNr = `ZL-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
       const xml = generatePain001({
@@ -306,6 +335,8 @@ export default function Zahlungslauf() {
       a.click();
       URL.revokeObjectURL(a.href);
       setStep(2);
+    } catch (e) {
+      setExportError(e.message || 'Unbekannter Fehler beim Export.');
     } finally {
       setSaving(false);
     }
@@ -328,7 +359,7 @@ export default function Zahlungslauf() {
       <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8, padding: '12px 20px', background: '#fff', borderBottom: '1px solid #e4e9e4' }}>
         {/* View-Umschalter */}
         <div style={{ display: 'flex', gap: 3, background: '#f0f3f0', borderRadius: 8, padding: 3 }}>
-          <button onClick={() => setView('wizard')} style={tabStyle(view === 'wizard')}>＋ Neuer Lauf</button>
+          <button onClick={neuerLauf} style={tabStyle(view === 'wizard')}>＋ Neuer Lauf</button>
           <button onClick={() => { setView('historie'); loadHistorie(); }} style={tabStyle(view === 'historie')}>📋 Historie</button>
         </div>
         <div style={{ width: 1, height: 18, background: '#d4dcd4' }} />
@@ -427,18 +458,18 @@ export default function Zahlungslauf() {
                         ) : <span style={{ color: '#c5cdc5', fontSize: 11.5 }}>—</span>}
                       </td>
                       <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                        {canWrite && z.status !== 'storniert' ? (
-                          <>
-                            <button onClick={() => openRueckmeldung(z)}
-                              style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #d4dcd4', background: '#fff', fontSize: 11.5, cursor: 'pointer', color: '#3d6641', marginRight: 6 }}>
-                              Rückmeldung
-                            </button>
-                            <button onClick={() => stornierenLauf(z)}
-                              style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #e0c0c0', background: '#fff', fontSize: 11.5, cursor: 'pointer', color: '#8a2d2d' }}>
-                              Zurücknehmen
-                            </button>
-                          </>
-                        ) : <span style={{ color: '#c5cdc5', fontSize: 11.5 }}>—</span>}
+                        {/* Auch abgeschlossene (verbuchte/stornierte) Läufe lassen sich öffnen –
+                            einzelne noch nicht verbuchte Belege können dort als OP zurückgeholt werden. */}
+                        <button onClick={() => openRueckmeldung(z)}
+                          style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #d4dcd4', background: '#fff', fontSize: 11.5, cursor: 'pointer', color: '#3d6641', marginRight: 6 }}>
+                          {canWrite && z.status !== 'storniert' ? 'Rückmeldung' : 'Positionen'}
+                        </button>
+                        {canWrite && z.status !== 'storniert' && (
+                          <button onClick={() => stornierenLauf(z)}
+                            style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #e0c0c0', background: '#fff', fontSize: 11.5, cursor: 'pointer', color: '#8a2d2d' }}>
+                            Zurücknehmen
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );
@@ -447,7 +478,7 @@ export default function Zahlungslauf() {
             </table>
           )}
           <div style={{ padding: '10px 20px', fontSize: 11, color: '#94a394' }}>
-            Rückmeldung = per Bankabstimmung (camt.053) verbuchte Zahlungen; Status „Verbucht", sobald alle abgeglichen sind. · <strong>Rückmeldung</strong>: pro Zahlung ausgeführt/storniert markieren (storniert → Rechnung wieder offen). · <strong>Zurücknehmen</strong>: ganzen Lauf rückgängig machen, Rechnungen werden wieder zahlbar.
+            Rückmeldung = per Bankabstimmung (camt.053) verbuchte Zahlungen; Status „Verbucht", sobald alle abgeglichen sind. · <strong>Rückmeldung</strong> (auch bei abgeschlossenen Läufen): pro Zahlung ausgeführt oder «↩ Zurück als OP» — noch nicht verbuchte Rechnungen werden wieder offen und zahlbar. Bereits per Bank verbuchte Zahlungen lassen sich nur über <strong>Zurücknehmen</strong> (ganzer Lauf, mit Gegenbuchung) rückgängig machen.
           </div>
         </div>
       ) : step === 2 ? (
@@ -458,7 +489,7 @@ export default function Zahlungslauf() {
           <div style={{ fontSize: 11.5, color: '#94a394', maxWidth: 420, textAlign: 'center', marginTop: 4 }}>
             Datei jetzt im E-Banking deiner Bank hochladen (Datentransfer / Zahlungen importieren) und dort freigeben.
           </div>
-          <button onClick={() => { setStep(0); }} style={{ marginTop: 6, padding: '6px 16px', borderRadius: 8, border: '1px solid #d4dcd4', background: '#fff', fontSize: 12, cursor: 'pointer' }}>Neuer Zahlungslauf</button>
+          <button onClick={neuerLauf} style={{ marginTop: 6, padding: '6px 16px', borderRadius: 8, border: '1px solid #d4dcd4', background: '#fff', fontSize: 12, cursor: 'pointer' }}>Neuer Zahlungslauf</button>
         </div>
       ) : step === 1 ? (
         /* ── Schritt 2: Prüfung ── */
@@ -485,6 +516,13 @@ export default function Zahlungslauf() {
             {errorCount > 0 && (
               <div style={{ marginTop: 12, background: '#fdf0f0', border: '1px solid #e0b8b8', borderRadius: 10, padding: '10px 14px', fontSize: 12.5, color: '#8a2d2d' }}>
                 ⚠ {errorCount} {errorCount === 1 ? 'Zahlung hat' : 'Zahlungen haben'} Fehler – Export ist blockiert bis alle Fehler behoben sind.
+              </div>
+            )}
+
+            {exportError && (
+              <div style={{ marginTop: 12, background: '#fdf0f0', border: '1px solid #e0b8b8', borderRadius: 10, padding: '10px 14px', fontSize: 12.5, color: '#8a2d2d', display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ flex: 1 }}>❌ Export fehlgeschlagen: {exportError}</span>
+                <button onClick={neuerLauf} style={{ padding: '4px 12px', borderRadius: 7, border: '1px solid #e0b8b8', background: '#fff', fontSize: 11.5, cursor: 'pointer', color: '#8a2d2d', fontWeight: 600, whiteSpace: 'nowrap' }}>Lauf neu starten</button>
               </div>
             )}
           </div>
@@ -795,33 +833,50 @@ export default function Zahlungslauf() {
                   <thead><tr>
                     <th style={hdr}>Beleg-Nr.</th>
                     <th style={hdr}>Lieferant</th>
+                    <th style={hdr}>Beleg</th>
                     <th style={{ ...hdr, textAlign:'right' }}>Betrag CHF</th>
                     <th style={{ ...hdr, textAlign:'center' }}>Rückmeldung</th>
                   </tr></thead>
                   <tbody>
-                    {rueckPositionen.map(p => (
+                    {rueckPositionen.map(p => {
+                      const verbucht = VERBUCHT.has(p.beleg_status);
+                      const gesperrt = !canWrite || verbucht || rueckLauf.status === 'storniert';
+                      return (
                       <tr key={p.id}>
                         <td style={{ ...td, fontFamily:'monospace', fontSize:12 }}>{p.beleg_nr}</td>
                         <td style={{ ...td, fontWeight:500 }}>{p.lieferant_name}</td>
+                        <td style={{ ...td, fontSize:11, color: verbucht ? '#166534' : '#92400e' }}>
+                          {BELEG_STATUS_LABEL[p.beleg_status] ?? p.beleg_status}
+                        </td>
                         <td style={{ ...td, textAlign:'right', fontVariantNumeric:'tabular-nums' }}>{CHF(p.betrag)}</td>
                         <td style={{ ...td, textAlign:'center', whiteSpace:'nowrap' }}>
-                          <div style={{ display:'inline-flex', border:'1px solid #d4dcd4', borderRadius:7, overflow:'hidden' }}>
-                            <button onClick={() => setChoice(p.id, 'ausgefuehrt')}
-                              style={{ padding:'4px 10px', border:'none', fontSize:11.5, cursor:'pointer',
-                                background: p.choice==='ausgefuehrt' ? '#7a9b7f' : '#fff',
-                                color: p.choice==='ausgefuehrt' ? '#fff' : '#6b826b', fontWeight:600 }}>
-                              ✓ Ausgeführt
-                            </button>
-                            <button onClick={() => setChoice(p.id, 'storniert')}
-                              style={{ padding:'4px 10px', border:'none', borderLeft:'1px solid #d4dcd4', fontSize:11.5, cursor:'pointer',
-                                background: p.choice==='storniert' ? '#c0392b' : '#fff',
-                                color: p.choice==='storniert' ? '#fff' : '#8a2d2d', fontWeight:600 }}>
-                              ✕ Storniert
-                            </button>
-                          </div>
+                          {gesperrt ? (
+                            <span style={{ fontSize:11, color:'#94a394' }}>
+                              {verbucht
+                                ? 'per Bank verbucht – nur via «Zurücknehmen»'
+                                : p.choice === 'storniert' ? 'storniert' : 'ausgeführt'}
+                            </span>
+                          ) : (
+                            <div style={{ display:'inline-flex', border:'1px solid #d4dcd4', borderRadius:7, overflow:'hidden' }}>
+                              <button onClick={() => setChoice(p.id, 'ausgefuehrt')}
+                                style={{ padding:'4px 10px', border:'none', fontSize:11.5, cursor:'pointer',
+                                  background: p.choice==='ausgefuehrt' ? '#7a9b7f' : '#fff',
+                                  color: p.choice==='ausgefuehrt' ? '#fff' : '#6b826b', fontWeight:600 }}>
+                                ✓ Ausgeführt
+                              </button>
+                              <button onClick={() => setChoice(p.id, 'storniert')}
+                                title="Zahlung nicht ausgeführt – Rechnung wieder als offener Posten zurückführen"
+                                style={{ padding:'4px 10px', border:'none', borderLeft:'1px solid #d4dcd4', fontSize:11.5, cursor:'pointer',
+                                  background: p.choice==='storniert' ? '#c0392b' : '#fff',
+                                  color: p.choice==='storniert' ? '#fff' : '#8a2d2d', fontWeight:600 }}>
+                                ↩ Zurück als OP
+                              </button>
+                            </div>
+                          )}
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               )}
@@ -831,11 +886,18 @@ export default function Zahlungslauf() {
                 {rueckPositionen.filter(p=>p.choice==='ausgefuehrt').length} ausgeführt · {rueckPositionen.filter(p=>p.choice==='storniert').length} storniert
               </span>
               <span style={{ display:'flex', gap:8 }}>
-                <button onClick={() => setRueckLauf(null)} disabled={rueckSaving} style={{ padding:'7px 14px', borderRadius:8, border:'1px solid #d4dcd4', background:'#fff', fontSize:12.5, cursor:'pointer' }}>Abbrechen</button>
-                <button onClick={saveRueckmeldung} disabled={rueckSaving || rueckLoading || rueckPositionen.length===0}
-                  style={{ padding:'7px 16px', borderRadius:8, border:'none', background:'#3d6641', color:'#fff', fontSize:12.5, fontWeight:600, cursor: rueckSaving ? 'default':'pointer' }}>
-                  {rueckSaving ? 'Speichert…' : 'Rückmeldung speichern'}
-                </button>
+                <button onClick={() => setRueckLauf(null)} disabled={rueckSaving} style={{ padding:'7px 14px', borderRadius:8, border:'1px solid #d4dcd4', background:'#fff', fontSize:12.5, cursor:'pointer' }}>Schliessen</button>
+                {(() => {
+                  const aenderbar = rueckPositionen.filter(p => !VERBUCHT.has(p.beleg_status));
+                  const moeglich = canWrite && rueckLauf.status !== 'storniert' && aenderbar.length > 0;
+                  if (!moeglich) return null;
+                  return (
+                    <button onClick={saveRueckmeldung} disabled={rueckSaving || rueckLoading}
+                      style={{ padding:'7px 16px', borderRadius:8, border:'none', background:'#3d6641', color:'#fff', fontSize:12.5, fontWeight:600, cursor: rueckSaving ? 'default':'pointer' }}>
+                      {rueckSaving ? 'Speichert…' : 'Rückmeldung speichern'}
+                    </button>
+                  );
+                })()}
               </span>
             </div>
           </div>
