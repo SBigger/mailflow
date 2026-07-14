@@ -16,9 +16,10 @@
 .gv-body {
     width: 100%;
     max-width: 100%;
+    height: 100%;
     display: flex;
     flex-direction: column;
-    min-height: 100vh;
+    min-height: 0;
     color: var(--fg);
     font-family: "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, sans-serif;
     background:
@@ -28,18 +29,20 @@
     background-attachment: fixed;
 }
 
-header {
+/* WICHTIG: alle Selektoren auf .gv-body scopen — sonst treffen `main`/`header`
+   auch das Smartis-Layout drumherum und zerlegen es (App-<main> wird zum Grid). */
+.gv-body header {
     display: flex; align-items: center; gap: 11px; padding: 12px 18px; position: sticky; top: 0; z-index: 10;
     background: rgba(255, 255, 255, .72); backdrop-filter: blur(14px) saturate(160%); border-bottom: 1px solid var(--border);
 }
 
-header h1 {
+.gv-body header h1 {
     font-size: 18px; margin: 0; font-weight: 800; letter-spacing: -.2px; display: flex; align-items: center; gap: 8px;
     background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent;
 }
 
-header .sub { color: var(--muted); font-size: 12px; font-weight: 500; }
-.spacer { flex: 1; }
+.gv-body header .sub { color: var(--muted); font-size: 12px; font-weight: 500; }
+.gv-body .spacer { flex: 1; }
 
 .btn {
     background: var(--surface); color: var(--fg2); border: 1px solid var(--border-2); border-radius: 11px;
@@ -54,8 +57,8 @@ header .sub { color: var(--muted); font-size: 12px; font-weight: 500; }
 
 .timer { font-variant-numeric: tabular-nums; font-size: 15px; font-weight: 700; color: var(--fg2); min-width: 56px; text-align: center; }
 
-main { flex: 1; min-height: 0; display: grid; grid-template-columns: 270px 14px 1fr 14px 340px; gap: 0; padding: 14px; }
-.col { display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 18px; box-shadow: var(--shadow); overflow: hidden; }
+.gv-body main { flex: 1; min-height: 0; min-width: 0; display: grid; grid-template-columns: 270px 14px 1fr 14px 340px; gap: 0; padding: 14px; overflow: hidden; }
+.gv-body .col { display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 18px; box-shadow: var(--shadow); overflow: hidden; }
 
 /* Ziehbare Trenner zwischen den Spalten */
 .col-resizer { position: relative; cursor: col-resize; touch-action: none; }
