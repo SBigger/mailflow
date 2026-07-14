@@ -55,6 +55,56 @@ export default async function handler(req, res) {
   const auth = 'Basic ' + Buffer.from(`${user}:${pass}`).toString('base64')
 
   try {
+    // Namenssuche fuer den Neukunden-Assistenten. Gleiche Antwortform wie die
+    // Edge Function zefix-search, damit beide Wege austauschbar sind.
+    // Achtung: Zefix liefert bei der SUCHE keine Adresse und keinen Zweck – die
+    // gibt es nur im Detailabruf (?uid=). Der Assistent reichert deshalb nach
+    // der Auswahl per Detailabruf an.
+    if (req.query.q) {
+      const q = String(req.query.q).trim()
+      if (q.length < 3) return res.status(400).json({ error: 'Mindestens 3 Zeichen erforderlich' })
+
+      let treffer = []
+      if (/^CHE[.\-\s]?\d/i.test(q)) {
+        const uid = q.replace(/[^A-Za-z0-9]/g, '').toUpperCase()
+        const r = await fetch(`${BASE}/company/uid/${uid}`, { headers: { Authorization: auth, Accept: 'application/json' } })
+        if (r.ok) {
+          const d = await r.json()
+          treffer = Array.isArray(d) ? d : [d]
+        }
+      } else {
+        const r = await fetch(`${BASE}/company/search`, {
+          method: 'POST',
+          headers: { Authorization: auth, Accept: 'application/json', 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: `${q}*`, activeOnly: true }),
+        })
+        if (!r.ok) throw new Error(`Zefix ${r.status}`)
+        const d = await r.json()
+        treffer = Array.isArray(d) ? d : []
+      }
+
+      const fmt = (raw) => {
+        const z = String(raw ?? '').replace(/\D/g, '')
+        return z.length === 9 ? `CHE-${z.slice(0, 3)}.${z.slice(3, 6)}.${z.slice(6)}` : (raw ?? null)
+      }
+      res.setHeader('Cache-Control', 'private, max-age=300')
+      return res.status(200).json({
+        results: treffer.slice(0, 20).map((c) => ({
+          name: c.name,
+          uid: c.uid ? fmt(c.uid) : null,
+          uid_raw: c.uid || null,
+          ehraid: c.ehraid,
+          sitz: c.legalSeat || c.address?.city || null,
+          plz: c.address?.swissZipCode || null,
+          strasse: c.address ? [c.address.street, c.address.houseNumber].filter(Boolean).join(' ') : null,
+          kanton: c.canton || null,
+          rechtsform: c.legalForm?.shortName?.de || c.legalForm?.name?.de || null,
+          status: c.status,
+          zweck: c.purpose || null,
+        })),
+      })
+    }
+
     if (req.query.gemeinden) {
       if (!gemeindenCache) {
         const r = await fetch(`${BASE}/community`, { headers: { Authorization: auth, Accept: 'application/json' } })

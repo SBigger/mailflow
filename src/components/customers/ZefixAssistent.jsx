@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useContext } from 'react';
-import { supabase } from '@/api/supabaseClient';
+import { firmenSuche, firmenDetail } from '@/lib/handelsregister';
 import { ThemeContext } from '@/Layout';
 import { Search, Building2, MapPin, X, Loader2, AlertCircle } from 'lucide-react';
 
@@ -36,11 +36,7 @@ export default function ZefixAssistent({ open, onClose, onCreate, fillMode = fal
     setError(null);
     setSearched(true);
     try {
-      const { data, error: fnErr } = await supabase.functions.invoke('zefix-search', {
-        body: { query: q.trim() },
-      });
-      if (fnErr) throw fnErr;
-      setResults(data?.results || []);
+      setResults(await firmenSuche(q));
     } catch (e) {
       const msg = e?.message || String(e);
       if (msg.includes('ZEFIX_USER') || msg.includes('nicht konfiguriert')) {
@@ -65,15 +61,29 @@ export default function ZefixAssistent({ open, onClose, onCreate, fillMode = fal
     }
   };
 
-  const handleSelect = (r) => {
+  const handleSelect = async (r) => {
+    // Die Zefix-Suche liefert keine Adresse – die steht nur im Detaildatensatz.
+    // Ohne dieses Nachladen bliebe der neue Kunde ohne Strasse und PLZ.
+    let adresse = { ort: r.sitz || '', plz: r.plz || '', strasse: r.strasse || '', kanton: r.kanton || '' };
+    if (r.uid_raw) {
+      try {
+        const d = await firmenDetail(r.uid_raw);
+        const a = d?.adresse ?? {};
+        adresse = {
+          ort: a.city || d?.sitz || adresse.ort,
+          plz: a.swissZipCode || adresse.plz,
+          strasse: [a.street, a.houseNumber].filter(Boolean).join(' ') || adresse.strasse,
+          kanton: d?.kanton || adresse.kanton,
+        };
+      } catch {
+        // Detailabruf fehlgeschlagen – lieber ohne Adresse anlegen als gar nicht.
+      }
+    }
     const base = {
       company_name: r.name,
       uid_nr: r.uid || '',
       rechtsform: r.rechtsform || '',
-      ort: r.sitz || '',
-      plz: r.plz || '',
-      strasse: r.strasse || '',
-      kanton: r.kanton || '',
+      ...adresse,
       zefix_ehraid: r.ehraid || null,
     };
     if (fillMode) { onCreate(base); return; }
