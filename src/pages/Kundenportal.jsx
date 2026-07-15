@@ -163,7 +163,7 @@ export default function Kundenportal() {
   async function copyLink(u) {
     setBusyId(u.id);
     try {
-      const { data } = await functions.invoke("portal-api", { action: "create-link", portal_user_id: u.id });
+      const { data } = await functions.invoke("portal-api", { action: "create-link", portal_user_id: u.id, appUrl: window.env.HOSTNAME });
       if (!data?.link) throw new Error(data?.error || "Kein Link erhalten.");
       try { await navigator.clipboard.writeText(data.link); toast.success("Anmeldelink kopiert (7 Tage gültig)."); }
       catch { window.prompt("Anmeldelink (7 Tage gültig) — kopieren mit Strg+C:", data.link); }
