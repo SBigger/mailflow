@@ -290,7 +290,7 @@ export default function Portal() {
   // ── Rendering ─────────────────────────────────────────────────────────────
   if (phase === "boot" || phase === "loading") {
     return (
-      <div className="pp"><style>{CSS}</style>
+      <div className="pp">
         <div className="loadwrap"><Loader2 size={26} className="animate-spin" /><span>Einen Moment…</span></div>
       </div>
     );
@@ -298,7 +298,7 @@ export default function Portal() {
 
   if (phase === "login" || phase === "sent") {
     return (
-      <div className="pp"><style>{CSS}</style>
+      <div className="pp">
         <div className="lwrap">
           <div className="lcard">
             <div className="mk"><ShieldCheck size={22} style={{ color: "var(--accent)" }} /> Smartis <span style={{ color: "var(--muted)", fontWeight: 400 }}>· Kundenportal</span></div>
@@ -331,7 +331,7 @@ export default function Portal() {
 
   // phase === "docs"
   return (
-    <div className="pp"><style>{CSS}</style>
+    <div className="pp">
       <div className="topbar">
         <span className="mk"><ShieldCheck size={20} style={{ color: "var(--accent)" }} /> Smartis <span className="badge">Kundenportal</span></span>
         <div className="who">
