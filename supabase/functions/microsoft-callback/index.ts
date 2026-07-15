@@ -15,7 +15,7 @@ Deno.serve(async (req) => {
   const clientId = Deno.env.get('MICROSOFT_CLIENT_ID')!
   const clientSecret = Deno.env.get('MICROSOFT_CLIENT_SECRET')!
   const tenantId = Deno.env.get('MICROSOFT_TENANT_ID') || 'common'
-  const redirectUri = Deno.env.get('MICROSOFT_REDIRECT_URI')!
+  const redirectUri = `${Deno.env.get('APP_URL')!}/functions/v1/microsoft-callback`
 
   const tokenRes = await fetch(
     `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,

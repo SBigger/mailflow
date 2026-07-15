@@ -5,7 +5,7 @@ import { ThemeContext } from "@/Layout";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import {
-  Upload, Trash2, Download, PowerOff, ArrowLeft, Table2, UserSquare2,
+  Upload, Trash2, Download, ArrowLeft, Table2, UserSquare2,
   RefreshCw, Building2,
 } from "lucide-react";
 import { useIsMobile } from "@/components/mobile/useIsMobile";
@@ -427,7 +427,7 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
 
   // ── Render ──────────────────────────────────────────────────
   return (
-    <div className="flex flex-col h-screen overflow-hidden" style={{ backgroundColor: isArtis ? '#f2f5f2' : isLight ? '#f0f0f6' : '#f2f5f2' }}>
+    <div className="flex flex-col h-screen w-screen overflow-hidden" style={{ backgroundColor: isArtis ? '#f2f5f2' : isLight ? '#f0f0f6' : '#f2f5f2' }}>
       {Header}
 
       {personTypeFilter === "telefonliste" ? (
@@ -444,7 +444,7 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
           />
         </div>
       ) : (
-        <div className="flex-1 flex overflow-hidden">
+        <div className="flex h-screen overflow-hidde">
           {/* Mini-Liste links */}
           <div className="flex-shrink-0" style={{ width: 280 }}>
             <CustomerMiniList
@@ -483,10 +483,14 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
                   </div>
                 )}
 
-                {/* Stammdaten oben (editierbar) + Aktionen (Inaktiv / Löschen) als Overlay-Icons oben rechts */}
-                <div style={{ position: "relative" }}>
-                  <CustomerHeader customer={currentCustomer} staff={appUsers} onUpdate={handleUpdate} />
-                  <div style={{ position: "absolute", top: 12, right: 16, display: "flex", gap: 6 }}>
+                {/* Stammdaten oben (editierbar); Aktionen sitzen IN der Kopfzeile
+                    (Aktiv/Inaktiv-Schalter bringt CustomerHeader selbst mit) */}
+                <div>
+                  <CustomerHeader
+                    customer={currentCustomer}
+                    staff={appUsers}
+                    onUpdate={handleUpdate}
+                    actions={<>
                     {!isPrivatperson && !isKontakt && (
                       <button
                         onClick={() => setShowZefixFill(true)}
@@ -497,14 +501,6 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
                         <Building2 className="h-4 w-4" />
                       </button>
                     )}
-                    <button
-                      onClick={() => handleUpdate({ aktiv: currentCustomer.aktiv === false ? true : false })}
-                      title={currentCustomer.aktiv === false ? "Reaktivieren (aktuell inaktiv)" : "Als inaktiv markieren"}
-                      className={`transition-colors rounded p-1 ${currentCustomer.aktiv === false ? 'text-red-400 hover:text-red-500' : 'hover:text-red-400'}`}
-                      style={{ color: currentCustomer.aktiv === false ? undefined : (isArtis ? '#8aaa8f' : isLight ? '#b0b0cc' : '#52525b') }}
-                    >
-                      <PowerOff className="h-4 w-4" />
-                    </button>
                     <button
                       onClick={() => {
                         const label = isNebendomizil
@@ -520,7 +516,8 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
-                  </div>
+                    </>}
+                  />
                 </div>
 
                 {/* Tabs */}

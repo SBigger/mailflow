@@ -77,7 +77,7 @@ function CollapsibleSectionLabel({ icon: Icon, label, color, lineColor, open, on
   );
 }
 
-export default function CustomerHeader({ customer, staff, onUpdate }) {
+export default function CustomerHeader({ customer, staff, onUpdate, actions = null }) {
   const { theme } = useContext(ThemeContext);
   const isLight = theme === 'light';
   const isArtis = theme === 'artis';
@@ -266,6 +266,14 @@ export default function CustomerHeader({ customer, staff, onUpdate }) {
         >
           {isInaktiv ? 'INAKTIV' : 'Aktiv'}
         </button>
+
+        {/* Zusätzliche Aktionen (z.B. Zefix abfüllen, Löschen) – in der Zeile,
+            damit sie das Namensfeld nicht überlappen */}
+        {actions && (
+          <div className="flex-shrink-0 mt-2 flex items-center gap-1">
+            {actions}
+          </div>
+        )}
       </div>
 
       {/* ── UID / RECHTSFORM (nur Unternehmen) ───────────────────────────── */}

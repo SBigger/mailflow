@@ -1,14 +1,14 @@
 import React, { useState, useContext, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
-import { ThemeContext } from "@/Layout";
+import { ThemeContext } from "../../Layout.jsx";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { entities, supabase } from "@/api/supabaseClient";
+import { entities, supabase } from "../../api/supabaseClient.js";
 import { toast } from "sonner";
 import {
   BookOpen, Wrench, ChevronRight, Plus, Trash2, Edit3, Save, X,
   Download, ArrowRight, Scissors, RotateCcw, Users, BarChart2,
-  Clock, Shield, AlertCircle, Building2, TrendingUp, Percent, Search
+  Clock, Shield, Building2, TrendingUp, Percent, Search
 } from "lucide-react";
 
 // ── Konstanten ────────────────────────────────────────────────────────────────
@@ -903,7 +903,7 @@ export default function Aktienbuch() {
   ];
 
   return (
-    <div className="flex flex-col h-full overflow-hidden" style={{ backgroundColor: pageBg }}>
+    <div className="flex flex-col h-screen w-screen overflow-hidden" style={{ backgroundColor: pageBg }}>
 
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 px-6 py-4 flex-shrink-0"
@@ -924,7 +924,7 @@ export default function Aktienbuch() {
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-5">
-        <div style={{ maxWidth: 1100 }}>
+        <div>
 
           {/* ── Unternehmens-Auswahl ──────────────────────────────────────────── */}
           <div className="rounded-2xl mb-6 overflow-hidden" style={{ border: `1px solid ${panelBdr}`, backgroundColor: panelBg }}>

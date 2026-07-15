@@ -1,14 +1,15 @@
 import React, { useState, useContext } from "react";
-import { ThemeContext } from "@/Layout";
+import { ThemeContext } from "../../Layout.jsx";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { entities, supabase } from "@/api/supabaseClient";
+import { entities, supabase } from "../../api/supabaseClient.js";
 import { toast } from "sonner";
-import { FONT_REGULAR_B64, FONT_BOLD_B64 } from "@/components/fristen/fontData.js";
+import { FONT_REGULAR_B64, FONT_BOLD_B64 } from "../../components/fristen/fontData.js";
 import {
   BookOpen, Save, Printer, Plus, Trash2,
-  Building2, User, Edit3, FileText, Wrench,
+  FileText, Wrench,
   ChevronRight, Search, Eye, PenLine, Loader2, X, UserPlus, Archive
 } from "lucide-react";
+import {useNavigate} from "react-router-dom";
 
 // ── Absender-Konstanten (gleich wie Fristen-Briefe) ──────────────────────────
 const SENDER_NAME   = "Artis Treuhand GmbH";
@@ -115,6 +116,7 @@ function generateBriefHtml(recipient, datum, betreff, body, signer) {
 // ── Haupt-Komponente ─────────────────────────────────────────────────────────
 export default function BriefSchreiben() {
   const { theme } = useContext(ThemeContext);
+  const navigate = useNavigate();
   const isLight = theme === "light";
   const isArtis = theme === "artis";
   const isDark   = !isLight && !isArtis;
@@ -123,7 +125,7 @@ export default function BriefSchreiben() {
   const pageBg      = isLight ? "#f4f4f8"               : isArtis ? "#f2f5f2"               : "#2a2a2f";
   const panelBg     = isLight ? "#ffffff"                : isArtis ? "#ffffff"                : "#27272a";
   const panelBorder = isLight ? "#e2e2ec"                : isArtis ? "#ccd8cc"                : "#3f3f46";
-  const headingCol  = isLight ? "#1e293b"                : isArtis ? "#1a3a1a"                : "#e4e4e7";
+  const headingCol  = isLight ? "#1e293b"                 : isArtis ? "#1a3a1a"               : "#e4e4e7";
   const subCol      = isLight ? "#64748b"                : isArtis ? "#4a6a4a"                : "#a1a1aa";
   const inputBg     = isLight ? "#f8f8fc"                : isArtis ? "#f5f8f5"                : "rgba(24,24,27,0.8)";
   const inputBorder = isLight ? "#d4d4e8"                : isArtis ? "#bfcfbf"                : "#3f3f46";
@@ -469,14 +471,18 @@ export default function BriefSchreiben() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col h-full overflow-hidden" style={{ backgroundColor: pageBg }}>
-
-      {/* ── Breadcrumb-Header ─────────────────────────────────────────────── */}
-      <div className="flex items-center gap-2 px-6 py-4 flex-shrink-0" style={{ borderBottom: `1px solid ${panelBorder}` }}>
+    <div className="flex flex-col h-screen w-screen overflow-hidden" style={{ backgroundColor: pageBg }}>
+      {/* Breadcrumb */}
+      <div className="flex items-center gap-2 px-6 py-4 flex-shrink-0"
+           style={{ borderBottom: `1px solid ${panelBorder}`, backgroundColor: panelBg }}>
         <Wrench className="w-4 h-4" style={{ color: accentLight }} />
-        <span className="text-sm" style={{ color: subCol }}>Artis Tools</span>
+        <button
+            onClick={() => navigate("/ArtisTools")}
+            className="text-sm hover:underline"
+            style={{ color: subCol, background: "none", border: "none", cursor: "pointer", padding: 0 }}
+        >Artis Tools</button>
         <ChevronRight className="w-3 h-3" style={{ color: subCol }} />
-        <FileText className="w-4 h-4" style={{ color: accent }} />
+        <BookOpen className="w-4 h-4" style={{ color: accent }} />
         <span className="text-sm font-semibold" style={{ color: headingCol }}>Briefe schreiben</span>
       </div>
 

@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from "react";
-import {entities, supabase} from "@/api/supabaseClient";
+import {entities, supabase} from "../../api/supabaseClient.js";
 import { QRCodeSVG } from "qrcode.react"; // Einfache QR-Code Komponente
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Button } from "../../components/ui/button.jsx";
+import { Input } from "../../components/ui/input.jsx";
 import { toast } from "sonner";
 import { ShieldCheck, Loader2, ArrowRight, Smartphone } from "lucide-react";
 import {useNavigate} from "react-router-dom";

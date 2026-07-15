@@ -144,6 +144,7 @@ const CUR_YEAR = new Date().getFullYear();
 // Kategorien zentral in src/lib/categories.js definiert
 import { CATEGORIES } from "@/lib/categories";
 import HighlightedText from "@/components/dokumente/HighlightedText.tsx";
+import BucketSizeDisplay from "../components/dokumente/BucketSize.jsx";
 
 function getFileInfo(mimeType, filename) {
   const ext = (filename || "").split(".").pop().toLowerCase();
@@ -943,6 +944,7 @@ export default function Dokumente() {
   const [chartisDoc, setChartisDoc] = useState(null); // Chartis-Panel pro Dokument
   const [highestScore, setHighestScore] = useState(false);
   const [menuDocId, setMenuDocId] = useState(null);
+  const [showBucketWidget, setShowBucketWidget] = useState(true);
 
   // Volltext-Suche via Supabase RPC (PostgreSQL GIN-Index)
   useEffect(() => {
@@ -1972,8 +1974,7 @@ export default function Dokumente() {
   const treeItem = { display: "flex", alignItems: "center", gap: 5, padding: "4px 8px", cursor: "pointer", borderRadius: 5, fontSize: 12, userSelect: "none" };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden", background: s.cardBg }}>
-
+    <div className="flex flex-col h-screen w-screen overflow-hidden" style={{background: s.cardBg }}>
       {/* Header */}
       <div style={{ padding: "12px 20px", borderBottom: "1px solid " + border, display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
         <span style={{ fontSize: 15, fontWeight: 700, color: s.textMain }}>E-Binder</span>
@@ -2597,6 +2598,11 @@ export default function Dokumente() {
           border={border}
           onClose={() => setShowShareLinks(false)}
         />
+      )}
+      {showBucketWidget && (
+          <BucketSizeDisplay
+              onClose={() => setShowBucketWidget(false)} // Schließt das Fenster
+          />
       )}
     </div>
   );

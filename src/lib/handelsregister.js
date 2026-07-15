@@ -119,17 +119,26 @@ export async function sucheFirmen(params, { timeoutMs = 130000 } = {}) {
 // fällt der Aufruf auf die Vercel Function /api/zefix zurück. Sobald deployt:
 // den Fallback und `api/zefix.js` löschen.
 async function zefixInvoke(body, fallbackQuery) {
-  const { data, error } = await supabase.functions.invoke('zefix-search', { body })
+  let data, error
+  try {
+    ;({ data, error } = await supabase.functions.invoke('zefix-search', { body }))
+  } catch (e) {
+    error = e
+  }
   if (!error) return data
-  if (import.meta.env.DEV) console.warn('zefix-search nicht erreichbar, nutze /api/zefix', error)
+  console.log(error);
+}
 
-  const { data: sess } = await supabase.auth.getSession()
-  const token = sess?.session?.access_token
-  if (!token) throw new Error('Nicht angemeldet.')
-  const res = await fetch(`/api/zefix?${fallbackQuery}`, { headers: { Authorization: `Bearer ${token}` } })
-  const json = await res.json()
-  if (!res.ok) throw new Error(json.error ?? `Zefix antwortet ${res.status}`)
-  return json
+/**
+ * Namenssuche im Handelsregister (Neukunden-Assistent). Nimmt Firmenname oder UID.
+ * Achtung: Zefix liefert bei der Suche KEINE Adresse – dafür `firmenDetail(uid)` nachladen.
+ */
+export async function firmenSuche(query) {
+  const q = String(query ?? '').trim()
+  if (q.length < 3) return []
+  const data = await zefixInvoke({ query: q }, `q=${encodeURIComponent(q)}`)
+  if (data?.error) throw new Error(data.error)
+  return data?.results ?? []
 }
 
 /** Detaildatensatz inkl. Revisionsstelle und Kapital. */

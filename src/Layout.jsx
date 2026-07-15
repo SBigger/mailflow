@@ -619,7 +619,7 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
           )}
 
           {/* Main Content Area */}
-          <main className="flex-1 overflow-hidden relative" style={{ paddingBottom: isMobile && !isTaskUser ? 56 : 0 }}>
+          <main className="flex w-screen overflow-hidden relative" style={{ paddingBottom: isMobile && !isTaskUser ? 56 : 0 }}>
             <Outlet />
           </main>
 

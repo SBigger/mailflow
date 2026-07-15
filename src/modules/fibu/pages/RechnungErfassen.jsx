@@ -636,7 +636,7 @@ export default function RechnungErfassen() {
         )}
 
         {/* ── QR-Zahlschein Scanner ── */}
-        <div style={{ background: '#fff', border: '1px solid #c5d4ea', borderRadius: 10, overflow: 'hidden' }}>
+        <div style={{ background: '#fff', border: '1px solid #c5d4ea', borderRadius: 10, overflow: 'hidden', flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: '#e8f0fb', borderBottom: '1px solid #c5d4ea' }}>
             <svg style={{ width: 18, height: 18, flexShrink: 0 }} viewBox="0 0 24 24" fill="none" stroke="#2e4a7d" strokeWidth={2}>
               <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
@@ -727,7 +727,7 @@ export default function RechnungErfassen() {
         </div>
 
         {/* ── Belegkopf ── */}
-        <div style={{ background: '#fff', border: '1px solid #e4e9e4', borderRadius: 10, padding: 16 }}>
+        <div style={{ background: '#fff', border: '1px solid #e4e9e4', borderRadius: 10, padding: 16, flexShrink: 0 }}>
           <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.1em', color: '#94a394', marginBottom: 12 }}>Belegkopf</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
@@ -859,7 +859,7 @@ export default function RechnungErfassen() {
         </div>
 
         {/* ── Buchungspositionen ── */}
-        <div style={{ background: '#fff', border: '1px solid #e4e9e4', borderRadius: 10, overflow: 'hidden' }}>
+        <div style={{ background: '#fff', border: '1px solid #e4e9e4', borderRadius: 10, overflow: 'hidden', flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderBottom: '1px solid #e4e9e4' }}>
             <span style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.1em', color: '#94a394' }}>Buchungspositionen</span>
             <div style={{ display: 'flex', gap: 8 }}>

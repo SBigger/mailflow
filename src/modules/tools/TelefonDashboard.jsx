@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Phone, PhoneIncoming, PhoneOutgoing, Clock, TrendingUp,
   UserCheck, UserX, Search, ExternalLink, Users, Video,
-  LayoutGrid, ListChecks, Hourglass, ChevronDown, ChevronRight,
+  LayoutGrid, Hourglass, ChevronDown, ChevronRight,
   UserPlus, Pencil,
 } from "lucide-react";
 import {
@@ -12,9 +12,9 @@ import {
 } from "recharts";
 import { format, isToday, isThisWeek, isThisMonth, startOfDay } from "date-fns";
 import { de } from "date-fns/locale";
-import { supabase } from "@/api/supabaseClient";
-import { ThemeContext } from "@/Layout";
-import CallCustomerPicker from "@/components/calls/CallCustomerPicker";
+import { supabase } from "../../api/supabaseClient.js";
+import { ThemeContext } from "../../Layout.jsx";
+import CallCustomerPicker from "../../components/calls/CallCustomerPicker.jsx";
 
 /**
  * Telefon-Dashboard
@@ -152,7 +152,7 @@ export default function TelefonDashboard() {
   }
 
   return (
-    <div style={{ height: "100%", backgroundColor: pageBg, overflowY: "auto", overflowX: "hidden" }}>
+    <div className="flex flex-col h-screen w-screen overflow-hidden" style={{ backgroundColor: pageBg, overflowY: "auto"}}>
       <div style={{ padding: 24, minHeight: "100%", boxSizing: "border-box" }}>
 
         {/* ── Header ─────────────────────────────────────── */}

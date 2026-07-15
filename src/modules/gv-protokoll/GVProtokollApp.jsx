@@ -15,6 +15,11 @@ const LS = {
     set: (k, v) => localStorage.setItem(k, JSON.stringify(v)),
 };
 
+// Spaltenbreiten: Startwerte + Grenzen (Mittelspalte füllt den Rest)
+const COL_W_DEFAULT = { left: 270, right: 340 };
+const COL_W_LIMITS = { left: [190, 560], right: [240, 760] };
+const clamp = (v, [min, max]) => Math.min(max, Math.max(min, v));
+
 export default function GvProtokollApp() {
     // ════════════════════════════════════════════════════════════════
     //  States
@@ -46,6 +51,10 @@ export default function GvProtokollApp() {
     const [savedProtocols, setSavedProtocols] = useState([]);
     const [currentProtocolId, setCurrentProtocolId] = useState(null);
     const [protocolTitle, setProtocolTitle] = useState("");
+
+    // Spaltenbreiten (per Maus verschiebbar, pro Gerät gemerkt)
+    const [colW, setColW] = useState(() => LS.get("gv_colW", COL_W_DEFAULT));
+    const dragRef = useRef(null);
 
     // Refs
     const mediaRecRef = useRef(null);
@@ -135,6 +144,42 @@ export default function GvProtokollApp() {
         loadCustomers();
         refreshRecoveryBanner();
         refreshMics();
+    }, []);
+
+    // ── Spalten verschieben ──────────────────────────────────────────
+    const startColDrag = (which) => (e) => {
+        e.preventDefault();
+        dragRef.current = { which, startX: e.clientX, startW: colW[which] };
+        document.body.style.cursor = "col-resize";
+        document.body.style.userSelect = "none";
+    };
+
+    const resetCols = () => {
+        setColW(COL_W_DEFAULT);
+        LS.set("gv_colW", COL_W_DEFAULT);
+    };
+
+    useEffect(() => {
+        const onMove = (e) => {
+            const d = dragRef.current;
+            if (!d) return;
+            // linker Trenner wächst mit der Maus, rechter gegenläufig
+            const delta = d.which === "left" ? e.clientX - d.startX : d.startX - e.clientX;
+            setColW(w => ({ ...w, [d.which]: clamp(d.startW + delta, COL_W_LIMITS[d.which]) }));
+        };
+        const onUp = () => {
+            if (!dragRef.current) return;
+            dragRef.current = null;
+            document.body.style.cursor = "";
+            document.body.style.userSelect = "";
+            setColW(w => { LS.set("gv_colW", w); return w; });
+        };
+        window.addEventListener("mousemove", onMove);
+        window.addEventListener("mouseup", onUp);
+        return () => {
+            window.removeEventListener("mousemove", onMove);
+            window.removeEventListener("mouseup", onUp);
+        };
     }, []);
 
     const loadCustomers = async () => {
@@ -378,7 +423,7 @@ export default function GvProtokollApp() {
     const liveTick = async () => {
         if (mediaRecRef.current?.state !== "recording") return;
         await liveTranscribe();
-        if (cfg.liveInterval > 0) liveTimerRef.current = setTimeout(liveTick, cfg.cfg.liveInterval * 1000);
+        if (cfg.liveInterval > 0) liveTimerRef.current = setTimeout(liveTick, cfg.liveInterval * 1000);
     };
 
     const liveTranscribe = async () => {
@@ -593,7 +638,7 @@ export default function GvProtokollApp() {
             <div className="vol"><div style={{ width: volWidth }}></div></div>
             {statusMsg && <div className="status">{statusMsg}</div>}
 
-            <main>
+            <main style={{ gridTemplateColumns: `${colW.left}px 14px 1fr 14px ${colW.right}px` }}>
                 {/* LINKS */}
                 <section className="col">
                     <div className="col-hd">👥 Teilnehmer <span className="count">{persons.length}</span></div>
@@ -650,6 +695,13 @@ export default function GvProtokollApp() {
                     </div>
                 </section>
 
+                <div
+                    className="col-resizer"
+                    onMouseDown={startColDrag("left")}
+                    onDoubleClick={resetCols}
+                    title="Ziehen zum Verschieben · Doppelklick = Standardbreite"
+                />
+
                 {/* MITTE */}
                 <section className="col">
                     <div className="col-hd">🎙️ Transkript <span className="count">{segments.length}</span></div>
@@ -682,6 +734,13 @@ export default function GvProtokollApp() {
                         ))}
                     </div>
                 </section>
+
+                <div
+                    className="col-resizer"
+                    onMouseDown={startColDrag("right")}
+                    onDoubleClick={resetCols}
+                    title="Ziehen zum Verschieben · Doppelklick = Standardbreite"
+                />
 
                 {/* RECHTS */}
                 <section className="col">

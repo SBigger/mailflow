@@ -1,17 +1,17 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '@/api/supabaseClient';
-import { steuerdaten as db } from '@/api/steuerdaten';
-import { fillAndDownload, listPdfFields } from '@/lib/pdfFill';
-import { SG_JP1B, FAVORITEN_IDS as SG_FAV } from '@/forms/sg_jp1b';
-import { TG_50I,  FAVORITEN_IDS as TG_FAV } from '@/forms/tg_50i';
-import { ESTV_19, FAVORITEN_IDS as ESTV_FAV } from '@/forms/estv_19';
+import { steuerdaten as db } from '../../api/steuerdaten.js';
+import { fillAndDownload, listPdfFields } from '../../lib/pdfFill.js';
+import { SG_JP1B, FAVORITEN_IDS as SG_FAV } from '../../forms/sg_jp1b.js';
+import { TG_50I,  FAVORITEN_IDS as TG_FAV } from '../../forms/tg_50i.js';
+import { ESTV_19, FAVORITEN_IDS as ESTV_FAV } from '../../forms/estv_19.js';
 import {
   Search, Download, Save, Plus, ChevronRight, FileText,
   Building2, X, Wrench, Check, CheckCircle2, Star, Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { PdfViewer } from '@/components/PdfViewer';
+import { PdfViewer } from '../../components/PdfViewer.jsx';
+import {supabase} from "../../api/supabaseClient.js";
 
 const FORMS    = { SG: SG_JP1B, TG: TG_50I, ESTV: ESTV_19 };
 const FORM_FAV = { SG: SG_FAV,  TG: TG_FAV, ESTV: ESTV_FAV };
@@ -565,7 +565,7 @@ export default function Steuern() {
   }
 
   return (
-    <div className="flex h-full overflow-hidden" style={{ backgroundColor: C.pageBg }}>
+    <div className="flex h-screen w-screen overflow-hidden" style={{ backgroundColor: C.pageBg }}>
 
       {/* ── Linke Sidebar ── */}
       <aside className="w-64 flex-shrink-0 flex flex-col border-r overflow-hidden"

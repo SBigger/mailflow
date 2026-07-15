@@ -9,7 +9,7 @@ Deno.serve(async (req) => {
 
   const clientId = Deno.env.get('MICROSOFT_CLIENT_ID')!
   const tenantId = Deno.env.get('MICROSOFT_TENANT_ID') || 'common'
-  const redirectUri = Deno.env.get('MICROSOFT_REDIRECT_URI')!
+  const redirectUri = `${Deno.env.get('APP_URL')!}/functions/v1/microsoft-callback`
 
   // Supabase user token aus state-Parameter lesen und weiterleiten
   let body: any;

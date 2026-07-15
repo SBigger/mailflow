@@ -7,21 +7,20 @@
 //   Mitte/Rechts:     Matrix Jahre x Kantone, Klick auf Zelle oeffnet Editor
 //   Editor (rechts):  Stand, Datum, prov. Steuer, def. Gewinn, Bemerkung,
 //                     verknuepfte Veranlagungs-Dokumente (BelegePicker)
-import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '@/api/supabaseClient';
+import { supabase } from '../../api/supabaseClient.js';
 import {
   veranlagungen as db,
   VERANLAGUNGSSTAND_OPTIONEN,
-  STANDARD_KANTONE,
   ALLE_KANTONE_PLUS_BUND,
-} from '@/api/veranlagungen';
+} from '../../api/veranlagungen.js';
 import {
-  Search, Building2, User2, Plus, ChevronRight, X, Save, Trash2,
+  Search, Building2, User2, Plus, ChevronRight, X, Save,
   Receipt, Edit3, Check, Calendar, FileText, GripVertical,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import BelegePicker from '@/components/BelegePicker';
+import BelegePicker from '../../components/BelegePicker.jsx';
 
 const CY    = new Date().getFullYear();
 const JAHRE = [CY, CY - 1, CY - 2, CY - 3, CY - 4];
@@ -676,7 +675,7 @@ export default function Veranlagungen() {
   }
 
   return (
-    <div className="flex h-full overflow-hidden" style={{ backgroundColor: C.pageBg }}>
+    <div className="flex h-screen w-screen overflow-hidden" style={{ backgroundColor: C.pageBg }}>
       {/* Linke Sidebar */}
       <aside className="w-64 flex-shrink-0 flex flex-col border-r overflow-hidden"
         style={{ backgroundColor: C.pageBg, borderColor: C.panelBdr }}>

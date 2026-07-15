@@ -453,10 +453,10 @@ export default function Dashboard() {
   const containerPadding = isMobile ? 'p-3' : 'p-6';
 
   return (
-    <div className={`h-screen overflow-y-auto ${containerPadding}`}>
-      <div className="max-w-7xl mx-auto">
+    <div className={`flex flex-col h-screen w-screen overflow-hidden overflow-y-auto ${containerPadding}`}>
+      <div>
         {/* Navigation Dropdown */}
-        <div className={isMobile ? 'mb-3' : 'mb-6'}>
+        <div className={isMobile ? 'mb-3' : ''}>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button

@@ -1,15 +1,15 @@
 import React, { useState, useContext, useMemo, useEffect, useRef } from "react";
-import { ThemeContext } from "@/Layout";
+import { ThemeContext } from "../../Layout.jsx";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { entities } from "@/api/supabaseClient";
+import { entities } from "../../api/supabaseClient.js";
 import { toast } from "sonner";
 import {
-  Scale, Plus, Trash2, Save, X, Download, FileSpreadsheet,
+  Scale, Plus, Trash2, FileSpreadsheet,
   Calculator, Percent, FileText, ChevronDown, ChevronRight,
   Settings, AlertCircle, Building2,
 } from "lucide-react";
 import * as XLSX from "xlsx";
-import CustomerMiniList from "../components/customers/CustomerMiniList";
+import CustomerMiniList from "../../components/customers/CustomerMiniList.jsx";
 
 // ── Konstanten ────────────────────────────────────────────────────────
 const KANTONE = ["AG","AI","AR","BE","BL","BS","FR","GE","GL","GR","JU","LU","NE","NW","OW","SG","SH","SO","SZ","TG","TI","UR","VD","VS","ZG","ZH"];
@@ -1079,7 +1079,7 @@ export default function Steuerausscheidung() {
   });
 
   return (
-    <div style={{ height: "100%", display: "flex", flexDirection: "column", background: t.pageBg }}>
+    <div className="flex flex-col h-screen w-screen overflow-hidden" style={{background: t.pageBg }}>
 
       {/* Page-Header */}
       <div style={{ padding: "12px 20px", borderBottom: `1px solid ${t.cardBorder}`, display: "flex", alignItems: "center", gap: 12 }}>

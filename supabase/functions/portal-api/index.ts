@@ -90,7 +90,7 @@ async function sendMagicLinkMail(to: string, vorname: string, link: string) {
       </p>
       <hr style="margin:24px 0;border:0;border-top:1px solid #e1e6e4;">
       <p style="color:#9ca3af;font-size:11px;">
-        Sie erhalten diese E-Mail, weil für diese Adresse ein Portal-Zugang bei Artis Treuhand besteht.
+        Sie erhalten diese E-Mail, weil für diese Adresse ein Portal-Zugang bei ${Deno.env.get("COMPANY_NAME")} besteht.
         Haben Sie den Login nicht angefordert, ignorieren Sie diese Nachricht.
       </p>
     </div>`;
@@ -101,7 +101,7 @@ async function sendMagicLinkMail(to: string, vorname: string, link: string) {
       body: { contentType: "HTML", content: htmlBody },
       toRecipients: [{ emailAddress: { address: to } }],
       from: { emailAddress: { address: fromAddress, name: "Smartis Kundenportal" } },
-      replyTo: [{ emailAddress: { address: fromAddress, name: "Artis Treuhand" } }],
+      replyTo: [{ emailAddress: { address: fromAddress, name: Deno.env.get("COMPANY_NAME") } }],
     },
     saveToSentItems: true,
   };
@@ -126,6 +126,20 @@ async function resolveSession(supabase: any, sessionToken: string | null) {
   if (!pu || !pu.is_active) return null;
   await supabase.from("portal_sessions").update({ last_seen_at: new Date().toISOString() }).eq("id", sess.id);
   return pu;
+}
+
+// Mitarbeiter-JWT serverseitig prüfen (inline statt _shared/auth.ts, damit der
+// Dashboard-Deploy ohne zusätzliche Dateien auskommt). service_role-Client
+// kann fremde User-JWTs via auth.getUser verifizieren.
+async function requireStaff(req: Request, supabase: any) {
+  const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
+  if (!token) return { ok: false as const, status: 401, error: "Unauthorized" };
+  const { data: { user }, error } = await supabase.auth.getUser(token);
+  if (error || !user) return { ok: false as const, status: 401, error: "Unauthorized" };
+  const { data: profile } = await supabase
+    .from("profiles").select("id, role").eq("id", user.id).maybeSingle();
+  if (!profile) return { ok: false as const, status: 403, error: "Kein Mitarbeiterprofil" };
+  return { ok: true as const, user };
 }
 
 async function audit(supabase: any, pu: any, action: string, doc_id: string | null, detail: string | null, ip: string) {
@@ -164,7 +178,7 @@ serve(async (req) => {
         await supabase.from("portal_magic_tokens").insert({
           portal_user_id: pu.id, token_hash: await sha256Hex(token), expires_at: expires,
         });
-        const base = Deno.env.get("PORTAL_URL") || "https://smartis.me/portal";
+        const base = `${body.appUrl}/portal`;
         const link = `${base}?token=${token}`;
         await sendMagicLinkMail(pu.email, pu.vorname, link);
         await audit(supabase, pu, "login-request", null, null, ip);
@@ -380,6 +394,30 @@ serve(async (req) => {
         .update({ status: "aktiv", updated_at: new Date().toISOString() }).eq("id", thread.id);
       await audit(supabase, pu, "chat-send", null, text.slice(0, 80), ip);
       return json({ ok: true });
+    }
+
+    // ── create-link: Anmeldelink erzeugen (NUR eingeloggte Mitarbeiter) ───────
+    // Für Weitergabe von Hand (Teams, persönlich) statt/zusätzlich zur Mail.
+    // 7 Tage gültig, einmal verwendbar.
+    if (action === "create-link") {
+      const staff = await requireStaff(req, supabase);
+      if (!staff.ok) return json({ error: staff.error }, staff.status);
+
+      const portalUserId = String(body.portal_user_id || "");
+      if (!portalUserId) return json({ error: "portal_user_id fehlt" }, 400);
+      const { data: pu } = await supabase.from("portal_users")
+        .select("*").eq("id", portalUserId).single();
+      if (!pu) return json({ error: "Portal-Zugang nicht gefunden." }, 404);
+      if (!pu.is_active) return json({ error: "Dieser Zugang ist gesperrt." }, 400);
+
+      const token = randomToken();
+      const expires = new Date(Date.now() + 7 * 86400_000).toISOString();
+      await supabase.from("portal_magic_tokens").insert({
+        portal_user_id: pu.id, token_hash: await sha256Hex(token), expires_at: expires,
+      });
+      const base = Deno.env.get("PORTAL_URL") || "https://smartis.me/portal";
+      await audit(supabase, pu, "link-created", null, staff.user?.email || null, ip);
+      return json({ link: `${base}?token=${token}`, expires_at: expires });
     }
 
     return json({ error: "Unbekannte Aktion" }, 400);

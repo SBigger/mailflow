@@ -1,14 +1,13 @@
 import React, { useState, useContext, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
-import { ThemeContext } from "@/Layout";
+import { ThemeContext } from "../../Layout.jsx";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { entities, supabase } from "@/api/supabaseClient";
+import { entities, supabase } from "../../api/supabaseClient.js";
 import { toast } from "sonner";
 import {
   Car, Wrench, ChevronRight, Plus, Trash2, Edit3, Save, X,
-  FileText, Download, Link, ExternalLink,
-  ChevronDown, ChevronUp, AlertCircle, Calculator, Search
+  FileText, Download, Link, AlertCircle, Calculator, Search
 } from "lucide-react";
 
 // ── Hilfsfunktionen ──────────────────────────────────────────────────────────
@@ -817,7 +816,7 @@ export default function Fahrzeugliste() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col h-full overflow-hidden" style={{ backgroundColor: pageBg }}>
+    <div className="flex flex-col h-screen w-screen overflow-hidden" style={{ backgroundColor: pageBg }}>
 
       {/* ── Breadcrumb ──────────────────────────────────────────────────── */}
       <div className="flex items-center gap-2 px-6 py-4 flex-shrink-0"
@@ -833,7 +832,7 @@ export default function Fahrzeugliste() {
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-5">
-        <div style={{ maxWidth: 1100 }}>
+        <div>
 
           {/* ── Mandant wählen ───────────────────────────────────────────── */}
           <div className="flex items-end gap-4 mb-6">
