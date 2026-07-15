@@ -9,12 +9,16 @@ import './styles.css';
 import {functions} from "../../api/supabaseClient.js";
 import {CATEGORIES} from "../../lib/categories.js";
 
+const SESSION_KEY = "portal_session";
+
 async function callPortal(action, payload = {}) {
-  const session = localStorage.getItem("portal_session") || undefined;
+  const session = localStorage.getItem(SESSION_KEY) || undefined;
   const {data, error} = await functions.invoke('portal-api', {
     method: "POST",
-    body: { action, session, ...payload },
-    appUrl: window.env.HOSTNAME
+    action,
+    session,
+    appUrl: window.env.HOSTNAME,
+    ...payload
   });
 
   if (error) throw new Error(error || "Verbindung fehlgeschlagen.");

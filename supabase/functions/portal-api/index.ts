@@ -159,9 +159,9 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
     const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "";
-    const body = req.method === "POST" ? await req.json().catch(() => ({})) : {};
-    const action = body.action || new URL(req.url).searchParams.get("action");
-    const sessionToken = body.session || req.headers.get("x-portal-session");
+    const body = await req.json();
+    const action = body.action ;
+    const sessionToken = body.session;
 
     // ── request-link: Magic-Link anfordern (kein User-Enumeration) ────────────
     if (action === "request-link") {
@@ -415,7 +415,7 @@ serve(async (req) => {
       await supabase.from("portal_magic_tokens").insert({
         portal_user_id: pu.id, token_hash: await sha256Hex(token), expires_at: expires,
       });
-      const base = Deno.env.get("PORTAL_URL") || "https://smartis.me/portal";
+      const base = `${body.appUrl}/portal`;
       await audit(supabase, pu, "link-created", null, staff.user?.email || null, ip);
       return json({ link: `${base}?token=${token}`, expires_at: expires });
     }
