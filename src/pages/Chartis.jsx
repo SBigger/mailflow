@@ -165,6 +165,7 @@ export default function Chartis() {
   const isKunde = (th) => th.thread_type === "objekt" && !!th.ext_contact_email;
   const teamObjekt = objektThreads.filter(th => !isKunde(th));
   const kundenThreads = objektThreads.filter(isKunde);
+  const unreadKunden = useMemo(() => kundenThreads.filter(isUnread).length, [objektThreads, lastReadByThread, me]);
   const myEmail = (me?.email || "").toLowerCase();
   const mailThreads = useMemo(() => {
     const map = new Map();
@@ -444,7 +445,7 @@ export default function Chartis() {
           <NavItem k="gruppen" icon={Users} label="Gruppen" count={unreadGruppen} />
           <NavItem k="erwaehnt" icon={AtSign} label="Erwähnt" count={unseenMentions} />
           <div style={{ fontSize: 9, letterSpacing: ".07em", textTransform: "uppercase", color: t.textMuted, padding: "9px 8px 3px" }}>Kunden · extern</div>
-          <NavItem k="kunden" icon={Building2} label="Konversationen" count={kundenThreads.length} />
+          <NavItem k="kunden" icon={Building2} label="Konversationen" count={unreadKunden} />
           <NavItem k="wartet" icon={Clock} label="Wartet" />
           <div style={{ height: 6 }} />
           <NavItem k="anrufe" icon={PhoneOff} label="Anrufe" count={missedCalls.length} red />
