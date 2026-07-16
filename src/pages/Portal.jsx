@@ -33,6 +33,41 @@ function fmtDate(iso) {
   if (!iso) return "";
   return new Date(iso).toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
+// Excel-Vorschau: Blatt-Tabs + Tabelle (erste Zeile als Kopf), max. 500 Zeilen
+function ExcelTable({ preview, onSheet }) {
+  const idx = preview.sheetIdx || 0;
+  const sheet = preview.sheets[idx];
+  const rows = (sheet?.rows || []).slice(0, 500);
+  const cols = rows.reduce((m, r) => Math.max(m, r.length), 0);
+  if (!rows.length) return <div className="fallback"><p style={{ color: "var(--muted)" }}>Dieses Blatt ist leer.</p></div>;
+  return (
+    <div className="xlswrap">
+      {preview.sheets.length > 1 && (
+        <div className="sheettabs">
+          {preview.sheets.map((s, i) => (
+            <button key={s.name + i} className={"sheettab" + (i === idx ? " on" : "")} onClick={() => onSheet(i)}>{s.name}</button>
+          ))}
+        </div>
+      )}
+      <div className="xlsscroll">
+        <table className="xlstable">
+          <tbody>
+            {rows.map((r, ri) => (
+              <tr key={ri}>
+                <td className="rownum">{ri + 1}</td>
+                {Array.from({ length: cols }).map((_, ci) => <td key={ci}>{r[ci] ?? ""}</td>)}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {(sheet?.rows || []).length > 500 && (
+        <div className="xlsnote">Vorschau auf die ersten 500 Zeilen begrenzt — die vollständige Datei erhalten Sie über „Herunterladen".</div>
+      )}
+    </div>
+  );
+}
+
 // Antworten kommen als E-Mail-HTML — für die Blase auf reinen Text reduzieren
 function stripHtml(html) {
   if (!html) return "";
@@ -169,6 +204,18 @@ const CSS = `
 .pp .mbody{flex:1;background:var(--surface2);overflow:auto;display:flex;align-items:center;justify-content:center}
 .pp .mbody iframe{width:100%;height:100%;border:0;background:#fff}
 .pp .mbody img{max-width:100%;max-height:100%;object-fit:contain}
+.pp .mbody.xls{align-items:stretch;justify-content:stretch;padding:0}
+.pp .xlswrap{flex:1;display:flex;flex-direction:column;min-width:0;width:100%}
+.pp .sheettabs{display:flex;gap:4px;padding:8px 10px;border-bottom:1px solid var(--line);background:var(--surface);overflow-x:auto}
+.pp .sheettab{border:1px solid var(--line);background:var(--surface2);color:var(--muted);border-radius:7px;
+  padding:5px 11px;font-size:12.5px;font-weight:500;cursor:pointer;white-space:nowrap;font-family:inherit}
+.pp .sheettab.on{background:var(--accentSoft);border-color:var(--accent);color:var(--accentInk);font-weight:600}
+.pp .xlsscroll{flex:1;overflow:auto;background:var(--surface)}
+.pp .xlstable{border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
+.pp .xlstable td{border:1px solid var(--line);padding:5px 9px;white-space:nowrap;max-width:320px;overflow:hidden;text-overflow:ellipsis}
+.pp .xlstable tr:first-child td{background:var(--surface2);font-weight:600;position:sticky;top:0}
+.pp .xlstable td.rownum{background:var(--surface2);color:var(--faint);font-size:11.5px;text-align:right;position:sticky;left:0;min-width:34px}
+.pp .xlsnote{padding:8px 12px;border-top:1px solid var(--line);background:var(--surface2);color:var(--faint);font-size:12.5px}
 .pp .fallback{text-align:center;padding:40px 24px}
 .pp .closebtn{width:36px;height:36px;border-radius:8px;border:0;background:transparent;color:var(--muted);
   display:grid;place-items:center;cursor:pointer}
@@ -274,14 +321,26 @@ export default function Portal() {
     setUser(null); setDocs([]); setPhase("login"); setEmail("");
   }
 
-  // Ansehen → Vorschau-Modal (PDF/Bild inline; sonst Download-Hinweis)
+  // Ansehen → Vorschau-Modal (PDF/Bild inline, Excel als Tabelle; sonst Download-Hinweis)
   async function openPreview(doc) {
     const kind = fileKind(doc.filename || doc.name);
-    if (kind !== "pdf" && kind !== "img") { setPreview({ doc, url: null, kind }); return; }
+    if (kind !== "pdf" && kind !== "img" && kind !== "xls") { setPreview({ doc, url: null, kind }); return; }
     setBusy(b => ({ ...b, [doc.id]: true }));
     try {
       const { url } = await callPortal("download", { doc_id: doc.id, mode: "view" });
-      setPreview({ doc, url, kind });
+      if (kind === "xls") {
+        // Excel im Browser lesen (Storage liefert CORS-Header) und als Tabelle zeigen
+        const buf = await fetch(url).then(r => r.arrayBuffer());
+        const { read, utils } = await import("xlsx");
+        const wb = read(new Uint8Array(buf), { type: "array", cellDates: true });
+        const sheets = wb.SheetNames.map(name => ({
+          name,
+          rows: utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: false, defval: "" }),
+        }));
+        setPreview({ doc, url, kind, sheets, sheetIdx: 0 });
+      } else {
+        setPreview({ doc, url, kind });
+      }
     } catch (e) { setError(e.message); }
     finally { setBusy(b => ({ ...b, [doc.id]: false })); }
   }
@@ -584,10 +643,11 @@ export default function Portal() {
               <button className="pbtn" style={{ marginLeft: "auto" }} onClick={() => downloadOne(preview.doc)}><Download size={16} /> Herunterladen</button>
               <button className="closebtn" title="Schliessen" onClick={() => setPreview(null)}><X size={18} /></button>
             </div>
-            <div className="mbody">
+            <div className={"mbody" + (preview.kind === "xls" ? " xls" : "")}>
               {preview.kind === "pdf" && preview.url && <iframe title="Vorschau" src={preview.url} />}
               {preview.kind === "img" && preview.url && <img src={preview.url} alt={preview.doc.name || "Vorschau"} />}
-              {(preview.kind !== "pdf" && preview.kind !== "img") && (
+              {preview.kind === "xls" && preview.sheets && <ExcelTable preview={preview} onSheet={i => setPreview(p => ({ ...p, sheetIdx: i }))} />}
+              {(preview.kind !== "pdf" && preview.kind !== "img" && preview.kind !== "xls") && (
                 <div className="fallback">
                   <FileText size={40} style={{ color: "var(--faint)" }} />
                   <p style={{ margin: "12px 0 4px", fontWeight: 600 }}>Keine Vorschau möglich</p>
