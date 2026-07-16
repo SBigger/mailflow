@@ -44,6 +44,7 @@ export default function GvProtokollApp() {
     const [isPaused, setIsPaused] = useState(false);
     const [statusMsg, setStatusMsg] = useState("");
     const [recoveryItems, setRecoveryItems] = useState([]);
+    const [recList, setRecList] = useState([]);
     const [showSettings, setShowSettings] = useState(false);
     const [mics, setMics] = useState([]);
     const [volWidth, setVolWidth] = useState("0%");
@@ -144,6 +145,7 @@ export default function GvProtokollApp() {
         loadCustomers();
         refreshRecoveryBanner();
         refreshMics();
+        loadRecList();
     }, []);
 
     // ── Spalten verschieben ──────────────────────────────────────────
@@ -319,6 +321,57 @@ export default function GvProtokollApp() {
             }
             setRecoveryItems(items);
         } catch {}
+    };
+
+    // ── Lokale Aufnahmen (IndexedDB) verwalten ───────────────────────
+    const fmtSize = (b) => b >= 1048576 ? (b / 1048576).toFixed(1) + " MB"
+        : b >= 1024 ? Math.round(b / 1024) + " KB" : (b || 0) + " B";
+
+    const loadRecList = async () => {
+        try {
+            const [recs, chunks] = [await dbGetAll("recordings"), await dbGetAll("chunks")];
+            const sizeByRec = {};
+            for (const c of chunks) sizeByRec[c.recId] = (sizeByRec[c.recId] || 0) + ((c.blob && c.blob.size) || 0);
+            const list = recs
+                .map(r => ({ id: r.id, startedAt: r.startedAt, status: r.status, bytes: sizeByRec[r.id] || 0 }))
+                .sort((a, b) => b.startedAt - a.startedAt);
+            setRecList(list);
+        } catch {}
+    };
+
+    const deleteRecording = async (id) => {
+        if (id === curRecIdRef.current && isRecording) {
+            setStatusMsg("⚠️ Laufende Aufnahme kann nicht gelöscht werden – zuerst Stopp drücken.");
+            return;
+        }
+        if (!window.confirm("Diese Aufnahme (Audio) endgültig von diesem Gerät löschen?")) return;
+        try {
+            const chunks = (await dbGetAll("chunks")).filter(c => c.recId === id);
+            for (const c of chunks) await dbDel("chunks", [c.recId, c.seq]);
+            await dbDel("recordings", id);
+            await loadRecList();
+            refreshRecoveryBanner();
+            setStatusMsg("🗑️ Aufnahme gelöscht.");
+        } catch (e) {
+            setStatusMsg("❌ Löschen fehlgeschlagen: " + e.message);
+        }
+    };
+
+    const deleteAllRecordings = async () => {
+        if (!recList.length) return;
+        if (!window.confirm(`Alle ${recList.length} lokalen Aufnahmen (Audio) endgültig löschen? Transkripte und gespeicherte Protokolle bleiben erhalten.`)) return;
+        try {
+            const skip = isRecording ? curRecIdRef.current : null;
+            const chunks = await dbGetAll("chunks");
+            for (const c of chunks) if (c.recId !== skip) await dbDel("chunks", [c.recId, c.seq]);
+            const recs = await dbGetAll("recordings");
+            for (const r of recs) if (r.id !== skip) await dbDel("recordings", r.id);
+            await loadRecList();
+            refreshRecoveryBanner();
+            setStatusMsg("🗑️ Alle lokalen Aufnahmen gelöscht.");
+        } catch (e) {
+            setStatusMsg("❌ Löschen fehlgeschlagen: " + e.message);
+        }
     };
 
     const refreshMics = async () => {
@@ -632,7 +685,7 @@ export default function GvProtokollApp() {
                 <button className="btn primary" onClick={evaluateAI}>✨ Auswerten</button>
                 <button className="btn" onClick={saveProtocol} title="In der Ablage des Kunden speichern">💾 Speichern</button>
                 <button className="btn ghost" onClick={exportMarkdown} title="Exportieren">⬇️</button>
-                <button className="btn ghost" onClick={() => setShowSettings(true)}>⚙️</button>
+                <button className="btn ghost" onClick={() => { loadRecList(); setShowSettings(true); }}>⚙️</button>
             </header>
 
             <div className="vol"><div style={{ width: volWidth }}></div></div>
@@ -780,6 +833,33 @@ export default function GvProtokollApp() {
                             <label>Claude Key (KI-Auswertung)</label>
                             <input type="password" value={cfg.claudeKey} onChange={e => setCfg({ ...cfg, claudeKey: e.target.value })} />
                         </div>
+
+                        <div className="fld">
+                            <div className="rec-hd">
+                                <label style={{ margin: 0 }}>🎙️ Lokale Aufnahmen</label>
+                                <span className="rec-total">{recList.length} · {fmtSize(recList.reduce((s, r) => s + r.bytes, 0))}</span>
+                            </div>
+                            <div className="rec-list">
+                                {recList.length ? recList.map(r => (
+                                    <div className="rec-row" key={r.id}>
+                                        <div className="rec-info">
+                                            <span className="rec-date">{new Date(r.startedAt).toLocaleString("de-CH")}</span>
+                                            <span className="rec-meta">
+                                                {fmtSize(r.bytes)}
+                                                {r.status !== "finalized" && <span className="rec-badge"> unvollständig</span>}
+                                                {r.id === curRecIdRef.current && isRecording && <span className="rec-badge live"> läuft</span>}
+                                            </span>
+                                        </div>
+                                        <button className="x" title="Audio dieser Aufnahme löschen" onClick={() => deleteRecording(r.id)}>🗑️</button>
+                                    </div>
+                                )) : <div className="prot-empty">Keine lokalen Aufnahmen.</div>}
+                            </div>
+                            {recList.length > 0 && (
+                                <button className="rec-clear-all" onClick={deleteAllRecordings}>🗑️ Alle Aufnahmen löschen</button>
+                            )}
+                            <div className="rec-hint">Aufnahmen liegen nur lokal in diesem Browser (nicht in der Cloud). Nach der Auswertung kannst du sie hier löschen, um Speicher freizugeben – Transkripte und in der Ablage gespeicherte Protokolle bleiben erhalten.</div>
+                        </div>
+
                         <div className="modal-actions">
                             <button className="btn primary" onClick={() => { LS.set("gv_cfg", cfg); setShowSettings(false); }}>Speichern</button>
                         </div>
