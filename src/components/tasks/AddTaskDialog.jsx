@@ -294,7 +294,7 @@ export default function AddTaskDialog({open, onClose, onAdd, columns}) {
                         <div className="relative">
                             {(() => {
                                 const filteredCustomers = customers.filter(c =>
-                                    c.company_name.toLowerCase().includes(customerSearch.toLowerCase())
+                                    c.company_name?.toLowerCase().includes(customerSearch.toLowerCase())
                                 );
                                 const options = [{ id: '', company_name: 'Kein Kunde' }, ...filteredCustomers];
                                 const selectOption = (opt) => {

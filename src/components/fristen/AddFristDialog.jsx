@@ -120,7 +120,7 @@ export default function AddFristDialog({ open, onClose, onSave, initial = null }
   }, [customerId, customers]);
 
   const filteredCustomers = customers.filter(c =>
-    c.company_name.toLowerCase().includes(customerSearch.toLowerCase())
+    c.company_name?.toLowerCase().includes(customerSearch.toLowerCase())
   );
 
   const handleSave = async () => {

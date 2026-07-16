@@ -101,7 +101,7 @@ export default function Posteingang() {
         docCount: folder.docs?.length
       };
     })
-        .filter(item => item.company_name.toLowerCase().includes(q))
+        .filter(item => item.company_name?.toLowerCase().includes(q))
         .sort((a, b) => a.company_name.localeCompare(b.company_name));
   }, [customers, allDoks]);
 

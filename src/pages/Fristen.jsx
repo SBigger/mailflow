@@ -346,7 +346,7 @@ export default function Fristen() {
         f.title?.toLowerCase().includes(q) ||
         f.description?.toLowerCase().includes(q) ||
         f.category?.toLowerCase().includes(q) ||
-        customers.find(c => c.id === f.customer_id)?.company_name.toLowerCase().includes(q)
+        customers.find(c => c.id === f.customer_id)?.company_name?.toLowerCase().includes(q)
       );
     }
 

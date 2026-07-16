@@ -1512,7 +1512,7 @@ export default function Settings() {
                                                 Kein Kunde
                                             </div>
                                             {customers
-                                                .filter(c => c.company_name.toLowerCase().includes(customerSearch.toLowerCase()))
+                                                .filter(c => c.company_name?.toLowerCase().includes(customerSearch.toLowerCase()))
                                                 .map((c) => (
                                                     <div
                                                         key={c.id}

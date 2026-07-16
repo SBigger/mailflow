@@ -1386,7 +1386,7 @@ export default function Dokumente() {
         const q = custSearch.toLowerCase();
         return customers.filter(c => {
             const has = allDoks.some(d => d.customer_id === c.id);
-            const match = !q || c.company_name.toLowerCase().includes(q);
+            const match = !q || c.company_name?.toLowerCase().includes(q);
             return has && match;
         }).map(c => {
             const docs = allDoks.filter(d => d.customer_id === c.id);
