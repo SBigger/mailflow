@@ -1,4 +1,5 @@
-import React, { useState, useContext, useMemo } from 'react';
+import React, { useState, useContext, useMemo, useRef, useEffect } from 'react';
+import { useContainerWidth } from '@/components/layout/useContainerQuery';
 import { supabase, entities, functions, auth } from '@/api/supabaseClient';
 import { ThemeContext } from '@/Layout';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -132,6 +133,18 @@ export default function Kalender({ embedded = false } = {}) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(embedded);
   const [activeDragTask, setActiveDragTask] = useState(null);
   const [selectedTaskBlock, setSelectedTaskBlock] = useState(null);
+
+  const [containerRef, containerWidth] = useContainerWidth();
+  // Container-Query: solange der Nutzer die Ansicht nicht manuell gewaehlt
+  // hat, folgt viewMode der tatsaechlichen Panel-Breite (nicht dem Browser-
+  // Viewport). Aendert nur, WELCHE bestehende Ansicht (Woche/Liste) gezeigt
+  // wird -- WeekView/ListView selbst bleiben unangetastet.
+  const userChangedViewRef = useRef(false);
+  const setViewModeManual = (mode) => { userChangedViewRef.current = true; setViewMode(mode); };
+  useEffect(() => {
+    if (!embedded || userChangedViewRef.current || containerWidth === 0) return;
+    setViewMode(containerWidth < 700 ? 'liste' : 'woche');
+  }, [embedded, containerWidth]);
 
   function openEvent(event) { setSelectedTaskBlock(null); setSelectedEvent(event); }
   function openTaskBlock(task) { setSelectedEvent(null); setSelectedTaskBlock(task); }
@@ -874,7 +887,7 @@ export default function Kalender({ embedded = false } = {}) {
 
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-    <div className="h-full flex flex-col overflow-hidden" style={{ backgroundColor: pageBg }}>
+    <div ref={containerRef} className="h-full flex flex-col overflow-hidden" style={{ backgroundColor: pageBg }}>
       {/* Toolbar */}
       <div
         className="flex items-center gap-3 px-4 py-3 border-b flex-shrink-0 flex-wrap"
@@ -958,7 +971,7 @@ export default function Kalender({ embedded = false } = {}) {
           ].map(({ key, icon: Icon, label }) => (
             <button
               key={key}
-              onClick={() => setViewMode(key)}
+              onClick={() => setViewModeManual(key)}
               className="px-3 py-1.5 text-xs flex items-center gap-1.5 transition-colors"
               style={{
                 backgroundColor: viewMode === key ? accentColor : 'transparent',

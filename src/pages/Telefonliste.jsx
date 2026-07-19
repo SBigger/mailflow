@@ -9,6 +9,7 @@ import {
 import { ThemeContext } from "@/Layout";
 import CallNotePopup from "@/components/customers/CallNotePopup";
 import { useIsMobile } from "@/components/mobile/useIsMobile";
+import { useContainerWidth } from "@/components/layout/useContainerQuery";
 
 /**
  * Telefonliste – Vollbild-Telefonbuch mit allen Kontakten:
@@ -24,6 +25,12 @@ export default function Telefonliste({ embedded = false, onOpen }) {
   const { theme } = useContext(ThemeContext);
   const navigate = useNavigate();
   const isMobile = useIsMobile();
+  const [containerRef, containerWidth] = useContainerWidth();
+  // Kartenliste auch im Widescreen-Panel, sobald es schmal ist (Container-
+  // Query) -- unabhaengig vom Browser-Viewport, der bei einem Panel ja breit
+  // sein kann, waehrend das Panel selbst schmal ist.
+  const isNarrowPanel = embedded && containerWidth > 0 && containerWidth < 700;
+  const showCards = isMobile || isNarrowPanel;
   const isArtis = theme === "artis";
   const isLight = theme === "light";
 
@@ -176,10 +183,10 @@ export default function Telefonliste({ embedded = false, onOpen }) {
     if (clean) setTimeout(() => { window.location.href = `tel:${clean}`; }, 80);
   };
 
-  // Alphabetische Sections für Mobile-Ansicht — filtered ist bereits sortiert,
-  // also linearer Durchlauf reicht.
+  // Alphabetische Sections für Karten-Ansicht (Mobile oder schmales
+  // Widescreen-Panel) — filtered ist bereits sortiert, linearer Durchlauf reicht.
   const sections = useMemo(() => {
-    if (!isMobile) return [];
+    if (!showCards) return [];
     const out = [];
     let currentLetter = null;
     let currentRows = null;
@@ -193,30 +200,30 @@ export default function Telefonliste({ embedded = false, onOpen }) {
       currentRows.push(r);
     }
     return out;
-  }, [filtered, isMobile]);
+  }, [filtered, showCards]);
 
   return (
-    <div style={{ height: "100%", display: "flex", flexDirection: "column", background: pageBg, overflow: "hidden" }}>
+    <div ref={containerRef} style={{ height: "100%", display: "flex", flexDirection: "column", background: pageBg, overflow: "hidden" }}>
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: isMobile ? "8px 12px" : "10px 16px", borderBottom: `1px solid ${borderColor}`, background: cardBg, flexShrink: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: showCards ? "8px 12px" : "10px 16px", borderBottom: `1px solid ${borderColor}`, background: cardBg, flexShrink: 0 }}>
         {!embedded && !isMobile && <h1 style={{ fontSize: 18, fontWeight: 600, color: textMain, margin: 0, flexShrink: 0 }}>Telefonliste</h1>}
-        <div style={{ position: "relative", flex: 1, maxWidth: isMobile ? "none" : 420 }}>
-          <Search size={isMobile ? 16 : 14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: subtle }} />
+        <div style={{ position: "relative", flex: 1, maxWidth: showCards ? "none" : 420 }}>
+          <Search size={showCards ? 16 : 14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: subtle }} />
           <Input
             ref={searchRef}
             type="search"
             inputMode="search"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder={isMobile ? "Name, Firma, Nummer…" : "Suchen: Name, Firma, Telefon, E-Mail … (Ctrl+F)"}
-            style={{ paddingLeft: isMobile ? 36 : 32, height: isMobile ? 40 : 32, fontSize: isMobile ? 16 : 13, background: isArtis ? "#f5f5f5" : isLight ? "#f0f0f8" : "rgba(24,24,27,0.6)", borderColor, color: textMain }}
+            placeholder={showCards ? "Name, Firma, Nummer…" : "Suchen: Name, Firma, Telefon, E-Mail … (Ctrl+F)"}
+            style={{ paddingLeft: showCards ? 36 : 32, height: isMobile ? 40 : 32, fontSize: isMobile ? 16 : 13, background: isArtis ? "#f5f5f5" : isLight ? "#f0f0f8" : "rgba(24,24,27,0.6)", borderColor, color: textMain }}
           />
         </div>
       </div>
 
       {/* Liste */}
       <div style={{ flex: 1, overflow: "auto", background: cardBg }}>
-        {isMobile ? (
+        {showCards ? (
           <MobileList
             sections={sections}
             isLoading={isLoading}

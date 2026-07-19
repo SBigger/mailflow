@@ -6,6 +6,7 @@ import { Search, FileText, ExternalLink } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { supabase, entities } from "@/api/supabaseClient";
 import { ThemeContext } from "@/Layout";
+import { useContainerWidth } from "@/components/layout/useContainerQuery";
 
 // ── Dokumente-Widget für Widescreen-Panels ─────────────────────────
 // BEWUSST eine eigene, schlanke Read-only-Komponente statt eine Einbettung
@@ -47,6 +48,10 @@ export default function DokumenteWidget() {
 
   const [search, setSearch] = useState("");
   const [recent, setRecent] = useState(loadRecent);
+  const [containerRef, containerWidth] = useContainerWidth();
+  // Container-Query: im sehr schmalen Panel (4-Spalten-Ultrawide) verdraengt
+  // Datum + Icon zu viel Platz vom Dateinamen -- ab da nur noch Name+Meta.
+  const isVeryNarrow = containerWidth > 0 && containerWidth < 380;
 
   const { data: docs = [], isLoading } = useQuery({
     queryKey: ["dokumente-widget-meta"],
@@ -98,7 +103,7 @@ export default function DokumenteWidget() {
   };
 
   return (
-    <div style={{ height: "100%", display: "flex", flexDirection: "column", background: cardBg, overflow: "hidden" }}>
+    <div ref={containerRef} style={{ height: "100%", display: "flex", flexDirection: "column", background: cardBg, overflow: "hidden" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderBottom: `1px solid ${borderColor}`, flexShrink: 0 }}>
         <div style={{ position: "relative", flex: 1 }}>
           <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: textMuted }} />
@@ -157,10 +162,12 @@ export default function DokumenteWidget() {
                 {[customerName(d.customer_id), d.year].filter(Boolean).join(" · ")}
               </div>
             </div>
-            <div style={{ color: textMuted, fontSize: 11, flexShrink: 0 }}>
-              {d.updated_at ? format(new Date(d.updated_at), "dd.MM.yy", { locale: de }) : ""}
-            </div>
-            <ExternalLink size={12} style={{ color: textMuted, flexShrink: 0 }} />
+            {!isVeryNarrow && (
+              <div style={{ color: textMuted, fontSize: 11, flexShrink: 0 }}>
+                {d.updated_at ? format(new Date(d.updated_at), "dd.MM.yy", { locale: de }) : ""}
+              </div>
+            )}
+            {!isVeryNarrow && <ExternalLink size={12} style={{ color: textMuted, flexShrink: 0 }} />}
           </div>
         ))}
       </div>

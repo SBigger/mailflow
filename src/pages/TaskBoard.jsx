@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { DragDropContext, Droppable } from "@hello-pangea/dnd";
 import { Plus, RefreshCw, Palette, Users, Search, X, ChevronsLeftRight, Mic, LayoutList, LayoutDashboard, MoreHorizontal, Bell, Image as ImageIcon, AppWindow, CalendarClock } from "lucide-react";
 import { useIsMobile } from "@/components/mobile/useIsMobile";
+import { useContainerWidth } from "@/components/layout/useContainerQuery";
 import MobileColumnNav from "@/components/mobile/MobileColumnNav";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -83,6 +84,11 @@ export default function TaskBoard({ embedded = false } = {}) {
   const [mobileColumnIndex, setMobileColumnIndex] = useState(0);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const isMobile = useIsMobile();
+  const [containerRef, containerWidth] = useContainerWidth();
+  // Einspaltige Mobile-Ansicht auch im schmalen Widescreen-Panel (Container-
+  // Query) -- das bestehende Mobile-UI (MobileColumnNav/MobileCard) wird
+  // dafuer 1:1 wiederverwendet, kein separater Kompakt-Pfad noetig.
+  const compact = isMobile || (embedded && containerWidth > 0 && containerWidth < 900);
 
   const queryClient = useQueryClient();
 
@@ -330,11 +336,11 @@ export default function TaskBoard({ embedded = false } = {}) {
   const textColor = isArtis ? '#2d3a2d' : isLight ? '#1a1a2e' : '#e4e4e7';
 
   return (
-    <div className="h-full flex flex-col overflow-hidden" style={{ backgroundColor: topBarBg }}>
+    <div ref={containerRef} className="h-full flex flex-col overflow-hidden" style={{ backgroundColor: topBarBg }}>
       {/* Top Bar */}
       <div className="flex-shrink-0 border-b px-3 md:px-6 py-3" style={{ backgroundColor: topBarBg, borderColor }}>
-        {/* Mobile Top Bar */}
-        {isMobile ? (
+        {/* Mobile Top Bar (auch im schmalen Widescreen-Panel) */}
+        {compact ? (
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
@@ -591,8 +597,8 @@ export default function TaskBoard({ embedded = false } = {}) {
           onTaskClick={setSelectedTask}
           onToggleComplete={(task) => updateTaskMutation.mutate({ id: task.id, data: { completed: !task.completed } })}
         />
-      ) : isMobile ? (
-         /* Mobile: single column view */
+      ) : compact ? (
+         /* Mobile oder schmales Panel: einspaltige Ansicht */
          <DragDropContext onDragEnd={handleDragEnd}>
            <div className="flex-1 flex flex-col overflow-hidden">
              {columns[mobileColumnIndex] && (
