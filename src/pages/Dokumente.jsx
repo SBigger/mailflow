@@ -1972,7 +1972,7 @@ export default function Dokumente() {
   const treeItem = { display: "flex", alignItems: "center", gap: 5, padding: "4px 8px", cursor: "pointer", borderRadius: 5, fontSize: 12, userSelect: "none" };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden", background: s.cardBg }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", background: s.cardBg }}>
 
       {/* Header */}
       <div style={{ padding: "12px 20px", borderBottom: "1px solid " + border, display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>

@@ -327,7 +327,7 @@ export default function TaskBoard() {
   const textColor = isArtis ? '#2d3a2d' : isLight ? '#1a1a2e' : '#e4e4e7';
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden" style={{ backgroundColor: topBarBg }}>
+    <div className="h-full flex flex-col overflow-hidden" style={{ backgroundColor: topBarBg }}>
       {/* Top Bar */}
       <div className="flex-shrink-0 border-b px-3 md:px-6 py-3" style={{ backgroundColor: topBarBg, borderColor }}>
         {/* Mobile Top Bar */}

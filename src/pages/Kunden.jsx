@@ -253,7 +253,7 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
     const mobileBg = isArtis ? '#f2f5f2' : isLight ? '#f0f0f6' : '#2a2a2f';
     const mobileAccent = isArtis ? '#7a9b7f' : '#7c3aed';
     return (
-      <div className="h-screen overflow-hidden flex flex-col" style={{ backgroundColor: mobileBg }}>
+      <div className="h-full overflow-hidden flex flex-col" style={{ backgroundColor: mobileBg }}>
         {/* Mobile Tab-Switcher */}
         <div className="flex flex-shrink-0 border-b" style={{ backgroundColor: isArtis ? '#fff' : isLight ? '#fff' : 'rgba(24,24,27,0.9)', borderColor }}>
           {[{ key: 'kunden', label: 'Kunden' }, { key: 'telefonliste', label: 'Telefonliste' }].map(({ key, label }) => (

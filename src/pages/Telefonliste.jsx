@@ -145,9 +145,8 @@ export default function Telefonliste({ embedded = false }) {
   const normalizePhone = (raw) => {
     if (!raw) return "";
     let s = String(raw).replace(/[\s.\-()/]/g, "");
-    if (s.startsWith("+41")) return s;
-    if (s.startsWith("0041")) return "+41" + s.slice(4);
-    if (s.startsWith("00")) return "+41" + s.slice(2); // z.B. 0071 → +4171
+    if (s.startsWith("+")) return s;
+    if (s.startsWith("00")) return "+" + s.slice(2); // 0049… → +49…, 0041… → +41…
     if (s.startsWith("0")) return "+41" + s.slice(1);
     return s;
   };

@@ -872,7 +872,7 @@ export default function Kalender() {
 
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-    <div className="h-screen flex flex-col overflow-hidden" style={{ backgroundColor: pageBg }}>
+    <div className="h-full flex flex-col overflow-hidden" style={{ backgroundColor: pageBg }}>
       {/* Toolbar */}
       <div
         className="flex items-center gap-3 px-4 py-3 border-b flex-shrink-0 flex-wrap"
