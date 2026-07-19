@@ -1,20 +1,30 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   ResizablePanelGroup, ResizablePanel, ResizableHandle,
 } from "@/components/ui/resizable";
+import { LayoutDashboard, Maximize2, Minimize2 } from "lucide-react";
 import { PANELS_FOR_CLASS } from "./useIsWidescreen";
-import { WIDGET_KEYS, defaultAppsForCount } from "./workspaceRegistry";
+import { WIDGET_KEYS, WIDGETS, defaultAppsForCount } from "./workspaceRegistry";
 import PanelHeader from "./PanelHeader";
 import PanelWidget from "./PanelWidget";
+import CollapsedPanelStrip from "./CollapsedPanelStrip";
 
-// Widescreen-Shell v2: Panel 0 = <Outlet/> (die aktuelle Route bleibt über
+// Widescreen-Shell v3: Panel 0 = <Outlet/> (die aktuelle Route bleibt über
 // die Sidebar navigierbar), Panels 1..n zeigen Widgets aus der Registry,
 // per Dropdown im Panel-Header austauschbar. Persistiert wird pro
-// Viewport-Klasse (2col/3col/4col) getrennt in localStorage — Ultrawide-
-// Layout im Büro und Laptop-Layout im Zug kommen sich so nicht in die Quere.
-// Server-Sync/Presets/Focus-Mode folgen als eigene Commits.
+// Viewport-Klasse (2col/3col/4col) getrennt in localStorage.
+//
+// Focus-Mode: Klick auf den Expand-Button (oder Doppelklick auf den Header,
+// oder Esc zum Verlassen) kollabiert alle anderen Panels über die
+// imperative react-resizable-panels-API (collapse()/expand()) auf ~4%.
+// Der Inhalt bleibt dabei gemountet (nur `invisible`, kein Unmount) — Scroll-
+// Position und Formular-Zustand in den Widgets gehen beim Fokussieren nicht
+// verloren. Die Größen vor dem Kollabieren merkt sich die Bibliothek selbst
+// (panelSizeBeforeCollapse), Verlassen stellt sie exakt wieder her.
+// Presets/Server-Sync folgen als eigene Commits.
 
 const LS_KEY = (vc) => `workspace_v2_${vc}`;
+const COLLAPSED_SIZE = 4;
 
 function loadState(viewportClass, panelCount) {
   try {
@@ -36,42 +46,89 @@ function loadState(viewportClass, panelCount) {
   };
 }
 
-export default function WorkspaceShell({ viewportClass, children }) {
+export default function WorkspaceShell({ viewportClass, currentPageName, children }) {
   const panelCount = PANELS_FOR_CLASS[viewportClass] ?? 2;
   const [state, setState] = useState(() => loadState(viewportClass, panelCount));
+  const [focusedIndex, setFocusedIndex] = useState(null);
+
+  const panelRefs = useRef([]);
+  const focusModeRef = useRef(false); // synchron VOR den imperativen collapse()/expand()-Aufrufen gesetzt
 
   useEffect(() => {
     setState(loadState(viewportClass, panelCount));
+    setFocusedIndex(null);
+    focusModeRef.current = false;
   }, [viewportClass, panelCount]);
 
-  const persist = useCallback((next) => {
-    setState(next);
-    try {
-      localStorage.setItem(LS_KEY(viewportClass), JSON.stringify(next));
-    } catch { /* Quota / Privatmodus egal */ }
+  const handleLayout = useCallback((sizes) => {
+    // Während des Focus-Mode feuert onLayout mehrfach mit Zwischenzuständen
+    // (kollabierte Panels) — die dürfen die eigentlichen Nutzer-Größen nicht
+    // überschreiben.
+    if (focusModeRef.current) return;
+    setState((prev) => {
+      const next = { ...prev, sizes };
+      try {
+        localStorage.setItem(LS_KEY(viewportClass), JSON.stringify(next));
+      } catch { /* egal */ }
+      return next;
+    });
   }, [viewportClass]);
 
-  const handleLayout = useCallback((sizes) => {
-    persist({ ...state, sizes });
-  }, [persist, state]);
-
   const handleSelectApp = useCallback((slotIndex, appKey) => {
-    const apps = state.apps.slice();
-    apps[slotIndex] = appKey;
-    persist({ ...state, apps });
-  }, [persist, state]);
+    setState((prev) => {
+      const apps = prev.apps.slice();
+      apps[slotIndex] = appKey;
+      const next = { ...prev, apps };
+      try {
+        localStorage.setItem(LS_KEY(viewportClass), JSON.stringify(next));
+      } catch { /* egal */ }
+      return next;
+    });
+  }, [viewportClass]);
 
-  // Cross-Panel-Navigation: Widget A ruft onOpen(appKey, params) →
-  // erstes Panel mit passender App wird fokussiert/ersetzt. In v2 ohne
-  // Runtime-Params (die kommen mit dem Presets-/Kontext-Commit) reicht
-  // "Panel auf diese App umschalten, falls noch nicht offen".
+  // Cross-Panel-Navigation: Widget A ruft onOpen(appKey) → falls die App
+  // schon in einem Panel läuft, nichts tun; sonst Panel 1 darauf umschalten.
+  // Runtime-Params (z.B. welcher Kunde) folgen mit dem Presets-/Kontext-Commit.
   const openApp = useCallback((appKey) => {
-    const existingIdx = state.apps.indexOf(appKey);
-    if (existingIdx >= 0) return; // schon offen, nichts zu tun in v2
-    const apps = state.apps.slice();
-    apps[0] = appKey;
-    persist({ ...state, apps });
-  }, [persist, state]);
+    setState((prev) => {
+      if (prev.apps.includes(appKey)) return prev;
+      const apps = prev.apps.slice();
+      apps[0] = appKey;
+      const next = { ...prev, apps };
+      try {
+        localStorage.setItem(LS_KEY(viewportClass), JSON.stringify(next));
+      } catch { /* egal */ }
+      return next;
+    });
+  }, [viewportClass]);
+
+  const toggleFocus = useCallback((idx) => {
+    setFocusedIndex((prev) => {
+      const entering = prev !== idx;
+      focusModeRef.current = entering;
+      if (!entering) {
+        panelRefs.current.forEach((p) => p?.expand?.());
+        return null;
+      }
+      panelRefs.current.forEach((p, i) => {
+        if (i === idx) p?.expand?.();
+        else p?.collapse?.();
+      });
+      return idx;
+    });
+  }, []);
+
+  // Esc verlässt den Focus-Mode.
+  useEffect(() => {
+    if (focusedIndex === null) return;
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") toggleFocus(focusedIndex);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [focusedIndex, toggleFocus]);
+
+  const isFocusMode = focusedIndex !== null;
 
   return (
     <ResizablePanelGroup
@@ -79,22 +136,96 @@ export default function WorkspaceShell({ viewportClass, children }) {
       onLayout={handleLayout}
       className="h-full w-full"
     >
-      <ResizablePanel defaultSize={state.sizes[0]} minSize={20} order={0}>
-        <div className="h-full w-full overflow-hidden">{children}</div>
-      </ResizablePanel>
-      {state.apps.map((appKey, i) => (
-        <React.Fragment key={i}>
-          <ResizableHandle withHandle />
-          <ResizablePanel defaultSize={state.sizes[i + 1]} minSize={15} order={i + 1}>
-            <div className="h-full w-full flex flex-col overflow-hidden">
-              <PanelHeader appKey={appKey} onSelectApp={(next) => handleSelectApp(i, next)} />
-              <div className="min-h-0 flex-1 overflow-hidden">
-                <PanelWidget appKey={appKey} onOpen={openApp} />
-              </div>
+      <ResizablePanel
+        ref={(el) => { panelRefs.current[0] = el; }}
+        defaultSize={state.sizes[0]}
+        minSize={20}
+        collapsible
+        collapsedSize={COLLAPSED_SIZE}
+        order={0}
+      >
+        <div className="relative h-full w-full overflow-hidden">
+          <div className={`flex h-full w-full flex-col overflow-hidden ${isFocusMode && focusedIndex !== 0 ? "invisible" : ""}`}>
+            <div className="flex h-9 shrink-0 items-center gap-1 border-b border-border bg-background px-2" onDoubleClick={() => toggleFocus(0)}>
+              <span className="flex items-center gap-1.5 px-1.5 text-sm font-medium text-muted-foreground">
+                <LayoutDashboard className="h-4 w-4 shrink-0" />
+                <span className="truncate max-w-[160px]">{currentPageName || "Aktuelle Seite"}</span>
+              </span>
+              <div className="min-w-0 flex-1" />
+              <button
+                type="button"
+                onClick={() => toggleFocus(0)}
+                aria-label={focusedIndex === 0 ? "Panel verkleinern" : "Panel vergrössern"}
+                title={focusedIndex === 0 ? "Panel verkleinern (Esc)" : "Panel vergrössern"}
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {focusedIndex === 0 ? (
+                  <Minimize2 className="h-3.5 w-3.5" />
+                ) : (
+                  <Maximize2 className="h-3.5 w-3.5" />
+                )}
+              </button>
             </div>
-          </ResizablePanel>
-        </React.Fragment>
-      ))}
+            <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
+          </div>
+          {isFocusMode && focusedIndex !== 0 && (
+            <div className="absolute inset-0">
+              <CollapsedPanelStrip
+                icon={LayoutDashboard}
+                label={currentPageName || "Seite"}
+                onExpand={() => toggleFocus(0)}
+              />
+            </div>
+          )}
+        </div>
+      </ResizablePanel>
+
+      {state.apps.map((appKey, i) => {
+        const idx = i + 1;
+        const def = WIDGETS[appKey];
+        const collapsedHere = isFocusMode && focusedIndex !== idx;
+        return (
+          <React.Fragment key={idx}>
+            {isFocusMode ? (
+              <div className="w-px shrink-0 bg-border" />
+            ) : (
+              <ResizableHandle withHandle />
+            )}
+            <ResizablePanel
+              ref={(el) => { panelRefs.current[idx] = el; }}
+              defaultSize={state.sizes[idx]}
+              minSize={15}
+              collapsible
+              collapsedSize={COLLAPSED_SIZE}
+              order={idx}
+            >
+              <div className="relative h-full w-full overflow-hidden">
+                <div className={`flex h-full w-full flex-col overflow-hidden ${collapsedHere ? "invisible" : ""}`}>
+                  <PanelHeader
+                    appKey={appKey}
+                    onSelectApp={(next) => handleSelectApp(i, next)}
+                    isExpanded={focusedIndex === idx}
+                    onToggleExpand={() => toggleFocus(idx)}
+                  />
+                  <div className="min-h-0 flex-1 overflow-hidden">
+                    <PanelWidget appKey={appKey} onOpen={openApp} />
+                  </div>
+                </div>
+                {collapsedHere && (
+                  <div className="absolute inset-0">
+                    <CollapsedPanelStrip
+                      icon={def?.icon}
+                      label={def?.label ?? appKey}
+                      color={def?.color}
+                      onExpand={() => toggleFocus(idx)}
+                    />
+                  </div>
+                )}
+              </div>
+            </ResizablePanel>
+          </React.Fragment>
+        );
+      })}
     </ResizablePanelGroup>
   );
 }

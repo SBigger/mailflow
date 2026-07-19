@@ -640,7 +640,7 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
           <main className="flex-1 overflow-hidden relative" style={{ paddingBottom: isMobile && !isTaskUser ? 'calc(56px + env(safe-area-inset-bottom))' : 0 }}>
             {layoutMode === 'widescreen' ? (
               <Suspense fallback={<Outlet />}>
-                <WorkspaceShell viewportClass={viewportClass}>
+                <WorkspaceShell viewportClass={viewportClass} currentPageName={currentPageName}>
                   <Outlet />
                 </WorkspaceShell>
               </Suspense>
