@@ -55,6 +55,7 @@ const Portal = lazy(() => import("./pages/Portal.jsx"));
 const Leistungserfassung = lazy(() => import("./pages/Leistungserfassung.jsx"));
 const Promptvorlagen = lazy(() => import("./pages/Promptvorlagen.jsx"));
 const TelefonDashboard = lazy(() => import("./pages/TelefonDashboard.jsx"));
+const Telefonliste = lazy(() => import("./pages/Telefonliste.jsx"));
 const Jahresplanung = lazy(() => import("./pages/Jahresplanung.jsx"));
 const Monatsplanung = lazy(() => import("./pages/Monatsplanung.jsx"));
 const Kalender = lazy(() => import("./pages/Kalender.jsx"));
@@ -126,6 +127,7 @@ function AuthenticatedApp() {
                     <Route path="/Veranlagungen" element={<Veranlagungen />} />
                     <Route path="/Promptvorlagen" element={<Promptvorlagen />} />
                     <Route path="/TelefonDashboard" element={<TelefonDashboard />} />
+                    <Route path="/Telefonliste" element={<Telefonliste />} />
                     <Route path="/Jahresplanung" element={<Jahresplanung />} />
                     <Route path="/Monatsplanung" element={<Monatsplanung />} />
                     <Route path="/Kalender" element={<Kalender />} />
