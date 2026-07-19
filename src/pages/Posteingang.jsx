@@ -25,7 +25,7 @@ function getFileInfo(mimeType, filename) {
   return { label: ext.toUpperCase() || "FILE", color: "#71717a" };
 }
 
-export default function Posteingang() {
+export default function Posteingang({ embedded = false } = {}) {
   const { theme } = useContext(ThemeContext);
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -141,7 +141,7 @@ export default function Posteingang() {
   const treeItem = { display: "flex", alignItems: "center", gap: 5, padding: "8px 12px", cursor: "pointer", borderRadius: 5, fontSize: 13, userSelect: "none" };
 
   return (
-      <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden", background: s.cardBg, color: s.textMain }}>
+      <div style={{ display: "flex", flexDirection: "column", height: embedded ? "100%" : "100vh", overflow: "hidden", background: s.cardBg, color: s.textMain }}>
         {/* Header */}
         <div style={{padding: "12px 20px", borderBottom: "1px solid " + border, display: "flex", alignItems: "center", gap: 10, flexShrink: 0}}>
           <span style={{ fontSize: 15, fontWeight: 700 }}>Paperboy</span>

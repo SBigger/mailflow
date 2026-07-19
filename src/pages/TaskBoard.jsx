@@ -29,19 +29,22 @@ import TaskDeadlineView from "../components/tasks/TaskDeadlineView";
 import TaskCard from "../components/tasks/TaskCard";
 import TaskCardMonday from "../components/tasks/TaskCardMonday";
 
-export default function TaskBoard() {
+export default function TaskBoard({ embedded = false } = {}) {
   const { theme } = useContext(ThemeContext);
   const isLight = theme === 'light';
   const isArtis = theme === 'artis';
   const [showAddTask, setShowAddTask] = useState(false);
   const [showVoiceTask, setShowVoiceTask] = useState(false);
 
-  // Tauri Hotkey Shift+Ctrl+S → Dialog direkt öffnen
+  // Tauri Hotkey Shift+Ctrl+S → Dialog direkt öffnen. Im Widescreen-Panel
+  // übersprungen: das Window-Event kennt kein Zielpanel, zwei Task-Panels
+  // würden sonst beide den Dialog öffnen.
   useEffect(() => {
+    if (embedded) return;
     const handler = () => setShowAddTask(true);
     window.addEventListener('smartis:open-new-task', handler);
     return () => window.removeEventListener('smartis:open-new-task', handler);
-  }, []);
+  }, [embedded]);
   const [showAddColumn, setShowAddColumn] = useState(false);
   const [selectedTask, setSelectedTask] = useState(null);
   const [collapsedColumns, setCollapsedColumns] = useState(new Set());

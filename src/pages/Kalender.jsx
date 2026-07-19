@@ -117,17 +117,19 @@ function computeEventLayout(events) {
 
 // ── Haupt-Komponente ─────────────────────────────────────────────────
 
-export default function Kalender() {
+export default function Kalender({ embedded = false } = {}) {
   const { theme } = useContext(ThemeContext);
   const queryClient = useQueryClient();
 
-  const [viewMode, setViewMode] = useState('woche');    // 'woche' | 'liste'
+  // Im Widescreen-Panel: Liste statt Woche (Wochengrid braucht Breite),
+  // Task-Sidebar startet eingeklappt — beides bleibt vom Nutzer umschaltbar.
+  const [viewMode, setViewMode] = useState(embedded ? 'liste' : 'woche');    // 'woche' | 'liste'
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [filterCustomer, setFilterCustomer] = useState('');
   const [filterStatus, setFilterStatus] = useState('');  // '' | 'accepted' | 'tentativelyAccepted' | 'declined'
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(embedded);
   const [activeDragTask, setActiveDragTask] = useState(null);
   const [selectedTaskBlock, setSelectedTaskBlock] = useState(null);
 
@@ -968,16 +970,18 @@ export default function Kalender() {
           ))}
         </div>
 
-        {/* Sync */}
-        <Button
-          size="sm"
-          onClick={handleSync}
-          disabled={isSyncing}
-          style={{ backgroundColor: accentColor, color: '#fff' }}
-        >
-          <RefreshCw className={`h-4 w-4 mr-1.5 ${isSyncing ? 'animate-spin' : ''}`} />
-          {isSyncing ? 'Sync...' : 'Sync'}
-        </Button>
+        {/* Sync — im Widescreen-Panel ausgeblendet (Platzgrund), Funktion unangetastet */}
+        {!embedded && (
+          <Button
+            size="sm"
+            onClick={handleSync}
+            disabled={isSyncing}
+            style={{ backgroundColor: accentColor, color: '#fff' }}
+          >
+            <RefreshCw className={`h-4 w-4 mr-1.5 ${isSyncing ? 'animate-spin' : ''}`} />
+            {isSyncing ? 'Sync...' : 'Sync'}
+          </Button>
+        )}
       </div>
 
       {/* Hauptbereich */}

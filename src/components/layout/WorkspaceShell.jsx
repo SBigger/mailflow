@@ -1,49 +1,77 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   ResizablePanelGroup, ResizablePanel, ResizableHandle,
 } from "@/components/ui/resizable";
 import { PANELS_FOR_CLASS } from "./useIsWidescreen";
-import { LayoutGrid } from "lucide-react";
+import { WIDGET_KEYS, defaultAppsForCount } from "./workspaceRegistry";
+import PanelHeader from "./PanelHeader";
+import PanelWidget from "./PanelWidget";
 
-// Widescreen-Foundation v1: eine minimale Shell mit
-// - Panel 0 = <Outlet/> (die aktuelle Route bleibt navigierbar über die Sidebar)
-// - Panels 1..n = Platzhalter mit App-Switcher-Callout (kommt in v2)
-//
-// Fokus/Presets/Widgets/Registry: alles Phase 2. v1 beweist nur, dass das
-// Layout additiv funktioniert — kein Widget läuft noch, keine Persistenz.
-// LayoutStorage-Key pro Viewport-Klasse, damit Ultrawide-/Laptop-Layouts
-// getrennt bleiben.
+// Widescreen-Shell v2: Panel 0 = <Outlet/> (die aktuelle Route bleibt über
+// die Sidebar navigierbar), Panels 1..n zeigen Widgets aus der Registry,
+// per Dropdown im Panel-Header austauschbar. Persistiert wird pro
+// Viewport-Klasse (2col/3col/4col) getrennt in localStorage — Ultrawide-
+// Layout im Büro und Laptop-Layout im Zug kommen sich so nicht in die Quere.
+// Server-Sync/Presets/Focus-Mode folgen als eigene Commits.
 
-const LS_LAYOUT = (vc) => `workspace_layout_${vc}`;
+const LS_KEY = (vc) => `workspace_v2_${vc}`;
 
-function loadSizes(viewportClass, panelCount) {
+function loadState(viewportClass, panelCount) {
   try {
-    const raw = JSON.parse(localStorage.getItem(LS_LAYOUT(viewportClass)));
-    if (Array.isArray(raw) && raw.length === panelCount && raw.every((n) => typeof n === "number")) {
+    const raw = JSON.parse(localStorage.getItem(LS_KEY(viewportClass)));
+    if (
+      raw &&
+      Array.isArray(raw.apps) && raw.apps.length === panelCount - 1 &&
+      Array.isArray(raw.sizes) && raw.sizes.length === panelCount &&
+      raw.apps.every((a) => WIDGET_KEYS.includes(a))
+    ) {
       return raw;
     }
   } catch { /* fallthrough */ }
-  // Default: Outlet-Panel etwas breiter, Rest gleichverteilt.
   const first = 50;
   const rest = (100 - first) / (panelCount - 1);
-  return [first, ...Array(panelCount - 1).fill(rest)];
+  return {
+    apps: defaultAppsForCount(panelCount - 1),
+    sizes: [first, ...Array(panelCount - 1).fill(rest)],
+  };
 }
 
 export default function WorkspaceShell({ viewportClass, children }) {
   const panelCount = PANELS_FOR_CLASS[viewportClass] ?? 2;
-  const [sizes, setSizes] = useState(() => loadSizes(viewportClass, panelCount));
+  const [state, setState] = useState(() => loadState(viewportClass, panelCount));
 
-  // Beim Wechsel der Viewport-Klasse neu laden (Panels ändern Anzahl).
   useEffect(() => {
-    setSizes(loadSizes(viewportClass, panelCount));
+    setState(loadState(viewportClass, panelCount));
   }, [viewportClass, panelCount]);
 
-  const handleLayout = (next) => {
-    setSizes(next);
+  const persist = useCallback((next) => {
+    setState(next);
     try {
-      localStorage.setItem(LS_LAYOUT(viewportClass), JSON.stringify(next));
+      localStorage.setItem(LS_KEY(viewportClass), JSON.stringify(next));
     } catch { /* Quota / Privatmodus egal */ }
-  };
+  }, [viewportClass]);
+
+  const handleLayout = useCallback((sizes) => {
+    persist({ ...state, sizes });
+  }, [persist, state]);
+
+  const handleSelectApp = useCallback((slotIndex, appKey) => {
+    const apps = state.apps.slice();
+    apps[slotIndex] = appKey;
+    persist({ ...state, apps });
+  }, [persist, state]);
+
+  // Cross-Panel-Navigation: Widget A ruft onOpen(appKey, params) →
+  // erstes Panel mit passender App wird fokussiert/ersetzt. In v2 ohne
+  // Runtime-Params (die kommen mit dem Presets-/Kontext-Commit) reicht
+  // "Panel auf diese App umschalten, falls noch nicht offen".
+  const openApp = useCallback((appKey) => {
+    const existingIdx = state.apps.indexOf(appKey);
+    if (existingIdx >= 0) return; // schon offen, nichts zu tun in v2
+    const apps = state.apps.slice();
+    apps[0] = appKey;
+    persist({ ...state, apps });
+  }, [persist, state]);
 
   return (
     <ResizablePanelGroup
@@ -51,30 +79,22 @@ export default function WorkspaceShell({ viewportClass, children }) {
       onLayout={handleLayout}
       className="h-full w-full"
     >
-      <ResizablePanel defaultSize={sizes[0]} minSize={20} order={0}>
+      <ResizablePanel defaultSize={state.sizes[0]} minSize={20} order={0}>
         <div className="h-full w-full overflow-hidden">{children}</div>
       </ResizablePanel>
-      {Array.from({ length: panelCount - 1 }, (_, i) => (
-        <React.Fragment key={i + 1}>
+      {state.apps.map((appKey, i) => (
+        <React.Fragment key={i}>
           <ResizableHandle withHandle />
-          <ResizablePanel defaultSize={sizes[i + 1]} minSize={15} order={i + 1}>
-            <PlaceholderPanel index={i + 2} />
+          <ResizablePanel defaultSize={state.sizes[i + 1]} minSize={15} order={i + 1}>
+            <div className="h-full w-full flex flex-col overflow-hidden">
+              <PanelHeader appKey={appKey} onSelectApp={(next) => handleSelectApp(i, next)} />
+              <div className="min-h-0 flex-1 overflow-hidden">
+                <PanelWidget appKey={appKey} onOpen={openApp} />
+              </div>
+            </div>
           </ResizablePanel>
         </React.Fragment>
       ))}
     </ResizablePanelGroup>
-  );
-}
-
-function PlaceholderPanel({ index }) {
-  return (
-    <div className="h-full w-full flex flex-col items-center justify-center gap-3 p-6 text-center text-sm text-muted-foreground border-l border-border">
-      <LayoutGrid className="h-8 w-8 opacity-50" />
-      <div className="font-medium">Panel {index}</div>
-      <div className="text-xs max-w-[280px]">
-        App-Auswahl folgt im nächsten Update. Der Widescreen-Modus ist bereits aktiv —
-        Panel-Breiten links per Splitter anpassen wird gespeichert.
-      </div>
-    </div>
   );
 }

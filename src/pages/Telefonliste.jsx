@@ -20,7 +20,7 @@ import { useIsMobile } from "@/components/mobile/useIsMobile";
  * Default Phone-App) übernommen.
  * Stift-Icon → 'Anrufen mit Notiz'-Popup wie bisher.
  */
-export default function Telefonliste({ embedded = false }) {
+export default function Telefonliste({ embedded = false, onOpen }) {
   const { theme } = useContext(ThemeContext);
   const navigate = useNavigate();
   const isMobile = useIsMobile();
@@ -229,7 +229,7 @@ export default function Telefonliste({ embedded = false }) {
             headerBg={headerBg}
             accent={accent}
             onCall={callAndNote}
-            onOpenCustomer={() => navigate("/Kunden")}
+            onOpenCustomer={(r) => (embedded && onOpen) ? onOpen("kunden", { customerId: r.customerId }) : navigate("/Kunden")}
             formatPhoneDisplay={formatPhoneDisplay}
           />
         ) : (
@@ -271,7 +271,7 @@ export default function Telefonliste({ embedded = false }) {
                   <td style={{ ...tdBase, borderBottomColor: borderColor, color: textMain, fontWeight: 500 }}>
                     <button
                       type="button"
-                      onClick={() => navigate("/Kunden")}
+                      onClick={() => (embedded && onOpen) ? onOpen("kunden", { customerId: r.customerId }) : navigate("/Kunden")}
                       title="Zum Kunden-Profil"
                       style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", color: textMain, font: "inherit", textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}
                       onMouseEnter={e => { e.currentTarget.style.color = accent; }}
