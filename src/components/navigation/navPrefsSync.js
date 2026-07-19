@@ -31,7 +31,7 @@ export function hydrateNavPrefs(profile) {
     if (Array.isArray(remote.favorites)) localStorage.setItem('app_favorites', JSON.stringify(remote.favorites));
     if (remote.groups && typeof remote.groups === 'object') localStorage.setItem('nav_groups_open', JSON.stringify(remote.groups));
     if (remote.mode === 'rail' || remote.mode === 'wide') localStorage.setItem('nav_mode', remote.mode);
-    if (remote.layout === 'hub' || remote.layout === 'sidebar') localStorage.setItem('nav_layout', remote.layout);
+    if (['hub', 'sidebar', 'widescreen'].includes(remote.layout)) localStorage.setItem('nav_layout', remote.layout);
     if (remote.open_mode === 'same' || remote.open_mode === 'new') localStorage.setItem('hub_open_mode', remote.open_mode);
     if (remote.widgets_on === true || remote.widgets_on === false) localStorage.setItem('hub_widgets', remote.widgets_on ? '1' : '0');
     if (Array.isArray(remote.widgets_order)) localStorage.setItem('hub_widgets_order', JSON.stringify(remote.widgets_order));
