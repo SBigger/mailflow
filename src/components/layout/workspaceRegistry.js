@@ -3,12 +3,12 @@
 // nur Seiten, die sich sicher in ein begrenztes Panel einbetten lassen
 // (embedded-Prop, kein Vollbild-Zwang, keine URL-Nebenwirkungen).
 //
-// TABU: Dokumente.jsx (handleCheckout/handleCheckin) und MailKanban.jsx
-// (MS365-Mail-Integration) sind hier bewusst NICHT gelistet — siehe
-// CLAUDE.md. Ein Dokumente-Widget müsste eine eigene Read-only-Komponente
-// sein, kein Rendering der Originalseite; das folgt als eigener Commit.
+// TABU: MailKanban.jsx (MS365-Mail-Integration) ist bewusst NICHT
+// gelistet — siehe CLAUDE.md. `dokumente` zeigt NICHT src/pages/Dokumente.jsx
+// (handleCheckout/handleCheckin dort sind tabu), sondern eine eigene
+// Read-only-Komponente (DokumenteWidget.jsx) ohne Checkout-Codepfade.
 import { lazy } from "react";
-import { Phone, CheckSquare, CalendarDays, CloudUpload } from "lucide-react";
+import { Phone, CheckSquare, CalendarDays, CloudUpload, FileText } from "lucide-react";
 
 export const WIDGETS = {
   telefonliste: {
@@ -35,12 +35,18 @@ export const WIDGETS = {
     color: "#dc2626",
     component: lazy(() => import("@/pages/Posteingang.jsx")),
   },
+  dokumente: {
+    label: "Dokumente",
+    icon: FileText,
+    color: "#0891b2",
+    component: lazy(() => import("@/components/widgets/DokumenteWidget.jsx")),
+  },
 };
 
 export const WIDGET_KEYS = Object.keys(WIDGETS);
 
 export function defaultAppsForCount(count) {
   // Panel 0 ist immer die Route (kein Registry-Eintrag); hier nur 1..n.
-  const order = ["kalender", "tasks", "telefonliste", "posteingang"];
+  const order = ["kalender", "tasks", "telefonliste", "dokumente"];
   return order.slice(0, count);
 }

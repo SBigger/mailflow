@@ -17,7 +17,7 @@ export const BUILTIN_PRESETS = [
     id: "builtin:fibu",
     label: "Fibu",
     description: "Belege erfassen und buchen",
-    apps: ["posteingang", "tasks", "telefonliste"],
+    apps: ["dokumente", "tasks", "telefonliste"],
   },
   {
     id: "builtin:planung",
