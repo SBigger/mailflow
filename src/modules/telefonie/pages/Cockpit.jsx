@@ -8,7 +8,7 @@ import { de } from "date-fns/locale";
 import { supabase, entities } from "@/api/supabaseClient";
 import { useAuth } from "@/lib/AuthContext";
 import { ThemeContext } from "@/Layout";
-import { isMissed, initials } from "@/lib/chartisTheme";
+import { isMissed, initials, personStyle } from "@/lib/chartisTheme";
 import { tele, PRESENCE, formatPhone } from "../theme";
 import { useTelephony } from "../context/TelephonyContext";
 
@@ -124,16 +124,24 @@ export default function Cockpit() {
           {staff.length === 0 && <Empty t={t}>Mitarbeiterliste wird geladen …</Empty>}
           {staff.map((s) => {
             const isMe = s.full_name === me;
-            const dot = isMe ? t.presence[(PRESENCE[effectivePresence] || PRESENCE.available).dot] : t.presence.offline;
+            const info = isMe ? (PRESENCE[effectivePresence] || PRESENCE.available) : null;
+            const dot = isMe ? t.presence[info.dot] : t.presence.offline;
+            const ps = personStyle(s);
             return (
-              <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 14px", borderBottom: `1px solid ${t.borderSubtle}` }}>
-                <span style={{ position: "relative", width: 34, height: 34, borderRadius: 11, background: t.accentSoft, color: t.accent, display: "grid", placeItems: "center", fontSize: 12.5, fontWeight: 800, flexShrink: 0 }}>
+              <div key={s.id}
+                style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 14px", borderBottom: `1px solid ${t.borderSubtle}`, transition: "background .12s" }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = t.activeRow)}
+                onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>
+                <span style={{ position: "relative", width: 34, height: 34, borderRadius: 11, background: ps.bg, color: ps.text, display: "grid", placeItems: "center", fontSize: 12.5, fontWeight: 800, flexShrink: 0 }}>
                   {initials(s.full_name)}
                   <span style={{ position: "absolute", right: -2, bottom: -2, width: 12, height: 12, borderRadius: "50%", background: dot, border: `2px solid ${t.raised}` }} />
                 </span>
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={{ fontSize: 12.5, fontWeight: 650, color: t.textPrimary }}>{s.full_name}{isMe && <span style={{ color: t.textMuted, fontWeight: 500 }}> · Du</span>}</div>
-                  <div style={{ fontSize: 11, color: t.textMuted }}>{isMe ? (PRESENCE[effectivePresence] || PRESENCE.available).label : "kein Live-Status"}</div>
+                  <div style={{ fontSize: 11, color: isMe ? t.textSecondary : t.textMuted, display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: dot }} />
+                    {isMe ? info.label : "kein Live-Status"}
+                  </div>
                 </div>
               </div>
             );
@@ -143,7 +151,15 @@ export default function Cockpit() {
         <Panel t={t} title="Rufgruppe · Sekretariat" icon={Radio} right="aktiv">
           <div style={{ padding: "14px 16px", fontSize: 12.5, color: t.textSecondary, lineHeight: 1.9 }}>
             <Row t={t} k="Nummer"><span style={{ fontFamily: "ui-monospace, monospace" }}>+41 71 511 22 33</span></Row>
-            <Row t={t} k="Klingelt bei">Petra · Roger · Sascha</Row>
+            <Row t={t} k="Klingelt bei">
+              <span style={{ display: "inline-flex", gap: 6, flexWrap: "wrap" }}>
+                {["Petra", "Roger", "Sascha"].map((n) => (
+                  <span key={n} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 600, background: t.sunken, border: `1px solid ${t.borderSubtle}`, padding: "2px 8px", borderRadius: 999 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: t.presence.online }} />{n}
+                  </span>
+                ))}
+              </span>
+            </Row>
             <Row t={t} k="Strategie">Alle gleichzeitig · 25 Sek</Row>
             <Row t={t} k="Fallback">→ Voicemail</Row>
             <div style={{ marginTop: 12, fontSize: 11, color: t.textMuted, fontStyle: "italic" }}>
