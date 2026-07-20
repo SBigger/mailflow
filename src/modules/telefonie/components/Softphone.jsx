@@ -1,11 +1,12 @@
-import React, { useContext, useEffect, useRef, useState } from "react";
+import React, { useContext, useEffect, useState } from "react";
 import {
   Phone, PhoneOff, PhoneIncoming, PhoneOutgoing, Mic, MicOff, Pause,
-  ArrowRightLeft, Grid3x3, Video, StickyNote, X, Delete, FileText,
+  ArrowRightLeft, Grid3x3, Video, StickyNote, X, Delete, FileText, Mail,
 } from "lucide-react";
 import { ThemeContext } from "@/Layout";
 import { tele, formatPhone } from "../theme";
 import { useTelephony } from "../context/TelephonyContext";
+import { useIncomingDossier } from "../useDossier";
 
 const KEYS = [
   ["1", ""], ["2", "ABC"], ["3", "DEF"],
@@ -27,10 +28,36 @@ function useCallTimer(active, startedAt) {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
+function relTime(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const days = Math.floor((Date.now() - d.getTime()) / 86400000);
+  if (days <= 0) return "heute";
+  if (days === 1) return "gestern";
+  if (days < 7) return `${days} Tg.`;
+  if (days < 31) return `${Math.floor(days / 7)} Wo.`;
+  return `${Math.floor(days / 30)} Mt.`;
+}
+
+function dueInfo(iso) {
+  if (!iso) return { label: "offen", overdue: false };
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return { label: "offen", overdue: false };
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const dd = new Date(d); dd.setHours(0, 0, 0, 0);
+  const diff = Math.round((dd.getTime() - today.getTime()) / 86400000);
+  if (diff < 0) return { label: "überfällig", overdue: true };
+  if (diff === 0) return { label: "fällig heute", overdue: true };
+  if (diff === 1) return { label: "morgen", overdue: false };
+  return { label: `${String(dd.getDate()).padStart(2, "0")}.${String(dd.getMonth() + 1).padStart(2, "0")}.`, overdue: false };
+}
+
 export default function Softphone() {
   const { theme } = useContext(ThemeContext);
   const t = tele(theme);
   const { call, incoming, panelOpen, setPanelOpen, dial, answer, decline, hangup, toggleMute, toggleHold, toggleVideo } = useTelephony();
+  const dossier = useIncomingDossier(incoming?.peerNumber);
 
   const [num, setNum] = useState("");
   const mono = { fontFamily: 'ui-monospace, "Segoe UI Mono", Consolas, monospace', fontVariantNumeric: "tabular-nums" };
@@ -43,16 +70,17 @@ export default function Softphone() {
     overflow: "hidden", color: t.textPrimary,
   };
 
-  // ── Eingehend: Screen-Pop ──────────────────────────────────────────────
+  // ── Eingehend: Screen-Pop mit echtem Dossier ───────────────────────────
   if (incoming) {
-    const name = incoming.customer?.company_name || incoming.peerName || incoming.peerNumber;
+    const name = dossier.customer?.company_name || incoming.peerName || formatPhone(incoming.peerNumber);
     return (
-      <div style={{ ...shellStyle, width: 384 }} role="dialog" aria-label="Eingehender Anruf">
+      <div style={{ ...shellStyle, width: 384, bottom: "auto", top: 24, maxHeight: "calc(100vh - 48px)", overflowY: "auto" }} role="dialog" aria-label="Eingehender Anruf">
         <div style={{ padding: "14px 18px 12px", background: t.accentSoft, borderBottom: `1px solid ${t.borderSubtle}`, display: "flex", alignItems: "center", gap: 8 }}>
           <PhoneIncoming size={16} style={{ color: t.accent }} />
           <span style={{ fontSize: 12.5, fontWeight: 750, color: t.accent }}>Eingehender Anruf</span>
           {incoming.viaNumber && <span style={{ marginLeft: "auto", fontSize: 10.5, fontWeight: 600, color: t.textMuted }}>via {incoming.viaNumber}</span>}
         </div>
+
         <div style={{ padding: "16px 18px 4px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 13 }}>
             <span style={{ width: 50, height: 50, borderRadius: 15, background: t.accentSoft, color: t.accent, display: "grid", placeItems: "center", fontSize: 18, fontWeight: 800, flexShrink: 0 }}>
@@ -62,21 +90,39 @@ export default function Softphone() {
               <div style={{ fontSize: 16.5, fontWeight: 750, lineHeight: 1.15 }}>{name}</div>
               <div style={{ ...mono, fontSize: 12.5, color: t.textMuted, marginTop: 2 }}>{formatPhone(incoming.peerNumber)}</div>
             </div>
+            {dossier.matched && (
+              <span style={{ marginLeft: "auto", alignSelf: "flex-start", fontSize: 10, fontWeight: 800, color: t.in, background: t.in + "1e", padding: "2px 8px", borderRadius: 999 }}>Kunde</span>
+            )}
           </div>
-          {/* Dossier-Vorschau (Daten folgen aus tasks/mail_items/Dateiablage sobald Nummer→Kunde verdrahtet) */}
-          <div style={{ marginTop: 13, display: "flex", flexDirection: "column", gap: 8 }}>
-            {[
-              { k: "Pendenzen", v: "wird geladen …" },
-              { k: "Letzte Mails", v: "wird geladen …" },
-              { k: "Letzte Dokumente", v: "wird geladen …" },
-            ].map((r) => (
-              <div key={r.k} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "7px 10px", background: t.sunken, border: `1px solid ${t.borderSubtle}`, borderRadius: 9 }}>
-                <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: ".07em", textTransform: "uppercase", color: t.textMuted }}>{r.k}</span>
-                <span style={{ fontSize: 11, color: t.textMuted }}>{r.v}</span>
-              </div>
-            ))}
-          </div>
+          {dossier.contactName && (
+            <div style={{ fontSize: 11.5, color: t.textMuted, marginTop: 7 }}>Anrufer: <b style={{ color: t.textSecondary }}>{dossier.contactName}</b></div>
+          )}
+
+          {dossier.matched ? (
+            <div style={{ marginTop: 13, display: "flex", flexDirection: "column", gap: 12 }}>
+              <DSec t={t} label="Pendenzen" count={dossier.pendenzen.length}>
+                {dossier.pendenzen.length
+                  ? dossier.pendenzen.map((p) => { const di = dueInfo(p.due_date); return <DRow key={p.id} t={t} dot={di.overdue ? t.missed : t.presence.away} text={p.title || "Aufgabe"} meta={di.label} metaCol={di.overdue ? t.missed : undefined} />; })
+                  : <DEmpty t={t}>Keine offenen Pendenzen</DEmpty>}
+              </DSec>
+              <DSec t={t} label="Letzte Mails" count={dossier.mails.length}>
+                {dossier.mails.length
+                  ? dossier.mails.map((m) => <DRow key={m.id} t={t} icon="mail" text={m.subject || "(kein Betreff)"} meta={relTime(m.received_date)} />)
+                  : <DEmpty t={t}>Keine Mails</DEmpty>}
+              </DSec>
+              <DSec t={t} label="Letzte Dokumente" count={dossier.docs.length}>
+                {dossier.docs.length
+                  ? dossier.docs.map((d) => <DRow key={d.id} t={t} icon="doc" text={d.name || d.filename || "Dokument"} meta={relTime(d.updated_at)} />)
+                  : <DEmpty t={t}>Keine Dokumente</DEmpty>}
+              </DSec>
+            </div>
+          ) : (
+            <div style={{ marginTop: 12, marginBottom: 4, fontSize: 12, color: t.textMuted, background: t.sunken, border: `1px solid ${t.borderSubtle}`, borderRadius: 10, padding: "11px 13px" }}>
+              Unbekannter Anrufer — (noch) keinem Kunden zugeordnet.
+            </div>
+          )}
         </div>
+
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, padding: "14px 18px 16px" }}>
           <button onClick={answer} style={bigBtn(t.answer)}><Phone size={17} /> Annehmen</button>
           <button onClick={decline} style={bigBtn(t.hangup)}><PhoneOff size={17} /> Ablehnen</button>
@@ -192,6 +238,36 @@ export default function Softphone() {
       </div>
     </div>
   );
+}
+
+function DSec({ t, label, count, children }) {
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 6 }}>
+        <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: ".08em", textTransform: "uppercase", color: t.textMuted }}>{label}</span>
+        {count != null && count > 0 && (
+          <span style={{ fontSize: 9.5, fontWeight: 800, color: t.textSecondary, background: t.sunken, padding: "0 6px", borderRadius: 999 }}>{count}</span>
+        )}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>{children}</div>
+    </div>
+  );
+}
+
+function DRow({ t, dot, icon, text, meta, metaCol }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "7px 10px", background: t.sunken, border: `1px solid ${t.borderSubtle}`, borderRadius: 9 }}>
+      {dot && <span style={{ width: 8, height: 8, borderRadius: "50%", background: dot, flexShrink: 0 }} />}
+      {icon === "mail" && <Mail size={13} style={{ color: t.textMuted, flexShrink: 0 }} />}
+      {icon === "doc" && <FileText size={13} style={{ color: t.textMuted, flexShrink: 0 }} />}
+      <span style={{ flex: 1, minWidth: 0, fontSize: 11.5, fontWeight: 600, color: t.textPrimary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{text}</span>
+      {meta && <span style={{ fontSize: 10.5, fontWeight: 650, color: metaCol || t.textMuted, flexShrink: 0, fontFamily: 'ui-monospace, "Segoe UI Mono", Consolas, monospace' }}>{meta}</span>}
+    </div>
+  );
+}
+
+function DEmpty({ t, children }) {
+  return <div style={{ fontSize: 11, color: t.textMuted, padding: "3px 2px" }}>{children}</div>;
 }
 
 function Ctrl({ t, on, icon: Icon, label, onClick }) {

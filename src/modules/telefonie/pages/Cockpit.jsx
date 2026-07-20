@@ -5,7 +5,7 @@ import {
 } from "lucide-react";
 import { format, isToday } from "date-fns";
 import { de } from "date-fns/locale";
-import { supabase } from "@/api/supabaseClient";
+import { supabase, entities } from "@/api/supabaseClient";
 import { useAuth } from "@/lib/AuthContext";
 import { ThemeContext } from "@/Layout";
 import { isMissed, initials } from "@/lib/chartisTheme";
@@ -22,7 +22,7 @@ export default function Cockpit() {
   const { theme } = useContext(ThemeContext);
   const t = tele(theme);
   const { profile } = useAuth();
-  const { effectivePresence, dial } = useTelephony();
+  const { effectivePresence, dial, simulateIncoming } = useTelephony();
   const me = profile?.full_name || "";
 
   const { data: calls = [] } = useQuery({
@@ -60,6 +60,22 @@ export default function Cockpit() {
     staleTime: 5 * 60_000,
   });
 
+  // Voller Kundenstamm (mit Telefonnummern) — nur für den Test-Anruf-Knopf;
+  // gleicher queryKey wie useDossier/Telefonliste → React Query dedupliziert.
+  const { data: custFull = [] } = useQuery({
+    queryKey: ["customers"],
+    queryFn: () => entities.Customer.list("company_name"),
+    staleTime: 5 * 60_000,
+  });
+  const testCall = () => {
+    const c = (custFull || []).find((x) => x.phone && x.aktiv !== false) || (custFull || []).find((x) => x.phone);
+    simulateIncoming(
+      c
+        ? { id: "sim-" + Date.now(), dir: "in", status: "ringing", peerNumber: c.phone, peerName: c.company_name || null, customer: null, viaNumber: "+41 71 511 22 33" }
+        : undefined
+    );
+  };
+
   const kpi = useMemo(() => {
     const today = calls.filter((c) => c.start_time && isToday(new Date(c.start_time)));
     const missed = today.filter(isMissed).length;
@@ -84,6 +100,10 @@ export default function Cockpit() {
             {format(new Date(), "EEEE, d. MMMM yyyy", { locale: de })} · Hauptnummer +41 71 511 22 33
           </p>
         </div>
+        <button onClick={testCall} title="Eingehenden Test-Anruf simulieren — zeigt das Screen-Pop-Dossier"
+          style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12, fontWeight: 650, color: t.accent, background: t.accentSoft, border: `1px solid ${t.accent}44`, padding: "6px 12px", borderRadius: 999, cursor: "pointer" }}>
+          <PhoneIncoming size={14} /> Test-Anruf
+        </button>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12, fontWeight: 650, color: t.textSecondary, background: t.raised, border: `1px solid ${t.borderSubtle}`, padding: "6px 12px", borderRadius: 999 }}>
           <span style={{ width: 8, height: 8, borderRadius: "50%", background: t.presence[(PRESENCE[effectivePresence] || PRESENCE.available).dot] }} />
           {(PRESENCE[effectivePresence] || PRESENCE.available).label}
