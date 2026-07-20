@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Check, X, ArrowRight, StickyNote, PhoneOutgoing, PhoneIncoming, AlertCircle } from "lucide-react";
 import { entities } from "@/api/supabaseClient";
@@ -6,8 +6,7 @@ import {
   currentEmployee, leProject, leServiceType, leRateGroupRate,
   leServiceRateHistory, leTimeEntry, resolveRateFor,
 } from "@/lib/leApi";
-import { ThemeContext } from "@/Layout";
-import { tele, formatPhone } from "../theme";
+import { tele, formatPhone, useAppTheme } from "../theme";
 import { matchCustomer } from "../useDossier";
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -18,7 +17,7 @@ const fmtDur = (sec) => { const m = Math.floor(sec / 60), s = sec % 60; return `
 // Buttet einen echten le_time_entry (RLS: nur eigener Mitarbeiter). Degradiert
 // sauber, wenn die Leistungserfassung (Mitarbeiter/Projekt/Leistungsart) fehlt.
 export default function CallWrapup({ wrapup, onClose }) {
-  const { theme } = useContext(ThemeContext);
+  const theme = useAppTheme();
   const t = tele(theme);
 
   const { data: customers = [] } = useQuery({ queryKey: ["customers"], queryFn: () => entities.Customer.list("company_name"), staleTime: 5 * 60_000 });

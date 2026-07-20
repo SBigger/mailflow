@@ -3,9 +3,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import { ThemeContext } from "@/Layout";
 import { useAuth } from "@/lib/AuthContext";
 import { tele } from "./theme";
-import { TelephonyProvider } from "./context/TelephonyContext";
 import TelefonieSidebar from "./components/TelefonieSidebar";
-import Softphone from "./components/Softphone";
 import Cockpit from "./pages/Cockpit";
 import { Verlauf, Rufgruppen, TeamPresence, Voicemail, Einstellungen } from "./pages/MorePages";
 
@@ -34,7 +32,6 @@ export default function TelefonieShell() {
 
   return (
     <ThemeContext.Provider value={{ theme, setTheme: () => {} }}>
-      <TelephonyProvider>
         <div
           style={{
             display: "flex", height: "100vh", overflow: "hidden",
@@ -56,9 +53,7 @@ export default function TelefonieShell() {
               <Route path="*" element={<Navigate to="/telefonie" replace />} />
             </Routes>
           </main>
-          <Softphone />
         </div>
-      </TelephonyProvider>
     </ThemeContext.Provider>
   );
 }

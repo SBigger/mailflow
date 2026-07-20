@@ -1,10 +1,9 @@
-import React, { useContext, useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Phone, PhoneOff, PhoneIncoming, PhoneOutgoing, Mic, MicOff, Pause,
   ArrowRightLeft, Grid3x3, Video, StickyNote, X, Delete, FileText, Mail,
 } from "lucide-react";
-import { ThemeContext } from "@/Layout";
-import { tele, formatPhone } from "../theme";
+import { tele, formatPhone, useAppTheme } from "../theme";
 import { useTelephony } from "../context/TelephonyContext";
 import { useIncomingDossier } from "../useDossier";
 import CallWrapup from "./CallWrapup";
@@ -55,7 +54,7 @@ function dueInfo(iso) {
 }
 
 export default function Softphone() {
-  const { theme } = useContext(ThemeContext);
+  const theme = useAppTheme();
   const t = tele(theme);
   const { call, incoming, wrapup, clearWrapup, panelOpen, setPanelOpen, dial, answer, decline, hangup, toggleMute, toggleHold, toggleVideo } = useTelephony();
   const dossier = useIncomingDossier(incoming?.peerNumber);
