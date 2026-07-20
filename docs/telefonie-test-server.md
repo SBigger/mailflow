@@ -1,6 +1,18 @@
-# Telefonie – Test-Server-Anleitung (für Roger)
+# Telefonie – Test-Server-Anleitung (für Roger) — ⚠️ ÜBERHOLT (2026-07-20 Nacht)
 
-Ziel: eine **kleine, dauerhaft laufende Test-VM**, damit das neue Softphone in smartis
+> **Dieser Plan (LiveKit + Kamailio auf eigener VM) wurde NICHT weiterverfolgt.**
+> Nach genauerer Recherche zu „Verbinden untereinander" (Transfer/intern/BLF/
+> Rufgruppen) hat sich gezeigt, dass das PBX-Funktionen sind, die ein
+> selbstgebauter LiveKit/Kamailio-Stack nur mit erheblichem Zusatzaufwand hätte
+> liefern können (attended Transfer z. B. gar nicht sauber self-hosted lösbar).
+> **Neuer Weg: peoplefone vPBX** (Cloud-Telefonanlage des bestehenden Providers,
+> CH-gehostet, kein eigener Server) + **CONNECTOR-API** für die smartis-Integration.
+> **→ Siehe `docs/telefonie-vpbx-setup.md` für den aktuellen Plan.**
+> Diese Datei bleibt nur als Referenz/Historie stehen — bitte nicht mehr umsetzen.
+
+---
+
+Ziel (ALT, nicht mehr aktuell): eine **kleine, dauerhaft laufende Test-VM**, damit das neue Softphone in smartis
 echte Anrufe über den bestehenden **Peoplefone-SIP-Trunk** machen/empfangen kann.
 Reine Testumgebung – produktiv wird derselbe Stack später auf deinem Server gezogen.
 
