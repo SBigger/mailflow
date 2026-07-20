@@ -36,7 +36,22 @@ function arraysEqual(a, b) {
 // Presets/Server-Sync folgen als eigene Commits.
 
 const LS_KEY = (vc) => `workspace_v2_${vc}`;
+const LS_PANELCOUNT_KEY = (vc) => `workspace_panelcount_${vc}`;
 const COLLAPSED_SIZE = 4;
+const MIN_PANELS = 2;
+
+// Nutzer kann die Panel-Anzahl auf einem breiteren Bildschirm bewusst
+// reduzieren (z.B. 4col-faehiger Monitor, aber nur 3 Panels gewuenscht --
+// 4 gleichzeitige Panels sind laut UX-Recherche eher die Obergrenze als
+// der Sweet Spot). "max" ist das, was die Viewport-Klasse hergibt; die
+// Wahl bleibt darauf begrenzt und wird pro Viewport-Klasse gemerkt.
+function loadPanelCount(viewportClass, max) {
+  try {
+    const raw = parseInt(localStorage.getItem(LS_PANELCOUNT_KEY(viewportClass)), 10);
+    if (Number.isFinite(raw) && raw >= MIN_PANELS && raw <= max) return raw;
+  } catch { /* egal */ }
+  return max;
+}
 
 function loadState(viewportClass, panelCount) {
   try {
@@ -59,7 +74,8 @@ function loadState(viewportClass, panelCount) {
 }
 
 export default function WorkspaceShell({ viewportClass, currentPageName, children }) {
-  const panelCount = PANELS_FOR_CLASS[viewportClass] ?? 2;
+  const maxPanels = PANELS_FOR_CLASS[viewportClass] ?? 2;
+  const [panelCount, setPanelCount] = useState(() => loadPanelCount(viewportClass, maxPanels));
   const [state, setState] = useState(() => loadState(viewportClass, panelCount));
   const [focusedIndex, setFocusedIndex] = useState(null);
 
@@ -71,11 +87,36 @@ export default function WorkspaceShell({ viewportClass, currentPageName, childre
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
 
   useEffect(() => {
-    setState(loadState(viewportClass, panelCount));
+    const nextCount = loadPanelCount(viewportClass, maxPanels);
+    setPanelCount(nextCount);
+    setState(loadState(viewportClass, nextCount));
     setCustomPresets(loadCustomPresets(viewportClass));
     setFocusedIndex(null);
     focusModeRef.current = false;
-  }, [viewportClass, panelCount]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewportClass, maxPanels]);
+
+  // Panel-Anzahl bewusst ändern (Nutzer-Auswahl, nicht Viewport-Wechsel):
+  // aktuelle App-Zuordnung wird gekürzt/aufgefüllt statt komplett zurückgesetzt.
+  const handleSetPanelCount = useCallback((next) => {
+    const clamped = Math.min(Math.max(next, MIN_PANELS), maxPanels);
+    try {
+      localStorage.setItem(LS_PANELCOUNT_KEY(viewportClass), String(clamped));
+    } catch { /* egal */ }
+    setPanelCount(clamped);
+    setState((prev) => {
+      const slots = clamped - 1;
+      const fallback = defaultAppsForCount(slots);
+      const apps = Array.from({ length: slots }, (_, i) => prev.apps[i] ?? fallback[i] ?? WIDGET_KEYS[0]);
+      const first = 50;
+      const rest = (100 - first) / slots;
+      const nextState = { apps, sizes: [first, ...Array(slots).fill(rest)] };
+      try {
+        localStorage.setItem(LS_KEY(viewportClass), JSON.stringify(nextState));
+      } catch { /* egal */ }
+      return nextState;
+    });
+  }, [viewportClass, maxPanels]);
 
   const handleLayout = useCallback((sizes) => {
     // Während des Focus-Mode feuert onLayout mehrfach mit Zwischenzuständen
@@ -212,6 +253,23 @@ export default function WorkspaceShell({ viewportClass, currentPageName, childre
               </div>
             );
           })}
+          {maxPanels > MIN_PANELS && (
+            <div className="flex items-center gap-1 rounded-md border border-border p-0.5" title="Anzahl Panels">
+              {Array.from({ length: maxPanels - MIN_PANELS + 1 }, (_, i) => i + MIN_PANELS).map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => handleSetPanelCount(n)}
+                  title={`${n} Panels`}
+                  className={`flex h-6 w-6 items-center justify-center rounded text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                    panelCount === n ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:bg-background/60"
+                  }`}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="min-w-0 flex-1" />
           <button
             type="button"
