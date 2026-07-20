@@ -29,6 +29,7 @@ export function TelephonyProvider({ children }) {
   const [call, setCall] = useState(null);         // aktiver / ausgehender Anruf
   const [incoming, setIncoming] = useState(null); // eingehender Anruf (Screen-Pop)
   const [panelOpen, setPanelOpen] = useState(false);
+  const [wrapup, setWrapup] = useState(null); // gerade beendeter Anruf → Nachbearbeitung
 
   useEffect(() => {
     localStorage.setItem("tele_presence", presence);
@@ -40,6 +41,7 @@ export function TelephonyProvider({ children }) {
   const dial = useCallback((number, meta = {}) => {
     if (!number) return;
     setIncoming(null);
+    setWrapup(null);
     // STUB: sofort „verbunden" — später CreateSIPParticipant + Room-Join
     setCall({
       id: "stub-" + Date.now(),
@@ -58,6 +60,7 @@ export function TelephonyProvider({ children }) {
 
   // ── eingehend annehmen ─────────────────────────────────────────────────
   const answer = useCallback(() => {
+    setWrapup(null);
     setIncoming((prev) => {
       if (!prev) return null;
       setCall({
@@ -74,7 +77,16 @@ export function TelephonyProvider({ children }) {
   }, []);
 
   const decline = useCallback(() => setIncoming(null), []);
-  const hangup  = useCallback(() => setCall(null), []);
+  const hangup = useCallback(() => {
+    setCall((prev) => {
+      if (prev) {
+        const durationSec = Math.max(0, Math.floor((Date.now() - (prev.startedAt || Date.now())) / 1000));
+        setWrapup({ ...prev, durationSec, endedAt: Date.now() });
+      }
+      return null;
+    });
+  }, []);
+  const clearWrapup = useCallback(() => setWrapup(null), []);
   const toggleMute  = useCallback(() => setCall((c) => (c ? { ...c, muted: !c.muted } : c)), []);
   const toggleHold  = useCallback(() => setCall((c) => (c ? { ...c, onHold: !c.onHold } : c)), []);
   const toggleVideo = useCallback(() => setCall((c) => (c ? { ...c, video: !c.video } : c)), []);
@@ -104,6 +116,8 @@ export function TelephonyProvider({ children }) {
     setPresence,
     call,
     incoming,
+    wrapup,
+    clearWrapup,
     panelOpen,
     setPanelOpen,
     dial,

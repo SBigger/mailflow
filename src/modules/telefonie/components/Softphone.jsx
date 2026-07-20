@@ -7,6 +7,7 @@ import { ThemeContext } from "@/Layout";
 import { tele, formatPhone } from "../theme";
 import { useTelephony } from "../context/TelephonyContext";
 import { useIncomingDossier } from "../useDossier";
+import CallWrapup from "./CallWrapup";
 
 const KEYS = [
   ["1", ""], ["2", "ABC"], ["3", "DEF"],
@@ -56,7 +57,7 @@ function dueInfo(iso) {
 export default function Softphone() {
   const { theme } = useContext(ThemeContext);
   const t = tele(theme);
-  const { call, incoming, panelOpen, setPanelOpen, dial, answer, decline, hangup, toggleMute, toggleHold, toggleVideo } = useTelephony();
+  const { call, incoming, wrapup, clearWrapup, panelOpen, setPanelOpen, dial, answer, decline, hangup, toggleMute, toggleHold, toggleVideo } = useTelephony();
   const dossier = useIncomingDossier(incoming?.peerNumber);
 
   const [num, setNum] = useState("");
@@ -170,6 +171,11 @@ export default function Softphone() {
         </div>
       </div>
     );
+  }
+
+  // ── Nachbearbeitung (Wrap-up) nach beendetem Anruf ─────────────────────
+  if (wrapup) {
+    return <CallWrapup wrapup={wrapup} onClose={clearWrapup} />;
   }
 
   // ── Idle: FAB → Wähl-Panel ─────────────────────────────────────────────
