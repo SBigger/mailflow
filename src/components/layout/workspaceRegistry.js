@@ -8,7 +8,8 @@
 // (handleCheckout/handleCheckin dort sind tabu), sondern eine eigene
 // Read-only-Komponente (DokumenteWidget.jsx) ohne Checkout-Codepfade.
 import { lazy } from "react";
-import { Phone, CheckSquare, CalendarDays, CloudUpload, FileText } from "lucide-react";
+import { Phone, CheckSquare, CalendarDays, CloudUpload, FileText, Clock, BookCheck } from "lucide-react";
+import { FEATURE_LEISTUNGSERFASSUNG } from "@/lib/featureFlags";
 
 export const WIDGETS = {
   telefonliste: {
@@ -40,6 +41,26 @@ export const WIDGETS = {
     icon: FileText,
     color: "#0891b2",
     component: lazy(() => import("@/components/widgets/DokumenteWidget.jsx")),
+  },
+  // Leistungserfassung hat kein h-screen und keine Router-Abhaengigkeit (rein
+  // lokaler State fuer Primary-/Secondary-Tabs) -- laesst sich ohne
+  // embedded-Prop einbetten. Nur anzeigen, wenn das Feature ueberhaupt an ist.
+  ...(FEATURE_LEISTUNGSERFASSUNG ? {
+    leistungserfassung: {
+      label: "Leistungserfassung",
+      icon: Clock,
+      color: "#4d6a50",
+      component: lazy(() => import("@/pages/Leistungserfassung.jsx")),
+    },
+  } : {}),
+  // Einziger Router-Bezug ist ein Breadcrumb-Link "Artis Tools" -- der
+  // navigiert (gemeinsamer Router) die ganze App weg, nicht nur das Panel.
+  // Bekannter, hingenommener Sonderfall, kein Blocker fuer die Einbettung.
+  abschlussdokumentation: {
+    label: "Abschluss",
+    icon: BookCheck,
+    color: "#0d9488",
+    component: lazy(() => import("@/pages/Abschlussdokumentation.jsx")),
   },
 };
 
