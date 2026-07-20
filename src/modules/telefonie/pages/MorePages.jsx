@@ -125,7 +125,7 @@ export function Rufgruppen() {
           ))}
         </div>
       </Panel>
-      <Note t={t}>Beispiel-Konfiguration. Die echte Verwaltung (mehrere Gruppen, Mitglieder, Zeiten, Fallback) kommt mit der Tabelle <code>phone_ring_groups</code> und dem Call-Router auf der Test-VM.</Note>
+      <Note t={t}>Beispiel-Konfiguration. Die echte Verwaltung (mehrere Gruppen, Mitglieder, Zeiten, Fallback) wird in der peoplefone-vPBX gepflegt — Rufgruppen/BLF/Voicemail sind dort bereits eingebaut, kein eigener Server nötig.</Note>
     </Page>
   );
 }
@@ -225,7 +225,7 @@ export function Einstellungen() {
           {profile?.phone ? formatPhone(profile.phone) : <span style={{ color: t.textMuted, fontFamily: "inherit", fontWeight: 500 }}>— (in den smartis-Einstellungen hinterlegen)</span>}
         </div>
       </Panel>
-      <Note t={t}>Gerätewahl (Mikrofon/Lautsprecher), Klingelton und die Verbindung zur Telefonanlage erscheinen hier, sobald die Test-VM (LiveKit + Kamailio) angebunden ist.</Note>
+      <Note t={t}>Gerätewahl (Mikrofon/Lautsprecher), Klingelton und die eigentliche Telefonverbindung (MicroSIP/Groundwire an der peoplefone-vPBX) erscheinen hier, sobald die Anbindung steht.</Note>
     </Page>
   );
 }

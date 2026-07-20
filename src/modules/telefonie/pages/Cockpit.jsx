@@ -217,7 +217,7 @@ export default function Cockpit() {
       </Panel>
 
       <div style={{ marginTop: 14, fontSize: 11, color: t.textMuted, display: "flex", alignItems: "center", gap: 7 }}>
-        <Settings2 size={13} /> Anrufe stammen aktuell aus dem Teams-Sync (read-only). Eigene Telefonie folgt mit der Test-VM (LiveKit + Kamailio).
+        <Settings2 size={13} /> Anrufe stammen aktuell aus dem Teams-Sync (read-only). Eigene Telefonie folgt mit peoplefone vPBX + CONNECTOR-Anbindung.
       </div>
     </div>
   );

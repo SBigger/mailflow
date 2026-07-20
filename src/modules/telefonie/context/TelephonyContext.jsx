@@ -5,10 +5,12 @@ import { useAuth } from "@/lib/AuthContext";
 // ===========================================================================
 // TelephonyContext — Telefonie-Client
 //
-// Medien-/SIP-Teil ist bewusst noch ein STUB: kein LiveKit, kein SIP, keine
+// Medien-/Telefonie-Teil ist bewusst noch ein STUB: kein echter Anruf, keine
 // Audio-Tracks. Er hält den UI-Zustand (aktiver Anruf, eingehender Anruf,
 // Wrap-up) und bietet die Methoden-Signaturen, die später der echte Client
-// erfüllt (dial/answer/hangup/hold/mute/transfer).
+// erfüllt (dial/answer/hangup/hold/mute/transfer). Entschieden (2026-07-20):
+// Motor = peoplefone vPBX (Cloud, kein eigener Server); Endgeräte = MicroSIP/
+// Groundwire/Bria; Anbindung an smartis via peoplefone-CONNECTOR-API.
 //
 // ECHT (kein Stub) sind dagegen zwei Bausteine, die rein auf Supabase Realtime
 // laufen und darum schon heute plattformweit funktionieren:
@@ -21,12 +23,11 @@ import { useAuth } from "@/lib/AuthContext";
 //     Function) andocken kann, um einen ECHTEN eingehenden Anruf plattformweit
 //     zu signalisieren — ohne dass sich am Frontend-Code etwas ändern muss.
 //
-// SEAM für die künftige Medien-Anbindung:
-//   connect()          → LiveKit-Room-Verbindung aufbauen (Token via Edge Fn)
-//   dial(number)       → CreateSIPParticipant über PBX/LiveKit SIP
-//   answer()/hangup()  → Room join / leave
-//   hold()/mute()      → Track-Steuerung
-//   transfer(target)   → REFER (blind) bzw. Raum-Orchestrierung (attended)
+// SEAM für die künftige Medien-Anbindung (Softphone-Client an der vPBX):
+//   dial(number)       → Softphone/CTI anweisen zu wählen (Click-to-Call)
+//   answer()/hangup()  → Softphone-Kommando bzw. Anruf-Event der vPBX
+//   hold()/mute()      → Softphone-Kommando
+//   transfer(target)   → Softphone/vPBX-Transfer (blind oder mit Rückfrage)
 // ===========================================================================
 
 const TelephonyCtx = createContext(null);
