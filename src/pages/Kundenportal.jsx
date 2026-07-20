@@ -75,7 +75,7 @@ export default function Kundenportal() {
     const q = custSearch.trim().toLowerCase();
     const list = customers.filter(c => c.company_name);
     if (!q) return list.slice(0, 50);
-    return list.filter(c => c.company_name.toLowerCase().includes(q)).slice(0, 50);
+    return list.filter(c => c.company_name?.toLowerCase().includes(q)).slice(0, 50);
   }, [customers, custSearch]);
 
   const filteredUsers = useMemo(() => {

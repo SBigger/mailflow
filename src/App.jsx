@@ -54,11 +54,13 @@ const Portal = lazy(() => import("./modules/kundenportal/Portal.jsx"));
 const Leistungserfassung = lazy(() => import("./pages/Leistungserfassung.jsx"));
 const Promptvorlagen = lazy(() => import("./modules/tools/Promptvorlagen.jsx"));
 const TelefonDashboard = lazy(() => import("./modules/tools/TelefonDashboard.jsx"));
+const Telefonliste = lazy(() => import("./pages/Telefonliste.jsx"));
 const Jahresplanung = lazy(() => import("./modules/tools/Jahresplanung.jsx"));
 const Monatsplanung = lazy(() => import("./modules/tools/Monatsplanung.jsx"));
 const Kalender = lazy(() => import("./modules/tools/Kalender.jsx"));
 const Steuerausscheidung = lazy(() => import("./modules/tools/Steuerausscheidung.jsx"));
 const FiBuRouter = lazy(() => import("./modules/fibu/router.jsx"));
+const TelefonieRouter = lazy(() => import("./modules/telefonie/router.jsx"));
 const Hub = lazy(() => import('./pages/Hub.jsx'));
 const AiAssistant = lazy(() => import('./pages/AiAssistant.jsx'));
 const GVProtokollApp = lazy(() => import('./modules/gv-protokoll/GVProtokollApp.jsx'));
@@ -90,6 +92,9 @@ function AuthenticatedApp() {
             <Routes>
                 {/* FiBu: eigene Shell, kein MailFlow-Layout */}
                 <Route path="/fibu/*" element={<FiBuRouter />} />
+
+                {/* Telefonie: eigene Shell + Softphone, kein MailFlow-Layout */}
+                <Route path="/telefonie/*" element={<TelefonieRouter />} />
 
                 {/* MailFlow: Layout als Wrapper-Route (Layout muss im Inneren ein <Outlet /> nutzen!) */}
                 <Route element={<Layout />}>
@@ -124,6 +129,7 @@ function AuthenticatedApp() {
                     <Route path="/Veranlagungen" element={<Veranlagungen />} />
                     <Route path="/Promptvorlagen" element={<Promptvorlagen />} />
                     <Route path="/TelefonDashboard" element={<TelefonDashboard />} />
+                    <Route path="/Telefonliste" element={<Telefonliste />} />
                     <Route path="/Jahresplanung" element={<Jahresplanung />} />
                     <Route path="/Monatsplanung" element={<Monatsplanung />} />
                     <Route path="/Kalender" element={<Kalender />} />

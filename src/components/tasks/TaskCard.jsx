@@ -165,9 +165,10 @@ export default function TaskCard({ task, index, onClick, onToggleComplete, curre
                     e.stopPropagation();
                     onToggleComplete && onToggleComplete(task);
                   }}
-                  className="flex-shrink-0 mt-0.5 transition-colors"
+                  className="flex-shrink-0 mt-0.5 transition-colors relative before:absolute before:-inset-[14px] before:content-[''] touch-manipulation"
                   style={{ color: task.completed ? '#22c55e' : mutedColor }}
                   title={task.completed ? "Als offen markieren" : "Als erledigt markieren"}
+                  aria-label={task.completed ? "Als offen markieren" : "Als erledigt markieren"}
                 >
                   {task.completed
                     ? <CheckCircle2 className="h-4 w-4" />

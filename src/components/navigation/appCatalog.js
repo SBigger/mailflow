@@ -75,7 +75,8 @@ export const NAV_GROUPS = [
       /*{ name: 'DokumenteV2', label: 'Dokumente V2', icon: FolderOpen, color: '#a8862f', aliases: ['ablage neu', 'beta'] },*/
       { name: 'Posteingang', label: 'Paperboy', icon: CloudUpload, rail: true, color: '#4ba3c7', aliases: ['posteingang', 'scans', 'upload', 'eingang', 'paperboy'] },
       { name: 'Kundenportal', label: 'Kundenportal', icon: ShieldCheck, color: '#0e756a', aliases: ['portal', 'kundenzugang', 'freigabe', 'read-only', 'kundenlogin'] },
-      { name: 'TelefonDashboard', label: 'Telefon', icon: PhoneCall, color: '#4fae6b', aliases: ['anrufe', 'telefonliste', 'calls'] },
+      { name: 'TelefonDashboard', label: 'Telefon', icon: PhoneCall, color: '#4fae6b', aliases: ['anrufe', 'telefonliste', 'calls', 'teams-anrufe'] },
+      { name: 'Telefonie', label: 'Telefonie', href: '/telefonie', icon: PhoneCall, rail: true, color: '#2d6a4f', aliases: ['softphone', 'anrufen', 'wählen', 'sip', 'voip', 'telefonie-modul'] },
     ],
   },
   {

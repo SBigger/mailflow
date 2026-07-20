@@ -944,7 +944,6 @@ export default function Dokumente() {
   const [chartisDoc, setChartisDoc] = useState(null); // Chartis-Panel pro Dokument
   const [highestScore, setHighestScore] = useState(false);
   const [menuDocId, setMenuDocId] = useState(null);
-  const [showBucketWidget, setShowBucketWidget] = useState(true);
 
   // Volltext-Suche via Supabase RPC (PostgreSQL GIN-Index)
   useEffect(() => {
@@ -968,6 +967,55 @@ export default function Dokumente() {
     }, 350);
     return () => clearTimeout(timer);
   }, [ftSearch, selCustomerId]);
+
+  const BUCKET_SIZE_POPUP = 'bucket_size_popup_timestamp';
+  const BUCKET_NAME = "Dokumentenspeicher";
+  const BUCKET_MAX_SIZE = 20;
+  const TWO_DAYS_IN_MS = 1 * 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  const [bucketStats, setBucketStats] = useState({ usedSizeGB: 0, percentage: 0, loading: true });
+  const [showBucketWidget, setShowBucketWidget] = useState(false);
+
+  useEffect(() => {
+    async function fetchBucketSize() {
+      try {
+        // Rufe die eben erstellte Edge Function auf
+        const { data, error } = await supabase.functions.invoke('get-bucket-size', {
+          body: {}
+        });
+
+        if (error) throw error;
+
+        const proc = Math.min((data.usedSizeGB / BUCKET_MAX_SIZE) * 100, 100).toFixed(1);
+        setBucketStats({
+          usedSizeGB: data.usedSizeGB,
+          percentage: proc,
+          loading: false
+        });
+
+        const storedTimestamp = localStorage.getItem(BUCKET_SIZE_POPUP);
+
+        if (!storedTimestamp) {
+          // 1. If it doesn't exist, show the popup and save the timestamp
+          setShowBucketWidget(true);
+        } else {
+          const timeElapsed = now - Number(storedTimestamp);
+
+          if (timeElapsed > TWO_DAYS_IN_MS && proc > 85) {
+            setShowBucketWidget(true);
+            localStorage.removeItem(BUCKET_SIZE_POPUP);
+          }
+        }
+
+
+      } catch (err) {
+        console.error("Fehler beim Abrufen der Bucket-Größe:", err);
+        setBucketStats({ used: 0, loading: false });
+      }
+    }
+
+    fetchBucketSize();
+  }, []);
 
   const [showUpload,    setShowUpload]    = useState(false);
   const [showBatch,     setShowBatch]     = useState(false);
@@ -1260,7 +1308,7 @@ export default function Dokumente() {
     const q = custSearch.toLowerCase();
     return customers.filter(c => {
       const has    = docsByCustomer.has(c.id);
-      const match  = !q || c.company_name.toLowerCase().includes(q);
+      const match  = !q || c.company_name?.toLowerCase().includes(q);
       return has && match;
     }).map(c => {
       const docs = docsByCustomer.get(c.id) || [];
@@ -2600,8 +2648,11 @@ export default function Dokumente() {
         />
       )}
       {showBucketWidget && (
-          <BucketSizeDisplay
-              onClose={() => setShowBucketWidget(false)} // Schließt das Fenster
+          <BucketSizeDisplay bucketName={BUCKET_NAME} maxSizeGB={BUCKET_MAX_SIZE} percentage={bucketStats.percentage} usedSizeGB={bucketStats.usedSizeGB}
+              onClose={() => {
+                setShowBucketWidget(false),
+                localStorage.setItem(BUCKET_SIZE_POPUP, now.toString());
+              }}
           />
       )}
     </div>

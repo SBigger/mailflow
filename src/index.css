@@ -111,3 +111,13 @@ html, body {
     @apply bg-background text-foreground;
   }
 }
+
+/* Verhindert iOS-Safari-Auto-Zoom auf Formularfeldern (Font-Size < 16px triggert Zoom-In).
+   Greift nur unter dem Mobile-Breakpoint, Desktop-Kompakt-Inputs bleiben unverändert. */
+@media (max-width: 767px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]),
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}

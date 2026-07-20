@@ -138,7 +138,7 @@ services:
       - '-c'
       - log_min_messages=fatal
     ports:
-      - '5432:5432'
+      - '5433:5432'
     environment:
       - POSTGRES_HOST=/var/run/postgresql
       - 'PGPORT=${POSTGRES_PORT:-5432}'

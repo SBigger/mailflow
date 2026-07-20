@@ -440,7 +440,7 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete, pre
                     Kein Kunde
                   </div>
                   {customers
-                    .filter(c => c.company_name.toLowerCase().includes(customerSearch.toLowerCase()))
+                    .filter(c => c.company_name?.toLowerCase().includes(customerSearch.toLowerCase()))
                     .map(c => (
                       <div key={c.id} className="px-3 py-2 text-sm cursor-pointer"
                         style={{ color: textColor }}

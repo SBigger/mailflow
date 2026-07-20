@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { DragDropContext, Droppable } from "@hello-pangea/dnd";
 import { Plus, RefreshCw, Palette, Users, Search, X, ChevronsLeftRight, Mic, LayoutList, LayoutDashboard, MoreHorizontal, Bell, Image as ImageIcon, AppWindow, CalendarClock } from "lucide-react";
 import { useIsMobile } from "@/components/mobile/useIsMobile";
+import { useContainerWidth } from "@/components/layout/useContainerQuery";
 import MobileColumnNav from "@/components/mobile/MobileColumnNav";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -29,19 +30,22 @@ import TaskDeadlineView from "../components/tasks/TaskDeadlineView";
 import TaskCard from "../components/tasks/TaskCard";
 import TaskCardMonday from "../components/tasks/TaskCardMonday";
 
-export default function TaskBoard() {
+export default function TaskBoard({ embedded = false } = {}) {
   const { theme } = useContext(ThemeContext);
   const isLight = theme === 'light';
   const isArtis = theme === 'artis';
   const [showAddTask, setShowAddTask] = useState(false);
   const [showVoiceTask, setShowVoiceTask] = useState(false);
 
-  // Tauri Hotkey Shift+Ctrl+S → Dialog direkt öffnen
+  // Tauri Hotkey Shift+Ctrl+S → Dialog direkt öffnen. Im Widescreen-Panel
+  // übersprungen: das Window-Event kennt kein Zielpanel, zwei Task-Panels
+  // würden sonst beide den Dialog öffnen.
   useEffect(() => {
+    if (embedded) return;
     const handler = () => setShowAddTask(true);
     window.addEventListener('smartis:open-new-task', handler);
     return () => window.removeEventListener('smartis:open-new-task', handler);
-  }, []);
+  }, [embedded]);
   const [showAddColumn, setShowAddColumn] = useState(false);
   const [selectedTask, setSelectedTask] = useState(null);
   const [collapsedColumns, setCollapsedColumns] = useState(new Set());
@@ -80,6 +84,11 @@ export default function TaskBoard() {
   const [mobileColumnIndex, setMobileColumnIndex] = useState(0);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const isMobile = useIsMobile();
+  const [containerRef, containerWidth] = useContainerWidth();
+  // Einspaltige Mobile-Ansicht auch im schmalen Widescreen-Panel (Container-
+  // Query) -- das bestehende Mobile-UI (MobileColumnNav/MobileCard) wird
+  // dafuer 1:1 wiederverwendet, kein separater Kompakt-Pfad noetig.
+  const compact = isMobile || (embedded && containerWidth > 0 && containerWidth < 900);
 
   const queryClient = useQueryClient();
 
@@ -327,11 +336,11 @@ export default function TaskBoard() {
   const textColor = isArtis ? '#2d3a2d' : isLight ? '#1a1a2e' : '#e4e4e7';
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden" style={{ backgroundColor: topBarBg }}>
+    <div ref={containerRef} className="h-full flex flex-col overflow-hidden" style={{ backgroundColor: topBarBg }}>
       {/* Top Bar */}
       <div className="flex-shrink-0 border-b px-3 md:px-6 py-3" style={{ backgroundColor: topBarBg, borderColor }}>
-        {/* Mobile Top Bar */}
-        {isMobile ? (
+        {/* Mobile Top Bar (auch im schmalen Widescreen-Panel) */}
+        {compact ? (
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
@@ -419,7 +428,7 @@ export default function TaskBoard() {
                     </DropdownMenuContent>
                   </DropdownMenu>
                   <Button onClick={() => setShowVoiceTask(true)} size="sm" className="bg-violet-600 hover:bg-violet-500 text-white gap-1.5 h-9 touch-manipulation flex-1">
-                    <Mic className="h-4 w-4" /> Sprache
+                    <Mic className="h-4 w-4" />
                   </Button>
                   <Button variant="ghost" size="icon" onClick={() => queryClient.invalidateQueries()} className="h-9 w-9 touch-manipulation" style={{ color: mutedText }}>
                     <RefreshCw className={`h-4 w-4 ${(colLoading || taskLoading) ? "animate-spin" : ""}`} />
@@ -561,7 +570,7 @@ export default function TaskBoard() {
               </Button>
               <Button onClick={() => setShowVoiceTask(true)} size="sm" variant="outline" className="gap-1.5 h-9"
                 style={{ backgroundColor: inputBg, borderColor: inputBorder, color: isLight ? '#3a3a5a' : '#d4d4d8' }}>
-                <Mic className="h-4 w-4 text-violet-400" /> Sprache
+                <Mic className="h-4 w-4 text-violet-400" />
               </Button>
               <Button onClick={() => setShowAddTask(true)} size="sm" className="bg-violet-600 hover:bg-violet-500 text-white">
                 <Plus className="h-4 w-4 mr-1" /> Neuer Task
@@ -588,8 +597,8 @@ export default function TaskBoard() {
           onTaskClick={setSelectedTask}
           onToggleComplete={(task) => updateTaskMutation.mutate({ id: task.id, data: { completed: !task.completed } })}
         />
-      ) : isMobile ? (
-         /* Mobile: single column view */
+      ) : compact ? (
+         /* Mobile oder schmales Panel: einspaltige Ansicht */
          <DragDropContext onDragEnd={handleDragEnd}>
            <div className="flex-1 flex flex-col overflow-hidden">
              {columns[mobileColumnIndex] && (

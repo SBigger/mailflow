@@ -40,7 +40,7 @@ export default function AssignToCustomerDialog({ open, onClose, mail }) {
   });
 
   const filtered = customers.filter(c =>
-    c.company_name.toLowerCase().includes(search.toLowerCase())
+    c.company_name?.toLowerCase().includes(search.toLowerCase())
   );
 
   return (

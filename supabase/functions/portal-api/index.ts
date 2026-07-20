@@ -317,8 +317,11 @@ serve(async (req) => {
       try { bytes = Uint8Array.from(atob(dataB64), c => c.charCodeAt(0)); }
       catch { return json({ error: "Datei konnte nicht gelesen werden." }, 400); }
 
-      // Ziel: posteingang/<customer_id>/<zeitstempel>_<name> → erscheint im Posteingang beim Kunden
-      const path = `${pu.customer_id}/${Date.now()}_${safe}`;
+      // Namensschema wie DokumentUploadKunden, sonst zeigt der Paperboy den Namen
+      // nicht an: <kategorie>_<jahr>_<zeitstempel>@<dateiname>
+      // (Posteingang.jsx nimmt vor '@' → split('_') = [kategorie, jahr]; nach '@' = Anzeigename)
+      const jahr = new Date().getFullYear();
+      const path = `${pu.customer_id}/kundenportal_${jahr}_${Date.now()}@${safe}`;
       const { error } = await supabase.storage
         .from("posteingang")
         .upload(path, bytes, { contentType: body.content_type || "application/octet-stream", upsert: false });

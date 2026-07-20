@@ -2,46 +2,15 @@ import React, {useEffect, useState} from 'react';
 import {supabase} from "@/api/supabaseClient.js";
 import {useNavigate} from "react-router-dom";
 
-const BucketSizeDisplay = ({
-                               bucketName = "Dokumentenspeicher",
-                               maxSizeGB = 20,
-                               onClose
-                           }) => {
+const BucketSizeDisplay = ({bucketName, maxSizeGB, usedSizeGB, percentage, onClose}) => {
     const navigate = useNavigate();
-    const [bucketStats, setBucketStats] = useState({ usedSizeGB: 0, percentage: 0, loading: true });
-    const [showWidget, setShowWidget] = useState(true);
-    const [upgrade, setUpgrade] = useState(false);
     const [progressColor, setProgressColor] = useState('#3b82f6');
+    const [upgrade, setUpgrade] = useState(false);
 
     useEffect(() => {
-        async function fetchBucketSize() {
-            try {
-                // Rufe die eben erstellte Edge Function auf
-                const { data, error } = await supabase.functions.invoke('get-bucket-size', {
-                    body: { bucketName: 'dokumente' }
-                });
-
-                if (error) throw error;
-
-                const procentag = Math.min((data.usedSizeGB / maxSizeGB) * 100, 100).toFixed(1)
-
-                setBucketStats({
-                    usedSizeGB: data.usedSizeGB,
-                    percentage: procentag,
-                    loading: false
-                });
-
-                if (procentag > 85) setProgressColor('#ef4444'), setUpgrade(true);
-                else if (procentag > 65) setProgressColor('#f59e0b');
-
-            } catch (err) {
-                console.error("Fehler beim Abrufen der Bucket-Größe:", err);
-                setBucketStats({ used: 0, loading: false });
-            }
-        }
-
-        fetchBucketSize();
-    }, []);
+        if (percentage > 85) setProgressColor('#ef4444'), setUpgrade(true);
+        else if (percentage > 65) setProgressColor('#f59e0b');
+    }, [usedSizeGB]);
 
     return (
         <div style={styles.floatingCard}>
@@ -59,32 +28,24 @@ const BucketSizeDisplay = ({
 
             <div style={styles.header}>
                 <span style={styles.bucketName}>{bucketName}</span>
-                <span style={styles.percentageText}>{bucketStats.percentage}% voll</span>
+                <span style={styles.percentageText}>{percentage}% voll</span>
             </div>
 
-            {bucketStats.loading ? (
-                <p style={{ fontSize: '14px', color: '#6b7280', textAlign: 'center', margin: '20px 0' }}>
-                    Lade Speicherplatzdaten...
-                </p>
-            ) : (
-                <>
-                    <div style={styles.progressTrack}>
-                        <div
-                            style={{
-                                ...styles.progressBar,
-                                width: `${bucketStats.percentage}%`,
-                                backgroundColor: progressColor
-                            }}
-                        />
-                    </div>
-                </>
-            )}
+            <div style={styles.progressTrack}>
+                <div
+                    style={{
+                        ...styles.progressBar,
+                        width: `${percentage}%`,
+                        backgroundColor: progressColor
+                    }}
+                />
+            </div>
 
             <div className="flex flex-col gap-3 text-xs mt-2" style={{ color: '#6b826b' }}>
                 {/* Obere Zeile: Status-Texte nebeneinander */}
                 <div className="flex justify-between w-full">
-                    <span>{bucketStats.usedSizeGB} GB von {maxSizeGB} GB genutzt</span>
-                    <span>{parseFloat(maxSizeGB - bucketStats.usedSizeGB).toFixed(1)} GB frei</span>
+                    <span>{usedSizeGB} GB von {maxSizeGB} GB genutzt</span>
+                    <span>{parseFloat(maxSizeGB - usedSizeGB).toFixed(1)} GB frei</span>
                 </div>
 
                 {/* Untere Zeile: Upgrade Button über die volle Breite */}

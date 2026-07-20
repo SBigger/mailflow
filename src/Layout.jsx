@@ -1,5 +1,7 @@
-import React, { useState, useEffect, useRef, createContext, useCallback } from "react";
+import React, { useState, useEffect, useRef, createContext, useCallback, Suspense } from "react";
 import { Link, useLocation, useNavigate, Outlet } from "react-router-dom";
+import { useIsWidescreen, useViewportClass } from "@/components/layout/useIsWidescreen";
+const WorkspaceShell = React.lazy(() => import("@/components/layout/WorkspaceShell"));
 import { createPageUrl } from "@/utils";
 import ChartisNotifier from "@/components/chartis/ChartisNotifier";
 import {
@@ -29,6 +31,7 @@ export const ThemeContext = createContext({
   navLayout: 'sidebar', setNavLayout: () => {},
   hubWidgets: false, setHubWidgets: () => {},
   hubOpenMode: 'same', setHubOpenMode: () => {},
+  layoutMode: 'desktop', viewportClass: null,
 });
 
 // ── Einzelner Navigations-Eintrag ──────────────────────────────────
@@ -216,10 +219,11 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
     localStorage.setItem("app_theme", newTheme);
   }, []);
 
-  // --- Navigations-Art: Seitenleiste (Standard) oder Start-Hub ohne Seitenleiste ---
-  const [navLayout, setNavLayoutState] = useState(() =>
-    localStorage.getItem("nav_layout") === "hub" ? "hub" : "sidebar"
-  );
+  // --- Navigations-Art: 'sidebar' | 'hub' | 'widescreen' ---
+  const [navLayout, setNavLayoutState] = useState(() => {
+    const v = localStorage.getItem("nav_layout");
+    return v === "hub" || v === "widescreen" ? v : "sidebar";
+  });
   const setNavLayout = useCallback((layout) => {
     setNavLayoutState(layout);
     localStorage.setItem("nav_layout", layout);
@@ -283,7 +287,10 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
         setOpenGroups({});
       }
       setRailMode(localStorage.getItem("nav_mode") === "rail");
-      setNavLayoutState(localStorage.getItem("nav_layout") === "hub" ? "hub" : "sidebar");
+      {
+        const v = localStorage.getItem("nav_layout");
+        setNavLayoutState(v === "hub" || v === "widescreen" ? v : "sidebar");
+      }
       setHubWidgetsState(localStorage.getItem("hub_widgets") === "1");
       setHubOpenModeState(localStorage.getItem("hub_open_mode") === "new" ? "new" : "same");
     }
@@ -305,6 +312,15 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
 
   // Start-Hub aktiv? (nur Desktop, nicht für Task-User)
   const hubMode = navLayout === 'hub' && !isTaskUser && !isMobile;
+
+  // --- Widescreen: additiver dritter Layout-Modus (nur Desktop, ab 1600px) ---
+  const isWidescreen = useIsWidescreen();
+  const viewportClass = useViewportClass();
+  const layoutMode = isMobile
+    ? 'mobile'
+    : (navLayout === 'widescreen' && isWidescreen && !isTaskUser)
+      ? 'widescreen'
+      : 'desktop';
 
   // Hub-Modus: beim App-Start auf dem Hub landen statt auf dem Dashboard
   const hubStartDone = useRef(false);
@@ -382,7 +398,7 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
   if (loading) return <div className="h-screen w-screen flex items-center justify-center" style={{ backgroundColor: pageBg }}>...</div>;
 
   return (
-      <ThemeContext.Provider value={{ theme, setTheme, navLayout, setNavLayout, hubWidgets, setHubWidgets, hubOpenMode, setHubOpenMode }}>
+      <ThemeContext.Provider value={{ theme, setTheme, navLayout, setNavLayout, hubWidgets, setHubWidgets, hubOpenMode, setHubOpenMode, layoutMode, viewportClass }}>
         <ChartisNotifier />
         <div className="flex h-screen overflow-hidden" style={{ backgroundColor: pageBg }}>
 
@@ -619,8 +635,16 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
           )}
 
           {/* Main Content Area */}
-          <main className="flex w-screen overflow-hidden relative" style={{ paddingBottom: isMobile && !isTaskUser ? 56 : 0 }}>
-            <Outlet />
+          <main className="flex w-screen overflow-hidden relative" style={{ paddingBottom: isMobile && !isTaskUser ? 'calc(56px + env(safe-area-inset-bottom))' : 0 }}>
+            {layoutMode === 'widescreen' ? (
+              <Suspense fallback={<Outlet />}>
+                <WorkspaceShell viewportClass={viewportClass} currentPageName={currentPageName}>
+                  <Outlet />
+                </WorkspaceShell>
+              </Suspense>
+            ) : (
+              <Outlet />
+            )}
           </main>
 
           {/* Favoriten-Dock rechts (Apps anpinnen via Stern im Launcher) */}

@@ -1,6 +1,6 @@
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Origin': 'https://sm-artis.ch',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
@@ -9,7 +9,8 @@ Deno.serve(async (req) => {
 
   const clientId = Deno.env.get('MICROSOFT_CLIENT_ID')!
   const tenantId = Deno.env.get('MICROSOFT_TENANT_ID') || 'common'
-  const redirectUri = `${Deno.env.get('APP_URL')!}/functions/v1/microsoft-callback`
+  const appUrl = `${Deno.env.get('APP_URL')!}/functions/v1/microsoft-callback`
+  const redirectUri = appUrl.replace('https://', 'https://api-')
 
   // Supabase user token aus state-Parameter lesen und weiterleiten
   let body: any;

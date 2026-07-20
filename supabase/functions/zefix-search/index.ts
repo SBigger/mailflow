@@ -131,7 +131,6 @@ serve(async (req) => {
 
     return ok({ results: mapped })
   } catch (e) {
-    console.log("Zefix search failed", e);
     return err(String(e?.message ?? e), 500)
   }
 })

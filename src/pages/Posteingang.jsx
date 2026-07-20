@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/lib/AuthContext";
 import CreateLinkDialog from "../components/posteingang/CreateLinkDialog.jsx";
 import AssignDialog from "../components/posteingang/AssignDialog.jsx";
+import { useContainerWidth } from "@/components/layout/useContainerQuery";
 
 // Configuration
 import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.js?url";
@@ -25,7 +26,7 @@ function getFileInfo(mimeType, filename) {
   return { label: ext.toUpperCase() || "FILE", color: "#71717a" };
 }
 
-export default function Posteingang() {
+export default function Posteingang({ embedded = false } = {}) {
   const { theme } = useContext(ThemeContext);
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -53,6 +54,12 @@ export default function Posteingang() {
   const [showAssignDialog, setShowAssignDialog] = useState(false);
   const [assignDoc, setAssignDoc] = useState(null);
   const [syncData, setSyncData] = useState(false);
+
+  const [containerRef, containerWidth] = useContainerWidth();
+  // Container-Query: die feste 280px-Sidebar kostet in einem schmalen
+  // Widescreen-Panel zu viel Platz -- Kunden-Filter wandert dann in ein
+  // kompaktes Dropdown im Header.
+  const sidebarVisible = !embedded || containerWidth === 0 || containerWidth >= 700;
 
   // Queries
   const { data: customers = [] } = useQuery({ queryKey: ["customers"], queryFn: () => entities.Customer.list("company_name") });
@@ -101,7 +108,7 @@ export default function Posteingang() {
         docCount: folder.docs?.length
       };
     })
-        .filter(item => item.company_name.toLowerCase().includes(q))
+        .filter(item => item.company_name?.toLowerCase().includes(q))
         .sort((a, b) => a.company_name.localeCompare(b.company_name));
   }, [customers, allDoks]);
 
@@ -141,19 +148,31 @@ export default function Posteingang() {
   const treeItem = { display: "flex", alignItems: "center", gap: 5, padding: "8px 12px", cursor: "pointer", borderRadius: 5, fontSize: 13, userSelect: "none" };
 
   return (
-      <div className="flex flex-col h-screen w-screen overflow-hidden" style={{background: s.cardBg, color: s.textMain }}>
+      <div ref={containerRef} className="w-screen" style={{ display: "flex", flexDirection: "column", height: embedded ? "100%" : "100vh", overflow: "hidden", background: s.cardBg, color: s.textMain }}>
         {/* Header */}
-        <div style={{padding: "12px 20px", borderBottom: "1px solid " + border, display: "flex", alignItems: "center", gap: 10, flexShrink: 0}}>
+        <div style={{padding: "12px 20px", borderBottom: "1px solid " + border, display: "flex", alignItems: "center", gap: 10, flexShrink: 0, flexWrap: "wrap"}}>
           <span style={{ fontSize: 15, fontWeight: 700 }}>Paperboy</span>
-          <div style={{ position: "relative" }}>
+          <div style={{ position: "relative", flex: sidebarVisible ? "none" : 1, minWidth: 120 }}>
             <Search size={13} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: s.textMuted }} />
             <input
                 value={ftSearch}
                 onChange={e => setFtSearch(e.target.value)}
                 placeholder="Volltext-Suche..."
-                style={{ background: s.inputBg, border: "1px solid " + border, color: s.textMain, borderRadius: 8, padding: "5px 30px", fontSize: 12, width: 280 }}
+                style={{ background: s.inputBg, border: "1px solid " + border, color: s.textMain, borderRadius: 8, padding: "5px 30px", fontSize: 12, width: sidebarVisible ? 280 : "100%" }}
             />
           </div>
+          {!sidebarVisible && (
+            <select
+              value={selCustomerId || ""}
+              onChange={(e) => setSelCustomerId(e.target.value || null)}
+              style={{ background: s.inputBg, border: "1px solid " + border, color: s.textMain, borderRadius: 8, padding: "5px 8px", fontSize: 12, minWidth: 140 }}
+            >
+              <option value="">Alle Kunden</option>
+              {tree.map((item) => (
+                <option key={item.customerId} value={item.customerId}>{item.company_name}</option>
+              ))}
+            </select>
+          )}
           <div style={{ flex: 1 }} />
           <Button onClick={() => setShowLinkDialog(true)} style={{ background: accent, color: "#fff" }}>
             Uploadseite für Kunde
@@ -161,7 +180,8 @@ export default function Posteingang() {
         </div>
 
         <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
-          {/* Sidebar */}
+          {/* Sidebar -- im schmalen Panel ausgeblendet, Kunden-Filter dann oben im Header */}
+          {sidebarVisible && (
           <div style={{ width: 280, borderRight: "1px solid " + border, background: s.sidebarBg, overflowY: "auto" }}>
             <div
                 onClick={() => setSelCustomerId(null)}
@@ -188,6 +208,7 @@ export default function Posteingang() {
                 </div>
             ))}
           </div>
+          )}
 
           {/* Main List */}
           <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
