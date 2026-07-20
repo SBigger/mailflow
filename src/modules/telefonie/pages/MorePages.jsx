@@ -9,7 +9,7 @@ import { de } from "date-fns/locale";
 import { supabase } from "@/api/supabaseClient";
 import { useAuth } from "@/lib/AuthContext";
 import { ThemeContext } from "@/Layout";
-import { isMissed, initials } from "@/lib/chartisTheme";
+import { isMissed, initials, personStyle } from "@/lib/chartisTheme";
 import { tele, PRESENCE, formatPhone } from "../theme";
 import { useTelephony } from "../context/TelephonyContext";
 
@@ -134,29 +134,40 @@ export function Rufgruppen() {
 export function TeamPresence() {
   const t = useT();
   const { profile } = useAuth();
-  const { effectivePresence } = useTelephony();
+  const { effectivePresence, teamPresence } = useTelephony();
   const me = profile?.full_name || "";
   const { data: staff = [] } = useQuery({
     queryKey: ["tele-staff"],
     queryFn: async () => { const { data, error } = await supabase.rpc("chartis_list_staff"); if (error) return []; return data || []; },
     staleTime: 5 * 60_000,
   });
+  const sortedStaff = useMemo(() => {
+    return [...staff].sort((a, b) => {
+      const pa = !!teamPresence[a.id], pb = !!teamPresence[b.id];
+      if (pa !== pb) return pa ? -1 : 1;
+      return (a.full_name || "").localeCompare(b.full_name || "");
+    });
+  }, [staff, teamPresence]);
   return (
-    <Page t={t} title="Team & Presence" subtitle="Wer ist erreichbar">
+    <Page t={t} title="Team & Presence" subtitle="Wer ist erreichbar — live aus smartis, ohne eigenen Telefonie-Server">
       <Panel t={t}>
         {staff.length === 0 && <div style={{ padding: 24, textAlign: "center", fontSize: 12.5, color: t.textMuted }}>Mitarbeiterliste wird geladen …</div>}
-        {staff.map((s) => {
+        {sortedStaff.map((s) => {
           const isMe = s.full_name === me;
-          const dot = isMe ? t.presence[(PRESENCE[effectivePresence] || PRESENCE.available).dot] : t.presence.offline;
+          const live = teamPresence[s.id];
+          const info = isMe ? (PRESENCE[effectivePresence] || PRESENCE.available)
+            : live ? (PRESENCE[live.status] || PRESENCE.available) : null;
+          const dot = info ? t.presence[info.dot] : t.presence.offline;
+          const ps = personStyle(s);
           return (
             <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderBottom: `1px solid ${t.borderSubtle}` }}>
-              <span style={{ position: "relative", width: 38, height: 38, borderRadius: 12, background: t.accentSoft, color: t.accent, display: "grid", placeItems: "center", fontSize: 14, fontWeight: 800, flexShrink: 0 }}>
+              <span style={{ position: "relative", width: 38, height: 38, borderRadius: 12, background: ps.bg, color: ps.text, display: "grid", placeItems: "center", fontSize: 14, fontWeight: 800, flexShrink: 0 }}>
                 {initials(s.full_name)}
                 <span style={{ position: "absolute", right: -2, bottom: -2, width: 13, height: 13, borderRadius: "50%", background: dot, border: `2.5px solid ${t.raised}` }} />
               </span>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 13, fontWeight: 650, color: t.textPrimary }}>{s.full_name || s.email}{isMe && <span style={{ color: t.textMuted, fontWeight: 500 }}> · Du</span>}</div>
-                <div style={{ fontSize: 11.5, color: t.textMuted }}>{isMe ? (PRESENCE[effectivePresence] || PRESENCE.available).label : "kein Live-Status"}</div>
+                <div style={{ fontSize: 11.5, color: info ? t.textSecondary : t.textMuted }}>{info ? info.label : "nicht in smartis angemeldet"}</div>
               </div>
             </div>
           );

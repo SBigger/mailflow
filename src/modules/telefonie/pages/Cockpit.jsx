@@ -22,7 +22,7 @@ export default function Cockpit() {
   const { theme } = useContext(ThemeContext);
   const t = tele(theme);
   const { profile } = useAuth();
-  const { effectivePresence, dial, simulateIncoming } = useTelephony();
+  const { effectivePresence, teamPresence, dial, simulateIncoming } = useTelephony();
   const me = profile?.full_name || "";
 
   const { data: calls = [] } = useQuery({
@@ -87,6 +87,16 @@ export default function Cockpit() {
     return { count: today.length, missed, avg, talk, inc, out };
   }, [calls]);
 
+  // Team sortiert: wer live verbunden ist (echte Presence) zuerst, Rest alphabetisch.
+  const sortedStaff = useMemo(() => {
+    return [...staff].sort((a, b) => {
+      const pa = !!teamPresence[a.id], pb = !!teamPresence[b.id];
+      if (pa !== pb) return pa ? -1 : 1;
+      return (a.full_name || "").localeCompare(b.full_name || "");
+    });
+  }, [staff, teamPresence]);
+  const onlineCount = useMemo(() => staff.filter((s) => !!teamPresence[s.id]).length, [staff, teamPresence]);
+
   const recent = calls.slice(0, 8);
   const custLabel = (c) => { const x = c.customer_id ? custMap.get(c.customer_id) : null; return x ? (x.company_name || `${x.vorname || ""} ${x.name || ""}`.trim()) : null; };
 
@@ -120,12 +130,17 @@ export default function Cockpit() {
 
       {/* Team + Rufgruppe */}
       <div style={{ display: "grid", gridTemplateColumns: "1.1fr 1fr", gap: 16, marginBottom: 16 }}>
-        <Panel t={t} title="Team & Presence" icon={Users} right={`${staff.length || "—"} Mitarbeitende`}>
+        <Panel t={t} title="Team & Presence" icon={Users} right={`${onlineCount}/${staff.length || 0} online`}>
           {staff.length === 0 && <Empty t={t}>Mitarbeiterliste wird geladen …</Empty>}
-          {staff.map((s) => {
+          {sortedStaff.map((s) => {
             const isMe = s.full_name === me;
-            const info = isMe ? (PRESENCE[effectivePresence] || PRESENCE.available) : null;
-            const dot = isMe ? t.presence[info.dot] : t.presence.offline;
+            const live = teamPresence[s.id];
+            // Eigener Status kommt direkt aus effectivePresence (bleibt auch
+            // beim allerersten Render korrekt, bevor der Presence-Sync durch
+            // ist); Kolleg:innen zeigen ihren echten Live-Status aus teamPresence.
+            const info = isMe ? (PRESENCE[effectivePresence] || PRESENCE.available)
+              : live ? (PRESENCE[live.status] || PRESENCE.available) : null;
+            const dot = info ? t.presence[info.dot] : t.presence.offline;
             const ps = personStyle(s);
             return (
               <div key={s.id}
@@ -138,9 +153,9 @@ export default function Cockpit() {
                 </span>
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={{ fontSize: 12.5, fontWeight: 650, color: t.textPrimary }}>{s.full_name}{isMe && <span style={{ color: t.textMuted, fontWeight: 500 }}> · Du</span>}</div>
-                  <div style={{ fontSize: 11, color: isMe ? t.textSecondary : t.textMuted, display: "flex", alignItems: "center", gap: 6 }}>
+                  <div style={{ fontSize: 11, color: info ? t.textSecondary : t.textMuted, display: "flex", alignItems: "center", gap: 6 }}>
                     <span style={{ width: 6, height: 6, borderRadius: "50%", background: dot }} />
-                    {isMe ? info.label : "kein Live-Status"}
+                    {info ? info.label : "nicht in smartis angemeldet"}
                   </div>
                 </div>
               </div>
