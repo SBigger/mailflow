@@ -173,7 +173,7 @@ export function TeamPresence() {
           );
         })}
       </Panel>
-      <Note t={t}>Live-Status für Kolleg:innen (frei / im Gespräch / DND) kommt über den Presence-Kanal, sobald die Telefonie läuft. „Durchstellen" per Klick folgt in v2.</Note>
+      <Note t={t}>Der Status hier zeigt, wer gerade in smartis angemeldet ist (echt, live). Sobald die Telefonie selbst läuft, kommt „im Gespräch"/DND direkt vom Softphone dazu; „Durchstellen" per Klick folgt in v2.</Note>
     </Page>
   );
 }
