@@ -39,7 +39,9 @@ export default function TelefonieShell() {
           style={{
             display: "flex", height: "100vh", overflow: "hidden",
             background: t.base, color: t.textPrimary,
-            fontFamily: '-apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+            // Haus-Schriftstack aus tailwind.config.js (Century Gothic Std),
+            // damit Telefonie exakt wie der Rest von smartis aussieht.
+            fontFamily: '"Century Gothic Std", "Century Gothic", Inter, system-ui, -apple-system, "Segoe UI", sans-serif',
           }}
         >
           <TelefonieSidebar />
