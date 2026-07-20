@@ -2416,13 +2416,13 @@ export default function Settings() {
                             <p className="text-sm mb-6" style={{color: textMuted}}>
                                 Wie möchtest du deine Apps öffnen? Beide Varianten haben Ctrl+K-Suche und Favoriten.
                             </p>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 max-w-2xl">
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 max-w-3xl">
                                 <button
                                     onClick={() => setNavLayout('sidebar')}
                                     className="text-left rounded-2xl border-2 p-4 transition-all duration-200 hover:scale-[1.01]"
                                     style={{
-                                        borderColor: navLayout !== 'hub' ? '#7a9b7f' : cardBorder,
-                                        boxShadow: navLayout !== 'hub' ? '0 0 0 3px rgba(122,155,127,0.22)' : 'none',
+                                        borderColor: navLayout === 'sidebar' ? '#7a9b7f' : cardBorder,
+                                        boxShadow: navLayout === 'sidebar' ? '0 0 0 3px rgba(122,155,127,0.22)' : 'none',
                                         backgroundColor: rowBg,
                                     }}
                                 >
@@ -2444,11 +2444,28 @@ export default function Settings() {
                                     }}
                                 >
                                     <div className="font-semibold text-sm mb-1" style={{color: headingColor}}>
-                                        Start-Hub <span className="text-xs font-normal" style={{color: textMuted}}>(neu)</span>
+                                        Start-Hub
                                     </div>
                                     <p className="text-xs" style={{color: textMuted}}>
                                         Keine Seitenleiste: Startseite mit Suche, Favoriten und allen Apps als Kacheln.
                                         Apps öffnen in eigenen Fenstern — mehrere gleichzeitig möglich.
+                                    </p>
+                                </button>
+                                <button
+                                    onClick={() => setNavLayout('widescreen')}
+                                    className="text-left rounded-2xl border-2 p-4 transition-all duration-200 hover:scale-[1.01]"
+                                    style={{
+                                        borderColor: navLayout === 'widescreen' ? '#7a9b7f' : cardBorder,
+                                        boxShadow: navLayout === 'widescreen' ? '0 0 0 3px rgba(122,155,127,0.22)' : 'none',
+                                        backgroundColor: rowBg,
+                                    }}
+                                >
+                                    <div className="font-semibold text-sm mb-1" style={{color: headingColor}}>
+                                        Widescreen <span className="text-xs font-normal" style={{color: textMuted}}>(neu)</span>
+                                    </div>
+                                    <p className="text-xs" style={{color: textMuted}}>
+                                        Zwei bis vier Apps nebeneinander in Panels — für breite Bildschirme
+                                        (ab 1600px). Auf schmaleren Bildschirmen automatisch Seitenleiste.
                                     </p>
                                 </button>
                             </div>

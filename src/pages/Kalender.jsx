@@ -1,4 +1,5 @@
-import React, { useState, useContext, useMemo } from 'react';
+import React, { useState, useContext, useMemo, useRef, useEffect } from 'react';
+import { useContainerWidth } from '@/components/layout/useContainerQuery';
 import { supabase, entities, functions, auth } from '@/api/supabaseClient';
 import { ThemeContext } from '@/Layout';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -117,19 +118,33 @@ function computeEventLayout(events) {
 
 // ── Haupt-Komponente ─────────────────────────────────────────────────
 
-export default function Kalender() {
+export default function Kalender({ embedded = false } = {}) {
   const { theme } = useContext(ThemeContext);
   const queryClient = useQueryClient();
 
-  const [viewMode, setViewMode] = useState('woche');    // 'woche' | 'liste'
+  // Im Widescreen-Panel: Liste statt Woche (Wochengrid braucht Breite),
+  // Task-Sidebar startet eingeklappt — beides bleibt vom Nutzer umschaltbar.
+  const [viewMode, setViewMode] = useState(embedded ? 'liste' : 'woche');    // 'woche' | 'liste'
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [filterCustomer, setFilterCustomer] = useState('');
   const [filterStatus, setFilterStatus] = useState('');  // '' | 'accepted' | 'tentativelyAccepted' | 'declined'
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(embedded);
   const [activeDragTask, setActiveDragTask] = useState(null);
   const [selectedTaskBlock, setSelectedTaskBlock] = useState(null);
+
+  const [containerRef, containerWidth] = useContainerWidth();
+  // Container-Query: solange der Nutzer die Ansicht nicht manuell gewaehlt
+  // hat, folgt viewMode der tatsaechlichen Panel-Breite (nicht dem Browser-
+  // Viewport). Aendert nur, WELCHE bestehende Ansicht (Woche/Liste) gezeigt
+  // wird -- WeekView/ListView selbst bleiben unangetastet.
+  const userChangedViewRef = useRef(false);
+  const setViewModeManual = (mode) => { userChangedViewRef.current = true; setViewMode(mode); };
+  useEffect(() => {
+    if (!embedded || userChangedViewRef.current || containerWidth === 0) return;
+    setViewMode(containerWidth < 700 ? 'liste' : 'woche');
+  }, [embedded, containerWidth]);
 
   function openEvent(event) { setSelectedTaskBlock(null); setSelectedEvent(event); }
   function openTaskBlock(task) { setSelectedEvent(null); setSelectedTaskBlock(task); }
@@ -872,7 +887,7 @@ export default function Kalender() {
 
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-    <div className="h-screen flex flex-col overflow-hidden" style={{ backgroundColor: pageBg }}>
+    <div ref={containerRef} className="h-full flex flex-col overflow-hidden" style={{ backgroundColor: pageBg }}>
       {/* Toolbar */}
       <div
         className="flex items-center gap-3 px-4 py-3 border-b flex-shrink-0 flex-wrap"
@@ -956,7 +971,7 @@ export default function Kalender() {
           ].map(({ key, icon: Icon, label }) => (
             <button
               key={key}
-              onClick={() => setViewMode(key)}
+              onClick={() => setViewModeManual(key)}
               className="px-3 py-1.5 text-xs flex items-center gap-1.5 transition-colors"
               style={{
                 backgroundColor: viewMode === key ? accentColor : 'transparent',
@@ -968,16 +983,18 @@ export default function Kalender() {
           ))}
         </div>
 
-        {/* Sync */}
-        <Button
-          size="sm"
-          onClick={handleSync}
-          disabled={isSyncing}
-          style={{ backgroundColor: accentColor, color: '#fff' }}
-        >
-          <RefreshCw className={`h-4 w-4 mr-1.5 ${isSyncing ? 'animate-spin' : ''}`} />
-          {isSyncing ? 'Sync...' : 'Sync'}
-        </Button>
+        {/* Sync — im Widescreen-Panel ausgeblendet (Platzgrund), Funktion unangetastet */}
+        {!embedded && (
+          <Button
+            size="sm"
+            onClick={handleSync}
+            disabled={isSyncing}
+            style={{ backgroundColor: accentColor, color: '#fff' }}
+          >
+            <RefreshCw className={`h-4 w-4 mr-1.5 ${isSyncing ? 'animate-spin' : ''}`} />
+            {isSyncing ? 'Sync...' : 'Sync'}
+          </Button>
+        )}
       </div>
 
       {/* Hauptbereich */}
