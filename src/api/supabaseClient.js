@@ -125,6 +125,7 @@ export const entities = {
   TaxUnit:          makeEntity('tax_allocation_unit'),
   TaxInvoice:       makeEntity('tax_allocation_invoice'),
   TaxSteuerfuss:    makeEntity('tax_steuerfuss'),
+  Wine:             makeEntity('wines'),
 };
 
 // Auth helpers
@@ -192,6 +193,19 @@ export async function uploadAvatar(file, userId) {
     .upload(path, file, { upsert: true, contentType: file.type, cacheControl: '3600' });
   if (error) throw new Error(error.message);
   const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path);
+  return publicUrl;
+}
+
+// ─── Weinflaschen-Foto hochladen ──────────────────────────────────────────────
+// Lädt ein Etikett-Foto (bereits clientseitig verkleinert) in den 'wine-photos'-
+// Bucket hoch und gibt die öffentliche URL zurück.
+export async function uploadWinePhoto(blob, userId) {
+  const path = `${userId}/${Date.now()}_${crypto.randomUUID()}.jpg`;
+  const { error } = await supabase.storage
+    .from('wine-photos')
+    .upload(path, blob, { contentType: blob.type || 'image/jpeg', upsert: false });
+  if (error) throw new Error(error.message);
+  const { data: { publicUrl } } = supabase.storage.from('wine-photos').getPublicUrl(path);
   return publicUrl;
 }
 
