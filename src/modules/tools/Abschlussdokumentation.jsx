@@ -1,9 +1,9 @@
 import React, { useState, useContext, useRef, useEffect, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
-import { ThemeContext } from "@/Layout";
+import { ThemeContext } from "../../Layout.jsx";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { entities, supabase } from "@/api/supabaseClient";
+import { entities, supabase } from "../../api/supabaseClient.js";
 import { toast } from "sonner";
 import {
   BookCheck, FileSpreadsheet, Upload, Download, ChevronRight, Wrench,
@@ -11,7 +11,7 @@ import {
   Search, ChevronDown, ChevronUp, X, FileText, BarChart2, RotateCcw,
   Plus, Trash2, Sparkles,
 } from "lucide-react";
-import DokUploadDialog from "@/components/dokumente/DokUploadDialog";
+import DokUploadDialog from "../../components/dokumente/DokUploadDialog.jsx";
 
 // ── Swiss Kontenrahmen KMU ────────────────────────────────────────────────────
 const KONTENRAHMEN_POSITIONEN = [
@@ -4384,7 +4384,7 @@ export default function Abschlussdokumentation() {
   const tabProps = { konten, accent, headingC, subC, panelBg, panelBdr, tableBdr, rowHover, theme, customerId: selectedCid, selectedYear };
 
   return (
-    <div className="flex flex-col h-full overflow-hidden" style={{ backgroundColor: pageBg }}>
+    <div className="flex flex-col h-screen w-screen overflow-hidden" style={{ backgroundColor: pageBg }}>
       <style>{`
         @media print {
           body > * { display: none !important; }

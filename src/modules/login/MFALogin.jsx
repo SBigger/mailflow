@@ -1,7 +1,7 @@
 import React, { useState } from "react";
-import { supabase} from "@/api/supabaseClient";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { supabase} from "../../api/supabaseClient.js";
+import { Button } from "../../components/ui/button.jsx";
+import { Input } from "../../components/ui/input.jsx";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { ShieldCheck, Loader2 } from "lucide-react";

@@ -148,7 +148,7 @@ export default function Posteingang({ embedded = false } = {}) {
   const treeItem = { display: "flex", alignItems: "center", gap: 5, padding: "8px 12px", cursor: "pointer", borderRadius: 5, fontSize: 13, userSelect: "none" };
 
   return (
-      <div ref={containerRef} style={{ display: "flex", flexDirection: "column", height: embedded ? "100%" : "100vh", overflow: "hidden", background: s.cardBg, color: s.textMain }}>
+      <div ref={containerRef} className="w-screen" style={{ display: "flex", flexDirection: "column", height: embedded ? "100%" : "100vh", overflow: "hidden", background: s.cardBg, color: s.textMain }}>
         {/* Header */}
         <div style={{padding: "12px 20px", borderBottom: "1px solid " + border, display: "flex", alignItems: "center", gap: 10, flexShrink: 0, flexWrap: "wrap"}}>
           <span style={{ fontSize: 15, fontWeight: 700 }}>Paperboy</span>

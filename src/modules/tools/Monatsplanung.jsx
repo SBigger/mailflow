@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo, useContext, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
-import { ThemeContext } from "@/Layout";
-import { supabase } from "@/api/supabaseClient";
-import { useAuth } from "@/lib/AuthContext";
+import { ThemeContext } from "../../Layout.jsx";
+import { supabase } from "../../api/supabaseClient.js";
+import { useAuth } from "../../lib/AuthContext.jsx";
 import { toast } from "sonner";
 import {
   CalendarRange, Plus, X, Trash2, Search,
@@ -1095,7 +1095,7 @@ export default function Monatsplanung() {
   const nextYear  = years.length > 0 ? years[0] + 1 : new Date().getFullYear() + 1;
 
   return (
-    <div style={{ height: "100vh", display: "flex", flexDirection: "column", backgroundColor: pageBg, overflow: "hidden" }}>
+    <div className="flex flex-col h-screen w-screen overflow-hidden" style={{backgroundColor: pageBg}}>
 
       {/* Top bar */}
       <div style={{ padding: "9px 18px", borderBottom: `1px solid ${border}`, display: "flex", alignItems: "center", gap: 10, backgroundColor: cardBg, flexShrink: 0, flexWrap: "wrap" }}>

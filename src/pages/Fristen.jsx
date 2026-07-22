@@ -435,7 +435,7 @@ export default function Fristen() {
 
   return (
     <ColWidthProvider>
-    <div className="h-full flex flex-col overflow-hidden" style={{ backgroundColor: pageBg }}>
+    <div className="flex flex-col h-screen w-screen overflow-hidden" style={{ backgroundColor: pageBg }}>
 
       {/* ── Top Bar ─────────────────────────────────────── */}
       <div className="flex-shrink-0 border-b px-4 md:px-6 pt-3 pb-2" style={{ backgroundColor: topBarBg, borderColor }}>

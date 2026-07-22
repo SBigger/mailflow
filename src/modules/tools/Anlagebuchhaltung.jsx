@@ -1,9 +1,9 @@
 import React, { useState, useContext, useEffect, useMemo, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
-import { ThemeContext } from "@/Layout";
+import { ThemeContext } from "../../Layout.jsx";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/api/supabaseClient";
+import { entities, supabase } from "../../api/supabaseClient.js";
 import { toast } from "sonner";
 import {
   Building2, FileSpreadsheet, Upload, Download, Plus, Trash2,
@@ -1289,7 +1289,7 @@ export default function Anlagebuchhaltung() {
   const isOpen = vorhandeneJahre.includes(selectedYear);
 
   return (
-    <div className="h-full flex flex-col" style={{ backgroundColor: pageBg }}>
+    <div className="flex flex-col h-screen w-screen overflow-hidden" style={{ backgroundColor: pageBg }}>
       {/* ── Breadcrumb ─────────────────────────────────────────────────────── */}
       <div className="flex items-center gap-2 px-6 py-3 flex-shrink-0"
         style={{ borderBottom: `1px solid ${panelBdr}`, backgroundColor: panelBg }}>

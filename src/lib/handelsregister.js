@@ -126,15 +126,7 @@ async function zefixInvoke(body, fallbackQuery) {
     error = e
   }
   if (!error) return data
-  if (import.meta.env.DEV) console.warn('zefix-search nicht erreichbar, nutze /api/zefix', error)
-
-  const { data: sess } = await supabase.auth.getSession()
-  const token = sess?.session?.access_token
-  if (!token) throw new Error('Nicht angemeldet.')
-  const res = await fetch(`/api/zefix?${fallbackQuery}`, { headers: { Authorization: `Bearer ${token}` } })
-  const json = await res.json()
-  if (!res.ok) throw new Error(json.error ?? `Zefix antwortet ${res.status}`)
-  return json
+  console.log(error);
 }
 
 /**

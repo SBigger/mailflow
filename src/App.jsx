@@ -28,39 +28,38 @@ const ReminderBoard = lazy(() => import('./pages/ReminderBoard'));
 const TicketBoard = lazy(() => import('./pages/TicketBoard'));
 const KnowledgeBase = lazy(() => import('./pages/KnowledgeBase'));
 const Dokumente = lazy(() => import('./pages/Dokumente'));
-const DokumenteV2 = lazy(() => import('./pages/DokumenteV2'));
 const Chartis = lazy(() => import('./pages/Chartis'));
 const UserManagement = lazy(() => import('./pages/UserManagement'));
 const Kundenportal = lazy(() => import('./pages/Kundenportal'));
 const ArtisTools = lazy(() => import('./pages/ArtisTools'));
-const BriefSchreiben = lazy(() => import('./pages/BriefSchreiben'));
-const Fahrzeugliste = lazy(() => import('./pages/Fahrzeugliste'));
-const Aktienbuch = lazy(() => import('./pages/Aktienbuch'));
-const Unterschriften = lazy(() => import('./pages/Unterschriften'));
-const Abschlussdokumentation = lazy(() => import('./pages/Abschlussdokumentation'));
-const Anlagebuchhaltung = lazy(() => import('./pages/Anlagebuchhaltung'));
-const Whiteboard = lazy(() => import('./pages/Whiteboard'));
+const BriefSchreiben = lazy(() => import('./modules/tools/BriefSchreiben.jsx'));
+const Fahrzeugliste = lazy(() => import('./modules/tools/Fahrzeugliste.jsx'));
+const Aktienbuch = lazy(() => import('./modules/tools/Aktienbuch.jsx'));
+const Unterschriften = lazy(() => import('./modules/tools/Unterschriften.jsx'));
+const Abschlussdokumentation = lazy(() => import('./modules/tools/Abschlussdokumentation.jsx'));
+const Anlagebuchhaltung = lazy(() => import('./modules/tools/Anlagebuchhaltung.jsx'));
+const Whiteboard = lazy(() => import('./modules/tools/Whiteboard.jsx'));
 const Firmensuche = lazy(() => import('./pages/Firmensuche'));
 const Auswertungen = lazy(() => import('./pages/Auswertungen'));
-const Steuern = lazy(() => import('./pages/Steuern'));
-const Veranlagungen = lazy(() => import('./pages/Veranlagungen'));
+const Steuern = lazy(() => import('./modules/tools/Steuern.jsx'));
+const Veranlagungen = lazy(() => import('./modules/tools/Veranlagungen.jsx'));
 const Login = lazy(() => import('./pages/Login'));
-const ResetPassword = lazy(() => import('./pages/ResetPassword'));
-const MFASetup = lazy(() => import("./pages/MFASetup.jsx"));
-const MFALogin = lazy(() => import("./pages/MFALogin.jsx"));
-const SetPassword = lazy(() => import("./pages/SetPassword.jsx"));
+const ResetPassword = lazy(() => import('./modules/login/ResetPassword.jsx'));
+const MFASetup = lazy(() => import("./modules/login/MFASetup.jsx"));
+const MFALogin = lazy(() => import("./modules/login/MFALogin.jsx"));
+const SetPassword = lazy(() => import("./modules/login/SetPassword.jsx"));
 const DokumentUploadKunden = lazy(() => import("./pages/DokumentUploadKunden.jsx"));
 const Posteingang = lazy(() => import("./pages/Posteingang.jsx"));
 const SharePage = lazy(() => import("./pages/SharePage.jsx"));
-const Portal = lazy(() => import("./pages/Portal.jsx"));
+const Portal = lazy(() => import("./modules/kundenportal/Portal.jsx"));
 const Leistungserfassung = lazy(() => import("./pages/Leistungserfassung.jsx"));
-const Promptvorlagen = lazy(() => import("./pages/Promptvorlagen.jsx"));
-const TelefonDashboard = lazy(() => import("./pages/TelefonDashboard.jsx"));
+const Promptvorlagen = lazy(() => import("./modules/tools/Promptvorlagen.jsx"));
+const TelefonDashboard = lazy(() => import("./modules/tools/TelefonDashboard.jsx"));
 const Telefonliste = lazy(() => import("./pages/Telefonliste.jsx"));
-const Jahresplanung = lazy(() => import("./pages/Jahresplanung.jsx"));
-const Monatsplanung = lazy(() => import("./pages/Monatsplanung.jsx"));
-const Kalender = lazy(() => import("./pages/Kalender.jsx"));
-const Steuerausscheidung = lazy(() => import("./pages/Steuerausscheidung.jsx"));
+const Jahresplanung = lazy(() => import("./modules/tools/Jahresplanung.jsx"));
+const Monatsplanung = lazy(() => import("./modules/tools/Monatsplanung.jsx"));
+const Kalender = lazy(() => import("./modules/tools/Kalender.jsx"));
+const Steuerausscheidung = lazy(() => import("./modules/tools/Steuerausscheidung.jsx"));
 const FiBuRouter = lazy(() => import("./modules/fibu/router.jsx"));
 const TelefonieRouter = lazy(() => import("./modules/telefonie/router.jsx"));
 const GlobalSoftphone = lazy(() => import("./modules/telefonie/components/Softphone.jsx"));
@@ -115,7 +114,6 @@ function AuthenticatedApp() {
                     <Route path="/TicketBoard" element={<TicketBoard />} />
                     <Route path="/KnowledgeBase" element={<KnowledgeBase />} />
                     <Route path="/Dokumente" element={<Dokumente />} />
-                    <Route path="/DokumenteV2" element={<DokumenteV2 />} />
                     <Route path="/Chartis" element={<Chartis/>}/>
                     <Route path="/Posteingang" element={<Posteingang />} />
                     <Route path="/UserManagement" element={<UserManagement />} />

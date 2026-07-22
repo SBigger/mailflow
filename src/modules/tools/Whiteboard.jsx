@@ -1,9 +1,9 @@
 import React, { useState, useRef, useCallback, useEffect, useContext, useMemo } from "react";
 import { Stage, Layer, Line, Rect, Image as KonvaImage } from "react-konva";
 import { getStroke } from "perfect-freehand";
-import { ThemeContext } from "@/Layout";
-import { supabase, entities } from "@/api/supabaseClient";
-import { useAuth } from "@/lib/AuthContext";
+import { ThemeContext } from "../../Layout.jsx";
+import { supabase } from "../../api/supabaseClient.js";
+import { useAuth } from "../../lib/AuthContext.jsx";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import * as pdfjsLib from "pdfjs-dist";
@@ -11,7 +11,7 @@ import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.js?url";
 if (pdfjsLib?.GlobalWorkerOptions) pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 import {
   ArrowLeft, Pen, Eraser, Hand, ZoomIn, ZoomOut, Save, Download, Upload,
-  FileText, Plus, Trash2, ChevronLeft, ChevronRight, Maximize2, Undo2, Redo2,
+  Plus, Trash2, ChevronLeft, ChevronRight, Maximize2, Undo2, Redo2, Wrench, BookOpen,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
@@ -70,6 +70,11 @@ export default function Whiteboard() {
   const isArtis = theme === "artis";
   const isLight = theme === "light";
   const accent  = isArtis ? "#4a7a4f" : "#6366f1";
+  const accentLight = isArtis ? "#7a9b7f"                : isLight  ? "#7a9abf"               : "#9f7aef";
+  const panelBg     = isLight ? "#ffffff"                : isArtis ? "#ffffff"                : "#27272a";
+  const panelBorder = isLight ? "#e2e2ec"                : isArtis ? "#ccd8cc"                : "#3f3f46";
+  const headingCol  = isLight ? "#1e293b"                 : isArtis ? "#1a3a1a"               : "#e4e4e7";
+  const subCol      = isLight ? "#64748b"                : isArtis ? "#4a6a4a"                : "#a1a1aa";
   const bgColor = isArtis ? "#f8faf8" : isLight ? "#f8f8fc" : "#18181b";
   const cardBg  = isArtis ? "#fff" : isLight ? "#fff" : "#27272a";
   const border  = isArtis ? "#ccd8cc" : isLight ? "#d4d4e8" : "#3f3f46";
@@ -433,14 +438,23 @@ export default function Whiteboard() {
 
   if (showList) {
     return (
-      <div style={{ background: bgColor, minHeight: "100vh", padding: 24, fontFamily: "Segoe UI, system-ui, sans-serif" }}>
-        <div style={{ maxWidth: 900, margin: "0 auto" }}>
+      <div className="flex flex-col h-screen w-screen overflow-hidden" style={{ background: bgColor,  fontFamily: "Segoe UI, system-ui, sans-serif" }}>
+        {/* Breadcrumb */}
+        <div className="flex items-center gap-2 px-6 py-4 flex-shrink-0"
+             style={{ borderBottom: `1px solid ${panelBorder}`, backgroundColor: panelBg }}>
+          <Wrench className="w-4 h-4" style={{ color: accentLight }} />
+          <button
+              onClick={() => navigate("/ArtisTools")}
+              className="text-sm hover:underline"
+              style={{ color: subCol, background: "none", border: "none", cursor: "pointer", padding: 0 }}
+          >Artis Tools</button>
+          <ChevronRight className="w-3 h-3" style={{ color: subCol }} />
+          <BookOpen className="w-4 h-4" style={{ color: accent }} />
+          <span className="text-sm font-semibold" style={{ color: headingCol }}>Whiteboard</span>
+        </div>
+        <div style={{ maxWidth: 900, margin: "0 auto", paddingTop: 20 }}>
           {/* Header */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <button onClick={() => navigate("/ArtisTools")} style={{ ...btnStyle(false), padding: 8 }}><ArrowLeft size={16} /></button>
-              <h1 style={{ color: textMain, fontSize: 20, fontWeight: 700, margin: 0 }}>Whiteboard</h1>
-            </div>
             <button onClick={newBoard} style={{ ...btnStyle(true), gap: 6, padding: "8px 16px", fontSize: 13, fontWeight: 600 }}>
               <Plus size={14} /> Neues Whiteboard
             </button>
@@ -487,7 +501,7 @@ export default function Whiteboard() {
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: bgColor, fontFamily: "Segoe UI, system-ui, sans-serif" }}>
+    <div className="flex flex-col h-screen w-screen overflow-hidden" style={{ background: bgColor, fontFamily: "Segoe UI, system-ui, sans-serif" }}>
       {/* ── Toolbar ────────────────────────────────────────── */}
       <div style={{ background: cardBg, borderBottom: `1px solid ${border}`, padding: "6px 12px", display: "flex", alignItems: "center", gap: 8, flexShrink: 0, flexWrap: "wrap" }}>
         {/* Zurueck */}

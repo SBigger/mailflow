@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useMemo, useContext, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
-import { ThemeContext } from "@/Layout";
-import { supabase } from "@/api/supabaseClient";
+import { ThemeContext } from "../../Layout.jsx";
+import { supabase } from "../../api/supabaseClient.js";
 import {
   ChevronDown, ChevronRight, X, Clock, Search, Calendar, Trash2, RefreshCw, Info, UserCheck,
-  LayoutGrid, BarChart2, CheckCircle2, Circle, Copy, Eye, Building2
+  LayoutGrid, BarChart2, Copy, Eye, Building2
 } from "lucide-react";
-import { useAuth } from "@/lib/AuthContext";
+import { useAuth } from "../../lib/AuthContext.jsx";
 import { toast } from "sonner";
 
 // ── Drag Portal ──────────────────────────────────────────────────────────────
@@ -139,11 +139,6 @@ export default function Jahresplanung() {
   }, [year]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
-
-  // Auto-migrate: add done column etc. silently on first mount
-  useEffect(() => {
-    supabase.functions.invoke("setup-jahresplanung").catch(() => {});
-  }, []);
 
   // Ctrl+F
   useEffect(() => {
@@ -355,7 +350,7 @@ export default function Jahresplanung() {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div style={{ height: "100vh", display: "flex", flexDirection: "column", backgroundColor: pageBg, overflow: "hidden" }}>
+    <div className="flex flex-col h-screen w-screen overflow-hidden" style={{ backgroundColor: pageBg}}>
 
       {/* ── Top bar ─────────────────────────────────────────────────────────── */}
       <div style={{ padding: "9px 18px", borderBottom: `1px solid ${border}`, display: "flex", alignItems: "center", gap: 10, backgroundColor: cardBg, flexShrink: 0 }}>

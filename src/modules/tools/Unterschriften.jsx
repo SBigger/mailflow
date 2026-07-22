@@ -1,13 +1,14 @@
 import React, { useState, useContext } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ThemeContext } from "@/Layout";
-import { entities, supabase } from "@/api/supabaseClient";
+import { ThemeContext } from "../../Layout.jsx";
+import { entities, supabase } from "../../api/supabaseClient.js";
 import { toast } from "sonner";
 import {
   PenLine, Plus, Download, X, ChevronRight, Wrench, Upload,
   User, Clock, CheckCircle2, Ban, FileText, Copy, FolderInput,
-  Send, Loader2, RefreshCw, ExternalLink, Info
+  Send, Loader2, RefreshCw, ExternalLink, Info, BookOpen
 } from "lucide-react";
+import {useNavigate} from "react-router-dom";
 
 // ── Status-Konfiguration ─────────────────────────────────────────────────────
 const STATUS_CONFIG = {
@@ -49,6 +50,7 @@ function defaultExpiry() {
 // ── Haupt-Komponente ─────────────────────────────────────────────────────────
 export default function Unterschriften() {
   const { theme } = useContext(ThemeContext);
+  const navigate = useNavigate();
   const isLight = theme === "light";
   const isArtis = theme === "artis";
 
@@ -248,18 +250,22 @@ export default function Unterschriften() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col h-full overflow-hidden" style={{ backgroundColor: pageBg }}>
-
+    <div className="flex flex-col h-screen w-screen overflow-hidden" style={{ backgroundColor: pageBg }}>
+      {/* Breadcrumb */}
+      <div className="flex items-center gap-2 px-6 py-4 flex-shrink-0"
+           style={{ borderBottom: `1px solid ${cardBorder}`, backgroundColor: cardBg }}>
+        <Wrench className="w-4 h-4" style={{ color: accentLight }} />
+        <button
+            onClick={() => navigate("/ArtisTools")}
+            className="text-sm hover:underline"
+            style={{ color: subCol, background: "none", border: "none", cursor: "pointer", padding: 0 }}
+        >Artis Tools</button>
+        <ChevronRight className="w-3 h-3" style={{ color: subCol }} />
+        <BookOpen className="w-4 h-4" style={{ color: accent }} />
+        <span className="text-sm font-semibold" style={{ color: headingCol }}>Unterschriften</span>
+      </div>
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="flex-shrink-0 px-6 py-5" style={{ borderBottom: `1px solid ${cardBorder}` }}>
-        <div className="flex items-center gap-2 mb-4">
-          <Wrench className="w-4 h-4" style={{ color: accentLight }} />
-          <span className="text-sm" style={{ color: subCol }}>Artis Tools</span>
-          <ChevronRight className="w-3 h-3" style={{ color: subCol }} />
-          <PenLine className="w-4 h-4" style={{ color: accent }} />
-          <span className="text-sm font-semibold" style={{ color: headingCol }}>Unterschriften</span>
-        </div>
-
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: headerIconBg }}>

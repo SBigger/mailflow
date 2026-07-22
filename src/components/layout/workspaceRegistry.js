@@ -28,7 +28,7 @@ export const WIDGETS = {
     label: "Kalender",
     icon: CalendarDays,
     color: "#2563eb",
-    component: lazy(() => import("@/pages/Kalender.jsx")),
+    component: lazy(() => import("@/modules/tools/Kalender.jsx")),
   },
   posteingang: {
     label: "Paperboy",
@@ -60,7 +60,7 @@ export const WIDGETS = {
     label: "Abschluss",
     icon: BookCheck,
     color: "#0d9488",
-    component: lazy(() => import("@/pages/Abschlussdokumentation.jsx")),
+    component: lazy(() => import("@/modules/tools/Abschlussdokumentation.jsx")),
   },
 };
 

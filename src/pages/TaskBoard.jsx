@@ -428,7 +428,7 @@ export default function TaskBoard({ embedded = false } = {}) {
                     </DropdownMenuContent>
                   </DropdownMenu>
                   <Button onClick={() => setShowVoiceTask(true)} size="sm" className="bg-violet-600 hover:bg-violet-500 text-white gap-1.5 h-9 touch-manipulation flex-1">
-                    <Mic className="h-4 w-4" /> Sprache
+                    <Mic className="h-4 w-4" />
                   </Button>
                   <Button variant="ghost" size="icon" onClick={() => queryClient.invalidateQueries()} className="h-9 w-9 touch-manipulation" style={{ color: mutedText }}>
                     <RefreshCw className={`h-4 w-4 ${(colLoading || taskLoading) ? "animate-spin" : ""}`} />
@@ -570,7 +570,7 @@ export default function TaskBoard({ embedded = false } = {}) {
               </Button>
               <Button onClick={() => setShowVoiceTask(true)} size="sm" variant="outline" className="gap-1.5 h-9"
                 style={{ backgroundColor: inputBg, borderColor: inputBorder, color: isLight ? '#3a3a5a' : '#d4d4d8' }}>
-                <Mic className="h-4 w-4 text-violet-400" /> Sprache
+                <Mic className="h-4 w-4 text-violet-400" />
               </Button>
               <Button onClick={() => setShowAddTask(true)} size="sm" className="bg-violet-600 hover:bg-violet-500 text-white">
                 <Plus className="h-4 w-4 mr-1" /> Neuer Task

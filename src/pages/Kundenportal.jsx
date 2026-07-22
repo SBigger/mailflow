@@ -91,7 +91,11 @@ export default function Kundenportal() {
   // Best-effort: Magic-Link-Mail über portal-api verschicken (falls deployt)
   async function sendInvite(emailAddr) {
     try {
-      await functions.invoke("portal-api", { action: "request-link", email: emailAddr });
+      await functions.invoke("portal-api", {
+        action: "request-link",
+        email: emailAddr,
+        appUrl: window.env.HOSTNAME
+      });
       return true;
     } catch {
       return false;
@@ -159,7 +163,7 @@ export default function Kundenportal() {
   async function copyLink(u) {
     setBusyId(u.id);
     try {
-      const { data } = await functions.invoke("portal-api", { action: "create-link", portal_user_id: u.id });
+      const { data } = await functions.invoke("portal-api", { action: "create-link", portal_user_id: u.id, appUrl: window.env.HOSTNAME });
       if (!data?.link) throw new Error(data?.error || "Kein Link erhalten.");
       try { await navigator.clipboard.writeText(data.link); toast.success("Anmeldelink kopiert (7 Tage gültig)."); }
       catch { window.prompt("Anmeldelink (7 Tage gültig) — kopieren mit Strg+C:", data.link); }
@@ -175,7 +179,7 @@ export default function Kundenportal() {
   const lbl = { fontSize: 12, fontWeight: 600, color: s.muted, display: "block", marginBottom: 5 };
 
   return (
-    <div style={{ background: s.bg, minHeight: "100%", color: s.ink, padding: "26px 28px" }}>
+    <div className="flex flex-col h-screen w-screen overflow-hidden" style={{ background: s.bg, minHeight: "100%", color: s.ink, padding: "26px 28px" }}>
       {/* Kopf */}
       <div style={{ display: "flex", alignItems: "center", gap: 13, marginBottom: 6 }}>
         <div style={{ width: 42, height: 42, borderRadius: 11, background: s.accentSoft, color: s.accentInk,

@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
-import { GripVertical } from "lucide-react";
+import {GripVertical, RefreshCw} from "lucide-react";
 import { entities, functions, auth, supabase } from "@/api/supabaseClient";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -149,7 +149,7 @@ export default function Dashboard() {
     enabled: !!currentUser,
   });
 
-  const { data: tasks = [] } = useQuery({
+  const { data: tasks = [], isLoading: taskLoading } = useQuery({
     queryKey: ["tasks", currentUser?.id],
     queryFn: async () => {
       if (!currentUser) return [];
@@ -158,17 +158,17 @@ export default function Dashboard() {
     enabled: !!currentUser,
   });
 
-  const { data: priorities = [] } = useQuery({
+  const { data: priorities = [], isLoading: prioritiesLoading } = useQuery({
     queryKey: ["priorities"],
     queryFn: () => entities.Priority.list("level"),
   });
 
-  const { data: taskColumns = [] } = useQuery({
+  const { data: taskColumns = [], isLoading: taskColumsLoading } = useQuery({
     queryKey: ["taskColumns"],
     queryFn: () => entities.TaskColumn.list("order"),
   });
 
-  const { data: mails = [] } = useQuery({
+  const { data: mails = [], isLoading: mailsLoading } = useQuery({
     queryKey: ["mailItems", currentUser?.id],
     queryFn: async () => {
       if (!currentUser) return [];
@@ -178,7 +178,7 @@ export default function Dashboard() {
   });
 
   // Fristen + Customers (für Fristen- und Uploads-Widget)
-  const { data: fristen = [] } = useQuery({
+  const { data: fristen = [], isLoading: fristenLoading } = useQuery({
     queryKey: ["fristen"],
     queryFn: () => entities.Frist.list("due_date"),
     enabled: !!currentUser,
@@ -191,7 +191,7 @@ export default function Dashboard() {
   });
 
   // Kunden-Uploads aus Storage-Bucket "posteingang" (Files = noch nicht abgelegt)
-  const { data: pendingUploads = [] } = useQuery({
+  const { data: pendingUploads = [], isLoading: pendingUploadsLoading } = useQuery({
     queryKey: ["dashboard", "pendingUploads"],
     queryFn: async () => {
       const { data: folders, error: folderErr } = await supabase.storage.from('posteingang').list();
@@ -453,10 +453,10 @@ export default function Dashboard() {
   const containerPadding = isMobile ? 'p-3' : 'p-6';
 
   return (
-    <div className={`h-screen overflow-y-auto ${containerPadding}`}>
-      <div className="max-w-7xl mx-auto">
+    <div className={`flex flex-col h-screen w-screen overflow-hidden overflow-y-auto ${containerPadding}`}>
+      <div>
         {/* Navigation Dropdown */}
-        <div className={isMobile ? 'mb-3' : 'mb-6'}>
+        <div className={isMobile ? 'mb-3' : ''}>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -642,10 +642,14 @@ export default function Dashboard() {
               <div className="text-xs" style={{ color: textMuted }}>
                 Termine konnten nicht geladen werden: {ms365.calendarError}
               </div>
-            ) : calendarEvents.length === 0 ? (
+            ) : calendarEvents.length === 0 && !ms365Q.isLoading ? (
               <div className="text-center py-4 text-sm" style={{ color: textMuted }}>
                 Keine Termine heute
               </div>
+            ) : ms365Q.isLoading ? (
+                <div className="text-center py-4 text-sm" style={{ color: textMuted }}>
+                  <RefreshCw className={`h-4 w-4 animate-spin`} />
+                </div>
             ) : (
               <div className={`grid grid-cols-1 ${isMobile ? '' : 'md:grid-cols-2 lg:grid-cols-3'} gap-2`}>
                 {calendarEvents.map((evt) => (
@@ -773,11 +777,18 @@ export default function Dashboard() {
                     </DropdownMenu>
                   </div>
 
-                  <div className={`space-y-2 ${isMobile ? 'max-h-[420px]' : 'max-h-[600px]'} overflow-y-auto`}>
-                    {filteredTasks.length === 0 ? (
-                      <div className="text-center py-8" style={{ color: textMuted }}>Keine offenen Tasks</div>
+                  <div className={`space-y-2 ${isMobile ? 'max-h-[420px]' : 'max-h-[600px]'} overflow-y-auto flex flex-col`}>
+                    {taskLoading ? (
+                        /* 1. Check loading state first to prevent text flicker */
+                        <div className="flex flex-col w-full h-40 justify-center items-center" style={{ color: textMuted }}>
+                          <RefreshCw className="h-6 w-6 animate-spin" />
+                        </div>
+                    ) : filteredTasks.length === 0 ? (
+                        /* 2. Show empty state only when we are definitely done loading */
+                        <div className="text-center py-8" style={{ color: textMuted }}>Keine offenen Tasks</div>
                     ) : (
-                      filteredTasks.map((task) => renderTaskCard(task))
+                        /* 3. Render the tasks */
+                        filteredTasks.map((task) => renderTaskCard(task))
                     )}
                   </div>
                 </div>
@@ -821,7 +832,12 @@ export default function Dashboard() {
                   </div>
 
                   <div className={`space-y-2 ${isMobile ? 'max-h-[420px]' : 'max-h-[600px]'} overflow-y-auto`}>
-                    {filteredMails.length === 0 ? (
+                    {mailsLoading ? (
+                        /* 1. Check loading state first to prevent text flicker */
+                        <div className="flex flex-col w-full h-40 justify-center items-center" style={{ color: textMuted }}>
+                          <RefreshCw className="h-6 w-6 animate-spin" />
+                        </div>
+                    ) : filteredMails.length === 0 ? (
                       <div className="text-center py-8" style={{ color: textMuted }}>Keine ungelesenen E-Mails</div>
                     ) : (
                       filteredMails.map((mail) => (
@@ -880,7 +896,12 @@ export default function Dashboard() {
                   </h2>
 
                   <div className={`space-y-2 ${isMobile ? 'max-h-[420px]' : 'max-h-[600px]'} overflow-y-auto`}>
-                    {upcomingFristen.length === 0 ? (
+                    {fristenLoading ? (
+                        /* 1. Check loading state first to prevent text flicker */
+                        <div className="flex flex-col w-full h-40 justify-center items-center" style={{ color: textMuted }}>
+                          <RefreshCw className="h-6 w-6 animate-spin" />
+                        </div>
+                    ) : upcomingFristen.length === 0 ? (
                       <div className="text-center py-8 text-sm" style={{ color: textMuted }}>
                         Keine Fristen in den nächsten 20 Tagen
                       </div>
@@ -959,7 +980,12 @@ export default function Dashboard() {
                   </h2>
 
                   <div className={`space-y-2 ${isMobile ? 'max-h-[420px]' : 'max-h-[600px]'} overflow-y-auto`}>
-                    {pendingUploads.length === 0 ? (
+                    {pendingUploadsLoading ? (
+                        /* 1. Check loading state first to prevent text flicker */
+                        <div className="flex flex-col w-full h-40 justify-center items-center" style={{ color: textMuted }}>
+                          <RefreshCw className="h-6 w-6 animate-spin" />
+                        </div>
+                    ) : pendingUploads.length === 0 ? (
                       <div className="text-center py-8 text-sm" style={{ color: textMuted }}>
                         Keine offenen Uploads
                       </div>
@@ -1123,7 +1149,12 @@ export default function Dashboard() {
                 </div>
 
                 <div className={`space-y-2 ${isMobile ? 'max-h-[420px]' : 'max-h-[600px]'} overflow-y-auto`}>
-                  {!col ? (
+                  {taskColumsLoading ? (
+                      /* 1. Check loading state first to prevent text flicker */
+                      <div className="flex flex-col w-full h-40 justify-center items-center" style={{ color: textMuted }}>
+                        <RefreshCw className="h-6 w-6 animate-spin" />
+                      </div>
+                  ) : !col ? (
                     <div className="text-center py-8 text-sm" style={{ color: textMuted }}>Bitte Spalte wählen</div>
                   ) : colTasks.length === 0 ? (
                     <div className="text-center py-8 text-sm" style={{ color: textMuted }}>Keine Tasks</div>

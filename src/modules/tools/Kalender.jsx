@@ -1,7 +1,6 @@
-import React, { useState, useContext, useMemo, useRef, useEffect } from 'react';
-import { useContainerWidth } from '@/components/layout/useContainerQuery';
-import { supabase, entities, functions, auth } from '@/api/supabaseClient';
-import { ThemeContext } from '@/Layout';
+import React, { useState, useContext, useMemo } from 'react';
+import { supabase, entities, functions, auth } from '../../api/supabaseClient.js';
+import { ThemeContext } from '../../Layout.jsx';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   DndContext, DragOverlay, useDraggable, useDroppable,
@@ -12,15 +11,15 @@ import {
   RefreshCw, List, Grid3X3, ExternalLink, Users, X, Building2,
   AlertCircle, CheckCircle2, HelpCircle, XCircle, ListTodo,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button } from '../../components/ui/button.jsx';
 import { toast } from 'sonner';
 import {
   format, startOfWeek, endOfWeek, addWeeks, subWeeks, addDays,
   isSameDay, isToday, parseISO, addMonths, subMonths,
 } from 'date-fns';
 import { de } from 'date-fns/locale';
-import TaskSidebar from '@/components/kalender/TaskSidebar';
-import TaskDragOverlay from '@/components/kalender/TaskDragOverlay';
+import TaskSidebar from '../../components/kalender/TaskSidebar.jsx';
+import TaskDragOverlay from '../../components/kalender/TaskDragOverlay.jsx';
 
 // ── Hilfsfunktionen ──────────────────────────────────────────────────
 
@@ -118,33 +117,19 @@ function computeEventLayout(events) {
 
 // ── Haupt-Komponente ─────────────────────────────────────────────────
 
-export default function Kalender({ embedded = false } = {}) {
+export default function Kalender() {
   const { theme } = useContext(ThemeContext);
   const queryClient = useQueryClient();
 
-  // Im Widescreen-Panel: Liste statt Woche (Wochengrid braucht Breite),
-  // Task-Sidebar startet eingeklappt — beides bleibt vom Nutzer umschaltbar.
-  const [viewMode, setViewMode] = useState(embedded ? 'liste' : 'woche');    // 'woche' | 'liste'
+  const [viewMode, setViewMode] = useState('woche');    // 'woche' | 'liste'
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [filterCustomer, setFilterCustomer] = useState('');
   const [filterStatus, setFilterStatus] = useState('');  // '' | 'accepted' | 'tentativelyAccepted' | 'declined'
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(embedded);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activeDragTask, setActiveDragTask] = useState(null);
   const [selectedTaskBlock, setSelectedTaskBlock] = useState(null);
-
-  const [containerRef, containerWidth] = useContainerWidth();
-  // Container-Query: solange der Nutzer die Ansicht nicht manuell gewaehlt
-  // hat, folgt viewMode der tatsaechlichen Panel-Breite (nicht dem Browser-
-  // Viewport). Aendert nur, WELCHE bestehende Ansicht (Woche/Liste) gezeigt
-  // wird -- WeekView/ListView selbst bleiben unangetastet.
-  const userChangedViewRef = useRef(false);
-  const setViewModeManual = (mode) => { userChangedViewRef.current = true; setViewMode(mode); };
-  useEffect(() => {
-    if (!embedded || userChangedViewRef.current || containerWidth === 0) return;
-    setViewMode(containerWidth < 700 ? 'liste' : 'woche');
-  }, [embedded, containerWidth]);
 
   function openEvent(event) { setSelectedTaskBlock(null); setSelectedEvent(event); }
   function openTaskBlock(task) { setSelectedEvent(null); setSelectedTaskBlock(task); }
@@ -887,7 +872,7 @@ export default function Kalender({ embedded = false } = {}) {
 
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-    <div ref={containerRef} className="h-full flex flex-col overflow-hidden" style={{ backgroundColor: pageBg }}>
+    <div className="flex flex-col h-screen w-screen overflow-hidden" style={{ backgroundColor: pageBg }}>
       {/* Toolbar */}
       <div
         className="flex items-center gap-3 px-4 py-3 border-b flex-shrink-0 flex-wrap"
@@ -971,7 +956,7 @@ export default function Kalender({ embedded = false } = {}) {
           ].map(({ key, icon: Icon, label }) => (
             <button
               key={key}
-              onClick={() => setViewModeManual(key)}
+              onClick={() => setViewMode(key)}
               className="px-3 py-1.5 text-xs flex items-center gap-1.5 transition-colors"
               style={{
                 backgroundColor: viewMode === key ? accentColor : 'transparent',
@@ -983,18 +968,16 @@ export default function Kalender({ embedded = false } = {}) {
           ))}
         </div>
 
-        {/* Sync — im Widescreen-Panel ausgeblendet (Platzgrund), Funktion unangetastet */}
-        {!embedded && (
-          <Button
-            size="sm"
-            onClick={handleSync}
-            disabled={isSyncing}
-            style={{ backgroundColor: accentColor, color: '#fff' }}
-          >
-            <RefreshCw className={`h-4 w-4 mr-1.5 ${isSyncing ? 'animate-spin' : ''}`} />
-            {isSyncing ? 'Sync...' : 'Sync'}
-          </Button>
-        )}
+        {/* Sync */}
+        <Button
+          size="sm"
+          onClick={handleSync}
+          disabled={isSyncing}
+          style={{ backgroundColor: accentColor, color: '#fff' }}
+        >
+          <RefreshCw className={`h-4 w-4 mr-1.5 ${isSyncing ? 'animate-spin' : ''}`} />
+          {isSyncing ? 'Sync...' : 'Sync'}
+        </Button>
       </div>
 
       {/* Hauptbereich */}

@@ -25,9 +25,7 @@ import { useAuth } from '@/lib/AuthContext';
 import * as packageJson from "../package.json";
 
 // Theme context for global access if needed elsewhere
-// navLayout: 'sidebar' | 'hub' | 'widescreen'
-// layoutMode: 'mobile' | 'desktop' | 'widescreen' — effektiv gerendert
-// viewportClass: '2col' | '3col' | '4col' | null — nur wenn widescreen aktiv
+// navLayout: 'sidebar' (Standard, Seitenleiste) oder 'hub' (Start-Hub ohne Seitenleiste)
 export const ThemeContext = createContext({
   theme: 'dark', setTheme: () => {},
   navLayout: 'sidebar', setNavLayout: () => {},
@@ -637,7 +635,7 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
           )}
 
           {/* Main Content Area */}
-          <main className="flex-1 overflow-hidden relative" style={{ paddingBottom: isMobile && !isTaskUser ? 'calc(56px + env(safe-area-inset-bottom))' : 0 }}>
+          <main className="flex w-screen overflow-hidden relative" style={{ paddingBottom: isMobile && !isTaskUser ? 'calc(56px + env(safe-area-inset-bottom))' : 0 }}>
             {layoutMode === 'widescreen' ? (
               <Suspense fallback={<Outlet />}>
                 <WorkspaceShell viewportClass={viewportClass} currentPageName={currentPageName}>
