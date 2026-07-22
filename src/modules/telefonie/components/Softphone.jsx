@@ -56,10 +56,12 @@ function dueInfo(iso) {
 export default function Softphone() {
   const theme = useAppTheme();
   const t = tele(theme);
-  const { call, incoming, wrapup, clearWrapup, panelOpen, setPanelOpen, dial, answer, decline, hangup, toggleMute, toggleHold, toggleVideo } = useTelephony();
+  const { call, incoming, wrapup, clearWrapup, panelOpen, setPanelOpen, dial, answer, decline, hangup, toggleMute, toggleHold, toggleVideo, sendDtmf } = useTelephony();
   const dossier = useIncomingDossier(incoming?.peerNumber);
 
   const [num, setNum] = useState("");
+  const [showDtmf, setShowDtmf] = useState(false);
+  useEffect(() => { if (!call) setShowDtmf(false); }, [call]);
   const mono = { fontFamily: 'ui-monospace, "Segoe UI Mono", Consolas, monospace', fontVariantNumeric: "tabular-nums" };
   const timer = useCallTimer(!!call, call?.startedAt);
 
@@ -155,10 +157,26 @@ export default function Softphone() {
             <Ctrl t={t} on={call.muted} icon={call.muted ? MicOff : Mic} label="Stumm" onClick={toggleMute} />
             <Ctrl t={t} on={call.onHold} icon={Pause} label="Halten" onClick={toggleHold} />
             <Ctrl t={t} icon={ArrowRightLeft} label="Verbinden" onClick={() => {}} />
-            <Ctrl t={t} icon={Grid3x3} label="Tastatur" onClick={() => {}} />
+            <Ctrl t={t} on={showDtmf} icon={Grid3x3} label="Tastatur" onClick={() => setShowDtmf((v) => !v)} />
             <Ctrl t={t} on={call.video} icon={Video} label="Video" onClick={toggleVideo} />
             <Ctrl t={t} icon={StickyNote} label="Notiz" onClick={() => {}} />
           </div>
+
+          {showDtmf && (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, margin: "0 0 14px" }}>
+              {KEYS.map(([d]) => (
+                <button
+                  key={d}
+                  onClick={() => sendDtmf(d)}
+                  style={{ border: `1px solid ${t.borderSubtle}`, background: t.sunken, borderRadius: 12, cursor: "pointer", padding: "8px 0", ...mono, fontSize: 17, fontWeight: 650, color: t.textPrimary }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = t.activeRow)}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = t.sunken)}
+                >
+                  {d}
+                </button>
+              ))}
+            </div>
+          )}
 
           <button onClick={hangup} style={{ ...bigBtn(t.hangup), width: "100%" }}><PhoneOff size={16} /> Auflegen</button>
 
