@@ -1,7 +1,7 @@
 import React, { useContext } from "react";
 import { useNavigate } from "react-router-dom";
 import { ThemeContext } from "@/Layout";
-import { BookOpen, Car, FileText, UserCog, ChevronRight, Wrench, PenLine, Presentation, FileSpreadsheet, Sparkles, Phone, CalendarRange, CalendarDays, Scale, Receipt, Building2, Mic, ExternalLink } from "lucide-react";
+import { BookOpen, Car, FileText, UserCog, ChevronRight, Wrench, PenLine, Presentation, FileSpreadsheet, Sparkles, Phone, CalendarRange, CalendarDays, Scale, Receipt, Building2, Mic, ExternalLink, Wine } from "lucide-react";
 
 const TOOLS = [
   {
@@ -147,6 +147,15 @@ const TOOLS = [
     color: "#6366f1",
     bg: "#e8e9fb",
     route: "/GVProtokollApp",
+  },
+  {
+    id: "weinregister",
+    title: "Weinregister",
+    description: "Weinflaschen per Foto registrieren – KI erkennt Winzer, Jahrgang & Rebsorte, Anzahl manuell erfassen",
+    icon: Wine,
+    color: "#8a2d5b",
+    bg: "#fbe9f3",
+    route: "/Weinregister",
   },
 ];
 

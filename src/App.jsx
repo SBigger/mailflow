@@ -35,6 +35,7 @@ const Kundenportal = lazy(() => import('./pages/Kundenportal'));
 const ArtisTools = lazy(() => import('./pages/ArtisTools'));
 const BriefSchreiben = lazy(() => import('./pages/BriefSchreiben'));
 const Fahrzeugliste = lazy(() => import('./pages/Fahrzeugliste'));
+const Weinregister = lazy(() => import('./pages/Weinregister'));
 const Aktienbuch = lazy(() => import('./pages/Aktienbuch'));
 const Unterschriften = lazy(() => import('./pages/Unterschriften'));
 const Abschlussdokumentation = lazy(() => import('./pages/Abschlussdokumentation'));
@@ -123,6 +124,7 @@ function AuthenticatedApp() {
                     <Route path="/ArtisTools" element={<ArtisTools />} />
                     <Route path="/BriefSchreiben" element={<BriefSchreiben />} />
                     <Route path="/Fahrzeugliste" element={<Fahrzeugliste />} />
+                    <Route path="/Weinregister" element={<Weinregister />} />
                     <Route path="/Aktienbuch" element={<Aktienbuch />} />
                     <Route path="/Unterschriften" element={<Unterschriften />} />
                     <Route path="/Abschlussdokumentation" element={<Abschlussdokumentation />} />
