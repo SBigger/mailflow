@@ -1,7 +1,18 @@
-# Telefonie — Setup-Anleitung (peoplefone vPBX + CONNECTOR)
+# Telefonie — Setup-Anleitung (peoplefone vPBX + lokales MicroSIP-Hook-Skript)
 
-Stand: 2026-07-20 (Nacht-Session). Das ist der **aktuelle** Plan (ersetzt die
-ältere `telefonie-test-server.md` mit LiveKit/Kamailio — die brauchen wir nicht mehr).
+Stand: 2026-07-22. Ersetzt die ältere `telefonie-test-server.md` (LiveKit/Kamailio —
+brauchen wir nicht mehr).
+
+> ⚠️ **KORREKTUR (2026-07-22, Sascha hat bei peoplefone-Support nachgefragt):**
+> **„peoplefone CONNECTOR" wurde zusammen mit „peoplefone HOSTED" abgeschafft** —
+> das war kein Freischalt-Problem, das Produkt existiert schlicht nicht mehr.
+> Schritt 2 (unten, CONNECTOR-URLs hinterlegen) ist damit **hinfällig**.
+> **Das betrifft unsere Lösung zum Glück nicht:** Screen-Pop/Anrufstatus laufen
+> längst über einen **eigenen, unabhängigen Weg** — ein kleines Skript auf dem
+> Mitarbeiter-PC, das MicroSIP bei jedem Anruf-Ereignis aufruft und direkt
+> unsere eigene Supabase-Function benachrichtigt (kein peoplefone-Produkt
+> beteiligt). Dieser Weg ist bereits gebaut, deployt und Ende-zu-Ende getestet
+> — siehe „Lokale MicroSIP-Anbindung" weiter unten statt Schritt 2.
 
 ## Was diese Nacht schon fertig wurde (ohne dass du etwas tun musstest)
 
@@ -42,63 +53,67 @@ ich dir genau wo klicken.)*
 Für den Test: **nicht** gleich eure Hauptnummer umziehen — erst mit einer
 Testnummer/Extension ausprobieren, wie unten beschrieben.
 
-## Schritt 2 — CONNECTOR-Modul aktivieren + URLs hinterlegen
+## Schritt 2 — Lokale MicroSIP-Anbindung (ERLEDIGT auf Saschas PC, Vorlage für weitere Mitarbeitende)
 
-CONNECTOR ist ein Zusatzmodul der vPBX (~CHF 2/User/Mt. + einmalig CHF 50).
-Im Portal aktivieren, dann bei den Connector-Einstellungen zwei URLs hinterlegen:
+Statt eines peoplefone-Produkts übernimmt ein **kleines Skript direkt auf dem
+PC** die Meldung an smartis — MicroSIP ruft es bei jedem Anruf-Ereignis auf
+(offiziell dokumentiertes MicroSIP-Feature, per Quellcode verifiziert:
+`ShellExecute(..., cmdXxx, callerId, ...)`).
 
-| Feld | Wert |
-|---|---|
-| **Lookup-URL** (bei jedem Anruf) | `https://<PROJECT-REF>.supabase.co/functions/v1/telefonie-connector-lookup` |
-| **Workflow-URL** (bei Anrufende) | `https://<PROJECT-REF>.supabase.co/functions/v1/telefonie-connector-workflow` |
-| **Auth-Header/Token** | ein von dir frei gewähltes Secret (z. B. per Passwort-Generator) |
+**Auf Saschas PC bereits eingerichtet** (Ordner bewusst ausserhalb von OneDrive,
+da dort das Secret drin liegt — nicht ins Git-Repo committen!):
+`C:\Users\<Name>\AppData\Local\SmartisTelefonie\`
+- `microsip-notify.ps1` — meldet Nummer + Status an unsere Function
+- `hook-ringing.bat` / `hook-answered.bat` / `hook-ended.bat` — dünne Aufrufer
 
-`<PROJECT-REF>` = die Projekt-ID von smartis.me in Supabase (siehst du im
-Supabase-Dashboard oben oder in der Projekt-URL).
+In `%APPDATA%\MicroSIP\MicroSIP.ini` (MicroSIP davor beenden, sonst
+überschreibt es die Änderung beim Schliessen!) sind gesetzt:
+```
+cmdIncomingCall="...\SmartisTelefonie\hook-ringing.bat"
+cmdCallStart="...\SmartisTelefonie\hook-answered.bat"
+cmdCallEnd="...\SmartisTelefonie\hook-ended.bat"
+```
 
-Das gleiche Secret muss **zusätzlich** als Supabase-Secret gesetzt werden
-(Schritt 3), unter dem Namen `CONNECTOR_SHARED_SECRET` — nur dann akzeptieren
-die Functions den Aufruf.
+**Für jeden weiteren Mitarbeitenden (Petra/Roger/...):** dieselben 4 Dateien
+in denselben lokalen Ordner auf deren PC kopieren + dieselben 3 ini-Zeilen
+eintragen (Pfad ggf. an den jeweiligen Windows-Benutzernamen anpassen). Eine
+kleine Einrichtungs-Routine dafür lässt sich bei Bedarf noch bauen.
 
-## Schritt 3 — Die zwei Edge Functions deployen
+Die Functions selbst (`telefonie-connector-lookup`/`-workflow`) heissen noch
+nach dem ursprünglichen CONNECTOR-Plan, sind aber jetzt ganz normale, von uns
+selbst aufgerufene Endpunkte — der Name ist nur historisch, keine Abhängigkeit
+zu einem peoplefone-Produkt mehr.
 
-Du brauchst dafür deinen Supabase-Zugang (den habe ich nicht). Im Repo-Ordner:
+## Schritt 3 — Die zwei Edge Functions deployen ✅ ERLEDIGT
+
+Beide Functions sind deployt und per curl Ende-zu-Ende getestet (echter
+Server-Aufruf → Realtime-Broadcast → Screen-Pop in smartis, ohne Klick im
+Browser). Secret `CONNECTOR_SHARED_SECRET` ist gesetzt. Für spätere eigene
+Deploys (z. B. nach einer Code-Änderung), falls kein Supabase-Zugang gerade
+verfügbar ist:
 
 ```bash
-# einmalig einloggen (öffnet Browser)
 supabase login
-
-# Secrets setzen (das Secret aus Schritt 2 hier eintragen)
-supabase secrets set CONNECTOR_SHARED_SECRET=<dein-gewähltes-secret> --project-ref <PROJECT-REF>
-
-# beide Functions deployen (ohne JWT-Prüfung, da peoplefone kein Supabase-Login hat)
-supabase functions deploy telefonie-connector-lookup --no-verify-jwt --project-ref <PROJECT-REF>
-supabase functions deploy telefonie-connector-workflow --no-verify-jwt --project-ref <PROJECT-REF>
+supabase functions deploy telefonie-connector-lookup --no-verify-jwt --project-ref uawgpxcihixqxqxxbjak
+supabase functions deploy telefonie-connector-workflow --no-verify-jwt --project-ref uawgpxcihixqxqxxbjak
 ```
 
-**Wichtiger Hinweis zur Ehrlichkeit:** Ich habe die exakte Form der
-CONNECTOR-Anfragen (welche Feldnamen peoplefone genau schickt) nicht aus der
-Original-Doku gelesen, sondern nur aus einer Recherche-Zusammenfassung
-abgeleitet. Die Functions loggen darum den kompletten eingehenden Request
-(`console.log(rawBody)`), damit man es beim ersten echten Testanruf sofort
-sieht. So prüfst du das nach dem ersten Testanruf:
-
+Logs ansehen (Achtung: `supabase functions logs` gibt es in älteren CLI-
+Versionen nicht — dann im Supabase-Dashboard unter Functions → Name → Logs
+nachsehen):
 ```bash
-supabase functions logs telefonie-connector-lookup --project-ref <PROJECT-REF>
+supabase functions logs telefonie-connector-lookup --project-ref uawgpxcihixqxqxxbjak
 ```
 
-Falls der Screen-Pop nicht mit der richtigen Nummer ankommt: den geloggten
-`rawBody` anschauen und in `supabase/functions/_shared/telefonie.ts` die
-Funktionen `pickPhoneNumber()`/`pickCalleeNumber()` um das echte Feld ergänzen
-(einfache Codeänderung, sag mir einfach was im Log steht, dann mache ich das).
+## Schritt 4 — Softphones installieren ✅ ERLEDIGT (Sascha)
 
-## Schritt 4 — Softphones installieren
-
-- **Desktop:** [MicroSIP](https://www.microsip.org/) (gratis) — Konto mit den
-  Zugangsdaten deiner vPBX-Nebenstelle einrichten (SIP-Server/Proxy, Benutzer,
-  Passwort findest du im vPBX-Portal bei der jeweiligen Nebenstelle).
+- **Desktop:** [MicroSIP](https://www.microsip.org/) — installiert, Konto
+  eingerichtet und registriert (`pbxs.peoplefone.ch`, Benutzer `90746408026`).
+  ⚠️ Beim Download **nur** die Datei `MicroSIP-3.22.12.exe` direkt von
+  microsip.org nehmen — die grossen "Download"-Werbekästchen auf der Seite
+  sind KEIN MicroSIP (haben beim ersten Versuch Adware installiert, wieder entfernt).
 - **Handy:** [Groundwire](https://acrobits.net/sip-client-ios-android/)
-  (App Store/Play Store, einmalig ~CHF 10) — gleiche Zugangsdaten.
+  (App Store/Play Store, einmalig ~CHF 10) — gleiche Zugangsdaten, noch offen.
 
 ## Schritt 5 — Testen
 
@@ -107,20 +122,31 @@ Funktionen `pickPhoneNumber()`/`pickCalleeNumber()` um das echte Feld ergänzen
 2. **Verbinden/Transfer**: einen Anruf annehmen und an eine andere Nebenstelle
    weitergeben (blind und mit Rückfrage/attended — beides sollte im Softphone
    als Button vorhanden sein).
-3. **Screen-Pop in smartis**: eine externe Nummer anrufen, die als
-   Kunden-/Kontaktnummer in smartis hinterlegt ist (z. B. deine eigene
-   Handynummer, falls sie irgendwo als Kontakt steht) — das Dossier sollte in
-   smartis (`/telefonie`) automatisch aufpoppen.
+3. **Screen-Pop in smartis (echter Anruf, nicht simuliert):** smartis
+   (`/telefonie`) offen lassen, dann bei MicroSIP wirklich anrufen lassen —
+   das Dossier sollte automatisch aufpoppen (Mechanismus curl-seitig schon
+   bestätigt, echter Anruf über MicroSIP noch nicht verifiziert).
+4. **Auflegen → Wrap-up automatisch:** nach Gesprächsende sollte in smartis
+   automatisch das Leistungs-Panel erscheinen (kein Klick auf "Auflegen" in
+   smartis nötig — das Ereignis kommt von MicroSIP selbst).
 
-## Was danach ansteht (nicht mehr diese Nacht)
+## Was danach ansteht
 
-- Presence im Team (heute Nacht gebaut) mit dem echten Softphone-Status
-  verknüpfen (aktuell zeigt sie nur „ist in smartis angemeldet" + den manuell
-  gewählten Status — nicht den echten SIP-Gesprächsstatus des Softphones).
-- Click-to-Call aus den Kundenlisten auf MicroSIP/Groundwire umstellen
-  (aktuell laufen die `tel:`-Links noch auf Teams — bewusst nicht angefasst,
-  damit das heutige Wählen nicht bricht, bevor die vPBX steht).
-- Falls die CONNECTOR-Integration zu flach ist (z. B. Presence direkt aus der
-  PBX statt nur „App offen"): Umstieg auf eine self-hostete FreePBX mit voller
-  AMI/ARI-Anbindung bleibt jederzeit möglich, ohne die smartis-Integration
-  (Dossier/Leistung/Cockpit) neu zu bauen — nur die Event-Quelle wechselt.
+- Presence im Team mit dem echten Softphone-Status verknüpfen (aktuell zeigt
+  sie nur „ist in smartis angemeldet" + den manuell gewählten Status — nicht
+  den echten SIP-Gesprächsstatus des Softphones). Der lokale Hook-Mechanismus
+  (`hook-ringing`/`-answered`/`-ended`) liefert die Rohdaten dafür bereits;
+  fehlt nur die Verdrahtung auf `effectivePresence`.
+- Click-to-Call aus den Kundenlisten (Telefonliste, Kunden, Chartis) von
+  Teams-`tel:`-Links auf den neuen MicroSIP-Weg umstellen — bewusst noch nicht
+  angefasst, bis der echte Anruf-Test (Schritt 5) bestätigt ist.
+- Lokale Anbindung für weitere Mitarbeitende (Petra/Roger/...) ausrollen,
+  siehe Schritt 2 — ggf. als kleine Setup-Routine statt manuellem Kopieren.
+- Peoplefones generisches API-Key-System (`Phone Control`-Scope) als
+  möglicher Ersatz für einzelne Handgriffe (z. B. Anruf serverseitig
+  auslösen) — bisher nicht gebraucht, nicht im Detail geprüft.
+- Falls mehr Tiefe nötig wird als der lokale Hook-Mechanismus bietet (z. B.
+  Rufgruppen-Events direkt aus der PBX statt nur pro Endgerät): Umstieg auf
+  eine self-hostete FreePBX mit voller AMI/ARI-Anbindung bleibt jederzeit
+  möglich, ohne die smartis-Integration (Dossier/Leistung/Cockpit) neu zu
+  bauen — nur die Event-Quelle wechselt.
