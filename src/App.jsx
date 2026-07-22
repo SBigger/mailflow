@@ -7,6 +7,7 @@ import {AuthProvider, useAuth} from '@/lib/AuthContext';
 import {Loader2} from 'lucide-react';
 import {FEATURE_LEISTUNGSERFASSUNG} from "@/lib/featureFlags";
 import Layout from './Layout';
+import { TelephonyProvider } from "./modules/telefonie/context/TelephonyContext.jsx";
 
 // --- Lade-Komponente für Suspense ---
 const PageLoader = () => (
@@ -61,6 +62,7 @@ const Kalender = lazy(() => import("./modules/tools/Kalender.jsx"));
 const Steuerausscheidung = lazy(() => import("./modules/tools/Steuerausscheidung.jsx"));
 const FiBuRouter = lazy(() => import("./modules/fibu/router.jsx"));
 const TelefonieRouter = lazy(() => import("./modules/telefonie/router.jsx"));
+const GlobalSoftphone = lazy(() => import("./modules/telefonie/components/Softphone.jsx"));
 const Hub = lazy(() => import('./pages/Hub.jsx'));
 const AiAssistant = lazy(() => import('./pages/AiAssistant.jsx'));
 const GVProtokollApp = lazy(() => import('./modules/gv-protokoll/GVProtokollApp.jsx'));
@@ -89,6 +91,7 @@ function AuthenticatedApp() {
     return (
         // Ein einziger Suspense-Wrapper fängt alle darunter liegenden Lazy-Komponenten ab
         <Suspense fallback={<PageLoader />}>
+            <TelephonyProvider>
             <Routes>
                 {/* FiBu: eigene Shell, kein MailFlow-Layout */}
                 <Route path="/fibu/*" element={<FiBuRouter />} />
@@ -150,6 +153,9 @@ function AuthenticatedApp() {
                 {/* Fängt völlig unbekannte URLs außerhalb des Layouts ab */}
                 <Route path="*" element={<Navigate to="/Dashboard" replace />} />
             </Routes>
+            {/* Globales Softphone: schwebt über der ganzen App (innerhalb wie ausserhalb des Layouts) */}
+            <Suspense fallback={null}><GlobalSoftphone /></Suspense>
+            </TelephonyProvider>
         </Suspense>
     );
 }

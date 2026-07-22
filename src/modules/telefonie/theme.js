@@ -4,7 +4,29 @@
 // die telefonie-typische Semantik (ein/aus/verpasst, annehmen/auflegen, Presence).
 // Inline-JS-Muster wie im Rest des Repos (keine CSS-Variablen).
 // ===========================================================================
+import { useState, useEffect } from "react";
 import { chartisTheme, SEM } from "@/lib/chartisTheme";
+
+// Aktuelles smartis-Theme selbst lesen (localStorage 'app_theme' bzw. data-theme
+// am <html>) + live auf Wechsel reagieren. Für UI ausserhalb des Layouts (globales
+// Softphone), wo der ThemeContext.Provider nicht im Baum ist.
+export function useAppTheme() {
+  const read = () => {
+    try {
+      return localStorage.getItem("app_theme") ||
+        document.documentElement.getAttribute("data-theme") || "artis";
+    } catch { return "artis"; }
+  };
+  const [theme, setTheme] = useState(read);
+  useEffect(() => {
+    const update = () => setTheme(read());
+    const obs = new MutationObserver(update);
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    window.addEventListener("storage", update);
+    return () => { obs.disconnect(); window.removeEventListener("storage", update); };
+  }, []);
+  return theme;
+}
 
 export function tele(theme) {
   const t = chartisTheme(theme);
