@@ -36,6 +36,27 @@ export const useTelephony = () => useContext(TelephonyCtx);
 const PRESENCE_CHANNEL = "telefonie-presence";
 const CALLS_CHANNEL = "telefonie-calls";
 
+// Loest den echten Anruf ueber das am PC als tel:-Standard-App hinterlegte
+// Softphone (MicroSIP) aus -- per unsichtbarem <a href="tel:...">-Klick statt
+// window.location.href, damit die SPA-Navigation nicht irritiert wird. Wird
+// immer aus einem echten Klick (Anrufen-Button) heraus aufgerufen, daher kein
+// Problem mit Browser-Regeln zu Nutzerinteraktion bei Custom-Protokollen.
+function triggerTelLink(number) {
+  if (!number) return;
+  try {
+    const clean = String(number).replace(/[^\d+]/g, "");
+    if (!clean) return;
+    const a = document.createElement("a");
+    a.href = "tel:" + clean;
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  } catch {
+    // Kein Standard-Handler hinterlegt o.ae. -- UI-Status wurde trotzdem gesetzt.
+  }
+}
+
 export function TelephonyProvider({ children }) {
   const { profile } = useAuth();
   const myId = profile?.id || null;
@@ -88,9 +109,16 @@ export function TelephonyProvider({ children }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectivePresence]);
 
-  // ── Realtime-Broadcast: eingehender Anruf ────────────────────────────────
+  // ── Realtime-Broadcast: Anruf-Ereignisse ─────────────────────────────────
   // self:true, damit der auslösende Client (Test-Anruf) sein eigenes Signal
-  // auch empfängt — dieselbe Leitung, die später ein Server-Event nutzt.
+  // auch empfängt — dieselbe Leitung, die peoplefone-CONNECTOR UND das lokale
+  // MicroSIP-Hook-Skript (microsip-notify.ps1) auf dem PC nutzen.
+  // payload.call.status unterscheidet drei Ereignisse:
+  //   "ringing"  → Screen-Pop (Dossier) anzeigen
+  //   "answered" → zu aktivem Anruf befördern (falls nicht schon lokal aktiv,
+  //                z. B. weil selbst gewählt — dann nicht überschreiben)
+  //   "ended"    → laufenden Anruf automatisch ins Wrap-up/Leistungs-Panel
+  //                überführen, genau wie ein manuelles hangup()
   const callsChRef = useRef(null);
   useEffect(() => {
     if (!myId) return;
@@ -98,20 +126,54 @@ export function TelephonyProvider({ children }) {
     ch.on("broadcast", { event: "incoming_call" }, ({ payload }) => {
       if (!payload) return;
       if (payload.targetUserId && payload.targetUserId !== myId) return; // nicht für mich
-      setCall(null);
-      setWrapup(null);
-      setIncoming(payload.call);
+      const incomingCall = payload.call;
+      const evtStatus = incomingCall?.status || "ringing";
+
+      if (evtStatus === "ringing") {
+        setCall(null);
+        setWrapup(null);
+        setIncoming(incomingCall);
+        return;
+      }
+
+      if (evtStatus === "answered") {
+        setCall((prev) => prev || {
+          ...incomingCall,
+          status: "active",
+          startedAt: Date.now(),
+          muted: false,
+          onHold: false,
+          video: false,
+        });
+        setIncoming(null);
+        setPanelOpen(true);
+        return;
+      }
+
+      if (evtStatus === "ended") {
+        setCall((prev) => {
+          if (!prev) return null;
+          const durationSec = Math.max(0, Math.floor((Date.now() - (prev.startedAt || Date.now())) / 1000));
+          setWrapup({ ...prev, durationSec, endedAt: Date.now() });
+          return null;
+        });
+        setIncoming(null);
+      }
     }).subscribe();
     callsChRef.current = ch;
     return () => { callsChRef.current = null; supabase.removeChannel(ch); };
   }, [myId]);
 
   // ── ausgehend ──────────────────────────────────────────────────────────
+  // Wählt ECHT über das lokale Softphone (MicroSIP als tel:-Standard-App) UND
+  // zeigt sofort optimistisch unsere eigene Anruf-Ansicht — der reale
+  // "answered"/"ended"-Status kommt gleich danach über den Broadcast-Kanal
+  // nach (siehe oben) und übernimmt bzw. beendet diesen Zustand automatisch.
   const dial = useCallback((number, meta = {}) => {
     if (!number) return;
     setIncoming(null);
     setWrapup(null);
-    // STUB: sofort „verbunden" — später CreateSIPParticipant + Room-Join
+    triggerTelLink(number);
     setCall({
       id: "stub-" + Date.now(),
       dir: "out",
