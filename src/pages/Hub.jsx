@@ -403,7 +403,7 @@ export default function Hub() {
   }
 
   return (
-    <div style={{ height: '100%', overflowY: 'auto', background: pal.bg, color: pal.ink }}>
+    <div className="w-screen" style={{ height: '100%', overflowY: 'auto', background: pal.bg, color: pal.ink }}>
       <div style={{
         maxWidth: showWidgets ? 1250 : 880, margin: '0 auto', padding: '6vh 24px 60px',
         display: 'flex', gap: 26, alignItems: 'flex-start',

@@ -970,7 +970,7 @@ export default function Dokumente() {
 
   const BUCKET_SIZE_POPUP = 'bucket_size_popup_timestamp';
   const BUCKET_NAME = "Dokumentenspeicher";
-  const BUCKET_MAX_SIZE = 20;
+  const BUCKET_MAX_SIZE = 50;
   const TWO_DAYS_IN_MS = 1 * 24 * 60 * 60 * 1000;
   const now = Date.now();
   const [bucketStats, setBucketStats] = useState({ usedSizeGB: 0, percentage: 0, loading: true });
@@ -1392,7 +1392,7 @@ export default function Dokumente() {
   // Signed URLs nur fuer Legacy-Dokumente (ohne SharePoint)
   useEffect(() => {
     const legacy = filtered.filter(d => !d.sharepoint_web_url && d.storage_path && !signedUrls[d.id]);
-    if (!legacy.length) return;
+    if (!legacy.length || true) return;
 
     legacy.forEach(async doc => {
       const storagePath = doc.storage_path.replace('dokumente/', '');

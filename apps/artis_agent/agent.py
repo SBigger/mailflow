@@ -95,9 +95,9 @@ WORKSPACE    = os.path.join(
     'SmartisAgent', 'Workspace'
 )
 APP_NAME     = "Smartis Agent"
-APP_VERSION  = "3.3.0"
+APP_VERSION  = "3.3.1"
 DRAFT_INTERVAL = 60   # Sekunden zwischen Draft-Uploads
-FILE_OPEN_TIMEOUT = 8 * 60 * 60  # 8 Stunden max Bearbeitung
+FILE_OPEN_TIMEOUT = 100 * 60 * 60  # 100 Stunden max Bearbeitung
 
 # ── Windows-Dialog-Konstanten ─────────────────────────────────────────────────
 MB_OK              = 0x00

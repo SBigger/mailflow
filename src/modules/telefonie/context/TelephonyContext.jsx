@@ -5,29 +5,31 @@ import { useAuth } from "@/lib/AuthContext";
 // ===========================================================================
 // TelephonyContext — Telefonie-Client
 //
-// Medien-/Telefonie-Teil ist bewusst noch ein STUB: kein echter Anruf, keine
-// Audio-Tracks. Er hält den UI-Zustand (aktiver Anruf, eingehender Anruf,
-// Wrap-up) und bietet die Methoden-Signaturen, die später der echte Client
-// erfüllt (dial/answer/hangup/hold/mute/transfer). Entschieden (2026-07-20):
-// Motor = peoplefone vPBX (Cloud, kein eigener Server); Endgeräte = MicroSIP/
-// Groundwire/Bria; Anbindung an smartis via peoplefone-CONNECTOR-API.
+// Motor = peoplefone vPBX (Cloud, kein eigener Server); Endgerät = MicroSIP.
+// Anrufstatus kommt server-seitig ueber peoplefones Call-Management-API
+// (telefonie-peoplefone-webhook, Nachfolger des fragilen lokalen ini-Hook-
+// Wegs) und/oder das lokale MicroSIP-Hook-Skript, beide auf denselben
+// Realtime-Broadcast-Kanal (siehe unten).
 //
-// ECHT (kein Stub) sind dagegen zwei Bausteine, die rein auf Supabase Realtime
-// laufen und darum schon heute plattformweit funktionieren:
+// dial()/answer()/decline()/hangup()/sendDtmf() sind ECHT: dial() ueber den
+// tel:-Standard-App-Weg, die anderen per Realtime-Broadcast-Event
+// "control_command" auf CALLS_CHANNEL -- ein kleiner lokaler Node-Prozess
+// (microsip-control-listener.js) ist selbst ein Realtime-Client auf
+// demselben Kanal und loest MicroSIPs dokumentierte Kommandozeilen-Schalter
+// aus. NICHT per direktem Browser-Fetch auf 127.0.0.1 (erster Versuch) --
+// Chrome verlangt dafuer eine Nutzer-Erlaubnis (Private Network Access,
+// aehnlich Kamera/Mikro), die sich nicht automatisieren laesst und den Fetch
+// sonst endlos haengen laesst. toggleMute/toggleHold/toggleVideo bleiben
+// reine UI-Anzeige — MicroSIP hat dafuer keinen bekannten Fernsteuer-
+// Schalter. "Verbinden" (Transfer) ebenfalls noch nicht verdrahtet (MicroSIP
+// koennte es per /transfer:XXX, fehlt nur die UI dafuer).
+//
+// ECHT sind auch zwei Bausteine, die rein auf Supabase Realtime laufen:
 //   – Presence: wer ist gerade online, mit welchem Status (frei/besetzt/DND/
 //     abwesend/im Gespräch) — Realtime-Presence-Channel, gleiches Muster wie
 //     `chartis-presence` in Chartis.jsx.
-//   – Eingehender Anruf: statt nur lokalen State zu setzen, wird ein
-//     Realtime-Broadcast-Event gesendet/empfangen. Das ist exakt der Kanal,
-//     an den später ein Server-Trigger (z. B. die peoplefone-CONNECTOR-Edge-
-//     Function) andocken kann, um einen ECHTEN eingehenden Anruf plattformweit
-//     zu signalisieren — ohne dass sich am Frontend-Code etwas ändern muss.
-//
-// SEAM für die künftige Medien-Anbindung (Softphone-Client an der vPBX):
-//   dial(number)       → Softphone/CTI anweisen zu wählen (Click-to-Call)
-//   answer()/hangup()  → Softphone-Kommando bzw. Anruf-Event der vPBX
-//   hold()/mute()      → Softphone-Kommando
-//   transfer(target)   → Softphone/vPBX-Transfer (blind oder mit Rückfrage)
+//   – Eingehender Anruf: Realtime-Broadcast-Event, das sowohl vom lokalen
+//     MicroSIP-Hook als auch von peoplefones Webhook ausgeloest wird.
 // ===========================================================================
 
 const TelephonyCtx = createContext(null);
@@ -164,6 +166,21 @@ export function TelephonyProvider({ children }) {
     return () => { callsChRef.current = null; supabase.removeChannel(ch); };
   }, [myId]);
 
+  // ── Echte Fernsteuerung von MicroSIP (2026-07-22) ────────────────────────
+  // Sendet auf demselben Kanal wie eingehende Anrufe, nur anderes Event --
+  // microsip-control-listener.js (lokaler Node-Prozess, selbst ein Realtime-
+  // Client) hoert mit und loest MicroSIPs Kommandozeilen-Schalter aus.
+  // Fire-and-forget: laeuft der lokale Helfer nicht, aendert sich am
+  // bisherigen (rein lokalen) Anzeige-Verhalten nichts.
+  const sendControlCommand = useCallback((action, extra) => {
+    if (!callsChRef.current || !myId) return;
+    callsChRef.current.send({
+      type: "broadcast",
+      event: "control_command",
+      payload: { targetUserId: myId, action, ...extra },
+    });
+  }, [myId]);
+
   // ── ausgehend ──────────────────────────────────────────────────────────
   // Wählt ECHT über das lokale Softphone (MicroSIP als tel:-Standard-App) UND
   // zeigt sofort optimistisch unsere eigene Anruf-Ansicht — der reale
@@ -190,7 +207,11 @@ export function TelephonyProvider({ children }) {
   }, []);
 
   // ── eingehend annehmen ─────────────────────────────────────────────────
+  // Loest ECHT aus (MicroSIP nimmt den klingelnden Anruf an) UND zeigt
+  // optimistisch die aktive Ansicht -- der reale "answered"-Broadcast (siehe
+  // oben) kommt gleich danach nach und ueberschreibt nichts, da bereits aktiv.
   const answer = useCallback(() => {
+    sendControlCommand("answer");
     setWrapup(null);
     setIncoming((prev) => {
       if (!prev) return null;
@@ -205,10 +226,14 @@ export function TelephonyProvider({ children }) {
       return null;
     });
     setPanelOpen(true);
-  }, []);
+  }, [sendControlCommand]);
 
-  const decline = useCallback(() => setIncoming(null), []);
+  const decline = useCallback(() => {
+    sendControlCommand("decline");
+    setIncoming(null);
+  }, [sendControlCommand]);
   const hangup = useCallback(() => {
+    sendControlCommand("hangup");
     setCall((prev) => {
       if (prev) {
         const durationSec = Math.max(0, Math.floor((Date.now() - (prev.startedAt || Date.now())) / 1000));
@@ -216,11 +241,15 @@ export function TelephonyProvider({ children }) {
       }
       return null;
     });
-  }, []);
+  }, [sendControlCommand]);
   const clearWrapup = useCallback(() => setWrapup(null), []);
   const toggleMute  = useCallback(() => setCall((c) => (c ? { ...c, muted: !c.muted } : c)), []);
   const toggleHold  = useCallback(() => setCall((c) => (c ? { ...c, onHold: !c.onHold } : c)), []);
   const toggleVideo = useCallback(() => setCall((c) => (c ? { ...c, video: !c.video } : c)), []);
+  // Echtes DTMF ueber denselben Weg -- MicroSIP kennt keinen Mute/Hold-
+  // Schalter, darum bleiben toggleMute/toggleHold oben bewusst reine
+  // UI-Anzeige (kein bekannter Fernsteuer-Weg dafuer).
+  const sendDtmf = useCallback((digit) => sendControlCommand("dtmf", { digit }), [sendControlCommand]);
 
   // ── Eingehenden Anruf signalisieren ──────────────────────────────────────
   // Sendet ein Broadcast-Event statt nur lokalen State zu setzen — genau der
@@ -269,9 +298,9 @@ export function TelephonyProvider({ children }) {
     toggleMute,
     toggleHold,
     toggleVideo,
+    sendDtmf,
     simulateIncoming,
     signalIncoming,
-    isStub: true,
   };
 
   return <TelephonyCtx.Provider value={value}>{children}</TelephonyCtx.Provider>;
