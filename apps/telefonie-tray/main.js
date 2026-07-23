@@ -69,6 +69,7 @@ let currentUrl = DEFAULT_URL;
 let isExpanded = false; // false = kleine Karte, true = volle Ansicht
 let realtimeChannel = null;
 let lastCallPayload = null; // letztes bekanntes Broadcast-Payload -- siehe expandToFullAndFocus()
+let toastShownForNumber = null; // verhindert Neu-Laden bei wiederholten "ringing"-Events desselben Anrufs
 
 // ── Config (userData/config.json) -- gleiches Muster wie apps/electron/main.cjs
 function getConfigPath() {
@@ -140,6 +141,7 @@ function createCallWindow() {
 
 function hideCallWindow() {
   if (toastHideTimer) { clearTimeout(toastHideTimer); toastHideTimer = null; }
+  toastShownForNumber = null;
   if (callWindow && !callWindow.isDestroyed()) callWindow.hide();
 }
 
@@ -149,6 +151,19 @@ function hideCallWindow() {
 function showToast(call) {
   const name = call.customer?.company_name || call.peerName || call.peerNumber || "Unbekannt";
   const number = call.peerNumber || "";
+
+  // peoplefone meldet "ringing" waehrend eines laengeren Klingelns oft
+  // mehrfach fuer denselben Anruf (gesehen bei einem echten Testanruf --
+  // 5x "ringing" in wenigen Sekunden). Ohne diese Bremse wuerde loadFile()
+  // jedes Mal neu ausgeloest, das Fenster reisst die laufende Ladung ab und
+  // wirkt wie ein Dauer-Ladekreisel. Bei UNVERAENDERTER Nummer nur den
+  // Ausblend-Timer auffrischen, nicht die Seite neu laden.
+  if (!isExpanded && toastShownForNumber === number && callWindow.isVisible()) {
+    if (toastHideTimer) clearTimeout(toastHideTimer);
+    toastHideTimer = setTimeout(hideCallWindow, TOAST_AUTO_HIDE_MS);
+    return;
+  }
+  toastShownForNumber = number;
 
   if (isExpanded) {
     // Aus der vollen Ansicht zurueck zur kleinen Karte (z.B. neuer Anruf,
@@ -187,6 +202,7 @@ function showToast(call) {
 // angenommen, oder Nutzer hat explizit "Öffnen" geklickt).
 function expandToFullAndFocus() {
   if (toastHideTimer) { clearTimeout(toastHideTimer); toastHideTimer = null; }
+  toastShownForNumber = null;
   if (!callWindow || callWindow.isDestroyed()) return;
 
   const work = screen.getPrimaryDisplay().workArea;
