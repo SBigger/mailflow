@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>Eingehender Anruf</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: transparent; }
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+    -webkit-app-region: drag;
+  }
+  .card {
+    height: 100%;
+    background: #fff;
+    border: 1px solid #c8dac8;
+    border-radius: 14px;
+    box-shadow: 0 10px 34px rgba(45,58,45,.22);
+    padding: 16px 18px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+  .row { display: flex; align-items: center; gap: 12px; -webkit-app-region: no-drag; }
+  .avatar {
+    width: 40px; height: 40px; border-radius: 11px; background: #eaf2ea;
+    color: #4d6b52; display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 15px; flex-shrink: 0;
+  }
+  .info { min-width: 0; }
+  .label { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #7a9b7f; }
+  .name { font-size: 15px; font-weight: 700; color: #2d3a2d; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+  .number { font-size: 12px; color: #6b826b; font-family: ui-monospace, Consolas, monospace; margin-top: 1px; }
+  .actions { display: flex; gap: 8px; -webkit-app-region: no-drag; }
+  button {
+    flex: 1; padding: 9px; border: none; border-radius: 9px; font-size: 12.5px;
+    font-weight: 700; cursor: pointer;
+  }
+  .open { background: #7a9b7f; color: #fff; }
+  .open:hover { opacity: .9; }
+  .dismiss { background: #f4f9f4; color: #6b826b; border: 1px solid #c8dac8; }
+  .dismiss:hover { background: #eaf2ea; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="row">
+      <div class="avatar" id="avatar">?</div>
+      <div class="info">
+        <div class="label">Eingehender Anruf</div>
+        <div class="name" id="name">Unbekannt</div>
+        <div class="number" id="number"></div>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="dismiss" onclick="window.toastAPI.dismiss()">Schliessen</button>
+      <button class="open" onclick="window.toastAPI.open()">Öffnen</button>
+    </div>
+  </div>
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const name = params.get('name') || 'Unbekannt';
+    const number = params.get('number') || '';
+    document.getElementById('name').textContent = name;
+    document.getElementById('number').textContent = number;
+    document.getElementById('avatar').textContent = name.slice(0, 2).toUpperCase();
+  </script>
+</body>
+</html>

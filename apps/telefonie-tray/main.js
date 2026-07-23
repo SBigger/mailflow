@@ -3,10 +3,20 @@
 //
 // Grund: ein Browser-Tab kann sich nicht selbst in den Vordergrund holen,
 // wenn eine andere App (z.B. Outlook) aktiv ist -- das ist eine bewusste
-// Sicherheitssperre aller Browser. Diese kleine Electron-App zeigt dieselbe
-// smartis-Telefonie-Oberflaeche in einem eigenen, nativen Fenster, das sich
-// bei einem eingehenden Anruf selbst nach vorne holen UND eine echte
-// Windows-Benachrichtigung zeigen kann.
+// Sicherheitssperre aller Browser. Diese kleine Electron-App zeigt bei einem
+// eingehenden Anruf eine kleine Karte unten rechts (wie Teams/Slack), OHNE
+// die Tastatur-Eingabe in der gerade aktiven App zu unterbrechen.
+//
+// WICHTIG (Fable-Recherche 2026-07-23): NICHT das volle Modul-Fenster
+// aufpoppen + Fokus stehlen bei jedem Klingeln -- genau das hat 3CX selbst
+// eine Zeit lang gemacht (Electron-Client v18) und wieder verworfen, weil
+// Nutzer beim Tippen aus Versehen mit Enter Anrufe annahmen / die Tastatur
+// gekapert wurde. Der bewaehrte Weg (Teams/Slack, auch 3CX's fruehere
+// "Call Alert Popup"): eine KLEINE, NICHT fokussierbare Karte per
+// showInactive() + setAlwaysOnTop(true,'screen-saver') -- sichtbar ueber
+// allem, aber Tastatur-Eingaben bleiben bei der aktiven App. Das volle
+// Modul-Fenster oeffnet sich nur auf einen ECHTEN Klick (Karte/Tray/
+// Benachrichtigung) -- dort ist Fokus-Uebernahme normal und erwuenscht.
 //
 // Architektur bewusst einfach gehalten: KEINE Aenderung am bestehenden
 // smartis-Frontend-Code noetig. Dieser Hauptprozess ist selbst ein ganz
@@ -18,16 +28,13 @@
 // nur die "Aufmerksamkeits"-Schicht drumherum.
 //
 // ⚠️ Umgebung (Fenster-URL) ist ueber Tray → "Umgebung wechseln…" waehlbar
-// (smartis.me Test / Produktiv / eigene URL, gleiches Muster wie
-// apps/electron/main.cjs). ABER: SUPABASE_URL/ANON_KEY unten sind fest auf
-// smartis.me's Backend verdrahtet -- fuer "Produktiv" (artis.sm-artis.ch,
-// eigenes Backend api-artis.sm-artis.ch) muessten diese ebenfalls umschalten,
-// was noch nicht gebaut ist (Produktiv-Zugangsdaten sind bewusst nicht
+// (smartis.me Test / Produktiv / eigene URL). ABER: SUPABASE_URL/ANON_KEY
+// unten sind fest auf smartis.me's Backend verdrahtet -- fuer "Produktiv"
+// (eigenes Backend api-artis.sm-artis.ch) muesste das separat umgeschaltet
+// werden, was noch nicht gebaut ist (Produktiv-Zugangsdaten bewusst nicht
 // hier hinterlegt, siehe CLAUDE.md "Produktiv... Default: nicht anfassen").
-// Bis dahin zeigt "Produktiv" zwar das richtige Fenster, aber Klingel-
-// Benachrichtigungen kommen weiterhin nur fuer smartis.me (Test).
 // ===========================================================================
-const { app, BrowserWindow, Tray, Menu, nativeImage, Notification, ipcMain } = require("electron");
+const { app, BrowserWindow, Tray, Menu, nativeImage, Notification, ipcMain, screen } = require("electron");
 const path = require("path");
 const fs = require("fs");
 // Electrons gebuendeltes Node hat kein natives globales WebSocket -- @supabase/
@@ -43,9 +50,12 @@ const SUPABASE_ANON_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhd2dweGNpaGl4cXhxeHhiamFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI0MzE5MzYsImV4cCI6MjA4ODAwNzkzNn0.fPbekBh1dO8byD2wxkjzFSKW4jSV0MHIGgci9nch98A";
 const DEFAULT_URL = "https://smartis.me/telefonie";
 const ICON_PATH = path.join(__dirname, "icon.ico");
+const TOAST_AUTO_HIDE_MS = 25000;
 
 let mainWindow = null;
 let setupWindow = null;
+let toastWindow = null;
+let toastHideTimer = null;
 let tray = null;
 
 // ── Config (userData/config.json) -- gleiches Muster wie apps/electron/main.cjs
@@ -106,35 +116,84 @@ function createTray(currentUrl) {
   tray = new Tray(nativeImage.createFromPath(ICON_PATH));
   tray.setToolTip("smartis Telefonie");
   const menu = Menu.buildFromTemplate([
-    { label: "Öffnen", click: showAndFocus },
+    { label: "Öffnen", click: showMainAndFocus },
     { type: "separator" },
     { label: "Umgebung wechseln…", click: () => openSetupWindow(currentUrl) },
     { type: "separator" },
     { label: "Beenden", click: () => { app.isQuitting = true; app.quit(); } },
   ]);
   tray.setContextMenu(menu);
-  tray.on("double-click", showAndFocus);
+  tray.on("double-click", showMainAndFocus);
 }
 
-// Holt das Fenster zuverlaessig nach vorne -- ein einfaches .focus() wird
-// von Windows oft blockiert (Foreground-Lock), wenn der Aufruf nicht vom
-// gerade aktiven Fenster kommt. setAlwaysOnTop kurz an/aus + app.focus mit
-// steal:true umgeht das zuverlaessig.
-function showAndFocus() {
+// Volles Modul-Fenster zeigen + Fokus holen -- NUR bei einem echten Klick
+// (Tray/Karte/Benachrichtigung) aufrufen, nie automatisch beim Klingeln.
+// Hier IST Fokus-Uebernahme erwuenscht, darum steal:true.
+function showMainAndFocus() {
+  hideToast();
   if (!mainWindow) return;
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
-  mainWindow.setAlwaysOnTop(true);
   app.focus({ steal: true });
   mainWindow.focus();
   mainWindow.moveTop();
-  setTimeout(() => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setAlwaysOnTop(false); }, 800);
+}
+
+function hideToast() {
+  if (toastHideTimer) { clearTimeout(toastHideTimer); toastHideTimer = null; }
+  if (toastWindow && !toastWindow.isDestroyed()) toastWindow.hide();
+}
+
+// Kleine, NICHT fokussierbare Karte unten rechts -- siehe Datei-Kommentar
+// oben fuer die Begruendung (3CX-Lehre). showInactive() statt show(),
+// 'screen-saver'-Ebene statt Fokus-Stehl-Trick.
+function showToast(call) {
+  const name = call.customer?.company_name || call.peerName || call.peerNumber || "Unbekannt";
+  const number = call.peerNumber || "";
+
+  if (!toastWindow || toastWindow.isDestroyed()) {
+    const work = screen.getPrimaryDisplay().workArea;
+    const w = 340, h = 150;
+    toastWindow = new BrowserWindow({
+      width: w,
+      height: h,
+      x: work.x + work.width - w - 16,
+      y: work.y + work.height - h - 16,
+      frame: false,
+      resizable: false,
+      movable: false,
+      skipTaskbar: true,
+      focusable: false,
+      show: false,
+      transparent: true,
+      alwaysOnTop: true,
+      icon: ICON_PATH,
+      webPreferences: {
+        preload: path.join(__dirname, "preload-toast.js"),
+        contextIsolation: true,
+        nodeIntegration: false,
+      },
+    });
+  }
+
+  toastWindow.loadFile(path.join(__dirname, "toast.html"), {
+    search: `name=${encodeURIComponent(name)}&number=${encodeURIComponent(number)}`,
+  });
+  toastWindow.once("ready-to-show", () => {
+    if (!toastWindow || toastWindow.isDestroyed()) return;
+    toastWindow.showInactive(); // KEIN show()/focus() -- Tastatur bleibt bei der aktiven App
+    toastWindow.setAlwaysOnTop(true, "screen-saver");
+    toastWindow.moveTop();
+  });
+
+  if (toastHideTimer) clearTimeout(toastHideTimer);
+  toastHideTimer = setTimeout(hideToast, TOAST_AUTO_HIDE_MS);
 }
 
 function notify(title, body) {
   if (!Notification.isSupported()) return;
   const n = new Notification({ title, body, icon: ICON_PATH });
-  n.on("click", showAndFocus);
+  n.on("click", showMainAndFocus); // echter Klick auf die Benachrichtigung -> Fokus ok
   n.show();
 }
 
@@ -146,10 +205,11 @@ function connectRealtime() {
     if (payload.targetUserId && payload.targetUserId !== MY_PROFILE_ID) return;
     const call = payload.call || {};
     if (call.status === "ringing") {
-      const who = call.customer?.company_name || call.peerName || call.peerNumber || "Unbekannt";
-      console.log("Eingehender Anruf:", who);
-      showAndFocus();
-      notify("Eingehender Anruf", who);
+      console.log("Eingehender Anruf:", call.peerNumber);
+      showToast(call); // klein, nicht fokussierend -- kein Tastatur-Klau
+      notify("Eingehender Anruf", call.customer?.company_name || call.peerName || call.peerNumber || "Unbekannt");
+    } else if (call.status === "ended" || call.status === "answered") {
+      hideToast(); // Karte weg, sobald abgenommen (anderswo/MicroSIP) oder beendet
     }
   }).subscribe((status) => {
     console.log("smartis Telefonie Tray: Realtime", status);
@@ -166,12 +226,15 @@ app.whenReady().then(() => {
     if (setupWindow) { setupWindow.close(); setupWindow = null; }
     if (mainWindow) {
       mainWindow.loadURL(url);
-      showAndFocus();
+      showMainAndFocus();
     } else {
       createWindow(url);
     }
     createTray(url);
   });
+
+  ipcMain.handle("telefonie-tray:toast-open", showMainAndFocus);
+  ipcMain.handle("telefonie-tray:toast-dismiss", hideToast);
 
   const savedUrl = getSavedUrl() || DEFAULT_URL;
   createWindow(savedUrl);
