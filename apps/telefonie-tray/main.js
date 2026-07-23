@@ -34,7 +34,7 @@
 // werden, was noch nicht gebaut ist (Produktiv-Zugangsdaten bewusst nicht
 // hier hinterlegt, siehe CLAUDE.md "Produktiv... Default: nicht anfassen").
 // ===========================================================================
-const { app, BrowserWindow, Tray, Menu, nativeImage, Notification, ipcMain, screen } = require("electron");
+const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, screen } = require("electron");
 const path = require("path");
 const fs = require("fs");
 // Electrons gebuendeltes Node hat kein natives globales WebSocket -- @supabase/
@@ -165,7 +165,6 @@ function showToast(call) {
       skipTaskbar: true,
       focusable: false,
       show: false,
-      transparent: true,
       alwaysOnTop: true,
       icon: ICON_PATH,
       webPreferences: {
@@ -176,25 +175,25 @@ function showToast(call) {
     });
   }
 
-  toastWindow.loadFile(path.join(__dirname, "toast.html"), {
-    search: `name=${encodeURIComponent(name)}&number=${encodeURIComponent(number)}`,
-  });
-  toastWindow.once("ready-to-show", () => {
+  // WICHTIG: Listener VOR loadFile() registrieren, sonst Race-Condition --
+  // bei einer so kleinen Seite kann "did-finish-load" schon feuern, bevor
+  // ein danach registrierter Listener ueberhaupt dran waere. Ausserdem
+  // "did-finish-load" statt "ready-to-show" verwenden: "ready-to-show"
+  // feuert nur EINMAL im Leben des Fensters (erste Anzeige), bei einem
+  // wiederverwendeten Fenster (2. Anruf) kaeme also nie wieder ein Event --
+  // "did-finish-load" feuert dagegen bei JEDEM loadFile()-Aufruf neu.
+  toastWindow.webContents.once("did-finish-load", () => {
     if (!toastWindow || toastWindow.isDestroyed()) return;
     toastWindow.showInactive(); // KEIN show()/focus() -- Tastatur bleibt bei der aktiven App
     toastWindow.setAlwaysOnTop(true, "screen-saver");
     toastWindow.moveTop();
   });
+  toastWindow.loadFile(path.join(__dirname, "toast.html"), {
+    search: `name=${encodeURIComponent(name)}&number=${encodeURIComponent(number)}`,
+  });
 
   if (toastHideTimer) clearTimeout(toastHideTimer);
   toastHideTimer = setTimeout(hideToast, TOAST_AUTO_HIDE_MS);
-}
-
-function notify(title, body) {
-  if (!Notification.isSupported()) return;
-  const n = new Notification({ title, body, icon: ICON_PATH });
-  n.on("click", showMainAndFocus); // echter Klick auf die Benachrichtigung -> Fokus ok
-  n.show();
 }
 
 function connectRealtime() {
@@ -205,11 +204,18 @@ function connectRealtime() {
     if (payload.targetUserId && payload.targetUserId !== MY_PROFILE_ID) return;
     const call = payload.call || {};
     if (call.status === "ringing") {
+      // Nur EINE Meldung beim Klingeln -- die kleine Karte, keine zusaetzliche
+      // native Benachrichtigung daneben (war doppelt/verwirrend).
       console.log("Eingehender Anruf:", call.peerNumber);
-      showToast(call); // klein, nicht fokussierend -- kein Tastatur-Klau
-      notify("Eingehender Anruf", call.customer?.company_name || call.peerName || call.peerNumber || "Unbekannt");
-    } else if (call.status === "ended" || call.status === "answered") {
-      hideToast(); // Karte weg, sobald abgenommen (anderswo/MicroSIP) oder beendet
+      showToast(call);
+    } else if (call.status === "answered") {
+      // Angenommen -> Karte weg, volles Fenster mit Kundendaten (Dossier)
+      // zeigen. Hier ist Fokus-Uebernahme erwuenscht: der Anruf laeuft
+      // gerade, Sascha will jetzt aktiv die Kundendaten sehen.
+      hideToast();
+      showMainAndFocus();
+    } else if (call.status === "ended") {
+      hideToast(); // z.B. verpasster Anruf, nie angenommen
     }
   }).subscribe((status) => {
     console.log("smartis Telefonie Tray: Realtime", status);
