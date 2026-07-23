@@ -57,7 +57,7 @@ const SUPABASE_ANON_KEY =
 const DEFAULT_URL = "https://smartis.me/telefonie";
 const ICON_PATH = path.join(__dirname, "icon.ico");
 const TOAST_AUTO_HIDE_MS = 25000;
-const TOAST_W = 340, TOAST_H = 150;
+const TOAST_W = 364, TOAST_H = 120;
 const FULL_W = 420, FULL_H = 740;
 const MARGIN = 16;
 
@@ -118,7 +118,8 @@ function createCallWindow() {
     focusable: false,
     show: false,
     alwaysOnTop: true,
-    backgroundColor: "#f4f9f4", // vermeidet weisses Aufblitzen beim Resize
+    backgroundColor: "#fcfcfc", // Fluent/Win11-Neutralton, vermeidet Aufblitzen beim Resize
+    roundedCorners: true, // DWM rundet das rahmenlose Fenster nativ (Win11 ~8px)
     icon: ICON_PATH,
     webPreferences: {
       preload: path.join(__dirname, "preload-toast.js"),
