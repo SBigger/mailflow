@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>smartis Telefonie – Einrichtung</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+    background: #f4f9f4;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    color: #2d3a2d;
+  }
+  .card {
+    background: #fff;
+    border: 1px solid #c8dac8;
+    border-radius: 16px;
+    padding: 32px 36px;
+    width: 440px;
+    box-shadow: 0 8px 32px rgba(45,58,45,0.10);
+  }
+  h2 { font-size: 16px; font-weight: 600; margin-bottom: 6px; color: #2d3a2d; }
+  p { font-size: 13px; color: #6b826b; margin-bottom: 18px; line-height: 1.5; }
+  .presets { display: flex; gap: 8px; margin-bottom: 16px; }
+  .preset-btn {
+    flex: 1; padding: 9px; border-radius: 8px; border: 1px solid #c8dac8;
+    background: #f4f9f4; color: #2d3a2d; font-size: 12.5px; font-weight: 600;
+    cursor: pointer;
+  }
+  .preset-btn:hover { border-color: #7a9b7f; }
+  .preset-btn.active { background: #7a9b7f; color: #fff; border-color: #7a9b7f; }
+  label { font-size: 12px; font-weight: 600; color: #6b826b; display: block; margin-bottom: 6px; }
+  input {
+    width: 100%; padding: 10px 14px; border: 1px solid #c8dac8; border-radius: 8px;
+    font-size: 14px; color: #2d3a2d; background: #f4f9f4; outline: none;
+    transition: border-color .15s;
+  }
+  input:focus { border-color: #7a9b7f; background: #fff; }
+  .error { color: #ef4444; font-size: 12px; margin-top: 6px; display: none; }
+  button.save {
+    width: 100%; margin-top: 20px; padding: 11px; background: #7a9b7f; color: #fff;
+    border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer;
+    transition: opacity .15s;
+  }
+  button.save:hover { opacity: .88; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h2>smartis Telefonie – welche Umgebung?</h2>
+  <p>Wähle die smartis-Instanz, die diese Tray-App anzeigen soll. Kann jederzeit über das Tray-Icon geändert werden.</p>
+  <div class="presets">
+    <button type="button" class="preset-btn" data-url="https://smartis.me/telefonie">smartis.me (Test)</button>
+    <button type="button" class="preset-btn" data-url="https://artis.sm-artis.ch/telefonie">Produktiv</button>
+  </div>
+  <label for="url">Oder eigene URL</label>
+  <input type="url" id="url" placeholder="https://meine-firma.sm-artis.ch/telefonie" autofocus />
+  <div class="error" id="error">Bitte eine gültige URL eingeben (beginnt mit https://)</div>
+  <button class="save" onclick="save()">Verbinden</button>
+</div>
+<script>
+  const params = new URLSearchParams(window.location.search);
+  const current = params.get('current');
+  if (current) document.getElementById('url').value = current;
+
+  document.querySelectorAll('.preset-btn').forEach((btn) => {
+    if (btn.dataset.url === current) btn.classList.add('active');
+    btn.addEventListener('click', () => {
+      document.getElementById('url').value = btn.dataset.url;
+      document.querySelectorAll('.preset-btn').forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+
+  function save() {
+    const val = document.getElementById('url').value.trim();
+    const err = document.getElementById('error');
+    if (!val.startsWith('http://') && !val.startsWith('https://')) {
+      err.style.display = 'block';
+      return;
+    }
+    err.style.display = 'none';
+    window.electronAPI.saveUrl(val.replace(/\/$/, ''));
+  }
+
+  document.getElementById('url').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') save();
+  });
+</script>
+</body>
+</html>
