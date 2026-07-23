@@ -67,6 +67,8 @@ let toastHideTimer = null;
 let tray = null;
 let currentUrl = DEFAULT_URL;
 let isExpanded = false; // false = kleine Karte, true = volle Ansicht
+let realtimeChannel = null;
+let lastCallPayload = null; // letztes bekanntes Broadcast-Payload -- siehe expandToFullAndFocus()
 
 // ── Config (userData/config.json) -- gleiches Muster wie apps/electron/main.cjs
 function getConfigPath() {
@@ -196,6 +198,17 @@ function expandToFullAndFocus() {
   isExpanded = true;
 
   if (callWindow.webContents.getURL() !== currentUrl) {
+    // Frische Seite -> ihre eigene Realtime-Subscription startet erst JETZT
+    // und hat das "answered"-Ereignis von eben verpasst (Supabase-Broadcasts
+    // werden nicht nachgeliefert). Darum: nach dem Laden den letzten
+    // bekannten Anruf-Stand einmal erneut senden, damit die Seite genau den
+    // Zustand zeigt, den sie auch bei einem live mitverfolgten Ereignis
+    // gezeigt haette (Dossier/aktives Gespraech statt Cockpit im Leerlauf).
+    callWindow.webContents.once("did-finish-load", () => {
+      if (lastCallPayload && realtimeChannel) {
+        realtimeChannel.send({ type: "broadcast", event: "incoming_call", payload: lastCallPayload });
+      }
+    });
     callWindow.loadURL(currentUrl);
   }
   callWindow.setAlwaysOnTop(false);
@@ -226,6 +239,7 @@ function connectRealtime() {
     if (!payload) return;
     if (payload.targetUserId && payload.targetUserId !== MY_PROFILE_ID) return;
     const call = payload.call || {};
+    if (call.status === "ringing" || call.status === "answered") lastCallPayload = payload;
     if (call.status === "ringing") {
       console.log("Eingehender Anruf:", call.peerNumber);
       showToast(call);
@@ -233,12 +247,14 @@ function connectRealtime() {
       // Angenommen -> dasselbe Fenster waechst zur vollen Ansicht mit den
       // Kundendaten (Dossier). Fokus-Uebernahme hier erwuenscht.
       expandToFullAndFocus();
-    } else if (call.status === "ended" && !isExpanded) {
-      hideCallWindow(); // verpasster Anruf, nie angenommen -- Karte weg
+    } else if (call.status === "ended") {
+      lastCallPayload = null;
+      if (!isExpanded) hideCallWindow(); // verpasster Anruf, nie angenommen -- Karte weg
     }
   }).subscribe((status) => {
     console.log("smartis Telefonie Tray: Realtime", status);
   });
+  realtimeChannel = ch;
 }
 
 app.setName("SmartisTelefonieTray");
