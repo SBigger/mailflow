@@ -7,16 +7,22 @@
 // eingehenden Anruf eine kleine Karte unten rechts (wie Teams/Slack), OHNE
 // die Tastatur-Eingabe in der gerade aktiven App zu unterbrechen.
 //
-// WICHTIG (Fable-Recherche 2026-07-23): NICHT das volle Modul-Fenster
-// aufpoppen + Fokus stehlen bei jedem Klingeln -- genau das hat 3CX selbst
-// eine Zeit lang gemacht (Electron-Client v18) und wieder verworfen, weil
-// Nutzer beim Tippen aus Versehen mit Enter Anrufe annahmen / die Tastatur
-// gekapert wurde. Der bewaehrte Weg (Teams/Slack, auch 3CX's fruehere
-// "Call Alert Popup"): eine KLEINE, NICHT fokussierbare Karte per
-// showInactive() + setAlwaysOnTop(true,'screen-saver') -- sichtbar ueber
-// allem, aber Tastatur-Eingaben bleiben bei der aktiven App. Das volle
-// Modul-Fenster oeffnet sich nur auf einen ECHTEN Klick (Karte/Tray/
-// Benachrichtigung) -- dort ist Fokus-Uebernahme normal und erwuenscht.
+// WICHTIG (2x Fable-Recherche 2026-07-23):
+// 1) NICHT das volle Modul-Fenster aufpoppen + Fokus stehlen bei jedem
+//    Klingeln -- genau das hat 3CX selbst eine Zeit lang gemacht (Electron-
+//    Client v18) und wieder verworfen (Nutzer nahmen aus Versehen per Enter
+//    Anrufe an, Tastatur gekapert). Bewaehrter Weg: kleine, NICHT
+//    fokussierbare Karte per showInactive() + setAlwaysOnTop('screen-saver').
+// 2) EIN Fenster fuer Karte UND volle Ansicht, NICHT zwei separate Fenster --
+//    kein etabliertes Programm (Teams, WhatsApp, Slack) laesst eine Karte
+//    verschwinden und ein unabhaengiges Fenster woanders aufpoppen, das wirkt
+//    unruhig. Stattdessen WAECHST dasselbe Fenster von der Ecke her (sofortige
+//    setBounds()-Aenderung -- Windows kennt keine animierte Fenstergroesse,
+//    das ist normal/ueblich so, die Kontinuitaet kommt vom SELBEN Fenster,
+//    nicht von einer Animation). "frame" kann in Electron nicht zur Laufzeit
+//    umgeschaltet werden -- darum bleibt das Fenster in BEIDEN Zustaenden
+//    frameless, die volle Ansicht hat ihre eigene Titelleiste/Schliessen-
+//    Button in der smartis-Weboberflaeche selbst.
 //
 // Architektur bewusst einfach gehalten: KEINE Aenderung am bestehenden
 // smartis-Frontend-Code noetig. Dieser Hauptprozess ist selbst ein ganz
@@ -51,12 +57,16 @@ const SUPABASE_ANON_KEY =
 const DEFAULT_URL = "https://smartis.me/telefonie";
 const ICON_PATH = path.join(__dirname, "icon.ico");
 const TOAST_AUTO_HIDE_MS = 25000;
+const TOAST_W = 340, TOAST_H = 150;
+const FULL_W = 420, FULL_H = 740;
+const MARGIN = 16;
 
-let mainWindow = null;
+let callWindow = null;
 let setupWindow = null;
-let toastWindow = null;
 let toastHideTimer = null;
 let tray = null;
+let currentUrl = DEFAULT_URL;
+let isExpanded = false; // false = kleine Karte, true = volle Ansicht
 
 // ── Config (userData/config.json) -- gleiches Muster wie apps/electron/main.cjs
 function getConfigPath() {
@@ -71,7 +81,7 @@ function writeConfig(cfg) {
 function getSavedUrl() { return readConfig().url || null; }
 function saveUrl(url) { const cfg = readConfig(); cfg.url = url; writeConfig(cfg); }
 
-function openSetupWindow(currentUrl) {
+function openSetupWindow() {
   if (setupWindow) { setupWindow.focus(); return; }
   setupWindow = new BrowserWindow({
     width: 480, height: 460, resizable: false, center: true,
@@ -84,64 +94,50 @@ function openSetupWindow(currentUrl) {
       nodeIntegration: false,
     },
   });
-  const query = currentUrl ? `?current=${encodeURIComponent(currentUrl)}` : "";
+  const query = `?current=${encodeURIComponent(currentUrl)}`;
   setupWindow.loadFile(path.join(__dirname, "setup.html"), { search: query });
   setupWindow.on("closed", () => { setupWindow = null; });
 }
 
-function createWindow(url) {
-  mainWindow = new BrowserWindow({
-    width: 420,
-    height: 740,
-    show: false,
+// Ein einziges Fenster fuer Karte UND volle Ansicht -- siehe Datei-Kommentar
+// oben. Frameless in beiden Zustaenden (Electron kann "frame" nicht zur
+// Laufzeit umschalten), startet klein+versteckt+nicht fokussierbar.
+function createCallWindow() {
+  const work = screen.getPrimaryDisplay().workArea;
+  callWindow = new BrowserWindow({
+    width: TOAST_W,
+    height: TOAST_H,
+    x: work.x + work.width - TOAST_W - MARGIN,
+    y: work.y + work.height - TOAST_H - MARGIN,
+    frame: false,
+    resizable: false,
+    movable: false,
     skipTaskbar: true,
-    autoHideMenuBar: true,
+    focusable: false,
+    show: false,
+    alwaysOnTop: true,
+    backgroundColor: "#f4f9f4", // vermeidet weisses Aufblitzen beim Resize
     icon: ICON_PATH,
-    webPreferences: { contextIsolation: true, nodeIntegration: false },
+    webPreferences: {
+      preload: path.join(__dirname, "preload-toast.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
   });
-  mainWindow.loadURL(url);
 
-  // Schliessen (X) beendet die App NICHT, nur ins Tray verstecken --
-  // typisches Tray-App-Verhalten, echtes Beenden nur ueber das Tray-Menu.
-  mainWindow.on("close", (e) => {
+  // Schliessen (X, nur in der vollen Ansicht sichtbar) beendet die App
+  // NICHT, nur verstecken -- typisches Tray-App-Verhalten.
+  callWindow.on("close", (e) => {
     if (!app.isQuitting) {
       e.preventDefault();
-      mainWindow.hide();
+      hideCallWindow();
     }
   });
 }
 
-function createTray(currentUrl) {
-  if (tray) { tray.destroy(); tray = null; }
-  tray = new Tray(nativeImage.createFromPath(ICON_PATH));
-  tray.setToolTip("smartis Telefonie");
-  const menu = Menu.buildFromTemplate([
-    { label: "Öffnen", click: showMainAndFocus },
-    { type: "separator" },
-    { label: "Umgebung wechseln…", click: () => openSetupWindow(currentUrl) },
-    { type: "separator" },
-    { label: "Beenden", click: () => { app.isQuitting = true; app.quit(); } },
-  ]);
-  tray.setContextMenu(menu);
-  tray.on("double-click", showMainAndFocus);
-}
-
-// Volles Modul-Fenster zeigen + Fokus holen -- NUR bei einem echten Klick
-// (Tray/Karte/Benachrichtigung) aufrufen, nie automatisch beim Klingeln.
-// Hier IST Fokus-Uebernahme erwuenscht, darum steal:true.
-function showMainAndFocus() {
-  hideToast();
-  if (!mainWindow) return;
-  if (mainWindow.isMinimized()) mainWindow.restore();
-  mainWindow.show();
-  app.focus({ steal: true });
-  mainWindow.focus();
-  mainWindow.moveTop();
-}
-
-function hideToast() {
+function hideCallWindow() {
   if (toastHideTimer) { clearTimeout(toastHideTimer); toastHideTimer = null; }
-  if (toastWindow && !toastWindow.isDestroyed()) toastWindow.hide();
+  if (callWindow && !callWindow.isDestroyed()) callWindow.hide();
 }
 
 // Kleine, NICHT fokussierbare Karte unten rechts -- siehe Datei-Kommentar
@@ -151,49 +147,76 @@ function showToast(call) {
   const name = call.customer?.company_name || call.peerName || call.peerNumber || "Unbekannt";
   const number = call.peerNumber || "";
 
-  if (!toastWindow || toastWindow.isDestroyed()) {
+  if (isExpanded) {
+    // Aus der vollen Ansicht zurueck zur kleinen Karte (z.B. neuer Anruf,
+    // waehrend die volle Ansicht noch vom letzten Gespraech offen war).
     const work = screen.getPrimaryDisplay().workArea;
-    const w = 340, h = 150;
-    toastWindow = new BrowserWindow({
-      width: w,
-      height: h,
-      x: work.x + work.width - w - 16,
-      y: work.y + work.height - h - 16,
-      frame: false,
-      resizable: false,
-      movable: false,
-      skipTaskbar: true,
-      focusable: false,
-      show: false,
-      alwaysOnTop: true,
-      icon: ICON_PATH,
-      webPreferences: {
-        preload: path.join(__dirname, "preload-toast.js"),
-        contextIsolation: true,
-        nodeIntegration: false,
-      },
+    callWindow.setFocusable(false);
+    callWindow.setBounds({
+      x: work.x + work.width - TOAST_W - MARGIN,
+      y: work.y + work.height - TOAST_H - MARGIN,
+      width: TOAST_W, height: TOAST_H,
     });
+    isExpanded = false;
   }
 
-  // WICHTIG: Listener VOR loadFile() registrieren, sonst Race-Condition --
-  // bei einer so kleinen Seite kann "did-finish-load" schon feuern, bevor
-  // ein danach registrierter Listener ueberhaupt dran waere. Ausserdem
-  // "did-finish-load" statt "ready-to-show" verwenden: "ready-to-show"
-  // feuert nur EINMAL im Leben des Fensters (erste Anzeige), bei einem
-  // wiederverwendeten Fenster (2. Anruf) kaeme also nie wieder ein Event --
-  // "did-finish-load" feuert dagegen bei JEDEM loadFile()-Aufruf neu.
-  toastWindow.webContents.once("did-finish-load", () => {
-    if (!toastWindow || toastWindow.isDestroyed()) return;
-    toastWindow.showInactive(); // KEIN show()/focus() -- Tastatur bleibt bei der aktiven App
-    toastWindow.setAlwaysOnTop(true, "screen-saver");
-    toastWindow.moveTop();
+  // Listener VOR loadFile() registrieren (Race-Condition bei kleinen
+  // Seiten), UND "did-finish-load" statt "ready-to-show" ("ready-to-show"
+  // feuert nur EINMAL im Fenster-Leben, bei Wiederverwendung nie wieder).
+  callWindow.webContents.once("did-finish-load", () => {
+    if (!callWindow || callWindow.isDestroyed() || isExpanded) return;
+    callWindow.showInactive(); // KEIN show()/focus() -- Tastatur bleibt bei der aktiven App
+    callWindow.setAlwaysOnTop(true, "screen-saver");
+    callWindow.moveTop();
   });
-  toastWindow.loadFile(path.join(__dirname, "toast.html"), {
+  callWindow.loadFile(path.join(__dirname, "toast.html"), {
     search: `name=${encodeURIComponent(name)}&number=${encodeURIComponent(number)}`,
   });
 
   if (toastHideTimer) clearTimeout(toastHideTimer);
-  toastHideTimer = setTimeout(hideToast, TOAST_AUTO_HIDE_MS);
+  toastHideTimer = setTimeout(hideCallWindow, TOAST_AUTO_HIDE_MS);
+}
+
+// Dasselbe Fenster waechst von der Ecke her zur vollen Ansicht -- sofortige
+// setBounds() (keine Animation, Windows kann das nicht zuverlaessig; die
+// Kontinuitaet kommt daher, dass es dasselbe Fenster bleibt, nicht von einer
+// Animation). Hier IST Fokus-Uebernahme erwuenscht (echte Aktion: Anruf
+// angenommen, oder Nutzer hat explizit "Öffnen" geklickt).
+function expandToFullAndFocus() {
+  if (toastHideTimer) { clearTimeout(toastHideTimer); toastHideTimer = null; }
+  if (!callWindow || callWindow.isDestroyed()) return;
+
+  const work = screen.getPrimaryDisplay().workArea;
+  callWindow.setFocusable(true);
+  callWindow.setBounds({
+    x: work.x + work.width - FULL_W - MARGIN,
+    y: work.y + work.height - FULL_H - MARGIN,
+    width: FULL_W, height: FULL_H,
+  });
+  isExpanded = true;
+
+  if (callWindow.webContents.getURL() !== currentUrl) {
+    callWindow.loadURL(currentUrl);
+  }
+  callWindow.setAlwaysOnTop(false);
+  callWindow.show();
+  app.focus({ steal: true });
+  callWindow.focus();
+}
+
+function createTray() {
+  if (tray) { tray.destroy(); tray = null; }
+  tray = new Tray(nativeImage.createFromPath(ICON_PATH));
+  tray.setToolTip("smartis Telefonie");
+  const menu = Menu.buildFromTemplate([
+    { label: "Öffnen", click: expandToFullAndFocus },
+    { type: "separator" },
+    { label: "Umgebung wechseln…", click: openSetupWindow },
+    { type: "separator" },
+    { label: "Beenden", click: () => { app.isQuitting = true; app.quit(); } },
+  ]);
+  tray.setContextMenu(menu);
+  tray.on("double-click", expandToFullAndFocus);
 }
 
 function connectRealtime() {
@@ -204,18 +227,14 @@ function connectRealtime() {
     if (payload.targetUserId && payload.targetUserId !== MY_PROFILE_ID) return;
     const call = payload.call || {};
     if (call.status === "ringing") {
-      // Nur EINE Meldung beim Klingeln -- die kleine Karte, keine zusaetzliche
-      // native Benachrichtigung daneben (war doppelt/verwirrend).
       console.log("Eingehender Anruf:", call.peerNumber);
       showToast(call);
     } else if (call.status === "answered") {
-      // Angenommen -> Karte weg, volles Fenster mit Kundendaten (Dossier)
-      // zeigen. Hier ist Fokus-Uebernahme erwuenscht: der Anruf laeuft
-      // gerade, Sascha will jetzt aktiv die Kundendaten sehen.
-      hideToast();
-      showMainAndFocus();
-    } else if (call.status === "ended") {
-      hideToast(); // z.B. verpasster Anruf, nie angenommen
+      // Angenommen -> dasselbe Fenster waechst zur vollen Ansicht mit den
+      // Kundendaten (Dossier). Fokus-Uebernahme hier erwuenscht.
+      expandToFullAndFocus();
+    } else if (call.status === "ended" && !isExpanded) {
+      hideCallWindow(); // verpasster Anruf, nie angenommen -- Karte weg
     }
   }).subscribe((status) => {
     console.log("smartis Telefonie Tray: Realtime", status);
@@ -228,26 +247,21 @@ app.whenReady().then(() => {
   app.setLoginItemSettings({ openAtLogin: true });
 
   ipcMain.handle("telefonie-tray:save-url", (_e, url) => {
+    currentUrl = url;
     saveUrl(url);
     if (setupWindow) { setupWindow.close(); setupWindow = null; }
-    if (mainWindow) {
-      mainWindow.loadURL(url);
-      showMainAndFocus();
-    } else {
-      createWindow(url);
-    }
-    createTray(url);
+    expandToFullAndFocus();
   });
 
-  ipcMain.handle("telefonie-tray:toast-open", showMainAndFocus);
-  ipcMain.handle("telefonie-tray:toast-dismiss", hideToast);
+  ipcMain.handle("telefonie-tray:toast-open", expandToFullAndFocus);
+  ipcMain.handle("telefonie-tray:toast-dismiss", hideCallWindow);
 
-  const savedUrl = getSavedUrl() || DEFAULT_URL;
-  createWindow(savedUrl);
-  createTray(savedUrl);
+  currentUrl = getSavedUrl() || DEFAULT_URL;
+  createCallWindow();
+  createTray();
   connectRealtime();
 });
 
-// Tray-App: soll weiterlaufen, auch wenn alle Fenster (versteckt statt
-// geschlossen, siehe oben) "zu" sind -- kein app.quit() hier.
+// Tray-App: soll weiterlaufen, auch wenn das Fenster (versteckt statt
+// geschlossen, siehe oben) "zu" ist -- kein app.quit() hier.
 app.on("window-all-closed", () => {});
