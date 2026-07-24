@@ -429,3 +429,8 @@ verify_jwt = false
 
 [functions.microsoft-callback]
 verify_jwt = false
+
+# WhatsApp-Webhook (360dialog/Meta POSTet ohne JWT; abgesichert per ?secret=
+# und optional X-Hub-Signature-256). Verify-Handshake laeuft ebenfalls JWT-frei.
+[functions.chartis-whatsapp-inbound]
+verify_jwt = false
