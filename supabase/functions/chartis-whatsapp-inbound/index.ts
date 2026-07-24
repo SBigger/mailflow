@@ -1,7 +1,7 @@
 // ===========================================================================
-// chartis-whatsapp-inbound  -  WhatsApp Cloud API Webhook (via 360dialog)
+// chartis-whatsapp-inbound  -  WhatsApp Cloud API Webhook (Meta direkt)
 // ===========================================================================
-// 360dialog (bzw. Meta) POSTet eingehende WhatsApp-Nachrichten hierher.
+// Meta POSTet eingehende WhatsApp-Nachrichten direkt hierher (kein BSP).
 // Routing (analog chartis-inbound, aber ohne Faden-Token):
 //   1) Dedup ueber wamid (at-least-once) via chartis_inbound_dedup
 //   2) wa_id (Absender) -> Faden ueber chartis_thread_whatsapp
@@ -11,8 +11,8 @@
 //   - 'statuses' (delivered/read/...) -> nur ACK (200), (noch) nicht verarbeitet
 // Absicherung:
 //   - ?secret=... muss CHARTIS_WHATSAPP_INBOUND_SECRET matchen (wie chartis-inbound)
-//   - optional zusaetzlich X-Hub-Signature-256 (HMAC-SHA256 mit WHATSAPP_APP_SECRET),
-//     falls der Provider die Meta-Signatur durchreicht
+//   - zusaetzlich X-Hub-Signature-256 (HMAC-SHA256 mit dem Meta-App-Secret in
+//     WHATSAPP_APP_SECRET). Meta signiert jede Zustellung -> empfohlen zu setzen.
 // Verify-Handshake: GET mit hub.mode/hub.verify_token/hub.challenge -> challenge
 // Deploy mit: supabase functions deploy chartis-whatsapp-inbound --no-verify-jwt
 // ===========================================================================

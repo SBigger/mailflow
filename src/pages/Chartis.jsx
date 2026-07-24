@@ -8,7 +8,7 @@ import CommandPalette from "@/components/chartis/CommandPalette";
 import TaskGlobalListView from "@/components/tasks/TaskGlobalListView";
 import { chartisTheme, SEM, AUTHOR, authorKey, personStyle, initials, isMissed } from "@/lib/chartisTheme";
 import {
-  MessageSquare, MessagesSquare, Plus, Users, User, Lock, AtSign, LayoutGrid, Building2, Clock,
+  MessageSquare, MessagesSquare, MessageCircle, Plus, Users, User, Lock, AtSign, LayoutGrid, Building2, Clock,
   PhoneOff, Phone, Mail, Calendar, CheckSquare, X, Search, Check, Loader2, Send, Paperclip, Video, Command,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -147,6 +147,18 @@ export default function Chartis() {
       return data || [];
     },
   });
+  // WhatsApp-Fäden: Objekt-Fäden mit hinterlegter wa_id-Bindung (chartis_thread_whatsapp)
+  const { data: whatsappThreads = [] } = useQuery({
+    queryKey: ["chartisWhatsappThreads"], refetchInterval: 15000,
+    queryFn: async () => {
+      const { data, error } = await supabase.from("chartis_thread_whatsapp")
+        .select("wa_id, phone, name, chartis_threads!inner(*)").limit(100);
+      if (error) return []; // Tabelle ggf. noch nicht migriert -> Feature still aus
+      return (data || [])
+        .map(r => ({ ...r.chartis_threads, _wa_id: r.wa_id, _wa_name: r.name || r.phone }))
+        .sort((a, b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0));
+    },
+  });
 
   const mentionIds = useMemo(() => new Set(mentions.map(m => m.thread_id)), [mentions]);
   const unseenMentions = mentions.filter(m => !m.seen).length;
@@ -223,6 +235,7 @@ export default function Chartis() {
     tag: { label: "Heute", icon: LayoutGrid }, direkt: { label: "Direkt", icon: User }, gruppen: { label: "Gruppen", icon: Users },
     erwaehnt: { label: "Erwähnt", icon: AtSign }, kunden: { label: "Kunden-Konversationen", icon: Building2 },
     wartet: { label: "Wartet auf Kunde", icon: Clock }, anrufe: { label: "Entgangene Anrufe", icon: PhoneOff },
+    whatsapp: { label: "WhatsApp", icon: MessageCircle },
     mails: { label: "Mails", icon: Mail }, teams: { label: "Teams-Chats", icon: MessagesSquare },
     kalender: { label: "Kalender", icon: Calendar }, todos: { label: "Todos", icon: CheckSquare },
     suche: { label: "Suche", icon: Search },
@@ -236,6 +249,7 @@ export default function Chartis() {
     else if (scope === "erwaehnt") list = [...dm, ...objektThreads].filter(x => mentionIds.has(x.id)).map(x => ({ type: "thread", x }));
     else if (scope === "kunden") list = kundenThreads.map(x => ({ type: "thread", x }));
     else if (scope === "wartet") list = kundenThreads.filter(x => x.status === "wartet_kunde").map(x => ({ type: "thread", x }));
+    else if (scope === "whatsapp") list = whatsappThreads.map(x => ({ type: "thread", x }));
     else if (scope === "anrufe") list = missedCalls.map(c => ({ type: "call", c }));
     else if (scope === "mails") list = mailThreads.map(m => ({ type: "mail", m }));
     else if (scope === "teams") list = teamsChats.map(tc => ({ type: "teamschat", tc }));
@@ -260,9 +274,9 @@ export default function Chartis() {
       : it.type === "teamschat" ? ((it.tc.topic || "") + " " + (it.tc.member_names || []).join(" ") + " " + (it.tc.last_message_preview || "")).toLowerCase().includes(q)
       : (title(it.x) + " " + preview(it.x)).toLowerCase().includes(q));
     return list;
-  }, [scope, seg, search, myThreads, objektThreads, missedCalls, mailThreads, calendarEvents, tasks, teamsChats, mentionIds, me]);
+  }, [scope, seg, search, myThreads, objektThreads, missedCalls, mailThreads, calendarEvents, tasks, teamsChats, whatsappThreads, mentionIds, me]);
 
-  const activeThread = useMemo(() => [...myThreads, ...objektThreads, ...searchResult.threads].find(x => x.id === activeId), [activeId, myThreads, objektThreads, searchResult]);
+  const activeThread = useMemo(() => [...myThreads, ...objektThreads, ...whatsappThreads, ...searchResult.threads].find(x => x.id === activeId), [activeId, myThreads, objektThreads, whatsappThreads, searchResult]);
 
   // Aufgaben für die Tabellen-Ansicht (Pane C) – nach @Mich + Suche gefiltert
   const todosFiltered = useMemo(() => {
@@ -392,6 +406,7 @@ export default function Chartis() {
       { id: "s-gruppen", icon: Users, label: "Gruppen", run: () => setScope("gruppen") },
       { id: "s-erwaehnt", icon: AtSign, label: "Erwähnt", run: () => setScope("erwaehnt") },
       { id: "s-kunden", icon: Building2, label: "Kunden-Konversationen", run: () => setScope("kunden") },
+      { id: "s-whatsapp", icon: MessageCircle, label: "WhatsApp", run: () => setScope("whatsapp") },
       { id: "s-anrufe", icon: PhoneOff, label: "Entgangene Anrufe", run: () => setScope("anrufe") },
       { id: "s-mails", icon: Mail, label: "Mails", run: () => setScope("mails") },
       { id: "s-teams", icon: MessagesSquare, label: "Teams-Chats", run: () => setScope("teams") },
@@ -447,6 +462,7 @@ export default function Chartis() {
           <div style={{ fontSize: 9, letterSpacing: ".07em", textTransform: "uppercase", color: t.textMuted, padding: "9px 8px 3px" }}>Kunden · extern</div>
           <NavItem k="kunden" icon={Building2} label="Konversationen" count={unreadKunden} />
           <NavItem k="wartet" icon={Clock} label="Wartet" />
+          <NavItem k="whatsapp" icon={MessageCircle} label="WhatsApp" count={whatsappThreads.length} />
           <div style={{ height: 6 }} />
           <NavItem k="anrufe" icon={PhoneOff} label="Anrufe" count={missedCalls.length} red />
           <div style={{ borderTop: `1px solid ${t.borderSubtle}`, margin: "8px 6px" }} />

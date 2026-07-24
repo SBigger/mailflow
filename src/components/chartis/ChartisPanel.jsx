@@ -6,7 +6,7 @@ import { ThemeContext } from "@/Layout";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
 import {
-  X, Send, Mail, Lock, MessageSquare, FileText, Loader2, Type, AlertTriangle, Users, Paperclip, UserPlus,
+  X, Send, Mail, Lock, MessageSquare, MessageCircle, FileText, Loader2, Type, AlertTriangle, Users, Paperclip, UserPlus,
   Pencil, Trash2, SmilePlus, Check,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -71,6 +71,9 @@ export default function ChartisPanel({
   const [extEmail, setExtEmail] = useState("");
   const [extName, setExtName] = useState("");
   const [invBusy, setInvBusy] = useState(false);
+  const [showWaSet, setShowWaSet] = useState(false); // WhatsApp-Nummer hinterlegen
+  const [waNum, setWaNum] = useState("");
+  const [waBusy, setWaBusy] = useState(false);
   const [typingUsers, setTypingUsers] = useState({}); // userId -> {name, at}
   const [editingId, setEditingId] = useState(null);   // Nachricht wird gerade bearbeitet
   const [editText, setEditText] = useState("");
@@ -141,6 +144,20 @@ export default function ChartisPanel({
   });
   const hasExternals = externals.length > 0;
 
+  // WhatsApp-Bindung des Fadens (Tabelle chartis_thread_whatsapp). Fehlt sie
+  // (noch nicht migriert), bleibt das Feature still aus.
+  const { data: waBinding } = useQuery({
+    queryKey: ["chartisWhatsapp", thread?.id],
+    enabled: !!thread?.id,
+    queryFn: async () => {
+      const { data, error } = await supabase.from("chartis_thread_whatsapp")
+        .select("wa_id, phone, name").eq("thread_id", thread.id).maybeSingle();
+      if (error) return null;
+      return data;
+    },
+  });
+  const hasWhatsapp = !!waBinding?.wa_id;
+
   // Emoji-Reaktionen aller Nachrichten des Fadens (live via Realtime unten)
   const { data: reactions = [] } = useQuery({
     queryKey: ["chartisReactions", thread?.id],
@@ -185,6 +202,33 @@ export default function ChartisPanel({
     try {
       await supabase.from("chartis_thread_externals").delete().eq("thread_id", thread.id).eq("email", email);
       qc.invalidateQueries({ queryKey: ["chartisExternals", thread.id] });
+    } catch (e) { toast.error("Fehler: " + (e?.message || e)); }
+  };
+
+  // WhatsApp-Nummer am Faden hinterlegen -> ab dann routet Inbound von dieser
+  // Nummer hierher und der WhatsApp-Sendemodus wird verfuegbar.
+  const setWhatsappNumber = async () => {
+    const raw = waNum.trim();
+    const wa_id = raw.replace(/\D/g, ""); // nur Ziffern = E.164 ohne '+'
+    if (wa_id.length < 8) { toast.error("Bitte gültige Nummer mit Ländervorwahl eingeben (z. B. +41 79 …)"); return; }
+    if (!thread?.id) return;
+    setWaBusy(true);
+    try {
+      const { error } = await supabase.from("chartis_thread_whatsapp")
+        .upsert({ thread_id: thread.id, wa_id, phone: raw, added_by: me?.id }, { onConflict: "thread_id" });
+      if (error) throw error;
+      setWaNum(""); setShowWaSet(false);
+      qc.invalidateQueries({ queryKey: ["chartisWhatsapp", thread.id] });
+      toast.success("WhatsApp-Nummer hinterlegt");
+    } catch (e) { toast.error("Fehler: " + (e?.message || e)); }
+    finally { setWaBusy(false); }
+  };
+  const removeWhatsappNumber = async () => {
+    if (!thread?.id) return;
+    try {
+      await supabase.from("chartis_thread_whatsapp").delete().eq("thread_id", thread.id);
+      if (mode === "whatsapp") setMode("intern");
+      qc.invalidateQueries({ queryKey: ["chartisWhatsapp", thread.id] });
     } catch (e) { toast.error("Fehler: " + (e?.message || e)); }
   };
 
@@ -270,6 +314,27 @@ export default function ChartisPanel({
       if (mode === "email") {
         await functions.invoke("chartis-send", { thread_id: thread.id, body: markdownToEmailHtml(finalBody) });
         toast.success("E-Mail an Kunde gesendet");
+        setText(""); setPending([]);
+        qc.invalidateQueries({ queryKey: mkey });
+        return;
+      }
+      if (mode === "whatsapp") {
+        // WhatsApp: reiner Text (Anhaenge als Klartext-URL). Direkt ueber den
+        // Supabase-Client aufrufen, damit wir den Fehler-Body (z. B. 24h-Fenster)
+        // auslesen koennen -- der functions-Wrapper verwirft ihn.
+        const waBody = [text.trim(), ...pending.map(a => a.url)].filter(Boolean).join("\n\n");
+        const { error } = await supabase.functions.invoke("chartis-whatsapp-send", { body: { thread_id: thread.id, body: waBody } });
+        if (error) {
+          let detail = error.message;
+          try {
+            const j = await error.context?.json?.();
+            if (j?.error === "outside_24h_window") detail = "Ausserhalb des 24-Stunden-Fensters ist nur eine genehmigte Vorlage erlaubt.";
+            else if (j?.error === "not_configured") detail = "WhatsApp ist noch nicht scharf geschaltet (kein API-Key hinterlegt).";
+            else if (j?.detail || j?.error) detail = j.detail || j.error;
+          } catch { /* Body nicht lesbar -> generische Meldung */ }
+          throw new Error(detail);
+        }
+        toast.success("WhatsApp-Nachricht gesendet");
         setText(""); setPending([]);
         qc.invalidateQueries({ queryKey: mkey });
         return;
@@ -370,12 +435,14 @@ export default function ChartisPanel({
             {!titleOverride && module && <span className="text-xs font-normal flex-shrink-0" style={{ color: textMuted }}>· {module}</span>}
           </div>
           {(() => {
+            const isWa = !directMode && mode === "whatsapp";
             const isExt = (!directMode && mode === "email") || (directMode && hasExternals);
+            const bg = isWa ? "#f0fdf4" : isExt ? "#fff3e6" : (isArtis ? "rgba(122,155,127,.16)" : "rgba(99,102,241,.10)");
+            const fg = isWa ? "#16a34a" : isExt ? "#d97706" : accent;
             return (
-              <span className="inline-flex items-center gap-1 flex-shrink-0" style={{ fontSize: 10, fontWeight: 500, padding: "3px 8px", borderRadius: 8,
-                background: isExt ? "#fff3e6" : (isArtis ? "rgba(122,155,127,.16)" : "rgba(99,102,241,.10)"),
-                color: isExt ? "#d97706" : accent }}>
-                {(!directMode && mode === "email") ? <><Mail className="h-3 w-3" />Extern · an Kunde</>
+              <span className="inline-flex items-center gap-1 flex-shrink-0" style={{ fontSize: 10, fontWeight: 500, padding: "3px 8px", borderRadius: 8, background: bg, color: fg }}>
+                {isWa ? <><MessageCircle className="h-3 w-3" />WhatsApp · an Kunde</>
+                  : (!directMode && mode === "email") ? <><Mail className="h-3 w-3" />Extern · an Kunde</>
                   : (directMode && hasExternals) ? <><Mail className="h-3 w-3" />Geteilt · Extern</>
                   : <><Lock className="h-3 w-3" />Intern</>}
               </span>
@@ -456,7 +523,7 @@ export default function ChartisPanel({
         ) : (
           messages.map(msg => {
             const sender = users.find(u => u.id === msg.created_by);
-            const isIncoming = msg.kind === "email_in";
+            const isIncoming = msg.kind === "email_in" || msg.kind === "whatsapp_in";
             const mine = !isIncoming && me?.id && msg.created_by === me.id;
             const deleted = !!msg.deleted_at;
             const customerTone = { bg: isArtis ? "#e6ede6" : isLight ? "#ebebf4" : "rgba(63,63,70,0.4)", text: isArtis ? "#2d3a2d" : isLight ? "#1a1a2e" : "#e4e4e7" };
@@ -467,7 +534,9 @@ export default function ChartisPanel({
             }, {}));
             return (
               <ChartisBubble key={msg.id} msg={msg} text={msg.body_text} kind={msg.kind} side={mine ? "right" : "left"}
-                senderLabel={isIncoming ? (msg.from_addr || "Kunde") : (sender?.full_name || sender?.email || "Mitarbeiter")}
+                senderLabel={isIncoming
+                  ? (msg.kind === "whatsapp_in" ? (waBinding?.name || waBinding?.phone || msg.from_addr || "WhatsApp") : (msg.from_addr || "Kunde"))
+                  : (sender?.full_name || sender?.email || "Mitarbeiter")}
                 showLabel={!mine} tone={tone} time={msg.created_at} theme={theme} fontPx={fontPx}
                 deleted={deleted} edited={!!msg.edited_at} canModify={mine && msg.kind === "intern" && !deleted}
                 reactions={agg} onToggleReaction={toggleReaction} quickEmojis={QUICK_EMOJIS}
@@ -496,7 +565,7 @@ export default function ChartisPanel({
 
       <div className="flex-shrink-0 border-t p-3" style={{ borderColor: border, backgroundColor: headerBg }}>
         {showEmail && (
-          <div className="flex items-center gap-2 mb-2">
+          <div className="flex items-center gap-2 mb-2 flex-wrap">
             <button onClick={() => setMode("intern")} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border"
               style={mode === "intern" ? { backgroundColor: accent, color: "#fff", borderColor: accent } : { backgroundColor: "transparent", color: textMuted, borderColor: border }}>
               <Lock className="h-3 w-3" /> Intern
@@ -507,12 +576,38 @@ export default function ChartisPanel({
               title={EMAIL_ENABLED ? "E-Mail an Kunde" : "Noch nicht aktiv (Domain fehlt)"}>
               <Mail className="h-3 w-3" /> E-Mail an Kunde
             </button>
+            <button onClick={() => hasWhatsapp ? setMode("whatsapp") : setShowWaSet(true)}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border"
+              style={mode === "whatsapp" ? { backgroundColor: "#25d366", color: "#fff", borderColor: "#25d366" } : { backgroundColor: "transparent", color: hasWhatsapp ? textMuted : "#bbb", borderColor: border, opacity: hasWhatsapp ? 1 : 0.85 }}
+              title={hasWhatsapp ? "WhatsApp an Kunde" : "WhatsApp-Nummer hinterlegen"}>
+              <MessageCircle className="h-3 w-3" /> WhatsApp
+            </button>
             {mode === "email" && <span className="text-[11px] truncate" style={{ color: textMuted }}>an {extContactEmail || "—"}</span>}
+            {mode === "whatsapp" && <span className="text-[11px] truncate" style={{ color: textMuted }}>an {waBinding?.phone || waBinding?.wa_id}</span>}
           </div>
         )}
         {showEmail && mode === "email" && (
           <div className="flex items-center gap-2 mb-2" style={{ fontSize: 10, color: "#b45309", background: "#fff7ed", border: "1px solid #fde0c0", borderRadius: 7, padding: "5px 8px" }}>
             <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" /> Geht raus an: {extContactEmail || "(keine Adresse hinterlegt)"} · Signatur aus Einstellungen wird angehängt
+          </div>
+        )}
+        {showEmail && mode === "whatsapp" && (
+          <div className="flex items-center gap-2 mb-2" style={{ fontSize: 10, color: "#166534", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 7, padding: "5px 8px" }}>
+            <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" /> WhatsApp an {waBinding?.phone || waBinding?.wa_id} · nur Text · ausserhalb des 24h-Fensters sind nur genehmigte Vorlagen möglich
+          </div>
+        )}
+        {showEmail && showWaSet && (
+          <div className="flex items-center gap-1.5 flex-wrap mb-2" style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 7, padding: "6px 8px" }}>
+            <MessageCircle className="h-3.5 w-3.5 flex-shrink-0" style={{ color: "#25d366" }} />
+            <input value={waNum} onChange={e => setWaNum(e.target.value)} placeholder="WhatsApp-Nr. mit Ländervorwahl, z. B. +41 79 123 45 67" type="tel"
+              onKeyDown={e => { if (e.key === "Enter") setWhatsappNumber(); }}
+              className="rounded-md border px-2 py-1 outline-none" style={{ background: inputBg, borderColor: border, color: textMain, fontSize: 12, minWidth: 240, flex: 1 }} />
+            <button onClick={setWhatsappNumber} disabled={waBusy}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium" style={{ background: "#25d366", color: "#fff", opacity: waBusy ? 0.6 : 1 }}>
+              {waBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} Speichern
+            </button>
+            {hasWhatsapp && <button onClick={removeWhatsappNumber} className="p-1 rounded" style={{ color: "#dc2626" }} title="Nummer entfernen"><Trash2 className="h-3.5 w-3.5" /></button>}
+            <button onClick={() => { setShowWaSet(false); setWaNum(""); }} className="p-1 rounded" style={{ color: textMuted }}><X className="h-3.5 w-3.5" /></button>
           </div>
         )}
 
@@ -552,9 +647,9 @@ export default function ChartisPanel({
           </button>
           <button onClick={handleSend} disabled={(!text.trim() && !pending.length) || sending || tablesMissing}
             className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium"
-            style={{ backgroundColor: (text.trim() || pending.length) && !sending ? accent : "#a1a1aa", color: "#fff", opacity: ((!text.trim() && !pending.length) || sending || tablesMissing) ? 0.6 : 1 }}>
-            {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : mode === "email" ? <Mail className="h-4 w-4" /> : <Send className="h-4 w-4" />}
-            {mode === "email" ? "Senden + Mail" : "Senden"}
+            style={{ backgroundColor: (text.trim() || pending.length) && !sending ? (mode === "whatsapp" ? "#25d366" : accent) : "#a1a1aa", color: "#fff", opacity: ((!text.trim() && !pending.length) || sending || tablesMissing) ? 0.6 : 1 }}>
+            {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : mode === "email" ? <Mail className="h-4 w-4" /> : mode === "whatsapp" ? <MessageCircle className="h-4 w-4" /> : <Send className="h-4 w-4" />}
+            {mode === "email" ? "Senden + Mail" : mode === "whatsapp" ? "Senden + WhatsApp" : "Senden"}
           </button>
         </div>
       </div>
@@ -603,6 +698,7 @@ function ChartisBubble({ msg, text, kind, side, senderLabel, showLabel = true, t
         <div className={`mb-1 ${isLeft ? "" : "text-right"}`} style={{ color: textMuted, fontSize: Math.max(10, fontPx - 2) }}>
           {kind === "email_in" && <Mail className="inline h-3 w-3 mr-0.5" />}
           {kind === "email_out" && <Mail className="inline h-3 w-3 mr-0.5" />}
+          {(kind === "whatsapp_in" || kind === "whatsapp_out") && <MessageCircle className="inline h-3 w-3 mr-0.5" style={{ color: "#25d366" }} />}
           {kind === "intern" && <Lock className="inline h-3 w-3 mr-0.5" />}
           {showLabel ? `${senderLabel}${timeStr ? " · " : ""}${timeStr}` : timeStr}
           {edited && !deleted && <span style={{ marginLeft: 5, fontStyle: "italic" }}>· bearbeitet</span>}

@@ -1,28 +1,33 @@
 // ===========================================================================
 // chartis-whatsapp-send  -  Outbound: Mitarbeiter-Nachricht via WhatsApp
 // ===========================================================================
-// Aufruf vom Frontend (Bearer-JWT eines Mitarbeiters). Versand ueber die
-// WhatsApp Business Cloud API bei 360dialog mit EINEM service-weiten Key
-// (D360-API-KEY als Secret) - kein pro-Nutzer-OAuth.
+// Aufruf vom Frontend (Bearer-JWT eines Mitarbeiters). Versand DIREKT ueber
+// Metas WhatsApp Cloud API (KEIN BSP wie 360dialog -> keine Monatsgebuehr;
+// Meta hostet gratis). Ein service-weiter Meta-Access-Token als Secret.
+//
+// Kosten: Antworten im 24h-Service-Fenster sind bei Meta kostenlos. Nur
+// proaktive Vorlagen (business-initiated) kosten pro Nachricht.
 //
 // 24h-Fenster (Meta-Regel):
 //   - Liegt die LETZTE eingehende Kundennachricht < 24h zurueck -> freie
-//     Textnachricht erlaubt.
+//     Textnachricht erlaubt (kostenlos).
 //   - Sonst NUR genehmigte Vorlagen (type='template'). Ein Freitext ausserhalb
 //     des Fensters wird mit 409 abgelehnt (der Client bietet dann Vorlagen an).
 //
 // Outbox-Muster wie chartis-send: ZUERST persistieren, DANN senden; bei
 // Sendefehler die Zeile wieder loeschen (kein Waisen-Eintrag, kein Doppelversand).
 //
-// "Dry" ohne Key: fehlt WHATSAPP_API_TOKEN -> 501 (not_configured), es wird
-// nichts persistiert. So laeuft die Function bereits, scharf ab dem Secret.
+// "Dry" ohne Konfig: fehlt WHATSAPP_ACCESS_TOKEN oder WHATSAPP_PHONE_NUMBER_ID
+// -> 501 (not_configured), es wird nichts persistiert. So laeuft die Function
+// bereits, scharf ab dem Setzen der Secrets.
 // ===========================================================================
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders, env } from '../_shared/chartis.ts'
 
-// 360dialog Cloud-API-Endpunkt (EU). Ueberschreibbar per Env fuer andere Provider.
-const WHATSAPP_API_URL = Deno.env.get('WHATSAPP_API_URL') || 'https://waba-v2.360dialog.io/messages'
+// Meta Graph API. GRAPH_VERSION ueberschreibbar; PHONE_NUMBER_ID = die ID der
+// registrierten Firmennummer aus dem Meta WhatsApp Manager.
+const GRAPH_VERSION = Deno.env.get('WHATSAPP_GRAPH_VERSION') || 'v21.0'
 const WINDOW_MS = 24 * 60 * 60 * 1000
 
 serve(async (req) => {
@@ -31,8 +36,12 @@ serve(async (req) => {
     new Response(JSON.stringify(b), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
 
   try {
-    const apiToken = Deno.env.get('WHATSAPP_API_TOKEN')
-    if (!apiToken) return json({ error: 'not_configured', detail: 'WHATSAPP_API_TOKEN fehlt' }, 501)
+    const apiToken = Deno.env.get('WHATSAPP_ACCESS_TOKEN')
+    const phoneNumberId = Deno.env.get('WHATSAPP_PHONE_NUMBER_ID')
+    if (!apiToken || !phoneNumberId) {
+      return json({ error: 'not_configured', detail: 'WHATSAPP_ACCESS_TOKEN oder WHATSAPP_PHONE_NUMBER_ID fehlt' }, 501)
+    }
+    const apiUrl = `https://graph.facebook.com/${GRAPH_VERSION}/${phoneNumberId}/messages`
 
     const supabase = createClient(env('SUPABASE_URL'), env('SUPABASE_SERVICE_ROLE_KEY'))
 
@@ -122,12 +131,12 @@ serve(async (req) => {
       .single()
     if (msgErr) return json({ error: 'DB-Fehler', details: msgErr.message }, 500)
 
-    // ── Versand ueber 360dialog (D360-API-KEY) ─────────────────────────────
+    // ── Versand direkt ueber Meta Graph API (Bearer-Token) ─────────────────
     let sent: Response
     try {
-      sent = await fetch(WHATSAPP_API_URL, {
+      sent = await fetch(apiUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'D360-API-KEY': apiToken },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiToken}` },
         body: JSON.stringify(waPayload),
       })
     } catch (e) {
