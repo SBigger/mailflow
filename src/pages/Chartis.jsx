@@ -2,6 +2,7 @@ import React, { useState, useContext, useMemo, useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { entities, supabase, auth, functions } from "@/api/supabaseClient";
+import { createPageUrl } from "@/utils";
 import { ThemeContext } from "@/Layout";
 import ChartisPanel from "@/components/chartis/ChartisPanel";
 import CommandPalette from "@/components/chartis/CommandPalette";
@@ -9,7 +10,7 @@ import TaskGlobalListView from "@/components/tasks/TaskGlobalListView";
 import { chartisTheme, SEM, AUTHOR, authorKey, personStyle, initials, isMissed } from "@/lib/chartisTheme";
 import {
   MessageSquare, MessagesSquare, MessageCircle, Plus, Users, User, Lock, AtSign, LayoutGrid, Building2, Clock,
-  PhoneOff, Phone, Mail, Calendar, CheckSquare, X, Search, Check, Loader2, Send, Paperclip, Video, Command,
+  PhoneOff, Phone, Mail, Calendar, CheckSquare, X, Search, Check, Loader2, Send, Paperclip, Video, Command, CloudUpload,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -20,7 +21,11 @@ export default function Chartis() {
   const t = chartisTheme(theme);
   const qc = useQueryClient();
 
-  const [scope, setScope] = useState("tag");
+  const [scope, setScope] = useState(() => {
+    // Deep-Link aus der Paperboy-FAB: gewünschten Bereich einmalig übernehmen
+    try { const j = localStorage.getItem("chartis_jump_scope"); if (j) { localStorage.removeItem("chartis_jump_scope"); return j; } } catch { /* egal */ }
+    return "tag";
+  });
   const [activeId, setActiveId] = useState(null);
   const [activeCall, setActiveCall] = useState(null);
   const [activeMail, setActiveMail] = useState(null);
@@ -160,6 +165,23 @@ export default function Chartis() {
     },
   });
 
+  // Paperboy: offene (noch nicht abgelegte) Dokumente im Storage-Bucket "posteingang".
+  // Gleicher queryKey wie Posteingang.jsx -> geteilter Cache.
+  const { data: paperboyFolders = [] } = useQuery({
+    queryKey: ["dokumente-all-post"], staleTime: 60000, refetchInterval: 120000,
+    queryFn: async () => {
+      const { data: folders, error } = await supabase.storage.from("posteingang").list();
+      if (error) throw error;
+      const results = await Promise.all((folders || []).map(async (folder) => {
+        const { data: files } = await supabase.storage.from("posteingang").list(folder.name);
+        const docs = (files || []).map(f => ({ ...f, storage_path: `${folder.name}/${f.name}`, customer_id: folder.name, fileName: f.name.split("@")[1] || f.name }));
+        return { customerId: folder.name, docs };
+      }));
+      return results;
+    },
+  });
+  const paperboyDocs = useMemo(() => paperboyFolders.flatMap(f => f.docs || []), [paperboyFolders]);
+
   const mentionIds = useMemo(() => new Set(mentions.map(m => m.thread_id)), [mentions]);
   const unseenMentions = mentions.filter(m => !m.seen).length;
   const tablesMissing = thErr && /relation .*chartis|does not exist|thread_type/i.test(thErr.message || "");
@@ -238,6 +260,7 @@ export default function Chartis() {
     whatsapp: { label: "WhatsApp", icon: MessageCircle },
     mails: { label: "Mails", icon: Mail }, teams: { label: "Teams-Chats", icon: MessagesSquare },
     kalender: { label: "Kalender", icon: Calendar }, todos: { label: "Todos", icon: CheckSquare },
+    paperboy: { label: "Paperboy – offen", icon: CloudUpload },
     suche: { label: "Suche", icon: Search },
   };
 
@@ -250,6 +273,7 @@ export default function Chartis() {
     else if (scope === "kunden") list = kundenThreads.map(x => ({ type: "thread", x }));
     else if (scope === "wartet") list = kundenThreads.filter(x => x.status === "wartet_kunde").map(x => ({ type: "thread", x }));
     else if (scope === "whatsapp") list = whatsappThreads.map(x => ({ type: "thread", x }));
+    else if (scope === "paperboy") list = paperboyDocs.map(d => ({ type: "paperboy", d }));
     else if (scope === "anrufe") list = missedCalls.map(c => ({ type: "call", c }));
     else if (scope === "mails") list = mailThreads.map(m => ({ type: "mail", m }));
     else if (scope === "teams") list = teamsChats.map(tc => ({ type: "teamschat", tc }));
@@ -272,9 +296,10 @@ export default function Chartis() {
       : it.type === "event" ? (it.e.subject || "").toLowerCase().includes(q)
       : it.type === "task" ? (it.k.title || "").toLowerCase().includes(q)
       : it.type === "teamschat" ? ((it.tc.topic || "") + " " + (it.tc.member_names || []).join(" ") + " " + (it.tc.last_message_preview || "")).toLowerCase().includes(q)
+      : it.type === "paperboy" ? ((it.d.fileName || "") + " " + (custById[it.d.customer_id]?.company_name || "")).toLowerCase().includes(q)
       : (title(it.x) + " " + preview(it.x)).toLowerCase().includes(q));
     return list;
-  }, [scope, seg, search, myThreads, objektThreads, missedCalls, mailThreads, calendarEvents, tasks, teamsChats, whatsappThreads, mentionIds, me]);
+  }, [scope, seg, search, myThreads, objektThreads, missedCalls, mailThreads, calendarEvents, tasks, teamsChats, whatsappThreads, paperboyDocs, mentionIds, me]);
 
   const activeThread = useMemo(() => [...myThreads, ...objektThreads, ...whatsappThreads, ...searchResult.threads].find(x => x.id === activeId), [activeId, myThreads, objektThreads, whatsappThreads, searchResult]);
 
@@ -409,6 +434,7 @@ export default function Chartis() {
       { id: "s-whatsapp", icon: MessageCircle, label: "WhatsApp", run: () => setScope("whatsapp") },
       { id: "s-anrufe", icon: PhoneOff, label: "Entgangene Anrufe", run: () => setScope("anrufe") },
       { id: "s-mails", icon: Mail, label: "Mails", run: () => setScope("mails") },
+      { id: "s-paperboy", icon: CloudUpload, label: "Paperboy – offene Uploads", run: () => setScope("paperboy") },
       { id: "s-teams", icon: MessagesSquare, label: "Teams-Chats", run: () => setScope("teams") },
       { id: "s-kalender", icon: Calendar, label: "Kalender", run: () => setScope("kalender") },
       { id: "s-todos", icon: CheckSquare, label: "Todos", run: () => setScope("todos") },
@@ -463,6 +489,7 @@ export default function Chartis() {
           <NavItem k="kunden" icon={Building2} label="Konversationen" count={unreadKunden} />
           <NavItem k="wartet" icon={Clock} label="Wartet" />
           <NavItem k="whatsapp" icon={MessageCircle} label="WhatsApp" count={whatsappThreads.length} />
+          <NavItem k="paperboy" icon={CloudUpload} label="Paperboy – offen" count={paperboyDocs.length} />
           <div style={{ height: 6 }} />
           <NavItem k="anrufe" icon={PhoneOff} label="Anrufe" count={missedCalls.length} red />
           <div style={{ borderTop: `1px solid ${t.borderSubtle}`, margin: "8px 6px" }} />
@@ -498,6 +525,7 @@ export default function Chartis() {
             {[
               { l: "Erwähnt", n: unseenMentions, go: "erwaehnt", red: false },
               { l: "Anrufe", n: missedCalls.length, go: "anrufe", red: true },
+              { l: "Paperboy", n: paperboyDocs.length, go: "paperboy", red: false },
               { l: "Todos", n: tasks.filter(k => k.due_date && new Date(k.due_date) <= new Date(new Date().setHours(23, 59, 59, 999))).length, go: "todos", red: false },
               { l: "Termine", n: calendarEvents.filter(e => new Date(e.start_time).toDateString() === new Date().toDateString()).length, go: "kalender", red: false },
             ].map(c => (
@@ -541,6 +569,16 @@ export default function Chartis() {
               </div>
               <span style={{ fontSize: 10, color: SEM.missed, flexShrink: 0 }}>{fmtTime(it.c.start_time)}</span>
             </button>
+          ) : it.type === "paperboy" ? (
+            <Link key={"pb" + it.d.storage_path} to={createPageUrl("Posteingang")}
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-left" style={{ borderBottom: `1px solid ${t.borderSubtle}`, borderLeft: "3px solid #4ba3c7", paddingLeft: 9 }}>
+              <div className="rounded-full flex items-center justify-center flex-shrink-0" style={{ width: 30, height: 30, background: "rgba(75,163,199,0.16)", color: "#4ba3c7" }}><CloudUpload className="h-4 w-4" /></div>
+              <div className="min-w-0 flex-1">
+                <div className="truncate" style={{ fontSize: 12, fontWeight: 700 }}>{it.d.fileName || "Dokument"}</div>
+                <div className="truncate" style={{ fontSize: 11, color: t.textMuted }}>{custById[it.d.customer_id]?.company_name || "Noch nicht abgelegt"}</div>
+              </div>
+              <span style={{ fontSize: 10, color: t.textMuted, flexShrink: 0 }}>{fmtTime(it.d.created_at)}</span>
+            </Link>
           ) : it.type === "mail" ? (
             <MailRow key={"m" + it.m.key} m={it.m} t={t} active={activeMail?.key === it.m.key} onClick={() => { clearActive(); setActiveMail(it.m); }} />
           ) : it.type === "teamschat" ? (

@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import VoiceAssistant from "@/components/voice/VoiceAssistant";
 import TaskReminderPopup from "@/components/tasks/TaskReminderPopup";
+import PaperboyInbox from "@/components/inbox/PaperboyInbox";
 import BottomNav from "@/components/mobile/BottomNav";
 import AppLauncher from "@/components/navigation/AppLauncher";
 import FavoritesDock, { useFavorites } from "@/components/navigation/FavoritesDock";
@@ -676,6 +677,9 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
 
         {/* Task Reminder Popup – globale Erinnerungen unten rechts */}
         <TaskReminderPopup currentUser={profile} />
+
+        {/* Schwebender Paperboy-Posteingang – gebündelte Eingänge unten rechts */}
+        {!isTaskUser && <PaperboyInbox />}
       </ThemeContext.Provider>
   );
 }
