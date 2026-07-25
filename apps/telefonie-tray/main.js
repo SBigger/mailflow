@@ -8,21 +8,19 @@
 // die Tastatur-Eingabe in der gerade aktiven App zu unterbrechen.
 //
 // WICHTIG (2x Fable-Recherche 2026-07-23):
-// 1) NICHT das volle Modul-Fenster aufpoppen + Fokus stehlen bei jedem
-//    Klingeln -- genau das hat 3CX selbst eine Zeit lang gemacht (Electron-
-//    Client v18) und wieder verworfen (Nutzer nahmen aus Versehen per Enter
-//    Anrufe an, Tastatur gekapert). Bewaehrter Weg: kleine, NICHT
-//    fokussierbare Karte per showInactive() + setAlwaysOnTop('screen-saver').
-// 2) EIN Fenster fuer Karte UND volle Ansicht, NICHT zwei separate Fenster --
-//    kein etabliertes Programm (Teams, WhatsApp, Slack) laesst eine Karte
-//    verschwinden und ein unabhaengiges Fenster woanders aufpoppen, das wirkt
-//    unruhig. Stattdessen WAECHST dasselbe Fenster von der Ecke her (sofortige
-//    setBounds()-Aenderung -- Windows kennt keine animierte Fenstergroesse,
-//    das ist normal/ueblich so, die Kontinuitaet kommt vom SELBEN Fenster,
-//    nicht von einer Animation). "frame" kann in Electron nicht zur Laufzeit
-//    umgeschaltet werden -- darum bleibt das Fenster in BEIDEN Zustaenden
-//    frameless, die volle Ansicht hat ihre eigene Titelleiste/Schliessen-
-//    Button in der smartis-Weboberflaeche selbst.
+// NICHT das volle Modul-Fenster aufpoppen + Fokus stehlen bei jedem
+// Klingeln -- genau das hat 3CX selbst eine Zeit lang gemacht (Electron-
+// Client v18) und wieder verworfen (Nutzer nahmen aus Versehen per Enter
+// Anrufe an, Tastatur gekapert). Bewaehrter Weg: kleine, NICHT
+// fokussierbare Karte per showInactive() + setAlwaysOnTop('screen-saver').
+//
+// BEWUSST EINFACH GEHALTEN (Sascha-Entscheid 2026-07-24): EIN fixes,
+// kleines Kartenfenster -- kein Aufklappen zur vollen smartis-Weboberflaeche
+// mehr. Ringing/Angenommen/Beendet aendern nur noch Text+Status auf
+// DERSELBEN Karte (per IPC-Push, ohne die Seite neu zu laden -- neu laden
+// war die Ursache des fruehen Absturz-Bugs bei ueberlappenden Events). Wer
+// das volle Dossier sehen will, klickt "Öffnen" -- das oeffnet smartis im
+// normalen Standardbrowser, nicht mehr eingebettet in diesem Fenster.
 //
 // Architektur bewusst einfach gehalten: KEINE Aenderung am bestehenden
 // smartis-Frontend-Code noetig. Dieser Hauptprozess ist selbst ein ganz
@@ -33,14 +31,15 @@
 // MicroSIP bleibt der Motor fuers eigentliche Gespraech -- diese App ist
 // nur die "Aufmerksamkeits"-Schicht drumherum.
 //
-// ⚠️ Umgebung (Fenster-URL) ist ueber Tray → "Umgebung wechseln…" waehlbar
-// (smartis.me Test / Produktiv / eigene URL). ABER: SUPABASE_URL/ANON_KEY
-// unten sind fest auf smartis.me's Backend verdrahtet -- fuer "Produktiv"
-// (eigenes Backend api-artis.sm-artis.ch) muesste das separat umgeschaltet
-// werden, was noch nicht gebaut ist (Produktiv-Zugangsdaten bewusst nicht
-// hier hinterlegt, siehe CLAUDE.md "Produktiv... Default: nicht anfassen").
+// ⚠️ Umgebung (Ziel-URL fuer "Öffnen") ist ueber Tray → "Umgebung wechseln…"
+// waehlbar (smartis.me Test / Produktiv / eigene URL). ABER: SUPABASE_URL/
+// ANON_KEY unten sind fest auf smartis.me's Backend verdrahtet -- fuer
+// "Produktiv" (eigenes Backend api-artis.sm-artis.ch) muesste das separat
+// umgeschaltet werden, was noch nicht gebaut ist (Produktiv-Zugangsdaten
+// bewusst nicht hier hinterlegt, siehe CLAUDE.md "Produktiv... Default:
+// nicht anfassen").
 // ===========================================================================
-const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, screen } = require("electron");
+const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, screen, shell, powerSaveBlocker } = require("electron");
 const path = require("path");
 const fs = require("fs");
 // Electrons gebuendeltes Node hat kein natives globales WebSocket -- @supabase/
@@ -57,8 +56,8 @@ const SUPABASE_ANON_KEY =
 const DEFAULT_URL = "https://smartis.me/telefonie";
 const ICON_PATH = path.join(__dirname, "icon.ico");
 const TOAST_AUTO_HIDE_MS = 25000;
+const TOAST_ENDED_HIDE_MS = 3000;
 const TOAST_W = 364, TOAST_H = 120;
-const FULL_W = 420, FULL_H = 740;
 const MARGIN = 16;
 
 let callWindow = null;
@@ -66,11 +65,12 @@ let setupWindow = null;
 let toastHideTimer = null;
 let tray = null;
 let currentUrl = DEFAULT_URL;
-let isExpanded = false; // false = kleine Karte, true = volle Ansicht
 let realtimeChannel = null;
-let lastCallPayload = null; // letztes bekanntes Broadcast-Payload -- siehe expandToFullAndFocus()
-let lastToastLoadAt = 0; // Zeitstempel des letzten loadFile() -- siehe showToast()
-const TOAST_RELOAD_COOLDOWN_MS = 4000;
+let toastLive = false; // true = Karte zeigt bereits einen Anruf -- Updates gehen per IPC statt Neuladen
+let currentCallId = null; // call.id der aktuell gezeigten Karte -- siehe showCall()
+let toastEnded = false; // true = fuer currentCallId schon "ended" verarbeitet -- siehe showCall()
+let lastLoadAt = 0; // Zeitstempel des letzten loadFile() -- siehe showCall()
+const RELOAD_COOLDOWN_MS = 4000;
 
 // ── Config (userData/config.json) -- gleiches Muster wie apps/electron/main.cjs
 function getConfigPath() {
@@ -103,9 +103,8 @@ function openSetupWindow() {
   setupWindow.on("closed", () => { setupWindow = null; });
 }
 
-// Ein einziges Fenster fuer Karte UND volle Ansicht -- siehe Datei-Kommentar
-// oben. Frameless in beiden Zustaenden (Electron kann "frame" nicht zur
-// Laufzeit umschalten), startet klein+versteckt+nicht fokussierbar.
+// Fixes, rahmenloses Kartenfenster -- startet klein+versteckt+nicht
+// fokussierbar, Groesse aendert sich nie (siehe Datei-Kommentar oben).
 function createCallWindow() {
   const work = screen.getPrimaryDisplay().workArea;
   callWindow = new BrowserWindow({
@@ -130,8 +129,9 @@ function createCallWindow() {
     },
   });
 
-  // Schliessen (X, nur in der vollen Ansicht sichtbar) beendet die App
-  // NICHT, nur verstecken -- typisches Tray-App-Verhalten.
+  // Schliessen beendet die App NICHT, nur verstecken -- typisches
+  // Tray-App-Verhalten (das Fenster ist ohnehin rahmenlos, hat also gar
+  // keinen sichtbaren Schliessen-Knopf -- reine Absicherung).
   callWindow.on("close", (e) => {
     if (!app.isQuitting) {
       e.preventDefault();
@@ -140,101 +140,86 @@ function createCallWindow() {
   });
 }
 
+function scheduleAutoHide(ms) {
+  if (toastHideTimer) clearTimeout(toastHideTimer);
+  toastHideTimer = setTimeout(hideCallWindow, ms);
+}
+
 function hideCallWindow() {
   if (toastHideTimer) { clearTimeout(toastHideTimer); toastHideTimer = null; }
+  toastLive = false;
+  currentCallId = null;
+  toastEnded = false;
   if (callWindow && !callWindow.isDestroyed()) callWindow.hide();
 }
 
-// Kleine, NICHT fokussierbare Karte unten rechts -- siehe Datei-Kommentar
-// oben fuer die Begruendung (3CX-Lehre). showInactive() statt show(),
-// 'screen-saver'-Ebene statt Fokus-Stehl-Trick.
-function showToast(call) {
+// Kleine, NICHT fokussierbare, fixe Karte unten rechts -- siehe Datei-
+// Kommentar oben fuer die Begruendung (3CX-Lehre + Sascha-Entscheid
+// 2026-07-24 gegen die volle Ansicht). showInactive() statt show(),
+// 'screen-saver'-Ebene statt Fokus-Stehl-Trick. Deckt ringing/answered/
+// ended gleichermassen ab -- nur Text+Status auf der Karte aendern sich.
+function showCall(call) {
   const name = call.customer?.company_name || call.peerName || call.peerNumber || "Unbekannt";
   const number = call.peerNumber || "";
+  const status = call.status;
+  const sameCall = toastLive && call.id === currentCallId;
 
-  // Ein echter Testanruf zeigte: der lokale MicroSIP-Hook UND peoplefones
-  // Webhook melden denselben Anruf oft praktisch gleichzeitig, teils mit
-  // leicht anderem Nummernformat -- ein Vergleich auf exakte Nummer-Gleichheit
-  // reicht darum NICHT als Bremse. Robuster: einfach ZEITLICH bremsen -- egal
-  // von wo/mit welchem Format ein weiteres "ringing" hereinkommt, innerhalb
-  // von TOAST_RELOAD_COOLDOWN_MS nach dem letzten Laden nie neu laden (nur
-  // Ausblend-Timer auffrischen). Ohne das reisst loadFile() die noch laufende
-  // vorherige Ladung ab (Chromium-Fehler "Message rejected... WidgetHost")
-  // und das kann bis zum Absturz der ganzen App eskalieren.
-  const now = Date.now();
-  if (!isExpanded && callWindow.isVisible() && (now - lastToastLoadAt) < TOAST_RELOAD_COOLDOWN_MS) {
-    if (toastHideTimer) clearTimeout(toastHideTimer);
-    toastHideTimer = setTimeout(hideCallWindow, TOAST_AUTO_HIDE_MS);
+  if (sameCall) {
+    // ⚠️ peoplefone schickt bei einem laenger klingelnden Anruf sehr viele
+    // Wiederholungs-"ringing"-Events (teils 15x+ fuer denselben Anruf,
+    // manchmal auch noch verspaetet NACH dem "ended"). Ohne diese Sperre
+    // wuerde so ein spaetes Event den 25s-Timer immer wieder aufziehen und
+    // die Karte schliesst nie mehr (genau der Bug vom 2026-07-24-Testlauf).
+    // Sobald "ended" einmal verarbeitet ist: weitere Events fuer denselben
+    // Anruf ignorieren, die Karte laeuft aus.
+    if (toastEnded) return;
+    if (status === "ended") toastEnded = true;
+    // Karte zeigt bereits einen Anruf (z.B. ringing -> answered) -- nur per
+    // IPC aktualisieren, NICHT neu laden. Neu laden war die Ursache des
+    // fruehen Absturz-Bugs bei ueberlappenden ringing-Events (lokaler
+    // MicroSIP-Hook + peoplefone-Webhook melden denselben Anruf oft fast
+    // gleichzeitig, teils mit leicht anderem Nummernformat).
+    callWindow.webContents.send("call-update", { name, number, status });
+    scheduleAutoHide(status === "ended" ? TOAST_ENDED_HIDE_MS : TOAST_AUTO_HIDE_MS);
     return;
   }
-  lastToastLoadAt = now;
 
-  if (isExpanded) {
-    // Aus der vollen Ansicht zurueck zur kleinen Karte (z.B. neuer Anruf,
-    // waehrend die volle Ansicht noch vom letzten Gespraech offen war).
-    const work = screen.getPrimaryDisplay().workArea;
-    callWindow.setFocusable(false);
-    callWindow.setBounds({
-      x: work.x + work.width - TOAST_W - MARGIN,
-      y: work.y + work.height - TOAST_H - MARGIN,
-      width: TOAST_W, height: TOAST_H,
-    });
-    isExpanded = false;
+  // Echt neuer Anruf (andere call.id, oder Karte war nicht sichtbar) --
+  // zeitlich bremsen statt auf exakte Nummer-Gleichheit zu pruefen: ein
+  // zweites, fast gleichzeitiges "ringing" von der jeweils anderen Quelle
+  // soll die Karte nicht doppelt neu laden.
+  const now = Date.now();
+  if (callWindow.isVisible() && (now - lastLoadAt) < RELOAD_COOLDOWN_MS) {
+    scheduleAutoHide(TOAST_AUTO_HIDE_MS);
+    return;
   }
+  lastLoadAt = now;
+  currentCallId = call.id;
+  toastEnded = status === "ended";
 
   // Listener VOR loadFile() registrieren (Race-Condition bei kleinen
   // Seiten), UND "did-finish-load" statt "ready-to-show" ("ready-to-show"
   // feuert nur EINMAL im Fenster-Leben, bei Wiederverwendung nie wieder).
   callWindow.webContents.once("did-finish-load", () => {
-    if (!callWindow || callWindow.isDestroyed() || isExpanded) return;
+    if (!callWindow || callWindow.isDestroyed()) return;
+    toastLive = true;
     callWindow.showInactive(); // KEIN show()/focus() -- Tastatur bleibt bei der aktiven App
     callWindow.setAlwaysOnTop(true, "screen-saver");
     callWindow.moveTop();
   });
   callWindow.loadFile(path.join(__dirname, "toast.html"), {
-    search: `name=${encodeURIComponent(name)}&number=${encodeURIComponent(number)}`,
+    search: `name=${encodeURIComponent(name)}&number=${encodeURIComponent(number)}&status=${encodeURIComponent(status)}`,
   });
 
-  if (toastHideTimer) clearTimeout(toastHideTimer);
-  toastHideTimer = setTimeout(hideCallWindow, TOAST_AUTO_HIDE_MS);
+  scheduleAutoHide(status === "ended" ? TOAST_ENDED_HIDE_MS : TOAST_AUTO_HIDE_MS);
 }
 
-// Dasselbe Fenster waechst von der Ecke her zur vollen Ansicht -- sofortige
-// setBounds() (keine Animation, Windows kann das nicht zuverlaessig; die
-// Kontinuitaet kommt daher, dass es dasselbe Fenster bleibt, nicht von einer
-// Animation). Hier IST Fokus-Uebernahme erwuenscht (echte Aktion: Anruf
-// angenommen, oder Nutzer hat explizit "Öffnen" geklickt).
-function expandToFullAndFocus() {
-  if (toastHideTimer) { clearTimeout(toastHideTimer); toastHideTimer = null; }
-  if (!callWindow || callWindow.isDestroyed()) return;
-
-  const work = screen.getPrimaryDisplay().workArea;
-  callWindow.setFocusable(true);
-  callWindow.setBounds({
-    x: work.x + work.width - FULL_W - MARGIN,
-    y: work.y + work.height - FULL_H - MARGIN,
-    width: FULL_W, height: FULL_H,
-  });
-  isExpanded = true;
-
-  if (callWindow.webContents.getURL() !== currentUrl) {
-    // Frische Seite -> ihre eigene Realtime-Subscription startet erst JETZT
-    // und hat das "answered"-Ereignis von eben verpasst (Supabase-Broadcasts
-    // werden nicht nachgeliefert). Darum: nach dem Laden den letzten
-    // bekannten Anruf-Stand einmal erneut senden, damit die Seite genau den
-    // Zustand zeigt, den sie auch bei einem live mitverfolgten Ereignis
-    // gezeigt haette (Dossier/aktives Gespraech statt Cockpit im Leerlauf).
-    callWindow.webContents.once("did-finish-load", () => {
-      if (lastCallPayload && realtimeChannel) {
-        realtimeChannel.send({ type: "broadcast", event: "incoming_call", payload: lastCallPayload });
-      }
-    });
-    callWindow.loadURL(currentUrl);
-  }
-  callWindow.setAlwaysOnTop(false);
-  callWindow.show();
-  app.focus({ steal: true });
-  callWindow.focus();
+// "Öffnen" (Tray-Menu, Karten-Button, Doppelklick) -- zeigt das volle
+// smartis-Dossier NICHT mehr in diesem Fenster, sondern im normalen
+// Standardbrowser (Sascha-Entscheid 2026-07-24: die Karte muss nicht
+// "alles sehen", nur zuverlaessig auf sich aufmerksam machen).
+function openInBrowser() {
+  shell.openExternal(currentUrl);
 }
 
 function createTray() {
@@ -242,14 +227,14 @@ function createTray() {
   tray = new Tray(nativeImage.createFromPath(ICON_PATH));
   tray.setToolTip("smartis Telefonie");
   const menu = Menu.buildFromTemplate([
-    { label: "Öffnen", click: expandToFullAndFocus },
+    { label: "Öffnen", click: openInBrowser },
     { type: "separator" },
     { label: "Umgebung wechseln…", click: openSetupWindow },
     { type: "separator" },
     { label: "Beenden", click: () => { app.isQuitting = true; app.quit(); } },
   ]);
   tray.setContextMenu(menu);
-  tray.on("double-click", expandToFullAndFocus);
+  tray.on("double-click", openInBrowser);
 }
 
 function connectRealtime() {
@@ -259,18 +244,9 @@ function connectRealtime() {
     if (!payload) return;
     if (payload.targetUserId && payload.targetUserId !== MY_PROFILE_ID) return;
     const call = payload.call || {};
-    if (call.status === "ringing" || call.status === "answered") lastCallPayload = payload;
-    if (call.status === "ringing") {
-      console.log("Eingehender Anruf:", call.peerNumber);
-      showToast(call);
-    } else if (call.status === "answered") {
-      // Angenommen -> dasselbe Fenster waechst zur vollen Ansicht mit den
-      // Kundendaten (Dossier). Fokus-Uebernahme hier erwuenscht.
-      expandToFullAndFocus();
-    } else if (call.status === "ended") {
-      lastCallPayload = null;
-      if (!isExpanded) hideCallWindow(); // verpasster Anruf, nie angenommen -- Karte weg
-    }
+    if (!call.status) return;
+    if (call.status === "ringing") console.log("Eingehender Anruf:", call.peerNumber);
+    showCall(call);
   }).subscribe((status) => {
     console.log("smartis Telefonie Tray: Realtime", status);
   });
@@ -285,6 +261,13 @@ app.setName("SmartisTelefonieTray");
 process.on("uncaughtException", (err) => {
   console.error("uncaughtException (App laeuft weiter):", err);
 });
+// uncaughtException faengt KEINE verworfenen Promises -- separates Node-
+// Event noetig, sonst beendet ein einzelnes ungefangenes Promise-Reject
+// (z.B. ein abgebrochenes loadFile() bei ueberlappenden Events) den ganzen
+// Prozess lautlos (Vorfall 2026-07-24: Exit-Code 4, kein Fehler im Log).
+process.on("unhandledRejection", (err) => {
+  console.error("unhandledRejection (App laeuft weiter):", err);
+});
 app.on("render-process-gone", (_e, _wc, details) => {
   console.error("render-process-gone:", JSON.stringify(details));
 });
@@ -292,14 +275,22 @@ app.on("render-process-gone", (_e, _wc, details) => {
 app.whenReady().then(() => {
   app.setLoginItemSettings({ openAtLogin: true });
 
+  // ⚠️ Windows drosselt Netzwerk/Timer von Hintergrund-Apps ohne Fokus
+  // (die Karte ist ja absichtlich meistens unsichtbar) -- das war die
+  // Ursache der wiederholten Realtime-CHANNEL_ERROR-Aussetzer (2026-07-24,
+  // per Vergleichstest bestaetigt: identischer Kanal blieb aus einem reinen
+  // Node-Prozess ohne Fenster die ganze Zeit stabil verbunden). Blocker
+  // haelt den Prozess aktiv, ohne den Bildschirm wachzuhalten.
+  powerSaveBlocker.start("prevent-app-suspension");
+
   ipcMain.handle("telefonie-tray:save-url", (_e, url) => {
     currentUrl = url;
     saveUrl(url);
     if (setupWindow) { setupWindow.close(); setupWindow = null; }
-    expandToFullAndFocus();
+    openInBrowser();
   });
 
-  ipcMain.handle("telefonie-tray:toast-open", expandToFullAndFocus);
+  ipcMain.handle("telefonie-tray:toast-open", openInBrowser);
   ipcMain.handle("telefonie-tray:toast-dismiss", hideCallWindow);
 
   currentUrl = getSavedUrl() || DEFAULT_URL;

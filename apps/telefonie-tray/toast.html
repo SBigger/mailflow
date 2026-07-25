@@ -59,7 +59,7 @@
     <div class="row">
       <div class="avatar" id="avatar">?</div>
       <div class="info">
-        <div class="label">Eingehender Anruf</div>
+        <div class="label" id="label">Eingehender Anruf</div>
         <div class="name" id="name">Unbekannt</div>
         <div class="number" id="number"></div>
       </div>
@@ -74,12 +74,25 @@
     </div>
   </div>
   <script>
+    const STATUS_LABEL = {
+      ringing: 'Eingehender Anruf',
+      answered: 'Im Gespräch',
+      ended: 'Anruf beendet',
+    };
+    function render({ name, number, status }) {
+      name = name || 'Unbekannt';
+      document.getElementById('label').textContent = STATUS_LABEL[status] || STATUS_LABEL.ringing;
+      document.getElementById('name').textContent = name;
+      document.getElementById('number').textContent = number || '';
+      document.getElementById('avatar').textContent = name.slice(0, 2).toUpperCase();
+    }
     const params = new URLSearchParams(window.location.search);
-    const name = params.get('name') || 'Unbekannt';
-    const number = params.get('number') || '';
-    document.getElementById('name').textContent = name;
-    document.getElementById('number').textContent = number;
-    document.getElementById('avatar').textContent = name.slice(0, 2).toUpperCase();
+    render({
+      name: params.get('name'),
+      number: params.get('number'),
+      status: params.get('status'),
+    });
+    window.toastAPI.onUpdate(render);
   </script>
 </body>
 </html>
