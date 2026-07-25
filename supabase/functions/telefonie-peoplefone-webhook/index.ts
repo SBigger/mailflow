@@ -34,6 +34,27 @@
 // Auth: eigener Query-Param ?secret=... (peoplefone signiert Webhook-Aufrufe
 // nicht) -- muss beim Registrieren der Subscription mit in die callbackUrl.
 // Deploy: supabase functions deploy telefonie-peoplefone-webhook --no-verify-jwt
+//
+// ⚠️ BETRIEBS-HINWEIS (Vorfall 2026-07-25): peoplefones Call-Management-API
+// LOESCHT die Subscription automatisch und sofort, sobald dieser Webhook
+// EIN EINZIGES MAL nicht mit HTTP 200 antwortet -- auch bei einem simplen
+// "keepAlive"-Ping (siehe OpenAPI-Spec CallManagementV1.yml, /subscription:
+// "if not [200], the subscription will be removed"). Am 2026-07-25 stand
+// die App >24h komplett still (kein Anruf kam mehr an), weil genau das
+// passiert war -- im Supabase-Dashboard (Functions -> diese Function ->
+// Overview) zeigte "Total Invocations" ueber den ganzen Zeitraum 0.
+// Symptom-Check: Dashboard-Invocations = 0 trotz echter Testanrufe ->
+// Subscription ist weg, nicht der Code.
+// Fix: POST an https://call-api.peoplefone.com/customer/call-management/v1/subscription
+// mit Header "Authorization: Bearer <PEOPLEFONE_API_KEY>" und Body
+// { owner: { identifier: "90746408026", type: "user" },
+//   callbackUrl: "<SUPABASE_URL>/functions/v1/telefonie-peoplefone-webhook?secret=<PEOPLEFONE_WEBHOOK_SECRET>" }
+// -- am einfachsten per kurzlebiger Wegwerf-Edge-Function (liest beide
+// Secrets serverseitig via Deno.env.get, keine Werte muessen im Chat
+// landen), deployt OHNE --no-verify-jwt (Aufruf dann mit
+// "Authorization: Bearer <SUPABASE_ANON_KEY>"), nach Erfolg sofort wieder
+// `supabase functions delete` -- keine dauerhaft unauthentifizierte
+// Wartungs-Route stehen lassen.
 // ===========================================================================
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
