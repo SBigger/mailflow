@@ -292,6 +292,18 @@ app.whenReady().then(() => {
 
   ipcMain.handle("telefonie-tray:toast-open", openInBrowser);
   ipcMain.handle("telefonie-tray:toast-dismiss", hideCallWindow);
+  // "Annehmen" auf der Karte -- derselbe Broadcast-Weg wie smartis' eigene
+  // Anruf-Steuerung (siehe microsip-control-listener.js), damit MicroSIP den
+  // Anruf wirklich annimmt, ohne dass Sascha extra ins MicroSIP-Fenster
+  // klicken muss.
+  ipcMain.handle("telefonie-tray:toast-answer", () => {
+    if (!realtimeChannel) return;
+    realtimeChannel.send({
+      type: "broadcast",
+      event: "control_command",
+      payload: { targetUserId: MY_PROFILE_ID, action: "answer" },
+    });
+  });
 
   currentUrl = getSavedUrl() || DEFAULT_URL;
   createCallWindow();

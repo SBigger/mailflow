@@ -24,12 +24,35 @@
 // state-Mapping: setup/early (Vorstufen vor Verbindung) -> ringing,
 // confirmed -> answered, terminated -> ended.
 //
+// ⚠️⚠️ owner.identifier = NUMERISCHE peoplefone-User-ID, NICHT der
+// SIP-Benutzername! (Root Cause des Totalausfalls 2026-07-22..25.)
+// Die Doku sagt woertlich "identifier: user_id"; das Schema kennt `user`
+// UND `sipUsername` als ZWEI VERSCHIEDENE Entity-Typen. Wir hatten die
+// Subscription monatelang auf "90746408026" (SIP-Benutzername) registriert:
+// der Endpoint akzeptiert das mit HTTP 201 und schickt sogar EINEN initialen
+// Status-Snapshot, bindet aber nie an einen echten Benutzer -> danach kommt
+// NIE ein Call-Event. Genau unser Symptom, und extrem irrefuehrend.
+// Per Config API bewiesen (GET configuration-api.peoplefone.com/customer/
+// voip/v1/users [+ /{id} fuers Detail], Scope "Configuration"):
+//   identifier 163879 = "Bigger", hosted.internalNumber "20",
+//   lineSettings.lines[].sipUserName "90746408026"   <- DAS ist der Benutzer
+//   identifier 8608/8609/8610 = vFax/smartis phone/Operator Connect,
+//   alle mit hosted == null  ->  STANDARD-Linien, fuer Call Management laut
+//   Doku NICHT nutzbar (nur vPBX/HOSTED-Benutzer).
+// Aktive Subscription seit 2026-07-25: db14dfe1-c0c9-47b6-8fd0-26cf7cdbeb20
+//
+// ⚠️ Beim Neu-Registrieren: laut Spec liefert ein POST /subscription mit einer
+// BEREITS benutzten callbackUrl nur die bestehende ID zurueck und aendert
+// nichts. Eine kaputte Subscription MUSS also zuerst per DELETE /subscription/
+// {id} weg, sonst repariert das erneute Registrieren gar nichts (genau darauf
+// bin ich am 2026-07-25 zuerst reingefallen).
+//
 // Ziel-Mitarbeiter: aktuell nur EINE Subscription (Sascha), darum bewusst
 // KEIN Matching-Aufwand -- targetUserId bleibt null (Broadcast an alle
 // verbundenen Clients, identisch zum alten Rufgruppen-Fallback). Sobald
 // weitere Mitarbeitende eigene Subscriptions bekommen: rawBody.owner.identifier
-// (peoplefones interner User-Identifier, bei Sascha = SIP-Benutzername) gegen
-// eine neue Zuordnung mappen -- NICHT gegen profiles.phone (andere Nummernwelt).
+// (die numerische User-ID, s.o.) gegen eine neue Zuordnung mappen -- NICHT
+// gegen profiles.phone (andere Nummernwelt).
 //
 // Auth: eigener Query-Param ?secret=... (peoplefone signiert Webhook-Aufrufe
 // nicht) -- muss beim Registrieren der Subscription mit in die callbackUrl.
