@@ -33,13 +33,18 @@ function useWidth() {
   return [ref, w];
 }
 
+// ⚠️ gridAutoRows: "1fr" ist Pflicht, nicht Kosmetik: Ohne Zeilenvorgabe
+// richten sich implizite Zeilen nach dem Inhalt – und der Kachelinhalt ist
+// absolut positioniert, hat also keine Höhe. Die Kacheln fielen sonst
+// zusammen. Mit 1fr teilen sich alle Zeilen die Bühnenhöhe gleichmässig.
 function gridFor(count, width) {
   const narrow = width < 900;
-  if (count <= 1) return { gridTemplateColumns: "1fr" };
-  if (count === 2) return { gridTemplateColumns: narrow ? "1fr" : "1fr 1fr" };
-  if (count === 3) return { gridTemplateColumns: narrow ? "1fr" : "1fr 1fr" };
-  if (count === 4) return { gridTemplateColumns: narrow ? "1fr" : "1fr 1fr" };
-  return { gridTemplateColumns: narrow ? "1fr 1fr" : "repeat(3, 1fr)" };
+  const rows = { gridAutoRows: "1fr" };
+  if (count <= 1) return { ...rows, gridTemplateColumns: "1fr" };
+  if (count === 2) return { ...rows, gridTemplateColumns: narrow ? "1fr" : "1fr 1fr" };
+  if (count === 3) return { ...rows, gridTemplateColumns: narrow ? "1fr" : "1fr 1fr" };
+  if (count === 4) return { ...rows, gridTemplateColumns: narrow ? "1fr" : "1fr 1fr" };
+  return { ...rows, gridTemplateColumns: narrow ? "1fr 1fr" : "repeat(3, 1fr)" };
 }
 
 export default function Stage({ t, participants, screenShare, children }) {

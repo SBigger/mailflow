@@ -58,7 +58,12 @@ export default function Tile({ p, t, radius = VM.tileRadius, compact = false }) 
   return (
     <div
       style={{
-        position: "relative", borderRadius: radius, overflow: "hidden",
+        // ⚠️ height 100% ist Pflicht: Der Kachelinhalt (Video bzw. Initialen)
+        // ist absolut positioniert, die Kachel hätte sonst keine eigene Höhe
+        // und fiele im Raster auf null zusammen – sichtbar als "Teilnehmer
+        // ohne Kamera ist unsichtbar".
+        position: "relative", height: "100%", width: "100%",
+        borderRadius: radius, overflow: "hidden",
         background: t.stageEmpty, minHeight: 0, minWidth: 0,
         transition: "box-shadow .15s ease-out",
         boxShadow: p.isSpeaking
