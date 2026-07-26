@@ -56,7 +56,7 @@ function dueInfo(iso) {
 export default function Softphone() {
   const theme = useAppTheme();
   const t = tele(theme);
-  const { call, incoming, wrapup, clearWrapup, panelOpen, setPanelOpen, dial, answer, decline, hangup, toggleMute, toggleHold, toggleVideo, sendDtmf } = useTelephony();
+  const { call, incoming, wrapup, clearWrapup, panelOpen, setPanelOpen, dial, answer, decline, hangup, toggleMute, toggleHold, toggleVideo, sendDtmf, controlError } = useTelephony();
   // ⚠️ Nummer auch aus dem AKTIVEN Anruf ziehen (Fix 2026-07-26): beim
   // Annehmen wird incoming auf null gesetzt -- vorher verlor der Hook damit
   // die Nummer und das Dossier war im Gespraech leer ("es zeigt nichts an"),
@@ -120,6 +120,9 @@ export default function Softphone() {
           <button onClick={answer} style={bigBtn(t.answer)}><Phone size={17} /> Annehmen</button>
           <button onClick={decline} style={bigBtn(t.hangup)}><PhoneOff size={17} /> Ablehnen</button>
         </div>
+        {controlError && (
+          <div style={{ padding: "0 18px 14px", fontSize: 11.5, fontWeight: 650, color: t.missed }}>{controlError}</div>
+        )}
       </div>
     );
   }
@@ -173,6 +176,9 @@ export default function Softphone() {
           )}
 
           <button onClick={hangup} style={{ ...bigBtn(t.hangup), width: "100%" }}><PhoneOff size={16} /> Auflegen</button>
+          {controlError && (
+            <div style={{ marginTop: 8, fontSize: 11.5, fontWeight: 650, color: t.missed }}>{controlError}</div>
+          )}
 
           {/* Kunden-Dossier WAEHREND des Gespraechs (Sascha-Wunsch 2026-07-26:
               "eine Kachel wo wir die dokumente und aufgaben sehen") -- ersetzt

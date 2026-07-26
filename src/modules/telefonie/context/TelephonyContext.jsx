@@ -180,15 +180,44 @@ export function TelephonyProvider({ children }) {
   // Sendet auf demselben Kanal wie eingehende Anrufe, nur anderes Event --
   // microsip-control-listener.js (lokaler Node-Prozess, selbst ein Realtime-
   // Client) hoert mit und loest MicroSIPs Kommandozeilen-Schalter aus.
-  // Fire-and-forget: laeuft der lokale Helfer nicht, aendert sich am
-  // bisherigen (rein lokalen) Anzeige-Verhalten nichts.
-  const sendControlCommand = useCallback((action, extra) => {
-    if (!callsChRef.current || !myId) return;
-    callsChRef.current.send({
-      type: "broadcast",
-      event: "control_command",
-      payload: { targetUserId: myId, action, ...extra },
-    });
+  //
+  // ⚠️ Seit 2026-07-26 NICHT mehr Fire-and-forget (Review-Befund: Auflegen
+  // verpuffte kommentarlos, wenn der Browser-Kanal gerade getrennt war --
+  // MicroSIP telefonierte weiter, waehrend die UI laengst "beendet" zeigte).
+  // Jetzt: Sendeergebnis pruefen, bei Fehlschlag einmal ueber Supabase's
+  // REST-Broadcast-Endpoint nachsenden (funktioniert auch bei totem
+  // WebSocket-Kanal) und true/false an den Aufrufer zurueckgeben.
+  const [controlError, setControlError] = useState(null);
+  const controlErrorTimer = useRef(null);
+  const flagControlError = useCallback((msg) => {
+    setControlError(msg);
+    if (controlErrorTimer.current) clearTimeout(controlErrorTimer.current);
+    controlErrorTimer.current = setTimeout(() => setControlError(null), 6000);
+  }, []);
+
+  const sendControlCommand = useCallback(async (action, extra) => {
+    if (!myId) return false;
+    const payload = { targetUserId: myId, action, ...extra };
+    try {
+      if (callsChRef.current) {
+        const status = await callsChRef.current.send({ type: "broadcast", event: "control_command", payload });
+        if (status === "ok") return true;
+      }
+    } catch { /* faellt auf REST zurueck */ }
+    try {
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/realtime/v1/api/broadcast`, {
+        method: "POST",
+        headers: {
+          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ messages: [{ topic: "telefonie-calls", event: "control_command", payload, private: false }] }),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
   }, [myId]);
 
   // ── ausgehend ──────────────────────────────────────────────────────────
@@ -220,8 +249,14 @@ export function TelephonyProvider({ children }) {
   // Loest ECHT aus (MicroSIP nimmt den klingelnden Anruf an) UND zeigt
   // optimistisch die aktive Ansicht -- der reale "answered"-Broadcast (siehe
   // oben) kommt gleich danach nach und ueberschreibt nichts, da bereits aktiv.
-  const answer = useCallback(() => {
-    sendControlCommand("answer");
+  // ⚠️ UI-Zustand erst NACH bestaetigter Zustellung abbauen (2026-07-26):
+  // vorher raeumten answer/decline/hangup die Oberflaeche bedingungslos ab
+  // und maskierten damit jeden Zustellfehler -- der rote Knopf war weg,
+  // obwohl MicroSIP weitertelefonierte. Schlaegt die Zustellung fehl,
+  // bleibt der Zustand stehen (Knopf erneut klickbar) + kurzer Fehlerhinweis.
+  const answer = useCallback(async () => {
+    const ok = await sendControlCommand("answer");
+    if (!ok) { flagControlError("Annehmen nicht zugestellt — nochmals versuchen"); return; }
     setWrapup(null);
     setIncoming((prev) => {
       if (!prev) return null;
@@ -236,14 +271,16 @@ export function TelephonyProvider({ children }) {
       return null;
     });
     setPanelOpen(true);
-  }, [sendControlCommand]);
+  }, [sendControlCommand, flagControlError]);
 
-  const decline = useCallback(() => {
-    sendControlCommand("decline");
+  const decline = useCallback(async () => {
+    const ok = await sendControlCommand("decline");
+    if (!ok) { flagControlError("Ablehnen nicht zugestellt — nochmals versuchen"); return; }
     setIncoming(null);
-  }, [sendControlCommand]);
-  const hangup = useCallback(() => {
-    sendControlCommand("hangup");
+  }, [sendControlCommand, flagControlError]);
+  const hangup = useCallback(async () => {
+    const ok = await sendControlCommand("hangup");
+    if (!ok) { flagControlError("Auflegen nicht zugestellt — nochmals versuchen"); return; }
     setCall((prev) => {
       if (prev) {
         const durationSec = Math.max(0, Math.floor((Date.now() - (prev.startedAt || Date.now())) / 1000));
@@ -251,7 +288,7 @@ export function TelephonyProvider({ children }) {
       }
       return null;
     });
-  }, [sendControlCommand]);
+  }, [sendControlCommand, flagControlError]);
   const clearWrapup = useCallback(() => setWrapup(null), []);
   const toggleMute  = useCallback(() => setCall((c) => (c ? { ...c, muted: !c.muted } : c)), []);
   const toggleHold  = useCallback(() => setCall((c) => (c ? { ...c, onHold: !c.onHold } : c)), []);
@@ -299,6 +336,7 @@ export function TelephonyProvider({ children }) {
     incoming,
     wrapup,
     clearWrapup,
+    controlError,
     panelOpen,
     setPanelOpen,
     dial,
