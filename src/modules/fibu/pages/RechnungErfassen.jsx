@@ -536,10 +536,8 @@ export default function RechnungErfassen() {
       }
 
       // ── Neu erfassen ──
-      const belegNr = await kreditorenApi.nextBelegNr(mandant.id);
       const beleg = await kreditorenApi.create(mandant.id, {
         ...head,
-        beleg_nr: belegNr,
         ...betraege,
       }, pos);
 

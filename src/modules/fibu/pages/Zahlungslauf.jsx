@@ -313,15 +313,6 @@ export default function Zahlungslauf() {
       };
       await zahlungslaufApi.create(mandant.id, lauf, positionen);
 
-      // Belege auf "ebanking" setzen – warten auf CAMT-Bestätigung
-      for (const b of selectedBelege) {
-        try {
-          await kreditorenApi.update(b.id, { status: 'ebanking' });
-        } catch (e) {
-          console.error('Status-Update ebanking fehlgeschlagen für', b.beleg_nr, e);
-        }
-      }
-
       // Skonto wird NICHT mehr hier gebucht. Der geplante Skonto-Abzug
       // steckt als skonto_betrag in der Zahlungslauf-Position und wird
       // erst bei der tatsächlichen Bank-Bestätigung (camt.053) verbucht –

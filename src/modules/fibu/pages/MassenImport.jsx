@@ -697,7 +697,6 @@ export default function MassenImport({ standalone = false }) {
   const [mwstCodes, setMwstCodes]     = useState([]);
   const [mwstMap, setMwstMap]         = useState({});
   const [saving, setSaving]           = useState(false);
-  const [nrCounter, setNrCounter]     = useState(0);
   const [dragOver, setDragOver]       = useState(false);
   const [liefModal, setLiefModal]     = useState(null);   // { init, targetName }
   const [liefSaving, setLiefSaving]   = useState(false);
@@ -780,10 +779,6 @@ export default function MassenImport({ standalone = false }) {
       const m = {}; codes.forEach(c => { m[c.code] = c.satz; });
       setMwstMap(m);
       mwstMapRef.current = m;
-    }).catch(console.error);
-    kreditorenApi.nextBelegNr(mandant.id).then(nr => {
-      const n = parseInt(nr.split('-')[2] ?? '0', 10);
-      setNrCounter(n);
     }).catch(console.error);
   }, [mandant?.id]);
 
@@ -958,14 +953,10 @@ export default function MassenImport({ standalone = false }) {
     if (!toBook.length) return;
 
     setSaving(true);
-    let counter = nrCounter;
-    const year = new Date().getFullYear();
 
     for (const row of toBook) {
       updateRow(row._id, { status: 'saving' });
       try {
-        counter++;
-        const belegNr = `KR-${year}-${String(counter).padStart(4, '0')}`;
         const satz   = mwstMap[row.mwst_code] ?? 0;
         const brutto = parseFloat(row.betrag_brutto) || 0;
         const netto  = satz > 0 ? Math.round(brutto / (1 + satz / 100) * 100) / 100 : brutto;
@@ -975,7 +966,6 @@ export default function MassenImport({ standalone = false }) {
           mandant.id,
           {
             lieferant_id:     row.lieferant_id || null,
-            beleg_nr:         belegNr,
             belegdatum:       row.belegdatum,
             buchungsdatum:    row.buchungsdatum || row.belegdatum,
             faelligkeit:      row.faelligkeit,
@@ -1004,7 +994,6 @@ export default function MassenImport({ standalone = false }) {
         updateRow(row._id, { status: 'error', errorMsg: e.message });
       }
     }
-    setNrCounter(counter);
     setSaving(false);
   };
 

@@ -6,6 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build --mode production",
+    "test:fibu": "node --test tests/fibu/*.test.mjs",
+    "test:leistungserfassung": "node --test tests/leistungserfassung/*.test.mjs",
+    "lint:leistungserfassung": "eslint src/pages/Leistungserfassung.jsx src/lib/leApi.js src/components/auswertungen/MonatsrapportPanel.jsx src/components/auswertungen/util.js src/components/leistungserfassung/AbwesenheitenPanel.jsx src/components/leistungserfassung/EntwurfsDurchgangPanel.jsx src/components/leistungserfassung/FirmenSettingsPanel.jsx src/components/leistungserfassung/GutschriftPanel.jsx src/components/leistungserfassung/LeistungsartenPanel.jsx src/components/leistungserfassung/MahnungenPanel.jsx src/components/leistungserfassung/NummernkreisePanel.jsx src/components/leistungserfassung/RechnungsuebersichtPanel.jsx src/components/leistungserfassung/SpesenAbrechnenPanel.jsx src/components/leistungserfassung/SpesenErfassenPanel.jsx src/components/leistungserfassung/StorageDocumentLink.jsx src/components/leistungserfassung/WiederkehrendePanel.jsx",
     "preview": "vite preview",
     "supabase": "npx supabase start && npx supabase functions serve --env-file .env.local",
     "supabase debug": "supabase start && supabase functions serve --env-file .env.local --inspect-mode brk",
@@ -86,6 +89,8 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.3.14",
+    "@eslint/js": "^9.39.2",
     "@playwright/test": "^1.60.0",
     "@tauri-apps/cli": "^2.11.2",
     "@types/react": "^18.2.66",
@@ -93,6 +98,11 @@
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
     "dotenv": "^17.4.2",
+    "eslint": "^9.39.2",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-unused-imports": "^4.3.0",
+    "globals": "^16.5.0",
     "postcss": "^8.5.3",
     "supabase": "^2.98.2",
     "tailwindcss": "^3.4.17",

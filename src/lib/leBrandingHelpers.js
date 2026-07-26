@@ -163,7 +163,7 @@ export function drawTableHeader(pdf, y, cols) {
  * Returns die neue Y-Koordinate unter der Box.
  *
  * @param {Object} pdf
- * @param {Object} totals - { subtotal, discount, vat_pct, vat_amount, total }
+ * @param {Object} totals - { subtotal, discount, vat_pct, vat_label, vat_amount, total }
  * @param {number} y - Start-Y
  */
 export function drawTotalsBox(pdf, totals, y) {
@@ -181,7 +181,10 @@ export function drawTotalsBox(pdf, totals, y) {
   if (Number(totals.discount || 0) > 0) {
     rows.push(['Rabatt', `-${fmtChf(totals.discount)}`]);
   }
-  rows.push([`MWST ${Number(totals.vat_pct ?? 8.1)}%`, fmtChf(totals.vat_amount)]);
+  rows.push([
+    totals.vat_label ?? `MWST ${Number(totals.vat_pct ?? 8.1)}%`,
+    fmtChf(totals.vat_amount),
+  ]);
 
   const rowH = 16;
   const totalRowH = 22;

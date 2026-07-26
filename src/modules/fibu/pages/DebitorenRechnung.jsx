@@ -181,7 +181,6 @@ export default function DebitorenRechnung() {
         betrag_netto: sign * totals.netto, betrag_mwst: sign * totals.mwst, betrag_brutto: sign * totals.brutto, status };
       if (mode === 'edit') {
         await debitorenApi.updateFull(mandant.id, belegId, beleg, positionen);
-        if (status !== 'entwurf') await debitorenApi.stellen(belegId);
       } else {
         await debitorenApi.create(mandant.id, beleg, positionen);
       }
@@ -245,7 +244,7 @@ export default function DebitorenRechnung() {
         <p>Freundliche Grüsse<br>${mSettings?.name || mandant?.name || ''}</p>`;
       await belegMailApi.send({ to, subject: `${docName} ${loaded.beleg_nr}${mSettings?.name ? ' – ' + mSettings.name : ''}`,
         html, attachmentUrl: url, attachmentFilename: `${loaded.beleg_nr}.pdf` });
-      await debitorenApi.update(belegId, { gesendet_am: new Date().toISOString(), gesendet_an: to });
+      await debitorenApi.markGesendet(belegId, to);
       await reload();
       alert('Gesendet an ' + to);
     } catch (e) { alert('Versand fehlgeschlagen: ' + e.message); }
