@@ -231,6 +231,12 @@
         if (!document.getElementById('transferList').children.length) {
           const targets = await window.toastAPI.getTargets();
           const list = document.getElementById('transferList');
+          if (!targets || !targets.length) {
+            const hint = document.createElement('div');
+            hint.className = 'dempty';
+            hint.textContent = 'Keine Nebenstellen hinterlegt — Nummer unten eingeben.';
+            list.appendChild(hint);
+          }
           (targets || []).forEach((t) => {
             const row = document.createElement('div');
             row.className = 'trow';

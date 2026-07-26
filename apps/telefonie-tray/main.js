@@ -565,18 +565,16 @@ app.whenReady().then(() => {
     });
   });
 
-  // Verbinden-Ziele: aus der Konfiguration (userData/config.json, Schluessel
-  // "targets"), sonst die bekannten Nebenstellen als Vorgabe. Bewusst lokal
-  // -- die Karte kann die Anlage ohne Login nicht selbst fragen.
+  // Verbinden-Ziele aus der Konfiguration (userData/config.json, "targets").
+  // ⚠️ BEWUSST KEINE Vorgabe-Nebenstellen (2026-07-26 teuer gelernt): hier
+  // standen erfundene Platzhalter 21-24. In der Anlage existiert aber nur
+  // EINE Nebenstelle (Sascha, 20) -- das Verbinden lief ins Leere und der
+  // Anruf kam ueber die Rufgruppe zurueck ("Anruf kam doppelt rein").
+  // Nur echte, in der Telefonanlage vorhandene Nebenstellen eintragen; die
+  // Liste zeigt Einstellungen -> Telefonie (kommt live aus der Anlage).
   ipcMain.handle("telefonie-tray:toast-targets", () => {
     const cfg = readConfig();
-    if (Array.isArray(cfg.targets) && cfg.targets.length) return cfg.targets;
-    return [
-      { name: "Romy Gerber", extension: "21" },
-      { name: "Reto Mühlemann", extension: "22" },
-      { name: "Maura Fuster", extension: "23" },
-      { name: "Isabella Nikollbibaj", extension: "24" },
-    ];
+    return Array.isArray(cfg.targets) ? cfg.targets : [];
   });
 
   // Karte auf eine bestimmte Hoehe bringen (das Verbinden-Panel braucht mehr
