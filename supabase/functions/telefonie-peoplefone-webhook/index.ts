@@ -70,8 +70,11 @@
 // Subscription ist weg, nicht der Code.
 // Fix: POST an https://call-api.peoplefone.com/customer/call-management/v1/subscription
 // mit Header "Authorization: Bearer <PEOPLEFONE_API_KEY>" und Body
-// { owner: { identifier: "90746408026", type: "user" },
+// { owner: { identifier: "163879", type: "user" },   // numerische User-ID, s.o.!
 //   callbackUrl: "<SUPABASE_URL>/functions/v1/telefonie-peoplefone-webhook?secret=<PEOPLEFONE_WEBHOOK_SECRET>" }
+// (Seit 2026-07-26 macht das die Function telefonie-peoplefone-keepalive
+// ohnehin alle 5 Min automatisch per pg_cron -- manuell nur noch noetig,
+// falls auch der Cron/die Keepalive-Function selbst tot sein sollte.)
 // -- am einfachsten per kurzlebiger Wegwerf-Edge-Function (liest beide
 // Secrets serverseitig via Deno.env.get, keine Werte muessen im Chat
 // landen), deployt OHNE --no-verify-jwt (Aufruf dann mit

@@ -434,3 +434,11 @@ verify_jwt = false
 # und optional X-Hub-Signature-256). Verify-Handshake laeuft ebenfalls JWT-frei.
 [functions.chartis-whatsapp-inbound]
 verify_jwt = false
+
+# peoplefone-Call-Management-Webhook (peoplefone POSTet ohne JWT; abgesichert
+# per ?secret=). ⚠️ Ohne diesen Eintrag blockiert ein kuenftiges Deploy ohne
+# --no-verify-jwt den Webhook -- peoplefone loescht die Subscription dann beim
+# ERSTEN abgewiesenen Aufruf sofort und lautlos (siehe Runbook-Kommentar in
+# der Function). Deshalb hier fest verdrahtet statt nur als CLI-Schalter.
+[functions.telefonie-peoplefone-webhook]
+verify_jwt = false

@@ -85,6 +85,14 @@ function rememberEnded(id) {
   endedCallIds.push(id);
   if (endedCallIds.length > MAX_REMEMBERED_ENDED) endedCallIds.shift();
 }
+// Anruf-Lebenszyklus ist eine Einbahnstrasse: ringing -> answered -> ended.
+// peoplefone liefert Events aber nicht streng geordnet (verspaetete
+// "ringing"-Wiederholungen kommen auch noch NACH "answered", siehe
+// showCall()) -- Rueckwaertsuebergaenge werden deshalb ignoriert, sonst
+// springt die Karte von "Im Gespraech" zurueck auf "Eingehender Anruf"
+// samt wieder eingeblendetem Annehmen-Knopf (Review-Befund 2026-07-26).
+const STATUS_RANK = { ringing: 0, answered: 1, ended: 2 };
+let currentStatusRank = -1; // Rang des zuletzt akzeptierten Status fuer currentCallId
 const RELOAD_COOLDOWN_MS = 4000;
 
 // ── Config (userData/config.json) -- gleiches Muster wie apps/electron/main.cjs
@@ -164,6 +172,7 @@ function hideCallWindow() {
   if (toastHideTimer) { clearTimeout(toastHideTimer); toastHideTimer = null; }
   toastLive = false;
   currentCallId = null;
+  currentStatusRank = -1;
   toastEnded = false;
   pendingStatusUpdate = null;
   if (pendingLoadListener) {
@@ -179,6 +188,11 @@ function hideCallWindow() {
 // 'screen-saver'-Ebene statt Fokus-Stehl-Trick. Deckt ringing/answered/
 // ended gleichermassen ab -- nur Text+Status auf der Karte aendern sich.
 function showCall(call) {
+  // Ausgehende Anrufe meldet der peoplefone-Webhook ebenfalls (dir "out") --
+  // selbst gewaehlt, die Karte wuerde faelschlich "Eingehender Anruf" samt
+  // Annehmen-Knopf zeigen (Review-Befund 2026-07-26). Keine Karte dafuer.
+  if (call.dir === "out") return;
+
   // ⚠️ BUG gefunden + behoben (2026-07-26): peoplefone schickt "terminated"
   // (ended) oft noch mehrfach verspaetet nach (live beobachtet: ~10s nach
   // Auflegen, danach nochmals ca. 4x) -- teils erst NACHDEM die Karte laengst
@@ -206,6 +220,12 @@ function showCall(call) {
     // Sobald "ended" einmal verarbeitet ist: weitere Events fuer denselben
     // Anruf ignorieren, die Karte laeuft aus.
     if (toastEnded) return;
+    // Rueckwaertsuebergang (z.B. verspaetetes "ringing" nach "answered")
+    // ignorieren -- siehe STATUS_RANK oben. Gleicher Rang (ringing-
+    // Wiederholung) laeuft weiter durch und verlaengert den Auto-Hide.
+    const rank = STATUS_RANK[status] ?? 0;
+    if (rank < currentStatusRank) return;
+    currentStatusRank = rank;
     if (status === "ended") { toastEnded = true; rememberEnded(call.id); }
 
     if (toastLive) {
@@ -252,6 +272,7 @@ function showCall(call) {
   }
   lastLoadAt = now;
   currentCallId = call.id;
+  currentStatusRank = STATUS_RANK[status] ?? 0;
   toastEnded = status === "ended";
   if (toastEnded) rememberEnded(call.id); // sehr kurzer Anruf, kommt gleich schon als "ended" an
   toastLive = false;

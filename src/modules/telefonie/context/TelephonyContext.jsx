@@ -132,9 +132,19 @@ export function TelephonyProvider({ children }) {
       const evtStatus = incomingCall?.status || "ringing";
 
       if (evtStatus === "ringing") {
-        setCall(null);
-        setWrapup(null);
-        setIncoming(incomingCall);
+        // Ausgehende Anrufe meldet der peoplefone-Webhook ebenfalls (dir
+        // "out") -- selbst gewaehlt, also kein Screen-Pop "Eingehender Anruf".
+        if (incomingCall?.dir === "out") return;
+        // ⚠️ Kein blindes setCall(null) mehr: peoplefone schickt "ringing"-
+        // Wiederholungen teils noch verspaetet NACH "answered" -- das warf
+        // ein bereits aktives Gespraech aus der Oberflaeche (Review-Befund
+        // 2026-07-26). Ein aktiver Anruf gewinnt immer gegen neues Klingeln.
+        setCall((prev) => {
+          if (prev) return prev;
+          setWrapup(null);
+          setIncoming(incomingCall);
+          return null;
+        });
         return;
       }
 
