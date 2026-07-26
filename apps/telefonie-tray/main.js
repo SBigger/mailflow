@@ -72,6 +72,19 @@ let toastEnded = false; // true = fuer currentCallId schon "ended" verarbeitet -
 let lastLoadAt = 0; // Zeitstempel des letzten loadFile() -- siehe showCall()
 let pendingLoadListener = null; // aktuell haengender once("did-finish-load")-Listener, falls noch keiner gefeuert hat
 let pendingStatusUpdate = null; // Status, der eintraf WAEHREND das Fenster noch laedt -- siehe showCall()
+// ⚠️ call.id, die bereits VOLLSTAENDIG als "ended" verarbeitet wurden -- UEBERLEBT
+// hideCallWindow() (anders als currentCallId/toastEnded), siehe showCall() fuer den
+// Bug, den das behebt: peoplefone schickt "terminated" oft mehrfach mit
+// Verzoegerung (analog zu den Ringing-Wiederholungen), teils noch 10+s NACHDEM
+// die Karte laengst wieder ausgeblendet ist. Ohne dieses Gedaechtnis sah so ein
+// spaetes Duplikat wie ein "neuer Anruf" aus (currentCallId war ja schon wieder
+// null) und die Karte ploppte mehrfach mit "beendet" erneut auf.
+const endedCallIds = [];
+const MAX_REMEMBERED_ENDED = 20;
+function rememberEnded(id) {
+  endedCallIds.push(id);
+  if (endedCallIds.length > MAX_REMEMBERED_ENDED) endedCallIds.shift();
+}
 const RELOAD_COOLDOWN_MS = 4000;
 
 // ── Config (userData/config.json) -- gleiches Muster wie apps/electron/main.cjs
@@ -166,6 +179,17 @@ function hideCallWindow() {
 // 'screen-saver'-Ebene statt Fokus-Stehl-Trick. Deckt ringing/answered/
 // ended gleichermassen ab -- nur Text+Status auf der Karte aendern sich.
 function showCall(call) {
+  // ⚠️ BUG gefunden + behoben (2026-07-26): peoplefone schickt "terminated"
+  // (ended) oft noch mehrfach verspaetet nach (live beobachtet: ~10s nach
+  // Auflegen, danach nochmals ca. 4x) -- teils erst NACHDEM die Karte laengst
+  // wieder ausgeblendet ist (hideCallWindow() hat currentCallId dann schon
+  // auf null zurueckgesetzt). So ein Duplikat sah dadurch wie ein "neuer
+  // Anruf" aus und die Karte ploppte fuer denselben, laengst erledigten
+  // Anruf immer wieder mit "beendet" auf. Fix: einmal vollstaendig beendete
+  // call.id dauerhaft (ueber das Ausblenden hinaus) merken und alles
+  // Weitere dafuer ignorieren.
+  if (endedCallIds.includes(call.id)) return;
+
   const name = call.customer?.company_name || call.peerName || call.peerNumber || "Unbekannt";
   const number = call.peerNumber || "";
   const status = call.status;
@@ -182,7 +206,7 @@ function showCall(call) {
     // Sobald "ended" einmal verarbeitet ist: weitere Events fuer denselben
     // Anruf ignorieren, die Karte laeuft aus.
     if (toastEnded) return;
-    if (status === "ended") toastEnded = true;
+    if (status === "ended") { toastEnded = true; rememberEnded(call.id); }
 
     if (toastLive) {
       // Fenster hat das erste Laden dieses Anrufs bereits abgeschlossen --
@@ -229,6 +253,7 @@ function showCall(call) {
   lastLoadAt = now;
   currentCallId = call.id;
   toastEnded = status === "ended";
+  if (toastEnded) rememberEnded(call.id); // sehr kurzer Anruf, kommt gleich schon als "ended" an
   toastLive = false;
   pendingStatusUpdate = null;
 
