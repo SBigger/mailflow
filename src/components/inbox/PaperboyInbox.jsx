@@ -5,6 +5,7 @@ import { Mail, CheckSquare, MessageSquare, PhoneOff, MessageCircle, X } from "lu
 import { ThemeContext } from "@/Layout";
 import PaperboyIcon from "./PaperboyIcon";
 import { useInboxSummary } from "./useInboxSummary";
+import { useTelephony } from "@/modules/telefonie/context/TelephonyContext";
 
 // Reihenfolge & Meta der Quellen-Kacheln (Variante 2)
 const SOURCES = [
@@ -115,13 +116,33 @@ export default function PaperboyInbox() {
   const paperboyGreen = "#5b8a5b";
 
   // Popup-Position relativ zur FAB (öffnet nach oben-links)
+  // ── Dem Softphone ausweichen (Sascha-Wunsch 2026-07-26) ───────────────
+  // Das globale Softphone-Panel schwebt auf zIndex 3000 unten rechts und
+  // verdeckte den Paperboy (frueher zIndex 55) komplett, sobald ein Anruf
+  // lief oder das Waehl-Panel offen war. Jetzt: Paperboy liegt UEBER der
+  // Telefon-Ebene, und sitzt seine (gespeicherte) Position in der Ecke, in
+  // der das offene Softphone-Panel steht, rutscht er fuers Rendern darueber
+  // -- die gespeicherte Wunschposition bleibt unangetastet, nach dem Anruf
+  // steht er wieder exakt dort, wo er hingezogen wurde.
+  const teleState = useTelephony() || {};
+  const phoneEngaged = !!(teleState.call || teleState.incoming || teleState.panelOpen || teleState.wrapup);
+  const SOFTPHONE_ZONE_W = 420; // Softphone-Shell 340-384px breit + Rand
+  const SOFTPHONE_CLEAR_Y = 560; // Panelhoehe (~470) + Abstand + FAB-Hoehe
+  const displayPos = useMemo(() => {
+    if (!phoneEngaged) return pos;
+    const w = typeof window !== "undefined" ? window.innerWidth : 1280;
+    const h = typeof window !== "undefined" ? window.innerHeight : 800;
+    const inSoftphoneCorner = pos.x > w - SOFTPHONE_ZONE_W && pos.y > h - SOFTPHONE_CLEAR_Y;
+    return inSoftphoneCorner ? { x: pos.x, y: Math.max(6, h - SOFTPHONE_CLEAR_Y) } : pos;
+  }, [pos, phoneEngaged]);
+
   const PANEL_W = 344;
   const panelStyle = useMemo(() => {
     const winW = typeof window !== "undefined" ? window.innerWidth : 1280;
-    const left = Math.min(Math.max(8, pos.x + 52 - PANEL_W), winW - PANEL_W - 8);
-    const bottom = Math.max(8, (typeof window !== "undefined" ? window.innerHeight : 800) - pos.y + 10);
+    const left = Math.min(Math.max(8, displayPos.x + 52 - PANEL_W), winW - PANEL_W - 8);
+    const bottom = Math.max(8, (typeof window !== "undefined" ? window.innerHeight : 800) - displayPos.y + 10);
     return { left, bottom };
-  }, [pos]);
+  }, [displayPos]);
 
   return (
     <>
@@ -129,7 +150,7 @@ export default function PaperboyInbox() {
         <div
           ref={panelRef}
           style={{
-            position: "fixed", left: panelStyle.left, bottom: panelStyle.bottom, width: PANEL_W, zIndex: 60,
+            position: "fixed", left: panelStyle.left, bottom: panelStyle.bottom, width: PANEL_W, zIndex: 3020,
             background: c.panelBg, border: `1px solid ${c.panelBorder}`, borderRadius: 14,
             boxShadow: "0 12px 40px rgba(20,30,24,.22)", overflow: "hidden",
             color: c.text, fontSize: 13,
@@ -229,7 +250,8 @@ export default function PaperboyInbox() {
         }}
         onClick={() => { if (movedRef.current) { movedRef.current = false; return; } setOpen(o => !o); }}
         style={{
-          position: "fixed", left: pos.x, top: pos.y, zIndex: 55,
+          position: "fixed", left: displayPos.x, top: displayPos.y, zIndex: 3010,
+          transition: dragRef.current ? "none" : "top .25s ease, left .25s ease",
           width: 52, height: 52, borderRadius: "50%",
           background: c.circleBg, border: `1.5px solid ${c.circleBorder}`,
           boxShadow: "0 6px 18px rgba(30,50,35,.20)",
