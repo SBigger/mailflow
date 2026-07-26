@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   Mail,
   CheckSquare,
+  Video as VideoIcon,
   Settings as SettingsIcon,
   Building2,
   CalendarClock,
@@ -77,6 +78,7 @@ export const NAV_GROUPS = [
       { name: 'Kundenportal', label: 'Kundenportal', icon: ShieldCheck, color: '#0e756a', aliases: ['portal', 'kundenzugang', 'freigabe', 'read-only', 'kundenlogin'] },
       { name: 'TelefonDashboard', label: 'Telefon', icon: PhoneCall, color: '#4fae6b', aliases: ['anrufe', 'telefonliste', 'calls', 'teams-anrufe'] },
       { name: 'Telefonie', label: 'Telefonie', href: '/telefonie', icon: PhoneCall, rail: true, color: '#2d6a4f', aliases: ['softphone', 'anrufen', 'wählen', 'sip', 'voip', 'telefonie-modul'] },
+      { name: 'Besprechungen', label: 'Besprechungen', href: '/besprechungen', icon: VideoIcon, rail: true, color: '#3f7fc2', aliases: ['video', 'videocall', 'meeting', 'konferenz', 'besprechung', 'bildschirm teilen'] },
     ],
   },
   {

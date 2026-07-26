@@ -62,6 +62,7 @@ const Kalender = lazy(() => import("./modules/tools/Kalender.jsx"));
 const Steuerausscheidung = lazy(() => import("./modules/tools/Steuerausscheidung.jsx"));
 const FiBuRouter = lazy(() => import("./modules/fibu/router.jsx"));
 const TelefonieRouter = lazy(() => import("./modules/telefonie/router.jsx"));
+const VideoRouter = lazy(() => import("./modules/video/router.jsx"));
 const GlobalSoftphone = lazy(() => import("./modules/telefonie/components/Softphone.jsx"));
 const Hub = lazy(() => import('./pages/Hub.jsx'));
 const AiAssistant = lazy(() => import('./pages/AiAssistant.jsx'));
@@ -98,6 +99,9 @@ function AuthenticatedApp() {
 
                 {/* Telefonie: eigene Shell + Softphone, kein MailFlow-Layout */}
                 <Route path="/telefonie/*" element={<TelefonieRouter />} />
+
+                {/* Besprechungen (Video): eigene Shell, kein MailFlow-Layout */}
+                <Route path="/besprechungen/*" element={<VideoRouter />} />
 
                 {/* MailFlow: Layout als Wrapper-Route (Layout muss im Inneren ein <Outlet /> nutzen!) */}
                 <Route element={<Layout />}>
