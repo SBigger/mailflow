@@ -1,17 +1,17 @@
 // Entwurfs-Durchgang – Stepper-UI durch alle Rechnungsentwürfe (status='entwurf').
 // User arbeitet sich Entwurf für Entwurf durch: Positionen editieren, Rabatt/MWST
 // anpassen, speichern, definitiv erstellen. Am Ende: "Alles versenden".
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   ChevronLeft, ChevronRight, Plus, Trash2, Check, FileCheck2,
   Send, Save, Receipt, SkipForward, FileDown,
-  Wallet, Banknote, X as XIcon, AlertTriangle,
+  Wallet, Banknote, X as XIcon,
 } from 'lucide-react';
-import { leInvoice, leInvoiceLine, leCompany, leOpenAkonti, leInvoiceAkontoLink } from '@/lib/leApi';
-import { supabase } from '@/api/supabaseClient';
+import { leInvoice, leCompany, leOpenAkonti, leInvoiceAkontoLink } from '@/lib/leApi';
 import { generateInvoicePdf, triggerDownload } from '@/lib/leInvoicePdf';
+import { deliverInvoiceByEmail } from '@/lib/leInvoiceDelivery';
 import {
   Chip, Card, IconBtn, Input, Field, PanelLoader, PanelError, PanelHeader, fmt,
   artisBtn, artisPrimaryStyle, artisGhostStyle,
@@ -21,7 +21,6 @@ const PRIMARY = '#7a9b7f';
 const ACCENT = '#e6ede6';
 const DARK = '#2d5a2d';
 
-const todayIso = () => new Date().toISOString().slice(0, 10);
 const num = (v) => (v === '' || v == null ? 0 : Number(v) || 0);
 
 // ------------------------------------------------------------------
@@ -63,46 +62,10 @@ function AkontoVerrechnungCard({ invoice, onLinked }) {
   );
 
   const verrechnenMut = useMutation({
-    mutationFn: async () => {
-      let i = 0;
-      for (const a of selectedAkonti) {
-        const subtotal = Number(a.subtotal || a.total || 0);
-        const vat = Number(a.vat_amount || 0);
-        await leInvoiceLine.create({
-          invoice_id: invoice.id,
-          akonto_invoice_id: a.id,
-          description: `Abzug Akonto ${a.invoice_no} vom ${fmt.date(a.issue_date)}`,
-          hours: 0,
-          rate: 0,
-          amount: -subtotal,
-          sort_order: 9000 + i,
-        });
-        await leInvoiceAkontoLink.create({
-          schluss_invoice_id: invoice.id,
-          akonto_invoice_id: a.id,
-          amount_net: subtotal,
-          amount_vat: vat,
-        });
-        i++;
-      }
-      // Kopfsummen der Schlussrechnung NEU aus ALLEN Zeilen berechnen (inkl. der
-      // eben eingefuegten Akonto-Abzugszeilen). Sonst bleibt invoice.total auf dem
-      // Betrag OHNE Abzug -> QR/PDF fordern den vollen Betrag -> Akonto doppelt bezahlt.
-      // Gleiche Formel wie DraftEditor/saveMut.
-      const { data: allLines } = await supabase
-        .from('le_invoice_line').select('amount').eq('invoice_id', invoice.id);
-      const subtotalRaw = (allLines ?? []).reduce((s, l) => s + Number(l.amount || 0), 0);
-      const pct  = Number(invoice.discount_pct || 0);
-      const dAmt = Number(invoice.discount_amount || 0);
-      const vPct = Number(invoice.vat_pct ?? 8.1);
-      const subtotalNet = Math.max(0, subtotalRaw * (1 - pct / 100) - dAmt);
-      const vatAmount = subtotalNet * vPct / 100;
-      await leInvoice.update(invoice.id, {
-        subtotal: subtotalNet,
-        vat_amount: vatAmount,
-        total: subtotalNet + vatAmount,
-      });
-    },
+    mutationFn: () => leInvoiceAkontoLink.applyToInvoice(
+      invoice.id,
+      selectedAkonti.map((a) => a.id),
+    ),
     onSuccess: () => {
       toast.success(`${selectedAkonti.length} Akonto verrechnet`);
       setSelected(new Set());
@@ -117,24 +80,9 @@ function AkontoVerrechnungCard({ invoice, onLinked }) {
 
   const removeMut = useMutation({
     mutationFn: async ({ link }) => {
-      await leInvoiceAkontoLink.remove(link.id);
-      // Robust: Abzugs-Line(s) gezielt per akonto_invoice_id löschen.
       const akId = link.akonto_invoice_id ?? link.akonto?.id;
-      let deleted = 0;
-      if (akId) {
-        const { data } = await supabase.from('le_invoice_line')
-          .delete().eq('invoice_id', invoice.id).eq('akonto_invoice_id', akId).select('id');
-        deleted = data?.length || 0;
-      }
-      // Fallback für Alt-Daten ohne akonto_invoice_id: String-Match.
-      if (!deleted) {
-        const akNo = link.akonto?.invoice_no;
-        const line = (invoice.lines ?? []).find((l) =>
-          (l.description ?? '').includes(`Abzug Akonto ${akNo}`));
-        if (line?.id) {
-          try { await leInvoiceLine.remove(line.id); } catch (_) { /* ignore */ }
-        }
-      }
+      if (!akId) throw new Error('Akonto-Rechnung der Verknüpfung fehlt.');
+      return leInvoiceAkontoLink.removeFromInvoice(invoice.id, akId);
     },
     onSuccess: () => {
       toast.success('Akonto-Verlinkung entfernt');
@@ -303,7 +251,11 @@ function DraftEditor({ invoice, onSaved, onFinalized, onDirtyChange }) {
   const subtotalRaw = activeLines.reduce((s, l) => s + num(l.amount), 0);
   const afterPct = subtotalRaw * (1 - num(discountPct) / 100);
   const subtotalNet = Math.max(0, afterPct - num(discountAmount));
-  const vatAmount = subtotalNet * num(vatPct) / 100;
+  const netFactor = Math.abs(subtotalRaw) > 0.000001 ? subtotalNet / subtotalRaw : 1;
+  const vatAmount = activeLines.reduce(
+    (sum, line) => sum + num(line.amount) * netFactor * num(line.vat_pct ?? vatPct) / 100,
+    0,
+  );
   const total = subtotalNet + vatAmount;
 
   // --- Line-Operationen ---
@@ -333,6 +285,8 @@ function DraftEditor({ invoice, onSaved, onFinalized, onDirtyChange }) {
         hours: 0,
         rate: 0,
         amount: 0,
+        vat_code: num(vatPct) === 0 ? 'EXP' : 'STD',
+        vat_pct: num(vatPct),
       }];
     });
     markDirty();
@@ -365,49 +319,32 @@ function DraftEditor({ invoice, onSaved, onFinalized, onDirtyChange }) {
   // --- Persistieren ---
   const saveMut = useMutation({
     mutationFn: async () => {
-      // 1) Header-Patch
-      await leInvoice.update(invoice.id, {
-        period_from: periodFrom || null,
-        period_to: periodTo || null,
-        due_date: dueDate || null,
-        notes: notes || null,
-        discount_pct: num(discountPct),
-        discount_amount: num(discountAmount),
-        vat_pct: num(vatPct),
-        subtotal: subtotalNet,
-        vat_amount: vatAmount,
-        total,
+      return leInvoice.saveDraft(invoice.id, {
+        header: {
+          period_from: periodFrom || null,
+          period_to: periodTo || null,
+          due_date: dueDate || null,
+          notes: notes || null,
+          discount_pct: num(discountPct),
+          discount_amount: num(discountAmount),
+          vat_pct: num(vatPct),
+        },
+        lines: lines
+          .filter((line) => !line._deleted)
+          .map((line) => ({
+            service_type_id: line.service_type_id ?? null,
+            description: line.description || '',
+            hours: num(line.hours),
+            rate: num(line.rate),
+            amount: num(line.amount),
+            sort_order: line.sort_order,
+            is_kulant: line.is_kulant ?? false,
+            vat_code: line.vat_code ?? (num(vatPct) === 0 ? 'EXP' : 'STD'),
+            vat_pct: line.vat_pct ?? num(vatPct),
+            section: line.section ?? 'honorar',
+            akonto_invoice_id: line.akonto_invoice_id ?? null,
+          })),
       });
-      // 2) Lines
-      for (const l of lines) {
-        if (l._deleted && l.id) {
-          await leInvoiceLine.remove(l.id);
-          continue;
-        }
-        if (l.id == null) {
-          await leInvoiceLine.create({
-            invoice_id: invoice.id,
-            sort_order: l.sort_order,
-            description: l.description || '',
-            hours: num(l.hours),
-            rate: num(l.rate),
-            amount: num(l.amount),
-          });
-        } else {
-          const orig = l._original || {};
-          const changed = ['description', 'hours', 'rate', 'amount', 'sort_order']
-            .some((k) => String(orig[k] ?? '') !== String(l[k] ?? ''));
-          if (changed) {
-            await leInvoiceLine.update(l.id, {
-              description: l.description || '',
-              hours: num(l.hours),
-              rate: num(l.rate),
-              amount: num(l.amount),
-              sort_order: l.sort_order,
-            });
-          }
-        }
-      }
     },
     onSuccess: () => {
       toast.success('Entwurf gespeichert');
@@ -729,17 +666,20 @@ export default function EntwurfsDurchgangPanel() {
   // Alles versenden: alle definitiv-Invoices in dieser Session (oder global)
   const sendAllMut = useMutation({
     mutationFn: async () => {
-      const nowIso = new Date().toISOString();
-      // Wir holen alle aktuell definitiven Invoices und setzen status='versendet'.
-      // Alternative: nur die IDs aus `finalized`. Wir nehmen die sichereren finalized-IDs.
       const ids = finalized.map((f) => f.id);
       if (ids.length === 0) return 0;
-      const { error } = await supabase
-        .from('le_invoice')
-        .update({ status: 'versendet', sent_at: nowIso })
-        .in('id', ids);
-      if (error) throw error;
-      return ids.length;
+      let sent = 0;
+      for (const id of ids) {
+        try {
+          await deliverInvoiceByEmail(id);
+          sent += 1;
+        } catch (error) {
+          throw new Error(
+            `${sent} von ${ids.length} Rechnungen versendet. Abbruch: ${error?.message ?? error}`,
+          );
+        }
+      }
+      return sent;
     },
     onSuccess: (n) => {
       toast.success(`${n} Rechnungen versendet`);

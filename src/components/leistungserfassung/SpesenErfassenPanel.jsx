@@ -7,7 +7,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   Receipt, Car, UtensilsCrossed, BedDouble, Phone, Package, GraduationCap, Coffee,
-  Plus, Upload, Send, Check, X as XIcon, Pencil, Trash2, CornerDownLeft, FileText,
+  Upload, Send, Check, X as XIcon, Pencil, Trash2, CornerDownLeft, FileText,
   Briefcase, Building2, Landmark,
 } from 'lucide-react';
 import { supabase } from '@/api/supabaseClient';
@@ -18,6 +18,7 @@ import {
   Chip, Card, IconBtn, Input, Select, Field, PanelLoader, PanelError, PanelHeader,
   fmt, artisBtn, artisPrimaryStyle, artisGhostStyle,
 } from './shared';
+import StorageDocumentLink from './StorageDocumentLink';
 
 // ---------------------------------------------------------------------------
 // Konstanten · CH-Spesen-Defaults 2026
@@ -104,8 +105,7 @@ const uploadReceipt = async (file, expenseId) => {
     contentType: file.type || undefined,
   });
   if (error) throw error;
-  const { data: pub } = supabase.storage.from('expenses').getPublicUrl(path);
-  return pub.publicUrl;
+  return path;
 };
 
 // ---------------------------------------------------------------------------
@@ -440,7 +440,6 @@ function QuickExpenseCard({ projects, customers, onCreate }) {
     if (form.vat_touched) return;
     const def = VAT_DEFAULT[form.category] ?? 0;
     setForm((prev) => ({ ...prev, vat_pct: String(def) }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.category]);
 
   // KM-Anzahl × Rate → amount_gross
@@ -448,7 +447,6 @@ function QuickExpenseCard({ projects, customers, onCreate }) {
     if (form.category !== 'km') return;
     const km = Number(form.km_count || 0);
     if (km > 0) setForm((prev) => ({ ...prev, amount_gross: String(round2(km * KM_RATE)) }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.km_count, form.category]);
 
   // Pauschalen-Vorschlag bei Verpflegung/Übernachtung wenn leer
@@ -458,7 +456,6 @@ function QuickExpenseCard({ projects, customers, onCreate }) {
     } else if (form.category === 'uebernachtung' && !form.amount_gross) {
       setForm((prev) => ({ ...prev, amount_gross: String(UEBERNACHTUNG_PAUSCHAL) }));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.category]);
 
   const project = projects.find((p) => p.id === form.project_id);
@@ -788,16 +785,14 @@ function ExpensesTable({ expenses, selectedIds, onToggleSelect, onToggleSelectAl
                 <td className="px-3 py-2"><Chip tone={statusInfo.tone}>{statusInfo.label}</Chip></td>
                 <td className="px-3 py-2 text-center">
                   {e.receipt_url ? (
-                    <a
-                      href={e.receipt_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                    <StorageDocumentLink
+                      value={e.receipt_url}
                       className="inline-flex items-center justify-center w-6 h-6 rounded border text-zinc-600 hover:bg-zinc-50"
                       style={{ borderColor: '#bfd3bf', color: '#2d5a2d', background: '#e6ede6' }}
                       title="Beleg öffnen"
                     >
                       <FileText className="w-3.5 h-3.5" />
-                    </a>
+                    </StorageDocumentLink>
                   ) : (
                     <span className="text-zinc-300 text-xs">—</span>
                   )}
@@ -891,7 +886,6 @@ function EditExpenseModal({ expense, projects, customers, onClose, onSave }) {
     if (!isKm) return;
     const km = Number(form.km_count || 0);
     if (km > 0) setForm((prev) => ({ ...prev, amount_gross: String(round2(km * KM_RATE)) }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.km_count, form.category]);
 
   const save = async () => {
@@ -1044,9 +1038,9 @@ function EditExpenseModal({ expense, projects, customers, onClose, onSave }) {
               />
             </label>
             {expense.receipt_url && !file && (
-              <a href={expense.receipt_url} target="_blank" rel="noopener noreferrer" className="text-xs underline text-zinc-600">
+              <StorageDocumentLink value={expense.receipt_url} className="text-xs underline text-zinc-600">
                 aktueller Beleg ansehen
-              </a>
+              </StorageDocumentLink>
             )}
             {file && <span className="text-xs text-zinc-500 truncate max-w-xs">{file.name}</span>}
           </div>

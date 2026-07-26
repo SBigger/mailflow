@@ -490,11 +490,11 @@ function CreateCreditDialog({ original, onClose, onSubmit }) {
   // Positions-Auswahl für Teilgutschrift (initial alle gewählt, voller Betrag)
   const [sel, setSel] = useState(() => lines0.map((l) => ({
     id: l.id, service_type_id: l.service_type_id, description: l.description,
-    hours: l.hours, rate: l.rate, amount: Number(l.amount || 0), checked: true,
+    hours: l.hours, rate: l.rate, amount: Number(l.amount || 0),
+    vat_pct: Number(l.vat_pct ?? original.vat_pct ?? 8.1), checked: true,
   })));
   const setLine = (id, patch) => setSel((arr) => arr.map((l) => (l.id === id ? { ...l, ...patch } : l)));
 
-  const vatPct = Number(original.vat_pct ?? 8.1);
   const chosen = sel.filter((l) => l.checked);
   const allChecked = sel.length > 0 && chosen.length === sel.length;
   const amountsUnchanged = sel.every((l) =>
@@ -502,8 +502,18 @@ function CreateCreditDialog({ original, onClose, onSubmit }) {
   // Voll = alle Positionen gewählt + unveränderte Beträge (oder gar keine Positionen).
   const isFull = sel.length === 0 || (allChecked && amountsUnchanged);
   const selSubtotal = chosen.reduce((s, l) => s + Number(l.amount || 0), 0);
-  const subtotal = isFull ? Number(original.subtotal ?? 0) : selSubtotal;
-  const vat = isFull ? vatOf(original) : Math.round(selSubtotal * vatPct) / 100;
+  const originalLineTotal = lines0.reduce((s, l) => s + Number(l.amount || 0), 0);
+  // Teilgutschriften übernehmen den Rabattfaktor und die MWST je Originalzeile.
+  const netFactor = Math.abs(originalLineTotal) > 0.000001
+    ? Math.abs(Number(original.subtotal ?? 0)) / Math.abs(originalLineTotal)
+    : 1;
+  const subtotal = isFull ? Number(original.subtotal ?? 0) : selSubtotal * netFactor;
+  const vat = isFull
+    ? vatOf(original)
+    : chosen.reduce(
+      (s, l) => s + Number(l.amount || 0) * netFactor * Number(l.vat_pct || 0) / 100,
+      0,
+    );
   const total = isFull ? Number(original.total ?? 0) : subtotal + vat;
 
   const handleConfirm = async () => {
@@ -517,8 +527,8 @@ function CreateCreditDialog({ original, onClose, onSubmit }) {
       await onSubmit({
         reason: reason.trim(),
         lines: isFull ? null : chosen.map((l) => ({
-          service_type_id: l.service_type_id, description: l.description,
-          hours: l.hours, rate: l.rate, amount: Number(l.amount || 0),
+          id: l.id,
+          amount: Number(l.amount || 0),
         })),
       });
     } finally {

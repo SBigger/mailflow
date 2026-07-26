@@ -2,12 +2,11 @@ import React, { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
-  RefreshCw, Calendar, CalendarDays, Pause, Play, Plus, Pencil, Trash2,
+  RefreshCw, CalendarDays, Pause, Play, Plus, Pencil, Trash2,
   FileText, Receipt, AlertCircle, X,
 } from 'lucide-react';
 import {
-  leRecurring, computeNextRecurringDate, leProject, customersForProjects,
-  leInvoice, leInvoiceLine, leCompany,
+  leRecurring, leProject, customersForProjects, generateRecurringInvoiceDrafts,
 } from '@/lib/leApi';
 import {
   Chip, Card, IconBtn, Input, Select, Field,
@@ -152,7 +151,7 @@ export default function WiederkehrendePanel() {
   );
   const allDueSelected = dueList.length > 0 && dueList.every((r) => selected.has(r.id));
   const toggleAllDue = () => {
-    setSelected((prev) => {
+    setSelected(() => {
       if (allDueSelected) return new Set();
       return new Set(dueList.map((r) => r.id));
     });
@@ -170,77 +169,16 @@ export default function WiederkehrendePanel() {
     if (selected.size === 0) return;
     const items = dueList.filter((r) => selected.has(r.id));
     setGenerating(true);
-    let created = 0;
-    let failed = 0;
     try {
-      const company = await leCompany.get().catch(() => null);
-
-      for (const r of items) {
-        try {
-          const lines = r.template_lines || [];
-          const subtotal = lines.reduce(
-            (s, l) => s + Number(l.hours || 0) * Number(l.rate || 0),
-            0,
-          );
-          const vatPct = Number(
-            lines[0]?.vat_pct ?? company?.vat_default_pct ?? 8.1,
-          );
-          const vatAmount = Math.round(subtotal * vatPct) / 100;
-          const total = Math.round((subtotal + vatAmount) * 100) / 100;
-
-          const issueDate = r.next_date;
-          const due = new Date(issueDate + 'T00:00:00');
-          due.setDate(due.getDate() + Number(r.payment_terms_days || 30));
-
-          const inv = await leInvoice.create({
-            project_id: r.project_id,
-            customer_id: r.customer_id,
-            status: 'entwurf',
-            issue_date: issueDate,
-            due_date: due.toISOString().slice(0, 10),
-            subtotal: Math.round(subtotal * 100) / 100,
-            vat_pct: vatPct,
-            vat_amount: vatAmount,
-            total,
-            notes: `Auto-generiert aus Wiederkehrende: ${r.title}`,
-          });
-
-          const invLines = lines.map((l, i) => ({
-            invoice_id: inv.id,
-            description: l.description,
-            hours: l.hours !== '' && l.hours != null ? Number(l.hours) : null,
-            rate: l.rate !== '' && l.rate != null ? Number(l.rate) : null,
-            amount: lineTotal(l),
-            sort_order: (i + 1) * 10,
-          }));
-          if (invLines.length) await leInvoiceLine.bulkCreate(invLines);
-
-          const nextDate = computeNextRecurringDate(
-            r.next_date,
-            r.cycle,
-            r.interval_months,
-          );
-          await leRecurring.update(r.id, {
-            last_run_at: r.next_date,
-            last_invoice_id: inv.id,
-            next_date: nextDate,
-          });
-          created += 1;
-        } catch (err) {
-          failed += 1;
-          console.error('Recurring draft failed', r.id, err);
-        }
-      }
+      const created = await generateRecurringInvoiceDrafts(items.map((item) => item.id));
+      toast.success(`${created.length} Entwurf${created.length === 1 ? '' : 'sentwürfe'} erstellt`);
+    } catch (error) {
+      toast.error('Erstellung fehlgeschlagen: ' + (error?.message ?? error));
     } finally {
       setGenerating(false);
       setSelected(new Set());
       qc.invalidateQueries({ queryKey: ['le', 'recurring'] });
       qc.invalidateQueries({ queryKey: ['le', 'invoice'] });
-    }
-    if (failed === 0) {
-      toast.success(`${created} Entwurf${created === 1 ? '' : 'sentwürfe'} erstellt`);
-    } else {
-      toast.warning(`${created} Entwürfe erstellt, ${failed} fehlgeschlagen`);
     }
   };
 

@@ -443,96 +443,44 @@ export const leInvoice = {
     if (error) throw error;
     return { ...inv, time_entries: timeEntries ?? [] };
   },
-  create: async (payload) => {
-    const { data, error } = await supabase.from('le_invoice').insert(payload).select().single();
-    if (error) throw error;
-    return data;
-  },
   update: async (id, patch) => {
     const { data, error } = await supabase.from('le_invoice').update(patch).eq('id', id).select().single();
     if (error) throw error;
     return data;
   },
-  remove: async (id) => {
-    const { error } = await supabase.from('le_invoice').delete().eq('id', id);
-    if (error) throw error;
-  },
-  nextInvoiceNo: async () => {
-    const { data, error } = await supabase.rpc('le_next_invoice_no');
+  saveDraft: async (id, { header, lines }) => {
+    const { data, error } = await supabase.rpc('le_save_invoice_draft', {
+      p_invoice_id: id,
+      p_header: header,
+      p_lines: lines,
+    });
     if (error) throw error;
     return data;
   },
   finalize: async (id) => {
-    const no = await leInvoice.nextInvoiceNo();
-    // QR-Referenz setzen (Mod-10 über customer-Id + Rechnungsnr-Stellen)
-    const inv = await leInvoice.get(id);
-    const numericPart = String(inv.customer_id || '').replace(/\D/g, '').slice(0, 8).padStart(8, '0')
-      + String(no).replace(/\D/g, '').slice(0, 18).padStart(18, '0');
-    const base = numericPart.slice(0, 26);
-    // Mod-10
-    const table = [0,9,4,6,8,2,7,1,3,5];
-    let carry = 0;
-    for (const ch of base.replace(/\D/g, '')) carry = table[(carry + parseInt(ch, 10)) % 10];
-    const qrRef = base + ((10 - carry) % 10);
-    // Ausstellungs- + Fälligkeitsdatum setzen. Ohne due_date greifen Debitoren-Aging
-    // und Mahnwesen (due_date < heute) NIE. +30 Tage = gleicher Default wie Direkt-Rechnung.
-    const issue = new Date();
-    const issueIso = issue.toISOString().slice(0, 10);
-    const due = new Date(issue); due.setDate(due.getDate() + 30);
-    return leInvoice.update(id, {
-      invoice_no: no,
-      qr_reference: qrRef,
-      status: 'definitiv',
-      issue_date: issueIso,
-      due_date: due.toISOString().slice(0, 10),
+    const { data, error } = await supabase.rpc('le_finalize_invoice', {
+      p_invoice_id: id,
     });
+    if (error) throw error;
+    return data;
   },
   // Entwurf löschen + alle verknüpften Time-Entries / Spesen wieder freigeben.
   // Nur für status='entwurf' erlaubt – danach hilft nur noch Storno (Gutschrift).
   deleteDraft: async (id) => {
-    const inv = await leInvoice.get(id);
-    if (!inv) throw new Error('Rechnung nicht gefunden');
-    if (inv.status !== 'entwurf') {
-      throw new Error('Nur Entwürfe können gelöscht werden – diese Rechnung ist bereits "' + inv.status + '". Bitte stattdessen stornieren (Gutschrift).');
-    }
-    // Time-Entries + Spesen wieder freigeben (verrechnet→erfasst, kulant_abgerechnet→kulant)
-    await releaseInvoiceEntries(id);
-    // Akonto-Verlinkungen entfernen
-    await supabase.from('le_invoice_akonto_link').delete().eq('schluss_invoice_id', id);
-    // Rechnung löschen (lines kaskadieren via FK)
-    const { error } = await supabase.from('le_invoice').delete().eq('id', id);
+    const { error } = await supabase.rpc('le_delete_invoice_draft', {
+      p_invoice_id: id,
+    });
     if (error) throw error;
   },
   // Definitive/versendete Rechnung stornieren: Status → 'storniert' UND die
   // zugrunde liegenden Buchungen/Spesen wieder freigeben, damit sie neu
   // verrechnet werden können (sonst bleiben die Stunden für immer gesperrt).
   storno: async (id) => {
-    const updated = await leInvoice.update(id, { status: 'storniert' });
-    await releaseInvoiceEntries(id);
-    return updated;
-  },
-};
-
-export const leInvoiceLine = {
-  create: async (payload) => {
-    const { data, error } = await supabase.from('le_invoice_line').insert(payload).select().single();
+    const { data, error } = await supabase.rpc('le_storno_invoice', {
+      p_invoice_id: id,
+    });
     if (error) throw error;
     return data;
-  },
-  update: async (id, patch) => {
-    const { data, error } = await supabase.from('le_invoice_line').update(patch).eq('id', id).select().single();
-    if (error) throw error;
-    return data;
-  },
-  remove: async (id) => {
-    const { error } = await supabase.from('le_invoice_line').delete().eq('id', id);
-    if (error) throw error;
-  },
-  bulkCreate: async (rows) => {
-    if (!rows?.length) return [];
-    const { data, error } = await supabase.from('le_invoice_line').insert(rows).select();
-    if (error) throw error;
-    return data ?? [];
   },
 };
 
@@ -546,14 +494,21 @@ export const leInvoiceAkontoLink = {
     if (error) throw error;
     return data ?? [];
   },
-  create: async (payload) => {
-    const { data, error } = await supabase.from('le_invoice_akonto_link').insert(payload).select().single();
+  applyToInvoice: async (invoiceId, akontoIds) => {
+    const { data, error } = await supabase.rpc('le_apply_akonto_links', {
+      p_schluss_invoice_id: invoiceId,
+      p_akonto_invoice_ids: akontoIds,
+    });
     if (error) throw error;
     return data;
   },
-  remove: async (id) => {
-    const { error } = await supabase.from('le_invoice_akonto_link').delete().eq('id', id);
+  removeFromInvoice: async (invoiceId, akontoId) => {
+    const { data, error } = await supabase.rpc('le_remove_akonto_link', {
+      p_schluss_invoice_id: invoiceId,
+      p_akonto_invoice_id: akontoId,
+    });
     if (error) throw error;
+    return data;
   },
 };
 
@@ -583,29 +538,33 @@ export async function leOpenAkonti(customerId) {
 
 // Akonto-Rechnung aus Projekt erstellen (Entwurf)
 export async function createAkontoInvoice({ projectId, customerId, amountNet, vatPct = 8.1, periodFrom, periodTo, description }) {
-  const subtotal = Number(amountNet);
-  const vatAmount = Math.round(subtotal * vatPct) / 100;
-  const total = subtotal + vatAmount;
-
-  const { data: inv, error: invErr } = await supabase.from('le_invoice').insert({
-    project_id: projectId ?? null,
-    customer_id: customerId ?? null,
-    status: 'entwurf',
-    invoice_type: 'akonto',
-    period_from: periodFrom ?? null,
-    period_to: periodTo ?? null,
-    subtotal, vat_pct: vatPct, vat_amount: vatAmount, total,
-    notes: 'Akonto-Rechnung – wird in Schlussrechnung verrechnet.',
-  }).select().single();
-  if (invErr) throw invErr;
-
-  await supabase.from('le_invoice_line').insert({
-    invoice_id: inv.id,
-    description: description || 'Akonto auf Honorar',
-    hours: 0, rate: 0, amount: subtotal,
-    sort_order: 10,
+  const { data, error } = await supabase.rpc('le_create_akonto_invoice', {
+    p_project_id: projectId ?? null,
+    p_customer_id: customerId ?? null,
+    p_amount_net: Number(amountNet),
+    p_vat_pct: Number(vatPct),
+    p_period_from: periodFrom ?? null,
+    p_period_to: periodTo ?? null,
+    p_description: description || null,
   });
-  return inv;
+  if (error) throw error;
+  return data;
+}
+
+export async function createExpenseInvoices(expenseIds) {
+  const { data, error } = await supabase.rpc('le_create_expense_invoices', {
+    p_expense_ids: [...new Set((expenseIds ?? []).filter(Boolean))],
+  });
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function generateRecurringInvoiceDrafts(recurringIds) {
+  const { data, error } = await supabase.rpc('le_generate_recurring_drafts', {
+    p_recurring_ids: [...new Set((recurringIds ?? []).filter(Boolean))],
+  });
+  if (error) throw error;
+  return data ?? [];
 }
 
 // Gibt alle Time-Entries + Spesen einer Rechnung wieder frei (fakturierbar).
@@ -613,20 +572,7 @@ export async function createAkontoInvoice({ projectId, customerId, amountNet, va
 // damit stornierte Stunden neu verrechnet werden können (DB-Trigger erlaubt
 // den Übergang verrechnet→erfasst bzw. kulant_abgerechnet→kulant).
 export async function releaseInvoiceEntries(invoiceId) {
-  await supabase.from('le_time_entry')
-    .update({ invoice_id: null, status: 'erfasst' })
-    .eq('invoice_id', invoiceId).eq('status', 'verrechnet');
-  await supabase.from('le_time_entry')
-    .update({ invoice_id: null, status: 'kulant' })
-    .eq('invoice_id', invoiceId).eq('status', 'kulant_abgerechnet');
-  // Sicherheits-Netz: alle übrigen Verknüpfungen lösen
-  await supabase.from('le_time_entry')
-    .update({ invoice_id: null })
-    .eq('invoice_id', invoiceId);
-  // Spesen wieder als 'genehmigt' freigeben
-  await supabase.from('le_expense')
-    .update({ invoiced_invoice_id: null, status: 'genehmigt' })
-    .eq('invoiced_invoice_id', invoiceId);
+  return leInvoice.storno(invoiceId);
 }
 
 // Gutschrift aus existierender Rechnung erstellen (negative Beträge, eigene Nummer).
@@ -635,83 +581,16 @@ export async function releaseInvoiceEntries(invoiceId) {
 //  - TEIL (lines=[{description, hours, rate, amount, service_type_id}]): nur die
 //    gewählten Positionen gutschreiben; Original bleibt unverändert bestehen.
 export async function createCreditFromInvoice(originalInvoiceId, { reason, lines = null } = {}) {
-  const orig = await leInvoice.get(originalInvoiceId);
-  if (!orig) throw new Error('Rechnung nicht gefunden.');
-  if (orig.status === 'storniert') throw new Error('Rechnung ist bereits storniert.');
-  if (orig.invoice_type === 'gutschrift') throw new Error('Eine Gutschrift kann nicht gutgeschrieben werden.');
-
-  const isPartial = Array.isArray(lines) && lines.length > 0;
-  const vatPct = Number(orig.vat_pct ?? 8.1);
-  // Beträge + Positionen: voll = Original-Summen; teil = aus gewählten Positionen.
-  let creditSubtotal, creditVat, creditTotal, srcLines;
-  if (isPartial) {
-    srcLines = lines;
-    const rawSum = lines.reduce((s, l) => s + Number(l.amount || 0), 0);
-    // Effektiven Rabatt der Originalrechnung auf die gewaehlten Positionen anwenden,
-    // sonst wird der Rabattanteil zu viel gutgeschrieben.
-    const origSubtotal = Number(orig.subtotal || 0);
-    let discountedSubtotal = origSubtotal;
-    if (Number(orig.discount_pct))        discountedSubtotal = origSubtotal * (1 - Number(orig.discount_pct) / 100);
-    else if (Number(orig.discount_amount)) discountedSubtotal = origSubtotal - Number(orig.discount_amount);
-    const factor = origSubtotal > 0 ? discountedSubtotal / origSubtotal : 1;
-    creditSubtotal = Math.round(rawSum * factor * 100) / 100;
-    creditVat = Math.round(creditSubtotal * vatPct) / 100;
-    creditTotal = creditSubtotal + creditVat;
-  } else {
-    srcLines = orig.lines ?? [];
-    creditSubtotal = Number(orig.subtotal || 0);
-    creditVat = Number(orig.vat_amount || 0);
-    creditTotal = Number(orig.total || 0);
-  }
-
-  // Neue Gutschriftsnummer ATOMAR aus dem RPC ziehen (FOR UPDATE-Row-Lock im
-  // le_next_credit_no verhindert Doppelnummern bei parallelen Gutschriften).
-  const { data: creditNo, error: noErr } = await supabase.rpc('le_next_credit_no');
-  if (noErr) throw noErr;
-
-  const { data: credit, error: credErr } = await supabase.from('le_invoice').insert({
-    invoice_no: creditNo,
-    project_id: orig.project_id,
-    customer_id: orig.customer_id,
-    parent_invoice_id: orig.id,
-    invoice_type: 'gutschrift',
-    status: 'definitiv',
-    issue_date: new Date().toISOString().slice(0, 10),
-    period_from: orig.period_from,
-    period_to: orig.period_to,
-    subtotal: -creditSubtotal,
-    vat_pct: vatPct,
-    vat_amount: -creditVat,
-    discount_pct: isPartial ? 0 : orig.discount_pct,
-    discount_amount: isPartial ? 0 : orig.discount_amount,
-    total: -creditTotal,
-    notes: (reason ? `Gutschrift zu Rechnung ${orig.invoice_no}: ${reason}` : `Gutschrift zu Rechnung ${orig.invoice_no}`)
-      + (isPartial ? ' (Teilgutschrift)' : ''),
-  }).select().single();
-  if (credErr) throw credErr;
-
-  // Gewählte Positionen mit negativen Beträgen kopieren
-  if (srcLines.length) {
-    const negLines = srcLines.map((l, i) => ({
-      invoice_id: credit.id,
-      service_type_id: l.service_type_id ?? null,
-      description: l.description,
-      hours: -Number(l.hours || 0),
-      rate: l.rate ?? 0,
-      amount: -Number(l.amount || 0),
-      sort_order: (i + 1) * 10,
-    }));
-    const { error: linesErr } = await supabase.from('le_invoice_line').insert(negLines);
-    if (linesErr) throw linesErr;
-  }
-
-  // Nur bei VOLLgutschrift: Original stornieren UND Buchungen/Spesen wieder freigeben.
-  // Bei Teilgutschrift bleibt das Original bestehen (nur der Teil wird gutgeschrieben).
-  if (!isPartial) {
-    await supabase.from('le_invoice').update({ status: 'storniert' }).eq('id', orig.id);
-    await releaseInvoiceEntries(orig.id);
-  }
-  return credit;
+  const partialLines = Array.isArray(lines)
+    ? lines.map((line) => ({ id: line.id, amount: Number(line.amount) }))
+    : null;
+  const { data, error } = await supabase.rpc('le_create_credit', {
+    p_original_invoice_id: originalInvoiceId,
+    p_reason: reason || null,
+    p_lines: partialLines,
+  });
+  if (error) throw error;
+  return data;
 }
 
 // ---------- Payment ----------
@@ -731,36 +610,11 @@ export const lePayment = {
   create: async (payload) => {
     const { data, error } = await supabase.from('le_payment').insert(payload).select().single();
     if (error) throw error;
-    if (data?.invoice_id) await lePayment.recomputeInvoice(data.invoice_id);
     return data;
   },
   remove: async (id) => {
-    const { data: pay } = await supabase.from('le_payment').select('invoice_id').eq('id', id).single();
     const { error } = await supabase.from('le_payment').delete().eq('id', id);
     if (error) throw error;
-    if (pay?.invoice_id) await lePayment.recomputeInvoice(pay.invoice_id);
-  },
-  // Setzt paid_amount + Status einer Rechnung NEU aus der Summe ALLER Zahlungen
-  // (single source of truth). Behebt: prev+amt verlor beim Löschen den Saldo und
-  // liess die Rechnung faelschlich auf 'bezahlt'.
-  recomputeInvoice: async (invoiceId) => {
-    if (!invoiceId) return;
-    const { data: pays } = await supabase.from('le_payment').select('amount, paid_at').eq('invoice_id', invoiceId);
-    const list = pays ?? [];
-    const paid = list.reduce((s, p) => s + Number(p.amount || 0), 0);
-    const { data: inv } = await supabase.from('le_invoice').select('total, status, sent_at').eq('id', invoiceId).single();
-    if (!inv) return;
-    const total = Number(inv.total || 0);
-    const patch = { paid_amount: paid };
-    if (total > 0 && paid + 0.005 >= total) {
-      patch.status = 'bezahlt';
-      patch.paid_at = list.map(p => p.paid_at).filter(Boolean).sort().slice(-1)[0] || null;
-    } else if (inv.status === 'bezahlt') {
-      // wieder offen (z.B. Zahlung geloescht / zu niedrig): zurueck auf versendet/definitiv
-      patch.status = inv.sent_at ? 'versendet' : 'definitiv';
-      patch.paid_at = null;
-    }
-    await supabase.from('le_invoice').update(patch).eq('id', invoiceId);
   },
   // Doppel-Import verhindern: gibt es schon eine Zahlung mit dieser Bank-Transaktionsref?
   existsByBankRef: async (bankRef) => {
@@ -795,28 +649,38 @@ export const leDunning = {
     if (error) throw error;
     return data ?? [];
   },
-  create: async (payload) => {
-    const { data, error } = await supabase.from('le_dunning').insert(payload).select().single();
-    if (error) throw error;
-    return data;
-  },
   update: async (id, patch) => {
     const { data, error } = await supabase.from('le_dunning').update(patch).eq('id', id).select().single();
     if (error) throw error;
     return data;
   },
-  remove: async (id) => {
-    const { error } = await supabase.from('le_dunning').delete().eq('id', id);
-    if (error) throw error;
-  },
-  nextNo: async () => {
-    const { data, error } = await supabase.rpc('le_next_dunning_no');
+  finalize: async (id) => {
+    const { data, error } = await supabase.rpc('le_finalize_dunning', {
+      p_dunning_id: id,
+    });
     if (error) throw error;
     return data;
   },
-  finalize: async (id) => {
-    const no = await leDunning.nextNo();
-    return leDunning.update(id, { dunning_no: no, status: 'versendet', sent_at: new Date().toISOString() });
+  reserveNumber: async (id) => {
+    const { data, error } = await supabase.rpc('le_reserve_dunning_no', {
+      p_dunning_id: id,
+    });
+    if (error) throw error;
+    return data;
+  },
+  createDrafts: async (invoiceIds) => {
+    const { data, error } = await supabase.rpc('le_create_dunning_drafts', {
+      p_invoice_ids: invoiceIds,
+    });
+    if (error) throw error;
+    return data ?? [];
+  },
+  escalate: async (id) => {
+    const { data, error } = await supabase.rpc('le_escalate_dunning', {
+      p_dunning_id: id,
+    });
+    if (error) throw error;
+    return data;
   },
 };
 
@@ -829,7 +693,17 @@ export async function leOverdueInvoices() {
     .in('status', ['versendet'])
     .lt('due_date', today);
   if (error) throw error;
-  return data ?? [];
+  const invoices = data ?? [];
+  const customerIds = [...new Set(invoices.map((invoice) => invoice.customer_id).filter(Boolean))];
+  if (customerIds.length === 0) return invoices;
+  const { data: disabledTerms, error: termsError } = await supabase
+    .from('le_customer_terms')
+    .select('customer_id')
+    .in('customer_id', customerIds)
+    .eq('dunning_disabled', true);
+  if (termsError) throw termsError;
+  const disabled = new Set((disabledTerms ?? []).map((term) => term.customer_id));
+  return invoices.filter((invoice) => !disabled.has(invoice.customer_id));
 }
 
 // ---------- Expense (Spesen) ----------
@@ -1099,7 +973,12 @@ export const leNumberSequence = {
     return data ?? [];
   },
   update: async (id, patch) => {
-    const { data, error } = await supabase.from('le_number_sequence').update(patch).eq('id', id).select().single();
+    const { data, error } = await supabase.rpc('le_update_number_sequence_settings', {
+      p_id: id,
+      p_format: patch.format,
+      p_padding_length: patch.padding_length,
+      p_reset_yearly: patch.reset_yearly,
+    });
     if (error) throw error;
     return data;
   },
@@ -1191,197 +1070,17 @@ export async function createInvoiceDraftsFromEntries({
   entries, projectIds, periodFrom, periodTo,
   direct = false, includeKulant = true, includeExpenses = false,
 }) {
-  const created = [];
-  const byProject = new Map();
-  for (const e of entries) {
-    if (!projectIds.includes(e.project_id)) continue;
-    if (!byProject.has(e.project_id)) byProject.set(e.project_id, []);
-    byProject.get(e.project_id).push(e);
-  }
-
-  // Weiterverrechenbare, genehmigte, noch nicht abgerechnete Spesen je Projekt
-  // (gleiche Konvention wie SpesenAbrechnenPanel: amount_gross als Positionsbetrag).
-  const expensesByProject = new Map();
-  if (includeExpenses && projectIds.length) {
-    const { data: exps, error: expErr } = await supabase
-      .from('le_expense')
-      .select('id, project_id, expense_date, category, description, amount_gross')
-      .in('project_id', projectIds)
-      .eq('rebillable', true)
-      .eq('status', 'genehmigt')
-      .is('invoiced_invoice_id', null);
-    if (expErr) throw expErr;
-    for (const x of exps ?? []) {
-      if (!expensesByProject.has(x.project_id)) expensesByProject.set(x.project_id, []);
-      expensesByProject.get(x.project_id).push(x);
-    }
-  }
-
-  // Heute/Fälligkeit (für Direkt-Rechnungen)
-  const today = new Date();
-  const todayIso = today.toISOString().slice(0, 10);
-  const due = new Date(today); due.setDate(due.getDate() + 30);
-  const dueIso = due.toISOString().slice(0, 10);
-
-  // MwSt-Satz aus den Firmen-Settings (konfigurierbar) statt hart kodiert; Default 8.1 %.
-  const company = await leCompany.get();
-  const vatPct = Number(company?.vat_default_pct ?? 8.1) || 8.1;
-
-  for (const [projectId, projEntries] of byProject) {
-    const proj = projEntries[0].project;
-    // Splitting: billable (erfasst/freigegeben + service.billable) vs. kulant
-    const billable = projEntries.filter(e =>
-      e.status !== 'kulant' && e.service_type?.billable !== false
-    );
-    const kulant = projEntries.filter(e => e.status === 'kulant');
-    const projExpenses = expensesByProject.get(projectId) ?? [];
-    if (billable.length === 0 && projExpenses.length === 0 && (!includeKulant || kulant.length === 0)) continue;
-
-    // Pauschal-Projekt: Fixbetrag (pauschal_amount) statt Stunden × Ansatz.
-    // Die Stunden bleiben verknüpft/sichtbar für den Aufwand-Vergleich.
-    const isPauschal = proj?.billing_mode === 'pauschal';
-    const pauschalAmount = Number(proj?.pauschal_amount || 0);
-    // Subtotal aus billable (verrechnete = externe Stunden) bzw. Pauschale + Spesen
-    const hoursSubtotal = isPauschal
-      ? pauschalAmount
-      : billable.reduce((s, e) => s + effectiveHours(e) * Number(e.rate_snapshot || 0), 0);
-    const expenseSubtotal = projExpenses.reduce((s, x) => s + Number(x.amount_gross || 0), 0);
-    const subtotal = hoursSubtotal + expenseSubtotal;
-    const vatAmount = Math.round(subtotal * vatPct) / 100;
-    const total = subtotal + vatAmount;
-
-    // Keine 0-CHF-Rechnung erzeugen (z.B. nur 0-Stunden/0-Satz-Einträge) – ausser
-    // es gibt Kulant-Positionen, die mitgeführt werden sollen.
-    if (subtotal <= 0 && !(includeKulant && kulant.length)) continue;
-
-    const invoicePayload = {
-      project_id: projectId,
-      customer_id: proj?.customer_id ?? null,
-      status: direct ? 'definitiv' : 'entwurf',
-      period_from: periodFrom ?? null,
-      period_to: periodTo ?? null,
-      subtotal,
-      vat_pct: vatPct,
-      vat_amount: vatAmount,
-      total,
-    };
-    if (direct) {
-      invoicePayload.issue_date = todayIso;
-      invoicePayload.due_date = dueIso;
-    }
-
-    const { data: inv, error: invErr } = await supabase
-      .from('le_invoice').insert(invoicePayload).select().single();
-    if (invErr) throw invErr;
-
-    let idx = 10;
-    const linesPayload = [];
-    if (isPauschal) {
-      // Pauschal-Projekt: eine Fix-Position. Die Stunden erscheinen NICHT als
-      // berechnete Zeilen, bleiben aber verknüpft (verrechnet) und im Vorschlag
-      // zum Aufwand-Vergleich sichtbar.
-      linesPayload.push({
-        invoice_id: inv.id,
-        service_type_id: null,
-        description: (`Pauschale ${proj?.name ?? ''}`).trim() + (proj?.pauschal_cycle ? ` (${proj.pauschal_cycle})` : ''),
-        hours: 0,
-        rate: 0,
-        amount: Math.round(pauschalAmount * 100) / 100,
-        sort_order: idx,
-      });
-      idx += 10;
-    } else {
-      // Aggregiere je service_type eine Linie (nur billable, externe Stunden)
-      const groupedByType = new Map();
-      for (const e of billable) {
-        const key = e.service_type_id ?? 'none';
-        if (!groupedByType.has(key)) groupedByType.set(key, { serviceType: e.service_type, hours: 0, amount: 0, rateSum: 0, count: 0 });
-        const g = groupedByType.get(key);
-        const h = effectiveHours(e);
-        const r = Number(e.rate_snapshot || 0);
-        g.hours += h;
-        g.amount += h * r;
-        g.rateSum += r;
-        g.count += 1;
-      }
-      for (const [, g] of groupedByType) {
-        const avgRate = g.hours > 0 ? g.amount / g.hours : (g.count ? g.rateSum / g.count : 0);
-        linesPayload.push({
-          invoice_id: inv.id,
-          service_type_id: g.serviceType?.id ?? null,
-          description: g.serviceType?.name ?? 'Leistung',
-          hours: Math.round(g.hours * 100) / 100,
-          rate: Math.round(avgRate * 100) / 100,
-          amount: Math.round(g.amount * 100) / 100,
-          sort_order: idx,
-        });
-        idx += 10;
-      }
-    }
-    // Spesen als eigene Positionen hintendran
-    for (const x of projExpenses) {
-      linesPayload.push({
-        invoice_id: inv.id,
-        description: `Spesen: ${x.description ?? x.category ?? ''} (${new Date(x.expense_date + 'T00:00:00').toLocaleDateString('de-CH')})`,
-        hours: 0,
-        rate: 0,
-        amount: Math.round(Number(x.amount_gross || 0) * 100) / 100,
-        sort_order: idx,
-      });
-      idx += 10;
-    }
-    if (linesPayload.length) {
-      const { error: lineErr } = await supabase.from('le_invoice_line').insert(linesPayload);
-      if (lineErr) throw lineErr;
-    }
-    // Spesen als abgerechnet markieren (Storno/Löschen gibt sie via
-    // releaseInvoiceEntries wieder frei)
-    if (projExpenses.length) {
-      const { error: expUpErr } = await supabase
-        .from('le_expense')
-        .update({ status: 'abgerechnet', invoiced_invoice_id: inv.id })
-        .in('id', projExpenses.map(x => x.id))
-        .is('invoiced_invoice_id', null);
-      if (expUpErr) throw expUpErr;
-    }
-
-    // Time-Entries verknüpfen.
-    // - NUR wirklich abrechenbare Einträge → 'verrechnet' (an die Rechnung gebunden)
-    // - kulant (wenn includeKulant) → 'kulant_abgerechnet'
-    // - pauschale / nicht-abrechenbare (service.billable === false) werden NICHT
-    //   verbucht/verrechnet: reine interne Zeiterfassung, kein Rechnungsposten,
-    //   keine Fibu-Buchung. Sie bleiben unverändert.
-    const billableIds = billable.map(e => e.id);
-    if (billableIds.length) {
-      // .is('invoice_id', null): nur noch nicht verrechnete Einträge beanspruchen –
-      // verhindert Doppelverrechnung, falls ein paralleler Durchlauf sie schon nahm.
-      const { error: upErr } = await supabase
-        .from('le_time_entry')
-        .update({ invoice_id: inv.id, status: 'verrechnet' })
-        .in('id', billableIds)
-        .is('invoice_id', null);
-      if (upErr) throw upErr;
-    }
-    if (includeKulant && kulant.length) {
-      const kulantIds = kulant.map(e => e.id);
-      const { error: kErr } = await supabase
-        .from('le_time_entry')
-        .update({ invoice_id: inv.id, status: 'kulant_abgerechnet' })
-        .in('id', kulantIds)
-        .is('invoice_id', null);
-      if (kErr) throw kErr;
-    }
-
-    // Direkt-Rechnung: finalisieren, damit fortlaufende Nummer + QR-Referenz gesetzt
-    // werden (MWST verlangt eine Rechnungsnummer; ohne qr_reference kein gueltiger Zahlteil).
-    if (direct) {
-      const finalized = await leInvoice.finalize(inv.id);
-      created.push(finalized ?? inv);
-    } else {
-      created.push(inv);
-    }
-  }
-  return created;
+  const { data, error } = await supabase.rpc('le_create_invoice_drafts', {
+    p_entry_ids: [...new Set((entries ?? []).map((entry) => entry.id).filter(Boolean))],
+    p_project_ids: [...new Set((projectIds ?? []).filter(Boolean))],
+    p_period_from: periodFrom ?? null,
+    p_period_to: periodTo ?? null,
+    p_direct: direct,
+    p_include_kulant: includeKulant,
+    p_include_expenses: includeExpenses,
+  });
+  if (error) throw error;
+  return data ?? [];
 }
 
 // ---------- Hilfen ----------
