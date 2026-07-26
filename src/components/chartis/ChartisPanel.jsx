@@ -2,6 +2,7 @@ import React, { useState, useContext, useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { entities, functions, supabase } from "@/api/supabaseClient";
 import { personStyle } from "@/lib/chartisTheme";
+import PersonAvatar from "@/components/ui/PersonAvatar";
 import { ThemeContext } from "@/Layout";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
@@ -534,6 +535,7 @@ export default function ChartisPanel({
             }, {}));
             return (
               <ChartisBubble key={msg.id} msg={msg} text={msg.body_text} kind={msg.kind} side={mine ? "right" : "left"}
+                senderUser={mine || isIncoming ? null : sender}
                 senderLabel={isIncoming
                   ? (msg.kind === "whatsapp_in" ? (waBinding?.name || waBinding?.phone || msg.from_addr || "WhatsApp") : (msg.from_addr || "Kunde"))
                   : (sender?.full_name || sender?.email || "Mitarbeiter")}
@@ -673,7 +675,7 @@ function renderBubbleContent(text) {
   return parts;
 }
 
-function ChartisBubble({ msg, text, kind, side, senderLabel, showLabel = true, tone, time, theme, fontPx,
+function ChartisBubble({ msg, text, kind, side, senderUser = null, senderLabel, showLabel = true, tone, time, theme, fontPx,
   deleted = false, edited = false, canModify = false, reactions = [], onToggleReaction, quickEmojis = [],
   editing = false, editText = "", setEditText, onStartEdit, onSaveEdit, onCancelEdit, onDelete,
   inputBg = "#fff", border = "#ddd", accent = "#6366f1" }) {
@@ -694,6 +696,11 @@ function ChartisBubble({ msg, text, kind, side, senderLabel, showLabel = true, t
 
   return (
     <div className={`flex ${isLeft ? "justify-start" : "justify-end"}`}>
+      {/* Kleiner Avatar links neben fremden Bubbles (eigene bleiben ohne);
+          marginTop gleicht die Absender-Zeile über der Bubble aus */}
+      {isLeft && senderUser && (
+        <PersonAvatar user={senderUser} size={24} title={senderLabel} style={{ marginRight: 6, marginTop: 20 }} />
+      )}
       <div className="max-w-[85%] group relative">
         <div className={`mb-1 ${isLeft ? "" : "text-right"}`} style={{ color: textMuted, fontSize: Math.max(10, fontPx - 2) }}>
           {kind === "email_in" && <Mail className="inline h-3 w-3 mr-0.5" />}

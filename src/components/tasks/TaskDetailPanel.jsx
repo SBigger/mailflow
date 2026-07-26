@@ -14,6 +14,7 @@ import { entities, functions, auth, supabase, uploadFile } from "@/api/supabaseC
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ThemeContext } from "@/Layout";
+import PersonAvatar from "@/components/ui/PersonAvatar";
 
 export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete, presentation = 'panel' }) {
   const isMobile = useIsMobile();
@@ -559,11 +560,10 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete, pre
               )}
               {comments.map(comment => {
                 const isMe = comment.user_email === currentUser?.email;
+                const commentUser = users.find(u => u.email === comment.user_email);
                 return (
                   <div key={comment.id} className={`flex gap-2 ${isMe ? 'flex-row-reverse' : ''}`}>
-                    <div className="h-7 w-7 rounded-full bg-violet-600/30 flex items-center justify-center text-violet-300 text-xs font-semibold flex-shrink-0">
-                      {(comment.user_name || comment.user_email).charAt(0).toUpperCase()}
-                    </div>
+                    <PersonAvatar user={commentUser} name={comment.user_name || comment.user_email} size={28} />
                     <div className={`max-w-[80%] flex flex-col gap-0.5 ${isMe ? 'items-end' : 'items-start'}`}>
                       <div className="text-xs" style={{ color: mutedText }}>
                         {isMe ? 'Du' : (comment.user_name || comment.user_email)}{comment.created_at && isValid(new Date(comment.created_at)) ? ` · ${format(new Date(comment.created_at), "dd.MM. HH:mm", { locale: de })}` : ''}
@@ -608,9 +608,7 @@ export default function TaskDetailPanel({ task, onClose, onUpdate, onDelete, pre
                             style={{ background: "transparent", border: "none", cursor: "pointer", color: textColor }}
                             onMouseEnter={e => e.currentTarget.style.background = dropdownHover}
                             onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                            <span style={{ width: 24, height: 24, borderRadius: 99, background: accentColor + "25", color: accentColor, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 600, flexShrink: 0 }}>
-                              {(u.full_name || u.email).charAt(0).toUpperCase()}
-                            </span>
+                            <PersonAvatar user={u} size={24} />
                             <span className="truncate">{u.full_name || u.email}</span>
                           </button>
                         ))}

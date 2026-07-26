@@ -6,6 +6,7 @@ import { format, isValid } from "date-fns";
 import { de } from "date-fns/locale";
 import { useQuery } from "@tanstack/react-query";
 import { entities, functions, auth } from "@/api/supabaseClient";
+import PersonAvatar from "@/components/ui/PersonAvatar";
 
 const DEFAULT_COLUMNS = [
   { key: "title", label: "Titel" },
@@ -57,9 +58,7 @@ function renderCell(key, task, priority, customer, user, theme) {
     case "assignee":
       return task.assignee ? (
         <div className="flex items-center gap-1.5">
-          <div className="h-6 w-6 rounded-full bg-violet-600/30 flex items-center justify-center text-violet-300 text-xs font-medium flex-shrink-0">
-            {(user?.full_name || task.assignee).charAt(0).toUpperCase()}
-          </div>
+          <PersonAvatar user={user} name={user?.full_name || task.assignee} size={24} />
           <span className="text-xs truncate max-w-[120px]" style={{ color: primaryText }}>{user?.full_name || task.assignee}</span>
         </div>
       ) : <span className="text-xs" style={{ color: emptyText }}>—</span>;

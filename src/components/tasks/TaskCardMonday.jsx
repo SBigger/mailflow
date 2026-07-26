@@ -7,6 +7,7 @@ import { de } from "date-fns/locale";
 import { entities, supabase } from "@/api/supabaseClient";
 import { useMutation } from "@tanstack/react-query";
 import { ThemeContext } from "@/Layout";
+import PersonAvatar from "@/components/ui/PersonAvatar";
 
 // Monday-Style Kachel-Variante: zeigt bei "zugewiesen an" das Foto (Kopf) der Person.
 // Drop-in-kompatibel zu TaskCard (gleiche Props & Verhalten).
@@ -91,11 +92,8 @@ export default function TaskCardMonday({ task, index, onClick, onToggleComplete,
     catch (e) { console.error(e); return ''; }
   }
 
-  // Anzeigename + Initialen für den "Kopf"
+  // Anzeigename für den "Kopf" (Foto/Initialen macht PersonAvatar)
   const assigneeName = assigneeUser?.full_name || (task.assignee ? task.assignee.split('@')[0] : null);
-  const assigneeInitials = (assigneeUser?.full_name || task.assignee || '?')
-    .split(/[\s@._-]+/).filter(Boolean).slice(0, 2).map(s => s[0]?.toUpperCase()).join('') || '?';
-  const avatarBg = isArtis ? '#3d7a3d' : '#7c3aed';
 
   return (
     <Draggable draggableId={task.id} index={index}>
@@ -197,14 +195,12 @@ export default function TaskCardMonday({ task, index, onClick, onToggleComplete,
                   className="flex items-center gap-2.5 mt-3 pt-3"
                   style={{ borderTop: `1px solid ${isArtis ? '#eef3ee' : isLight ? '#efecf9' : '#2c2c39'}` }}
                 >
-                  <div
-                    className="w-9 h-9 rounded-full overflow-hidden flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0"
-                    style={{ backgroundColor: avatarBg, boxShadow: '0 0 0 2px rgba(255,255,255,0.9), 0 1px 3px rgba(0,0,0,0.18)' }}
-                  >
-                    {assigneeUser?.avatar_url
-                      ? <img src={assigneeUser.avatar_url} alt={assigneeName || ''} className="w-full h-full object-cover" />
-                      : <span>{assigneeInitials}</span>}
-                  </div>
+                  <PersonAvatar
+                    user={assigneeUser}
+                    name={assigneeName || task.assignee}
+                    size={36}
+                    style={{ borderRadius: '50%', boxShadow: '0 0 0 2px rgba(255,255,255,0.9), 0 1px 3px rgba(0,0,0,0.18)' }}
+                  />
                   <div className="min-w-0">
                     <div className="text-[10px] uppercase tracking-wide font-semibold" style={{ color: mutedColor }}>Zugewiesen an</div>
                     <div className="text-[13px] font-semibold truncate" style={{ color: titleColor }}>{assigneeName}</div>

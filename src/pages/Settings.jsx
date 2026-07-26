@@ -1,5 +1,5 @@
 import React, {useState, useContext, useRef, useEffect} from "react";
-import {entities, functions, auth, supabase} from "@/api/supabaseClient";
+import {entities, functions, auth, supabase, uploadAvatar} from "@/api/supabaseClient";
 import {useQuery, useMutation, useQueryClient} from "@tanstack/react-query";
 import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
@@ -29,9 +29,10 @@ import {
     Download,
     Database,
     Inbox,
-    ShieldCheck, Upload, PanelLeft, Loader2
+    ShieldCheck, Upload, PanelLeft, Loader2, Camera, ImageOff
 } from "lucide-react";
 import {ThemeContext} from "@/Layout";
+import PersonAvatar from "@/components/ui/PersonAvatar";
 import DeleteUserDialog from "@/components/settings/DeleteUserDialog";
 import DokAblageSettings from "@/components/settings/DokAblageSettings";
 import {DragDropContext, Droppable, Draggable} from "@hello-pangea/dnd";
@@ -82,6 +83,10 @@ export default function Settings() {
     const [status, setStatus] = useState('');
     const [trigger, setTrigger] = useState(false);
     const fileInputRef = useRef(null);
+    // Avatar/Foto-Upload (eigenes Input – fileInputRef ist fürs Backup belegt)
+    const avatarInputRef = useRef(null);
+    const [avatarTargetUserId, setAvatarTargetUserId] = useState(null);
+    const [avatarUploadingId,  setAvatarUploadingId]  = useState(null);
 
     const {data: user} = useQuery({
         queryKey: ['currentUser'],
@@ -349,6 +354,59 @@ export default function Settings() {
             toast.error('Fehler: ' + e.message);
         } finally {
             setPhoneSaving(false);
+        }
+    };
+
+    // Avatar-URL speichern: eigenes Profil darf per RLS (own_profile) direkt
+    // schreiben, fremde Profile laufen über die admin-only Edge Function.
+    const saveAvatarUrl = async (userId, url) => {
+        if (userId === user?.id) {
+            const {error} = await supabase.from('profiles').update({avatar_url: url}).eq('id', userId);
+            if (error) throw new Error(error.message);
+        } else {
+            await functions.invoke('updateUserProfile', {user_id: userId, avatar_url: url});
+        }
+    };
+
+    // Foto-Upload auslösen (verstecktes File-Input klicken)
+    const triggerAvatarUpload = (userId) => {
+        setAvatarTargetUserId(userId);
+        requestAnimationFrame(() => avatarInputRef.current?.click());
+    };
+
+    const handleAvatarFile = async (e) => {
+        const file = e.target.files?.[0];
+        const userId = avatarTargetUserId;
+        e.target.value = ''; // Reset → gleiches File kann erneut gewählt werden
+        if (!file || !userId) return;
+        if (!file.type.startsWith('image/')) { toast.error('Bitte ein Bild auswählen'); return; }
+        if (file.size > 5 * 1024 * 1024) { toast.error('Bild zu gross (max. 5 MB)'); return; }
+        setAvatarUploadingId(userId);
+        try {
+            const url = await uploadAvatar(file, userId);
+            await saveAvatarUrl(userId, url);
+            toast.success('Foto gespeichert');
+            queryClient.invalidateQueries({queryKey: ['users']});
+            queryClient.invalidateQueries({queryKey: ['currentUser']});
+        } catch (err) {
+            toast.error('Fehler: ' + err.message);
+        } finally {
+            setAvatarUploadingId(null);
+            setAvatarTargetUserId(null);
+        }
+    };
+
+    const handleRemoveAvatar = async (userId) => {
+        setAvatarUploadingId(userId);
+        try {
+            await saveAvatarUrl(userId, null);
+            toast.success('Foto entfernt');
+            queryClient.invalidateQueries({queryKey: ['users']});
+            queryClient.invalidateQueries({queryKey: ['currentUser']});
+        } catch (err) {
+            toast.error('Fehler: ' + err.message);
+        } finally {
+            setAvatarUploadingId(null);
         }
     };
 
@@ -907,6 +965,51 @@ export default function Settings() {
                 {/* Signaturen Tab */}
                 {activeTab === 'signature' && (
                     <div className="space-y-6">
+                        {/* Profilfoto (Selbstbedienung – schreibt per RLS direkt aufs eigene Profil) */}
+                        <div className="rounded-xl p-6 border"
+                             style={{backgroundColor: cardBg, borderColor: cardBorder}}>
+                            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2"
+                                style={{color: headingColor}}>
+                                <Camera className="h-5 w-5"/> Profilfoto
+                            </h3>
+                            <div className="flex items-center gap-4">
+                                <button
+                                    type="button"
+                                    onClick={() => user && triggerAvatarUpload(user.id)}
+                                    title="Foto ändern"
+                                    className="group/av relative flex-shrink-0 rounded-full"
+                                >
+                                    <PersonAvatar user={user} size={72}/>
+                                    <span className="absolute inset-0 rounded-full bg-black/45 opacity-0 group-hover/av:opacity-100 transition-opacity flex items-center justify-center">
+                                        {avatarUploadingId === user?.id
+                                            ? <Loader2 className="h-5 w-5 animate-spin text-white"/>
+                                            : <Camera className="h-5 w-5 text-white"/>}
+                                    </span>
+                                </button>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    <Button
+                                        onClick={() => user && triggerAvatarUpload(user.id)}
+                                        disabled={!!avatarUploadingId}
+                                        className="bg-indigo-600 hover:bg-indigo-500"
+                                    >
+                                        <Camera className="h-4 w-4 mr-2"/> Foto wählen
+                                    </Button>
+                                    {user?.avatar_url && (
+                                        <Button
+                                            variant="outline"
+                                            onClick={() => handleRemoveAvatar(user.id)}
+                                            disabled={!!avatarUploadingId}
+                                            style={{borderColor: cardBorder, color: textMuted, backgroundColor: 'transparent'}}
+                                        >
+                                            <ImageOff className="h-4 w-4 mr-2"/> Entfernen
+                                        </Button>
+                                    )}
+                                </div>
+                            </div>
+                            {/* Verstecktes File-Input für die Selbstbedienung in diesem Tab */}
+                            <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarFile}/>
+                        </div>
+
                         <div className="rounded-xl p-6 border"
                              style={{backgroundColor: cardBg, borderColor: cardBorder}}>
                             <h3 className="text-lg font-semibold mb-4 flex items-center gap-2"
@@ -1834,10 +1937,30 @@ export default function Settings() {
                                                     {u.inviteState === 3 ? (
                                                         <ShieldCheck className="h-5 w-5"/>
                                                     ) : (<></>)}
-                                                    <div
-                                                        className="w-9 h-9 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400 text-sm font-semibold flex-shrink-0">
-                                                        {(u.full_name || u.email || '?').charAt(0).toUpperCase()}
-                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => triggerAvatarUpload(u.id)}
+                                                        title="Foto ändern"
+                                                        className="group/av relative flex-shrink-0 rounded-full"
+                                                    >
+                                                        <PersonAvatar user={u} size={36}/>
+                                                        <span className="absolute inset-0 rounded-full bg-black/45 opacity-0 group-hover/av:opacity-100 transition-opacity flex items-center justify-center">
+                                                            {avatarUploadingId === u.id
+                                                                ? <Loader2 className="h-4 w-4 animate-spin text-white"/>
+                                                                : <Camera className="h-4 w-4 text-white"/>}
+                                                        </span>
+                                                    </button>
+                                                    {u.avatar_url && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleRemoveAvatar(u.id)}
+                                                            title="Foto entfernen"
+                                                            className="flex-shrink-0 opacity-40 hover:opacity-100 transition-opacity -ml-1"
+                                                            style={{color: textMuted}}
+                                                        >
+                                                            <ImageOff className="h-3.5 w-3.5"/>
+                                                        </button>
+                                                    )}
 
                                                     {/* Name / Email area */}
                                                     <div className="flex-1 min-w-0">
@@ -2049,6 +2172,8 @@ export default function Settings() {
                                 )}
                             </div>
                         </div>
+                        {/* Verstecktes File-Input für den Foto-Upload (für alle Benutzerzeilen) */}
+                        <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarFile}/>
                     </div>
                 )}
 

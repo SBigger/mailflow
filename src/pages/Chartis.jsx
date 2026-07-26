@@ -5,6 +5,7 @@ import { entities, supabase, auth, functions } from "@/api/supabaseClient";
 import { createPageUrl } from "@/utils";
 import { ThemeContext } from "@/Layout";
 import ChartisPanel from "@/components/chartis/ChartisPanel";
+import PersonAvatar from "@/components/ui/PersonAvatar";
 import CommandPalette from "@/components/chartis/CommandPalette";
 import TaskGlobalListView from "@/components/tasks/TaskGlobalListView";
 import { chartisTheme, SEM, AUTHOR, authorKey, personStyle, initials, isMissed } from "@/lib/chartisTheme";
@@ -248,7 +249,8 @@ export default function Chartis() {
     if (th.thread_type === "direkt") {
       const other = (th.chartis_participants || []).map(p => p.user_id).find(uid => uid !== me?.id);
       const u = userById[other];
-      return { label: initials(u?.full_name || u?.email), userId: other, ...personStyle(u) };
+      // user/avatarUrl mitgeben → ThreadRow kann das Profilfoto zeigen (Fallback = Initialen)
+      return { label: initials(u?.full_name || u?.email), userId: other, user: u, avatarUrl: u?.avatar_url, ...personStyle(u) };
     }
     return { label: initials(th.subject), ...AUTHOR.staff };
   }
@@ -653,10 +655,19 @@ function ThreadRow({ th, t, active, mentioned, unread, title, preview, av, kunde
     <button onClick={onClick} className="w-full flex items-center gap-2.5 px-3 py-2 text-left relative" style={{ borderBottom: `1px solid ${t.borderSubtle}`, background: active ? t.activeRow : "transparent" }}>
       {strong && <span style={{ position: "absolute", left: 0, top: 8, bottom: 8, width: 3, borderRadius: 2, background: t.accentFill }} />}
       <div className="relative flex-shrink-0">
-        <div className="rounded-full flex items-center justify-center" style={{ width: 30, height: 30, background: av.bg, color: av.text, fontSize: 11, fontWeight: 600 }}>
-          {av.icon ? <av.icon className="h-4 w-4" /> : av.label}
-        </div>
-        {online && <span style={{ position: "absolute", right: -1, bottom: -1, width: 9, height: 9, borderRadius: 99, background: SEM.presence.online, border: `1.5px solid ${t.base}` }} />}
+        {av.user ? (
+          /* Person → zentraler Avatar (Foto oder Initialen), Online-Dot als Overlay-Child */
+          <PersonAvatar user={av.user} size={30}>
+            {online && <span style={{ position: "absolute", right: -1, bottom: -1, width: 9, height: 9, borderRadius: 99, background: SEM.presence.online, border: `1.5px solid ${t.base}` }} />}
+          </PersonAvatar>
+        ) : (
+          <>
+            <div className="rounded-full flex items-center justify-center" style={{ width: 30, height: 30, background: av.bg, color: av.text, fontSize: 11, fontWeight: 600 }}>
+              {av.icon ? <av.icon className="h-4 w-4" /> : av.label}
+            </div>
+            {online && <span style={{ position: "absolute", right: -1, bottom: -1, width: 9, height: 9, borderRadius: 99, background: SEM.presence.online, border: `1.5px solid ${t.base}` }} />}
+          </>
+        )}
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
@@ -1223,8 +1234,9 @@ function Picker({ t, list, onlineIds, pickSearch, setPickSearch, pickSel, setPic
               <div key={u.id} className="flex items-center gap-2 px-2 py-2 rounded-lg" style={{ background: sel ? t.activeRow : "transparent" }}>
                 <button onClick={() => onDirect(u.id)} disabled={busy} className="flex items-center gap-2 flex-1 min-w-0 text-left">
                   <div className="relative flex-shrink-0">
-                    <div className="rounded-full flex items-center justify-center" style={{ width: 30, height: 30, background: AUTHOR[authorKey(u)].bg, color: AUTHOR[authorKey(u)].text, fontSize: 11, fontWeight: 600 }}>{initials(u.full_name || u.email)}</div>
-                    {onlineIds?.has(u.id) && <span style={{ position: "absolute", right: -1, bottom: -1, width: 9, height: 9, borderRadius: 99, background: SEM.presence.online, border: "1.5px solid #fff" }} />}
+                    <PersonAvatar user={u} size={30}>
+                      {onlineIds?.has(u.id) && <span style={{ position: "absolute", right: -1, bottom: -1, width: 9, height: 9, borderRadius: 99, background: SEM.presence.online, border: "1.5px solid #fff" }} />}
+                    </PersonAvatar>
                   </div>
                   <div className="min-w-0"><div className="truncate" style={{ fontSize: 13, fontWeight: 500 }}>{u.full_name || u.email}</div><div className="truncate" style={{ fontSize: 11, color: t.textMuted }}>{u.email}</div></div>
                 </button>
