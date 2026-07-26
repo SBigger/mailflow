@@ -3,11 +3,14 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase, entities } from "@/api/supabaseClient";
 import { normalizePhone } from "./theme";
 
-// Letzte 9 Ziffern einer normalisierten Nummer – gleicher Suffix-Ansatz wie
-// der Teams-Sync (sync-teams-calls), damit Nummern trotz +41/0-Varianten matchen.
+// Letzte 6 Ziffern einer normalisierten Nummer (Sascha-Entscheid 2026-07-26:
+// vorher 9 – das ist bei CH-Nummern faktisch die ganze nationale Nummer, und
+// jede Format-/Präfix-Abweichung zwischen peoplefone und CRM liess den Match
+// scheitern, Dossier blieb leer). 6 Ziffern sind bei unserem Kundenstamm
+// eindeutig genug; erster Treffer gewinnt.
 function suffix(raw) {
   const d = normalizePhone(raw).replace(/\D/g, "");
-  return d.length >= 6 ? d.slice(-9) : "";
+  return d.length >= 6 ? d.slice(-6) : "";
 }
 
 // Nummer -> Kunde (über customers.phone UND contact_persons[].phone/phone2).
