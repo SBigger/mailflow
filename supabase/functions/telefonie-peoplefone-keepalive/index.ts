@@ -38,9 +38,10 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-// Numerische peoplefone-User-ID (NICHT der SIP-Benutzername!) -- siehe
-// ausfuehrliche Begruendung im Kommentar von telefonie-peoplefone-webhook.
-const OWNER_USER_ID = "163879"; // "Bigger", vPBX-Benutzer, interne Nr. 20
+// Notnagel, falls noch KEIN Profil eine peoplefone-Zuordnung hat (siehe
+// Einstellungen -> Telefonie). Numerische peoplefone-User-ID, NICHT der
+// SIP-Benutzername -- Begruendung im Kommentar von telefonie-peoplefone-webhook.
+const FALLBACK_OWNER_USER_ID = "163879"; // "Bigger", vPBX-Benutzer, interne Nr. 20
 const PROVIDER = "peoplefone";
 const BASE = "https://call-api.peoplefone.com/customer/call-management/v1";
 const MAX_CLEANUPS_PER_RUN = 5; // Drosselungs-Schutz: Rest beim naechsten Lauf
@@ -82,78 +83,104 @@ serve(async () => {
     }
   }
 
-  // 1) ZUERST aufraeumen, DANN neu registrieren (Umstellung 2026-07-26,
-  // zweiter Anlauf): in der alten Reihenfolge (POST, 3s spaeter DELETE) lief
-  // JEDES Loeschen in die 419-Drosselung -- die greift offenbar bei dicht
-  // aufeinanderfolgenden Subscription-Aenderungen desselben Owners. Am
-  // LAUF-ANFANG liegt der letzte Schreibzugriff dagegen ~5 Minuten zurueck
-  // (voriger Cron-Lauf) -- beste Karten fuer den ersten DELETE.
-  // ⚠️ Die JUENGSTE noch aktive Subscription wird hier bewusst VERSCHONT:
-  // sie ist unser aktuell einziger funktionierender Empfangsweg -- erst
-  // loeschen, wenn die Nachfolgerin erfolgreich angelegt ist (Schritt 3),
-  // sonst risse ein fehlgeschlagener POST eine Empfangsluecke bis zum
-  // naechsten Lauf.
-  const { data: stale, error: readError } = await supabase
-    .from("telefonie_subscriptions")
-    .select("subscription_id")
-    .is("cleaned_up_at", null)
-    .order("created_at", { ascending: true });
-  if (readError) console.error("keepalive: Lesen alter IDs fehlgeschlagen:", readError.message);
-  const staleIds = (stale ?? []).map((r) => r.subscription_id as string);
-  const previousActive = staleIds.pop() ?? null; // juengste = aktuell aktive
-  for (const [i, id] of staleIds.slice(0, MAX_CLEANUPS_PER_RUN).entries()) {
-    if (i > 0) await sleep(DELETE_SPACING_MS);
-    await tryCleanup(id);
+  // ── Welche peoplefone-Benutzer brauchen eine Subscription? ──────────────
+  // Rollout-Vorbereitung 2026-07-26: bis dahin war das fest Sascha (163879).
+  // Jetzt: alle Profile mit gepflegter Zuordnung (Einstellungen -> Telefonie).
+  // Fallback auf den Vorgabe-Owner, damit ein leerer Datenbestand die
+  // Telefonie nicht stilllegt.
+  let owners: string[] = [];
+  try {
+    const { data: profs } = await supabase
+      .from("profiles")
+      .select("peoplefone_user_id")
+      .not("peoplefone_user_id", "is", null);
+    owners = [...new Set((profs ?? []).map((p) => String(p.peoplefone_user_id)).filter(Boolean))];
+  } catch (e) {
+    console.error("keepalive: Owner-Liste nicht lesbar:", e);
   }
+  if (!owners.length) owners = [FALLBACK_OWNER_USER_ID];
 
-  // 2) Neue Subscription anlegen.
   const callbackUrl =
     `${supabaseUrl}/functions/v1/telefonie-peoplefone-webhook?secret=${encodeURIComponent(webhookSecret)}`;
-  let newId: string | null = null;
-  let subscribeResult: unknown;
-  try {
-    const res = await fetch(`${BASE}/subscription`, {
-      method: "POST",
-      headers: auth,
-      body: JSON.stringify({ owner: { identifier: OWNER_USER_ID, type: "user" }, callbackUrl }),
-    });
-    const text = await res.text();
-    subscribeResult = { status: res.status, body: text.slice(0, 300) };
-    if (res.ok) {
-      try { newId = JSON.parse(text)?.id ?? null; } catch { /* ignore */ }
-    }
-  } catch (e) {
-    subscribeResult = { error: String(e) };
-  }
-
-  // 3) Neue ID SOFORT als eigene Zeile sichern -- ein Absturz danach kostet
-  // so nie das Wissen ueber eine erzeugte Subscription. Schlaegt das Sichern
-  // fehl, ist genau DAS der Fall, den dieses Design verhindern soll --
-  // deshalb laut loggen und als Fehler im Ergebnis ausweisen.
+  const perOwner: unknown[] = [];
   let trackError: string | null = null;
-  if (newId) {
-    const { error } = await supabase.from("telefonie_subscriptions").upsert(
-      { subscription_id: newId, provider: PROVIDER },
-      { onConflict: "subscription_id", ignoreDuplicates: true },
-    );
-    if (error) {
-      trackError = error.message;
-      console.error("keepalive: NEUE ID KONNTE NICHT GESPEICHERT WERDEN:", newId, error.message);
+
+  for (const [ownerIdx, owner] of owners.entries()) {
+    // peoplefone drosselt dicht aufeinanderfolgende Subscription-Aenderungen
+    // (undokumentiertes 419) -- zwischen den Mitarbeitenden Luft lassen.
+    if (ownerIdx > 0) await sleep(DELETE_SPACING_MS);
+
+    // 1) ZUERST aufraeumen, DANN neu registrieren (Umstellung 2026-07-26,
+    // zweiter Anlauf): in der alten Reihenfolge (POST, 3s spaeter DELETE) lief
+    // JEDES Loeschen in die Drosselung. Am LAUF-ANFANG liegt der letzte
+    // Schreibzugriff dieses Owners dagegen ~15 Minuten zurueck (voriger
+    // Cron-Lauf) -- beste Karten fuer den ersten DELETE.
+    // ⚠️ Die JUENGSTE noch aktive Subscription wird bewusst VERSCHONT: sie ist
+    // der aktuell einzige funktionierende Empfangsweg dieser Person -- erst
+    // loeschen, wenn die Nachfolgerin steht (Schritt 3), sonst risse ein
+    // fehlgeschlagener POST eine Empfangsluecke bis zum naechsten Lauf.
+    const { data: stale, error: readError } = await supabase
+      .from("telefonie_subscriptions")
+      .select("subscription_id")
+      .is("cleaned_up_at", null)
+      .eq("peoplefone_user_id", owner)
+      .order("created_at", { ascending: true });
+    if (readError) console.error("keepalive: Lesen alter IDs fehlgeschlagen:", readError.message);
+    const staleIds = (stale ?? []).map((r) => r.subscription_id as string);
+    const previousActive = staleIds.pop() ?? null; // juengste = aktuell aktive
+    for (const [i, id] of staleIds.slice(0, MAX_CLEANUPS_PER_RUN).entries()) {
+      if (i > 0) await sleep(DELETE_SPACING_MS);
+      await tryCleanup(id);
     }
+
+    // 2) Neue Subscription fuer diesen Benutzer anlegen.
+    let newId: string | null = null;
+    let subscribeResult: unknown;
+    try {
+      const res = await fetch(`${BASE}/subscription`, {
+        method: "POST",
+        headers: auth,
+        body: JSON.stringify({ owner: { identifier: owner, type: "user" }, callbackUrl }),
+      });
+      const text = await res.text();
+      subscribeResult = { status: res.status, body: text.slice(0, 300) };
+      if (res.ok) {
+        try { newId = JSON.parse(text)?.id ?? null; } catch { /* ignore */ }
+      }
+    } catch (e) {
+      subscribeResult = { error: String(e) };
+    }
+
+    // 3) Neue ID SOFORT sichern -- ein Absturz danach kostet so nie das
+    // Wissen ueber eine erzeugte Subscription. Schlaegt das Sichern fehl, ist
+    // genau DAS der Fall, den dieses Design verhindern soll -> laut loggen.
+    if (newId) {
+      const { error } = await supabase.from("telefonie_subscriptions").upsert(
+        { subscription_id: newId, provider: PROVIDER, peoplefone_user_id: owner },
+        { onConflict: "subscription_id", ignoreDuplicates: true },
+      );
+      if (error) {
+        trackError = error.message;
+        console.error("keepalive: NEUE ID KONNTE NICHT GESPEICHERT WERDEN:", newId, error.message);
+      }
+    }
+
+    // 4) Die bisher aktive Vorgaengerin jetzt loeschen -- die Nachfolgerin
+    // steht (sofern der POST klappte). Faellt der Versuch in die Drosselung,
+    // holt Schritt 1 des NAECHSTEN Laufs sie mit besserem Timing nach.
+    if (previousActive && newId && previousActive !== newId) {
+      await sleep(DELETE_SPACING_MS);
+      await tryCleanup(previousActive);
+    }
+
+    perOwner.push({ owner, newId, subscribeResult });
   }
 
-  // 4) Die bisher aktive Vorgaengerin jetzt loeschen -- die Nachfolgerin
-  // steht (sofern der POST klappte). Faellt der Versuch in die Drosselung
-  // (419), holt Schritt 1 des NAECHSTEN Laufs sie mit besserem Timing nach.
-  if (previousActive && newId && previousActive !== newId) {
-    await sleep(DELETE_SPACING_MS);
-    await tryCleanup(previousActive);
-  }
-
-  const summary = { newId, subscribeResult, trackError, cleanups };
+  const ok = perOwner.every((r) => (r as { newId: string | null }).newId) && !trackError;
+  const summary = { owners: owners.length, perOwner, trackError, cleanups };
   console.log("keepalive:", JSON.stringify(summary));
   return new Response(JSON.stringify(summary), {
-    status: newId && !trackError ? 200 : 500,
+    status: ok ? 200 : 500,
     headers: { "Content-Type": "application/json" },
   });
 });

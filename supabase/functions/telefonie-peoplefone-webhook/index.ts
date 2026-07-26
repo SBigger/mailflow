@@ -148,6 +148,31 @@ serve(async (req) => {
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const supabase = createClient(supabaseUrl, serviceKey);
 
+  // ── Gezieltes Routing (Rollout-Vorbereitung 2026-07-26) ──────────────────
+  // owner.identifier ist die numerische peoplefone-User-ID. Ueber die im
+  // Einstellungen-Tab "Telefonie" gepflegte Zuordnung finden wir das smartis-
+  // Profil und adressieren die Karte gezielt -- bisher ging jeder Anruf an
+  // ALLE verbundenen Clients (targetUserId: null), was mit mehreren
+  // Mitarbeitenden nicht mehr geht.
+  // Bewusst mit Fallback null: ist niemand zugeordnet (oder die Spalte noch
+  // leer), verhaelt sich alles exakt wie bisher -- lieber eine Karte zu viel
+  // als ein verpasster Anruf.
+  const ownerId = (rawBody.owner as Record<string, unknown> | undefined)?.identifier;
+  let targetUserId: string | null = null;
+  if (ownerId) {
+    try {
+      const { data: prof } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("peoplefone_user_id", String(ownerId))
+        .maybeSingle();
+      targetUserId = prof?.id ?? null;
+    } catch (e) {
+      console.error("Profil-Zuordnung fehlgeschlagen:", e);
+    }
+  }
+  if (!targetUserId) console.log("kein Profil fuer owner", String(ownerId ?? ""), "-- Karte geht an alle");
+
   for (const entry of calls) {
     const callStatus = pickState(entry.state);
     if (!callStatus) {
@@ -195,7 +220,7 @@ serve(async (req) => {
       viaNumber: null,
     };
     const bc = await broadcastRealtime(supabaseUrl, serviceKey, "telefonie-calls", "incoming_call", {
-      targetUserId: null,
+      targetUserId,
       call: callPayload,
     });
     if (!bc.ok) console.error("broadcast failed:", bc.status, bc.body);

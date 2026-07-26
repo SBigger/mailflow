@@ -49,11 +49,21 @@ if (typeof globalThis.WebSocket === "undefined") {
 }
 const { createClient } = require("@supabase/supabase-js");
 
-const MY_PROFILE_ID = "ebac33f8-7fc7-40ca-97ca-2112788265e7"; // Sascha -- pro Mitarbeitendem anpassen
-const SUPABASE_URL = "https://uawgpxcihixqxqxxbjak.supabase.co";
-const SUPABASE_ANON_KEY =
+// ⚠️ Vorgaben, NICHT pro Mitarbeitendem im Code aendern (2026-07-26): alles
+// hier ist ueber userData/config.json ueberschreibbar -- siehe INSTALL.md.
+// Ohne eigene profileId laeuft die App im "alle Anrufe"-Modus: sie zeigt
+// dann jede Karte, die nicht gezielt an jemand anderen adressiert ist.
+const DEFAULT_PROFILE_ID = "ebac33f8-7fc7-40ca-97ca-2112788265e7"; // Sascha
+const DEFAULT_SUPABASE_URL = "https://uawgpxcihixqxqxxbjak.supabase.co";
+const DEFAULT_SUPABASE_ANON_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhd2dweGNpaGl4cXhxeHhiamFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI0MzE5MzYsImV4cCI6MjA4ODAwNzkzNn0.fPbekBh1dO8byD2wxkjzFSKW4jSV0MHIGgci9nch98A";
 const DEFAULT_URL = "https://smartis.me/telefonie";
+
+// Zur Laufzeit aus der Konfiguration gefuellt (app.whenReady, sobald
+// app.getPath("userData") verfuegbar ist).
+let MY_PROFILE_ID = DEFAULT_PROFILE_ID;
+let SUPABASE_URL = DEFAULT_SUPABASE_URL;
+let SUPABASE_ANON_KEY = DEFAULT_SUPABASE_ANON_KEY;
 const ICON_PATH = path.join(__dirname, "icon.ico");
 const TOAST_AUTO_HIDE_MS = 25000;
 const TOAST_ENDED_HIDE_MS = 3000;
@@ -107,13 +117,56 @@ function getConfigPath() {
   return path.join(app.getPath("userData"), "config.json");
 }
 function readConfig() {
-  try { return JSON.parse(fs.readFileSync(getConfigPath(), "utf8")); } catch { return {}; }
+  let raw;
+  try {
+    raw = fs.readFileSync(getConfigPath(), "utf8");
+  } catch {
+    return {}; // noch keine Konfiguration -- normal beim ersten Start
+  }
+  try {
+    // ⚠️ BOM entfernen (2026-07-26 beim Rollout-Test entdeckt): Windows-
+    // Werkzeuge (Notepad, PowerShell Set-Content -Encoding utf8) schreiben
+    // JSON mit unsichtbarem Vorspann, an dem JSON.parse scheitert. Vorher
+    // wurde die GANZE Konfiguration stillschweigend verworfen -- die App
+    // lief dann unbemerkt unter der Vorgabe-Kennung.
+    return JSON.parse(raw.replace(/^﻿/, ""));
+  } catch (e) {
+    console.error("⚠️ config.json ist fehlerhaft und wird ignoriert:", getConfigPath(), e.message);
+    return {};
+  }
 }
 function writeConfig(cfg) {
   fs.writeFileSync(getConfigPath(), JSON.stringify(cfg, null, 2), "utf8");
 }
 function getSavedUrl() { return readConfig().url || null; }
 function saveUrl(url) { const cfg = readConfig(); cfg.url = url; writeConfig(cfg); }
+
+// Konfiguration einlesen und die Laufzeit-Werte setzen (Rollout-Vorbereitung
+// 2026-07-26: bis dahin war die App fest auf Sascha verdrahtet und damit
+// nicht verteilbar). Erwartete Schluessel in userData/config.json:
+//   profileId       UUID des smartis-Profils dieser Person  (Pflicht fuer den Rollout)
+//   supabaseUrl     nur noetig fuer eine andere Umgebung (z.B. Produktiv)
+//   supabaseAnonKey dito
+//   url             Ziel von "Öffnen"
+//   targets         [{ name, extension }] fuers Verbinden
+function applyConfig() {
+  const cfg = readConfig();
+  if (typeof cfg.profileId === "string" && cfg.profileId.trim()) MY_PROFILE_ID = cfg.profileId.trim();
+  if (typeof cfg.supabaseUrl === "string" && cfg.supabaseUrl.trim()) SUPABASE_URL = cfg.supabaseUrl.trim();
+  if (typeof cfg.supabaseAnonKey === "string" && cfg.supabaseAnonKey.trim()) SUPABASE_ANON_KEY = cfg.supabaseAnonKey.trim();
+  // ⚠️ Laut vorbeugen, wenn jemand die App ohne eigene Konfiguration
+  // installiert -- sonst laeuft sie still unter Saschas Profil-ID mit.
+  if (MY_PROFILE_ID === DEFAULT_PROFILE_ID && !cfg.profileId) {
+    console.warn("⚠️ Keine profileId in", getConfigPath(),
+      "-- App laeuft mit der Vorgabe. Fuer andere Mitarbeitende bitte eintragen (siehe INSTALL.md).");
+  }
+  console.log("Konfiguration:", JSON.stringify({
+    profileId: MY_PROFILE_ID.slice(0, 8) + "…",
+    supabaseUrl: SUPABASE_URL,
+    url: cfg.url || DEFAULT_URL,
+    targets: Array.isArray(cfg.targets) ? cfg.targets.length : "Vorgabe",
+  }));
+}
 
 function openSetupWindow() {
   if (setupWindow) { setupWindow.focus(); return; }
@@ -441,6 +494,8 @@ app.on("render-process-gone", (_e, _wc, details) => {
 });
 
 app.whenReady().then(() => {
+  applyConfig(); // muss VOR connectRealtime laufen (setzt Profil + Backend)
+
   // ⚠️ BUG gefunden + behoben (2026-07-26): ohne explizites path/args traegt
   // Electron bei einer UNVERPACKTEN App (npm start) nur electron.exe OHNE den
   // App-Pfad in den Registry-Run-Key ein -- beim naechsten Login startete
