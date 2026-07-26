@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Clock, FileText, Database, Smartphone, Banknote, SlidersHorizontal, Check, RotateCcw } from 'lucide-react';
+import { supabase } from '@/api/supabaseClient';
 
 import TagesansichtPanel from '@/components/leistungserfassung/TagesansichtPanel';
 import MitarbeiterPanel from '@/components/leistungserfassung/MitarbeiterPanel';
@@ -50,7 +51,7 @@ const NAV = [
     ],
   },
   {
-    id: 'abrechnen', label: 'Abrechnen', icon: FileText,
+    id: 'abrechnen', label: 'Abrechnen', icon: FileText, access: 'billing',
     sec: [
       { id: 'aa',         label: 'Angef. Arbeiten (AA)', comp: AAPanel },
       { id: 'fakvor',     label: 'Faktura-Vorschlag',    comp: FakturaVorschlagPanel },
@@ -63,7 +64,7 @@ const NAV = [
     ],
   },
   {
-    id: 'debitoren', label: 'Debitoren', icon: Banknote,
+    id: 'debitoren', label: 'Debitoren', icon: Banknote, access: 'billing',
     sec: [
       { id: 'op-liste', label: 'Offene Posten',     comp: DebitorenOPPanel },
       { id: 'mahnung',  label: 'Mahnwesen',         comp: MahnungenPanel },
@@ -71,7 +72,7 @@ const NAV = [
     ],
   },
   {
-    id: 'stammdaten', label: 'Stammdaten', icon: Database,
+    id: 'stammdaten', label: 'Stammdaten', icon: Database, access: 'stammdaten',
     sec: [
       { id: 'sd-projekte', label: 'Projekte',            comp: ProjektePanel },
       { id: 'sd-vorlagen', label: 'Projekt-Vorlagen',    comp: ProjektVorlagenPanel },
@@ -118,6 +119,8 @@ function readJumpTarget() {
 }
 
 export default function Leistungserfassung() {
+  const [role, setRole] = useState(null);
+  const [roleLoaded, setRoleLoaded] = useState(false);
   const [jump] = useState(readJumpTarget);
   const [primary, setPrimary] = useState(jump?.primary ?? 'erfassen');
   const [secondaryMap, setSecondaryMap] = useState(() => {
@@ -125,6 +128,38 @@ export default function Leistungserfassung() {
     if (jump) map[jump.primary] = jump.secondary;
     return map;
   });
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        if (!cancelled) setRoleLoaded(true);
+        return;
+      }
+      const { data } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .maybeSingle();
+      if (!cancelled) {
+        setRole(data?.role ?? 'readonly');
+        setRoleLoaded(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const allowedNav = useMemo(() => {
+    const canManage = ['admin', 'mandatsleiter'].includes(role);
+    return NAV.filter((item) => !item.access || canManage);
+  }, [role]);
+
+  useEffect(() => {
+    if (roleLoaded && !allowedNav.some((item) => item.id === primary)) {
+      setPrimary(allowedNav[0]?.id ?? 'erfassen');
+    }
+  }, [allowedNav, primary, roleLoaded]);
 
   // Laschen ein-/ausblenden (persistent, pro Browser). Set aus sec-IDs, die versteckt sind.
   const [hiddenTabs, setHiddenTabs] = useState(() => {
@@ -164,9 +199,12 @@ export default function Leistungserfassung() {
     return () => window.removeEventListener('le-navigate', handler);
   }, []);
 
-  const primaryDef = useMemo(() => NAV.find(n => n.id === primary), [primary]);
+  const primaryDef = useMemo(
+    () => allowedNav.find(n => n.id === primary) ?? allowedNav[0],
+    [allowedNav, primary],
+  );
   const visibleSec = useMemo(
-    () => primaryDef.sec.filter(s => !hiddenTabs.has(s.id)),
+    () => (primaryDef?.sec ?? []).filter(s => !hiddenTabs.has(s.id)),
     [primaryDef, hiddenTabs],
   );
   let secondaryId = secondaryMap[primary];
@@ -177,7 +215,7 @@ export default function Leistungserfassung() {
     }
   }, [hiddenTabs, secondaryId, visibleSec, primary]);
   if (hiddenTabs.has(secondaryId) && visibleSec.length) secondaryId = visibleSec[0].id;
-  const secondaryDef = primaryDef.sec.find(s => s.id === secondaryId);
+  const secondaryDef = primaryDef?.sec.find(s => s.id === secondaryId);
 
   const PanelComp = secondaryDef?.comp;
 
@@ -198,7 +236,7 @@ export default function Leistungserfassung() {
 
           {/* Primary Tabs neben Titel */}
           <div className="flex items-center gap-1 overflow-x-auto ml-auto">
-            {NAV.map(n => {
+            {allowedNav.map(n => {
               const Icon = n.icon;
               const active = n.id === primary;
               return (
@@ -273,7 +311,7 @@ export default function Leistungserfassung() {
             {customizeOpen && (
               <div className="absolute right-0 mt-1 z-30 rounded-lg border shadow-lg bg-white" style={{ borderColor: '#d9e0d9', width: 260 }}>
                 <div className="px-3 py-2 border-b flex items-center justify-between" style={{ borderColor: '#eef1ee' }}>
-                  <span className="text-xs font-semibold text-zinc-700">Laschen «{primaryDef.label}»</span>
+                  <span className="text-xs font-semibold text-zinc-700">Laschen «{primaryDef?.label}»</span>
                   {hiddenTabs.size > 0 && (
                     <button
                       type="button"
@@ -286,7 +324,7 @@ export default function Leistungserfassung() {
                   )}
                 </div>
                 <div className="max-h-[50vh] overflow-y-auto py-1">
-                  {primaryDef.sec.map(s => {
+                  {(primaryDef?.sec ?? []).map(s => {
                     const visible = !hiddenTabs.has(s.id);
                     const isLastVisible = visible && visibleSec.length === 1;
                     return (
@@ -321,7 +359,11 @@ export default function Leistungserfassung() {
       </div>
 
       <div className="px-6 py-3">
-        {PanelComp ? <PanelComp /> : <ComingSoon title={`${primaryDef.label} · ${secondaryDef?.label ?? ''}`} />}
+        {!roleLoaded
+          ? <div className="p-6 text-sm text-zinc-500">Berechtigungen werden geladen…</div>
+          : PanelComp
+            ? <PanelComp />
+            : <ComingSoon title={`${primaryDef?.label ?? ''} · ${secondaryDef?.label ?? ''}`} />}
       </div>
     </div>
   );

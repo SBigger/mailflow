@@ -249,6 +249,9 @@ export async function generateDunningPdf({ dunning, invoice, customer, company }
     console.warn('Upload Mahn-PDF fehlgeschlagen, fallback Browser-Download:', upload.error);
     return { blob, url: null, path: null };
   }
-  const { data: pub } = supabase.storage.from('invoices').getPublicUrl(path);
-  return { url: pub.publicUrl, path, blob };
+  const { data: signed, error: signedError } = await supabase.storage
+    .from('invoices')
+    .createSignedUrl(path, 60 * 60);
+  if (signedError) return { blob, url: null, path };
+  return { url: signed.signedUrl, path, blob };
 }

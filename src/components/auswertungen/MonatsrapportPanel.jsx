@@ -28,7 +28,9 @@ import {
 function absenceHoursInMonth(absences, templates, profiles, holidaySet, rangeFrom, rangeTo) {
   let total = 0;
   for (const a of absences) {
-    if (a.status === 'abgelehnt') continue;
+    // Nur genehmigte Abwesenheiten reduzieren die produktive Sollzeit.
+    // Offene, abgelehnte und stornierte Antraege bleiben ohne Wirkung.
+    if (a.status !== 'genehmigt') continue;
     const from = a.date_from < rangeFrom ? rangeFrom : a.date_from;
     const to = a.date_to > rangeTo ? rangeTo : a.date_to;
     if (from > to) continue;
@@ -284,7 +286,6 @@ export default function MonatsrapportPanel() {
       absences: absencesFor(selectedEmp.id),
       year, month0,
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedEmp, entriesQ.data, absencesQ.data, profilesById, templatesQ.data, holidaySet, year, month0]);
 
   const handlePdf = async (all) => {

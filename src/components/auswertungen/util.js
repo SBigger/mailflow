@@ -87,14 +87,21 @@ export const pickProfile = (profiles, dateIso) => {
   const sorted = [...(profiles ?? [])].sort((a, b) => b.valid_from.localeCompare(a.valid_from));
   return sorted.find(p =>
     p.valid_from <= dateIso && (!p.valid_to || p.valid_to >= dateIso)
-  ) || sorted[0] || null;
+  ) || null;
 };
 
 const HOURS_BY_DAY = ['hours_so', 'hours_mo', 'hours_di', 'hours_mi', 'hours_do', 'hours_fr', 'hours_sa'];
 
 // Feiertags-Set aus le_holiday-Zeilen (Set von ISO-Datumsstrings)
-export function toHolidaySet(holidayRows) {
-  return new Set((holidayRows ?? []).map(h => h.date));
+export function toHolidaySet(holidayRows, canton = 'SG') {
+  return new Set(
+    (holidayRows ?? [])
+      .filter((holiday) =>
+        holiday.canton == null
+        || holiday.canton === '*'
+        || holiday.canton === canton)
+      .map((holiday) => holiday.date),
+  );
 }
 
 // Soll-Stunden eines einzelnen Tages, zweistufig kaskadiert:

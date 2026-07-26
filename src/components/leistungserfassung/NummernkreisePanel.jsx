@@ -1,13 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Save, Info, Hash } from 'lucide-react';
+import { Save, Info } from 'lucide-react';
 import { leNumberSequence } from '@/lib/leApi';
 import {
   Card,
   Chip,
   Input,
-  Field,
   PanelLoader,
   PanelError,
   PanelHeader,
@@ -44,12 +43,12 @@ function preview(format, padding, currentValue) {
 function Row({ row, onSave, isSaving }) {
   const [local, setLocal] = useState({
     format: row.format ?? '',
-    padding: row.padding ?? 4,
+    padding: row.padding_length ?? 4,
     reset_yearly: !!row.reset_yearly,
   });
   const dirty =
     local.format !== (row.format ?? '') ||
-    Number(local.padding) !== Number(row.padding ?? 4) ||
+    Number(local.padding) !== Number(row.padding_length ?? 4) ||
     local.reset_yearly !== !!row.reset_yearly;
 
   return (
@@ -92,7 +91,7 @@ function Row({ row, onSave, isSaving }) {
           onClick={() =>
             onSave(row.id, {
               format: local.format,
-              padding: Number(local.padding) || 1,
+              padding_length: Number(local.padding) || 1,
               reset_yearly: local.reset_yearly,
             })
           }

@@ -231,23 +231,42 @@ export async function generateInvoicePdf({ invoice, company }) {
     y = 60;
   }
 
-  // Rabatt berechnen
-  const discount = (Number(invoice.subtotal || 0) * (Number(invoice.discount_pct || 0) / 100))
-    + Number(invoice.discount_amount || 0);
+  // invoice.subtotal ist der Nettobetrag NACH Rabatt; die Positionen enthalten
+  // die Rohsumme. Den Rabatt deshalb nicht nochmals auf subtotal anwenden.
+  const rawSubtotal = lines.reduce((sum, line) => sum + Number(line.amount || 0), 0);
+  const isCredit = invoice.invoice_type === 'gutschrift';
+  const discount = isCredit ? 0 : Math.max(0, rawSubtotal - Number(invoice.subtotal || 0));
+  const vatRates = [...new Set(
+    lines
+      .filter((line) => !line.is_kulant)
+      .map((line) => Number(line.vat_pct ?? invoice.vat_pct ?? 8.1)),
+  )];
 
   drawTotalsBox(pdf, {
-    subtotal: invoice.subtotal,
+    subtotal: isCredit ? invoice.subtotal : rawSubtotal,
     discount,
     vat_pct: invoice.vat_pct ?? 8.1,
+    vat_label: vatRates.length > 1 ? 'MWST gemischt' : undefined,
     vat_amount: invoice.vat_amount,
     total: invoice.total,
   }, y);
 
-  // ---- Notes ----
-  if (invoice.notes) {
-    let notesY = y;
+  // ---- Zahlungs-/Skonto-Hinweis + Notes ----
+  const noteLines = [];
+  const skontoPct = Number(invoice.skonto_pct || 0);
+  const skontoDays = Number(invoice.skonto_days || 0);
+  if (skontoPct > 0 && skontoDays > 0 && Number(invoice.total || 0) > 0 && invoice.issue_date) {
+    const deadline = new Date(invoice.issue_date + 'T00:00:00');
+    deadline.setDate(deadline.getDate() + skontoDays);
+    const payable = Number(invoice.total) * (1 - skontoPct / 100);
+    noteLines.push(
+      `${skontoPct}% Skonto bei Zahlung bis ${deadline.toLocaleDateString('de-CH')}: CHF ${fmtChf(payable)}`,
+    );
+  }
+  if (invoice.notes) noteLines.push(invoice.notes);
+  if (noteLines.length) {
     pdf.font('Helvetica').fontSize(9).fillColor('#444444')
-       .text(invoice.notes, 50, notesY, { width: 250 });
+       .text(noteLines.join('\n'), 50, y, { width: 250 });
     resetText(pdf);
   }
 
@@ -276,8 +295,14 @@ export async function generateInvoicePdf({ invoice, company }) {
     console.error('Upload fehlgeschlagen, fallback auf Browser-Download:', upload.error);
     return { blob, url: null, path: null };
   }
-  const { data: pub } = supabase.storage.from('invoices').getPublicUrl(path);
-  return { url: pub.publicUrl, path, blob };
+  const { data: signed, error: signedError } = await supabase.storage
+    .from('invoices')
+    .createSignedUrl(path, 60 * 60);
+  if (signedError) {
+    console.error('Signierte PDF-URL konnte nicht erstellt werden:', signedError);
+    return { blob, url: null, path };
+  }
+  return { url: signed.signedUrl, path, blob };
 }
 
 // ---- Beiblatt-Renderer ----------------------------------------------------
@@ -410,9 +435,10 @@ function drawBeiblatt(pdf, invoice, customer, company) {
   pdf.text(fmtChf(totalHonorar), cols.amount, y, { width: 65, align: 'right' });
   y += 14;
 
-  // Rabatt
-  const discount = (Number(invoice.subtotal || 0) * (Number(invoice.discount_pct || 0) / 100))
-    + Number(invoice.discount_amount || 0);
+  // Der Kopfbetrag ist bereits rabattiert; Rohsumme kommt aus den Positionen.
+  const discount = invoice.invoice_type === 'gutschrift'
+    ? 0
+    : Math.max(0, totalHonorar - Number(invoice.subtotal || 0));
   if (discount > 0) {
     pdf.font('Helvetica').fontSize(10).fillColor('#000000');
     pdf.text('Rabatt', cols.desc, y, { width: cols.amount - cols.desc - 5 });
