@@ -7,6 +7,7 @@ import { tele, formatPhone, useAppTheme } from "../theme";
 import { useTelephony } from "../context/TelephonyContext";
 import { useIncomingDossier } from "../useDossier";
 import { openDokument } from "@/lib/openDokument";
+import { functions } from "@/api/supabaseClient";
 import CallWrapup from "./CallWrapup";
 
 const KEYS = [
@@ -67,7 +68,39 @@ export default function Softphone() {
 
   const [num, setNum] = useState("");
   const [showDtmf, setShowDtmf] = useState(false);
-  useEffect(() => { if (!call) setShowDtmf(false); }, [call]);
+  // ── Verbinden (Blind-Transfer via peoplefone-API, 2026-07-26) ──────────
+  // Ziele kommen live aus der Anlage (Edge Function telefonie-transfer,
+  // action "targets"); Zustand "done" heisst nur "Anlage hat den Transfer
+  // angenommen" -- das Ende unseres Beins meldet der Webhook von selbst.
+  const [showTransfer, setShowTransfer] = useState(false);
+  const [transferTargets, setTransferTargets] = useState(null); // null = noch nie geladen
+  const [transferState, setTransferState] = useState(null); // null | "busy" | "done" | Fehlertext
+  const [transferNum, setTransferNum] = useState("");
+  useEffect(() => { if (!call) { setShowDtmf(false); setShowTransfer(false); setTransferState(null); setTransferNum(""); } }, [call]);
+
+  const toggleTransfer = async () => {
+    const next = !showTransfer;
+    setShowTransfer(next);
+    if (next && transferTargets === null) {
+      try {
+        const { data } = await functions.invoke("telefonie-transfer", { action: "targets" });
+        setTransferTargets(data?.targets || []);
+      } catch {
+        setTransferTargets([]);
+      }
+    }
+  };
+
+  const doTransfer = async (destination) => {
+    if (!destination || transferState === "busy") return;
+    setTransferState("busy");
+    try {
+      await functions.invoke("telefonie-transfer", { action: "transfer", callId: call?.id, destination });
+      setTransferState("done");
+    } catch (e) {
+      setTransferState("Verbinden fehlgeschlagen — " + (e?.message || "unbekannter Fehler"));
+    }
+  };
   const mono = { fontFamily: 'ui-monospace, "Segoe UI Mono", Consolas, monospace', fontVariantNumeric: "tabular-nums" };
   const timer = useCallTimer(!!call, call?.startedAt);
 
@@ -154,11 +187,57 @@ export default function Softphone() {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, margin: "14px 0" }}>
             <Ctrl t={t} on={call.muted} icon={call.muted ? MicOff : Mic} label="Stumm" onClick={toggleMute} />
             <Ctrl t={t} on={call.onHold} icon={Pause} label="Halten" onClick={toggleHold} />
-            <Ctrl t={t} icon={ArrowRightLeft} label="Verbinden" onClick={() => {}} />
+            <Ctrl t={t} on={showTransfer} icon={ArrowRightLeft} label="Verbinden" onClick={toggleTransfer} />
             <Ctrl t={t} on={showDtmf} icon={Grid3x3} label="Tastatur" onClick={() => setShowDtmf((v) => !v)} />
             <Ctrl t={t} on={call.video} icon={Video} label="Video" onClick={toggleVideo} />
             <Ctrl t={t} icon={StickyNote} label="Notiz" onClick={() => {}} />
           </div>
+
+          {showTransfer && (
+            <div style={{ margin: "0 0 14px", textAlign: "left", background: t.sunken, border: `1px solid ${t.borderSubtle}`, borderRadius: 12, padding: "10px 12px" }}>
+              {transferState === "done" ? (
+                <div style={{ fontSize: 12.5, fontWeight: 650, color: t.answer }}>Wird verbunden … der Anruf verlässt gleich deine Leitung.</div>
+              ) : (
+                <>
+                  <div style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: ".08em", textTransform: "uppercase", color: t.textMuted, marginBottom: 7 }}>Verbinden an</div>
+                  {transferTargets === null && <div style={{ fontSize: 11.5, color: t.textMuted }}>Lade Nebenstellen…</div>}
+                  {Array.isArray(transferTargets) && transferTargets.filter((x) => x.internalNumber !== "20").map((x) => (
+                    <button
+                      key={x.peoplefoneId}
+                      onClick={() => doTransfer(x.internalNumber)}
+                      disabled={transferState === "busy"}
+                      style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "6px 8px", marginBottom: 4, background: t.raised, border: `1px solid ${t.borderSubtle}`, borderRadius: 8, cursor: "pointer", color: t.textPrimary, fontSize: 12, fontWeight: 600, textAlign: "left" }}
+                    >
+                      <ArrowRightLeft size={12} style={{ color: t.accent, flexShrink: 0 }} />
+                      <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.name}</span>
+                      <span style={{ ...mono, fontSize: 11, color: t.textMuted }}>{x.internalNumber}</span>
+                    </button>
+                  ))}
+                  {Array.isArray(transferTargets) && transferTargets.filter((x) => x.internalNumber !== "20").length === 0 && (
+                    <div style={{ fontSize: 11.5, color: t.textMuted, marginBottom: 6 }}>Keine Nebenstellen gefunden.</div>
+                  )}
+                  <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                    <input
+                      value={transferNum}
+                      onChange={(e) => setTransferNum(e.target.value)}
+                      placeholder="oder Nummer…"
+                      style={{ flex: 1, minWidth: 0, padding: "6px 9px", borderRadius: 8, border: `1px solid ${t.borderSubtle}`, background: t.raised, color: t.textPrimary, fontSize: 12 }}
+                    />
+                    <button
+                      onClick={() => doTransfer(transferNum.replace(/[^\d+*#]/g, ""))}
+                      disabled={transferState === "busy" || !transferNum.trim()}
+                      style={{ ...bigBtn(t.accent), padding: "6px 12px", fontSize: 12, opacity: transferState === "busy" || !transferNum.trim() ? 0.55 : 1 }}
+                    >
+                      {transferState === "busy" ? "…" : "Verbinden"}
+                    </button>
+                  </div>
+                  {typeof transferState === "string" && transferState !== "busy" && transferState !== "done" && (
+                    <div style={{ fontSize: 11.5, fontWeight: 650, color: t.missed, marginTop: 7 }}>{transferState}</div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
 
           {showDtmf && (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, margin: "0 0 14px" }}>
