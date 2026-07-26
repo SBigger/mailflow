@@ -66,10 +66,12 @@ let toastHideTimer = null;
 let tray = null;
 let currentUrl = DEFAULT_URL;
 let realtimeChannel = null;
-let toastLive = false; // true = Karte zeigt bereits einen Anruf -- Updates gehen per IPC statt Neuladen
-let currentCallId = null; // call.id der aktuell gezeigten Karte -- siehe showCall()
+let toastLive = false; // true = aktuelles loadFile() ist fertig (did-finish-load war schon) -- siehe showCall()
+let currentCallId = null; // call.id der aktuell geladenen/gezeigten Karte -- siehe showCall()
 let toastEnded = false; // true = fuer currentCallId schon "ended" verarbeitet -- siehe showCall()
 let lastLoadAt = 0; // Zeitstempel des letzten loadFile() -- siehe showCall()
+let pendingLoadListener = null; // aktuell haengender once("did-finish-load")-Listener, falls noch keiner gefeuert hat
+let pendingStatusUpdate = null; // Status, der eintraf WAEHREND das Fenster noch laedt -- siehe showCall()
 const RELOAD_COOLDOWN_MS = 4000;
 
 // ── Config (userData/config.json) -- gleiches Muster wie apps/electron/main.cjs
@@ -150,6 +152,11 @@ function hideCallWindow() {
   toastLive = false;
   currentCallId = null;
   toastEnded = false;
+  pendingStatusUpdate = null;
+  if (pendingLoadListener) {
+    callWindow?.webContents.removeListener("did-finish-load", pendingLoadListener);
+    pendingLoadListener = null;
+  }
   if (callWindow && !callWindow.isDestroyed()) callWindow.hide();
 }
 
@@ -162,9 +169,11 @@ function showCall(call) {
   const name = call.customer?.company_name || call.peerName || call.peerNumber || "Unbekannt";
   const number = call.peerNumber || "";
   const status = call.status;
-  const sameCall = toastLive && call.id === currentCallId;
+  // ⚠️ Bewusst NUR auf currentCallId geprueft, NICHT (mehr) auf toastLive --
+  // siehe Bug vom 2026-07-26 unten fuer den Grund.
+  const isSameCall = currentCallId !== null && call.id === currentCallId;
 
-  if (sameCall) {
+  if (isSameCall) {
     // ⚠️ peoplefone schickt bei einem laenger klingelnden Anruf sehr viele
     // Wiederholungs-"ringing"-Events (teils 15x+ fuer denselben Anruf,
     // manchmal auch noch verspaetet NACH dem "ended"). Ohne diese Sperre
@@ -174,12 +183,28 @@ function showCall(call) {
     // Anruf ignorieren, die Karte laeuft aus.
     if (toastEnded) return;
     if (status === "ended") toastEnded = true;
-    // Karte zeigt bereits einen Anruf (z.B. ringing -> answered) -- nur per
-    // IPC aktualisieren, NICHT neu laden. Neu laden war die Ursache des
-    // fruehen Absturz-Bugs bei ueberlappenden ringing-Events (lokaler
-    // MicroSIP-Hook + peoplefone-Webhook melden denselben Anruf oft fast
-    // gleichzeitig, teils mit leicht anderem Nummernformat).
-    callWindow.webContents.send("call-update", { name, number, status });
+
+    if (toastLive) {
+      // Fenster hat das erste Laden dieses Anrufs bereits abgeschlossen --
+      // nur per IPC aktualisieren, NICHT neu laden. Neu laden war die
+      // Ursache des fruehen Absturz-Bugs bei ueberlappenden ringing-Events.
+      callWindow.webContents.send("call-update", { name, number, status });
+    } else {
+      // ⚠️ BUG gefunden + behoben (2026-07-26): das erste loadFile() fuer
+      // diesen Anruf laeuft noch (did-finish-load ist noch nicht gefeuert).
+      // Fruehe hing der sameCall-Check zusaetzlich an toastLive -- kam eine
+      // Wiederholung schneller als toast.html laden konnte (live beobachtet:
+      // 6 Ringing-Events, Fenster kam nie sichtbar zum Zug), wertete der Code
+      // sie faelschlich als "toastLive noch false -> also KEIN sameCall" und
+      // rief loadFile() erneut auf -- das bricht die laufende Ladung ab, ohne
+      // dass "did-finish-load" je feuert. Bei mehreren schnellen Wiederholungen
+      // kaskadiert das (mehrere haengende once-Listener, MaxListenersExceeded-
+      // Warning) und die Karte wird oft erst sichtbar, wenn der Anruf schon
+      // vorbei ist. Fix: waehrend des Ladens NICHT neu laden, nur den
+      // neuesten Status merken -- der did-finish-load-Handler unten wendet
+      // ihn nach, sobald das Laden tatsaechlich fertig ist.
+      pendingStatusUpdate = { name, number, status };
+    }
     scheduleAutoHide(status === "ended" ? TOAST_ENDED_HIDE_MS : TOAST_AUTO_HIDE_MS);
     return;
   }
@@ -204,17 +229,33 @@ function showCall(call) {
   lastLoadAt = now;
   currentCallId = call.id;
   toastEnded = status === "ended";
+  toastLive = false;
+  pendingStatusUpdate = null;
 
+  // Haengenden Listener einer ABGEBROCHENEN vorherigen Ladung entfernen
+  // (siehe Kommentar oben) -- sonst haeufen sich die once()-Listener bei
+  // mehreren schnellen "echt neuer Anruf"-Wechseln an (MaxListenersExceeded).
+  if (pendingLoadListener) {
+    callWindow.webContents.removeListener("did-finish-load", pendingLoadListener);
+  }
   // Listener VOR loadFile() registrieren (Race-Condition bei kleinen
   // Seiten), UND "did-finish-load" statt "ready-to-show" ("ready-to-show"
   // feuert nur EINMAL im Fenster-Leben, bei Wiederverwendung nie wieder).
-  callWindow.webContents.once("did-finish-load", () => {
+  pendingLoadListener = () => {
+    pendingLoadListener = null;
     if (!callWindow || callWindow.isDestroyed()) return;
     toastLive = true;
     callWindow.showInactive(); // KEIN show()/focus() -- Tastatur bleibt bei der aktiven App
     callWindow.setAlwaysOnTop(true, "screen-saver");
     callWindow.moveTop();
-  });
+    // Waehrend des Ladens ist evtl. schon ein neuerer Status fuer denselben
+    // Anruf eingetroffen (siehe pendingStatusUpdate oben) -- jetzt nachholen.
+    if (pendingStatusUpdate) {
+      callWindow.webContents.send("call-update", pendingStatusUpdate);
+      pendingStatusUpdate = null;
+    }
+  };
+  callWindow.webContents.once("did-finish-load", pendingLoadListener);
   callWindow.loadFile(path.join(__dirname, "toast.html"), {
     search: `name=${encodeURIComponent(name)}&number=${encodeURIComponent(number)}&status=${encodeURIComponent(status)}`,
   });
