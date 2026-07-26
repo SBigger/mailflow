@@ -912,6 +912,40 @@ export const leCompany = {
   },
 };
 
+// ---------- Fibu-Liveverbuchung ----------
+export const leFibu = {
+  getBinding: async () => {
+    const { data, error } = await supabase.rpc('le_get_fibu_binding');
+    if (error) throw error;
+    return data?.[0] ?? null;
+  },
+  listBindingCandidates: async () => {
+    const { data, error } = await supabase.rpc('le_list_fibu_binding_candidates');
+    if (error) throw error;
+    return data ?? [];
+  },
+  listRevenueAccounts: async () => {
+    const { data, error } = await supabase.rpc('le_list_bound_fibu_revenue_accounts');
+    if (error) throw error;
+    return data ?? [];
+  },
+  bindMandant: async (mandantId) => {
+    const { data, error } = await supabase.rpc('le_bind_fibu_mandant', {
+      p_mandant_id: mandantId,
+    });
+    if (error) throw error;
+    return data;
+  },
+  rebindMandant: async (mandantId, reason) => {
+    const { data, error } = await supabase.rpc('le_rebind_fibu_mandant', {
+      p_new_mandant_id: mandantId,
+      p_reason: reason,
+    });
+    if (error) throw error;
+    return data;
+  },
+};
+
 // ---------- Customer Terms ----------
 export const leCustomerTerms = {
   get: async (customerId) => {

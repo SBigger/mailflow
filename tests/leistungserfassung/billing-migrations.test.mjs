@@ -753,3 +753,507 @@ test('dunning drafts, number reservation and escalation are atomic', async (t) =
   const previous = await one(db, `select status from le_dunning where id = $1`, [draft.id]);
   assert.equal(previous.status, 'eskaliert');
 });
+
+const fibuBootstrapSql = `
+  create table auth.users (
+    id uuid primary key
+  );
+
+  create table public.fibu_mandanten (
+    id uuid primary key default gen_random_uuid(),
+    name text not null,
+    uid text,
+    waehrung char(3) not null default 'CHF',
+    mwst_methode text not null default 'effektiv'
+      check (mwst_methode in ('effektiv','saldosteuersatz','pauschalsteuersatz')),
+    aktiv boolean not null default true
+  );
+  create table public.fibu_user_mandant_access (
+    id uuid primary key default gen_random_uuid(),
+    user_id uuid not null references auth.users(id),
+    mandant_id uuid not null references public.fibu_mandanten(id),
+    role text not null check (role in ('admin','buchhalter','readonly')),
+    unique(user_id, mandant_id)
+  );
+  create table public.fibu_konten (
+    id uuid primary key default gen_random_uuid(),
+    mandant_id uuid not null references public.fibu_mandanten(id),
+    konto_nr text not null,
+    bezeichnung text not null,
+    konto_typ text not null check (konto_typ in ('aktiv','passiv','ertrag','aufwand','abschluss')),
+    mwst_code text,
+    aktiv boolean not null default true,
+    unique(mandant_id, konto_nr)
+  );
+  create table public.fibu_kunden (
+    id uuid primary key default gen_random_uuid(),
+    mandant_id uuid not null references public.fibu_mandanten(id),
+    nr text not null,
+    name text not null,
+    uid text,
+    adresse text,
+    plz text,
+    ort text,
+    land char(2) not null default 'CH',
+    email text,
+    iban text,
+    zahlungsbedingung_tage smallint not null default 30,
+    standard_konto_nr text,
+    mwst_code text not null default 'U81',
+    notiz text,
+    aktiv boolean not null default true,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    unique(mandant_id, nr)
+  );
+  create table public.fibu_debitoren_belege (
+    id uuid primary key default gen_random_uuid(),
+    mandant_id uuid not null references public.fibu_mandanten(id),
+    beleg_nr text not null,
+    kunde_id uuid not null references public.fibu_kunden(id),
+    belegtyp text not null default 'rechnung' check (belegtyp in ('rechnung','gutschrift')),
+    titel text,
+    belegdatum date not null,
+    valutadatum date,
+    faelligkeit date not null,
+    zahlungsbedingung_tage smallint,
+    waehrung char(3) not null default 'CHF',
+    betrag_netto numeric(14,2) not null default 0,
+    betrag_mwst numeric(14,2) not null default 0,
+    betrag_brutto numeric(14,2) not null default 0,
+    betrag_bezahlt numeric(14,2) not null default 0,
+    bezahlt_am date,
+    zahlungsreferenz text,
+    status text not null default 'entwurf'
+      check (status in ('entwurf','offen','teilbezahlt','bezahlt','storniert')),
+    notiz text,
+    pdf_url text,
+    verbucht boolean not null default false,
+    storno_beleg_id uuid references public.fibu_debitoren_belege(id),
+    gebucht_am timestamptz,
+    gebucht_von uuid references auth.users(id),
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    unique(mandant_id, beleg_nr)
+  );
+  create table public.fibu_debitoren_positionen (
+    id uuid primary key default gen_random_uuid(),
+    mandant_id uuid not null references public.fibu_mandanten(id),
+    beleg_id uuid not null references public.fibu_debitoren_belege(id) on delete cascade,
+    position smallint not null default 1,
+    artikel_id uuid,
+    bezeichnung text,
+    menge numeric(14,3) not null default 1,
+    einheit text,
+    einzelpreis numeric(14,2) not null default 0,
+    konto_nr text not null,
+    mwst_code text not null default 'U81',
+    mwst_satz numeric(5,2) not null default 8.1,
+    betrag_netto numeric(14,2) not null default 0,
+    betrag_mwst numeric(14,2) not null default 0,
+    betrag_brutto numeric(14,2) not null default 0,
+    kostenstelle text
+  );
+  create table public.fibu_buchungen (
+    id uuid primary key default gen_random_uuid(),
+    mandant_id uuid not null references public.fibu_mandanten(id),
+    buchungs_nr text not null,
+    buchungsdatum date not null,
+    beleg_ref text,
+    konto_soll text not null,
+    konto_haben text not null,
+    betrag numeric(14,2) not null,
+    mwst_code text,
+    mwst_betrag numeric(14,2),
+    text text,
+    quelle text,
+    quelle_id uuid,
+    storniert boolean not null default false,
+    storno_von uuid references public.fibu_buchungen(id),
+    created_at timestamptz not null default now(),
+    created_by uuid references auth.users(id),
+    unique(mandant_id, buchungs_nr)
+  );
+  create table public.fibu_mwst_codes (
+    id uuid primary key default gen_random_uuid(),
+    mandant_id uuid not null references public.fibu_mandanten(id),
+    code text not null,
+    bezeichnung text not null,
+    satz numeric(5,2) not null default 0,
+    typ text not null,
+    konto_vorsteuer text,
+    konto_umsatz text,
+    aktiv boolean not null default true,
+    sortierung smallint not null default 0,
+    abrechnung_ziffer text,
+    unique(mandant_id, code)
+  );
+  create table public.fibu_buchungs_counter (
+    mandant_id uuid not null,
+    year int not null,
+    value int not null default 0,
+    primary key (mandant_id, year)
+  );
+
+  create function public.fibu_mandant_ids_for_user()
+  returns uuid[] language sql stable security definer set search_path = public as
+    'select coalesce(array_agg(mandant_id), array[]::uuid[])
+       from fibu_user_mandant_access where user_id = auth.uid()';
+  create function public.fibu_can_write_for(p_mandant_id uuid)
+  returns boolean language sql stable security definer set search_path = public as
+    'select exists (
+       select 1 from fibu_user_mandant_access
+        where user_id = auth.uid() and mandant_id = p_mandant_id
+          and role in (''admin'',''buchhalter'')
+     )';
+  create function public.fibu_next_buchungs_nr(p_mandant_id uuid)
+  returns text language plpgsql security definer set search_path = public as $$
+  declare y int := extract(year from current_date)::int; n int;
+  begin
+    insert into fibu_buchungs_counter(mandant_id, year, value)
+    values (p_mandant_id, y, 1)
+    on conflict (mandant_id, year) do update
+      set value = fibu_buchungs_counter.value + 1
+    returning value into n;
+    return 'BU-' || y || '-' || lpad(n::text, 5, '0');
+  end $$;
+  create function public.fibu_debitoren_verbuchen(p_beleg_id uuid)
+  returns void language plpgsql security definer set search_path = public as $$
+  begin
+    update fibu_debitoren_belege
+       set verbucht = true, gebucht_am = now()
+     where id = p_beleg_id;
+  end $$;
+`;
+
+async function createLiveBookingDatabase() {
+  const db = await createDatabase();
+  await db.exec(fibuBootstrapSql);
+  for (const name of [
+    '20260726190000_le_fibu_live_booking.sql',
+    '20260726191000_fibu_debitoren_hardening.sql',
+  ]) {
+    const sql = await migration(name);
+    try {
+      await db.exec(sql);
+    } catch (error) {
+      error.message = `${name}: ${error.message}`;
+      throw error;
+    }
+  }
+  return db;
+}
+
+test('Fibu binding is owner-locked and invoice, payment and credit stay transactional', async (t) => {
+  const db = await createLiveBookingDatabase();
+  t.after(() => db.close());
+
+  const ownerId = '17000000-0000-0000-0000-000000000001';
+  const otherAdminId = '17000000-0000-0000-0000-000000000002';
+  const employeeId = '27000000-0000-0000-0000-000000000001';
+  const customerId = '37000000-0000-0000-0000-000000000001';
+  const projectId = '47000000-0000-0000-0000-000000000001';
+  const mandantA = '77000000-0000-0000-0000-000000000001';
+  const mandantB = '77000000-0000-0000-0000-000000000002';
+
+  await db.query(`insert into auth.users(id) values ($1),($2)`, [ownerId, otherAdminId]);
+  await db.query(
+    `insert into profiles(id, role, is_admin) values
+       ($1,'admin',true),($2,'admin',true)`,
+    [ownerId, otherAdminId],
+  );
+  await db.query(`update auth.test_session set user_id = $1 where id = true`, [ownerId]);
+  await db.query(
+    `insert into fibu_mandanten(id,name,uid) values
+       ($1,'Eigene Firma AG','CHE-111.111.111'),
+       ($2,'Korrektur AG','CHE-222.222.222')`,
+    [mandantA, mandantB],
+  );
+  await db.query(
+    `insert into fibu_user_mandant_access(user_id,mandant_id,role) values
+       ($1,$3,'admin'),($1,$4,'admin'),($2,$3,'admin'),($2,$4,'admin')`,
+    [ownerId, otherAdminId, mandantA, mandantB],
+  );
+  await db.query(
+    `insert into fibu_konten(mandant_id,konto_nr,bezeichnung,konto_typ)
+     select m.id, x.konto_nr, x.bezeichnung, x.konto_typ
+       from fibu_mandanten m
+       cross join (values
+         ('1100','Debitoren','aktiv'),
+         ('2200','Umsatzsteuer','passiv'),
+         ('3400','Dienstleistungsertrag','ertrag')
+       ) as x(konto_nr,bezeichnung,konto_typ)`,
+  );
+  await db.query(
+    `insert into fibu_mwst_codes(
+       mandant_id,code,bezeichnung,satz,typ,konto_umsatz,sortierung,abrechnung_ziffer
+     )
+     select m.id, x.code, x.bezeichnung, x.satz, x.typ, x.konto, x.sortierung, x.ziffer
+       from fibu_mandanten m
+       cross join (values
+         ('U81','Umsatzsteuer 8.1',8.1,'umsatzsteuer','2200',10,'302'),
+         ('U26','Umsatzsteuer 2.6',2.6,'umsatzsteuer','2200',20,'312'),
+         ('U38','Umsatzsteuer 3.8',3.8,'umsatzsteuer','2200',30,'342'),
+         ('U0','Export',0.0,'steuerbefreit',null,40,'221'),
+         ('U0A','Ausgenommen',0.0,'steuerbefreit',null,50,'230')
+       ) as x(code,bezeichnung,satz,typ,konto,sortierung,ziffer)`,
+  );
+  await db.query(
+    `insert into customers(
+       id,company_name,street,building_number,zip,city,country,billing_email
+     ) values ($1,'Livekunde AG','Testweg','7','8000','Zürich','CH','fibu@test.invalid')`,
+    [customerId],
+  );
+  await db.query(
+    `insert into le_employee(id,profile_id,short_code,full_name)
+     values ($1,$2,'FB','Fibu Binder')`,
+    [employeeId, ownerId],
+  );
+  await db.query(
+    `insert into le_project(id,project_no,name,customer_id,rate_mode)
+     values ($1,'P-FIBU','Liveverbuchung',$2,'service_type')`,
+    [projectId, customerId],
+  );
+  const service = await one(db, `select id from le_service_type where code = 'BUCH'`);
+  const invoice = await one(
+    db,
+    `insert into le_invoice(project_id,customer_id,status,invoice_type,created_by)
+     values ($1,$2,'entwurf','normal',$3) returning *`,
+    [projectId, customerId, ownerId],
+  );
+  await one(
+    db,
+    `select * from le_save_invoice_draft(
+       $1,
+       '{"discount_pct":0,"discount_amount":0,"vat_pct":8.1}'::jsonb,
+       jsonb_build_array(jsonb_build_object(
+         'service_type_id',$2::text,'description','Buchhaltung Juli',
+         'hours',1,'rate',100,'amount',100,'sort_order',10,
+         'vat_code','STD','vat_pct',8.1
+       ))
+     )`,
+    [invoice.id, service.id],
+  );
+
+  await assert.rejects(
+    db.query(`select * from le_finalize_invoice($1)`, [invoice.id]),
+    /Fibu-Mandant gebunden|Mandant gebunden werden/i,
+  );
+  const stillDraft = await one(db, `select status,invoice_no from le_invoice where id=$1`, [invoice.id]);
+  assert.equal(stillDraft.status, 'entwurf');
+  assert.equal(stillDraft.invoice_no, null);
+
+  await db.query(`update fibu_mandanten set waehrung='EUR' where id=$1`, [mandantA]);
+  await assert.rejects(
+    db.query(`select * from le_bind_fibu_mandant($1)`, [mandantA]),
+    /nur fuer CHF-Mandanten/i,
+  );
+  await db.query(
+    `update fibu_mandanten set waehrung='CHF',mwst_methode='pauschalsteuersatz' where id=$1`,
+    [mandantA],
+  );
+  await assert.rejects(
+    db.query(`select * from le_bind_fibu_mandant($1)`, [mandantA]),
+    /MWST-Methode .* nicht unterstuetzt/i,
+  );
+  await db.query(`update fibu_mandanten set mwst_methode='effektiv' where id=$1`, [mandantA]);
+  await one(db, `select * from le_bind_fibu_mandant($1)`, [mandantA]);
+  const binding = await one(db, `select * from le_get_fibu_binding()`);
+  assert.equal(binding.mandant_id, mandantA);
+  assert.equal(binding.owner_user_id, ownerId);
+  assert.equal(binding.can_rebind, true);
+  assert.equal(binding.posting_ready, true);
+
+  const finalized = await one(db, `select * from le_finalize_invoice($1)`, [invoice.id]);
+  assert.equal(finalized.status, 'definitiv');
+  const postedInvoice = await one(
+    db,
+    `select fibu_mandant_id,fibu_debitoren_beleg_id,fibu_posted_at
+       from le_invoice where id=$1`,
+    [invoice.id],
+  );
+  assert.equal(postedInvoice.fibu_mandant_id, mandantA);
+  assert.ok(postedInvoice.fibu_debitoren_beleg_id);
+  assert.ok(postedInvoice.fibu_posted_at);
+
+  const debtor = await one(
+    db,
+    `select * from fibu_debitoren_belege where id=$1`,
+    [postedInvoice.fibu_debitoren_beleg_id],
+  );
+  assert.equal(debtor.source_system, 'mailflow_le');
+  assert.equal(debtor.source_id, invoice.id);
+  assert.equal(debtor.verbucht, true);
+  assert.equal(Number(debtor.betrag_brutto), 108.1);
+  assert.equal(
+    Number((await one(db, `select count(*) as count from fibu_buchungen where quelle_id=$1`, [debtor.id])).count),
+    2,
+  );
+
+  await one(db, `select * from le_finalize_invoice($1)`, [invoice.id]);
+  assert.equal(
+    Number((await one(db, `select count(*) as count from fibu_buchungen where quelle_id=$1`, [debtor.id])).count),
+    2,
+  );
+
+  const paymentId = '67000000-0000-0000-0000-000000000001';
+  await db.query(
+    `insert into le_payment(id,invoice_id,customer_id,amount,paid_at)
+     values ($1,$2,$3,108.10,'2026-07-26')`,
+    [paymentId, invoice.id, customerId],
+  );
+  const paidDebtor = await one(db, `select status,betrag_bezahlt from fibu_debitoren_belege where id=$1`, [debtor.id]);
+  assert.equal(paidDebtor.status, 'bezahlt');
+  assert.equal(Number(paidDebtor.betrag_bezahlt), 108.1);
+  assert.equal(
+    Number((await one(db, `select count(*) as count from fibu_buchungen where quelle_id=$1`, [debtor.id])).count),
+    2,
+  );
+  await db.query(`delete from le_payment where id=$1`, [paymentId]);
+
+  const credit = await one(db, `select * from le_create_credit($1,'Vollgutschrift',null)`, [invoice.id]);
+  assert.equal(Number(credit.total), -108.1);
+  const creditLink = await one(
+    db,
+    `select fibu_debitoren_beleg_id from le_invoice where id=$1`,
+    [credit.id],
+  );
+  assert.ok(creditLink.fibu_debitoren_beleg_id);
+  const statuses = await db.query(
+    `select id,status from fibu_debitoren_belege
+      where id in ($1,$2) order by id`,
+    [debtor.id, creditLink.fibu_debitoren_beleg_id],
+  );
+  assert.deepEqual(statuses.rows.map((row) => row.status), ['storniert', 'storniert']);
+
+  const balance = await one(
+    db,
+    `select
+       sum(case when konto_soll='1100' then betrag else 0 end)
+       - sum(case when konto_haben='1100' then betrag else 0 end) as debitoren,
+       sum(case when konto_haben='3400' then betrag else 0 end)
+       - sum(case when konto_soll='3400' then betrag else 0 end) as ertrag,
+       sum(case when konto_haben='2200' then betrag else 0 end)
+       - sum(case when konto_soll='2200' then betrag else 0 end) as mwst
+     from fibu_buchungen
+    where quelle='debitoren'`,
+  );
+  assert.equal(Number(balance.debitoren), 0);
+  assert.equal(Number(balance.ertrag), 0);
+  assert.equal(Number(balance.mwst), 0);
+  const vatSummary = await one(
+    db,
+    `select * from fibu_mwst_summary($1,'2026-01-01','2026-12-31') where mwst_code='U81'`,
+    [mandantA],
+  );
+  assert.equal(Number(vatSummary.sum_netto), 0);
+  assert.equal(Number(vatSummary.sum_mwst), 0);
+
+  await db.query(
+    `insert into fibu_konten(mandant_id,konto_nr,bezeichnung,konto_typ) values
+       ($1,'6000','Dienstleistungsaufwand','aufwand')`,
+    [mandantA],
+  );
+  await db.query(
+    `insert into fibu_mwst_codes(
+       mandant_id,code,bezeichnung,satz,typ,konto_vorsteuer,sortierung,abrechnung_ziffer
+     ) values ($1,'M81','Vorsteuer 8.1',8.1,'vorsteuer','1170',5,'400')`,
+    [mandantA],
+  );
+  await db.query(
+    `insert into fibu_buchungen(
+       mandant_id,buchungs_nr,buchungsdatum,konto_soll,konto_haben,betrag,
+       mwst_code,mwst_betrag,quelle
+     ) values
+       ($1,'TEST-KR-1','2026-07-01','6000','2000',50,'M81',4.05,'kreditoren'),
+       ($1,'TEST-KR-2','2026-07-02','2000','6000',50,'M81',-4.05,'kreditoren')`,
+    [mandantA],
+  );
+  const creditorVat = await one(
+    db,
+    `select * from fibu_mwst_summary($1,'2026-01-01','2026-12-31') where mwst_code='M81'`,
+    [mandantA],
+  );
+  assert.equal(Number(creditorVat.sum_netto), 0);
+  assert.equal(Number(creditorVat.sum_mwst), 0);
+  assert.equal(Number(creditorVat.sum_brutto), 0);
+  const creditorByAccount = await one(
+    db,
+    `select * from fibu_mwst_by_konto($1,'2026-01-01','2026-12-31')
+      where mwst_code='M81' and konto_nr='6000'`,
+    [mandantA],
+  );
+  assert.equal(Number(creditorByAccount.sum_netto), 0);
+  assert.equal(Number(creditorByAccount.sum_mwst), 0);
+
+  await assert.rejects(
+    db.query(`update fibu_konten set aktiv=false where mandant_id=$1 and konto_nr='3400'`, [mandantA]),
+    /verknuepft/i,
+  );
+  await assert.rejects(
+    db.query(`update le_service_type set ertragskonto='9999' where id=$1`, [service.id]),
+    /fehlt|nicht aktiv/i,
+  );
+
+  await db.query(`update auth.test_session set user_id=$1 where id=true`, [otherAdminId]);
+  await assert.rejects(
+    db.query(`select * from le_rebind_fibu_mandant($1,'Falscher Erstmandant')`, [mandantB]),
+    /Eigentuemer/i,
+  );
+  await db.query(`update auth.test_session set user_id=$1 where id=true`, [ownerId]);
+  const rebound = await one(
+    db,
+    `select * from le_rebind_fibu_mandant($1,'Korrektur nach Vieraugenkontrolle')`,
+    [mandantB],
+  );
+  assert.equal(rebound.mandant_id, mandantB);
+  const historical = await one(db, `select fibu_mandant_id from le_invoice where id=$1`, [invoice.id]);
+  assert.equal(historical.fibu_mandant_id, mandantA);
+  assert.equal(
+    Number((await one(db, `select count(*) as count from le_fibu_binding_audit`)).count),
+    2,
+  );
+
+  await db.query(
+    `update fibu_mandanten set mwst_methode='saldosteuersatz' where id=$1`,
+    [mandantB],
+  );
+  assert.equal((await one(db, `select * from le_get_fibu_binding()`)).posting_ready, true);
+  const saldoInvoice = await one(
+    db,
+    `insert into le_invoice(project_id,customer_id,status,invoice_type,created_by)
+     values ($1,$2,'entwurf','normal',$3) returning *`,
+    [projectId, customerId, ownerId],
+  );
+  await one(
+    db,
+    `select * from le_save_invoice_draft(
+       $1,
+       '{"discount_pct":0,"discount_amount":0,"vat_pct":8.1}'::jsonb,
+       jsonb_build_array(jsonb_build_object(
+         'service_type_id',$2::text,'description','Saldosteuersatz-Test',
+         'hours',1,'rate',100,'amount',100,'sort_order',10,
+         'vat_code','STD','vat_pct',8.1
+       ))
+     )`,
+    [saldoInvoice.id, service.id],
+  );
+  await one(db, `select * from le_finalize_invoice($1)`, [saldoInvoice.id]);
+  const saldoLink = await one(
+    db,
+    `select fibu_mandant_id,fibu_debitoren_beleg_id from le_invoice where id=$1`,
+    [saldoInvoice.id],
+  );
+  assert.equal(saldoLink.fibu_mandant_id, mandantB);
+  const saldoBooking = await one(
+    db,
+    `select count(*) over () as booking_count, konto_soll, konto_haben, betrag, mwst_code
+       from fibu_buchungen where quelle_id=$1`,
+    [saldoLink.fibu_debitoren_beleg_id],
+  );
+  assert.equal(Number(saldoBooking.booking_count), 1);
+  assert.equal(saldoBooking.konto_soll, '1100');
+  assert.equal(saldoBooking.konto_haben, '3400');
+  assert.equal(Number(saldoBooking.betrag), 108.1);
+  assert.equal(saldoBooking.mwst_code, null);
+});

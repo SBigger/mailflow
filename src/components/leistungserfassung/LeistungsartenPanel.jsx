@@ -11,8 +11,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { leServiceType, leServiceRateHistory, leVatRate } from '@/lib/leApi';
-import { supabase } from '@/api/supabaseClient';
+import { leServiceType, leServiceRateHistory, leVatRate, leFibu } from '@/lib/leApi';
 import {
   Chip,
   Card,
@@ -29,24 +28,9 @@ import {
   artisGhostStyle,
 } from './shared';
 
-// Ertragskonten für die Buchung bei Rechnungsversand: fest der Fibu-Mandant "Artis"
-// (Artis Treuhands eigene Buchhaltung), nur aktive Ertragskonten.
+// Ertragskonten kommen ausschliesslich aus dem einmalig gebundenen Fibu-Mandanten.
 async function fetchErtragskonten() {
-  const { data: mandant, error: mErr } = await supabase
-    .from('fibu_mandanten')
-    .select('id')
-    .eq('name', 'Artis')
-    .single();
-  if (mErr) throw mErr;
-  const { data, error } = await supabase
-    .from('fibu_konten')
-    .select('konto_nr, bezeichnung')
-    .eq('mandant_id', mandant.id)
-    .eq('konto_typ', 'ertrag')
-    .eq('aktiv', true)
-    .order('konto_nr');
-  if (error) throw error;
-  return data ?? [];
+  return leFibu.listRevenueAccounts();
 }
 
 // ---------- Panel ----------
@@ -56,7 +40,7 @@ export default function LeistungsartenPanel() {
     queryKey: ['le', 'service_type'],
     queryFn: leServiceType.list,
   });
-  const kontenQ = useQuery({ queryKey: ['fibu', 'ertragskonten', 'Artis'], queryFn: fetchErtragskonten });
+  const kontenQ = useQuery({ queryKey: ['le', 'fibu-revenue-accounts'], queryFn: fetchErtragskonten });
   const kontoByNr = useMemo(
     () => Object.fromEntries((kontenQ.data ?? []).map((k) => [k.konto_nr, k.bezeichnung])),
     [kontenQ.data]
@@ -239,7 +223,7 @@ function EditDialog({ open, onOpenChange, initial }) {
     return out;
   }, [ratesQ.data]);
 
-  const kontenQ = useQuery({ queryKey: ['fibu', 'ertragskonten', 'Artis'], queryFn: fetchErtragskonten, enabled: open });
+  const kontenQ = useQuery({ queryKey: ['le', 'fibu-revenue-accounts'], queryFn: fetchErtragskonten, enabled: open });
 
   const [form, setForm] = useState(() => defaultForm(initial));
   // reset form on open change
@@ -344,12 +328,21 @@ function EditDialog({ open, onOpenChange, initial }) {
               </Select>
             </Field>
           </div>
-          <Field label="Ertragskonto" hint="Für die Fibu-Buchung (Mandant Artis) bei Rechnungsversand.">
+          <Field label="Ertragskonto" hint="Aktives Ertragskonto des dauerhaft gebundenen Fibu-Mandanten.">
             <Select
               value={form.ertragskonto}
               onChange={(e) => setForm({ ...form, ertragskonto: e.target.value })}
+              disabled={kontenQ.isLoading || kontenQ.isError || (kontenQ.data ?? []).length === 0}
             >
-              {kontenQ.data?.length === 0 && <option value="3400">3400</option>}
+              {(kontenQ.data ?? []).length === 0 && (
+                <option value={form.ertragskonto || ''}>
+                  {kontenQ.isLoading
+                    ? 'Konten werden geladen…'
+                    : kontenQ.isError
+                      ? 'Fibu-Konten nicht verfügbar'
+                      : 'Zuerst Fibu-Mandant unter Firma verbinden'}
+                </option>
+              )}
               {(kontenQ.data ?? []).map((k) => (
                 <option key={k.konto_nr} value={k.konto_nr}>{k.konto_nr} – {k.bezeichnung}</option>
               ))}

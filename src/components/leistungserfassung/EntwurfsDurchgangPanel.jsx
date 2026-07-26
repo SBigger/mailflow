@@ -361,8 +361,9 @@ function DraftEditor({ invoice, onSaved, onFinalized, onDirtyChange }) {
       return leInvoice.finalize(invoice.id);
     },
     onSuccess: (inv) => {
-      toast.success(`Definitiv: ${inv.invoice_no}`);
+      toast.success(`Definitiv und live verbucht: ${inv.invoice_no}`);
       qc.invalidateQueries({ queryKey: ['le', 'invoice', 'entwurf'] });
+      qc.invalidateQueries({ queryKey: ['le', 'invoice'] });
       onFinalized?.(inv);
     },
     onError: (e) => toast.error('Finalisieren fehlgeschlagen: ' + (e?.message ?? e)),

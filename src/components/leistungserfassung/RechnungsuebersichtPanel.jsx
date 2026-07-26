@@ -7,7 +7,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   FileText, Send, CheckCircle2, X as XIcon, Trash2, Eye, Search, Calendar, FileDown,
-  ChevronRight, ChevronDown,
+  ChevronRight, ChevronDown, Landmark,
 } from 'lucide-react';
 import { leInvoice, lePayment, leCompany, createCreditFromInvoice } from '@/lib/leApi';
 import { deliverInvoiceByEmail } from '@/lib/leInvoiceDelivery';
@@ -449,6 +449,7 @@ function InvoiceDetailDialog({ invoice, onClose, onSend, onPay, onCancel }) {
                     <th className="text-right font-semibold px-2 py-1.5 w-16">Menge</th>
                     <th className="text-right font-semibold px-2 py-1.5 w-20">Satz</th>
                     <th className="text-right font-semibold px-2 py-1.5 w-24">Betrag</th>
+                    <th className="text-left font-semibold px-2 py-1.5 w-20">Fibu-Konto</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -458,6 +459,7 @@ function InvoiceDetailDialog({ invoice, onClose, onSend, onPay, onCancel }) {
                       <td className="px-2 py-1.5 text-right tabular-nums">{fmt.hours(ln.hours ?? ln.quantity)}</td>
                       <td className="px-2 py-1.5 text-right tabular-nums text-zinc-500">{fmt.chf(ln.rate ?? ln.unit_price)}</td>
                       <td className="px-2 py-1.5 text-right tabular-nums font-medium">{fmt.chf(ln.amount)}</td>
+                      <td className="px-2 py-1.5 font-mono text-zinc-500">{ln.fibu_konto_nr || '—'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -770,7 +772,18 @@ function InvoiceGroupedRow({ inv, expanded, onToggle, onOpen, onSend, onPay, onC
             ? (expanded ? <ChevronDown className="w-3.5 h-3.5 text-zinc-400" /> : <ChevronRight className="w-3.5 h-3.5 text-zinc-400" />)
             : <span className="w-3.5 h-3.5 inline-block" />}
         </td>
-        <td className="px-3 py-1.5 font-medium text-zinc-700">{inv.invoice_no || <span className="text-zinc-400 italic">(Entwurf)</span>}</td>
+        <td className="px-3 py-1.5 font-medium text-zinc-700">
+          <span className="inline-flex items-center gap-1.5">
+            {inv.invoice_no || <span className="text-zinc-400 italic">(Entwurf)</span>}
+            {inv.fibu_debitoren_beleg_id && (
+              <Landmark
+                className="w-3.5 h-3.5"
+                style={{ color: '#5f8365' }}
+                aria-label="Live in Fibu verbucht"
+              />
+            )}
+          </span>
+        </td>
         <td className="px-3 py-1.5 text-zinc-600 tabular-nums">{fmt.date(inv.issue_date)}</td>
         <td className="px-3 py-1.5">{inv.customer?.company_name ?? '—'}</td>
         <td className="px-3 py-1.5 text-zinc-600">{inv.project?.name ?? '—'}</td>
@@ -819,6 +832,7 @@ function InvoiceGroupedRow({ inv, expanded, onToggle, onOpen, onSend, onPay, onC
                     <th className="text-right font-semibold px-2 py-1.5 w-16">Stunden</th>
                     <th className="text-right font-semibold px-2 py-1.5 w-20">Satz</th>
                     <th className="text-right font-semibold px-2 py-1.5 w-24">Betrag</th>
+                    <th className="text-left font-semibold px-2 py-1.5 w-20">Fibu-Konto</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -828,6 +842,7 @@ function InvoiceGroupedRow({ inv, expanded, onToggle, onOpen, onSend, onPay, onC
                       <td className="px-2 py-1.5 text-right tabular-nums">{Number(l.hours || 0) > 0 ? fmt.hours(l.hours) : '—'}</td>
                       <td className="px-2 py-1.5 text-right tabular-nums text-zinc-500">{Number(l.rate || 0) > 0 ? fmt.chf(l.rate) : '—'}</td>
                       <td className="px-2 py-1.5 text-right tabular-nums font-medium">{fmt.chf(l.amount)}</td>
+                      <td className="px-2 py-1.5 font-mono text-zinc-500">{l.fibu_konto_nr || '—'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -836,6 +851,7 @@ function InvoiceGroupedRow({ inv, expanded, onToggle, onOpen, onSend, onPay, onC
                     <td className="px-2 py-1.5 font-semibold text-zinc-600">Total</td>
                     <td colSpan={2}></td>
                     <td className="px-2 py-1.5 text-right tabular-nums font-semibold" style={{ color: '#2d5a2d' }}>{fmt.chf(total)}</td>
+                    <td></td>
                   </tr>
                 </tfoot>
               </table>
