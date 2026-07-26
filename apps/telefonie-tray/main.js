@@ -42,6 +42,7 @@
 const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, screen, shell, powerSaveBlocker } = require("electron");
 const path = require("path");
 const fs = require("fs");
+const crypto = require("crypto");
 // Electrons gebuendeltes Node hat kein natives globales WebSocket -- @supabase/
 // realtime-js braucht eins im globalen Scope, sonst wirft createClient().
 if (typeof globalThis.WebSocket === "undefined") {
@@ -89,6 +90,29 @@ let pendingStatusUpdate = null; // Status, der eintraf WAEHREND das Fenster noch
 let lastUpdateKey = null; // zuletzt per IPC gesendeter Karteninhalt -- Duplikate nicht erneut senden
 let currentDossier = null; // Dossier (Pendenzen/Dokumente) des aktuellen Anrufs, vom Webhook mitgeliefert
 let currentPeerNumber = null; // Nummer der aktuell gezeigten Karte -- fuer die Rufgruppen-Bein-Erkennung
+let CONTROL_SECRET = null; // persoenliches Geheimnis zum Signieren (aus config.json)
+
+// ── Fernsteuer-Befehl signiert senden (Security-Paket 2026-07-26) ────────
+// Der Kanal ist oeffentlich: ohne Signatur koennte jeder, der Kanalnamen und
+// Profil-ID kennt, fremde Telefone steuern ("answer" = mithoeren). Der lokale
+// Helfer fuehrt nur noch Befehle mit gueltiger, frischer Signatur aus.
+function sendeSteuerbefehl(action, extra = {}) {
+  if (!realtimeChannel) return;
+  if (!CONTROL_SECRET) {
+    console.error("⚠️ Kein controlSecret in der Konfiguration -- Befehl", action, "wird NICHT gesendet (siehe INSTALL.md).");
+    return;
+  }
+  const payload = {
+    targetUserId: MY_PROFILE_ID,
+    action,
+    ...extra,
+    ts: Date.now(),
+    nonce: crypto.randomBytes(12).toString("hex"),
+  };
+  const kanonisch = [payload.targetUserId, payload.action, payload.target ?? "", payload.digit ?? "", payload.ts, payload.nonce].join("|");
+  payload.sig = crypto.createHmac("sha256", CONTROL_SECRET).update(kanonisch).digest("hex");
+  realtimeChannel.send({ type: "broadcast", event: "control_command", payload });
+}
 // ⚠️ call.id, die bereits VOLLSTAENDIG als "ended" verarbeitet wurden -- UEBERLEBT
 // hideCallWindow() (anders als currentCallId/toastEnded), siehe showCall() fuer den
 // Bug, den das behebt: peoplefone schickt "terminated" oft mehrfach mit
@@ -154,6 +178,11 @@ function applyConfig() {
   if (typeof cfg.profileId === "string" && cfg.profileId.trim()) MY_PROFILE_ID = cfg.profileId.trim();
   if (typeof cfg.supabaseUrl === "string" && cfg.supabaseUrl.trim()) SUPABASE_URL = cfg.supabaseUrl.trim();
   if (typeof cfg.supabaseAnonKey === "string" && cfg.supabaseAnonKey.trim()) SUPABASE_ANON_KEY = cfg.supabaseAnonKey.trim();
+  if (typeof cfg.controlSecret === "string" && cfg.controlSecret.trim()) CONTROL_SECRET = cfg.controlSecret.trim();
+  if (!CONTROL_SECRET) {
+    console.warn("⚠️ Kein controlSecret in", getConfigPath(),
+      "-- Annehmen/Verbinden/Auflegen von der Karte aus bleibt wirkungslos (siehe INSTALL.md).");
+  }
   // ⚠️ Laut vorbeugen, wenn jemand die App ohne eigene Konfiguration
   // installiert -- sonst laeuft sie still unter Saschas Profil-ID mit.
   if (MY_PROFILE_ID === DEFAULT_PROFILE_ID && !cfg.profileId) {
@@ -534,22 +563,14 @@ app.whenReady().then(() => {
   // klicken muss.
   ipcMain.handle("telefonie-tray:toast-answer", () => {
     if (!realtimeChannel) return;
-    realtimeChannel.send({
-      type: "broadcast",
-      event: "control_command",
-      payload: { targetUserId: MY_PROFILE_ID, action: "answer" },
-    });
+    sendeSteuerbefehl("answer");
   });
   // Roter Auflegen-Knopf auf der Karte (Sascha 2026-07-26: das X wurde als
   // Auflegen missverstanden -- X schliesst weiterhin nur die Karte, Auflegen
   // ist jetzt ein eigener, unmissverstaendlich roter Knopf im Gespraech).
   ipcMain.handle("telefonie-tray:toast-hangup", () => {
     if (!realtimeChannel) return;
-    realtimeChannel.send({
-      type: "broadcast",
-      event: "control_command",
-      payload: { targetUserId: MY_PROFILE_ID, action: "hangup" },
-    });
+    sendeSteuerbefehl("hangup");
   });
   // Verbinden direkt von der Karte (Sascha 2026-07-26: "keine Knoepfe zum
   // Verbinden"). Geht bewusst ueber den lokalen Fernsteuerungs-Listener
@@ -558,11 +579,7 @@ app.whenReady().then(() => {
   // angemeldeten Benutzer. Blind-Transfer, wie bei peoplefone auch.
   ipcMain.handle("telefonie-tray:toast-transfer", (_e, target) => {
     if (!realtimeChannel || !target) return;
-    realtimeChannel.send({
-      type: "broadcast",
-      event: "control_command",
-      payload: { targetUserId: MY_PROFILE_ID, action: "transfer", target: String(target) },
-    });
+    sendeSteuerbefehl("transfer", { target: String(target) });
   });
 
   // Verbinden-Ziele aus der Konfiguration (userData/config.json, "targets").

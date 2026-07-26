@@ -215,9 +215,45 @@ export function TelephonyProvider({ children }) {
     controlErrorTimer.current = setTimeout(() => setControlError(null), 6000);
   }, []);
 
+  // ── Persoenliches Geheimnis zum Signieren (Security-Paket 2026-07-26) ───
+  // Der Kanal ist oeffentlich; ohne Signatur koennte jeder mit Kanalnamen und
+  // Profil-ID fremde Telefone steuern ("answer" = mithoeren). RLS gibt jedem
+  // nur das EIGENE Profil frei, das Geheimnis autorisiert also genau das
+  // eigene Telefon.
+  const controlSecretRef = useRef(null);
+  useEffect(() => {
+    if (!myId) return;
+    let abgebrochen = false;
+    supabase.from("profiles").select("telefonie_control_secret").eq("id", myId).maybeSingle()
+      .then(({ data }) => { if (!abgebrochen) controlSecretRef.current = data?.telefonie_control_secret || null; })
+      .catch(() => { /* ohne Geheimnis bleibt die Fernsteuerung wirkungslos */ });
+    return () => { abgebrochen = true; };
+  }, [myId]);
+
+  const signiere = useCallback(async (payload) => {
+    const secret = controlSecretRef.current;
+    if (!secret) return null;
+    const kanonisch = [payload.targetUserId, payload.action, payload.target ?? "", payload.digit ?? "", payload.ts, payload.nonce].join("|");
+    const enc = new TextEncoder();
+    const key = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+    const mac = await crypto.subtle.sign("HMAC", key, enc.encode(kanonisch));
+    return [...new Uint8Array(mac)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  }, []);
+
   const sendControlCommand = useCallback(async (action, extra) => {
     if (!myId) return false;
-    const payload = { targetUserId: myId, action, ...extra };
+    const payload = {
+      targetUserId: myId,
+      action,
+      ...extra,
+      ts: Date.now(),
+      nonce: crypto.getRandomValues(new Uint8Array(12)).reduce((s, b) => s + b.toString(16).padStart(2, "0"), ""),
+    };
+    payload.sig = await signiere(payload);
+    if (!payload.sig) {
+      console.error("Kein Fernsteuer-Geheimnis im Profil -- Befehl wird nicht gesendet.");
+      return false;
+    }
     try {
       if (callsChRef.current) {
         const status = await callsChRef.current.send({ type: "broadcast", event: "control_command", payload });
@@ -238,7 +274,7 @@ export function TelephonyProvider({ children }) {
     } catch {
       return false;
     }
-  }, [myId]);
+  }, [myId, signiere]);
 
   // ── ausgehend ──────────────────────────────────────────────────────────
   // Wählt ECHT über das lokale Softphone (MicroSIP als tel:-Standard-App) UND

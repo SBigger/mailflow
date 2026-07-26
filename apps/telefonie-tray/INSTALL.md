@@ -29,21 +29,32 @@ Beim ersten Start legt Electron den Konfigurationsordner an. Dort
 ```json
 {
   "profileId": "<UUID des smartis-Profils dieser Person>",
+  "controlSecret": "<Wert aus profiles.telefonie_control_secret dieser Person>",
   "url": "https://smartis.me/telefonie",
   "targets": [
-    { "name": "Romy Gerber", "extension": "21" },
-    { "name": "Reto Mühlemann", "extension": "22" }
+    { "name": "Romy Gerber", "extension": "21" }
   ]
 }
 ```
+
+⚠️ Die Datei **ohne BOM** speichern (in Notepad: „UTF-8", nicht „UTF-8 mit BOM";
+in PowerShell nicht `Set-Content -Encoding utf8`). Mit BOM wird die gesamte
+Konfiguration verworfen — die App warnt dann beim Start.
 
 - **`profileId`** ist der wichtigste Wert: Er entscheidet, wessen Anrufe diese
   Karte zeigt. Zu finden in smartis (Einstellungen → Benutzer) bzw. in der
   Datenbank-Tabelle `profiles`.
   ⚠️ **Fehlt er, läuft die App unter der Vorgabe-Kennung mit** und zeigt fremde
   Anrufe — beim Start erscheint dann eine Warnung im Protokoll.
-- `targets` ist die Auswahlliste beim Verbinden (Vorgabe: die bekannten
-  Nebenstellen).
+- **`controlSecret`** signiert Annehmen/Verbinden/Auflegen. Ohne diesen Wert
+  bleiben die Knöpfe wirkungslos (der lokale Helfer lehnt unsignierte Befehle
+  ab). Muss **identisch** in der Helfer-Konfiguration stehen (Schritt 2) und
+  mit `profiles.telefonie_control_secret` dieser Person übereinstimmen.
+  Wie ein Passwort behandeln — nicht ins Repo, nicht per Chat verschicken.
+- `targets` ist die Auswahlliste beim Verbinden. **Nur echte Nebenstellen
+  eintragen** (Liste: Einstellungen → Telefonie, kommt live aus der Anlage) —
+  ein Transfer auf eine nicht existierende Nebenstelle kommt über die
+  Rufgruppe zurück und wirkt wie ein doppelter Anruf.
 - `supabaseUrl` / `supabaseAnonKey` nur setzen, wenn eine andere Umgebung als
   smartis.me angebunden werden soll (z.B. Produktiv).
 
@@ -56,8 +67,19 @@ Damit Annehmen/Verbinden/Auflegen aus der Karte MicroSIP wirklich steuern:
 1. Ordner `%LOCALAPPDATA%\SmartisTelefonie\` anlegen.
 2. `microsip-control-listener.js` und `start-control-listener.vbs` von einem
    eingerichteten PC kopieren.
-3. Im Listener `MY_PROFILE_ID` auf die Profil-UUID dieser Person setzen und den
-   MicroSIP-Pfad prüfen.
+3. Dort eine `config.json` anlegen (ebenfalls **ohne BOM**) — dieselben Werte
+   wie bei der Karte:
+
+   ```json
+   {
+     "profileId": "<UUID des smartis-Profils>",
+     "controlSecret": "<identisch zur Karte>"
+   }
+   ```
+
+   Ohne `controlSecret` lehnt der Helfer **jeden** Befehl ab (das ist Absicht:
+   der Kanal ist öffentlich, nur signierte Befehle dürfen ausgeführt werden).
+   MicroSIP-Pfad im Skript prüfen.
 4. Autostart: Registry-Schlüssel `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`,
    Wert `SmartisTelefonieControl` =
    `wscript.exe "C:\Users\<Benutzer>\AppData\Local\SmartisTelefonie\start-control-listener.vbs"`
@@ -72,7 +94,14 @@ Problemen.
 - Testanruf: Karte erscheint unten rechts, Annehmen holt das Gespräch heran,
   MicroSIP verschwindet danach von selbst wieder.
 
-## Bekannte Einschränkung
+## Absicherung
 
-Der Fernsteuerungs-Kanal ist derzeit nicht signiert — die Absicherung steht im
-Security-Paket an und sollte **vor** dem breiten Rollout erledigt sein.
+Der Realtime-Kanal ist öffentlich (anon-Key und Kanalname stehen im Repo).
+Deshalb sind Fernsteuer-Befehle **signiert**: Der Helfer führt nur Befehle mit
+gültiger Signatur aus, die höchstens 30 Sekunden alt sind und nicht schon
+einmal ausgeführt wurden. Ohne Kenntnis des persönlichen `controlSecret` kann
+niemand ein fremdes Telefon steuern.
+
+**Noch offen:** Die Anruf-Ereignisse selbst (Kundenname, Pendenzen,
+Dokumentnamen) laufen weiterhin unverschlüsselt über den öffentlichen Kanal —
+mitlesen ist also technisch möglich. Nächster Schritt des Security-Pakets.
