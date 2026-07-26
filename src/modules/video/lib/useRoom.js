@@ -67,7 +67,9 @@ export function useRoom() {
   const snapshot = useCallback(() => {
     const room = roomRef.current;
     if (!room || !room.localParticipant) return;
-    const remotes = Array.from(room.remoteParticipants?.values?.() || []);
+    // v2 heisst die Sammlung remoteParticipants, v1 hiess sie participants.
+    const remoteMap = room.remoteParticipants || room.participants;
+    const remotes = Array.from(remoteMap?.values?.() || []);
     const list = [
       describe(room.localParticipant, true),
       ...remotes.map((p) => describe(p, false)),

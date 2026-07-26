@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { X, Send, MicOff, MonitorUp, Hand } from "lucide-react";
-import { RoomEvent } from "livekit-client";
+import { X, Send, MicOff, MonitorUp } from "lucide-react";
 import { VM, initials, personStyle } from "../theme";
 
 // ===========================================================================
@@ -15,8 +14,12 @@ import { VM, initials, personStyle } from "../theme";
 // bewusst flüchtig: Nachrichten sind nach dem Gespräch weg. Wer dauerhaft
 // dokumentieren will, nutzt Chartis. (Ab Phase 3 wandert Wichtiges ohnehin
 // ins Protokoll.)
+//
+// ⚠️ Die Nachrichtenliste kommt als Eigenschaft von aussen und wird NICHT
+// hier gehalten: Dieses Panel wird beim Schliessen abgebaut – eine interne
+// Liste wäre danach leer, und alles, was währenddessen ankam, verloren.
 // ===========================================================================
-export default function SidePanel({ t, tab, onClose, participants, roomRef, onUnread }) {
+export default function SidePanel({ t, tab, onClose, participants, messages = [], onSend }) {
   return (
     <div style={{
       width: VM.panelWidth, flexShrink: 0, background: t.stagePanel,
@@ -45,7 +48,7 @@ export default function SidePanel({ t, tab, onClose, participants, roomRef, onUn
 
       {tab === "people"
         ? <PeopleList t={t} participants={participants} />
-        : <Chat t={t} roomRef={roomRef} onUnread={onUnread} />}
+        : <Chat t={t} messages={messages} onSend={onSend} />}
     </div>
   );
 }
@@ -81,56 +84,30 @@ function PeopleList({ t, participants }) {
   );
 }
 
-function Chat({ t, roomRef, onUnread }) {
-  const [msgs, setMsgs] = useState([]);
+function Chat({ t, messages, onSend }) {
   const [text, setText] = useState("");
   const endRef = useRef(null);
 
   useEffect(() => {
-    const room = roomRef?.current;
-    if (!room) return;
-    const onData = (payload, participant) => {
-      try {
-        const data = JSON.parse(new TextDecoder().decode(payload));
-        if (data?.kind !== "chat") return;
-        setMsgs((m) => [...m, {
-          id: `${Date.now()}-${Math.random()}`,
-          from: participant?.name || participant?.identity || "Unbekannt",
-          text: String(data.text || "").slice(0, 2000),
-          at: new Date(),
-        }]);
-      } catch { /* fremde Datenpakete ignorieren */ }
-    };
-    room.on(RoomEvent.DataReceived, onData);
-    return () => { room.off(RoomEvent.DataReceived, onData); };
-  }, [roomRef]);
-
-  useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" });
-    onUnread?.(0); // Panel ist offen – alles gelesen
-  }, [msgs, onUnread]);
+  }, [messages]);
 
   const send = async () => {
-    const room = roomRef?.current;
     const value = text.trim();
-    if (!room || !value) return;
-    const body = new TextEncoder().encode(JSON.stringify({ kind: "chat", text: value }));
-    try {
-      await room.localParticipant.publishData(body, { reliable: true });
-      setMsgs((m) => [...m, { id: `${Date.now()}`, from: "Sie", text: value, at: new Date(), own: true }]);
-      setText("");
-    } catch { /* Zustellung nicht garantiert – Nachricht bleibt im Feld */ }
+    if (!value) return;
+    const ok = await onSend?.(value);
+    if (ok) setText("");
   };
 
   return (
     <>
       <div style={{ flex: 1, minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column", gap: 10 }}>
-        {msgs.length === 0 && (
+        {messages.length === 0 && (
           <p style={{ fontSize: 12, color: t.onStageMuted, margin: 0 }}>
             Noch keine Nachrichten. Der Chat gilt nur für dieses Gespräch.
           </p>
         )}
-        {msgs.map((m) => {
+        {messages.map((m) => {
           const tone = personStyle({ full_name: m.from });
           return (
             <div key={m.id} style={{ display: "flex", gap: 9, alignItems: "flex-start" }}>

@@ -31,10 +31,13 @@ export default function Raum() {
   const [unread, setUnread] = useState(0);
   const [toast, setToast] = useState(null);
   const [barVisible, setBarVisible] = useState(true);
+  // ⚠️ Der Gesprächschat lebt HIER, nicht im Panel: Sonst entstünde die Liste
+  // erst beim Öffnen und alles, was währenddessen ankam, wäre verloren.
+  const [chat, setChat] = useState([]);
 
   const {
     state, error, participants, micOn, camOn, screenOn,
-    connect, leave, toggleMic, toggleCam, toggleScreen, room,
+    connect, leave, toggleMic, toggleCam, toggleScreen, switchDevice, room,
   } = useRoom();
 
   // ── Beitreten ──────────────────────────────────────────────────────────
@@ -52,6 +55,9 @@ export default function Raum() {
         videoDeviceId: prefs.camId,
         audioDeviceId: prefs.micId,
       });
+      // Gewählten Lautsprecher übernehmen – ohne das bliebe die Auswahl im
+      // Beitritts-Bildschirm wirkungslos (nicht jeder Browser kann es).
+      if (prefs.speakerId) await switchDevice("audiooutput", prefs.speakerId);
       setPhase("live");
     } catch (e) {
       // Supabase meldet Nicht-2xx generisch – für den Nutzer übersetzen.
@@ -63,7 +69,7 @@ export default function Raum() {
       );
       setPhase("failed");
     }
-  }, [roomName, connect]);
+  }, [roomName, connect, switchDevice]);
 
   const handleLeave = useCallback(async () => {
     await leave();
@@ -87,14 +93,34 @@ export default function Raum() {
         const data = JSON.parse(new TextDecoder().decode(payload));
         if (data?.kind === "hand") {
           setToast(`${participant?.name || "Jemand"} hat die Hand gehoben`);
-        } else if (data?.kind === "chat" && panel !== "chat") {
-          setUnread((n) => n + 1);
+        } else if (data?.kind === "chat") {
+          setChat((m) => [...m, {
+            id: `${Date.now()}-${Math.random()}`,
+            from: participant?.name || participant?.identity || "Unbekannt",
+            text: String(data.text || "").slice(0, 2000),
+          }]);
+          // Nur zählen, wenn der Chat gerade nicht offen ist.
+          setPanel((cur) => { if (cur !== "chat") setUnread((n) => n + 1); return cur; });
         }
       } catch { /* fremde Pakete ignorieren */ }
     };
     r.on(RoomEvent.DataReceived, onData);
     return () => { r.off(RoomEvent.DataReceived, onData); };
-  }, [room, phase, panel]);
+  }, [room, phase]);
+
+  const sendChat = useCallback(async (text) => {
+    const r = room?.current;
+    const value = String(text || "").trim();
+    if (!r || !value) return false;
+    const body = new TextEncoder().encode(JSON.stringify({ kind: "chat", text: value }));
+    try {
+      await r.localParticipant.publishData(body, { reliable: true });
+      setChat((m) => [...m, { id: `${Date.now()}`, from: "Sie", text: value, own: true }]);
+      return true;
+    } catch {
+      return false; // Nachricht bleibt im Eingabefeld stehen
+    }
+  }, [room]);
 
   useEffect(() => {
     if (!toast) return;
@@ -214,8 +240,9 @@ export default function Raum() {
         {panel && (
           <div style={{ padding: `${VM.stagePad}px ${VM.stagePad}px ${VM.stagePad}px 0`, display: "flex", minHeight: 0 }}>
             <SidePanel
-              t={t} tab={panel} participants={participants} roomRef={room}
-              onClose={() => setPanel(null)} onUnread={setUnread}
+              t={t} tab={panel} participants={participants}
+              messages={chat} onSend={sendChat}
+              onClose={() => setPanel(null)}
             />
           </div>
         )}
