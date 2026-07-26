@@ -89,6 +89,14 @@ import { matchCustomerBySuffix, broadcastRealtime } from "../_shared/telefonie.t
 const json = (b: unknown, status = 200) =>
   new Response(JSON.stringify(b), { status, headers: { "Content-Type": "application/json" } });
 
+// Telefonnummern in Logs maskieren (Review 2026-07-26: personenbezogene
+// Daten). 7+ zusammenhaengende Ziffern = praktisch sicher eine Rufnummer;
+// die hexadezimalen callIds (kurze Ziffernlaeufe) bleiben lesbar, damit die
+// Logs als Debug-Werkzeug taugen (haben heute 3x den Tag gerettet).
+function maskNumbers(s: string): string {
+  return s.replace(/\d{7,}/g, (m) => "…" + m.slice(-3));
+}
+
 function pickState(state: unknown): "ringing" | "answered" | "ended" | null {
   const raw = String(state || "").toLowerCase();
   if (raw === "confirmed") return "answered";
@@ -106,7 +114,16 @@ function pickRemoteParty(entry: Record<string, unknown>): string {
 serve(async (req) => {
   const url = new URL(req.url);
   const secret = Deno.env.get("PEOPLEFONE_WEBHOOK_SECRET");
-  if (secret && url.searchParams.get("secret") !== secret) {
+  // Fail-closed (Review 2026-07-26): fehlt das Secret in der Umgebung
+  // (Fehlkonfiguration), NICHT alles offen durchwinken, sondern hart
+  // ablehnen -- lieber verlieren wir Zustellungen (peoplefone raeumt die
+  // Subscription dann weg), als dass die oeffentlich erreichbare Function
+  // beliebige gefaelschte Anruf-Events akzeptiert.
+  if (!secret) {
+    console.error("PEOPLEFONE_WEBHOOK_SECRET fehlt -- Webhook verweigert alle Anfragen");
+    return json({ error: "misconfigured" }, 500);
+  }
+  if (url.searchParams.get("secret") !== secret) {
     return json({ error: "unauthorized" }, 401);
   }
 
@@ -116,7 +133,7 @@ serve(async (req) => {
   } catch {
     return json({ ok: true }); // leerer/fehlender Body -- trotzdem 200, sonst faellt die Subscription weg
   }
-  console.log("telefonie-peoplefone-webhook rawBody:", JSON.stringify(rawBody));
+  console.log("telefonie-peoplefone-webhook rawBody:", maskNumbers(JSON.stringify(rawBody)));
 
   if (rawBody.action === "keepAlive") {
     return json({ ok: true });
