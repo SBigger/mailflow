@@ -29,7 +29,7 @@ import {
     Download,
     Database,
     Inbox,
-    ShieldCheck, Upload, PanelLeft, Loader2, Camera, ImageOff
+    ShieldCheck, Upload, PanelLeft, Loader2, Camera, ImageOff, Phone
 } from "lucide-react";
 import {ThemeContext} from "@/Layout";
 import PersonAvatar from "@/components/ui/PersonAvatar";
@@ -149,6 +149,38 @@ export default function Settings() {
         queryFn: () => entities.Customer.list("company_name"),
         enabled: activeTab === 'domain-rules',
     });
+
+    // ── Telefonie: Nebenstellen live aus der peoplefone-Anlage (2026-07-26).
+    // Gleiche Quelle wie die Verbinden-Ziele (Edge Function telefonie-transfer)
+    // -- keine Datenpflege in smartis, die Anlage ist die Wahrheit.
+    const {data: pbxTargets = [], isLoading: pbxLoading, isError: pbxError} = useQuery({
+        queryKey: ['pbx-targets'],
+        queryFn: async () => {
+            const {data} = await functions.invoke('telefonie-transfer', {action: 'targets'});
+            return data?.targets || [];
+        },
+        enabled: activeTab === 'telefonie' && user?.role === 'admin',
+        staleTime: 5 * 60_000,
+    });
+    const [extSavingId, setExtSavingId] = useState(null);
+    // Zuordnung Profil -> peoplefone-Benutzer speichern (Grundstein fuer den
+    // Mitarbeiter-Rollout: eigene Subscriptions, gezielte Karten, Verbinden-
+    // Liste). Admin-RLS ("Admins can update any profile") erlaubt das direkt.
+    const saveExtension = async (profileId, target) => {
+        setExtSavingId(profileId);
+        try {
+            const {error: extErr} = await supabase.from('profiles').update({
+                peoplefone_user_id: target?.peoplefoneId || null,
+                internal_extension: target?.internalNumber || null,
+            }).eq('id', profileId);
+            if (extErr) throw new Error(extErr.message);
+            queryClient.invalidateQueries({queryKey: ['users']});
+        } catch (e) {
+            toast.error('Zuordnung speichern fehlgeschlagen: ' + (e?.message || e));
+        } finally {
+            setExtSavingId(null);
+        }
+    };
 
     const {data: activityTemplates = []} = useQuery({
         queryKey: ['activityTemplates'],
@@ -930,6 +962,14 @@ export default function Settings() {
                     >
                         {theme === 'light' ? <Sun className="h-4 w-4"/> : <Moon className="h-4 w-4"/>} Darstellung
                     </button>
+                    {user?.role !== 'task_user' && (
+                        <button
+                            onClick={() => setActiveTab('telefonie')}
+                            className={`w-full justify-start flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'telefonie' ? navActiveStyle : navInactiveStyle}`}
+                        >
+                            <Phone className="h-4 w-4"/> Telefonie
+                        </button>
+                    )}
                     {user?.role === 'admin' && (
                         <>
                             {isFetching ? '...loading' : (
@@ -2305,6 +2345,85 @@ export default function Settings() {
                                     </button>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Telefonie Tab (2026-07-26): Zuordnung Mitarbeiter <-> peoplefone-
+                    Nebenstelle als Grundstein fuer den Telefonie-Rollout. */}
+                {activeTab === 'telefonie' && (
+                    <div className="space-y-6">
+                        {user?.role === 'admin' && (
+                            <div className="rounded-xl p-6 border" style={{backgroundColor: cardBg, borderColor: cardBorder}}>
+                                <h3 className="text-lg font-semibold mb-1 flex items-center gap-2" style={{color: headingColor}}>
+                                    <Phone className="h-5 w-5"/> Nebenstellen-Zuordnung
+                                </h3>
+                                <p className="text-sm mb-6" style={{color: textMuted}}>
+                                    Welcher peoplefone-Anschluss gehört zu welcher Person? Die Liste kommt live aus der
+                                    Telefonanlage. Diese Zuordnung steuert künftig, bei wem die Anruf-Karte aufpoppt und
+                                    wohin „Verbinden" zeigt.
+                                </p>
+                                {pbxLoading && <p className="text-sm" style={{color: textMuted}}>Lade Nebenstellen aus der Anlage…</p>}
+                                {pbxError && <p className="text-sm text-red-500">Nebenstellen konnten nicht geladen werden — peoplefone-API prüfen.</p>}
+                                <div className="space-y-2">
+                                    {users.filter(u => u.role !== 'task_user').map(u => {
+                                        const assigned = pbxTargets.find(t => t.peoplefoneId === u.peoplefone_user_id);
+                                        return (
+                                            <div key={u.id} className="flex items-center gap-3 rounded-lg border px-3 py-2"
+                                                 style={{borderColor: cardBorder}}>
+                                                <PersonAvatar user={u} size={30}/>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="text-sm font-medium truncate" style={{color: headingColor}}>{u.full_name || u.email}</div>
+                                                    <div className="text-xs truncate" style={{color: textMuted}}>
+                                                        {assigned
+                                                            ? `Nebenstelle ${assigned.internalNumber} · ${assigned.name}`
+                                                            : (u.internal_extension ? `Nebenstelle ${u.internal_extension} (nicht mehr in der Anlage?)` : 'keine Zuordnung')}
+                                                    </div>
+                                                </div>
+                                                {extSavingId === u.id
+                                                    ? <Loader2 className="h-4 w-4 animate-spin" style={{color: textMuted}}/>
+                                                    : (
+                                                        <select
+                                                            value={u.peoplefone_user_id || ''}
+                                                            onChange={(e) => {
+                                                                const t = pbxTargets.find(x => x.peoplefoneId === e.target.value) || null;
+                                                                saveExtension(u.id, t);
+                                                            }}
+                                                            className="text-sm rounded-md border px-2 py-1"
+                                                            style={{borderColor: cardBorder, backgroundColor: cardBg, color: headingColor, maxWidth: 220}}
+                                                        >
+                                                            <option value="">— keine —</option>
+                                                            {pbxTargets.map(t => (
+                                                                <option key={t.peoplefoneId} value={t.peoplefoneId}>
+                                                                    {t.internalNumber} · {t.name}
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                    )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+                        <div className="rounded-xl p-6 border" style={{backgroundColor: cardBg, borderColor: cardBorder}}>
+                            <h3 className="text-lg font-semibold mb-1 flex items-center gap-2" style={{color: headingColor}}>
+                                <Phone className="h-5 w-5"/> Mein Telefon
+                            </h3>
+                            {(() => {
+                                const me = users.find(u => u.id === user?.id) || user || {};
+                                return (
+                                    <p className="text-sm" style={{color: textMuted}}>
+                                        {me.internal_extension
+                                            ? <>Dir ist die Nebenstelle <b style={{color: headingColor}}>{me.internal_extension}</b> zugeordnet.</>
+                                            : 'Dir ist noch keine Nebenstelle zugeordnet — das übernimmt ein Admin in der Zuordnung oben.'}
+                                    </p>
+                                );
+                            })()}
+                            <p className="text-sm mt-3" style={{color: textMuted}}>
+                                Persönliche Einstellungen (Klingelverhalten, Anruf-Karte, Töne) folgen mit dem
+                                Mitarbeiter-Rollout.
+                            </p>
                         </div>
                     </div>
                 )}
