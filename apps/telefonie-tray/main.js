@@ -329,6 +329,15 @@ function connectRealtime() {
 
 app.setName("SmartisTelefonieTray");
 
+// Doppelstart-Schutz: seit dem Autostart-Fix (Run-Key, 2026-07-26) startet
+// die App beim Login automatisch -- ein zusaetzlicher manueller Start (npm
+// start) wuerde sonst eine ZWEITE Instanz mit eigener Realtime-Verbindung
+// erzeugen und jede Karte doppelt zeigen. Zweite Instanz beendet sich sofort.
+if (!app.requestSingleInstanceLock()) {
+  console.log("smartis Telefonie Tray laeuft bereits -- diese Instanz beendet sich.");
+  app.quit();
+}
+
 // Absturz-Sicherung: ein Fehler in einem Broadcast-Handler o.ae. soll die
 // ganze App nie mehr lautlos beenden (siehe Vorfall 2026-07-23: Absturz nach
 // mehreren schnellen "ringing"-Events, kein Fehler im Log ersichtlich).
@@ -347,7 +356,20 @@ app.on("render-process-gone", (_e, _wc, details) => {
 });
 
 app.whenReady().then(() => {
-  app.setLoginItemSettings({ openAtLogin: true });
+  // ⚠️ BUG gefunden + behoben (2026-07-26): ohne explizites path/args traegt
+  // Electron bei einer UNVERPACKTEN App (npm start) nur electron.exe OHNE den
+  // App-Pfad in den Registry-Run-Key ein -- beim naechsten Login startete
+  // dann bloss das leere Electron-Standardfenster statt dieser App (genau so
+  // nach Saschas Reboot am 2026-07-26 beobachtet: kein Tray, keine Karte,
+  // bis manuell nachgestartet wurde). Der App-Ordner MUSS als Argument mit
+  // (in Anfuehrungszeichen -- der OneDrive-Pfad enthaelt Leerzeichen).
+  // Pfad UND Argument selbst quoten -- Electron schreibt beides woertlich in
+  // den Run-Key, und beide Pfade enthalten Leerzeichen (OneDrive-Ordner).
+  app.setLoginItemSettings({
+    openAtLogin: true,
+    path: `"${process.execPath}"`,
+    args: [`"${__dirname}"`],
+  });
 
   // ⚠️ Windows drosselt Netzwerk/Timer von Hintergrund-Apps ohne Fokus
   // (die Karte ist ja absichtlich meistens unsichtbar) -- das war die
