@@ -57,7 +57,12 @@ export default function Softphone() {
   const theme = useAppTheme();
   const t = tele(theme);
   const { call, incoming, wrapup, clearWrapup, panelOpen, setPanelOpen, dial, answer, decline, hangup, toggleMute, toggleHold, toggleVideo, sendDtmf } = useTelephony();
-  const dossier = useIncomingDossier(incoming?.peerNumber);
+  // ⚠️ Nummer auch aus dem AKTIVEN Anruf ziehen (Fix 2026-07-26): beim
+  // Annehmen wird incoming auf null gesetzt -- vorher verlor der Hook damit
+  // die Nummer und das Dossier war im Gespraech leer ("es zeigt nichts an"),
+  // obwohl es beim Klingeln kurz da war. Dank identischer Query-Keys kommt
+  // es beim Uebergang ringing->Gespraech ohne Neuladen aus dem Cache.
+  const dossier = useIncomingDossier(incoming?.peerNumber || call?.peerNumber);
 
   const [num, setNum] = useState("");
   const [showDtmf, setShowDtmf] = useState(false);
@@ -102,21 +107,7 @@ export default function Softphone() {
 
           {dossier.matched ? (
             <div style={{ marginTop: 13, display: "flex", flexDirection: "column", gap: 12 }}>
-              <DSec t={t} label="Pendenzen" count={dossier.pendenzen.length}>
-                {dossier.pendenzen.length
-                  ? dossier.pendenzen.map((p) => { const di = dueInfo(p.due_date); return <DRow key={p.id} t={t} dot={di.overdue ? t.missed : t.presence.away} text={p.title || "Aufgabe"} meta={di.label} metaCol={di.overdue ? t.missed : undefined} />; })
-                  : <DEmpty t={t}>Keine offenen Pendenzen</DEmpty>}
-              </DSec>
-              <DSec t={t} label="Letzte Mails" count={dossier.mails.length}>
-                {dossier.mails.length
-                  ? dossier.mails.map((m) => <DRow key={m.id} t={t} icon="mail" text={m.subject || "(kein Betreff)"} meta={relTime(m.received_date)} />)
-                  : <DEmpty t={t}>Keine Mails</DEmpty>}
-              </DSec>
-              <DSec t={t} label="Letzte Dokumente" count={dossier.docs.length}>
-                {dossier.docs.length
-                  ? dossier.docs.map((d) => <DRow key={d.id} t={t} icon="doc" text={d.name || d.filename || "Dokument"} meta={relTime(d.updated_at)} />)
-                  : <DEmpty t={t}>Keine Dokumente</DEmpty>}
-              </DSec>
+              <DossierSections t={t} dossier={dossier} />
             </div>
           ) : (
             <div style={{ marginTop: 12, marginBottom: 4, fontSize: 12, color: t.textMuted, background: t.sunken, border: `1px solid ${t.borderSubtle}`, borderRadius: 10, padding: "11px 13px" }}>
@@ -135,9 +126,12 @@ export default function Softphone() {
 
   // ── Aktiver Anruf ──────────────────────────────────────────────────────
   if (call) {
-    const label = call.customer?.company_name || call.peerName || formatPhone(call.peerNumber);
+    // dossier.customer als Fallback: echte Webhook-Anrufe tragen customer im
+    // Payload, aber nicht jeder Weg (z.B. selbst gewaehlt) -- der Hook matcht
+    // dann selbst ueber die Nummer.
+    const label = call.customer?.company_name || dossier.customer?.company_name || call.peerName || formatPhone(call.peerNumber);
     return (
-      <div style={shellStyle} role="dialog" aria-label="Aktiver Anruf">
+      <div style={{ ...shellStyle, width: 384, maxHeight: "calc(100vh - 52px)", overflowY: "auto" }} role="dialog" aria-label="Aktiver Anruf">
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "13px 16px", borderBottom: `1px solid ${t.borderSubtle}` }}>
           <span style={{ fontSize: 13, fontWeight: 700 }}>{call.dir === "in" ? "Eingehender" : "Ausgehender"} Anruf</span>
           <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 600, color: t.textMuted, background: t.sunken, padding: "3px 9px", borderRadius: 999 }}>
@@ -180,9 +174,13 @@ export default function Softphone() {
 
           <button onClick={hangup} style={{ ...bigBtn(t.hangup), width: "100%" }}><PhoneOff size={16} /> Auflegen</button>
 
-          {call.customer?.id && (
-            <div style={{ marginTop: 11, display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11.5, fontWeight: 650, color: t.accent }}>
-              <FileText size={14} /> Dossier öffnen
+          {/* Kunden-Dossier WAEHREND des Gespraechs (Sascha-Wunsch 2026-07-26:
+              "eine Kachel wo wir die dokumente und aufgaben sehen") -- ersetzt
+              den frueheren funktionslosen "Dossier oeffnen"-Hinweis. textAlign
+              zuruecksetzen, der Eltern-Container zentriert. */}
+          {dossier.matched && (
+            <div style={{ marginTop: 14, textAlign: "left", display: "flex", flexDirection: "column", gap: 12 }}>
+              <DossierSections t={t} dossier={dossier} />
             </div>
           )}
         </div>
@@ -260,6 +258,30 @@ export default function Softphone() {
         </div>
       </div>
     </div>
+  );
+}
+
+// Die drei Dossier-Sektionen (Pendenzen / Mails / Dokumente) -- gemeinsam
+// genutzt vom Klingel-Pop UND dem Aktiv-Anruf-Panel (seit 2026-07-26).
+function DossierSections({ t, dossier }) {
+  return (
+    <>
+      <DSec t={t} label="Pendenzen" count={dossier.pendenzen.length}>
+        {dossier.pendenzen.length
+          ? dossier.pendenzen.map((p) => { const di = dueInfo(p.due_date); return <DRow key={p.id} t={t} dot={di.overdue ? t.missed : t.presence.away} text={p.title || "Aufgabe"} meta={di.label} metaCol={di.overdue ? t.missed : undefined} />; })
+          : <DEmpty t={t}>Keine offenen Pendenzen</DEmpty>}
+      </DSec>
+      <DSec t={t} label="Letzte Mails" count={dossier.mails.length}>
+        {dossier.mails.length
+          ? dossier.mails.map((m) => <DRow key={m.id} t={t} icon="mail" text={m.subject || "(kein Betreff)"} meta={relTime(m.received_date)} />)
+          : <DEmpty t={t}>Keine Mails</DEmpty>}
+      </DSec>
+      <DSec t={t} label="Letzte Dokumente" count={dossier.docs.length}>
+        {dossier.docs.length
+          ? dossier.docs.map((d) => <DRow key={d.id} t={t} icon="doc" text={d.name || d.filename || "Dokument"} meta={relTime(d.updated_at)} />)
+          : <DEmpty t={t}>Keine Dokumente</DEmpty>}
+      </DSec>
+    </>
   );
 }
 
