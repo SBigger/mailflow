@@ -60,7 +60,53 @@ serve(async () => {
   const supabase = createClient(supabaseUrl, serviceKey);
   const auth = { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" };
 
-  // 1) Neue Subscription anlegen.
+  // Ein Loeschversuch inkl. Buchhaltung. 2xx/404 = bestaetigt weg.
+  // Beim 419 den Retry-After-Header mitloggen -- peoplefone dokumentiert
+  // seine Drosselung nirgends, vielleicht verraet der Header das Fenster.
+  const cleanups: unknown[] = [];
+  async function tryCleanup(id: string) {
+    try {
+      const res = await fetch(`${BASE}/subscription/${id}`, { method: "DELETE", headers: auth });
+      const confirmed = res.ok || res.status === 404;
+      const retryAfter = res.headers.get("retry-after");
+      cleanups.push({ id, status: res.status, confirmed, ...(retryAfter ? { retryAfter } : {}) });
+      if (confirmed) {
+        const { error } = await supabase
+          .from("telefonie_subscriptions")
+          .update({ cleaned_up_at: new Date().toISOString() })
+          .eq("subscription_id", id);
+        if (error) console.error("keepalive: cleaned_up_at setzen fehlgeschlagen:", id, error.message);
+      }
+    } catch (e) {
+      cleanups.push({ id, error: String(e) });
+    }
+  }
+
+  // 1) ZUERST aufraeumen, DANN neu registrieren (Umstellung 2026-07-26,
+  // zweiter Anlauf): in der alten Reihenfolge (POST, 3s spaeter DELETE) lief
+  // JEDES Loeschen in die 419-Drosselung -- die greift offenbar bei dicht
+  // aufeinanderfolgenden Subscription-Aenderungen desselben Owners. Am
+  // LAUF-ANFANG liegt der letzte Schreibzugriff dagegen ~5 Minuten zurueck
+  // (voriger Cron-Lauf) -- beste Karten fuer den ersten DELETE.
+  // ⚠️ Die JUENGSTE noch aktive Subscription wird hier bewusst VERSCHONT:
+  // sie ist unser aktuell einziger funktionierender Empfangsweg -- erst
+  // loeschen, wenn die Nachfolgerin erfolgreich angelegt ist (Schritt 3),
+  // sonst risse ein fehlgeschlagener POST eine Empfangsluecke bis zum
+  // naechsten Lauf.
+  const { data: stale, error: readError } = await supabase
+    .from("telefonie_subscriptions")
+    .select("subscription_id")
+    .is("cleaned_up_at", null)
+    .order("created_at", { ascending: true });
+  if (readError) console.error("keepalive: Lesen alter IDs fehlgeschlagen:", readError.message);
+  const staleIds = (stale ?? []).map((r) => r.subscription_id as string);
+  const previousActive = staleIds.pop() ?? null; // juengste = aktuell aktive
+  for (const [i, id] of staleIds.slice(0, MAX_CLEANUPS_PER_RUN).entries()) {
+    if (i > 0) await sleep(DELETE_SPACING_MS);
+    await tryCleanup(id);
+  }
+
+  // 2) Neue Subscription anlegen.
   const callbackUrl =
     `${supabaseUrl}/functions/v1/telefonie-peoplefone-webhook?secret=${encodeURIComponent(webhookSecret)}`;
   let newId: string | null = null;
@@ -80,13 +126,10 @@ serve(async () => {
     subscribeResult = { error: String(e) };
   }
 
-  // 2) Neue ID SOFORT als eigene Zeile sichern, VOR jedem Aufraeumen --
-  // ein Absturz danach kostet so nie das Wissen ueber eine erzeugte
-  // Subscription. Schlaegt das Sichern fehl, ist genau DAS der Fall, den
-  // dieses Design verhindern soll -- deshalb laut loggen und als Fehler
-  // im Ergebnis ausweisen (der naechste Lauf raeumt zustellende Waisen
-  // zwar nicht auf, aber peoplefone gibt fuer dieselbe callbackUrl ggf.
-  // dieselbe ID erneut zurueck -- dann faengt ein spaeterer Lauf sie doch).
+  // 3) Neue ID SOFORT als eigene Zeile sichern -- ein Absturz danach kostet
+  // so nie das Wissen ueber eine erzeugte Subscription. Schlaegt das Sichern
+  // fehl, ist genau DAS der Fall, den dieses Design verhindern soll --
+  // deshalb laut loggen und als Fehler im Ergebnis ausweisen.
   let trackError: string | null = null;
   if (newId) {
     const { error } = await supabase.from("telefonie_subscriptions").upsert(
@@ -99,36 +142,12 @@ serve(async () => {
     }
   }
 
-  // 3) ALLE noch nicht bestaetigt geloeschten Vorgaenger aufraeumen
-  // (aelteste zuerst), nicht nur den juengsten. 404 = bei peoplefone schon
-  // weg = ebenfalls erledigt. 419/Netzfehler = beim naechsten Lauf erneut.
-  const cleanups: unknown[] = [];
-  const { data: stale, error: readError } = await supabase
-    .from("telefonie_subscriptions")
-    .select("subscription_id")
-    .is("cleaned_up_at", null)
-    .neq("subscription_id", newId ?? "")
-    .order("created_at", { ascending: true })
-    .limit(MAX_CLEANUPS_PER_RUN);
-  if (readError) console.error("keepalive: Lesen alter IDs fehlgeschlagen:", readError.message);
-
-  for (const row of stale ?? []) {
-    const id = row.subscription_id as string;
+  // 4) Die bisher aktive Vorgaengerin jetzt loeschen -- die Nachfolgerin
+  // steht (sofern der POST klappte). Faellt der Versuch in die Drosselung
+  // (419), holt Schritt 1 des NAECHSTEN Laufs sie mit besserem Timing nach.
+  if (previousActive && newId && previousActive !== newId) {
     await sleep(DELETE_SPACING_MS);
-    try {
-      const res = await fetch(`${BASE}/subscription/${id}`, { method: "DELETE", headers: auth });
-      const confirmed = res.ok || res.status === 404;
-      cleanups.push({ id, status: res.status, confirmed });
-      if (confirmed) {
-        const { error } = await supabase
-          .from("telefonie_subscriptions")
-          .update({ cleaned_up_at: new Date().toISOString() })
-          .eq("subscription_id", id);
-        if (error) console.error("keepalive: cleaned_up_at setzen fehlgeschlagen:", id, error.message);
-      }
-    } catch (e) {
-      cleanups.push({ id, error: String(e) });
-    }
+    await tryCleanup(previousActive);
   }
 
   const summary = { newId, subscribeResult, trackError, cleanups };

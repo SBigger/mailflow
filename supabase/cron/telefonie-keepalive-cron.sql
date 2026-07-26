@@ -21,9 +21,18 @@
 -- Kontrolle:  select jobid, jobname, schedule, active from cron.job;
 -- Abschalten: select cron.unschedule('telefonie-peoplefone-keepalive');
 -- ══════════════════════════════════════════════════════════════════════
+-- ⚠️ */15 statt urspruenglich */5 (umgestellt 2026-07-26): peoplefone
+-- drosselt Subscription-Aenderungen desselben Owners hart (DELETE -> 419,
+-- ohne Retry-After) -- unsere eigenen 5-Minuten-POSTs frassen das Budget
+-- auf, KEIN einziges Aufraeumen kam durch, und die Waisen stellen
+-- nachweislich ALLE parallel zu (60+ Webhook-Zustellungen pro Minute fuer
+-- EINEN Anruf, Logs 26.07. 15:59). keepAlive-Pings schickt peoplefone
+-- entgegen der eigenen Spec gar nicht (0 in 5h Logs) -- Gesundheit ist
+-- also nicht beobachtbar, blindes Erneuern bleibt noetig, aber seltener.
+-- Trade-off: stirbt eine Subscription leise, maximal 15 Min Luecke.
 select cron.schedule(
   'telefonie-peoplefone-keepalive',
-  '*/5 * * * *',
+  '*/15 * * * *',
   $job$
   select net.http_post(
     url     := 'https://uawgpxcihixqxqxxbjak.supabase.co/functions/v1/telefonie-peoplefone-keepalive',
