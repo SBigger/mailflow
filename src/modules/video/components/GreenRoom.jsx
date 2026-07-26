@@ -15,6 +15,14 @@ export default function GreenRoom({ t, title, subtitle, joinLabel = "Beitreten",
   const streamRef = useRef(null);
   const rafRef = useRef(null);
   const audioCtxRef = useRef(null);
+  // ⚠️ Laufnummer gegen verwaiste Kamerastreams: getUserMedia ist asynchron.
+  // Wechselt man schnell das Gerät (oder läuft der Effekt doppelt — React
+  // StrictMode tut das in der Entwicklung), kommt ein älterer Aufruf ZURÜCK,
+  // nachdem längst aufgeräumt wurde. Ohne diese Prüfung bliebe dieser Stream
+  // für immer offen: Das Kamera-Lämpchen brennt weiter, obwohl niemand
+  // sendet — genau die Sorte Fehler, die Vertrauen kostet.
+  const runRef = useRef(0);
+  const deadRef = useRef(false);
 
   const [devices, setDevices] = useState({ cams: [], mics: [], speakers: [] });
   const [sel, setSel] = useState({ cam: "", mic: "", speaker: "" });
@@ -25,17 +33,26 @@ export default function GreenRoom({ t, title, subtitle, joinLabel = "Beitreten",
 
   // ── Vorschau starten / bei Gerätewechsel neu aufbauen ──────────────────
   const startPreview = useCallback(async (camId, micId) => {
+    const run = ++runRef.current;
     // Alten Stream immer zuerst stoppen, sonst bleibt die Kamera belegt und
     // das Lämpchen brennt weiter.
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((tr) => tr.stop());
       streamRef.current = null;
     }
+    if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+    if (audioCtxRef.current) { try { audioCtxRef.current.close(); } catch { /* egal */ } audioCtxRef.current = null; }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: camId ? { deviceId: { exact: camId } } : true,
         audio: micId ? { deviceId: { exact: micId } } : true,
       });
+      // Überholt worden oder Komponente weg? Dann diesen Stream sofort
+      // schliessen, statt ihn liegen zu lassen.
+      if (run !== runRef.current || deadRef.current) {
+        stream.getTracks().forEach((tr) => tr.stop());
+        return;
+      }
       streamRef.current = stream;
       if (videoRef.current) videoRef.current.srcObject = stream;
       setPermError(null);
@@ -65,6 +82,9 @@ export default function GreenRoom({ t, title, subtitle, joinLabel = "Beitreten",
         src.connect(analyser);
         const buf = new Uint8Array(analyser.frequencyBinCount);
         const tick = () => {
+          // Gehört diese Messschleife noch zum aktuellen Lauf? Sonst still
+          // beenden – sie hinge sonst am schon geschlossenen Stream.
+          if (run !== runRef.current || deadRef.current) return;
           analyser.getByteTimeDomainData(buf);
           let peak = 0;
           for (let i = 0; i < buf.length; i++) peak = Math.max(peak, Math.abs(buf[i] - 128));
@@ -83,8 +103,11 @@ export default function GreenRoom({ t, title, subtitle, joinLabel = "Beitreten",
   }, []);
 
   useEffect(() => {
+    deadRef.current = false;
     startPreview();
     return () => {
+      deadRef.current = true;
+      runRef.current++; // laufende getUserMedia-Aufrufe entwerten
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       if (audioCtxRef.current) { try { audioCtxRef.current.close(); } catch { /* egal */ } }
       if (streamRef.current) streamRef.current.getTracks().forEach((tr) => tr.stop());
