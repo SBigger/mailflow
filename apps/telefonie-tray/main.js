@@ -496,6 +496,41 @@ app.whenReady().then(() => {
       payload: { targetUserId: MY_PROFILE_ID, action: "hangup" },
     });
   });
+  // Verbinden direkt von der Karte (Sascha 2026-07-26: "keine Knoepfe zum
+  // Verbinden"). Geht bewusst ueber den lokalen Fernsteuerungs-Listener
+  // (MicroSIP /transfer) statt ueber die Edge Function telefonie-transfer:
+  // die Karte hat keinen Login, die Function verlangt aber einen
+  // angemeldeten Benutzer. Blind-Transfer, wie bei peoplefone auch.
+  ipcMain.handle("telefonie-tray:toast-transfer", (_e, target) => {
+    if (!realtimeChannel || !target) return;
+    realtimeChannel.send({
+      type: "broadcast",
+      event: "control_command",
+      payload: { targetUserId: MY_PROFILE_ID, action: "transfer", target: String(target) },
+    });
+  });
+
+  // Verbinden-Ziele: aus der Konfiguration (userData/config.json, Schluessel
+  // "targets"), sonst die bekannten Nebenstellen als Vorgabe. Bewusst lokal
+  // -- die Karte kann die Anlage ohne Login nicht selbst fragen.
+  ipcMain.handle("telefonie-tray:toast-targets", () => {
+    const cfg = readConfig();
+    if (Array.isArray(cfg.targets) && cfg.targets.length) return cfg.targets;
+    return [
+      { name: "Romy Gerber", extension: "21" },
+      { name: "Reto Mühlemann", extension: "22" },
+      { name: "Maura Fuster", extension: "23" },
+      { name: "Isabella Nikollbibaj", extension: "24" },
+    ];
+  });
+
+  // Karte auf eine bestimmte Hoehe bringen (das Verbinden-Panel braucht mehr
+  // Platz als die reine Statuszeile). Werte bewusst begrenzt.
+  ipcMain.handle("telefonie-tray:toast-height", (_e, h) => {
+    const want = Math.max(TOAST_H, Math.min(Number(h) || TOAST_H, TOAST_DOSSIER_H));
+    if (callWindow && !callWindow.isDestroyed()) positionCallWindow(want);
+  });
+
   // Klick auf eine Dokumentzeile der Karte -- springt in die Dateiablage
   // direkt zum Dokument (Deep-Link ?doc=, siehe Dokumente.jsx). Die Karte
   // selbst kann keine Signed-URLs erzeugen (kein Login, nur anon-Key) --
