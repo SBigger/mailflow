@@ -5,5 +5,6 @@ contextBridge.exposeInMainWorld("toastAPI", {
   open: () => ipcRenderer.invoke("telefonie-tray:toast-open"),
   dismiss: () => ipcRenderer.invoke("telefonie-tray:toast-dismiss"),
   answer: () => ipcRenderer.invoke("telefonie-tray:toast-answer"),
+  hangup: () => ipcRenderer.invoke("telefonie-tray:toast-hangup"),
   onUpdate: (cb) => ipcRenderer.on("call-update", (_e, data) => cb(data)),
 });

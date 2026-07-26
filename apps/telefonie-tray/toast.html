@@ -54,6 +54,8 @@
   .icon-btn.open svg { stroke: rgba(0,0,0,.61); }
   .icon-btn.answer { background: #107C10; }
   .icon-btn.answer svg { stroke: #fff; }
+  .icon-btn.hangup { background: #C42B1C; }
+  .icon-btn.hangup svg { stroke: #fff; }
 </style>
 </head>
 <body>
@@ -76,6 +78,9 @@
       <button class="icon-btn answer" id="answerBtn" title="Annehmen" onclick="answerCall()">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 4.5c1.2-1 2.6-1 3.5.3l1.4 2c.6.9.4 2-.3 2.7l-1 1c.9 2 2.5 3.6 4.5 4.5l1-1c.7-.7 1.8-.9 2.7-.3l2 1.4c1.3.9 1.3 2.3.3 3.5-1.1 1.3-2.9 1.9-4.5 1.4-5-1.5-8.9-5.4-10.4-10.4-.5-1.6.1-3.4 1.4-4.5z"/></svg>
       </button>
+      <button class="icon-btn hangup" id="hangupBtn" title="Auflegen" onclick="hangupCall()">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="transform: rotate(135deg)"><path d="M4.5 4.5c1.2-1 2.6-1 3.5.3l1.4 2c.6.9.4 2-.3 2.7l-1 1c.9 2 2.5 3.6 4.5 4.5l1-1c.7-.7 1.8-.9 2.7-.3l2 1.4c1.3.9 1.3 2.3.3 3.5-1.1 1.3-2.9 1.9-4.5 1.4-5-1.5-8.9-5.4-10.4-10.4-.5-1.6.1-3.4 1.4-4.5z"/></svg>
+      </button>
     </div>
   </div>
   <script>
@@ -92,14 +97,20 @@
       document.getElementById('name').textContent = name;
       document.getElementById('number').textContent = current.number || '';
       document.getElementById('avatar').textContent = name.slice(0, 2).toUpperCase();
-      // Annehmen ergibt nur waehrend des Klingelns Sinn.
+      // Annehmen nur waehrend des Klingelns; Auflegen nur im Gespraech.
+      // (Das X daneben schliesst bewusst NUR die Karte, nie das Gespraech.)
       document.getElementById('answerBtn').style.display = current.status === 'ringing' ? 'flex' : 'none';
+      document.getElementById('hangupBtn').style.display = current.status === 'answered' ? 'flex' : 'none';
     }
     function answerCall() {
       window.toastAPI.answer(); // loest den echten MicroSIP-Befehl aus (siehe microsip-control-listener.js)
       // Sofortiges optisches Feedback -- unabhaengig davon, ob/wann peoplefones
       // eigenes "answered"-Notify eintrifft (siehe Vorfall 2026-07-25).
       render({ status: 'answered' });
+    }
+    function hangupCall() {
+      window.toastAPI.hangup(); // MicroSIP /hangupall via Fernsteuerungs-Listener
+      render({ status: 'ended' });
     }
     const params = new URLSearchParams(window.location.search);
     render({

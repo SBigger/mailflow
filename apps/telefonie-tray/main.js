@@ -421,6 +421,17 @@ app.whenReady().then(() => {
       payload: { targetUserId: MY_PROFILE_ID, action: "answer" },
     });
   });
+  // Roter Auflegen-Knopf auf der Karte (Sascha 2026-07-26: das X wurde als
+  // Auflegen missverstanden -- X schliesst weiterhin nur die Karte, Auflegen
+  // ist jetzt ein eigener, unmissverstaendlich roter Knopf im Gespraech).
+  ipcMain.handle("telefonie-tray:toast-hangup", () => {
+    if (!realtimeChannel) return;
+    realtimeChannel.send({
+      type: "broadcast",
+      event: "control_command",
+      payload: { targetUserId: MY_PROFILE_ID, action: "hangup" },
+    });
+  });
 
   currentUrl = getSavedUrl() || DEFAULT_URL;
   createCallWindow();
