@@ -2,33 +2,38 @@
 // telefonie-peoplefone-keepalive -- haelt die peoplefone-Subscription am Leben
 //
 // PROBLEM (belegt 2026-07-25/26): Die Call-Management-Subscription stirbt
-// nach kurzer Zeit leise weg. Beobachtet: am 25.07. um 15:15 registriert,
-// um 15:54 lieferte sie noch einen kompletten Anruf (setup -> early ->
-// terminated, owner 163879) -- danach kam NIE wieder ein Request, nicht
-// mal die laut Spec periodischen keepAlive-Pings. Beim naechsten echten
-// Anruf am 26.07. kam nichts mehr an.
-// Der Tod ist NICHT beobachtbar: peoplefone loescht die Subscription, sobald
-// EIN Zustellversuch fehlschlaegt (Spec: "if not [200] the subscription will
-// be removed") -- ein fehlgeschlagener Versuch erreicht uns per Definition
-// nie, also steht in unseren Logs auch kein Fehler.
+// nach kurzer Zeit leise weg. Der Tod ist NICHT beobachtbar: peoplefone
+// loescht sie, sobald EIN Zustellversuch nicht mit HTTP 200 beantwortet
+// wird (Spec: "if not [200] the subscription will be removed") -- ein
+// fehlgeschlagener Versuch erreicht unsere Logs per Definition nie. Es
+// gibt auch KEINEN GET-Endpoint, um den Subscription-Status abzufragen.
+// Darum: alle 5 Minuten stumpf neu registrieren (Cron siehe
+// supabase/cron/telefonie-keepalive-cron.sql).
 //
-// ⚠️ 26.07.: die Spec verspricht "gleiche callbackUrl -> gleiche ID zurueck,
-// kein Effekt". In der Praxis kam bei ZWEI Laeufen im Abstand von 7 Minuten
-// JEDES MAL eine NEUE ID zurueck -- die "kein Effekt"-Zusage stimmt fuer
-// unseren Account offenbar nicht (oder die Subscription stirbt schneller
-// als 5 Minuten). Ein simples "alle 5 Min neu registrieren" wuerde also
-// nicht no-op bleiben, sondern Dutzende Subscriptions pro Stunde anhaeufen
-// -> Risiko: peoplefone liefert irgendwann jedes Ereignis mehrfach.
+// ⚠️ Die Spec verspricht "gleiche callbackUrl -> gleiche ID zurueck, kein
+// Effekt" -- stimmt fuer unseren Account nachweislich nicht (26.07.: jeder
+// Lauf lieferte eine NEUE ID). Ohne Aufraeumen haeufen sich also
+// Subscriptions an, und JEDE stellt zu -> Ereignisse kaemen mehrfach.
 //
-// LOESUNG: eigene Buchhaltung statt der (nicht verlaesslichen) Zusage aus
-// der Spec vertrauen. Tabelle public.telefonie_subscription merkt sich die
-// zuletzt bekannte ID. Jeder Lauf: neue Subscription anlegen, NEUE ID
-// speichern, dann die VORHERIGE ID explizit per DELETE entfernen (falls
-// unterschiedlich). So existiert zu jedem Zeitpunkt maximal eine zusaetzliche
-// (auslaufende) Subscription, nie ein unbegrenztes Anhaeufen.
+// DESIGN (Umbau 2026-07-26 nach externem Review): fruher merkte sich eine
+// Ein-Zeilen-Tabelle nur die NEUESTE ID -- schlug deren Loeschung fehl
+// (peoplefone antwortet haeufig 419 "Too Many Attempts", undokumentiert),
+// war die ID beim naechsten Lauf vergessen und die Subscription dauerhaft
+// verwaist. Verwaiste sterben NICHT von selbst: sie zeigen ja auf denselben
+// funktionierenden Webhook und stellen erfolgreich zu.
+// Jetzt: public.telefonie_subscriptions, EINE Zeile PRO jemals erzeugter
+// Subscription. Geloescht gilt erst nach Bestaetigung durch peoplefone
+// (2xx oder 404 = schon weg) -> cleaned_up_at. Jeder Lauf raeumt ALLE noch
+// unbestaetigten alten IDs auf (max. MAX_CLEANUPS_PER_RUN, Rest beim
+// naechsten Lauf) -- ein 419 verschiebt das Loeschen also nur, statt die
+// ID zu verlieren.
 //
-// Aufruf per Supabase Cron (pg_cron + pg_net), alle 5 Minuten.
+// Kein Lock gegen parallele Laeufe: Cron alle 5 Min, ein Lauf dauert
+// Sekunden -- Ueberschneidung praktisch ausgeschlossen, und selbst dann
+// entstuende nur eine zusaetzliche getrackte (aufraeumbare) Subscription.
+//
 // Deploy: supabase functions deploy telefonie-peoplefone-keepalive
+// (MIT JWT-Pruefung -- der Cron ruft mit anon-Key-Bearer auf.)
 // ══════════════════════════════════════════════════════════════════════
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -38,6 +43,10 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const OWNER_USER_ID = "163879"; // "Bigger", vPBX-Benutzer, interne Nr. 20
 const PROVIDER = "peoplefone";
 const BASE = "https://call-api.peoplefone.com/customer/call-management/v1";
+const MAX_CLEANUPS_PER_RUN = 5; // Drosselungs-Schutz: Rest beim naechsten Lauf
+const DELETE_SPACING_MS = 3000;
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 serve(async () => {
   const apiKey = Deno.env.get("PEOPLEFONE_API_KEY");
@@ -51,16 +60,7 @@ serve(async () => {
   const supabase = createClient(supabaseUrl, serviceKey);
   const auth = { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" };
 
-  // Zuletzt bekannte ID nachschlagen (fuer den Aufraeum-Schritt am Ende).
-  const { data: existing } = await supabase
-    .from("telefonie_subscription")
-    .select("subscription_id")
-    .eq("provider", PROVIDER)
-    .maybeSingle();
-  const previousId = existing?.subscription_id ?? null;
-
-  // Neue Subscription anlegen (bzw. laut Spec ggf. die bestehende bestaetigen
-  // -- verlaesslich ist das laut Beobachtung von heute aber nicht, siehe oben).
+  // 1) Neue Subscription anlegen.
   const callbackUrl =
     `${supabaseUrl}/functions/v1/telefonie-peoplefone-webhook?secret=${encodeURIComponent(webhookSecret)}`;
   let newId: string | null = null;
@@ -80,44 +80,61 @@ serve(async () => {
     subscribeResult = { error: String(e) };
   }
 
-  // Neue ID sofort sichern, BEVOR die alte geloescht wird -- sonst koennten
-  // wir bei einem Absturz dazwischen ganz ohne gespeicherte ID dastehen.
+  // 2) Neue ID SOFORT als eigene Zeile sichern, VOR jedem Aufraeumen --
+  // ein Absturz danach kostet so nie das Wissen ueber eine erzeugte
+  // Subscription. Schlaegt das Sichern fehl, ist genau DAS der Fall, den
+  // dieses Design verhindern soll -- deshalb laut loggen und als Fehler
+  // im Ergebnis ausweisen (der naechste Lauf raeumt zustellende Waisen
+  // zwar nicht auf, aber peoplefone gibt fuer dieselbe callbackUrl ggf.
+  // dieselbe ID erneut zurueck -- dann faengt ein spaeterer Lauf sie doch).
+  let trackError: string | null = null;
   if (newId) {
-    await supabase.from("telefonie_subscription").upsert({
-      provider: PROVIDER,
-      subscription_id: newId,
-      updated_at: new Date().toISOString(),
-    });
-  }
-
-  // Alte Subscription aufraeumen, falls es tatsaechlich eine neue ID gab.
-  // ⚠️ Bewusst "Best Effort": peoplefone antwortet auf das DELETE oft mit
-  // 419 "Too Many Attempts" -- selbst bei einem voellig natuerlichen,
-  // unforcierten 5-Minuten-Cron-Lauf (live beobachtet 2026-07-26, auch mit
-  // 1.5s Pause). Die Drosselung greift offenbar gezielt bei aufeinander-
-  // folgenden Subscription-Aenderungen desselben Owners, nicht nur bei
-  // allgemeiner API-Last -- laengere Pausen halfen nicht zuverlaessig.
-  // Schlaegt das Loeschen fehl, bleibt genau diese eine alte Subscription
-  // dauerhaft verwaist (der naechste Lauf versucht nur noch die DANN
-  // aktuelle zu loeschen, nicht diese) -- peoplefones eigenes natuerliches
-  // Absterben raeumt sie im Zweifel selbst auf. Tolerierbar (hoechstens
-  // zeitweise doppelt zugestellte Ereignisse, kein Totalausfall) und kein
-  // Grund, den ganzen Lauf als Fehler zu werten.
-  let deleteResult: unknown = null;
-  if (newId && previousId && previousId !== newId) {
-    await new Promise((r) => setTimeout(r, 3000));
-    try {
-      const res = await fetch(`${BASE}/subscription/${previousId}`, { method: "DELETE", headers: auth });
-      deleteResult = { id: previousId, status: res.status };
-    } catch (e) {
-      deleteResult = { id: previousId, error: String(e) };
+    const { error } = await supabase.from("telefonie_subscriptions").upsert(
+      { subscription_id: newId, provider: PROVIDER },
+      { onConflict: "subscription_id", ignoreDuplicates: true },
+    );
+    if (error) {
+      trackError = error.message;
+      console.error("keepalive: NEUE ID KONNTE NICHT GESPEICHERT WERDEN:", newId, error.message);
     }
   }
 
-  const summary = { previousId, newId, subscribeResult, deleteResult };
+  // 3) ALLE noch nicht bestaetigt geloeschten Vorgaenger aufraeumen
+  // (aelteste zuerst), nicht nur den juengsten. 404 = bei peoplefone schon
+  // weg = ebenfalls erledigt. 419/Netzfehler = beim naechsten Lauf erneut.
+  const cleanups: unknown[] = [];
+  const { data: stale, error: readError } = await supabase
+    .from("telefonie_subscriptions")
+    .select("subscription_id")
+    .is("cleaned_up_at", null)
+    .neq("subscription_id", newId ?? "")
+    .order("created_at", { ascending: true })
+    .limit(MAX_CLEANUPS_PER_RUN);
+  if (readError) console.error("keepalive: Lesen alter IDs fehlgeschlagen:", readError.message);
+
+  for (const row of stale ?? []) {
+    const id = row.subscription_id as string;
+    await sleep(DELETE_SPACING_MS);
+    try {
+      const res = await fetch(`${BASE}/subscription/${id}`, { method: "DELETE", headers: auth });
+      const confirmed = res.ok || res.status === 404;
+      cleanups.push({ id, status: res.status, confirmed });
+      if (confirmed) {
+        const { error } = await supabase
+          .from("telefonie_subscriptions")
+          .update({ cleaned_up_at: new Date().toISOString() })
+          .eq("subscription_id", id);
+        if (error) console.error("keepalive: cleaned_up_at setzen fehlgeschlagen:", id, error.message);
+      }
+    } catch (e) {
+      cleanups.push({ id, error: String(e) });
+    }
+  }
+
+  const summary = { newId, subscribeResult, trackError, cleanups };
   console.log("keepalive:", JSON.stringify(summary));
   return new Response(JSON.stringify(summary), {
-    status: 200,
+    status: newId && !trackError ? 200 : 500,
     headers: { "Content-Type": "application/json" },
   });
 });
