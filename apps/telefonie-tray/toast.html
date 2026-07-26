@@ -125,7 +125,7 @@
             overdue: p.due_date ? new Date(p.due_date) <= today : false })),
           empty: 'Keine offenen Pendenzen' },
         { label: 'Letzte Dokumente', rows: (d.docs || []).map((x) => ({
-            txt: x.name || x.filename || 'Dokument', meta: fmtD(x.updated_at), overdue: false })),
+            txt: x.name || x.filename || 'Dokument', meta: fmtD(x.updated_at), overdue: false, docId: x.id })),
           empty: 'Keine Dokumente' },
       ];
       for (const sec of sections) {
@@ -150,6 +150,12 @@
           m.className = 'meta' + (r.overdue ? ' overdue' : '');
           m.textContent = r.meta;
           row.appendChild(t); row.appendChild(m);
+          if (r.docId) {
+            // Klick springt in die Dateiablage direkt zum Dokument.
+            row.style.cursor = 'pointer';
+            row.title = 'In der Dateiablage öffnen';
+            row.addEventListener('click', () => window.toastAPI.openDoc(r.docId));
+          }
           wrap.appendChild(row);
         }
         box.appendChild(wrap);

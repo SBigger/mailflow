@@ -69,7 +69,7 @@ export function useIncomingDossier(number) {
     queryKey: ["tele-doss-docs", cid], enabled: !!cid, staleTime: 60_000,
     queryFn: async () => {
       const { data } = await supabase.from("dokumente")
-        .select("id,name,filename,updated_at,customer_id")
+        .select("id,name,filename,updated_at,customer_id,storage_path,sharepoint_web_url")
         .eq("customer_id", cid).order("updated_at", { ascending: false }).limit(3);
       return data || [];
     },

@@ -178,11 +178,18 @@ export function TelephonyProvider({ children }) {
         rememberEndedId(incomingCall?.id);
         setCall((prev) => {
           if (!prev) return null;
+          // ⚠️ Rufgruppen-Beine (2026-07-26): EIN realer Anruf laeuft bei
+          // peoplefone als MEHRERE callIds (Gruppen-Bein + Leitungs-Bein).
+          // Das "ended" eines ANDEREN Beins (andere id, Richtung nicht
+          // "out") darf das aktive Gespraech nicht beenden -- das Bein
+          // stirbt genau dann, wenn man selbst abnimmt.
+          if (incomingCall?.dir !== "out" && prev.id && incomingCall?.id && prev.id !== incomingCall.id) return prev;
           const durationSec = Math.max(0, Math.floor((Date.now() - (prev.startedAt || Date.now())) / 1000));
           setWrapup({ ...prev, durationSec, endedAt: Date.now() });
           return null;
         });
-        setIncoming(null);
+        // Klingel-Pop nur schliessen, wenn wirklich DIESES Bein endet.
+        setIncoming((prevInc) => (prevInc && prevInc.id && incomingCall?.id && prevInc.id !== incomingCall.id ? prevInc : null));
       }
     }).subscribe();
     callsChRef.current = ch;

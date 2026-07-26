@@ -6,6 +6,7 @@ import {
 import { tele, formatPhone, useAppTheme } from "../theme";
 import { useTelephony } from "../context/TelephonyContext";
 import { useIncomingDossier } from "../useDossier";
+import { openDokument } from "@/lib/openDokument";
 import CallWrapup from "./CallWrapup";
 
 const KEYS = [
@@ -284,7 +285,7 @@ function DossierSections({ t, dossier }) {
       </DSec>
       <DSec t={t} label="Letzte Dokumente" count={dossier.docs.length}>
         {dossier.docs.length
-          ? dossier.docs.map((d) => <DRow key={d.id} t={t} icon="doc" text={d.name || d.filename || "Dokument"} meta={relTime(d.updated_at)} />)
+          ? dossier.docs.map((d) => <DRow key={d.id} t={t} icon="doc" text={d.name || d.filename || "Dokument"} meta={relTime(d.updated_at)} onClick={() => openDokument(d)} />)
           : <DEmpty t={t}>Keine Dokumente</DEmpty>}
       </DSec>
     </>
@@ -305,9 +306,12 @@ function DSec({ t, label, count, children }) {
   );
 }
 
-function DRow({ t, dot, icon, text, meta, metaCol }) {
+function DRow({ t, dot, icon, text, meta, metaCol, onClick }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "7px 10px", background: t.sunken, border: `1px solid ${t.borderSubtle}`, borderRadius: 9 }}>
+    <div
+      onClick={onClick}
+      title={onClick ? "Dokument öffnen" : undefined}
+      style={{ display: "flex", alignItems: "center", gap: 9, padding: "7px 10px", background: t.sunken, border: `1px solid ${t.borderSubtle}`, borderRadius: 9, cursor: onClick ? "pointer" : "default" }}>
       {dot && <span style={{ width: 8, height: 8, borderRadius: "50%", background: dot, flexShrink: 0 }} />}
       {icon === "mail" && <Mail size={13} style={{ color: t.textMuted, flexShrink: 0 }} />}
       {icon === "doc" && <FileText size={13} style={{ color: t.textMuted, flexShrink: 0 }} />}

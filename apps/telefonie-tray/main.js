@@ -78,6 +78,7 @@ let pendingLoadListener = null; // aktuell haengender once("did-finish-load")-Li
 let pendingStatusUpdate = null; // Status, der eintraf WAEHREND das Fenster noch laedt -- siehe showCall()
 let lastUpdateKey = null; // zuletzt per IPC gesendeter Karteninhalt -- Duplikate nicht erneut senden
 let currentDossier = null; // Dossier (Pendenzen/Dokumente) des aktuellen Anrufs, vom Webhook mitgeliefert
+let currentPeerNumber = null; // Nummer der aktuell gezeigten Karte -- fuer die Rufgruppen-Bein-Erkennung
 // ⚠️ call.id, die bereits VOLLSTAENDIG als "ended" verarbeitet wurden -- UEBERLEBT
 // hideCallWindow() (anders als currentCallId/toastEnded), siehe showCall() fuer den
 // Bug, den das behebt: peoplefone schickt "terminated" oft mehrfach mit
@@ -199,6 +200,7 @@ function hideCallWindow() {
   pendingStatusUpdate = null;
   lastUpdateKey = null;
   currentDossier = null;
+  currentPeerNumber = null;
   if (pendingLoadListener) {
     callWindow?.webContents.removeListener("did-finish-load", pendingLoadListener);
     pendingLoadListener = null;
@@ -231,9 +233,29 @@ function showCall(call) {
   const name = call.customer?.company_name || call.peerName || call.peerNumber || "Unbekannt";
   const number = call.peerNumber || "";
   const status = call.status;
-  // ⚠️ Bewusst NUR auf currentCallId geprueft, NICHT (mehr) auf toastLive --
+
+  // ⚠️ "Beendet" eroeffnet NIE eine neue Karte (2026-07-26, Log-Beleg: fuer
+  // EINEN Anruf kamen 58 terminated-Wiederholungen, teils mit anderer
+  // callId) -- ein ended darf hoechstens eine sichtbare Karte beenden.
+  if (status === "ended" && (currentCallId === null || !callWindow.isVisible())) {
+    rememberEnded(call.id);
+    return;
+  }
+
+  // ⚠️ Rufgruppen-Beine (2026-07-26, Log-Beleg: EIN realer Anruf lief als
+  // ZWEI callIds -- Gruppen-Bein + Leitungs-Bein): gleiche Nummer wie die
+  // sichtbare Karte, aber andere call.id = anderes Bein DESSELBEN Anrufs.
+  // Wie derselbe Anruf behandeln (kein Karten-Neuaufbau!), ABER: das
+  // "ended" eines ANDEREN Beins ignorieren -- das Bein stirbt genau dann,
+  // wenn man selbst abnimmt, das Gespraech laeuft weiter. Das echte Ende
+  // kommt ueber die getrackte callId (oder den Auto-Hide-Timer).
+  const sameLeg = currentCallId !== null && call.id === currentCallId;
+  const otherLegSameNumber = currentCallId !== null && call.id !== currentCallId
+    && number !== "" && number === currentPeerNumber && callWindow.isVisible();
+  if (otherLegSameNumber && status === "ended") return;
+  // ⚠️ Bewusst NUR auf IDs/Nummer geprueft, NICHT (mehr) auf toastLive --
   // siehe Bug vom 2026-07-26 unten fuer den Grund.
-  const isSameCall = currentCallId !== null && call.id === currentCallId;
+  const isSameCall = sameLeg || otherLegSameNumber;
 
   if (isSameCall) {
     // ⚠️ peoplefone schickt bei einem laenger klingelnden Anruf sehr viele
@@ -308,6 +330,7 @@ function showCall(call) {
   }
   lastLoadAt = now;
   currentCallId = call.id;
+  currentPeerNumber = number || null;
   currentStatusRank = STATUS_RANK[status] ?? 0;
   toastEnded = status === "ended";
   if (toastEnded) rememberEnded(call.id); // sehr kurzer Anruf, kommt gleich schon als "ended" an
@@ -472,6 +495,16 @@ app.whenReady().then(() => {
       event: "control_command",
       payload: { targetUserId: MY_PROFILE_ID, action: "hangup" },
     });
+  });
+  // Klick auf eine Dokumentzeile der Karte -- springt in die Dateiablage
+  // direkt zum Dokument (Deep-Link ?doc=, siehe Dokumente.jsx). Die Karte
+  // selbst kann keine Signed-URLs erzeugen (kein Login, nur anon-Key) --
+  // der Browser mit der angemeldeten smartis-Session uebernimmt.
+  ipcMain.handle("telefonie-tray:toast-open-doc", (_e, docId) => {
+    if (!docId) return;
+    let origin = "https://smartis.me";
+    try { origin = new URL(currentUrl).origin; } catch { /* Default behalten */ }
+    shell.openExternal(origin + "/Dokumente?doc=" + encodeURIComponent(String(docId)));
   });
 
   currentUrl = getSavedUrl() || DEFAULT_URL;
