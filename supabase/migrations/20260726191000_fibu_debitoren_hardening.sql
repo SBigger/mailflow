@@ -299,7 +299,8 @@ as $$
    order by s.report_konto, s.mwst_code;
 $$;
 
-create or replace function public.fibu_mwst_detail(
+drop function if exists public.fibu_mwst_detail(uuid,date,date);
+create function public.fibu_mwst_detail(
   p_mandant_id uuid,
   p_von date,
   p_bis date
