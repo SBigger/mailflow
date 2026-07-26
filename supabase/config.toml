@@ -415,7 +415,7 @@ content_path = "./supabase/templates/confirmation.html"
 
 [auth.email.template.recovery]
 subject = "Passwort zurücksetzen"
-content_path = "./supabase/templates/reset_password.html"
+content_path = "./supabase/templates/recovery.html"
 
 [auth.email.notification.password_changed]
 subject = "Your password has been changed"

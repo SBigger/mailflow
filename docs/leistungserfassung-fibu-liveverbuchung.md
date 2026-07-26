@@ -93,22 +93,31 @@ Belegdarstellung.
 - interner Buchungsnummern-Helfer nicht mehr direkt für normale Benutzer
   ausführbar.
 
-## Verbleibende Befunde ausserhalb der LE-Liveverbuchung
+## Härtung der manuellen FiBu
 
-Die neue LE-Buchung ist atomar. Die bestehenden manuellen Erfassungsmasken der
-FiBu sollten in einem eigenen Folgepaket gehärtet werden:
+Das Folgepaket `20260726192000_fibu_manual_workflows_atomic.sql` behebt die
+zuvor offenen manuellen Abläufe:
 
-- Manuelle Kreditoren-Neuanlage erstellt Kopf, Positionen und Hauptbuch derzeit
-  noch in mehreren Client-Schritten; ein Journalfehler wird nur protokolliert.
-- Manuelle Debitoren-Neuanlage, Entwurf-Aktualisierung und «Stellen» laufen
-  ebenfalls mehrstufig.
-- Manuelle Zahlungsänderungen lesen und schreiben den Saldo getrennt und sind
-  bei paralleler Bearbeitung nicht vollständig race-sicher.
-- Der Kreditoren-Belegnummernvorschlag verwendet noch `MAX + 1`.
+- Kreditoren- und Debitorenbelege werden mit Kopf, Positionen und Hauptbuch in
+  einer Transaktion erstellt;
+- Summen und MWST-Sätze stammen serverseitig aus den validierten Positionen;
+- das separate Kreditoren-Buchungsdatum steuert Hauptbuch, Wechselkurs und
+  MWST-Periode;
+- Kreditoren- und Debitorennummern verwenden atomare Nummernkreise;
+- Entwurf speichern, «Stellen», Bearbeiten und Löschen sind serverseitig
+  geschützt;
+- Zahlungen verwenden Zeilensperren und verhindern parallele Überzahlungen;
+- Zahlungslauf, Positionen und Status `ebanking` werden gemeinsam gespeichert;
+- Lieferanten-IBAN, Skonto, Konto, Rollen und Mandant werden serverseitig
+  geprüft;
+- Mahnhistorie und Mahnstufe werden gemeinsam gespeichert;
+- Massenimport, die zweite Kreditoren-Bearbeitungsmaske und der Finance-MCP
+  verwenden dieselben Transaktionsfassaden.
 
-Diese Punkte betreffen nicht den neuen Weg Leistungserfassung → Debitoren →
-Hauptbuch, sind aber vor einer Freigabe der gesamten manuellen FiBu als
-produktionsreif separat zu beheben.
+Eine manuell erfasste Zahlung erzeugt weiterhin bewusst keine Bankbuchung. Die
+Hauptbuchzahlung entsteht erst im Bankabgleich, weil erst dort das tatsächliche
+Bankkonto bekannt ist. E-Mail-Versand und Datei-Upload sind externe Vorgänge und
+können naturgemäss nicht Teil derselben PostgreSQL-Transaktion sein.
 
 ## Prüfung
 
@@ -121,4 +130,9 @@ Der Integrationstest deckt insbesondere ab:
 - Idempotenz bei wiederholter Finalisierung;
 - Kontenschutz und ungültige Leistungsartenkonten;
 - effektive Methode und Saldosteuersatz-Methode;
-- Erhalt historischer Mandantenzuordnungen nach einer Korrektur.
+- Erhalt historischer Mandantenzuordnungen nach einer Korrektur;
+- falsches Konto und Überzahlung ohne Teilstände;
+- Buchungsdatum über Jahresgrenzen;
+- atomarer Zahlungslauf inklusive Doppelzahlungsschutz;
+- Löschen nur bei ungebuchten Debitorenentwürfen;
+- Schreibsperre für Benutzer mit Rolle `readonly`.
