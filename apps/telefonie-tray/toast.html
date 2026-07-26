@@ -56,6 +56,15 @@
   .icon-btn.answer svg { stroke: #fff; }
   .icon-btn.hangup { background: #C42B1C; }
   .icon-btn.hangup svg { stroke: #fff; }
+  /* Dossier (Pendenzen/Dokumente) -- vom Webhook mitgeliefert, damit die
+     Karte die Kundendaten OHNE offenen Browser zeigen kann. */
+  .dossier { -webkit-app-region: no-drag; display: none; flex-direction: column; gap: 9px; margin: 10px 0 4px; overflow: hidden; }
+  .dsec-label { font-size: 9.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: rgba(0,0,0,.48); margin-bottom: 4px; }
+  .drow { display: flex; align-items: center; justify-content: space-between; gap: 8px; background: rgba(0,0,0,.035); border: 1px solid rgba(0,0,0,.05); border-radius: 6px; padding: 5px 9px; }
+  .drow .txt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; font-weight: 600; color: rgba(0,0,0,.85); }
+  .drow .meta { flex-shrink: 0; font-size: 10.5px; color: rgba(0,0,0,.5); font-variant-numeric: tabular-nums; }
+  .drow .meta.overdue { color: #C42B1C; font-weight: 700; }
+  .dempty { font-size: 11px; color: rgba(0,0,0,.45); padding: 1px 2px; }
 </style>
 </head>
 <body>
@@ -68,6 +77,7 @@
         <div class="number" id="number"></div>
       </div>
     </div>
+    <div class="dossier" id="dossier"></div>
     <div class="actions">
       <button class="icon-btn dismiss" title="Schliessen" onclick="window.toastAPI.dismiss()">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
@@ -89,7 +99,63 @@
       answered: 'Im Gespräch',
       ended: 'Anruf beendet',
     };
-    let current = { name: '', number: '', status: 'ringing' };
+    let current = { name: '', number: '', status: 'ringing', dossier: null };
+
+    // dd.MM. aus einem ISO-Datum; leere/kaputte Daten -> ''.
+    function fmtD(iso) {
+      if (!iso) return '';
+      const d = new Date(iso);
+      if (isNaN(d)) return '';
+      return String(d.getDate()).padStart(2, '0') + '.' + String(d.getMonth() + 1).padStart(2, '0') + '.';
+    }
+
+    // Dossier-Sektionen aufbauen -- bewusst per createElement/textContent
+    // (Kundendaten, kein innerHTML: keine Injektionsflaeche).
+    function renderDossier() {
+      const box = document.getElementById('dossier');
+      box.textContent = '';
+      const d = current.dossier;
+      const has = d && ((d.pendenzen && d.pendenzen.length) || (d.docs && d.docs.length));
+      box.style.display = has ? 'flex' : 'none';
+      if (!has) return;
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const sections = [
+        { label: 'Pendenzen', rows: (d.pendenzen || []).map((p) => ({
+            txt: p.title || 'Aufgabe', meta: fmtD(p.due_date),
+            overdue: p.due_date ? new Date(p.due_date) <= today : false })),
+          empty: 'Keine offenen Pendenzen' },
+        { label: 'Letzte Dokumente', rows: (d.docs || []).map((x) => ({
+            txt: x.name || x.filename || 'Dokument', meta: fmtD(x.updated_at), overdue: false })),
+          empty: 'Keine Dokumente' },
+      ];
+      for (const sec of sections) {
+        const wrap = document.createElement('div');
+        const label = document.createElement('div');
+        label.className = 'dsec-label';
+        label.textContent = sec.label;
+        wrap.appendChild(label);
+        if (!sec.rows.length) {
+          const e = document.createElement('div');
+          e.className = 'dempty';
+          e.textContent = sec.empty;
+          wrap.appendChild(e);
+        }
+        for (const r of sec.rows) {
+          const row = document.createElement('div');
+          row.className = 'drow';
+          const t = document.createElement('span');
+          t.className = 'txt';
+          t.textContent = r.txt;
+          const m = document.createElement('span');
+          m.className = 'meta' + (r.overdue ? ' overdue' : '');
+          m.textContent = r.meta;
+          row.appendChild(t); row.appendChild(m);
+          wrap.appendChild(row);
+        }
+        box.appendChild(wrap);
+      }
+    }
+
     function render(data) {
       current = { ...current, ...data };
       const name = current.name || 'Unbekannt';
@@ -101,6 +167,7 @@
       // (Das X daneben schliesst bewusst NUR die Karte, nie das Gespraech.)
       document.getElementById('answerBtn').style.display = current.status === 'ringing' ? 'flex' : 'none';
       document.getElementById('hangupBtn').style.display = current.status === 'answered' ? 'flex' : 'none';
+      renderDossier();
     }
     function answerCall() {
       window.toastAPI.answer(); // loest den echten MicroSIP-Befehl aus (siehe microsip-control-listener.js)

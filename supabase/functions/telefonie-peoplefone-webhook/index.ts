@@ -146,6 +146,27 @@ serve(async (req) => {
       console.error("customer lookup failed:", e);
     }
 
+    // Dossier-Kurzfassung (offene Pendenzen + letzte Dokumente) direkt in den
+    // Broadcast packen (Sascha-Entscheid 2026-07-26): die Electron-Karte hat
+    // keinen eigenen Login (anon-Key, RLS verlangt authenticated) und soll
+    // die Kundendaten trotzdem OHNE offenen Browser zeigen -- also liefert
+    // der Webhook sie serverseitig (service_role) gleich mit. Nur fuer
+    // ringing/answered -- bei ended blendet die Karte ohnehin gleich aus.
+    let dossier: { pendenzen: unknown[]; docs: unknown[] } | null = null;
+    if (match && callStatus !== "ended") {
+      try {
+        const [t, d] = await Promise.all([
+          supabase.from("tasks").select("id,title,due_date").eq("customer_id", match.customerId)
+            .eq("completed", false).order("due_date", { ascending: true }).limit(3),
+          supabase.from("dokumente").select("id,name,filename,updated_at").eq("customer_id", match.customerId)
+            .order("updated_at", { ascending: false }).limit(3),
+        ]);
+        dossier = { pendenzen: t.data ?? [], docs: d.data ?? [] };
+      } catch (e) {
+        console.error("dossier lookup failed:", e);
+      }
+    }
+
     const callPayload = {
       id: "peoplefone-" + (entry.callId || Date.now()),
       dir: entry.direction === "outgoing" ? "out" : "in",
@@ -153,6 +174,7 @@ serve(async (req) => {
       peerNumber: remoteParty,
       peerName: match?.contactName || null,
       customer: match ? { id: match.customerId, company_name: match.label } : null,
+      dossier,
       viaNumber: null,
     };
     const bc = await broadcastRealtime(supabaseUrl, serviceKey, "telefonie-calls", "incoming_call", {

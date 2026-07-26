@@ -58,6 +58,10 @@ const ICON_PATH = path.join(__dirname, "icon.ico");
 const TOAST_AUTO_HIDE_MS = 25000;
 const TOAST_ENDED_HIDE_MS = 3000;
 const TOAST_W = 364, TOAST_H = 120;
+// Erweiterte Hoehe, wenn das Dossier (Pendenzen/Dokumente, je max 3) mit auf
+// der Karte steht -- Sascha-Entscheid 2026-07-26: Kundendaten direkt auf der
+// Karte, ohne dass smartis im Browser offen sein muss.
+const TOAST_DOSSIER_H = 360;
 const MARGIN = 16;
 
 let callWindow = null;
@@ -73,6 +77,7 @@ let lastLoadAt = 0; // Zeitstempel des letzten loadFile() -- siehe showCall()
 let pendingLoadListener = null; // aktuell haengender once("did-finish-load")-Listener, falls noch keiner gefeuert hat
 let pendingStatusUpdate = null; // Status, der eintraf WAEHREND das Fenster noch laedt -- siehe showCall()
 let lastUpdateKey = null; // zuletzt per IPC gesendeter Karteninhalt -- Duplikate nicht erneut senden
+let currentDossier = null; // Dossier (Pendenzen/Dokumente) des aktuellen Anrufs, vom Webhook mitgeliefert
 // ⚠️ call.id, die bereits VOLLSTAENDIG als "ended" verarbeitet wurden -- UEBERLEBT
 // hideCallWindow() (anders als currentCallId/toastEnded), siehe showCall() fuer den
 // Bug, den das behebt: peoplefone schickt "terminated" oft mehrfach mit
@@ -169,6 +174,22 @@ function scheduleAutoHide(ms) {
   toastHideTimer = setTimeout(hideCallWindow, ms);
 }
 
+// Karte unten rechts verankern -- Hoehe variiert je nachdem, ob ein Dossier
+// (Pendenzen/Dokumente) mit anzuzeigen ist.
+function positionCallWindow(h) {
+  const work = screen.getPrimaryDisplay().workArea;
+  callWindow.setBounds({
+    x: work.x + work.width - TOAST_W - MARGIN,
+    y: work.y + work.height - h - MARGIN,
+    width: TOAST_W,
+    height: h,
+  });
+}
+
+function dossierHasContent(d) {
+  return !!(d && ((d.pendenzen && d.pendenzen.length) || (d.docs && d.docs.length)));
+}
+
 function hideCallWindow() {
   if (toastHideTimer) { clearTimeout(toastHideTimer); toastHideTimer = null; }
   toastLive = false;
@@ -177,6 +198,7 @@ function hideCallWindow() {
   toastEnded = false;
   pendingStatusUpdate = null;
   lastUpdateKey = null;
+  currentDossier = null;
   if (pendingLoadListener) {
     callWindow?.webContents.removeListener("did-finish-load", pendingLoadListener);
     pendingLoadListener = null;
@@ -229,6 +251,7 @@ function showCall(call) {
     if (rank < currentStatusRank) return;
     currentStatusRank = rank;
     if (status === "ended") { toastEnded = true; rememberEnded(call.id); }
+    if (call.dossier) currentDossier = call.dossier;
 
     if (toastLive) {
       // Fenster hat das erste Laden dieses Anrufs bereits abgeschlossen --
@@ -238,10 +261,13 @@ function showCall(call) {
       // verwaisten peoplefone-Subscriptions stellen jedes Ereignis zigfach
       // zu -- jedes Duplikat liess die Karte sichtbar "mehrfach
       // aktualisieren" (Sascha-Beobachtung). Inhaltsgleich = ignorieren.
-      const key = name + " " + number + " " + status;
+      const key = name + " " + number + " " + status + " " + dossierHasContent(currentDossier);
       if (key !== lastUpdateKey) {
         lastUpdateKey = key;
-        callWindow.webContents.send("call-update", { name, number, status });
+        if (dossierHasContent(currentDossier) && callWindow.getBounds().height < TOAST_DOSSIER_H) {
+          positionCallWindow(TOAST_DOSSIER_H); // Dossier kam nachtraeglich -- Karte vergroessern
+        }
+        callWindow.webContents.send("call-update", { name, number, status, dossier: currentDossier });
       }
     } else {
       // ⚠️ BUG gefunden + behoben (2026-07-26): das erste loadFile() fuer
@@ -287,7 +313,8 @@ function showCall(call) {
   if (toastEnded) rememberEnded(call.id); // sehr kurzer Anruf, kommt gleich schon als "ended" an
   toastLive = false;
   pendingStatusUpdate = null;
-  lastUpdateKey = name + " " + number + " " + status;
+  currentDossier = call.dossier || null;
+  lastUpdateKey = name + " " + number + " " + status + " " + dossierHasContent(currentDossier);
 
   // Haengenden Listener einer ABGEBROCHENEN vorherigen Ladung entfernen
   // (siehe Kommentar oben) -- sonst haeufen sich die once()-Listener bei
@@ -298,19 +325,22 @@ function showCall(call) {
   // Listener VOR loadFile() registrieren (Race-Condition bei kleinen
   // Seiten), UND "did-finish-load" statt "ready-to-show" ("ready-to-show"
   // feuert nur EINMAL im Fenster-Leben, bei Wiederverwendung nie wieder).
+  const initialUpdate = { name, number, status };
   pendingLoadListener = () => {
     pendingLoadListener = null;
     if (!callWindow || callWindow.isDestroyed()) return;
     toastLive = true;
+    // Groesse VOR dem Anzeigen setzen -- mit Dossier ist die Karte hoeher.
+    positionCallWindow(dossierHasContent(currentDossier) ? TOAST_DOSSIER_H : TOAST_H);
     callWindow.showInactive(); // KEIN show()/focus() -- Tastatur bleibt bei der aktiven App
     callWindow.setAlwaysOnTop(true, "screen-saver");
     callWindow.moveTop();
-    // Waehrend des Ladens ist evtl. schon ein neuerer Status fuer denselben
-    // Anruf eingetroffen (siehe pendingStatusUpdate oben) -- jetzt nachholen.
-    if (pendingStatusUpdate) {
-      callWindow.webContents.send("call-update", pendingStatusUpdate);
-      pendingStatusUpdate = null;
-    }
+    // Vollstaendigen Stand nachreichen: evtl. waehrend des Ladens
+    // eingetroffener neuerer Status (pendingStatusUpdate) + das Dossier
+    // (zu gross fuer die URL-Parameter, geht nur per IPC).
+    const upd = pendingStatusUpdate || initialUpdate;
+    pendingStatusUpdate = null;
+    callWindow.webContents.send("call-update", { ...upd, dossier: currentDossier });
   };
   callWindow.webContents.once("did-finish-load", pendingLoadListener);
   callWindow.loadFile(path.join(__dirname, "toast.html"), {
