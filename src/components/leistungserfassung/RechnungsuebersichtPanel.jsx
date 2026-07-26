@@ -9,11 +9,11 @@ import {
   FileText, Send, CheckCircle2, X as XIcon, Trash2, Eye, Search, Calendar, FileDown,
   ChevronRight, ChevronDown,
 } from 'lucide-react';
-import { leInvoice, leCompany, sendInvoiceViaMs365, createCreditFromInvoice } from '@/lib/leApi';
-import { supabase } from '@/api/supabaseClient';
+import { leInvoice, lePayment, leCompany, createCreditFromInvoice } from '@/lib/leApi';
+import { deliverInvoiceByEmail } from '@/lib/leInvoiceDelivery';
 import { generateInvoicePdf, triggerDownload } from '@/lib/leInvoicePdf';
 import {
-  Card, Chip, IconBtn, Input, Select, Field,
+  Card, Chip, IconBtn, Input, Field,
   PanelLoader, PanelError, PanelHeader, fmt,
   artisBtn, artisPrimaryStyle, artisGhostStyle,
 } from './shared';
@@ -77,38 +77,7 @@ export default function RechnungsuebersichtPanel() {
 
   // --- Mutations -----------------------------------------------------------
   const sendMut = useMutation({
-    // Echter Versand: PDF erzeugen -> Empfänger prüfen -> per MS365 mit Anhang mailen
-    // -> erst bei Erfolg als 'versendet' markieren (kein "versendet" ohne echte Mail).
-    mutationFn: async (id) => {
-      const company = await leCompany.get();
-      if (!company) throw new Error('Firmen-Settings fehlen.');
-      const fresh = await leInvoice.getWithEntries(id); // inkl. Kunde + Projekt + Lines + Beiblatt
-      // Projekt-Rechnungs-E-Mail hat Vorrang. Separate, fehlertolerante Abfrage –
-      // falls die Spalte le_project.billing_email noch nicht migriert ist, bleibt
-      // projectEmail null und es wird die Kunden-E-Mail genutzt (kein Bruch).
-      let projectEmail = null;
-      if (fresh.project?.id) {
-        const { data: pe } = await supabase.from('le_project').select('billing_email').eq('id', fresh.project.id).maybeSingle();
-        projectEmail = pe?.billing_email || null;
-      }
-      const customerEmail = projectEmail || fresh.customer?.billing_email;
-      if (!customerEmail) throw new Error('Weder Projekt noch Kunde hat eine Rechnungs-E-Mail-Adresse hinterlegt.');
-      // PDF generieren (lädt es gleichzeitig in den 'invoices'-Bucket hoch)
-      const result = await generateInvoicePdf({ invoice: fresh, company });
-      if (!result.url) throw new Error('PDF konnte nicht hochgeladen werden – Versand nicht möglich.');
-      // Mail mit PDF-Anhang via MS365 (gleiche Edge Function wie der Mahn-Pfad)
-      const subject = `Rechnung ${fresh.invoice_no || ''} – ${company.company_name || ''}`.trim();
-      const html = `<p>Sehr geehrte Damen und Herren</p><p>Anbei erhalten Sie unsere Rechnung${fresh.invoice_no ? ' Nr. ' + fresh.invoice_no : ''}.</p><p>Mit freundlichen Grüssen<br>${company.company_name || ''}</p>`;
-      await sendInvoiceViaMs365({
-        to: customerEmail,
-        subject,
-        html,
-        attachmentUrl: result.url,
-        attachmentFilename: `Rechnung-${fresh.invoice_no || 'Entwurf'}.pdf`,
-      });
-      // Erst NACH erfolgreichem Mailversand als versendet markieren
-      return leInvoice.update(id, { status: 'versendet', sent_at: new Date().toISOString() });
-    },
+    mutationFn: deliverInvoiceByEmail,
     onSuccess: () => {
       toast.success('Rechnung als PDF per Mail versendet');
       invalidate();
@@ -117,7 +86,16 @@ export default function RechnungsuebersichtPanel() {
   });
 
   const payMut = useMutation({
-    mutationFn: ({ id, patch }) => leInvoice.update(id, patch),
+    mutationFn: ({ invoice, payment }) => lePayment.create({
+      invoice_id: invoice.id,
+      customer_id: invoice.customer_id ?? invoice.customer?.id ?? null,
+      amount: payment.amount,
+      currency: invoice.currency ?? 'CHF',
+      paid_at: payment.paid_at,
+      reference: invoice.qr_reference ?? invoice.invoice_no ?? null,
+      source: 'manual',
+      notes: 'Manuell in der Rechnungsübersicht erfasst',
+    }),
     onSuccess: () => {
       toast.success('Als bezahlt markiert');
       invalidate();
@@ -307,7 +285,7 @@ export default function RechnungsuebersichtPanel() {
         <PaymentDialog
           invoice={payInvoice}
           onClose={() => setPayInvoice(null)}
-          onSubmit={(patch) => payMut.mutate({ id: payInvoice.id, patch })}
+          onSubmit={(payment) => payMut.mutate({ invoice: payInvoice, payment })}
           saving={payMut.isPending}
         />
       )}
@@ -317,7 +295,7 @@ export default function RechnungsuebersichtPanel() {
 
 // --- Tabellenzeile ---------------------------------------------------------
 
-function InvoiceRow({ inv, onOpen, onSend, onPay, onCancel, onRemove, sending }) {
+function _InvoiceRow({ inv, onOpen, onSend, onPay, onCancel, onRemove, sending }) {
   const statusInfo = STATUS_CHIP[inv.status] ?? STATUS_CHIP.entwurf;
   const isDraft = inv.status === 'entwurf';
   const canSend = inv.status === 'definitiv';
@@ -398,7 +376,7 @@ function InvoiceDetailDialog({ invoice, onClose, onSend, onPay, onCancel }) {
   const canCancel = invoice.status !== 'storniert' && invoice.status !== 'entwurf';
 
   const subtotal = Number(invoice.subtotal ?? 0);
-  const vat = Number(invoice.vat_total ?? 0);
+  const vat = Number(invoice.vat_amount ?? invoice.vat_total ?? 0);
   const total = Number(invoice.total ?? 0);
 
   return (
@@ -477,8 +455,8 @@ function InvoiceDetailDialog({ invoice, onClose, onSend, onPay, onCancel }) {
                   {lines.map((ln) => (
                     <tr key={ln.id} className="border-b last:border-b-0" style={{ borderColor: '#f3f5f3' }}>
                       <td className="px-2 py-1.5">{ln.description ?? '—'}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{fmt.hours(ln.quantity)}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums text-zinc-500">{fmt.chf(ln.unit_price)}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{fmt.hours(ln.hours ?? ln.quantity)}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums text-zinc-500">{fmt.chf(ln.rate ?? ln.unit_price)}</td>
                       <td className="px-2 py-1.5 text-right tabular-nums font-medium">{fmt.chf(ln.amount)}</td>
                     </tr>
                   ))}
@@ -552,9 +530,8 @@ function PaymentDialog({ invoice, onClose, onSubmit, saving }) {
     const amt = Number(paidAmount);
     if (!Number.isFinite(amt) || amt <= 0) { toast.error('Betrag ungültig'); return; }
     onSubmit({
-      status: 'bezahlt',
       paid_at: paidAt,
-      paid_amount: amt,
+      amount: amt,
     });
   };
 
