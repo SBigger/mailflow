@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Video as Cam, LogIn, Copy, Check, Clock } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
+import { functions } from "@/api/supabaseClient";
 import { useAppTheme } from "@/modules/telefonie/theme";
 import { videoTheme, VIDEO_FONT } from "../theme";
 
@@ -30,16 +31,6 @@ export function rememberRoom(name) {
   } catch { /* ohne Verlauf lebt es sich auch */ }
 }
 
-// Lesbarer, nicht erratbarer Raumname – Buchstaben/Ziffern ohne Verwechsler.
-function newRoomName() {
-  const alphabet = "abcdefghjkmnpqrstuvwxyz23456789";
-  let id = "";
-  const bytes = new Uint8Array(8);
-  crypto.getRandomValues(bytes);
-  for (const b of bytes) id += alphabet[b % alphabet.length];
-  return `artis-${id}`;
-}
-
 export default function Uebersicht() {
   const navigate = useNavigate();
   const { profile } = useAuth();
@@ -48,12 +39,28 @@ export default function Uebersicht() {
 
   const [joinName, setJoinName] = useState("");
   const [copied, setCopied] = useState(null);
+  const [startet, setStartet] = useState(false);
+  const [fehler, setFehler] = useState(null);
   const recent = readRecent();
 
-  const start = () => {
-    const name = newRoomName();
-    rememberRoom(name);
-    navigate(`/besprechungen/raum/${name}`);
+  // Der Raumname entsteht SERVERSEITIG (Edge Function "create"): So ist er
+  // eindeutig, wird nie wiederverwendet, und die Besprechung existiert in der
+  // Datenbank — ohne die könnte ein Gast über seinen Link nichts finden.
+  const start = async () => {
+    setStartet(true);
+    setFehler(null);
+    try {
+      const { data } = await functions.invoke("meeting-api", { action: "create", title: "Besprechung" });
+      const name = data?.meeting?.room_name;
+      if (!name) throw new Error(data?.error || "Besprechung konnte nicht angelegt werden.");
+      rememberRoom(name);
+      navigate(`/besprechungen/raum/${name}`);
+    } catch (e) {
+      setFehler(e?.message?.includes("non-2xx")
+        ? "Der Videodienst antwortet nicht. Bitte in einem Moment nochmals versuchen."
+        : (e?.message || "Besprechung konnte nicht angelegt werden."));
+      setStartet(false);
+    }
   };
 
   const join = (name) => {
@@ -63,8 +70,11 @@ export default function Uebersicht() {
     navigate(`/besprechungen/raum/${clean}`);
   };
 
+  // ⚠️ Der GÄSTE-Link (/meet/…), nicht der interne Raumlink: Kunden haben
+  // kein smartis-Konto und würden auf der internen Seite in der Anmeldung
+  // landen. Genau dieser Link gehört in die Termineinladung.
   const copyLink = async (name) => {
-    const link = `${window.location.origin}/besprechungen/raum/${name}`;
+    const link = `${window.location.origin}/meet/${name}`;
     try {
       await navigator.clipboard.writeText(link);
       setCopied(name);
@@ -98,18 +108,23 @@ export default function Uebersicht() {
           </p>
           <button
             onClick={start}
+            disabled={startet}
             style={{
               width: "100%", border: "none", borderRadius: 13, padding: 13,
               background: t.accentFill, color: "#fff", fontFamily: "inherit",
-              fontSize: 14, fontWeight: 750, cursor: "pointer",
+              fontSize: 14, fontWeight: 750, cursor: startet ? "default" : "pointer",
+              opacity: startet ? .7 : 1,
               display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
               transition: "filter .15s ease-out",
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.filter = "brightness(1.08)")}
+            onMouseEnter={(e) => { if (!startet) e.currentTarget.style.filter = "brightness(1.08)"; }}
             onMouseLeave={(e) => (e.currentTarget.style.filter = "none")}
           >
-            <Cam size={17} /> Besprechung starten
+            <Cam size={17} /> {startet ? "Wird angelegt…" : "Besprechung starten"}
           </button>
+          {fehler && (
+            <p style={{ fontSize: 12, color: t.missed, margin: "10px 0 0" }}>{fehler}</p>
+          )}
         </div>
 
         <div style={card}>

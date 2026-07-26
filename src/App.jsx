@@ -63,6 +63,7 @@ const Steuerausscheidung = lazy(() => import("./modules/tools/Steuerausscheidung
 const FiBuRouter = lazy(() => import("./modules/fibu/router.jsx"));
 const TelefonieRouter = lazy(() => import("./modules/telefonie/router.jsx"));
 const VideoRouter = lazy(() => import("./modules/video/router.jsx"));
+const MeetGuest = lazy(() => import("./modules/video/pages/MeetGuest.jsx"));
 const GlobalSoftphone = lazy(() => import("./modules/telefonie/components/Softphone.jsx"));
 const Hub = lazy(() => import('./pages/Hub.jsx'));
 const AiAssistant = lazy(() => import('./pages/AiAssistant.jsx'));
@@ -186,6 +187,13 @@ function App() {
                         <Route path="/share/:token"
                                element={<Suspense fallback={<PageLoader/>}><SharePage/></Suspense>}/>
                         <Route path="/share" element={<Suspense fallback={<PageLoader/>}><SharePage/></Suspense>}/>
+
+                        {/* Besprechung als Gast — bewusst AUSSERHALB der Anmeldung:
+                            Kunden haben kein smartis-Konto, sie kommen nur mit dem
+                            Link aus der Termineinladung. Der Warteraum entscheidet,
+                            wer wirklich hereinkommt. */}
+                        <Route path="/meet/:room"
+                               element={<Suspense fallback={<PageLoader/>}><MeetGuest/></Suspense>}/>
                         <Route path="/portal" element={<Suspense fallback={<PageLoader/>}><Portal/></Suspense>}/>
                         <Route path="*" element={<AuthenticatedApp/>}/>
                     </Routes>

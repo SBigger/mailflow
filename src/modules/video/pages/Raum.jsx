@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { RoomEvent } from "livekit-client";
 import { AlertTriangle, Loader2 } from "lucide-react";
-import { functions } from "@/api/supabaseClient";
+import { functions, supabase } from "@/api/supabaseClient";
 import { useAppTheme } from "@/modules/telefonie/theme";
 import { videoTheme, VM, VIDEO_FONT } from "../theme";
 import { useRoom } from "../lib/useRoom";
@@ -10,6 +10,7 @@ import GreenRoom from "../components/GreenRoom";
 import Stage from "../components/Stage";
 import ControlBar from "../components/ControlBar";
 import SidePanel from "../components/SidePanel";
+import KnockCard from "../components/KnockCard";
 
 // ===========================================================================
 // Raum – ein laufendes Gespräch.
@@ -34,6 +35,11 @@ export default function Raum() {
   // ⚠️ Der Gesprächschat lebt HIER, nicht im Panel: Sonst entstünde die Liste
   // erst beim Öffnen und alles, was währenddessen ankam, wäre verloren.
   const [chat, setChat] = useState([]);
+  // Wartende Gäste (Warteraum). Kommen per Echtzeit-Meldung herein; beim
+  // Betreten wird zusätzlich einmal nachgefragt — sonst würde jemand, der
+  // VOR uns angeklopft hat, unsichtbar bleiben.
+  const [wartende, setWartende] = useState([]);
+  const [einlassBusy, setEinlassBusy] = useState(null);
 
   const {
     state, error, participants, micOn, camOn, screenOn,
@@ -107,6 +113,43 @@ export default function Raum() {
     r.on(RoomEvent.DataReceived, onData);
     return () => { r.off(RoomEvent.DataReceived, onData); };
   }, [room, phase]);
+
+  // ── Warteraum ──────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (phase !== "live" || !roomName) return;
+
+    // Nachzügler-Sicherung: wer angeklopft hat, bevor wir im Raum waren.
+    let weg = false;
+    (async () => {
+      try {
+        const { data } = await functions.invoke("meeting-api", { action: "waiting", room: roomName });
+        if (!weg && Array.isArray(data?.waiting)) setWartende(data.waiting);
+      } catch { /* ohne Vorabliste kommen wenigstens neue Meldungen an */ }
+    })();
+
+    const ch = supabase.channel(`meeting-${roomName}`);
+    ch.on("broadcast", { event: "guest_knock" }, ({ payload }) => {
+      if (!payload?.guestId) return;
+      setWartende((w) => (w.some((g) => g.id === payload.guestId)
+        ? w
+        : [...w, { id: payload.guestId, display_name: payload.name || "Gast" }]));
+      setToast(`${payload.name || "Jemand"} möchte beitreten`);
+    }).subscribe();
+
+    return () => { weg = true; supabase.removeChannel(ch); };
+  }, [phase, roomName]);
+
+  const entscheide = useCallback(async (guestId, aktion) => {
+    setEinlassBusy(guestId);
+    try {
+      await functions.invoke("meeting-api", { action: aktion, guestId });
+      setWartende((w) => w.filter((g) => g.id !== guestId));
+    } catch {
+      setToast("Konnte nicht übermittelt werden — bitte nochmals versuchen");
+    } finally {
+      setEinlassBusy(null);
+    }
+  }, []);
 
   const sendChat = useCallback(async (text) => {
     const r = room?.current;
@@ -226,6 +269,12 @@ export default function Raum() {
             }}>{toast}</div>
           )}
 
+          <KnockCard
+            t={t} guests={wartende} busyId={einlassBusy}
+            onAdmit={(id) => entscheide(id, "admit")}
+            onReject={(id) => entscheide(id, "reject")}
+          />
+
           <ControlBar
             t={t} visible={barVisible}
             micOn={micOn} camOn={camOn} screenOn={screenOn}
@@ -267,6 +316,7 @@ function Keyframes() {
       @keyframes vidPulse { 0%,100% { transform: scaleY(.45) } 50% { transform: scaleY(1) } }
       @keyframes vidSlideIn { from { opacity: 0; transform: translateX(12px) } to { opacity: 1; transform: none } }
       @keyframes vidSlideUp { from { opacity: 0; transform: translate(-50%, 8px) } to { opacity: 1; transform: translate(-50%, 0) } }
+      @keyframes vidKnock { from { opacity: 0; transform: translateY(-8px) } to { opacity: 1; transform: none } }
       @media (prefers-reduced-motion: reduce) {
         *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
       }

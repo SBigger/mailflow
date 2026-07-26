@@ -19,7 +19,8 @@
 // Deploy: supabase functions deploy meeting-api --project-ref <ref>
 // Secrets: LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET
 // ===========================================================================
-import { requireUser, jsonResponse, corsHeaders } from "../_shared/auth.ts";
+import { requireUser, jsonResponse, corsHeaders, serviceClient } from "../_shared/auth.ts";
+import { broadcastRealtime } from "../_shared/telefonie.ts";
 
 const TOKEN_TTL_SECONDS = 60 * 60 * 6; // 6 h -- deckt auch lange Sitzungen ab;
                                        // LiveKit erneuert die Verbindung selbst,
@@ -43,6 +44,7 @@ async function signAccessToken(
   apiKey: string,
   apiSecret: string,
   opts: { identity: string; name: string; room: string; metadata?: Record<string, unknown> },
+  ttlSeconds: number = TOKEN_TTL_SECONDS,
 ): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   const header = { alg: "HS256", typ: "JWT" };
@@ -50,7 +52,7 @@ async function signAccessToken(
     iss: apiKey,
     sub: opts.identity,
     nbf: now - 10,          // kleine Toleranz gegen Uhr-Abweichungen
-    exp: now + TOKEN_TTL_SECONDS,
+    exp: now + ttlSeconds,
     name: opts.name,
     ...(opts.metadata ? { metadata: JSON.stringify(opts.metadata) } : {}),
     video: {
@@ -78,13 +80,15 @@ async function signAccessToken(
   return `${signingInput}.${b64url(new Uint8Array(sig))}`;
 }
 
+// Gast-Aktionen laufen OHNE Mitarbeiter-Anmeldung (der Gast hat ja kein
+// Konto). Sie sind bewusst eng: Raumdaten nur rudimentaer, Zutritt erst
+// nach ausdruecklicher Freigabe durch den Berater.
+const GUEST_ACTIONS = new Set(["guest-info", "guest-knock", "guest-status"]);
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
-    const auth = await requireUser(req);
-    if (auth.response) return auth.response;
-
     const body = await req.json().catch(() => ({}));
     const action = String(body.action || "token");
 
@@ -95,6 +99,15 @@ Deno.serve(async (req) => {
       console.error("meeting-api: LIVEKIT_URL/API_KEY/API_SECRET fehlen");
       return jsonResponse({ error: "Videodienst ist nicht eingerichtet." }, 500);
     }
+
+    // ── Gastweg (ohne Anmeldung) ──────────────────────────────────────────
+    if (GUEST_ACTIONS.has(action)) {
+      return await handleGuest(action, body, { url, apiKey, apiSecret });
+    }
+
+    // ── Ab hier nur angemeldete Mitarbeitende ────────────────────────────
+    const auth = await requireUser(req);
+    if (auth.response) return auth.response;
 
     if (action === "token") {
       const room = String(body.room || "").trim();
@@ -122,9 +135,180 @@ Deno.serve(async (req) => {
       return jsonResponse({ token, url, identity: `staff:${auth.user!.id}`, name: displayName });
     }
 
+    // ── Besprechung anlegen ───────────────────────────────────────────────
+    // Der Raumname entsteht SERVERSEITIG. Vorher erzeugte ihn der Browser --
+    // dann könnte jemand einen bereits benutzten Namen "anlegen" und sich so
+    // in eine fremde Besprechung einklinken.
+    if (action === "create") {
+      const room = "artis-" + zufallsName(10);
+      const { data, error } = await auth.admin!
+        .from("meetings")
+        .insert({
+          room_name: room,
+          title: String(body.title || "Besprechung").slice(0, 200),
+          customer_id: body.customerId || null,
+          created_by: auth.user!.id,
+          starts_at: body.startsAt || null,
+          ends_at: body.endsAt || null,
+        })
+        .select("id, room_name, title, starts_at")
+        .single();
+      if (error) {
+        console.error("meeting-api create:", error.message);
+        return jsonResponse({ error: "Besprechung konnte nicht angelegt werden." }, 500);
+      }
+      return jsonResponse({ meeting: data });
+    }
+
+    // ── Wartende auflisten (Nachzügler, die vor dem Beitritt anklopften) ──
+    if (action === "waiting") {
+      const room = String(body.room || "").trim();
+      if (!ROOM_PATTERN.test(room)) return jsonResponse({ error: "Ungültiger Raumname." }, 400);
+      const meeting = await findeBesprechung(auth.admin!, room);
+      if (!meeting) return jsonResponse({ waiting: [] });
+      const { data } = await auth.admin!
+        .from("meeting_guests")
+        .select("id, display_name, requested_at")
+        .eq("meeting_id", meeting.id)
+        .is("admitted_at", null)
+        .is("rejected_at", null)
+        .order("requested_at", { ascending: true });
+      return jsonResponse({ waiting: data || [] });
+    }
+
+    // ── Zulassen / Abweisen ───────────────────────────────────────────────
+    if (action === "admit" || action === "reject") {
+      const guestId = String(body.guestId || "");
+      if (!guestId) return jsonResponse({ error: "guestId fehlt." }, 400);
+      const feld = action === "admit"
+        ? { admitted_at: new Date().toISOString(), admitted_by: auth.user!.id }
+        : { rejected_at: new Date().toISOString() };
+      const { error } = await auth.admin!
+        .from("meeting_guests").update(feld).eq("id", guestId);
+      if (error) {
+        console.error(`meeting-api ${action}:`, error.message);
+        return jsonResponse({ error: "Aktion fehlgeschlagen." }, 500);
+      }
+      return jsonResponse({ ok: true });
+    }
+
     return jsonResponse({ error: `Unbekannte Aktion: ${action}` }, 400);
   } catch (e) {
     console.error("meeting-api:", e);
     return jsonResponse({ error: String((e as Error)?.message ?? e) }, 500);
   }
 });
+
+// ── Hilfsfunktionen ────────────────────────────────────────────────────────
+
+// Zufälliger, gut vorlesbarer Raumname (ohne 0/O/1/l/i – die verwechselt man
+// am Telefon). 10 Zeichen aus 31 ≈ 49 Bit: nicht erratbar.
+function zufallsName(laenge: number): string {
+  const alphabet = "abcdefghjkmnpqrstuvwxyz23456789";
+  const bytes = new Uint8Array(laenge);
+  crypto.getRandomValues(bytes);
+  let s = "";
+  for (const b of bytes) s += alphabet[b % alphabet.length];
+  return s;
+}
+
+async function findeBesprechung(admin: ReturnType<typeof serviceClient>, room: string) {
+  const { data } = await admin
+    .from("meetings")
+    .select("id, room_name, title, starts_at, status, lobby_enabled")
+    .eq("room_name", room)
+    .maybeSingle();
+  return data;
+}
+
+// ── Gastweg ────────────────────────────────────────────────────────────────
+// Bewusst sparsam mit Auskünften: Ein Fremder, der einen Raumnamen errät,
+// soll daraus nichts über Mandanten lernen. Darum nur der Titel – kein
+// Kundenname, keine Teilnehmerliste, keine Zeiten anderer Besprechungen.
+async function handleGuest(
+  action: string,
+  body: Record<string, unknown>,
+  lk: { url: string; apiKey: string; apiSecret: string },
+) {
+  const admin = serviceClient();
+
+  if (action === "guest-info") {
+    const room = String(body.room || "").trim();
+    if (!ROOM_PATTERN.test(room)) return jsonResponse({ error: "Ungültiger Link." }, 400);
+    const meeting = await findeBesprechung(admin, room);
+    if (!meeting || meeting.status === "abgesagt") {
+      return jsonResponse({ error: "Diese Besprechung gibt es nicht (mehr)." }, 404);
+    }
+    return jsonResponse({ title: meeting.title, startsAt: meeting.starts_at, status: meeting.status });
+  }
+
+  if (action === "guest-knock") {
+    const room = String(body.room || "").trim();
+    const name = String(body.name || "").trim().slice(0, 80);
+    if (!ROOM_PATTERN.test(room)) return jsonResponse({ error: "Ungültiger Link." }, 400);
+    if (name.length < 2) return jsonResponse({ error: "Bitte geben Sie Ihren Namen an." }, 400);
+
+    const meeting = await findeBesprechung(admin, room);
+    if (!meeting || meeting.status === "abgesagt") {
+      return jsonResponse({ error: "Diese Besprechung gibt es nicht (mehr)." }, 404);
+    }
+
+    const { data, error } = await admin
+      .from("meeting_guests")
+      .insert({ meeting_id: meeting.id, display_name: name })
+      .select("id")
+      .single();
+    if (error) {
+      console.error("meeting-api guest-knock:", error.message);
+      return jsonResponse({ error: "Anmeldung fehlgeschlagen." }, 500);
+    }
+
+    // Den Berater sofort benachrichtigen – ohne das müsste er raten, wann
+    // jemand wartet. Enthält bewusst nichts Vertrauliches.
+    await broadcastRealtime(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      `meeting-${room}`,
+      "guest_knock",
+      { guestId: data.id, name },
+    );
+
+    return jsonResponse({ guestId: data.id });
+  }
+
+  if (action === "guest-status") {
+    const guestId = String(body.guestId || "");
+    if (!guestId) return jsonResponse({ error: "guestId fehlt." }, 400);
+
+    const { data: gast } = await admin
+      .from("meeting_guests")
+      .select("id, display_name, admitted_at, rejected_at, meeting_id")
+      .eq("id", guestId)
+      .maybeSingle();
+    if (!gast) return jsonResponse({ state: "unbekannt" }, 404);
+    if (gast.rejected_at) return jsonResponse({ state: "abgewiesen" });
+    if (!gast.admitted_at) return jsonResponse({ state: "wartet" });
+
+    const { data: meeting } = await admin
+      .from("meetings").select("room_name").eq("id", gast.meeting_id).single();
+    if (!meeting) return jsonResponse({ state: "unbekannt" }, 404);
+
+    // Zutritt bestätigt → Token ausstellen. Bewusst kurzlebig: Es deckt nur
+    // den Verbindungsaufbau ab, LiveKit hält die Sitzung danach selbst.
+    // Erneutes Abholen ist erlaubt (sonst sperrt ein Browser-Neuladen aus).
+    const token = await signAccessToken(lk.apiKey, lk.apiSecret, {
+      identity: `guest:${gast.id}`,
+      name: gast.display_name,
+      room: meeting.room_name,
+      metadata: { guest: true },
+    }, 15 * 60);
+
+    await admin.from("meeting_guests")
+      .update({ token_issued_at: new Date().toISOString() })
+      .eq("id", gast.id).is("token_issued_at", null);
+
+    return jsonResponse({ state: "zugelassen", token, url: lk.url, name: gast.display_name });
+  }
+
+  return jsonResponse({ error: `Unbekannte Aktion: ${action}` }, 400);
+}

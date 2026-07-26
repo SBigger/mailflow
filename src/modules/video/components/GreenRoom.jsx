@@ -10,7 +10,14 @@ import { VM } from "../theme";
 // Welt. Die Vorschau läuft über getUserMedia direkt – nicht über LiveKit,
 // denn hier ist noch keine Verbindung aufgebaut und niemand hört mit.
 // ===========================================================================
-export default function GreenRoom({ t, title, subtitle, joinLabel = "Beitreten", onJoin, busy }) {
+export default function GreenRoom({
+  t, title, subtitle, joinLabel = "Beitreten", onJoin, busy,
+  askName = false,        // Gäste tragen ihren Namen selbst ein
+  defaultName = "",
+  hint = "Noch sieht und hört Sie niemand.",
+  brand = false,          // Artis-Zeile für die Gästeseite
+}) {
+  const [guestName, setGuestName] = useState(defaultName);
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const rafRef = useRef(null);
@@ -135,14 +142,26 @@ export default function GreenRoom({ t, title, subtitle, joinLabel = "Beitreten",
       streamRef.current.getTracks().forEach((tr) => tr.stop());
       streamRef.current = null;
     }
-    onJoin?.({ camOn, micOn, camId: sel.cam, micId: sel.mic, speakerId: sel.speaker });
+    onJoin?.({ camOn, micOn, camId: sel.cam, micId: sel.mic, speakerId: sel.speaker, name: guestName.trim() });
   };
+
+  const nameFehlt = askName && guestName.trim().length < 2;
 
   return (
     <div style={{
       minHeight: "100%", display: "flex", flexDirection: "column", alignItems: "center",
       justifyContent: "center", gap: 16, padding: "34px 24px", background: t.sunken,
     }}>
+      {brand && (
+        <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 2 }}>
+          <span style={{
+            width: 24, height: 24, borderRadius: 7, background: t.accentFill, color: "#fff",
+            display: "grid", placeItems: "center", fontSize: 12, fontWeight: 700,
+          }}>A</span>
+          <span style={{ fontSize: 13, fontWeight: 700, color: t.textPrimary }}>Artis Treuhand</span>
+        </div>
+      )}
+
       <div style={{ textAlign: "center" }}>
         <h1 style={{ fontSize: 21, fontWeight: 700, margin: 0, letterSpacing: "-.01em", color: t.textPrimary }}>
           {title}
@@ -207,24 +226,40 @@ export default function GreenRoom({ t, title, subtitle, joinLabel = "Beitreten",
         )}
       </div>
 
+      {askName && (
+        <input
+          value={guestName}
+          onChange={(e) => setGuestName(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && !nameFehlt && !busy) join(); }}
+          placeholder="Ihr Name"
+          aria-label="Ihr Name"
+          autoFocus
+          style={{
+            width: "100%", maxWidth: 560, background: t.raised,
+            border: `1px solid ${t.borderSubtle}`, borderRadius: 11,
+            padding: "11px 13px", fontFamily: "inherit", fontSize: 13.5, color: t.textPrimary,
+          }}
+        />
+      )}
+
       <button
         onClick={join}
-        disabled={busy}
+        disabled={busy || nameFehlt}
         style={{
           width: "100%", maxWidth: 560, border: "none", borderRadius: 13, padding: 13,
           background: t.accentFill, color: "#fff", fontFamily: "inherit",
-          fontSize: 14, fontWeight: 750, cursor: busy ? "default" : "pointer",
-          opacity: busy ? .7 : 1, display: "flex", alignItems: "center",
+          fontSize: 14, fontWeight: 750, cursor: busy || nameFehlt ? "default" : "pointer",
+          opacity: busy || nameFehlt ? .55 : 1, display: "flex", alignItems: "center",
           justifyContent: "center", gap: 8, transition: "filter .15s ease-out",
         }}
-        onMouseEnter={(e) => { if (!busy) e.currentTarget.style.filter = "brightness(1.08)"; }}
+        onMouseEnter={(e) => { if (!busy && !nameFehlt) e.currentTarget.style.filter = "brightness(1.08)"; }}
         onMouseLeave={(e) => (e.currentTarget.style.filter = "none")}
       >
         {busy && <Loader2 size={16} style={{ animation: "vidSpin 1s linear infinite" }} />}
         {busy ? "Verbinde…" : joinLabel}
       </button>
 
-      <p style={{ fontSize: 11, color: t.textMuted, margin: 0 }}>Noch sieht und hört Sie niemand.</p>
+      <p style={{ fontSize: 11, color: t.textMuted, margin: 0 }}>{hint}</p>
     </div>
   );
 }
