@@ -122,6 +122,17 @@ export function TelephonyProvider({ children }) {
   //   "ended"    → laufenden Anruf automatisch ins Wrap-up/Leistungs-Panel
   //                überführen, genau wie ein manuelles hangup()
   const callsChRef = useRef(null);
+  // ⚠️ Bereits beendete call.id merken (2026-07-26, gleiche Lehre wie in der
+  // Tray-App): die verwaisten peoplefone-Subscriptions stellen jedes Ereignis
+  // zigfach und teils verspaetet zu -- ein "answered"-Duplikat NACH dem
+  // Auflegen liess das Gespraechs-Panel sonst wieder auferstehen (Sascha:
+  // "die Kachel aktualisiert sich mehrfach, auch beim Aufhaengen").
+  const endedIdsRef = useRef([]);
+  const rememberEndedId = useCallback((id) => {
+    if (!id || endedIdsRef.current.includes(id)) return;
+    endedIdsRef.current.push(id);
+    if (endedIdsRef.current.length > 20) endedIdsRef.current.shift();
+  }, []);
   useEffect(() => {
     if (!myId) return;
     const ch = supabase.channel(CALLS_CHANNEL, { config: { broadcast: { self: true } } });
@@ -130,6 +141,7 @@ export function TelephonyProvider({ children }) {
       if (payload.targetUserId && payload.targetUserId !== myId) return; // nicht für mich
       const incomingCall = payload.call;
       const evtStatus = incomingCall?.status || "ringing";
+      if (incomingCall?.id && endedIdsRef.current.includes(incomingCall.id)) return; // laengst erledigt
 
       if (evtStatus === "ringing") {
         // Ausgehende Anrufe meldet der peoplefone-Webhook ebenfalls (dir
@@ -163,6 +175,7 @@ export function TelephonyProvider({ children }) {
       }
 
       if (evtStatus === "ended") {
+        rememberEndedId(incomingCall?.id);
         setCall((prev) => {
           if (!prev) return null;
           const durationSec = Math.max(0, Math.floor((Date.now() - (prev.startedAt || Date.now())) / 1000));
@@ -276,19 +289,22 @@ export function TelephonyProvider({ children }) {
   const decline = useCallback(async () => {
     const ok = await sendControlCommand("decline");
     if (!ok) { flagControlError("Ablehnen nicht zugestellt — nochmals versuchen"); return; }
-    setIncoming(null);
-  }, [sendControlCommand, flagControlError]);
+    setIncoming((prev) => { rememberEndedId(prev?.id); return null; });
+  }, [sendControlCommand, flagControlError, rememberEndedId]);
   const hangup = useCallback(async () => {
     const ok = await sendControlCommand("hangup");
     if (!ok) { flagControlError("Auflegen nicht zugestellt — nochmals versuchen"); return; }
     setCall((prev) => {
       if (prev) {
+        // Auch lokal aufgelegte Anrufe als erledigt merken -- verspaetete
+        // "answered"-Duplikate duerfen das Panel nicht wiederbeleben.
+        rememberEndedId(prev.id);
         const durationSec = Math.max(0, Math.floor((Date.now() - (prev.startedAt || Date.now())) / 1000));
         setWrapup({ ...prev, durationSec, endedAt: Date.now() });
       }
       return null;
     });
-  }, [sendControlCommand, flagControlError]);
+  }, [sendControlCommand, flagControlError, rememberEndedId]);
   const clearWrapup = useCallback(() => setWrapup(null), []);
   const toggleMute  = useCallback(() => setCall((c) => (c ? { ...c, muted: !c.muted } : c)), []);
   const toggleHold  = useCallback(() => setCall((c) => (c ? { ...c, onHold: !c.onHold } : c)), []);

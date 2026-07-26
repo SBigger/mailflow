@@ -72,6 +72,7 @@ let toastEnded = false; // true = fuer currentCallId schon "ended" verarbeitet -
 let lastLoadAt = 0; // Zeitstempel des letzten loadFile() -- siehe showCall()
 let pendingLoadListener = null; // aktuell haengender once("did-finish-load")-Listener, falls noch keiner gefeuert hat
 let pendingStatusUpdate = null; // Status, der eintraf WAEHREND das Fenster noch laedt -- siehe showCall()
+let lastUpdateKey = null; // zuletzt per IPC gesendeter Karteninhalt -- Duplikate nicht erneut senden
 // ⚠️ call.id, die bereits VOLLSTAENDIG als "ended" verarbeitet wurden -- UEBERLEBT
 // hideCallWindow() (anders als currentCallId/toastEnded), siehe showCall() fuer den
 // Bug, den das behebt: peoplefone schickt "terminated" oft mehrfach mit
@@ -175,6 +176,7 @@ function hideCallWindow() {
   currentStatusRank = -1;
   toastEnded = false;
   pendingStatusUpdate = null;
+  lastUpdateKey = null;
   if (pendingLoadListener) {
     callWindow?.webContents.removeListener("did-finish-load", pendingLoadListener);
     pendingLoadListener = null;
@@ -232,7 +234,15 @@ function showCall(call) {
       // Fenster hat das erste Laden dieses Anrufs bereits abgeschlossen --
       // nur per IPC aktualisieren, NICHT neu laden. Neu laden war die
       // Ursache des fruehen Absturz-Bugs bei ueberlappenden ringing-Events.
-      callWindow.webContents.send("call-update", { name, number, status });
+      // ⚠️ Identische Updates NICHT erneut senden (2026-07-26): die
+      // verwaisten peoplefone-Subscriptions stellen jedes Ereignis zigfach
+      // zu -- jedes Duplikat liess die Karte sichtbar "mehrfach
+      // aktualisieren" (Sascha-Beobachtung). Inhaltsgleich = ignorieren.
+      const key = name + " " + number + " " + status;
+      if (key !== lastUpdateKey) {
+        lastUpdateKey = key;
+        callWindow.webContents.send("call-update", { name, number, status });
+      }
     } else {
       // ⚠️ BUG gefunden + behoben (2026-07-26): das erste loadFile() fuer
       // diesen Anruf laeuft noch (did-finish-load ist noch nicht gefeuert).
@@ -277,6 +287,7 @@ function showCall(call) {
   if (toastEnded) rememberEnded(call.id); // sehr kurzer Anruf, kommt gleich schon als "ended" an
   toastLive = false;
   pendingStatusUpdate = null;
+  lastUpdateKey = name + " " + number + " " + status;
 
   // Haengenden Listener einer ABGEBROCHENEN vorherigen Ladung entfernen
   // (siehe Kommentar oben) -- sonst haeufen sich die once()-Listener bei
