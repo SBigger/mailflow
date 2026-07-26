@@ -184,12 +184,20 @@ function showCall(call) {
     return;
   }
 
-  // Echt neuer Anruf (andere call.id, oder Karte war nicht sichtbar) --
-  // zeitlich bremsen statt auf exakte Nummer-Gleichheit zu pruefen: ein
-  // zweites, fast gleichzeitiges "ringing" von der jeweils anderen Quelle
-  // soll die Karte nicht doppelt neu laden.
+  // Echt neuer Anruf (andere call.id, oder Karte war nicht sichtbar).
+  //
+  // ⚠️ BUG gefunden + behoben (2026-07-26): die Bremse griff bisher IMMER,
+  // wenn das Fenster kuerzlich geladen wurde -- auch wenn call.id sich
+  // unterscheidet, also wirklich ein ANDERER Anruf klingelt (z.B. Anruf 1
+  // beendet, Sekunden spaeter klingelt Anruf 2). Die Karte blieb dann auf
+  // "Anruf beendet" von Anruf 1 haengen (25s-Timer wurde nochmal aufgezogen)
+  // statt Anruf 2 zu zeigen -- live beobachtet: "beendet" erschien doppelt.
+  // Die Bremse darf nur greifen, wenn wir NICHT sicher wissen, dass es ein
+  // anderer Anruf ist (kein currentCallId bekannt, z.B. beim allerersten
+  // Laden). Sobald wir eine andere, bekannte call.id sehen, IMMER neu laden.
   const now = Date.now();
-  if (callWindow.isVisible() && (now - lastLoadAt) < RELOAD_COOLDOWN_MS) {
+  const knownDifferentCall = currentCallId !== null && call.id !== currentCallId;
+  if (!knownDifferentCall && callWindow.isVisible() && (now - lastLoadAt) < RELOAD_COOLDOWN_MS) {
     scheduleAutoHide(TOAST_AUTO_HIDE_MS);
     return;
   }
