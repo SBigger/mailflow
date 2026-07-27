@@ -6,7 +6,12 @@
 // ersetzt, aendert sich in dieser Datei nichts.
 // ===========================================================================
 const $ = (id) => document.getElementById(id);
-const engine = window.createMockEngine();
+
+// Echter Motor, wenn die App in Electron laeuft (Realtime + signierte Befehle
+// im Hauptprozess); sonst der Mock -- so bleibt die Oberflaeche auch ohne
+// Telefonanlage entwickelbar. Beide erfuellen engine/engine-api.md.
+const echterMotor = !!window.phoneAPI?.engine;
+const engine = echterMotor ? window.phoneAPI.engine : window.createMockEngine();
 
 // ── Ansichten umschalten ─────────────────────────────────────────────────
 document.querySelectorAll(".rail-btn").forEach((btn) => {
@@ -39,7 +44,11 @@ buildKeypad($("keypad2"), (d) => engine.sendDtmf(d));
 
 $("btnCall").addEventListener("click", () => {
   const nr = $("dialInput").value.trim();
-  if (nr) engine.dial(nr);
+  if (!nr) return;
+  // Ausgehend uebernimmt der Sprach-Motor (heute MicroSIP als tel:-Programm);
+  // der Mock hat seinen eigenen dial().
+  if (echterMotor) window.phoneAPI.dial(nr);
+  else engine.dial(nr);
 });
 $("dialInput").addEventListener("keydown", (e) => {
   if (e.key === "Enter") $("btnCall").click();
@@ -125,15 +134,19 @@ function tickTimer() {
   $("activeTimer").textContent = String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0");
 }
 
+let meineNebenstelle = null;
+
 engine.on("registration", (reg) => {
   const dot = $("regDot"), me = $("mePresence");
-  const map = { registered: [var_online(), "Verbunden"], connecting: [var_away(), "verbinde…"], failed: [var_off(), "nicht verbunden"] };
+  const map = { registered: [var_online(), "Bereit"], connecting: [var_away(), "verbinde…"], failed: [var_off(), "nicht verbunden"] };
   const [color, text] = map[reg.state] || map.failed;
+  const nst = reg.extension || meineNebenstelle;
   dot.style.background = color; me.style.background = color;
-  $("regText").textContent = text + (reg.extension ? " · Nebenstelle " + reg.extension : "") + (reg.message ? " (" + reg.message + ")" : "");
+  $("regText").textContent = text + (nst ? " · Nebenstelle " + nst : "") + (reg.message ? " (" + reg.message + ")" : "");
   $("accountInfo").textContent = reg.state === "registered"
-    ? "Angemeldet an der Telefonanlage" + (reg.extension ? " · Nebenstelle " + reg.extension : "")
-    : "Noch nicht angemeldet — der SIP-Motor wird gerade gebaut (aktuell simuliert).";
+    ? "Mit smartis verbunden" + (nst ? " · Nebenstelle " + nst : "") +
+      (echterMotor ? " — Sprache läuft über MicroSIP im Hintergrund." : "")
+    : (echterMotor ? "Nicht verbunden — Anrufe kommen gerade nicht an." : "Simulierter Betrieb (Mock-Motor).");
 });
 function var_online() { return getComputedStyle(document.documentElement).getPropertyValue("--online").trim(); }
 function var_away() { return getComputedStyle(document.documentElement).getPropertyValue("--away").trim(); }
@@ -207,16 +220,18 @@ function renderCallList() {
 renderCallList();
 
 // ── Kollegen / Verbinden-Ziele ───────────────────────────────────────────
-// Platzhalter bis zur smartis-Anbindung: dieselben Daten liefert die Edge
-// Function telefonie-transfer (action "targets") live aus der Telefonanlage.
-let contacts = [
-  { name: "Romy Gerber", extension: "21" },
-  { name: "Reto Mühlemann", extension: "22" },
-  { name: "Maura Fuster", extension: "23" },
-  { name: "Isabella Nikollbibaj", extension: "24" },
-];
+// Kommen aus der Konfiguration (dieselbe Datei wie bei der Anruf-Karte).
+// ⚠️ Nur echte, in der Telefonanlage vorhandene Nebenstellen eintragen: ein
+// Transfer ins Leere kommt ueber die Rufgruppe zurueck und wirkt wie ein
+// doppelter Anruf (live erlebt am 2026-07-26).
+let contacts = [];
 function renderContacts(filter = "") {
   const box = $("contactList"); box.textContent = "";
+  if (!contacts.length) {
+    const e = document.createElement("div"); e.className = "muted";
+    e.textContent = "Keine Nebenstellen hinterlegt — in der Konfiguration unter \"targets\" eintragen (echte Nebenstellen aus der Telefonanlage).";
+    box.appendChild(e); return;
+  }
   contacts.filter((c) => c.name.toLowerCase().includes(filter.toLowerCase())).forEach((c) => {
     const row = document.createElement("div"); row.className = "row-item";
     const av = document.createElement("span"); av.className = "avatar"; av.textContent = initials(c.name);
@@ -225,7 +240,10 @@ function renderContacts(filter = "") {
     const t2 = document.createElement("div"); t2.className = "t2"; t2.textContent = "Nebenstelle " + c.extension;
     txt.append(t1, t2);
     row.append(av, txt);
-    row.addEventListener("click", () => engine.dial(c.extension));
+    row.addEventListener("click", () => {
+      if (echterMotor) window.phoneAPI.dial(c.extension);
+      else engine.dial(c.extension);
+    });
     box.appendChild(row);
   });
 }
@@ -234,6 +252,11 @@ renderContacts();
 
 function renderTransferList() {
   const box = $("transferList"); box.textContent = "";
+  if (!contacts.length) {
+    const e = document.createElement("div"); e.className = "dempty";
+    e.textContent = "Keine Nebenstellen hinterlegt — Nummer unten eingeben.";
+    box.appendChild(e);
+  }
   contacts.forEach((c) => {
     const row = document.createElement("div"); row.className = "row-item";
     const av = document.createElement("span"); av.className = "avatar"; av.textContent = initials(c.name);
@@ -273,16 +296,35 @@ async function loadAudioDevices() {
 }
 loadAudioDevices();
 
-// ── Testauslöser ─────────────────────────────────────────────────────────
-$("btnSimIn").addEventListener("click", () => engine.simulateIncoming());
-$("btnSimUnknown").addEventListener("click", () => engine.simulateIncoming({
-  name: null, number: "+41 44 123 45 67", customer: null, dossier: null,
-}));
+// ── Testauslöser (nur im simulierten Betrieb sinnvoll) ───────────────────
+if (echterMotor) {
+  // Mit echtem Motor kommen Anrufe von der Telefonanlage -- der Testknopf
+  // wuerde nur einen Anruf vortaeuschen, den es nicht gibt.
+  document.querySelectorAll("#view-settings .card").forEach((c) => {
+    if (c.querySelector("#btnSimIn")) c.remove();
+  });
+} else {
+  $("btnSimIn").addEventListener("click", () => engine.simulateIncoming());
+  $("btnSimUnknown").addEventListener("click", () => engine.simulateIncoming({
+    name: null, number: "+41 44 123 45 67", customer: null, dossier: null,
+  }));
+}
 
 // ── Start ────────────────────────────────────────────────────────────────
-engine.connect();
+if (!echterMotor) engine.connect(); // echter Motor verbindet aus dem Hauptprozess
+
 if (window.phoneAPI?.getProfile) {
   window.phoneAPI.getProfile().then((p) => {
     if (p?.fullName) $("meAvatar").textContent = initials(p.fullName);
+    if (p?.extension) meineNebenstelle = p.extension;
+    if (Array.isArray(p?.targets) && p.targets.length) {
+      contacts = p.targets;
+      renderContacts();
+      renderTransferList();
+    }
+    if (p && p.hatGeheimnis === false) {
+      $("accountInfo").textContent =
+        "Kein Fernsteuer-Geheimnis hinterlegt — Annehmen, Verbinden und Auflegen bleiben wirkungslos.";
+    }
   }).catch(() => {});
 }
