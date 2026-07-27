@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Video as Cam, LogIn, Copy, Check, Clock } from "lucide-react";
+import { Video as Cam, LogIn, Clock, UserPlus, Trash2 } from "lucide-react";
+import EinladenPanel from "../components/EinladenPanel";
 import { useAuth } from "@/lib/AuthContext";
 import { functions } from "@/api/supabaseClient";
 import { useAppTheme } from "@/modules/telefonie/theme";
@@ -9,17 +10,21 @@ import { videoTheme, VIDEO_FONT } from "../theme";
 // ===========================================================================
 // Übersicht – Einstieg ins Modul: Besprechung starten oder beitreten.
 //
-// PHASE 1 bewusst schlank: Räume entstehen spontan, es gibt noch keine
-// geplanten Termine und keine Gästelinks (das kommt mit Phase 2 samt
-// meetings-Tabelle und Warteraum). Zuletzt benutzte Räume liegen lokal im
-// Browser – kein Serverzustand, den wir später migrieren müssten.
+// Räume entstehen spontan (geplante Termine mit Outlook-Einladung kommen in
+// Phase 2, Schritt 2). Gästezugang mit Warteraum ist da: pro Raum lassen sich
+// der Kunden- und der interne Link getrennt holen.
+//
+// Die Liste "zuletzt benutzt" liegt bewusst lokal im Browser – sie ist eine
+// Bequemlichkeit, kein Datenbestand. Die Wahrheit über offene Besprechungen
+// steht in der Tabelle meetings; "Beenden" wirkt deshalb auf BEIDES: lokal
+// verschwindet der Eintrag, serverseitig wird der Gästelink ungültig.
 // ===========================================================================
 const RECENT_KEY = "video_recent_rooms";
 
 function readRecent() {
   try {
     const v = JSON.parse(localStorage.getItem(RECENT_KEY));
-    return Array.isArray(v) ? v.slice(0, 5) : [];
+    return Array.isArray(v) ? v.slice(0, 8) : [];
   } catch { return []; }
 }
 
@@ -27,8 +32,14 @@ export function rememberRoom(name) {
   try {
     const list = readRecent().filter((r) => r.name !== name);
     list.unshift({ name, at: Date.now() });
-    localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, 5)));
+    localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, 8)));
   } catch { /* ohne Verlauf lebt es sich auch */ }
+}
+
+function forgetRoom(name) {
+  try {
+    localStorage.setItem(RECENT_KEY, JSON.stringify(readRecent().filter((r) => r.name !== name)));
+  } catch { /* egal */ }
 }
 
 export default function Uebersicht() {
@@ -38,10 +49,28 @@ export default function Uebersicht() {
   const t = videoTheme(theme);
 
   const [joinName, setJoinName] = useState("");
-  const [copied, setCopied] = useState(null);
   const [startet, setStartet] = useState(false);
   const [fehler, setFehler] = useState(null);
-  const recent = readRecent();
+  const [recent, setRecent] = useState(() => readRecent());
+  const [offen, setOffen] = useState(null);      // aufgeklappter Raum
+  const [schliesst, setSchliesst] = useState(null);
+
+  // Besprechung beenden: macht den Gästelink endgültig unbrauchbar und nimmt
+  // den Raum aus der Liste. Bewusst mit Rückfrage — ein versehentliches
+  // Beenden während eines laufenden Gesprächs wäre unangenehm.
+  const beenden = async (name) => {
+    if (!window.confirm(
+      `Besprechung "${name}" beenden?\n\nDer Gästelink wird damit ungültig — wer ihn hat, kommt nicht mehr herein.`
+    )) return;
+    setSchliesst(name);
+    try {
+      await functions.invoke("meeting-api", { action: "close", room: name });
+    } catch { /* lokal trotzdem aufräumen */ }
+    forgetRoom(name);
+    setRecent(readRecent());
+    setOffen(null);
+    setSchliesst(null);
+  };
 
   // Der Raumname entsteht SERVERSEITIG (Edge Function "create"): So ist er
   // eindeutig, wird nie wiederverwendet, und die Besprechung existiert in der
@@ -70,17 +99,9 @@ export default function Uebersicht() {
     navigate(`/besprechungen/raum/${clean}`);
   };
 
-  // ⚠️ Der GÄSTE-Link (/meet/…), nicht der interne Raumlink: Kunden haben
-  // kein smartis-Konto und würden auf der internen Seite in der Anmeldung
-  // landen. Genau dieser Link gehört in die Termineinladung.
-  const copyLink = async (name) => {
-    const link = `${window.location.origin}/meet/${name}`;
-    try {
-      await navigator.clipboard.writeText(link);
-      setCopied(name);
-      setTimeout(() => setCopied(null), 2000);
-    } catch { /* Zwischenablage kann blockiert sein */ }
-  };
+  // (Das Kopieren der Links liegt jetzt im EinladenPanel — dort stehen der
+  // Gäste- und der interne Link getrennt beschriftet nebeneinander, damit
+  // niemand mehr den falschen erwischt.)
 
   const card = {
     background: t.raised, border: `1px solid ${t.borderSubtle}`,
@@ -97,14 +118,14 @@ export default function Uebersicht() {
       </h1>
       <p style={{ fontSize: 14, color: t.textSecondary, margin: "0 0 26px", maxWidth: "60ch" }}>
         Videogespräche direkt in smartis{profile?.full_name ? `, ${profile.full_name.split(" ")[0]}` : ""}.
-        Zurzeit für interne Gespräche — Kundenlinks folgen im nächsten Schritt.
+        Kunden nehmen ohne Konto teil — Sie lassen sie aus dem Warteraum herein.
       </p>
 
       <div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}>
         <div style={card}>
           <h2 style={{ fontSize: 15.5, fontWeight: 700, margin: "0 0 6px" }}>Neue Besprechung</h2>
           <p style={{ fontSize: 13, color: t.textMuted, margin: "0 0 16px" }}>
-            Öffnet sofort einen Raum. Den Link können Sie danach an Kolleginnen und Kollegen weitergeben.
+            Öffnet sofort einen Raum. Danach unter «Einladen» den passenden Link holen — für Kunden oder fürs Team.
           </p>
           <button
             onClick={start}
@@ -168,37 +189,63 @@ export default function Uebersicht() {
           <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
             {recent.map((r) => (
               <div key={r.name} style={{
-                display: "flex", alignItems: "center", gap: 11, background: t.raised,
-                border: `1px solid ${t.borderSubtle}`, borderRadius: 12, padding: "11px 14px",
+                background: t.raised, border: `1px solid ${offen === r.name ? t.accentFill : t.borderSubtle}`,
+                borderRadius: 12, overflow: "hidden", transition: "border-color .15s",
               }}>
-                <Clock size={15} style={{ color: t.textMuted, flexShrink: 0 }} />
-                <span style={{
-                  flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 600,
-                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                  fontFamily: 'ui-monospace, "Segoe UI Mono", Consolas, monospace',
-                }}>{r.name}</span>
-                <button
-                  onClick={() => copyLink(r.name)}
-                  title="Link kopieren"
-                  aria-label="Link kopieren"
-                  style={{
-                    border: "none", background: "transparent", cursor: "pointer",
-                    color: copied === r.name ? t.answer : t.textMuted,
-                    display: "grid", placeItems: "center", width: 30, height: 30, borderRadius: 8,
-                  }}
-                >
-                  {copied === r.name ? <Check size={15} /> : <Copy size={15} />}
-                </button>
-                <button
-                  onClick={() => join(r.name)}
-                  style={{
-                    border: "none", background: t.accentSoft, color: t.accent,
-                    borderRadius: 9, padding: "7px 13px", cursor: "pointer",
-                    fontFamily: "inherit", fontSize: 12.5, fontWeight: 700,
-                  }}
-                >
-                  Beitreten
-                </button>
+                <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "11px 14px" }}>
+                  <Clock size={15} style={{ color: t.textMuted, flexShrink: 0 }} />
+                  <span style={{
+                    flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 600,
+                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                    fontFamily: 'ui-monospace, "Segoe UI Mono", Consolas, monospace',
+                  }}>{r.name}</span>
+
+                  <button
+                    onClick={() => setOffen((o) => (o === r.name ? null : r.name))}
+                    style={{
+                      border: "none", background: offen === r.name ? t.accentFill : t.accentSoft,
+                      color: offen === r.name ? "#fff" : t.accent,
+                      borderRadius: 9, padding: "7px 13px", cursor: "pointer",
+                      fontFamily: "inherit", fontSize: 12.5, fontWeight: 700,
+                      display: "flex", alignItems: "center", gap: 6,
+                    }}
+                  >
+                    <UserPlus size={14} /> Einladen
+                  </button>
+                  <button
+                    onClick={() => join(r.name)}
+                    style={{
+                      border: "none", background: t.accentFill, color: "#fff",
+                      borderRadius: 9, padding: "7px 13px", cursor: "pointer",
+                      fontFamily: "inherit", fontSize: 12.5, fontWeight: 700,
+                    }}
+                  >
+                    Beitreten
+                  </button>
+                  <button
+                    onClick={() => beenden(r.name)}
+                    disabled={schliesst === r.name}
+                    title="Besprechung beenden — Gästelink wird ungültig"
+                    aria-label="Besprechung beenden"
+                    style={{
+                      border: "none", background: "transparent", cursor: "pointer",
+                      color: t.textMuted, display: "grid", placeItems: "center",
+                      width: 30, height: 30, borderRadius: 8, flexShrink: 0,
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.color = t.missed)}
+                    onMouseLeave={(e) => (e.currentTarget.style.color = t.textMuted)}
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+
+                {offen === r.name && (
+                  <div style={{ padding: "4px 14px 16px", borderTop: `1px solid ${t.borderSubtle}` }}>
+                    <div style={{ paddingTop: 14 }}>
+                      <EinladenPanel t={t} roomName={r.name} />
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>

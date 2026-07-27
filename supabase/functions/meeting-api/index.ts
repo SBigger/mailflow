@@ -160,6 +160,37 @@ Deno.serve(async (req) => {
       return jsonResponse({ meeting: data });
     }
 
+    // ── Besprechung schliessen ────────────────────────────────────────────
+    // ⚠️ Sicherheitsrelevant, nicht bloss Aufräumen: Solange eine Besprechung
+    // "offen" ist, bleibt ihr Gästelink gültig -- auch Wochen später. Wer den
+    // Link einmal hatte (weitergeleitete Termineinladung!), könnte erneut
+    // anklopfen. Schliessen macht den Link endgültig unbrauchbar.
+    if (action === "close") {
+      const room = String(body.room || "").trim();
+      if (!ROOM_PATTERN.test(room)) return jsonResponse({ error: "Ungültiger Raumname." }, 400);
+      const { error } = await auth.admin!
+        .from("meetings")
+        .update({ status: "beendet", ended_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+        .eq("room_name", room);
+      if (error) {
+        console.error("meeting-api close:", error.message);
+        return jsonResponse({ error: "Konnte nicht geschlossen werden." }, 500);
+      }
+      return jsonResponse({ ok: true });
+    }
+
+    // ── Eigene Besprechungen auflisten ───────────────────────────────────
+    if (action === "list") {
+      const { data } = await auth.admin!
+        .from("meetings")
+        .select("id, room_name, title, status, created_at")
+        .neq("status", "beendet")
+        .neq("status", "abgesagt")
+        .order("created_at", { ascending: false })
+        .limit(20);
+      return jsonResponse({ meetings: data || [] });
+    }
+
     // ── Wartende auflisten (Nachzügler, die vor dem Beitritt anklopften) ──
     if (action === "waiting") {
       const room = String(body.room || "").trim();
@@ -236,7 +267,7 @@ async function handleGuest(
     const room = String(body.room || "").trim();
     if (!ROOM_PATTERN.test(room)) return jsonResponse({ error: "Ungültiger Link." }, 400);
     const meeting = await findeBesprechung(admin, room);
-    if (!meeting || meeting.status === "abgesagt") {
+    if (!meeting || meeting.status === "abgesagt" || meeting.status === "beendet") {
       return jsonResponse({ error: "Diese Besprechung gibt es nicht (mehr)." }, 404);
     }
     return jsonResponse({ title: meeting.title, startsAt: meeting.starts_at, status: meeting.status });
@@ -249,7 +280,7 @@ async function handleGuest(
     if (name.length < 2) return jsonResponse({ error: "Bitte geben Sie Ihren Namen an." }, 400);
 
     const meeting = await findeBesprechung(admin, room);
-    if (!meeting || meeting.status === "abgesagt") {
+    if (!meeting || meeting.status === "abgesagt" || meeting.status === "beendet") {
       return jsonResponse({ error: "Diese Besprechung gibt es nicht (mehr)." }, 404);
     }
 

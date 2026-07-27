@@ -24,7 +24,15 @@ Deno.serve(async (req) => {
     client_id: clientId,
     response_type: 'code',
     redirect_uri: redirectUri,
-    scope: 'offline_access Mail.Read Mail.ReadBasic Mail.ReadWrite Mail.Send User.Read Files.ReadWrite.All Sites.ReadWrite.All Calendars.Read Chat.Read ChatMessage.Send',
+    // ⚠️ Calendars.ReadWrite (statt nur .Read) seit 2026-07-27: nötig, damit
+    // smartis Besprechungstermine als echte Outlook-Einladungen anlegen kann
+    // (Modul "Besprechungen"). ReadWrite schliesst Read ein.
+    // REIHENFOLGE BEIM AUSROLLEN: zuerst muss die Berechtigung in Azure
+    // eingetragen UND Administrator-Zustimmung erteilt sein — sonst scheitert
+    // der Zustimmungsdialog. Danach diese Function ausrollen. Bestehende
+    // Anmeldungen behalten ihre alten Rechte, bis sich die Person EINMAL neu
+    // verbindet (gleiche Lehre wie bei der Einführung von Calendars.Read).
+    scope: 'offline_access Mail.Read Mail.ReadBasic Mail.ReadWrite Mail.Send User.Read Files.ReadWrite.All Sites.ReadWrite.All Calendars.ReadWrite Chat.Read ChatMessage.Send',
     response_mode: 'query',
     state: state || '',
     ...(mail ? { login_hint: mail } : {}),
