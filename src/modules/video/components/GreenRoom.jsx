@@ -30,6 +30,9 @@ export default function GreenRoom({
   // sendet — genau die Sorte Fehler, die Vertrauen kostet.
   const runRef = useRef(0);
   const deadRef = useRef(false);
+  // Verweis auf startPreview, damit der Geräte-Wächter sie aufrufen kann,
+  // ohne dass die beiden sich gegenseitig als Abhängigkeit brauchen.
+  const startPreviewRef = useRef(null);
 
   const [devices, setDevices] = useState({ cams: [], mics: [], speakers: [] });
   const [sel, setSel] = useState({ cam: "", mic: "", speaker: "" });
@@ -37,6 +40,49 @@ export default function GreenRoom({
   const [micOn, setMicOn] = useState(true);
   const [level, setLevel] = useState(0);
   const [permError, setPermError] = useState(null);
+
+  // Geräteliste einlesen. Bewusst als eigene Funktion: Sie läuft nicht nur
+  // beim Öffnen, sondern auch, wenn sich später etwas ändert (siehe unten).
+  const ladeGeraete = useCallback(async () => {
+    try {
+      const list = await navigator.mediaDevices.enumerateDevices();
+      setDevices({
+        cams: list.filter((d) => d.kind === "videoinput"),
+        mics: list.filter((d) => d.kind === "audioinput"),
+        speakers: list.filter((d) => d.kind === "audiooutput"),
+      });
+      return list;
+    } catch {
+      return [];
+    }
+  }, []);
+
+  // ⚠️ Geräte kommen und gehen (2026-07-27, Sascha: "mein Bluetooth-Kopfhörer
+  // ist nicht integriert"): Wer sein Headset erst NACH dem Öffnen verbindet,
+  // sah es vorher nie – die Liste wurde nur einmal gelesen. Der Browser meldet
+  // solche Änderungen von sich aus; darauf hören wir jetzt.
+  // Verschwindet das gerade gewählte Gerät (Headset ausgeschaltet), fallen
+  // wir bewusst auf die Standardauswahl zurück, statt auf ein totes Gerät zu
+  // zeigen und den Nutzer im Stillen ohne Ton dastehen zu lassen.
+  useEffect(() => {
+    const md = navigator.mediaDevices;
+    if (!md?.addEventListener) return;
+    const beiWechsel = async () => {
+      const list = await ladeGeraete();
+      const gibtEs = (id, kind) => !id || list.some((d) => d.kind === kind && d.deviceId === id);
+      setSel((s) => {
+        const camWeg = !gibtEs(s.cam, "videoinput");
+        const micWeg = !gibtEs(s.mic, "audioinput");
+        const spkWeg = !gibtEs(s.speaker, "audiooutput");
+        if (!camWeg && !micWeg && !spkWeg) return s;
+        // Vorschau mit den verbliebenen Geräten neu aufbauen.
+        setTimeout(() => startPreviewRef.current?.(camWeg ? "" : s.cam, micWeg ? "" : s.mic), 0);
+        return { cam: camWeg ? "" : s.cam, mic: micWeg ? "" : s.mic, speaker: spkWeg ? "" : s.speaker };
+      });
+    };
+    md.addEventListener("devicechange", beiWechsel);
+    return () => md.removeEventListener("devicechange", beiWechsel);
+  }, [ladeGeraete]);
 
   // ── Vorschau starten / bei Gerätewechsel neu aufbauen ──────────────────
   const startPreview = useCallback(async (camId, micId) => {
@@ -66,12 +112,7 @@ export default function GreenRoom({
 
       // Gerätenamen sind erst NACH erteilter Berechtigung lesbar – deshalb
       // die Liste hier und nicht schon beim Laden holen.
-      const list = await navigator.mediaDevices.enumerateDevices();
-      setDevices({
-        cams: list.filter((d) => d.kind === "videoinput"),
-        mics: list.filter((d) => d.kind === "audioinput"),
-        speakers: list.filter((d) => d.kind === "audiooutput"),
-      });
+      await ladeGeraete();
       setSel((s) => ({
         cam: s.cam || stream.getVideoTracks()[0]?.getSettings?.().deviceId || "",
         mic: s.mic || stream.getAudioTracks()[0]?.getSettings?.().deviceId || "",
@@ -108,6 +149,8 @@ export default function GreenRoom({
       );
     }
   }, []);
+
+  useEffect(() => { startPreviewRef.current = startPreview; }, [startPreview]);
 
   useEffect(() => {
     deadRef.current = false;
