@@ -77,5 +77,46 @@ export function supportsBlur() {
 // eine Person überall in smartis dieselbe Farbe trägt.
 export { initials, personStyle } from "@/lib/chartisTheme";
 
+// ===========================================================================
+// Stiftfarben für Markierungen auf dem geteilten Bildschirm.
+//
+// Warum eine EIGENE Palette und nicht die Avatarfarben (AUTHOR_PALETTE):
+// Deren Töne sind pastellig – auf einer weissen Bilanz wären sie kaum zu
+// sehen. Ein Stift muss auf BELIEBIGEM Inhalt lesbar sein, also kräftige,
+// klar unterscheidbare Töne. Reihenfolge und Hash sind identisch mit der
+// Avatarpalette, damit eine Person Avatar und Stift in verwandter Farbe
+// trägt statt in zwei zusammenhanglosen.
+//
+// Gegen hellen UND dunklen Untergrund hilft die Farbe allein trotzdem nicht;
+// deshalb zeichnet ZeichenFlaeche jeden Strich zusätzlich mit dunklem Saum.
+// ===========================================================================
+export const STIFT_FARBEN = [
+  "#3b82f6", // blau
+  "#22c55e", // grün
+  "#f59e0b", // amber
+  "#8b5cf6", // violett
+  "#ec4899", // pink
+  "#14b8a6", // türkis
+  "#f97316", // orange
+  "#6366f1", // indigo
+  "#ef4444", // rot
+  "#10b981", // smaragd
+  "#06b6d4", // cyan
+  "#d946ef", // fuchsia
+];
+
+// Dieselbe Streuung wie hashStr in chartisTheme – dort nicht exportiert,
+// deshalb hier noch einmal. Ändert sich das eine, muss das andere mit.
+function streuung(s) {
+  let h = 0;
+  const str = String(s || "?");
+  for (let i = 0; i < str.length; i++) h = (Math.imul(h, 31) + str.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+
+export function stiftFarbe(identity) {
+  return STIFT_FARBEN[streuung(identity) % STIFT_FARBEN.length];
+}
+
 export const VIDEO_FONT =
   '"Century Gothic Std", "Century Gothic", Inter, system-ui, -apple-system, "Segoe UI", sans-serif';

@@ -11,10 +11,16 @@ import { VM, initials, personStyle } from "../theme";
 // desorientierend mitten im Gespräch.
 //
 // Der Chat läuft über LiveKits Datenkanal. Das kostet nichts extra, braucht
-// keine Tabelle und ist Ende-zu-Ende innerhalb des Raums – dafür ist er
-// bewusst flüchtig: Nachrichten sind nach dem Gespräch weg. Wer dauerhaft
-// dokumentieren will, nutzt Chartis. (Ab Phase 3 wandert Wichtiges ohnehin
-// ins Protokoll.)
+// keine Tabelle und ist bewusst flüchtig: Nachrichten sind nach dem Gespräch
+// weg. Wer dauerhaft dokumentieren will, nutzt Chartis. (Ab Phase 3 wandert
+// Wichtiges ohnehin ins Protokoll.)
+//
+// ⚠️ NICHT ende-zu-ende-verschlüsselt. Hier stand früher das Gegenteil, und
+// das war falsch: Der Transport ist zwar verschlüsselt (WebRTC/DTLS), aber
+// der Server von LiveKit sieht den Klartext – er verteilt die Pakete ja.
+// Echte Ende-zu-Ende-Verschlüsselung gäbe es nur mit LiveKits E2EE und einem
+// Schlüssel, den nur die Teilnehmenden kennen. Solange das nicht eingerichtet
+// ist, gehören Dinge, die den Anbieter nichts angehen, nicht in diesen Chat.
 //
 // ⚠️ Die Nachrichtenliste kommt als Eigenschaft von aussen und wird NICHT
 // hier gehalten: Dieses Panel wird beim Schliessen abgebaut – eine interne

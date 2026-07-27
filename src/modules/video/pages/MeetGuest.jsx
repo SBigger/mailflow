@@ -4,6 +4,7 @@ import { Loader2, AlertTriangle, Clock } from "lucide-react";
 import { functions } from "@/api/supabaseClient";
 import { videoTheme, VM, VIDEO_FONT } from "../theme";
 import { useRoom } from "../lib/useRoom";
+import useMarkieren from "../lib/useMarkieren";
 import GreenRoom from "../components/GreenRoom";
 import Stage from "../components/Stage";
 import ControlBar from "../components/ControlBar";
@@ -38,8 +39,22 @@ export default function MeetGuest() {
   const guestIdRef = useRef(null);
   const pollRef = useRef(null);
 
+  // ⚠️ room heisst hier schon der RAUMNAME aus der Adresse (oben, useParams).
+  // Das Room-Objekt von LiveKit deshalb umbenennen, sonst überschreibt das
+  // eine still das andere.
   const { state, participants, micOn, camOn, screenOn,
-    connect, leave, toggleMic, toggleCam, toggleScreen, switchDevice } = useRoom();
+    connect, leave, toggleMic, toggleCam, toggleScreen, switchDevice,
+    room: livekitRoom } = useRoom();
+
+  // Gäste dürfen mitmarkieren – gerade sie, denn sie können am geteilten
+  // Beleg ja auf nichts zeigen. "Alle löschen" bleibt dem Teilenden.
+  const teiltJemand = participants.some((p) => p.screenOn && p.screenTrack);
+  const markieren = useMarkieren({
+    room: livekitRoom,
+    identity: participants.find((p) => p.isLocal)?.identity,
+    verbunden: phase === "live",
+    aktiv: teiltJemand,
+  });
 
   // ── Raum prüfen ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -126,6 +141,15 @@ export default function MeetGuest() {
     }
   }, [room, beginneWarten]);
 
+  // Auch beim Gast: Ein endgültiger Abbruch darf keine leere Bühne
+  // hinterlassen. Er landet auf der Abschiedsseite und kann neu anklopfen.
+  const verlaesstRef = useRef(false);
+  useEffect(() => {
+    if (phase !== "live" || state !== "idle" || verlaesstRef.current) return;
+    setMeldung("Die Verbindung wurde getrennt.");
+    setPhase("beendet");
+  }, [phase, state]);
+
   const huelle = {
     height: "100vh", display: "flex", flexDirection: "column",
     fontFamily: VIDEO_FONT, overflow: "hidden",
@@ -137,7 +161,7 @@ export default function MeetGuest() {
       <div style={{ ...huelle, background: t.stage }}>
         <Keyframes />
         <div style={{ flex: 1, minHeight: 0, display: "flex", position: "relative" }}>
-          <Stage t={t} participants={participants}>
+          <Stage t={t} participants={participants} markieren={markieren}>
             {state === "reconnecting" && (
               <div style={hinweisOben(t)}>
                 <Loader2 size={14} style={{ animation: "vidSpin 1s linear infinite" }} />
@@ -151,7 +175,7 @@ export default function MeetGuest() {
               onHand={() => {}}
               onChat={() => {}}
               onPeople={() => {}}
-              onLeave={async () => { await leave(); setPhase("beendet"); }}
+              onLeave={async () => { verlaesstRef.current = true; await leave(); setPhase("beendet"); }}
               peopleCount={participants.length}
             />
           </Stage>

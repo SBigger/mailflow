@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
-import Tile, { TrackView } from "./Tile";
+import Tile, { TrackView, TrackViewAudio } from "./Tile";
 import InviteBox from "./InviteBox";
+import ZeichenFlaeche, { MarkierLeiste } from "./ZeichenFlaeche";
 import { VM } from "../theme";
 
 // ===========================================================================
@@ -48,8 +49,12 @@ function gridFor(count, width) {
   return { ...rows, gridTemplateColumns: narrow ? "1fr 1fr" : "repeat(3, 1fr)" };
 }
 
-export default function Stage({ t, participants, screenShare, roomName, children }) {
+export default function Stage({ t, participants, screenShare, roomName, markieren, children }) {
   const [ref, width] = useWidth();
+  // Fläche und Videoelement der Bildschirmfreigabe – die Markierebene rechnet
+  // daraus aus, wo das geteilte Bild innerhalb seiner Fläche tatsächlich liegt.
+  const docRef = useRef(null);
+  const videoRef = useRef(null);
   // Einladung eingeblendet? Nur für diesen Besuch — wer sie wegklickt, will
   // sie jetzt weghaben, nicht für immer. Beim nächsten Raum ist sie wieder da.
   const [einladenOffen, setEinladenOffen] = useState(true);
@@ -72,11 +77,42 @@ export default function Stage({ t, participants, screenShare, roomName, children
       {sharer ? (
         // ── Dokumentmodus ────────────────────────────────────────────────
         <>
-          <div style={{
+          <div ref={docRef} style={{
             flex: 1, minWidth: 0, borderRadius: VM.tileRadius, background: t.stageDoc,
             display: "grid", placeItems: "center", position: "relative", overflow: "hidden",
           }}>
-            <TrackView track={sharer.screenTrack} muted fit="contain" />
+            <TrackView track={sharer.screenTrack} muted fit="contain" elRef={videoRef} />
+
+            {/* Systemton der Freigabe – ohne das läuft ein geteiltes Video
+                stumm, und niemand merkt warum. Eigene Freigabe ausgenommen:
+                Die hört man schon aus den eigenen Lautsprechern. */}
+            {sharer.screenAudioTrack && <TrackViewAudio track={sharer.screenAudioTrack} />}
+
+            {/* Markieren: alle dürfen zeichnen, jede Person in ihrer Farbe.
+                Alles löschen darf nur, wer teilt – es ist sein Bildschirm. */}
+            {markieren && (
+              <>
+                <ZeichenFlaeche
+                  t={t} containerRef={docRef} videoRef={videoRef}
+                  striche={markieren.striche}
+                  stiftAn={markieren.stiftAn}
+                  meineFarbe={markieren.meineFarbe}
+                  onStart={markieren.beginne}
+                  onPunkt={markieren.fuehre}
+                  onEnde={markieren.beende}
+                />
+                <MarkierLeiste
+                  t={t}
+                  stiftAn={markieren.stiftAn}
+                  meineFarbe={markieren.meineFarbe}
+                  onStift={() => markieren.setStiftAn((s) => !s)}
+                  onMeineWeg={markieren.loescheMeine}
+                  onAlleWeg={markieren.loescheAlle}
+                  darfAlle={!!sharer.isLocal}
+                />
+              </>
+            )}
+
             <span style={{
               position: "absolute", top: 14, left: 14, zIndex: 4,
               background: "rgba(0,0,0,.55)", padding: "5px 11px", borderRadius: 999,

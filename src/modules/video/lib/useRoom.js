@@ -33,6 +33,10 @@ function describe(participant, isLocal) {
   const cam = publicationFor(participant, Track.Source.Camera);
   const mic = publicationFor(participant, Track.Source.Microphone);
   const screen = publicationFor(participant, Track.Source.ScreenShare);
+  // ⚠️ Systemton der Bildschirmfreigabe ist eine EIGENE Spur, nicht Teil von
+  // ScreenShare. toggleScreen veröffentlicht sie (audio: true) – wer sie nicht
+  // ausdrücklich abholt und an ein <audio> hängt, teilt ein Video stumm.
+  const screenAudio = publicationFor(participant, Track.Source.ScreenShareAudio);
 
   // metadata trägt bei Gästen später { guest: true } – in Phase 1 sind alle
   // Teilnehmenden Mitarbeitende, der Zweig ist aber schon vorbereitet.
@@ -53,6 +57,9 @@ function describe(participant, isLocal) {
     videoTrack: cam?.track || null,
     screenTrack: screen?.track || null,
     audioTrack: isLocal ? null : mic?.track || null, // eigenes Audio nie lokal ausgeben (Rückkopplung)
+    // Auch der Systemton nur von der Gegenseite: Den eigenen hört man ja
+    // bereits aus den Lautsprechern des eigenen Rechners.
+    screenAudioTrack: isLocal ? null : screenAudio?.track || null,
     connectionQuality: participant.connectionQuality || "unknown",
   };
 }

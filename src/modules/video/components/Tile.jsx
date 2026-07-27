@@ -9,7 +9,11 @@ import { VM, initials, personStyle } from "../theme";
 // beim Trackwechsel sauber abhängen, sonst bleiben Streams im Hintergrund
 // aktiv (Kamera-Lämpchen bleibt an, Ton läuft doppelt).
 // ===========================================================================
-function TrackView({ track, muted = false, mirror = false, fit = "cover" }) {
+// elRef: optionaler Zugriff auf das <video> von aussen. Die Markierebene
+// braucht videoWidth/videoHeight, um auszurechnen, wo das Bild in seiner
+// Fläche wirklich liegt (siehe ZeichenFlaeche) – ohne diese Masse läge jede
+// Markierung um die schwarzen Ränder daneben.
+function TrackView({ track, muted = false, mirror = false, fit = "cover", elRef }) {
   const ref = useRef(null);
   useEffect(() => {
     const el = ref.current;
@@ -20,7 +24,10 @@ function TrackView({ track, muted = false, mirror = false, fit = "cover" }) {
 
   return (
     <video
-      ref={ref}
+      ref={(el) => {
+        ref.current = el;
+        if (elRef) elRef.current = el;
+      }}
       autoPlay
       playsInline
       muted={muted}
@@ -147,4 +154,4 @@ function SpeakingDots({ t }) {
   );
 }
 
-export { TrackView };
+export { TrackView, TrackViewAudio };

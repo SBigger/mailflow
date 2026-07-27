@@ -22,9 +22,13 @@
 import { requireUser, jsonResponse, corsHeaders, serviceClient } from "../_shared/auth.ts";
 import { broadcastRealtime } from "../_shared/telefonie.ts";
 
-const TOKEN_TTL_SECONDS = 60 * 60 * 6; // 6 h -- deckt auch lange Sitzungen ab;
-                                       // LiveKit erneuert die Verbindung selbst,
-                                       // die TTL betrifft nur den Erstzutritt.
+// Die TTL betrifft NUR den Erstzutritt -- eine bestehende Verbindung hält
+// LiveKit selbst aufrecht, auch über den Ablauf hinaus. Deshalb braucht es
+// keine sechs Stunden: Eine Stunde deckt "Green Room offen liegen lassen und
+// später beitreten" bequem ab, und ein abgefangenes Token ist entsprechend
+// kürzer brauchbar. Wer nach einem Abbruch neu beitritt, holt ohnehin ein
+// frisches Token.
+const TOKEN_TTL_SECONDS = 60 * 60;
 
 // Raumnamen bewusst eng begrenzt: keine Leerzeichen, keine Sonderzeichen --
 // so kann ein Raumname nie als Pfad oder in einem Header Unfug anrichten.
@@ -247,8 +251,12 @@ Deno.serve(async (req) => {
 
     return jsonResponse({ error: `Unbekannte Aktion: ${action}` }, 400);
   } catch (e) {
+    // Der Wortlaut bleibt im Serverprotokoll. Nach aussen eine neutrale
+    // Meldung: Unerwartete Fehler von Supabase, Netz oder Konfiguration
+    // nennen gern Tabellen, Spalten oder Hostnamen -- das geht niemanden
+    // etwas an, der zufällig auf einem Gästelink sitzt.
     console.error("meeting-api:", e);
-    return jsonResponse({ error: String((e as Error)?.message ?? e) }, 500);
+    return jsonResponse({ error: "Der Videodienst hat einen Fehler gemeldet." }, 500);
   }
 });
 

@@ -6,6 +6,7 @@ import { functions, supabase } from "@/api/supabaseClient";
 import { useAppTheme } from "@/modules/telefonie/theme";
 import { videoTheme, VM, VIDEO_FONT } from "../theme";
 import { useRoom } from "../lib/useRoom";
+import useMarkieren from "../lib/useMarkieren";
 import GreenRoom from "../components/GreenRoom";
 import Stage from "../components/Stage";
 import ControlBar from "../components/ControlBar";
@@ -49,6 +50,17 @@ export default function Raum() {
     connect, leave, toggleMic, toggleCam, toggleScreen, switchDevice, room,
   } = useRoom();
 
+  // Markieren auf dem geteilten Bildschirm. Nur sinnvoll, solange überhaupt
+  // jemand teilt – deshalb hängt der Stift an genau dieser Bedingung und
+  // räumt sich selbst auf, wenn die Freigabe endet.
+  const teiltJemand = participants.some((p) => p.screenOn && p.screenTrack);
+  const markieren = useMarkieren({
+    room,
+    identity: participants.find((p) => p.isLocal)?.identity,
+    verbunden: phase === "live",
+    aktiv: teiltJemand,
+  });
+
   // ── Beitreten ──────────────────────────────────────────────────────────
   const handleJoin = useCallback(async (prefs) => {
     setPhase("connecting");
@@ -85,10 +97,25 @@ export default function Raum() {
     }
   }, [roomName, connect, switchDevice]);
 
+  // Selbst aufgelegt? Dann ist das Trennen erwartet und darf NICHT als
+  // Abbruch behandelt werden (siehe Effekt weiter unten).
+  const verlaesstRef = useRef(false);
   const handleLeave = useCallback(async () => {
+    verlaesstRef.current = true;
     await leave();
     navigate("/besprechungen");
   }, [leave, navigate]);
+
+  // ⚠️ Reisst die Verbindung endgültig ab (nicht bloss "reconnecting"), leert
+  // useRoom die Teilnehmerliste – die Phase bliebe aber "live". Sichtbar wäre
+  // eine leere schwarze Bühne ohne jede Erklärung. Stattdessen zurück in den
+  // Green Room mit Hinweis: Von dort ist der Wiedereinstieg ein Klick, und
+  // Kamera/Mikrofon lassen sich gleich nochmals prüfen.
+  useEffect(() => {
+    if (phase !== "live" || state !== "idle" || verlaesstRef.current) return;
+    setFailure("Die Verbindung wurde getrennt. Sie können der Besprechung wieder beitreten.");
+    setPhase("failed");
+  }, [phase, state]);
 
   // ── Hand heben: kurze Meldung an alle, kein Dauerzustand (Phase 1) ─────
   const raiseHand = useCallback(async () => {
@@ -268,7 +295,7 @@ export default function Raum() {
     <div style={shell}>
       <Keyframes />
       <div style={{ flex: 1, minHeight: 0, display: "flex", position: "relative" }}>
-        <Stage t={t} participants={participants} roomName={roomName}>
+        <Stage t={t} participants={participants} roomName={roomName} markieren={markieren}>
           {state === "reconnecting" && (
             <div style={{
               position: "absolute", top: 16, left: "50%", transform: "translateX(-50%)",
