@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Pen, Eraser, Trash2 } from "lucide-react";
+import { Pen } from "lucide-react";
 import { bildRechteck } from "../lib/bildRechteck";
+import { sichtbarkeit } from "../lib/markierZeit";
 
 // ===========================================================================
 // ZeichenFlaeche – die Markierebene über dem geteilten Bildschirm.
@@ -84,6 +85,14 @@ export default function ZeichenFlaeche({
   const canvasRef = useRef(null);
   const rechteck = useVideoRechteck(containerRef, videoRef);
 
+  // ⚠️ Die Striche verblassen mit der ZEIT, nicht mit einer Zustandsänderung.
+  // Also läuft hier eine Bildschleife statt eines Effekts, der auf `striche`
+  // horcht – sonst bliebe ein fertiger Strich einfach stehen, weil sich an
+  // ihm ja nichts mehr ändert. Die Liste kommt deshalb über eine Referenz
+  // herein; die Schleife selbst wird nur beim Grössenwechsel neu aufgesetzt.
+  const stricheRef = useRef(striche);
+  stricheRef.current = striche;
+
   useEffect(() => {
     const cv = canvasRef.current;
     if (!cv || !rechteck) return;
@@ -97,17 +106,38 @@ export default function ZeichenFlaeche({
     const ctx = cv.getContext("2d");
     if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, br, hr);
     ctx.lineJoin = "round";
     ctx.lineCap = "round";
     // Strichstärke am Bild, nicht am Fenster: In der schmalen Ansicht wäre
     // eine feste Pixelbreite plump, in der grossen dünn wie ein Haar.
     const stark = Math.max(2.5, br * 0.0035);
-    for (const s of striche) {
-      malen(ctx, s.punkte, br, hr, "rgba(0,0,0,.5)", stark + 3.5);
-      malen(ctx, s.punkte, br, hr, s.farbe, stark);
-    }
-  }, [striche, rechteck]);
+
+    let lauf = true;
+    let anfrage = 0;
+    let warLeer = false;
+
+    const bild = () => {
+      if (!lauf) return;
+      const liste = stricheRef.current;
+      // Nichts zu zeigen und schon leer? Dann auch nichts tun – die Schleife
+      // läuft weiter, kostet aber nichts.
+      if (liste.length === 0 && warLeer) { anfrage = requestAnimationFrame(bild); return; }
+      const jetzt = Date.now();
+      ctx.clearRect(0, 0, br, hr);
+      for (const s of liste) {
+        const deckung = sichtbarkeit(s.zeit, jetzt);
+        if (deckung <= 0) continue;
+        ctx.globalAlpha = deckung;
+        malen(ctx, s.punkte, br, hr, "rgba(0,0,0,.5)", stark + 3.5);
+        malen(ctx, s.punkte, br, hr, s.farbe, stark);
+      }
+      ctx.globalAlpha = 1;
+      warLeer = liste.length === 0;
+      anfrage = requestAnimationFrame(bild);
+    };
+    bild();
+    return () => { lauf = false; cancelAnimationFrame(anfrage); };
+  }, [rechteck]);
 
   // Bildschirmpunkt -> 0..1 im geteilten Bild. Weil die Leinwand genau auf
   // dem Bild liegt, genügt ihr eigenes Rechteck.
@@ -182,7 +212,11 @@ export default function ZeichenFlaeche({
 }
 
 // ===========================================================================
-// MarkierLeiste – Stift, eigenes Radiergummi, alles löschen.
+// MarkierLeiste – ein einziger Knopf: der Stift.
+//
+// Kein Radiergummi, weil es nichts zu radieren gibt: Striche verschwinden
+// nach gut fünf Sekunden von selbst (siehe useMarkieren). Damit ist das
+// Werkzeug ein Zeigestab und keine Tafel – und niemand muss aufräumen.
 //
 // Sitzt am geteilten Bild und NICHT in der Steuerleiste unten: Das Werkzeug
 // gehört zu der Sache, auf die es wirkt, und die untere Leiste soll bei ihren
@@ -190,7 +224,7 @@ export default function ZeichenFlaeche({
 // einen Knopf, der die meiste Zeit nichts tut – markiert wird nur, solange
 // jemand teilt.
 // ===========================================================================
-export function MarkierLeiste({ t, stiftAn, meineFarbe, onStift, onMeineWeg, onAlleWeg, darfAlle }) {
+export function MarkierLeiste({ t, stiftAn, meineFarbe, onStift }) {
   return (
     <div style={{
       position: "absolute", top: 12, right: 12, zIndex: 6,
@@ -201,7 +235,9 @@ export function MarkierLeiste({ t, stiftAn, meineFarbe, onStift, onMeineWeg, onA
       <button
         onClick={onStift}
         aria-pressed={stiftAn}
-        title={stiftAn ? "Stift weglegen" : "Auf dem geteilten Bild markieren"}
+        title={stiftAn
+          ? "Stift weglegen"
+          : "Auf dem geteilten Bild markieren – die Striche verschwinden nach ein paar Sekunden von selbst"}
         style={{
           display: "flex", alignItems: "center", gap: 7, cursor: "pointer",
           border: "none", borderRadius: 999, padding: "7px 13px",
@@ -222,30 +258,6 @@ export function MarkierLeiste({ t, stiftAn, meineFarbe, onStift, onMeineWeg, onA
         }} />
         <Pen size={14} /> Markieren
       </button>
-
-      <LeistenKnopf t={t} icon={Eraser} titel="Meine Markierungen löschen" onClick={onMeineWeg} />
-      {darfAlle && (
-        <LeistenKnopf t={t} icon={Trash2} titel="Alle Markierungen löschen" onClick={onAlleWeg} />
-      )}
     </div>
-  );
-}
-
-function LeistenKnopf({ t, icon: Icon, titel, onClick }) {
-  return (
-    <button
-      onClick={onClick}
-      title={titel}
-      aria-label={titel}
-      style={{
-        width: 32, height: 32, borderRadius: 999, border: "none",
-        background: "transparent", color: t.onStageMuted, cursor: "pointer",
-        display: "grid", placeItems: "center",
-      }}
-      onMouseEnter={(e) => { e.currentTarget.style.background = t.stageHover; e.currentTarget.style.color = t.onStage; }}
-      onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = t.onStageMuted; }}
-    >
-      <Icon size={15} />
-    </button>
   );
 }

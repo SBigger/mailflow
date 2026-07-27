@@ -89,7 +89,7 @@ export default function Stage({ t, participants, screenShare, roomName, markiere
             {sharer.screenAudioTrack && <TrackViewAudio track={sharer.screenAudioTrack} />}
 
             {/* Markieren: alle dürfen zeichnen, jede Person in ihrer Farbe.
-                Alles löschen darf nur, wer teilt – es ist sein Bildschirm. */}
+                Aufräumen muss niemand – die Striche verblassen von selbst. */}
             {markieren && (
               <>
                 <ZeichenFlaeche
@@ -106,9 +106,6 @@ export default function Stage({ t, participants, screenShare, roomName, markiere
                   stiftAn={markieren.stiftAn}
                   meineFarbe={markieren.meineFarbe}
                   onStift={() => markieren.setStiftAn((s) => !s)}
-                  onMeineWeg={markieren.loescheMeine}
-                  onAlleWeg={markieren.loescheAlle}
-                  darfAlle={!!sharer.isLocal}
                 />
               </>
             )}

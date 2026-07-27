@@ -24,14 +24,25 @@
 // ist ja anders gross und der geteilte Bildschirm hat ein eigenes
 // Seitenverhältnis. Die Umrechnung macht ZeichenFlaeche.
 //
-// Bewusste Grenze: Wer später dazukommt, sieht vorher gezeichnete Striche
-// nicht. Ein Nachliefern des Standes bräuchte eine Abstimmung darüber, wer
-// ihn schickt (sonst antworten alle gleichzeitig) – der Aufwand lohnt für
-// eine Geste nicht, die ohnehin zum gerade Gesagten gehört.
+// ── Striche verschwinden von selbst ─────────────────────────────────────
+// Nach gut fünf Sekunden ist jeder Strich weg (Sascha: "es kann auch sofort
+// nach 5 sek oder so verschwinden"). Das macht die Sache zum Zeigestab statt
+// zur Tafel – und erspart genau das, was bei Zeichenwerkzeugen sonst nervt:
+// aufräumen. Deshalb gibt es auch keine Radiergummis mehr.
+//
+// Gezählt wird ab dem LETZTEN Punkt, nicht ab dem ersten: Sonst würde ein
+// langsam gezogener Kreis vorne schon verblassen, während man hinten noch
+// zeichnet.
+//
+// Der Zeitstempel entsteht bei jedem EMPFÄNGER lokal. Absichtlich – so
+// spielt es keine Rolle, ob die Uhren der Beteiligten auseinanderliegen.
+// Nebenbei erledigt sich damit die Frage, was jemand sieht, der später
+// dazukommt: nichts, und das ist auch richtig so.
 // ===========================================================================
 import { useCallback, useEffect, useRef, useState } from "react";
 import { RoomEvent } from "livekit-client";
 import { stiftFarbe } from "../theme";
+import { verfallen } from "./markierZeit";
 
 // Obergrenzen gegen Endlos-Gekritzel: Die Fläche wird bei jeder Änderung neu
 // gezeichnet, und irgendwann kostet das spürbar. Ältestes fällt heraus.
@@ -69,19 +80,18 @@ export default function useMarkieren({ room, identity, verbunden, aktiv }) {
   // aussehen als bei den anderen.
   const anwenden = useCallback((von, d) => {
     setStriche((alt) => {
+      const jetzt = Date.now();
       if (d.art === "start") {
-        const neu = [...alt, { id: d.id, von, farbe: d.farbe, punkte: [[d.x, d.y]] }];
+        const neu = [...alt, { id: d.id, von, farbe: d.farbe, punkte: [[d.x, d.y]], zeit: jetzt }];
         return neu.length > MAX_STRICHE ? neu.slice(neu.length - MAX_STRICHE) : neu;
       }
       if (d.art === "punkte") {
         return alt.map((s) => (
           s.id === d.id && s.punkte.length < MAX_PUNKTE
-            ? { ...s, punkte: [...s.punkte, ...d.p] }
+            ? { ...s, punkte: [...s.punkte, ...d.p], zeit: jetzt }
             : s
         ));
       }
-      if (d.art === "weg") return alt.filter((s) => s.von !== von);
-      if (d.art === "wegAlle") return [];
       return alt;
     });
   }, []);
@@ -138,15 +148,19 @@ export default function useMarkieren({ room, identity, verbunden, aktiv }) {
     laufendRef.current = null;
   }, [abgeben]);
 
-  const loescheMeine = useCallback(() => {
-    anwenden(identity, { art: "weg" });
-    sende({ art: "weg" });
-  }, [identity, anwenden, sende]);
-
-  const loescheAlle = useCallback(() => {
-    anwenden(identity, { art: "wegAlle" });
-    sende({ art: "wegAlle" });
-  }, [identity, anwenden, sende]);
+  // Verblasste Striche wegräumen. Das Ausblenden selbst macht die Anzeige
+  // (sie zeichnet ohnehin bei jedem Bild neu); hier fällt nur noch heraus,
+  // was niemand mehr sieht. Alle 500 ms genügt dafür.
+  useEffect(() => {
+    if (!aktiv) return;
+    const id = setInterval(() => {
+      const jetzt = Date.now();
+      setStriche((alt) => (alt.some((s) => verfallen(s.zeit, jetzt))
+        ? alt.filter((s) => !verfallen(s.zeit, jetzt))
+        : alt));
+    }, 500);
+    return () => clearInterval(id);
+  }, [aktiv]);
 
   // Endet die Freigabe, sind die Markierungen gegenstandslos – sie hingen ja
   // an einem Bild, das es nicht mehr gibt. Alle sehen das Ende gleichzeitig,
@@ -162,8 +176,5 @@ export default function useMarkieren({ room, identity, verbunden, aktiv }) {
 
   useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
 
-  return {
-    striche, stiftAn, setStiftAn, meineFarbe,
-    beginne, fuehre, beende, loescheMeine, loescheAlle,
-  };
+  return { striche, stiftAn, setStiftAn, meineFarbe, beginne, fuehre, beende };
 }
