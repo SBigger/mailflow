@@ -179,15 +179,37 @@ Deno.serve(async (req) => {
       return jsonResponse({ ok: true });
     }
 
-    // ── Eigene Besprechungen auflisten ───────────────────────────────────
+    // ── Besprechungen auflisten ──────────────────────────────────────────
+    // Zwei Verwendungen:
+    //   ohne "rooms" -> die laufenden Besprechungen (Überblick)
+    //   mit  "rooms" -> der Zustand GENAU dieser Räume. Das braucht die
+    //     Übersicht: Ihre Liste "zuletzt benutzt" liegt im Browser und weiss
+    //     nichts davon, dass ein Raum inzwischen geschlossen wurde. Ohne
+    //     diesen Abgleich verschickt jemand einen längst toten Gästelink und
+    //     der Kunde steht vor verschlossener Tür.
+    // Wer nicht zurückkommt, ist beendet oder gelöscht -- der Aufrufer sieht
+    // das daran, dass sein Raumname in der Antwort fehlt.
     if (action === "list") {
-      const { data } = await auth.admin!
+      const rooms = Array.isArray(body.rooms)
+        ? (body.rooms as unknown[])
+            .filter((r): r is string => typeof r === "string" && ROOM_PATTERN.test(r))
+            .slice(0, 50)
+        : null;
+
+      let frage = auth.admin!
         .from("meetings")
-        .select("id, room_name, title, status, created_at")
-        .neq("status", "beendet")
-        .neq("status", "abgesagt")
+        .select("id, room_name, title, status, created_at, ended_at");
+
+      if (rooms) {
+        if (rooms.length === 0) return jsonResponse({ meetings: [] });
+        frage = frage.in("room_name", rooms);
+      } else {
+        frage = frage.neq("status", "beendet").neq("status", "abgesagt");
+      }
+
+      const { data } = await frage
         .order("created_at", { ascending: false })
-        .limit(20);
+        .limit(rooms ? 50 : 20);
       return jsonResponse({ meetings: data || [] });
     }
 

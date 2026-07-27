@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Video as Cam, LogIn, Clock, UserPlus, Trash2 } from "lucide-react";
 import EinladenPanel from "../components/EinladenPanel";
@@ -54,18 +54,47 @@ export default function Uebersicht() {
   const [recent, setRecent] = useState(() => readRecent());
   const [offen, setOffen] = useState(null);      // aufgeklappter Raum
   const [schliesst, setSchliesst] = useState(null);
+  const [zustand, setZustand] = useState({});    // Raumname -> "offen" | "beendet"
 
-  // Besprechung beenden: macht den Gästelink endgültig unbrauchbar und nimmt
-  // den Raum aus der Liste. Bewusst mit Rückfrage — ein versehentliches
-  // Beenden während eines laufenden Gesprächs wäre unangenehm.
+  // Die Liste stammt aus dem Browser, die Wahrheit steht auf dem Server: Ein
+  // Raum kann längst geschlossen sein (von Hand oder nachts automatisch).
+  // Ohne diesen Abgleich verschickt man ahnungslos einen toten Gästelink.
+  useEffect(() => {
+    if (recent.length === 0) return;
+    let weg = false;
+    (async () => {
+      try {
+        const { data } = await functions.invoke("meeting-api", {
+          action: "list", rooms: recent.map((r) => r.name),
+        });
+        if (weg) return;
+        // Was der Server nicht zurückgibt, existiert nicht mehr (nach 30 Tagen
+        // gelöscht) — für den Gästelink ist das dasselbe wie beendet.
+        const karte = Object.fromEntries(recent.map((r) => [r.name, "beendet"]));
+        for (const m of data?.meetings || []) karte[m.room_name] = m.status;
+        setZustand(karte);
+      } catch { /* ohne Abgleich bleibt die Liste benutzbar */ }
+    })();
+    return () => { weg = true; };
+  }, [recent]);
+
+  const istBeendet = (name) => zustand[name] === "beendet" || zustand[name] === "abgesagt";
+
+  // Beenden: macht den Gästelink endgültig unbrauchbar und nimmt den Raum aus
+  // der Liste. Bewusst mit Rückfrage — ein versehentliches Beenden während
+  // eines laufenden Gesprächs wäre unangenehm. Bei bereits beendeten Räumen
+  // gibt es nichts zu warnen, da wird nur die lokale Zeile entfernt.
   const beenden = async (name) => {
-    if (!window.confirm(
+    const zu = istBeendet(name);
+    if (!zu && !window.confirm(
       `Besprechung "${name}" beenden?\n\nDer Gästelink wird damit ungültig — wer ihn hat, kommt nicht mehr herein.`
     )) return;
     setSchliesst(name);
-    try {
-      await functions.invoke("meeting-api", { action: "close", room: name });
-    } catch { /* lokal trotzdem aufräumen */ }
+    if (!zu) {
+      try {
+        await functions.invoke("meeting-api", { action: "close", room: name });
+      } catch { /* lokal trotzdem aufräumen */ }
+    }
     forgetRoom(name);
     setRecent(readRecent());
     setOffen(null);
@@ -187,10 +216,13 @@ export default function Uebersicht() {
             color: t.textMuted, margin: "0 0 10px",
           }}>Zuletzt benutzt</h2>
           <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-            {recent.map((r) => (
+            {recent.map((r) => {
+              const zu = istBeendet(r.name);
+              return (
               <div key={r.name} style={{
                 background: t.raised, border: `1px solid ${offen === r.name ? t.accentFill : t.borderSubtle}`,
                 borderRadius: 12, overflow: "hidden", transition: "border-color .15s",
+                opacity: zu ? .62 : 1,
               }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "11px 14px" }}>
                   <Clock size={15} style={{ color: t.textMuted, flexShrink: 0 }} />
@@ -198,16 +230,27 @@ export default function Uebersicht() {
                     flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 600,
                     overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                     fontFamily: 'ui-monospace, "Segoe UI Mono", Consolas, monospace',
+                    textDecoration: zu ? "line-through" : "none",
                   }}>{r.name}</span>
+
+                  {zu && (
+                    <span style={{
+                      flexShrink: 0, fontSize: 11, fontWeight: 700, color: t.textMuted,
+                      background: t.base, border: `1px solid ${t.borderSubtle}`,
+                      borderRadius: 999, padding: "3px 9px",
+                    }}>beendet</span>
+                  )}
 
                   <button
                     onClick={() => setOffen((o) => (o === r.name ? null : r.name))}
+                    disabled={zu}
+                    title={zu ? "Diese Besprechung ist beendet — der Gästelink funktioniert nicht mehr" : "Link holen"}
                     style={{
                       border: "none", background: offen === r.name ? t.accentFill : t.accentSoft,
                       color: offen === r.name ? "#fff" : t.accent,
-                      borderRadius: 9, padding: "7px 13px", cursor: "pointer",
+                      borderRadius: 9, padding: "7px 13px", cursor: zu ? "not-allowed" : "pointer",
                       fontFamily: "inherit", fontSize: 12.5, fontWeight: 700,
-                      display: "flex", alignItems: "center", gap: 6,
+                      display: zu ? "none" : "flex", alignItems: "center", gap: 6,
                     }}
                   >
                     <UserPlus size={14} /> Einladen
@@ -215,7 +258,8 @@ export default function Uebersicht() {
                   <button
                     onClick={() => join(r.name)}
                     style={{
-                      border: "none", background: t.accentFill, color: "#fff",
+                      border: "none", background: zu ? t.base : t.accentFill,
+                      color: zu ? t.textSecondary : "#fff",
                       borderRadius: 9, padding: "7px 13px", cursor: "pointer",
                       fontFamily: "inherit", fontSize: 12.5, fontWeight: 700,
                     }}
@@ -225,8 +269,8 @@ export default function Uebersicht() {
                   <button
                     onClick={() => beenden(r.name)}
                     disabled={schliesst === r.name}
-                    title="Besprechung beenden — Gästelink wird ungültig"
-                    aria-label="Besprechung beenden"
+                    title={zu ? "Aus der Liste entfernen" : "Besprechung beenden — Gästelink wird ungültig"}
+                    aria-label={zu ? "Aus der Liste entfernen" : "Besprechung beenden"}
                     style={{
                       border: "none", background: "transparent", cursor: "pointer",
                       color: t.textMuted, display: "grid", placeItems: "center",
@@ -247,7 +291,8 @@ export default function Uebersicht() {
                   </div>
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
