@@ -1,9 +1,10 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   Mic, MicOff, Video as Cam, VideoOff, MonitorUp, Hand,
-  MessageSquare, Users, PhoneOff,
+  MessageSquare, Users, PhoneOff, ChevronUp,
 } from "lucide-react";
 import { VM, supportsBlur } from "../theme";
+import DeviceMenu from "./DeviceMenu";
 
 // ===========================================================================
 // ControlBar – EINE schwebende Pille unten mittig (Designregel 6).
@@ -20,8 +21,10 @@ export default function ControlBar({
   t, micOn, camOn, screenOn, handRaised,
   onMic, onCam, onScreen, onHand, onChat, onPeople, onLeave,
   chatBadge = 0, peopleCount = 0, visible = true,
+  geraete, onGeraetWaehlen,   // Geräte mitten im Gespräch wechseln
 }) {
   const blur = supportsBlur();
+  const [menu, setMenu] = useState(null); // null | "audio" | "video"
 
   return (
     <div
@@ -40,12 +43,33 @@ export default function ControlBar({
         boxShadow: t.barShadow,
       }}
     >
-      <Ctrl t={t} label="Mikro" active={micOn} danger={!micOn}
-            icon={micOn ? Mic : MicOff} onClick={onMic}
-            aria={micOn ? "Mikrofon ausschalten" : "Mikrofon einschalten"} />
-      <Ctrl t={t} label="Kamera" active={camOn} danger={!camOn}
-            icon={camOn ? Cam : VideoOff} onClick={onCam}
-            aria={camOn ? "Kamera ausschalten" : "Kamera einschalten"} />
+      <MitGeraetewahl
+        t={t} offen={menu === "audio"}
+        onToggle={() => setMenu((m) => (m === "audio" ? null : "audio"))}
+        menuInhalt={menu === "audio" && onGeraetWaehlen && (
+          <DeviceMenu t={t} art="audio" aktuell={geraete}
+                      onWaehlen={onGeraetWaehlen} onClose={() => setMenu(null)} />
+        )}
+        aria="Mikrofon und Lautsprecher wählen"
+      >
+        <Ctrl t={t} label="Mikro" active={micOn} danger={!micOn}
+              icon={micOn ? Mic : MicOff} onClick={onMic}
+              aria={micOn ? "Mikrofon ausschalten" : "Mikrofon einschalten"} />
+      </MitGeraetewahl>
+
+      <MitGeraetewahl
+        t={t} offen={menu === "video"}
+        onToggle={() => setMenu((m) => (m === "video" ? null : "video"))}
+        menuInhalt={menu === "video" && onGeraetWaehlen && (
+          <DeviceMenu t={t} art="video" aktuell={geraete}
+                      onWaehlen={onGeraetWaehlen} onClose={() => setMenu(null)} />
+        )}
+        aria="Kamera wählen"
+      >
+        <Ctrl t={t} label="Kamera" active={camOn} danger={!camOn}
+              icon={camOn ? Cam : VideoOff} onClick={onCam}
+              aria={camOn ? "Kamera ausschalten" : "Kamera einschalten"} />
+      </MitGeraetewahl>
       <Ctrl t={t} label="Teilen" active={screenOn} icon={MonitorUp} onClick={onScreen}
             aria={screenOn ? "Bildschirmfreigabe beenden" : "Bildschirm teilen"} />
       <Ctrl t={t} label="Hand" active={handRaised} icon={Hand} onClick={onHand}
@@ -74,6 +98,33 @@ export default function ControlBar({
         <PhoneOff size={18} /> Verlassen
       </button>
     </div>
+  );
+}
+
+// Knopf + kleiner Pfeil für die Geräteauswahl. Der Pfeil sitzt bewusst AM
+// Knopf und nicht als eigener Eintrag in der Leiste – so bleibt die Leiste
+// bei sechs Bedienelementen (Designregel 6), und wer nichts umstellen will,
+// nimmt den Pfeil gar nicht wahr.
+function MitGeraetewahl({ t, children, offen, onToggle, menuInhalt, aria }) {
+  return (
+    <span style={{ position: "relative", display: "inline-flex" }}>
+      {children}
+      <button
+        onClick={onToggle}
+        aria-label={aria}
+        aria-expanded={offen}
+        style={{
+          position: "absolute", right: 1, top: 1, width: 16, height: 16,
+          border: "none", borderRadius: 5, cursor: "pointer", padding: 0,
+          display: "grid", placeItems: "center",
+          background: offen ? t.accentFill : "rgba(255,255,255,.16)",
+          color: "#fff", transition: "background .12s",
+        }}
+      >
+        <ChevronUp size={11} style={{ transform: offen ? "rotate(180deg)" : "none", transition: "transform .15s" }} />
+      </button>
+      {menuInhalt}
+    </span>
   );
 }
 

@@ -113,8 +113,13 @@ export default function Stage({ t, participants, screenShare, roomName, children
               {/* Allein im Raum = der Moment, in dem man jemanden einladen
                   will. Genau hier gehört der Gästelink hin — nicht auf eine
                   andere Seite (siehe InviteBox für die Vorgeschichte). */}
+              {/* ⚠️ ÜBER der Steuerleiste platzieren, nicht auf gleicher Höhe:
+                  Beide sassen bei bottom:16, der Erklärtext wurde verdeckt
+                  (im ersten Test sichtbar abgeschnitten). */}
               <div style={{
-                position: "absolute", left: "50%", bottom: 16, transform: "translateX(-50%)",
+                position: "absolute", left: "50%",
+                bottom: VM.barHeight + VM.barBottom + 18,
+                transform: "translateX(-50%)",
                 width: "min(420px, calc(100% - 32px))",
                 background: "rgba(10,13,18,.82)", backdropFilter: "blur(14px)",
                 border: `1px solid ${t.stageLine}`, borderRadius: 14,

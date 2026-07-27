@@ -40,6 +40,9 @@ export default function Raum() {
   // VOR uns angeklopft hat, unsichtbar bleiben.
   const [wartende, setWartende] = useState([]);
   const [einlassBusy, setEinlassBusy] = useState(null);
+  // Aktuell benutzte Geräte – damit das Auswahlmenü im Gespräch anzeigen kann,
+  // was gerade anliegt (Häkchen), nicht nur eine nackte Liste.
+  const [geraete, setGeraete] = useState({});
 
   const {
     state, error, participants, micOn, camOn, screenOn,
@@ -64,6 +67,11 @@ export default function Raum() {
       // Gewählten Lautsprecher übernehmen – ohne das bliebe die Auswahl im
       // Beitritts-Bildschirm wirkungslos (nicht jeder Browser kann es).
       if (prefs.speakerId) await switchDevice("audiooutput", prefs.speakerId);
+      setGeraete({
+        audioinput: prefs.micId || undefined,
+        videoinput: prefs.camId || undefined,
+        audiooutput: prefs.speakerId || undefined,
+      });
       setPhase("live");
     } catch (e) {
       // Supabase meldet Nicht-2xx generisch – für den Nutzer übersetzen.
@@ -138,6 +146,20 @@ export default function Raum() {
 
     return () => { weg = true; supabase.removeChannel(ch); };
   }, [phase, roomName]);
+
+  // Gerät mitten im Gespräch umstellen. LiveKit tauscht die Spur im
+  // laufenden Betrieb aus – die Gegenseite merkt nichts ausser einem kurzen
+  // Bildaussetzer.
+  const waehleGeraet = useCallback(async (kind, deviceId) => {
+    try {
+      await switchDevice(kind, deviceId);
+      setGeraete((g) => ({ ...g, [kind]: deviceId }));
+      const wie = kind === "audioinput" ? "Mikrofon" : kind === "videoinput" ? "Kamera" : "Lautsprecher";
+      setToast(`${wie} gewechselt`);
+    } catch {
+      setToast("Gerät konnte nicht gewechselt werden");
+    }
+  }, [switchDevice]);
 
   const entscheide = useCallback(async (guestId, aktion) => {
     setEinlassBusy(guestId);
@@ -283,6 +305,7 @@ export default function Raum() {
             onPeople={() => setPanel((p) => (p === "people" ? null : "people"))}
             onLeave={handleLeave}
             chatBadge={unread} peopleCount={participants.length}
+            geraete={geraete} onGeraetWaehlen={waehleGeraet}
           />
         </Stage>
 
@@ -317,6 +340,7 @@ function Keyframes() {
       @keyframes vidSlideIn { from { opacity: 0; transform: translateX(12px) } to { opacity: 1; transform: none } }
       @keyframes vidSlideUp { from { opacity: 0; transform: translate(-50%, 8px) } to { opacity: 1; transform: translate(-50%, 0) } }
       @keyframes vidKnock { from { opacity: 0; transform: translateY(-8px) } to { opacity: 1; transform: none } }
+      @keyframes vidMenu { from { opacity: 0; transform: translateY(6px) } to { opacity: 1; transform: none } }
       @media (prefers-reduced-motion: reduce) {
         *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
       }
