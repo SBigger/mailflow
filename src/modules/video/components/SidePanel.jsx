@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { X, Send, MicOff, MonitorUp } from "lucide-react";
+import InviteBox from "./InviteBox";
 import { VM, initials, personStyle } from "../theme";
 
 // ===========================================================================
@@ -19,7 +20,7 @@ import { VM, initials, personStyle } from "../theme";
 // hier gehalten: Dieses Panel wird beim Schliessen abgebaut – eine interne
 // Liste wäre danach leer, und alles, was währenddessen ankam, verloren.
 // ===========================================================================
-export default function SidePanel({ t, tab, onClose, participants, messages = [], onSend }) {
+export default function SidePanel({ t, tab, onClose, participants, messages = [], onSend, roomName }) {
   return (
     <div style={{
       width: VM.panelWidth, flexShrink: 0, background: t.stagePanel,
@@ -46,9 +47,16 @@ export default function SidePanel({ t, tab, onClose, participants, messages = []
         </button>
       </div>
 
-      {tab === "people"
-        ? <PeopleList t={t} participants={participants} />
-        : <Chat t={t} messages={messages} onSend={onSend} />}
+      {tab === "people" ? (
+        <>
+          <PeopleList t={t} participants={participants} />
+          {roomName && (
+            <div style={{ marginTop: "auto", paddingTop: 14, borderTop: `1px solid ${t.stageLine}` }}>
+              <InviteBox t={t} roomName={roomName} dunkel />
+            </div>
+          )}
+        </>
+      ) : <Chat t={t} messages={messages} onSend={onSend} />}
     </div>
   );
 }

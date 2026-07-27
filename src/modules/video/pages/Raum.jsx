@@ -246,7 +246,7 @@ export default function Raum() {
     <div style={shell}>
       <Keyframes />
       <div style={{ flex: 1, minHeight: 0, display: "flex", position: "relative" }}>
-        <Stage t={t} participants={participants}>
+        <Stage t={t} participants={participants} roomName={roomName}>
           {state === "reconnecting" && (
             <div style={{
               position: "absolute", top: 16, left: "50%", transform: "translateX(-50%)",
@@ -289,7 +289,7 @@ export default function Raum() {
         {panel && (
           <div style={{ padding: `${VM.stagePad}px ${VM.stagePad}px ${VM.stagePad}px 0`, display: "flex", minHeight: 0 }}>
             <SidePanel
-              t={t} tab={panel} participants={participants}
+              t={t} tab={panel} participants={participants} roomName={roomName}
               messages={chat} onSend={sendChat}
               onClose={() => setPanel(null)}
             />

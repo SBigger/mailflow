@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import Tile, { TrackView } from "./Tile";
+import InviteBox from "./InviteBox";
 import { VM } from "../theme";
 
 // ===========================================================================
@@ -47,7 +48,7 @@ function gridFor(count, width) {
   return { ...rows, gridTemplateColumns: narrow ? "1fr 1fr" : "repeat(3, 1fr)" };
 }
 
-export default function Stage({ t, participants, screenShare, children }) {
+export default function Stage({ t, participants, screenShare, roomName, children }) {
   const [ref, width] = useWidth();
   const me = participants.find((p) => p.isLocal);
   const others = participants.filter((p) => !p.isLocal);
@@ -109,12 +110,20 @@ export default function Stage({ t, participants, screenShare, children }) {
             // Gespräche; ohne Gegenüber gibt es nichts anderes zu zeigen.)
             <div style={{ position: "relative", minHeight: 0 }}>
               {me && <Tile p={me} t={t} />}
+              {/* Allein im Raum = der Moment, in dem man jemanden einladen
+                  will. Genau hier gehört der Gästelink hin — nicht auf eine
+                  andere Seite (siehe InviteBox für die Vorgeschichte). */}
               <div style={{
-                position: "absolute", left: "50%", bottom: 14, transform: "translateX(-50%)",
-                background: "rgba(0,0,0,.55)", borderRadius: 999, padding: "7px 15px",
-                fontSize: 12.5, color: t.onStage, whiteSpace: "nowrap",
+                position: "absolute", left: "50%", bottom: 16, transform: "translateX(-50%)",
+                width: "min(420px, calc(100% - 32px))",
+                background: "rgba(10,13,18,.82)", backdropFilter: "blur(14px)",
+                border: `1px solid ${t.stageLine}`, borderRadius: 14,
+                padding: "13px 15px", display: "flex", flexDirection: "column", gap: 10,
               }}>
-                Sie sind allein — sobald jemand beitritt, erscheint er hier.
+                <div style={{ fontSize: 12.5, color: t.onStage, textAlign: "center" }}>
+                  Sie sind allein — sobald jemand beitritt, erscheint er hier.
+                </div>
+                {roomName && <InviteBox t={t} roomName={roomName} dunkel />}
               </div>
             </div>
           ) : (
