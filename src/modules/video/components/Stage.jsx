@@ -50,6 +50,9 @@ function gridFor(count, width) {
 
 export default function Stage({ t, participants, screenShare, roomName, children }) {
   const [ref, width] = useWidth();
+  // Einladung eingeblendet? Nur für diesen Besuch — wer sie wegklickt, will
+  // sie jetzt weghaben, nicht für immer. Beim nächsten Raum ist sie wieder da.
+  const [einladenOffen, setEinladenOffen] = useState(true);
   const me = participants.find((p) => p.isLocal);
   const others = participants.filter((p) => !p.isLocal);
 
@@ -112,24 +115,56 @@ export default function Stage({ t, participants, screenShare, roomName, children
               {me && <Tile p={me} t={t} />}
               {/* Allein im Raum = der Moment, in dem man jemanden einladen
                   will. Genau hier gehört der Gästelink hin — nicht auf eine
-                  andere Seite (siehe InviteBox für die Vorgeschichte). */}
-              {/* ⚠️ ÜBER der Steuerleiste platzieren, nicht auf gleicher Höhe:
-                  Beide sassen bei bottom:16, der Erklärtext wurde verdeckt
-                  (im ersten Test sichtbar abgeschnitten). */}
-              <div style={{
-                position: "absolute", left: "50%",
-                bottom: VM.barHeight + VM.barBottom + 18,
-                transform: "translateX(-50%)",
-                width: "min(420px, calc(100% - 32px))",
-                background: "rgba(10,13,18,.82)", backdropFilter: "blur(14px)",
-                border: `1px solid ${t.stageLine}`, borderRadius: 14,
-                padding: "13px 15px", display: "flex", flexDirection: "column", gap: 10,
-              }}>
-                <div style={{ fontSize: 12.5, color: t.onStage, textAlign: "center" }}>
-                  Sie sind allein — sobald jemand beitritt, erscheint er hier.
+                  andere Seite (siehe InviteBox für die Vorgeschichte).
+                  ⚠️ Aber: mittig sass er dem eigenen Gesicht im Weg (Sascha,
+                  mit Bild belegt). Deshalb linksbündig, schmaler — und vor
+                  allem WEGKLICKBAR. Weggeklickt bleibt eine kleine Marke
+                  stehen, sonst wäre der Link wieder unauffindbar, und genau
+                  daran scheiterte der erste Kundentest. */}
+              {roomName && (einladenOffen ? (
+                <div style={{
+                  position: "absolute", left: 16,
+                  bottom: VM.barHeight + VM.barBottom + 18,
+                  width: "min(380px, calc(100% - 32px))",
+                  background: "rgba(10,13,18,.82)", backdropFilter: "blur(14px)",
+                  border: `1px solid ${t.stageLine}`, borderRadius: 14,
+                  padding: "13px 15px", display: "flex", flexDirection: "column", gap: 10,
+                }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                    <div style={{ flex: 1, fontSize: 12.5, color: t.onStage }}>
+                      Sie sind allein — sobald jemand beitritt, erscheint er hier.
+                    </div>
+                    <button
+                      onClick={() => setEinladenOffen(false)}
+                      title="Ausblenden" aria-label="Einladung ausblenden"
+                      style={{
+                        flexShrink: 0, border: "none", background: "transparent",
+                        color: t.onStageMuted, cursor: "pointer", padding: 0,
+                        width: 20, height: 20, display: "grid", placeItems: "center",
+                        fontSize: 17, lineHeight: 1,
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.color = t.onStage)}
+                      onMouseLeave={(e) => (e.currentTarget.style.color = t.onStageMuted)}
+                    >×</button>
+                  </div>
+                  <InviteBox t={t} roomName={roomName} dunkel />
                 </div>
-                {roomName && <InviteBox t={t} roomName={roomName} dunkel />}
-              </div>
+              ) : (
+                <button
+                  onClick={() => setEinladenOffen(true)}
+                  title="Gästelink einblenden"
+                  style={{
+                    position: "absolute", left: 16,
+                    bottom: VM.barHeight + VM.barBottom + 18,
+                    border: `1px solid ${t.stageLine}`, borderRadius: 999,
+                    background: "rgba(10,13,18,.72)", backdropFilter: "blur(14px)",
+                    color: t.onStage, cursor: "pointer", padding: "8px 14px",
+                    fontFamily: "inherit", fontSize: 12.5, fontWeight: 650,
+                  }}
+                >
+                  Gäste einladen
+                </button>
+              ))}
             </div>
           ) : (
             others.map((p, i) => (
