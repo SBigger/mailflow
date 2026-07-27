@@ -44,8 +44,14 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const FALLBACK_OWNER_USER_ID = "163879"; // "Bigger", vPBX-Benutzer, interne Nr. 20
 const PROVIDER = "peoplefone";
 const BASE = "https://call-api.peoplefone.com/customer/call-management/v1";
-const MAX_CLEANUPS_PER_RUN = 5; // Drosselungs-Schutz: Rest beim naechsten Lauf
-const DELETE_SPACING_MS = 3000;
+const MAX_CLEANUPS_PER_RUN = 5; // Rest beim naechsten Lauf
+// peoplefone-Limits laut Support (Ticket 12540357, 2026-07-27): 5 Anfragen
+// pro Sekunde, 200 pro Minute je Konto -- unsere zwei Anfragen je
+// Viertelstunde liegen weit darunter, 1.2s Abstand genuegt vollauf.
+const DELETE_SPACING_MS = 1200;
+// Nach dieser Zeit gilt ein nicht loeschbares Abo als erledigt (siehe
+// ausfuehrliche Begruendung in tryCleanup).
+const ABANDON_AFTER_MS = 2 * 60 * 60 * 1000;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -65,18 +71,33 @@ serve(async () => {
   // Beim 419 den Retry-After-Header mitloggen -- peoplefone dokumentiert
   // seine Drosselung nirgends, vielleicht verraet der Header das Fenster.
   const cleanups: unknown[] = [];
-  async function tryCleanup(id: string) {
+  async function markiereErledigt(id: string, grund: string) {
+    const { error } = await supabase
+      .from("telefonie_subscriptions")
+      .update({ cleaned_up_at: new Date().toISOString() })
+      .eq("subscription_id", id);
+    if (error) console.error("keepalive: cleaned_up_at setzen fehlgeschlagen:", id, error.message);
+    else console.log("keepalive: Abo", id, "als erledigt vermerkt --", grund);
+  }
+
+  async function tryCleanup(id: string, createdAt?: string) {
     try {
       const res = await fetch(`${BASE}/subscription/${id}`, { method: "DELETE", headers: auth });
       const confirmed = res.ok || res.status === 404;
       const retryAfter = res.headers.get("retry-after");
       cleanups.push({ id, status: res.status, confirmed, ...(retryAfter ? { retryAfter } : {}) });
-      if (confirmed) {
-        const { error } = await supabase
-          .from("telefonie_subscriptions")
-          .update({ cleaned_up_at: new Date().toISOString() })
-          .eq("subscription_id", id);
-        if (error) console.error("keepalive: cleaned_up_at setzen fehlgeschlagen:", id, error.message);
+      if (confirmed) { await markiereErledigt(id, "von peoplefone bestaetigt"); return; }
+
+      // ⚠️ Geisterjagd beenden (2026-07-27, nach peoplefone-Auskunft Ticket
+      // 12540357): 419 ist laut Support ihr Rate-Limiter (5/s, 200/min) --
+      // davon sind wir mit zwei Anfragen je Viertelstunde meilenweit
+      // entfernt. Die 419 kommen also NICHT von unserer Last; die Abos sind
+      // laengst weg (peoplefone entfernt sie selbst, sobald der Callback
+      // Fehler liefert -- genau das hat unsere Secret-Rotation ausgeloest).
+      // Ohne dieses Aufgeben versucht jeder Lauf ewig dieselben toten IDs.
+      const alterMs = createdAt ? Date.now() - new Date(createdAt).getTime() : 0;
+      if (alterMs > ABANDON_AFTER_MS) {
+        await markiereErledigt(id, `nach ${Math.round(alterMs / 3600000)}h aufgegeben (HTTP ${res.status})`);
       }
     } catch (e) {
       cleanups.push({ id, error: String(e) });
@@ -121,16 +142,16 @@ serve(async () => {
     // fehlgeschlagener POST eine Empfangsluecke bis zum naechsten Lauf.
     const { data: stale, error: readError } = await supabase
       .from("telefonie_subscriptions")
-      .select("subscription_id")
+      .select("subscription_id, created_at")
       .is("cleaned_up_at", null)
       .eq("peoplefone_user_id", owner)
       .order("created_at", { ascending: true });
     if (readError) console.error("keepalive: Lesen alter IDs fehlgeschlagen:", readError.message);
-    const staleIds = (stale ?? []).map((r) => r.subscription_id as string);
-    const previousActive = staleIds.pop() ?? null; // juengste = aktuell aktive
-    for (const [i, id] of staleIds.slice(0, MAX_CLEANUPS_PER_RUN).entries()) {
+    const staleRows = (stale ?? []) as { subscription_id: string; created_at: string }[];
+    const previousActive = staleRows.pop() ?? null; // juengste = aktuell aktive
+    for (const [i, row] of staleRows.slice(0, MAX_CLEANUPS_PER_RUN).entries()) {
       if (i > 0) await sleep(DELETE_SPACING_MS);
-      await tryCleanup(id);
+      await tryCleanup(row.subscription_id, row.created_at);
     }
 
     // 2) Neue Subscription fuer diesen Benutzer anlegen.
@@ -168,9 +189,9 @@ serve(async () => {
     // 4) Die bisher aktive Vorgaengerin jetzt loeschen -- die Nachfolgerin
     // steht (sofern der POST klappte). Faellt der Versuch in die Drosselung,
     // holt Schritt 1 des NAECHSTEN Laufs sie mit besserem Timing nach.
-    if (previousActive && newId && previousActive !== newId) {
+    if (previousActive && newId && previousActive.subscription_id !== newId) {
       await sleep(DELETE_SPACING_MS);
-      await tryCleanup(previousActive);
+      await tryCleanup(previousActive.subscription_id, previousActive.created_at);
     }
 
     perOwner.push({ owner, newId, subscribeResult });
