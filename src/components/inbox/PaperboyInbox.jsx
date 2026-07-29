@@ -6,6 +6,7 @@ import { ThemeContext } from "@/Layout";
 import PaperboyIcon from "./PaperboyIcon";
 import { useInboxSummary } from "./useInboxSummary";
 import { useTelephony } from "@/modules/telefonie/context/TelephonyContext";
+import { FAB, RAND, STANDARD, zuPlatz, zuPunkt } from "./paperboyPlatz";
 
 // Reihenfolge & Meta der Quellen-Kacheln (Variante 2)
 const SOURCES = [
@@ -16,6 +17,32 @@ const SOURCES = [
   { key: "calls", label: "Anrufe", icon: PhoneOff, color: "#c94f4f" },
   { key: "whatsapp", label: "WhatsApp", icon: MessageCircle, color: "#25d366" },
 ];
+
+// Position: siehe paperboyPlatz.js – dort steht auch, warum absolute Pixel
+// der falsche Ansatz waren.
+const PLATZ_KEY = "paperboy_fab_platz";    // Ecke + Abstand
+const ALT_KEY = "paperboy_fab_pos";        // altes Format, absolute Pixel
+
+function fenster() {
+  return {
+    w: typeof window !== "undefined" ? window.innerWidth : 1280,
+    h: typeof window !== "undefined" ? window.innerHeight : 800,
+  };
+}
+
+function ladePlatz() {
+  try {
+    const p = JSON.parse(localStorage.getItem(PLATZ_KEY));
+    if (p && Number.isFinite(p.dx) && Number.isFinite(p.dy)) return p;
+  } catch { /* egal */ }
+  // Alte, absolut gespeicherte Position NICHT übernehmen: Sie wurde in einem
+  // Fenster unbekannter Grösse gesetzt, lässt sich also nicht sinnvoll
+  // umrechnen – und ist genau der Grund, warum er in der Luft hing. Einmal
+  // wegräumen und beim Standard anfangen; wer ihn woanders haben will, zieht
+  // ihn hin, und ab jetzt bleibt er dort.
+  try { localStorage.removeItem(ALT_KEY); } catch { /* egal */ }
+  return STANDARD;
+}
 
 function fmtTime(iso) {
   if (!iso) return "";
@@ -41,24 +68,31 @@ export default function PaperboyInbox() {
   const panelRef = useRef(null);
 
   // ── Position (verschiebbar, pro Gerät gespeichert) ────────────────
-  const [pos, setPos] = useState(() => {
-    try {
-      const p = JSON.parse(localStorage.getItem("paperboy_fab_pos"));
-      if (p && Number.isFinite(p.x) && Number.isFinite(p.y)) return p;
-    } catch { /* Default unten rechts, über dem Telefon-Widget */ }
-    const w = typeof window !== "undefined" ? window.innerWidth : 1280;
-    const h = typeof window !== "undefined" ? window.innerHeight : 800;
-    return { x: w - 78, y: h - 148 };
-  });
+  // Die Wahrheit ist der Platz (Ecke + Abstand); `pos` ist nur die daraus
+  // berechnete Stelle im AKTUELLEN Fenster.
+  const platzRef = useRef(null);
+  if (platzRef.current === null) platzRef.current = ladePlatz();
+  const [pos, setPos] = useState(() => { const { w, h } = fenster(); return zuPunkt(platzRef.current, w, h); });
   const posRef = useRef(pos);
   const dragRef = useRef(null);
   const movedRef = useRef(false);
   useEffect(() => { posRef.current = pos; }, [pos]);
 
-  const clamp = (x, y) => ({
-    x: Math.min(Math.max(6, x), (typeof window !== "undefined" ? window.innerWidth : 1280) - 62),
-    y: Math.min(Math.max(6, y), (typeof window !== "undefined" ? window.innerHeight : 800) - 62),
-  });
+  // Fenster geändert (Grösse, zweiter Bildschirm, Zoom): neu aus der Ecke
+  // rechnen. Ohne das bliebe er dort stehen, wo die Ecke einmal war.
+  useEffect(() => {
+    const neu = () => { const { w, h } = fenster(); setPos(zuPunkt(platzRef.current, w, h)); };
+    window.addEventListener("resize", neu);
+    return () => window.removeEventListener("resize", neu);
+  }, []);
+
+  const clamp = (x, y) => {
+    const { w, h } = fenster();
+    return {
+      x: Math.min(Math.max(RAND, x), w - FAB - RAND),
+      y: Math.min(Math.max(RAND, y), h - FAB - RAND),
+    };
+  };
 
   useEffect(() => {
     const move = (e) => {
@@ -71,7 +105,10 @@ export default function PaperboyInbox() {
       if (!dragRef.current) return;
       dragRef.current = null;
       document.body.style.userSelect = "";
-      try { localStorage.setItem("paperboy_fab_pos", JSON.stringify(posRef.current)); } catch { /* egal */ }
+      // Nicht die Pixel merken, sondern die Ecke samt Abstand – siehe oben.
+      const { w, h } = fenster();
+      platzRef.current = zuPlatz(posRef.current.x, posRef.current.y, w, h);
+      try { localStorage.setItem(PLATZ_KEY, JSON.stringify(platzRef.current)); } catch { /* egal */ }
     };
     window.addEventListener("mousemove", move);
     window.addEventListener("mouseup", up);
