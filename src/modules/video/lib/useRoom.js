@@ -178,9 +178,35 @@ export function useRoom() {
     if (!room) return;
     const on = room.localParticipant.isScreenShareEnabled;
     try {
-      // audio: true teilt Systemton mit (z.B. Video in einer Präsentation);
-      // der Browser fragt selbst, ob der Nutzer das erlauben will.
-      await room.localParticipant.setScreenShareEnabled(!on, { audio: true });
+      await room.localParticipant.setScreenShareEnabled(!on, {
+        // audio: true teilt Systemton mit (z.B. Video in einer Präsentation);
+        // der Browser fragt selbst, ob der Nutzer das erlauben will.
+        audio: true,
+        systemAudio: "include",
+
+        // ⚠️ Den GANZEN Bildschirm vorauswählen.
+        //
+        // Der Auswahldialog gehört Chrome, wir können ihn nicht ersetzen –
+        // aber vorgeben, welcher Reiter offen ist. Ohne diese Angabe landet
+        // man auf "Fenster" und teilt versehentlich nur ein einzelnes
+        // Programm; die anderen sehen dann nicht, was man meint (Sascha,
+        // 29.07.: "sehen nicht den ganzen bildschirm sondern nur diesen
+        // teil"). Eine Vorauswahl, keine Vorschrift: Wer bewusst nur ein
+        // Fenster zeigen will, wechselt den Reiter.
+        video: { displaySurface: "monitor" },
+
+        // Den smartis-Tab selbst gar nicht erst anbieten – ihn zu teilen
+        // ergibt nur die Endlos-Spiegelung.
+        selfBrowserSurface: "exclude",
+
+        // Umschalten während der Freigabe erlauben (Chrome blendet dafür eine
+        // Leiste ein), statt beenden und neu starten zu müssen.
+        surfaceSwitching: "include",
+
+        // Im Treuhand wird meist eine Tabelle oder ein Beleg geteilt: lieber
+        // scharfe Schrift als flüssige Bewegung.
+        contentHint: "detail",
+      });
     } catch (e) {
       // Nutzer hat den Auswahldialog abgebrochen – kein Fehlerfall.
       if (e?.name !== "NotAllowedError") setError(e?.message || "Bildschirmfreigabe fehlgeschlagen");
