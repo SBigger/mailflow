@@ -2364,7 +2364,14 @@ export default function Settings() {
                                     wohin „Verbinden" zeigt.
                                 </p>
                                 {pbxLoading && <p className="text-sm" style={{color: textMuted}}>Lade Nebenstellen aus der Anlage…</p>}
-                                {pbxError && <p className="text-sm text-red-500">Nebenstellen konnten nicht geladen werden — peoplefone-API prüfen.</p>}
+                                {pbxError && (
+                                    <p className="text-sm text-red-500">
+                                        Nebenstellen konnten nicht geladen werden. Meist fehlt dem peoplefone-API-Schlüssel
+                                        die Berechtigung für den Konfigurations-Bereich (Configuration API) — im
+                                        peoplefone-Portal unter API-Verwaltung ergänzen. Die bestehenden Zuordnungen
+                                        unten bleiben unverändert.
+                                    </p>
+                                )}
                                 <div className="space-y-2">
                                     {users.filter(u => u.role !== 'task_user').map(u => {
                                         const assigned = pbxTargets.find(t => t.peoplefoneId === u.peoplefone_user_id);
@@ -2377,7 +2384,14 @@ export default function Settings() {
                                                     <div className="text-xs truncate" style={{color: textMuted}}>
                                                         {assigned
                                                             ? `Nebenstelle ${assigned.internalNumber} · ${assigned.name}`
-                                                            : (u.internal_extension ? `Nebenstelle ${u.internal_extension} (nicht mehr in der Anlage?)` : 'keine Zuordnung')}
+                                                            : u.internal_extension
+                                                                // Der Hinweis „nicht mehr in der Anlage" darf nur kommen,
+                                                                // wenn die Liste wirklich geladen wurde -- sonst behaupten
+                                                                // wir bei jedem API-Fehler faelschlich, die Nebenstelle sei weg.
+                                                                ? (pbxLoading || pbxError
+                                                                    ? `Nebenstelle ${u.internal_extension}`
+                                                                    : `Nebenstelle ${u.internal_extension} (nicht mehr in der Anlage?)`)
+                                                                : 'keine Zuordnung'}
                                                     </div>
                                                 </div>
                                                 {extSavingId === u.id

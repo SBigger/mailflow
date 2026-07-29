@@ -59,13 +59,27 @@ serve(async (req) => {
   const apiKey = Deno.env.get("PEOPLEFONE_API_KEY");
   if (!apiKey) return json({ error: "PEOPLEFONE_API_KEY fehlt" }, 500);
   const auth = { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" };
+  // peoplefone gibt Schluessel pro Bereich aus: unser Call-Management-Schluessel
+  // darf die Configuration API NICHT lesen (403, 2026-07-29 verifiziert). Wer
+  // einen eigenen Konfigurations-Schluessel hinterlegt, wird hier verwendet;
+  // sonst bleibt es beim bisherigen (dann scheitert nur "targets", nicht das Verbinden).
+  const configKey = Deno.env.get("PEOPLEFONE_CONFIG_API_KEY") ?? apiKey;
+  const configAuth = { Authorization: `Bearer ${configKey}`, "Content-Type": "application/json" };
 
   let body: Record<string, unknown> = {};
   try { body = await req.json(); } catch { /* leer */ }
 
   if (body.action === "targets") {
-    const res = await fetch(`${CONFIG_BASE}/users`, { headers: auth });
-    if (!res.ok) return json({ error: "peoplefone users nicht lesbar", status: res.status }, 502);
+    const res = await fetch(`${CONFIG_BASE}/users`, { headers: configAuth });
+    if (!res.ok) {
+      return json({
+        error: "peoplefone users nicht lesbar",
+        status: res.status,
+        hinweis: res.status === 403
+          ? "Schluessel hat keine Berechtigung fuer die Configuration API"
+          : undefined,
+      }, 502);
+    }
     const data = await res.json();
     const users = Array.isArray(data) ? data : (data?.items ?? data?.users ?? []);
     // Nur echte vPBX-Benutzer (hosted gesetzt); eigene Nebenstelle rausfiltern
