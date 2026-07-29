@@ -43,18 +43,28 @@ export default function InviteBox({ t, roomName, dunkel = false, kompakt = false
         </div>
       )}
       <div style={{ display: "flex", gap: 7, alignItems: "stretch", minWidth: 0 }}>
-        <input
-          readOnly
-          value={link}
-          onFocus={(e) => e.target.select()}
-          aria-label="Einladungslink für Gäste"
+        {/* Ein echter Link, kein Textfeld: Sascha wollte ihn anklicken können
+            ("link ist nicht anklickbar"). Ein readOnly-Feld sieht zwar aus wie
+            ein Link, tut aber nichts. Markieren von Hand geht weiterhin – der
+            Text ist auswählbar, und daneben steht ja der Kopierknopf. */}
+        <a
+          href={link}
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Gästeseite in neuem Tab öffnen"
           style={{
             flex: 1, minWidth: 0, background: flaeche, border: `1px solid ${rand}`,
             borderRadius: 10, padding: "9px 11px", color: schrift,
             fontFamily: 'ui-monospace, "Segoe UI Mono", Consolas, monospace',
-            fontSize: 11.5, outline: "none",
+            fontSize: 11.5, textDecoration: "none",
+            display: "flex", alignItems: "center",
+            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
           }}
-        />
+          onMouseEnter={(e) => (e.currentTarget.style.textDecoration = "underline")}
+          onMouseLeave={(e) => (e.currentTarget.style.textDecoration = "none")}
+        >
+          {link}
+        </a>
         <button
           onClick={kopieren}
           aria-label="Link kopieren"

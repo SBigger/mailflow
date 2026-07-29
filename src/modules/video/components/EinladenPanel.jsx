@@ -138,16 +138,26 @@ function LinkZeile({ t, icon: Icon, titel, hinweis, link, kopiert, onKopieren, o
         <span style={{ fontSize: 13, fontWeight: 700, color: t.textPrimary }}>{titel}</span>
       </div>
       <div style={{ display: "flex", gap: 7 }}>
-        <input
-          readOnly value={link} onFocus={(e) => e.target.select()}
-          aria-label={`Link ${titel}`}
+        {/* Echter Link statt readOnly-Feld – siehe InviteBox: Ein Feld, das
+            aussieht wie ein Link und auf Klick nichts tut, ärgert nur. */}
+        <a
+          href={link}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={`${titel}: in neuem Tab öffnen`}
           style={{
             flex: 1, minWidth: 0, background: t.base, border: `1px solid ${t.borderSubtle}`,
             borderRadius: 10, padding: "9px 11px", color: t.textPrimary,
             fontFamily: 'ui-monospace, "Segoe UI Mono", Consolas, monospace',
-            fontSize: 11.5, outline: "none",
+            fontSize: 11.5, textDecoration: "none",
+            display: "flex", alignItems: "center",
+            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
           }}
-        />
+          onMouseEnter={(e) => (e.currentTarget.style.textDecoration = "underline")}
+          onMouseLeave={(e) => (e.currentTarget.style.textDecoration = "none")}
+        >
+          {link}
+        </a>
         <button onClick={onKopieren} aria-label="Link kopieren" title="Link kopieren"
           style={knopf(kopiert ? t.answer : t.accentFill)}>
           {kopiert ? <Check size={15} /> : <Copy size={15} />}
