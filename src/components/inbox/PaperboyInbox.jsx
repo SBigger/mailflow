@@ -55,9 +55,14 @@ function fmtTime(iso) {
     : d.toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit" });
 }
 
-export default function PaperboyInbox() {
+// themeVorgabe: für Shells OHNE ThemeContext-Provider (FiBu). Ohne die käme
+// der Vorgabewert des Contexts zum Zug – "dark" – und das Panel stünde dunkel
+// auf einer hellen Seite. Telefonie und Besprechungen brauchen das nicht, die
+// stellen den Context selbst bereit.
+export default function PaperboyInbox({ theme: themeVorgabe } = {}) {
   const navigate = useNavigate();
-  const { theme } = useContext(ThemeContext) || {};
+  const { theme: themeAusContext } = useContext(ThemeContext) || {};
+  const theme = themeVorgabe || themeAusContext;
   const isLight = theme === "light";
   const isArtis = theme === "artis";
   const isDark = !isLight && !isArtis;

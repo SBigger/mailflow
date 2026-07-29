@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { ThemeContext } from "@/Layout";
 import { useAuth } from "@/lib/AuthContext";
 import { videoTheme, VIDEO_FONT } from "./theme";
+import PaperboyInbox from "@/components/inbox/PaperboyInbox";
 import VideoSidebar from "./components/VideoSidebar";
 import Uebersicht from "./pages/Uebersicht";
 import Raum from "./pages/Raum";
@@ -50,6 +51,12 @@ export default function VideoShell() {
           </Routes>
         </main>
       </div>
+      {/* Wie in Telefonie – aber NICHT im Gespräch: Ein schwebendes Männchen
+          mit Ungelesen-Zähler über der Bühne lenkt ab, und wer gerade mit
+          einem Kunden spricht, will seine Maileingänge nicht sehen.
+          (Die Gästeseite /meet/... liegt ohnehin ausserhalb dieser Shell –
+          dort dürfte er ohnehin nie auftauchen.) */}
+      {!inCall && <PaperboyInbox />}
     </ThemeContext.Provider>
   );
 }

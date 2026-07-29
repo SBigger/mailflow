@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { MandantProvider } from '../../contexts/MandantContext';
 import FiBuSidebar from './FiBuSidebar';
+import PaperboyInbox from '@/components/inbox/PaperboyInbox';
 import { useMandant } from '../../contexts/MandantContext';
 
 // Lazy-loaded pages
@@ -122,6 +123,12 @@ export default function FiBuShell() {
           <FiBuContent />
         </main>
       </div>
+      {/* Gebündelte Eingänge – FiBu läuft ohne MailFlow-Layout, wo der
+          Paperboy sonst hängt. Das Thema wird hier fest mitgegeben: FiBu ist
+          durchgehend hell gestaltet (#f2f5f2 oben) und stellt keinen
+          ThemeContext bereit; ohne die Vorgabe käme dessen Standardwert
+          "dark" zum Zug und das Panel stünde dunkel auf heller Seite. */}
+      <PaperboyInbox theme="artis" />
     </MandantProvider>
   );
 }

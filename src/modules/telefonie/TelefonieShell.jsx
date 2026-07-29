@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import { ThemeContext } from "@/Layout";
 import { useAuth } from "@/lib/AuthContext";
 import { tele } from "./theme";
+import PaperboyInbox from "@/components/inbox/PaperboyInbox";
 import TelefonieSidebar from "./components/TelefonieSidebar";
 import Cockpit from "./pages/Cockpit";
 import { Verlauf, Rufgruppen, TeamPresence, Voicemail, Einstellungen } from "./pages/MorePages";
@@ -54,6 +55,10 @@ export default function TelefonieShell() {
             </Routes>
           </main>
         </div>
+        {/* Gebündelte Eingänge – die Modul-Shells laufen ohne MailFlow-Layout,
+            wo der Paperboy sonst hängt. Ohne das fehlt er ausgerechnet dort,
+            wo man am längsten arbeitet. */}
+        <PaperboyInbox />
     </ThemeContext.Provider>
   );
 }
