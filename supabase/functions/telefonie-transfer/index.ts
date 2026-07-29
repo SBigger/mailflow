@@ -31,6 +31,7 @@
 // Deploy: supabase functions deploy telefonie-transfer
 // ===========================================================================
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const OWNER_USER_ID = "163879"; // "Bigger", vPBX-Benutzer, interne Nr. 20
 const CALL_BASE = "https://call-api.peoplefone.com/customer/call-management/v1";
@@ -60,16 +61,32 @@ serve(async (req) => {
   if (!apiKey) return json({ error: "PEOPLEFONE_API_KEY fehlt" }, 500);
   const auth = { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" };
   // peoplefone gibt Schluessel pro Bereich aus: unser Call-Management-Schluessel
-  // darf die Configuration API NICHT lesen (403, 2026-07-29 verifiziert). Wer
-  // einen eigenen Konfigurations-Schluessel hinterlegt, wird hier verwendet;
-  // sonst bleibt es beim bisherigen (dann scheitert nur "targets", nicht das Verbinden).
-  const configKey = Deno.env.get("PEOPLEFONE_CONFIG_API_KEY") ?? apiKey;
-  const configAuth = { Authorization: `Bearer ${configKey}`, "Content-Type": "application/json" };
+  // darf die Configuration API NICHT lesen (403, 2026-07-29 verifiziert).
+  // Reihenfolge: Supabase-Secret -> in den Einstellungen hinterlegter Schluessel
+  // (integration_secrets, via Edge Function telefonie-zugang) -> alter Schluessel.
+  // Der letzte Schritt laesst hoechstens "targets" scheitern, nie das Verbinden.
+  async function holeKonfigSchluessel(): Promise<string> {
+    const ausSecret = Deno.env.get("PEOPLEFONE_CONFIG_API_KEY");
+    if (ausSecret) return ausSecret;
+    try {
+      const admin = createClient(
+        Deno.env.get("SUPABASE_URL") ?? "",
+        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+      );
+      const { data } = await admin
+        .from("integration_secrets").select("value")
+        .eq("name", "peoplefone_config_api_key").maybeSingle();
+      if (typeof data?.value === "string" && data.value.length > 0) return data.value;
+    } catch { /* egal -- dann eben der Rueckfall */ }
+    return apiKey;
+  }
 
   let body: Record<string, unknown> = {};
   try { body = await req.json(); } catch { /* leer */ }
 
   if (body.action === "targets") {
+    const configKey = await holeKonfigSchluessel();
+    const configAuth = { Authorization: `Bearer ${configKey}`, "Content-Type": "application/json" };
     const res = await fetch(`${CONFIG_BASE}/users`, { headers: configAuth });
     if (!res.ok) {
       return json({

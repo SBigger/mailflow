@@ -162,6 +162,39 @@ export default function Settings() {
         enabled: activeTab === 'telefonie' && user?.role === 'admin',
         staleTime: 5 * 60_000,
     });
+    // ── Telefonie: Zugangsdaten der Anlage (2026-07-29, Sascha-Wunsch).
+    // Der Schluessel selbst kommt NIE zurueck -- die Funktion liefert nur
+    // "gesetzt / letzte vier Zeichen / wann". Ablage: integration_secrets,
+    // fuer die Oberflaeche unlesbar (RLS ohne Policy, nur service_role).
+    const {data: zugangEintraege = [], isLoading: zugangLoading} = useQuery({
+        queryKey: ['telefonie-zugang'],
+        queryFn: async () => {
+            const {data} = await functions.invoke('telefonie-zugang', {action: 'status'});
+            return data?.eintraege || [];
+        },
+        enabled: activeTab === 'telefonie' && user?.role === 'admin',
+    });
+    const [zugangWert, setZugangWert] = useState('');
+    const [zugangSpeichert, setZugangSpeichert] = useState(false);
+    const speichereZugang = async (name, wert) => {
+        setZugangSpeichert(true);
+        try {
+            // functions.invoke wirft bei nicht-2xx bereits selbst; hier bleibt
+            // nur der Fall "200 mit Fehlertext im Rumpf".
+            const {data} = await functions.invoke('telefonie-zugang',
+                wert === null ? {action: 'delete', name} : {action: 'set', name, value: wert});
+            if (data?.error) throw new Error(data.error);
+            setZugangWert('');
+            toast.success(wert === null ? 'Schlüssel entfernt' : 'Schlüssel hinterlegt');
+            queryClient.invalidateQueries({queryKey: ['telefonie-zugang']});
+            queryClient.invalidateQueries({queryKey: ['pbx-targets']});
+        } catch (e) {
+            toast.error('Speichern fehlgeschlagen: ' + (e?.message || e));
+        } finally {
+            setZugangSpeichert(false);
+        }
+    };
+
     const [extSavingId, setExtSavingId] = useState(null);
     // Zuordnung Profil -> peoplefone-Benutzer speichern (Grundstein fuer den
     // Mitarbeiter-Rollout: eigene Subscriptions, gezielte Karten, Verbinden-
@@ -2353,6 +2386,63 @@ export default function Settings() {
                     Nebenstelle als Grundstein fuer den Telefonie-Rollout. */}
                 {activeTab === 'telefonie' && (
                     <div className="space-y-6">
+                        {/* Zugang zur Anlage (2026-07-29). Bewusst "eintragen, nie auslesen":
+                            der Schluessel liegt in integration_secrets, wohin die Oberflaeche
+                            nicht sehen kann -- hier gibt es nur Status und Ersetzen. */}
+                        {user?.role === 'admin' && (
+                            <div className="rounded-xl p-6 border" style={{backgroundColor: cardBg, borderColor: cardBorder}}>
+                                <h3 className="text-lg font-semibold mb-1 flex items-center gap-2" style={{color: headingColor}}>
+                                    <Phone className="h-5 w-5"/> Zugang zur Telefonanlage
+                                </h3>
+                                <p className="text-sm mb-4" style={{color: textMuted}}>
+                                    peoplefone gibt Schlüssel getrennt nach Bereich aus. Für die Nebenstellen-Liste
+                                    braucht es einen Schlüssel mit Zugriff auf den Konfigurations-Bereich
+                                    (Configuration API) — im peoplefone-Portal unter API-Verwaltung.
+                                    Einmal eingetragen, ist der Schlüssel nicht mehr sichtbar; er lässt sich nur
+                                    ersetzen oder entfernen.
+                                </p>
+                                {zugangLoading && <p className="text-sm" style={{color: textMuted}}>Lade Status…</p>}
+                                {zugangEintraege.map(e => (
+                                    <div key={e.name} className="rounded-lg border p-4" style={{borderColor: cardBorder}}>
+                                        <div className="text-sm font-medium mb-1" style={{color: headingColor}}>{e.beschreibung}</div>
+                                        <div className="text-xs mb-3" style={{color: textMuted}}>
+                                            {e.gesetzt
+                                                ? `Hinterlegt${e.endetAuf ? ` (endet auf …${e.endetAuf})` : ''}${e.aktualisiertAm ? ` · ${new Date(e.aktualisiertAm).toLocaleDateString('de-CH')}` : ''}`
+                                                : 'Noch nicht hinterlegt — es gilt der Schlüssel aus den Server-Einstellungen.'}
+                                        </div>
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <input
+                                                type="password"
+                                                autoComplete="new-password"
+                                                value={zugangWert}
+                                                onChange={(ev) => setZugangWert(ev.target.value)}
+                                                placeholder={e.gesetzt ? 'Neuen Schlüssel eintragen…' : 'Schlüssel einfügen…'}
+                                                className="text-sm rounded-md border px-3 py-2 flex-1"
+                                                style={{borderColor: cardBorder, backgroundColor: cardBg, color: headingColor, minWidth: 240}}
+                                            />
+                                            <button
+                                                onClick={() => speichereZugang(e.name, zugangWert)}
+                                                disabled={zugangSpeichert || zugangWert.trim().length < 8}
+                                                className="px-4 py-2 rounded-md text-white text-sm font-medium disabled:opacity-50"
+                                                style={{backgroundColor: isArtis ? '#7a9b7f' : '#6366f1'}}
+                                            >
+                                                {zugangSpeichert ? 'Speichert…' : 'Speichern'}
+                                            </button>
+                                            {e.gesetzt && (
+                                                <button
+                                                    onClick={() => speichereZugang(e.name, null)}
+                                                    disabled={zugangSpeichert}
+                                                    className="px-3 py-2 rounded-md text-sm border disabled:opacity-50"
+                                                    style={{borderColor: cardBorder, color: textMuted}}
+                                                >
+                                                    Entfernen
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                         {user?.role === 'admin' && (
                             <div className="rounded-xl p-6 border" style={{backgroundColor: cardBg, borderColor: cardBorder}}>
                                 <h3 className="text-lg font-semibold mb-1 flex items-center gap-2" style={{color: headingColor}}>
