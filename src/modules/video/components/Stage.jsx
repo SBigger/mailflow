@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { Eye, EyeOff } from "lucide-react";
 import Tile, { TrackView, TrackViewAudio } from "./Tile";
 import InviteBox from "./InviteBox";
 import ZeichenFlaeche, { MarkierLeiste } from "./ZeichenFlaeche";
@@ -65,6 +66,27 @@ export default function Stage({ t, participants, screenShare, roomName, markiere
   const sharer = screenShare || participants.find((p) => p.screenOn && p.screenTrack);
   const narrow = width < 900;
 
+  // ⚠️ Wer selbst teilt, bekommt sein Bild NICHT zurückgespiegelt.
+  //
+  // Sonst zeigt der geteilte Bildschirm das Besprechungsfenster, das den
+  // geteilten Bildschirm zeigt, der … – ein Tunnel ins Unendliche. Bei einem
+  // einzigen Monitor passiert das zwangsläufig, und es sieht kaputt aus
+  // (Sascha, 29.07.: "Bildschirm teilen geht nicht", mit Bild belegt).
+  // Zoom macht es genauso: Beim Teilen tritt das eigene Fenster zurück.
+  //
+  // Zum Zeigen braucht der Teilende die Ansicht auch nicht – sein echter
+  // Mauszeiger ist im geteilten Bild ohnehin für alle sichtbar. Der Stift ist
+  // für die ANDEREN da, die sonst auf nichts deuten könnten.
+  //
+  // Einblendbar bleibt es trotzdem: Nur mit sichtbarem Bild sieht man, was die
+  // anderen anstreichen. Deshalb der Umschalter und der Hinweis, sobald
+  // jemand markiert.
+  const eigeneFreigabe = !!sharer?.isLocal;
+  const [eigeneSicht, setEigeneSicht] = useState(false);
+  useEffect(() => { if (!eigeneFreigabe) setEigeneSicht(false); }, [eigeneFreigabe]);
+  const dokModus = !!sharer && (!eigeneFreigabe || eigeneSicht);
+  const fremdeMarken = (markieren?.striche?.length || 0) > 0;
+
   return (
     <div
       ref={ref}
@@ -74,7 +96,37 @@ export default function Stage({ t, participants, screenShare, roomName, markiere
         background: t.stage,
       }}
     >
-      {sharer ? (
+      {/* Eigene Freigabe läuft, Ansicht ist ausgeblendet: statt des Tunnels
+          eine ruhige Leiste mit dem Weg zurück. */}
+      {eigeneFreigabe && !eigeneSicht && (
+        <div style={{
+          position: "absolute", top: VM.stagePad, left: "50%", transform: "translateX(-50%)",
+          zIndex: 8, display: "flex", alignItems: "center", gap: 12,
+          background: "rgba(10,13,18,.82)", backdropFilter: "blur(14px)",
+          border: `1px solid ${fremdeMarken ? t.accentFill : t.stageLine}`,
+          borderRadius: 999, padding: "8px 8px 8px 16px", maxWidth: "calc(100% - 40px)",
+        }}>
+          <span style={{ fontSize: 12.5, color: t.onStage, whiteSpace: "nowrap" }}>
+            {fremdeMarken
+              ? "Jemand markiert etwas auf Ihrem Bildschirm"
+              : "Sie teilen Ihren Bildschirm — die anderen sehen ihn"}
+          </span>
+          <button
+            onClick={() => setEigeneSicht(true)}
+            title="Zeigt, was die anderen sehen — samt ihrer Markierungen"
+            style={{
+              flexShrink: 0, border: "none", borderRadius: 999, cursor: "pointer",
+              background: fremdeMarken ? t.accentFill : "rgba(255,255,255,.14)",
+              color: "#fff", fontFamily: "inherit", fontSize: 12, fontWeight: 700,
+              padding: "6px 13px", display: "flex", alignItems: "center", gap: 6,
+            }}
+          >
+            <Eye size={14} /> Ansicht einblenden
+          </button>
+        </div>
+      )}
+
+      {dokModus ? (
         // ── Dokumentmodus ────────────────────────────────────────────────
         <>
           <div ref={docRef} style={{
@@ -107,6 +159,26 @@ export default function Stage({ t, participants, screenShare, roomName, markiere
                   meineFarbe={markieren.meineFarbe}
                   onStift={() => markieren.setStiftAn((s) => !s)}
                 />
+              </>
+            )}
+
+            {/* Zurueck aus der Selbstansicht – nur wer selbst teilt, sieht das */}
+            {eigeneFreigabe && (
+              <>
+                <button
+                  onClick={() => setEigeneSicht(false)}
+                  title="Eigene Ansicht ausblenden — verhindert die Endlos-Spiegelung"
+                  style={{
+                    position: "absolute", top: 12, right: markieren ? 152 : 12, zIndex: 6,
+                    display: "flex", alignItems: "center", gap: 6, cursor: "pointer",
+                    border: `1px solid ${t.stageLine}`, borderRadius: 999,
+                    background: "rgba(10,13,18,.72)", backdropFilter: "blur(14px)",
+                    color: t.onStage, fontFamily: "inherit", fontSize: 12.5, fontWeight: 650,
+                    padding: "7px 13px",
+                  }}
+                >
+                  <EyeOff size={14} /> Ausblenden
+                </button>
               </>
             )}
 
@@ -219,7 +291,7 @@ export default function Stage({ t, participants, screenShare, roomName, markiere
       )}
 
       {/* Selbstansicht als Vorschau unten rechts */}
-      {me && !sharer?.isLocal && others.length > 0 && (
+      {me && !(eigeneFreigabe && dokModus) && others.length > 0 && (
         <div style={{
           position: "absolute", right: VM.stagePad,
           bottom: VM.barHeight + VM.barBottom + 16,
