@@ -2382,16 +2382,19 @@ export default function Settings() {
                                                 <div className="flex-1 min-w-0">
                                                     <div className="text-sm font-medium truncate" style={{color: headingColor}}>{u.full_name || u.email}</div>
                                                     <div className="text-xs truncate" style={{color: textMuted}}>
-                                                        {assigned
-                                                            ? `Nebenstelle ${assigned.internalNumber} · ${assigned.name}`
-                                                            : u.internal_extension
-                                                                // Der Hinweis „nicht mehr in der Anlage" darf nur kommen,
-                                                                // wenn die Liste wirklich geladen wurde -- sonst behaupten
-                                                                // wir bei jedem API-Fehler faelschlich, die Nebenstelle sei weg.
-                                                                ? (pbxLoading || pbxError
-                                                                    ? `Nebenstelle ${u.internal_extension}`
-                                                                    : `Nebenstelle ${u.internal_extension} (nicht mehr in der Anlage?)`)
-                                                                : 'keine Zuordnung'}
+                                                        {(() => {
+                                                            if (assigned) return `Nebenstelle ${assigned.internalNumber} · ${assigned.name}`;
+                                                            const ext = u.internal_extension ? `Nebenstelle ${u.internal_extension}` : null;
+                                                            // Ohne geladene Liste wissen wir nur, was bei UNS gespeichert ist.
+                                                            // Dann darf hier nichts behauptet werden, was wir nicht geprueft haben.
+                                                            if (pbxLoading || pbxError) {
+                                                                if (u.peoplefone_user_id) return `${ext ?? 'Zugeordnet'} · Zuordnung gespeichert`;
+                                                                return ext ?? 'keine Zuordnung';
+                                                            }
+                                                            // Liste ist da: jetzt ist „nicht gefunden" eine echte Aussage.
+                                                            if (u.peoplefone_user_id) return `${ext ?? 'Zuordnung'} (Anschluss nicht mehr in der Anlage?)`;
+                                                            return ext ? `${ext} · noch keinem Anschluss zugeordnet` : 'keine Zuordnung';
+                                                        })()}
                                                     </div>
                                                 </div>
                                                 {extSavingId === u.id
@@ -2399,14 +2402,32 @@ export default function Settings() {
                                                     : (
                                                         <select
                                                             value={u.peoplefone_user_id || ''}
+                                                            // Ohne Liste gibt es nichts auszuwaehlen -- und ein Klick wuerde die
+                                                            // gespeicherte Zuordnung auf „keine" setzen. Darum gesperrt.
+                                                            disabled={pbxLoading || pbxError}
+                                                            title={pbxError
+                                                                ? 'Liste aus der Telefonanlage nicht verfügbar — Auswahl gesperrt, damit bestehende Zuordnungen nicht versehentlich gelöscht werden.'
+                                                                : undefined}
                                                             onChange={(e) => {
                                                                 const t = pbxTargets.find(x => x.peoplefoneId === e.target.value) || null;
                                                                 saveExtension(u.id, t);
                                                             }}
                                                             className="text-sm rounded-md border px-2 py-1"
-                                                            style={{borderColor: cardBorder, backgroundColor: cardBg, color: headingColor, maxWidth: 220}}
+                                                            style={{
+                                                                borderColor: cardBorder, backgroundColor: cardBg,
+                                                                color: headingColor, maxWidth: 220,
+                                                                opacity: (pbxLoading || pbxError) ? 0.55 : 1,
+                                                                cursor: (pbxLoading || pbxError) ? 'not-allowed' : undefined,
+                                                            }}
                                                         >
                                                             <option value="">— keine —</option>
+                                                            {/* Gespeicherten Wert anzeigbar halten, auch wenn die Liste fehlt --
+                                                                sonst zeigt der Browser faelschlich „keine". */}
+                                                            {u.peoplefone_user_id && !pbxTargets.some(t => t.peoplefoneId === u.peoplefone_user_id) && (
+                                                                <option value={u.peoplefone_user_id}>
+                                                                    {u.internal_extension ? `${u.internal_extension} · gespeichert` : 'gespeichert'}
+                                                                </option>
+                                                            )}
                                                             {pbxTargets.map(t => (
                                                                 <option key={t.peoplefoneId} value={t.peoplefoneId}>
                                                                     {t.internalNumber} · {t.name}
