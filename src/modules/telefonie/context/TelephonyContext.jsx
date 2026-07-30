@@ -135,8 +135,17 @@ export function TelephonyProvider({ children }) {
   }, []);
   useEffect(() => {
     if (!myId) return;
-    const ch = supabase.channel(CALLS_CHANNEL, { config: { broadcast: { self: true } } });
-    ch.on("broadcast", { event: "incoming_call" }, ({ payload }) => {
+    // Der Browser ist angemeldet -- Realtime muss das Token kennen, sonst
+    // bleibt das private Thema verschlossen (Migration 20260730100000).
+    supabase.auth.getSession().then(({ data }) => {
+      try { supabase.realtime.setAuth(data?.session?.access_token ?? null); } catch { /* egal */ }
+    });
+    // Ein Ereignis, zwei Wege: waehrend der Umstellung liefert der Webhook
+    // sowohl ins persoenliche private Thema als auch auf den alten
+    // Gemeinschaftskanal. Dieselbe Behandlung fuer beide -- eine Dublette
+    // desselben Anrufs faengt die Zustandslogik unten ab (gleiche call.id =
+    // gleiches Bein, also kein zweiter Screen-Pop).
+    const behandleAnruf = ({ payload }) => {
       if (!payload) return;
       if (payload.targetUserId && payload.targetUserId !== myId) return; // nicht für mich
       const incomingCall = payload.call;
@@ -191,9 +200,29 @@ export function TelephonyProvider({ children }) {
         // Klingel-Pop nur schliessen, wenn wirklich DIESES Bein endet.
         setIncoming((prevInc) => (prevInc && prevInc.id && incomingCall?.id && prevInc.id !== incomingCall.id ? prevInc : null));
       }
-    }).subscribe();
+    };
+
+    const ch = supabase.channel(CALLS_CHANNEL, { config: { broadcast: { self: true } } });
+    ch.on("broadcast", { event: "incoming_call" }, behandleAnruf).subscribe();
     callsChRef.current = ch;
-    return () => { callsChRef.current = null; supabase.removeChannel(ch); };
+
+    // Persoenliches, privates Thema -- dorthin wandert alles, sobald auch der
+    // Fernsteuer-Helfer angemeldet ist. Faellt es aus, bleibt der alte Kanal
+    // als Netz darunter; still wird es also nie.
+    const privat = supabase.channel(`telefonie-user:${myId}`, {
+      config: { broadcast: { self: true }, private: true },
+    });
+    privat.on("broadcast", { event: "incoming_call" }, behandleAnruf).subscribe((s) => {
+      if (s === "CHANNEL_ERROR") {
+        console.warn("Privates Telefonie-Thema nicht erreichbar — es gilt weiter der alte Kanal.");
+      }
+    });
+
+    return () => {
+      callsChRef.current = null;
+      supabase.removeChannel(ch);
+      supabase.removeChannel(privat);
+    };
   }, [myId]);
 
   // ── Echte Fernsteuerung von MicroSIP (2026-07-22) ────────────────────────
