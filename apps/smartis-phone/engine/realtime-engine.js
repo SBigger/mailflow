@@ -27,8 +27,16 @@ const crypto = require("crypto");
 const STATUS_RANK = { ringing: 0, calling: 0, active: 1, ended: 2 };
 const MAX_REMEMBERED_ENDED = 20;
 
-function createRealtimeEngine({ supabaseUrl, supabaseAnonKey, profileId, controlSecret, log = () => {} }) {
-  const { createClient } = require("@supabase/supabase-js");
+function createRealtimeEngine({
+  supabase: mitgegebenerClient,
+  supabaseUrl, supabaseAnonKey,
+  profileId, controlSecret,
+  // Privater Kanal: eigenes Thema pro Person, nur mit Anmeldung abonnierbar.
+  // Standard aus, damit der Umbau niemandem das Telefon abstellt -- der
+  // Schalter faellt weg, sobald alle Clients sich anmelden.
+  privaterKanal = false,
+  log = () => {},
+}) {
   const handlers = {};
   const emit = (event, payload) => (handlers[event] || []).forEach((h) => h(payload));
 
@@ -37,7 +45,10 @@ function createRealtimeEngine({ supabaseUrl, supabaseAnonKey, profileId, control
   let channel = null;
   const endedIds = [];
 
-  const supabase = createClient(supabaseUrl, supabaseAnonKey);
+  // Angemeldeter Client wird durchgereicht (er traegt die Sitzung); ohne
+  // Anmeldung faellt es auf den oeffentlichen Weg zurueck.
+  const supabase = mitgegebenerClient
+    || require("@supabase/supabase-js").createClient(supabaseUrl, supabaseAnonKey);
 
   function rememberEnded(id) {
     if (!id || endedIds.includes(id)) return;
@@ -128,7 +139,14 @@ function createRealtimeEngine({ supabaseUrl, supabaseAnonKey, profileId, control
     emit("registration", { ...registration });
 
     if (channel) { try { supabase.removeChannel(channel); } catch { /* egal */ } }
-    channel = supabase.channel("telefonie-calls", { config: { broadcast: { self: true } } });
+    // Privat = eigenes Thema pro Person. Die Policies (Migration
+    // 20260730100000) lassen genau die Zeile mit der eigenen Benutzer-ID zu --
+    // fremde Anrufe sind damit nicht gefiltert, sondern unerreichbar.
+    const thema = privaterKanal ? `telefonie-user:${profileId}` : "telefonie-calls";
+    log("Kanal:", thema, privaterKanal ? "(privat)" : "(oeffentlich)");
+    channel = supabase.channel(thema, {
+      config: { broadcast: { self: true }, private: privaterKanal },
+    });
 
     channel.on("broadcast", { event: "incoming_call" }, ({ payload }) => {
       if (!payload) return;

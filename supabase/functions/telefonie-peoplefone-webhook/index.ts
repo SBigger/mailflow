@@ -219,11 +219,29 @@ serve(async (req) => {
       dossier,
       viaNumber: null,
     };
-    const bc = await broadcastRealtime(supabaseUrl, serviceKey, "telefonie-calls", "incoming_call", {
-      targetUserId,
-      call: callPayload,
-    });
-    if (!bc.ok) console.error("broadcast failed:", bc.status, bc.body);
+    const inhalt = { targetUserId, call: callPayload };
+
+    // Waehrend der Umstellung auf private Kanaele wird BEIDES bedient:
+    //
+    //  - das persoenliche, private Thema (nur die betroffene Person kann es
+    //    abonnieren -- Policies aus Migration 20260730100000), und
+    //  - der alte oeffentliche Gemeinschaftskanal, solange noch Clients daran
+    //    haengen (Tray, Browser, Fernsteuer-Helfer).
+    //
+    // Sobald alle umgestellt sind, faellt der zweite Aufruf weg. Bis dahin ist
+    // Doppelversand das kleinere Uebel gegenueber einem stillen Telefon --
+    // die Clients verwerfen Dubletten ohnehin ueber die call.id.
+    if (targetUserId) {
+      const privat = await broadcastRealtime(
+        supabaseUrl, serviceKey, `telefonie-user:${targetUserId}`, "incoming_call", inhalt, true,
+      );
+      if (!privat.ok) console.error("privater broadcast fehlgeschlagen:", privat.status, privat.body);
+    }
+
+    if (Deno.env.get("TELEFONIE_ALTER_KANAL") !== "aus") {
+      const bc = await broadcastRealtime(supabaseUrl, serviceKey, "telefonie-calls", "incoming_call", inhalt);
+      if (!bc.ok) console.error("broadcast failed:", bc.status, bc.body);
+    }
   }
 
   return json({ ok: true });

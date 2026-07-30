@@ -328,3 +328,56 @@ if (window.phoneAPI?.getProfile) {
     }
   }).catch(() => {});
 }
+
+// ── Anmeldung ────────────────────────────────────────────────────────────
+// Ohne Anmeldung kein privater Kanal: der Anruf-Kanal war bisher oeffentlich,
+// jeder mit dem anon-Schluessel konnte mithoeren (Befund OFF-01). Erst mit
+// einem Benutzer-Token greifen die Policies auf das eigene Thema.
+//
+// Im Browser (Mock-Motor) gibt es keine Anmeldung -- dort bleibt die Maske aus,
+// damit die Oberflaeche weiter ohne Telefonanlage entwickelbar ist.
+if (window.phoneAPI?.auth) {
+  const maske = $("anmeldung");
+  const fehler = $("anmeldeFehler");
+
+  const zeigeMaske = (an) => { maske.hidden = !an; };
+
+  const uebernehmen = (s) => {
+    zeigeMaske(!s?.angemeldet);
+    if (s?.angemeldet) {
+      if (s.name) $("meAvatar").textContent =
+        s.name.split(/\s+/).map((t) => t[0]).slice(0, 2).join("").toUpperCase();
+      // Ohne Zuordnung zur Telefonanlage kommen keine Anrufe an -- das darf
+      // die App nicht verschweigen, sonst sucht man den Fehler beim Telefon.
+      if (!s.zugeordnet) {
+        $("accountInfo").textContent =
+          "Angemeldet, aber noch keinem peoplefone-Anschluss zugeordnet — es kommen keine Anrufe an. "
+          + "Ein Administrator macht das in den smartis-Einstellungen unter Telefonie.";
+      }
+    }
+  };
+
+  const anmelden = async () => {
+    fehler.hidden = true;
+    const btn = $("btnAnmelden");
+    btn.disabled = true; btn.textContent = "Anmelden…";
+    try {
+      const r = await window.phoneAPI.auth.anmelden($("anmeldeEmail").value, $("anmeldePasswort").value);
+      if (!r?.ok) {
+        fehler.textContent = r?.fehler || "Anmeldung fehlgeschlagen.";
+        fehler.hidden = false;
+      } else {
+        $("anmeldePasswort").value = "";
+        uebernehmen(await window.phoneAPI.auth.status());
+      }
+    } finally {
+      btn.disabled = false; btn.textContent = "Anmelden";
+    }
+  };
+
+  $("btnAnmelden").addEventListener("click", anmelden);
+  $("anmeldePasswort").addEventListener("keydown", (e) => { if (e.key === "Enter") anmelden(); });
+
+  window.phoneAPI.auth.beiAenderung(uebernehmen);
+  window.phoneAPI.auth.status().then(uebernehmen).catch(() => zeigeMaske(true));
+}

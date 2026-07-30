@@ -10,6 +10,24 @@
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
+
+<!-- ── Anmeldung ──────────────────────────────────────────────────────────
+     Liegt ueber allem und verschwindet, sobald eine Sitzung besteht. Erst mit
+     Anmeldung kann der Client den privaten Anruf-Kanal abonnieren; ohne sie
+     saehe er entweder nichts oder muesste am oeffentlichen Kanal haengen. -->
+<div class="anmeldung" id="anmeldung" hidden>
+  <div class="anmeldung-box">
+    <h1 class="anmeldung-titel">smartis Telefon</h1>
+    <p class="anmeldung-text">Mit deinem smartis-Konto anmelden.</p>
+    <label class="field"><span>E-Mail</span>
+      <input type="email" id="anmeldeEmail" autocomplete="username" spellcheck="false"></label>
+    <label class="field"><span>Passwort</span>
+      <input type="password" id="anmeldePasswort" autocomplete="current-password"></label>
+    <p class="anmeldung-fehler" id="anmeldeFehler" hidden></p>
+    <button class="btn-call anmeldung-btn" id="btnAnmelden">Anmelden</button>
+  </div>
+</div>
+
 <div class="shell">
 
   <!-- ── Navigationsleiste links ─────────────────────────────────────── -->

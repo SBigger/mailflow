@@ -21,6 +21,7 @@ if (typeof globalThis.WebSocket === "undefined") {
   globalThis.WebSocket = require("ws");
 }
 const { createRealtimeEngine } = require("./engine/realtime-engine");
+const { createAuth } = require("./auth");
 
 const WIN_W = 420, WIN_H = 720;
 let mainWindow = null;
@@ -54,9 +55,15 @@ function loadConfig() {
     targets: Array.isArray(cfg.targets) ? cfg.targets : [],
     extension: cfg.extension || null,
     fullName: cfg.fullName || null,
+    // Umstellungs-Schalter: privater Kanal pro Person. Standard aus, damit
+    // ein halb umgestellter Bestand nicht ploetzlich still ist. Wird gesetzt,
+    // sobald Tray und Browser ebenfalls angemeldet laufen.
+    privaterKanal: cfg.privaterKanal === true,
   };
 }
 let CFG = null;
+let AUTH = null;
+let AKTUELL = { angemeldet: false, profil: null };
 
 function createMainWindow() {
   mainWindow = new BrowserWindow({
@@ -109,33 +116,91 @@ if (!app.requestSingleInstanceLock()) {
                        geheimnis: CFG.controlSecret ? "vorhanden" : "FEHLT",
                        ziele: CFG.targets.length }));
     if (!CFG.profileId) {
-      console.warn("⚠️ Keine profileId -- der Client empfaengt keine Anrufe (siehe README).");
+      console.log("Keine profileId in der Konfiguration -- das ist in Ordnung: sie kommt jetzt aus der Anmeldung.");
     }
 
+    AUTH = createAuth({
+      supabaseUrl: CFG.supabaseUrl,
+      anonKey: CFG.supabaseAnonKey,
+      userDataPath: app.getPath("userData"),
+      log: (...a) => console.log("[Anmeldung]", ...a),
+    });
+
     createMainWindow();
+
+    const anDieOberflaeche = (event) => (payload) => {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("phone:" + event, payload);
+    };
 
     // ── Motor starten und an die Oberflaeche bruecken ────────────────────
     // Realtime + Signieren brauchen Node, laufen also hier; der Renderer
     // bekommt dieselben Ereignisse ueber IPC und kennt weiterhin nur die
     // Motor-Schnittstelle.
-    engine = createRealtimeEngine({
-      supabaseUrl: CFG.supabaseUrl,
-      supabaseAnonKey: CFG.supabaseAnonKey,
-      profileId: CFG.profileId,
-      controlSecret: CFG.controlSecret,
-      log: (...a) => console.log("[Motor]", ...a),
-    });
-    const anDieOberflaeche = (event) => (payload) => {
-      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("phone:" + event, payload);
-    };
-    engine.on("registration", anDieOberflaeche("registration"));
-    engine.on("call", anDieOberflaeche("call"));
-    engine.on("callEnded", anDieOberflaeche("callEnded"));
+    //
+    // Neu: erst anmelden, dann verbinden. Wer angemeldet ist, bekommt
+    // profileId und controlSecret aus dem eigenen Profil -- keine Handarbeit
+    // in der config.json mehr. Ohne Anmeldung bleibt der alte Weg als
+    // Rueckfall, damit der Umbau niemandem das Telefon abstellt.
+    async function starteMotor() {
+      const sitzung = await AUTH.sitzung();
+      const profil = sitzung ? await AUTH.eigenesProfil() : null;
+      AKTUELL = { angemeldet: !!sitzung, profil };
+
+      const profileId = profil?.id || CFG.profileId;
+      const controlSecret = profil?.telefonie_control_secret || CFG.controlSecret;
+      // Privat geht nur mit Anmeldung -- sonst gaebe es kein Token fuer die Policy.
+      const privat = CFG.privaterKanal && !!sitzung;
+
+      if (engine) { try { engine.disconnect(); } catch { /* egal */ } }
+      engine = createRealtimeEngine({
+        supabase: AUTH.supabase,
+        supabaseUrl: CFG.supabaseUrl,
+        supabaseAnonKey: CFG.supabaseAnonKey,
+        profileId,
+        controlSecret,
+        privaterKanal: privat,
+        log: (...a) => console.log("[Motor]", ...a),
+      });
+      engine.on("registration", anDieOberflaeche("registration"));
+      engine.on("call", anDieOberflaeche("call"));
+      engine.on("callEnded", anDieOberflaeche("callEnded"));
+
+      anDieOberflaeche("auth")({
+        angemeldet: !!sitzung,
+        name: profil?.full_name || profil?.email || null,
+        extension: profil?.internal_extension || CFG.extension || null,
+        zugeordnet: !!profil?.peoplefone_user_id,
+      });
+
+      if (!profileId) {
+        console.warn("⚠️ Keine Benutzer-Zuordnung -- der Client empfaengt keine Anrufe. Bitte anmelden.");
+        return;
+      }
+      engine.connect();
+    }
 
     // Erst verbinden, wenn die Oberflaeche steht -- sonst geht das erste
     // Ereignis ins Leere (der Renderer haette noch keine Zuhoerer).
-    mainWindow.webContents.once("did-finish-load", () => {
-      if (CFG.profileId) engine.connect();
+    mainWindow.webContents.once("did-finish-load", () => { starteMotor(); });
+
+    ipcMain.handle("auth:status", () => ({
+      angemeldet: AKTUELL.angemeldet,
+      name: AKTUELL.profil?.full_name || AKTUELL.profil?.email || null,
+      extension: AKTUELL.profil?.internal_extension || CFG.extension || null,
+      zugeordnet: !!AKTUELL.profil?.peoplefone_user_id,
+      privaterKanal: CFG.privaterKanal,
+    }));
+    ipcMain.handle("auth:login", async (_e, email, passwort) => {
+      const r = await AUTH.anmelden(email, passwort);
+      if (r.ok) await starteMotor();
+      return r;
+    });
+    ipcMain.handle("auth:logout", async () => {
+      await AUTH.abmelden();
+      if (engine) { try { engine.disconnect(); } catch { /* egal */ } }
+      AKTUELL = { angemeldet: false, profil: null };
+      anDieOberflaeche("auth")({ angemeldet: false, name: null, extension: null, zugeordnet: false });
+      return true;
     });
 
     ipcMain.handle("phone:engine", (_e, methode, arg) => {
@@ -163,10 +228,11 @@ if (!app.requestSingleInstanceLock()) {
     });
 
     ipcMain.handle("phone:get-profile", () => ({
-      fullName: CFG.fullName,
-      extension: CFG.extension,
+      fullName: AKTUELL.profil?.full_name || CFG.fullName,
+      extension: AKTUELL.profil?.internal_extension || CFG.extension,
       targets: CFG.targets,
-      hatGeheimnis: !!CFG.controlSecret,
+      hatGeheimnis: !!(AKTUELL.profil?.telefonie_control_secret || CFG.controlSecret),
+      angemeldet: AKTUELL.angemeldet,
     }));
   });
 }

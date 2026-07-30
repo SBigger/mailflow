@@ -6,12 +6,21 @@
 // Motor-Schnittstelle aus engine/engine-api.md sieht.
 const { contextBridge, ipcRenderer } = require("electron");
 
-const ereignisse = ["registration", "call", "callEnded"];
+const ereignisse = ["registration", "call", "callEnded", "auth"];
 
 contextBridge.exposeInMainWorld("phoneAPI", {
   openDoc: (docId) => ipcRenderer.invoke("phone:open-doc", docId),
   getProfile: () => ipcRenderer.invoke("phone:get-profile"),
   dial: (nummer) => ipcRenderer.invoke("phone:dial", nummer),
+
+  // Anmeldung: das Passwort wandert direkt in den Hauptprozess und von dort
+  // zu Supabase -- es wird nirgends zwischengespeichert.
+  auth: {
+    status: () => ipcRenderer.invoke("auth:status"),
+    anmelden: (email, passwort) => ipcRenderer.invoke("auth:login", email, passwort),
+    abmelden: () => ipcRenderer.invoke("auth:logout"),
+    beiAenderung: (handler) => ipcRenderer.on("phone:auth", (_e, p) => handler(p)),
+  },
 
   engine: {
     on(event, handler) {

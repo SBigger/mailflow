@@ -105,6 +105,10 @@ export async function broadcastRealtime(
   topic: string,
   event: string,
   payload: unknown,
+  // Privat = nur angemeldete Benutzer mit passender Policy empfangen. Der
+  // service_role-Schluessel darf in beide Sorten senden; die Trennung wirkt
+  // auf der Empfangsseite (Migration 20260730100000).
+  privat = false,
 ): Promise<{ ok: boolean; status: number; body?: string }> {
   try {
     const res = await fetch(`${supabaseUrl}/realtime/v1/api/broadcast`, {
@@ -114,7 +118,7 @@ export async function broadcastRealtime(
         Authorization: `Bearer ${serviceRoleKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ messages: [{ topic, event, payload, private: false }] }),
+      body: JSON.stringify({ messages: [{ topic, event, payload, private: privat }] }),
     });
     if (!res.ok) return { ok: false, status: res.status, body: await res.text() };
     return { ok: true, status: res.status };
