@@ -1,0 +1,134 @@
+{
+  "titel": "MailFlow / smartis.me — Sicherheits- und Fehler-Register",
+  "stand": "2026-07-30",
+  "herkunft": "Gesamt-Review vom 04.07.2026 (Multi-Agent, 12 Subsysteme, jeder Fund gegengeprüft): 65 bestätigt, 60 nach Zusammenfassung (42 hoch, 18 mittel), 10 widerlegt.",
+  "wie_zu_lesen": [
+    "status = offen | erledigt | erledigt_deploy_offen | veraltet | beobachten",
+    "'erledigt' heisst: auf smartis.me umgesetzt UND verifiziert. Produktiv (artis.sm-artis.ch) ist damit NICHT erledigt — siehe uebernahme_produktiv.",
+    "WICHTIG vor jedem Fix: der Befund stammt aus einem Code-Stand vom 04.07.2026. Mehrere Funde waren beim Nachprüfen bereits behoben. Immer erst gegen den aktuellen Code prüfen, nie blind fixen.",
+    "schwere: hoch | mittel | niedrig"
+  ],
+  "zusammenfassung": {
+    "erledigt": 28,
+    "offen": 7,
+    "veraltet_bereits_behoben": 2,
+    "deploy_oder_neubau_ausstehend": 4
+  },
+
+  "offen": [
+    {
+      "id": "OFF-01",
+      "titel": "Telefonie-Kanal ist öffentlich (private: false)",
+      "cluster": "zugriff",
+      "schwere": "hoch",
+      "datei": "src/modules/telefonie/context/TelephonyContext.jsx:271",
+      "gefunden": "2026-07-30",
+      "fehlerszenario": "Der Broadcast-Kanal 'telefonie-calls' ist nicht privat. Wer den öffentlichen anon-Schlüssel der Web-App hat (er steckt in jeder ausgelieferten Seite), kann mithören: eingehende Rufnummern, Kundenname, offene Pendenzen, Dokumentnamen — für alle Mitarbeitenden.",
+      "warum_noch_offen": "Kein Schalter: private Kanäle verlangen echte Benutzer-Anmeldung (realtime.set_auth + Policies auf realtime.messages). Tray und Listener laufen heute nur mit dem anon-Schlüssel.",
+      "loesungsweg": "Anmeldung pro Mitarbeitendem im eigenen Client, damit denselben Kanal privat schalten. Wird zusammen mit dem Softphone-Client gebaut.",
+      "haengt_zusammen_mit": ["OFF-02"]
+    },
+    {
+      "id": "OFF-02",
+      "titel": "Chartis-Presence braucht ebenfalls private Kanäle",
+      "cluster": "zugriff",
+      "schwere": "niedrig",
+      "modul": "chartis",
+      "fehlerszenario": "Presence-Kanal ist aus demselben Grund öffentlich wie OFF-01.",
+      "warum_noch_offen": "Gleiche Abhängigkeit: Realtime-Auth-Policies.",
+      "loesungsweg": "Fällt mit der Lösung von OFF-01 mit ab."
+    },
+    {
+      "id": "OFF-03",
+      "titel": "Gewinnvortrag wird im Jahresabschluss doppelt gebucht",
+      "cluster": "geld",
+      "schwere": "hoch",
+      "fehlerszenario": "Schritt C erfasst Konto 2970 als Passiv und die Folgezeilen erfassen es nochmals.",
+      "warum_noch_offen": "Buchhalterische Kernfunktion. Bilanz-Modell ist bestätigt (volle Historie), durch den Bilanz-Fix nicht mehr bilanzwirksam — aber ein Test-Abschluss auf smartis.me ist nötig, um es zu beobachten, statt blind zu ändern.",
+      "naechster_schritt": "Test-Abschluss auf smartis.me durchführen und Buchungssätze vergleichen."
+    },
+    {
+      "id": "OFF-04",
+      "titel": "Share-Passwörter liegen im Klartext",
+      "cluster": "zugriff",
+      "schwere": "mittel",
+      "fehlerszenario": "Passwörter von Freigabe-Links sind nicht gehasht gespeichert. Das RLS-Loch, über das sie lesbar waren, ist geschlossen (siehe ERL-01) — die Speicherform bleibt.",
+      "naechster_schritt": "Hashen beim Setzen, Prüfung serverseitig; Migration für Bestand."
+    },
+    {
+      "id": "OFF-05",
+      "titel": "BankAbstimmung liest Spalten, die nie geschrieben werden",
+      "cluster": "datenverlust",
+      "schwere": "mittel",
+      "fehlerszenario": "Auswertung greift auf Felder zu, die der Schreibpfad nicht füllt — stille Leerwerte statt Fehler.",
+      "naechster_schritt": "Gegen aktuellen Code prüfen (kann wie SollzeitenPanel bereits erledigt sein)."
+    },
+    {
+      "id": "OFF-06",
+      "titel": "Chartis: Message-ID ist eine Postmark-UUID statt RFC5322",
+      "cluster": "kommunikation",
+      "schwere": "niedrig",
+      "fehlerszenario": "Antworten lassen sich bei manchen Gegenstellen nicht sauber dem Verlauf zuordnen."
+    },
+    {
+      "id": "OFF-07",
+      "titel": "Rollen sind angelegt, aber niemand ist herabgestuft",
+      "cluster": "zugriff",
+      "schwere": "mittel",
+      "entscheid": "Sascha 2026-07-05: alle bleiben vorerst Admin.",
+      "fehlerszenario": "Die vier Rollen und alle Prüfungen sind scharf, aber sämtliche Konten sind Admin — die Schutzwirkung greift dadurch nicht. Betrifft direkt OFF-01: ein Admin-Browser sieht heute alles.",
+      "naechster_schritt": "Bewusster Entscheid, wer mandatsleiter/sachbearbeiter/readonly wird. Reine Datenpflege, kein Code."
+    }
+  ],
+
+  "erledigt": [
+    {"id": "ERL-01", "titel": "share_links-RLS: jeder mit anon-Schlüssel konnte alle Tokens + Klartext-Passwörter lesen", "cluster": "zugriff", "schwere": "hoch", "migration": "20260704120000_share_links_rls_fix.sql", "status": "erledigt", "produktiv": "offen"},
+    {"id": "ERL-02", "titel": "Welle 1 — Rollen-Fundament (Constraint, is_admin/can_write/can_approve, Self-Escalation-Trigger, anon-Revoke)", "cluster": "zugriff", "schwere": "hoch", "commit": "5c4fc907", "migration": "20260705100000_roles_foundation.sql", "status": "erledigt"},
+    {"id": "ERL-03", "titel": "Welle 2 — Edge Functions ohne serverseitige Auth (7 Stück) + share-link Download-IDOR", "cluster": "zugriff", "schwere": "hoch", "commit": "b3792703", "betroffen": ["get-staff-ids", "send-ticket-reply", "share-link", "notify-frist-ablehnung", "voice-assistant", "suggest-ticket-reply", "fibu-inbox-webhook"], "status": "erledigt_deploy_offen"},
+    {"id": "ERL-04", "titel": "Welle 3a — Fibu-Schreibrechte an Mandantsrolle gekoppelt (20 Tabellen)", "cluster": "zugriff", "schwere": "hoch", "commit": "4b19ebde", "migration": "20260705110000_fibu_write_role_enforcement.sql", "status": "erledigt"},
+    {"id": "ERL-05", "titel": "W3b — alle 10 Fibu-Buchungs-RPCs mit Mandant- und Rollen-Guard (RPCs umgingen RLS: readonly konnte buchen, teils Cross-Mandant)", "cluster": "zugriff", "schwere": "hoch", "commit": "5c1db2a0 + 65d0d4d9", "migration": "20260705160000 + 20260705170000", "status": "erledigt", "pruefung": "Aggregat-Query: guard=true, anzahl=10"},
+    {"id": "ERL-06", "titel": "MWST doppelt gezählt (Steuerzeile trug nochmals mwst_code/mwst_betrag)", "cluster": "geld", "schwere": "hoch", "commit": "35c08e82", "migration": "20260705120000", "status": "erledigt", "produktiv": "Daten-UPDATE von Sascha genehmigt (MWST-Perioden noch nicht eingereicht)"},
+    {"id": "ERL-07", "titel": "Bilanz doppelt nach Abschluss (Eröffnungsbuchungen mitgezählt)", "cluster": "geld", "schwere": "hoch", "commit": "5abf0ae3", "migration": "20260705130000", "status": "erledigt", "notiz": "auf smartis.me latent (0 Abschlüsse), greift ab erstem Abschluss"},
+    {"id": "ERL-08", "titel": "DokumenteV2 löschte Storage vor DB (GeBüV-Bruch) und zeigte gelöschte Dokumente", "cluster": "datenverlust", "schwere": "hoch", "commit": "645e9ef7", "status": "erledigt"},
+    {"id": "ERL-09", "titel": "KundenKonditionenPanel nullte die Rechnungsadresse", "cluster": "datenverlust", "schwere": "hoch", "commit": "645e9ef7", "status": "erledigt"},
+    {"id": "ERL-10", "titel": "BriefSchreiben: stiller Insert-Fehler (falsche Spaltennamen)", "cluster": "datenverlust", "schwere": "mittel", "commit": "645e9ef7", "status": "erledigt"},
+    {"id": "ERL-11", "titel": "FristenEinreichenDialog: UTC-Verschiebung ergab 29.06 statt 30.06", "cluster": "datenverlust", "schwere": "mittel", "commit": "645e9ef7", "status": "erledigt"},
+    {"id": "ERL-12", "titel": "Bulk-Freigabe verrechnete Kulanz-Stunden", "cluster": "geld", "schwere": "hoch", "commit": "645e9ef7", "status": "erledigt"},
+    {"id": "ERL-13", "titel": "Direkt-Rechnung wurde 'definitiv' ohne Nummer und QR", "cluster": "geld", "schwere": "hoch", "commit": "645e9ef7", "status": "erledigt"},
+    {"id": "ERL-14", "titel": "Mahnwesen ignorierte Teilzahlungen (mahnte den vollen Betrag)", "cluster": "geld", "schwere": "hoch", "commit": "645e9ef7", "status": "erledigt"},
+    {"id": "ERL-15", "titel": "Entwurf löschen ohne deleteDraft", "cluster": "datenverlust", "schwere": "mittel", "commit": "645e9ef7", "status": "erledigt"},
+    {"id": "ERL-16", "titel": "Teilgutschrift ignorierte den Rabatt", "cluster": "geld", "schwere": "hoch", "commit": "7bd54396", "status": "erledigt"},
+    {"id": "ERL-17", "titel": "Akonto reduzierte das Total nie → Doppelzahlung", "cluster": "geld", "schwere": "hoch", "commit": "77a504a3", "status": "erledigt"},
+    {"id": "ERL-18", "titel": "Pauschale ignoriert — Leistungsart-Ebene (nicht abrechenbare wurden gebunden)", "cluster": "geld", "schwere": "mittel", "commit": "2aba4b55", "status": "erledigt"},
+    {"id": "ERL-19", "titel": "Pauschale ignoriert — Projekt-Ebene (Faktura rechnete Stunden × Ansatz statt Pauschale)", "cluster": "geld", "schwere": "hoch", "commit": "2929f738", "status": "erledigt"},
+    {"id": "ERL-20", "titel": "Gutschriftsnummer nicht atomar (Race)", "cluster": "geld", "schwere": "mittel", "commit": "d2445dae", "status": "erledigt"},
+    {"id": "ERL-21", "titel": "Buchungsnummer-Race", "cluster": "geld", "schwere": "mittel", "commit": "8282330c", "status": "erledigt"},
+    {"id": "ERL-22", "titel": "TaskReminder in falscher Zeitzone", "cluster": "kommunikation", "schwere": "niedrig", "commit": "8362adac", "status": "erledigt"},
+    {"id": "ERL-23", "titel": "Steuerausscheidung: berechnete Werte wurden nicht gespeichert", "cluster": "datenverlust", "schwere": "mittel", "commit": "582aa6cc", "status": "erledigt"},
+    {"id": "ERL-24", "titel": "Chartis: Doppelversand (senden vor speichern)", "cluster": "kommunikation", "schwere": "mittel", "commit": "5847cacc", "status": "erledigt_deploy_offen", "notiz": "Outbox-Muster"},
+    {"id": "ERL-25", "titel": "QR-Dummy-Referenz produktiv", "cluster": "geld", "schwere": "hoch", "commit": "4edca902", "status": "erledigt_deploy_offen", "entscheid": "normale IBAN → keine Referenz (NON); QR-IBAN ohne gültige Referenz → Fehler"},
+    {"id": "ERL-26", "titel": "MFA nur clientseitig", "cluster": "zugriff", "schwere": "hoch", "commit": "3d1b90eb", "migration": "20260705180000_mfa_serverseitig.sql", "status": "erledigt", "notiz": "RESTRICTIVE Policy auf 60 sensible Tabellen; heute No-Op (0 verifizierte Faktoren), greift ab dem ersten eingerichteten Faktor"},
+    {"id": "ERL-27", "titel": "artis_agent RCE über smartis-open:// (os.startfile)", "cluster": "desktop", "schwere": "hoch", "commit": "0b968cfd", "status": "erledigt_neubau_offen"},
+    {"id": "ERL-28", "titel": "Tauri excel_upload_server: unauthentifizierter lokaler Dateizugriff", "cluster": "desktop", "schwere": "hoch", "commit": "95f9a2d1", "status": "erledigt_neubau_offen"}
+  ],
+
+  "veraltet": [
+    {"id": "VER-01", "titel": "SollzeitenPanel las falsche Spalten (hours_mon statt hours_mo)", "notiz": "beim Nachprüfen bereits im Code behoben — Report-Stand war veraltet"},
+    {"id": "VER-02", "titel": "RapportEditDialog überschrieb Handkorrekturen", "notiz": "beim Nachprüfen bereits im Code behoben"}
+  ],
+
+  "ausstehende_uebernahme": {
+    "edge_functions_deployen": {
+      "anzahl": 11,
+      "grund": "Git deployt keine Edge Functions — sie brauchen einen eigenen Deploy-Schritt.",
+      "liste": ["makeAdmin", "inviteUser", "get-staff-ids", "send-ticket-reply", "share-link", "notify-frist-ablehnung", "voice-assistant", "suggest-ticket-reply", "fibu-inbox-webhook", "chartis-send", "create-qr-invoice"],
+      "hinweis": "_shared/auth.ts wird mitgebündelt."
+    },
+    "produktiv_artis": {
+      "wer": "Roger (brsoft) — Handover-Mail vom 05.07.2026 an info@brsoft.ch ist raus",
+      "inhalt": "alle Migrationen + Edge Functions in der dokumentierten Reihenfolge",
+      "warnung": "Bei der MWST-Migration gehört ein Daten-UPDATE dazu (von Sascha genehmigt). Beim Prüfen nie auf 'Success' im SQL-Editor vertrauen — das Ergebnispanel hing zeitweise; immer per Aggregat-Query gegenprüfen."
+    },
+    "desktop_neu_bauen": ["artis_agent (ERL-27)", "Tauri-App (ERL-28)"]
+  }
+}
