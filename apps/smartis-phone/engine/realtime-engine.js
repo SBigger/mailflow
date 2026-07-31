@@ -35,6 +35,9 @@ function createRealtimeEngine({
   // Standard aus, damit der Umbau niemandem das Telefon abstellt -- der
   // Schalter faellt weg, sobald alle Clients sich anmelden.
   privaterKanal = false,
+  // Kurzer Weg zum MicroSIP-Helfer auf demselben PC (lokale-steuerung.js).
+  // Fehlt er, geht alles wie bisher ueber den Kanal.
+  lokalerVersand = null,
   log = () => {},
 }) {
   const handlers = {};
@@ -114,8 +117,7 @@ function createRealtimeEngine({
 
   // Signierter Fernsteuer-Befehl (Security-Paket 2026-07-26): der Kanal ist
   // oeffentlich -- ohne Signatur koennte jeder fremde Telefone steuern.
-  function sendeBefehl(action, extra = {}) {
-    if (!channel) return false;
+  async function sendeBefehl(action, extra = {}) {
     if (!controlSecret) {
       log("⚠️ Kein controlSecret -- Befehl", action, "wird nicht gesendet");
       return false;
@@ -129,8 +131,23 @@ function createRealtimeEngine({
     };
     const kanonisch = [p.targetUserId, p.action, p.target ?? "", p.digit ?? "", p.ts, p.nonce].join("|");
     p.sig = crypto.createHmac("sha256", controlSecret).update(kanonisch).digest("hex");
+
+    // Zuerst der kurze Weg: der Helfer laeuft auf demselben PC. Klappt das,
+    // verlaesst der Befehl den Rechner gar nicht erst.
+    if (lokalerVersand) {
+      try {
+        if (await lokalerVersand(p)) {
+          log("Befehl lokal uebergeben:", action, extra.target ? "-> " + extra.target : "");
+          return true;
+        }
+      } catch (e) {
+        log("lokale Uebergabe fehlgeschlagen:", e.message);
+      }
+    }
+
+    if (!channel) return false;
     channel.send({ type: "broadcast", event: "control_command", payload: p });
-    log("Befehl gesendet:", action, extra.target ? "-> " + extra.target : "");
+    log("Befehl ueber die Cloud gesendet:", action, extra.target ? "-> " + extra.target : "");
     return true;
   }
 

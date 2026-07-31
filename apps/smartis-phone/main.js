@@ -22,6 +22,7 @@ if (typeof globalThis.WebSocket === "undefined") {
 }
 const { createRealtimeEngine } = require("./engine/realtime-engine");
 const { createAuth } = require("./auth");
+const { sendeLokal } = require("./lokale-steuerung");
 
 const WIN_W = 420, WIN_H = 720;
 let mainWindow = null;
@@ -159,6 +160,7 @@ if (!app.requestSingleInstanceLock()) {
         profileId,
         controlSecret,
         privaterKanal: privat,
+        lokalerVersand: sendeLokal,
         log: (...a) => console.log("[Motor]", ...a),
       });
       engine.on("registration", anDieOberflaeche("registration"));
