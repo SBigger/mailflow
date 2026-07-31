@@ -1,21 +1,26 @@
 /**
- * gv-stt — Proxy für ElevenLabs Speech-to-Text (GV-Protokoll-App)
+ * gv-stt — Proxy für Suisse Notes Speech-to-Text (GV-Protokoll-App)
  *
- * Hält den ElevenLabs-Key SERVERSEITIG (Supabase-Secret ELEVENLABS_API_KEY),
- * damit die öffentliche GV-App (smartis.me/gv-protokoll/) keinen Key im
- * Client braucht. Der Request-Body (multipart mit Audiodatei) wird ohne
- * Zwischenpufferung an ElevenLabs durchgestreamt.
+ * Schweizerdeutsch-Transkription MIT Sprecher-Trennung (Diarization).
+ * Ersetzt den früheren ElevenLabs-Weg, dessen Mundart-Erkennung schwach war.
+ *
+ * Der SUISSE_NOTES_API_KEY liegt SERVERSEITIG (Supabase-Secret), weil Suisse
+ * Notes keine Browser-Aufrufe erlaubt (CORS) und der Key nicht in den Client darf.
+ *
+ * Zwei Modi (der Client wählt über den Content-Type):
+ *   - multipart POST (Feld "file" [+ "language"])  → Upload zu /api/v1/transcribe,
+ *                                                     Antwort enthält { id, status }
+ *   - JSON POST { "id": "<transcription_id>" }      → Status/Ergebnis von
+ *                                                     /api/v1/transcriptions/{id}
  *
  * Secret setzen:
- *   supabase secrets set ELEVENLABS_API_KEY=sk_… --project-ref <ref>
+ *   supabase secrets set SUISSE_NOTES_API_KEY=sk_live_… --project-ref <ref>
  * Deploy:
  *   supabase functions deploy gv-stt --project-ref <ref>
- *
- * Hinweis: Sehr lange Einzel-Uploads (z.B. 2h am Stück) können an das
- * Wall-Clock-Limit der Edge Function stossen. Die laufende Zwischen-
- * Transkription der App mildert das ab; für Produktiv ggf. Timeout prüfen.
  */
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+
+const SN_BASE = "https://app.suisse-notes.ch/api/v1";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -29,21 +34,42 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return jsonResp({ error: "Nur POST" }, 405);
 
-  console.log("Function will start::")
+  const KEY = Deno.env.get("SUISSE_NOTES_API_KEY");
+  if (!KEY) return jsonResp({ error: "SUISSE_NOTES_API_KEY nicht gesetzt (Supabase-Secret fehlt)" }, 500);
 
-  const KEY = Deno.env.get("ELEVENLABS_API_KEY");
-  if (!KEY) return jsonResp({ error: "ELEVENLABS_API_KEY nicht gesetzt (Supabase-Secret fehlt)" }, 500);
+  const contentType = req.headers.get("content-type") || "";
 
   try {
-    const r = await fetch("https://api.elevenlabs.io/v1/speech-to-text", {
+    // ─── Status/Ergebnis abrufen (JSON-Body { id }) ─────────────────────
+    if (contentType.includes("application/json")) {
+      let body: { id?: string };
+      try {
+        body = await req.json();
+      } catch {
+        return jsonResp({ error: "Ungültiger JSON-Body" }, 400);
+      }
+      const id = body.id;
+      if (!id) return jsonResp({ error: "Feld 'id' fehlt" }, 400);
+
+      const r = await fetch(`${SN_BASE}/transcriptions/${encodeURIComponent(id)}`, {
+        headers: { "Authorization": `Bearer ${KEY}` },
+      });
+      const txt = await r.text();
+      return new Response(txt, { status: r.status, headers: { ...cors, "Content-Type": "application/json" } });
+    }
+
+    // ─── Audio hochladen (multipart, Feld "file") ───────────────────────
+    // Body wird ohne Zwischenpufferung durchgestreamt (inkl. Content-Type mit
+    // Multipart-Boundary), nur der Authorization-Header kommt dazu.
+    const r = await fetch(`${SN_BASE}/transcribe`, {
       method: "POST",
       headers: {
-        "xi-api-key": KEY,
-        "content-type": req.headers.get("content-type") || "multipart/form-data",
+        "Authorization": `Bearer ${KEY}`,
+        "content-type": contentType || "multipart/form-data",
       },
       body: req.body,
       duplex: "half",
-    });
+    } as RequestInit);
     const txt = await r.text();
     return new Response(txt, { status: r.status, headers: { ...cors, "Content-Type": "application/json" } });
   } catch (e) {

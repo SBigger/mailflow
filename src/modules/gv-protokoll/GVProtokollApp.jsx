@@ -24,7 +24,7 @@ export default function GvProtokollApp() {
     // ════════════════════════════════════════════════════════════════
     //  States
     // ════════════════════════════════════════════════════════════════
-    const [cfg, setCfg] = useState(() => LS.get("gv_cfg", { eleven: "", lang: "deu", claudeKey: "", claudeModel: "claude-opus-4-8", mic: "", liveInterval: 120, systemAudio: false, numSpeakers: 0 }));
+    const [cfg, setCfg] = useState(() => LS.get("gv_cfg", { lang: "de", mic: "", systemAudio: false }));
     const [customers, setCustomers] = useState([]);
     const [selectedCustomer, setSelectedCustomer] = useState(() => LS.get("gv_customer", { id: "", name: "" }));
     const [persons, setPersons] = useState(() => LS.get("gv_persons", []));
@@ -441,7 +441,8 @@ export default function GvProtokollApp() {
         }, 250);
 
         startMeter(streamRef.current);
-        if (cfg.liveInterval > 0) liveTimerRef.current = setTimeout(liveTick, cfg.liveInterval * 1000);
+        // Keine Live-Zwischentranskription: Suisse Notes lädt die ganze Datei hoch
+        // und rechnet pro Minute ab → transkribiert wird einmal beim Stopp.
     };
 
     const pauseRec = () => {
@@ -471,25 +472,6 @@ export default function GvProtokollApp() {
         if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
         setIsRecording(false);
         setIsPaused(false);
-    };
-
-    const liveTick = async () => {
-        if (mediaRecRef.current?.state !== "recording") return;
-        await liveTranscribe();
-        if (cfg.liveInterval > 0) liveTimerRef.current = setTimeout(liveTick, cfg.liveInterval * 1000);
-    };
-
-    const liveTranscribe = async () => {
-        if (liveBusyRef.current || !curRecIdRef.current) return;
-        liveBusyRef.current = true;
-        try {
-            const allChunks = (await dbGetAll("chunks")).filter(c => c.recId === curRecIdRef.current).sort((a,b)=>a.seq-b.seq);
-            if (allChunks.length) {
-                const blob = new Blob(allChunks.map(c => c.blob), { type: recMimeRef.current });
-                await transcribe(blob, true);
-            }
-        } catch {}
-        liveBusyRef.current = false;
     };
 
     // ════════════════════════════════════════════════════════════════
@@ -530,43 +512,59 @@ export default function GvProtokollApp() {
     // ════════════════════════════════════════════════════════════════
     //  Transkription & AI Evaluation
     // ════════════════════════════════════════════════════════════════
-    const transcribe = async (blob, isLive = false) => {
-        setStatusMsg(isLive ? "🟢 Zwischenstand wird transkribiert..." : "⏳ Transkribiere mit ElevenLabs...");
+    // Transkription über Suisse Notes (Schweizerdeutsch + Sprecher-Trennung).
+    // Ablauf: Audio hochladen → Job-ID → alle 5 s Status pollen → Segmente mappen.
+    // Der Dienst ist asynchron und rechnet pro Audiominute ab → keine Live-Zwischen-
+    // transkription mehr (die würde die Datei mehrfach hochladen und verrechnen).
+    const transcribe = async (blob) => {
+        setStatusMsg("⏳ Audio wird zu Suisse Notes hochgeladen…");
         const fd = new FormData();
-        fd.append("file", blob, "audio.webm");
-        fd.append("model_id", "scribe_v2");
-        fd.append("diarize", "true");
-        if (cfg.lang) fd.append("language_code", cfg.lang);
-        if (cfg.numSpeakers > 0) fd.append("num_speakers", cfg.numSpeakers);
+        fd.append("file", blob, "aufnahme.webm");
+        fd.append("language", "de"); // Suisse Notes erkennt Schweizerdeutsch unter "de" automatisch
 
         try {
-            const { data, error } = await supabase.functions.invoke('gv-stt', {
-                body: fd
-            })
-            if (error) throw new Error(error.message)
+            // 1) Upload → Job-ID
+            const { data: up, error: upErr } = await supabase.functions.invoke('gv-stt', { body: fd });
+            if (upErr) throw new Error(upErr.message);
+            if (up?.error) throw new Error(typeof up.error === "string" ? up.error : JSON.stringify(up.error));
+            const jobId = up?.id;
+            if (!jobId) throw new Error("Keine Transkriptions-ID von Suisse Notes erhalten.");
 
-            // Words parser
-            const segs = [];
-            let cur = null;
-            (data.words || []).forEach(w => {
-                if (w.type === "spacing") { if (cur) cur.text += w.text || " "; return; }
-                const spk = w.speaker_id || "speaker_0";
-                if (!cur || cur.speaker !== spk) {
-                    if (cur) cur.text = cur.text.trim();
-                    cur = { speaker: spk, text: "", start: w.start || 0, end: w.end || 0 };
-                    segs.push(cur);
-                }
-                cur.text += (w.text || "") + " ";
-                cur.end = w.end || cur.end;
-            });
-            if (cur) cur.text = cur.text.trim();
+            // 2) Pollen bis fertig (max. ~20 Min)
+            setStatusMsg("🇨🇭 Suisse Notes transkribiert (Schweizerdeutsch)…");
+            let result = null;
+            for (let i = 0; i < 240; i++) {
+                await new Promise(r => setTimeout(r, 5000));
+                const { data: st, error: stErr } = await supabase.functions.invoke('gv-stt', { body: { id: jobId } });
+                if (stErr) throw new Error(stErr.message);
+                if (st?.status === "completed") { result = st; break; }
+                if (st?.status === "failed") throw new Error(st.error || "Transkription fehlgeschlagen.");
+            }
+            if (!result) throw new Error("Zeitüberschreitung beim Transkribieren.");
+
+            // 3) Segmente ins Modul-Format mappen
+            //    Suisse Notes: { speaker:"Speaker 1", text, start_ms, end_ms }
+            //    Modul:        { speaker:"speaker_0", text, start, end } (Sekunden)
+            const tr = result.transcript || {};
+            const nameToKey = {};
+            let spkIdx = 0;
+            const segs = (tr.segments || []).map(s => {
+                const name = s.speaker || "Speaker 1";
+                if (!(name in nameToKey)) nameToKey[name] = "speaker_" + (spkIdx++);
+                return {
+                    speaker: nameToKey[name],
+                    text: (s.text || "").trim(),
+                    start: (s.start_ms || 0) / 1000,
+                    end: (s.end_ms || 0) / 1000,
+                };
+            }).filter(s => s.text);
 
             if (lastAudioUrlRef.current) URL.revokeObjectURL(lastAudioUrlRef.current);
             lastAudioUrlRef.current = URL.createObjectURL(blob);
 
             setSegments(segs);
             LS.set("gv_segments", segs);
-            setStatusMsg(isLive ? "🟢 Live-Transkript aktualisiert." : "✅ Transkription abgeschlossen.");
+            setStatusMsg(`✅ Transkription abgeschlossen (${segs.length} Abschnitte).`);
             return true;
         } catch (e) {
             setStatusMsg("❌ Fehler: " + e.message);
@@ -825,13 +823,9 @@ export default function GvProtokollApp() {
                 <div className="modal-bg show">
                     <div className="modal">
                         <h2>Einstellungen</h2>
-                        <div className="fld">
-                            <label>ElevenLabs Key (Sprecher-Trennung)</label>
-                            <input type="password" value={cfg.eleven} onChange={e => setCfg({ ...cfg, eleven: e.target.value })} />
-                        </div>
-                        <div className="fld">
-                            <label>Claude Key (KI-Auswertung)</label>
-                            <input type="password" value={cfg.claudeKey} onChange={e => setCfg({ ...cfg, claudeKey: e.target.value })} />
+                        <div className="fld" style={{ fontSize: "12.5px", color: "var(--muted)", lineHeight: 1.5 }}>
+                            🇨🇭 Transkription: <b>Suisse Notes</b> (Schweizerdeutsch, Sprecher-Trennung) ·
+                            KI-Auswertung: <b>Claude</b>. Die API-Schlüssel liegen serverseitig – hier nichts einzugeben.
                         </div>
 
                         <div className="fld">
