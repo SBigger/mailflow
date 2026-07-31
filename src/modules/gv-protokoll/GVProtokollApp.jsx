@@ -9,6 +9,8 @@ const COLORS = ["#3b82f6", "#22c55e", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4"
 const DB_NAME = "gv-protokoll";
 const DB_VER = 1;
 const CHUNK_MS = 15000;
+const PREVIEW_FIRST_MS = 75000;   // erste Live-Vorschau nach ~75 s (früh sehen, dass es läuft)
+const PREVIEW_MS = 300000;        // danach alle 5 Min – Kosten bleiben ~2×, egal welches Intervall
 
 const LS = {
     get: (k, d) => { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
@@ -68,6 +70,12 @@ export default function GvProtokollApp() {
     const previewAudioRef = useRef(null);
     const lastAudioUrlRef = useRef(null);
     const previewTimerRef = useRef(null);
+
+    // Live-Vorschau (2. Recorder, rotiert eigenständige Häppchen)
+    const prevRecRef = useRef(null);        // Recorder B (Vorschau)
+    const prevRotateRef = useRef(null);     // Rotations-Timer
+    const prevSegmentsRef = useRef([]);     // bisher zusammengetragene Vorschau-Segmente
+    const prevStoppingRef = useRef(false);  // beim Stopp letztes Häppchen nicht mehr transkribieren
 
     const curRecIdRef = useRef(null);
     const chunkSeqRef = useRef(0);
@@ -441,14 +449,17 @@ export default function GvProtokollApp() {
         }, 250);
 
         startMeter(streamRef.current);
-        // Keine Live-Zwischentranskription: Suisse Notes lädt die ganze Datei hoch
-        // und rechnet pro Minute ab → transkribiert wird einmal beim Stopp.
+        // Live-Vorschau (grob): erste nach ~75 s, danach alle 5 Min. Die saubere
+        // Endfassung (ganze Datei) kommt beim Stopp und ersetzt die Vorschau.
+        startPreview();
     };
 
     const pauseRec = () => {
         if (!mediaRecRef.current || mediaRecRef.current.state === "inactive") return;
         if (!isPaused) {
             mediaRecRef.current.pause();
+            if (prevRecRef.current && prevRecRef.current.state === "recording") { try { prevRecRef.current.pause(); } catch {} }
+            if (prevRotateRef.current) { clearTimeout(prevRotateRef.current); prevRotateRef.current = null; }
             clearInterval(timerIntRef.current);
             timeOffsetRef.current += (Date.now() - recStartRef.current) / 1000;
             setIsPaused(true);
@@ -456,6 +467,8 @@ export default function GvProtokollApp() {
         } else {
             recStartRef.current = Date.now();
             mediaRecRef.current.resume();
+            if (prevRecRef.current && prevRecRef.current.state === "paused") { try { prevRecRef.current.resume(); } catch {} }
+            if (!prevStoppingRef.current) prevRotateRef.current = setTimeout(rotatePreview, PREVIEW_MS);
             timerIntRef.current = setInterval(() => {
                 const elapsed = (Date.now() - recStartRef.current) / 1000 + timeOffsetRef.current;
                 setTimerText(fmtTime(elapsed));
@@ -466,12 +479,58 @@ export default function GvProtokollApp() {
     };
 
     const stopRec = () => {
+        stopPreview();
         if (liveTimerRef.current) clearTimeout(liveTimerRef.current);
         if (mediaRecRef.current && mediaRecRef.current.state !== "inactive") mediaRecRef.current.stop();
         if (timerIntRef.current) clearInterval(timerIntRef.current);
         if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
         setIsRecording(false);
         setIsPaused(false);
+    };
+
+    // ── Live-Vorschau: eigenständige Häppchen über einen 2. Recorder ────
+    // Jedes Häppchen ist eine vollständige, für sich transkribierbare Audiodatei.
+    // Der durchgehende Recorder A liefert später die lückenlose Endfassung.
+    const startPreviewSegment = () => {
+        const stream = streamRef.current;
+        if (!stream) return;
+        try {
+            const chunks = [];
+            const baseSec = (Date.now() - recStartRef.current) / 1000 + timeOffsetRef.current; // Startzeit im Gesamtverlauf
+            const rec = new MediaRecorder(stream, { mimeType: recMimeRef.current });
+            rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+            rec.onstop = () => {
+                if (prevStoppingRef.current || !chunks.length) return;
+                const blob = new Blob(chunks, { type: recMimeRef.current });
+                previewTranscribe(blob, baseSec); // nicht awaiten – läuft parallel weiter
+            };
+            rec.start();
+            prevRecRef.current = rec;
+        } catch { /* Vorschau ist optional */ }
+    };
+
+    const rotatePreview = () => {
+        if (prevStoppingRef.current) return;
+        if (prevRecRef.current && prevRecRef.current.state === "recording") {
+            try { prevRecRef.current.stop(); } catch {} // → onstop transkribiert dieses Häppchen
+        }
+        startPreviewSegment();
+        prevRotateRef.current = setTimeout(rotatePreview, PREVIEW_MS);
+    };
+
+    const startPreview = () => {
+        prevStoppingRef.current = false;
+        prevSegmentsRef.current = [];
+        startPreviewSegment();
+        prevRotateRef.current = setTimeout(rotatePreview, PREVIEW_FIRST_MS);
+    };
+
+    const stopPreview = () => {
+        prevStoppingRef.current = true;
+        if (prevRotateRef.current) { clearTimeout(prevRotateRef.current); prevRotateRef.current = null; }
+        if (prevRecRef.current && prevRecRef.current.state !== "inactive") {
+            try { prevRecRef.current.stop(); } catch {}
+        }
     };
 
     // ════════════════════════════════════════════════════════════════
@@ -513,51 +572,60 @@ export default function GvProtokollApp() {
     //  Transkription & AI Evaluation
     // ════════════════════════════════════════════════════════════════
     // Transkription über Suisse Notes (Schweizerdeutsch + Sprecher-Trennung).
-    // Ablauf: Audio hochladen → Job-ID → alle 5 s Status pollen → Segmente mappen.
-    // Der Dienst ist asynchron und rechnet pro Audiominute ab → keine Live-Zwischen-
-    // transkription mehr (die würde die Datei mehrfach hochladen und verrechnen).
-    const transcribe = async (blob) => {
-        setStatusMsg("⏳ Audio wird zu Suisse Notes hochgeladen…");
+    // Ablauf: Audio hochladen → Job-ID → alle 5 s pollen → Segmente mappen.
+    //
+    // Zwei Wege:
+    //   • transcribe()        – saubere Endfassung beim Stopp (ganze Datei, ersetzt Vorschau)
+    //   • previewTranscribe() – grobe Live-Vorschau während der Aufnahme (2. Recorder,
+    //                           eigenständige Häppchen; erste nach ~75 s, dann alle 5 Min)
+
+    // Rohe Suisse-Notes-Transkription eines Blobs (Upload + Pollen). Gibt das
+    // transcript-Objekt zurück oder wirft.
+    const suisseTranscribe = async (blob) => {
         const fd = new FormData();
         fd.append("file", blob, "aufnahme.webm");
-        fd.append("language", "de"); // Suisse Notes erkennt Schweizerdeutsch unter "de" automatisch
+        fd.append("language", "de"); // Schweizerdeutsch wird unter "de" automatisch erkannt
 
+        const { data: up, error: upErr } = await supabase.functions.invoke('gv-stt', { body: fd });
+        if (upErr) throw new Error(upErr.message);
+        if (up?.error) throw new Error(typeof up.error === "string" ? up.error : JSON.stringify(up.error));
+        const jobId = up?.id;
+        if (!jobId) throw new Error("Keine Transkriptions-ID von Suisse Notes erhalten.");
+
+        for (let i = 0; i < 240; i++) {
+            await new Promise(r => setTimeout(r, 5000));
+            const { data: st, error: stErr } = await supabase.functions.invoke('gv-stt', { body: { id: jobId } });
+            if (stErr) throw new Error(stErr.message);
+            if (st?.status === "completed") return st.transcript || {};
+            if (st?.status === "failed") throw new Error(st.error || "Transkription fehlgeschlagen.");
+        }
+        throw new Error("Zeitüberschreitung beim Transkribieren.");
+    };
+
+    // Suisse-Notes-Segmente → Modul-Format. baseSec verschiebt die Zeitachse
+    // (für Vorschau-Häppchen, die mitten in der Aufnahme beginnen).
+    const mapSegs = (tr, baseSec = 0, preview = false) => {
+        const nameToKey = {};
+        let spkIdx = 0;
+        return (tr.segments || []).map(s => {
+            const name = s.speaker || "Speaker 1";
+            if (!(name in nameToKey)) nameToKey[name] = "speaker_" + (spkIdx++);
+            return {
+                speaker: nameToKey[name],
+                text: (s.text || "").trim(),
+                start: (s.start_ms || 0) / 1000 + baseSec,
+                end: (s.end_ms || 0) / 1000 + baseSec,
+                preview,
+            };
+        }).filter(s => s.text);
+    };
+
+    // Saubere Endfassung (ganze Datei) – beim Stopp / bei „Audio laden".
+    const transcribe = async (blob) => {
+        setStatusMsg("⏳ Saubere Endfassung wird erstellt (Upload zu Suisse Notes)…");
         try {
-            // 1) Upload → Job-ID
-            const { data: up, error: upErr } = await supabase.functions.invoke('gv-stt', { body: fd });
-            if (upErr) throw new Error(upErr.message);
-            if (up?.error) throw new Error(typeof up.error === "string" ? up.error : JSON.stringify(up.error));
-            const jobId = up?.id;
-            if (!jobId) throw new Error("Keine Transkriptions-ID von Suisse Notes erhalten.");
-
-            // 2) Pollen bis fertig (max. ~20 Min)
-            setStatusMsg("🇨🇭 Suisse Notes transkribiert (Schweizerdeutsch)…");
-            let result = null;
-            for (let i = 0; i < 240; i++) {
-                await new Promise(r => setTimeout(r, 5000));
-                const { data: st, error: stErr } = await supabase.functions.invoke('gv-stt', { body: { id: jobId } });
-                if (stErr) throw new Error(stErr.message);
-                if (st?.status === "completed") { result = st; break; }
-                if (st?.status === "failed") throw new Error(st.error || "Transkription fehlgeschlagen.");
-            }
-            if (!result) throw new Error("Zeitüberschreitung beim Transkribieren.");
-
-            // 3) Segmente ins Modul-Format mappen
-            //    Suisse Notes: { speaker:"Speaker 1", text, start_ms, end_ms }
-            //    Modul:        { speaker:"speaker_0", text, start, end } (Sekunden)
-            const tr = result.transcript || {};
-            const nameToKey = {};
-            let spkIdx = 0;
-            const segs = (tr.segments || []).map(s => {
-                const name = s.speaker || "Speaker 1";
-                if (!(name in nameToKey)) nameToKey[name] = "speaker_" + (spkIdx++);
-                return {
-                    speaker: nameToKey[name],
-                    text: (s.text || "").trim(),
-                    start: (s.start_ms || 0) / 1000,
-                    end: (s.end_ms || 0) / 1000,
-                };
-            }).filter(s => s.text);
+            const tr = await suisseTranscribe(blob);
+            const segs = mapSegs(tr, 0, false);
 
             if (lastAudioUrlRef.current) URL.revokeObjectURL(lastAudioUrlRef.current);
             lastAudioUrlRef.current = URL.createObjectURL(blob);
@@ -570,6 +638,21 @@ export default function GvProtokollApp() {
             setStatusMsg("❌ Fehler: " + e.message);
             return false;
         }
+    };
+
+    // Grobe Live-Vorschau eines Häppchens (während der Aufnahme). Ergebnisse
+    // werden zeitlich einsortiert; die saubere Endfassung ersetzt sie beim Stopp.
+    const previewTranscribe = async (blob, baseSec) => {
+        try {
+            const tr = await suisseTranscribe(blob);
+            if (prevStoppingRef.current) return; // Aufnahme beendet → Endfassung übernimmt
+            const mapped = mapSegs(tr, baseSec, true);
+            const merged = [...prevSegmentsRef.current, ...mapped].sort((a, b) => a.start - b.start);
+            prevSegmentsRef.current = merged;
+            setSegments(merged);
+            LS.set("gv_segments", merged);
+            setStatusMsg("👀 Vorschau aktualisiert (grob) – saubere Fassung folgt beim Stopp.");
+        } catch { /* Vorschau-Fehler still ignorieren, Endfassung bleibt massgeblich */ }
     };
 
     const finalizeRecording = async (recId) => {
@@ -774,11 +857,16 @@ export default function GvProtokollApp() {
                     </div>
                     <audio ref={previewAudioRef} style={{ display: "none" }} />
                     <div className="col-body">
+                        {segments.some(s => s.preview) && (
+                            <div style={{ fontSize: "12px", color: "var(--muted)", margin: "0 4px 10px", padding: "6px 10px", background: "var(--grad-soft)", borderRadius: "8px" }}>
+                                👀 Live-Vorschau (grob) – die saubere Fassung mit korrekter Sprecher-Trennung kommt beim Stopp.
+                            </div>
+                        )}
                         {segments.map((seg, i) => (
-                            <div className="seg" key={i}>
+                            <div className="seg" key={i} style={seg.preview ? { opacity: 0.6 } : undefined}>
                                 <div className="av" style={{ background: speakerColor(seg.speaker) }}>{speakerLabel(seg.speaker).slice(0,1)}</div>
                                 <div className="bubble">
-                                    <div className="who"><span>{speakerLabel(seg.speaker)}</span> <span className="ts">{fmtTime(seg.start)}</span></div>
+                                    <div className="who"><span>{speakerLabel(seg.speaker)}</span> <span className="ts">{fmtTime(seg.start)}</span>{seg.preview && <span className="ts" style={{ fontStyle: "italic" }}>· Vorschau</span>}</div>
                                     <div className="txt" contentEditable suppressContentEditableWarning onBlur={e => setSegOverrides({ ...segOverrides, [seg.start]: e.target.textContent })}>{seg.text}</div>
                                 </div>
                             </div>
