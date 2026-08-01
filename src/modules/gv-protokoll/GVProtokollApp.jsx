@@ -84,6 +84,10 @@ export default function GvProtokollApp() {
     const recStartRef = useRef(0);
     const timeOffsetRef = useRef(0);
     const liveBusyRef = useRef(false);
+    // Teilnehmer als Ref: transcribe() läuft aus onstop-Handlern heraus und würde
+    // sonst den persons-Stand vom Aufnahmestart sehen.
+    const personsRef = useRef(persons);
+    personsRef.current = persons;
 
     // ════════════════════════════════════════════════════════════════
     //  IndexedDB & Synchros
@@ -600,22 +604,76 @@ export default function GvProtokollApp() {
     // ════════════════════════════════════════════════════════════════
     //  Transkription & AI Evaluation
     // ════════════════════════════════════════════════════════════════
-    // Transkription über Suisse Notes (Schweizerdeutsch + Sprecher-Trennung).
-    // Ablauf: Audio hochladen → Job-ID → alle 5 s pollen → Segmente mappen.
+    // Transkription mit Sprecher-Trennung. Standard ist ElevenLabs scribe_v2,
+    // Suisse Notes bleibt in den Einstellungen umschaltbar (siehe gv-stt).
     //
     // Zwei Wege:
     //   • transcribe()        – saubere Endfassung beim Stopp (ganze Datei, ersetzt Vorschau)
     //   • previewTranscribe() – grobe Live-Vorschau während der Aufnahme (2. Recorder,
     //                           eigenständige Häppchen; erste nach ~75 s, dann alle 5 Min)
 
-    // Rohe Suisse-Notes-Transkription eines Blobs (Upload + Pollen). Gibt das
-    // transcript-Objekt zurück oder wirft.
+    // Namen und Fachbegriffe, an denen die Erkennung sonst scheitert. ElevenLabs
+    // verlangt keyterms als WIEDERHOLTE Multipart-Felder – ein JSON-String wird
+    // mit 422 abgelehnt. Verbotene Zeichen müssen raus, max. 50 Zeichen je Term.
+    const buildKeyterms = () => {
+        const feste = ["Traktandum", "Traktanden", "Protokoll", "Generalversammlung",
+                       "Revisionsstelle", "Bilanz", "Erfolgsrechnung", "Décharge", "Statuten"];
+        const namen = (personsRef.current || []).flatMap(p => String(p.name || "").split(/\s+/));
+        return [...new Set([...namen, selectedCustomer.name, ...feste])]
+            .map(t => String(t || "").replace(/[<>{}[\]\\]/g, "").trim())
+            .filter(t => t.length > 1 && t.length <= 50)
+            .slice(0, 100);
+    };
+
+    // Rohe Transkription eines Blobs. Gibt immer das gleiche normalisierte
+    // Format zurück ({ segments: [{ speaker, text, start_ms, end_ms }] }),
+    // egal welcher Anbieter dahinter steckt – oder wirft.
+    const sttTranscribe = async (blob) => {
+        if (cfg.sttProvider === "suisse") return suisseTranscribe(blob);
+
+        const fd = new FormData();
+        fd.append("file", blob, "aufnahme.webm");
+        fd.append("model_id", "scribe_v2");
+        fd.append("language_code", "deu");   // Schweizerdeutsch läuft über das Deutsch-Modell
+        fd.append("diarize", "true");
+        const n = (personsRef.current || []).length;
+        if (n > 1) fd.append("num_speakers", String(Math.min(n, 32)));
+        for (const t of buildKeyterms()) fd.append("keyterms", t);
+
+        const { data, error } = await supabase.functions.invoke('gv-stt', {
+            body: fd,
+            headers: { 'x-stt-provider': 'elevenlabs' },
+        });
+        if (error) throw new Error(error.message);
+        if (data?.error) throw new Error(typeof data.error === "string" ? data.error : JSON.stringify(data.error));
+        if (!data?.words) throw new Error("Keine Wörter von ElevenLabs erhalten.");
+
+        // Wörter zu Sprecher-Blöcken zusammenfassen (ElevenLabs liefert pro Wort,
+        // start/end in Sekunden). "spacing" trägt die Leerzeichen und darf den
+        // Block nicht brechen, "audio_event" (Lachen o.ä.) fliegt raus.
+        const segments = [];
+        for (const w of data.words) {
+            if (w.type && w.type !== "word" && w.type !== "spacing") continue;
+            const spk = w.speaker_id || "speaker_0";
+            const last = segments[segments.length - 1];
+            if (last && last.speaker === spk) {
+                last.text += w.text;
+                last.end_ms = (w.end ?? 0) * 1000;
+            } else if (w.type !== "spacing") {
+                segments.push({ speaker: spk, text: w.text, start_ms: (w.start ?? 0) * 1000, end_ms: (w.end ?? 0) * 1000 });
+            }
+        }
+        return { segments };
+    };
+
+    // Suisse Notes: asynchron – hochladen, Job-ID, alle 5 s pollen.
     const suisseTranscribe = async (blob) => {
         const fd = new FormData();
         fd.append("file", blob, "aufnahme.webm");
         fd.append("language", "de"); // Schweizerdeutsch wird unter "de" automatisch erkannt
 
-        const { data: up, error: upErr } = await supabase.functions.invoke('gv-stt', { body: fd });
+        const H = { 'x-stt-provider': 'suisse' };
+        const { data: up, error: upErr } = await supabase.functions.invoke('gv-stt', { body: fd, headers: H });
         if (upErr) throw new Error(upErr.message);
         if (up?.error) throw new Error(typeof up.error === "string" ? up.error : JSON.stringify(up.error));
         const jobId = up?.id;
@@ -623,7 +681,7 @@ export default function GvProtokollApp() {
 
         for (let i = 0; i < 240; i++) {
             await new Promise(r => setTimeout(r, 5000));
-            const { data: st, error: stErr } = await supabase.functions.invoke('gv-stt', { body: { id: jobId } });
+            const { data: st, error: stErr } = await supabase.functions.invoke('gv-stt', { body: { id: jobId }, headers: H });
             if (stErr) throw new Error(stErr.message);
             if (st?.status === "completed") return st.transcript || {};
             if (st?.status === "failed") throw new Error(st.error || "Transkription fehlgeschlagen.");
@@ -631,7 +689,7 @@ export default function GvProtokollApp() {
         throw new Error("Zeitüberschreitung beim Transkribieren.");
     };
 
-    // Suisse-Notes-Segmente → Modul-Format. baseSec verschiebt die Zeitachse
+    // Segmente → Modul-Format. baseSec verschiebt die Zeitachse
     // (für Vorschau-Häppchen, die mitten in der Aufnahme beginnen).
     const mapSegs = (tr, baseSec = 0, preview = false) => {
         const nameToKey = {};
@@ -653,7 +711,7 @@ export default function GvProtokollApp() {
     const transcribe = async (blob) => {
         setStatusMsg("⏳ Saubere Endfassung wird erstellt (Upload zu Suisse Notes)…");
         try {
-            const tr = await suisseTranscribe(blob);
+            const tr = await sttTranscribe(blob);
             const segs = mapSegs(tr, 0, false);
 
             if (lastAudioUrlRef.current) URL.revokeObjectURL(lastAudioUrlRef.current);
@@ -673,7 +731,7 @@ export default function GvProtokollApp() {
     // werden zeitlich einsortiert; die saubere Endfassung ersetzt sie beim Stopp.
     const previewTranscribe = async (blob, baseSec) => {
         try {
-            const tr = await suisseTranscribe(blob);
+            const tr = await sttTranscribe(blob);
             if (prevStoppingRef.current) return; // Aufnahme beendet → Endfassung übernimmt
             const mapped = mapSegs(tr, baseSec, true);
             const merged = [...prevSegmentsRef.current, ...mapped].sort((a, b) => a.start - b.start);
@@ -941,8 +999,23 @@ export default function GvProtokollApp() {
                     <div className="modal">
                         <h2>Einstellungen</h2>
                         <div className="fld" style={{ fontSize: "12.5px", color: "var(--muted)", lineHeight: 1.5 }}>
-                            🇨🇭 Transkription: <b>Suisse Notes</b> (Schweizerdeutsch, Sprecher-Trennung) ·
-                            KI-Auswertung: <b>Claude</b>. Die API-Schlüssel liegen serverseitig – hier nichts einzugeben.
+                            🎙️ Transkription mit Sprecher-Trennung · KI-Auswertung: <b>Claude</b>.
+                            Die API-Schlüssel liegen serverseitig – hier nichts einzugeben.
+                        </div>
+
+                        <div className="fld">
+                            <label>Transkriptions-Dienst</label>
+                            <select value={cfg.sttProvider || "elevenlabs"}
+                                    onChange={e => setCfg({ ...cfg, sttProvider: e.target.value })}>
+                                <option value="elevenlabs">ElevenLabs scribe_v2 (empfohlen)</option>
+                                <option value="suisse">Suisse Notes (CH-gehostet)</option>
+                            </select>
+                            <div className="rec-hint">
+                                Vergleich vom 01.08.2026 auf denselben 10 Minuten: ElevenLabs erkannte mehr
+                                (1661 gegen 1605 Wörter), war rund sechsmal schneller, traf Schweizer Namen
+                                und Redewendungen besser und behielt die Mundartfärbung. Suisse Notes
+                                normalisiert alles zu Hochdeutsch.
+                            </div>
                         </div>
 
                         <div className="fld">
