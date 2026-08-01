@@ -347,6 +347,35 @@ export default function GvProtokollApp() {
         } catch {}
     };
 
+    // Chunks aus IndexedDB zu EINER Datei zusammensetzen und herunterladen.
+    // Bewusst nicht recMimeRef benutzen: der Ref ist nach einem Reload leer,
+    // die gespeicherte Aufnahme kennt ihren mimeType aber noch.
+    const downloadRecording = async (id) => {
+        try {
+            const rec = (await dbGetAll("recordings")).find(r => r.id === id);
+            const chunks = (await dbGetAll("chunks")).filter(c => c.recId === id).sort((a, b) => a.seq - b.seq);
+            if (!chunks.length) {
+                setStatusMsg("⚠️ Zu dieser Aufnahme sind keine Audiodaten mehr vorhanden.");
+                return;
+            }
+            const mime = rec?.mimeType || chunks[0].blob?.type || "audio/webm";
+            const ext = mime.includes("mp4") ? "m4a" : mime.includes("ogg") ? "ogg" : "webm";
+            const blob = new Blob(chunks.map(c => c.blob), { type: mime });
+            const stamp = new Date(rec?.startedAt || Date.now()).toISOString().slice(0, 19).replace(/[:T]/g, "-");
+            const url = URL.createObjectURL(blob);
+            const el = document.createElement("a");
+            el.href = url;
+            el.download = `GV-Aufnahme_${stamp}.${ext}`;
+            document.body.appendChild(el);
+            el.click();
+            el.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 60000); // grosse Dateien brauchen Zeit
+            setStatusMsg(`⬇️ Aufnahme als Datei gespeichert (${fmtSize(blob.size)}).`);
+        } catch (e) {
+            setStatusMsg("❌ Download fehlgeschlagen: " + e.message);
+        }
+    };
+
     const deleteRecording = async (id) => {
         if (id === curRecIdRef.current && isRecording) {
             setStatusMsg("⚠️ Laufende Aufnahme kann nicht gelöscht werden – zuerst Stopp drücken.");
@@ -932,6 +961,7 @@ export default function GvProtokollApp() {
                                                 {r.id === curRecIdRef.current && isRecording && <span className="rec-badge live"> läuft</span>}
                                             </span>
                                         </div>
+                                        <button className="x dl" title="Audio als Datei herunterladen" onClick={() => downloadRecording(r.id)}>⬇️</button>
                                         <button className="x" title="Audio dieser Aufnahme löschen" onClick={() => deleteRecording(r.id)}>🗑️</button>
                                     </div>
                                 )) : <div className="prot-empty">Keine lokalen Aufnahmen.</div>}
