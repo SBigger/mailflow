@@ -29,6 +29,15 @@ elektronisch einreichen · mandantenfähig · Start mit natürlichen Personen (n
    (Belegerkennung angekündigt für Herbst 2026) besetzen dieselbe Nische. Zeitfenster ist
    eng, aber der Treuhand-Kontext von Artis ist ein Vorteil, kein Nachteil.
 
+**Zwei Funde der zweiten Recherche-Runde, die die Planung verschieben:**
+
+- **AGOV authentifiziert Personen, keine Maschinen** (§9.1). Ein unbeaufsichtigter
+  Server-Upload über den Bürgerportal-Pfad ist damit nicht vorgesehen — der
+  Treuhänder-Kanal ist nicht die bequemere, sondern die einzige Option.
+- **Thurgau verlangt auf dem eFisc-Pfad eine unterzeichnete Quittung per Post** (§3.3).
+  Ob das auch für den Treuhänder-Kanal gilt, ist offen — bis dahin gehört TG in den
+  Ausblick, nicht in die Aufwandschätzung.
+
 ---
 
 ## 2. Standard-Landschaft (eCH)
@@ -48,15 +57,46 @@ elektronisch einreichen · mandantenfähig · Start mit natürlichen Personen (n
   Beilagen in beliebigem Format (Belege).
 - Kantonale Besonderheiten werden über den Typ **`cantonExtensionType`** abgebildet: alle
   Typen tragen ein Attribut `cantonExtension`, in das kantonale Erweiterungen eingehängt
-  werden. Die Zuordnung der kantonalen Namespaces ist in Kap. 3.5 des Standards geregelt.
+  werden — die einzufügende Struktur wird über **`xs:any`** aufgenommen. Die Zuordnung der
+  kantonalen Namespaces ist in Kap. 3.5 des Standards geregelt.
 - Das XML kann laut Standard entstehen aus: **Software**, **2D-Barcode-Scan** oder
   **OCR-Scan** — der Standard denkt unsere Pipeline also explizit mit.
 
-> ⚠️ Die konkrete Elementhierarchie (Personalien / Einkommen / Abzüge / Vermögen /
-> Wertschriftenverzeichnis / Liegenschaften) konnte in dieser Session **nicht** verifiziert
-> werden: `ech.ch` ist von der Netzwerk-Policy dieser Umgebung blockiert (CONNECT 403).
-> Der erste Umsetzungsschritt ist daher zwingend der Download von Hauptdokument **und**
-> XSD-Beilagen von ech.ch. Siehe [§11](#11-verifikations-backlog).
+#### Elementstruktur (Stand der Recherche)
+
+`taxDeclaration` besteht — analog zu **eCH-0058** — aus einem **Header-Type** und einem
+**Content-Type**. Im Content-Type liegen unter anderem:
+
+| Element | Inhalt |
+|---|---|
+| `mainForm` | Hauptformular |
+| `listOfSecurities` | **Wertschriftenverzeichnis**; Ertragstotale differenziert nach Abschnitt A/B sowie Bundes- und Staatssteuer |
+| `listOfLiabilities` | **Schuldenverzeichnis** (Bruttodarstellung); Totale der Schulden und der Schuldzinsen sind getrennt auszuweisen |
+| `qualifiedInvestmentsPrivate` / `qualifiedInvestmentsBusiness` | Qualifizierte Beteiligungen, Privat- bzw. Geschäftsvermögen |
+| `jobExpenses` | Berufsauslagen |
+| `jobOrientedFurtherEducationCost` | Berufsorientierte Weiterbildungskosten |
+| `insurancePremiums` | Versicherungsprämien |
+| `diseaseAndAccidentExpenses` | Krankheits- und Unfallkosten |
+| `handicapExpenses` | Behinderungsbedingte Kosten |
+| `cantonExtension` | Kantonale Erweiterung |
+
+Personalien liegen unter `personalData` (ebenfalls Header + Content), mit den Typen
+`representativePersonType` (Vertreter — für uns relevant!), `personDataPartner1Type` /
+`personDataPartner2Type`, `childDataType` und `disabledPersonSupportType`.
+
+> ⚠️ Diese Struktur stammt aus Suchmaschinen-Auszügen des Standarddokuments, **nicht** aus
+> der XSD selbst: `ech.ch` ist von der Netzwerk-Policy dieser Umgebung hart blockiert (kein
+> TLS-Handshake, CONNECT 403 — dasselbe gilt für den Mirror
+> `2023.prod.ech.vereine5.myhostpoint.ch`). Kardinalitäten, Datentypen und die vollständige
+> Feldliste fehlen. Der erste Umsetzungsschritt bleibt der Download von Hauptdokument
+> **und** XSD-Beilagen. Siehe [§11](#11-verifikations-backlog).
+
+#### Angrenzende Standards
+
+- **eCH-0229** — Steuerdaten **juristische** Personen; ebenfalls mit `cantonExtension`.
+  Relevant, sobald das Modul über nP hinausgeht.
+- **eCH-0233** — *Archivierung Steuern*. Für unsere Aufbewahrungs- und Archivpflichten
+  (§10) die einschlägige Referenz.
 
 ### 2.2 eCH-0196 — der unterschätzte Hebel
 
@@ -75,10 +115,25 @@ Vorhandene Vorarbeit (Open Source, als Referenz-Implementierung lesenswert):
 - `vroonhof/opensteuerauszug` — erzeugt eSteuerauszüge aus Banking-Exports
 
 Barcode-Extraktion: PDF417 **Structured Append** über mehrere Seiten; die technische
-Wegleitung nennt die Java-Bibliothek J4L Vision. Für unseren JS/Deno-Stack ist das ein
-offener Punkt — realistische Kandidaten sind `zxing-wasm` (PDF417-Decoder, läuft im
-Browser wie in Deno) oder ein Python-Sidecar mit `zxing-cpp`. Muss prototypisch
-gemessen werden, bevor wir uns festlegen.
+Wegleitung nennt die Java-Bibliothek J4L Vision.
+
+**Empfehlung für unseren Stack: [`zxing-wasm`](https://github.com/Sec-ant/zxing-wasm)**
+(ZXing-C++ als WASM, ES/CJS mit Typen). Gründe: läuft in **Web, Node, Bun und Deno** — also
+sowohl im Browser-Client als auch in einer Supabase Edge Function, ohne zweite Laufzeit.
+ZXing unterstützt Multi-Barcode-Erkennung und liefert Structured-Append-Metadaten
+(`PDF417ResultMetadata`), was für das Zusammensetzen mehrseitiger Auszüge nötig ist. Das
+Projekt ist aktiv gepflegt (u.a. Fixes für PDF417-Heap-Overflows). Alternative, falls es an
+echten Auszügen scheitert: Python-Sidecar mit `zxing-cpp`.
+
+> Vorbehalt: Das ist eine Bewertung nach Dokumentation, **keine Messung**. Der Test an
+> echten mehrseitigen eSteuerauszügen verschiedener Banken steht aus (V11).
+
+**Wirtschaftlicher Nebenaspekt:** Nicht alle Banken liefern den eSteuerauszug, und die
+Preise schwanken erheblich — von gratis bis rund 300 Franken. Die Kantonalbanken Aargau,
+Luzern und Schwyz sowie Valiant geben ihn allen Kundinnen und Kunden kostenlos ab, andere
+verlangen eine Gebühr oder liefern nur eine reduzierte «Light»-Version. Für die Pipeline
+heisst das: **der eSteuerauszug ist der beste, aber nicht der garantierte Fall.** Der
+OCR-Pfad bleibt Pflicht, nicht Kür.
 
 ---
 
@@ -130,9 +185,20 @@ Treuhänder-Kanal, explizite Drittsoftware-Schnittstelle, unterschriftsfreie Ein
 - **Drittsoftware:** SG ist in der E-Filing-Kantonsliste von Dr. Tax enthalten. Ein
   Treuhänder-Upload-Kanal existiert also; die technische Spezifikation ist öffentlich
   nicht auffindbar.
+- **Einreichung — zwei Wege (bestätigt):**
+  1. **Vollständiges eFiling:** Die Steuererklärung 2025 kann **komplett elektronisch
+     inklusive Beilagen** eingereicht werden. Alle Belege werden über E-Tax SG hochgeladen.
+  2. **Freigabebestätigung per Post:** Am Ende des Einreichungsprozesses wird ein Dokument
+     ausgedruckt, unterschrieben und mit den darin aufgeführten Unterlagen ans
+     Gemeindesteueramt geschickt.
+- **Beleg-Erfassung:** Drag & Drop, dazu die Smartphone-Apps **oBeam** und **Snapshare**
+  (Ringler) zum Scannen physischer Belege. Das ist funktional genau unser Ingest-Schritt —
+  und zeigt, dass wir mit MailFlows Kundenportal-Upload nichts Exotisches bauen.
 
-**Bewertung:** Zweiter Kanton. Der AGOV-Firmenaccount mit 5 Geräten ist für unsere
-Mandantenfähigkeit relevant — aber auch eine Sollbruchstelle (siehe §9).
+**Bewertung:** Zweiter Kanton. Weg 1 (volles eFiling) ist für uns der einzig interessante —
+Weg 2 wäre ein Medienbruch mitten in der Automatisierung. Der AGOV-Firmenaccount mit
+5 Geräten ist für unsere Mandantenfähigkeit relevant — aber auch eine Sollbruchstelle
+(siehe §9).
 
 ### 3.3 Thurgau — Nachzügler, Sonderfall
 
@@ -147,9 +213,23 @@ Mandantenfähigkeit relevant — aber auch eine Sollbruchstelle (siehe §9).
   Einreichung müssen Belege elektronisch mitgeliefert werden; Korrekturen sind innerhalb
   **24 Stunden** durch erneute Einreichung möglich.
 
-**Bewertung:** Dritter Kanton. Weil es keine Web-App gibt, ist Browser-Automation hier
-ohnehin keine Option — was die Entscheidung für den XML-/Schnittstellenweg zusätzlich
-stützt.
+> 🚩 **Kritischer Fund — Medienbruch auf dem eFisc-Pfad.** Nach der Wegleitung der
+> Steuerverwaltung TG gilt die elektronisch übermittelte Steuererklärung **erst dann als
+> eingereicht, wenn die unterzeichnete Quittung beim Gemeindesteueramt eingetroffen ist**;
+> die Belege gehen zusammen mit dieser Quittung per Post. Anders als in ZH (keine
+> Unterschrift) und SG (volles eFiling möglich) endet die Kette in TG damit auf Papier.
+>
+> Zwei Einschränkungen, bevor daraus eine Entscheidung wird: Die Quelle ist eine ältere
+> Wegleitung, der Stand 2026 ist ungeprüft — und die Aussage betrifft den **eFisc-Bürgerpfad**.
+> Ob für registrierte Treuhänder über den Dr.-Tax-Kanal dieselbe Unterschriftspflicht gilt,
+> ist offen und der eigentlich zu klärende Punkt (V6/V7).
+
+**Bewertung:** Dritter Kanton — und mit deutlicherem Abstand als zunächst angenommen. Weil
+es keine Web-App gibt, ist Browser-Automation hier ohnehin keine Option. Falls sich die
+Unterschriftspflicht auch für den Treuhänder-Kanal bestätigt, ist eine durchgehend
+automatisierte Einreichung in TG **gar nicht möglich**; das Modul liefert dann bis zur
+Freigabequittung und ein Mensch schickt sie ab. Das ist kein K.-o.-Kriterium, muss aber vor
+der Aufwandschätzung für TG geklärt sein.
 
 ### 3.4 Vergleich
 
@@ -157,10 +237,11 @@ stützt.
 |---|---|---|---|
 | Bürger-Portal | ZHprivateTax (Web) | E-Tax SG (Web, seit 2026) | eFisc (Desktop) |
 | Login | AGOV | E-Login / AGOV | lokal |
-| Unterschrift nötig | nein (ZStB 109c.4) | zu prüfen | zu prüfen |
-| Belege elektronisch | Pflicht | zu prüfen | Pflicht bei e-Einreichung |
+| Unterschrift nötig | **nein** (ZStB 109c.4) | wahlweise — volles eFiling möglich | **ja** auf dem eFisc-Pfad (Quittung per Post); Treuhänder-Kanal offen |
+| Belege elektronisch | Pflicht | möglich (Weg 1) bzw. Post (Weg 2) | Pflicht bei e-Einreichung |
 | Treuhänder-Register | ja, mit TH-ID | ja | ja |
 | Drittsoftware-Schnittstelle | **dokumentiert** | vorhanden (Dr. Tax) | vorhanden (Dr. Tax) |
+| Durchgehend automatisierbar | ja | ja | **fraglich** |
 | Pilot-Eignung | **1** | 2 | 3 |
 
 ---
@@ -344,6 +425,51 @@ der teuerste Fehler im ganzen System.
 
 ---
 
+## 8a. Feld-Mapping-Katalog (Entwurf)
+
+Der fachliche Kern des Moduls. Er lässt sich **ohne** die noch fehlende XSD vorbereiten:
+Beleg → normalisierte Position → eCH-0119-Zielelement. Die Spalte «eCH-0119-Ziel» ist eine
+begründete Zuordnung auf Basis der in §2.1 ermittelten Elementnamen und **nach XSD-Erhalt
+zu verifizieren**.
+
+| Belegart | Parse-Methode | Extrahierte Werte | eCH-0119-Ziel (vorläufig) |
+|---|---|---|---|
+| **Lohnausweis** | eCH-0270-Barcode → sonst OCR | Bruttolohn, AHV/ALV, BVG, Quellensteuer, Spesen, Arbeitgeber | `mainForm` Einkommen (Haupt-/Nebenerwerb) |
+| **eSteuerauszug** | eCH-0196 XML → sonst PDF417 | Depot-/Kontobestände per 31.12., Bruttoerträge A/B, VSt-Guthaben, Schuldzinsen | `listOfSecurities` (Totale nach A/B sowie Bund/Staat getrennt) |
+| **Kontoauszug/Saldobestätigung** | OCR | Saldo 31.12., Zinsertrag | `listOfSecurities` |
+| **Schuld-/Hypothekarausweis** | OCR | Schuldbetrag 31.12., Schuldzinsen, Gläubiger | `listOfLiabilities` (**brutto**, Schulden und Zinsen getrennt ausweisen) |
+| **Säule 3a** | OCR | Einzahlung, Vorsorgeeinrichtung | `mainForm` Abzüge |
+| **PK-Einkauf** | OCR | Einkaufssumme, Datum | `mainForm` Abzüge |
+| **Krankenkasse** | eCH-0275 → sonst OCR | Prämien, Selbstbehalt, Franchise | `insurancePremiums` |
+| **Arzt-/Zahnarztrechnungen** | OCR | Betrag, Datum, selbst getragen? | `diseaseAndAccidentExpenses` (Selbstbehalt-Schwelle beachten) |
+| **Behinderungskosten** | OCR | Betrag, Art | `handicapExpenses` |
+| **Weiterbildung** | OCR | Kurskosten, Anbieter, berufsorientiert? | `jobOrientedFurtherEducationCost` |
+| **Arbeitsweg / Verpflegung** | Erfassung + OCR | ÖV-Abo, km, Auswärtsverpflegung | `jobExpenses` |
+| **Kinderbetreuung** | OCR | Betrag, Kind, Institution | `mainForm` Abzüge, Bezug zu `childDataType` |
+| **Spendenbescheinigung** | OCR | Betrag, Organisation, gemeinnützig? | `mainForm` Abzüge |
+| **Alimente** | OCR/Vertrag | Betrag, Empfänger, Kind vs. Ex-Gatte | `mainForm` Einkommen bzw. Abzüge |
+| **Renten AHV/IV/BVG** | OCR | Jahresbetrag, Rentenart | `mainForm` Einkommen (Besteuerungsquote je Art) |
+| **Liegenschaft** | OCR + Vorjahr | Eigenmietwert, Mietertrag, Steuerwert, Unterhalt | Liegenschaftenverzeichnis (Formular gem. SSK) |
+| **Qualifizierte Beteiligung** | OCR | Anteil ≥ 10 %, Ertrag, privat/geschäftlich | `qualifiedInvestmentsPrivate` / `…Business` |
+| **Vorjahres-Veranlagung** | OCR/Import | Vorjahreswerte als Plausi-Referenz | kein Zielfeld — **Prüfgrösse** |
+
+**Drei Regeln, die im Mapping-Code stehen müssen, nicht im Prompt:**
+
+1. **Bruttoprinzip bei `listOfLiabilities`.** Schulden und Schuldzinsen werden getrennt
+   ausgewiesen — niemals saldieren, auch wenn der Beleg es zusammenfasst.
+2. **A/B-Trennung im Wertschriftenverzeichnis** und die getrennte Führung von Bundes- und
+   Staatssteuer sind strukturgebend, nicht kosmetisch. Wer das im Datenmodell flach
+   abbildet, baut es später teuer um.
+3. **Analog zur MwSt-Regel des Fibu-Moduls: nicht nachrechnen, ablesen.** Die KI liest
+   Beträge ab; Summen- und Plausi-Kontrollen macht der Code gegen die Vorjahreswerte.
+
+**Was der Katalog bewusst noch nicht leistet:** Schwellenwerte, Pauschalen und Maxima
+(Säule-3a-Maximum, Fahrkostendeckel, Selbstbehalt Krankheitskosten, Kinderabzüge) sind
+kantonal und jährlich verschieden. Sie gehören in eine **versionierte Parametertabelle pro
+Kanton und Steuerperiode**, nicht in den Code und schon gar nicht in den LLM-Prompt.
+
+---
+
 ## 9. Mandantenfähigkeit & Multiuser
 
 Drei Ebenen, die nicht vermischt werden dürfen:
@@ -357,6 +483,31 @@ Drei Ebenen, die nicht vermischt werden dürfen:
    blockieren, solange er fehlt.
 3. **Artis ↔ Kanton:** Ein **Treuhänder-Register-Konto mit TH-ID** (ZH). In SG ein
    E-Login/AGOV mit zentraler Firmen-E-Mail, auf bis zu fünf Geräten hinterlegbar.
+
+### 9.1 AGOV authentifiziert Menschen, keine Maschinen
+
+Der wichtigste architektonische Fund dieser Recherche-Runde: **AGOV authentifiziert
+Personen, keine Maschinen-Identitäten.** Die Anbindung erfolgt zwar über Standardprotokolle
+(**OIDC** oder **SAML**, Spezifikation unter `agov.ch/spec`), und Zielanwendungen lassen
+sich direkt oder über bestehende IAM-Systeme als SSO-Domäne anbinden — aber es gibt keinen
+technischen Service-Account-Typ.
+
+**Konsequenz:** Eine vollautomatische, unbeaufsichtigte Einreichung über den
+Bürgerportal-Pfad (ZHprivateTax, E-Tax SG) ist nicht bloss unerwünscht, sondern
+**technisch nicht vorgesehen**. Das ist kein Rückschlag — es bestätigt die Grundentscheidung
+dieses Dokuments: Der Weg führt über den **Treuhänder-Register-Kanal**, der eine eigene
+Authentifizierung mitbringt.
+
+Für ZH ist beim Treuhänder-Register von **starker Authentisierung mittels SuisseID oder
+mTAN** die Rede. ⚠️ **SuisseID wurde eingestellt** — diese Angabe ist also mit hoher
+Wahrscheinlichkeit veraltet und muss zwingend am aktuellen Stand geprüft werden (V3). Genau
+hier entscheidet sich, ob ein serverseitiger Upload ohne menschlichen Zwischenschritt
+überhaupt möglich ist — und damit, wie «agentisch» das Modul am Ende wirklich sein kann.
+
+Ebenfalls aus der ZH-Recherche: Das Treuhänder-Register kennt einen **Excel-Import in
+vorgegebenem Format** für die Klientenerfassung (Download auf der Treuhänder-Seite des
+KStA). Das betrifft die Mandantenliste, nicht die Deklaration — ist aber ein nützlicher
+Nebeneingang für das initiale Onboarding der Mandate.
 
 > ⚠️ **Sollbruchstelle:** Das SG-Modell «ein Firmenaccount, fünf Geräte» ist ein geteilter
 > Zugang. Wenn unser Server in dessen Namen einreicht, geht die Zuordnung «welcher
@@ -393,29 +544,42 @@ Drei Ebenen, die nicht vermischt werden dürfen:
 
 ## 11. Verifikations-Backlog
 
-Diese Punkte sind **nicht verifiziert** und müssen vor dem ersten Codezeile-Commit geklärt
-werden. Die Netzwerk-Policy dieser Umgebung blockiert `ech.ch`, `zh.ch`, `sg.ch` und
-`tg.ch` (Proxy antwortet mit CONNECT 403), Recherche war daher auf Suchmaschinen-Ergebnisse
-beschränkt.
+Stand nach der zweiten Recherche-Runde. Die Netzwerk-Policy dieser Umgebung lässt **nur
+GitHub** durch — `ech.ch`, `zh.ch`, `sg.ch`, `tg.ch`, `steueramt.zh.ch`, `sg-support.etax.ch`,
+`helpdesk.drtax.ch`, `esteuer.ewv-ete.ch`, `ssk-csi.ch` und `agov.ch` scheitern bereits am
+TLS-Handshake. Alles unten Stehende beruht daher auf Suchmaschinen-Auszügen, nicht auf
+Primärdokumenten.
 
-| # | Frage | Wo klären |
-|---|---|---|
-| V1 | eCH-0119 V4.0.0 Hauptdokument + **XSD-Beilagen** herunterladen; Elementhierarchie, Namespaces, Kap. 3.5 kantonale Namespaces | ech.ch |
-| V2 | Gibt es eine Version > 4.0.0? Welche Version verlangen ZH/SG/TG für Periode 2025/2026? | ech.ch / Kantone |
-| V3 | **Spezifikation der ZH-Drittsoftware-Schnittstelle** zum Treuhänder-Register: Protokoll, Auth, Zertifizierung, Testumgebung | KStA ZH, Treuhänder-Register |
-| V4 | Was bedeutet «zertifizierte Schnittstelle» (iqtax)? Gibt es ein formales Zulassungsverfahren für Softwareanbieter? | KStA ZH |
-| V5 | SG: Upload-Kanal für Treuhänder — Format, Auth, akzeptiert E-Tax SG eCH-0119-Import von Fremdsoftware? | Steueramt SG / Ringler |
-| V6 | TG: Einreichungskanal für Fremdsoftware neben eFisc; gilt die 24h-Korrekturfrist generell? | Steuerverwaltung TG |
-| V7 | Signatur-/Bestätigungserfordernis in SG und TG (in ZH geklärt: keine Unterschrift) | SG / TG |
-| V8 | Maximale Paketgrösse und erlaubte Beilagen-Formate je Kanton | alle drei |
-| V9 | Quittung/Empfangsbestätigung: Format, Aufbewahrungspflicht, Rechtswirkung | alle drei |
-| V10 | eCH-0270: Welche Belegarsteller liefern den Barcode 2026 tatsächlich? Abdeckungsgrad Lohnausweis | SSK |
-| V11 | PDF417-Structured-Append-Decoder für JS/Deno: `zxing-wasm` prototypisch gegen echte eSteuerauszüge messen | intern |
-| V12 | AGOV: Gibt es einen technischen Account-Typ für Software-Anbieter (M2M), oder nur personengebundene Logins? | AGOV / Kantone |
+| # | Frage | Status | Wo klären |
+|---|---|---|---|
+| V1 | eCH-0119 XSD: Kardinalitäten, Datentypen, vollständige Feldliste | 🟡 **Struktur teilweise** — Elementnamen in §2.1, XSD fehlt | ech.ch |
+| V2 | Version > 4.0.0? Welche verlangen ZH/SG/TG für 2025/2026? | 🔴 offen — keine Hinweise auf > 4.0.0 gefunden | ech.ch / Kantone |
+| V3 | ZH-Schnittstelle zum Treuhänder-Register: Protokoll, Auth, Testumgebung | 🟡 **Existenz bestätigt**, Spezifikation fehlt. Auth-Angabe «SuisseID oder mTAN» ist vermutlich **veraltet** | KStA ZH |
+| V4 | «Zertifizierte Schnittstelle» (iqtax) — formales Zulassungsverfahren? | 🔴 offen | KStA ZH |
+| V5 | SG: Treuhänder-Upload-Kanal; akzeptiert E-Tax SG eCH-0119 aus Fremdsoftware? | 🟡 volles eFiling für Bürger bestätigt; Treuhänder-Kanal-Spezifikation fehlt | Steueramt SG / Ringler |
+| V6 | TG: Einreichungskanal für Fremdsoftware neben eFisc; 24h-Korrekturfrist | 🔴 offen — **jetzt prioritär**, siehe V7 | Steuerverwaltung TG |
+| V7 | Signatur-/Bestätigungserfordernis SG und TG | 🟢 **SG geklärt** (volles eFiling möglich) · 🚩 **TG: Unterschrift auf eFisc-Pfad**, Treuhänder-Pfad offen | TG |
+| V8 | Maximale Paketgrösse und erlaubte Beilagen-Formate je Kanton | 🔴 offen | alle drei |
+| V9 | Quittung: Format, Aufbewahrungspflicht, Rechtswirkung | 🔴 offen — dazu **eCH-0233** (Archivierung Steuern) auswerten | alle drei / ech.ch |
+| V10 | eCH-0270-Barcode-Abdeckung 2026; eSteuerauszug-Verbreitung | 🟡 **eSteuerauszug: nicht alle Banken, 0–300 CHF, teils «Light»** · Lohnausweis-Barcode-Abdeckung offen | SSK |
+| V11 | PDF417-Decoder für JS/Deno | 🟢 **Empfehlung `zxing-wasm`** (Deno-fähig, Structured-Append-Metadaten) — Messung an echten Auszügen steht aus | intern |
+| V12 | AGOV: technischer Account für Software-Anbieter? | 🟢 **geklärt: nein.** AGOV authentifiziert Personen, keine Maschinen. OIDC/SAML, Spec unter `agov.ch/spec` | — |
 
-**Empfohlener erster Schritt, bevor irgendetwas gebaut wird:** eine schriftliche Anfrage an
-das Kantonale Steueramt Zürich (Treuhänder-Register) mit den Punkten V3, V4, V8, V9. Das ist
-der günstigste Weg, um in zwei Wochen zu wissen, ob das Produkt überhaupt existieren kann.
+**Was sich durch diese Runde geändert hat:**
+
+1. **TG rutscht ab.** Der mögliche Unterschriftszwang macht eine durchgehende
+   Automatisierung fraglich. V6/V7 sind von «nice to know» zu **entscheidungsrelevant**
+   geworden — sie bestimmen, ob TG überhaupt in den Scope gehört.
+2. **AGOV ist geklärt und bestätigt die Architektur.** Kein M2M-Login heisst: der
+   Treuhänder-Kanal ist nicht die bequemere, sondern die **einzige** Option.
+3. **Der eSteuerauszug ist schwächer als erhofft.** Nicht flächendeckend, teils
+   kostenpflichtig, teils «Light». Der OCR-Pfad bleibt gleichwertig zu bauen — er ist kein
+   Fallback für Randfälle.
+
+**Empfohlener erster Schritt, unverändert:** schriftliche Anfrage an das Kantonale
+Steueramt Zürich (Treuhänder-Register) mit V3, V4, V8, V9 — ergänzt um die aktuelle
+Authentifizierungsmethode, nachdem SuisseID weggefallen ist. Parallel dazu die analoge
+Anfrage an die Steuerverwaltung TG zu V6/V7, weil davon der Zuschnitt des Projekts abhängt.
 
 ---
 
@@ -442,6 +606,13 @@ Investitionsschutz liegt bewusst vorne in der Kette.
 - **Pilotkanton ZH**, Steuerperiode 2026 als Zielsaison (Deklaration ab Frühjahr 2027).
   Für die Saison 2026 (Periode 2025) ist es zu spät — das ist kein Rückschlag, sondern
   gibt uns die Zeit, Phase 0 richtig zu machen.
+- **Scope auf ZH + SG zuschneiden, TG unter Vorbehalt.** Nach der zweiten Recherche-Runde
+  ist TG der einzige der drei Kantone, bei dem eine durchgehende elektronische Einreichung
+  nicht belegt ist. Solange V6/V7 offen sind, gehört TG in den Ausblick, nicht in die
+  Aufwandschätzung.
+- **Nicht auf den eSteuerauszug allein bauen.** Er ist nicht flächendeckend, kostet bei
+  manchen Banken bis zu dreistellig und existiert teils nur als «Light»-Version. OCR ist
+  gleichwertiger Pfad, nicht Notnagel.
 - **Reihenfolge nicht umdrehen.** Verlockend ist, mit dem XML-Generator anzufangen, weil er
   technisch klar umrissen ist. Falsch: ohne verifizierte XSD baut man am Schema vorbei, und
   ohne Ingest hat man nichts zu exportieren.
@@ -460,7 +631,8 @@ Investitionsschutz liegt bewusst vorne in der Kette.
 - [eCH-0196 E-Steuerauszug V2.2.0](https://www.ech.ch/de/ech/ech-0196/2.2.0) · [V2.3.0](https://www.ech.ch/de/ech/ech-0196/2.3.0) · [Technische Wegleitung](https://www.ech.ch/sites/default/files/dosvers/beilagen/BEIL1_d_DEF_2022-06-07_eCH-0196_V2.2.0_Technische%20Wegleitung.pdf) · [Barcode-Generierung](https://www.ech.ch/sites/default/files/dosvers/beilagen/BEIL2_d_DEF_2022-06-07_eCH-0196_V2.0.0_Barcode%20Generierung%20-%20Technische%20Wegleitung.pdf)
 - [eCH-0270 Barcode-Generierung für Steuerbelege V1.0.0](https://www.ech.ch/de/ech/ech-0270/1.0.0) · [PDF](https://www.ech.ch/sites/default/files/imce/eCH-Dossier/eCH-Dossier_PDF_Publikationen/Hauptdokument/STAN_d_DEF_2024-11-04_eCH-0270_V1.0.0_Barcode%20Generierung.pdf)
 - [eCH-0275 Steuerbescheinigung Krankenkassen V1.0.0](https://www.ech.ch/de/ech/ech-0275/1.0.0)
-- [SSK – eSteuerauszug](https://www.ssk-csi.ch/de/links/esteuerauszug) · [esteuer.ewv-ete.ch](https://esteuer.ewv-ete.ch/de/esteuerauszug/)
+- [eCH-0233 Archivierung Steuern V1.0](https://www.ech.ch/sites/default/files/dosvers/hauptdokument/BEST_d_DEF_2019-11-29_eCH-0233_V1.0_Archivierung_Steuern.pdf) (eCH-0229 = Pendant für juristische Personen)
+- [SSK – eSteuerauszug](https://www.ssk-csi.ch/de/links/esteuerauszug) · [esteuer.ewv-ete.ch](https://esteuer.ewv-ete.ch/de/esteuerauszug/) · [Allg. Infos zu eStA](https://esteuer.ewv-ete.ch/de/esteuerauszug/information/allg-infos-zu-esta/)
 
 **Zürich**
 - [Steuererklärung Privatpersonen](https://www.zh.ch/de/steuern-finanzen/steuern/steuern-natuerliche-personen/steuererklaerung-natuerliche-personen.html) · [Auf die Online-Steuererklärung umsteigen](https://www.zh.ch/de/steuern-finanzen/steuern/steuern-natuerliche-personen/steuererklaerung-natuerliche-personen/auf-online-steuererklaerung-umsteigen.html)
@@ -471,10 +643,15 @@ Investitionsschutz liegt bewusst vorne in der Kette.
 **St. Gallen**
 - [E-Tax SG für Privatpersonen](https://www.sg.ch/steuern-finanzen/steuern/elektronische-steuererklaerung/etaxnp.html) · [Elektronische Steuererklärung](https://www.sg.ch/steuern-finanzen/steuern/elektronische-steuererklaerung.html)
 - [Medienmitteilung: Neue Online-Steuererklärung E-Tax SG](https://www.sg.ch/news/sgch_allgemein/2026/01/neue-online-steuererklaerung-e-tax-sg.html)
-- [E-Tax SG Support – Vorjahresdaten importieren](https://sg-support.etax.ch/hc/de/sections/21413153298076-Vorjahresdaten-importieren) · [eSteuerauszug hinzufügen](https://sg-support.etax.ch/hc/de/articles/25891860972956-Wie-kann-ich-einen-eSteuerauszug-hinzuf%C3%BCgen)
+- [E-Tax SG Support – Vorjahresdaten importieren](https://sg-support.etax.ch/hc/de/sections/21413153298076-Vorjahresdaten-importieren) · [eSteuerauszug hinzufügen](https://sg-support.etax.ch/hc/de/articles/25891860972956-Wie-kann-ich-einen-eSteuerauszug-hinzuf%C3%BCgen) · [Wie reiche ich meine Steuererklärung ein?](https://sg-support.etax.ch/hc/de/articles/22940093561756-Wie-reiche-ich-meine-Steuererkl%C3%A4rung-ein) · [Belege hinzufügen](https://sg-support.etax.ch/hc/de/articles/22937939269532-Wie-k%C3%B6nnen-Belege-hinzugef%C3%BCgt-werden)
+- [Elektronische Steuererklärung – e-service.sg.ch](https://www.e-service.sg.ch/eservices/elektronische-steuererklaerung.html)
 
 **Thurgau**
 - [Steuerverwaltung TG](https://steuerverwaltung.tg.ch/) · [eFisc Steuererklärungssoftware](https://steuerverwaltung.tg.ch/hilfsmittel/efisc-steuererklaerungssoftware.html/2958) · [eSteuerauszug in eFisc](https://steuerverwaltung.tg.ch/hilfsmittel/efisc-steuererklaerungssoftware/funktionen-efisc2016.html/5541)
+- [Wegleitung zur Steuererklärung 2026 (nP)](https://steuerverwaltung.tg.ch/public/upload/assets/183684/FW26_Form_01a_Wegleitung.pdf) · [Wegleitung 2022 (Quelle Unterschriftserfordernis)](https://steuerverwaltung.tg.ch/public/upload/assets/125713/FW22_Form.01a_Wegleitung_Steuererkl%C3%A4rung_TG_V2_NP.pdf)
+
+**AGOV / Identität**
+- [AGOV – Informationen für Behörden](https://www.agov.admin.ch/de/informationen-behoerden) · [agov.ch](https://www.agov.ch/?l=de) · [AGOV help](https://help.agov.ch/?l=de)
 
 **Markt & Software**
 - [Dr. Tax Helpdesk – Online-Einreichung / E-Filing](https://helpdesk.drtax.ch/hc/de/articles/115000806069-Online-Einreichung-E-Filing) · [Dr. Tax Professional](https://www.drtax.ch/web/ch/de/produkte/steuererklaerung/drtax-professional.aspx) · [News: automatisierte Belegerkennung](https://www.drtax.ch/web/ch/de/news.aspx?newsid=4b744b34-3084-4759-a5b6-4a7faa2e52bd)
@@ -484,5 +661,7 @@ Investitionsschutz liegt bewusst vorne in der Kette.
 **Datenschutz**
 - [revDSG – KMU.admin.ch](https://www.kmu.admin.ch/kmu/de/home/fakten-trends/digitalisierung/datenschutz/neues-datenschutzgesetz-rev-dsg.html) · [Auftragsbearbeitervereinbarung – PwC Schweiz](https://www.pwc.ch/de/insights/regulierung/die-auftragsbearbeitervereinbarung.html) · [revDSG für Treuhänder:innen](https://accounto.ch/totalrevidiertes-datenschutzgesetz-revdsg-was-treuhaenderinnen-beachten-muessen/)
 
-**Open Source (Referenzen)**
+**Open Source / Technik (Referenzen)**
 - [BrunoEberhard/open-ech-taxstatement](https://github.com/BrunoEberhard/open-ech-taxstatement) · [vroonhof/opensteuerauszug](https://github.com/vroonhof/opensteuerauszug/)
+- [Sec-ant/zxing-wasm](https://github.com/Sec-ant/zxing-wasm) · [PeculiarVentures/js-zxing-pdf417](https://github.com/PeculiarVentures/js-zxing-pdf417) · [ZXing PDF417Reader API](https://zxing.github.io/zxing/apidocs/com/google/zxing/pdf417/PDF417Reader.html)
+- [Blick: Kosten für E-Steuerauszug bei Banken schwanken stark](https://www.blick.ch/wirtschaft/von-0-bis-300-franken-bei-welcher-bank-du-fuer-den-e-steuerauszug-nichts-bezahlen-musst-id21621793.html)
