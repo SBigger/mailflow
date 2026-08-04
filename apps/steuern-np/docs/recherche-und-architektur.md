@@ -4,10 +4,16 @@ Recherche- und Architekturdokument · Stand 04.08.2026 · Autor: Claude Code
 Auftrag: Belege einlesen (OCR/PDF) → relevant/nicht relevant sortieren → Felder füllen →
 elektronisch einreichen · mandantenfähig · Start mit natürlichen Personen (nP).
 
-> **Status:** Recherche + Zielarchitektur. Kein Produktivcode. Offene Punkte, die sich nur
-> durch direkte Anfrage bei den Steuerverwaltungen klären lassen, sind in
-> [§11 Verifikations-Backlog](#11-verifikations-backlog) gesammelt und **nicht** als Fakten
-> im Fliesstext behauptet.
+> **Status:** Recherche, Zielarchitektur und ein erster Aufbau (Ingest, Triage, Datenmodell).
+> Offene Punkte, die sich nur durch direkte Anfrage bei den Steuerverwaltungen klären
+> lassen, sind in [§11 Verifikations-Backlog](#11-verifikations-backlog) gesammelt und
+> **nicht** als Fakten im Fliesstext behauptet.
+>
+> **Eigenständiges Produkt.** Diese App liegt unter `apps/steuern-np/` mit eigenem Build und
+> **eigenem Supabase-Projekt** — sie ist kein MailFlow-Modul. Begründung in §10: Steuerdaten
+> unterliegen dem Steuergeheimnis, und eine physisch getrennte Datenhaltung ist gegenüber
+> Mandanten und Aufsicht das belastbarste Argument. Was aus MailFlow taugte, wurde
+> **kopiert, nicht importiert** (§6.2).
 
 ---
 
@@ -325,56 +331,84 @@ bei uns ein Nebenprodukt der bestehenden Ablage.
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-### 6.2 Wiederverwendung aus MailFlow
+### 6.2 Was aus MailFlow übernommen wurde
 
-| Baustein | Datei | Verwendung |
+Kopiert, nicht importiert — die App hat keine Bauabhängigkeit zu MailFlow.
+
+| Baustein | Herkunft in MailFlow | Zustand hier |
 |---|---|---|
-| OCR/PDF-Extraktion | `src/lib/batchAiSuggest.js` | Stufe 1c/1d unverändert übernehmen |
-| Zweistufiges Matching mit 0.85-Schwelle | ebd. | Muster für die Triage |
-| UID-Erkennung (OCR-tolerant) | `findUidInText()` | Personen-/Firmenzuordnung |
-| LLM-Call CH-Cloud | `supabase/functions/suggest-document-fields` | Vorlage für `steuer-suggest-position` |
-| Beleg-OCR Edge Function | `supabase/functions/fibu-kassenbeleg-ocr` | Vorlage Server-seitiges OCR |
-| Mandantenfähigkeit + RLS | `fibu_mandanten`, `fibu_user_mandant_access` | Direkt als Muster übernehmen |
-| Dokumentenablage, Tags, Kunden | Dokumente-Modul | Belegquelle |
-| Fristen | `Fristen.jsx`, `portal-sg-fristeingabe` | Einreichungsfristen-Kopplung |
+| PDF-Formularbefüllung | `src/lib/pdfFill.js` | `src/lib/pdfFill.js`, 1:1 (nur `pdf-lib` als Abhängigkeit) |
+| Belegvorschau | `src/components/PdfViewer.jsx` | `src/components/PdfViewer.jsx`, Import-Pfad angepasst |
+| OCR-/PDF-Extraktion, Tesseract-Lazy-Load | `src/lib/batchAiSuggest.js` | `src/lib/dokumentText.js`, auf Belegtypen zugeschnitten, `fra` ergänzt |
+| OCR-tolerante UID-Erkennung | `findUidInText()` | dito, plus `findAhvInText()` |
+| Triage-Muster (Regeln, KI erst < 0.85) | `batchAiSuggest.js` | `src/lib/triage.js`, Logik neu, Muster übernommen |
+| RLS über eine Zugriffstabelle | `fibu_user_mandant_access` | `user_mandant_access` im eigenen Schema |
+| LLM-Edge-Function | `suggest-document-fields` | `steuer-suggest-position`, **ohne** US-Fallback |
 
-**Explizit nicht anfassen:** MS365-Mail-Integration, `handleCheckout`/`handleCheckin` in
-`Dokumente.jsx`, `fileHandleDB.js`, `CheckinDialog.jsx`.
+#### 🔎 Fund: MailFlow hat bereits ein Steuermodul — für juristische Personen
+
+Bei der Umsetzung ist aufgefallen, was die erste Recherche übersehen hatte:
+`src/modules/tools/Steuern.jsx` füllt bereits amtliche **JP**-Steuerformulare aus —
+`src/forms/sg_jp1b.js` (SG, Vereine/Stiftungen), `tg_50i.js` (TG) und `estv_19.js`
+(ESTV Beteiligungen), über `pdfFill.js` mit vermessenen Overlay-Koordinaten, gespeichert in
+einer Tabelle `steuerdaten` (Kunde × Kanton × Jahr, Felder als JSONB). Dazu kommt
+`CustomerSteuerZugaengeTab.jsx`, das Zugangsnummer und Passwort der Steuererklärung
+**pro Jahr** verwaltet.
+
+Drei Konsequenzen:
+
+1. **Der PDF-Weg ist im Haus erprobt.** Falls die kantonale Schnittstelle verschlossen
+   bleibt, ist das Befüllen der amtlichen nP-Formulare kein Neuland, sondern eine bekannte
+   Technik mit vorhandenem Werkzeug. Deshalb ist `pdfFill.js` mitkopiert.
+2. **Die Formulardefinitionen sind ein Muster, keine Vorlage.** JP-Formulare haben mit der
+   nP-Erklärung inhaltlich nichts gemein — übernehmbar ist die *Struktur* (Feld-IDs,
+   Koordinaten, Favoriten), nicht der Inhalt.
+3. **Zugangscodes werden bereits verwaltet.** Das entspricht genau dem ZH-Modell, bei dem
+   die Weitergabe des Zugangscode-Briefs die Vertretung für die laufende Periode
+   autorisiert (§9). Für die Trennung heisst das: Diese Daten bleiben in MailFlow, das
+   Steuermodul führt seinen Vollmachtsstatus selbst.
+
+**In MailFlow explizit nicht anfassen:** MS365-Mail-Integration,
+`handleCheckout`/`handleCheckin` in `Dokumente.jsx`, `fileHandleDB.js`, `CheckinDialog.jsx`
+— und neu auch das bestehende JP-Steuermodul, das produktiv genutzt wird.
 
 ---
 
 ## 7. Datenmodell (Entwurf)
 
+Umgesetzt in `supabase/migrations/20260804210000_foundation.sql`. Weil die App ein eigenes
+Supabase-Projekt hat, trägt das Schema **kein Präfix** — es gibt nichts, wovon es sich
+abgrenzen müsste.
+
 ```sql
--- Steuerpflichtige Person (nP), pro Mandant/Kunde
-steuer_np_person        (id, mandant_id, kunde_id, ahv_nr_hash, zivilstand,
-                         kanton, gemeinde, ...)
+mandanten            (id, name, uid, th_id_zh, aktiv)          -- Treuhandmandat, TH-ID für ZH
+user_mandant_access  (user_id, mandant_id, role)                -- admin|bearbeiter|readonly
 
--- Eine Steuererklärung = Person × Steuerperiode × Kanton
-steuer_deklaration      (id, person_id, periode, kanton,
-                         status,           -- entwurf|review|freigegeben|eingereicht|quittiert
-                         ech_version, created_by, freigegeben_von, freigegeben_am)
+np_personen          (id, mandant_id, name, vorname, ahv_nr_hash,
+                      zivilstand, kanton, gemeinde, …)
 
--- Beleg im Dossier, mit Herkunftsnachweis
-steuer_beleg            (id, deklaration_id, storage_path, quelle,
-                         belegart,         -- lohnausweis|esteuerauszug|kk_bescheinigung|
-                                           -- saeule3a|liegenschaft|schuldzins|spende|...
-                         parse_methode,    -- ech0196|ech0270|pdf_text|ocr|manuell
-                         relevanz,         -- relevant|nicht_relevant|unklar
-                         confidence, roh_text, roh_xml)
+deklarationen        (id, person_id, periode, kanton,
+                      status,            -- entwurf|review|freigegeben|eingereicht|quittiert
+                      ech_version,
+                      vollmacht_status,  -- offen|erteilt|abgelaufen → sperrt die Einreichung
+                      created_by, freigegeben_von, freigegeben_am)
 
--- Extrahierte Position, immer mit Rückverweis auf den Beleg
-steuer_position         (id, deklaration_id, beleg_id,
-                         ech_pfad,         -- Ziel im eCH-0119-XML
-                         wert_num, wert_text, waehrung,
-                         confidence, bestaetigt_von, bestaetigt_am)
+belege               (id, deklaration_id, storage_path, datei_hash, quelle,
+                      belegart, parse_methode,   -- ech0196|ech0270|ech0275|pdf_text|ocr
+                      relevanz, relevanz_grund,  -- relevant|nicht_relevant|unklar
+                      confidence, periode_beleg, roh_text, roh_xml)
 
--- Jede Einreichung ist ein unveränderlicher Snapshot
-steuer_einreichung      (id, deklaration_id, paket_hash, paket_path,
-                         kanal, uebermittelt_am, quittung_ref, quittung_raw)
+positionen           (id, deklaration_id, beleg_id, ech_pfad,
+                      wert_num, wert_text, waehrung, confidence,
+                      herkunft,          -- ech0196|ech0270|ech0275|ki|manuell|vorjahr
+                      bestaetigt_von, bestaetigt_am)
 
--- Lückenloser Audit-Trail
-steuer_audit_log        (id, deklaration_id, user_id, aktion, alt, neu, ts)
+einreichungen        (id, deklaration_id, kanal, paket_hash, paket_path,
+                      uebermittelt_von, uebermittelt_am,
+                      quittung_ref, quittung_raw, ersetzt_id)
+
+audit_log            (id, deklaration_id, user_id, aktion, entitaet, alt, neu, ts)
+parameter            (kanton, periode, schluessel, wert_num, quelle)  -- Pauschalen, Maxima
 ```
 
 **Zwei Invarianten, die im Schema erzwungen werden müssen:**
@@ -384,10 +418,15 @@ steuer_audit_log        (id, deklaration_id, user_id, aktion, alt, neu, ts)
 2. `steuer_einreichung` ist append-only (kein UPDATE/DELETE-Policy für `authenticated`).
    Eine Korrektur ist eine neue Zeile, keine Änderung.
 
-**RLS:** exakt nach dem Fibu-Muster — Zugriff über `steuer_user_mandant_access`
-(bzw. Wiederverwendung von `fibu_user_mandant_access`, falls die Mandantendefinition
-identisch bleibt). Rollen: `admin` (freigeben + einreichen), `bearbeiter` (erfassen,
-nicht einreichen), `readonly`.
+**RLS:** nach dem bewährten Fibu-Muster, aber im eigenen Schema — Zugriff über
+`user_mandant_access` und die Helper `mandant_ids_for_user()` / `darf_einreichen()`.
+Rollen: `admin` (freigeben + einreichen), `bearbeiter` (erfassen, nicht einreichen),
+`readonly`.
+
+**Die Freigaberegel steht in der Datenbank, nicht im UI.** Ein `BEFORE INSERT`-Trigger auf
+`einreichungen` verweigert die Übermittlung, solange Vollmacht fehlt, keine menschliche
+Freigabe vorliegt oder noch Positionen unter dem Schwellwert unbestätigt sind. Eine Regel,
+die nur im Frontend lebt, hält beim ersten Skript nicht.
 
 ---
 
@@ -529,8 +568,20 @@ Nebeneingang für das initiale Onboarding der Mandate.
 - **Auftragsbearbeitungsverträge** braucht es mit jedem Unterauftragnehmer, insbesondere:
   Supabase (Hosting/DB) und **Infomaniak AI Tools** (LLM).
 - **Konsequenz für die Architektur:**
-  - LLM-Verarbeitung ausschliesslich über die bestehende **Infomaniak-CH-Cloud**. Keine
-    US-Anbieter für Steuerdaten, auch nicht «nur zum Testen».
+  - **Eigenes Supabase-Projekt**, getrennt von MailFlow. Steuerdaten teilen keine Datenbank
+    mit Mail, Dokumenten und Leistungserfassung. Das ist der Hauptgrund für die Trennung
+    des ganzen Produkts.
+  - LLM-Verarbeitung ausschliesslich über die **Infomaniak-CH-Cloud**. Keine US-Anbieter für
+    Steuerdaten, auch nicht «nur zum Testen».
+
+  > ⚠️ **Abweichung zu MailFlow, die auffiel:** `CLAUDE.md` nennt Infomaniak als KI-Backend,
+  > die produktive Function `suggest-document-fields` ruft aber OpenAI, Gemini und
+  > Anthropic auf. Für die Fibu-Belegerkennung mag das vertretbar sein — für Steuerdaten
+  > ist es das nicht. `steuer-suggest-position` hat deshalb **bewusst keinen Fallback**:
+  > Fehlt der Infomaniak-Schlüssel, gibt die Function einen Fehler zurück und die App
+  > bleibt bei der Regel-Einschätzung, statt die Daten ins Ausland zu schicken.
+  > Ob MailFlows Fibu-Pfad ebenfalls angepasst werden sollte, ist eine offene Frage an
+  > Sascha — sie betrifft ein produktives Modul und wird hier nicht einseitig entschieden.
   - AHV-Nummern nie im Klartext in Logs, LLM-Prompts oder Fehlermeldungen. Im Prompt
     pseudonymisieren, erst beim XML-Export einsetzen.
   - Aufbewahrung: Steuerakten typischerweise 10 Jahre → Löschkonzept **jetzt** definieren,

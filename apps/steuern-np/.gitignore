@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.env
+.env.local
+*.esteuerauszug.xml
+*.barcode.bin

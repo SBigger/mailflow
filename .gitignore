@@ -50,3 +50,7 @@ public/sm-artis-agent.exe
 scripts/fakturaliste-full.txt
 scripts/fakturaliste-full.json
 scripts/reconcile-result.json
+
+# Steuern-nP-App hat eigene Abhängigkeiten
+apps/steuern-np/node_modules/
+apps/steuern-np/dist/
