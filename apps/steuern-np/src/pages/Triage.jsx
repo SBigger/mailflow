@@ -23,6 +23,8 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { BELEGART_BY_KEY } from "@/lib/belegarten";
 import { SCHWELLE_REVIEW } from "@/lib/triage";
+import BelegUpload from "@/components/BelegUpload";
+import { useAuth } from "@/lib/AuthContext";
 
 // ──────────────────────────────────────────────────────────────
 // Darstellung der Herkunft — der wichtigste Unterschied im UI
@@ -179,17 +181,20 @@ function BelegKarte({ beleg, positionen, onBestaetigen, onRelevanzAendern }) {
 // ──────────────────────────────────────────────────────────────
 // Seite
 // ──────────────────────────────────────────────────────────────
-export default function SteuernNP() {
+export default function Triage() {
   const qc = useQueryClient();
+  const { mandantId } = useAuth();
   const [deklarationId, setDeklarationId] = useState(null);
   const [zeigeAussortierte, setZeigeAussortierte] = useState(false);
 
   const { data: deklarationen = [], isLoading: ladeDek } = useQuery({
-    queryKey: ["deklarationen"],
+    queryKey: ["deklarationen", mandantId],
+    enabled: !!mandantId,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("deklarationen")
         .select("*, np_personen(name, vorname, kanton)")
+        .eq("mandant_id", mandantId)
         .order("periode", { ascending: false });
       if (error) throw error;
       return data || [];
@@ -295,10 +300,8 @@ export default function SteuernNP() {
           <h1 className="text-lg font-semibold">Steuern natürliche Personen</h1>
         </div>
         <p className="text-sm text-slate-600 max-w-xl">
-          Noch keine Steuererklärung angelegt. Das Modul befindet sich im Aufbau —
-          Beleg-Ingest und Triage stehen, der eCH-0119-Export wartet auf die
-          Schema-Verifikation (siehe{" "}
-          <code className="text-[11px]">docs/recherche-und-architektur.md</code>).
+          Noch keine Steuererklärung eröffnet. Lege unter <strong>Stammdaten</strong> eine
+          Person und eine Deklaration an — danach lassen sich hier Belege einlesen.
         </p>
       </div>
     );
@@ -365,6 +368,18 @@ export default function SteuernNP() {
           </ul>
         </div>
       </div>
+
+      {/* Belege einlesen */}
+      <BelegUpload
+        mandantId={aktuelle.mandant_id}
+        deklarationId={aktuelle.id}
+        periode={aktuelle.periode}
+        bekannteHashes={belege.map(b => b.datei_hash).filter(Boolean)}
+        onFertig={() => {
+          qc.invalidateQueries({ queryKey: ["belege", aktuelle.id] });
+          qc.invalidateQueries({ queryKey: ["positionen", aktuelle.id] });
+        }}
+      />
 
       {/* Unklare zuerst — sie brauchen eine Entscheidung */}
       {unklare.length > 0 && (

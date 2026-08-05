@@ -4,9 +4,16 @@ Agentische Steuerdeklaration für **natürliche Personen** in den Kantonen ZH, S
 Belege einlesen (OCR/PDF/XML) → relevant/nicht relevant sortieren → Felder füllen →
 elektronisch einreichen. Mandantenfähig.
 
-> **Status: früher Aufbau.** Ingest und Triage stehen, der eCH-0119-Export wartet auf die
-> Schema-Verifikation und der Einreichungskanal auf die Antwort der Steuerverwaltungen.
+> **Status: lauffähiges Gerüst.** Anmeldung, Stammdaten, Beleg-Upload, Triage und Review
+> funktionieren durchgehend. Offen bleiben die beiden Dinge, die nicht in unserer Hand
+> liegen: der **eCH-0119-Export** wartet auf die XSD, der **Einreichungskanal** auf die
+> Antwort der Steuerverwaltungen.
 > Details und offene Punkte: [`docs/recherche-und-architektur.md`](./docs/recherche-und-architektur.md).
+
+**Was heute schon geht:** anmelden → Mandant und Person anlegen → Deklaration eröffnen →
+Belege per Drag & Drop einlesen (PDF, Scan mit OCR, eSteuerauszug-XML) → automatische
+Sortierung in relevant / unklar / nicht relevant mit Begründung und Herkunft je Wert →
+Positionen bestätigen. **Was noch nicht geht:** einreichen.
 
 ## Eigenständig, nicht Teil von MailFlow
 
@@ -58,22 +65,45 @@ supabase secrets set INFOMANIAK_API_KEY=…
 ```
 src/
   lib/
+    AuthContext.jsx   Anmeldung + aktiver Mandant
     belegarten.js     Katalog der Belegarten mit Erkennungsmustern und eCH-0119-Ziel
     triage.js         Zweistufige Relevanz-Triage (Regeln → KI ab < 0.85)
+    ingest.js         Die Kette: Hash → Extraktion → Triage → Upload → Datenbank
     ech0196.js        Parser für den eSteuerauszug
+    ech0119.js        XML-Export (Gerüst, siehe Warnung unten)
     dokumentText.js   Text-/OCR-Extraktion, Hash, UID/AHV-Erkennung
     pdfFill.js        PDF-Formularbefüllung (Rückfallpfad)
+  components/
+    BelegUpload.jsx   Drag & Drop mit Fortschritt je Verarbeitungsschritt
+    PdfViewer.jsx     Belegvorschau
   pages/
+    Login.jsx         Anmeldung
+    Stammdaten.jsx    Mandanten, Personen, Deklarationen, Vollmachtsstatus
     Triage.jsx        Vier-Augen-Review: Beleg links, Positionen rechts
 supabase/
-  migrations/         Schema mit RLS und den beiden Invarianten
+  migrations/         Schema mit RLS, Invarianten, Storage-Bucket, Audit-Trigger
   functions/          steuer-suggest-position (nur Infomaniak, kein US-Fallback)
 scripts/
   spike-pdf417-…      Spike: PDF417-Barcodes aus eSteuerauszug lesen (Backlog V11)
+tests/                23 Tests: Triage, Betrags-Parser, XML-Export
 docs/
   recherche-und-architektur.md   Recherche, Kantonsvergleich, Zielarchitektur, Backlog
   anfragen-kantone.md            Versandfertige Anfragen an KStA ZH und Steuerverwaltung TG
 ```
+
+## ⚠️ Der XML-Export ist noch nicht schemakonform
+
+`ech0119.js` erzeugt XML nach dem bisher bekannten Stand des Standards — die **XSD wurde
+nie eingesehen** (Backlog V1). Kardinalitäten, Datentypen, Reihenfolge und Pflichtfelder
+sind ungeprüft.
+
+Deshalb verweigert `paketBauen()` die Erzeugung eines übermittlungsfähigen Pakets, solange
+`SCHEMA.verifiziert` auf `false` steht. Für eine Vorschau gibt es `{ entwurf: true }`. Das
+ist eine bewusste Schranke: Ein geratenes Schema darf nicht versehentlich bei einer
+Steuerverwaltung landen.
+
+Sobald die XSD vorliegt: Elementnamen in `SCHEMA` und `baueXml()` korrigieren, einen echten
+Validator in `validieren()` einhängen, `SCHEMA.verifiziert` auf `true` setzen.
 
 ## Zwei Regeln, die das System durchhält
 
