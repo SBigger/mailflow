@@ -38,11 +38,31 @@ möglich, ohne Daten entflechten zu müssen.
 | Triage-Muster (Regeln, dann KI ab < 0.85) | `batchAiSuggest.js` | Bewährt in der Massenablage |
 | RLS-Muster über `user_mandant_access` | FiBu-Modul | Mandantenfähigkeit |
 
-## Setup
+## Ausprobieren — Demo ohne Backend
+
+Kein Supabase, kein Schlüssel, keine Anmeldung:
 
 ```bash
 cd apps/steuern-np
 npm install
+npm run dev
+```
+
+Dann **http://localhost:5173/demo** öffnen und Steuerbelege hineinziehen — PDF, Foto,
+Scan oder eSteuerauszug-XML. Zu sehen sind Belegart, Relevanz, Confidence, die Begründung
+der Einordnung, der gelesene Text und eine eCH-0119-Strukturvorschau.
+
+Zwei Dinge dazu:
+
+- **Nichts verlässt den Browser.** Keine Uploads, keine Speicherung. Bei Steuerbelegen ist
+  das keine Nebensache — du kannst echte Dokumente verwenden.
+- **Es läuft nur die Regelstufe.** Der KI-Fallback für unklare Belege braucht die Edge
+  Function und damit ein Backend. Was die Demo zeigt, ist die *untere* Schranke der
+  Erkennungsqualität, nicht die obere.
+
+## Vollbetrieb
+
+```bash
 cp .env.example .env.local     # eigenes Supabase-Projekt eintragen
 npm run dev
 ```

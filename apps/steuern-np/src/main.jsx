@@ -8,6 +8,7 @@ import { AuthProvider, useAuth } from './lib/AuthContext.jsx';
 import Login from './pages/Login.jsx';
 import Triage from './pages/Triage.jsx';
 import Stammdaten from './pages/Stammdaten.jsx';
+import Demo from './pages/Demo.jsx';
 import './index.css';
 
 const queryClient = new QueryClient({
@@ -15,7 +16,29 @@ const queryClient = new QueryClient({
 });
 
 function Shell() {
-  const { user, laedt, mandant, mandanten, mandantId, setMandantId, abmelden } = useAuth();
+  const { user, laedt, istKonfiguriert, mandant, mandanten, mandantId, setMandantId, abmelden } = useAuth();
+  const imDemo = window.location.pathname.startsWith('/demo');
+
+  // Der Demo-Modus braucht kein Backend und ist deshalb auch ohne
+  // Konfiguration und ohne Anmeldung erreichbar. Angemeldet läuft /demo
+  // dagegen in der normalen Shell mit Navigation (Route weiter unten).
+  const demoShell = (
+    <div className="min-h-screen">
+      <header className="border-b bg-white">
+        <nav className="max-w-6xl mx-auto flex items-center gap-2 px-4 h-12">
+          <span className="font-semibold text-sm mr-3">Steuern nP</span>
+          <span className="text-[11px] px-2 py-0.5 rounded bg-amber-100 text-amber-800">
+            Demo — ohne Backend, nichts wird gespeichert
+          </span>
+        </nav>
+      </header>
+      <main className="max-w-6xl mx-auto">
+        <Routes><Route path="*" element={<Demo />} /></Routes>
+      </main>
+    </div>
+  );
+
+  if (!istKonfiguriert) return demoShell;
 
   if (laedt) {
     return (
@@ -24,7 +47,7 @@ function Shell() {
       </div>
     );
   }
-  if (!user) return <Login />;
+  if (!user) return imDemo ? demoShell : <Login />;
 
   const link = ({ isActive }) =>
     `px-3 py-1.5 rounded-md text-sm ${isActive ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}`;
@@ -36,6 +59,7 @@ function Shell() {
           <span className="font-semibold text-sm mr-3">Steuern nP</span>
           <NavLink to="/triage" className={link}>Belegtriage</NavLink>
           <NavLink to="/stammdaten" className={link}>Stammdaten</NavLink>
+          <NavLink to="/demo" className={link}>Demo</NavLink>
 
           <div className="ml-auto flex items-center gap-2">
             {mandanten.length > 1 && (
@@ -61,6 +85,7 @@ function Shell() {
           <Route path="/" element={<Navigate to="/triage" replace />} />
           <Route path="/triage" element={<Triage />} />
           <Route path="/stammdaten" element={<Stammdaten />} />
+          <Route path="/demo" element={<Demo />} />
           <Route path="*" element={<Navigate to="/triage" replace />} />
         </Routes>
       </main>

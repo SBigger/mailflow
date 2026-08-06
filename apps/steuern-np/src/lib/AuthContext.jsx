@@ -6,7 +6,7 @@
  * arbeitet. Beides steckt deshalb in einem Context.
  */
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
-import { supabase } from "@/api/supabaseClient";
+import { supabase, istKonfiguriert } from "@/api/supabaseClient";
 
 const AuthContext = createContext(null);
 
@@ -21,6 +21,10 @@ export function AuthProvider({ children }) {
   );
 
   useEffect(() => {
+    // Ohne Konfiguration gibt es keine Session — die App bleibt beim
+    // Demo-Modus, statt in einem Ladezustand hängen zu bleiben.
+    if (!istKonfiguriert) { setLaedt(false); return; }
+
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session ?? null);
       setLaedt(false);
@@ -30,7 +34,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   const ladeMandanten = useCallback(async () => {
-    if (!session) { setMandanten([]); return; }
+    if (!session || !supabase) { setMandanten([]); return; }
     const { data, error } = await supabase
       .from("mandanten")
       .select("id, name, uid, th_id_zh")
@@ -59,7 +63,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   const abmelden = useCallback(async () => {
-    await supabase.auth.signOut();
+    if (supabase) await supabase.auth.signOut();
     localStorage.removeItem(MANDANT_KEY);
     setMandantIdState(null);
   }, []);
@@ -68,7 +72,7 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider value={{
-      session, user: session?.user ?? null, laedt,
+      session, user: session?.user ?? null, laedt, istKonfiguriert,
       mandanten, mandant, mandantId, setMandantId,
       ladeMandanten, abmelden,
     }}>
