@@ -11,4 +11,5 @@ public/tesseract/
 release/
 # Zusammengebaute portable Fassung und Verteilarchive (aus portabel-vorlage/ erzeugt)
 portabel/
+SteuernNP-portabel.zip
 *.zip
