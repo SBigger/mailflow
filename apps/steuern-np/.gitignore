@@ -4,3 +4,8 @@ dist/
 .env.local
 *.esteuerauszug.xml
 *.barcode.bin
+
+# Tesseract-Sprachdaten und Kern: 31 MB Binaerdaten, per Skript beschafft
+public/tesseract/
+# Fertige Windows-Pakete
+release/

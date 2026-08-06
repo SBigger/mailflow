@@ -2,5 +2,122 @@
 @tailwind components;
 @tailwind utilities;
 
-:root { color-scheme: light; }
-body { @apply bg-slate-50 text-slate-900 antialiased; }
+/* ══════════════════════════════════════════════════════════════════════
+   Gestaltung
+   Anleihe beim Gegenstand: kantonale Steuerformulare sind einfarbig auf
+   Papier gedruckt. Ein Spot-Grün auf leicht kühlem Papierton, Haarlinien
+   statt Schatten, Serifen für die Amtssprache, Tabellenziffern überall
+   dort, wo Beträge untereinander stehen.
+   ══════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --paper:      #F5F7F4;
+  --card:       #FFFFFF;
+  --ink:        #171D19;
+  --ink-weak:   #5A6560;
+  --ink-faint:  #8A948E;
+  --rule:       #D6DCD6;
+  --rule-soft:  #E7EBE6;
+  --spot:       #2C5C49;
+  --spot-weak:  #E4EDE8;
+  --warn:       #9A5A16;
+  --warn-weak:  #F6EBDC;
+  --stop:       #8C2F2F;
+  --stop-weak:  #F6E5E3;
+  --mute:       #6E7873;
+  --mute-weak:  #ECEEEB;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #121613; --card: #1A201C; --ink: #E8EDE9; --ink-weak: #A3AEA7;
+    --ink-faint: #7A857F; --rule: #2C3530; --rule-soft: #232B27;
+    --spot: #7FC4A6; --spot-weak: #1E2E27; --warn: #E0A868; --warn-weak: #2E2519;
+    --stop: #E08C86; --stop-weak: #2E1D1C; --mute: #939E98; --mute-weak: #232926;
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --paper: #121613; --card: #1A201C; --ink: #E8EDE9; --ink-weak: #A3AEA7;
+  --ink-faint: #7A857F; --rule: #2C3530; --rule-soft: #232B27;
+  --spot: #7FC4A6; --spot-weak: #1E2E27; --warn: #E0A868; --warn-weak: #2E2519;
+  --stop: #E08C86; --stop-weak: #2E1D1C; --mute: #939E98; --mute-weak: #232926;
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --paper: #F5F7F4; --card: #FFFFFF; --ink: #171D19; --ink-weak: #5A6560;
+  --ink-faint: #8A948E; --rule: #D6DCD6; --rule-soft: #E7EBE6;
+  --spot: #2C5C49; --spot-weak: #E4EDE8; --warn: #9A5A16; --warn-weak: #F6EBDC;
+  --stop: #8C2F2F; --stop-weak: #F6E5E3; --mute: #6E7873; --mute-weak: #ECEEEB;
+  color-scheme: light;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Bausteine ────────────────────────────────────────────────── */
+
+.serif { font-family: ui-serif, Georgia, "Iowan Old Style", "Times New Roman", serif; }
+
+.eyebrow {
+  font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase;
+  font-weight: 700; color: var(--ink-faint);
+}
+
+.karte {
+  background: var(--card);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+}
+
+.zahl { font-variant-numeric: tabular-nums; }
+
+.knopf {
+  font: inherit; font-size: 13px; font-weight: 500; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px;
+  border-radius: 2px; padding: 0 12px; height: 32px;
+  border: 1px solid transparent;
+  transition: background-color .12s, border-color .12s, color .12s;
+}
+.knopf:disabled { opacity: .45; cursor: default; }
+.knopf-primaer { background: var(--spot); color: var(--paper); }
+.knopf-primaer:not(:disabled):hover { filter: brightness(1.12); }
+.knopf-rand { border-color: var(--rule); background: var(--card); color: var(--ink); }
+.knopf-rand:not(:disabled):hover { border-color: var(--spot); color: var(--spot); }
+.knopf-still { color: var(--ink-weak); background: transparent; }
+.knopf-still:not(:disabled):hover { background: var(--mute-weak); color: var(--ink); }
+.knopf-klein { height: 26px; font-size: 12px; padding: 0 8px; }
+
+.feld {
+  font: inherit; font-size: 13px;
+  background: var(--card); color: var(--ink);
+  border: 1px solid var(--rule); border-radius: 2px;
+  padding: 0 9px; height: 32px; width: 100%;
+}
+.feld:focus { outline: 2px solid var(--spot); outline-offset: -1px; border-color: var(--spot); }
+textarea.feld { height: auto; padding: 8px 9px; line-height: 1.55; }
+
+.marke {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; font-weight: 700;
+  padding: 3px 7px; border-radius: 2px; white-space: nowrap;
+}
+.marke-relevant { color: var(--spot); background: var(--spot-weak); }
+.marke-unklar   { color: var(--warn); background: var(--warn-weak); }
+.marke-raus     { color: var(--mute); background: var(--mute-weak); }
+.marke-stop     { color: var(--stop); background: var(--stop-weak); }
+
+/* Fokus bleibt sichtbar — die App wird viel mit der Tastatur bedient */
+:focus-visible { outline: 2px solid var(--spot); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }

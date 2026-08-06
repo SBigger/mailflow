@@ -3,6 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      Kein Netz. connect-src 'none' verbietet jede ausgehende Verbindung —
+      damit ist technisch zugesichert, was die Anwendung verspricht:
+      Steuerdaten verlassen das Geraet nicht. wasm-unsafe-eval braucht
+      Tesseract fuer die OCR, die Dateien liegen lokal daneben.
+    -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' blob: data:; object-src 'none'; base-uri 'none'" />
     <title>Steuern nP</title>
   </head>
   <body>

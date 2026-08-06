@@ -37,8 +37,18 @@ async function getOcrWorker() {
   _ocrWorkerPromise = (async () => {
     const { createWorker } = await import("tesseract.js");
     console.info("[OCR] Lade Tesseract (deu+eng+fra)…");
+
+    // Alles lokal: Worker, Kern und Sprachdaten liegen neben der Anwendung.
+    // Ohne diese Pfade würde tesseract.js sie aus dem Netz nachladen — die
+    // App läuft aber offline, und Steuerbelege gehen ohnehin nirgendwohin.
+    const basis = new URL("./tesseract/", document.baseURI).href;
+
     // fra dazu: Belege aus der Westschweiz kommen bei Zuzügern regelmässig vor
     const worker = await createWorker(["deu", "eng", "fra"], 1, {
+      workerPath: `${basis}worker.min.js`,
+      corePath:   basis,
+      langPath:   `${basis}lang`,
+      gzip:       true,
       logger: m => {
         if (m.status === "recognizing text") return;
         console.debug("[OCR]", m.status, m.progress ? Math.round(m.progress * 100) + "%" : "");

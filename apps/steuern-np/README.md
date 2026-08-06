@@ -1,147 +1,117 @@
 # Steuern nP
 
-Agentische Steuerdeklaration für **natürliche Personen** in den Kantonen ZH, SG und TG.
-Belege einlesen (OCR/PDF/XML) → relevant/nicht relevant sortieren → Felder füllen →
-elektronisch einreichen. Mandantenfähig.
+Lokale Anwendung für die Steuererklärung **natürlicher Personen**, Kanton St. Gallen.
+Belege einscannen → sortieren und aussortieren → auf die Positionen des Hauptformulars
+zuweisen → sortiert exportieren. Mit Benutzern und Mandanten.
 
-> **Status: lauffähiges Gerüst.** Anmeldung, Stammdaten, Beleg-Upload, Triage und Review
-> funktionieren durchgehend. Offen bleiben die beiden Dinge, die nicht in unserer Hand
-> liegen: der **eCH-0119-Export** wartet auf die XSD, der **Einreichungskanal** auf die
-> Antwort der Steuerverwaltungen.
-> Details und offene Punkte: [`docs/recherche-und-architektur.md`](./docs/recherche-und-architektur.md).
+**Läuft ab Laufwerk. Ohne Installation, ohne Server, ohne Netz.**
 
-**Was heute schon geht:** anmelden → Mandant und Person anlegen → Deklaration eröffnen →
-Belege per Drag & Drop einlesen (PDF, Scan mit OCR, eSteuerauszug-XML) → automatische
-Sortierung in relevant / unklar / nicht relevant mit Begründung und Herkunft je Wert →
-Positionen bestätigen. **Was noch nicht geht:** einreichen.
+---
 
-## Eigenständig, nicht Teil von MailFlow
+## Was die App tut
 
-Diese App ist bewusst von MailFlow getrennt:
+1. **Einlesen** — PDF, Scan, Foto oder eSteuerauszug-XML per Drag & Drop. Gescanntes wird
+   per OCR gelesen (deutsch, englisch, französisch), alles offline.
+2. **Sortieren** — jeder Beleg wird eingeordnet: Belegart, relevant / unklar / aussortiert,
+   mit Begründung und Sicherheitsgrad. Duplikate werden am Dateiinhalt erkannt.
+3. **Zuweisen** — die erkannten Beträge landen auf den Positionen des SG-Hauptformulars,
+   gegliedert nach **Seite 1 bis 4**. Beträge lassen sich korrigieren und von Hand ergänzen.
+   Summen und Totale rechnet die App.
+4. **Exportieren** — sortiert nach Formularseite und Ziffer, in drei Formaten:
+   Übersicht zum Abtippen, CSV für Excel, JSON als Datenformat.
 
-- **eigener Build** — eigenes `package.json`, eigenes Vite-Setup, kein Import aus `../../src`
-- **eigenes Supabase-Projekt** — eigene Datenbank, eigene Auth, eigene Edge Functions
-- **eigenes Deployment**
+Was sie **nicht** tut: elektronisch einreichen. Der Kanal dafür ist noch nicht geklärt —
+siehe [`docs/recherche-und-architektur.md`](./docs/recherche-und-architektur.md).
 
-Der Grund ist nicht Ordnungsliebe: Steuerdaten unterliegen dem **Steuergeheimnis**,
-zusätzlich zum revDSG. Eine physisch getrennte Datenhaltung ist das belastbarste Argument
-gegenüber Mandanten und Aufsicht — und sie macht eine spätere Ausgliederung des Produkts
-möglich, ohne Daten entflechten zu müssen.
+## Wo die Daten liegen
 
-**Aus MailFlow übernommen** (kopiert, nicht importiert):
+Neben der Anwendung, nicht im Benutzerprofil:
 
-| Datei | Herkunft | Warum |
-|---|---|---|
-| `src/lib/pdfFill.js` | `src/lib/pdfFill.js` | Befüllt amtliche PDF-Formulare. Der Rückfallpfad, falls die kantonale Schnittstelle verschlossen bleibt |
-| `src/components/PdfViewer.jsx` | dito | Belegvorschau im Review |
-| `src/lib/dokumentText.js` | Auszug aus `src/lib/batchAiSuggest.js` | OCR-/PDF-Extraktion, Tesseract-Lazy-Loading, OCR-tolerante UID-Erkennung |
-| Triage-Muster (Regeln, dann KI ab < 0.85) | `batchAiSuggest.js` | Bewährt in der Massenablage |
-| RLS-Muster über `user_mandant_access` | FiBu-Modul | Mandantenfähigkeit |
+```
+SteuernNP/
+  SteuernNP.exe
+  daten/
+    steuerdaten.json          Benutzer, Mandanten, Personen, Deklarationen, Belege, Positionen
+    belege/<mandant>/<dekl>/  die abgelegten Belegdateien
+    sicherung/                eine Kopie je Kalendertag
+```
 
-## Ausprobieren — Demo ohne Backend
+Den Ordner auf einen anderen Stick kopieren heisst: alles ist mitgekommen.
 
-Kein Supabase, kein Schlüssel, keine Anmeldung:
+**Kein Netz.** Die Anwendung setzt `connect-src 'none'` — ausgehende Verbindungen sind
+technisch unterbunden, nicht bloss unterlassen. Steuerdaten unterliegen dem Steuergeheimnis.
+
+**Kein Passwortschutz.** «Benutzer» heisst hier: wer gerade arbeitet. Der Name landet im
+Protokoll und bei jeder bestätigten Position. Wer Zugriff auf das Laufwerk hat, hat Zugriff
+auf die Daten — der Schutz liegt beim Laufwerk, nicht in der Anwendung. Für Steuerdossiers
+gehört das Laufwerk entsprechend verschlüsselt.
+
+## Windows-Paket bauen
 
 ```bash
 cd apps/steuern-np
 npm install
-npm run dev
+npm run paket:win
 ```
 
-Dann **http://localhost:5180/demo** öffnen und Steuerbelege hineinziehen — PDF, Foto,
-Scan oder eSteuerauszug-XML. Zu sehen sind Belegart, Relevanz, Confidence, die Begründung
-der Einordnung, der gelesene Text und eine eCH-0119-Strukturvorschau.
+Ergebnis: `release/SteuernNP-win32-x64/` — rund 300 MB, davon 270 MB Electron-Laufzeit.
+Ordner aufs Laufwerk kopieren, `SteuernNP.exe` doppelklicken. Kein npm, kein Node, keine
+Installation auf dem Zielrechner.
 
-Zwei Dinge dazu:
-
-- **Nichts verlässt den Browser.** Keine Uploads, keine Speicherung. Bei Steuerbelegen ist
-  das keine Nebensache — du kannst echte Dokumente verwenden.
-- **Es läuft nur die Regelstufe.** Der KI-Fallback für unklare Belege braucht die Edge
-  Function und damit ein Backend. Was die Demo zeigt, ist die *untere* Schranke der
-  Erkennungsqualität, nicht die obere.
-
-## Vollbetrieb
+## Entwickeln
 
 ```bash
-cp .env.example .env.local     # eigenes Supabase-Projekt eintragen
-npm run dev
+npm install
+npm run ocr:daten     # holt Tesseract-Kern und Sprachdaten nach public/tesseract/
+npm run dev           # http://localhost:5180
+npm run start         # baut und startet die Electron-App
+npm test              # 42 Tests
 ```
 
-Datenbank aufsetzen:
+Die OCR-Dateien (31 MB) liegen bewusst nicht im Git — `npm run ocr:daten` stellt sie aus
+den npm-Paketen wieder her. Ohne sie fällt OCR aus; die App würde sie sonst aus dem Netz
+nachladen, und genau das soll sie nicht.
 
-```bash
-supabase db push               # gegen das Steuer-Projekt, NICHT gegen MailFlow
-```
-
-Edge Function:
-
-```bash
-supabase functions deploy steuer-suggest-position
-supabase secrets set INFOMANIAK_API_KEY=…
-```
+Im Browser (`npm run dev`) fehlt der Dateizugriff: Die Daten landen dann im
+Browserspeicher, und die App weist darauf hin. Für echtes Arbeiten `npm run start`.
 
 ## Aufbau
 
 ```
-src/
-  lib/
-    AuthContext.jsx   Anmeldung + aktiver Mandant
-    belegarten.js     Katalog der Belegarten mit Erkennungsmustern und eCH-0119-Ziel
-    triage.js         Zweistufige Relevanz-Triage (Regeln → KI ab < 0.85)
-    ingest.js         Die Kette: Hash → Extraktion → Triage → Upload → Datenbank
-    ech0196.js        Parser für den eSteuerauszug
-    ech0119.js        XML-Export (Gerüst, siehe Warnung unten)
-    dokumentText.js   Text-/OCR-Extraktion, Hash, UID/AHV-Erkennung
-    pdfFill.js        PDF-Formularbefüllung (Rückfallpfad)
-  components/
-    BelegUpload.jsx   Drag & Drop mit Fortschritt je Verarbeitungsschritt
-    PdfViewer.jsx     Belegvorschau
-  pages/
-    Login.jsx         Anmeldung
-    Stammdaten.jsx    Mandanten, Personen, Deklarationen, Vollmachtsstatus
-    Triage.jsx        Vier-Augen-Review: Beleg links, Positionen rechts
-supabase/
-  migrations/         Schema mit RLS, Invarianten, Storage-Bucket, Audit-Trigger
-  functions/          steuer-suggest-position (nur Infomaniak, kein US-Fallback)
-scripts/
-  spike-pdf417-…      Spike: PDF417-Barcodes aus eSteuerauszug lesen (Backlog V11)
-tests/                23 Tests: Triage, Betrags-Parser, XML-Export
-docs/
-  recherche-und-architektur.md   Recherche, Kantonsvergleich, Zielarchitektur, Backlog
-  anfragen-kantone.md            Versandfertige Anfragen an KStA ZH und Steuerverwaltung TG
+src/lib/
+  sgFormular.js     Positionen des SG-Hauptformulars, Seite 1–4, mit Summenlogik
+  belegarten.js     18 Belegarten mit Erkennungsmustern
+  triage.js         Relevanz-Triage über Regeln
+  ingest.js         Die Kette: Hash → Extraktion → Triage → Ablage → Datenbank
+  dokumentText.js   Text- und OCR-Extraktion, Hash, UID-/AHV-Erkennung
+  ech0196.js        Parser für den eSteuerauszug
+  ech0119.js        XML-Export (Gerüst, siehe unten)
+  db.js             Lokale Datenbank
+  export.js         Sortierter Export nach Seite und Ziffer
+  pdfFill.js        PDF-Formularbefüllung (Rückfallpfad)
+src/pages/
+  Verwaltung.jsx    Benutzer, Mandanten, Personen, Deklarationen
+  Dossier.jsx       Belege · Zuweisung · Export
+electron/
+  main.cjs          Hauptprozess: Dateiablage, Sicherung, Export-Dialog
+  preload.cjs       Schmale Brücke, kein direkter Dateisystemzugriff im Fenster
 ```
 
-## ⚠️ Der XML-Export ist noch nicht schemakonform
+## ⚠️ Zwei Dinge sind noch nicht geprüft
 
-`ech0119.js` erzeugt XML nach dem bisher bekannten Stand des Standards — die **XSD wurde
-nie eingesehen** (Backlog V1). Kardinalitäten, Datentypen, Reihenfolge und Pflichtfelder
-sind ungeprüft.
+**Die Ziffern des SG-Hauptformulars.** Die Wegleitung war bei der Umsetzung nicht
+zugänglich. Seitenaufbau und Reihenfolge folgen dem einheitlichen Formularsatz der
+Schweizerischen Steuerkonferenz, die konkreten Nummern sind daran angelehnt und
+**nicht verifiziert**. Export und Zuweisungsansicht weisen sichtbar darauf hin.
+Zum Beheben: `Wegleitung_NP_2025.pdf` von sg.ch nach `docs/` legen, Ziffern in
+`src/lib/sgFormular.js` abgleichen, `VERIFIZIERT` auf `true` setzen.
 
-Deshalb verweigert `paketBauen()` die Erzeugung eines übermittlungsfähigen Pakets, solange
-`SCHEMA.verifiziert` auf `false` steht. Für eine Vorschau gibt es `{ entwurf: true }`. Das
-ist eine bewusste Schranke: Ein geratenes Schema darf nicht versehentlich bei einer
-Steuerverwaltung landen.
+**Der eSteuerauszug-Parser.** Die eCH-0196-XSD lag nicht vor; die Feldzuordnung ist
+begründet, aber an echten Auszügen ungetestet. Sie steht als korrigierbare Tabelle in
+`ech0196.js`.
 
-Sobald die XSD vorliegt: Elementnamen in `SCHEMA` und `baueXml()` korrigieren, einen echten
-Validator in `validieren()` einhängen, `SCHEMA.verifiziert` auf `true` setzen.
+## Herkunft
 
-## Zwei Regeln, die das System durchhält
-
-1. **Kein Wert ohne Herkunft.** Jede Position verweist entweder auf einen Beleg oder auf
-   den Menschen, der sie bestätigt hat. Als CHECK-Constraint in der Datenbank, nicht nur
-   im UI.
-2. **Der Agent bereitet vor, ein Mensch gibt frei.** Die Einreichung ist per Trigger
-   gesperrt, solange Vollmacht, Freigabe oder Bestätigungen fehlen.
-
-## Nächste Schritte
-
-Der kritische Pfad läuft nicht über Code, sondern über zwei Briefe — siehe
-[`docs/anfragen-kantone.md`](./docs/anfragen-kantone.md). Ohne die Antwort des KStA Zürich
-ist nicht bekannt, wie der Upload technisch funktioniert; ohne die Antwort der
-Steuerverwaltung Thurgau nicht, ob TG überhaupt in den Projektumfang gehört.
-
-Parallel dazu, unabhängig von den Antworten:
-
-- eCH-0119-XSD beschaffen und den Feld-Mapping-Katalog (§8a der Recherche) verbindlich machen
-- PDF417-Spike an einem echten eSteuerauszug messen
-- Beleg-Upload und Storage-Anbindung ergänzen
+Aus MailFlow übernommen (kopiert, nicht importiert): `pdfFill.js`, `PdfViewer.jsx`, die
+OCR-/PDF-Extraktion aus `batchAiSuggest.js`, die OCR-tolerante UID-Erkennung und das
+Triage-Muster. Die App hat keine Bauabhängigkeit zu MailFlow.
