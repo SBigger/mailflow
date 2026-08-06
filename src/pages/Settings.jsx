@@ -40,6 +40,25 @@ import {toast} from "sonner";
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
 
+// Zugriffsrollen — muss zum profiles_role_check-Constraint (Migration
+// 20260705100000_roles_foundation.sql) und zu ALLOWED_ROLES in den
+// Edge Functions inviteUser/makeAdmin passen. 'user' gibt es nicht mehr.
+const ROLE_OPTIONS = [
+    {value: 'admin',          label: 'Admin (Voller Zugriff)',            short: 'Admin'},
+    {value: 'mandatsleiter',  label: 'Mandatsleiter (volle Fachrechte)',  short: 'Mandatsleiter'},
+    {value: 'sachbearbeiter', label: 'Sachbearbeiter (erfassen & buchen)', short: 'Sachbearbeiter'},
+    {value: 'readonly',       label: 'Nur-Lesen / Revisor',               short: 'Nur-Lesen'},
+    {value: 'task_user',      label: 'Task Benutzer (nur Tasks)',         short: 'Task Benutzer'},
+];
+const ROLE_BADGE = {
+    admin:          'bg-purple-500/10 text-purple-400 border border-purple-500/30',
+    mandatsleiter:  'bg-blue-500/10 text-blue-400 border border-blue-500/30',
+    sachbearbeiter: 'bg-sky-500/10 text-sky-400 border border-sky-500/30',
+    readonly:       'bg-amber-500/10 text-amber-400 border border-amber-500/30',
+    task_user:      'bg-green-500/10 text-green-400 border border-green-500/30',
+};
+const roleLabel = (role) => ROLE_OPTIONS.find(r => r.value === role)?.short || role || '—';
+
 export default function Settings() {
     const queryClient = useQueryClient();
     const {theme, setTheme, navLayout, setNavLayout, hubWidgets, setHubWidgets, hubOpenMode, setHubOpenMode} = useContext(ThemeContext);
@@ -61,7 +80,7 @@ export default function Settings() {
     const [customerSearch, setCustomerSearch] = useState('');
     const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
     const [inviteEmail, setInviteEmail] = useState('');
-    const [inviteRole, setInviteRole] = useState('user');
+    const [inviteRole, setInviteRole] = useState('sachbearbeiter');
     const [syncDays, setSyncDays] = useState(60);
     const [newActivityName, setNewActivityName] = useState('');
     const [newStaff, setNewStaff] = useState({name: '', email: ''});
@@ -1951,9 +1970,9 @@ export default function Settings() {
                                         color: inputColor,
                                         border: `1px solid ${inputBorder}`
                                     }}>
-                                        <option value="admin">Admin (Voller Zugriff)</option>
-                                        <option value="user">Benutzer (Mail + Tasks)</option>
-                                        <option value="task_user">Task Benutzer (nur Tasks)</option>
+                                        {ROLE_OPTIONS.map(r => (
+                                            <option key={r.value} value={r.value}>{r.label}</option>
+                                        ))}
                                     </select>
                                     <Button
                                         onClick={async () => {
@@ -1975,7 +1994,7 @@ export default function Settings() {
                                                 if (data.success) {
                                                     toast.success(`Einladung versendet an ${emailToInvite}`);
                                                     setInviteEmail('');
-                                                    setInviteRole('user');
+                                                    setInviteRole('sachbearbeiter');
                                                     queryClient.invalidateQueries({queryKey: ['users']});
                                                 } else {
                                                     toast.error(data.error || 'Einladung fehlgeschlagen');
@@ -2168,9 +2187,9 @@ export default function Settings() {
                                                                             color: inputColor,
                                                                             border: `1px solid ${inputBorder}`
                                                                         }}>
-                                                                    <option value="admin">Admin</option>
-                                                                    <option value="user">Benutzer</option>
-                                                                    <option value="task_user">Task Benutzer</option>
+                                                                    {ROLE_OPTIONS.map(r => (
+                                                                        <option key={r.value} value={r.value}>{r.short}</option>
+                                                                    ))}
                                                                 </select>
                                                                 <Button
                                                                     variant="ghost" size="icon"
@@ -2192,13 +2211,9 @@ export default function Settings() {
                                                         ) : (
                                                             <>
                                   <span className={`text-xs px-2 py-1 rounded-full ${
-                                      u.role === 'admin'
-                                          ? 'bg-purple-500/10 text-purple-400 border border-purple-500/30'
-                                          : u.role === 'task_user'
-                                              ? 'bg-green-500/10 text-green-400 border border-green-500/30'
-                                              : 'bg-blue-500/10 text-blue-400 border border-blue-500/30'
+                                      ROLE_BADGE[u.role] || 'bg-zinc-500/10 text-zinc-400 border border-zinc-500/30'
                                   }`}>
-                                    {u.role === 'admin' ? 'Admin' : u.role === 'task_user' ? 'Task Benutzer' : 'Benutzer'}
+                                    {roleLabel(u.role)}
                                   </span>
                                                                 {u.id !== user?.id && (
                                                                     <>
@@ -2207,7 +2222,7 @@ export default function Settings() {
                                                                             title="Rolle bearbeiten"
                                                                             onClick={() => {
                                                                                 setEditingUserId(u.id);
-                                                                                setEditingUserRole(u.role || 'user');
+                                                                                setEditingUserRole(u.role || 'sachbearbeiter');
                                                                             }}
                                                                             className="h-7 w-7"
                                                                             style={{color: textMuted}}

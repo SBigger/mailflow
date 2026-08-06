@@ -87,7 +87,11 @@ export default function UserManagement() {
     if (!inviteEmail.trim()) { toast.error("Bitte E-Mail eingeben"); return; }
     setInviting(true);
     try {
-      await functions.invoke('inviteUser', { email: inviteEmail, role: inviteRole });
+      await functions.invoke('inviteUser', {
+        email: inviteEmail,
+        role: inviteRole,
+        appUrl: window.env.HOSTNAME,
+      });
       toast.success(`Einladung an ${inviteEmail} gesendet`);
       setInviteEmail("");
       queryClient.invalidateQueries({ queryKey: ["allUsers"] });
@@ -210,12 +214,12 @@ export default function UserManagement() {
     if (pwEditValue.trim().length < 8) { toast.error("Passwort muss mindestens 8 Zeichen haben"); return; }
     setPwSaving(true);
     try {
+      // functions.invoke verpackt das Payload bereits selbst in { body }
       const res = await functions.invoke('setUserPassword', {
-        body: { user_id: userId, password: pwEditValue.trim() }
+        user_id: userId,
+        password: pwEditValue.trim(),
       });
-      if (res.error) throw new Error(res.error.message || 'Fehler beim Speichern');
-      const data = res.data;
-      if (data?.error) throw new Error(data.error);
+      if (res.data?.error) throw new Error(res.data.error);
       toast.success("Passwort erfolgreich gesetzt");
       setPwEditUserId(null);
       setPwEditValue("");
