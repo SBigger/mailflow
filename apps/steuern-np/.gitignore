@@ -9,3 +9,6 @@ dist/
 public/tesseract/
 # Fertige Windows-Pakete
 release/
+# Zusammengebaute portable Fassung und Verteilarchive (aus portabel-vorlage/ erzeugt)
+portabel/
+*.zip

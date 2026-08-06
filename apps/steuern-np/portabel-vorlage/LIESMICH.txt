@@ -1,0 +1,46 @@
+STEUERN NP — portable Variante
+==============================
+
+STARTEN
+  Windows:  START.cmd doppelklicken
+  macOS:    START.command doppelklicken
+
+Der Browser oeffnet sich auf http://localhost:5180.
+Zum Beenden das schwarze Fenster schliessen.
+
+Voraussetzung: Node.js muss installiert sein (https://nodejs.org, LTS-Version).
+Das Startskript sagt es, falls es fehlt.
+
+
+WAS DIE APP TUT
+  1. Belege einlesen — PDF, Scan, Foto oder eSteuerauszug-XML per Drag & Drop.
+     Gescanntes wird per OCR gelesen (deutsch und franzoesisch).
+  2. Sortieren — Belegart erkennen, relevant / unklar / aussortiert,
+     mit Begruendung. Duplikate werden am Dateiinhalt erkannt.
+  3. Zuweisen — Betraege auf die Positionen des St. Galler Hauptformulars,
+     gegliedert nach Seite 1 bis 4. Summen rechnet die App.
+  4. Exportieren — sortiert nach Seite und Ziffer: Uebersicht zum Abtippen,
+     CSV fuer Excel, JSON.
+
+
+WO DIE DATEN LIEGEN
+  In dieser Variante im Speicher des Browsers, nicht als Datei.
+  Das genuegt zum Ausprobieren, aber NICHT fuer echte Mandate:
+  Wer den Browserverlauf loescht, loescht die Daten.
+
+  Fuer echtes Arbeiten die Electron-Variante nutzen — dort liegt alles
+  als Datei neben dem Programm und laesst sich sichern und mitnehmen.
+  Bauen mit:  npm install && npm run paket:win
+
+
+ES WIRD NICHTS GESENDET
+  Der Server lauscht nur auf dem eigenen Rechner. Die Anwendung selbst
+  hat ausgehende Verbindungen technisch gesperrt. Belege verlassen das
+  Geraet nicht.
+
+
+NOCH NICHT GEPRUEFT
+  Die Ziffern des SG-Hauptformulars sind an den ueblichen Aufbau
+  angelehnt, aber nicht gegen die Wegleitung des Kantons abgeglichen.
+  Die Zuweisungsansicht und der Export weisen darauf hin.
+  Vor der Uebernahme in die echte Steuererklaerung bitte pruefen.

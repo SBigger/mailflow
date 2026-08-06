@@ -11,7 +11,8 @@
     "spike:pdf417": "node scripts/spike-pdf417-esteuerauszug.mjs",
     "start": "npm run build && electron .",
     "paket:win": "npm run ocr:daten && npm run build && electron-packager . SteuernNP --platform=win32 --arch=x64 --out=release --overwrite --app-version=0.1.0 --prune=true --ignore=\"^/(src|tests|docs|scripts|supabase|release|public)\"",
-    "ocr:daten": "node scripts/ocr-daten-holen.mjs"
+    "ocr:daten": "node scripts/ocr-daten-holen.mjs",
+    "paket:portabel": "npm run ocr:daten && npm run build && node scripts/portabel-bauen.mjs"
   },
   "dependencies": {
     "lucide-react": "^0.475.0",

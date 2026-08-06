@@ -46,17 +46,39 @@ Protokoll und bei jeder bestätigten Position. Wer Zugriff auf das Laufwerk hat,
 auf die Daten — der Schutz liegt beim Laufwerk, nicht in der Anwendung. Für Steuerdossiers
 gehört das Laufwerk entsprechend verschlüsselt.
 
-## Windows-Paket bauen
+## Zwei Fassungen zum Verteilen
+
+### Electron — für echte Mandate
 
 ```bash
-cd apps/steuern-np
 npm install
 npm run paket:win
 ```
 
 Ergebnis: `release/SteuernNP-win32-x64/` — rund 300 MB, davon 270 MB Electron-Laufzeit.
-Ordner aufs Laufwerk kopieren, `SteuernNP.exe` doppelklicken. Kein npm, kein Node, keine
-Installation auf dem Zielrechner.
+Ordner aufs Laufwerk kopieren, `SteuernNP.exe` doppelklicken. Auf dem Zielrechner braucht
+es weder npm noch Node. **Nur diese Fassung führt die Daten als Datei** neben dem Programm,
+mit Tagessicherung, und lässt sich als Ordner mitnehmen.
+
+### Portabel — zum Ausprobieren
+
+```bash
+npm install
+npm run paket:portabel
+cd portabel && zip -r ../SteuernNP-portabel.zip .
+```
+
+Ergebnis: `portabel/` — rund 22 MB. Enthält die gebaute Oberfläche und einen winzigen
+lokalen Server ohne Fremdpakete (`portabel-vorlage/server.mjs`). Entpacken, `START.cmd`
+doppelklicken, der Browser öffnet sich auf Port 5180.
+
+Ein Server ist nötig, weil der Browser bei einem Datei-Aufruf (`file://`) die Web Worker
+blockiert, die OCR braucht. Auf dem Zielrechner muss **Node.js** vorhanden sein; das
+Startskript sagt es, falls nicht.
+
+⚠️ **Nicht für echte Mandate.** Die Daten liegen hier im Browserspeicher — wer den
+Verlauf löscht, löscht die Daten. Englisch ist aus den OCR-Daten entfernt (11 MB für einen
+Fall, der bei Schweizer Belegen kaum vorkommt).
 
 ## Entwickeln
 
