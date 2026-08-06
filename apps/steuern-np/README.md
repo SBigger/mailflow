@@ -48,7 +48,7 @@ npm install
 npm run dev
 ```
 
-Dann **http://localhost:5173/demo** öffnen und Steuerbelege hineinziehen — PDF, Foto,
+Dann **http://localhost:5180/demo** öffnen und Steuerbelege hineinziehen — PDF, Foto,
 Scan oder eSteuerauszug-XML. Zu sehen sind Belegart, Relevanz, Confidence, die Begründung
 der Einordnung, der gelesene Text und eine eCH-0119-Strukturvorschau.
 

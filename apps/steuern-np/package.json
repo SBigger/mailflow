@@ -5,9 +5,9 @@
   "type": "module",
   "description": "Agentische Steuerdeklaration natürliche Personen (ZH/SG/TG) — eigenständig, getrennt von MailFlow",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --port 5180 --strictPort",
     "build": "vite build",
-    "preview": "vite preview",
+    "preview": "vite preview --port 5181 --strictPort",
     "test": "node --test tests/*.test.mjs",
     "spike:pdf417": "node scripts/spike-pdf417-esteuerauszug.mjs"
   },
