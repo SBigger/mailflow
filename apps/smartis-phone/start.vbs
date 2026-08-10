@@ -19,4 +19,8 @@ If Not fso.FileExists(electron) Then
 End If
 
 WshShell.CurrentDirectory = ordner
-WshShell.Run """" & electron & """ """ & ordner & """", 0, False
+' ⚠️ Fensterstil 1 (normal), NICHT 0. Mit 0 startet die App unsichtbar: sie
+' laeuft dann zwar, hat aber kein Fenster -- man sucht sie vergeblich
+' (10.08.2026 genau so passiert). Electron oeffnet ohnehin keine Konsole,
+' der Trick mit 0 ist hier also nicht noetig.
+WshShell.Run """" & electron & """ """ & ordner & """", 1, False
