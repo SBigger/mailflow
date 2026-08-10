@@ -42,14 +42,54 @@ function buildKeypad(el, onKey) {
 buildKeypad($("keypad"), (d) => { $("dialInput").value += d; });
 buildKeypad($("keypad2"), (d) => engine.sendDtmf(d));
 
-$("btnCall").addEventListener("click", () => {
-  const nr = $("dialInput").value.trim();
-  if (!nr) return;
-  // Ausgehend uebernimmt der Sprach-Motor (heute MicroSIP als tel:-Programm);
-  // der Mock hat seinen eigenen dial().
-  if (echterMotor) window.phoneAPI.dial(nr);
-  else engine.dial(nr);
-});
+// Ausgehend waehlen -- in dieser Reihenfolge:
+//   1. eigener SIP-Motor, wenn er registriert ist (seit 10.08.2026)
+//   2. tel:-Link an Windows, also der alte Weg ueber MicroSIP
+//   3. Mock-Motor (Entwicklung im Browser)
+//
+// Punkt 2 ist bewusst nur noch Rueckfall: ist MicroSIP nicht mehr als
+// tel:-Programm eingetragen, fragt Windows den Benutzer, welche App den Link
+// oeffnen soll -- ein Dialog, der mit Telefonieren nichts zu tun hat.
+function waehle(nr) {
+  const sauber = String(nr || "").trim();
+  if (!sauber) return;
+
+  const sip = window.sipMotor;
+  if (sip && sip.getState()?.registration?.state === "registered") {
+    sip.dial(sauber);
+    return;
+  }
+  if (echterMotor) {
+    window.phoneAPI.dial(sauber).then((r) => {
+      if (r?.ok) return;
+      hinweis(
+        "Wählen geht noch nicht: die eigene Sprachverbindung ist nicht verbunden, "
+        + "und Windows kennt kein Telefonprogramm für Rufnummern. "
+        + "Einstellungen → Eigene Sprachverbindung.",
+      );
+    }).catch(() => {});
+    return;
+  }
+  engine.dial(sauber);
+}
+
+// Kurze Rueckmeldung im Fenster statt eines stummen Fehlschlags oder eines
+// Windows-Dialogs, den niemand erwartet.
+function hinweis(text) {
+  let box = document.getElementById("hinweis");
+  if (!box) {
+    box = document.createElement("div");
+    box.id = "hinweis";
+    box.className = "hinweis";
+    document.body.appendChild(box);
+  }
+  box.textContent = text;
+  box.classList.add("sichtbar");
+  clearTimeout(hinweis._uhr);
+  hinweis._uhr = setTimeout(() => box.classList.remove("sichtbar"), 7000);
+}
+
+$("btnCall").addEventListener("click", () => waehle($("dialInput").value));
 $("dialInput").addEventListener("keydown", (e) => {
   if (e.key === "Enter") $("btnCall").click();
 });
@@ -241,8 +281,7 @@ function renderContacts(filter = "") {
     txt.append(t1, t2);
     row.append(av, txt);
     row.addEventListener("click", () => {
-      if (echterMotor) window.phoneAPI.dial(c.extension);
-      else engine.dial(c.extension);
+      waehle(c.extension);
     });
     box.appendChild(row);
   });

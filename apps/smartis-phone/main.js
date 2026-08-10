@@ -215,9 +215,21 @@ if (!app.requestSingleInstanceLock()) {
     // und uebernimmt den Ruf -- bis der eigene SIP-Stack das selbst kann.
     ipcMain.handle("phone:dial", (_e, nummer) => {
       const sauber = String(nummer || "").replace(/[^\d+*#]/g, "");
-      if (!sauber) return false;
+      if (!sauber) return { ok: false, grund: "keine Nummer" };
+
+      // Erst nachsehen, OB Windows ein Telefonprogramm kennt. Ohne diese
+      // Pruefung oeffnet Windows die Auswahl "Womit soll dieser tel:-Link
+      // geoeffnet werden?" und schlaegt Chrome, Teams und Skype vor -- ein
+      // Dialog, der mit Telefonieren nichts zu tun hat und den Benutzer
+      // ratlos zuruecklaesst (10.08.2026 genau so passiert).
+      let programm = "";
+      try { programm = app.getApplicationNameForProtocol("tel://" + sauber) || ""; } catch { /* egal */ }
+      if (!programm) {
+        return { ok: false, grund: "kein Telefonprogramm eingetragen" };
+      }
+
       shell.openExternal("tel:" + sauber);
-      return true;
+      return { ok: true, programm };
     });
 
     // Dokument in der smartis-Dateiablage oeffnen (gleicher Deep-Link wie
