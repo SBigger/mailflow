@@ -282,6 +282,34 @@ if (!app.requestSingleInstanceLock()) {
       }
     });
 
+    // ── Anrufverlauf ────────────────────────────────────────────────────
+    // Quelle ist die Datenbank, nicht der Client: nur so stehen auch die
+    // Gespraeche drin, die am Handy oder am Tischtelefon liefen. RLS zeigt
+    // ohnehin nur die eigenen Zeilen -- die Abfrage braucht keinen Filter,
+    // aber sie braucht eine Anmeldung.
+    ipcMain.handle("phone:verlauf", async () => {
+      if (!AKTUELL.angemeldet) return null;   // null = kein Verlauf verfuegbar
+      try {
+        const { data, error } = await AUTH.supabase
+          .from("telefonie_anrufe")
+          .select("id, call_id, richtung, nummer, name, kunde, begonnen_am, dauer_sek, verpasst, gesehen")
+          .order("begonnen_am", { ascending: false })
+          .limit(60);
+        if (error) { console.error("Verlauf nicht lesbar:", error.message); return null; }
+        return data ?? [];
+      } catch (e) {
+        console.error("Verlauf nicht lesbar:", e.message);
+        return null;
+      }
+    });
+    ipcMain.handle("phone:verlauf-gesehen", async (_e, id) => {
+      if (!AKTUELL.angemeldet || !id) return false;
+      try {
+        await AUTH.supabase.from("telefonie_anrufe").update({ gesehen: true }).eq("id", id);
+        return true;
+      } catch { return false; }
+    });
+
     ipcMain.handle("phone:get-profile", () => ({
       fullName: AKTUELL.profil?.full_name || CFG.fullName,
       extension: AKTUELL.profil?.internal_extension || CFG.extension,

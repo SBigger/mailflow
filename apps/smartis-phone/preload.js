@@ -13,6 +13,11 @@ contextBridge.exposeInMainWorld("phoneAPI", {
   getProfile: () => ipcRenderer.invoke("phone:get-profile"),
   dial: (nummer) => ipcRenderer.invoke("phone:dial", nummer),
 
+  // Anrufverlauf aus smartis (nicht aus dem Arbeitsspeicher): enthaelt auch
+  // Gespraeche, die an einem anderen Geraet gefuehrt wurden.
+  verlauf: () => ipcRenderer.invoke("phone:verlauf"),
+  verlaufGesehen: (id) => ipcRenderer.invoke("phone:verlauf-gesehen", id),
+
   // Anmeldung: das Passwort wandert direkt in den Hauptprozess und von dort
   // zu Supabase -- es wird nirgends zwischengespeichert.
   auth: {

@@ -230,6 +230,7 @@ function aufAnrufEnde(info) {
   ["ctrlKeypad", "ctrlTransfer", "ctrlDossier"].forEach((c) => $(c).classList.remove("on"));
   $("dialInput").value = "";
   addCallToList(info, letzter);
+  verlaufNachtragen();
 }
 
 // ── Anrufliste (heute lokal; spaeter aus smartis call_records) ───────────
@@ -320,6 +321,9 @@ function renderCallList() {
 
     row.append(pfeil, haupt, zeit, zurueck);
     row.addEventListener("click", () => {
+      if (!c.gesehen && c.id && window.phoneAPI?.verlaufGesehen) {
+        window.phoneAPI.verlaufGesehen(c.id).catch(() => {});
+      }
       c.gesehen = true;
       if (c.number) $("dialInput").value = c.number;
       renderCallList();
@@ -618,3 +622,44 @@ function fensterAbgleich() {
 }
 window.addEventListener("resize", fensterAbgleich);
 fensterAbgleich();
+
+// ── Verlauf aus smartis ──────────────────────────────────────────────────
+// Bis zum 10.08.2026 lebte die Liste nur im Arbeitsspeicher: nach dem
+// Schliessen war sie weg, und Gespraeche am Handy fehlten ganz. Jetzt ist die
+// Datenbank die Wahrheit, gespeist aus der Anlagen-Meldung -- der Client
+// zeigt nur noch an.
+//
+// Die oertliche Liste bleibt als Sofortanzeige: der Webhook braucht einen
+// Moment, und ein gerade beendetes Gespraech soll nicht erst nach Sekunden
+// erscheinen. Beim naechsten Laden wird sie durch die Datenbank ersetzt.
+let verlaufAusDatenbank = false;
+
+async function ladeVerlauf() {
+  if (!window.phoneAPI?.verlauf) return;
+  let zeilen = null;
+  try { zeilen = await window.phoneAPI.verlauf(); } catch { return; }
+  if (!Array.isArray(zeilen)) return;   // nicht angemeldet -> oertliche Liste behalten
+
+  verlaufAusDatenbank = true;
+  callLog.length = 0;
+  zeilen.forEach((z) => callLog.push({
+    id: z.id,
+    at: Date.parse(z.begonnen_am) || Date.now(),
+    dir: z.richtung,
+    name: z.kunde || z.name || z.nummer || "Unbekannt",
+    number: z.nummer || "",
+    durationSec: z.dauer_sek || 0,
+    verpasst: !!z.verpasst,
+    gesehen: !!z.gesehen,
+  }));
+  renderCallList();
+}
+
+// Nach einem Gespraech kurz warten: der Webhook schreibt das Ende erst, wenn
+// die Anlage es meldet.
+function verlaufNachtragen() { setTimeout(ladeVerlauf, 4000); }
+
+ladeVerlauf();
+// Regelmaessig nachziehen, damit auch Anrufe auftauchen, die anderswo
+// gefuehrt wurden -- ohne dass man die App neu starten muss.
+setInterval(ladeVerlauf, 60000);

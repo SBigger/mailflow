@@ -219,6 +219,78 @@ serve(async (req) => {
       dossier,
       viaNumber: null,
     };
+    // ── Verlauf festhalten ────────────────────────────────────────────
+    // Erst seit 10.08.2026: die Meldung wurde bisher angezeigt und danach
+    // weggeworfen. Dadurch war der Verlauf im Client fluechtig und Anrufe,
+    // die am Handy oder Tischtelefon liefen, fehlten ganz.
+    //
+    // Eine Zeile je Anruf, ueber die Meldungen hinweg fortgeschrieben --
+    // sonst stuende jeder Anruf drei Mal drin (ringing/answered/ended).
+    // Fehler hier duerfen den Broadcast NICHT aufhalten: ein fehlender
+    // Verlaufseintrag ist aergerlich, eine ausbleibende Anruf-Karte waere
+    // ein echter Ausfall.
+    if (targetUserId && entry.callId) {
+      try {
+        const jetzt = new Date().toISOString();
+        const grund = {
+          user_id: targetUserId,
+          call_id: String(entry.callId),
+          richtung: entry.direction === "outgoing" ? "out" : "in",
+          nummer: remoteParty || null,
+          name: match?.contactName || null,
+          customer_id: match?.customerId ?? null,
+          kunde: match?.label ?? null,
+        };
+
+        if (callStatus === "ringing") {
+          // onConflict: die Anlage wiederholt "ringing" mehrfach.
+          await supabase.from("telefonie_anrufe")
+            .upsert({ ...grund, begonnen_am: jetzt, verpasst: grund.richtung === "in" },
+                    { onConflict: "user_id,call_id", ignoreDuplicates: true });
+        } else if (callStatus === "active") {
+          const { data: vorhanden } = await supabase.from("telefonie_anrufe")
+            .select("id, beantwortet_am").eq("user_id", targetUserId)
+            .eq("call_id", String(entry.callId)).maybeSingle();
+          if (vorhanden?.id) {
+            if (!vorhanden.beantwortet_am) {
+              await supabase.from("telefonie_anrufe")
+                .update({ beantwortet_am: jetzt, verpasst: false }).eq("id", vorhanden.id);
+            }
+          } else {
+            // Kein "ringing" gesehen (z.B. selbst gewaehlt) -- Zeile anlegen.
+            await supabase.from("telefonie_anrufe").upsert(
+              { ...grund, begonnen_am: jetzt, beantwortet_am: jetzt, verpasst: false },
+              { onConflict: "user_id,call_id" },
+            );
+          }
+        } else if (callStatus === "ended") {
+          const { data: vorhanden } = await supabase.from("telefonie_anrufe")
+            .select("id, begonnen_am, beantwortet_am, beendet_am")
+            .eq("user_id", targetUserId).eq("call_id", String(entry.callId)).maybeSingle();
+          // peoplefone wiederholt "terminated" minutenlang -- nur einmal schliessen.
+          if (vorhanden?.id && !vorhanden.beendet_am) {
+            const seit = vorhanden.beantwortet_am ?? null;
+            const dauer = seit
+              ? Math.max(0, Math.round((Date.parse(jetzt) - Date.parse(seit)) / 1000))
+              : 0;
+            await supabase.from("telefonie_anrufe").update({
+              beendet_am: jetzt,
+              dauer_sek: dauer,
+              // Verpasst = eingehend und nie angenommen.
+              verpasst: grund.richtung === "in" && !seit,
+            }).eq("id", vorhanden.id);
+          } else if (!vorhanden) {
+            await supabase.from("telefonie_anrufe").upsert({
+              ...grund, begonnen_am: jetzt, beendet_am: jetzt, dauer_sek: 0,
+              verpasst: grund.richtung === "in",
+            }, { onConflict: "user_id,call_id" });
+          }
+        }
+      } catch (e) {
+        console.error("Verlauf konnte nicht geschrieben werden:", e);
+      }
+    }
+
     const inhalt = { targetUserId, call: callPayload };
 
     // Waehrend der Umstellung auf private Kanaele wird BEIDES bedient:
