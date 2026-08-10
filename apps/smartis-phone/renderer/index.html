@@ -100,6 +100,36 @@
         <p class="muted small">Getrenntes Klingel-Gerät: Klingeln über die Lautsprecher, Gespräch im Headset.</p>
       </div>
 
+      <!-- Eigener Sprach-Motor (seit peoplefones Freigabe vom 10.08.2026).
+           Solange erprobt wird, steht er neben dem bisherigen Weg statt ihn
+           zu ersetzen -- ein halb fertiger Sprachkanal darf niemandem das
+           Telefon abstellen. -->
+      <div class="card">
+        <h3>Eigene Sprachverbindung <span class="muted small">(in Erprobung)</span></h3>
+        <p class="muted small">
+          Damit telefoniert smartis selbst — ohne MicroSIP. Benutzername und Passwort stehen
+          im peoplefone-Portal bei der jeweiligen Linie unter „SIP Setup“.
+        </p>
+        <label class="field"><span>SIP-Benutzer</span>
+          <input id="sipUser" autocomplete="off" spellcheck="false"></label>
+        <label class="field"><span>SIP-Passwort</span>
+          <input id="sipPassword" type="password" autocomplete="new-password"></label>
+        <label class="field"><span>WebSocket</span>
+          <input id="sipWss" autocomplete="off" spellcheck="false"></label>
+        <label class="field"><span>Domain</span>
+          <input id="sipDomain" autocomplete="off" spellcheck="false"></label>
+        <div class="row">
+          <button class="btn-ghost" id="btnSipSpeichern">Speichern</button>
+          <button class="btn-ghost" id="btnSipVerbinden">Verbinden</button>
+          <button class="btn-ghost" id="btnSipTrennen">Trennen</button>
+        </div>
+        <p class="muted small" id="sipStatus">Nicht verbunden.</p>
+        <p class="muted small">
+          Die Adresse ist bei peoplefone ausdrücklich vorläufig und zieht voraussichtlich um —
+          deshalb steht sie hier als Feld und nicht fest im Programm.
+        </p>
+      </div>
+
       <div class="card">
         <h3>Test (ohne Telefonanlage)</h3>
         <p class="muted small">Der Motor ist noch simuliert — hier lässt sich die Oberfläche vollständig durchspielen.</p>
@@ -185,6 +215,11 @@
 </footer>
 
 <script src="../engine/mock-engine.js"></script>
+<!-- sip.js liefert nur ES-Module; die laden ueber file:// nicht. Darum
+     einmal gebuendelt (npm run sip:bundle) und klassisch eingebunden. -->
+<script src="vendor/sip.bundle.js"></script>
+<script src="sip-engine.js"></script>
 <script src="app.js"></script>
+<script src="sip-ui.js"></script>
 </body>
 </html>

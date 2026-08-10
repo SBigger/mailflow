@@ -22,6 +22,13 @@ contextBridge.exposeInMainWorld("phoneAPI", {
     beiAenderung: (handler) => ipcRenderer.on("phone:auth", (_e, p) => handler(p)),
   },
 
+  // SIP-Zugang (eigener Sprach-Motor). Das Passwort muss der Renderer kennen --
+  // WebRTC gibt es nur dort. Es bleibt aber innerhalb der App.
+  sip: {
+    laden: () => ipcRenderer.invoke("sip:get"),
+    speichern: (cfg) => ipcRenderer.invoke("sip:set", cfg),
+  },
+
   engine: {
     on(event, handler) {
       if (!ereignisse.includes(event)) return;

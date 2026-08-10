@@ -5,11 +5,13 @@
   "description": "smartis Telefon -- eigener Softphone-Client (loest MicroSIP + telefonie-tray ab)",
   "main": "main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "sip:bundle": "esbuild node_modules/sip.js/lib/index.js --bundle --format=iife --global-name=SIP --platform=browser --outfile=renderer/vendor/sip.bundle.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2",
     "electron": "^33",
+    "sip.js": "^0.21.2",
     "ws": "^8.21.1"
   }
 }

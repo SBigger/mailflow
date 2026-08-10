@@ -12,7 +12,7 @@
 //   - Einzelinstanz-Sperre (sonst zwei Telefone gleichzeitig)
 //   - Autostart mit explizitem Pfad+Argument (sonst startet nur Electron)
 // ===========================================================================
-const { app, BrowserWindow, ipcMain, shell, powerSaveBlocker, Menu } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, powerSaveBlocker, Menu, safeStorage } = require("electron");
 const path = require("path");
 const fs = require("fs");
 // Electrons gebuendeltes Node hat kein globales WebSocket -- @supabase/
@@ -227,6 +227,43 @@ if (!app.requestSingleInstanceLock()) {
       let origin = "https://smartis.me";
       try { origin = new URL(CFG.url).origin; } catch { /* Vorgabe behalten */ }
       shell.openExternal(origin + "/Dokumente?doc=" + encodeURIComponent(String(docId)));
+    });
+
+    // ── SIP-Zugangsdaten ────────────────────────────────────────────────
+    // Verschluesselt auf der Platte (safeStorage/DPAPI), wie die Sitzung.
+    //
+    // Anders als der Anlagen-Schluessel MUSS das SIP-Passwort auslesbar sein:
+    // die Registrierung passiert im Renderer, weil es WebRTC nur dort gibt.
+    // Es verlaesst dabei nie die App -- aber "eintragen, nie auslesen" waere
+    // hier schlicht gelogen, deshalb steht es so in der Oberflaeche.
+    const sipDatei = () => path.join(app.getPath("userData"), "sip.dat");
+    function leseSip() {
+      try {
+        const roh = fs.readFileSync(sipDatei());
+        if (!safeStorage.isEncryptionAvailable()) return null;
+        return JSON.parse(safeStorage.decryptString(roh));
+      } catch { return null; }
+    }
+    ipcMain.handle("sip:get", () => leseSip() || {
+      wsServer: "wss://webrtcproxy.peoplefone.ch/ws",
+      domain: "webrtcproxy.peoplefone.ch",
+      sipUser: "", sipPassword: "",
+    });
+    ipcMain.handle("sip:set", (_e, cfg) => {
+      if (!safeStorage.isEncryptionAvailable()) {
+        return { ok: false, fehler: "Verschluesselung nicht verfuegbar — nicht gespeichert." };
+      }
+      try {
+        fs.writeFileSync(sipDatei(), safeStorage.encryptString(JSON.stringify({
+          wsServer: String(cfg?.wsServer || "").trim(),
+          domain: String(cfg?.domain || "").trim(),
+          sipUser: String(cfg?.sipUser || "").trim(),
+          sipPassword: String(cfg?.sipPassword || ""),
+        })));
+        return { ok: true };
+      } catch (e) {
+        return { ok: false, fehler: e.message };
+      }
     });
 
     ipcMain.handle("phone:get-profile", () => ({
