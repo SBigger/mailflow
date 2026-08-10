@@ -220,41 +220,122 @@ function aufAnruf(call) {
 }
 
 function aufAnrufEnde(info) {
+  // Den Anruf festhalten, BEVOR er geloescht wird -- sonst weiss die Liste
+  // weder Richtung noch Nummer und koennte "verpasst" nicht erkennen.
+  const letzter = current;
   current = null;
   clearInterval(timerHandle);
   showOverlay(null);
   ["panelKeypad", "panelTransfer"].forEach((p) => $(p).classList.remove("active"));
   ["ctrlKeypad", "ctrlTransfer", "ctrlDossier"].forEach((c) => $(c).classList.remove("on"));
   $("dialInput").value = "";
-  addCallToList(info);
+  addCallToList(info, letzter);
 }
 
 // ── Anrufliste (heute lokal; spaeter aus smartis call_records) ───────────
 const callLog = [];
-function addCallToList(info) {
-  callLog.unshift({ ...info, at: Date.now(), name: $("acName").textContent, number: $("acNumber").textContent });
+function addCallToList(info, anruf) {
+  const c = anruf || {};
+  callLog.unshift({
+    ...info,
+    at: Date.now(),
+    dir: c.dir || "in",
+    // Verpasst = eingehend und nie zustande gekommen.
+    verpasst: (c.dir || "in") === "in" && !(info.durationSec > 0),
+    gesehen: false,
+    name: $("acName").textContent,
+    number: c.peerNumber || $("acNumber").textContent,
+  });
   renderCallList();
 }
+function tagesTitel(zeit) {
+  const d = new Date(zeit), heute = new Date();
+  const gleich = (a, b) => a.toDateString() === b.toDateString();
+  if (gleich(d, heute)) return "Heute";
+  const gestern = new Date(heute); gestern.setDate(gestern.getDate() - 1);
+  if (gleich(d, gestern)) return "Gestern";
+  return d.toLocaleDateString("de-CH", { weekday: "short", day: "2-digit", month: "2-digit" });
+}
+function dauerText(sek) {
+  const s = Math.max(0, sek | 0);
+  return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+}
+
+let verlaufFilter = "alle";
 function renderCallList() {
   const box = $("callList");
   box.textContent = "";
-  if (!callLog.length) {
-    const e = document.createElement("div"); e.className = "muted"; e.textContent = "Noch keine Anrufe.";
+
+  const sichtbar = callLog.filter((c) => {
+    if (verlaufFilter === "verpasst") return c.verpasst;
+    if (verlaufFilter === "gewaehlt") return c.dir === "out";
+    return true;
+  });
+
+  // Verpasste zaehlen -- die Zahl am Reiter ist der eigentliche Grund, warum
+  // der Verlauf ueberhaupt sichtbar sein muss.
+  const offen = callLog.filter((c) => c.verpasst && !c.gesehen).length;
+  const marke = $("verpasstMarke");
+  if (marke) { marke.textContent = String(offen); marke.hidden = offen === 0; }
+
+  if (!sichtbar.length) {
+    const e = document.createElement("div"); e.className = "muted small";
+    e.textContent = verlaufFilter === "alle" ? "Noch keine Anrufe." : "Nichts in dieser Auswahl.";
     box.appendChild(e); return;
   }
-  callLog.slice(0, 40).forEach((c) => {
-    const row = document.createElement("div"); row.className = "row-item";
-    const av = document.createElement("span"); av.className = "avatar"; av.textContent = initials(c.name);
-    const txt = document.createElement("div"); txt.className = "txt";
-    const t1 = document.createElement("div"); t1.className = "t1"; t1.textContent = c.name || c.number || "Unbekannt";
-    const t2 = document.createElement("div"); t2.className = "t2";
-    t2.textContent = (c.reason || "beendet") + " · " + Math.floor((c.durationSec || 0) / 60) + ":" + String((c.durationSec || 0) % 60).padStart(2, "0");
-    txt.append(t1, t2);
-    const meta = document.createElement("span"); meta.className = "meta";
-    meta.textContent = new Date(c.at).toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" });
-    row.append(av, txt, meta);
-    row.addEventListener("click", () => { if (c.number) { $("dialInput").value = c.number; document.querySelector('.rail-btn[data-view="dial"]').click(); } });
+
+  let letzterTag = null;
+  sichtbar.slice(0, 60).forEach((c) => {
+    const titel = tagesTitel(c.at);
+    if (titel !== letzterTag) {
+      letzterTag = titel;
+      const t = document.createElement("div"); t.className = "tag"; t.textContent = titel;
+      box.appendChild(t);
+    }
+
+    const row = document.createElement("div");
+    row.className = "row-item" + (c.verpasst ? " offen" : "");
+
+    const pfeil = document.createElement("span");
+    pfeil.className = "pfeil " + (c.verpasst ? "weg" : c.dir === "out" ? "raus" : "rein");
+    pfeil.textContent = c.dir === "out" ? "↗" : "↙";
+
+    const haupt = document.createElement("div"); haupt.className = "haupt";
+    const name = document.createElement("div"); name.className = "name";
+    name.textContent = c.name || c.number || "Unbekannt";
+    const unten = document.createElement("div"); unten.className = "unten";
+    unten.textContent = c.verpasst
+      ? (c.number || "Unbekannt") + " · nicht angenommen"
+      : (c.number || "") + (c.durationSec ? " · " + dauerText(c.durationSec) : "");
+    haupt.append(name, unten);
+
+    const zeit = document.createElement("span"); zeit.className = "zeit";
+    zeit.textContent = new Date(c.at).toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" });
+
+    const zurueck = document.createElement("button");
+    zurueck.className = "zurueck"; zurueck.type = "button";
+    zurueck.title = c.dir === "out" ? "Nochmals anrufen" : "Zurückrufen";
+    zurueck.textContent = "↗";
+    zurueck.addEventListener("click", (e) => { e.stopPropagation(); if (c.number) waehle(c.number); });
+
+    row.append(pfeil, haupt, zeit, zurueck);
+    row.addEventListener("click", () => {
+      c.gesehen = true;
+      if (c.number) $("dialInput").value = c.number;
+      renderCallList();
+    });
     box.appendChild(row);
+  });
+}
+
+const filterLeiste = $("verlaufFilter");
+if (filterLeiste) {
+  filterLeiste.querySelectorAll("button").forEach((b) => {
+    b.addEventListener("click", () => {
+      verlaufFilter = b.dataset.filter;
+      filterLeiste.querySelectorAll("button").forEach((x) => x.classList.toggle("an", x === b));
+      renderCallList();
+    });
   });
 }
 renderCallList();
@@ -354,12 +435,19 @@ if (!echterMotor) engine.connect(); // echter Motor verbindet aus dem Hauptproze
 
 if (window.phoneAPI?.getProfile) {
   window.phoneAPI.getProfile().then((p) => {
-    if (p?.fullName) $("meAvatar").textContent = initials(p.fullName);
-    if (p?.extension) meineNebenstelle = p.extension;
+    if (p?.fullName) {
+      $("meAvatar").textContent = initials(p.fullName);
+      $("meName").textContent = p.fullName;
+    }
+    if (p?.extension) {
+      meineNebenstelle = p.extension;
+      $("meName").title = "Nebenstelle " + p.extension;
+    }
     if (Array.isArray(p?.targets) && p.targets.length) {
       contacts = p.targets;
       renderContacts();
       renderTransferList();
+      renderFavoriten();
     }
     if (p && p.hatGeheimnis === false) {
       $("accountInfo").textContent =
@@ -384,6 +472,8 @@ if (window.phoneAPI?.auth) {
   const uebernehmen = (s) => {
     zeigeMaske(!s?.angemeldet);
     if (s?.angemeldet) {
+      if (s.name) $("meName").textContent = s.name;
+      if (s.extension) $("meName").title = "Nebenstelle " + s.extension;
       if (s.name) $("meAvatar").textContent =
         s.name.split(/\s+/).map((t) => t[0]).slice(0, 2).join("").toUpperCase();
       // Ohne Zuordnung zur Telefonanlage kommen keine Anrufe an -- das darf
@@ -441,3 +531,90 @@ function verbindeMotor(m) {
 }
 verbindeMotor(engine);
 window.verbindeMotor = verbindeMotor;
+
+// ── Thema ────────────────────────────────────────────────────────────────
+// Dieselben drei Themen wie smartis im Browser. Artis ist die Vorgabe --
+// es ist die Hausfarbe, nicht eine von dreien.
+(function themaEinrichten() {
+  const gespeichert = localStorage.getItem("smartis-telefon-thema") || "artis";
+  const setzen = (t) => {
+    document.documentElement.setAttribute("data-thema", t);
+    localStorage.setItem("smartis-telefon-thema", t);
+    document.querySelectorAll("#themenwahl button")
+      .forEach((b) => b.classList.toggle("an", b.dataset.thema === t));
+  };
+  setzen(gespeichert);
+  document.querySelectorAll("#themenwahl button")
+    .forEach((b) => b.addEventListener("click", () => setzen(b.dataset.thema)));
+})();
+
+// ── Favoriten ────────────────────────────────────────────────────────────
+// Bewusst von Hand gesetzt statt automatisch: eine Liste, die sich nach
+// Haeufigkeit selbst umsortiert, verschiebt genau dann den Knopf, wenn man
+// ihn eilig treffen will. Anwesenheit steht dabei ueber der Nummer -- die
+// Frage vor einem internen Anruf ist "ist sie frei", nicht "welche Nummer".
+const FAVORITEN_SPEICHER = "smartis-telefon-favoriten";
+function favoritenListe() {
+  try { return JSON.parse(localStorage.getItem(FAVORITEN_SPEICHER)) || []; }
+  catch { return []; }
+}
+function favoritenSpeichern(l) {
+  localStorage.setItem(FAVORITEN_SPEICHER, JSON.stringify(l));
+}
+function renderFavoriten() {
+  const box = $("favoriten");
+  if (!box) return;
+  box.textContent = "";
+
+  const gemerkt = favoritenListe();
+  const eintraege = gemerkt.length
+    ? gemerkt
+    : contacts.slice(0, 5).map((c) => ({ name: c.name, extension: c.extension }));
+
+  if (!eintraege.length) {
+    const e = document.createElement("div"); e.className = "fav-leer";
+    e.textContent = "Noch keine Favoriten — unter Kollegen jemanden mit dem Stern merken.";
+    box.appendChild(e);
+    return;
+  }
+
+  eintraege.forEach((f) => {
+    const b = document.createElement("button");
+    b.className = "fav"; b.type = "button"; b.title = f.name + " · Nebenstelle " + f.extension;
+
+    const bild = document.createElement("span"); bild.className = "fav-bild";
+    const kreis = document.createElement("span"); kreis.textContent = initials(f.name);
+    const punkt = document.createElement("i");
+    // Anwesenheit kommt mit der smartis-Anbindung; bis dahin ehrlich grau
+    // statt einem gruenen Punkt, der nichts weiss.
+    punkt.className = f.presence || "";
+    bild.append(kreis, punkt);
+
+    const name = document.createElement("span"); name.className = "fav-name";
+    name.textContent = String(f.name || "").split(/\s+/)[0];
+
+    b.append(bild, name);
+    b.addEventListener("click", () => {
+      // Im Gespraech verbinden statt neu waehlen -- das ist in dem Moment
+      // immer gemeint.
+      if (current) aktiverMotor().transfer(f.extension);
+      else waehle(f.extension);
+    });
+    box.appendChild(b);
+  });
+}
+renderFavoriten();
+
+// ── Breites Fenster ──────────────────────────────────────────────────────
+// Dort steht das Waehlfeld dauerhaft links; rechts gehoert dem gewaehlten
+// Bereich. Ohne diesen Abgleich waere die rechte Haelfte beim Start leer,
+// weil anfangs "Waehlen" aktiv ist.
+function fensterAbgleich() {
+  const breit = window.matchMedia("(min-width: 720px)").matches;
+  const aktiv = document.querySelector(".rail-btn.active");
+  if (breit && aktiv?.dataset.view === "dial") {
+    document.querySelector('.rail-btn[data-view="calls"]')?.click();
+  }
+}
+window.addEventListener("resize", fensterAbgleich);
+fensterAbgleich();

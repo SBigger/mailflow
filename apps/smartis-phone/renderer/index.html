@@ -30,29 +30,26 @@
 
 <div class="shell">
 
-  <!-- ── Navigationsleiste links ─────────────────────────────────────── -->
-  <nav class="rail">
-    <button class="rail-btn active" data-view="dial" title="Wählen">
-      <svg viewBox="0 0 24 24"><path d="M4.5 4.5c1.2-1 2.6-1 3.5.3l1.4 2c.6.9.4 2-.3 2.7l-1 1c.9 2 2.5 3.6 4.5 4.5l1-1c.7-.7 1.8-.9 2.7-.3l2 1.4c1.3.9 1.3 2.3.3 3.5-1.1 1.3-2.9 1.9-4.5 1.4-5-1.5-8.9-5.4-10.4-10.4-.5-1.6.1-3.4 1.4-4.5z"/></svg>
-      <span>Wählen</span>
-    </button>
-    <button class="rail-btn" data-view="calls" title="Anrufe">
-      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
-      <span>Anrufe</span>
-    </button>
-    <button class="rail-btn" data-view="contacts" title="Kollegen">
-      <svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.4-3 2.8-4.8 5.5-4.8s5.1 1.8 5.5 4.8"/><path d="M16 5.5a3 3 0 0 1 0 5.6M17.5 14.4c2 .5 3.4 2.1 3.7 4.6"/></svg>
-      <span>Kollegen</span>
-    </button>
-    <button class="rail-btn" data-view="settings" title="Einstellungen">
-      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 13.5a7.6 7.6 0 0 0 0-3l1.8-1.4-2-3.4-2.1.9a7.6 7.6 0 0 0-2.6-1.5L14.2 2h-4l-.3 2.1a7.6 7.6 0 0 0-2.6 1.5l-2.1-.9-2 3.4 1.8 1.4a7.6 7.6 0 0 0 0 3l-1.8 1.4 2 3.4 2.1-.9a7.6 7.6 0 0 0 2.6 1.5l.3 2.1h4l.3-2.1a7.6 7.6 0 0 0 2.6-1.5l2.1.9 2-3.4z"/></svg>
-      <span>Einstell.</span>
-    </button>
-    <div class="rail-spacer"></div>
-    <div class="rail-me" id="railMe" title="Angemeldet">
-      <span class="me-avatar" id="meAvatar">SB</span>
+  <!-- ── Kopfzeile ───────────────────────────────────────────────────── -->
+  <header class="kopf">
+    <div class="ich">
+      <span class="me-avatar" id="meAvatar">··</span>
       <span class="presence-dot" id="mePresence"></span>
     </div>
+    <div class="wer">
+      <div class="wer-name" id="meName">Nicht angemeldet</div>
+      <div class="wer-zeile" id="regText">verbinde…</div>
+    </div>
+    <span class="status"><span class="punkt" id="regDot"></span><span id="statusText">Verfügbar</span></span>
+  </header>
+
+  <!-- ── Reiter über dem Wählbereich (früher die Leiste links).
+       Klassenname bleibt rail-btn: die Logik in app.js haengt daran. ── -->
+  <nav class="reiter">
+    <button class="rail-btn active" data-view="dial">Wählen</button>
+    <button class="rail-btn" data-view="calls">Anrufe <span class="marke" id="verpasstMarke" hidden>0</span></button>
+    <button class="rail-btn" data-view="contacts">Kollegen</button>
+    <button class="rail-btn" data-view="settings">Einstellungen</button>
   </nav>
 
   <!-- ── Hauptbereich ────────────────────────────────────────────────── -->
@@ -70,9 +67,20 @@
       </div>
     </section>
 
-    <!-- Anrufliste -->
+    <!-- Anrufliste. Im breiten Fenster steht sie dauerhaft neben dem
+         Wählfeld, im schmalen wird sie zum eigenen Reiter. -->
     <section class="view" id="view-calls">
-      <h2 class="view-title">Anrufe</h2>
+      <div class="block-kopf"><h2 class="view-title">Favoriten</h2></div>
+      <div class="favoriten" id="favoriten"></div>
+
+      <div class="block-kopf">
+        <h2 class="view-title">Anrufverlauf</h2>
+        <div class="filter" id="verlaufFilter">
+          <button type="button" class="an" data-filter="alle">Alle</button>
+          <button type="button" data-filter="verpasst">Verpasst</button>
+          <button type="button" data-filter="gewaehlt">Gewählt</button>
+        </div>
+      </div>
       <div class="list" id="callList"></div>
     </section>
 
@@ -90,6 +98,16 @@
       <div class="card">
         <h3>Anschluss</h3>
         <p class="muted" id="accountInfo">—</p>
+      </div>
+
+      <div class="card">
+        <h3>Darstellung</h3>
+        <div class="themenwahl" id="themenwahl">
+          <button type="button" data-thema="artis" class="an">Artis</button>
+          <button type="button" data-thema="hell">Hell</button>
+          <button type="button" data-thema="dunkel">Dunkel</button>
+        </div>
+        <p class="muted small">Gleiche Farben und Schrift wie smartis im Browser.</p>
       </div>
 
       <div class="card">

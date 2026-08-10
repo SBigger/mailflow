@@ -24,7 +24,11 @@ const { createRealtimeEngine } = require("./engine/realtime-engine");
 const { createAuth } = require("./auth");
 const { sendeLokal } = require("./lokale-steuerung");
 
-const WIN_W = 420, WIN_H = 720;
+// Breite statt Streifen (10.08.2026): mit der neuen Aufteilung steht das
+// Waehlfeld links und der gewaehlte Bereich rechts -- dafuer braucht es
+// Platz. Wird das Fenster schmaler gezogen, bleibt das Tastenfeld und der
+// Rest wandert zurueck in die Reiter (siehe app.css, 720px).
+const WIN_W = 900, WIN_H = 620;
 let mainWindow = null;
 let engine = null;
 
@@ -70,8 +74,8 @@ function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: WIN_W,
     height: WIN_H,
-    minWidth: 380,
-    minHeight: 560,
+    minWidth: 360,
+    minHeight: 540,
     title: "smartis Telefon",
     backgroundColor: "#f6f9f6",
     autoHideMenuBar: true,
