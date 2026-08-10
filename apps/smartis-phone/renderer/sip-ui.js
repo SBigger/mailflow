@@ -19,7 +19,12 @@
     $("sipPassword").value = cfg.sipPassword || "";
     $("sipWss").value = cfg.wsServer || window.SIP_STANDARD.wss;
     $("sipDomain").value = cfg.domain || window.SIP_STANDARD.domain;
-    if (cfg.sipUser) status("Zugangsdaten hinterlegt — noch nicht verbunden.");
+    // Sind Zugangsdaten da, gleich verbinden: ein Telefon, das man morgens
+    // erst von Hand anstellen muss, ist keines.
+    if (cfg.sipUser && cfg.sipPassword) {
+      status("Zugangsdaten hinterlegt — verbinde…");
+      verbinde();
+    }
   }
 
   const felder = () => ({
@@ -34,7 +39,7 @@
     status(r?.ok ? "Gespeichert." : "Nicht gespeichert: " + (r?.fehler || "unbekannter Fehler"));
   });
 
-  $("btnSipVerbinden").addEventListener("click", () => {
+  function verbinde() {
     const cfg = felder();
     if (!cfg.sipUser || !cfg.sipPassword) { status("Benutzername und Passwort fehlen."); return; }
     if (motor) { try { motor.disconnect(); } catch { /* egal */ } }
@@ -59,11 +64,15 @@
     });
     motor.on("callEnded", (e) => status("Beendet nach " + (e?.durationSec ?? 0) + " s."));
 
-    // Fuer den Test von Hand erreichbar machen -- die Hauptoberflaeche haengt
-    // bewusst noch am alten Motor.
     window.sipMotor = motor;
+    // Die Hauptoberflaeche mithoeren lassen: eingehende Anrufe erscheinen
+    // dadurch als richtige Anrufkarte mit Annehmen/Auflegen, nicht bloss als
+    // Statuszeile hier in den Einstellungen.
+    if (typeof window.verbindeMotor === "function") window.verbindeMotor(motor);
     motor.connect();
-  });
+  }
+
+  $("btnSipVerbinden").addEventListener("click", verbinde);
 
   $("btnSipTrennen").addEventListener("click", () => {
     if (motor) { try { motor.disconnect(); } catch { /* egal */ } motor = null; window.sipMotor = null; }

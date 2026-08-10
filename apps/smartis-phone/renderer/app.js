@@ -40,7 +40,7 @@ function buildKeypad(el, onKey) {
   });
 }
 buildKeypad($("keypad"), (d) => { $("dialInput").value += d; });
-buildKeypad($("keypad2"), (d) => engine.sendDtmf(d));
+buildKeypad($("keypad2"), (d) => aktiverMotor().sendDtmf(d));
 
 // Ausgehend waehlen -- in dieser Reihenfolge:
 //   1. eigener SIP-Motor, wenn er registriert ist (seit 10.08.2026)
@@ -95,11 +95,11 @@ $("dialInput").addEventListener("keydown", (e) => {
 });
 
 // ── Anruf-Knoepfe ────────────────────────────────────────────────────────
-$("btnAnswer").addEventListener("click", () => engine.answer());
-$("btnDecline").addEventListener("click", () => engine.hangup());
-$("btnHangup").addEventListener("click", () => engine.hangup());
-$("ctrlMute").addEventListener("click", () => engine.setMuted(!current?.muted));
-$("ctrlHold").addEventListener("click", () => engine.setHold(!current?.onHold));
+$("btnAnswer").addEventListener("click", () => aktiverMotor().answer());
+$("btnDecline").addEventListener("click", () => aktiverMotor().hangup());
+$("btnHangup").addEventListener("click", () => aktiverMotor().hangup());
+$("ctrlMute").addEventListener("click", () => aktiverMotor().setMuted(!current?.muted));
+$("ctrlHold").addEventListener("click", () => aktiverMotor().setHold(!current?.onHold));
 const togglePanel = (panelId, ctrlId) => {
   const open = !$(panelId).classList.contains("active");
   ["panelKeypad", "panelTransfer"].forEach((p) => $(p).classList.remove("active"));
@@ -116,7 +116,7 @@ $("ctrlDossier").addEventListener("click", () => {
 $("ctrlNote").addEventListener("click", () => { /* Notiz-Panel folgt mit der smartis-Anbindung */ });
 $("btnTransferNum").addEventListener("click", () => {
   const nr = $("transferNum").value.trim();
-  if (nr) engine.transfer(nr);
+  if (nr) aktiverMotor().transfer(nr);
 });
 
 // ── Dossier zeichnen (gleiche Form wie die heutige Anruf-Karte) ──────────
@@ -176,7 +176,7 @@ function tickTimer() {
 
 let meineNebenstelle = null;
 
-engine.on("registration", (reg) => {
+function aufRegistrierung(reg) {
   const dot = $("regDot"), me = $("mePresence");
   const map = { registered: [var_online(), "Bereit"], connecting: [var_away(), "verbinde…"], failed: [var_off(), "nicht verbunden"] };
   const [color, text] = map[reg.state] || map.failed;
@@ -187,12 +187,12 @@ engine.on("registration", (reg) => {
     ? "Mit smartis verbunden" + (nst ? " · Nebenstelle " + nst : "") +
       (echterMotor ? " — Sprache läuft über MicroSIP im Hintergrund." : "")
     : (echterMotor ? "Nicht verbunden — Anrufe kommen gerade nicht an." : "Simulierter Betrieb (Mock-Motor).");
-});
+}
 function var_online() { return getComputedStyle(document.documentElement).getPropertyValue("--online").trim(); }
 function var_away() { return getComputedStyle(document.documentElement).getPropertyValue("--away").trim(); }
 function var_off() { return getComputedStyle(document.documentElement).getPropertyValue("--offline").trim(); }
 
-engine.on("call", (call) => {
+function aufAnruf(call) {
   current = call;
   const label = call.customer?.company_name || call.peerName || call.peerNumber || "Unbekannt";
 
@@ -217,9 +217,9 @@ engine.on("call", (call) => {
   clearInterval(timerHandle);
   timerHandle = setInterval(tickTimer, 500);
   tickTimer();
-});
+}
 
-engine.on("callEnded", (info) => {
+function aufAnrufEnde(info) {
   current = null;
   clearInterval(timerHandle);
   showOverlay(null);
@@ -227,7 +227,7 @@ engine.on("callEnded", (info) => {
   ["ctrlKeypad", "ctrlTransfer", "ctrlDossier"].forEach((c) => $(c).classList.remove("on"));
   $("dialInput").value = "";
   addCallToList(info);
-});
+}
 
 // ── Anrufliste (heute lokal; spaeter aus smartis call_records) ───────────
 const callLog = [];
@@ -304,7 +304,7 @@ function renderTransferList() {
     txt.appendChild(t1);
     const meta = document.createElement("span"); meta.className = "meta"; meta.textContent = c.extension;
     row.append(av, txt, meta);
-    row.addEventListener("click", () => engine.transfer(c.extension));
+    row.addEventListener("click", () => aktiverMotor().transfer(c.extension));
     box.appendChild(row);
   });
 }
@@ -420,3 +420,24 @@ if (window.phoneAPI?.auth) {
   window.phoneAPI.auth.beiAenderung(uebernehmen);
   window.phoneAPI.auth.status().then(uebernehmen).catch(() => zeigeMaske(true));
 }
+
+// ── Welcher Motor ist zustaendig? ────────────────────────────────────────
+// Seit dem 10.08.2026 gibt es zwei: den bisherigen (Anrufkarte + Dossier ueber
+// smartis, Sprache ueber MicroSIP) und den eigenen SIP-Motor, der wirklich
+// telefoniert. Solange der SIP-Motor registriert ist, gehoert ihm die
+// Bedienung -- sonst bleibt alles beim Alten. Kein Schalter, kein Neustart.
+function aktiverMotor() {
+  const sip = window.sipMotor;
+  if (sip && sip.getState()?.registration?.state === "registered") return sip;
+  return engine;
+}
+
+// Beide Motoren melden in DIESELBE Oberflaeche. Die Anrufkarte weiss dadurch
+// nicht, woher ein Anruf kommt -- und muss es auch nicht wissen.
+function verbindeMotor(m) {
+  m.on("registration", aufRegistrierung);
+  m.on("call", aufAnruf);
+  m.on("callEnded", aufAnrufEnde);
+}
+verbindeMotor(engine);
+window.verbindeMotor = verbindeMotor;
