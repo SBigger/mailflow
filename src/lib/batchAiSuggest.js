@@ -139,26 +139,35 @@ async function fileToBase64(file) {
   });
 }
 
-/** Rendert PDF-Seiten zu Canvas und OCRt sie (max. 5 Seiten für Geschwindigkeit). */
+/**
+ * Rendert PDF-Seiten zu Canvas und OCRt sie (max. 5 Seiten für Geschwindigkeit).
+ *
+ * Rendering läuft sequenziell (pdfjs mag pro Dokument nur eine Render-Operation
+ * gleichzeitig), die OCR-Jobs selbst aber parallel über den Worker-Pool aus
+ * getOcrScheduler() – bis zu 4 Seiten gleichzeitig statt eine nach der anderen.
+ * Bei einem 4-seitigen Scan macht das aus ~4x Seitenzeit ungefähr 1x.
+ */
 async function ocrPdfPages(pdf, maxPages = 5) {
-  let text = "";
   const pages = Math.min(pdf.numPages, maxPages);
+  const canvases = [];
   for (let i = 1; i <= pages; i++) {
     const page = await pdf.getPage(i);
     const viewport = page.getViewport({ scale: 2 });
     const canvas = document.createElement("canvas");
     canvas.width = viewport.width;
     canvas.height = viewport.height;
-    const ctx = canvas.getContext("2d");
-    await page.render({ canvasContext: ctx, viewport }).promise;
-    try {
-      const pageText = await ocrBlob(canvas);
-      text += pageText + "\n";
-    } catch (e) {
-      console.warn("[OCR] PDF-Seite fehlgeschlagen", i, e);
-    }
+    await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+    canvases.push(canvas);
   }
-  return text.trim();
+  const texts = await Promise.all(canvases.map(async (canvas, idx) => {
+    try {
+      return await ocrBlob(canvas);
+    } catch (e) {
+      console.warn("[OCR] PDF-Seite fehlgeschlagen", idx + 1, e);
+      return "";
+    }
+  }));
+  return texts.join("\n").trim();
 }
 
 // ══════════════════════════════════════════════════════════════════════
