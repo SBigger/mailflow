@@ -33,6 +33,7 @@ export default function Belegsortierung() {
   const [belege, setBelege] = useState([]);
   const [laeuft, setLaeuft] = useState(false);
   const [ueber, setUeber] = useState(false);
+  const [gewaehlt, setGewaehlt] = useState(null);   // id des Belegs in der Vorschau
   const eingabe = useRef(null);
 
   async function verarbeite(dateien) {
@@ -45,7 +46,13 @@ export default function Belegsortierung() {
 
     for (const datei of liste) {
       const id = `${datei.name}-${datei.size}-${Date.now()}`;
-      setBelege(v => [...v, { id, name: datei.name, stand: 'liest', groesse: datei.size }]);
+      // Objekt-URL fuer die Vorschau. Der Browser bringt seinen eigenen
+      // PDF-Betrachter mit – damit laesst sich blaettern und zoomen, statt
+      // nur die erste Seite als Bild zu sehen.
+      const url = URL.createObjectURL(datei);
+      setBelege(v => [...v, { id, name: datei.name, stand: 'liest', groesse: datei.size, url,
+                              istPdf: /\.pdf$/i.test(datei.name) }]);
+      setGewaehlt(g => g ?? id);
 
       try {
         const hash = await dateiHash(datei);
@@ -87,6 +94,20 @@ export default function Belegsortierung() {
   function setzePosition(id, positionId) {
     setBelege(v => v.map(b => b.id === id
       ? { ...b, position: positionId || null, vonHand: true } : b));
+    // Nach dem Zuweisen zum naechsten Beleg springen, der eine Entscheidung
+    // braucht – sonst muss man nach jedem Klick von Hand weitersuchen.
+    setBelege(v => {
+      const naechster = v.find(b => b.id !== id && b.stand === 'fertig' && !b.position
+        && !(b.vorschlag?.length === 1));
+      if (naechster) setGewaehlt(naechster.id);
+      return v;
+    });
+  }
+
+  function zuruecksetzen() {
+    belege.forEach(b => { if (b.url) URL.revokeObjectURL(b.url); });
+    setBelege([]);
+    setGewaehlt(null);
   }
 
   // ── Nach Seiten der Steuererklärung gruppieren ──────────────────────────
@@ -110,7 +131,7 @@ export default function Belegsortierung() {
 
   return (
     <div style={{ backgroundColor: C.pageBg, minHeight: '100%', padding: 20 }}>
-      <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+      <div style={{ maxWidth: 1600, margin: '0 auto' }}>
 
         <h1 style={{ fontSize: 20, fontWeight: 700, color: C.heading, marginBottom: 4 }}>
           Belegsortierung – natürliche Personen
@@ -119,6 +140,10 @@ export default function Belegsortierung() {
           Belegstapel hineinziehen. Die Erkennung läuft im Browser, es geht nichts nach aussen.
           Sortiert wird in die Reihenfolge der Steuererklärung.
         </p>
+
+        <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+          {/* ── links: Liste ── */}
+          <div style={{ flex: '1 1 0', minWidth: 0 }}>
 
         {/* Ablagefläche */}
         <div
@@ -161,7 +186,7 @@ export default function Belegsortierung() {
               </span>
             )}
             <button
-              onClick={() => setBelege([])}
+              onClick={zuruecksetzen}
               style={{
                 marginLeft: 'auto', fontSize: 11, color: C.sub, background: 'none',
                 border: `1px solid ${C.panelBdr}`, borderRadius: 5, padding: '3px 9px',
@@ -175,7 +200,8 @@ export default function Belegsortierung() {
         {gruppiert.ohne.length > 0 && (
           <Block titel="Braucht eine Entscheidung" farbe={C.offen}>
             {gruppiert.ohne.map(b => (
-              <Zeile key={b.id} beleg={b} onPosition={setzePosition} />
+              <Zeile key={b.id} beleg={b} onPosition={setzePosition}
+                     aktiv={b.id === gewaehlt} onWaehlen={setGewaehlt} />
             ))}
           </Block>
         )}
@@ -186,11 +212,67 @@ export default function Belegsortierung() {
           if (!arr?.length) return null;
           return (
             <Block key={g.id} titel={`Seite ${g.seite} · ${g.label}`} farbe={C.accent}>
-              {arr.map(b => <Zeile key={b.id} beleg={b} onPosition={setzePosition} />)}
+              {arr.map(b => <Zeile key={b.id} beleg={b} onPosition={setzePosition}
+                                   aktiv={b.id === gewaehlt} onWaehlen={setGewaehlt} />)}
             </Block>
           );
         })}
+          </div>
+
+          {/* ── rechts: Vorschau ── */}
+          <Vorschau beleg={belege.find(b => b.id === gewaehlt)} />
+        </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Vorschau des gewaehlten Belegs.
+ *
+ * Bewusst der eingebaute PDF-Betrachter des Browsers statt einer selbst
+ * gerenderten Seite: damit laesst sich blaettern und zoomen. Bei einem
+ * 38-seitigen Umbaubuendel ist die erste Seite selten die, an der man
+ * entscheidet.
+ */
+function Vorschau({ beleg }) {
+  const rahmen = {
+    width: '46%', minWidth: 400, position: 'sticky', top: 16,
+    height: 'calc(100vh - 150px)', backgroundColor: C.panelBg,
+    border: `1px solid ${C.panelBdr}`, borderRadius: 8,
+    display: 'flex', flexDirection: 'column', overflow: 'hidden',
+  };
+
+  if (!beleg) {
+    return (
+      <div style={{ ...rahmen, alignItems: 'center', justifyContent: 'center' }}>
+        <FileText size={26} style={{ color: C.muted, marginBottom: 8 }} />
+        <div style={{ fontSize: 12, color: C.muted }}>Beleg anklicken für die Vorschau</div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={rahmen}>
+      <div style={{
+        padding: '8px 12px', borderBottom: `1px solid ${C.panelBdr}`,
+        fontSize: 12, fontWeight: 600, color: C.heading,
+        display: 'flex', alignItems: 'center', gap: 8,
+      }}>
+        <FileText size={13} style={{ color: C.accent, flexShrink: 0 }} />
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {beleg.name}
+        </span>
+        <a href={beleg.url} target="_blank" rel="noreferrer"
+           style={{ marginLeft: 'auto', fontSize: 11, color: C.accent, flexShrink: 0 }}>
+          neues Fenster
+        </a>
+      </div>
+      {beleg.istPdf
+        ? <iframe title={beleg.name} src={beleg.url} style={{ flex: 1, border: 'none' }} />
+        : <div style={{ flex: 1, overflow: 'auto', padding: 8 }}>
+            <img src={beleg.url} alt={beleg.name} style={{ width: '100%' }} />
+          </div>}
     </div>
   );
 }
@@ -211,16 +293,20 @@ function Block({ titel, farbe, children }) {
   );
 }
 
-function Zeile({ beleg: b, onPosition }) {
+function Zeile({ beleg: b, onPosition, aktiv, onWaehlen }) {
   const laden = b.stand !== 'fertig' && b.stand !== 'fehler';
   const pos = b.position ? KATALOG_NACH_ID[b.position] : null;
   const dims = offeneDimensionen(pos ? [pos] : b.vorschlag || []);
 
   return (
-    <div style={{
-      display: 'flex', alignItems: 'flex-start', gap: 10, padding: '9px 12px',
-      borderBottom: `1px solid ${C.pageBg}`, fontSize: 12,
-    }}>
+    <div
+      onClick={() => onWaehlen?.(b.id)}
+      style={{
+        display: 'flex', alignItems: 'flex-start', gap: 10, padding: '9px 12px',
+        borderBottom: `1px solid ${C.pageBg}`, fontSize: 12, cursor: 'pointer',
+        backgroundColor: aktiv ? C.accentBg : 'transparent',
+        borderLeft: `3px solid ${aktiv ? C.accent : 'transparent'}`,
+      }}>
       <div style={{ paddingTop: 2 }}>
         {laden      ? <Loader2 size={14} className="animate-spin" style={{ color: C.muted }} />
         : b.stand === 'fehler' ? <X size={14} style={{ color: '#c25b5b' }} />
@@ -282,6 +368,7 @@ function Zeile({ beleg: b, onPosition }) {
       {!laden && b.stand !== 'fehler' && (
         <select
           value={b.position || ''}
+          onClick={e => e.stopPropagation()}
           onChange={e => onPosition(b.id, e.target.value)}
           style={{
             backgroundColor: C.inputBg, border: `1px solid ${C.panelBdr}`, borderRadius: 5,
