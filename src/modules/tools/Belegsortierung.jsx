@@ -28,6 +28,7 @@ import { triageRegeln, triageMitKi, brauchtKi } from '../../lib/steuerBelege/tri
 import { positionenFuer, offeneDimensionen } from '../../lib/steuerBelege/belegartZuPosition.js';
 import { BELEGART_BY_KEY, BELEGARTEN } from '../../lib/steuerBelege/belegarten.js';
 import { findAhvInText, dateiHash } from '../../lib/steuerBelege/belegHelfer.js';
+import { findeBetrag } from '../../lib/steuerBelege/betrag.js';
 import { KATALOG, KATALOG_NACH_ID, GRUPPEN, AUSSORTIERT, DIMENSIONEN, katalogFuerPrompt }
   from '../../forms/steuer_np_katalog.js';
 import { baueBeilagenBundle } from '../../lib/steuerBelege/beilagenBundle.js';
@@ -60,12 +61,23 @@ function useFarben() {
   }, [theme]);
 }
 
+const SEITE_KEY = 'belegsortierung-seitenleiste-breite';
+const SEITE_MIN = 200, SEITE_MAX = 460;
 const VORSCHAU_KEY = 'belegsortierung-vorschau-breite';
-const VORSCHAU_MIN = 340, VORSCHAU_MAX = 1100;
+const VORSCHAU_MIN = 340;
+// Obergrenze haengt am Fenster, nicht an einer festen Zahl: sonst sind die drei
+// Spalten zusammen breiter als der Bildschirm und links wie rechts wird
+// abgeschnitten. 240 Seitenleiste + 320 Mindestbreite fuer die Belegliste.
+const maxBreite = seite => Math.max(VORSCHAU_MIN, window.innerWidth - (seite || 240) - 320);
+function ladeSeitenBreite() {
+  const g = parseInt(localStorage.getItem(SEITE_KEY), 10);
+  return isNaN(g) ? 240 : Math.min(SEITE_MAX, Math.max(SEITE_MIN, g));
+}
+
 function ladeVorschauBreite() {
   const g = parseInt(localStorage.getItem(VORSCHAU_KEY), 10);
-  if (!isNaN(g)) return Math.min(VORSCHAU_MAX, Math.max(VORSCHAU_MIN, g));
-  return Math.round(window.innerWidth * 0.34);
+  const wunsch = !isNaN(g) ? g : Math.round(window.innerWidth * 0.34);
+  return Math.min(maxBreite(ladeSeitenBreite()), Math.max(VORSCHAU_MIN, wunsch));
 }
 
 // Abschnitte der Seitenleiste. 0 und 99 sind keine Seiten der Erklärung,
@@ -81,6 +93,16 @@ const ABLAGEN = [
   { seite: 99, label: 'Nicht benötigt', unter: 'Vom Bündel ausgeschlossen' },
 ];
 
+// Betrag zur Position suchen. Der Katalog sagt, welcher gesucht wird –
+// beim Lohnausweis der Nettolohn, bei der Bank der Bestand per 31.12.
+function betragFuer(positionId, text) {
+  const p = positionId ? KATALOG_NACH_ID[positionId] : null;
+  if (!p?.betrag || !text) return { betrag: null, betragQuelle: null, betragAnker: null };
+  const t = findeBetrag(text, positionId);
+  if (!t) return { betrag: null, betragQuelle: null, betragAnker: null };
+  return { betrag: t.betrag, betragQuelle: 'regel', betragAnker: t.anker };
+}
+
 const chf = n => (n || n === 0)
   ? Number(n).toLocaleString('de-CH', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
   : '—';
@@ -95,9 +117,12 @@ export default function Belegsortierung() {
   const [zieht, setZieht]           = useState(null);
   const [ueberZiel, setUeberZiel]   = useState(null);
   const [vorschauBreite, setVorschauBreite] = useState(ladeVorschauBreite);
+  const [ziehtGriff, setZiehtGriff] = useState(false);
+  const [seitenBreite, setSeitenBreite] = useState(ladeSeitenBreite);
   const [kunde, setKunde]           = useState(null);
   const [steuerjahr, setSteuerjahr] = useState(new Date().getFullYear() - 1);
   const [kundenSuche, setKundenSuche] = useState('');
+  const [kundenListe, setKundenListe] = useState(false);
   const [suche, setSuche]           = useState('');
   const [speichert, setSpeichert]   = useState(false);
   const [gespeichertUm, setGespeichertUm] = useState(null);
@@ -198,6 +223,7 @@ export default function Belegsortierung() {
           position: vorschlag.length === 1 ? vorschlag[0].id : null,
           ahv: findAhvInText(text),
           jahr: tri.periodeBeleg ?? null,
+          ...betragFuer(vorschlag.length === 1 ? vorschlag[0].id : null, text),
         } : b));
       } catch (e) {
         setBelege(v => v.map(b => b.id === id
@@ -214,7 +240,11 @@ export default function Belegsortierung() {
   function setzePosition(id, positionId) {
     setBelege(v => {
       const neu = v.map(b => b.id === id
-        ? { ...b, position: positionId || null, vonHand: true } : b);
+        // Beim Umhaengen den Betrag neu suchen – der Anker haengt an der
+        // Position. Ein von Hand eingetippter Betrag bleibt aber stehen.
+        ? { ...b, position: positionId || null, vonHand: true,
+            ...(b.betragQuelle === 'hand' ? {} : betragFuer(positionId, b.text)) }
+        : b);
       const naechster = neu.find(b => b.id !== id && b.stand === 'fertig' && !b.position);
       queueMicrotask(() => setGewaehlt(naechster ? naechster.id : id));
       return neu;
@@ -285,12 +315,36 @@ export default function Belegsortierung() {
     },
   });
 
+  // Ein Regler fuer beide Kanten. `richtung` sagt, ob Ziehen nach rechts
+  // breiter (Seitenleiste) oder schmaler (Vorschau liegt rechts) macht.
+  const macheGriff = (wert, setzen, min, max, key, richtung) => e => {
+    e.preventDefault();
+    setZiehtGriff(true);
+    const startX = e.clientX, start = wert;
+    const bewegen = me => {
+      const grenze = typeof max === 'function' ? max() : max;
+      setzen(Math.min(grenze, Math.max(min, start + richtung * (me.clientX - startX))));
+    };
+    const los = () => {
+      setZiehtGriff(false);
+      document.removeEventListener('mousemove', bewegen);
+      document.removeEventListener('mouseup', los);
+      setzen(b => { localStorage.setItem(key, String(b)); return b; });
+    };
+    document.addEventListener('mousemove', bewegen);
+    document.addEventListener('mouseup', los);
+  };
+
+  const seiteZiehen = macheGriff(seitenBreite, setSeitenBreite, SEITE_MIN, SEITE_MAX, SEITE_KEY, 1);
+
   const griffZiehen = e => {
     e.preventDefault();
+    setZiehtGriff(true);
     const startX = e.clientX, startBreite = vorschauBreite;
     const bewegen = me => setVorschauBreite(
-      Math.min(VORSCHAU_MAX, Math.max(VORSCHAU_MIN, startBreite - (me.clientX - startX))));
+      Math.min(maxBreite(seitenBreite), Math.max(VORSCHAU_MIN, startBreite - (me.clientX - startX))));
     const los = () => {
+      setZiehtGriff(false);
       document.removeEventListener('mousemove', bewegen);
       document.removeEventListener('mouseup', los);
       setVorschauBreite(b => { localStorage.setItem(VORSCHAU_KEY, String(b)); return b; });
@@ -298,6 +352,13 @@ export default function Belegsortierung() {
     document.addEventListener('mousemove', bewegen);
     document.addEventListener('mouseup', los);
   };
+
+  // Fenster kleiner gezogen? Vorschau mitnehmen, sonst laeuft die Liste raus.
+  useEffect(() => {
+    const anpassen = () => setVorschauBreite(b => Math.min(maxBreite(seitenBreite), b));
+    window.addEventListener('resize', anpassen);
+    return () => window.removeEventListener('resize', anpassen);
+  }, [seitenBreite]);
 
   // Positionen des gewählten Abschnitts, gefiltert nach Suche
   const sichtbarePositionen = useMemo(() => {
@@ -317,13 +378,15 @@ export default function Belegsortierung() {
   return (
     <div style={{
       backgroundColor: C.pageBg, height: '100%', boxSizing: 'border-box',
-      display: 'flex', overflow: 'hidden',
+      // flex:1 ist noetig, weil das App-MAIN selbst ein Flex-Container ist:
+      // ohne das schrumpft das Modul auf Inhaltsbreite und rechts bleibt der
+      // halbe Bildschirm leer.
+      display: 'flex', overflow: 'hidden', flex: 1, width: '100%', minWidth: 0,
     }}>
 
       {/* ══ links: Abschnitte und Stand ══ */}
       <div style={{
-        width: 240, flexShrink: 0, backgroundColor: C.panelBg,
-        borderRight: `1px solid ${C.panelBdr}`,
+        width: seitenBreite, flexShrink: 0, backgroundColor: C.panelBg,
         display: 'flex', flexDirection: 'column', overflow: 'hidden',
       }}>
         <div style={{ padding: '14px 14px 10px 14px', borderBottom: `1px solid ${C.pageBg}` }}>
@@ -332,21 +395,24 @@ export default function Belegsortierung() {
           <input
             value={kunde ? (kunde.company_name || '') : kundenSuche}
             onChange={e => { setKundenSuche(e.target.value); setKunde(null); }}
-            placeholder="Name eingeben …"
+            onFocus={() => setKundenListe(true)}
+            onBlur={() => setTimeout(() => setKundenListe(false), 180)}
+            placeholder="anklicken oder tippen …"
             style={{
               width: '100%', boxSizing: 'border-box', backgroundColor: C.inputBg,
               border: `1px solid ${kunde ? C.accent : C.panelBdr}`, borderRadius: 5,
               padding: '5px 8px', fontSize: 12, color: C.heading, outline: 'none',
             }}
           />
-          {!kunde && kundenSuche.length >= 2 && (
+          {kundenListe && (
             <div style={{
               marginTop: 4, maxHeight: 180, overflowY: 'auto',
               border: `1px solid ${C.panelBdr}`, borderRadius: 5,
             }}>
-              {kunden.filter(k => k.company_name?.toLowerCase().includes(kundenSuche.toLowerCase()))
-                .slice(0, 20).map(k => (
-                  <div key={k.id} onClick={() => { setKunde(k); setKundenSuche(''); }}
+              {kunden.filter(k => !kundenSuche
+                  || k.company_name?.toLowerCase().includes(kundenSuche.toLowerCase()))
+                .slice(0, 40).map(k => (
+                  <div key={k.id} onMouseDown={() => { setKunde(k); setKundenSuche(''); setKundenListe(false); }}
                     style={{ padding: '5px 8px', fontSize: 12, cursor: 'pointer',
                              borderBottom: `1px solid ${C.pageBg}`, color: C.heading }}>
                     {k.company_name}{k.ort && <span style={{ color: C.muted }}> · {k.ort}</span>}
@@ -424,6 +490,15 @@ export default function Belegsortierung() {
             </div>
           )}
         </div>
+      </div>
+
+      <div onMouseDown={seiteZiehen} style={{
+        width: 8, flexShrink: 0, cursor: 'col-resize', backgroundColor: C.pageBg,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        borderRight: `1px solid ${C.panelBdr}`,
+      }}>
+        <div style={{ width: 3, height: 46, borderRadius: 2,
+                      backgroundColor: ziehtGriff ? C.accent : C.panelBdr }} />
       </div>
 
       {/* ══ mitte: der gewählte Abschnitt ══ */}
@@ -562,12 +637,23 @@ export default function Belegsortierung() {
       </div>
 
       {/* ══ rechts: Beleg und erkannte Angaben ══ */}
+      {/* Waehrend des Ziehens eine unsichtbare Flaeche ueber alles: sonst
+          verschluckt das eingebettete PDF-Fenster die Mausbewegungen und der
+          Zug bricht ab, sobald der Zeiger darueber kommt. */}
+      {ziehtGriff && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 9999,
+          cursor: 'col-resize', userSelect: 'none',
+        }} />
+      )}
+
       <div onMouseDown={griffZiehen} style={{
-        width: 8, flexShrink: 0, cursor: 'col-resize',
+        width: 10, flexShrink: 0, cursor: 'col-resize',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         backgroundColor: C.pageBg,
       }}>
-        <div style={{ width: 3, height: 40, borderRadius: 2, backgroundColor: C.panelBdr }} />
+        <div style={{ width: 3, height: 46, borderRadius: 2,
+                      backgroundColor: ziehtGriff ? C.accent : C.panelBdr }} />
       </div>
 
       <Vorschau beleg={aktiverBeleg} breite={vorschauBreite}
@@ -699,7 +785,7 @@ function BelegKarte({ beleg: b, aktiv, onWaehlen, onDragStart, onDragEnd, zieht 
 function Vorschau({ beleg: b, breite, onAendern, onPosition }) {
   const C = useFarben();
   const rahmen = {
-    width: breite, flexShrink: 0, height: '100%', backgroundColor: C.panelBg,
+    width: breite, flexShrink: 0, flexGrow: 1, height: '100%', backgroundColor: C.panelBg,
     borderLeft: `1px solid ${C.panelBdr}`,
     display: 'flex', flexDirection: 'column', overflow: 'hidden',
   };
@@ -768,7 +854,7 @@ function Vorschau({ beleg: b, breite, onAendern, onPosition }) {
           <div>
             <div style={etikett(C)}>Betrag CHF</div>
             <input type="number" value={b.betrag ?? ''} placeholder="noch nicht ausgelesen"
-              onChange={e => onAendern(b.id, { betrag: e.target.value })} style={feld} />
+              onChange={e => onAendern(b.id, { betrag: e.target.value, betragQuelle: 'hand' })} style={feld} />
           </div>
           <div>
             <div style={etikett(C)}>Steuerjahr</div>
