@@ -1,0 +1,76 @@
+====================================================
+ Lokale KI + Python - Setup fuer Windows
+====================================================
+
+WAS DAS INSTALLIERT
+--------------------
+- Python 3.x (Programmiersprache, falls noch nicht vorhanden)
+- Ollama (lokale KI-Engine - laeuft komplett auf diesem PC,
+  keine Cloud, keine laufenden Kosten, funktioniert offline)
+- ein kleines Sprachmodell (llama3.2, ca. 2 GB Download)
+
+Alles zusammen ergibt eine kleine, private KI, die direkt auf
+diesem PC laeuft - nichts wird an Anthropic, OpenAI o.ae. geschickt.
+
+
+VORAUSSETZUNG
+-------------
+Windows 10 oder 11 mit "winget" (Windows Paketmanager). Der ist auf
+den meisten aktuellen PCs schon vorhanden. Falls nicht: im Microsoft
+Store nach "App Installer" suchen und installieren, dann nochmal
+versuchen.
+
+Ca. 3-4 GB freier Speicherplatz (Python + Ollama + Modell).
+
+
+INSTALLATION (einmalig)
+------------------------
+1. "INSTALLIEREN - Doppelklick.bat" doppelklicken
+2. Es oeffnet sich ein schwarzes Fenster (PowerShell) und installiert
+   der Reihe nach Python, Ollama und das KI-Modell. Das kann je nach
+   Internetverbindung ein paar Minuten dauern (Modell ist ca. 2 GB).
+3. Am Ende "Enter" druecken zum Schliessen.
+
+Falls "ollama" direkt danach noch nicht erkannt wird: einfach ein
+NEUES Terminal-Fenster oeffnen (Windows laedt den PATH sonst nicht
+neu) und das Skript nochmal doppelklicken - bereits installierte
+Sachen werden automatisch uebersprungen.
+
+
+VERWENDUNG
+----------
+Direkt im Terminal chatten:
+
+    ollama run llama3.2
+
+Aus Python heraus ansprechen (Beispiel-Skript liegt in diesem Ordner):
+
+    python beispiel_chat.py
+
+Das Beispiel-Skript zeigt, wie man aus eigenem Python-Code Fragen an
+die lokale KI schickt - als Ausgangspunkt fuer eigene Ideen.
+
+
+ANDERE / GROESSERE MODELLE
+---------------------------
+llama3.2 ist bewusst klein gewaehlt, damit es auch auf normaler
+Buero-Hardware ohne starke Grafikkarte fluessig laeuft. Wer mehr
+Leistung (und mehr RAM) hat, kann weitere Modelle laden, z.B.:
+
+    ollama pull qwen2.5:7b
+    ollama pull mistral
+
+Verfuegbare Modelle: https://ollama.com/library
+Danach im Beispiel-Skript einfach MODELL = "..." anpassen.
+
+
+PROBLEME
+--------
+- "winget wird nicht erkannt": siehe VORAUSSETZUNG oben.
+- Download bricht ab / sehr langsam: liegt meist an der
+  Internetverbindung, Skript einfach nochmal ausfuehren (setzt beim
+  Modell-Download automatisch fort).
+- Ollama-Symbol taucht nicht im Tray auf: einmal neu anmelden/Windows
+  neu starten, Ollama startet danach automatisch mit.
+
+====================================================
