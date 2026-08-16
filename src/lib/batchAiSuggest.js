@@ -149,7 +149,7 @@ export async function pdfPagesToImages(file, maxPages = 2) {
       const canvas = document.createElement("canvas");
       canvas.width  = viewport.width;
       canvas.height = viewport.height;
-      await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+      await page.render({ canvasContext: canvas.getContext("2d"), viewport, intent: "print" }).promise;
       const data = canvas.toDataURL("image/jpeg", 0.75).split(",")[1];
       out.push(data);
     }
@@ -182,6 +182,16 @@ async function fileToBase64(file) {
  * getOcrScheduler() – bis zu 4 Seiten gleichzeitig statt eine nach der anderen.
  * Bei einem 4-seitigen Scan macht das aus ~4x Seitenzeit ungefähr 1x.
  */
+/**
+ * Rastern immer mit intent "print".
+ *
+ * Mit dem Standard-intent "display" taktet pdf.js das Zeichnen ueber
+ * requestAnimationFrame -- und in einem Hintergrund-Tab feuert das NIE.
+ * Live gemessen: dieselbe Seite haengt mit "display" endlos, mit "print"
+ * ist sie in einer Sekunde gerendert. Praxisfall: waehrend der OCR eines
+ * grossen Stapels wechselt man den Tab -- bisher fror damit alles ein,
+ * bis der Tab wieder in den Vordergrund kam.
+ */
 async function ocrPdfPages(pdf, maxPages = 5) {
   const pages = Math.min(pdf.numPages, maxPages);
   const canvases = [];
@@ -191,7 +201,7 @@ async function ocrPdfPages(pdf, maxPages = 5) {
     const canvas = document.createElement("canvas");
     canvas.width = viewport.width;
     canvas.height = viewport.height;
-    await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+    await page.render({ canvasContext: canvas.getContext("2d"), viewport, intent: "print" }).promise;
     canvases.push(canvas);
   }
   const texts = await Promise.all(canvases.map(async (canvas, idx) => {
@@ -249,7 +259,7 @@ export async function extractPageTexts(file, { maxPages = 40, onStage } = {}) {
     canvas.width = viewport.width;
     canvas.height = viewport.height;
     await mitZeitschranke(
-      page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise,
+      page.render({ canvasContext: canvas.getContext("2d"), viewport, intent: "print" }).promise,
       25000, `Rendern Seite ${i}`);
     canvases.push(canvas);
   }
