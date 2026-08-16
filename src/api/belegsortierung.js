@@ -23,6 +23,7 @@ function fuerDieDatenbank(b) {
     betrag2:     b.betrag2 ?? null,
     // Seitenbereich: ein PDF kann mehrere Belege enthalten
     vonSeite:    b.vonSeite ?? null,
+    doppelVon:   b.doppelVon ?? null,
     bisSeite:    b.bisSeite ?? null,
     jahr:        b.jahr ?? null,
     // Der Text ist das Teure an einem Scan – gut zehn Sekunden OCR je Seite.

@@ -30,6 +30,7 @@ import { BELEGART_BY_KEY, BELEGARTEN } from '../../lib/steuerBelege/belegarten.j
 import { findAhvInText, dateiHash } from '../../lib/steuerBelege/belegHelfer.js';
 import { findeBetraege } from '../../lib/steuerBelege/betrag.js';
 import { trenneBelege, seitenLabel } from '../../lib/steuerBelege/belegTrennung.js';
+import { findeDoppel } from '../../lib/steuerBelege/doppelErkennung.js';
 import { KATALOG, KATALOG_NACH_ID, AUSSORTIERT, DIMENSIONEN, katalogFuerPrompt,
          VERZEICHNISSE, VERZEICHNIS_NACH_ID, migriereId }
   from '../../forms/steuer_np_katalog.js';
@@ -223,6 +224,30 @@ export default function Belegsortierung() {
         const neueBelege = [];
         for (let i = 0; i < teile.length; i++) {
           const teil = teile[i];
+          const teilName = teile.length > 1 ? `${datei.name} · ${seitenLabel(teil)}` : datei.name;
+
+          // Doppelt eingescannt? Gleiches Papier, anderer Scan — der Datei-Hash
+          // sieht das nicht, der erkannte Text schon. Gemessen: zwei Scans
+          // derselben Seite ≈ 0.84 Uebereinstimmung, verschiedene Belege ≤ 0.11.
+          const doppel = findeDoppel({ text: teil.text },
+            [...belegeRef.current, ...neueBelege].filter(b => b.text && b.stand !== 'fehler'));
+          if (doppel) {
+            neueBelege.push({
+              id: `${id}#${teil.von}`, name: teilName, stand: 'fertig',
+              groesse: datei.size, url, datei, istPdf: /\.pdf$/i.test(datei.name),
+              hash: `${hash}#${teil.von}-${teil.bis}`,
+              vonSeite: teil.von, bisSeite: teil.bis,
+              text: teil.text,
+              position: '_aussortiert', doppelVon: doppel.doppelVon,
+              quelle: 'regel', confidence: doppel.score,
+              begruendung: `Doppelt eingescannt – gleicht «${doppel.name}» `
+                         + `(${Math.round(doppel.score * 100)}% Textübereinstimmung). `
+                         + `Bleibt sichtbar liegen, kommt aber nicht ins Bündel.`,
+              vorschlag: [], kandidaten: [],
+            });
+            continue;
+          }
+
           const eingang = {
             text: teil.text,
             dateiname: datei.name,
@@ -242,11 +267,12 @@ export default function Belegsortierung() {
           const zuord = tri.belegart ? positionenFuer(tri.belegart) : { positionen: [], offen: true };
           const kiPos = (tri.positionen || []).map(x => KATALOG_NACH_ID[x]).filter(Boolean);
           const vorschlag = kiPos.length ? kiPos : (zuord.positionen || []);
-          const position = vorschlag.length === 1 ? vorschlag[0].id : null;
+          const position = tri.grund === 'duplikat' ? '_aussortiert'
+                         : (vorschlag.length === 1 ? vorschlag[0].id : null);
 
           neueBelege.push({
             id: `${id}#${teil.von}`,
-            name: teile.length > 1 ? `${datei.name} · ${seitenLabel(teil)}` : datei.name,
+            name: teilName,
             stand: 'fertig',
             groesse: datei.size, url, datei,
             istPdf: /\.pdf$/i.test(datei.name),
