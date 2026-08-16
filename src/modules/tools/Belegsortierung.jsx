@@ -9,7 +9,8 @@
 // Pipeline wie die Fibu-Belegerkennung, die Zuordnung über Regeln. Es geht
 // nichts nach aussen.
 
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Upload, FileText, AlertTriangle, Check, HelpCircle, X, Loader2, Download, GripVertical } from 'lucide-react';
 
 import { supabase } from '@/api/supabaseClient';
@@ -21,6 +22,7 @@ import { findAhvInText, dateiHash } from '../../lib/steuerBelege/belegHelfer.js'
 import { KATALOG, KATALOG_NACH_ID, GRUPPEN, AUSSORTIERT, DIMENSIONEN, katalogFuerPrompt }
   from '../../forms/steuer_np_katalog.js';
 import { baueBeilagenBundle } from '../../lib/steuerBelege/beilagenBundle.js';
+import { belegsortierung as db } from '../../api/belegsortierung.js';
 
 const C = {
   pageBg:  '#f2f5f2', panelBg: '#ffffff', panelBdr: '#ccd8cc',
@@ -50,7 +52,59 @@ export default function Belegsortierung() {
   const [ueberZiel, setUeberZiel] = useState(null);
   const [vorschauBreite, setVorschauBreite] = useState(ladeVorschauBreite);
   const [ziehtGriff, setZiehtGriff] = useState(false);
+  const [kunde, setKunde] = useState(null);
+  const [steuerjahr, setSteuerjahr] = useState(new Date().getFullYear() - 1);
+  const [suche, setSuche] = useState('');
+  const [speichert, setSpeichert] = useState(false);
+  const [gespeichertUm, setGespeichertUm] = useState(null);
   const eingabe = useRef(null);
+
+  // Nur natürliche Personen – das Gegenstück zum Steuermodul, das ausschliesslich
+  // juristische Personen führt.
+  const { data: kunden = [] } = useQuery({
+    queryKey: ['customers_np'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('customers')
+        .select('id, company_name, ort, plz, person_type, aktiv')
+        .in('person_type', ['privatperson', 'privatperson_partner'])
+        .order('company_name');
+      if (error) throw new Error(error.message);
+      return (data || []).filter(k => k.aktiv !== false);
+    },
+  });
+
+  // Gespeicherten Stand laden, sobald Mandant und Jahr feststehen. Die Belege
+  // kommen ohne Datei zurück – erst wenn derselbe Stapel wieder hineingezogen
+  // wird, führt der Hash sie wieder zusammen.
+  const { data: gespeichert } = useQuery({
+    queryKey: ['belegsortierung', kunde?.id, steuerjahr],
+    queryFn: () => db.get(kunde.id, steuerjahr),
+    enabled: !!kunde?.id,
+  });
+
+  useEffect(() => {
+    if (!gespeichert?.belege?.length) return;
+    setBelege(v => {
+      if (v.length) return v;                     // laufende Arbeit nicht überschreiben
+      return gespeichert.belege.map((b, i) => ({
+        ...b, id: `gespeichert-${i}-${b.hash}`, stand: 'fertig', ohneDatei: true,
+      }));
+    });
+  }, [gespeichert]);
+
+  async function speichern() {
+    if (!kunde?.id) return;
+    setSpeichert(true);
+    try {
+      await db.upsert(kunde.id, steuerjahr, belege);
+      setGespeichertUm(new Date());
+    } catch (e) {
+      alert('Speichern fehlgeschlagen: ' + (e.message || e));
+    } finally {
+      setSpeichert(false);
+    }
+  }
 
   // Griff zwischen Liste und Vorschau ziehen → Vorschau breiter/schmaler machen.
   const griffZiehen = e => {
@@ -71,6 +125,11 @@ export default function Belegsortierung() {
     document.addEventListener('mousemove', bewegen);
     document.addEventListener('mouseup', loslassen);
   };
+
+  // Aktueller Stand für die Hash-Wiedererkennung, ohne verarbeite() bei jeder
+  // Zustandsänderung neu zu erzeugen.
+  const belegeRef = useRef(belege);
+  useEffect(() => { belegeRef.current = belege; }, [belege]);
 
   async function verarbeite(dateien) {
     const liste = Array.from(dateien).filter(f => /\.(pdf|png|jpe?g)$/i.test(f.name));
@@ -93,6 +152,21 @@ export default function Belegsortierung() {
 
       try {
         const hash = await dateiHash(datei);
+
+        // Schon einmal einsortiert? Dann Datei nur anhaengen, nicht neu
+        // erkennen – OCR und KI kosten Minuten, der Hash kostet nichts.
+        const bekannt = belegeRef.current.find(b => b.hash === hash && b.ohneDatei);
+        if (bekannt) {
+          setBelege(v => v
+            .filter(b => b.id !== id)
+            .map(b => b.id === bekannt.id
+              ? { ...b, datei, url, istPdf: /\.pdf$/i.test(datei.name), ohneDatei: false,
+                  name: datei.name, stand: 'fertig' }
+              : b));
+          setGewaehlt(g => (g === id ? bekannt.id : g));
+          continue;
+        }
+
         const text = await extractDocumentText(datei, {
           onStage: s => setBelege(v => v.map(b => b.id === id ? { ...b, stand: s } : b)),
         });
@@ -256,6 +330,86 @@ export default function Belegsortierung() {
               (sendet Briefkopf, AHV-Nr. maskiert)
             </span>
           </label>
+        </div>
+
+        {/* Mandant und Jahr – ohne die lässt sich nichts speichern */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap',
+          backgroundColor: C.panelBg, border: `1px solid ${C.panelBdr}`,
+          borderRadius: 8, padding: '8px 12px',
+        }}>
+          <span style={{ fontSize: 11, color: C.sub, fontWeight: 600 }}>Mandant</span>
+          <input
+            value={kunde ? (kunde.company_name || '') : suche}
+            onChange={e => { setSuche(e.target.value); setKunde(null); }}
+            placeholder="Name eingeben …"
+            style={{
+              backgroundColor: C.inputBg, border: `1px solid ${kunde ? C.accent : C.panelBdr}`,
+              borderRadius: 5, padding: '4px 8px', fontSize: 12, color: C.heading,
+              width: 240, outline: 'none',
+            }}
+          />
+          {!kunde && suche.length >= 2 && (
+            <div style={{
+              position: 'relative', width: 0, height: 0,
+            }}>
+              <div style={{
+                position: 'absolute', top: 8, left: -248, width: 240, zIndex: 20,
+                backgroundColor: C.panelBg, border: `1px solid ${C.panelBdr}`,
+                borderRadius: 6, maxHeight: 220, overflowY: 'auto',
+                boxShadow: '0 4px 14px rgba(0,0,0,.10)',
+              }}>
+                {kunden
+                  .filter(k => k.company_name?.toLowerCase().includes(suche.toLowerCase()))
+                  .slice(0, 25)
+                  .map(k => (
+                    <div key={k.id} onClick={() => { setKunde(k); setSuche(''); }}
+                      style={{
+                        padding: '5px 9px', fontSize: 12, cursor: 'pointer',
+                        borderBottom: `1px solid ${C.pageBg}`, color: C.heading,
+                      }}>
+                      {k.company_name}
+                      {k.ort && <span style={{ color: C.muted }}> · {k.ort}</span>}
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+
+          <span style={{ fontSize: 11, color: C.sub, fontWeight: 600, marginLeft: 6 }}>Jahr</span>
+          <select value={steuerjahr} onChange={e => setSteuerjahr(Number(e.target.value))}
+            style={{
+              backgroundColor: C.inputBg, border: `1px solid ${C.panelBdr}`, borderRadius: 5,
+              padding: '4px 6px', fontSize: 12, color: C.heading,
+            }}>
+            {Array.from({ length: 6 }, (_, i) => new Date().getFullYear() - i).map(j => (
+              <option key={j} value={j}>{j}</option>
+            ))}
+          </select>
+
+          <button
+            onClick={speichern}
+            disabled={!kunde || speichert || !belege.length}
+            style={{
+              marginLeft: 'auto', fontSize: 11, fontWeight: 600,
+              color: kunde && belege.length ? '#fff' : C.muted,
+              backgroundColor: kunde && belege.length ? C.accent : 'transparent',
+              border: `1px solid ${kunde && belege.length ? C.accent : C.panelBdr}`,
+              borderRadius: 5, padding: '4px 12px',
+              cursor: kunde && belege.length ? 'pointer' : 'default',
+            }}>
+            {speichert ? 'speichert …' : 'Speichern'}
+          </button>
+          {gespeichertUm && (
+            <span style={{ fontSize: 10, color: C.muted }}>
+              gespeichert {gespeichertUm.toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' })}
+            </span>
+          )}
+          {!kunde && (
+            <span style={{ fontSize: 10, color: C.warn }}>
+              ohne Mandant kann nicht gespeichert werden
+            </span>
+          )}
         </div>
 
         <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
