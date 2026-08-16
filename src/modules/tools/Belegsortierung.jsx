@@ -496,12 +496,19 @@ export default function Belegsortierung() {
         {/* Der Katalog ist die Ablage: jede Position ein Stapel */}
         {seitenGruppen.map(([seite, positionen]) => {
           const belegt = positionen.filter(p => proPosition.get(p.id)?.length);
-          // Leere Positionen nur zeigen, solange gezogen wird – sonst wäre die
-          // Seite eine Wand aus 41 leeren Zeilen.
-          const sichtbar = zieht ? positionen : belegt;
+          // Seite 0 (Arbeitspapiere) und 99 (nicht benötigt) sind IMMER da.
+          // Sie sind die zwei häufigsten Ziele beim Durchgehen eines Stapels –
+          // wenn man sie erst beim Ziehen sieht, sind sie unauffindbar.
+          const immer = seite === 0 || seite === 99;
+          // Sonst leere Positionen nur zeigen, solange gezogen wird – die Seite
+          // wäre sonst eine Wand aus 41 leeren Zeilen.
+          const sichtbar = (zieht || immer) ? positionen : belegt;
           if (!sichtbar.length) return null;
+          const titel = seite === 99 ? 'Nicht benötigt'
+                      : seite === 0  ? 'Arbeitspapiere (keine Beilage)'
+                      : `Seite ${seite} · ${seitenName(seite)}`;
           return (
-            <Block key={seite} titel={`Seite ${seite} · ${seitenName(seite)}`} farbe={C.accent}>
+            <Block key={seite} titel={titel} farbe={seite >= 90 ? C.muted : C.accent}>
               {sichtbar.map(p => (
                 <Ablage key={p.id} position={p} belege={proPosition.get(p.id) || []}
                         aktivZiel={ueberZiel === p.id} zieht={!!zieht}
@@ -630,7 +637,7 @@ function Ablage({ position: p, belege, aktivZiel, zieht, gewaehlt, onWaehlen,
                onDragStart={onDragStart(b.id)} onDragEnd={onDragEnd} />
       ))}
 
-      {leer && zieht && (
+      {leer && (
         <div style={{ padding: '2px 12px 8px 12px', fontSize: 10, color: C.muted }}>
           hierher ziehen
         </div>
