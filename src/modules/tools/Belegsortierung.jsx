@@ -167,6 +167,8 @@ export default function Belegsortierung() {
 
   const belegeRef = useRef(belege);
   useEffect(() => { belegeRef.current = belege; }, [belege]);
+  const kundeRef = useRef(kunde);
+  useEffect(() => { kundeRef.current = kunde; }, [kunde]);
 
   // Solange hier gearbeitet wird, darf ein frisches Deployment die Seite
   // NICHT neu laden (siehe main.jsx onNeedRefresh) – sonst ist ein laufender
@@ -207,11 +209,20 @@ export default function Belegsortierung() {
       try {
         const hash = await dateiHash(datei);
 
+        // Original in die Ablage -- einmal je Inhalt. Ohne Mandant gibt es
+        // keinen Zielordner; dann holt Speichern das spaeter nach.
+        let dateiPfad = null;
+        if (kundeRef.current?.id) {
+          try { dateiPfad = await db.dateiHochladen(kundeRef.current.id, hash, datei); }
+          catch (e) { console.warn('[Ablage] Hochladen fehlgeschlagen:', e.message); }
+        }
+
         const bekannt = belegeRef.current.find(b => b.hash === hash && b.ohneDatei);
         if (bekannt) {
           setBelege(v => v.filter(b => b.id !== id).map(b => b.id === bekannt.id
             ? { ...b, datei, url, istPdf: /\.pdf$/i.test(datei.name),
-                ohneDatei: false, name: datei.name, stand: 'fertig' }
+                ohneDatei: false, name: datei.name, stand: 'fertig',
+                dateiPfad: b.dateiPfad || dateiPfad }
             : b));
           return;
         }
@@ -245,7 +256,7 @@ export default function Belegsortierung() {
             neueBelege.push({
               id: `${id}#${teil.von}`, name: teilName, stand: 'fertig',
               groesse: datei.size, url, datei, istPdf: /\.pdf$/i.test(datei.name),
-              hash: `${hash}#${teil.von}-${teil.bis}`,
+              hash: `${hash}#${teil.von}-${teil.bis}`, dateiPfad,
               vonSeite: teil.von, bisSeite: teil.bis,
               text: teil.text,
               position: '_aussortiert', doppelVon: doppel.doppelVon,
@@ -286,7 +297,7 @@ export default function Belegsortierung() {
             stand: 'fertig',
             groesse: datei.size, url, datei,
             istPdf: /\.pdf$/i.test(datei.name),
-            hash: eingang.dateiHash,
+            hash: eingang.dateiHash, dateiPfad,
             vonSeite: teil.von, bisSeite: teil.bis,
             trennGrund: teil.grund,
             text: teil.text,
@@ -350,7 +361,17 @@ export default function Belegsortierung() {
     if (!kunde?.id) return;
     setSpeichert(true);
     try {
-      await db.upsert(kunde.id, steuerjahr, belege);
+      // Dateien, die vor der Mandantenwahl eingelesen wurden, jetzt ablegen
+      const mitPfad = belege.map(b => ({ ...b }));
+      for (const b of mitPfad) {
+        if (b.datei && !b.dateiPfad && b.hash) {
+          const basisHash = String(b.hash).split('#')[0];
+          try { b.dateiPfad = await db.dateiHochladen(kunde.id, basisHash, b.datei); }
+          catch { /* Anzeige bleibt dann sitzungsgebunden */ }
+        }
+      }
+      setBelege(v => v.map(x => mitPfad.find(m => m.id === x.id) || x));
+      await db.upsert(kunde.id, steuerjahr, mitPfad);
       setGespeichertUm(new Date());
     } catch (e) {
       alert('Speichern fehlgeschlagen: ' + (e.message || e));
@@ -360,7 +381,22 @@ export default function Belegsortierung() {
   async function bundelHerunterladen() {
     setBaut(true);
     try {
-      const bytes = await baueBeilagenBundle(belege.filter(b => b.position), {
+      // Nach einem Neuladen fehlen die File-Objekte -- aus der Ablage holen,
+      // einmal je Datei (mehrere Teilbelege teilen sich dieselbe).
+      const dateiCache = new Map();
+      const fuersBundle = [];
+      for (const b of belege.filter(x => x.position)) {
+        if (b.datei || !b.dateiPfad) { fuersBundle.push(b); continue; }
+        try {
+          if (!dateiCache.has(b.dateiPfad)) {
+            const blob = await db.dateiLaden(b.dateiPfad);
+            dateiCache.set(b.dateiPfad, new File([blob], b.name || 'beleg.pdf',
+              { type: blob.type || 'application/pdf' }));
+          }
+          fuersBundle.push({ ...b, datei: dateiCache.get(b.dateiPfad) });
+        } catch { fuersBundle.push(b); }
+      }
+      const bytes = await baueBeilagenBundle(fuersBundle, {
         mandant: kunde?.company_name, steuerjahr,
       });
       const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
@@ -470,6 +506,20 @@ export default function Belegsortierung() {
   }, [abschnitt, proPosition, zieht, suche]);
 
   const aktiverBeleg = belege.find(b => b.id === gewaehlt);
+
+  // Aus dem gespeicherten Stand geladen und Datei nicht zur Hand? Aus der
+  // Ablage holen -- erst beim Anklicken, nicht fuer alle 50 auf Vorrat.
+  useEffect(() => {
+    const b = belege.find(x => x.id === gewaehlt);
+    if (!b || b.url || !b.dateiPfad) return;
+    let aktivFlag = true;
+    db.dateiUrl(b.dateiPfad)
+      .then(url => { if (aktivFlag) aendere(b.id, {
+        url, istPdf: /\.(pdf)(\?|$)/i.test(b.dateiPfad) || /\.pdf$/i.test(b.dateiPfad),
+        ausAblage: true }); })
+      .catch(e => console.warn('[Ablage] Vorschau nicht ladbar:', e.message));
+    return () => { aktivFlag = false; };
+  }, [gewaehlt, belege]);
 
   return (
     <div style={{
@@ -943,8 +993,9 @@ function Vorschau({ beleg: b, breite, onAendern, onPosition }) {
       <div style={{ flex: 1, minHeight: 0, backgroundColor: C.pageBg }}>
         {!b.url ? (
           <div style={{ padding: 20, fontSize: 11, color: C.muted, textAlign: 'center' }}>
-            Aus dem gespeicherten Stand geladen – die Datei liegt nicht mehr vor.<br />
-            Denselben Beleg nochmals hineinziehen, dann erscheint er hier.
+            {b.dateiPfad
+              ? 'Beleg wird aus der Ablage geholt …'
+              : 'Aus einem älteren Stand ohne Ablage-Kopie – einmal neu hineinziehen, dann liegt er künftig bereit.'}
           </div>
         ) : b.istPdf ? (
           // Bei einem Buendel auf der Seite dieses Belegs aufgehen

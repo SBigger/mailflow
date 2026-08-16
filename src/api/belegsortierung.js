@@ -24,6 +24,7 @@ function fuerDieDatenbank(b) {
     // Seitenbereich: ein PDF kann mehrere Belege enthalten
     vonSeite:    b.vonSeite ?? null,
     doppelVon:   b.doppelVon ?? null,
+    dateiPfad:   b.dateiPfad ?? null,
     bisSeite:    b.bisSeite ?? null,
     jahr:        b.jahr ?? null,
     // Der Text ist das Teure an einem Scan – gut zehn Sekunden OCR je Seite.
@@ -32,7 +33,41 @@ function fuerDieDatenbank(b) {
   };
 }
 
+// Originaldateien liegen im Storage-Bucket "belegsortierung", adressiert ueber
+// den Inhalts-Hash: derselbe Beleg wird nie doppelt gespeichert, und beim
+// Wiederoeffnen einer Sortierung laesst sich jede Datei wieder anzeigen --
+// vorher war nach dem Neuladen nur noch die Entscheidung da, das PDF weg.
+const BUCKET = 'belegsortierung';
+
+function dateiPfadFuer(customerId, hash, name) {
+  const endung = (String(name || '').match(/[.](pdf|png|jpeg|jpg)$/i) || ['.pdf'])[0].toLowerCase();
+  return customerId + '/' + hash + endung;
+}
+
 export const belegsortierung = {
+  /** Originaldatei einmal je Inhalt ablegen. Gibt den Pfad zurueck. */
+  async dateiHochladen(customerId, hash, datei) {
+    const pfad = dateiPfadFuer(customerId, hash, datei.name);
+    const { error } = await supabase.storage.from(BUCKET)
+      .upload(pfad, datei, { upsert: true, contentType: datei.type || 'application/pdf' });
+    if (error) throw new Error(error.message);
+    return pfad;
+  },
+
+  /** Kurzlebige Anzeige-URL (1 Stunde) fuer die Vorschau. */
+  async dateiUrl(pfad) {
+    const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(pfad, 3600);
+    if (error) throw new Error(error.message);
+    return data.signedUrl;
+  },
+
+  /** Datei zurueckholen -- fuers Beilagenbuendel nach einem Neuladen. */
+  async dateiLaden(pfad) {
+    const { data, error } = await supabase.storage.from(BUCKET).download(pfad);
+    if (error) throw new Error(error.message);
+    return data;
+  },
+
   async get(customerId, steuerjahr) {
     const { data, error } = await supabase
       .from('belegsortierung')
