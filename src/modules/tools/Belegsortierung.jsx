@@ -168,6 +168,16 @@ export default function Belegsortierung() {
   const belegeRef = useRef(belege);
   useEffect(() => { belegeRef.current = belege; }, [belege]);
 
+  // Solange hier gearbeitet wird, darf ein frisches Deployment die Seite
+  // NICHT neu laden (siehe main.jsx onNeedRefresh) – sonst ist ein laufender
+  // OCR-Stapel oder eine ungespeicherte Sortierung kommentarlos weg.
+  useEffect(() => {
+    const aktiv = (window.smartisArbeitAktiv ||= new Set());
+    if (laeuft || belege.length) aktiv.add('Belegsortierung');
+    else aktiv.delete('Belegsortierung');
+    return () => aktiv.delete('Belegsortierung');
+  }, [laeuft, belege.length]);
+
   // ── Einlesen ────────────────────────────────────────────────────────────
   async function verarbeite(dateien) {
     const liste = Array.from(dateien).filter(f => /\.(pdf|png|jpe?g)$/i.test(f.name));
