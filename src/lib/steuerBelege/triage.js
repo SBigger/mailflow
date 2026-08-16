@@ -77,6 +77,25 @@ export function findePeriode(text, erwartet) {
   return kandidaten[0].jahr;
 }
 
+/**
+ * Bereitet den Text für die KI auf: Kopfbereich statt Volltext, AHV-Nummer
+ * maskiert.
+ *
+ * Warum so wenig: Die Belegart steht praktisch immer im Briefkopf und in den
+ * ersten Zeilen — wer schickt, bestimmt meist was es ist. Der Rest des
+ * Dokuments trägt zur Frage «was ist das» nichts bei, wäre aber genau der
+ * Teil mit den Beträgen, Diagnosen und Kontobewegungen.
+ *
+ * Die AHV-Nummer wird lokal für die Zuordnung zum Ehegatten gebraucht, aber
+ * die KI muss sie nie sehen.
+ */
+export function ausschnittFuerKi(text, zeichen = 1800) {
+  if (!text) return "";
+  return text
+    .slice(0, zeichen)
+    .replace(/756[.,\s-]*\d{4}[.,\s-]*\d{4}[.,\s-]*\d{2}/g, "756.[maskiert]");
+}
+
 // ══════════════════════════════════════════════════════════════════════
 // Stufe 1: Regeln
 // ══════════════════════════════════════════════════════════════════════
@@ -251,9 +270,16 @@ export async function triageMitKi(supabase, beleg, kontext = {}) {
   try {
     const { data, error } = await supabase.functions.invoke("steuer-suggest-position", {
       body: {
-        text:      (beleg.text || "").slice(0, 20000),
-        dateiname: beleg.dateiname || "",
-        periode:   kontext.periode ?? null,
+        // Nur der Kopfbereich, und die AHV-Nummer vorher raus. Fuer die Frage
+        // «was ist das» reicht der Briefkopf; Arzt- und Krankheitsbelege sind
+        // besonders schuetzenswerte Personendaten und muessen nicht in voller
+        // Laenge das Haus verlassen.
+        text:       ausschnittFuerKi(beleg.text),
+        dateiname:  beleg.dateiname || "",
+        periode:    kontext.periode ?? null,
+        // Katalog kommt vom Aufrufer, damit er nur an EINER Stelle gepflegt wird
+        katalog:    kontext.katalog || "",
+        belegarten: kontext.belegarten || BELEGARTEN.map(b => `${b.key} = ${b.label}`).join("\n"),
       },
     });
     if (error) throw error;

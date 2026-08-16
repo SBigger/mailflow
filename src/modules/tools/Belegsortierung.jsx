@@ -12,12 +12,13 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { Upload, FileText, AlertTriangle, Check, HelpCircle, X, Loader2 } from 'lucide-react';
 
+import { supabase } from '@/api/supabaseClient';
 import { extractDocumentText } from '../../lib/batchAiSuggest.js';
-import { triageRegeln, brauchtKi } from '../../lib/steuerBelege/triage.js';
+import { triageRegeln, triageMitKi, brauchtKi } from '../../lib/steuerBelege/triage.js';
 import { positionenFuer, offeneDimensionen } from '../../lib/steuerBelege/belegartZuPosition.js';
-import { BELEGART_BY_KEY } from '../../lib/steuerBelege/belegarten.js';
+import { BELEGART_BY_KEY, BELEGARTEN } from '../../lib/steuerBelege/belegarten.js';
 import { findAhvInText, dateiHash } from '../../lib/steuerBelege/belegHelfer.js';
-import { KATALOG, KATALOG_NACH_ID, GRUPPEN, AUSSORTIERT, DIMENSIONEN }
+import { KATALOG, KATALOG_NACH_ID, GRUPPEN, AUSSORTIERT, DIMENSIONEN, katalogFuerPrompt }
   from '../../forms/steuer_np_katalog.js';
 
 const C = {
@@ -34,6 +35,7 @@ export default function Belegsortierung() {
   const [laeuft, setLaeuft] = useState(false);
   const [ueber, setUeber] = useState(false);
   const [gewaehlt, setGewaehlt] = useState(null);   // id des Belegs in der Vorschau
+  const [kiNutzen, setKiNutzen] = useState(true);
   const eingabe = useRef(null);
 
   async function verarbeite(dateien) {
@@ -60,28 +62,43 @@ export default function Belegsortierung() {
           onStage: s => setBelege(v => v.map(b => b.id === id ? { ...b, stand: s } : b)),
         });
 
-        const tri = triageRegeln(
-          { text, dateiname: datei.name, parseMethode: 'ocr', dateiHash: hash },
-          { bekannteHashes },
-        );
+        const eingang = { text, dateiname: datei.name, parseMethode: 'ocr', dateiHash: hash };
+        const kontext = {
+          bekannteHashes,
+          katalog: katalogFuerPrompt(),
+          belegarten: BELEGARTEN.map(b => `${b.key} = ${b.label}`).join('\n'),
+        };
+
+        // Regeln zuerst. Nur was darunter bleibt, geht an die KI – bei einem
+        // echten Stapel war das rund ein Drittel.
+        let tri = triageRegeln(eingang, kontext);
+        if (kiNutzen && brauchtKi(tri)) {
+          setBelege(v => v.map(b => b.id === id ? { ...b, stand: 'ki' } : b));
+          tri = await triageMitKi(supabase, eingang, kontext);
+        }
         bekannteHashes.push(hash);
 
         const zuord = tri.belegart ? positionenFuer(tri.belegart) : { positionen: [], offen: true };
-        const gewaehlt = zuord.positionen?.length === 1 ? zuord.positionen[0].id : null;
+
+        // Die KI darf auch direkt Positionen nennen – dann gewinnt ihr
+        // Vorschlag, sonst leitet er sich aus der Belegart ab.
+        const kiPositionen = (tri.positionen || [])
+          .map(pid => KATALOG_NACH_ID[pid]).filter(Boolean);
 
         setBelege(v => v.map(b => b.id === id ? {
           ...b, stand: 'fertig', hash, text,
           belegart: tri.belegart,
           confidence: tri.confidence,
           begruendung: tri.begruendung,
+          quelle: tri.quelle || 'regel',
           kiNoetig: brauchtKi(tri),
-          vorschlag: zuord.positionen || [],
+          vorschlag: kiPositionen.length ? kiPositionen : (zuord.positionen || []),
           kandidaten: zuord.kandidaten || [],
-          offenGrund: zuord.offen ? (zuord.grund || null) : null,
+          offenGrund: kiPositionen.length ? null : (zuord.offen ? (zuord.grund || null) : null),
           hinweis: zuord.hinweis || null,
-          position: gewaehlt,
+          position: (kiPositionen.length === 1) ? kiPositionen[0].id
+                  : (zuord.positionen?.length === 1 ? zuord.positionen[0].id : null),
           ahv: findAhvInText(text),
-          seiten: null,
         } : b));
       } catch (e) {
         setBelege(v => v.map(b => b.id === id
@@ -136,10 +153,25 @@ export default function Belegsortierung() {
         <h1 style={{ fontSize: 20, fontWeight: 700, color: C.heading, marginBottom: 4 }}>
           Belegsortierung – natürliche Personen
         </h1>
-        <p style={{ fontSize: 12, color: C.sub, marginBottom: 16 }}>
-          Belegstapel hineinziehen. Die Erkennung läuft im Browser, es geht nichts nach aussen.
-          Sortiert wird in die Reihenfolge der Steuererklärung.
-        </p>
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap',
+        }}>
+          <p style={{ fontSize: 12, color: C.sub, margin: 0, flex: 1, minWidth: 320 }}>
+            Belegstapel hineinziehen. Erkannt wird zuerst über Regeln im Browser; nur was dort
+            unklar bleibt, geht an die KI. Sortiert wird in die Reihenfolge der Steuererklärung.
+          </p>
+          <label style={{
+            display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: C.sub,
+            cursor: 'pointer', whiteSpace: 'nowrap',
+          }}>
+            <input type="checkbox" checked={kiNutzen}
+                   onChange={e => setKiNutzen(e.target.checked)} />
+            KI für unklare Belege
+            <span style={{ color: C.muted }}>
+              (sendet Briefkopf, AHV-Nr. maskiert)
+            </span>
+          </label>
+        </div>
 
         <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
           {/* ── links: Liste ── */}
@@ -326,6 +358,12 @@ function Zeile({ beleg: b, onPosition, aktiv, onWaehlen }) {
             </span>
           )}
           {b.vonHand && <span style={{ fontSize: 10, color: C.accent }}>von Hand</span>}
+          {b.quelle === 'ki' && !b.vonHand && (
+            <span style={{
+              fontSize: 10, color: C.offen, border: `1px solid ${C.panelBdr}`,
+              borderRadius: 3, padding: '0 4px',
+            }}>KI</span>
+          )}
         </div>
 
         {laden && <div style={{ color: C.muted, marginTop: 2 }}>{standText(b.stand)}</div>}
@@ -389,5 +427,6 @@ function standText(stand) {
   if (stand === 'liest')  return 'wird gelesen …';
   if (stand === 'ocr')    return 'Scan erkannt – OCR läuft, das dauert';
   if (stand === 'pdf')    return 'PDF-Text wird gelesen …';
+  if (stand === 'ki')     return 'Regeln reichten nicht – KI wird gefragt …';
   return String(stand || '') + ' …';
 }
