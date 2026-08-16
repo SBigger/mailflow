@@ -170,6 +170,57 @@ async function ocrPdfPages(pdf, maxPages = 5) {
   return texts.join("\n").trim();
 }
 
+/**
+ * Text JE SEITE eines PDFs – Grundlage der Belegtrennung.
+ *
+ * Ein eingescanntes Buendel enthaelt selten einen Beleg: der Umbau-Ordner
+ * eines Mandanten hat 38 Seiten und darauf 30 Verguetungsauftraege. Um sie
+ * auseinanderzunehmen, braucht es den Text jeder Seite einzeln statt am
+ * Stueck.
+ *
+ * Digitale PDFs liefern ihn direkt; Scans gehen ueber den OCR-Pool, wo die
+ * Seiten nebeneinander laufen.
+ */
+export async function extractPageTexts(file, { maxPages = 40, onStage } = {}) {
+  if (!file) return [];
+  const name = (file.name || "").toLowerCase();
+  if (!(file.type === "application/pdf" || name.endsWith(".pdf"))) {
+    const text = await extractDocumentText(file, { onStage });
+    return text ? [text] : [];
+  }
+
+  const buf = await file.arrayBuffer();
+  sichereWorker();
+  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  const anzahl = Math.min(pdf.numPages, maxPages);
+
+  // Zuerst die eingebettete Textebene versuchen – kostet fast nichts.
+  const texte = [];
+  for (let i = 1; i <= anzahl; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    texte.push(content.items.map(it => it.str).join(" ").trim());
+  }
+  const hatText = texte.join("").length > 50 * anzahl * 0.3;
+  if (hatText) return texte;
+
+  // Scan: rendern (seriell, ein pdfjs-Dokument) und gemeinsam erkennen.
+  try { onStage?.("ocr", `Scan mit ${anzahl} Seiten – OCR läuft…`); } catch {}
+  const canvases = [];
+  for (let i = 1; i <= anzahl; i++) {
+    const page = await pdf.getPage(i);
+    const viewport = page.getViewport({ scale: 1.7 });
+    const canvas = document.createElement("canvas");
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+    canvases.push(canvas);
+  }
+  return await Promise.all(canvases.map((c, i) =>
+    ocrBlob(c).catch(e => { console.warn("[OCR] Seite fehlgeschlagen", i + 1, e); return ""; })
+  ));
+}
+
 // ══════════════════════════════════════════════════════════════════════
 // Text-Extraktion
 // ══════════════════════════════════════════════════════════════════════

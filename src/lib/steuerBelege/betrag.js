@@ -17,10 +17,11 @@ export const ANKER = {
   einkauf_pk:  ['einkaufssumme', 'einkauf', 'freiwilliger einkauf'],
   versicherungspraemien: ['total praemien', 'praemien total', 'jahrespraemie', 'praemie'],
   krankheitskosten:      ['selbst getragen', 'selbstbehalt', 'franchise', 'zu ihren lasten'],
-  schuldzinsen:          ['zinsen', 'schuldzins', 'hypothekarzins', 'zinsaufwand'],
-  schulden:              ['restschuld', 'saldo', 'kapitalbetrag', 'darlehensbetrag'],
-  bankguthaben:          ['saldo per', 'kontostand', 'steuerwert', 'guthaben per', 'saldo'],
-  wertschriften_ertrag:  ['bruttoertrag', 'ertrag', 'zinsertrag', 'dividende'],
+  schulden:              ['restschuld', 'kapitalbetrag', 'darlehensbetrag', 'saldo per', 'saldo'],
+  wertschriften:         ['steuerwert', 'saldo per', 'kontostand', 'guthaben per', 'saldo'],
+  beteiligung_qualifiziert: ['steuerwert', 'nennwert'],
+  krypto:                ['bestand', 'steuerwert', 'saldo'],
+  selbstaendig:          ['reingewinn', 'gewinn', 'jahresgewinn'],
   rente_ahv:   ['jahresrente', 'total rente', 'rente'],
   rente_pk:    ['jahresrente', 'total rente', 'rente'],
   spenden:     ['spende', 'zuwendung', 'betrag'],
@@ -94,6 +95,13 @@ export function findeBetrag(text, positionId) {
         if (n == null || n === 0) continue;
         if (n >= 1900 && n <= 2100 && !/[.,]\d{2}$/.test(z)) continue;
         if (Math.abs(n) < 10) continue;
+        // Daten aussortieren: «31.12» sieht aus wie ein Betrag mit Rappen,
+        // ist aber der Stichtag («Restschuld per 31.12.»). Tag ≤ 31 und
+        // Nachkommateil, der als Monat taugt → kein Betrag.
+        if (/^\d{1,2}[.,]\d{2}$/.test(z) && n < 32) {
+          const monat = Number.parseInt(z.slice(-2), 10);
+          if (monat >= 1 && monat <= 12) continue;
+        }
         return {
           betrag: n,
           anker: anker[i],
@@ -119,4 +127,37 @@ export function ausschnittUmAnker(text, positionId, zeichen = 900) {
     }
   }
   return text.slice(0, zeichen);
+}
+
+/**
+ * Anker für das ZWEITE Betragsfeld der verschmolzenen Positionen — dort, wo
+ * ein Beleg zwei Werte liefert (Wertschriften: Ertrag neben dem Steuerwert;
+ * Schulden: Zins neben der Restschuld; Selbständige: Eigenkapital neben dem
+ * Gewinn).
+ */
+export const ANKER2 = {
+  wertschriften: ['bruttoertrag', 'zinsertrag', 'ertrag', 'dividende', 'habenzins'],
+  beteiligung_qualifiziert: ['bruttodividende', 'dividende', 'bruttoertrag'],
+  schulden:      ['schuldzins', 'zinsen', 'hypothekarzins', 'zinsaufwand', 'sollzins'],
+  selbstaendig:  ['eigenkapital', 'kapital per'],
+};
+
+/** Beide Beträge einer Position suchen. betrag2 nur, wo ANKER2 etwas kennt. */
+export function findeBetraege(text, positionId) {
+  const erster = findeBetrag(text, positionId);
+  const zweite = ANKER2[positionId];
+  let betrag2 = null;
+  if (zweite?.length && text) {
+    const gemerkt = ANKER[positionId];
+    ANKER[positionId] = zweite;               // kurzzeitig umhaengen, gleiche Suche
+    const t = findeBetrag(text, positionId);
+    ANKER[positionId] = gemerkt;
+    if (t && t.betrag !== erster?.betrag) betrag2 = t.betrag;
+  }
+  return {
+    betrag:  erster?.betrag ?? null,
+    anker:   erster?.anker ?? null,
+    confidence: erster?.confidence ?? null,
+    betrag2,
+  };
 }

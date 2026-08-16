@@ -21,14 +21,17 @@ export const BELEGART_ZU_POSITION = {
   lohnausweis:        { positionen: ['lohn_haupt'],
                         hinweis: 'Zweiter Lohnausweis derselben Person im selben Jahr → lohn_neben.' },
 
-  esteuerauszug:      { positionen: ['wertschriften_ertrag', 'bankguthaben'],
-                        hinweis: 'Ein Beleg, zwei Positionen: Ertrag auf Seite 2, Bestand auf Seite 4.' },
+  esteuerauszug:      { positionen: ['wertschriften'],
+                        hinweis: 'Ein Beleg, mehrere Ziele: Steuerwert, Bruttoertrag und '
+                               + 'Verrechnungsantrag laufen alle über das Wertschriftenverzeichnis.' },
 
-  kontoauszug:        { positionen: ['bankguthaben'],
-                        hinweis: 'Nennt der Auszug auch Zinsertrag, zusätzlich wertschriften_ertrag.' },
+  kontoauszug:        { positionen: ['wertschriften'],
+                        hinweis: 'Je Konto eine Zeile im Wertschriftenverzeichnis. Nennt der '
+                               + 'Auszug Sollsaldi oder Schuldzinsen, zusätzlich schulden.' },
 
-  schuldzins:         { positionen: ['schuldzinsen', 'schulden'],
-                        hinweis: 'Zins auf Seite 3, Restschuld auf Seite 4 – derselbe Ausweis.' },
+  schuldzins:         { positionen: ['schulden'],
+                        hinweis: 'Restschuld und Zins stehen im selben Ausweis und gehen als '
+                               + 'zwei Beträge in die eine Zeile des Schuldenverzeichnisses.' },
 
   saeule3a:           { positionen: ['saeule_3a'] },
   pk_einkauf:         { positionen: ['einkauf_pk'] },
@@ -43,9 +46,9 @@ export const BELEGART_ZU_POSITION = {
                         hinweis: 'Kassenübersichten enthalten oft beides – enthält der Beleg eine '
                                + 'Leistungsabrechnung, zusätzlich krankheitskosten.' },
 
-  beteiligung:        { positionen: ['wertschriften_ertrag', 'bankguthaben'],
-                        hinweis: 'Qualifizierte Beteiligungen laufen über das Wertschriftenverzeichnis; '
-                               + 'nicht kotierte Anteile ggf. uebriges_vermoegen.' },
+  beteiligung:        { positionen: ['beteiligung_qualifiziert'],
+                        hinweis: 'Steht im Wertschriftenverzeichnis mit Code Q und zusätzlich auf dem '
+                               + 'Blatt «Qualifizierte Beteiligungen» (Teilbesteuerung).' },
 
   // ── mehrdeutig: Belegart erkannt, Position noch offen ────────────────────
   rente:              { mehrdeutig: true,
@@ -78,7 +81,7 @@ export const BELEGART_ZU_POSITION = {
                                + 'eigenem Briefkopf zu eigene_berechnung.' },
 
   zahlungsauftrag:    { mehrdeutig: true,
-                        kandidaten: ['uebriges_vermoegen', 'bankguthaben', '_aussortiert'],
+                        kandidaten: ['uebriges_vermoegen', 'wertschriften', '_aussortiert'],
                         unterscheidet: 'Zweck der Zahlung – Kapitaleinlage, Umbuchung oder Privates' },
 
   // ── gehört nicht in die Erklärung ────────────────────────────────────────

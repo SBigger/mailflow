@@ -1,87 +1,108 @@
 // Positionskatalog für die Steuererklärung natürlicher Personen (kantonsneutral).
 //
-// Wozu: Ein Mandant bringt einen Stapel Belege. Dieser Katalog sagt, wohin jeder
-// Beleg in der Steuererklärung gehört – damit der Stapel in genau die Reihenfolge
-// gebracht werden kann, in der die Erklärung ausgefüllt wird (Seite 2 Einkünfte,
-// Seite 3 Abzüge, Seite 4 Vermögen).
+// Gegliedert nach VERZEICHNISSEN, nicht nach den vier Seiten des Hauptformulars.
+// Der Grund steht in jeder echten Erklärung: die Seiten tragen nur Totale, die
+// Substanz liegt in den Verzeichnissen — und ein Verzeichnis speist regelmässig
+// MEHRERE Ziffern. Nachgemessen an der eingereichten Erklärung ZH 2024 dieses
+// Mandats (Dr.-Tax-Ausdruck, 28 Seiten):
 //
-// Warum kantonsneutral: Die Ziffernnummern unterscheiden sich je Kanton, der
-// Aufbau kaum – das Steuerharmonisierungsgesetz gibt Einkommens- und
-// Vermögensbegriff vor. Wir sortieren deshalb nach Position, nicht nach Ziffer.
+//   Wertschriftenverzeichnis  → Ertrag Ziff. 4.1 + Vermögen Ziff. 30.1
+//                               + Verrechnungsantrag + Q-Blatt (VIER Ziele)
+//   Liegenschaftenverzeichnis → Ertrag Ziff. 6 + Vermögen Ziff. 31
+//   Schuldenverzeichnis       → Schuldzinsen Ziff. 12 + Schulden Ziff. 34
+//
+// Deshalb ist «ein Bankbeleg = Vermögen» falsch: der Beleg gehört in EIN
+// Verzeichnis (Wertschriften), und das Verzeichnis verteilt auf die Ziffern.
+// Derselbe ZKB-Steuerausweis erschien in der Referenz an drei Orten —
+// Wertschriften, Schulden und Vermögensverwaltungskosten.
 //
 // Felder je Position:
-//   id          – stabiler Schlüssel (wird gespeichert, nie ändern)
-//   seite       – Seite der Steuererklärung (Sortierung 1. Ebene)
-//   sort        – Reihenfolge innerhalb der Seite
-//   gruppe      – 'arbeitspapier' | 'allgemein' | 'einkommen' | 'abzuege' | 'vermoegen'
-//   label       – Anzeigename
-//   belege      – typische Belegarten; Anker für die KI, Hinweis für den Nutzer
-//   betrag      – was für ein Betrag ausgelesen werden soll (null = kein Betrag)
-//   stichtag    – 'jahr' = Summe über das Steuerjahr · 'ende' = Bestand per 31.12.
-//                 · null = kein Betrag
-//   dimensionen – Zusatzangaben, ohne die die Position nicht auswertbar ist
-//   pruefen     – verlangt eine fachliche Entscheidung, die kein Beleg hergibt
-//   hinweis     – Fallstricke bei der Zuordnung (geht in den KI-Prompt)
+//   id           – stabiler Schlüssel (wird gespeichert; Umbenennungen laufen
+//                  über ALT_IDS, damit gespeicherte Stände lesbar bleiben)
+//   verzeichnis  – zu welchem Stapel die Position gehört (Gliederung der UI)
+//   seite, sort  – Seite des Hauptformulars (Info + Feinreihenfolge)
+//   belege       – typische Belegarten; Anker für die KI, Hinweis für den Nutzer
+//   betrag       – was für ein Betrag gesucht wird (null = keiner)
+//   betrag2      – zweites Betragsfeld, wo EIN Beleg zwei Werte liefert
+//                  (Wertschriften: Steuerwert UND Ertrag; Schulden: Restschuld
+//                  UND Zins; Selbständige: Reingewinn UND Eigenkapital)
+//   stichtag     – 'jahr' = Summe über das Steuerjahr · 'ende' = Bestand 31.12.
+//   dimensionen  – Zusatzangaben, ohne die die Position nicht auswertbar ist
+//   pruefen      – verlangt eine fachliche Entscheidung, die kein Beleg hergibt
+//   hinweis      – Fallstricke bei der Zuordnung (geht in den KI-Prompt)
 
-export const GRUPPEN = [
-  { id: 'arbeitspapier', label: 'Arbeitspapiere (keine Beilage)', seite: 0 },
-  { id: 'allgemein',     label: 'Allgemein / Personalien',        seite: 1 },
-  { id: 'einkommen',     label: 'Einkünfte',                      seite: 2 },
-  { id: 'abzuege',       label: 'Abzüge',                         seite: 3 },
-  { id: 'vermoegen',     label: 'Vermögen',                       seite: 4 },
-];
-
-// Zusatzangaben, die ein Beleg an dieser Position braucht, damit die Sortierung
-// überhaupt brauchbar ist. Ohne sie landen bei einem Ehepaar mit zwei
-// Liegenschaften alle Belege auf einem Haufen.
-//   'person' – bei gemeinsamer Veranlagung: welcher Ehegatte? Der Lohnausweis
-//              der Frau gehört in ihre Spalte, nicht in die des Mannes.
-//   'objekt' – welche Liegenschaft? Unterhalt und Hypothek werden je Objekt
-//              gerechnet, nicht über alle zusammen.
-//   'konto'  – welche Bankbeziehung? Das Wertschriftenverzeichnis führt jedes
-//              Konto und Depot einzeln auf, mit Bestand und Ertrag.
 export const DIMENSIONEN = {
   person: 'Ehegatte',
   objekt: 'Liegenschaft',
   konto:  'Konto / Depot',
 };
 
+// Die Stapel, in die sortiert wird. `fuehrung` sagt, wie das Verzeichnis im
+// Original geführt wird — je Person ein Blatt, je Objekt ein Beiblatt, je
+// Konto eine Zeile. `speist` dokumentiert die Ziffern-Ziele aus der Referenz.
+export const VERZEICHNISSE = [
+  { id: 'allgemein',      label: 'Allgemein',                 fuehrung: null,
+    unter: 'Zugangsdaten, Vollmacht, Vorjahr' },
+  { id: 'erwerb',         label: 'Lohn, Renten & Erwerb',     fuehrung: 'person',
+    unter: 'je Ehegatte', speist: 'Ziff. 1–5' },
+  { id: 'wertschriften',  label: 'Wertschriftenverzeichnis',  fuehrung: 'konto',
+    unter: 'je Konto / Depot / Titel',
+    speist: 'Ertrag Ziff. 4.1 + Vermögen Ziff. 30.1 + Verrechnungsantrag' },
+  { id: 'liegenschaften', label: 'Liegenschaftenverzeichnis', fuehrung: 'objekt',
+    unter: 'je Objekt, mit Beiblatt',
+    speist: 'Ertrag Ziff. 6 + Vermögen Ziff. 31' },
+  { id: 'schulden',       label: 'Schuldenverzeichnis',       fuehrung: 'objekt',
+    unter: 'je Gläubiger',
+    speist: 'Schuldzinsen Ziff. 12 + Schulden Ziff. 34' },
+  { id: 'berufsauslagen', label: 'Berufsauslagen',            fuehrung: 'person',
+    unter: 'je Ehegatte ein Blatt', speist: 'Ziff. 11' },
+  { id: 'vorsorge',       label: 'Vorsorge (3a / PK / AHV)',  fuehrung: 'person',
+    unter: 'je Ehegatte', speist: 'Ziff. 13–14' },
+  { id: 'versicherungen', label: 'Versicherungen & Krankheit', fuehrung: null,
+    unter: 'Prämien gemeinsam', speist: 'Ziff. 15 + 21' },
+  { id: 'abzuege',        label: 'Weitere Abzüge',            fuehrung: null,
+    unter: 'Spenden, Kinder, Alimente', speist: 'Ziff. 16–22' },
+  { id: 'vermoegen',      label: 'Übriges Vermögen',          fuehrung: null,
+    unter: 'Bargeld, Fahrzeuge, Übriges', speist: 'Ziff. 30.2–33' },
+  { id: 'arbeitspapiere', label: 'Arbeitspapiere',            fuehrung: null,
+    unter: 'Keine Beilage' },
+  { id: 'aussortiert',    label: 'Nicht benötigt',            fuehrung: null,
+    unter: 'Vom Bündel ausgeschlossen' },
+];
+
+export const VERZEICHNIS_NACH_ID = Object.fromEntries(VERZEICHNISSE.map(v => [v.id, v]));
+
+// Umbenannte/verschmolzene Positionen: alte id → neue id. Wird beim Laden
+// gespeicherter Stände angewandt, damit nichts verloren geht.
+export const ALT_IDS = {
+  wertschriften_ertrag: 'wertschriften',
+  bankguthaben:         'wertschriften',
+  schuldzinsen:         'schulden',
+  geschaeftsvermoegen:  'selbstaendig',
+};
+
 export const KATALOG = [
-  // ── Seite 0 · Arbeitspapiere ──────────────────────────────────────────────
-  // Eigene Unterlagen, keine Beilage für das Steueramt. Gehören weder ins
-  // Bündel noch in den Aussortiert-Korb, sondern zum Dossier.
-  { id: 'arbeitsnotiz', seite: 0, sort: 10, gruppe: 'arbeitspapier',
-    label: 'Besprechungs- und Arbeitsnotizen',
-    belege: ['handschriftliche Notiz', 'Besprechungsnotiz', 'Pendenzenliste', 'Checkliste'],
-    betrag: null, stichtag: null },
-
-  { id: 'eigene_berechnung', seite: 0, sort: 20, gruppe: 'arbeitspapier',
-    label: 'Eigene Berechnungen und Aufstellungen',
-    belege: ['Zinsberechnung', 'Aufstellung Treuhänder', 'Hilfsblatt'],
-    betrag: null, stichtag: null,
-    hinweis: 'Papier mit eigenem Briefkopf ist Arbeitspapier, kein Beleg des Mandanten.' },
-
-  // ── Seite 1 · Allgemein ───────────────────────────────────────────────────
-  { id: 'formular', seite: 1, sort: 10, gruppe: 'allgemein',
+  // ── Allgemein ─────────────────────────────────────────────────────────────
+  { id: 'formular', verzeichnis: 'allgemein', seite: 1, sort: 10,
     label: 'Steuererklärungsformular / Zugangscode',
     belege: ['Zugangsdaten Online-Steuererklärung', 'Zugangscodeschreiben', 'Hauptformular'],
     betrag: null, stichtag: null,
     hinweis: 'Schlüsselbeleg: nennt Kanton, Gemeinde, beide Namen, AHVN13, Steuerjahr und Frist. '
            + 'Zuerst auswerten – der Rest des Stapels lässt sich damit sicherer zuordnen.' },
 
-  { id: 'vollmacht', seite: 1, sort: 20, gruppe: 'allgemein',
+  { id: 'vollmacht', verzeichnis: 'allgemein', seite: 1, sort: 20,
     label: 'Vollmacht / Vertretung',
     belege: ['Vollmacht', 'Vertretungsvollmacht'],
     betrag: null, stichtag: null },
 
-  { id: 'vorjahr', seite: 1, sort: 30, gruppe: 'allgemein',
+  { id: 'vorjahr', verzeichnis: 'allgemein', seite: 1, sort: 30,
     label: 'Vorjahresveranlagung / Schlussrechnung',
     belege: ['Veranlagungsverfügung', 'Schlussrechnung', 'Steuerausscheidung'],
     betrag: null, stichtag: null,
     hinweis: 'Betrifft das Vorjahr – Grundlage, nicht Beilage zum laufenden Jahr.' },
 
-  // ── Seite 2 · Einkünfte ───────────────────────────────────────────────────
-  { id: 'lohn_haupt', seite: 2, sort: 10, gruppe: 'einkommen',
+  // ── Lohn, Renten & Erwerb ────────────────────────────────────────────────
+  { id: 'lohn_haupt', verzeichnis: 'erwerb', seite: 2, sort: 10,
     label: 'Unselbständige Erwerbstätigkeit – Haupterwerb',
     belege: ['Lohnausweis'],
     betrag: 'Nettolohn (Lohnausweis Ziffer 11)', stichtag: 'jahr',
@@ -89,269 +110,287 @@ export const KATALOG = [
     hinweis: 'Massgebend ist der Nettolohn in Ziffer 11, nicht der Bruttolohn. '
            + 'Der Name des Arbeitnehmers steht im Adressfeld – daran hängt die Person.' },
 
-  { id: 'lohn_neben', seite: 2, sort: 20, gruppe: 'einkommen',
+  { id: 'lohn_neben', verzeichnis: 'erwerb', seite: 2, sort: 20,
     label: 'Unselbständige Erwerbstätigkeit – Nebenerwerb',
     belege: ['Lohnausweis', 'Honorarabrechnung'],
     betrag: 'Nettolohn (Lohnausweis Ziffer 11)', stichtag: 'jahr',
     dimensionen: ['person'],
     hinweis: 'Zweiter und weiterer Lohnausweis derselben Person im gleichen Jahr.' },
 
-  { id: 'selbstaendig', seite: 2, sort: 30, gruppe: 'einkommen',
+  { id: 'selbstaendig', verzeichnis: 'erwerb', seite: 2, sort: 30,
     label: 'Selbständige Erwerbstätigkeit',
-    belege: ['Jahresrechnung', 'Erfolgsrechnung', 'Fragebogen Selbständigerwerbende', 'AHV-Beitragsverfügung'],
+    belege: ['Jahresrechnung', 'Erfolgsrechnung', 'Bilanz', 'Fragebogen Selbständigerwerbende'],
     betrag: 'Reingewinn', stichtag: 'jahr',
-    dimensionen: ['person'] },
+    betrag2: 'Eigenkapital per 31.12. (Geschäftsvermögen)', stichtag2: 'ende',
+    dimensionen: ['person'],
+    hinweis: 'DIESELBE Jahresrechnung speist den Gewinn (Einkommen) und das '
+           + 'Geschäftsvermögen (Vermögen) – ein Beleg, zwei Beträge.' },
 
-  { id: 'rente_ahv', seite: 2, sort: 40, gruppe: 'einkommen',
+  { id: 'rente_ahv', verzeichnis: 'erwerb', seite: 2, sort: 40,
     label: 'AHV- / IV-Renten',
     belege: ['Rentenbescheinigung AHV', 'IV-Rentenbescheinigung', 'Ausgleichskasse'],
-    betrag: 'Jahresrente', stichtag: 'jahr',
-    dimensionen: ['person'] },
+    betrag: 'Jahresrente', stichtag: 'jahr', dimensionen: ['person'] },
 
-  { id: 'rente_pk', seite: 2, sort: 50, gruppe: 'einkommen',
+  { id: 'rente_pk', verzeichnis: 'erwerb', seite: 2, sort: 50,
     label: 'Renten aus 2. Säule (Pensionskasse)',
     belege: ['Rentenausweis Pensionskasse', 'BVG-Rentenbescheinigung'],
-    betrag: 'Jahresrente', stichtag: 'jahr',
-    dimensionen: ['person'],
+    betrag: 'Jahresrente', stichtag: 'jahr', dimensionen: ['person'],
     hinweis: 'Nicht mit dem Vorsorgeausweis aktiver Versicherter verwechseln – der ist kein Einkommen.' },
 
-  { id: 'rente_saeule3', seite: 2, sort: 60, gruppe: 'einkommen',
+  { id: 'rente_saeule3', verzeichnis: 'erwerb', seite: 2, sort: 60,
     label: 'Renten und Kapitalleistungen aus Säule 3a / 3b',
     belege: ['Rentenbescheinigung', 'Kapitalleistungsabrechnung', 'Auszahlungsbeleg Säule 3a'],
-    betrag: 'Rente bzw. Kapitalleistung', stichtag: 'jahr',
-    dimensionen: ['person'],
-    hinweis: 'Kapitalleistungen werden gesondert besteuert – separat kennzeichnen.' },
+    betrag: 'Rente bzw. Kapitalleistung', stichtag: 'jahr', dimensionen: ['person'],
+    hinweis: 'Kapitalleistungen werden gesondert besteuert (Ziff. 40) – separat kennzeichnen.' },
 
-  { id: 'ersatz', seite: 2, sort: 70, gruppe: 'einkommen',
+  { id: 'ersatz', verzeichnis: 'erwerb', seite: 2, sort: 70,
     label: 'Erwerbsausfallentschädigungen (ALV, KTG, UVG, EO/MSE)',
-    belege: ['Taggeldabrechnung', 'Arbeitslosenkasse', 'Unfallversicherung', 'Krankentaggeld', 'EO-Abrechnung'],
-    betrag: 'Total Taggelder', stichtag: 'jahr',
-    dimensionen: ['person'] },
+    belege: ['Taggeldabrechnung', 'Arbeitslosenkasse', 'Krankentaggeld', 'EO-Abrechnung'],
+    betrag: 'Total Taggelder', stichtag: 'jahr', dimensionen: ['person'] },
 
-  { id: 'wertschriften_ertrag', seite: 2, sort: 80, gruppe: 'einkommen',
-    label: 'Ertrag aus Wertschriften und Guthaben',
-    belege: ['Steuerausweis Bank', 'Steuerverzeichnis', 'Zinsausweis', 'Dividendenabrechnung', 'Depotauszug'],
-    betrag: 'Bruttoertrag / verrechnungssteuerpflichtiger Ertrag', stichtag: 'jahr',
-    dimensionen: ['konto', 'person'],
-    hinweis: 'Je Konto/Depot eine eigene Zeile – Grundlage des Wertschriftenverzeichnisses. '
-           + 'Dasselbe Bankdokument liefert meist auch den Bestand (Seite 4).' },
-
-  { id: 'liegenschaft_ertrag', seite: 2, sort: 90, gruppe: 'einkommen',
-    label: 'Ertrag aus Liegenschaften / Eigenmietwert',
-    belege: ['Mietzinsabrechnung', 'Liegenschaftsschätzung', 'Eigenmietwertverfügung', 'Mietzinskonto'],
-    betrag: 'Mietertrag bzw. Eigenmietwert', stichtag: 'jahr',
-    dimensionen: ['objekt'] },
-
-  { id: 'alimente_erhalten', seite: 2, sort: 100, gruppe: 'einkommen',
+  { id: 'alimente_erhalten', verzeichnis: 'erwerb', seite: 2, sort: 80,
     label: 'Erhaltene Unterhaltsbeiträge (Alimente)',
     belege: ['Scheidungsurteil', 'Trennungsvereinbarung', 'Zahlungsnachweis'],
-    betrag: 'Jahresbetrag', stichtag: 'jahr',
-    dimensionen: ['person'],
+    betrag: 'Jahresbetrag', stichtag: 'jahr', dimensionen: ['person'],
     hinweis: 'Kinderalimente und Ehegattenalimente getrennt erfassen.' },
 
-  { id: 'uebrige_einkuenfte', seite: 2, sort: 110, gruppe: 'einkommen',
+  { id: 'uebrige_einkuenfte', verzeichnis: 'erwerb', seite: 2, sort: 90,
     label: 'Übrige Einkünfte',
-    belege: ['Lotteriegewinn', 'Nutzniessung', 'Erbschaft', 'Verwaltungsratshonorar'],
-    betrag: 'Betrag', stichtag: 'jahr',
-    dimensionen: ['person'] },
+    belege: ['Verwaltungsratshonorar', 'Lotteriegewinn', 'Nutzniessung'],
+    betrag: 'Betrag', stichtag: 'jahr', dimensionen: ['person'] },
 
-  // ── Seite 3 · Abzüge ──────────────────────────────────────────────────────
-  { id: 'berufsauslagen_fahrkosten', seite: 3, sort: 10, gruppe: 'abzuege',
-    label: 'Berufsauslagen – Fahrkosten',
-    belege: ['ÖV-Abonnement', 'Streckenabonnement', 'Arbeitswegbestätigung', 'Fahrkostennachweis'],
-    betrag: 'Jahreskosten', stichtag: 'jahr',
-    dimensionen: ['person'] },
+  // ── Wertschriftenverzeichnis ─────────────────────────────────────────────
+  { id: 'wertschriften', verzeichnis: 'wertschriften', seite: 4, sort: 10,
+    label: 'Konto / Depot / Titel',
+    belege: ['Steuerausweis Bank', 'Steuerverzeichnis', 'Kontoauszug 31.12.', 'Depotauszug',
+             'Zinsausweis', 'Dividendenabrechnung', 'eSteuerauszug'],
+    betrag: 'Steuerwert per 31.12.', stichtag: 'ende',
+    betrag2: 'Bruttoertrag im Jahr', stichtag2: 'jahr',
+    dimensionen: ['konto', 'person'],
+    hinweis: 'EIN Beleg, MEHRERE Ziele: Steuerwert → Vermögen, Bruttoertrag → Einkommen, '
+           + '35% des Ertrags A → Verrechnungsantrag. Je Konto/Depot eine eigene Zeile. '
+           + 'Nennt der Ausweis auch Sollsaldi oder Schuldzinsen, zusätzlich dem '
+           + 'Schuldenverzeichnis zuordnen.' },
 
-  { id: 'berufsauslagen_verpflegung', seite: 3, sort: 11, gruppe: 'abzuege',
-    label: 'Berufsauslagen – Verpflegung / auswärtige Unterkunft',
-    belege: ['Bestätigung Arbeitgeber', 'Kantinenabrechnung', 'Mietvertrag Wochenaufenthalt'],
-    betrag: 'Jahreskosten', stichtag: 'jahr',
+  { id: 'beteiligung_qualifiziert', verzeichnis: 'wertschriften', seite: 4, sort: 20,
+    label: 'Qualifizierte Beteiligung (≥10%)',
+    belege: ['Dividendenbescheinigung', 'Steuerbescheinigung Beteiligung', 'Aktienregister'],
+    betrag: 'Steuerwert per 31.12.', stichtag: 'ende',
+    betrag2: 'Bruttodividende im Jahr', stichtag2: 'jahr',
     dimensionen: ['person'],
+    hinweis: 'Eigene AG/GmbH-Anteile: stehen im Wertschriftenverzeichnis mit Code Q und '
+           + 'zusätzlich auf dem Blatt «Qualifizierte Beteiligungen» (Teilbesteuerung Ziff. 16.5).' },
+
+  { id: 'krypto', verzeichnis: 'wertschriften', seite: 4, sort: 30,
+    label: 'Kryptowährungen',
+    belege: ['Krypto-Bestandsauszug', 'Wallet-Auszug', 'Börsenauszug'],
+    betrag: 'Bestand per 31.12.', stichtag: 'ende', dimensionen: ['person'],
+    hinweis: 'Gehören ins Wertschriftenverzeichnis (Kursliste ESTV), nicht zu Bargeld.' },
+
+  // ── Liegenschaftenverzeichnis ────────────────────────────────────────────
+  { id: 'liegenschaft_ertrag', verzeichnis: 'liegenschaften', seite: 2, sort: 10,
+    label: 'Ertrag / Eigenmietwert / Mieterspiegel',
+    belege: ['Mietzinsabrechnung', 'Mietvertrag', 'Eigenmietwertverfügung', 'Mietzinskonto'],
+    betrag: 'Mietertrag bzw. Eigenmietwert', stichtag: 'jahr', dimensionen: ['objekt'],
+    hinweis: 'Mieterspiegel steht auf der Vorderseite des Beiblatts je Objekt.' },
+
+  { id: 'liegenschaftsunterhalt', verzeichnis: 'liegenschaften', seite: 3, sort: 20,
+    label: 'Unterhalts- und Verwaltungskosten',
+    belege: ['Handwerkerrechnung', 'Gebäudeversicherung', 'Kaminfeger', 'Heizung/Service',
+             'Verwaltungsabrechnung', 'Strom/Gas Nebenkosten vermietet'],
+    betrag: 'Rechnungsbetrag', stichtag: 'jahr', dimensionen: ['objekt'],
+    pruefen: 'werterhaltend oder wertvermehrend (Anteil in %)',
+    hinweis: 'Aufstellung je Objekt auf der Rückseite des Beiblatts, mit Spalte '
+           + '«davon wertvermehrend %». Die Gebäudeversicherung gehört HIERHER, '
+           + 'nicht zu den Versicherungsprämien. Effektiv wird mit dem Pauschalabzug verglichen.' },
+
+  { id: 'liegenschaften', verzeichnis: 'liegenschaften', seite: 4, sort: 30,
+    label: 'Steuerwert / Objektdaten',
+    belege: ['Steuerwertverfügung', 'Amtliche Schätzung', 'Kaufvertrag', 'Grundbuchauszug'],
+    betrag: 'Steuerwert', stichtag: 'ende', dimensionen: ['objekt'] },
+
+  // ── Schuldenverzeichnis ──────────────────────────────────────────────────
+  { id: 'schulden', verzeichnis: 'schulden', seite: 4, sort: 10,
+    label: 'Schuld je Gläubiger',
+    belege: ['Hypothekarausweis', 'Zinsausweis', 'Kreditausweis', 'Darlehensvertrag',
+             'Kontokorrentauszug'],
+    betrag: 'Restschuld per 31.12.', stichtag: 'ende',
+    betrag2: 'Schuldzinsen im Jahr', stichtag2: 'jahr',
+    dimensionen: ['objekt'],
+    hinweis: 'Eine Zeile je Gläubiger, beide Spalten aus demselben Ausweis: '
+           + 'Restschuld → Ziff. 34, Zinsen → Ziff. 12. Hypotheken dem Objekt zuordnen.' },
+
+  // ── Berufsauslagen (je Person ein Blatt) ─────────────────────────────────
+  { id: 'berufsauslagen_fahrkosten', verzeichnis: 'berufsauslagen', seite: 3, sort: 10,
+    label: 'Fahrkosten',
+    belege: ['ÖV-Abonnement', 'Streckenabonnement', 'Arbeitswegbestätigung'],
+    betrag: 'Jahreskosten', stichtag: 'jahr', dimensionen: ['person'] },
+
+  { id: 'berufsauslagen_verpflegung', verzeichnis: 'berufsauslagen', seite: 3, sort: 20,
+    label: 'Verpflegung / auswärtige Unterkunft',
+    belege: ['Bestätigung Arbeitgeber', 'Kantinenabrechnung', 'Mietvertrag Wochenaufenthalt'],
+    betrag: 'Jahreskosten', stichtag: 'jahr', dimensionen: ['person'],
     hinweis: 'Verbilligte Kantine kürzt den Abzug – Lohnausweis Ziffer 13 beachten.' },
 
-  { id: 'berufsauslagen_uebrige', seite: 3, sort: 12, gruppe: 'abzuege',
-    label: 'Berufsauslagen – übrige Berufskosten',
-    belege: ['Berufsverbandsbeitrag', 'Fachliteratur', 'Arbeitszimmer', 'Berufswerkzeug'],
-    betrag: 'Jahreskosten', stichtag: 'jahr',
-    dimensionen: ['person'] },
+  { id: 'berufsauslagen_uebrige', verzeichnis: 'berufsauslagen', seite: 3, sort: 30,
+    label: 'Übrige Berufskosten',
+    belege: ['Berufsverbandsbeitrag', 'Fachliteratur', 'Arbeitszimmer', 'Pauschalspesen'],
+    betrag: 'Jahreskosten', stichtag: 'jahr', dimensionen: ['person'] },
 
-  { id: 'weiterbildung', seite: 3, sort: 13, gruppe: 'abzuege',
-    label: 'Berufsauslagen – Aus- und Weiterbildung',
+  { id: 'weiterbildung', verzeichnis: 'berufsauslagen', seite: 3, sort: 40,
+    label: 'Aus- und Weiterbildung',
     belege: ['Kursrechnung', 'Studiengebühren', 'Prüfungsgebühren', 'Kursbestätigung'],
-    betrag: 'Jahreskosten', stichtag: 'jahr',
-    dimensionen: ['person'] },
+    betrag: 'Jahreskosten', stichtag: 'jahr', dimensionen: ['person'],
+    hinweis: 'Eigener Abzug (nicht Teil der Berufsauslagen-Pauschale), hier nur einsortiert.' },
 
-  { id: 'saeule_3a', seite: 3, sort: 20, gruppe: 'abzuege',
+  // ── Vorsorge ─────────────────────────────────────────────────────────────
+  { id: 'saeule_3a', verzeichnis: 'vorsorge', seite: 3, sort: 10,
     label: 'Beiträge Säule 3a',
     belege: ['Vorsorgebescheinigung Säule 3a', 'Bescheinigung gebundene Vorsorge'],
-    betrag: 'Einzahlung im Steuerjahr', stichtag: 'jahr',
-    dimensionen: ['person'],
-    hinweis: 'Häufigster Beleg überhaupt. Pro Person und Vorsorgeeinrichtung ein eigener Ausweis.' },
+    betrag: 'Einzahlung im Steuerjahr', stichtag: 'jahr', dimensionen: ['person'],
+    hinweis: 'Häufigster Beleg überhaupt. Je Person und Vorsorgeeinrichtung ein eigener '
+           + 'Ausweis – in der Referenz als Aufstellung je Person mit Policen-Nr. geführt.' },
 
-  { id: 'einkauf_pk', seite: 3, sort: 30, gruppe: 'abzuege',
+  { id: 'einkauf_pk', verzeichnis: 'vorsorge', seite: 3, sort: 20,
     label: 'Einkauf in die 2. Säule',
     belege: ['Einkaufsbestätigung Pensionskasse', 'Bestätigung freiwilliger Einkauf'],
-    betrag: 'Einkaufssumme', stichtag: 'jahr',
-    dimensionen: ['person'] },
+    betrag: 'Einkaufssumme', stichtag: 'jahr', dimensionen: ['person'] },
 
-  { id: 'ahv_beitraege', seite: 3, sort: 40, gruppe: 'abzuege',
+  { id: 'ahv_beitraege', verzeichnis: 'vorsorge', seite: 3, sort: 30,
     label: 'AHV/IV/EO-Beiträge Nichterwerbstätiger',
     belege: ['Beitragsverfügung Ausgleichskasse'],
-    betrag: 'Jahresbeitrag', stichtag: 'jahr',
-    dimensionen: ['person'] },
+    betrag: 'Jahresbeitrag', stichtag: 'jahr', dimensionen: ['person'] },
 
-  { id: 'versicherungspraemien', seite: 3, sort: 50, gruppe: 'abzuege',
+  // ── Versicherungen & Krankheit ───────────────────────────────────────────
+  { id: 'versicherungspraemien', verzeichnis: 'versicherungen', seite: 3, sort: 10,
     label: 'Versicherungsprämien und Sparzinsen',
-    belege: ['Prämienbescheinigung Krankenkasse', 'Prämien- und Kostenübersicht', 'Lebensversicherung'],
-    betrag: 'Jahresprämie', stichtag: 'jahr',
-    dimensionen: ['person'],
-    hinweis: 'Die Prämienbescheinigung (Abzug) ist etwas anderes als die Leistungsabrechnung '
-           + '(Krankheitskosten). Kassenübersichten enthalten oft beides – dann doppelt zuordnen.' },
+    belege: ['Prämienbescheinigung Krankenkasse', 'Prämien- und Kostenübersicht',
+             'Lebensversicherung', 'private Unfallversicherung'],
+    betrag: 'Jahresprämie', stichtag: 'jahr', dimensionen: ['person'],
+    hinweis: 'Blatt wird gemeinsam geführt (abzüglich Prämienverbilligung, Maximalabzug '
+           + 'nach Zivilstand). Die GEBÄUDEversicherung gehört zum Liegenschaftsunterhalt. '
+           + 'Kassenübersichten enthalten oft auch Leistungsabrechnungen – dann zusätzlich '
+           + 'Krankheitskosten.' },
 
-  { id: 'schuldzinsen', seite: 3, sort: 60, gruppe: 'abzuege',
-    label: 'Schuldzinsen',
-    belege: ['Hypothekarzinsbescheinigung', 'Kreditzinsausweis', 'Zinsausweis Bank'],
-    betrag: 'Zinsen im Steuerjahr', stichtag: 'jahr',
-    dimensionen: ['objekt'],
-    hinweis: 'Derselbe Ausweis nennt meist auch die Restschuld – die gehört zu den Schulden (Seite 4).' },
+  { id: 'krankheitskosten', verzeichnis: 'versicherungen', seite: 3, sort: 20,
+    label: 'Krankheits- und Unfallkosten',
+    belege: ['Arztrechnung', 'Zahnarztrechnung', 'Leistungsabrechnung Krankenkasse', 'Apothekenbeleg'],
+    betrag: 'Selbst getragener Betrag', stichtag: 'jahr', dimensionen: ['person'],
+    hinweis: 'Nur der selbst getragene Teil zählt – Kassenleistung von der Rechnung abziehen.' },
 
-  { id: 'alimente_bezahlt', seite: 3, sort: 70, gruppe: 'abzuege',
+  { id: 'behinderungskosten', verzeichnis: 'versicherungen', seite: 3, sort: 30,
+    label: 'Behinderungsbedingte Kosten',
+    belege: ['Pflegeheimrechnung', 'IV-Ausweis', 'Hilfsmittelrechnung'],
+    betrag: 'Betrag', stichtag: 'jahr', dimensionen: ['person'] },
+
+  // ── Weitere Abzüge ───────────────────────────────────────────────────────
+  { id: 'alimente_bezahlt', verzeichnis: 'abzuege', seite: 3, sort: 10,
     label: 'Bezahlte Unterhaltsbeiträge (Alimente)',
     belege: ['Scheidungsurteil', 'Zahlungsnachweis', 'Bankbelastung'],
-    betrag: 'Jahresbetrag', stichtag: 'jahr',
-    dimensionen: ['person'] },
+    betrag: 'Jahresbetrag', stichtag: 'jahr', dimensionen: ['person'] },
 
-  { id: 'kinderbetreuung', seite: 3, sort: 80, gruppe: 'abzuege',
+  { id: 'kinderbetreuung', verzeichnis: 'abzuege', seite: 3, sort: 20,
     label: 'Kinderbetreuungskosten',
     belege: ['Kita-Rechnung', 'Tagesmutter', 'Hortrechnung'],
     betrag: 'Jahreskosten', stichtag: 'jahr' },
 
-  { id: 'liegenschaftsunterhalt', seite: 3, sort: 90, gruppe: 'abzuege',
-    label: 'Liegenschaftsunterhalt',
-    belege: ['Handwerkerrechnung', 'Gebäudeversicherung', 'Kaminfeger', 'Heizkostenabrechnung',
-             'Verwaltungsabrechnung', 'Serviceabonnement'],
-    betrag: 'Rechnungsbetrag', stichtag: 'jahr',
-    dimensionen: ['objekt'],
-    pruefen: 'werterhaltend oder wertvermehrend',
-    hinweis: 'Werterhaltend ist abzugsfähig, wertvermehrend nicht – das steht auf keiner Rechnung. '
-           + 'Umbau- und Sanierungsprojekte immer zur Prüfung vorlegen, nie selber entscheiden. '
-           + 'Effektive Summe je Objekt wird gebraucht, weil sie mit dem Pauschalabzug verglichen wird.' },
-
-  { id: 'krankheitskosten', seite: 3, sort: 100, gruppe: 'abzuege',
-    label: 'Krankheits- und Unfallkosten',
-    belege: ['Arztrechnung', 'Zahnarztrechnung', 'Leistungsabrechnung Krankenkasse', 'Apothekenbeleg'],
-    betrag: 'Selbst getragener Betrag', stichtag: 'jahr',
-    dimensionen: ['person'],
-    hinweis: 'Nur der selbst getragene Teil zählt – Kassenleistung von der Rechnung abziehen.' },
-
-  { id: 'behinderungskosten', seite: 3, sort: 110, gruppe: 'abzuege',
-    label: 'Behinderungsbedingte Kosten',
-    belege: ['Pflegeheimrechnung', 'IV-Ausweis', 'Hilfsmittelrechnung'],
-    betrag: 'Betrag', stichtag: 'jahr',
-    dimensionen: ['person'] },
-
-  { id: 'spenden', seite: 3, sort: 120, gruppe: 'abzuege',
-    label: 'Freiwillige Zuwendungen / Spenden',
+  { id: 'spenden', verzeichnis: 'abzuege', seite: 3, sort: 30,
+    label: 'Gemeinnützige Zuwendungen / Spenden',
     belege: ['Spendenbescheinigung', 'Zuwendungsbestätigung', 'Einzahlungsschein Hilfswerk'],
     betrag: 'Jahresbetrag', stichtag: 'jahr',
-    hinweis: 'Einzahlungsscheine sind oft blanko – der Betrag steht dann nur im Kontoauszug. '
+    hinweis: 'In der Referenz als Aufstellung mit Datum und Empfänger je Zeile. '
+           + 'Einzahlungsscheine sind oft blanko – Betrag steht nur im Kontoauszug: '
            + 'Position zuordnen, Betrag offen lassen statt raten.' },
 
-  { id: 'parteispenden', seite: 3, sort: 130, gruppe: 'abzuege',
+  { id: 'parteispenden', verzeichnis: 'abzuege', seite: 3, sort: 40,
     label: 'Zuwendungen an politische Parteien',
     belege: ['Spendenbescheinigung Partei'],
-    betrag: 'Jahresbetrag', stichtag: 'jahr' },
+    betrag: 'Jahresbetrag', stichtag: 'jahr',
+    hinweis: 'Läuft über «Weitere Abzüge» (Ziff. 16.5), nicht über die Spenden-Aufstellung.' },
 
-  { id: 'uebrige_abzuege', seite: 3, sort: 150, gruppe: 'abzuege',
-    label: 'Übrige Abzüge',
-    belege: ['Vermögensverwaltungskosten', 'Depotgebühren'],
-    betrag: 'Betrag', stichtag: 'jahr' },
+  { id: 'uebrige_abzuege', verzeichnis: 'abzuege', seite: 3, sort: 50,
+    label: 'Übrige Abzüge / Vermögensverwaltung',
+    belege: ['Depotgebühren', 'Vermögensverwaltungskosten'],
+    betrag: 'Betrag', stichtag: 'jahr',
+    hinweis: 'Die Pauschale für Vermögensverwaltung berechnet sich aus den Depots im '
+           + 'Wertschriftenverzeichnis – der Bank-Steuerausweis liefert die Basis gleich mit.' },
 
-  // ── Seite 4 · Vermögen ────────────────────────────────────────────────────
-  { id: 'bankguthaben', seite: 4, sort: 10, gruppe: 'vermoegen',
-    label: 'Bankguthaben und Wertschriften',
-    belege: ['Steuerausweis Bank', 'Kontoauszug 31.12.', 'Depotauszug', 'Saldobescheinigung'],
-    betrag: 'Bestand per 31.12.', stichtag: 'ende',
-    dimensionen: ['konto', 'person'],
-    hinweis: 'Je Konto/Depot eine eigene Zeile. Dasselbe Dokument liefert meist auch den Ertrag (Seite 2).' },
+  // ── Übriges Vermögen ─────────────────────────────────────────────────────
+  { id: 'bargeld', verzeichnis: 'vermoegen', seite: 4, sort: 10,
+    label: 'Bargeld, Edelmetalle',
+    belege: ['Goldkauf-Quittung', 'Edelmetall-Depotauszug', 'Tresorbestand'],
+    betrag: 'Steuerwert per 31.12.', stichtag: 'ende',
+    hinweis: 'In der Referenz als eigene Aufstellung (Goldkäufe, Tresorbestand) zu Ziff. 30.2. '
+           + 'Krypto gehört NICHT hierher, sondern ins Wertschriftenverzeichnis.' },
 
-  { id: 'bargeld', seite: 4, sort: 20, gruppe: 'vermoegen',
-    label: 'Bargeld, Edelmetalle, Kryptowährungen',
-    belege: ['Depotauszug Edelmetalle', 'Krypto-Bestandsauszug'],
-    betrag: 'Bestand per 31.12.', stichtag: 'ende' },
-
-  { id: 'lebensversicherung', seite: 4, sort: 30, gruppe: 'vermoegen',
+  { id: 'lebensversicherung', verzeichnis: 'vermoegen', seite: 4, sort: 20,
     label: 'Lebensversicherungen (Rückkaufswert)',
     belege: ['Rückkaufswertbescheinigung', 'Steuerbescheinigung Lebensversicherung'],
-    betrag: 'Rückkaufswert per 31.12.', stichtag: 'ende',
-    dimensionen: ['person'] },
+    betrag: 'Rückkaufswert per 31.12.', stichtag: 'ende', dimensionen: ['person'] },
 
-  { id: 'fahrzeuge', seite: 4, sort: 40, gruppe: 'vermoegen',
+  { id: 'fahrzeuge', verzeichnis: 'vermoegen', seite: 4, sort: 30,
     label: 'Fahrzeuge',
     belege: ['Kaufvertrag', 'Fahrzeugausweis', 'Eurotax-Bewertung'],
     betrag: 'Zeitwert', stichtag: 'ende' },
 
-  { id: 'liegenschaften', seite: 4, sort: 50, gruppe: 'vermoegen',
-    label: 'Liegenschaften',
-    belege: ['Steuerwertverfügung', 'Amtliche Schätzung', 'Kaufvertrag', 'Grundbuchauszug'],
-    betrag: 'Steuerwert', stichtag: 'ende',
-    dimensionen: ['objekt'] },
+  { id: 'uebriges_vermoegen', verzeichnis: 'vermoegen', seite: 4, sort: 40,
+    label: 'Übrige Vermögenswerte (Darlehen, Erbanteile, Kapitaleinlagen)',
+    belege: ['Darlehensvertrag', 'Erbteilungsvertrag', 'Sanierungsvereinbarung', 'Kapitaleinzahlung'],
+    betrag: 'Wert per 31.12.', stichtag: 'ende', dimensionen: ['person'],
+    hinweis: 'Aktiv-Darlehen (verliehen) hierher bzw. ins Wertschriftenverzeichnis; '
+           + 'Passiv-Darlehen (geschuldet) ins Schuldenverzeichnis.' },
 
-  { id: 'geschaeftsvermoegen', seite: 4, sort: 60, gruppe: 'vermoegen',
-    label: 'Geschäftsvermögen',
-    belege: ['Bilanz', 'Jahresrechnung'],
-    betrag: 'Eigenkapital per 31.12.', stichtag: 'ende',
-    dimensionen: ['person'] },
+  // ── Arbeitspapiere ───────────────────────────────────────────────────────
+  { id: 'arbeitsnotiz', verzeichnis: 'arbeitspapiere', seite: 0, sort: 10,
+    label: 'Besprechungs- und Arbeitsnotizen',
+    belege: ['handschriftliche Notiz', 'Besprechungsnotiz', 'Pendenzenliste', 'Checkliste'],
+    betrag: null, stichtag: null },
 
-  { id: 'uebriges_vermoegen', seite: 4, sort: 70, gruppe: 'vermoegen',
-    label: 'Übrige Vermögenswerte (Beteiligungen, Darlehen, Erbanteile)',
-    belege: ['Darlehensvertrag', 'Beteiligungsausweis', 'Erbteilungsvertrag', 'Sanierungsvereinbarung',
-             'Kapitaleinzahlung'],
-    betrag: 'Wert per 31.12.', stichtag: 'ende',
-    dimensionen: ['person'] },
-
-  { id: 'schulden', seite: 4, sort: 80, gruppe: 'vermoegen',
-    label: 'Schulden',
-    belege: ['Hypothekarausweis', 'Kreditausweis', 'Darlehensvertrag', 'Saldobescheinigung Schuld'],
-    betrag: 'Restschuld per 31.12.', stichtag: 'ende',
-    dimensionen: ['objekt'],
-    hinweis: 'Derselbe Ausweis nennt meist auch die Zinsen – die gehören zu den Schuldzinsen (Seite 3).' },
+  { id: 'eigene_berechnung', verzeichnis: 'arbeitspapiere', seite: 0, sort: 20,
+    label: 'Eigene Berechnungen und Aufstellungen',
+    belege: ['Zinsberechnung', 'Aufstellung Treuhänder', 'Hilfsblatt'],
+    betrag: null, stichtag: null,
+    hinweis: 'Papier mit eigenem Briefkopf ist Arbeitspapier, kein Beleg des Mandanten.' },
 ];
 
-// Belege, die zwar im Stapel liegen, aber nirgends hingehören. Landen in einem
-// eigenen Bereich, damit nichts unbemerkt verschwindet – aussortiert wird von
-// Hand, nie automatisch gelöscht.
+// Belege, die zwar im Stapel liegen, aber nirgends hingehören. Sichtbar
+// liegen lassen, nie automatisch löschen — sie stehen auf dem Deckblatt des
+// Bündels unter «Gesichtet, nicht beigelegt».
 export const AUSSORTIERT = {
-  id: '_aussortiert',
-  seite: 99,
-  sort: 999,
-  gruppe: 'aussortiert',
+  id: '_aussortiert', verzeichnis: 'aussortiert', seite: 99, sort: 999,
   label: 'Nicht zur Steuererklärung',
   belege: ['Werbung', 'Doppel', 'Privatpost', 'privater Konsum', 'unleserlich', 'leere Seite'],
-  betrag: null,
-  stichtag: null,
-  hinweis: 'Rechnungen für privaten Konsum (Möbel, Geräte, Hobby) sind nicht abzugsfähig, '
-         + 'auch wenn sie wie eine Handwerkerrechnung aussehen.',
+  betrag: null, stichtag: null,
+  hinweis: 'Rechnungen für privaten Konsum (Möbel, Geräte, Hobby, Garten) sind nicht '
+         + 'abzugsfähig, auch wenn sie wie eine Handwerkerrechnung aussehen.',
 };
 
-// Ein Beleg kann zu mehreren Positionen gehören – der Bank-Steuerausweis nennt
-// Ertrag, Bestand und oft auch Schuldzinsen. Diese Paare kennt die Erkennung,
-// damit sie den Beleg mehrfach einordnet statt sich für eine Seite zu entscheiden.
+// Ein Beleg kann zwei Verzeichnisse bedienen. Seit dem Verzeichnis-Umbau sind
+// die meisten alten Paare in EINE Position mit zwei Betragsfeldern verschmolzen;
+// übrig bleiben die echten verzeichnisübergreifenden Fälle.
 export const MEHRFACH_ZUORDNUNG = [
-  ['wertschriften_ertrag', 'bankguthaben'],
-  ['schuldzinsen', 'schulden'],
-  ['liegenschaft_ertrag', 'liegenschaften'],
-  ['versicherungspraemien', 'krankheitskosten'],
+  ['wertschriften', 'schulden'],              // Bank-Steuerausweis mit Sollsaldi
+  ['versicherungspraemien', 'krankheitskosten'], // Kassenübersicht mit Leistungsteil
 ];
 
 export const KATALOG_NACH_ID = Object.fromEntries(
   [...KATALOG, AUSSORTIERT].map(p => [p.id, p])
 );
 
-/** Belege in die Reihenfolge der Steuererklärung bringen (Seite, dann Position). */
+/** Alte Positions-ids aus gespeicherten Ständen auf die heutigen abbilden. */
+export function migriereId(positionId) {
+  return ALT_IDS[positionId] || positionId;
+}
+
+const VERZEICHNIS_RANG = Object.fromEntries(VERZEICHNISSE.map((v, i) => [v.id, i]));
+
+/** Belege in die Reihenfolge der Erklärung bringen: Verzeichnis, dann Position. */
 export function sortiereNachKatalog(belege, positionVon = b => b.positionId) {
   const rang = Object.fromEntries(
-    [...KATALOG, AUSSORTIERT].map(p => [p.id, p.seite * 1000 + p.sort])
+    [...KATALOG, AUSSORTIERT].map(p => [
+      p.id,
+      (VERZEICHNIS_RANG[p.verzeichnis] ?? 90) * 1000 + p.sort,
+    ])
   );
   return [...belege].sort((a, b) => {
     const ra = rang[positionVon(a)] ?? Number.MAX_SAFE_INTEGER;
@@ -360,14 +399,25 @@ export function sortiereNachKatalog(belege, positionVon = b => b.positionId) {
   });
 }
 
-/** Kompakte Positionsliste für den KI-Prompt (id · Seite · Label · typische Belege). */
+/** Kompakte Positionsliste für den KI-Prompt. */
 export function katalogFuerPrompt() {
   return [...KATALOG, AUSSORTIERT]
     .map(p => {
-      const teile = [p.id, `S${p.seite}`, p.label, p.belege.join(', ')];
+      const v = VERZEICHNIS_NACH_ID[p.verzeichnis];
+      const teile = [p.id, v?.label || p.verzeichnis, p.label, p.belege.join(', ')];
       if (p.dimensionen) teile.push(`benötigt: ${p.dimensionen.join(' + ')}`);
+      if (p.betrag2)     teile.push(`zwei Beträge: ${p.betrag} + ${p.betrag2}`);
       if (p.hinweis)     teile.push(`Hinweis: ${p.hinweis}`);
       return teile.join(' | ');
     })
     .join('\n');
 }
+
+// Rückwärtskompatibilität: GRUPPEN hiess die alte Seitengliederung. Ein paar
+// Stellen (Bündel-Deckblatt) lesen sie noch für die Seitenbeschriftung.
+export const GRUPPEN = [
+  { id: 'allgemein', label: 'Allgemein / Personalien', seite: 1 },
+  { id: 'einkommen', label: 'Einkünfte',               seite: 2 },
+  { id: 'abzuege',   label: 'Abzüge',                  seite: 3 },
+  { id: 'vermoegen', label: 'Vermögen',                seite: 4 },
+];

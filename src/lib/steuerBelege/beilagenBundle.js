@@ -10,7 +10,8 @@
 // beigelegt wurde.
 
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
-import { KATALOG_NACH_ID, sortiereNachKatalog } from '../../forms/steuer_np_katalog.js';
+import { KATALOG_NACH_ID, VERZEICHNIS_NACH_ID, sortiereNachKatalog }
+  from '../../forms/steuer_np_katalog.js';
 
 const A4 = [595.28, 841.89];
 const RAND = 56;
@@ -25,7 +26,7 @@ export function bundelReihenfolge(belege) {
 
 function istBeilage(beleg) {
   const p = KATALOG_NACH_ID[beleg.position];
-  return p && p.seite >= 1 && p.seite <= 4;
+  return p && !['arbeitspapiere', 'aussortiert'].includes(p.verzeichnis);
 }
 
 /**
@@ -55,7 +56,14 @@ export async function baueBeilagenBundle(belege, kopf = {}) {
 
     if (/\.pdf$/i.test(datei.name)) {
       const quelle = await PDFDocument.load(bytes, { ignoreEncryption: true });
-      const seiten = await doc.copyPages(quelle, quelle.getPageIndices());
+      // Ein PDF kann mehrere Belege enthalten – dann steht in vonSeite/bisSeite,
+      // welcher Teil zu DIESEM Beleg gehoert. Ohne das laege der ganze
+      // 38-seitige Umbauordner bei jeder einzelnen Rechnung im Buendel.
+      const alle = quelle.getPageIndices();
+      const indizes = (beleg.vonSeite && beleg.bisSeite)
+        ? alle.slice(beleg.vonSeite - 1, beleg.bisSeite)
+        : alle;
+      const seiten = await doc.copyPages(quelle, indizes);
       seiten.forEach(s => doc.addPage(s));
     } else {
       const bild = /\.png$/i.test(datei.name)
@@ -100,13 +108,13 @@ export async function baueBeilagenBundle(belege, kopf = {}) {
   zeile(`${beilagen.length} Beilagen · erstellt ${kopf.erstelltAm || heute()}`,
         { grau: true, luft: 24 });
 
-  let letzteSeite = null;
+  let letztesVerz = null;
   for (const b of beilagen) {
     const p = KATALOG_NACH_ID[b.position];
-    if (p.seite !== letzteSeite) {
+    if (p.verzeichnis !== letztesVerz) {
       y -= 6;
-      zeile(`Seite ${p.seite} · ${gruppenName(p.seite)}`, { gross: false, luft: 14 });
-      letzteSeite = p.seite;
+      zeile(VERZEICHNIS_NACH_ID[p.verzeichnis]?.label || p.verzeichnis, { gross: false, luft: 14 });
+      letztesVerz = p.verzeichnis;
     }
     // +1, weil das Deckblatt erst nach dem Zaehlen vorne eingeschoben wurde
     const ab = startSeiten.get(b.id ?? b.name) + 1;
@@ -124,10 +132,6 @@ export async function baueBeilagenBundle(belege, kopf = {}) {
   }
 
   return doc.save();
-}
-
-function gruppenName(seite) {
-  return { 1: 'Allgemein', 2: 'Einkünfte', 3: 'Abzüge', 4: 'Vermögen' }[seite] || '';
 }
 
 function heute() {

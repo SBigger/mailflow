@@ -20,6 +20,10 @@ function fuerDieDatenbank(b) {
     vonHand:     !!b.vonHand,
     // Betrag und Jahr sind Erfassung, nicht Erkennung – sie muessen mit
     betrag:      b.betrag ?? null,
+    betrag2:     b.betrag2 ?? null,
+    // Seitenbereich: ein PDF kann mehrere Belege enthalten
+    vonSeite:    b.vonSeite ?? null,
+    bisSeite:    b.bisSeite ?? null,
     jahr:        b.jahr ?? null,
     // Der Text ist das Teure an einem Scan – gut zehn Sekunden OCR je Seite.
     // Deshalb aufheben, aber gedeckelt: er dient nur der Wiedererkennung.

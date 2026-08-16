@@ -19,17 +19,19 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Upload, FileText, AlertTriangle, Check, HelpCircle, X, Loader2,
-  Download, GripVertical, Search, Save,
+  Download, GripVertical, Search, Save, ChevronDown,
 } from 'lucide-react';
 
 import { supabase } from '@/api/supabaseClient';
-import { extractDocumentText } from '../../lib/batchAiSuggest.js';
+import { extractPageTexts } from '../../lib/batchAiSuggest.js';
 import { triageRegeln, triageMitKi, brauchtKi } from '../../lib/steuerBelege/triage.js';
 import { positionenFuer, offeneDimensionen } from '../../lib/steuerBelege/belegartZuPosition.js';
 import { BELEGART_BY_KEY, BELEGARTEN } from '../../lib/steuerBelege/belegarten.js';
 import { findAhvInText, dateiHash } from '../../lib/steuerBelege/belegHelfer.js';
-import { findeBetrag } from '../../lib/steuerBelege/betrag.js';
-import { KATALOG, KATALOG_NACH_ID, GRUPPEN, AUSSORTIERT, DIMENSIONEN, katalogFuerPrompt }
+import { findeBetraege } from '../../lib/steuerBelege/betrag.js';
+import { trenneBelege, seitenLabel } from '../../lib/steuerBelege/belegTrennung.js';
+import { KATALOG, KATALOG_NACH_ID, AUSSORTIERT, DIMENSIONEN, katalogFuerPrompt,
+         VERZEICHNISSE, VERZEICHNIS_NACH_ID, migriereId }
   from '../../forms/steuer_np_katalog.js';
 import { baueBeilagenBundle } from '../../lib/steuerBelege/beilagenBundle.js';
 import { belegsortierung as db } from '../../api/belegsortierung.js';
@@ -80,27 +82,30 @@ function ladeVorschauBreite() {
   return Math.min(maxBreite(ladeSeitenBreite()), Math.max(VORSCHAU_MIN, wunsch));
 }
 
-// Abschnitte der Seitenleiste. 0 und 99 sind keine Seiten der Erklärung,
-// sondern Ablagen — sie stehen deshalb unten und ohne Betrag.
-const ABSCHNITTE = [
-  { seite: 1, label: 'Allgemein' },
-  { seite: 2, label: 'Einkünfte' },
-  { seite: 3, label: 'Abzüge' },
-  { seite: 4, label: 'Vermögen' },
-];
-const ABLAGEN = [
-  { seite: 0,  label: 'Arbeitspapiere', unter: 'Keine Beilage' },
-  { seite: 99, label: 'Nicht benötigt', unter: 'Vom Bündel ausgeschlossen' },
-];
+// Die Seitenleiste zeigt die VERZEICHNISSE aus dem Katalog — die echten
+// Stapel, in die sortiert wird. Arbeitspapiere und Aussortiertes stehen
+// unten, getrennt vom Fachlichen.
+const NAV_OBEN  = VERZEICHNISSE.filter(v => !['arbeitspapiere', 'aussortiert'].includes(v.id));
+const NAV_UNTEN = VERZEICHNISSE.filter(v =>  ['arbeitspapiere', 'aussortiert'].includes(v.id));
 
 // Betrag zur Position suchen. Der Katalog sagt, welcher gesucht wird –
 // beim Lohnausweis der Nettolohn, bei der Bank der Bestand per 31.12.
 function betragFuer(positionId, text) {
   const p = positionId ? KATALOG_NACH_ID[positionId] : null;
-  if (!p?.betrag || !text) return { betrag: null, betragQuelle: null, betragAnker: null };
-  const t = findeBetrag(text, positionId);
-  if (!t) return { betrag: null, betragQuelle: null, betragAnker: null };
-  return { betrag: t.betrag, betragQuelle: 'regel', betragAnker: t.anker };
+  const leer = { betrag: null, betrag2: null, betragQuelle: null, betragAnker: null };
+  if (!p?.betrag || !text) return leer;
+  const t = findeBetraege(text, positionId);
+  if (t.betrag == null && t.betrag2 == null) return leer;
+  return { betrag: t.betrag, betrag2: t.betrag2, betragQuelle: 'regel', betragAnker: t.anker };
+}
+
+// «Bruttoertrag im Jahr» → «Ertrag» — fuer die knappe Summenzeile
+function kurzLabel(text) {
+  const t = String(text || '');
+  if (/ertrag|dividende/i.test(t)) return 'Ertrag';
+  if (/zins/i.test(t))             return 'Zins';
+  if (/eigenkapital/i.test(t))     return 'EK';
+  return t.split(' ')[0];
 }
 
 const chf = n => (n || n === 0)
@@ -127,7 +132,7 @@ export default function Belegsortierung() {
   const [speichert, setSpeichert]   = useState(false);
   const [gespeichertUm, setGespeichertUm] = useState(null);
   const [baut, setBaut]             = useState(false);
-  const [abschnitt, setAbschnitt]   = useState(2);   // Seite 2 = Einkünfte
+  const [abschnitt, setAbschnitt]   = useState('erwerb');
   const eingabe = useRef(null);
 
   // ── Mandant und gespeicherter Stand ─────────────────────────────────────
@@ -154,6 +159,8 @@ export default function Belegsortierung() {
     if (!gespeichert?.belege?.length) return;
     setBelege(v => v.length ? v : gespeichert.belege.map((b, i) => ({
       ...b, id: `gespeichert-${i}-${b.hash}`, stand: 'fertig', ohneDatei: true,
+      // Verschmolzene Positionen aus aelteren Staenden auf die heutigen ids
+      position: migriereId(b.position),
     })));
   }, [gespeichert]);
 
@@ -189,8 +196,6 @@ export default function Belegsortierung() {
       try {
         const hash = await dateiHash(datei);
 
-        // Schon einmal einsortiert? Datei nur anhaengen — OCR und KI kosten
-        // Minuten, der Hash kostet nichts.
         const bekannt = belegeRef.current.find(b => b.hash === hash && b.ohneDatei);
         if (bekannt) {
           setBelege(v => v.filter(b => b.id !== id).map(b => b.id === bekannt.id
@@ -201,41 +206,73 @@ export default function Belegsortierung() {
         }
 
         setBelege(v => v.map(b => b.id === id ? { ...b, stand: 'liest' } : b));
-        // Zwei Seiten reichen fuer die Zuordnung: die Belegart steht im
-        // Briefkopf. Fuenf Seiten je Beleg waren der Hauptgrund fuer die
-        // lange Wartezeit.
-        const text = await extractDocumentText(datei, {
-          maxOcrPages: 2,
+
+        // Text JE SEITE holen und das PDF in einzelne Belege zerlegen. Ein
+        // gescanntes Buendel enthaelt selten einen Beleg -- der Umbau-Ordner
+        // hat 38 Seiten und darauf 30 Verguetungsauftraege.
+        const seitenTexte = await extractPageTexts(datei, {
           onStage: st => setBelege(v => v.map(b => b.id === id ? { ...b, stand: st } : b)),
         });
+        const teile = trenneBelege(seitenTexte);
 
-        const eingang = { text, dateiname: datei.name, parseMethode: 'ocr', dateiHash: hash };
-        const kontext = { ...kontextBasis, bekannteHashes };
+        setBelege(v => v.map(b => b.id === id
+          ? { ...b, stand: 'trennt', teileGesamt: teile.length } : b));
 
-        let tri = triageRegeln(eingang, kontext);
-        if (kiNutzen && brauchtKi(tri)) {
-          setBelege(v => v.map(b => b.id === id ? { ...b, stand: 'ki' } : b));
-          tri = await triageMitKi(supabase, eingang, kontext);
+        // Jeder Teil wird ein eigener Beleg. Die Datei bleibt dieselbe, nur
+        // der Seitenbereich unterscheidet sie.
+        const neueBelege = [];
+        for (let i = 0; i < teile.length; i++) {
+          const teil = teile[i];
+          const eingang = {
+            text: teil.text,
+            dateiname: datei.name,
+            parseMethode: 'ocr',
+            dateiHash: `${hash}#${teil.von}-${teil.bis}`,
+          };
+          const kontext = { ...kontextBasis, bekannteHashes };
+
+          let tri = triageRegeln(eingang, kontext);
+          if (kiNutzen && brauchtKi(tri)) {
+            setBelege(v => v.map(b => b.id === id
+              ? { ...b, stand: 'ki', teilNr: i + 1 } : b));
+            tri = await triageMitKi(supabase, eingang, kontext);
+          }
+          bekannteHashes.push(eingang.dateiHash);
+
+          const zuord = tri.belegart ? positionenFuer(tri.belegart) : { positionen: [], offen: true };
+          const kiPos = (tri.positionen || []).map(x => KATALOG_NACH_ID[x]).filter(Boolean);
+          const vorschlag = kiPos.length ? kiPos : (zuord.positionen || []);
+          const position = vorschlag.length === 1 ? vorschlag[0].id : null;
+
+          neueBelege.push({
+            id: `${id}#${teil.von}`,
+            name: teile.length > 1 ? `${datei.name} · ${seitenLabel(teil)}` : datei.name,
+            stand: 'fertig',
+            groesse: datei.size, url, datei,
+            istPdf: /\.pdf$/i.test(datei.name),
+            hash: eingang.dateiHash,
+            vonSeite: teil.von, bisSeite: teil.bis,
+            trennGrund: teil.grund,
+            text: teil.text,
+            belegart: tri.belegart, confidence: tri.confidence,
+            begruendung: tri.begruendung, quelle: tri.quelle || 'regel',
+            vorschlag, kandidaten: zuord.kandidaten || [],
+            offenGrund: kiPos.length ? null : (zuord.offen ? zuord.grund : null),
+            hinweis: zuord.hinweis || null,
+            position,
+            ahv: findAhvInText(teil.text),
+            jahr: tri.periodeBeleg ?? null,
+            ...betragFuer(position, teil.text),
+          });
         }
-        bekannteHashes.push(hash);
 
-        const zuord = tri.belegart ? positionenFuer(tri.belegart) : { positionen: [], offen: true };
-        const kiPos = (tri.positionen || []).map(x => KATALOG_NACH_ID[x]).filter(Boolean);
-        const vorschlag = kiPos.length ? kiPos : (zuord.positionen || []);
-        const position = vorschlag.length === 1 ? vorschlag[0].id : null;
-
-        setBelege(v => v.map(b => b.id === id ? {
-          ...b, stand: 'fertig', hash, text,
-          belegart: tri.belegart, confidence: tri.confidence,
-          begruendung: tri.begruendung, quelle: tri.quelle || 'regel',
-          vorschlag, kandidaten: zuord.kandidaten || [],
-          offenGrund: kiPos.length ? null : (zuord.offen ? zuord.grund : null),
-          hinweis: zuord.hinweis || null,
-          position,
-          ahv: findAhvInText(text),
-          jahr: tri.periodeBeleg ?? null,
-          ...betragFuer(position, text),
-        } : b));
+        // Platzhalter durch die Teilbelege ersetzen
+        setBelege(v => {
+          const i = v.findIndex(b => b.id === id);
+          if (i < 0) return v;
+          return [...v.slice(0, i), ...neueBelege, ...v.slice(i + 1)];
+        });
+        setGewaehlt(g => (g === id ? neueBelege[0]?.id ?? null : g));
       } catch (e) {
         setBelege(v => v.map(b => b.id === id
           ? { ...b, stand: 'fehler', fehler: e.message || String(e) } : b));
@@ -302,20 +339,21 @@ export default function Belegsortierung() {
   }
 
   // ── Aufteilung ──────────────────────────────────────────────────────────
-  const { proSeite, proPosition, ohne } = useMemo(() => {
-    const proSeite = new Map(), proPosition = new Map(), ohne = [];
+  const { proVerz, proPosition, ohne } = useMemo(() => {
+    const proVerz = new Map(), proPosition = new Map(), ohne = [];
     for (const b of belege) {
       const p = b.position ? KATALOG_NACH_ID[b.position] : null;
       if (!p) { ohne.push(b); continue; }
-      if (!proSeite.has(p.seite)) proSeite.set(p.seite, []);
-      proSeite.get(p.seite).push(b);
+      if (!proVerz.has(p.verzeichnis)) proVerz.set(p.verzeichnis, []);
+      proVerz.get(p.verzeichnis).push(b);
       if (!proPosition.has(p.id)) proPosition.set(p.id, []);
       proPosition.get(p.id).push(b);
     }
-    return { proSeite, proPosition, ohne };
+    return { proVerz, proPosition, ohne };
   }, [belege]);
 
-  const summe = liste => (liste || []).reduce((s, b) => s + (parseFloat(b.betrag) || 0), 0);
+  const summe  = liste => (liste || []).reduce((s, b) => s + (parseFloat(b.betrag) || 0), 0);
+  const summe2 = liste => (liste || []).reduce((s, b) => s + (parseFloat(b.betrag2) || 0), 0);
   const geprueft = belege.filter(b => b.position && (b.vonHand || b.betrag)).length;
   const fortschritt = belege.length ? Math.round(geprueft / belege.length * 100) : 0;
 
@@ -384,7 +422,7 @@ export default function Belegsortierung() {
 
   // Positionen des gewählten Abschnitts, gefiltert nach Suche
   const sichtbarePositionen = useMemo(() => {
-    const alle = [...KATALOG, AUSSORTIERT].filter(p => p.seite === abschnitt);
+    const alle = [...KATALOG, AUSSORTIERT].filter(p => p.verzeichnis === abschnitt);
     if (zieht) return alle;
     return alle.filter(p => {
       const liste = proPosition.get(p.id) || [];
@@ -414,18 +452,31 @@ export default function Belegsortierung() {
         <div style={{ padding: '14px 14px 10px 14px', borderBottom: `1px solid ${C.pageBg}` }}>
           <div style={{ fontSize: 10, color: C.muted, textTransform: 'uppercase',
                         letterSpacing: '.08em', marginBottom: 6 }}>Mandant</div>
+          <div style={{ position: 'relative' }}>
           <input
             value={kunde ? (kunde.company_name || '') : kundenSuche}
             onChange={e => { setKundenSuche(e.target.value); setKunde(null); }}
             onFocus={() => setKundenListe(true)}
             onBlur={() => setTimeout(() => setKundenListe(false), 180)}
+            onKeyDown={e => {
+              if (e.key === 'ArrowDown') { setKundenListe(true); return; }
+              if (e.key === 'Enter') {
+                const treffer = kunden.filter(k => !kundenSuche
+                  || k.company_name?.toLowerCase().includes(kundenSuche.toLowerCase()));
+                if (treffer.length) { setKunde(treffer[0]); setKundenSuche(''); setKundenListe(false); }
+              }
+              if (e.key === 'Escape') setKundenListe(false);
+            }}
             placeholder="anklicken oder tippen …"
             style={{
               width: '100%', boxSizing: 'border-box', backgroundColor: C.inputBg,
               border: `1px solid ${kunde ? C.accent : C.panelBdr}`, borderRadius: 5,
-              padding: '5px 8px', fontSize: 12, color: C.heading, outline: 'none',
+              padding: '5px 24px 5px 8px', fontSize: 12, color: C.heading, outline: 'none',
             }}
           />
+          <ChevronDown size={14} onMouseDown={e => { e.preventDefault(); setKundenListe(o => !o); }}
+            style={{ position: 'absolute', right: 7, top: 8, color: C.muted, cursor: 'pointer' }} />
+          </div>
           {kundenListe && (
             <div style={{
               marginTop: 4, maxHeight: 180, overflowY: 'auto',
@@ -473,22 +524,23 @@ export default function Belegsortierung() {
 
         <div style={{ flex: 1, overflowY: 'auto', padding: '10px 8px' }}>
           <div style={{ fontSize: 10, color: C.muted, textTransform: 'uppercase',
-                        letterSpacing: '.08em', padding: '0 6px 6px 6px' }}>Hauptformular</div>
-          {ABSCHNITTE.map(a => (
-            <NavEintrag key={a.seite} nummer={String(a.seite).padStart(2, '0')}
-              label={a.label} anzahl={(proSeite.get(a.seite) || []).length}
-              betrag={summe(proSeite.get(a.seite))}
-              aktiv={abschnitt === a.seite} onClick={() => setAbschnitt(a.seite)} />
+                        letterSpacing: '.08em', padding: '0 6px 6px 6px' }}>Verzeichnisse</div>
+          {NAV_OBEN.map((v, i) => (
+            <NavEintrag key={v.id} nummer={String(i + 1).padStart(2, '0')}
+              label={v.label} unter={v.unter}
+              anzahl={(proVerz.get(v.id) || []).length}
+              betrag={summe(proVerz.get(v.id))}
+              aktiv={abschnitt === v.id} onClick={() => setAbschnitt(v.id)} />
           ))}
 
           <div style={{ height: 10 }} />
           <NavEintrag nummer="?" label="Nicht zugeordnet" unter="Manuell prüfen"
             anzahl={ohne.length} farbe={C.offen}
-            aktiv={abschnitt === -1} onClick={() => setAbschnitt(-1)} />
-          {ABLAGEN.map(a => (
-            <NavEintrag key={a.seite} nummer="–" label={a.label} unter={a.unter}
-              anzahl={(proSeite.get(a.seite) || []).length} farbe={C.muted}
-              aktiv={abschnitt === a.seite} onClick={() => setAbschnitt(a.seite)} />
+            aktiv={abschnitt === 'ohne'} onClick={() => setAbschnitt('ohne')} />
+          {NAV_UNTEN.map(v => (
+            <NavEintrag key={v.id} nummer="–" label={v.label} unter={v.unter}
+              anzahl={(proVerz.get(v.id) || []).length} farbe={C.muted}
+              aktiv={abschnitt === v.id} onClick={() => setAbschnitt(v.id)} />
           ))}
         </div>
 
@@ -531,17 +583,21 @@ export default function Belegsortierung() {
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 10, color: C.muted, textTransform: 'uppercase',
                             letterSpacing: '.08em' }}>
-                {abschnitt >= 1 && abschnitt <= 4 ? `Seite ${abschnitt}` : 'Ablage'}
+                {VERZEICHNIS_NACH_ID[abschnitt]?.fuehrung
+                  ? `geführt je ${DIMENSIONEN[VERZEICHNIS_NACH_ID[abschnitt].fuehrung] || VERZEICHNIS_NACH_ID[abschnitt].fuehrung}`
+                  : 'Verzeichnis'}
               </div>
               <h1 style={{ fontSize: 19, fontWeight: 700, color: C.heading, margin: '2px 0 0 0' }}>
                 {abschnittName(abschnitt)}
               </h1>
               <div style={{ fontSize: 11, color: C.sub, marginTop: 2 }}>
-                {abschnitt === -1
+                {abschnitt === 'ohne'
                   ? `${ohne.length} ohne Zuordnung`
-                  : `${(proSeite.get(abschnitt) || []).length} Belege` +
-                    (abschnitt >= 1 && abschnitt <= 4
-                      ? ` · Total CHF ${chf(summe(proSeite.get(abschnitt)))}` : '')}
+                  : `${(proVerz.get(abschnitt) || []).length} Belege`
+                    + (summe(proVerz.get(abschnitt)) > 0
+                      ? ` · Total CHF ${chf(summe(proVerz.get(abschnitt)))}` : '')
+                    + (VERZEICHNIS_NACH_ID[abschnitt]?.speist
+                      ? ` · speist ${VERZEICHNIS_NACH_ID[abschnitt].speist}` : '')}
               </div>
             </div>
             <button onClick={() => eingabe.current?.click()}
@@ -613,13 +669,13 @@ export default function Belegsortierung() {
           )}
 
           {/* Nicht zugeordnet */}
-          {abschnitt === -1 && ohne.map(b => (
+          {abschnitt === 'ohne' && ohne.map(b => (
             <BelegKarte key={b.id} beleg={b} aktiv={b.id === gewaehlt} onWaehlen={setGewaehlt}
               onDragStart={zieheAn(b.id)} onDragEnd={zieheAus} zieht={zieht === b.id} />
           ))}
 
           {/* Positionen des Abschnitts als Ablagestellen */}
-          {abschnitt !== -1 && sichtbarePositionen.map(p => {
+          {abschnitt !== 'ohne' && sichtbarePositionen.map(p => {
             const liste = proPosition.get(p.id) || [];
             return (
               <div key={p.id} {...zielProps(p.id)} style={{
@@ -638,9 +694,15 @@ export default function Belegsortierung() {
                       {p.dimensionen.map(d => DIMENSIONEN[d]).join(' + ')}
                     </span>
                   )}
-                  {liste.length > 0 && p.seite >= 1 && p.seite <= 4 && (
-                    <span style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 600,
-                                   color: C.sub }}>CHF {chf(summe(liste))}</span>
+                  {liste.length > 0 && p.betrag && (
+                    <span style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 600, color: C.sub }}>
+                      CHF {chf(summe(liste))}
+                      {p.betrag2 && summe2(liste) > 0 && (
+                        <span style={{ color: C.muted, fontWeight: 400 }}>
+                          {' '}· {kurzLabel(p.betrag2)} {chf(summe2(liste))}
+                        </span>
+                      )}
+                    </span>
                   )}
                 </div>
                 {liste.map(b => (
@@ -698,11 +760,9 @@ function knopf(C, aktiv, farbe) {
   };
 }
 
-function abschnittName(seite) {
-  if (seite === -1) return 'Nicht zugeordnet';
-  if (seite === 0)  return 'Arbeitspapiere';
-  if (seite === 99) return 'Nicht benötigt';
-  return GRUPPEN.find(g => g.seite === seite)?.label || '';
+function abschnittName(id) {
+  if (id === 'ohne') return 'Nicht zugeordnet';
+  return VERZEICHNIS_NACH_ID[id]?.label || '';
 }
 
 function NavEintrag({ nummer, label, unter, anzahl, betrag, aktiv, farbe, onClick }) {
@@ -851,7 +911,10 @@ function Vorschau({ beleg: b, breite, onAendern, onPosition }) {
             Denselben Beleg nochmals hineinziehen, dann erscheint er hier.
           </div>
         ) : b.istPdf ? (
-          <iframe title={b.name} src={b.url} style={{ width: '100%', height: '100%', border: 'none' }} />
+          // Bei einem Buendel auf der Seite dieses Belegs aufgehen
+          <iframe title={b.name}
+                  src={b.vonSeite > 1 ? `${b.url}#page=${b.vonSeite}` : b.url}
+                  style={{ width: '100%', height: '100%', border: 'none' }} />
         ) : (
           <div style={{ height: '100%', overflow: 'auto', padding: 8 }}>
             <img src={b.url} alt={b.name} style={{ width: '100%' }} />
@@ -874,10 +937,20 @@ function Vorschau({ beleg: b, breite, onAendern, onPosition }) {
 
         <div style={{ display: 'grid', gap: 8 }}>
           <div>
-            <div style={etikett(C)}>Betrag CHF</div>
+            <div style={etikett(C)}>
+              {(b.position && KATALOG_NACH_ID[b.position]?.betrag) || 'Betrag'} – CHF
+            </div>
             <input type="number" value={b.betrag ?? ''} placeholder="noch nicht ausgelesen"
               onChange={e => onAendern(b.id, { betrag: e.target.value, betragQuelle: 'hand' })} style={feld} />
           </div>
+          {b.position && KATALOG_NACH_ID[b.position]?.betrag2 && (
+            <div>
+              <div style={etikett(C)}>{KATALOG_NACH_ID[b.position].betrag2} – CHF</div>
+              <input type="number" value={b.betrag2 ?? ''} placeholder="noch nicht ausgelesen"
+                onChange={e => onAendern(b.id, { betrag2: e.target.value, betragQuelle: 'hand' })}
+                style={feld} />
+            </div>
+          )}
           <div>
             <div style={etikett(C)}>Steuerjahr</div>
             <input value={b.jahr ?? ''} onChange={e => onAendern(b.id, { jahr: e.target.value })}
@@ -938,6 +1011,7 @@ function Hinweis({ farbe, children }) {
 
 function standText(stand) {
   if (stand === 'wartet') return 'wartet …';
+  if (stand === 'trennt') return 'wird in einzelne Belege zerlegt …';
   if (stand === 'liest') return 'wird gelesen …';
   if (stand === 'ocr')   return 'Scan erkannt – OCR läuft, das dauert';
   if (stand === 'pdf')   return 'PDF-Text wird gelesen …';
