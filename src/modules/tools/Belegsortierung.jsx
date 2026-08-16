@@ -156,14 +156,24 @@ export default function Belegsortierung() {
     enabled: !!kunde?.id,
   });
 
+  // «Leeren» merkt sich Mandant+Jahr: react-query holt den gespeicherten
+  // Stand bei jedem Fokuswechsel neu, und ohne diese Notiz füllte der
+  // Effekt die eben geleerte Liste gleich wieder auf.
+  const geleertFuer = useRef(null);
+
+  // Ein Wechsel von Mandant oder Jahr hebt die Notiz auf — wer zurückkommt,
+  // will den gespeicherten Stand wieder sehen. (Läuft VOR dem Füll-Effekt.)
+  useEffect(() => { geleertFuer.current = null; }, [kunde?.id, steuerjahr]);
+
   useEffect(() => {
     if (!gespeichert?.belege?.length) return;
+    if (geleertFuer.current === `${kunde?.id}|${steuerjahr}`) return;
     setBelege(v => v.length ? v : gespeichert.belege.map((b, i) => ({
       ...b, id: `gespeichert-${i}-${b.hash}`, stand: 'fertig', ohneDatei: true,
       // Verschmolzene Positionen aus aelteren Staenden auf die heutigen ids
       position: migriereId(b.position),
     })));
-  }, [gespeichert]);
+  }, [gespeichert, kunde?.id, steuerjahr]);
 
   const belegeRef = useRef(belege);
   useEffect(() => { belegeRef.current = belege; }, [belege]);
@@ -756,6 +766,7 @@ export default function Belegsortierung() {
             )}
             {belege.length > 0 && (
               <button onClick={() => { belege.forEach(b => b.url && URL.revokeObjectURL(b.url));
+                                       geleertFuer.current = `${kunde?.id}|${steuerjahr}`;
                                        setBelege([]); setGewaehlt(null); }}
                 style={{ fontSize: 10, color: C.sub, background: 'none',
                          border: `1px solid ${C.panelBdr}`, borderRadius: 5,
