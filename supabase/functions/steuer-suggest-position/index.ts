@@ -57,7 +57,11 @@ Regeln:
 - Ob Liegenschaftsunterhalt werterhaltend oder wertvermehrend ist, steht auf
   keiner Rechnung. Ordne der Position zu, entscheide die Frage nicht.
 - Handschriftliches und Papier mit dem Briefkopf des Treuhänders sind
-  Arbeitspapiere, keine Beilagen.`;
+  Arbeitspapiere, keine Beilagen.
+- Kommt ein BILD mit, ist es die erste Seite des Belegs — der Textausschnitt
+  dazu war für die OCR unlesbar oder leer. Lies Briefkopf, Logo und Titel aus
+  dem Bild; das Layout (Einzahlungsschein, Police, Kontoauszug, Handnotiz)
+  sagt oft mehr als der Text.`;
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -69,9 +73,15 @@ serve(async (req) => {
     const periode = body.periode ?? null;
     const katalog = String(body.katalog || "");
     const belegarten = String(body.belegarten || "");
+    // Bild-Fallback: base64-JPEG der ersten Seite des Teils. Kommt nur bei
+    // Belegen, an denen Regeln UND Text-KI gescheitert sind.
+    const bild = typeof body.bild === "string" ? body.bild : "";
+    const bildTyp = ["image/jpeg", "image/png", "image/webp", "image/gif"]
+      .includes(body.bildTyp) ? body.bildTyp : "image/jpeg";
 
-    if (!text.trim()) return ok({ error: "Kein Text übergeben" });
+    if (!text.trim() && !bild) return ok({ error: "Kein Text übergeben" });
     if (!katalog.trim()) return ok({ error: "Kein Katalog übergeben" });
+    if (bild.length > 6_000_000) return ok({ error: "Bild zu gross" });
 
     const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY");
     if (!anthropicKey) return ok({ error: "ANTHROPIC_API_KEY fehlt" });
@@ -81,11 +91,22 @@ serve(async (req) => {
       periode ? `Steuerperiode der Deklaration: ${periode}` : "",
       dateiname ? `Dateiname: ${dateiname}` : "",
       "",
-      "TEXTAUSSCHNITT:",
+      text.trim() ? "TEXTAUSSCHNITT:" : "Kein lesbarer Text — nur das Bild.",
       text,
     ].filter(Boolean).join("\n");
 
-    const modelle = ["claude-haiku-4-5", "claude-sonnet-4-5", "claude-3-5-haiku-latest"];
+    // Mit Bild wird die Nachricht multimodal: erst das Bild, dann die Frage.
+    const inhalt = bild
+      ? [
+          { type: "image", source: { type: "base64", media_type: bildTyp, data: bild } },
+          { type: "text", text: frage },
+        ]
+      : frage;
+
+    // claude-3-5-haiku kann keine Bilder — mit Bild endet die Kette vorher.
+    const modelle = bild
+      ? ["claude-haiku-4-5", "claude-sonnet-4-5"]
+      : ["claude-haiku-4-5", "claude-sonnet-4-5", "claude-3-5-haiku-latest"];
     let letzterFehler = "";
 
     for (const model of modelle) {
@@ -109,7 +130,7 @@ serve(async (req) => {
               // sonst zahlt man ihn fuer jeden einzelnen Beleg neu.
               { type: "text", text: daten, cache_control: { type: "ephemeral" } },
             ],
-            messages: [{ role: "user", content: frage }],
+            messages: [{ role: "user", content: inhalt }],
           }),
           signal: ctrl.signal,
         });

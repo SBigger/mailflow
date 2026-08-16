@@ -280,6 +280,12 @@ export async function triageMitKi(supabase, beleg, kontext = {}) {
         // Katalog kommt vom Aufrufer, damit er nur an EINER Stelle gepflegt wird
         katalog:    kontext.katalog || "",
         belegarten: kontext.belegarten || BELEGARTEN.map(b => `${b.key} = ${b.label}`).join("\n"),
+        // Bild-Fallback: erste Seite des Teils als JPEG, NUR wenn Regeln und
+        // Text-KI leer ausgingen. Im Bild lässt sich nichts maskieren — darum
+        // bleibt es auf die Reste beschränkt, die sonst von Hand zu sortieren
+        // wären.
+        bild:       beleg.bild || undefined,
+        bildTyp:    beleg.bild ? (beleg.bildTyp || "image/jpeg") : undefined,
       },
     });
     if (error) throw error;
@@ -297,7 +303,7 @@ export async function triageMitKi(supabase, beleg, kontext = {}) {
       confidence:   Number(Math.max(regel.confidence, nimmKi ? kiConfidence : 0).toFixed(2)),
       periodeBeleg: regel.periodeBeleg ?? data.periode ?? null,
       begruendung:  nimmKi
-        ? `KI: ${data.begruendung || "keine Begründung"} (Regel sagte: ${regel.begruendung})`
+        ? `KI${beleg.bild ? " (Bild)" : ""}: ${data.begruendung || "keine Begründung"} (Regel sagte: ${regel.begruendung})`
         : `${regel.begruendung} (KI weniger sicher, verworfen)`,
       positionen:   Array.isArray(data.positionen) ? data.positionen : [],
       quelle:       nimmKi ? "ki" : "regel",

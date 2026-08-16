@@ -56,17 +56,27 @@ const ADRESSE = /\b(1[0-9]{3}|[2-9][0-9]{3})\s+[a-z][a-z.\s-]{2,24}\b/;
 /**
  * Entscheidet für eine Seite, ob sie einen neuen Beleg beginnt.
  *
- * @param {string} seitenText  OCR-Text der Seite
- * @param {number} nummer      1-basierte Seitennummer im PDF
+ * @param {string} seitenText   OCR-Text der Seite
+ * @param {number} nummer       1-basierte Seitennummer im PDF
+ * @param {string} vorherText   OCR-Text der Seite davor (fürs Briefpapier)
  * @returns {{neu:boolean, grund:string}}
  */
-export function beginntNeuenBeleg(seitenText, nummer) {
+export function beginntNeuenBeleg(seitenText, nummer, vorherText = '') {
   if (nummer === 1) return { neu: true, grund: 'erste Seite' };
 
   const t = flach(seitenText);
   // Der Kopfbereich entscheidet – weiter unten stehen Tabellen und Summen,
   // in denen zufällig Datumsangaben und Nummern vorkommen.
   const kopf = t.slice(0, 700);
+  const vorher = flach(vorherText);
+
+  // Briefpapier-Regel: Was auf der Seite davor IDENTISCH vorkam, ist
+  // Kopf- oder Fusszeile des Absenders, kein Beleganfang. Die ZKB druckt
+  // «Horgen, 31. Dezember 2025» auf jede Seite ihres Steuerausweises –
+  // ohne diese Regel zerfiel der 15-Seiter in zehn Einzelbelege.
+  // Eine Belegnummer mit Datum («Nr. 38.01 vom …») ändert sich je Beleg
+  // und bleibt damit ein gültiges Signal.
+  const istBriefpapier = (treffer) => vorher.includes(flach(treffer).trim());
 
   for (const m of FORTSETZUNG) {
     const treffer = kopf.match(m);
@@ -75,10 +85,13 @@ export function beginntNeuenBeleg(seitenText, nummer) {
 
   for (const m of NEUER_BELEG) {
     const treffer = kopf.match(m);
-    if (treffer) return { neu: true, grund: `neuer Beleg («${treffer[0].trim().slice(0, 40)}»)` };
+    if (!treffer) continue;
+    if (istBriefpapier(treffer[0])) continue;   // wiederkehrend = Briefpapier
+    return { neu: true, grund: `neuer Beleg («${treffer[0].trim().slice(0, 40)}»)` };
   }
 
-  if (ADRESSE.test(kopf)) return { neu: true, grund: 'Adressblock im Kopf' };
+  const adr = kopf.match(ADRESSE);
+  if (adr && !istBriefpapier(adr[0])) return { neu: true, grund: 'Adressblock im Kopf' };
 
   // Nichts erkannt: zur vorherigen Seite schlagen. Zusammenlassen ist die
   // vorsichtigere Annahme – ein zu gross geratener Beleg faellt beim
@@ -97,7 +110,7 @@ export function trenneBelege(seiten) {
   if (!seiten?.length) return [];
   const belege = [];
   for (let i = 0; i < seiten.length; i++) {
-    const { neu, grund } = beginntNeuenBeleg(seiten[i], i + 1);
+    const { neu, grund } = beginntNeuenBeleg(seiten[i], i + 1, seiten[i - 1] || '');
     if (neu || !belege.length) {
       belege.push({ von: i + 1, bis: i + 1, grund, text: seiten[i] || '' });
     } else {

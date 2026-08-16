@@ -160,8 +160,34 @@ export async function pdfPagesToImages(file, maxPages = 2) {
   }
 }
 
+/**
+ * Rendert genau EINE Seite eines PDFs zu JPEG-base64.
+ *
+ * Für den Bild-Fallback der Belegsortierung: dort ist ein «Beleg» ein
+ * Seitenbereich innerhalb einer Datei — an die KI geht die erste Seite DES
+ * TEILS, nicht die erste Seite der Datei.
+ */
+export async function pdfSeiteAlsBild(file, seite = 1) {
+  try {
+    const buf = await file.arrayBuffer();
+    sichereWorker();
+    const pdf = await pdfjsLib.getDocument({ data: buf, worker: eigenerPdfWorker() }).promise;
+    if (seite < 1 || seite > pdf.numPages) return null;
+    const page = await pdf.getPage(seite);
+    const viewport = page.getViewport({ scale: 1.6 });
+    const canvas = document.createElement("canvas");
+    canvas.width  = viewport.width;
+    canvas.height = viewport.height;
+    await page.render({ canvasContext: canvas.getContext("2d"), viewport, intent: "print" }).promise;
+    return canvas.toDataURL("image/jpeg", 0.75).split(",")[1];
+  } catch (e) {
+    console.warn("[Belegsortierung] Seite→Bild fehlgeschlagen:", e);
+    return null;
+  }
+}
+
 /** File → base64 (für Bilder). */
-async function fileToBase64(file) {
+export async function fileToBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {

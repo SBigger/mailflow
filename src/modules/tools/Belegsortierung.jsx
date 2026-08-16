@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 
 import { supabase } from '@/api/supabaseClient';
-import { extractPageTexts } from '../../lib/batchAiSuggest.js';
+import { extractPageTexts, pdfSeiteAlsBild, fileToBase64 } from '../../lib/batchAiSuggest.js';
 import { triageRegeln, triageMitKi, brauchtKi } from '../../lib/steuerBelege/triage.js';
 import { positionenFuer, offeneDimensionen } from '../../lib/steuerBelege/belegartZuPosition.js';
 import { BELEGART_BY_KEY, BELEGARTEN } from '../../lib/steuerBelege/belegarten.js';
@@ -282,6 +282,26 @@ export default function Belegsortierung() {
             setBelege(v => v.map(b => b.id === id
               ? { ...b, stand: 'ki', teilNr: i + 1 } : b));
             tri = await triageMitKi(supabase, eingang, kontext);
+          }
+
+          // Bild-Nachschlag: Erkennen weder Regeln noch Text-KI den Teil,
+          // geht seine ERSTE SEITE als Foto an die KI — bei Handnotizen und
+          // unleserlichen Scans steht die Antwort im Layout, nicht im Text.
+          // Bewusst nur für diese Reste: im Bild lässt sich keine
+          // AHV-Nummer maskieren.
+          if (kiNutzen && !tri.belegart && !(tri.positionen || []).length
+              && tri.grund !== 'duplikat') {
+            setBelege(v => v.map(b => b.id === id
+              ? { ...b, stand: 'ki-bild', teilNr: i + 1 } : b));
+            const istPdf = /\.pdf$/i.test(datei.name);
+            const bild = istPdf
+              ? await pdfSeiteAlsBild(datei, teil.von)
+              : /\.(jpe?g|png|webp|gif)$/i.test(datei.name)
+                ? await fileToBase64(datei) : null;
+            if (bild) {
+              const bildTyp = istPdf ? 'image/jpeg' : (datei.type || 'image/jpeg');
+              tri = await triageMitKi(supabase, { ...eingang, bild, bildTyp }, kontext);
+            }
           }
           bekannteHashes.push(eingang.dateiHash);
 
@@ -1103,5 +1123,6 @@ function standText(stand) {
   if (stand === 'ocr')   return 'Scan erkannt – OCR läuft, das dauert';
   if (stand === 'pdf')   return 'PDF-Text wird gelesen …';
   if (stand === 'ki')    return 'Regeln reichten nicht – KI wird gefragt …';
+  if (stand === 'ki-bild') return 'Text half nicht – Seite geht als Bild an die KI …';
   return String(stand || '') + ' …';
 }
