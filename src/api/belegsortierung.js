@@ -18,6 +18,9 @@ function fuerDieDatenbank(b) {
     quelle:      b.quelle ?? null,
     begruendung: b.begruendung ?? null,
     vonHand:     !!b.vonHand,
+    // Betrag und Jahr sind Erfassung, nicht Erkennung – sie muessen mit
+    betrag:      b.betrag ?? null,
+    jahr:        b.jahr ?? null,
     // Der Text ist das Teure an einem Scan – gut zehn Sekunden OCR je Seite.
     // Deshalb aufheben, aber gedeckelt: er dient nur der Wiedererkennung.
     text:        (b.text || '').slice(0, 20000),
