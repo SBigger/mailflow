@@ -65,6 +65,22 @@ export const BELEGART_ZU_POSITION = {
                         kandidaten: ['alimente_erhalten', 'alimente_bezahlt'],
                         unterscheidet: 'Zahlungsrichtung – erhalten oder bezahlt' },
 
+  steuerformular:     { positionen: ['formular'],
+                        hinweis: 'Schluesselbeleg – nennt Kanton, Gemeinde, beide Namen, AHVN13, '
+                               + 'Jahr und Frist. Zuerst auswerten, dann den Rest des Stapels.' },
+
+  liegenschaftsunterhalt: { positionen: ['liegenschaftsunterhalt'],
+                        hinweis: 'Werterhaltend oder wertvermehrend entscheidet kein Beleg – '
+                               + 'Umbauprojekte immer vorlegen.' },
+
+  arbeitspapier:      { positionen: ['eigene_berechnung'],
+                        hinweis: 'Handschriftliches gehoert zu arbeitsnotiz, Berechnungen mit '
+                               + 'eigenem Briefkopf zu eigene_berechnung.' },
+
+  zahlungsauftrag:    { mehrdeutig: true,
+                        kandidaten: ['uebriges_vermoegen', 'bankguthaben', '_aussortiert'],
+                        unterscheidet: 'Zweck der Zahlung – Kapitaleinlage, Umbuchung oder Privates' },
+
   // ── gehört nicht in die Erklärung ────────────────────────────────────────
   werbung:            { positionen: ['_aussortiert'] },
   mahnung:            { positionen: ['_aussortiert'],

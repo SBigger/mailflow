@@ -49,7 +49,8 @@ export const BELEGARTEN = [
     parse: "ocr",
     ech_pfad: "listOfSecurities",
     stark: ["saldobestaetigung", "saldobescheinigung"],
-    keywords: ["kontoauszug", "saldo per", "zinsertrag", "iban", "kontostand"],
+    // «iban» war hier und steht auf jeder Schweizer Rechnung.
+    keywords: ["kontoauszug", "saldo per", "zinsertrag", "kontostand", "privatkonto", "sparkonto"],
   },
   {
     key: "schuldzins",
@@ -65,7 +66,9 @@ export const BELEGARTEN = [
     parse: "ocr",
     ech_pfad: "mainForm.deduction.pillar3a",
     stark: ["saeule 3a", "saule 3a", "3a-bescheinigung", "vorsorgebescheinigung"],
-    keywords: ["gebundene vorsorge", "vorsorgestiftung", "einzahlung", "bvg 3a"],
+    // «einzahlung» war hier und stand auf jedem Einzahlungsschein — damit wurden
+    // Spenden, Architekten- und Versicherungsrechnungen zu Saeule-3a-Belegen.
+    keywords: ["gebundene vorsorge", "vorsorgestiftung", "bvg 3a", "freizuegigkeit"],
   },
   {
     key: "pk_einkauf",
@@ -174,8 +177,59 @@ export const BELEGARTEN = [
     label: "Vorjahres-Veranlagung",
     parse: "ocr",
     ech_pfad: null,              // Prüfgrösse, kein Zielfeld
-    stark: ["veranlagungsverfuegung", "schlussrechnung"],
-    keywords: ["veranlagung", "steuerbares einkommen", "steuerbares vermoegen"],
+    // «schlussrechnung» stand hier als starkes Signal und ist doch ein normales
+    // Rechnungswort — eine Kaminfegerrechnung wurde damit zur Veranlagung.
+    stark: ["veranlagungsverfuegung", "schlussrechnung staats- und gemeindesteuern",
+            "schlussrechnung staatssteuer"],
+    keywords: ["veranlagung", "steuerbares einkommen", "steuerbares vermoegen",
+               "steueramt", "einsprachefrist"],
+  },
+
+  // ── Ergaenzt nach dem ersten Probelauf an einem echten Stapel ────────────
+  // Diese vier Arten fehlten und wurden dadurch zwangslaeufig falsch
+  // einsortiert — das Zugangsdatenschreiben zum Beispiel als Lohnausweis,
+  // weil darauf eine AHV-Nummer steht.
+  {
+    key: "steuerformular",
+    label: "Steuerformular / Zugangsdaten",
+    parse: "ocr",
+    ech_pfad: null,
+    stark: ["zugangsdaten", "zugangscode", "online-steuererklaerung", "steuererklaerung 20"],
+    keywords: ["ahvn13", "pid", "einreichungsfrist", "privatetax", "steuersoftware",
+               "kantonales steueramt"],
+  },
+  {
+    key: "liegenschaftsunterhalt",
+    label: "Liegenschaftsunterhalt",
+    parse: "ocr",
+    ech_pfad: "listOfRealEstate",
+    // Der Absender traegt hier die Information, nicht der Rechnungstext:
+    // wer eine Gebaeudeversicherung oder einen Kaminfeger im Briefkopf hat,
+    // schickt eine Unterhaltsrechnung.
+    stark: ["gebaeudeversicherung", "kaminfeger", "feuerungskontrolle",
+            "liegenschaftenunterhalt", "unterhaltskosten"],
+    keywords: ["architektur", "bauherr", "umbau", "sanierung", "handwerker", "installation",
+               "heizung", "sanitaer", "reinigung", "hauswartung", "serviceabonnement",
+               "nebenkostenabrechnung"],
+  },
+  {
+    key: "arbeitspapier",
+    label: "Arbeitspapier (keine Beilage)",
+    parse: "ocr",
+    ech_pfad: null,
+    // Der eigene Firmenname taugt NICHT als Merkmal: Artis steht als
+    // Zahlungsauftraggeber auf den Kontoauszuegen der Mandanten und machte
+    // im Probelauf einen Bankauszug zum Arbeitspapier.
+    stark: ["besprechungsnotiz", "berechnung zins", "zins- und kapitalausweis"],
+    keywords: ["pendenzen", "checkliste", "hilfsblatt", "aufstellung treuhaender", "notiz"],
+  },
+  {
+    key: "zahlungsauftrag",
+    label: "Zahlungsauftrag / Kapitaleinlage",
+    parse: "ocr",
+    ech_pfad: null,
+    stark: ["inlandzahlung", "zahlungsauftrag", "vergütungsauftrag", "verguetungsauftrag"],
+    keywords: ["beguenstigter", "kapitaleinlage", "aktienkapital", "einzahlung kapital"],
   },
 ];
 

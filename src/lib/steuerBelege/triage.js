@@ -24,6 +24,22 @@ export const SCHWELLE_REVIEW = 0.85;
 // Normalisierung (gleiche Regeln wie batchAiSuggest.js)
 // ══════════════════════════════════════════════════════════════════════
 
+/**
+ * Zieht die Umlaut-Dehnung wieder heraus: aus «gebaeudeversicherung» wird
+ * «gebaudeversicherung».
+ *
+ * Wozu: normalize() schreibt ä zu ae aus — OCR verschluckt den Umlaut dagegen
+ * meist ganz. Der GVZ-Briefkopf kam im Probelauf als «GEBAUDEVERSICHERUNG»
+ * heraus und traf das Stichwort «gebaeudeversicherung» nie. Wird auf beiden
+ * Seiten angewandt, treffen sich die Schreibweisen.
+ *
+ * Gleiche Idee wie die OCR-tolerante UID-Erkennung, wo das Komma als
+ * Trennzeichen zugelassen ist, weil OCR aus «.» oft «,» macht.
+ */
+export function flach(s) {
+  return normalize(s).replace(/ae/g, "a").replace(/oe/g, "o").replace(/ue/g, "u");
+}
+
 export function normalize(s) {
   if (!s) return "";
   return s.toLowerCase()
@@ -84,6 +100,9 @@ export function triageRegeln(beleg, kontext = {}) {
   const { periode = null, bekannteHashes = [] } = kontext;
 
   const heu = normalize(`${text}\n${dateiname}`);
+  const heuFlach = flach(`${text}\n${dateiname}`);
+  // Treffer gilt in der normalisierten ODER in der umlautflachen Schreibweise
+  const trifft = (begriff) => heu.includes(normalize(begriff)) || heuFlach.includes(flach(begriff));
 
   // ─── Duplikat: schlägt alles andere ───────────────────────────────
   if (dateiHash && bekannteHashes.includes(dateiHash)) {
@@ -117,19 +136,30 @@ export function triageRegeln(beleg, kontext = {}) {
   }
 
   // ─── Scoring über den Belegarten-Katalog ──────────────────────────
+  //
+  // Mindestbeleg: Ein einzelnes schwaches Stichwort darf keine Belegart
+  // bestimmen. Der erste Probelauf an einem echten Stapel zeigte, warum —
+  // «einzahlung» steht auf jedem Einzahlungsschein und machte Spenden,
+  // Architekten- und Versicherungsrechnungen zu Säule-3a-Belegen; «iban»
+  // machte eine Rasenmäherrechnung zum Kontoauszug. Verlangt wird deshalb
+  // entweder ein starkes Signal oder zwei unabhängige Stichwörter.
   let best = null;
   for (const art of BELEGARTEN) {
     let score = 0;
     const treffer = [];
+    let starkTreffer = 0;
+    let kwTreffer = 0;
 
     for (const s of art.stark) {
-      if (heu.includes(normalize(s))) { score += 6; treffer.push(s); }
+      if (trifft(s)) { score += 6; treffer.push(s); starkTreffer++; }
     }
     for (const k of art.keywords) {
-      if (heu.includes(normalize(k))) { score += 1; treffer.push(k); }
+      if (trifft(k)) { score += 1; treffer.push(k); kwTreffer++; }
     }
     // eCH-0270-Barcode wurde gelesen und die Art passt: starkes Signal
-    if (parseMethode === "ech0270" && art.parse === "ech0270") score += 6;
+    if (parseMethode === "ech0270" && art.parse === "ech0270") { score += 6; starkTreffer++; }
+
+    if (starkTreffer === 0 && kwTreffer < 2) continue;   // zu dünn – keine Aussage
 
     if (score > 0 && (!best || score > best.score)) {
       best = { art, score, treffer };
@@ -139,7 +169,7 @@ export function triageRegeln(beleg, kontext = {}) {
   // ─── Nicht-relevant-Muster ────────────────────────────────────────
   let negativ = null;
   for (const m of NICHT_RELEVANT_MUSTER) {
-    const n = m.keywords.filter(k => heu.includes(normalize(k))).length;
+    const n = m.keywords.filter(k => trifft(k)).length;
     if (n > 0 && (!negativ || n > negativ.n)) negativ = { key: m.key, n };
   }
 
