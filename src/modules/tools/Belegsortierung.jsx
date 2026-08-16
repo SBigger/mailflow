@@ -10,7 +10,7 @@
 // nichts nach aussen.
 
 import React, { useState, useMemo, useRef } from 'react';
-import { Upload, FileText, AlertTriangle, Check, HelpCircle, X, Loader2 } from 'lucide-react';
+import { Upload, FileText, AlertTriangle, Check, HelpCircle, X, Loader2, Download } from 'lucide-react';
 
 import { supabase } from '@/api/supabaseClient';
 import { extractDocumentText } from '../../lib/batchAiSuggest.js';
@@ -20,6 +20,7 @@ import { BELEGART_BY_KEY, BELEGARTEN } from '../../lib/steuerBelege/belegarten.j
 import { findAhvInText, dateiHash } from '../../lib/steuerBelege/belegHelfer.js';
 import { KATALOG, KATALOG_NACH_ID, GRUPPEN, AUSSORTIERT, DIMENSIONEN, katalogFuerPrompt }
   from '../../forms/steuer_np_katalog.js';
+import { baueBeilagenBundle } from '../../lib/steuerBelege/beilagenBundle.js';
 
 const C = {
   pageBg:  '#f2f5f2', panelBg: '#ffffff', panelBdr: '#ccd8cc',
@@ -52,8 +53,9 @@ export default function Belegsortierung() {
       // PDF-Betrachter mit – damit laesst sich blaettern und zoomen, statt
       // nur die erste Seite als Bild zu sehen.
       const url = URL.createObjectURL(datei);
+      // datei wird fuer das Beilagenbuendel gebraucht – nicht wegwerfen
       setBelege(v => [...v, { id, name: datei.name, stand: 'liest', groesse: datei.size, url,
-                              istPdf: /\.pdf$/i.test(datei.name) }]);
+                              datei, istPdf: /\.pdf$/i.test(datei.name) }]);
       setGewaehlt(g => g ?? id);
 
       try {
@@ -119,6 +121,25 @@ export default function Belegsortierung() {
       if (naechster) setGewaehlt(naechster.id);
       return v;
     });
+  }
+
+  const [baut, setBaut] = useState(false);
+
+  async function bundelHerunterladen() {
+    setBaut(true);
+    try {
+      const bytes = await baueBeilagenBundle(belege.filter(b => b.position), {});
+      const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Beilagen sortiert.pdf`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+    } catch (e) {
+      alert('Bündel konnte nicht erzeugt werden: ' + (e.message || e));
+    } finally {
+      setBaut(false);
+    }
   }
 
   function zuruecksetzen() {
@@ -218,9 +239,25 @@ export default function Belegsortierung() {
               </span>
             )}
             <button
+              onClick={bundelHerunterladen}
+              disabled={baut || !zugeordnet}
+              style={{
+                marginLeft: 'auto', fontSize: 11, fontWeight: 600,
+                color: zugeordnet ? '#fff' : C.muted,
+                backgroundColor: zugeordnet ? C.accent : 'transparent',
+                border: `1px solid ${zugeordnet ? C.accent : C.panelBdr}`,
+                borderRadius: 5, padding: '4px 11px',
+                cursor: zugeordnet ? 'pointer' : 'default',
+                display: 'flex', alignItems: 'center', gap: 5,
+              }}
+            >
+              <Download size={12} />
+              {baut ? 'wird gebaut …' : 'Bündel als PDF'}
+            </button>
+            <button
               onClick={zuruecksetzen}
               style={{
-                marginLeft: 'auto', fontSize: 11, color: C.sub, background: 'none',
+                fontSize: 11, color: C.sub, background: 'none',
                 border: `1px solid ${C.panelBdr}`, borderRadius: 5, padding: '3px 9px',
                 cursor: 'pointer',
               }}
