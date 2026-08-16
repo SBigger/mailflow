@@ -10,7 +10,7 @@
 // nichts nach aussen.
 
 import React, { useState, useMemo, useRef } from 'react';
-import { Upload, FileText, AlertTriangle, Check, HelpCircle, X, Loader2, Download } from 'lucide-react';
+import { Upload, FileText, AlertTriangle, Check, HelpCircle, X, Loader2, Download, GripVertical } from 'lucide-react';
 
 import { supabase } from '@/api/supabaseClient';
 import { extractDocumentText } from '../../lib/batchAiSuggest.js';
@@ -29,14 +29,14 @@ const C = {
   inputBg: '#f8faf8', warn:    '#c2833c', offen:    '#7a7a9c',
 };
 
-const SEITEN = [...GRUPPEN, { id: 'aussortiert', label: 'Nicht zur Steuererklärung', seite: 99 }];
-
 export default function Belegsortierung() {
   const [belege, setBelege] = useState([]);
   const [laeuft, setLaeuft] = useState(false);
   const [ueber, setUeber] = useState(false);
   const [gewaehlt, setGewaehlt] = useState(null);   // id des Belegs in der Vorschau
   const [kiNutzen, setKiNutzen] = useState(true);
+  const [zieht, setZieht] = useState(null);      // id des Belegs, der gerade gezogen wird
+  const [ueberZiel, setUeberZiel] = useState(null);
   const eingabe = useRef(null);
 
   async function verarbeite(dateien) {
@@ -111,15 +111,15 @@ export default function Belegsortierung() {
   }
 
   function setzePosition(id, positionId) {
-    setBelege(v => v.map(b => b.id === id
-      ? { ...b, position: positionId || null, vonHand: true } : b));
-    // Nach dem Zuweisen zum naechsten Beleg springen, der eine Entscheidung
-    // braucht – sonst muss man nach jedem Klick von Hand weitersuchen.
     setBelege(v => {
-      const naechster = v.find(b => b.id !== id && b.stand === 'fertig' && !b.position
-        && !(b.vorschlag?.length === 1));
-      if (naechster) setGewaehlt(naechster.id);
-      return v;
+      const neu = v.map(b => b.id === id
+        ? { ...b, position: positionId || null, vonHand: true } : b);
+      // Weiter zum naechsten Beleg der Warteschlange – sonst muss man nach
+      // jedem Zug von Hand weitersuchen.
+      const naechster = neu.find(b => b.id !== id && b.stand === 'fertig'
+        && !b.position && !(b.vorschlag?.length === 1));
+      queueMicrotask(() => setGewaehlt(naechster ? naechster.id : id));
+      return neu;
     });
   }
 
@@ -148,24 +148,55 @@ export default function Belegsortierung() {
     setGewaehlt(null);
   }
 
-  // ── Nach Seiten der Steuererklärung gruppieren ──────────────────────────
-  const gruppiert = useMemo(() => {
-    const nachSeite = new Map();
-    const ohne = [];
+  // ── Belege den Positionen zuordnen ──────────────────────────────────────
+  // Der Katalog ist die Ablage: jede Position ist ein Stapel, auf den man
+  // einen Beleg ziehen kann. Was noch keinen Stapel hat, liegt oben in der
+  // Warteschlange.
+  const { proPosition, warteschlange } = useMemo(() => {
+    const proPosition = new Map();
+    const warteschlange = [];
     for (const b of belege) {
+      if (b.stand !== 'fertig') { warteschlange.push(b); continue; }
       const pid = b.position ?? (b.vorschlag?.length === 1 ? b.vorschlag[0].id : null);
-      const pos = pid ? KATALOG_NACH_ID[pid] : null;
-      if (!pos) { ohne.push(b); continue; }
-      if (!nachSeite.has(pos.seite)) nachSeite.set(pos.seite, []);
-      nachSeite.get(pos.seite).push({ ...b, pos });
+      if (!pid || !KATALOG_NACH_ID[pid]) { warteschlange.push(b); continue; }
+      if (!proPosition.has(pid)) proPosition.set(pid, []);
+      proPosition.get(pid).push(b);
     }
-    for (const [, arr] of nachSeite) arr.sort((a, b) => a.pos.sort - b.pos.sort);
-    return { nachSeite, ohne };
+    return { proPosition, warteschlange };
   }, [belege]);
+
+  const seitenGruppen = useMemo(() => {
+    const g = new Map();
+    for (const p of [...KATALOG, AUSSORTIERT]) {
+      if (!g.has(p.seite)) g.set(p.seite, []);
+      g.get(p.seite).push(p);
+    }
+    return [...g.entries()].sort((a, b) => a[0] - b[0]);
+  }, []);
 
   const fertig = belege.filter(b => b.stand === 'fertig');
   const zugeordnet = fertig.filter(b => b.position || b.vorschlag?.length === 1).length;
   const offen = fertig.length - zugeordnet;
+
+  // ── Ziehen und Ablegen ──────────────────────────────────────────────────
+  const zieheAn = (id) => (e) => {
+    e.dataTransfer.setData('text/plain', id);
+    e.dataTransfer.effectAllowed = 'move';
+    setZieht(id);
+  };
+  const zieheAus = () => { setZieht(null); setUeberZiel(null); };
+
+  const zielProps = (positionId) => ({
+    onDragOver: e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setUeberZiel(positionId); },
+    onDragLeave: () => setUeberZiel(z => (z === positionId ? null : z)),
+    onDrop: e => {
+      e.preventDefault();
+      e.stopPropagation();
+      const id = e.dataTransfer.getData('text/plain');
+      if (id) setzePosition(id, positionId);
+      zieheAus();
+    },
+  });
 
   return (
     <div style={{ backgroundColor: C.pageBg, minHeight: '100%', padding: 20 }}>
@@ -265,24 +296,31 @@ export default function Belegsortierung() {
           </div>
         )}
 
-        {/* Noch zu entscheiden */}
-        {gruppiert.ohne.length > 0 && (
-          <Block titel="Braucht eine Entscheidung" farbe={C.offen}>
-            {gruppiert.ohne.map(b => (
-              <Zeile key={b.id} beleg={b} onPosition={setzePosition}
-                     aktiv={b.id === gewaehlt} onWaehlen={setGewaehlt} />
+        {/* Warteschlange – von hier wird gezogen */}
+        {warteschlange.length > 0 && (
+          <Block titel={`Zu entscheiden · ${warteschlange.length}`} farbe={C.offen}>
+            {warteschlange.map(b => (
+              <Zeile key={b.id} beleg={b} aktiv={b.id === gewaehlt} onWaehlen={setGewaehlt}
+                     onDragStart={zieheAn(b.id)} onDragEnd={zieheAus} zieht={zieht === b.id} />
             ))}
           </Block>
         )}
 
-        {/* In der Reihenfolge der Erklärung */}
-        {SEITEN.map(g => {
-          const arr = gruppiert.nachSeite.get(g.seite);
-          if (!arr?.length) return null;
+        {/* Der Katalog ist die Ablage: jede Position ein Stapel */}
+        {seitenGruppen.map(([seite, positionen]) => {
+          const belegt = positionen.filter(p => proPosition.get(p.id)?.length);
+          // Leere Positionen nur zeigen, solange gezogen wird – sonst wäre die
+          // Seite eine Wand aus 41 leeren Zeilen.
+          const sichtbar = zieht ? positionen : belegt;
+          if (!sichtbar.length) return null;
           return (
-            <Block key={g.id} titel={`Seite ${g.seite} · ${g.label}`} farbe={C.accent}>
-              {arr.map(b => <Zeile key={b.id} beleg={b} onPosition={setzePosition}
-                                   aktiv={b.id === gewaehlt} onWaehlen={setGewaehlt} />)}
+            <Block key={seite} titel={`Seite ${seite} · ${seitenName(seite)}`} farbe={C.accent}>
+              {sichtbar.map(p => (
+                <Ablage key={p.id} position={p} belege={proPosition.get(p.id) || []}
+                        aktivZiel={ueberZiel === p.id} zieht={!!zieht}
+                        gewaehlt={gewaehlt} onWaehlen={setGewaehlt}
+                        onDragStart={zieheAn} onDragEnd={zieheAus} {...zielProps(p.id)} />
+              ))}
             </Block>
           );
         })}
@@ -346,6 +384,57 @@ function Vorschau({ beleg }) {
   );
 }
 
+function seitenName(seite) {
+  if (seite === 99) return 'Nicht zur Steuererklärung';
+  return GRUPPEN.find(g => g.seite === seite)?.label || '';
+}
+
+/**
+ * Eine Position als Ablagestelle. Belege werden daraufgezogen, statt aus
+ * einer Liste mit 41 Einträgen gesucht zu werden – das entspricht dem, was
+ * man auf dem Tisch macht: Blatt auf den richtigen Stapel legen.
+ */
+function Ablage({ position: p, belege, aktivZiel, zieht, gewaehlt, onWaehlen,
+                  onDragStart, onDragEnd, ...zielProps }) {
+  const leer = belege.length === 0;
+  return (
+    <div {...zielProps} style={{
+      borderBottom: `1px solid ${C.pageBg}`,
+      backgroundColor: aktivZiel ? C.accentBg : 'transparent',
+      outline: aktivZiel ? `2px dashed ${C.accent}` : 'none',
+      outlineOffset: -2,
+      opacity: leer && zieht ? 0.55 : 1,
+    }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px',
+        fontSize: 11, color: leer ? C.muted : C.sub, fontWeight: leer ? 400 : 600,
+      }}>
+        <span>{p.label}</span>
+        {p.dimensionen && (
+          <span style={{ color: C.muted, fontWeight: 400 }}>
+            · {p.dimensionen.map(d => DIMENSIONEN[d]).join(' + ')}
+          </span>
+        )}
+        {!leer && (
+          <span style={{ marginLeft: 'auto', color: C.accent }}>{belege.length}</span>
+        )}
+      </div>
+
+      {belege.map(b => (
+        <Zeile key={b.id} beleg={b} imStapel
+               aktiv={b.id === gewaehlt} onWaehlen={onWaehlen}
+               onDragStart={onDragStart(b.id)} onDragEnd={onDragEnd} />
+      ))}
+
+      {leer && zieht && (
+        <div style={{ padding: '2px 12px 8px 12px', fontSize: 10, color: C.muted }}>
+          hierher ziehen
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Block({ titel, farbe, children }) {
   return (
     <div style={{ marginBottom: 16 }}>
@@ -362,19 +451,26 @@ function Block({ titel, farbe, children }) {
   );
 }
 
-function Zeile({ beleg: b, onPosition, aktiv, onWaehlen }) {
+function Zeile({ beleg: b, aktiv, onWaehlen, onDragStart, onDragEnd, zieht, imStapel }) {
   const laden = b.stand !== 'fertig' && b.stand !== 'fehler';
   const pos = b.position ? KATALOG_NACH_ID[b.position] : null;
   const dims = offeneDimensionen(pos ? [pos] : b.vorschlag || []);
+  const ziehbar = !laden && b.stand !== 'fehler';
 
   return (
     <div
+      draggable={ziehbar}
+      onDragStart={ziehbar ? onDragStart : undefined}
+      onDragEnd={onDragEnd}
       onClick={() => onWaehlen?.(b.id)}
       style={{
-        display: 'flex', alignItems: 'flex-start', gap: 10, padding: '9px 12px',
-        borderBottom: `1px solid ${C.pageBg}`, fontSize: 12, cursor: 'pointer',
+        display: 'flex', alignItems: 'flex-start', gap: 10,
+        padding: imStapel ? '6px 12px 8px 22px' : '9px 12px',
+        borderBottom: imStapel ? 'none' : `1px solid ${C.pageBg}`,
+        fontSize: 12, cursor: ziehbar ? 'grab' : 'pointer',
         backgroundColor: aktiv ? C.accentBg : 'transparent',
         borderLeft: `3px solid ${aktiv ? C.accent : 'transparent'}`,
+        opacity: zieht ? 0.4 : 1,
       }}>
       <div style={{ paddingTop: 2 }}>
         {laden      ? <Loader2 size={14} className="animate-spin" style={{ color: C.muted }} />
@@ -440,21 +536,8 @@ function Zeile({ beleg: b, onPosition, aktiv, onWaehlen }) {
         )}
       </div>
 
-      {!laden && b.stand !== 'fehler' && (
-        <select
-          value={b.position || ''}
-          onClick={e => e.stopPropagation()}
-          onChange={e => onPosition(b.id, e.target.value)}
-          style={{
-            backgroundColor: C.inputBg, border: `1px solid ${C.panelBdr}`, borderRadius: 5,
-            padding: '3px 6px', fontSize: 11, color: C.heading, maxWidth: 260, flexShrink: 0,
-          }}
-        >
-          <option value="">— Position wählen —</option>
-          {[...KATALOG, AUSSORTIERT].map(p => (
-            <option key={p.id} value={p.id}>S{p.seite} · {p.label}</option>
-          ))}
-        </select>
+      {ziehbar && (
+        <GripVertical size={13} style={{ color: C.muted, flexShrink: 0, marginTop: 2 }} />
       )}
     </div>
   );
