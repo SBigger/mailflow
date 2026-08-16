@@ -306,8 +306,14 @@ export default function Belegsortierung() {
   });
 
   return (
-    <div style={{ backgroundColor: C.pageBg, minHeight: '100%', padding: 20 }}>
-      <div style={{ maxWidth: 1600, margin: '0 auto' }}>
+    <div style={{
+      backgroundColor: C.pageBg, height: '100%', padding: 20, boxSizing: 'border-box',
+      display: 'flex', flexDirection: 'column', overflow: 'hidden',
+    }}>
+      <div style={{
+        maxWidth: 1600, margin: '0 auto', width: '100%',
+        display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0,
+      }}>
 
         <h1 style={{ fontSize: 20, fontWeight: 700, color: C.heading, marginBottom: 4 }}>
           Belegsortierung – natürliche Personen
@@ -412,9 +418,9 @@ export default function Belegsortierung() {
           )}
         </div>
 
-        <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
-          {/* ── links: Liste ── */}
-          <div style={{ flex: '1 1 0', minWidth: 0 }}>
+        <div style={{ display: 'flex', gap: 16, flex: 1, minHeight: 0 }}>
+          {/* ── links: Liste, scrollt fuer sich ── */}
+          <div style={{ flex: '1 1 0', minWidth: 0, overflowY: 'auto', paddingRight: 4 }}>
 
         {/* Ablagefläche */}
         <div
@@ -527,7 +533,6 @@ export default function Belegsortierung() {
             style={{
               alignSelf: 'stretch', width: 10, flexShrink: 0, cursor: 'col-resize',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              position: 'sticky', top: 16, height: 'calc(100vh - 150px)',
             }}
           >
             <div style={{
@@ -555,8 +560,7 @@ export default function Belegsortierung() {
  */
 function Vorschau({ beleg, breite }) {
   const rahmen = {
-    width: breite, flexShrink: 0, position: 'sticky', top: 16,
-    height: 'calc(100vh - 150px)', backgroundColor: C.panelBg,
+    width: breite, flexShrink: 0, height: '100%', backgroundColor: C.panelBg,
     border: `1px solid ${C.panelBdr}`, borderRadius: 8,
     display: 'flex', flexDirection: 'column', overflow: 'hidden',
   };
