@@ -3,7 +3,10 @@
 #  Installiert (falls nicht vorhanden):
 #    - Python 3.x
 #    - Ollama (lokale KI-Engine, laeuft komplett offline)
-#    - ein kleines Sprachmodell (llama3.2, ca. 2 GB)
+#    - llama3.2 (ca. 2 GB) - kleines Modell fuer allgemeinen Chat
+#    - qwen2.5:7b (ca. 4,7 GB) - staerker bei Deutsch/mehrsprachigem
+#      Text und beim strukturierten Auslesen von Texten (z.B. Belege),
+#      zum lokalen Testen/Ausprobieren
 #  Nutzt winget (Windows Paketmanager, bei Windows 10/11 meist
 #  schon vorhanden ueber "App Installer" aus dem Microsoft Store).
 # ============================================================
@@ -62,6 +65,18 @@ if (Test-Command "ollama") {
     Write-Host "    ollama pull llama3.2"
 }
 
+Write-Step "Lade zweites Modell herunter (qwen2.5:7b, ca. 4,7 GB, einmalig)..."
+Write-Host "Staerker bei Deutsch/mehrsprachigem Text und strukturiertem Auslesen"
+Write-Host "(z.B. Belege/Rechnungen) - zum lokalen Testen."
+if (Test-Command "ollama") {
+    ollama pull qwen2.5:7b
+} else {
+    Write-Host "HINWEIS: 'ollama' ist in diesem Fenster noch nicht bekannt (PATH wird erst"
+    Write-Host "nach einem Neustart des Terminals aktualisiert)."
+    Write-Host "Bitte dieses Fenster schliessen, ein NEUES Terminal oeffnen und ausfuehren:"
+    Write-Host "    ollama pull qwen2.5:7b"
+}
+
 Write-Host ""
 Write-Host "===================================================="
 Write-Host " Fertig!"
@@ -69,6 +84,7 @@ Write-Host "===================================================="
 Write-Host ""
 Write-Host "KI direkt im Terminal ausprobieren:"
 Write-Host "    ollama run llama3.2"
+Write-Host "    ollama run qwen2.5:7b"
 Write-Host ""
 Write-Host "KI aus Python ansprechen: siehe beispiel_chat.py in diesem Ordner"
 Write-Host "    python beispiel_chat.py"
