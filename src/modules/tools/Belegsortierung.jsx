@@ -165,21 +165,31 @@ export default function Belegsortierung() {
     const liste = Array.from(dateien).filter(f => /\.(pdf|png|jpe?g)$/i.test(f.name));
     if (!liste.length) return;
     setLaeuft(true);
+
     const bekannteHashes = belege.map(b => b.hash).filter(Boolean);
+    const kontextBasis = {
+      katalog: katalogFuerPrompt(),
+      belegarten: BELEGARTEN.map(b => `${b.key} = ${b.label}`).join('\n'),
+    };
 
-    for (const datei of liste) {
-      const id = `${datei.name}-${datei.size}-${Date.now()}`;
-      const url = URL.createObjectURL(datei);
-      setBelege(v => [...v, {
-        id, name: datei.name, stand: 'liest', groesse: datei.size, url, datei,
-        istPdf: /\.pdf$/i.test(datei.name),
-      }]);
-      setGewaehlt(g => g ?? id);
+    // Alle Belege sofort anlegen, damit die Liste gleich steht und man
+    // waehrend der Erkennung schon blaettern kann.
+    const eintraege = liste.map(datei => ({
+      datei,
+      id: `${datei.name}-${datei.size}-${Math.random().toString(36).slice(2, 8)}`,
+      url: URL.createObjectURL(datei),
+    }));
+    setBelege(v => [...v, ...eintraege.map(e => ({
+      id: e.id, name: e.datei.name, stand: 'wartet', groesse: e.datei.size,
+      url: e.url, datei: e.datei, istPdf: /\.pdf$/i.test(e.datei.name),
+    }))]);
+    setGewaehlt(g => g ?? eintraege[0].id);
 
+    const einen = async ({ datei, id, url }) => {
       try {
         const hash = await dateiHash(datei);
 
-        // Schon einmal einsortiert? Datei nur anhängen — OCR und KI kosten
+        // Schon einmal einsortiert? Datei nur anhaengen — OCR und KI kosten
         // Minuten, der Hash kostet nichts.
         const bekannt = belegeRef.current.find(b => b.hash === hash && b.ohneDatei);
         if (bekannt) {
@@ -187,20 +197,20 @@ export default function Belegsortierung() {
             ? { ...b, datei, url, istPdf: /\.pdf$/i.test(datei.name),
                 ohneDatei: false, name: datei.name, stand: 'fertig' }
             : b));
-          setGewaehlt(g => (g === id ? bekannt.id : g));
-          continue;
+          return;
         }
 
+        setBelege(v => v.map(b => b.id === id ? { ...b, stand: 'liest' } : b));
+        // Zwei Seiten reichen fuer die Zuordnung: die Belegart steht im
+        // Briefkopf. Fuenf Seiten je Beleg waren der Hauptgrund fuer die
+        // lange Wartezeit.
         const text = await extractDocumentText(datei, {
-          onStage: s => setBelege(v => v.map(b => b.id === id ? { ...b, stand: s } : b)),
+          maxOcrPages: 2,
+          onStage: st => setBelege(v => v.map(b => b.id === id ? { ...b, stand: st } : b)),
         });
 
         const eingang = { text, dateiname: datei.name, parseMethode: 'ocr', dateiHash: hash };
-        const kontext = {
-          bekannteHashes,
-          katalog: katalogFuerPrompt(),
-          belegarten: BELEGARTEN.map(b => `${b.key} = ${b.label}`).join('\n'),
-        };
+        const kontext = { ...kontextBasis, bekannteHashes };
 
         let tri = triageRegeln(eingang, kontext);
         if (kiNutzen && brauchtKi(tri)) {
@@ -210,8 +220,9 @@ export default function Belegsortierung() {
         bekannteHashes.push(hash);
 
         const zuord = tri.belegart ? positionenFuer(tri.belegart) : { positionen: [], offen: true };
-        const kiPos = (tri.positionen || []).map(p => KATALOG_NACH_ID[p]).filter(Boolean);
+        const kiPos = (tri.positionen || []).map(x => KATALOG_NACH_ID[x]).filter(Boolean);
         const vorschlag = kiPos.length ? kiPos : (zuord.positionen || []);
+        const position = vorschlag.length === 1 ? vorschlag[0].id : null;
 
         setBelege(v => v.map(b => b.id === id ? {
           ...b, stand: 'fertig', hash, text,
@@ -220,16 +231,27 @@ export default function Belegsortierung() {
           vorschlag, kandidaten: zuord.kandidaten || [],
           offenGrund: kiPos.length ? null : (zuord.offen ? zuord.grund : null),
           hinweis: zuord.hinweis || null,
-          position: vorschlag.length === 1 ? vorschlag[0].id : null,
+          position,
           ahv: findAhvInText(text),
           jahr: tri.periodeBeleg ?? null,
-          ...betragFuer(vorschlag.length === 1 ? vorschlag[0].id : null, text),
+          ...betragFuer(position, text),
         } : b));
       } catch (e) {
         setBelege(v => v.map(b => b.id === id
           ? { ...b, stand: 'fehler', fehler: e.message || String(e) } : b));
       }
-    }
+    };
+
+    // Muster aus der Massenablage: erste Datei allein — sie laedt die
+    // OCR-Arbeiter und waermt den Prompt-Zwischenspeicher. Der Rest laeuft
+    // zu dritt, so wie dort.
+    await einen(eintraege[0]);
+    const rest = eintraege.slice(1);
+    let naechster = 0;
+    await Promise.all(Array.from({ length: Math.min(3, rest.length) }, async () => {
+      while (naechster < rest.length) await einen(rest[naechster++]);
+    }));
+
     setLaeuft(false);
   }
 
@@ -915,6 +937,7 @@ function Hinweis({ farbe, children }) {
 }
 
 function standText(stand) {
+  if (stand === 'wartet') return 'wartet …';
   if (stand === 'liest') return 'wird gelesen …';
   if (stand === 'ocr')   return 'Scan erkannt – OCR läuft, das dauert';
   if (stand === 'pdf')   return 'PDF-Text wird gelesen …';

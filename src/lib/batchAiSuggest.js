@@ -47,42 +47,53 @@ sichereWorker();
 // OCR (Tesseract.js) – lazy load, damit initialer Bundle-Size klein bleibt
 // ══════════════════════════════════════════════════════════════════════
 
-let _ocrWorker = null;
-let _ocrWorkerPromise = null;
+let _ocrPool = null;
+let _ocrPoolPromise = null;
 
-async function getOcrWorker() {
-  if (_ocrWorker) return _ocrWorker;
-  if (_ocrWorkerPromise) return _ocrWorkerPromise;
+/**
+ * Mehrere OCR-Arbeiter statt einem.
+ *
+ * Vorher lief alles ueber einen einzigen Worker: mehrere Dateien gleichzeitig
+ * zu verarbeiten brachte nichts, weil sie sich dort ohnehin anstellten. Bei
+ * einem Stapel gescannter Belege ist die OCR der Engpass, nicht alles andere.
+ *
+ * Anzahl richtet sich nach den Kernen, gedeckelt auf 4 — jeder Arbeiter haelt
+ * sein eigenes Sprachmodell im Speicher (rund 20 MB), und mehr als vier
+ * bringen auf einem Buero-Rechner nichts mehr.
+ */
+async function getOcrScheduler() {
+  if (_ocrPool) return _ocrPool;
+  if (_ocrPoolPromise) return _ocrPoolPromise;
 
-  _ocrWorkerPromise = (async () => {
-    const { createWorker } = await import("tesseract.js");
-    console.info("[OCR] Lade Tesseract (deu+eng)…");
-    const worker = await createWorker(["deu", "eng"], 1, {
-      logger: m => {
-        if (m.status === "recognizing text") return;
-        console.debug("[OCR]", m.status, m.progress ? Math.round(m.progress*100)+"%" : "");
-      },
-    });
+  _ocrPoolPromise = (async () => {
+    const { createWorker, createScheduler } = await import("tesseract.js");
+    const anzahl = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 4) - 1));
+    console.info(`[OCR] Lade Tesseract (deu+eng), ${anzahl} Arbeiter…`);
+    const scheduler = createScheduler();
+    await Promise.all(Array.from({ length: anzahl }, async () => {
+      const w = await createWorker(["deu", "eng"], 1);
+      scheduler.addWorker(w);
+    }));
     console.info("[OCR] Bereit");
-    _ocrWorker = worker;
-    return worker;
+    _ocrPool = scheduler;
+    return scheduler;
   })();
 
-  return _ocrWorkerPromise;
+  return _ocrPoolPromise;
 }
 
 /** Freigabe des OCR-Workers (z. B. beim Schließen des Dialogs) */
 export async function terminateOcr() {
   try {
-    if (_ocrWorker) await _ocrWorker.terminate();
+    if (_ocrPool) await _ocrPool.terminate();
   } catch {}
-  _ocrWorker = null;
-  _ocrWorkerPromise = null;
+  _ocrPool = null;
+  _ocrPoolPromise = null;
 }
 
 async function ocrBlob(blobOrCanvas) {
-  const worker = await getOcrWorker();
-  const { data } = await worker.recognize(blobOrCanvas);
+  const scheduler = await getOcrScheduler();
+  const { data } = await scheduler.addJob("recognize", blobOrCanvas);
   return (data?.text || "").trim();
 }
 
@@ -159,7 +170,7 @@ async function ocrPdfPages(pdf, maxPages = 5) {
  * Fallback auf OCR für Bilder und gescannte PDFs.
  * Max. 100'000 Zeichen Ergebnis.
  */
-export async function extractDocumentText(file, { onStage } = {}) {
+export async function extractDocumentText(file, { onStage, maxOcrPages = 5 } = {}) {
   if (!file) return "";
   const name = (file.name || "").toLowerCase();
   const type = file.type || "";
@@ -183,7 +194,7 @@ export async function extractDocumentText(file, { onStage } = {}) {
         console.info("[BatchUpload] PDF enthält wenig Text → OCR-Fallback", file.name);
         report("ocr", "Gescanntes PDF → OCR läuft…");
         try {
-          const ocrText = await ocrPdfPages(pdf, 5);
+          const ocrText = await ocrPdfPages(pdf, maxOcrPages);
           if (ocrText.length > text.length) text = ocrText;
           report("ocr-done", `OCR fertig (${text.length} Zeichen)`);
         } catch (e) {
