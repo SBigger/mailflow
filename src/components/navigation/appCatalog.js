@@ -46,6 +46,7 @@ import {
   PhoneCall,
   Users,
   ShieldCheck,
+  FileStack,
 } from "lucide-react";
 import { createPageUrl } from "@/utils";
 import { FEATURE_LEISTUNGSERFASSUNG } from "@/lib/featureFlags";
@@ -97,6 +98,7 @@ export const NAV_GROUPS = [
   {
     id: 'steuern', label: 'Steuern', color: '#c25b5b', items: [
       { name: 'Steuern', label: 'Steuererklärungen', icon: Percent, color: '#c25b5b', aliases: ['ste', 'steuern', 'taxes'] },
+      { name: 'Belegsortierung', label: 'Belegsortierung', icon: FileStack, color: '#c25b5b', aliases: ['belege', 'sortieren', 'schuhkarton', 'stapel'] },
       { name: 'Veranlagungen', label: 'Veranlagungen', icon: FileCheck, color: '#d67f3c', aliases: ['veranlagung', 'einschätzung'] },
       { name: 'Steuerausscheidung', label: 'Steuerausscheidung', icon: Scale, color: '#9c5bc2', aliases: ['ausscheidung', 'interkantonal'] },
     ],
