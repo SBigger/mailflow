@@ -32,13 +32,33 @@ import { KATALOG, KATALOG_NACH_ID, GRUPPEN, AUSSORTIERT, DIMENSIONEN, katalogFue
   from '../../forms/steuer_np_katalog.js';
 import { baueBeilagenBundle } from '../../lib/steuerBelege/beilagenBundle.js';
 import { belegsortierung as db } from '../../api/belegsortierung.js';
+import { useTheme } from '../../components/useTheme.jsx';
+import { chartisTheme, SEM } from '../../lib/chartisTheme.js';
 
-const C = {
-  pageBg:  '#f2f5f2', panelBg: '#ffffff', panelBdr: '#ccd8cc',
-  heading: '#1a3a1a', sub:     '#4a6a4a', accent:   '#5b8a5b',
-  accentBg:'#eef5ee', muted:   '#9ca3af', rowHov:   '#f0f5f0',
-  inputBg: '#f8faf8', warn:    '#c2833c', offen:    '#7a7a9c',
-};
+// Farben kommen aus dem gewaehlten Theme (artis / light / dark), nicht aus
+// festen Werten – sonst bliebe das Modul in der dunklen Ansicht hellgruen.
+// Die beiden Warnfarben sind bewusst themeunabhaengig: sie muessen auf allen
+// drei Untergruenden gleich deutlich sein.
+function useFarben() {
+  const { theme } = useTheme();
+  return useMemo(() => {
+    const t = chartisTheme(theme);
+    return {
+      pageBg:   t.sunken,
+      panelBg:  t.raised,
+      panelBdr: t.borderSubtle,
+      heading:  t.textPrimary,
+      sub:      t.textSecondary,
+      muted:    t.textMuted,
+      accent:   t.accent,
+      accentBg: t.accentSoft,
+      rowHov:   t.activeRow,
+      inputBg:  t.base,
+      warn:     SEM.away,        // fachlich zu pruefen
+      offen:    t.accentFill,    // Entscheidung noetig
+    };
+  }, [theme]);
+}
 
 const VORSCHAU_KEY = 'belegsortierung-vorschau-breite';
 const VORSCHAU_MIN = 340, VORSCHAU_MAX = 1100;
@@ -66,6 +86,7 @@ const chf = n => (n || n === 0)
   : '—';
 
 export default function Belegsortierung() {
+  const C = useFarben();
   const [belege, setBelege]         = useState([]);
   const [laeuft, setLaeuft]         = useState(false);
   const [ueber, setUeber]           = useState(false);
@@ -385,11 +406,11 @@ export default function Belegsortierung() {
 
         <div style={{ padding: 10, borderTop: `1px solid ${C.pageBg}`, display: 'grid', gap: 6 }}>
           <button onClick={speichern} disabled={!kunde || speichert || !belege.length}
-            style={knopf(kunde && belege.length, C.accent)}>
+            style={knopf(C, kunde && belege.length, C.accent)}>
             <Save size={12} /> {speichert ? 'speichert …' : 'Speichern'}
           </button>
           <button onClick={bundelHerunterladen} disabled={baut || !belege.some(b => b.position)}
-            style={knopf(belege.some(b => b.position), C.heading)}>
+            style={knopf(C, belege.some(b => b.position), C.heading)}>
             <Download size={12} /> {baut ? 'wird gebaut …' : 'Bündel als PDF'}
           </button>
           {gespeichertUm && (
@@ -427,7 +448,7 @@ export default function Belegsortierung() {
               </div>
             </div>
             <button onClick={() => eingabe.current?.click()}
-              style={{ ...knopf(true, C.accent), width: 'auto', padding: '6px 12px' }}>
+              style={{ ...knopf(C, true, C.accent), width: 'auto', padding: '6px 12px' }}>
               <Upload size={12} /> Belege hinzufügen
             </button>
             <label style={{ display: 'flex', alignItems: 'center', gap: 5,
@@ -557,7 +578,7 @@ export default function Belegsortierung() {
 
 // ══════════════════════════════════════════════════════════════════════════
 
-function knopf(aktiv, farbe) {
+function knopf(C, aktiv, farbe) {
   return {
     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
     width: '100%', fontSize: 11, fontWeight: 600,
@@ -577,6 +598,7 @@ function abschnittName(seite) {
 }
 
 function NavEintrag({ nummer, label, unter, anzahl, betrag, aktiv, farbe, onClick }) {
+  const C = useFarben();
   return (
     <div onClick={onClick} style={{
       display: 'flex', alignItems: 'center', gap: 9, padding: '7px 6px',
@@ -607,6 +629,7 @@ function NavEintrag({ nummer, label, unter, anzahl, betrag, aktiv, farbe, onClic
 }
 
 function BelegKarte({ beleg: b, aktiv, onWaehlen, onDragStart, onDragEnd, zieht }) {
+  const C = useFarben();
   const laden = b.stand !== 'fertig' && b.stand !== 'fehler';
   const kuerzel = (BELEGART_BY_KEY[b.belegart]?.label || b.name || '??')
     .replace(/[^A-Za-zÄÖÜäöü]/g, '').slice(0, 2).toUpperCase();
@@ -674,6 +697,7 @@ function BelegKarte({ beleg: b, aktiv, onWaehlen, onDragStart, onDragEnd, zieht 
  * selten die, an der man entscheidet.
  */
 function Vorschau({ beleg: b, breite, onAendern, onPosition }) {
+  const C = useFarben();
   const rahmen = {
     width: breite, flexShrink: 0, height: '100%', backgroundColor: C.panelBg,
     borderLeft: `1px solid ${C.panelBdr}`,
@@ -742,17 +766,17 @@ function Vorschau({ beleg: b, breite, onAendern, onPosition }) {
 
         <div style={{ display: 'grid', gap: 8 }}>
           <div>
-            <div style={etikett}>Betrag CHF</div>
+            <div style={etikett(C)}>Betrag CHF</div>
             <input type="number" value={b.betrag ?? ''} placeholder="noch nicht ausgelesen"
               onChange={e => onAendern(b.id, { betrag: e.target.value })} style={feld} />
           </div>
           <div>
-            <div style={etikett}>Steuerjahr</div>
+            <div style={etikett(C)}>Steuerjahr</div>
             <input value={b.jahr ?? ''} onChange={e => onAendern(b.id, { jahr: e.target.value })}
               style={feld} />
           </div>
           <div>
-            <div style={etikett}>Zuordnung</div>
+            <div style={etikett(C)}>Zuordnung</div>
             <select value={b.position || ''} onChange={e => onPosition(b.id, e.target.value)}
               style={feld}>
               <option value="">— noch offen —</option>
@@ -791,9 +815,10 @@ function Vorschau({ beleg: b, breite, onAendern, onPosition }) {
   );
 }
 
-const etikett = { fontSize: 10, color: C.sub, marginBottom: 3 };
+const etikett = C => ({ fontSize: 10, color: C.sub, marginBottom: 3 });
 
 function Hinweis({ farbe, children }) {
+  const C = useFarben();
   return (
     <div style={{ fontSize: 10, color: farbe, marginTop: 6,
                   display: 'flex', gap: 5, lineHeight: 1.5 }}>
