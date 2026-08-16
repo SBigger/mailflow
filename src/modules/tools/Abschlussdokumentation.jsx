@@ -1333,17 +1333,31 @@ function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = 
 
   // ── Excel-Datei laden → Sheet-Picker wenn mehrere Blätter ───────────────
   async function loadExcel(file) {
-    const data = new Uint8Array(await file.arrayBuffer());
-    const XLSX = await import('xlsx');
-    const wb = XLSX.read(data, { type: "array" });
-    if (wb.SheetNames.length === 1) {
-      // Nur ein Blatt → direkt parsen
-      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: "" });
-      processRows(rows, file.name);
-    } else {
-      // Mehrere Blätter → Sheet-Picker zeigen
-      setSheetPicker({ wb, filename: file.name, sheetNames: wb.SheetNames });
-      setSelectedSheets(wb.SheetNames); // alle vorselektiert
+    try {
+      const data = new Uint8Array(await file.arrayBuffer());
+      const XLSX = await import('xlsx');
+      const wb = XLSX.read(data, { type: "array" });
+      // Nur Blätter mit tatsächlichem Inhalt berücksichtigen (leere Blätter
+      // sind ein häufiger Grund für "es passiert nichts").
+      const nonEmpty = wb.SheetNames.filter(n => {
+        const r = XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, defval: "" });
+        return r.length >= 2 && r.some(row => Array.isArray(row) && row.some(c => String(c).trim()));
+      });
+      if (nonEmpty.length === 0) {
+        toast.error("Excel-Datei enthält keine lesbaren Daten (leere Blätter oder unerwartetes Format).");
+        return;
+      }
+      if (nonEmpty.length === 1) {
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[nonEmpty[0]], { header: 1, defval: "" });
+        processRows(rows, file.name);
+      } else {
+        // Mehrere Blätter mit Inhalt → Sheet-Picker zeigen
+        setSheetPicker({ wb, filename: file.name, sheetNames: nonEmpty });
+        setSelectedSheets(nonEmpty); // alle vorselektiert
+      }
+    } catch (e) {
+      console.error("[Excel-Import]", e);
+      toast.error("Excel konnte nicht gelesen werden: " + (e?.message || String(e)));
     }
   }
 
@@ -1382,6 +1396,9 @@ function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = 
       // CSV – Zeichensatz automatisch erkennen (UTF-8 / Windows-1252), quote-sicher parsen
       readTextSmart(file).then(text => {
         processRows(parseCsvText(text), file.name);
+      }).catch(e => {
+        console.error("[CSV-Import]", e);
+        toast.error("Datei konnte nicht gelesen werden: " + (e?.message || String(e)));
       });
     }
   }
@@ -1432,12 +1449,18 @@ function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = 
     let header = null;
     let allData = [];
     const names = [];
-    for (const f of files) {
-      const rows = await readFileRows(f);
-      if (rows.length < 2) continue;
-      names.push(f.name);
-      if (!header) header = rows[0].map(String);
-      allData = [...allData, ...rows.slice(1)];
+    try {
+      for (const f of files) {
+        const rows = await readFileRows(f);
+        if (rows.length < 2) continue;
+        names.push(f.name);
+        if (!header) header = rows[0].map(String);
+        allData = [...allData, ...rows.slice(1)];
+      }
+    } catch (e) {
+      console.error("[Import mehrere Dateien]", e);
+      toast.error("Datei konnte nicht gelesen werden: " + (e?.message || String(e)));
+      return;
     }
     if (!header || allData.length === 0) { toast.error("Keine Daten in den Dateien gefunden"); return; }
     // Duplikate (gleiche Kontonummer) deduplizieren – erstes Vorkommen gewinnt
