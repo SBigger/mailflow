@@ -20,9 +20,28 @@ import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.js?url";
 import { supabase } from "@/api/supabaseClient";
 // pdfjs-dist 3.11 ist UMD → je nach Vite-Mode ist der Namespace `{default: {...}}` oder direkt {...}
 const pdfjsLib = (_pdfjsNs && typeof _pdfjsNs.getDocument === "function") ? _pdfjsNs : (_pdfjsNs?.default || _pdfjsNs);
-if (pdfjsLib?.GlobalWorkerOptions) {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
+
+/**
+ * Setzt den pdfjs-Worker – und zwar VOR jeder Benutzung, nicht nur einmal beim
+ * Laden des Moduls.
+ *
+ * `GlobalWorkerOptions.workerSrc` ist global, und im Projekt setzen ihn ein
+ * gutes Dutzend Stellen auf drei verschiedene Worker-Dateien. Wer zuletzt
+ * geladen wird, gewinnt. Redet pdfjs dann mit dem Worker einer anderen
+ * Übersetzung, überlebt das Lesen des Textes zwar noch, aber
+ * `page.render()` auf ein Canvas bleibt für immer stehen — ohne Fehler, ohne
+ * Zeitüberschreitung. Genau daran hing die OCR-Erkennung: getDocument lief in
+ * 191 ms durch, render danach 20 Sekunden ohne Antwort.
+ *
+ * Richtig behoben wäre das mit EINER zentralen Stelle für den Worker; bis
+ * dahin stellen wir ihn hier unmittelbar vor dem Gebrauch wieder richtig.
+ */
+function sichereWorker() {
+  if (pdfjsLib?.GlobalWorkerOptions && pdfjsLib.GlobalWorkerOptions.workerSrc !== pdfjsWorker) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
+  }
 }
+sichereWorker();
 
 // ══════════════════════════════════════════════════════════════════════
 // OCR (Tesseract.js) – lazy load, damit initialer Bundle-Size klein bleibt
@@ -74,6 +93,7 @@ async function ocrBlob(blobOrCanvas) {
 export async function pdfPagesToImages(file, maxPages = 2) {
   try {
     const buf = await file.arrayBuffer();
+    sichereWorker();
     const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
     const out = [];
     const pages = Math.min(pdf.numPages, maxPages);
@@ -148,6 +168,7 @@ export async function extractDocumentText(file, { onStage } = {}) {
     // ─── PDF ────────────────────────────────────────────────────────
     if (type === "application/pdf" || name.endsWith(".pdf")) {
       const buf = await file.arrayBuffer();
+      sichereWorker();
       const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
       let text = "";
       for (let i = 1; i <= Math.min(pdf.numPages, 20); i++) {
