@@ -252,6 +252,25 @@ export default function Belegsortierung() {
           // derselben Seite ≈ 0.84 Uebereinstimmung, verschiedene Belege ≤ 0.11.
           const doppel = findeDoppel({ text: teil.text },
             [...belegeRef.current, ...neueBelege].filter(b => b.text && b.stand !== 'fehler'));
+
+          // Gleicht der Teil einem GESPEICHERTEN Beleg ohne Datei, ist das
+          // kein Doppel, sondern der alte Stand, der seine Datei wiederkriegt:
+          // Datei anheften, Zuordnung und Beträge bleiben stehen. So heilt
+          // «einmal neu hineinziehen» auch getrennte Bündel, bei denen die
+          // Hash-Abkürzung oben nie greift.
+          const alterStand = doppel
+            && belegeRef.current.find(b => b.id === doppel.doppelVon && b.ohneDatei);
+          if (alterStand) {
+            setBelege(v => v.map(b => b.id === alterStand.id
+              ? { ...b, datei, url, istPdf: /\.pdf$/i.test(datei.name),
+                  ohneDatei: false, stand: 'fertig',
+                  vonSeite: teil.von, bisSeite: teil.bis,
+                  hash: `${hash}#${teil.von}-${teil.bis}`,
+                  dateiPfad: b.dateiPfad || dateiPfad }
+              : b));
+            continue;
+          }
+
           if (doppel) {
             neueBelege.push({
               id: `${id}#${teil.von}`, name: teilName, stand: 'fertig',
