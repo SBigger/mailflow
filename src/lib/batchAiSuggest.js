@@ -43,6 +43,41 @@ function sichereWorker() {
 }
 sichereWorker();
 
+/**
+ * Eigener, fest gepaarter PDF-Worker fuer diese Pipeline.
+ *
+ * sichereWorker() reichte nicht: GlobalWorkerOptions ist global, andere Module
+ * stellen es um, und nach einem Deployment kann der Service-Worker eine Seite
+ * aus ZWEI Builds mischen -- dann passt gar kein global gesetzter Worker mehr
+ * zur Bibliothek. Live nachgestellt: mit dem einen Worker haengt page.render()
+ * endlos, mit dem anderen bricht es mit "WorkerMessageHandler undefined" ab.
+ *
+ * Deshalb bekommt getDocument hier einen EXPLIZITEN Worker, dessen URL aus
+ * demselben Chunk stammt wie die Bibliothek selbst -- damit sind beide immer
+ * aus demselben Build, egal was der Rest der Seite tut.
+ */
+let _pdfWorker = null;
+function eigenerPdfWorker() {
+  if (_pdfWorker && !_pdfWorker.destroyed) return _pdfWorker;
+  try {
+    _pdfWorker = new pdfjsLib.PDFWorker({ port: new Worker(pdfjsWorker) });
+    return _pdfWorker;
+  } catch (e) {
+    console.warn("[PDF] Eigener Worker nicht moeglich, nutze global:", e?.message);
+    _pdfWorker = null;
+    return undefined;
+  }
+}
+
+/** page.render() darf NIE endlos haengen -- lieber ehrlich abbrechen. */
+function mitZeitschranke(promise, ms, was) {
+  return Promise.race([
+    promise,
+    new Promise((_, ablehnen) => setTimeout(
+      () => ablehnen(new Error(`${was} nach ${ms / 1000}s abgebrochen`)), ms)),
+  ]);
+}
+
 // ══════════════════════════════════════════════════════════════════════
 // OCR (Tesseract.js) – lazy load, damit initialer Bundle-Size klein bleibt
 // ══════════════════════════════════════════════════════════════════════
@@ -105,7 +140,7 @@ export async function pdfPagesToImages(file, maxPages = 2) {
   try {
     const buf = await file.arrayBuffer();
     sichereWorker();
-    const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+    const pdf = await pdfjsLib.getDocument({ data: buf, worker: eigenerPdfWorker() }).promise;
     const out = [];
     const pages = Math.min(pdf.numPages, maxPages);
     for (let i = 1; i <= pages; i++) {
@@ -191,7 +226,7 @@ export async function extractPageTexts(file, { maxPages = 40, onStage } = {}) {
 
   const buf = await file.arrayBuffer();
   sichereWorker();
-  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  const pdf = await pdfjsLib.getDocument({ data: buf, worker: eigenerPdfWorker() }).promise;
   const anzahl = Math.min(pdf.numPages, maxPages);
 
   // Zuerst die eingebettete Textebene versuchen – kostet fast nichts.
@@ -213,7 +248,9 @@ export async function extractPageTexts(file, { maxPages = 40, onStage } = {}) {
     const canvas = document.createElement("canvas");
     canvas.width = viewport.width;
     canvas.height = viewport.height;
-    await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+    await mitZeitschranke(
+      page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise,
+      25000, `Rendern Seite ${i}`);
     canvases.push(canvas);
   }
   return await Promise.all(canvases.map((c, i) =>
@@ -240,7 +277,7 @@ export async function extractDocumentText(file, { onStage, maxOcrPages = 5 } = {
     if (type === "application/pdf" || name.endsWith(".pdf")) {
       const buf = await file.arrayBuffer();
       sichereWorker();
-      const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+      const pdf = await pdfjsLib.getDocument({ data: buf, worker: eigenerPdfWorker() }).promise;
       let text = "";
       for (let i = 1; i <= Math.min(pdf.numPages, 20); i++) {
         const page = await pdf.getPage(i);
