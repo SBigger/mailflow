@@ -29,6 +29,17 @@ const C = {
   inputBg: '#f8faf8', warn:    '#c2833c', offen:    '#7a7a9c',
 };
 
+// Breite der Vorschau: als px in localStorage gemerkt, damit sie flexibel
+// bleibt (per Ziehen am Griff) statt bei jedem Neuladen auf 46% zurückzuspringen.
+const VORSCHAU_BREITE_KEY = 'belegsortierung-vorschau-breite';
+const VORSCHAU_BREITE_MIN = 340;
+const VORSCHAU_BREITE_MAX = 1100;
+function ladeVorschauBreite() {
+  const gespeichert = parseInt(localStorage.getItem(VORSCHAU_BREITE_KEY), 10);
+  if (!isNaN(gespeichert)) return Math.min(VORSCHAU_BREITE_MAX, Math.max(VORSCHAU_BREITE_MIN, gespeichert));
+  return Math.round(window.innerWidth * 0.42);
+}
+
 export default function Belegsortierung() {
   const [belege, setBelege] = useState([]);
   const [laeuft, setLaeuft] = useState(false);
@@ -37,7 +48,29 @@ export default function Belegsortierung() {
   const [kiNutzen, setKiNutzen] = useState(true);
   const [zieht, setZieht] = useState(null);      // id des Belegs, der gerade gezogen wird
   const [ueberZiel, setUeberZiel] = useState(null);
+  const [vorschauBreite, setVorschauBreite] = useState(ladeVorschauBreite);
+  const [ziehtGriff, setZiehtGriff] = useState(false);
   const eingabe = useRef(null);
+
+  // Griff zwischen Liste und Vorschau ziehen → Vorschau breiter/schmaler machen.
+  const griffZiehen = e => {
+    e.preventDefault();
+    setZiehtGriff(true);
+    const startX = e.clientX;
+    const startBreite = vorschauBreite;
+    const bewegen = me => {
+      const neu = startBreite - (me.clientX - startX); // Vorschau ist rechts: nach links ziehen = breiter
+      setVorschauBreite(Math.min(VORSCHAU_BREITE_MAX, Math.max(VORSCHAU_BREITE_MIN, neu)));
+    };
+    const loslassen = () => {
+      setZiehtGriff(false);
+      document.removeEventListener('mousemove', bewegen);
+      document.removeEventListener('mouseup', loslassen);
+      setVorschauBreite(b => { localStorage.setItem(VORSCHAU_BREITE_KEY, String(b)); return b; });
+    };
+    document.addEventListener('mousemove', bewegen);
+    document.addEventListener('mouseup', loslassen);
+  };
 
   async function verarbeite(dateien) {
     const liste = Array.from(dateien).filter(f => /\.(pdf|png|jpe?g)$/i.test(f.name));
@@ -326,8 +359,25 @@ export default function Belegsortierung() {
         })}
           </div>
 
+          {/* ── Griff: Vorschau breiter/schmaler ziehen ── */}
+          <div
+            onMouseDown={griffZiehen}
+            title="Ziehen zum Verbreitern/Verschmälern"
+            style={{
+              alignSelf: 'stretch', width: 10, flexShrink: 0, cursor: 'col-resize',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              position: 'sticky', top: 16, height: 'calc(100vh - 150px)',
+            }}
+          >
+            <div style={{
+              width: 4, height: '100%', borderRadius: 3,
+              backgroundColor: ziehtGriff ? C.accent : C.panelBdr,
+              transition: ziehtGriff ? 'none' : 'background-color .15s',
+            }} />
+          </div>
+
           {/* ── rechts: Vorschau ── */}
-          <Vorschau beleg={belege.find(b => b.id === gewaehlt)} />
+          <Vorschau beleg={belege.find(b => b.id === gewaehlt)} breite={vorschauBreite} />
         </div>
       </div>
     </div>
@@ -342,9 +392,9 @@ export default function Belegsortierung() {
  * 38-seitigen Umbaubuendel ist die erste Seite selten die, an der man
  * entscheidet.
  */
-function Vorschau({ beleg }) {
+function Vorschau({ beleg, breite }) {
   const rahmen = {
-    width: '46%', minWidth: 400, position: 'sticky', top: 16,
+    width: breite, flexShrink: 0, position: 'sticky', top: 16,
     height: 'calc(100vh - 150px)', backgroundColor: C.panelBg,
     border: `1px solid ${C.panelBdr}`, borderRadius: 8,
     display: 'flex', flexDirection: 'column', overflow: 'hidden',
