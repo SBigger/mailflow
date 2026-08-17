@@ -1,0 +1,15 @@
+{
+  "name": "smartis-telefonie-tray",
+  "version": "0.1.0",
+  "description": "Schlanke Tray-Huelle fuer smartis Telefonie -- zeigt eingehende Anrufe auch wenn eine andere App aktiv ist (Browser-Tabs koennen sich nicht selbst in den Vordergrund holen).",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron ."
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2",
+    "electron": "^33",
+    "ws": "^8.21.1"
+  }
+}

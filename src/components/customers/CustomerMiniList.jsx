@@ -13,6 +13,7 @@ export default function CustomerMiniList({
   selectedId,
   onSelect,
   personTypeFilter = "alle",
+  abcFilter = "alle",
 }) {
   const { theme } = useContext(ThemeContext);
   const isArtis = theme === "artis";
@@ -46,7 +47,7 @@ export default function CustomerMiniList({
   }, []);
 
   // Reset highlight when search/filter changes
-  useEffect(() => { setFocusedIdx(-1); }, [search, personTypeFilter]);
+  useEffect(() => { setFocusedIdx(-1); }, [search, personTypeFilter, abcFilter]);
 
   // Scroll highlighted item into view
   useEffect(() => {
@@ -63,7 +64,7 @@ export default function CustomerMiniList({
     if (personTypeFilter === "alle") return true;
     if (personTypeFilter === "privatperson") return c.person_type === "privatperson";
     return c.person_type === "unternehmen" || !c.person_type;
-  });
+  }).filter(c => abcFilter === "alle" || c.abc_klasse === abcFilter);
 
   const q = search.trim().toLowerCase();
   const searchFiltered = !q ? typeFiltered : typeFiltered.filter(c =>

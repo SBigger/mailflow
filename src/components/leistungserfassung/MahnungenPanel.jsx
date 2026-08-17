@@ -9,8 +9,8 @@ import React, { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
-  AlertTriangle, FileText, Send, CheckCircle2, X as XIcon,
-  ChevronUp, Plus, Calendar, FileDown, Mail,
+  AlertTriangle, FileText, Send, CheckCircle2,
+  ChevronUp, Plus, FileDown, Mail,
 } from 'lucide-react';
 import { leOverdueInvoices, leDunning, leCompany, leInvoice, sendInvoiceViaMs365 } from '@/lib/leApi';
 import { generateDunningPdf } from '@/lib/leDunningPdf';
@@ -18,13 +18,12 @@ import { triggerDownload } from '@/lib/leInvoicePdf';
 import {
   Card, Chip, IconBtn, Select, Field,
   PanelLoader, PanelError, PanelHeader, fmt,
-  artisBtn, artisPrimaryStyle, artisGhostStyle,
+  artisBtn, artisPrimaryStyle,
 } from './shared';
 
 // --- Konstanten ------------------------------------------------------------
 
 const DEFAULT_FEES = { 1: 20, 2: 30, 3: 50 };
-const DEFAULT_DAYS = { 1: 14, 2: 10, 3: 10 };
 
 const STATUS_TABS = [
   { key: '',          label: 'Alle' },
@@ -40,14 +39,6 @@ const STATUS_CHIP = {
   bezahlt:   { tone: 'green',   label: 'Bezahlt' },
   eskaliert: { tone: 'orange',  label: 'Eskaliert' },
   storniert: { tone: 'red',     label: 'Storniert' },
-};
-
-const todayIso = () => new Date().toISOString().slice(0, 10);
-
-const addDaysIso = (days) => {
-  const d = new Date();
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
 };
 
 const daysBetween = (fromIso, toIso = null) => {
@@ -195,36 +186,8 @@ function VorschlaegeTab() {
 
   const createMut = useMutation({
     mutationFn: async (rows) => {
-      const today = todayIso();
-      // Standard-Werte (CH); company-Settings könnten sie später übersteuern
-      const fees = DEFAULT_FEES;
-      const newDays = DEFAULT_DAYS;
-      let created = 0;
-      for (const inv of rows) {
-        const level = inv._recommended;
-        const fee = fees[level] ?? 0;
-        const newDue = addDaysIso(newDays[level] ?? 10);
-        // Offener Betrag = Total minus bereits Bezahltes (Teilzahlungen), nicht der Vollbetrag.
-        const outstanding = Math.max(0, Number(inv.total ?? 0) - Number(inv.paid_amount ?? 0));
-        const interestAmount = computeInterest(outstanding, inv.due_date);
-        await leDunning.create({
-          invoice_id: inv.id,
-          customer_id: inv.customer_id,
-          level,
-          dunning_date: today,
-          new_due_date: newDue,
-          fee,
-          interest_rate_pct: 5.0,
-          interest_from: inv.due_date,
-          interest_amount: interestAmount,
-          outstanding_amount: outstanding,
-          total_amount: outstanding + fee + interestAmount,
-          is_betreibungsandrohung: level === 3,
-          status: 'entwurf',
-        });
-        created += 1;
-      }
-      return created;
+      const created = await leDunning.createDrafts(rows.map((invoice) => invoice.id));
+      return created.length;
     },
     onSuccess: (n) => {
       toast.success(`${n} Mahnungs-Entwurf${n === 1 ? '' : 'e'} erstellt`);
@@ -417,34 +380,9 @@ function MahnungenTab() {
   });
 
   const escalateMut = useMutation({
-    mutationFn: async (dun) => {
-      const nextLevel = Math.min(3, (dun.level || 1) + 1);
-      // Aktuelle Mahnung als 'eskaliert' markieren
-      await leDunning.update(dun.id, { status: 'eskaliert' });
-      // Neue Mahnung auf nächster Stufe als Entwurf erstellen
-      const today = todayIso();
-      const fee = DEFAULT_FEES[nextLevel] ?? 0;
-      const outstanding = Number(dun.outstanding_amount ?? 0);
-      const interestAmount = computeInterest(outstanding, dun.interest_from);
-      await leDunning.create({
-        invoice_id: dun.invoice_id,
-        customer_id: dun.customer_id,
-        level: nextLevel,
-        dunning_date: today,
-        new_due_date: addDaysIso(DEFAULT_DAYS[nextLevel] ?? 10),
-        fee,
-        interest_rate_pct: 5.0,
-        interest_from: dun.interest_from,
-        interest_amount: interestAmount,
-        outstanding_amount: outstanding,
-        total_amount: outstanding + fee + interestAmount,
-        is_betreibungsandrohung: nextLevel === 3,
-        status: 'entwurf',
-      });
-      return nextLevel;
-    },
-    onSuccess: (lv) => {
-      toast.success(`Auf Stufe ${lv} eskaliert (neuer Entwurf erstellt)`);
+    mutationFn: (dun) => leDunning.escalate(dun.id),
+    onSuccess: (next) => {
+      toast.success(`Auf Stufe ${next.level} eskaliert (neuer Entwurf erstellt)`);
       invalidate();
     },
     onError: (e) => toast.error('Fehler: ' + (e?.message ?? e)),
@@ -656,6 +594,11 @@ function DunningRow({ dun, onSend, onPay, onEscalate, sending }) {
           <IconBtn
             onClick={async () => {
               try {
+                // Eine Mail-Mahnung braucht vor der PDF-Erzeugung eine Nummer.
+                // Die Reservierung lässt sie bis zum erfolgreichen Mailversand als Entwurf.
+                const currentDun = dun.dunning_no
+                  ? dun
+                  : await leDunning.reserveNumber(dun.id);
                 // 1. PDF generieren (lädt es gleichzeitig in den Storage hoch)
                 const company = await leCompany.get();
                 if (!company) { toast.error('Firmen-Settings fehlen.'); return; }
@@ -664,7 +607,7 @@ function DunningRow({ dun, onSend, onPay, onEscalate, sending }) {
                 if (fullInv?.status === 'storniert') { toast.error('Rechnung ist storniert – keine Mahnung möglich.'); return; }
                 if (fullInv?.status === 'bezahlt') { toast.error('Rechnung ist bereits bezahlt – keine Mahnung nötig.'); return; }
                 const result = await generateDunningPdf({
-                  dunning: dun, invoice: fullInv,
+                  dunning: currentDun, invoice: fullInv,
                   customer: fullInv.customer, company,
                 });
                 // 2. PDF muss im Storage liegen, damit die Edge Function es ziehen kann
@@ -679,20 +622,21 @@ function DunningRow({ dun, onSend, onPay, onEscalate, sending }) {
                   return;
                 }
                 // 4. Mail senden
-                const subject = `Mahnung ${dun.dunning_no || 'Entwurf'} zu Rechnung ${fullInv.invoice_no}`;
+                const subject = `Mahnung ${currentDun.dunning_no} zu Rechnung ${fullInv.invoice_no}`;
                 const html = `<p>Sehr geehrte Damen und Herren</p><p>Anbei finden Sie unsere Mahnung. Wir bitten um Begleichung des offenen Betrags.</p><p>Mit freundlichen Grüssen<br>${company.company_name}</p>`;
                 await sendInvoiceViaMs365({
                   to: customerEmail,
                   subject,
                   html,
                   attachmentUrl: result.url,
-                  attachmentFilename: `Mahnung-${dun.dunning_no || 'Entwurf'}.pdf`,
+                  attachmentFilename: `Mahnung-${currentDun.dunning_no}.pdf`,
                 });
                 toast.success('Mahnung versendet');
                 // 5. Als versendet markieren
                 await leDunning.update(dun.id, {
                   status: 'versendet',
                   sent_at: new Date().toISOString(),
+                  pdf_url: result.path,
                 });
               } catch (e) {
                 toast.error('Versand-Fehler: ' + (e?.message ?? e));

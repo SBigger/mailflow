@@ -1,6 +1,5 @@
-import React, { useState, useMemo, useContext } from "react";
-import {Search, Download, Trash2, FileUser, RefreshCw} from "lucide-react";
-import * as pdfjsLib from "pdfjs-dist";
+import React, { useState, useMemo, useContext, useRef } from "react";
+import {Search, Download, Trash2, FileUser, Eye} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeContext } from "@/Layout";
 import { supabase, entities } from "@/api/supabaseClient";
@@ -9,11 +8,9 @@ import { toast } from "sonner";
 import { useAuth } from "@/lib/AuthContext";
 import CreateLinkDialog from "../components/posteingang/CreateLinkDialog.jsx";
 import AssignDialog from "../components/posteingang/AssignDialog.jsx";
+import DocHoverPreview from "@/components/dokumente/DocHoverPreview";
 import { useContainerWidth } from "@/components/layout/useContainerQuery";
 
-// Configuration
-import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.js?url";
-if (pdfjsLib?.GlobalWorkerOptions) pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 const BUCKET = "posteingang";
 
 // ─── Helper Functions ────────────────────────────────────────────────────────
@@ -49,11 +46,12 @@ export default function Posteingang({ embedded = false } = {}) {
   // States
   const [selCustomerId, setSelCustomerId] = useState(null);
   const [custSearch, setCustSearch] = useState("");
-  const [ftSearch, setftSearch] = useState("");
+  const [ftSearch, setFtSearch] = useState("");
   const [showLinkDialog, setShowLinkDialog] = useState(false);
   const [showAssignDialog, setShowAssignDialog] = useState(false);
   const [assignDoc, setAssignDoc] = useState(null);
-  const [syncData, setSyncData] = useState(false);
+  const [hoverPreview, setHoverPreview] = useState(null); // { doc, url, rect } — gleiches Vorschau-Fenster wie in der Dateiablage
+  const hoverTimer = useRef(null);
 
   const [containerRef, containerWidth] = useContainerWidth();
   // Container-Query: die feste 280px-Sidebar kostet in einem schmalen
@@ -121,8 +119,16 @@ export default function Posteingang({ embedded = false } = {}) {
       const folder = allDoks.find(d => d.customerId === selCustomerId);
       list = folder ? folder.docs : [];
     }
+    const q = ftSearch.trim().toLowerCase();
+    if (q) {
+      list = list.filter(d =>
+        (d.fileName || d.name || "").toLowerCase().includes(q) ||
+        (d.category || "").toLowerCase().includes(q) ||
+        String(d.year || "").includes(q)
+      );
+    }
     return list.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-  }, [allDoks, selCustomerId]);
+  }, [allDoks, selCustomerId, ftSearch]);
 
   const breadcrumb = useMemo(() => {
     const cust = customers.find(c => c.id === selCustomerId);
@@ -130,17 +136,51 @@ export default function Posteingang({ embedded = false } = {}) {
   }, [selCustomerId, customers]);
 
   const downloadDoc = async (doc) => {
-    const { data } = await supabase.storage.from(BUCKET).createSignedUrl(doc.storage_path, 360);
-    if (data?.signedUrl) window.open(data.signedUrl, '_blank');
+    // download-Option: Browser speichert unter dem echten Dateinamen statt
+    // dem Storage-Namen mit "kategorie_jahr_zeit@"-Praefix.
+    const { data, error } = await supabase.storage.from(BUCKET)
+      .createSignedUrl(doc.storage_path, 360, { download: doc.fileName || true });
+    if (error || !data?.signedUrl) {
+      toast.error("Download fehlgeschlagen" + (error?.message ? `: ${error.message}` : ""));
+      return;
+    }
+    const a = window.document.createElement("a");
+    a.href = data.signedUrl;
+    a.download = doc.fileName || "";
+    window.document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+
+  // Vorschau: Datei per Signed-URL laden und im selben schwebenden Fenster
+  // zeigen wie in der Dateiablage (verschieb-/vergroesserbar, × schliesst).
+  const openPreview = async (doc, targetEl) => {
+    const rect = targetEl?.getBoundingClientRect?.() || null;
+    const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(doc.storage_path, 600);
+    if (error || !data?.signedUrl) {
+      toast.error("Vorschau nicht möglich" + (error?.message ? `: ${error.message}` : ""));
+      return;
+    }
+    setHoverPreview({
+      doc: {
+        id: doc.id || doc.storage_path,
+        name: doc.fileName || doc.name,
+        filename: doc.fileName || doc.name,
+        file_size: doc.metadata?.size,
+      },
+      url: data.signedUrl,
+      rect,
+    });
   };
 
   const handleDelete = async (doc) => {
-    const {data, error} = await supabase.storage.from(BUCKET).remove([doc.storage_path])
+    if (!window.confirm(`«${doc.fileName || doc.name}» wirklich löschen?`)) return;
+    const { error } = await supabase.storage.from(BUCKET).remove([doc.storage_path])
 
     if(error) {
-      toast.error(`Löschen für ${doc.name} hat nicht funktioniert.`);
+      toast.error(`Löschen für ${doc.fileName || doc.name} hat nicht funktioniert.`);
     } else {
-      toast.success(`${doc.name} gelöscht.`)
+      toast.success(`${doc.fileName || doc.name} gelöscht.`)
       queryClient.invalidateQueries({ queryKey: ["dokumente-all-post"] });
     }
   }
@@ -157,7 +197,7 @@ export default function Posteingang({ embedded = false } = {}) {
             <input
                 value={ftSearch}
                 onChange={e => setFtSearch(e.target.value)}
-                placeholder="Volltext-Suche..."
+                placeholder="Suchen (Name, Kategorie, Jahr)..."
                 style={{ background: s.inputBg, border: "1px solid " + border, color: s.textMain, borderRadius: 8, padding: "5px 30px", fontSize: 12, width: sidebarVisible ? 280 : "100%" }}
             />
           </div>
@@ -224,13 +264,29 @@ export default function Posteingang({ embedded = false } = {}) {
                   return (
                       <div key={doc?.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px", borderBottom: "1px solid " + border, transition: "background 0.2s" }}>
                         <span style={{ background: fi.color, color: "white", padding: "2px 8px", borderRadius: 4, fontSize: 10, fontWeight: 700 }}>{fi.label}</span>
-                        <span style={{ flex: 1, fontSize: 14 }}>{doc?.fileName}</span>
+                        <span
+                            title="Vorschau öffnen"
+                            onClick={e => openPreview(doc, e.currentTarget)}
+                            style={{ flex: 1, fontSize: 14, cursor: "pointer", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                        >{doc?.fileName || doc?.name}</span>
                         {doc?.year && <span style={{ fontSize: 11, color: s.textMuted, background: s.sidebarBg, border: "1px solid " + border, borderRadius: 6, padding: "2px 7px", flexShrink: 0 }}>{doc?.year}</span>}
                         {doc?.category && <span style={{ fontSize: 11, color: s.textMuted, background: s.sidebarBg, border: "1px solid " + border, borderRadius: 6, padding: "2px 7px", flexShrink: 0 }}>{doc?.category}</span>}
                         <div style={{ display: "flex", alignItems: "center", gap: 15 }}>
-                          <FileUser size={25} onClick={() => {setAssignDoc(doc), setShowAssignDialog(true)}} style={{ cursor: "pointer", color: s.textMuted }} />
-                          <Download size={16} onClick={() => downloadDoc(doc)} style={{ cursor: "pointer", color: s.textMuted }} />
-                          <Trash2 size={16} onClick={() => handleDelete(doc)} style={{ cursor: "pointer", color: "#ef4444" }} />
+                          <Eye
+                              size={18}
+                              title="Vorschau"
+                              onClick={e => openPreview(doc, e.currentTarget)}
+                              onMouseEnter={e => {
+                                const el = e.currentTarget;
+                                clearTimeout(hoverTimer.current);
+                                hoverTimer.current = setTimeout(() => openPreview(doc, el), 350);
+                              }}
+                              onMouseLeave={() => clearTimeout(hoverTimer.current)}
+                              style={{ cursor: "pointer", color: s.textMuted }}
+                          />
+                          <FileUser size={25} title="Kunde zuweisen" onClick={() => {setAssignDoc(doc), setShowAssignDialog(true)}} style={{ cursor: "pointer", color: s.textMuted }} />
+                          <Download size={16} title="Herunterladen" onClick={() => downloadDoc(doc)} style={{ cursor: "pointer", color: s.textMuted }} />
+                          <Trash2 size={16} title="Löschen" onClick={() => handleDelete(doc)} style={{ cursor: "pointer", color: "#ef4444" }} />
                         </div>
                       </div>
                   );
@@ -239,13 +295,23 @@ export default function Posteingang({ embedded = false } = {}) {
           </div>
         </div>
 
+        {hoverPreview && (
+            <DocHoverPreview
+                doc={hoverPreview.doc}
+                url={hoverPreview.url}
+                rect={hoverPreview.rect}
+                theme={theme}
+                onClose={() => setHoverPreview(null)}
+            />
+        )}
+
         {showAssignDialog && (
             <AssignDialog
                 open={showAssignDialog}
                 onClose={() => {
                   setShowAssignDialog(false);
                   setAssignDoc(null);
-                  queryClient.invalidateQueries(["dokumente-all-post"]);
+                  queryClient.invalidateQueries({ queryKey: ["dokumente-all-post"] });
                 }}
                 doc={assignDoc}
                 customers={customers}

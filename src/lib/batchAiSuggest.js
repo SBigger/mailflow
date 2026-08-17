@@ -20,51 +20,129 @@ import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.js?url";
 import { supabase } from "@/api/supabaseClient";
 // pdfjs-dist 3.11 ist UMD → je nach Vite-Mode ist der Namespace `{default: {...}}` oder direkt {...}
 const pdfjsLib = (_pdfjsNs && typeof _pdfjsNs.getDocument === "function") ? _pdfjsNs : (_pdfjsNs?.default || _pdfjsNs);
-if (pdfjsLib?.GlobalWorkerOptions) {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
+
+/**
+ * Setzt den pdfjs-Worker – und zwar VOR jeder Benutzung, nicht nur einmal beim
+ * Laden des Moduls.
+ *
+ * `GlobalWorkerOptions.workerSrc` ist global, und im Projekt setzen ihn ein
+ * gutes Dutzend Stellen auf drei verschiedene Worker-Dateien. Wer zuletzt
+ * geladen wird, gewinnt. Redet pdfjs dann mit dem Worker einer anderen
+ * Übersetzung, überlebt das Lesen des Textes zwar noch, aber
+ * `page.render()` auf ein Canvas bleibt für immer stehen — ohne Fehler, ohne
+ * Zeitüberschreitung. Genau daran hing die OCR-Erkennung: getDocument lief in
+ * 191 ms durch, render danach 20 Sekunden ohne Antwort.
+ *
+ * Richtig behoben wäre das mit EINER zentralen Stelle für den Worker; bis
+ * dahin stellen wir ihn hier unmittelbar vor dem Gebrauch wieder richtig.
+ */
+function sichereWorker() {
+  if (pdfjsLib?.GlobalWorkerOptions && pdfjsLib.GlobalWorkerOptions.workerSrc !== pdfjsWorker) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
+  }
+}
+sichereWorker();
+
+/**
+ * Eigener, fest gepaarter PDF-Worker fuer diese Pipeline.
+ *
+ * sichereWorker() reichte nicht: GlobalWorkerOptions ist global, andere Module
+ * stellen es um, und nach einem Deployment kann der Service-Worker eine Seite
+ * aus ZWEI Builds mischen -- dann passt gar kein global gesetzter Worker mehr
+ * zur Bibliothek. Live nachgestellt: mit dem einen Worker haengt page.render()
+ * endlos, mit dem anderen bricht es mit "WorkerMessageHandler undefined" ab.
+ *
+ * Deshalb bekommt getDocument hier einen EXPLIZITEN Worker, dessen URL aus
+ * demselben Chunk stammt wie die Bibliothek selbst -- damit sind beide immer
+ * aus demselben Build, egal was der Rest der Seite tut.
+ */
+let _pdfWorker = null;
+function eigenerPdfWorker() {
+  if (_pdfWorker && !_pdfWorker.destroyed) return _pdfWorker;
+  try {
+    _pdfWorker = new pdfjsLib.PDFWorker({ port: new Worker(pdfjsWorker) });
+    return _pdfWorker;
+  } catch (e) {
+    console.warn("[PDF] Eigener Worker nicht moeglich, nutze global:", e?.message);
+    _pdfWorker = null;
+    return undefined;
+  }
+}
+
+/** page.render() darf NIE endlos haengen -- lieber ehrlich abbrechen. */
+function mitZeitschranke(promise, ms, was) {
+  return Promise.race([
+    promise,
+    new Promise((_, ablehnen) => setTimeout(
+      () => ablehnen(new Error(`${was} nach ${ms / 1000}s abgebrochen`)), ms)),
+  ]);
 }
 
 // ══════════════════════════════════════════════════════════════════════
 // OCR (Tesseract.js) – lazy load, damit initialer Bundle-Size klein bleibt
 // ══════════════════════════════════════════════════════════════════════
 
-let _ocrWorker = null;
-let _ocrWorkerPromise = null;
+let _ocrPool = null;
+let _ocrPoolPromise = null;
 
-async function getOcrWorker() {
-  if (_ocrWorker) return _ocrWorker;
-  if (_ocrWorkerPromise) return _ocrWorkerPromise;
+/**
+ * Mehrere OCR-Arbeiter statt einem.
+ *
+ * Vorher lief alles ueber einen einzigen Worker: mehrere Dateien gleichzeitig
+ * zu verarbeiten brachte nichts, weil sie sich dort ohnehin anstellten. Bei
+ * einem Stapel gescannter Belege ist die OCR der Engpass, nicht alles andere.
+ *
+ * Anzahl richtet sich nach den Kernen, gedeckelt auf 4 — jeder Arbeiter haelt
+ * sein eigenes Sprachmodell im Speicher (rund 20 MB), und mehr als vier
+ * bringen auf einem Buero-Rechner nichts mehr.
+ */
+async function getOcrScheduler() {
+  if (_ocrPool) return _ocrPool;
+  if (_ocrPoolPromise) return _ocrPoolPromise;
 
-  _ocrWorkerPromise = (async () => {
-    const { createWorker } = await import("tesseract.js");
-    console.info("[OCR] Lade Tesseract (deu+eng)…");
-    const worker = await createWorker(["deu", "eng"], 1, {
-      logger: m => {
-        if (m.status === "recognizing text") return;
-        console.debug("[OCR]", m.status, m.progress ? Math.round(m.progress*100)+"%" : "");
-      },
-    });
+  _ocrPoolPromise = (async () => {
+    const { createWorker, createScheduler } = await import("tesseract.js");
+    const anzahl = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 4) - 1));
+    console.info(`[OCR] Lade Tesseract (deu+eng), ${anzahl} Arbeiter…`);
+    const scheduler = createScheduler();
+    await Promise.all(Array.from({ length: anzahl }, async () => {
+      const w = await createWorker(["deu", "eng"], 1);
+      scheduler.addWorker(w);
+    }));
     console.info("[OCR] Bereit");
-    _ocrWorker = worker;
-    return worker;
+    _ocrPool = scheduler;
+    return scheduler;
   })();
 
-  return _ocrWorkerPromise;
+  return _ocrPoolPromise;
 }
 
 /** Freigabe des OCR-Workers (z. B. beim Schließen des Dialogs) */
 export async function terminateOcr() {
   try {
-    if (_ocrWorker) await _ocrWorker.terminate();
+    if (_ocrPool) await _ocrPool.terminate();
   } catch {}
-  _ocrWorker = null;
-  _ocrWorkerPromise = null;
+  _ocrPool = null;
+  _ocrPoolPromise = null;
 }
 
 async function ocrBlob(blobOrCanvas) {
-  const worker = await getOcrWorker();
-  const { data } = await worker.recognize(blobOrCanvas);
-  return (data?.text || "").trim();
+  const { text } = await ocrErkenne(blobOrCanvas);
+  return text;
+}
+
+/**
+ * OCR mit Vertrauenswert (0–100, von tesseract je Seite gemeldet).
+ * Der Wert sagt ehrlich, wie sicher die Erkennung war — unter ~70 ist der
+ * Text erfahrungsgemäss löchrig und die Seite ein Fall für die Bild-KI.
+ */
+async function ocrErkenne(blobOrCanvas) {
+  const scheduler = await getOcrScheduler();
+  const { data } = await scheduler.addJob("recognize", blobOrCanvas);
+  return {
+    text: (data?.text || "").trim(),
+    vertrauen: Number.isFinite(data?.confidence) ? data.confidence : null,
+  };
 }
 
 /**
@@ -74,7 +152,8 @@ async function ocrBlob(blobOrCanvas) {
 export async function pdfPagesToImages(file, maxPages = 2) {
   try {
     const buf = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+    sichereWorker();
+    const pdf = await pdfjsLib.getDocument({ data: buf, worker: eigenerPdfWorker() }).promise;
     const out = [];
     const pages = Math.min(pdf.numPages, maxPages);
     for (let i = 1; i <= pages; i++) {
@@ -83,7 +162,7 @@ export async function pdfPagesToImages(file, maxPages = 2) {
       const canvas = document.createElement("canvas");
       canvas.width  = viewport.width;
       canvas.height = viewport.height;
-      await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+      await page.render({ canvasContext: canvas.getContext("2d"), viewport, intent: "print" }).promise;
       const data = canvas.toDataURL("image/jpeg", 0.75).split(",")[1];
       out.push(data);
     }
@@ -94,8 +173,34 @@ export async function pdfPagesToImages(file, maxPages = 2) {
   }
 }
 
+/**
+ * Rendert genau EINE Seite eines PDFs zu JPEG-base64.
+ *
+ * Für den Bild-Fallback der Belegsortierung: dort ist ein «Beleg» ein
+ * Seitenbereich innerhalb einer Datei — an die KI geht die erste Seite DES
+ * TEILS, nicht die erste Seite der Datei.
+ */
+export async function pdfSeiteAlsBild(file, seite = 1) {
+  try {
+    const buf = await file.arrayBuffer();
+    sichereWorker();
+    const pdf = await pdfjsLib.getDocument({ data: buf, worker: eigenerPdfWorker() }).promise;
+    if (seite < 1 || seite > pdf.numPages) return null;
+    const page = await pdf.getPage(seite);
+    const viewport = page.getViewport({ scale: 1.6 });
+    const canvas = document.createElement("canvas");
+    canvas.width  = viewport.width;
+    canvas.height = viewport.height;
+    await page.render({ canvasContext: canvas.getContext("2d"), viewport, intent: "print" }).promise;
+    return canvas.toDataURL("image/jpeg", 0.75).split(",")[1];
+  } catch (e) {
+    console.warn("[Belegsortierung] Seite→Bild fehlgeschlagen:", e);
+    return null;
+  }
+}
+
 /** File → base64 (für Bilder). */
-async function fileToBase64(file) {
+export async function fileToBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
@@ -108,26 +213,108 @@ async function fileToBase64(file) {
   });
 }
 
-/** Rendert PDF-Seiten zu Canvas und OCRt sie (max. 5 Seiten für Geschwindigkeit). */
+/**
+ * Rendert PDF-Seiten zu Canvas und OCRt sie (max. 5 Seiten für Geschwindigkeit).
+ *
+ * Rendering läuft sequenziell (pdfjs mag pro Dokument nur eine Render-Operation
+ * gleichzeitig), die OCR-Jobs selbst aber parallel über den Worker-Pool aus
+ * getOcrScheduler() – bis zu 4 Seiten gleichzeitig statt eine nach der anderen.
+ * Bei einem 4-seitigen Scan macht das aus ~4x Seitenzeit ungefähr 1x.
+ */
+/**
+ * Rastern immer mit intent "print".
+ *
+ * Mit dem Standard-intent "display" taktet pdf.js das Zeichnen ueber
+ * requestAnimationFrame -- und in einem Hintergrund-Tab feuert das NIE.
+ * Live gemessen: dieselbe Seite haengt mit "display" endlos, mit "print"
+ * ist sie in einer Sekunde gerendert. Praxisfall: waehrend der OCR eines
+ * grossen Stapels wechselt man den Tab -- bisher fror damit alles ein,
+ * bis der Tab wieder in den Vordergrund kam.
+ */
 async function ocrPdfPages(pdf, maxPages = 5) {
-  let text = "";
   const pages = Math.min(pdf.numPages, maxPages);
+  const canvases = [];
   for (let i = 1; i <= pages; i++) {
     const page = await pdf.getPage(i);
     const viewport = page.getViewport({ scale: 2 });
     const canvas = document.createElement("canvas");
     canvas.width = viewport.width;
     canvas.height = viewport.height;
-    const ctx = canvas.getContext("2d");
-    await page.render({ canvasContext: ctx, viewport }).promise;
-    try {
-      const pageText = await ocrBlob(canvas);
-      text += pageText + "\n";
-    } catch (e) {
-      console.warn("[OCR] PDF-Seite fehlgeschlagen", i, e);
-    }
+    await page.render({ canvasContext: canvas.getContext("2d"), viewport, intent: "print" }).promise;
+    canvases.push(canvas);
   }
-  return text.trim();
+  const texts = await Promise.all(canvases.map(async (canvas, idx) => {
+    try {
+      return await ocrBlob(canvas);
+    } catch (e) {
+      console.warn("[OCR] PDF-Seite fehlgeschlagen", idx + 1, e);
+      return "";
+    }
+  }));
+  return texts.join("\n").trim();
+}
+
+/**
+ * Text JE SEITE eines PDFs – Grundlage der Belegtrennung.
+ *
+ * Ein eingescanntes Buendel enthaelt selten einen Beleg: der Umbau-Ordner
+ * eines Mandanten hat 38 Seiten und darauf 30 Verguetungsauftraege. Um sie
+ * auseinanderzunehmen, braucht es den Text jeder Seite einzeln statt am
+ * Stueck.
+ *
+ * Digitale PDFs liefern ihn direkt; Scans gehen ueber den OCR-Pool, wo die
+ * Seiten nebeneinander laufen.
+ */
+export async function extractPageTexts(file, { maxPages = 40, vonSeite = 1, onStage } = {}) {
+  if (!file) return { seiten: [], vertrauen: [] };
+  const name = (file.name || "").toLowerCase();
+  if (!(file.type === "application/pdf" || name.endsWith(".pdf"))) {
+    const text = await extractDocumentText(file, { onStage });
+    return text ? { seiten: [text], vertrauen: [null] } : { seiten: [], vertrauen: [] };
+  }
+
+  const buf = await file.arrayBuffer();
+  sichereWorker();
+  const pdf = await pdfjsLib.getDocument({ data: buf, worker: eigenerPdfWorker() }).promise;
+  const anzahl = Math.min(pdf.numPages, maxPages);
+  // vonSeite erlaubt Bereichs-OCR — der manuelle Trenner liest nur die
+  // Seiten des zerlegten Belegs neu, nicht die ganze Datei.
+  const start = Math.max(1, vonSeite);
+  const seitenZahl = Math.max(0, anzahl - start + 1);
+  if (!seitenZahl) return { seiten: [], vertrauen: [] };
+
+  // Zuerst die eingebettete Textebene versuchen – kostet fast nichts.
+  const texte = [];
+  for (let i = start; i <= anzahl; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    texte.push(content.items.map(it => it.str).join(" ").trim());
+  }
+  const hatText = texte.join("").length > 50 * seitenZahl * 0.3;
+  // Textebene = digitales Original, Vertrauen spielt keine Rolle (null).
+  if (hatText) return { seiten: texte, vertrauen: texte.map(() => null) };
+
+  // Scan: rendern (seriell, ein pdfjs-Dokument) und gemeinsam erkennen.
+  try { onStage?.("ocr", `Scan mit ${seitenZahl} Seiten – OCR läuft…`); } catch {}
+  const canvases = [];
+  for (let i = start; i <= anzahl; i++) {
+    const page = await pdf.getPage(i);
+    const viewport = page.getViewport({ scale: 1.7 });
+    const canvas = document.createElement("canvas");
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    await mitZeitschranke(
+      page.render({ canvasContext: canvas.getContext("2d"), viewport, intent: "print" }).promise,
+      25000, `Rendern Seite ${i}`);
+    canvases.push(canvas);
+  }
+  const erkannt = await Promise.all(canvases.map((c, i) =>
+    ocrErkenne(c).catch(e => {
+      console.warn("[OCR] Seite fehlgeschlagen", i + 1, e);
+      return { text: "", vertrauen: 0 };
+    })
+  ));
+  return { seiten: erkannt.map(e => e.text), vertrauen: erkannt.map(e => e.vertrauen) };
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -139,7 +326,7 @@ async function ocrPdfPages(pdf, maxPages = 5) {
  * Fallback auf OCR für Bilder und gescannte PDFs.
  * Max. 100'000 Zeichen Ergebnis.
  */
-export async function extractDocumentText(file, { onStage } = {}) {
+export async function extractDocumentText(file, { onStage, maxOcrPages = 5 } = {}) {
   if (!file) return "";
   const name = (file.name || "").toLowerCase();
   const type = file.type || "";
@@ -148,7 +335,8 @@ export async function extractDocumentText(file, { onStage } = {}) {
     // ─── PDF ────────────────────────────────────────────────────────
     if (type === "application/pdf" || name.endsWith(".pdf")) {
       const buf = await file.arrayBuffer();
-      const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+      sichereWorker();
+      const pdf = await pdfjsLib.getDocument({ data: buf, worker: eigenerPdfWorker() }).promise;
       let text = "";
       for (let i = 1; i <= Math.min(pdf.numPages, 20); i++) {
         const page = await pdf.getPage(i);
@@ -162,7 +350,7 @@ export async function extractDocumentText(file, { onStage } = {}) {
         console.info("[BatchUpload] PDF enthält wenig Text → OCR-Fallback", file.name);
         report("ocr", "Gescanntes PDF → OCR läuft…");
         try {
-          const ocrText = await ocrPdfPages(pdf, 5);
+          const ocrText = await ocrPdfPages(pdf, maxOcrPages);
           if (ocrText.length > text.length) text = ocrText;
           report("ocr-done", `OCR fertig (${text.length} Zeichen)`);
         } catch (e) {

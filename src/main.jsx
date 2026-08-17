@@ -60,18 +60,33 @@ registerSW({
     }
   },
   onNeedRefresh() {
-    console.info('[SW] New content available, activating...');
-
-    // 1. Tell the waiting service worker to take over immediately
-    // 2. Then reload the page to see the changes
-    if (navigator.serviceWorker) {
-      navigator.serviceWorker.getRegistration().then((reg) => {
-        if (reg && reg.waiting) {
-          reg.waiting.postMessage({ type: 'SKIP_WAITING' });
-        }
-      });
-    }
-    window.location.reload();
+    // Neue Version da. Aber NICHT blind neu laden: ein Deploy waehrend
+    // jemand einen Belegstapel sortiert oder ein Formular fuellt, warf
+    // bisher kommentarlos die ganze ungespeicherte Arbeit weg (zweimal
+    // live erlebt am 16.08.). Module melden laufende Arbeit ueber
+    // window.smartisArbeitAktiv an; solange dort etwas steht, wird das
+    // Update zurueckgehalten und alle 30 s erneut geprueft.
+    const aktivieren = () => {
+      console.info('[SW] New content available, activating...');
+      if (navigator.serviceWorker) {
+        navigator.serviceWorker.getRegistration().then((reg) => {
+          if (reg && reg.waiting) {
+            reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+          }
+        });
+      }
+      window.location.reload();
+    };
+    const versuch = () => {
+      const aktiv = window.smartisArbeitAktiv;
+      if (aktiv && aktiv.size > 0) {
+        console.info('[SW] Update wartet – Arbeit im Gang:', [...aktiv].join(', '));
+        setTimeout(versuch, 30000);
+      } else {
+        aktivieren();
+      }
+    };
+    versuch();
   },
   onOfflineReady() {
     console.info('[SW] App bereit für Offline-Nutzung');

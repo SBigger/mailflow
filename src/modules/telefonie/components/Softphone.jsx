@@ -6,6 +6,8 @@ import {
 import { tele, formatPhone, useAppTheme } from "../theme";
 import { useTelephony } from "../context/TelephonyContext";
 import { useIncomingDossier } from "../useDossier";
+import { openDokument } from "@/lib/openDokument";
+import { functions } from "@/api/supabaseClient";
 import CallWrapup from "./CallWrapup";
 
 const KEYS = [
@@ -56,12 +58,49 @@ function dueInfo(iso) {
 export default function Softphone() {
   const theme = useAppTheme();
   const t = tele(theme);
-  const { call, incoming, wrapup, clearWrapup, panelOpen, setPanelOpen, dial, answer, decline, hangup, toggleMute, toggleHold, toggleVideo, sendDtmf } = useTelephony();
-  const dossier = useIncomingDossier(incoming?.peerNumber);
+  const { call, incoming, wrapup, clearWrapup, panelOpen, setPanelOpen, dial, answer, decline, hangup, toggleMute, toggleHold, toggleVideo, sendDtmf, controlError } = useTelephony();
+  // ⚠️ Nummer auch aus dem AKTIVEN Anruf ziehen (Fix 2026-07-26): beim
+  // Annehmen wird incoming auf null gesetzt -- vorher verlor der Hook damit
+  // die Nummer und das Dossier war im Gespraech leer ("es zeigt nichts an"),
+  // obwohl es beim Klingeln kurz da war. Dank identischer Query-Keys kommt
+  // es beim Uebergang ringing->Gespraech ohne Neuladen aus dem Cache.
+  const dossier = useIncomingDossier(incoming?.peerNumber || call?.peerNumber);
 
   const [num, setNum] = useState("");
   const [showDtmf, setShowDtmf] = useState(false);
-  useEffect(() => { if (!call) setShowDtmf(false); }, [call]);
+  // ── Verbinden (Blind-Transfer via peoplefone-API, 2026-07-26) ──────────
+  // Ziele kommen live aus der Anlage (Edge Function telefonie-transfer,
+  // action "targets"); Zustand "done" heisst nur "Anlage hat den Transfer
+  // angenommen" -- das Ende unseres Beins meldet der Webhook von selbst.
+  const [showTransfer, setShowTransfer] = useState(false);
+  const [transferTargets, setTransferTargets] = useState(null); // null = noch nie geladen
+  const [transferState, setTransferState] = useState(null); // null | "busy" | "done" | Fehlertext
+  const [transferNum, setTransferNum] = useState("");
+  useEffect(() => { if (!call) { setShowDtmf(false); setShowTransfer(false); setTransferState(null); setTransferNum(""); } }, [call]);
+
+  const toggleTransfer = async () => {
+    const next = !showTransfer;
+    setShowTransfer(next);
+    if (next && transferTargets === null) {
+      try {
+        const { data } = await functions.invoke("telefonie-transfer", { action: "targets" });
+        setTransferTargets(data?.targets || []);
+      } catch {
+        setTransferTargets([]);
+      }
+    }
+  };
+
+  const doTransfer = async (destination) => {
+    if (!destination || transferState === "busy") return;
+    setTransferState("busy");
+    try {
+      await functions.invoke("telefonie-transfer", { action: "transfer", callId: call?.id, destination });
+      setTransferState("done");
+    } catch (e) {
+      setTransferState("Verbinden fehlgeschlagen — " + (e?.message || "unbekannter Fehler"));
+    }
+  };
   const mono = { fontFamily: 'ui-monospace, "Segoe UI Mono", Consolas, monospace', fontVariantNumeric: "tabular-nums" };
   const timer = useCallTimer(!!call, call?.startedAt);
 
@@ -102,21 +141,7 @@ export default function Softphone() {
 
           {dossier.matched ? (
             <div style={{ marginTop: 13, display: "flex", flexDirection: "column", gap: 12 }}>
-              <DSec t={t} label="Pendenzen" count={dossier.pendenzen.length}>
-                {dossier.pendenzen.length
-                  ? dossier.pendenzen.map((p) => { const di = dueInfo(p.due_date); return <DRow key={p.id} t={t} dot={di.overdue ? t.missed : t.presence.away} text={p.title || "Aufgabe"} meta={di.label} metaCol={di.overdue ? t.missed : undefined} />; })
-                  : <DEmpty t={t}>Keine offenen Pendenzen</DEmpty>}
-              </DSec>
-              <DSec t={t} label="Letzte Mails" count={dossier.mails.length}>
-                {dossier.mails.length
-                  ? dossier.mails.map((m) => <DRow key={m.id} t={t} icon="mail" text={m.subject || "(kein Betreff)"} meta={relTime(m.received_date)} />)
-                  : <DEmpty t={t}>Keine Mails</DEmpty>}
-              </DSec>
-              <DSec t={t} label="Letzte Dokumente" count={dossier.docs.length}>
-                {dossier.docs.length
-                  ? dossier.docs.map((d) => <DRow key={d.id} t={t} icon="doc" text={d.name || d.filename || "Dokument"} meta={relTime(d.updated_at)} />)
-                  : <DEmpty t={t}>Keine Dokumente</DEmpty>}
-              </DSec>
+              <DossierSections t={t} dossier={dossier} />
             </div>
           ) : (
             <div style={{ marginTop: 12, marginBottom: 4, fontSize: 12, color: t.textMuted, background: t.sunken, border: `1px solid ${t.borderSubtle}`, borderRadius: 10, padding: "11px 13px" }}>
@@ -129,15 +154,21 @@ export default function Softphone() {
           <button onClick={answer} style={bigBtn(t.answer)}><Phone size={17} /> Annehmen</button>
           <button onClick={decline} style={bigBtn(t.hangup)}><PhoneOff size={17} /> Ablehnen</button>
         </div>
+        {controlError && (
+          <div style={{ padding: "0 18px 14px", fontSize: 11.5, fontWeight: 650, color: t.missed }}>{controlError}</div>
+        )}
       </div>
     );
   }
 
   // ── Aktiver Anruf ──────────────────────────────────────────────────────
   if (call) {
-    const label = call.customer?.company_name || call.peerName || formatPhone(call.peerNumber);
+    // dossier.customer als Fallback: echte Webhook-Anrufe tragen customer im
+    // Payload, aber nicht jeder Weg (z.B. selbst gewaehlt) -- der Hook matcht
+    // dann selbst ueber die Nummer.
+    const label = call.customer?.company_name || dossier.customer?.company_name || call.peerName || formatPhone(call.peerNumber);
     return (
-      <div style={shellStyle} role="dialog" aria-label="Aktiver Anruf">
+      <div style={{ ...shellStyle, width: 384, maxHeight: "calc(100vh - 52px)", overflowY: "auto" }} role="dialog" aria-label="Aktiver Anruf">
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "13px 16px", borderBottom: `1px solid ${t.borderSubtle}` }}>
           <span style={{ fontSize: 13, fontWeight: 700 }}>{call.dir === "in" ? "Eingehender" : "Ausgehender"} Anruf</span>
           <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 600, color: t.textMuted, background: t.sunken, padding: "3px 9px", borderRadius: 999 }}>
@@ -156,11 +187,57 @@ export default function Softphone() {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, margin: "14px 0" }}>
             <Ctrl t={t} on={call.muted} icon={call.muted ? MicOff : Mic} label="Stumm" onClick={toggleMute} />
             <Ctrl t={t} on={call.onHold} icon={Pause} label="Halten" onClick={toggleHold} />
-            <Ctrl t={t} icon={ArrowRightLeft} label="Verbinden" onClick={() => {}} />
+            <Ctrl t={t} on={showTransfer} icon={ArrowRightLeft} label="Verbinden" onClick={toggleTransfer} />
             <Ctrl t={t} on={showDtmf} icon={Grid3x3} label="Tastatur" onClick={() => setShowDtmf((v) => !v)} />
             <Ctrl t={t} on={call.video} icon={Video} label="Video" onClick={toggleVideo} />
             <Ctrl t={t} icon={StickyNote} label="Notiz" onClick={() => {}} />
           </div>
+
+          {showTransfer && (
+            <div style={{ margin: "0 0 14px", textAlign: "left", background: t.sunken, border: `1px solid ${t.borderSubtle}`, borderRadius: 12, padding: "10px 12px" }}>
+              {transferState === "done" ? (
+                <div style={{ fontSize: 12.5, fontWeight: 650, color: t.answer }}>Wird verbunden … der Anruf verlässt gleich deine Leitung.</div>
+              ) : (
+                <>
+                  <div style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: ".08em", textTransform: "uppercase", color: t.textMuted, marginBottom: 7 }}>Verbinden an</div>
+                  {transferTargets === null && <div style={{ fontSize: 11.5, color: t.textMuted }}>Lade Nebenstellen…</div>}
+                  {Array.isArray(transferTargets) && transferTargets.filter((x) => x.internalNumber !== "20").map((x) => (
+                    <button
+                      key={x.peoplefoneId}
+                      onClick={() => doTransfer(x.internalNumber)}
+                      disabled={transferState === "busy"}
+                      style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "6px 8px", marginBottom: 4, background: t.raised, border: `1px solid ${t.borderSubtle}`, borderRadius: 8, cursor: "pointer", color: t.textPrimary, fontSize: 12, fontWeight: 600, textAlign: "left" }}
+                    >
+                      <ArrowRightLeft size={12} style={{ color: t.accent, flexShrink: 0 }} />
+                      <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.name}</span>
+                      <span style={{ ...mono, fontSize: 11, color: t.textMuted }}>{x.internalNumber}</span>
+                    </button>
+                  ))}
+                  {Array.isArray(transferTargets) && transferTargets.filter((x) => x.internalNumber !== "20").length === 0 && (
+                    <div style={{ fontSize: 11.5, color: t.textMuted, marginBottom: 6 }}>Keine Nebenstellen gefunden.</div>
+                  )}
+                  <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                    <input
+                      value={transferNum}
+                      onChange={(e) => setTransferNum(e.target.value)}
+                      placeholder="oder Nummer…"
+                      style={{ flex: 1, minWidth: 0, padding: "6px 9px", borderRadius: 8, border: `1px solid ${t.borderSubtle}`, background: t.raised, color: t.textPrimary, fontSize: 12 }}
+                    />
+                    <button
+                      onClick={() => doTransfer(transferNum.replace(/[^\d+*#]/g, ""))}
+                      disabled={transferState === "busy" || !transferNum.trim()}
+                      style={{ ...bigBtn(t.accent), padding: "6px 12px", fontSize: 12, opacity: transferState === "busy" || !transferNum.trim() ? 0.55 : 1 }}
+                    >
+                      {transferState === "busy" ? "…" : "Verbinden"}
+                    </button>
+                  </div>
+                  {typeof transferState === "string" && transferState !== "busy" && transferState !== "done" && (
+                    <div style={{ fontSize: 11.5, fontWeight: 650, color: t.missed, marginTop: 7 }}>{transferState}</div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
 
           {showDtmf && (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, margin: "0 0 14px" }}>
@@ -179,10 +256,17 @@ export default function Softphone() {
           )}
 
           <button onClick={hangup} style={{ ...bigBtn(t.hangup), width: "100%" }}><PhoneOff size={16} /> Auflegen</button>
+          {controlError && (
+            <div style={{ marginTop: 8, fontSize: 11.5, fontWeight: 650, color: t.missed }}>{controlError}</div>
+          )}
 
-          {call.customer?.id && (
-            <div style={{ marginTop: 11, display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11.5, fontWeight: 650, color: t.accent }}>
-              <FileText size={14} /> Dossier öffnen
+          {/* Kunden-Dossier WAEHREND des Gespraechs (Sascha-Wunsch 2026-07-26:
+              "eine Kachel wo wir die dokumente und aufgaben sehen") -- ersetzt
+              den frueheren funktionslosen "Dossier oeffnen"-Hinweis. textAlign
+              zuruecksetzen, der Eltern-Container zentriert. */}
+          {dossier.matched && (
+            <div style={{ marginTop: 14, textAlign: "left", display: "flex", flexDirection: "column", gap: 12 }}>
+              <DossierSections t={t} dossier={dossier} />
             </div>
           )}
         </div>
@@ -263,6 +347,30 @@ export default function Softphone() {
   );
 }
 
+// Die drei Dossier-Sektionen (Pendenzen / Mails / Dokumente) -- gemeinsam
+// genutzt vom Klingel-Pop UND dem Aktiv-Anruf-Panel (seit 2026-07-26).
+function DossierSections({ t, dossier }) {
+  return (
+    <>
+      <DSec t={t} label="Pendenzen" count={dossier.pendenzen.length}>
+        {dossier.pendenzen.length
+          ? dossier.pendenzen.map((p) => { const di = dueInfo(p.due_date); return <DRow key={p.id} t={t} dot={di.overdue ? t.missed : t.presence.away} text={p.title || "Aufgabe"} meta={di.label} metaCol={di.overdue ? t.missed : undefined} />; })
+          : <DEmpty t={t}>Keine offenen Pendenzen</DEmpty>}
+      </DSec>
+      <DSec t={t} label="Letzte Mails" count={dossier.mails.length}>
+        {dossier.mails.length
+          ? dossier.mails.map((m) => <DRow key={m.id} t={t} icon="mail" text={m.subject || "(kein Betreff)"} meta={relTime(m.received_date)} />)
+          : <DEmpty t={t}>Keine Mails</DEmpty>}
+      </DSec>
+      <DSec t={t} label="Letzte Dokumente" count={dossier.docs.length}>
+        {dossier.docs.length
+          ? dossier.docs.map((d) => <DRow key={d.id} t={t} icon="doc" text={d.name || d.filename || "Dokument"} meta={relTime(d.updated_at)} onClick={() => openDokument(d)} />)
+          : <DEmpty t={t}>Keine Dokumente</DEmpty>}
+      </DSec>
+    </>
+  );
+}
+
 function DSec({ t, label, count, children }) {
   return (
     <div>
@@ -277,9 +385,12 @@ function DSec({ t, label, count, children }) {
   );
 }
 
-function DRow({ t, dot, icon, text, meta, metaCol }) {
+function DRow({ t, dot, icon, text, meta, metaCol, onClick }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "7px 10px", background: t.sunken, border: `1px solid ${t.borderSubtle}`, borderRadius: 9 }}>
+    <div
+      onClick={onClick}
+      title={onClick ? "Dokument öffnen" : undefined}
+      style={{ display: "flex", alignItems: "center", gap: 9, padding: "7px 10px", background: t.sunken, border: `1px solid ${t.borderSubtle}`, borderRadius: 9, cursor: onClick ? "pointer" : "default" }}>
       {dot && <span style={{ width: 8, height: 8, borderRadius: "50%", background: dot, flexShrink: 0 }} />}
       {icon === "mail" && <Mail size={13} style={{ color: t.textMuted, flexShrink: 0 }} />}
       {icon === "doc" && <FileText size={13} style={{ color: t.textMuted, flexShrink: 0 }} />}

@@ -1,5 +1,4 @@
 import { supabase } from '@/api/supabaseClient';
-import { buildQrReference } from '../utils/pain001';
 
 // ── Mandanten ────────────────────────────────────────────────────
 export const mandantenApi = {
@@ -189,52 +188,17 @@ export const kreditorenApi = {
   },
 
   create: async (mandantId, beleg, positionen) => {
-    const { data, error } = await supabase
-      .from('fibu_kreditoren_belege')
-      .insert({ ...beleg, mandant_id: mandantId })
-      .select()
-      .single();
-    if (error) throw error;
-
-    if (positionen?.length) {
-      const pos = positionen.map((p, i) => ({
-        ...p, mandant_id: mandantId, beleg_id: data.id, position: i + 1,
-      }));
-      const { error: posErr } = await supabase.from('fibu_kreditoren_positionen').insert(pos);
-      if (posErr) throw posErr;
-
-      // ── Korrekte Doppelbuchungen inkl. MWST erstellen ──
-      const { error: buchErr } = await supabase.rpc('fibu_kreditoren_verbuchen', {
-        p_beleg_id: data.id,
-      });
-      if (buchErr) console.error('Journal-Buchung fehlgeschlagen:', buchErr);
-
-      // ── Lieferant-Defaults lernen: letztes Konto + MWST-Code speichern ──
-      if (beleg.lieferant_id && positionen[0]) {
-        const hauptPos = positionen[0];
-        await supabase.from('fibu_lieferanten').update({
-          standard_konto_nr: hauptPos.konto_nr || undefined,
-          mwst_code:         hauptPos.mwst_code || undefined,
-          updated_at:        new Date().toISOString(),
-        }).eq('id', beleg.lieferant_id);
-      }
-    }
-    return data;
-  },
-
-  update: async (id, payload) => {
-    const { data, error } = await supabase
-      .from('fibu_kreditoren_belege')
-      .update(payload)
-      .eq('id', id)
-      .select()
-      .single();
+    const { data, error } = await supabase.rpc('fibu_kreditoren_erstellen', {
+      p_mandant_id: mandantId,
+      p_beleg: beleg,
+      p_positionen: positionen ?? [],
+    });
     if (error) throw error;
     return data;
   },
 
   // Beleg bearbeiten: Kopf + Positionen ersetzen und SAUBER neu verbuchen
-  // (entfernt alte GL-Buchungen, kein Doppel-Beleg). Lieferant/Belegtyp fix;
+  // (entfernt alte GL-Buchungen, kein Doppel-Beleg). Belegtyp/Mandant bleiben fix;
   // bezahlte/MWST-abgerechnete/stornierte Belege werden serverseitig gesperrt.
   bearbeiten: async (belegId, beleg, positionen) => {
     const { error } = await supabase.rpc('fibu_kreditoren_bearbeiten', {
@@ -299,32 +263,14 @@ export const kreditorenApi = {
   },
 
   markBezahlt: async (id, betrag, bezahltAm) => {
-    const { data: beleg } = await supabase
-      .from('fibu_kreditoren_belege')
-      .select('betrag_brutto, betrag_bezahlt')
-      .eq('id', id)
-      .single();
-    const neuBezahlt = (beleg?.betrag_bezahlt ?? 0) + betrag;
-    const status = neuBezahlt >= beleg?.betrag_brutto ? 'bezahlt' : 'teilbezahlt';
-    return kreditorenApi.update(id, {
-      betrag_bezahlt: neuBezahlt,
-      bezahlt_am: bezahltAm ?? new Date().toISOString().slice(0, 10),
-      status,
+    const { data, error } = await supabase.rpc('fibu_kreditoren_zahlung_erfassen', {
+      p_beleg_id: id,
+      p_betrag: betrag,
+      p_datum: bezahltAm ?? new Date().toISOString().slice(0, 10),
+      p_zahlungsreferenz: null,
     });
-  },
-
-  nextBelegNr: async (mandantId) => {
-    const year = new Date().getFullYear();
-    const { data } = await supabase
-      .from('fibu_kreditoren_belege')
-      .select('beleg_nr')
-      .eq('mandant_id', mandantId)
-      .like('beleg_nr', `KR-${year}-%`)
-      .order('beleg_nr', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    const last = parseInt(data?.beleg_nr?.split('-')[2] ?? '0', 10);
-    return `KR-${year}-${String(last + 1).padStart(4, '0')}`;
+    if (error) throw error;
+    return data;
   },
 
   // Vorsteuer für ein Quartal — Stichtag ist das Buchungsdatum (nicht Belegdatum)
@@ -421,24 +367,16 @@ export const kiVorschlagApi = {
 // ── Zahlungsläufe ────────────────────────────────────────────────
 export const zahlungslaufApi = {
   create: async (mandantId, lauf, positionen) => {
-    const { data, error } = await supabase
-      .from('fibu_zahlungslaeufe')
-      .insert({ ...lauf, mandant_id: mandantId })
-      .select()
-      .single();
-    if (error) throw error;
-    if (positionen?.length) {
-      // DB-Trigger trg_fibu_zlp_no_double blockiert Belege, die bereits in einem
-      // aktiven Lauf stecken (Doppelzahlungsschutz). Fehler sauber melden + Orphan entfernen.
-      const { error: posErr } = await supabase.from('fibu_zahlungslauf_positionen').insert(
-        positionen.map(p => ({ ...p, mandant_id: mandantId, zahlungslauf_id: data.id }))
-      );
-      if (posErr) {
-        await supabase.from('fibu_zahlungslaeufe').delete().eq('id', data.id);
-        if (/aktiven Zahlungslauf|unique|duplicate/i.test(posErr.message || ''))
-          throw new Error('Mindestens ein Beleg ist bereits in einem aktiven Zahlungslauf – Doppelzahlung verhindert.');
-        throw posErr;
+    const { data, error } = await supabase.rpc('fibu_zahlungslauf_erstellen', {
+      p_mandant_id: mandantId,
+      p_lauf: lauf,
+      p_positionen: positionen ?? [],
+    });
+    if (error) {
+      if (/aktiven Zahlungslauf|unique|duplicate/i.test(error.message || '')) {
+        throw new Error('Mindestens ein Beleg ist bereits in einem aktiven Zahlungslauf – Doppelzahlung verhindert.');
       }
+      throw error;
     }
     return data;
   },
@@ -867,6 +805,39 @@ export const budgetApi = {
 
 // ── Kundenstamm (Debitoren) ──────────────────────────────────────
 export const kundenApi = {
+  /**
+   * Erstellt mehrere Kunden auf einmal und vergibt fortlaufende Kundennummern
+   * @param {string} mandantId
+   * @param {Array<Object>} kundenArray - Array von Kundenobjekten (ohne mandant_id und nr)
+   */
+  bulkCreate: async (mandantId, kundenArray) => {
+    if (!kundenArray || kundenArray.length === 0) return [];
+
+    const nextDStr = await kundenApi.nextNr(mandantId);
+    let nextNummer = parseInt(nextDStr.replace(/\D/g, ''), 10) - 1 || 1;
+
+    // Array mit Mandant-ID und generierter Kundennummer aufbereiten
+    const payload = kundenArray.map((kunde) => {
+      nextNummer++;
+      return {
+        ...kunde,
+        mandant_id: mandantId,
+        nr: `K-${nextNummer}`, // Verwendet bestehende Nr. aus Import oder generiert neue
+        zahlungsbedingung_tage: kunde.zahlungsbedingung_tage ?? 30,
+        mwst_code: kunde.mwst_code ?? 'U81',
+        aktiv: kunde.aktiv ?? true,
+      };
+    });
+
+    // Bulk-Insert in Supabase ausführen
+    const { data, error } = await supabase
+        .from('fibu_kunden')
+        .insert(payload)
+        .select();
+
+    if (error) throw error;
+    return data;
+  },
   list: async (mandantId) => {
     const { data, error } = await supabase
       .from('fibu_kunden').select('*').eq('mandant_id', mandantId).order('name');
@@ -900,6 +871,37 @@ export const kundenApi = {
 
 // ── Produktstamm (Artikel: Dienstleistung + Material) ────────────
 export const artikelApi = {
+  bulkCreate: async (mandantId, artikelArray) => {
+    if (!artikelArray || artikelArray.length === 0) return [];
+
+    // Höchste bestehende Artikel-Nr ermitteln für Fallback-Nummerierung
+    const nextDStr = await artikelApi.nextNr(mandantId, 'dienstleistung');
+    let nextNummer = parseInt(nextDStr.replace(/\D/g, ''), 10) - 1 || 1;
+
+    const payload = artikelArray.map((artikel) => {
+      nextNummer++;
+      return {
+        ...artikel,
+        mandant_id: mandantId,
+        nr: `D-${String(nextNummer).padStart(3, '0')}`,
+        typ: artikel.typ || 'dienstleistung',
+        einheit: artikel.einheit || 'Std',
+        verkaufspreis: parseFloat(artikel.verkaufspreis) || 0,
+        waehrung: artikel.waehrung || 'CHF',
+        mwst_code: artikel.mwst_code || 'U81',
+        ertragskonto: artikel.ertragskonto || '3400',
+        aktiv: artikel.aktiv ?? true,
+      };
+    });
+
+    const { data, error } = await supabase
+        .from('fibu_artikel')
+        .insert(payload)
+        .select();
+
+    if (error) throw error;
+    return data;
+  },
   list: async (mandantId) => {
     const { data, error } = await supabase
       .from('fibu_artikel').select('*').eq('mandant_id', mandantId).order('nr');
@@ -951,79 +953,53 @@ export const debitorenApi = {
     if (error) throw error;
     return data;
   },
-  nextBelegNr: async (mandantId) => {
-    const { data, error } = await supabase.rpc('fibu_next_debitoren_nr', { p_mandant_id: mandantId });
-    if (error) throw error;
-    return data;
-  },
   // beleg: Kopf (ohne beleg_nr -> wird generiert), positionen: Zeilen.
   // Wenn status !== 'entwurf' wird direkt ins Hauptbuch gebucht.
   create: async (mandantId, beleg, positionen) => {
-    let beleg_nr = beleg.beleg_nr;
-    if (!beleg_nr) {
-      const { data: nr, error: ne } = await supabase.rpc('fibu_next_debitoren_nr', { p_mandant_id: mandantId });
-      if (ne) throw ne;
-      beleg_nr = nr;
-    }
-    // QR-Referenz (27-stellig) generieren, falls noch keine gesetzt – für QR-Rechnung
-    const zahlungsreferenz = beleg.zahlungsreferenz || buildQrReference(beleg_nr, beleg_nr);
-    const { data, error } = await supabase
-      .from('fibu_debitoren_belege')
-      .insert({ ...beleg, beleg_nr, zahlungsreferenz, mandant_id: mandantId }).select().single();
+    const { data, error } = await supabase.rpc('fibu_debitoren_erstellen', {
+      p_mandant_id: mandantId,
+      p_beleg: beleg,
+      p_positionen: positionen ?? [],
+    });
     if (error) throw error;
-    if (positionen?.length) {
-      const pos = positionen.map((p, i) => ({ ...p, mandant_id: mandantId, beleg_id: data.id, position: i + 1 }));
-      const { error: pe } = await supabase.from('fibu_debitoren_positionen').insert(pos);
-      if (pe) throw pe;
-    }
-    if (beleg.status && beleg.status !== 'entwurf') {
-      const { error: ve } = await supabase.rpc('fibu_debitoren_verbuchen', { p_beleg_id: data.id });
-      if (ve) throw ve;
-    }
     return data;
   },
   // Entwurf -> gestellt (offen) + ins Hauptbuch buchen
   stellen: async (id) => {
-    const { error: ue } = await supabase
-      .from('fibu_debitoren_belege').update({ status: 'offen' }).eq('id', id);
-    if (ue) throw ue;
-    const { error: ve } = await supabase.rpc('fibu_debitoren_verbuchen', { p_beleg_id: id });
-    if (ve) throw ve;
+    const { data, error } = await supabase.rpc('fibu_debitoren_stellen', {
+      p_beleg_id: id,
+    });
+    if (error) throw error;
+    return data;
   },
-  update: async (id, payload) => {
-    const { error } = await supabase.from('fibu_debitoren_belege').update(payload).eq('id', id);
+  markGesendet: async (id, email) => {
+    const { error } = await supabase.from('fibu_debitoren_belege').update({
+      gesendet_am: new Date().toISOString(),
+      gesendet_an: email,
+    }).eq('id', id);
     if (error) throw error;
   },
   // Vollständiges Update eines Entwurfs: Kopf + Positionen (alte ersetzen).
   // Nur erlaubt solange nicht verbucht (status === 'entwurf').
-  updateFull: async (mandantId, id, beleg, positionen) => {
-    const { error: ue } = await supabase
-      .from('fibu_debitoren_belege').update(beleg).eq('id', id);
-    if (ue) throw ue;
-    const { error: de } = await supabase
-      .from('fibu_debitoren_positionen').delete().eq('beleg_id', id);
-    if (de) throw de;
-    if (positionen?.length) {
-      const pos = positionen.map((p, i) => ({ ...p, mandant_id: mandantId, beleg_id: id, position: i + 1 }));
-      const { error: pe } = await supabase.from('fibu_debitoren_positionen').insert(pos);
-      if (pe) throw pe;
-    }
+  updateFull: async (_mandantId, id, beleg, positionen) => {
+    const { data, error } = await supabase.rpc('fibu_debitoren_entwurf_speichern', {
+      p_beleg_id: id,
+      p_beleg: beleg,
+      p_positionen: positionen ?? [],
+      p_stellen: beleg.status !== 'entwurf',
+    });
+    if (error) throw error;
+    return data;
   },
   // Zahlungseingang erfassen (wie Kreditoren markBezahlt – GL bucht die Bankabstimmung).
   markBezahlt: async (id, betrag, bezahltAm) => {
-    const { data: beleg } = await supabase
-      .from('fibu_debitoren_belege')
-      .select('betrag_brutto, betrag_bezahlt')
-      .eq('id', id)
-      .single();
-    const neuBezahlt = (beleg?.betrag_bezahlt ?? 0) + betrag;
-    const status = neuBezahlt >= beleg?.betrag_brutto ? 'bezahlt' : 'teilbezahlt';
-    const { error } = await supabase.from('fibu_debitoren_belege').update({
-      betrag_bezahlt: neuBezahlt,
-      bezahlt_am: bezahltAm ?? new Date().toISOString().slice(0, 10),
-      status,
-    }).eq('id', id);
+    const { data, error } = await supabase.rpc('fibu_debitoren_zahlung_erfassen', {
+      p_beleg_id: id,
+      p_betrag: betrag,
+      p_datum: bezahltAm ?? new Date().toISOString().slice(0, 10),
+    });
     if (error) throw error;
+    return data;
   },
   // Rechnung stornieren → erzeugt eine Storno-Gutschrift per Storno-Datum.
   storno: async (belegId, stornoDatum) => {
@@ -1034,7 +1010,9 @@ export const debitorenApi = {
     return data;   // id der Storno-Gutschrift
   },
   remove: async (id) => {
-    const { error } = await supabase.from('fibu_debitoren_belege').delete().eq('id', id);
+    const { error } = await supabase.rpc('fibu_debitoren_entwurf_loeschen', {
+      p_beleg_id: id,
+    });
     if (error) throw error;
   },
 };
@@ -1062,24 +1040,16 @@ export const mahnungApi = {
     return data ?? [];
   },
   // Mahnung protokollieren + Beleg-Mahnstufe hochsetzen.
-  erstellen: async (mandantId, beleg, { stufe, gebuehr = 0, faelligAm, pdfUrl = null, gesendetAn = null }) => {
-    const offen = (beleg.betrag_brutto || 0) - (beleg.betrag_bezahlt || 0);
-    const { data, error } = await supabase
-      .from('fibu_debitoren_mahnungen')
-      .insert({
-        mandant_id: mandantId, beleg_id: beleg.id, stufe,
-        mahndatum: new Date().toISOString().slice(0, 10),
-        faellig_am: faelligAm ?? null, gebuehr, betrag_offen: offen,
-        pdf_url: pdfUrl, gesendet_an: gesendetAn,
-        gesendet_am: gesendetAn ? new Date().toISOString() : null,
-      })
-      .select().single();
+  erstellen: async (_mandantId, beleg, { stufe, gebuehr = 0, faelligAm, pdfUrl = null, gesendetAn = null }) => {
+    const { data, error } = await supabase.rpc('fibu_debitoren_mahnung_erstellen', {
+      p_beleg_id: beleg.id,
+      p_stufe: stufe,
+      p_gebuehr: gebuehr,
+      p_faellig_am: faelligAm ?? null,
+      p_pdf_url: pdfUrl,
+      p_gesendet_an: gesendetAn,
+    });
     if (error) throw error;
-    const { error: ue } = await supabase
-      .from('fibu_debitoren_belege')
-      .update({ mahnstufe: stufe, letzte_mahnung_am: new Date().toISOString().slice(0, 10) })
-      .eq('id', beleg.id);
-    if (ue) throw ue;
     return data;
   },
 };

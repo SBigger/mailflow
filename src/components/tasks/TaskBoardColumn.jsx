@@ -104,7 +104,7 @@ export default function TaskBoardColumn({ column, index, tasks, onRename, onDele
         <div
           ref={provided.innerRef}
           {...provided.draggableProps}
-          className={`flex-shrink-0 ${cardStyle === 'monday' ? 'w-[400px]' : 'w-80'} flex flex-col h-full`}
+          className={`${cardStyle === 'monday' ? 'flex-shrink-0 w-[400px]' : 'flex-1 min-w-[320px] max-w-[460px]'} flex flex-col h-full`}
         >
           <div 
            {...provided.dragHandleProps}

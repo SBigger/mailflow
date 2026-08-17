@@ -4,6 +4,7 @@ import { steuerdaten as db } from '../../api/steuerdaten.js';
 import { fillAndDownload, listPdfFields } from '../../lib/pdfFill.js';
 import { SG_JP1B, FAVORITEN_IDS as SG_FAV } from '../../forms/sg_jp1b.js';
 import { TG_50I,  FAVORITEN_IDS as TG_FAV } from '../../forms/tg_50i.js';
+import { ZH_500,  FAVORITEN_IDS as ZH_FAV } from '../../forms/zh_500.js';
 import { ESTV_19, FAVORITEN_IDS as ESTV_FAV } from '../../forms/estv_19.js';
 import {
   Search, Download, Save, Plus, ChevronRight, FileText,
@@ -13,11 +14,12 @@ import { toast } from 'sonner';
 import { PdfViewer } from '../../components/PdfViewer.jsx';
 import {supabase} from "../../api/supabaseClient.js";
 
-const FORMS    = { SG: SG_JP1B, TG: TG_50I, ESTV: ESTV_19 };
-const FORM_FAV = { SG: SG_FAV,  TG: TG_FAV, ESTV: ESTV_FAV };
+const FORMS    = { SG: SG_JP1B, TG: TG_50I, ZH: ZH_500, ESTV: ESTV_19 };
+const FORM_FAV = { SG: SG_FAV,  TG: TG_FAV, ZH: ZH_FAV, ESTV: ESTV_FAV };
 const TABS = [
   { id: 'SG',   label: 'Kanton SG'           },
   { id: 'TG',   label: 'Kanton TG'           },
+  { id: 'ZH',   label: 'Kanton ZH'           },
   { id: 'ESTV', label: 'ESTV Beteiligungen'  },
 ];
 const CY    = new Date().getFullYear();
@@ -361,6 +363,9 @@ function FormEditor({ kunde, kanton, steuerjahr, onFelderChange }) {
               style={{ color: C.accent, borderBottom: `1px solid ${C.panelBdr}`, paddingBottom: 6 }}>
               {section.titel}
             </h3>
+            {section.hinweis && (
+              <p className="text-xs mb-3" style={{ color: C.sub }}>{section.hinweis}</p>
+            )}
             <div className="grid grid-cols-2 gap-x-4 gap-y-3">
               {section.felder.map(feld => {
                 const isFav = favIds.has(feld.id);

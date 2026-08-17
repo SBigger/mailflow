@@ -1,5 +1,5 @@
 import React, {useState, useContext, useRef, useEffect} from "react";
-import {entities, functions, auth, supabase} from "@/api/supabaseClient";
+import {entities, functions, auth, supabase, uploadAvatar} from "@/api/supabaseClient";
 import {useQuery, useMutation, useQueryClient} from "@tanstack/react-query";
 import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
@@ -29,15 +29,35 @@ import {
     Download,
     Database,
     Inbox,
-    ShieldCheck, Upload, PanelLeft, Loader2
+    ShieldCheck, Upload, PanelLeft, Loader2, Camera, ImageOff, Phone
 } from "lucide-react";
 import {ThemeContext} from "@/Layout";
+import PersonAvatar from "@/components/ui/PersonAvatar";
 import DeleteUserDialog from "@/components/settings/DeleteUserDialog";
 import DokAblageSettings from "@/components/settings/DokAblageSettings";
 import {DragDropContext, Droppable, Draggable} from "@hello-pangea/dnd";
 import {toast} from "sonner";
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
+
+// Zugriffsrollen — muss zum profiles_role_check-Constraint (Migration
+// 20260705100000_roles_foundation.sql) und zu ALLOWED_ROLES in den
+// Edge Functions inviteUser/makeAdmin passen. 'user' gibt es nicht mehr.
+const ROLE_OPTIONS = [
+    {value: 'admin',          label: 'Admin (Voller Zugriff)',            short: 'Admin'},
+    {value: 'mandatsleiter',  label: 'Mandatsleiter (volle Fachrechte)',  short: 'Mandatsleiter'},
+    {value: 'sachbearbeiter', label: 'Sachbearbeiter (erfassen & buchen)', short: 'Sachbearbeiter'},
+    {value: 'readonly',       label: 'Nur-Lesen / Revisor',               short: 'Nur-Lesen'},
+    {value: 'task_user',      label: 'Task Benutzer (nur Tasks)',         short: 'Task Benutzer'},
+];
+const ROLE_BADGE = {
+    admin:          'bg-purple-500/10 text-purple-400 border border-purple-500/30',
+    mandatsleiter:  'bg-blue-500/10 text-blue-400 border border-blue-500/30',
+    sachbearbeiter: 'bg-sky-500/10 text-sky-400 border border-sky-500/30',
+    readonly:       'bg-amber-500/10 text-amber-400 border border-amber-500/30',
+    task_user:      'bg-green-500/10 text-green-400 border border-green-500/30',
+};
+const roleLabel = (role) => ROLE_OPTIONS.find(r => r.value === role)?.short || role || '—';
 
 export default function Settings() {
     const queryClient = useQueryClient();
@@ -60,7 +80,7 @@ export default function Settings() {
     const [customerSearch, setCustomerSearch] = useState('');
     const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
     const [inviteEmail, setInviteEmail] = useState('');
-    const [inviteRole, setInviteRole] = useState('user');
+    const [inviteRole, setInviteRole] = useState('sachbearbeiter');
     const [syncDays, setSyncDays] = useState(60);
     const [newActivityName, setNewActivityName] = useState('');
     const [newStaff, setNewStaff] = useState({name: '', email: ''});
@@ -82,6 +102,10 @@ export default function Settings() {
     const [status, setStatus] = useState('');
     const [trigger, setTrigger] = useState(false);
     const fileInputRef = useRef(null);
+    // Avatar/Foto-Upload (eigenes Input – fileInputRef ist fürs Backup belegt)
+    const avatarInputRef = useRef(null);
+    const [avatarTargetUserId, setAvatarTargetUserId] = useState(null);
+    const [avatarUploadingId,  setAvatarUploadingId]  = useState(null);
 
     const {data: user} = useQuery({
         queryKey: ['currentUser'],
@@ -144,6 +168,71 @@ export default function Settings() {
         queryFn: () => entities.Customer.list("company_name"),
         enabled: activeTab === 'domain-rules',
     });
+
+    // ── Telefonie: Nebenstellen live aus der peoplefone-Anlage (2026-07-26).
+    // Gleiche Quelle wie die Verbinden-Ziele (Edge Function telefonie-transfer)
+    // -- keine Datenpflege in smartis, die Anlage ist die Wahrheit.
+    const {data: pbxTargets = [], isLoading: pbxLoading, isError: pbxError} = useQuery({
+        queryKey: ['pbx-targets'],
+        queryFn: async () => {
+            const {data} = await functions.invoke('telefonie-transfer', {action: 'targets'});
+            return data?.targets || [];
+        },
+        enabled: activeTab === 'telefonie' && user?.role === 'admin',
+        staleTime: 5 * 60_000,
+    });
+    // ── Telefonie: Zugangsdaten der Anlage (2026-07-29, Sascha-Wunsch).
+    // Der Schluessel selbst kommt NIE zurueck -- die Funktion liefert nur
+    // "gesetzt / letzte vier Zeichen / wann". Ablage: integration_secrets,
+    // fuer die Oberflaeche unlesbar (RLS ohne Policy, nur service_role).
+    const {data: zugangEintraege = [], isLoading: zugangLoading} = useQuery({
+        queryKey: ['telefonie-zugang'],
+        queryFn: async () => {
+            const {data} = await functions.invoke('telefonie-zugang', {action: 'status'});
+            return data?.eintraege || [];
+        },
+        enabled: activeTab === 'telefonie' && user?.role === 'admin',
+    });
+    const [zugangWert, setZugangWert] = useState('');
+    const [zugangSpeichert, setZugangSpeichert] = useState(false);
+    const speichereZugang = async (name, wert) => {
+        setZugangSpeichert(true);
+        try {
+            // functions.invoke wirft bei nicht-2xx bereits selbst; hier bleibt
+            // nur der Fall "200 mit Fehlertext im Rumpf".
+            const {data} = await functions.invoke('telefonie-zugang',
+                wert === null ? {action: 'delete', name} : {action: 'set', name, value: wert});
+            if (data?.error) throw new Error(data.error);
+            setZugangWert('');
+            toast.success(wert === null ? 'Schlüssel entfernt' : 'Schlüssel hinterlegt');
+            queryClient.invalidateQueries({queryKey: ['telefonie-zugang']});
+            queryClient.invalidateQueries({queryKey: ['pbx-targets']});
+        } catch (e) {
+            toast.error('Speichern fehlgeschlagen: ' + (e?.message || e));
+        } finally {
+            setZugangSpeichert(false);
+        }
+    };
+
+    const [extSavingId, setExtSavingId] = useState(null);
+    // Zuordnung Profil -> peoplefone-Benutzer speichern (Grundstein fuer den
+    // Mitarbeiter-Rollout: eigene Subscriptions, gezielte Karten, Verbinden-
+    // Liste). Admin-RLS ("Admins can update any profile") erlaubt das direkt.
+    const saveExtension = async (profileId, target) => {
+        setExtSavingId(profileId);
+        try {
+            const {error: extErr} = await supabase.from('profiles').update({
+                peoplefone_user_id: target?.peoplefoneId || null,
+                internal_extension: target?.internalNumber || null,
+            }).eq('id', profileId);
+            if (extErr) throw new Error(extErr.message);
+            queryClient.invalidateQueries({queryKey: ['users']});
+        } catch (e) {
+            toast.error('Zuordnung speichern fehlgeschlagen: ' + (e?.message || e));
+        } finally {
+            setExtSavingId(null);
+        }
+    };
 
     const {data: activityTemplates = []} = useQuery({
         queryKey: ['activityTemplates'],
@@ -349,6 +438,59 @@ export default function Settings() {
             toast.error('Fehler: ' + e.message);
         } finally {
             setPhoneSaving(false);
+        }
+    };
+
+    // Avatar-URL speichern: eigenes Profil darf per RLS (own_profile) direkt
+    // schreiben, fremde Profile laufen über die admin-only Edge Function.
+    const saveAvatarUrl = async (userId, url) => {
+        if (userId === user?.id) {
+            const {error} = await supabase.from('profiles').update({avatar_url: url}).eq('id', userId);
+            if (error) throw new Error(error.message);
+        } else {
+            await functions.invoke('updateUserProfile', {user_id: userId, avatar_url: url});
+        }
+    };
+
+    // Foto-Upload auslösen (verstecktes File-Input klicken)
+    const triggerAvatarUpload = (userId) => {
+        setAvatarTargetUserId(userId);
+        requestAnimationFrame(() => avatarInputRef.current?.click());
+    };
+
+    const handleAvatarFile = async (e) => {
+        const file = e.target.files?.[0];
+        const userId = avatarTargetUserId;
+        e.target.value = ''; // Reset → gleiches File kann erneut gewählt werden
+        if (!file || !userId) return;
+        if (!file.type.startsWith('image/')) { toast.error('Bitte ein Bild auswählen'); return; }
+        if (file.size > 5 * 1024 * 1024) { toast.error('Bild zu gross (max. 5 MB)'); return; }
+        setAvatarUploadingId(userId);
+        try {
+            const url = await uploadAvatar(file, userId);
+            await saveAvatarUrl(userId, url);
+            toast.success('Foto gespeichert');
+            queryClient.invalidateQueries({queryKey: ['users']});
+            queryClient.invalidateQueries({queryKey: ['currentUser']});
+        } catch (err) {
+            toast.error('Fehler: ' + err.message);
+        } finally {
+            setAvatarUploadingId(null);
+            setAvatarTargetUserId(null);
+        }
+    };
+
+    const handleRemoveAvatar = async (userId) => {
+        setAvatarUploadingId(userId);
+        try {
+            await saveAvatarUrl(userId, null);
+            toast.success('Foto entfernt');
+            queryClient.invalidateQueries({queryKey: ['users']});
+            queryClient.invalidateQueries({queryKey: ['currentUser']});
+        } catch (err) {
+            toast.error('Fehler: ' + err.message);
+        } finally {
+            setAvatarUploadingId(null);
         }
     };
 
@@ -872,6 +1014,14 @@ export default function Settings() {
                     >
                         {theme === 'light' ? <Sun className="h-4 w-4"/> : <Moon className="h-4 w-4"/>} Darstellung
                     </button>
+                    {user?.role !== 'task_user' && (
+                        <button
+                            onClick={() => setActiveTab('telefonie')}
+                            className={`w-full justify-start flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'telefonie' ? navActiveStyle : navInactiveStyle}`}
+                        >
+                            <Phone className="h-4 w-4"/> Telefonie
+                        </button>
+                    )}
                     {user?.role === 'admin' && (
                         <>
                             {isFetching ? '...loading' : (
@@ -907,6 +1057,51 @@ export default function Settings() {
                 {/* Signaturen Tab */}
                 {activeTab === 'signature' && (
                     <div className="space-y-6">
+                        {/* Profilfoto (Selbstbedienung – schreibt per RLS direkt aufs eigene Profil) */}
+                        <div className="rounded-xl p-6 border"
+                             style={{backgroundColor: cardBg, borderColor: cardBorder}}>
+                            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2"
+                                style={{color: headingColor}}>
+                                <Camera className="h-5 w-5"/> Profilfoto
+                            </h3>
+                            <div className="flex items-center gap-4">
+                                <button
+                                    type="button"
+                                    onClick={() => user && triggerAvatarUpload(user.id)}
+                                    title="Foto ändern"
+                                    className="group/av relative flex-shrink-0 rounded-full"
+                                >
+                                    <PersonAvatar user={user} size={72}/>
+                                    <span className="absolute inset-0 rounded-full bg-black/45 opacity-0 group-hover/av:opacity-100 transition-opacity flex items-center justify-center">
+                                        {avatarUploadingId === user?.id
+                                            ? <Loader2 className="h-5 w-5 animate-spin text-white"/>
+                                            : <Camera className="h-5 w-5 text-white"/>}
+                                    </span>
+                                </button>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    <Button
+                                        onClick={() => user && triggerAvatarUpload(user.id)}
+                                        disabled={!!avatarUploadingId}
+                                        className="bg-indigo-600 hover:bg-indigo-500"
+                                    >
+                                        <Camera className="h-4 w-4 mr-2"/> Foto wählen
+                                    </Button>
+                                    {user?.avatar_url && (
+                                        <Button
+                                            variant="outline"
+                                            onClick={() => handleRemoveAvatar(user.id)}
+                                            disabled={!!avatarUploadingId}
+                                            style={{borderColor: cardBorder, color: textMuted, backgroundColor: 'transparent'}}
+                                        >
+                                            <ImageOff className="h-4 w-4 mr-2"/> Entfernen
+                                        </Button>
+                                    )}
+                                </div>
+                            </div>
+                            {/* Verstecktes File-Input für die Selbstbedienung in diesem Tab */}
+                            <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarFile}/>
+                        </div>
+
                         <div className="rounded-xl p-6 border"
                              style={{backgroundColor: cardBg, borderColor: cardBorder}}>
                             <h3 className="text-lg font-semibold mb-4 flex items-center gap-2"
@@ -1775,9 +1970,9 @@ export default function Settings() {
                                         color: inputColor,
                                         border: `1px solid ${inputBorder}`
                                     }}>
-                                        <option value="admin">Admin (Voller Zugriff)</option>
-                                        <option value="user">Benutzer (Mail + Tasks)</option>
-                                        <option value="task_user">Task Benutzer (nur Tasks)</option>
+                                        {ROLE_OPTIONS.map(r => (
+                                            <option key={r.value} value={r.value}>{r.label}</option>
+                                        ))}
                                     </select>
                                     <Button
                                         onClick={async () => {
@@ -1799,7 +1994,7 @@ export default function Settings() {
                                                 if (data.success) {
                                                     toast.success(`Einladung versendet an ${emailToInvite}`);
                                                     setInviteEmail('');
-                                                    setInviteRole('user');
+                                                    setInviteRole('sachbearbeiter');
                                                     queryClient.invalidateQueries({queryKey: ['users']});
                                                 } else {
                                                     toast.error(data.error || 'Einladung fehlgeschlagen');
@@ -1834,10 +2029,30 @@ export default function Settings() {
                                                     {u.inviteState === 3 ? (
                                                         <ShieldCheck className="h-5 w-5"/>
                                                     ) : (<></>)}
-                                                    <div
-                                                        className="w-9 h-9 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400 text-sm font-semibold flex-shrink-0">
-                                                        {(u.full_name || u.email || '?').charAt(0).toUpperCase()}
-                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => triggerAvatarUpload(u.id)}
+                                                        title="Foto ändern"
+                                                        className="group/av relative flex-shrink-0 rounded-full"
+                                                    >
+                                                        <PersonAvatar user={u} size={36}/>
+                                                        <span className="absolute inset-0 rounded-full bg-black/45 opacity-0 group-hover/av:opacity-100 transition-opacity flex items-center justify-center">
+                                                            {avatarUploadingId === u.id
+                                                                ? <Loader2 className="h-4 w-4 animate-spin text-white"/>
+                                                                : <Camera className="h-4 w-4 text-white"/>}
+                                                        </span>
+                                                    </button>
+                                                    {u.avatar_url && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleRemoveAvatar(u.id)}
+                                                            title="Foto entfernen"
+                                                            className="flex-shrink-0 opacity-40 hover:opacity-100 transition-opacity -ml-1"
+                                                            style={{color: textMuted}}
+                                                        >
+                                                            <ImageOff className="h-3.5 w-3.5"/>
+                                                        </button>
+                                                    )}
 
                                                     {/* Name / Email area */}
                                                     <div className="flex-1 min-w-0">
@@ -1972,9 +2187,9 @@ export default function Settings() {
                                                                             color: inputColor,
                                                                             border: `1px solid ${inputBorder}`
                                                                         }}>
-                                                                    <option value="admin">Admin</option>
-                                                                    <option value="user">Benutzer</option>
-                                                                    <option value="task_user">Task Benutzer</option>
+                                                                    {ROLE_OPTIONS.map(r => (
+                                                                        <option key={r.value} value={r.value}>{r.short}</option>
+                                                                    ))}
                                                                 </select>
                                                                 <Button
                                                                     variant="ghost" size="icon"
@@ -1996,13 +2211,9 @@ export default function Settings() {
                                                         ) : (
                                                             <>
                                   <span className={`text-xs px-2 py-1 rounded-full ${
-                                      u.role === 'admin'
-                                          ? 'bg-purple-500/10 text-purple-400 border border-purple-500/30'
-                                          : u.role === 'task_user'
-                                              ? 'bg-green-500/10 text-green-400 border border-green-500/30'
-                                              : 'bg-blue-500/10 text-blue-400 border border-blue-500/30'
+                                      ROLE_BADGE[u.role] || 'bg-zinc-500/10 text-zinc-400 border border-zinc-500/30'
                                   }`}>
-                                    {u.role === 'admin' ? 'Admin' : u.role === 'task_user' ? 'Task Benutzer' : 'Benutzer'}
+                                    {roleLabel(u.role)}
                                   </span>
                                                                 {u.id !== user?.id && (
                                                                     <>
@@ -2011,7 +2222,7 @@ export default function Settings() {
                                                                             title="Rolle bearbeiten"
                                                                             onClick={() => {
                                                                                 setEditingUserId(u.id);
-                                                                                setEditingUserRole(u.role || 'user');
+                                                                                setEditingUserRole(u.role || 'sachbearbeiter');
                                                                             }}
                                                                             className="h-7 w-7"
                                                                             style={{color: textMuted}}
@@ -2049,6 +2260,8 @@ export default function Settings() {
                                 )}
                             </div>
                         </div>
+                        {/* Verstecktes File-Input für den Foto-Upload (für alle Benutzerzeilen) */}
+                        <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarFile}/>
                     </div>
                 )}
 
@@ -2180,6 +2393,177 @@ export default function Settings() {
                                     </button>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Telefonie Tab (2026-07-26): Zuordnung Mitarbeiter <-> peoplefone-
+                    Nebenstelle als Grundstein fuer den Telefonie-Rollout. */}
+                {activeTab === 'telefonie' && (
+                    <div className="space-y-6">
+                        {/* Zugang zur Anlage (2026-07-29). Bewusst "eintragen, nie auslesen":
+                            der Schluessel liegt in integration_secrets, wohin die Oberflaeche
+                            nicht sehen kann -- hier gibt es nur Status und Ersetzen. */}
+                        {user?.role === 'admin' && (
+                            <div className="rounded-xl p-6 border" style={{backgroundColor: cardBg, borderColor: cardBorder}}>
+                                <h3 className="text-lg font-semibold mb-1 flex items-center gap-2" style={{color: headingColor}}>
+                                    <Phone className="h-5 w-5"/> Zugang zur Telefonanlage
+                                </h3>
+                                <p className="text-sm mb-4" style={{color: textMuted}}>
+                                    peoplefone gibt Schlüssel getrennt nach Bereich aus. Für die Nebenstellen-Liste
+                                    braucht es einen Schlüssel mit Zugriff auf den Konfigurations-Bereich
+                                    (Configuration API) — im peoplefone-Portal unter API-Verwaltung.
+                                    Einmal eingetragen, ist der Schlüssel nicht mehr sichtbar; er lässt sich nur
+                                    ersetzen oder entfernen.
+                                </p>
+                                {zugangLoading && <p className="text-sm" style={{color: textMuted}}>Lade Status…</p>}
+                                {zugangEintraege.map(e => (
+                                    <div key={e.name} className="rounded-lg border p-4" style={{borderColor: cardBorder}}>
+                                        <div className="text-sm font-medium mb-1" style={{color: headingColor}}>{e.beschreibung}</div>
+                                        <div className="text-xs mb-3" style={{color: textMuted}}>
+                                            {e.gesetzt
+                                                ? `Hinterlegt${e.endetAuf ? ` (endet auf …${e.endetAuf})` : ''}${e.aktualisiertAm ? ` · ${new Date(e.aktualisiertAm).toLocaleDateString('de-CH')}` : ''}`
+                                                : 'Noch nicht hinterlegt — es gilt der Schlüssel aus den Server-Einstellungen.'}
+                                        </div>
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <input
+                                                type="password"
+                                                autoComplete="new-password"
+                                                value={zugangWert}
+                                                onChange={(ev) => setZugangWert(ev.target.value)}
+                                                placeholder={e.gesetzt ? 'Neuen Schlüssel eintragen…' : 'Schlüssel einfügen…'}
+                                                className="text-sm rounded-md border px-3 py-2 flex-1"
+                                                style={{borderColor: cardBorder, backgroundColor: cardBg, color: headingColor, minWidth: 240}}
+                                            />
+                                            <button
+                                                onClick={() => speichereZugang(e.name, zugangWert)}
+                                                disabled={zugangSpeichert || zugangWert.trim().length < 8}
+                                                className="px-4 py-2 rounded-md text-white text-sm font-medium disabled:opacity-50"
+                                                style={{backgroundColor: isArtis ? '#7a9b7f' : '#6366f1'}}
+                                            >
+                                                {zugangSpeichert ? 'Speichert…' : 'Speichern'}
+                                            </button>
+                                            {e.gesetzt && (
+                                                <button
+                                                    onClick={() => speichereZugang(e.name, null)}
+                                                    disabled={zugangSpeichert}
+                                                    className="px-3 py-2 rounded-md text-sm border disabled:opacity-50"
+                                                    style={{borderColor: cardBorder, color: textMuted}}
+                                                >
+                                                    Entfernen
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                        {user?.role === 'admin' && (
+                            <div className="rounded-xl p-6 border" style={{backgroundColor: cardBg, borderColor: cardBorder}}>
+                                <h3 className="text-lg font-semibold mb-1 flex items-center gap-2" style={{color: headingColor}}>
+                                    <Phone className="h-5 w-5"/> Nebenstellen-Zuordnung
+                                </h3>
+                                <p className="text-sm mb-6" style={{color: textMuted}}>
+                                    Welcher peoplefone-Anschluss gehört zu welcher Person? Die Liste kommt live aus der
+                                    Telefonanlage. Diese Zuordnung steuert künftig, bei wem die Anruf-Karte aufpoppt und
+                                    wohin „Verbinden" zeigt.
+                                </p>
+                                {pbxLoading && <p className="text-sm" style={{color: textMuted}}>Lade Nebenstellen aus der Anlage…</p>}
+                                {pbxError && (
+                                    <p className="text-sm text-red-500">
+                                        Nebenstellen konnten nicht geladen werden. Meist fehlt dem peoplefone-API-Schlüssel
+                                        die Berechtigung für den Konfigurations-Bereich (Configuration API) — im
+                                        peoplefone-Portal unter API-Verwaltung ergänzen. Die bestehenden Zuordnungen
+                                        unten bleiben unverändert.
+                                    </p>
+                                )}
+                                <div className="space-y-2">
+                                    {users.filter(u => u.role !== 'task_user').map(u => {
+                                        const assigned = pbxTargets.find(t => t.peoplefoneId === u.peoplefone_user_id);
+                                        return (
+                                            <div key={u.id} className="flex items-center gap-3 rounded-lg border px-3 py-2"
+                                                 style={{borderColor: cardBorder}}>
+                                                <PersonAvatar user={u} size={30}/>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="text-sm font-medium truncate" style={{color: headingColor}}>{u.full_name || u.email}</div>
+                                                    <div className="text-xs truncate" style={{color: textMuted}}>
+                                                        {(() => {
+                                                            if (assigned) return `Nebenstelle ${assigned.internalNumber} · ${assigned.name}`;
+                                                            const ext = u.internal_extension ? `Nebenstelle ${u.internal_extension}` : null;
+                                                            // Ohne geladene Liste wissen wir nur, was bei UNS gespeichert ist.
+                                                            // Dann darf hier nichts behauptet werden, was wir nicht geprueft haben.
+                                                            if (pbxLoading || pbxError) {
+                                                                if (u.peoplefone_user_id) return `${ext ?? 'Zugeordnet'} · Zuordnung gespeichert`;
+                                                                return ext ?? 'keine Zuordnung';
+                                                            }
+                                                            // Liste ist da: jetzt ist „nicht gefunden" eine echte Aussage.
+                                                            if (u.peoplefone_user_id) return `${ext ?? 'Zuordnung'} (Anschluss nicht mehr in der Anlage?)`;
+                                                            return ext ? `${ext} · noch keinem Anschluss zugeordnet` : 'keine Zuordnung';
+                                                        })()}
+                                                    </div>
+                                                </div>
+                                                {extSavingId === u.id
+                                                    ? <Loader2 className="h-4 w-4 animate-spin" style={{color: textMuted}}/>
+                                                    : (
+                                                        <select
+                                                            value={u.peoplefone_user_id || ''}
+                                                            // Ohne Liste gibt es nichts auszuwaehlen -- und ein Klick wuerde die
+                                                            // gespeicherte Zuordnung auf „keine" setzen. Darum gesperrt.
+                                                            disabled={pbxLoading || pbxError}
+                                                            title={pbxError
+                                                                ? 'Liste aus der Telefonanlage nicht verfügbar — Auswahl gesperrt, damit bestehende Zuordnungen nicht versehentlich gelöscht werden.'
+                                                                : undefined}
+                                                            onChange={(e) => {
+                                                                const t = pbxTargets.find(x => x.peoplefoneId === e.target.value) || null;
+                                                                saveExtension(u.id, t);
+                                                            }}
+                                                            className="text-sm rounded-md border px-2 py-1"
+                                                            style={{
+                                                                borderColor: cardBorder, backgroundColor: cardBg,
+                                                                color: headingColor, maxWidth: 220,
+                                                                opacity: (pbxLoading || pbxError) ? 0.55 : 1,
+                                                                cursor: (pbxLoading || pbxError) ? 'not-allowed' : undefined,
+                                                            }}
+                                                        >
+                                                            <option value="">— keine —</option>
+                                                            {/* Gespeicherten Wert anzeigbar halten, auch wenn die Liste fehlt --
+                                                                sonst zeigt der Browser faelschlich „keine". */}
+                                                            {u.peoplefone_user_id && !pbxTargets.some(t => t.peoplefoneId === u.peoplefone_user_id) && (
+                                                                <option value={u.peoplefone_user_id}>
+                                                                    {u.internal_extension ? `${u.internal_extension} · gespeichert` : 'gespeichert'}
+                                                                </option>
+                                                            )}
+                                                            {pbxTargets.map(t => (
+                                                                <option key={t.peoplefoneId} value={t.peoplefoneId}>
+                                                                    {t.internalNumber} · {t.name}
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                    )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+                        <div className="rounded-xl p-6 border" style={{backgroundColor: cardBg, borderColor: cardBorder}}>
+                            <h3 className="text-lg font-semibold mb-1 flex items-center gap-2" style={{color: headingColor}}>
+                                <Phone className="h-5 w-5"/> Mein Telefon
+                            </h3>
+                            {(() => {
+                                const me = users.find(u => u.id === user?.id) || user || {};
+                                return (
+                                    <p className="text-sm" style={{color: textMuted}}>
+                                        {me.internal_extension
+                                            ? <>Dir ist die Nebenstelle <b style={{color: headingColor}}>{me.internal_extension}</b> zugeordnet.</>
+                                            : 'Dir ist noch keine Nebenstelle zugeordnet — das übernimmt ein Admin in der Zuordnung oben.'}
+                                    </p>
+                                );
+                            })()}
+                            <p className="text-sm mt-3" style={{color: textMuted}}>
+                                Persönliche Einstellungen (Klingelverhalten, Anruf-Karte, Töne) folgen mit dem
+                                Mitarbeiter-Rollout.
+                            </p>
                         </div>
                     </div>
                 )}

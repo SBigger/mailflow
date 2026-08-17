@@ -8,8 +8,8 @@
 // → Beim ersten echten Testanruf (30-Tage-Test) IMMER zuerst die Logs der
 //   Function ansehen (`rawBody` wird geloggt) und pickPhoneNumber()/die
 //   Feldnamen unten anpassen, falls peoplefone andere Keys schickt.
-// Gleiche Normalisierungs-/Match-Logik wie in sync-teams-calls/index.ts,
-// damit beide Wege (Teams-Sync + Connector) identisch matchen.
+// Normalisierung wie in sync-teams-calls/index.ts; der Suffix-Vergleich ist
+// seit 2026-07-26 BEWUSST lockerer (6 statt 9 Ziffern, siehe phoneSuffix).
 // ══════════════════════════════════════════════════════════════════════
 
 export function normalizePhone(raw: string | null | undefined): string | null {
@@ -21,10 +21,19 @@ export function normalizePhone(raw: string | null | undefined): string | null {
   return digits.startsWith("+") ? digits : "+" + digits;
 }
 
+// Letzte 6 Ziffern (Sascha-Entscheid 2026-07-26, vorher 9): 9 Ziffern sind
+// bei CH-Nummern faktisch die ganze nationale Nummer -- jede Format-/Praefix-
+// Abweichung zwischen peoplefone und CRM liess den Match scheitern ("Format-
+// Problem", Karte zeigte nur die Nummer statt den Kundennamen). 6 sind bei
+// unserem Kundenstamm eindeutig genug; erster Treffer gewinnt.
+// ⚠️ BEWUSST anders als sync-teams-calls (dort weiterhin 9): dessen Suffix
+// wird als call_notes_pending.phone_suffix GESPEICHERT und beim Verknuepfen
+// exakt verglichen -- die beiden Welten duerfen unabhaengig sein, aber
+// innerhalb des Teams-Sync muss Schreiben+Lesen dasselbe Format behalten.
 export function phoneSuffix(norm: string | null): string | null {
   if (!norm) return null;
   const d = norm.replace(/\D/g, "");
-  return d.length >= 7 ? d.slice(-9) : null;
+  return d.length >= 6 ? d.slice(-6) : null;
 }
 
 // Versucht, aus einem beliebig geformten CONNECTOR-Payload die Anrufernummer
@@ -96,6 +105,10 @@ export async function broadcastRealtime(
   topic: string,
   event: string,
   payload: unknown,
+  // Privat = nur angemeldete Benutzer mit passender Policy empfangen. Der
+  // service_role-Schluessel darf in beide Sorten senden; die Trennung wirkt
+  // auf der Empfangsseite (Migration 20260730100000).
+  privat = false,
 ): Promise<{ ok: boolean; status: number; body?: string }> {
   try {
     const url = supabaseUrl.replace('http://', 'https://');
@@ -106,7 +119,7 @@ export async function broadcastRealtime(
         Authorization: `Bearer ${serviceRoleKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ messages: [{ topic, event, payload, private: false }] }),
+      body: JSON.stringify({ messages: [{ topic, event, payload, private: privat }] }),
     });
     if (!res.ok) return { ok: false, status: res.status, body: await res.text() };
     return { ok: true, status: res.status };

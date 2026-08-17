@@ -467,8 +467,11 @@ export default function RechnungsUebersicht() {
   };
 
   const handleSave = async (id, form, positionen) => {
-    // 1. Beleg-Kopffelder aktualisieren
-    await kreditorenApi.update(id, {
+    const validPos = (positionen ?? []).filter(p => (p.betrag_brutto ?? 0) > 0);
+    if (validPos.length === 0) {
+      throw new Error('Mindestens eine Position mit Betrag ist erforderlich.');
+    }
+    await kreditorenApi.bearbeiten(id, {
       belegdatum:         form.belegdatum,
       buchungsdatum:      form.buchungsdatum,
       faelligkeit:        form.faelligkeit,
@@ -476,45 +479,15 @@ export default function RechnungsUebersicht() {
       lieferant_beleg_nr: form.lieferant_beleg_nr,
       zahlungsreferenz:   form.zahlungsreferenz,
       notiz:              form.notiz,
-    });
-
-    // 2. Positionen ersetzen (Delete + Insert)
-    const validPos = (positionen ?? []).filter(p => (p.betrag_brutto ?? 0) > 0);
-    if (validPos.length > 0 && editBeleg?.mandant_id) {
-      const { supabase: sb } = await import('@/api/supabaseClient');
-
-      // Alle bisherigen Positionen löschen
-      await sb.from('fibu_kreditoren_positionen').delete().eq('beleg_id', id);
-
-      // Neue Positionen einfügen
-      await sb.from('fibu_kreditoren_positionen').insert(
-        validPos.map((p, i) => ({
-          beleg_id:      id,
-          mandant_id:    editBeleg.mandant_id,
-          position:      i + 1,
-          konto_nr:      p.konto_nr || null,
-          bezeichnung:   p.bezeichnung || null,
-          mwst_code:     p.mwst_code,
-          mwst_satz:     mwstCodes.find(c => c.code === p.mwst_code)?.satz ?? 0,
-          betrag_netto:  Math.round((p.betrag_netto  ?? 0) * 100) / 100,
-          betrag_mwst:   Math.round((p.betrag_mwst   ?? 0) * 100) / 100,
-          betrag_brutto: Math.round((p.betrag_brutto ?? 0) * 100) / 100,
-        }))
-      );
-
-      // Beleg-Totals aus Positionen neu berechnen
-      const tot = validPos.reduce((a, p) => ({
-        netto:  a.netto  + (p.betrag_netto  ?? 0),
-        mwst:   a.mwst   + (p.betrag_mwst   ?? 0),
-        brutto: a.brutto + (p.betrag_brutto  ?? 0),
-      }), { netto: 0, mwst: 0, brutto: 0 });
-
-      await sb.from('fibu_kreditoren_belege').update({
-        betrag_netto:  Math.round(tot.netto  * 100) / 100,
-        betrag_mwst:   Math.round(tot.mwst   * 100) / 100,
-        betrag_brutto: Math.round(tot.brutto * 100) / 100,
-      }).eq('id', id);
-    }
+    }, validPos.map(p => ({
+      konto_nr:      p.konto_nr,
+      bezeichnung:   p.bezeichnung || null,
+      mwst_code:     p.mwst_code,
+      mwst_satz:     mwstCodes.find(c => c.code === p.mwst_code)?.satz ?? 0,
+      betrag_netto:  Math.round((p.betrag_netto  ?? 0) * 100) / 100,
+      betrag_mwst:   Math.round((p.betrag_mwst   ?? 0) * 100) / 100,
+      betrag_brutto: Math.round((p.betrag_brutto ?? 0) * 100) / 100,
+    })));
 
     await load();
   };

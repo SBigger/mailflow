@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { Search, Building2, ScanSearch, Download, X, ExternalLink, Loader2, Info } from "lucide-react";
+import { Search, Building2, ScanSearch, Download, X, ExternalLink, Loader2, Info, ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import {
   sucheFirmen, firmenDetail, gemeindeliste, revisionsmandate, RECHTSFORMEN, formatUid,
@@ -93,6 +93,11 @@ function DetailDialog({ uid, onClose }) {
                 : <span className="text-slate-400">— keine (Opting-out) —</span>}
             </Zeile>
             <Zeile k="Zweck"><span className="leading-relaxed">{daten.zweck ?? "—"}</span></Zeile>
+            <Zeile k="Verwaltungsrat">
+              <span className="text-slate-400">
+                Zefix liefert keine Personendaten — Verwaltungsrat und Zeichnungsberechtigte stehen nur im kantonalen Auszug.
+              </span>
+            </Zeile>
             {daten.auszug_url && (
               <Zeile k="Handelsregister">
                 <a href={daten.auszug_url} target="_blank" rel="noreferrer"
@@ -109,8 +114,17 @@ function DetailDialog({ uid, onClose }) {
 }
 
 // ── Ergebnisliste: Tabelle ab md, darunter Karten ─────────────────────────────
+const SEITENGROESSE = 25;
+
 function Ergebnisse({ spalten, rows, onKlick }) {
+  const [seite, setSeite] = useState(0);
+  useEffect(() => { setSeite(0); }, [rows]);
+
   if (!rows.length) return null;
+
+  const seiten = Math.ceil(rows.length / SEITENGROESSE);
+  const sichtbar = rows.slice(seite * SEITENGROESSE, (seite + 1) * SEITENGROESSE);
+
   return (
     <>
       <div className="hidden overflow-hidden rounded-xl border border-slate-200 dark:border-zinc-700 md:block">
@@ -121,7 +135,7 @@ function Ergebnisse({ spalten, rows, onKlick }) {
             ))}</tr>
           </thead>
           <tbody>
-            {rows.map((r, i) => (
+            {sichtbar.map((r, i) => (
               <tr key={r.uid || i}
                   onClick={() => r.uid && onKlick?.(r.uid)}
                   className={`border-t border-slate-100 dark:border-zinc-800 ${r.uid ? "cursor-pointer hover:bg-slate-50 dark:hover:bg-zinc-800/60" : ""}`}>
@@ -133,7 +147,7 @@ function Ergebnisse({ spalten, rows, onKlick }) {
       </div>
 
       <div className="space-y-2.5 md:hidden">
-        {rows.map((r, i) => (
+        {sichtbar.map((r, i) => (
           <div key={r.uid || i}
                onClick={() => r.uid && onKlick?.(r.uid)}
                className="rounded-xl border border-slate-200 bg-white p-3.5 dark:border-zinc-700 dark:bg-zinc-900">
@@ -150,6 +164,22 @@ function Ergebnisse({ spalten, rows, onKlick }) {
           </div>
         ))}
       </div>
+
+      {seiten > 1 && (
+        <div className="mt-3 flex items-center justify-between text-sm text-slate-500 dark:text-zinc-400">
+          <span>Seite {seite + 1} von {seiten} · {rows.length} Treffer</span>
+          <div className="flex gap-2">
+            <button onClick={() => setSeite((s) => Math.max(0, s - 1))} disabled={seite === 0}
+                    className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-300 px-2.5 disabled:opacity-40 dark:border-zinc-600">
+              <ChevronLeft className="h-4 w-4" /> Zurück
+            </button>
+            <button onClick={() => setSeite((s) => Math.min(seiten - 1, s + 1))} disabled={seite >= seiten - 1}
+                    className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-300 px-2.5 disabled:opacity-40 dark:border-zinc-600">
+              Weiter <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
     </>
   );
 }

@@ -129,11 +129,11 @@ export default function CustomerHeader({ customer, staff, onUpdate, actions = nu
   const adresseHasData  = !!(customer.strasse || customer.plz || customer.ort || customer.kanton);
   const mandatHasData   = !!(customer.mandatsleiter_id || customer.sachbearbeiter_id || customer.abc_klasse);
   const [partnerOpen,  setPartnerOpen]  = useState(partnerHasData);
-  const [adresseOpen,  setAdresseOpen]  = useState(adresseHasData);
+  const [adresseOpen,  setAdresseOpen]  = useState(!isKontakt || adresseHasData);
   const [mandatOpen,   setMandatOpen]   = useState(mandatHasData);
   useEffect(() => {
     setPartnerOpen(!!(customer.partner_name || customer.partner_vorname));
-    setAdresseOpen(!!(customer.strasse || customer.plz || customer.ort || customer.kanton));
+    setAdresseOpen(!isKontakt || !!(customer.strasse || customer.plz || customer.ort || customer.kanton));
     setMandatOpen(!!(customer.mandatsleiter_id || customer.sachbearbeiter_id || customer.abc_klasse));
   }, [customer.id]);
 
@@ -205,6 +205,17 @@ export default function CustomerHeader({ customer, staff, onUpdate, actions = nu
     className: `${inputClass} ${extraClass}`,
     style: inputStyle,
   });
+
+  // Pflichtfelder für Privatpersonen UND Unternehmen (nicht für Kontaktpersonen):
+  // rote Umrandung, solange das Feld leer ist
+  const isRequiredEntity = !isKontakt;
+  const inpReq = (value, extraClass = "") => ({
+    className: `${inputClass} ${extraClass}`,
+    style: { ...inputStyle, borderColor: isRequiredEntity && !value ? '#ef4444' : borderColor },
+  });
+  const reqStar = isRequiredEntity && <span className="text-red-500"> *</span>;
+  // Kanton ist nur bei Privatpersonen Pflicht
+  const reqStarKanton = isPrivatperson && <span className="text-red-500"> *</span>;
 
   return (
     <div className="p-5 space-y-4 border-b" style={{ borderColor: isArtis ? '#ccd8cc' : isLight ? '#d4d4e8' : 'rgba(63,63,70,0.6)' }}>
@@ -368,41 +379,41 @@ export default function CustomerHeader({ customer, staff, onUpdate, actions = nu
         {adresseOpen && (
           <>
             <div className="space-y-1">
-              <label className="text-[10px] font-medium tracking-wide" style={{ color: labelColor }}>Strasse</label>
+              <label className="text-[10px] font-medium tracking-wide" style={{ color: labelColor }}>Strasse{reqStar}</label>
               <Input
                 value={strasse}
                 onChange={e => setStrasse(e.target.value)}
                 onBlur={() => { if (strasse !== customer.strasse) onUpdate({ strasse }); }}
                 placeholder="Strasse und Hausnummer"
                 autoComplete="off"
-                {...inp()}
+                {...inpReq(strasse)}
               />
             </div>
             <div className="grid gap-2" style={{ gridTemplateColumns: '80px 1fr 160px' }}>
               <div className="space-y-1">
-                <label className="text-[10px] font-medium tracking-wide" style={{ color: labelColor }}>PLZ</label>
+                <label className="text-[10px] font-medium tracking-wide" style={{ color: labelColor }}>PLZ{reqStar}</label>
                 <Input
                   value={plz}
                   onChange={e => setPlz(e.target.value)}
                   onBlur={() => { if (plz !== customer.plz) onUpdate({ plz }); }}
                   placeholder="PLZ"
                   autoComplete="off"
-                  {...inp()}
+                  {...inpReq(plz)}
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-[10px] font-medium tracking-wide" style={{ color: labelColor }}>Ort</label>
+                <label className="text-[10px] font-medium tracking-wide" style={{ color: labelColor }}>Ort{reqStar}</label>
                 <Input
                   value={ort}
                   onChange={e => setOrt(e.target.value)}
                   onBlur={() => { if (ort !== customer.ort) onUpdate({ ort }); }}
                   placeholder="Ortschaft"
                   autoComplete="off"
-                  {...inp()}
+                  {...inpReq(ort)}
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-[10px] font-medium tracking-wide" style={{ color: labelColor }}>Kanton</label>
+                <label className="text-[10px] font-medium tracking-wide" style={{ color: labelColor }}>Kanton{reqStarKanton}</label>
                 <Select
                   value={kanton || "__none__"}
                   onValueChange={v => {
@@ -411,7 +422,7 @@ export default function CustomerHeader({ customer, staff, onUpdate, actions = nu
                     onUpdate({ kanton: val || null });
                   }}
                 >
-                  <SelectTrigger className="h-8 text-xs" style={inputStyle}>
+                  <SelectTrigger className="h-8 text-xs" style={{ ...inputStyle, borderColor: isPrivatperson && !kanton ? '#ef4444' : borderColor }}>
                     <SelectValue placeholder="— KT" />
                   </SelectTrigger>
                   <SelectContent>
@@ -436,7 +447,7 @@ export default function CustomerHeader({ customer, staff, onUpdate, actions = nu
           {/* Telefon */}
           <div className="flex items-center flex-1 gap-2">
             <div className="flex-1 space-y-1">
-              <label className="text-[10px] font-medium tracking-wide" style={{ color: labelColor }}>Telefon</label>
+              <label className="text-[10px] font-medium tracking-wide" style={{ color: labelColor }}>Telefon{reqStar}</label>
               <div className="flex items-center gap-2">
                 <Input
                   value={phone}
@@ -445,7 +456,7 @@ export default function CustomerHeader({ customer, staff, onUpdate, actions = nu
                   placeholder="Telefonnummer"
                   autoComplete="new-password"
                   name="customer-phone-field"
-                  {...inp('flex-1')}
+                  {...inpReq(phone, 'flex-1')}
                 />
                 {phone && (
                   <button
@@ -468,7 +479,7 @@ export default function CustomerHeader({ customer, staff, onUpdate, actions = nu
           {/* E-Mail */}
           <div className="flex items-center flex-1 gap-2">
             <div className="flex-1 space-y-1">
-              <label className="text-[10px] font-medium tracking-wide" style={{ color: labelColor }}>E-Mail</label>
+              <label className="text-[10px] font-medium tracking-wide" style={{ color: labelColor }}>E-Mail{reqStar}</label>
               <div className="flex items-center gap-2">
                 <Input
                   value={email}
@@ -478,7 +489,7 @@ export default function CustomerHeader({ customer, staff, onUpdate, actions = nu
                   type="email"
                   autoComplete="new-password"
                   name="customer-email-field"
-                  {...inp('flex-1')}
+                  {...inpReq(email, 'flex-1')}
                 />
                 {email && (
                   <a

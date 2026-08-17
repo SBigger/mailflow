@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   Mail,
   CheckSquare,
+  Video as VideoIcon,
   Settings as SettingsIcon,
   Building2,
   CalendarClock,
@@ -45,6 +46,7 @@ import {
   PhoneCall,
   Users,
   ShieldCheck,
+  FileStack,
 } from "lucide-react";
 import { createPageUrl } from "@/utils";
 import { FEATURE_LEISTUNGSERFASSUNG } from "@/lib/featureFlags";
@@ -77,6 +79,7 @@ export const NAV_GROUPS = [
       { name: 'Kundenportal', label: 'Kundenportal', icon: ShieldCheck, color: '#0e756a', aliases: ['portal', 'kundenzugang', 'freigabe', 'read-only', 'kundenlogin'] },
       { name: 'TelefonDashboard', label: 'Telefon', icon: PhoneCall, color: '#4fae6b', aliases: ['anrufe', 'telefonliste', 'calls', 'teams-anrufe'] },
       { name: 'Telefonie', label: 'Telefonie', href: '/telefonie', icon: PhoneCall, rail: true, color: '#2d6a4f', aliases: ['softphone', 'anrufen', 'wählen', 'sip', 'voip', 'telefonie-modul'] },
+      { name: 'Besprechungen', label: 'Besprechungen', href: '/besprechungen', icon: VideoIcon, rail: true, color: '#3f7fc2', aliases: ['video', 'videocall', 'meeting', 'konferenz', 'besprechung', 'bildschirm teilen'] },
     ],
   },
   {
@@ -95,6 +98,7 @@ export const NAV_GROUPS = [
   {
     id: 'steuern', label: 'Steuern', color: '#c25b5b', items: [
       { name: 'Steuern', label: 'Steuererklärungen', icon: Percent, color: '#c25b5b', aliases: ['ste', 'steuern', 'taxes'] },
+      { name: 'Belegsortierung', label: 'Belegsortierung', icon: FileStack, color: '#c25b5b', aliases: ['belege', 'sortieren', 'schuhkarton', 'stapel'] },
       { name: 'Veranlagungen', label: 'Veranlagungen', icon: FileCheck, color: '#d67f3c', aliases: ['veranlagung', 'einschätzung'] },
       { name: 'Steuerausscheidung', label: 'Steuerausscheidung', icon: Scale, color: '#9c5bc2', aliases: ['ausscheidung', 'interkantonal'] },
     ],

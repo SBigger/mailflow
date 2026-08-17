@@ -7,6 +7,7 @@ import { de } from "date-fns/locale";
 import { entities, supabase } from "@/api/supabaseClient";
 import { useMutation } from "@tanstack/react-query";
 import { ThemeContext } from "@/Layout";
+import PersonAvatar from "@/components/ui/PersonAvatar";
 
 export default function TaskCard({ task, index, onClick, onToggleComplete, currentUser, priorities = [], assigneeUser }) {
   const { theme } = useContext(ThemeContext);
@@ -195,7 +196,9 @@ export default function TaskCard({ task, index, onClick, onToggleComplete, curre
 
                 {task.assignee && (
                   <Badge variant="outline" className="text-xs gap-1" style={{ backgroundColor: 'rgba(124,58,237,0.08)', borderColor: 'rgba(124,58,237,0.25)', color: '#7c3aed' }}>
-                    <User className="h-3 w-3" />
+                    {assigneeUser
+                      ? <PersonAvatar user={assigneeUser} size={20} />
+                      : <User className="h-3 w-3" />}
                     {assigneeUser?.full_name || task.assignee.split('@')[0]}
                   </Badge>
                 )}

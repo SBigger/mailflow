@@ -13,9 +13,11 @@ import {
   ChevronDown, ChevronUp, Upload, Filter,
 } from 'lucide-react';
 import {
-  leAbsence, leSollzeitProfile, leEmployee, currentEmployee,
+  leAbsence, leSollzeitProfile, leSollzeitTemplate, leHoliday, leEmployee, currentEmployee,
 } from '@/lib/leApi';
 import { supabase } from '@/api/supabaseClient';
+import { pickProfile, sollForDay, toHolidaySet } from '@/components/auswertungen/util';
+import StorageDocumentLink from './StorageDocumentLink';
 import {
   Card, Chip, IconBtn, Input, Select, Field,
   PanelLoader, PanelError, PanelHeader,
@@ -107,32 +109,20 @@ const calcVacationBalance = (profile, absences, year) => {
   };
 };
 
-const dailyHoursFromProfile = (profile, dateIso) => {
-  if (!profile) return 8;
-  const day = new Date(dateIso).getDay(); // 0=So..6=Sa
-  const map = ['hours_so','hours_mo','hours_di','hours_mi','hours_do','hours_fr','hours_sa'];
-  const v = Number(profile[map[day]] ?? 0);
-  return v || 0;
-};
-
-const calcHoursTotal = (profile, fromIso, toIso, halfFrom, halfTo) => {
+const calcHoursTotal = (templates, profiles, holidaySet, fromIso, toIso, halfFrom, halfTo) => {
   if (!fromIso || !toIso) return 0;
   let total = 0;
-  const d = new Date(fromIso);
-  const end = new Date(toIso);
+  const d = new Date(fromIso + 'T00:00:00');
+  const end = new Date(toIso + 'T00:00:00');
   if (end < d) return 0;
-  // Standard-Tagesstunden falls kein Profil oder Wochenenden 0
-  const fallback = profile ? null : 8;
   while (d <= end) {
-    const day = d.getDay();
-    if (day !== 0 && day !== 6) {
-      const h = fallback ?? dailyHoursFromProfile(profile, isoDate(d));
-      total += h;
-    }
+    total += sollForDay(templates, profiles, holidaySet, isoDate(d));
     d.setDate(d.getDate() + 1);
   }
-  if (halfFrom) total -= (profile ? dailyHoursFromProfile(profile, fromIso) / 2 : 4);
-  if (halfTo && fromIso !== toIso) total -= (profile ? dailyHoursFromProfile(profile, toIso) / 2 : 4);
+  if (halfFrom) total -= sollForDay(templates, profiles, holidaySet, fromIso) / 2;
+  if (halfTo && fromIso !== toIso) {
+    total -= sollForDay(templates, profiles, holidaySet, toIso) / 2;
+  }
   return Math.max(0, Number(total.toFixed(2)));
 };
 
@@ -257,7 +247,7 @@ const MiniCalendar = ({ absences, year, month, onPrev, onNext }) => {
 
 // --- Antrag erfassen Card --------------------------------------------------
 
-const AntragForm = ({ open, onToggle, profile, onSubmit, busy }) => {
+const AntragForm = ({ open, onToggle, templates, profiles, holidaySet, onSubmit, busy }) => {
   const [category, setCategory] = useState('ferien');
   const [dateFrom, setDateFrom] = useState(todayIso());
   const [dateTo, setDateTo] = useState(todayIso());
@@ -273,7 +263,10 @@ const AntragForm = ({ open, onToggle, profile, onSubmit, busy }) => {
     return Math.max(0, d);
   }, [dateFrom, dateTo, halfFrom, halfTo]);
 
-  const hours = useMemo(() => calcHoursTotal(profile, dateFrom, dateTo, halfFrom, halfTo), [profile, dateFrom, dateTo, halfFrom, halfTo]);
+  const hours = useMemo(
+    () => calcHoursTotal(templates, profiles, holidaySet, dateFrom, dateTo, halfFrom, halfTo),
+    [templates, profiles, holidaySet, dateFrom, dateTo, halfFrom, halfTo],
+  );
   const isMedical = category === 'krankheit' || category === 'unfall';
 
   const reset = () => {
@@ -445,7 +438,7 @@ export default function AbwesenheitenPanel() {
             .select('role')
             .eq('id', user.id)
             .single();
-          if (!cancelled && profile?.role === 'admin') setIsAdmin(true);
+          if (!cancelled && ['admin', 'mandatsleiter'].includes(profile?.role)) setIsAdmin(true);
         }
       } catch { /* ignore */ }
       finally { if (!cancelled) setMeResolved(true); }
@@ -464,6 +457,14 @@ export default function AbwesenheitenPanel() {
     queryKey: ['le', 'sollzeit', meEmployeeId],
     queryFn: () => leSollzeitProfile.listForEmployee(meEmployeeId),
     enabled: !!meEmployeeId,
+  });
+  const sollzeitTemplateQ = useQuery({
+    queryKey: ['le', 'sollzeit-template'],
+    queryFn: () => leSollzeitTemplate.list(),
+  });
+  const holidaysQ = useQuery({
+    queryKey: ['le', 'holiday', 'all'],
+    queryFn: () => leHoliday.list(),
   });
 
   const showTeam = isAdmin && tab === 'team';
@@ -487,7 +488,9 @@ export default function AbwesenheitenPanel() {
   const employees = employeesQ.data ?? [];
   const absences = absencesQ.data ?? [];
   const myAbsences = myAbsencesAllYearsQ.data ?? [];
-  const activeProfile = (sollzeitQ.data ?? [])[0] ?? null;
+  const profiles = sollzeitQ.data ?? [];
+  const activeProfile = pickProfile(profiles, `${year}-12-31`);
+  const holidaySet = useMemo(() => toHolidaySet(holidaysQ.data), [holidaysQ.data]);
 
   // KPI: Saldo bezieht sich IMMER auf eigene Abwesenheiten im gewählten Jahr
   const balance = useMemo(
@@ -503,11 +506,10 @@ export default function AbwesenheitenPanel() {
       let receipt_url = null;
       if (file) {
         const ext = (file.name.split('.').pop() || 'bin').toLowerCase();
-        const path = `abwesenheiten/${meEmployeeId}/${Date.now()}-${Math.random().toString(36).slice(2,8)}.${ext}`;
-        const { error: upErr } = await supabase.storage.from('dokumente').upload(path, file, { upsert: false });
+        const path = `employees/${meEmployeeId}/${Date.now()}-${Math.random().toString(36).slice(2,8)}.${ext}`;
+        const { error: upErr } = await supabase.storage.from('absences').upload(path, file, { upsert: false });
         if (upErr) throw upErr;
-        const { data: { publicUrl } } = supabase.storage.from('dokumente').getPublicUrl(path);
-        receipt_url = publicUrl;
+        receipt_url = path;
       }
       return leAbsence.create({
         employee_id: meEmployeeId,
@@ -562,20 +564,29 @@ export default function AbwesenheitenPanel() {
       </div>
     );
   }
-  const anyError = absencesQ.error || sollzeitQ.error || myAbsencesAllYearsQ.error || (isAdmin && employeesQ.error);
+  const anyError = absencesQ.error || sollzeitQ.error || sollzeitTemplateQ.error
+    || holidaysQ.error || myAbsencesAllYearsQ.error || (isAdmin && employeesQ.error);
   if (anyError) {
     return (
       <div>
         <PanelHeader title="Abwesenheiten" subtitle="Ferien, Krankheit & Co." />
         <PanelError
           error={anyError}
-          onRetry={() => { absencesQ.refetch(); sollzeitQ.refetch(); myAbsencesAllYearsQ.refetch(); if (isAdmin) employeesQ.refetch(); }}
+          onRetry={() => {
+            absencesQ.refetch();
+            sollzeitQ.refetch();
+            sollzeitTemplateQ.refetch();
+            holidaysQ.refetch();
+            myAbsencesAllYearsQ.refetch();
+            if (isAdmin) employeesQ.refetch();
+          }}
         />
       </div>
     );
   }
 
-  const loading = absencesQ.isLoading || sollzeitQ.isLoading;
+  const loading = absencesQ.isLoading || sollzeitQ.isLoading
+    || sollzeitTemplateQ.isLoading || holidaysQ.isLoading;
 
   // Tabellen-Daten (nach Filterung)
   const rows = absences;
@@ -654,7 +665,9 @@ export default function AbwesenheitenPanel() {
       <AntragForm
         open={formOpen}
         onToggle={() => setFormOpen((v) => !v)}
-        profile={activeProfile}
+        templates={sollzeitTemplateQ.data ?? []}
+        profiles={profiles}
+        holidaySet={holidaySet}
         onSubmit={(p) => createMut.mutateAsync(p)}
         busy={createMut.isPending}
       />
@@ -804,14 +817,13 @@ export default function AbwesenheitenPanel() {
                               {a.notes || <span className="text-zinc-300">—</span>}
                             </div>
                             {a.receipt_url && (
-                              <a
-                                href={a.receipt_url}
-                                target="_blank"
-                                rel="noopener noreferrer"
+                              <StorageDocumentLink
+                                value={a.receipt_url}
+                                bucket="absences"
                                 className="text-[10px] underline text-zinc-500 hover:text-zinc-700"
                               >
                                 Beleg ansehen
-                              </a>
+                              </StorageDocumentLink>
                             )}
                           </td>
                           <td className="px-2 py-2">

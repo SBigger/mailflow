@@ -10,11 +10,12 @@ import { toast } from 'sonner';
 import {
   Receipt, Wallet, ChevronDown, ChevronRight, Check, FileText, Calendar, Search,
 } from 'lucide-react';
-import { leExpense, leInvoice, leInvoiceLine, leCompany } from '@/lib/leApi';
+import { leExpense, createExpenseInvoices } from '@/lib/leApi';
 import {
   Card, Chip, Input, Select, Field, PanelLoader, PanelError, PanelHeader,
   artisBtn, artisPrimaryStyle, artisGhostStyle, fmt,
 } from './shared';
+import StorageDocumentLink from './StorageDocumentLink';
 
 // ---------------------------------------------------------------------------
 // Helpers / Konstanten
@@ -79,13 +80,7 @@ export default function SpesenAbrechnenPanel() {
     }),
   });
 
-  const companyQ = useQuery({
-    queryKey: ['le', 'company'],
-    queryFn: () => leCompany.get(),
-  });
-
   const expenses = expensesQ.data ?? [];
-  const company = companyQ.data;
 
   // --- Filter: weiterverrechenbar + nicht abgerechnet ---------------------
   const billable = useMemo(() => {
@@ -192,56 +187,9 @@ export default function SpesenAbrechnenPanel() {
 
   // --- Mutation: Rechnungsentwürfe erstellen -------------------------------
   const createInvoicesMut = useMutation({
-    mutationFn: async () => {
-      const selected = selectionSummary.selectedExpenses;
-      // Pro Kunde sammeln
-      const byCustomer = new Map();
-      for (const e of selected) {
-        const cid = e.customer_id ?? e.project?.customer_id;
-        if (!cid) continue;
-        if (!byCustomer.has(cid)) byCustomer.set(cid, []);
-        byCustomer.get(cid).push(e);
-      }
-
-      const created = [];
-      for (const [customerId, items] of byCustomer) {
-        const subtotal = items.reduce((s, e) => s + Number(e.amount_gross || 0), 0);
-        const vatPct = company?.vat_default_pct ?? 8.1;
-        const vatAmount = Math.round(subtotal * vatPct) / 100;
-        const total = subtotal + vatAmount;
-
-        const inv = await leInvoice.create({
-          customer_id: customerId,
-          project_id: items[0].project_id ?? null,
-          status: 'entwurf',
-          subtotal,
-          vat_pct: vatPct,
-          vat_amount: vatAmount,
-          total,
-          notes: 'Spesen-Verrechnung',
-        });
-
-        const lines = items.map((e, i) => ({
-          invoice_id: inv.id,
-          description: `${categoryLabel(e.category)}: ${e.description ?? ''} (${fmt.date(e.expense_date)})`,
-          hours: 0,
-          rate: 0,
-          amount: Number(e.amount_gross || 0),
-          sort_order: (i + 1) * 10,
-        }));
-        await leInvoiceLine.bulkCreate(lines);
-
-        // Spesen markieren
-        for (const e of items) {
-          await leExpense.update(e.id, {
-            status: 'abgerechnet',
-            invoiced_invoice_id: inv.id,
-          });
-        }
-        created.push(inv);
-      }
-      return created;
-    },
+    mutationFn: () => createExpenseInvoices(
+      selectionSummary.selectedExpenses.map((expense) => expense.id),
+    ),
     onSuccess: (invoices) => {
       const n = invoices.length;
       toast.success(`${n} Rechnungsentwurf${n === 1 ? '' : 'entwürfe'} erstellt`);
@@ -539,16 +487,14 @@ function CustomerGroup({ group, expanded, onToggleExpanded, selectedIds, onToggl
                       </td>
                       <td className="px-2 py-1.5 text-center">
                         {e.receipt_url ? (
-                          <a
-                            href={e.receipt_url}
-                            target="_blank"
-                            rel="noreferrer"
+                          <StorageDocumentLink
+                            value={e.receipt_url}
                             onClick={(ev) => ev.stopPropagation()}
                             title="Beleg öffnen"
                             className="inline-flex items-center justify-center w-6 h-6 rounded text-zinc-500 hover:bg-zinc-100"
                           >
                             <Receipt className="w-3.5 h-3.5" />
-                          </a>
+                          </StorageDocumentLink>
                         ) : (
                           <span className="text-zinc-300">—</span>
                         )}

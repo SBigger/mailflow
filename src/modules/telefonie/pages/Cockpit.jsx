@@ -8,7 +8,8 @@ import { de } from "date-fns/locale";
 import { supabase, entities } from "@/api/supabaseClient";
 import { useAuth } from "@/lib/AuthContext";
 import { ThemeContext } from "@/Layout";
-import { isMissed, initials, personStyle } from "@/lib/chartisTheme";
+import { isMissed } from "@/lib/chartisTheme";
+import PersonAvatar from "@/components/ui/PersonAvatar";
 import { tele, PRESENCE, formatPhone } from "../theme";
 import { useTelephony } from "../context/TelephonyContext";
 
@@ -141,16 +142,14 @@ export default function Cockpit() {
             const info = isMe ? (PRESENCE[effectivePresence] || PRESENCE.available)
               : live ? (PRESENCE[live.status] || PRESENCE.available) : null;
             const dot = info ? t.presence[info.dot] : t.presence.offline;
-            const ps = personStyle(s);
             return (
               <div key={s.id}
                 style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 14px", borderBottom: `1px solid ${t.borderSubtle}`, transition: "background .12s" }}
                 onMouseEnter={(e) => (e.currentTarget.style.background = t.activeRow)}
                 onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>
-                <span style={{ position: "relative", width: 34, height: 34, borderRadius: 11, background: ps.bg, color: ps.text, display: "grid", placeItems: "center", fontSize: 12.5, fontWeight: 800, flexShrink: 0 }}>
-                  {initials(s.full_name)}
+                <PersonAvatar user={s} size={34} radius={11}>
                   <span style={{ position: "absolute", right: -2, bottom: -2, width: 12, height: 12, borderRadius: "50%", background: dot, border: `2px solid ${t.raised}` }} />
-                </span>
+                </PersonAvatar>
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={{ fontSize: 12.5, fontWeight: 650, color: t.textPrimary }}>{s.full_name}{isMe && <span style={{ color: t.textMuted, fontWeight: 500 }}> · Du</span>}</div>
                   <div style={{ fontSize: 11, color: info ? t.textSecondary : t.textMuted, display: "flex", alignItems: "center", gap: 6 }}>

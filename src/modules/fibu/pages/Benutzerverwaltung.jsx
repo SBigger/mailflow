@@ -74,7 +74,8 @@ export default function Benutzerverwaltung() {
       const list = (data?.users ?? []).map(u => ({
         id:           u.id,
         email:        u.email,
-        display_name: u.user_metadata?.full_name || u.user_metadata?.name || u.email?.split('@')[0] || '?',
+        // getAllUsers liefert profiles-Zeilen (kein user_metadata)
+        display_name: u.full_name || u.email?.split('@')[0] || '?',
       }));
       setAllUsers(list);
     } catch {

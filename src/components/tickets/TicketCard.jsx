@@ -6,6 +6,7 @@ import { ThemeContext } from "@/Layout";
 import { formatDistanceToNow, differenceInDays } from "date-fns";
 import { de } from "date-fns/locale";
 import { FileText, Clock, User, AlertTriangle } from "lucide-react";
+import PersonAvatar from "@/components/ui/PersonAvatar";
 
 export default function TicketCard({ ticket, index, onClick, users = [] }) {
   const { data: priorities = [] } = useQuery({
@@ -132,12 +133,7 @@ export default function TicketCard({ ticket, index, onClick, users = [] }) {
             <div className="flex items-center justify-between">
               {assignee ? (
                 <div className="flex items-center gap-1">
-                  <div
-                    className="h-5 w-5 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
-                    style={{ backgroundColor: accentLeft }}
-                  >
-                    {(assignee.full_name || assignee.email || "?")[0].toUpperCase()}
-                  </div>
+                  <PersonAvatar user={assignee} size={20} />
                   <span className="text-xs truncate max-w-[80px]" style={{ color: textMuted }}>
                     {assignee.full_name || assignee.email}
                   </span>

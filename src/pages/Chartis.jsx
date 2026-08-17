@@ -2,14 +2,16 @@ import React, { useState, useContext, useMemo, useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { entities, supabase, auth, functions } from "@/api/supabaseClient";
+import { createPageUrl } from "@/utils";
 import { ThemeContext } from "@/Layout";
 import ChartisPanel from "@/components/chartis/ChartisPanel";
+import PersonAvatar from "@/components/ui/PersonAvatar";
 import CommandPalette from "@/components/chartis/CommandPalette";
 import TaskGlobalListView from "@/components/tasks/TaskGlobalListView";
 import { chartisTheme, SEM, AUTHOR, authorKey, personStyle, initials, isMissed } from "@/lib/chartisTheme";
 import {
-  MessageSquare, MessagesSquare, Plus, Users, User, Lock, AtSign, LayoutGrid, Building2, Clock,
-  PhoneOff, Phone, Mail, Calendar, CheckSquare, X, Search, Check, Loader2, Send, Paperclip, Video, Command,
+  MessageSquare, MessagesSquare, MessageCircle, Plus, Users, User, Lock, AtSign, LayoutGrid, Building2, Clock,
+  PhoneOff, Phone, Mail, Calendar, CheckSquare, X, Search, Check, Loader2, Send, Paperclip, Video, Command, CloudUpload,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -20,7 +22,11 @@ export default function Chartis() {
   const t = chartisTheme(theme);
   const qc = useQueryClient();
 
-  const [scope, setScope] = useState("tag");
+  const [scope, setScope] = useState(() => {
+    // Deep-Link aus der Paperboy-FAB: gewünschten Bereich einmalig übernehmen
+    try { const j = localStorage.getItem("chartis_jump_scope"); if (j) { localStorage.removeItem("chartis_jump_scope"); return j; } } catch { /* egal */ }
+    return "tag";
+  });
   const [activeId, setActiveId] = useState(null);
   const [activeCall, setActiveCall] = useState(null);
   const [activeMail, setActiveMail] = useState(null);
@@ -147,6 +153,35 @@ export default function Chartis() {
       return data || [];
     },
   });
+  // WhatsApp-Fäden: Objekt-Fäden mit hinterlegter wa_id-Bindung (chartis_thread_whatsapp)
+  const { data: whatsappThreads = [] } = useQuery({
+    queryKey: ["chartisWhatsappThreads"], refetchInterval: 15000,
+    queryFn: async () => {
+      const { data, error } = await supabase.from("chartis_thread_whatsapp")
+        .select("wa_id, phone, name, chartis_threads!inner(*)").limit(100);
+      if (error) return []; // Tabelle ggf. noch nicht migriert -> Feature still aus
+      return (data || [])
+        .map(r => ({ ...r.chartis_threads, _wa_id: r.wa_id, _wa_name: r.name || r.phone }))
+        .sort((a, b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0));
+    },
+  });
+
+  // Paperboy: offene (noch nicht abgelegte) Dokumente im Storage-Bucket "posteingang".
+  // Gleicher queryKey wie Posteingang.jsx -> geteilter Cache.
+  const { data: paperboyFolders = [] } = useQuery({
+    queryKey: ["dokumente-all-post"], staleTime: 60000, refetchInterval: 120000,
+    queryFn: async () => {
+      const { data: folders, error } = await supabase.storage.from("posteingang").list();
+      if (error) throw error;
+      const results = await Promise.all((folders || []).map(async (folder) => {
+        const { data: files } = await supabase.storage.from("posteingang").list(folder.name);
+        const docs = (files || []).map(f => ({ ...f, storage_path: `${folder.name}/${f.name}`, customer_id: folder.name, fileName: f.name.split("@")[1] || f.name }));
+        return { customerId: folder.name, docs };
+      }));
+      return results;
+    },
+  });
+  const paperboyDocs = useMemo(() => paperboyFolders.flatMap(f => f.docs || []), [paperboyFolders]);
 
   const mentionIds = useMemo(() => new Set(mentions.map(m => m.thread_id)), [mentions]);
   const unseenMentions = mentions.filter(m => !m.seen).length;
@@ -214,7 +249,8 @@ export default function Chartis() {
     if (th.thread_type === "direkt") {
       const other = (th.chartis_participants || []).map(p => p.user_id).find(uid => uid !== me?.id);
       const u = userById[other];
-      return { label: initials(u?.full_name || u?.email), userId: other, ...personStyle(u) };
+      // user/avatarUrl mitgeben → ThreadRow kann das Profilfoto zeigen (Fallback = Initialen)
+      return { label: initials(u?.full_name || u?.email), userId: other, user: u, avatarUrl: u?.avatar_url, ...personStyle(u) };
     }
     return { label: initials(th.subject), ...AUTHOR.staff };
   }
@@ -223,8 +259,10 @@ export default function Chartis() {
     tag: { label: "Heute", icon: LayoutGrid }, direkt: { label: "Direkt", icon: User }, gruppen: { label: "Gruppen", icon: Users },
     erwaehnt: { label: "Erwähnt", icon: AtSign }, kunden: { label: "Kunden-Konversationen", icon: Building2 },
     wartet: { label: "Wartet auf Kunde", icon: Clock }, anrufe: { label: "Entgangene Anrufe", icon: PhoneOff },
+    whatsapp: { label: "WhatsApp", icon: MessageCircle },
     mails: { label: "Mails", icon: Mail }, teams: { label: "Teams-Chats", icon: MessagesSquare },
     kalender: { label: "Kalender", icon: Calendar }, todos: { label: "Todos", icon: CheckSquare },
+    paperboy: { label: "Paperboy – offen", icon: CloudUpload },
     suche: { label: "Suche", icon: Search },
   };
 
@@ -236,6 +274,8 @@ export default function Chartis() {
     else if (scope === "erwaehnt") list = [...dm, ...objektThreads].filter(x => mentionIds.has(x.id)).map(x => ({ type: "thread", x }));
     else if (scope === "kunden") list = kundenThreads.map(x => ({ type: "thread", x }));
     else if (scope === "wartet") list = kundenThreads.filter(x => x.status === "wartet_kunde").map(x => ({ type: "thread", x }));
+    else if (scope === "whatsapp") list = whatsappThreads.map(x => ({ type: "thread", x }));
+    else if (scope === "paperboy") list = paperboyDocs.map(d => ({ type: "paperboy", d }));
     else if (scope === "anrufe") list = missedCalls.map(c => ({ type: "call", c }));
     else if (scope === "mails") list = mailThreads.map(m => ({ type: "mail", m }));
     else if (scope === "teams") list = teamsChats.map(tc => ({ type: "teamschat", tc }));
@@ -258,11 +298,12 @@ export default function Chartis() {
       : it.type === "event" ? (it.e.subject || "").toLowerCase().includes(q)
       : it.type === "task" ? (it.k.title || "").toLowerCase().includes(q)
       : it.type === "teamschat" ? ((it.tc.topic || "") + " " + (it.tc.member_names || []).join(" ") + " " + (it.tc.last_message_preview || "")).toLowerCase().includes(q)
+      : it.type === "paperboy" ? ((it.d.fileName || "") + " " + (custById[it.d.customer_id]?.company_name || "")).toLowerCase().includes(q)
       : (title(it.x) + " " + preview(it.x)).toLowerCase().includes(q));
     return list;
-  }, [scope, seg, search, myThreads, objektThreads, missedCalls, mailThreads, calendarEvents, tasks, teamsChats, mentionIds, me]);
+  }, [scope, seg, search, myThreads, objektThreads, missedCalls, mailThreads, calendarEvents, tasks, teamsChats, whatsappThreads, paperboyDocs, mentionIds, me]);
 
-  const activeThread = useMemo(() => [...myThreads, ...objektThreads, ...searchResult.threads].find(x => x.id === activeId), [activeId, myThreads, objektThreads, searchResult]);
+  const activeThread = useMemo(() => [...myThreads, ...objektThreads, ...whatsappThreads, ...searchResult.threads].find(x => x.id === activeId), [activeId, myThreads, objektThreads, whatsappThreads, searchResult]);
 
   // Aufgaben für die Tabellen-Ansicht (Pane C) – nach @Mich + Suche gefiltert
   const todosFiltered = useMemo(() => {
@@ -392,8 +433,10 @@ export default function Chartis() {
       { id: "s-gruppen", icon: Users, label: "Gruppen", run: () => setScope("gruppen") },
       { id: "s-erwaehnt", icon: AtSign, label: "Erwähnt", run: () => setScope("erwaehnt") },
       { id: "s-kunden", icon: Building2, label: "Kunden-Konversationen", run: () => setScope("kunden") },
+      { id: "s-whatsapp", icon: MessageCircle, label: "WhatsApp", run: () => setScope("whatsapp") },
       { id: "s-anrufe", icon: PhoneOff, label: "Entgangene Anrufe", run: () => setScope("anrufe") },
       { id: "s-mails", icon: Mail, label: "Mails", run: () => setScope("mails") },
+      { id: "s-paperboy", icon: CloudUpload, label: "Paperboy – offene Uploads", run: () => setScope("paperboy") },
       { id: "s-teams", icon: MessagesSquare, label: "Teams-Chats", run: () => setScope("teams") },
       { id: "s-kalender", icon: Calendar, label: "Kalender", run: () => setScope("kalender") },
       { id: "s-todos", icon: CheckSquare, label: "Todos", run: () => setScope("todos") },
@@ -447,6 +490,8 @@ export default function Chartis() {
           <div style={{ fontSize: 9, letterSpacing: ".07em", textTransform: "uppercase", color: t.textMuted, padding: "9px 8px 3px" }}>Kunden · extern</div>
           <NavItem k="kunden" icon={Building2} label="Konversationen" count={unreadKunden} />
           <NavItem k="wartet" icon={Clock} label="Wartet" />
+          <NavItem k="whatsapp" icon={MessageCircle} label="WhatsApp" count={whatsappThreads.length} />
+          <NavItem k="paperboy" icon={CloudUpload} label="Paperboy – offen" count={paperboyDocs.length} />
           <div style={{ height: 6 }} />
           <NavItem k="anrufe" icon={PhoneOff} label="Anrufe" count={missedCalls.length} red />
           <div style={{ borderTop: `1px solid ${t.borderSubtle}`, margin: "8px 6px" }} />
@@ -482,6 +527,7 @@ export default function Chartis() {
             {[
               { l: "Erwähnt", n: unseenMentions, go: "erwaehnt", red: false },
               { l: "Anrufe", n: missedCalls.length, go: "anrufe", red: true },
+              { l: "Paperboy", n: paperboyDocs.length, go: "paperboy", red: false },
               { l: "Todos", n: tasks.filter(k => k.due_date && new Date(k.due_date) <= new Date(new Date().setHours(23, 59, 59, 999))).length, go: "todos", red: false },
               { l: "Termine", n: calendarEvents.filter(e => new Date(e.start_time).toDateString() === new Date().toDateString()).length, go: "kalender", red: false },
             ].map(c => (
@@ -525,6 +571,16 @@ export default function Chartis() {
               </div>
               <span style={{ fontSize: 10, color: SEM.missed, flexShrink: 0 }}>{fmtTime(it.c.start_time)}</span>
             </button>
+          ) : it.type === "paperboy" ? (
+            <Link key={"pb" + it.d.storage_path} to={createPageUrl("Posteingang")}
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-left" style={{ borderBottom: `1px solid ${t.borderSubtle}`, borderLeft: "3px solid #4ba3c7", paddingLeft: 9 }}>
+              <div className="rounded-full flex items-center justify-center flex-shrink-0" style={{ width: 30, height: 30, background: "rgba(75,163,199,0.16)", color: "#4ba3c7" }}><CloudUpload className="h-4 w-4" /></div>
+              <div className="min-w-0 flex-1">
+                <div className="truncate" style={{ fontSize: 12, fontWeight: 700 }}>{it.d.fileName || "Dokument"}</div>
+                <div className="truncate" style={{ fontSize: 11, color: t.textMuted }}>{custById[it.d.customer_id]?.company_name || "Noch nicht abgelegt"}</div>
+              </div>
+              <span style={{ fontSize: 10, color: t.textMuted, flexShrink: 0 }}>{fmtTime(it.d.created_at)}</span>
+            </Link>
           ) : it.type === "mail" ? (
             <MailRow key={"m" + it.m.key} m={it.m} t={t} active={activeMail?.key === it.m.key} onClick={() => { clearActive(); setActiveMail(it.m); }} />
           ) : it.type === "teamschat" ? (
@@ -599,10 +655,19 @@ function ThreadRow({ th, t, active, mentioned, unread, title, preview, av, kunde
     <button onClick={onClick} className="w-full flex items-center gap-2.5 px-3 py-2 text-left relative" style={{ borderBottom: `1px solid ${t.borderSubtle}`, background: active ? t.activeRow : "transparent" }}>
       {strong && <span style={{ position: "absolute", left: 0, top: 8, bottom: 8, width: 3, borderRadius: 2, background: t.accentFill }} />}
       <div className="relative flex-shrink-0">
-        <div className="rounded-full flex items-center justify-center" style={{ width: 30, height: 30, background: av.bg, color: av.text, fontSize: 11, fontWeight: 600 }}>
-          {av.icon ? <av.icon className="h-4 w-4" /> : av.label}
-        </div>
-        {online && <span style={{ position: "absolute", right: -1, bottom: -1, width: 9, height: 9, borderRadius: 99, background: SEM.presence.online, border: `1.5px solid ${t.base}` }} />}
+        {av.user ? (
+          /* Person → zentraler Avatar (Foto oder Initialen), Online-Dot als Overlay-Child */
+          <PersonAvatar user={av.user} size={30}>
+            {online && <span style={{ position: "absolute", right: -1, bottom: -1, width: 9, height: 9, borderRadius: 99, background: SEM.presence.online, border: `1.5px solid ${t.base}` }} />}
+          </PersonAvatar>
+        ) : (
+          <>
+            <div className="rounded-full flex items-center justify-center" style={{ width: 30, height: 30, background: av.bg, color: av.text, fontSize: 11, fontWeight: 600 }}>
+              {av.icon ? <av.icon className="h-4 w-4" /> : av.label}
+            </div>
+            {online && <span style={{ position: "absolute", right: -1, bottom: -1, width: 9, height: 9, borderRadius: 99, background: SEM.presence.online, border: `1.5px solid ${t.base}` }} />}
+          </>
+        )}
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
@@ -1169,8 +1234,9 @@ function Picker({ t, list, onlineIds, pickSearch, setPickSearch, pickSel, setPic
               <div key={u.id} className="flex items-center gap-2 px-2 py-2 rounded-lg" style={{ background: sel ? t.activeRow : "transparent" }}>
                 <button onClick={() => onDirect(u.id)} disabled={busy} className="flex items-center gap-2 flex-1 min-w-0 text-left">
                   <div className="relative flex-shrink-0">
-                    <div className="rounded-full flex items-center justify-center" style={{ width: 30, height: 30, background: AUTHOR[authorKey(u)].bg, color: AUTHOR[authorKey(u)].text, fontSize: 11, fontWeight: 600 }}>{initials(u.full_name || u.email)}</div>
-                    {onlineIds?.has(u.id) && <span style={{ position: "absolute", right: -1, bottom: -1, width: 9, height: 9, borderRadius: 99, background: SEM.presence.online, border: "1.5px solid #fff" }} />}
+                    <PersonAvatar user={u} size={30}>
+                      {onlineIds?.has(u.id) && <span style={{ position: "absolute", right: -1, bottom: -1, width: 9, height: 9, borderRadius: 99, background: SEM.presence.online, border: "1.5px solid #fff" }} />}
+                    </PersonAvatar>
                   </div>
                   <div className="min-w-0"><div className="truncate" style={{ fontSize: 13, fontWeight: 500 }}>{u.full_name || u.email}</div><div className="truncate" style={{ fontSize: 11, color: t.textMuted }}>{u.email}</div></div>
                 </button>

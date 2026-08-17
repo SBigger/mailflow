@@ -83,11 +83,62 @@ export default function UserManagement() {
     },
   });
 
+  // Mitarbeitergruppen = Gruppen mit hinterlegter Rolle. Reine Kundengruppen
+  // (staff_role NULL) gehören ins Kundenportal, nicht hierher.
+  const { data: staffGroups = [] } = useQuery({
+    queryKey: ["access_groups_staff"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('access_groups')
+        .select('id, name, staff_role, aktiv, access_group_staff(user_id)')
+        .not('staff_role', 'is', null)
+        .order('name');
+      if (error) throw new Error(error.message);
+      return data || [];
+    },
+  });
+
+  const groupsOf = (userId) =>
+    staffGroups.filter(g => (g.access_group_staff || []).some(m => m.user_id === userId));
+
+  // Gruppenzugehörigkeit umschalten. Die Rolle wird weiterhin über die
+  // bestehende Edge Function gesetzt — profiles.role ist per Trigger gegen
+  // direkte Client-Änderungen gesperrt, das umgehen wir hier nicht.
+  const toggleGroup = async (user, group) => {
+    const isIn = (group.access_group_staff || []).some(m => m.user_id === user.id);
+    try {
+      if (isIn) {
+        const { error } = await supabase.from('access_group_staff')
+          .delete().eq('group_id', group.id).eq('user_id', user.id);
+        if (error) throw error;
+        toast.success(`Aus „${group.name}" entfernt (Rolle bleibt unverändert)`);
+      } else {
+        const { error } = await supabase.from('access_group_staff')
+          .insert({ group_id: group.id, user_id: user.id });
+        if (error) throw error;
+        if (group.staff_role && group.staff_role !== user.role) {
+          await functions.invoke('makeAdmin', { user_id: user.id, role: group.staff_role });
+          toast.success(`Zu „${group.name}" hinzugefügt · Rolle: ${ROLE_STYLE[group.staff_role]?.label || group.staff_role}`);
+        } else {
+          toast.success(`Zu „${group.name}" hinzugefügt`);
+        }
+      }
+      queryClient.invalidateQueries({ queryKey: ["access_groups_staff"] });
+      queryClient.invalidateQueries({ queryKey: ["allUsers"] });
+    } catch (e) {
+      toast.error("Fehler: " + (e?.message || e));
+    }
+  };
+
   const handleInvite = async () => {
     if (!inviteEmail.trim()) { toast.error("Bitte E-Mail eingeben"); return; }
     setInviting(true);
     try {
-      await functions.invoke('inviteUser', { email: inviteEmail, role: inviteRole });
+      await functions.invoke('inviteUser', {
+        email: inviteEmail,
+        role: inviteRole,
+        appUrl: window.env.HOSTNAME,
+      });
       toast.success(`Einladung an ${inviteEmail} gesendet`);
       setInviteEmail("");
       queryClient.invalidateQueries({ queryKey: ["allUsers"] });
@@ -210,12 +261,12 @@ export default function UserManagement() {
     if (pwEditValue.trim().length < 8) { toast.error("Passwort muss mindestens 8 Zeichen haben"); return; }
     setPwSaving(true);
     try {
+      // functions.invoke verpackt das Payload bereits selbst in { body }
       const res = await functions.invoke('setUserPassword', {
-        body: { user_id: userId, password: pwEditValue.trim() }
+        user_id: userId,
+        password: pwEditValue.trim(),
       });
-      if (res.error) throw new Error(res.error.message || 'Fehler beim Speichern');
-      const data = res.data;
-      if (data?.error) throw new Error(data.error);
+      if (res.data?.error) throw new Error(res.data.error);
       toast.success("Passwort erfolgreich gesetzt");
       setPwEditUserId(null);
       setPwEditValue("");
@@ -407,6 +458,13 @@ export default function UserManagement() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
+                    {groupsOf(user.id).map(g => (
+                      <span key={g.id} className="text-xs px-2 py-1 rounded-md flex items-center gap-1"
+                        style={{ backgroundColor: 'rgba(122,155,127,0.15)', color: '#7a9b7f', opacity: g.aktiv ? 1 : .5 }}
+                        title={g.aktiv ? 'Gruppe' : 'Gruppe (deaktiviert)'}>
+                        <Users className="h-3 w-3" /> {g.name}
+                      </span>
+                    ))}
                     <RoleBadge role={user.role} />
                     {user.id !== currentUser?.id && (
                       <DropdownMenu>
@@ -431,6 +489,26 @@ export default function UserManagement() {
                               </DropdownMenuItem>
                             );
                           })}
+                          {staffGroups.length > 0 && (
+                            <>
+                              <DropdownMenuSeparator style={{ backgroundColor: cardBorder }} />
+                              <div className="px-2 py-1.5 text-[11px] uppercase tracking-wide" style={{ color: textSecondary }}>Gruppe</div>
+                              {staffGroups.map((g) => {
+                                const isIn = (g.access_group_staff || []).some(m => m.user_id === user.id);
+                                return (
+                                  <DropdownMenuItem key={g.id} onClick={() => toggleGroup(user, g)} style={{ color: textPrimary }}>
+                                    <Users className="h-4 w-4 mr-2" />
+                                    <div>
+                                      <div className="font-medium">{g.name}{isIn ? ' ✓' : ''}</div>
+                                      <div className="text-xs" style={{ color: textSecondary }}>
+                                        setzt Rolle: {ROLE_STYLE[g.staff_role]?.label || g.staff_role}
+                                      </div>
+                                    </div>
+                                  </DropdownMenuItem>
+                                );
+                              })}
+                            </>
+                          )}
                           <DropdownMenuSeparator style={{ backgroundColor: cardBorder }} />
                           <DropdownMenuItem
                             onClick={() => { setPwEditUserId(user.id); setPwEditValue(""); setPwShowValue(false); }}

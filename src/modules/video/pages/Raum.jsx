@@ -1,0 +1,376 @@
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { RoomEvent } from "livekit-client";
+import { AlertTriangle, Loader2 } from "lucide-react";
+import { functions, supabase } from "@/api/supabaseClient";
+import { useAppTheme } from "@/modules/telefonie/theme";
+import { videoTheme, VM, VIDEO_FONT } from "../theme";
+import { useRoom } from "../lib/useRoom";
+import useMarkieren from "../lib/useMarkieren";
+import GreenRoom from "../components/GreenRoom";
+import Stage from "../components/Stage";
+import ControlBar from "../components/ControlBar";
+import SidePanel from "../components/SidePanel";
+import KnockCard from "../components/KnockCard";
+
+// ===========================================================================
+// Raum – ein laufendes Gespräch.
+//
+// Ablauf: Green Room (Geräte prüfen) → Token holen → verbinden → Bühne.
+// Der Green Room ist auch für Mitarbeitende Pflicht: Der häufigste Ärger in
+// Videogesprächen ist "ich höre dich nicht" in der ersten Minute – genau das
+// fängt die Vorschau ab.
+// ===========================================================================
+export default function Raum() {
+  const { roomName } = useParams();
+  const navigate = useNavigate();
+  const theme = useAppTheme();
+  const t = videoTheme(theme);
+
+  const [phase, setPhase] = useState("green"); // green | connecting | live | failed
+  const [failure, setFailure] = useState(null);
+  const [panel, setPanel] = useState(null); // null | "people" | "chat"
+  const [unread, setUnread] = useState(0);
+  const [toast, setToast] = useState(null);
+  const [barVisible, setBarVisible] = useState(true);
+  // ⚠️ Der Gesprächschat lebt HIER, nicht im Panel: Sonst entstünde die Liste
+  // erst beim Öffnen und alles, was währenddessen ankam, wäre verloren.
+  const [chat, setChat] = useState([]);
+  // Wartende Gäste (Warteraum). Kommen per Echtzeit-Meldung herein; beim
+  // Betreten wird zusätzlich einmal nachgefragt — sonst würde jemand, der
+  // VOR uns angeklopft hat, unsichtbar bleiben.
+  const [wartende, setWartende] = useState([]);
+  const [einlassBusy, setEinlassBusy] = useState(null);
+  // Aktuell benutzte Geräte – damit das Auswahlmenü im Gespräch anzeigen kann,
+  // was gerade anliegt (Häkchen), nicht nur eine nackte Liste.
+  const [geraete, setGeraete] = useState({});
+
+  const {
+    state, error, participants, micOn, camOn, screenOn,
+    connect, leave, toggleMic, toggleCam, toggleScreen, switchDevice, room,
+  } = useRoom();
+
+  // Markieren auf dem geteilten Bildschirm. Nur sinnvoll, solange überhaupt
+  // jemand teilt – deshalb hängt der Stift an genau dieser Bedingung und
+  // räumt sich selbst auf, wenn die Freigabe endet.
+  const teiltJemand = participants.some((p) => p.screenOn && p.screenTrack);
+  const markieren = useMarkieren({
+    room,
+    identity: participants.find((p) => p.isLocal)?.identity,
+    verbunden: phase === "live",
+    aktiv: teiltJemand,
+  });
+
+  // ── Beitreten ──────────────────────────────────────────────────────────
+  const handleJoin = useCallback(async (prefs) => {
+    setPhase("connecting");
+    setFailure(null);
+    try {
+      const { data } = await functions.invoke("meeting-api", { action: "token", room: roomName });
+      if (!data?.token || !data?.url) throw new Error("Kein Zugangstoken erhalten.");
+      await connect({
+        url: data.url,
+        token: data.token,
+        video: prefs.camOn,
+        audio: prefs.micOn,
+        videoDeviceId: prefs.camId,
+        audioDeviceId: prefs.micId,
+      });
+      // Gewählten Lautsprecher übernehmen – ohne das bliebe die Auswahl im
+      // Beitritts-Bildschirm wirkungslos (nicht jeder Browser kann es).
+      if (prefs.speakerId) await switchDevice("audiooutput", prefs.speakerId);
+      setGeraete({
+        audioinput: prefs.micId || undefined,
+        videoinput: prefs.camId || undefined,
+        audiooutput: prefs.speakerId || undefined,
+      });
+      setPhase("live");
+    } catch (e) {
+      // Supabase meldet Nicht-2xx generisch – für den Nutzer übersetzen.
+      const raw = e?.message || "";
+      setFailure(
+        raw.includes("non-2xx")
+          ? "Der Videodienst ist noch nicht eingerichtet (Zugangsdaten fehlen auf dem Server)."
+          : raw || "Verbindung fehlgeschlagen.",
+      );
+      setPhase("failed");
+    }
+  }, [roomName, connect, switchDevice]);
+
+  // Selbst aufgelegt? Dann ist das Trennen erwartet und darf NICHT als
+  // Abbruch behandelt werden (siehe Effekt weiter unten).
+  const verlaesstRef = useRef(false);
+  const handleLeave = useCallback(async () => {
+    verlaesstRef.current = true;
+    await leave();
+    navigate("/besprechungen");
+  }, [leave, navigate]);
+
+  // ⚠️ Reisst die Verbindung endgültig ab (nicht bloss "reconnecting"), leert
+  // useRoom die Teilnehmerliste – die Phase bliebe aber "live". Sichtbar wäre
+  // eine leere schwarze Bühne ohne jede Erklärung. Stattdessen zurück in den
+  // Green Room mit Hinweis: Von dort ist der Wiedereinstieg ein Klick, und
+  // Kamera/Mikrofon lassen sich gleich nochmals prüfen.
+  useEffect(() => {
+    if (phase !== "live" || state !== "idle" || verlaesstRef.current) return;
+    setFailure("Die Verbindung wurde getrennt. Sie können der Besprechung wieder beitreten.");
+    setPhase("failed");
+  }, [phase, state]);
+
+  // ── Hand heben: kurze Meldung an alle, kein Dauerzustand (Phase 1) ─────
+  const raiseHand = useCallback(async () => {
+    const r = room?.current;
+    if (!r) return;
+    const body = new TextEncoder().encode(JSON.stringify({ kind: "hand" }));
+    try { await r.localParticipant.publishData(body, { reliable: true }); } catch { /* egal */ }
+    setToast("Sie haben die Hand gehoben");
+  }, [room]);
+
+  useEffect(() => {
+    const r = room?.current;
+    if (!r || phase !== "live") return;
+    const onData = (payload, participant) => {
+      try {
+        const data = JSON.parse(new TextDecoder().decode(payload));
+        if (data?.kind === "hand") {
+          setToast(`${participant?.name || "Jemand"} hat die Hand gehoben`);
+        } else if (data?.kind === "chat") {
+          setChat((m) => [...m, {
+            id: `${Date.now()}-${Math.random()}`,
+            from: participant?.name || participant?.identity || "Unbekannt",
+            text: String(data.text || "").slice(0, 2000),
+          }]);
+          // Nur zählen, wenn der Chat gerade nicht offen ist.
+          setPanel((cur) => { if (cur !== "chat") setUnread((n) => n + 1); return cur; });
+        }
+      } catch { /* fremde Pakete ignorieren */ }
+    };
+    r.on(RoomEvent.DataReceived, onData);
+    return () => { r.off(RoomEvent.DataReceived, onData); };
+  }, [room, phase]);
+
+  // ── Warteraum ──────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (phase !== "live" || !roomName) return;
+
+    // Nachzügler-Sicherung: wer angeklopft hat, bevor wir im Raum waren.
+    let weg = false;
+    (async () => {
+      try {
+        const { data } = await functions.invoke("meeting-api", { action: "waiting", room: roomName });
+        if (!weg && Array.isArray(data?.waiting)) setWartende(data.waiting);
+      } catch { /* ohne Vorabliste kommen wenigstens neue Meldungen an */ }
+    })();
+
+    const ch = supabase.channel(`meeting-${roomName}`);
+    ch.on("broadcast", { event: "guest_knock" }, ({ payload }) => {
+      if (!payload?.guestId) return;
+      setWartende((w) => (w.some((g) => g.id === payload.guestId)
+        ? w
+        : [...w, { id: payload.guestId, display_name: payload.name || "Gast" }]));
+      setToast(`${payload.name || "Jemand"} möchte beitreten`);
+    }).subscribe();
+
+    return () => { weg = true; supabase.removeChannel(ch); };
+  }, [phase, roomName]);
+
+  // Gerät mitten im Gespräch umstellen. LiveKit tauscht die Spur im
+  // laufenden Betrieb aus – die Gegenseite merkt nichts ausser einem kurzen
+  // Bildaussetzer.
+  const waehleGeraet = useCallback(async (kind, deviceId) => {
+    try {
+      await switchDevice(kind, deviceId);
+      setGeraete((g) => ({ ...g, [kind]: deviceId }));
+      const wie = kind === "audioinput" ? "Mikrofon" : kind === "videoinput" ? "Kamera" : "Lautsprecher";
+      setToast(`${wie} gewechselt`);
+    } catch {
+      setToast("Gerät konnte nicht gewechselt werden");
+    }
+  }, [switchDevice]);
+
+  const entscheide = useCallback(async (guestId, aktion) => {
+    setEinlassBusy(guestId);
+    try {
+      await functions.invoke("meeting-api", { action: aktion, guestId });
+      setWartende((w) => w.filter((g) => g.id !== guestId));
+    } catch {
+      setToast("Konnte nicht übermittelt werden — bitte nochmals versuchen");
+    } finally {
+      setEinlassBusy(null);
+    }
+  }, []);
+
+  const sendChat = useCallback(async (text) => {
+    const r = room?.current;
+    const value = String(text || "").trim();
+    if (!r || !value) return false;
+    const body = new TextEncoder().encode(JSON.stringify({ kind: "chat", text: value }));
+    try {
+      await r.localParticipant.publishData(body, { reliable: true });
+      setChat((m) => [...m, { id: `${Date.now()}`, from: "Sie", text: value, own: true }]);
+      return true;
+    } catch {
+      return false; // Nachricht bleibt im Eingabefeld stehen
+    }
+  }, [room]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const id = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(id);
+  }, [toast]);
+
+  // ── Steuerleiste ausblenden, aber erst nach der ersten Bewegung und nie
+  // in den ersten 15 Sekunden (Designregel 6 – technikferne Gäste sollen die
+  // Knöpfe finden, bevor sie verschwinden).
+  useEffect(() => {
+    if (phase !== "live") return;
+    let idle;
+    let armed = false;
+    const arm = setTimeout(() => { armed = true; }, VM.showControlsOnJoinMs);
+    const wake = () => {
+      setBarVisible(true);
+      clearTimeout(idle);
+      if (armed && !panel) idle = setTimeout(() => setBarVisible(false), VM.hideControlsAfterMs);
+    };
+    window.addEventListener("mousemove", wake);
+    window.addEventListener("keydown", wake);
+    window.addEventListener("touchstart", wake);
+    return () => {
+      clearTimeout(arm); clearTimeout(idle);
+      window.removeEventListener("mousemove", wake);
+      window.removeEventListener("keydown", wake);
+      window.removeEventListener("touchstart", wake);
+    };
+  }, [phase, panel]);
+
+  // Tastatur: M = Mikro, V = Kamera (Designregel 16)
+  useEffect(() => {
+    if (phase !== "live") return;
+    const onKey = (e) => {
+      const inField = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target?.tagName || "");
+      if (inField || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === "m" || e.key === "M") { e.preventDefault(); toggleMic(); }
+      if (e.key === "v" || e.key === "V") { e.preventDefault(); toggleCam(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [phase, toggleMic, toggleCam]);
+
+  const shell = {
+    height: "100vh", display: "flex", flexDirection: "column",
+    background: t.stage, fontFamily: VIDEO_FONT, overflow: "hidden",
+  };
+
+  // ── Vor dem Beitritt: App-Theme, heller Grund ─────────────────────────
+  if (phase === "green" || phase === "connecting" || phase === "failed") {
+    return (
+      <div style={{ ...shell, background: t.sunken, color: t.textPrimary }}>
+        <Keyframes />
+        {failure && (
+          <div style={{
+            display: "flex", alignItems: "center", gap: 9, margin: "18px auto 0",
+            maxWidth: 560, background: t.missed + "14", border: `1px solid ${t.missed}44`,
+            color: t.missed, borderRadius: 11, padding: "11px 14px", fontSize: 12.5,
+          }}>
+            <AlertTriangle size={16} style={{ flexShrink: 0 }} /> {failure}
+          </div>
+        )}
+        <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+          <GreenRoom
+            t={t}
+            title={roomName ? roomName.replace(/[-_]/g, " ") : "Besprechung"}
+            subtitle="Prüfen Sie Kamera und Mikrofon, bevor Sie beitreten."
+            joinLabel="Jetzt beitreten"
+            busy={phase === "connecting"}
+            onJoin={handleJoin}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // ── Im Gespräch: dunkle Bühne ─────────────────────────────────────────
+  return (
+    <div style={shell}>
+      <Keyframes />
+      <div style={{ flex: 1, minHeight: 0, display: "flex", position: "relative" }}>
+        <Stage t={t} participants={participants} roomName={roomName} markieren={markieren}>
+          {state === "reconnecting" && (
+            <div style={{
+              position: "absolute", top: 16, left: "50%", transform: "translateX(-50%)",
+              zIndex: 15, display: "flex", alignItems: "center", gap: 8,
+              background: "rgba(15,18,24,.8)", border: `1px solid ${t.stageLine}`,
+              borderRadius: 999, padding: "7px 14px", fontSize: 12, color: t.onStage,
+            }}>
+              <Loader2 size={14} style={{ animation: "vidSpin 1s linear infinite" }} />
+              Verbindung wird wiederhergestellt…
+            </div>
+          )}
+
+          {toast && (
+            <div style={{
+              position: "absolute", bottom: VM.barHeight + VM.barBottom + 22, left: "50%",
+              transform: "translateX(-50%)", zIndex: 15,
+              background: "rgba(15,18,24,.85)", border: `1px solid ${t.stageLine}`,
+              borderRadius: 999, padding: "8px 15px", fontSize: 12.5, color: t.onStage,
+              animation: "vidSlideUp .2s ease-out",
+            }}>{toast}</div>
+          )}
+
+          <KnockCard
+            t={t} guests={wartende} busyId={einlassBusy}
+            onAdmit={(id) => entscheide(id, "admit")}
+            onReject={(id) => entscheide(id, "reject")}
+          />
+
+          <ControlBar
+            t={t} visible={barVisible}
+            micOn={micOn} camOn={camOn} screenOn={screenOn}
+            onMic={toggleMic} onCam={toggleCam} onScreen={toggleScreen} onHand={raiseHand}
+            onChat={() => { setPanel((p) => (p === "chat" ? null : "chat")); setUnread(0); }}
+            onPeople={() => setPanel((p) => (p === "people" ? null : "people"))}
+            onLeave={handleLeave}
+            chatBadge={unread} peopleCount={participants.length}
+            geraete={geraete} onGeraetWaehlen={waehleGeraet}
+          />
+        </Stage>
+
+        {panel && (
+          <div style={{ padding: `${VM.stagePad}px ${VM.stagePad}px ${VM.stagePad}px 0`, display: "flex", minHeight: 0 }}>
+            <SidePanel
+              t={t} tab={panel} participants={participants} roomName={roomName}
+              messages={chat} onSend={sendChat}
+              onClose={() => setPanel(null)}
+            />
+          </div>
+        )}
+      </div>
+
+      {error && (
+        <div style={{
+          position: "absolute", bottom: 12, left: 12, zIndex: 30,
+          background: t.missed, color: "#fff", borderRadius: 10,
+          padding: "8px 12px", fontSize: 12,
+        }}>{error}</div>
+      )}
+    </div>
+  );
+}
+
+// Animationen zentral – Inline-Styles können keine Keyframes.
+function Keyframes() {
+  return (
+    <style>{`
+      @keyframes vidSpin { from { transform: rotate(0) } to { transform: rotate(360deg) } }
+      @keyframes vidPulse { 0%,100% { transform: scaleY(.45) } 50% { transform: scaleY(1) } }
+      @keyframes vidSlideIn { from { opacity: 0; transform: translateX(12px) } to { opacity: 1; transform: none } }
+      @keyframes vidSlideUp { from { opacity: 0; transform: translate(-50%, 8px) } to { opacity: 1; transform: translate(-50%, 0) } }
+      @keyframes vidKnock { from { opacity: 0; transform: translateY(-8px) } to { opacity: 1; transform: none } }
+      @keyframes vidMenu { from { opacity: 0; transform: translateY(6px) } to { opacity: 1; transform: none } }
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+      }
+    `}</style>
+  );
+}

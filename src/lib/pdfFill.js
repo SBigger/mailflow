@@ -1,4 +1,4 @@
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+import { PDFDocument, StandardFonts, rgb, PDFName, PDFString } from 'pdf-lib';
 
 const CHF_COLS = new Set([
   'aktienkapital','nominalwert','reingewinn_buch','reingewinn_buch_dbs','aufr_nichtabzugsfaehig','aufr_geldwerte_leist',
@@ -16,12 +16,105 @@ const CHF_COLS = new Set([
   'beteiligung_2_bw','beteiligung_2_ertrag','beteiligung_3_bw','beteiligung_3_ertrag',
 ]);
 
-function formatValue(id, val) {
+function fmtChf(n) {
+  return n.toLocaleString('de-CH', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+}
+
+// `typ` ist optional – Formulare ohne Typ-Angabe (SG/TG/ESTV) fallen auf die
+// alte id-basierte CHF_COLS-Liste zurück.
+function formatValue(id, val, typ) {
   if (val == null || val === '') return '';
-  if (CHF_COLS.has(id) && !isNaN(parseFloat(val))) {
-    return parseFloat(val).toLocaleString('de-CH', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  if ((typ === 'betrag' || (typ == null && CHF_COLS.has(id))) && !isNaN(parseFloat(val))) {
+    return fmtChf(parseFloat(val));
+  }
+  // <input type="date"> liefert ISO – auf den Formularen ist dd.mm.yyyy üblich.
+  if (typ === 'datum') {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(val));
+    if (m) return `${m[3]}.${m[2]}.${m[1]}`;
   }
   return String(val);
+}
+
+// ── Berechnete Summen ────────────────────────────────────────────────────────
+// Manche Formulare (ZH Form. 500) rechnen ihre Zwischensummen per eingebettetem
+// PDF-JavaScript. pdf-lib führt kein PDF-JS aus, darum werden die Summen hier
+// aus `formDef.computed` nachgerechnet.
+//   { id, col: 'ss'|'bs', acroField, plus: [...], minus: [...],
+//     manual: '<feldId>',      → manuelle Eingabe schlägt die Berechnung
+//     mindestens: '<feldId>' } → Ergebnis wird nach unten begrenzt
+// Einträge in plus/minus dürfen auf Feld-ids ODER auf frühere computed-ids
+// zeigen (Reihenfolge der Liste ist die Auswertungsreihenfolge).
+// In der Spalte 'bs' (Bundessteuer) gewinnt `<feldId>_bund`, falls gesetzt.
+function runComputed(formDef, felder) {
+  const ergebnisse = {};   // acroField -> Zahl
+  const memo = {};         // "col:id"  -> Zahl
+
+  const num = (id, col) => {
+    const key = `${col}:${id}`;
+    if (key in memo) return memo[key];
+    const bundKey = `${id}_bund`;
+    const quelle = col === 'bs' && felder[bundKey] != null && felder[bundKey] !== ''
+      ? bundKey : id;
+    return parseFloat(felder[quelle]) || 0;
+  };
+
+  for (const c of formDef.computed || []) {
+    let wert = (c.plus || []).reduce((s, id) => s + num(id, c.col), 0)
+             - (c.minus || []).reduce((s, id) => s + num(id, c.col), 0);
+
+    if (c.mindestens) wert = Math.max(wert, num(c.mindestens, c.col));
+
+    const manuell = c.manual != null ? felder[c.manual] : null;
+    if (manuell != null && manuell !== '' && !isNaN(parseFloat(manuell))) {
+      wert = parseFloat(manuell);
+    }
+
+    memo[`${c.col}:${c.id}`] = wert;
+    ergebnisse[c.acroField] = wert;
+  }
+  return ergebnisse;
+}
+
+// ── Code 39 (Strichcode Seite 1, ZH) ─────────────────────────────────────────
+// Im Original entsteht der Code aus der Schrift „3of9Barcode" via PDF-JS. Da
+// beides beim Flatten wegfällt, wird er hier vektoriell gezeichnet.
+// Muster je Zeichen: 9 Elemente (Balken/Lücke im Wechsel, beginnend mit Balken),
+// 1 = breit, 0 = schmal. Danach eine schmale Trennlücke.
+const CODE39 = {
+  '0': '000110100', '1': '100100001', '2': '001100001', '3': '101100000',
+  '4': '000110001', '5': '100110000', '6': '001110000', '7': '000100101',
+  '8': '100100100', '9': '001100100', 'A': '100001001', 'B': '001001001',
+  'C': '101001000', 'D': '000011001', 'E': '100011000', 'F': '001011000',
+  'G': '000001101', 'H': '100001100', 'I': '001001100', 'J': '000011100',
+  'K': '100000011', 'L': '001000011', 'M': '101000010', 'N': '000010011',
+  'O': '100010010', 'P': '001010010', 'Q': '000000111', 'R': '100000110',
+  'S': '001000110', 'T': '000010110', 'U': '110000001', 'V': '011000001',
+  'W': '111000000', 'X': '010010001', 'Y': '110010000', 'Z': '011010000',
+  '-': '010000101', '.': '110000100', ' ': '011000100', '$': '010101000',
+  '/': '010100010', '+': '010001010', '%': '000101010',
+  '*': '010010100',   // Start/Stop – nicht mit 'P' (001010010) verwechseln
+};
+
+function drawCode39(page, text, cfg) {
+  const narrow = cfg.narrow ?? 0.675;
+  const wide   = narrow * 3;
+  const gap    = narrow;
+  const daten  = `*${String(text).toUpperCase()}*`;
+
+  let x = cfg.x;
+  for (const zeichen of daten) {
+    const muster = CODE39[zeichen];
+    if (!muster) continue;                       // nicht kodierbare Zeichen überspringen
+    for (let i = 0; i < muster.length; i++) {
+      const breite = muster[i] === '1' ? wide : narrow;
+      if (i % 2 === 0) {                          // gerade Position = Balken
+        page.drawRectangle({ x, y: cfg.y, width: breite, height: cfg.h, color: rgb(0, 0, 0) });
+      }
+      x += breite;
+    }
+    x += gap;
+  }
+  return x - cfg.x;                               // gezeichnete Gesamtbreite
 }
 
 function drawAlignedText(page, text, pos, font, halfW) {
@@ -109,7 +202,84 @@ async function buildSplitFilledPdf(formDef, felder, srcBytes) {
   return outDoc.save();
 }
 
-// ── AcroForm-Felder befüllen (TG, ESTV) ──────────────────────────────────────
+// Entfernt Felder samt ihrer Widgets aus dem Dokument.
+// Bewusst NICHT über form.removeField(): das löscht in pdf-lib 1.17 das
+// Feld-Objekt, entfernt die Annotation aber nicht zuverlässig von der Seite
+// (es räumt anhand der Appearance-Referenz auf). Zurück bleibt eine tote
+// Referenz in /Annots, an der updateFieldAppearances() abstürzt.
+function entferneFelder(pdfDoc, form, namen) {
+  const widgets = new Set();
+  for (const name of namen) {
+    let field;
+    try { field = form.getField(name); } catch { continue; }
+    for (const widget of field.acroField.getWidgets()) widgets.add(widget.dict);
+    try { form.acroForm.removeField(field.acroField); } catch {}
+  }
+  if (!widgets.size) return;
+
+  for (const page of pdfDoc.getPages()) {
+    const annots = page.node.Annots();
+    if (!annots) continue;
+    for (let i = annots.size() - 1; i >= 0; i--) {
+      let dict;
+      try { dict = annots.lookup(i); } catch { continue; }
+      if (widgets.has(dict)) annots.remove(i);
+    }
+  }
+}
+
+// Setzt die Schriftgrösse eines Textfelds.
+// Nicht über field.setFontSize(): im ZH-PDF steht im /DA der Fontname escaped
+// (`\057Helv 9 Tf 0 g` statt `/Helv 9 Tf 0 g`). pdf-lib findet darin keinen
+// Tf-Operator – setFontSize() wirft, und beim Erzeugen der Appearance fällt es
+// auf „automatisch" zurück, was mehrzeilige Kästen kastenfüllend aufbläst.
+// Ein sauber geschriebenes /DA behebt beides; der Fontname darin ist nur für
+// Grösse/Farbe relevant, die Glyphen kommen aus dem übergebenen Font.
+function setzeSchriftgroesse(field, groesse) {
+  try {
+    field.acroField.dict.set(PDFName.of('DA'), PDFString.of(`/Helv ${groesse} Tf 0 g`));
+  } catch {}
+}
+
+// Wählt eine Option in einer Ja/Nein-Gruppe (ZH Ziffer 24).
+// pdf-lib erkennt die Gruppe als PDFCheckBox (das Radio-Flag fehlt im PDF) und
+// bietet kein select(). Ausserdem haben die Widgets nur eine „Ein"-Darstellung
+// und keine /Off-Variante – beim Flatten fände pdf-lib für die nicht gewählte
+// Box keine Appearance. Darum: gewähltes Widget setzen, die übrigen entfernen.
+function waehleOption(pdfDoc, form, feldName, exportWert) {
+  let field;
+  try { field = form.getField(feldName); } catch { return; }
+
+  const gewaehlt = PDFName.of(exportWert);
+  const zuEntfernen = new Set();
+  let treffer = false;
+
+  for (const widget of field.acroField.getWidgets()) {
+    const normal = widget.getNormalAppearance();
+    const passt = normal && typeof normal.has === 'function' && normal.has(gewaehlt);
+    if (passt) {
+      widget.dict.set(PDFName.of('AS'), gewaehlt);
+      treffer = true;
+    } else {
+      zuEntfernen.add(widget.dict);
+    }
+  }
+  if (!treffer) return;                       // unbekannter Exportwert – nichts anfassen
+
+  field.acroField.dict.set(PDFName.of('V'), gewaehlt);
+
+  for (const page of pdfDoc.getPages()) {
+    const annots = page.node.Annots();
+    if (!annots) continue;
+    for (let i = annots.size() - 1; i >= 0; i--) {
+      let dict;
+      try { dict = annots.lookup(i); } catch { continue; }
+      if (zuEntfernen.has(dict)) annots.remove(i);
+    }
+  }
+}
+
+// ── AcroForm-Felder befüllen (TG, ESTV, ZH) ──────────────────────────────────
 async function fillAcroformBytes(formDef, felder, srcBytes) {
   const pdfDoc = await PDFDocument.load(srcBytes, { ignoreEncryption: true });
   const font   = await pdfDoc.embedFont(StandardFonts.Helvetica);
@@ -117,17 +287,50 @@ async function fillAcroformBytes(formDef, felder, srcBytes) {
 
   for (const section of formDef.sections) {
     for (const feld of section.felder) {
+      const val     = felder[feld.id];
+      const valBund = feld.acroFieldBund ? felder[`${feld.id}_bund`] : undefined;
+      const hatWert = val     != null && val     !== '';
+      const hatBund = valBund != null && valBund !== '';
+      // Nur die Bundesspalte erfasst? Dann trotzdem schreiben.
+      if (!hatWert && !hatBund) continue;
+
+      // Auswahlliste (Dropdown) – z.B. Gemeinde beim ZH-Formular
+      if (feld.acroChoice) {
+        try { form.getDropdown(feld.acroChoice).select(String(val)); } catch {}
+        continue;
+      }
+
+      // Ja/Nein-Gruppe – Option wird über acroRadioWerte auf den Exportwert gemappt
+      if (feld.acroRadio) {
+        waehleOption(pdfDoc, form, feld.acroRadio, feld.acroRadioWerte?.[val] ?? String(val));
+        continue;
+      }
+
       if (!feld.acroField) continue;
-      const val = felder[feld.id];
-      if (val == null || val === '') continue;
-      try {
-        if (feld.typ === 'checkbox') {
+
+      if (feld.typ === 'checkbox') {
+        try {
           const cb = form.getCheckBox(feld.acroField);
           if (val) cb.check(); else cb.uncheck();
-        } else {
-          form.getTextField(feld.acroField).setText(formatValue(feld.id, val));
-        }
-      } catch {}
+        } catch {}
+        continue;
+      }
+
+      const text = hatWert ? formatValue(feld.id, val, feld.typ) : '';
+      if (hatWert) {
+        try {
+          const tf = form.getTextField(feld.acroField);
+          if (feld.schriftgroesse) setzeSchriftgroesse(tf, feld.schriftgroesse);
+          tf.setText(text);
+        } catch {}
+      }
+
+      // Zweite Spalte (Bundessteuer) mitfüllen. Ein eigener Wert in
+      // `<id>_bund` schlägt die Spiegelung.
+      if (feld.acroFieldBund) {
+        const bundWert = hatBund ? formatValue(feld.id, valBund, feld.typ) : text;
+        try { form.getTextField(feld.acroFieldBund).setText(bundWert); } catch {}
+      }
     }
   }
 
@@ -159,7 +362,9 @@ async function fillAcroformBytes(formDef, felder, srcBytes) {
       }
       if (!text) continue;
       try {
-        form.getTextField(hook.acroField).setText(text);
+        const tf = form.getTextField(hook.acroField);
+        if (hook.schriftgroesse) setzeSchriftgroesse(tf, hook.schriftgroesse);
+        tf.setText(text);
       } catch {}
     }
   }
@@ -177,6 +382,21 @@ async function fillAcroformBytes(formDef, felder, srcBytes) {
         if (ktVal && ktVal.trim()) f.setText(ktVal);
       } catch {}
     }
+  }
+
+  // Berechnete Summen (ersetzen das PDF-eigene JavaScript)
+  const summen = runComputed(formDef, felder);
+  for (const [acroField, wert] of Object.entries(summen)) {
+    if (!wert) continue;                       // 0 / NaN bleibt leer wie von Hand
+    try { form.getTextField(acroField).setText(fmtChf(wert)); } catch {}
+  }
+
+  // Felder, die nicht in den Ausdruck gehören, VOR dem Flatten entfernen.
+  // pdf-lib zeichnet beim Flatten auch als „hidden" markierte Widgets – ohne
+  // das Entfernen landeten z.B. Navigations-Buttons oder ein Strichcode mit
+  // seinem Vorgabewert im PDF.
+  if (formDef.dropFields?.length) {
+    entferneFelder(pdfDoc, form, formDef.dropFields);
   }
 
   form.updateFieldAppearances(font);
@@ -198,6 +418,19 @@ async function fillAcroformBytes(formDef, felder, srcBytes) {
       const page = pages[(r.seite ?? 1) - 1];
       if (!page) continue;
       page.drawRectangle({ x: r.x, y: r.y, width: r.w, height: r.h, color: rgb(1, 1, 1) });
+    }
+  }
+
+  // Strichcode nach dem Flatten zeichnen (liegt damit zuoberst)
+  if (formDef.barcode) {
+    const cfg  = formDef.barcode;
+    const text = typeof cfg.payload === 'function' ? cfg.payload(felder) : cfg.payload;
+    const page = pdfDoc.getPages()[(cfg.seite ?? 1) - 1];
+    if (text && page) {
+      const breite = drawCode39(page, text, cfg);
+      if (cfg.w && breite > cfg.w) {
+        console.warn(`Strichcode zu breit (${breite.toFixed(1)}pt > ${cfg.w}pt) – Nutzlast "${text}"`);
+      }
     }
   }
 

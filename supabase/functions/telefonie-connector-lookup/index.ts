@@ -1,13 +1,17 @@
 // ===========================================================================
 // telefonie-connector-lookup
 //
-// Lookup-Endpunkt für den peoplefone CONNECTOR (vPBX-Zusatzmodul). Peoplefone
-// ruft diese URL bei jedem ein-/ausgehenden Anruf auf und übergibt die
-// Anrufernummer; wir liefern zurück, wer das ist (für das Connector-Popup)
-// UND feuern zusätzlich ein Realtime-Broadcast-Event, damit das eingehende
-// Dossier direkt in smartis aufpoppt (gleicher Kanal, den das Frontend schon
-// über den "Test-Anruf"-Knopf benutzt: Channel "telefonie-calls",
-// Event "incoming_call").
+// Lookup-Endpunkt für den peoplefone CONNECTOR (vPBX-Zusatzmodul) UND für das
+// lokale MicroSIP-Hook-Skript (microsip-notify.ps1) auf dem Mitarbeiter-PC.
+// Beide rufen dieselbe URL bei einem Anruf-Ereignis auf und übergeben die
+// Anrufernummer (+ optional "status": "ringing"|"answered"|"ended", Default
+// "ringing"); wir liefern zurück, wer das ist (für das Connector-Popup) UND
+// feuern zusätzlich ein Realtime-Broadcast-Event, damit smartis live reagiert
+// (gleicher Kanal, den das Frontend schon über den "Test-Anruf"-Knopf nutzt:
+// Channel "telefonie-calls", Event "incoming_call"). Das Frontend
+// (TelephonyContext.jsx) unterscheidet anhand von "status": ringing zeigt
+// den Dossier-Screen-Pop, answered promoviert zum aktiven Anruf, ended löst
+// automatisch das Wrap-up/Leistungs-Panel aus.
 //
 // ⚠️ NICHT DEPLOYT / NICHT GEGEN ECHTEN VERKEHR GETESTET.
 // Die exakten Feldnamen des CONNECTOR-Requests sind best-effort (siehe

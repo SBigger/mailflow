@@ -25,7 +25,7 @@ const PositionSchema = z.object({
   betrag_netto: z.number(),
   betrag_mwst: z.number().default(0),
   betrag_brutto: z.number(),
-  mwst_code: z.string().default("VS81"),
+  mwst_code: z.string().default("M81"),
   mwst_satz: z.number().default(8.1),
   bezeichnung: z.string().optional(),
   kostenstelle: z.string().optional(),
@@ -100,84 +100,40 @@ export function registerFinanceTools(server: McpServer, context: ToolContext): v
     name: "finance_create_creditor_invoice",
     title: "Kreditor-Rechnung erstellen",
     description:
-      "Erstellt einen Kreditoren-Beleg (Lieferantenrechnung) mit optionalen " +
-      "Buchungspositionen. MwSt wird NICHT nachgerechnet – Betraege werden uebernommen. " +
-      "Fehlen Beleg-Summen, werden sie aus den Positionen aufsummiert.",
+      "Erstellt und verbucht einen Kreditoren-Beleg atomar. Nummer und Summen werden " +
+      "serverseitig erzeugt; bei einem Fehler werden Kopf, Positionen und Hauptbuch zurueckgerollt.",
     input: {
       lieferant_id: z.string().uuid(),
       belegdatum: z.string().describe("YYYY-MM-DD"),
       faelligkeit: z.string().describe("YYYY-MM-DD"),
-      beleg_nr: z.string().optional().describe("default: automatisch generiert"),
       lieferant_beleg_nr: z.string().optional(),
       waehrung: z.string().length(3).default("CHF"),
       belegtyp: z.enum(["rechnung", "gutschrift"]).default("rechnung"),
-      betrag_netto: z.number().optional(),
-      betrag_mwst: z.number().optional(),
-      betrag_brutto: z.number().optional(),
       notiz: z.string().optional(),
-      positionen: z.array(PositionSchema).optional(),
+      positionen: z.array(PositionSchema).min(1),
     },
-    handler: async (args,ctx) => {
+    handler: async (args, ctx) => {
       requireWritesEnabled(ctx);
       const mandantId = requireMandantId(ctx);
 
-      const pos = args.positionen ?? [];
-      // Summen aus Positionen ableiten (reine Summe, KEINE MwSt-Neuberechnung),
-      // falls die Beleg-Summen nicht explizit uebergeben wurden.
-      const netto = args.betrag_netto ?? round2(pos.reduce((s, p) => s + p.betrag_netto, 0));
-      const mwst = args.betrag_mwst ?? round2(pos.reduce((s, p) => s + p.betrag_mwst, 0));
-      const brutto = args.betrag_brutto ?? round2(pos.reduce((s, p) => s + p.betrag_brutto, 0));
-
-      const belegNr = args.beleg_nr ?? `KRD-${new Date().toISOString().slice(0, 10)}-${Date.now().toString().slice(-5)}`;
-
       const beleg = unwrap(
         await supabase
-          .from("fibu_kreditoren_belege")
-          .insert({
-            mandant_id: mandantId,
-            beleg_nr: belegNr,
-            lieferant_id: args.lieferant_id,
-            lieferant_beleg_nr: args.lieferant_beleg_nr ?? null,
-            belegdatum: args.belegdatum,
-            faelligkeit: args.faelligkeit,
-            waehrung: args.waehrung,
-            belegtyp: args.belegtyp,
-            betrag_netto: netto,
-            betrag_mwst: mwst,
-            betrag_brutto: brutto,
-            betrag_bezahlt: 0,
-            status: "offen",
-            notiz: args.notiz ?? null,
-          })
-          .select(BELEG_FIELDS)
-          .single(),
+          .rpc("fibu_kreditoren_erstellen", {
+            p_mandant_id: mandantId,
+            p_beleg: {
+              lieferant_id: args.lieferant_id,
+              lieferant_beleg_nr: args.lieferant_beleg_nr ?? null,
+              belegdatum: args.belegdatum,
+              faelligkeit: args.faelligkeit,
+              waehrung: args.waehrung,
+              belegtyp: args.belegtyp,
+              status: "offen",
+              notiz: args.notiz ?? null,
+            },
+            p_positionen: args.positionen,
+          }),
       );
-
-      let positionen: unknown[] = [];
-      if (pos.length > 0) {
-        positionen = unwrap(
-          await supabase
-            .from("fibu_kreditoren_positionen")
-            .insert(
-              pos.map((p, i) => ({
-                mandant_id: mandantId,
-                beleg_id: beleg.id,
-                position: i + 1,
-                konto_nr: p.konto_nr,
-                bezeichnung: p.bezeichnung ?? null,
-                mwst_code: p.mwst_code,
-                mwst_satz: p.mwst_satz,
-                betrag_netto: p.betrag_netto,
-                betrag_mwst: p.betrag_mwst,
-                betrag_brutto: p.betrag_brutto,
-                kostenstelle: p.kostenstelle ?? null,
-              })),
-            )
-            .select("position, konto_nr, betrag_brutto, kostenstelle"),
-        );
-      }
-
-      return ok({ created: true, invoice: beleg, positionen });
+      return ok({ created: true, invoice: beleg, positionen: args.positionen });
     },
   }, context);
 
@@ -196,35 +152,15 @@ export function registerFinanceTools(server: McpServer, context: ToolContext): v
     handler: async (args, ctx) => {
       requireWritesEnabled(ctx);
       const mandantId = requireMandantId(ctx);
-      const beleg = unwrap(
-        await supabase
-          .from("fibu_kreditoren_belege")
-          .select("id, betrag_brutto, betrag_bezahlt, status")
-          .eq("mandant_id", mandantId)
-          .eq("id", args.beleg_id)
-          .maybeSingle(),
-      );
-      if (!beleg) throw new ToolError(`Kein Kreditoren-Beleg mit ID ${args.beleg_id} fuer diesen Mandanten gefunden.`);
-      if (beleg.status === "storniert") throw new ToolError("Beleg ist storniert – keine Zahlung moeglich.");
-
-      const neuBezahlt = round2(Number(beleg.betrag_bezahlt) + args.betrag);
-      const brutto = Number(beleg.betrag_brutto);
-      const status = neuBezahlt + 0.005 >= brutto ? "bezahlt" : "teilbezahlt";
-
       const row = unwrap(
         await supabase
-          .from("fibu_kreditoren_belege")
-          .update({
-            betrag_bezahlt: neuBezahlt,
-            bezahlt_am: args.bezahlt_am ?? new Date().toISOString().slice(0, 10),
-            zahlungsreferenz: args.zahlungsreferenz ?? null,
-            status,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("mandant_id", mandantId)
-          .eq("id", args.beleg_id)
-          .select("id, betrag_brutto, betrag_bezahlt, status, bezahlt_am")
-          .single(),
+          .rpc("fibu_kreditoren_zahlung_erfassen", {
+            p_beleg_id: args.beleg_id,
+            p_betrag: args.betrag,
+            p_datum: args.bezahlt_am ?? new Date().toISOString().slice(0, 10),
+            p_zahlungsreferenz: args.zahlungsreferenz ?? null,
+            p_mandant_id: mandantId,
+          }),
       );
       return ok({ updated: true, invoice: row });
     },

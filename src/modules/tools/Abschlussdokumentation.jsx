@@ -270,39 +270,46 @@ async function generateAbschlussPDF({ konten, einstellungen, customerName, selec
   };
 
   // ── Bilanz-Zeilen bauen ──
-  // cols: Label (100) | IST (28) | VJ (28) | Δ% (16) → 172mm
+  // Eine Schriftgrösse für das ganze Dokument, Hierarchie nur über fett/normal.
+  // Bilanz: Label | IST | VJ (kein Δ%, auf Wunsch entfernt) → 182mm
+  // Erfolgsrechnung behält Δ% (erwünscht als Kennzahl, nicht als Layout-Zierde).
+  const FS = 8;
   const CP = { top: 1.5, bottom: 1.5, left: 3, right: 2 };
   const CPT = { top: 3, bottom: 3, left: 3, right: 2 };
 
   const bSec = (label, fill, col) => [{
-    content: label, colSpan: 4,
-    styles: { fillColor: fill, textColor: col, fontStyle: "bold", fontSize: 8,
+    content: label, colSpan: 3,
+    styles: { fillColor: fill, textColor: col, fontStyle: "bold", fontSize: FS,
       cellPadding: { top: 3, bottom: 1, left: 4, right: 3 } }
   }];
 
+  // Bilanzsumme/Totalzeilen bekommen zusätzlich zu fett eine Trennlinie darüber —
+  // das klassische Buchhaltungs-Signal für "Ergebnis dieser Gruppe".
   const bRow = (label, ist, vj, { total = false, sub = false, indent = false } = {}) => {
-    const p = pct(ist, vj);
     const fw = total || sub ? "bold" : "normal";
-    const fs = total ? 9 : 8;
-    const tc = total ? DARK : DARK;
+    const topLine = total ? { lineWidth: { top: 0.3 }, lineColor: DARK } : {};
     return [
-      { content: label,    styles: { fontSize: fs, fontStyle: fw, textColor: tc,
+      { content: label,    styles: { fontSize: FS, fontStyle: fw, textColor: DARK, ...topLine,
           cellPadding: { ...( total ? CPT : CP), left: indent ? 7 : 3 } } },
-      { content: N(ist),   styles: { halign: "right", fontSize: fs, fontStyle: fw, textColor: tc } },
-      { content: vj != null ? N(vj) : "", styles: { halign: "right", fontSize: 7, textColor: GRAY } },
-      { content: p,        styles: { halign: "right", fontSize: 7, textColor: pctC(p) } },
+      { content: N(ist),   styles: { halign: "right", fontSize: FS, fontStyle: fw, textColor: DGRN, ...topLine } },
+      { content: vj != null ? N(vj) : "", styles: { halign: "right", fontSize: FS, fontStyle: fw, textColor: DARK, ...topLine } },
     ];
   };
 
-  const colHead = (title, fill, col) => [[
-    { content: title,           styles: { fillColor: fill, textColor: col, fontStyle: "bold", fontSize: 9, cellPadding: { top: 3, bottom: 3, left: 4, right: 2 } } },
-    { content: String(selectedYear),   styles: { fillColor: fill, textColor: GRAY, halign: "right", fontSize: 8 } },
-    { content: String(selectedYear-1), styles: { fillColor: fill, textColor: GRAY, halign: "right", fontSize: 8 } },
-    { content: "Δ%",            styles: { fillColor: fill, textColor: GRAY, halign: "right", fontSize: 8 } },
-  ]];
+  const colHead = (title, fill, col, withPct = false) => {
+    const cells = [
+      { content: title,                  styles: { fillColor: fill, textColor: col, fontStyle: "bold", fontSize: FS, cellPadding: { top: 3, bottom: 3, left: 4, right: 2 } } },
+      { content: String(selectedYear),   styles: { fillColor: fill, textColor: DGRN, fontStyle: "bold", halign: "right", fontSize: FS } },
+      { content: String(selectedYear-1), styles: { fillColor: fill, textColor: col,  fontStyle: "bold", halign: "right", fontSize: FS } },
+    ];
+    if (withPct) cells.push({ content: "Δ%", styles: { fillColor: fill, textColor: col, fontStyle: "bold", halign: "right", fontSize: FS } });
+    return [cells];
+  };
 
-  const COL = { 0: { cellWidth: 102 }, 1: { cellWidth: 28, halign: "right" },
-                2: { cellWidth: 28, halign: "right" }, 3: { cellWidth: 16, halign: "right" } };
+  const COL_BILANZ = { 0: { cellWidth: 118 }, 1: { cellWidth: 32, halign: "right" },
+                        2: { cellWidth: 32, halign: "right" } };
+  const COL_ER = { 0: { cellWidth: 102 }, 1: { cellWidth: 28, halign: "right" },
+                    2: { cellWidth: 28, halign: "right" }, 3: { cellWidth: 16, halign: "right" } };
   const MARG = { left: 14, right: 14 };
 
   // ── BILANZ IDs ──
@@ -312,16 +319,20 @@ async function generateAbschlussPDF({ konten, einstellungen, customerName, selec
   const FK_LANG_IDS = ["FK_LANG_BANK","FK_LANG_VERZ_NAHE","FK_LANG_SONST","FK_LANG_SONST_NAHE","FK_RUECKSTELLUNGEN"];
   const EK_IDS      = ["EK_KAPITAL","EK_KAP_RESERVE","EK_GES_RESERVE","EK_FREIE_RESERVE","EK_RESERVEN","EK_VORTRAG","EK_JAHRESERGEBNIS"];
 
-  // Hilfszelle: einzelne Konto-Zeile im Detail-Modus (etwas kleiner + grauer, eingerückt)
-  const kRow = (label, ist, vj) => {
-    const p = pct(ist, vj);
-    return [
-      { content: label, styles: { fontSize: 7, fontStyle: "normal", textColor: [90, 90, 100],
+  // Hilfszelle: einzelne Konto-Zeile im Detail-Modus, eingerückt.
+  // withPct steuert die 4. Spalte — Bilanz hat keine, Erfolgsrechnung schon.
+  const kRow = (label, ist, vj, { withPct = true } = {}) => {
+    const cells = [
+      { content: label, styles: { fontSize: FS, fontStyle: "normal", textColor: DARK,
           cellPadding: { top: 0.8, bottom: 0.8, left: 12, right: 2 } } },
-      { content: N(ist), styles: { halign: "right", fontSize: 7, textColor: [90, 90, 100] } },
-      { content: vj != null ? N(vj) : "", styles: { halign: "right", fontSize: 7, textColor: GRAY } },
-      { content: p, styles: { halign: "right", fontSize: 6.5, textColor: GRAY } },
+      { content: N(ist), styles: { halign: "right", fontSize: FS, fontStyle: "normal", textColor: DGRN } },
+      { content: vj != null ? N(vj) : "", styles: { halign: "right", fontSize: FS, fontStyle: "normal", textColor: DARK } },
     ];
+    if (withPct) {
+      const p = pct(ist, vj);
+      cells.push({ content: p, styles: { halign: "right", fontSize: FS, textColor: pctC(p) } });
+    }
+    return cells;
   };
 
   const posRows = (ids, flip = false) => ids.flatMap(id => {
@@ -329,7 +340,7 @@ async function generateAbschlussPDF({ konten, einstellungen, customerName, selec
     const ist = sumI([id]) * (flip ? pSign : 1);
     const vj  = sumVJ([id]) * (flip ? pSign : 1);
     if (ist === 0 && vj === 0) return [];
-    const lbl = (pos?.level === 3 ? "  ↳ " : "  ") + (pos?.label || id);
+    const lbl = "  " + (pos?.label || id);
     const out = [bRow(lbl, ist, vj, { indent: true })];
     if (mode === "detail") {
       // Einzelkonten dieser Position einrücken (vor dem Sub-Total)
@@ -341,7 +352,7 @@ async function generateAbschlussPDF({ konten, einstellungen, customerName, selec
         const kVj  = (parseFloat(k.saldo_vorjahr) || 0) * (flip ? pSign : 1);
         if (kIst === 0 && kVj === 0) continue;
         const kLbl = `    ${k.kontonummer}  ${k.kontoname || ""}`;
-        out.push(kRow(kLbl, kIst, kVj));
+        out.push(kRow(kLbl, kIst, kVj, { withPct: false }));
       }
     }
     return out;
@@ -367,14 +378,17 @@ async function generateAbschlussPDF({ konten, einstellungen, customerName, selec
       bRow("Total Anlagevermögen", avI, avV, { sub: true }),
       bRow("TOTAL AKTIVEN", akI, akV, { total: true }),
     ],
-    columnStyles: COL, margin: MARG, styles: { fontSize: 8, cellPadding: CP }, theme: "plain",
+    columnStyles: COL_BILANZ, margin: MARG, styles: { fontSize: FS, cellPadding: CP }, theme: "plain",
   });
 
-  // Differenz-Hinweis klein unter Aktiven
+  // Nur bei echter Differenz einen Hinweis zeigen — ist die Bilanz ausgeglichen
+  // (der Normalfall), bleibt es still, statt das extra zu bestätigen.
   const diff = akI - paI;
-  y = doc.lastAutoTable.finalY + 3;
-  doc.setFontSize(7); doc.setTextColor(...(Math.abs(diff) < 0.01 ? GREEN : RED));
-  doc.text(Math.abs(diff) < 0.01 ? "Bilanz ausgeglichen" : `Differenz: CHF ${N(diff)}`, 14, y);
+  if (Math.abs(diff) >= 0.01) {
+    y = doc.lastAutoTable.finalY + 3;
+    doc.setFont("helvetica", "bold"); doc.setFontSize(FS); doc.setTextColor(...RED);
+    doc.text(`Differenz: CHF ${N(diff)}`, 14, y);
+  }
 
   // ── Seite 2: PASSIVEN ──
   doc.addPage();
@@ -392,7 +406,7 @@ async function generateAbschlussPDF({ konten, einstellungen, customerName, selec
       bRow("Total Eigenkapital", ekI, ekV, { sub: true }),
       bRow("TOTAL PASSIVEN", paI, paV, { total: true }),
     ],
-    columnStyles: COL, margin: MARG, styles: { fontSize: 8, cellPadding: CP }, theme: "plain",
+    columnStyles: COL_BILANZ, margin: MARG, styles: { fontSize: FS, cellPadding: CP }, theme: "plain",
   });
 
   // ── Seite 3: ERFOLGSRECHNUNG ──
@@ -433,21 +447,23 @@ async function generateAbschlussPDF({ konten, einstellungen, customerName, selec
   const jeI = ebtI + frEI + frAI + stI;
   const jeV = ebtV + frEV + frAV + stV;
 
-  // ER-Zeile: 4 Spalten Label | IST | VJ | Δ%
+  // ER-Zeile: 4 Spalten Label | IST | VJ | Δ% — Δ% bleibt hier (im Gegensatz zur
+  // Bilanz), weil es in der Erfolgsrechnung eine echte Kennzahl ist, keine Zierde.
   const eRow = (lbl, ist, vj, { total = false, sub = false } = {}) => {
-    const p = pct(ist, vj); const fw = total || sub ? "bold" : "normal"; const fs = total ? 9 : 8;
+    const p = pct(ist, vj); const fw = total || sub ? "bold" : "normal";
+    const topLine = total ? { lineWidth: { top: 0.3 }, lineColor: DARK } : {};
     return [
-      { content: lbl, styles: { fontSize: fs, fontStyle: fw, textColor: DARK,
+      { content: lbl, styles: { fontSize: FS, fontStyle: fw, textColor: DARK, ...topLine,
           cellPadding: { ...(total ? CPT : CP) } } },
-      { content: N(ist), styles: { halign: "right", fontSize: fs, fontStyle: fw,
-          textColor: total ? (ist >= 0 ? GREEN : RED) : DARK } },
-      { content: vj != null ? N(vj) : "", styles: { halign: "right", fontSize: 7, textColor: GRAY } },
-      { content: p, styles: { halign: "right", fontSize: 7, textColor: pctC(p) } },
+      { content: N(ist), styles: { halign: "right", fontSize: FS, fontStyle: fw, ...topLine,
+          textColor: total ? (ist >= 0 ? GREEN : RED) : DGRN } },
+      { content: vj != null ? N(vj) : "", styles: { halign: "right", fontSize: FS, fontStyle: fw, textColor: DARK, ...topLine } },
+      { content: p, styles: { halign: "right", fontSize: FS, textColor: pctC(p), ...topLine } },
     ];
   };
   const eSec = (lbl, fill, col) => [{
     content: lbl, colSpan: 4,
-    styles: { fillColor: fill, textColor: col, fontStyle: "bold", fontSize: 8,
+    styles: { fillColor: fill, textColor: col, fontStyle: "bold", fontSize: FS,
       cellPadding: { top: 3, bottom: 1, left: 4, right: 3 } }
   }];
 
@@ -502,9 +518,9 @@ async function generateAbschlussPDF({ konten, einstellungen, customerName, selec
   ];
 
   autoTable(doc, {
-    startY: y, head: colHead("ERFOLGSRECHNUNG", LGRN, GREEN),
-    body: erBody, columnStyles: COL, margin: MARG,
-    styles: { fontSize: 8, cellPadding: CP }, theme: "plain",
+    startY: y, head: colHead("ERFOLGSRECHNUNG", LGRN, GREEN, true),
+    body: erBody, columnStyles: COL_ER, margin: MARG,
+    styles: { fontSize: FS, cellPadding: CP }, theme: "plain",
   });
 
   // Bei returnDoc: doc + autoTable an Aufrufer zurückgeben (für Revisions-Dossier)
@@ -1333,17 +1349,31 @@ function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = 
 
   // ── Excel-Datei laden → Sheet-Picker wenn mehrere Blätter ───────────────
   async function loadExcel(file) {
-    const data = new Uint8Array(await file.arrayBuffer());
-    const XLSX = await import('xlsx');
-    const wb = XLSX.read(data, { type: "array" });
-    if (wb.SheetNames.length === 1) {
-      // Nur ein Blatt → direkt parsen
-      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: "" });
-      processRows(rows, file.name);
-    } else {
-      // Mehrere Blätter → Sheet-Picker zeigen
-      setSheetPicker({ wb, filename: file.name, sheetNames: wb.SheetNames });
-      setSelectedSheets(wb.SheetNames); // alle vorselektiert
+    try {
+      const data = new Uint8Array(await file.arrayBuffer());
+      const XLSX = await import('xlsx');
+      const wb = XLSX.read(data, { type: "array" });
+      // Nur Blätter mit tatsächlichem Inhalt berücksichtigen (leere Blätter
+      // sind ein häufiger Grund für "es passiert nichts").
+      const nonEmpty = wb.SheetNames.filter(n => {
+        const r = XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, defval: "" });
+        return r.length >= 2 && r.some(row => Array.isArray(row) && row.some(c => String(c).trim()));
+      });
+      if (nonEmpty.length === 0) {
+        toast.error("Excel-Datei enthält keine lesbaren Daten (leere Blätter oder unerwartetes Format).");
+        return;
+      }
+      if (nonEmpty.length === 1) {
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[nonEmpty[0]], { header: 1, defval: "" });
+        processRows(rows, file.name);
+      } else {
+        // Mehrere Blätter mit Inhalt → Sheet-Picker zeigen
+        setSheetPicker({ wb, filename: file.name, sheetNames: nonEmpty });
+        setSelectedSheets(nonEmpty); // alle vorselektiert
+      }
+    } catch (e) {
+      console.error("[Excel-Import]", e);
+      toast.error("Excel konnte nicht gelesen werden: " + (e?.message || String(e)));
     }
   }
 
@@ -1382,6 +1412,9 @@ function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = 
       // CSV – Zeichensatz automatisch erkennen (UTF-8 / Windows-1252), quote-sicher parsen
       readTextSmart(file).then(text => {
         processRows(parseCsvText(text), file.name);
+      }).catch(e => {
+        console.error("[CSV-Import]", e);
+        toast.error("Datei konnte nicht gelesen werden: " + (e?.message || String(e)));
       });
     }
   }
@@ -1432,12 +1465,18 @@ function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = 
     let header = null;
     let allData = [];
     const names = [];
-    for (const f of files) {
-      const rows = await readFileRows(f);
-      if (rows.length < 2) continue;
-      names.push(f.name);
-      if (!header) header = rows[0].map(String);
-      allData = [...allData, ...rows.slice(1)];
+    try {
+      for (const f of files) {
+        const rows = await readFileRows(f);
+        if (rows.length < 2) continue;
+        names.push(f.name);
+        if (!header) header = rows[0].map(String);
+        allData = [...allData, ...rows.slice(1)];
+      }
+    } catch (e) {
+      console.error("[Import mehrere Dateien]", e);
+      toast.error("Datei konnte nicht gelesen werden: " + (e?.message || String(e)));
+      return;
     }
     if (!header || allData.length === 0) { toast.error("Keine Daten in den Dateien gefunden"); return; }
     // Duplikate (gleiche Kontonummer) deduplizieren – erstes Vorkommen gewinnt
@@ -2105,9 +2144,29 @@ function BelegeSection({ arbeitspapier, onSave, customerId, selectedYear, accent
   // Upload-Dialog: wenn Beleg noch nicht in der Ablage. uploadFile = die zu uploadende Datei.
   const [uploadFile, setUploadFile] = useState(null);
   const fileInputRef = useRef(null);
+  // Vorschau rechts neben den Beleg-Chips — welcher Beleg, welche signierte URL.
+  const [preview, setPreview] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   // Docs zurücksetzen wenn Kunde oder Jahr wechselt → erzwingt Neuladen
-  useEffect(() => { setDocs([]); setFtResults(null); }, [customerId, selectedYear]);
+  useEffect(() => { setDocs([]); setFtResults(null); setPreview(null); }, [customerId, selectedYear]);
+
+  // Signierte URL für die Vorschau laden, sobald ein Beleg ausgewählt ist.
+  useEffect(() => {
+    if (!preview) { setPreviewUrl(null); return; }
+    const path = (preview.storage_path || "").replace(/^dokumente\//, "");
+    if (!path) { setPreviewUrl(null); return; }
+    let aktiv = true;
+    setPreviewLoading(true);
+    supabase.storage.from(BUCKET).createSignedUrl(path, 3600).then(({ data, error }) => {
+      if (!aktiv) return;
+      setPreviewLoading(false);
+      if (data?.signedUrl) setPreviewUrl(data.signedUrl);
+      else { setPreviewUrl(null); toast.error("Vorschau nicht verfügbar" + (error ? ": " + error.message : "")); }
+    });
+    return () => { aktiv = false; };
+  }, [preview]);
 
   // Dokumente laden wenn Picker öffnet — nur das gewählte Geschäftsjahr
   useEffect(() => {
@@ -2311,29 +2370,69 @@ function BelegeSection({ arbeitspapier, onSave, customerId, selectedYear, accent
           }}>+ Beleg verknüpfen</button>
       </div>
 
-      {belege.length === 0
-        ? <span style={{ fontSize: 11, color: subC, fontStyle: "italic" }}>Noch keine Belege verknüpft</span>
-        : <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-            {belege.map(b => {
-              const fl = fileLabel(b.file_type, b.filename);
-              return (
-                <div key={b.id} style={{
-                  display: "flex", alignItems: "center", gap: 5, padding: "3px 6px 3px 5px",
-                  borderRadius: 6, backgroundColor: b.ki ? "#fefce8" : "#f8fafc", border: `1px solid ${b.ki ? "#fde68a" : panelBdr}`, fontSize: 11,
-                }}>
-                  <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 4px", borderRadius: 3, backgroundColor: fl.bg, color: fl.col, flexShrink: 0 }}>{fl.label}</span>
-                  {b.ki && <span title="KI-vorgeschlagen – bitte prüfen" style={{ fontSize: 9, fontWeight: 700, padding: "1px 4px", borderRadius: 3, backgroundColor: "#fef08a", color: "#854d0e", flexShrink: 0 }}>KI</span>}
-                  <span style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: headingC }} title={b.name}>{b.name}</span>
-                  {b.year && <span style={{ color: subC, fontSize: 10, flexShrink: 0 }}>{b.year}</span>}
-                  <button onClick={() => openDoc(b)} title="Öffnen"
-                    style={{ background: "none", border: "none", cursor: "pointer", color: accent, fontSize: 13, padding: "0 2px", lineHeight: 1 }}>↗</button>
-                  <button onClick={() => removeBeleg(b.id)} title="Verknüpfung entfernen"
-                    style={{ background: "none", border: "none", cursor: "pointer", color: subC, fontSize: 14, padding: "0 1px", opacity: 0.55, lineHeight: 1 }}>×</button>
-                </div>
-              );
-            })}
-          </div>
-      }
+      <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+        {belege.length === 0
+          ? <span style={{ fontSize: 11, color: subC, fontStyle: "italic" }}>Noch keine Belege verknüpft</span>
+          : <div style={{ display: "flex", flexWrap: "wrap", gap: 5, flex: 1, minWidth: 0 }}>
+              {belege.map(b => {
+                const fl = fileLabel(b.file_type, b.filename);
+                const aktiv = preview?.id === b.id;
+                return (
+                  <div key={b.id} onClick={() => setPreview(aktiv ? null : b)}
+                    title="Klicken für Vorschau" style={{
+                    display: "flex", alignItems: "center", gap: 5, padding: "3px 6px 3px 5px", cursor: "pointer",
+                    borderRadius: 6, backgroundColor: aktiv ? (accent + "14") : (b.ki ? "#fefce8" : "#f8fafc"),
+                    border: `1px solid ${aktiv ? accent : (b.ki ? "#fde68a" : panelBdr)}`, fontSize: 11,
+                  }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 4px", borderRadius: 3, backgroundColor: fl.bg, color: fl.col, flexShrink: 0 }}>{fl.label}</span>
+                    {b.ki && <span title="KI-vorgeschlagen – bitte prüfen" style={{ fontSize: 9, fontWeight: 700, padding: "1px 4px", borderRadius: 3, backgroundColor: "#fef08a", color: "#854d0e", flexShrink: 0 }}>KI</span>}
+                    <span style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: headingC }} title={b.name}>{b.name}</span>
+                    {b.year && <span style={{ color: subC, fontSize: 10, flexShrink: 0 }}>{b.year}</span>}
+                    <button onClick={e => { e.stopPropagation(); openDoc(b); }} title="In neuem Tab öffnen"
+                      style={{ background: "none", border: "none", cursor: "pointer", color: accent, fontSize: 13, padding: "0 2px", lineHeight: 1 }}>↗</button>
+                    <button onClick={e => { e.stopPropagation(); removeBeleg(b.id); if (aktiv) setPreview(null); }} title="Verknüpfung entfernen"
+                      style={{ background: "none", border: "none", cursor: "pointer", color: subC, fontSize: 14, padding: "0 1px", opacity: 0.55, lineHeight: 1 }}>×</button>
+                  </div>
+                );
+              })}
+            </div>
+        }
+
+        {preview && (() => {
+          const ft = preview.file_type || "";
+          const istPdf = ft.includes("pdf");
+          const istBild = ft.startsWith("image/");
+          return (
+            <div style={{ width: 320, flexShrink: 0, border: `1px solid ${panelBdr}`, borderRadius: 8, overflow: "hidden" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 6px 4px 8px", borderBottom: `1px solid ${panelBdr}`, backgroundColor: "#f8fafc" }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: headingC, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={preview.name}>{preview.name}</span>
+                <button onClick={() => openDoc(preview)} title="In neuem Tab öffnen"
+                  style={{ background: "none", border: "none", cursor: "pointer", color: accent, fontSize: 13, padding: "0 3px", lineHeight: 1 }}>↗</button>
+                <button onClick={() => setPreview(null)} title="Vorschau schliessen"
+                  style={{ background: "none", border: "none", cursor: "pointer", color: subC, fontSize: 15, padding: "0 2px", opacity: 0.6, lineHeight: 1 }}>×</button>
+              </div>
+              <div style={{ height: 260, backgroundColor: "#f1f5f9", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                {previewLoading
+                  ? <span style={{ fontSize: 11, color: subC }}>Lädt…</span>
+                  : !previewUrl
+                    ? <span style={{ fontSize: 11, color: subC }}>Vorschau nicht verfügbar</span>
+                    : istPdf
+                      ? <iframe src={previewUrl} title={preview.name} style={{ width: "100%", height: "100%", border: "none" }} />
+                      : istBild
+                        ? <img src={previewUrl} alt={preview.name} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                        : <div style={{ textAlign: "center", padding: 12 }}>
+                            <div style={{ fontSize: 11, color: subC, marginBottom: 8 }}>Keine Vorschau für diesen Dateityp</div>
+                            <button onClick={() => openDoc(preview)} style={{
+                              fontSize: 11, fontWeight: 600, padding: "4px 10px", borderRadius: 5, cursor: "pointer",
+                              backgroundColor: accent + "14", border: `1px solid ${accent}40`, color: accent,
+                            }}>Öffnen ↗</button>
+                          </div>
+                }
+              </div>
+            </div>
+          );
+        })()}
+      </div>
     </div>
   );
 }

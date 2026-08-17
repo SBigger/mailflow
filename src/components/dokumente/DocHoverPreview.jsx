@@ -73,6 +73,14 @@ export default function DocHoverPreview({ doc, url, rect, theme, onClose }) {
 
   const [excel, setExcel] = useState(null);  // { sheets:[{name,rows}], active }
   const objUrlRef = useRef(null);
+  const workerRef = useRef(null);
+
+  // Esc schließt das Fenster — auch als Rettung, falls mal etwas hakt.
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onClose?.(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
 
   // ── Fenster-Geometrie (verschiebbar + groessenverstellbar, gemerkt) ──
   const [box, setBox] = useState(() => {
@@ -143,10 +151,45 @@ export default function DocHoverPreview({ doc, url, rect, theme, onClose }) {
           pdfDocRef.current = pdf; setPdfNum(pdf.numPages); setPdfPage(1); setSt({ kind: "pdf" }); return;
         }
         if (/\.(xlsx|xls|xlsm|xlsb|ods|csv)$/.test(name)) {
-          const { read, utils } = await import("xlsx");
           const buf = await blob.arrayBuffer();
-          const wb = read(new Uint8Array(buf), { type: "array", cellDates: true });
-          const sheets = wb.SheetNames.map(nm => ({ name: nm, rows: utils.sheet_to_json(wb.Sheets[nm], { header: 1, raw: false, defval: "" }).slice(0, 1000) }));
+          if (cancelled) return;
+          // Parsen im Web-Worker: hält den Haupt-Thread frei, damit die App bei großen
+          // Dateien (z. B. XLSM) nicht mehr einfriert und das ×-Schließen immer reagiert.
+          let worker = null;
+          try {
+            worker = new Worker(new URL("./xlsxPreview.worker.js", import.meta.url), { type: "module" });
+          } catch { worker = null; }
+
+          if (worker) {
+            workerRef.current = worker;
+            const timeout = setTimeout(() => {
+              if (cancelled) return;
+              try { worker.terminate(); } catch { /* ignore */ }
+              if (workerRef.current === worker) workerRef.current = null;
+              setSt({ kind: "error", error: "Vorschau dauert zu lange – bitte die Datei herunterladen." });
+            }, 25000);
+            worker.onmessage = (ev) => {
+              clearTimeout(timeout);
+              try { worker.terminate(); } catch { /* ignore */ }
+              if (workerRef.current === worker) workerRef.current = null;
+              if (cancelled) return;
+              if (ev.data?.ok) { setExcel({ sheets: ev.data.sheets, active: 0 }); setSt({ kind: "excel" }); }
+              else setSt({ kind: "error", error: ev.data?.error || "Excel konnte nicht gelesen werden" });
+            };
+            worker.onerror = () => {
+              clearTimeout(timeout);
+              try { worker.terminate(); } catch { /* ignore */ }
+              if (workerRef.current === worker) workerRef.current = null;
+              if (!cancelled) setSt({ kind: "error", error: "Vorschau fehlgeschlagen – bitte herunterladen." });
+            };
+            worker.postMessage({ buf });
+            return;
+          }
+
+          // Fallback ohne Worker (kann kurz hängen): Zeilen beim Lesen begrenzen.
+          const { read, utils } = await import("xlsx");
+          const wb = read(new Uint8Array(buf), { type: "array", cellDates: true, sheetRows: 1000 });
+          const sheets = wb.SheetNames.map(nm => ({ name: nm, rows: utils.sheet_to_json(wb.Sheets[nm], { header: 1, raw: false, defval: "" }).slice(0, 1000).map(r => Array.isArray(r) ? r.slice(0, 60) : r) }));
           if (!cancelled) { setExcel({ sheets, active: 0 }); setSt({ kind: "excel" }); } return;
         }
         if (/\.(docx|docm)$/.test(name)) {
@@ -166,7 +209,11 @@ export default function DocHoverPreview({ doc, url, rect, theme, onClose }) {
       }
     })();
 
-    return () => { cancelled = true; if (objUrlRef.current) { URL.revokeObjectURL(objUrlRef.current); objUrlRef.current = null; } };
+    return () => {
+      cancelled = true;
+      if (workerRef.current) { try { workerRef.current.terminate(); } catch { /* ignore */ } workerRef.current = null; }
+      if (objUrlRef.current) { URL.revokeObjectURL(objUrlRef.current); objUrlRef.current = null; }
+    };
   }, [doc?.id, url]);
 
   // ── PDF-Seite rendern ──

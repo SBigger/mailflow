@@ -9,7 +9,8 @@ import { de } from "date-fns/locale";
 import { supabase } from "@/api/supabaseClient";
 import { useAuth } from "@/lib/AuthContext";
 import { ThemeContext } from "@/Layout";
-import { isMissed, initials, personStyle } from "@/lib/chartisTheme";
+import { isMissed } from "@/lib/chartisTheme";
+import PersonAvatar from "@/components/ui/PersonAvatar";
 import { tele, PRESENCE, formatPhone } from "../theme";
 import { useTelephony } from "../context/TelephonyContext";
 
@@ -158,13 +159,11 @@ export function TeamPresence() {
           const info = isMe ? (PRESENCE[effectivePresence] || PRESENCE.available)
             : live ? (PRESENCE[live.status] || PRESENCE.available) : null;
           const dot = info ? t.presence[info.dot] : t.presence.offline;
-          const ps = personStyle(s);
           return (
             <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderBottom: `1px solid ${t.borderSubtle}` }}>
-              <span style={{ position: "relative", width: 38, height: 38, borderRadius: 12, background: ps.bg, color: ps.text, display: "grid", placeItems: "center", fontSize: 14, fontWeight: 800, flexShrink: 0 }}>
-                {initials(s.full_name)}
+              <PersonAvatar user={s} size={38} radius={12}>
                 <span style={{ position: "absolute", right: -2, bottom: -2, width: 13, height: 13, borderRadius: "50%", background: dot, border: `2.5px solid ${t.raised}` }} />
-              </span>
+              </PersonAvatar>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 13, fontWeight: 650, color: t.textPrimary }}>{s.full_name || s.email}{isMe && <span style={{ color: t.textMuted, fontWeight: 500 }}> · Du</span>}</div>
                 <div style={{ fontSize: 11.5, color: info ? t.textSecondary : t.textMuted }}>{info ? info.label : "nicht in smartis angemeldet"}</div>

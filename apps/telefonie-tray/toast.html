@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>Eingehender Anruf</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: transparent; }
+  body {
+    font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+    -webkit-app-region: drag;
+    animation: enter 250ms cubic-bezier(0.1, 0.9, 0.2, 1);
+  }
+  @keyframes enter {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .card {
+    height: 100%;
+    background: #fcfcfc;
+    border: 1px solid rgba(0,0,0,.06);
+    border-radius: 8px;
+    box-shadow: 0 0 2px rgba(0,0,0,.12), 0 8px 16px rgba(0,0,0,.14);
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+  .row { display: flex; align-items: center; gap: 12px; -webkit-app-region: no-drag; }
+  .avatar {
+    width: 40px; height: 40px; border-radius: 50%; background: #e5f0e6;
+    color: #2d6a34; display: flex; align-items: center; justify-content: center;
+    font-weight: 600; font-size: 14px; flex-shrink: 0;
+    border: 1px solid rgba(0,0,0,.06);
+  }
+  .info { min-width: 0; }
+  .label { font-size: 12px; font-weight: 400; color: rgba(0,0,0,.61); }
+  .name {
+    font-size: 14px; font-weight: 600; color: rgba(0,0,0,.896);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px;
+  }
+  .number { font-size: 12px; font-weight: 400; color: rgba(0,0,0,.61); margin-top: 1px; }
+  .actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; -webkit-app-region: no-drag; }
+  .icon-btn {
+    width: 40px; height: 40px; border-radius: 50%; border: none; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: transform 100ms ease, filter 100ms ease;
+  }
+  .icon-btn:hover { filter: brightness(1.08); }
+  .icon-btn:active { transform: scale(.96); }
+  .icon-btn.dismiss { background: rgba(0,0,0,.05); }
+  .icon-btn.dismiss svg { stroke: rgba(0,0,0,.61); }
+  .icon-btn.open { background: rgba(0,0,0,.05); }
+  .icon-btn.open svg { stroke: rgba(0,0,0,.61); }
+  .icon-btn.answer { background: #107C10; }
+  .icon-btn.answer svg { stroke: #fff; }
+  .icon-btn.hangup { background: #C42B1C; }
+  .icon-btn.hangup svg { stroke: #fff; }
+  /* Dossier (Pendenzen/Dokumente) -- vom Webhook mitgeliefert, damit die
+     Karte die Kundendaten OHNE offenen Browser zeigen kann. */
+  .dossier { -webkit-app-region: no-drag; display: none; flex-direction: column; gap: 9px; margin: 10px 0 4px; overflow: hidden; }
+  .dsec-label { font-size: 9.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: rgba(0,0,0,.48); margin-bottom: 4px; }
+  .drow { display: flex; align-items: center; justify-content: space-between; gap: 8px; background: rgba(0,0,0,.035); border: 1px solid rgba(0,0,0,.05); border-radius: 6px; padding: 5px 9px; }
+  .drow .txt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; font-weight: 600; color: rgba(0,0,0,.85); }
+  .drow .meta { flex-shrink: 0; font-size: 10.5px; color: rgba(0,0,0,.5); font-variant-numeric: tabular-nums; }
+  .drow .meta.overdue { color: #C42B1C; font-weight: 700; }
+  .dempty { font-size: 11px; color: rgba(0,0,0,.45); padding: 1px 2px; }
+  /* Verbinden-Panel (nur im Gespraech) */
+  /* Nur die Liste scrollt -- das Nummernfeld darunter muss immer sichtbar
+     bleiben (sonst ragt es aus der Karte, live gesehen 2026-07-26). */
+  .transfer { -webkit-app-region: no-drag; display: none; flex-direction: column; margin: 8px 0 4px; min-height: 0; }
+  .transfer.active { display: flex; }
+  #transferList { overflow-y: auto; max-height: 116px; }
+  .trow {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 9px;
+    background: rgba(0,0,0,.035); border: 1px solid rgba(0,0,0,.05); border-radius: 6px;
+    margin-bottom: 4px; cursor: pointer; font-size: 12px; font-weight: 600; color: rgba(0,0,0,.85);
+  }
+  .trow:hover { background: rgba(0,0,0,.07); }
+  .trow .ext { font-size: 11px; color: rgba(0,0,0,.5); font-variant-numeric: tabular-nums; }
+  .tform { display: flex; gap: 6px; margin-top: 2px; }
+  .tform input {
+    flex: 1; min-width: 0; padding: 6px 9px; border: 1px solid rgba(0,0,0,.12); border-radius: 6px;
+    font-size: 12px; font-family: inherit; outline: none;
+  }
+  .tform button {
+    padding: 6px 11px; border: none; border-radius: 6px; background: #107C10; color: #fff;
+    font-size: 12px; font-weight: 600; font-family: inherit; cursor: pointer;
+  }
+  .icon-btn.transfer-btn { background: rgba(0,0,0,.05); }
+  .icon-btn.transfer-btn svg { stroke: rgba(0,0,0,.61); }
+  .icon-btn.transfer-btn.on { background: #0f6cbd; }
+  .icon-btn.transfer-btn.on svg { stroke: #fff; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="row">
+      <div class="avatar" id="avatar">?</div>
+      <div class="info">
+        <div class="label" id="label">Eingehender Anruf</div>
+        <div class="name" id="name">Unbekannt</div>
+        <div class="number" id="number"></div>
+      </div>
+    </div>
+    <div class="dossier" id="dossier"></div>
+    <div class="transfer" id="transferPanel">
+      <div class="dsec-label">Verbinden an</div>
+      <div id="transferList"></div>
+      <div class="tform">
+        <input id="transferNum" placeholder="oder Nummer…" inputmode="tel">
+        <button onclick="doTransferNum()">Verbinden</button>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="icon-btn dismiss" title="Schliessen" onclick="window.toastAPI.dismiss()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+      <button class="icon-btn open" title="Öffnen" onclick="window.toastAPI.open()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+      </button>
+      <button class="icon-btn answer" id="answerBtn" title="Annehmen" onclick="answerCall()">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 4.5c1.2-1 2.6-1 3.5.3l1.4 2c.6.9.4 2-.3 2.7l-1 1c.9 2 2.5 3.6 4.5 4.5l1-1c.7-.7 1.8-.9 2.7-.3l2 1.4c1.3.9 1.3 2.3.3 3.5-1.1 1.3-2.9 1.9-4.5 1.4-5-1.5-8.9-5.4-10.4-10.4-.5-1.6.1-3.4 1.4-4.5z"/></svg>
+      </button>
+      <button class="icon-btn transfer-btn" id="transferBtn" title="Verbinden" onclick="toggleTransfer()">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h13l-3.5-3.5M20 15H7l3.5 3.5"/></svg>
+      </button>
+      <button class="icon-btn hangup" id="hangupBtn" title="Auflegen" onclick="hangupCall()">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="transform: rotate(135deg)"><path d="M4.5 4.5c1.2-1 2.6-1 3.5.3l1.4 2c.6.9.4 2-.3 2.7l-1 1c.9 2 2.5 3.6 4.5 4.5l1-1c.7-.7 1.8-.9 2.7-.3l2 1.4c1.3.9 1.3 2.3.3 3.5-1.1 1.3-2.9 1.9-4.5 1.4-5-1.5-8.9-5.4-10.4-10.4-.5-1.6.1-3.4 1.4-4.5z"/></svg>
+      </button>
+    </div>
+  </div>
+  <script>
+    const STATUS_LABEL = {
+      ringing: 'Eingehender Anruf',
+      answered: 'Im Gespräch',
+      ended: 'Anruf beendet',
+    };
+    let current = { name: '', number: '', status: 'ringing', dossier: null };
+
+    // dd.MM. aus einem ISO-Datum; leere/kaputte Daten -> ''.
+    function fmtD(iso) {
+      if (!iso) return '';
+      const d = new Date(iso);
+      if (isNaN(d)) return '';
+      return String(d.getDate()).padStart(2, '0') + '.' + String(d.getMonth() + 1).padStart(2, '0') + '.';
+    }
+
+    // Dossier-Sektionen aufbauen -- bewusst per createElement/textContent
+    // (Kundendaten, kein innerHTML: keine Injektionsflaeche).
+    function renderDossier() {
+      const box = document.getElementById('dossier');
+      box.textContent = '';
+      const d = current.dossier;
+      const has = d && ((d.pendenzen && d.pendenzen.length) || (d.docs && d.docs.length));
+      box.style.display = has ? 'flex' : 'none';
+      if (!has) return;
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const sections = [
+        { label: 'Pendenzen', rows: (d.pendenzen || []).map((p) => ({
+            txt: p.title || 'Aufgabe', meta: fmtD(p.due_date),
+            overdue: p.due_date ? new Date(p.due_date) <= today : false })),
+          empty: 'Keine offenen Pendenzen' },
+        { label: 'Letzte Dokumente', rows: (d.docs || []).map((x) => ({
+            txt: x.name || x.filename || 'Dokument', meta: fmtD(x.updated_at), overdue: false, docId: x.id })),
+          empty: 'Keine Dokumente' },
+      ];
+      for (const sec of sections) {
+        const wrap = document.createElement('div');
+        const label = document.createElement('div');
+        label.className = 'dsec-label';
+        label.textContent = sec.label;
+        wrap.appendChild(label);
+        if (!sec.rows.length) {
+          const e = document.createElement('div');
+          e.className = 'dempty';
+          e.textContent = sec.empty;
+          wrap.appendChild(e);
+        }
+        for (const r of sec.rows) {
+          const row = document.createElement('div');
+          row.className = 'drow';
+          const t = document.createElement('span');
+          t.className = 'txt';
+          t.textContent = r.txt;
+          const m = document.createElement('span');
+          m.className = 'meta' + (r.overdue ? ' overdue' : '');
+          m.textContent = r.meta;
+          row.appendChild(t); row.appendChild(m);
+          if (r.docId) {
+            // Klick springt in die Dateiablage direkt zum Dokument.
+            row.style.cursor = 'pointer';
+            row.title = 'In der Dateiablage öffnen';
+            row.addEventListener('click', () => window.toastAPI.openDoc(r.docId));
+          }
+          wrap.appendChild(row);
+        }
+        box.appendChild(wrap);
+      }
+    }
+
+    function render(data) {
+      current = { ...current, ...data };
+      const name = current.name || 'Unbekannt';
+      document.getElementById('label').textContent = STATUS_LABEL[current.status] || STATUS_LABEL.ringing;
+      document.getElementById('name').textContent = name;
+      document.getElementById('number').textContent = current.number || '';
+      document.getElementById('avatar').textContent = name.slice(0, 2).toUpperCase();
+      // Annehmen nur waehrend des Klingelns; Auflegen nur im Gespraech.
+      // (Das X daneben schliesst bewusst NUR die Karte, nie das Gespraech.)
+      document.getElementById('answerBtn').style.display = current.status === 'ringing' ? 'flex' : 'none';
+      document.getElementById('hangupBtn').style.display = current.status === 'answered' ? 'flex' : 'none';
+      // Verbinden ergibt nur im laufenden Gespraech Sinn.
+      document.getElementById('transferBtn').style.display = current.status === 'answered' ? 'flex' : 'none';
+      if (current.status !== 'answered') closeTransfer();
+      renderDossier();
+    }
+
+    // ── Verbinden (blind) ueber den lokalen Fernsteuerungs-Listener ────────
+    let transferOpen = false;
+    async function toggleTransfer() {
+      transferOpen = !transferOpen;
+      const panel = document.getElementById('transferPanel');
+      const btn = document.getElementById('transferBtn');
+      panel.classList.toggle('active', transferOpen);
+      btn.classList.toggle('on', transferOpen);
+      // Dossier weicht dem Panel, sonst wird die Karte zu hoch.
+      document.getElementById('dossier').style.display = transferOpen ? 'none' : '';
+      if (transferOpen) {
+        window.toastAPI.setHeight(360);
+        if (!document.getElementById('transferList').children.length) {
+          const targets = await window.toastAPI.getTargets();
+          const list = document.getElementById('transferList');
+          if (!targets || !targets.length) {
+            const hint = document.createElement('div');
+            hint.className = 'dempty';
+            hint.textContent = 'Keine Nebenstellen hinterlegt — Nummer unten eingeben.';
+            list.appendChild(hint);
+          }
+          (targets || []).forEach((t) => {
+            const row = document.createElement('div');
+            row.className = 'trow';
+            const n = document.createElement('span'); n.textContent = t.name || t.extension;
+            const e = document.createElement('span'); e.className = 'ext'; e.textContent = t.extension || '';
+            row.append(n, e);
+            row.addEventListener('click', () => doTransfer(t.extension));
+            list.appendChild(row);
+          });
+        }
+      } else {
+        renderDossier();
+      }
+    }
+    function closeTransfer() {
+      if (!transferOpen) return;
+      transferOpen = false;
+      document.getElementById('transferPanel').classList.remove('active');
+      document.getElementById('transferBtn').classList.remove('on');
+      document.getElementById('dossier').style.display = '';
+    }
+    function doTransfer(target) {
+      if (!target) return;
+      window.toastAPI.transfer(target);
+      closeTransfer();
+      render({ status: 'ended' }); // unser Bein endet mit dem Verbinden
+    }
+    function doTransferNum() {
+      const v = document.getElementById('transferNum').value.trim();
+      if (v) doTransfer(v);
+    }
+    function answerCall() {
+      window.toastAPI.answer(); // loest den echten MicroSIP-Befehl aus (siehe microsip-control-listener.js)
+      // Sofortiges optisches Feedback -- unabhaengig davon, ob/wann peoplefones
+      // eigenes "answered"-Notify eintrifft (siehe Vorfall 2026-07-25).
+      render({ status: 'answered' });
+    }
+    function hangupCall() {
+      window.toastAPI.hangup(); // MicroSIP /hangupall via Fernsteuerungs-Listener
+      render({ status: 'ended' });
+    }
+    const params = new URLSearchParams(window.location.search);
+    render({
+      name: params.get('name'),
+      number: params.get('number'),
+      status: params.get('status'),
+    });
+    window.toastAPI.onUpdate(render);
+  </script>
+</body>
+</html>

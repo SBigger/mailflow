@@ -1,12 +1,24 @@
 import React, { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Save, Building2, MapPin, Banknote, FileText, FileDown } from 'lucide-react';
-import { leCompany } from '@/lib/leApi';
+import {
+  Save,
+  Building2,
+  MapPin,
+  Banknote,
+  FileText,
+  FileDown,
+  Landmark,
+  LockKeyhole,
+  ShieldCheck,
+  AlertTriangle,
+} from 'lucide-react';
+import { leCompany, leFibu } from '@/lib/leApi';
 import { generateInvoicePdf, triggerDownload } from '@/lib/leInvoicePdf';
 import {
   Card,
   Input,
+  Select,
   Field,
   PanelLoader,
   PanelError,
@@ -54,8 +66,22 @@ export default function FirmenSettingsPanel({ mode = 'full' } = {}) {
     queryKey: ['le', 'company'],
     queryFn: leCompany.get,
   });
+  const bindingQ = useQuery({
+    queryKey: ['le', 'fibu-binding'],
+    queryFn: leFibu.getBinding,
+    enabled: mode === 'full',
+  });
+  const candidatesQ = useQuery({
+    queryKey: ['le', 'fibu-binding-candidates'],
+    queryFn: leFibu.listBindingCandidates,
+    enabled: mode === 'full',
+  });
 
   const [form, setForm] = useState(EMPTY);
+  const [selectedMandant, setSelectedMandant] = useState('');
+  const [showCorrection, setShowCorrection] = useState(false);
+  const [correctionMandant, setCorrectionMandant] = useState('');
+  const [correctionReason, setCorrectionReason] = useState('');
 
   useEffect(() => {
     if (data) {
@@ -74,6 +100,28 @@ export default function FirmenSettingsPanel({ mode = 'full' } = {}) {
     },
     onError: (e) => toast.error('Fehler: ' + (e?.message ?? e)),
   });
+  const bindMut = useMutation({
+    mutationFn: (mandantId) => leFibu.bindMandant(mandantId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['le', 'fibu-binding'] });
+      qc.invalidateQueries({ queryKey: ['le', 'fibu-revenue-accounts'] });
+      toast.success('Fibu-Mandant dauerhaft gebunden');
+      setSelectedMandant('');
+    },
+    onError: (e) => toast.error('Bindung nicht möglich: ' + (e?.message ?? e), { duration: 8000 }),
+  });
+  const rebindMut = useMutation({
+    mutationFn: ({ mandantId, reason }) => leFibu.rebindMandant(mandantId, reason),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['le', 'fibu-binding'] });
+      qc.invalidateQueries({ queryKey: ['le', 'fibu-revenue-accounts'] });
+      toast.success('Fibu-Mandant protokolliert korrigiert');
+      setShowCorrection(false);
+      setCorrectionMandant('');
+      setCorrectionReason('');
+    },
+    onError: (e) => toast.error('Korrektur nicht möglich: ' + (e?.message ?? e), { duration: 8000 }),
+  });
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -86,6 +134,29 @@ export default function FirmenSettingsPanel({ mode = 'full' } = {}) {
       payment_terms_days: form.payment_terms_days === '' ? null : Number(form.payment_terms_days),
     };
     saveMut.mutate(payload);
+  };
+
+  const bindMandant = () => {
+    const candidate = (candidatesQ.data ?? []).find((m) => m.mandant_id === selectedMandant);
+    if (!candidate) return toast.error('Bitte einen Fibu-Mandanten wählen');
+    const confirmed = window.confirm(
+      `Fibu-Mandant „${candidate.mandant_name}“ dauerhaft mit der Leistungserfassung verbinden?\n\n` +
+      'Du wirst als fachlicher Eigentümer gespeichert. Ab dann werden definitive Rechnungen live gebucht. ' +
+      'Ein normaler Benutzer kann diese Auswahl nicht mehr ändern.'
+    );
+    if (confirmed) bindMut.mutate(candidate.mandant_id);
+  };
+
+  const correctMandant = () => {
+    const reason = correctionReason.trim();
+    const candidate = (candidatesQ.data ?? []).find((m) => m.mandant_id === correctionMandant);
+    if (!candidate) return toast.error('Bitte den neuen Fibu-Mandanten wählen');
+    if (reason.length < 10) return toast.error('Bitte eine nachvollziehbare Begründung eingeben');
+    const confirmed = window.confirm(
+      `Gesperrte Mandantenbindung wirklich auf „${candidate.mandant_name}“ korrigieren?\n\n` +
+      `Begründung: ${reason}\n\nBestehende Buchungen bleiben unverändert beim bisherigen Mandanten.`
+    );
+    if (confirmed) rebindMut.mutate({ mandantId: candidate.mandant_id, reason });
   };
 
   if (isLoading) return <PanelLoader />;
@@ -223,6 +294,167 @@ export default function FirmenSettingsPanel({ mode = 'full' } = {}) {
                   <Input type="number" min={0} value={form.payment_terms_days} onChange={(e) => set('payment_terms_days', e.target.value)} />
                 </Field>
               </div>
+            </Section>
+
+            <Section icon={Landmark} title="Fibu-Liveverbuchung">
+              {bindingQ.isLoading ? (
+                <div className="text-sm text-zinc-500">Mandantenbindung wird geladen…</div>
+              ) : bindingQ.error ? (
+                <div className="rounded border p-3 text-sm" style={{ borderColor: '#f0b8b8', background: '#fff7f7', color: '#8d3030' }}>
+                  Fibu-Status konnte nicht geladen werden: {bindingQ.error?.message ?? String(bindingQ.error)}
+                </div>
+              ) : !bindingQ.data ? (
+                <div className="space-y-3">
+                  <div className="flex gap-3 rounded border p-3" style={{ borderColor: '#ead9a8', background: '#fffaf0' }}>
+                    <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" style={{ color: '#9a6b16' }} />
+                    <div className="text-sm" style={{ color: '#6f5018' }}>
+                      <div className="font-semibold">Noch nicht verbunden</div>
+                      <div className="mt-1 text-xs leading-relaxed">
+                        Nach der Erstbindung werden definitive Rechnungen atomar als Debitorenbeleg und im Hauptbuch verbucht.
+                        Ohne gültige Konten wird die Finalisierung abgebrochen.
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-[1fr_auto] gap-2 items-end">
+                    <Field label="Fibu-Mandant" hint="Nur Mandanten, in denen du Admin oder Buchhalter bist.">
+                      <Select
+                        value={selectedMandant}
+                        onChange={(e) => setSelectedMandant(e.target.value)}
+                        disabled={bindMut.isPending || candidatesQ.isLoading}
+                      >
+                        <option value="">Bitte wählen…</option>
+                        {(candidatesQ.data ?? []).map((m) => (
+                          <option key={m.mandant_id} value={m.mandant_id}>
+                            {m.mandant_name}{m.uid ? ` · ${m.uid}` : ''} · {m.currency} · {m.vat_method} · {m.fibu_role}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+                    <button
+                      type="button"
+                      onClick={bindMandant}
+                      disabled={!selectedMandant || bindMut.isPending}
+                      className={artisBtn.primary}
+                      style={{ ...artisPrimaryStyle, opacity: !selectedMandant || bindMut.isPending ? 0.55 : 1 }}
+                    >
+                      <LockKeyhole className="w-4 h-4" />
+                      {bindMut.isPending ? 'Verbinde…' : 'Dauerhaft verbinden'}
+                    </button>
+                  </div>
+                  {!candidatesQ.isLoading && (candidatesQ.data ?? []).length === 0 && (
+                    <div className="text-xs text-zinc-500">
+                      Kein zulässiger Mandant gefunden. Du brauchst dort die Fibu-Rolle Admin oder Buchhalter.
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div
+                    className="flex items-start justify-between gap-4 rounded border p-3"
+                    style={{
+                      borderColor: bindingQ.data.posting_ready ? '#b9d7be' : '#f0b8b8',
+                      background: bindingQ.data.posting_ready ? '#f4faf5' : '#fff7f7',
+                    }}
+                  >
+                    <div className="flex gap-3">
+                      {bindingQ.data.posting_ready
+                        ? <ShieldCheck className="w-5 h-5 shrink-0 mt-0.5" style={{ color: '#4f8058' }} />
+                        : <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" style={{ color: '#a23c3c' }} />}
+                      <div>
+                        <div className="font-semibold text-sm">{bindingQ.data.mandant_name}</div>
+                        <div className="mt-1 text-xs text-zinc-600">
+                          Debitoren {bindingQ.data.debitoren_konto_nr} · Standard-Ertrag {bindingQ.data.default_ertragskonto_nr}
+                        </div>
+                        <div className="mt-1 text-xs text-zinc-500">
+                          Gebunden am {new Date(bindingQ.data.bound_at).toLocaleString('de-CH')}
+                          {bindingQ.data.can_rebind ? ' · Du bist der fachliche Eigentümer' : ''}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium"
+                      style={{
+                        color: bindingQ.data.posting_ready ? '#386342' : '#8d3030',
+                        background: bindingQ.data.posting_ready ? '#e4f2e6' : '#fde8e8',
+                      }}>
+                      <LockKeyhole className="w-3.5 h-3.5" />
+                      {bindingQ.data.posting_ready ? 'gesperrt & bereit' : 'gesperrt · Fehler'}
+                    </div>
+                  </div>
+
+                  {(bindingQ.data.issues ?? []).length > 0 && (
+                    <ul className="rounded border p-3 pl-7 text-xs list-disc space-y-1"
+                      style={{ borderColor: '#f0b8b8', background: '#fff7f7', color: '#8d3030' }}>
+                      {bindingQ.data.issues.map((issue) => <li key={issue}>{issue}</li>)}
+                    </ul>
+                  )}
+
+                  {bindingQ.data.can_rebind && (
+                    <div className="border-t pt-3" style={{ borderColor: '#eef1ee' }}>
+                      {!showCorrection ? (
+                        <button
+                          type="button"
+                          onClick={() => setShowCorrection(true)}
+                          className={artisBtn.ghost}
+                          style={{ borderColor: '#dbc6a0', color: '#775a25', background: '#fffaf2' }}
+                        >
+                          Eigentümer-Korrektur öffnen
+                        </button>
+                      ) : (
+                        <div className="rounded border p-3 space-y-3" style={{ borderColor: '#dbc6a0', background: '#fffaf2' }}>
+                          <div className="text-xs leading-relaxed" style={{ color: '#6f5018' }}>
+                            Nur für eine echte Fehlkonfiguration. Bereits verbuchte Rechnungen werden nicht verschoben;
+                            jede Korrektur wird mit Benutzer, Zeitpunkt, altem/neuem Mandanten und Begründung protokolliert.
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <Field label="Neuer Mandant">
+                              <Select value={correctionMandant} onChange={(e) => setCorrectionMandant(e.target.value)}>
+                                <option value="">Bitte wählen…</option>
+                                {(candidatesQ.data ?? [])
+                                  .filter((m) => m.mandant_id !== bindingQ.data.mandant_id)
+                                  .map((m) => (
+                                    <option key={m.mandant_id} value={m.mandant_id}>
+                                      {m.mandant_name}{m.uid ? ` · ${m.uid}` : ''} · {m.currency} · {m.vat_method}
+                                    </option>
+                                  ))}
+                              </Select>
+                            </Field>
+                            <Field label="Begründung" hint="Mindestens 10 Zeichen; wird dauerhaft protokolliert.">
+                              <Input
+                                value={correctionReason}
+                                onChange={(e) => setCorrectionReason(e.target.value)}
+                                placeholder="Warum ist die Korrektur nötig?"
+                              />
+                            </Field>
+                          </div>
+                          <div className="flex justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setShowCorrection(false);
+                                setCorrectionMandant('');
+                                setCorrectionReason('');
+                              }}
+                              className={artisBtn.ghost}
+                              style={{ borderColor: '#d1dcd1', color: '#3d4a3d', background: '#fff' }}
+                            >
+                              Abbrechen
+                            </button>
+                            <button
+                              type="button"
+                              onClick={correctMandant}
+                              disabled={rebindMut.isPending}
+                              className={artisBtn.primary}
+                              style={{ background: '#8a672c', opacity: rebindMut.isPending ? 0.55 : 1 }}
+                            >
+                              {rebindMut.isPending ? 'Korrigiere…' : 'Protokolliert korrigieren'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </Section>
           </>
         )}

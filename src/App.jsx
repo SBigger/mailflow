@@ -42,6 +42,7 @@ const Whiteboard = lazy(() => import('./modules/tools/Whiteboard.jsx'));
 const Firmensuche = lazy(() => import('./pages/Firmensuche'));
 const Auswertungen = lazy(() => import('./pages/Auswertungen'));
 const Steuern = lazy(() => import('./modules/tools/Steuern.jsx'));
+const Belegsortierung = lazy(() => import('./modules/tools/Belegsortierung.jsx'));
 const Veranlagungen = lazy(() => import('./modules/tools/Veranlagungen.jsx'));
 const Login = lazy(() => import('./pages/Login'));
 const ResetPassword = lazy(() => import('./modules/login/ResetPassword.jsx'));
@@ -62,6 +63,8 @@ const Kalender = lazy(() => import("./modules/tools/Kalender.jsx"));
 const Steuerausscheidung = lazy(() => import("./modules/tools/Steuerausscheidung.jsx"));
 const FiBuRouter = lazy(() => import("./modules/fibu/router.jsx"));
 const TelefonieRouter = lazy(() => import("./modules/telefonie/router.jsx"));
+const VideoRouter = lazy(() => import("./modules/video/router.jsx"));
+const MeetGuest = lazy(() => import("./modules/video/pages/MeetGuest.jsx"));
 const GlobalSoftphone = lazy(() => import("./modules/telefonie/components/Softphone.jsx"));
 const Hub = lazy(() => import('./pages/Hub.jsx'));
 const AiAssistant = lazy(() => import('./pages/AiAssistant.jsx'));
@@ -99,6 +102,9 @@ function AuthenticatedApp() {
                 {/* Telefonie: eigene Shell + Softphone, kein MailFlow-Layout */}
                 <Route path="/telefonie/*" element={<TelefonieRouter />} />
 
+                {/* Besprechungen (Video): eigene Shell, kein MailFlow-Layout */}
+                <Route path="/besprechungen/*" element={<VideoRouter />} />
+
                 {/* MailFlow: Layout als Wrapper-Route (Layout muss im Inneren ein <Outlet /> nutzen!) */}
                 <Route element={<Layout />}>
                     <Route path="/" element={<Navigate to="/Dashboard" replace />} />
@@ -129,6 +135,7 @@ function AuthenticatedApp() {
                     <Route path="/Firmensuche" element={<Firmensuche />} />
                     <Route path="/Auswertungen" element={<Auswertungen />} />
                     <Route path="/Steuern" element={<Steuern />} />
+                    <Route path="/Belegsortierung" element={<Belegsortierung />} />
                     <Route path="/Veranlagungen" element={<Veranlagungen />} />
                     <Route path="/Promptvorlagen" element={<Promptvorlagen />} />
                     <Route path="/TelefonDashboard" element={<TelefonDashboard />} />
@@ -182,6 +189,13 @@ function App() {
                         <Route path="/share/:token"
                                element={<Suspense fallback={<PageLoader/>}><SharePage/></Suspense>}/>
                         <Route path="/share" element={<Suspense fallback={<PageLoader/>}><SharePage/></Suspense>}/>
+
+                        {/* Besprechung als Gast — bewusst AUSSERHALB der Anmeldung:
+                            Kunden haben kein smartis-Konto, sie kommen nur mit dem
+                            Link aus der Termineinladung. Der Warteraum entscheidet,
+                            wer wirklich hereinkommt. */}
+                        <Route path="/meet/:room"
+                               element={<Suspense fallback={<PageLoader/>}><MeetGuest/></Suspense>}/>
                         <Route path="/portal" element={<Suspense fallback={<PageLoader/>}><Portal/></Suspense>}/>
                         <Route path="*" element={<AuthenticatedApp/>}/>
                     </Routes>

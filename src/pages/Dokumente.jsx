@@ -1649,6 +1649,42 @@ export default function Dokumente() {
     }
   }, [allDoks, isLoading]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── URL-Parameter ?doc=<doc_id> → Dokument nur ANZEIGEN (Deep-Link aus der
+  // Telefonie-Anruf-Karte, 2026-07-26): richtiger Ordner-Kontext, Zeile
+  // hervorheben, hinscrollen, Vorschau oeffnen. BEWUSST OHNE Checkout --
+  // anders als ?open= oben, das wie ein Bearbeiten-Klick wirkt.
+  useEffect(() => {
+    if (isLoading || !allDoks.length) return;
+    const params = new URLSearchParams(window.location.search);
+    const docId = params.get('doc');
+    if (!docId) return;
+    window.history.replaceState({}, '', '/Dokumente');
+    const doc = allDoks.find(d => d.id === docId);
+    if (!doc) { toast.error('Dokument nicht gefunden.'); return; }
+    // Ansicht erzwingen (Volltext-/Datei-Suche und Abschluss-View wuerden die
+    // Zeile sonst ueberlagern) und Ordner-Kontext des Dokuments waehlen.
+    setPageTab('alle');
+    setViewMode('normal');
+    setFtSearch(''); setFtResults(null); setFileSearch(''); setCustSearch('');
+    setSelCustomerId(doc.customer_id);
+    setSelCat(doc.category || null);
+    setSelYear(doc.year ?? '__none__');
+    setExpandedC(p => ({ ...p, [doc.customer_id]: true }));
+    setExpandedCat(p => ({ ...p, [doc.customer_id + '_' + doc.category]: true }));
+    setHighlightDocId(doc.id);
+    setTimeout(() => {
+      document.querySelector(`[data-doc-id="${doc.id}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }, 200);
+    // Vorschau direkt oeffnen (nur Storage-Dokumente; SharePoint hat keine
+    // Inline-Vorschau -- dort reicht Highlight+Scroll).
+    if (doc.storage_path && false) {
+      const sp = doc.storage_path.replace(/^dokumente\//, '');
+      supabase.storage.from(BUCKET).createSignedUrl(sp, 600).then(({ data }) => {
+        if (data?.signedUrl) setHoverPreview({ doc, url: data.signedUrl, rect: null });
+      });
+    }
+  }, [allDoks, isLoading]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Button-Klick animieren (kurzes Scale-Feedback)
   const animateBtn = (key) => {
     setClickedBtns(prev => ({ ...prev, [key]: true }));
@@ -1957,7 +1993,7 @@ export default function Dokumente() {
     const cust          = showCustomer ? customers.find(cx => cx.id === doc.customer_id) : null;
     const openOrCheckout = () => { const _u = doc.sharepoint_web_url || signedUrls[doc.id]; if (!doc.checked_out_by) { handleCheckout(doc); } else if (doc.checked_out_by === user?.id) { openCheckin(doc); } else if (_u) { window.open(_u, '_blank'); } else { toast.error('URL nicht verfügbar.'); } };
     return (
-      <div key={doc.id} {...fileDropProps(doc)}
+      <div key={doc.id} data-doc-id={doc.id} {...fileDropProps(doc)}
         title="Neue Datei hierher ziehen = als neue Version ablegen"
         style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 16px", borderBottom: "1px solid " + border + "55", transition: "background 0.1s", opacity: replacingId === doc.id ? 0.5 : 1, ...(doc.id === highlightDocId ? { boxShadow: "0 0 0 2px " + accent + "88 inset", background: accent + "12", borderRadius: 6 } : {}), ...(doc.id === dropTargetId ? { boxShadow: "0 0 0 2px #10b981 inset", background: "#10b98114", borderRadius: 6 } : {}) }}
         onMouseEnter={e => { if (doc.id !== dropTargetId) e.currentTarget.style.background = s.rowHover; }}

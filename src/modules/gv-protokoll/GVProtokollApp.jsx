@@ -9,6 +9,8 @@ const COLORS = ["#3b82f6", "#22c55e", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4"
 const DB_NAME = "gv-protokoll";
 const DB_VER = 1;
 const CHUNK_MS = 15000;
+const PREVIEW_FIRST_MS = 75000;   // erste Live-Vorschau nach ~75 s (früh sehen, dass es läuft)
+const PREVIEW_MS = 300000;        // danach alle 5 Min – Kosten bleiben ~2×, egal welches Intervall
 
 const LS = {
     get: (k, d) => { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
@@ -24,7 +26,7 @@ export default function GvProtokollApp() {
     // ════════════════════════════════════════════════════════════════
     //  States
     // ════════════════════════════════════════════════════════════════
-    const [cfg, setCfg] = useState(() => LS.get("gv_cfg", { eleven: "", lang: "deu", claudeKey: "", claudeModel: "claude-opus-4-8", mic: "", liveInterval: 120, systemAudio: false, numSpeakers: 0 }));
+    const [cfg, setCfg] = useState(() => LS.get("gv_cfg", { lang: "de", mic: "", systemAudio: false }));
     const [customers, setCustomers] = useState([]);
     const [selectedCustomer, setSelectedCustomer] = useState(() => LS.get("gv_customer", { id: "", name: "" }));
     const [persons, setPersons] = useState(() => LS.get("gv_persons", []));
@@ -69,6 +71,12 @@ export default function GvProtokollApp() {
     const lastAudioUrlRef = useRef(null);
     const previewTimerRef = useRef(null);
 
+    // Live-Vorschau (2. Recorder, rotiert eigenständige Häppchen)
+    const prevRecRef = useRef(null);        // Recorder B (Vorschau)
+    const prevRotateRef = useRef(null);     // Rotations-Timer
+    const prevSegmentsRef = useRef([]);     // bisher zusammengetragene Vorschau-Segmente
+    const prevStoppingRef = useRef(false);  // beim Stopp letztes Häppchen nicht mehr transkribieren
+
     const curRecIdRef = useRef(null);
     const chunkSeqRef = useRef(0);
     const recMimeRef = useRef("");
@@ -76,6 +84,10 @@ export default function GvProtokollApp() {
     const recStartRef = useRef(0);
     const timeOffsetRef = useRef(0);
     const liveBusyRef = useRef(false);
+    // Teilnehmer als Ref: transcribe() läuft aus onstop-Handlern heraus und würde
+    // sonst den persons-Stand vom Aufnahmestart sehen.
+    const personsRef = useRef(persons);
+    personsRef.current = persons;
 
     // ════════════════════════════════════════════════════════════════
     //  IndexedDB & Synchros
@@ -339,6 +351,35 @@ export default function GvProtokollApp() {
         } catch {}
     };
 
+    // Chunks aus IndexedDB zu EINER Datei zusammensetzen und herunterladen.
+    // Bewusst nicht recMimeRef benutzen: der Ref ist nach einem Reload leer,
+    // die gespeicherte Aufnahme kennt ihren mimeType aber noch.
+    const downloadRecording = async (id) => {
+        try {
+            const rec = (await dbGetAll("recordings")).find(r => r.id === id);
+            const chunks = (await dbGetAll("chunks")).filter(c => c.recId === id).sort((a, b) => a.seq - b.seq);
+            if (!chunks.length) {
+                setStatusMsg("⚠️ Zu dieser Aufnahme sind keine Audiodaten mehr vorhanden.");
+                return;
+            }
+            const mime = rec?.mimeType || chunks[0].blob?.type || "audio/webm";
+            const ext = mime.includes("mp4") ? "m4a" : mime.includes("ogg") ? "ogg" : "webm";
+            const blob = new Blob(chunks.map(c => c.blob), { type: mime });
+            const stamp = new Date(rec?.startedAt || Date.now()).toISOString().slice(0, 19).replace(/[:T]/g, "-");
+            const url = URL.createObjectURL(blob);
+            const el = document.createElement("a");
+            el.href = url;
+            el.download = `GV-Aufnahme_${stamp}.${ext}`;
+            document.body.appendChild(el);
+            el.click();
+            el.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 60000); // grosse Dateien brauchen Zeit
+            setStatusMsg(`⬇️ Aufnahme als Datei gespeichert (${fmtSize(blob.size)}).`);
+        } catch (e) {
+            setStatusMsg("❌ Download fehlgeschlagen: " + e.message);
+        }
+    };
+
     const deleteRecording = async (id) => {
         if (id === curRecIdRef.current && isRecording) {
             setStatusMsg("⚠️ Laufende Aufnahme kann nicht gelöscht werden – zuerst Stopp drücken.");
@@ -441,13 +482,17 @@ export default function GvProtokollApp() {
         }, 250);
 
         startMeter(streamRef.current);
-        if (cfg.liveInterval > 0) liveTimerRef.current = setTimeout(liveTick, cfg.liveInterval * 1000);
+        // Live-Vorschau (grob): erste nach ~75 s, danach alle 5 Min. Die saubere
+        // Endfassung (ganze Datei) kommt beim Stopp und ersetzt die Vorschau.
+        startPreview();
     };
 
     const pauseRec = () => {
         if (!mediaRecRef.current || mediaRecRef.current.state === "inactive") return;
         if (!isPaused) {
             mediaRecRef.current.pause();
+            if (prevRecRef.current && prevRecRef.current.state === "recording") { try { prevRecRef.current.pause(); } catch {} }
+            if (prevRotateRef.current) { clearTimeout(prevRotateRef.current); prevRotateRef.current = null; }
             clearInterval(timerIntRef.current);
             timeOffsetRef.current += (Date.now() - recStartRef.current) / 1000;
             setIsPaused(true);
@@ -455,6 +500,8 @@ export default function GvProtokollApp() {
         } else {
             recStartRef.current = Date.now();
             mediaRecRef.current.resume();
+            if (prevRecRef.current && prevRecRef.current.state === "paused") { try { prevRecRef.current.resume(); } catch {} }
+            if (!prevStoppingRef.current) prevRotateRef.current = setTimeout(rotatePreview, PREVIEW_MS);
             timerIntRef.current = setInterval(() => {
                 const elapsed = (Date.now() - recStartRef.current) / 1000 + timeOffsetRef.current;
                 setTimerText(fmtTime(elapsed));
@@ -465,6 +512,7 @@ export default function GvProtokollApp() {
     };
 
     const stopRec = () => {
+        stopPreview();
         if (liveTimerRef.current) clearTimeout(liveTimerRef.current);
         if (mediaRecRef.current && mediaRecRef.current.state !== "inactive") mediaRecRef.current.stop();
         if (timerIntRef.current) clearInterval(timerIntRef.current);
@@ -473,23 +521,49 @@ export default function GvProtokollApp() {
         setIsPaused(false);
     };
 
-    const liveTick = async () => {
-        if (mediaRecRef.current?.state !== "recording") return;
-        await liveTranscribe();
-        if (cfg.liveInterval > 0) liveTimerRef.current = setTimeout(liveTick, cfg.liveInterval * 1000);
+    // ── Live-Vorschau: eigenständige Häppchen über einen 2. Recorder ────
+    // Jedes Häppchen ist eine vollständige, für sich transkribierbare Audiodatei.
+    // Der durchgehende Recorder A liefert später die lückenlose Endfassung.
+    const startPreviewSegment = () => {
+        const stream = streamRef.current;
+        if (!stream) return;
+        try {
+            const chunks = [];
+            const baseSec = (Date.now() - recStartRef.current) / 1000 + timeOffsetRef.current; // Startzeit im Gesamtverlauf
+            const rec = new MediaRecorder(stream, { mimeType: recMimeRef.current });
+            rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+            rec.onstop = () => {
+                if (prevStoppingRef.current || !chunks.length) return;
+                const blob = new Blob(chunks, { type: recMimeRef.current });
+                previewTranscribe(blob, baseSec); // nicht awaiten – läuft parallel weiter
+            };
+            rec.start();
+            prevRecRef.current = rec;
+        } catch { /* Vorschau ist optional */ }
     };
 
-    const liveTranscribe = async () => {
-        if (liveBusyRef.current || !curRecIdRef.current) return;
-        liveBusyRef.current = true;
-        try {
-            const allChunks = (await dbGetAll("chunks")).filter(c => c.recId === curRecIdRef.current).sort((a,b)=>a.seq-b.seq);
-            if (allChunks.length) {
-                const blob = new Blob(allChunks.map(c => c.blob), { type: recMimeRef.current });
-                await transcribe(blob, true);
-            }
-        } catch {}
-        liveBusyRef.current = false;
+    const rotatePreview = () => {
+        if (prevStoppingRef.current) return;
+        if (prevRecRef.current && prevRecRef.current.state === "recording") {
+            try { prevRecRef.current.stop(); } catch {} // → onstop transkribiert dieses Häppchen
+        }
+        startPreviewSegment();
+        prevRotateRef.current = setTimeout(rotatePreview, PREVIEW_MS);
+    };
+
+    const startPreview = () => {
+        prevStoppingRef.current = false;
+        prevSegmentsRef.current = [];
+        startPreviewSegment();
+        prevRotateRef.current = setTimeout(rotatePreview, PREVIEW_FIRST_MS);
+    };
+
+    const stopPreview = () => {
+        prevStoppingRef.current = true;
+        if (prevRotateRef.current) { clearTimeout(prevRotateRef.current); prevRotateRef.current = null; }
+        if (prevRecRef.current && prevRecRef.current.state !== "inactive") {
+            try { prevRecRef.current.stop(); } catch {}
+        }
     };
 
     // ════════════════════════════════════════════════════════════════
@@ -530,48 +604,142 @@ export default function GvProtokollApp() {
     // ════════════════════════════════════════════════════════════════
     //  Transkription & AI Evaluation
     // ════════════════════════════════════════════════════════════════
-    const transcribe = async (blob, isLive = false) => {
-        setStatusMsg(isLive ? "🟢 Zwischenstand wird transkribiert..." : "⏳ Transkribiere mit ElevenLabs...");
+    // Transkription mit Sprecher-Trennung. Standard ist ElevenLabs scribe_v2,
+    // Suisse Notes bleibt in den Einstellungen umschaltbar (siehe gv-stt).
+    //
+    // Zwei Wege:
+    //   • transcribe()        – saubere Endfassung beim Stopp (ganze Datei, ersetzt Vorschau)
+    //   • previewTranscribe() – grobe Live-Vorschau während der Aufnahme (2. Recorder,
+    //                           eigenständige Häppchen; erste nach ~75 s, dann alle 5 Min)
+
+    // Namen und Fachbegriffe, an denen die Erkennung sonst scheitert. ElevenLabs
+    // verlangt keyterms als WIEDERHOLTE Multipart-Felder – ein JSON-String wird
+    // mit 422 abgelehnt. Verbotene Zeichen müssen raus, max. 50 Zeichen je Term.
+    const buildKeyterms = () => {
+        const feste = ["Traktandum", "Traktanden", "Protokoll", "Generalversammlung",
+                       "Revisionsstelle", "Bilanz", "Erfolgsrechnung", "Décharge", "Statuten"];
+        const namen = (personsRef.current || []).flatMap(p => String(p.name || "").split(/\s+/));
+        return [...new Set([...namen, selectedCustomer.name, ...feste])]
+            .map(t => String(t || "").replace(/[<>{}[\]\\]/g, "").trim())
+            .filter(t => t.length > 1 && t.length <= 50)
+            .slice(0, 100);
+    };
+
+    // Rohe Transkription eines Blobs. Gibt immer das gleiche normalisierte
+    // Format zurück ({ segments: [{ speaker, text, start_ms, end_ms }] }),
+    // egal welcher Anbieter dahinter steckt – oder wirft.
+    const sttTranscribe = async (blob) => {
+        if (cfg.sttProvider === "suisse") return suisseTranscribe(blob);
+
         const fd = new FormData();
-        fd.append("file", blob, "audio.webm");
+        fd.append("file", blob, "aufnahme.webm");
         fd.append("model_id", "scribe_v2");
+        fd.append("language_code", "deu");   // Schweizerdeutsch läuft über das Deutsch-Modell
         fd.append("diarize", "true");
-        if (cfg.lang) fd.append("language_code", cfg.lang);
-        if (cfg.numSpeakers > 0) fd.append("num_speakers", cfg.numSpeakers);
+        const n = (personsRef.current || []).length;
+        if (n > 1) fd.append("num_speakers", String(Math.min(n, 32)));
+        for (const t of buildKeyterms()) fd.append("keyterms", t);
 
+        const { data, error } = await supabase.functions.invoke('gv-stt', {
+            body: fd,
+            headers: { 'x-stt-provider': 'elevenlabs' },
+        });
+        if (error) throw new Error(error.message);
+        if (data?.error) throw new Error(typeof data.error === "string" ? data.error : JSON.stringify(data.error));
+        if (!data?.words) throw new Error("Keine Wörter von ElevenLabs erhalten.");
+
+        // Wörter zu Sprecher-Blöcken zusammenfassen (ElevenLabs liefert pro Wort,
+        // start/end in Sekunden). "spacing" trägt die Leerzeichen und darf den
+        // Block nicht brechen, "audio_event" (Lachen o.ä.) fliegt raus.
+        const segments = [];
+        for (const w of data.words) {
+            if (w.type && w.type !== "word" && w.type !== "spacing") continue;
+            const spk = w.speaker_id || "speaker_0";
+            const last = segments[segments.length - 1];
+            if (last && last.speaker === spk) {
+                last.text += w.text;
+                last.end_ms = (w.end ?? 0) * 1000;
+            } else if (w.type !== "spacing") {
+                segments.push({ speaker: spk, text: w.text, start_ms: (w.start ?? 0) * 1000, end_ms: (w.end ?? 0) * 1000 });
+            }
+        }
+        return { segments };
+    };
+
+    // Suisse Notes: asynchron – hochladen, Job-ID, alle 5 s pollen.
+    const suisseTranscribe = async (blob) => {
+        const fd = new FormData();
+        fd.append("file", blob, "aufnahme.webm");
+        fd.append("language", "de"); // Schweizerdeutsch wird unter "de" automatisch erkannt
+
+        const H = { 'x-stt-provider': 'suisse' };
+        const { data: up, error: upErr } = await supabase.functions.invoke('gv-stt', { body: fd, headers: H });
+        if (upErr) throw new Error(upErr.message);
+        if (up?.error) throw new Error(typeof up.error === "string" ? up.error : JSON.stringify(up.error));
+        const jobId = up?.id;
+        if (!jobId) throw new Error("Keine Transkriptions-ID von Suisse Notes erhalten.");
+
+        for (let i = 0; i < 240; i++) {
+            await new Promise(r => setTimeout(r, 5000));
+            const { data: st, error: stErr } = await supabase.functions.invoke('gv-stt', { body: { id: jobId }, headers: H });
+            if (stErr) throw new Error(stErr.message);
+            if (st?.status === "completed") return st.transcript || {};
+            if (st?.status === "failed") throw new Error(st.error || "Transkription fehlgeschlagen.");
+        }
+        throw new Error("Zeitüberschreitung beim Transkribieren.");
+    };
+
+    // Segmente → Modul-Format. baseSec verschiebt die Zeitachse
+    // (für Vorschau-Häppchen, die mitten in der Aufnahme beginnen).
+    const mapSegs = (tr, baseSec = 0, preview = false) => {
+        const nameToKey = {};
+        let spkIdx = 0;
+        return (tr.segments || []).map(s => {
+            const name = s.speaker || "Speaker 1";
+            if (!(name in nameToKey)) nameToKey[name] = "speaker_" + (spkIdx++);
+            return {
+                speaker: nameToKey[name],
+                text: (s.text || "").trim(),
+                start: (s.start_ms || 0) / 1000 + baseSec,
+                end: (s.end_ms || 0) / 1000 + baseSec,
+                preview,
+            };
+        }).filter(s => s.text);
+    };
+
+    // Saubere Endfassung (ganze Datei) – beim Stopp / bei „Audio laden".
+    const transcribe = async (blob) => {
+        setStatusMsg("⏳ Saubere Endfassung wird erstellt (Upload zu Suisse Notes)…");
         try {
-            const { data, error } = await supabase.functions.invoke('gv-stt', {
-                body: fd
-            })
-            if (error) throw new Error(error.message)
-
-            // Words parser
-            const segs = [];
-            let cur = null;
-            (data.words || []).forEach(w => {
-                if (w.type === "spacing") { if (cur) cur.text += w.text || " "; return; }
-                const spk = w.speaker_id || "speaker_0";
-                if (!cur || cur.speaker !== spk) {
-                    if (cur) cur.text = cur.text.trim();
-                    cur = { speaker: spk, text: "", start: w.start || 0, end: w.end || 0 };
-                    segs.push(cur);
-                }
-                cur.text += (w.text || "") + " ";
-                cur.end = w.end || cur.end;
-            });
-            if (cur) cur.text = cur.text.trim();
+            const tr = await sttTranscribe(blob);
+            const segs = mapSegs(tr, 0, false);
 
             if (lastAudioUrlRef.current) URL.revokeObjectURL(lastAudioUrlRef.current);
             lastAudioUrlRef.current = URL.createObjectURL(blob);
 
             setSegments(segs);
             LS.set("gv_segments", segs);
-            setStatusMsg(isLive ? "🟢 Live-Transkript aktualisiert." : "✅ Transkription abgeschlossen.");
+            setStatusMsg(`✅ Transkription abgeschlossen (${segs.length} Abschnitte).`);
             return true;
         } catch (e) {
             setStatusMsg("❌ Fehler: " + e.message);
             return false;
         }
+    };
+
+    // Grobe Live-Vorschau eines Häppchens (während der Aufnahme). Ergebnisse
+    // werden zeitlich einsortiert; die saubere Endfassung ersetzt sie beim Stopp.
+    const previewTranscribe = async (blob, baseSec) => {
+        try {
+            const tr = await sttTranscribe(blob);
+            if (prevStoppingRef.current) return; // Aufnahme beendet → Endfassung übernimmt
+            const mapped = mapSegs(tr, baseSec, true);
+            const merged = [...prevSegmentsRef.current, ...mapped].sort((a, b) => a.start - b.start);
+            prevSegmentsRef.current = merged;
+            setSegments(merged);
+            LS.set("gv_segments", merged);
+            setStatusMsg("👀 Vorschau aktualisiert (grob) – saubere Fassung folgt beim Stopp.");
+        } catch { /* Vorschau-Fehler still ignorieren, Endfassung bleibt massgeblich */ }
     };
 
     const finalizeRecording = async (recId) => {
@@ -776,11 +944,16 @@ export default function GvProtokollApp() {
                     </div>
                     <audio ref={previewAudioRef} style={{ display: "none" }} />
                     <div className="col-body">
+                        {segments.some(s => s.preview) && (
+                            <div style={{ fontSize: "12px", color: "var(--muted)", margin: "0 4px 10px", padding: "6px 10px", background: "var(--grad-soft)", borderRadius: "8px" }}>
+                                👀 Live-Vorschau (grob) – die saubere Fassung mit korrekter Sprecher-Trennung kommt beim Stopp.
+                            </div>
+                        )}
                         {segments.map((seg, i) => (
-                            <div className="seg" key={i}>
+                            <div className="seg" key={i} style={seg.preview ? { opacity: 0.6 } : undefined}>
                                 <div className="av" style={{ background: speakerColor(seg.speaker) }}>{speakerLabel(seg.speaker).slice(0,1)}</div>
                                 <div className="bubble">
-                                    <div className="who"><span>{speakerLabel(seg.speaker)}</span> <span className="ts">{fmtTime(seg.start)}</span></div>
+                                    <div className="who"><span>{speakerLabel(seg.speaker)}</span> <span className="ts">{fmtTime(seg.start)}</span>{seg.preview && <span className="ts" style={{ fontStyle: "italic" }}>· Vorschau</span>}</div>
                                     <div className="txt" contentEditable suppressContentEditableWarning onBlur={e => setSegOverrides({ ...segOverrides, [seg.start]: e.target.textContent })}>{seg.text}</div>
                                 </div>
                             </div>
@@ -825,13 +998,24 @@ export default function GvProtokollApp() {
                 <div className="modal-bg show">
                     <div className="modal">
                         <h2>Einstellungen</h2>
-                        <div className="fld">
-                            <label>ElevenLabs Key (Sprecher-Trennung)</label>
-                            <input type="password" value={cfg.eleven} onChange={e => setCfg({ ...cfg, eleven: e.target.value })} />
+                        <div className="fld" style={{ fontSize: "12.5px", color: "var(--muted)", lineHeight: 1.5 }}>
+                            🎙️ Transkription mit Sprecher-Trennung · KI-Auswertung: <b>Claude</b>.
+                            Die API-Schlüssel liegen serverseitig – hier nichts einzugeben.
                         </div>
+
                         <div className="fld">
-                            <label>Claude Key (KI-Auswertung)</label>
-                            <input type="password" value={cfg.claudeKey} onChange={e => setCfg({ ...cfg, claudeKey: e.target.value })} />
+                            <label>Transkriptions-Dienst</label>
+                            <select value={cfg.sttProvider || "elevenlabs"}
+                                    onChange={e => setCfg({ ...cfg, sttProvider: e.target.value })}>
+                                <option value="elevenlabs">ElevenLabs scribe_v2 (empfohlen)</option>
+                                <option value="suisse">Suisse Notes (CH-gehostet)</option>
+                            </select>
+                            <div className="rec-hint">
+                                Vergleich vom 01.08.2026 auf denselben 10 Minuten: ElevenLabs erkannte mehr
+                                (1661 gegen 1605 Wörter), war rund sechsmal schneller, traf Schweizer Namen
+                                und Redewendungen besser und behielt die Mundartfärbung. Suisse Notes
+                                normalisiert alles zu Hochdeutsch.
+                            </div>
                         </div>
 
                         <div className="fld">
@@ -850,6 +1034,7 @@ export default function GvProtokollApp() {
                                                 {r.id === curRecIdRef.current && isRecording && <span className="rec-badge live"> läuft</span>}
                                             </span>
                                         </div>
+                                        <button className="x dl" title="Audio als Datei herunterladen" onClick={() => downloadRecording(r.id)}>⬇️</button>
                                         <button className="x" title="Audio dieser Aufnahme löschen" onClick={() => deleteRecording(r.id)}>🗑️</button>
                                     </div>
                                 )) : <div className="prot-empty">Keine lokalen Aufnahmen.</div>}

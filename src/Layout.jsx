@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import VoiceAssistant from "@/components/voice/VoiceAssistant";
 import TaskReminderPopup from "@/components/tasks/TaskReminderPopup";
+import PaperboyInbox from "@/components/inbox/PaperboyInbox";
 import BottomNav from "@/components/mobile/BottomNav";
 import AppLauncher from "@/components/navigation/AppLauncher";
 import FavoritesDock, { useFavorites } from "@/components/navigation/FavoritesDock";
@@ -22,6 +23,7 @@ import { NAV_GROUPS, DEFAULT_OPEN, itemHref, visibleItems, recordAppOpen, appKey
 import { hydrateNavPrefs, scheduleNavPrefsSave } from "@/components/navigation/navPrefsSync";
 import { useIsMobile } from "@/components/mobile/useIsMobile";
 import { useAuth } from '@/lib/AuthContext';
+import PersonAvatar from "@/components/ui/PersonAvatar";
 import * as packageJson from "../package.json";
 
 // Theme context for global access if needed elsewhere
@@ -592,12 +594,7 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
                         onMouseOver={e => { e.currentTarget.style.background = pal.hover; }}
                         onMouseOut={e => { e.currentTarget.style.background = 'transparent'; }}
                     >
-                      <div
-                          className="rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400 font-semibold border border-indigo-500/30"
-                          style={{ width: 30, height: 30, fontSize: 12, flexShrink: 0 }}
-                      >
-                        {profile?.full_name?.charAt(0) || profile?.email?.charAt(0)}
-                      </div>
+                      <PersonAvatar user={profile} size={30} />
                       {!railMode && (
                           <div style={{ minWidth: 0 }}>
                             <div style={{ fontSize: 12.5, fontWeight: 600, color: pal.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -676,6 +673,9 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
 
         {/* Task Reminder Popup – globale Erinnerungen unten rechts */}
         <TaskReminderPopup currentUser={profile} />
+
+        {/* Schwebender Paperboy-Posteingang – gebündelte Eingänge unten rechts */}
+        {!isTaskUser && <PaperboyInbox />}
       </ThemeContext.Provider>
   );
 }
