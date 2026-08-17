@@ -37,13 +37,27 @@ const FORTSETZUNG = [
   /\bseite\s*([2-9]|[1-9]\d)\s*(von|\/)\s*\d+/,
 ];
 
-// Beginn eines Geschäftspapiers
+// Beginn eines Geschäftspapiers.
+//
+// Die Muster fangen, wo immer möglich, den KONKRETEN WERT mit (Nummer oder
+// Datum) — die Briefpapier-Regel vergleicht den ganzen Treffer mit der
+// Vorseite: gleiche Rechnungsnummer wiederholt = Fortsetzung, NEUE Nummer =
+// neuer Beleg. Ohne den Wert im Treffer erstickte die Briefpapier-Regel
+// ganze Stapel gleicher Absender («Stadtwerke-Rechnung um Rechnung») zu
+// einem einzigen Beleg, weil «rechnung nr» auf jeder Seite gleich aussieht.
 const NEUER_BELEG = [
   // Belegnummer mit Datum: «Vergütungsauftrag Nr. 38.01 vom 31.01.2025»
   /\b(nr\.?|nummer)\s*[\d.\/-]{2,12}\s*vom\s*\d{1,2}[.\s]/,
+  // Belegnummer mit Wert: «Rechnung Nr. 3291314.13»
+  /\b(rechnung|gutschrift|quittung|beleg|auftrag|bescheinigung|ausweis|auszug)s?[\s.-]*(nr\.?|nummer)\s*[.:]?\s*[a-z]?\d[\d.\/-]{1,14}/,
+  /\brechnungs-?nr\.?\s*[.:]?\s*[a-z]?\d[\d.\/-]{1,14}/,
+  // Rechnungsdatum mit Wert: «Rechnungsdatum: 12.05.2025» / «Rechnung vom 12.05.2025»
+  /\brechnungsdatum\s*[.:]?\s*\d{1,2}[.]\s?\d{1,2}[.]\s?\d{2,4}/,
+  /\b(rechnung|gutschrift)\s*vom\s*\d{1,2}[.]\s?\d{1,2}[.]\s?\d{2,4}/,
+  // Formen ohne lesbaren Wert (OCR frisst die Nummer): bleiben als schwaches
+  // Signal drin — die Briefpapier-Regel unterdrückt sie bei Wiederholung.
   /\b(rechnung|gutschrift|quittung|beleg|auftrag|bescheinigung|ausweis|auszug)\s*(nr\.?|nummer)/,
   /\brechnungsdatum\b/,
-  /\brechnungs-?nr\b/,
   // Ortszeile mit ausgeschriebenem Datum: «Schmerikon, 16. Januar 2025»
   /\b[a-z]{3,},\s*\d{1,2}\.\s*(januar|februar|marz|april|mai|juni|juli|august|september|oktober|november|dezember)\s*\d{4}/,
   // Empfängerblock

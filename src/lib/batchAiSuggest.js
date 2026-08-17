@@ -180,14 +180,14 @@ export async function pdfPagesToImages(file, maxPages = 2) {
  * Seitenbereich innerhalb einer Datei — an die KI geht die erste Seite DES
  * TEILS, nicht die erste Seite der Datei.
  */
-export async function pdfSeiteAlsBild(file, seite = 1) {
+export async function pdfSeiteAlsBild(file, seite = 1, scale = 1.6) {
   try {
     const buf = await file.arrayBuffer();
     sichereWorker();
     const pdf = await pdfjsLib.getDocument({ data: buf, worker: eigenerPdfWorker() }).promise;
     if (seite < 1 || seite > pdf.numPages) return null;
     const page = await pdf.getPage(seite);
-    const viewport = page.getViewport({ scale: 1.6 });
+    const viewport = page.getViewport({ scale });
     const canvas = document.createElement("canvas");
     canvas.width  = viewport.width;
     canvas.height = viewport.height;
@@ -196,6 +196,34 @@ export async function pdfSeiteAlsBild(file, seite = 1) {
   } catch (e) {
     console.warn("[Belegsortierung] Seite→Bild fehlgeschlagen:", e);
     return null;
+  }
+}
+
+/**
+ * Alle Seiten eines PDFs als kleine Vorschaubilder (data-URLs) — für die
+ * Seitenübersicht beim manuellen Aufteilen. EIN Dokument-Handle, ein
+ * Durchlauf, kleine Auflösung; bei 15 Seiten unter zwei Sekunden.
+ */
+export async function pdfSeitenMiniaturen(file, { maxSeiten = 60, scale = 0.32 } = {}) {
+  try {
+    const buf = await file.arrayBuffer();
+    sichereWorker();
+    const pdf = await pdfjsLib.getDocument({ data: buf, worker: eigenerPdfWorker() }).promise;
+    const anzahl = Math.min(pdf.numPages, maxSeiten);
+    const bilder = [];
+    for (let i = 1; i <= anzahl; i++) {
+      const page = await pdf.getPage(i);
+      const viewport = page.getViewport({ scale });
+      const canvas = document.createElement("canvas");
+      canvas.width  = viewport.width;
+      canvas.height = viewport.height;
+      await page.render({ canvasContext: canvas.getContext("2d"), viewport, intent: "print" }).promise;
+      bilder.push(canvas.toDataURL("image/jpeg", 0.6));
+    }
+    return { bilder, seitenGesamt: pdf.numPages };
+  } catch (e) {
+    console.warn("[Belegsortierung] Miniaturen fehlgeschlagen:", e);
+    return { bilder: [], seitenGesamt: 0 };
   }
 }
 
