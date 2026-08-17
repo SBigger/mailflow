@@ -270,39 +270,46 @@ async function generateAbschlussPDF({ konten, einstellungen, customerName, selec
   };
 
   // ── Bilanz-Zeilen bauen ──
-  // cols: Label (100) | IST (28) | VJ (28) | Δ% (16) → 172mm
+  // Eine Schriftgrösse für das ganze Dokument, Hierarchie nur über fett/normal.
+  // Bilanz: Label | IST | VJ (kein Δ%, auf Wunsch entfernt) → 182mm
+  // Erfolgsrechnung behält Δ% (erwünscht als Kennzahl, nicht als Layout-Zierde).
+  const FS = 8;
   const CP = { top: 1.5, bottom: 1.5, left: 3, right: 2 };
   const CPT = { top: 3, bottom: 3, left: 3, right: 2 };
 
   const bSec = (label, fill, col) => [{
-    content: label, colSpan: 4,
-    styles: { fillColor: fill, textColor: col, fontStyle: "bold", fontSize: 8,
+    content: label, colSpan: 3,
+    styles: { fillColor: fill, textColor: col, fontStyle: "bold", fontSize: FS,
       cellPadding: { top: 3, bottom: 1, left: 4, right: 3 } }
   }];
 
+  // Bilanzsumme/Totalzeilen bekommen zusätzlich zu fett eine Trennlinie darüber —
+  // das klassische Buchhaltungs-Signal für "Ergebnis dieser Gruppe".
   const bRow = (label, ist, vj, { total = false, sub = false, indent = false } = {}) => {
-    const p = pct(ist, vj);
     const fw = total || sub ? "bold" : "normal";
-    const fs = total ? 9 : 8;
-    const tc = total ? DARK : DARK;
+    const topLine = total ? { lineWidth: { top: 0.3 }, lineColor: DARK } : {};
     return [
-      { content: label,    styles: { fontSize: fs, fontStyle: fw, textColor: tc,
+      { content: label,    styles: { fontSize: FS, fontStyle: fw, textColor: DARK, ...topLine,
           cellPadding: { ...( total ? CPT : CP), left: indent ? 7 : 3 } } },
-      { content: N(ist),   styles: { halign: "right", fontSize: fs, fontStyle: fw, textColor: tc } },
-      { content: vj != null ? N(vj) : "", styles: { halign: "right", fontSize: 7, textColor: GRAY } },
-      { content: p,        styles: { halign: "right", fontSize: 7, textColor: pctC(p) } },
+      { content: N(ist),   styles: { halign: "right", fontSize: FS, fontStyle: fw, textColor: DGRN, ...topLine } },
+      { content: vj != null ? N(vj) : "", styles: { halign: "right", fontSize: FS, fontStyle: fw, textColor: DARK, ...topLine } },
     ];
   };
 
-  const colHead = (title, fill, col) => [[
-    { content: title,           styles: { fillColor: fill, textColor: col, fontStyle: "bold", fontSize: 9, cellPadding: { top: 3, bottom: 3, left: 4, right: 2 } } },
-    { content: String(selectedYear),   styles: { fillColor: fill, textColor: GRAY, halign: "right", fontSize: 8 } },
-    { content: String(selectedYear-1), styles: { fillColor: fill, textColor: GRAY, halign: "right", fontSize: 8 } },
-    { content: "Δ%",            styles: { fillColor: fill, textColor: GRAY, halign: "right", fontSize: 8 } },
-  ]];
+  const colHead = (title, fill, col, withPct = false) => {
+    const cells = [
+      { content: title,                  styles: { fillColor: fill, textColor: col, fontStyle: "bold", fontSize: FS, cellPadding: { top: 3, bottom: 3, left: 4, right: 2 } } },
+      { content: String(selectedYear),   styles: { fillColor: fill, textColor: DGRN, fontStyle: "bold", halign: "right", fontSize: FS } },
+      { content: String(selectedYear-1), styles: { fillColor: fill, textColor: col,  fontStyle: "bold", halign: "right", fontSize: FS } },
+    ];
+    if (withPct) cells.push({ content: "Δ%", styles: { fillColor: fill, textColor: col, fontStyle: "bold", halign: "right", fontSize: FS } });
+    return [cells];
+  };
 
-  const COL = { 0: { cellWidth: 102 }, 1: { cellWidth: 28, halign: "right" },
-                2: { cellWidth: 28, halign: "right" }, 3: { cellWidth: 16, halign: "right" } };
+  const COL_BILANZ = { 0: { cellWidth: 118 }, 1: { cellWidth: 32, halign: "right" },
+                        2: { cellWidth: 32, halign: "right" } };
+  const COL_ER = { 0: { cellWidth: 102 }, 1: { cellWidth: 28, halign: "right" },
+                    2: { cellWidth: 28, halign: "right" }, 3: { cellWidth: 16, halign: "right" } };
   const MARG = { left: 14, right: 14 };
 
   // ── BILANZ IDs ──
@@ -312,16 +319,20 @@ async function generateAbschlussPDF({ konten, einstellungen, customerName, selec
   const FK_LANG_IDS = ["FK_LANG_BANK","FK_LANG_VERZ_NAHE","FK_LANG_SONST","FK_LANG_SONST_NAHE","FK_RUECKSTELLUNGEN"];
   const EK_IDS      = ["EK_KAPITAL","EK_KAP_RESERVE","EK_GES_RESERVE","EK_FREIE_RESERVE","EK_RESERVEN","EK_VORTRAG","EK_JAHRESERGEBNIS"];
 
-  // Hilfszelle: einzelne Konto-Zeile im Detail-Modus (etwas kleiner + grauer, eingerückt)
-  const kRow = (label, ist, vj) => {
-    const p = pct(ist, vj);
-    return [
-      { content: label, styles: { fontSize: 7, fontStyle: "normal", textColor: [90, 90, 100],
+  // Hilfszelle: einzelne Konto-Zeile im Detail-Modus, eingerückt.
+  // withPct steuert die 4. Spalte — Bilanz hat keine, Erfolgsrechnung schon.
+  const kRow = (label, ist, vj, { withPct = true } = {}) => {
+    const cells = [
+      { content: label, styles: { fontSize: FS, fontStyle: "normal", textColor: DARK,
           cellPadding: { top: 0.8, bottom: 0.8, left: 12, right: 2 } } },
-      { content: N(ist), styles: { halign: "right", fontSize: 7, textColor: [90, 90, 100] } },
-      { content: vj != null ? N(vj) : "", styles: { halign: "right", fontSize: 7, textColor: GRAY } },
-      { content: p, styles: { halign: "right", fontSize: 6.5, textColor: GRAY } },
+      { content: N(ist), styles: { halign: "right", fontSize: FS, fontStyle: "normal", textColor: DGRN } },
+      { content: vj != null ? N(vj) : "", styles: { halign: "right", fontSize: FS, fontStyle: "normal", textColor: DARK } },
     ];
+    if (withPct) {
+      const p = pct(ist, vj);
+      cells.push({ content: p, styles: { halign: "right", fontSize: FS, textColor: pctC(p) } });
+    }
+    return cells;
   };
 
   const posRows = (ids, flip = false) => ids.flatMap(id => {
@@ -329,7 +340,7 @@ async function generateAbschlussPDF({ konten, einstellungen, customerName, selec
     const ist = sumI([id]) * (flip ? pSign : 1);
     const vj  = sumVJ([id]) * (flip ? pSign : 1);
     if (ist === 0 && vj === 0) return [];
-    const lbl = (pos?.level === 3 ? "  ↳ " : "  ") + (pos?.label || id);
+    const lbl = "  " + (pos?.label || id);
     const out = [bRow(lbl, ist, vj, { indent: true })];
     if (mode === "detail") {
       // Einzelkonten dieser Position einrücken (vor dem Sub-Total)
@@ -341,7 +352,7 @@ async function generateAbschlussPDF({ konten, einstellungen, customerName, selec
         const kVj  = (parseFloat(k.saldo_vorjahr) || 0) * (flip ? pSign : 1);
         if (kIst === 0 && kVj === 0) continue;
         const kLbl = `    ${k.kontonummer}  ${k.kontoname || ""}`;
-        out.push(kRow(kLbl, kIst, kVj));
+        out.push(kRow(kLbl, kIst, kVj, { withPct: false }));
       }
     }
     return out;
@@ -367,14 +378,17 @@ async function generateAbschlussPDF({ konten, einstellungen, customerName, selec
       bRow("Total Anlagevermögen", avI, avV, { sub: true }),
       bRow("TOTAL AKTIVEN", akI, akV, { total: true }),
     ],
-    columnStyles: COL, margin: MARG, styles: { fontSize: 8, cellPadding: CP }, theme: "plain",
+    columnStyles: COL_BILANZ, margin: MARG, styles: { fontSize: FS, cellPadding: CP }, theme: "plain",
   });
 
-  // Differenz-Hinweis klein unter Aktiven
+  // Nur bei echter Differenz einen Hinweis zeigen — ist die Bilanz ausgeglichen
+  // (der Normalfall), bleibt es still, statt das extra zu bestätigen.
   const diff = akI - paI;
-  y = doc.lastAutoTable.finalY + 3;
-  doc.setFontSize(7); doc.setTextColor(...(Math.abs(diff) < 0.01 ? GREEN : RED));
-  doc.text(Math.abs(diff) < 0.01 ? "Bilanz ausgeglichen" : `Differenz: CHF ${N(diff)}`, 14, y);
+  if (Math.abs(diff) >= 0.01) {
+    y = doc.lastAutoTable.finalY + 3;
+    doc.setFont("helvetica", "bold"); doc.setFontSize(FS); doc.setTextColor(...RED);
+    doc.text(`Differenz: CHF ${N(diff)}`, 14, y);
+  }
 
   // ── Seite 2: PASSIVEN ──
   doc.addPage();
@@ -392,7 +406,7 @@ async function generateAbschlussPDF({ konten, einstellungen, customerName, selec
       bRow("Total Eigenkapital", ekI, ekV, { sub: true }),
       bRow("TOTAL PASSIVEN", paI, paV, { total: true }),
     ],
-    columnStyles: COL, margin: MARG, styles: { fontSize: 8, cellPadding: CP }, theme: "plain",
+    columnStyles: COL_BILANZ, margin: MARG, styles: { fontSize: FS, cellPadding: CP }, theme: "plain",
   });
 
   // ── Seite 3: ERFOLGSRECHNUNG ──
@@ -433,21 +447,23 @@ async function generateAbschlussPDF({ konten, einstellungen, customerName, selec
   const jeI = ebtI + frEI + frAI + stI;
   const jeV = ebtV + frEV + frAV + stV;
 
-  // ER-Zeile: 4 Spalten Label | IST | VJ | Δ%
+  // ER-Zeile: 4 Spalten Label | IST | VJ | Δ% — Δ% bleibt hier (im Gegensatz zur
+  // Bilanz), weil es in der Erfolgsrechnung eine echte Kennzahl ist, keine Zierde.
   const eRow = (lbl, ist, vj, { total = false, sub = false } = {}) => {
-    const p = pct(ist, vj); const fw = total || sub ? "bold" : "normal"; const fs = total ? 9 : 8;
+    const p = pct(ist, vj); const fw = total || sub ? "bold" : "normal";
+    const topLine = total ? { lineWidth: { top: 0.3 }, lineColor: DARK } : {};
     return [
-      { content: lbl, styles: { fontSize: fs, fontStyle: fw, textColor: DARK,
+      { content: lbl, styles: { fontSize: FS, fontStyle: fw, textColor: DARK, ...topLine,
           cellPadding: { ...(total ? CPT : CP) } } },
-      { content: N(ist), styles: { halign: "right", fontSize: fs, fontStyle: fw,
-          textColor: total ? (ist >= 0 ? GREEN : RED) : DARK } },
-      { content: vj != null ? N(vj) : "", styles: { halign: "right", fontSize: 7, textColor: GRAY } },
-      { content: p, styles: { halign: "right", fontSize: 7, textColor: pctC(p) } },
+      { content: N(ist), styles: { halign: "right", fontSize: FS, fontStyle: fw, ...topLine,
+          textColor: total ? (ist >= 0 ? GREEN : RED) : DGRN } },
+      { content: vj != null ? N(vj) : "", styles: { halign: "right", fontSize: FS, fontStyle: fw, textColor: DARK, ...topLine } },
+      { content: p, styles: { halign: "right", fontSize: FS, textColor: pctC(p), ...topLine } },
     ];
   };
   const eSec = (lbl, fill, col) => [{
     content: lbl, colSpan: 4,
-    styles: { fillColor: fill, textColor: col, fontStyle: "bold", fontSize: 8,
+    styles: { fillColor: fill, textColor: col, fontStyle: "bold", fontSize: FS,
       cellPadding: { top: 3, bottom: 1, left: 4, right: 3 } }
   }];
 
@@ -502,9 +518,9 @@ async function generateAbschlussPDF({ konten, einstellungen, customerName, selec
   ];
 
   autoTable(doc, {
-    startY: y, head: colHead("ERFOLGSRECHNUNG", LGRN, GREEN),
-    body: erBody, columnStyles: COL, margin: MARG,
-    styles: { fontSize: 8, cellPadding: CP }, theme: "plain",
+    startY: y, head: colHead("ERFOLGSRECHNUNG", LGRN, GREEN, true),
+    body: erBody, columnStyles: COL_ER, margin: MARG,
+    styles: { fontSize: FS, cellPadding: CP }, theme: "plain",
   });
 
   // Bei returnDoc: doc + autoTable an Aufrufer zurückgeben (für Revisions-Dossier)
