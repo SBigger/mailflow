@@ -125,7 +125,7 @@ async function extractOldWordText(arrayBuffer: ArrayBuffer, fileName: string): P
     const formData = new FormData();
     formData.append("file", new Blob([arrayBuffer]), fileName);
 
-    const ocrResponse = await fetch("http://ocr-api-tb9qrqpdn001flt6zq1jx65m:7996/ocr", {
+    const ocrResponse = await fetch("http://192.168.5.10:7996/ocr", {
       method: "POST",
       body: formData
     });

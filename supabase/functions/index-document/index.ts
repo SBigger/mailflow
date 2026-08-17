@@ -139,10 +139,19 @@ async function indexOne(docId: string): Promise<{ status: string; chars: number 
   const text   = await extractText(buffer, doc.filename || "", doc.file_type || "");
 
   if (text) {
+    // Sanitize: NUL-Bytes und kaputte Surrogates raus, sonst lehnt
+    // PostgreSQL den UPDATE als "unsupported Unicode escape sequence" ab.
+    const cleanText = text
+        .replace(/\u0000/g, "")              // NUL bytes
+        .replace(/[\uD800-\uDFFF]/g, "")    // halbe UTF-16 Surrogates
+        .replace(/[\u0001-\u0008\u000B\u000C\u000E-\u001F]/g, " ")  // andere control chars
+        .replace(/\s{3,}/g, " ")
+        .trim();
+
     const { error: updErr } = await supabase
-      .from("dokumente")
-      .update({ content_text: text })
-      .eq("id", docId);
+        .from("dokumente")
+        .update({ content_text: cleanText })
+        .eq("id", docId);
     if (updErr) throw new Error("Update fehlgeschlagen: " + updErr.message);
   }
 
@@ -192,6 +201,7 @@ Deno.serve(async (req) => {
           console.error("[index-document] Batch-Fehler:", id, e);
           errors.push(String(e));
         }
+        await new Promise((r) => setTimeout(r, 500));
       }
 
       return new Response(

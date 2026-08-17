@@ -25,9 +25,8 @@ Deno.serve(async (req) => {
     const { data: pendingDocs, error: fetchError } = await supabase
         .from('dokumente')
         .select('id, storage_object_id, storage_path, name, filename')
-        .ilike('status', '%message":"Kein Text gefunden%')
-        .ilike('file_type', '%pdf%')
-        .lt('file_size', 1000000)
+        .ilike('status', '%error%')
+        .ilike('file_type', '%outlook%')
         .limit(1);
 
     if (fetchError) {

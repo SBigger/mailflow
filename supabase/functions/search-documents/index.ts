@@ -39,7 +39,6 @@ Deno.serve(async (req) => {
         Deno.env.get('SUPABASE_URL')!,
         Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     );
-    const t = searchQuery.trim().split(/\s+/).join(' & ').replace('*', ':*');
 
     // 3. Perform Hybrid RPC search
     const { data: results, error: searchError } = await supabase.rpc('match_documents_hybrid', {
