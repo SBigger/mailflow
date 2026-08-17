@@ -260,6 +260,10 @@ export default function AssignDialog({ customers, preCustomerId, doc, onClose, s
                 if (cancelled) return;
                 contentTextRef.current = res.contentText || "";
 
+                // Alles synchron entscheiden: `touched` sagt, ob der Nutzer ein Feld
+                // schon angefasst hat — nur unberuehrte Felder bekommen Vorschlaege.
+                // (Kein applied.push in State-Updatern: die laufen verzoegert und
+                // der Hinweis-Text waere unvollstaendig.)
                 const sugg = res.suggestions || {};
                 const applied = [];
 
@@ -268,33 +272,34 @@ export default function AssignDialog({ customers, preCustomerId, doc, onClose, s
                     const names = sugg.tag_ids
                         .map(id => allTags.find(t => t.id === id)?.name).filter(Boolean);
                     if (names.length) applied.push(`Tag «${names.join(", ")}»`);
-                    // Kategorie kommt vom Parent-Tag — gleiche Logik wie beim manuellen Tag-Klick.
-                    if (!touched.current.cat) {
+                }
+
+                if (!touched.current.cat) {
+                    // Kategorie vom Parent-Tag (gleiche Logik wie beim manuellen
+                    // Tag-Klick), sonst aus dem Keyword-Matching.
+                    let neueKat = "";
+                    if (sugg.tag_ids?.length && !touched.current.tags) {
                         const tag = allTags.find(t => t.id === sugg.tag_ids[0]);
                         const parent = tag?.parent_id ? allTags.find(t => t.id === tag.parent_id) : tag;
-                        if (parent?.category) {
-                            setCategory(prev => {
-                                if (prev) return prev;
-                                applied.push(`Kategorie ${CATEGORIES.find(c => c.key === parent.category)?.label || parent.category}`);
-                                setCatError(false);
-                                return parent.category;
-                            });
-                        }
+                        if (parent?.category) neueKat = parent.category;
+                    }
+                    if (!neueKat && sugg.category) neueKat = sugg.category;
+                    if (neueKat) {
+                        setCategory(neueKat);
+                        setCatError(false);
+                        applied.push(`Kategorie ${CATEGORIES.find(c => c.key === neueKat)?.label || neueKat}`);
                     }
                 }
-                if (sugg.category && !touched.current.cat) {
-                    setCategory(prev => {
-                        if (prev) return prev;
-                        applied.push(`Kategorie ${CATEGORIES.find(c => c.key === sugg.category)?.label || sugg.category}`);
-                        setCatError(false);
-                        return sugg.category;
-                    });
+
+                if (sugg.year && !touched.current.year && !doc.year) {
+                    setYear(String(sugg.year));
                 }
-                if (sugg.year && !touched.current.year) {
-                    setYear(prev => prev || String(sugg.year));
-                }
-                if (sugg.customer_id && !touched.current.cust && customers?.some(c => c.id === sugg.customer_id)) {
-                    setCustId(prev => prev || sugg.customer_id);
+                if (sugg.customer_id && !touched.current.cust
+                    && !(preCustomerId || folderCustId)
+                    && customers?.some(c => c.id === sugg.customer_id)) {
+                    setCustId(sugg.customer_id);
+                    const kName = customers.find(c => c.id === sugg.customer_id)?.company_name;
+                    if (kName) applied.push(`Kunde «${kName}»`);
                 }
 
                 setKi({
