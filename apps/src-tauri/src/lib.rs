@@ -477,26 +477,68 @@ pub fn run() {
                 .center()
                 .focused(true)
                 .disable_drag_drop_handler()
+
                 // --- NAVIGATIONS INTERCEPTION ---
                 .on_navigation(move |url| {
-                    // Custom deep-link handler
-                    if url.scheme() == "artis-open" {
+                    if url.scheme() == "smartis-open" {
                         let _ = tauri_plugin_opener::open_url(url.as_str(), None::<&str>);
                         return false;
                     }
 
-                    true // Allow internal navigation on *.sm-artis.ch
+                    true
                 })
-                // --- WINDOW.OPEN() INTERCEPTION (Tauri v2 API) ---
+
+                // --- WINDOW.OPEN() INTERCEPTION ---
                 .on_new_window(|url, _features| {
-                    if url.scheme() != "artis-open" {
+                    if url.scheme() != "smartis-open" {
                         tauri::webview::NewWindowResponse::Allow
                     } else {
                         tauri::webview::NewWindowResponse::Deny
                     }
                 })
-                .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0")
-                .additional_browser_args("--disable-features=TrackingProtection3pcd,TrackingProtectionSettingsPageLaunch,PrivacySandboxSettings4,PartitionedCookies,ThirdPartyStoragePartitioning,BlockThirdPartyCookies,SameSiteByDefaultCookies,CookiesWithoutSameSiteMustBeSecure,msEdgeTrackingProtection,PrivacySandboxAdsAPIs,FedCm --enable-features=SharedArrayBuffer")
+
+                // --- DOWNLOAD INTERCEPTION ---
+                .on_download(|_webview, event| {
+                    match event {
+                        tauri::webview::DownloadEvent::Requested { url, .. } => {
+                            log::info!("Download angefordert: {}", url);
+                        }
+
+                        tauri::webview::DownloadEvent::Finished {
+                            url,
+                            path,
+                            success,
+                        } => {
+                            log::info!(
+                                "Download fertig: {} -> {:?} (ok={})",
+                                url,
+                                path,
+                                success
+                            );
+                        }
+
+                        _ => {}
+                    }
+
+                    true
+                })
+
+                .user_agent(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) \
+                     AppleWebKit/537.36 (KHTML, like Gecko) \
+                     Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0"
+                )
+
+                .additional_browser_args(
+                    "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,\
+                    TrackingProtection3pcd,TrackingProtectionSettingsPageLaunch,PrivacySandboxSettings4,\
+                    PartitionedCookies,ThirdPartyStoragePartitioning,BlockThirdPartyCookies,\
+                    SameSiteByDefaultCookies,CookiesWithoutSameSiteMustBeSecure,msEdgeTrackingProtection,\
+                    PrivacySandboxAdsAPIs,FedCm \
+                    --disable-popup-blocking \
+                    --enable-features=SharedArrayBuffer"
+                )
+
                 .initialization_script(IFRAME_POLYFILL)
                 .build()
                 .map_err(|e| e.to_string())?;

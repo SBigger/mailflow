@@ -111,7 +111,8 @@ export async function broadcastRealtime(
   privat = false,
 ): Promise<{ ok: boolean; status: number; body?: string }> {
   try {
-    const res = await fetch(`${supabaseUrl}/realtime/v1/api/broadcast`, {
+    const url = supabaseUrl.replace('http://', 'https://');
+    const res = await fetch(`${url}/realtime/v1/api/broadcast`, {
       method: "POST",
       headers: {
         apikey: serviceRoleKey,

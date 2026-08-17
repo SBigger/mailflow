@@ -108,10 +108,11 @@ serve(async (req) => {
   if (!bc.ok) console.error("broadcast failed:", bc.status, bc.body);
 
   // Antwort für den CONNECTOR selbst (Popup/CRM-Link seiner eigenen Oberfläche).
+  const appUrl = `${Deno.env.get('APP_URL')!}`
   return json({
     ok: true,
     name: match?.contactName || match?.label || null,
     company: match?.label || null,
-    link: match ? `https://smartis.me/Kunden?customer=${match.customerId}` : null,
+    link: match ? `${appUrl}/Kunden?customer=${match.customerId}` : null,
   });
 });

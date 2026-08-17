@@ -805,6 +805,39 @@ export const budgetApi = {
 
 // ── Kundenstamm (Debitoren) ──────────────────────────────────────
 export const kundenApi = {
+  /**
+   * Erstellt mehrere Kunden auf einmal und vergibt fortlaufende Kundennummern
+   * @param {string} mandantId
+   * @param {Array<Object>} kundenArray - Array von Kundenobjekten (ohne mandant_id und nr)
+   */
+  bulkCreate: async (mandantId, kundenArray) => {
+    if (!kundenArray || kundenArray.length === 0) return [];
+
+    const nextDStr = await kundenApi.nextNr(mandantId);
+    let nextNummer = parseInt(nextDStr.replace(/\D/g, ''), 10) - 1 || 1;
+
+    // Array mit Mandant-ID und generierter Kundennummer aufbereiten
+    const payload = kundenArray.map((kunde) => {
+      nextNummer++;
+      return {
+        ...kunde,
+        mandant_id: mandantId,
+        nr: `K-${nextNummer}`, // Verwendet bestehende Nr. aus Import oder generiert neue
+        zahlungsbedingung_tage: kunde.zahlungsbedingung_tage ?? 30,
+        mwst_code: kunde.mwst_code ?? 'U81',
+        aktiv: kunde.aktiv ?? true,
+      };
+    });
+
+    // Bulk-Insert in Supabase ausführen
+    const { data, error } = await supabase
+        .from('fibu_kunden')
+        .insert(payload)
+        .select();
+
+    if (error) throw error;
+    return data;
+  },
   list: async (mandantId) => {
     const { data, error } = await supabase
       .from('fibu_kunden').select('*').eq('mandant_id', mandantId).order('name');
@@ -838,6 +871,37 @@ export const kundenApi = {
 
 // ── Produktstamm (Artikel: Dienstleistung + Material) ────────────
 export const artikelApi = {
+  bulkCreate: async (mandantId, artikelArray) => {
+    if (!artikelArray || artikelArray.length === 0) return [];
+
+    // Höchste bestehende Artikel-Nr ermitteln für Fallback-Nummerierung
+    const nextDStr = await artikelApi.nextNr(mandantId, 'dienstleistung');
+    let nextNummer = parseInt(nextDStr.replace(/\D/g, ''), 10) - 1 || 1;
+
+    const payload = artikelArray.map((artikel) => {
+      nextNummer++;
+      return {
+        ...artikel,
+        mandant_id: mandantId,
+        nr: `D-${String(nextNummer).padStart(3, '0')}`,
+        typ: artikel.typ || 'dienstleistung',
+        einheit: artikel.einheit || 'Std',
+        verkaufspreis: parseFloat(artikel.verkaufspreis) || 0,
+        waehrung: artikel.waehrung || 'CHF',
+        mwst_code: artikel.mwst_code || 'U81',
+        ertragskonto: artikel.ertragskonto || '3400',
+        aktiv: artikel.aktiv ?? true,
+      };
+    });
+
+    const { data, error } = await supabase
+        .from('fibu_artikel')
+        .insert(payload)
+        .select();
+
+    if (error) throw error;
+    return data;
+  },
   list: async (mandantId) => {
     const { data, error } = await supabase
       .from('fibu_artikel').select('*').eq('mandant_id', mandantId).order('nr');

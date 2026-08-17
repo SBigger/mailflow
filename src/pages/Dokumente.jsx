@@ -970,7 +970,7 @@ export default function Dokumente() {
 
   const BUCKET_SIZE_POPUP = 'bucket_size_popup_timestamp';
   const BUCKET_NAME = "Dokumentenspeicher";
-  const BUCKET_MAX_SIZE = 20;
+  const BUCKET_MAX_SIZE = 50;
   const TWO_DAYS_IN_MS = 1 * 24 * 60 * 60 * 1000;
   const now = Date.now();
   const [bucketStats, setBucketStats] = useState({ usedSizeGB: 0, percentage: 0, loading: true });
