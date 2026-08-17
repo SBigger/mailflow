@@ -56,7 +56,13 @@ export default function TaskBoard({ embedded = false } = {}) {
    const [userFilter, setUserFilter] = useState('me');
    const [verantwortlichFilter, setVerantwortlichFilter] = useState('all');
    const [searchQuery, setSearchQuery] = useState("");
-  const [globalListView, setGlobalListView] = useState(false);
+  // Listen- vs. Kanban-Ansicht – pro Gerät gespeichert, damit die Wahl beim Neuladen erhalten bleibt
+  const [globalListView, setGlobalListView] = useState(() => {
+    try { return localStorage.getItem('taskboard-list-view') === '1'; } catch { return false; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('taskboard-list-view', globalListView ? '1' : '0'); } catch { /* ignore */ }
+  }, [globalListView]);
   const [deadlineView, setDeadlineView] = useState(false); // Fristenansicht (nach Fälligkeit gruppiert)
   // Kachel-Variante: 'standard' (bestehend) oder 'monday' (Foto-Kacheln) – pro Gerät gespeichert
   const [cardStyle, setCardStyle] = useState(() => {
@@ -641,7 +647,7 @@ export default function TaskBoard({ embedded = false } = {}) {
           <DragDropContext onDragEnd={handleDragEnd}>
             <Droppable droppableId="all-columns" direction="horizontal" type="column">
               {(provided) => (
-                <div {...provided.droppableProps} ref={provided.innerRef} className="flex gap-3 h-full min-w-max">
+                <div {...provided.droppableProps} ref={provided.innerRef} className={`flex gap-4 h-full ${cardStyle === 'monday' ? 'min-w-max' : 'w-full'}`}>
                   {columns.map((column, index) => (
                     <TaskBoardColumn
                       key={column.id}

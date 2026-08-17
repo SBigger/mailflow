@@ -124,12 +124,16 @@ function migriereBetraege(b) {
       einkommen = b.betrag ?? null; vermoegen = b.betrag2 ?? null;
     }
   }
+  // Regel-Werte mit der HEUTIGEN Regel neu rechnen — die Anker sind seit dem
+  // Speichern besser geworden (kumulierte «Gesamttotale» und OCR-Monsterzahlen
+  // flogen raus). Was die heutige Regel nicht mehr findet, wird leer und
+  // damit wieder Prüfarbeit statt falscher Zahl. Handeingaben bleiben stehen.
   if (b.betragQuelle !== 'hand' && b.text && position) {
     const p = KATALOG_NACH_ID[position];
-    if ((einkommen == null && p?.einkommen) || (vermoegen == null && p?.vermoegen)) {
+    if (p?.einkommen || p?.vermoegen) {
       const t = findeSeiten(b.text, position);
-      if (einkommen == null && t.einkommen != null) einkommen = t.einkommen;
-      if (vermoegen == null && t.vermoegen != null) vermoegen = t.vermoegen;
+      einkommen = p?.einkommen ? t.einkommen : einkommen;
+      vermoegen = p?.vermoegen ? t.vermoegen : vermoegen;
     }
   }
   return { ...b, position, einkommen, vermoegen };

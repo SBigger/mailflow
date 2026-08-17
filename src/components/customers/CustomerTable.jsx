@@ -21,6 +21,7 @@ const LS_WIDTHS = "customerTable.widths.v1";
 const DEFAULT_COLS = [
   { key: "name",    label: "Name",    w: 260, minW: 140 },
   { key: "typ",     label: "Typ",     w: 100, minW:  70 },
+  { key: "klasse",  label: "Klasse",  w:  70, minW:  50 },
   { key: "kt",      label: "KT",      w:  56, minW:  40 },
   { key: "ort",     label: "Ort",     w: 150, minW:  80 },
   { key: "email",   label: "E-Mail",  w: 220, minW: 100 },
@@ -31,10 +32,17 @@ const DEFAULT_COLS = [
   { key: "uid",     label: "UID",     w: 150, minW:  80 },
 ];
 
+const ABC_COLORS = {
+  A: { color: "#15803d", bg: "#dcfce7" },
+  B: { color: "#b45309", bg: "#fef3c7" },
+  C: { color: "#52525b", bg: "#f4f4f5" },
+};
+
 export default function CustomerTable({
   customers,
   onSelect,
   personTypeFilter = "alle",
+  abcFilter = "alle",
 }) {
   const { theme } = useContext(ThemeContext);
   const isArtis = theme === "artis";
@@ -193,7 +201,7 @@ export default function CustomerTable({
     if (personTypeFilter === "alle") return true;
     if (personTypeFilter === "privatperson") return c.person_type === "privatperson";
     return c.person_type === "unternehmen" || !c.person_type;
-  });
+  }).filter(c => abcFilter === "alle" || c.abc_klasse === abcFilter);
 
   const q = search.trim().toLowerCase();
   const searchFiltered = !q ? typeFiltered : typeFiltered.filter(c => {
@@ -493,6 +501,18 @@ function Row({ c, cols, onSelect, rowHover, textMain, textMuted, subtle, borderC
             );
           case "typ":
             return <td key={col.key} style={{ ...td, color: textMuted }}>{isPrivat ? "Person" : "Unternehmen"}</td>;
+          case "klasse": {
+            const k = ABC_COLORS[c.abc_klasse];
+            return (
+              <td key={col.key} style={td}>
+                {k ? (
+                  <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 20, height: 20, borderRadius: 5, background: k.bg, color: k.color, fontWeight: 700, fontSize: 11 }}>
+                    {c.abc_klasse}
+                  </span>
+                ) : <span style={{ color: subtle }}>—</span>}
+              </td>
+            );
+          }
           case "kt":
             return <td key={col.key} style={{ ...td, color: textMuted, fontVariantNumeric: "tabular-nums" }}>{c.kanton || "—"}</td>;
           case "ort":

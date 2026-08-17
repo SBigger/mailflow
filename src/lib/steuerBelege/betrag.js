@@ -26,6 +26,10 @@ export const ANKER_EINKOMMEN = {
   wertschriften: ['bruttoertrag', 'zinsertrag', 'habenzins', 'dividende', 'ertrag'],
   beteiligung_qualifiziert: ['bruttodividende', 'dividende', 'bruttoertrag'],
   liegenschaft_ertrag: ['mietzins', 'mietertrag', 'eigenmietwert'],
+  // «total» steht bewusst ganz hinten: beim Vergütungsauftrag ist «Total
+  // Auszahlung» der Betrag dieses Belegs, «Gesamttotal» das kumulierte
+  // Bausummen-Total. (Die GVZ-Falle «Versicherungssumme Total 6'500'000»
+  // fängt der Sperr-Kontext in sucheMitAnkern.)
   liegenschaftsunterhalt: ['total auszahlung', 'rechnungsbetrag', 'endbetrag',
                            'zu bezahlen', 'zahlbetrag', 'total'],
   schulden:    ['schuldzins', 'hypothekarzins', 'zinsaufwand', 'sollzins', 'zinsen'],
@@ -93,14 +97,25 @@ export function alsZahl(roh) {
 
 const BETRAG_MUSTER = /-?\d{1,3}(?:[’'`\s.]\d{3})+(?:[.,]\d{2})?|-?\d+[.,]\d{2}\b|-?\d{4,9}\b/g;
 
+// Steht so etwas DIREKT VOR dem Ankertreffer, beschriftet die Zahl daneben
+// keinen Betrag der Erklärung: «Versicherungssumme Total CHF 6'500'000» ist
+// der Gebäudewert, «Kunden-Nr. 160947» eine Nummer. Gemessen an der GVZ-
+// Bauzeitversicherung und der GVA-Prämienrechnung dieses Mandats.
+const SPERR_KONTEXT = [
+  'versicherungssumme', 'versicherungswert', 'deckungssumme', 'garantiesumme',
+  'gebaudewert', 'neuwert', 'kunden-nr', 'kundennummer', 'rechnungs-nr',
+  'rechnungsnummer', 'baukosten',
+];
+
 /**
  * Kern der Suche: erster Anker, der im Text eine plausible Zahl neben sich hat.
  *
  * @param {string}   text
  * @param {string[]} anker  geordnet, verlässlichster zuerst
+ * @param {number}   max    Obergrenze für plausible Werte dieser Seite
  * @returns {{betrag:number, anker:string, confidence:number}|null}
  */
-function sucheMitAnkern(text, anker) {
+function sucheMitAnkern(text, anker, max = 500_000_000) {
   if (!text || !anker?.length) return null;
   const t = flach(text);
 
@@ -112,6 +127,11 @@ function sucheMitAnkern(text, anker) {
       if (treffer < 0) break;
       ab = treffer + a.length;
 
+      // Sperr-Kontext: beschriftet der Text davor eine Summe, die kein
+      // Erklärungsbetrag ist, zählt dieses Vorkommen nicht.
+      const davor = t.slice(Math.max(0, treffer - 60), treffer);
+      if (SPERR_KONTEXT.some(x => davor.includes(x))) continue;
+
       // Der Betrag steht rechts vom Begriff oder in derselben Zeile darunter.
       const fenster = t.slice(treffer, treffer + 160);
       const zahlen = fenster.match(BETRAG_MUSTER) || [];
@@ -120,7 +140,7 @@ function sucheMitAnkern(text, anker) {
         // Jahreszahlen und Ziffernnummern aussortieren – sie stehen überall
         if (n == null || n === 0) continue;
         if (n >= 1900 && n <= 2100 && !/[.,]\d{2}$/.test(z)) continue;
-        if (Math.abs(n) < 10) continue;
+        if (Math.abs(n) < 10 || Math.abs(n) > max) continue;
         // Daten aussortieren: «31.12» sieht aus wie ein Betrag mit Rappen,
         // ist aber der Stichtag («Restschuld per 31.12.»). Tag ≤ 31 und
         // Nachkommateil, der als Monat taugt → kein Betrag.
@@ -147,7 +167,11 @@ function sucheMitAnkern(text, anker) {
  *            anker:string|null, confidence:number|null}}
  */
 export function findeSeiten(text, positionId) {
-  const e = sucheMitAnkern(text, ANKER_EINKOMMEN[positionId]);
+  // Einkommensseite: über 10 Mio ist bei einer Privatperson kein Lohn, keine
+  // Prämie und kein Unterhalt, sondern zusammengeklebte OCR-Ziffern (gemessen:
+  // «107'144'154.10» aus einer Handwerkerrechnung). Vermögensseite lässt mehr
+  // zu — Liegenschaften und Depots erreichen echte zweistellige Millionen.
+  const e = sucheMitAnkern(text, ANKER_EINKOMMEN[positionId], 10_000_000);
   const v = sucheMitAnkern(text, ANKER_VERMOEGEN[positionId]);
   // Beide Anker auf derselben Zahl (etwa «Saldo» und «Ertrag» im gleichen
   // Fenster): dann zählt nur die verlässlichere Seite.

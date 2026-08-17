@@ -101,7 +101,9 @@ export default function Portal() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const [user, setUser] = useState(null);
-  const [customerName, setCustomerName] = useState("");
+  const [fallbackName, setFallbackName] = useState("");
+  const [customers, setCustomers] = useState([]);        // alle freigegebenen Mandanten
+  const [selCustomer, setSelCustomer] = useState(null);  // der gerade betrachtete
   const [docs, setDocs] = useState([]);
   const [tagMap, setTagMap] = useState({});
   const [busy, setBusy] = useState({});
@@ -123,13 +125,30 @@ export default function Portal() {
   const [selTag, setSelTag] = useState(null);
   const [q, setQ] = useState("");
 
+  // Ein Zugang kann mehrere Mandanten sehen. Es wird immer genau EINER
+  // betrachtet — Dokumente, Upload und Nachrichten beziehen sich darauf.
+  // Eine „alle"-Ansicht wäre bei Nachrichten nicht auflösbar (ein Faden je
+  // Mandant) und würde Dokumente verschiedener Firmen vermischen.
+  const customerName = useMemo(
+    () => customers.find(c => c.id === selCustomer)?.name || fallbackName,
+    [customers, selCustomer, fallbackName],
+  );
+
+  // Mandantenliste übernehmen und die Auswahl gültig halten
+  const applyCustomers = useCallback((list, primaryName) => {
+    const arr = Array.isArray(list) ? list : [];
+    setCustomers(arr);
+    if (primaryName != null) setFallbackName(primaryName);
+    setSelCustomer(prev => (prev && arr.some(c => c.id === prev) ? prev : (arr[0]?.id ?? null)));
+  }, []);
+
   const loadDocs = useCallback(async () => {
     setPhase("loading");
     try {
       const data = await callPortal("list");
       setDocs(data.docs || []);
       setTagMap(data.tags || {});
-      setCustomerName(data.customer_name || "");
+      applyCustomers(data.customers, data.customer_name || "");
       setUser(u => u || data.user);
       setPhase("docs");
     } catch (e) {
@@ -137,7 +156,7 @@ export default function Portal() {
       setPhase("login");
       setError(e.message);
     }
-  }, []);
+  }, [applyCustomers]);
 
   // Boot: Token aus URL einlösen, sonst bestehende Session, sonst Login
   useEffect(() => {
@@ -148,7 +167,7 @@ export default function Portal() {
         .then(data => {
           localStorage.setItem(SESSION_KEY, data.session);
           setUser(data.user);
-          setCustomerName(data.user?.customer_name || "");
+          applyCustomers(data.customers, data.user?.customer_name || "");
           window.history.replaceState({}, "", window.location.pathname);
           loadDocs();
         })
@@ -158,7 +177,7 @@ export default function Portal() {
     } else {
       setPhase("login");
     }
-  }, [loadDocs]);
+  }, [loadDocs, applyCustomers]);
 
   async function requestLink() {
     const em = email.trim().toLowerCase();
@@ -267,7 +286,7 @@ export default function Portal() {
     for (const file of files) {
       try {
         const data = await fileToB64(file);
-        await callPortal("upload", { filename: file.name, content_type: file.type, data });
+        await callPortal("upload", { filename: file.name, content_type: file.type, data, customer_id: selCustomer });
       } catch { failed++; }
       done++; setUpload(u => u && ({ ...u, done }));
     }
@@ -281,11 +300,11 @@ export default function Portal() {
   const loadChat = useCallback(async () => {
     setChatLoading(true);
     try {
-      const data = await callPortal("chat-list");
+      const data = await callPortal("chat-list", { customer_id: selCustomer });
       setChatMsgs(data.messages || []);
     } catch (e) { setError(e.message); }
     finally { setChatLoading(false); }
-  }, []);
+  }, [selCustomer]);
 
   useEffect(() => { if (chatOpen) loadChat(); }, [chatOpen, loadChat]);
   useEffect(() => { if (chatOpen) chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatMsgs, chatOpen]);
@@ -295,22 +314,29 @@ export default function Portal() {
     if (!text || chatBusy) return;
     setChatBusy(true);
     try {
-      await callPortal("chat-send", { text });
+      await callPortal("chat-send", { text, customer_id: selCustomer });
       setChatText("");
       await loadChat();
     } catch (e) { setError(e.message); }
     finally { setChatBusy(false); }
   }
 
-  // Ableitungen für die Doku-Ansicht
+  // Ableitungen für die Doku-Ansicht — immer auf den gewählten Mandanten
+  // eingegrenzt. Dokumente ohne customer_id stammen von einer älteren
+  // portal-api-Version und bleiben sichtbar, statt zu verschwinden.
+  const scopedDocs = useMemo(
+    () => (selCustomer ? docs.filter(d => !d.customer_id || d.customer_id === selCustomer) : docs),
+    [docs, selCustomer],
+  );
+
   const cats = useMemo(() => {
     const known = CATEGORIES.map(c => c.key);
-    const present = [...new Set(docs.map(d => d.category))];
+    const present = [...new Set(scopedDocs.map(d => d.category))];
     const ordered = [...CATEGORIES.map(c => c.key), ...present.filter(k => !known.includes(k))];
     return ordered
-      .filter(k => docs.some(d => d.category === k))
-      .map(k => ({ key: k, count: docs.filter(d => d.category === k).length }));
-  }, [docs]);
+      .filter(k => scopedDocs.some(d => d.category === k))
+      .map(k => ({ key: k, count: scopedDocs.filter(d => d.category === k).length }));
+  }, [scopedDocs]);
 
   useEffect(() => {
     if (phase === "docs" && !selCat && cats.length) setSelCat(cats[0].key);
@@ -318,25 +344,29 @@ export default function Portal() {
 
   const years = useMemo(() => {
     if (!selCat) return [];
-    return [...new Set(docs.filter(d => d.category === selCat).map(d => d.year).filter(Boolean))].sort((a, b) => b - a);
-  }, [docs, selCat]);
+    return [...new Set(scopedDocs.filter(d => d.category === selCat).map(d => d.year).filter(Boolean))].sort((a, b) => b - a);
+  }, [scopedDocs, selCat]);
 
   useEffect(() => { setSelYear(years[0] ?? null); setSelTag(null); }, [selCat]); // eslint-disable-line
 
+  // Mandantenwechsel: Kategorie/Jahr/Tag zurücksetzen, sonst zeigt die Ansicht
+  // eine Kategorie, die es beim neuen Mandanten gar nicht gibt.
+  useEffect(() => { setSelCat(null); setSelYear(null); setSelTag(null); setQ(""); }, [selCustomer]);
+
   const catTags = useMemo(() => {
-    const ids = [...new Set(docs.filter(d => d.category === selCat).flatMap(d => d.tag_ids || []))];
+    const ids = [...new Set(scopedDocs.filter(d => d.category === selCat).flatMap(d => d.tag_ids || []))];
     return ids.map(id => ({ id, name: tagMap[id] || "Tag" })).filter(t => t.name).sort((a, b) => a.name.localeCompare(b.name));
-  }, [docs, selCat, tagMap]);
+  }, [scopedDocs, selCat, tagMap]);
 
   const visibleDocs = useMemo(() => {
-    let list = docs.filter(d => d.category === selCat && (selYear == null || d.year === selYear));
+    let list = scopedDocs.filter(d => d.category === selCat && (selYear == null || d.year === selYear));
     if (selTag) list = list.filter(d => (d.tag_ids || []).includes(selTag));
     if (q.trim()) {
       const s = q.trim().toLowerCase();
       list = list.filter(d => `${d.name} ${d.filename}`.toLowerCase().includes(s));
     }
     return list;
-  }, [docs, selCat, selYear, selTag, q]);
+  }, [scopedDocs, selCat, selYear, selTag, q]);
 
   // ── Rendering ─────────────────────────────────────────────────────────────
   if (phase === "boot" || phase === "loading") {
@@ -396,7 +426,17 @@ export default function Portal() {
             disabled={upload?.busy} onClick={() => fileInputRef.current?.click()}>
             {upload?.busy ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />} Hochladen
           </button>
-          <div className="nm">{customerName}<small>angemeldet als {user?.vorname} {user?.nachname}</small></div>
+          <div className="nm">
+            {customers.length > 1 ? (
+              <select value={selCustomer || ""} onChange={e => setSelCustomer(e.target.value)}
+                title="Mandant wechseln"
+                style={{ background: "transparent", color: "inherit", font: "inherit", fontWeight: 600,
+                  border: "1px solid var(--faint)", borderRadius: 8, padding: "3px 6px", cursor: "pointer" }}>
+                {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            ) : customerName}
+            <small>angemeldet als {user?.vorname} {user?.nachname}</small>
+          </div>
           <div className="avatar">{((user?.vorname?.[0] || "") + (user?.nachname?.[0] || "")).toUpperCase()}</div>
           <button className="ghost" onClick={logout}><LogOut size={16} /> Abmelden</button>
         </div>

@@ -2,13 +2,13 @@ import React, { useState, useContext } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { entities } from "@/api/supabaseClient";
 import { ThemeContext } from "@/Layout";
-import { Plus, RefreshCw, CalendarClock, Wand2 } from "lucide-react";
+import { Plus, RefreshCw, CalendarClock, Wand2, CalendarOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { FristInlineRow, NewFristRow } from "@/components/fristen/FristInlineRow";
 import GenerateFristenDialog from "@/components/fristen/GenerateFristenDialog";
 
-export default function CustomerFristenTab({ customer }) {
+export default function CustomerFristenTab({ customer, onUpdate }) {
   const { theme } = useContext(ThemeContext);
   const isArtis = theme === "artis";
   const isLight = theme === "light";
@@ -86,6 +86,24 @@ export default function CustomerFristenTab({ customer }) {
 
   return (
     <div className="space-y-3">
+      {/* Keine-Frist Toggle */}
+      {onUpdate && (
+        <button
+          onClick={() => onUpdate({ keine_frist: !customer.keine_frist })}
+          className="flex items-center gap-2 w-full px-3 py-2 rounded-lg border text-xs font-medium transition-colors"
+          style={{
+            backgroundColor: customer.keine_frist ? '#fef2f2' : (isArtis ? '#f7faf7' : '#fafafa'),
+            borderColor: customer.keine_frist ? '#fecaca' : (isArtis ? '#d4e4d4' : '#e5e7eb'),
+            color: customer.keine_frist ? '#b91c1c' : textMuted,
+          }}
+        >
+          <CalendarOff className="h-3.5 w-3.5" />
+          {customer.keine_frist
+            ? 'Keine Frist aktiv — wird bei der Fristen-Generierung übersprungen (klicken zum Aufheben)'
+            : 'Von der Fristen-Generierung ausschliessen'}
+        </button>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <span className="text-sm font-medium" style={{ color: textMuted }}>

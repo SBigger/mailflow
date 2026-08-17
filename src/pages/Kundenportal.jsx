@@ -1,12 +1,14 @@
 import React, { useState, useMemo, useContext } from "react";
-import { supabase, entities, functions } from "@/api/supabaseClient";
+import { supabase, entities, functions, auth } from "@/api/supabaseClient";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ThemeContext } from "@/Layout";
 import {
   ShieldCheck, Mail, UserPlus, Search, Building2, Trash2, Ban,
-  CheckCircle2, Send, Clock, Loader2, Lock, X, Link as LinkIcon,
+  CheckCircle2, Send, Clock, Loader2, Lock, X, Link as LinkIcon, SlidersHorizontal,
 } from "lucide-react";
+import KundenZugriffDialog from "@/components/zugriff/KundenZugriffDialog";
+import GruppenVerwaltung from "@/components/zugriff/GruppenVerwaltung";
 
 // ── Kundenportal-Verwaltung ────────────────────────────────────────────────
 // Interne Seite: Portal-Zugänge anlegen/sperren. Die E-Mail steuert den Zugang.
@@ -52,6 +54,14 @@ export default function Kundenportal() {
   const [saving, setSaving]     = useState(false);
   const [busyId, setBusyId]     = useState(null);
   const [search, setSearch]     = useState("");
+  const [tab, setTab]           = useState("zugaenge");   // 'zugaenge' | 'gruppen'
+  const [accessUser, setAccessUser] = useState(null);      // offener Zugriff-Dialog
+
+  // Ändern darf nur admin/mandatsleiter — dieselbe Grenze wie in der RLS
+  // (can_manage_stammdaten). Die Oberfläche spiegelt sie nur, durchgesetzt
+  // wird sie in der Datenbank.
+  const { data: currentUser } = useQuery({ queryKey: ["currentUser"], queryFn: () => auth.me() });
+  const canManage = ["admin", "mandatsleiter"].includes(currentUser?.role);
 
   // Portal-Nutzer inkl. Kundenname (FK customer_id → customers)
   const { data: users = [], isLoading } = useQuery({
@@ -70,6 +80,39 @@ export default function Kundenportal() {
     queryKey: ["customers_for_portal"],
     queryFn: () => entities.Customer.list("company_name", 5000),
   });
+
+  // Freigaben aller Zugänge in einem Rutsch — für die Spalte „Zugriff".
+  // Bewusst nachgebaut statt portal_customer_ids pro Zeile aufzurufen: das wären
+  // n Roundtrips. Die verbindliche Rechnung macht weiterhin die DB.
+  const { data: access } = useQuery({
+    queryKey: ["portal_access_counts"],
+    queryFn: async () => {
+      const [{ data: direkt }, { data: mitglied }, { data: gruppen }] = await Promise.all([
+        supabase.from("portal_user_customers").select("portal_user_id, customer_id"),
+        supabase.from("access_group_portal").select("portal_user_id, group_id"),
+        supabase.from("access_groups").select("id, aktiv, access_group_customers(customer_id)"),
+      ]);
+      return { direkt: direkt || [], mitglied: mitglied || [], gruppen: gruppen || [] };
+    },
+  });
+
+  const accessCount = useMemo(() => {
+    const map = new Map();
+    const add = (uid, cid) => {
+      if (!uid || !cid) return;
+      if (!map.has(uid)) map.set(uid, new Set());
+      map.get(uid).add(cid);
+    };
+    for (const u of users) add(u.id, u.customer_id);           // Hauptmandant zählt immer
+    for (const r of access?.direkt || []) add(r.portal_user_id, r.customer_id);
+    const byGroup = new Map((access?.gruppen || []).map(g => [g.id, g]));
+    for (const m of access?.mitglied || []) {
+      const g = byGroup.get(m.group_id);
+      if (!g?.aktiv) continue;
+      for (const row of g.access_group_customers || []) add(m.portal_user_id, row.customer_id);
+    }
+    return map;
+  }, [users, access]);
 
   const custOptions = useMemo(() => {
     const q = custSearch.trim().toLowerCase();
@@ -194,6 +237,24 @@ export default function Kundenportal() {
         </div>
       </div>
 
+      {/* Umschalter */}
+      <div style={{ display: "flex", gap: 4, marginTop: 18, borderBottom: `1px solid ${s.line}` }}>
+        {[["zugaenge", "Portal-Zugänge"], ["gruppen", "Gruppen"]].map(([key, label]) => (
+          <button key={key} onClick={() => setTab(key)}
+            style={{ border: 0, background: "transparent", padding: "9px 14px", fontSize: 14,
+              fontWeight: 600, cursor: "pointer",
+              color: tab === key ? s.accentInk : s.muted,
+              borderBottom: `2px solid ${tab === key ? s.accent : "transparent"}`, marginBottom: -1 }}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "gruppen" ? (
+        <div style={{ marginTop: 20 }}>
+          <GruppenVerwaltung s={s} customers={customers} canManage={canManage} />
+        </div>
+      ) : (
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 340px", gap: 22, alignItems: "start", marginTop: 20 }}>
         {/* Liste */}
         <div style={{ background: s.surface, border: `1px solid ${s.line}`, borderRadius: 14, overflow: "hidden" }}>
@@ -220,7 +281,7 @@ export default function Kundenportal() {
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
                   <tr style={{ background: s.surface2 }}>
-                    {["Person", "Mandant", "Status", "Letzter Login", ""].map((h, i) => (
+                    {["Person", "Zugriff", "Status", "Letzter Login", ""].map((h, i) => (
                       <th key={i} style={{ fontSize: 11.5, letterSpacing: ".05em", textTransform: "uppercase",
                         color: s.faint, fontWeight: 600, textAlign: "left", padding: "11px 16px" }}>{h}</th>
                     ))}
@@ -242,7 +303,22 @@ export default function Kundenportal() {
                         </div>
                       </td>
                       <td style={{ padding: "12px 16px", color: s.muted, fontSize: 14 }}>
-                        {u.customer?.company_name || <span style={{ color: s.faint }}>—</span>}
+                        <button onClick={() => canManage && setAccessUser(u)}
+                          title={canManage ? "Zugriff festlegen" : "Nur Administratoren und Mandatsleiter dürfen das ändern"}
+                          style={{ border: 0, background: "transparent", padding: 0, textAlign: "left",
+                            color: "inherit", cursor: canManage ? "pointer" : "default" }}>
+                          <div style={{ fontSize: 14 }}>
+                            {u.customer?.company_name || <span style={{ color: s.faint }}>—</span>}
+                          </div>
+                          {(() => {
+                            const n = accessCount.get(u.id)?.size || 0;
+                            return n > 1 ? (
+                              <div style={{ fontSize: 12, color: s.accentInk, fontWeight: 600, marginTop: 2 }}>
+                                + {n - 1} weitere{n - 1 === 1 ? "r" : ""} Mandant{n - 1 === 1 ? "" : "en"}
+                              </div>
+                            ) : null;
+                          })()}
+                        </button>
                       </td>
                       <td style={{ padding: "12px 16px" }}>
                         <StatusPill active={u.is_active} s={s} />
@@ -252,6 +328,7 @@ export default function Kundenportal() {
                       </td>
                       <td style={{ padding: "12px 16px" }}>
                         <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                          <IconBtn title="Zugriff festlegen" s={s} busy={!canManage} onClick={() => setAccessUser(u)}><SlidersHorizontal size={16} /></IconBtn>
                           <IconBtn title="Anmeldelink kopieren" s={s} busy={busyId === u.id} onClick={() => copyLink(u)}><LinkIcon size={16} /></IconBtn>
                           <IconBtn title="Anmeldelink per E-Mail senden" s={s} busy={busyId === u.id} onClick={() => resend(u)}><Send size={16} /></IconBtn>
                           <IconBtn title={u.is_active ? "Sperren" : "Freigeben"} s={s} busy={busyId === u.id} onClick={() => toggleActive(u)}>
@@ -319,7 +396,8 @@ export default function Kundenportal() {
             <div style={{ display: "flex", alignItems: "center", gap: 10, background: s.surface2, border: `1px solid ${s.line}`,
               borderRadius: 9, padding: "10px 12px", marginTop: 10, fontSize: 13, color: s.muted }}>
               <Lock size={15} style={{ color: s.accent, flexShrink: 0 }} />
-              Sieht read-only alle Dokumente dieses Mandanten.
+              Sieht read-only alle Dokumente dieses Mandanten. Weitere Mandanten lassen sich
+              danach über «Zugriff festlegen» anhaken.
             </div>
 
             <button onClick={handleCreate} disabled={saving}
@@ -336,6 +414,16 @@ export default function Kundenportal() {
           </div>
         </div>
       </div>
+      )}
+
+      {accessUser && (
+        <KundenZugriffDialog
+          portalUser={accessUser}
+          customers={customers}
+          s={s}
+          onClose={() => setAccessUser(null)}
+        />
+      )}
     </div>
   );
 }
