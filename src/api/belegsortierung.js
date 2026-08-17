@@ -17,6 +17,13 @@ function fuerDieDatenbank(b) {
     confidence:  b.confidence ?? null,
     quelle:      b.quelle ?? null,
     begruendung: b.begruendung ?? null,
+    // strukturierte Erklärung: was erkannt wurde, woran, was die KI sagte,
+    // und ob sich Regeln und KI widersprachen (dann keine Auto-Zuordnung)
+    merkmale:    Array.isArray(b.merkmale) ? b.merkmale.slice(0, 6) : null,
+    kiBegruendung: b.kiBegruendung ?? null,
+    widerspruch: b.widerspruch ? true : null,
+    regelBelegart: b.regelBelegart ?? null,
+    kiBelegart:  b.kiBelegart ?? null,
     vonHand:     !!b.vonHand,
     // Beträge und Jahr sind Erfassung, nicht Erkennung – sie muessen mit.
     // Jeder Beleg fuehrt BEIDE Seiten der Erklaerung; leere bleiben null.

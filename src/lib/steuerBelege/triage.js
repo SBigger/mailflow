@@ -260,6 +260,9 @@ export function triageRegeln(beleg, kontext = {}) {
     grund,
     confidence: Number(confidence.toFixed(2)),
     periodeBeleg,
+    // merkmale strukturiert — die Anzeige baut daraus «Woran erkannt: …»,
+    // statt dass alles in einem Fliesstext verschwindet.
+    merkmale: best.treffer.slice(0, 4),
     begruendung: `«${best.art.label}» erkannt über: ${best.treffer.slice(0, 4).join(", ")}.${hinweis}`,
   };
 }
@@ -315,16 +318,32 @@ export async function triageMitKi(supabase, beleg, kontext = {}) {
     // Die KI darf die Regel nur überstimmen, wenn sie deutlich sicherer ist.
     const nimmKi = !regel.belegart || kiConfidence > regel.confidence + 0.15;
 
+    // Widerspruch: BEIDE sind sich sicher, sagen aber Verschiedenes. Dann
+    // entscheidet keiner von beiden still — der Beleg geht mit beiden
+    // Sichten in die manuelle Prüfung. (ChatGPT-Review-Punkt 5, 17.08.)
+    const widerspruch = !!(regel.belegart && data.belegart
+      && regel.belegart !== data.belegart
+      && regel.confidence >= 0.6 && kiConfidence >= 0.6);
+
     return {
       belegart:     nimmKi ? (data.belegart || regel.belegart) : regel.belegart,
-      relevanz:     nimmKi ? (data.relevanz || regel.relevanz) : regel.relevanz,
+      relevanz:     widerspruch ? RELEVANZ.UNKLAR
+                  : nimmKi ? (data.relevanz || regel.relevanz) : regel.relevanz,
       grund:        regel.grund ?? data.grund ?? null,
-      confidence:   Number(Math.max(regel.confidence, nimmKi ? kiConfidence : 0).toFixed(2)),
+      confidence:   widerspruch ? Math.min(0.5, regel.confidence, kiConfidence)
+                  : Number(Math.max(regel.confidence, nimmKi ? kiConfidence : 0).toFixed(2)),
       periodeBeleg: regel.periodeBeleg ?? data.periode ?? null,
-      begruendung:  nimmKi
+      merkmale:     regel.merkmale || [],
+      kiBegruendung: data.begruendung || null,
+      widerspruch,
+      regelBelegart: widerspruch ? regel.belegart : undefined,
+      kiBelegart:    widerspruch ? data.belegart : undefined,
+      begruendung:  widerspruch
+        ? `Widerspruch: Regeln sahen «${regel.belegart}», die KI «${data.belegart}» — bitte von Hand entscheiden.`
+        : nimmKi
         ? `KI${beleg.bild ? " (Bild)" : ""}: ${data.begruendung || "keine Begründung"} (Regel sagte: ${regel.begruendung})`
         : `${regel.begruendung} (KI weniger sicher, verworfen)`,
-      positionen:   Array.isArray(data.positionen) ? data.positionen : [],
+      positionen:   widerspruch ? [] : (Array.isArray(data.positionen) ? data.positionen : []),
       quelle:       nimmKi ? "ki" : "regel",
     };
   } catch (e) {

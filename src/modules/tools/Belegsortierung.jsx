@@ -403,13 +403,18 @@ export default function Belegsortierung() {
           let position = tri.grund === 'duplikat' ? '_aussortiert'
                        : (vorschlag.length === 1 ? vorschlag[0].id : null);
 
+          // Bei Widerspruch (Regeln und KI beide sicher, aber uneins) wird
+          // NICHTS automatisch zugeordnet — der Beleg geht mit beiden
+          // Sichten in die Handprüfung.
+          if (tri.widerspruch) position = null;
+
           // Wahl-Stufe: Belegart erkannt, aber MEHRERE mögliche Ziele
           // (Kontoauszug → Wertschriften oder Schulden; Rente → AHV, PK oder
           // Säule 3). Die Regeln sind sich hier ihrer Sache sicher, darum kam
           // die KI bisher nie dran — und der Beleg blieb liegen. Genau diese
           // eine Entscheidungsfrage stellen, mehr nicht.
           const kandidatenListe = vorschlag.length >= 2 ? vorschlag : (zuord.kandidaten || []);
-          if (!position && kiNutzen && tri.grund !== 'duplikat'
+          if (!position && kiNutzen && tri.grund !== 'duplikat' && !tri.widerspruch
               && kandidatenListe.length >= 2) {
             setBelege(v => v.map(b => b.id === id
               ? { ...b, stand: 'ki-wahl', teilNr: i + 1 } : b));
@@ -430,7 +435,8 @@ export default function Belegsortierung() {
                   && kandidatenListe.some(k => k.id === wahl.position)) {
                 position = wahl.position;
                 tri = { ...tri, quelle: 'ki',
-                  begruendung: `${tri.begruendung} · KI-Wahl: ${wahl.begruendung}` };
+                  begruendung: `${tri.begruendung} · KI-Wahl: ${wahl.begruendung}`,
+                  kiBegruendung: `${tri.kiBegruendung ? tri.kiBegruendung + ' · ' : ''}Wahl: ${wahl.begruendung}` };
               }
             } catch (e) { console.warn('[KI-Wahl]', e.message); }
           }
@@ -482,6 +488,9 @@ export default function Belegsortierung() {
             ocrVertrauen: teilVertrauen,
             belegart: tri.belegart, confidence: tri.confidence,
             begruendung: tri.begruendung, quelle: tri.quelle || 'regel',
+            merkmale: tri.merkmale || [], kiBegruendung: tri.kiBegruendung || null,
+            widerspruch: !!tri.widerspruch,
+            regelBelegart: tri.regelBelegart || null, kiBelegart: tri.kiBelegart || null,
             vorschlag, kandidaten: zuord.kandidaten || [],
             offenGrund: kiPos.length ? null : (zuord.offen ? zuord.grund : null),
             hinweis: zuord.hinweis || null,
@@ -1164,6 +1173,7 @@ function BelegKarte({ beleg: b, aktiv, onWaehlen, onDragStart, onDragEnd, zieht 
         <div style={{ fontSize: 10, color: C.muted }}>
           {laden ? standText(b.stand)
                  : b.stand === 'fehler' ? b.fehler
+                 : b.widerspruch ? '⚠ Regeln und KI uneins – prüfen'
                  : [BELEGART_BY_KEY[b.belegart]?.label, pos?.label].filter(Boolean).join(' · ')
                    || 'noch nicht zugeordnet'}
         </div>
@@ -1468,10 +1478,41 @@ function Vorschau({ beleg: b, breite, steuerjahr, onAendern, onPosition }) {
           </div>
         </div>
 
-        {b.begruendung && (
-          <div style={{ fontSize: 10, color: C.muted, marginTop: 8, lineHeight: 1.5 }}>
-            {b.begruendung}
+        {/* Erklärung strukturiert statt als Fliesstext-Wurst: was erkannt
+            wurde, woran, und was die KI dazu sagte — jede Zeile für sich.
+            Alte Stände ohne die neuen Felder zeigen weiter die Prosa. */}
+        {(b.belegart || b.merkmale?.length > 0 || b.kiBegruendung || b.begruendung) && (
+          <div style={{ fontSize: 10, color: C.muted, marginTop: 8,
+                        display: 'grid', gap: 3, lineHeight: 1.5 }}>
+            {b.belegart && (
+              <div>
+                <span style={{ color: C.sub, fontWeight: 600 }}>Erkannt als: </span>
+                {BELEGART_BY_KEY[b.belegart]?.label || b.belegart}
+                {b.confidence != null && ` · ${Math.round(b.confidence * 100)} % sicher`}
+              </div>
+            )}
+            {b.merkmale?.length > 0 && (
+              <div>
+                <span style={{ color: C.sub, fontWeight: 600 }}>Woran: </span>
+                {b.merkmale.join(', ')}
+              </div>
+            )}
+            {b.kiBegruendung && (
+              <div>
+                <span style={{ color: C.sub, fontWeight: 600 }}>KI: </span>
+                {b.kiBegruendung}
+              </div>
+            )}
+            {!b.belegart && !b.kiBegruendung && b.begruendung && (
+              <div>{b.begruendung}</div>
+            )}
           </div>
+        )}
+        {b.widerspruch && (
+          <Hinweis farbe={C.warn}>
+            Widerspruch: Regeln sahen «{BELEGART_BY_KEY[b.regelBelegart]?.label || b.regelBelegart}»,
+            die KI «{BELEGART_BY_KEY[b.kiBelegart]?.label || b.kiBelegart}» — bitte von Hand entscheiden.
+          </Hinweis>
         )}
         {b.offenGrund && (
           <Hinweis farbe={C.offen}>Entscheidet sich an: {b.offenGrund}</Hinweis>
