@@ -2128,9 +2128,29 @@ function BelegeSection({ arbeitspapier, onSave, customerId, selectedYear, accent
   // Upload-Dialog: wenn Beleg noch nicht in der Ablage. uploadFile = die zu uploadende Datei.
   const [uploadFile, setUploadFile] = useState(null);
   const fileInputRef = useRef(null);
+  // Vorschau rechts neben den Beleg-Chips — welcher Beleg, welche signierte URL.
+  const [preview, setPreview] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   // Docs zurücksetzen wenn Kunde oder Jahr wechselt → erzwingt Neuladen
-  useEffect(() => { setDocs([]); setFtResults(null); }, [customerId, selectedYear]);
+  useEffect(() => { setDocs([]); setFtResults(null); setPreview(null); }, [customerId, selectedYear]);
+
+  // Signierte URL für die Vorschau laden, sobald ein Beleg ausgewählt ist.
+  useEffect(() => {
+    if (!preview) { setPreviewUrl(null); return; }
+    const path = (preview.storage_path || "").replace(/^dokumente\//, "");
+    if (!path) { setPreviewUrl(null); return; }
+    let aktiv = true;
+    setPreviewLoading(true);
+    supabase.storage.from(BUCKET).createSignedUrl(path, 3600).then(({ data, error }) => {
+      if (!aktiv) return;
+      setPreviewLoading(false);
+      if (data?.signedUrl) setPreviewUrl(data.signedUrl);
+      else { setPreviewUrl(null); toast.error("Vorschau nicht verfügbar" + (error ? ": " + error.message : "")); }
+    });
+    return () => { aktiv = false; };
+  }, [preview]);
 
   // Dokumente laden wenn Picker öffnet — nur das gewählte Geschäftsjahr
   useEffect(() => {
@@ -2334,29 +2354,69 @@ function BelegeSection({ arbeitspapier, onSave, customerId, selectedYear, accent
           }}>+ Beleg verknüpfen</button>
       </div>
 
-      {belege.length === 0
-        ? <span style={{ fontSize: 11, color: subC, fontStyle: "italic" }}>Noch keine Belege verknüpft</span>
-        : <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-            {belege.map(b => {
-              const fl = fileLabel(b.file_type, b.filename);
-              return (
-                <div key={b.id} style={{
-                  display: "flex", alignItems: "center", gap: 5, padding: "3px 6px 3px 5px",
-                  borderRadius: 6, backgroundColor: b.ki ? "#fefce8" : "#f8fafc", border: `1px solid ${b.ki ? "#fde68a" : panelBdr}`, fontSize: 11,
-                }}>
-                  <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 4px", borderRadius: 3, backgroundColor: fl.bg, color: fl.col, flexShrink: 0 }}>{fl.label}</span>
-                  {b.ki && <span title="KI-vorgeschlagen – bitte prüfen" style={{ fontSize: 9, fontWeight: 700, padding: "1px 4px", borderRadius: 3, backgroundColor: "#fef08a", color: "#854d0e", flexShrink: 0 }}>KI</span>}
-                  <span style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: headingC }} title={b.name}>{b.name}</span>
-                  {b.year && <span style={{ color: subC, fontSize: 10, flexShrink: 0 }}>{b.year}</span>}
-                  <button onClick={() => openDoc(b)} title="Öffnen"
-                    style={{ background: "none", border: "none", cursor: "pointer", color: accent, fontSize: 13, padding: "0 2px", lineHeight: 1 }}>↗</button>
-                  <button onClick={() => removeBeleg(b.id)} title="Verknüpfung entfernen"
-                    style={{ background: "none", border: "none", cursor: "pointer", color: subC, fontSize: 14, padding: "0 1px", opacity: 0.55, lineHeight: 1 }}>×</button>
-                </div>
-              );
-            })}
-          </div>
-      }
+      <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+        {belege.length === 0
+          ? <span style={{ fontSize: 11, color: subC, fontStyle: "italic" }}>Noch keine Belege verknüpft</span>
+          : <div style={{ display: "flex", flexWrap: "wrap", gap: 5, flex: 1, minWidth: 0 }}>
+              {belege.map(b => {
+                const fl = fileLabel(b.file_type, b.filename);
+                const aktiv = preview?.id === b.id;
+                return (
+                  <div key={b.id} onClick={() => setPreview(aktiv ? null : b)}
+                    title="Klicken für Vorschau" style={{
+                    display: "flex", alignItems: "center", gap: 5, padding: "3px 6px 3px 5px", cursor: "pointer",
+                    borderRadius: 6, backgroundColor: aktiv ? (accent + "14") : (b.ki ? "#fefce8" : "#f8fafc"),
+                    border: `1px solid ${aktiv ? accent : (b.ki ? "#fde68a" : panelBdr)}`, fontSize: 11,
+                  }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 4px", borderRadius: 3, backgroundColor: fl.bg, color: fl.col, flexShrink: 0 }}>{fl.label}</span>
+                    {b.ki && <span title="KI-vorgeschlagen – bitte prüfen" style={{ fontSize: 9, fontWeight: 700, padding: "1px 4px", borderRadius: 3, backgroundColor: "#fef08a", color: "#854d0e", flexShrink: 0 }}>KI</span>}
+                    <span style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: headingC }} title={b.name}>{b.name}</span>
+                    {b.year && <span style={{ color: subC, fontSize: 10, flexShrink: 0 }}>{b.year}</span>}
+                    <button onClick={e => { e.stopPropagation(); openDoc(b); }} title="In neuem Tab öffnen"
+                      style={{ background: "none", border: "none", cursor: "pointer", color: accent, fontSize: 13, padding: "0 2px", lineHeight: 1 }}>↗</button>
+                    <button onClick={e => { e.stopPropagation(); removeBeleg(b.id); if (aktiv) setPreview(null); }} title="Verknüpfung entfernen"
+                      style={{ background: "none", border: "none", cursor: "pointer", color: subC, fontSize: 14, padding: "0 1px", opacity: 0.55, lineHeight: 1 }}>×</button>
+                  </div>
+                );
+              })}
+            </div>
+        }
+
+        {preview && (() => {
+          const ft = preview.file_type || "";
+          const istPdf = ft.includes("pdf");
+          const istBild = ft.startsWith("image/");
+          return (
+            <div style={{ width: 320, flexShrink: 0, border: `1px solid ${panelBdr}`, borderRadius: 8, overflow: "hidden" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 6px 4px 8px", borderBottom: `1px solid ${panelBdr}`, backgroundColor: "#f8fafc" }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: headingC, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={preview.name}>{preview.name}</span>
+                <button onClick={() => openDoc(preview)} title="In neuem Tab öffnen"
+                  style={{ background: "none", border: "none", cursor: "pointer", color: accent, fontSize: 13, padding: "0 3px", lineHeight: 1 }}>↗</button>
+                <button onClick={() => setPreview(null)} title="Vorschau schliessen"
+                  style={{ background: "none", border: "none", cursor: "pointer", color: subC, fontSize: 15, padding: "0 2px", opacity: 0.6, lineHeight: 1 }}>×</button>
+              </div>
+              <div style={{ height: 260, backgroundColor: "#f1f5f9", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                {previewLoading
+                  ? <span style={{ fontSize: 11, color: subC }}>Lädt…</span>
+                  : !previewUrl
+                    ? <span style={{ fontSize: 11, color: subC }}>Vorschau nicht verfügbar</span>
+                    : istPdf
+                      ? <iframe src={previewUrl} title={preview.name} style={{ width: "100%", height: "100%", border: "none" }} />
+                      : istBild
+                        ? <img src={previewUrl} alt={preview.name} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                        : <div style={{ textAlign: "center", padding: 12 }}>
+                            <div style={{ fontSize: 11, color: subC, marginBottom: 8 }}>Keine Vorschau für diesen Dateityp</div>
+                            <button onClick={() => openDoc(preview)} style={{
+                              fontSize: 11, fontWeight: 600, padding: "4px 10px", borderRadius: 5, cursor: "pointer",
+                              backgroundColor: accent + "14", border: `1px solid ${accent}40`, color: accent,
+                            }}>Öffnen ↗</button>
+                          </div>
+                }
+              </div>
+            </div>
+          );
+        })()}
+      </div>
     </div>
   );
 }
