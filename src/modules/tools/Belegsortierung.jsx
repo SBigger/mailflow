@@ -19,7 +19,8 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Upload, FileText, AlertTriangle, Check, HelpCircle, X, Loader2,
-  Download, GripVertical, Search, Save, ChevronDown,
+  Download, GripVertical, Search, Save, ChevronDown, Maximize2,
+  ChevronLeft, ChevronRight,
 } from 'lucide-react';
 
 import { supabase } from '@/api/supabaseClient';
@@ -168,6 +169,8 @@ export default function Belegsortierung() {
   const [gespeichertUm, setGespeichertUm] = useState(null);
   const [baut, setBaut]             = useState(false);
   const [abschnitt, setAbschnitt]   = useState('erwerb');
+  // Vollbild-Durchsicht: null = zu, sonst { schritt: 1|2|3, index }
+  const [durchsicht, setDurchsicht] = useState(null);
   const eingabe = useRef(null);
 
   // ── Mandant und gespeicherter Stand ─────────────────────────────────────
@@ -1115,6 +1118,12 @@ export default function Belegsortierung() {
               style={{ ...knopf(C, true, C.accent), width: 'auto', padding: '6px 12px' }}>
               <Upload size={12} /> Belege hinzufügen
             </button>
+            {belege.some(b => b.stand === 'fertig') && (
+              <button onClick={() => setDurchsicht({ schritt: 1, index: 0 })}
+                style={{ ...knopf(C, true, C.heading), width: 'auto', padding: '6px 12px' }}>
+                <Maximize2 size={12} /> Durchsicht
+              </button>
+            )}
             <label style={{ display: 'flex', alignItems: 'center', gap: 5,
                             fontSize: 10, color: C.sub, cursor: 'pointer' }}>
               <input type="checkbox" checked={kiNutzen}
@@ -1266,6 +1275,15 @@ export default function Belegsortierung() {
                 onTrennen={trenneVonHand} onZusammen={zusammenlegen}
                 hatNachbarVor={!!nachbarVon(aktiverBeleg, 'vor')}
                 hatNachbarNach={!!nachbarVon(aktiverBeleg, 'nach')} />
+
+      {durchsicht && (
+        <Durchsicht belege={belege} C={C}
+          schritt={durchsicht.schritt} index={durchsicht.index}
+          setDurchsicht={setDurchsicht}
+          onAendern={aendere} onPosition={setzePosition}
+          onTrennen={trenneVonHand} onZusammen={zusammenlegen}
+          nachbarVon={nachbarVon} onWaehlen={setGewaehlt} />
+      )}
     </div>
   );
 }
@@ -1404,6 +1422,266 @@ function BelegKarte({ beleg: b, aktiv, onWaehlen, onDragStart, onDragEnd, zieht 
  * blättern und zoomen. Bei einem 38-seitigen Umbaubündel ist die erste Seite
  * selten die, an der man entscheidet.
  */
+// ── Vollbild-Durchsicht ────────────────────────────────────────────────────
+//
+// Der Arbeitsmodus zum Abarbeiten, in drei Schritten und mit Platz:
+//   1 Trennung   – stimmt die Zerlegung je Dokument? (trennen/zusammenlegen)
+//   2 Relevanz   – braucht es den Beleg für die Steuern oder nicht?
+//   3 Zuordnung  – noch offene Belege der richtigen Position zuweisen.
+// Grosse Vorschau links, rechts nur die Bedienung des aktuellen Schritts.
+// Esc schliesst, Pfeiltasten blättern. Erledigtes verlässt die Liste von
+// selbst — der Zähler im Reiter ist der Fortschritt.
+const DURCHSICHT_SCHRITTE = [
+  { nr: 1, label: 'Trennung' },
+  { nr: 2, label: 'Relevanz' },
+  { nr: 3, label: 'Zuordnung' },
+];
+
+function Durchsicht({ belege, C, schritt, index, setDurchsicht,
+                      onAendern, onPosition, onTrennen, onZusammen,
+                      nachbarVon, onWaehlen }) {
+  const [trennSeite, setTrennSeite] = useState('');
+
+  const fertige = belege.filter(x => x.stand === 'fertig');
+  const istPdfQ = x => (x.istPdf || /\.pdf($|\?)/i.test(x.dateiPfad || '') || /\.pdf$/i.test(x.name || ''));
+  const listen = {
+    1: fertige.filter(x => istPdfQ(x) && (x.datei || x.dateiPfad)
+        && ((x.bisSeite || 0) > (x.vonSeite || 1)
+            || nachbarVon(x, 'vor') || nachbarVon(x, 'nach'))),
+    2: fertige.filter(x => x.position !== '_aussortiert'),
+    3: fertige.filter(x => !x.position),
+  };
+  const liste = listen[schritt] || [];
+  const i = Math.min(index, Math.max(0, liste.length - 1));
+  const b = liste[i] || null;
+
+  useEffect(() => { setTrennSeite(''); if (b) onWaehlen(b.id); }, [b?.id]);
+
+  useEffect(() => {
+    const h = (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+      if (e.key === 'Escape') setDurchsicht(null);
+      if (e.key === 'ArrowRight') setDurchsicht(d => d && ({ ...d, index: d.index + 1 }));
+      if (e.key === 'ArrowLeft')  setDurchsicht(d => d && ({ ...d, index: Math.max(0, d.index - 1) }));
+    };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [setDurchsicht]);
+
+  const weiter  = () => setDurchsicht(d => ({ ...d, index: d.index + 1 }));
+  const zurueck = () => setDurchsicht(d => ({ ...d, index: Math.max(0, d.index - 1) }));
+
+  const feld = {
+    width: '100%', boxSizing: 'border-box', backgroundColor: C.inputBg,
+    border: `1px solid ${C.panelBdr}`, borderRadius: 5,
+    padding: '6px 8px', fontSize: 12, color: C.heading, outline: 'none',
+  };
+  const aktion = (rand, farbe) => ({
+    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+    padding: '8px 10px', fontSize: 12, borderRadius: 6, cursor: 'pointer',
+    border: `1px solid ${rand}`, background: 'none', color: farbe, width: '100%',
+  });
+
+  const nachbarVor  = b ? nachbarVon(b, 'vor')  : null;
+  const nachbarNach = b ? nachbarVon(b, 'nach') : null;
+  const posDef = b?.position ? KATALOG_NACH_ID[b.position] : null;
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 1000, backgroundColor: C.pageBg,
+                  display: 'flex', flexDirection: 'column' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px',
+                    borderBottom: `1px solid ${C.panelBdr}`, backgroundColor: C.panelBg }}>
+        {DURCHSICHT_SCHRITTE.map(s => (
+          <button key={s.nr} onClick={() => setDurchsicht({ schritt: s.nr, index: 0 })}
+            style={{ padding: '6px 12px', fontSize: 12, borderRadius: 6, cursor: 'pointer',
+                     border: `1px solid ${schritt === s.nr ? C.accent : C.panelBdr}`,
+                     backgroundColor: schritt === s.nr ? C.accentBg : 'transparent',
+                     color: schritt === s.nr ? C.accent : C.sub,
+                     fontWeight: schritt === s.nr ? 700 : 500 }}>
+            {s.nr} · {s.label}
+            <span style={{ marginLeft: 6, fontSize: 10, opacity: 0.75 }}>
+              {(listen[s.nr] || []).length}
+            </span>
+          </button>
+        ))}
+        <span style={{ marginLeft: 'auto', fontSize: 11, color: C.muted }}>
+          {liste.length ? `${i + 1} von ${liste.length}` : 'Schritt erledigt'}
+        </span>
+        <button onClick={() => setDurchsicht(null)}
+          style={{ border: 'none', background: 'none', color: C.sub, cursor: 'pointer',
+                   padding: 6, display: 'flex' }}>
+          <X size={16} />
+        </button>
+      </div>
+
+      {b ? (
+        <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
+          <div style={{ flex: 1, minWidth: 0, backgroundColor: '#3a3a3e',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            {b.url ? (
+              <iframe title="Beleg"
+                src={b.vonSeite > 1 ? `${b.url}#page=${b.vonSeite}` : b.url}
+                style={{ width: '100%', height: '100%', border: 'none' }} />
+            ) : (
+              <div style={{ fontSize: 12, color: '#bbb' }}>
+                {b.dateiPfad ? 'Vorschau wird aus der Ablage geladen …'
+                             : 'Keine Ablage-Kopie vorhanden'}
+              </div>
+            )}
+          </div>
+
+          <div style={{ width: 380, flexShrink: 0, backgroundColor: C.panelBg,
+                        borderLeft: `1px solid ${C.panelBdr}`, padding: 14,
+                        display: 'flex', flexDirection: 'column', gap: 10, overflowY: 'auto' }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: C.heading }}>{b.name}</div>
+            {(b.belegart || b.kiBegruendung) && (
+              <div style={{ fontSize: 10, color: C.muted, lineHeight: 1.5,
+                            display: 'grid', gap: 2 }}>
+                {b.belegart && (
+                  <div>
+                    <span style={{ color: C.sub, fontWeight: 600 }}>Erkannt als: </span>
+                    {BELEGART_BY_KEY[b.belegart]?.label || b.belegart}
+                    {b.confidence != null && ` · ${Math.round(b.confidence * 100)} %`}
+                  </div>
+                )}
+                {b.merkmale?.length > 0 && (
+                  <div><span style={{ color: C.sub, fontWeight: 600 }}>Woran: </span>
+                    {b.merkmale.join(', ')}</div>
+                )}
+                {b.kiBegruendung && (
+                  <div><span style={{ color: C.sub, fontWeight: 600 }}>KI: </span>
+                    {b.kiBegruendung}</div>
+                )}
+              </div>
+            )}
+            {b.widerspruch && (
+              <div style={{ fontSize: 10, color: C.warn }}>
+                ⚠ Regeln sahen «{BELEGART_BY_KEY[b.regelBelegart]?.label || b.regelBelegart}»,
+                die KI «{BELEGART_BY_KEY[b.kiBelegart]?.label || b.kiBelegart}».
+              </div>
+            )}
+
+            {schritt === 1 && (
+              <>
+                <div style={{ fontSize: 11, color: C.sub }}>
+                  Seiten {b.vonSeite || 1}
+                  {(b.bisSeite || 0) > (b.vonSeite || 1) ? `–${b.bisSeite}` : ''} — stimmt
+                  die Zerlegung? Blättere in der Vorschau durch die Seiten.
+                </div>
+                {(b.bisSeite || 0) > (b.vonSeite || 1) && (
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <input type="number" value={trennSeite}
+                      min={(b.vonSeite || 1) + 1} max={b.bisSeite}
+                      placeholder={`ab Seite (${(b.vonSeite || 1) + 1}–${b.bisSeite})`}
+                      onChange={e => setTrennSeite(e.target.value)}
+                      style={{ ...feld, flex: 1 }} />
+                    <button
+                      onClick={() => onTrennen(b, Number(trennSeite))}
+                      disabled={!(Number(trennSeite) > (b.vonSeite || 1)
+                               && Number(trennSeite) <= (b.bisSeite || 0))}
+                      style={{ ...aktion(C.panelBdr, C.heading), width: 'auto', flexShrink: 0 }}>
+                      Hier trennen
+                    </button>
+                  </div>
+                )}
+                {nachbarVor && (
+                  <button onClick={() => onZusammen(b, 'vor')}
+                    style={aktion(C.panelBdr, C.heading)}>
+                    ← mit «{nachbarVor.name}» zusammenlegen
+                  </button>
+                )}
+                {nachbarNach && (
+                  <button onClick={() => onZusammen(b, 'nach')}
+                    style={aktion(C.panelBdr, C.heading)}>
+                    mit «{nachbarNach.name}» zusammenlegen →
+                  </button>
+                )}
+                <button onClick={weiter} style={aktion(C.accent, C.accent)}>
+                  Zerlegung stimmt – weiter <ChevronRight size={13} />
+                </button>
+              </>
+            )}
+
+            {schritt === 2 && (
+              <>
+                <div style={{ fontSize: 11, color: C.sub }}>
+                  Braucht es diesen Beleg für die Steuererklärung?
+                </div>
+                <button onClick={() => onAendern(b.id, { position: '_aussortiert', vonHand: true })}
+                  style={aktion(C.warn, C.warn)}>
+                  Nicht benötigt – aussortieren
+                </button>
+                <button onClick={weiter} style={aktion(C.accent, C.accent)}>
+                  Braucht's – weiter <ChevronRight size={13} />
+                </button>
+              </>
+            )}
+
+            {schritt === 3 && (
+              <>
+                <div>
+                  <div style={{ fontSize: 10, color: C.muted, marginBottom: 3 }}>Zuordnung</div>
+                  <select value={b.position || ''}
+                    onChange={e => onPosition(b.id, e.target.value)} style={feld}>
+                    <option value="">— noch offen —</option>
+                    {[...KATALOG, AUSSORTIERT].map(p => (
+                      <option key={p.id} value={p.id}>S{p.seite} · {p.label}</option>
+                    ))}
+                  </select>
+                </div>
+                {b.kandidaten?.length > 0 && (
+                  <div style={{ display: 'grid', gap: 5 }}>
+                    <div style={{ fontSize: 10, color: C.muted }}>Kandidaten:</div>
+                    {b.kandidaten.map(k => (
+                      <button key={k.id} onClick={() => onPosition(b.id, k.id)}
+                        style={aktion(C.panelBdr, C.heading)}>
+                        {k.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <button onClick={weiter} style={aktion(C.panelBdr, C.sub)}>
+                  später entscheiden – weiter <ChevronRight size={13} />
+                </button>
+              </>
+            )}
+
+            <div style={{ marginTop: 'auto', display: 'flex', gap: 6 }}>
+              <button onClick={zurueck} disabled={i === 0}
+                style={{ ...aktion(C.panelBdr, i === 0 ? C.muted : C.sub), width: '50%' }}>
+                <ChevronLeft size={13} /> zurück
+              </button>
+              <button onClick={weiter} disabled={i >= liste.length - 1}
+                style={{ ...aktion(C.panelBdr, i >= liste.length - 1 ? C.muted : C.sub), width: '50%' }}>
+                weiter <ChevronRight size={13} />
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 12,
+                      alignItems: 'center', justifyContent: 'center' }}>
+          <Check size={30} style={{ color: C.accent }} />
+          <div style={{ fontSize: 13, color: C.heading, fontWeight: 600 }}>
+            Schritt {schritt} ist durch.
+          </div>
+          {schritt < 3 ? (
+            <button onClick={() => setDurchsicht({ schritt: schritt + 1, index: 0 })}
+              style={{ ...aktion(C.accent, C.accent), width: 'auto', padding: '8px 16px' }}>
+              Weiter zu Schritt {schritt + 1} <ChevronRight size={13} />
+            </button>
+          ) : (
+            <button onClick={() => setDurchsicht(null)}
+              style={{ ...aktion(C.accent, C.accent), width: 'auto', padding: '8px 16px' }}>
+              Durchsicht abschliessen
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Vorschau({ beleg: b, breite, steuerjahr, onAendern, onPosition,
                     onTrennen, onZusammen, hatNachbarVor, hatNachbarNach }) {
   const C = useFarben();
