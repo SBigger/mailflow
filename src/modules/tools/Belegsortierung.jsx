@@ -28,7 +28,7 @@ import { triageRegeln, triageMitKi, brauchtKi } from '../../lib/steuerBelege/tri
 import { positionenFuer, offeneDimensionen } from '../../lib/steuerBelege/belegartZuPosition.js';
 import { BELEGART_BY_KEY, BELEGARTEN } from '../../lib/steuerBelege/belegarten.js';
 import { findAhvInText, dateiHash } from '../../lib/steuerBelege/belegHelfer.js';
-import { findeBetraege } from '../../lib/steuerBelege/betrag.js';
+import { findeSeiten } from '../../lib/steuerBelege/betrag.js';
 import { trenneBelege, seitenLabel } from '../../lib/steuerBelege/belegTrennung.js';
 import { findeDoppel } from '../../lib/steuerBelege/doppelErkennung.js';
 import { KATALOG, KATALOG_NACH_ID, AUSSORTIERT, DIMENSIONEN, katalogFuerPrompt,
@@ -89,24 +89,50 @@ function ladeVorschauBreite() {
 const NAV_OBEN  = VERZEICHNISSE.filter(v => !['arbeitspapiere', 'aussortiert'].includes(v.id));
 const NAV_UNTEN = VERZEICHNISSE.filter(v =>  ['arbeitspapiere', 'aussortiert'].includes(v.id));
 
-// Betrag zur Position suchen. Der Katalog sagt, welcher gesucht wird –
-// beim Lohnausweis der Nettolohn, bei der Bank der Bestand per 31.12.
-function betragFuer(positionId, text) {
+// Beide Betragsseiten zur Position suchen. Der Katalog sagt, was gesucht
+// wird — beim Lohnausweis der Nettolohn (Einkommen), bei der Bank Ertrag UND
+// Steuerwert, beim Kaufvertrag nur der Wert (Vermögen).
+function seitenFuer(positionId, text) {
   const p = positionId ? KATALOG_NACH_ID[positionId] : null;
-  const leer = { betrag: null, betrag2: null, betragQuelle: null, betragAnker: null };
-  if (!p?.betrag || !text) return leer;
-  const t = findeBetraege(text, positionId);
-  if (t.betrag == null && t.betrag2 == null) return leer;
-  return { betrag: t.betrag, betrag2: t.betrag2, betragQuelle: 'regel', betragAnker: t.anker };
+  const leer = { einkommen: null, vermoegen: null, betragQuelle: null, betragAnker: null };
+  if (!p || (!p.einkommen && !p.vermoegen) || !text) return leer;
+  const t = findeSeiten(text, positionId);
+  if (t.einkommen == null && t.vermoegen == null) return leer;
+  return { einkommen: t.einkommen, vermoegen: t.vermoegen,
+           betragQuelle: 'regel', betragAnker: t.anker };
 }
 
-// «Bruttoertrag im Jahr» → «Ertrag» — fuer die knappe Summenzeile
-function kurzLabel(text) {
-  const t = String(text || '');
-  if (/ertrag|dividende/i.test(t)) return 'Ertrag';
-  if (/zins/i.test(t))             return 'Zins';
-  if (/eigenkapital/i.test(t))     return 'EK';
-  return t.split(' ')[0];
+// Bei diesen Positionen hiess das alte Feld `betrag` der Vermögensbestand
+// (und `betrag2` der Ertrag/Zins) — bei allen übrigen war `betrag` die
+// Einkommensseite. Nur für das Lesen gespeicherter Stände von vor dem Umbau.
+const ALT_BETRAG_WAR_VERMOEGEN = new Set([
+  'wertschriften', 'beteiligung_qualifiziert', 'krypto', 'liegenschaften',
+  'schulden', 'bargeld', 'lebensversicherung', 'fahrzeuge', 'uebriges_vermoegen',
+]);
+
+// Gespeicherten Beleg auf die zwei Seiten heben: alte betrag/betrag2-Felder
+// der Position entsprechend umhängen, und leere Seiten aus dem gespeicherten
+// Text nachfüllen — Handeingaben bleiben unangetastet.
+function migriereBetraege(b) {
+  const position = migriereId(b.position);
+  let { einkommen = null, vermoegen = null } = b;
+  if (b.einkommen === undefined && b.vermoegen === undefined
+      && (b.betrag != null || b.betrag2 != null)) {
+    if (ALT_BETRAG_WAR_VERMOEGEN.has(position)) {
+      vermoegen = b.betrag ?? null; einkommen = b.betrag2 ?? null;
+    } else {
+      einkommen = b.betrag ?? null; vermoegen = b.betrag2 ?? null;
+    }
+  }
+  if (b.betragQuelle !== 'hand' && b.text && position) {
+    const p = KATALOG_NACH_ID[position];
+    if ((einkommen == null && p?.einkommen) || (vermoegen == null && p?.vermoegen)) {
+      const t = findeSeiten(b.text, position);
+      if (einkommen == null && t.einkommen != null) einkommen = t.einkommen;
+      if (vermoegen == null && t.vermoegen != null) vermoegen = t.vermoegen;
+    }
+  }
+  return { ...b, position, einkommen, vermoegen };
 }
 
 const chf = n => (n || n === 0)
@@ -169,9 +195,10 @@ export default function Belegsortierung() {
     if (!gespeichert?.belege?.length) return;
     if (geleertFuer.current === `${kunde?.id}|${steuerjahr}`) return;
     setBelege(v => v.length ? v : gespeichert.belege.map((b, i) => ({
-      ...b, id: `gespeichert-${i}-${b.hash}`, stand: 'fertig', ohneDatei: true,
-      // Verschmolzene Positionen aus aelteren Staenden auf die heutigen ids
-      position: migriereId(b.position),
+      // migriereBetraege hebt alte betrag/betrag2-Felder auf die zwei Seiten
+      // und füllt Lücken aus dem gespeicherten Text nach
+      ...migriereBetraege(b), id: `gespeichert-${i}-${b.hash}`,
+      stand: 'fertig', ohneDatei: true,
     })));
   }, [gespeichert, kunde?.id, steuerjahr]);
 
@@ -358,7 +385,7 @@ export default function Belegsortierung() {
             position,
             ahv: findAhvInText(teil.text),
             jahr: tri.periodeBeleg ?? null,
-            ...betragFuer(position, teil.text),
+            ...seitenFuer(position, teil.text),
           });
         }
 
@@ -398,7 +425,7 @@ export default function Belegsortierung() {
         // Beim Umhaengen den Betrag neu suchen – der Anker haengt an der
         // Position. Ein von Hand eingetippter Betrag bleibt aber stehen.
         ? { ...b, position: positionId || null, vonHand: true,
-            ...(b.betragQuelle === 'hand' ? {} : betragFuer(positionId, b.text)) }
+            ...(b.betragQuelle === 'hand' ? {} : seitenFuer(positionId, b.text)) }
         : b);
       const naechster = neu.find(b => b.id !== id && b.stand === 'fertig' && !b.position);
       queueMicrotask(() => setGewaehlt(naechster ? naechster.id : id));
@@ -473,10 +500,35 @@ export default function Belegsortierung() {
     return { proVerz, proPosition, ohne };
   }, [belege]);
 
-  const summe  = liste => (liste || []).reduce((s, b) => s + (parseFloat(b.betrag) || 0), 0);
-  const summe2 = liste => (liste || []).reduce((s, b) => s + (parseFloat(b.betrag2) || 0), 0);
-  const geprueft = belege.filter(b => b.position && (b.vonHand || b.betrag)).length;
+  // Drei Summen je Liste: Einkünfte und Abzüge (Einkommensseite, getrennt
+  // nach Wirkung der Position) und Vermögen. So trägt jedes Verzeichnis
+  // seine Zeilen der Erklärung schon fertig zusammen.
+  const summen = liste => (liste || []).reduce((s, b) => {
+    const p = b.position ? KATALOG_NACH_ID[b.position] : null;
+    const e = parseFloat(b.einkommen) || 0;
+    if (p?.wirkung === 'abzug') s.abzug += e; else s.einkunft += e;
+    s.vermoegen += parseFloat(b.vermoegen) || 0;
+    return s;
+  }, { einkunft: 0, abzug: 0, vermoegen: 0 });
+
+  const geprueft = belege.filter(b =>
+    b.position && (b.vonHand || b.einkommen != null || b.vermoegen != null)).length;
   const fortschritt = belege.length ? Math.round(geprueft / belege.length * 100) : 0;
+
+  // Gesamtzeile über alles — die Erklärung im Kleinformat. Schulden zählen
+  // nicht zum Vermögen, sie stehen als eigener Posten daneben.
+  const total = useMemo(() => {
+    const t = { einkunft: 0, abzug: 0, vermoegen: 0, schulden: 0 };
+    for (const b of belege) {
+      const p = b.position ? KATALOG_NACH_ID[b.position] : null;
+      if (!p || p.verzeichnis === 'aussortiert') continue;
+      const e = parseFloat(b.einkommen) || 0;
+      if (p.wirkung === 'abzug') t.abzug += e; else t.einkunft += e;
+      const v = parseFloat(b.vermoegen) || 0;
+      if (p.verzeichnis === 'schulden') t.schulden += v; else t.vermoegen += v;
+    }
+    return t;
+  }, [belege]);
 
   // ── Ziehen ──────────────────────────────────────────────────────────────
   const zieheAn = id => e => {
@@ -654,6 +706,24 @@ export default function Belegsortierung() {
             <div style={{ fontSize: 10, color: C.muted, marginTop: 5 }}>
               {geprueft} von {belege.length} Belegen geprüft
             </div>
+            {/* Die Erklärung im Kleinformat: beide Dimensionen auf einen Blick */}
+            {(total.einkunft > 0 || total.abzug > 0 || total.vermoegen > 0 || total.schulden > 0) && (
+              <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: '1fr 1fr',
+                            gap: '3px 10px', fontSize: 10 }}>
+                <span style={{ color: C.muted }}>Einkünfte</span>
+                <span style={{ color: C.heading, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                  {total.einkunft > 0 ? chf(total.einkunft) : '—'}</span>
+                <span style={{ color: C.muted }}>Abzüge</span>
+                <span style={{ color: C.heading, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                  {total.abzug > 0 ? chf(total.abzug) : '—'}</span>
+                <span style={{ color: C.muted }}>Vermögen</span>
+                <span style={{ color: C.heading, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                  {total.vermoegen > 0 ? chf(total.vermoegen) : '—'}</span>
+                <span style={{ color: C.muted }}>Schulden</span>
+                <span style={{ color: C.heading, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                  {total.schulden > 0 ? chf(total.schulden) : '—'}</span>
+              </div>
+            )}
           </div>
         )}
 
@@ -664,7 +734,7 @@ export default function Belegsortierung() {
             <NavEintrag key={v.id} nummer={String(i + 1).padStart(2, '0')}
               label={v.label} unter={v.unter}
               anzahl={(proVerz.get(v.id) || []).length}
-              betrag={summe(proVerz.get(v.id))}
+              summen={summen(proVerz.get(v.id))} istSchulden={v.id === 'schulden'}
               aktiv={abschnitt === v.id} onClick={() => setAbschnitt(v.id)} />
           ))}
 
@@ -728,11 +798,17 @@ export default function Belegsortierung() {
               <div style={{ fontSize: 11, color: C.sub, marginTop: 2 }}>
                 {abschnitt === 'ohne'
                   ? `${ohne.length} ohne Zuordnung`
-                  : `${(proVerz.get(abschnitt) || []).length} Belege`
-                    + (summe(proVerz.get(abschnitt)) > 0
-                      ? ` · Total CHF ${chf(summe(proVerz.get(abschnitt)))}` : '')
-                    + (VERZEICHNIS_NACH_ID[abschnitt]?.speist
-                      ? ` · speist ${VERZEICHNIS_NACH_ID[abschnitt].speist}` : '')}
+                  : (() => {
+                      const s = summen(proVerz.get(abschnitt));
+                      const teile = [`${(proVerz.get(abschnitt) || []).length} Belege`];
+                      if (s.einkunft > 0)  teile.push(`Einkünfte CHF ${chf(s.einkunft)}`);
+                      if (s.abzug > 0)     teile.push(`Abzüge CHF ${chf(s.abzug)}`);
+                      if (s.vermoegen > 0) teile.push(`${abschnitt === 'schulden'
+                        ? 'Schulden' : 'Vermögen'} CHF ${chf(s.vermoegen)}`);
+                      if (VERZEICHNIS_NACH_ID[abschnitt]?.speist)
+                        teile.push(`speist ${VERZEICHNIS_NACH_ID[abschnitt].speist}`);
+                      return teile.join(' · ');
+                    })()}
               </div>
             </div>
             <button onClick={() => eingabe.current?.click()}
@@ -830,16 +906,25 @@ export default function Belegsortierung() {
                       {p.dimensionen.map(d => DIMENSIONEN[d]).join(' + ')}
                     </span>
                   )}
-                  {liste.length > 0 && p.betrag && (
-                    <span style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 600, color: C.sub }}>
-                      CHF {chf(summe(liste))}
-                      {p.betrag2 && summe2(liste) > 0 && (
-                        <span style={{ color: C.muted, fontWeight: 400 }}>
-                          {' '}· {kurzLabel(p.betrag2)} {chf(summe2(liste))}
-                        </span>
-                      )}
-                    </span>
-                  )}
+                  {liste.length > 0 && (p.einkommen || p.vermoegen) && (() => {
+                    const s = summen(liste);
+                    const haupt = p.wirkung === 'abzug' || p.einkommen == null
+                      ? (s.abzug || s.einkunft || s.vermoegen)
+                      : (s.einkunft || s.abzug || s.vermoegen);
+                    const neben = p.einkommen && p.vermoegen && s.vermoegen > 0
+                      && haupt !== s.vermoegen ? s.vermoegen : 0;
+                    if (!haupt) return null;
+                    return (
+                      <span style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 600, color: C.sub }}>
+                        CHF {chf(haupt)}
+                        {neben > 0 && (
+                          <span style={{ color: C.muted, fontWeight: 400 }}>
+                            {' '}· Verm. {chf(neben)}
+                          </span>
+                        )}
+                      </span>
+                    );
+                  })()}
                 </div>
                 {liste.map(b => (
                   <BelegKarte key={b.id} beleg={b} aktiv={b.id === gewaehlt} onWaehlen={setGewaehlt}
@@ -901,8 +986,16 @@ function abschnittName(id) {
   return VERZEICHNIS_NACH_ID[id]?.label || '';
 }
 
-function NavEintrag({ nummer, label, unter, anzahl, betrag, aktiv, farbe, onClick }) {
+function NavEintrag({ nummer, label, unter, anzahl, summen, istSchulden, aktiv, farbe, onClick }) {
   const C = useFarben();
+  // Kompakte Summenzeile des Verzeichnisses: Einkommensseite zuerst, das
+  // Vermögen läuft nebenher mit — leere Seiten erscheinen gar nicht.
+  const teile = [];
+  if (summen?.einkunft > 0) teile.push(`CHF ${chf(summen.einkunft)}`);
+  if (summen?.abzug > 0)    teile.push(`Abzug ${chf(summen.abzug)}`);
+  if (summen?.vermoegen > 0)
+    teile.push(`${istSchulden ? 'Schuld' : 'Verm.'} ${chf(summen.vermoegen)}`);
+  const betragText = teile.join(' · ');
   return (
     <div onClick={onClick} style={{
       display: 'flex', alignItems: 'center', gap: 9, padding: '7px 6px',
@@ -919,9 +1012,10 @@ function NavEintrag({ nummer, label, unter, anzahl, betrag, aktiv, farbe, onClic
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 12, fontWeight: aktiv ? 700 : 500,
                       color: farbe || C.heading }}>{label}</div>
-        {(unter || betrag > 0) && (
-          <div style={{ fontSize: 10, color: C.muted }}>
-            {betrag > 0 ? `CHF ${chf(betrag)}` : unter}
+        {(unter || betragText) && (
+          <div style={{ fontSize: 10, color: C.muted, overflow: 'hidden',
+                        textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {betragText || unter}
           </div>
         )}
       </div>
@@ -972,9 +1066,15 @@ function BelegKarte({ beleg: b, aktiv, onWaehlen, onDragStart, onDragEnd, zieht 
         </div>
       </div>
 
-      {!laden && b.betrag > 0 && (
-        <div style={{ fontSize: 12, fontWeight: 700, color: C.heading, flexShrink: 0 }}>
-          CHF {chf(b.betrag)}
+      {!laden && (b.einkommen > 0 || b.vermoegen > 0) && (
+        <div style={{ fontSize: 12, fontWeight: 700, color: C.heading, flexShrink: 0,
+                      textAlign: 'right' }}>
+          CHF {chf(b.einkommen > 0 ? b.einkommen : b.vermoegen)}
+          {b.einkommen > 0 && b.vermoegen > 0 && (
+            <div style={{ fontSize: 10, fontWeight: 400, color: C.muted }}>
+              Verm. {chf(b.vermoegen)}
+            </div>
+          )}
         </div>
       )}
       {!laden && b.confidence != null && (
@@ -1073,21 +1173,31 @@ function Vorschau({ beleg: b, breite, onAendern, onPosition }) {
         </div>
 
         <div style={{ display: 'grid', gap: 8 }}>
+          {/* Jeder Beleg führt BEIDE Seiten der Erklärung — Einkommen und
+              Vermögen. Wo der Katalog nichts erwartet, bleibt das Feld leer,
+              steht aber da (Lohnausweis: nur Einkommen; Kaufvertrag: nur
+              Vermögen; Bank-Steuerausweis: beides). */}
           <div>
             <div style={etikett(C)}>
-              {(b.position && KATALOG_NACH_ID[b.position]?.betrag) || 'Betrag'} – CHF
+              {(b.position && KATALOG_NACH_ID[b.position]?.einkommen) || 'Einkommen im Jahr'}
+              {b.position && KATALOG_NACH_ID[b.position]?.wirkung === 'abzug' ? ' (Abzug)' : ''} – CHF
             </div>
-            <input type="number" value={b.betrag ?? ''} placeholder="noch nicht ausgelesen"
-              onChange={e => onAendern(b.id, { betrag: e.target.value, betragQuelle: 'hand' })} style={feld} />
+            <input type="number" value={b.einkommen ?? ''}
+              placeholder={b.position && KATALOG_NACH_ID[b.position]?.einkommen
+                ? 'noch nicht ausgelesen' : 'bleibt meist leer'}
+              onChange={e => onAendern(b.id, { einkommen: e.target.value, betragQuelle: 'hand' })}
+              style={feld} />
           </div>
-          {b.position && KATALOG_NACH_ID[b.position]?.betrag2 && (
-            <div>
-              <div style={etikett(C)}>{KATALOG_NACH_ID[b.position].betrag2} – CHF</div>
-              <input type="number" value={b.betrag2 ?? ''} placeholder="noch nicht ausgelesen"
-                onChange={e => onAendern(b.id, { betrag2: e.target.value, betragQuelle: 'hand' })}
-                style={feld} />
+          <div>
+            <div style={etikett(C)}>
+              {(b.position && KATALOG_NACH_ID[b.position]?.vermoegen) || 'Vermögen per 31.12.'} – CHF
             </div>
-          )}
+            <input type="number" value={b.vermoegen ?? ''}
+              placeholder={b.position && KATALOG_NACH_ID[b.position]?.vermoegen
+                ? 'noch nicht ausgelesen' : 'bleibt meist leer'}
+              onChange={e => onAendern(b.id, { vermoegen: e.target.value, betragQuelle: 'hand' })}
+              style={feld} />
+          </div>
           <div>
             <div style={etikett(C)}>Steuerjahr</div>
             <input value={b.jahr ?? ''} onChange={e => onAendern(b.id, { jahr: e.target.value })}

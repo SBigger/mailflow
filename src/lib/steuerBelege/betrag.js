@@ -1,36 +1,63 @@
-// Betrag aus einem Beleg auslesen.
+// Beträge aus einem Beleg auslesen — immer BEIDE Seiten.
 //
-// Der Katalog sagt bei jeder Position, WELCHER Betrag gesucht wird — beim
-// Lohnausweis der Nettolohn nach Ziffer 11, bei der Säule 3a die Einzahlung,
-// bei der Bank der Bestand per 31.12. Genau das ist der Unterschied zwischen
-// Raten und Auslesen: gesucht wird nicht «eine Zahl», sondern eine bestimmte.
+// Die Steuererklärung hat zwei Dimensionen, und jeder Beleg bedient eine oder
+// beide: der Lohnausweis nur das Einkommen, der Autokaufvertrag nur das
+// Vermögen, der Bank-Steuerausweis beide (Ertrag + Steuerwert 31.12.), der
+// Hypothekarausweis beide (Schuldzins als Abzug + Restschuld). Gesucht wird
+// deshalb je Position mit ZWEI Ankertafeln — was auf einer Seite nichts hat,
+// bleibt dort leer.
 //
-// Zwei Stufen wie bei der Zuordnung: erst Anker im Text, dann erst die KI.
 // Die Anker sind bewusst OCR-tolerant — auf einem Scan wird aus «11.» leicht
-// «ll.» und aus «'» ein «’» oder gar nichts.
+// «ll.» und aus «'» ein «’» oder gar nichts. Und sie sind GEORDNET: der erste
+// Treffer gewinnt. Beim Vergütungsauftrag steht «Total Auszahlung» (der Betrag
+// dieses Belegs) VOR dem kumulierten «Gesamttotal» über alle bisherigen —
+// wer das generische «total» zuerst sucht, addiert die Baukosten doppelt.
 
-/** Ankerbegriffe je Katalogposition, in absteigender Verlässlichkeit. */
-export const ANKER = {
-  lohn_haupt:  ['nettolohn', 'netto lohn', 'lohn netto', 'ziffer 11', 'total brutto'],
+/** Anker für die EINKOMMENSSEITE (Einkünfte und Abzüge), je Position. */
+export const ANKER_EINKOMMEN = {
+  lohn_haupt:  ['nettolohn', 'netto lohn', 'lohn netto', 'ziffer 11'],
   lohn_neben:  ['nettolohn', 'netto lohn', 'ziffer 11'],
-  saeule_3a:   ['einzahlung', 'beitrag', 'geleistete beitraege', 'total beitraege'],
-  einkauf_pk:  ['einkaufssumme', 'einkauf', 'freiwilliger einkauf'],
-  versicherungspraemien: ['total praemien', 'praemien total', 'jahrespraemie', 'praemie'],
-  krankheitskosten:      ['selbst getragen', 'selbstbehalt', 'franchise', 'zu ihren lasten'],
-  schulden:              ['restschuld', 'kapitalbetrag', 'darlehensbetrag', 'saldo per', 'saldo'],
-  wertschriften:         ['steuerwert', 'saldo per', 'kontostand', 'guthaben per', 'saldo'],
-  beteiligung_qualifiziert: ['steuerwert', 'nennwert'],
-  krypto:                ['bestand', 'steuerwert', 'saldo'],
-  selbstaendig:          ['reingewinn', 'gewinn', 'jahresgewinn'],
+  selbstaendig: ['reingewinn', 'jahresgewinn', 'gewinn'],
   rente_ahv:   ['jahresrente', 'total rente', 'rente'],
   rente_pk:    ['jahresrente', 'total rente', 'rente'],
+  rente_saeule3: ['kapitalleistung', 'jahresrente', 'rente'],
+  ersatz:      ['total taggelder', 'taggeld'],
+  alimente_erhalten: ['unterhaltsbeitrag', 'alimente'],
+  wertschriften: ['bruttoertrag', 'zinsertrag', 'habenzins', 'dividende', 'ertrag'],
+  beteiligung_qualifiziert: ['bruttodividende', 'dividende', 'bruttoertrag'],
+  liegenschaft_ertrag: ['mietzins', 'mietertrag', 'eigenmietwert'],
+  liegenschaftsunterhalt: ['total auszahlung', 'rechnungsbetrag', 'endbetrag',
+                           'zu bezahlen', 'zahlbetrag', 'total'],
+  schulden:    ['schuldzins', 'hypothekarzins', 'zinsaufwand', 'sollzins', 'zinsen'],
+  berufsauslagen_fahrkosten:  ['abonnement', 'total'],
+  berufsauslagen_verpflegung: ['total'],
+  berufsauslagen_uebrige:     ['total'],
+  weiterbildung: ['kurskosten', 'kursgeld', 'total', 'rechnungsbetrag'],
+  saeule_3a:   ['einzahlung', 'geleistete beitraege', 'total beitraege', 'beitrag'],
+  einkauf_pk:  ['einkaufssumme', 'freiwilliger einkauf', 'einkauf'],
+  ahv_beitraege: ['jahresbeitrag', 'beitrag'],
+  versicherungspraemien: ['total praemien', 'praemien total', 'jahrespraemie', 'praemie'],
+  krankheitskosten: ['selbst getragen', 'selbstbehalt', 'franchise', 'zu ihren lasten'],
+  behinderungskosten: ['total', 'betrag'],
+  alimente_bezahlt: ['unterhaltsbeitrag', 'alimente'],
+  kinderbetreuung: ['total', 'rechnungsbetrag'],
   spenden:     ['spende', 'zuwendung', 'betrag'],
-  liegenschaftsunterhalt: ['total', 'rechnungsbetrag', 'endbetrag', 'zu bezahlen'],
-  liegenschaft_ertrag:    ['mietzins', 'mietertrag', 'eigenmietwert'],
-  liegenschaften:         ['steuerwert', 'amtlicher wert', 'verkehrswert'],
-  weiterbildung:          ['kurskosten', 'total', 'rechnungsbetrag'],
-  kinderbetreuung:        ['total', 'rechnungsbetrag'],
-  ek_kapital:             ['einbezahlt', 'aktienkapital', 'stammkapital'],
+  parteispenden: ['spende', 'zuwendung'],
+  uebrige_abzuege: ['depotgebuehr', 'verwaltungsgebuehr', 'gebuehren', 'total'],
+};
+
+/** Anker für die VERMÖGENSSEITE (Bestand per 31.12.), je Position. */
+export const ANKER_VERMOEGEN = {
+  wertschriften: ['steuerwert', 'saldo per', 'kontostand', 'guthaben per', 'saldo'],
+  beteiligung_qualifiziert: ['steuerwert', 'nennwert'],
+  krypto:        ['bestand', 'steuerwert', 'saldo'],
+  liegenschaften: ['steuerwert', 'amtlicher wert', 'verkehrswert'],
+  schulden:      ['restschuld', 'kapitalbetrag', 'darlehensbetrag', 'saldo per', 'saldo'],
+  selbstaendig:  ['eigenkapital', 'kapital per'],
+  bargeld:       ['bestand', 'steuerwert', 'wert'],
+  lebensversicherung: ['rueckkaufswert', 'steuerwert'],
+  fahrzeuge:     ['zeitwert', 'kaufpreis', 'eurotax'],
+  uebriges_vermoegen: ['darlehensbetrag', 'nominalwert', 'wert per'],
 };
 
 function flach(s) {
@@ -67,15 +94,14 @@ export function alsZahl(roh) {
 const BETRAG_MUSTER = /-?\d{1,3}(?:[’'`\s.]\d{3})+(?:[.,]\d{2})?|-?\d+[.,]\d{2}\b|-?\d{4,9}\b/g;
 
 /**
- * Sucht den Betrag zu einer Position.
+ * Kern der Suche: erster Anker, der im Text eine plausible Zahl neben sich hat.
  *
+ * @param {string}   text
+ * @param {string[]} anker  geordnet, verlässlichster zuerst
  * @returns {{betrag:number, anker:string, confidence:number}|null}
  */
-export function findeBetrag(text, positionId) {
-  if (!text) return null;
-  const anker = ANKER[positionId];
-  if (!anker?.length) return null;
-
+function sucheMitAnkern(text, anker) {
+  if (!text || !anker?.length) return null;
   const t = flach(text);
 
   for (let i = 0; i < anker.length; i++) {
@@ -114,50 +140,29 @@ export function findeBetrag(text, positionId) {
   return null;
 }
 
-/** Kurzer Ausschnitt rund um den Anker – für die Rückfrage an die KI. */
-export function ausschnittUmAnker(text, positionId, zeichen = 900) {
-  if (!text) return '';
-  const anker = ANKER[positionId] || [];
-  const t = flach(text);
-  for (const a of anker) {
-    const i = t.indexOf(flach(a));
-    if (i >= 0) {
-      const von = Math.max(0, i - Math.floor(zeichen / 3));
-      return text.slice(von, von + zeichen);
-    }
+/**
+ * Beide Seiten einer Position suchen.
+ *
+ * @returns {{einkommen:number|null, vermoegen:number|null,
+ *            anker:string|null, confidence:number|null}}
+ */
+export function findeSeiten(text, positionId) {
+  const e = sucheMitAnkern(text, ANKER_EINKOMMEN[positionId]);
+  const v = sucheMitAnkern(text, ANKER_VERMOEGEN[positionId]);
+  // Beide Anker auf derselben Zahl (etwa «Saldo» und «Ertrag» im gleichen
+  // Fenster): dann zählt nur die verlässlichere Seite.
+  if (e && v && e.betrag === v.betrag) {
+    if (e.confidence >= v.confidence) return sammle(e, null);
+    return sammle(null, v);
   }
-  return text.slice(0, zeichen);
+  return sammle(e, v);
 }
 
-/**
- * Anker für das ZWEITE Betragsfeld der verschmolzenen Positionen — dort, wo
- * ein Beleg zwei Werte liefert (Wertschriften: Ertrag neben dem Steuerwert;
- * Schulden: Zins neben der Restschuld; Selbständige: Eigenkapital neben dem
- * Gewinn).
- */
-export const ANKER2 = {
-  wertschriften: ['bruttoertrag', 'zinsertrag', 'ertrag', 'dividende', 'habenzins'],
-  beteiligung_qualifiziert: ['bruttodividende', 'dividende', 'bruttoertrag'],
-  schulden:      ['schuldzins', 'zinsen', 'hypothekarzins', 'zinsaufwand', 'sollzins'],
-  selbstaendig:  ['eigenkapital', 'kapital per'],
-};
-
-/** Beide Beträge einer Position suchen. betrag2 nur, wo ANKER2 etwas kennt. */
-export function findeBetraege(text, positionId) {
-  const erster = findeBetrag(text, positionId);
-  const zweite = ANKER2[positionId];
-  let betrag2 = null;
-  if (zweite?.length && text) {
-    const gemerkt = ANKER[positionId];
-    ANKER[positionId] = zweite;               // kurzzeitig umhaengen, gleiche Suche
-    const t = findeBetrag(text, positionId);
-    ANKER[positionId] = gemerkt;
-    if (t && t.betrag !== erster?.betrag) betrag2 = t.betrag;
-  }
+function sammle(e, v) {
   return {
-    betrag:  erster?.betrag ?? null,
-    anker:   erster?.anker ?? null,
-    confidence: erster?.confidence ?? null,
-    betrag2,
+    einkommen: e?.betrag ?? null,
+    vermoegen: v?.betrag ?? null,
+    anker: e?.anker ?? v?.anker ?? null,
+    confidence: Math.max(e?.confidence ?? 0, v?.confidence ?? 0) || null,
   };
 }

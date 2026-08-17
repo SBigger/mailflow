@@ -18,9 +18,12 @@ function fuerDieDatenbank(b) {
     quelle:      b.quelle ?? null,
     begruendung: b.begruendung ?? null,
     vonHand:     !!b.vonHand,
-    // Betrag und Jahr sind Erfassung, nicht Erkennung – sie muessen mit
-    betrag:      b.betrag ?? null,
-    betrag2:     b.betrag2 ?? null,
+    // Beträge und Jahr sind Erfassung, nicht Erkennung – sie muessen mit.
+    // Jeder Beleg fuehrt BEIDE Seiten der Erklaerung; leere bleiben null.
+    // (Aeltere Staende mit betrag/betrag2 hebt migriereBetraege beim Laden.)
+    einkommen:   b.einkommen ?? null,
+    vermoegen:   b.vermoegen ?? null,
+    betragQuelle: b.betragQuelle ?? null,
     // Seitenbereich: ein PDF kann mehrere Belege enthalten
     vonSeite:    b.vonSeite ?? null,
     doppelVon:   b.doppelVon ?? null,
