@@ -81,8 +81,14 @@ export const BELEGART_ZU_POSITION = {
                                + 'eigenem Briefkopf zu eigene_berechnung.' },
 
   zahlungsauftrag:    { mehrdeutig: true,
-                        kandidaten: ['uebriges_vermoegen', 'wertschriften', '_aussortiert'],
-                        unterscheidet: 'Zweck der Zahlung – Kapitaleinlage, Umbuchung oder Privates' },
+                        // liegenschaftsunterhalt MUSS Kandidat sein: die
+                        // Vergütungsaufträge eines Umbaus sind Zahlungsaufträge
+                        // UND Unterhaltsbelege — ohne diesen Kandidaten wählte
+                        // die KI «privat» und 18 Bauzahlungen flogen raus.
+                        kandidaten: ['liegenschaftsunterhalt', 'uebriges_vermoegen',
+                                     'wertschriften', '_aussortiert'],
+                        unterscheidet: 'Zweck der Zahlung – Bau-/Handwerkerzahlung ans Objekt '
+                                     + '(Unterhalt), Kapitaleinlage, Umbuchung oder Privates' },
 
   // ── gehört nicht in die Erklärung ────────────────────────────────────────
   werbung:            { positionen: ['_aussortiert'] },

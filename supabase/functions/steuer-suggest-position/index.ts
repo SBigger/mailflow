@@ -113,8 +113,10 @@ Regeln:
   Pensionskasse/Sammelstiftung → 2. Säule, Vorsorgestiftung/Bank → Säule 3.
 - Bei Liegenschaftsbelegen: Mietzins/Eigenmietwert → Ertrag, amtliche
   Schätzung/Steuerwert → Objektdaten, Rechnungen → Unterhalt.
-- Bei Zahlungen entscheidet der Zweck: Kapitaleinlage/Darlehen → Vermögen,
-  private Rechnung → nicht zur Steuererklärung.`;
+- Bei Zahlungen entscheidet der Zweck: Bau-, Handwerker- und
+  Architektenzahlungen mit Bauherr/Objekt (auch «Vergütungsauftrag») →
+  Liegenschaftsunterhalt; Kapitaleinlage/Darlehen → Vermögen; private
+  Konsumrechnung → nicht zur Steuererklärung.`;
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
