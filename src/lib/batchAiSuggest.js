@@ -265,7 +265,7 @@ async function ocrPdfPages(pdf, maxPages = 5) {
  * Digitale PDFs liefern ihn direkt; Scans gehen ueber den OCR-Pool, wo die
  * Seiten nebeneinander laufen.
  */
-export async function extractPageTexts(file, { maxPages = 40, onStage } = {}) {
+export async function extractPageTexts(file, { maxPages = 40, vonSeite = 1, onStage } = {}) {
   if (!file) return { seiten: [], vertrauen: [] };
   const name = (file.name || "").toLowerCase();
   if (!(file.type === "application/pdf" || name.endsWith(".pdf"))) {
@@ -277,22 +277,27 @@ export async function extractPageTexts(file, { maxPages = 40, onStage } = {}) {
   sichereWorker();
   const pdf = await pdfjsLib.getDocument({ data: buf, worker: eigenerPdfWorker() }).promise;
   const anzahl = Math.min(pdf.numPages, maxPages);
+  // vonSeite erlaubt Bereichs-OCR — der manuelle Trenner liest nur die
+  // Seiten des zerlegten Belegs neu, nicht die ganze Datei.
+  const start = Math.max(1, vonSeite);
+  const seitenZahl = Math.max(0, anzahl - start + 1);
+  if (!seitenZahl) return { seiten: [], vertrauen: [] };
 
   // Zuerst die eingebettete Textebene versuchen – kostet fast nichts.
   const texte = [];
-  for (let i = 1; i <= anzahl; i++) {
+  for (let i = start; i <= anzahl; i++) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
     texte.push(content.items.map(it => it.str).join(" ").trim());
   }
-  const hatText = texte.join("").length > 50 * anzahl * 0.3;
+  const hatText = texte.join("").length > 50 * seitenZahl * 0.3;
   // Textebene = digitales Original, Vertrauen spielt keine Rolle (null).
   if (hatText) return { seiten: texte, vertrauen: texte.map(() => null) };
 
   // Scan: rendern (seriell, ein pdfjs-Dokument) und gemeinsam erkennen.
-  try { onStage?.("ocr", `Scan mit ${anzahl} Seiten – OCR läuft…`); } catch {}
+  try { onStage?.("ocr", `Scan mit ${seitenZahl} Seiten – OCR läuft…`); } catch {}
   const canvases = [];
-  for (let i = 1; i <= anzahl; i++) {
+  for (let i = start; i <= anzahl; i++) {
     const page = await pdf.getPage(i);
     const viewport = page.getViewport({ scale: 1.7 });
     const canvas = document.createElement("canvas");

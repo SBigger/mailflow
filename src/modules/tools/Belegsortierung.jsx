@@ -545,6 +545,194 @@ export default function Belegsortierung() {
     });
   }
 
+  // ── Manuell trennen und zusammenlegen ───────────────────────────────────
+  //
+  // Die automatische Trennung ist gut, aber nicht allwissend: Im ZKB-Kuvert
+  // stecken mehrere Zins- und Saldoausweise, die als EIN Teil durchrutschen —
+  // jeder gehört aber als eigene Zeile ins Schuldenverzeichnis. Umgekehrt
+  // zerfällt mal ein Beleg zu fein. Beides korrigiert der Mensch mit einem
+  // Klick; der neue Bereich läuft danach durch die volle Erkennung.
+
+  // Ein Seitenbereich durch die Erkennungs-Pipeline (Regeln → KI mit Bild →
+  // Wahl-Stufe → Beträge). Gleiches Verhalten wie beim Einlesen.
+  async function erkenneNeu({ datei, dateiName, basisHash, dateiPfad, von, bis,
+                              seitenTexte, vertrauenWerte, urlAlt }) {
+    const text = seitenTexte.join('\n');
+    const eingang = { text, dateiname: dateiName, parseMethode: 'ocr',
+                      dateiHash: `${basisHash}#${von}-${bis}` };
+    const kontext = {
+      katalog: katalogFuerPrompt(),
+      belegarten: BELEGARTEN.map(x => `${x.key} = ${x.label}`).join('\n'),
+      periode: Number(steuerjahr) || null, bekannteHashes: [],
+    };
+    const vWerte = (vertrauenWerte || []).filter(x => x != null);
+    const teilVertrauen = vWerte.length
+      ? Math.round(vWerte.reduce((s, x) => s + x, 0) / vWerte.length) : null;
+
+    let tri = triageRegeln(eingang, kontext);
+    if (kiNutzen && brauchtKi(tri)) {
+      let anfrage = eingang;
+      if (datei && !istGesundheitsbeleg({ text })) {
+        const bild = await pdfSeiteAlsBild(datei, von);
+        if (bild) anfrage = { ...eingang, bild, bildTyp: 'image/jpeg' };
+      }
+      tri = await triageMitKi(supabase, anfrage, kontext);
+    }
+    const gesundheit = istGesundheitsbeleg({
+      text, belegart: tri.belegart, positionen: tri.positionen || [] });
+
+    const zuord = tri.belegart ? positionenFuer(tri.belegart) : { positionen: [], offen: true };
+    const kiPos = (tri.positionen || []).map(x => KATALOG_NACH_ID[x]).filter(Boolean);
+    const vorschlag = kiPos.length ? kiPos : (zuord.positionen || []);
+    let position = vorschlag.length === 1 ? vorschlag[0].id : null;
+    if (tri.widerspruch) position = null;
+
+    const kandidatenListe = vorschlag.length >= 2 ? vorschlag : (zuord.kandidaten || []);
+    if (!position && kiNutzen && !tri.widerspruch && kandidatenListe.length >= 2) {
+      try {
+        const bilder = [];
+        if (!gesundheit && datei) {
+          const bild = await pdfSeiteAlsBild(datei, von);
+          if (bild) bilder.push(bild);
+        }
+        const wahl = await positionWaehlen(supabase, {
+          text: ausschnittFuerKi(text), dateiname: dateiName,
+          periode: Number(steuerjahr) || null, belegart: tri.belegart,
+          kriterium: zuord.grund || '', kandidaten: kandidatenListe, bilder,
+        });
+        if (wahl.position && wahl.confidence >= 0.5
+            && kandidatenListe.some(k => k.id === wahl.position)) {
+          position = wahl.position;
+          tri = { ...tri, quelle: 'ki',
+            kiBegruendung: `${tri.kiBegruendung ? tri.kiBegruendung + ' · ' : ''}Wahl: ${wahl.begruendung}` };
+        }
+      } catch (e) { console.warn('[KI-Wahl]', e.message); }
+    }
+
+    let seiten = seitenFuer(position, text);
+    const posDef = position ? KATALOG_NACH_ID[position] : null;
+    const fehltE = posDef?.einkommen && seiten.einkommen == null;
+    const fehltV = posDef?.vermoegen && seiten.vermoegen == null;
+    if (kiNutzen && !gesundheit && (fehltE || fehltV) && datei) {
+      try {
+        const bilder = [];
+        for (let s = von; s <= Math.min(bis, von + 2); s++) {
+          const bild = await pdfSeiteAlsBild(datei, s);
+          if (bild) bilder.push(bild);
+        }
+        if (bilder.length) {
+          const r = await betraegePerBild(supabase, {
+            bilder,
+            einkommenLabel: fehltE ? posDef.einkommen : null,
+            vermoegenLabel: fehltV ? posDef.vermoegen : null,
+            dateiname: dateiName, periode: Number(steuerjahr) || null,
+          });
+          if (fehltE && r.einkommen != null) seiten.einkommen = r.einkommen;
+          if (fehltV && r.vermoegen != null) seiten.vermoegen = r.vermoegen;
+          if (r.einkommen != null || r.vermoegen != null)
+            seiten = { ...seiten, betragQuelle: 'ki' };
+        }
+      } catch (e) { console.warn('[Betrag per Bild]', e.message); }
+    }
+
+    return {
+      id: `hand-${basisHash.slice(0, 8)}-${von}-${bis}-${Math.random().toString(36).slice(2, 7)}`,
+      name: bis > von ? `${dateiName} · Seiten ${von}–${bis}` : `${dateiName} · Seite ${von}`,
+      stand: 'fertig', groesse: null, url: urlAlt || null,
+      datei: datei && datei.name ? datei : undefined, istPdf: true,
+      hash: `${basisHash}#${von}-${bis}`, dateiPfad: dateiPfad || null,
+      vonSeite: von, bisSeite: bis, trennGrund: 'von Hand',
+      text, ocrVertrauen: teilVertrauen,
+      belegart: tri.belegart, confidence: tri.confidence,
+      begruendung: tri.begruendung, quelle: tri.quelle || 'regel',
+      merkmale: tri.merkmale || [], kiBegruendung: tri.kiBegruendung || null,
+      widerspruch: !!tri.widerspruch,
+      regelBelegart: tri.regelBelegart || null, kiBelegart: tri.kiBelegart || null,
+      vorschlag, kandidaten: zuord.kandidaten || [],
+      offenGrund: kiPos.length ? null : (zuord.offen ? zuord.grund : null),
+      hinweis: zuord.hinweis || null, position,
+      ahv: findAhvInText(text), jahr: tri.periodeBeleg ?? null,
+      ...seiten,
+    };
+  }
+
+  function nachbarVon(b, richtung) {
+    if (!b) return null;
+    const basis = String(b.hash || '').split('#')[0];
+    if (!basis) return null;
+    return belege.find(x => x.id !== b.id && x.stand === 'fertig'
+      && String(x.hash || '').split('#')[0] === basis
+      && (richtung === 'vor'
+        ? (x.bisSeite || x.vonSeite) === (b.vonSeite || 1) - 1
+        : x.vonSeite === (b.bisSeite || b.vonSeite || 1) + 1)) || null;
+  }
+
+  async function trenneVonHand(b, abSeite) {
+    const von = b.vonSeite || 1, bis = b.bisSeite || von;
+    abSeite = Number(abSeite);
+    if (!(abSeite > von && abSeite <= bis)) return;
+    aendere(b.id, { stand: 'liest' });
+    try {
+      const datei = b.datei || await db.dateiLaden(b.dateiPfad);
+      const basisHash = String(b.hash || '').split('#')[0] || await dateiHash(datei);
+      const dateiName = (b.name || '').split(' · ')[0] || b.name || 'Beleg.pdf';
+      // Seitentexte NUR über den Bereich dieses Belegs neu holen — der
+      // gespeicherte Text ist am Stück und lässt sich nicht seitenweise teilen.
+      const { seiten, vertrauen } = await extractPageTexts(datei, {
+        vonSeite: von, maxPages: bis,
+        onStage: st => aendere(b.id, { stand: st }),
+      });
+      const schnitt = abSeite - von;
+      const neuA = await erkenneNeu({ datei, dateiName, basisHash, dateiPfad: b.dateiPfad,
+        von, bis: abSeite - 1, urlAlt: b.url,
+        seitenTexte: seiten.slice(0, schnitt), vertrauenWerte: vertrauen.slice(0, schnitt) });
+      const neuB = await erkenneNeu({ datei, dateiName, basisHash, dateiPfad: b.dateiPfad,
+        von: abSeite, bis, urlAlt: b.url,
+        seitenTexte: seiten.slice(schnitt), vertrauenWerte: vertrauen.slice(schnitt) });
+      setBelege(v => {
+        const i = v.findIndex(x => x.id === b.id);
+        if (i < 0) return v;
+        return [...v.slice(0, i), neuA, neuB, ...v.slice(i + 1)];
+      });
+      setGewaehlt(neuA.id);
+    } catch (e) {
+      console.warn('[Trennen]', e);
+      aendere(b.id, { stand: 'fertig' });
+    }
+  }
+
+  async function zusammenlegen(b, richtung) {
+    const n = nachbarVon(b, richtung);
+    if (!n) return;
+    aendere(b.id, { stand: 'liest' });
+    try {
+      const datei = b.datei || n.datei
+        || await db.dateiLaden(b.dateiPfad || n.dateiPfad);
+      const basisHash = String(b.hash || '').split('#')[0] || await dateiHash(datei);
+      const dateiName = (b.name || '').split(' · ')[0] || b.name || 'Beleg.pdf';
+      const von = Math.min(b.vonSeite || 1, n.vonSeite || 1);
+      const bis = Math.max(b.bisSeite || b.vonSeite || 1, n.bisSeite || n.vonSeite || 1);
+      // Texte liegen schon vor — in Seitenreihenfolge aneinanderhängen,
+      // kein neues OCR nötig.
+      const erst = richtung === 'vor' ? n : b;
+      const zweit = richtung === 'vor' ? b : n;
+      const neu = await erkenneNeu({ datei, dateiName, basisHash,
+        dateiPfad: b.dateiPfad || n.dateiPfad, von, bis, urlAlt: b.url || n.url,
+        seitenTexte: [erst.text || '', zweit.text || ''],
+        vertrauenWerte: [b.ocrVertrauen, n.ocrVertrauen] });
+      setBelege(v => {
+        const i = Math.min(v.findIndex(x => x.id === b.id), v.findIndex(x => x.id === n.id));
+        const rest = v.filter(x => x.id !== b.id && x.id !== n.id);
+        const stelle = Math.max(0, Math.min(i, rest.length));
+        return [...rest.slice(0, stelle), neu, ...rest.slice(stelle)];
+      });
+      setGewaehlt(neu.id);
+    } catch (e) {
+      console.warn('[Zusammenlegen]', e);
+      aendere(b.id, { stand: 'fertig' });
+    }
+  }
+
   async function speichern() {
     if (!kunde?.id) return;
     setSpeichert(true);
@@ -1074,7 +1262,10 @@ export default function Belegsortierung() {
       </div>
 
       <Vorschau beleg={aktiverBeleg} breite={vorschauBreite} steuerjahr={steuerjahr}
-                onAendern={aendere} onPosition={setzePosition} />
+                onAendern={aendere} onPosition={setzePosition}
+                onTrennen={trenneVonHand} onZusammen={zusammenlegen}
+                hatNachbarVor={!!nachbarVon(aktiverBeleg, 'vor')}
+                hatNachbarNach={!!nachbarVon(aktiverBeleg, 'nach')} />
     </div>
   );
 }
@@ -1213,11 +1404,13 @@ function BelegKarte({ beleg: b, aktiv, onWaehlen, onDragStart, onDragEnd, zieht 
  * blättern und zoomen. Bei einem 38-seitigen Umbaubündel ist die erste Seite
  * selten die, an der man entscheidet.
  */
-function Vorschau({ beleg: b, breite, steuerjahr, onAendern, onPosition }) {
+function Vorschau({ beleg: b, breite, steuerjahr, onAendern, onPosition,
+                    onTrennen, onZusammen, hatNachbarVor, hatNachbarNach }) {
   const C = useFarben();
   const [holtBetraege, setHoltBetraege] = useState(false);
   const [holErgebnis, setHolErgebnis] = useState(null);
-  useEffect(() => { setHolErgebnis(null); }, [b?.id]);
+  const [trennSeite, setTrennSeite] = useState('');
+  useEffect(() => { setHolErgebnis(null); setTrennSeite(''); }, [b?.id]);
 
   // Fehlende Beträge auf Zuruf per Bild-KI ablesen — für gespeicherte Belege
   // (etwa den Schuldzins, den die OCR im ZKB-Ausweis nicht fand). Explizit
@@ -1476,6 +1669,56 @@ function Vorschau({ beleg: b, breite, steuerjahr, onAendern, onPosition }) {
               ))}
             </select>
           </div>
+
+          {/* Manuell trennen / zusammenlegen — wenn die automatische
+              Trennung danebenlag. Der neue Bereich läuft durch die volle
+              Erkennung (OCR nur über die betroffenen Seiten). */}
+          {b.stand === 'fertig' && istPdfQuelle && (b.datei || b.dateiPfad)
+            && ((b.bisSeite || 0) > (b.vonSeite || 1) || hatNachbarVor || hatNachbarNach) && (
+            <div style={{ display: 'grid', gap: 6 }}>
+              <div style={etikett(C)}>
+                Seiten {b.vonSeite || 1}{(b.bisSeite || 0) > (b.vonSeite || 1) ? `–${b.bisSeite}` : ''}
+              </div>
+              {(b.bisSeite || 0) > (b.vonSeite || 1) && (
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <input type="number" value={trennSeite}
+                    min={(b.vonSeite || 1) + 1} max={b.bisSeite}
+                    placeholder={`ab Seite (${(b.vonSeite || 1) + 1}–${b.bisSeite})`}
+                    onChange={e => setTrennSeite(e.target.value)}
+                    style={{ ...feld, flex: 1 }} />
+                  <button
+                    onClick={() => onTrennen(b, Number(trennSeite))}
+                    disabled={!(Number(trennSeite) > (b.vonSeite || 1)
+                             && Number(trennSeite) <= (b.bisSeite || 0))}
+                    style={{ padding: '5px 10px', fontSize: 11, borderRadius: 5,
+                             border: `1px solid ${C.panelBdr}`, background: 'none',
+                             color: C.heading, cursor: 'pointer', flexShrink: 0 }}>
+                    Hier trennen
+                  </button>
+                </div>
+              )}
+              {(hatNachbarVor || hatNachbarNach) && (
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {hatNachbarVor && (
+                    <button onClick={() => onZusammen(b, 'vor')}
+                      style={{ flex: 1, padding: '5px 8px', fontSize: 11, borderRadius: 5,
+                               border: `1px solid ${C.panelBdr}`, background: 'none',
+                               color: C.heading, cursor: 'pointer' }}>
+                      ← mit vorherigem zusammenlegen
+                    </button>
+                  )}
+                  {hatNachbarNach && (
+                    <button onClick={() => onZusammen(b, 'nach')}
+                      style={{ flex: 1, padding: '5px 8px', fontSize: 11, borderRadius: 5,
+                               border: `1px solid ${C.panelBdr}`, background: 'none',
+                               color: C.heading, cursor: 'pointer' }}>
+                      mit nächstem zusammenlegen →
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Erklärung strukturiert statt als Fliesstext-Wurst: was erkannt
