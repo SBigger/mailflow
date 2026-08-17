@@ -339,6 +339,47 @@ export async function triageMitKi(supabase, beleg, kontext = {}) {
 }
 
 /**
+ * Lässt die KI unter bereits feststehenden Positions-Kandidaten wählen.
+ *
+ * Der häufigste «Nicht zugeordnet»-Fall ist gar nicht «nicht erkannt»,
+ * sondern «erkannt, aber zwei mögliche Ziele»: Ein Kontoauszug kann
+ * Wertschriften (Guthaben) oder Schulden (Sollsaldo) sein. Die Regeln sind
+ * sich der Belegart sicher — deshalb wurde die KI bisher NIE gefragt, und
+ * der Beleg blieb liegen. Diese eine Entscheidungsfrage ist billig und
+ * präzise; die Antwort darf nur eine Kandidaten-id sein.
+ *
+ * @param {object} supabase
+ * @param {object} auftrag
+ *   @param {string}   auftrag.text        Textausschnitt (maskiert)
+ *   @param {Array<{id:string,label:string}>} auftrag.kandidaten
+ *   @param {string}   auftrag.kriterium   woran die Entscheidung hängt
+ *   @param {string[]} [auftrag.bilder]    Seitenbilder (base64), max. 2
+ * @returns {{position:string|null, confidence:number, begruendung:string}}
+ */
+export async function positionWaehlen(supabase, auftrag) {
+  const { data, error } = await supabase.functions.invoke("steuer-suggest-position", {
+    body: {
+      modus: "wahl",
+      text: auftrag.text || "",
+      dateiname: auftrag.dateiname || "",
+      periode: auftrag.periode ?? null,
+      belegart: auftrag.belegart || null,
+      kriterium: auftrag.kriterium || "",
+      kandidaten: (auftrag.kandidaten || []).map(k => ({ id: k.id, label: k.label })),
+      bilder: (auftrag.bilder || []).slice(0, 2),
+      bildTyp: auftrag.bildTyp || "image/jpeg",
+    },
+  });
+  if (error) throw error;
+  if (!data || data.error) throw new Error(data?.error || "Leere Antwort");
+  return {
+    position: data.position || null,
+    confidence: Number(data.confidence) || 0,
+    begruendung: data.begruendung || "",
+  };
+}
+
+/**
  * Holt gezielt fehlende Beträge aus Seitenbildern eines Belegs.
  *
  * Wird gerufen, wenn die Position feststeht, die Anker im OCR-Text aber leer

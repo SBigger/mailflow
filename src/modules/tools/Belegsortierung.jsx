@@ -24,7 +24,8 @@ import {
 
 import { supabase } from '@/api/supabaseClient';
 import { extractPageTexts, pdfSeiteAlsBild, fileToBase64 } from '../../lib/batchAiSuggest.js';
-import { triageRegeln, triageMitKi, brauchtKi, istGesundheitsbeleg, betraegePerBild }
+import { triageRegeln, triageMitKi, brauchtKi, istGesundheitsbeleg, betraegePerBild,
+         positionWaehlen, ausschnittFuerKi }
   from '../../lib/steuerBelege/triage.js';
 import { positionenFuer, offeneDimensionen } from '../../lib/steuerBelege/belegartZuPosition.js';
 import { BELEGART_BY_KEY, BELEGARTEN } from '../../lib/steuerBelege/belegarten.js';
@@ -340,18 +341,35 @@ export default function Belegsortierung() {
           };
           const kontext = { ...kontextBasis, bekannteHashes };
 
-          let tri = triageRegeln(eingang, kontext);
-          if (kiNutzen && brauchtKi(tri)) {
-            setBelege(v => v.map(b => b.id === id
-              ? { ...b, stand: 'ki', teilNr: i + 1 } : b));
-            tri = await triageMitKi(supabase, eingang, kontext);
-          }
-
           // Wie sicher war die OCR über die Seiten dieses Teils? null heisst
           // digitale Textebene (perfekt); unter ~70 ist der Text löchrig.
           const vWerte = vertrauen.slice(teil.von - 1, teil.bis).filter(x => x != null);
           const teilVertrauen = vWerte.length
             ? Math.round(vWerte.reduce((s, x) => s + x, 0) / vWerte.length) : null;
+
+          // Erste Seite des Teils als Bild — von mehreren Stellen gebraucht.
+          const istPdf = /\.pdf$/i.test(datei.name);
+          const bildTyp = istPdf ? 'image/jpeg' : (datei.type || 'image/jpeg');
+          const bildVomTeil = () => istPdf
+            ? pdfSeiteAlsBild(datei, teil.von)
+            : /\.(jpe?g|png|webp|gif)$/i.test(datei.name)
+              ? fileToBase64(datei) : Promise.resolve(null);
+
+          let tri = triageRegeln(eingang, kontext);
+          let bildDabei = false;
+          if (kiNutzen && brauchtKi(tri)) {
+            setBelege(v => v.map(b => b.id === id
+              ? { ...b, stand: 'ki', teilNr: i + 1 } : b));
+            // Bei Scans das Seitenbild GLEICH mitgeben: OCR-Text ist löchrig,
+            // und ein Aufruf mit Bild trifft besser als zwei gestaffelte.
+            // Krankheitsbelege nie — im Bild lässt sich nichts maskieren.
+            let anfrage = eingang;
+            if (teilVertrauen != null && !istGesundheitsbeleg({ text: teil.text })) {
+              const bild = await bildVomTeil();
+              if (bild) { anfrage = { ...eingang, bild, bildTyp }; bildDabei = true; }
+            }
+            tri = await triageMitKi(supabase, anfrage, kontext);
+          }
 
           // Krankheits- und Behandlungsbelege gehen NIE als Bild raus —
           // im Bild lässt sich keine AHV-Nummer und keine Diagnose maskieren.
@@ -360,25 +378,21 @@ export default function Belegsortierung() {
             positionen: tri.positionen || [],
           });
 
-          // Bild-Nachschlag in zwei Fällen: (a) weder Regeln noch Text-KI
-          // erkennen den Teil — bei Handnotizen steht die Antwort im Layout;
-          // (b) die OCR war so schwach, dass auch eine gefundene Zuordnung
-          // auf Sand steht («Kontoauszug» aus Buchstabensalat).
+          // Bild-Nachschlag, falls es noch keins gab: (a) weder Regeln noch
+          // Text-KI erkennen den Teil — bei Handnotizen steht die Antwort im
+          // Layout; (b) die OCR war so schwach, dass auch eine gefundene
+          // Zuordnung auf Sand steht («Kontoauszug» aus Buchstabensalat).
           const unerkannt = !tri.belegart && !(tri.positionen || []).length;
           const ocrSchwach = teilVertrauen != null && teilVertrauen < 70
                           && tri.confidence < 0.85;
-          if (kiNutzen && !gesundheit && tri.grund !== 'duplikat'
+          if (kiNutzen && !gesundheit && !bildDabei && tri.grund !== 'duplikat'
               && (unerkannt || ocrSchwach)) {
             setBelege(v => v.map(b => b.id === id
               ? { ...b, stand: 'ki-bild', teilNr: i + 1 } : b));
-            const istPdf = /\.pdf$/i.test(datei.name);
-            const bild = istPdf
-              ? await pdfSeiteAlsBild(datei, teil.von)
-              : /\.(jpe?g|png|webp|gif)$/i.test(datei.name)
-                ? await fileToBase64(datei) : null;
+            const bild = await bildVomTeil();
             if (bild) {
-              const bildTyp = istPdf ? 'image/jpeg' : (datei.type || 'image/jpeg');
               tri = await triageMitKi(supabase, { ...eingang, bild, bildTyp }, kontext);
+              bildDabei = true;
             }
           }
           bekannteHashes.push(eingang.dateiHash);
@@ -386,8 +400,40 @@ export default function Belegsortierung() {
           const zuord = tri.belegart ? positionenFuer(tri.belegart) : { positionen: [], offen: true };
           const kiPos = (tri.positionen || []).map(x => KATALOG_NACH_ID[x]).filter(Boolean);
           const vorschlag = kiPos.length ? kiPos : (zuord.positionen || []);
-          const position = tri.grund === 'duplikat' ? '_aussortiert'
-                         : (vorschlag.length === 1 ? vorschlag[0].id : null);
+          let position = tri.grund === 'duplikat' ? '_aussortiert'
+                       : (vorschlag.length === 1 ? vorschlag[0].id : null);
+
+          // Wahl-Stufe: Belegart erkannt, aber MEHRERE mögliche Ziele
+          // (Kontoauszug → Wertschriften oder Schulden; Rente → AHV, PK oder
+          // Säule 3). Die Regeln sind sich hier ihrer Sache sicher, darum kam
+          // die KI bisher nie dran — und der Beleg blieb liegen. Genau diese
+          // eine Entscheidungsfrage stellen, mehr nicht.
+          const kandidatenListe = vorschlag.length >= 2 ? vorschlag : (zuord.kandidaten || []);
+          if (!position && kiNutzen && tri.grund !== 'duplikat'
+              && kandidatenListe.length >= 2) {
+            setBelege(v => v.map(b => b.id === id
+              ? { ...b, stand: 'ki-wahl', teilNr: i + 1 } : b));
+            try {
+              const bilder = [];
+              if (!gesundheit && teilVertrauen != null) {
+                const bild = await bildVomTeil();
+                if (bild) bilder.push(bild);
+              }
+              const wahl = await positionWaehlen(supabase, {
+                text: ausschnittFuerKi(teil.text),
+                dateiname: datei.name, periode: kontextBasis.periode,
+                belegart: tri.belegart,
+                kriterium: zuord.grund || '',
+                kandidaten: kandidatenListe, bilder, bildTyp,
+              });
+              if (wahl.position && wahl.confidence >= 0.5
+                  && kandidatenListe.some(k => k.id === wahl.position)) {
+                position = wahl.position;
+                tri = { ...tri, quelle: 'ki',
+                  begruendung: `${tri.begruendung} · KI-Wahl: ${wahl.begruendung}` };
+              }
+            } catch (e) { console.warn('[KI-Wahl]', e.message); }
+          }
 
           // Beträge: erst die Anker im Text; lässt der OCR-Text eine Seite
           // leer, die der Katalog erwartet, die betroffenen Seiten als Bild
@@ -1177,6 +1223,79 @@ function Vorschau({ beleg: b, breite, steuerjahr, onAendern, onPosition }) {
   const kannBetraegeHolen = (fehltE || fehltV) && istPdfQuelle
     && (b?.datei || b?.dateiPfad) && !istGesundheitsbeleg(b || {});
 
+  // Offene Belege per KI zuordnen lassen — die Wahl-Stufe auf Zuruf.
+  // Mit erkannter Belegart wird nur die Entscheidungsfrage gestellt
+  // (Kontoauszug: Guthaben oder Sollsaldo?); ohne Belegart läuft die volle
+  // Klassifikation, bei Scans mit Seitenbild. Krankheitsbelege ohne Bild.
+  const [bestimmt, setBestimmt] = useState(false);
+  const kannPositionBestimmen = b && !b.position && b.stand === 'fertig'
+    && (b.text || b.datei || b.dateiPfad);
+
+  async function positionBestimmen() {
+    setBestimmt(true); setHolErgebnis(null);
+    try {
+      const gesund = istGesundheitsbeleg(b);
+      const bilder = [];
+      if (!gesund && istPdfQuelle && (b.datei || b.dateiPfad)) {
+        const quelle = b.datei || await db.dateiLaden(b.dateiPfad);
+        const bild = await pdfSeiteAlsBild(quelle, b.vonSeite || 1);
+        if (bild) bilder.push(bild);
+      }
+      const zuord = b.belegart ? positionenFuer(b.belegart) : null;
+      const kand = (b.kandidaten?.length ? b.kandidaten : zuord?.kandidaten) || [];
+
+      const anwenden = (pos, begr) => onAendern(b.id, {
+        position: pos, quelle: 'ki',
+        begruendung: `${b.begruendung ? b.begruendung + ' · ' : ''}${begr}`,
+        ...(b.betragQuelle === 'hand' ? {} : seitenFuer(pos, b.text)),
+      });
+
+      if (kand.length >= 2) {
+        const wahl = await positionWaehlen(supabase, {
+          text: ausschnittFuerKi(b.text), dateiname: b.name,
+          periode: steuerjahr ?? null, belegart: b.belegart,
+          kriterium: zuord?.grund || '', kandidaten: kand, bilder,
+        });
+        if (wahl.position && kand.some(k => k.id === wahl.position)) {
+          anwenden(wahl.position, `KI-Wahl: ${wahl.begruendung}`);
+          setHolErgebnis(wahl.begruendung || 'zugeordnet');
+        } else {
+          setHolErgebnis('KI konnte nicht entscheiden'
+            + (wahl.begruendung ? ` — ${wahl.begruendung}` : ''));
+        }
+      } else {
+        const tri = await triageMitKi(supabase, {
+          text: b.text || '', dateiname: b.name,
+          ...(bilder.length ? { bild: bilder[0], bildTyp: 'image/jpeg' } : {}),
+        }, { periode: steuerjahr ?? null, katalog: katalogFuerPrompt() });
+        const kiPos = (tri.positionen || []).map(x => KATALOG_NACH_ID[x]).filter(Boolean);
+        if (kiPos.length === 1) {
+          anwenden(kiPos[0].id, `KI: ${tri.begruendung}`);
+          setHolErgebnis(tri.begruendung || 'zugeordnet');
+        } else if (kiPos.length >= 2) {
+          const wahl = await positionWaehlen(supabase, {
+            text: ausschnittFuerKi(b.text), dateiname: b.name,
+            periode: steuerjahr ?? null, belegart: tri.belegart,
+            kandidaten: kiPos, bilder,
+          });
+          if (wahl.position) {
+            anwenden(wahl.position, `KI-Wahl: ${wahl.begruendung}`);
+            setHolErgebnis(wahl.begruendung || 'zugeordnet');
+          } else {
+            setHolErgebnis(`Zwei Kandidaten, keine Entscheidung: ${kiPos.map(k => k.label).join(' / ')}`);
+          }
+        } else {
+          setHolErgebnis('KI hat keine Position erkannt'
+            + (tri.begruendung ? ` — ${tri.begruendung}` : ''));
+        }
+      }
+    } catch (e) {
+      setHolErgebnis(`Fehlgeschlagen: ${e.message}`);
+    } finally {
+      setBestimmt(false);
+    }
+  }
+
   async function betraegeHolen() {
     setHoltBetraege(true); setHolErgebnis(null);
     try {
@@ -1282,6 +1401,17 @@ function Vorschau({ beleg: b, breite, steuerjahr, onAendern, onPosition }) {
         </div>
 
         <div style={{ display: 'grid', gap: 8 }}>
+          {kannPositionBestimmen && (
+            <button onClick={positionBestimmen} disabled={bestimmt}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center',
+                       gap: 6, padding: '6px 8px', fontSize: 11, borderRadius: 5,
+                       border: `1px solid ${C.accent}`, background: 'none',
+                       color: C.accent, cursor: bestimmt ? 'wait' : 'pointer' }}>
+              {bestimmt
+                ? <><Loader2 size={11} className="animate-spin" /> KI entscheidet …</>
+                : <>Position per KI bestimmen</>}
+            </button>
+          )}
           {/* Jeder Beleg führt BEIDE Seiten der Erklärung — Einkommen und
               Vermögen. Wo der Katalog nichts erwartet, bleibt das Feld leer,
               steht aber da (Lohnausweis: nur Einkommen; Kaufvertrag: nur
@@ -1388,5 +1518,6 @@ function standText(stand) {
   if (stand === 'ki')    return 'Regeln reichten nicht – KI wird gefragt …';
   if (stand === 'ki-bild') return 'Text half nicht – Seite geht als Bild an die KI …';
   if (stand === 'ki-betrag') return 'Beträge fehlen – werden vom Beleg abgelesen …';
+  if (stand === 'ki-wahl') return 'Mehrere mögliche Ziele – KI entscheidet …';
   return String(stand || '') + ' …';
 }

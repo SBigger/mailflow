@@ -78,15 +78,130 @@ Regeln:
   Betrag nicht auf den Seiten, gib null zurück.
 - Schweizer Schreibweisen normalisieren: 112'480.00 → 112480.00.
 - Nur die GESUCHTEN Beträge. Nach was nicht gefragt ist, bleibt null.
+- Der Betrag gehört in das Feld der GEFRAGTEN Seite: Was unter «einkommen:»
+  gesucht wurde, kommt ins Feld "einkommen" — auch Abzüge wie Schuldzinsen
+  oder Prämien. Was unter «vermoegen:» gesucht wurde, ins Feld "vermoegen".
+- Die Begriffe heissen auf dem Beleg oft anders: Schuldzinsen stehen als
+  «bezahlter Zins», «belasteter Zins» oder «Sollzinsen»; der Steuerwert als
+  «Saldo per 31.12.» oder «Kontostand». Lies die Zahl der passenden Spalte
+  ab. Ob etwas steuerlich abziehbar ist, beurteilst du NICHT — das macht
+  der Treuhänder.
 - Nummern sind keine Beträge: Kunden-Nr., Rechnungs-Nr., Policen-Nr.,
   Versicherungssummen und Gebäudewerte sind NICHT gesucht.
 - Bei mehreren Jahren auf dem Beleg zählt die angegebene Steuerperiode.`;
+
+const REGELN_WAHL = `Du triffst EINE Entscheidung über einen Schweizer Steuerbeleg.
+
+Die Belegart ist bereits erkannt. Offen ist nur, zu WELCHER der genannten
+Positionen der Beleg gehört. Du bekommst das Unterscheidungskriterium, einen
+Textausschnitt (oft OCR, fehlerhaft) und allenfalls ein Seitenbild.
+
+Antworte AUSSCHLIESSLICH mit JSON:
+{
+  "position": "<id aus der Kandidatenliste oder null>",
+  "confidence": 0.0-1.0,
+  "begruendung": "<ein Satz: woran du es festmachst>"
+}
+
+Regeln:
+- NUR eine id aus der Kandidatenliste — oder null, wenn der Beleg die Frage
+  nicht beantwortet. Rate nicht: ein falsch einsortierter Beleg kostet mehr
+  als ein offener.
+- Beim Kontoauszug entscheidet das Vorzeichen: Guthaben → Wertschriften,
+  Sollsaldo/Kredit → Schulden.
+- Bei Renten entscheidet der Absender: Ausgleichskasse (SVA/AK) → AHV,
+  Pensionskasse/Sammelstiftung → 2. Säule, Vorsorgestiftung/Bank → Säule 3.
+- Bei Liegenschaftsbelegen: Mietzins/Eigenmietwert → Ertrag, amtliche
+  Schätzung/Steuerwert → Objektdaten, Rechnungen → Unterhalt.
+- Bei Zahlungen entscheidet der Zweck: Kapitaleinlage/Darlehen → Vermögen,
+  private Rechnung → nicht zur Steuererklärung.`;
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
     const body = await req.json();
+
+    // ── Modus «wahl»: erkannte Belegart, Position unter Kandidaten wählen ─
+    if (body.modus === "wahl") {
+      const text = String(body.text || "").slice(0, 4000);
+      const kandidaten = (Array.isArray(body.kandidaten) ? body.kandidaten : [])
+        .filter((k: { id?: unknown }) => k && typeof k.id === "string").slice(0, 6);
+      const bilder = (Array.isArray(body.bilder) ? body.bilder : [])
+        .filter((b: unknown) => typeof b === "string" && b).slice(0, 2);
+      const bildTyp = ["image/jpeg", "image/png", "image/webp"].includes(body.bildTyp)
+        ? body.bildTyp : "image/jpeg";
+
+      if (kandidaten.length < 2) return ok({ error: "Zu wenige Kandidaten" });
+      if (!text.trim() && !bilder.length) return ok({ error: "Weder Text noch Bild" });
+
+      const key = Deno.env.get("ANTHROPIC_API_KEY");
+      if (!key) return ok({ error: "ANTHROPIC_API_KEY fehlt" });
+
+      const frage = [
+        body.belegart ? `Erkannte Belegart: ${body.belegart}` : "",
+        body.kriterium ? `Unterscheidungskriterium: ${body.kriterium}` : "",
+        body.periode ? `Steuerperiode: ${body.periode}` : "",
+        body.dateiname ? `Dateiname: ${body.dateiname}` : "",
+        "",
+        "KANDIDATEN:",
+        ...kandidaten.map((k: { id: string; label?: string }) =>
+          `- ${k.id}: ${k.label || k.id}`),
+        "",
+        text.trim() ? "TEXTAUSSCHNITT:" : "(kein lesbarer Text — nur das Bild)",
+        text,
+      ].filter(Boolean).join("\n");
+
+      const inhalt = bilder.length
+        ? [
+            ...bilder.map((b: string) => ({
+              type: "image", source: { type: "base64", media_type: bildTyp, data: b },
+            })),
+            { type: "text", text: frage },
+          ]
+        : frage;
+
+      let letzter = "";
+      for (const model of ["claude-haiku-4-5", "claude-sonnet-4-5"]) {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 30000);
+        try {
+          const res = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-api-key": key,
+              "anthropic-version": "2023-06-01",
+            },
+            body: JSON.stringify({
+              model, max_tokens: 300,
+              system: REGELN_WAHL,
+              messages: [{ role: "user", content: inhalt }],
+            }),
+            signal: ctrl.signal,
+          });
+          if (!res.ok) { letzter = `${model}: HTTP ${res.status}`; continue; }
+          const antwort = await res.json();
+          const roh = antwort?.content?.[0]?.text || "";
+          const treffer = roh.match(/\{[\s\S]*\}/);
+          if (!treffer) { letzter = `${model}: kein JSON`; continue; }
+          const p = JSON.parse(treffer[0]);
+          // Nur Kandidaten-ids gelten — alles andere ist null.
+          const gueltig = kandidaten.some((k: { id: string }) => k.id === p.position);
+          return ok({
+            position: gueltig ? p.position : null,
+            confidence: Math.max(0, Math.min(1, Number(p.confidence) || 0)),
+            begruendung: p.begruendung || "",
+            model_used: model,
+          });
+        } catch (e) {
+          letzter = `${model}: ${e.message || e}`;
+        } finally {
+          clearTimeout(timer);
+        }
+      }
+      return ok({ error: `Kein Modell hat geantwortet (${letzter})` });
+    }
 
     // ── Modus «betrag»: gezielt Beträge von Seitenbildern ablesen ────────
     if (body.modus === "betrag") {
@@ -121,6 +236,7 @@ serve(async (req) => {
       ];
 
       let letzter = "";
+      let leereAntwort: Record<string, unknown> | null = null;
       for (const model of ["claude-haiku-4-5", "claude-sonnet-4-5"]) {
         const ctrl = new AbortController();
         const timer = setTimeout(() => ctrl.abort(), 30000);
@@ -145,18 +261,32 @@ serve(async (req) => {
           const treffer = roh.match(/\{[\s\S]*\}/);
           if (!treffer) { letzter = `${model}: kein JSON`; continue; }
           const p = JSON.parse(treffer[0]);
-          return ok({
-            einkommen: typeof p.einkommen === "number" ? p.einkommen : null,
-            vermoegen: typeof p.vermoegen === "number" ? p.vermoegen : null,
+          let e = typeof p.einkommen === "number" ? p.einkommen : null;
+          let v = typeof p.vermoegen === "number" ? p.vermoegen : null;
+          // War nur EINE Seite gefragt und die Antwort steckt im anderen
+          // Feld, umhängen — gemessen: Haiku legte den gefundenen Schuldzins
+          // ins Vermögensfeld, und der Client verwarf ihn.
+          if (eLabel && !vLabel && e == null && v != null) { e = v; v = null; }
+          if (vLabel && !eLabel && v == null && e != null) { v = e; e = null; }
+          const antwortDaten = {
+            einkommen: e,
+            vermoegen: v,
             begruendung: p.begruendung || "",
             model_used: model,
-          });
+          };
+          // Gar nichts gefunden? Das nächste (stärkere) Modell versuchen —
+          // Haiku verweigert gelegentlich mit fachlicher Begründung, wo
+          // Sonnet die Spalte einfach abliest. Die leere Antwort bleibt
+          // als Rückfalljoker stehen.
+          if (e == null && v == null) { leereAntwort = antwortDaten; continue; }
+          return ok(antwortDaten);
         } catch (e) {
           letzter = `${model}: ${e.message || e}`;
         } finally {
           clearTimeout(timer);
         }
       }
+      if (leereAntwort) return ok(leereAntwort);
       return ok({ error: `Kein Modell hat geantwortet (${letzter})` });
     }
     const text = String(body.text || "").slice(0, 4000);
