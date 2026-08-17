@@ -1169,7 +1169,12 @@ function Vorschau({ beleg: b, breite, steuerjahr, onAendern, onPosition }) {
   const posDef = b?.position ? KATALOG_NACH_ID[b.position] : null;
   const fehltE = !!(posDef?.einkommen && b?.einkommen == null);
   const fehltV = !!(posDef?.vermoegen && b?.vermoegen == null);
-  const kannBetraegeHolen = (fehltE || fehltV) && b?.istPdf
+  // istPdf wird erst beim Laden der Vorschau gesetzt — für gespeicherte
+  // Belege zählt darum auch die Endung des Ablage-Pfads, sonst fehlt der
+  // Knopf, bis die Vorschau durch ist.
+  const istPdfQuelle = b?.istPdf || /\.pdf($|\?)/i.test(b?.dateiPfad || '')
+    || /\.pdf$/i.test(b?.name || '');
+  const kannBetraegeHolen = (fehltE || fehltV) && istPdfQuelle
     && (b?.datei || b?.dateiPfad) && !istGesundheitsbeleg(b || {});
 
   async function betraegeHolen() {
