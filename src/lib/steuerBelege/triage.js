@@ -96,6 +96,25 @@ export function ausschnittFuerKi(text, zeichen = 1800) {
     .replace(/756[.,\s-]*\d{4}[.,\s-]*\d{4}[.,\s-]*\d{2}/g, "756.[maskiert]");
 }
 
+// Krankheits- und Behandlungsbelege sind besonders schützenswerte
+// Personendaten (revDSG) — im Bild lässt sich nichts maskieren. Deshalb die
+// feste Regel: solche Belege gehen NIE als Bild an die KI, weder zur
+// Zuordnung noch für Beträge. Der Textausschnitt (maskiert) bleibt erlaubt.
+const GESUNDHEIT_SIGNALE = [
+  'arzt', 'dr. med', 'zahnarzt', 'dentalhygiene', 'spital', 'klinik',
+  'apotheke', 'therapie', 'physio', 'diagnose', 'behandlung', 'patient',
+  'leistungsabrechnung', 'selbstbehalt', 'franchise', 'krankheitskosten',
+  'pflegeheim', 'hilfsmittel',
+];
+
+export function istGesundheitsbeleg(beleg) {
+  if (beleg.belegart === 'krankenkasse') return true;
+  const pos = [beleg.position, ...(beleg.positionen || [])];
+  if (pos.some(p => p === 'krankheitskosten' || p === 'behinderungskosten')) return true;
+  const t = flach(beleg.text || '');
+  return GESUNDHEIT_SIGNALE.some(s => t.includes(flach(s)));
+}
+
 // ══════════════════════════════════════════════════════════════════════
 // Stufe 1: Regeln
 // ══════════════════════════════════════════════════════════════════════
@@ -317,6 +336,44 @@ export async function triageMitKi(supabase, beleg, kontext = {}) {
       begruendung: `${regel.begruendung} (KI nicht erreichbar: ${e.message})`,
     };
   }
+}
+
+/**
+ * Holt gezielt fehlende Beträge aus Seitenbildern eines Belegs.
+ *
+ * Wird gerufen, wenn die Position feststeht, die Anker im OCR-Text aber leer
+ * ausgingen — der Schuldzins steht z. B. auf der Zinsabschluss-Seite, die die
+ * OCR verstümmelt hat. Gefragt wird NUR nach den fehlenden Seiten; die KI
+ * soll ablesen, nicht rechnen.
+ *
+ * @param {object} supabase
+ * @param {object} auftrag
+ *   @param {string[]} auftrag.bilder          base64-JPEGs (max. 3 Seiten)
+ *   @param {string|null} auftrag.einkommenLabel  was gesucht wird, oder null
+ *   @param {string|null} auftrag.vermoegenLabel
+ * @returns {{einkommen:number|null, vermoegen:number|null, begruendung:string}}
+ */
+export async function betraegePerBild(supabase, auftrag) {
+  const { data, error } = await supabase.functions.invoke("steuer-suggest-position", {
+    body: {
+      modus: "betrag",
+      bilder: (auftrag.bilder || []).slice(0, 3),
+      bildTyp: auftrag.bildTyp || "image/jpeg",
+      einkommenLabel: auftrag.einkommenLabel || null,
+      vermoegenLabel: auftrag.vermoegenLabel || null,
+      dateiname: auftrag.dateiname || "",
+      periode: auftrag.periode ?? null,
+    },
+  });
+  if (error) throw error;
+  if (!data || data.error) throw new Error(data?.error || "Leere Antwort");
+  return {
+    einkommen: Number.isFinite(Number(data.einkommen)) && data.einkommen != null
+      ? Number(data.einkommen) : null,
+    vermoegen: Number.isFinite(Number(data.vermoegen)) && data.vermoegen != null
+      ? Number(data.vermoegen) : null,
+    begruendung: data.begruendung || "",
+  };
 }
 
 /**

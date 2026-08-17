@@ -127,9 +127,22 @@ export async function terminateOcr() {
 }
 
 async function ocrBlob(blobOrCanvas) {
+  const { text } = await ocrErkenne(blobOrCanvas);
+  return text;
+}
+
+/**
+ * OCR mit Vertrauenswert (0–100, von tesseract je Seite gemeldet).
+ * Der Wert sagt ehrlich, wie sicher die Erkennung war — unter ~70 ist der
+ * Text erfahrungsgemäss löchrig und die Seite ein Fall für die Bild-KI.
+ */
+async function ocrErkenne(blobOrCanvas) {
   const scheduler = await getOcrScheduler();
   const { data } = await scheduler.addJob("recognize", blobOrCanvas);
-  return (data?.text || "").trim();
+  return {
+    text: (data?.text || "").trim(),
+    vertrauen: Number.isFinite(data?.confidence) ? data.confidence : null,
+  };
 }
 
 /**
@@ -253,11 +266,11 @@ async function ocrPdfPages(pdf, maxPages = 5) {
  * Seiten nebeneinander laufen.
  */
 export async function extractPageTexts(file, { maxPages = 40, onStage } = {}) {
-  if (!file) return [];
+  if (!file) return { seiten: [], vertrauen: [] };
   const name = (file.name || "").toLowerCase();
   if (!(file.type === "application/pdf" || name.endsWith(".pdf"))) {
     const text = await extractDocumentText(file, { onStage });
-    return text ? [text] : [];
+    return text ? { seiten: [text], vertrauen: [null] } : { seiten: [], vertrauen: [] };
   }
 
   const buf = await file.arrayBuffer();
@@ -273,7 +286,8 @@ export async function extractPageTexts(file, { maxPages = 40, onStage } = {}) {
     texte.push(content.items.map(it => it.str).join(" ").trim());
   }
   const hatText = texte.join("").length > 50 * anzahl * 0.3;
-  if (hatText) return texte;
+  // Textebene = digitales Original, Vertrauen spielt keine Rolle (null).
+  if (hatText) return { seiten: texte, vertrauen: texte.map(() => null) };
 
   // Scan: rendern (seriell, ein pdfjs-Dokument) und gemeinsam erkennen.
   try { onStage?.("ocr", `Scan mit ${anzahl} Seiten – OCR läuft…`); } catch {}
@@ -289,9 +303,13 @@ export async function extractPageTexts(file, { maxPages = 40, onStage } = {}) {
       25000, `Rendern Seite ${i}`);
     canvases.push(canvas);
   }
-  return await Promise.all(canvases.map((c, i) =>
-    ocrBlob(c).catch(e => { console.warn("[OCR] Seite fehlgeschlagen", i + 1, e); return ""; })
+  const erkannt = await Promise.all(canvases.map((c, i) =>
+    ocrErkenne(c).catch(e => {
+      console.warn("[OCR] Seite fehlgeschlagen", i + 1, e);
+      return { text: "", vertrauen: 0 };
+    })
   ));
+  return { seiten: erkannt.map(e => e.text), vertrauen: erkannt.map(e => e.vertrauen) };
 }
 
 // ══════════════════════════════════════════════════════════════════════

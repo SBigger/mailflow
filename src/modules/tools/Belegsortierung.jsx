@@ -24,7 +24,8 @@ import {
 
 import { supabase } from '@/api/supabaseClient';
 import { extractPageTexts, pdfSeiteAlsBild, fileToBase64 } from '../../lib/batchAiSuggest.js';
-import { triageRegeln, triageMitKi, brauchtKi } from '../../lib/steuerBelege/triage.js';
+import { triageRegeln, triageMitKi, brauchtKi, istGesundheitsbeleg, betraegePerBild }
+  from '../../lib/steuerBelege/triage.js';
 import { positionenFuer, offeneDimensionen } from '../../lib/steuerBelege/belegartZuPosition.js';
 import { BELEGART_BY_KEY, BELEGARTEN } from '../../lib/steuerBelege/belegarten.js';
 import { findAhvInText, dateiHash } from '../../lib/steuerBelege/belegHelfer.js';
@@ -127,8 +128,10 @@ function migriereBetraege(b) {
   // Regel-Werte mit der HEUTIGEN Regel neu rechnen — die Anker sind seit dem
   // Speichern besser geworden (kumulierte «Gesamttotale» und OCR-Monsterzahlen
   // flogen raus). Was die heutige Regel nicht mehr findet, wird leer und
-  // damit wieder Prüfarbeit statt falscher Zahl. Handeingaben bleiben stehen.
-  if (b.betragQuelle !== 'hand' && b.text && position) {
+  // damit wieder Prüfarbeit statt falscher Zahl. Handeingaben bleiben stehen,
+  // und per Bild-KI abgelesene Beträge auch — die Regel würde sie nur wieder
+  // verlieren, gefunden hat sie sie ja schon damals nicht.
+  if (b.betragQuelle !== 'hand' && b.betragQuelle !== 'ki' && b.text && position) {
     const p = KATALOG_NACH_ID[position];
     if (p?.einkommen || p?.vermoegen) {
       const t = findeSeiten(b.text, position);
@@ -273,7 +276,7 @@ export default function Belegsortierung() {
         // Text JE SEITE holen und das PDF in einzelne Belege zerlegen. Ein
         // gescanntes Buendel enthaelt selten einen Beleg -- der Umbau-Ordner
         // hat 38 Seiten und darauf 30 Verguetungsauftraege.
-        const seitenTexte = await extractPageTexts(datei, {
+        const { seiten: seitenTexte, vertrauen } = await extractPageTexts(datei, {
           onStage: st => setBelege(v => v.map(b => b.id === id ? { ...b, stand: st } : b)),
         });
         const teile = trenneBelege(seitenTexte);
@@ -344,13 +347,28 @@ export default function Belegsortierung() {
             tri = await triageMitKi(supabase, eingang, kontext);
           }
 
-          // Bild-Nachschlag: Erkennen weder Regeln noch Text-KI den Teil,
-          // geht seine ERSTE SEITE als Foto an die KI — bei Handnotizen und
-          // unleserlichen Scans steht die Antwort im Layout, nicht im Text.
-          // Bewusst nur für diese Reste: im Bild lässt sich keine
-          // AHV-Nummer maskieren.
-          if (kiNutzen && !tri.belegart && !(tri.positionen || []).length
-              && tri.grund !== 'duplikat') {
+          // Wie sicher war die OCR über die Seiten dieses Teils? null heisst
+          // digitale Textebene (perfekt); unter ~70 ist der Text löchrig.
+          const vWerte = vertrauen.slice(teil.von - 1, teil.bis).filter(x => x != null);
+          const teilVertrauen = vWerte.length
+            ? Math.round(vWerte.reduce((s, x) => s + x, 0) / vWerte.length) : null;
+
+          // Krankheits- und Behandlungsbelege gehen NIE als Bild raus —
+          // im Bild lässt sich keine AHV-Nummer und keine Diagnose maskieren.
+          const gesundheit = istGesundheitsbeleg({
+            text: teil.text, belegart: tri.belegart,
+            positionen: tri.positionen || [],
+          });
+
+          // Bild-Nachschlag in zwei Fällen: (a) weder Regeln noch Text-KI
+          // erkennen den Teil — bei Handnotizen steht die Antwort im Layout;
+          // (b) die OCR war so schwach, dass auch eine gefundene Zuordnung
+          // auf Sand steht («Kontoauszug» aus Buchstabensalat).
+          const unerkannt = !tri.belegart && !(tri.positionen || []).length;
+          const ocrSchwach = teilVertrauen != null && teilVertrauen < 70
+                          && tri.confidence < 0.85;
+          if (kiNutzen && !gesundheit && tri.grund !== 'duplikat'
+              && (unerkannt || ocrSchwach)) {
             setBelege(v => v.map(b => b.id === id
               ? { ...b, stand: 'ki-bild', teilNr: i + 1 } : b));
             const istPdf = /\.pdf$/i.test(datei.name);
@@ -371,6 +389,40 @@ export default function Belegsortierung() {
           const position = tri.grund === 'duplikat' ? '_aussortiert'
                          : (vorschlag.length === 1 ? vorschlag[0].id : null);
 
+          // Beträge: erst die Anker im Text; lässt der OCR-Text eine Seite
+          // leer, die der Katalog erwartet, die betroffenen Seiten als Bild
+          // gezielt nachfragen (abgelesen, nicht gerechnet).
+          let seiten = seitenFuer(position, teil.text);
+          const posDef = position ? KATALOG_NACH_ID[position] : null;
+          const fehltE = posDef?.einkommen && seiten.einkommen == null;
+          const fehltV = posDef?.vermoegen && seiten.vermoegen == null;
+          if (kiNutzen && !gesundheit && (fehltE || fehltV)
+              && /\.pdf$/i.test(datei.name)) {
+            setBelege(v => v.map(b => b.id === id
+              ? { ...b, stand: 'ki-betrag', teilNr: i + 1 } : b));
+            try {
+              const bilder = [];
+              for (let s = teil.von; s <= Math.min(teil.bis, teil.von + 2); s++) {
+                const bild = await pdfSeiteAlsBild(datei, s);
+                if (bild) bilder.push(bild);
+              }
+              if (bilder.length) {
+                const r = await betraegePerBild(supabase, {
+                  bilder,
+                  einkommenLabel: fehltE ? posDef.einkommen : null,
+                  vermoegenLabel: fehltV ? posDef.vermoegen : null,
+                  dateiname: datei.name, periode: kontextBasis.periode,
+                });
+                if (fehltE && r.einkommen != null) seiten.einkommen = r.einkommen;
+                if (fehltV && r.vermoegen != null) seiten.vermoegen = r.vermoegen;
+                if (r.einkommen != null || r.vermoegen != null) {
+                  seiten = { ...seiten, betragQuelle: 'ki',
+                    betragAnker: `KI (Bild): ${r.begruendung || 'abgelesen'}` };
+                }
+              }
+            } catch (e) { console.warn('[Betrag per Bild]', e.message); }
+          }
+
           neueBelege.push({
             id: `${id}#${teil.von}`,
             name: teilName,
@@ -381,6 +433,7 @@ export default function Belegsortierung() {
             vonSeite: teil.von, bisSeite: teil.bis,
             trennGrund: teil.grund,
             text: teil.text,
+            ocrVertrauen: teilVertrauen,
             belegart: tri.belegart, confidence: tri.confidence,
             begruendung: tri.begruendung, quelle: tri.quelle || 'regel',
             vorschlag, kandidaten: zuord.kandidaten || [],
@@ -389,7 +442,7 @@ export default function Belegsortierung() {
             position,
             ahv: findAhvInText(teil.text),
             jahr: tri.periodeBeleg ?? null,
-            ...seitenFuer(position, teil.text),
+            ...seiten,
           });
         }
 
@@ -965,7 +1018,7 @@ export default function Belegsortierung() {
                       backgroundColor: ziehtGriff ? C.accent : C.panelBdr }} />
       </div>
 
-      <Vorschau beleg={aktiverBeleg} breite={vorschauBreite}
+      <Vorschau beleg={aktiverBeleg} breite={vorschauBreite} steuerjahr={steuerjahr}
                 onAendern={aendere} onPosition={setzePosition} />
     </div>
   );
@@ -1104,8 +1157,55 @@ function BelegKarte({ beleg: b, aktiv, onWaehlen, onDragStart, onDragEnd, zieht 
  * blättern und zoomen. Bei einem 38-seitigen Umbaubündel ist die erste Seite
  * selten die, an der man entscheidet.
  */
-function Vorschau({ beleg: b, breite, onAendern, onPosition }) {
+function Vorschau({ beleg: b, breite, steuerjahr, onAendern, onPosition }) {
   const C = useFarben();
+  const [holtBetraege, setHoltBetraege] = useState(false);
+  const [holErgebnis, setHolErgebnis] = useState(null);
+  useEffect(() => { setHolErgebnis(null); }, [b?.id]);
+
+  // Fehlende Beträge auf Zuruf per Bild-KI ablesen — für gespeicherte Belege
+  // (etwa den Schuldzins, den die OCR im ZKB-Ausweis nicht fand). Explizit
+  // per Klick, und für Krankheitsbelege gar nicht erst angeboten.
+  const posDef = b?.position ? KATALOG_NACH_ID[b.position] : null;
+  const fehltE = !!(posDef?.einkommen && b?.einkommen == null);
+  const fehltV = !!(posDef?.vermoegen && b?.vermoegen == null);
+  const kannBetraegeHolen = (fehltE || fehltV) && b?.istPdf
+    && (b?.datei || b?.dateiPfad) && !istGesundheitsbeleg(b || {});
+
+  async function betraegeHolen() {
+    setHoltBetraege(true); setHolErgebnis(null);
+    try {
+      const quelle = b.datei || await db.dateiLaden(b.dateiPfad);
+      const von = b.vonSeite || 1;
+      const bis = Math.min(b.bisSeite || von, von + 2);
+      const bilder = [];
+      for (let s = von; s <= bis; s++) {
+        const bild = await pdfSeiteAlsBild(quelle, s);
+        if (bild) bilder.push(bild);
+      }
+      if (!bilder.length) throw new Error('Seiten liessen sich nicht rendern');
+      const r = await betraegePerBild(supabase, {
+        bilder,
+        einkommenLabel: fehltE ? posDef.einkommen : null,
+        vermoegenLabel: fehltV ? posDef.vermoegen : null,
+        dateiname: b.name, periode: steuerjahr ?? null,
+      });
+      const neu = {};
+      if (fehltE && r.einkommen != null) neu.einkommen = r.einkommen;
+      if (fehltV && r.vermoegen != null) neu.vermoegen = r.vermoegen;
+      if (Object.keys(neu).length) {
+        onAendern(b.id, { ...neu, betragQuelle: 'ki' });
+        setHolErgebnis(r.begruendung || 'abgelesen');
+      } else {
+        setHolErgebnis('Auf den Seiten nicht gefunden'
+          + (r.begruendung ? ` — ${r.begruendung}` : ''));
+      }
+    } catch (e) {
+      setHolErgebnis(`Fehlgeschlagen: ${e.message}`);
+    } finally {
+      setHoltBetraege(false);
+    }
+  }
   const rahmen = {
     width: breite, flexShrink: 0, flexGrow: 1, height: '100%', backgroundColor: C.panelBg,
     borderLeft: `1px solid ${C.panelBdr}`,
@@ -1202,6 +1302,20 @@ function Vorschau({ beleg: b, breite, onAendern, onPosition }) {
               onChange={e => onAendern(b.id, { vermoegen: e.target.value, betragQuelle: 'hand' })}
               style={feld} />
           </div>
+          {kannBetraegeHolen && (
+            <button onClick={betraegeHolen} disabled={holtBetraege}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center',
+                       gap: 6, padding: '6px 8px', fontSize: 11, borderRadius: 5,
+                       border: `1px solid ${C.panelBdr}`, background: 'none',
+                       color: C.accent, cursor: holtBetraege ? 'wait' : 'pointer' }}>
+              {holtBetraege
+                ? <><Loader2 size={11} className="animate-spin" /> liest vom Beleg ab …</>
+                : <>Fehlende Beträge per KI vom Beleg ablesen</>}
+            </button>
+          )}
+          {holErgebnis && (
+            <div style={{ fontSize: 10, color: C.muted }}>{holErgebnis}</div>
+          )}
           <div>
             <div style={etikett(C)}>Steuerjahr</div>
             <input value={b.jahr ?? ''} onChange={e => onAendern(b.id, { jahr: e.target.value })}
@@ -1268,5 +1382,6 @@ function standText(stand) {
   if (stand === 'pdf')   return 'PDF-Text wird gelesen …';
   if (stand === 'ki')    return 'Regeln reichten nicht – KI wird gefragt …';
   if (stand === 'ki-bild') return 'Text half nicht – Seite geht als Bild an die KI …';
+  if (stand === 'ki-betrag') return 'Beträge fehlen – werden vom Beleg abgelesen …';
   return String(stand || '') + ' …';
 }

@@ -63,11 +63,102 @@ Regeln:
   dem Bild; das Layout (Einzahlungsschein, Police, Kontoauszug, Handnotiz)
   sagt oft mehr als der Text.`;
 
+const REGELN_BETRAG = `Du liest gezielt Beträge aus einem Schweizer Steuerbeleg ab.
+
+Du bekommst Seitenbilder EINES Belegs und die Beschreibung, welche Beträge
+gesucht sind. Antworte AUSSCHLIESSLICH mit JSON:
+{
+  "einkommen": <Zahl oder null>,
+  "vermoegen": <Zahl oder null>,
+  "begruendung": "<ein Satz: wo auf der Seite der Betrag steht>"
+}
+
+Regeln:
+- Du liest AB, du rechnest nicht und du schätzt nicht. Steht der gesuchte
+  Betrag nicht auf den Seiten, gib null zurück.
+- Schweizer Schreibweisen normalisieren: 112'480.00 → 112480.00.
+- Nur die GESUCHTEN Beträge. Nach was nicht gefragt ist, bleibt null.
+- Nummern sind keine Beträge: Kunden-Nr., Rechnungs-Nr., Policen-Nr.,
+  Versicherungssummen und Gebäudewerte sind NICHT gesucht.
+- Bei mehreren Jahren auf dem Beleg zählt die angegebene Steuerperiode.`;
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
     const body = await req.json();
+
+    // ── Modus «betrag»: gezielt Beträge von Seitenbildern ablesen ────────
+    if (body.modus === "betrag") {
+      const bilder = (Array.isArray(body.bilder) ? body.bilder : [])
+        .filter((b: unknown) => typeof b === "string" && b).slice(0, 3);
+      const bildTyp = ["image/jpeg", "image/png", "image/webp"].includes(body.bildTyp)
+        ? body.bildTyp : "image/jpeg";
+      const eLabel = body.einkommenLabel ? String(body.einkommenLabel) : null;
+      const vLabel = body.vermoegenLabel ? String(body.vermoegenLabel) : null;
+
+      if (!bilder.length) return ok({ error: "Kein Bild übergeben" });
+      if (!eLabel && !vLabel) return ok({ error: "Nichts gesucht" });
+      if (bilder.reduce((s: number, b: string) => s + b.length, 0) > 12_000_000)
+        return ok({ error: "Bilder zu gross" });
+
+      const key = Deno.env.get("ANTHROPIC_API_KEY");
+      if (!key) return ok({ error: "ANTHROPIC_API_KEY fehlt" });
+
+      const frage = [
+        body.periode ? `Steuerperiode: ${body.periode}` : "",
+        body.dateiname ? `Dateiname: ${body.dateiname}` : "",
+        "Gesucht:",
+        eLabel ? `- einkommen: ${eLabel}` : "",
+        vLabel ? `- vermoegen: ${vLabel}` : "",
+      ].filter(Boolean).join("\n");
+
+      const inhalt = [
+        ...bilder.map((b: string) => ({
+          type: "image", source: { type: "base64", media_type: bildTyp, data: b },
+        })),
+        { type: "text", text: frage },
+      ];
+
+      let letzter = "";
+      for (const model of ["claude-haiku-4-5", "claude-sonnet-4-5"]) {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 30000);
+        try {
+          const res = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-api-key": key,
+              "anthropic-version": "2023-06-01",
+            },
+            body: JSON.stringify({
+              model, max_tokens: 400,
+              system: REGELN_BETRAG,
+              messages: [{ role: "user", content: inhalt }],
+            }),
+            signal: ctrl.signal,
+          });
+          if (!res.ok) { letzter = `${model}: HTTP ${res.status}`; continue; }
+          const antwort = await res.json();
+          const roh = antwort?.content?.[0]?.text || "";
+          const treffer = roh.match(/\{[\s\S]*\}/);
+          if (!treffer) { letzter = `${model}: kein JSON`; continue; }
+          const p = JSON.parse(treffer[0]);
+          return ok({
+            einkommen: typeof p.einkommen === "number" ? p.einkommen : null,
+            vermoegen: typeof p.vermoegen === "number" ? p.vermoegen : null,
+            begruendung: p.begruendung || "",
+            model_used: model,
+          });
+        } catch (e) {
+          letzter = `${model}: ${e.message || e}`;
+        } finally {
+          clearTimeout(timer);
+        }
+      }
+      return ok({ error: `Kein Modell hat geantwortet (${letzter})` });
+    }
     const text = String(body.text || "").slice(0, 4000);
     const dateiname = String(body.dateiname || "");
     const periode = body.periode ?? null;
