@@ -1149,8 +1149,8 @@ export default function Belegsortierung() {
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column',
                     overflow: 'hidden' }}>
         <div style={{ padding: '14px 18px 10px 18px', borderBottom: `1px solid ${C.panelBdr}` }}>
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12 }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap' }}>
+            <div style={{ flex: '1 1 200px', minWidth: 0 }}>
               <div style={{ fontSize: 10, color: C.muted, textTransform: 'uppercase',
                             letterSpacing: '.08em' }}>
                 {VERZEICHNIS_NACH_ID[abschnitt]?.fuehrung
@@ -1176,28 +1176,38 @@ export default function Belegsortierung() {
                     })()}
               </div>
             </div>
-            <button onClick={() => eingabe.current?.click()}
-              style={{ ...knopf(C, true, C.accent), width: 'auto', padding: '6px 12px' }}>
-              <Upload size={12} /> Belege hinzufügen
-            </button>
-            {dateiListe.length > 0 && (
-              <button onClick={() => oeffneAufteilen(null)}
-                style={{ ...knopf(C, true, C.heading), width: 'auto', padding: '6px 12px' }}>
-                <GripVertical size={12} /> Aufteilen
+            {/* Knöpfe als eigene Gruppe: Bei schmaler Mittelspalte (breite
+                Vorschau) rutscht die ganze Zeile nach unten, statt dass die
+                Knöpfe den Titel überlagern. */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8,
+                          flexWrap: 'wrap', flexShrink: 0 }}>
+              <button onClick={() => eingabe.current?.click()}
+                style={{ ...knopf(C, true, C.accent), width: 'auto',
+                         padding: '6px 12px', whiteSpace: 'nowrap' }}>
+                <Upload size={12} /> Belege hinzufügen
               </button>
-            )}
-            {belege.some(b => b.stand === 'fertig') && (
-              <button onClick={() => setDurchsicht({ schritt: 1, index: 0 })}
-                style={{ ...knopf(C, true, C.heading), width: 'auto', padding: '6px 12px' }}>
-                <Maximize2 size={12} /> Durchsicht
-              </button>
-            )}
-            <label style={{ display: 'flex', alignItems: 'center', gap: 5,
-                            fontSize: 10, color: C.sub, cursor: 'pointer' }}>
-              <input type="checkbox" checked={kiNutzen}
-                     onChange={e => setKiNutzen(e.target.checked)} />
-              KI für Unklares
-            </label>
+              {dateiListe.length > 0 && (
+                <button onClick={() => oeffneAufteilen(null)}
+                  style={{ ...knopf(C, true, C.heading), width: 'auto',
+                           padding: '6px 12px', whiteSpace: 'nowrap' }}>
+                  <GripVertical size={12} /> Aufteilen
+                </button>
+              )}
+              {belege.some(b => b.stand === 'fertig') && (
+                <button onClick={() => setDurchsicht({ schritt: 1, index: 0 })}
+                  style={{ ...knopf(C, true, C.heading), width: 'auto',
+                           padding: '6px 12px', whiteSpace: 'nowrap' }}>
+                  <Maximize2 size={12} /> Durchsicht
+                </button>
+              )}
+              <label style={{ display: 'flex', alignItems: 'center', gap: 5,
+                              fontSize: 10, color: C.sub, cursor: 'pointer',
+                              whiteSpace: 'nowrap' }}>
+                <input type="checkbox" checked={kiNutzen}
+                       onChange={e => setKiNutzen(e.target.checked)} />
+                KI für Unklares
+              </label>
+            </div>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
