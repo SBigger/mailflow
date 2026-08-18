@@ -381,6 +381,22 @@ export default function Belegsortierung() {
           catch (e) { console.warn('[Ablage] Hochladen fehlgeschlagen:', e.message); }
         }
 
+        // Gespeicherter Stand ohne Datei: Alle Teile DIESER Datei erkennen sich
+        // am Inhalts-Hash wieder. Datei anheften, Ablage-Kopie nachliefern —
+        // ohne die Seiten erneut zu lesen. Das ist der schnelle Weg zurück zu
+        // einer vollständigen Vorschau, wenn beim Einlesen noch kein Mandant
+        // gewählt war (dann wurde nichts abgelegt).
+        const teileDerDatei = belegeRef.current.filter(b =>
+          b.ohneDatei && String(b.hash || '').split('#')[0] === hash);
+        if (teileDerDatei.length) {
+          setBelege(v => v.filter(b => b.id !== id).map(b =>
+            teileDerDatei.some(t => t.id === b.id)
+              ? { ...b, datei, url, istPdf: /\.pdf$/i.test(datei.name),
+                  ohneDatei: false, stand: 'fertig', dateiPfad: b.dateiPfad || dateiPfad }
+              : b));
+          return;
+        }
+
         const bekannt = belegeRef.current.find(b => b.hash === hash && b.ohneDatei);
         if (bekannt) {
           setBelege(v => v.filter(b => b.id !== id).map(b => b.id === bekannt.id
@@ -646,6 +662,27 @@ export default function Belegsortierung() {
     setBelege(v => konsolidiereDoppel(v));
     setLaeuft(false);
   }
+
+  // Mandant erst nachträglich gewählt? Dann die Dateien, die noch im
+  // Arbeitsspeicher liegen, sofort ablegen. Vorher passierte das erst beim
+  // Speichern — und wer zwischendurch neu lud, hatte nie eine Kopie und
+  // damit für immer eine leere Vorschau.
+  useEffect(() => {
+    if (!kunde?.id) return;
+    const offene = belegeRef.current.filter(b => b.datei && !b.dateiPfad && b.hash);
+    if (!offene.length) return;
+    let abgebrochen = false;
+    (async () => {
+      for (const b of offene) {
+        if (abgebrochen) return;
+        try {
+          const pfad = await db.dateiHochladen(kunde.id, String(b.hash).split('#')[0], b.datei);
+          setBelege(v => v.map(x => x.id === b.id ? { ...x, dateiPfad: pfad } : x));
+        } catch (e) { console.warn('[Ablage] Nachliefern fehlgeschlagen:', e.message); }
+      }
+    })();
+    return () => { abgebrochen = true; };
+  }, [kunde?.id]);
 
   // Beim Öffnen den letzten Entwurf zurückholen: Mandant, Jahr und die
   // sortierten Belege. Die Dateien fehlen dann — die Vorschau holt sie aus
