@@ -54,6 +54,35 @@ export function kennzahlen(text) {
   return menge;
 }
 
+/** Beträge eines Belegs: Zahlen mit Rappen (298.10, 1'204.55). */
+export function betraege(text) {
+  const menge = new Set();
+  for (const m of String(text || '').matchAll(/\d[\d'’.,\s]{0,12}[.,]\d{2}\b/g)) {
+    const roh = m[0].replace(/[^\d]/g, '');
+    if (roh.length >= 3) menge.add(roh);
+  }
+  return menge;
+}
+
+/** Belegnummern: der Wert hinter «Rechnung Nr.», «Rechnungs-Nr.», «Beleg Nr.». */
+export function belegnummern(text) {
+  const t = String(text || '').toLowerCase();
+  const menge = new Set();
+  const muster = /(rechnung|rechnungs|beleg|auftrag|quittung|gutschrift)s?[\s.-]*(nr|nummer)\.?\s*[:.]?\s*([a-z]?\d[\d.\/-]{2,16})/g;
+  for (const m of t.matchAll(muster)) {
+    const roh = m[3].replace(/\D/g, '');
+    if (roh.length >= 4) menge.add(roh);
+  }
+  return menge;
+}
+
+/** Haben zwei Texte KEINE gemeinsame Zahl dieser Art, sind sie verschieden. */
+function disjunkt(a, b) {
+  if (!a.size || !b.size) return false;
+  for (const x of a) if (b.has(x)) return false;
+  return true;
+}
+
 /** Anteil gemeinsamer Kennzahlen (0–1). */
 export function kennzahlDeckung(a, b) {
   if (!a.size || !b.size) return 1;      // keine Aussage möglich
@@ -91,8 +120,12 @@ export function findeDoppel(neuer, vorhandene) {
     if (!alt.text || alt.doppelVon) continue;      // Doppel nicht als Original nehmen
     const score = aehnlichkeit(mengeNeu, wortmenge(alt.text));
     if (score < DOPPEL_SCHWELLE) continue;
-    // Gegenprobe an den Kennzahlen: gleiche Vorlage, andere Nummern und
-    // Beträge = zwei Rechnungen, keine Kopie.
+    // Gegenprobe: Was zwei Rechnungen desselben Absenders unterscheidet,
+    // sind Belegnummer und Betrag — Adresse, PLZ, Kundennummer und
+    // Tarifzeilen stehen auf jeder Quartalsrechnung gleich. Kein einziger
+    // gemeinsamer Betrag oder eine andere Rechnungsnummer: zwei Belege.
+    if (disjunkt(belegnummern(neuer.text), belegnummern(alt.text))) continue;
+    if (disjunkt(betraege(neuer.text), betraege(alt.text))) continue;
     const deckung = kennzahlDeckung(kzNeu, kennzahlen(alt.text));
     if (deckung < KENNZAHL_MINDEST) continue;
     if (!bester || score > bester.score) {
