@@ -64,6 +64,16 @@ export function betraege(text) {
   return menge;
 }
 
+/** Grösster Betrag eines Belegs — praktisch immer die Endsumme. */
+export function groessterBetrag(text) {
+  let max = null;
+  for (const roh of betraege(text)) {
+    const n = Number(roh.slice(0, -2) + '.' + roh.slice(-2));
+    if (Number.isFinite(n) && (max == null || n > max)) max = n;
+  }
+  return max;
+}
+
 /** Belegnummern: der Wert hinter «Rechnung Nr.», «Rechnungs-Nr.», «Beleg Nr.». */
 export function belegnummern(text) {
   const t = String(text || '').toLowerCase();
@@ -127,18 +137,21 @@ export function findeDoppel(neuer, vorhandene) {
     // sind Belegnummer und Betrag — Adresse, PLZ, Kundennummer und
     // Tarifzeilen stehen auf jeder Quartalsrechnung gleich. Kein einziger
     // gemeinsamer Betrag oder eine andere Rechnungsnummer: zwei Belege.
-    if (disjunkt(belegnummern(neuer.text), belegnummern(alt.text))) continue;
-    if (disjunkt(betraege(neuer.text), betraege(alt.text))) continue;
-    const deckung = kennzahlDeckung(kzNeu, kennzahlen(alt.text));
-    if (deckung < KENNZAHL_MINDEST) continue;
-
-    // Liest die OCR auf einer Seite gar keine Zahlen, kann die Gegenprobe
-    // nichts bestaetigen — dann zaehlt nur noch nahezu identischer Text.
-    // Ein echter Zweitscan erreicht 0.95 bis 1.00 (live gemessen: 1.00);
-    // zwei Quartalsrechnungen bleiben bei 0.80 bis 0.87 haengen und wurden
-    // ohne diese Huerde faelschlich aus dem Buendel geworfen.
-    const belegt = betraege(neuer.text).size > 0 && betraege(alt.text).size > 0;
-    if (!belegt && score < DOPPEL_SICHER) continue;
+    // Gegenprobe am GRÖSSTEN Betrag — das ist die Endsumme. Zwei Scans
+    // desselben Papiers teilen sie; zwei Quartalsrechnungen derselben
+    // Gemeinde nicht, auch wenn Adresse, Tarifzeilen und einzelne
+    // Positionsbeträge identisch sind. Belegnummern taugen dafür NICHT:
+    // die OCR liest sie auf zwei Scans oft verschieden und liess damit
+    // echte Doppel durchrutschen.
+    const sNeu = groessterBetrag(neuer.text);
+    const sAlt = groessterBetrag(alt.text);
+    if (sNeu != null && sAlt != null) {
+      const abweichung = Math.abs(sNeu - sAlt) / Math.max(sNeu, sAlt);
+      if (abweichung > 0.005) continue;          // andere Endsumme = anderer Beleg
+    } else if (score < DOPPEL_SICHER) {
+      // Keine Summe lesbar: dann zählt nur noch nahezu identischer Text.
+      continue;
+    }
     if (!bester || score > bester.score) {
       bester = { doppelVon: alt.id, name: alt.name, score: Number(score.toFixed(2)) };
     }
