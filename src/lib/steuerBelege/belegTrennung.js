@@ -81,6 +81,11 @@ const STRASSE = /\b[a-z]{3,}(strasse|gasse|weg|platz|allee|ring|damm)\s+\d{1,4}\
 // (sonst macht OCR-Schrott «2023 a...» eine Adresse daraus).
 const PLZ_ORT = /(?<![\d.,])(1[0-9]{3}|[2-9][0-9]{3})\s+[a-z]{3,}/;
 const KONTAKT = /(postfach|telefon|tel\.|www\.|@[a-z0-9-]+\.(ch|com|li|de))/;
+// Die UID ist der eindeutigste Absender-Fingerabdruck überhaupt: Sie steht
+// im Kleingedruckten fast jeder Rechnung und gehört genau EINER Firma.
+// Trennzeichen grosszügig — OCR macht aus «.» gern ein «,» oder ein Leer-
+// zeichen (CHE-116.295.497 · CHE 116 295 497).
+const UID = /\bche[\s.,-]*\d{3}[\s.,-]*\d{3}[\s.,-]*\d{3}\b/;
 // Das Datum im Kopf gehört zur Evidenz: Derselbe Absender schickt im
 // selben Umschlag mehrere Schreiben (Police, Bauzeitversicherung,
 // Prämienrechnung) — sie unterscheiden sich am Datum, nicht am Briefkopf.
@@ -102,7 +107,7 @@ export function kopfEvidenz(seitenText, zeilen = 12) {
     String(seitenText || '').split('\n').filter(z => z.trim()).slice(0, zeilen).join(' ')
   );
   const absender = [];
-  for (const m of [STRASSE, PLZ_ORT, KONTAKT]) {
+  for (const m of [STRASSE, PLZ_ORT, KONTAKT, UID]) {
     const t = kopf.match(m);
     if (t) absender.push(t[0].trim());
   }
