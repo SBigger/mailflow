@@ -1344,7 +1344,8 @@ export default function Belegsortierung() {
       )}
 
       {aufteilen && (
-        <AufteilenDialog auftrag={aufteilen} C={C} dateien={dateiListe}
+        <AufteilenDialog key={aufteilen.basisHash} auftrag={aufteilen} C={C}
+          dateien={dateiListe}
           onDateiWechsel={oeffneAufteilen}
           onUebernehmen={wendeAufteilungAn}
           onSchliessen={() => { if (!aufteilen.arbeitet) setAufteilen(null); }} />
