@@ -145,6 +145,48 @@ function migriereBetraege(b) {
   return { ...b, position, einkommen, vermoegen };
 }
 
+// ── Lokaler Entwurf ────────────────────────────────────────────────────────
+//
+// Eine Stunde OCR darf kein Neuladen kosten. Nach jeder Änderung wandert der
+// Stand in den Browserspeicher — ohne Dateien und Objekt-URLs, die ein Reload
+// ohnehin ungültig macht. Beim Öffnen wird er zurückgeholt, sofern für
+// denselben Mandanten und dasselbe Jahr noch nichts Gespeichertes da ist.
+//
+// Das ersetzt NICHT das Speichern in der Datenbank (dort liegt die geprüfte
+// Arbeit), es rettet nur die laufende Sitzung — auch bei einem Deployment,
+// einem Absturz oder einem versehentlich geschlossenen Fenster.
+const ENTWURF_KEY = 'belegsortierung-entwurf';
+
+function entwurfSichern(kunde, steuerjahr, belege) {
+  try {
+    if (!belege.length) { localStorage.removeItem(ENTWURF_KEY); return; }
+    const schlank = belege
+      .filter(b => b.stand === 'fertig')
+      .map(({ datei, url, ...rest }) => rest);
+    const paket = { kundeId: kunde?.id || null, kundeName: kunde?.company_name || '',
+                    steuerjahr, zeit: Date.now(), belege: schlank };
+    let text = JSON.stringify(paket);
+    // Der Belegtext ist das Grösste daran. Wird es zu viel für den
+    // Browserspeicher, fliegt er raus — die Sortierung ist wichtiger.
+    if (text.length > 3_000_000) {
+      paket.belege = schlank.map(b => ({ ...b, text: (b.text || '').slice(0, 400) }));
+      text = JSON.stringify(paket);
+    }
+    localStorage.setItem(ENTWURF_KEY, text);
+  } catch { /* voller Speicher: dann eben ohne Netz */ }
+}
+
+function entwurfLesen() {
+  try {
+    const roh = localStorage.getItem(ENTWURF_KEY);
+    if (!roh) return null;
+    const p = JSON.parse(roh);
+    // Älter als zwei Tage: nicht mehr anbieten, sonst überrascht er.
+    if (!p?.belege?.length || Date.now() - (p.zeit || 0) > 2 * 24 * 3600 * 1000) return null;
+    return p;
+  } catch { return null; }
+}
+
 const chf = n => (n || n === 0)
   ? Number(n).toLocaleString('de-CH', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
   : '—';
@@ -250,8 +292,25 @@ export default function Belegsortierung() {
 
   const belegeRef = useRef(belege);
   useEffect(() => { belegeRef.current = belege; }, [belege]);
+
+  // Entwurf mitschreiben (leicht verzögert, damit das Tippen flüssig bleibt).
+  useEffect(() => {
+    const t = setTimeout(() => entwurfSichern(kunde, steuerjahr, belege), 800);
+    return () => clearTimeout(t);
+  }, [belege, kunde, steuerjahr]);
   const kundeRef = useRef(kunde);
   useEffect(() => { kundeRef.current = kunde; }, [kunde]);
+
+  // Warnung vor dem Verlassen, solange nicht gespeichert ist. Der Entwurf im
+  // Browserspeicher fängt den Verlust auf, aber ein Hinweis ist ehrlicher als
+  // ein stiller Neustart — auch wenn das Neuladen von aussen kommt.
+  useEffect(() => {
+    const offen = belege.some(b => b.stand === 'fertig');
+    if (!offen) return;
+    const h = (e) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', h);
+    return () => window.removeEventListener('beforeunload', h);
+  }, [belege, gespeichertUm]);
 
   // Solange hier gearbeitet wird, darf ein frisches Deployment die Seite
   // NICHT neu laden (siehe main.jsx onNeedRefresh) – sonst ist ein laufender
@@ -566,6 +625,20 @@ export default function Belegsortierung() {
     setLaeuft(false);
   }
 
+  // Beim Öffnen den letzten Entwurf zurückholen: Mandant, Jahr und die
+  // sortierten Belege. Die Dateien fehlen dann — die Vorschau holt sie aus
+  // der Ablage, sobald ein Beleg angeklickt wird.
+  const entwurfGeholt = useRef(false);
+  useEffect(() => {
+    if (entwurfGeholt.current) return;
+    const e = entwurfLesen();
+    if (!e) { entwurfGeholt.current = true; return; }
+    entwurfGeholt.current = true;
+    if (e.steuerjahr) setSteuerjahr(e.steuerjahr);
+    if (e.kundeId && !kunde) setKunde({ id: e.kundeId, company_name: e.kundeName });
+    setBelege(v => v.length ? v : e.belege.map(b => ({ ...b, ohneDatei: true })));
+  }, []);
+
   // ── Ändern ──────────────────────────────────────────────────────────────
   const aendere = (id, felder) =>
     setBelege(v => v.map(b => b.id === id ? { ...b, ...felder } : b));
@@ -814,6 +887,8 @@ export default function Belegsortierung() {
       setBelege(v => v.map(x => mitPfad.find(m => m.id === x.id) || x));
       await db.upsert(kunde.id, steuerjahr, mitPfad);
       setGespeichertUm(new Date());
+      // In der Datenbank ist jetzt die bessere Wahrheit — der Notnagel darf weg.
+      try { localStorage.removeItem(ENTWURF_KEY); } catch {}
     } catch (e) {
       alert('Speichern fehlgeschlagen: ' + (e.message || e));
     } finally { setSpeichert(false); }
@@ -1230,6 +1305,7 @@ export default function Belegsortierung() {
             {belege.length > 0 && (
               <button onClick={() => { belege.forEach(b => b.url && URL.revokeObjectURL(b.url));
                                        geleertFuer.current = `${kunde?.id}|${steuerjahr}`;
+                                       try { localStorage.removeItem(ENTWURF_KEY); } catch {}
                                        setBelege([]); setGewaehlt(null); }}
                 style={{ fontSize: 10, color: C.sub, background: 'none',
                          border: `1px solid ${C.panelBdr}`, borderRadius: 5,
