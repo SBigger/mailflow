@@ -64,8 +64,55 @@ const NEUER_BELEG = [
   /\b(bauherr|empfanger|kunde|kundin|versicherte person|zahlbar durch)\b/,
 ];
 
-// Schweizer Adresszeile: 4-stellige PLZ + Ort
-const ADRESSE = /\b(1[0-9]{3}|[2-9][0-9]{3})\s+[a-z][a-z.\s-]{2,24}\b/;
+// ── Kopf-Evidenz ─────────────────────────────────────────────────────────
+//
+// Woran ein Beleg anfängt, ist am Papier abgelesen und nicht geraten: JEDES
+// Geschäftspapier trägt oben einen Kopf — Absender mit Strasse, Postfach,
+// Telefon oder Web, und/oder den Empfänger mit PLZ und Ort. Eine RÜCKSEITE
+// hat das nicht; sie beginnt mitten im Stoff («Kontoauszug», «Übertrag»).
+//
+// Gemessen am Versicherungsbündel eines Mandanten (7 Seiten, 5 Belege): Die
+// alte Regel «irgendwo im Kopfbereich steht eine PLZ» riss die Rückseiten der
+// Allianz-Rechnungen ab, weil in deren Tabelle unter «Versicherte Orte» eine
+// PLZ steht. Mit der Kopf-Evidenz bleiben sie bei ihrer Vorderseite.
+const STRASSE = /\b[a-z]{3,}(strasse|gasse|weg|platz|allee|ring|damm)\s+\d{1,4}\b/;
+// PLZ + Ort — NICHT hinter Ziffer/Punkt (sonst wird «08.11.2024
+// Folgeprämie» zur Adresse) und der Ort braucht drei Buchstaben
+// (sonst macht OCR-Schrott «2023 a...» eine Adresse daraus).
+const PLZ_ORT = /(?<![\d.,])(1[0-9]{3}|[2-9][0-9]{3})\s+[a-z]{3,}/;
+const KONTAKT = /(postfach|telefon|tel\.|www\.|@[a-z0-9-]+\.(ch|com|li|de))/;
+// Das Datum im Kopf gehört zur Evidenz: Derselbe Absender schickt im
+// selben Umschlag mehrere Schreiben (Police, Bauzeitversicherung,
+// Prämienrechnung) — sie unterscheiden sich am Datum, nicht am Briefkopf.
+const DATUM = /\b\d{1,2}\.\s?(januar|februar|marz|april|mai|juni|juli|august|september|oktober|november|dezember)\s?\d{4}|\b\d{1,2}\.\d{1,2}\.\d{4}\b/;
+
+/**
+ * Kopfmerkmale der ersten Zeilen einer Seite.
+ *
+ *   absender  Strasse, PLZ+Ort, Postfach/Telefon/Web — der BRIEFKOPF.
+ *             Fehlt er ganz, ist die Seite eine Rückseite oder ein
+ *             Anhangsblatt und beginnt keinen neuen Beleg.
+ *   merkmale  Briefkopf PLUS Datum. Das Datum unterscheidet zwei Schreiben
+ *             DESSELBEN Absenders (Police, Bauzeitversicherung, Rechnung im
+ *             selben Umschlag) — aber nur, wenn überhaupt ein Kopf da ist.
+ *             Sonst würde das «Kontostand vom …» einer Rückseite zählen.
+ */
+export function kopfEvidenz(seitenText, zeilen = 12) {
+  const kopf = flach(
+    String(seitenText || '').split('\n').filter(z => z.trim()).slice(0, zeilen).join(' ')
+  );
+  const absender = [];
+  for (const m of [STRASSE, PLZ_ORT, KONTAKT]) {
+    const t = kopf.match(m);
+    if (t) absender.push(t[0].trim());
+  }
+  const merkmale = [...absender];
+  if (absender.length) {
+    const d = kopf.match(DATUM);
+    if (d) merkmale.push(d[0].trim());
+  }
+  return { absender, merkmale };
+}
 
 /**
  * Entscheidet für eine Seite, ob sie einen neuen Beleg beginnt.
@@ -97,6 +144,11 @@ export function beginntNeuenBeleg(seitenText, nummer, vorherText = '') {
     if (treffer) return { neu: false, grund: `Fortsetzung («${treffer[0].trim()}»)` };
   }
 
+  // Ohne Briefkopf kein neuer Beleg: Rückseiten und Anhangsblätter beginnen
+  // mitten im Stoff. Das ist die verlässlichste Bremse gegen Übertrennung.
+  const evidenz = kopfEvidenz(seitenText);
+  if (!evidenz.absender.length) return { neu: false, grund: 'kein Briefkopf – Rückseite' };
+
   for (const m of NEUER_BELEG) {
     const treffer = kopf.match(m);
     if (!treffer) continue;
@@ -104,13 +156,13 @@ export function beginntNeuenBeleg(seitenText, nummer, vorherText = '') {
     return { neu: true, grund: `neuer Beleg («${treffer[0].trim().slice(0, 40)}»)` };
   }
 
-  const adr = kopf.match(ADRESSE);
-  if (adr && !istBriefpapier(adr[0])) return { neu: true, grund: 'Adressblock im Kopf' };
+  // Briefkopf vorhanden und anders als auf der Vorseite → neues Papier.
+  const evidenzVorher = kopfEvidenz(vorherText).merkmale;
+  const neuerKopf = evidenz.merkmale.find(x => !evidenzVorher.includes(x));
+  if (neuerKopf) return { neu: true, grund: `neuer Briefkopf («${neuerKopf.slice(0, 34)}»)` };
 
-  // Nichts erkannt: zur vorherigen Seite schlagen. Zusammenlassen ist die
-  // vorsichtigere Annahme – ein zu gross geratener Beleg faellt beim
-  // Durchsehen auf, ein zerrissener nicht.
-  return { neu: false, grund: 'kein Trennsignal' };
+  // Gleicher Briefkopf wie davor: mehrseitiges Schreiben desselben Absenders.
+  return { neu: false, grund: 'gleicher Briefkopf wie davor' };
 }
 
 /**
