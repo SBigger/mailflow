@@ -354,22 +354,13 @@ export default function Belegsortierung() {
             continue;
           }
 
-          if (doppel) {
-            neueBelege.push({
-              id: `${id}#${teil.von}`, name: teilName, stand: 'fertig',
-              groesse: datei.size, url, datei, istPdf: /\.pdf$/i.test(datei.name),
-              hash: `${hash}#${teil.von}-${teil.bis}`, dateiPfad,
-              vonSeite: teil.von, bisSeite: teil.bis,
-              text: teil.text,
-              position: '_aussortiert', doppelVon: doppel.doppelVon,
-              quelle: 'regel', confidence: doppel.score,
-              begruendung: `Doppelt eingescannt – gleicht «${doppel.name}» `
-                         + `(${Math.round(doppel.score * 100)}% Textübereinstimmung). `
-                         + `Bleibt sichtbar liegen, kommt aber nicht ins Bündel.`,
-              vorschlag: [], kandidaten: [],
-            });
-            continue;
-          }
+          // Vermutete Doppel werden MARKIERT, nicht weggeworfen. Heute
+          // zeigte sich in beiden Richtungen, wie unsicher der Textvergleich
+          // ist: drei echte Quartalsrechnungen galten als Kopie, ein echter
+          // Zweitscan blieb unerkannt. Ein still verschwundener Beleg ist der
+          // teurere Fehler — also läuft die normale Erkennung weiter und der
+          // Verdacht steht als Hinweis daneben, den der Mensch in Schritt 1
+          // der Durchsicht mit einem Blick bestätigt.
 
           const eingang = {
             text: teil.text,
@@ -528,6 +519,8 @@ export default function Belegsortierung() {
             trennGrund: teil.grund,
             text: teil.text,
             ocrVertrauen: teilVertrauen,
+            doppelVerdacht: doppel
+              ? { name: doppel.name, score: doppel.score } : null,
             belegart: tri.belegart, confidence: tri.confidence,
             begruendung: tri.begruendung, quelle: tri.quelle || 'regel',
             merkmale: tri.merkmale || [], kiBegruendung: tri.kiBegruendung || null,
@@ -705,7 +698,29 @@ export default function Belegsortierung() {
   // behalten ihren Beleg samt Zuordnung und Beträgen — nur die geänderten
   // werden neu gelesen und erkannt.
 
+  // Alle eingelesenen Dateien mit ihren Belegen — die Auswahlliste des Editors.
+  const dateiListe = useMemo(() => {
+    const proDatei = new Map();
+    for (const b of belege) {
+      if (b.stand !== 'fertig') continue;
+      const basis = String(b.hash || '').split('#')[0];
+      if (!basis) continue;
+      const istPdf = b.istPdf || /\.pdf($|\?)/i.test(b.dateiPfad || '') || /\.pdf$/i.test(b.name || '');
+      if (!istPdf || !(b.datei || b.dateiPfad)) continue;
+      if (!proDatei.has(basis)) {
+        proDatei.set(basis, { basis, name: (b.name || '').split(' · ')[0] || b.name,
+                              vertreter: b, teile: 0, seiten: 0 });
+      }
+      const e = proDatei.get(basis);
+      e.teile += 1;
+      e.seiten = Math.max(e.seiten, b.bisSeite || b.vonSeite || 1);
+    }
+    return [...proDatei.values()].sort((a, z) => a.name.localeCompare(z.name));
+  }, [belege]);
+
   async function oeffneAufteilen(b) {
+    b = b || dateiListe[0]?.vertreter;
+    if (!b) return;
     const basis = String(b.hash || '').split('#')[0];
     if (!basis) return;
     let quelle = b.datei || null;
@@ -1158,6 +1173,12 @@ export default function Belegsortierung() {
               style={{ ...knopf(C, true, C.accent), width: 'auto', padding: '6px 12px' }}>
               <Upload size={12} /> Belege hinzufügen
             </button>
+            {dateiListe.length > 0 && (
+              <button onClick={() => oeffneAufteilen(null)}
+                style={{ ...knopf(C, true, C.heading), width: 'auto', padding: '6px 12px' }}>
+                <GripVertical size={12} /> Aufteilen
+              </button>
+            )}
             {belege.some(b => b.stand === 'fertig') && (
               <button onClick={() => setDurchsicht({ schritt: 1, index: 0 })}
                 style={{ ...knopf(C, true, C.heading), width: 'auto', padding: '6px 12px' }}>
@@ -1323,7 +1344,8 @@ export default function Belegsortierung() {
       )}
 
       {aufteilen && (
-        <AufteilenDialog auftrag={aufteilen} C={C}
+        <AufteilenDialog auftrag={aufteilen} C={C} dateien={dateiListe}
+          onDateiWechsel={oeffneAufteilen}
           onUebernehmen={wendeAufteilungAn}
           onSchliessen={() => { if (!aufteilen.arbeitet) setAufteilen(null); }} />
       )}
@@ -1425,6 +1447,7 @@ function BelegKarte({ beleg: b, aktiv, onWaehlen, onDragStart, onDragEnd, zieht 
         <div style={{ fontSize: 10, color: C.muted }}>
           {laden ? standText(b.stand)
                  : b.stand === 'fehler' ? b.fehler
+                 : b.doppelVerdacht ? `möglicherweise doppelt – wie «${b.doppelVerdacht.name}»`
                  : b.doppelVon ? 'Doppelt eingescannt'
                  : b.widerspruch ? '⚠ Regeln und KI uneins – prüfen'
                  : [BELEGART_BY_KEY[b.belegart]?.label, pos?.label].filter(Boolean).join(' · ')
@@ -1473,7 +1496,7 @@ function BelegKarte({ beleg: b, aktiv, onWaehlen, onDragStart, onDragEnd, zieht 
 // zum Vergrössern, denn ohne Lesen entscheidet niemand, wo eine Rechnung
 // anfängt. Übernehmen baut die Belege der Datei neu; unveränderte Bereiche
 // behalten Zuordnung und Beträge.
-function AufteilenDialog({ auftrag, C, onUebernehmen, onSchliessen }) {
+function AufteilenDialog({ auftrag, C, dateien = [], onDateiWechsel, onUebernehmen, onSchliessen }) {
   const { quelle, dateiName, teile, arbeitet, fortschritt } = auftrag;
   const von = teile[0]?.von || 1;
   const bis = teile[teile.length - 1]?.bis || 1;
@@ -1513,16 +1536,17 @@ function AufteilenDialog({ auftrag, C, onUebernehmen, onSchliessen }) {
 
   const bereichVon = seite => bereiche.findIndex(r => seite >= r.von && seite <= r.bis);
 
+  // Esc schliesst, solange nichts läuft.
+  useEffect(() => {
+    const h = e => { if (e.key === 'Escape' && !arbeitet) onSchliessen(); };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [arbeitet, onSchliessen]);
+
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 1100,
-                  backgroundColor: 'rgba(0,0,0,0.55)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-         onClick={onSchliessen}>
-      <div onClick={e => e.stopPropagation()}
-        style={{ width: 'min(1200px, 94vw)', height: 'min(780px, 92vh)',
-                 backgroundColor: C.panelBg, borderRadius: 10,
-                 border: `1px solid ${C.panelBdr}`,
-                 display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 1100, backgroundColor: C.pageBg }}>
+      <div style={{ position: 'absolute', inset: 0, backgroundColor: C.panelBg,
+                    display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10,
                       padding: '10px 14px', borderBottom: `1px solid ${C.panelBdr}` }}>
@@ -1534,7 +1558,8 @@ function AufteilenDialog({ auftrag, C, onUebernehmen, onSchliessen }) {
             {unveraendert ? ' (unverändert)' : ' nach Übernehmen'}
           </div>
           <div style={{ marginLeft: 'auto', fontSize: 10, color: C.muted }}>
-            Klick zwischen die Seiten = Trennstelle · Klick auf die Seite = gross anzeigen
+            Klick zwischen die Seiten = trennen oder zusammenlegen · Klick auf die
+            Seite = gross · nochmals klicken = Lupe
           </div>
           <button onClick={onSchliessen} disabled={arbeitet}
             style={{ border: 'none', background: 'none', color: C.sub,
@@ -1544,8 +1569,30 @@ function AufteilenDialog({ auftrag, C, onUebernehmen, onSchliessen }) {
         </div>
 
         <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
+          {/* Dateien der Sortierung — Wechsel ohne den Editor zu verlassen */}
+          {dateien.length > 1 && (
+            <div style={{ width: 210, flexShrink: 0, overflowY: 'auto',
+                          borderRight: `1px solid ${C.panelBdr}`, padding: 8 }}>
+              <div style={{ fontSize: 10, color: C.muted, textTransform: 'uppercase',
+                            letterSpacing: '.08em', padding: '2px 6px 6px' }}>Dateien</div>
+              {dateien.map(d => (
+                <div key={d.basis}
+                  onClick={() => !arbeitet && d.basis !== auftrag.basisHash && onDateiWechsel(d.vertreter)}
+                  style={{ padding: '7px 8px', borderRadius: 6, marginBottom: 3,
+                           cursor: arbeitet ? 'default' : 'pointer',
+                           backgroundColor: d.basis === auftrag.basisHash ? C.accentBg : 'transparent' }}>
+                  <div style={{ fontSize: 11, fontWeight: d.basis === auftrag.basisHash ? 700 : 500,
+                                color: C.heading, overflow: 'hidden',
+                                textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.name}</div>
+                  <div style={{ fontSize: 10, color: C.muted }}>
+                    {d.seiten} Seiten · {d.teile} {d.teile === 1 ? 'Beleg' : 'Belege'}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
           {/* Miniaturen mit Trennstellen */}
-          <div style={{ width: 330, flexShrink: 0, overflowY: 'auto',
+          <div style={{ width: 360, flexShrink: 0, overflowY: 'auto',
                         borderRight: `1px solid ${C.panelBdr}`, padding: 10 }}>
             {!minis && (
               <div style={{ fontSize: 11, color: C.muted, display: 'flex',
@@ -1583,7 +1630,7 @@ function AufteilenDialog({ auftrag, C, onUebernehmen, onSchliessen }) {
                              backgroundColor: gross === seite ? C.accentBg : 'transparent',
                              borderLeft: `3px solid ${istStart ? C.accent : 'transparent'}` }}>
                     <img src={minis[seite - 1]} alt={`Seite ${seite}`}
-                      style={{ width: 62, borderRadius: 3,
+                      style={{ width: 76, borderRadius: 3,
                                border: `1px solid ${C.panelBdr}`, flexShrink: 0 }} />
                     <div style={{ fontSize: 10, color: C.sub }}>
                       Seite {seite}

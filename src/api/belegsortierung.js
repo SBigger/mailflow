@@ -32,6 +32,7 @@ function fuerDieDatenbank(b) {
     vermoegen:   b.vermoegen ?? null,
     betragQuelle: b.betragQuelle ?? null,
     ocrVertrauen: b.ocrVertrauen ?? null,
+    doppelVerdacht: b.doppelVerdacht ?? null,
     // Seitenbereich: ein PDF kann mehrere Belege enthalten
     vonSeite:    b.vonSeite ?? null,
     doppelVon:   b.doppelVon ?? null,
