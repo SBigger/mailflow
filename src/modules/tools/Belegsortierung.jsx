@@ -451,7 +451,11 @@ export default function Belegsortierung() {
           // Säule 3). Die Regeln sind sich hier ihrer Sache sicher, darum kam
           // die KI bisher nie dran — und der Beleg blieb liegen. Genau diese
           // eine Entscheidungsfrage stellen, mehr nicht.
-          const kandidatenListe = vorschlag.length >= 2 ? vorschlag : (zuord.kandidaten || []);
+          // Kandidaten: aus der Belegart, sonst die von der KI selbst genannten
+          // — sonst bliebe ein treffend beschriebener Beleg ohne Ziel liegen.
+          const kiKand = (tri.kiKandidaten || []).map(x => KATALOG_NACH_ID[x]).filter(Boolean);
+          const kandidatenListe = vorschlag.length >= 2 ? vorschlag
+            : (zuord.kandidaten?.length ? zuord.kandidaten : kiKand);
           if (!position && kiNutzen && tri.grund !== 'duplikat' && !tri.widerspruch
               && kandidatenListe.length >= 2) {
             setBelege(v => v.map(b => b.id === id
@@ -529,7 +533,7 @@ export default function Belegsortierung() {
             merkmale: tri.merkmale || [], kiBegruendung: tri.kiBegruendung || null,
             widerspruch: !!tri.widerspruch,
             regelBelegart: tri.regelBelegart || null, kiBelegart: tri.kiBelegart || null,
-            vorschlag, kandidaten: zuord.kandidaten || [],
+            vorschlag, kandidaten: (zuord.kandidaten?.length ? zuord.kandidaten : kiKand),
             offenGrund: kiPos.length ? null : (zuord.offen ? zuord.grund : null),
             hinweis: zuord.hinweis || null,
             position,
@@ -623,7 +627,9 @@ export default function Belegsortierung() {
     let position = vorschlag.length === 1 ? vorschlag[0].id : null;
     if (tri.widerspruch) position = null;
 
-    const kandidatenListe = vorschlag.length >= 2 ? vorschlag : (zuord.kandidaten || []);
+    const kiKand = (tri.kiKandidaten || []).map(x => KATALOG_NACH_ID[x]).filter(Boolean);
+    const kandidatenListe = vorschlag.length >= 2 ? vorschlag
+      : (zuord.kandidaten?.length ? zuord.kandidaten : kiKand);
     if (!position && kiNutzen && !tri.widerspruch && kandidatenListe.length >= 2) {
       try {
         const bilder = [];
@@ -684,7 +690,7 @@ export default function Belegsortierung() {
       merkmale: tri.merkmale || [], kiBegruendung: tri.kiBegruendung || null,
       widerspruch: !!tri.widerspruch,
       regelBelegart: tri.regelBelegart || null, kiBelegart: tri.kiBelegart || null,
-      vorschlag, kandidaten: zuord.kandidaten || [],
+      vorschlag, kandidaten: (zuord.kandidaten?.length ? zuord.kandidaten : kiKand),
       offenGrund: kiPos.length ? null : (zuord.offen ? zuord.grund : null),
       hinweis: zuord.hinweis || null, position,
       ahv: findAhvInText(text), jahr: tri.periodeBeleg ?? null,

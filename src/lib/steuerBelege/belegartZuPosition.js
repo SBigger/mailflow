@@ -72,6 +72,12 @@ export const BELEGART_ZU_POSITION = {
                         hinweis: 'Schluesselbeleg – nennt Kanton, Gemeinde, beide Namen, AHVN13, '
                                + 'Jahr und Frist. Zuerst auswerten, dann den Rest des Stapels.' },
 
+  nebenkosten:        { mehrdeutig: true,
+                        kandidaten: ['liegenschaftsunterhalt', '_aussortiert'],
+                        unterscheidet: 'Objekt — Betriebskosten einer VERMIETETEN '
+                                     + 'Liegenschaft sind Unterhalt, die der '
+                                     + 'selbstbewohnten sind Lebenshaltung' },
+
   liegenschaftsunterhalt: { positionen: ['liegenschaftsunterhalt'],
                         hinweis: 'Werterhaltend oder wertvermehrend entscheidet kein Beleg – '
                                + 'Umbauprojekte immer vorlegen.' },

@@ -212,6 +212,25 @@ export const BELEGARTEN = [
                "heizung", "sanitaer", "reinigung", "hauswartung", "serviceabonnement",
                "nebenkostenabrechnung"],
   },
+
+  {
+    // Betriebskosten einer Liegenschaft: Wasser, Strom, Gas, Abwasser,
+    // Kehricht. Gemessen am Schenkel-Stapel: ein Dutzend Rechnungen der
+    // Stadtwerke Rorschach und der Gemeinde Hombrechtikon blieben liegen,
+    // weil KEINE Belegart passte — die KI beschrieb sie richtig und ordnete
+    // trotzdem nichts zu. Ob abziehbar, haengt am Objekt (vermietet ja,
+    // selbstbewohnt nein) — deshalb mehrdeutig, die Wahl-Stufe entscheidet.
+    key: "nebenkosten",
+    label: "Nebenkosten / Betriebskosten Liegenschaft",
+    parse: "ocr",
+    ech_pfad: "listOfRealEstate",
+    stark: ["nebenkostenabrechnung", "betriebskostenabrechnung",
+            "technische betriebe", "stadtwerke", "wasserzins", "abwassergebuehr",
+            "kehrichtgebuehr", "netznutzung"],
+    keywords: ["wasser", "abwasser", "strom", "elektrizitaet", "gas", "kehricht",
+               "entsorgung", "gewaesserschutz", "grundgebuehr", "verbrauch",
+               "zaehlernummer", "gemeinde", "stadt"],
+  },
   {
     key: "arbeitspapier",
     label: "Arbeitspapier (keine Beilage)",
