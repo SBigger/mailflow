@@ -155,14 +155,30 @@ function migriereBetraege(b) {
 // Das ersetzt NICHT das Speichern in der Datenbank (dort liegt die geprüfte
 // Arbeit), es rettet nur die laufende Sitzung — auch bei einem Deployment,
 // einem Absturz oder einem versehentlich geschlossenen Fenster.
-const ENTWURF_KEY = 'belegsortierung-entwurf';
+const ENTWURF_BASIS = 'belegsortierung-entwurf';
+
+/** Eigener Schlüssel je Mandant und Jahr — zwei offene Fenster, zwei Stände. */
+function entwurfKey(kunde, steuerjahr) {
+  return `${ENTWURF_BASIS}-${kunde?.id || 'ohne'}-${steuerjahr}`;
+}
 
 function entwurfSichern(kunde, steuerjahr, belege) {
+  const key = entwurfKey(kunde, steuerjahr);
   try {
-    if (!belege.length) { localStorage.removeItem(ENTWURF_KEY); return; }
+    if (!belege.length) { localStorage.removeItem(key); return; }
     const schlank = belege
       .filter(b => b.stand === 'fertig')
       .map(({ datei, url, ...rest }) => rest);
+
+    // Schutz vor gegenseitigem Überschreiben: Liegt unter demselben Schlüssel
+    // ein JÜNGERER Stand mit MEHR Belegen, arbeitet dort ein anderes Fenster.
+    // Dann nicht draufschreiben — ein zweites Fenster hat heute beinahe eine
+    // ganze Sortierung gekostet.
+    try {
+      const alt = JSON.parse(localStorage.getItem(key) || 'null');
+      if (alt && alt.belege?.length > schlank.length && Date.now() - alt.zeit < 10 * 60 * 1000) return;
+    } catch { /* kaputter Eintrag: überschreiben ist dann richtig */ }
+
     const paket = { kundeId: kunde?.id || null, kundeName: kunde?.company_name || '',
                     steuerjahr, zeit: Date.now(), belege: schlank };
     let text = JSON.stringify(paket);
@@ -172,19 +188,25 @@ function entwurfSichern(kunde, steuerjahr, belege) {
       paket.belege = schlank.map(b => ({ ...b, text: (b.text || '').slice(0, 400) }));
       text = JSON.stringify(paket);
     }
-    localStorage.setItem(ENTWURF_KEY, text);
+    localStorage.setItem(key, text);
   } catch { /* voller Speicher: dann eben ohne Netz */ }
 }
 
+/** Jüngsten brauchbaren Entwurf finden — egal, für welchen Mandanten. */
 function entwurfLesen() {
+  let bester = null;
   try {
-    const roh = localStorage.getItem(ENTWURF_KEY);
-    if (!roh) return null;
-    const p = JSON.parse(roh);
-    // Älter als zwei Tage: nicht mehr anbieten, sonst überrascht er.
-    if (!p?.belege?.length || Date.now() - (p.zeit || 0) > 2 * 24 * 3600 * 1000) return null;
-    return p;
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key?.startsWith(ENTWURF_BASIS)) continue;
+      const p = JSON.parse(localStorage.getItem(key) || 'null');
+      if (!p?.belege?.length) continue;
+      // Älter als zwei Tage: nicht mehr anbieten, sonst überrascht er.
+      if (Date.now() - (p.zeit || 0) > 2 * 24 * 3600 * 1000) continue;
+      if (!bester || p.zeit > bester.zeit) bester = p;
+    }
   } catch { return null; }
+  return bester;
 }
 
 const chf = n => (n || n === 0)
@@ -888,7 +910,7 @@ export default function Belegsortierung() {
       await db.upsert(kunde.id, steuerjahr, mitPfad);
       setGespeichertUm(new Date());
       // In der Datenbank ist jetzt die bessere Wahrheit — der Notnagel darf weg.
-      try { localStorage.removeItem(ENTWURF_KEY); } catch {}
+      try { localStorage.removeItem(entwurfKey(kunde, steuerjahr)); } catch {}
     } catch (e) {
       alert('Speichern fehlgeschlagen: ' + (e.message || e));
     } finally { setSpeichert(false); }
@@ -1316,7 +1338,7 @@ export default function Belegsortierung() {
             {belege.length > 0 && (
               <button onClick={() => { belege.forEach(b => b.url && URL.revokeObjectURL(b.url));
                                        geleertFuer.current = `${kunde?.id}|${steuerjahr}`;
-                                       try { localStorage.removeItem(ENTWURF_KEY); } catch {}
+                                       try { localStorage.removeItem(entwurfKey(kunde, steuerjahr)); } catch {}
                                        setBelege([]); setGewaehlt(null); }}
                 style={{ fontSize: 10, color: C.sub, background: 'none',
                          border: `1px solid ${C.panelBdr}`, borderRadius: 5,
