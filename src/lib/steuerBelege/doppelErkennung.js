@@ -102,6 +102,9 @@ export const KENNZAHL_MINDEST = 0.5;
 // desselben Papiers liegen über 0.8.
 export const DOPPEL_SCHWELLE = 0.78;
 
+// Ohne Zahlen-Gegenprobe verlangt ein Doppel nahezu identischen Text.
+export const DOPPEL_SICHER = 0.95;
+
 /**
  * Prüft einen neuen Beleg gegen die vorhandenen.
  *
@@ -128,6 +131,14 @@ export function findeDoppel(neuer, vorhandene) {
     if (disjunkt(betraege(neuer.text), betraege(alt.text))) continue;
     const deckung = kennzahlDeckung(kzNeu, kennzahlen(alt.text));
     if (deckung < KENNZAHL_MINDEST) continue;
+
+    // Liest die OCR auf einer Seite gar keine Zahlen, kann die Gegenprobe
+    // nichts bestaetigen — dann zaehlt nur noch nahezu identischer Text.
+    // Ein echter Zweitscan erreicht 0.95 bis 1.00 (live gemessen: 1.00);
+    // zwei Quartalsrechnungen bleiben bei 0.80 bis 0.87 haengen und wurden
+    // ohne diese Huerde faelschlich aus dem Buendel geworfen.
+    const belegt = betraege(neuer.text).size > 0 && betraege(alt.text).size > 0;
+    if (!belegt && score < DOPPEL_SICHER) continue;
     if (!bester || score > bester.score) {
       bester = { doppelVon: alt.id, name: alt.name, score: Number(score.toFixed(2)) };
     }
