@@ -731,7 +731,14 @@ export default function Belegsortierung() {
     if (!quelle) return;
     const teile = belegeRef.current
       .filter(x => x.stand === 'fertig' && String(x.hash || '').split('#')[0] === basis)
-      .map(x => ({ von: x.vonSeite || 1, bis: x.bisSeite || x.vonSeite || 1 }))
+      .map(x => ({
+        von: x.vonSeite || 1, bis: x.bisSeite || x.vonSeite || 1,
+        // Was der Block ist, gehört in den Editor: Wer die Grenze zieht,
+        // muss sehen, was da erkannt wurde — sonst teilt man blind auf.
+        titel: BELEGART_BY_KEY[x.belegart]?.label
+            || KATALOG_NACH_ID[x.position]?.label
+            || (x.position === '_aussortiert' ? 'Nicht zur Steuererklärung' : 'noch offen'),
+      }))
       .sort((a, z) => a.von - z.von);
     if (!teile.length) return;
     setAufteilen({ basisHash: basis, dateiName: (b.name || '').split(' · ')[0] || b.name,
@@ -1527,6 +1534,40 @@ function AufteilenDialog({ auftrag, C, dateien = [], onDateiWechsel, onUebernehm
     return () => { aktiv = false; };
   }, [gross]);
 
+  const umschalten = (seite) => {
+    if (arbeitet || seite <= von || seite > bis) return;
+    setSchnitte(alt => {
+      const neu = new Set(alt);
+      if (neu.has(seite)) neu.delete(seite); else neu.add(seite);
+      return neu;
+    });
+  };
+
+  // Tastatur: blaettern mit den Pfeilen, trennen mit der Leertaste,
+  // vergroessern mit Enter. Wer 40 Seiten durchgeht, will nicht klicken.
+  useEffect(() => {
+    const h = (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+      if (e.key === 'Escape' && !arbeitet) { onSchliessen(); return; }
+      if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+        e.preventDefault(); setGross(g => Math.min(bis, g + 1));
+      } else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+        e.preventDefault(); setGross(g => Math.max(von, g - 1));
+      } else if (e.key === ' ') {
+        e.preventDefault(); umschalten(gross);
+      } else if (e.key === 'Enter') {
+        e.preventDefault(); setZoom(z => !z);
+      }
+    };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [gross, von, bis, arbeitet, onSchliessen]);
+
+  // Die gewaehlte Seite in den Blick holen (auch bei Tastaturbedienung).
+  useEffect(() => {
+    document.getElementById(`mini-${gross}`)?.scrollIntoView({ block: 'nearest' });
+  }, [gross]);
+
   const bereiche = useMemo(() => {
     const starts = [von, ...[...schnitte].filter(x => x > von && x <= bis).sort((a, z) => a - z)];
     return starts.map((s, i) => ({ von: s, bis: (starts[i + 1] ?? bis + 1) - 1 }));
@@ -1535,14 +1576,9 @@ function AufteilenDialog({ auftrag, C, dateien = [], onDateiWechsel, onUebernehm
   const unveraendert = bereiche.length === teile.length
     && bereiche.every((r, i) => r.von === teile[i].von && r.bis === teile[i].bis);
 
-  const bereichVon = seite => bereiche.findIndex(r => seite >= r.von && seite <= r.bis);
-
-  // Esc schliesst, solange nichts läuft.
-  useEffect(() => {
-    const h = e => { if (e.key === 'Escape' && !arbeitet) onSchliessen(); };
-    window.addEventListener('keydown', h);
-    return () => window.removeEventListener('keydown', h);
-  }, [arbeitet, onSchliessen]);
+  // Blockfarben: benachbarte Belege sollen sich unterscheiden lassen.
+  const FARBEN = ['#6366f1', '#0891b2', '#16a34a', '#d97706', '#db2777', '#7c3aed'];
+  const titelVon = (r) => teile.find(t => t.von === r.von && t.bis === r.bis)?.titel;
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 1100, backgroundColor: C.pageBg }}>
@@ -1559,8 +1595,7 @@ function AufteilenDialog({ auftrag, C, dateien = [], onDateiWechsel, onUebernehm
             {unveraendert ? ' (unverändert)' : ' nach Übernehmen'}
           </div>
           <div style={{ marginLeft: 'auto', fontSize: 10, color: C.muted }}>
-            Klick zwischen die Seiten = trennen oder zusammenlegen · Klick auf die
-            Seite = gross · nochmals klicken = Lupe
+            ↑↓ blättern · Leertaste trennt · Enter vergrössert · Esc schliesst
           </div>
           <button onClick={onSchliessen} disabled={arbeitet}
             style={{ border: 'none', background: 'none', color: C.sub,
@@ -1570,7 +1605,6 @@ function AufteilenDialog({ auftrag, C, dateien = [], onDateiWechsel, onUebernehm
         </div>
 
         <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
-          {/* Dateien der Sortierung — Wechsel ohne den Editor zu verlassen */}
           {dateien.length > 1 && (
             <div style={{ width: 210, flexShrink: 0, overflowY: 'auto',
                           borderRight: `1px solid ${C.panelBdr}`, padding: 8 }}>
@@ -1592,8 +1626,9 @@ function AufteilenDialog({ auftrag, C, dateien = [], onDateiWechsel, onUebernehm
               ))}
             </div>
           )}
-          {/* Miniaturen mit Trennstellen */}
-          <div style={{ width: 360, flexShrink: 0, overflowY: 'auto',
+
+          {/* Seiten, gruppiert als Belege */}
+          <div style={{ width: 380, flexShrink: 0, overflowY: 'auto',
                         borderRight: `1px solid ${C.panelBdr}`, padding: 10 }}>
             {!minis && (
               <div style={{ fontSize: 11, color: C.muted, display: 'flex',
@@ -1601,42 +1636,66 @@ function AufteilenDialog({ auftrag, C, dateien = [], onDateiWechsel, onUebernehm
                 <Loader2 size={12} className="animate-spin" /> Seiten werden gerendert …
               </div>
             )}
-            {minis && Array.from({ length: bis - von + 1 }, (_, idx) => {
-              const seite = von + idx;
-              const bi = bereichVon(seite);
-              const istStart = bereiche.some(r => r.von === seite);
+            {minis && bereiche.map((r, bi) => {
+              const farbe = FARBEN[bi % FARBEN.length];
+              const titel = titelVon(r);
               return (
-                <React.Fragment key={seite}>
-                  {seite > von && (
-                    <button onClick={() => setSchnitte(alt => {
-                        const neu = new Set(alt);
-                        if (neu.has(seite)) neu.delete(seite); else neu.add(seite);
-                        return neu;
-                      })}
-                      disabled={arbeitet}
-                      style={{ width: '100%', margin: '4px 0', padding: '3px 6px',
-                               fontSize: 10, borderRadius: 5, cursor: 'pointer',
-                               border: schnitte.has(seite)
-                                 ? `1px solid ${C.accent}` : `1px dashed ${C.panelBdr}`,
-                               backgroundColor: schnitte.has(seite) ? C.accentBg : 'transparent',
-                               color: schnitte.has(seite) ? C.accent : C.muted }}>
-                      {schnitte.has(seite)
-                        ? `✂ Beleg-Grenze — klicken zum Zusammenlegen`
-                        : 'hier trennen'}
-                    </button>
-                  )}
-                  <div onClick={() => setGross(seite)}
-                    style={{ display: 'flex', gap: 8, alignItems: 'center',
-                             padding: 5, borderRadius: 6, cursor: 'pointer',
-                             backgroundColor: gross === seite ? C.accentBg : 'transparent',
-                             borderLeft: `3px solid ${istStart ? C.accent : 'transparent'}` }}>
-                    <img src={minis[seite - 1]} alt={`Seite ${seite}`}
-                      style={{ width: 76, borderRadius: 3,
-                               border: `1px solid ${C.panelBdr}`, flexShrink: 0 }} />
-                    <div style={{ fontSize: 10, color: C.sub }}>
-                      Seite {seite}
-                      <div style={{ color: C.muted }}>Beleg {bi + 1}</div>
+                <React.Fragment key={r.von}>
+                  {bi > 0 && (
+                    <div onClick={() => umschalten(r.von)}
+                      title="Diese beiden Belege zusammenlegen"
+                      style={{ display: 'flex', alignItems: 'center', gap: 6,
+                               margin: '7px 2px', cursor: arbeitet ? 'default' : 'pointer',
+                               fontSize: 10, color: C.muted }}>
+                      <div style={{ flex: 1, height: 1, backgroundColor: C.panelBdr }} />
+                      <span>Grenze — klicken zum Zusammenlegen</span>
+                      <div style={{ flex: 1, height: 1, backgroundColor: C.panelBdr }} />
                     </div>
+                  )}
+                  <div style={{ border: `1px solid ${farbe}33`, borderLeft: `3px solid ${farbe}`,
+                                borderRadius: 8, padding: 7, backgroundColor: `${farbe}0d` }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 5 }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: farbe }}>
+                        Beleg {bi + 1}
+                      </span>
+                      <span style={{ fontSize: 10, color: C.sub }}>
+                        {r.von === r.bis ? `Seite ${r.von}` : `Seiten ${r.von}–${r.bis}`}
+                      </span>
+                      <span style={{ fontSize: 10, color: C.muted, marginLeft: 'auto',
+                                     overflow: 'hidden', textOverflow: 'ellipsis',
+                                     whiteSpace: 'nowrap', maxWidth: 160 }}>
+                        {titel || 'neu — wird erkannt'}
+                      </span>
+                    </div>
+                    {Array.from({ length: r.bis - r.von + 1 }, (_, k) => {
+                      const seite = r.von + k;
+                      return (
+                        <React.Fragment key={seite}>
+                          {k > 0 && (
+                            <div onClick={() => umschalten(seite)}
+                              title={`Vor Seite ${seite} trennen`}
+                              style={{ height: 15, margin: '1px 0', opacity: 0.5,
+                                       cursor: arbeitet ? 'default' : 'pointer',
+                                       display: 'flex', alignItems: 'center', gap: 5 }}
+                              onMouseEnter={e => { e.currentTarget.style.opacity = 1; }}
+                              onMouseLeave={e => { e.currentTarget.style.opacity = 0.5; }}>
+                              <div style={{ flex: 1, borderTop: `1px dashed ${C.panelBdr}` }} />
+                              <span style={{ fontSize: 9, color: C.muted }}>hier trennen</span>
+                              <div style={{ flex: 1, borderTop: `1px dashed ${C.panelBdr}` }} />
+                            </div>
+                          )}
+                          <div id={`mini-${seite}`} onClick={() => setGross(seite)}
+                            style={{ display: 'flex', gap: 8, alignItems: 'center',
+                                     padding: 4, borderRadius: 6, cursor: 'pointer',
+                                     outline: gross === seite ? `2px solid ${farbe}` : 'none' }}>
+                            <img src={minis[seite - 1]} alt={`Seite ${seite}`}
+                              style={{ width: 76, borderRadius: 3,
+                                       border: `1px solid ${C.panelBdr}`, flexShrink: 0 }} />
+                            <div style={{ fontSize: 10, color: C.sub }}>Seite {seite}</div>
+                          </div>
+                        </React.Fragment>
+                      );
+                    })}
                   </div>
                 </React.Fragment>
               );
@@ -1663,7 +1722,7 @@ function AufteilenDialog({ auftrag, C, dateien = [], onDateiWechsel, onUebernehm
         <div style={{ display: 'flex', alignItems: 'center', gap: 10,
                       padding: '10px 14px', borderTop: `1px solid ${C.panelBdr}` }}>
           <div style={{ fontSize: 10, color: C.muted }}>
-            Unveränderte Bereiche behalten Zuordnung und Beträge — nur geänderte
+            Unveränderte Belege behalten Zuordnung und Beträge — nur geänderte
             werden neu gelesen und erkannt.
           </div>
           {(arbeitet || fortschritt) && (
