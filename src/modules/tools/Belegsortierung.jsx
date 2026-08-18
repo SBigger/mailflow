@@ -1084,7 +1084,18 @@ export default function Belegsortierung() {
             value={kunde ? (kunde.company_name || '') : kundenSuche}
             onChange={e => { setKundenSuche(e.target.value); setKunde(null); }}
             onFocus={() => setKundenListe(true)}
-            onBlur={() => setTimeout(() => setKundenListe(false), 180)}
+            onBlur={() => setTimeout(() => {
+              setKundenListe(false);
+              // Wer tippt und dann wegklickt, hatte bisher KEINEN Mandanten —
+              // und ohne Mandant ist Speichern gesperrt. Passt der getippte
+              // Text auf genau einen, wird der jetzt übernommen.
+              setKunde(k => {
+                if (k) return k;
+                const treffer = kunden.filter(x => x.company_name
+                  ?.toLowerCase().includes(kundenSuche.trim().toLowerCase()));
+                return kundenSuche.trim() && treffer.length === 1 ? treffer[0] : k;
+              });
+            }, 180)}
             onKeyDown={e => {
               if (e.key === 'ArrowDown') { setKundenListe(true); return; }
               if (e.key === 'Enter') {
