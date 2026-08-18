@@ -56,6 +56,15 @@ function dateiPfadFuer(customerId, hash, name) {
   return customerId + '/' + hash + endung;
 }
 
+// Der Pfad ergibt sich aus Mandant und Inhalts-Hash — die Ablage ist
+// inhaltsadressiert. Damit findet ein gespeicherter Beleg SEINE Datei auch
+// dann wieder, wenn beim Einlesen noch kein Mandant gewaehlt war und deshalb
+// nie ein Pfad vermerkt wurde.
+export function pfadAusHash(customerId, hash, name) {
+  if (!customerId || !hash) return null;
+  return dateiPfadFuer(customerId, String(hash).split('#')[0], name);
+}
+
 export const belegsortierung = {
   /** Originaldatei einmal je Inhalt ablegen. Gibt den Pfad zurueck. */
   async dateiHochladen(customerId, hash, datei) {

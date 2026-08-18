@@ -39,7 +39,7 @@ import { KATALOG, KATALOG_NACH_ID, AUSSORTIERT, DIMENSIONEN, katalogFuerPrompt,
          VERZEICHNISSE, VERZEICHNIS_NACH_ID, migriereId }
   from '../../forms/steuer_np_katalog.js';
 import { baueBeilagenBundle } from '../../lib/steuerBelege/beilagenBundle.js';
-import { belegsortierung as db } from '../../api/belegsortierung.js';
+import { belegsortierung as db, pfadAusHash } from '../../api/belegsortierung.js';
 import { useTheme } from '../../components/useTheme.jsx';
 import { chartisTheme, SEM } from '../../lib/chartisTheme.js';
 
@@ -838,7 +838,7 @@ export default function Belegsortierung() {
       const basis = String(b.hash || '').split('#')[0];
       if (!basis) continue;
       const istPdf = b.istPdf || /\.pdf($|\?)/i.test(b.dateiPfad || '') || /\.pdf$/i.test(b.name || '');
-      if (!istPdf || !(b.datei || b.dateiPfad)) continue;
+      if (!istPdf || !(b.datei || b.dateiPfad || pfadAusHash(kunde?.id, b.hash, b.name))) continue;
       if (!proDatei.has(basis)) {
         proDatei.set(basis, { basis, name: (b.name || '').split(' · ')[0] || b.name,
                               vertreter: b, teile: 0, seiten: 0 });
@@ -856,8 +856,9 @@ export default function Belegsortierung() {
     const basis = String(b.hash || '').split('#')[0];
     if (!basis) return;
     let quelle = b.datei || null;
-    if (!quelle && b.dateiPfad) {
-      try { quelle = await db.dateiLaden(b.dateiPfad); }
+    const pfad = b.dateiPfad || pfadAusHash(kunde?.id, b.hash, b.name);
+    if (!quelle && pfad) {
+      try { quelle = await db.dateiLaden(pfad); }
       catch (e) { console.warn('[Aufteilen] Datei nicht ladbar:', e.message); return; }
     }
     if (!quelle) return;
@@ -961,14 +962,15 @@ export default function Belegsortierung() {
       const dateiCache = new Map();
       const fuersBundle = [];
       for (const b of belege.filter(x => x.position)) {
-        if (b.datei || !b.dateiPfad) { fuersBundle.push(b); continue; }
+        const pfadB = b.dateiPfad || pfadAusHash(kunde?.id, b.hash, b.name);
+        if (b.datei || !pfadB) { fuersBundle.push(b); continue; }
         try {
-          if (!dateiCache.has(b.dateiPfad)) {
-            const blob = await db.dateiLaden(b.dateiPfad);
-            dateiCache.set(b.dateiPfad, new File([blob], b.name || 'beleg.pdf',
+          if (!dateiCache.has(pfadB)) {
+            const blob = await db.dateiLaden(pfadB);
+            dateiCache.set(pfadB, new File([blob], b.name || 'beleg.pdf',
               { type: blob.type || 'application/pdf' }));
           }
-          fuersBundle.push({ ...b, datei: dateiCache.get(b.dateiPfad) });
+          fuersBundle.push({ ...b, datei: dateiCache.get(pfadB) });
         } catch { fuersBundle.push(b); }
       }
       const bytes = await baueBeilagenBundle(fuersBundle, {
@@ -1111,15 +1113,22 @@ export default function Belegsortierung() {
   // Ablage holen -- erst beim Anklicken, nicht fuer alle 50 auf Vorrat.
   useEffect(() => {
     const b = belege.find(x => x.id === gewaehlt);
-    if (!b || b.url || !b.dateiPfad) return;
+    if (!b || b.url) return;
+    // Kein vermerkter Pfad? Die Ablage ist inhaltsadressiert — der Pfad ergibt
+    // sich aus Mandant und Hash. Damit findet ein Beleg seine Datei auch dann,
+    // wenn beim Einlesen noch kein Mandant gewählt war (und deshalb nie ein
+    // Pfad gespeichert wurde). Klappt es, wird der Pfad gleich vermerkt.
+    const pfad = b.dateiPfad || pfadAusHash(kunde?.id, b.hash, b.name);
+    if (!pfad) return;
     let aktivFlag = true;
-    db.dateiUrl(b.dateiPfad)
+    db.dateiUrl(pfad)
       .then(url => { if (aktivFlag) aendere(b.id, {
-        url, istPdf: /\.(pdf)(\?|$)/i.test(b.dateiPfad) || /\.pdf$/i.test(b.dateiPfad),
+        url, dateiPfad: pfad,
+        istPdf: /\.(pdf)(\?|$)/i.test(pfad) || /\.pdf$/i.test(pfad),
         ausAblage: true }); })
       .catch(e => console.warn('[Ablage] Vorschau nicht ladbar:', e.message));
     return () => { aktivFlag = false; };
-  }, [gewaehlt, belege]);
+  }, [gewaehlt, belege, kunde?.id]);
 
   return (
     <div style={{
