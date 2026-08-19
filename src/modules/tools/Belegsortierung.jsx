@@ -967,7 +967,10 @@ export default function Belegsortierung() {
         try {
           if (!dateiCache.has(pfadB)) {
             const blob = await db.dateiLaden(pfadB);
-            dateiCache.set(pfadB, new File([blob], b.name || 'beleg.pdf',
+            // Der Beleg heisst «13.pdf · Seiten 1–2» — die DATEI heisst
+            // «13.pdf». Mit dem Belegnamen endete sie nicht auf .pdf.
+            dateiCache.set(pfadB, new File([blob],
+              String(b.name || 'beleg.pdf').split(' · ')[0],
               { type: blob.type || 'application/pdf' }));
           }
           fuersBundle.push({ ...b, datei: dateiCache.get(pfadB) });
