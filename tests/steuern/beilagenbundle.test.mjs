@@ -181,3 +181,45 @@ test('bleibt bei wenigen Beilagen einseitig', async () => {
     assert.ok(seiten[e.seite - 1].some(t => t.trim() === `Beleg Nummer ${nummer}`));
   }
 });
+
+test('ein «≥» im Positionsnamen bringt das Bündel nicht zu Fall', async () => {
+  // Die Standardschriften von pdf-lib können nur WinAnsi. Ein «≥» aus
+  // «Qualifizierte Beteiligung (≥10%)» warf eine Ausnahme tief in der
+  // Schriftbibliothek und liess das ganze Bündel scheitern. Der Schutz sitzt
+  // im Zeichenpfad des Deckblatts — und genau der wurde für den Umbruch neu
+  // geschrieben, muss hier also erneut nachgewiesen werden.
+  const belege = [{
+    id: 'q1', name: 'beteiligung.pdf', position: 'beteiligung_qualifiziert',
+    datei: alsDatei('beteiligung.pdf', await belegPdf('Beleg Nummer 1')),
+  }];
+
+  const seiten = await seitenZeilen(await baueBeilagenBundle(belege, {
+    mandant: 'Muster «Söhne» AG', steuerjahr: 2025, erstelltAm: '19.08.2026',
+  }));
+
+  const verzeichnis = seiten[0].join(' ');
+  assert.ok(verzeichnis.includes('>=10%'), 'das ≥ muss ersetzt sein, nicht verschluckt');
+  assert.ok(!verzeichnis.includes('≥'));
+  assert.ok(verzeichnis.includes('"Söhne"'), 'auch « » werden ersetzt');
+  assert.equal(seiten.length, 2);
+});
+
+test('erkennt ein PDF am Inhalt, nicht an der Dateiendung', async () => {
+  // Ein getrennter Beleg heisst «13.pdf · Seiten 1–2»; die daraus gebaute
+  // Datei erbt den Namen und endet nicht auf .pdf. pdf-lib versuchte sie dann
+  // als JPEG zu lesen und warf «SOI not found in JPEG». Die ersten Bytes sind
+  // eindeutig — %PDF.
+  const belege = [{
+    id: 'x1', name: '13.pdf · Seiten 1–2', position: 'lohn_haupt',
+    datei: alsDatei('13.pdf · Seiten 1–2', await belegPdf('Beleg Nummer 1')),
+  }];
+
+  const seiten = await seitenZeilen(await baueBeilagenBundle(belege, {
+    mandant: 'M', steuerjahr: 2025,
+  }));
+
+  // Als PDF eingelesen: genau eine Beilagenseite mit dem Text darauf.
+  assert.equal(seiten.length, 2, 'Deckblatt plus die eine Beilage');
+  assert.ok(seiten[1].some(t => t.trim() === 'Beleg Nummer 1'),
+            'der Beleg muss als PDF-Seite drin sein, nicht als Bild');
+});

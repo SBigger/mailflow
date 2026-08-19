@@ -54,7 +54,14 @@ export async function baueBeilagenBundle(belege, kopf = {}) {
     const bytes = new Uint8Array(await datei.arrayBuffer());
     const vorher = doc.getPageCount();
 
-    if (/\.pdf$/i.test(datei.name)) {
+    // Nach dem INHALT entscheiden, nicht nach dem Namen: Ein Beleg heisst
+    // «13.pdf · Seiten 1–2», die daraus gebaute Datei erbt diesen Namen und
+    // endet damit nicht auf .pdf — pdf-lib versuchte sie als JPEG zu lesen
+    // und warf «SOI not found in JPEG». Die ersten Bytes sind eindeutig.
+    const istPdfDatei = bytes[0] === 0x25 && bytes[1] === 0x50
+                     && bytes[2] === 0x44 && bytes[3] === 0x46;      // %PDF
+    const istPngDatei = bytes[0] === 0x89 && bytes[1] === 0x50;      // PNG
+    if (istPdfDatei) {
       const quelle = await PDFDocument.load(bytes, { ignoreEncryption: true });
       // Ein PDF kann mehrere Belege enthalten – dann steht in vonSeite/bisSeite,
       // welcher Teil zu DIESEM Beleg gehoert. Ohne das laege der ganze
@@ -66,7 +73,7 @@ export async function baueBeilagenBundle(belege, kopf = {}) {
       const seiten = await doc.copyPages(quelle, indizes);
       seiten.forEach(s => doc.addPage(s));
     } else {
-      const bild = /\.png$/i.test(datei.name)
+      const bild = istPngDatei
         ? await doc.embedPng(bytes)
         : await doc.embedJpg(bytes);
       const seite = doc.addPage(A4);
@@ -99,6 +106,21 @@ export async function baueBeilagenBundle(belege, kopf = {}) {
   // aber niemand aus. Bei einem Mandanten mit 51 Beilagen standen 22 im
   // Verzeichnis, der Rest fiel kommentarlos weg — ausgerechnet in dem
   // Dokument, das dem Steueramt als Index dient.
+
+  // Die Standardschriften von pdf-lib können nur WinAnsi. Ein einziges «≥»
+  // aus der Position «Qualifizierte Beteiligung (≥10%)» liess bisher das
+  // ganze Bündel scheitern — mit einer Ausnahme tief in der Schriftbibliothek
+  // und ohne brauchbare Meldung. Darum: Sonderzeichen vor dem Zeichnen auf
+  // darstellbare Entsprechungen bringen, Unbekanntes fällt weg.
+  const sichererText = (roh) => String(roh ?? '')
+    .replace(/[≥]/g, '>=').replace(/[≤]/g, '<=')
+    .replace(/[–—]/g, '-').replace(/[«»]/g, '"')
+    .replace(/[„“”]/g, '"').replace(/[‚‘’]/g, "'")
+    .replace(/[…]/g, '...').replace(/[·•]/g, '-')
+    .replace(/[≠]/g, '!=').replace(/[±]/g, '+/-')
+    .replace(/ /g, ' ')
+    // eslint-disable-next-line no-control-regex
+    .replace(/[^\x00-ÿ]/g, '');
 
   const zeilen = [];
   const merke = (text, o = {}) => zeilen.push({ text, luft: 15, ...o });
@@ -169,7 +191,7 @@ export async function baueBeilagenBundle(belege, kopf = {}) {
       const text = z.rohSeite != null
         ? `${String(z.rohSeite + deckZeilen.length).padStart(3, ' ')}   ${z.label}`
         : z.text;
-      decks[i].drawText(String(text), {
+      decks[i].drawText(sichererText(text), {
         x: RAND + (z.einzug || 0), y: z.y,
         size: z.gross ? 13 : 9,
         font: z.gross ? fett : normal,
