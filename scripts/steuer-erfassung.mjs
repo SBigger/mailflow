@@ -113,15 +113,32 @@ export function sammlePdfs(pfad) {
 }
 
 /**
+ * Ab wie vielen Zeichen eine Seite eine brauchbare Textebene hat.
+ *
+ * Derselbe Wert, den `extractPageTexts` im Browser-Modul im Mittel verlangt
+ * (50 × Seiten × 0.3 = 15 Zeichen je Seite) — nur wird er hier JE SEITE
+ * geprüft statt über die ganze Datei gemittelt. Der Unterschied ist nicht
+ * kosmetisch: an einem echten Beilagenbündel (Deckblatt mit Verzeichnis,
+ * dahinter 75 gescannte Seiten) reichten die 1394 Zeichen des Deckblatts, um
+ * die Datei-Schwelle von 1140 zu reissen. Die Datei galt als digital, die 75
+ * Scanseiten wurden ohne Textinhalt an das Deckblatt geklebt und meldeten sich
+ * als EIN Beleg. Genau der stille Verlust, den dieses Skript verhindern soll.
+ */
+const TEXT_MINDEST = 15;
+
+/**
  * Text je Seite aus der eingebetteten Textebene.
  *
- * Zusammensetzung und Scan-Schwelle sind bewusst identisch zu
+ * Die Zusammensetzung des Seitentexts ist bewusst identisch zu
  * `extractPageTexts` in src/lib/batchAiSuggest.js — weicht das ab, trennt der
  * Node-Lauf den Stapel anders als der Browser, und zwei Läufe über denselben
- * Ordner wären nicht mehr vergleichbar.
+ * Ordner wären nicht mehr vergleichbar. Nur die Scan-Erkennung ist feiner,
+ * siehe TEXT_MINDEST.
  *
- * @returns {{seiten: string[], scan: boolean, seitenGesamt: number}}
- *          scan=true heisst: keine brauchbare Textebene, die Datei braucht OCR.
+ * @returns {{seiten: string[], scanSeiten: number[], scan: boolean,
+ *            seitenGesamt: number}}
+ *          scanSeiten sind die 1-basierten Seiten ohne Textebene;
+ *          scan=true heisst: die ganze Datei ist ein Scan.
  */
 export async function seitenTexte(datei, maxSeiten = 40) {
   const daten = new Uint8Array(readFileSync(datei));
@@ -139,8 +156,58 @@ export async function seitenTexte(datei, maxSeiten = 40) {
   const seitenGesamt = pdf.numPages;
   await pdf.destroy();
 
-  const hatText = texte.join('').length > 50 * anzahl * 0.3;
-  return { seiten: texte, scan: !hatText, seitenGesamt };
+  const scanSeiten = texte
+    .map((t, i) => (t.length < TEXT_MINDEST ? i + 1 : 0))
+    .filter(Boolean);
+  return {
+    seiten: texte, scanSeiten,
+    scan: scanSeiten.length === texte.length,
+    seitenGesamt,
+  };
+}
+
+/**
+ * Die Seiten einer Datei in Belege zerlegen — Textseiten über die
+ * Belegtrennung, Scanseiten als eigene, ausdrücklich markierte Abschnitte.
+ *
+ * Warum getrennt: `trenneBelege` entscheidet am Briefkopf, ob eine Seite einen
+ * neuen Beleg beginnt. Eine Seite ohne Textebene hat keinen Briefkopf, gilt
+ * damit als «gleicher Absender wie davor» und hängt sich an den Vorgänger.
+ * Ein Deckblatt mit 75 Scans dahinter würde so zu einem Beleg. Scanseiten
+ * dürfen deshalb gar nicht erst in die Trennung.
+ */
+function zerlegeInTeile(seiten, scanSeiten) {
+  const istScan = new Set(scanSeiten);
+
+  // Zusammenhängende Läufe gleicher Art bilden.
+  const laeufe = [];
+  for (let i = 0; i < seiten.length; i++) {
+    const scan = istScan.has(i + 1);
+    const letzter = laeufe[laeufe.length - 1];
+    if (letzter && letzter.scan === scan) letzter.bis = i + 1;
+    else laeufe.push({ von: i + 1, bis: i + 1, scan });
+  }
+
+  const teile = [];
+  for (const lauf of laeufe) {
+    if (lauf.scan) {
+      teile.push({
+        von: lauf.von, bis: lauf.bis, text: '',
+        grund: 'ohne Textebene', ocrNoetig: true,
+      });
+      continue;
+    }
+    // Seitennummern des Abschnitts wieder auf die Datei umrechnen.
+    for (const t of trenneBelege(seiten.slice(lauf.von - 1, lauf.bis))) {
+      teile.push({
+        ...t,
+        von: t.von + lauf.von - 1,
+        bis: t.bis + lauf.von - 1,
+        ocrNoetig: false,
+      });
+    }
+  }
+  return teile;
 }
 
 /** Inhalts-Hash wie belegHelfer.dateiHash, nur mit Node-Krypto. */
@@ -173,16 +240,40 @@ export async function erfasseOrdner({ ordner, jahr, maxSeiten = 40 }) {
     }
 
     if (gelesen.scan) {
-      scans.push({ name, seiten: gelesen.seitenGesamt });
+      scans.push({ name, seiten: gelesen.seitenGesamt, seitenOhneText: gelesen.seitenGesamt });
       continue;
+    }
+    // Teil-Scan: die Datei hat eine Textebene, aber nicht überall. Sie wird
+    // verarbeitet UND die Lücke gemeldet — nicht das eine gegen das andere.
+    if (gelesen.scanSeiten.length) {
+      scans.push({ name, seiten: gelesen.seitenGesamt,
+                   seitenOhneText: gelesen.scanSeiten.length, teilweise: true });
     }
 
     const hash = inhaltsHash(datei);
-    const teile = trenneBelege(gelesen.seiten);
+    const teile = zerlegeInTeile(gelesen.seiten, gelesen.scanSeiten);
 
     for (const teil of teile) {
       const teilName = teile.length > 1 ? `${name} · ${seitenLabel(teil)}` : name;
       const teilHash = `${hash}#${teil.von}-${teil.bis}`;
+
+      // Seiten ohne Textebene können die Regeln nicht beurteilen. Sie werden
+      // als Beleg geführt, damit sie in der Zählung auftauchen, aber als
+      // «braucht OCR» markiert statt als offene Entscheidung.
+      if (teil.ocrNoetig) {
+        belege.push({
+          id: teilHash, name: teilName, hash: teilHash, dateiPfad: datei,
+          vonSeite: teil.von, bisSeite: teil.bis, trennGrund: teil.grund,
+          text: '', belegart: null, confidence: 0,
+          begruendung: 'Keine Textebene — nicht gelesen, OCR nötig.',
+          quelle: 'regel', merkmale: [], periodeBeleg: null,
+          relevanz: null, relevanzGrund: null,
+          position: null, kandidaten: [], kandidatenGrund: null, dimensionen: [],
+          einkommen: null, vermoegen: null, betragQuelle: null, betragAnker: null,
+          vonHand: false, doppelVerdacht: null, ocrNoetig: true,
+        });
+        continue;
+      }
 
       // Doppelverdacht wird MARKIERT, nicht weggeworfen — gleiche Begründung
       // wie im Modul: ein still verschwundener Beleg ist der teurere Fehler.
@@ -238,6 +329,7 @@ export async function erfasseOrdner({ ordner, jahr, maxSeiten = 40 }) {
 
         vonHand: false,
         doppelVerdacht: doppel ? { name: doppel.name, score: doppel.score } : null,
+        ocrNoetig: false,
       });
     }
   }
@@ -257,7 +349,12 @@ export function gruppiere(belege) {
     // hier steht nur der Vorschlag. Getrennt von den offenen Belegen, weil es
     // zwei verschiedene Arten von Arbeit sind: bestätigen gegenüber entscheiden.
     nichtRelevant: belege.filter(b => !b.position && b.relevanz === RELEVANZ.NICHT_RELEVANT),
-    offen: belege.filter(b => !b.position && b.relevanz !== RELEVANZ.NICHT_RELEVANT),
+    // Seiten ohne Textebene sind keine offene Entscheidung — es gibt nichts
+    // zu entscheiden, solange niemand sie gelesen hat. Eigene Gruppe, sonst
+    // sieht die Prüfliste nach Arbeit aus, die hier gar nicht möglich ist.
+    ocrNoetig: belege.filter(b => b.ocrNoetig),
+    offen: belege.filter(b => !b.position && !b.ocrNoetig
+                           && b.relevanz !== RELEVANZ.NICHT_RELEVANT),
     ohneBetrag: zugeordnet.filter(b => {
       const p = KATALOG_NACH_ID[b.position];
       return (p?.einkommen && b.einkommen == null) || (p?.vermoegen && b.vermoegen == null);
@@ -306,20 +403,26 @@ async function hauptlauf() {
 
   if (jsonZiel) writeFileSync(jsonZiel, JSON.stringify(belege, null, 2), 'utf-8');
 
-  const { zugeordnet, duplikate, nichtRelevant, offen, ohneBetrag } = gruppiere(belege);
+  const { zugeordnet, duplikate, nichtRelevant, offen, ohneBetrag, ocrNoetig }
+    = gruppiere(belege);
 
   console.log(`ERFASSUNG  Steuerjahr ${jahr}`);
   console.log(`${dateien.length} Datei${dateien.length === 1 ? '' : 'en'} gelesen · ${belege.length} Belege erkannt\n`);
   console.log(`  ${zugeordnet.length} eindeutig zugeordnet`);
   console.log(`  ${offen.length} offen — Zuordnung von Hand`);
+  console.log(`  ${ocrNoetig.length} ohne Textebene — nicht gelesen, OCR nötig`);
   console.log(`  ${nichtRelevant.length} nicht relevant — Vorschlag: aussortieren`);
   console.log(`  ${duplikate.length} als Doppel aussortiert`);
   console.log(`  ${ohneBetrag.length} zugeordnet, aber ohne Betrag`);
 
   if (scans.length) {
-    console.log(`\n⚠ ${scans.length} Datei${scans.length === 1 ? '' : 'en'} ohne Textebene — NICHT verarbeitet.`);
+    console.log(`\n⚠ ${scans.length} Datei${scans.length === 1 ? '' : 'en'} mit Seiten ohne Textebene.`);
     console.log('  Das sind Scans; sie brauchen OCR und gehören ins Belegsortierungs-Modul.');
-    for (const s of scans) console.log(`    · ${s.name} (${s.seiten} Seiten)`);
+    for (const s of scans) {
+      console.log(s.teilweise
+        ? `    · ${s.name}: ${s.seitenOhneText} von ${s.seiten} Seiten ohne Text — Rest verarbeitet`
+        : `    · ${s.name}: alle ${s.seiten} Seiten ohne Text — nicht verarbeitet`);
+    }
   }
   if (fehler.length) {
     console.log(`\n⚠ ${fehler.length} Datei${fehler.length === 1 ? '' : 'en'} nicht lesbar:`);
@@ -334,6 +437,15 @@ async function hauptlauf() {
         : (b.belegart ? `Belegart «${b.belegart}», aber kein Ziel` : 'Belegart nicht erkannt');
       console.log(`  · ${b.name} — ${wie}`);
     }
+  }
+
+  if (ocrNoetig.length) {
+    console.log('\nOHNE TEXTEBENE — diese Seiten hat niemand gelesen:');
+    for (const b of ocrNoetig) {
+      const n = b.bisSeite - b.vonSeite + 1;
+      console.log(`  · ${b.name} (${n} Seite${n === 1 ? '' : 'n'})`);
+    }
+    console.log('  Sie zählen oben NICHT als erfasst. Im Belegsortierungs-Modul einlesen.');
   }
 
   if (nichtRelevant.length) {

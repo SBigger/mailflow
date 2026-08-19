@@ -241,3 +241,52 @@ test('nennt einen fehlenden Ordner beim Namen', async () => {
     /gibt es nicht/,
   );
 });
+
+test('verliert Scanseiten nicht hinter einem Deckblatt mit Textebene', async () => {
+  // Der Fall aus der Praxis: ein Beilagenbündel aus dem Belegsortierungs-Modul
+  // — Seite 1 ein generiertes Verzeichnis mit Text, dahinter lauter Scans.
+  // Über die ganze Datei gemittelt riss der Text des Deckblatts die
+  // Scan-Schwelle, die Datei galt als digital, und die Scanseiten hängten sich
+  // mangels Briefkopf an das Deckblatt: EIN Beleg, 75 Seiten unbemerkt weg.
+  const ordner4 = mkdtempSync(join(tmpdir(), 'steuer-deckblatt-'));
+  try {
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    const deck = doc.addPage([595, 842]);
+    let y = 790;
+    for (const z of [
+      'Beilagenverzeichnis', 'Dominik Muster', 'Steuerperiode 2025',
+      '51 Beilagen - erstellt 19.08.2026', 'Wertschriftenverzeichnis',
+      'Konto / Depot / Titel   02.pdf - Seite 1',
+      'Liegenschaftenverzeichnis',
+      'Ertrag / Eigenmietwert / Mieterspiegel   05.pdf - Seite 2',
+    ]) { deck.drawText(z, { x: 50, y, size: 11, font }); y -= 18; }
+    for (let i = 0; i < 8; i++) doc.addPage([595, 842]);   // Scans ohne Text
+    writeFileSync(join(ordner4, 'beilagen.pdf'), await doc.save());
+
+    const r = await erfasseOrdner({ ordner: ordner4, jahr: 2025 });
+    const g = gruppiere(r.belege);
+
+    // Das Deckblatt und der Scanblock sind zwei Belege, nicht einer.
+    assert.equal(r.belege.length, 2);
+    const deckblatt = r.belege.find(b => !b.ocrNoetig);
+    const scanblock = r.belege.find(b => b.ocrNoetig);
+    assert.ok(deckblatt && scanblock, 'Deckblatt und Scanblock muessen getrennt sein');
+    assert.deepEqual([deckblatt.vonSeite, deckblatt.bisSeite], [1, 1]);
+    assert.deepEqual([scanblock.vonSeite, scanblock.bisSeite], [2, 9]);
+
+    // Die Luecke muss gemeldet sein — als Teil-Scan, nicht als Ganz-Scan.
+    assert.equal(r.scans.length, 1);
+    assert.equal(r.scans[0].teilweise, true);
+    assert.equal(r.scans[0].seitenOhneText, 8);
+    assert.equal(r.scans[0].seiten, 9);
+
+    // Und sie darf nicht als offene Entscheidung durchgehen: es gibt nichts
+    // zu entscheiden, solange die Seiten niemand gelesen hat.
+    assert.equal(g.ocrNoetig.length, 1);
+    assert.ok(!g.offen.some(b => b.ocrNoetig));
+    assert.equal(scanblock.position, null);
+  } finally {
+    rmSync(ordner4, { recursive: true, force: true });
+  }
+});
