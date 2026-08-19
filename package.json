@@ -8,6 +8,7 @@
     "build": "vite build --mode production",
     "test:fibu": "node --test tests/fibu/*.test.mjs",
     "test:leistungserfassung": "node --test tests/leistungserfassung/*.test.mjs",
+    "test:steuern": "node --test tests/steuern/*.test.mjs",
     "lint:leistungserfassung": "eslint src/pages/Leistungserfassung.jsx src/lib/leApi.js src/components/auswertungen/MonatsrapportPanel.jsx src/components/auswertungen/util.js src/components/leistungserfassung/AbwesenheitenPanel.jsx src/components/leistungserfassung/EntwurfsDurchgangPanel.jsx src/components/leistungserfassung/FirmenSettingsPanel.jsx src/components/leistungserfassung/GutschriftPanel.jsx src/components/leistungserfassung/LeistungsartenPanel.jsx src/components/leistungserfassung/MahnungenPanel.jsx src/components/leistungserfassung/NummernkreisePanel.jsx src/components/leistungserfassung/RechnungsuebersichtPanel.jsx src/components/leistungserfassung/SpesenAbrechnenPanel.jsx src/components/leistungserfassung/SpesenErfassenPanel.jsx src/components/leistungserfassung/StorageDocumentLink.jsx src/components/leistungserfassung/WiederkehrendePanel.jsx",
     "preview": "vite preview",
     "supabase": "npx supabase start && npx supabase functions serve --env-file .env.local",
