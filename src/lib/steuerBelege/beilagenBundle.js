@@ -87,49 +87,96 @@ export async function baueBeilagenBundle(belege, kopf = {}) {
   }
 
   // ── Deckblatt bauen und nach vorne stellen ──────────────────────────────
-  const deck = doc.insertPage(0, A4);
-  let y = A4[1] - RAND;
+  //
+  // Zweistufig, weil sich beides gegenseitig bedingt: die Seitenzahl einer
+  // Beilage steht erst fest, wenn klar ist, wie viele Deckblattseiten davor
+  // liegen — und wie viele das sind, zeigt erst der Umbruch. Darum werden die
+  // Zeilen zuerst gesammelt und umgebrochen (das haengt nur an ihrer Anzahl
+  // und Hoehe, nicht an den Zahlen darin) und erst danach gezeichnet.
+  //
+  // Vorher war das Deckblatt fest einseitig: die Zeichenfunktion gab bei
+  // Seitenende `false` zurueck und zeichnete nichts, den Rueckgabewert wertete
+  // aber niemand aus. Bei einem Mandanten mit 51 Beilagen standen 22 im
+  // Verzeichnis, der Rest fiel kommentarlos weg — ausgerechnet in dem
+  // Dokument, das dem Steueramt als Index dient.
 
-  const zeile = (text, { gross = false, grau = false, einzug = 0, luft = 15 } = {}) => {
-    if (y < RAND + 40) return false;                 // Deckblatt bleibt einseitig
-    deck.drawText(String(text), {
-      x: RAND + einzug, y,
-      size: gross ? 13 : 9,
-      font: gross ? fett : normal,
-      color: grau ? rgb(0.45, 0.45, 0.45) : rgb(0.1, 0.1, 0.1),
-    });
-    y -= luft;
-    return true;
-  };
+  const zeilen = [];
+  const merke = (text, o = {}) => zeilen.push({ text, luft: 15, ...o });
 
-  zeile('Beilagenverzeichnis', { gross: true, luft: 22 });
-  if (kopf.mandant)    zeile(kopf.mandant, { luft: 13 });
-  if (kopf.steuerjahr) zeile(`Steuerperiode ${kopf.steuerjahr}`, { luft: 13 });
-  zeile(`${beilagen.length} Beilagen · erstellt ${kopf.erstelltAm || heute()}`,
+  merke('Beilagenverzeichnis', { gross: true, luft: 22 });
+  if (kopf.mandant)    merke(kopf.mandant, { luft: 13 });
+  if (kopf.steuerjahr) merke(`Steuerperiode ${kopf.steuerjahr}`, { luft: 13 });
+  merke(`${beilagen.length} Beilagen · erstellt ${kopf.erstelltAm || heute()}`,
         { grau: true, luft: 24 });
 
   let letztesVerz = null;
   for (const b of beilagen) {
     const p = KATALOG_NACH_ID[b.position];
     if (p.verzeichnis !== letztesVerz) {
-      y -= 6;
-      zeile(VERZEICHNIS_NACH_ID[p.verzeichnis]?.label || p.verzeichnis, { gross: false, luft: 14 });
+      // Ein Gruppenkopf allein am Seitenfuss ist eine Ueberschrift ohne
+      // Inhalt: er haelt den ersten Eintrag (zwei Zeilen) bei sich.
+      merke(VERZEICHNIS_NACH_ID[p.verzeichnis]?.label || p.verzeichnis,
+            { luft: 14, vorLuft: 6, zusammen: 2 });
       letztesVerz = p.verzeichnis;
     }
-    // +1, weil das Deckblatt erst nach dem Zaehlen vorne eingeschoben wurde
-    const ab = startSeiten.get(b.id ?? b.name) + 1;
-    zeile(`${String(ab).padStart(3, ' ')}   ${p.label}`, { einzug: 12, luft: 12 });
-    zeile(b.name, { einzug: 52, grau: true, luft: 13 });
+    // Die Seitenzahl bleibt roh — erst der Umbruch weiss, was davorkommt.
+    merke(null, { rohSeite: startSeiten.get(b.id ?? b.name), label: p.label,
+                  einzug: 12, luft: 12, zusammen: 1 });
+    merke(b.name, { einzug: 52, grau: true, luft: 13 });
   }
 
   if (nichtBeigelegt.length) {
-    y -= 10;
-    zeile('Gesichtet, nicht beigelegt', { luft: 14 });
+    merke('Gesichtet, nicht beigelegt', { luft: 14, vorLuft: 10 });
     for (const b of nichtBeigelegt) {
       const p = KATALOG_NACH_ID[b.position];
-      zeile(`${b.name} — ${p.label}`, { einzug: 12, grau: true, luft: 12 });
+      merke(`${b.name} — ${p.label}`, { einzug: 12, grau: true, luft: 12 });
     }
   }
+
+  // Umbruch. Folgeseiten bekommen eine Fortsetzungszeile, damit ein
+  // mehrseitiges Verzeichnis auch als eines erkennbar ist.
+  const deckZeilen = [];
+  {
+    let aktuell = null, y = 0;
+    const neueSeite = () => {
+      aktuell = [];
+      deckZeilen.push(aktuell);
+      y = A4[1] - RAND;
+      if (deckZeilen.length > 1) {
+        aktuell.push({ text: 'Beilagenverzeichnis (Fortsetzung)', gross: true, y });
+        y -= 22;
+      }
+    };
+    neueSeite();
+    zeilen.forEach((z, i) => {
+      // Zeilen, die zusammengehoeren, brauchen gemeinsam Platz. Sonst reisst
+      // der Umbruch die Positionszeile vom Dateinamen darunter, und der Name
+      // steht verwaist unter der Fortsetzungszeile der Folgeseite.
+      const reserve = zeilen.slice(i + 1, i + 1 + (z.zusammen || 0))
+        .reduce((summe, n) => summe + (n.vorLuft || 0) + n.luft, 0);
+      if (y - (z.vorLuft || 0) - reserve < RAND + 20) neueSeite();
+      y -= (z.vorLuft || 0);
+      aktuell.push({ ...z, y });
+      y -= z.luft;
+    });
+  }
+
+  const decks = deckZeilen.map((_, i) => doc.insertPage(i, A4));
+
+  deckZeilen.forEach((seitenZeilen, i) => {
+    for (const z of seitenZeilen) {
+      // Jetzt steht die Verschiebung fest: alle Deckblattseiten liegen davor.
+      const text = z.rohSeite != null
+        ? `${String(z.rohSeite + deckZeilen.length).padStart(3, ' ')}   ${z.label}`
+        : z.text;
+      decks[i].drawText(String(text), {
+        x: RAND + (z.einzug || 0), y: z.y,
+        size: z.gross ? 13 : 9,
+        font: z.gross ? fett : normal,
+        color: z.grau ? rgb(0.45, 0.45, 0.45) : rgb(0.1, 0.1, 0.1),
+      });
+    }
+  });
 
   return doc.save();
 }
