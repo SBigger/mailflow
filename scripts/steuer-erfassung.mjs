@@ -30,11 +30,16 @@
  * zurückführbar. Was die Regeln nicht sicher entscheiden, wird als offen
  * ausgewiesen und gehört in die Durchsicht — nicht geraten.
  *
- * Keine OCR. Gelesen wird die eingebettete Textebene digitaler PDFs. Scans
- * haben keine, die brauchen Tesseract, und das läuft im Browser-Modul. Solche
- * Dateien werden gezählt und namentlich gemeldet, nicht stillschweigend als
- * leerer Beleg durchgereicht — ein unbemerkt übersprungener Beleg ist der
- * teurere Fehler.
+ * Keine OCR im selben Lauf. Gelesen wird die eingebettete Textebene; Seiten
+ * ohne eine solche werden gezählt und namentlich gemeldet, nicht
+ * stillschweigend als leerer Beleg durchgereicht — ein unbemerkt
+ * übersprungener Beleg ist der teurere Fehler.
+ *
+ * Wer sie trotzdem lesen will, lässt vorher `steuer-ocr.mjs` laufen und gibt
+ * dessen Ausgabe mit «--ocr» mit. Getrennte Schritte, weil OCR rund sieben
+ * Sekunden je Seite kostet: einmal lesen, danach beliebig oft auswerten —
+ * und weil so sichtbar bleibt, welche Zahl aus einer Textebene stammt und
+ * welche aus einer Mustererkennung.
  *
  * Nichts wird eingereicht und nichts in ein Portal getippt. Vgl.
  * docs/steuern-np-recherche.md §4.
@@ -218,11 +223,12 @@ export function inhaltsHash(datei) {
 /**
  * Einen Ordner voller Belege erfassen.
  *
- * @param {{ordner: string, jahr: number, maxSeiten?: number}} auftrag
+ * @param {{ordner: string, jahr: number, maxSeiten?: number,
+ *          ocr?: {[dateiname: string]: {[seite: number]: {text, vertrauen}}}}} auftrag
  * @returns {Promise<{dateien: string[], belege: object[],
  *                    scans: object[], fehler: object[]}>}
  */
-export async function erfasseOrdner({ ordner, jahr, maxSeiten = 40 }) {
+export async function erfasseOrdner({ ordner, jahr, maxSeiten = 40, ocr = null }) {
   const dateien = sammlePdfs(ordner);
   const belege = [];
   const bekannteHashes = [];
@@ -243,8 +249,20 @@ export async function erfasseOrdner({ ordner, jahr, maxSeiten = 40 }) {
       scans.push({ name, seiten: gelesen.seitenGesamt, seitenOhneText: gelesen.seitenGesamt });
       continue;
     }
-    // Teil-Scan: die Datei hat eine Textebene, aber nicht überall. Sie wird
-    // verarbeitet UND die Lücke gemeldet — nicht das eine gegen das andere.
+    // Erkannten Text einsetzen, wo die Textebene nichts hergab. Was von der
+    // OCR kommt, bleibt als solches erkennbar (quelle: 'ocr') — eine gelesene
+    // Zahl und eine erratene Zahl duerfen im Report nicht gleich aussehen.
+    const ocrSeiten = ocr?.[name] || null;
+    const nochScan = [];
+    for (const nr of gelesen.scanSeiten) {
+      const treffer = ocrSeiten?.[nr];
+      if (treffer?.text) gelesen.seiten[nr - 1] = treffer.text;
+      else nochScan.push(nr);
+    }
+    gelesen.scanSeiten = nochScan;
+
+    // Teil-Scan: die Datei hat Text, aber nicht ueberall, und die OCR hat die
+    // Luecke nicht geschlossen. Sie wird verarbeitet UND die Luecke gemeldet.
     if (gelesen.scanSeiten.length) {
       scans.push({ name, seiten: gelesen.seitenGesamt,
                    seitenOhneText: gelesen.scanSeiten.length, teilweise: true });
@@ -376,6 +394,7 @@ async function hauptlauf() {
   const jahr = Number(argument('jahr', new Date().getFullYear() - 1));
   const jsonZiel = argument('json');
   const maxSeiten = Number(argument('maxseiten', 40));
+  const ocrDatei = argument('ocr');
 
   if (!ordner) {
     console.error(`Aufruf: node scripts/steuer-erfassung.mjs --ordner <pfad> [--jahr 2025] [--json out.json]
@@ -384,13 +403,31 @@ async function hauptlauf() {
   --jahr       Steuerperiode; steuert die Periodenprüfung  (Vorgabe: Vorjahr)
   --json       Datei für die Ausgabe, direkt weiterverwendbar mit
                steuer-arbeitsliste.mjs --datei
-  --maxseiten  Seitenobergrenze je PDF                     (Vorgabe: 40)`);
+  --maxseiten  Seitenobergrenze je PDF                     (Vorgabe: 40)
+  --ocr        Ausgabe von steuer-ocr.mjs; fuellt die Seiten ohne Textebene`);
     process.exit(1);
+  }
+
+  // Die OCR-Ausgabe steht je Datei und Seite bereit — steuer-ocr.mjs schreibt
+  // eine Datei je PDF, hier wird nach Dateiname geschluesselt.
+  let ocr = null;
+  if (ocrDatei) {
+    try {
+      const roh = JSON.parse(readFileSync(ocrDatei, 'utf-8'));
+      const name = basename(roh.datei || '');
+      ocr = { [name]: Object.fromEntries(
+        (roh.seiten || []).filter(x => x.text).map(x => [x.nr, x])) };
+      const gelesen = Object.keys(ocr[name]).length;
+      console.log(`OCR-Text eingelesen: ${gelesen} Seiten aus «${name}»\n`);
+    } catch (e) {
+      console.error(`OCR-Datei «${ocrDatei}» nicht lesbar: ${e.message}`);
+      process.exit(2);
+    }
   }
 
   let lauf;
   try {
-    lauf = await erfasseOrdner({ ordner, jahr, maxSeiten });
+    lauf = await erfasseOrdner({ ordner, jahr, maxSeiten, ocr });
   } catch (e) {
     console.error(e.message);
     process.exit(2);
