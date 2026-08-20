@@ -37,6 +37,7 @@ Antworte AUSSCHLIESSLICH mit JSON in dieser Form:
 {
   "belegart": "<Schlüssel oder null>",
   "positionen": ["<id aus dem Katalog>", ...],
+  "kandidaten": ["<id>", ...],
   "relevanz": "relevant" | "unklar" | "nicht_relevant",
   "confidence": 0.0-1.0,
   "periode": <Jahr oder null>,
@@ -52,6 +53,15 @@ Regeln:
 - Rate NICHT. Wenn der Ausschnitt nicht reicht, gib "unklar" mit niedriger
   confidence zurück und sag im Begründungssatz, was fehlen würde. Ein falsch
   einsortierter Beleg kostet mehr als ein offener.
+- ABER lass den Beleg nie ganz ohne Ziel: Kannst du dich nicht festlegen,
+  nenne unter "kandidaten" die 2–4 Positionen, die überhaupt in Frage kommen
+  (inkl. "_aussortiert", wenn Privates dabei sein könnte). Ein Mensch
+  entscheidet dann zwischen ihnen — mit einer leeren Antwort kann niemand
+  etwas anfangen.
+- Betriebs- und Nebenkosten einer Liegenschaft (Wasser, Strom, Gas, Abwasser,
+  Kehricht) gehören zum Liegenschaftsunterhalt, wenn das Objekt VERMIETET
+  ist; bei selbstbewohntem Objekt sind sie Lebenshaltung. Steht das nicht auf
+  dem Beleg, beide als Kandidaten nennen.
 - Rechnungen für privaten Konsum (Möbel, Geräte, Hobby, Garten) sind NICHT
   abzugsfähig, auch wenn sie wie eine Handwerkerrechnung aussehen.
 - Ob Liegenschaftsunterhalt werterhaltend oder wertvermehrend ist, steht auf
@@ -116,7 +126,14 @@ Regeln:
 - Bei Zahlungen entscheidet der Zweck: Bau-, Handwerker- und
   Architektenzahlungen mit Bauherr/Objekt (auch «Vergütungsauftrag») →
   Liegenschaftsunterhalt; Kapitaleinlage/Darlehen → Vermögen; private
-  Konsumrechnung → nicht zur Steuererklärung.`;
+  Konsumrechnung → nicht zur Steuererklärung.
+- Bei Nebenkosten (Wasser, Strom, Gas, Abwasser, Kehricht) entscheidet die
+  ADRESSE: Steht als Objekt eine ANDERE Adresse als die Empfängeradresse des
+  Steuerpflichtigen, ist die Liegenschaft vermietet → Liegenschaftsunterhalt.
+  Stimmen Objekt- und Wohnadresse überein, ist es Lebenshaltung → nicht zur
+  Steuererklärung.
+- Entscheide, wo der Beleg die Frage beantwortet. Nur wenn er wirklich
+  schweigt, gib null zurück.`;
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -369,6 +386,7 @@ serve(async (req) => {
         return ok({
           belegart:    p.belegart || null,
           positionen:  Array.isArray(p.positionen) ? p.positionen : [],
+          kandidaten:  Array.isArray(p.kandidaten) ? p.kandidaten : [],
           relevanz:    p.relevanz || "unklar",
           confidence:  Math.max(0, Math.min(1, Number(p.confidence) || 0)),
           periode:     p.periode ?? null,

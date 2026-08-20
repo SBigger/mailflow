@@ -34,11 +34,86 @@ export function aehnlichkeit(a, b) {
   return schnitt / (a.size + b.size - schnitt);
 }
 
+/**
+ * Kennzahlen eines Belegs: Rechnungs-, Kunden- und Policennummern sowie
+ * Beträge. Sie sind das, was zwei Belege desselben Absenders unterscheidet.
+ *
+ * Warum das nötig wurde: Ein Stapel Quartalsrechnungen der Stadtwerke für
+ * dieselbe Liegenschaft teilt Briefkopf, Adresse, Tarifzeilen und Floskeln —
+ * gemessen 0.80 bis 0.87 Wortübereinstimmung. Ohne diese Prüfung erklärte die
+ * Doppelerkennung drei echte Rechnungen zu Kopien und warf sie aus dem Bündel.
+ */
+export function kennzahlen(text) {
+  const menge = new Set();
+  for (const m of String(text || '').matchAll(/\b\d[\d'’.,\s-]{2,}\d\b/g)) {
+    const ziffern = m[0].replace(/\D/g, '');
+    // Vierstellig aufwärts: Nummern und Beträge. Kürzeres sind Mengen,
+    // Tarife und Datumsteile — die wiederholen sich auf jedem Formular.
+    if (ziffern.length >= 4 && ziffern.length <= 16) menge.add(ziffern);
+  }
+  return menge;
+}
+
+/** Beträge eines Belegs: Zahlen mit Rappen (298.10, 1'204.55). */
+export function betraege(text) {
+  const menge = new Set();
+  for (const m of String(text || '').matchAll(/\d[\d'’.,\s]{0,12}[.,]\d{2}\b/g)) {
+    const roh = m[0].replace(/[^\d]/g, '');
+    if (roh.length >= 3) menge.add(roh);
+  }
+  return menge;
+}
+
+/** Grösster Betrag eines Belegs — praktisch immer die Endsumme. */
+export function groessterBetrag(text) {
+  let max = null;
+  for (const roh of betraege(text)) {
+    const n = Number(roh.slice(0, -2) + '.' + roh.slice(-2));
+    if (Number.isFinite(n) && (max == null || n > max)) max = n;
+  }
+  return max;
+}
+
+/** Belegnummern: der Wert hinter «Rechnung Nr.», «Rechnungs-Nr.», «Beleg Nr.». */
+export function belegnummern(text) {
+  const t = String(text || '').toLowerCase();
+  const menge = new Set();
+  const muster = /(rechnung|rechnungs|beleg|auftrag|quittung|gutschrift)s?[\s.-]*(nr|nummer)\.?\s*[:.]?\s*([a-z]?\d[\d.\/-]{2,16})/g;
+  for (const m of t.matchAll(muster)) {
+    const roh = m[3].replace(/\D/g, '');
+    if (roh.length >= 4) menge.add(roh);
+  }
+  return menge;
+}
+
+/** Haben zwei Texte KEINE gemeinsame Zahl dieser Art, sind sie verschieden. */
+function disjunkt(a, b) {
+  if (!a.size || !b.size) return false;
+  for (const x of a) if (b.has(x)) return false;
+  return true;
+}
+
+/** Anteil gemeinsamer Kennzahlen (0–1). */
+export function kennzahlDeckung(a, b) {
+  if (!a.size || !b.size) return 1;      // keine Aussage möglich
+  let gleich = 0;
+  for (const x of a) if (b.has(x)) gleich++;
+  return gleich / Math.max(a.size, b.size);
+}
+
+// Zwei Scans DESSELBEN Papiers teilen auch ihre Zahlen; OCR-Rauschen
+// verändert einzelne, aber nicht die Mehrheit. Liegt die Deckung darunter,
+// sind es verschiedene Belege — egal wie ähnlich der Fliesstext ist.
+export const KENNZAHL_MINDEST = 0.5;
+
 // Ab hier gilt ein Paar als Doppel. Bewusst hoch angesetzt: zwei
 // verschiedene Rechnungen desselben Absenders teilen Briefkopf und
 // Floskeln und erreichen damit typischerweise 0.4–0.6 — zwei Scans
 // desselben Papiers liegen über 0.8.
 export const DOPPEL_SCHWELLE = 0.78;
+
+// Ohne Zahlen-Gegenprobe verlangt ein Doppel nahezu identischen Text.
+export const DOPPEL_SICHER = 0.95;
 
 /**
  * Prüft einen neuen Beleg gegen die vorhandenen.
@@ -51,11 +126,33 @@ export function findeDoppel(neuer, vorhandene) {
   const mengeNeu = wortmenge(neuer.text);
   if (mengeNeu.size < 12) return null;   // zu wenig Text für eine Aussage
 
+  const kzNeu = kennzahlen(neuer.text);
+
   let bester = null;
   for (const alt of vorhandene) {
     if (!alt.text || alt.doppelVon) continue;      // Doppel nicht als Original nehmen
     const score = aehnlichkeit(mengeNeu, wortmenge(alt.text));
-    if (score >= DOPPEL_SCHWELLE && (!bester || score > bester.score)) {
+    if (score < DOPPEL_SCHWELLE) continue;
+    // Gegenprobe: Was zwei Rechnungen desselben Absenders unterscheidet,
+    // sind Belegnummer und Betrag — Adresse, PLZ, Kundennummer und
+    // Tarifzeilen stehen auf jeder Quartalsrechnung gleich. Kein einziger
+    // gemeinsamer Betrag oder eine andere Rechnungsnummer: zwei Belege.
+    // Gegenprobe am GRÖSSTEN Betrag — das ist die Endsumme. Zwei Scans
+    // desselben Papiers teilen sie; zwei Quartalsrechnungen derselben
+    // Gemeinde nicht, auch wenn Adresse, Tarifzeilen und einzelne
+    // Positionsbeträge identisch sind. Belegnummern taugen dafür NICHT:
+    // die OCR liest sie auf zwei Scans oft verschieden und liess damit
+    // echte Doppel durchrutschen.
+    const sNeu = groessterBetrag(neuer.text);
+    const sAlt = groessterBetrag(alt.text);
+    if (sNeu != null && sAlt != null) {
+      const abweichung = Math.abs(sNeu - sAlt) / Math.max(sNeu, sAlt);
+      if (abweichung > 0.005) continue;          // andere Endsumme = anderer Beleg
+    } else if (score < DOPPEL_SICHER) {
+      // Keine Summe lesbar: dann zählt nur noch nahezu identischer Text.
+      continue;
+    }
+    if (!bester || score > bester.score) {
       bester = { doppelVon: alt.id, name: alt.name, score: Number(score.toFixed(2)) };
     }
   }

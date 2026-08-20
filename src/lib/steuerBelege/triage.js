@@ -344,6 +344,11 @@ export async function triageMitKi(supabase, beleg, kontext = {}) {
         ? `KI${beleg.bild ? " (Bild)" : ""}: ${data.begruendung || "keine Begründung"} (Regel sagte: ${regel.begruendung})`
         : `${regel.begruendung} (KI weniger sicher, verworfen)`,
       positionen:   widerspruch ? [] : (Array.isArray(data.positionen) ? data.positionen : []),
+      // Kandidaten der KI, wenn sie sich nicht festlegen konnte — damit die
+      // Wahl-Stufe trotzdem etwas zu entscheiden hat. Ohne das beschrieb die
+      // KI den Beleg treffend («Nebenkosten der vermieteten Liegenschaft»)
+      // und er blieb trotzdem unzugeordnet liegen.
+      kiKandidaten: Array.isArray(data.kandidaten) ? data.kandidaten : [],
       quelle:       nimmKi ? "ki" : "regel",
     };
   } catch (e) {

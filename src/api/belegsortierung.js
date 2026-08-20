@@ -32,6 +32,7 @@ function fuerDieDatenbank(b) {
     vermoegen:   b.vermoegen ?? null,
     betragQuelle: b.betragQuelle ?? null,
     ocrVertrauen: b.ocrVertrauen ?? null,
+    doppelVerdacht: b.doppelVerdacht ?? null,
     // Seitenbereich: ein PDF kann mehrere Belege enthalten
     vonSeite:    b.vonSeite ?? null,
     doppelVon:   b.doppelVon ?? null,
@@ -53,6 +54,15 @@ const BUCKET = 'belegsortierung';
 function dateiPfadFuer(customerId, hash, name) {
   const endung = (String(name || '').match(/[.](pdf|png|jpeg|jpg)$/i) || ['.pdf'])[0].toLowerCase();
   return customerId + '/' + hash + endung;
+}
+
+// Der Pfad ergibt sich aus Mandant und Inhalts-Hash — die Ablage ist
+// inhaltsadressiert. Damit findet ein gespeicherter Beleg SEINE Datei auch
+// dann wieder, wenn beim Einlesen noch kein Mandant gewaehlt war und deshalb
+// nie ein Pfad vermerkt wurde.
+export function pfadAusHash(customerId, hash, name) {
+  if (!customerId || !hash) return null;
+  return dateiPfadFuer(customerId, String(hash).split('#')[0], name);
 }
 
 export const belegsortierung = {

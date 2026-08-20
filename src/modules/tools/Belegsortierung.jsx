@@ -24,7 +24,8 @@ import {
 } from 'lucide-react';
 
 import { supabase } from '@/api/supabaseClient';
-import { extractPageTexts, pdfSeiteAlsBild, fileToBase64 } from '../../lib/batchAiSuggest.js';
+import { extractPageTexts, pdfSeiteAlsBild, pdfSeitenMiniaturen, fileToBase64 }
+  from '../../lib/batchAiSuggest.js';
 import { triageRegeln, triageMitKi, brauchtKi, istGesundheitsbeleg, betraegePerBild,
          positionWaehlen, ausschnittFuerKi }
   from '../../lib/steuerBelege/triage.js';
@@ -38,7 +39,7 @@ import { KATALOG, KATALOG_NACH_ID, AUSSORTIERT, DIMENSIONEN, katalogFuerPrompt,
          VERZEICHNISSE, VERZEICHNIS_NACH_ID, migriereId }
   from '../../forms/steuer_np_katalog.js';
 import { baueBeilagenBundle } from '../../lib/steuerBelege/beilagenBundle.js';
-import { belegsortierung as db } from '../../api/belegsortierung.js';
+import { belegsortierung as db, pfadAusHash } from '../../api/belegsortierung.js';
 import { useTheme } from '../../components/useTheme.jsx';
 import { chartisTheme, SEM } from '../../lib/chartisTheme.js';
 
@@ -144,9 +145,104 @@ function migriereBetraege(b) {
   return { ...b, position, einkommen, vermoegen };
 }
 
+// ── Lokaler Entwurf ────────────────────────────────────────────────────────
+//
+// Eine Stunde OCR darf kein Neuladen kosten. Nach jeder Änderung wandert der
+// Stand in den Browserspeicher — ohne Dateien und Objekt-URLs, die ein Reload
+// ohnehin ungültig macht. Beim Öffnen wird er zurückgeholt, sofern für
+// denselben Mandanten und dasselbe Jahr noch nichts Gespeichertes da ist.
+//
+// Das ersetzt NICHT das Speichern in der Datenbank (dort liegt die geprüfte
+// Arbeit), es rettet nur die laufende Sitzung — auch bei einem Deployment,
+// einem Absturz oder einem versehentlich geschlossenen Fenster.
+const ENTWURF_BASIS = 'belegsortierung-entwurf';
+
+/** Eigener Schlüssel je Mandant und Jahr — zwei offene Fenster, zwei Stände. */
+function entwurfKey(kunde, steuerjahr) {
+  return `${ENTWURF_BASIS}-${kunde?.id || 'ohne'}-${steuerjahr}`;
+}
+
+function entwurfSichern(kunde, steuerjahr, belege) {
+  const key = entwurfKey(kunde, steuerjahr);
+  try {
+    if (!belege.length) { localStorage.removeItem(key); return; }
+    const schlank = belege
+      .filter(b => b.stand === 'fertig')
+      .map(({ datei, url, ...rest }) => rest);
+
+    // Schutz vor gegenseitigem Überschreiben: Liegt unter demselben Schlüssel
+    // ein JÜNGERER Stand mit MEHR Belegen, arbeitet dort ein anderes Fenster.
+    // Dann nicht draufschreiben — ein zweites Fenster hat heute beinahe eine
+    // ganze Sortierung gekostet.
+    try {
+      const alt = JSON.parse(localStorage.getItem(key) || 'null');
+      if (alt && alt.belege?.length > schlank.length && Date.now() - alt.zeit < 10 * 60 * 1000) return;
+    } catch { /* kaputter Eintrag: überschreiben ist dann richtig */ }
+
+    const paket = { kundeId: kunde?.id || null, kundeName: kunde?.company_name || '',
+                    steuerjahr, zeit: Date.now(), belege: schlank };
+    let text = JSON.stringify(paket);
+    // Der Belegtext ist das Grösste daran. Wird es zu viel für den
+    // Browserspeicher, fliegt er raus — die Sortierung ist wichtiger.
+    if (text.length > 3_000_000) {
+      paket.belege = schlank.map(b => ({ ...b, text: (b.text || '').slice(0, 400) }));
+      text = JSON.stringify(paket);
+    }
+    localStorage.setItem(key, text);
+  } catch { /* voller Speicher: dann eben ohne Netz */ }
+}
+
+/** Jüngsten brauchbaren Entwurf finden — egal, für welchen Mandanten. */
+function entwurfLesen() {
+  let bester = null;
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key?.startsWith(ENTWURF_BASIS)) continue;
+      const p = JSON.parse(localStorage.getItem(key) || 'null');
+      if (!p?.belege?.length) continue;
+      // Älter als zwei Tage: nicht mehr anbieten, sonst überrascht er.
+      if (Date.now() - (p.zeit || 0) > 2 * 24 * 3600 * 1000) continue;
+      if (!bester || p.zeit > bester.zeit) bester = p;
+    }
+  } catch { return null; }
+  return bester;
+}
+
 const chf = n => (n || n === 0)
   ? Number(n).toLocaleString('de-CH', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
   : '—';
+
+// Beim parallelen Einlesen entscheidet das Wettrennen, wer bei einem
+// Doppel-Paar «Original» wird — liegt der Zweitscan vorn, sortiert er das
+// echte Original aus und sitzt selbst zugeordnet in den Rubriken. Der
+// Nachlauf macht es deterministisch: die alphabetisch frühere Datei ist das
+// Original, die fachliche Erkennung wandert beim Tausch mit.
+function konsolidiereDoppel(liste) {
+  let geaendert = false;
+  const neu = liste.map(b => ({ ...b }));
+  const proId = new Map(neu.map(b => [b.id, b]));
+  const FACH = ['position', 'belegart', 'confidence', 'begruendung', 'quelle',
+    'vorschlag', 'kandidaten', 'offenGrund', 'hinweis', 'einkommen', 'vermoegen',
+    'betragQuelle', 'betragAnker', 'jahr', 'merkmale', 'kiBegruendung',
+    'widerspruch', 'regelBelegart', 'kiBelegart', 'vonHand', 'ahv'];
+  for (const d of neu) {
+    if (!d.doppelVon) continue;
+    const o = proId.get(d.doppelVon);
+    if (!o || o.doppelVon) continue;
+    if ((o.name || '') > (d.name || '')) {
+      geaendert = true;
+      for (const f of FACH) { const t = d[f]; d[f] = o[f]; o[f] = t; }
+      d.doppelVon = null;
+      o.doppelVon = d.id;
+      o.position = '_aussortiert';
+      o.vonHand = false;
+      o.begruendung = `Doppelt eingescannt – gleicht «${d.name}». `
+                    + `Bleibt sichtbar liegen, kommt aber nicht ins Bündel.`;
+    }
+  }
+  return geaendert ? neu : liste;
+}
 
 export default function Belegsortierung() {
   const C = useFarben();
@@ -171,6 +267,9 @@ export default function Belegsortierung() {
   const [abschnitt, setAbschnitt]   = useState('erwerb');
   // Vollbild-Durchsicht: null = zu, sonst { schritt: 1|2|3, index }
   const [durchsicht, setDurchsicht] = useState(null);
+  // Seiten-Aufteilen-Dialog: null = zu, sonst { basisHash, dateiName, quelle,
+  // dateiPfad, teile, arbeitet, fortschritt }
+  const [aufteilen, setAufteilen] = useState(null);
   const eingabe = useRef(null);
 
   // ── Mandant und gespeicherter Stand ─────────────────────────────────────
@@ -215,8 +314,25 @@ export default function Belegsortierung() {
 
   const belegeRef = useRef(belege);
   useEffect(() => { belegeRef.current = belege; }, [belege]);
+
+  // Entwurf mitschreiben (leicht verzögert, damit das Tippen flüssig bleibt).
+  useEffect(() => {
+    const t = setTimeout(() => entwurfSichern(kunde, steuerjahr, belege), 800);
+    return () => clearTimeout(t);
+  }, [belege, kunde, steuerjahr]);
   const kundeRef = useRef(kunde);
   useEffect(() => { kundeRef.current = kunde; }, [kunde]);
+
+  // Warnung vor dem Verlassen, solange nicht gespeichert ist. Der Entwurf im
+  // Browserspeicher fängt den Verlust auf, aber ein Hinweis ist ehrlicher als
+  // ein stiller Neustart — auch wenn das Neuladen von aussen kommt.
+  useEffect(() => {
+    const offen = belege.some(b => b.stand === 'fertig');
+    if (!offen) return;
+    const h = (e) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', h);
+    return () => window.removeEventListener('beforeunload', h);
+  }, [belege, gespeichertUm]);
 
   // Solange hier gearbeitet wird, darf ein frisches Deployment die Seite
   // NICHT neu laden (siehe main.jsx onNeedRefresh) – sonst ist ein laufender
@@ -263,6 +379,22 @@ export default function Belegsortierung() {
         if (kundeRef.current?.id) {
           try { dateiPfad = await db.dateiHochladen(kundeRef.current.id, hash, datei); }
           catch (e) { console.warn('[Ablage] Hochladen fehlgeschlagen:', e.message); }
+        }
+
+        // Gespeicherter Stand ohne Datei: Alle Teile DIESER Datei erkennen sich
+        // am Inhalts-Hash wieder. Datei anheften, Ablage-Kopie nachliefern —
+        // ohne die Seiten erneut zu lesen. Das ist der schnelle Weg zurück zu
+        // einer vollständigen Vorschau, wenn beim Einlesen noch kein Mandant
+        // gewählt war (dann wurde nichts abgelegt).
+        const teileDerDatei = belegeRef.current.filter(b =>
+          b.ohneDatei && String(b.hash || '').split('#')[0] === hash);
+        if (teileDerDatei.length) {
+          setBelege(v => v.filter(b => b.id !== id).map(b =>
+            teileDerDatei.some(t => t.id === b.id)
+              ? { ...b, datei, url, istPdf: /\.pdf$/i.test(datei.name),
+                  ohneDatei: false, stand: 'fertig', dateiPfad: b.dateiPfad || dateiPfad }
+              : b));
+          return;
         }
 
         const bekannt = belegeRef.current.find(b => b.hash === hash && b.ohneDatei);
@@ -319,22 +451,13 @@ export default function Belegsortierung() {
             continue;
           }
 
-          if (doppel) {
-            neueBelege.push({
-              id: `${id}#${teil.von}`, name: teilName, stand: 'fertig',
-              groesse: datei.size, url, datei, istPdf: /\.pdf$/i.test(datei.name),
-              hash: `${hash}#${teil.von}-${teil.bis}`, dateiPfad,
-              vonSeite: teil.von, bisSeite: teil.bis,
-              text: teil.text,
-              position: '_aussortiert', doppelVon: doppel.doppelVon,
-              quelle: 'regel', confidence: doppel.score,
-              begruendung: `Doppelt eingescannt – gleicht «${doppel.name}» `
-                         + `(${Math.round(doppel.score * 100)}% Textübereinstimmung). `
-                         + `Bleibt sichtbar liegen, kommt aber nicht ins Bündel.`,
-              vorschlag: [], kandidaten: [],
-            });
-            continue;
-          }
+          // Vermutete Doppel werden MARKIERT, nicht weggeworfen. Heute
+          // zeigte sich in beiden Richtungen, wie unsicher der Textvergleich
+          // ist: drei echte Quartalsrechnungen galten als Kopie, ein echter
+          // Zweitscan blieb unerkannt. Ein still verschwundener Beleg ist der
+          // teurere Fehler — also läuft die normale Erkennung weiter und der
+          // Verdacht steht als Hinweis daneben, den der Mensch in Schritt 1
+          // der Durchsicht mit einem Blick bestätigt.
 
           const eingang = {
             text: teil.text,
@@ -416,7 +539,11 @@ export default function Belegsortierung() {
           // Säule 3). Die Regeln sind sich hier ihrer Sache sicher, darum kam
           // die KI bisher nie dran — und der Beleg blieb liegen. Genau diese
           // eine Entscheidungsfrage stellen, mehr nicht.
-          const kandidatenListe = vorschlag.length >= 2 ? vorschlag : (zuord.kandidaten || []);
+          // Kandidaten: aus der Belegart, sonst die von der KI selbst genannten
+          // — sonst bliebe ein treffend beschriebener Beleg ohne Ziel liegen.
+          const kiKand = (tri.kiKandidaten || []).map(x => KATALOG_NACH_ID[x]).filter(Boolean);
+          const kandidatenListe = vorschlag.length >= 2 ? vorschlag
+            : (zuord.kandidaten?.length ? zuord.kandidaten : kiKand);
           if (!position && kiNutzen && tri.grund !== 'duplikat' && !tri.widerspruch
               && kandidatenListe.length >= 2) {
             setBelege(v => v.map(b => b.id === id
@@ -489,12 +616,14 @@ export default function Belegsortierung() {
             trennGrund: teil.grund,
             text: teil.text,
             ocrVertrauen: teilVertrauen,
+            doppelVerdacht: doppel
+              ? { name: doppel.name, score: doppel.score } : null,
             belegart: tri.belegart, confidence: tri.confidence,
             begruendung: tri.begruendung, quelle: tri.quelle || 'regel',
             merkmale: tri.merkmale || [], kiBegruendung: tri.kiBegruendung || null,
             widerspruch: !!tri.widerspruch,
             regelBelegart: tri.regelBelegart || null, kiBelegart: tri.kiBelegart || null,
-            vorschlag, kandidaten: zuord.kandidaten || [],
+            vorschlag, kandidaten: (zuord.kandidaten?.length ? zuord.kandidaten : kiKand),
             offenGrund: kiPos.length ? null : (zuord.offen ? zuord.grund : null),
             hinweis: zuord.hinweis || null,
             position,
@@ -527,8 +656,47 @@ export default function Belegsortierung() {
       while (naechster < rest.length) await einen(rest[naechster++]);
     }));
 
+    // Nachlauf: Doppel-Paare deterministisch ausrichten (Original = die
+    // alphabetisch frühere Datei), egal in welcher Reihenfolge sie fertig
+    // wurden.
+    setBelege(v => konsolidiereDoppel(v));
     setLaeuft(false);
   }
+
+  // Mandant erst nachträglich gewählt? Dann die Dateien, die noch im
+  // Arbeitsspeicher liegen, sofort ablegen. Vorher passierte das erst beim
+  // Speichern — und wer zwischendurch neu lud, hatte nie eine Kopie und
+  // damit für immer eine leere Vorschau.
+  useEffect(() => {
+    if (!kunde?.id) return;
+    const offene = belegeRef.current.filter(b => b.datei && !b.dateiPfad && b.hash);
+    if (!offene.length) return;
+    let abgebrochen = false;
+    (async () => {
+      for (const b of offene) {
+        if (abgebrochen) return;
+        try {
+          const pfad = await db.dateiHochladen(kunde.id, String(b.hash).split('#')[0], b.datei);
+          setBelege(v => v.map(x => x.id === b.id ? { ...x, dateiPfad: pfad } : x));
+        } catch (e) { console.warn('[Ablage] Nachliefern fehlgeschlagen:', e.message); }
+      }
+    })();
+    return () => { abgebrochen = true; };
+  }, [kunde?.id]);
+
+  // Beim Öffnen den letzten Entwurf zurückholen: Mandant, Jahr und die
+  // sortierten Belege. Die Dateien fehlen dann — die Vorschau holt sie aus
+  // der Ablage, sobald ein Beleg angeklickt wird.
+  const entwurfGeholt = useRef(false);
+  useEffect(() => {
+    if (entwurfGeholt.current) return;
+    const e = entwurfLesen();
+    if (!e) { entwurfGeholt.current = true; return; }
+    entwurfGeholt.current = true;
+    if (e.steuerjahr) setSteuerjahr(e.steuerjahr);
+    if (e.kundeId && !kunde) setKunde({ id: e.kundeId, company_name: e.kundeName });
+    setBelege(v => v.length ? v : e.belege.map(b => ({ ...b, ohneDatei: true })));
+  }, []);
 
   // ── Ändern ──────────────────────────────────────────────────────────────
   const aendere = (id, felder) =>
@@ -548,13 +716,7 @@ export default function Belegsortierung() {
     });
   }
 
-  // ── Manuell trennen und zusammenlegen ───────────────────────────────────
-  //
-  // Die automatische Trennung ist gut, aber nicht allwissend: Im ZKB-Kuvert
-  // stecken mehrere Zins- und Saldoausweise, die als EIN Teil durchrutschen —
-  // jeder gehört aber als eigene Zeile ins Schuldenverzeichnis. Umgekehrt
-  // zerfällt mal ein Beleg zu fein. Beides korrigiert der Mensch mit einem
-  // Klick; der neue Bereich läuft danach durch die volle Erkennung.
+  // ── Manuelles Nacherkennen ──────────────────────────────────────────────
 
   // Ein Seitenbereich durch die Erkennungs-Pipeline (Regeln → KI mit Bild →
   // Wahl-Stufe → Beträge). Gleiches Verhalten wie beim Einlesen.
@@ -590,7 +752,9 @@ export default function Belegsortierung() {
     let position = vorschlag.length === 1 ? vorschlag[0].id : null;
     if (tri.widerspruch) position = null;
 
-    const kandidatenListe = vorschlag.length >= 2 ? vorschlag : (zuord.kandidaten || []);
+    const kiKand = (tri.kiKandidaten || []).map(x => KATALOG_NACH_ID[x]).filter(Boolean);
+    const kandidatenListe = vorschlag.length >= 2 ? vorschlag
+      : (zuord.kandidaten?.length ? zuord.kandidaten : kiKand);
     if (!position && kiNutzen && !tri.widerspruch && kandidatenListe.length >= 2) {
       try {
         const bilder = [];
@@ -651,7 +815,7 @@ export default function Belegsortierung() {
       merkmale: tri.merkmale || [], kiBegruendung: tri.kiBegruendung || null,
       widerspruch: !!tri.widerspruch,
       regelBelegart: tri.regelBelegart || null, kiBelegart: tri.kiBelegart || null,
-      vorschlag, kandidaten: zuord.kandidaten || [],
+      vorschlag, kandidaten: (zuord.kandidaten?.length ? zuord.kandidaten : kiKand),
       offenGrund: kiPos.length ? null : (zuord.offen ? zuord.grund : null),
       hinweis: zuord.hinweis || null, position,
       ahv: findAhvInText(text), jahr: tri.periodeBeleg ?? null,
@@ -659,80 +823,111 @@ export default function Belegsortierung() {
     };
   }
 
-  function nachbarVon(b, richtung) {
-    if (!b) return null;
-    const basis = String(b.hash || '').split('#')[0];
-    if (!basis) return null;
-    return belege.find(x => x.id !== b.id && x.stand === 'fertig'
-      && String(x.hash || '').split('#')[0] === basis
-      && (richtung === 'vor'
-        ? (x.bisSeite || x.vonSeite) === (b.vonSeite || 1) - 1
-        : x.vonSeite === (b.bisSeite || b.vonSeite || 1) + 1)) || null;
-  }
+  // ── Seiten aufteilen: Übersicht statt Seitenzahlen tippen ──────────────
+  //
+  // Alle Seiten der Datei als Miniaturen, Trennstellen per Klick setzen und
+  // entfernen, EINMAL übernehmen. Bereiche, deren Grenzen sich nicht ändern,
+  // behalten ihren Beleg samt Zuordnung und Beträgen — nur die geänderten
+  // werden neu gelesen und erkannt.
 
-  async function trenneVonHand(b, abSeite) {
-    const von = b.vonSeite || 1, bis = b.bisSeite || von;
-    abSeite = Number(abSeite);
-    if (!(abSeite > von && abSeite <= bis)) return;
-    aendere(b.id, { stand: 'liest' });
-    try {
-      const datei = b.datei || await db.dateiLaden(b.dateiPfad);
-      const basisHash = String(b.hash || '').split('#')[0] || await dateiHash(datei);
-      const dateiName = (b.name || '').split(' · ')[0] || b.name || 'Beleg.pdf';
-      // Seitentexte NUR über den Bereich dieses Belegs neu holen — der
-      // gespeicherte Text ist am Stück und lässt sich nicht seitenweise teilen.
-      const { seiten, vertrauen } = await extractPageTexts(datei, {
-        vonSeite: von, maxPages: bis,
-        onStage: st => aendere(b.id, { stand: st }),
-      });
-      const schnitt = abSeite - von;
-      const neuA = await erkenneNeu({ datei, dateiName, basisHash, dateiPfad: b.dateiPfad,
-        von, bis: abSeite - 1, urlAlt: b.url,
-        seitenTexte: seiten.slice(0, schnitt), vertrauenWerte: vertrauen.slice(0, schnitt) });
-      const neuB = await erkenneNeu({ datei, dateiName, basisHash, dateiPfad: b.dateiPfad,
-        von: abSeite, bis, urlAlt: b.url,
-        seitenTexte: seiten.slice(schnitt), vertrauenWerte: vertrauen.slice(schnitt) });
-      setBelege(v => {
-        const i = v.findIndex(x => x.id === b.id);
-        if (i < 0) return v;
-        return [...v.slice(0, i), neuA, neuB, ...v.slice(i + 1)];
-      });
-      setGewaehlt(neuA.id);
-    } catch (e) {
-      console.warn('[Trennen]', e);
-      aendere(b.id, { stand: 'fertig' });
+  // Alle eingelesenen Dateien mit ihren Belegen — die Auswahlliste des Editors.
+  const dateiListe = useMemo(() => {
+    const proDatei = new Map();
+    for (const b of belege) {
+      if (b.stand !== 'fertig') continue;
+      const basis = String(b.hash || '').split('#')[0];
+      if (!basis) continue;
+      const istPdf = b.istPdf || /\.pdf($|\?)/i.test(b.dateiPfad || '') || /\.pdf$/i.test(b.name || '');
+      if (!istPdf || !(b.datei || b.dateiPfad || pfadAusHash(kunde?.id, b.hash, b.name))) continue;
+      if (!proDatei.has(basis)) {
+        proDatei.set(basis, { basis, name: (b.name || '').split(' · ')[0] || b.name,
+                              vertreter: b, teile: 0, seiten: 0 });
+      }
+      const e = proDatei.get(basis);
+      e.teile += 1;
+      e.seiten = Math.max(e.seiten, b.bisSeite || b.vonSeite || 1);
     }
+    return [...proDatei.values()].sort((a, z) => a.name.localeCompare(z.name));
+  }, [belege]);
+
+  async function oeffneAufteilen(b) {
+    b = b || dateiListe[0]?.vertreter;
+    if (!b) return;
+    const basis = String(b.hash || '').split('#')[0];
+    if (!basis) return;
+    let quelle = b.datei || null;
+    const pfad = b.dateiPfad || pfadAusHash(kunde?.id, b.hash, b.name);
+    if (!quelle && pfad) {
+      try { quelle = await db.dateiLaden(pfad); }
+      catch (e) { console.warn('[Aufteilen] Datei nicht ladbar:', e.message); return; }
+    }
+    if (!quelle) return;
+    const teile = belegeRef.current
+      .filter(x => x.stand === 'fertig' && String(x.hash || '').split('#')[0] === basis)
+      .map(x => ({
+        von: x.vonSeite || 1, bis: x.bisSeite || x.vonSeite || 1,
+        // Was der Block ist, gehört in den Editor: Wer die Grenze zieht,
+        // muss sehen, was da erkannt wurde — sonst teilt man blind auf.
+        titel: BELEGART_BY_KEY[x.belegart]?.label
+            || KATALOG_NACH_ID[x.position]?.label
+            || (x.position === '_aussortiert' ? 'Nicht zur Steuererklärung' : 'noch offen'),
+      }))
+      .sort((a, z) => a.von - z.von);
+    if (!teile.length) return;
+    setAufteilen({ basisHash: basis, dateiName: (b.name || '').split(' · ')[0] || b.name,
+                   quelle, dateiPfad: b.dateiPfad || null, teile,
+                   arbeitet: false, fortschritt: '' });
   }
 
-  async function zusammenlegen(b, richtung) {
-    const n = nachbarVon(b, richtung);
-    if (!n) return;
-    aendere(b.id, { stand: 'liest' });
+  async function wendeAufteilungAn(neueBereiche) {
+    const a = aufteilen;
+    if (!a || a.arbeitet) return;
+    setAufteilen(x => ({ ...x, arbeitet: true, fortschritt: 'liest geänderte Seiten …' }));
     try {
-      const datei = b.datei || n.datei
-        || await db.dateiLaden(b.dateiPfad || n.dateiPfad);
-      const basisHash = String(b.hash || '').split('#')[0] || await dateiHash(datei);
-      const dateiName = (b.name || '').split(' · ')[0] || b.name || 'Beleg.pdf';
-      const von = Math.min(b.vonSeite || 1, n.vonSeite || 1);
-      const bis = Math.max(b.bisSeite || b.vonSeite || 1, n.bisSeite || n.vonSeite || 1);
-      // Texte liegen schon vor — in Seitenreihenfolge aneinanderhängen,
-      // kein neues OCR nötig.
-      const erst = richtung === 'vor' ? n : b;
-      const zweit = richtung === 'vor' ? b : n;
-      const neu = await erkenneNeu({ datei, dateiName, basisHash,
-        dateiPfad: b.dateiPfad || n.dateiPfad, von, bis, urlAlt: b.url || n.url,
-        seitenTexte: [erst.text || '', zweit.text || ''],
-        vertrauenWerte: [b.ocrVertrauen, n.ocrVertrauen] });
+      const alte = belegeRef.current.filter(x => x.stand === 'fertig'
+        && String(x.hash || '').split('#')[0] === a.basisHash);
+      const nachRange = new Map(alte.map(x =>
+        [`${x.vonSeite || 1}-${x.bisSeite || x.vonSeite || 1}`, x]));
+
+      const behalten = [], frisch = [];
+      for (const r of neueBereiche) {
+        const alt = nachRange.get(`${r.von}-${r.bis}`);
+        if (alt) behalten.push(alt); else frisch.push(r);
+      }
+
+      const neue = [];
+      if (frisch.length) {
+        const minS = Math.min(...frisch.map(r => r.von));
+        const maxS = Math.max(...frisch.map(r => r.bis));
+        const { seiten, vertrauen } = await extractPageTexts(a.quelle,
+          { vonSeite: minS, maxPages: maxS });
+        for (let i = 0; i < frisch.length; i++) {
+          const r = frisch[i];
+          setAufteilen(x => x && ({ ...x,
+            fortschritt: `erkennt Bereich ${i + 1} von ${frisch.length} (Seiten ${r.von}–${r.bis}) …` }));
+          neue.push(await erkenneNeu({
+            datei: a.quelle, dateiName: a.dateiName, basisHash: a.basisHash,
+            dateiPfad: a.dateiPfad, von: r.von, bis: r.bis,
+            seitenTexte: seiten.slice(r.von - minS, r.bis - minS + 1),
+            vertrauenWerte: vertrauen.slice(r.von - minS, r.bis - minS + 1),
+            urlAlt: alte[0]?.url || null,
+          }));
+        }
+      }
+
+      const zusammen = [...behalten, ...neue]
+        .sort((x, z) => (x.vonSeite || 1) - (z.vonSeite || 1));
       setBelege(v => {
-        const i = Math.min(v.findIndex(x => x.id === b.id), v.findIndex(x => x.id === n.id));
-        const rest = v.filter(x => x.id !== b.id && x.id !== n.id);
-        const stelle = Math.max(0, Math.min(i, rest.length));
-        return [...rest.slice(0, stelle), neu, ...rest.slice(stelle)];
+        const erste = v.findIndex(x => alte.some(al => al.id === x.id));
+        const rest = v.filter(x => !alte.some(al => al.id === x.id));
+        const stelle = erste < 0 ? rest.length : Math.min(erste, rest.length);
+        return [...rest.slice(0, stelle), ...zusammen, ...rest.slice(stelle)];
       });
-      setGewaehlt(neu.id);
+      setGewaehlt(zusammen[0]?.id ?? null);
+      setAufteilen(null);
     } catch (e) {
-      console.warn('[Zusammenlegen]', e);
-      aendere(b.id, { stand: 'fertig' });
+      console.warn('[Aufteilen]', e);
+      setAufteilen(x => x && ({ ...x, arbeitet: false, fortschritt: `Fehler: ${e.message}` }));
     }
   }
 
@@ -752,6 +947,8 @@ export default function Belegsortierung() {
       setBelege(v => v.map(x => mitPfad.find(m => m.id === x.id) || x));
       await db.upsert(kunde.id, steuerjahr, mitPfad);
       setGespeichertUm(new Date());
+      // In der Datenbank ist jetzt die bessere Wahrheit — der Notnagel darf weg.
+      try { localStorage.removeItem(entwurfKey(kunde, steuerjahr)); } catch {}
     } catch (e) {
       alert('Speichern fehlgeschlagen: ' + (e.message || e));
     } finally { setSpeichert(false); }
@@ -765,14 +962,18 @@ export default function Belegsortierung() {
       const dateiCache = new Map();
       const fuersBundle = [];
       for (const b of belege.filter(x => x.position)) {
-        if (b.datei || !b.dateiPfad) { fuersBundle.push(b); continue; }
+        const pfadB = b.dateiPfad || pfadAusHash(kunde?.id, b.hash, b.name);
+        if (b.datei || !pfadB) { fuersBundle.push(b); continue; }
         try {
-          if (!dateiCache.has(b.dateiPfad)) {
-            const blob = await db.dateiLaden(b.dateiPfad);
-            dateiCache.set(b.dateiPfad, new File([blob], b.name || 'beleg.pdf',
+          if (!dateiCache.has(pfadB)) {
+            const blob = await db.dateiLaden(pfadB);
+            // Der Beleg heisst «13.pdf · Seiten 1–2» — die DATEI heisst
+            // «13.pdf». Mit dem Belegnamen endete sie nicht auf .pdf.
+            dateiCache.set(pfadB, new File([blob],
+              String(b.name || 'beleg.pdf').split(' · ')[0],
               { type: blob.type || 'application/pdf' }));
           }
-          fuersBundle.push({ ...b, datei: dateiCache.get(b.dateiPfad) });
+          fuersBundle.push({ ...b, datei: dateiCache.get(pfadB) });
         } catch { fuersBundle.push(b); }
       }
       const bytes = await baueBeilagenBundle(fuersBundle, {
@@ -915,15 +1116,22 @@ export default function Belegsortierung() {
   // Ablage holen -- erst beim Anklicken, nicht fuer alle 50 auf Vorrat.
   useEffect(() => {
     const b = belege.find(x => x.id === gewaehlt);
-    if (!b || b.url || !b.dateiPfad) return;
+    if (!b || b.url) return;
+    // Kein vermerkter Pfad? Die Ablage ist inhaltsadressiert — der Pfad ergibt
+    // sich aus Mandant und Hash. Damit findet ein Beleg seine Datei auch dann,
+    // wenn beim Einlesen noch kein Mandant gewählt war (und deshalb nie ein
+    // Pfad gespeichert wurde). Klappt es, wird der Pfad gleich vermerkt.
+    const pfad = b.dateiPfad || pfadAusHash(kunde?.id, b.hash, b.name);
+    if (!pfad) return;
     let aktivFlag = true;
-    db.dateiUrl(b.dateiPfad)
+    db.dateiUrl(pfad)
       .then(url => { if (aktivFlag) aendere(b.id, {
-        url, istPdf: /\.(pdf)(\?|$)/i.test(b.dateiPfad) || /\.pdf$/i.test(b.dateiPfad),
+        url, dateiPfad: pfad,
+        istPdf: /\.(pdf)(\?|$)/i.test(pfad) || /\.pdf$/i.test(pfad),
         ausAblage: true }); })
       .catch(e => console.warn('[Ablage] Vorschau nicht ladbar:', e.message));
     return () => { aktivFlag = false; };
-  }, [gewaehlt, belege]);
+  }, [gewaehlt, belege, kunde?.id]);
 
   return (
     <div style={{
@@ -947,7 +1155,18 @@ export default function Belegsortierung() {
             value={kunde ? (kunde.company_name || '') : kundenSuche}
             onChange={e => { setKundenSuche(e.target.value); setKunde(null); }}
             onFocus={() => setKundenListe(true)}
-            onBlur={() => setTimeout(() => setKundenListe(false), 180)}
+            onBlur={() => setTimeout(() => {
+              setKundenListe(false);
+              // Wer tippt und dann wegklickt, hatte bisher KEINEN Mandanten —
+              // und ohne Mandant ist Speichern gesperrt. Passt der getippte
+              // Text auf genau einen, wird der jetzt übernommen.
+              setKunde(k => {
+                if (k) return k;
+                const treffer = kunden.filter(x => x.company_name
+                  ?.toLowerCase().includes(kundenSuche.trim().toLowerCase()));
+                return kundenSuche.trim() && treffer.length === 1 ? treffer[0] : k;
+              });
+            }, 180)}
             onKeyDown={e => {
               if (e.key === 'ArrowDown') { setKundenListe(true); return; }
               if (e.key === 'Enter') {
@@ -1087,8 +1306,8 @@ export default function Belegsortierung() {
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column',
                     overflow: 'hidden' }}>
         <div style={{ padding: '14px 18px 10px 18px', borderBottom: `1px solid ${C.panelBdr}` }}>
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12 }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap' }}>
+            <div style={{ flex: '1 1 200px', minWidth: 0 }}>
               <div style={{ fontSize: 10, color: C.muted, textTransform: 'uppercase',
                             letterSpacing: '.08em' }}>
                 {VERZEICHNIS_NACH_ID[abschnitt]?.fuehrung
@@ -1114,22 +1333,38 @@ export default function Belegsortierung() {
                     })()}
               </div>
             </div>
-            <button onClick={() => eingabe.current?.click()}
-              style={{ ...knopf(C, true, C.accent), width: 'auto', padding: '6px 12px' }}>
-              <Upload size={12} /> Belege hinzufügen
-            </button>
-            {belege.some(b => b.stand === 'fertig') && (
-              <button onClick={() => setDurchsicht({ schritt: 1, index: 0 })}
-                style={{ ...knopf(C, true, C.heading), width: 'auto', padding: '6px 12px' }}>
-                <Maximize2 size={12} /> Durchsicht
+            {/* Knöpfe als eigene Gruppe: Bei schmaler Mittelspalte (breite
+                Vorschau) rutscht die ganze Zeile nach unten, statt dass die
+                Knöpfe den Titel überlagern. */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8,
+                          flexWrap: 'wrap', flexShrink: 0 }}>
+              <button onClick={() => eingabe.current?.click()}
+                style={{ ...knopf(C, true, C.accent), width: 'auto',
+                         padding: '6px 12px', whiteSpace: 'nowrap' }}>
+                <Upload size={12} /> Belege hinzufügen
               </button>
-            )}
-            <label style={{ display: 'flex', alignItems: 'center', gap: 5,
-                            fontSize: 10, color: C.sub, cursor: 'pointer' }}>
-              <input type="checkbox" checked={kiNutzen}
-                     onChange={e => setKiNutzen(e.target.checked)} />
-              KI für Unklares
-            </label>
+              {dateiListe.length > 0 && (
+                <button onClick={() => oeffneAufteilen(null)}
+                  style={{ ...knopf(C, true, C.heading), width: 'auto',
+                           padding: '6px 12px', whiteSpace: 'nowrap' }}>
+                  <GripVertical size={12} /> Aufteilen
+                </button>
+              )}
+              {belege.some(b => b.stand === 'fertig') && (
+                <button onClick={() => setDurchsicht({ schritt: 1, index: 0 })}
+                  style={{ ...knopf(C, true, C.heading), width: 'auto',
+                           padding: '6px 12px', whiteSpace: 'nowrap' }}>
+                  <Maximize2 size={12} /> Durchsicht
+                </button>
+              )}
+              <label style={{ display: 'flex', alignItems: 'center', gap: 5,
+                              fontSize: 10, color: C.sub, cursor: 'pointer',
+                              whiteSpace: 'nowrap' }}>
+                <input type="checkbox" checked={kiNutzen}
+                       onChange={e => setKiNutzen(e.target.checked)} />
+                KI für Unklares
+              </label>
+            </div>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
@@ -1152,6 +1387,7 @@ export default function Belegsortierung() {
             {belege.length > 0 && (
               <button onClick={() => { belege.forEach(b => b.url && URL.revokeObjectURL(b.url));
                                        geleertFuer.current = `${kunde?.id}|${steuerjahr}`;
+                                       try { localStorage.removeItem(entwurfKey(kunde, steuerjahr)); } catch {}
                                        setBelege([]); setGewaehlt(null); }}
                 style={{ fontSize: 10, color: C.sub, background: 'none',
                          border: `1px solid ${C.panelBdr}`, borderRadius: 5,
@@ -1272,17 +1508,22 @@ export default function Belegsortierung() {
 
       <Vorschau beleg={aktiverBeleg} breite={vorschauBreite} steuerjahr={steuerjahr}
                 onAendern={aendere} onPosition={setzePosition}
-                onTrennen={trenneVonHand} onZusammen={zusammenlegen}
-                hatNachbarVor={!!nachbarVon(aktiverBeleg, 'vor')}
-                hatNachbarNach={!!nachbarVon(aktiverBeleg, 'nach')} />
+                onAufteilen={oeffneAufteilen} />
 
       {durchsicht && (
         <Durchsicht belege={belege} C={C}
           schritt={durchsicht.schritt} index={durchsicht.index}
           setDurchsicht={setDurchsicht}
           onAendern={aendere} onPosition={setzePosition}
-          onTrennen={trenneVonHand} onZusammen={zusammenlegen}
-          nachbarVon={nachbarVon} onWaehlen={setGewaehlt} />
+          onAufteilen={oeffneAufteilen} onWaehlen={setGewaehlt} />
+      )}
+
+      {aufteilen && (
+        <AufteilenDialog key={aufteilen.basisHash} auftrag={aufteilen} C={C}
+          dateien={dateiListe}
+          onDateiWechsel={oeffneAufteilen}
+          onUebernehmen={wendeAufteilungAn}
+          onSchliessen={() => { if (!aufteilen.arbeitet) setAufteilen(null); }} />
       )}
     </div>
   );
@@ -1382,6 +1623,8 @@ function BelegKarte({ beleg: b, aktiv, onWaehlen, onDragStart, onDragEnd, zieht 
         <div style={{ fontSize: 10, color: C.muted }}>
           {laden ? standText(b.stand)
                  : b.stand === 'fehler' ? b.fehler
+                 : b.doppelVerdacht ? `möglicherweise doppelt – wie «${b.doppelVerdacht.name}»`
+                 : b.doppelVon ? 'Doppelt eingescannt'
                  : b.widerspruch ? '⚠ Regeln und KI uneins – prüfen'
                  : [BELEGART_BY_KEY[b.belegart]?.label, pos?.label].filter(Boolean).join(' · ')
                    || 'noch nicht zugeordnet'}
@@ -1422,6 +1665,257 @@ function BelegKarte({ beleg: b, aktiv, onWaehlen, onDragStart, onDragEnd, zieht 
  * blättern und zoomen. Bei einem 38-seitigen Umbaubündel ist die erste Seite
  * selten die, an der man entscheidet.
  */
+// ── Seiten aufteilen: der Dialog ───────────────────────────────────────────
+//
+// Links alle Seiten der Datei als Miniaturen mit klickbaren Trennstellen
+// («✂» zwischen den Seiten), rechts die angeklickte Seite gross — mit Klick
+// zum Vergrössern, denn ohne Lesen entscheidet niemand, wo eine Rechnung
+// anfängt. Übernehmen baut die Belege der Datei neu; unveränderte Bereiche
+// behalten Zuordnung und Beträge.
+function AufteilenDialog({ auftrag, C, dateien = [], onDateiWechsel, onUebernehmen, onSchliessen }) {
+  const { quelle, dateiName, teile, arbeitet, fortschritt } = auftrag;
+  const von = teile[0]?.von || 1;
+  const bis = teile[teile.length - 1]?.bis || 1;
+
+  const [minis, setMinis] = useState(null);
+  const [schnitte, setSchnitte] = useState(() => new Set(teile.slice(1).map(t => t.von)));
+  const [gross, setGross] = useState(von);
+  const [grossBild, setGrossBild] = useState(null);
+  const [zoom, setZoom] = useState(false);
+
+  useEffect(() => {
+    let aktiv = true;
+    (async () => {
+      const { bilder } = await pdfSeitenMiniaturen(quelle, { maxSeiten: bis });
+      if (aktiv) setMinis(bilder);
+    })();
+    return () => { aktiv = false; };
+  }, []);
+
+  useEffect(() => {
+    let aktiv = true;
+    setGrossBild(null); setZoom(false);
+    (async () => {
+      const b64 = await pdfSeiteAlsBild(quelle, gross, 1.8);
+      if (aktiv && b64) setGrossBild(`data:image/jpeg;base64,${b64}`);
+    })();
+    return () => { aktiv = false; };
+  }, [gross]);
+
+  const umschalten = (seite) => {
+    if (arbeitet || seite <= von || seite > bis) return;
+    setSchnitte(alt => {
+      const neu = new Set(alt);
+      if (neu.has(seite)) neu.delete(seite); else neu.add(seite);
+      return neu;
+    });
+  };
+
+  // Tastatur: blaettern mit den Pfeilen, trennen mit der Leertaste,
+  // vergroessern mit Enter. Wer 40 Seiten durchgeht, will nicht klicken.
+  useEffect(() => {
+    const h = (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+      if (e.key === 'Escape' && !arbeitet) { onSchliessen(); return; }
+      if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+        e.preventDefault(); setGross(g => Math.min(bis, g + 1));
+      } else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+        e.preventDefault(); setGross(g => Math.max(von, g - 1));
+      } else if (e.key === ' ') {
+        e.preventDefault(); umschalten(gross);
+      } else if (e.key === 'Enter') {
+        e.preventDefault(); setZoom(z => !z);
+      }
+    };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [gross, von, bis, arbeitet, onSchliessen]);
+
+  // Die gewaehlte Seite in den Blick holen (auch bei Tastaturbedienung).
+  useEffect(() => {
+    document.getElementById(`mini-${gross}`)?.scrollIntoView({ block: 'nearest' });
+  }, [gross]);
+
+  const bereiche = useMemo(() => {
+    const starts = [von, ...[...schnitte].filter(x => x > von && x <= bis).sort((a, z) => a - z)];
+    return starts.map((s, i) => ({ von: s, bis: (starts[i + 1] ?? bis + 1) - 1 }));
+  }, [schnitte, von, bis]);
+
+  const unveraendert = bereiche.length === teile.length
+    && bereiche.every((r, i) => r.von === teile[i].von && r.bis === teile[i].bis);
+
+  // Blockfarben: benachbarte Belege sollen sich unterscheiden lassen.
+  const FARBEN = ['#6366f1', '#0891b2', '#16a34a', '#d97706', '#db2777', '#7c3aed'];
+  const titelVon = (r) => teile.find(t => t.von === r.von && t.bis === r.bis)?.titel;
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 1100, backgroundColor: C.pageBg }}>
+      <div style={{ position: 'absolute', inset: 0, backgroundColor: C.panelBg,
+                    display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '10px 14px', borderBottom: `1px solid ${C.panelBdr}` }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: C.heading }}>
+            {dateiName} · Seiten {von}–{bis}
+          </div>
+          <div style={{ fontSize: 11, color: C.sub }}>
+            {bereiche.length} {bereiche.length === 1 ? 'Beleg' : 'Belege'}
+            {unveraendert ? ' (unverändert)' : ' nach Übernehmen'}
+          </div>
+          <div style={{ marginLeft: 'auto', fontSize: 10, color: C.muted }}>
+            ↑↓ blättern · Leertaste trennt · Enter vergrössert · Esc schliesst
+          </div>
+          <button onClick={onSchliessen} disabled={arbeitet}
+            style={{ border: 'none', background: 'none', color: C.sub,
+                     cursor: 'pointer', padding: 4, display: 'flex' }}>
+            <X size={15} />
+          </button>
+        </div>
+
+        <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
+          {dateien.length > 1 && (
+            <div style={{ width: 210, flexShrink: 0, overflowY: 'auto',
+                          borderRight: `1px solid ${C.panelBdr}`, padding: 8 }}>
+              <div style={{ fontSize: 10, color: C.muted, textTransform: 'uppercase',
+                            letterSpacing: '.08em', padding: '2px 6px 6px' }}>Dateien</div>
+              {dateien.map(d => (
+                <div key={d.basis}
+                  onClick={() => !arbeitet && d.basis !== auftrag.basisHash && onDateiWechsel(d.vertreter)}
+                  style={{ padding: '7px 8px', borderRadius: 6, marginBottom: 3,
+                           cursor: arbeitet ? 'default' : 'pointer',
+                           backgroundColor: d.basis === auftrag.basisHash ? C.accentBg : 'transparent' }}>
+                  <div style={{ fontSize: 11, fontWeight: d.basis === auftrag.basisHash ? 700 : 500,
+                                color: C.heading, overflow: 'hidden',
+                                textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.name}</div>
+                  <div style={{ fontSize: 10, color: C.muted }}>
+                    {d.seiten} Seiten · {d.teile} {d.teile === 1 ? 'Beleg' : 'Belege'}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Seiten, gruppiert als Belege */}
+          <div style={{ width: 380, flexShrink: 0, overflowY: 'auto',
+                        borderRight: `1px solid ${C.panelBdr}`, padding: 10 }}>
+            {!minis && (
+              <div style={{ fontSize: 11, color: C.muted, display: 'flex',
+                            alignItems: 'center', gap: 6, padding: 8 }}>
+                <Loader2 size={12} className="animate-spin" /> Seiten werden gerendert …
+              </div>
+            )}
+            {minis && bereiche.map((r, bi) => {
+              const farbe = FARBEN[bi % FARBEN.length];
+              const titel = titelVon(r);
+              return (
+                <React.Fragment key={r.von}>
+                  {bi > 0 && (
+                    <div onClick={() => umschalten(r.von)}
+                      title="Diese beiden Belege zusammenlegen"
+                      style={{ display: 'flex', alignItems: 'center', gap: 6,
+                               margin: '7px 2px', cursor: arbeitet ? 'default' : 'pointer',
+                               fontSize: 10, color: C.muted }}>
+                      <div style={{ flex: 1, height: 1, backgroundColor: C.panelBdr }} />
+                      <span>Grenze — klicken zum Zusammenlegen</span>
+                      <div style={{ flex: 1, height: 1, backgroundColor: C.panelBdr }} />
+                    </div>
+                  )}
+                  <div style={{ border: `1px solid ${farbe}33`, borderLeft: `3px solid ${farbe}`,
+                                borderRadius: 8, padding: 7, backgroundColor: `${farbe}0d` }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 5 }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: farbe }}>
+                        Beleg {bi + 1}
+                      </span>
+                      <span style={{ fontSize: 10, color: C.sub }}>
+                        {r.von === r.bis ? `Seite ${r.von}` : `Seiten ${r.von}–${r.bis}`}
+                      </span>
+                      <span style={{ fontSize: 10, color: C.muted, marginLeft: 'auto',
+                                     overflow: 'hidden', textOverflow: 'ellipsis',
+                                     whiteSpace: 'nowrap', maxWidth: 160 }}>
+                        {titel || 'neu — wird erkannt'}
+                      </span>
+                    </div>
+                    {Array.from({ length: r.bis - r.von + 1 }, (_, k) => {
+                      const seite = r.von + k;
+                      return (
+                        <React.Fragment key={seite}>
+                          {k > 0 && (
+                            <div onClick={() => umschalten(seite)}
+                              title={`Vor Seite ${seite} trennen`}
+                              style={{ height: 15, margin: '1px 0', opacity: 0.5,
+                                       cursor: arbeitet ? 'default' : 'pointer',
+                                       display: 'flex', alignItems: 'center', gap: 5 }}
+                              onMouseEnter={e => { e.currentTarget.style.opacity = 1; }}
+                              onMouseLeave={e => { e.currentTarget.style.opacity = 0.5; }}>
+                              <div style={{ flex: 1, borderTop: `1px dashed ${C.panelBdr}` }} />
+                              <span style={{ fontSize: 9, color: C.muted }}>hier trennen</span>
+                              <div style={{ flex: 1, borderTop: `1px dashed ${C.panelBdr}` }} />
+                            </div>
+                          )}
+                          <div id={`mini-${seite}`} onClick={() => setGross(seite)}
+                            style={{ display: 'flex', gap: 8, alignItems: 'center',
+                                     padding: 4, borderRadius: 6, cursor: 'pointer',
+                                     outline: gross === seite ? `2px solid ${farbe}` : 'none' }}>
+                            <img src={minis[seite - 1]} alt={`Seite ${seite}`}
+                              style={{ width: 76, borderRadius: 3,
+                                       border: `1px solid ${C.panelBdr}`, flexShrink: 0 }} />
+                            <div style={{ fontSize: 10, color: C.sub }}>Seite {seite}</div>
+                          </div>
+                        </React.Fragment>
+                      );
+                    })}
+                  </div>
+                </React.Fragment>
+              );
+            })}
+          </div>
+
+          {/* grosse Ansicht */}
+          <div style={{ flex: 1, minWidth: 0, overflow: 'auto',
+                        backgroundColor: '#3a3a3e', display: 'flex',
+                        alignItems: 'flex-start', justifyContent: 'center' }}>
+            {grossBild ? (
+              <img src={grossBild} alt={`Seite ${gross}`}
+                onClick={() => setZoom(z => !z)}
+                style={{ width: zoom ? '175%' : '100%', maxWidth: zoom ? 'none' : '100%',
+                         cursor: zoom ? 'zoom-out' : 'zoom-in', display: 'block' }} />
+            ) : (
+              <div style={{ fontSize: 12, color: '#bbb', padding: 30 }}>
+                Seite {gross} wird gerendert …
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '10px 14px', borderTop: `1px solid ${C.panelBdr}` }}>
+          <div style={{ fontSize: 10, color: C.muted }}>
+            Unveränderte Belege behalten Zuordnung und Beträge — nur geänderte
+            werden neu gelesen und erkannt.
+          </div>
+          {(arbeitet || fortschritt) && (
+            <div style={{ fontSize: 11, color: C.sub, display: 'flex',
+                          alignItems: 'center', gap: 6 }}>
+              {arbeitet && <Loader2 size={12} className="animate-spin" />}
+              {fortschritt}
+            </div>
+          )}
+          <button onClick={() => onUebernehmen(bereiche)}
+            disabled={unveraendert || arbeitet}
+            style={{ marginLeft: 'auto', padding: '8px 16px', fontSize: 12,
+                     fontWeight: 600, borderRadius: 6,
+                     border: `1px solid ${unveraendert || arbeitet ? C.panelBdr : C.accent}`,
+                     backgroundColor: unveraendert || arbeitet ? 'transparent' : C.accentBg,
+                     color: unveraendert || arbeitet ? C.muted : C.accent,
+                     cursor: unveraendert || arbeitet ? 'default' : 'pointer' }}>
+            {arbeitet ? 'arbeitet …' : `Übernehmen (${bereiche.length} Belege)`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Vollbild-Durchsicht ────────────────────────────────────────────────────
 //
 // Der Arbeitsmodus zum Abarbeiten, in drei Schritten und mit Platz:
@@ -1438,16 +1932,20 @@ const DURCHSICHT_SCHRITTE = [
 ];
 
 function Durchsicht({ belege, C, schritt, index, setDurchsicht,
-                      onAendern, onPosition, onTrennen, onZusammen,
-                      nachbarVon, onWaehlen }) {
-  const [trennSeite, setTrennSeite] = useState('');
-
+                      onAendern, onPosition, onAufteilen, onWaehlen }) {
   const fertige = belege.filter(x => x.stand === 'fertig');
   const istPdfQ = x => (x.istPdf || /\.pdf($|\?)/i.test(x.dateiPfad || '') || /\.pdf$/i.test(x.name || ''));
+  // Schritt 1 arbeitet je DATEI (erster Teil vertritt sie) — die
+  // Seitenübersicht zeigt und ändert ohnehin die ganze Datei.
+  const proDatei = [];
+  const gesehen = new Set();
+  for (const x of fertige) {
+    const basis = String(x.hash || '').split('#')[0];
+    if (!basis || gesehen.has(basis)) continue;
+    if (istPdfQ(x) && (x.datei || x.dateiPfad)) { gesehen.add(basis); proDatei.push(x); }
+  }
   const listen = {
-    1: fertige.filter(x => istPdfQ(x) && (x.datei || x.dateiPfad)
-        && ((x.bisSeite || 0) > (x.vonSeite || 1)
-            || nachbarVon(x, 'vor') || nachbarVon(x, 'nach'))),
+    1: proDatei,
     2: fertige.filter(x => x.position !== '_aussortiert'),
     3: fertige.filter(x => !x.position),
   };
@@ -1455,7 +1953,7 @@ function Durchsicht({ belege, C, schritt, index, setDurchsicht,
   const i = Math.min(index, Math.max(0, liste.length - 1));
   const b = liste[i] || null;
 
-  useEffect(() => { setTrennSeite(''); if (b) onWaehlen(b.id); }, [b?.id]);
+  useEffect(() => { if (b) onWaehlen(b.id); }, [b?.id]);
 
   useEffect(() => {
     const h = (e) => {
@@ -1482,9 +1980,10 @@ function Durchsicht({ belege, C, schritt, index, setDurchsicht,
     border: `1px solid ${rand}`, background: 'none', color: farbe, width: '100%',
   });
 
-  const nachbarVor  = b ? nachbarVon(b, 'vor')  : null;
-  const nachbarNach = b ? nachbarVon(b, 'nach') : null;
   const posDef = b?.position ? KATALOG_NACH_ID[b.position] : null;
+  const dateiTeile = b ? fertige.filter(x =>
+    String(x.hash || '').split('#')[0] === String(b.hash || '').split('#')[0])
+    .sort((x, z) => (x.vonSeite || 1) - (z.vonSeite || 1)) : [];
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 1000, backgroundColor: C.pageBg,
@@ -1564,38 +2063,21 @@ function Durchsicht({ belege, C, schritt, index, setDurchsicht,
             {schritt === 1 && (
               <>
                 <div style={{ fontSize: 11, color: C.sub }}>
-                  Seiten {b.vonSeite || 1}
-                  {(b.bisSeite || 0) > (b.vonSeite || 1) ? `–${b.bisSeite}` : ''} — stimmt
-                  die Zerlegung? Blättere in der Vorschau durch die Seiten.
+                  Diese Datei ist in {dateiTeile.length}
+                  {dateiTeile.length === 1 ? ' Beleg' : ' Belege'} zerlegt:
                 </div>
-                {(b.bisSeite || 0) > (b.vonSeite || 1) && (
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <input type="number" value={trennSeite}
-                      min={(b.vonSeite || 1) + 1} max={b.bisSeite}
-                      placeholder={`ab Seite (${(b.vonSeite || 1) + 1}–${b.bisSeite})`}
-                      onChange={e => setTrennSeite(e.target.value)}
-                      style={{ ...feld, flex: 1 }} />
-                    <button
-                      onClick={() => onTrennen(b, Number(trennSeite))}
-                      disabled={!(Number(trennSeite) > (b.vonSeite || 1)
-                               && Number(trennSeite) <= (b.bisSeite || 0))}
-                      style={{ ...aktion(C.panelBdr, C.heading), width: 'auto', flexShrink: 0 }}>
-                      Hier trennen
-                    </button>
-                  </div>
-                )}
-                {nachbarVor && (
-                  <button onClick={() => onZusammen(b, 'vor')}
-                    style={aktion(C.panelBdr, C.heading)}>
-                    ← mit «{nachbarVor.name}» zusammenlegen
-                  </button>
-                )}
-                {nachbarNach && (
-                  <button onClick={() => onZusammen(b, 'nach')}
-                    style={aktion(C.panelBdr, C.heading)}>
-                    mit «{nachbarNach.name}» zusammenlegen →
-                  </button>
-                )}
+                <div style={{ display: 'grid', gap: 3, fontSize: 10, color: C.muted }}>
+                  {dateiTeile.map(x => (
+                    <div key={x.id}>
+                      Seiten {x.vonSeite || 1}
+                      {(x.bisSeite || 0) > (x.vonSeite || 1) ? `–${x.bisSeite}` : ''} ·{' '}
+                      {x.position ? (KATALOG_NACH_ID[x.position]?.label || x.position) : 'offen'}
+                    </div>
+                  ))}
+                </div>
+                <button onClick={() => onAufteilen(b)} style={aktion(C.panelBdr, C.heading)}>
+                  Seiten ansehen und aufteilen …
+                </button>
                 <button onClick={weiter} style={aktion(C.accent, C.accent)}>
                   Zerlegung stimmt – weiter <ChevronRight size={13} />
                 </button>
@@ -1682,13 +2164,11 @@ function Durchsicht({ belege, C, schritt, index, setDurchsicht,
   );
 }
 
-function Vorschau({ beleg: b, breite, steuerjahr, onAendern, onPosition,
-                    onTrennen, onZusammen, hatNachbarVor, hatNachbarNach }) {
+function Vorschau({ beleg: b, breite, steuerjahr, onAendern, onPosition, onAufteilen }) {
   const C = useFarben();
   const [holtBetraege, setHoltBetraege] = useState(false);
   const [holErgebnis, setHolErgebnis] = useState(null);
-  const [trennSeite, setTrennSeite] = useState('');
-  useEffect(() => { setHolErgebnis(null); setTrennSeite(''); }, [b?.id]);
+  useEffect(() => { setHolErgebnis(null); }, [b?.id]);
 
   // Fehlende Beträge auf Zuruf per Bild-KI ablesen — für gespeicherte Belege
   // (etwa den Schuldzins, den die OCR im ZKB-Ausweis nicht fand). Explizit
@@ -1948,54 +2428,16 @@ function Vorschau({ beleg: b, breite, steuerjahr, onAendern, onPosition,
             </select>
           </div>
 
-          {/* Manuell trennen / zusammenlegen — wenn die automatische
-              Trennung danebenlag. Der neue Bereich läuft durch die volle
-              Erkennung (OCR nur über die betroffenen Seiten). */}
-          {b.stand === 'fertig' && istPdfQuelle && (b.datei || b.dateiPfad)
-            && ((b.bisSeite || 0) > (b.vonSeite || 1) || hatNachbarVor || hatNachbarNach) && (
-            <div style={{ display: 'grid', gap: 6 }}>
-              <div style={etikett(C)}>
-                Seiten {b.vonSeite || 1}{(b.bisSeite || 0) > (b.vonSeite || 1) ? `–${b.bisSeite}` : ''}
-              </div>
-              {(b.bisSeite || 0) > (b.vonSeite || 1) && (
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <input type="number" value={trennSeite}
-                    min={(b.vonSeite || 1) + 1} max={b.bisSeite}
-                    placeholder={`ab Seite (${(b.vonSeite || 1) + 1}–${b.bisSeite})`}
-                    onChange={e => setTrennSeite(e.target.value)}
-                    style={{ ...feld, flex: 1 }} />
-                  <button
-                    onClick={() => onTrennen(b, Number(trennSeite))}
-                    disabled={!(Number(trennSeite) > (b.vonSeite || 1)
-                             && Number(trennSeite) <= (b.bisSeite || 0))}
-                    style={{ padding: '5px 10px', fontSize: 11, borderRadius: 5,
-                             border: `1px solid ${C.panelBdr}`, background: 'none',
-                             color: C.heading, cursor: 'pointer', flexShrink: 0 }}>
-                    Hier trennen
-                  </button>
-                </div>
-              )}
-              {(hatNachbarVor || hatNachbarNach) && (
-                <div style={{ display: 'flex', gap: 6 }}>
-                  {hatNachbarVor && (
-                    <button onClick={() => onZusammen(b, 'vor')}
-                      style={{ flex: 1, padding: '5px 8px', fontSize: 11, borderRadius: 5,
-                               border: `1px solid ${C.panelBdr}`, background: 'none',
-                               color: C.heading, cursor: 'pointer' }}>
-                      ← mit vorherigem zusammenlegen
-                    </button>
-                  )}
-                  {hatNachbarNach && (
-                    <button onClick={() => onZusammen(b, 'nach')}
-                      style={{ flex: 1, padding: '5px 8px', fontSize: 11, borderRadius: 5,
-                               border: `1px solid ${C.panelBdr}`, background: 'none',
-                               color: C.heading, cursor: 'pointer' }}>
-                      mit nächstem zusammenlegen →
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
+          {/* Manuell aufteilen: Seitenübersicht mit Miniaturen statt
+              Seitenzahlen tippen — trennt und legt zusammen in einem. */}
+          {b.stand === 'fertig' && istPdfQuelle && (b.datei || b.dateiPfad) && (
+            <button onClick={() => onAufteilen(b)}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center',
+                       gap: 6, padding: '6px 8px', fontSize: 11, borderRadius: 5,
+                       border: `1px solid ${C.panelBdr}`, background: 'none',
+                       color: C.heading, cursor: 'pointer' }}>
+              <GripVertical size={11} /> Seiten dieser Datei aufteilen …
+            </button>
           )}
         </div>
 
