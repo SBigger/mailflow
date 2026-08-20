@@ -14,7 +14,7 @@
     "feld_id": "Jedes Feld trägt eine id nach dem Muster <feldname>[:<liste>::<index>]…:<Art>. Die Art am Schluss ist Input, Select, Checkbox, DatePicker, RadioJa/RadioNein/Radio<Text>. Stabiler Selektor: [id=\"…\"] – wegen des Doppelpunkts NICHT als #id verwenden (bzw. CSS.escape benutzen).",
     "ausnahmen": "Bekannte Abweichungen: «OrtP1» (Personalien) ohne Doppelpunkt-Konvention; die beiden «Art»-Auswahlfelder bei Krankheits-/Unfallkosten und bei behinderungsbedingten Kosten tragen die id wörtlich «undefined» und sind nur über die Reihenfolge der button.atm-form_input__input--trigger ansprechbar; Schieber tragen den Beschriftungstext in der id (slider_<feld><Beschriftung>).",
     "auswahlfeld": "Auswahlfelder sind KEINE <select>-Elemente, sondern <button id=\"…:Select\"> mit einer Liste aus li.atm-list__item. Setzen daher über Klick auf den Knopf und dann auf den Listeneintrag, nicht über form_input.",
-    "betrag": "Beträge in GANZEN FRANKEN. Geprüft: Eingabe «12345.49» wird als «12'345» angezeigt, Eingabe «1234.55» als «1'235» – das Portal rundet die Rappen weg und setzt selbst den Tausender-Apostroph. Vor dem Feld steht die Währungsmarke «CHF». Also: OHNE Rappen und OHNE Apostroph eintippen, das Portal formatiert.",
+    "betrag": "Beträge in GANZEN FRANKEN. Geprüft: Eingabe «12345.49» wird als «12'345» angezeigt, Eingabe «1234.55» als «1'235» – das Portal rundet die Rappen weg und setzt selbst den Tausender-Apostroph. Vor dem Feld steht die Währungsmarke «CHF». Bestätigt wird das vom Portal selbst: die Betragsspalten im Formulareditor sind mit «CHF ohne Rappen» überschrieben. Also: OHNE Rappen und OHNE Apostroph eintippen, das Portal formatiert.",
     "zeilenlisten": "Zwei Bauarten. (a) Knopf «… hinzufügen» / «Weitere Zeile hinzufügen» erzeugt eine Zeile mit laufendem Index (…::0:, ::1:, …). (b) Formulare mit Endlosliste haben IMMER eine leere Schlusszeile, deren Feldnamen auf «WR» enden; sobald dort etwas eingetippt wird, wird sie zur echten Zeile und darunter erscheint eine neue WR-Zeile. WICHTIG beim Erfassen: nach jeder Eingabe die ids neu lesen, sie ändern sich.",
     "vorjahresdaten": "Felder mit Vorjahreswert sind schreibgeschützt (readonly + disabled), bis die Vorjahresdaten bestätigt wurden. Knöpfe je Maske: «Alle bestätigen» / «Alle löschen», je Block «Bestätigen» / «Ändern». Ohne diesen Schritt schlägt jede Eingabe stillschweigend fehl.",
     "rechenfelder": "Schreibgeschützte Betragsfelder (RO/DIS) sind Rechenfelder des Portals. Viele davon haben rechts einen Stift-Knopf (button.atm-form_input__functionality), der den Erfassungsdialog öffnet.",
@@ -5887,6 +5887,15 @@
         "position": "wertschriften"
       },
       {
+        "seite": "due-disability-costs/page-1",
+        "ziffer": "A 1.–3. / B / D",
+        "code": "3100 / 3101 / 3102 …",
+        "bezeichnung": "Behinderungsbedingte Kosten bei IV-Leistungen, bei Heim-/Entlastungsaufenthalten, weitere; Vergütungen Dritter; Pauschale",
+        "feld": "handicapExpensesExpenseIVAllowances / handicapExpensesExpenseReliefStay / handicapExpensesExpenseFreeTextAmount / handicapExpensesAllowance… / handicapExpensesTotalAmountDeductionFlatrate:Input",
+        "rechenfeld": false,
+        "position": "behinderungskosten"
+      },
+      {
         "seite": "shareholding/page-1",
         "ziffer": "—",
         "code": "—",
@@ -6891,7 +6900,8 @@
         }
       ],
       "ziffern": [
-        "STE3 Ziff. 16.4 (Code —)"
+        "STE3 Ziff. 16.4 (Code —)",
+        "due-disability-costs/page-1 Ziff. A 1.–3. / B / D (Code 3100 / 3101 / 3102 …)"
       ],
       "ohne_zielfeld": false
     },
