@@ -1,0 +1,710 @@
+{
+  "portal": "ZHprivateTax",
+  "kanton": "ZH",
+  "jahr": 2025,
+  "aufgenommen": "2026-08-20",
+  "aufnahmeArt": "rein lesend — keine Eingabe, keine Zeile angelegt, nichts gespeichert, nichts eingereicht",
+  "basisUrl": "https://zhp.services.zh.ch/app/ZHprivateTax2025/",
+  "routenMuster": "#/<Dossier-ID>/tax-assistant/<gruppe>/<maske>",
+  "dialogRoutenMuster": "#/<Dossier-ID>/dialogs/<gruppe>/<dialog>",
+  "anzahlMasken": 34,
+  "anzahlFelder": 188,
+  "anzahlFelderHinweis": "188 logische Felder. Im DOM sind es 232 einzelne Steuerelemente — der Unterschied sind Radio-Gruppen: eine Auswahl wie Zivilstand mit 7 Optionen zaehlt hier als EIN Feld mit 7 Optionen, im DOM als 7 Elemente.",
+  "feldIdMuster": {
+    "einfach": "<fachName>:Input | :DatePicker | :Checkbox | :RadioJa",
+    "jeEhegatte": "<fachName>P1:Input bzw. <fachName>P2:Input — P1 = Person 1, P2 = Person 2. Umschaltung über die Personen-Reiter oben in der Maske. Aufgenommen wurde nur die P1-Ansicht; die P2-Variante ist im Programmcode der App durchgehend belegt.",
+    "zeilenliste": "<fachName>WR:<listenName>:<Zeilenindex>:Input — der Zeilenindex steht zwischen den beiden Doppelpunkten; bei der ersten (leeren) Zeile ist er leer",
+    "beleg": "attachment_file<...> — Upload-Feld, readonly, wird über einen Dateidialog gefüllt"
+  },
+  "formatHinweise": [
+    "Betragsfelder sind type=text mit generischem maxlength=120 — daraus lässt sich das Zahlenformat NICHT ableiten.",
+    "Ob Rappen und ob ein Tausender-Apostroph zulässig sind, wurde NICHT geprüft, weil dafür eine Eingabe nötig gewesen wäre. Beim ersten echten Erfassen testen und hier nachtragen.",
+    "Beispielschreibweise für die spätere Prüfung (erfunden, kein echter Wert): 1234.55"
+  ],
+  "navigation": {
+    "einstieg": "Dashboard (Route .../home). Die Reiterzeile Datenimport | Übersicht | Hilfsmittel / Formulare | Administration besteht aus Ankerlinks auf Abschnitte DERSELBEN Dashboard-Seite, nicht aus eigenen Seiten.",
+    "maskenNavigation": "Aus dem Dashboard-Abschnitt Übersicht in eine beliebige Maske einsteigen; danach steht links die vollständige Seitenleiste mit allen 6 Gruppen und 34 Masken bereit. Zur Übersicht führt zurück aufs Dashboard.",
+    "gruppen": ["Persönliches", "Einkünfte", "Abzüge", "Wertschriften", "Vermögen", "Abschluss"],
+    "alternativNavigation": "Hilfsmittel-Kachel Navigation über Formulare (Route .../tax-forms/home) — Navigation entlang der amtlichen Hauptformulare. NICHT aufgenommen, siehe nichtAufgenommen.",
+    "warnung": "Im Dashboard-Abschnitt Hilfsmittel stehen vier ZERSTÖRENDE Kacheln, die alle erfassten Daten löschen: Vorjahresdaten erneut importieren, Neuen Zugangscode erstellen, Steuererklärung zurücksetzen, Steuererklärung löschen. Alle tragen denselben Knopf Start — beim Klicken sehr genau auf die Kachel achten."
+  },
+  "masken": [
+    {
+      "key": "persoenliches/steuerpflichtige-personen",
+      "gruppe": "Persönliches",
+      "titel": "Steuerpflichtige Personen",
+      "route": "tax-assistant/personal/personal-data",
+      "navigation": "Seitenleiste: Persönliches > Steuerpflichtige Personen",
+      "personenTabs": true,
+      "abschnitte": ["Personalien", "Berufliche Angaben", "Weitere Angaben"],
+      "felder": [
+        {"label": "Vorname", "id": "personDataFirstNameP1:Input", "typ": "text", "maxlength": 60, "abschnitt": "Personalien", "position": "—"},
+        {"label": "Name", "id": "personDataOfficialNameP1:Input", "typ": "text", "maxlength": 60, "abschnitt": "Personalien", "position": "—"},
+        {"label": "Geburtsdatum", "id": "personDataDateOfBirthP1:DatePicker", "typ": "datum", "abschnitt": "Personalien", "position": "—"},
+        {"label": "Strasse", "id": "personDataStreetP1:Input", "typ": "text", "maxlength": 60, "abschnitt": "Personalien", "position": "—"},
+        {"label": "Nummer", "id": "personDataHouseNumberP1:Input", "typ": "text", "maxlength": 12, "abschnitt": "Personalien", "position": "—"},
+        {"label": "Zusatz", "id": "personDataAddressLine1P1:Input", "typ": "text", "maxlength": 60, "abschnitt": "Personalien", "position": "—"},
+        {"label": "PLZ", "id": "personDataZipP1:Input", "typ": "text", "maxlength": 15, "abschnitt": "Personalien", "position": "—"},
+        {"label": "Ort", "id": "OrtP1", "typ": "text", "maxlength": 40, "abschnitt": "Personalien", "position": "—"},
+        {"label": "Telefon", "id": "personDataPhoneNumberP1:Input", "typ": "text", "maxlength": 20, "abschnitt": "Personalien", "position": "—"},
+        {"label": "E-Mail", "id": "personDataEmailP1:Input", "typ": "text", "maxlength": 60, "abschnitt": "Personalien", "position": "—"},
+        {"label": "Zivilstand", "id": "id-<code><text>married", "typ": "radio", "optionen": ["ledig", "verheiratet", "verwitwet", "geschieden", "getrennt", "eingetragene Partnerschaft", "aufgelöste Partnerschaft"], "abschnitt": "Personalien", "position": "—"},
+        {"label": "Konfession", "id": "id-<code><text>711", "typ": "radio", "optionen": ["111 reformiert", "121 römisch-katholisch", "122 christ-katholisch", "811 andere", "711 keine"], "abschnitt": "Personalien", "position": "—"},
+        {"label": "Beruf", "id": "personDataJobP1:Input", "typ": "text", "maxlength": 60, "abschnitt": "Berufliche Angaben", "position": "—"},
+        {"label": "Sind im Jahr 2025 ordentliche Beiträge an die Pensionskasse (2. Säule) geleistet worden?", "id": "personDataPaymentPensionP1:RadioJa", "typ": "radio", "optionen": ["true = Ja", "false = Nein"], "abschnitt": "Berufliche Angaben", "position": "—"},
+        {"label": "Gemeinde", "id": "personDataTaxMunicipality:Input", "typ": "text", "maxlength": 120, "readonly": true, "disabled": true, "abschnitt": "Weitere Angaben", "position": "— (Rechenfeld, vom Portal gesetzt)"}
+      ],
+      "bemerkung": "Alle Personalien-Felder existieren zweimal (P1/P2). Personalien füllt Sascha selbst."
+    },
+    {
+      "key": "persoenliches/kinder",
+      "gruppe": "Persönliches",
+      "titel": "Kinder",
+      "route": "tax-assistant/personal/children",
+      "navigation": "Seitenleiste: Persönliches > Kinder",
+      "abschnitte": ["Im Haushalt", "Ausserhalb des Haushalts"],
+      "zeilenliste": {"anlegenMit": ["Kind im Haushalt hinzufügen", "Kind ausserhalb Haushalt hinzufügen"], "listenNamen": ["intChild", "extChild"]},
+      "felder": [
+        {"label": "Gemeinsames Kind", "id": "intChildIsCommonChildWR:intChild:<i>:Checkbox", "typ": "checkbox", "abschnitt": "Im Haushalt", "position": "—"},
+        {"label": "Vorname", "id": "intChildFirstNameWR:intChild:<i>:Input", "typ": "text", "maxlength": 30, "abschnitt": "Im Haushalt", "position": "—"},
+        {"label": "Name", "id": "intChildOfficialNameWR:intChild:<i>:Input", "typ": "text", "maxlength": 30, "abschnitt": "Im Haushalt", "position": "—"},
+        {"label": "Geburtsdatum", "id": "intChildDateOfBirthWR:intChild:<i>:DatePicker", "typ": "datum", "abschnitt": "Im Haushalt", "position": "—"},
+        {"label": "Schule oder Lehrfirma (wenn in Ausbildung)", "id": "intChildSchoolOrCompanyWR:intChild:<i>:Input", "typ": "text", "maxlength": 34, "abschnitt": "Im Haushalt", "position": "—"},
+        {"label": "Voraussichtlich bis (Jahr)", "id": "intChildCorrectToWR:intChild:<i>:Input", "typ": "text", "maxlength": 120, "abschnitt": "Im Haushalt", "position": "—"},
+        {"label": "Gemeinsames Kind", "id": "extChildIsCommonChildWR:extChild:<i>:Checkbox", "typ": "checkbox", "abschnitt": "Ausserhalb des Haushalts", "position": "—"},
+        {"label": "Vorname", "id": "extChildFirstNameWR:extChild:<i>:Input", "typ": "text", "maxlength": 30, "abschnitt": "Ausserhalb des Haushalts", "position": "—"},
+        {"label": "Name", "id": "extChildOfficialNameWR:extChild:<i>:Input", "typ": "text", "maxlength": 30, "abschnitt": "Ausserhalb des Haushalts", "position": "—"},
+        {"label": "Geburtsdatum", "id": "extChildDateOfBirthWR:extChild:<i>:DatePicker", "typ": "datum", "abschnitt": "Ausserhalb des Haushalts", "position": "—"},
+        {"label": "Adresse", "id": "extChildAddressLine1WR:extChild:<i>:Input", "typ": "text", "maxlength": 60, "abschnitt": "Ausserhalb des Haushalts", "position": "—"},
+        {"label": "Schule oder Lehrfirma (wenn in Ausbildung)", "id": "extChildSchoolOrCompanyWR:extChild:<i>:Input", "typ": "text", "maxlength": 34, "abschnitt": "Ausserhalb des Haushalts", "position": "—"},
+        {"label": "Voraussichtlich bis (Jahr)", "id": "extChildCorrectToWR:extChild:<i>:Input", "typ": "text", "maxlength": 120, "abschnitt": "Ausserhalb des Haushalts", "position": "—"}
+      ],
+      "bemerkung": "Kinderbetreuungskosten (Katalog kinderbetreuung) sind in dieser Maske NICHT sichtbar. Im Routenverzeichnis der App existiert ein Dialog external-care — der Betreuungsabzug hängt vermutlich an der einzelnen Kinderzeile. Nicht geprüft, weil dafür eine Zeile hätte angelegt werden müssen."
+    },
+    {
+      "key": "persoenliches/unterstuetzte-personen",
+      "gruppe": "Persönliches",
+      "titel": "Unterstützte Personen",
+      "route": "tax-assistant/personal/supported-person",
+      "navigation": "Seitenleiste: Persönliches > Unterstützte Personen",
+      "abschnitte": ["Im Haushalt", "Ausserhalb des Haushalts"],
+      "jaNeinSchalter": "Ja/Nein — Felder erscheinen erst bei Ja. Nicht umgestellt (wäre eine Eingabe).",
+      "zeilenliste": {"anlegenMit": ["Unterstützte Person im Haushalt hinzufügen", "Unterstützte Person ausserhalb Haushalt hinzufügen"], "listenNamen": ["intSupportedPerson", "extSupportedPerson"]},
+      "felder": [
+        {"label": "Vorname", "id": "intSupportedPersonFirstNameWR:intSupportedPerson:<i>:Input", "typ": "text", "maxlength": 22, "abschnitt": "Im Haushalt", "position": "—"},
+        {"label": "Name", "id": "intSupportedPersonOfficialNameWR:intSupportedPerson:<i>:Input", "typ": "text", "maxlength": 34, "abschnitt": "Im Haushalt", "position": "—"},
+        {"label": "Geburtsjahr", "id": "intSupportedPersonYearOfBirthWR:intSupportedPerson:<i>:Input", "typ": "text", "maxlength": 120, "abschnitt": "Im Haushalt", "position": "—"},
+        {"label": "Vorname", "id": "extSupportedPersonFirstNameWR:extSupportedPerson:<i>:Input", "typ": "text", "maxlength": 22, "abschnitt": "Ausserhalb des Haushalts", "position": "—"},
+        {"label": "Name", "id": "extSupportedPersonOfficialNameWR:extSupportedPerson:<i>:Input", "typ": "text", "maxlength": 34, "abschnitt": "Ausserhalb des Haushalts", "position": "—"},
+        {"label": "Geburtsjahr", "id": "extSupportedPersonYearOfBirthWR:extSupportedPerson:<i>:Input", "typ": "text", "maxlength": 120, "abschnitt": "Ausserhalb des Haushalts", "position": "—"},
+        {"label": "Adresse", "id": "extSupportedPersonAddressLine1WR:extSupportedPerson:<i>:Input", "typ": "text", "maxlength": 50, "abschnitt": "Ausserhalb des Haushalts", "position": "—"}
+      ]
+    },
+    {
+      "key": "persoenliches/vertreter",
+      "gruppe": "Persönliches",
+      "titel": "Vertreter",
+      "route": "tax-assistant/personal/representative-person",
+      "navigation": "Seitenleiste: Persönliches > Vertreter",
+      "abschnitte": ["Vertreter"],
+      "jaNeinSchalter": "Ja/Nein — Felder erscheinen erst bei Ja. Nicht umgestellt.",
+      "felder": [
+        {"label": "Treuhänder-ID", "id": "representativePersonThId:Input", "typ": "text", "maxlength": 20, "abschnitt": "Vertreter", "position": "vollmacht"},
+        {"label": "Firma", "id": "representativePersonOrganisation:Input", "typ": "text", "maxlength": 60, "abschnitt": "Vertreter", "position": "vollmacht"},
+        {"label": "Vorname", "id": "representativePersonFirstName:Input", "typ": "text", "maxlength": 60, "abschnitt": "Vertreter", "position": "vollmacht"},
+        {"label": "Name", "id": "representativePersonOfficialName:Input", "typ": "text", "maxlength": 60, "abschnitt": "Vertreter", "position": "vollmacht"},
+        {"label": "Strasse", "id": "representativePersonStreet:Input", "typ": "text", "maxlength": 60, "abschnitt": "Vertreter", "position": "vollmacht"},
+        {"label": "Nummer", "id": "representativePersonHouseNumber:Input", "typ": "text", "maxlength": 12, "abschnitt": "Vertreter", "position": "vollmacht"},
+        {"label": "PLZ", "id": "representativePersonZip:Input", "typ": "text", "maxlength": 15, "abschnitt": "Vertreter", "position": "vollmacht"},
+        {"label": "Ort", "id": "representativePersonTown:Input", "typ": "text", "maxlength": 40, "abschnitt": "Vertreter", "position": "vollmacht"},
+        {"label": "Telefon", "id": "representativePersonPhoneNumber:Input", "typ": "text", "maxlength": 20, "abschnitt": "Vertreter", "position": "vollmacht"}
+      ]
+    },
+    {
+      "key": "persoenliches/erhaltene-schenkungen",
+      "gruppe": "Persönliches",
+      "titel": "Erhaltene Schenkungen / Erbschaften",
+      "route": "tax-assistant/personal/benefit-payment-received",
+      "navigation": "Seitenleiste: Persönliches > Erhaltene Schenkungen / Erbschaften",
+      "zeilenliste": {"anlegenMit": ["Neue Schenkung/Erbschaft hinzufügen"], "zustand": "leer — Hinweistext: Sie haben noch keine Erhaltene Schenkungen / Erbschaften erfasst"},
+      "felder": [],
+      "bemerkung": "Zeilenstruktur nicht aufgenommen — sichtbar erst nach Anlegen einer Zeile. Zugehöriger Dialog laut Routenverzeichnis: prior-bequeathment-detail."
+    },
+    {
+      "key": "persoenliches/ausgerichtete-schenkungen",
+      "gruppe": "Persönliches",
+      "titel": "Ausgerichtete Schenkungen / Erbvorbezüge",
+      "route": "tax-assistant/personal/benefit-paidout",
+      "navigation": "Seitenleiste: Persönliches > Ausgerichtete Schenkungen / Erbvorbezüge",
+      "jaNeinSchalter": "Ja/Nein vorhanden",
+      "zeilenliste": {"anlegenMit": ["Neue Ausgerichtete Schenkung / Erbvorbezug hinzufügen"], "zustand": "leer"},
+      "felder": [],
+      "bemerkung": "Zeilenstruktur nicht aufgenommen — sichtbar erst nach Anlegen einer Zeile."
+    },
+    {
+      "key": "persoenliches/kapitalleistungen",
+      "gruppe": "Persönliches",
+      "titel": "Kapitalleistungen",
+      "route": "tax-assistant/personal/benefit-payment",
+      "navigation": "Seitenleiste: Persönliches > Kapitalleistungen",
+      "abschnitte": ["Kapitalleistung <n>"],
+      "zeilenliste": {"anlegenMit": ["Kapitalleistung hinzufügen"], "listenName": "benefitPayment"},
+      "felder": [
+        {"label": "Art", "id": "id-<code><text>", "typ": "radio", "optionen": ["1 aus AHV/IV", "2 aus Freizügigkeitskonto/-police", "3 infolge Tod oder für bleibende körperliche oder gesundheitliche Nachteile", "4 aus einer Einrichtung der beruflichen Vorsorge (2. Säule)", "5 aus einer anerkannten Form der geb. Selbstvorsorge (3. Säule a)", "6 sonstige"], "abschnitt": "Kapitalleistung <n>", "position": "rente_saeule3"},
+        {"label": "Auszahlungsdatum", "id": "benefitPaymentDateWR:benefitPayment:<i>:DatePicker", "typ": "datum", "abschnitt": "Kapitalleistung <n>", "position": "rente_saeule3"},
+        {"label": "Betrag", "id": "benefitPaymentAmountWR:benefitPayment:<i>:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Kapitalleistung <n>", "position": "rente_saeule3"}
+      ],
+      "bemerkung": "ACHTUNG Doppelkandidat: rente_saeule3 gehört je nach Beleg hierher (Kapitalleistung, Sonderbesteuerung) ODER in Einkünfte > Renten und Versicherungen (laufende Rente). Entscheid durch Sascha."
+    },
+    {
+      "key": "persoenliches/bankverbindung",
+      "gruppe": "Persönliches",
+      "titel": "Bankverbindung für Rückerstattungen",
+      "route": "tax-assistant/personal/account-data",
+      "navigation": "Seitenleiste: Persönliches > Bankverbindung für Rückerstattungen",
+      "abschnitte": ["Kontoangaben"],
+      "felder": [
+        {"label": "IBAN-Nr.", "id": "listOfSecuritiesBankAccountIbanNumber:Input", "typ": "text", "maxlength": 26, "abschnitt": "Kontoangaben", "position": "—"},
+        {"label": "Konto lautend auf", "id": "listOfSecuritiesBankAccountAccountOwner:Input", "typ": "text", "maxlength": 50, "abschnitt": "Kontoangaben", "position": "—"}
+      ],
+      "bemerkung": "Bankverbindung — trägt Sascha selbst ein, nicht der Agent."
+    },
+    {
+      "key": "einkuenfte/erwerb",
+      "gruppe": "Einkünfte",
+      "titel": "Erwerb",
+      "route": "tax-assistant/revenue/employed",
+      "navigation": "Seitenleiste: Einkünfte > Erwerb",
+      "personenTabs": true,
+      "abschnitte": ["Unselbständiger Erwerb", "Selbständiger Erwerb", "Betriebsvermögen Selbständigerwerbender (Person 1 und Person 2)"],
+      "zeilenliste": {"anlegenMit": ["Weitere Zeile hinzufügen"], "listenNamen": ["revenueEmployedMainRevenueDetailP1", "revenueEmployedSidelineRevenueDetailP1"]},
+      "felder": [
+        {"label": "Von", "id": "revenueEmployedMainRevenueDetailP1BeginDateWR:revenueEmployedMainRevenueDetailP1:<i>:DatePicker", "typ": "datum", "abschnitt": "Haupterwerb <n>", "position": "lohn_haupt"},
+        {"label": "Bis", "id": "revenueEmployedMainRevenueDetailP1EndDateWR:revenueEmployedMainRevenueDetailP1:<i>:DatePicker", "typ": "datum", "abschnitt": "Haupterwerb <n>", "position": "lohn_haupt"},
+        {"label": "Arbeitgeber", "id": "revenueEmployedMainRevenueDetailP1EntrepreneurWR:revenueEmployedMainRevenueDetailP1:<i>:Input", "typ": "text", "maxlength": 86, "abschnitt": "Haupterwerb <n>", "position": "lohn_haupt"},
+        {"label": "Nettolohn", "id": "revenueEmployedMainRevenueDetailP1RevenueWR:revenueEmployedMainRevenueDetailP1:<i>:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Haupterwerb <n>", "position": "lohn_haupt"},
+        {"label": "Beleg hochladen: Lohnausweis Haupterwerb", "id": "attachment_filerevenueEmployedMainRevenueDetailP1<i>", "typ": "datei", "readonly": true, "abschnitt": "Haupterwerb <n>", "position": "lohn_haupt (Beleg)"},
+        {"label": "Von", "id": "revenueEmployedSidelineRevenueDetailP1BeginDateWR:revenueEmployedSidelineRevenueDetailP1:<i>:DatePicker", "typ": "datum", "abschnitt": "Nebenerwerb <n>", "position": "lohn_neben"},
+        {"label": "Bis", "id": "revenueEmployedSidelineRevenueDetailP1EndDateWR:revenueEmployedSidelineRevenueDetailP1:<i>:DatePicker", "typ": "datum", "abschnitt": "Nebenerwerb <n>", "position": "lohn_neben"},
+        {"label": "Arbeitgeber", "id": "revenueEmployedSidelineRevenueDetailP1DescriptionWR:revenueEmployedSidelineRevenueDetailP1:<i>:Input", "typ": "text", "maxlength": 86, "abschnitt": "Nebenerwerb <n>", "position": "lohn_neben"},
+        {"label": "Nettolohn", "id": "revenueEmployedSidelineRevenueDetailP1RevenueWR:revenueEmployedSidelineRevenueDetailP1:<i>:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Nebenerwerb <n>", "position": "lohn_neben"},
+        {"label": "Beleg hochladen: Lohnausweis Nebenerwerb", "id": "attachment_filerevenueEmployedSidelineRevenueDetailP1<i>", "typ": "datei", "readonly": true, "abschnitt": "Nebenerwerb <n>", "position": "lohn_neben (Beleg)"},
+        {"label": "Einkünfte", "id": "revenueSelfemployedMainRevenueAmountP1:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Selbständiger Erwerb / Haupterwerb", "position": "selbstaendig (Einkommen)"},
+        {"label": "Eigenkapital ohne Geschäftswertschriften", "id": "revenueSelfemployedMainAssetsAmountP1:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Selbständiger Erwerb / Haupterwerb", "position": "selbstaendig (Vermögen)"},
+        {"label": "Erhebliche Mitarbeit im Geschäft", "id": "revenueRelevantCooperationMainP1:Checkbox", "typ": "checkbox", "abschnitt": "Selbständiger Erwerb / Haupterwerb", "position": "selbstaendig"},
+        {"label": "Einkünfte", "id": "revenueSelfemployedSidelineRevenueAmountP1:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Selbständiger Erwerb / Nebenerwerb", "position": "selbstaendig (Einkommen)"},
+        {"label": "Eigenkapital ohne Geschäftswertschriften", "id": "revenueSelfemployedSidelineAssetsAmountP1:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Selbständiger Erwerb / Nebenerwerb", "position": "selbstaendig (Vermögen)"},
+        {"label": "Erhebliche Mitarbeit im Geschäft", "id": "revenueRelevantCooperationSidelineP1:Checkbox", "typ": "checkbox", "abschnitt": "Selbständiger Erwerb / Nebenerwerb", "position": "selbstaendig"},
+        {"label": "Eigenkapital Selbständigerwerbender ohne Geschäftswertschriften", "id": "assetSelfEmployedBusinessCapitalFiscalValue:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Betriebsvermögen Selbständigerwerbender (Person 1 und Person 2)", "position": "selbstaendig (Vermögen, gemeinsam)"}
+      ],
+      "bemerkung": "Haupt- und Nebenerwerb sind Zeilenlisten je Person. Der Nettolohn ist Lohnausweis Ziffer 11."
+    },
+    {
+      "key": "einkuenfte/renten-versicherungen",
+      "gruppe": "Einkünfte",
+      "titel": "Renten und Versicherungen",
+      "route": "tax-assistant/revenue/insurance",
+      "navigation": "Seitenleiste: Einkünfte > Renten und Versicherungen",
+      "personenTabs": true,
+      "abschnitte": ["AHV-/IV-Renten (100 %)", "Entschädigungen, Zulagen und Taggelder", "Rente/Pension <n>"],
+      "zeilenliste": {"anlegenMit": ["Weitere Zeile hinzufügen"], "listenName": "revenuePensionDetailP1"},
+      "felder": [
+        {"label": "Art", "id": "id-<code><text>", "typ": "radio", "optionen": ["0 AHV", "1 IV"], "abschnitt": "AHV-/IV-Renten (100 %)", "position": "rente_ahv"},
+        {"label": "Betrag", "id": "revenueInsuranceP1AHVIV100Amount:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "AHV-/IV-Renten (100 %)", "position": "rente_ahv"},
+        {"label": "Erwerbsausfallentschädigungen aus Arbeitslosenversicherung", "id": "revenueUnemploymentInsuranceP1:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Entschädigungen, Zulagen und Taggelder", "position": "ersatz"},
+        {"label": "Kinder- und Familienzulagen, Mutterschaftsentschädigung, Taggelder, EO-Entschädigungen", "id": "revenueChildAllowancesP1:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Entschädigungen, Zulagen und Taggelder", "position": "ersatz"},
+        {"label": "Bezeichnung", "id": "revenuePensionDetailP1DescriptionWR:revenuePensionDetailP1:<i>:Input", "typ": "text", "maxlength": 86, "abschnitt": "Rente/Pension <n>", "position": "rente_pk"},
+        {"label": "Betrag", "id": "revenuePensionDetailP1Amount100WR:revenuePensionDetailP1:<i>:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Rente/Pension <n>", "position": "rente_pk"},
+        {"label": "Prozent", "id": "id-<code><text>", "typ": "radio", "optionen": ["0", "Leibrente", "60", "80", "100"], "abschnitt": "Rente/Pension <n>", "position": "rente_pk (steuerbarer Anteil)"},
+        {"label": "Steuerbar", "id": "revenuePensionDetailP1AmountFinalWR:revenuePensionDetailP1:<i>:Input", "typ": "betrag", "maxlength": 120, "readonly": true, "disabled": true, "abschnitt": "Rente/Pension <n>", "position": "— (Rechenfeld)"}
+      ],
+      "bemerkung": "Auch möglicher Zielort für rente_saeule3, wenn es sich um eine laufende Rente handelt (nicht um eine Kapitalleistung)."
+    },
+    {
+      "key": "einkuenfte/uebrige-einkuenfte",
+      "gruppe": "Einkünfte",
+      "titel": "Übrige Einkünfte",
+      "route": "tax-assistant/revenue/rest",
+      "navigation": "Seitenleiste: Einkünfte > Übrige Einkünfte",
+      "abschnitte": ["Unterhaltsbeiträge", "Kapitalabfindungen für wiederkehrende Leistungen", "Geschäfts- und Korporationsanteile", "Weitere Einkünfte"],
+      "zeilenliste": {"anlegenMit": ["Geschäfts-/ Korporationsanteil hinzufügen", "Weitere Zeile hinzufügen"], "listenNamen": ["inheritanceEtcDetail", "revenueRestRevenueFreeTextDetail"]},
+      "felder": [
+        {"label": "Unterhaltsbeiträge vom geschiedenen/getrennten Ehegatten/Partner", "id": "revenueRestRevenueAlimony:Input", "typ": "betrag", "maxlength": 120, "readonly": true, "disabled": true, "abschnitt": "Unterhaltsbeiträge", "position": "alimente_erhalten — ACHTUNG Rechenfeld, nicht direkt beschreibbar"},
+        {"label": "Unterhaltsbeiträge für minderjährige Kinder (bis zum Monat der Volljährigkeit)", "id": "revenueRestRevenueAlimonyChild:Input", "typ": "betrag", "maxlength": 120, "readonly": true, "disabled": true, "abschnitt": "Unterhaltsbeiträge", "position": "alimente_erhalten — ACHTUNG Rechenfeld"},
+        {"label": "Nähere Bezeichnung", "id": "revenueRestRevenueLumpSumSettlementText:Input", "typ": "text", "maxlength": 28, "abschnitt": "Kapitalabfindungen für wiederkehrende Leistungen", "position": "uebrige_einkuenfte"},
+        {"label": "Anzahl Monate", "id": "revenueLumpSumSettlementMonths:Input", "typ": "zahl", "maxlength": 120, "abschnitt": "Kapitalabfindungen für wiederkehrende Leistungen", "position": "uebrige_einkuenfte"},
+        {"label": "Betrag", "id": "revenueRestRevenueLumpSumSettlementAmount:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Kapitalabfindungen für wiederkehrende Leistungen", "position": "uebrige_einkuenfte"},
+        {"label": "Datum", "id": "inheritanceEtcDetailDateWR:inheritanceEtcDetail:<i>:DatePicker", "typ": "datum", "abschnitt": "Geschäfts-/ Korporationsanteil <n>", "position": "uebriges_vermoegen / uebrige_einkuenfte"},
+        {"label": "Genaue Bezeichnung", "id": "inheritanceEtcDetailDescriptionWR:inheritanceEtcDetail:<i>:Input", "typ": "text", "maxlength": 68, "abschnitt": "Geschäfts-/ Korporationsanteil <n>", "position": "uebriges_vermoegen / uebrige_einkuenfte"},
+        {"label": "Vermögen Betrag", "id": "inheritanceEtcDetailAssetWR:inheritanceEtcDetail:<i>:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Geschäfts-/ Korporationsanteil <n>", "position": "uebriges_vermoegen (Vermögen)"},
+        {"label": "Einkommen Betrag", "id": "inheritanceEtcDetailRevenueWR:inheritanceEtcDetail:<i>:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Geschäfts-/ Korporationsanteil <n>", "position": "uebrige_einkuenfte (Einkommen)"},
+        {"label": "Art", "id": "revenueRestRevenueFreeTextDetailDescriptionWR:revenueRestRevenueFreeTextDetail:<i>:Input", "typ": "text", "maxlength": 38, "abschnitt": "Weitere Einkunft <n>", "position": "uebrige_einkuenfte"},
+        {"label": "Betrag", "id": "revenueRestRevenueFreeTextDetailAmountWR:revenueRestRevenueFreeTextDetail:<i>:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Weitere Einkunft <n>", "position": "uebrige_einkuenfte"}
+      ],
+      "bemerkung": "Die Geschäfts-/Korporationsanteil-Zeile trägt BEIDE Dimensionen (Vermögen + Einkommen) und erscheint identisch auch unter Vermögen > Bewegliches Vermögen — es ist dieselbe Liste (inheritanceEtcDetail), nur zweimal eingeblendet."
+    },
+    {
+      "key": "einkuenfte/liegenschaften",
+      "gruppe": "Einkünfte",
+      "titel": "Liegenschaften",
+      "route": "tax-assistant/revenue/properties",
+      "navigation": "Seitenleiste: Einkünfte > Liegenschaften",
+      "abschnitte": ["Liegenschaftenverzeichnis"],
+      "zeilenliste": {
+        "anlegenMit": ["Liegenschaften hinzufügen"],
+        "spalten": ["Nr.", "Ort", "Strasse und Nummer", "Kanton / Land", "Steuerwert Ertragswert", "Steuerwert Verkehrswert", "Ertrag", "Kosten", "Verbleibender Ertrag", "Aktionen"],
+        "detailDialoge": ["dialogs/.../property-detail", "dialogs/.../property-taxvalue"]
+      },
+      "felder": [],
+      "bemerkung": "Dieselbe Liste wie Vermögen > Liegenschaften — ein Verzeichnis, zwei Einstiege. Die Beiblatt-Felder je Objekt (Eigenmietwert, Mieterspiegel, Unterhalt effektiv/pauschal) liegen im Dialog property-detail und wurden NICHT geöffnet, weil dafür eine Zeile hätte angelegt bzw. eine bestehende Zeile zur Bearbeitung geöffnet werden müssen."
+    },
+    {
+      "key": "abzuege/fahrkosten",
+      "gruppe": "Abzüge",
+      "titel": "Berufsbedingte Fahrkosten",
+      "route": "tax-assistant/deductions/job-expenses-motorvehicle",
+      "navigation": "Seitenleiste: Abzüge > Berufsbedingte Fahrkosten",
+      "personenTabs": true,
+      "abschnitte": ["Öffentliches Verkehrsmittel, Fahrrad, Kleinmotorrad", "Begründung für die Benützung eines privaten Motorfahrzeuges", "Angaben zur Benutzung eines privaten Motorfahrzeugs", "Arbeitsort <n>"],
+      "zeilenliste": {"anlegenMit": ["Weitere Zeile hinzufügen"], "listenName": "jobExpensesDetailsMotorvehicleP1"},
+      "felder": [
+        {"label": "Arbeitgeber", "id": "personDataEmployerP1:Input", "typ": "text", "maxlength": 60, "position": "berufsauslagen_fahrkosten"},
+        {"label": "Arbeitsort Strasse", "id": "jobExpensesPlaceOfWorkP1:Input", "typ": "text", "maxlength": 96, "position": "berufsauslagen_fahrkosten"},
+        {"label": "Abonnementskosten für öffentliche Verkehrsmittel", "id": "jobExpensesTicketCostPublicTransportP1:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Öffentliches Verkehrsmittel, Fahrrad, Kleinmotorrad", "position": "berufsauslagen_fahrkosten"},
+        {"label": "Fahrrad, Kleinmotorrad", "id": "jobExpensesBicycleOrSmallMotorbikeP1:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Öffentliches Verkehrsmittel, Fahrrad, Kleinmotorrad", "position": "berufsauslagen_fahrkosten"},
+        {"label": "Fehlen eines öffentlichen Verkehrsmittels (siehe Wegleitung)", "id": "jobExpensesReasonPrivateMotorvehicleP1NoPublicTransport:Checkbox", "typ": "checkbox", "abschnitt": "Begründung für die Benützung eines privaten Motorfahrzeuges", "position": "berufsauslagen_fahrkosten"},
+        {"label": "Zeitersparnis von über 1 Stunde bei Benützung des privaten Motorfahrzeuges", "id": "jobExpensesReasonPrivateMotorvehicleP1TimeSaving:Checkbox", "typ": "checkbox", "abschnitt": "Begründung für die Benützung eines privaten Motorfahrzeuges", "position": "berufsauslagen_fahrkosten"},
+        {"label": "Ständige Benützung während der Arbeitszeit auf Verlangen und gegen Entschädigung des Arbeitgebers", "id": "jobExpensesReasonPrivateMotorvehicleP1JobRequirement:Checkbox", "typ": "checkbox", "abschnitt": "Begründung für die Benützung eines privaten Motorfahrzeuges", "position": "berufsauslagen_fahrkosten"},
+        {"label": "Unmöglichkeit der Benützung des öffentl. Verkehrsmittels zufolge Krankheit/Gebrechlichkeit", "id": "jobExpensesReasonPrivateMotorvehicleP1MedicalReasons:Checkbox", "typ": "checkbox", "abschnitt": "Begründung für die Benützung eines privaten Motorfahrzeuges", "position": "berufsauslagen_fahrkosten"},
+        {"label": "Geleastes Fahrzeug", "id": "jobExpensesMotorvehicleP1IsLeased:Checkbox", "typ": "checkbox", "abschnitt": "Angaben zur Benutzung eines privaten Motorfahrzeugs", "position": "berufsauslagen_fahrkosten"},
+        {"label": "Arbeitsort", "id": "jobExpensesDetailsMotorvehicleP1PlaceOfWorkWR:jobExpensesDetailsMotorvehicleP1:<i>:Input", "typ": "text", "maxlength": 22, "abschnitt": "Arbeitsort <n>", "position": "berufsauslagen_fahrkosten"},
+        {"label": "Anzahl Arbeitstage", "id": "jobExpensesDetailsMotorvehicleP1NumberOfWorkdaysWR:jobExpensesDetailsMotorvehicleP1:<i>:Input", "typ": "zahl", "maxlength": 120, "abschnitt": "Arbeitsort <n>", "position": "berufsauslagen_fahrkosten"},
+        {"label": "Anzahl km pro Fahrt", "id": "jobExpensesDetailsMotorvehicleP1DistanceWR:jobExpensesDetailsMotorvehicleP1:<i>:Input", "typ": "zahl", "maxlength": 120, "abschnitt": "Arbeitsort <n>", "position": "berufsauslagen_fahrkosten"},
+        {"label": "Fahrten pro Tag", "id": "jobExpensesDetailsMotorvehicleP1NumberOfTripsWR:jobExpensesDetailsMotorvehicleP1:<i>:Input", "typ": "zahl", "maxlength": 120, "abschnitt": "Arbeitsort <n>", "position": "berufsauslagen_fahrkosten"},
+        {"label": "Rappen pro km", "id": "id-<code><text>", "typ": "radio", "optionen": ["70 (Auto)", "40 (Motorrad)"], "abschnitt": "Arbeitsort <n>", "position": "berufsauslagen_fahrkosten"}
+      ]
+    },
+    {
+      "key": "abzuege/weitere-berufsauslagen",
+      "gruppe": "Abzüge",
+      "titel": "Weitere Berufsauslagen",
+      "route": "tax-assistant/deductions/job-expenses-other-expenses",
+      "navigation": "Seitenleiste: Abzüge > Weitere Berufsauslagen",
+      "personenTabs": true,
+      "abschnitte": ["Auswärtige Verpflegung", "Durchgehende mindestens achtstündige Schicht-/Nachtarbeit", "Abrechnungsart Berufskosten", "Mehrkosten Wochenaufenthalt <n>", "Auslagen bei Nebenerwerb"],
+      "zeilenliste": {"anlegenMit": ["Weitere Zeile hinzufügen"], "listenName": "jobExpensesWeekdayStayDetailP1"},
+      "felder": [
+        {"label": "Mit Verbilligung Arbeitgeber", "id": "jobExpensesCateringSubsidizedP1:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Auswärtige Verpflegung", "position": "berufsauslagen_verpflegung"},
+        {"label": "Voll zu Lasten des Arbeitnehmers", "id": "jobExpensesCateringNonSubsidizedP1:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Auswärtige Verpflegung", "position": "berufsauslagen_verpflegung"},
+        {"label": "Anzahl Tage", "id": "jobExpensesCateringShiftWorkNumberOfDaysP1:Input", "typ": "zahl", "maxlength": 120, "abschnitt": "Durchgehende mindestens achtstündige Schicht-/Nachtarbeit", "position": "berufsauslagen_verpflegung"},
+        {"label": "Abrechnungsart Berufskosten", "id": "jobExpensesRemainingJobCostFlatrateOrRealP1:Radio<text>", "typ": "radio", "optionen": ["true = Pauschal, 3 % des Nettolohns gemäss Lohnausweis", "false = Effektive Kosten gemäss Aufstellung"], "abschnitt": "Abrechnungsart Berufskosten (Person 1)", "position": "berufsauslagen_uebrige — Entscheid pauschal/effektiv trifft Sascha"},
+        {"label": "Datum", "id": "jobExpensesWeekdayStayDetailP1DateWR:jobExpensesWeekdayStayDetailP1:<i>:DatePicker", "typ": "datum", "abschnitt": "Mehrkosten Wochenaufenthalt <n>", "position": "berufsauslagen_verpflegung"},
+        {"label": "Bezeichnung", "id": "jobExpensesWeekdayStayDetailP1DescriptionWR:jobExpensesWeekdayStayDetailP1:<i>:Input", "typ": "text", "maxlength": 144, "abschnitt": "Mehrkosten Wochenaufenthalt <n>", "position": "berufsauslagen_verpflegung"},
+        {"label": "Betrag", "id": "jobExpensesWeekdayStayDetailP1AmountWR:jobExpensesWeekdayStayDetailP1:<i>:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Mehrkosten Wochenaufenthalt <n>", "position": "berufsauslagen_verpflegung"},
+        {"label": "Auslagen bei Nebenerwerb", "id": "jobExpensesSidelineFlatrateOrRealP1:Radio<text>", "typ": "radio", "optionen": ["true = Pauschal, 20% der Einkünfte aus Nebenerwerb", "false = Effektive Kosten gemäss Aufstellung"], "abschnitt": "Auslagen bei Nebenerwerb", "position": "berufsauslagen_uebrige — Entscheid pauschal/effektiv trifft Sascha"}
+      ]
+    },
+    {
+      "key": "abzuege/weiterbildung",
+      "gruppe": "Abzüge",
+      "titel": "Berufsorientierte Aus- und Weiterbildung",
+      "route": "tax-assistant/deductions/job-expenses-education",
+      "navigation": "Seitenleiste: Abzüge > Berufsorientierte Aus- und Weiterbildung",
+      "personenTabs": true,
+      "abschnitte": ["Ausbildung <n>"],
+      "zeilenliste": {"anlegenMit": ["Weitere Zeile hinzufügen"], "listenName": "furtherEducationCostDetail"},
+      "felder": [
+        {"label": "Bezeichnung", "id": "furtherEducationCostDetailDescriptionWR:furtherEducationCostDetail:<i>:Input", "typ": "text", "maxlength": 120, "abschnitt": "Ausbildung <n>", "position": "weiterbildung"},
+        {"label": "Betrag", "id": "furtherEducationCostDetailAmountP1WR:furtherEducationCostDetail:<i>:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Ausbildung <n>", "position": "weiterbildung"},
+        {"label": "Beitrag Arbeitgeber oder weiterer Stellen (Bund, Branchenverbände etc.)", "id": "furtherEducationEmployerContributionP1:Input", "typ": "betrag", "maxlength": 120, "position": "weiterbildung (Kürzung)"}
+      ]
+    },
+    {
+      "key": "abzuege/schuldzinsen",
+      "gruppe": "Abzüge",
+      "titel": "Schuldzinsen",
+      "route": "tax-assistant/deductions/deduction-private-liabilities",
+      "navigation": "Seitenleiste: Abzüge > Schuldzinsen",
+      "abschnitte": ["Privatschulden inkl. Grundpfandschulden"],
+      "zeilenliste": {"anlegenMit": ["Weitere Zeile hinzufügen"], "listenName": "listOfLiabilitiesPrivateLiabilities"},
+      "felder": [
+        {"label": "Name, Vorname und Adresse des Gläubigers", "id": "listOfLiabilitiesPrivateLiabilitiesIdentificationWR:listOfLiabilitiesPrivateLiabilities:<i>:Input", "typ": "text", "maxlength": 110, "abschnitt": "Schuld <n>", "position": "schulden (Gläubiger)"},
+        {"label": "Schuld am 31.12.", "id": "listOfLiabilitiesPrivateLiabilitiesLiabilityWR:listOfLiabilitiesPrivateLiabilities:<i>:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Schuld <n>", "position": "schulden (Vermögen / Restschuld)"},
+        {"label": "Schuldzinsen", "id": "listOfLiabilitiesPrivateLiabilitiesLiabilityInterestWR:listOfLiabilitiesPrivateLiabilities:<i>:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Schuld <n>", "position": "schulden (Einkommen / Zins)"}
+      ],
+      "bemerkung": "IDENTISCH mit Vermögen > Schulden — ein einziges Schuldenverzeichnis, zwei Einstiege. Nur einmal erfassen."
+    },
+    {
+      "key": "abzuege/unterhalt-renten",
+      "gruppe": "Abzüge",
+      "titel": "Unterhalt und Renten",
+      "route": "tax-assistant/deductions/deduction-payment",
+      "navigation": "Seitenleiste: Abzüge > Unterhalt und Renten",
+      "abschnitte": ["Unterhaltsbeiträge", "Rentenleistungen"],
+      "felder": [
+        {"label": "Unterhaltsbeiträge an den geschiedenen oder getrennt lebenden Ehegatten/Partner", "id": "deductionPaymentAlimonyCantonalTax:Input", "typ": "betrag", "maxlength": 120, "readonly": true, "disabled": true, "abschnitt": "Unterhaltsbeiträge", "position": "alimente_bezahlt — ACHTUNG Rechenfeld, speist sich aus dem Dialog deduction-payment-alimony"},
+        {"label": "Unterhaltsbeiträge für minderjährige Kinder (bis zum Monat der Volljährigkeit)", "id": "deductionPaymentAlimonyChildCantonalTax:Input", "typ": "betrag", "maxlength": 120, "readonly": true, "disabled": true, "abschnitt": "Unterhaltsbeiträge", "position": "alimente_bezahlt — ACHTUNG Rechenfeld"},
+        {"label": "Rentenleistungen", "id": "deductionPaymentPensionTotal:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Rentenleistungen", "position": "—"},
+        {"label": "Rentenleistungen CHF, abzugsfähig: Ertragsanteil", "id": "deductionPaymentPensionDeduction:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Rentenleistungen", "position": "—"}
+      ]
+    },
+    {
+      "key": "abzuege/vorsorge",
+      "gruppe": "Abzüge",
+      "titel": "Säule 3a und weitere Vorsorgearten",
+      "route": "tax-assistant/deductions/provision",
+      "navigation": "Seitenleiste: Abzüge > Säule 3a und weitere Vorsorgearten",
+      "personenTabs": true,
+      "abschnitte": ["Beiträge Säule 3a", "Beiträge an die AHV, IV und 2. Säule"],
+      "zeilenliste": {"anlegenMit": ["Weitere Zeile hinzufügen"], "zustand": "Abschnitt AHV/IV/2. Säule leer — Hinweistext: Sie haben noch keine Beiträge an die AHV, IV und 2. Säule erfasst"},
+      "felder": [
+        {"label": "Betrag Effektiv", "id": "deductionProvision3aP1Effective:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Beiträge Säule 3a", "position": "saeule_3a"}
+      ],
+      "bemerkung": "Der Abschnitt Beiträge an die AHV, IV und 2. Säule ist eine leere Zeilenliste — Spaltenstruktur NICHT aufgenommen. Dort landen laut Katalog SOWOHL einkauf_pk (Einkauf 2. Säule) ALS AUCH ahv_beitraege (AHV/IV/EO Nichterwerbstätige). Welche Zeilenart welche Position trägt, ist offen und muss Sascha entscheiden."
+    },
+    {
+      "key": "abzuege/versicherungspraemien",
+      "gruppe": "Abzüge",
+      "titel": "Versicherungsprämien",
+      "route": "tax-assistant/deductions/insurance-premiums",
+      "navigation": "Seitenleiste: Abzüge > Versicherungsprämien",
+      "abschnitte": ["Bezahlte Versicherungsprämien und Zinsen von Sparkapitalien"],
+      "tabellen": [{"zweck": "Abzugsberechnung (Rechenfelder)", "spalten": ["Kategorie", "Staatssteuer", "Bundessteuer"]}],
+      "felder": [
+        {"label": "Private Krankenversicherungsprämien", "id": "insurancePremiumsPrivateHealthInsurance:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Bezahlte Versicherungsprämien und Zinsen von Sparkapitalien", "position": "versicherungspraemien"},
+        {"label": "Private Unfallversicherungsprämien", "id": "insurancePremiumsPrivateAccidentInsurance:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Bezahlte Versicherungsprämien und Zinsen von Sparkapitalien", "position": "versicherungspraemien"},
+        {"label": "Private Lebens- und Rentenversicherungsprämien", "id": "insurancePremiumsPrivateLifeAndPensionInsurance:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Bezahlte Versicherungsprämien und Zinsen von Sparkapitalien", "position": "versicherungspraemien"},
+        {"label": "Zinsen von Sparkapitalien", "id": "insurancePremiumsInterestSavings:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Bezahlte Versicherungsprämien und Zinsen von Sparkapitalien", "position": "versicherungspraemien"},
+        {"label": "Abzüglich erhaltene Prämienverbilligungen", "id": "insurancePremiumsDeductionsPremiumsReduction:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Bezahlte Versicherungsprämien und Zinsen von Sparkapitalien", "position": "versicherungspraemien (Kürzung)"}
+      ],
+      "bemerkung": "Die GEBÄUDEversicherung gehört NICHT hierher, sondern in den Liegenschaftsunterhalt."
+    },
+    {
+      "key": "abzuege/krankheitskosten",
+      "gruppe": "Abzüge",
+      "titel": "Krankheits- und Unfallkosten",
+      "route": "tax-assistant/deductions/disease-accident-expenses",
+      "navigation": "Seitenleiste: Abzüge > Krankheits- und Unfallkosten",
+      "jaNeinSchalter": "Ja/Nein vorhanden",
+      "abschnitte": ["Die Kosten wurden für folgende Personen aufgewendet", "Aufwendungen", "In obigem Selbstbehalt NICHT enthaltene, weitere Aufwendungen", "Vergütungen Dritter und Anteil Lebenshaltungskosten", "Pauschale"],
+      "zeilenliste": {"anlegenMit": ["Weitere Zeile hinzufügen"], "listenName": "diseaseAndAccidentExpensesConcernedPerson"},
+      "felder": [
+        {"label": "Vorname", "id": "diseaseAndAccidentExpensesConcernedPersonFirstNameWR:diseaseAndAccidentExpensesConcernedPerson:<i>:Input", "typ": "text", "maxlength": 40, "abschnitt": "Die Kosten wurden für folgende Personen aufgewendet", "position": "krankheitskosten"},
+        {"label": "Name", "id": "diseaseAndAccidentExpensesConcernedPersonOfficialNameWR:diseaseAndAccidentExpensesConcernedPerson:<i>:Input", "typ": "text", "maxlength": 50, "abschnitt": "Die Kosten wurden für folgende Personen aufgewendet", "position": "krankheitskosten"},
+        {"label": "Wohn-/Aufenthaltsort", "id": "diseaseAndAccidentExpensesConcernedPersonLocationWR:diseaseAndAccidentExpensesConcernedPerson:<i>:Input", "typ": "text", "maxlength": 62, "abschnitt": "Die Kosten wurden für folgende Personen aufgewendet", "position": "krankheitskosten"},
+        {"label": "Selbstbehalt gemäss Abrechnung Krankenkasse und Versicherung", "id": "diseaseAndAccidentExpensesExpenseFranchise:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Aufwendungen", "position": "krankheitskosten"},
+        {"label": "Art Weitere Aufwendungen", "id": "id-<code><text>Weitere Aufwendungen", "typ": "radio", "optionen": ["Arzt und vom Arzt verordnete Medikamente", "Zahnarztkosten", "Pflegepersonal (entgeltliche Leistungen von Drittpersonen)", "Kosten für Aufenthalt in Spitälern und Heilstätten usw.", "Ärztlich verordnete Therapien, Kuraufenthalte usw."], "abschnitt": "In obigem Selbstbehalt NICHT enthaltene, weitere Aufwendungen", "position": "krankheitskosten"},
+        {"label": "Betrag CHF", "id": "diseaseAndAccidentExpensesExpenseFreeTextAmount:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "In obigem Selbstbehalt NICHT enthaltene, weitere Aufwendungen", "position": "krankheitskosten"},
+        {"label": "Beschreibung weitere Aufwendungen", "id": "diseaseAndAccidentExpensesExpenseFreeText:Input", "typ": "text", "maxlength": 104, "abschnitt": "In obigem Selbstbehalt NICHT enthaltene, weitere Aufwendungen", "position": "krankheitskosten"},
+        {"label": "Art Krankenkasse/Versicherung", "id": "id-<code><text>Krankenkasse/Versicherung", "typ": "radio", "optionen": ["Anteil Lebenshaltungskosten (z.B. Ernährung)", "Weitere Vergütungen"], "abschnitt": "Vergütungen Dritter und Anteil Lebenshaltungskosten", "position": "krankheitskosten (Kürzung)"},
+        {"label": "Betrag CHF", "id": "diseaseAndAccidentExpensesAllowanceInsurance:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Vergütungen Dritter und Anteil Lebenshaltungskosten", "position": "krankheitskosten (Kürzung)"},
+        {"label": "Pauschale (D)", "id": "diseaseAndAccidentExpensesTotalAmountExpensesFlatrate:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Pauschale", "position": "krankheitskosten (Pauschale)"}
+      ],
+      "bemerkung": "Nur der selbst getragene Teil zählt — Kassenleistung gehört in die Kürzungsfelder."
+    },
+    {
+      "key": "abzuege/behinderungskosten",
+      "gruppe": "Abzüge",
+      "titel": "Behinderungsbedingte Kosten",
+      "route": "tax-assistant/deductions/handicap-expenses",
+      "navigation": "Seitenleiste: Abzüge > Behinderungsbedingte Kosten",
+      "abschnitte": ["Die Kosten wurden für folgende Personen aufgewendet", "Effektive Aufwendungen", "Vergütungen Dritter und Anteil Lebenshaltungskosten", "Pauschale"],
+      "zeilenliste": {"anlegenMit": ["Weitere Zeile hinzufügen"], "listenName": "handicapExpensesConcernedPersonHandicap"},
+      "felder": [
+        {"label": "Vorname", "id": "handicapExpensesConcernedPersonHandicapFirstNameWR:handicapExpensesConcernedPersonHandicap:<i>:Input", "typ": "text", "maxlength": 38, "abschnitt": "Die Kosten wurden für folgende Personen aufgewendet", "position": "behinderungskosten"},
+        {"label": "Name", "id": "handicapExpensesConcernedPersonHandicapOfficialNameWR:handicapExpensesConcernedPersonHandicap:<i>:Input", "typ": "text", "maxlength": 42, "abschnitt": "Die Kosten wurden für folgende Personen aufgewendet", "position": "behinderungskosten"},
+        {"label": "Wohn-/Aufenthaltsort", "id": "handicapExpensesConcernedPersonHandicapLocationWR:handicapExpensesConcernedPersonHandicap:<i>:Input", "typ": "text", "maxlength": 36, "abschnitt": "Die Kosten wurden für folgende Personen aufgewendet", "position": "behinderungskosten"},
+        {"label": "Art der Behinderung", "id": "handicapExpensesConcernedPersonHandicapHandicapWR:handicapExpensesConcernedPersonHandicap:<i>:Input", "typ": "text", "maxlength": 32, "abschnitt": "Die Kosten wurden für folgende Personen aufgewendet", "position": "behinderungskosten"},
+        {"label": "Art (Empfänger von IV-Leistungen etc.)", "id": "id-<code><text>Behinderungsbedingte Kosten bei Empfängern von IV-Leistungen, etc.", "typ": "radio", "optionen": ["Behinderungsbedingte Kosten bei Heim- und Entlastungsaufenthalten", "Weitere Aufwendungen"], "abschnitt": "Effektive Aufwendungen", "position": "behinderungskosten"},
+        {"label": "Betrag CHF", "id": "handicapExpensesExpenseIVAllowances:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Effektive Aufwendungen", "position": "behinderungskosten"},
+        {"label": "Art Weitere Vergütungen", "id": "id-<code><text>Weitere Vergütungen", "typ": "radio", "optionen": ["Krankenkasse / Versicherungen", "Hilflosenentschädigungen", "Anteil Lebenshaltungskosten (z.B. Ernährung, Bekleidung, Unterkunft)"], "abschnitt": "Vergütungen Dritter und Anteil Lebenshaltungskosten", "position": "behinderungskosten (Kürzung)"},
+        {"label": "Betrag CHF", "id": "handicapExpensesAllowanceFreeTextAmount:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Vergütungen Dritter und Anteil Lebenshaltungskosten", "position": "behinderungskosten (Kürzung)"},
+        {"label": "Beschreibung weitere Vergütungen", "id": "handicapExpensesAllowanceFreeText:Input", "typ": "text", "maxlength": 106, "abschnitt": "Vergütungen Dritter und Anteil Lebenshaltungskosten", "position": "behinderungskosten (Kürzung)"},
+        {"label": "Pauschale, Art (D)", "id": "handicapExpensesTotalAmountDeductionFlatrateDescription:Input", "typ": "text", "maxlength": 86, "abschnitt": "Pauschale", "position": "behinderungskosten (Pauschale)"},
+        {"label": "Betrag", "id": "handicapExpensesTotalAmountDeductionFlatrate:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Pauschale", "position": "behinderungskosten (Pauschale)"}
+      ]
+    },
+    {
+      "key": "abzuege/spenden",
+      "gruppe": "Abzüge",
+      "titel": "Gemeinnützige Zuwendungen",
+      "route": "tax-assistant/deductions/revenue-calculation-deduction-charity-detail",
+      "navigation": "Seitenleiste: Abzüge > Gemeinnützige Zuwendungen",
+      "jaNeinSchalter": "Ja/Nein vorhanden",
+      "abschnitte": ["Zuwendung <n>"],
+      "zeilenliste": {"anlegenMit": ["Neue Gemeinnützige Zuwendung hinzufügen"], "listenName": "revenueCalculationDeductionCharityDetail"},
+      "felder": [
+        {"label": "Datum", "id": "revenueCalculationDeductionCharityDetailDateWR:revenueCalculationDeductionCharityDetail:<i>:DatePicker", "typ": "datum", "abschnitt": "Zuwendung <n>", "position": "spenden"},
+        {"label": "Bezeichnung", "id": "revenueCalculationDeductionCharityDetailDescriptionWR:revenueCalculationDeductionCharityDetail:<i>:Input", "typ": "text", "maxlength": 130, "abschnitt": "Zuwendung <n>", "position": "spenden"},
+        {"label": "Betrag", "id": "revenueCalculationDeductionCharityDetailAmountCantonalTaxWR:revenueCalculationDeductionCharityDetail:<i>:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Zuwendung <n>", "position": "spenden"}
+      ],
+      "bemerkung": "Je Spende eine Zeile mit Datum und Empfänger — passt genau auf die Katalog-Aufstellung."
+    },
+    {
+      "key": "abzuege/weitere-abzuege",
+      "gruppe": "Abzüge",
+      "titel": "Weitere Abzüge",
+      "route": "tax-assistant/deductions/deduction-further-deduction",
+      "navigation": "Seitenleiste: Abzüge > Weitere Abzüge",
+      "abschnitte": ["Kosten für die Verwaltung des beweglichen Privatvermögens", "Übrige weitere Abzüge", "Beiträge an politische Parteien"],
+      "tabellen": [{"zweck": "Abzugsberechnung (Rechenfelder)", "spalten": ["Kategorie", "Staatssteuer", "Bundessteuer"]}],
+      "zeilenliste": {"anlegenMit": ["Weitere Zeile hinzufügen"], "listenNamen": ["deductionFurtherDeductionFinancialManagementDetail", "deductionFurtherDeductionFreeTextDetail", "deductionFurtherDeductionPoliticalPartyDetail"]},
+      "felder": [
+        {"label": "Bezeichnung", "id": "deductionFurtherDeductionFinancialManagementDetailDescriptionWR:deductionFurtherDeductionFinancialManagementDetail:<i>:Input", "typ": "text", "maxlength": 120, "abschnitt": "Kosten für die Verwaltung des beweglichen Privatvermögens", "position": "uebrige_abzuege (Vermögensverwaltung)"},
+        {"label": "Betrag", "id": "deductionFurtherDeductionFinancialManagementDetailAmountCantonalWR:deductionFurtherDeductionFinancialManagementDetail:<i>:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Kosten für die Verwaltung des beweglichen Privatvermögens", "position": "uebrige_abzuege (Vermögensverwaltung)"},
+        {"label": "Art", "id": "id-<code><text>", "typ": "radio", "optionen": ["1 Sonstige Abzüge", "3 NBU-Abzüge Person 1", "4 NBU-Abzüge Person 2", "5 Diff. Grundstückgewinn Person 1", "6 Diff. Grundstückgewinn Person 2", "7 Realisierte stille Reserven Person 1", "8 Realisierte stille Reserven Person 2", "9 Einsatzkosten Lotteriegewinn", "10 Diff. Freibetrag Feuerwehrsold Person 1", "11 Diff. Freibetrag Feuerwehrsold Person 2", "12 Patente, Forschung & Entwicklung Person 1", "13 Patente, Forschung & Entwicklung Person 2"], "abschnitt": "Übrige weitere Abzüge", "position": "uebrige_abzuege"},
+        {"label": "Bezeichnung", "id": "deductionFurtherDeductionFreeTextDetailDescriptionWR:deductionFurtherDeductionFreeTextDetail:<i>:Input", "typ": "text", "maxlength": 114, "abschnitt": "Übrige weitere Abzüge", "position": "uebrige_abzuege"},
+        {"label": "Staatssteuer", "id": "deductionFurtherDeductionFreeTextDetailAmountCantonalTaxWR:deductionFurtherDeductionFreeTextDetail:<i>:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Übrige weitere Abzüge", "position": "uebrige_abzuege"},
+        {"label": "Bundessteuer", "id": "deductionFurtherDeductionFreeTextDetailAmountFederalTaxWR:deductionFurtherDeductionFreeTextDetail:<i>:Input", "typ": "betrag", "maxlength": 120, "readonly": true, "disabled": true, "abschnitt": "Übrige weitere Abzüge", "position": "— (Rechenfeld)"},
+        {"label": "Datum", "id": "deductionFurtherDeductionPoliticalPartyDetailDateWR:deductionFurtherDeductionPoliticalPartyDetail:<i>:DatePicker", "typ": "datum", "abschnitt": "Beiträge an politische Parteien", "position": "parteispenden"},
+        {"label": "Bezeichnung", "id": "deductionFurtherDeductionPoliticalPartyDetailDescriptionWR:deductionFurtherDeductionPoliticalPartyDetail:<i>:Input", "typ": "text", "maxlength": 130, "abschnitt": "Beiträge an politische Parteien", "position": "parteispenden"},
+        {"label": "Betrag CHF", "id": "deductionFurtherDeductionPoliticalPartyDetailAmountWR:deductionFurtherDeductionPoliticalPartyDetail:<i>:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Beiträge an politische Parteien", "position": "parteispenden"}
+      ],
+      "bemerkung": "Der Pauschalabzug für Vermögensverwaltung wird vom Portal selbst gerechnet (eigener Abschnitt Automatischer Pauschalabzug). Hier nur effektive Kosten erfassen."
+    },
+    {
+      "key": "wertschriften/wertschriftenverzeichnis",
+      "gruppe": "Wertschriften",
+      "titel": "Wertschriftenverzeichnis",
+      "route": "tax-assistant/securities/security-list",
+      "navigation": "Seitenleiste: Wertschriften > Wertschriftenverzeichnis",
+      "abschnitte": ["Neue Wertschrift hinzufügen", "Wertschriften"],
+      "zeilenliste": {
+        "anlegenMit": [
+          "eSteuerauszug importieren (Import eines eSteuerauszug-PDF)",
+          "Wertschrift suchen (Online-Suche nach Valoren-/ISIN-Nummer; findet auch Kryptowährungen; füllt Steuerwert und Erträge automatisch)",
+          "Wertschriftenart auswählen > Bankkonto",
+          "Wertschriftenart auswählen > Wertschrift und Guthaben",
+          "Wertschriftenart auswählen > Wertschrift mit ausl. QS (DA-1)"
+        ],
+        "spalten": ["Bezeichnung Valoren-Nr.", "Nennwert/ Stückzahl", "Steuerwert CHF", "Ertrag CHF", "Schaltfläche Bearbeiten/Löschen"],
+        "detailDialoge": [
+          "dialogs/securities/securities-detail",
+          "dialogs/securities/securities-search",
+          "dialogs/securities/load-tax-statement",
+          "dialogs/securities/tax-statement-detail-bank-account",
+          "dialogs/securities/tax-statement-detail-security",
+          "dialogs/securities/tax-statement-detail-security-ictax",
+          "dialogs/securities/tax-statement-detail-liability",
+          "dialogs/securities/tax-statement-detail-lump-sum-tax-credit",
+          "dialogs/securities/securities-bfp-calculation",
+          "dialogs/securities/da-1-detail",
+          "dialogs/securities/da1-search"
+        ]
+      },
+      "felder": [
+        {"label": "Wertschriftenanzeige gruppieren (nach Art)", "id": "slider_groupListOfSecuritiesAndDa1", "typ": "checkbox", "position": "— (nur Anzeige)"},
+        {"label": "Ich bestätige, dass ich über kein Bankkonto und keine sonstigen Wertschriften verfüge.", "id": "confirmNoSecurities:Checkbox", "typ": "checkbox", "position": "— (Verzicht; setzt Sascha)"}
+      ],
+      "bemerkung": "WICHTIGSTE LÜCKE DER AUFNAHME. Die eigentlichen Zeilenfelder (Konto/Depot, Bezeichnung, Valoren-Nr., Nennwert/Stückzahl, Steuerwert, Bruttoertrag, Verrechnungssteuer-Antrag, Code Q für qualifizierte Beteiligung) liegen im Dialog securities-detail. Dieser Dialog wurde NICHT geöffnet, weil dazu entweder eine neue Zeile angelegt oder eine bestehende Zeile zur Bearbeitung geöffnet werden müsste. Erst nachtragen, wenn Sascha das freigibt."
+    },
+    {
+      "key": "wertschriften/da1",
+      "gruppe": "Wertschriften",
+      "titel": "Angaben zum DA-1 Formular",
+      "route": "tax-assistant/securities/da1-data",
+      "navigation": "Seitenleiste: Wertschriften > Angaben zum DA-1 Formular",
+      "abschnitte": ["Persönliche Angaben", "DA-1 Kontoangaben"],
+      "felder": [
+        {"label": "Wohnsitz am 01.01.2025", "id": "da1DomicileBeginningOfYear:Input", "typ": "text", "maxlength": 20, "abschnitt": "Persönliche Angaben", "position": "—"},
+        {"label": "Wohnsitz am 31.12.2025", "id": "da1DomicileEndOfYear:Input", "typ": "text", "maxlength": 20, "abschnitt": "Persönliche Angaben", "position": "—"},
+        {"label": "Werden im Antrag Erträge aus einem Gemeinschaftsdepot oder einem Erbanfall geltend gemacht?", "id": "da1EarningsCommunity:RadioJa", "typ": "radio", "optionen": ["true = Ja", "false = Nein"], "abschnitt": "Persönliche Angaben", "position": "—"},
+        {"label": "Fragen an die Besitzer von USA Wertschriften: Sind im Antrag US-Erträge enthalten?", "id": "da1CitizenshipUSA:RadioJa", "typ": "radio", "optionen": ["true = Ja", "false = Nein"], "abschnitt": "Persönliche Angaben", "position": "—"},
+        {"label": "Kontoangaben aus dem Bereich Persönliches / Bankverbindung für Rückerstattungen übernehmen", "id": "da1BankAccountIsFromWV:Checkbox", "typ": "checkbox", "abschnitt": "DA-1 Kontoangaben", "position": "—"},
+        {"label": "IBAN-Nr.", "id": "da1BankAccountIbanNumber:Input", "typ": "text", "maxlength": 42, "abschnitt": "DA-1 Kontoangaben", "position": "—"},
+        {"label": "Konto lautend auf", "id": "da1BankAccountAccountOwner:Input", "typ": "text", "maxlength": 50, "abschnitt": "DA-1 Kontoangaben", "position": "—"}
+      ],
+      "bemerkung": "Rahmenangaben für die Anrechnung ausländischer Quellensteuern. IBAN setzt Sascha selbst."
+    },
+    {
+      "key": "vermoegen/bewegliches-vermoegen",
+      "gruppe": "Vermögen",
+      "titel": "Bewegliches Vermögen",
+      "route": "tax-assistant/assets/asset-movable-property",
+      "navigation": "Seitenleiste: Vermögen > Bewegliches Vermögen",
+      "abschnitte": ["Bargeld, Gold und andere Edelmetalle", "Geschäfts- und Korporationsanteile", "Übrige Vermögenswerte"],
+      "zeilenliste": {"anlegenMit": ["Geschäfts-/ Korporationsanteil hinzufügen"], "listenName": "inheritanceEtcDetail"},
+      "felder": [
+        {"label": "Betrag", "id": "assetMovablePropertyCashValueFiscalValue:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Bargeld, Gold und andere Edelmetalle", "position": "bargeld"},
+        {"label": "Datum", "id": "inheritanceEtcDetailDateWR:inheritanceEtcDetail:<i>:DatePicker", "typ": "datum", "abschnitt": "Geschäfts-/ Korporationsanteil <n>", "position": "uebriges_vermoegen"},
+        {"label": "Genaue Bezeichnung", "id": "inheritanceEtcDetailDescriptionWR:inheritanceEtcDetail:<i>:Input", "typ": "text", "maxlength": 68, "abschnitt": "Geschäfts-/ Korporationsanteil <n>", "position": "uebriges_vermoegen"},
+        {"label": "Vermögen Betrag", "id": "inheritanceEtcDetailAssetWR:inheritanceEtcDetail:<i>:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Geschäfts-/ Korporationsanteil <n>", "position": "uebriges_vermoegen (Vermögen)"},
+        {"label": "Einkommen Betrag", "id": "inheritanceEtcDetailRevenueWR:inheritanceEtcDetail:<i>:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Geschäfts-/ Korporationsanteil <n>", "position": "uebrige_einkuenfte (Einkommen)"},
+        {"label": "Nähere Bezeichnung", "id": "assetMovablePropertyFreeText:Input", "typ": "text", "maxlength": 60, "abschnitt": "Übrige Vermögenswerte", "position": "uebriges_vermoegen"},
+        {"label": "Betrag", "id": "assetMovablePropertyFreeTextAmountFiscalValue:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Übrige Vermögenswerte", "position": "uebriges_vermoegen"}
+      ],
+      "bemerkung": "Kryptowährungen gehören laut Katalog NICHT hierher, sondern ins Wertschriftenverzeichnis (dort über Wertschrift suchen auffindbar)."
+    },
+    {
+      "key": "vermoegen/lebensversicherungen",
+      "gruppe": "Vermögen",
+      "titel": "Lebens- und Rentenversicherungen",
+      "route": "tax-assistant/assets/asset-movable-property-life-insurances",
+      "navigation": "Seitenleiste: Vermögen > Lebens- und Rentenversicherungen",
+      "jaNeinSchalter": "Ja/Nein vorhanden",
+      "abschnitte": ["Versicherung <n>"],
+      "zeilenliste": {"anlegenMit": ["Neue Versicherung hinzufügen"], "listenName": "assetMovablePropertyLifeInsurances"},
+      "felder": [
+        {"label": "Versicherungsgesellschaft", "id": "assetMovablePropertyLifeInsurancesCompanyWR:assetMovablePropertyLifeInsurances:<i>:Input", "typ": "text", "maxlength": 40, "abschnitt": "Versicherung <n>", "position": "lebensversicherung"},
+        {"label": "Abschlussjahr", "id": "assetMovablePropertyLifeInsurancesFixtureYearWR:assetMovablePropertyLifeInsurances:<i>:Input", "typ": "zahl", "maxlength": 120, "abschnitt": "Versicherung <n>", "position": "lebensversicherung"},
+        {"label": "Ablaufjahr", "id": "assetMovablePropertyLifeInsurancesExpirationYearWR:assetMovablePropertyLifeInsurances:<i>:Input", "typ": "zahl", "maxlength": 120, "abschnitt": "Versicherung <n>", "position": "lebensversicherung"},
+        {"label": "Steuerwert", "id": "assetMovablePropertyLifeInsurancesFiscalValueWR:assetMovablePropertyLifeInsurances:<i>:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Versicherung <n>", "position": "lebensversicherung (Rückkaufswert)"}
+      ]
+    },
+    {
+      "key": "vermoegen/motorfahrzeuge",
+      "gruppe": "Vermögen",
+      "titel": "Motorfahrzeuge",
+      "route": "tax-assistant/assets/asset-movable-property-vehicles",
+      "navigation": "Seitenleiste: Vermögen > Motorfahrzeuge",
+      "abschnitte": ["Fahrzeug <n>"],
+      "zeilenliste": {"anlegenMit": ["Neues Motorfahrzeug hinzufügen"], "listenName": "assetMovablePropertyVehicleDetails"},
+      "felder": [
+        {"label": "Bezeichnung", "id": "assetMovablePropertyVehicleDetailDescriptionWR:assetMovablePropertyVehicleDetails:<i>:Input", "typ": "text", "maxlength": 34, "abschnitt": "Fahrzeug <n>", "position": "fahrzeuge"},
+        {"label": "Kaufjahr", "id": "assetMovablePropertyVehicleDetailYearWR:assetMovablePropertyVehicleDetails:<i>:Input", "typ": "zahl", "maxlength": 120, "abschnitt": "Fahrzeug <n>", "position": "fahrzeuge"},
+        {"label": "Kaufpreis", "id": "assetMovablePropertyVehicleDetailPurchasePriceWR:assetMovablePropertyVehicleDetails:<i>:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Fahrzeug <n>", "position": "fahrzeuge"},
+        {"label": "Steuerwert", "id": "assetMovablePropertyVehicleDetailFiscalValueWR:assetMovablePropertyVehicleDetails:<i>:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Fahrzeug <n>", "position": "fahrzeuge (Zeitwert)"}
+      ]
+    },
+    {
+      "key": "vermoegen/liegenschaften",
+      "gruppe": "Vermögen",
+      "titel": "Liegenschaften",
+      "route": "tax-assistant/assets/properties",
+      "navigation": "Seitenleiste: Vermögen > Liegenschaften",
+      "abschnitte": ["Liegenschaftenverzeichnis"],
+      "zeilenliste": {
+        "anlegenMit": ["Liegenschaften hinzufügen"],
+        "spalten": ["Nr.", "Ort", "Strasse und Nummer", "Kanton / Land", "Steuerwert Ertragswert", "Steuerwert Verkehrswert", "Ertrag", "Kosten", "Verbleibender Ertrag", "Aktionen"],
+        "detailDialoge": ["dialogs/.../property-detail", "dialogs/.../property-taxvalue"]
+      },
+      "felder": [],
+      "bemerkung": "Dieselbe Liste wie Einkünfte > Liegenschaften. Detailfelder je Objekt NICHT aufgenommen (Dialog nicht geöffnet). Der Entscheid Unterhalt effektiv ODER pauschal liegt im Objektdialog und gehört Sascha."
+    },
+    {
+      "key": "vermoegen/schulden",
+      "gruppe": "Vermögen",
+      "titel": "Schulden",
+      "route": "tax-assistant/assets/asset-private-liabilities",
+      "navigation": "Seitenleiste: Vermögen > Schulden",
+      "abschnitte": ["Privatschulden inkl. Grundpfandschulden"],
+      "zeilenliste": {"anlegenMit": ["Weitere Zeile hinzufügen"], "listenName": "listOfLiabilitiesPrivateLiabilities"},
+      "felder": [
+        {"label": "Name, Vorname und Adresse des Gläubigers", "id": "listOfLiabilitiesPrivateLiabilitiesIdentificationWR:listOfLiabilitiesPrivateLiabilities:<i>:Input", "typ": "text", "maxlength": 110, "abschnitt": "Schuld <n>", "position": "schulden (Gläubiger)"},
+        {"label": "Schuld am 31.12.", "id": "listOfLiabilitiesPrivateLiabilitiesLiabilityWR:listOfLiabilitiesPrivateLiabilities:<i>:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Schuld <n>", "position": "schulden (Vermögen / Restschuld)"},
+        {"label": "Schuldzinsen", "id": "listOfLiabilitiesPrivateLiabilitiesLiabilityInterestWR:listOfLiabilitiesPrivateLiabilities:<i>:Input", "typ": "betrag", "maxlength": 120, "abschnitt": "Schuld <n>", "position": "schulden (Einkommen / Zins)"}
+      ],
+      "bemerkung": "IDENTISCH mit Abzüge > Schuldzinsen — ein Verzeichnis, zwei Einstiege. Eine Zeile je Gläubiger; Restschuld und Zins in getrennte Spalten. Eine Zuordnung der Hypothek zum Objekt gibt es in dieser Zeile NICHT."
+    },
+    {
+      "key": "abschluss/steuerausscheidung",
+      "gruppe": "Abschluss",
+      "titel": "Steuerausscheidung",
+      "route": "tax-assistant/finish/tax-separation",
+      "navigation": "Seitenleiste: Abschluss > Steuerausscheidung",
+      "abschnitte": ["Manuelle Steuerausscheidung"],
+      "felder": [],
+      "bemerkung": "Keine Eingabefelder im Grundzustand. Zugehörige Dialoge laut Routenverzeichnis: invalid-tax-separation, tax-separation-tip, more-real-estates-countries."
+    },
+    {
+      "key": "abschluss/bemerkungen",
+      "gruppe": "Abschluss",
+      "titel": "Bemerkungen",
+      "route": "tax-assistant/finish/commentary",
+      "navigation": "Seitenleiste: Abschluss > Bemerkungen",
+      "jaNeinSchalter": "Ja/Nein vorhanden",
+      "felder": [
+        {"label": "Bemerkungen zur Steuererklärung können Sie hier eintragen:", "id": "commentary:Input", "typ": "textarea", "maxlength": 10000, "position": "—"}
+      ]
+    },
+    {
+      "key": "abschluss/belege",
+      "gruppe": "Abschluss",
+      "titel": "Belege",
+      "route": "tax-assistant/finish/attachments",
+      "navigation": "Seitenleiste: Abschluss > Belege",
+      "abschnitte": ["Ihre hochgeladenen Belege", "eSteuerauszüge"],
+      "tabellen": [{"zweck": "eSteuerauszüge", "spalten": ["Kunde", "Institution", "Kunden-Nr", "Schaltfläche Bearbeiten/Löschen"]}],
+      "felder": [
+        {"label": "Weitere Belege für Einkünfte", "id": "attachment_file9000:revenue<i>", "typ": "datei", "readonly": true, "abschnitt": "Einkünfte", "position": "— (Beleg-Upload)"},
+        {"label": "Weitere Belege für Abzüge", "id": "attachment_file9000:deductions<i>", "typ": "datei", "readonly": true, "abschnitt": "Abzüge", "position": "— (Beleg-Upload)"},
+        {"label": "Weitere Belege für Wertschriften", "id": "attachment_file9000:securities<i>", "typ": "datei", "readonly": true, "abschnitt": "Wertschriften", "position": "— (Beleg-Upload)"},
+        {"label": "Weitere Belege für Vermögen", "id": "attachment_file9000:assets<i>", "typ": "datei", "readonly": true, "abschnitt": "Vermögen", "position": "— (Beleg-Upload)"}
+      ]
+    },
+    {
+      "key": "abschluss/einreichen",
+      "gruppe": "Abschluss",
+      "titel": "Einreichen",
+      "route": "tax-assistant/finish/submit",
+      "navigation": "Seitenleiste: Abschluss > Einreichen",
+      "abschnitte": ["Daten validieren", "Steuererklärung einsehen", "Übermittlung"],
+      "felder": [],
+      "gefaehrlicheKnoepfe": ["Steuererklärung übermitteln"],
+      "bemerkung": "NUR ANGESEHEN, nichts gedrückt. Der Knopf Steuererklärung übermitteln ist ausschliesslich Sascha vorbehalten."
+    }
+  ],
+  "nichtAufgenommen": [
+    {
+      "was": "Wertschriften-Zeilendialog (securities-detail und die tax-statement-detail-* Dialoge)",
+      "grund": "Erreichbar nur durch Anlegen einer neuen Zeile oder Öffnen einer bestehenden Zeile zur Bearbeitung — beides wäre über reines Lesen hinausgegangen.",
+      "betroffenePositionen": ["wertschriften", "beteiligung_qualifiziert", "krypto"]
+    },
+    {
+      "was": "Liegenschaften-Objektdialog (property-detail, property-taxvalue)",
+      "grund": "Gleicher Grund — Zeilendialog.",
+      "betroffenePositionen": ["liegenschaft_ertrag", "liegenschaftsunterhalt", "liegenschaften"]
+    },
+    {
+      "was": "Zeilenstruktur der Liste Beiträge an die AHV, IV und 2. Säule",
+      "grund": "Liste ist leer; Spalten erscheinen erst nach Weitere Zeile hinzufügen.",
+      "betroffenePositionen": ["einkauf_pk", "ahv_beitraege"]
+    },
+    {
+      "was": "Kinderbetreuungskosten",
+      "grund": "In der Maske Kinder nicht sichtbar. Im Routenverzeichnis existiert ein Dialog external-care — hängt vermutlich an der einzelnen Kinderzeile.",
+      "betroffenePositionen": ["kinderbetreuung"]
+    },
+    {
+      "was": "Zeilenstruktur Erhaltene / Ausgerichtete Schenkungen (Dialoge prior-bequeathment-detail, inheritor-detail)",
+      "grund": "Listen leer.",
+      "betroffenePositionen": []
+    },
+    {
+      "was": "Felder hinter Ja/Nein-Schaltern (Unterstützte Personen, Vertreter, Gemeinnützige Zuwendungen, Lebensversicherungen, Krankheitskosten, Bemerkungen, Ausgerichtete Schenkungen)",
+      "grund": "Umschalten auf Ja wäre eine Dateneingabe gewesen. Die dahinterliegenden Felder waren teilweise trotzdem im DOM lesbar und sind erfasst.",
+      "betroffenePositionen": []
+    },
+    {
+      "was": "Personen-Ansicht P2",
+      "grund": "Personen-Reiter wurden nicht umgeschaltet. Dass zu jedem P1-Feld ein P2-Gegenstück existiert, ist im Programmcode der App belegt.",
+      "betroffenePositionen": []
+    },
+    {
+      "was": "Alternative Navigation über Formulare (tax-forms/*)",
+      "grund": "Direkter Routenaufruf wird von der App umgeleitet; über die Hilfsmittel-Kachel nicht mehr erreichbar, weil das Dashboard danach in einem Ladezustand hängen blieb (siehe offenePunkte).",
+      "betroffenePositionen": []
+    },
+    {
+      "was": "Zahlenformat der Betragsfelder (Rappen, Apostroph)",
+      "grund": "Feststellbar nur durch Eingabe.",
+      "betroffenePositionen": []
+    }
+  ],
+  "katalogOhneZielfeld": [
+    {"position": "formular", "grund": "Zugangscode/Hauptformular — kein Portalfeld, das ist der Portalzugang selbst"},
+    {"position": "vorjahr", "grund": "Vorjahresveranlagung — kein Erfassungsfeld; das Portal bietet dafür nur die Funktion Datenimport"},
+    {"position": "kinderbetreuung", "grund": "In keiner erreichbaren Maske gefunden; vermutlich Dialog external-care an der Kinderzeile"},
+    {"position": "arbeitsnotiz", "grund": "Arbeitspapier, keine Beilage"},
+    {"position": "eigene_berechnung", "grund": "Arbeitspapier, keine Beilage"},
+    {"position": "_aussortiert", "grund": "Nicht zur Steuererklärung"}
+  ],
+  "offenePunkte": [
+    "Doppelkandidat rente_saeule3: Kapitalleistungen (Persönliches) ODER Rente/Pension (Einkünfte > Renten und Versicherungen) — Sascha entscheidet.",
+    "einkauf_pk und ahv_beitraege zielen beide auf dieselbe Zeilenliste Beiträge an die AHV, IV und 2. Säule — welche Zeilenart welche Position trägt, ist offen.",
+    "alimente_erhalten und alimente_bezahlt zeigen in der Übersichtsmaske nur Rechenfelder (readonly). Der beschreibbare Ort ist der Dialog deduction-payment-alimony bzw. die Kinderzeile — nicht aufgenommen.",
+    "Das Schuldenverzeichnis kennt KEINE Objektzuordnung der Hypothek. Die Katalog-Dimension objekt bei schulden hat im Portal kein Gegenstück.",
+    "Betragsformat (Rappen/Apostroph) beim ersten echten Feld testen und hier nachtragen.",
+    "Zwischenzeitlich hing das Dashboard im Ladezustand laden... — behoben durch erneuten Einstieg über die Portal-Startseite (Steuererklärung weiterbearbeiten). Danach lief alles wieder normal; der Dashboard-Stand war unverändert. Auslöser war vermutlich ein direkt gesetzter Routen-Hash. Merke: im Portal nur über die Oberfläche navigieren, nicht über die Adresszeile. Der Fehler ReferenceError: ReactDOM is not defined stammt aus dem Vendor-Bundle des Portals und tritt auch beim normalen Laden auf — nicht von uns verursacht."
+  ]
+}
