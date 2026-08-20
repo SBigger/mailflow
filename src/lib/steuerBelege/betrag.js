@@ -95,7 +95,12 @@ export function alsZahl(roh) {
   return n;
 }
 
-const BETRAG_MUSTER = /-?\d{1,3}(?:[’'`\s.]\d{3})+(?:[.,]\d{2})?|-?\d+[.,]\d{2}\b|-?\d{4,9}\b/g;
+// Erste Alternative: OCR verschluckt gern EIN Trennzeichen, dann steht
+// «4'000000.00» statt «4'000'000.00». Ohne sie griff nur der Anfang («4'000»)
+// — aus vier Millionen Restschuld wurden viertausend (ZKB-Saldoausweis 2025).
+// Bewusst eng auf GENAU sechs Ziffern nach dem Hochkomma: die Gruppe auf
+// «3 bis 6» zu oeffnen war messbar schaedlich (aus 22'300.00 wurde 22.00).
+const BETRAG_MUSTER = /-?\d{1,3}['’`]\d{6}(?:[.,]\d{2})?|-?\d{1,3}(?:[’'`\s.]\d{3})+(?:[.,]\d{2})?|-?\d+[.,]\d{2}\b|-?\d{4,9}\b/g;
 
 // Steht so etwas DIREKT VOR dem Ankertreffer, beschriftet die Zahl daneben
 // keinen Betrag der Erklärung: «Versicherungssumme Total CHF 6'500'000» ist
@@ -141,6 +146,12 @@ function sucheMitAnkern(text, anker, max = 500_000_000) {
         if (n == null || n === 0) continue;
         if (n >= 1900 && n <= 2100 && !/[.,]\d{2}$/.test(z)) continue;
         if (Math.abs(n) < 10 || Math.abs(n) > max) continue;
+        // «8714 Feldbach» ist eine Postleitzahl, kein Betrag. Vier blanke
+        // Ziffern unmittelbar vor einem Ortsnamen zählen nicht — gemessen am
+        // ZKB-Saldoausweis, wo die PLZ der Liegenschaft als Restschuld ankam
+        // und das Hypothekardarlehen mit 8'714.00 in der Erklärung stand.
+        if (/^\d{4}$/.test(z) && n >= 1000 &&
+            new RegExp(z + '\\s+(?!chf|fr|eur|usd|franken|sfr)[a-z]{3,}').test(fenster)) continue;
         // Daten aussortieren: «31.12» sieht aus wie ein Betrag mit Rappen,
         // ist aber der Stichtag («Restschuld per 31.12.»). Tag ≤ 31 und
         // Nachkommateil, der als Monat taugt → kein Betrag.

@@ -33,6 +33,12 @@ export const BELEGART_ZU_POSITION = {
                         hinweis: 'Restschuld und Zins stehen im selben Ausweis und gehen als '
                                + 'zwei Beträge in die eine Zeile des Schuldenverzeichnisses.' },
 
+  darlehen_zins:      { mehrdeutig: true,
+                        kandidaten: ['uebriges_vermoegen', 'wertschriften', 'schulden'],
+                        unterscheidet: 'Richtung — steht der Mandant im Beleg als '
+                                     + 'Darlehensgeber (Guthaben + Zinsertrag) oder als '
+                                     + 'Darlehensnehmer (Schuld + Zinsabzug)?' },
+
   saeule3a:           { positionen: ['saeule_3a'] },
   pk_einkauf:         { positionen: ['einkauf_pk'] },
   krankheitskosten:   { positionen: ['krankheitskosten'] },

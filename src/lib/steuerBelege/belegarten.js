@@ -53,6 +53,21 @@ export const BELEGARTEN = [
     keywords: ["kontoauszug", "saldo per", "zinsertrag", "kontostand", "privatkonto", "sparkonto"],
   },
   {
+    // Zinsabrechnung zu einem Darlehen zwischen zwei Parteien. Dasselbe Blatt
+    // ist beim Geber ein Guthaben mit Zinsertrag und beim Nehmer eine Schuld
+    // mit Zinsabzug — die Richtung steht nur im Text, nie im Formular. Ohne
+    // eigene Belegart greift «schuldzins» (Stichwoerter «darlehen» +
+    // «zinssatz») und macht daraus stillschweigend einen ABZUG: gemessen an
+    // vier Quartalsabrechnungen ueber ein VERLIEHENES Darlehen von 5 Mio, die
+    // sonst als Schuldzins von 74'791.65 in die Erklaerung gelaufen waeren.
+    key: "darlehen_zins",
+    label: "Darlehens-Zinsabrechnung",
+    parse: "ocr",
+    ech_pfad: null,
+    stark: ["darlehensgeber"],
+    keywords: ["darlehensnehmer", "zinssatz", "kapital", "zinsabrechnung", "360/360"],
+  },
+  {
     key: "schuldzins",
     label: "Schuld- / Hypothekarausweis",
     parse: "ocr",
