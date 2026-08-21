@@ -73,7 +73,7 @@ export default function Mahnwesen() {
     setBusy(true);
     try {
       const full = await debitorenApi.get(dlg.beleg.id);
-      const { url, blob } = await generateMahnungPdf({
+      const { url, path, blob } = await generateMahnungPdf({
         beleg: full, kunde: full.kunde || {}, mandant: mSettings || mandant, zahlstelle: zsFor(),
         stufe: dlg.stufe, gebuehr: parseFloat(dlg.gebuehr) || 0, faelligAm: dlg.frist,
       });
@@ -96,7 +96,8 @@ export default function Mahnwesen() {
         document.body.appendChild(a); a.click(); a.remove();
         setTimeout(() => URL.revokeObjectURL(url), 5000);
       }
-      await mahnungApi.erstellen(mandant.id, full, { stufe: dlg.stufe, gebuehr: parseFloat(dlg.gebuehr) || 0, faelligAm: dlg.frist, pdfUrl: url, gesendetAn });
+      // Pfad ablegen, nicht die signierte URL — die läuft nach einer Stunde ab.
+      await mahnungApi.erstellen(mandant.id, full, { stufe: dlg.stufe, gebuehr: parseFloat(dlg.gebuehr) || 0, faelligAm: dlg.frist, pdfUrl: path ?? url, gesendetAn });
       setDlg(null);
       load();
       if (alsoSend) alert('Mahnung gesendet an ' + gesendetAn);
