@@ -58,7 +58,7 @@ export const FAVORITEN_IDS = new Set([
 export const ZH_500 = {
   kanton: 'ZH',
   name: 'Kanton Zürich – Form. 500 (2025)',
-  pdfUrl: '/zh/500_STE_2025.pdf',
+  pdfUrl: 'storage:zh/500_STE_2025.pdf',
   typ: 'acroform',
 
   // Felder, die vor dem Flatten entfernt werden. pdf-lib zeichnet beim Flatten

@@ -39,7 +39,7 @@ export const FAVORITEN_IDS = new Set([
 export const SG_JP1B = {
   kanton: 'SG',
   name: 'Kanton St. Gallen – JP 1b (2025)',
-  pdfUrl: '/sg/JP_1b_2025.pdf',
+  pdfUrl: 'storage:sg/JP_1b_2025.pdf',
   typ: 'static',
   bookletLayout: [
     { srcPage: 0, half: 'right' }, // Form-Seite 1

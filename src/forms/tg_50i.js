@@ -16,7 +16,7 @@ export const FAVORITEN_IDS = new Set([
 export const TG_50I = {
   kanton: 'TG',
   name: 'Kanton Thurgau – Form 50/I',
-  pdfUrl: '/pdf-tg/public/upload/assets/171676/JPW24_50_I_Steuererklaerung_primaer_fx_v01.pdf',
+  pdfUrl: 'storage:tg/JPW24_50_I_Steuererklaerung_primaer_fx_v01.pdf',
   typ: 'acroform',
   mirrorKantonToBund: true,   // leeres .calc.1 (Bund) übernimmt automatisch .calc.0 (Kanton)
   hideBottomButtons: 35,      // weisses Rechteck über Drucken/Schliessen/Zurück/Weiter

@@ -113,18 +113,9 @@ export default defineConfig(({ mode }) => {
       port: 3000,
       strictPort: true, // Prevents Vite from trying 3001 if 3000 is "busy"
       proxy: {
-        // Für /Steuern: AcroForm-Formulare werden proxied geladen, damit pdf-lib/pdfjs
-        // sie CORS-frei lesen kann (ehemals steuerapp).
-        '/pdf-sg': {
-          target: 'https://www.sg.ch',
-          changeOrigin: true,
-          rewrite: p => p.replace(/^\/pdf-sg/, ''),
-        },
-        '/pdf-tg': {
-          target: 'https://steuerverwaltung.tg.ch',
-          changeOrigin: true,
-          rewrite: p => p.replace(/^\/pdf-tg/, ''),
-        },
+        // Für /Steuern: ZH, SG und TG liegen im Storage-Bucket steuerformulare,
+        // nur das ESTV-Formular wird noch live geholt und braucht den Proxy,
+        // damit pdf-lib/pdfjs es CORS-frei lesen kann.
         '/pdf-estv': {
           target: 'https://www.estv.admin.ch',
           changeOrigin: true,

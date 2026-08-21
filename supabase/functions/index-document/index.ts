@@ -116,6 +116,30 @@ async function extractText(
   return "";
 }
 
+// -- Postgres-Sicherung -------------------------------------------------------
+
+/**
+ * PostgREST schickt den Update-Body durch `jsonb`. Dort sind das Null-Zeichen
+ * U+0000 ("unsupported Unicode escape sequence") und ungepaarte Surrogate
+ * ("invalid Unicode surrogate pair") nicht darstellbar - beides kommt in
+ * extrahiertem Text regelmaessig vor (kaputte PDF-Zeichentabellen, UTF-16-
+ * Dateien, ein slice() mitten durch ein Surrogatpaar). Ohne diese Bereinigung
+ * schlaegt das Update fehl und das Dokument bleibt unindexiert.
+ * Gegenstueck im Frontend: src/lib/pgSafeText.js
+ */
+function scrubPgText(s: string): string {
+  let out = s.indexOf("\u0000") === -1 ? s : s.replace(/\u0000/g, "");
+  if (/[\uD800-\uDFFF]/.test(out)) {
+    // deno-lint-ignore no-explicit-any
+    const anyOut = out as any;
+    out = typeof anyOut.toWellFormed === "function"
+      ? anyOut.toWellFormed()
+      : out.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/g, "\uFFFD")
+           .replace(/([^\uD800-\uDBFF]|^)([\uDC00-\uDFFF])/g, "$1\uFFFD");
+  }
+  return out;
+}
+
 // ── Einzeldokument indexieren ─────────────────────────────────────────────────
 
 async function indexOne(docId: string): Promise<{ status: string; chars: number }> {
@@ -136,7 +160,7 @@ async function indexOne(docId: string): Promise<{ status: string; chars: number 
   if (dlErr || !fileData) throw new Error("Download fehlgeschlagen: " + dlErr?.message);
 
   const buffer = await fileData.arrayBuffer();
-  const text   = await extractText(buffer, doc.filename || "", doc.file_type || "");
+  const text   = scrubPgText(await extractText(buffer, doc.filename || "", doc.file_type || ""));
 
   if (text) {
     const { error: updErr } = await supabase

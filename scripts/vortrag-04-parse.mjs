@@ -35,11 +35,39 @@ function fixEmployeeName(raw) {
   return cleaned;
 }
 
-// Nach dem Betrag steht neu oft ein Status-Wort (z.B. "Abzurechnen", "Kulant") -
-// als optionales einzelnes Wort ohne Ziffern vor dem Lookahead zugelassen.
+// Nach dem Betrag steht neu oft ein Status-Wort (z.B. "Abzurechnen", "Kulant") UND/ODER
+// der auf eine 2. Zeile umgebrochene Rest der Tätigkeitsbeschreibung (z.B. "anpassen." oder
+// auch mehrwortige Phrasen, die selbst Ziffern enthalten können wie "Jahresabschluss 2024").
+// Dieser Rest wird zeichenweise verschluckt, SOLANGE an der aktuellen Position keine echte
+// Buchungsgrenze (Datum/Kontogruppen-Zeile) beginnt (negative Lookaheads TERM/TERM_END) -
+// eine simple "keine Ziffern erlaubt"-Regel reicht nicht, weil Umbruchtext selbst Jahreszahlen
+// enthalten kann. Vorher (nur 1 Wort erlaubt) hat ein fehlschlagender Lookahead die Regex dazu
+// gebracht, rückwirkend die GESAMTE nächste Buchung in die Beschreibung hineinzuziehen
+// (Datum/MA/Beleg-Nr. der 1. Buchung + Stunden/Betrag der 2. Buchung -> falsche Daten, siehe
+// Vortrag-Import 2026-07-04, 286 von 1859 Zeilen betroffen).
 // Mitarbeiter-Feld: nur Grossbuchstaben-Wörter (echte Namen), max. 3 Tokens, sonst leer
 // (verhindert dass Beschreibungstext/Ziffern aus Nachbar-Buchungen mitgerissen werden).
-const bookingRe = /(\d{2}\.\d{2}\.\d{4})\s+((?:[A-ZÄÖÜ][A-Za-zÄÖÜäöü.\-]*\s+){0,3}?)(\d{2,3}'\d{3})\s+(.+?)\s+([vk])\s+([\d.]+)\s+([\d.]+)\s+([\d.,']+?)(?:\s+[A-Za-zÄÖÜäöü]+)?(?=\s+\d{2}\.\d{2}\.\d{4}|\s+\d{3,4}\.\s|\s+\d{6}\.\s|\s*$)/g;
+// Zwischen Beschreibung und Typ-Buchstabe (v/k) fehlt in manchen Zeilen das Leerzeichen im
+// extrahierten Text (z.B. "fürv 5.00" statt "für v 5.00", vermutlich weil die Typ-Spalte im
+// PDF sehr nah an der Tätigkeits-Spalte sitzt). Mit einer strikten \s+-Anforderung davor sprang
+// die Regex über diese Buchung hinweg und griff stattdessen versehentlich Datum/Betrag der
+// NÄCHSTEN Buchung ab. Deshalb hier \s* (Leerzeichen vor v/k optional, danach weiterhin Pflicht).
+// Manche Buchungen haben GAR keinen Tätigkeitstext auf der 1. Zeile (komplett auf die
+// Folgezeile umgebrochen, z.B. "122'585 v 1.00 120.00 120.00 Abzurechnen  Nachbearbeitung
+// Kontoabstimmung"). Mit (.+?) (1+ Zeichen Pflicht) hat die Regex dann "v" selbst als
+// Beschreibungszeichen verschluckt und ist auf den NÄCHSTEN v/k-Marker (der Folgebuchung)
+// ausgewichen -> deshalb hier (.*?), 0 Zeichen erlaubt.
+//
+// Grenzfall: Ein Datumsbereich IM Fliesstext ("01.11.-07.06.2023") sieht wie eine echte
+// Buchungsgrenze aus, weil "07.06.2023" zufällig \d{2}\.\d{2}\.\d{4} matcht. Echte Grenzen
+// haben aber IMMER echtes Leerzeichen davor, dieser Bereich nur einen Bindestrich. Deshalb
+// verlangt der Terminator-Check \s+TERM (nicht bloss TERM) - eine an Satzzeichen "geklebte"
+// Zahl zählt nicht als Grenze.
+const TERM = String.raw`\d{2}\.\d{2}\.\d{4}|\d{3,4}\.\s|\d{6}\.\s`;
+const bookingRe = new RegExp(
+  String.raw`(\d{2}\.\d{2}\.\d{4})\s+((?:[A-ZÄÖÜ][A-Za-zÄÖÜäöü.\-]*\s+){0,3}?)(\d{2,3}'\d{3})\s+(.*?)\s*([vk])\s+([\d.]+)\s+([\d.]+)\s+([\d.,']+?)(?:\s+(?:(?!\s+(?:${TERM})).)*)?(?=\s+(?:${TERM})|\s*$)`,
+  'g',
+);
 const kontoRe = /(\d{3,4})\.\s+([A-ZÄÖÜa-zäöü][A-Za-zäöüÄÖÜ.,\- ]*?)\s+([\d.]+)\s+([\d.,']+)(?:\s+[\d.,']+)*(?=\s+\d{2}\.\d{2}\.\d{4}|\s+\d{6}\.\s|\s*$)/g;
 
 // 1) Pass: Seiten nach Projektnummer gruppieren (mehrseitige Projekte zusammenführen),
@@ -136,6 +164,21 @@ for (const projNo of projectOrder) {
   }
 }
 
+// Rabatt-Normalisierung: Kontogruppe 4900 heisst im Quellsystem explizit "Rabatt". Eine
+// Buchung (Projekt 158401 "Spezialrabatt") landete abweichend unter Kontogruppe 2000
+// ("Telefon, Kopien, etc.") - vermutlich ein Erfassungsfehler im Altsystem, per Beschreibung
+// aber eindeutig als Rabatt erkennbar. Ausserdem stand der Betrag im Altsystem als PLUS in der
+// Liste, wirkt aber als Preisnachlass -> muss die abrechenbare Summe MINDERN statt erhöhen.
+// Deshalb hier: Kontogruppe vereinheitlichen + Betrag negieren (positiv=falsch, siehe
+// Vortrag-Import 2026-07-04 Nutzer-Rückmeldung zu Projekt Impact290Degrees).
+for (const r of results) {
+  const isRabatt = r.kontogruppe_code === '4900' || /rabatt/i.test(r.description);
+  if (!isRabatt) continue;
+  r.kontogruppe_code = '4900';
+  r.kontogruppe_name = 'Rabatt';
+  if (r.amount > 0) r.amount = -r.amount;
+}
+
 writeFileSync(OUT, JSON.stringify(results, null, 2), 'utf8');
 console.log('Buchungen extrahiert:', results.length);
 console.log('Übersprungene Projektnummern (ausgeschlossen):', [...skippedProjects]);
@@ -154,8 +197,9 @@ for (const [no, v] of Object.entries(byProject)) {
 }
 
 // Plausi-Check: bei "v" (verrechenbar) sollte hours*rate == amount sein (Toleranz 0.02 CHF)
+// Rabatt-Zeilen ausgenommen (Betrag bewusst negiert, hours*rate bliebe positiv).
 const suspicious = results.filter(r => {
-  if (r.type !== 'v') return false;
+  if (r.type !== 'v' || r.kontogruppe_code === '4900') return false;
   const expected = Math.round(r.hours * r.rate * 100) / 100;
   return Math.abs(expected - r.amount) > 0.02;
 });

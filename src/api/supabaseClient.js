@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { scrubPgPayload } from '@/lib/pgSafeText';
 
 let supabase = null;
 
@@ -63,14 +64,16 @@ function makeEntity(tableName) {
 
     async create(payload) {
       const { data: { user } } = await supabase.auth.getUser();
-      const row = { ...payload, created_by: user?.id };
+      // Maschinell erzeugte Texte (Volltext aus PDF/Excel/OCR) koennen Zeichen
+      // enthalten, an denen PostgREST den ganzen Insert abbricht – siehe pgSafeText.
+      const row = { ...scrubPgPayload(payload), created_by: user?.id };
       const { data, error } = await supabase.from(tableName).insert(row).select().single();
       if (error) throw new Error(error.message);
       return data;
     },
 
     async update(id, payload) {
-      const { data, error } = await supabase.from(tableName).update(payload).eq('id', id).select().single();
+      const { data, error } = await supabase.from(tableName).update(scrubPgPayload(payload)).eq('id', id).select().single();
       if (error) throw new Error(error.message);
       return data;
     },
@@ -83,7 +86,7 @@ function makeEntity(tableName) {
 
     async bulkCreate(items) {
       const { data: { user } } = await supabase.auth.getUser();
-      const rows = items.map(item => ({ ...item, created_by: item.created_by || user?.id }));
+      const rows = items.map(item => ({ ...scrubPgPayload(item), created_by: item.created_by || user?.id }));
       const { data, error } = await supabase.from(tableName).insert(rows).select();
       if (error) throw new Error(error.message);
       return data;

@@ -73,7 +73,7 @@ const KONTOGRUPPE_MAP = {
   '1100': 'BER', '1104': 'BUCH', '1106': 'ABS', '1108': 'LOHN', '1190': 'ADM',
   '1200': 'STEU', '1202': 'STDEK', '1204': 'MWST', '1300': 'REV', '1400': 'RECHT',
   '1500': 'UMST', '1508': 'UBE', '1600': 'BUCH', '1602': 'BER', '1604': 'BER',
-  '2000': 'ADM', '4900': 'BER',
+  '2000': 'ADM', '4900': 'RABATT',
 };
 
 async function reimport() {

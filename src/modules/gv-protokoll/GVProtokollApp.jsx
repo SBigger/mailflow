@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './styles.css';
 import {supabase} from "../../api/supabaseClient.js";
+import { buildProtocolDocx, safeFileName } from "./docxExport.js";
 
 // ════════════════════════════════════════════════════════════════
 //  KOnstanten & Initialisierungen
@@ -255,7 +256,10 @@ export default function GvProtokollApp() {
                 const { error } = await supabase.from('gv_protocols').update(payload).eq('id', currentProtocolId);
                 if (error) throw error;
             } else {
-                const { data, error } = await supabase.from('gv_protocols').insert(payload).select('id').single();
+                // Sitzungsdatum nur beim Anlegen setzen – die Ablage sortiert danach
+                const { data, error } = await supabase.from('gv_protocols')
+                    .insert({ ...payload, meeting_date: new Date().toISOString().slice(0, 10) })
+                    .select('id').single();
                 if (error) throw error;
                 setCurrentProtocolId(data.id);
             }
@@ -819,13 +823,38 @@ export default function GvProtokollApp() {
 
     const customerLabel = (c) => c.person_type === "privatperson" ? `${c.anrede || ""} ${c.vorname || ""} ${c.nachname || ""}`.trim() : c.company_name;
 
-    const exportMarkdown = () => {
-        let md = `# Protokoll: ${selectedCustomer.name || "GV"}\n\n## Zusammenfassung\n${summaryText}\n`;
-        const blob = new Blob([md], { type: "text/markdown" });
-        const el = document.createElement("a");
-        el.href = URL.createObjectURL(blob);
-        el.download = "Protokoll.md";
-        el.click();
+    // Das komplette Ergebnis (Zusammenfassung, Traktanden, Beschlüsse, Aufgaben)
+    // als echte Word-Datei herunterladen.
+    const exportWord = async () => {
+        if (!summaryText.trim() && !traktanden.length && !decisions.length && !tasks.length) {
+            setStatusMsg("❌ Noch kein Ergebnis da – zuerst auf „Auswerten\" klicken.");
+            return;
+        }
+        try {
+            setStatusMsg("📄 Word-Datei wird erstellt …");
+            const dateText = new Date().toLocaleDateString("de-CH", { day: "2-digit", month: "long", year: "numeric" });
+            const title = protocolTitle || `Protokoll ${new Date().toLocaleDateString("de-CH")}`;
+            const blob = await buildProtocolDocx({
+                customerName: selectedCustomer.name,
+                title,
+                dateText,
+                persons, agenda, summaryText, traktanden, decisions, tasks,
+            });
+            const name = safeFileName(
+                `Protokoll_${selectedCustomer.name || "GV"}_${new Date().toISOString().slice(0, 10)}`
+            );
+            const url = URL.createObjectURL(blob);
+            const el = document.createElement("a");
+            el.href = url;
+            el.download = `${name}.docx`;
+            document.body.appendChild(el);
+            el.click();
+            el.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 5000);
+            setStatusMsg(`⬇️ „${name}.docx\" heruntergeladen.`);
+        } catch (err) {
+            setStatusMsg("❌ Word-Export fehlgeschlagen: " + err.message);
+        }
     };
 
     return (
@@ -852,7 +881,7 @@ export default function GvProtokollApp() {
 
                 <button className="btn primary" onClick={evaluateAI}>✨ Auswerten</button>
                 <button className="btn" onClick={saveProtocol} title="In der Ablage des Kunden speichern">💾 Speichern</button>
-                <button className="btn ghost" onClick={exportMarkdown} title="Exportieren">⬇️</button>
+                <button className="btn" onClick={exportWord} title="Protokoll als Word-Datei (.docx) herunterladen">⬇️ Word</button>
                 <button className="btn ghost" onClick={() => { loadRecList(); setShowSettings(true); }}>⚙️</button>
             </header>
 
@@ -981,6 +1010,17 @@ export default function GvProtokollApp() {
                                 <div className="trakt-c" contentEditable suppressContentEditableWarning onBlur={e => { t.inhalt = e.target.textContent; setTraktanden([...traktanden]); }}>{t.inhalt}</div>
                             </div>
                         ))}
+
+                        {decisions.length > 0 && (
+                            <>
+                                <div className="sub-hd" style={{ marginTop: "15px" }}>⚖️ Beschlüsse</div>
+                                {decisions.map((d, i) => (
+                                    <div className="item decision" key={i}>
+                                        <div contentEditable suppressContentEditableWarning onBlur={e => { d.text = e.target.textContent; setDecisions([...decisions]); }}>{d.text}</div>
+                                    </div>
+                                ))}
+                            </>
+                        )}
 
                         <div className="sub-hd" style={{ marginTop: "15px" }}>✔️ Aufgaben</div>
                         {tasks.map((t, i) => (
