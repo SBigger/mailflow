@@ -10,6 +10,9 @@ export const FAVORITEN_IDS = new Set([
 export const ESTV_19 = {
   kanton: 'ESTV',
   name: 'ESTV – Formular 19 (Beteiligungen)',
+  // TODO: nach steuerformulare-Bucket umhaengen, sobald estv.admin.ch das PDF
+  // wieder ausliefert (20.08.2026: HTTP 502). Laeuft bis dahin ueber den
+  // Vercel-Rewrite /pdf-estv, siehe vercel.json.
   pdfUrl: '/pdf-estv/dam/estv/de/dokumente/dbst/formulare/dbst-form-19-2024-de.pdf',
   pdfUrl19a: 'https://www.estv.admin.ch/dam/estv/de/dokumente/dbst/formulare/dbst-form-19a-2024-de.pdf.download.pdf/dbst-form-19a-2024-de.pdf',
   typ: 'acroform',

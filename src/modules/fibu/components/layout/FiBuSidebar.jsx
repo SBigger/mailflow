@@ -147,7 +147,7 @@ function detectSection(pathname) {
 
 // ── Hauptkomponente ──────────────────────────────────────────────
 export default function FiBuSidebar() {
-  const { mandant, mandanten, switchMandant } = useMandant();
+  const { mandant, mandanten, switchMandant, isExtern } = useMandant();
   const navigate  = useNavigate();
   const location  = useLocation();
 
@@ -244,7 +244,8 @@ export default function FiBuSidebar() {
           }}>A</div>
         </div>
 
-        {/* ← MailFlow */}
+        {/* ← MailFlow · fuer externe Kundenbenutzer gibt es kein "draussen" */}
+        {!isExtern && (
         <button
           title="Zurück zu MailFlow"
           onClick={() => navigate('/Dashboard')}
@@ -263,6 +264,7 @@ export default function FiBuSidebar() {
           </svg>
           <span style={{ fontSize: 8, fontWeight: 700, letterSpacing: '.04em', lineHeight: 1 }}>MF</span>
         </button>
+        )}
 
         <div style={{ width: 28, height: 1, background: '#2e4a2e', marginBottom: 8 }} />
 
@@ -372,12 +374,14 @@ export default function FiBuSidebar() {
                     {m.name}
                   </button>
                 ))}
+                {!isExtern && (
                 <div style={{ borderTop: '1px solid #e4e9e4' }}>
                   <button
                     style={{ width: '100%', textAlign: 'left', padding: '8px 10px', fontSize: 12, border: 'none', background: 'none', cursor: 'pointer', color: '#7a9b7f', fontWeight: 600 }}
                     onClick={() => { navigate('/fibu', { state: { showNew: true } }); setMandantOpen(false); }}
                   >+ Neuer Mandant anlegen</button>
                 </div>
+                )}
               </div>
             )}
           </div>

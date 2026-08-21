@@ -9,6 +9,7 @@ import {Eye} from "lucide-react";
 import DocHoverPreview from "../../../components/dokumente/DocHoverPreview.jsx";
 import {ThemeContext} from "../../../Layout.jsx";
 import {supabase} from "../../../api/supabaseClient.js";
+import { signierteUrl } from "../utils/debitorenStorage";
 
 const CHF = (n) => n == null ? '—' : new Intl.NumberFormat('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 const DATE = (s) => s ? new Date(s).toLocaleDateString('de-CH') : '—';
@@ -89,7 +90,11 @@ export default function DebitorenUebersicht() {
     clearTimeout(hoverTimer.current);
     const rect = el.getBoundingClientRect();
     hoverTimer.current = setTimeout(async () => {
-      if (beleg.pdf_url) setHoverPreview({ doc: null, url: beleg.pdf_url, rect });
+      if (!beleg.pdf_url) return;
+      // pdf_url ist der Storage-Pfad (Altbestand: eine tote public-URL, aus der
+      // signierteUrl den Pfad wieder herausholt) — hier frisch signieren.
+      const url = await signierteUrl(beleg.pdf_url, 600);
+      if (url) setHoverPreview({ doc: null, url, rect });
     }, 280);
   };
   // Nur ein noch nicht ausgeloestes Oeffnen abbrechen — ein offenes Fenster bleibt.

@@ -2,9 +2,11 @@
 // =====================================================================
 // Erzeugt einen A4-Mahnbrief zu einer überfälligen Ausgangsrechnung.
 // Optional mit Swiss-QR-Zahlteil über den offenen Betrag + Mahngebühr,
-// sofern die Zahlstelle eine QR-IBAN hat. Lädt das PDF in Bucket
-// "invoices" und gibt {url, path, blob} zurück (wie debitorenInvoicePdf).
+// sofern die Zahlstelle eine QR-IBAN hat. Lädt das PDF mandantengetrennt in
+// den Bucket "fibu-debitoren" und gibt {url, path, blob} zurück — url ist eine
+// kurzlebige signierte URL für den Mailversand, path das, was gespeichert wird.
 import { supabase } from '@/api/supabaseClient';
+import { DEBITOREN_BUCKET, mahnungPfad, signierteUrl } from './debitorenStorage';
 import { isQrIban, normIban, buildQrReference } from './pain001';
 import {
   ARTIS_GREEN_DARK, ARTIS_GREEN_LIGHT_BG, MUTED_TEXT,
@@ -138,9 +140,13 @@ export async function generateMahnungPdf({ beleg, kunde = {}, mandant = {}, zahl
 
   if (!upload) return { url: null, path: null, blob };
 
-  const path = `debitoren/mahnung-${beleg.id}-s${stufe}.pdf`;
-  const up = await supabase.storage.from('invoices').upload(path, blob, { upsert: true, contentType: 'application/pdf' });
+  const mandantId = beleg.mandant_id ?? mandant?.id;
+  const path = mahnungPfad(mandantId, beleg.id, stufe);
+  const up = await supabase.storage.from(DEBITOREN_BUCKET)
+    .upload(path, blob, { upsert: true, contentType: 'application/pdf' });
   if (up.error) { console.error('Mahnung-PDF-Upload fehlgeschlagen:', up.error); return { url: null, path: null, blob }; }
-  const { data: pub } = supabase.storage.from('invoices').getPublicUrl(path);
-  return { url: pub?.publicUrl ?? null, path, blob };
+  // Signierte URL für den sofortigen Mailversand (die Edge Function holt das
+  // PDF darüber ab). Dauerhaft gespeichert wird der Pfad, nicht diese URL.
+  const url = await signierteUrl(path, 3600);
+  return { url, path, blob };
 }

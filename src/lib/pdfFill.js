@@ -1,4 +1,5 @@
 import { PDFDocument, StandardFonts, rgb, PDFName, PDFString } from 'pdf-lib';
+import { resolveFormularPdfUrl } from '@/lib/steuerFormularPdf';
 
 const CHF_COLS = new Set([
   'aktienkapital','nominalwert','reingewinn_buch','reingewinn_buch_dbs','aufr_nichtabzugsfaehig','aufr_geldwerte_leist',
@@ -469,8 +470,10 @@ export async function fillPdfBytes(formDef, felder, srcBytes) {
 }
 
 // Lädt PDF einmal, gibt Bytes zurück (für Cache in PdfViewer)
+// `storage:`-Pfade werden vorher zur Signed URL des Buckets aufgelöst.
 export async function fetchPdfBytes(pdfUrl) {
-  const resp = await fetch(pdfUrl, { mode: 'cors' });
+  const url  = await resolveFormularPdfUrl(pdfUrl);
+  const resp = await fetch(url, { mode: 'cors' });
   if (!resp.ok) throw new Error(`PDF konnte nicht geladen werden: ${resp.statusText}`);
   return new Uint8Array(await resp.arrayBuffer());
 }
@@ -492,8 +495,7 @@ export async function fillAndDownload(formDef, felder, kundenName, steuerjahr) {
 
 // Hilfsfunktion: Alle AcroForm-Feldnamen eines PDFs ausgeben (Entwickler-Tool)
 export async function listPdfFields(pdfUrl) {
-  const resp = await fetch(pdfUrl, { mode: 'cors' });
-  const pdfBytes = await resp.arrayBuffer();
+  const pdfBytes = await fetchPdfBytes(pdfUrl);
   const pdfDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
   const form = pdfDoc.getForm();
   return form.getFields().map(f => ({ name: f.getName(), typ: f.constructor.name }));

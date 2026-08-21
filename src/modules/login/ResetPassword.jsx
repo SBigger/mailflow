@@ -54,9 +54,16 @@ export default function ResetPassword() {
       const { data, error} = await supabase.auth.updateUser({ password });
       if (error) throw error;
 
-      let route = "";
+      let route = "/Login";
       const response = await entities.User.get(data?.user.id);
       switch (response.inviteState) {
+        case 1:
+          // Eingeladen, aber noch nie ein Passwort gesetzt: das ist hiermit
+          // erledigt. Ohne das Weitersetzen bliebe der Zugang gesperrt
+          // (AuthContext wirft inviteState 1 wieder hinaus).
+          await entities.User.update(data.user.id, { inviteState: 2 });
+          route = "/mfa-setup";
+          break;
         case 2:
           route = "/mfa-setup";
           break;

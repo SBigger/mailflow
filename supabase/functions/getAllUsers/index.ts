@@ -31,10 +31,23 @@ Deno.serve(async (req) => {
       })
     }
 
-    // Return all profiles (any authenticated user can list users for task assignment etc.)
+    // Externe Kundenbenutzer duerfen die Mitarbeiterliste nicht sehen.
+    const { data: callerProfile } = await adminClient
+      .from('profiles').select('role').eq('id', user.id).single()
+    if (!callerProfile || callerProfile.role === 'extern') {
+      return new Response(JSON.stringify({ error: 'Forbidden' }), {
+        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    // Mitarbeiterliste (fuer Task-Zuweisung etc.). Bewusst KEIN select('*'):
+    // profiles enthaelt Microsoft-/Kalender-Tokens und das Telefonie-Secret —
+    // die haben in einer Benutzerliste nichts verloren.
     const { data: profiles, error } = await adminClient
       .from('profiles')
-      .select('*')
+      .select('id, email, full_name, role, is_admin, theme, titel, inviteState, ' +
+              'phone, avatar_url, outlook_email, internal_extension, peoplefone_user_id, ' +
+              'created_at, updated_at')
       .order('full_name', { ascending: true })
 
     if (error) throw error

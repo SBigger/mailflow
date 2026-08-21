@@ -128,6 +128,33 @@ async function resolveSession(supabase: any, sessionToken: string | null) {
   return pu;
 }
 
+// ── Effektive Kundenliste eines Portal-Zugangs ──────────────────────────────
+// Die Entscheidung, wer welchen Kunden sieht, liegt bewusst in der DB
+// (portal_customer_ids: Hauptmandant + direkte Häkchen + aktive Gruppen) —
+// damit es genau EINE Wahrheit gibt und nicht zwei, die auseinanderlaufen.
+// Fällt der RPC aus (z.B. Migration noch nicht eingespielt), fallen wir auf den
+// alten Einzel-Mandanten zurück: das gewährt weniger, nie mehr.
+async function customerIdsFor(supabase: any, pu: any): Promise<string[]> {
+  const { data, error } = await supabase.rpc("portal_customer_ids", { p_portal_user_id: pu.id });
+  if (error || !Array.isArray(data)) {
+    console.error("portal-api: portal_customer_ids nicht verfügbar, Fallback auf Hauptmandant", error);
+    return pu.customer_id ? [pu.customer_id] : [];
+  }
+  const ids = data.map((r: any) => (typeof r === "string" ? r : r?.portal_customer_ids ?? r?.customer_id))
+                  .filter((v: any): v is string => typeof v === "string");
+  return [...new Set(ids)];
+}
+
+// Namen der freigegebenen Kunden (für Umschalter/Anzeige im Portal)
+async function customersFor(supabase: any, ids: string[]) {
+  if (!ids.length) return [];
+  const { data } = await supabase
+    .from("customers").select("id, company_name").in("id", ids);
+  return (data || [])
+    .map((c: any) => ({ id: c.id, name: c.company_name || "" }))
+    .sort((a: any, b: any) => a.name.localeCompare(b.name, "de-CH"));
+}
+
 // Mitarbeiter-JWT serverseitig prüfen (inline statt _shared/auth.ts, damit der
 // Dashboard-Deploy ohne zusätzliche Dateien auskommt). service_role-Client
 // kann fremde User-JWTs via auth.getUser verifizieren.
@@ -159,9 +186,9 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
     const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "";
-    const body = await req.json();
-    const action = body.action ;
-    const sessionToken = body.session;
+    const body = req.method === "POST" ? await req.json().catch(() => ({})) : {};
+    const action = body.action || new URL(req.url).searchParams.get("action");
+    const sessionToken = body.session || req.headers.get("x-portal-session");
 
     // ── request-link: Magic-Link anfordern (kein User-Enumeration) ────────────
     if (action === "request-link") {
@@ -213,13 +240,20 @@ serve(async (req) => {
       await supabase.from("portal_users").update({ last_login_at: new Date().toISOString() }).eq("id", pu.id);
       await audit(supabase, pu, "login", null, null, ip);
 
-      const { data: cust } = await supabase
-        .from("customers").select("company_name").eq("id", pu.customer_id).single();
+      const ids = await customerIdsFor(supabase, pu);
+      const customers = await customersFor(supabase, ids);
+      // customer_name bleibt erhalten (Hauptmandant) — ältere, noch geladene
+      // Portal-Clients lesen dieses Feld.
+      const primary = customers.find((c: any) => c.id === pu.customer_id) || customers[0];
 
       return json({
         session,
         expires_at: sExpires,
-        user: { vorname: pu.vorname, nachname: pu.nachname, email: pu.email, customer_name: cust?.company_name || "" },
+        customers,
+        user: {
+          vorname: pu.vorname, nachname: pu.nachname, email: pu.email,
+          customer_name: primary?.name || "", customers,
+        },
       });
     }
 
@@ -227,9 +261,16 @@ serve(async (req) => {
     if (action === "me") {
       const pu = await resolveSession(supabase, sessionToken);
       if (!pu) return json({ error: "Nicht angemeldet." }, 401);
-      const { data: cust } = await supabase
-        .from("customers").select("company_name").eq("id", pu.customer_id).single();
-      return json({ user: { vorname: pu.vorname, nachname: pu.nachname, email: pu.email, customer_name: cust?.company_name || "" } });
+      const ids = await customerIdsFor(supabase, pu);
+      const customers = await customersFor(supabase, ids);
+      const primary = customers.find((c: any) => c.id === pu.customer_id) || customers[0];
+      return json({
+        customers,
+        user: {
+          vorname: pu.vorname, nachname: pu.nachname, email: pu.email,
+          customer_name: primary?.name || "", customers,
+        },
+      });
     }
 
     // ── list: alle Dokumente des Mandanten (read-only) ────────────────────────
@@ -237,10 +278,20 @@ serve(async (req) => {
       const pu = await resolveSession(supabase, sessionToken);
       if (!pu) return json({ error: "Nicht angemeldet." }, 401);
 
+      const ids = await customerIdsFor(supabase, pu);
+      if (!ids.length) {
+        await audit(supabase, pu, "list", null, "keine Freigabe", ip);
+        return json({
+          customer_name: "", customers: [],
+          user: { vorname: pu.vorname, nachname: pu.nachname, email: pu.email },
+          docs: [], tags: {},
+        });
+      }
+
       const { data: docs } = await supabase
         .from("dokumente")
-        .select("id, name, filename, category, year, file_size, file_type, tag_ids, created_at, updated_at")
-        .eq("customer_id", pu.customer_id)
+        .select("id, name, filename, category, year, file_size, file_type, tag_ids, created_at, updated_at, customer_id")
+        .in("customer_id", ids)
         .is("deleted_at", null)
         .order("year", { ascending: false })
         .order("name", { ascending: true });
@@ -254,12 +305,13 @@ serve(async (req) => {
         for (const t of tagRows || []) tags[t.id] = t.name;
       }
 
-      const { data: cust } = await supabase
-        .from("customers").select("company_name").eq("id", pu.customer_id).single();
+      const customers = await customersFor(supabase, ids);
+      const primary = customers.find((c: any) => c.id === pu.customer_id) || customers[0];
 
-      await audit(supabase, pu, "list", null, `${(docs || []).length} docs`, ip);
+      await audit(supabase, pu, "list", null, `${(docs || []).length} docs · ${ids.length} Mandant(en)`, ip);
       return json({
-        customer_name: cust?.company_name || "",
+        customer_name: primary?.name || "",   // Altfeld, für ältere Portal-Clients
+        customers,
         user: { vorname: pu.vorname, nachname: pu.nachname, email: pu.email },
         docs: docs || [],
         tags,
@@ -278,8 +330,12 @@ serve(async (req) => {
         .select("storage_path, filename, name, customer_id, deleted_at")
         .eq("id", doc_id).single();
 
-      // IDOR-Schutz: Dokument MUSS zum Mandanten des Nutzers gehören und aktiv sein
-      if (!doc || doc.customer_id !== pu.customer_id || doc.deleted_at) {
+      // IDOR-Schutz: Dokument MUSS zu einem freigegebenen Mandanten gehören
+      // und aktiv sein. Geprüft wird gegen die effektive Liste, nicht gegen
+      // portal_users.customer_id — sonst wären Gruppen-/Häkchen-Freigaben
+      // sichtbar (list), aber nicht herunterladbar.
+      const allowed = await customerIdsFor(supabase, pu);
+      if (!doc || !allowed.includes(doc.customer_id) || doc.deleted_at) {
         return json({ error: "Dieses Dokument gehört nicht zu Ihrem Zugang." }, 403);
       }
       if (!doc.storage_path) return json({ error: "Datei nicht verfügbar." }, 404);
@@ -304,6 +360,15 @@ serve(async (req) => {
     if (action === "upload") {
       const pu = await resolveSession(supabase, sessionToken);
       if (!pu) return json({ error: "Nicht angemeldet." }, 401);
+      // Zielmandant: explizit gewählt oder Hauptmandant — immer gegen die
+      // Freigabeliste geprüft, sonst könnte in fremde Posteingänge geschrieben
+      // werden.
+      const allowed = await customerIdsFor(supabase, pu);
+      const target = String(body.customer_id || pu.customer_id || "");
+      if (!target || !allowed.includes(target)) {
+        return json({ error: "Für diesen Mandanten besteht keine Freigabe." }, 403);
+      }
+
       const dataB64 = String(body.data || "");
       if (!dataB64) return json({ error: "Keine Datei erhalten." }, 400);
       if (dataB64.length > 11_500_000) return json({ error: "Datei zu gross (max. 8 MB)." }, 413);
@@ -321,7 +386,7 @@ serve(async (req) => {
       // nicht an: <kategorie>_<jahr>_<zeitstempel>@<dateiname>
       // (Posteingang.jsx nimmt vor '@' → split('_') = [kategorie, jahr]; nach '@' = Anzeigename)
       const jahr = new Date().getFullYear();
-      const path = `${pu.customer_id}/kundenportal_${jahr}_${Date.now()}@${safe}`;
+      const path = `${target}/kundenportal_${jahr}_${Date.now()}@${safe}`;
       const { error } = await supabase.storage
         .from("posteingang")
         .upload(path, bytes, { contentType: body.content_type || "application/octet-stream", upsert: false });
@@ -340,8 +405,15 @@ serve(async (req) => {
       const pu = await resolveSession(supabase, sessionToken);
       if (!pu) return json({ error: "Nicht angemeldet." }, 401);
 
+      // Ein Faden pro Kunde → bei mehreren Freigaben muss der Kunde mitkommen.
+      const allowedChat = await customerIdsFor(supabase, pu);
+      const chatCustomer = String(body.customer_id || pu.customer_id || "");
+      if (!chatCustomer || !allowedChat.includes(chatCustomer)) {
+        return json({ error: "Für diesen Mandanten besteht keine Freigabe." }, 403);
+      }
+
       const { data: thread } = await supabase.from("chartis_threads")
-        .select("id").eq("module", "unternehmen").eq("record_id", pu.customer_id).maybeSingle();
+        .select("id").eq("module", "unternehmen").eq("record_id", chatCustomer).maybeSingle();
       if (!thread) return json({ messages: [] });
 
       const { data: msgs } = await supabase.from("chartis_messages")
@@ -360,15 +432,21 @@ serve(async (req) => {
       if (!text) return json({ error: "Die Nachricht ist leer." }, 400);
       if (text.length > 5000) return json({ error: "Die Nachricht ist zu lang (max. 5000 Zeichen)." }, 413);
 
+      const allowedChat = await customerIdsFor(supabase, pu);
+      const chatCustomer = String(body.customer_id || pu.customer_id || "");
+      if (!chatCustomer || !allowedChat.includes(chatCustomer)) {
+        return json({ error: "Für diesen Mandanten besteht keine Freigabe." }, 403);
+      }
+
       // Faden holen oder anlegen
       let { data: thread } = await supabase.from("chartis_threads")
-        .select("id, mandant_id").eq("module", "unternehmen").eq("record_id", pu.customer_id).maybeSingle();
+        .select("id, mandant_id").eq("module", "unternehmen").eq("record_id", chatCustomer).maybeSingle();
       if (!thread) {
         const { data: cust } = await supabase.from("customers")
-          .select("company_name").eq("id", pu.customer_id).single();
+          .select("company_name").eq("id", chatCustomer).single();
         const { data: created, error: tErr } = await supabase.from("chartis_threads")
           .insert({
-            module: "unternehmen", record_id: pu.customer_id, thread_type: "objekt",
+            module: "unternehmen", record_id: chatCustomer, thread_type: "objekt",
             subject: cust?.company_name || "Kundenportal", ext_contact_email: pu.email,
           })
           .select("id, mandant_id").single();

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useAuth } from '@/lib/AuthContext';
 import { mandantenApi } from '../api';
 
 const MandantContext = createContext(null);
@@ -7,6 +8,10 @@ const MandantContext = createContext(null);
 export function MandantProvider({ children }) {
   const { mandantId } = useParams();
   const navigate = useNavigate();
+  // Externer Kundenbenutzer? Dann gibt es ausserhalb der FiBu nichts zu sehen —
+  // Wege nach draussen werden in der Oberflaeche ausgeblendet.
+  const { profile } = useAuth();
+  const isExtern = profile?.role === 'extern';
   const [mandant, setMandant] = useState(null);
   const [mandanten, setMandanten] = useState([]);
   const [role, setRole] = useState(null);
@@ -36,7 +41,13 @@ export function MandantProvider({ children }) {
         localStorage.setItem('fibu_last_mandant', mandantId);
       })
       .catch(err => {
-        setError(err.message);
+        // Kein Zugriff (RLS liefert keine Zeile) → PostgREST meldet das als
+        // "Cannot coerce the result to a single JSON object". Das ist fuer den
+        // Benutzer nichtssagend; typischer Fall ist ein alter oder geteilter Link.
+        const keinZugriff = /coerce the result|multiple \(or no\) rows|PGRST116/i.test(err.message ?? '');
+        setError(keinZugriff
+          ? 'Kein Zugriff auf diesen Mandanten. Bitte einen Mandanten aus der Liste wählen.'
+          : err.message);
         if (localStorage.getItem('fibu_last_mandant') === mandantId) {
           localStorage.removeItem('fibu_last_mandant');
         }
@@ -54,7 +65,7 @@ export function MandantProvider({ children }) {
   return (
     <MandantContext.Provider value={{
       mandant, mandanten, role, loading, error,
-      canWrite, isAdmin, switchMandant,
+      canWrite, isAdmin, isExtern, switchMandant,
     }}>
       {children}
     </MandantContext.Provider>

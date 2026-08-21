@@ -30,9 +30,10 @@ function RolleBadge({ role }) {
 // ── Hilfsfunktionen ───────────────────────────────────────────────
 const initials = (name) => name?.split(' ').map(p => p[0]).join('').toUpperCase().slice(0, 2) || '?';
 const fmtDate  = (d) => d ? new Date(d).toLocaleDateString('de-CH') : '—';
+const istMail  = (s) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test((s ?? '').trim());
 
 export default function Benutzerverwaltung() {
-  const { mandant, isAdmin } = useMandant();
+  const { mandant, isAdmin, isExtern } = useMandant();
 
   const [users,    setUsers]    = useState([]);
   const [allUsers, setAllUsers] = useState([]);   // Alle System-User (für Suche)
@@ -85,8 +86,10 @@ export default function Benutzerverwaltung() {
 
   useEffect(() => {
     loadUsers();
-    if (isAdmin) loadAllUsers();
-  }, [loadUsers, loadAllUsers, isAdmin]);
+    // Die Mitarbeiterliste gibt es nur fuer Artis-Personal — ein eingeladener
+    // Kunde soll nicht sehen, wer sonst noch in Smartis arbeitet.
+    if (isAdmin && !isExtern) loadAllUsers();
+  }, [loadUsers, loadAllUsers, isAdmin, isExtern]);
 
   // ── Rolle ändern ───────────────────────────────────────────────
   async function handleRoleChange(userId, newRole) {
@@ -127,19 +130,35 @@ export default function Benutzerverwaltung() {
     }
   }
 
-  // ── Hinzufügen ────────────────────────────────────────────────
+  // ── Hinzufügen / Einladen ─────────────────────────────────────
+  // Zwei Wege im selben Feld:
+  //  · bestehenden Smartis-Benutzer ausgewählt → nur Zugriff eintragen
+  //  · E-Mail-Adresse eingetippt → Kunde wird eingeladen (Rolle 'extern')
+  //    und sieht danach ausschliesslich diesen Mandanten.
   async function handleAdd() {
-    if (!selUser) return;
+    const mail = search.trim().toLowerCase();
+    if (!selUser && !istMail(mail)) return;
     setAdding(true);
     setMsg(null);
     try {
-      const { error } = await supabase.rpc('fibu_set_mandant_user_role', {
-        p_mandant_id:     mandant.id,
-        p_target_user_id: selUser.id,
-        p_role:           selRole,
-      });
-      if (error) throw error;
-      setMsg({ type: 'ok', text: `${selUser.display_name} wurde als ${ROLLEN.find(r => r.value === selRole)?.label} hinzugefügt.` });
+      if (selUser) {
+        const { error } = await supabase.rpc('fibu_set_mandant_user_role', {
+          p_mandant_id:     mandant.id,
+          p_target_user_id: selUser.id,
+          p_role:           selRole,
+        });
+        if (error) throw error;
+        setMsg({ type: 'ok', text: `${selUser.display_name} wurde als ${ROLLEN.find(r => r.value === selRole)?.label} hinzugefügt.` });
+      } else {
+        const { data, error } = await supabase.functions.invoke('fibuInviteUser', {
+          body: { email: mail, mandant_id: mandant.id, fibu_role: selRole },
+        });
+        // Edge Functions liefern Fehlertexte im Body — die sind aussagekräftiger
+        // als das generische "non-2xx status code" der Invoke-Fehlermeldung.
+        if (data?.error) throw new Error(data.error);
+        if (error) throw error;
+        setMsg({ type: 'ok', text: data?.hinweis ?? `Einladung an ${mail} versendet.` });
+      }
       setSelUser(null);
       setSearch('');
       await loadUsers();
@@ -151,6 +170,7 @@ export default function Benutzerverwaltung() {
   }
 
   // ── Suche / Dropdown ──────────────────────────────────────────
+  const kannAbsenden = !!selUser || istMail(search);
   const existingIds = new Set(users.map(u => u.user_id));
   const filtered = allUsers.filter(u =>
     !existingIds.has(u.id) &&
@@ -234,6 +254,7 @@ export default function Benutzerverwaltung() {
                             <div style={{ fontWeight: 600, fontSize: 13, color: '#1a1a2e' }}>
                               {u.display_name}
                               {isMe && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#7a9b7f', background: '#e8f4e8', padding: '1px 6px', borderRadius: 4 }}>Du</span>}
+                              {u.ist_extern && <span title="Kundenzugang – sieht ausschliesslich diesen Mandanten" style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#9a6b2d', background: '#fdf0dc', padding: '1px 6px', borderRadius: 4 }}>Kunde</span>}
                             </div>
                             <div style={{ fontSize: 11.5, color: '#94a394' }}>{u.email}</div>
                           </div>
@@ -301,7 +322,7 @@ export default function Benutzerverwaltung() {
             <div style={{ flex: 1, minWidth: 220, position: 'relative' }}>
               <input
                 style={{ ...inp, width: '100%', boxSizing: 'border-box' }}
-                placeholder="Name oder E-Mail suchen…"
+                placeholder="Mitarbeiter suchen — oder E-Mail des Kunden eingeben…"
                 value={selUser ? `${selUser.display_name} (${selUser.email})` : search}
                 onChange={e => { setSearch(e.target.value); setSelUser(null); setShowDrop(true); }}
                 onFocus={() => setShowDrop(true)}
@@ -310,7 +331,14 @@ export default function Benutzerverwaltung() {
               {showDrop && !selUser && search.length > 0 && (
                 <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', border: '1px solid #d4dcd4', borderRadius: 8, zIndex: 50, boxShadow: '0 4px 16px rgba(0,0,0,.1)', marginTop: 2, maxHeight: 240, overflowY: 'auto' }}>
                   {filtered.length === 0 ? (
-                    <div style={{ padding: '10px 14px', fontSize: 12.5, color: '#94a394' }}>Kein Benutzer gefunden</div>
+                    <div style={{ padding: '10px 14px', fontSize: 12.5, color: '#94a394' }}>
+                      {istMail(search)
+                        ? <>«{search.trim()}» ist noch nicht in Smartis.<br />
+                            <span style={{ color: '#4a6a4f', fontWeight: 600 }}>
+                              Mit «Einladen» einen Kundenzugang anlegen — sieht danach nur «{mandant?.name}».
+                            </span></>
+                        : 'Kein Benutzer gefunden'}
+                    </div>
                   ) : filtered.map(u => (
                     <div
                       key={u.id}
@@ -353,16 +381,18 @@ export default function Benutzerverwaltung() {
             {/* Button */}
             <button
               onClick={handleAdd}
-              disabled={!selUser || adding}
+              disabled={!kannAbsenden || adding}
               style={{
                 padding: '7px 18px', borderRadius: 8, border: 'none',
-                background: selUser ? '#7a9b7f' : '#c5cdc5',
+                background: kannAbsenden ? '#7a9b7f' : '#c5cdc5',
                 color: '#fff', fontSize: 13, fontWeight: 600,
-                cursor: selUser ? 'pointer' : 'not-allowed',
+                cursor: kannAbsenden ? 'pointer' : 'not-allowed',
                 whiteSpace: 'nowrap',
               }}
             >
-              {adding ? 'Fügt hinzu…' : '+ Hinzufügen'}
+              {adding
+                ? (selUser ? 'Fügt hinzu…' : 'Lädt ein…')
+                : (istMail(search) ? '✉ Einladen' : '+ Hinzufügen')}
             </button>
           </div>
 

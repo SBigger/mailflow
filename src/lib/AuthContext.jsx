@@ -8,6 +8,10 @@ export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [requiresMfa, setRequiresMfa] = useState(null);
+  // Eingeladen, aber Passwort noch nie gesetzt (inviteState 1). Ohne diesen
+  // Hinweis landet so jemand nach korrekter Anmeldung wortlos wieder auf der
+  // Login-Maske und weiss nicht, warum.
+  const [inviteIncomplete, setInviteIncomplete] = useState(null);
 
   useEffect(() => {
     const checkUser = async () => {
@@ -22,6 +26,7 @@ export function AuthProvider({ children }) {
     const handleAuthLogic = async (session) => {
       const user = session?.user ?? null;
       if (user) {
+        setInviteIncomplete(null);
         // Check if MFA is required but not yet completed
         const { data, error } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
 
@@ -57,8 +62,13 @@ export function AuthProvider({ children }) {
   async function loadProfile(userId, user) {
     const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
     if(data && data.inviteState === 1) {
+      // Einladung noch nicht abgeschlossen: anmelden ja, hinein aber nicht.
+      // Halbe Sitzung wieder beenden und den Grund merken, damit die
+      // Login-Maske ihn anzeigen kann.
+      setInviteIncomplete(data.email ?? user?.email ?? '');
       setProfile(null);
       setUser(null);
+      supabase.auth.signOut();
     } else {
       setProfile(data);
       setUser(user);
@@ -95,7 +105,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, login, checkMFA, signOut, updateProfile, requiresMfa }}>
+    <AuthContext.Provider value={{ user, profile, loading, login, checkMFA, signOut, updateProfile, requiresMfa, inviteIncomplete, setInviteIncomplete }}>
       {children}
     </AuthContext.Provider>
   );

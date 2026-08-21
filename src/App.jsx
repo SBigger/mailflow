@@ -91,6 +91,21 @@ function AuthenticatedApp() {
     if (!user) return <Login/>;
     if (requiresMfa) return <MFALogin/>;
 
+    // --- Externe Kundenbenutzer: ausschliesslich das FiBu-Modul ---
+    // Sie sehen nur die Mandanten, die in fibu_user_mandant_access fuer sie
+    // freigegeben sind — dort aber mit vollen Rechten. Alles uebrige von
+    // Smartis ist fuer sie weder erreichbar (hier) noch lesbar (RLS: is_staff).
+    if (profile?.role === 'extern') {
+        return (
+            <Suspense fallback={<PageLoader />}>
+                <Routes>
+                    <Route path="/fibu/*" element={<FiBuRouter />} />
+                    <Route path="*" element={<Navigate to="/fibu" replace />} />
+                </Routes>
+            </Suspense>
+        );
+    }
+
     return (
         // Ein einziger Suspense-Wrapper fängt alle darunter liegenden Lazy-Komponenten ab
         <Suspense fallback={<PageLoader />}>
