@@ -1175,7 +1175,7 @@ function PositionSelector({ value, onChange, subC, panelBg, panelBdr, headingC, 
 }
 
 // ── Import Dialog ─────────────────────────────────────────────────────────────
-function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = false, initialFlipER = false }) {
+function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = false, initialFlipER = false, customerId, selectedYear }) {
   const isLight = theme === "light";
   const isArtis = theme === "artis";
   const panelBg  = isArtis ? "#ffffff" : isLight ? "#ffffff" : "#27272a";
@@ -1198,6 +1198,84 @@ function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = 
   const fileRef = useRef(null);
   const file2Ref = useRef(null);
   const pdfRef = useRef(null);
+
+  // ── Aus E-Binder wählen: statt lokal suchen, direkt aus den schon
+  //    hochgeladenen Dokumenten des Mandanten importieren ───────────────────
+  const [showEBinderPicker, setShowEBinderPicker] = useState(false);
+  const [eBinderDocs, setEBinderDocs] = useState([]);
+  const [eBinderLoading, setEBinderLoading] = useState(false);
+  const [eBinderSearch, setEBinderSearch] = useState("");
+  const [eBinderSelected, setEBinderSelected] = useState([]); // bis zu 2 Dokumente
+  const [eBinderImporting, setEBinderImporting] = useState(false);
+  // Vorschau rechts daneben — unabhängig von der Auswahl fürs Importieren.
+  const [eBinderPreview, setEBinderPreview] = useState(null);
+  const [eBinderPreviewUrl, setEBinderPreviewUrl] = useState(null);
+  const [eBinderPreviewLoading, setEBinderPreviewLoading] = useState(false);
+
+  useEffect(() => {
+    if (!eBinderPreview) { setEBinderPreviewUrl(null); return; }
+    const path = (eBinderPreview.storage_path || "").replace(/^dokumente\//, "");
+    if (!path) { setEBinderPreviewUrl(null); return; }
+    let aktiv = true;
+    setEBinderPreviewLoading(true);
+    supabase.storage.from(BUCKET).createSignedUrl(path, 3600).then(({ data, error }) => {
+      if (!aktiv) return;
+      setEBinderPreviewLoading(false);
+      if (data?.signedUrl) setEBinderPreviewUrl(data.signedUrl);
+      else { setEBinderPreviewUrl(null); toast.error("Vorschau nicht verfügbar" + (error ? ": " + error.message : "")); }
+    });
+    return () => { aktiv = false; };
+  }, [eBinderPreview]);
+
+  useEffect(() => {
+    if (!showEBinderPicker || !customerId || eBinderDocs.length > 0) return;
+    setEBinderLoading(true);
+    let q = supabase.from("dokumente")
+      .select("id, name, filename, storage_path, category, year, file_type")
+      .eq("customer_id", customerId)
+      .order("created_at", { ascending: false })
+      .limit(500);
+    if (selectedYear) q = q.eq("year", selectedYear);
+    q.then(({ data, error }) => {
+      setEBinderLoading(false);
+      if (error) { toast.error("E-Binder konnte nicht geladen werden: " + error.message); return; }
+      setEBinderDocs(data || []);
+    });
+  }, [showEBinderPicker, customerId, selectedYear]);
+
+  const toggleEBinderDoc = (doc) => {
+    setEBinderSelected(prev => {
+      if (prev.some(d => d.id === doc.id)) return prev.filter(d => d.id !== doc.id);
+      if (prev.length >= 2) { toast.error("Maximal 2 Dateien gleichzeitig (Bilanz + ER)"); return prev; }
+      return [...prev, doc];
+    });
+  };
+
+  async function importFromEBinder() {
+    if (!eBinderSelected.length) return;
+    setEBinderImporting(true);
+    try {
+      const files = [];
+      for (const doc of eBinderSelected) {
+        const path = (doc.storage_path || "").replace(/^dokumente\//, "");
+        if (!path) throw new Error(`${doc.name}: kein Speicherpfad`);
+        const { data, error } = await supabase.storage.from(BUCKET).download(path);
+        if (error || !data) throw new Error(`${doc.name}: ${error?.message || "Download fehlgeschlagen"}`);
+        files.push(new File([data], doc.filename || doc.name, { type: data.type }));
+      }
+      setShowEBinderPicker(false);
+      setEBinderSelected([]);
+      const pdfs = files.filter(f => f.name.toLowerCase().endsWith(".pdf"));
+      const others = files.filter(f => !f.name.toLowerCase().endsWith(".pdf"));
+      if (pdfs.length > 0) parsePdfFiles(pdfs.slice(0, 2));
+      else if (others.length > 1) parseMultipleFiles(others);
+      else if (others[0]) parseFile(others[0]);
+    } catch (e) {
+      toast.error("Import aus E-Binder fehlgeschlagen: " + (e?.message || String(e)));
+    } finally {
+      setEBinderImporting(false);
+    }
+  }
 
   // Spalten-Erkennung: Muster in Prioritäts-Reihenfolge (erstes Muster gewinnt),
   // optional mit Ausschluss-Wörtern (verhindert z.B. "Kontoname" als Kontonummer).
@@ -1632,7 +1710,7 @@ function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = 
     border: `1px solid ${panelBdr}`, outline: "none", backgroundColor: pageBg, color: headingC,
   };
 
-  return createPortal(
+  return (<>{createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: "rgba(0,0,0,0.5)" }}>
       <div className="rounded-2xl overflow-hidden flex flex-col" style={{
         backgroundColor: panelBg, border: `1px solid ${panelBdr}`,
@@ -1684,6 +1762,17 @@ function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = 
                     </button>
                     <input ref={pdfRef} type="file" accept=".pdf" multiple className="hidden" onChange={handlePdfChange} />
                   </div>
+                  {customerId && (
+                    <div style={{ marginTop: 8, padding: "10px 14px", borderRadius: 10, border: `1px solid ${panelBdr}`, backgroundColor: pageBg, display: "flex", alignItems: "center", gap: 10 }}>
+                      <span style={{ fontSize: 12, color: subC, flex: 1 }}>
+                        📁 Bilanz/ER liegt schon im E-Binder dieses Mandanten?
+                      </span>
+                      <button onClick={() => setShowEBinderPicker(true)}
+                        style={{ fontSize: 11, fontWeight: 600, padding: "4px 12px", borderRadius: 6, cursor: "pointer", border: `1px solid ${accent}60`, color: accent, backgroundColor: accent + "10" }}>
+                        Aus E-Binder wählen
+                      </button>
+                    </div>
+                  )}
                 </>
               )}
 
@@ -1828,7 +1917,106 @@ function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = 
       </div>
     </div>,
     document.body
-  );
+  )}
+  {showEBinderPicker && createPortal(
+    <div className="fixed inset-0 z-[60] flex items-center justify-center" style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
+      onMouseDown={e => { if (e.target === e.currentTarget) { setShowEBinderPicker(false); setEBinderPreview(null); } }}>
+      <div className="flex" style={{ gap: 12 }}>
+      <div className="rounded-2xl overflow-hidden flex flex-col" style={{
+        backgroundColor: panelBg, border: `1px solid ${panelBdr}`,
+        width: 640, maxHeight: "80vh", boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
+      }}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: `1px solid ${panelBdr}`, backgroundColor: isArtis ? "#e8f2e8" : isLight ? "#f1f5f9" : "#2f2f35" }}>
+          <span className="text-sm font-bold" style={{ color: headingC }}>📁 Aus E-Binder wählen</span>
+          <button onClick={() => { setShowEBinderPicker(false); setEBinderPreview(null); }} className="p-1 rounded hover:opacity-70"><X className="w-4 h-4" style={{ color: subC }} /></button>
+        </div>
+        {/* Suche */}
+        <div className="px-5 py-3" style={{ borderBottom: `1px solid ${panelBdr}` }}>
+          <input autoFocus value={eBinderSearch} onChange={e => setEBinderSearch(e.target.value)}
+            placeholder="Name oder Dateiname suchen…"
+            style={{ width: "100%", fontSize: 13, padding: "7px 12px", borderRadius: 8, border: `1px solid ${panelBdr}`, outline: "none", boxSizing: "border-box", backgroundColor: pageBg, color: headingC }} />
+          <div style={{ fontSize: 11, color: subC, marginTop: 5 }}>
+            {selectedYear ? `Jahr ${selectedYear}` : "Alle Jahre"} · bis zu 2 Dateien wählbar (Bilanz + ER) · 👁 zeigt die Vorschau daneben
+          </div>
+        </div>
+        {/* Liste */}
+        <div className="overflow-y-auto" style={{ flex: 1 }}>
+          {eBinderLoading
+            ? <div style={{ padding: 32, textAlign: "center", fontSize: 13, color: subC }}>Lädt…</div>
+            : (() => {
+                const q = eBinderSearch.trim().toLowerCase();
+                const filtered = eBinderDocs.filter(d => !q ||
+                  d.name?.toLowerCase().includes(q) || d.filename?.toLowerCase().includes(q));
+                if (!filtered.length) return <div style={{ padding: 32, textAlign: "center", fontSize: 13, color: subC }}>Keine Dokumente gefunden</div>;
+                return filtered.map(doc => {
+                  const checked = eBinderSelected.some(d => d.id === doc.id);
+                  const previewed = eBinderPreview?.id === doc.id;
+                  const ext = (doc.filename || "").split(".").pop()?.toUpperCase() || "DOC";
+                  return (
+                    <div key={doc.id} onClick={() => toggleEBinderDoc(doc)}
+                      style={{ padding: "9px 18px", cursor: "pointer", display: "flex", alignItems: "center", gap: 12,
+                        borderBottom: `1px solid ${panelBdr}`, backgroundColor: checked ? accent + "12" : "transparent" }}>
+                      <input type="checkbox" checked={checked} readOnly style={{ width: 15, height: 15, accentColor: accent, flexShrink: 0 }} />
+                      <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 4,
+                        backgroundColor: ext === "PDF" ? "#fee2e2" : "#dbeafe", color: ext === "PDF" ? "#dc2626" : "#1d4ed8", flexShrink: 0 }}>{ext}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, color: headingC, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{doc.name}</div>
+                        <div style={{ fontSize: 11, color: subC, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{doc.filename}</div>
+                      </div>
+                      {doc.year && <span style={{ fontSize: 11, color: subC, flexShrink: 0 }}>{doc.year}</span>}
+                      <button onClick={e => { e.stopPropagation(); setEBinderPreview(previewed ? null : doc); }}
+                        title="Vorschau"
+                        style={{ background: previewed ? accent + "20" : "none", border: "none", borderRadius: 5, cursor: "pointer",
+                          color: previewed ? accent : subC, fontSize: 14, padding: "3px 6px", flexShrink: 0, lineHeight: 1 }}>👁</button>
+                    </div>
+                  );
+                });
+              })()
+          }
+        </div>
+        {/* Footer */}
+        <div className="flex justify-end gap-2 px-5 py-3" style={{ borderTop: `1px solid ${panelBdr}` }}>
+          <button onClick={() => { setShowEBinderPicker(false); setEBinderSelected([]); setEBinderPreview(null); }} className="px-4 py-2 rounded-lg text-sm" style={{ color: subC }}>Abbrechen</button>
+          <button disabled={!eBinderSelected.length || eBinderImporting} onClick={importFromEBinder}
+            className="flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-semibold text-white transition-opacity"
+            style={{ backgroundColor: accent, opacity: eBinderSelected.length && !eBinderImporting ? 1 : 0.4 }}>
+            <Upload className="w-3.5 h-3.5" />
+            {eBinderImporting ? "Lädt…" : eBinderSelected.length ? `${eBinderSelected.length} Datei${eBinderSelected.length > 1 ? "en" : ""} übernehmen` : "Übernehmen"}
+          </button>
+        </div>
+      </div>
+      {eBinderPreview && (() => {
+        const ft = eBinderPreview.file_type || "";
+        const istPdf = ft.includes("pdf") || (eBinderPreview.filename || "").toLowerCase().endsWith(".pdf");
+        const istBild = ft.startsWith("image/");
+        return (
+          <div onMouseDown={e => e.stopPropagation()} className="rounded-2xl overflow-hidden flex flex-col" style={{
+            width: 380, maxHeight: "80vh", backgroundColor: panelBg, border: `1px solid ${panelBdr}`, boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
+          }}>
+            <div className="flex items-center gap-2 px-4 py-3" style={{ borderBottom: `1px solid ${panelBdr}`, backgroundColor: isArtis ? "#e8f2e8" : isLight ? "#f1f5f9" : "#2f2f35" }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: headingC, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={eBinderPreview.name}>{eBinderPreview.name}</span>
+              <button onClick={() => setEBinderPreview(null)} className="p-1 rounded hover:opacity-70"><X className="w-3.5 h-3.5" style={{ color: subC }} /></button>
+            </div>
+            <div style={{ flex: 1, minHeight: 400, backgroundColor: "#f1f5f9", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              {eBinderPreviewLoading
+                ? <span style={{ fontSize: 12, color: subC }}>Lädt…</span>
+                : !eBinderPreviewUrl
+                  ? <span style={{ fontSize: 12, color: subC }}>Vorschau nicht verfügbar</span>
+                  : istPdf
+                    ? <iframe src={eBinderPreviewUrl} title={eBinderPreview.name} style={{ width: "100%", height: "100%", minHeight: 400, border: "none" }} />
+                    : istBild
+                      ? <img src={eBinderPreviewUrl} alt={eBinderPreview.name} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                      : <div style={{ textAlign: "center", padding: 16, fontSize: 12, color: subC }}>Keine Vorschau für diesen Dateityp</div>
+              }
+            </div>
+          </div>
+        );
+      })()}
+      </div>
+    </div>,
+    document.body
+  )}</>);
 }
 
 // ── Export-Modus Dialog (Mindestgliederung / Detailliert) ────────────────────
@@ -4840,6 +5028,8 @@ export default function Abschlussdokumentation() {
           theme={theme}
           initialFlipPassiven={signFlipPassiven}
           initialFlipER={signFlipER}
+          customerId={selectedCid}
+          selectedYear={selectedYear}
         />
       )}
 
