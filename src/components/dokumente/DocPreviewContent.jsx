@@ -258,6 +258,8 @@ const SHEET_HEADBG = "#f5f5f5";
 const SHEET_HEADFG = "#616161";
 const SHEET_FG     = "#000000";
 const ROWHEAD_W    = 42;
+const HEAD_H       = 18;   // Hoehe der Spaltenkopfzeile
+const DEFAULT_ROW_H = 20;  // Excel-Standardzeile in Pixel
 
 function colLetter(n) {
   let s = "";
@@ -279,11 +281,18 @@ function ExcelSheet({ sheet }) {
     for (let i = 0; i < ci; i++) x += cols[i]?.px ?? 84;
     return x;
   };
+  // Fixierte Zeilen brauchen ihren echten Abstand von oben -- mit einer fest
+  // angenommenen Zeilenhoehe wuerden sie sich bei hohen Zeilen ueberlappen.
+  const topOffset = [];
+  {
+    let y = HEAD_H;
+    for (let i = 0; i < rows.length; i++) { topOffset.push(y); y += rows[i].px || DEFAULT_ROW_H; }
+  }
 
   const headCell = {
     position: "sticky", top: 0, zIndex: 3, background: SHEET_HEADBG, color: SHEET_HEADFG,
     border: "1px solid " + SHEET_GRID, fontSize: 10, fontWeight: 400, textAlign: "center",
-    padding: "1px 4px", height: 18,
+    padding: "1px 4px", height: HEAD_H,
   };
 
   return (
@@ -312,7 +321,7 @@ function ExcelSheet({ sheet }) {
             const stickyRow = ri < freezeY;
             return (
               <tr key={ri} style={row.px ? { height: row.px } : undefined}>
-                <th style={{ ...headCell, top: stickyRow ? 18 + ri * 20 : undefined,
+                <th style={{ ...headCell, top: stickyRow ? topOffset[ri] : undefined,
                   position: "sticky", left: 0, zIndex: stickyRow ? 5 : 2 }}>{ri + 1}</th>
                 {Array.from({ length: colCount }, (_, ci) => {
                   const cell = row.cells[ci];
@@ -343,7 +352,7 @@ function ExcelSheet({ sheet }) {
                         ...(sticky ? {
                           position: "sticky", zIndex: 1,
                           ...(ci < freezeX ? { left: leftOffset(ci) } : null),
-                          ...(stickyRow ? { top: 18 + ri * 20 } : null),
+                          ...(stickyRow ? { top: topOffset[ri] } : null),
                         } : null),
                       }}>{cell?.t || ""}</td>
                   );
