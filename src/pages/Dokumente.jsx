@@ -1901,6 +1901,21 @@ export default function Dokumente() {
     } catch { return null; }
   }, [signedUrls]);
 
+  // Metadaten direkt aus der Panel-Spalte speichern (ohne Dialog). Gleiche
+  // Felder und gleiche Regeln wie im Bearbeiten-Dialog; der Kunde bleibt, den
+  // wechselt man weiterhin ueber "Alle Felder".
+  const handleSaveMeta = useCallback(async (doc, patch) => {
+    try {
+      await entities.Dokument.update(doc.id, patch);
+      await queryClient.invalidateQueries({ queryKey: ["dokumente-all"] });
+      toast.success("Metadaten gespeichert");
+      return true;
+    } catch (e) {
+      toast.error("Speichern fehlgeschlagen: " + (e?.message || e));
+      return false;
+    }
+  }, [queryClient]);
+
   // Nur ein noch nicht ausgeloestes Oeffnen abbrechen — ein offenes Fenster bleibt.
   const cancelHoverOpen = () => { clearTimeout(hoverTimer.current); };
   // Gibt das Augen-Symbol fuer eine Zeile zurueck (nur bei lokal previewbaren Dateien).
@@ -2083,9 +2098,16 @@ export default function Dokumente() {
   const treeItem = { display: "flex", alignItems: "center", gap: 5, padding: "4px 8px", cursor: "pointer", borderRadius: 5, fontSize: 12, userSelect: "none" };
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden" style={{background: s.cardBg }}>
+    // h-full/w-full statt h-screen/w-screen: im Multilayout steht die Seite in
+    // einem Panel, das nur einen Teil des Bildschirms breit ist. Mit 100vw ragte
+    // sie darueber hinaus und alles Rechtsbuendige (Volltext-Suche, Links,
+    // Hochladen, Massenablage, Ansichts-Umschalter, Sortierung) lag hinter der
+    // Panel-Kante im overflow:hidden.
+    <div className="flex flex-col h-full w-full overflow-hidden" style={{background: s.cardBg }}>
       {/* Header */}
-      <div style={{ padding: "12px 20px", borderBottom: "1px solid " + border, display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+      {/* flexWrap: im Multilayout ist die Seite nur ein Panel breit -- dann
+          rutschen Suche und Knoepfe in die naechste Zeile statt zu verschwinden. */}
+      <div style={{ padding: "12px 20px", borderBottom: "1px solid " + border, display: "flex", alignItems: "center", gap: 10, flexShrink: 0, flexWrap: "wrap" }}>
         <span style={{ fontSize: 15, fontWeight: 700, color: s.textMain }}>E-Binder</span>
         {/* Tabs */}
         <div style={{ display: "flex", gap: 2, background: s.sidebarBg, border: "1px solid " + border, borderRadius: 8, padding: 3 }}>
@@ -2101,13 +2123,13 @@ export default function Dokumente() {
         </div>
         <div style={{ flex: 1 }} />
         {/* ── Volltext-Suche ── */}
-        <div style={{ position: "relative" }}>
+        <div style={{ position: "relative", flex: "1 1 200px", minWidth: 160, maxWidth: 280 }}>
           <Search size={13} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: ftSearching ? accent : s.textMuted, pointerEvents: "none" }} />
           <input
             value={ftSearch}
             onChange={e => setFtSearch(e.target.value)}
             placeholder={selCustomerId ? "Volltext-Suche (dieser Kunde)…" : "Volltext-Suche über alle Dokumente…"}
-            style={{ background: s.inputBg, border: "1px solid " + (ftSearch ? accent : border), color: s.textMain, borderRadius: 8, padding: "5px 32px 5px 30px", fontSize: 12, width: 280, outline: "none", transition: "border 0.2s" }}
+            style={{ background: s.inputBg, border: "1px solid " + (ftSearch ? accent : border), color: s.textMain, borderRadius: 8, padding: "5px 32px 5px 30px", fontSize: 12, width: "100%", outline: "none", transition: "border 0.2s" }}
           />
           {ftSearch && (
             <button onClick={() => { setFtSearch(""); setFtResults(null); }}
@@ -2417,7 +2439,7 @@ export default function Dokumente() {
             </div>
           )}
           {/* Topbar */}
-          <div style={{ padding: "8px 16px", borderBottom: "1px solid " + border, display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+          <div style={{ padding: "8px 16px", borderBottom: "1px solid " + border, display: "flex", alignItems: "center", gap: 10, flexShrink: 0, flexWrap: "wrap" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 13, fontWeight: 600, color: accent, overflow: "hidden", minWidth: 0 }}>
               {selCustomer ? (<>
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flexShrink: 1 }}>{selCustomer.company_name}</span>
@@ -2516,6 +2538,8 @@ export default function Dokumente() {
                 else { toast.error('URL nicht verfügbar.'); }
               }}
               onEditDoc={setEditDoc}
+              onSaveMeta={handleSaveMeta}
+              filterTagsForCategory={filterTagsByCategory}
               renderActions={(doc) => renderRowActions(doc, {
                 isCheckedOut:  !!doc.checked_out_by,
                 isMyCheckout:  doc.checked_out_by === user?.id,
