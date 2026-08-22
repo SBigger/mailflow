@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import {entities, supabase} from "../../api/supabaseClient.js";
+import { supabase } from "../../api/supabaseClient.js";
 import { Button } from "../../components/ui/button.jsx";
 import { Input } from "../../components/ui/input.jsx";
 import { toast } from "sonner";
@@ -49,8 +49,10 @@ export default function SetPassword() {
       const { data, error} = await supabase.auth.updateUser({ password });
       if (error) throw error;
 
-      const { err } = await entities.User.update(data?.user.id, { inviteState: 2 });
-      if (err) throw err;
+      // Nicht direkt auf profiles schreiben: fuer die Rolle 'extern' verbietet
+      // RLS das, die Einladung liesse sich sonst nie abschliessen.
+      const { error: inviteErr } = await supabase.rpc('complete_invite');
+      if (inviteErr) throw inviteErr;
 
       setDone(true);
       toast.success("Passwort erfolgreich gesetzt!");

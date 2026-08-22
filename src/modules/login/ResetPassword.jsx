@@ -61,7 +61,11 @@ export default function ResetPassword() {
           // Eingeladen, aber noch nie ein Passwort gesetzt: das ist hiermit
           // erledigt. Ohne das Weitersetzen bliebe der Zugang gesperrt
           // (AuthContext wirft inviteState 1 wieder hinaus).
-          await entities.User.update(data.user.id, { inviteState: 2 });
+          // Fehler nicht verschlucken: schlaegt der Aufruf fehl (z.B. weil die
+          // Migration auf dem Mandanten noch nicht eingespielt ist), bliebe der
+          // Zugang sonst stumm auf inviteState 1 haengen.
+          const { error: inviteErr } = await supabase.rpc('complete_invite');
+          if (inviteErr) throw inviteErr;
           route = "/mfa-setup";
           break;
         case 2:
