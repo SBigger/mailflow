@@ -108,6 +108,13 @@ const AI_BELEG_KEYWORDS = {
   EK_JAHRESERGEBNIS: ["jahresergebnis", "jahresgewinn", "jahresverlust", "erfolgsrechnung"],
 };
 
+// Dokument-Kategorien, die für eine Bilanzposition praktisch nie der richtige Beleg
+// sind — ein Bankkonto darf nicht mit einer AHV-Abrechnung verknüpft werden, nur
+// weil ein Stichwort zufällig trifft und sonst kein besserer Kandidat da ist.
+// Ausnahme: Sozialversicherungs-Kreditoren (FK_KURZ_SONST) werden tatsächlich oft
+// mit Personal-Dokumenten (AHV-/Quellensteuer-Abrechnung) belegt.
+const AI_BLOCKED_CATEGORIES = { default: ["personal", "korrespondenz"], FK_KURZ_SONST: [] };
+
 // Zahlen aus einem Text extrahieren und auf gerundete Beträge normalisieren.
 // Erkennt CH/DE-Formate: 1'234.56 · 1’234.56 · 1.234,56 · 1234,56 · 1234.56 · 1234
 function extractAmounts(text) {
@@ -4716,9 +4723,11 @@ export default function Abschlussdokumentation() {
         // (ein Jahresbudget nennt AHV, MWST, Leasing etc. alle in einer Datei) —
         // damit gewinnen sie sonst fast jede Suche, ob per Keyword oder LLM.
         const isPlanning = d => /\b(reporting|budget)\b/i.test(d.name || d.filename || "");
+        const blockedCats = AI_BLOCKED_CATEGORIES[k.position_id] ?? AI_BLOCKED_CATEGORIES.default;
         const cands = data
           .filter(d => !selectedYear || d.year === selectedYear || d.year == null)
           .filter(d => !isPlanning(d))
+          .filter(d => !blockedCats.includes(d.category))
           .slice(0, 5);
         if (!cands.length) continue;
         cands.forEach(d => docMeta.set(d.id, d));
@@ -4730,11 +4739,11 @@ export default function Abschlussdokumentation() {
           const kwHits = terms.filter(t => hay.includes(t)).length;
           const yearBonus = (selectedYear && d.year === selectedYear) ? 1 : 0;
           const amtHit = amountAppears(extractAmounts(contentCache.get(d.id) || ""), k.saldo_ist);
-          return { d, amtHit, score: (d.rank || 0) * 4 + kwHits + yearBonus + (amtHit ? 6 : 0) };
+          return { d, amtHit, kwHits, score: (d.rank || 0) * 4 + kwHits + yearBonus + (amtHit ? 6 : 0) };
         }).sort((a, b) => b.score - a.score);
         const best = scored[0];
         if (best?.amtHit) { await linkBeleg(k, best.d, "Betrag"); continue; } // sehr zuverlässig
-        pending.push({ k, cands });
+        pending.push({ k, cands, scored });
       }
 
       // ── Phase 2: LLM-Rerank für die unsicheren Konten ──
@@ -4774,9 +4783,15 @@ export default function Abschlussdokumentation() {
       // hunderten unpassenden Konten zugewiesen. Lieber ein Konto unbelegt lassen
       // als einen falschen Beleg stumm anhängen; ohne Kandidat bleibt es offen
       // und taucht in den Pendenzen auf.
+      // Zusätzlich verlangen wir eine eigene Textbestätigung für den von der KI
+      // gewählten Beleg (Kontoname/Stichwort-Treffer oder Betrag) — ohne das hat
+      // die KI z.B. ein Bankkonto mit einer AHV-Abrechnung verknüpft, weil unter
+      // den Kandidaten einfach kein besserer war. Lieber offen als blind vertraut.
       for (const p of stillOpen) {
         const llmDocId = llmAssigned.get(String(p.k.kontonummer));
-        if (llmDocId && docMeta.has(llmDocId)) await linkBeleg(p.k, docMeta.get(llmDocId), "KI");
+        if (!llmDocId || !docMeta.has(llmDocId)) continue;
+        const corroborated = p.scored.some(s => s.d.id === llmDocId && (s.kwHits > 0 || s.amtHit));
+        if (corroborated) await linkBeleg(p.k, docMeta.get(llmDocId), "KI");
       }
 
       qc.invalidateQueries({ queryKey: ["abschluss_konten", abschlussId] });
