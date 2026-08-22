@@ -1,9 +1,8 @@
 // modules/tasks.ts
-import { McpServer } from "npm:@modelcontextprotocol/sdk@1.0.1/server/mcp.js";
 import { z } from "npm:zod@3.23.8";
 import { supabase } from "../supabase.ts";
 import { registerTool, ok, unwrap } from "../tool.ts";
-import { requireCustomerId, requireWritesEnabled, type ToolContext, ToolError } from "../scope.ts";
+import { resolveCustomerId, requireWritesEnabled, type ToolContext, ToolError } from "../scope.ts";
 
 /**
  * Modul: Aufgabenverwaltung (Tasks)
@@ -19,9 +18,9 @@ const TASK_FIELDS =
     "reminder_date, column_id, assigned_to, assignee, verantwortlich, tags, project, " +
     "customer_id, created_at, updated_at";
 
-export function registerTaskTools(server: McpServer, context: ToolContext): void {
+export function registerTaskTools(context: ToolContext): void {
 
-  registerTool(server, {
+  registerTool({
     name: "tasks_list",
     title: "Aufgaben abfragen",
     description:
@@ -36,9 +35,10 @@ export function registerTaskTools(server: McpServer, context: ToolContext): void
       due_before: z.string().optional().describe("ISO-Datum: nur Aufgaben faellig vor diesem Zeitpunkt"),
       search: z.string().optional().describe("Freitextsuche in Titel/Beschreibung"),
       limit: z.number().int().min(1).max(200).default(50),
+      customer_id: z.string().uuid().optional().describe("Kunde (customers.id). Ohne Angabe wird der im Frontend gewaehlte Kunde verwendet."),
     },
     handler: async (args, ctx) => {
-      const customerId = requireCustomerId(ctx);
+      const customerId = resolveCustomerId(ctx, args.customer_id);
       let q = supabase
           .from("tasks")
           .select(TASK_FIELDS)
@@ -61,13 +61,16 @@ export function registerTaskTools(server: McpServer, context: ToolContext): void
     },
   }, context);
 
-  registerTool(server, {
+  registerTool({
     name: "tasks_get",
     title: "Aufgabe abrufen",
     description: "Liest eine einzelne Aufgabe (inkl. Anhaenge) anhand der ID.",
-    input: { id: z.string().uuid() },
+    input: {
+      id: z.string().uuid(),
+      customer_id: z.string().uuid().optional().describe("Kunde (customers.id). Ohne Angabe wird der im Frontend gewaehlte Kunde verwendet."),
+    },
     handler: async (args, ctx) => {
-      const customerId = requireCustomerId(ctx);
+      const customerId = resolveCustomerId(ctx, args.customer_id);
       const data = unwrap(
           await supabase
               .from("tasks")
@@ -81,7 +84,7 @@ export function registerTaskTools(server: McpServer, context: ToolContext): void
     },
   }, context);
 
-  registerTool(server, {
+  registerTool({
     name: "tasks_create",
     title: "Aufgabe anlegen",
     description:
@@ -99,10 +102,11 @@ export function registerTaskTools(server: McpServer, context: ToolContext): void
       due_date: z.string().optional().describe("ISO-Datum"),
       tags: z.array(z.string()).optional(),
       project: z.string().optional(),
+      customer_id: z.string().uuid().optional().describe("Kunde (customers.id). Ohne Angabe wird der im Frontend gewaehlte Kunde verwendet."),
     },
     handler: async (args, ctx) => {
       requireWritesEnabled(ctx);
-      const customerId = requireCustomerId(ctx);
+      const customerId = resolveCustomerId(ctx, args.customer_id);
       const row = unwrap(
           await supabase
               .from("tasks")
@@ -114,7 +118,7 @@ export function registerTaskTools(server: McpServer, context: ToolContext): void
     },
   }, context);
 
-  registerTool(server, {
+  registerTool({
     name: "tasks_update",
     title: "Aufgabe aendern",
     description:
@@ -134,11 +138,12 @@ export function registerTaskTools(server: McpServer, context: ToolContext): void
       due_date: z.string().optional(),
       tags: z.array(z.string()).optional(),
       project: z.string().optional(),
+      customer_id: z.string().uuid().optional().describe("Kunde (customers.id). Ohne Angabe wird der im Frontend gewaehlte Kunde verwendet."),
     },
     handler: async (args, ctx) => {
       requireWritesEnabled(ctx);
-      const customerId = requireCustomerId(ctx);
-      const { id, ...patch } = args;
+      const customerId = resolveCustomerId(ctx, args.customer_id);
+      const { id, customer_id: _scope, ...patch } = args;
       if (Object.keys(patch).length === 0) throw new ToolError("Keine Felder zum Aktualisieren angegeben.");
       const row = unwrap(
           await supabase
@@ -154,7 +159,7 @@ export function registerTaskTools(server: McpServer, context: ToolContext): void
     },
   }, context);
 
-  registerTool(server, {
+  registerTool({
     name: "tasks_set_status",
     title: "Aufgaben-Status aendern",
     description:
@@ -164,10 +169,11 @@ export function registerTaskTools(server: McpServer, context: ToolContext): void
       id: z.string().uuid(),
       status: z.string(),
       completed: z.boolean().optional(),
+      customer_id: z.string().uuid().optional().describe("Kunde (customers.id). Ohne Angabe wird der im Frontend gewaehlte Kunde verwendet."),
     },
     handler: async (args, ctx) => {
       requireWritesEnabled(ctx);
-      const customerId = requireCustomerId(ctx);
+      const customerId = resolveCustomerId(ctx, args.customer_id);
       const patch: Record<string, unknown> = { status: args.status, updated_at: new Date().toISOString() };
       if (args.completed !== undefined) patch.completed = args.completed;
       const row = unwrap(
@@ -184,7 +190,7 @@ export function registerTaskTools(server: McpServer, context: ToolContext): void
     },
   }, context);
 
-  registerTool(server, {
+  registerTool({
     name: "tasks_assign",
     title: "Aufgabe zuweisen",
     description: "Weist eine Aufgabe einer Person zu (assigned_to UUID und/oder Anzeigename).",
@@ -192,10 +198,11 @@ export function registerTaskTools(server: McpServer, context: ToolContext): void
       id: z.string().uuid(),
       assigned_to: z.string().uuid().nullable().optional().describe("profiles.id oder null zum Entfernen"),
       assignee: z.string().nullable().optional().describe("Anzeigename oder null"),
+      customer_id: z.string().uuid().optional().describe("Kunde (customers.id). Ohne Angabe wird der im Frontend gewaehlte Kunde verwendet."),
     },
     handler: async (args, ctx) => {
       requireWritesEnabled(ctx);
-      const customerId = requireCustomerId(ctx);
+      const customerId = resolveCustomerId(ctx, args.customer_id);
       const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
       if (args.assigned_to !== undefined) patch.assigned_to = args.assigned_to;
       if (args.assignee !== undefined) patch.assignee = args.assignee;
@@ -214,7 +221,7 @@ export function registerTaskTools(server: McpServer, context: ToolContext): void
     },
   }, context);
 
-  registerTool(server, {
+  registerTool({
     name: "tasks_list_columns",
     title: "Kanban-Spalten abfragen",
     description:

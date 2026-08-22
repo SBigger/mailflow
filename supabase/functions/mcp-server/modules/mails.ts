@@ -1,4 +1,3 @@
-import { McpServer } from "npm:@modelcontextprotocol/sdk@1.0.1/server/mcp.js";
 import { z } from "npm:zod@3.23.8";
 import { registerTool, ok } from "../tool.ts";
 import {requireBearToken, requireWritesEnabled, type ToolContext, ToolError} from "../scope.ts";
@@ -20,14 +19,14 @@ import {requireBearToken, requireWritesEnabled, type ToolContext, ToolError} fro
  */
 
 function edgeFunctionUrl(): string {
-    const base = Deno.env.get("SUPABASE_PUBLIC_URL");
-    if (!base) throw new ToolError("SUPABASE_URL ist nicht konfiguriert.");
+    const base = Deno.env.get("SUPABASE_PUBLIC_URL") ?? Deno.env.get("SUPABASE_URL");
+    if (!base) throw new ToolError("Weder SUPABASE_PUBLIC_URL noch SUPABASE_URL ist konfiguriert.");
     const path = "replyOutlookMail";
     return `${base.replace(/\/$/, "")}/functions/v1/${path}`;
 }
 
-export function registerMailTools(server: McpServer, context: ToolContext): void {
-    registerTool(server, {
+export function registerMailTools(context: ToolContext): void {
+    registerTool({
         name: "mail_send",
         title: "E-Mail versenden (via Edge Function)",
         description:
