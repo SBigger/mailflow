@@ -24,8 +24,8 @@ python -m venv env && env/Scripts/pip install olefile
 env/Scripts/python vba-auslesen.py "%APPDATA%\Microsoft\Word\STARTUP\SmartisWord.dotm"
 ```
 
-## Stand 21.08.2026: gefundener Fehler, Korrektur noch nicht eingebaut
-`SmartisHelper.bas` enthaelt bereits die Korrektur, die installierte `.dotm` **noch nicht**.
+## Stand 21.08.2026: Korrektur ist eingebaut und geprueft
+`SmartisHelper.bas` und die installierte `.dotm` sind auf demselben Stand.
 
 Der alte Code loeste SharePoint-Pfade so auf:
 
