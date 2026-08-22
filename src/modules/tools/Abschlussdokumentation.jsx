@@ -166,6 +166,15 @@ function fmtCHFshort(val) {
   return "CHF\u00a0" + fmtCHF(val);
 }
 
+// ── Drei-Zustand-Status je Konto: offen / erledigt / pendent ─────────────────
+// Liest weiterhin das alte boolesche `pendent`-Feld, falls ein Konto noch nie
+// auf den neuen `status` migriert wurde (bestehende Kunden-Daten).
+function statusOf(konto) {
+  return konto?.arbeitspapier?.status || (konto?.arbeitspapier?.pendent ? "pendent" : "offen");
+}
+const STATUS_ORDER = ["offen", "erledigt", "pendent"];
+const STATUS_LABEL = { offen: "Offen", erledigt: "Erledigt", pendent: "Pendent" };
+
 // Sicherer Formel-Evaluator: erlaubt nur Ziffern + - * / . ( ) '
 function evalExpr(str) {
   if (str === null || str === undefined || str === "") return null;
@@ -2842,12 +2851,13 @@ function KontenplanTab({ konten, onUpdateKonto, onAddKonto, customerId, selected
     );
   }
 
-  const COL_HEADERS = ["Konto-Nr", "Kontoname", "Saldo IST", "Saldo VJ", "Abw.", "Position", "Notiz", "Pendent"];
+  const COL_HEADERS = ["Konto-Nr", "Kontoname", "Saldo IST", "Saldo VJ", "Abw.", "Position", "Notiz", "Status"];
   const COL_ALIGN = [false, false, true, true, true, false, false, false];
   // Violett für „pendent"-Zeilen – theme-abhängig, damit Text lesbar bleibt.
   // Light/Artis: helles Violett + dunkler Text · Dark: halbtransparenter Violett-Overlay + heller Text.
   const PENDENT_BG       = isArtis ? "#efe9fb" : isLight ? "#ede9fe" : "rgba(139,92,246,0.22)";
   const PENDENT_BG_HOVER = isArtis ? "#e5dbf7" : isLight ? "#ddd6fe" : "rgba(139,92,246,0.34)";
+  const STATUS_DOT = { offen: "#b3ab98", erledigt: "#16a34a", pendent: "#7c3aed" };
 
   return (
     <div className="overflow-x-auto">
@@ -2988,7 +2998,8 @@ function KontenplanTab({ konten, onUpdateKonto, onAddKonto, customerId, selected
                   const noMapping = !effectivePos && /^[1-8]/.test(String(konto.kontonummer));
 
                   const isExpanded = expandedKonten.has(konto.id);
-                  const isPendent = !!konto.arbeitspapier?.pendent;
+                  const kontoStatus = statusOf(konto);
+                  const isPendent = kontoStatus === "pendent";
                   return (
                     <React.Fragment key={konto.id}>
                     <tr style={{
@@ -3089,15 +3100,20 @@ function KontenplanTab({ konten, onUpdateKonto, onAddKonto, customerId, selected
                           panelBg={panelBg} panelBdr={panelBdr}
                         />
                       </td>
-                      {/* Pendent */}
+                      {/* Status: offen / erledigt / pendent */}
                       <td style={{ padding: "4px 12px", textAlign: "center" }}>
-                        <input
-                          type="checkbox"
-                          checked={isPendent}
-                          onChange={e => onUpdateKonto(konto.id, { arbeitspapier: { ...(konto.arbeitspapier || {}), pendent: e.target.checked } })}
-                          title={isPendent ? "Als erledigt markieren" : "Als pendent markieren"}
-                          style={{ width: 16, height: 16, cursor: "pointer", accentColor: "#7c3aed", verticalAlign: "middle" }}
-                        />
+                        <div style={{ display: "inline-flex", gap: 4 }}>
+                          {STATUS_ORDER.map(s => (
+                            <button key={s}
+                              onClick={() => onUpdateKonto(konto.id, { arbeitspapier: { ...(konto.arbeitspapier || {}), status: s, pendent: s === "pendent" } })}
+                              title={STATUS_LABEL[s]}
+                              style={{
+                                width: 14, height: 14, borderRadius: "50%", cursor: "pointer", padding: 0,
+                                border: `2px solid ${STATUS_DOT[s]}`,
+                                backgroundColor: kontoStatus === s ? STATUS_DOT[s] : "transparent",
+                              }} />
+                          ))}
+                        </div>
                       </td>
                     </tr>
                     {/* ── Arbeitspapier (MiniExcel) + Belege ── */}
@@ -4084,6 +4100,214 @@ function AnhangTab({ einstellungen, onSaveEinstellungen, accent, headingC, subC,
   );
 }
 
+// ── Pendenzen-Review: dreispaltige Ansicht statt einer zweiten Tabelle ───────
+// Liste links, Beleg-Vorschau permanent gross in der Mitte, Status/Notiz/
+// Weiter rechts. Für das Abarbeiten offener Posten — der Kontenplan bleibt
+// für die Übersicht über alle Konten unverändert.
+function PendenzenReview({ konten, onUpdateKonto, accent, headingC, subC, panelBg, panelBdr, theme, onClose }) {
+  const isArtis = theme === "artis";
+  const isLight = theme === "light";
+  const pageBg = isArtis ? "#f2f5f2" : isLight ? "#f4f4f8" : "#1c1c20";
+  const cardBg = isArtis ? "#ffffff" : isLight ? "#ffffff" : "#27272a";
+
+  const [filter, setFilter] = useState("pendent"); // alle | offen | erledigt | pendent
+  const [selectedId, setSelectedId] = useState(null);
+  const [notizDraft, setNotizDraft] = useState("");
+  const [preview, setPreview] = useState(null);   // { url, loading }
+
+  const relevant = useMemo(() =>
+    konten.filter(k => Math.abs(parseFloat(k.saldo_ist) || 0) > 0.005), [konten]);
+
+  const filtered = useMemo(() => {
+    const list = filter === "alle" ? relevant : relevant.filter(k => statusOf(k) === filter);
+    return [...list].sort((a, b) => (parseInt(a.kontonummer) || 0) - (parseInt(b.kontonummer) || 0));
+  }, [relevant, filter]);
+
+  useEffect(() => {
+    if (!filtered.length) { setSelectedId(null); return; }
+    if (!filtered.some(k => k.id === selectedId)) setSelectedId(filtered[0].id);
+  }, [filtered, selectedId]);
+
+  const selected = filtered.find(k => k.id === selectedId) || null;
+  const belege = selected?.arbeitspapier?.belege || [];
+  const erstBeleg = belege[0] || null;
+
+  useEffect(() => { setNotizDraft(selected?.notiz || ""); }, [selectedId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!erstBeleg) { setPreview(null); return; }
+    const path = (erstBeleg.storage_path || "").replace(/^dokumente\//, "");
+    if (!path) { setPreview(null); return; }
+    let aktiv = true;
+    setPreview({ url: null, loading: true });
+    supabase.storage.from(BUCKET).createSignedUrl(path, 3600).then(({ data }) => {
+      if (!aktiv) return;
+      setPreview({ url: data?.signedUrl || null, loading: false });
+    });
+    return () => { aktiv = false; };
+  }, [erstBeleg?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const counts = useMemo(() => {
+    const c = { alle: relevant.length, offen: 0, erledigt: 0, pendent: 0 };
+    relevant.forEach(k => { c[statusOf(k)]++; });
+    return c;
+  }, [relevant]);
+
+  const geprueft = counts.erledigt + counts.pendent;
+  const idx = filtered.findIndex(k => k.id === selectedId);
+
+  const goto = (delta) => {
+    if (idx < 0 || !filtered.length) return;
+    const next = filtered[(idx + delta + filtered.length) % filtered.length];
+    setSelectedId(next.id);
+  };
+
+  const setStatus = (s) => {
+    if (!selected) return;
+    onUpdateKonto(selected.id, { arbeitspapier: { ...(selected.arbeitspapier || {}), status: s, pendent: s === "pendent" } });
+    if (filter !== "alle" && s !== filter) setTimeout(() => goto(0), 0); // Auswahl rutscht via useEffect automatisch nach
+  };
+
+  const saveNotiz = () => {
+    if (!selected || notizDraft === (selected.notiz || "")) return;
+    onUpdateKonto(selected.id, { notiz: notizDraft });
+  };
+
+  const FILTERS = [
+    { key: "pendent", label: "Pendent" }, { key: "offen", label: "Offen" },
+    { key: "erledigt", label: "Erledigt" }, { key: "alle", label: "Alle" },
+  ];
+
+  return createPortal(
+    <div style={{ position: "fixed", inset: 0, zIndex: 9998, backgroundColor: pageBg, display: "flex", flexDirection: "column" }}>
+      {/* Kopfzeile */}
+      <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 20px", borderBottom: `1px solid ${panelBdr}`, backgroundColor: cardBg, flexShrink: 0 }}>
+        <span style={{ fontSize: 14, fontWeight: 700, color: headingC }}>📋 Pendenzen-Review</span>
+        <div style={{ display: "flex", gap: 6 }}>
+          {FILTERS.map(f => (
+            <button key={f.key} onClick={() => setFilter(f.key)}
+              style={{
+                fontSize: 11.5, fontWeight: 700, padding: "5px 12px", borderRadius: 8, cursor: "pointer",
+                border: `1px solid ${filter === f.key ? accent : panelBdr}`,
+                backgroundColor: filter === f.key ? accent + "18" : "transparent",
+                color: filter === f.key ? accent : subC,
+              }}>
+              {f.label} <span style={{ opacity: 0.7 }}>({counts[f.key]})</span>
+            </button>
+          ))}
+        </div>
+        <span style={{ fontSize: 12, color: subC, marginLeft: 4 }}>{geprueft} von {counts.alle} geprüft</span>
+        <div style={{ flex: 1 }} />
+        <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: subC, fontSize: 20, lineHeight: 1 }}>×</button>
+      </div>
+
+      {!filtered.length ? (
+        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: subC, fontSize: 13 }}>
+          Keine Konten in dieser Ansicht.
+        </div>
+      ) : (
+        <div style={{ flex: 1, display: "grid", gridTemplateColumns: "280px 1fr 260px", gap: 14, padding: 14, minHeight: 0 }}>
+          {/* Liste */}
+          <div style={{ backgroundColor: cardBg, border: `1px solid ${panelBdr}`, borderRadius: 12, overflowY: "auto" }}>
+            {filtered.map(k => {
+              const st = statusOf(k);
+              const active = k.id === selectedId;
+              return (
+                <div key={k.id} onClick={() => setSelectedId(k.id)}
+                  style={{
+                    padding: "10px 14px", cursor: "pointer",
+                    borderLeft: `3px solid ${active ? accent : "transparent"}`,
+                    backgroundColor: active ? accent + "14" : "transparent",
+                    borderBottom: `1px solid ${panelBdr}`,
+                  }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: STATUS_DOT[st], flexShrink: 0 }} />
+                    <span style={{ fontSize: 12.5, fontWeight: active ? 700 : 600, color: headingC, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {k.kontonummer} · {k.kontoname}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 11, color: subC, marginTop: 2, paddingLeft: 14 }}>{fmtCHF(k.saldo_ist)} CHF</div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Beleg-Vorschau */}
+          <div style={{ backgroundColor: cardBg, border: `1px solid ${panelBdr}`, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, overflow: "hidden" }}>
+            {!erstBeleg ? (
+              <div style={{ textAlign: "center", color: subC, fontSize: 13 }}>
+                Noch kein Beleg verknüpft.<br />
+                <span style={{ fontSize: 11.5 }}>Im Kontenplan bei diesem Konto „Beleg verknüpfen" nutzen.</span>
+              </div>
+            ) : preview?.loading ? (
+              <span style={{ fontSize: 12, color: subC }}>Lädt…</span>
+            ) : !preview?.url ? (
+              <span style={{ fontSize: 12, color: subC }}>Vorschau nicht verfügbar</span>
+            ) : (erstBeleg.file_type || "").includes("pdf") ? (
+              <iframe src={preview.url} title={erstBeleg.name} style={{ width: "100%", height: "100%", border: "none" }} />
+            ) : (erstBeleg.file_type || "").startsWith("image/") ? (
+              <img src={preview.url} alt={erstBeleg.name} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+            ) : (
+              <div style={{ textAlign: "center", color: subC, fontSize: 12 }}>
+                {erstBeleg.name}<br />Keine Vorschau für diesen Dateityp.
+              </div>
+            )}
+          </div>
+
+          {/* Aktion */}
+          <div style={{ backgroundColor: cardBg, border: `1px solid ${panelBdr}`, borderRadius: 12, padding: 14, display: "flex", flexDirection: "column", gap: 12, overflowY: "auto" }}>
+            {selected && (
+              <>
+                <div>
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: headingC }}>{selected.kontonummer} · {selected.kontoname}</div>
+                  <div style={{ fontSize: 11.5, color: subC, marginTop: 2 }}>Saldo {fmtCHF(selected.saldo_ist)} CHF</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 10.5, fontWeight: 700, color: subC, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>Status setzen</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                    {STATUS_ORDER.map(s => {
+                      const active = statusOf(selected) === s;
+                      return (
+                        <button key={s} onClick={() => setStatus(s)}
+                          style={{
+                            textAlign: "left", padding: "7px 10px", borderRadius: 7, cursor: "pointer",
+                            border: `1.5px solid ${active ? STATUS_DOT[s] : panelBdr}`,
+                            backgroundColor: active ? STATUS_DOT[s] + "18" : "transparent",
+                            color: active ? STATUS_DOT[s] : headingC,
+                            fontWeight: active ? 700 : 400, fontSize: 12.5,
+                          }}>
+                          {STATUS_LABEL[s]}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 10.5, fontWeight: 700, color: subC, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>Notiz</div>
+                  <textarea value={notizDraft} onChange={e => setNotizDraft(e.target.value)} onBlur={saveNotiz}
+                    placeholder="Kurze Bemerkung…"
+                    style={{ width: "100%", height: 64, resize: "none", borderRadius: 7, border: `1px solid ${panelBdr}`, padding: "7px 9px", fontSize: 12, color: headingC, backgroundColor: pageBg, fontFamily: "inherit" }} />
+                </div>
+                <div style={{ marginTop: "auto", display: "flex", gap: 8 }}>
+                  <button onClick={() => goto(-1)} disabled={filtered.length < 2}
+                    style={{ flex: 1, padding: "8px 0", borderRadius: 8, border: `1px solid ${panelBdr}`, backgroundColor: "transparent", color: subC, fontSize: 12, cursor: filtered.length < 2 ? "default" : "pointer" }}>
+                    ← Zurück
+                  </button>
+                  <button onClick={() => goto(1)} disabled={filtered.length < 2}
+                    style={{ flex: 1, padding: "8px 0", borderRadius: 8, border: "none", backgroundColor: accent, color: "#fff", fontWeight: 700, fontSize: 12, cursor: filtered.length < 2 ? "default" : "pointer" }}>
+                    Weiter →
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>,
+    document.body
+  );
+}
+
 // ── Hauptkomponente ───────────────────────────────────────────────────────────
 export default function Abschlussdokumentation() {
   const navigate = useNavigate();
@@ -4110,6 +4334,7 @@ export default function Abschlussdokumentation() {
   const [dossierStatus, setDossierStatus] = useState(null); // null | Fortschrittstext
   const [aiBusy, setAiBusy] = useState(null); // null | Fortschrittstext der KI-Zuweisung
   const [exportDialog, setExportDialog] = useState(null);   // null | "pdf" | "dossier"
+  const [showPendenzen, setShowPendenzen] = useState(false);
 
   // ── Auto-Jahr: neuestes Jahr das wirklich Konten hat ────────────────────────
   useEffect(() => {
@@ -4852,6 +5077,19 @@ export default function Abschlussdokumentation() {
             </button>
             <button
               disabled={konten.length === 0}
+              onClick={() => setShowPendenzen(true)}
+              title="Offene Posten der Reihe nach durchgehen: Beleg, Status, Notiz"
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-opacity"
+              style={{
+                backgroundColor: panelBg, color: headingC,
+                border: `1px solid ${panelBdr}`,
+                opacity: konten.length > 0 ? 1 : 0.4,
+                cursor: konten.length > 0 ? "pointer" : "not-allowed",
+              }}>
+              📋 Pendenzen
+            </button>
+            <button
+              disabled={konten.length === 0}
               onClick={() => exportKontenCSV(konten, customerName, selectedYear)}
               className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-opacity"
               style={{
@@ -5058,6 +5296,21 @@ export default function Abschlussdokumentation() {
           panelBdr={panelBdr}
           onClose={() => setExportDialog(null)}
           onExport={runExport}
+        />
+      )}
+
+      {/* ── Pendenzen-Review ────────────────────────────────────────────────── */}
+      {showPendenzen && (
+        <PendenzenReview
+          konten={konten}
+          onUpdateKonto={handleUpdateKonto}
+          accent={accent}
+          headingC={headingC}
+          subC={subC}
+          panelBg={panelBg}
+          panelBdr={panelBdr}
+          theme={theme}
+          onClose={() => setShowPendenzen(false)}
         />
       )}
     </div>
