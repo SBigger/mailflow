@@ -4596,7 +4596,7 @@ export default function Abschlussdokumentation() {
         }).sort((a, b) => b.score - a.score);
         const best = scored[0];
         if (best?.amtHit) { await linkBeleg(k, best.d, "Betrag"); continue; } // sehr zuverlässig
-        pending.push({ k, cands, best });
+        pending.push({ k, cands });
       }
 
       // ── Phase 2: LLM-Rerank für die unsicheren Konten ──
@@ -4629,11 +4629,16 @@ export default function Abschlussdokumentation() {
         }
       }
 
-      // ── Phase 3: LLM-Treffer verknüpfen, sonst Stichwort-Fallback ──
+      // ── Phase 3: nur noch LLM-Treffer verknüpfen ──
+      // Der frühere Stichwort-Fallback (Score >= 1.5 aus Volltext-Rank + Keyword-
+      // Treffern) hat in der Praxis vor allem breite Dokumente wie ein Jahres-
+      // budget gewonnen — die erwähnen fast jedes Stichwort einmal und wurden so
+      // hunderten unpassenden Konten zugewiesen. Lieber ein Konto unbelegt lassen
+      // als einen falschen Beleg stumm anhängen; ohne Kandidat bleibt es offen
+      // und taucht in den Pendenzen auf.
       for (const p of stillOpen) {
         const llmDocId = llmAssigned.get(String(p.k.kontonummer));
-        if (llmDocId && docMeta.has(llmDocId)) { await linkBeleg(p.k, docMeta.get(llmDocId), "KI"); continue; }
-        if (p.best && p.best.score >= 1.5) await linkBeleg(p.k, p.best.d, "Stichwort");
+        if (llmDocId && docMeta.has(llmDocId)) await linkBeleg(p.k, docMeta.get(llmDocId), "KI");
       }
 
       qc.invalidateQueries({ queryKey: ["abschluss_konten", abschlussId] });
