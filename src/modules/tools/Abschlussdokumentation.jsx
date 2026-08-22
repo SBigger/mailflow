@@ -174,6 +174,7 @@ function statusOf(konto) {
 }
 const STATUS_ORDER = ["offen", "erledigt", "pendent"];
 const STATUS_LABEL = { offen: "Offen", erledigt: "Erledigt", pendent: "Pendent" };
+const STATUS_DOT = { offen: "#b3ab98", erledigt: "#16a34a", pendent: "#7c3aed" };
 
 // Sicherer Formel-Evaluator: erlaubt nur Ziffern + - * / . ( ) '
 function evalExpr(str) {
@@ -2857,7 +2858,6 @@ function KontenplanTab({ konten, onUpdateKonto, onAddKonto, customerId, selected
   // Light/Artis: helles Violett + dunkler Text · Dark: halbtransparenter Violett-Overlay + heller Text.
   const PENDENT_BG       = isArtis ? "#efe9fb" : isLight ? "#ede9fe" : "rgba(139,92,246,0.22)";
   const PENDENT_BG_HOVER = isArtis ? "#e5dbf7" : isLight ? "#ddd6fe" : "rgba(139,92,246,0.34)";
-  const STATUS_DOT = { offen: "#b3ab98", erledigt: "#16a34a", pendent: "#7c3aed" };
 
   return (
     <div className="overflow-x-auto">
