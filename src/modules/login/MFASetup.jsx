@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import {entities, supabase} from "../../api/supabaseClient.js";
+import { supabase } from "../../api/supabaseClient.js";
 import { QRCodeSVG } from "qrcode.react"; // Einfache QR-Code Komponente
 import { Button } from "../../components/ui/button.jsx";
 import { Input } from "../../components/ui/input.jsx";
@@ -62,7 +62,11 @@ export default function MFASetup() {
             toast.success("2-Faktor-Authentifizierung erfolgreich aktiviert!");
             const { data, error} = await supabase.auth.getSession();
             if (error) throw error;
-            await entities.User.update(data.session.user.id, { inviteState: 3 });
+            // Nicht direkt auf profiles schreiben: fuer die Rolle 'extern'
+            // verbietet RLS das, der letzte Schritt der Einladung liesse sich
+            // sonst nie abschliessen. Fehler nicht verschlucken.
+            const { error: inviteErr } = await supabase.rpc('complete_invite', { p_ziel: 3 });
+            if (inviteErr) throw inviteErr;
             navigate("/Login");
         } catch (err) {
             toast.error("Code ungültig: " + err.message);
