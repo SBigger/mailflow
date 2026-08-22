@@ -4581,7 +4581,15 @@ export default function Abschlussdokumentation() {
         if (!query.trim()) continue;
         const { data, error } = await supabase.rpc("search_dokumente", { p_query: query, p_customer_id: selectedCid, p_limit: 8 });
         if (error || !data?.length) continue;
-        const cands = data.filter(d => !selectedYear || d.year === selectedYear || d.year == null).slice(0, 5);
+        // Budget/Reporting-Dokumente nie als Beleg-Kandidat: das sind interne
+        // Planungsunterlagen, die praktisch jedes Stichwort einmal enthalten
+        // (ein Jahresbudget nennt AHV, MWST, Leasing etc. alle in einer Datei) —
+        // damit gewinnen sie sonst fast jede Suche, ob per Keyword oder LLM.
+        const isPlanning = d => /\b(reporting|budget)\b/i.test(d.name || d.filename || "");
+        const cands = data
+          .filter(d => !selectedYear || d.year === selectedYear || d.year == null)
+          .filter(d => !isPlanning(d))
+          .slice(0, 5);
         if (!cands.length) continue;
         cands.forEach(d => docMeta.set(d.id, d));
         await ensureContent(cands.map(d => d.id));
