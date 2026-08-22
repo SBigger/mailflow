@@ -10508,10 +10508,10 @@ CREATE OR REPLACE TRIGGER on_auth_user_created
 
 /* cron jobs*/
 
-DO $$ BEGIN PERFORM cron.schedule('auto-sync-all', '*/5 * * * *', 'select net.http_post(url:=''https://api.artis.sm-artis.ch/functions/v1/auto-sync-all'',headers:=jsonb_build_object(''Content-Type'',''application/json'',''X-Cron-Secret'',''IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU''),body:=''{}''::jsonb,timeout_milliseconds:=55000);'); PERFORM cron.schedule('outlook-auto-sync', '* * * * *', 'select
+DO $$ BEGIN PERFORM cron.schedule('auto-sync-all', '*/5 * * * *', 'select net.http_post(url:=''https://api.artis.sm-artis.ch/functions/v1/auto-sync-all'',headers:=jsonb_build_object(''Content-Type'',''application/json'',''X-Cron-Secret'',''<ENTFERNT: X-Cron-Secret gehoert in den Vault, siehe vault.decrypted_secrets>''),body:=''{}''::jsonb,timeout_milliseconds:=55000);'); PERFORM cron.schedule('outlook-auto-sync', '* * * * *', 'select
   net.http_post(
       url:=''https://api.artis.sm-artis.ch/functions/v1/sync-outlook-mails'',
-      headers:=jsonb_build_object(''X-Cron-Secret'', ''IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU''),
+      headers:=jsonb_build_object(''X-Cron-Secret'', ''<ENTFERNT: X-Cron-Secret gehoert in den Vault, siehe vault.decrypted_secrets>''),
       timeout_milliseconds:=1000
   );'); PERFORM cron.schedule('sync-teams-calls-daily', '0 6 * * *', '
   select net.http_post(
