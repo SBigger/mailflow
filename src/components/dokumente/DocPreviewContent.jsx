@@ -112,9 +112,15 @@ export default function DocPreviewContent({ doc, url, C, onStatus, pdfScale = 1.
           }
 
           // Fallback ohne Worker (kann kurz haengen): Zeilen beim Lesen begrenzen.
+          // Gleiche Datenform wie der Worker, nur ohne Zellformate.
           const { read, utils } = await import("xlsx");
           const wb = read(new Uint8Array(buf), { type: "array", cellDates: true, sheetRows: 1000 });
-          const sheets = wb.SheetNames.map(nm => ({ name: nm, rows: utils.sheet_to_json(wb.Sheets[nm], { header: 1, raw: false, defval: "" }).slice(0, 1000).map(r => Array.isArray(r) ? r.slice(0, 60) : r) }));
+          const sheets = wb.SheetNames.map(nm => ({
+            name: nm, cols: [], styles: [], freeze: null, formatted: false,
+            rows: utils.sheet_to_json(wb.Sheets[nm], { header: 1, raw: false, defval: "" })
+              .slice(0, 1000)
+              .map(r => ({ px: null, cells: (Array.isArray(r) ? r.slice(0, 60) : []).map(v => ({ t: String(v ?? ""), s: -1 })) })),
+          }));
           if (!cancelled) { setExcel({ sheets, active: 0 }); setSt({ kind: "excel" }); } return;
         }
         if (/\.(docx|docm)$/.test(name)) {
@@ -166,8 +172,6 @@ export default function DocPreviewContent({ doc, url, C, onStatus, pdfScale = 1.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [st.kind, pdfPage, pdfNum, excel]);
 
-  const excelRows = excel?.sheets?.[excel.active]?.rows || [];
-
   return (
     <>
       {st.kind === "idle"    && <Centered c={C}>Dokument in der Liste anklicken</Centered>}
@@ -190,22 +194,7 @@ export default function DocPreviewContent({ doc, url, C, onStatus, pdfScale = 1.
         </div>
       )}
 
-      {st.kind === "excel" && (
-        <div style={{ overflow: "auto", padding: 4 }}>
-          <table style={{ borderCollapse: "collapse", fontSize: 11, color: C.fg }}>
-            <tbody>
-              {excelRows.map((row, ri) => (
-                <tr key={ri} style={{ background: ri === 0 ? C.headerRow : ri % 2 ? C.rowAlt : "transparent" }}>
-                  {(row.length ? row : [""]).map((cell, ci) => (
-                    <td key={ci} style={{ border: "1px solid " + C.cellBorder, padding: "2px 6px", whiteSpace: "nowrap",
-                      maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", fontWeight: ri === 0 ? 600 : 400 }}>{String(cell ?? "")}</td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      {st.kind === "excel" && <ExcelSheet sheet={excel?.sheets?.[excel.active]} />}
 
       {st.kind === "word" && (
         <div style={{ padding: 12 }}>
@@ -256,4 +245,114 @@ export function previewChrome(theme) {
     cellBorder: "#2c2c2c", headerRow: "#252525", rowAlt: "#1b1b1b",
     tabBar: "#111111", tabActive: "#252525", tabActiveFg: "#ffffff", tabFg: "#888888", tabAccent: "#4a7a4f",
   };
+}
+
+// ── Excel-Blatt ────────────────────────────────────────────────────────────
+// Bewusst immer auf Weiss und in Excel-Optik, unabhaengig vom App-Thema: graue
+// Gitternetzlinien, Spaltenkoepfe A B C, Zeilennummern, und die Formate aus der
+// Datei (fett, Farben, Rahmen, Ausrichtung, Zahlenformate). Fixierte Bereiche
+// aus Excel bleiben beim Scrollen stehen.
+const SHEET_BG     = "#ffffff";
+const SHEET_GRID   = "#d4d4d4";
+const SHEET_HEADBG = "#f5f5f5";
+const SHEET_HEADFG = "#616161";
+const SHEET_FG     = "#000000";
+const ROWHEAD_W    = 42;
+
+function colLetter(n) {
+  let s = "";
+  while (n > 0) { const r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = Math.floor((n - 1) / 26); }
+  return s;
+}
+
+function ExcelSheet({ sheet }) {
+  if (!sheet) return null;
+  const { rows = [], cols = [], styles = [], freeze } = sheet;
+  const colCount = rows.reduce((m, r) => Math.max(m, r.cells.length), 0);
+  if (!colCount) return <Centered c={{ faint: "#888" }}>Das Blatt ist leer.</Centered>;
+
+  // Fixierte Spalten/Zeilen aus Excel: links bzw. oben klebend.
+  const freezeX = freeze?.x || 0;
+  const freezeY = freeze?.y || 0;
+  const leftOffset = (ci) => {
+    let x = ROWHEAD_W;
+    for (let i = 0; i < ci; i++) x += cols[i]?.px ?? 84;
+    return x;
+  };
+
+  const headCell = {
+    position: "sticky", top: 0, zIndex: 3, background: SHEET_HEADBG, color: SHEET_HEADFG,
+    border: "1px solid " + SHEET_GRID, fontSize: 10, fontWeight: 400, textAlign: "center",
+    padding: "1px 4px", height: 18,
+  };
+
+  return (
+    <div style={{ background: SHEET_BG, minHeight: "100%", overflow: "auto" }}>
+      <table style={{ borderCollapse: "collapse", background: SHEET_BG, color: SHEET_FG,
+        fontFamily: "Calibri, 'Segoe UI', Arial, sans-serif", fontSize: 12, tableLayout: "fixed" }}>
+        <colgroup>
+          <col style={{ width: ROWHEAD_W }} />
+          {Array.from({ length: colCount }, (_, i) => (
+            <col key={i} style={{ width: cols[i]?.px ?? 84 }} />
+          ))}
+        </colgroup>
+        <thead>
+          <tr>
+            <th style={{ ...headCell, left: 0, zIndex: 5, width: ROWHEAD_W }} />
+            {Array.from({ length: colCount }, (_, i) => (
+              <th key={i} style={i < freezeX
+                ? { ...headCell, position: "sticky", left: leftOffset(i), zIndex: 5 }
+                : headCell}>{colLetter(i + 1)}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, ri) => {
+            if (row.px === 0) return null;                    // in Excel ausgeblendet
+            const stickyRow = ri < freezeY;
+            return (
+              <tr key={ri} style={row.px ? { height: row.px } : undefined}>
+                <th style={{ ...headCell, top: stickyRow ? 18 + ri * 20 : undefined,
+                  position: "sticky", left: 0, zIndex: stickyRow ? 5 : 2 }}>{ri + 1}</th>
+                {Array.from({ length: colCount }, (_, ci) => {
+                  const cell = row.cells[ci];
+                  if (cell === null) return null;             // von einer Verbindung verdeckt
+                  const st = cell && cell.s >= 0 ? styles[cell.s] : null;
+                  const sticky = ci < freezeX || stickyRow;
+                  return (
+                    <td key={ci} colSpan={cell?.cs} rowSpan={cell?.rs}
+                      style={{
+                        border: "1px solid " + SHEET_GRID,
+                        borderTop:    st?.bt || undefined,
+                        borderRight:  st?.br || undefined,
+                        borderBottom: st?.bb || undefined,
+                        borderLeft:   st?.bl || undefined,
+                        background: st?.bg || SHEET_BG,
+                        color: st?.c || SHEET_FG,
+                        fontWeight: st?.b ? 700 : 400,
+                        fontStyle: st?.i ? "italic" : undefined,
+                        textDecoration: st?.u ? "underline" : st?.s ? "line-through" : undefined,
+                        fontSize: st?.sz ? st.sz + "px" : undefined,
+                        fontFamily: st?.ff || undefined,
+                        textAlign: st?.ha || "left",
+                        verticalAlign: st?.va === "middle" ? "middle" : st?.va === "top" ? "top" : "bottom",
+                        whiteSpace: st?.wrap ? "pre-wrap" : "nowrap",
+                        paddingLeft: 4 + (st?.ind ? st.ind * 8 : 0),
+                        paddingRight: 4,
+                        overflow: "hidden", textOverflow: "ellipsis",
+                        ...(sticky ? {
+                          position: "sticky", zIndex: 1,
+                          ...(ci < freezeX ? { left: leftOffset(ci) } : null),
+                          ...(stickyRow ? { top: 18 + ri * 20 } : null),
+                        } : null),
+                      }}>{cell?.t || ""}</td>
+                  );
+                })}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
 }
