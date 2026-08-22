@@ -24,24 +24,63 @@ import { invoke } from '@tauri-apps/api/core';
 import '@/index.css'
 import { registerSW } from 'virtual:pwa-register'
 
+// Popups in der Desktop-App (Tauri).
+// WebView2 oeffnet auf window.open kein eigenes Fenster - auch nicht mit
+// NewWindowResponse::Allow, das wurde am 11.07.2026 erfolglos versucht. Darum
+// faengt der Interceptor jedes window.open ab und laesst Rust ein echtes
+// Tauri-Fenster bauen. Das laeuft im selben WebView2-Profil, Supabase-Session
+// und Cookies bleiben also erhalten.
 if (typeof window !== 'undefined' && window.__TAURI__) {
   const origOpen = window.open.bind(window)
   const oauthHosts = /login\.microsoftonline\.com|login\.live\.com|login\.microsoft\.com|login\.windows\.net/
+
+  // Attrappe fuer Aufrufer, die den Rueckgabewert pruefen: MSAL schaut auf
+  // .closed, openApp.js meldet bei null "Popup blockiert". Ohne die Attrappe
+  // kaeme trotz offenem Fenster eine Fehlermeldung.
+  const attrappe = () => ({ closed: false, close() {}, focus() {}, postMessage() {} })
+
+  // 'width=1600,height=900' -> { width: 1600, height: 900 }
+  const masse = (features) => {
+    const zahl = (feld) => {
+      const m = typeof features === 'string'
+        ? features.match(new RegExp(feld + '\\s*=\\s*(\\d+)'))
+        : null
+      return m ? Number(m[1]) : null
+    }
+    return { width: zahl('width'), height: zahl('height') }
+  }
+
   window.open = function (url, name, features) {
     try {
-      if (typeof url === 'string' && oauthHosts.test(url)) {
-        window.__TAURI__.core
-            .invoke('open_oauth_window', { url })
-            .catch((e) => console.error('[Smartis] OAuth-Popup fehlgeschlagen:', e))
-        // Dummy-Window für Libraries die window.open().closed prüfen (z.B. MSAL)
-        return { closed: false, close() {}, focus() {}, postMessage() {} }
+      if (typeof url === 'string' && url) {
+        // Relative Routen wie '/fibu/bank/123' gegen den aktuellen Origin
+        // aufloesen, sonst findet ein eigenes Fenster sie nicht.
+        let ziel = null
+        try { ziel = new URL(url, window.location.href) } catch { ziel = null }
+
+        if (oauthHosts.test(url)) {
+          window.__TAURI__.core
+              .invoke('open_oauth_window', { url: ziel ? ziel.toString() : url })
+              .catch((e) => console.error('[Smartis] OAuth-Popup fehlgeschlagen:', e))
+          return attrappe()
+        }
+
+        if (ziel && (ziel.protocol === 'http:' || ziel.protocol === 'https:')) {
+          const { width, height } = masse(features)
+          window.__TAURI__.core
+              .invoke('open_popup_window', { url: ziel.toString(), title: null, width, height })
+              .catch((e) => console.error('[Smartis] Popup fehlgeschlagen:', e))
+          return attrappe()
+        }
       }
     } catch (e) {
-      console.warn('[Smartis] OAuth-Intercept Fehler:', e)
+      console.warn('[Smartis] Popup-Intercept Fehler:', e)
     }
+    // blob:, data:, about:blank und Aufrufe ohne URL bleiben im WebView2 -
+    // die kann ein fremdes Fenster gar nicht aufloesen.
     return origOpen(url, name, features)
   }
-  console.info('[Smartis] OAuth-Popup-Interceptor aktiv')
+  console.info('[Smartis] Popup-Interceptor aktiv')
 }
 
 registerSW({

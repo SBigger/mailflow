@@ -30,42 +30,17 @@ export function openApp(item, { sameWindow, navigate, record = true, event } = {
     return;
   }
 
-  // 1) Desktop-App (Tauri): echtes separates Fenster
-  try {
-    const WW = window.__TAURI__?.webviewWindow?.WebviewWindow;
-    if (WW) {
-      // WICHTIG: relative Route gegen den aktuellen (Remote-)Origin absolut
-      // machen. Sonst hängt Tauri die Route an den lokalen Bundle-Origin
-      // tauri://localhost/ an — ein FREMDER Origin ohne Supabase-Session.
-      // Das neue Fenster wäre dann ausgeloggt, die Dokumentliste bliebe leer
-      // und der ?open=<id>-Handler in Dokumente.jsx fände das Dokument nie.
-      // Absolut → gleicher Origin wie das Hauptfenster → Session/Cookies
-      // werden geteilt und das Dokument öffnet.
-      let winUrl = href;
-      try { winUrl = new URL(href, window.location.origin).toString(); } catch { /* href bleibt */ }
-      const label = ('app-' + href + '-' + Date.now()).replace(/[^a-zA-Z0-9-]/g, '-');
-      const win = new WW(label, {
-        url: winUrl,
-        title: 'Smartis — ' + item.label,
-        width: 1280,
-        height: 860,
-        // MUSS byte-identisch zu additional_browser_args des main-Fensters in
-        // apps/src-tauri/src/lib.rs sein. WebView2 verweigert sonst ein zweites
-        // Environment mit abweichenden Args im selben Profil (0x8007139F
-        // ERROR_INVALID_STATE) → das Fenster blitzt auf und schließt sofort.
-        additionalBrowserArgs: '--disable-features=TrackingProtection3pcd,TrackingProtectionSettingsPageLaunch,PrivacySandboxSettings4,PartitionedCookies,ThirdPartyStoragePartitioning,BlockThirdPartyCookies,SameSiteByDefaultCookies,CookiesWithoutSameSiteMustBeSecure,msEdgeTrackingProtection,PrivacySandboxAdsAPIs,FedCm --enable-features=SharedArrayBuffer',
-      });
-      // Fehlt der Fenster-Berechtigung im Tauri-Build → Browser-Fallback
-      if (typeof win.once === 'function') {
-        win.once('tauri://error', () => openTab(href, item));
-      }
-      return;
-    }
-  } catch {
-    // weiter zum Browser-Fallback
-  }
-
-  // 2) Browser: neuer Tab (Session bleibt erhalten)
+  // Desktop-App und Browser gehen denselben Weg: window.open. In der
+  // Desktop-App faengt der Interceptor in main.jsx das ab und laesst Rust ein
+  // echtes Tauri-Fenster bauen - mit denselben WebView2-Argumenten wie das
+  // Hauptfenster, weil die nur noch in lib.rs stehen.
+  //
+  // Frueher stand hier ein eigener WebviewWindow-Aufruf mit von Hand kopierten
+  // additionalBrowserArgs. Sobald die von lib.rs abwichen, verweigerte WebView2
+  // das zweite Environment im selben Profil (0x8007139F ERROR_INVALID_STATE),
+  // das Fenster blitzte nur auf und schloss sofort. Genau das ist am 17.08.2026
+  // passiert, als lib.rs erweitert wurde und diese Kopie stehen blieb. Eine
+  // Quelle statt zwei.
   openTab(href, item);
 }
 
@@ -73,7 +48,10 @@ export function openApp(item, { sameWindow, navigate, record = true, event } = {
 // null zurück und ein Erfolg wäre nicht von einem Popup-Blocker
 // unterscheidbar. Und: Das Hub-Fenster wird NIE mitnavigiert.
 function openTab(href, item) {
-  const w = window.open(href, '_blank');
+  // Im Browser bewusst ohne Groessenangabe, damit ein normaler Tab aufgeht.
+  // In der Desktop-App wird daraus ein Fenster, das braucht eine Startgroesse.
+  const groesse = window.__TAURI__ ? 'width=1280,height=860' : undefined;
+  const w = window.open(href, '_blank', groesse);
   if (!w) {
     toast.error(`«${item.label}» konnte nicht geöffnet werden — bitte Popups für Smartis erlauben.`);
   }

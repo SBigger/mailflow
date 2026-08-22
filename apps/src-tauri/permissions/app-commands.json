@@ -14,6 +14,7 @@
           "get_version",
           "open_oauth_window",
           "open_embedded_window",
+          "open_popup_window",
           "open_external_url",
           "disable_tracking_prevention",
           "get_customer_from_filename"

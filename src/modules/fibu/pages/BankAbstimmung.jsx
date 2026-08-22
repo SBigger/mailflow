@@ -939,7 +939,15 @@ export default function BankAbstimmung() {
           )}
 
           <button
-            onClick={() => { if (window.opener) window.close(); else navigate(-1); }}
+            onClick={() => {
+              // In der Desktop-App ist dieses Fenster ein eigenes Tauri-Fenster.
+              // Dort ist window.opener leer und window.close() greift nicht, das
+              // Fenster muss sich selbst schliessen. Nur nicht das Hauptfenster,
+              // sonst waere die ganze App zu.
+              const eigenes = window.__TAURI__?.window?.getCurrentWindow?.();
+              if (eigenes && eigenes.label !== 'main') { eigenes.close(); return; }
+              if (window.opener) window.close(); else navigate(-1);
+            }}
             title="Schliessen"
             style={{ padding: '4px 10px', borderRadius: 8, border: '1px solid #ffffff30',
               background: 'transparent', color: '#fff', cursor: 'pointer', fontSize: 13 }}>
