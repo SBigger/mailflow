@@ -9,6 +9,31 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use std::env;
 use regex::Regex;
 
+// ── WebView2-Argumente: EINE Quelle ────────────────────────────
+
+// WebView2 verweigert im selben Benutzerprofil ein zweites Environment mit
+// abweichenden Argumenten (0x8007139F ERROR_INVALID_STATE). Ein Fenster, das
+// mit anderen Args gebaut wird, blitzt darum nur kurz auf und schliesst sofort.
+// Genau das ist passiert, als lib.rs erweitert wurde und die von Hand kopierte
+// Zweitfassung im Frontend (openApp.js) stehen blieb. Deshalb bauen ALLE
+// Fenster mit dieser einen Konstante. Nie irgendwo einzeln aendern.
+const BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,TrackingProtection3pcd,TrackingProtectionSettingsPageLaunch,PrivacySandboxSettings4,PartitionedCookies,ThirdPartyStoragePartitioning,BlockThirdPartyCookies,SameSiteByDefaultCookies,CookiesWithoutSameSiteMustBeSecure,msEdgeTrackingProtection,PrivacySandboxAdsAPIs,FedCm --disable-popup-blocking --enable-features=SharedArrayBuffer";
+
+const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0";
+
+// Zeitstempel allein reichte als Fensterlabel nicht: zwei Popups in derselben
+// Millisekunde bekamen dasselbe Label und Tauri verwarf das zweite Fenster.
+static FENSTER_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+fn neues_label(prefix: &str) -> String {
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let n = FENSTER_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    format!("{}-{}-{}", prefix, ts, n)
+}
+
 // ── Datenstrukturen ────────────────────────────────────────────────────────────
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -268,6 +293,7 @@ async fn open_oauth_window(app: AppHandle, url: String) -> Result<(), String> {
       .resizable(true)
       .center()
       .focused(true)
+      .additional_browser_args(BROWSER_ARGS)
       .build()
     {
       Ok(_) => log::info!("OAuth-Fenster {} erstellt", label),
@@ -305,11 +331,74 @@ fn open_embedded_window(
         .resizable(true)
         .center()
         .focused(true)
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0")
+        .user_agent(USER_AGENT)
+        .additional_browser_args(BROWSER_ARGS)
         .build()
         .map_err(|e| e.to_string())?;
 
     Ok(())
+}
+
+/// Popup als echtes Tauri-Fenster oeffnen.
+///
+/// WebView2 soll die Popups NICHT selbst machen: mit
+/// NewWindowResponse::Allow kam in dieser App nie ein Fenster hoch (Roger,
+/// 11.07.2026, Commit 8c2454af "tried to fix window.open (not successfull)").
+/// Ein selbst gebautes Tauri-Fenster laeuft im selben WebView2-Profil, also
+/// bleiben Supabase-Session und Cookies erhalten.
+///
+/// Wird von zwei Seiten gerufen: vom on_new_window-Handler (window.open aus
+/// einer Seite ohne Frontend-Interceptor) und vom Frontend ueber den Command
+/// open_popup_window.
+fn popup_fenster_bauen(
+    app: &AppHandle,
+    url: &str,
+    title: Option<String>,
+    width: Option<f64>,
+    height: Option<f64>,
+) {
+    use tauri::{WebviewUrl, WebviewWindowBuilder};
+
+    let parsed = match tauri::Url::parse(url) {
+        Ok(u) => u,
+        Err(e) => {
+            log::error!("Popup: URL '{}' nicht lesbar: {}", url, e);
+            return;
+        }
+    };
+
+    let label = neues_label("app");
+    match WebviewWindowBuilder::new(app, &label, WebviewUrl::External(parsed))
+        .title(title.as_deref().unwrap_or("Smartis"))
+        .inner_size(width.unwrap_or(1280.0), height.unwrap_or(860.0))
+        .min_inner_size(600.0, 400.0)
+        .resizable(true)
+        .center()
+        .focused(true)
+        .disable_drag_drop_handler()
+        .user_agent(USER_AGENT)
+        .additional_browser_args(BROWSER_ARGS)
+        .initialization_script(IFRAME_POLYFILL)
+        .build()
+    {
+        Ok(_) => log::info!("Popup-Fenster {} geoeffnet: {}", label, url),
+        Err(e) => log::error!("Popup-Fenster {} fehlgeschlagen: {:?}", label, e),
+    }
+}
+
+#[tauri::command]
+fn open_popup_window(
+    app: AppHandle,
+    url: String,
+    title: Option<String>,
+    width: Option<f64>,
+    height: Option<f64>,
+) -> Result<(), String> {
+    let app2 = app.clone();
+    app.run_on_main_thread(move || {
+        popup_fenster_bauen(&app2, &url, title, width, height);
+    })
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -465,6 +554,9 @@ pub fn run() {
 
             let url = tauri::Url::parse(&url_string).map_err(|e| e.to_string())?;
 
+            // Handle fuer den on_new_window-Handler: der baut die Popups selbst.
+            let popup_handle = app.handle().clone();
+
             let version = app.package_info().version.to_string();
             let window_title = format!("Smartis by Artis Treuhand -> v{}", version);
 
@@ -489,11 +581,25 @@ pub fn run() {
                 })
 
                 // --- WINDOW.OPEN() INTERCEPTION ---
-                .on_new_window(|url, _features| {
-                    if url.scheme() != "smartis-open" {
-                        tauri::webview::NewWindowResponse::Allow
-                    } else {
-                        tauri::webview::NewWindowResponse::Deny
+                // Allow (= WebView2 macht das Fenster selbst) brachte hier nie
+                // ein Fenster hervor. Darum bauen wir http(s)-Popups selbst und
+                // sagen WebView2 ab. blob:, data: und about:blank muessen im
+                // WebView2 bleiben, die kann ein fremdes Fenster nicht aufloesen.
+                .on_new_window(move |url, _features| {
+                    match url.scheme() {
+                        "http" | "https" => {
+                            let ziel = url.to_string();
+                            let bauen_mit = popup_handle.clone();
+                            let auf_main = popup_handle.clone();
+                            if let Err(e) = auf_main.run_on_main_thread(move || {
+                                popup_fenster_bauen(&bauen_mit, &ziel, None, None, None);
+                            }) {
+                                log::error!("Popup konnte nicht eingereiht werden: {}", e);
+                            }
+                            tauri::webview::NewWindowResponse::Deny
+                        }
+                        "smartis-open" => tauri::webview::NewWindowResponse::Deny,
+                        _ => tauri::webview::NewWindowResponse::Allow,
                     }
                 })
 
@@ -523,21 +629,8 @@ pub fn run() {
                     true
                 })
 
-                .user_agent(
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) \
-                     AppleWebKit/537.36 (KHTML, like Gecko) \
-                     Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0"
-                )
-
-                .additional_browser_args(
-                    "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,\
-                    TrackingProtection3pcd,TrackingProtectionSettingsPageLaunch,PrivacySandboxSettings4,\
-                    PartitionedCookies,ThirdPartyStoragePartitioning,BlockThirdPartyCookies,\
-                    SameSiteByDefaultCookies,CookiesWithoutSameSiteMustBeSecure,msEdgeTrackingProtection,\
-                    PrivacySandboxAdsAPIs,FedCm \
-                    --disable-popup-blocking \
-                    --enable-features=SharedArrayBuffer"
-                )
+                .user_agent(USER_AGENT)
+                .additional_browser_args(BROWSER_ARGS)
 
                 .initialization_script(IFRAME_POLYFILL)
                 .build()
@@ -575,6 +668,7 @@ pub fn run() {
             get_version,
             open_oauth_window,
             open_embedded_window,
+            open_popup_window,
             open_external_url,
             disable_tracking_prevention,
             get_customer_from_filename

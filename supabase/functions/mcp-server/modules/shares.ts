@@ -1,9 +1,8 @@
 // modules/shares.ts
-import { McpServer } from "npm:@modelcontextprotocol/sdk@1.0.1/server/mcp.js";
 import { z } from "npm:zod@3.23.8";
 import { supabase } from "../supabase.ts";
 import { registerTool, ok, unwrap } from "../tool.ts";
-import { requireCustomerId, requireWritesEnabled, type ToolContext, ToolError } from "../scope.ts";
+import { resolveCustomerId, requireWritesEnabled, type ToolContext, ToolError } from "../scope.ts";
 
 /**
  * Modul: Aktienbuch (Aktienregister)
@@ -22,9 +21,9 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
-export function registerShareTools(server: McpServer, context: ToolContext): void {
+export function registerShareTools(context: ToolContext): void {
 
-  registerTool(server, {
+  registerTool({
     name: "shares_list",
     title: "Aktienregister abfragen",
     description:
@@ -34,9 +33,10 @@ export function registerShareTools(server: McpServer, context: ToolContext): voi
       only_active: z.boolean().default(true),
       aktionaer: z.string().optional().describe("Freitext-Filter auf Aktionaersname"),
       limit: z.number().int().min(1).max(500).default(100),
+      customer_id: z.string().uuid().optional().describe("Kunde (customers.id). Ohne Angabe wird der im Frontend gewaehlte Kunde verwendet."),
     },
     handler: async (args, ctx) => {
-      const customerId = requireCustomerId(ctx);
+      const customerId = resolveCustomerId(ctx, args.customer_id);
       let q = supabase
           .from("aktienbuch")
           .select(SHARE_FIELDS)
@@ -54,13 +54,16 @@ export function registerShareTools(server: McpServer, context: ToolContext): voi
     },
   }, context);
 
-  registerTool(server, {
+  registerTool({
     name: "shares_get",
     title: "Aktienbuch-Eintrag abrufen",
     description: "Liest einen einzelnen Aktienbuch-Eintrag anhand der ID.",
-    input: { id: z.string().uuid() },
+    input: {
+      id: z.string().uuid(),
+      customer_id: z.string().uuid().optional().describe("Kunde (customers.id). Ohne Angabe wird der im Frontend gewaehlte Kunde verwendet."),
+    },
     handler: async (args, ctx) => {
-      const customerId = requireCustomerId(ctx);
+      const customerId = resolveCustomerId(ctx, args.customer_id);
       const data = unwrap(
           await supabase
               .from("aktienbuch")
@@ -74,7 +77,7 @@ export function registerShareTools(server: McpServer, context: ToolContext): voi
     },
   }, context);
 
-  registerTool(server, {
+  registerTool({
     name: "shares_register_transaction",
     title: "Aktien-Transaktion erfassen",
     description:
@@ -100,10 +103,11 @@ export function registerShareTools(server: McpServer, context: ToolContext): voi
       vorgaenger_id: z.string().uuid().optional(),
       vinkuliert: z.boolean().default(false),
       notizen: z.string().optional(),
+      customer_id: z.string().uuid().optional().describe("Kunde (customers.id). Ohne Angabe wird der im Frontend gewaehlte Kunde verwendet."),
     },
     handler: async (args, ctx) => {
       requireWritesEnabled(ctx);
-      const customerId = requireCustomerId(ctx);
+      const customerId = resolveCustomerId(ctx, args.customer_id);
       const row = unwrap(
           await supabase
               .from("aktienbuch")
@@ -135,7 +139,7 @@ export function registerShareTools(server: McpServer, context: ToolContext): voi
     },
   }, context);
 
-  registerTool(server, {
+  registerTool({
     name: "shares_update_shareholder",
     title: "Aktionaersdaten aendern",
     description:
@@ -150,11 +154,12 @@ export function registerShareTools(server: McpServer, context: ToolContext): voi
       vinkuliert: z.boolean().optional(),
       aktiv: z.boolean().optional(),
       notizen: z.string().optional(),
+      customer_id: z.string().uuid().optional().describe("Kunde (customers.id). Ohne Angabe wird der im Frontend gewaehlte Kunde verwendet."),
     },
     handler: async (args, ctx) => {
       requireWritesEnabled(ctx);
-      const customerId = requireCustomerId(ctx);
-      const { id, ...patch } = args;
+      const customerId = resolveCustomerId(ctx, args.customer_id);
+      const { id, customer_id: _scope, ...patch } = args;
       if (Object.keys(patch).length === 0) throw new ToolError("Keine Felder zum Aktualisieren angegeben.");
       const row = unwrap(
           await supabase
@@ -170,15 +175,17 @@ export function registerShareTools(server: McpServer, context: ToolContext): voi
     },
   }, context);
 
-  registerTool(server, {
+  registerTool({
     name: "shares_cap_table",
     title: "Aktionaersstruktur (Cap Table)",
     description:
         "Aggregiert die aktiven Aktienbuch-Eintraege je Aktionaer: Anzahl Aktien, " +
         "Nominalkapital und prozentualer Anteil.",
-    input: {},
+    input: {
+      customer_id: z.string().uuid().optional().describe("Kunde (customers.id). Ohne Angabe wird der im Frontend gewaehlte Kunde verwendet."),
+    },
     handler: async (_args, ctx) => {
-      const customerId = requireCustomerId(ctx);
+      const customerId = resolveCustomerId(ctx, args.customer_id);
       const rows = unwrap(
           await supabase
               .from("aktienbuch")

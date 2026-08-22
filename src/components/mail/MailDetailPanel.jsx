@@ -307,7 +307,13 @@ export default function MailDetailPanel({ mail, onClose, onReply, onDelete, onEd
             }}
           >
             {mail.body ? (
-              <div dangerouslySetInnerHTML={{ __html: mail.body.replace(/\n/g, "<br/>") }} />
+              // Bewusst KEIN dangerouslySetInnerHTML: der Inhalt kommt aus
+              // fremden E-Mails. Der Sync legt ohnehin nur Klartext ab
+              // (Graph-Feld bodyPreview), und Zeilenumbrueche stellt
+              // pre-wrap dar. Sollen spaeter echte HTML-Mails angezeigt
+              // werden, gehoert das in einen sandboxed iframe oder durch
+              // einen Sanitizer - nicht hierher.
+              <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{mail.body}</div>
             ) : mail.body_preview ? (
               <p style={{ color: textMuted, fontStyle: 'italic' }}>{mail.body_preview}</p>
             ) : (

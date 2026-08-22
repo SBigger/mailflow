@@ -166,6 +166,16 @@ function fmtCHFshort(val) {
   return "CHF\u00a0" + fmtCHF(val);
 }
 
+// ── Drei-Zustand-Status je Konto: offen / erledigt / pendent ─────────────────
+// Liest weiterhin das alte boolesche `pendent`-Feld, falls ein Konto noch nie
+// auf den neuen `status` migriert wurde (bestehende Kunden-Daten).
+function statusOf(konto) {
+  return konto?.arbeitspapier?.status || (konto?.arbeitspapier?.pendent ? "pendent" : "offen");
+}
+const STATUS_ORDER = ["offen", "erledigt", "pendent"];
+const STATUS_LABEL = { offen: "Offen", erledigt: "Erledigt", pendent: "Pendent" };
+const STATUS_DOT = { offen: "#b3ab98", erledigt: "#16a34a", pendent: "#dc2626" };
+
 // Sicherer Formel-Evaluator: erlaubt nur Ziffern + - * / . ( ) '
 function evalExpr(str) {
   if (str === null || str === undefined || str === "") return null;
@@ -1175,7 +1185,7 @@ function PositionSelector({ value, onChange, subC, panelBg, panelBdr, headingC, 
 }
 
 // ── Import Dialog ─────────────────────────────────────────────────────────────
-function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = false, initialFlipER = false }) {
+function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = false, initialFlipER = false, customerId, selectedYear }) {
   const isLight = theme === "light";
   const isArtis = theme === "artis";
   const panelBg  = isArtis ? "#ffffff" : isLight ? "#ffffff" : "#27272a";
@@ -1198,6 +1208,84 @@ function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = 
   const fileRef = useRef(null);
   const file2Ref = useRef(null);
   const pdfRef = useRef(null);
+
+  // ── Aus E-Binder wählen: statt lokal suchen, direkt aus den schon
+  //    hochgeladenen Dokumenten des Mandanten importieren ───────────────────
+  const [showEBinderPicker, setShowEBinderPicker] = useState(false);
+  const [eBinderDocs, setEBinderDocs] = useState([]);
+  const [eBinderLoading, setEBinderLoading] = useState(false);
+  const [eBinderSearch, setEBinderSearch] = useState("");
+  const [eBinderSelected, setEBinderSelected] = useState([]); // bis zu 2 Dokumente
+  const [eBinderImporting, setEBinderImporting] = useState(false);
+  // Vorschau rechts daneben — unabhängig von der Auswahl fürs Importieren.
+  const [eBinderPreview, setEBinderPreview] = useState(null);
+  const [eBinderPreviewUrl, setEBinderPreviewUrl] = useState(null);
+  const [eBinderPreviewLoading, setEBinderPreviewLoading] = useState(false);
+
+  useEffect(() => {
+    if (!eBinderPreview) { setEBinderPreviewUrl(null); return; }
+    const path = (eBinderPreview.storage_path || "").replace(/^dokumente\//, "");
+    if (!path) { setEBinderPreviewUrl(null); return; }
+    let aktiv = true;
+    setEBinderPreviewLoading(true);
+    supabase.storage.from(BUCKET).createSignedUrl(path, 3600).then(({ data, error }) => {
+      if (!aktiv) return;
+      setEBinderPreviewLoading(false);
+      if (data?.signedUrl) setEBinderPreviewUrl(data.signedUrl);
+      else { setEBinderPreviewUrl(null); toast.error("Vorschau nicht verfügbar" + (error ? ": " + error.message : "")); }
+    });
+    return () => { aktiv = false; };
+  }, [eBinderPreview]);
+
+  useEffect(() => {
+    if (!showEBinderPicker || !customerId || eBinderDocs.length > 0) return;
+    setEBinderLoading(true);
+    let q = supabase.from("dokumente")
+      .select("id, name, filename, storage_path, category, year, file_type")
+      .eq("customer_id", customerId)
+      .order("created_at", { ascending: false })
+      .limit(500);
+    if (selectedYear) q = q.eq("year", selectedYear);
+    q.then(({ data, error }) => {
+      setEBinderLoading(false);
+      if (error) { toast.error("E-Binder konnte nicht geladen werden: " + error.message); return; }
+      setEBinderDocs(data || []);
+    });
+  }, [showEBinderPicker, customerId, selectedYear]);
+
+  const toggleEBinderDoc = (doc) => {
+    setEBinderSelected(prev => {
+      if (prev.some(d => d.id === doc.id)) return prev.filter(d => d.id !== doc.id);
+      if (prev.length >= 2) { toast.error("Maximal 2 Dateien gleichzeitig (Bilanz + ER)"); return prev; }
+      return [...prev, doc];
+    });
+  };
+
+  async function importFromEBinder() {
+    if (!eBinderSelected.length) return;
+    setEBinderImporting(true);
+    try {
+      const files = [];
+      for (const doc of eBinderSelected) {
+        const path = (doc.storage_path || "").replace(/^dokumente\//, "");
+        if (!path) throw new Error(`${doc.name}: kein Speicherpfad`);
+        const { data, error } = await supabase.storage.from(BUCKET).download(path);
+        if (error || !data) throw new Error(`${doc.name}: ${error?.message || "Download fehlgeschlagen"}`);
+        files.push(new File([data], doc.filename || doc.name, { type: data.type }));
+      }
+      setShowEBinderPicker(false);
+      setEBinderSelected([]);
+      const pdfs = files.filter(f => f.name.toLowerCase().endsWith(".pdf"));
+      const others = files.filter(f => !f.name.toLowerCase().endsWith(".pdf"));
+      if (pdfs.length > 0) parsePdfFiles(pdfs.slice(0, 2));
+      else if (others.length > 1) parseMultipleFiles(others);
+      else if (others[0]) parseFile(others[0]);
+    } catch (e) {
+      toast.error("Import aus E-Binder fehlgeschlagen: " + (e?.message || String(e)));
+    } finally {
+      setEBinderImporting(false);
+    }
+  }
 
   // Spalten-Erkennung: Muster in Prioritäts-Reihenfolge (erstes Muster gewinnt),
   // optional mit Ausschluss-Wörtern (verhindert z.B. "Kontoname" als Kontonummer).
@@ -1632,7 +1720,7 @@ function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = 
     border: `1px solid ${panelBdr}`, outline: "none", backgroundColor: pageBg, color: headingC,
   };
 
-  return createPortal(
+  return (<>{createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: "rgba(0,0,0,0.5)" }}>
       <div className="rounded-2xl overflow-hidden flex flex-col" style={{
         backgroundColor: panelBg, border: `1px solid ${panelBdr}`,
@@ -1684,6 +1772,17 @@ function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = 
                     </button>
                     <input ref={pdfRef} type="file" accept=".pdf" multiple className="hidden" onChange={handlePdfChange} />
                   </div>
+                  {customerId && (
+                    <div style={{ marginTop: 8, padding: "10px 14px", borderRadius: 10, border: `1px solid ${panelBdr}`, backgroundColor: pageBg, display: "flex", alignItems: "center", gap: 10 }}>
+                      <span style={{ fontSize: 12, color: subC, flex: 1 }}>
+                        📁 Bilanz/ER liegt schon im E-Binder dieses Mandanten?
+                      </span>
+                      <button onClick={() => setShowEBinderPicker(true)}
+                        style={{ fontSize: 11, fontWeight: 600, padding: "4px 12px", borderRadius: 6, cursor: "pointer", border: `1px solid ${accent}60`, color: accent, backgroundColor: accent + "10" }}>
+                        Aus E-Binder wählen
+                      </button>
+                    </div>
+                  )}
                 </>
               )}
 
@@ -1828,7 +1927,106 @@ function ImportDialog({ onClose, onImport, accent, theme, initialFlipPassiven = 
       </div>
     </div>,
     document.body
-  );
+  )}
+  {showEBinderPicker && createPortal(
+    <div className="fixed inset-0 z-[60] flex items-center justify-center" style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
+      onMouseDown={e => { if (e.target === e.currentTarget) { setShowEBinderPicker(false); setEBinderPreview(null); } }}>
+      <div className="flex" style={{ gap: 12 }}>
+      <div className="rounded-2xl overflow-hidden flex flex-col" style={{
+        backgroundColor: panelBg, border: `1px solid ${panelBdr}`,
+        width: 640, maxHeight: "80vh", boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
+      }}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: `1px solid ${panelBdr}`, backgroundColor: isArtis ? "#e8f2e8" : isLight ? "#f1f5f9" : "#2f2f35" }}>
+          <span className="text-sm font-bold" style={{ color: headingC }}>📁 Aus E-Binder wählen</span>
+          <button onClick={() => { setShowEBinderPicker(false); setEBinderPreview(null); }} className="p-1 rounded hover:opacity-70"><X className="w-4 h-4" style={{ color: subC }} /></button>
+        </div>
+        {/* Suche */}
+        <div className="px-5 py-3" style={{ borderBottom: `1px solid ${panelBdr}` }}>
+          <input autoFocus value={eBinderSearch} onChange={e => setEBinderSearch(e.target.value)}
+            placeholder="Name oder Dateiname suchen…"
+            style={{ width: "100%", fontSize: 13, padding: "7px 12px", borderRadius: 8, border: `1px solid ${panelBdr}`, outline: "none", boxSizing: "border-box", backgroundColor: pageBg, color: headingC }} />
+          <div style={{ fontSize: 11, color: subC, marginTop: 5 }}>
+            {selectedYear ? `Jahr ${selectedYear}` : "Alle Jahre"} · bis zu 2 Dateien wählbar (Bilanz + ER) · 👁 zeigt die Vorschau daneben
+          </div>
+        </div>
+        {/* Liste */}
+        <div className="overflow-y-auto" style={{ flex: 1 }}>
+          {eBinderLoading
+            ? <div style={{ padding: 32, textAlign: "center", fontSize: 13, color: subC }}>Lädt…</div>
+            : (() => {
+                const q = eBinderSearch.trim().toLowerCase();
+                const filtered = eBinderDocs.filter(d => !q ||
+                  d.name?.toLowerCase().includes(q) || d.filename?.toLowerCase().includes(q));
+                if (!filtered.length) return <div style={{ padding: 32, textAlign: "center", fontSize: 13, color: subC }}>Keine Dokumente gefunden</div>;
+                return filtered.map(doc => {
+                  const checked = eBinderSelected.some(d => d.id === doc.id);
+                  const previewed = eBinderPreview?.id === doc.id;
+                  const ext = (doc.filename || "").split(".").pop()?.toUpperCase() || "DOC";
+                  return (
+                    <div key={doc.id} onClick={() => toggleEBinderDoc(doc)}
+                      style={{ padding: "9px 18px", cursor: "pointer", display: "flex", alignItems: "center", gap: 12,
+                        borderBottom: `1px solid ${panelBdr}`, backgroundColor: checked ? accent + "12" : "transparent" }}>
+                      <input type="checkbox" checked={checked} readOnly style={{ width: 15, height: 15, accentColor: accent, flexShrink: 0 }} />
+                      <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 4,
+                        backgroundColor: ext === "PDF" ? "#fee2e2" : "#dbeafe", color: ext === "PDF" ? "#dc2626" : "#1d4ed8", flexShrink: 0 }}>{ext}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, color: headingC, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{doc.name}</div>
+                        <div style={{ fontSize: 11, color: subC, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{doc.filename}</div>
+                      </div>
+                      {doc.year && <span style={{ fontSize: 11, color: subC, flexShrink: 0 }}>{doc.year}</span>}
+                      <button onClick={e => { e.stopPropagation(); setEBinderPreview(previewed ? null : doc); }}
+                        title="Vorschau"
+                        style={{ background: previewed ? accent + "20" : "none", border: "none", borderRadius: 5, cursor: "pointer",
+                          color: previewed ? accent : subC, fontSize: 14, padding: "3px 6px", flexShrink: 0, lineHeight: 1 }}>👁</button>
+                    </div>
+                  );
+                });
+              })()
+          }
+        </div>
+        {/* Footer */}
+        <div className="flex justify-end gap-2 px-5 py-3" style={{ borderTop: `1px solid ${panelBdr}` }}>
+          <button onClick={() => { setShowEBinderPicker(false); setEBinderSelected([]); setEBinderPreview(null); }} className="px-4 py-2 rounded-lg text-sm" style={{ color: subC }}>Abbrechen</button>
+          <button disabled={!eBinderSelected.length || eBinderImporting} onClick={importFromEBinder}
+            className="flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-semibold text-white transition-opacity"
+            style={{ backgroundColor: accent, opacity: eBinderSelected.length && !eBinderImporting ? 1 : 0.4 }}>
+            <Upload className="w-3.5 h-3.5" />
+            {eBinderImporting ? "Lädt…" : eBinderSelected.length ? `${eBinderSelected.length} Datei${eBinderSelected.length > 1 ? "en" : ""} übernehmen` : "Übernehmen"}
+          </button>
+        </div>
+      </div>
+      {eBinderPreview && (() => {
+        const ft = eBinderPreview.file_type || "";
+        const istPdf = ft.includes("pdf") || (eBinderPreview.filename || "").toLowerCase().endsWith(".pdf");
+        const istBild = ft.startsWith("image/");
+        return (
+          <div onMouseDown={e => e.stopPropagation()} className="rounded-2xl overflow-hidden flex flex-col" style={{
+            width: 380, maxHeight: "80vh", backgroundColor: panelBg, border: `1px solid ${panelBdr}`, boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
+          }}>
+            <div className="flex items-center gap-2 px-4 py-3" style={{ borderBottom: `1px solid ${panelBdr}`, backgroundColor: isArtis ? "#e8f2e8" : isLight ? "#f1f5f9" : "#2f2f35" }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: headingC, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={eBinderPreview.name}>{eBinderPreview.name}</span>
+              <button onClick={() => setEBinderPreview(null)} className="p-1 rounded hover:opacity-70"><X className="w-3.5 h-3.5" style={{ color: subC }} /></button>
+            </div>
+            <div style={{ flex: 1, minHeight: 400, backgroundColor: "#f1f5f9", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              {eBinderPreviewLoading
+                ? <span style={{ fontSize: 12, color: subC }}>Lädt…</span>
+                : !eBinderPreviewUrl
+                  ? <span style={{ fontSize: 12, color: subC }}>Vorschau nicht verfügbar</span>
+                  : istPdf
+                    ? <iframe src={eBinderPreviewUrl} title={eBinderPreview.name} style={{ width: "100%", height: "100%", minHeight: 400, border: "none" }} />
+                    : istBild
+                      ? <img src={eBinderPreviewUrl} alt={eBinderPreview.name} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                      : <div style={{ textAlign: "center", padding: 16, fontSize: 12, color: subC }}>Keine Vorschau für diesen Dateityp</div>
+              }
+            </div>
+          </div>
+        );
+      })()}
+      </div>
+    </div>,
+    document.body
+  )}</>);
 }
 
 // ── Export-Modus Dialog (Mindestgliederung / Detailliert) ────────────────────
@@ -2654,101 +2852,14 @@ function KontenplanTab({ konten, onUpdateKonto, onAddKonto, customerId, selected
     );
   }
 
-  const COL_HEADERS = ["Konto-Nr", "Kontoname", "Saldo IST", "Saldo VJ", "Abw.", "Position", "Notiz", "Pendent"];
+  const COL_HEADERS = ["Konto-Nr", "Kontoname", "Saldo IST", "Saldo VJ", "Abw.", "Position", "Notiz", "Status"];
   const COL_ALIGN = [false, false, true, true, true, false, false, false];
-  // Violett für „pendent"-Zeilen – theme-abhängig, damit Text lesbar bleibt.
-  // Light/Artis: helles Violett + dunkler Text · Dark: halbtransparenter Violett-Overlay + heller Text.
-  const PENDENT_BG       = isArtis ? "#efe9fb" : isLight ? "#ede9fe" : "rgba(139,92,246,0.22)";
-  const PENDENT_BG_HOVER = isArtis ? "#e5dbf7" : isLight ? "#ddd6fe" : "rgba(139,92,246,0.34)";
+  // Rot für „pendent"-Zeilen – theme-abhängig, damit Text lesbar bleibt.
+  // Light/Artis: helles Rot + dunkler Text · Dark: halbtransparenter Rot-Overlay + heller Text.
+  const PENDENT_BG       = isArtis ? "#fef2f2" : isLight ? "#fef2f2" : "rgba(220,38,38,0.22)";
+  const PENDENT_BG_HOVER = isArtis ? "#fee2e2" : isLight ? "#fee2e2" : "rgba(220,38,38,0.34)";
 
-  return (
-    <div className="overflow-x-auto">
-      <table style={{ tableLayout: "fixed", width: COL_HEADERS.reduce((s, _, i) => s + colWidths[i], 0) + "px", borderCollapse: "collapse", fontSize: 13 }}>
-        <colgroup>
-          {colWidths.map((w, i) => <col key={i} style={{ width: w }} />)}
-        </colgroup>
-        <thead style={{ position: "sticky", top: 0, zIndex: 10 }}>
-          <tr style={{ backgroundColor: isArtis ? "#e8f2e8" : isLight ? "#f1f5f9" : "#2f2f35" }}>
-            {COL_HEADERS.map((h, ci) => (
-              <th key={h} style={{
-                position: "relative",
-                padding: "9px 12px", textAlign: COL_ALIGN[ci] ? "right" : "left",
-                fontWeight: 700, fontSize: 11, letterSpacing: "0.04em", textTransform: "uppercase",
-                color: subC, borderBottom: `2px solid ${tableBdr}`, whiteSpace: "nowrap",
-                userSelect: "none", overflow: "hidden",
-              }}>
-                {h}
-                {/* Resize handle */}
-                <div onMouseDown={e => startResize(e, ci)} style={{
-                  position: "absolute", right: 0, top: 0, bottom: 0, width: 5,
-                  cursor: "col-resize", zIndex: 2,
-                }} />
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {/* ── Inline-Eingabezeile für manuelles Hinzufügen ── */}
-          {onAddKonto && (
-            <tr style={{ backgroundColor: accent + "0a", borderBottom: `2px solid ${accent}40` }}>
-              <td style={{ padding: "4px 6px 4px 12px" }}>
-                <input value={newRow.kontonummer}
-                  onChange={e => setNewRow(v => ({ ...v, kontonummer: e.target.value }))}
-                  onKeyDown={e => { if (e.key === "Enter") submitNewRow(); }}
-                  placeholder="Nr."
-                  style={{ width: "100%", fontSize: 12, fontFamily: "monospace", fontWeight: 600,
-                    padding: "4px 6px", borderRadius: 4, border: `1px solid ${accent}40`,
-                    outline: "none", backgroundColor: panelBg, color: headingC }} />
-              </td>
-              <td style={{ padding: "4px 6px" }}>
-                <input value={newRow.kontoname}
-                  onChange={e => setNewRow(v => ({ ...v, kontoname: e.target.value }))}
-                  onKeyDown={e => { if (e.key === "Enter") submitNewRow(); }}
-                  placeholder="Kontoname"
-                  style={{ width: "100%", fontSize: 12, padding: "4px 8px", borderRadius: 4,
-                    border: `1px solid ${accent}40`, outline: "none", backgroundColor: panelBg, color: headingC }} />
-              </td>
-              <td style={{ padding: "4px 12px", textAlign: "right" }}>
-                <input value={newRow.saldo_ist}
-                  onChange={e => setNewRow(v => ({ ...v, saldo_ist: e.target.value }))}
-                  onKeyDown={e => { if (e.key === "Enter") submitNewRow(); }}
-                  placeholder="0.00"
-                  title="Rechnung möglich: 1000+500 oder 2*630.50"
-                  style={{ width: "100%", fontSize: 12, fontFamily: "monospace", textAlign: "right",
-                    padding: "4px 6px", borderRadius: 4, border: `1px solid ${accent}40`,
-                    outline: "none", backgroundColor: panelBg, color: headingC }} />
-              </td>
-              <td style={{ padding: "4px 12px", textAlign: "right" }}>
-                <input value={newRow.saldo_vorjahr}
-                  onChange={e => setNewRow(v => ({ ...v, saldo_vorjahr: e.target.value }))}
-                  onKeyDown={e => { if (e.key === "Enter") submitNewRow(); }}
-                  placeholder="0.00"
-                  title="Rechnung möglich: 1000+500"
-                  style={{ width: "100%", fontSize: 12, fontFamily: "monospace", textAlign: "right",
-                    padding: "4px 6px", borderRadius: 4, border: `1px solid ${accent}40`,
-                    outline: "none", backgroundColor: panelBg, color: subC }} />
-              </td>
-              <td style={{ padding: "4px 6px", textAlign: "center" }}>
-                <button onClick={submitNewRow}
-                  title="Hinzufügen (Enter)"
-                  style={{ fontSize: 14, fontWeight: 800, lineHeight: 1, padding: "4px 10px",
-                    borderRadius: 5, border: "none", cursor: "pointer",
-                    backgroundColor: accent, color: "#fff" }}>+</button>
-              </td>
-              <td style={{ padding: "4px 6px" }}>
-                <PositionSelector
-                  value={newRow.position_id}
-                  onChange={(pid) => setNewRow(v => ({ ...v, position_id: pid }))}
-                  subC={subC} panelBg={panelBg} panelBdr={panelBdr} headingC={headingC} accent={accent}
-                />
-              </td>
-              <td style={{ padding: "4px 12px", fontSize: 11, color: subC, fontStyle: "italic" }}>
-                Neue Zeile · Enter zum Hinzufügen
-              </td>
-              <td />
-            </tr>
-          )}
-          {groupOrder.map(groupKey => {
+  const renderGroup = (groupKey) => {
             const rows = grouped[groupKey];
             if (!rows) return null;
             const pos = POSITION_MAP[groupKey];
@@ -2800,7 +2911,8 @@ function KontenplanTab({ konten, onUpdateKonto, onAddKonto, customerId, selected
                   const noMapping = !effectivePos && /^[1-8]/.test(String(konto.kontonummer));
 
                   const isExpanded = expandedKonten.has(konto.id);
-                  const isPendent = !!konto.arbeitspapier?.pendent;
+                  const kontoStatus = statusOf(konto);
+                  const isPendent = kontoStatus === "pendent";
                   return (
                     <React.Fragment key={konto.id}>
                     <tr style={{
@@ -2901,15 +3013,20 @@ function KontenplanTab({ konten, onUpdateKonto, onAddKonto, customerId, selected
                           panelBg={panelBg} panelBdr={panelBdr}
                         />
                       </td>
-                      {/* Pendent */}
+                      {/* Status: offen / erledigt / pendent */}
                       <td style={{ padding: "4px 12px", textAlign: "center" }}>
-                        <input
-                          type="checkbox"
-                          checked={isPendent}
-                          onChange={e => onUpdateKonto(konto.id, { arbeitspapier: { ...(konto.arbeitspapier || {}), pendent: e.target.checked } })}
-                          title={isPendent ? "Als erledigt markieren" : "Als pendent markieren"}
-                          style={{ width: 16, height: 16, cursor: "pointer", accentColor: "#7c3aed", verticalAlign: "middle" }}
-                        />
+                        <div style={{ display: "inline-flex", gap: 4 }}>
+                          {STATUS_ORDER.map(s => (
+                            <button key={s}
+                              onClick={() => onUpdateKonto(konto.id, { arbeitspapier: { ...(konto.arbeitspapier || {}), status: s, pendent: s === "pendent" } })}
+                              title={STATUS_LABEL[s]}
+                              style={{
+                                width: 14, height: 14, borderRadius: "50%", cursor: "pointer", padding: 0,
+                                border: `2px solid ${STATUS_DOT[s]}`,
+                                backgroundColor: kontoStatus === s ? STATUS_DOT[s] : "transparent",
+                              }} />
+                          ))}
+                        </div>
                       </td>
                     </tr>
                     {/* ── Arbeitspapier (MiniExcel) + Belege ── */}
@@ -2955,7 +3072,96 @@ function KontenplanTab({ konten, onUpdateKonto, onAddKonto, customerId, selected
                 )}
               </React.Fragment>
             );
-          })}
+  };
+
+  return (
+    <div className="overflow-x-auto">
+      <table style={{ tableLayout: "fixed", width: COL_HEADERS.reduce((s, _, i) => s + colWidths[i], 0) + "px", borderCollapse: "collapse", fontSize: 13 }}>
+        <colgroup>
+          {colWidths.map((w, i) => <col key={i} style={{ width: w }} />)}
+        </colgroup>
+        <thead style={{ position: "sticky", top: 0, zIndex: 10 }}>
+          <tr style={{ backgroundColor: isArtis ? "#e8f2e8" : isLight ? "#f1f5f9" : "#2f2f35" }}>
+            {COL_HEADERS.map((h, ci) => (
+              <th key={h} style={{
+                position: "relative",
+                padding: "9px 12px", textAlign: COL_ALIGN[ci] ? "right" : "left",
+                fontWeight: 700, fontSize: 11, letterSpacing: "0.04em", textTransform: "uppercase",
+                color: subC, borderBottom: `2px solid ${tableBdr}`, whiteSpace: "nowrap",
+                userSelect: "none", overflow: "hidden",
+              }}>
+                {h}
+                {/* Resize handle */}
+                <div onMouseDown={e => startResize(e, ci)} style={{
+                  position: "absolute", right: 0, top: 0, bottom: 0, width: 5,
+                  cursor: "col-resize", zIndex: 2,
+                }} />
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {/* ── Inline-Eingabezeile für manuelles Hinzufügen ── */}
+          {onAddKonto && (
+            <tr style={{ backgroundColor: accent + "0a", borderBottom: `2px solid ${accent}40` }}>
+              <td style={{ padding: "4px 6px 4px 12px" }}>
+                <input value={newRow.kontonummer}
+                  onChange={e => setNewRow(v => ({ ...v, kontonummer: e.target.value }))}
+                  onKeyDown={e => { if (e.key === "Enter") submitNewRow(); }}
+                  placeholder="Nr."
+                  style={{ width: "100%", fontSize: 12, fontFamily: "monospace", fontWeight: 600,
+                    padding: "4px 6px", borderRadius: 4, border: `1px solid ${accent}40`,
+                    outline: "none", backgroundColor: panelBg, color: headingC }} />
+              </td>
+              <td style={{ padding: "4px 6px" }}>
+                <input value={newRow.kontoname}
+                  onChange={e => setNewRow(v => ({ ...v, kontoname: e.target.value }))}
+                  onKeyDown={e => { if (e.key === "Enter") submitNewRow(); }}
+                  placeholder="Kontoname"
+                  style={{ width: "100%", fontSize: 12, padding: "4px 8px", borderRadius: 4,
+                    border: `1px solid ${accent}40`, outline: "none", backgroundColor: panelBg, color: headingC }} />
+              </td>
+              <td style={{ padding: "4px 12px", textAlign: "right" }}>
+                <input value={newRow.saldo_ist}
+                  onChange={e => setNewRow(v => ({ ...v, saldo_ist: e.target.value }))}
+                  onKeyDown={e => { if (e.key === "Enter") submitNewRow(); }}
+                  placeholder="0.00"
+                  title="Rechnung möglich: 1000+500 oder 2*630.50"
+                  style={{ width: "100%", fontSize: 12, fontFamily: "monospace", textAlign: "right",
+                    padding: "4px 6px", borderRadius: 4, border: `1px solid ${accent}40`,
+                    outline: "none", backgroundColor: panelBg, color: headingC }} />
+              </td>
+              <td style={{ padding: "4px 12px", textAlign: "right" }}>
+                <input value={newRow.saldo_vorjahr}
+                  onChange={e => setNewRow(v => ({ ...v, saldo_vorjahr: e.target.value }))}
+                  onKeyDown={e => { if (e.key === "Enter") submitNewRow(); }}
+                  placeholder="0.00"
+                  title="Rechnung möglich: 1000+500"
+                  style={{ width: "100%", fontSize: 12, fontFamily: "monospace", textAlign: "right",
+                    padding: "4px 6px", borderRadius: 4, border: `1px solid ${accent}40`,
+                    outline: "none", backgroundColor: panelBg, color: subC }} />
+              </td>
+              <td style={{ padding: "4px 6px", textAlign: "center" }}>
+                <button onClick={submitNewRow}
+                  title="Hinzufügen (Enter)"
+                  style={{ fontSize: 14, fontWeight: 800, lineHeight: 1, padding: "4px 10px",
+                    borderRadius: 5, border: "none", cursor: "pointer",
+                    backgroundColor: accent, color: "#fff" }}>+</button>
+              </td>
+              <td style={{ padding: "4px 6px" }}>
+                <PositionSelector
+                  value={newRow.position_id}
+                  onChange={(pid) => setNewRow(v => ({ ...v, position_id: pid }))}
+                  subC={subC} panelBg={panelBg} panelBdr={panelBdr} headingC={headingC} accent={accent}
+                />
+              </td>
+              <td style={{ padding: "4px 12px", fontSize: 11, color: subC, fontStyle: "italic" }}>
+                Neue Zeile · Enter zum Hinzufügen
+              </td>
+              <td />
+            </tr>
+          )}
+          {groupOrder.filter(k => k !== "__KEIN_MAPPING__").map(renderGroup)}
 
           {/* ── JAHRESERGEBNIS Summe (nur wenn ER-Konten vorhanden) ── */}
           {(() => {
@@ -2995,6 +3201,7 @@ function KontenplanTab({ konten, onUpdateKonto, onAddKonto, customerId, selected
               </tr>
             );
           })()}
+          {grouped.__KEIN_MAPPING__ && renderGroup("__KEIN_MAPPING__")}
         </tbody>
       </table>
 
@@ -3141,8 +3348,7 @@ function BilanzkennzahlRow({ label, value, valueVJ, bilanzsumme, bilanzsummeVJ, 
 }
 
 function BilanzTab({ konten, accent, headingC, subC, panelBg, panelBdr, tableBdr,
-                      signFlipPassiven, onFlipPassiven, diffAnpassungen, onSaveDiffAnpassungen }) {
-  const [editAnp, setEditAnp] = useState(null); // { idx, bezeichnung, betrag }
+                      signFlipPassiven, onFlipPassiven }) {
   const [showDetails, setShowDetails] = useState(false);
 
   const sumByIds = (ids) => konten
@@ -3197,10 +3403,7 @@ function BilanzTab({ konten, accent, headingC, subC, panelBg, panelBdr, tableBdr
   );
 
   const diff = aktivenTotal - passivenTotal;
-  const anpTotal = (diffAnpassungen || []).reduce((s, a) => s + (parseFloat(a.betrag) || 0), 0);
-  const diffNachAnp = diff - anpTotal;
   const balanced = Math.abs(diff) < 0.005;
-  const balancedNachAnp = Math.abs(diffNachAnp) < 0.005;
 
   const flipBtn = (onClick, active) => (
     <button onClick={onClick} title="Vorzeichen umkehren" style={{
@@ -3332,113 +3535,15 @@ function BilanzTab({ konten, accent, headingC, subC, panelBg, panelBdr, tableBdr
       {/* Differenz */}
       {!balanced && (
         <div className="rounded-xl overflow-hidden" style={{ border: "1px solid #fecaca", backgroundColor: "#fef2f2" }}>
-          {/* Header */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderBottom: "1px solid #fecaca" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <AlertCircle className="w-4 h-4" style={{ color: "#dc2626" }} />
-              <span className="text-sm font-semibold" style={{ color: "#dc2626" }}>
-                Aktiven ≠ Passiven · Differenz: CHF {fmtCHF(Math.abs(diff))}
-              </span>
-            </div>
-            <button
-              onClick={() => {
-                const rows = [...(diffAnpassungen || []), { id: crypto.randomUUID(), bezeichnung: "", betrag: 0 }];
-                onSaveDiffAnpassungen(rows);
-                setEditAnp({ idx: rows.length - 1, bezeichnung: "", betrag: "" });
-              }}
-              style={{ fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 5, cursor: "pointer", backgroundColor: "#dc262614", border: "1px solid #dc262640", color: "#dc2626" }}>
-              + Anpassungszeile
-            </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px" }}>
+            <AlertCircle className="w-4 h-4" style={{ color: "#dc2626" }} />
+            <span className="text-sm font-semibold" style={{ color: "#dc2626" }}>
+              Aktiven ≠ Passiven · Differenz: CHF {fmtCHF(Math.abs(diff))}
+            </span>
           </div>
-          {/* Anpassungszeilen */}
-          {(diffAnpassungen || []).length > 0 && (
-            <div style={{ padding: "8px 14px" }}>
-              <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
-                <thead>
-                  <tr style={{ color: "#dc2626", fontWeight: 700, fontSize: 11 }}>
-                    <th style={{ textAlign: "left", padding: "3px 0", width: "50%" }}>Bezeichnung</th>
-                    <th style={{ textAlign: "right", padding: "3px 8px", width: "40%" }}>Betrag CHF</th>
-                    <th style={{ width: "10%" }} />
-                  </tr>
-                </thead>
-                <tbody>
-                  {(diffAnpassungen || []).map((a, idx) => {
-                    const isEditing = editAnp?.idx === idx;
-                    const saveAnpRow = () => {
-                      if (!editAnp || editAnp.idx !== idx) return;
-                      const rows = (diffAnpassungen || []).map((r, i) =>
-                        i === idx ? { ...r, bezeichnung: editAnp.bezeichnung, betrag: parseFloat(editAnp.betrag) || 0 } : r
-                      );
-                      onSaveDiffAnpassungen(rows);
-                      setEditAnp(null);
-                    };
-                    return (
-                    <tr key={a.id}>
-                      <td style={{ padding: "3px 0" }}>
-                        {isEditing ? (
-                          <input autoFocus value={editAnp.bezeichnung}
-                            onChange={e => setEditAnp(v => ({ ...v, bezeichnung: e.target.value }))}
-                            onKeyDown={e => {
-                              if (e.key === "Tab") { e.preventDefault(); document.getElementById(`anp-betrag-${idx}`)?.focus(); document.getElementById(`anp-betrag-${idx}`)?.select(); }
-                              if (e.key === "Escape") setEditAnp(null);
-                              if (e.key === "Enter") { document.getElementById(`anp-betrag-${idx}`)?.focus(); document.getElementById(`anp-betrag-${idx}`)?.select(); }
-                            }}
-                            style={{ width: "100%", fontSize: 12, padding: "3px 8px", borderRadius: 4, border: "1px solid #fca5a5", outline: "none" }} />
-                        ) : (
-                          <span onClick={() => setEditAnp({ idx, bezeichnung: a.bezeichnung, betrag: String(a.betrag) })}
-                            style={{ cursor: "text", color: a.bezeichnung ? "#374151" : "#9ca3af", fontStyle: a.bezeichnung ? "normal" : "italic" }}>
-                            {a.bezeichnung || "Bezeichnung eingeben…"}
-                          </span>
-                        )}
-                      </td>
-                      <td style={{ padding: "3px 8px", textAlign: "right" }}>
-                        {isEditing ? (
-                          <input id={`anp-betrag-${idx}`} value={editAnp.betrag} type="number" step="0.01"
-                            onChange={e => setEditAnp(v => ({ ...v, betrag: e.target.value }))}
-                            onKeyDown={e => {
-                              if (e.key === "Enter") saveAnpRow();
-                              if (e.key === "Escape") setEditAnp(null);
-                              if (e.key === "Tab") { e.preventDefault(); saveAnpRow(); }
-                            }}
-                            onBlur={saveAnpRow}
-                            style={{ width: "100%", fontSize: 12, padding: "3px 8px", borderRadius: 4, border: "1px solid #fca5a5", outline: "none", textAlign: "right" }} />
-                        ) : (
-                          <span onClick={() => setEditAnp({ idx, bezeichnung: a.bezeichnung, betrag: String(a.betrag) })}
-                            style={{ cursor: "text", fontFamily: "monospace", color: "#374151" }}>
-                            {fmtCHF(a.betrag)}
-                          </span>
-                        )}
-                      </td>
-                      <td style={{ textAlign: "right", padding: "3px 0" }}>
-                        {isEditing
-                          ? <button onMouseDown={e => { e.preventDefault(); saveAnpRow(); }}
-                              style={{ background: "none", border: "none", cursor: "pointer", color: "#16a34a", fontSize: 16, lineHeight: 1, fontWeight: 700 }}>✓</button>
-                          : <button onClick={() => onSaveDiffAnpassungen((diffAnpassungen || []).filter((_, i) => i !== idx))}
-                              style={{ background: "none", border: "none", cursor: "pointer", color: "#fca5a5", fontSize: 14, lineHeight: 1 }}>×</button>
-                        }
-                      </td>
-                    </tr>
-                    );
-                  })}
-                  <tr style={{ borderTop: "1px solid #fecaca", fontWeight: 700 }}>
-                    <td style={{ padding: "4px 0", fontSize: 12, color: "#dc2626" }}>Total Anpassungen</td>
-                    <td style={{ padding: "4px 8px", textAlign: "right", fontFamily: "monospace", fontSize: 12, color: "#dc2626" }}>{fmtCHF(anpTotal)}</td>
-                    <td />
-                  </tr>
-                  <tr style={{ fontWeight: 700 }}>
-                    <td style={{ padding: "4px 0", fontSize: 12, color: balancedNachAnp ? "#16a34a" : "#dc2626" }}>Verbleibende Differenz</td>
-                    <td style={{ padding: "4px 8px", textAlign: "right", fontFamily: "monospace", fontSize: 12, color: balancedNachAnp ? "#16a34a" : "#dc2626" }}>{fmtCHF(Math.abs(diffNachAnp))}</td>
-                    <td />
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          )}
-          {(diffAnpassungen || []).length === 0 && (
-            <div style={{ padding: "8px 14px", fontSize: 12, color: "#dc2626aa" }}>
-              Konten-Zuweisung prüfen oder Anpassungszeilen erfassen.
-            </div>
-          )}
+          <div style={{ padding: "0 14px 10px", fontSize: 12, color: "#dc2626aa" }}>
+            Konten-Zuweisung prüfen.
+          </div>
         </div>
       )}
       {balanced && konten.length > 0 && (
@@ -3896,6 +4001,218 @@ function AnhangTab({ einstellungen, onSaveEinstellungen, accent, headingC, subC,
   );
 }
 
+// ── Pendenzen-Review: dreispaltige Ansicht statt einer zweiten Tabelle ───────
+// Liste links, Beleg-Vorschau permanent gross in der Mitte, Status/Notiz/
+// Weiter rechts. Für das Abarbeiten offener Posten — der Kontenplan bleibt
+// für die Übersicht über alle Konten unverändert.
+function PendenzenReview({ konten, onUpdateKonto, accent, headingC, subC, panelBg, panelBdr, theme, onClose }) {
+  const isArtis = theme === "artis";
+  const isLight = theme === "light";
+  const pageBg = isArtis ? "#f2f5f2" : isLight ? "#f4f4f8" : "#1c1c20";
+  const cardBg = isArtis ? "#ffffff" : isLight ? "#ffffff" : "#27272a";
+
+  const [filter, setFilter] = useState("pendent"); // alle | offen | erledigt | pendent
+  const [selectedId, setSelectedId] = useState(null);
+  const [notizDraft, setNotizDraft] = useState("");
+  const [preview, setPreview] = useState(null);   // { url, loading }
+
+  const relevant = useMemo(() =>
+    konten.filter(k => Math.abs(parseFloat(k.saldo_ist) || 0) > 0.005), [konten]);
+
+  const filtered = useMemo(() => {
+    const list = filter === "alle" ? relevant : relevant.filter(k => statusOf(k) === filter);
+    return [...list].sort((a, b) => (parseInt(a.kontonummer) || 0) - (parseInt(b.kontonummer) || 0));
+  }, [relevant, filter]);
+
+  useEffect(() => {
+    if (!filtered.length) { setSelectedId(null); return; }
+    if (!filtered.some(k => k.id === selectedId)) setSelectedId(filtered[0].id);
+  }, [filtered, selectedId]);
+
+  const selected = filtered.find(k => k.id === selectedId) || null;
+  const belege = selected?.arbeitspapier?.belege || [];
+  const erstBeleg = belege[0] || null;
+
+  useEffect(() => { setNotizDraft(selected?.notiz || ""); }, [selectedId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!erstBeleg) { setPreview(null); return; }
+    const path = (erstBeleg.storage_path || "").replace(/^dokumente\//, "");
+    if (!path) { setPreview(null); return; }
+    let aktiv = true;
+    setPreview({ url: null, loading: true });
+    supabase.storage.from(BUCKET).createSignedUrl(path, 3600).then(({ data }) => {
+      if (!aktiv) return;
+      setPreview({ url: data?.signedUrl || null, loading: false });
+    });
+    return () => { aktiv = false; };
+  }, [erstBeleg?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const counts = useMemo(() => {
+    const c = { alle: relevant.length, offen: 0, erledigt: 0, pendent: 0 };
+    relevant.forEach(k => { c[statusOf(k)]++; });
+    return c;
+  }, [relevant]);
+
+  const geprueft = counts.erledigt + counts.pendent;
+  const idx = filtered.findIndex(k => k.id === selectedId);
+
+  const goto = (delta) => {
+    if (idx < 0 || !filtered.length) return;
+    const next = filtered[(idx + delta + filtered.length) % filtered.length];
+    setSelectedId(next.id);
+  };
+
+  const setStatus = (s) => {
+    if (!selected) return;
+    // Nachbar VOR der Statusänderung merken: sobald das Konto aus dem aktuellen
+    // Filter fällt, soll die Auswahl zum nächsten Posten weiterrücken statt an
+    // den Listenanfang zu springen (sonst arbeitet man sich nie durch die Liste).
+    const neighbor = filter !== "alle" && s !== filter ? (filtered[idx + 1] || filtered[idx - 1] || null) : null;
+    onUpdateKonto(selected.id, { arbeitspapier: { ...(selected.arbeitspapier || {}), status: s, pendent: s === "pendent" } });
+    if (neighbor) setSelectedId(neighbor.id);
+  };
+
+  const saveNotiz = () => {
+    if (!selected || notizDraft === (selected.notiz || "")) return;
+    onUpdateKonto(selected.id, { notiz: notizDraft });
+  };
+
+  const FILTERS = [
+    { key: "pendent", label: "Pendent" }, { key: "offen", label: "Offen" },
+    { key: "erledigt", label: "Erledigt" }, { key: "alle", label: "Alle" },
+  ];
+
+  return createPortal(
+    <div style={{ position: "fixed", inset: 0, zIndex: 9998, backgroundColor: pageBg, display: "flex", flexDirection: "column" }}>
+      {/* Kopfzeile */}
+      <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 20px", borderBottom: `1px solid ${panelBdr}`, backgroundColor: cardBg, flexShrink: 0 }}>
+        <span style={{ fontSize: 14, fontWeight: 700, color: headingC }}>📋 Pendenzen-Review</span>
+        <div style={{ display: "flex", gap: 6 }}>
+          {FILTERS.map(f => (
+            <button key={f.key} onClick={() => setFilter(f.key)}
+              style={{
+                fontSize: 11.5, fontWeight: 700, padding: "5px 12px", borderRadius: 8, cursor: "pointer",
+                border: `1px solid ${filter === f.key ? accent : panelBdr}`,
+                backgroundColor: filter === f.key ? accent + "18" : "transparent",
+                color: filter === f.key ? accent : subC,
+              }}>
+              {f.label} <span style={{ opacity: 0.7 }}>({counts[f.key]})</span>
+            </button>
+          ))}
+        </div>
+        <span style={{ fontSize: 12, color: subC, marginLeft: 4 }}>{geprueft} von {counts.alle} geprüft</span>
+        <div style={{ flex: 1 }} />
+        <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: subC, fontSize: 20, lineHeight: 1 }}>×</button>
+      </div>
+
+      {!filtered.length ? (
+        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: subC, fontSize: 13 }}>
+          Keine Konten in dieser Ansicht.
+        </div>
+      ) : (
+        <div style={{ flex: 1, display: "grid", gridTemplateColumns: "280px 1fr 260px", gap: 14, padding: 14, minHeight: 0 }}>
+          {/* Liste */}
+          <div style={{ backgroundColor: cardBg, border: `1px solid ${panelBdr}`, borderRadius: 12, overflowY: "auto" }}>
+            {filtered.map(k => {
+              const st = statusOf(k);
+              const active = k.id === selectedId;
+              return (
+                <div key={k.id} onClick={() => setSelectedId(k.id)}
+                  style={{
+                    padding: "10px 14px", cursor: "pointer",
+                    borderLeft: `3px solid ${active ? accent : "transparent"}`,
+                    backgroundColor: active ? accent + "14" : "transparent",
+                    borderBottom: `1px solid ${panelBdr}`,
+                  }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: STATUS_DOT[st], flexShrink: 0 }} />
+                    <span style={{ fontSize: 12.5, fontWeight: active ? 700 : 600, color: headingC, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {k.kontonummer} · {k.kontoname}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 11, color: subC, marginTop: 2, paddingLeft: 14 }}>{fmtCHF(k.saldo_ist)} CHF</div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Beleg-Vorschau */}
+          <div style={{ backgroundColor: cardBg, border: `1px solid ${panelBdr}`, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, overflow: "hidden" }}>
+            {!erstBeleg ? (
+              <div style={{ textAlign: "center", color: subC, fontSize: 13 }}>
+                Noch kein Beleg verknüpft.<br />
+                <span style={{ fontSize: 11.5 }}>Im Kontenplan bei diesem Konto „Beleg verknüpfen" nutzen.</span>
+              </div>
+            ) : preview?.loading ? (
+              <span style={{ fontSize: 12, color: subC }}>Lädt…</span>
+            ) : !preview?.url ? (
+              <span style={{ fontSize: 12, color: subC }}>Vorschau nicht verfügbar</span>
+            ) : (erstBeleg.file_type || "").includes("pdf") ? (
+              <iframe src={preview.url} title={erstBeleg.name} style={{ width: "100%", height: "100%", border: "none" }} />
+            ) : (erstBeleg.file_type || "").startsWith("image/") ? (
+              <img src={preview.url} alt={erstBeleg.name} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+            ) : (
+              <div style={{ textAlign: "center", color: subC, fontSize: 12 }}>
+                {erstBeleg.name}<br />Keine Vorschau für diesen Dateityp.
+              </div>
+            )}
+          </div>
+
+          {/* Aktion */}
+          <div style={{ backgroundColor: cardBg, border: `1px solid ${panelBdr}`, borderRadius: 12, padding: 14, display: "flex", flexDirection: "column", gap: 12, overflowY: "auto" }}>
+            {selected && (
+              <>
+                <div>
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: headingC }}>{selected.kontonummer} · {selected.kontoname}</div>
+                  <div style={{ fontSize: 11.5, color: subC, marginTop: 2 }}>Saldo {fmtCHF(selected.saldo_ist)} CHF</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 10.5, fontWeight: 700, color: subC, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>Status setzen</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                    {STATUS_ORDER.map(s => {
+                      const active = statusOf(selected) === s;
+                      return (
+                        <button key={s} onClick={() => setStatus(s)}
+                          style={{
+                            textAlign: "left", padding: "7px 10px", borderRadius: 7, cursor: "pointer",
+                            border: `1.5px solid ${active ? STATUS_DOT[s] : panelBdr}`,
+                            backgroundColor: active ? STATUS_DOT[s] + "18" : "transparent",
+                            color: active ? STATUS_DOT[s] : headingC,
+                            fontWeight: active ? 700 : 400, fontSize: 12.5,
+                          }}>
+                          {STATUS_LABEL[s]}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 10.5, fontWeight: 700, color: subC, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>Notiz</div>
+                  <textarea value={notizDraft} onChange={e => setNotizDraft(e.target.value)} onBlur={saveNotiz}
+                    placeholder="Kurze Bemerkung…"
+                    style={{ width: "100%", height: 64, resize: "none", borderRadius: 7, border: `1px solid ${panelBdr}`, padding: "7px 9px", fontSize: 12, color: headingC, backgroundColor: pageBg, fontFamily: "inherit" }} />
+                </div>
+                <div style={{ marginTop: "auto", display: "flex", gap: 8 }}>
+                  <button onClick={() => goto(-1)} disabled={filtered.length < 2}
+                    style={{ flex: 1, padding: "8px 0", borderRadius: 8, border: `1px solid ${panelBdr}`, backgroundColor: "transparent", color: subC, fontSize: 12, cursor: filtered.length < 2 ? "default" : "pointer" }}>
+                    ← Zurück
+                  </button>
+                  <button onClick={() => goto(1)} disabled={filtered.length < 2}
+                    style={{ flex: 1, padding: "8px 0", borderRadius: 8, border: "none", backgroundColor: accent, color: "#fff", fontWeight: 700, fontSize: 12, cursor: filtered.length < 2 ? "default" : "pointer" }}>
+                    Weiter →
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>,
+    document.body
+  );
+}
+
 // ── Hauptkomponente ───────────────────────────────────────────────────────────
 export default function Abschlussdokumentation() {
   const navigate = useNavigate();
@@ -3922,6 +4239,7 @@ export default function Abschlussdokumentation() {
   const [dossierStatus, setDossierStatus] = useState(null); // null | Fortschrittstext
   const [aiBusy, setAiBusy] = useState(null); // null | Fortschrittstext der KI-Zuweisung
   const [exportDialog, setExportDialog] = useState(null);   // null | "pdf" | "dossier"
+  const [showPendenzen, setShowPendenzen] = useState(false);
 
   // ── Auto-Jahr: neuestes Jahr das wirklich Konten hat ────────────────────────
   useEffect(() => {
@@ -4393,7 +4711,15 @@ export default function Abschlussdokumentation() {
         if (!query.trim()) continue;
         const { data, error } = await supabase.rpc("search_dokumente", { p_query: query, p_customer_id: selectedCid, p_limit: 8 });
         if (error || !data?.length) continue;
-        const cands = data.filter(d => !selectedYear || d.year === selectedYear || d.year == null).slice(0, 5);
+        // Budget/Reporting-Dokumente nie als Beleg-Kandidat: das sind interne
+        // Planungsunterlagen, die praktisch jedes Stichwort einmal enthalten
+        // (ein Jahresbudget nennt AHV, MWST, Leasing etc. alle in einer Datei) —
+        // damit gewinnen sie sonst fast jede Suche, ob per Keyword oder LLM.
+        const isPlanning = d => /\b(reporting|budget)\b/i.test(d.name || d.filename || "");
+        const cands = data
+          .filter(d => !selectedYear || d.year === selectedYear || d.year == null)
+          .filter(d => !isPlanning(d))
+          .slice(0, 5);
         if (!cands.length) continue;
         cands.forEach(d => docMeta.set(d.id, d));
         await ensureContent(cands.map(d => d.id));
@@ -4408,7 +4734,7 @@ export default function Abschlussdokumentation() {
         }).sort((a, b) => b.score - a.score);
         const best = scored[0];
         if (best?.amtHit) { await linkBeleg(k, best.d, "Betrag"); continue; } // sehr zuverlässig
-        pending.push({ k, cands, best });
+        pending.push({ k, cands });
       }
 
       // ── Phase 2: LLM-Rerank für die unsicheren Konten ──
@@ -4441,11 +4767,16 @@ export default function Abschlussdokumentation() {
         }
       }
 
-      // ── Phase 3: LLM-Treffer verknüpfen, sonst Stichwort-Fallback ──
+      // ── Phase 3: nur noch LLM-Treffer verknüpfen ──
+      // Der frühere Stichwort-Fallback (Score >= 1.5 aus Volltext-Rank + Keyword-
+      // Treffern) hat in der Praxis vor allem breite Dokumente wie ein Jahres-
+      // budget gewonnen — die erwähnen fast jedes Stichwort einmal und wurden so
+      // hunderten unpassenden Konten zugewiesen. Lieber ein Konto unbelegt lassen
+      // als einen falschen Beleg stumm anhängen; ohne Kandidat bleibt es offen
+      // und taucht in den Pendenzen auf.
       for (const p of stillOpen) {
         const llmDocId = llmAssigned.get(String(p.k.kontonummer));
-        if (llmDocId && docMeta.has(llmDocId)) { await linkBeleg(p.k, docMeta.get(llmDocId), "KI"); continue; }
-        if (p.best && p.best.score >= 1.5) await linkBeleg(p.k, p.best.d, "Stichwort");
+        if (llmDocId && docMeta.has(llmDocId)) await linkBeleg(p.k, docMeta.get(llmDocId), "KI");
       }
 
       qc.invalidateQueries({ queryKey: ["abschluss_konten", abschlussId] });
@@ -4651,6 +4982,19 @@ export default function Abschlussdokumentation() {
             </button>
             <button
               disabled={konten.length === 0}
+              onClick={() => setShowPendenzen(true)}
+              title="Offene Posten der Reihe nach durchgehen: Beleg, Status, Notiz"
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-opacity"
+              style={{
+                backgroundColor: panelBg, color: headingC,
+                border: `1px solid ${panelBdr}`,
+                opacity: konten.length > 0 ? 1 : 0.4,
+                cursor: konten.length > 0 ? "pointer" : "not-allowed",
+              }}>
+              📋 Pendenzen
+            </button>
+            <button
+              disabled={konten.length === 0}
               onClick={() => exportKontenCSV(konten, customerName, selectedYear)}
               className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-opacity"
               style={{
@@ -4801,8 +5145,6 @@ export default function Abschlussdokumentation() {
                     <BilanzTab {...tabProps}
                       signFlipPassiven={signFlipPassiven}
                       onFlipPassiven={() => updateEinstellungenMut.mutate({ sign_flip_passiven: !signFlipPassiven })}
-                      diffAnpassungen={diffAnpassungen}
-                      onSaveDiffAnpassungen={(rows) => updateEinstellungenMut.mutate({ differenz_anpassungen: rows })}
                     />
                   )}
                   {activeTab === "erfolgsrechnung" && (
@@ -4840,6 +5182,8 @@ export default function Abschlussdokumentation() {
           theme={theme}
           initialFlipPassiven={signFlipPassiven}
           initialFlipER={signFlipER}
+          customerId={selectedCid}
+          selectedYear={selectedYear}
         />
       )}
 
@@ -4855,6 +5199,21 @@ export default function Abschlussdokumentation() {
           panelBdr={panelBdr}
           onClose={() => setExportDialog(null)}
           onExport={runExport}
+        />
+      )}
+
+      {/* ── Pendenzen-Review ────────────────────────────────────────────────── */}
+      {showPendenzen && (
+        <PendenzenReview
+          konten={konten}
+          onUpdateKonto={handleUpdateKonto}
+          accent={accent}
+          headingC={headingC}
+          subC={subC}
+          panelBg={panelBg}
+          panelBdr={panelBdr}
+          theme={theme}
+          onClose={() => setShowPendenzen(false)}
         />
       )}
     </div>

@@ -33,6 +33,7 @@ export function hydrateNavPrefs(profile) {
     if (remote.mode === 'rail' || remote.mode === 'wide') localStorage.setItem('nav_mode', remote.mode);
     if (['hub', 'sidebar', 'widescreen'].includes(remote.layout)) localStorage.setItem('nav_layout', remote.layout);
     if (remote.open_mode === 'same' || remote.open_mode === 'new') localStorage.setItem('hub_open_mode', remote.open_mode);
+    if (['normal', 'abschluss', 'panel'].includes(remote.dok_view)) localStorage.setItem('dok_view', remote.dok_view);
     if (remote.widgets_on === true || remote.widgets_on === false) localStorage.setItem('hub_widgets', remote.widgets_on ? '1' : '0');
     if (Array.isArray(remote.widgets_order)) localStorage.setItem('hub_widgets_order', JSON.stringify(remote.widgets_order));
     if (remote.widgets_mandant && typeof remote.widgets_mandant === 'object') {
@@ -67,6 +68,7 @@ export function scheduleNavPrefsSave() {
           mode: localStorage.getItem('nav_mode') || 'wide',
           layout: localStorage.getItem('nav_layout') || 'sidebar',
           open_mode: localStorage.getItem('hub_open_mode') || 'same',
+          dok_view: localStorage.getItem('dok_view') || 'normal',
           widgets_on: localStorage.getItem('hub_widgets') === '1',
           widgets_order: readJson('hub_widgets_order', null) ?? undefined,
           widgets_mandant: {

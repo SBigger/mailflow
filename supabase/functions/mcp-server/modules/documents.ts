@@ -1,9 +1,8 @@
 // modules/documents.ts
-import { McpServer } from "npm:@modelcontextprotocol/sdk@1.0.1/server/mcp.js";
 import { z } from "npm:zod@3.23.8";
 import { supabase } from "../supabase.ts";
 import { registerTool, ok, unwrap } from "../tool.ts";
-import { requireCustomerId, requireWritesEnabled, type ToolContext, ToolError } from "../scope.ts";
+import { resolveCustomerId, requireWritesEnabled, type ToolContext, ToolError } from "../scope.ts";
 
 /**
  * Modul: Dokumentenverwaltung
@@ -24,9 +23,9 @@ function safeName(name: string): string {
   return name.replace(/[^\w.\-]+/g, "_").replace(/_+/g, "_").slice(0, 120) || "datei";
 }
 
-export function registerDocumentTools(server: McpServer, context: ToolContext): void {
+export function registerDocumentTools(context: ToolContext): void {
 
-  registerTool(server, {
+  registerTool({
     name: "documents_search",
     title: "Dokumente suchen",
     description:
@@ -38,10 +37,10 @@ export function registerDocumentTools(server: McpServer, context: ToolContext): 
       year: z.number().int().optional(),
       tag_id: z.string().uuid().optional().describe("Filter auf ein dok_tags.id (in tag_ids enthalten)"),
       limit: z.number().int().min(1).max(200).default(50),
-      customerId: z.string().uuid()
+      customer_id: z.string().uuid().optional().describe("Kunde (customers.id). Ohne Angabe wird der im Frontend gewaehlte Kunde verwendet."),
     },
     handler: async (args, ctx) => {
-      const customerId = requireCustomerId(ctx);
+      const customerId = resolveCustomerId(ctx, args.customer_id);
       let q = supabase
           .from("dokumente")
           .select(DOC_META)
@@ -62,7 +61,7 @@ export function registerDocumentTools(server: McpServer, context: ToolContext): 
     },
   }, context);
 
-  registerTool(server, {
+  registerTool({
     name: "documents_get",
     title: "Dokument abrufen",
     description:
@@ -71,10 +70,10 @@ export function registerDocumentTools(server: McpServer, context: ToolContext): 
     input: {
       id: z.string().uuid(),
       include_content: z.boolean().default(false),
-      customerId: z.string().uuid()
+      customer_id: z.string().uuid().optional().describe("Kunde (customers.id). Ohne Angabe wird der im Frontend gewaehlte Kunde verwendet."),
     },
     handler: async (args, ctx) => {
-      const customerId = requireCustomerId(ctx);
+      const customerId = resolveCustomerId(ctx, args.customer_id);
       const select = args.include_content ? `${DOC_META}, content_text` : DOC_META;
       const data = unwrap(
           await supabase
@@ -89,7 +88,7 @@ export function registerDocumentTools(server: McpServer, context: ToolContext): 
     },
   }, context);
 
-  registerTool(server, {
+  registerTool({
     name: "documents_get_download_url",
     title: "Download-Link erzeugen",
     description:
@@ -97,10 +96,10 @@ export function registerDocumentTools(server: McpServer, context: ToolContext): 
     input: {
       id: z.string().uuid(),
       expires_in_seconds: z.number().int().min(60).max(86400).default(3600),
-      customerId: z.string().uuid()
+      customer_id: z.string().uuid().optional().describe("Kunde (customers.id). Ohne Angabe wird der im Frontend gewaehlte Kunde verwendet."),
     },
     handler: async (args, ctx) => {
-      const customerId = requireCustomerId(ctx);
+      const customerId = resolveCustomerId(ctx, args.customer_id);
       const doc = unwrap(
           await supabase
               .from("dokumente")
@@ -121,7 +120,7 @@ export function registerDocumentTools(server: McpServer, context: ToolContext): 
     },
   }, context);
 
-  registerTool(server, {
+  registerTool({
     name: "documents_upload",
     title: "Dokument hochladen",
     description:
@@ -136,11 +135,11 @@ export function registerDocumentTools(server: McpServer, context: ToolContext): 
       notes: z.string().optional(),
       tag_ids: z.array(z.string().uuid()).optional(),
       file_type: z.string().optional().describe("MIME-Type, z.B. application/pdf"),
-      customerId: z.string().uuid()
+      customer_id: z.string().uuid().optional().describe("Kunde (customers.id). Ohne Angabe wird der im Frontend gewaehlte Kunde verwendet."),
     },
     handler: async (args, ctx) => {
       requireWritesEnabled(ctx);
-      const customerId = requireCustomerId(ctx);
+      const customerId = resolveCustomerId(ctx, args.customer_id);
 
       // In Deno/Supabase Edge Functions ist Buffer global verfügbar.
       const buffer = Buffer.from(args.content_base64, "base64");
@@ -195,7 +194,7 @@ export function registerDocumentTools(server: McpServer, context: ToolContext): 
     },
   }, context);
 
-  registerTool(server, {
+  registerTool({
     name: "documents_categorize",
     title: "Dokument kategorisieren",
     description:
@@ -205,11 +204,11 @@ export function registerDocumentTools(server: McpServer, context: ToolContext): 
       id: z.string().uuid(),
       category: z.string().optional(),
       set_tags: z.array(z.string().uuid()).optional().describe("Ersetzt tag_ids vollstaendig"),
-      customerId: z.string().uuid()
+      customer_id: z.string().uuid().optional().describe("Kunde (customers.id). Ohne Angabe wird der im Frontend gewaehlte Kunde verwendet."),
     },
     handler: async (args, ctx) => {
       requireWritesEnabled(ctx);
-      const customerId = requireCustomerId(ctx);
+      const customerId = resolveCustomerId(ctx, args.customer_id);
 
       const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
       if (args.category !== undefined) patch.category = args.category;
@@ -230,7 +229,7 @@ export function registerDocumentTools(server: McpServer, context: ToolContext): 
     },
   }, context);
 
-  registerTool(server, {
+  registerTool({
     name: "documents_list_tags",
     title: "Dokument-Tags abfragen",
     description: "Listet den Tag-Katalog (dok_tags) zum Kategorisieren von Dokumenten.",

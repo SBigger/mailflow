@@ -15,8 +15,44 @@ import {
     X,
     Loader2
 } from "lucide-react";
-import {entities, functions, supabase} from "@/api/supabaseClient.js";
-import {useQuery, useQueryClient} from "@tanstack/react-query";
+import {entities, supabase} from "@/api/supabaseClient.js";
+import {useQuery} from "@tanstack/react-query";
+import {sanitizeAiHtml} from "@/lib/sanitizeHtml.js";
+
+const STORAGE_KEY = "ai-assistant-verlauf";
+
+/**
+ * Ruft das KI-Gateway auf.
+ *
+ * supabase.functions.invoke wird hier direkt verwendet (statt des Wrappers in
+ * supabaseClient), weil dessen Error nur "non-2xx status code" sagt - die
+ * eigentliche Fehlermeldung der Edge Function steckt in error.context.
+ */
+async function askGateway(body) {
+    const { data, error } = await supabase.functions.invoke("mcp-server", { body });
+
+    if (error) {
+        let detail = "";
+        try {
+            const payload = await error.context?.json?.();
+            detail = payload?.error || payload?.details || "";
+        } catch {
+            detail = "";
+        }
+        if (error.context?.status === 404) {
+            throw new Error("Der KI-Dienst ist auf diesem Server nicht installiert (Edge Function 'mcp-server' fehlt).");
+        }
+        if (error.context?.status === 401) {
+            throw new Error(detail || "Sitzung abgelaufen - bitte neu anmelden.");
+        }
+        throw new Error(detail || error.message || "Verbindung zum KI-Gateway fehlgeschlagen.");
+    }
+
+    if (data?.error) throw new Error(data.details ? `${data.error}: ${data.details}` : data.error);
+    if (!data?.response) throw new Error("Keine Antwort erhalten.");
+
+    return data;
+}
 
 const SUGGESTED_PROMPTS = [
     {
@@ -170,7 +206,16 @@ function SearchableDropdown({ label, options, selectedValue, onSelect, themeStyl
 
 export default function AiAssistant() {
     const { theme } = useContext(ThemeContext);
-    const [messages, setMessages] = useState([]);
+    // Verlauf ueberlebt einen Reload/Seitenwechsel, aber nicht das Schliessen
+    // des Tabs - es stehen Mandantendaten drin.
+    const [messages, setMessages] = useState(() => {
+        try {
+            const stored = sessionStorage.getItem(STORAGE_KEY);
+            return stored ? JSON.parse(stored) : [];
+        } catch {
+            return [];
+        }
+    });
     const [input, setInput] = useState("");
     const [isLoading, setIsLoading] = useState(false);
     const messagesEndRef = useRef(null);
@@ -178,6 +223,14 @@ export default function AiAssistant() {
     // States für ausgewählte Kunden und Mandanten
     const [selectedCustomer, setSelectedCustomer] = useState("");
     const [selectedMandant, setSelectedMandant] = useState("");
+
+    useEffect(() => {
+        try {
+            sessionStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+        } catch {
+            /* Speicher voll oder gesperrt - der Verlauf im State bleibt trotzdem nutzbar */
+        }
+    }, [messages]);
 
     const { data: customers = [], isLoading: isLoadingCustomers } = useQuery({
         queryKey: ["customers"],
@@ -217,44 +270,51 @@ export default function AiAssistant() {
     }, [messages]);
 
     const handleSend = async (textToSend) => {
-        const text = textToSend || input;
-        if (!text.trim()) return;
+        const text = (textToSend ?? input).trim();
+        if (!text || isLoading) return;
 
-        const updatedMessages = [...messages, { id: Date.now(), role: "user", content: text }];
-        setMessages(updatedMessages);
+        // Nur Rolle und Inhalt an die API - die Fehler-Bubbles und UI-Felder
+        // gehoeren nicht in die Historie, die Claude sieht.
+        const history = messages
+            .filter((m) => !m.isError)
+            .map((m) => ({ role: m.role, content: m.content }));
+
+        setMessages((prev) => [...prev, { id: Date.now(), role: "user", content: text }]);
         setInput("");
         setIsLoading(true);
 
         try {
-            // IDs werden jetzt dynamisch aus dem State übergeben
-            const { data, error } = await functions.invoke('mcp-server',
-                JSON.stringify({
-                    messages: updatedMessages,
-                    customerId: selectedCustomer || null,
-                    mandantId: selectedMandant || null
-                })
-            );
+            const data = await askGateway({
+                messages: [...history, { role: "user", content: text }],
+                customerId: selectedCustomer || null,
+                customerName: customers.find((c) => c.value === selectedCustomer)?.label || null,
+                mandantId: selectedMandant || null,
+                mandantName: mandanten.find((m) => m.value === selectedMandant)?.label || null,
+            });
 
-            if(data && data.response) {
-                setMessages((prev) => [
-                    ...prev,
-                    { id: Date.now() + 1, role: "assistant", content: data.response || "Keine Antwort erhalten." }
-                ]);
-            } else {
-                setMessages((prev) => [
-                    ...prev,
-                    { id: Date.now() + 1, role: "assistant", content: data.error?.message || "Keine Antwort erhalten." }
-                ]);
-            }
-
-        } catch (error) {
-            setMessages((prev) => [
-                ...prev,
-                { id: Date.now() + 1, role: "assistant", content: "Fehler: Verbindung zum KI-Gateway fehlgeschlagen." }
-            ]);
+            setMessages((prev) => [...prev, {
+                id: Date.now() + 1,
+                role: "assistant",
+                content: data.response,
+                toolCalls: data.tool_calls || [],
+            }]);
+        } catch (err) {
+            setMessages((prev) => [...prev, {
+                id: Date.now() + 1,
+                role: "assistant",
+                content: err.message || "Verbindung zum KI-Gateway fehlgeschlagen.",
+                isError: true,
+            }]);
         } finally {
             setIsLoading(false);
         }
+    };
+
+    const handleClear = () => {
+        setMessages([]);
+        try {
+            sessionStorage.removeItem(STORAGE_KEY);
+        } catch { /* egal */ }
     };
 
     return (
@@ -292,7 +352,7 @@ export default function AiAssistant() {
                     />
 
                     <button
-                        onClick={() => setMessages([])}
+                        onClick={handleClear}
                         className="flex items-center gap-2 text-xs font-semibold px-3 py-2 rounded-xl border transition-all hover:opacity-80 h-[34px]"
                         style={{ backgroundColor: cardBg, borderColor: cardBorder, color: subColor }} disabled={messages.length === 0}>
                         <Trash2 className="w-3.5 h-3.5" /> Verlauf leeren
@@ -313,7 +373,7 @@ export default function AiAssistant() {
                             </p>
                         </div>
 
-                        <div className="grid grid-cols-3 gap-4 w-full">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 w-full">
                             {SUGGESTED_PROMPTS.map(({ id, title, description, icon: Icon, color, bg, prompt }) => (
                                 <div
                                     key={id}
@@ -362,16 +422,40 @@ export default function AiAssistant() {
                                         >
                                             {msg.content}
                                         </div>
+                                    ) : msg.isError ? (
+                                        /* 2. Fehler: als Klartext, nie als HTML */
+                                        <div className="rounded-2xl px-4 py-2.5 text-sm shadow-sm leading-relaxed"
+                                             style={{
+                                                 backgroundColor: isDark ? "rgba(220,38,38,0.12)" : "#fef2f2",
+                                                 color: isDark ? "#fca5a5" : "#b91c1c",
+                                                 border: `1px solid ${isDark ? "rgba(220,38,38,0.35)" : "#fecaca"}`,
+                                             }}
+                                        >
+                                            {msg.content}
+                                        </div>
                                     ) : (
-                                        /* 2. Variante für die KI: Rendert das generierte HTML */
-                                        <div className="rounded-2xl px-4 py-2.5 text-sm shadow-sm whitespace-pre-wrap leading-relaxed"
+                                        /* 3. Variante für die KI: gefiltertes HTML rendern */
+                                        <div className="rounded-2xl px-4 py-2.5 text-sm shadow-sm leading-relaxed min-w-0 overflow-x-auto ai-antwort"
                                              style={{
                                                  backgroundColor: isDark ? "rgba(255,255,255,0.05)" : "#f1f5f9",
                                                  color: headingColor,
                                                  border: `1px solid ${cardBorder}`,
                                              }}
-                                             dangerouslySetInnerHTML={{ __html: msg.content }}
-                                        />
+                                        >
+                                            <div dangerouslySetInnerHTML={{ __html: sanitizeAiHtml(msg.content) }} />
+                                            {msg.toolCalls?.length > 0 && (
+                                                <div className="mt-2 pt-2 text-[11px] flex flex-wrap gap-1 items-center"
+                                                     style={{ borderTop: `1px solid ${cardBorder}`, color: subColor }}>
+                                                    <span>Verwendete Daten:</span>
+                                                    {[...new Set(msg.toolCalls)].map((t) => (
+                                                        <span key={t} className="px-1.5 py-0.5 rounded"
+                                                              style={{ backgroundColor: isDark ? "rgba(255,255,255,0.08)" : "#e2e8f0" }}>
+                                                            {t}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
                                     )}
                                 </div>
                             );
@@ -395,15 +479,22 @@ export default function AiAssistant() {
             <div className="max-w-4xl w-full mx-auto shrink-0">
                 <form
                     onSubmit={(e) => { e.preventDefault(); handleSend(); }}
-                    className="flex items-center gap-2 rounded-xl p-2 transition-all"
+                    className="flex items-end gap-2 rounded-xl p-2 transition-all"
                     style={{ backgroundColor: cardBg, border: `1px solid ${cardBorder}` }}
                 >
-                    <input
-                        type="text"
+                    <textarea
+                        rows={1}
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
-                        placeholder="Frage zu Aktien, Steuern oder Mandanten stellen..."
-                        className="flex-1 bg-transparent border-none outline-none px-3 text-sm"
+                        onKeyDown={(e) => {
+                            // Enter sendet, Shift+Enter macht eine neue Zeile.
+                            if (e.key === "Enter" && !e.shiftKey) {
+                                e.preventDefault();
+                                handleSend();
+                            }
+                        }}
+                        placeholder="Frage zu Aktien, Steuern oder Mandanten stellen... (Shift+Enter = neue Zeile)"
+                        className="flex-1 bg-transparent border-none outline-none px-3 text-sm resize-none max-h-40 custom-scrollbar"
                         style={{ color: headingColor }}
                         disabled={isLoading}
                     />

@@ -6,6 +6,7 @@ const SUPABASE_ANON = window.env.KEY1;
 const SHARE_FN = `${window.env.API_URL}/functions/v1/share-link`;
 
 import { CATEGORIES } from "@/lib/categories";
+import { prettyDownloadName, prettyDisplayName } from "@/lib/docFileName";
 
 function catLabel(key) {
   const c = CATEGORIES.find(x => x.key === key);
@@ -129,10 +130,10 @@ export default function SharePage() {
         const safe = s => (s || "").replace(/[\\/:*?"<>|]/g, "_").trim() || "_";
         const catFolder = doc.category ? safe(catLabel(doc.category).replace(/^[^\w]+\s/, "")) : "Ohne Kategorie";
         const yearFolder = doc.year || "Ohne Jahr";
-        const path = `${catFolder}/${yearFolder}/${safe(doc.filename || doc.name || "datei")}`;
+        const path = `${catFolder}/${yearFolder}/${safe(prettyDownloadName(doc, "Dokument"))}`;
         zip.file(path, blob);
       } catch (e) {
-        failures.push({ name: doc.filename || doc.name, error: e.message });
+        failures.push({ name: prettyDisplayName(doc), error: e.message });
       } finally {
         done++;
         setZipState(p => ({ ...p, done, label: `${done} / ${docs.length} geladen…` }));
@@ -221,14 +222,14 @@ export default function SharePage() {
         </span>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ color: FG, fontSize: 13, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {doc.name || doc.filename}
+            {prettyDisplayName(doc)}
           </div>
           <div style={{ color: FG2, fontSize: 11, marginTop: 1 }}>
             {formatBytes(doc.file_size)}{doc.year ? " \u00b7 " + doc.year : ""}
           </div>
         </div>
         <button
-          onClick={() => downloadFile(doc.id, doc.filename || doc.name)}
+          onClick={() => downloadFile(doc.id, prettyDownloadName(doc, "Dokument"))}
           disabled={isLoading}
           style={{ background: isLoading ? BORD : ACC, color: "#fff", border: "none", borderRadius: 8, padding: "7px 12px", cursor: isLoading ? "default" : "pointer", display: "flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 600, flexShrink: 0, transition: "background 0.15s" }}
         >
