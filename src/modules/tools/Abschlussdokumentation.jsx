@@ -174,7 +174,7 @@ function statusOf(konto) {
 }
 const STATUS_ORDER = ["offen", "erledigt", "pendent"];
 const STATUS_LABEL = { offen: "Offen", erledigt: "Erledigt", pendent: "Pendent" };
-const STATUS_DOT = { offen: "#b3ab98", erledigt: "#16a34a", pendent: "#7c3aed" };
+const STATUS_DOT = { offen: "#b3ab98", erledigt: "#16a34a", pendent: "#dc2626" };
 
 // Sicherer Formel-Evaluator: erlaubt nur Ziffern + - * / . ( ) '
 function evalExpr(str) {
@@ -2854,10 +2854,10 @@ function KontenplanTab({ konten, onUpdateKonto, onAddKonto, customerId, selected
 
   const COL_HEADERS = ["Konto-Nr", "Kontoname", "Saldo IST", "Saldo VJ", "Abw.", "Position", "Notiz", "Status"];
   const COL_ALIGN = [false, false, true, true, true, false, false, false];
-  // Violett für „pendent"-Zeilen – theme-abhängig, damit Text lesbar bleibt.
-  // Light/Artis: helles Violett + dunkler Text · Dark: halbtransparenter Violett-Overlay + heller Text.
-  const PENDENT_BG       = isArtis ? "#efe9fb" : isLight ? "#ede9fe" : "rgba(139,92,246,0.22)";
-  const PENDENT_BG_HOVER = isArtis ? "#e5dbf7" : isLight ? "#ddd6fe" : "rgba(139,92,246,0.34)";
+  // Rot für „pendent"-Zeilen – theme-abhängig, damit Text lesbar bleibt.
+  // Light/Artis: helles Rot + dunkler Text · Dark: halbtransparenter Rot-Overlay + heller Text.
+  const PENDENT_BG       = isArtis ? "#fef2f2" : isLight ? "#fef2f2" : "rgba(220,38,38,0.22)";
+  const PENDENT_BG_HOVER = isArtis ? "#fee2e2" : isLight ? "#fee2e2" : "rgba(220,38,38,0.34)";
 
   const renderGroup = (groupKey) => {
             const rows = grouped[groupKey];
