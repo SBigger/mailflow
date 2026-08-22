@@ -4164,8 +4164,12 @@ function PendenzenReview({ konten, onUpdateKonto, accent, headingC, subC, panelB
 
   const setStatus = (s) => {
     if (!selected) return;
+    // Nachbar VOR der Statusänderung merken: sobald das Konto aus dem aktuellen
+    // Filter fällt, soll die Auswahl zum nächsten Posten weiterrücken statt an
+    // den Listenanfang zu springen (sonst arbeitet man sich nie durch die Liste).
+    const neighbor = filter !== "alle" && s !== filter ? (filtered[idx + 1] || filtered[idx - 1] || null) : null;
     onUpdateKonto(selected.id, { arbeitspapier: { ...(selected.arbeitspapier || {}), status: s, pendent: s === "pendent" } });
-    if (filter !== "alle" && s !== filter) setTimeout(() => goto(0), 0); // Auswahl rutscht via useEffect automatisch nach
+    if (neighbor) setSelectedId(neighbor.id);
   };
 
   const saveNotiz = () => {
