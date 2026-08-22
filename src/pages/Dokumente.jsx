@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef, useContext } from "react";
+import React, { useState, useMemo, useEffect, useRef, useCallback, useContext } from "react";
 import {
   Search,
   Upload,
@@ -27,6 +27,9 @@ import {
 } from "lucide-react";
 import VersionsDialog from "@/components/dokumente/VersionsDialog";
 import DocHoverPreview from "@/components/dokumente/DocHoverPreview";
+import { prettyDownloadName, prettyDisplayName } from "@/lib/docFileName";
+import DocPanelView from "@/components/dokumente/DocPanelView";
+import { scheduleNavPrefsSave } from "@/components/navigation/navPrefsSync";
 import ChartisPanel from "@/components/chartis/ChartisPanel";
 import * as _pdfjsNs from "pdfjs-dist";
 import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.js?url";
@@ -155,6 +158,9 @@ function getFileInfo(mimeType, filename) {
   if (["zip","rar","7z"].includes(ext))                           return { label: "ZIP", color: "#d97706" };
   return { label: ext.toUpperCase() || "FILE", color: "#71717a" };
 }
+// Gemerkte Ansicht des e-Binders (Wert wird zusaetzlich in profiles.nav_prefs gespiegelt).
+const DOK_VIEW_KEY = "dok_view";
+
 function detectYear(filename) {
   const m = (filename || "").match(/\b(20\d{2})\b/);
   return m ? parseInt(m[1]) : null;
@@ -1070,8 +1076,21 @@ export default function Dokumente() {
     })();
   }, []);
   const [sortBy,        setSortBy]        = useState("-created_at"); // "-created_at" | "name" | "year"
-  const [viewMode,      setViewMode]      = useState("normal");      // "normal" | "abschluss"
+  // Ansicht: pro Benutzer gemerkt (localStorage sofort, profiles.nav_prefs
+  // gebuendelt hinterher -- damit die Wahl auf allen Geraeten gleich ist).
+  const [viewMode,      setViewMode]      = useState(() => {
+    const v = localStorage.getItem(DOK_VIEW_KEY);
+    return ["normal", "abschluss", "panel"].includes(v) ? v : "normal";
+  });                                                                // "normal" | "abschluss" | "panel"
   const [openFolders,   setOpenFolders]   = useState(new Set());
+
+  // Ansicht wechseln UND merken: sofort lokal, gebuendelt ins Profil.
+  const chooseViewMode = (v) => {
+    setViewMode(v);
+    setOpenFolders(new Set());
+    try { localStorage.setItem(DOK_VIEW_KEY, v); } catch { /* ignore */ }
+    scheduleNavPrefsSave();
+  };
   const [showSortMenu,  setShowSortMenu]  = useState(false);
   const [editDoc,        setEditDoc]        = useState(null);
   const [copyDoc,        setCopyDoc]        = useState(null);
@@ -1446,7 +1465,7 @@ export default function Dokumente() {
 
           const resp = await fetch(url);
           const blob = await resp.blob();
-          folder.file((doc.filename || doc.name || "datei").replace(/[<>:"/\\|?*]/g, "_"), blob);
+          folder.file(prettyDownloadName(doc, "Dokument"), blob);
           done++;
         } catch (e) {
           console.warn("ZIP: Datei fehlgeschlagen:", doc.name, e);
@@ -1498,7 +1517,7 @@ export default function Dokumente() {
               if (!url) continue;
               const resp = await fetch(url);
               const blob = await resp.blob();
-              cFolder.file(safe(doc.filename || doc.name || "datei"), blob);
+              cFolder.file(safe(prettyDownloadName(doc, "Dokument")), blob);
               done++;
             } catch (e) { console.warn("ZIP Abschluss:", doc.name, e); }
           }
@@ -1548,7 +1567,7 @@ export default function Dokumente() {
             if (!url) continue;
             const resp = await fetch(url);
             const blob = await resp.blob();
-            cFolder.file(safe(doc.filename || doc.name || "datei"), blob);
+            cFolder.file(safe(prettyDownloadName(doc, "Dokument")), blob);
             done++;
           } catch (e) { console.warn("ZIP Abschluss-Ordner:", doc.name, e); }
         }
@@ -1578,17 +1597,9 @@ export default function Dokumente() {
         return;
       }
 
-      // 2) Hueschen Dateinamen bilden: Anzeigename + Original-Extension
-      //    Sonderzeichen sanitiert fuer Windows/macOS-Kompatibilitaet
-      const origExt = (doc.filename || "").includes(".")
-        ? doc.filename.slice(doc.filename.lastIndexOf("."))
-        : "";
-      const sanitizedName = (doc.name || "download")
-        .replace(/[\\/:*?"<>|]/g, "_")
-        .trim() || "download";
-      const prettyFilename = sanitizedName.endsWith(origExt)
-        ? sanitizedName
-        : sanitizedName + origExt;
+      // 2) Huebschen Dateinamen bilden: Anzeigename ohne interne Nummern
+      //    (Upload-Zeitstempel, Storage-Key, M-Files-ID) + Original-Extension.
+      const prettyFilename = prettyDownloadName(doc, "download");
 
       // 3) storage_path normalisieren (DB hat oft 'dokumente/' Prefix, Storage nicht)
       const srcPath = doc.storage_path.startsWith(BUCKET + "/")
@@ -1878,6 +1889,18 @@ export default function Dokumente() {
       if (url) setHoverPreview({ doc, url, rect });
     }, 280);
   };
+  // Signed URL fuer die Panel-Vorschau. useCallback, weil DocPanelView die
+  // Funktion in einer Abhaengigkeitsliste fuehrt.
+  const getPanelPreviewUrl = useCallback(async (doc) => {
+    if (signedUrls[doc.id]) return signedUrls[doc.id];
+    if (!doc.storage_path) return null;
+    try {
+      const sp = doc.storage_path.replace(/^dokumente\//, '');
+      const { data } = await supabase.storage.from(BUCKET).createSignedUrl(sp, 600);
+      return data?.signedUrl || null;
+    } catch { return null; }
+  }, [signedUrls]);
+
   // Nur ein noch nicht ausgeloestes Oeffnen abbrechen — ein offenes Fenster bleibt.
   const cancelHoverOpen = () => { clearTimeout(hoverTimer.current); };
   // Gibt das Augen-Symbol fuer eine Zeile zurueck (nur bei lokal previewbaren Dateien).
@@ -1899,14 +1922,16 @@ export default function Dokumente() {
   // Empfaenger kann den Link ohne Login anklicken (gleicher Mechanismus wie "Link erstellen").
   const handleMailDoc = async (doc) => {
     try {
+      // Der Kunde sieht diesen Namen -- interne Nummern (Upload-Zeitstempel,
+      // Storage-Key, M-Files-ID) gehoeren nicht in Betreff, Text und Freigabe.
+      const name = prettyDisplayName(doc, "Dokument");
       const { data, error } = await supabase
         .from("share_links")
-        .insert({ name: doc.name, doc_id: doc.id, customer_id: doc.customer_id })
+        .insert({ name, doc_id: doc.id, customer_id: doc.customer_id })
         .select("token")
         .single();
       if (error) throw error;
       const url = `${window.location.origin}/share/${data.token}`;
-      const name = doc.name || "Dokument";
       // Ein mailto:-Body kann nur reinen Text tragen (kein HTML) – deshalb legen wir den
       // klickbaren Dateiname-Hyperlink zusaetzlich in die Zwischenablage. Im geoeffneten
       // Mail fuegt der Nutzer ihn mit Strg+V als Link ein (wie in Outlook). Die nackte URL
@@ -1938,7 +1963,7 @@ export default function Dokumente() {
 
   // Wiederverwendbare Zeilen-Aktionen: haeufige Icons einzeln, Rest im "⋯"-Menue.
   const iconBtn = { background: "none", border: "none", cursor: "pointer", color: s.textMuted, display: "flex", alignItems: "center", padding: 4, borderRadius: 4, flexShrink: 0 };
-  const renderRowActions = (doc, { isCheckedOut, isMyCheckout, lockedByOther, isAdmin }) => {
+  const renderRowActions = (doc, { isCheckedOut, isMyCheckout, lockedByOther, isAdmin, hidePreviewEye = false }) => {
     const mItem = (icon, label, onClick, opts = {}) => (
       <button onClick={() => { setMenuDocId(null); if (!opts.disabled) onClick(); }} disabled={!!opts.disabled}
         style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left",
@@ -1953,7 +1978,7 @@ export default function Dokumente() {
     return (
       <>
         <button onClick={() => handleMailDoc(doc)} title="Per Mail senden (Freigabe-Link)" style={iconBtn}><Mail size={15} /></button>
-        {renderPreviewEye(doc)}
+        {!hidePreviewEye && renderPreviewEye(doc)}
         <button onClick={() => setCopyDoc(doc)} title="Kopieren (neu verschlagworten)" style={iconBtn}><CopyPlus size={14} /></button>
         <button onClick={() => { animateBtn(`sh-${doc.id}`); setShareDialog({ type: 'doc', doc_id: doc.id, name: doc.name, customer_id: doc.customer_id }); }} title="Link erstellen" style={iconBtn}><Link2 size={15} /></button>
         <button onClick={() => setChartisDoc(doc)} title="Chartis – Chat zu diesem Dokument" style={iconBtn}><MessageSquare size={15} /></button>
@@ -2427,8 +2452,9 @@ export default function Dokumente() {
             <div style={{ display: "flex", gap: 4, alignItems: "center", flexShrink: 0 }}>
               {/* View-Umschalter */}
               <div style={{ display: "flex", gap: 2, background: s.inputBg, border: "1px solid " + border, borderRadius: 6, padding: 2 }}>
-                {[{ key: "normal", label: "Normal" }, { key: "abschluss", label: "Abschluss" }].map(v => (
-                  <button key={v.key} onClick={() => { setViewMode(v.key); setOpenFolders(new Set()); }}
+                {[{ key: "normal", label: "Normal" }, { key: "abschluss", label: "Abschluss" }, { key: "panel", label: "Panel" }].map(v => (
+                  <button key={v.key} onClick={() => chooseViewMode(v.key)}
+                    title={v.key === "panel" ? "Dreispaltig: Liste, Metadaten und Vorschau nebeneinander" : undefined}
                     style={{ background: viewMode === v.key ? accent : "none", color: viewMode === v.key ? "#fff" : s.textMuted,
                       border: "none", cursor: "pointer", borderRadius: 4, padding: "2px 10px", fontSize: 11, fontWeight: viewMode === v.key ? 600 : 400 }}>
                     {v.label}
@@ -2468,7 +2494,38 @@ export default function Dokumente() {
             </div>
           </div>
 
-          {/* Liste */}
+          {/* Panel-Ansicht: Liste | Metadaten | Vorschau -- bringt eigene Spalten
+              samt eigenem Scrollen mit, ersetzt darum den Listen-Container. */}
+          {viewMode === "panel" && selCustomerId ? (
+            <DocPanelView
+              docs={filtered}
+              theme={theme}
+              s={s}
+              border={border}
+              accent={accent}
+              allTags={allTags}
+              categories={CATEGORIES}
+              user={user}
+              getFileInfo={getFileInfo}
+              getPreviewUrl={getPanelPreviewUrl}
+              onOpenDoc={(doc) => {
+                const _u = doc.sharepoint_web_url || signedUrls[doc.id];
+                if (!doc.checked_out_by) { handleCheckout(doc); }
+                else if (doc.checked_out_by === user?.id) { openCheckin(doc); }
+                else if (_u) { window.open(_u, '_blank'); }
+                else { toast.error('URL nicht verfügbar.'); }
+              }}
+              onEditDoc={setEditDoc}
+              renderActions={(doc) => renderRowActions(doc, {
+                isCheckedOut:  !!doc.checked_out_by,
+                isMyCheckout:  doc.checked_out_by === user?.id,
+                lockedByOther: !!doc.checked_out_by && doc.checked_out_by !== user?.id,
+                isAdmin:       user?.role === 'admin',
+                hidePreviewEye: true,
+              })}
+              highlightDocId={highlightDocId}
+            />
+          ) : (
           <div style={{ flex: 1, overflowY: "auto" }} onClick={() => showSortMenu && setShowSortMenu(false)}>
             {!selCustomerId ? (
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", color: s.textMuted, gap: 10 }}>
@@ -2601,6 +2658,7 @@ export default function Dokumente() {
               filtered.map(doc => renderDocRow(doc))
             )}
           </div>
+          )}
         </div>
       </div>
       )}

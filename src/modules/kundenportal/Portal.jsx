@@ -8,6 +8,7 @@ import JSZip from "jszip";
 import './styles.css';
 import {functions} from "../../api/supabaseClient.js";
 import {CATEGORIES} from "../../lib/categories.js";
+import { prettyDownloadName, prettyDisplayName } from "../../lib/docFileName.js";
 
 const SESSION_KEY = "portal_session";
 
@@ -250,7 +251,7 @@ export default function Portal() {
         const blob = await r.blob();
         const cat = safe(catLabel(doc.category));
         const year = doc.year || "Ohne Jahr";
-        archive.file(`${cat}/${year}/${safe(doc.filename || doc.name || "datei")}`, blob);
+        archive.file(`${cat}/${year}/${safe(prettyDownloadName(doc, "Dokument"))}`, blob);
       } catch { /* einzelne Ausfälle überspringen */ }
       finally { done++; setZip(z => z && ({ ...z, done, label: `${done} / ${list.length} geladen…` })); }
     };
@@ -503,7 +504,7 @@ export default function Portal() {
                   <div className="frow" key={d.id}>
                     <div className="fname">
                       <div className={"ftag " + kind}><FileText size={17} /></div>
-                      <div className="t"><b>{d.name || d.filename}</b><small>{(tagMap[(d.tag_ids || [])[0]]) || catLabel(d.category)}</small></div>
+                      <div className="t"><b>{prettyDisplayName(d)}</b><small>{(tagMap[(d.tag_ids || [])[0]]) || catLabel(d.category)}</small></div>
                     </div>
                     <div className="fmeta">{fmtDate(d.updated_at || d.created_at)}</div>
                     <div className="fmeta">{fmtBytes(d.file_size)}</div>
@@ -531,7 +532,7 @@ export default function Portal() {
             <div className="mhead">
               <div className={"ftag " + preview.kind}><FileText size={17} /></div>
               <div className="t" style={{ minWidth: 0 }}>
-                <b style={{ display: "block", fontSize: 15, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{preview.doc.name || preview.doc.filename}</b>
+                <b style={{ display: "block", fontSize: 15, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{prettyDisplayName(preview.doc)}</b>
                 <small style={{ color: "var(--faint)", fontSize: 12.5 }}>{catLabel(preview.doc.category)} · {preview.doc.year || ""} · {fmtBytes(preview.doc.file_size)}</small>
               </div>
               <button className="pbtn" style={{ marginLeft: "auto" }} onClick={() => downloadOne(preview.doc)}><Download size={16} /> Herunterladen</button>

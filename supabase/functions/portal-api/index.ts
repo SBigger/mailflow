@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { prettyDownloadName } from "../_shared/docFileName.ts";
 
 // ══════════════════════════════════════════════════════════════════════════
 //  portal-api — Backend des Kundenportals (read-only Dokumentenzugang)
@@ -345,14 +346,14 @@ serve(async (req) => {
       const storageKey = doc.storage_path.replace(/^dokumente\//, "");
       const { data: signed, error } = await supabase.storage
         .from("dokumente")
-        .createSignedUrl(storageKey, SIGNED_TTL_SEC, viewMode ? {} : { download: doc.filename || doc.name });
+        .createSignedUrl(storageKey, SIGNED_TTL_SEC, viewMode ? {} : { download: prettyDownloadName(doc) });
       if (error || !signed?.signedUrl) return json({ error: "Download-Link konnte nicht erstellt werden." }, 500);
 
       const internalUrl = Deno.env.get("SUPABASE_URL")!;
       const publicUrl = Deno.env.get("SUPABASE_PUBLIC_URL") || internalUrl;
       const finalUrl = signed.signedUrl.replace(internalUrl, publicUrl).replace("http:", "https:");
 
-      await audit(supabase, pu, viewMode ? "view" : "download", doc_id, doc.filename || doc.name, ip);
+      await audit(supabase, pu, viewMode ? "view" : "download", doc_id, prettyDownloadName(doc), ip);
       return json({ url: finalUrl });
     }
 
