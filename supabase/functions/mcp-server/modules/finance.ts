@@ -1,8 +1,7 @@
-import { McpServer } from "npm:@modelcontextprotocol/sdk@1.0.1/server/mcp.js";
 import { z } from "npm:zod@3.23.8";
 import { supabase } from "../supabase.ts";
 import { registerTool, ok, unwrap } from "../tool.ts";
-import {requireMandantId, requireWritesEnabled, type ToolContext, ToolError} from "../scope.ts";
+import {resolveMandantId, requireWritesEnabled, type ToolContext, ToolError} from "../scope.ts";
 
 /**
  * Modul: Finanzverwaltung (Finanzbuchhaltung)
@@ -35,8 +34,34 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
-export function registerFinanceTools(server: McpServer, context: ToolContext): void {
-  registerTool(server, {
+export function registerFinanceTools(context: ToolContext): void {
+  registerTool({
+    name: "finance_list_mandanten",
+    title: "FiBu-Mandanten auflisten",
+    description:
+      "Listet die Mandanten der Finanzbuchhaltung. Damit findet man die mandant_id, " +
+      "die alle uebrigen finance_*-Tools brauchen, wenn im Frontend kein Mandant gewaehlt ist.",
+    input: {
+      query: z.string().optional().describe("Freitext-Filter auf den Mandantennamen"),
+      limit: z.number().int().min(1).max(200).default(100),
+    },
+    handler: async (args, _ctx) => {
+      let q = supabase
+        .from("fibu_mandanten")
+        .select("id, name, uid, mwst_nr, mwst_pflichtig, waehrung, geschaeftsjahr_beginn, kontenrahmen, aktiv")
+        .eq("aktiv", true)
+        .order("name", { ascending: true })
+        .limit(args.limit);
+      if (args.query) {
+        const s = args.query.replace(/[%,]/g, " ");
+        q = q.ilike("name", `%${s}%`);
+      }
+      const data = unwrap(await q);
+      return ok({ count: data.length, mandanten: data });
+    },
+  }, context);
+
+  registerTool({
     name: "finance_list_creditor_invoices",
     title: "Kreditor-Rechnungen abfragen",
     description:
@@ -50,9 +75,10 @@ export function registerFinanceTools(server: McpServer, context: ToolContext): v
       from: z.string().optional().describe("Belegdatum ab (ISO/YYYY-MM-DD)"),
       to: z.string().optional().describe("Belegdatum bis (ISO/YYYY-MM-DD)"),
       limit: z.number().int().min(1).max(200).default(50),
+      mandant_id: z.string().uuid().optional().describe("FiBu-Mandant (fibu_mandanten.id). Ohne Angabe wird der im Frontend gewaehlte Mandant verwendet."),
     },
     handler: async (args, ctx) => {
-      const mandantId = requireMandantId(ctx);
+      const mandantId = resolveMandantId(ctx, args.mandant_id);
       let q = supabase
         .from("fibu_kreditoren_belege")
         .select(BELEG_FIELDS)
@@ -68,13 +94,16 @@ export function registerFinanceTools(server: McpServer, context: ToolContext): v
     },
   }, context);
 
-  registerTool(server, {
+  registerTool({
     name: "finance_get_creditor_invoice",
     title: "Kreditor-Rechnung abrufen",
     description: "Liest einen Kreditoren-Beleg inkl. Buchungspositionen (Kontierung).",
-    input: { id: z.string().uuid() },
+    input: {
+      id: z.string().uuid(),
+      mandant_id: z.string().uuid().optional().describe("FiBu-Mandant (fibu_mandanten.id). Ohne Angabe wird der im Frontend gewaehlte Mandant verwendet."),
+    },
     handler: async (args, ctx) => {
-      const mandantId = requireMandantId(ctx);
+      const mandantId = resolveMandantId(ctx, args.mandant_id);
       const beleg = unwrap(
         await supabase
           .from("fibu_kreditoren_belege")
@@ -96,7 +125,7 @@ export function registerFinanceTools(server: McpServer, context: ToolContext): v
     },
   }, context);
 
-  registerTool(server, {
+  registerTool({
     name: "finance_create_creditor_invoice",
     title: "Kreditor-Rechnung erstellen",
     description:
@@ -111,10 +140,11 @@ export function registerFinanceTools(server: McpServer, context: ToolContext): v
       belegtyp: z.enum(["rechnung", "gutschrift"]).default("rechnung"),
       notiz: z.string().optional(),
       positionen: z.array(PositionSchema).min(1),
+      mandant_id: z.string().uuid().optional().describe("FiBu-Mandant (fibu_mandanten.id). Ohne Angabe wird der im Frontend gewaehlte Mandant verwendet."),
     },
     handler: async (args, ctx) => {
       requireWritesEnabled(ctx);
-      const mandantId = requireMandantId(ctx);
+      const mandantId = resolveMandantId(ctx, args.mandant_id);
 
       const beleg = unwrap(
         await supabase
@@ -137,7 +167,7 @@ export function registerFinanceTools(server: McpServer, context: ToolContext): v
     },
   }, context);
 
-  registerTool(server, {
+  registerTool({
     name: "finance_record_payment",
     title: "Zahlung erfassen (Zahlungsabgleich)",
     description:
@@ -148,10 +178,11 @@ export function registerFinanceTools(server: McpServer, context: ToolContext): v
       betrag: z.number().positive(),
       bezahlt_am: z.string().optional().describe("YYYY-MM-DD, default heute"),
       zahlungsreferenz: z.string().optional(),
+      mandant_id: z.string().uuid().optional().describe("FiBu-Mandant (fibu_mandanten.id). Ohne Angabe wird der im Frontend gewaehlte Mandant verwendet."),
     },
     handler: async (args, ctx) => {
       requireWritesEnabled(ctx);
-      const mandantId = requireMandantId(ctx);
+      const mandantId = resolveMandantId(ctx, args.mandant_id);
       const row = unwrap(
         await supabase
           .rpc("fibu_kreditoren_zahlung_erfassen", {
@@ -166,7 +197,7 @@ export function registerFinanceTools(server: McpServer, context: ToolContext): v
     },
   }, context);
 
-  registerTool(server, {
+  registerTool({
     name: "finance_list_suppliers",
     title: "Lieferanten abfragen",
     description: "Listet die Lieferanten (Kreditoren-Stammdaten) des Mandanten.",
@@ -174,9 +205,10 @@ export function registerFinanceTools(server: McpServer, context: ToolContext): v
       query: z.string().optional().describe("Freitext in name/nr"),
       only_active: z.boolean().default(true),
       limit: z.number().int().min(1).max(200).default(100),
+      mandant_id: z.string().uuid().optional().describe("FiBu-Mandant (fibu_mandanten.id). Ohne Angabe wird der im Frontend gewaehlte Mandant verwendet."),
     },
     handler: async (args, ctx) => {
-      const mandantId = requireMandantId(ctx);
+      const mandantId = resolveMandantId(ctx, args.mandant_id);
       let q = supabase
         .from("fibu_lieferanten")
         .select("id, nr, name, uid, ort, iban, zahlungsbedingung_tage, standard_konto_nr, mwst_code, aktiv")
@@ -193,16 +225,17 @@ export function registerFinanceTools(server: McpServer, context: ToolContext): v
     },
   }, context);
 
-  registerTool(server, {
+  registerTool({
     name: "finance_list_accounts",
     title: "Kontenplan abfragen",
     description: "Listet den Kontenplan (fibu_konten) des Mandanten für die Kontierung.",
     input: {
       konto_typ: z.enum(["aktiv", "passiv", "ertrag", "aufwand", "abschluss"]).optional(),
       limit: z.number().int().min(1).max(500).default(300),
+      mandant_id: z.string().uuid().optional().describe("FiBu-Mandant (fibu_mandanten.id). Ohne Angabe wird der im Frontend gewaehlte Mandant verwendet."),
     },
     handler: async (args, ctx) => {
-      const mandantId = requireMandantId(ctx);
+      const mandantId = resolveMandantId(ctx, args.mandant_id);
       let q = supabase
         .from("fibu_konten")
         .select("konto_nr, bezeichnung, konto_typ, mwst_code, waehrung, aktiv")
@@ -215,7 +248,7 @@ export function registerFinanceTools(server: McpServer, context: ToolContext): v
     },
   }, context);
 
-  registerTool(server, {
+  registerTool({
     name: "finance_creditors_summary",
     title: "Kreditoren-Reporting",
     description:
@@ -225,9 +258,10 @@ export function registerFinanceTools(server: McpServer, context: ToolContext): v
     input: {
       from: z.string().optional().describe("Belegdatum ab (YYYY-MM-DD)"),
       to: z.string().optional().describe("Belegdatum bis (YYYY-MM-DD)"),
+      mandant_id: z.string().uuid().optional().describe("FiBu-Mandant (fibu_mandanten.id). Ohne Angabe wird der im Frontend gewaehlte Mandant verwendet."),
     },
     handler: async (args, ctx) => {
-      const mandantId = requireMandantId(ctx);
+      const mandantId = resolveMandantId(ctx, args.mandant_id);
       let q = supabase
         .from("fibu_kreditoren_belege")
         .select("status, betrag_brutto, betrag_bezahlt, waehrung")
@@ -251,7 +285,7 @@ export function registerFinanceTools(server: McpServer, context: ToolContext): v
     },
   }, context);
 
-  registerTool(server, {
+  registerTool({
     name: "finance_cost_center_report",
     title: "Kostenstellen-Auswertung",
     description:
@@ -259,9 +293,10 @@ export function registerFinanceTools(server: McpServer, context: ToolContext): v
       "fibu_kreditoren_positionen des Mandanten.",
     input: {
       limit: z.number().int().min(1).max(20000).default(10000).describe("max. Positionen"),
+      mandant_id: z.string().uuid().optional().describe("FiBu-Mandant (fibu_mandanten.id). Ohne Angabe wird der im Frontend gewaehlte Mandant verwendet."),
     },
     handler: async (args, ctx) => {
-      const mandantId = requireMandantId(ctx);
+      const mandantId = resolveMandantId(ctx, args.mandant_id);
       const rows = unwrap(
         await supabase
           .from("fibu_kreditoren_positionen")

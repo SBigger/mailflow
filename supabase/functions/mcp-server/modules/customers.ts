@@ -1,5 +1,4 @@
 // modules/customers.ts
-import { McpServer } from "npm:@modelcontextprotocol/sdk@1.0.1/server/mcp.js";
 import { z } from "npm:zod@3.23.8";
 import { supabase } from "../supabase.ts";
 import { registerTool, ok, unwrap } from "../tool.ts";
@@ -26,9 +25,9 @@ function resolveCustomerId(context: ToolContext, explicit?: string): string {
   throw new ToolError("Keine customer_id angegeben und CUSTOMER_ID ist im Kontext nicht konfiguriert.");
 }
 
-export function registerCustomerTools(server: McpServer, context: ToolContext): void {
+export function registerCustomerTools(context: ToolContext): void {
 
-  registerTool(server, {
+  registerTool({
     name: "customers_search",
     title: "Kunden suchen",
     description:
@@ -56,7 +55,7 @@ export function registerCustomerTools(server: McpServer, context: ToolContext): 
     },
   }, context);
 
-  registerTool(server, {
+  registerTool({
     name: "customers_get",
     title: "Kunde abrufen",
     description:
@@ -78,7 +77,7 @@ export function registerCustomerTools(server: McpServer, context: ToolContext): 
     },
   }, context);
 
-  registerTool(server, {
+  registerTool({
     name: "customers_create",
     title: "Kunde anlegen",
     description:
@@ -104,11 +103,11 @@ export function registerCustomerTools(server: McpServer, context: ToolContext): 
       const row = unwrap(
           await supabase.from("customers").insert({ ...args, aktiv: true }).select(CUST_FIELDS).single(),
       );
-      return row;
+      return ok({ created: true, customer: row });
     },
   }, context);
 
-  registerTool(server, {
+  registerTool({
     name: "customers_update",
     title: "Kunden-Stammdaten aendern",
     description:
@@ -149,7 +148,7 @@ export function registerCustomerTools(server: McpServer, context: ToolContext): 
     },
   }, context);
 
-  registerTool(server, {
+  registerTool({
     name: "customers_get_links",
     title: "Verknuepfungen des Kunden",
     description:
