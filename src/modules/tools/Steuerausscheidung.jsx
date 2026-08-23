@@ -1079,7 +1079,7 @@ export default function Steuerausscheidung() {
   });
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden" style={{background: t.pageBg }}>
+    <div className="flex flex-col h-full w-full overflow-hidden" style={{background: t.pageBg }}>
 
       {/* Page-Header */}
       <div style={{ padding: "12px 20px", borderBottom: `1px solid ${t.cardBorder}`, display: "flex", alignItems: "center", gap: 12 }}>

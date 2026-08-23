@@ -471,7 +471,7 @@ export default function BriefSchreiben() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden" style={{ backgroundColor: pageBg }}>
+    <div className="flex flex-col h-full w-full overflow-hidden" style={{ backgroundColor: pageBg }}>
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 px-6 py-4 flex-shrink-0"
            style={{ borderBottom: `1px solid ${panelBorder}`, backgroundColor: panelBg }}>

@@ -152,7 +152,7 @@ export default function TelefonDashboard() {
   }
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden" style={{ backgroundColor: pageBg, overflowY: "auto"}}>
+    <div className="flex flex-col h-full w-full overflow-hidden" style={{ backgroundColor: pageBg, overflowY: "auto"}}>
       <div style={{ padding: 24, minHeight: "100%", boxSizing: "border-box" }}>
 
         {/* ── Header ─────────────────────────────────────── */}

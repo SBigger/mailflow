@@ -4985,7 +4985,7 @@ export default function Abschlussdokumentation() {
   const tabProps = { konten, accent, headingC, subC, panelBg, panelBdr, tableBdr, rowHover, theme, customerId: selectedCid, selectedYear };
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden" style={{ backgroundColor: pageBg }}>
+    <div className="flex flex-col h-full w-full overflow-hidden" style={{ backgroundColor: pageBg }}>
       <style>{`
         @media print {
           body > * { display: none !important; }
