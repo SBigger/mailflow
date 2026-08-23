@@ -176,6 +176,58 @@ const STATUS_ORDER = ["offen", "erledigt", "pendent"];
 const STATUS_LABEL = { offen: "Offen", erledigt: "Erledigt", pendent: "Pendent" };
 const STATUS_DOT = { offen: "#b3ab98", erledigt: "#16a34a", pendent: "#dc2626" };
 
+// ── Offene Prüfpunkte: automatisch erkannte Kontrollen ───────────────────────
+// Ergänzen die manuelle Checkliste um zwei Prüfungen, die sich aus den Konten
+// selbst ableiten lassen — nichts davon wird gespeichert, es wird bei jedem
+// Render frisch aus `konten` berechnet, damit es nie veraltet.
+const PP_UV_IDS      = ["UV_FLUESSIG","UV_WERTSCHRIFTEN","UV_FORD_LL","UV_FORD_LL_NAHE","UV_FORD_SONST","UV_FORD_SONST_NAHE","UV_VORRAETE","UV_ABGRENZUNG"];
+const PP_AV_IDS      = ["AV_FINANZ","AV_FINANZ_NAHE","AV_MOBIL","AV_IMMOBIL","AV_IMMATERIELL"];
+const PP_FK_KURZ_IDS = ["FK_KURZ_LL","FK_KURZ_LL_NAHE","FK_KURZ_BANK","FK_KURZ_VERZ_NAHE","FK_KURZ_SONST","FK_KURZ_SONST_NAHE","FK_KURZ_ABGRENZUNG"];
+const PP_FK_LANG_IDS = ["FK_LANG_BANK","FK_LANG_VERZ_NAHE","FK_LANG_SONST","FK_LANG_SONST_NAHE","FK_RUECKSTELLUNGEN"];
+const PP_EK_IDS      = ["EK_KAPITAL","EK_KAP_RESERVE","EK_GES_RESERVE","EK_FREIE_RESERVE","EK_RESERVEN","EK_VORTRAG","EK_JAHRESERGEBNIS"];
+
+// Bilanzdifferenz: erscheint nur solange Aktiven≠Passiven, ist nicht manuell
+// abhakbar (verschwindet erst, wenn die Zahlen wirklich stimmen).
+function detectBilanzdifferenzPruefpunkt(konten, signFlipPassiven) {
+  const pSign = signFlipPassiven ? -1 : 1;
+  const sum = ids => konten.filter(k => ids.includes(k.position_id)).reduce((s, k) => s + (parseFloat(k.saldo_ist) || 0), 0);
+  const aktivenTotal = sum(PP_UV_IDS) + sum(PP_AV_IDS);
+  const passivenTotal = (sum(PP_FK_KURZ_IDS) + sum(PP_FK_LANG_IDS) + sum(PP_EK_IDS)) * pSign;
+  const diff = aktivenTotal - passivenTotal;
+  if (Math.abs(diff) < 0.005) return null;
+  return {
+    key: "bilanzdifferenz", title: "Bilanzdifferenz beheben",
+    sub: `Aktiven ≠ Passiven · CHF ${fmtCHF(Math.abs(diff))}`,
+    tag: "pflicht", auto: true, locked: true,
+  };
+}
+
+// Varianz-Plausibilisierung: jedes Konto mit ≥20% UND ≥ CHF 500 Abweichung
+// zum Vorjahr wird zur Prüfung vorgeschlagen — beides zusammen, damit weder
+// kleine Konten mit zufällig grossem Prozentsprung noch grosse Konten mit
+// trivialer Rundungsdifferenz die Liste zumüllen.
+const PP_VARIANZ_PCT = 20;
+const PP_VARIANZ_CHF = 500;
+function detectVarianzPruefpunkte(konten) {
+  return konten
+    .map(k => {
+      const ist = parseFloat(k.saldo_ist) || 0;
+      const vj = parseFloat(k.saldo_vorjahr);
+      if (!vj || Math.abs(vj) < 0.01) return null;
+      const deltaAbs = Math.abs(ist - vj);
+      if (deltaAbs < PP_VARIANZ_CHF) return null;
+      const deltaPct = Math.round((ist - vj) / Math.abs(vj) * 100);
+      if (Math.abs(deltaPct) < PP_VARIANZ_PCT) return null;
+      return {
+        key: `variance:${k.id}:${deltaPct}`,
+        title: `${k.kontoname || k.kontonummer} ${deltaPct > 0 ? "+" : ""}${deltaPct}% plausibilisieren`,
+        sub: `Konto ${k.kontonummer} · Veränderung gegenüber Vorjahr CHF ${fmtCHF(deltaAbs)}`,
+        tag: "analyse", auto: true, locked: false,
+      };
+    })
+    .filter(Boolean);
+}
+
 // Sicherer Formel-Evaluator: erlaubt nur Ziffern + - * / . ( ) '
 function evalExpr(str) {
   if (str === null || str === undefined || str === "") return null;
@@ -4005,16 +4057,47 @@ function AnhangTab({ einstellungen, onSaveEinstellungen, accent, headingC, subC,
 // Liste links, Beleg-Vorschau permanent gross in der Mitte, Status/Notiz/
 // Weiter rechts. Für das Abarbeiten offener Posten — der Kontenplan bleibt
 // für die Übersicht über alle Konten unverändert.
-function PendenzenReview({ konten, onUpdateKonto, accent, headingC, subC, panelBg, panelBdr, theme, onClose }) {
+function PendenzenReview({ konten, onUpdateKonto, accent, headingC, subC, panelBg, panelBdr, theme, onClose, einstellungen, onSaveEinstellungen, signFlipPassiven }) {
   const isArtis = theme === "artis";
   const isLight = theme === "light";
   const pageBg = isArtis ? "#f2f5f2" : isLight ? "#f4f4f8" : "#1c1c20";
   const cardBg = isArtis ? "#ffffff" : isLight ? "#ffffff" : "#27272a";
 
+  const [ppTab, setPpTab] = useState("konten"); // konten | pruefpunkte
   const [filter, setFilter] = useState("pendent"); // alle | offen | erledigt | pendent
   const [selectedId, setSelectedId] = useState(null);
   const [notizDraft, setNotizDraft] = useState("");
   const [preview, setPreview] = useState(null);   // { url, loading }
+  const [newPpTitle, setNewPpTitle] = useState("");
+  const [newPpTag, setNewPpTag] = useState("nachweis");
+
+  const manualPruefpunkte = einstellungen?.pruefpunkte ?? [];
+  const ackKeys = useMemo(() => new Set(einstellungen?.pruefpunkte_ack ?? []), [einstellungen?.pruefpunkte_ack]);
+  const bilanzItem = useMemo(() => detectBilanzdifferenzPruefpunkt(konten, signFlipPassiven), [konten, signFlipPassiven]);
+  const varianzItems = useMemo(() => detectVarianzPruefpunkte(konten), [konten]);
+  const allPruefpunkte = useMemo(() => {
+    const auto = [bilanzItem, ...varianzItems].filter(Boolean).map(it => ({ ...it, done: it.locked ? false : ackKeys.has(it.key) }));
+    return [...manualPruefpunkte.map(p => ({ ...p, auto: false })), ...auto];
+  }, [manualPruefpunkte, bilanzItem, varianzItems, ackKeys]);
+  const ppOpenCount = allPruefpunkte.filter(p => !p.done).length;
+
+  const togglePruefpunkt = (item) => {
+    if (item.locked) return;
+    if (item.auto) {
+      const next = new Set(ackKeys);
+      next.has(item.key) ? next.delete(item.key) : next.add(item.key);
+      onSaveEinstellungen({ pruefpunkte_ack: [...next] });
+    } else {
+      onSaveEinstellungen({ pruefpunkte: manualPruefpunkte.map(p => p.id === item.id ? { ...p, done: !p.done } : p) });
+    }
+  };
+  const addPruefpunkt = () => {
+    const title = newPpTitle.trim();
+    if (!title) return;
+    onSaveEinstellungen({ pruefpunkte: [...manualPruefpunkte, { id: crypto.randomUUID(), title, sub: "", tag: newPpTag, done: false }] });
+    setNewPpTitle("");
+  };
+  const deletePruefpunkt = (id) => onSaveEinstellungen({ pruefpunkte: manualPruefpunkte.filter(p => p.id !== id) });
 
   const relevant = useMemo(() =>
     konten.filter(k => Math.abs(parseFloat(k.saldo_ist) || 0) > 0.005), [konten]);
@@ -4086,27 +4169,100 @@ function PendenzenReview({ konten, onUpdateKonto, accent, headingC, subC, panelB
   return createPortal(
     <div style={{ position: "fixed", inset: 0, zIndex: 9998, backgroundColor: pageBg, display: "flex", flexDirection: "column" }}>
       {/* Kopfzeile */}
-      <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 20px", borderBottom: `1px solid ${panelBdr}`, backgroundColor: cardBg, flexShrink: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 20px", borderBottom: `1px solid ${panelBdr}`, backgroundColor: cardBg, flexShrink: 0, flexWrap: "wrap", rowGap: 8 }}>
         <span style={{ fontSize: 14, fontWeight: 700, color: headingC }}>📋 Pendenzen-Review</span>
-        <div style={{ display: "flex", gap: 6 }}>
-          {FILTERS.map(f => (
-            <button key={f.key} onClick={() => setFilter(f.key)}
-              style={{
-                fontSize: 11.5, fontWeight: 700, padding: "5px 12px", borderRadius: 8, cursor: "pointer",
-                border: `1px solid ${filter === f.key ? accent : panelBdr}`,
-                backgroundColor: filter === f.key ? accent + "18" : "transparent",
-                color: filter === f.key ? accent : subC,
-              }}>
-              {f.label} <span style={{ opacity: 0.7 }}>({counts[f.key]})</span>
-            </button>
-          ))}
+        <div style={{ display: "flex", gap: 4, padding: 3, borderRadius: 9, backgroundColor: pageBg, border: `1px solid ${panelBdr}` }}>
+          <button onClick={() => setPpTab("konten")}
+            style={{ fontSize: 11.5, fontWeight: 700, padding: "6px 12px", borderRadius: 6, cursor: "pointer", border: "none",
+              backgroundColor: ppTab === "konten" ? headingC : "transparent", color: ppTab === "konten" ? cardBg : subC }}>
+            Konten-Pendenzen
+          </button>
+          <button onClick={() => setPpTab("pruefpunkte")}
+            style={{ fontSize: 11.5, fontWeight: 700, padding: "6px 12px", borderRadius: 6, cursor: "pointer", border: "none",
+              backgroundColor: ppTab === "pruefpunkte" ? headingC : "transparent", color: ppTab === "pruefpunkte" ? cardBg : subC }}>
+            Offene Prüfpunkte <span style={{ opacity: 0.7 }}>({ppOpenCount})</span>
+          </button>
         </div>
-        <span style={{ fontSize: 12, color: subC, marginLeft: 4 }}>{geprueft} von {counts.alle} geprüft</span>
+        {ppTab === "konten" && (
+          <div style={{ display: "flex", gap: 6 }}>
+            {FILTERS.map(f => (
+              <button key={f.key} onClick={() => setFilter(f.key)}
+                style={{
+                  fontSize: 11.5, fontWeight: 700, padding: "5px 12px", borderRadius: 8, cursor: "pointer",
+                  border: `1px solid ${filter === f.key ? accent : panelBdr}`,
+                  backgroundColor: filter === f.key ? accent + "18" : "transparent",
+                  color: filter === f.key ? accent : subC,
+                }}>
+                {f.label} <span style={{ opacity: 0.7 }}>({counts[f.key]})</span>
+              </button>
+            ))}
+          </div>
+        )}
+        {ppTab === "konten" && <span style={{ fontSize: 12, color: subC, marginLeft: 4 }}>{geprueft} von {counts.alle} geprüft</span>}
         <div style={{ flex: 1 }} />
         <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: subC, fontSize: 20, lineHeight: 1 }}>×</button>
       </div>
 
-      {!filtered.length ? (
+      {ppTab === "pruefpunkte" ? (
+        <div style={{ flex: 1, overflowY: "auto", padding: 14 }}>
+          <div style={{ maxWidth: 760, margin: "0 auto" }}>
+            <div style={{ backgroundColor: cardBg, border: `1px solid ${panelBdr}`, borderRadius: 12, overflow: "hidden" }}>
+              <div style={{ padding: "12px 18px", borderBottom: `1px solid ${panelBdr}`, display: "flex", gap: 8 }}>
+                <input value={newPpTitle} onChange={e => setNewPpTitle(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") addPruefpunkt(); }}
+                  placeholder="Neuer Prüfpunkt…"
+                  style={{ flex: 1, fontSize: 12.5, padding: "7px 10px", borderRadius: 7, border: `1px solid ${panelBdr}`, outline: "none", color: headingC, backgroundColor: pageBg }} />
+                <select value={newPpTag} onChange={e => setNewPpTag(e.target.value)}
+                  style={{ fontSize: 12, padding: "7px 8px", borderRadius: 7, border: `1px solid ${panelBdr}`, color: headingC, backgroundColor: pageBg }}>
+                  <option value="nachweis">Nachweis</option>
+                  <option value="pflicht">Pflicht</option>
+                  <option value="analyse">Analyse</option>
+                </select>
+                <button onClick={addPruefpunkt} style={{ padding: "7px 14px", borderRadius: 7, border: "none", backgroundColor: accent, color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+                  + Hinzufügen
+                </button>
+              </div>
+              {!allPruefpunkte.length ? (
+                <div style={{ padding: "22px 18px", textAlign: "center", color: subC, fontSize: 12.5 }}>Keine offenen Prüfpunkte.</div>
+              ) : allPruefpunkte.map((p, i) => {
+                const tagColors = {
+                  nachweis: { bg: "#fdecd6", fg: "#b5590a" }, pflicht: { bg: "#fdecd6", fg: "#b5590a" },
+                  analyse: { bg: "#e4e9f5", fg: "#3d5789" }, erledigt: { bg: pageBg, fg: subC },
+                }[p.done ? "erledigt" : p.tag] || { bg: pageBg, fg: subC };
+                return (
+                  <div key={p.auto ? p.key : p.id}
+                    style={{ display: "flex", alignItems: "flex-start", gap: 14, padding: "13px 18px",
+                      borderBottom: i < allPruefpunkte.length - 1 ? `1px solid ${panelBdr}` : "none",
+                      backgroundColor: p.done ? accent + "0a" : "transparent" }}>
+                    <div onClick={() => togglePruefpunkt(p)}
+                      title={p.locked ? "Wird automatisch aktualisiert" : undefined}
+                      style={{
+                        width: 19, height: 19, borderRadius: 6, flexShrink: 0, marginTop: 1,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        cursor: p.locked ? "default" : "pointer", fontSize: 12, fontWeight: 700, color: "#fff",
+                        border: `1.5px solid ${p.done ? "#16a34a" : panelBdr}`,
+                        backgroundColor: p.done ? "#16a34a" : "transparent",
+                      }}>
+                      {p.done ? "✓" : ""}
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: headingC }}>{p.title}</div>
+                      {(p.sub || p.done) && <div style={{ fontSize: 11.5, color: subC, marginTop: 2 }}>{p.sub}</div>}
+                    </div>
+                    <span style={{ flexShrink: 0, fontSize: 10.5, fontWeight: 700, padding: "4px 12px", borderRadius: 20, backgroundColor: tagColors.bg, color: tagColors.fg }}>
+                      {p.done ? "Erledigt" : (p.tag === "nachweis" ? "Nachweis" : p.tag === "pflicht" ? "Pflicht" : "Analyse")}
+                    </span>
+                    {!p.auto && (
+                      <button onClick={() => deletePruefpunkt(p.id)} title="Löschen"
+                        style={{ background: "none", border: "none", cursor: "pointer", color: subC, fontSize: 14, opacity: 0.5, flexShrink: 0 }}>×</button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      ) : !filtered.length ? (
         <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: subC, fontSize: 13 }}>
           Keine Konten in dieser Ansicht.
         </div>
@@ -5214,6 +5370,9 @@ export default function Abschlussdokumentation() {
           panelBdr={panelBdr}
           theme={theme}
           onClose={() => setShowPendenzen(false)}
+          einstellungen={einstellungen}
+          onSaveEinstellungen={(partial) => updateEinstellungenMut.mutate(partial)}
+          signFlipPassiven={signFlipPassiven}
         />
       )}
     </div>
