@@ -52,6 +52,77 @@ function cssBorder(b) {
   return `${w}px ${style} ${cssColor(b.color) || "#b0b0b0"}`;
 }
 
+// ── Zahlenformate ────────────────────────────────────────────────────────
+// SheetJS (SSF) ist strenger als Excel und wirft bei Formaten, die Excel klaglos
+// anzeigt. Zwei Faelle treffen uns bei echten Treuhand-Dateien staendig:
+//   "#,###,##0"  aus der JR-Plus-Vorlage  -> "unsupported format"
+//   "#'##0.00"   Schweizer Schreibweise   -> falsch als "1443'220.91"
+// Darum wird das Format vorher auf die Form gebracht, die SSF versteht, und der
+// Tausendertrenner danach auf den Schweizer Hochkomma gesetzt -- so, wie Excel
+// es auf einem Schweizer Rechner anzeigt.
+
+// Ein Lauf aus Platzhaltern und Trennern, z.B. "#,###,##0" oder "#,##0,".
+// Nachgestellte Trenner bedeuten Skalierung durch 1000 und bleiben erhalten.
+function fixGroupRun(run) {
+  const m = /^([#0][#0,']*[#0]|[#0])([,']*)$/.exec(run);
+  if (!m) return run;
+  const core = m[1], trail = m[2].replace(/'/g, ",");
+  if (!/[,']/.test(core)) return core + trail;
+  const digits = core.replace(/[^#0]/g, "");
+  const zeros = /0+$/.exec(digits);
+  return "#,##" + "0".repeat(zeros ? zeros[0].length : 1) + trail;
+}
+
+// Gibt das bereinigte Format zurueck und ob darin gruppiert wird.
+function normalizeNumFmt(fmt) {
+  let grouped = false;
+  // Text in Anfuehrungszeichen bleibt unangetastet.
+  const out = fmt.split(/("(?:[^"]*)")/).map((part, i) => {
+    if (i % 2 === 1) return part;
+    return part.replace(/[#0][#0,']*/g, (run) => {
+      const fixed = fixGroupRun(run);
+      if (/[,']/.test(run.slice(0, run.replace(/[,']+$/, "").length))) grouped = true;
+      return fixed;
+    });
+  }).join("");
+  return { fmt: out, grouped };
+}
+
+const CH_GROUP = "'";   // Schweizer Tausendertrenner, so zeigt Excel de-CH an
+
+function formatNumber(v, fmt) {
+  const { fmt: norm, grouped } = normalizeNumFmt(fmt);
+  try {
+    const out = SSF.format(norm, v);
+    return grouped ? out.replace(/,/g, CH_GROUP) : out;
+  } catch {
+    // Letzte Rettung: Nachkommastellen aus dem Format lesen und selber setzen.
+    const dec = /\.(0+)/.exec(norm);
+    const d = dec ? dec[1].length : 0;
+    const s = new Intl.NumberFormat("de-CH", {
+      minimumFractionDigits: d, maximumFractionDigits: d,
+      useGrouping: grouped,
+    }).format(v);
+    return /%/.test(norm) ? s + "%" : s;
+  }
+}
+
+// Datumsformate: SSF kennt "dd/mm/yyyy", wirft aber bei der hierzulande
+// ueblichen Punktschreibweise "dd.mm.yyyy" und bei Laenderpraefixen wie
+// "[$-807]". Darum in dieser Reihenfolge versuchen und am Ende die Punkte
+// wieder einsetzen. Gibt null zurueck, wenn nichts davon greift.
+function formatDate(serial, fmt) {
+  const plain = fmt.replace(/\[\$-[^\]]*\]/g, "").replace(/;@\s*$/, "");
+  for (const [f, back] of [[fmt, false], [plain, false], [plain.replace(/\./g, "/"), true]]) {
+    if (!f) continue;
+    try {
+      const out = SSF.format(f, serial);
+      if (typeof out === "string" && out.length) return back ? out.replace(/\//g, ".") : out;
+    } catch { /* naechster Versuch */ }
+  }
+  return null;
+}
+
 // Sichtbarer Text einer Zelle -- mit dem Zahlenformat der Zelle.
 function cellText(cell) {
   let v = cell.value;
@@ -65,11 +136,21 @@ function cellText(cell) {
   if (v === null || v === undefined) return "";
   const fmt = cell.numFmt;
   if (v instanceof Date) {
-    if (fmt) { try { return SSF.format(fmt, toSerial(v)); } catch { /* weiter unten */ } }
-    return v.toLocaleDateString("de-CH");
+    if (fmt) {
+      const d = formatDate(toSerial(v), fmt);
+      if (d !== null) return d;
+    }
+    // Ohne brauchbares Format: Uhrzeit nur zeigen, wenn es eine gibt.
+    const hasTime = v.getUTCHours() || v.getUTCMinutes() || v.getUTCSeconds();
+    return hasTime
+      ? v.toLocaleString("de-CH", { dateStyle: "short", timeStyle: "short", timeZone: "UTC" })
+      : v.toLocaleDateString("de-CH", { timeZone: "UTC" });
   }
-  if (typeof v === "number" && fmt) {
-    try { return SSF.format(fmt, v); } catch { /* weiter unten */ }
+  if (typeof v === "number") {
+    if (fmt) return formatNumber(v, fmt);
+    // Ohne Format zeigt Excel "Standard": keine Fliesskomma-Reste wie
+    // 2825841.9699999997 anzeigen, sondern die Zahl so, wie sie gemeint ist.
+    return String(Number(v.toPrecision(15)));
   }
   if (typeof v === "boolean") return v ? "WAHR" : "FALSCH";
   return String(v);
