@@ -222,7 +222,7 @@ export default function Kundenportal() {
   const lbl = { fontSize: 12, fontWeight: 600, color: s.muted, display: "block", marginBottom: 5 };
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden" style={{ background: s.bg, minHeight: "100%", color: s.ink, padding: "26px 28px" }}>
+    <div className="flex flex-col h-full w-full overflow-hidden" style={{ background: s.bg, minHeight: "100%", color: s.ink, padding: "26px 28px" }}>
       {/* Kopf */}
       <div style={{ display: "flex", alignItems: "center", gap: 13, marginBottom: 6 }}>
         <div style={{ width: 42, height: 42, borderRadius: 11, background: s.accentSoft, color: s.accentInk,

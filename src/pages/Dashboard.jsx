@@ -453,7 +453,7 @@ export default function Dashboard() {
   const containerPadding = isMobile ? 'p-3' : 'p-6';
 
   return (
-    <div className={`flex flex-col h-screen w-screen overflow-hidden overflow-y-auto ${containerPadding}`}>
+    <div className={`flex flex-col h-full w-full overflow-hidden overflow-y-auto ${containerPadding}`}>
       <div>
         {/* Navigation Dropdown */}
         <div className={isMobile ? 'mb-3' : ''}>

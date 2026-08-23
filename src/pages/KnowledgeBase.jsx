@@ -50,7 +50,7 @@ export default function KnowledgeBase() {
   });
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden" style={{ backgroundColor: pageBg }}>
+    <div className="flex flex-col h-full w-full overflow-hidden" style={{ backgroundColor: pageBg }}>
 
       {/* Top Bar */}
       <div className="flex-shrink-0 flex items-center gap-3 px-4 py-2.5 border-b flex-wrap"

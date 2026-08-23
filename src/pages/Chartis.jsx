@@ -471,7 +471,7 @@ export default function Chartis() {
   );
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden" style={{ background: t.sunken, color: t.textPrimary }}>
+    <div className="flex h-full w-full overflow-hidden" style={{ background: t.sunken, color: t.textPrimary }}>
       {/* Pane A — Modul-Rail */}
       <div className="flex flex-col flex-shrink-0" style={{ width: 168, borderRight: `1px solid ${t.borderSubtle}`, background: t.sunken }}>
         <div className="flex items-center gap-2 px-3 py-3">

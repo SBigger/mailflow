@@ -448,7 +448,7 @@ export default function MailKanban() {
   // Warte bis Profil geladen ist bevor wir "nicht verbunden" zeigen
   if (userLoading) {
     return (
-      <div className="flex items-center justify-center h-screen w-screen" style={{ backgroundColor: pageBg }}>
+      <div className="flex items-center justify-center h-full w-full" style={{ backgroundColor: pageBg }}>
         <div className="animate-spin rounded-full h-8 w-8 border-b-2" style={{ borderColor: mutedText }} />
       </div>
     );
@@ -456,7 +456,7 @@ export default function MailKanban() {
 
   if (!currentUser?.microsoft_access_token) {
     return (
-      <div className="flex items-center justify-center h-screen w-screen" style={{ backgroundColor: pageBg }}>
+      <div className="flex items-center justify-center h-full w-full" style={{ backgroundColor: pageBg }}>
         <div className="text-center">
           <Mail className="h-12 w-12 mx-auto mb-4" style={{ color: mutedText }} />
           <h2 className="text-xl font-semibold mb-2" style={{ color: titleText }}>Noch nicht mit Outlook verbunden</h2>
@@ -471,7 +471,7 @@ export default function MailKanban() {
   }
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden" style={{ backgroundColor: pageBg }}>
+    <div className="flex h-full w-full overflow-hidden" style={{ backgroundColor: pageBg }}>
       {/* Main Kanban Area */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top Bar */}
