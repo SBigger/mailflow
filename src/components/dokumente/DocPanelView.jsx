@@ -348,7 +348,8 @@ export default function DocPanelView({
             overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {selected ? prettyDisplayName(selected) : "Vorschau"}
           </span>
-          {kind === "pdf" && pdfNum > 1 && (
+          {/* Blaettern: PDF-Seiten und PowerPoint-Folien teilen sich dieselbe Leiste. */}
+          {(kind === "pdf" || kind === "pptx") && pdfNum > 1 && (
             <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
               <button onClick={() => setPdfPage?.(p => Math.max(1, p - 1))} disabled={pdfPage <= 1} style={navBtn(pdfPage > 1, C)}><ChevronLeft size={14} /></button>
               <span style={{ fontSize: 10, color: C.headFg, opacity: 0.85, minWidth: 54, textAlign: "center" }}>{pdfPage} / {pdfNum}</span>

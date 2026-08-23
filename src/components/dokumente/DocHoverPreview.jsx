@@ -96,7 +96,8 @@ export default function DocHoverPreview({ doc, url, rect, theme, onClose }) {
         <span style={{ fontSize: 11, fontWeight: 600, color: C.headFg, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
           {doc?.name || doc?.filename}
         </span>
-        {kind === "pdf" && pdfNum > 1 && (
+        {/* Blaettern: PDF-Seiten und PowerPoint-Folien teilen sich dieselbe Leiste. */}
+          {(kind === "pdf" || kind === "pptx") && pdfNum > 1 && (
           <span onMouseDown={e => e.stopPropagation()} style={{ display: "flex", alignItems: "center", gap: 4, marginRight: 4 }}>
             <button onClick={() => setPdfPage?.(p => Math.max(1, p - 1))} disabled={pdfPage <= 1} style={navBtn(pdfPage > 1, C)}><ChevronLeft size={14} /></button>
             <span style={{ fontSize: 10, color: C.headFg, opacity: 0.85, minWidth: 54, textAlign: "center" }}>{pdfPage} / {pdfNum}</span>
