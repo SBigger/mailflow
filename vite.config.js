@@ -37,6 +37,21 @@ export default defineConfig(({ mode }) => {
           cleanupOutdatedCaches: true,
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,webp}'],
           maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
+          // ⚠️ Seiten für LEUTE VON AUSSEN immer frisch aus dem Netz holen.
+          //
+          // Sonst beantwortet der Service Worker den Seitenaufruf aus seinem
+          // Zwischenspeicher — mit der index.html vom letzten Besuch. Wer
+          // smartis kennt, hat also die App von gestern, und eine erst heute
+          // hinzugekommene Route existiert dort schlicht nicht: Der Aufruf
+          // fällt auf die Sammelroute und landet auf dem Dashboard. Genau das
+          // passierte mit /meet/… (Sascha, 27.07.: "komme ich auf smartis.me
+          // dashboard"), obwohl die Route längst ausgeliefert war — in einem
+          // frischen Browser lief dieselbe Adresse einwandfrei.
+          //
+          // Diese drei Adressen richten sich an Kunden. Offline nützen sie
+          // ohnehin nichts (Videogespräch, Upload, geteilte Datei), Netz ist
+          // also keine zusätzliche Bedingung.
+          navigateFallbackDenylist: [/^\/meet\//, /^\/upload\//, /^\/share(\/|$)/],
         },
       }),
     ],
@@ -65,18 +80,9 @@ export default defineConfig(({ mode }) => {
       port: 3000,
       strictPort: true, // Prevents Vite from trying 3001 if 3000 is "busy"
       proxy: {
-        // Für /Steuern: AcroForm-Formulare werden proxied geladen, damit pdf-lib/pdfjs
-        // sie CORS-frei lesen kann (ehemals steuerapp).
-        '/pdf-sg': {
-          target: 'https://www.sg.ch',
-          changeOrigin: true,
-          rewrite: p => p.replace(/^\/pdf-sg/, ''),
-        },
-        '/pdf-tg': {
-          target: 'https://steuerverwaltung.tg.ch',
-          changeOrigin: true,
-          rewrite: p => p.replace(/^\/pdf-tg/, ''),
-        },
+        // Für /Steuern: ZH, SG und TG liegen im Storage-Bucket steuerformulare,
+        // nur das ESTV-Formular wird noch live geholt und braucht den Proxy,
+        // damit pdf-lib/pdfjs es CORS-frei lesen kann.
         '/pdf-estv': {
           target: 'https://www.estv.admin.ch',
           changeOrigin: true,

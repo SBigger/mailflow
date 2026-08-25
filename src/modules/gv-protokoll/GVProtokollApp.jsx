@@ -62,6 +62,7 @@ export default function GvProtokollApp() {
 
     // Refs
     const mediaRecRef = useRef(null);
+    const startingRef = useRef(false);
     const streamRef = useRef(null);
     const timerIntRef = useRef(null);
     const liveTimerRef = useRef(null);
@@ -419,6 +420,30 @@ export default function GvProtokollApp() {
         }
     };
 
+    // Manche Browser-Fehler haben eine leere message (z.B. OverconstrainedError
+    // in Chrome). Dann ist wenigstens der Name eine Auskunft.
+    const errText = (e) => e?.message || e?.name || String(e);
+
+    // Ein gemerktes Mikrofon, das es nicht mehr gibt (Headset aus, anderes Dock,
+    // anderer Rechner), laesst getUserMedia mit `exact` hart scheitern. Darum
+    // erst mit dem gemerkten Geraet versuchen, sonst auf das Standardmikrofon
+    // zurueckfallen und die tote Auswahl vergessen.
+    const openMic = async () => {
+        const base = { echoCancellation: true, noiseSuppression: true };
+        if (cfg.mic) {
+            try {
+                return await navigator.mediaDevices.getUserMedia({ audio: { ...base, deviceId: { exact: cfg.mic } } });
+            } catch (e) {
+                if (e?.name === "NotAllowedError" || e?.name === "SecurityError") throw e;
+                const next = { ...cfg, mic: "" };
+                setCfg(next);
+                LS.set("gv_cfg", next);
+                setStatusMsg("⚠️ Das gemerkte Mikrofon ist nicht mehr da – es läuft mit dem Standardmikrofon.");
+            }
+        }
+        return navigator.mediaDevices.getUserMedia({ audio: base });
+    };
+
     const refreshMics = async () => {
         if (!navigator.mediaDevices?.enumerateDevices) return;
         try {
@@ -431,19 +456,29 @@ export default function GvProtokollApp() {
     //  Recording Core Logic
     // ════════════════════════════════════════════════════════════════
     const startRec = async () => {
+        // Ein zweiter Klick, waehrend der Berechtigungs-Dialog offen steht,
+        // wuerde sonst einen zweiten Recorder starten und die Chunks vermischen.
+        if (startingRef.current || isRecording) return;
+        startingRef.current = true;
+        try {
         try {
             let s;
             if (cfg.systemAudio) {
                 s = await navigator.mediaDevices.getDisplayMedia({ audio: true, video: true });
                 s.getVideoTracks().forEach(t => t.stop());
             } else {
-                const audioConstraints = { echoCancellation: true, noiseSuppression: true };
-                if (cfg.mic) audioConstraints.deviceId = { exact: cfg.mic };
-                s = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+                s = await openMic();
             }
+            if (!s.getAudioTracks().length) throw new Error("Kein Ton in der Aufnahmequelle.");
+            // Faellt das Mikrofon weg (Bluetooth aus, Kabel raus), endet die
+            // Aufnahme sonst still und wortlos weiter.
+            s.getAudioTracks().forEach(t => t.addEventListener("ended", () => {
+                setStatusMsg("⚠️ Mikrofon weg (z.B. Bluetooth aus) – Aufnahme wird gestoppt.");
+                stopRec();
+            }));
             streamRef.current = s;
         } catch (e) {
-            setStatusMsg("Audio-Zugriff verweigert: " + e.message);
+            setStatusMsg("❌ Kein Audio-Zugriff: " + errText(e));
             return;
         }
 
@@ -489,6 +524,9 @@ export default function GvProtokollApp() {
         // Live-Vorschau (grob): erste nach ~75 s, danach alle 5 Min. Die saubere
         // Endfassung (ganze Datei) kommt beim Stopp und ersetzt die Vorschau.
         startPreview();
+        } finally {
+            startingRef.current = false;
+        }
     };
 
     const pauseRec = () => {
@@ -886,7 +924,7 @@ export default function GvProtokollApp() {
             </header>
 
             <div className="vol"><div style={{ width: volWidth }}></div></div>
-            {statusMsg && <div className="status">{statusMsg}</div>}
+            {statusMsg && <div className="status show">{statusMsg}</div>}
 
             <main style={{ gridTemplateColumns: `${colW.left}px 14px 1fr 14px ${colW.right}px` }}>
                 {/* LINKS */}
@@ -1041,6 +1079,37 @@ export default function GvProtokollApp() {
                         <div className="fld" style={{ fontSize: "12.5px", color: "var(--muted)", lineHeight: 1.5 }}>
                             🎙️ Transkription mit Sprecher-Trennung · KI-Auswertung: <b>Claude</b>.
                             Die API-Schlüssel liegen serverseitig – hier nichts einzugeben.
+                        </div>
+
+                        <div className="fld">
+                            <label>🎤 Mikrofon</label>
+                            <select value={cfg.mic || ""}
+                                    onChange={e => setCfg({ ...cfg, mic: e.target.value })}
+                                    onFocus={refreshMics}>
+                                <option value="">Standardmikrofon</option>
+                                {mics.map((m, i) => (
+                                    <option key={m.deviceId} value={m.deviceId}>
+                                        {m.label || `Mikrofon ${i + 1}`}
+                                    </option>
+                                ))}
+                            </select>
+                            <div className="rec-hint">
+                                Die Namen erscheinen erst, wenn der Aufnahme-Zugriff einmal erlaubt wurde.
+                                Ist ein gemerktes Gerät nicht mehr da, nimmt die App automatisch das
+                                Standardmikrofon und meldet das oben im Balken.
+                            </div>
+                        </div>
+
+                        <div className="fld">
+                            <label>
+                                <input type="checkbox" checked={!!cfg.systemAudio}
+                                       onChange={e => setCfg({ ...cfg, systemAudio: e.target.checked })} />
+                                {" "}Ton vom Bildschirm statt vom Mikrofon aufnehmen
+                            </label>
+                            <div className="rec-hint">
+                                Für Online-Sitzungen. Beim Start fragt der Browser, welches Fenster
+                                geteilt wird – ohne diese Auswahl beginnt keine Aufnahme.
+                            </div>
                         </div>
 
                         <div className="fld">

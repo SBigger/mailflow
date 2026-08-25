@@ -47,6 +47,7 @@ export default function DocPreviewContent({ doc, url, C, onStatus, pdfScale = 1.
   const [pdfImg, setPdfImg]   = useState(null);
 
   const [excel, setExcel] = useState(null);  // { sheets:[{name,rows}], active }
+  const [pptx, setPptx]   = useState(null);  // { width, height, slides:[...] }
   const objUrlRef = useRef(null);
   const workerRef = useRef(null);
 
@@ -54,7 +55,7 @@ export default function DocPreviewContent({ doc, url, C, onStatus, pdfScale = 1.
   useEffect(() => {
     let cancelled = false;
     setSt({ kind: "loading", payload: null, error: null });
-    setPdfImg(null); pdfDocRef.current = null; setExcel(null);
+    setPdfImg(null); pdfDocRef.current = null; setExcel(null); setPptx(null);
     const name = (doc?.filename || doc?.name || "").toLowerCase();
 
     if (!doc || !url) { setSt({ kind: "idle" }); return; }
@@ -122,6 +123,21 @@ export default function DocPreviewContent({ doc, url, C, onStatus, pdfScale = 1.
               .map(r => ({ px: null, cells: (Array.isArray(r) ? r.slice(0, 60) : []).map(v => ({ t: String(v ?? ""), s: -1 })) })),
           }));
           if (!cancelled) { setExcel({ sheets, active: 0 }); setSt({ kind: "excel" }); } return;
+        }
+        if (/\.(pptx|pptm)$/.test(name)) {
+          const buf = await blob.arrayBuffer();
+          const { parsePptx } = await import("@/lib/pptxPreview");
+          const deck = await parsePptx(buf);
+          if (!cancelled) {
+            setPptx(deck);
+            setPdfPage(1); setPdfNum(deck.slides.length);   // gleiche Blaetter-Leiste wie beim PDF
+            setSt({ kind: "pptx" });
+          }
+          return;
+        }
+        if (/\.ppt$/.test(name)) {
+          if (!cancelled) setSt({ kind: "error", error: "Alte .ppt-Dateien lassen sich nicht anzeigen - bitte als .pptx speichern oder herunterladen." });
+          return;
         }
         if (/\.(docx|docm)$/.test(name)) {
           const buf = await blob.arrayBuffer();
@@ -195,6 +211,8 @@ export default function DocPreviewContent({ doc, url, C, onStatus, pdfScale = 1.
       )}
 
       {st.kind === "excel" && <ExcelSheet sheet={excel?.sheets?.[excel.active]} />}
+
+      {st.kind === "pptx" && <PptxSlide deck={pptx} index={pdfPage - 1} />}
 
       {st.kind === "word" && (
         <div style={{ padding: 12 }}>
@@ -364,4 +382,123 @@ function ExcelSheet({ sheet }) {
       </table>
     </div>
   );
+}
+
+// ── PowerPoint-Folie ───────────────────────────────────────────────────────
+// Die Folie wird in ihrer echten Groesse aufgebaut (Positionen kommen als
+// Pixel aus pptxPreview) und dann als Ganzes auf die Breite des Containers
+// skaliert. Damit stimmen Verhaeltnisse und Schriftgroessen zueinander, egal
+// wie schmal die Vorschau gerade ist.
+function PptxSlide({ deck, index }) {
+  const wrapRef = useRef(null);
+  const [scale, setScale] = useState(1);
+  const slide = deck?.slides?.[index];
+
+  useEffect(() => {
+    const node = wrapRef.current;
+    if (!node || !deck?.width) return;
+    const fit = () => {
+      const avail = node.clientWidth - 24;            // Rand links und rechts
+      setScale(Math.max(0.15, Math.min(1.6, avail / deck.width)));
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(node);
+    return () => ro.disconnect();
+  }, [deck?.width]);
+
+  if (!deck || !slide) return null;
+
+  return (
+    <div ref={wrapRef} style={{ padding: 12, display: "flex", flexDirection: "column", alignItems: "center" }}>
+      <div style={{ width: deck.width * scale, height: deck.height * scale, flexShrink: 0 }}>
+        <div style={{ width: deck.width, height: deck.height, transform: `scale(${scale})`, transformOrigin: "top left",
+          position: "relative", background: "#ffffff", color: "#1a1a1a", overflow: "hidden",
+          boxShadow: "0 2px 14px rgba(0,0,0,0.28)", borderRadius: 2,
+          fontFamily: "Calibri, 'Segoe UI', Arial, sans-serif" }}>
+          {slide.shapes.map((sh, i) => (
+            <PptxShape key={i} shape={sh} />
+          ))}
+        </div>
+      </div>
+
+      {slide.notes && (
+        <div style={{ width: deck.width * scale, marginTop: 10, fontSize: 11, lineHeight: 1.5,
+          color: "#888", whiteSpace: "pre-wrap", textAlign: "left" }}>
+          <b style={{ color: "#aaa" }}>Notizen:</b> {slide.notes}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PptxShape({ shape }) {
+  const b = shape.box;
+  const base = {
+    position: "absolute", left: b.x, top: b.y, width: b.w, height: b.h,
+    ...(b.rot ? { transform: `rotate(${b.rot}deg)` } : null),
+  };
+
+  if (shape.kind === "image") {
+    return shape.url
+      ? <img src={shape.url} alt="" style={{ ...base, objectFit: "contain" }} />
+      : <div style={{ ...base, border: "1px dashed #ccc", display: "flex", alignItems: "center",
+          justifyContent: "center", fontSize: 11, color: "#aaa" }}>Bild</div>;
+  }
+
+  if (shape.kind === "table") {
+    return (
+      <div style={{ ...base, overflow: "hidden" }}>
+        <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12, tableLayout: shape.grid?.length ? "fixed" : "auto" }}>
+          {shape.grid?.length > 0 && (
+            <colgroup>{shape.grid.map((w, i) => <col key={i} style={{ width: w }} />)}</colgroup>
+          )}
+          <tbody>
+            {shape.rows.map((row, ri) => (
+              <tr key={ri}>
+                {row.filter(c => !c.merged).map((c, ci) => (
+                  <td key={ci} colSpan={c.colSpan > 1 ? c.colSpan : undefined}
+                    style={{ border: "1px solid #c8c8c8", padding: "2px 5px", verticalAlign: "top" }}>
+                    <PptxParas paras={c.paras} compact />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ ...base, display: "flex", flexDirection: "column", justifyContent: "center", overflow: "hidden" }}>
+      <PptxParas paras={shape.paras} />
+    </div>
+  );
+}
+
+const PPTX_ALIGN = { l: "left", ctr: "center", r: "right", just: "justify" };
+
+function PptxParas({ paras, compact }) {
+  return paras.map((p, pi) => (
+    <p key={pi} style={{
+      margin: compact ? 0 : "0 0 3px",
+      paddingLeft: p.level * 20 + (p.bullet ? 14 : 0),
+      textIndent: p.bullet ? -14 : 0,
+      textAlign: PPTX_ALIGN[p.align] || "left",
+      lineHeight: 1.25,
+    }}>
+      {p.bullet && <span style={{ opacity: 0.65 }}>{"\u2022 "}</span>}
+      {p.runs.map((r, ri) => r.text === "\n" ? <br key={ri} /> : (
+        <span key={ri} style={{
+          fontWeight: r.bold ? 700 : 400,
+          fontStyle: r.italic ? "italic" : undefined,
+          textDecoration: r.underline ? "underline" : r.strike ? "line-through" : undefined,
+          fontSize: r.size ? r.size * 1.333 : undefined,   // Punkt in Pixel
+          color: r.color || undefined,
+          fontFamily: r.font || undefined,
+        }}>{r.text}</span>
+      ))}
+    </p>
+  ));
 }

@@ -438,7 +438,7 @@ export default function Whiteboard() {
 
   if (showList) {
     return (
-      <div className="flex flex-col h-screen w-screen overflow-hidden" style={{ background: bgColor,  fontFamily: "Segoe UI, system-ui, sans-serif" }}>
+      <div className="flex flex-col h-full w-full overflow-hidden" style={{ background: bgColor,  fontFamily: "Segoe UI, system-ui, sans-serif" }}>
         {/* Breadcrumb */}
         <div className="flex items-center gap-2 px-6 py-4 flex-shrink-0"
              style={{ borderBottom: `1px solid ${panelBorder}`, backgroundColor: panelBg }}>
@@ -501,7 +501,7 @@ export default function Whiteboard() {
   }
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden" style={{ background: bgColor, fontFamily: "Segoe UI, system-ui, sans-serif" }}>
+    <div className="flex flex-col h-full w-full overflow-hidden" style={{ background: bgColor, fontFamily: "Segoe UI, system-ui, sans-serif" }}>
       {/* ── Toolbar ────────────────────────────────────────── */}
       <div style={{ background: cardBg, borderBottom: `1px solid ${border}`, padding: "6px 12px", display: "flex", alignItems: "center", gap: 8, flexShrink: 0, flexWrap: "wrap" }}>
         {/* Zurueck */}

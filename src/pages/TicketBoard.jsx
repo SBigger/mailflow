@@ -148,7 +148,7 @@ export default function TicketBoard() {
   const isLoading = colLoading || ticketsLoading;
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden" style={{ backgroundColor: pageBg }}>
+    <div className="flex h-full w-full overflow-hidden" style={{ backgroundColor: pageBg }}>
 
       {/* ── Hauptbereich (Board) ── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">

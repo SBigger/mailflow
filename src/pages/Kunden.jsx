@@ -427,7 +427,7 @@ export default function Kunden({ initialPersonTypeFilter = "alle" }) {
 
   // ── Render ──────────────────────────────────────────────────
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden" style={{ backgroundColor: isArtis ? '#f2f5f2' : isLight ? '#f0f0f6' : '#f2f5f2' }}>
+    <div className="flex flex-col h-full w-full overflow-hidden" style={{ backgroundColor: isArtis ? '#f2f5f2' : isLight ? '#f0f0f6' : '#f2f5f2' }}>
       {Header}
 
       {personTypeFilter === "telefonliste" ? (

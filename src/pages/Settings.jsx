@@ -941,7 +941,7 @@ export default function Settings() {
     const rowBorder = isDark ? '#3f3f46' : isArtis ? '#ccd8cc' : '#d4d4e8';
 
     return (
-        <div className="flex h-screen w-screen overflow-hidden" style={{backgroundColor: pageBg}}>
+        <div className="flex h-full w-full overflow-hidden" style={{backgroundColor: pageBg}}>
             {/* Left Sidebar Navigation */}
             <div className="w-64 flex-shrink-0 border-r p-6 overflow-y-auto"
                  style={{borderColor: sidebarBorder, backgroundColor: sidebarBg}}>

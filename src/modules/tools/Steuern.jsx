@@ -570,7 +570,7 @@ export default function Steuern() {
   }
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden" style={{ backgroundColor: C.pageBg }}>
+    <div className="flex h-full w-full overflow-hidden" style={{ backgroundColor: C.pageBg }}>
 
       {/* ── Linke Sidebar ── */}
       <aside className="w-64 flex-shrink-0 flex flex-col border-r overflow-hidden"

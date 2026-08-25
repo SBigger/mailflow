@@ -1289,7 +1289,7 @@ export default function Anlagebuchhaltung() {
   const isOpen = vorhandeneJahre.includes(selectedYear);
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden" style={{ backgroundColor: pageBg }}>
+    <div className="flex flex-col h-full w-full overflow-hidden" style={{ backgroundColor: pageBg }}>
       {/* ── Breadcrumb ─────────────────────────────────────────────────────── */}
       <div className="flex items-center gap-2 px-6 py-3 flex-shrink-0"
         style={{ borderBottom: `1px solid ${panelBdr}`, backgroundColor: panelBg }}>

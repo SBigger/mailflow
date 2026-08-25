@@ -2,12 +2,7 @@
   {
     "identifier": "custom-app-permissions",
     "description": "Definiert und erlaubt eigene App Commands",
-    "windows": [
-      "main",
-      "app-*",
-      "oauth-*",
-      "embed-*"
-    ],
+    "windows": ["main", "app-*", "oauth-*", "embed-*"],
     "permissions": [
       "core:default",
       "notification:default",
@@ -16,27 +11,7 @@
       "opener:default",
       "allow-open-oauth-window"
     ],
-    "remote": {
-      "urls": [
-        "https://*.sm-artis.ch"
-      ]
-    }
-  },
-  {
-    "identifier": "popup-fenster-schliessen",
-    "description": "Nur Neben- und Popup-Fenster duerfen sich selbst schliessen. Das Hauptfenster bewusst NICHT, sonst wuerde ein Schliessen-Knopf die ganze App beenden.",
-    "windows": [
-      "app-*",
-      "oauth-*",
-      "embed-*"
-    ],
-    "permissions": [
-      "core:window:allow-close"
-    ],
-    "remote": {
-      "urls": [
-        "https://*.sm-artis.ch"
-      ]
-    }
+    "remote": { "urls": ["https://*.sm-artis.ch"] }
   }
 ]
+

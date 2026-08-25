@@ -350,7 +350,7 @@ export default function Jahresplanung() {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden" style={{ backgroundColor: pageBg}}>
+    <div className="flex flex-col h-full w-full overflow-hidden" style={{ backgroundColor: pageBg}}>
 
       {/* ── Top bar ─────────────────────────────────────────────────────────── */}
       <div style={{ padding: "9px 18px", borderBottom: `1px solid ${border}`, display: "flex", alignItems: "center", gap: 10, backgroundColor: cardBg, flexShrink: 0 }}>
