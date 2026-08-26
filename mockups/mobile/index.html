@@ -1,0 +1,1485 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>SmartDesme am Handy</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Jost:wght@300;400;500;600;700&family=Karla:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+<style>
+/* ══════════════════════════════════════════════════════════════════
+   SmartDesme Mobile — Konzept & Mockups
+   Bühne: Artis-Grün-gebrochene Neutraltöne, hell wie dunkel.
+   Gerätescreens: echte App-Palette (Artis / Dark), bewusst fix gesetzt.
+   ══════════════════════════════════════════════════════════════════ */
+
+:root{
+  --stage:#eef1ec; --band:#e2e7de; --panel:#ffffff; --panel-2:#f6f9f4;
+  --line:#d9e0d6; --line-soft:#e7ece4;
+  --ink:#1b2119; --ink-2:#4b5a4d; --ink-3:#7b8a7c;
+  --acc:#5c8163; --acc-bright:#7a9b7f; --acc-wash:#e4ece4;
+  --warn:#a97423; --warn-wash:#f7eeda; --crit:#a94139; --crit-wash:#f7e5e3;
+  --ok:#37805a; --ok-wash:#e0efe6;
+  --shadow:0 1px 2px rgba(27,33,25,.05), 0 8px 24px -12px rgba(27,33,25,.18);
+  --shadow-dev:0 2px 6px rgba(0,0,0,.14), 0 28px 60px -24px rgba(0,0,0,.42);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --stage:#12160f; --band:#0c0f0a; --panel:#1a1f18; --panel-2:#202619;
+    --line:#2c3429; --line-soft:#232a21;
+    --ink:#e6ece4; --ink-2:#a7b5a8; --ink-3:#77877a;
+    --acc:#9cc0a1; --acc-bright:#7a9b7f; --acc-wash:#23301f;
+    --warn:#d6a446; --warn-wash:#2e2718; --crit:#d2716a; --crit-wash:#2f1d1c;
+    --ok:#5fb182; --ok-wash:#17281e;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.7);
+    --shadow-dev:0 2px 6px rgba(0,0,0,.5), 0 28px 60px -24px rgba(0,0,0,.9);
+  }
+}
+:root[data-theme="dark"]{
+  --stage:#12160f; --band:#0c0f0a; --panel:#1a1f18; --panel-2:#202619;
+  --line:#2c3429; --line-soft:#232a21;
+  --ink:#e6ece4; --ink-2:#a7b5a8; --ink-3:#77877a;
+  --acc:#9cc0a1; --acc-bright:#7a9b7f; --acc-wash:#23301f;
+  --warn:#d6a446; --warn-wash:#2e2718; --crit:#d2716a; --crit-wash:#2f1d1c;
+  --ok:#5fb182; --ok-wash:#17281e;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.7);
+  --shadow-dev:0 2px 6px rgba(0,0,0,.5), 0 28px 60px -24px rgba(0,0,0,.9);
+}
+
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0; background:var(--stage); color:var(--ink);
+  font-family:'Karla','Segoe UI',system-ui,sans-serif;
+  font-size:16px; line-height:1.65; overflow-x:hidden;
+}
+h1,h2,h3,h4,.dsp{font-family:'Jost','Century Gothic',system-ui,sans-serif;text-wrap:balance}
+code,.mono{font-family:'JetBrains Mono',ui-monospace,monospace}
+
+.wrap{max-width:1120px;margin:0 auto;padding:0 24px}
+.narrow{max-width:720px}
+@media(max-width:640px){.wrap{padding:0 16px}}
+
+/* ── Kopf ────────────────────────────────────────────────────── */
+.top{padding:72px 0 44px;border-bottom:1px solid var(--line)}
+.eyebrow{
+  font-family:'JetBrains Mono',monospace;font-size:11.5px;font-weight:500;
+  letter-spacing:.14em;text-transform:uppercase;color:var(--acc);
+}
+h1{font-size:clamp(38px,7vw,64px);font-weight:600;letter-spacing:-.025em;line-height:1.03;margin:14px 0 0}
+h1 em{font-style:normal;color:var(--acc)}
+.lede{font-size:clamp(17px,2.2vw,20px);color:var(--ink-2);max-width:62ch;margin:20px 0 0;line-height:1.6}
+.metaline{
+  display:flex;flex-wrap:wrap;gap:8px;margin-top:26px;
+  font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--ink-3);
+}
+.metaline span{border:1px solid var(--line);border-radius:999px;padding:4px 11px;background:var(--panel)}
+
+/* ── Sektionen ───────────────────────────────────────────────── */
+body > section{padding:60px 0}
+.sec-head{margin-bottom:34px}
+.sec-num{
+  font-family:'JetBrains Mono',monospace;font-size:11.5px;font-weight:700;
+  letter-spacing:.12em;color:var(--acc);display:block;margin-bottom:10px;
+}
+h2{font-size:clamp(26px,3.6vw,36px);font-weight:600;letter-spacing:-.02em;margin:0;line-height:1.15}
+.sec-sub{color:var(--ink-2);max-width:64ch;margin:14px 0 0;font-size:16.5px}
+h3{font-size:19px;font-weight:600;margin:0;letter-spacing:-.01em}
+
+/* ── Befund-Karten ───────────────────────────────────────────── */
+.grid{display:grid;gap:14px}
+.g2{grid-template-columns:repeat(2,1fr)}
+.g3{grid-template-columns:repeat(3,1fr)}
+@media(max-width:820px){.g2,.g3{grid-template-columns:1fr}}
+
+.card{
+  background:var(--panel);border:1px solid var(--line);border-radius:14px;
+  padding:20px 22px;box-shadow:var(--shadow);
+}
+.card .sev{
+  display:inline-flex;align-items:center;gap:6px;
+  font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:700;
+  letter-spacing:.1em;text-transform:uppercase;padding:3px 9px;border-radius:5px;margin-bottom:12px;
+}
+.sev-crit{background:var(--crit-wash);color:var(--crit)}
+.sev-warn{background:var(--warn-wash);color:var(--warn)}
+.sev-ok{background:var(--ok-wash);color:var(--ok)}
+.card p{margin:9px 0 0;font-size:15px;color:var(--ink-2);line-height:1.6}
+.ref{
+  display:block;margin-top:14px;padding-top:12px;border-top:1px solid var(--line-soft);
+  font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--ink-3);
+  word-break:break-all;
+}
+
+/* ── Geräte-Labor ────────────────────────────────────────────── */
+.lab{background:var(--band);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.lab-head{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:22px;margin-bottom:28px}
+
+.ctrls{display:flex;flex-wrap:wrap;gap:18px}
+.ctrl-group{display:flex;flex-direction:column;gap:7px}
+.ctrl-label{
+  font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;
+  letter-spacing:.13em;text-transform:uppercase;color:var(--ink-3);
+}
+.seg{display:flex;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:3px;gap:3px}
+.seg button{
+  font-family:'Jost',system-ui,sans-serif;font-size:13px;font-weight:500;
+  border:0;background:transparent;color:var(--ink-2);padding:7px 13px;
+  border-radius:7px;cursor:pointer;white-space:nowrap;transition:background .15s,color .15s;
+}
+.seg button:hover{background:var(--acc-wash);color:var(--acc)}
+.seg button[aria-pressed="true"]{background:var(--acc-bright);color:#fff}
+.seg button:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+
+.stage-row{
+  display:flex;justify-content:center;align-items:flex-start;gap:34px;
+  padding:8px 0 6px;overflow-x:auto;scrollbar-width:thin;
+}
+.dev-col{display:flex;flex-direction:column;align-items:center;gap:14px;flex:0 0 auto}
+.dev-cap{text-align:center}
+.dev-cap b{font-family:'Jost',sans-serif;font-size:14px;font-weight:600;display:block;color:var(--ink)}
+.dev-cap span{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-3)}
+
+/* Geräterahmen: Screen wird in echten dp gebaut und skaliert. */
+.dev{
+  --w:412; --h:915; --s:.62;
+  padding:9px;border-radius:34px;background:#0a0c09;
+  box-shadow:var(--shadow-dev), inset 0 0 0 1.5px #33392f;
+  flex:0 0 auto;
+}
+.dev-glass{
+  width:calc(var(--w) * var(--s) * 1px);
+  height:calc(var(--h) * var(--s) * 1px);
+  border-radius:26px;overflow:hidden;position:relative;background:#000;
+}
+.dev-screen{
+  width:calc(var(--w) * 1px); height:calc(var(--h) * 1px);
+  transform:scale(var(--s));transform-origin:top left;
+  display:flex;flex-direction:column;position:relative;overflow:hidden;
+  background:var(--sbg);color:var(--stext);
+  font-family:'Jost','Century Gothic',system-ui,sans-serif;line-height:1.4;
+}
+@media(max-width:600px){.stage-row{gap:20px}}
+
+/* Screen-Paletten — bewusst fix: das ist die App, nicht die Seite. */
+.dev-screen[data-skin="artis"]{
+  --sbg:#f2f5f2; --scard:#ffffff; --sborder:#dfe6df; --sline:#eef2ee;
+  --stext:#2d3a2d; --smuted:#6b826b; --sfaint:#9aab9a;
+  --sacc:#7a9b7f; --sacc-deep:#5d7f63; --swash:#e6ede6; --schip:#edf2ed;
+  --sbar:#eaf0ea; --swarn:#a97423; --swarnw:#faf0dc; --scrit:#b04640; --scritw:#fae7e5;
+  --sok:#3f8a5e; --sokw:#e2f0e8; --sinfo:#3d6ba8; --sinfow:#e4ecf7;
+}
+.dev-screen[data-skin="dark"]{
+  --sbg:#17171b; --scard:#202027; --sborder:#31313c; --sline:#282830;
+  --stext:#e6e6ea; --smuted:#9a9aa8; --sfaint:#6e6e7c;
+  --sacc:#8fb894; --sacc-deep:#7fae86; --swash:#26332a; --schip:#282830;
+  --sbar:#1c1c21; --swarn:#d6a446; --swarnw:#2e2718; --scrit:#d2716a; --scritw:#2f1d1c;
+  --sok:#5fb182; --sokw:#17281e; --sinfo:#7fa5d8; --sinfow:#1c2430;
+}
+
+/* ── Systemleiste + Gestenleiste (Android-Anmutung) ──────────── */
+.sysbar{
+  height:30px;flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;
+  padding:0 18px 0 22px;font-size:12.5px;font-weight:600;color:var(--stext);
+  background:var(--sbar);
+}
+.sysbar .sig{display:flex;align-items:center;gap:5px}
+.sysbar i{display:block;background:currentColor;border-radius:1px}
+.bars{display:flex;align-items:flex-end;gap:1.5px;height:9px}
+.bars i{width:2.5px}
+.bars i:nth-child(1){height:3px}.bars i:nth-child(2){height:5px}
+.bars i:nth-child(3){height:7px}.bars i:nth-child(4){height:9px}
+.batt{width:19px;height:9.5px;border:1.4px solid currentColor;border-radius:2.5px;position:relative;padding:1.2px}
+.batt::after{content:'';position:absolute;right:-3px;top:2.6px;width:1.6px;height:3.6px;background:currentColor;border-radius:0 1px 1px 0}
+.batt i{height:100%;width:72%;border-radius:1px}
+.punch{position:absolute;top:9px;left:50%;transform:translateX(-50%);width:11px;height:11px;border-radius:50%;background:#0a0c09;z-index:20}
+.gbar{
+  height:22px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;background:var(--sbar);
+}
+.gbar::after{content:'';width:118px;height:4px;border-radius:2px;background:var(--sfaint);opacity:.55}
+
+/* ── Gerüst innerhalb des Screens ────────────────────────────── */
+.body{flex:1;display:flex;min-height:0;position:relative}
+.rail{display:none}
+.panes{flex:1;display:flex;min-width:0}
+.pane{min-width:0;display:flex;flex-direction:column;overflow:hidden;position:relative}
+.pane-list{flex:1}
+.pane-detail{display:none}
+
+.scr{display:none;flex:1;flex-direction:column;min-height:0;overflow:hidden;padding:0}
+.scr.on{display:flex}
+
+.appbar{
+  flex:0 0 auto;padding:12px 16px 10px;background:var(--sbg);
+  display:flex;align-items:center;gap:11px;
+}
+.appbar h4{font-size:19px;font-weight:600;margin:0;letter-spacing:-.01em;flex:1}
+.avatar-sm{
+  width:32px;height:32px;border-radius:50%;background:var(--sacc);color:#fff;
+  display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;
+}
+.iconbtn{
+  width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  color:var(--smuted);flex-shrink:0;
+}
+.search{
+  flex:0 0 auto;margin:0 16px 10px;height:42px;border-radius:21px;background:var(--scard);
+  border:1px solid var(--sborder);display:flex;align-items:center;gap:9px;padding:0 15px;
+  font-size:14px;color:var(--sfaint);
+}
+.scroll{flex:1;overflow:hidden;padding-bottom:8px}
+
+.trow .tb,.trow .tt,.trow .ts,.mrow .mb,.msub,.msnip,
+.fb,.fn,.fm,.det-meta .mb2,.field .fv,.app .lb,
+.kpi .n,.kpi .l,.hello .h,.hello .d{display:block}
+.sw{width:16px;height:16px;flex-shrink:0;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.sw-sm{width:13px;height:13px}
+.sw-lg{width:21px;height:21px;stroke-width:1.8}
+
+/* Untere Navigation */
+.bnav{
+  flex:0 0 auto;height:60px;display:flex;background:var(--sbar);
+  border-top:1px solid var(--sborder);
+}
+.bnav button{
+  flex:1;border:0;background:transparent;cursor:pointer;color:var(--smuted);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+  font-family:'Jost',sans-serif;font-size:10.5px;font-weight:500;padding:0;
+}
+.bnav button .pillbg{
+  width:52px;height:26px;border-radius:13px;display:flex;align-items:center;justify-content:center;
+  transition:background .18s;
+}
+.bnav button[aria-pressed="true"]{color:var(--sacc-deep);font-weight:600}
+.bnav button[aria-pressed="true"] .pillbg{background:var(--swash)}
+.bnav button:focus-visible{outline:2px solid var(--sacc);outline-offset:-3px}
+
+/* Schwebender Knopf */
+.fab{
+  position:absolute;right:16px;bottom:16px;width:56px;height:56px;border-radius:18px;
+  background:var(--sacc);color:#fff;display:flex;align-items:center;justify-content:center;
+  box-shadow:0 3px 8px rgba(0,0,0,.2),0 10px 22px -8px rgba(0,0,0,.35);z-index:8;
+}
+.fab .sw{width:24px;height:24px;stroke-width:2.1}
+
+/* ── Bausteine in den Screens ────────────────────────────────── */
+.hello{padding:4px 16px 14px}
+.hello .h{font-size:24px;font-weight:600;letter-spacing:-.02em;line-height:1.15}
+.hello .d{font-size:13px;color:var(--smuted);margin-top:3px}
+
+.kpis{display:flex;gap:8px;padding:0 16px 14px}
+.kpi{
+  flex:1;background:var(--scard);border:1px solid var(--sborder);border-radius:13px;
+  padding:11px 12px;position:relative;overflow:hidden;
+}
+.kpi .n{font-size:23px;font-weight:600;line-height:1;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.kpi .l{font-size:10.5px;color:var(--smuted);margin-top:5px;font-weight:500;letter-spacing:.01em}
+.kpi::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--sacc)}
+.kpi.w::before{background:var(--swarn)}.kpi.w .n{color:var(--swarn)}
+.kpi.c::before{background:var(--scrit)}.kpi.c .n{color:var(--scrit)}
+
+.slabel{
+  padding:2px 16px 8px;font-size:11px;font-weight:600;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--sfaint);display:flex;align-items:center;justify-content:space-between;
+}
+.slabel a{color:var(--sacc-deep);text-transform:none;letter-spacing:0;font-size:12px;font-weight:600}
+
+.tline{padding:0 16px 12px;display:flex;flex-direction:column;gap:7px}
+.trow{
+  background:var(--scard);border:1px solid var(--sborder);border-radius:12px;
+  padding:11px 13px;display:flex;align-items:center;gap:11px;
+}
+.trow .tm{
+  font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;color:var(--sacc-deep);
+  width:40px;flex-shrink:0;font-variant-numeric:tabular-nums;
+}
+.trow .tb{flex:1;min-width:0}
+.trow .tt{font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.trow .ts{font-size:11.5px;color:var(--smuted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.trow .mk{width:3px;align-self:stretch;border-radius:2px;background:var(--sacc);flex-shrink:0}
+.trow .mk.w{background:var(--swarn)}.trow .mk.i{background:var(--sinfo)}
+
+.apps{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;padding:0 12px 14px}
+.app{
+  display:flex;flex-direction:column;align-items:center;gap:7px;padding:11px 3px;border-radius:14px;
+}
+.app .ic{
+  width:50px;height:50px;border-radius:16px;display:flex;align-items:center;justify-content:center;
+  color:#fff;position:relative;box-shadow:0 1px 3px rgba(0,0,0,.13);
+}
+.app .ic .sw{width:23px;height:23px;stroke-width:1.9}
+.app .lb{font-size:11px;font-weight:500;text-align:center;line-height:1.2;color:var(--stext)}
+.app .bdg{
+  position:absolute;top:-3px;right:-4px;min-width:19px;height:19px;border-radius:10px;padding:0 5px;
+  background:var(--scrit);color:#fff;font-size:10.5px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;border:2px solid var(--sbg);
+  font-variant-numeric:tabular-nums;
+}
+
+/* Spalten-Pager (Kanban am Handy) */
+.pager{
+  flex:0 0 auto;display:flex;gap:6px;padding:2px 16px 11px;overflow:hidden;
+}
+.pg{
+  padding:6px 13px;border-radius:16px;font-size:13px;font-weight:500;white-space:nowrap;
+  background:var(--schip);color:var(--smuted);display:flex;align-items:center;gap:6px;
+}
+.pg b{font-variant-numeric:tabular-nums;font-weight:700;font-size:12px}
+.pg.on{background:var(--sacc);color:#fff}
+.pgdots{display:flex;gap:4px;justify-content:center;padding:0 0 8px}
+.pgdots i{width:5px;height:5px;border-radius:50%;background:var(--sfaint);opacity:.4}
+.pgdots i.on{opacity:1;background:var(--sacc);width:16px;border-radius:3px}
+
+/* Mail-Zeilen */
+.rows{display:flex;flex-direction:column;padding:0 12px;gap:7px}
+.mrow{
+  background:var(--scard);border:1px solid var(--sborder);border-radius:13px;padding:11px 12px;
+  display:flex;gap:11px;position:relative;overflow:hidden;
+}
+.mrow.unread{border-left:3px solid var(--sacc)}
+.mrow .av{
+  width:36px;height:36px;border-radius:12px;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+  font-size:12.5px;font-weight:700;color:#fff;
+}
+.mrow .mb{flex:1;min-width:0}
+.mtop{display:flex;align-items:baseline;gap:8px}
+.mtop .from{font-size:14px;font-weight:600;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mtop .tm{font-size:11px;color:var(--sfaint);flex-shrink:0;font-variant-numeric:tabular-nums}
+.msub{font-size:13.5px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.msnip{font-size:12px;color:var(--smuted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mchips{display:flex;gap:5px;margin-top:7px;flex-wrap:wrap}
+
+.chip{
+  font-size:10.5px;font-weight:600;padding:2.5px 8px;border-radius:6px;
+  background:var(--schip);color:var(--smuted);display:inline-flex;align-items:center;gap:4px;white-space:nowrap;
+}
+.chip .sw{width:11px;height:11px;stroke-width:2.2}
+.chip.a{background:var(--swash);color:var(--sacc-deep)}
+.chip.w{background:var(--swarnw);color:var(--swarn)}
+.chip.c{background:var(--scritw);color:var(--scrit)}
+.chip.i{background:var(--sinfow);color:var(--sinfo)}
+.chip.o{background:var(--sokw);color:var(--sok)}
+
+/* Wisch-Aktionen sichtbar gemacht */
+.swipewrap{background:transparent;border:0;padding:0;overflow:hidden;border-radius:13px;position:relative}
+.swipecard{
+  display:flex;gap:11px;width:100%;padding:11px 12px;background:var(--scard);
+  border:1px solid var(--sborder);border-left:3px solid var(--sacc);border-radius:13px;
+  transform:translateX(-104px);position:relative;z-index:2;
+  box-shadow:4px 0 10px -4px rgba(0,0,0,.22);
+}
+.swipeacts{
+  position:absolute;right:0;top:0;bottom:0;width:104px;display:flex;
+}
+.swipeacts div{
+  flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+  color:#fff;font-size:9.5px;font-weight:600;
+}
+.swipeacts .sw{width:17px;height:17px}
+.sa-task{background:var(--sacc)}
+.sa-file{background:var(--sinfo)}
+
+/* Aufgabenkarten */
+.tcard{
+  background:var(--scard);border:1px solid var(--sborder);border-radius:13px;padding:12px 13px;
+  border-left:3px solid var(--sacc);
+}
+.tcard.p1{border-left-color:var(--scrit)}
+.tcard.p2{border-left-color:var(--swarn)}
+.tcard .tt{font-size:14.5px;font-weight:600;line-height:1.35}
+.tcard .tm2{font-size:12px;color:var(--smuted);margin-top:4px}
+.tcard .tf{display:flex;align-items:center;gap:6px;margin-top:9px;flex-wrap:wrap}
+.mini-av{
+  width:22px;height:22px;border-radius:50%;font-size:9.5px;font-weight:700;color:#fff;
+  display:flex;align-items:center;justify-content:center;margin-left:auto;flex-shrink:0;
+}
+.prog{height:4px;border-radius:2px;background:var(--schip);margin-top:9px;overflow:hidden}
+.prog i{display:block;height:100%;background:var(--sacc);border-radius:2px}
+
+/* Dateien / E-Binder */
+.crumb{
+  flex:0 0 auto;display:flex;align-items:center;gap:5px;padding:0 16px 10px;
+  font-size:12.5px;color:var(--smuted);overflow:hidden;white-space:nowrap;
+}
+.crumb b{color:var(--stext);font-weight:600}
+.crumb .sw{width:12px;height:12px;color:var(--sfaint)}
+.tagbar{flex:0 0 auto;display:flex;gap:6px;padding:0 16px 11px;overflow:hidden}
+.frow{
+  background:var(--scard);border:1px solid var(--sborder);border-radius:13px;padding:10px 12px;
+  display:flex;align-items:center;gap:11px;
+}
+.ftype{
+  width:38px;height:38px;border-radius:11px;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+  font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:700;letter-spacing:.02em;color:#fff;
+}
+.ft-pdf{background:#b04640}.ft-xls{background:#2f7d54}.ft-doc{background:#3d6ba8}
+.ft-img{background:#8a63b8}.ft-dir{background:var(--sacc)}
+.frow .fb{flex:1;min-width:0}
+.frow .fn{font-size:13.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.frow .fm{font-size:11.5px;color:var(--sfaint);margin-top:2px;font-variant-numeric:tabular-nums}
+
+/* Kamera / Beleg scannen */
+.cam{flex:1;position:relative;background:#101210;display:flex;flex-direction:column;overflow:hidden}
+.camview{flex:1;position:relative;overflow:hidden;background:
+  linear-gradient(160deg,#2b2f2c 0%,#1a1d1b 55%,#141614 100%);}
+.doc{
+  position:absolute;left:13%;top:15%;width:74%;height:58%;
+  background:linear-gradient(172deg,#f6f4ee,#e6e3da);border-radius:3px;
+  transform:rotate(-1.6deg);box-shadow:0 18px 40px -12px rgba(0,0,0,.7);
+  padding:18px 16px;
+}
+.doc .dl{height:5px;border-radius:2px;background:#c9c5b8;margin-bottom:8px}
+.doc .dl.s{width:44%}.doc .dl.m{width:70%}.doc .dl.xs{width:28%}
+.doc .dl.hd{height:9px;width:52%;background:#a8a498;margin-bottom:14px}
+.corner{position:absolute;width:26px;height:26px;border:2.5px solid #8fe0a8}
+.c1{left:11%;top:12.6%;border-right:0;border-bottom:0;border-radius:4px 0 0 0}
+.c2{right:11%;top:12.6%;border-left:0;border-bottom:0;border-radius:0 4px 0 0}
+.c3{left:11%;top:69%;border-right:0;border-top:0;border-radius:0 0 0 4px}
+.c4{right:11%;top:69%;border-left:0;border-top:0;border-radius:0 0 4px 0}
+.camhint{
+  position:absolute;left:50%;bottom:16px;transform:translateX(-50%);
+  background:rgba(16,20,17,.82);color:#d8ecdb;border:1px solid rgba(143,224,168,.4);
+  border-radius:999px;padding:6px 14px;font-size:12px;font-weight:500;
+  display:flex;align-items:center;gap:7px;white-space:nowrap;
+}
+.camhint .dt{width:6px;height:6px;border-radius:50%;background:#8fe0a8}
+.camtop{
+  position:absolute;left:0;right:0;top:0;display:flex;align-items:center;justify-content:space-between;
+  padding:12px 16px;color:#e6ebe6;
+}
+.camtools{
+  flex:0 0 auto;height:112px;background:#101210;display:flex;align-items:center;
+  justify-content:space-around;padding:0 24px;
+}
+.shutter{
+  width:64px;height:64px;border-radius:50%;border:3.5px solid #e8ede8;
+  display:flex;align-items:center;justify-content:center;
+}
+.shutter i{width:50px;height:50px;border-radius:50%;background:#e8ede8;display:block}
+.camside{width:44px;height:44px;border-radius:13px;background:rgba(255,255,255,.11);
+  display:flex;align-items:center;justify-content:center;color:#e6ebe6}
+
+/* Ergebnis-Sheet nach dem Scan */
+.sheet{
+  position:absolute;left:0;right:0;bottom:0;background:var(--scard);
+  border-radius:20px 20px 0 0;box-shadow:0 -6px 26px -8px rgba(0,0,0,.4);
+  padding:10px 16px 16px;z-index:9;border:1px solid var(--sborder);border-bottom:0;
+}
+.sheet .grip{width:36px;height:4px;border-radius:2px;background:var(--sfaint);opacity:.5;margin:0 auto 12px}
+.field{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--sline)}
+.field:last-of-type{border-bottom:0}
+.field .fl{font-size:12px;color:var(--smuted);width:74px;flex-shrink:0}
+.field .fv{font-size:14px;font-weight:600;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.btn-row{display:flex;gap:9px;margin-top:13px}
+.btn-p{
+  flex:1;height:46px;border-radius:14px;background:var(--sacc);color:#fff;
+  display:flex;align-items:center;justify-content:center;gap:7px;font-size:14.5px;font-weight:600;
+}
+.btn-s{
+  height:46px;padding:0 18px;border-radius:14px;background:var(--schip);color:var(--stext);
+  display:flex;align-items:center;justify-content:center;font-size:14.5px;font-weight:500;
+}
+
+/* Detail-Ansicht (Mail geöffnet) */
+.det{flex:1;display:flex;flex-direction:column;overflow:hidden;background:var(--sbg)}
+.det-head{padding:14px 16px 12px;border-bottom:1px solid var(--sborder);background:var(--scard)}
+.det-head .dsub{font-size:17px;font-weight:600;line-height:1.3;letter-spacing:-.01em}
+.det-meta{display:flex;align-items:center;gap:9px;margin-top:11px}
+.det-meta .mb2{flex:1;min-width:0}
+.det-meta .nm{font-size:13px;font-weight:600}
+.det-meta .em{font-size:11.5px;color:var(--sfaint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.det-body{flex:1;padding:15px 16px;font-size:13.5px;line-height:1.65;color:var(--stext);overflow:hidden}
+.det-body p{margin:0 0 11px}
+.attach{
+  display:flex;align-items:center;gap:10px;background:var(--scard);border:1px solid var(--sborder);
+  border-radius:11px;padding:9px 11px;margin-top:13px;
+}
+.det-acts{
+  flex:0 0 auto;display:flex;gap:8px;padding:11px 16px;border-top:1px solid var(--sborder);background:var(--scard);
+}
+.act{
+  flex:1;min-width:0;height:42px;border-radius:12px;background:var(--schip);color:var(--stext);
+  display:flex;align-items:center;justify-content:center;gap:6px;font-size:12.5px;font-weight:600;
+}
+.act.pri{background:var(--sacc);color:#fff}
+.empty{
+  flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:11px;
+  color:var(--sfaint);text-align:center;padding:30px;
+}
+.empty .sw{width:38px;height:38px;stroke-width:1.4}
+.empty p{font-size:13.5px;margin:0;max-width:34ch;line-height:1.5}
+
+/* ══ Faltbar aufgeklappt: Rail links, Liste + Detail nebeneinander ══ */
+.dev[data-device="fold-open"] .rail{
+  display:flex;flex-direction:column;align-items:center;gap:3px;
+  width:68px;flex:0 0 68px;background:var(--sbar);border-right:1px solid var(--sborder);
+  padding:12px 0;
+}
+.dev[data-device="fold-open"] .railbtn{
+  width:100%;padding:7px 0;display:flex;flex-direction:column;align-items:center;gap:4px;
+  color:var(--smuted);font-size:10.5px;font-weight:500;border:0;background:transparent;cursor:pointer;
+  font-family:'Jost',sans-serif;
+}
+.dev[data-device="fold-open"] .railbtn .pillbg{
+  width:46px;height:30px;border-radius:15px;display:flex;align-items:center;justify-content:center;transition:background .18s;
+}
+.dev[data-device="fold-open"] .railbtn[aria-pressed="true"]{color:var(--sacc-deep);font-weight:600}
+.dev[data-device="fold-open"] .railbtn[aria-pressed="true"] .pillbg{background:var(--swash)}
+.dev[data-device="fold-open"] .bnav{display:none}
+.dev[data-device="fold-open"] .pane-list{flex:0 0 268px;border-right:1px solid var(--sborder)}
+.dev[data-device="fold-open"] .pane-detail{display:flex;flex:1}
+.dev[data-device="fold-open"] .apps{grid-template-columns:repeat(3,1fr)}
+.dev[data-device="fold-open"][data-screen="home"] .apps{grid-template-columns:repeat(6,1fr);padding:0 16px 14px}
+.dev[data-device="fold-open"][data-screen="home"] .tline,
+.dev[data-device="fold-open"][data-screen="home"] .kpis{padding-left:20px;padding-right:20px}
+.dev[data-device="fold-open"] .kpis{flex-wrap:wrap}
+.dev[data-device="fold-open"] .fab{right:20px;bottom:20px}
+/* Scharnier: die tote Zone in der Mitte des aufgeklappten Geräts */
+.dev[data-device="fold-open"] .hinge{
+  display:block;position:absolute;left:calc(50% - 5px);top:0;bottom:0;width:10px;z-index:15;
+  background:linear-gradient(90deg,rgba(0,0,0,0),rgba(0,0,0,.09),rgba(0,0,0,0));pointer-events:none;
+}
+.hinge{display:none}
+.det-empty{display:none}
+.dev[data-screen="tasks"] .det-main,
+.dev[data-screen="files"] .det-main{display:none}
+.dev[data-screen="tasks"] .det-empty,
+.dev[data-screen="files"] .det-empty{display:flex}
+.dev[data-screen="home"] .pane-detail,
+.dev[data-screen="scan"] .pane-detail{display:none !important}
+.dev[data-device="fold-open"][data-screen="home"] .pane-list,
+.dev[data-device="fold-open"][data-screen="scan"] .pane-list{flex:1;border-right:0}
+.dev[data-device="fold-cover"] .apps{grid-template-columns:repeat(3,1fr)}
+.dev[data-device="fold-cover"] .kpi .n{font-size:20px}
+
+/* ── Seiten-Bausteine ────────────────────────────────────────── */
+.callout{
+  background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--acc-bright);
+  border-radius:0 14px 14px 0;padding:20px 24px;box-shadow:var(--shadow);
+}
+.callout h3{margin-bottom:8px}
+.callout p{margin:0;color:var(--ink-2);font-size:15.5px}
+.callout p + p{margin-top:11px}
+
+table{width:100%;border-collapse:collapse;font-size:14.5px}
+.tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:14px;background:var(--panel);box-shadow:var(--shadow)}
+th{
+  text-align:left;font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:700;
+  letter-spacing:.11em;text-transform:uppercase;color:var(--ink-3);
+  padding:14px 16px;border-bottom:1px solid var(--line);white-space:nowrap;
+}
+td{padding:13px 16px;border-bottom:1px solid var(--line-soft);color:var(--ink-2);vertical-align:top}
+tr:last-child td{border-bottom:0}
+td b{color:var(--ink);font-weight:600}
+td.m,th.m{font-family:'JetBrains Mono',monospace;font-size:12.5px;white-space:nowrap;font-variant-numeric:tabular-nums}
+
+.tier{border:1px solid var(--line);border-radius:14px;background:var(--panel);padding:20px 22px;box-shadow:var(--shadow)}
+.tier-h{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.tier-h .dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+.tier-h h3{flex:1}
+.tier-h .cnt{font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--ink-3)}
+.taglist{display:flex;flex-wrap:wrap;gap:6px}
+.tag{
+  font-size:12.5px;font-weight:500;padding:4px 11px;border-radius:7px;
+  background:var(--panel-2);border:1px solid var(--line);color:var(--ink-2);
+}
+.tag.hi{background:var(--acc-wash);border-color:transparent;color:var(--acc);font-weight:600}
+.tier p{font-size:14px;color:var(--ink-3);margin:12px 0 0;line-height:1.55}
+
+.step{display:grid;grid-template-columns:auto 1fr;gap:20px;align-items:start}
+.step + .step{margin-top:12px}
+.step-rail{display:flex;flex-direction:column;align-items:center;gap:6px;padding-top:4px}
+.step-badge{
+  width:38px;height:38px;border-radius:12px;background:var(--acc-bright);color:#fff;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;
+  font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:700;
+}
+.step-line{flex:1;width:2px;background:var(--line);min-height:22px;border-radius:1px}
+.step:last-child .step-line{display:none}
+.step-body{padding-bottom:22px}
+.step-top{display:flex;flex-wrap:wrap;align-items:baseline;gap:11px}
+.step-top h3{margin:0}
+.cost{
+  font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;padding:3px 9px;border-radius:6px;
+  background:var(--panel-2);border:1px solid var(--line);color:var(--ink-3);white-space:nowrap;
+}
+.step-body > p{margin:9px 0 0;color:var(--ink-2);font-size:15px}
+ul.ticks{list-style:none;padding:0;margin:13px 0 0;display:flex;flex-direction:column;gap:8px}
+ul.ticks li{
+  padding-left:24px;position:relative;font-size:14.5px;color:var(--ink-2);line-height:1.55;
+}
+ul.ticks li::before{
+  content:'';position:absolute;left:2px;top:.58em;width:8px;height:8px;border-radius:2px;
+  background:var(--acc-bright);
+}
+ul.ticks li code{
+  font-size:12.5px;background:var(--panel-2);border:1px solid var(--line);
+  border-radius:5px;padding:1.5px 5px;color:var(--acc);
+}
+
+.split{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:820px){.split{grid-template-columns:1fr}}
+.vs{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px 22px;box-shadow:var(--shadow)}
+.vs.pick{border-color:var(--acc-bright);box-shadow:0 0 0 1px var(--acc-bright),var(--shadow)}
+.vs .badge{
+  font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--acc);margin-bottom:9px;display:block;
+}
+.vs ul{list-style:none;padding:0;margin:13px 0 0;font-size:14px;color:var(--ink-2)}
+.vs li{padding:6px 0 6px 22px;position:relative;line-height:1.5}
+.vs li::before{position:absolute;left:0;top:6px;font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700}
+.vs li.y::before{content:'+';color:var(--ok)}
+.vs li.n::before{content:'−';color:var(--crit)}
+
+footer{border-top:1px solid var(--line);padding:36px 0 60px;color:var(--ink-3);font-size:13.5px}
+footer .mono{font-size:12px}
+
+@media (prefers-reduced-motion: reduce){
+  *{transition:none !important;animation:none !important;scroll-behavior:auto !important}
+}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="i-mail" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2.5"/><path d="m2.5 6.5 9.5 6.5 9.5-6.5"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="m8.5 12.2 2.6 2.6 4.8-5.2"/></symbol>
+<symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7.5a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+<symbol id="i-cam" viewBox="0 0 24 24"><path d="M3 8.5a2 2 0 0 1 2-2h2.2l1.3-2h6l1.3 2H19a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="3.6"/></symbol>
+<symbol id="i-cal" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2.5"/><path d="M3 10h18M8 3v4M16 3v4"/></symbol>
+<symbol id="i-phone" viewBox="0 0 24 24"><path d="M6.2 3.5h3l1.6 4-2 1.4a12 12 0 0 0 6.3 6.3l1.4-2 4 1.6v3a2 2 0 0 1-2.2 2A17 17 0 0 1 4.2 5.7a2 2 0 0 1 2-2.2z"/></symbol>
+<symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 6.8V12l3.6 2.2"/></symbol>
+<symbol id="i-grid" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.8"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.8"/><path d="m16.2 16.2 4.3 4.3"/></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5.5v13M5.5 12h13"/></symbol>
+<symbol id="i-right" viewBox="0 0 24 24"><path d="m9.5 5.5 6.5 6.5-6.5 6.5"/></symbol>
+<symbol id="i-left" viewBox="0 0 24 24"><path d="m14.5 5.5-6.5 6.5 6.5 6.5"/></symbol>
+<symbol id="i-clip" viewBox="0 0 24 24"><path d="M20 11.5 12 19.4a5 5 0 0 1-7-7l8.2-8.2a3.4 3.4 0 0 1 4.8 4.8l-8.1 8a1.8 1.8 0 0 1-2.5-2.5l7.5-7.4"/></symbol>
+<symbol id="i-reply" viewBox="0 0 24 24"><path d="m9.5 7.5-4.5 4.5 4.5 4.5"/><path d="M5 12h8.5a5.5 5.5 0 0 1 5.5 5.5V19"/></symbol>
+<symbol id="i-fwd" viewBox="0 0 24 24"><path d="m14.5 7.5 4.5 4.5-4.5 4.5"/><path d="M19 12h-8.5A5.5 5.5 0 0 0 5 17.5V19"/></symbol>
+<symbol id="i-more" viewBox="0 0 24 24"><circle cx="12" cy="5.5" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="12" cy="18.5" r="1.4"/></symbol>
+<symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 15.5V10a6 6 0 1 0-12 0v5.5L4.5 18h15z"/><path d="M10 21h4"/></symbol>
+<symbol id="i-flash" viewBox="0 0 24 24"><path d="M13.5 3 5 13.5h6L10.5 21 19 10.5h-6z"/></symbol>
+<symbol id="i-img" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="2.5"/><circle cx="8.5" cy="10" r="1.7"/><path d="m4.5 17.5 4.8-4.4 4 3.2 3-2.6 4 3.8"/></symbol>
+<symbol id="i-ai" viewBox="0 0 24 24"><path d="M12 3.5 13.7 9l5.5 1.7-5.5 1.7L12 18l-1.7-5.6L4.8 10.7 10.3 9z"/><path d="M18.5 16.5 19.2 19l2.3.8-2.3.8-.7 2.4-.7-2.4-2.3-.8 2.3-.8z"/></symbol>
+<symbol id="i-file" viewBox="0 0 24 24"><path d="M13.5 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8.5z"/><path d="M13.5 3v5.5H19"/></symbol>
+<symbol id="i-tag" viewBox="0 0 24 24"><path d="M11.5 3.5H20v8.5l-8.8 8.8a1.6 1.6 0 0 1-2.3 0l-6.2-6.2a1.6 1.6 0 0 1 0-2.3z"/><circle cx="16.3" cy="7.7" r="1.3"/></symbol>
+<symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="2.5" width="6" height="11.5" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3.5"/></symbol>
+<symbol id="i-chat" viewBox="0 0 24 24"><path d="M20.5 12.5a7.5 7.5 0 0 1-7.5 7.5c-1.2 0-2.4-.3-3.4-.8L4.5 20.5l1.4-4.6A7.5 7.5 0 1 1 20.5 12.5z"/></symbol>
+<symbol id="i-arch" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="4.5" rx="1.5"/><path d="M4.8 8.5v9.7A2 2 0 0 0 6.8 20h10.4a2 2 0 0 0 2-1.8V8.5M10 12h4"/></symbol>
+<symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M4.2 4.2l1.6 1.6M18.2 18.2l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.2 19.8l1.6-1.6M18.2 5.8l1.6-1.6"/></symbol>
+<symbol id="i-wifi" viewBox="0 0 24 24"><path d="M2.5 8.5a15 15 0 0 1 19 0M5.8 12.3a10 10 0 0 1 12.4 0M9 16a5 5 0 0 1 6 0"/><circle cx="12" cy="19.4" r="1.1" fill="currentColor" stroke="none"/></symbol>
+<symbol id="i-filter" viewBox="0 0 24 24"><path d="M4 6h16M7 12h10M10 18h4"/></symbol>
+<symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 5.8 12 5.8 21.5 12 21.5 12 18 18.2 12 18.2 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+</defs></svg>
+
+<header class="top">
+  <div class="wrap">
+    <span class="eyebrow">Konzept &amp; Mockups · smartis.me</span>
+    <h1>SmartDesme<br />am <em>Handy</em>.</h1>
+    <p class="lede">
+      Die App ist heute für 1600&nbsp;px gebaut und knickt am Telefon auf eine Notversion ein.
+      Dieses Dokument zeigt den Befund, fünf bedienbare Bildschirme und einen Weg in drei Etappen
+      — inklusive Faltgerät, wo aus einer Liste zwei Spalten werden.
+    </p>
+    <div class="metaline">
+      <span>Stand 20.08.2026</span>
+      <span>Branch claude/smartdesme-mobile-fullscreen</span>
+      <span>Vorschlag, noch nicht umgesetzt</span>
+    </div>
+  </div>
+</header>
+
+<section>
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="sec-num">01 — BEFUND</span>
+      <h2>Was am Telefon heute im Weg steht</h2>
+      <p class="sec-sub">
+        Sechs Punkte aus dem Code. Keiner davon ist ein Schönheitsfehler — jeder kostet
+        am Telefon konkret Bedienbarkeit.
+      </p>
+    </div>
+
+    <div class="grid g3">
+      <div class="card">
+        <span class="sev sev-crit">Kein Handy-UI</span>
+        <h3>Die Dateiablage kennt kein Telefon</h3>
+        <p>
+          Der E-Binder ist die grösste Seite der App und enthält keine einzige Handy-Abfrage.
+          Er startet fix auf Bildschirmbreite mit mehreren Spalten nebeneinander — am Telefon
+          bleibt davon ein waagrecht scrollendes Etwas übrig.
+        </p>
+        <code class="ref">src/pages/Dokumente.jsx:2061 — flex h-screen w-screen, 2696 Zeilen, 0× isMobile</code>
+      </div>
+
+      <div class="card">
+        <span class="sev sev-crit">Kein Vollbild</span>
+        <h3>Die Höhe stimmt nie ganz</h3>
+        <p>
+          80 Stellen rechnen mit der vollen Bildschirmhöhe. Am Telefon ist die aber nicht
+          konstant: Die Adressleiste fährt beim Scrollen ein und aus. Ergebnis — die unterste
+          Zeile und die Navigationsleiste liegen teils hinter der Systemleiste.
+        </p>
+        <code class="ref">80× h-screen / 100vh · 0× dvh · viewport ohne viewport-fit=cover</code>
+      </div>
+
+      <div class="card">
+        <span class="sev sev-warn">Faltgerät</span>
+        <h3>Aufgeklappt wird es zum Schreibtisch</h3>
+        <p>
+          Die Weiche steht bei 768&nbsp;px. Ein aufgeklapptes Faltgerät misst rund 673&nbsp;px
+          und fällt damit noch knapp auf Handy — die Fläche wird nicht genutzt. Wenige Pixel
+          mehr und die volle Schreibtisch-Seitenleiste erscheint auf einem 7,6-Zoll-Gerät.
+        </p>
+        <code class="ref">useIsMobile.jsx:3 — window.innerWidth &lt; 768, eine einzige Schwelle</code>
+      </div>
+
+      <div class="card">
+        <span class="sev sev-warn">Erreichbarkeit</span>
+        <h3>Vierzig Werkzeuge, elf Wege dorthin</h3>
+        <p>
+          Unten gibt es drei Reiter plus ein Blatt mit neun festen Kacheln. Die Suche über alle
+          Apps hängt an einer Tastenkombination und ist am Telefon abgeschaltet. Alles andere
+          erreicht man nur, indem man die Adresse von Hand tippt.
+        </p>
+        <code class="ref">Layout.jsx:662 — AppLauncher nur wenn !isMobile</code>
+      </div>
+
+      <div class="card">
+        <span class="sev sev-warn">Anmutung</span>
+        <h3>Es fühlt sich nach Webseite an</h3>
+        <p>
+          Kein Wischen zwischen den Spalten, kein Ziehen zum Aktualisieren, keine Wischgesten
+          auf den Zeilen, keine Blätter von unten statt Dialogen. Die Grundlage stimmt —
+          installierbar ist die App längst —, die Gesten fehlen.
+        </p>
+        <code class="ref">manifest.json — display: standalone, ohne display_override/shortcuts</code>
+      </div>
+
+      <div class="card">
+        <span class="sev sev-ok">Vorhanden</span>
+        <h3>Die halbe Miete steht schon</h3>
+        <p>
+          Installierbar, mit Zwischenspeicher und Auto-Aktualisierung. Untere Navigation,
+          Spaltenreiter für Mails und Aufgaben, der untere Rand respektiert bereits die
+          Gestenleiste. Darauf lässt sich aufbauen statt neu anzufangen.
+        </p>
+        <code class="ref">vite.config.js:63 VitePWA · mobile/BottomNav.jsx · MobileColumnNav.jsx</code>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="lab">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="sec-num">02 — MOCKUPS</span>
+      <h2>Fünf Bildschirme, drei Geräte</h2>
+      <p class="sec-sub">
+        Bedienbar: unten umschalten wie am Telefon, oben Gerät und Farbwelt wechseln.
+        Die Bildschirme sind in echten Gerätepunkten gebaut und nur verkleinert dargestellt
+        — was hier passt, passt auch auf dem Gerät.
+      </p>
+    </div>
+
+    <div class="lab-head">
+      <div class="ctrls">
+        <div class="ctrl-group">
+          <span class="ctrl-label" id="lbl-dev">Gerät</span>
+          <div class="seg" role="group" aria-labelledby="lbl-dev">
+            <button type="button" data-dev="phone" aria-pressed="true">Telefon</button>
+            <button type="button" data-dev="fold-cover" aria-pressed="false">Falter zu</button>
+            <button type="button" data-dev="fold-open" aria-pressed="false">Falter offen</button>
+          </div>
+        </div>
+        <div class="ctrl-group">
+          <span class="ctrl-label" id="lbl-skin">Farbwelt</span>
+          <div class="seg" role="group" aria-labelledby="lbl-skin">
+            <button type="button" data-skin="artis" aria-pressed="true">Artis</button>
+            <button type="button" data-skin="dark" aria-pressed="false">Dunkel</button>
+          </div>
+        </div>
+      </div>
+      <div class="dev-cap" style="text-align:right">
+        <b id="dev-name">Pixel 8 · Standardtelefon</b>
+        <span id="dev-dim" class="mono">412 × 915 dp</span>
+      </div>
+    </div>
+
+    <div class="stage-row">
+      <div class="dev-col">
+        <div class="dev" id="dev" data-device="phone">
+          <div class="dev-glass">
+            <div class="dev-screen" id="screen" data-skin="artis">
+              <div class="punch"></div>
+              <div class="sysbar">
+                <span>9:41</span>
+                <span class="sig">
+                  <span class="bars"><i></i><i></i><i></i><i></i></span>
+                  <svg class="sw" style="width:13px;height:13px"><use href="#i-wifi"/></svg>
+                  <span class="batt"><i></i></span>
+                </span>
+              </div>
+
+              <div class="body">
+                <div class="hinge"></div>
+                <nav class="rail" aria-label="Bereiche">
+                  <button type="button" class="railbtn" data-go="home" aria-pressed="true"><span class="pillbg"><svg class="sw sw-lg"><use href="#i-grid"/></svg></span>Start</button>
+                  <button type="button" class="railbtn" data-go="mail" aria-pressed="false"><span class="pillbg"><svg class="sw sw-lg"><use href="#i-mail"/></svg></span>Mails</button>
+                  <button type="button" class="railbtn" data-go="tasks" aria-pressed="false"><span class="pillbg"><svg class="sw sw-lg"><use href="#i-check"/></svg></span>Aufgaben</button>
+                  <button type="button" class="railbtn" data-go="files" aria-pressed="false"><span class="pillbg"><svg class="sw sw-lg"><use href="#i-folder"/></svg></span>Ablage</button>
+                  <button type="button" class="railbtn" data-go="scan" aria-pressed="false"><span class="pillbg"><svg class="sw sw-lg"><use href="#i-cam"/></svg></span>Scannen</button>
+                </nav>
+
+                <div class="panes">
+                  <div class="pane pane-list">
+
+                    <!-- ══ START ══ -->
+                    <section class="scr on" data-scr="home">
+                      <div class="appbar">
+                        <div style="flex:1">
+                          <div class="hello" style="padding:0">
+                            <div class="h">Guten Morgen, Sascha</div>
+                            <div class="d">Mittwoch, 20. August</div>
+                          </div>
+                        </div>
+                        <span class="iconbtn"><svg class="sw sw-lg"><use href="#i-bell"/></svg></span>
+                        <span class="avatar-sm">SB</span>
+                      </div>
+                      <div class="search"><svg class="sw"><use href="#i-search"/></svg><span style="flex:1">Suchen in allen Apps …</span><svg class="sw"><use href="#i-mic"/></svg></div>
+                      <div class="scroll">
+                        <div class="kpis">
+                          <div class="kpi"><div class="n">12</div><div class="l">Neue Mails</div></div>
+                          <div class="kpi w"><div class="n">5</div><div class="l">Heute fällig</div></div>
+                          <div class="kpi c"><div class="n">2</div><div class="l">Fristen</div></div>
+                        </div>
+                        <div class="slabel"><span>Heute</span><a>Kalender</a></div>
+                        <div class="tline">
+                          <div class="trow"><span class="mk i"></span><span class="tm">09:30</span><span class="tb"><span class="tt">Besprechung Huber Immobilien</span><span class="ts">Teams · 45 Min · Jahresabschluss 2025</span></span></div>
+                          <div class="trow"><span class="mk w"></span><span class="tm">14:00</span><span class="tb"><span class="tt">MWST-Abrechnung Q2 einreichen</span><span class="ts">Bergmann Elektro AG · Frist</span></span></div>
+                          <div class="trow"><span class="mk"></span><span class="tm">16:00</span><span class="tb"><span class="tt">Rückruf R. Wyss</span><span class="ts">Wyss Gartenbau GmbH</span></span></div>
+                        </div>
+                        <div class="slabel"><span>Werkzeuge</span><a>Alle</a></div>
+                        <div class="apps">
+                          <div class="app"><span class="ic" style="background:#4e79a7"><svg class="sw"><use href="#i-mail"/></svg><span class="bdg">12</span></span><span class="lb">Mails</span></div>
+                          <div class="app"><span class="ic" style="background:#2f9e77"><svg class="sw"><use href="#i-check"/></svg><span class="bdg">5</span></span><span class="lb">Aufgaben</span></div>
+                          <div class="app"><span class="ic" style="background:#caa53d"><svg class="sw"><use href="#i-folder"/></svg></span><span class="lb">E-Binder</span></div>
+                          <div class="app"><span class="ic" style="background:#4ba3c7"><svg class="sw"><use href="#i-cam"/></svg></span><span class="lb">Scannen</span></div>
+                          <div class="app"><span class="ic" style="background:#5b6fc9"><svg class="sw"><use href="#i-cal"/></svg></span><span class="lb">Kalender</span></div>
+                          <div class="app"><span class="ic" style="background:#2d6a4f"><svg class="sw"><use href="#i-phone"/></svg></span><span class="lb">Kontakte</span></div>
+                          <div class="app"><span class="ic" style="background:#2e9aa8"><svg class="sw"><use href="#i-clock"/></svg></span><span class="lb">Zeit</span></div>
+                          <div class="app"><span class="ic" style="background:#c65b8a"><svg class="sw"><use href="#i-chat"/></svg></span><span class="lb">Chartis</span></div>
+                        </div>
+                      </div>
+                    </section>
+
+                    <!-- ══ MAILS ══ -->
+                    <section class="scr" data-scr="mail">
+                      <div class="appbar">
+                        <h4>Mails</h4>
+                        <span class="iconbtn"><svg class="sw sw-lg"><use href="#i-search"/></svg></span>
+                        <span class="iconbtn"><svg class="sw sw-lg"><use href="#i-filter"/></svg></span>
+                        <span class="avatar-sm">SB</span>
+                      </div>
+                      <div class="pager">
+                        <span class="pg on">Eingang <b>12</b></span>
+                        <span class="pg">Wartet <b>4</b></span>
+                        <span class="pg">Erledigt <b>31</b></span>
+                      </div>
+                      <div class="scroll">
+                        <div class="rows">
+                          <div class="mrow unread">
+                            <span class="av" style="background:#4e79a7">HI</span>
+                            <span class="mb">
+                              <span class="mtop"><span class="from">Huber Immobilien AG</span><span class="tm">08:14</span></span>
+                              <span class="msub">Unterlagen Jahresabschluss 2025</span>
+                              <span class="msnip">Guten Tag Herr Bigger, anbei die fehlenden Belege …</span>
+                              <span class="mchips"><span class="chip a"><svg class="sw"><use href="#i-clip"/></svg>3</span><span class="chip i">Huber Immobilien</span><span class="chip w">Abschluss</span></span>
+                            </span>
+                          </div>
+                          <div class="mrow swipewrap">
+                            <span class="swipeacts">
+                              <div class="sa-task"><svg class="sw"><use href="#i-check"/></svg>Aufgabe</div>
+                              <div class="sa-file"><svg class="sw"><use href="#i-folder"/></svg>Ablegen</div>
+                            </span>
+                            <span class="swipecard">
+                              <span class="av" style="background:#c9564f">BE</span>
+                              <span class="mb">
+                                <span class="mtop"><span class="from">Bergmann Elektro AG</span><span class="tm">07:52</span></span>
+                                <span class="msub">MWST Q2 — Rückfrage Vorsteuer</span>
+                                <span class="msnip">Können Sie kurz prüfen, ob die Position …</span>
+                                <span class="mchips"><span class="chip c">Frist heute</span><span class="chip i">Bergmann</span></span>
+                              </span>
+                            </span>
+                          </div>
+                          <div class="mrow">
+                            <span class="av" style="background:#2f7d54">SG</span>
+                            <span class="mb">
+                              <span class="mtop"><span class="from">Steueramt St. Gallen</span><span class="tm">Gestern</span></span>
+                              <span class="msub">Fristerstreckung bewilligt</span>
+                              <span class="msnip">Ihr Gesuch vom 12.08.2026 wurde bewilligt bis …</span>
+                              <span class="mchips"><span class="chip o">Erledigt</span><span class="chip">Wyss Gartenbau</span></span>
+                            </span>
+                          </div>
+                          <div class="mrow">
+                            <span class="av" style="background:#8a63b8">RW</span>
+                            <span class="mb">
+                              <span class="mtop"><span class="from">R. Wyss</span><span class="tm">Gestern</span></span>
+                              <span class="msub">Rückruf wegen Lohnausweis</span>
+                              <span class="msnip">Sie erreichen mich am besten nachmittags …</span>
+                              <span class="mchips"><span class="chip i">Wyss Gartenbau</span></span>
+                            </span>
+                          </div>
+                          <div class="mrow">
+                            <span class="av" style="background:#d98836">KT</span>
+                            <span class="mb">
+                              <span class="mtop"><span class="from">Kaufmann Treuhand</span><span class="tm">Mo</span></span>
+                              <span class="msub">Übergabe Mandat Frühling AG</span>
+                              <span class="msnip">Wie besprochen sende ich Ihnen die Kontoblätter …</span>
+                              <span class="mchips"><span class="chip a"><svg class="sw"><use href="#i-clip"/></svg>7</span></span>
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="pgdots"><i class="on"></i><i></i><i></i></div>
+                      <span class="fab"><svg class="sw"><use href="#i-plus"/></svg></span>
+                    </section>
+
+                    <!-- ══ AUFGABEN ══ -->
+                    <section class="scr" data-scr="tasks">
+                      <div class="appbar">
+                        <h4>Aufgaben</h4>
+                        <span class="iconbtn"><svg class="sw sw-lg"><use href="#i-search"/></svg></span>
+                        <span class="iconbtn"><svg class="sw sw-lg"><use href="#i-filter"/></svg></span>
+                        <span class="avatar-sm">SB</span>
+                      </div>
+                      <div class="pager">
+                        <span class="pg on">Offen <b>7</b></span>
+                        <span class="pg">In Arbeit <b>3</b></span>
+                        <span class="pg">Review <b>2</b></span>
+                      </div>
+                      <div class="scroll">
+                        <div class="rows">
+                          <div class="tcard p1">
+                            <div class="tt">MWST-Abrechnung Q2 einreichen</div>
+                            <div class="tm2">Bergmann Elektro AG</div>
+                            <div class="tf"><span class="chip c"><svg class="sw"><use href="#i-clock"/></svg>Heute 14:00</span><span class="chip">Fibu</span><span class="mini-av" style="background:#4e79a7">SB</span></div>
+                          </div>
+                          <div class="tcard p2">
+                            <div class="tt">Belege 2025 nachfordern</div>
+                            <div class="tm2">Huber Immobilien AG · 3 von 8 erhalten</div>
+                            <div class="prog"><i style="width:37%"></i></div>
+                            <div class="tf"><span class="chip w"><svg class="sw"><use href="#i-clock"/></svg>Fr 22.08.</span><span class="chip">Abschluss</span><span class="mini-av" style="background:#c65b8a">RM</span></div>
+                          </div>
+                          <div class="tcard">
+                            <div class="tt">Lohnausweis 2025 erstellen</div>
+                            <div class="tm2">Wyss Gartenbau GmbH</div>
+                            <div class="tf"><span class="chip"><svg class="sw"><use href="#i-clock"/></svg>Nächste Woche</span><span class="chip">Löhne</span><span class="mini-av" style="background:#2f9e77">TK</span></div>
+                          </div>
+                          <div class="tcard p2">
+                            <div class="tt">Kontenplan Frühling AG übernehmen</div>
+                            <div class="tm2">Übergabe von Kaufmann Treuhand</div>
+                            <div class="tf"><span class="chip w"><svg class="sw"><use href="#i-clock"/></svg>Mo 25.08.</span><span class="chip">Neu&shy;mandat</span><span class="mini-av" style="background:#4e79a7">SB</span></div>
+                          </div>
+                          <div class="tcard">
+                            <div class="tt">Revisionsstelle anfragen</div>
+                            <div class="tm2">Frühling AG · Zefix-Eintrag prüfen</div>
+                            <div class="tf"><span class="chip">Ohne Datum</span><span class="mini-av" style="background:#d98836">AM</span></div>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="pgdots"><i class="on"></i><i></i><i></i><i></i></div>
+                      <span class="fab"><svg class="sw"><use href="#i-plus"/></svg></span>
+                    </section>
+
+                    <!-- ══ ABLAGE / E-BINDER ══ -->
+                    <section class="scr" data-scr="files">
+                      <div class="appbar">
+                        <span class="iconbtn"><svg class="sw sw-lg"><use href="#i-left"/></svg></span>
+                        <h4>E-Binder</h4>
+                        <span class="iconbtn"><svg class="sw sw-lg"><use href="#i-search"/></svg></span>
+                        <span class="iconbtn"><svg class="sw sw-lg"><use href="#i-more"/></svg></span>
+                      </div>
+                      <div class="crumb">
+                        <span>Huber Immobilien</span><svg class="sw"><use href="#i-right"/></svg>
+                        <span>2025</span><svg class="sw"><use href="#i-right"/></svg>
+                        <b>Buchhaltung</b>
+                      </div>
+                      <div class="tagbar">
+                        <span class="chip a"><svg class="sw"><use href="#i-tag"/></svg>Abschluss</span>
+                        <span class="chip">Kreditoren</span>
+                        <span class="chip">Bank</span>
+                        <span class="chip">MWST</span>
+                      </div>
+                      <div class="scroll">
+                        <div class="rows">
+                          <div class="frow">
+                            <span class="ftype ft-dir"><svg class="sw"><use href="#i-folder"/></svg></span>
+                            <span class="fb"><span class="fn">Kontoauszüge</span><span class="fm">14 Dateien · 20.08.2026</span></span>
+                            <svg class="sw" style="color:var(--sfaint)"><use href="#i-right"/></svg>
+                          </div>
+                          <div class="frow">
+                            <span class="ftype ft-pdf">PDF</span>
+                            <span class="fb"><span class="fn">Bilanz_2025_Huber_final.pdf</span><span class="fm">1,4 MB · 18.08.2026 · R. Meier</span></span>
+                            <svg class="sw" style="color:var(--sfaint)"><use href="#i-more"/></svg>
+                          </div>
+                          <div class="frow">
+                            <span class="ftype ft-xls">XLSX</span>
+                            <span class="fb"><span class="fn">Abschlussarbeiten_2025.xlsx</span><span class="fm">86 KB · 18.08.2026 · S. Bigger</span></span>
+                            <svg class="sw" style="color:var(--sfaint)"><use href="#i-more"/></svg>
+                          </div>
+                          <div class="frow">
+                            <span class="ftype ft-pdf">PDF</span>
+                            <span class="fb"><span class="fn">MWST_Abrechnung_Q2.pdf</span><span class="fm">220 KB · 15.08.2026 · S. Bigger</span></span>
+                            <svg class="sw" style="color:var(--sfaint)"><use href="#i-more"/></svg>
+                          </div>
+                          <div class="frow">
+                            <span class="ftype ft-doc">DOCX</span>
+                            <span class="fb"><span class="fn">Protokoll_GV_2026.docx</span><span class="fm">44 KB · 12.08.2026 · A. Moser</span></span>
+                            <svg class="sw" style="color:var(--sfaint)"><use href="#i-more"/></svg>
+                          </div>
+                          <div class="frow">
+                            <span class="ftype ft-img">JPG</span>
+                            <span class="fb"><span class="fn">Kassenbeleg_0815.jpg</span><span class="fm">2,1 MB · 11.08.2026 · Paperboy</span></span>
+                            <svg class="sw" style="color:var(--sfaint)"><use href="#i-more"/></svg>
+                          </div>
+                        </div>
+                      </div>
+                      <span class="fab"><svg class="sw"><use href="#i-plus"/></svg></span>
+                    </section>
+
+                    <!-- ══ SCANNEN ══ -->
+                    <section class="scr" data-scr="scan">
+                      <div class="cam">
+                        <div class="camview">
+                          <div class="doc">
+                            <div class="dl hd"></div>
+                            <div class="dl m"></div><div class="dl s"></div><div class="dl m"></div>
+                            <div class="dl xs"></div><div class="dl m"></div><div class="dl s"></div>
+                            <div class="dl m"></div><div class="dl xs"></div>
+                          </div>
+                          <span class="corner c1"></span><span class="corner c2"></span>
+                          <span class="corner c3"></span><span class="corner c4"></span>
+                          <div class="camtop">
+                            <svg class="sw sw-lg"><use href="#i-left"/></svg>
+                            <span style="font-size:14px;font-weight:600">Beleg erfassen</span>
+                            <svg class="sw sw-lg"><use href="#i-flash"/></svg>
+                          </div>
+                          <div class="camhint"><span class="dt"></span>Rechnung erkannt · ruhig halten</div>
+                        </div>
+                        <div class="camtools">
+                          <span class="camside"><svg class="sw sw-lg"><use href="#i-img"/></svg></span>
+                          <span class="shutter"><i></i></span>
+                          <span class="camside"><svg class="sw sw-lg"><use href="#i-file"/></svg></span>
+                        </div>
+                        <div class="sheet">
+                          <div class="grip"></div>
+                          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+                            <svg class="sw" style="color:var(--sacc)"><use href="#i-ai"/></svg>
+                            <span style="font-size:13px;font-weight:600">Erkannt — bitte kurz prüfen</span>
+                            <span class="chip o" style="margin-left:auto">94 %</span>
+                          </div>
+                          <div class="field"><span class="fl">Lieferant</span><span class="fv">Elektro Sutter AG</span></div>
+                          <div class="field"><span class="fl">Datum</span><span class="fv">18.08.2026</span></div>
+                          <div class="field"><span class="fl">Betrag</span><span class="fv">CHF 1'284.60</span></div>
+                          <div class="field"><span class="fl">MWST</span><span class="fv">CHF 96.35 · 8.1 %</span></div>
+                          <div class="field"><span class="fl">Mandant</span><span class="fv">Bergmann Elektro AG</span></div>
+                          <div class="btn-row">
+                            <span class="btn-s">Ändern</span>
+                            <span class="btn-p"><svg class="sw"><use href="#i-check"/></svg>Übernehmen</span>
+                          </div>
+                        </div>
+                      </div>
+                    </section>
+
+                  </div><!-- /pane-list -->
+
+                  <div class="pane pane-detail">
+                    <div class="det det-main">
+                      <div class="det-head">
+                        <div class="dsub">Unterlagen Jahresabschluss 2025</div>
+                        <div class="det-meta">
+                          <span class="av avatar-sm" style="background:#4e79a7;border-radius:12px">HI</span>
+                          <span class="mb2"><span class="nm">Huber Immobilien AG</span><br /><span class="em">m.huber@huber-immo.ch · heute 08:14</span></span>
+                          <span class="chip w">Abschluss</span>
+                        </div>
+                      </div>
+                      <div class="det-body">
+                        <p>Guten Tag Herr Bigger</p>
+                        <p>
+                          Anbei die fehlenden Belege für den Jahresabschluss 2025. Die Kontoauszüge
+                          Dezember liegen bei, ebenso die beiden Kreditorenrechnungen, die letzte
+                          Woche noch offen waren.
+                        </p>
+                        <p>Die Inventarliste reichen wir bis Ende Woche nach.</p>
+                        <p>Freundliche Grüsse<br />M. Huber</p>
+                        <div class="attach">
+                          <span class="ftype ft-pdf" style="width:34px;height:34px">PDF</span>
+                          <span class="fb"><span class="fn">Kontoauszuege_12_2025.pdf</span><span class="fm">1,8 MB</span></span>
+                          <svg class="sw" style="color:var(--sfaint)"><use href="#i-eye"/></svg>
+                        </div>
+                        <div class="attach">
+                          <span class="ftype ft-pdf" style="width:34px;height:34px">PDF</span>
+                          <span class="fb"><span class="fn">Kreditor_Sutter_0815.pdf</span><span class="fm">240 KB</span></span>
+                          <svg class="sw" style="color:var(--sfaint)"><use href="#i-eye"/></svg>
+                        </div>
+                      </div>
+                      <div class="det-acts">
+                        <span class="act pri"><svg class="sw"><use href="#i-reply"/></svg>Antworten</span>
+                        <span class="act"><svg class="sw"><use href="#i-check"/></svg>Aufgabe</span>
+                        <span class="act"><svg class="sw"><use href="#i-folder"/></svg>Ablegen</span>
+                                      </div>
+                    </div>
+                    <div class="det det-empty">
+                      <div class="empty">
+                        <svg class="sw"><use href="#i-eye"/></svg>
+                        <p>Links einen Eintrag wählen — er öffnet sich hier, ohne dass die Liste verschwindet.</p>
+                      </div>
+                    </div>
+                  </div>
+
+                </div><!-- /panes -->
+              </div><!-- /body -->
+
+              <nav class="bnav" aria-label="Hauptnavigation">
+                <button type="button" data-go="home" aria-pressed="true"><span class="pillbg"><svg class="sw sw-lg"><use href="#i-grid"/></svg></span>Start</button>
+                <button type="button" data-go="mail" aria-pressed="false"><span class="pillbg"><svg class="sw sw-lg"><use href="#i-mail"/></svg></span>Mails</button>
+                <button type="button" data-go="tasks" aria-pressed="false"><span class="pillbg"><svg class="sw sw-lg"><use href="#i-check"/></svg></span>Aufgaben</button>
+                <button type="button" data-go="files" aria-pressed="false"><span class="pillbg"><svg class="sw sw-lg"><use href="#i-folder"/></svg></span>Ablage</button>
+                <button type="button" data-go="scan" aria-pressed="false"><span class="pillbg"><svg class="sw sw-lg"><use href="#i-cam"/></svg></span>Scannen</button>
+              </nav>
+              <div class="gbar"></div>
+            </div>
+          </div>
+        </div>
+        <div class="dev-cap">
+          <b id="cap-title">Start · Tagesüberblick statt leeres Dashboard</b>
+          <span id="cap-note" class="mono">unten tippen zum Wechseln</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="sec-num">03 — GERÄTEKLASSEN</span>
+      <h2>Eine Schwelle wird zu fünf</h2>
+      <p class="sec-sub">
+        Statt „unter 768&nbsp;px ist Handy“ eine Leiter, die zwischen Faltgerät zu, Faltgerät offen
+        und Tablet unterscheidet. Das Faltgerät erkennt sich zusätzlich selbst — Android meldet
+        die zwei Bildschirmhälften und die Lage des Scharniers.
+      </p>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>Klasse</th><th class="m">Breite</th><th>Typisches Gerät</th><th>Gerüst</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><b>compact</b></td><td class="m">&lt; 400</td><td>Deckelbildschirm Falter, kleines Telefon</td><td>Eine Spalte, 3 Reiter unten, Werkzeuge im Blatt</td></tr>
+          <tr><td><b>phone</b></td><td class="m">400 – 599</td><td>Pixel 8, iPhone 15, Galaxy S24</td><td>Eine Spalte, 5 Reiter unten, Liste schiebt zum Detail</td></tr>
+          <tr><td><b>fold / tablet</b></td><td class="m">600 – 1023</td><td>Falter offen (673), iPad hoch</td><td>Leiste links, Liste + Detail nebeneinander, Scharnier als Trennlinie</td></tr>
+          <tr><td><b>desktop</b></td><td class="m">1024 – 1599</td><td>Laptop</td><td>Heutiges Gerüst mit Seitenleiste</td></tr>
+          <tr><td><b>widescreen</b></td><td class="m">≥ 1600</td><td>Bildschirm im Büro</td><td>Bestehende Kachel-Arbeitsfläche, 2–4 Spalten</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout" style="margin-top:22px">
+      <h3>Warum das Faltgerät nicht einfach ein breites Telefon ist</h3>
+      <p>
+        Aufgeklappt hat es zwei Hälften mit einer toten Zone dazwischen. Wer eine Liste über
+        die volle Breite legt, schneidet sie mitten durch. Android meldet Anzahl und Lage der
+        Hälften; die Trennstelle wird damit zur bewussten Trennlinie zwischen Liste und Detail
+        — genau dort, wo auch am Schreibtisch die Panel-Grenze liegt.
+      </p>
+      <p>
+        Zweiter Punkt: Beim Auf- und Zuklappen wechselt die Geräteklasse mitten im Betrieb.
+        Der Zustand — welche Mail offen ist, was im Formular steht — muss das überleben.
+        Deshalb entscheidet ausschliesslich die Darstellung über das Gerüst, nie über die Daten.
+      </p>
+    </div>
+  </div>
+</section>
+
+<section class="lab">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="sec-num">04 — UMFANG</span>
+      <h2>Was aufs Telefon gehört — und was nicht</h2>
+      <p class="sec-sub">
+        Rund vierzig Werkzeuge stehen im Katalog. Alle aufs Telefon zu bringen wäre teuer
+        und würde niemandem helfen. Die Auswahl richtet sich danach, was man unterwegs
+        tatsächlich tut: nachsehen, erfassen, abhaken.
+      </p>
+    </div>
+    <div class="grid g3">
+      <div class="tier">
+        <div class="tier-h"><span class="dot" style="background:var(--acc-bright)"></span><h3>Vollwertig</h3><span class="cnt">8 Apps</span></div>
+        <div class="taglist">
+          <span class="tag hi">Mails</span><span class="tag hi">Aufgaben</span><span class="tag hi">E-Binder</span>
+          <span class="tag hi">Paperboy &amp; Scan</span><span class="tag hi">Kalender</span><span class="tag hi">Kontakte</span>
+          <span class="tag hi">Chartis</span><span class="tag hi">Fristen</span>
+        </div>
+        <p>
+          Der tägliche Kern. Diese acht bekommen eigene Handy-Ansichten, Wischgesten
+          und funktionieren mit einer Hand.
+        </p>
+      </div>
+      <div class="tier">
+        <div class="tier-h"><span class="dot" style="background:var(--warn)"></span><h3>Abgespeckt</h3><span class="cnt">6 Apps</span></div>
+        <div class="taglist">
+          <span class="tag">Zeiterfassung</span><span class="tag">Kunden</span><span class="tag">Tickets</span>
+          <span class="tag">Firmensuche</span><span class="tag">Dashboard</span><span class="tag">Einstellungen</span>
+        </div>
+        <p>
+          Ansehen und einfache Eingaben ja, Massenbearbeitung nein. Zeiterfassung unterwegs
+          ist der stärkste Fall: Stoppuhr starten, Mandant wählen, fertig.
+        </p>
+      </div>
+      <div class="tier">
+        <div class="tier-h"><span class="dot" style="background:var(--ink-3)"></span><h3>Bewusst am Schreibtisch</h3><span class="cnt">~25 Apps</span></div>
+        <div class="taglist">
+          <span class="tag">Fibu komplett</span><span class="tag">Kontenplan</span><span class="tag">Jahresabschluss</span>
+          <span class="tag">Steuerausscheidung</span><span class="tag">Jahresplanung</span><span class="tag">Whiteboard</span>
+          <span class="tag">Benutzerverwaltung</span><span class="tag">Auswertungen</span>
+        </div>
+        <p>
+          Tabellenarbeit, Buchungsmasken, Zeichenfläche. Am Telefon erscheint hier ein
+          klarer Hinweis statt einer unbrauchbaren Miniaturansicht.
+        </p>
+      </div>
+    </div>
+    <div class="callout" style="margin-top:22px">
+      <h3>Der Beleg-Scan ist das stärkste Argument fürs Telefon</h3>
+      <p>
+        Alles andere kann der Schreibtisch besser. Nur eines nicht: Die Kamera ist im Telefon.
+        Beleg abfotografieren, Kanten zuschneiden, die bestehende KI-Belegerkennung liest
+        Lieferant, Datum, Betrag und MWST aus, Zuordnung zum Mandanten, ab in den E-Binder —
+        während man noch beim Kunden am Tisch sitzt. Der Weg über Scanner und Schreibtisch
+        entfällt komplett.
+      </p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="sec-num">05 — WEG</span>
+      <h2>Drei Etappen, jede für sich brauchbar</h2>
+      <p class="sec-sub">
+        Nach Etappe 1 ist die App am Telefon bereits vollflächig und sauber installiert.
+        Nach Etappe 2 passt sie sich dem Gerät an. Etappe 3 macht sie zur App.
+        Aufwand grob geschätzt, alles auf smartis.me — an api-artis wird nichts angefasst.
+      </p>
+    </div>
+
+    <div class="step">
+      <div class="step-rail"><span class="step-badge">1</span><span class="step-line"></span></div>
+      <div class="step-body">
+        <div class="step-top"><h3>Vollbild und Installation</h3><span class="cost">≈ 1 Tag · risikoarm</span></div>
+        <p>Rein gestalterisch, keine Logik betroffen. Wirkt sofort auf allen Seiten gleichzeitig.</p>
+        <ul class="ticks">
+          <li>Bildschirmhöhe auf die tatsächlich sichtbare Fläche umstellen — <code>100dvh</code> statt <code>100vh</code>, damit die Adressleiste nichts mehr abschneidet</li>
+          <li>Randloses Vollbild: <code>viewport-fit=cover</code> plus Abstandsgrössen für Kamera-Aussparung oben und Gestenleiste unten</li>
+          <li>Installationsdatei erweitern: Vollbild bevorzugt, Hochformat, Schnellaktionen fürs Symbol auf dem Startbildschirm (Scannen, Mails, Aufgaben), Bildschirmfotos für den Installationsdialog</li>
+          <li>Farbe der Systemleiste folgt der gewählten Farbwelt, hell wie dunkel</li>
+          <li>Berührungsflächen durchgehend auf 48&nbsp;dp, Überscroll und Doppeltipp-Zoom aus</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-rail"><span class="step-badge">2</span><span class="step-line"></span></div>
+      <div class="step-body">
+        <div class="step-top"><h3>Geräteklassen und Faltgerät</h3><span class="cost">≈ 3–4 Tage</span></div>
+        <p>Der eigentliche Umbau. Eine zentrale Stelle entscheidet, alle Seiten fragen dort nach.</p>
+        <ul class="ticks">
+          <li>Neuer Haken <code>useDeviceClass()</code> löst die einzelne 768er-Schwelle ab; das bestehende <code>useIsMobile</code> bleibt als Weiterleitung bestehen, damit nichts bricht</li>
+          <li>Faltgerät-Erkennung über die von Android gemeldeten Bildschirmhälften, mit sauberem Rückfall auf reine Breitenmessung</li>
+          <li>Liste-und-Detail als gemeinsames Muster: am Telefon schiebt sich das Detail über die Liste, aufgeklappt steht es daneben</li>
+          <li>Untere Leiste am Telefon, Leiste links beim aufgeklappten Falter — der Wechsel passiert beim Klappen ohne Datenverlust</li>
+          <li>Handy-Ansicht für den E-Binder: Pfadleiste, Dateiliste, Vorschau als Blatt von unten — statt der drei Schreibtisch-Spalten</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-rail"><span class="step-badge">3</span></div>
+      <div class="step-body">
+        <div class="step-top"><h3>Anmutung einer echten App</h3><span class="cost">≈ 4–5 Tage</span></div>
+        <p>Ab hier merkt man den Unterschied zu einer Webseite nicht mehr.</p>
+        <ul class="ticks">
+          <li>Wischen zwischen den Spalten von Mails und Aufgaben, Ziehen zum Aktualisieren</li>
+          <li>Wischgesten auf den Zeilen: nach links Aufgabe erzeugen oder ablegen, nach rechts erledigen</li>
+          <li>Blätter von unten statt Dialogfenster, dazu ein kurzes Vibrieren bei bestätigten Aktionen</li>
+          <li>Werkzeugsuche als Blatt von unten — die vierzig Apps werden am Telefon endlich auffindbar</li>
+          <li>Kamera-Scan mit Kantenerkennung, direkt an die bestehende Belegerkennung angeschlossen</li>
+          <li>Android-Zurückgeste schliesst Blätter und Detailansichten, statt die App zu verlassen</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="lab">
+  <div class="wrap narrow">
+    <div class="sec-head">
+      <span class="sec-num">06 — ENTSCHEID</span>
+      <h2>Installierte Webseite oder App aus dem Store?</h2>
+      <p class="sec-sub">Eine Frage, die vorab geklärt sein sollte, weil sie Etappe 1 mitbestimmt.</p>
+    </div>
+    <div class="split">
+      <div class="vs pick">
+        <span class="badge">Empfehlung</span>
+        <h3>Installierte Webseite</h3>
+        <ul>
+          <li class="y">Grundlage steht bereits, keine neue Bauabfolge nötig</li>
+          <li class="y">Aktualisierung wie bisher über den Push auf master</li>
+          <li class="y">Läuft auf Android und iPhone gleichermassen</li>
+          <li class="y">Kein Store, keine Prüfung, keine Signaturschlüssel</li>
+          <li class="n">Installation über das Browsermenü, nicht über den Store</li>
+          <li class="n">Kein Eintrag in Androids Systemfreigabe</li>
+        </ul>
+      </div>
+      <div class="vs">
+        <span class="badge">Später möglich</span>
+        <h3>Echte App aus dem Store</h3>
+        <ul>
+          <li class="y">Symbol und Installation über den Play Store</li>
+          <li class="y">Systemfreigabe, Mitteilungen, Dateizugriff nativ</li>
+          <li class="y">Tauri ist im Projekt bereits vorhanden und kann Android</li>
+          <li class="n">Play-Konto, Signatur, Freigabeprüfung nötig</li>
+          <li class="n">Jede Änderung braucht einen neuen Store-Durchlauf</li>
+          <li class="n">Für iPhone zusätzlich ein Apple-Entwicklerkonto</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout" style="margin-top:22px">
+      <h3>Der Vorschlag</h3>
+      <p>
+        Etappen 1 bis 3 als installierte Webseite bauen. Die Arbeit daran ist zu hundert Prozent
+        wiederverwendbar: Eine Store-App würde später genau diese Oberfläche einpacken.
+        Der Entscheid für den Store lässt sich damit vertagen, ohne etwas zu verlieren —
+        und beantworten, sobald klar ist, ob der Play-Store-Eintrag wirklich gebraucht wird.
+      </p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p style="margin:0 0 6px">
+      Nächster Schritt: Etappe 1 freigeben — sie ist in sich abgeschlossen und
+      am Telefon sofort spürbar. Etappe 2 danach, sobald die Werkzeugauswahl oben bestätigt ist.
+    </p>
+    <p class="mono" style="margin:0;opacity:.75">
+      mockups/mobile/index.html · Entwurf, keine Änderung am Anwendungscode
+    </p>
+  </div>
+</footer>
+
+<script>
+(function(){
+  var dev    = document.getElementById('dev');
+  var screen = document.getElementById('screen');
+  var devName = document.getElementById('dev-name');
+  var devDim  = document.getElementById('dev-dim');
+  var capTitle = document.getElementById('cap-title');
+  var capNote  = document.getElementById('cap-note');
+
+  var DEVICES = {
+    'phone':      { w:412, h:915, s:0.78, name:'Pixel 8 · Standardtelefon',        dim:'412 × 915 dp' },
+    'fold-cover': { w:344, h:882, s:0.78, name:'Galaxy Z Fold · Deckelbildschirm', dim:'344 × 882 dp' },
+    'fold-open':  { w:673, h:841, s:0.60, name:'Galaxy Z Fold · aufgeklappt',      dim:'673 × 841 dp' }
+  };
+
+  var CAPS = {
+    home:  'Start · Tagesüberblick statt leerem Dashboard',
+    mail:  'Mails · Spalten als Reiter, Wischgesten auf der Zeile',
+    tasks: 'Aufgaben · Kanban-Spalten zum Durchblättern',
+    files: 'E-Binder · Pfad, Liste, Vorschau statt drei Spalten',
+    scan:  'Scannen · Kamera plus bestehende Belegerkennung'
+  };
+
+  var device = 'phone';
+  var current = 'home';
+
+  // Verkleinerung an die verfügbare Breite anpassen, damit auch ein
+  // 360px-Fenster das aufgeklappte Faltgerät ganz zeigt.
+  function fit(base, w){
+    var avail = Math.min(window.innerWidth - 44, 760);
+    var max = avail / w;
+    return Math.max(0.3, Math.min(base, max));
+  }
+
+  function applyDevice(){
+    var d = DEVICES[device];
+    var s = fit(d.s, d.w);
+    dev.dataset.device = device;
+    dev.style.setProperty('--w', d.w);
+    dev.style.setProperty('--h', d.h);
+    dev.style.setProperty('--s', s.toFixed(4));
+    devName.textContent = d.name;
+    devDim.textContent  = d.dim;
+    capNote.textContent = device === 'fold-open'
+      ? 'links wechseln · Liste und Detail nebeneinander'
+      : 'unten tippen zum Wechseln';
+  }
+
+  function applyScreen(){
+    dev.dataset.screen = current;
+    var scrs = screen.querySelectorAll('.scr');
+    for (var i = 0; i < scrs.length; i++){
+      scrs[i].classList.toggle('on', scrs[i].dataset.scr === current);
+    }
+    var navs = screen.querySelectorAll('[data-go]');
+    for (var j = 0; j < navs.length; j++){
+      navs[j].setAttribute('aria-pressed', String(navs[j].dataset.go === current));
+    }
+    capTitle.textContent = CAPS[current];
+  }
+
+  screen.addEventListener('click', function(e){
+    var btn = e.target.closest('[data-go]');
+    if (!btn) return;
+    current = btn.dataset.go;
+    applyScreen();
+  });
+
+  document.querySelectorAll('[data-dev]').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      device = btn.dataset.dev;
+      document.querySelectorAll('[data-dev]').forEach(function(b){
+        b.setAttribute('aria-pressed', String(b === btn));
+      });
+      applyDevice();
+    });
+  });
+
+  document.querySelectorAll('[data-skin]').forEach(function(btn){
+    if (!btn.matches('button')) return;
+    btn.addEventListener('click', function(){
+      screen.dataset.skin = btn.dataset.skin;
+      document.querySelectorAll('button[data-skin]').forEach(function(b){
+        b.setAttribute('aria-pressed', String(b === btn));
+      });
+    });
+  });
+
+  var resizeTimer;
+  window.addEventListener('resize', function(){
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(applyDevice, 120);
+  });
+
+  applyDevice();
+  applyScreen();
+})();
+</script>
+</body>
+</html>
