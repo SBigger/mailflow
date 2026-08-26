@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import {
   ShieldCheck, Mail, Search, Folder, Calendar, Tag as TagIcon, Eye, Download,
   LogOut, Loader2, CheckCircle2, AlertCircle, FileText, ChevronRight, Lock, Archive, X, Upload,
-  MessageSquare, Send,
+  MessageSquare, Send, BookCheck, Circle,
 } from "lucide-react";
 import JSZip from "jszip";
 import './styles.css';
@@ -36,6 +36,18 @@ function fmtDate(iso) {
   if (!iso) return "";
   return new Date(iso).toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
+function fmtCHF(v) {
+  const n = parseFloat(v);
+  if (isNaN(n)) return "—";
+  return n.toLocaleString("de-CH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+const MONAT_LABELS = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
+function periodeLabel(p) {
+  const periode = p.monat ? `Zwischenabschluss ${MONAT_LABELS[p.monat - 1]}` : "Jahresabschluss";
+  return `${periode} ${p.geschaeftsjahr}`;
+}
+const KONTO_STATUS_LABEL = { offen: "Offen", erledigt: "Erledigt", pendent: "Rückfrage" };
+const KONTO_STATUS_COLOR = { offen: "var(--faint)", erledigt: "#16a34a", pendent: "#dc2626" };
 // Excel-Vorschau: Blatt-Tabs + Tabelle (erste Zeile als Kopf), max. 500 Zeilen
 function ExcelTable({ preview, onSheet }) {
   const idx = preview.sheetIdx || 0;
@@ -112,6 +124,17 @@ export default function Portal() {
   const [zip, setZip] = useState(null);            // { done, total, label }
   const [upload, setUpload] = useState(null);      // { busy, done, total, ok, msg }
   const fileInputRef = useRef(null);
+
+  // Abschlussdokumentation — nur freigegebene Perioden, nur offene Konten,
+  // Upload je Konto (routet über denselben Posteingang wie "Hochladen" oben).
+  const [abschlussOpen, setAbschlussOpen] = useState(false);
+  const [abschlussPeriods, setAbschlussPeriods] = useState(null); // null = noch nicht geladen
+  const [abschlussPeriod, setAbschlussPeriod] = useState(null);   // gewählte abschluss_id
+  const [abschlussKonten, setAbschlussKonten] = useState([]);
+  const [abschlussLoading, setAbschlussLoading] = useState(false);
+  const [kontoUpload, setKontoUpload] = useState({}); // { [kontoId]: {busy, ok, msg} }
+  const kontoFileInputRef = useRef(null);
+  const [kontoUploadTarget, setKontoUploadTarget] = useState(null); // { id, kontonummer }
 
   // Chat (Chartis) — nur email_in/email_out, nie interne Notizen
   const [chatOpen, setChatOpen] = useState(false);
@@ -322,6 +345,60 @@ export default function Portal() {
     finally { setChatBusy(false); }
   }
 
+  // ── Abschlussdokumentation ────────────────────────────────────────────────
+  async function openAbschluss() {
+    setAbschlussOpen(true);
+    if (abschlussPeriods != null) return; // schon geladen für diese Session
+    try {
+      const data = await callPortal("abschluss-list", { customer_id: selCustomer });
+      const periods = data.periods || [];
+      setAbschlussPeriods(periods);
+      if (periods[0]) loadAbschlussPendenzen(periods[0].id);
+    } catch (e) { setError(e.message); setAbschlussPeriods([]); }
+  }
+
+  async function loadAbschlussPendenzen(abschlussId) {
+    setAbschlussPeriod(abschlussId);
+    setAbschlussLoading(true);
+    try {
+      const data = await callPortal("abschluss-pendenzen", { abschluss_id: abschlussId });
+      setAbschlussKonten(data.konten || []);
+    } catch (e) { setError(e.message); setAbschlussKonten([]); }
+    finally { setAbschlussLoading(false); }
+  }
+
+  // Beleg-Vorschau: dieselbe Preview-Ansicht wie bei den regulären Dokumenten,
+  // die "download"-Aktion prüft ohnehin nur, ob die doc_id zum freigegebenen
+  // Mandanten gehört — Herkunft (Kontenplan vs. Kategorie-Liste) spielt keine Rolle.
+  function openBelegPreview(beleg) {
+    openPreview(beleg);
+  }
+
+  // Upload zu einem bestimmten offenen Konto: derselbe Posteingang-Weg wie
+  // "Hochladen" oben, aber der Dateiname bekommt die Kontonummer vorangestellt,
+  // damit die Treuhänderin beim definitiven Einordnen sofort sieht, wofür die
+  // Datei gedacht war.
+  async function handleKontoFiles(konto, fileList) {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+    const tooBig = files.find(f => f.size > MAX_UPLOAD);
+    if (tooBig) { setKontoUpload(u => ({ ...u, [konto.id]: { ok: false, msg: `„${tooBig.name}" ist zu gross (max. 8 MB).` } })); return; }
+    setKontoUpload(u => ({ ...u, [konto.id]: { busy: true, msg: "Wird übermittelt…" } }));
+    let failed = 0;
+    for (const file of files) {
+      try {
+        const data = await fileToB64(file);
+        const filename = `Konto-${konto.kontonummer}_${file.name}`;
+        await callPortal("upload", { filename, content_type: file.type, data, customer_id: selCustomer });
+      } catch { failed++; }
+    }
+    setKontoUpload(u => ({ ...u, [konto.id]: {
+      ok: failed === 0,
+      msg: failed === 0 ? "Beleg übermittelt." : "Übermittlung fehlgeschlagen.",
+    } }));
+    setTimeout(() => setKontoUpload(u => ({ ...u, [konto.id]: undefined })), 6000);
+  }
+
   // Ableitungen für die Doku-Ansicht — immer auf den gewählten Mandanten
   // eingegrenzt. Dokumente ohne customer_id stammen von einer älteren
   // portal-api-Version und bleiben sichtbar, statt zu verschwinden.
@@ -353,6 +430,8 @@ export default function Portal() {
   // Mandantenwechsel: Kategorie/Jahr/Tag zurücksetzen, sonst zeigt die Ansicht
   // eine Kategorie, die es beim neuen Mandanten gar nicht gibt.
   useEffect(() => { setSelCat(null); setSelYear(null); setSelTag(null); setQ(""); }, [selCustomer]);
+  // Andere Firma → andere Abschlüsse, neu laden statt die alten weiterzuzeigen.
+  useEffect(() => { setAbschlussPeriods(null); setAbschlussPeriod(null); setAbschlussKonten([]); }, [selCustomer]);
 
   const catTags = useMemo(() => {
     const ids = [...new Set(scopedDocs.filter(d => d.category === selCat).flatMap(d => d.tag_ids || []))];
@@ -419,6 +498,10 @@ export default function Portal() {
         <div className="who">
           <input ref={fileInputRef} type="file" multiple style={{ display: "none" }}
             onChange={e => { handleFiles(e.target.files); e.target.value = ""; }} />
+          <button className="ghost" title="Ihr Jahresabschluss"
+            onClick={openAbschluss}>
+            <BookCheck size={16} /> Abschluss
+          </button>
           <button className="ghost" title="Nachricht an Ihre Treuhänderin"
             onClick={() => setChatOpen(true)}>
             <MessageSquare size={16} /> Nachrichten
@@ -616,6 +699,90 @@ export default function Portal() {
           </div>
         </div>
       )}
+
+      {/* Jahresabschluss / Zwischenabschluss — nur freigegebene Perioden, nur offene Konten */}
+      {abschlussOpen && (
+        <div className="overlay" onClick={e => { if (e.target.classList.contains("overlay")) setAbschlussOpen(false); }}>
+          <div className="modal">
+            <div className="mhead">
+              <BookCheck size={18} style={{ color: "var(--accent)" }} />
+              <div className="t" style={{ minWidth: 0 }}>
+                <b style={{ display: "block", fontSize: 15, fontWeight: 600 }}>Ihr Abschluss</b>
+                <small style={{ color: "var(--faint)", fontSize: 12.5 }}>{customerName}</small>
+              </div>
+              {abschlussPeriods && abschlussPeriods.length > 1 && (
+                <select value={abschlussPeriod || ""} onChange={e => loadAbschlussPendenzen(e.target.value)}
+                  style={{ marginLeft: "auto", background: "transparent", color: "inherit", font: "inherit", fontWeight: 600,
+                    border: "1px solid var(--faint)", borderRadius: 8, padding: "5px 8px", cursor: "pointer" }}>
+                  {abschlussPeriods.map(p => <option key={p.id} value={p.id}>{periodeLabel(p)}</option>)}
+                </select>
+              )}
+              <button className="closebtn" style={abschlussPeriods && abschlussPeriods.length > 1 ? {} : { marginLeft: "auto" }}
+                onClick={() => setAbschlussOpen(false)}><X size={18} /></button>
+            </div>
+
+            <div className="mbody" style={{ padding: "0 4px" }}>
+              {abschlussLoading ? (
+                <div className="empty"><Loader2 size={20} className="animate-spin" /></div>
+              ) : abschlussPeriods && abschlussPeriods.length === 0 ? (
+                <div className="empty" style={{ padding: "40px 20px" }}>
+                  <BookCheck size={34} style={{ color: "var(--faint)" }} />
+                  <p style={{ margin: "12px 0 4px", fontWeight: 600, color: "var(--ink)" }}>Noch kein freigegebener Abschluss</p>
+                  <p style={{ margin: 0, fontSize: 13.5 }}>Sobald Ihre Treuhänderin einen Abschluss freigibt, erscheint er hier.</p>
+                </div>
+              ) : abschlussKonten.length === 0 ? (
+                <div className="empty" style={{ padding: "40px 20px" }}>
+                  <CheckCircle2 size={34} style={{ color: "var(--accent)" }} />
+                  <p style={{ margin: "12px 0 4px", fontWeight: 600, color: "var(--ink)" }}>Keine offenen Punkte</p>
+                </div>
+              ) : (
+                <div style={{ padding: "8px 16px 20px" }}>
+                  {abschlussKonten.map(k => (
+                    <div key={k.id} style={{ padding: "14px 4px", borderBottom: "1px solid var(--line)" }}>
+                      <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+                        <b style={{ fontSize: 14 }}>{k.kontonummer} · {k.kontoname}</b>
+                        <span style={{ marginLeft: "auto", fontSize: 13, fontVariantNumeric: "tabular-nums", color: "var(--muted)" }}>
+                          CHF {fmtCHF(k.saldo_ist)}
+                        </span>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5, fontWeight: 600, color: KONTO_STATUS_COLOR[k.status] }}>
+                          <Circle size={8} fill="currentColor" /> {KONTO_STATUS_LABEL[k.status] || "Offen"}
+                        </span>
+                      </div>
+
+                      {k.belege.length > 0 && (
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+                          {k.belege.map(b => (
+                            <button key={b.id} className="chip" onClick={() => openBelegPreview(b)}
+                              style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                              <FileText size={13} /> {prettyDisplayName(b)}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 10 }}>
+                        <button className="ghost" style={{ padding: "5px 10px", fontSize: 12.5 }}
+                          disabled={kontoUpload[k.id]?.busy}
+                          onClick={() => { setKontoUploadTarget(k); kontoFileInputRef.current?.click(); }}>
+                          {kontoUpload[k.id]?.busy ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />} Beleg nachliefern
+                        </button>
+                        {kontoUpload[k.id]?.msg && (
+                          <span style={{ fontSize: 12, color: kontoUpload[k.id]?.ok === false ? "var(--danger)" : "var(--accent)" }}>
+                            {kontoUpload[k.id].msg}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {error && <div className="errbox" style={{ margin: "0 16px 14px" }}><AlertCircle size={17} />{error}</div>}
+            </div>
+          </div>
+        </div>
+      )}
+      <input ref={kontoFileInputRef} type="file" style={{ display: "none" }}
+        onChange={e => { if (kontoUploadTarget) handleKontoFiles(kontoUploadTarget, e.target.files); e.target.value = ""; }} />
 
       {/* Upload-Status */}
       {upload && (
