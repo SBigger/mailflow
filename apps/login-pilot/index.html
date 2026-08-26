@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LoginPilot</title>
+<style>
+  :root {
+    --bg:       #0f172a;
+    --surf:     #1e293b;
+    --surf2:    #263448;
+    --border:   #334155;
+    --text:     #e2e8f0;
+    --muted:    #94a3b8;
+    --accent:   #3b82f6;
+    --accentH:  #2563eb;
+    --green:    #22c55e;
+    --red:      #ef4444;
+    --r:        9px;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body { height: 100%; }
+  body {
+    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    user-select: none;
+  }
+
+  /* ══════════════ DOCK (immer sichtbare Icon-Leiste) ══════════════ */
+  #dock {
+    height: 64px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 8px 0 4px;
+    background: linear-gradient(180deg, #1a2740 0%, #131f36 100%);
+    border-bottom: 1px solid var(--border);
+    -webkit-app-region: drag;   /* Fenster verschiebbar */
+  }
+
+  .grip {
+    width: 14px; height: 100%;
+    display: flex; align-items: center; justify-content: center;
+    color: #3b4a63; font-size: 13px; flex-shrink: 0;
+    cursor: grab;
+  }
+  .ver {
+    -webkit-app-region: no-drag;
+    font-size: 9px; font-weight: 700; color: #64748b;
+    padding: 2px 5px; border: 1px solid var(--border); border-radius: 6px;
+    flex-shrink: 0; white-space: nowrap;
+  }
+
+  #dock-icons {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    height: 100%;
+    padding: 6px 2px;
+    scrollbar-width: none;
+  }
+  #dock-icons::-webkit-scrollbar { height: 0; }
+
+  .dock-btn {
+    -webkit-app-region: no-drag;
+    flex-shrink: 0;
+    width: 54px; height: 52px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 3px;
+    background: var(--surf);
+    border: 1px solid var(--border);
+    border-radius: 11px;
+    cursor: pointer;
+    transition: transform .1s, border-color .14s, background .14s;
+  }
+  .dock-btn:hover { border-color: var(--accent); background: var(--surf2); transform: translateY(-1px); }
+  .dock-btn:active { transform: scale(.93); }
+  .dock-btn.busy { opacity: .5; pointer-events: none; }
+  .dock-btn .di { font-size: 21px; line-height: 1; }
+  .dock-btn .dl { font-size: 8.5px; font-weight: 600; color: var(--muted); max-width: 50px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .dock-empty {
+    -webkit-app-region: no-drag;
+    flex: 1; display: flex; align-items: center; gap: 8px;
+    color: var(--muted); font-size: 12px; padding-left: 6px;
+  }
+  .dock-empty b { color: var(--text); }
+
+  .dock-tools { display: flex; align-items: center; gap: 3px; flex-shrink: 0; padding-left: 4px; border-left: 1px solid var(--border); }
+  .tool {
+    -webkit-app-region: no-drag;
+    width: 32px; height: 32px;
+    display: flex; align-items: center; justify-content: center;
+    background: transparent; border: 1px solid transparent; border-radius: 8px;
+    color: var(--muted); font-size: 15px; cursor: pointer;
+    transition: background .14s, color .14s, border-color .14s;
+  }
+  .tool:hover { background: var(--surf2); color: var(--text); }
+  .tool.accent { color: #93c5fd; }
+  .tool.accent:hover { background: var(--accent); color: #fff; }
+  .tool.on { color: var(--green); border-color: var(--green); background: rgba(34,197,94,.1); }
+  .tool.close:hover { background: rgba(239,68,68,.14); color: var(--red); }
+
+  /* ══════════════ MANAGER (klappt bei Bedarf auf) ══════════════ */
+  #manager {
+    display: none;
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    -webkit-app-region: no-drag;
+  }
+  body.open #manager { display: block; }
+
+  .panel {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    background: var(--bg);
+    opacity: 0; pointer-events: none;
+    transition: opacity .15s ease;
+  }
+  .panel.active { opacity: 1; pointer-events: all; }
+
+  .hdr {
+    display: flex; align-items: center; gap: 8px;
+    padding: 11px 12px 10px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .hdr h2 { font-size: 15px; font-weight: 700; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  button { cursor: pointer; border: none; outline: none; font-family: inherit; }
+
+  .btn { background: var(--accent); color: #fff; padding: 7px 15px; border-radius: 7px; font-size: 13px; font-weight: 600; transition: background .14s, transform .1s; }
+  .btn:hover { background: var(--accentH); }
+  .btn:active { transform: scale(.97); }
+
+  .btn-ghost { background: transparent; color: var(--muted); padding: 5px 9px; border-radius: 6px; font-size: 18px; line-height: 1; transition: color .14s, background .14s; }
+  .btn-ghost:hover { color: var(--text); background: var(--surf2); }
+
+  .btn-sm { background: var(--surf2); color: var(--text); padding: 5px 11px; border-radius: 6px; font-size: 12px; font-weight: 600; border: 1px solid var(--border); transition: background .14s, border-color .14s; }
+  .btn-sm:hover { background: var(--border); border-color: var(--accent); }
+
+  .btn-outline { background: transparent; color: var(--text); padding: 8px 14px; border-radius: 7px; font-size: 13px; font-weight: 600; border: 1px solid var(--border); transition: background .14s; }
+  .btn-outline:hover { background: var(--surf2); }
+
+  .icon-btn { background: transparent; color: var(--muted); padding: 4px 7px; border-radius: 5px; font-size: 14px; line-height: 1; transition: color .14s, background .14s; }
+  .icon-btn:hover { color: var(--text); background: var(--surf2); }
+  .icon-btn.red:hover { color: var(--red); background: rgba(239,68,68,.1); }
+
+  /* Liste */
+  #login-list { flex: 1; overflow-y: auto; padding: 10px 11px; display: flex; flex-direction: column; gap: 7px; }
+  #login-list::-webkit-scrollbar { width: 4px; }
+  #login-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .list-footer { padding: 8px 11px; border-top: 1px solid var(--border); display: flex; align-items: center; gap: 7px; flex-shrink: 0; }
+  .footer-btn { background: var(--surf); border: 1px solid var(--border); color: var(--muted); font-size: 11px; font-weight: 600; padding: 5px 10px; border-radius: 6px; transition: color .14s, border-color .14s, background .14s; flex-shrink: 0; }
+  .footer-btn:hover { color: var(--text); border-color: var(--accent); background: var(--surf2); }
+  .footer-btn.on { color: var(--green); border-color: var(--green); background: rgba(34,197,94,.08); }
+
+  .empty { text-align: center; color: var(--muted); margin-top: 40px; font-size: 13px; line-height: 1.8; }
+  .empty .ico { font-size: 34px; display: block; margin-bottom: 10px; }
+
+  .card { background: var(--surf); border: 1px solid var(--border); border-radius: var(--r); padding: 10px 11px; display: flex; align-items: center; gap: 10px; transition: border-color .14s; }
+  .card:hover { border-color: var(--accent); }
+  .card-ico { font-size: 22px; width: 32px; text-align: center; flex-shrink: 0; }
+  .card-info { flex: 1; min-width: 0; }
+  .card-name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card-sub  { font-size: 11px; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 5px; }
+  .badge { font-size: 9px; font-weight: 700; text-transform: uppercase; padding: 1px 5px; border-radius: 3px; flex-shrink: 0; }
+  .badge.web  { background: rgba(59,130,246,.2); color: #60a5fa; }
+  .badge.prog { background: rgba(245,158,11,.2); color: #fbbf24; }
+  .card-actions { display: flex; align-items: center; gap: 3px; flex-shrink: 0; }
+  .btn-login { background: var(--accent); color: #fff; padding: 5px 11px; border-radius: 6px; font-size: 12px; font-weight: 700; transition: background .14s, transform .1s; }
+  .btn-login:hover { background: var(--accentH); }
+  .btn-login:active { transform: scale(.97); }
+
+  /* Edit */
+  .form-scroll { flex: 1; overflow-y: auto; padding: 14px 14px 8px; display: flex; flex-direction: column; gap: 13px; }
+  .form-scroll::-webkit-scrollbar { width: 4px; }
+  .form-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+  .field input { background: var(--surf); border: 1px solid var(--border); border-radius: 7px; color: var(--text); font-size: 13px; font-family: inherit; padding: 7px 10px; outline: none; transition: border-color .14s; }
+  .field input:focus { border-color: var(--accent); }
+  .field input.invalid { border-color: var(--red); }
+  .field .hint { font-size: 11px; color: var(--muted); line-height: 1.5; }
+  .row { display: flex; gap: 9px; }
+  .row .field { flex: 1; }
+  .check { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--text); cursor: pointer; background: var(--surf); border: 1px solid var(--border); border-radius: 7px; padding: 9px 11px; }
+  .check input { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
+  .check .sub { font-size: 11px; font-weight: 400; color: var(--muted); }
+  .sep { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; padding-bottom: 2px; border-bottom: 1px solid var(--border); }
+  .type-toggle { display: flex; background: var(--surf); border: 1px solid var(--border); border-radius: 8px; padding: 3px; gap: 3px; }
+  .type-btn { flex: 1; padding: 6px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; color: var(--muted); background: transparent; transition: background .14s, color .14s; }
+  .type-btn.on { background: var(--accent); color: #fff; }
+  .input-row { display: flex; gap: 6px; }
+  .input-row input { flex: 1; }
+  .input-row .btn-sm { flex-shrink: 0; align-self: flex-start; padding: 8px 11px; }
+  .adv-toggle { background: transparent; border: 1px dashed var(--border); color: var(--muted); font-size: 12px; padding: 6px; border-radius: 6px; width: 100%; text-align: center; transition: color .14s, border-color .14s; }
+  .adv-toggle:hover { color: var(--text); border-color: var(--accent); }
+  .adv-block { display: none; flex-direction: column; gap: 13px; }
+  .adv-block.open { display: flex; }
+  .form-footer { padding: 10px 14px; border-top: 1px solid var(--border); display: flex; gap: 8px; flex-shrink: 0; }
+  .form-footer .btn, .form-footer .btn-outline { flex: 1; padding: 9px; font-size: 13px; }
+
+  /* Credentials */
+  #cred-panel .hdr { background: rgba(34,197,94,.06); border-bottom-color: rgba(34,197,94,.2); }
+  #cred-panel h2 { color: var(--green); }
+  .cred-body { flex: 1; overflow-y: auto; padding: 16px 14px; display: flex; flex-direction: column; gap: 11px; }
+  .cred-hint { font-size: 12px; color: var(--muted); background: var(--surf); border: 1px solid var(--border); border-radius: 7px; padding: 9px 12px; line-height: 1.6; }
+  .cred-field { background: var(--surf); border: 1px solid var(--border); border-radius: var(--r); padding: 11px 13px; display: flex; align-items: center; gap: 10px; cursor: pointer; transition: border-color .14s; position: relative; }
+  .cred-field:hover { border-color: var(--accent); }
+  .cred-field:active { background: var(--surf2); }
+  .cred-field-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
+  .cred-field-value { font-size: 14px; font-weight: 600; margin-top: 2px; font-family: monospace; }
+  .cred-field-info { flex: 1; min-width: 0; }
+  .cred-field-value.masked { letter-spacing: 4px; font-size: 16px; color: var(--muted); }
+  .cred-copy-icon { color: var(--muted); font-size: 14px; flex-shrink: 0; transition: color .14s; }
+  .cred-field:hover .cred-copy-icon { color: var(--accent); }
+  .cred-copied { position: absolute; top: 8px; right: 10px; background: var(--green); color: #fff; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 4px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  .cred-copied.show { opacity: 1; }
+  .cred-footer { padding: 10px 14px; border-top: 1px solid var(--border); display: flex; gap: 8px; flex-shrink: 0; }
+  .cred-footer .btn { flex: 1; }
+
+  /* Toast */
+  #toast { position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%) translateY(50px); background: #1a3a1a; border: 1px solid var(--green); color: var(--green); padding: 7px 16px; border-radius: 18px; font-size: 12px; font-weight: 700; pointer-events: none; opacity: 0; transition: transform .18s, opacity .18s; z-index: 999; white-space: nowrap; }
+  #toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+  #toast.err  { background: #3a1a1a; border-color: var(--red); color: var(--red); }
+</style>
+</head>
+<body>
+
+<!-- ══════════════ DOCK ══════════════ -->
+<div id="dock">
+  <div class="grip" title="Verschieben">⠿</div>
+  <div id="dock-icons"></div>
+  <div class="dock-tools">
+    <span class="ver" id="ver" title="LoginPilot-Version">v?</span>
+    <button class="tool accent" title="Login hinzufügen" onclick="openEdit(null,'website')">＋</button>
+    <button class="tool" title="Verwalten" onclick="showPanel('list-panel')">⚙</button>
+    <button class="tool" id="pin-btn" title="Immer im Vordergrund" onclick="togglePin()">📌</button>
+    <button class="tool close" title="In den Infobereich" onclick="window.api.hideWindow()">✕</button>
+  </div>
+</div>
+
+<!-- ══════════════ MANAGER ══════════════ -->
+<div id="manager">
+
+  <!-- LISTE / VERWALTUNG -->
+  <div id="list-panel" class="panel active">
+    <div class="hdr">
+      <button class="btn-ghost" title="Zuklappen" onclick="collapse()">▾</button>
+      <h2>Verwalten</h2>
+      <button class="btn-sm" onclick="openEdit(null,'website')">🌐 Web</button>
+      <button class="btn-sm" onclick="openEdit(null,'program')">🖥 App</button>
+    </div>
+    <div id="login-list"></div>
+    <div class="list-footer">
+      <button class="footer-btn" id="autostart-btn" onclick="toggleAutostart()" title="Autostart beim Windows-Start">⚡ Autostart</button>
+      <button class="footer-btn" onclick="doCreateShortcut()" title="Desktop-Verknüpfung erstellen">🔗 Desktop-Link</button>
+    </div>
+  </div>
+
+  <!-- EDIT -->
+  <div id="edit-panel" class="panel">
+    <div class="hdr">
+      <button class="btn-ghost" onclick="showPanel('list-panel')">←</button>
+      <h2 id="edit-title">Login erfassen</h2>
+    </div>
+    <div class="form-scroll">
+      <div class="field">
+        <label>Typ</label>
+        <div class="type-toggle">
+          <button class="type-btn on" id="type-web"  onclick="setType('website')">🌐 Webseite</button>
+          <button class="type-btn"    id="type-prog" onclick="setType('program')">🖥 Programm</button>
+        </div>
+      </div>
+      <div class="row">
+        <div class="field" style="flex: 0 0 68px;">
+          <label>Emoji</label>
+          <input id="f-icon" type="text" placeholder="🌐" maxlength="4">
+        </div>
+        <div class="field">
+          <label>Name *</label>
+          <input id="f-name" type="text" placeholder="z. B. PostFinance">
+        </div>
+      </div>
+      <div class="field" id="row-url">
+        <label>Login-URL *</label>
+        <input id="f-url" type="url" placeholder="https://…">
+      </div>
+      <div class="field" id="row-autosubmit">
+        <label class="check">
+          <input id="f-autosubmit" type="checkbox" checked>
+          <span>Automatisch anmelden<br><span class="sub">Button klicken / Enter drücken – nur 2FA bleibt für dich</span></span>
+        </label>
+      </div>
+      <div class="field" id="row-submitkw">
+        <label>Stichwort zum Klicken <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">(optional)</span></label>
+        <input id="f-submitKw" type="text" placeholder="z. B. Anmelden, Login, Abacus-ERP" spellcheck="false" autocomplete="off">
+        <div class="hint">Text vom Button oder von der Kachel, die geklickt werden soll (z. B. auf einer Auswahlseite „Abacus-ERP").</div>
+      </div>
+      <div class="field" id="row-exe" style="display:none">
+        <label>Programm-Pfad *</label>
+        <div class="input-row">
+          <input id="f-exe" type="text" placeholder="C:\Programme\…\app.exe" spellcheck="false">
+          <button class="btn-sm" onclick="pickExe()">Durchsuchen</button>
+        </div>
+      </div>
+      <div class="sep">Zugangsdaten</div>
+      <div class="field">
+        <label>Benutzername</label>
+        <input id="f-user" type="text" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="field">
+        <label>Passwort</label>
+        <input id="f-pass" type="password" autocomplete="off">
+        <div class="hint">Gespeichert via Windows DPAPI / macOS Keychain.</div>
+      </div>
+      <div class="sep">Drittes Merkmal <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div>
+      <div class="row">
+        <div class="field" style="flex: 0 0 130px;">
+          <label>Bezeichnung</label>
+          <input id="f-extra-label" type="text" placeholder="z. B. Mandant">
+        </div>
+        <div class="field">
+          <label>Wert</label>
+          <input id="f-extra-val" type="text" autocomplete="off" spellcheck="false">
+        </div>
+      </div>
+
+      <!-- Programm-Autotippen (nur Typ Programm) -->
+      <div id="autotype-wrap" style="display:none">
+        <div class="sep">Automatisch ins Programm tippen</div>
+        <div class="field">
+          <label class="check">
+            <input id="f-autotype" type="checkbox" onchange="toggleAutotype()">
+            <span>Zugangsdaten ins Login-Fenster tippen<br><span class="sub">Nach dem Start werden Passwort (und optional Benutzer) ins gerade offene Fenster getippt.</span></span>
+          </label>
+        </div>
+        <div class="adv-block" id="autotype-block">
+          <label class="check">
+            <input id="f-typeuser" type="checkbox">
+            <span>Benutzer zuerst tippen, dann Tab<br><span class="sub">Sonst nur das Passwort (z. B. Master-Passwort).</span></span>
+          </label>
+          <label class="check">
+            <input id="f-typeenter" type="checkbox" checked>
+            <span>Mit Enter bestätigen</span>
+          </label>
+          <div class="row">
+            <div class="field" style="flex:0 0 150px">
+              <label>Wartezeit (ms)</label>
+              <input id="f-typedelay" type="number" min="0" max="15000" step="100" value="1200">
+              <div class="hint">Bis das Login-Fenster offen ist.</div>
+            </div>
+            <div class="field">
+              <label>Fenstertitel (optional)</label>
+              <input id="f-windowtitle" type="text" placeholder="z. B. Password Depot" spellcheck="false" autocomplete="off">
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="adv-wrap">
+        <button class="adv-toggle" id="adv-btn" onclick="toggleAdv()">⚙ Erweiterte Einstellungen (Selektoren)</button>
+        <div class="adv-block" id="adv-block">
+          <div style="height:6px"></div>
+          <div class="field">
+            <label>Benutzername-Selektor</label>
+            <input id="f-userSel" type="text" placeholder='input[name="login"]' spellcheck="false" autocomplete="off">
+            <div class="hint">Leer = automatisch erstes sichtbares Textfeld.</div>
+          </div>
+          <div class="field">
+            <label>Passwort-Selektor</label>
+            <input id="f-passSel" type="text" placeholder='input[type="password"]' spellcheck="false" autocomplete="off">
+          </div>
+          <div class="field">
+            <label>Anmelde-Button-Selektor</label>
+            <input id="f-submitSel" type="text" placeholder='button[type="submit"]' spellcheck="false" autocomplete="off">
+            <div class="hint">Leer = kein Auto-Submit (du drückst Enter).</div>
+          </div>
+          <div class="field" style="max-width:130px">
+            <label>Verzögerung (ms)</label>
+            <input id="f-delay" type="number" min="0" max="15000" step="100" value="600">
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="form-footer">
+      <button class="btn-outline" onclick="showPanel('list-panel')">Abbrechen</button>
+      <button class="btn" onclick="saveEdit()">Speichern</button>
+    </div>
+  </div>
+
+  <!-- CREDENTIALS -->
+  <div id="cred-panel" class="panel">
+    <div class="hdr">
+      <button class="btn-ghost" onclick="collapse()">▾</button>
+      <h2 id="cred-title">Login gestartet</h2>
+    </div>
+    <div class="cred-body">
+      <div class="cred-hint" id="cred-hint"></div>
+      <div class="cred-field" id="cred-user-row" onclick="copyField('cred-user-val', this)">
+        <div class="cred-field-info">
+          <div class="cred-field-label">Benutzername</div>
+          <div class="cred-field-value" id="cred-user-val"></div>
+        </div>
+        <span class="cred-copy-icon">⎘</span>
+        <span class="cred-copied">Kopiert!</span>
+      </div>
+      <div class="cred-field" id="cred-pass-row" onclick="copyField('cred-pass-real', this)">
+        <div class="cred-field-info">
+          <div class="cred-field-label">Passwort</div>
+          <div class="cred-field-value masked">••••••••</div>
+          <span id="cred-pass-real" style="display:none"></span>
+        </div>
+        <span class="cred-copy-icon">⎘</span>
+        <span class="cred-copied">Kopiert!</span>
+      </div>
+      <div class="cred-field" id="cred-extra-row" onclick="copyField('cred-extra-val', this)">
+        <div class="cred-field-info">
+          <div class="cred-field-label" id="cred-extra-label">Drittes Merkmal</div>
+          <div class="cred-field-value" id="cred-extra-val"></div>
+        </div>
+        <span class="cred-copy-icon">⎘</span>
+        <span class="cred-copied">Kopiert!</span>
+      </div>
+    </div>
+    <div class="cred-footer">
+      <button class="btn" onclick="collapse()">Fertig</button>
+    </div>
+  </div>
+
+</div><!-- /manager -->
+
+<div id="toast"></div>
+
+<script>
+'use strict';
+
+const DOCK_H = 64, MANAGE_H = 660;
+
+let logins   = [];
+let editId   = null;
+let editType = 'website';
+let advOpen  = false;
+
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', async () => {
+  logins = await window.api.loadLogins();
+  renderDock();
+  renderList();
+  window.api.getVersion().then(v => { const el = document.getElementById('ver'); if (el) el.textContent = 'v' + v; });
+  window.api.getAutostart().then(setAutostartBtn);
+  window.api.getPin().then(on => document.getElementById('pin-btn').classList.toggle('on', !!on));
+  window.api.onShowCredentials(login => showCredPanel(login));
+  window.api.onOpenManage(() => showPanel('list-panel'));
+});
+
+// ── Manager auf/zu ─────────────────────────────────────────────────────────────
+function ensureOpen() {
+  if (!document.body.classList.contains('open')) {
+    document.body.classList.add('open');
+    window.api.setHeight(MANAGE_H);
+  }
+}
+function showPanel(id) {
+  ensureOpen();
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+function collapse() {
+  document.body.classList.remove('open');
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('list-panel').classList.add('active');
+  window.api.setHeight(DOCK_H);
+}
+
+// ── Dock rendern ───────────────────────────────────────────────────────────────
+function renderDock() {
+  const el = document.getElementById('dock-icons');
+  if (!logins.length) {
+    el.innerHTML = '<span class="dock-empty">Noch keine Logins – mit <b>＋</b> hinzufügen</span>';
+    return;
+  }
+  el.innerHTML = logins.map(l => {
+    const isWeb = l.type !== 'program';
+    const ico = esc(l.icon || (isWeb ? '🌐' : '🖥'));
+    return `<button class="dock-btn" data-id="${l.id}" title="${esc(l.name)} – Klick zum Starten (Rechtsklick: bearbeiten)"
+              onclick="startLogin('${l.id}')" oncontextmenu="event.preventDefault();editLogin('${l.id}')">
+              <span class="di">${ico}</span><span class="dl">${esc(l.name)}</span>
+            </button>`;
+  }).join('');
+}
+
+// ── Login starten (von Dock oder Liste) ────────────────────────────────────────
+async function startLogin(id) {
+  const login = logins.find(l => l.id === id);
+  if (!login) return;
+  const btn = document.querySelector(`.dock-btn[data-id="${id}"]`);
+  btn?.classList.add('busy');
+
+  if (login.type === 'program') {
+    const r = await window.api.launchProgram(login);
+    btn?.classList.remove('busy');
+    if (!r?.ok) { toast('Fehler: ' + (r?.error || 'Unbekannt'), true); return; }
+    if (login.autoType) toast('Programm gestartet – wird getippt…');
+    else showCredPanel(login);
+  } else {
+    const r = await window.api.startLogin(login);
+    setTimeout(() => btn?.classList.remove('busy'), 2500);
+    if (!r?.ok) toast('Fehler: ' + (r?.error || 'Unbekannt'), true);
+  }
+}
+
+function editLogin(id) { showPanel('list-panel'); openEdit(id); }
+
+// ── Liste (Verwaltung) ─────────────────────────────────────────────────────────
+function renderList() {
+  const el = document.getElementById('login-list');
+  if (!logins.length) {
+    el.innerHTML = `<div class="empty">
+      <span class="ico">🔑</span>
+      Noch nichts erfasst.<br>
+      <strong>🌐 Web</strong> für Webseiten,<br>
+      <strong>🖥 App</strong> für Desktop-Programme.
+    </div>`;
+    return;
+  }
+  el.innerHTML = logins.map(l => {
+    const isWeb = l.type !== 'program';
+    const sub   = isWeb ? stripProto(l.url) : (l.exePath ? shortPath(l.exePath) : '—');
+    return `
+    <div class="card">
+      <div class="card-ico">${esc(l.icon || (isWeb ? '🌐' : '🖥'))}</div>
+      <div class="card-info">
+        <div class="card-name">${esc(l.name)}</div>
+        <div class="card-sub">
+          <span class="badge ${isWeb ? 'web' : 'prog'}">${isWeb ? 'Web' : 'App'}</span>
+          ${esc(sub)}
+        </div>
+      </div>
+      <div class="card-actions">
+        <button class="btn-login" onclick="startLogin('${l.id}')">▶</button>
+        <button class="icon-btn" onclick="openEdit('${l.id}')" title="Bearbeiten">✏</button>
+        <button class="icon-btn red" onclick="delLogin('${l.id}')" title="Löschen">🗑</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── Credential-Panel (Programme) ───────────────────────────────────────────────
+function showCredPanel(login) {
+  document.getElementById('cred-title').textContent = login.name + ' – Zugangsdaten';
+  document.getElementById('cred-hint').textContent =
+    `${login.name} wurde gestartet. Klicke auf ein Feld, um es zu kopieren, dann im Programm einfügen (Ctrl+V).`;
+
+  const userRow = document.getElementById('cred-user-row');
+  document.getElementById('cred-user-val').textContent = login.username || '';
+  userRow.style.display = login.username ? '' : 'none';
+
+  const passRow = document.getElementById('cred-pass-row');
+  document.getElementById('cred-pass-real').textContent = login.password || '';
+  passRow.style.display = login.password ? '' : 'none';
+
+  const extraRow = document.getElementById('cred-extra-row');
+  if (login.extraValue) {
+    document.getElementById('cred-extra-label').textContent = login.extraLabel || 'Drittes Merkmal';
+    document.getElementById('cred-extra-val').textContent = login.extraValue;
+    extraRow.style.display = '';
+  } else {
+    extraRow.style.display = 'none';
+  }
+  showPanel('cred-panel');
+}
+
+function copyField(valueElemId, row) {
+  const val = document.getElementById(valueElemId).textContent;
+  if (!val) return;
+  navigator.clipboard.writeText(val).then(() => {
+    const badge = row.querySelector('.cred-copied');
+    badge.classList.add('show');
+    setTimeout(() => badge.classList.remove('show'), 1400);
+  });
+}
+
+// ── Edit ───────────────────────────────────────────────────────────────────────
+function openEdit(id, forceType) {
+  editId = id || null;
+  const l = id ? logins.find(x => x.id === id) : null;
+  const t = forceType || l?.type || 'website';
+
+  document.getElementById('edit-title').textContent = l ? l.name + ' bearbeiten' : (t === 'program' ? 'Programm erfassen' : 'Webseite erfassen');
+  document.getElementById('f-icon').value        = l?.icon        || '';
+  document.getElementById('f-name').value        = l?.name        || '';
+  document.getElementById('f-url').value         = l?.url         || '';
+  document.getElementById('f-exe').value         = l?.exePath     || '';
+  document.getElementById('f-user').value        = l?.username    || '';
+  document.getElementById('f-pass').value        = l?.password    || '';
+  document.getElementById('f-extra-label').value = l?.extraLabel  || '';
+  document.getElementById('f-extra-val').value   = l?.extraValue  || '';
+  document.getElementById('f-userSel').value     = l?.userSelector   || '';
+  document.getElementById('f-passSel').value     = l?.passSelector   || '';
+  document.getElementById('f-submitSel').value   = l?.submitSelector || '';
+  document.getElementById('f-delay').value       = l?.delay ?? 600;
+  document.getElementById('f-autosubmit').checked = l?.autoSubmit !== false;
+  document.getElementById('f-submitKw').value     = l?.submitKeyword || '';
+  document.getElementById('f-autotype').checked   = !!l?.autoType;
+  document.getElementById('f-typeuser').checked   = !!l?.typeUser;
+  document.getElementById('f-typeenter').checked  = l?.typeEnter !== false;
+  document.getElementById('f-typedelay').value    = l?.typeDelay ?? 1200;
+  document.getElementById('f-windowtitle').value  = l?.windowTitle || '';
+  toggleAutotype();
+
+  setType(t);
+  setAdv(!!(l?.userSelector || l?.passSelector || l?.submitSelector));
+  showPanel('edit-panel');
+}
+
+function setType(t) {
+  editType = t;
+  document.getElementById('type-web').classList.toggle('on', t === 'website');
+  document.getElementById('type-prog').classList.toggle('on', t === 'program');
+  document.getElementById('row-url').style.display        = t === 'website' ? '' : 'none';
+  document.getElementById('row-autosubmit').style.display = t === 'website' ? '' : 'none';
+  document.getElementById('row-submitkw').style.display    = t === 'website' ? '' : 'none';
+  document.getElementById('row-exe').style.display        = t === 'program' ? '' : 'none';
+  document.getElementById('adv-wrap').style.display       = t === 'website' ? '' : 'none';
+  document.getElementById('autotype-wrap').style.display  = t === 'program' ? '' : 'none';
+}
+
+function toggleAutotype() {
+  const on = document.getElementById('f-autotype').checked;
+  document.getElementById('autotype-block').classList.toggle('open', on);
+}
+
+async function pickExe() {
+  const p = await window.api.pickExe();
+  if (p) document.getElementById('f-exe').value = p;
+}
+
+function saveEdit() {
+  const name = document.getElementById('f-name').value.trim();
+  const url  = document.getElementById('f-url').value.trim();
+  const exe  = document.getElementById('f-exe').value.trim();
+
+  if (!name) { shake('f-name'); return; }
+  if (editType === 'website' && !url) { shake('f-url'); return; }
+  if (editType === 'program' && !exe) { shake('f-exe'); return; }
+
+  const entry = {
+    id:             editId || uid(),
+    type:           editType,
+    icon:           document.getElementById('f-icon').value.trim() || (editType === 'program' ? '🖥' : '🌐'),
+    name,
+    url:            editType === 'website' ? url : '',
+    exePath:        editType === 'program' ? exe : '',
+    username:       document.getElementById('f-user').value,
+    password:       document.getElementById('f-pass').value,
+    extraLabel:     document.getElementById('f-extra-label').value.trim(),
+    extraValue:     document.getElementById('f-extra-val').value,
+    userSelector:   document.getElementById('f-userSel').value.trim(),
+    passSelector:   document.getElementById('f-passSel').value.trim(),
+    submitSelector: document.getElementById('f-submitSel').value.trim(),
+    autoSubmit:     document.getElementById('f-autosubmit').checked,
+    submitKeyword:  document.getElementById('f-submitKw').value.trim(),
+    delay:          parseInt(document.getElementById('f-delay').value) || 600,
+    autoType:       document.getElementById('f-autotype').checked,
+    typeUser:       document.getElementById('f-typeuser').checked,
+    typeEnter:      document.getElementById('f-typeenter').checked,
+    typeDelay:      parseInt(document.getElementById('f-typedelay').value) || 1200,
+    windowTitle:    document.getElementById('f-windowtitle').value.trim(),
+  };
+
+  logins = editId ? logins.map(l => l.id === editId ? entry : l) : [...logins, entry];
+  window.api.saveLogins(logins);
+  renderDock();
+  renderList();
+  showPanel('list-panel');
+  toast('Gespeichert ✓');
+}
+
+function delLogin(id) {
+  if (!confirm('Eintrag wirklich löschen?')) return;
+  logins = logins.filter(l => l.id !== id);
+  window.api.saveLogins(logins);
+  renderDock();
+  renderList();
+  toast('Gelöscht');
+}
+
+// ── Erweiterte Einstellungen ────────────────────────────────────────────────────
+function setAdv(open) {
+  advOpen = open;
+  document.getElementById('adv-block').classList.toggle('open', open);
+  document.getElementById('adv-btn').textContent = open
+    ? '⚙ Erweiterte Einstellungen ausblenden'
+    : '⚙ Erweiterte Einstellungen (Selektoren)';
+}
+function toggleAdv() { setAdv(!advOpen); }
+
+// ── Pin ─────────────────────────────────────────────────────────────────────────
+async function togglePin() {
+  const cur = await window.api.getPin();
+  const next = !cur;
+  await window.api.setPin(next);
+  document.getElementById('pin-btn').classList.toggle('on', next);
+  toast(next ? 'Immer im Vordergrund ✓' : 'Nicht mehr im Vordergrund');
+}
+
+// ── Hilfen ───────────────────────────────────────────────────────────────────────
+function esc(s) { return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function stripProto(u) { return (u || '').replace(/^https?:\/\//, ''); }
+function shortPath(p) {
+  if (!p) return '';
+  const parts = p.replace(/\\/g, '/').split('/');
+  return parts.length > 2 ? '…/' + parts.slice(-2).join('/') : p;
+}
+function shake(id) {
+  const el = document.getElementById(id);
+  el.classList.add('invalid'); el.focus();
+  setTimeout(() => el.classList.remove('invalid'), 1600);
+}
+let toastTimer;
+function toast(msg, err = false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'show' + (err ? ' err' : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.className = ''; }, 2500);
+}
+
+// ── Autostart / Desktop-Link ─────────────────────────────────────────────────────
+function setAutostartBtn(on) {
+  const btn = document.getElementById('autostart-btn');
+  if (!btn) return;
+  btn.textContent = on ? '⚡ Autostart ✓' : '⚡ Autostart';
+  btn.classList.toggle('on', !!on);
+}
+async function toggleAutostart() {
+  const next = !(await window.api.getAutostart());
+  await window.api.setAutostart(next);
+  setAutostartBtn(next);
+  toast(next ? 'Autostart aktiviert ✓' : 'Autostart deaktiviert');
+}
+async function doCreateShortcut() {
+  const r = await window.api.createShortcut();
+  toast(r?.ok ? 'Desktop-Verknüpfung erstellt ✓' : 'Fehler: ' + (r?.error || 'Unbekannt'), !r?.ok);
+}
+</script>
+</body>
+</html>
