@@ -38,7 +38,18 @@ export default function DebitorenRechnung() {
   const [kundeId, setKundeId] = useState('');
   const [titel, setTitel] = useState('');
   const [belegdatum, setBelegdatum] = useState(todayISO());
+  // Steuert die Periode, in der gebucht wird - getrennt vom Belegdatum, damit
+  // eine Rechnung mit altem Belegdatum in einer offenen Periode verbucht werden
+  // kann (gleiche Mechanik wie bei den Kreditoren).
+  const [buchungsdatum, setBuchungsdatum] = useState(todayISO());
   const [zahlungsfrist, setZahlungsfrist] = useState(30);
+
+  // Das Buchungsdatum zieht mit dem Belegdatum mit, solange es niemand
+  // eigenstaendig gesetzt hat.
+  const handleBelegdatumChange = (val) => {
+    setBuchungsdatum(prev => (prev === belegdatum ? val : prev));
+    setBelegdatum(val);
+  };
   const [rows, setRows] = useState([newRow()]);
 
   // Geladener Beleg (Edit/View)
@@ -81,6 +92,7 @@ export default function DebitorenRechnung() {
       setKundeId(b.kunde_id || '');
       setTitel(b.titel || '');
       setBelegdatum(b.belegdatum || todayISO());
+      setBuchungsdatum(b.buchungsdatum || b.belegdatum || todayISO());
       setZahlungsfrist(b.zahlungsbedingung_tage ?? 30);
       const pos = (b.positionen || []).sort((a, c) => (a.position || 0) - (c.position || 0));
       setRows(pos.length ? pos.map(p => ({
@@ -176,7 +188,7 @@ export default function DebitorenRechnung() {
       // Gutschrift: Kopfbeträge negativ (mindert offene Debitoren-Posten, wie beim Storno).
       // Positionen bleiben positiv – fibu_debitoren_verbuchen dreht die Buchungsrichtung.
       const sign = isGutschrift ? -1 : 1;
-      const beleg = { kunde_id: kundeId, belegtyp, titel: titel || null, belegdatum, valutadatum: belegdatum,
+      const beleg = { kunde_id: kundeId, belegtyp, titel: titel || null, belegdatum, buchungsdatum, valutadatum: belegdatum,
         faelligkeit, zahlungsbedingung_tage: parseInt(zahlungsfrist) || null, waehrung: 'CHF',
         betrag_netto: sign * totals.netto, betrag_mwst: sign * totals.mwst, betrag_brutto: sign * totals.brutto, status };
       if (mode === 'edit') {
@@ -301,7 +313,7 @@ export default function DebitorenRechnung() {
 
       <div style={{ padding: 24}}>
         <div style={{ ...card, padding: 20 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 2fr 1fr 1fr', gap: 16, marginBottom: 18 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1.9fr 1fr 1fr 1fr', gap: 16, marginBottom: 18 }}>
             <div><label style={lbl}>Belegart</label>
               <select style={inp} value={belegtyp} disabled={readOnly} onChange={e => setBelegtyp(e.target.value)}>
                 <option value="rechnung">Rechnung</option>
@@ -314,7 +326,22 @@ export default function DebitorenRechnung() {
                 {kunden.map(k => <option key={k.id} value={k.id}>{k.name}{k.ort ? `, ${k.ort}` : ''}</option>)}
               </select>
             </div>
-            <div><label style={lbl}>Belegdatum</label><input type="date" style={inp} value={belegdatum} onChange={e => setBelegdatum(e.target.value)} disabled={readOnly} /></div>
+            <div><label style={lbl}>Belegdatum</label><input type="date" style={inp} value={belegdatum} onChange={e => handleBelegdatumChange(e.target.value)} disabled={readOnly} /></div>
+            <div>
+              <label style={lbl}>
+                Buchungsdatum
+                <span style={{ fontWeight: 400, color: '#94a394', marginLeft: 4, fontSize: 10.5 }}>steuert Verbuchungsjahr</span>
+              </label>
+              <input type="date" disabled={readOnly}
+                style={{ ...inp, borderColor: buchungsdatum !== belegdatum ? '#7a5aaa' : undefined }}
+                value={buchungsdatum}
+                onChange={e => setBuchungsdatum(e.target.value)} />
+              {buchungsdatum !== belegdatum && (
+                <div style={{ fontSize: 10.5, color: '#7a5aaa', marginTop: 3 }}>
+                  ※ Buchungsdatum weicht vom Belegdatum ab
+                </div>
+              )}
+            </div>
             <div><label style={lbl}>Fällig in (Tagen) → {faelligkeit}</label><input type="number" style={inp} value={zahlungsfrist} onChange={e => setZahlungsfrist(e.target.value)} disabled={readOnly} /></div>
             <div style={{ gridColumn: '1 / 5' }}><label style={lbl}>{isGutschrift ? 'Gutschrift-Grund / Titel' : 'Rechnungstitel'}</label><input style={inp} value={titel} onChange={e => setTitel(e.target.value)} placeholder="z.B. Beratung & Material Q2 2026" disabled={readOnly} /></div>
           </div>
