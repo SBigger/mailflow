@@ -48,6 +48,7 @@ function periodeLabel(p) {
 }
 const KONTO_STATUS_LABEL = { offen: "Offen", erledigt: "Erledigt", pendent: "Rückfrage" };
 const KONTO_STATUS_COLOR = { offen: "var(--faint)", erledigt: "#16a34a", pendent: "#dc2626" };
+const ABSCHLUSS_STATUS_LABEL = { in_arbeit: "Entwurf", abgeschlossen: "Abgeschlossen", genehmigt: "Genehmigt" };
 // Excel-Vorschau: Blatt-Tabs + Tabelle (erste Zeile als Kopf), max. 500 Zeilen
 function ExcelTable({ preview, onSheet }) {
   const idx = preview.sheetIdx || 0;
@@ -131,6 +132,7 @@ export default function Portal() {
   const [abschlussPeriods, setAbschlussPeriods] = useState(null); // null = noch nicht geladen
   const [abschlussPeriod, setAbschlussPeriod] = useState(null);   // gewählte abschluss_id
   const [abschlussKonten, setAbschlussKonten] = useState([]);
+  const [abschlussPeriodeInfo, setAbschlussPeriodeInfo] = useState(null); // { status, locked }
   const [abschlussLoading, setAbschlussLoading] = useState(false);
   const [kontoUpload, setKontoUpload] = useState({}); // { [kontoId]: {busy, ok, msg} }
   const kontoFileInputRef = useRef(null);
@@ -363,7 +365,8 @@ export default function Portal() {
     try {
       const data = await callPortal("abschluss-pendenzen", { abschluss_id: abschlussId });
       setAbschlussKonten(data.konten || []);
-    } catch (e) { setError(e.message); setAbschlussKonten([]); }
+      setAbschlussPeriodeInfo(data.periode || null);
+    } catch (e) { setError(e.message); setAbschlussKonten([]); setAbschlussPeriodeInfo(null); }
     finally { setAbschlussLoading(false); }
   }
 
@@ -379,6 +382,7 @@ export default function Portal() {
   // damit die Treuhänderin beim definitiven Einordnen sofort sieht, wofür die
   // Datei gedacht war.
   async function handleKontoFiles(konto, fileList) {
+    if (abschlussPeriodeInfo?.locked) return; // Abschluss ist fertig, kein Nachliefern mehr nötig
     const files = Array.from(fileList || []);
     if (!files.length) return;
     const tooBig = files.find(f => f.size > MAX_UPLOAD);
@@ -431,7 +435,7 @@ export default function Portal() {
   // eine Kategorie, die es beim neuen Mandanten gar nicht gibt.
   useEffect(() => { setSelCat(null); setSelYear(null); setSelTag(null); setQ(""); }, [selCustomer]);
   // Andere Firma → andere Abschlüsse, neu laden statt die alten weiterzuzeigen.
-  useEffect(() => { setAbschlussPeriods(null); setAbschlussPeriod(null); setAbschlussKonten([]); }, [selCustomer]);
+  useEffect(() => { setAbschlussPeriods(null); setAbschlussPeriod(null); setAbschlussKonten([]); setAbschlussPeriodeInfo(null); }, [selCustomer]);
 
   const catTags = useMemo(() => {
     const ids = [...new Set(scopedDocs.filter(d => d.category === selCat).flatMap(d => d.tag_ids || []))];
@@ -700,7 +704,8 @@ export default function Portal() {
         </div>
       )}
 
-      {/* Jahresabschluss / Zwischenabschluss — nur freigegebene Perioden, nur offene Konten */}
+      {/* Jahresabschluss / Zwischenabschluss — der Kunde arbeitet am Entwurf mit;
+          sobald abgeschlossen/genehmigt, ist nur noch das Nachliefern gesperrt. */}
       {abschlussOpen && (
         <div className="overlay" onClick={e => { if (e.target.classList.contains("overlay")) setAbschlussOpen(false); }}>
           <div className="modal">
@@ -710,14 +715,21 @@ export default function Portal() {
                 <b style={{ display: "block", fontSize: 15, fontWeight: 600 }}>Ihr Abschluss</b>
                 <small style={{ color: "var(--faint)", fontSize: 12.5 }}>{customerName}</small>
               </div>
+              {abschlussPeriodeInfo && (
+                <span style={{ marginLeft: "auto", fontSize: 11.5, fontWeight: 700, padding: "3px 10px", borderRadius: 20,
+                  color: abschlussPeriodeInfo.locked ? "#16a34a" : "var(--accent)",
+                  background: abschlussPeriodeInfo.locked ? "#16a34a1a" : "color-mix(in srgb, var(--accent) 12%, transparent)" }}>
+                  {ABSCHLUSS_STATUS_LABEL[abschlussPeriodeInfo.status] || abschlussPeriodeInfo.status}
+                </span>
+              )}
               {abschlussPeriods && abschlussPeriods.length > 1 && (
                 <select value={abschlussPeriod || ""} onChange={e => loadAbschlussPendenzen(e.target.value)}
-                  style={{ marginLeft: "auto", background: "transparent", color: "inherit", font: "inherit", fontWeight: 600,
+                  style={{ marginLeft: abschlussPeriodeInfo ? 8 : "auto", background: "transparent", color: "inherit", font: "inherit", fontWeight: 600,
                     border: "1px solid var(--faint)", borderRadius: 8, padding: "5px 8px", cursor: "pointer" }}>
                   {abschlussPeriods.map(p => <option key={p.id} value={p.id}>{periodeLabel(p)}</option>)}
                 </select>
               )}
-              <button className="closebtn" style={abschlussPeriods && abschlussPeriods.length > 1 ? {} : { marginLeft: "auto" }}
+              <button className="closebtn" style={abschlussPeriodeInfo || (abschlussPeriods && abschlussPeriods.length > 1) ? {} : { marginLeft: "auto" }}
                 onClick={() => setAbschlussOpen(false)}><X size={18} /></button>
             </div>
 
@@ -727,8 +739,8 @@ export default function Portal() {
               ) : abschlussPeriods && abschlussPeriods.length === 0 ? (
                 <div className="empty" style={{ padding: "40px 20px" }}>
                   <BookCheck size={34} style={{ color: "var(--faint)" }} />
-                  <p style={{ margin: "12px 0 4px", fontWeight: 600, color: "var(--ink)" }}>Noch kein freigegebener Abschluss</p>
-                  <p style={{ margin: 0, fontSize: 13.5 }}>Sobald Ihre Treuhänderin einen Abschluss freigibt, erscheint er hier.</p>
+                  <p style={{ margin: "12px 0 4px", fontWeight: 600, color: "var(--ink)" }}>Noch kein Abschluss vorhanden</p>
+                  <p style={{ margin: 0, fontSize: 13.5 }}>Sobald Ihre Treuhänderin einen Abschluss für Sie anlegt, erscheint er hier.</p>
                 </div>
               ) : abschlussKonten.length === 0 ? (
                 <div className="empty" style={{ padding: "40px 20px" }}>
@@ -761,11 +773,15 @@ export default function Portal() {
                       )}
 
                       <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 10 }}>
-                        <button className="ghost" style={{ padding: "5px 10px", fontSize: 12.5 }}
-                          disabled={kontoUpload[k.id]?.busy}
-                          onClick={() => { setKontoUploadTarget(k); kontoFileInputRef.current?.click(); }}>
-                          {kontoUpload[k.id]?.busy ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />} Beleg nachliefern
-                        </button>
+                        {abschlussPeriodeInfo?.locked ? (
+                          <span style={{ fontSize: 12, color: "var(--faint)" }}>Abschluss ist abgeschlossen — kein Nachliefern mehr möglich.</span>
+                        ) : (
+                          <button className="ghost" style={{ padding: "5px 10px", fontSize: 12.5 }}
+                            disabled={kontoUpload[k.id]?.busy}
+                            onClick={() => { setKontoUploadTarget(k); kontoFileInputRef.current?.click(); }}>
+                            {kontoUpload[k.id]?.busy ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />} Beleg nachliefern
+                          </button>
+                        )}
                         {kontoUpload[k.id]?.msg && (
                           <span style={{ fontSize: 12, color: kontoUpload[k.id]?.ok === false ? "var(--danger)" : "var(--accent)" }}>
                             {kontoUpload[k.id].msg}
