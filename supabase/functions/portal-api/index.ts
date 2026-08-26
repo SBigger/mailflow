@@ -15,7 +15,7 @@ import { prettyDownloadName } from "../_shared/docFileName.ts";
 //   - list               { session }                → alle Dokumente des Mandanten + Tags
 //   - download           { session, doc_id }        → kurzlebige Signed URL (nach Prüfung)
 //   - me                 { session }                → Nutzerinfo
-//   - abschluss-list     { session, customer_id }   → freigegebene Abschluss-Perioden
+//   - abschluss-list     { session, customer_id }   → alle Abschluss-Perioden (inkl. Entwurf)
 //   - abschluss-pendenzen{ session, abschluss_id }  → offene Konten eines Abschlusses
 // ══════════════════════════════════════════════════════════════════════════
 
@@ -480,9 +480,11 @@ serve(async (req) => {
       return json({ ok: true });
     }
 
-    // ── abschluss-list: freigegebene Abschluss-Perioden des Mandanten ────────
-    // Nur "abgeschlossen"/"genehmigt" — ein Entwurf ("in_arbeit") geht den
-    // Kunden nichts an, der sieht noch keine halbfertigen Zahlen.
+    // ── abschluss-list: Abschluss-Perioden des Mandanten ─────────────────────
+    // Absichtlich ALLE Status, inkl. "in_arbeit" — der Kunde soll gerade am
+    // Entwurf mitarbeiten (fehlende Belege nachliefern), nicht erst danach
+    // etwas zu sehen bekommen. Gesperrt wird nur der Upload, sobald der
+    // Abschluss abgeschlossen/genehmigt ist (siehe unten, "locked").
     if (action === "abschluss-list") {
       const pu = await resolveSession(supabase, sessionToken);
       if (!pu) return json({ error: "Nicht angemeldet." }, 401);
@@ -496,7 +498,6 @@ serve(async (req) => {
         .from("abschluss")
         .select("id, geschaeftsjahr, monat, status, version, updated_at")
         .eq("customer_id", target)
-        .in("status", ["abgeschlossen", "genehmigt"])
         .order("geschaeftsjahr", { ascending: false })
         .order("monat", { ascending: false })
         .order("version", { ascending: false });
@@ -505,9 +506,11 @@ serve(async (req) => {
       return json({ periods: data || [] });
     }
 
-    // ── abschluss-pendenzen: offene Konten eines freigegebenen Abschlusses ───
+    // ── abschluss-pendenzen: offene Konten eines Abschlusses ─────────────────
     // Liefert nur, was der Kunde wirklich braucht (Saldo, Status, Beleg-
     // Metadaten) — nicht das ganze arbeitspapier-Feld mit internen Notizen.
+    // "locked" zeigt dem Frontend, ob der Beleg-Upload noch sinnvoll ist
+    // (abgeschlossen/genehmigt → nichts mehr nachliefern).
     if (action === "abschluss-pendenzen") {
       const pu = await resolveSession(supabase, sessionToken);
       if (!pu) return json({ error: "Nicht angemeldet." }, 401);
@@ -519,7 +522,7 @@ serve(async (req) => {
         .select("id, customer_id, status, geschaeftsjahr, monat")
         .eq("id", abschlussId).maybeSingle();
       const allowed = await customerIdsFor(supabase, pu);
-      if (!ab || !allowed.includes(ab.customer_id) || !["abgeschlossen", "genehmigt"].includes(ab.status)) {
+      if (!ab || !allowed.includes(ab.customer_id)) {
         return json({ error: "Dieser Abschluss gehört nicht zu Ihrem Zugang." }, 403);
       }
 
@@ -540,9 +543,10 @@ serve(async (req) => {
           })),
         }));
 
+      const locked = ["abgeschlossen", "genehmigt"].includes(ab.status);
       await audit(supabase, pu, "abschluss-pendenzen", null,
         `${relevant.length} Konten · ${ab.geschaeftsjahr}${ab.monat ? "/" + ab.monat : ""}`, ip);
-      return json({ konten: relevant, periode: { geschaeftsjahr: ab.geschaeftsjahr, monat: ab.monat, status: ab.status } });
+      return json({ konten: relevant, periode: { geschaeftsjahr: ab.geschaeftsjahr, monat: ab.monat, status: ab.status, locked } });
     }
 
     // ── create-link: Anmeldelink erzeugen (NUR eingeloggte Mitarbeiter) ───────
