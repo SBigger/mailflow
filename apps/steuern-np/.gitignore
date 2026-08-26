@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.env
+.env.local
+*.esteuerauszug.xml
+*.barcode.bin
+
+# Tesseract-Sprachdaten und Kern: 31 MB Binaerdaten, per Skript beschafft
+public/tesseract/
+# Fertige Windows-Pakete
+release/
+# Zusammengebaute portable Fassung und Verteilarchive (aus portabel-vorlage/ erzeugt)
+portabel/
+SteuernNP-portabel.zip
+*.zip

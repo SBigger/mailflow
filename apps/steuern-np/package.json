@@ -1,0 +1,35 @@
+{
+  "name": "steuern-np",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Lokale Steuerdeklaration natuerliche Personen (SG) — Belege scannen, sortieren, auf das Hauptformular zuweisen, sortiert exportieren",
+  "scripts": {
+    "dev": "vite --port 5180 --strictPort",
+    "build": "vite build",
+    "test": "node --test tests/*.test.mjs",
+    "spike:pdf417": "node scripts/spike-pdf417-esteuerauszug.mjs",
+    "start": "npm run build && electron .",
+    "paket:win": "npm run ocr:daten && npm run build && electron-packager . SteuernNP --platform=win32 --arch=x64 --out=release --overwrite --app-version=0.1.0 --prune=true --ignore=\"^/(src|tests|docs|scripts|release|public|portabel)\"",
+    "ocr:daten": "node scripts/ocr-daten-holen.mjs",
+    "paket:portabel": "npm run ocr:daten && npm run build && node scripts/paket-portabel.mjs"
+  },
+  "dependencies": {
+    "lucide-react": "^0.475.0",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^3.11.174",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tesseract.js": "^6.0.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.5.3",
+    "tailwindcss": "^3.4.17",
+    "vite": "^6.1.0",
+    "electron": "^33.2.0",
+    "@electron/packager": "^18.3.6"
+  },
+  "main": "electron/main.cjs"
+}
