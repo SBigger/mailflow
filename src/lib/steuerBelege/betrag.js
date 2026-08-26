@@ -120,6 +120,30 @@ const SPERR_KONTEXT = [
  * @param {number}   max    Obergrenze für plausible Werte dieser Seite
  * @returns {{betrag:number, anker:string, confidence:number}|null}
  */
+/**
+ * Wörter, die einen Anker als Silbe enthalten, aber etwas anderes meinen.
+ *
+ * Die Ankersuche arbeitet auf dem rohen Text, weil Belege ihre Begriffe
+ * beliebig zusammensetzen — «Bruttoertrag», «Mietertrag», «Kapitalertrag»
+ * sollen alle auf «ertrag» ansprechen. Der Preis dafür sind Silbentreffer:
+ * an einem echten Kontoauszug wurde «Übertrag auf Hypothek Nr. 94124208
+ * 718.65» zu einem Wertschriftenertrag von 718.65. Das ist die teuerste Sorte
+ * Fehler, die dieses Modul machen kann — eine Zahl, die stimmen könnte, an
+ * einer Stelle, an der sie nicht hingehört, und niemand stutzt.
+ *
+ * Gesperrt wird nur, wenn das umgebende Wort NICHT der Anker selbst ist:
+ * «Betrag» als Anker bleibt «Betrag».
+ */
+const SILBEN_SPERRE = ['ubertrag', 'vertrag', 'wertschrift'];
+
+/** Das ganze Wort um eine Fundstelle herum. */
+function wortUm(t, von, bis) {
+  let a = von, e = bis;
+  while (a > 0 && /[a-z0-9]/.test(t[a - 1])) a--;
+  while (e < t.length && /[a-z0-9]/.test(t[e])) e++;
+  return t.slice(a, e);
+}
+
 function sucheMitAnkern(text, anker, max = 500_000_000) {
   if (!text || !anker?.length) return null;
   const t = flach(text);
@@ -131,6 +155,11 @@ function sucheMitAnkern(text, anker, max = 500_000_000) {
       const treffer = t.indexOf(a, ab);
       if (treffer < 0) break;
       ab = treffer + a.length;
+
+      // Silbentreffer: steckt der Anker nur als Teil eines Wortes drin, das
+      // etwas anderes meint, zaehlt das Vorkommen nicht.
+      const wort = wortUm(t, treffer, treffer + a.length);
+      if (wort !== a && SILBEN_SPERRE.some(x => wort.startsWith(x))) continue;
 
       // Sperr-Kontext: beschriftet der Text davor eine Summe, die kein
       // Erklärungsbetrag ist, zählt dieses Vorkommen nicht.
