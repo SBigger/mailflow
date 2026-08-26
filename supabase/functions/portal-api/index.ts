@@ -10,11 +10,13 @@ import { prettyDownloadName } from "../_shared/docFileName.ts";
 //  Modelliert nach `share-link` (IDOR-Scope-Schutz, Signed-URL intern→public).
 //
 //  Aktionen (JSON-Body { action, ... }, öffentlich mit anon-apikey):
-//   - request-link { email }            → Magic-Link per Mail (kein User-Enum)
-//   - verify       { token }            → Session-Token + Nutzerinfo
-//   - list         { session }          → alle Dokumente des Mandanten + Tags
-//   - download     { session, doc_id }  → kurzlebige Signed URL (nach Prüfung)
-//   - me           { session }          → Nutzerinfo
+//   - request-link       { email }                 → Magic-Link per Mail (kein User-Enum)
+//   - verify             { token }                 → Session-Token + Nutzerinfo
+//   - list               { session }                → alle Dokumente des Mandanten + Tags
+//   - download           { session, doc_id }        → kurzlebige Signed URL (nach Prüfung)
+//   - me                 { session }                → Nutzerinfo
+//   - abschluss-list     { session, customer_id }   → freigegebene Abschluss-Perioden
+//   - abschluss-pendenzen{ session, abschluss_id }  → offene Konten eines Abschlusses
 // ══════════════════════════════════════════════════════════════════════════
 
 const corsHeaders = {
@@ -476,6 +478,71 @@ serve(async (req) => {
         .update({ status: "aktiv", updated_at: new Date().toISOString() }).eq("id", thread.id);
       await audit(supabase, pu, "chat-send", null, text.slice(0, 80), ip);
       return json({ ok: true });
+    }
+
+    // ── abschluss-list: freigegebene Abschluss-Perioden des Mandanten ────────
+    // Nur "abgeschlossen"/"genehmigt" — ein Entwurf ("in_arbeit") geht den
+    // Kunden nichts an, der sieht noch keine halbfertigen Zahlen.
+    if (action === "abschluss-list") {
+      const pu = await resolveSession(supabase, sessionToken);
+      if (!pu) return json({ error: "Nicht angemeldet." }, 401);
+      const allowed = await customerIdsFor(supabase, pu);
+      const target = String(body.customer_id || pu.customer_id || "");
+      if (!target || !allowed.includes(target)) {
+        return json({ error: "Für diesen Mandanten besteht keine Freigabe." }, 403);
+      }
+
+      const { data } = await supabase
+        .from("abschluss")
+        .select("id, geschaeftsjahr, monat, status, version, updated_at")
+        .eq("customer_id", target)
+        .in("status", ["abgeschlossen", "genehmigt"])
+        .order("geschaeftsjahr", { ascending: false })
+        .order("monat", { ascending: false })
+        .order("version", { ascending: false });
+
+      await audit(supabase, pu, "abschluss-list", null, `${(data || []).length} Perioden`, ip);
+      return json({ periods: data || [] });
+    }
+
+    // ── abschluss-pendenzen: offene Konten eines freigegebenen Abschlusses ───
+    // Liefert nur, was der Kunde wirklich braucht (Saldo, Status, Beleg-
+    // Metadaten) — nicht das ganze arbeitspapier-Feld mit internen Notizen.
+    if (action === "abschluss-pendenzen") {
+      const pu = await resolveSession(supabase, sessionToken);
+      if (!pu) return json({ error: "Nicht angemeldet." }, 401);
+      const abschlussId = String(body.abschluss_id || "");
+      if (!abschlussId) return json({ error: "abschluss_id fehlt" }, 400);
+
+      const { data: ab } = await supabase
+        .from("abschluss")
+        .select("id, customer_id, status, geschaeftsjahr, monat")
+        .eq("id", abschlussId).maybeSingle();
+      const allowed = await customerIdsFor(supabase, pu);
+      if (!ab || !allowed.includes(ab.customer_id) || !["abgeschlossen", "genehmigt"].includes(ab.status)) {
+        return json({ error: "Dieser Abschluss gehört nicht zu Ihrem Zugang." }, 403);
+      }
+
+      const { data: konten } = await supabase
+        .from("abschluss_konten")
+        .select("id, kontonummer, kontoname, saldo_ist, saldo_vorjahr, arbeitspapier")
+        .eq("abschluss_id", abschlussId)
+        .order("kontonummer");
+
+      const relevant = (konten || [])
+        .filter((k: any) => Math.abs(parseFloat(k.saldo_ist) || 0) > 0.005)
+        .map((k: any) => ({
+          id: k.id, kontonummer: k.kontonummer, kontoname: k.kontoname,
+          saldo_ist: k.saldo_ist, saldo_vorjahr: k.saldo_vorjahr,
+          status: k.arbeitspapier?.status || (k.arbeitspapier?.pendent ? "pendent" : "offen"),
+          belege: (k.arbeitspapier?.belege || []).map((b: any) => ({
+            id: b.id, name: b.name, filename: b.filename, file_type: b.file_type,
+          })),
+        }));
+
+      await audit(supabase, pu, "abschluss-pendenzen", null,
+        `${relevant.length} Konten · ${ab.geschaeftsjahr}${ab.monat ? "/" + ab.monat : ""}`, ip);
+      return json({ konten: relevant, periode: { geschaeftsjahr: ab.geschaeftsjahr, monat: ab.monat, status: ab.status } });
     }
 
     // ── create-link: Anmeldelink erzeugen (NUR eingeloggte Mitarbeiter) ───────
