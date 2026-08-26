@@ -941,6 +941,7 @@ function currentYear() {
 }
 
 const YEARS = Array.from({ length: 11 }, (_, i) => 2020 + i);
+const MONAT_LABELS = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
 
 const STATUS_CONFIG = {
   in_arbeit:    { label: "In Arbeit",    bg: "#fff7ed", text: "#c2410c", border: "#fed7aa" },
@@ -4396,6 +4397,7 @@ export default function Abschlussdokumentation() {
   const qc = useQueryClient();
   const [selectedCid, setSelectedCid] = useState("");
   const [selectedYear, setSelectedYear] = useState(currentYear());
+  const [selectedMonat, setSelectedMonat] = useState(0); // 0 = Jahresabschluss, 1-12 = Zwischenabschluss per Monatsende
   const [selectedVersion, setSelectedVersion] = useState(null); // null = neueste Version
   const [activeTab, setActiveTab] = useState("kontenplan");
   const [showImport, setShowImport] = useState(false);
@@ -4464,13 +4466,14 @@ export default function Abschlussdokumentation() {
 
   // ── Abschluss-Versionen laden / erstellen ─────────────────────────────────
   const { data: versions = [], isLoading: abschlussLoading, refetch: refetchAbschluss } = useQuery({
-    queryKey: ["abschluss_versions", selectedCid, selectedYear],
+    queryKey: ["abschluss_versions", selectedCid, selectedYear, selectedMonat],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("abschluss")
         .select("*")
         .eq("customer_id", selectedCid)
         .eq("geschaeftsjahr", selectedYear)
+        .eq("monat", selectedMonat)
         .order("version", { ascending: true });
       if (error) throw new Error(error.message);
       return data || [];
@@ -4487,46 +4490,46 @@ export default function Abschlussdokumentation() {
     return versions[versions.length - 1];
   }, [versions, selectedVersion]);
 
-  // Beim Wechsel von Mandant/Jahr immer die neueste Version zeigen
-  useEffect(() => { setSelectedVersion(null); }, [selectedCid, selectedYear]);
+  // Beim Wechsel von Mandant/Jahr/Monat immer die neueste Version zeigen
+  useEffect(() => { setSelectedVersion(null); }, [selectedCid, selectedYear, selectedMonat]);
 
   // ── Abschluss erstellen falls nicht vorhanden ─────────────────────────────
   const createAbschlussMut = useMutation({
     mutationFn: async () => {
       const { data, error } = await supabase
         .from("abschluss")
-        .insert({ customer_id: selectedCid, geschaeftsjahr: selectedYear, status: "in_arbeit", version: 1 })
+        .insert({ customer_id: selectedCid, geschaeftsjahr: selectedYear, monat: selectedMonat, status: "in_arbeit", version: 1 })
         .select()
         .single();
       if (error) throw new Error(error.message);
       return data;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["abschluss_versions", selectedCid, selectedYear] });
+      qc.invalidateQueries({ queryKey: ["abschluss_versions", selectedCid, selectedYear, selectedMonat] });
       qc.invalidateQueries({ queryKey: ["abschluss_cids"] });
     },
     onError: (e) => {
       // Zeile existiert bereits (Race mit Auto-Jahr-Effekt) → kein Fehler-Toast,
       // einfach neu laden. Greift bei altem wie neuem Unique-Constraint.
       if (/duplicate key|23505|already exists/i.test(e?.message || "")) {
-        qc.invalidateQueries({ queryKey: ["abschluss_versions", selectedCid, selectedYear] });
+        qc.invalidateQueries({ queryKey: ["abschluss_versions", selectedCid, selectedYear, selectedMonat] });
         return;
       }
       toast.error("Fehler: " + e.message);
     },
   });
 
-  // Auto-create erste Version, wenn für Kunde+Jahr noch keine existiert.
-  // Guard pro (Kunde|Jahr) gegen Doppel-Anlage durch das überlappende
+  // Auto-create erste Version, wenn für Kunde+Jahr+Monat noch keine existiert.
+  // Guard pro (Kunde|Jahr|Monat) gegen Doppel-Anlage durch das überlappende
   // Auto-Jahr-Effekt-Timing (sonst "duplicate key"-Fehler, v.a. beim Default-Jahr).
   const autoCreateKeysRef = useRef(new Set());
   useEffect(() => {
     if (!selectedCid || abschlussLoading || versions.length > 0 || createAbschlussMut.isPending) return;
-    const key = `${selectedCid}|${selectedYear}`;
+    const key = `${selectedCid}|${selectedYear}|${selectedMonat}`;
     if (autoCreateKeysRef.current.has(key)) return;
     autoCreateKeysRef.current.add(key);
     createAbschlussMut.mutate();
-  }, [selectedCid, selectedYear, versions.length, abschlussLoading]);
+  }, [selectedCid, selectedYear, selectedMonat, versions.length, abschlussLoading]);
 
   const abschlussId = abschluss?.id;
   const gesperrt = !!abschluss?.gesperrt;
@@ -4559,7 +4562,7 @@ export default function Abschlussdokumentation() {
       const { error } = await supabase.from("abschluss").update({ einstellungen: merged }).eq("id", abschlussId);
       if (error) throw new Error(error.message);
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["abschluss_versions", selectedCid, selectedYear] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["abschluss_versions", selectedCid, selectedYear, selectedMonat] }),
     onError: (e) => toast.error(e.message),
   });
 
@@ -4571,7 +4574,7 @@ export default function Abschlussdokumentation() {
       if (error) throw new Error(error.message);
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["abschluss_versions", selectedCid, selectedYear] });
+      qc.invalidateQueries({ queryKey: ["abschluss_versions", selectedCid, selectedYear, selectedMonat] });
       toast.success("Status aktualisiert");
     },
     onError: (e) => toast.error(e.message),
@@ -4583,7 +4586,7 @@ export default function Abschlussdokumentation() {
       const nextV = versions.length ? Math.max(...versions.map(v => v.version || 1)) + 1 : 1;
       const { data, error } = await supabase
         .from("abschluss")
-        .insert({ customer_id: selectedCid, geschaeftsjahr: selectedYear, status: "in_arbeit", version: nextV })
+        .insert({ customer_id: selectedCid, geschaeftsjahr: selectedYear, monat: selectedMonat, status: "in_arbeit", version: nextV })
         .select()
         .single();
       if (error) throw new Error(error.message);
@@ -4591,7 +4594,7 @@ export default function Abschlussdokumentation() {
     },
     onSuccess: (data) => {
       setSelectedVersion(data.version);
-      qc.invalidateQueries({ queryKey: ["abschluss_versions", selectedCid, selectedYear] });
+      qc.invalidateQueries({ queryKey: ["abschluss_versions", selectedCid, selectedYear, selectedMonat] });
       toast.success(`Version ${data.version} angelegt – leer, bitte Bilanz/ER importieren`);
     },
     onError: (e) => toast.error(e.message),
@@ -4604,7 +4607,7 @@ export default function Abschlussdokumentation() {
       if (error) throw new Error(error.message);
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["abschluss_versions", selectedCid, selectedYear] });
+      qc.invalidateQueries({ queryKey: ["abschluss_versions", selectedCid, selectedYear, selectedMonat] });
       toast.success(gesperrt ? "Version entsperrt" : "Version gesperrt");
     },
     onError: (e) => toast.error(e.message),
@@ -4620,8 +4623,8 @@ export default function Abschlussdokumentation() {
       setSelectedVersion(null);
       // Guard freigeben, damit beim Löschen der letzten Version wieder
       // automatisch eine leere V1 angelegt werden kann.
-      autoCreateKeysRef.current.delete(`${selectedCid}|${selectedYear}`);
-      qc.invalidateQueries({ queryKey: ["abschluss_versions", selectedCid, selectedYear] });
+      autoCreateKeysRef.current.delete(`${selectedCid}|${selectedYear}|${selectedMonat}`);
+      qc.invalidateQueries({ queryKey: ["abschluss_versions", selectedCid, selectedYear, selectedMonat] });
       qc.invalidateQueries({ queryKey: ["abschluss_cids"] });
       toast.success("Version gelöscht");
     },
@@ -4642,7 +4645,7 @@ export default function Abschlussdokumentation() {
       const { error } = await supabase.from("abschluss").update({ notizen: text }).eq("id", abschlussId);
       if (error) throw new Error(error.message);
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["abschluss_versions", selectedCid, selectedYear] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["abschluss_versions", selectedCid, selectedYear, selectedMonat] }),
     onError: (e) => toast.error(e.message),
   });
 
@@ -5040,6 +5043,24 @@ export default function Abschlussdokumentation() {
                 outline: "none", cursor: "pointer", minWidth: 90,
               }}>
               {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
+          </div>
+
+          {/* Periode: Jahresabschluss oder Zwischenabschluss per Monatsende */}
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-wider mb-1.5 block" style={{ color: subC }}>
+              Periode
+            </label>
+            <select
+              value={selectedMonat}
+              onChange={e => setSelectedMonat(Number(e.target.value))}
+              style={{
+                height: 36, padding: "0 10px", borderRadius: 8, fontSize: 13, fontWeight: 600,
+                border: `1px solid ${panelBdr}`, backgroundColor: panelBg, color: headingC,
+                outline: "none", cursor: "pointer", minWidth: 150,
+              }}>
+              <option value={0}>Jahresabschluss</option>
+              {MONAT_LABELS.map((m, i) => <option key={i + 1} value={i + 1}>Zwischenabschluss {m}</option>)}
             </select>
           </div>
 
