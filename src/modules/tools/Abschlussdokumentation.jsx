@@ -4584,18 +4584,43 @@ export default function Abschlussdokumentation() {
   const createVersionMut = useMutation({
     mutationFn: async () => {
       const nextV = versions.length ? Math.max(...versions.map(v => v.version || 1)) + 1 : 1;
+      // Quelle für die Übernahme: die gerade betrachtete Version (nicht zwingend
+      // die höchste) – wer V2 aus V1 heraus anlegt, erwartet V1s Stand als Basis.
+      const sourceId = abschlussId;
       const { data, error } = await supabase
         .from("abschluss")
         .insert({ customer_id: selectedCid, geschaeftsjahr: selectedYear, monat: selectedMonat, status: "in_arbeit", version: nextV })
         .select()
         .single();
       if (error) throw new Error(error.message);
-      return data;
+
+      // Belege, Notizen, Status und Salden aus der Vorversion übernehmen, statt
+      // leer zu starten – sonst gehen Kunden-Uploads und Bearbeitung bei jeder
+      // neuen Version verloren. Ein nachträglicher Bilanz/ER-Import überschreibt
+      // hier nur die Salden (siehe importKontenMut), Zuweisungen bleiben stehen.
+      let carried = 0;
+      if (sourceId) {
+        const { data: sourceKonten, error: fetchErr } = await supabase
+          .from("abschluss_konten")
+          .select("kontonummer, kontoname, saldo_ist, saldo_vorjahr, position_id, notiz, arbeitspapier")
+          .eq("abschluss_id", sourceId);
+        if (fetchErr) throw new Error(fetchErr.message);
+        const toInsert = (sourceKonten || []).map(k => ({ ...k, abschluss_id: data.id }));
+        for (let i = 0; i < toInsert.length; i += 100) {
+          const { error: insErr } = await supabase.from("abschluss_konten").insert(toInsert.slice(i, i + 100));
+          if (insErr) throw new Error(insErr.message);
+        }
+        carried = toInsert.length;
+      }
+      return { ...data, carried };
     },
     onSuccess: (data) => {
       setSelectedVersion(data.version);
       qc.invalidateQueries({ queryKey: ["abschluss_versions", selectedCid, selectedYear, selectedMonat] });
-      toast.success(`Version ${data.version} angelegt – leer, bitte Bilanz/ER importieren`);
+      qc.invalidateQueries({ queryKey: ["abschluss_konten", data.id] });
+      toast.success(data.carried
+        ? `Version ${data.version} angelegt – ${data.carried} Konten inkl. Belege/Notizen übernommen`
+        : `Version ${data.version} angelegt – leer, bitte Bilanz/ER importieren`);
     },
     onError: (e) => toast.error(e.message),
   });
