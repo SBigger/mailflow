@@ -115,6 +115,57 @@ const AI_BELEG_KEYWORDS = {
 // mit Personal-Dokumenten (AHV-/Quellensteuer-Abrechnung) belegt.
 const AI_BLOCKED_CATEGORIES = { default: ["personal", "korrespondenz"], FK_KURZ_SONST: [] };
 
+// Manche Bilanzpositionen werden durch mehrjährig gültige Dokumente belegt
+// (Kreditvertrag, Mietvertrag, Statuten, HR-Auszug, Anlagespiegel) — die
+// dürfen aus FRÜHEREN Jahren stammen und werden Jahr für Jahr wiederverwendet,
+// statt jedes Jahr neu hochgeladen zu werden. Rechnungswesen/MWST sind
+// dagegen streng ans Geschäftsjahr gebunden — ein Dokument ohne Jahr ist dort
+// eher verdächtig als neutral (anders als beim generischen Default unten).
+const AI_EVERGREEN_POSITIONS = new Set([
+  "AV_MOBIL", "AV_IMMOBIL", "AV_FINANZ", "AV_IMMATERIELL",
+  "FK_LANG_BANK", "FK_LANG_SONST", "EK_KAPITAL", "EK_KAP_RESERVE",
+]);
+const AI_PERIODENGEBUNDENE_KATEGORIEN = ["rechnungswesen", "mwst"];
+
+// Ist ein Kandidat für diese Position und dieses Geschäftsjahr zulässig?
+function aiYearOk(positionId, doc, selectedYear) {
+  if (!selectedYear) return true;
+  if (AI_EVERGREEN_POSITIONS.has(positionId)) return doc.year == null || doc.year <= selectedYear;
+  if (AI_PERIODENGEBUNDENE_KATEGORIEN.includes(doc.category)) return doc.year === selectedYear;
+  return doc.year === selectedYear || doc.year == null;
+}
+
+// Erwartete Beleg-Kategorien je Bilanzposition — nur als Score-BONUS genutzt,
+// nie als Hart-Filter: die 7 Kategorien im System sind zu grob (z.B. landen
+// Bankauszug, OP-Liste und Anlagespiegel alle unter "rechnungswesen"), ein
+// falsch abgelegter aber inhaltlich richtiger Beleg soll trotzdem gefunden
+// werden können.
+const AI_ERWARTETE_KATEGORIEN = {
+  UV_FLUESSIG: ["rechnungswesen"], UV_WERTSCHRIFTEN: ["rechnungswesen"],
+  UV_FORD_LL: ["rechnungswesen"], UV_FORD_LL_NAHE: ["rechnungswesen"],
+  UV_FORD_SONST: ["rechnungswesen", "mwst", "steuern"],
+  UV_VORRAETE: ["rechnungswesen"], UV_ABGRENZUNG: ["rechnungswesen"],
+  AV_FINANZ: ["rechnungswesen", "rechtsberatung"], AV_MOBIL: ["rechnungswesen"],
+  AV_IMMOBIL: ["rechnungswesen"], AV_IMMATERIELL: ["rechnungswesen"],
+  FK_KURZ_LL: ["rechnungswesen"], FK_KURZ_BANK: ["rechnungswesen"],
+  FK_KURZ_SONST: ["rechnungswesen", "personal", "mwst", "steuern"],
+  FK_KURZ_ABGRENZUNG: ["rechnungswesen"], FK_LANG_BANK: ["rechnungswesen", "rechtsberatung"],
+  FK_LANG_SONST: ["rechnungswesen", "rechtsberatung"], FK_RUECKSTELLUNGEN: ["rechnungswesen"],
+  EK_KAPITAL: ["rechnungswesen", "rechtsberatung"], EK_KAP_RESERVE: ["rechnungswesen", "rechtsberatung"],
+  EK_GES_RESERVE: ["rechnungswesen"], EK_VORTRAG: ["rechnungswesen"], EK_JAHRESERGEBNIS: ["rechnungswesen"],
+};
+
+// Stichwörter aus einem Dokumentnamen für den Vorjahres-Muster-Abgleich:
+// Jahres-/Monatsangaben raus (sonst sucht man faktisch nach dem alten Jahr),
+// nur Wörter ab 3 Zeichen behalten.
+function aiTokensFromName(name) {
+  return String(name || "")
+    .toLowerCase()
+    .replace(/\b(19|20)\d{2}\b|januar|februar|märz|april|mai|juni|juli|august|september|oktober|november|dezember|q[1-4]/gi, "")
+    .split(/[^a-zäöüß0-9]+/i)
+    .filter(t => t.length > 2);
+}
+
 // Zahlen aus einem Text extrahieren und auf gerundete Beträge normalisieren.
 // Erkennt CH/DE-Formate: 1'234.56 · 1’234.56 · 1.234,56 · 1234,56 · 1234.56 · 1234
 function extractAmounts(text) {
@@ -4871,6 +4922,7 @@ export default function Abschlussdokumentation() {
     const contentCache = new Map(); // docId → content_text
     const docMeta = new Map();      // docId → Kandidaten-Metadaten (für LLM/Link)
     const assignedKontoIds = new Set();
+    const assignedDocIds = new Set(); // ein Dokument wird nie zweimal vergeben
 
     const ensureContent = async (ids) => {
       const need = ids.filter(id => !contentCache.has(id));
@@ -4886,15 +4938,65 @@ export default function Abschlussdokumentation() {
       };
       const ap = { ...(k.arbeitspapier || {}), belege: [...((k.arbeitspapier?.belege) || []), newBeleg] };
       const { error } = await supabase.from("abschluss_konten").update({ arbeitspapier: ap }).eq("id", k.id);
-      if (!error) { assignedKontoIds.add(k.id); assignedList.push({ konto: `${k.kontonummer} ${k.kontoname}`, doc: d.name, reason }); return true; }
+      if (!error) {
+        assignedKontoIds.add(k.id); assignedDocIds.add(d.id);
+        assignedList.push({ konto: `${k.kontonummer} ${k.kontoname}`, doc: d.name, reason });
+        return true;
+      }
       return false;
     };
 
     try {
+      // ── Phase 0: Vorjahres-Muster ──────────────────────────────────────────
+      // Was letztes Jahr für dieses Konto bestätigt (verknüpft) war, ist die
+      // beste Suchgrundlage für dieses Jahr — kontospezifischer als die
+      // generischen AI_BELEG_KEYWORDS (unterscheidet z.B. mehrere Bankkonten
+      // desselben Kunden). Nur EXAKTES Geschäftsjahr als Kandidat zulässig
+      // (kein "year == null" wie sonst) — das Vorjahresdokument selbst darf
+      // nie versehentlich wieder verlinkt werden.
+      const { data: prevAbschluss } = await supabase
+        .from("abschluss")
+        .select("id")
+        .eq("customer_id", selectedCid)
+        .eq("geschaeftsjahr", selectedYear - 1)
+        .eq("monat", selectedMonat)
+        .order("version", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (prevAbschluss?.id) {
+        const { data: prevKonten } = await supabase
+          .from("abschluss_konten")
+          .select("kontonummer, arbeitspapier")
+          .eq("abschluss_id", prevAbschluss.id);
+        const musterMap = new Map(); // kontonummer → { tokens, category }
+        for (const pk of (prevKonten || [])) {
+          const b = (pk.arbeitspapier?.belege || [])[0];
+          const tokens = aiTokensFromName(b?.name || b?.filename);
+          if (b && tokens.length) musterMap.set(String(pk.kontonummer), { tokens, category: b.category });
+        }
+        if (musterMap.size) {
+          setAiBusy("Prüfe Vorjahres-Muster …");
+          for (const k of targets) {
+            const muster = musterMap.get(String(k.kontonummer));
+            if (!muster) continue;
+            const { data } = await supabase.rpc("search_dokumente", {
+              p_query: muster.tokens.slice(0, 6).join(" "), p_customer_id: selectedCid, p_limit: 8,
+            });
+            const cand = (data || []).find(d =>
+              d.year === selectedYear && !assignedDocIds.has(d.id) &&
+              (!muster.category || d.category === muster.category) &&
+              muster.tokens.every(t => `${d.name || ""} ${d.filename || ""}`.toLowerCase().includes(t))
+            );
+            if (cand) { docMeta.set(cand.id, cand); await linkBeleg(k, cand, "Vorjahr"); }
+          }
+        }
+      }
+
       // ── Phase 1: Kandidaten sammeln + Betrags-Treffer sofort verknüpfen ──
       const pending = []; // { k, cands: [doc…], best }
       for (let i = 0; i < targets.length; i++) {
         const k = targets[i];
+        if (assignedKontoIds.has(k.id)) continue; // schon per Vorjahres-Muster verknüpft
         setAiBusy(`Analyse ${i + 1} / ${targets.length} …`);
         const pos = POSITION_MAP[k.position_id];
         const kw = AI_BELEG_KEYWORDS[k.position_id] || [];
@@ -4909,7 +5011,7 @@ export default function Abschlussdokumentation() {
         const isPlanning = d => /\b(reporting|budget)\b/i.test(d.name || d.filename || "");
         const blockedCats = AI_BLOCKED_CATEGORIES[k.position_id] ?? AI_BLOCKED_CATEGORIES.default;
         const cands = data
-          .filter(d => !selectedYear || d.year === selectedYear || d.year == null)
+          .filter(d => aiYearOk(k.position_id, d, selectedYear))
           .filter(d => !isPlanning(d))
           .filter(d => !blockedCats.includes(d.category))
           .slice(0, 5);
@@ -4918,21 +5020,30 @@ export default function Abschlussdokumentation() {
         await ensureContent(cands.map(d => d.id));
 
         const terms = [String(k.kontoname || "").toLowerCase(), ...kw.map(s => s.toLowerCase())].filter(Boolean);
+        const expectedCats = AI_ERWARTETE_KATEGORIEN[k.position_id] || [];
+        const isEvergreen = AI_EVERGREEN_POSITIONS.has(k.position_id);
         const scored = cands.map(d => {
           const hay = `${d.name || ""} ${d.filename || ""} ${d.headline || ""}`.toLowerCase();
           const kwHits = terms.filter(t => hay.includes(t)).length;
-          const yearBonus = (selectedYear && d.year === selectedYear) ? 1 : 0;
+          const catBonus = expectedCats.includes(d.category) ? 2 : 0;
+          // Bei mehrjährig gültigen Positionen darf ein älteres, gültiges Jahr
+          // nicht wie ein Zufallstreffer auf 0 fallen — sonst verliert der
+          // richtige alte Vertrag systematisch gegen unpassende Kandidaten.
+          const yearBonus = !selectedYear ? 0
+            : d.year === selectedYear ? 1
+            : (isEvergreen && d.year != null && d.year < selectedYear) ? 0.5
+            : 0;
           const amtHit = amountAppears(extractAmounts(contentCache.get(d.id) || ""), k.saldo_ist);
-          return { d, amtHit, kwHits, score: (d.rank || 0) * 4 + kwHits + yearBonus + (amtHit ? 6 : 0) };
+          return { d, amtHit, kwHits, score: (d.rank || 0) * 4 + kwHits + catBonus + yearBonus + (amtHit ? 6 : 0) };
         }).sort((a, b) => b.score - a.score);
-        const best = scored[0];
-        if (best?.amtHit) { await linkBeleg(k, best.d, "Betrag"); continue; } // sehr zuverlässig
+        const best = scored.find(s => s.amtHit && !assignedDocIds.has(s.d.id));
+        if (best) { await linkBeleg(k, best.d, "Betrag"); continue; } // sehr zuverlässig
         pending.push({ k, cands, scored });
       }
 
       // ── Phase 2: LLM-Rerank für die unsicheren Konten ──
       const stillOpen = pending.filter(p => !assignedKontoIds.has(p.k.id));
-      let llmAssigned = new Map(); // kontonummer → doc_id
+      let llmAssigned = new Map(); // kontonummer → { doc_id, confidence }
       if (stillOpen.length) {
         setAiBusy("KI wertet aus …");
         const docIds = [...new Set(stillOpen.flatMap(p => p.cands.map(d => d.id)))];
@@ -4952,7 +5063,9 @@ export default function Abschlussdokumentation() {
           });
           if (!llmErr && Array.isArray(llm?.assignments)) {
             for (const a of llm.assignments) {
-              if (a.doc_id && (a.confidence ?? 0) >= 0.6) llmAssigned.set(String(a.kontonummer), a.doc_id);
+              if (a.doc_id && (a.confidence ?? 0) >= 0.6) {
+                llmAssigned.set(String(a.kontonummer), { doc_id: a.doc_id, confidence: a.confidence ?? 0 });
+              }
             }
           }
         } catch (e) {
@@ -4971,11 +5084,18 @@ export default function Abschlussdokumentation() {
       // gewählten Beleg (Kontoname/Stichwort-Treffer oder Betrag) — ohne das hat
       // die KI z.B. ein Bankkonto mit einer AHV-Abrechnung verknüpft, weil unter
       // den Kandidaten einfach kein besserer war. Lieber offen als blind vertraut.
-      for (const p of stillOpen) {
-        const llmDocId = llmAssigned.get(String(p.k.kontonummer));
-        if (!llmDocId || !docMeta.has(llmDocId)) continue;
-        const corroborated = p.scored.some(s => s.d.id === llmDocId && (s.kwHits > 0 || s.amtHit));
-        if (corroborated) await linkBeleg(p.k, docMeta.get(llmDocId), "KI");
+      // Nach Konfidenz absteigend auflösen: will das LLM dasselbe Dokument
+      // zwei Positionen geben (im Prompt verboten, aber nicht erzwungen),
+      // gewinnt der sicherere Vorschlag; die zweite Position bleibt offen
+      // statt denselben Beleg doppelt zu verknüpfen.
+      const llmOrder = stillOpen
+        .map(p => ({ p, m: llmAssigned.get(String(p.k.kontonummer)) }))
+        .filter(x => x.m && docMeta.has(x.m.doc_id))
+        .sort((a, b) => b.m.confidence - a.m.confidence);
+      for (const { p, m } of llmOrder) {
+        if (assignedDocIds.has(m.doc_id)) continue;
+        const corroborated = p.scored.some(s => s.d.id === m.doc_id && (s.kwHits > 0 || s.amtHit));
+        if (corroborated) await linkBeleg(p.k, docMeta.get(m.doc_id), "KI");
       }
 
       qc.invalidateQueries({ queryKey: ["abschluss_konten", abschlussId] });
