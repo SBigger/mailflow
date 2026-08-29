@@ -7,16 +7,14 @@ import {AuthProvider, useAuth} from '@/lib/AuthContext';
 import {Loader2} from 'lucide-react';
 import Layout from './Layout';
 import { TelephonyProvider } from "./modules/telefonie/context/TelephonyContext.jsx";
-import ProtectedRoute from './lib/ProtectedRoute'; // Passe den Pfad ggf. an
+import ProtectedRoute from './lib/ProtectedRoute';
 
-// --- Lade-Komponente für Suspense ---
 const PageLoader = () => (
     <div className="fixed inset-0 bg-zinc-950 flex items-center justify-center">
         <Loader2 className="w-8 h-8 text-blue-500 animate-spin"/>
     </div>
 );
 
-// --- Lazy Imports der Seiten ---
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const MailKanban = lazy(() => import('./pages/MailKanban'));
 const TaskBoard = lazy(() => import('./pages/TaskBoard'));
@@ -95,7 +93,6 @@ function AuthenticatedApp() {
         <Suspense fallback={<PageLoader />}>
             <TelephonyProvider>
                 <Routes>
-                    {/* Alles wird über die zentrale ProtectedRoute geleitet */}
                     <Route element={<ProtectedRoute />}>
                         <Route path="/fibu/*" element={<FiBuRouter />} />
                         <Route path="/telefonie/*" element={<TelefonieRouter />} />
@@ -176,11 +173,6 @@ function App() {
                         <Route path="/share/:token"
                                element={<Suspense fallback={<PageLoader/>}><SharePage/></Suspense>}/>
                         <Route path="/share" element={<Suspense fallback={<PageLoader/>}><SharePage/></Suspense>}/>
-
-                        {/* Besprechung als Gast — bewusst AUSSERHALB der Anmeldung:
-                            Kunden haben kein smartis-Konto, sie kommen nur mit dem
-                            Link aus der Termineinladung. Der Warteraum entscheidet,
-                            wer wirklich hereinkommt. */}
                         <Route path="/meet/:room"
                                element={<Suspense fallback={<PageLoader/>}><MeetGuest/></Suspense>}/>
                         <Route path="/portal" element={<Suspense fallback={<PageLoader/>}><Portal/></Suspense>}/>

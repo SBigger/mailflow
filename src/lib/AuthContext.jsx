@@ -67,8 +67,7 @@ export function AuthProvider({ children }) {
       setProfile(data);
       setUser(user);
 
-      // Berechtigungen einmalig beim Login/Profil-Laden vom Backend abrufen (oder aus der DB ermitteln)
-      // Beispiel: Eine Funktion oder Tabelle, die ermittelt, welche Routen/Module dieser User/Tenant darf
+      // Berechtigungen einmalig beim Login/Profil-Laden vom Backend abrufen
       await fetchPermissions(data);
     }
     setLoading(false);
@@ -82,7 +81,6 @@ export function AuthProvider({ children }) {
 
       if (error) throw error;
 
-      // data ist ein Array von Text-Pfaden (z.B. ['*'] oder ['/fibu', '/Dashboard'])
       setAllowedRoutes(data || []);
     } catch (err) {
       console.error("Fehler beim Laden der Berechtigungen:", err);
@@ -95,7 +93,13 @@ export function AuthProvider({ children }) {
     if (!profile) return false;
     if (allowedRoutes.includes('*')) return true;
 
-    // Prüfen, ob der Pfad in den erlaubten Routen enthalten ist (inkl. Wildcards/Sub-Routen)
+    return allowedRoutes.some(route => pathname.startsWith(route));
+  }
+
+  // Zusätzliche Methode, um ohne Umleitung zu prüfen ob Zugriff besteht
+  function canAccessRoute(pathname) {
+    if (!profile) return false;
+    if (allowedRoutes.includes('*')) return true;
     return allowedRoutes.some(route => pathname.startsWith(route));
   }
 
@@ -132,7 +136,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-      <AuthContext.Provider value={{ user, profile, loading, login, checkMFA, signOut, updateProfile, requiresMfa, inviteIncomplete, setInviteIncomplete, hasPermission, getFirstAllowedRoute }}>
+      <AuthContext.Provider value={{ user, profile, loading, login, checkMFA, signOut, updateProfile, requiresMfa, inviteIncomplete, setInviteIncomplete, hasPermission, canAccessRoute, getFirstAllowedRoute }}>
         {children}
       </AuthContext.Provider>
   );

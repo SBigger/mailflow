@@ -5,6 +5,7 @@ import { GripVertical, Receipt, FileText, Clock, PhoneCall, Phone, CheckSquare }
 import { supabase } from '@/api/supabaseClient';
 import { openApp } from './openApp';
 import { scheduleNavPrefsSave } from './navPrefsSync';
+import { useAuth } from '@/lib/AuthContext'; //[cite: 6]
 
 // ── Hub-Widgets: Mini-Dashboard am rechten Hub-Rand ────────────────
 // Vier Kacheln (Debitoren-OPs, Kreditoren-OPs, grösste angefangene
@@ -32,58 +33,59 @@ export function getWidgetOrder() {
 // Kleiner Mandanten-Filter im Widget-Kopf ('' = alle Mandanten)
 function MandantSelect({ pal, mandanten, value, onChange }) {
   return (
-    <select
-      value={value}
-      onClick={(e) => e.stopPropagation()}
-      onChange={(e) => onChange(e.target.value)}
-      style={{
-        fontSize: 10, color: pal.sub, background: 'transparent', border: 'none',
-        outline: 'none', cursor: 'pointer', padding: 0, maxWidth: 150,
-        fontFamily: 'inherit', appearance: 'auto',
-      }}
-    >
-      <option value="">Alle Mandanten</option>
-      {(mandanten ?? []).map(m => (
-        <option key={m.id} value={m.id}>{m.name}</option>
-      ))}
-    </select>
+      <select
+          value={value}
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) => onChange(e.target.value)}
+          style={{
+            fontSize: 10, color: pal.sub, background: 'transparent', border: 'none',
+            outline: 'none', cursor: 'pointer', padding: 0, maxWidth: 150,
+            fontFamily: 'inherit', appearance: 'auto',
+          }}
+      >
+        <option value="">Alle Mandanten</option>
+        {(mandanten ?? []).map(m => (
+            <option key={m.id} value={m.id}>{m.name}</option>
+        ))}
+      </select>
   );
 }
 
-function Widget({ pal, icon: Icon, color, title, sub, subNode, onOpen, openLabel, dragHandleProps, children }) {
+function Widget({ pal, icon: Icon, color, title, sub, subNode, onOpen, openLabel, dragHandleProps, children, disabled, onOpenDisabled }) {
   return (
-    <div style={{
-      borderRadius: 16, background: pal.panelBg, border: `1px solid ${pal.panelBorder}`,
-      overflow: 'hidden',
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '11px 12px 9px' }}>
+      <div style={{
+        borderRadius: 16, background: pal.panelBg, border: `1px solid ${pal.panelBorder}`,
+        overflow: 'hidden',
+        opacity: disabled ? 0.35 : 1, //[cite: 6]
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '11px 12px 9px' }}>
         <span {...dragHandleProps} title="Verschieben" style={{ color: pal.sub, cursor: 'grab', display: 'flex', flexShrink: 0 }}>
           <GripVertical style={{ width: 13, height: 13 }} />
         </span>
-        <span style={{
-          width: 27, height: 27, borderRadius: 8, flexShrink: 0,
-          background: `linear-gradient(135deg, ${color}, ${color}bb)`,
-          display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff',
-        }}>
+          <span style={{
+            width: 27, height: 27, borderRadius: 8, flexShrink: 0,
+            background: disabled ? 'gray' : `linear-gradient(135deg, ${color}, ${color}bb)`, //[cite: 6]
+            display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff',
+          }}>
           <Icon style={{ width: 13, height: 13 }} />
         </span>
-        <span style={{ flex: 1, minWidth: 0 }}>
-          <b style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: pal.tileInk }}>{title}</b>
-          {subNode ?? (sub && <small style={{ display: 'block', fontSize: 10, color: pal.sub }}>{sub}</small>)}
+          <span style={{ flex: 1, minWidth: 0 }}>
+          <b style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: pal.tileInk }}>{title} {disabled && '(Kein Zugriff)'}</b>
+            {subNode ?? (sub && <small style={{ display: 'block', fontSize: 10, color: pal.sub }}>{sub}</small>)}
         </span>
-        {onOpen && (
-          <button
-            onClick={onOpen}
-            style={{ fontSize: 10.5, fontWeight: 700, color: pal.accentText, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}
-          >{openLabel} →</button>
-        )}
+          {onOpen && (
+              <button
+                  onClick={disabled ? onOpenDisabled : onOpen} //[cite: 6]
+                  style={{ fontSize: 10.5, fontWeight: 700, color: disabled ? pal.sub : pal.accentText, cursor: disabled ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }} //[cite: 6]
+              >{openLabel} →</button>
+          )}
+        </div>
+        {children}
       </div>
-      {children}
-    </div>
   );
 }
 
-function Row({ pal, onClick, main, subLine, badge, badgeKind, amount, extra }) {
+function Row({ pal, onClick, main, subLine, badge, badgeKind, amount, extra, disabled }) {
   const [hover, setHover] = useState(false);
   const badgeStyle = {
     red: { background: 'rgba(181,44,44,.14)', color: '#d06a6a' },
@@ -91,41 +93,42 @@ function Row({ pal, onClick, main, subLine, badge, badgeKind, amount, extra }) {
     green: { background: 'rgba(62,122,78,.16)', color: '#5fae72' },
   }[badgeKind ?? 'green'];
   return (
-    <button
-      onClick={onClick}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      style={{
-        display: 'flex', alignItems: 'center', gap: 8, width: '100%',
-        padding: '6px 12px', fontSize: 12, textAlign: 'left', cursor: onClick ? 'pointer' : 'default',
-        background: hover && onClick ? pal.rowHover : 'transparent',
-      }}
-    >
+      <button
+          onClick={disabled ? undefined : onClick} //[cite: 6]
+          onMouseEnter={() => setHover(true)}
+          onMouseLeave={() => setHover(false)}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+            padding: '6px 12px', fontSize: 12, textAlign: 'left', cursor: disabled ? 'not-allowed' : (onClick ? 'pointer' : 'default'), //[cite: 6]
+            background: hover && onClick && !disabled ? pal.rowHover : 'transparent', //[cite: 6]
+            opacity: disabled ? 0.5 : 1, //[cite: 6]
+          }}
+      >
       <span style={{ flex: 1, minWidth: 0 }}>
         <span style={{ display: 'block', fontWeight: 600, color: pal.tileInk, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{main}</span>
         {subLine && <span className="num" style={{ display: 'block', fontSize: 10, color: pal.sub }}>{subLine}</span>}
       </span>
-      {badge && (
-        <span style={{ ...badgeStyle, fontSize: 9, fontWeight: 800, borderRadius: 8, padding: '1px 6px', whiteSpace: 'nowrap', flexShrink: 0 }}>
+        {badge && (
+            <span style={{ ...badgeStyle, fontSize: 9, fontWeight: 800, borderRadius: 8, padding: '1px 6px', whiteSpace: 'nowrap', flexShrink: 0 }}>
           {badge}
         </span>
-      )}
-      {amount != null && (
-        <span style={{ fontWeight: 650, color: pal.tileInk, whiteSpace: 'nowrap', flexShrink: 0, fontVariantNumeric: 'tabular-nums', fontSize: 12 }}>
+        )}
+        {amount != null && (
+            <span style={{ fontWeight: 650, color: pal.tileInk, whiteSpace: 'nowrap', flexShrink: 0, fontVariantNumeric: 'tabular-nums', fontSize: 12 }}>
           {amount}
         </span>
-      )}
-      {extra}
-    </button>
+        )}
+        {extra}
+      </button>
   );
 }
 
 function Kpi({ pal, value, caption }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '0 12px 6px 41px' }}>
-      <span style={{ fontSize: 19, fontWeight: 750, letterSpacing: '-.02em', color: pal.tileInk, fontVariantNumeric: 'tabular-nums' }}>{value}</span>
-      <span style={{ fontSize: 10.5, color: pal.sub, fontVariantNumeric: 'tabular-nums' }}>{caption}</span>
-    </div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '0 12px 6px 41px' }}>
+        <span style={{ fontSize: 19, fontWeight: 750, letterSpacing: '-.02em', color: pal.tileInk, fontVariantNumeric: 'tabular-nums' }}>{value}</span>
+        <span style={{ fontSize: 10.5, color: pal.sub, fontVariantNumeric: 'tabular-nums' }}>{caption}</span>
+      </div>
   );
 }
 
@@ -137,6 +140,11 @@ function Status({ pal, q, emptyText }) {
 
 // ── Die vier Widgets ───────────────────────────────────────────────
 function DebitorenWidget({ pal, navigate, dragHandleProps, mandanten }) {
+  const { canAccessRoute } = useAuth(); //[cite: 6]
+  const targetRoute = mandantIdPath => mandantIdPath
+      ? { href: `/fibu/${mandantIdPath}/debitoren/uebersicht`, label: 'Debitoren', name: 'HubWidgetDebitoren' }
+      : { fibu: 'debitoren/uebersicht', label: 'Debitoren', name: 'HubWidgetDebitoren' };
+
   const [mandantId, setMandantId] = useState(() => localStorage.getItem('hub_mandant_deb') || '');
   const pickMandant = (id) => {
     setMandantId(id);
@@ -148,11 +156,11 @@ function DebitorenWidget({ pal, navigate, dragHandleProps, mandanten }) {
     staleTime: 120_000,
     queryFn: async () => {
       let query = supabase
-        .from('fibu_debitoren_belege')
-        .select('id, mandant_id, betrag_brutto, betrag_bezahlt, faelligkeit, status, kunde:fibu_kunden(name), mandant:fibu_mandanten(name)')
-        .in('status', ['offen', 'teilbezahlt'])
-        .order('faelligkeit', { ascending: true })
-        .limit(500);
+          .from('fibu_debitoren_belege')
+          .select('id, mandant_id, betrag_brutto, betrag_bezahlt, faelligkeit, status, kunde:fibu_kunden(name), mandant:fibu_mandanten(name)')
+          .in('status', ['offen', 'teilbezahlt'])
+          .order('faelligkeit', { ascending: true })
+          .limit(500);
       if (mandantId) query = query.eq('mandant_id', mandantId);
       const { data, error } = await query;
       if (error) throw error;
@@ -166,32 +174,45 @@ function DebitorenWidget({ pal, navigate, dragHandleProps, mandanten }) {
   const top = [...ueberfaellig, ...belege.filter(b => !ueberfaellig.includes(b))].slice(0, 4);
   const tage = (f) => f ? Math.round((Date.now() - new Date(f).getTime()) / 86400000) : 0;
 
+  const appObj = targetRoute(mandantId);
+  const disabled = !canAccessRoute(appObj.href || appObj.name); //[cite: 6]
+
   return (
-    <Widget pal={pal} dragHandleProps={dragHandleProps} icon={FileText} color="#3e9b6e" title="Debitoren offen"
-            subNode={<MandantSelect pal={pal} mandanten={mandanten} value={mandantId} onChange={pickMandant} />}
-            openLabel="Debitoren"
-            onOpen={() => openApp(mandantId
-              ? { href: `/fibu/${mandantId}/debitoren/uebersicht`, label: 'Debitoren', name: 'HubWidgetDebitoren' }
-              : { fibu: 'debitoren/uebersicht', label: 'Debitoren', name: 'HubWidgetDebitoren' }, { navigate })}>
-      {belege.length > 0 && <Kpi pal={pal} value={`CHF ${CHF(total)}`} caption={`${belege.length} Rechn. · ${ueberfaellig.length} überfällig`} />}
-      {top.length ? (
-        <div style={{ borderTop: `1px solid ${pal.panelBorder}`, padding: '4px 0 6px' }}>
-          {top.map(b => (
-            <Row key={b.id} pal={pal}
-                 onClick={() => openApp({ href: `/fibu/${b.mandant_id}/debitoren/uebersicht`, label: 'Debitoren', name: 'HubWidgetDebitoren' }, { navigate })}
-                 main={b.kunde?.name ?? '—'}
-                 subLine={`${b.mandant?.name ?? ''}${b.faelligkeit ? ' · fällig ' + new Date(b.faelligkeit).toLocaleDateString('de-CH') : ''}`}
-                 badge={b.faelligkeit && b.faelligkeit < heute ? `${tage(b.faelligkeit)} Tg` : 'läuft'}
-                 badgeKind={b.faelligkeit && b.faelligkeit < heute ? 'red' : 'green'}
-                 amount={CHF(rest(b))} />
-          ))}
-        </div>
-      ) : <Status pal={pal} q={q} emptyText="Keine offenen Debitoren 🎉" />}
-    </Widget>
+      <Widget pal={pal} dragHandleProps={dragHandleProps} icon={FileText} color="#3e9b6e" title="Debitoren offen"
+              disabled={disabled} //[cite: 6]
+              onOpenDisabled={(e) => e.preventDefault()} //[cite: 6]
+              subNode={<MandantSelect pal={pal} mandanten={mandanten} value={mandantId} onChange={pickMandant} />}
+              openLabel="Debitoren"
+              onOpen={() => openApp(appObj, { navigate })}>
+        {belege.length > 0 && <Kpi pal={pal} value={`CHF ${CHF(total)}`} caption={`${belege.length} Rechn. · ${ueberfaellig.length} überfällig`} />}
+        {top.length ? (
+            <div style={{ borderTop: `1px solid ${pal.panelBorder}`, padding: '4px 0 6px' }}>
+              {top.map(b => {
+                const rowAppObj = targetRoute(b.mandant_id);
+                const rowDisabled = !canAccessRoute(rowAppObj.href || rowAppObj.name); //[cite: 6]
+                return (
+                    <Row key={b.id} pal={pal}
+                         disabled={rowDisabled} //[cite: 6]
+                         onClick={() => openApp(rowAppObj, { navigate })}
+                         main={b.kunde?.name ?? '—'}
+                         subLine={`${b.mandant?.name ?? ''}${b.faelligkeit ? ' · fällig ' + new Date(b.faelligkeit).toLocaleDateString('de-CH') : ''}`}
+                         badge={b.faelligkeit && b.faelligkeit < heute ? `${tage(b.faelligkeit)} Tg` : 'läuft'}
+                         badgeKind={b.faelligkeit && b.faelligkeit < heute ? 'red' : 'green'}
+                         amount={CHF(rest(b))} />
+                );
+              })}
+            </div>
+        ) : <Status pal={pal} q={q} emptyText="Keine offenen Debitoren 🎉" />}
+      </Widget>
   );
 }
 
 function KreditorenWidget({ pal, navigate, dragHandleProps, mandanten }) {
+  const { canAccessRoute } = useAuth(); //[cite: 6]
+  const targetRoute = mandantIdPath => mandantIdPath
+      ? { href: `/fibu/${mandantIdPath}/kreditoren/opliste`, label: 'OP-Liste', name: 'HubWidgetKreditoren' }
+      : { fibu: 'kreditoren/opliste', label: 'OP-Liste', name: 'HubWidgetKreditoren' };
+
   const [mandantId, setMandantId] = useState(() => localStorage.getItem('hub_mandant_kred') || '');
   const pickMandant = (id) => {
     setMandantId(id);
@@ -203,11 +224,11 @@ function KreditorenWidget({ pal, navigate, dragHandleProps, mandanten }) {
     staleTime: 120_000,
     queryFn: async () => {
       let query = supabase
-        .from('fibu_kreditoren_belege')
-        .select('id, mandant_id, betrag_brutto, betrag_bezahlt, faelligkeit, status, lieferant:fibu_lieferanten(name), mandant:fibu_mandanten(name)')
-        .in('status', ['offen', 'ausstehend', 'ebanking', 'teilbezahlt'])
-        .order('faelligkeit', { ascending: true })
-        .limit(500);
+          .from('fibu_kreditoren_belege')
+          .select('id, mandant_id, betrag_brutto, betrag_bezahlt, faelligkeit, status, lieferant:fibu_lieferanten(name), mandant:fibu_mandanten(name)')
+          .in('status', ['offen', 'ausstehend', 'ebanking', 'teilbezahlt'])
+          .order('faelligkeit', { ascending: true })
+          .limit(500);
       if (mandantId) query = query.eq('mandant_id', mandantId);
       const { data, error } = await query;
       if (error) throw error;
@@ -221,32 +242,44 @@ function KreditorenWidget({ pal, navigate, dragHandleProps, mandanten }) {
   const faellig = belege.filter(b => b.faelligkeit && b.faelligkeit <= in7);
   const top = belege.slice(0, 4);
 
+  const appObj = targetRoute(mandantId);
+  const disabled = !canAccessRoute(appObj.href || appObj.name); //[cite: 6]
+
   return (
-    <Widget pal={pal} dragHandleProps={dragHandleProps} icon={Receipt} color="#c9564f" title="Kreditoren offen"
-            subNode={<MandantSelect pal={pal} mandanten={mandanten} value={mandantId} onChange={pickMandant} />}
-            openLabel="OP-Liste"
-            onOpen={() => openApp(mandantId
-              ? { href: `/fibu/${mandantId}/kreditoren/opliste`, label: 'OP-Liste', name: 'HubWidgetKreditoren' }
-              : { fibu: 'kreditoren/opliste', label: 'OP-Liste', name: 'HubWidgetKreditoren' }, { navigate })}>
-      {belege.length > 0 && <Kpi pal={pal} value={`CHF ${CHF(total)}`} caption={`${belege.length} Belege · ${faellig.length} fällig ≤ 7 Tage`} />}
-      {top.length ? (
-        <div style={{ borderTop: `1px solid ${pal.panelBorder}`, padding: '4px 0 6px' }}>
-          {top.map(b => (
-            <Row key={b.id} pal={pal}
-                 onClick={() => openApp({ href: `/fibu/${b.mandant_id}/kreditoren/uebersicht`, label: 'Kreditoren', name: 'HubWidgetKreditoren' }, { navigate })}
-                 main={b.lieferant?.name ?? '—'}
-                 subLine={`${b.mandant?.name ?? ''}${b.faelligkeit ? ' · fällig ' + new Date(b.faelligkeit).toLocaleDateString('de-CH') : ''}`}
-                 badge={b.faelligkeit && b.faelligkeit < heute ? 'überfällig' : b.faelligkeit && b.faelligkeit <= in7 ? 'fällig' : 'läuft'}
-                 badgeKind={b.faelligkeit && b.faelligkeit < heute ? 'red' : b.faelligkeit && b.faelligkeit <= in7 ? 'amber' : 'green'}
-                 amount={CHF(rest(b))} />
-          ))}
-        </div>
-      ) : <Status pal={pal} q={q} emptyText="Keine offenen Kreditoren 🎉" />}
-    </Widget>
+      <Widget pal={pal} dragHandleProps={dragHandleProps} icon={Receipt} color="#c9564f" title="Kreditoren offen"
+              disabled={disabled} //[cite: 6]
+              onOpenDisabled={(e) => e.preventDefault()} //[cite: 6]
+              subNode={<MandantSelect pal={pal} mandanten={mandanten} value={mandantId} onChange={pickMandant} />}
+              openLabel="OP-Liste"
+              onOpen={() => openApp(appObj, { navigate })}>
+        {belege.length > 0 && <Kpi pal={pal} value={`CHF ${CHF(total)}`} caption={`${belege.length} Belege · ${faellig.length} fällig ≤ 7 Tage`} />}
+        {top.length ? (
+            <div style={{ borderTop: `1px solid ${pal.panelBorder}`, padding: '4px 0 6px' }}>
+              {top.map(b => {
+                const rowAppObj = { href: `/fibu/${b.mandant_id}/kreditoren/uebersicht`, label: 'Kreditoren', name: 'HubWidgetKreditoren' };
+                const rowDisabled = !canAccessRoute(rowAppObj.href || rowAppObj.name); //[cite: 6]
+                return (
+                    <Row key={b.id} pal={pal}
+                         disabled={rowDisabled} //[cite: 6]
+                         onClick={() => openApp(rowAppObj, { navigate })}
+                         main={b.lieferant?.name ?? '—'}
+                         subLine={`${b.mandant?.name ?? ''}${b.faelligkeit ? ' · fällig ' + new Date(b.faelligkeit).toLocaleDateString('de-CH') : ''}`}
+                         badge={b.faelligkeit && b.faelligkeit < heute ? 'überfällig' : b.faelligkeit && b.faelligkeit <= in7 ? 'fällig' : 'läuft'}
+                         badgeKind={b.faelligkeit && b.faelligkeit < heute ? 'red' : b.faelligkeit && b.faelligkeit <= in7 ? 'amber' : 'green'}
+                         amount={CHF(rest(b))} />
+                );
+              })}
+            </div>
+        ) : <Status pal={pal} q={q} emptyText="Keine offenen Kreditoren 🎉" />}
+      </Widget>
   );
 }
 
 function ArbeitenWidget({ pal, navigate, dragHandleProps }) {
+  const { canAccessRoute } = useAuth(); //[cite: 6]
+  const appObj = { name: 'Leistungserfassung', label: 'Leistungserfassung' };
+  const disabled = !canAccessRoute(appObj.name); //[cite: 6]
+
   const q = useQuery({
     queryKey: ['hub-widget', 'arbeiten'],
     staleTime: 300_000,
@@ -256,18 +289,18 @@ function ArbeitenWidget({ pal, navigate, dragHandleProps }) {
       let entries = [];
       for (let i = 0; i < 5; i++) {
         const { data, error } = await supabase
-          .from('le_time_entry')
-          .select('project_id, hours_internal, rate_snapshot')
-          .is('invoice_id', null)
-          .not('project_id', 'is', null)
-          .range(i * PAGE, (i + 1) * PAGE - 1);
+            .from('le_time_entry')
+            .select('project_id, hours_internal, rate_snapshot')
+            .is('invoice_id', null)
+            .not('project_id', 'is', null)
+            .range(i * PAGE, (i + 1) * PAGE - 1);
         if (error) throw error;
         entries = entries.concat(data ?? []);
         if ((data ?? []).length < PAGE) break;
       }
       const { data: projects, error: pErr } = await supabase
-        .from('le_project')
-        .select('id, name, customer:customers(company_name)');
+          .from('le_project')
+          .select('id, name, customer:customers(company_name)');
       if (pErr) throw pErr;
 
       const byProject = new Map();
@@ -280,40 +313,43 @@ function ArbeitenWidget({ pal, navigate, dragHandleProps }) {
       }
       const names = new Map((projects ?? []).map(p => [p.id, p]));
       const list = [...byProject.entries()]
-        .map(([id, v]) => ({ id, ...v, project: names.get(id) }))
-        .filter(x => x.project && x.amount > 0)
-        .sort((a, b) => b.amount - a.amount);
+          .map(([id, v]) => ({ id, ...v, project: names.get(id) }))
+          .filter(x => x.project && x.amount > 0)
+          .sort((a, b) => b.amount - a.amount);
       return { top: list.slice(0, 5), total: list.reduce((s, x) => s + x.amount, 0) };
     },
   });
   const top = q.data?.top ?? [];
 
   return (
-    <Widget pal={pal} dragHandleProps={dragHandleProps} icon={Clock} color="#2e9aa8" title="Angefangene Arbeiten" sub="grösste Projekte · unfakturiert"
-            openLabel="Leistungen" onOpen={() => openApp({ name: 'Leistungserfassung', label: 'Leistungserfassung' }, { navigate })}>
-      {top.length ? (
-        <>
-          <div style={{ padding: '2px 0 6px' }}>
-            {top.map(x => (
-              <Row key={x.id} pal={pal}
-                   onClick={() => openApp({ name: 'Leistungserfassung', label: 'Leistungserfassung' }, { navigate })}
-                   main={`${x.project.name}${x.project.customer?.company_name ? ' · ' + x.project.customer.company_name : ''}`}
-                   subLine={`${x.hours.toLocaleString('de-CH', { maximumFractionDigits: 1 })} h unfakturiert`}
-                   amount={CHF(x.amount)} />
-            ))}
-          </div>
-          <div className="num" style={{ borderTop: `1px solid ${pal.panelBorder}`, padding: '7px 12px', fontSize: 10, color: pal.sub }}>
-            Total unfakturiert: CHF {CHF(q.data?.total)}
-          </div>
-        </>
-      ) : <Status pal={pal} q={q} emptyText="Keine unfakturierten Arbeiten" />}
-    </Widget>
+      <Widget pal={pal} dragHandleProps={dragHandleProps} icon={Clock} color="#2e9aa8" title="Angefangene Arbeiten" sub="grösste Projekte · unfakturiert"
+              disabled={disabled} //[cite: 6]
+              onOpenDisabled={(e) => e.preventDefault()} //[cite: 6]
+              openLabel="Leistungen" onOpen={() => openApp(appObj, { navigate })}>
+        {top.length ? (
+            <>
+              <div style={{ padding: '2px 0 6px' }}>
+                {top.map(x => (
+                    <Row key={x.id} pal={pal}
+                         disabled={disabled} //[cite: 6]
+                         onClick={() => openApp(appObj, { navigate })}
+                         main={`${x.project.name}${x.project.customer?.company_name ? ' · ' + x.project.customer.company_name : ''}`}
+                         subLine={`${x.hours.toLocaleString('de-CH', { maximumFractionDigits: 1 })} h unfakturiert`}
+                         amount={CHF(x.amount)} />
+                ))}
+              </div>
+              <div className="num" style={{ borderTop: `1px solid ${pal.panelBorder}`, padding: '7px 12px', fontSize: 10, color: pal.sub }}>
+                Total unfakturiert: CHF {CHF(q.data?.total)}
+              </div>
+            </>
+        ) : <Status pal={pal} q={q} emptyText="Keine unfakturierten Arbeiten" />}
+      </Widget>
   );
 }
 
 // Normalisiert ü/ö/ä für tolerantes Matching
 const norm = (s) => (s || '').toLowerCase()
-  .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue');
+    .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue');
 // Erkennt einen Task als Rückruf: primär über die Kanban-Spalte „Rückruf",
 // zusätzlich über Tag „Rückruf" oder das Wort im Titel/Beschreibung.
 const RUECKRUF_RE = /(rueckruf|zurueckruf)/;
@@ -329,6 +365,11 @@ function findPhone(text) {
 }
 
 function RueckrufeWidget({ pal, navigate, profile, dragHandleProps }) {
+  const { canAccessRoute } = useAuth(); //[cite: 6]
+  const appObj = { name: 'TelefonDashboard', label: 'Telefon' };
+  const taskAppObj = { name: 'TaskBoard', label: 'Tasks' }; //[cite: 6]
+  const disabled = !canAccessRoute(appObj.name); //[cite: 6]
+
   const q = useQuery({
     queryKey: ['hub-widget', 'rueckrufe', profile?.email ?? '', profile?.full_name ?? ''],
     staleTime: 60_000,
@@ -336,17 +377,17 @@ function RueckrufeWidget({ pal, navigate, profile, dragHandleProps }) {
       // 1) Telefon-Rückrufe (Anruf-Notizen) + 2) Rückruf-Tasks + 3) Task-Spalten (für „Rückruf"-Spalte)
       const [callsRes, tasksRes, colsRes] = await Promise.all([
         supabase
-          .from('call_notes_pending')
-          .select('id, phone_number, artis_user_name, note_title, clicked_at')
-          .is('linked_call_id', null)
-          .order('clicked_at', { ascending: false })
-          .limit(100),
+            .from('call_notes_pending')
+            .select('id, phone_number, artis_user_name, note_title, clicked_at')
+            .is('linked_call_id', null)
+            .order('clicked_at', { ascending: false })
+            .limit(100),
         supabase
-          .from('tasks')
-          .select('id, title, description, due_date, assignee, verantwortlich, created_by, tags, column_id, customer:customers(company_name)')
-          // „offen" = nicht erledigt: completed = false ODER NULL (viele Tasks haben es nie gesetzt)
-          .not('completed', 'is', true)
-          .limit(500),
+            .from('tasks')
+            .select('id, title, description, due_date, assignee, verantwortlich, created_by, tags, column_id, customer:customers(company_name)')
+            // „offen" = nicht erledigt: completed = false ODER NULL (viele Tasks haben es nie gesetzt)
+            .not('completed', 'is', true)
+            .limit(500),
         supabase.from('task_columns').select('id, name'),
       ]);
       if (callsRes.error) throw callsRes.error;
@@ -355,34 +396,34 @@ function RueckrufeWidget({ pal, navigate, profile, dragHandleProps }) {
 
       // IDs aller Spalten, deren Name „Rückruf" enthält
       const rueckrufColIds = new Set((colsRes.data ?? [])
-        .filter(c => norm(c.name).includes('rueckruf'))
-        .map(c => c.id));
+          .filter(c => norm(c.name).includes('rueckruf'))
+          .map(c => c.id));
 
       // Telefon-Rückrufe → nur die eigenen (nach Anzeigename)
       const calls = (callsRes.data ?? [])
-        .filter(n => !profile?.full_name || n.artis_user_name === profile.full_name)
-        .map(n => ({
-          id: 'call-' + n.id, kind: 'call',
-          main: n.note_title || n.phone_number || 'Rückruf',
-          sub: [n.phone_number, n.clicked_at ? new Date(n.clicked_at).toLocaleDateString('de-CH') : null].filter(Boolean).join(' · '),
-          phone: n.phone_number || null,
-          ts: n.clicked_at ? new Date(n.clicked_at).getTime() : 0,
-        }));
+          .filter(n => !profile?.full_name || n.artis_user_name === profile.full_name)
+          .map(n => ({
+            id: 'call-' + n.id, kind: 'call',
+            main: n.note_title || n.phone_number || 'Rückruf',
+            sub: [n.phone_number, n.clicked_at ? new Date(n.clicked_at).toLocaleDateString('de-CH') : null].filter(Boolean).join(' · '),
+            phone: n.phone_number || null,
+            ts: n.clicked_at ? new Date(n.clicked_at).getTime() : 0,
+          }));
 
       // Rückruf-Tasks → nur meine + nur echte Rückrufe
       const mine = (t) =>
-        t.assignee === profile?.email ||
-        t.verantwortlich === profile?.email ||
-        (!t.assignee && t.created_by === profile?.id);
+          t.assignee === profile?.email ||
+          t.verantwortlich === profile?.email ||
+          (!t.assignee && t.created_by === profile?.id);
       const tasks = (tasksRes.data ?? [])
-        .filter(mine).filter(t => istRueckrufTask(t, rueckrufColIds))
-        .map(t => ({
-          id: 'task-' + t.id, kind: 'task',
-          main: t.title || 'Rückruf',
-          sub: [t.customer?.company_name, t.due_date ? 'fällig ' + new Date(t.due_date).toLocaleDateString('de-CH') : null].filter(Boolean).join(' · '),
-          phone: findPhone(t.description) || findPhone(t.title),
-          ts: t.due_date ? new Date(t.due_date).getTime() : Number.MAX_SAFE_INTEGER,
-        }));
+          .filter(mine).filter(t => istRueckrufTask(t, rueckrufColIds))
+          .map(t => ({
+            id: 'task-' + t.id, kind: 'task',
+            main: t.title || 'Rückruf',
+            sub: [t.customer?.company_name, t.due_date ? 'fällig ' + new Date(t.due_date).toLocaleDateString('de-CH') : null].filter(Boolean).join(' · '),
+            phone: findPhone(t.description) || findPhone(t.title),
+            ts: t.due_date ? new Date(t.due_date).getTime() : Number.MAX_SAFE_INTEGER,
+          }));
 
       // Zusammengefasst, dringlichstes zuerst (fällige/älteste oben)
       const merged = [...tasks, ...calls].sort((a, b) => a.ts - b.ts);
@@ -393,40 +434,45 @@ function RueckrufeWidget({ pal, navigate, profile, dragHandleProps }) {
   const shown = items.slice(0, 5);
 
   return (
-    <Widget pal={pal} dragHandleProps={dragHandleProps} icon={PhoneCall} color="#4fae6b" title="Meine Rückrufe"
-            sub={`${profile?.full_name ? profile.full_name.split(' ')[0] + ' · ' : ''}Telefon & Tasks${items.length ? ' · ' + items.length : ''}`}
-            openLabel="Telefon" onOpen={() => openApp({ name: 'TelefonDashboard', label: 'Telefon' }, { navigate })}>
-      {shown.length ? (
-        <div style={{ padding: '2px 0 6px' }}>
-          {shown.map(it => (
-            <Row key={it.id} pal={pal}
-                 onClick={() => openApp(it.kind === 'task'
-                   ? { name: 'TaskBoard', label: 'Tasks' }
-                   : { name: 'TelefonDashboard', label: 'Telefon' }, { navigate })}
-                 main={it.main}
-                 subLine={it.sub}
-                 badge={it.kind === 'task' ? 'Task' : 'Anruf'}
-                 badgeKind={it.kind === 'task' ? 'green' : 'amber'}
-                 extra={it.phone ? (
-                   <span
-                     title={`${it.phone} anrufen`}
-                     onClick={(e) => { e.stopPropagation(); window.location.href = `tel:${it.phone}`; }}
-                     style={{
-                       width: 24, height: 24, borderRadius: 8, flexShrink: 0, cursor: 'pointer',
-                       display: 'flex', alignItems: 'center', justifyContent: 'center',
-                       background: 'rgba(79,174,107,.15)', color: '#4fae6b',
-                     }}
-                   ><Phone style={{ width: 12, height: 12 }} /></span>
-                 ) : null} />
-          ))}
-          {items.length > shown.length && (
-            <div style={{ padding: '4px 12px 0', fontSize: 10.5, color: pal.sub }}>
-              + {items.length - shown.length} weitere
+      <Widget pal={pal} dragHandleProps={dragHandleProps} icon={PhoneCall} color="#4fae6b" title="Meine Rückrufe"
+              disabled={disabled} //[cite: 6]
+              onOpenDisabled={(e) => e.preventDefault()} //[cite: 6]
+              sub={`${profile?.full_name ? profile.full_name.split(' ')[0] + ' · ' : ''}Telefon & Tasks${items.length ? ' · ' + items.length : ''}`}
+              openLabel="Telefon" onOpen={() => openApp(appObj, { navigate })}>
+        {shown.length ? (
+            <div style={{ padding: '2px 0 6px' }}>
+              {shown.map(it => {
+                const targetApp = it.kind === 'task' ? taskAppObj : appObj;
+                const rowDisabled = !canAccessRoute(targetApp.name); //[cite: 6]
+                return (
+                    <Row key={it.id} pal={pal}
+                         disabled={rowDisabled} //[cite: 6]
+                         onClick={() => openApp(targetApp, { navigate })}
+                         main={it.main}
+                         subLine={it.sub}
+                         badge={it.kind === 'task' ? 'Task' : 'Anruf'}
+                         badgeKind={it.kind === 'task' ? 'green' : 'amber'}
+                         extra={it.phone ? (
+                             <span
+                                 title={`${it.phone} anrufen`}
+                                 onClick={(e) => { e.stopPropagation(); window.location.href = `tel:${it.phone}`; }}
+                                 style={{
+                                   width: 24, height: 24, borderRadius: 8, flexShrink: 0, cursor: 'pointer',
+                                   display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                   background: 'rgba(79,174,107,.15)', color: '#4fae6b',
+                                 }}
+                             ><Phone style={{ width: 12, height: 12 }} /></span>
+                         ) : null} />
+                );
+              })}
+              {items.length > shown.length && (
+                  <div style={{ padding: '4px 12px 0', fontSize: 10.5, color: pal.sub }}>
+                    + {items.length - shown.length} weitere
+                  </div>
+              )}
             </div>
-          )}
-        </div>
-      ) : <Status pal={pal} q={q} emptyText="Keine offenen Rückrufe 🎉" />}
-    </Widget>
+        ) : <Status pal={pal} q={q} emptyText="Keine offenen Rückrufe 🎉" />}
+      </Widget>
   );
 }
 
@@ -465,35 +511,35 @@ export default function HubWidgets({ pal, navigate, profile }) {
   };
 
   return (
-    <aside style={{ width: 308, flexShrink: 0, position: 'sticky', top: 18 }}>
-      <div style={{
-        fontSize: 10, fontWeight: 800, letterSpacing: '.15em', textTransform: 'uppercase',
-        color: pal.label, padding: '0 4px 10px',
-      }}>Überblick · heute</div>
-      <DragDropContext onDragEnd={onDragEnd}>
-        <Droppable droppableId="hub-widgets">
-          {(provided) => (
-            <div ref={provided.innerRef} {...provided.droppableProps}
-                 style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {order.map((id, index) => {
-                const W = WIDGET_MAP[id];
-                if (!W) return null;
-                return (
-                  <Draggable key={id} draggableId={id} index={index}>
-                    {(drag) => (
-                      <div ref={drag.innerRef} {...drag.draggableProps} style={drag.draggableProps.style}>
-                        <WidgetShell dragHandleProps={drag.dragHandleProps} pal={pal} navigate={navigate} profile={profile} mandanten={mandantenQ.data ?? []} id={id} />
-                      </div>
-                    )}
-                  </Draggable>
-                );
-              })}
-              {provided.placeholder}
-            </div>
-          )}
-        </Droppable>
-      </DragDropContext>
-    </aside>
+      <aside style={{ width: 308, flexShrink: 0, position: 'sticky', top: 18 }}>
+        <div style={{
+          fontSize: 10, fontWeight: 800, letterSpacing: '.15em', textTransform: 'uppercase',
+          color: pal.label, padding: '0 4px 10px',
+        }}>Überblick · heute</div>
+        <DragDropContext onDragEnd={onDragEnd}>
+          <Droppable droppableId="hub-widgets">
+            {(provided) => (
+                <div ref={provided.innerRef} {...provided.droppableProps}
+                     style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {order.map((id, index) => {
+                    const W = WIDGET_MAP[id];
+                    if (!W) return null;
+                    return (
+                        <Draggable key={id} draggableId={id} index={index}>
+                          {(drag) => (
+                              <div ref={drag.innerRef} {...drag.draggableProps} style={drag.draggableProps.style}>
+                                <WidgetShell dragHandleProps={drag.dragHandleProps} pal={pal} navigate={navigate} profile={profile} mandanten={mandantenQ.data ?? []} id={id} />
+                              </div>
+                          )}
+                        </Draggable>
+                    );
+                  })}
+                  {provided.placeholder}
+                </div>
+            )}
+          </Droppable>
+        </DragDropContext>
+      </aside>
   );
 }
 

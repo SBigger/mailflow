@@ -19,9 +19,7 @@ export default function ProtectedRoute() {
         return <Navigate to="/Login" replace />;
     }
 
-    // Sofortiger Check gegen den gecachten State im Context
     if (!hasPermission(location.pathname)) {
-        // Externe User automatisch zur FiBu umleiten, andere zum Dashboard
         const fallbackRoute = getFirstAllowedRoute();
         return <Navigate to={fallbackRoute} replace />;
     }
