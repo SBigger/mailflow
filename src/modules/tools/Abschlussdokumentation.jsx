@@ -115,6 +115,57 @@ const AI_BELEG_KEYWORDS = {
 // mit Personal-Dokumenten (AHV-/Quellensteuer-Abrechnung) belegt.
 const AI_BLOCKED_CATEGORIES = { default: ["personal", "korrespondenz"], FK_KURZ_SONST: [] };
 
+// Manche Bilanzpositionen werden durch mehrjährig gültige Dokumente belegt
+// (Kreditvertrag, Mietvertrag, Statuten, HR-Auszug, Anlagespiegel) — die
+// dürfen aus FRÜHEREN Jahren stammen und werden Jahr für Jahr wiederverwendet,
+// statt jedes Jahr neu hochgeladen zu werden. Rechnungswesen/MWST sind
+// dagegen streng ans Geschäftsjahr gebunden — ein Dokument ohne Jahr ist dort
+// eher verdächtig als neutral (anders als beim generischen Default unten).
+const AI_EVERGREEN_POSITIONS = new Set([
+  "AV_MOBIL", "AV_IMMOBIL", "AV_FINANZ", "AV_IMMATERIELL",
+  "FK_LANG_BANK", "FK_LANG_SONST", "EK_KAPITAL", "EK_KAP_RESERVE",
+]);
+const AI_PERIODENGEBUNDENE_KATEGORIEN = ["rechnungswesen", "mwst"];
+
+// Ist ein Kandidat für diese Position und dieses Geschäftsjahr zulässig?
+function aiYearOk(positionId, doc, selectedYear) {
+  if (!selectedYear) return true;
+  if (AI_EVERGREEN_POSITIONS.has(positionId)) return doc.year == null || doc.year <= selectedYear;
+  if (AI_PERIODENGEBUNDENE_KATEGORIEN.includes(doc.category)) return doc.year === selectedYear;
+  return doc.year === selectedYear || doc.year == null;
+}
+
+// Erwartete Beleg-Kategorien je Bilanzposition — nur als Score-BONUS genutzt,
+// nie als Hart-Filter: die 7 Kategorien im System sind zu grob (z.B. landen
+// Bankauszug, OP-Liste und Anlagespiegel alle unter "rechnungswesen"), ein
+// falsch abgelegter aber inhaltlich richtiger Beleg soll trotzdem gefunden
+// werden können.
+const AI_ERWARTETE_KATEGORIEN = {
+  UV_FLUESSIG: ["rechnungswesen"], UV_WERTSCHRIFTEN: ["rechnungswesen"],
+  UV_FORD_LL: ["rechnungswesen"], UV_FORD_LL_NAHE: ["rechnungswesen"],
+  UV_FORD_SONST: ["rechnungswesen", "mwst", "steuern"],
+  UV_VORRAETE: ["rechnungswesen"], UV_ABGRENZUNG: ["rechnungswesen"],
+  AV_FINANZ: ["rechnungswesen", "rechtsberatung"], AV_MOBIL: ["rechnungswesen"],
+  AV_IMMOBIL: ["rechnungswesen"], AV_IMMATERIELL: ["rechnungswesen"],
+  FK_KURZ_LL: ["rechnungswesen"], FK_KURZ_BANK: ["rechnungswesen"],
+  FK_KURZ_SONST: ["rechnungswesen", "personal", "mwst", "steuern"],
+  FK_KURZ_ABGRENZUNG: ["rechnungswesen"], FK_LANG_BANK: ["rechnungswesen", "rechtsberatung"],
+  FK_LANG_SONST: ["rechnungswesen", "rechtsberatung"], FK_RUECKSTELLUNGEN: ["rechnungswesen"],
+  EK_KAPITAL: ["rechnungswesen", "rechtsberatung"], EK_KAP_RESERVE: ["rechnungswesen", "rechtsberatung"],
+  EK_GES_RESERVE: ["rechnungswesen"], EK_VORTRAG: ["rechnungswesen"], EK_JAHRESERGEBNIS: ["rechnungswesen"],
+};
+
+// Stichwörter aus einem Dokumentnamen für den Vorjahres-Muster-Abgleich:
+// Jahres-/Monatsangaben raus (sonst sucht man faktisch nach dem alten Jahr),
+// nur Wörter ab 3 Zeichen behalten.
+function aiTokensFromName(name) {
+  return String(name || "")
+    .toLowerCase()
+    .replace(/\b(19|20)\d{2}\b|januar|februar|märz|april|mai|juni|juli|august|september|oktober|november|dezember|q[1-4]/gi, "")
+    .split(/[^a-zäöüß0-9]+/i)
+    .filter(t => t.length > 2);
+}
+
 // Zahlen aus einem Text extrahieren und auf gerundete Beträge normalisieren.
 // Erkennt CH/DE-Formate: 1'234.56 · 1’234.56 · 1.234,56 · 1234,56 · 1234.56 · 1234
 function extractAmounts(text) {
@@ -941,6 +992,7 @@ function currentYear() {
 }
 
 const YEARS = Array.from({ length: 11 }, (_, i) => 2020 + i);
+const MONAT_LABELS = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
 
 const STATUS_CONFIG = {
   in_arbeit:    { label: "In Arbeit",    bg: "#fff7ed", text: "#c2410c", border: "#fed7aa" },
@@ -4396,6 +4448,7 @@ export default function Abschlussdokumentation() {
   const qc = useQueryClient();
   const [selectedCid, setSelectedCid] = useState("");
   const [selectedYear, setSelectedYear] = useState(currentYear());
+  const [selectedMonat, setSelectedMonat] = useState(0); // 0 = Jahresabschluss, 1-12 = Zwischenabschluss per Monatsende
   const [selectedVersion, setSelectedVersion] = useState(null); // null = neueste Version
   const [activeTab, setActiveTab] = useState("kontenplan");
   const [showImport, setShowImport] = useState(false);
@@ -4464,13 +4517,14 @@ export default function Abschlussdokumentation() {
 
   // ── Abschluss-Versionen laden / erstellen ─────────────────────────────────
   const { data: versions = [], isLoading: abschlussLoading, refetch: refetchAbschluss } = useQuery({
-    queryKey: ["abschluss_versions", selectedCid, selectedYear],
+    queryKey: ["abschluss_versions", selectedCid, selectedYear, selectedMonat],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("abschluss")
         .select("*")
         .eq("customer_id", selectedCid)
         .eq("geschaeftsjahr", selectedYear)
+        .eq("monat", selectedMonat)
         .order("version", { ascending: true });
       if (error) throw new Error(error.message);
       return data || [];
@@ -4487,46 +4541,46 @@ export default function Abschlussdokumentation() {
     return versions[versions.length - 1];
   }, [versions, selectedVersion]);
 
-  // Beim Wechsel von Mandant/Jahr immer die neueste Version zeigen
-  useEffect(() => { setSelectedVersion(null); }, [selectedCid, selectedYear]);
+  // Beim Wechsel von Mandant/Jahr/Monat immer die neueste Version zeigen
+  useEffect(() => { setSelectedVersion(null); }, [selectedCid, selectedYear, selectedMonat]);
 
   // ── Abschluss erstellen falls nicht vorhanden ─────────────────────────────
   const createAbschlussMut = useMutation({
     mutationFn: async () => {
       const { data, error } = await supabase
         .from("abschluss")
-        .insert({ customer_id: selectedCid, geschaeftsjahr: selectedYear, status: "in_arbeit", version: 1 })
+        .insert({ customer_id: selectedCid, geschaeftsjahr: selectedYear, monat: selectedMonat, status: "in_arbeit", version: 1 })
         .select()
         .single();
       if (error) throw new Error(error.message);
       return data;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["abschluss_versions", selectedCid, selectedYear] });
+      qc.invalidateQueries({ queryKey: ["abschluss_versions", selectedCid, selectedYear, selectedMonat] });
       qc.invalidateQueries({ queryKey: ["abschluss_cids"] });
     },
     onError: (e) => {
       // Zeile existiert bereits (Race mit Auto-Jahr-Effekt) → kein Fehler-Toast,
       // einfach neu laden. Greift bei altem wie neuem Unique-Constraint.
       if (/duplicate key|23505|already exists/i.test(e?.message || "")) {
-        qc.invalidateQueries({ queryKey: ["abschluss_versions", selectedCid, selectedYear] });
+        qc.invalidateQueries({ queryKey: ["abschluss_versions", selectedCid, selectedYear, selectedMonat] });
         return;
       }
       toast.error("Fehler: " + e.message);
     },
   });
 
-  // Auto-create erste Version, wenn für Kunde+Jahr noch keine existiert.
-  // Guard pro (Kunde|Jahr) gegen Doppel-Anlage durch das überlappende
+  // Auto-create erste Version, wenn für Kunde+Jahr+Monat noch keine existiert.
+  // Guard pro (Kunde|Jahr|Monat) gegen Doppel-Anlage durch das überlappende
   // Auto-Jahr-Effekt-Timing (sonst "duplicate key"-Fehler, v.a. beim Default-Jahr).
   const autoCreateKeysRef = useRef(new Set());
   useEffect(() => {
     if (!selectedCid || abschlussLoading || versions.length > 0 || createAbschlussMut.isPending) return;
-    const key = `${selectedCid}|${selectedYear}`;
+    const key = `${selectedCid}|${selectedYear}|${selectedMonat}`;
     if (autoCreateKeysRef.current.has(key)) return;
     autoCreateKeysRef.current.add(key);
     createAbschlussMut.mutate();
-  }, [selectedCid, selectedYear, versions.length, abschlussLoading]);
+  }, [selectedCid, selectedYear, selectedMonat, versions.length, abschlussLoading]);
 
   const abschlussId = abschluss?.id;
   const gesperrt = !!abschluss?.gesperrt;
@@ -4559,7 +4613,7 @@ export default function Abschlussdokumentation() {
       const { error } = await supabase.from("abschluss").update({ einstellungen: merged }).eq("id", abschlussId);
       if (error) throw new Error(error.message);
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["abschluss_versions", selectedCid, selectedYear] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["abschluss_versions", selectedCid, selectedYear, selectedMonat] }),
     onError: (e) => toast.error(e.message),
   });
 
@@ -4571,7 +4625,7 @@ export default function Abschlussdokumentation() {
       if (error) throw new Error(error.message);
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["abschluss_versions", selectedCid, selectedYear] });
+      qc.invalidateQueries({ queryKey: ["abschluss_versions", selectedCid, selectedYear, selectedMonat] });
       toast.success("Status aktualisiert");
     },
     onError: (e) => toast.error(e.message),
@@ -4581,18 +4635,43 @@ export default function Abschlussdokumentation() {
   const createVersionMut = useMutation({
     mutationFn: async () => {
       const nextV = versions.length ? Math.max(...versions.map(v => v.version || 1)) + 1 : 1;
+      // Quelle für die Übernahme: die gerade betrachtete Version (nicht zwingend
+      // die höchste) – wer V2 aus V1 heraus anlegt, erwartet V1s Stand als Basis.
+      const sourceId = abschlussId;
       const { data, error } = await supabase
         .from("abschluss")
-        .insert({ customer_id: selectedCid, geschaeftsjahr: selectedYear, status: "in_arbeit", version: nextV })
+        .insert({ customer_id: selectedCid, geschaeftsjahr: selectedYear, monat: selectedMonat, status: "in_arbeit", version: nextV })
         .select()
         .single();
       if (error) throw new Error(error.message);
-      return data;
+
+      // Belege, Notizen, Status und Salden aus der Vorversion übernehmen, statt
+      // leer zu starten – sonst gehen Kunden-Uploads und Bearbeitung bei jeder
+      // neuen Version verloren. Ein nachträglicher Bilanz/ER-Import überschreibt
+      // hier nur die Salden (siehe importKontenMut), Zuweisungen bleiben stehen.
+      let carried = 0;
+      if (sourceId) {
+        const { data: sourceKonten, error: fetchErr } = await supabase
+          .from("abschluss_konten")
+          .select("kontonummer, kontoname, saldo_ist, saldo_vorjahr, position_id, notiz, arbeitspapier")
+          .eq("abschluss_id", sourceId);
+        if (fetchErr) throw new Error(fetchErr.message);
+        const toInsert = (sourceKonten || []).map(k => ({ ...k, abschluss_id: data.id }));
+        for (let i = 0; i < toInsert.length; i += 100) {
+          const { error: insErr } = await supabase.from("abschluss_konten").insert(toInsert.slice(i, i + 100));
+          if (insErr) throw new Error(insErr.message);
+        }
+        carried = toInsert.length;
+      }
+      return { ...data, carried };
     },
     onSuccess: (data) => {
       setSelectedVersion(data.version);
-      qc.invalidateQueries({ queryKey: ["abschluss_versions", selectedCid, selectedYear] });
-      toast.success(`Version ${data.version} angelegt – leer, bitte Bilanz/ER importieren`);
+      qc.invalidateQueries({ queryKey: ["abschluss_versions", selectedCid, selectedYear, selectedMonat] });
+      qc.invalidateQueries({ queryKey: ["abschluss_konten", data.id] });
+      toast.success(data.carried
+        ? `Version ${data.version} angelegt – ${data.carried} Konten inkl. Belege/Notizen übernommen`
+        : `Version ${data.version} angelegt – leer, bitte Bilanz/ER importieren`);
     },
     onError: (e) => toast.error(e.message),
   });
@@ -4604,7 +4683,7 @@ export default function Abschlussdokumentation() {
       if (error) throw new Error(error.message);
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["abschluss_versions", selectedCid, selectedYear] });
+      qc.invalidateQueries({ queryKey: ["abschluss_versions", selectedCid, selectedYear, selectedMonat] });
       toast.success(gesperrt ? "Version entsperrt" : "Version gesperrt");
     },
     onError: (e) => toast.error(e.message),
@@ -4620,8 +4699,8 @@ export default function Abschlussdokumentation() {
       setSelectedVersion(null);
       // Guard freigeben, damit beim Löschen der letzten Version wieder
       // automatisch eine leere V1 angelegt werden kann.
-      autoCreateKeysRef.current.delete(`${selectedCid}|${selectedYear}`);
-      qc.invalidateQueries({ queryKey: ["abschluss_versions", selectedCid, selectedYear] });
+      autoCreateKeysRef.current.delete(`${selectedCid}|${selectedYear}|${selectedMonat}`);
+      qc.invalidateQueries({ queryKey: ["abschluss_versions", selectedCid, selectedYear, selectedMonat] });
       qc.invalidateQueries({ queryKey: ["abschluss_cids"] });
       toast.success("Version gelöscht");
     },
@@ -4642,7 +4721,7 @@ export default function Abschlussdokumentation() {
       const { error } = await supabase.from("abschluss").update({ notizen: text }).eq("id", abschlussId);
       if (error) throw new Error(error.message);
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["abschluss_versions", selectedCid, selectedYear] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["abschluss_versions", selectedCid, selectedYear, selectedMonat] }),
     onError: (e) => toast.error(e.message),
   });
 
@@ -4843,6 +4922,7 @@ export default function Abschlussdokumentation() {
     const contentCache = new Map(); // docId → content_text
     const docMeta = new Map();      // docId → Kandidaten-Metadaten (für LLM/Link)
     const assignedKontoIds = new Set();
+    const assignedDocIds = new Set(); // ein Dokument wird nie zweimal vergeben
 
     const ensureContent = async (ids) => {
       const need = ids.filter(id => !contentCache.has(id));
@@ -4858,15 +4938,65 @@ export default function Abschlussdokumentation() {
       };
       const ap = { ...(k.arbeitspapier || {}), belege: [...((k.arbeitspapier?.belege) || []), newBeleg] };
       const { error } = await supabase.from("abschluss_konten").update({ arbeitspapier: ap }).eq("id", k.id);
-      if (!error) { assignedKontoIds.add(k.id); assignedList.push({ konto: `${k.kontonummer} ${k.kontoname}`, doc: d.name, reason }); return true; }
+      if (!error) {
+        assignedKontoIds.add(k.id); assignedDocIds.add(d.id);
+        assignedList.push({ konto: `${k.kontonummer} ${k.kontoname}`, doc: d.name, reason });
+        return true;
+      }
       return false;
     };
 
     try {
+      // ── Phase 0: Vorjahres-Muster ──────────────────────────────────────────
+      // Was letztes Jahr für dieses Konto bestätigt (verknüpft) war, ist die
+      // beste Suchgrundlage für dieses Jahr — kontospezifischer als die
+      // generischen AI_BELEG_KEYWORDS (unterscheidet z.B. mehrere Bankkonten
+      // desselben Kunden). Nur EXAKTES Geschäftsjahr als Kandidat zulässig
+      // (kein "year == null" wie sonst) — das Vorjahresdokument selbst darf
+      // nie versehentlich wieder verlinkt werden.
+      const { data: prevAbschluss } = await supabase
+        .from("abschluss")
+        .select("id")
+        .eq("customer_id", selectedCid)
+        .eq("geschaeftsjahr", selectedYear - 1)
+        .eq("monat", selectedMonat)
+        .order("version", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (prevAbschluss?.id) {
+        const { data: prevKonten } = await supabase
+          .from("abschluss_konten")
+          .select("kontonummer, arbeitspapier")
+          .eq("abschluss_id", prevAbschluss.id);
+        const musterMap = new Map(); // kontonummer → { tokens, category }
+        for (const pk of (prevKonten || [])) {
+          const b = (pk.arbeitspapier?.belege || [])[0];
+          const tokens = aiTokensFromName(b?.name || b?.filename);
+          if (b && tokens.length) musterMap.set(String(pk.kontonummer), { tokens, category: b.category });
+        }
+        if (musterMap.size) {
+          setAiBusy("Prüfe Vorjahres-Muster …");
+          for (const k of targets) {
+            const muster = musterMap.get(String(k.kontonummer));
+            if (!muster) continue;
+            const { data } = await supabase.rpc("search_dokumente", {
+              p_query: muster.tokens.slice(0, 6).join(" "), p_customer_id: selectedCid, p_limit: 8,
+            });
+            const cand = (data || []).find(d =>
+              d.year === selectedYear && !assignedDocIds.has(d.id) &&
+              (!muster.category || d.category === muster.category) &&
+              muster.tokens.every(t => `${d.name || ""} ${d.filename || ""}`.toLowerCase().includes(t))
+            );
+            if (cand) { docMeta.set(cand.id, cand); await linkBeleg(k, cand, "Vorjahr"); }
+          }
+        }
+      }
+
       // ── Phase 1: Kandidaten sammeln + Betrags-Treffer sofort verknüpfen ──
       const pending = []; // { k, cands: [doc…], best }
       for (let i = 0; i < targets.length; i++) {
         const k = targets[i];
+        if (assignedKontoIds.has(k.id)) continue; // schon per Vorjahres-Muster verknüpft
         setAiBusy(`Analyse ${i + 1} / ${targets.length} …`);
         const pos = POSITION_MAP[k.position_id];
         const kw = AI_BELEG_KEYWORDS[k.position_id] || [];
@@ -4881,7 +5011,7 @@ export default function Abschlussdokumentation() {
         const isPlanning = d => /\b(reporting|budget)\b/i.test(d.name || d.filename || "");
         const blockedCats = AI_BLOCKED_CATEGORIES[k.position_id] ?? AI_BLOCKED_CATEGORIES.default;
         const cands = data
-          .filter(d => !selectedYear || d.year === selectedYear || d.year == null)
+          .filter(d => aiYearOk(k.position_id, d, selectedYear))
           .filter(d => !isPlanning(d))
           .filter(d => !blockedCats.includes(d.category))
           .slice(0, 5);
@@ -4890,21 +5020,30 @@ export default function Abschlussdokumentation() {
         await ensureContent(cands.map(d => d.id));
 
         const terms = [String(k.kontoname || "").toLowerCase(), ...kw.map(s => s.toLowerCase())].filter(Boolean);
+        const expectedCats = AI_ERWARTETE_KATEGORIEN[k.position_id] || [];
+        const isEvergreen = AI_EVERGREEN_POSITIONS.has(k.position_id);
         const scored = cands.map(d => {
           const hay = `${d.name || ""} ${d.filename || ""} ${d.headline || ""}`.toLowerCase();
           const kwHits = terms.filter(t => hay.includes(t)).length;
-          const yearBonus = (selectedYear && d.year === selectedYear) ? 1 : 0;
+          const catBonus = expectedCats.includes(d.category) ? 2 : 0;
+          // Bei mehrjährig gültigen Positionen darf ein älteres, gültiges Jahr
+          // nicht wie ein Zufallstreffer auf 0 fallen — sonst verliert der
+          // richtige alte Vertrag systematisch gegen unpassende Kandidaten.
+          const yearBonus = !selectedYear ? 0
+            : d.year === selectedYear ? 1
+            : (isEvergreen && d.year != null && d.year < selectedYear) ? 0.5
+            : 0;
           const amtHit = amountAppears(extractAmounts(contentCache.get(d.id) || ""), k.saldo_ist);
-          return { d, amtHit, kwHits, score: (d.rank || 0) * 4 + kwHits + yearBonus + (amtHit ? 6 : 0) };
+          return { d, amtHit, kwHits, score: (d.rank || 0) * 4 + kwHits + catBonus + yearBonus + (amtHit ? 6 : 0) };
         }).sort((a, b) => b.score - a.score);
-        const best = scored[0];
-        if (best?.amtHit) { await linkBeleg(k, best.d, "Betrag"); continue; } // sehr zuverlässig
+        const best = scored.find(s => s.amtHit && !assignedDocIds.has(s.d.id));
+        if (best) { await linkBeleg(k, best.d, "Betrag"); continue; } // sehr zuverlässig
         pending.push({ k, cands, scored });
       }
 
       // ── Phase 2: LLM-Rerank für die unsicheren Konten ──
       const stillOpen = pending.filter(p => !assignedKontoIds.has(p.k.id));
-      let llmAssigned = new Map(); // kontonummer → doc_id
+      let llmAssigned = new Map(); // kontonummer → { doc_id, confidence }
       if (stillOpen.length) {
         setAiBusy("KI wertet aus …");
         const docIds = [...new Set(stillOpen.flatMap(p => p.cands.map(d => d.id)))];
@@ -4924,7 +5063,9 @@ export default function Abschlussdokumentation() {
           });
           if (!llmErr && Array.isArray(llm?.assignments)) {
             for (const a of llm.assignments) {
-              if (a.doc_id && (a.confidence ?? 0) >= 0.6) llmAssigned.set(String(a.kontonummer), a.doc_id);
+              if (a.doc_id && (a.confidence ?? 0) >= 0.6) {
+                llmAssigned.set(String(a.kontonummer), { doc_id: a.doc_id, confidence: a.confidence ?? 0 });
+              }
             }
           }
         } catch (e) {
@@ -4943,11 +5084,18 @@ export default function Abschlussdokumentation() {
       // gewählten Beleg (Kontoname/Stichwort-Treffer oder Betrag) — ohne das hat
       // die KI z.B. ein Bankkonto mit einer AHV-Abrechnung verknüpft, weil unter
       // den Kandidaten einfach kein besserer war. Lieber offen als blind vertraut.
-      for (const p of stillOpen) {
-        const llmDocId = llmAssigned.get(String(p.k.kontonummer));
-        if (!llmDocId || !docMeta.has(llmDocId)) continue;
-        const corroborated = p.scored.some(s => s.d.id === llmDocId && (s.kwHits > 0 || s.amtHit));
-        if (corroborated) await linkBeleg(p.k, docMeta.get(llmDocId), "KI");
+      // Nach Konfidenz absteigend auflösen: will das LLM dasselbe Dokument
+      // zwei Positionen geben (im Prompt verboten, aber nicht erzwungen),
+      // gewinnt der sicherere Vorschlag; die zweite Position bleibt offen
+      // statt denselben Beleg doppelt zu verknüpfen.
+      const llmOrder = stillOpen
+        .map(p => ({ p, m: llmAssigned.get(String(p.k.kontonummer)) }))
+        .filter(x => x.m && docMeta.has(x.m.doc_id))
+        .sort((a, b) => b.m.confidence - a.m.confidence);
+      for (const { p, m } of llmOrder) {
+        if (assignedDocIds.has(m.doc_id)) continue;
+        const corroborated = p.scored.some(s => s.d.id === m.doc_id && (s.kwHits > 0 || s.amtHit));
+        if (corroborated) await linkBeleg(p.k, docMeta.get(m.doc_id), "KI");
       }
 
       qc.invalidateQueries({ queryKey: ["abschluss_konten", abschlussId] });
@@ -5040,6 +5188,24 @@ export default function Abschlussdokumentation() {
                 outline: "none", cursor: "pointer", minWidth: 90,
               }}>
               {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
+          </div>
+
+          {/* Periode: Jahresabschluss oder Zwischenabschluss per Monatsende */}
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-wider mb-1.5 block" style={{ color: subC }}>
+              Periode
+            </label>
+            <select
+              value={selectedMonat}
+              onChange={e => setSelectedMonat(Number(e.target.value))}
+              style={{
+                height: 36, padding: "0 10px", borderRadius: 8, fontSize: 13, fontWeight: 600,
+                border: `1px solid ${panelBdr}`, backgroundColor: panelBg, color: headingC,
+                outline: "none", cursor: "pointer", minWidth: 150,
+              }}>
+              <option value={0}>Jahresabschluss</option>
+              {MONAT_LABELS.map((m, i) => <option key={i + 1} value={i + 1}>Zwischenabschluss {m}</option>)}
             </select>
           </div>
 
