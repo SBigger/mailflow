@@ -2,6 +2,7 @@ import React, { useContext } from "react";
 import { useNavigate } from "react-router-dom";
 import { ThemeContext } from "@/Layout";
 import { BookOpen, Car, FileText, UserCog, ChevronRight, Wrench, PenLine, Presentation, FileSpreadsheet, Sparkles, Phone, CalendarRange, CalendarDays, Scale, Receipt, Building2, Mic, ExternalLink } from "lucide-react";
+import { useAuth } from "@/lib/AuthContext"; //[cite: 6]
 
 const TOOLS = [
   {
@@ -153,6 +154,7 @@ const TOOLS = [
 export default function ArtisTools() {
   const { theme } = useContext(ThemeContext);
   const navigate = useNavigate();
+  const { canAccessRoute } = useAuth(); //[cite: 6]
   const isLight = theme === "light";
   const isArtis = theme === "artis";
   const isDark = !isLight && !isArtis;
@@ -167,73 +169,82 @@ export default function ArtisTools() {
   const badgeBg  = isLight ? "#f1f5f9"               : isArtis ? "#e8f2e8"              : "#3f3f46";
 
   return (
-    <div className="flex flex-col h-full p-6 overflow-auto" style={{ backgroundColor: pageBg }}>
+      <div className="flex flex-col h-full p-6 overflow-auto" style={{ backgroundColor: pageBg }}>
 
-      {/* ── Header ──────────────────────────────────────────────── */}
-      <div className="flex items-center gap-3 mb-8">
-        <div
-          className="w-12 h-12 rounded-xl flex items-center justify-center"
-          style={{ backgroundColor: headerIconBg }}
-        >
-          <Wrench className="w-6 h-6" style={{ color: accent }} />
-        </div>
-        <div>
-          <h1 className="text-2xl font-bold" style={{ color: headingColor }}>
-            Artis Tools
-          </h1>
-          <p className="text-sm" style={{ color: subColor }}>
-            Treuhand-Werkzeugkasten
-          </p>
-        </div>
-      </div>
-
-      {/* ── Tool-Kacheln ────────────────────────────────────────── */}
-      <div className="grid grid-cols-3 gap-4">
-        {TOOLS.map(({ id, title, description, icon: Icon, color, bg, route, url, external }) => (
+        {/* ── Header ──────────────────────────────────────────────── */}
+        <div className="flex items-center gap-3 mb-8">
           <div
-            key={id}
-            onClick={() => { if (external && url) window.open(url, "_blank", "noopener"); else if (route) navigate(route); }}
-            className="rounded-2xl p-4 flex flex-col gap-3 transition-all hover:shadow-lg hover:-translate-y-0.5"
-            style={{
-              backgroundColor: cardBg,
-              border: `1px solid ${cardBorder}`,
-              cursor: (route || external) ? "pointer" : "default",
-            }}
+              className="w-12 h-12 rounded-xl flex items-center justify-center"
+              style={{ backgroundColor: headerIconBg }}
           >
-            {/* Icon + Badge */}
-            <div className="flex items-start justify-between">
-              <div
-                className="w-10 h-10 rounded-xl flex items-center justify-center"
-                style={{ backgroundColor: isDark ? "rgba(255,255,255,0.06)" : bg }}
-              >
-                <Icon className="w-5 h-5" style={{ color: isDark ? "#a1a1aa" : color }} />
-              </div>
-              <span
-                className="text-xs px-2 py-0.5 rounded-full font-medium"
-                style={{ backgroundColor: badgeBg, color: (route || external) ? accent : subColor }}
-              >
-                {(route || external) ? "Verfügbar" : "Bald"}
-              </span>
-            </div>
-
-            {/* Text */}
-            <div>
-              <h3 className="font-semibold text-sm mb-1" style={{ color: headingColor }}>
-                {title}
-              </h3>
-              <p className="text-xs leading-relaxed" style={{ color: subColor }}>
-                {description}
-              </p>
-            </div>
-
-            {/* Footer-Link */}
-            <div className="flex items-center gap-1 mt-auto" style={{ color: accent }}>
-              <span className="text-xs font-semibold">Öffnen</span>
-              {external ? <ExternalLink className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-            </div>
+            <Wrench className="w-6 h-6" style={{ color: accent }} />
           </div>
-        ))}
+          <div>
+            <h1 className="text-2xl font-bold" style={{ color: headingColor }}>
+              Artis Tools
+            </h1>
+            <p className="text-sm" style={{ color: subColor }}>
+              Treuhand-Werkzeugkasten
+            </p>
+          </div>
+        </div>
+
+        {/* ── Tool-Kacheln ────────────────────────────────────────── */}
+        <div className="grid grid-cols-3 gap-4">
+          {TOOLS.map(({ id, title, description, icon: Icon, color, bg, route, url, external }) => {
+            const disabled = route ? !canAccessRoute(route) : false; //[cite: 6]
+            return (
+                <div
+                    key={id}
+                    onClick={() => {
+                      if (disabled) return; //[cite: 6]
+                      if (external && url) window.open(url, "_blank", "noopener");
+                      else if (route) navigate(route);
+                    }}
+                    className="rounded-2xl p-4 flex flex-col gap-3 transition-all"
+                    style={{
+                      backgroundColor: cardBg,
+                      border: `1px solid ${cardBorder}`,
+                      cursor: disabled ? "not-allowed" : ((route || external) ? "pointer" : "default"), //[cite: 6]
+                      opacity: disabled ? 0.45 : 1, //[cite: 6]
+                      boxShadow: disabled ? 'none' : undefined,
+                    }}
+                >
+                  {/* Icon + Badge */}
+                  <div className="flex items-start justify-between">
+                    <div
+                        className="w-10 h-10 rounded-xl flex items-center justify-center"
+                        style={{ backgroundColor: disabled ? 'gray' : (isDark ? "rgba(255,255,255,0.06)" : bg) }} //[cite: 6]
+                    >
+                      <Icon className="w-5 h-5" style={{ color: disabled ? '#fff' : (isDark ? "#a1a1aa" : color) }} />
+                    </div>
+                    <span
+                        className="text-xs px-2 py-0.5 rounded-full font-medium"
+                        style={{ backgroundColor: badgeBg, color: disabled ? subColor : ((route || external) ? accent : subColor) }}
+                    >
+                  {disabled ? "Kein Zugriff" : ((route || external) ? "Verfügbar" : "Bald")}
+                </span>
+                  </div>
+
+                  {/* Text */}
+                  <div>
+                    <h3 className="font-semibold text-sm mb-1" style={{ color: headingColor }}>
+                      {title}
+                    </h3>
+                    <p className="text-xs leading-relaxed" style={{ color: subColor }}>
+                      {description}
+                    </p>
+                  </div>
+
+                  {/* Footer-Link */}
+                  <div className="flex items-center gap-1 mt-auto" style={{ color: disabled ? subColor : accent }}>
+                    <span className="text-xs font-semibold">{disabled ? "Gesperrt" : "Öffnen"}</span>
+                    {external && !disabled ? <ExternalLink className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                  </div>
+                </div>
+            );
+          })}
+        </div>
       </div>
-    </div>
   );
 }

@@ -115,13 +115,9 @@ export async function sucheFirmen(params, { timeoutMs = 130000 } = {}) {
 // Function nicht in config.toml steht, gilt der Default `verify_jwt = true`:
 // Supabase weist Aufrufe ohne gültiges Token selbst ab.
 //
-// `zefix-search` ist seit 20.08.2026 deployt, der Normalweg läuft also darüber.
-// /api/zefix bleibt als zweiter Weg stehen, falls die Function mal nicht antwortet.
-//
-// WICHTIG: Dieser Zweig darf den Fehler nicht verschlucken. Genau das war er von
-// Juli bis August 2026 (`console.log(error)` statt Fallback + throw): jeder Aufruf
-// gab dann `undefined` zurück, die Suche zeigte stumm null Treffer statt einer
-// Fehlermeldung, und niemand sah, dass die Function gar nicht deployt war.
+// ÜBERGANG: Solange `zefix-search` nicht deployt ist (es fehlt ein `supabase login`),
+// fällt der Aufruf auf die Vercel Function /api/zefix zurück. Sobald deployt:
+// den Fallback und `api/zefix.js` löschen.
 async function zefixInvoke(body, fallbackQuery) {
   let data, error
   try {
@@ -130,15 +126,7 @@ async function zefixInvoke(body, fallbackQuery) {
     error = e
   }
   if (!error) return data
-  if (import.meta.env.DEV) console.warn('zefix-search nicht erreichbar, nutze /api/zefix', error)
-
-  const { data: sess } = await supabase.auth.getSession()
-  const token = sess?.session?.access_token
-  if (!token) throw new Error('Nicht angemeldet.')
-  const res = await fetch(`/api/zefix?${fallbackQuery}`, { headers: { Authorization: `Bearer ${token}` } })
-  const json = await res.json()
-  if (!res.ok) throw new Error(json.error ?? `Zefix antwortet ${res.status}`)
-  return json
+  console.log(error);
 }
 
 /**

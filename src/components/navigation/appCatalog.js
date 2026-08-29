@@ -49,7 +49,6 @@ import {
   FileStack,
 } from "lucide-react";
 import { createPageUrl } from "@/utils";
-import { FEATURE_LEISTUNGSERFASSUNG } from "@/lib/featureFlags";
 import { scheduleNavPrefsSave } from "./navPrefsSync";
 
 export const NAV_GROUPS = [
@@ -66,7 +65,7 @@ export const NAV_GROUPS = [
       { name: 'TicketBoard', label: 'Tickets', icon: LifeBuoy, rail: true, color: '#e07b39', aliases: ['support', 'anfragen'] },
       { name: 'Fristen', label: 'Fristen', icon: CalendarClock, rail: true, color: '#c94f4f', aliases: ['deadline', 'termine', 'fristverlängerung', 'steuerfristen'] },
       { name: 'Kalender', label: 'Kalender', icon: CalendarDays, color: '#5b6fc9', aliases: ['termine', 'agenda'] },
-      ...(FEATURE_LEISTUNGSERFASSUNG ? [{ name: 'Leistungserfassung', label: 'Leistungserfassung', icon: Clock, rail: true, color: '#2e9aa8', aliases: ['stunden', 'zeiterfassung', 'rapport', 'le'] }] : []),
+      { name: 'Leistungserfassung', label: 'Leistungserfassung', icon: Clock, rail: true, color: '#2e9aa8', aliases: ['stunden', 'zeiterfassung', 'rapport', 'le'] },
     ],
   },
   {
@@ -74,7 +73,6 @@ export const NAV_GROUPS = [
       { name: 'Kunden', label: 'Kunden', icon: Building2, rail: true, color: '#d98836', aliases: ['crm', 'mandanten', 'firmen', 'unternehmen'] },
       { name: 'Personen', label: 'Personen', icon: Users, color: '#8a63c9', aliases: ['privatpersonen', 'kontakte'] },
       { name: 'Dokumente', label: 'E-Binder', icon: FolderOpen, rail: true, color: '#caa53d', aliases: ['dokumente', 'ablage', 'dateiablage', 'dateien', 'abschlussunterlagen', 'archiv', 'e-binder', 'ebinder'] },
-      /*{ name: 'DokumenteV2', label: 'Dokumente V2', icon: FolderOpen, color: '#a8862f', aliases: ['ablage neu', 'beta'] },*/
       { name: 'Posteingang', label: 'Paperboy', icon: CloudUpload, rail: true, color: '#4ba3c7', aliases: ['posteingang', 'scans', 'upload', 'eingang', 'paperboy'] },
       { name: 'Kundenportal', label: 'Kundenportal', icon: ShieldCheck, color: '#0e756a', aliases: ['portal', 'kundenzugang', 'freigabe', 'read-only', 'kundenlogin'] },
       { name: 'TelefonDashboard', label: 'Telefon', icon: PhoneCall, color: '#4fae6b', aliases: ['anrufe', 'telefonliste', 'calls', 'teams-anrufe'] },
@@ -133,12 +131,8 @@ export const NAV_GROUPS = [
   },
 ];
 
-// Gruppen, die beim ersten Start in der Sidebar aufgeklappt sind:
-// alle — damit jede App sofort sichtbar ist. Zuklappen bleibt Sache des Nutzers.
 export const DEFAULT_OPEN = { start: true, arbeit: true, kunden: true, fibu: true, steuern: true, planung: true, tools: true, system: true };
 
-// FiBu-Links öffnen den zuletzt benutzten Mandanten direkt;
-// ohne bekannten Mandanten landet man auf der Mandanten-Auswahl.
 export function fibuHref(sub) {
   const id = localStorage.getItem('fibu_last_mandant');
   if (!id || !sub) return '/fibu';
@@ -193,11 +187,11 @@ export function recordAppOpen(item) {
     data[key] = { n: Math.min(prev.n + 1, 500), t: Date.now() };
     localStorage.setItem(FRECENCY_KEY, JSON.stringify(data));
   } catch {
-    // localStorage voll/gesperrt → Tracking einfach auslassen
+    // localStorage voll/gesperrt
   }
 }
 
-// ── Favoriten: explizit angepinnte Apps (rechte Dock-Leiste) ───────
+// ── Favoriten ─────────────────────────────────────────────────────
 const FAVORITES_KEY = 'app_favorites';
 
 export function getFavoriteKeys() {
@@ -215,7 +209,6 @@ function writeFavorites(keys) {
   } catch {
     return;
   }
-  // Dock und Launcher live synchron halten + ins Profil sichern
   window.dispatchEvent(new CustomEvent('smartis:favorites-changed'));
   scheduleNavPrefsSave();
 }
@@ -230,11 +223,9 @@ export function toggleFavorite(item) {
   writeFavorites(cur.includes(k) ? cur.filter(x => x !== k) : [...cur, k]);
 }
 
-// Neue Reihenfolge der Favoriten übernehmen (Drag & Drop im Hub/Dock)
 export function reorderFavorites(orderedKeys) {
   const known = new Set(getFavoriteKeys());
   const clean = orderedKeys.filter(k => known.has(k));
-  // fehlende (falls parallel etwas dazu kam) hinten anhängen
   const rest = [...known].filter(k => !clean.includes(k));
   writeFavorites([...clean, ...rest]);
 }

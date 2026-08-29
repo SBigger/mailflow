@@ -318,7 +318,7 @@ export default function AiAssistant() {
     };
 
     return (
-        <div className="flex flex-col h-full p-6 overflow-hidden" style={{ backgroundColor: pageBg }}>
+        <div className="flex flex-col h-screen w-screen p-6 overflow-hidden" style={{ backgroundColor: pageBg }}>
 
             {/* ── Header ──────────────────────────────────────────────── */}
             <div className="flex items-center justify-between mb-6 shrink-0">

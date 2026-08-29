@@ -8,10 +8,10 @@ export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [requiresMfa, setRequiresMfa] = useState(null);
-  // Eingeladen, aber Passwort noch nie gesetzt (inviteState 1). Ohne diesen
-  // Hinweis landet so jemand nach korrekter Anmeldung wortlos wieder auf der
-  // Login-Maske und weiss nicht, warum.
   const [inviteIncomplete, setInviteIncomplete] = useState(null);
+
+  // Neuer State für gecachte Berechtigungen (z.B. erlaubte Pfade oder Module)
+  const [allowedRoutes, setAllowedRoutes] = useState([]);
 
   useEffect(() => {
     const checkUser = async () => {
@@ -27,7 +27,6 @@ export function AuthProvider({ children }) {
       const user = session?.user ?? null;
       if (user) {
         setInviteIncomplete(null);
-        // Check if MFA is required but not yet completed
         const { data, error } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
 
         if (error) {
@@ -37,18 +36,16 @@ export function AuthProvider({ children }) {
           return;
         }
 
-        // If they are at AAL1 but 'next_level' is AAL2, they need to verify MFA
         if (data.currentLevel === 'aal1' && data.nextLevel === 'aal2') {
-          // Option A: Set a specific state to show the MFA OTP input
           setRequiresMfa(true);
           setLoading(false);
         } else {
-          // They are fully verified (AAL2) or don't have MFA enabled
           setRequiresMfa(false);
           loadProfile(user.id, user);
         }
       } else {
         setProfile(null);
+        setAllowedRoutes([]);
         setLoading(false);
         setUser(null);
       }
@@ -62,22 +59,56 @@ export function AuthProvider({ children }) {
   async function loadProfile(userId, user) {
     const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
     if(data && data.inviteState === 1) {
-      // Einladung noch nicht abgeschlossen: anmelden ja, hinein aber nicht.
-      // Halbe Sitzung wieder beenden und den Grund merken, damit die
-      // Login-Maske ihn anzeigen kann.
       setInviteIncomplete(data.email ?? user?.email ?? '');
       setProfile(null);
       setUser(null);
       supabase.auth.signOut();
-    } else {
+    } else if (data) {
       setProfile(data);
       setUser(user);
+
+      // Berechtigungen einmalig beim Login/Profil-Laden vom Backend abrufen
+      await fetchPermissions(data);
     }
     setLoading(false);
   }
 
+  async function fetchPermissions(userProfile) {
+    try {
+      const { data, error } = await supabase.rpc('get_user_permissions', {
+        user_id: userProfile.id
+      });
+
+      if (error) throw error;
+
+      setAllowedRoutes(data || []);
+    } catch (err) {
+      console.error("Fehler beim Laden der Berechtigungen:", err);
+      setAllowedRoutes([]);
+    }
+  }
+
+  // Die Prüffunktion für die ProtectedRoute
+  function hasPermission(pathname) {
+    if (!profile) return false;
+    if (allowedRoutes.includes('*')) return true;
+
+    return allowedRoutes.some(route => pathname.startsWith(route));
+  }
+
+  // Zusätzliche Methode, um ohne Umleitung zu prüfen ob Zugriff besteht
+  function canAccessRoute(pathname) {
+    if (!profile) return false;
+    if (allowedRoutes.includes('*')) return true;
+    return allowedRoutes.some(route => pathname.startsWith(route));
+  }
+
+  function getFirstAllowedRoute() {
+    return allowedRoutes[0] || '/Login';
+  }
+
   async function login(email, password) {
-    return  await supabase.auth.signInWithPassword({ email, password });
+    return await supabase.auth.signInWithPassword({ email, password });
   }
 
   async function checkMFA() {
@@ -86,28 +117,28 @@ export function AuthProvider({ children }) {
 
   async function signOut() {
     setLoading(true);
-    const { error} = await supabase.auth.signOut();
+    const { error } = await supabase.auth.signOut();
     setLoading(false);
     if (error) {
       console.error("Logout fehlgeschlagen:", error);
       return;
     }
-
     setUser(null);
+    setAllowedRoutes([]);
   }
 
   async function updateProfile(updates) {
     const { data, error } = await supabase
-      .from('profiles').update(updates).eq('id', user.id).select().single();
+        .from('profiles').update(updates).eq('id', user.id).select().single();
     if (error) throw error;
     setProfile(data);
     return data;
   }
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, login, checkMFA, signOut, updateProfile, requiresMfa, inviteIncomplete, setInviteIncomplete }}>
-      {children}
-    </AuthContext.Provider>
+      <AuthContext.Provider value={{ user, profile, loading, login, checkMFA, signOut, updateProfile, requiresMfa, inviteIncomplete, setInviteIncomplete, hasPermission, canAccessRoute, getFirstAllowedRoute }}>
+        {children}
+      </AuthContext.Provider>
   );
 }
 

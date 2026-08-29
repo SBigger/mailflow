@@ -5,18 +5,16 @@ import {QueryClientProvider, QueryClient} from '@tanstack/react-query';
 import {BrowserRouter as Router, Route, Routes, Navigate, useNavigate} from 'react-router-dom';
 import {AuthProvider, useAuth} from '@/lib/AuthContext';
 import {Loader2} from 'lucide-react';
-import {FEATURE_LEISTUNGSERFASSUNG} from "@/lib/featureFlags";
 import Layout from './Layout';
 import { TelephonyProvider } from "./modules/telefonie/context/TelephonyContext.jsx";
+import ProtectedRoute from './lib/ProtectedRoute';
 
-// --- Lade-Komponente für Suspense ---
 const PageLoader = () => (
     <div className="fixed inset-0 bg-zinc-950 flex items-center justify-center">
         <Loader2 className="w-8 h-8 text-blue-500 animate-spin"/>
     </div>
 );
 
-// --- Lazy Imports der Seiten ---
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const MailKanban = lazy(() => import('./pages/MailKanban'));
 const TaskBoard = lazy(() => import('./pages/TaskBoard'));
@@ -75,7 +73,7 @@ const queryClient = new QueryClient({
 });
 
 function AuthenticatedApp() {
-    const {user, loading, requiresMfa, profile} = useAuth();
+    const {user, loading, requiresMfa} = useAuth();
     const navigate = useNavigate();
 
     useEffect(() => {
@@ -91,92 +89,63 @@ function AuthenticatedApp() {
     if (!user) return <Login/>;
     if (requiresMfa) return <MFALogin/>;
 
-    // --- Externe Kundenbenutzer: ausschliesslich das FiBu-Modul ---
-    // Sie sehen nur die Mandanten, die in fibu_user_mandant_access fuer sie
-    // freigegeben sind — dort aber mit vollen Rechten. Alles uebrige von
-    // Smartis ist fuer sie weder erreichbar (hier) noch lesbar (RLS: is_staff).
-    if (profile?.role === 'extern') {
-        return (
-            <Suspense fallback={<PageLoader />}>
-                <Routes>
-                    <Route path="/fibu/*" element={<FiBuRouter />} />
-                    <Route path="*" element={<Navigate to="/fibu" replace />} />
-                </Routes>
-            </Suspense>
-        );
-    }
-
     return (
-        // Ein einziger Suspense-Wrapper fängt alle darunter liegenden Lazy-Komponenten ab
         <Suspense fallback={<PageLoader />}>
             <TelephonyProvider>
-            <Routes>
-                {/* FiBu: eigene Shell, kein MailFlow-Layout */}
-                <Route path="/fibu/*" element={<FiBuRouter />} />
+                <Routes>
+                    <Route element={<ProtectedRoute />}>
+                        <Route path="/fibu/*" element={<FiBuRouter />} />
+                        <Route path="/telefonie/*" element={<TelefonieRouter />} />
+                        <Route path="/besprechungen/*" element={<VideoRouter />} />
+                        <Route element={<Layout />}>
+                            <Route path="/" element={<Navigate to="/Dashboard" replace />} />
+                            <Route path="/Hub" element={<Hub />} />
+                            <Route path="/Dashboard" element={<Dashboard />} />
+                            <Route path="/MailKanban" element={<MailKanban />} />
+                            <Route path="/TaskBoard" element={<TaskBoard />} />
+                            <Route path="/Settings" element={<Settings />} />
+                            <Route path="/Kunden" element={<Kunden />} />
+                            <Route path="/Personen" element={<Personen />} />
+                            <Route path="/Fristen" element={<Fristen />} />
+                            <Route path="/ReminderBoard" element={<ReminderBoard />} />
+                            <Route path="/TicketBoard" element={<TicketBoard />} />
+                            <Route path="/KnowledgeBase" element={<KnowledgeBase />} />
+                            <Route path="/Dokumente" element={<Dokumente />} />
+                            <Route path="/Chartis" element={<Chartis/>}/>
+                            <Route path="/Posteingang" element={<Posteingang />} />
+                            <Route path="/UserManagement" element={<UserManagement />} />
+                            <Route path="/Kundenportal" element={<Kundenportal />} />
+                            <Route path="/ArtisTools" element={<ArtisTools />} />
+                            <Route path="/BriefSchreiben" element={<BriefSchreiben />} />
+                            <Route path="/Fahrzeugliste" element={<Fahrzeugliste />} />
+                            <Route path="/Aktienbuch" element={<Aktienbuch />} />
+                            <Route path="/Unterschriften" element={<Unterschriften />} />
+                            <Route path="/Abschlussdokumentation" element={<Abschlussdokumentation />} />
+                            <Route path="/Anlagebuchhaltung" element={<Anlagebuchhaltung />} />
+                            <Route path="/Whiteboard" element={<Whiteboard />} />
+                            <Route path="/Firmensuche" element={<Firmensuche />} />
+                            <Route path="/Auswertungen" element={<Auswertungen />} />
+                            <Route path="/Steuern" element={<Steuern />} />
+                            <Route path="/Belegsortierung" element={<Belegsortierung />} />
+                            <Route path="/Veranlagungen" element={<Veranlagungen />} />
+                            <Route path="/Promptvorlagen" element={<Promptvorlagen />} />
+                            <Route path="/TelefonDashboard" element={<TelefonDashboard />} />
+                            <Route path="/Telefonliste" element={<Telefonliste />} />
+                            <Route path="/Jahresplanung" element={<Jahresplanung />} />
+                            <Route path="/Monatsplanung" element={<Monatsplanung />} />
+                            <Route path="/Kalender" element={<Kalender />} />
+                            <Route path="/Steuerausscheidung" element={<Steuerausscheidung />} />
+                            <Route path="/GVProtokollApp" element={<GVProtokollApp/>} />
+                            <Route path="/AiAssistant" element={<AiAssistant />} />
+                            <Route path="/Leistungserfassung" element={<Leistungserfassung />} />
 
-                {/* Telefonie: eigene Shell + Softphone, kein MailFlow-Layout */}
-                <Route path="/telefonie/*" element={<TelefonieRouter />} />
+                            <Route path="*" element={<Navigate to="/Dashboard" replace />} />
+                        </Route>
+                    </Route>
 
-                {/* Besprechungen (Video): eigene Shell, kein MailFlow-Layout */}
-                <Route path="/besprechungen/*" element={<VideoRouter />} />
-
-                {/* MailFlow: Layout als Wrapper-Route (Layout muss im Inneren ein <Outlet /> nutzen!) */}
-                <Route element={<Layout />}>
-                    <Route path="/" element={<Navigate to="/Dashboard" replace />} />
-                    <Route path="/Hub" element={<Hub />} />
-                    <Route path="/Dashboard" element={<Dashboard />} />
-                    <Route path="/MailKanban" element={<MailKanban />} />
-                    <Route path="/TaskBoard" element={<TaskBoard />} />
-                    <Route path="/Settings" element={<Settings />} />
-                    <Route path="/Kunden" element={<Kunden />} />
-                    <Route path="/Personen" element={<Personen />} />
-                    <Route path="/Fristen" element={<Fristen />} />
-                    <Route path="/ReminderBoard" element={<ReminderBoard />} />
-                    <Route path="/TicketBoard" element={<TicketBoard />} />
-                    <Route path="/KnowledgeBase" element={<KnowledgeBase />} />
-                    <Route path="/Dokumente" element={<Dokumente />} />
-                    <Route path="/Chartis" element={<Chartis/>}/>
-                    <Route path="/Posteingang" element={<Posteingang />} />
-                    <Route path="/UserManagement" element={<UserManagement />} />
-                    <Route path="/Kundenportal" element={<Kundenportal />} />
-                    <Route path="/ArtisTools" element={<ArtisTools />} />
-                    <Route path="/BriefSchreiben" element={<BriefSchreiben />} />
-                    <Route path="/Fahrzeugliste" element={<Fahrzeugliste />} />
-                    <Route path="/Aktienbuch" element={<Aktienbuch />} />
-                    <Route path="/Unterschriften" element={<Unterschriften />} />
-                    <Route path="/Abschlussdokumentation" element={<Abschlussdokumentation />} />
-                    <Route path="/Anlagebuchhaltung" element={<Anlagebuchhaltung />} />
-                    <Route path="/Whiteboard" element={<Whiteboard />} />
-                    <Route path="/Firmensuche" element={<Firmensuche />} />
-                    <Route path="/Auswertungen" element={<Auswertungen />} />
-                    <Route path="/Steuern" element={<Steuern />} />
-                    <Route path="/Belegsortierung" element={<Belegsortierung />} />
-                    <Route path="/Veranlagungen" element={<Veranlagungen />} />
-                    <Route path="/Promptvorlagen" element={<Promptvorlagen />} />
-                    <Route path="/TelefonDashboard" element={<TelefonDashboard />} />
-                    <Route path="/Telefonliste" element={<Telefonliste />} />
-                    <Route path="/Jahresplanung" element={<Jahresplanung />} />
-                    <Route path="/Monatsplanung" element={<Monatsplanung />} />
-                    <Route path="/Kalender" element={<Kalender />} />
-                    <Route path="/Steuerausscheidung" element={<Steuerausscheidung />} />
-                    <Route path="/GVProtokollApp" element={<GVProtokollApp/>} />
-                    {profile?.modules?.ai && (
-                        <Route path="/AiAssistant" element={<AiAssistant />} />
-                    )}
-
-                    {FEATURE_LEISTUNGSERFASSUNG && (
-                        <Route path="/Leistungserfassung" element={<Leistungserfassung />} />
-                    )}
-
-                    {/* Fängt falsche URLs innerhalb des Layouts ab */}
                     <Route path="*" element={<Navigate to="/Dashboard" replace />} />
-                </Route>
-
-                {/* Fängt völlig unbekannte URLs außerhalb des Layouts ab */}
-                <Route path="*" element={<Navigate to="/Dashboard" replace />} />
-            </Routes>
-            {/* Globales Softphone: schwebt über der ganzen App (innerhalb wie ausserhalb des Layouts) */}
-            <Suspense fallback={null}><GlobalSoftphone /></Suspense>
+                </Routes>
+                <Suspense fallback={null}><GlobalSoftphone /></Suspense>
             </TelephonyProvider>
         </Suspense>
     );
@@ -204,11 +173,6 @@ function App() {
                         <Route path="/share/:token"
                                element={<Suspense fallback={<PageLoader/>}><SharePage/></Suspense>}/>
                         <Route path="/share" element={<Suspense fallback={<PageLoader/>}><SharePage/></Suspense>}/>
-
-                        {/* Besprechung als Gast — bewusst AUSSERHALB der Anmeldung:
-                            Kunden haben kein smartis-Konto, sie kommen nur mit dem
-                            Link aus der Termineinladung. Der Warteraum entscheidet,
-                            wer wirklich hereinkommt. */}
                         <Route path="/meet/:room"
                                element={<Suspense fallback={<PageLoader/>}><MeetGuest/></Suspense>}/>
                         <Route path="/portal" element={<Suspense fallback={<PageLoader/>}><Portal/></Suspense>}/>
