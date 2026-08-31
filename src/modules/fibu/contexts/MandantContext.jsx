@@ -65,7 +65,7 @@ export function MandantProvider({ children }) {
   return (
     <MandantContext.Provider value={{
       mandant, mandanten, role, loading, error,
-      canWrite, isAdmin, isExtern, switchMandant,
+      canWrite, isAdmin, isExtern, switchMandant, profile
     }}>
       {children}
     </MandantContext.Provider>

@@ -5,6 +5,7 @@ import { MandantProvider } from '../../contexts/MandantContext';
 import FiBuSidebar from './FiBuSidebar';
 import PaperboyInbox from '@/components/inbox/PaperboyInbox';
 import { useMandant } from '../../contexts/MandantContext';
+import {useAuth} from "../../../../lib/AuthContext.jsx";
 
 // Lazy-loaded pages
 const KreditorenDashboard = React.lazy(() => import('../../pages/KreditorenDashboard'));
@@ -111,24 +112,34 @@ function FiBuContent() {
   );
 }
 
-export default function FiBuShell() {
+function FiBuShellContent() {
+  const { profile } = useMandant();
+  const { canAccessRoute } = useAuth();
+
   return (
-    <MandantProvider>
       <div
-        className="flex h-screen overflow-hidden"
-        style={{ background: '#f2f5f2', color: '#1a1a2e', fontFamily: "'Inter', system-ui, sans-serif" }}
+          className="flex h-screen overflow-hidden"
+          style={{ background: '#f2f5f2', color: '#1a1a2e', fontFamily: "'Inter', system-ui, sans-serif" }}
       >
         <FiBuSidebar />
         <main className="flex-1 flex flex-col overflow-hidden">
           <FiBuContent />
         </main>
-      </div>
-      {/* Gebündelte Eingänge – FiBu läuft ohne MailFlow-Layout, wo der
+        {/* Gebündelte Eingänge – FiBu läuft ohne MailFlow-Layout, wo der
           Paperboy sonst hängt. Das Thema wird hier fest mitgegeben: FiBu ist
           durchgehend hell gestaltet (#f2f5f2 oben) und stellt keinen
           ThemeContext bereit; ohne die Vorgabe käme dessen Standardwert
           "dark" zum Zug und das Panel stünde dunkel auf heller Seite. */}
-      <PaperboyInbox theme="artis" />
-    </MandantProvider>
+
+        {canAccessRoute('Posteingang') && <PaperboyInbox theme="artis" />}
+      </div>
+  );
+}
+
+export default function FiBuShell() {
+  return (
+      <MandantProvider>
+        <FiBuShellContent />
+      </MandantProvider>
   );
 }

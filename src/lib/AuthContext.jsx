@@ -66,9 +66,12 @@ export function AuthProvider({ children }) {
     } else if (data) {
       setProfile(data);
       setUser(user);
-
       // Berechtigungen einmalig beim Login/Profil-Laden vom Backend abrufen
       await fetchPermissions(data);
+    } else {
+      setProfile(null);
+      setUser(null);
+      supabase.auth.signOut();
     }
     setLoading(false);
   }
@@ -100,7 +103,19 @@ export function AuthProvider({ children }) {
   function canAccessRoute(pathname) {
     if (!profile) return false;
     if (allowedRoutes.includes('*')) return true;
-    return allowedRoutes.some(route => pathname.startsWith(route));
+
+    return allowedRoutes.some(route => {
+      // Exakter Treffer
+      if (route === pathname) return true;
+
+      // Wildcard-Prüfung (z. B. wenn in allowedRoutes '/fibu/*' steht)
+      if (route.endsWith('/*')) {
+        const basePath = route.slice(0, -2); // schneidet '/*' ab
+        return pathname === basePath || pathname.startsWith(basePath + '/');
+      }
+
+      return false;
+    });
   }
 
   function getFirstAllowedRoute() {

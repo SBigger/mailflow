@@ -124,7 +124,7 @@ async function initApp() {
     config.KEY1 = json.KEY1;
 
   } catch (error) {
-    console.log("init error: ", error);
+    //console.log("init error: ", error);
   } finally {
     if(import.meta.env.DEV) {
       config.API_URL = import.meta.env.VITE_SUPABASE_URL;

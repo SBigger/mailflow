@@ -3,6 +3,10 @@ import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useMandant } from '../../contexts/MandantContext';
 import { supabase } from '@/api/supabaseClient';
 import { useSetupProgress, SETUP_TOTAL } from '../../hooks/useSetupProgress';
+import PersonAvatar from "../../../../components/ui/PersonAvatar.jsx";
+import * as packageJson from "../../../../../package.json";
+import {LogOut} from "lucide-react";
+import {useAuth} from "../../../../lib/AuthContext.jsx";
 
 // ── Erkennt Tauri Desktop-Client ───────────────────────
 const isNativeApp = () =>
@@ -147,10 +151,13 @@ function detectSection(pathname) {
 
 // ── Hauptkomponente ──────────────────────────────────────────────
 export default function FiBuSidebar() {
-  const { mandant, mandanten, switchMandant, isExtern } = useMandant();
+  const { mandant, mandanten, switchMandant, isExtern, profile } = useMandant();
   const navigate  = useNavigate();
   const location  = useLocation();
+  const { signOut } = useAuth();
 
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef(null);
   const [mandantOpen, setMandantOpen] = useState(false);
   const [inboxPending, setInboxPending] = useState(0);
   const { doneCount: setupDone } = useSetupProgress(mandant?.id, mandant);
@@ -225,12 +232,18 @@ export default function FiBuSidebar() {
 
   const native = isNativeApp();
 
+  const handleLogout = async () => {
+    setMenuOpen(false);
+    await signOut();
+    navigate('/Login');
+  };
+
   // ── Render ───────────────────────────────────────────────────
   return (
     <aside style={{ display: 'flex', height: '100%', flexShrink: 0 }}>
 
       {/* ── Icon-Leiste (dunkel) ─────────────────────────────── */}
-      <div style={{
+      <div  className="pb-3" style={{
         width: 52, background: '#243824', display: 'flex',
         flexDirection: 'column', alignItems: 'center',
         borderRight: '1px solid #1a2a1a',
@@ -313,15 +326,47 @@ export default function FiBuSidebar() {
         <div style={{ flex: 1 }} />
 
         {/* User Avatar */}
-        <div style={{ paddingBottom: 14, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-          <div
-            title="Artis Treuhand · Administrator"
-            style={{
-              width: 30, height: 30, borderRadius: '50%',
-              background: '#4a6a4a', display: 'flex', alignItems: 'center',
-              justifyContent: 'center', color: '#c8e0c8', fontSize: 10.5, fontWeight: 700,
-            }}
-          >SB</div>
+        <div className="relative" ref={menuRef} style={{ display: 'flex', justifyContent: 'flex-start' }}>
+          <button
+              onClick={() => setMenuOpen(!menuOpen)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 9,
+                width: '100%',
+                padding: '5px 8px',
+                borderRadius: 8, border: 'none', cursor: 'pointer',
+                background: 'transparent', textAlign: 'left',
+              }}
+              onMouseOver={e => { e.currentTarget.style.background = '#dcdde8'; }}
+              onMouseOut={e => { e.currentTarget.style.background = 'transparent'; }}
+          >
+            <PersonAvatar user={profile} size={30} />
+          </button>
+
+          {menuOpen && (
+              <div
+                  className="absolute w-52 rounded-md shadow-xl bg-zinc-900 border border-zinc-800 py-2 z-50 animate-in fade-in slide-in-from-left-2"
+                  style={{ bottom: '100%', left: 0, marginBottom: 6 }}
+              >
+                <div className="px-4 py-2 border-b border-zinc-800 mb-1">
+                  <p className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold">Benutzer</p>
+                  <p className="text-sm font-medium text-zinc-200 truncate">{profile?.full_name || profile?.email}</p>
+                  {profile?.role !== 'extern' && (
+                      <>
+                        <p className="text-[10px] text-zinc-500 mt-1 italic">Role: {profile?.role}</p>
+                        <p className="text-[10px] text-zinc-500 mt-1 italic">Version: {packageJson.version}</p>
+                      </>
+                  )}
+                </div>
+
+                <button
+                    onClick={handleLogout}
+                    className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-400 hover:bg-red-500/10 transition-colors"
+                >
+                  <LogOut size={14} />
+                  Abmelden
+                </button>
+              </div>
+          )}
         </div>
       </div>
 

@@ -151,7 +151,7 @@ const TOOLS = [
   },
 ];
 
-export default function ArtisTools() {
+export default function Tools() {
   const { theme } = useContext(ThemeContext);
   const navigate = useNavigate();
   const { canAccessRoute } = useAuth(); //[cite: 6]
@@ -181,7 +181,7 @@ export default function ArtisTools() {
           </div>
           <div>
             <h1 className="text-2xl font-bold" style={{ color: headingColor }}>
-              Artis Tools
+              Tools
             </h1>
             <p className="text-sm" style={{ color: subColor }}>
               Treuhand-Werkzeugkasten

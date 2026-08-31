@@ -119,7 +119,7 @@ export const NAV_GROUPS = [
       { name: 'Fahrzeugliste', label: 'Fahrzeugliste', icon: Car, color: '#4fa3b8', aliases: ['autos', 'fahrzeuge'] },
       { name: 'Unterschriften', label: 'Unterschriften', icon: FileSignature, color: '#8a63c9', aliases: ['signatur', 'skribble', 'signieren'] },
       { name: 'Promptvorlagen', label: 'Promptvorlagen', icon: Sparkles, color: '#d4a03d', aliases: ['ki-vorlagen', 'prompts'] },
-      { name: 'ArtisTools', label: 'Alle Tools', icon: Wrench, rail: true, color: '#7b8794', aliases: ['werkzeuge', 'tools übersicht'] },
+      { name: 'Tools', label: 'Alle Tools', icon: Wrench, rail: true, color: '#7b8794', aliases: ['werkzeuge', 'tools übersicht'] },
     ],
   },
   {
