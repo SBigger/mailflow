@@ -564,11 +564,15 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
                         height: railMode ? 40 : 'auto',
                         padding: railMode ? 0 : '6px 10px',
                         margin: railMode ? '0 auto 4px' : '0 0 4px',
-                        borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13,
+                        borderRadius: 8, border: 'none',
+                        fontSize: 13,
                         color: voiceOpen ? '#fff' : pal.text,
                         background: voiceOpen ? pal.active : 'transparent',
                         transition: 'background .12s',
+                        cursor: !canAccessRoute('/AiAssistant') ? 'not-allowed' : 'pointer',
+                        opacity: !canAccessRoute('/AiAssistant') ? 0.4 : 1,
                       }}
+                      disabled={!canAccessRoute('/AiAssistant')}
                       onMouseOver={e => { if (!voiceOpen) e.currentTarget.style.background = pal.hover; }}
                       onMouseOut={e => { if (!voiceOpen) e.currentTarget.style.background = 'transparent'; }}
                   >
@@ -658,10 +662,11 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
                 dark={!isLight && !isArtis}
             />
         )}
+        <VoiceAssistant open={voiceOpen && !isMobile} onClose={() => setVoiceOpen(false)} />
+        {canAccessRoute('ReminderBoard') && <TaskReminderPopup currentUser={profile} />}
+        {canAccessRoute('Posteingang') && <PaperboyInbox />}
 
-        <VoiceAssistant open={voiceOpen && !isTaskUser && !isMobile} onClose={() => setVoiceOpen(false)} />
-        <TaskReminderPopup currentUser={profile} />
-        {!isTaskUser && <PaperboyInbox />}
+
       </ThemeContext.Provider>
   );
 }

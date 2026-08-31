@@ -119,13 +119,13 @@ export const NAV_GROUPS = [
       { name: 'Fahrzeugliste', label: 'Fahrzeugliste', icon: Car, color: '#4fa3b8', aliases: ['autos', 'fahrzeuge'] },
       { name: 'Unterschriften', label: 'Unterschriften', icon: FileSignature, color: '#8a63c9', aliases: ['signatur', 'skribble', 'signieren'] },
       { name: 'Promptvorlagen', label: 'Promptvorlagen', icon: Sparkles, color: '#d4a03d', aliases: ['ki-vorlagen', 'prompts'] },
-      { name: 'ArtisTools', label: 'Alle Tools', icon: Wrench, rail: true, color: '#7b8794', aliases: ['werkzeuge', 'tools übersicht'] },
+      { name: 'Tools', label: 'Alle Tools', icon: Wrench, rail: true, color: '#7b8794', aliases: ['werkzeuge', 'tools übersicht'] },
     ],
   },
   {
     id: 'system', label: null, color: '#7b8794', items: [
       { name: 'KnowledgeBase', label: 'Wissen', icon: BookOpen, rail: false, color: '#4a9e9a', aliases: ['knowledge', 'wiki', 'anleitungen'] },
-      { name: 'AiAssistant', label: 'AI-Assistant', icon: Bot, rail: true, requiresAi: true, color: '#7a5bd4', aliases: ['ki', 'assistent', 'ai'] },
+      { name: 'AiAssistant', label: 'KI-Assistant', icon: Bot, rail: true, requiresAi: true, color: '#7a5bd4', aliases: ['ki', 'assistent', 'ai'] },
       { name: 'Settings', label: 'Einstellungen', icon: SettingsIcon, rail: true, color: '#7b8794', aliases: ['settings', 'konfiguration', 'optionen'] },
     ],
   },

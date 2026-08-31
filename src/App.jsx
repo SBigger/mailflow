@@ -29,7 +29,7 @@ const Dokumente = lazy(() => import('./pages/Dokumente'));
 const Chartis = lazy(() => import('./pages/Chartis'));
 const UserManagement = lazy(() => import('./pages/UserManagement'));
 const Kundenportal = lazy(() => import('./pages/Kundenportal'));
-const ArtisTools = lazy(() => import('./pages/ArtisTools'));
+const Tools = lazy(() => import('./pages/Tools.jsx'));
 const BriefSchreiben = lazy(() => import('./modules/tools/BriefSchreiben.jsx'));
 const Fahrzeugliste = lazy(() => import('./modules/tools/Fahrzeugliste.jsx'));
 const Aktienbuch = lazy(() => import('./modules/tools/Aktienbuch.jsx'));
@@ -73,7 +73,7 @@ const queryClient = new QueryClient({
 });
 
 function AuthenticatedApp() {
-    const {user, loading, requiresMfa} = useAuth();
+    const {user, loading, requiresMfa, canAccessRoute} = useAuth();
     const navigate = useNavigate();
 
     useEffect(() => {
@@ -115,7 +115,7 @@ function AuthenticatedApp() {
                             <Route path="/Posteingang" element={<Posteingang />} />
                             <Route path="/UserManagement" element={<UserManagement />} />
                             <Route path="/Kundenportal" element={<Kundenportal />} />
-                            <Route path="/ArtisTools" element={<ArtisTools />} />
+                            <Route path="/Tools" element={<Tools />} />
                             <Route path="/BriefSchreiben" element={<BriefSchreiben />} />
                             <Route path="/Fahrzeugliste" element={<Fahrzeugliste />} />
                             <Route path="/Aktienbuch" element={<Aktienbuch />} />
@@ -145,7 +145,9 @@ function AuthenticatedApp() {
 
                     <Route path="*" element={<Navigate to="/Dashboard" replace />} />
                 </Routes>
-                <Suspense fallback={null}><GlobalSoftphone /></Suspense>
+                {canAccessRoute('TelefonDashboard') &&
+                    <Suspense fallback={null}><GlobalSoftphone/></Suspense>
+                }
             </TelephonyProvider>
         </Suspense>
     );
