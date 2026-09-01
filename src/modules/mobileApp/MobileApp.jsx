@@ -1,14 +1,13 @@
-import React, { useState, useEffect, useRef } from 'react'
-import { supabase } from '@/api/supabaseClient'
-import { Camera, LogOut, RefreshCw, Upload, CheckCircle2, Image as ImageIcon } from 'lucide-react'
+import React, { useState, useRef } from 'react'
+import { supabase } from '../../api/supabaseClient'
+import { Camera, RefreshCw, Upload, CheckCircle2, Image as ImageIcon } from 'lucide-react'
 import { useTheme } from '@/components/useTheme'
 import { useIsMobile } from '@/components/mobile/useIsMobile'
+import {useAuth} from "../../lib/AuthContext.jsx";
 
 export default function MobileApp() {
     const isMobile = useIsMobile()
-    const [session, setSession] = useState(null)
-    const [email, setEmail] = useState('')
-    const [password, setPassword] = useState('')
+    const { user }  = useAuth();
     const [loading, setLoading] = useState(false)
     const [message, setMessage] = useState('')
 
@@ -32,34 +31,6 @@ export default function MobileApp() {
     const accentColor = isDark ? '#818cf8' : isArtis ? '#7a9b7f' : '#7c3aed'
     const itemBg = isDark ? 'rgba(24,24,27,0.6)' : isArtis ? 'rgba(255,255,255,0.55)' : 'rgba(248,250,252,0.9)'
     const itemBorder = isDark ? 'rgba(63,63,70,0.5)' : isArtis ? 'rgba(191,207,191,0.6)' : 'rgba(203,213,225,0.6)'
-
-    // Auth Status überwachen
-    useEffect(() => {
-        supabase.auth.getSession().then(({ data: { session } }) => {
-            setSession(session)
-        })
-
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-            setSession(session)
-        })
-
-        return () => subscription.unsubscribe()
-    }, [])
-
-    // Login Funktion
-    const handleLogin = async (e) => {
-        e.preventDefault()
-        setLoading(true)
-        const { error } = await supabase.auth.signInWithPassword({ email, password })
-        if (error) alert(error.message)
-        setLoading(false)
-    }
-
-    // Logout Funktion
-    const handleLogout = async () => {
-        await supabase.auth.signOut()
-        stopCamera()
-    }
 
     // Kamera starten (nutzt 'environment' für Rückkamera auf Smartphones)
     const startCamera = async () => {
@@ -111,7 +82,7 @@ export default function MobileApp() {
         setMessage('')
 
         try {
-            const fileName = `${session.user.id}/${Date.now()}.jpg`
+            const fileName = `${user.id}/${Date.now()}.jpg`
 
             // 1. Bild in Supabase Storage hochladen
             const { error: uploadError } = await supabase.storage
@@ -142,62 +113,8 @@ export default function MobileApp() {
         }
     }
 
-    // Wenn nicht eingeloggt: Login-Ansicht im Dashboard-Card-Style
-    if (!session) {
-        return (
-            <div className="flex flex-col h-full w-full items-center justify-center p-6 font-sans">
-                <div className="w-full max-w-md rounded-xl border p-6 shadow-sm" style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
-                    <div className="flex items-center gap-3 mb-6">
-                        <Camera className="h-6 w-6" style={{ color: accentColor }} />
-                        <h1 className="text-xl font-bold" style={{ color: headingColor }}>Login / Registrierung</h1>
-                    </div>
-                    <form onSubmit={handleLogin} className="flex flex-col gap-4">
-                        <input
-                            type="email"
-                            placeholder="E-Mail"
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                            required
-                            className="p-2.5 rounded-lg border text-sm focus:outline-none"
-                            style={{ backgroundColor: itemBg, borderColor: cardBorder, color: headingColor }}
-                        />
-                        <input
-                            type="password"
-                            placeholder="Passwort"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            required
-                            className="p-2.5 rounded-lg border text-sm focus:outline-none"
-                            style={{ backgroundColor: itemBg, borderColor: cardBorder, color: headingColor }}
-                        />
-                        <button
-                            type="submit"
-                            disabled={loading}
-                            className="p-2.5 rounded-lg text-white font-medium text-sm transition-colors cursor-pointer flex items-center justify-center gap-2"
-                            style={{ backgroundColor: accentColor }}
-                        >
-                            {loading ? <RefreshCw className="h-4 w-4 animate-spin" /> : 'Einloggen'}
-                        </button>
-                    </form>
-                </div>
-            </div>
-        )
-    }
-
-    // Wenn eingeloggt: Kamera-App-Ansicht im Dashboard-Layout
     return (
-        <div className={`flex flex-col h-full w-full overflow-y-auto ${isMobile ? 'p-3' : 'p-6'} max-w-2xl mx-auto font-sans`}>
-            {/* Header */}
-            <div className="flex items-center justify-between mb-6 pb-4 border-b" style={{ borderColor: cardBorder }}>
-                <div className="flex items-center gap-3">
-                    <Camera className="h-7 w-7" style={{ color: accentColor }} />
-                    <div>
-                        <h1 className={`${isMobile ? 'text-xl' : 'text-2xl'} font-bold`} style={{ color: headingColor }}>Smartis Fibu App</h1>
-                        <p className="text-xs" style={{ color: textMuted }}>Eingeloggt als: {session.user.email}</p>
-                    </div>
-                </div>
-            </div>
-
+        <div className={`flex flex-col w-full align-center justify-center overflow-y-auto ${isMobile ? 'p-3' : 'p-6'} max-w-2xl mx-auto font-sans`}>
             {/* Haupt-Card Container */}
             <div className="rounded-xl border p-6 shadow-sm" style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
                 <div className="text-center">

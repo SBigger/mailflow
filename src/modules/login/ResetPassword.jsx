@@ -19,24 +19,32 @@ export default function ResetPassword() {
   useEffect(() => {
     // Prüfen, ob wir eine Session haben (kommt via URL-Hash vom Invite-Link)
     const checkSession = async () => {
-      const { data } = await supabase.auth.getSession();
-      if (data.session) {
-        const { data, err } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+      const { data: sessionData } = await supabase.auth.getSession();
 
-        if (data?.nextLevel === 'aal2' && data?.nextLevel !== data?.currentLevel) {
+      if (sessionData.session) {
+        const { data: mfaData, error: mfaError } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+
+        if (!mfaError && mfaData?.nextLevel === 'aal2' && mfaData?.nextLevel !== mfaData?.currentLevel) {
           navigate('/mfa-login', { state: { redirect: '/reset-password' } });
+          return;
         }
-        
+
         setSessionReady(true);
       } else {
-        // Falls nach 2 Sek. keine Session da ist, war der Link evtl. abgelaufen
+        // Falls nach 2 Sek. immer noch keine Session da ist, ist der Link abgelaufen/ungültig
         setTimeout(() => {
-          if (!sessionReady) toast.error("Sitzung abgelaufen oder ungültiger Link.");
+          setSessionReady((ready) => {
+            if (!ready) {
+              toast.error("Sitzung abgelaufen oder ungültiger Link.");
+            }
+            return ready;
+          });
         }, 2000);
       }
     };
+
     checkSession();
-  }, [sessionReady]);
+  }, []); // Leeres Array, damit es wirklich nur einmal beim Laden ausgeführt wird
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -55,25 +63,39 @@ export default function ResetPassword() {
       if (error) throw error;
 
       let route = "/Login";
-      const response = await entities.User.get(data?.user.id);
-      switch (response.inviteState) {
-        case 1:
-          // Eingeladen, aber noch nie ein Passwort gesetzt: das ist hiermit
-          // erledigt. Ohne das Weitersetzen bliebe der Zugang gesperrt
-          // (AuthContext wirft inviteState 1 wieder hinaus).
-          // Fehler nicht verschlucken: schlaegt der Aufruf fehl (z.B. weil die
-          // Migration auf dem Mandanten noch nicht eingespielt ist), bliebe der
-          // Zugang sonst stumm auf inviteState 1 haengen.
-          const { error: inviteErr } = await supabase.rpc('complete_invite');
-          if (inviteErr) throw inviteErr;
-          route = "/mfa-setup";
-          break;
-        case 2:
-          route = "/mfa-setup";
-          break;
-        case 3:
-          route = "/Login";
-          break;
+
+      // 1. NEU: Prüfen, ob der Nutzer bereits MFA-Faktoren hat
+      const { data: factorsData, error: listError } = await supabase.auth.mfa.listFactors();
+
+      if (listError) {
+        console.error("Fehler beim Laden der Faktoren:", listError);
+      }
+
+      // Prüfen, ob das Array existiert und mindestens ein Faktor den Status 'verified' hat
+      const hasMfaEnabled = factorsData?.totp?.some(f => f.status === 'verified') || false;
+
+      console.log("Faktoren:", factorsData);
+      console.log("MFA aktiv?", hasMfaEnabled);
+
+      if (hasMfaEnabled) {
+        // Wenn MFA bereits aktiv ist, direkt zur Challenge zwingen (AAL2)
+        route = "/mfa-login";
+      } else {
+        // Ansonsten wie gewohnt nach inviteState entscheiden
+        const response = await entities.User.get(data?.user.id);
+        switch (response?.inviteState) {
+          case 1:
+            const { error: inviteErr } = await supabase.rpc('complete_invite');
+            if (inviteErr) throw inviteErr;
+            route = "/mfa-setup";
+            break;
+          case 2:
+            route = "/mfa-setup";
+            break;
+          case 3:
+            route = "/login";
+            break;
+        }
       }
 
       setDone(true);

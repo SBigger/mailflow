@@ -78,9 +78,9 @@ Deno.serve(async (req) => {
     let neu     = false
 
     if (!userId) {
-      const appUrl = Deno.env.get('APP_URL') ?? 'https://smartis.me'
+      const appUrl = Deno.env.get('APP_URL')
       const { data: invite, error: inviteError } = await admin.auth.admin.inviteUserByEmail(mail, {
-        redirectTo: `${appUrl}/set-password`,
+        redirectTo: `https://${appUrl}/set-password`,
       })
       if (inviteError) throw new Error(inviteError.message)
 

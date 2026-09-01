@@ -19,10 +19,15 @@ export default function MFASetup() {
     useEffect(() => {
         async function startEnroll() {
             try {
+                const now = new Date();
+                const dateStr = now.toLocaleDateString();
+                const timeStr = now.toLocaleTimeString(); // Enthält standardmäßig Stunden, Minuten und Sekunden
+                const uniqueFriendlyName = `Hauptgereat - ${dateStr} ${timeStr}`;
+
                 const { data, error } = await supabase.auth.mfa.enroll({
                     factorType: "totp",
                     issuer: "Artis MailFlow",
-                    friendlyName: "Hauptgerät",
+                    friendlyName: uniqueFriendlyName
                 });
 
                 if (error) throw error;

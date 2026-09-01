@@ -1,65 +1,28 @@
 import { useState } from 'react';
 import { useAuth } from '../lib/AuthContext';
-import { supabase } from '../api/supabaseClient';
+import { supabase } from '@/api/supabaseClient';
 import { Mail, Lock, Loader2, MailCheck } from 'lucide-react';
 import artisLogo from '/artis-logo.png';
 import {toast} from "sonner";
 import {useNavigate} from "react-router-dom";
 
 export default function Login() {
-  const { login, checkMFA, inviteIncomplete, setInviteIncomplete } = useAuth();
+  const { login, requiresMfa } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [sendingLink, setSendingLink] = useState(false);
-  const [linkSent, setLinkSent] = useState(false);
   const navigate = useNavigate();
-
-  // Neuen Link schicken, wenn die Einladung abgelaufen oder verlegt wurde.
-  // Ziel ist /set-password (nicht /reset-password) — nur dort wird inviteState
-  // weitergesetzt; sonst bliebe der Zugang gesperrt.
-  const handleResendLink = async () => {
-    setSendingLink(true);
-    try {
-      const { error } = await supabase.auth.resetPasswordForEmail(inviteIncomplete, {
-        redirectTo: `${window.location.origin}/set-password`,
-      });
-      if (error) throw error;
-      setLinkSent(true);
-      toast.success('Neuer Link ist unterwegs.');
-    } catch (err) {
-      toast.error(err.message);
-    } finally {
-      setSendingLink(false);
-    }
-  };
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
-    setInviteIncomplete?.(null);
-    setLinkSent(false);
 
     try {
       const { data, error } = await login(email, password);
-
       if (error) throw error;
 
-      // PRÜFUNG: Braucht der User MFA?
-      const { data: mfaData, error: mfaError } = await checkMFA();
-
-      if (mfaError) throw mfaError;
-
-      // Wenn der User MFA aktiviert hat, ist sein 'nextLevel' aal2,
-      // aber sein 'currentLevel' noch aal1.
-      if (mfaData.nextLevel === 'aal2' && mfaData.currentLevel !== 'aal2') {
-        // Weiterleitung zur 2FA-Eingabeseite (Schritt B)
-        navigate("/mfa-login");
-      } else {
-        // Normaler Login ohne MFA
-        navigate("/Dashboard");
-      }
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -76,35 +39,6 @@ export default function Login() {
           <h1 className="text-2xl font-bold capitalize" style={{ color: '#2d3a2d' }}>{window.env?.CUSTOMER} Mailflow</h1>
           <p className="text-sm mt-1" style={{ color: '#6b826b' }}>Intelligentes E-Mail & Task Management</p>
         </div>
-
-        {/* Einladung noch offen: erklaeren statt wortlos zurueckwerfen */}
-        {inviteIncomplete && (
-          <div className="rounded-2xl p-4 mb-4 border" style={{ backgroundColor: '#fdf6e7', borderColor: '#e6cf9b' }}>
-            <div className="flex items-start gap-3">
-              <MailCheck className="w-5 h-5 mt-0.5 shrink-0" style={{ color: '#9a6b2d' }} />
-              <div className="text-sm" style={{ color: '#6b4c1f' }}>
-                <p className="font-semibold mb-1">Einladung noch nicht abgeschlossen</p>
-                <p>
-                  Für <span className="font-medium">{inviteIncomplete}</span> muss zuerst ein Passwort
-                  gesetzt werden. Der Link dazu steht in der Einladungs-E-Mail.
-                </p>
-                {linkSent ? (
-                  <p className="mt-2 font-medium">Neuer Link versendet — bitte den Posteingang prüfen.</p>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={handleResendLink}
-                    disabled={sendingLink}
-                    className="mt-2 underline font-medium disabled:opacity-50"
-                    style={{ color: '#9a6b2d' }}
-                  >
-                    {sendingLink ? 'Wird gesendet…' : 'Keine E-Mail erhalten? Neuen Link senden'}
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Form */}
         <div className="rounded-2xl p-6 shadow-sm border" style={{ backgroundColor: '#ffffff', borderColor: '#ccd8cc' }}>

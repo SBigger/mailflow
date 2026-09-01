@@ -10,6 +10,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useMandant } from '../contexts/MandantContext';
 import { supabase, functions } from '@/api/supabaseClient';
+import {useAuth} from "../../../lib/AuthContext.jsx";
 
 // ── Rollen-Definitionen ───────────────────────────────────────────
 const ROLLEN = [
@@ -34,7 +35,7 @@ const istMail  = (s) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test((s ?? '').trim());
 
 export default function Benutzerverwaltung() {
   const { mandant, isAdmin, isExtern } = useMandant();
-
+  const { user }  = useAuth();
   const [users,    setUsers]    = useState([]);
   const [allUsers, setAllUsers] = useState([]);   // Alle System-User (für Suche)
   const [loading,  setLoading]  = useState(true);
@@ -49,10 +50,7 @@ export default function Benutzerverwaltung() {
   const [showDrop, setShowDrop] = useState(false);
 
   // Aktuell eingeloggter User (um "du selbst" zu markieren)
-  const [myId, setMyId] = useState(null);
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => setMyId(data?.user?.id ?? null));
-  }, []);
+  const [myId, setMyId] = useState(user.id);
 
   // ── Laden ──────────────────────────────────────────────────────
   const loadUsers = useCallback(async () => {

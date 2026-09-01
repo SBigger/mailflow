@@ -664,8 +664,7 @@ export default function Layout({ currentPageName: currentPageNameProp }) {
         )}
         <VoiceAssistant open={voiceOpen && !isMobile} onClose={() => setVoiceOpen(false)} />
         {canAccessRoute('ReminderBoard') && <TaskReminderPopup currentUser={profile} />}
-        {canAccessRoute('Posteingang') && <PaperboyInbox />}
-
+        {canAccessRoute('Posteingang') && !isMobile && <PaperboyInbox />}
 
       </ThemeContext.Provider>
   );
