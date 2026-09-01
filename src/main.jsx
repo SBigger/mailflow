@@ -23,7 +23,6 @@ import App from '@/App.jsx'
 import { invoke } from '@tauri-apps/api/core';
 import '@/index.css'
 import { registerSW } from 'virtual:pwa-register'
-import {BrowserRouter} from "react-router-dom";
 
 if (typeof window !== 'undefined' && window.__TAURI__) {
   const origOpen = window.open.bind(window)

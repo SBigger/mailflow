@@ -4,7 +4,6 @@ import { scrubPgPayload } from '@/lib/pgSafeText';
 let supabase = null;
 
 export function initSupabase() {
-  console.log("init Supabase");
   supabase = createClient(window.env.API_URL, window.env.KEY1, {
     realtime: {
       params: {
