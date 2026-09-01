@@ -8,6 +8,7 @@ import {Loader2} from 'lucide-react';
 import Layout from './Layout';
 import { TelephonyProvider } from "./modules/telefonie/context/TelephonyContext.jsx";
 import ProtectedRoute from './lib/ProtectedRoute';
+import {useIsMobile} from "./components/mobile/useIsMobile.jsx";
 
 const PageLoader = () => (
     <div className="fixed inset-0 bg-zinc-950 flex items-center justify-center">
@@ -67,6 +68,7 @@ const GlobalSoftphone = lazy(() => import("./modules/telefonie/components/Softph
 const Hub = lazy(() => import('./pages/Hub.jsx'));
 const AiAssistant = lazy(() => import('./pages/AiAssistant.jsx'));
 const GVProtokollApp = lazy(() => import('./modules/gv-protokoll/GVProtokollApp.jsx'));
+const MobileApp = lazy(() => import('./modules/mobileApp/MobileApp.jsx'));
 
 const queryClient = new QueryClient({
     defaultOptions: {queries: {retry: 1, staleTime: 30000}}
@@ -74,6 +76,7 @@ const queryClient = new QueryClient({
 
 function AuthenticatedApp() {
     const {user, loading, requiresMfa, canAccessRoute} = useAuth();
+    const isMobile = useIsMobile();
     const navigate = useNavigate();
 
     useEffect(() => {
@@ -86,8 +89,9 @@ function AuthenticatedApp() {
     }, [user, navigate]);
 
     if (loading) return <PageLoader/>;
-    if (!user) return <Login/>;
     if (requiresMfa) return <MFALogin/>;
+    if (!user) return <Login/>;
+
 
     return (
         <Suspense fallback={<PageLoader />}>
@@ -100,6 +104,7 @@ function AuthenticatedApp() {
                         <Route element={<Layout />}>
                             <Route path="/" element={<Navigate to="/Dashboard" replace />} />
                             <Route path="/Hub" element={<Hub />} />
+                            <Route path="/MobileApp" element={<MobileApp />} />
                             <Route path="/Dashboard" element={<Dashboard />} />
                             <Route path="/MailKanban" element={<MailKanban />} />
                             <Route path="/TaskBoard" element={<TaskBoard />} />
@@ -145,7 +150,7 @@ function AuthenticatedApp() {
 
                     <Route path="*" element={<Navigate to="/Dashboard" replace />} />
                 </Routes>
-                {canAccessRoute('TelefonDashboard') &&
+                {canAccessRoute('TelefonDashboard') && !isMobile &&
                     <Suspense fallback={null}><GlobalSoftphone/></Suspense>
                 }
             </TelephonyProvider>

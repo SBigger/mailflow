@@ -31,7 +31,7 @@ export default function SetPassword() {
       }
     };
     checkSession();
-  }, [sessionReady]);
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();

@@ -45,6 +45,7 @@ export default function UserManagement() {
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState("sachbearbeiter");
   const [inviting, setInviting] = useState(false);
+  const [resetPassword, setResetPassword] = useState(null);
   const [userToDelete, setUserToDelete] = useState(null);
 
   // Inline rename state
@@ -79,7 +80,9 @@ export default function UserManagement() {
     queryKey: ["allUsers"],
     queryFn: async () => {
       const res = await functions.invoke('getAllUsers');
-      return res.data?.users || [];
+      const users = res.data?.users || []
+      const interUsers = users.filter(u=> u.role !== 'extern')
+      return interUsers;
     },
   });
 
@@ -134,7 +137,7 @@ export default function UserManagement() {
     if (!inviteEmail.trim()) { toast.error("Bitte E-Mail eingeben"); return; }
     setInviting(true);
     try {
-      await functions.invoke('inviteUser', {
+      const {data} = await functions.invoke('inviteUser', {
         email: inviteEmail,
         role: inviteRole,
         appUrl: window.env.HOSTNAME,
@@ -146,6 +149,21 @@ export default function UserManagement() {
       toast.error("Fehler: " + error.message);
     } finally {
       setInviting(false);
+    }
+  };
+
+  const handleResetPassword = async (email) => {
+    setResetPassword(email);
+    try {
+      const {error} = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: window.location.origin + '/reset-password'
+      });
+      if (error) throw error;
+      toast.success(`Passwort-Reset E-Mail an ${email} gesendet`);
+    } catch (e) {
+      toast.error('Fehler: ' + e.message);
+    } finally {
+      setResetPassword(null);
     }
   };
 
@@ -256,27 +274,6 @@ export default function UserManagement() {
     }
   };
 
-  const handleSetPassword = async (userId) => {
-    if (!pwEditValue.trim()) { toast.error("Bitte Passwort eingeben"); return; }
-    if (pwEditValue.trim().length < 8) { toast.error("Passwort muss mindestens 8 Zeichen haben"); return; }
-    setPwSaving(true);
-    try {
-      // functions.invoke verpackt das Payload bereits selbst in { body }
-      const res = await functions.invoke('setUserPassword', {
-        user_id: userId,
-        password: pwEditValue.trim(),
-      });
-      if (res.data?.error) throw new Error(res.data.error);
-      toast.success("Passwort erfolgreich gesetzt");
-      setPwEditUserId(null);
-      setPwEditValue("");
-    } catch (e) {
-      toast.error("Fehler: " + e.message);
-    } finally {
-      setPwSaving(false);
-    }
-  };
-
   const bg = isArtis ? '#f2f5f2' : isLight ? '#f4f4f8' : '#09090b';
   const cardBg = isArtis ? '#ffffff' : isLight ? '#ffffff' : 'rgba(24,24,27,0.8)';
   const cardBorder = isArtis ? '#ccd8cc' : isLight ? '#d4d4e8' : '#27272a';
@@ -297,7 +294,7 @@ export default function UserManagement() {
   }
 
   return (
-    <div className="min-h-screen p-6" style={{ backgroundColor: bg }}>
+    <div className="w-full" style={{ backgroundColor: bg }}>
       {/* Verstecktes File-Input für Foto-Upload (für alle Benutzerzeilen) */}
       <input
         ref={avatarInputRef}
@@ -306,7 +303,7 @@ export default function UserManagement() {
         className="hidden"
         onChange={handleAvatarFile}
       />
-      <div className="max-w-3xl mx-auto">
+      <div className="mx-auto">
         {/* Header */}
         <div className="flex items-center gap-3 mb-8">
           <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: accentBg }}>
@@ -511,11 +508,21 @@ export default function UserManagement() {
                           )}
                           <DropdownMenuSeparator style={{ backgroundColor: cardBorder }} />
                           <DropdownMenuItem
-                            onClick={() => { setPwEditUserId(user.id); setPwEditValue(""); setPwShowValue(false); }}
-                            style={{ color: textPrimary }}
+                              onClick={() => { handleResetPassword(user.email); }}
+                              style={{ color: textPrimary }}
+                              disabled={resetPassword === user.email}
                           >
-                            <KeyRound className="h-4 w-4 mr-2" />
-                            Passwort setzen
+                            {resetPassword === user.email ? (
+                                <>
+                                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                  Wird zurückgesetzt...
+                                </>
+                            ) : (
+                                <>
+                                  <KeyRound className="h-4 w-4 mr-2" />
+                                  Passwort zurücksetzen
+                                </>
+                            )}
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             onClick={() => { setPhoneEditUserId(user.id); setPhoneEditValue(user.phone || ""); }}

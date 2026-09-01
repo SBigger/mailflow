@@ -8,7 +8,6 @@ export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [requiresMfa, setRequiresMfa] = useState(null);
-  const [inviteIncomplete, setInviteIncomplete] = useState(null);
 
   // Neuer State für gecachte Berechtigungen (z.B. erlaubte Pfade oder Module)
   const [allowedRoutes, setAllowedRoutes] = useState([]);
@@ -20,13 +19,13 @@ export function AuthProvider({ children }) {
     };
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      console.log("Auth event: ", JSON.stringify(_event))
       handleAuthLogic(session);
     });
 
     const handleAuthLogic = async (session) => {
       const user = session?.user ?? null;
       if (user) {
-        setInviteIncomplete(null);
         const { data, error } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
 
         if (error) {
@@ -37,8 +36,8 @@ export function AuthProvider({ children }) {
         }
 
         if (data.currentLevel === 'aal1' && data.nextLevel === 'aal2') {
-          setRequiresMfa(true);
           setLoading(false);
+          setRequiresMfa(true);
         } else {
           setRequiresMfa(false);
           loadProfile(user.id, user);
@@ -58,20 +57,10 @@ export function AuthProvider({ children }) {
 
   async function loadProfile(userId, user) {
     const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
-    if(data && data.inviteState === 1) {
-      setInviteIncomplete(data.email ?? user?.email ?? '');
-      setProfile(null);
-      setUser(null);
-      supabase.auth.signOut();
-    } else if (data) {
+    if (data) {
       setProfile(data);
       setUser(user);
-      // Berechtigungen einmalig beim Login/Profil-Laden vom Backend abrufen
       await fetchPermissions(data);
-    } else {
-      setProfile(null);
-      setUser(null);
-      supabase.auth.signOut();
     }
     setLoading(false);
   }
@@ -103,19 +92,7 @@ export function AuthProvider({ children }) {
   function canAccessRoute(pathname) {
     if (!profile) return false;
     if (allowedRoutes.includes('*')) return true;
-
-    return allowedRoutes.some(route => {
-      // Exakter Treffer
-      if (route === pathname) return true;
-
-      // Wildcard-Prüfung (z. B. wenn in allowedRoutes '/fibu/*' steht)
-      if (route.endsWith('/*')) {
-        const basePath = route.slice(0, -2); // schneidet '/*' ab
-        return pathname === basePath || pathname.startsWith(basePath + '/');
-      }
-
-      return false;
-    });
+    return allowedRoutes.some(route => pathname.startsWith(route));
   }
 
   function getFirstAllowedRoute() {
@@ -123,7 +100,7 @@ export function AuthProvider({ children }) {
   }
 
   async function login(email, password) {
-    return await supabase.auth.signInWithPassword({ email, password });
+    return supabase.auth.signInWithPassword({ email, password });
   }
 
   async function checkMFA() {
@@ -151,7 +128,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-      <AuthContext.Provider value={{ user, profile, loading, login, checkMFA, signOut, updateProfile, requiresMfa, inviteIncomplete, setInviteIncomplete, hasPermission, canAccessRoute, getFirstAllowedRoute }}>
+      <AuthContext.Provider value={{ user, profile, loading, login, requiresMfa, signOut, updateProfile, hasPermission, canAccessRoute, getFirstAllowedRoute }}>
         {children}
       </AuthContext.Provider>
   );
