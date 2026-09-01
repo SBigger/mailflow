@@ -12,11 +12,20 @@
  *  B) Einzeldokument manuell:
  *     POST /index-document  Body: { doc_id: "uuid" }
  *
- *  C) Batch – alle nicht indexierten Dokumente:
- *     POST /index-document  Body: { batch: true }
+ *  C) Batch – nicht indexierte Dokumente, in Haeppchen:
+ *     POST /index-document  Body: { batch: true, limit?: 5 }
+ *     Antwort enthaelt "remaining" -- so lange erneut aufrufen, bis 0.
+ *     Die Haeppchen sind noetig, weil ein Scan im OCR-Container Minuten
+ *     braucht und die Edge Function eine Laufzeitgrenze hat.
+ *
+ * OCR: Scans, Bilder sowie .doc und .rtf gehen an den OCR-Container, sofern
+ * OCR_URL gesetzt ist (siehe ../_shared/ocrClient.ts). Ohne OCR_URL verhaelt
+ * sich alles wie vorher -- so laeuft smartis.me unveraendert weiter, nur ohne
+ * Volltext bei Scans.
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { ocrConfigured, needsOcr, ocrExtract } from "../_shared/ocrClient.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -142,7 +151,7 @@ function scrubPgText(s: string): string {
 
 // ── Einzeldokument indexieren ─────────────────────────────────────────────────
 
-async function indexOne(docId: string): Promise<{ status: string; chars: number }> {
+async function indexOne(docId: string): Promise<{ status: string; chars: number; quelle?: string }> {
   const { data: doc, error } = await supabase
     .from("dokumente")
     .select("id, filename, storage_path, file_type, content_text")
@@ -159,8 +168,27 @@ async function indexOne(docId: string): Promise<{ status: string; chars: number 
 
   if (dlErr || !fileData) throw new Error("Download fehlgeschlagen: " + dlErr?.message);
 
-  const buffer = await fileData.arrayBuffer();
-  const text   = scrubPgText(await extractText(buffer, doc.filename || "", doc.file_type || ""));
+  const buffer   = await fileData.arrayBuffer();
+  const filename = doc.filename || "";
+  const mime     = doc.file_type || "";
+
+  // 1) Lokal, so weit es geht: Textebene im PDF, Excel, Word, Klartext.
+  let text   = scrubPgText(await extractText(buffer, filename, mime));
+  let quelle = text ? "lokal" : "leer";
+
+  // 2) Reicht das nicht (Scan, Bild, .doc, .rtf), uebernimmt der OCR-Container.
+  //    Ohne OCR_URL wird der Schritt still uebersprungen.
+  if (needsOcr(filename, mime, text)) {
+    if (ocrConfigured()) {
+      const ocrText = scrubPgText(await ocrExtract(buffer, filename, mime));
+      if (ocrText.trim().length > text.trim().length) {
+        text   = ocrText;
+        quelle = "ocr";
+      }
+    } else {
+      quelle = "ocr_nicht_konfiguriert";
+    }
+  }
 
   if (text) {
     const { error: updErr } = await supabase
@@ -170,7 +198,7 @@ async function indexOne(docId: string): Promise<{ status: string; chars: number 
     if (updErr) throw new Error("Update fehlgeschlagen: " + updErr.message);
   }
 
-  return { status: "indexed", chars: text.length };
+  return { status: text ? "indexed" : "kein_text", chars: text.length, quelle };
 }
 
 // ── Handler ───────────────────────────────────────────────────────────────────
@@ -183,43 +211,63 @@ Deno.serve(async (req) => {
   try {
     const payload = await req.json();
 
-    // ── C) Batch-Modus ──
+    // ── C) Batch-Modus, in Haeppchen mit Cursor ──
+    // Frueher lief hier eine Schleife ueber ALLE offenen Dokumente. Mit dem
+    // OCR-Container dauert ein einzelner Scan Sekunden bis Minuten, damit
+    // liefe der Aufruf in die Laufzeitgrenze der Edge Function.
+    //
+    // Der Cursor (nach id aufsteigend) ist wichtig, nicht nur die Haeppchen:
+    // Ein Scan, den auch die OCR nicht lesen kann, bleibt ohne content_text
+    // und waere beim naechsten Durchgang wieder in der Auswahl. Ein Aufrufer,
+    // der bis "fertig" wiederholt, haenge sonst ewig an denselben Dateien.
+    //
+    //   POST { batch: true, limit: 5 }              erster Durchgang
+    //   POST { batch: true, limit: 5, after: "<last_id>" }   naechster
+    // wiederholen, bis "fertig": true.
     if (payload.batch === true) {
-      const { data: docs } = await supabase
-        .from("dokumente")
-        .select("id")
-        .is("content_text", null)
-        .not("storage_path", "is", null);
+      const limit = Math.max(1, Math.min(50, Number(payload.limit) || 5));
+      const after = typeof payload.after === "string" ? payload.after : null;
 
-      // Auch leere Strings berücksichtigen
-      const { data: emptyDocs } = await supabase
+      let q = supabase
         .from("dokumente")
-        .select("id")
-        .eq("content_text", "")
-        .not("storage_path", "is", null);
+        .select("id", { count: "exact" })
+        .or("content_text.is.null,content_text.eq.")
+        .not("storage_path", "is", null)
+        .is("deleted_at", null)
+        .order("id", { ascending: true })
+        .limit(limit);
+      if (after) q = q.gt("id", after);
 
-      const ids = [
-        ...(docs || []).map((d) => d.id),
-        ...(emptyDocs || []).map((d) => d.id),
-      ];
+      const { data: docs, count } = await q;
+      const ids = (docs || []).map((d) => d.id);
 
       let indexed = 0;
-      let skipped = 0;
+      let ohneText = 0;
       const errors: string[] = [];
 
       for (const id of ids) {
         try {
           const r = await indexOne(id);
           if (r.status === "indexed") indexed++;
-          else skipped++;
+          else ohneText++;
         } catch (e) {
           console.error("[index-document] Batch-Fehler:", id, e);
-          errors.push(String(e));
+          errors.push(id + ": " + String(e));
         }
       }
 
       return new Response(
-        JSON.stringify({ status: "batch_done", total: ids.length, indexed, skipped, errors }),
+        JSON.stringify({
+          status:       "batch_done",
+          verarbeitet:  ids.length,
+          indexed,
+          ohne_text:    ohneText,
+          last_id:      ids.length ? ids[ids.length - 1] : after,
+          fertig:       ids.length < limit,
+          offen_gesamt: count ?? null,
+          ocr:          ocrConfigured() ? "aktiv" : "nicht konfiguriert",
+          errors,
+        }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
