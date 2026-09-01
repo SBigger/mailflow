@@ -202,7 +202,26 @@ export async function uploadAvatar(file, userId) {
 export const functions = {
   async invoke(name, payload = {}) {
     const { data, error } = await supabase.functions.invoke(name, { body: payload });
-    if (error) throw new Error(error.message);
-    return { data };
+
+    if (error) {
+      let errorMessage = error.message;
+
+      // Prüfen, ob Supabase einen Response-Kontext mitgeliefert hat
+      if (error.context && typeof error.context.json === 'function') {
+        try {
+          const body = await error.context.json();
+          // Nutze die Nachricht aus deinem Backend (z.B. e.message), falls vorhanden
+          if (body && body.error) {
+            errorMessage = body.error;
+          }
+        } catch (e) {
+          // Falls das Parsen des JSON fehlschlägt, greift der Fallback auf error.message
+        }
+      }
+
+      throw new Error(errorMessage);
+    }
+
+    return { data, error };
   }
 };

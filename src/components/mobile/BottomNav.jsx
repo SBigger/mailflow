@@ -5,7 +5,7 @@ import {
   CalendarDays, Phone, CheckSquare, MoreHorizontal,
   LayoutDashboard, Mail, CalendarClock, Building2,
   FolderArchive, CloudUpload, MessageSquare, Receipt,
-  Settings as SettingsIcon,
+  Settings as SettingsIcon, Camera,
 } from "lucide-react";
 import { ThemeContext } from "@/Layout";
 import {
@@ -19,6 +19,7 @@ import {
 const primaryTabs = [
   { name: "Kalender",     label: "Kalender", icon: CalendarDays },
   { name: "Telefonliste", label: "Kontakte", icon: Phone },
+  { name: "MobileApp", label: "Kamera", icon: Camera},
   { name: "TaskBoard",    label: "Aufgaben", icon: CheckSquare },
 ];
 

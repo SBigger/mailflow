@@ -79,7 +79,9 @@ export default function UserManagement() {
     queryKey: ["allUsers"],
     queryFn: async () => {
       const res = await functions.invoke('getAllUsers');
-      return res.data?.users || [];
+      const users = res.data?.users || []
+      const interUsers = users.filter(u=> u.role !== 'extern')
+      return interUsers;
     },
   });
 
@@ -134,7 +136,7 @@ export default function UserManagement() {
     if (!inviteEmail.trim()) { toast.error("Bitte E-Mail eingeben"); return; }
     setInviting(true);
     try {
-      await functions.invoke('inviteUser', {
+      const {data} = await functions.invoke('inviteUser', {
         email: inviteEmail,
         role: inviteRole,
         appUrl: window.env.HOSTNAME,
@@ -297,7 +299,7 @@ export default function UserManagement() {
   }
 
   return (
-    <div className="min-h-screen p-6" style={{ backgroundColor: bg }}>
+    <div className="w-full" style={{ backgroundColor: bg }}>
       {/* Verstecktes File-Input für Foto-Upload (für alle Benutzerzeilen) */}
       <input
         ref={avatarInputRef}
@@ -306,7 +308,7 @@ export default function UserManagement() {
         className="hidden"
         onChange={handleAvatarFile}
       />
-      <div className="max-w-3xl mx-auto">
+      <div className="mx-auto">
         {/* Header */}
         <div className="flex items-center gap-3 mb-8">
           <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: accentBg }}>

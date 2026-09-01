@@ -9,7 +9,7 @@
  */
 import React, { useEffect, useState, useCallback } from 'react';
 import { useMandant } from '../contexts/MandantContext';
-import { supabase } from '@/api/supabaseClient';
+import { supabase, functions } from '@/api/supabaseClient';
 
 // ── Rollen-Definitionen ───────────────────────────────────────────
 const ROLLEN = [
@@ -71,7 +71,7 @@ export default function Benutzerverwaltung() {
 
   const loadAllUsers = useCallback(async () => {
     try {
-      const { data } = await supabase.functions.invoke('getAllUsers');
+      const { data } = await functions.invoke('getAllUsers');
       const list = (data?.users ?? []).map(u => ({
         id:           u.id,
         email:        u.email,
@@ -150,8 +150,8 @@ export default function Benutzerverwaltung() {
         if (error) throw error;
         setMsg({ type: 'ok', text: `${selUser.display_name} wurde als ${ROLLEN.find(r => r.value === selRole)?.label} hinzugefügt.` });
       } else {
-        const { data, error } = await supabase.functions.invoke('fibuInviteUser', {
-          body: { email: mail, mandant_id: mandant.id, fibu_role: selRole },
+        const { data, error } = await functions.invoke('fibuInviteUser', {
+           email: mail, mandant_id: mandant.id, fibu_role: selRole
         });
         // Edge Functions liefern Fehlertexte im Body — die sind aussagekräftiger
         // als das generische "non-2xx status code" der Invoke-Fehlermeldung.

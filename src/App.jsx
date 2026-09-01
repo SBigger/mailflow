@@ -67,6 +67,7 @@ const GlobalSoftphone = lazy(() => import("./modules/telefonie/components/Softph
 const Hub = lazy(() => import('./pages/Hub.jsx'));
 const AiAssistant = lazy(() => import('./pages/AiAssistant.jsx'));
 const GVProtokollApp = lazy(() => import('./modules/gv-protokoll/GVProtokollApp.jsx'));
+const MobileApp = lazy(() => import('./modules/mobileApp/MobileApp.jsx'));
 
 const queryClient = new QueryClient({
     defaultOptions: {queries: {retry: 1, staleTime: 30000}}
@@ -100,6 +101,7 @@ function AuthenticatedApp() {
                         <Route element={<Layout />}>
                             <Route path="/" element={<Navigate to="/Dashboard" replace />} />
                             <Route path="/Hub" element={<Hub />} />
+                            <Route path="/MobileApp" element={<MobileApp />} />
                             <Route path="/Dashboard" element={<Dashboard />} />
                             <Route path="/MailKanban" element={<MailKanban />} />
                             <Route path="/TaskBoard" element={<TaskBoard />} />
