@@ -1,30 +1,32 @@
-# OCR-Container: Vertrag und Inbetriebnahme
+# OCR-Container an index-document anbinden
 
-Der OCR-Container (Tesseract, poppler, catdoc) liegt **nicht** in diesem
-Repository. Er laeuft auf dem Server neben der jeweiligen Instanz. Die
-Edge Function `index-document` ruft ihn ueber `_shared/ocrClient.ts` auf.
+Scans, Bilder sowie `.doc` und `.rtf` kann die Edge Function selber nicht lesen.
+Dafuer gibt es den OCR-Container (Tesseract, poppler, catdoc), der auf dem
+Server neben der Instanz laeuft. Er ist NICHT Teil dieses Repositories.
 
-**Ohne gesetzte `OCR_URL` passiert nichts.** Die Funktion verhaelt sich dann
-exakt wie vorher: Textebene aus PDF, Excel, Word und Klartext werden gelesen,
-Scans bleiben ohne Volltext. So laeuft smartis.me weiter, ohne dass etwas
-kaputtgeht oder anders aussieht.
+Angebunden wird er ueber `../_shared/ocrClient.ts`. **Ist `OCR_URL` nicht
+gesetzt, passiert nichts** -- die Indexierung laeuft wie bisher, Scans bleiben
+ohne Volltext. Genau so laeuft smartis.me weiter, ohne dass etwas bricht.
 
-## Umgebungsvariablen
-
-| Variable | Pflicht | Vorgabe | Bedeutung |
-|---|---|---|---|
-| `OCR_URL` | ja, sonst aus | – | Voller Endpunkt, z. B. `https://ocr.sm-artis.ch/extract` |
-| `OCR_TOKEN` | empfohlen | leer | Gemeinsames Geheimnis, geht als `X-OCR-Token` mit |
-| `OCR_TIMEOUT_MS` | nein | `120000` | Abbruch nach dieser Zeit |
-| `OCR_LANGS` | nein | `deu+eng` | Tesseract-Sprachen, z. B. `deu+eng+fra+ita` |
-
-Setzen:
+## Secrets setzen
 
 ```bash
-supabase secrets set OCR_URL=https://ocr.example.ch/extract OCR_TOKEN=<geheim>
+supabase secrets set OCR_URL=https://ocr.example.ch/extract --project-ref <ref>
+supabase secrets set OCR_TOKEN=<langes-zufaelliges-geheimnis> --project-ref <ref>
+# optional:
+supabase secrets set OCR_LANGS=deu+eng+fra+ita --project-ref <ref>
+supabase secrets set OCR_TIMEOUT_MS=180000 --project-ref <ref>
+supabase functions deploy index-document --project-ref <ref>
 ```
 
-## Vertrag
+| Variable | Bedeutung | Vorgabe |
+|---|---|---|
+| `OCR_URL` | voller Endpunkt des Containers. Fehlt sie, wird OCR uebersprungen. | -- |
+| `OCR_TOKEN` | geht als Header `X-OCR-Token` mit. Leer lassen heisst: keine Absicherung. | leer |
+| `OCR_LANGS` | Tesseract-Sprachen, als Feld `lang` im Formular | `deu+eng` |
+| `OCR_TIMEOUT_MS` | Abbruch pro Datei | `120000` |
+
+## Vertrag mit dem Container
 
 **Anfrage**
 
@@ -33,64 +35,64 @@ POST <OCR_URL>
 X-OCR-Token: <OCR_TOKEN>          nur wenn gesetzt
 Content-Type: multipart/form-data
 
-file      die Datei, mit Dateinamen
-filename  derselbe Name nochmals als Feld
-lang      z. B. "deu+eng"
+file      = die Datei, mit Dateinamen
+filename  = derselbe Name nochmal als Feld
+lang      = z. B. "deu+eng"
 ```
 
-**Antwort** – alle drei Formate werden akzeptiert:
+**Antwort** -- alle drei Formen werden akzeptiert:
 
 ```json
 {"text": "..."}
+```
+```json
 {"ok": true, "text": "..."}
 ```
+```
+Reiner Text im Body
+```
 
-oder schlicht der Text als `text/plain` im Body.
+Ein `{"ok": false, "error": "..."}`, ein HTTP-Fehler oder eine Zeitueberschreitung
+gelten als Fehlschlag: Es wird protokolliert, aber **nicht geworfen**. Lieber
+kein Volltext als ein abgebrochener Upload.
 
-Ein Fehler wird als `{"ok": false, "error": "..."}` oder ueber einen
-HTTP-Status ungleich 200 gemeldet.
+Passt der bestehende Endpunkt nicht zu diesem Vertrag, ist `ocrClient.ts` die
+**einzige** Stelle, die angepasst werden muss.
 
-**Wichtig:** Ein Fehlschlag des Containers darf den Upload nie stoppen. Der
-Client faengt HTTP-Fehler, Zeitueberschreitungen und ungueltige Antworten ab
-und liefert dann einen leeren Text zurueck. Das Dokument wird abgelegt, es hat
-nur keinen Volltext. Lieber kein Volltext als ein verlorener Upload.
+## Was wann an den Container geht
 
-Weicht der bestehende Endpunkt davon ab, ist `_shared/ocrClient.ts` die einzige
-Stelle, die angepasst werden muss.
+`needsOcr()` in `ocrClient.ts` entscheidet:
 
-## Was an den Container geht
-
-Entschieden in `needsOcr()`:
-
-| Fall | an den Container |
+| Datei | an den Container |
 |---|---|
-| PDF, lokale Textextraktion unter 50 Zeichen (Scan) | ja |
-| Bild (png, jpg, jpeg, webp, bmp, gif, tif, tiff) | ja |
-| `.doc` und `.rtf` | ja, koennen wir sonst gar nicht lesen |
-| PDF mit Textebene | nein, lokal erledigt |
-| xlsx, docx, csv, txt | nein, lokal erledigt |
+| PDF, dessen Textebene unter 50 Zeichen liefert (Scan) | ja |
+| Bilder: png, jpg, jpeg, webp, bmp, gif, tif, tiff | ja |
+| `.doc`, `.rtf` (koennen wir sonst gar nicht lesen) | ja |
+| PDF mit Textebene, xlsx, docx, txt | nein, bleibt lokal |
 
-Die Schwelle von 50 Zeichen ist bewusst tief: Manche Scans tragen eine
-Kopfzeile oder eine Seitenzahl als echten Text und saehen sonst wie ein
-Dokument mit Textebene aus.
+Erst wird also lokal extrahiert, der Container kommt nur, wenn dabei nichts
+Brauchbares herauskommt. Das spart Rechenzeit bei den PDF, die schon Text haben.
 
-## Nachlauf ueber den Altbestand
+## Altbestand nachfahren
 
-Der Batch-Modus arbeitet in Haeppchen und mit einem Cursor. Beides ist noetig:
-Ein Scan braucht im Container Sekunden bis Minuten, ein Durchgang ueber alle
-Dokumente liefe in die Laufzeitgrenze der Edge Function. Und ein Dokument, das
-auch die OCR nicht lesen kann, bleibt ohne `content_text` und waere sonst bei
-jedem Durchgang wieder dabei.
+Der Batch-Modus laeuft in Haeppchen mit Cursor. Beides ist noetig: Ein Scan
+braucht im Container Sekunden bis Minuten (Laufzeitgrenze der Edge Function),
+und eine Datei, die auch die OCR nicht lesen kann, bliebe ohne Cursor bei jedem
+Durchgang wieder in der Auswahl.
 
 ```bash
 # erster Durchgang
-curl -X POST "$SUPABASE_URL/functions/v1/index-document" \
-  -H "Authorization: Bearer $SERVICE_ROLE_KEY" \
-  -H "Content-Type: application/json" \
+curl -X POST "$URL/functions/v1/index-document" \
+  -H "Authorization: Bearer $SERVICE_ROLE_KEY" -H "Content-Type: application/json" \
   -d '{"batch": true, "limit": 5}'
+
+# weiter mit dem last_id aus der Antwort, bis "fertig": true
+curl -X POST "$URL/functions/v1/index-document" \
+  -H "Authorization: Bearer $SERVICE_ROLE_KEY" -H "Content-Type: application/json" \
+  -d '{"batch": true, "limit": 5, "after": "<last_id>"}'
 ```
 
-Antwort:
+Die Antwort:
 
 ```json
 {
@@ -106,27 +108,17 @@ Antwort:
 }
 ```
 
-Danach mit `{"batch": true, "limit": 5, "after": "<last_id>"}` weiter, bis
-`"fertig": true`. `ohne_text` zaehlt die Dokumente, aus denen auch der
-Container nichts holen konnte.
+`ocr: "nicht konfiguriert"` heisst, dass `OCR_URL` fehlt -- dann werden Scans
+zwar angefasst, bleiben aber ohne Text.
 
-Auf smartis.me steht dort `"ocr": "nicht konfiguriert"` – der Nachlauf laeuft
-trotzdem, holt aber bei Scans erwartungsgemaess nichts.
+## Absicherung
 
-## Anmerkungen zum Container
+Der Container bekommt Mandantendokumente zu sehen, Berufsgeheimnis. Wenn er von
+aussen erreichbar ist, gehoert dazu:
 
-Nicht blockierend, aber der Vollstaendigkeit halber, aus der Durchsicht des
-Dockerfiles vom 01.09.2026:
-
-- `CMD ["python", "/app.py"]` startet den eingebauten Flask-Entwicklungsserver.
-  Der ist einzelstrangig; beim Nachlauf und bei parallelen Uploads wird das
-  eine Warteschlange. gunicorn mit einigen Arbeitern waere die Ergaenzung.
-- `EXPOSE 80` ohne TLS. Sobald der Endpunkt von aussen erreichbar ist, braucht
-  es TLS, das Token und eine IP-Beschraenkung. Es gehen Mandantendokumente
-  durch, Berufsgeheimnis.
-- Im Image steckt nur `tesseract-ocr-deu` samt eingebautem `eng`. Fuer Mandate
-  in der Romandie und im Tessin waeren `tesseract-ocr-fra` und
-  `tesseract-ocr-ita` sinnvoll, plus `OCR_LANGS=deu+eng+fra+ita`.
-- Im Container zuerst `pdftotext` versuchen und nur bei leerem Ergebnis in die
-  OCR gehen. Wir filtern zwar schon vor, aber doppelt haelt besser und spart
-  Rechenzeit.
+- TLS, nicht blankes HTTP
+- ein langes `OCR_TOKEN`, serverseitig geprueft
+- eine IP-Beschraenkung auf die aufrufende Instanz, wo moeglich
+- kein Entwicklungsserver: `python app.py` startet den eingebauten Flask-Server
+  und ist einstraengig. Fuer den Nachlauf und parallele Uploads besser gunicorn
+  mit mehreren Arbeitern.
