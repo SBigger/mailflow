@@ -1,0 +1,26 @@
+{
+  "html": "<html><head><style>body{font-family:Arial; padding:30px;} h1{color:#2c3e50;}</style></head><body><h1>Ihre Rechnung</h1><p>Sehr geehrte Damen und Herren,<br>anbei erhalten Sie die Abrechnung für den vergangenen Monat.</p></body></html>",
+  "qrData": {
+    "amount": 450.00,
+    "currency": "CHF",
+    "creditor": {
+      "account": "CH2830000011623852950",
+      "name": "Meine Firma GmbH",
+      "address": "Bundesplatz",
+      "buildingNumber": "1",
+      "zip": "3011",
+      "city": "Bern",
+      "country": "CH"
+    },
+    "debtor": {
+      "name": "Susi Sorglos",
+      "address": "Bahnhofstrasse",
+      "buildingNumber": "99",
+      "zip": "8001",
+      "city": "Zürich",
+      "country": "CH"
+    },
+    "reference": "000000000000000012312312316",
+    "message": "Monatsabrechnung Juni"
+  }
+}
