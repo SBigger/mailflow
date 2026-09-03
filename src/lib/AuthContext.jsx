@@ -75,8 +75,12 @@ export function AuthProvider({ children }) {
 
       setAllowedRoutes(data || []);
     } catch (err) {
+      // Fail-open: die DB-Funktion get_user_permissions ist auf Produktion (noch)
+      // nicht vorhanden. Ohne Fallback bleibt allowedRoutes leer und blockiert
+      // die komplette App (weisser Screen nach dem Login). Bis die Migration
+      // sauber nachgezogen ist, gilt daher wieder die alte Rollenlogik.
       console.error("Fehler beim Laden der Berechtigungen:", err);
-      setAllowedRoutes([]);
+      setAllowedRoutes(userProfile.role === 'extern' ? ['/fibu'] : ['*']);
     }
   }
 
