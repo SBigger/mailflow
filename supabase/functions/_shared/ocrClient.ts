@@ -1,6 +1,13 @@
 /**
  * ocrClient.ts — Anbindung an den OCR-Container (Tesseract + poppler + catdoc).
  *
+ * Stand 03.09.2026: Rogers Container liegt jetzt im Repo unter
+ * docker_files/ocr (Commit ae4211b1 auf master). Der Vertrag unten ist gegen
+ * dessen app.py abgeglichen: Pfad /ocr, Feld file, Antwort {"text": "..."}.
+ * Zwei Dinge weichen ab und sind hier beruecksichtigt: er prueft den Header
+ * X-Shared-Secret (nicht X-OCR-Token), und er meldet Fehler mit HTTP 200 und
+ * dem Text "[OCR Fehler beim Verarbeiten der Datei: ...]".
+ *
  * Der Container laeuft auf dem Server neben der Instanz (Roger, 01.09.2026).
  * Er ist NICHT Teil dieses Repositories und auf smartis.me nicht vorhanden.
  * Deshalb ist hier alles ueber Umgebungsvariablen geschaltet:
@@ -8,13 +15,16 @@
  *   OCR_URL         voller Endpunkt, z. B. https://ocr.sm-artis.ch/extract
  *                   NICHT gesetzt -> OCR wird uebersprungen, alles andere
  *                   laeuft unveraendert weiter (Stand smartis.me).
- *   OCR_TOKEN       gemeinsames Geheimnis, geht als X-OCR-Token mit.
+ *   OCR_TOKEN       gemeinsames Geheimnis. Geht als X-Shared-Secret mit,
+ *                   zusaetzlich als X-OCR-Token, damit beide Varianten passen.
  *   OCR_TIMEOUT_MS  Abbruch nach dieser Zeit, Vorgabe 120000.
  *   OCR_LANGS       Tesseract-Sprachen, Vorgabe "deu+eng".
  *
  * ── Vertrag mit dem Container ────────────────────────────────────────────
- * Anfrage:  POST <OCR_URL>
- *           Header  X-OCR-Token: <OCR_TOKEN>      (nur wenn gesetzt)
+ * Anfrage:  POST <OCR_URL>            bei Roger: https://ocr.sm-artis.ch/ocr
+ *           Header  X-Shared-Secret: <OCR_TOKEN>  (nur wenn gesetzt)
+ *                   X-OCR-Token:     <OCR_TOKEN>  (dito, fuer den Fall dass
+ *                                    ein Endpunkt den anderen Namen erwartet)
  *           Body    multipart/form-data
  *                     file      die Datei, mit Dateinamen
  *                     lang      z. B. "deu+eng"
@@ -86,7 +96,12 @@ export async function ocrExtract(
 
   try {
     const headers: Record<string, string> = {};
-    if (token) headers["X-OCR-Token"] = token;
+    if (token) {
+      // Rogers app.py prueft X-Shared-Secret. Der zweite Name kostet nichts
+      // und haelt die Anbindung offen, falls der Endpunkt wechselt.
+      headers["X-Shared-Secret"] = token;
+      headers["X-OCR-Token"] = token;
+    }
 
     const resp = await fetch(url, { method: "POST", headers, body: form, signal: ctrl.signal });
 
@@ -96,7 +111,14 @@ export async function ocrExtract(
     }
 
     const raw = await resp.text();
-    const text = parseOcrResponse(raw);
+    let text = parseOcrResponse(raw);
+
+    // Der Container antwortet auch im Fehlerfall mit HTTP 200 und schreibt die
+    // Meldung ins Textfeld. Ungefiltert landet sie als Volltext im Suchindex.
+    if (/^\[OCR[- ]?Fehler/i.test(text.trim())) {
+      console.error(`[ocr] ${safeName}: Container meldet ${text.trim().slice(0, 300)}`);
+      text = "";
+    }
     console.info(`[ocr] ${safeName}: ${text.length} Zeichen erkannt`);
     return text.slice(0, MAX_CHARS);
   } catch (e) {
