@@ -19,7 +19,6 @@ export function AuthProvider({ children }) {
     };
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      console.log("Auth event: ", JSON.stringify(_event))
       handleAuthLogic(session);
     });
 

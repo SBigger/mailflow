@@ -1,13 +1,13 @@
 import React, { useState, useRef } from 'react'
 import { supabase } from '../../api/supabaseClient'
-import { Camera, RefreshCw, Upload, CheckCircle2, Image as ImageIcon } from 'lucide-react'
+import { Camera, RefreshCw, Upload, CheckCircle2, Image as ImageIcon, Zap, ZapOff } from 'lucide-react'
 import { useTheme } from '@/components/useTheme'
 import { useIsMobile } from '@/components/mobile/useIsMobile'
-import {useAuth} from "../../lib/AuthContext.jsx";
+import { useAuth } from "../../lib/AuthContext.jsx";
 
 export default function MobileApp() {
     const isMobile = useIsMobile()
-    const { user }  = useAuth();
+    const { user } = useAuth();
     const [loading, setLoading] = useState(false)
     const [message, setMessage] = useState('')
 
@@ -16,6 +16,8 @@ export default function MobileApp() {
     const canvasRef = useRef(null)
     const [photo, setPhoto] = useState(null)
     const [isCameraActive, setIsCameraActive] = useState(false)
+    const [isTorchOn, setIsTorchOn] = useState(false)
+    const [torchSupported, setTorchSupported] = useState(false)
 
     // Theme-Erkennung (analog zum Dashboard)
     const { theme } = useTheme()
@@ -36,10 +38,22 @@ export default function MobileApp() {
     const startCamera = async () => {
         setIsCameraActive(true)
         setMessage('')
+        setIsTorchOn(false)
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'environment' }
+            })
             if (videoRef.current) {
                 videoRef.current.srcObject = stream
+            }
+
+            // Prüfen, ob das Gerät eine Taschenlampe/Blitz unterstützt
+            const track = stream.getVideoTracks()[0]
+            const capabilities = track.getCapabilities ? track.getCapabilities() : {}
+            if (capabilities.torch) {
+                setTorchSupported(true)
+            } else {
+                setTorchSupported(false)
             }
         } catch (err) {
             console.error("Kamerafehler:", err)
@@ -52,10 +66,36 @@ export default function MobileApp() {
     const stopCamera = () => {
         if (videoRef.current && videoRef.current.srcObject) {
             const stream = videoRef.current.srcObject
-            stream.getTracks().forEach(track => track.stop())
+            stream.getTracks().forEach(track => {
+                // Blitz vorher ausschalten, falls er noch an war
+                if (isTorchOn) {
+                    track.applyConstraints({ advanced: [{ torch: false }] }).catch(() => {})
+                }
+                track.stop()
+            })
             videoRef.current.srcObject = null
         }
         setIsCameraActive(false)
+        setIsTorchOn(false)
+        setTorchSupported(false)
+    }
+
+    // Blitz umschalten (An/Aus)
+    const toggleTorch = async () => {
+        if (!videoRef.current || !videoRef.current.srcObject) return
+        const track = videoRef.current.srcObject.getVideoTracks()[0]
+        if (!track) return
+
+        try {
+            const newTorchState = !isTorchOn
+            await track.applyConstraints({
+                advanced: [{ torch: newTorchState }]
+            })
+            setIsTorchOn(newTorchState)
+        } catch (err) {
+            console.error("Fehler beim Umschalten des Blitzes:", err)
+            alert("Blitz konnte nicht gesteuert werden.")
+        }
     }
 
     // Foto aufnehmen
@@ -96,10 +136,10 @@ export default function MobileApp() {
                 .from('fibu-foto-app')
                 .getPublicUrl(fileName)
 
-            // 3. Metadaten in Tabelle speichern
+            // 3. Metadaten in Tabelle speichern (Korrigiert: user.id statt session.user.id)
             const { error: dbError } = await supabase
                 .from('fibu_photo_app_metadata')
-                .insert([{ user_id: session.user.id, image_url: publicUrl }])
+                .insert([{ user_id: user.id, image_url: publicUrl }])
 
             if (dbError) throw dbError
 
@@ -140,6 +180,21 @@ export default function MobileApp() {
                         <div className="flex flex-col items-center">
                             <div className="relative w-full max-w-md overflow-hidden rounded-lg border mb-4 bg-black" style={{ borderColor: itemBorder }}>
                                 <video ref={videoRef} autoPlay playsInline className="w-full h-auto block"></video>
+
+                                {/* Blitz-Button overlay (wird nur angezeigt, wenn Hardware es unterstützt) */}
+                                {torchSupported && (
+                                    <button
+                                        onClick={toggleTorch}
+                                        className="absolute top-3 right-3 p-2.5 rounded-full shadow-md backdrop-blur-md transition-colors cursor-pointer flex items-center justify-center"
+                                        style={{
+                                            backgroundColor: isTorchOn ? 'rgba(234, 179, 8, 0.9)' : 'rgba(0, 0, 0, 0.6)',
+                                            color: isTorchOn ? '#000' : '#fff'
+                                        }}
+                                        title={isTorchOn ? "Blitz ausschalten" : "Blitz einschalten"}
+                                    >
+                                        {isTorchOn ? <Zap className="h-5 w-5" /> : <ZapOff className="h-5 w-5" />}
+                                    </button>
+                                )}
                             </div>
                             <div className="flex gap-3">
                                 <button
