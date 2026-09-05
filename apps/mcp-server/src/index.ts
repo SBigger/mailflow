@@ -8,6 +8,7 @@ import { registerDocumentTools } from "./modules/documents.js";
 import { registerCustomerTools } from "./modules/customers.js";
 import { registerFinanceTools } from "./modules/finance.js";
 import { registerShareTools } from "./modules/shares.js";
+import { registerSteuernTools } from "./modules/steuern.js";
 
 /**
  * artis MCP-Server – Einstiegspunkt.
@@ -26,6 +27,7 @@ async function main(): Promise<void> {
   registerCustomerTools(server);
   registerFinanceTools(server);
   registerShareTools(server);
+  registerSteuernTools(server);
 
   const transport = new StdioServerTransport();
   await server.connect(transport);

@@ -1,6 +1,12 @@
 import { config as loadEnv } from "dotenv";
 import { z } from "zod";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
+// .env neben dem Server (apps/mcp-server/.env) laden – unabhaengig vom Arbeitsverzeichnis,
+// aus dem der MCP-Client (Claude Desktop / Claude Code) den Prozess startet. Bereits
+// gesetzte Umgebungsvariablen (z.B. aus dem env-Block der Client-Konfiguration) gewinnen.
+loadEnv({ path: path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", ".env") });
 loadEnv();
 
 const uuid = z.string().uuid();
