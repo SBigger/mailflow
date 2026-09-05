@@ -47,10 +47,11 @@ const KUNDE_INPUT = {
 interface Kunde {
   id: string; company_name: string | null; name: string | null; strasse: string | null; plz: string | null; ort: string | null;
   kanton: string | null; uid_nr: string | null; rechtsform: string | null; contact_persons: unknown;
+  steuer_zugaenge: { jahr: number | string; nummer?: string | null }[] | null;
 }
 
 async function kundeAufloesen(args: { customer_id?: string; firma?: string }): Promise<Kunde> {
-  const FIELDS = "id, company_name, name, strasse, plz, ort, kanton, uid_nr, rechtsform, contact_persons";
+  const FIELDS = "id, company_name, name, strasse, plz, ort, kanton, uid_nr, rechtsform, contact_persons, steuer_zugaenge";
   if (args.firma && !args.customer_id) {
     const s = args.firma.replace(/[%,]/g, " ");
     const rows: Kunde[] = unwrap(await supabase.from("customers").select(FIELDS).ilike("company_name", `%${s}%`).eq("aktiv", true).limit(10));
@@ -98,13 +99,37 @@ async function abschlussLaden(customerId: string, jahr: number, abschlussId?: st
   return { abschluss, konten, hinweise };
 }
 
-async function gvAusInput(gv: z.infer<typeof GV_SCHEMA>, konten: Konto[], jahr: number): Promise<Gewinnverwendung> {
-  const basis: Gewinnverwendung = {
+/**
+ * Gewinnverwendung aus dem strukturierten Beschluss im GV-Protokoll (Modul gv-protokoll,
+ * gv_protocols.data.gewinnverwendung mit geschaeftsjahr). Neuestes passendes Protokoll gewinnt.
+ */
+async function gvAusProtokoll(customerId: string, jahr: number): Promise<{ gv: Gewinnverwendung; quelle: string; gv_datum: string | null; faelligkeit: string | null } | null> {
+  const rows: { id: string; title: string; meeting_date: string; data: any }[] = unwrap(
+    await supabase.from("gv_protocols").select("id, title, meeting_date, data").eq("customer_id", customerId).order("meeting_date", { ascending: false }).limit(20),
+  );
+  const n = (v: unknown) => (v === "" || v == null ? undefined : Number(v));
+  for (const r of rows) {
+    const g = r.data?.gewinnverwendung;
+    if (!g || String(g.geschaeftsjahr) !== String(jahr)) continue;
+    const gv: Gewinnverwendung = { dividende: n(g.dividende), tantiemen: n(g.tantiemen), zuweisung_gesetzl_gewinnreserve: n(g.zuweisung_gesetzl_gewinnreserve), zuweisung_freiwillige_reserve: n(g.zuweisung_freiwillige_reserve) };
+    if (Object.values(gv).every((v) => v == null)) continue;
+    return { gv, quelle: `GV-Protokoll "${r.title}" vom ${r.meeting_date} (${r.id})`, gv_datum: g.gv_datum || r.meeting_date || null, faelligkeit: g.faelligkeit || null };
+  }
+  return null;
+}
+
+async function gvAusInput(gv: z.infer<typeof GV_SCHEMA>, konten: Konto[], jahr: number, customerId?: string, hinweise?: string[]): Promise<Gewinnverwendung> {
+  let basis: Gewinnverwendung = {
     dividende: gv?.dividende, tantiemen: gv?.tantiemen,
     zuweisung_gesetzl_gewinnreserve: gv?.zuweisung_gesetzl_gewinnreserve,
     zuweisung_freiwillige_reserve: gv?.zuweisung_freiwillige_reserve,
     uebrige: gv?.uebrige,
   };
+  const nichtsAngegeben = [basis.dividende, basis.tantiemen, basis.zuweisung_gesetzl_gewinnreserve, basis.zuweisung_freiwillige_reserve].every((v) => v == null) && !basis.uebrige?.length;
+  if (nichtsAngegeben && customerId) {
+    const p = await gvAusProtokoll(customerId, jahr);
+    if (p) { basis = { ...basis, ...p.gv }; hinweise?.push(`Gewinnverwendung uebernommen aus ${p.quelle}.`); }
+  }
   if (gv?.auto_gesetzliche_reserve && basis.zuweisung_gesetzl_gewinnreserve == null) {
     const k = (await steuernLib()).berechneKennzahlen(konten, jahr, basis);
     basis.zuweisung_gesetzl_gewinnreserve = k.gesetzliche_reserve.empfohlene_zuweisung;
@@ -144,7 +169,14 @@ async function aktionaereLaden(customerId: string): Promise<Aktionaer[]> {
     .sort((a, b) => b.anteil_prozent - a.anteil_prozent);
 }
 
+/** Register-Nr. des Jahres aus den Steuer-Zugaengen des Kunden (Tab Steuer-Zugaenge, Feld nummer). */
+function registerNrAusZugaengen(k: Kunde, jahr: number): string | null {
+  const z = (k.steuer_zugaenge ?? []).find((e) => String(e.jahr) === String(jahr)) ?? (k.steuer_zugaenge ?? []).find((e) => String(e.jahr) === String(jahr + 1));
+  return z?.nummer?.trim() || null;
+}
+
 function stammdaten(k: Kunde, jahr: number, gemeindeZh: string | null, registerNr: string | null): Stammdaten {
+  registerNr = registerNr ?? registerNrAusZugaengen(k, jahr);
   return {
     firma_name: k.company_name ?? k.name ?? "",
     strasse: k.strasse, plz: k.plz, ort: k.ort, kanton: k.kanton, uid: k.uid_nr,
@@ -195,7 +227,7 @@ async function vorschlagBerechnen(args: {
 }) {
   const lib = await steuernLib();
   const { abschluss, konten, hinweise } = await abschlussLaden(args.kunde.id, args.jahr, args.abschluss_id);
-  const gv = await gvAusInput(args.gv, konten, args.jahr);
+  const gv = await gvAusInput(args.gv, konten, args.jahr, args.kunde.id, hinweise);
   const kennzahlen = lib.berechneKennzahlen(konten, args.jahr, gv);
   const vv = await verlustvortragErmitteln(args.kunde.id, args.kanton, args.jahr, args.verlustvortrag);
   const gespeichert = await steuerdatenLesen(args.kunde.id, args.kanton, args.jahr);
@@ -240,7 +272,7 @@ export function registerSteuernTools(server: McpServer): void {
     handler: async (args) => {
       const kunde = await kundeAufloesen(args);
       const { abschluss, konten, hinweise } = await abschlussLaden(kunde.id, args.jahr, args.abschluss_id);
-      const gv = await gvAusInput(args.gewinnverwendung, konten, args.jahr);
+      const gv = await gvAusInput(args.gewinnverwendung, konten, args.jahr, kunde.id, hinweise);
       const k = (await steuernLib()).berechneKennzahlen(konten, args.jahr, gv);
       return ok({ kunde: { id: kunde.id, firma: kunde.company_name }, abschluss: { id: abschluss.id, jahr: abschluss.geschaeftsjahr, status: abschluss.status, konten: konten.length }, hinweise, kennzahlen: k });
     },
@@ -354,15 +386,19 @@ export function registerSteuernTools(server: McpServer): void {
       const kunde = await kundeAufloesen(args);
       const { abschluss, konten, hinweise } = await abschlussLaden(kunde.id, args.jahr, args.abschluss_id);
       const gvIn = args.gewinnverwendung ?? {};
-      const gv = await gvAusInput({ ...gvIn, dividende: gvIn.dividende ?? args.dividende_brutto }, konten, args.jahr);
+      const protokoll = (!gvIn.dividende && !args.dividende_brutto) ? await gvAusProtokoll(kunde.id, args.jahr) : null;
+      const gv = await gvAusInput({ ...gvIn, dividende: gvIn.dividende ?? (args.dividende_brutto || undefined) }, konten, args.jahr, kunde.id, hinweise);
+      const dividendeBrutto = args.dividende_brutto || gv.dividende || 0;
+      const gvDatum = args.gv_datum ?? protokoll?.gv_datum ?? null;
+      const faelligkeit = args.faelligkeit ?? protokoll?.faelligkeit ?? null;
       const k = (await steuernLib()).berechneKennzahlen(konten, args.jahr, gv);
       const aktionaere = await aktionaereLaden(kunde.id);
       const blatt = erstelleVstDatenblatt(k, {
         firma: kunde.company_name ?? kunde.name ?? "", rechtsform: kunde.rechtsform, uid: kunde.uid_nr,
         adresse: [kunde.strasse, [kunde.plz, kunde.ort].filter(Boolean).join(" ")].filter(Boolean).join(", "),
         jahr: args.jahr, gj_von: `${args.jahr}-01-01`, gj_bis: `${args.jahr}-12-31`,
-        gv_datum: args.gv_datum ?? null, faelligkeit: args.faelligkeit ?? null,
-        dividende_brutto: args.dividende_brutto, davon_aus_kapitaleinlagereserven: args.davon_kapitaleinlagereserven, aktionaere,
+        gv_datum: gvDatum, faelligkeit,
+        dividende_brutto: dividendeBrutto, davon_aus_kapitaleinlagereserven: args.davon_kapitaleinlagereserven, aktionaere,
       });
       // Beilagen im E-Binder suchen
       let docs: { id: string; name: string; category: string; year: number }[] = [];
@@ -397,7 +433,7 @@ export function registerSteuernTools(server: McpServer): void {
     handler: async (args) => {
       const kunde = await kundeAufloesen(args);
       const { abschluss, konten, hinweise } = await abschlussLaden(kunde.id, args.jahr, args.abschluss_id);
-      const gv = await gvAusInput(args.gewinnverwendung, konten, args.jahr);
+      const gv = await gvAusInput(args.gewinnverwendung, konten, args.jahr, kunde.id, hinweise);
       const k = (await steuernLib()).berechneKennzahlen(konten, args.jahr, gv);
       const gemeinde = kunde.kanton === "ZH" ? await gemeindeZhFinden(kunde.ort) : { name: null, bfs: null };
       const bfs = args.bfs_nr ?? gemeinde.bfs ?? (await bfsNummerFinden(kunde.ort, kunde.kanton));
@@ -405,7 +441,7 @@ export function registerSteuernTools(server: McpServer): void {
       const m = /^(.*?)\s+(\d+[a-zA-Z]?)\s*$/.exec(kunde.strasse ?? "");
       const erg = erzeugeEbilanzXml(konten, k, {
         organisationName: kunde.company_name ?? kunde.name ?? "",
-        registerNumber: args.register_nr ?? null,
+        registerNumber: args.register_nr ?? (() => { const d = (registerNrAusZugaengen(kunde, args.jahr) ?? "").replace(/D/g, ""); return d ? parseInt(d, 10) : null; })(),
         uid: kunde.uid_nr ? kunde.uid_nr.replace(/[^A-Z0-9]/gi, "").toUpperCase() : null,
         assessmentMunicipality: gemeinde.name ?? kunde.ort ?? "",
         assessmentMunicipalityId: bfs,

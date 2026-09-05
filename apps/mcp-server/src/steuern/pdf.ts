@@ -35,7 +35,7 @@ export interface FormDef {
 
 const FORM_DATEIEN: Record<string, { datei: string; exportName: string }> = {
   ZH: { datei: "zh_500.js", exportName: "ZH_500" },
-  SG: { datei: "sg_jp1b.js", exportName: "SG_JP1B" },
+  SG: { datei: "sg_jp1a.js", exportName: "SG_JP1A" },
   TG: { datei: "tg_50i.js", exportName: "TG_50I" },
   ESTV: { datei: "estv_19.js", exportName: "ESTV_19" },
 };

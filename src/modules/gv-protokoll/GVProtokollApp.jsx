@@ -39,6 +39,11 @@ export default function GvProtokollApp() {
     const [decisions, setDecisions] = useState(() => { const ev = LS.get("gv_eval", null); return ev?.decisions || []; });
     const [summaryText, setSummaryText] = useState(() => { const ev = LS.get("gv_eval", null); return ev?.summaryText || ""; });
     const [traktanden, setTraktanden] = useState(() => { const ev = LS.get("gv_eval", null); return ev?.traktanden || []; });
+    // Strukturierter Beschluss zur Gewinnverwendung – wird vom Tool /Steuern (Kurzmaske) und vom
+    // MCP-Server gelesen, damit Dividende und Zuweisungen nicht nochmals von Hand erfasst werden.
+    const GV_LEER = { geschaeftsjahr: String(new Date().getFullYear() - 1), gv_datum: "", faelligkeit: "", dividende: "", tantiemen: "", zuweisung_gesetzl_gewinnreserve: "", zuweisung_freiwillige_reserve: "", bemerkung: "" };
+    const [gewinnverwendung, setGewinnverwendung] = useState(() => { const ev = LS.get("gv_eval", null); return { ...GV_LEER, ...(ev?.gewinnverwendung || {}) }; });
+    const setGv = (k, v) => setGewinnverwendung(g => ({ ...g, [k]: v }));
     const [agenda, setAgenda] = useState(() => LS.get("gv_agenda", ""));
 
     // UI States
@@ -142,8 +147,8 @@ export default function GvProtokollApp() {
     }, [persons, speakerMap]);
 
     useEffect(() => {
-        LS.set("gv_eval", { summaryText, traktanden, tasks, decisions });
-    }, [summaryText, traktanden, tasks, decisions]);
+        LS.set("gv_eval", { summaryText, traktanden, tasks, decisions, gewinnverwendung });
+    }, [summaryText, traktanden, tasks, decisions, gewinnverwendung]);
 
     useEffect(() => {
         LS.set("gv_agenda", agenda);
@@ -249,7 +254,7 @@ export default function GvProtokollApp() {
             customer_id: selectedCustomer.id || null,
             customer_name: selectedCustomer.name,
             title: title.trim() || defTitle,
-            data: { persons, segments, speakerMap, segOverrides, agenda, summaryText, traktanden, tasks, decisions },
+            data: { persons, segments, speakerMap, segOverrides, agenda, summaryText, traktanden, tasks, decisions, gewinnverwendung },
             updated_at: new Date().toISOString(),
         };
         try {
@@ -287,6 +292,7 @@ export default function GvProtokollApp() {
             setTraktanden(d.traktanden || []);
             setTasks(d.tasks || []);
             setDecisions(d.decisions || []);
+            setGewinnverwendung({ ...GV_LEER, ...(d.gewinnverwendung || {}) });
             setCurrentProtocolId(data.id);
             setProtocolTitle(data.title);
             setStatusMsg(`📂 „${data.title}" geladen.`);
@@ -1059,6 +1065,27 @@ export default function GvProtokollApp() {
                                 ))}
                             </>
                         )}
+
+                        <div className="sub-hd" style={{ marginTop: "15px" }}>💰 Gewinnverwendung (Beschluss)</div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 10px', fontSize: '12px' }}>
+                            {[
+                                ['geschaeftsjahr', 'Geschäftsjahr', 'text'],
+                                ['gv_datum', 'Datum der GV', 'date'],
+                                ['faelligkeit', 'Fälligkeit Dividende', 'date'],
+                                ['dividende', 'Dividende brutto (CHF)', 'number'],
+                                ['tantiemen', 'Tantiemen (CHF)', 'number'],
+                                ['zuweisung_gesetzl_gewinnreserve', 'Zuweisung gesetzliche Gewinnreserve (CHF)', 'number'],
+                                ['zuweisung_freiwillige_reserve', 'Zuweisung freiwillige Gewinnreserve (CHF)', 'number'],
+                                ['bemerkung', 'Bemerkung', 'text'],
+                            ].map(([key, label, type]) => (
+                                <label key={key} style={{ display: 'flex', flexDirection: 'column', gap: '2px', color: '#6b7691' }}>
+                                    {label}
+                                    <input className="cust-input" type={type} step={type === 'number' ? '0.01' : undefined}
+                                        value={gewinnverwendung[key] ?? ''} onChange={e => setGv(key, e.target.value)} />
+                                </label>
+                            ))}
+                        </div>
+                        <small style={{ color: '#6b7691' }}>Rest wird auf neue Rechnung vorgetragen. Das Tool /Steuern und der Steuer-MCP übernehmen diese Werte automatisch.</small>
 
                         <div className="sub-hd" style={{ marginTop: "15px" }}>✔️ Aufgaben</div>
                         {tasks.map((t, i) => (

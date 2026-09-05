@@ -99,12 +99,28 @@ node scripts/test-steuern.mjs "smarterion" 2025 SG <ausgabeordner>      # lesend
 MCP_ALLOW_WRITES=true node scripts/test-steuern-write.mjs "Ankab" 2025 ZH 50000   # speichert + E-Binder
 ```
 
+## Datenquellen ohne Handeingabe (Stand 05.09.2026)
+
+- **Gewinnverwendung** kommt aus dem GV-Protokoll: das Modul gv-protokoll
+  speichert unter `gv_protocols.data.gewinnverwendung` einen strukturierten
+  Block (geschaeftsjahr, gv_datum, faelligkeit, dividende, tantiemen,
+  zuweisung_gesetzl_gewinnreserve, zuweisung_freiwillige_reserve). Kurzmaske
+  und MCP lesen das neueste Protokoll des Kunden mit passendem Geschaeftsjahr,
+  wenn keine Gewinnverwendung uebergeben wird; das VSt-Datenblatt nimmt daraus
+  auch GV-Datum und Faelligkeit.
+- **Register-Nr.** kommt aus dem Kunden-Tab "Steuer-Zugaenge"
+  (`customers.steuer_zugaenge[]`, Eintrag des Steuerjahres, Feld `nummer`),
+  wenn das Formularfeld leer ist. Fuer die E-Bilanz werden daraus die Ziffern
+  als `registerNumber` genommen.
+- **SG** ist seit 05.09.2026 JP 1a (Kapitalgesellschaften), Datei
+  `storage:sg/JP_1a_2025.pdf`, Definition `src/forms/sg_jp1a.js`. JP 1b wurde
+  entfernt (nicht benoetigt). Die Kurzmaske fuellt auch die Ziffern 610-613
+  (Umsatz, Material, Personal, Bilanzsumme).
+
 ## Offene Punkte
 
-1. SG: das im Tool hinterlegte Formular JP 1b ist laut Formularkopf fuer
-   Vereine, Stiftungen und kollektive Kapitalanlagen; Kapitalgesellschaften
-   brauchen JP 1a. Ab Steuererklaerung 2026 loest E-Tax SG (Web, AGOV) die
-   PDF-Formulare ab.
+1. SG: ab Steuererklaerung 2026 loest E-Tax SG (Web, AGOV) die PDF-Formulare
+   ab; dann wird JP 1a nur noch Arbeitspapier.
 2. ZH nimmt ab Steuerjahr 2025 nur noch ZHcorporateTax (kein Papierversand,
    kein E-Mail). Der dokumentierte Import ist die cTax-ZIP; der E-Bilanz-Upload
    (XBRL/eCH-0276) ist fuer die Steuerperiode 2025 angekuendigt – vor dem

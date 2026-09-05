@@ -57,6 +57,12 @@ function Kachel({ label, value, sub, tone }) {
   );
 }
 
+// Register-Nr. des Jahres aus dem Tab Steuer-Zugänge des Kunden (Feld nummer)
+function registerNrAusZugaengen(kunde, jahr) {
+  const z = (kunde.steuer_zugaenge || []).find((e) => String(e.jahr) === String(jahr)) || (kunde.steuer_zugaenge || []).find((e) => String(e.jahr) === String(jahr + 1));
+  return (z?.nummer || '').trim();
+}
+
 function gemeindeZh(ort) {
   if (!ort) return '';
   const o = ort.toLowerCase();
@@ -116,13 +122,46 @@ export default function AbschlussUebernahme({ kunde, kanton, steuerjahr, felder,
     },
   });
 
-  // Gewinnverwendung – vorbelegt aus bereits erfassten Feldern des Formulars
+  // Gewinnverwendung – vorbelegt aus bereits erfassten Feldern des Formulars,
+  // sonst aus dem strukturierten Beschluss im GV-Protokoll (Modul gv-protokoll).
   const [gv, setGv] = useState(() => ({
     dividende: felder.gv_dividende ?? felder.bilanz_dividende ?? '',
     tantiemen: felder.gv_tantiemen ?? felder.bilanz_tantiemen ?? '',
     zuweisung_gesetzl_gewinnreserve: felder.gv_gesetzl_gewinnres ?? felder.bilanz_gesetzl_gewinnres ?? '',
     zuweisung_freiwillige_reserve: felder.gv_freiw_gewinnres ?? felder.bilanz_freiw_gewinnres ?? '',
   }));
+  const [gvQuelle, setGvQuelle] = useState(null);
+
+  const { data: gvProtokoll } = useQuery({
+    queryKey: ['gv_protokoll_gewinnverwendung', kunde.id, steuerjahr],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('gv_protocols')
+        .select('id, title, meeting_date, data')
+        .eq('customer_id', kunde.id)
+        .order('meeting_date', { ascending: false })
+        .limit(20);
+      if (error) throw new Error(error.message);
+      const treffer = (data || []).find((p) => {
+        const g = p.data?.gewinnverwendung;
+        return g && String(g.geschaeftsjahr) === String(steuerjahr) && [g.dividende, g.tantiemen, g.zuweisung_gesetzl_gewinnreserve, g.zuweisung_freiwillige_reserve].some((v) => v !== '' && v != null);
+      });
+      return treffer ? { id: treffer.id, title: treffer.title, meeting_date: treffer.meeting_date, gv: treffer.data.gewinnverwendung } : null;
+    },
+  });
+  useEffect(() => {
+    if (!gvProtokoll) return;
+    const leer = Object.values(gv).every((v) => v === '' || v == null);
+    if (!leer) return;
+    const n = (v) => (v === '' || v == null ? '' : Number(v));
+    setGv({
+      dividende: n(gvProtokoll.gv.dividende), tantiemen: n(gvProtokoll.gv.tantiemen),
+      zuweisung_gesetzl_gewinnreserve: n(gvProtokoll.gv.zuweisung_gesetzl_gewinnreserve),
+      zuweisung_freiwillige_reserve: n(gvProtokoll.gv.zuweisung_freiwillige_reserve),
+    });
+    setGvQuelle(`GV-Protokoll «${gvProtokoll.title}» vom ${new Date(gvProtokoll.meeting_date).toLocaleDateString('de-CH')}`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gvProtokoll]);
   const [verlustManuell, setVerlustManuell] = useState(null);
   const [ueberschreiben, setUeberschreiben] = useState(false);
   const [zeigeKonten, setZeigeKonten] = useState(false);
@@ -137,7 +176,7 @@ export default function AbschlussUebernahme({ kunde, kanton, steuerjahr, felder,
     if (!kennzahlen || !unterstuetzt) return null;
     const st = {
       firma_name: kunde.company_name || '', strasse: kunde.strasse, plz: kunde.plz, ort: kunde.ort, kanton: kunde.kanton,
-      uid: kunde.uid_nr, register_nr: felder.register_nr || '', gj_von: `${steuerjahr}-01-01`, gj_bis: `${steuerjahr}-12-31`,
+      uid: kunde.uid_nr, register_nr: felder.register_nr || registerNrAusZugaengen(kunde, steuerjahr), gj_von: `${steuerjahr}-01-01`, gj_bis: `${steuerjahr}-12-31`,
       vertreter_artis: felder.vertreter_artis ?? true, gemeinde_zh: kanton === 'ZH' ? (felder.gemeinde || gemeindeZh(kunde.ort)) : null,
     };
     return felderFuerKanton(kanton, kennzahlen, st, vv);
@@ -227,6 +266,7 @@ export default function AbschlussUebernahme({ kunde, kanton, steuerjahr, felder,
               {/* Gewinnverwendung */}
               <div>
                 <h3 className="text-xs font-bold uppercase tracking-widest mb-2" style={{ color: C.accent }}>Gewinnverwendung gemäss GV-Antrag</h3>
+                {gvQuelle && <div className="text-[11px] mb-2" style={{ color: C.okFg }}>Übernommen aus {gvQuelle}</div>}
                 <div className="grid grid-cols-2 gap-x-4 gap-y-3">
                   <Betrag label="Dividende (brutto)" value={gv.dividende} onChange={(v) => setGv((g) => ({ ...g, dividende: v }))}
                     hint={kennzahlen.aktienkapital > 0 && gv.dividende ? `${Math.round((gv.dividende / kennzahlen.aktienkapital) * 10000) / 100} % des Kapitals` : null} />

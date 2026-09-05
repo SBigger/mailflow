@@ -1,4 +1,4 @@
-// Kennzahlen → Felder der Steuerformulare (src/forms/zh_500.js, sg_jp1b.js, tg_50i.js).
+// Kennzahlen → Felder der Steuerformulare (src/forms/zh_500.js, sg_jp1a.js, tg_50i.js).
 // Gemeinsame Quelle fuer Tool /Steuern und MCP-Server. Summen, die das Formular
 // selbst rechnet (ZH computed), werden nicht gesetzt. Steuerliche Korrekturen
 // (Aufrechnungen, Abzuege, Beteiligungsabzug, Ausscheidung) bleiben manuell.
@@ -51,31 +51,67 @@ export function felderZH(k, st, vv) {
 }
 
 export function felderSG(k, st, vv) {
+  // SG JP 1a (Kapitalgesellschaften/Genossenschaften), Codes gemäss Formular 2025.
   const n = k.ek_nach_verwendung;
+  const g = k.gewinnverwendung;
   const verlust = vv?.betrag ?? 0;
   const verrechenbar = Math.min(Math.max(k.jahresergebnis, 0), verlust);
   const steuerbar = k.jahresergebnis - verrechenbar;
-  const ekBilanz = n.total - n.versteuerte_stille_reserven; // Code 530
+  // Ziffer 18 = Summe 14–17 = Eigenkapital laut Handelsbilanz: in der Bilanz gebuchte
+  // "versteuerte stille Reserven" gehören damit zu 15.4 Übrige; Ziffer 20 bleibt für
+  // ausserbilanzielle stille Reserven frei.
+  const uebrige = n.uebrige_reserve + n.versteuerte_stille_reserven;
+  const ekHandelsbilanz = n.total;
   const f = {
     ...stammfelder(st),
     sitzgemeinde: st.ort ?? '',
     register_nr: st.register_nr ?? '',
     abschluss_vom: st.gj_bis,
+    // Reingewinn (Seite 2) – ohne steuerliche Korrekturen; Aufrechnungen/Abzüge bleiben manuell
     reingewinn_buch: leerWennNull(k.jahresergebnis),
+    zwischentotal: leerWennNull(k.jahresergebnis),
+    reingewinn_vor_entl: leerWennNull(k.jahresergebnis),
+    reingewinn_nach_entl: leerWennNull(k.jahresergebnis),
     verlustvortrag_abzug: pos(verrechenbar),
     steuerbarer_gewinn_kt: leerWennNull(steuerbar),
     reingewinn_ch: leerWennNull(steuerbar),
     reingewinn_sg: leerWennNull(steuerbar),
     reingewinn_sg_ord: leerWennNull(steuerbar),
-    einbezahltes_kapital: pos(ekBilanz),
-    gesetzl_gewinnres: pos(n.gesetzl_kapitalreserve + n.gesetzl_gewinnreserve),
-    freie_reserven: pos(n.freiwillige_reserve + n.uebrige_reserve),
-    kap_reserven: pos(n.versteuerte_stille_reserven),
-    eigenkapital_total: pos(ekBilanz + n.versteuerte_stille_reserven),
-    steuerbares_kapital: pos(Math.max(ekBilanz + n.versteuerte_stille_reserven, n.aktienkapital)),
+    // Gewinnverwendung (Seite 3, Codes 285–299)
+    gv_vortrag_vorjahr: leerWennNull(k.gewinnvortrag),
+    gv_reingewinn_er: leerWennNull(k.jahresergebnis),
+    gv_bilanzgewinn: leerWennNull(k.bilanzgewinn),
+    gv_dividende: pos(g.dividende),
+    gv_gesetzl_gewinnres: pos(g.zuweisung_gesetzl_gewinnreserve),
+    gv_freiw_gewinnres: pos(g.zuweisung_freiwillige_reserve),
+    gv_total: leerWennNull(g.total),
+    gv_vortrag_neu: leerWennNull(g.vortrag_neu),
+    // Kapital und Reserven (Seite 3, Codes 500–580), Stand nach Gewinnverwendung
+    ek_kapital: pos(n.aktienkapital),
+    ek_gesetzl_kapitalres: pos(n.gesetzl_kapitalreserve),
+    ek_gesetzl_gewinnres: pos(n.gesetzl_gewinnreserve),
+    ek_freiw_gewinnres: pos(n.freiwillige_reserve),
+    ek_uebrige: pos(uebrige),
+    ek_gewinnvortrag: leerWennNull(n.gewinnvortrag),
+    ek_eigene_kapitalanteile: pos(Math.abs(n.eigene_kapitalanteile)),
+    ek_total_handelsbilanz: leerWennNull(ekHandelsbilanz),
+    ek_steuerbar_total: pos(Math.max(ekHandelsbilanz, n.aktienkapital)),
+    kapital_ch: pos(Math.max(ekHandelsbilanz, n.aktienkapital)),
+    kapital_sg: pos(Math.max(ekHandelsbilanz, n.aktienkapital)),
+    // Ergänzende Angaben (Seite 4, Codes 610–613)
+    umsatz: leerWennNull(k.umsatz ?? 0),
+    materialaufwand: leerWennNull(k.materialaufwand ?? 0),
+    personalaufwand: leerWennNull(k.personalaufwand ?? 0),
+    bilanzsumme: leerWennNull(k.bilanzsumme),
   };
-  f.kapital_ch = f.steuerbares_kapital;
-  f.kapital_sg = f.steuerbares_kapital;
+  if (uebrige > 0.005) {
+    f.ek_uebrige_txt = n.versteuerte_stille_reserven > 0.005 && n.uebrige_reserve < 0.005
+      ? 'Versteuerte stille Reserven'
+      : n.versteuerte_stille_reserven > 0.005 ? 'Übrige Reserven inkl. versteuerte stille Reserven' : 'Übrige Reserven';
+  }
+  if (g.tantiemen > 0.005) { f.gv_uebrige_txt_1 = 'Tantiemen'; f.gv_uebrige_1 = pos(g.tantiemen); }
+  const ueb = g.uebrige;
+  if (ueb[0]) { const i = g.tantiemen > 0.005 ? 2 : 1; f[`gv_uebrige_txt_${i}`] = ueb[0].bezeichnung; f[`gv_uebrige_${i}`] = pos(ueb[0].betrag); }
   if (vv?.jahre?.length) {
     vv.jahre.slice(0, 7).forEach((j, i) => { f[`verlust_jahr_${i + 1}`] = String(j.jahr); f[`verlust_betrag_${i + 1}`] = pos(j.betrag); });
     f.verlustvortrag_beginn = pos(verlust);

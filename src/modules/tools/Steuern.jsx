@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { steuerdaten as db } from '../../api/steuerdaten.js';
 import { fillAndDownload, listPdfFields } from '../../lib/pdfFill.js';
-import { SG_JP1B, FAVORITEN_IDS as SG_FAV } from '../../forms/sg_jp1b.js';
+import { SG_JP1A, FAVORITEN_IDS as SG_FAV } from '../../forms/sg_jp1a.js';
 import { TG_50I,  FAVORITEN_IDS as TG_FAV } from '../../forms/tg_50i.js';
 import { ZH_500,  FAVORITEN_IDS as ZH_FAV } from '../../forms/zh_500.js';
 import { ESTV_19, FAVORITEN_IDS as ESTV_FAV } from '../../forms/estv_19.js';
@@ -16,10 +16,10 @@ import AbschlussUebernahme from '../../components/steuern/AbschlussUebernahme.js
 import { KANTONE_MIT_AUTOFILL } from '../../lib/steuern/formular.js';
 import {supabase} from "../../api/supabaseClient.js";
 
-const FORMS    = { SG: SG_JP1B, TG: TG_50I, ZH: ZH_500, ESTV: ESTV_19 };
-const FORM_FAV = { SG: SG_FAV,  TG: TG_FAV, ZH: ZH_FAV, ESTV: ESTV_FAV };
+const FORMS    = { SG: SG_JP1A, TG: TG_50I, ZH: ZH_500, ESTV: ESTV_19 };
+const FORM_FAV = { SG: SG_FAV, TG: TG_FAV, ZH: ZH_FAV, ESTV: ESTV_FAV };
 const TABS = [
-  { id: 'SG',   label: 'Kanton SG'           },
+  { id: 'SG',    label: 'Kanton SG'           },
   { id: 'TG',   label: 'Kanton TG'           },
   { id: 'ZH',   label: 'Kanton ZH'           },
   { id: 'ESTV', label: 'ESTV Beteiligungen'  },
@@ -555,7 +555,7 @@ export default function Steuern() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('customers')
-        .select('id, company_name, ort, plz, strasse, kanton, person_type, aktiv, uid_nr, rechtsform')
+        .select('id, company_name, ort, plz, strasse, kanton, person_type, aktiv, uid_nr, rechtsform, steuer_zugaenge')
         .neq('person_type', 'privatperson')
         .neq('person_type', 'privatperson_partner')
         .order('company_name');

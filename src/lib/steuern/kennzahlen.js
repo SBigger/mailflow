@@ -185,8 +185,15 @@ export function berechneKennzahlen(konten, jahr, gv = {}) {
   if (aktienkapital === 0) warnungen.push('Kein Aktien-/Stammkapital-Konto gefunden.');
   if (aktiven.length === 0) warnungen.push('Keine Aktiv-Konten gefunden – Bilanzsumme ist 0.');
 
+  // Ergänzende Angaben (SG JP 1a Ziffer 29): Umsatz netto (3xxx), Material (4xxx), Personal (5xxx)
+  const erSum = (von, bis) => round2(sum(er.filter((k) => NR(k) >= von && NR(k) <= bis), 'saldo_ist') * eSign);
+  const umsatz = erSum(3000, 3999);            // Ertrag positiv (inkl. Erlösminderungen, Bestandesänderungen)
+  const materialaufwand = round2(-erSum(4000, 4999));
+  const personalaufwand = round2(-erSum(5000, 5999));
+
   return {
     jahr,
+    umsatz, materialaufwand, personalaufwand,
     vorzeichen: { passiven_negativ: passivenNegativ, ertrag_negativ: ertragNegativ },
     bilanzsumme: round2(aktivenIst), bilanzsumme_vorjahr: bilanzsummeVj,
     jahresergebnis, jahresergebnis_vorjahr: jahresergebnisVj, jahresergebnis_herkunft: herkunft, jahresergebnis_er: jahresergebnisEr,
