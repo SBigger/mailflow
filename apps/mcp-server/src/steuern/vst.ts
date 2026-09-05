@@ -8,7 +8,7 @@
  * Werte in der Reihenfolge der Portal-Erfassung, damit sie in einem Zug
  * uebertragen werden koennen (von Hand oder durch den Browser-Agenten).
  */
-import type { Kennzahlen } from "./kennzahlen.js";
+import type { Kennzahlen } from "./lib.js";
 
 export interface Aktionaer {
   name: string;

@@ -35,7 +35,17 @@ steuern_ebilanz_xml       firma="Ankab" jahr=2025 register_nr=1234567 ausgabe_pf
 Der Kunde wird ueber `firma` (Teilstring, eindeutig) oder `customer_id`
 angesprochen; ohne beides gilt `CUSTOMER_ID` aus der `.env`.
 
-## Regeln der Ableitung (src/steuern/kennzahlen.ts)
+## Gemeinsame Bibliothek mit dem Frontend
+
+Die Ableitung (Kennzahlen, Feld-Mapping, Merge) liegt EINMAL im Repo unter
+`src/lib/steuern/kennzahlen.js` und `src/lib/steuern/formular.js`. Das Tool
+/Steuern nutzt sie ueber die Kurzmaske «Aus Abschluss» (Komponente
+`src/components/steuern/AbschlussUebernahme.jsx`), der MCP-Server laedt sie zur
+Laufzeit ueber `src/steuern/lib.ts` (dynamischer Import, Typen dort deklariert).
+Aenderungen an den Regeln gehoeren in die JS-Dateien; Web und Claude bleiben so
+identisch.
+
+## Regeln der Ableitung (src/lib/steuern/kennzahlen.js)
 
 - Vorzeichen werden pro Abschluss erkannt (Abacus liefert Passiven/Ertrag negativ).
 - Jahresergebnis = Bilanzdifferenz Aktiven − Passiven; Kontrolle gegen die

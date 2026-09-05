@@ -13,8 +13,9 @@
  * lassen. Feinere Zuordnungen (z.B. Produktions- vs. Dienstleistungserloese)
  * laufen ueber die Kontonummer nach KMU-Kontenrahmen.
  */
-import type { Kennzahlen, Konto } from "./kennzahlen.js";
-import { kontonummerAlsZahl, alsZahl } from "./kennzahlen.js";
+import type { Kennzahlen, Konto } from "./lib.js";
+const kontonummerAlsZahl = (k: Konto): number => parseInt(String(k.kontonummer).replace(/\D/g, "").slice(0, 4), 10) || 0;
+const alsZahl = (v: unknown): number => { const n = typeof v === "number" ? v : parseFloat(String(v ?? "")); return Number.isFinite(n) ? n : 0; };
 
 export interface EbilanzHeader {
   organisationName: string;

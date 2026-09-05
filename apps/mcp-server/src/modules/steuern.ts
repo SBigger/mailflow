@@ -6,8 +6,7 @@ import { supabase } from "../supabase.js";
 import { config } from "../config.js";
 import { registerTool, ok, unwrap } from "../tool.js";
 import { requireWritesEnabled, ToolError } from "../scope.js";
-import { berechneKennzahlen, type Gewinnverwendung, type Kennzahlen, type Konto } from "../steuern/kennzahlen.js";
-import { felderFuerKanton, zusammenfuehren, type Kanton, type Stammdaten, type Verlustvortrag, type Felder } from "../steuern/formular.js";
+import { steuernLib, type Gewinnverwendung, type Konto, type Kanton, type Stammdaten, type Verlustvortrag, type Felder } from "../steuern/lib.js";
 import { erstelleVstDatenblatt, type Aktionaer } from "../steuern/vst.js";
 import { erzeugeEbilanzXml } from "../steuern/ebilanz.js";
 import { erzeugePdf, ladeFormDef, ladeZhGemeinden, repoSrcVorhanden } from "../steuern/pdf.js";
@@ -99,7 +98,7 @@ async function abschlussLaden(customerId: string, jahr: number, abschlussId?: st
   return { abschluss, konten, hinweise };
 }
 
-function gvAusInput(gv: z.infer<typeof GV_SCHEMA>, konten: Konto[], jahr: number): Gewinnverwendung {
+async function gvAusInput(gv: z.infer<typeof GV_SCHEMA>, konten: Konto[], jahr: number): Promise<Gewinnverwendung> {
   const basis: Gewinnverwendung = {
     dividende: gv?.dividende, tantiemen: gv?.tantiemen,
     zuweisung_gesetzl_gewinnreserve: gv?.zuweisung_gesetzl_gewinnreserve,
@@ -107,7 +106,7 @@ function gvAusInput(gv: z.infer<typeof GV_SCHEMA>, konten: Konto[], jahr: number
     uebrige: gv?.uebrige,
   };
   if (gv?.auto_gesetzliche_reserve && basis.zuweisung_gesetzl_gewinnreserve == null) {
-    const k = berechneKennzahlen(konten, jahr, basis);
+    const k = (await steuernLib()).berechneKennzahlen(konten, jahr, basis);
     basis.zuweisung_gesetzl_gewinnreserve = k.gesetzliche_reserve.empfohlene_zuweisung;
   }
   return basis;
@@ -125,24 +124,7 @@ async function verlustvortragErmitteln(customerId: string, kanton: string, jahr:
       .gte("steuerjahr", jahr - 7).lt("steuerjahr", jahr).order("steuerjahr", { ascending: false }),
   );
   if (!rows.length) return null;
-  const vj = rows[0];
-  const f = vj.felder ?? {};
-  const n = (v: unknown) => (v == null || v === "" ? null : Number(v));
-  // Restverlust laut Vorjahres-Erklaerung: SG/TG verlustvortrag_ende, ZH: Ziffer 7 negativ = (Reingewinn − Vorjahresverluste)
-  const rest = n(f.verlustvortrag_ende);
-  const reingewinn = n(f.reingewinn_buch);
-  const vorjahresverluste = n(f.vorjahresverluste) ?? n(f.verlustvortrag_abzug) ?? 0;
-  let betrag: number | null = null;
-  let quelle = "";
-  if (rest != null) { betrag = rest; quelle = `steuerdaten ${kanton} ${vj.steuerjahr}: verlustvortrag_ende`; }
-  else if (reingewinn != null) {
-    const z7 = reingewinn - (vorjahresverluste ?? 0);
-    if (z7 < 0) { betrag = -z7; quelle = `steuerdaten ${kanton} ${vj.steuerjahr}: Reingewinn ${reingewinn} abzgl. Vorjahresverluste ${vorjahresverluste} = ${z7}`; }
-    else if ((vorjahresverluste ?? 0) > reingewinn) { betrag = (vorjahresverluste ?? 0) - Math.max(reingewinn, 0); quelle = `steuerdaten ${kanton} ${vj.steuerjahr}: nicht verrechneter Rest`; }
-  }
-  if (betrag == null || betrag <= 0) return null;
-  const jahre = rows.filter((r) => (n(r.felder?.reingewinn_buch) ?? 0) < 0).map((r) => ({ jahr: r.steuerjahr, betrag: -(n(r.felder?.reingewinn_buch) ?? 0) }));
-  return { betrag: Math.round(betrag * 100) / 100, jahre: jahre.length ? jahre : undefined, quelle };
+  return (await steuernLib()).verlustvortragAusErklaerungen(rows);
 }
 
 async function aktionaereLaden(customerId: string): Promise<Aktionaer[]> {
@@ -211,15 +193,16 @@ async function vorschlagBerechnen(args: {
   kunde: Kunde; jahr: number; kanton: Kanton; abschluss_id?: string;
   gv: z.infer<typeof GV_SCHEMA>; verlustvortrag?: number; register_nr?: string;
 }) {
+  const lib = await steuernLib();
   const { abschluss, konten, hinweise } = await abschlussLaden(args.kunde.id, args.jahr, args.abschluss_id);
-  const gv = gvAusInput(args.gv, konten, args.jahr);
-  const kennzahlen = berechneKennzahlen(konten, args.jahr, gv);
+  const gv = await gvAusInput(args.gv, konten, args.jahr);
+  const kennzahlen = lib.berechneKennzahlen(konten, args.jahr, gv);
   const vv = await verlustvortragErmitteln(args.kunde.id, args.kanton, args.jahr, args.verlustvortrag);
   const gespeichert = await steuerdatenLesen(args.kunde.id, args.kanton, args.jahr);
   const registerNr = args.register_nr ?? (gespeichert?.felder?.register_nr as string | undefined) ?? null;
   const gemeinde = args.kanton === "ZH" ? await gemeindeZhFinden(args.kunde.ort) : { name: null, bfs: null };
   const st = stammdaten(args.kunde, args.jahr, gemeinde.name, registerNr);
-  const vorschlag = felderFuerKanton(args.kanton, kennzahlen, st, vv);
+  const vorschlag = lib.felderFuerKanton(args.kanton, kennzahlen, st, vv) ?? {};
   return { abschluss, konten, kennzahlen, vv, gespeichert, vorschlag, hinweise, gemeinde };
 }
 
@@ -257,8 +240,8 @@ export function registerSteuernTools(server: McpServer): void {
     handler: async (args) => {
       const kunde = await kundeAufloesen(args);
       const { abschluss, konten, hinweise } = await abschlussLaden(kunde.id, args.jahr, args.abschluss_id);
-      const gv = gvAusInput(args.gewinnverwendung, konten, args.jahr);
-      const k = berechneKennzahlen(konten, args.jahr, gv);
+      const gv = await gvAusInput(args.gewinnverwendung, konten, args.jahr);
+      const k = (await steuernLib()).berechneKennzahlen(konten, args.jahr, gv);
       return ok({ kunde: { id: kunde.id, firma: kunde.company_name }, abschluss: { id: abschluss.id, jahr: abschluss.geschaeftsjahr, status: abschluss.status, konten: konten.length }, hinweise, kennzahlen: k });
     },
   });
@@ -316,7 +299,7 @@ export function registerSteuernTools(server: McpServer): void {
       const vorschlag: Felder = { ...r.vorschlag, ...(args.zusatzfelder ?? {}) };
       const bestehend = { ...(r.gespeichert?.felder ?? {}) };
       const { _erledigt, _autofill, ...bestehendOhneMeta } = bestehend as Felder & { _erledigt?: unknown; _autofill?: unknown };
-      const merge = zusammenfuehren(bestehendOhneMeta, vorschlag, args.ueberschreiben);
+      const merge = (await steuernLib()).zusammenfuehren(bestehendOhneMeta, vorschlag, args.ueberschreiben);
       const hinweise = [...r.hinweise, ...r.kennzahlen.warnungen];
       if (args.kanton === "ZH" && !r.gemeinde.name) hinweise.push(`Gemeinde "${kunde.ort ?? "?"}" nicht in der ZH-Gemeindeliste gefunden – Feld gemeinde von Hand waehlen.`);
       if (!r.vv) hinweise.push("Kein Verlustvortrag aus frueheren Erklaerungen ermittelt (0 angenommen).");
@@ -371,8 +354,8 @@ export function registerSteuernTools(server: McpServer): void {
       const kunde = await kundeAufloesen(args);
       const { abschluss, konten, hinweise } = await abschlussLaden(kunde.id, args.jahr, args.abschluss_id);
       const gvIn = args.gewinnverwendung ?? {};
-      const gv = gvAusInput({ ...gvIn, dividende: gvIn.dividende ?? args.dividende_brutto }, konten, args.jahr);
-      const k = berechneKennzahlen(konten, args.jahr, gv);
+      const gv = await gvAusInput({ ...gvIn, dividende: gvIn.dividende ?? args.dividende_brutto }, konten, args.jahr);
+      const k = (await steuernLib()).berechneKennzahlen(konten, args.jahr, gv);
       const aktionaere = await aktionaereLaden(kunde.id);
       const blatt = erstelleVstDatenblatt(k, {
         firma: kunde.company_name ?? kunde.name ?? "", rechtsform: kunde.rechtsform, uid: kunde.uid_nr,
@@ -414,8 +397,8 @@ export function registerSteuernTools(server: McpServer): void {
     handler: async (args) => {
       const kunde = await kundeAufloesen(args);
       const { abschluss, konten, hinweise } = await abschlussLaden(kunde.id, args.jahr, args.abschluss_id);
-      const gv = gvAusInput(args.gewinnverwendung, konten, args.jahr);
-      const k = berechneKennzahlen(konten, args.jahr, gv);
+      const gv = await gvAusInput(args.gewinnverwendung, konten, args.jahr);
+      const k = (await steuernLib()).berechneKennzahlen(konten, args.jahr, gv);
       const gemeinde = kunde.kanton === "ZH" ? await gemeindeZhFinden(kunde.ort) : { name: null, bfs: null };
       const bfs = args.bfs_nr ?? gemeinde.bfs ?? (await bfsNummerFinden(kunde.ort, kunde.kanton));
       if (bfs == null) hinweise.push(`BFS-Gemeindenummer fuer "${kunde.ort ?? "?"}" nicht ermittelbar – Parameter bfs_nr angeben.`);
@@ -466,7 +449,7 @@ export function registerSteuernTools(server: McpServer): void {
         felder = g.felder;
       } else {
         const r = await vorschlagBerechnen({ kunde, jahr: args.jahr, kanton: args.kanton, gv: args.gewinnverwendung });
-        felder = zusammenfuehren(r.gespeichert?.felder ?? {}, r.vorschlag, false).felder;
+        felder = (await steuernLib()).zusammenfuehren(r.gespeichert?.felder ?? {}, r.vorschlag, false).felder;
         hinweise.push(...r.hinweise, ...r.kennzahlen.warnungen);
       }
       const { bytes, formDef } = await erzeugePdf(args.kanton, felder);
