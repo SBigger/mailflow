@@ -84,7 +84,7 @@ export default defineConfig(({ mode }) => {
           // Diese drei Adressen richten sich an Kunden. Offline nützen sie
           // ohnehin nichts (Videogespräch, Upload, geteilte Datei), Netz ist
           // also keine zusätzliche Bedingung.
-          navigateFallbackDenylist: [/^\/meet\//, /^\/upload\//, /^\/share(\/|$)/],
+          navigateFallbackDenylist: [/^\/meet\//, /^\/upload\//, /^\/share(\/|$)/, /^\/abacus-callback/],
         },
       }),
     ],
