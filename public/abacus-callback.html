@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Abacus Login-Rückmeldung</title>
+<style>
+  body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: #f6f5f0; color: #1c2b3a; margin: 0; padding: 40px 20px; }
+  .box { max-width: 640px; margin: 0 auto; background: #fff; border-radius: 12px; padding: 28px 32px; box-shadow: 0 2px 12px rgba(0,0,0,.06); }
+  h1 { font-size: 20px; margin: 0 0 12px; }
+  p { line-height: 1.5; }
+  code, textarea { font-family: ui-monospace, Consolas, monospace; }
+  textarea { width: 100%; box-sizing: border-box; min-height: 90px; padding: 10px; border: 1px solid #c9d1d9; border-radius: 8px; font-size: 13px; }
+  button { margin-top: 10px; padding: 9px 16px; border: 0; border-radius: 8px; background: #6d8f7a; color: #fff; font-size: 14px; cursor: pointer; }
+  button:hover { background: #5c7c68; }
+  .err { color: #a33; }
+  .muted { color: #667; font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="box">
+  <h1>Abacus Login-Rückmeldung</h1>
+  <div id="out"><p class="muted">Warte auf Rückmeldung von Abacus ...</p></div>
+</div>
+<script src="/abacus-callback.js"></script>
+</body>
+</html>
