@@ -178,7 +178,7 @@ async function buildSplitFilledPdf(formDef, felder, srcBytes) {
         if (feld.overlay.skipRender) continue;
         const val = felder[feld.id];
         if (val == null || val === '' || val === false) continue;
-        const text = feld.typ === 'checkbox' ? (val ? 'X' : '') : formatValue(feld.id, val);
+        const text = feld.typ === 'checkbox' ? (val ? 'X' : '') : formatValue(feld.id, val, feld.typ);
         if (!text) continue;
         const { x, y, groesse = 9, align, alsoAt = [] } = feld.overlay;
         const positions = [{ x, y, groesse, align }, ...alsoAt.map(a => ({ groesse, align, ...a }))];
@@ -193,6 +193,8 @@ async function buildSplitFilledPdf(formDef, felder, srcBytes) {
       for (const ov of formDef.staticOverlays) {
         if (ov.formSeite !== formSeite) continue;
         if (ov.whenField && !felder[ov.whenField]) continue;
+        // { whenFieldEquals: ['feldId', 'wert'] } – z.B. Ja/Nein-Kreuze (SG JP 1a Ziffer 30)
+        if (Array.isArray(ov.whenFieldEquals) && String(felder[ov.whenFieldEquals[0]] ?? '') !== String(ov.whenFieldEquals[1])) continue;
         const text = resolveStaticOverlayText(ov, felder);
         if (!text) continue;
         drawAlignedText(newPage, text, ov, font, halfW);
@@ -452,7 +454,7 @@ async function fillStaticOverlayBytes(formDef, felder, srcBytes) {
       const { seite, x, y, groesse = 9 } = feld.overlay;
       const page = pages[seite];
       if (!page) continue;
-      const text = feld.typ === 'checkbox' ? (val ? 'X' : '') : formatValue(feld.id, val);
+      const text = feld.typ === 'checkbox' ? (val ? 'X' : '') : formatValue(feld.id, val, feld.typ);
       if (!text) continue;
       page.drawText(text, { x, y, size: groesse, font, color: rgb(0, 0, 0), maxWidth: 200 });
     }

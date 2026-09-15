@@ -2,22 +2,24 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { steuerdaten as db } from '../../api/steuerdaten.js';
 import { fillAndDownload, listPdfFields } from '../../lib/pdfFill.js';
-import { SG_JP1B, FAVORITEN_IDS as SG_FAV } from '../../forms/sg_jp1b.js';
+import { SG_JP1A, FAVORITEN_IDS as SG_FAV } from '../../forms/sg_jp1a.js';
 import { TG_50I,  FAVORITEN_IDS as TG_FAV } from '../../forms/tg_50i.js';
 import { ZH_500,  FAVORITEN_IDS as ZH_FAV } from '../../forms/zh_500.js';
 import { ESTV_19, FAVORITEN_IDS as ESTV_FAV } from '../../forms/estv_19.js';
 import {
   Search, Download, Save, Plus, ChevronRight, FileText,
-  Building2, X, Wrench, Check, CheckCircle2, Star, Trash2,
+  Building2, X, Wrench, Check, CheckCircle2, Star, Trash2, Sparkles,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { PdfViewer } from '../../components/PdfViewer.jsx';
+import AbschlussUebernahme from '../../components/steuern/AbschlussUebernahme.jsx';
+import { KANTONE_MIT_AUTOFILL } from '../../lib/steuern/formular.js';
 import {supabase} from "../../api/supabaseClient.js";
 
-const FORMS    = { SG: SG_JP1B, TG: TG_50I, ZH: ZH_500, ESTV: ESTV_19 };
-const FORM_FAV = { SG: SG_FAV,  TG: TG_FAV, ZH: ZH_FAV, ESTV: ESTV_FAV };
+const FORMS    = { SG: SG_JP1A, TG: TG_50I, ZH: ZH_500, ESTV: ESTV_19 };
+const FORM_FAV = { SG: SG_FAV, TG: TG_FAV, ZH: ZH_FAV, ESTV: ESTV_FAV };
 const TABS = [
-  { id: 'SG',   label: 'Kanton SG'           },
+  { id: 'SG',    label: 'Kanton SG'           },
   { id: 'TG',   label: 'Kanton TG'           },
   { id: 'ZH',   label: 'Kanton ZH'           },
   { id: 'ESTV', label: 'ESTV Beteiligungen'  },
@@ -258,6 +260,20 @@ function FormEditor({ kunde, kanton, steuerjahr, onFelderChange }) {
   const [inspFelder,  setInspFelder]  = useState(null);
   const [inspLoading, setInspLoading] = useState(false);
 
+  // Kurzmaske «Aus Abschluss übernehmen»
+  const [uebernahmeOpen, setUebernahmeOpen] = useState(false);
+  function handleUebernehmen(neueFelder, meta) {
+    const next = {
+      ...neueFelder,
+      _autofill: { abschluss_id: meta?.abschluss_id ?? null, zeit: new Date().toISOString(), quelle: 'tool /Steuern – Aus Abschluss übernehmen' },
+    };
+    setFelder(next);
+    onFelderChange?.(next);
+    setDirty(true);
+    setShowAll(true);
+    toast.success('Felder aus dem Abschluss übernommen – bitte prüfen und speichern');
+  }
+
   async function handleInspect() {
     setInspOpen(true);
     if (inspFelder) return;
@@ -301,6 +317,17 @@ function FormEditor({ kunde, kanton, steuerjahr, onFelderChange }) {
           )}
         </div>
         <div className="flex items-center gap-2">
+          {KANTONE_MIT_AUTOFILL.includes(kanton) && (
+            <button
+              onClick={() => setUebernahmeOpen(true)}
+              title="Reingewinn, Gewinnvortrag, Kapital und Reserven aus dem Smartis-Abschluss übernehmen"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
+              style={{ backgroundColor: C.panelBg, color: C.accent, border: `1px solid ${C.accent}` }}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              Aus Abschluss
+            </button>
+          )}
           <button
             onClick={() => { setErledigt(v => !v); setDirty(true); }}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
@@ -414,6 +441,18 @@ function FormEditor({ kunde, kanton, steuerjahr, onFelderChange }) {
         )}
       </div>
 
+      {/* Kurzmaske: Aus Abschluss übernehmen */}
+      {uebernahmeOpen && (
+        <AbschlussUebernahme
+          kunde={kunde}
+          kanton={kanton}
+          steuerjahr={steuerjahr}
+          felder={felder}
+          onUebernehmen={handleUebernehmen}
+          onClose={() => setUebernahmeOpen(false)}
+        />
+      )}
+
       {/* Inspector-Modal */}
       {inspOpen && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -516,7 +555,7 @@ export default function Steuern() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('customers')
-        .select('id, company_name, ort, plz, strasse, kanton, person_type, aktiv')
+        .select('id, company_name, ort, plz, strasse, kanton, person_type, aktiv, uid_nr, rechtsform, steuer_zugaenge')
         .neq('person_type', 'privatperson')
         .neq('person_type', 'privatperson_partner')
         .order('company_name');
@@ -556,7 +595,8 @@ export default function Steuern() {
 
   function selectKunde(k) {
     setSelected(k);
-    setActiveTab('SG');
+    // Kanton des Kunden als Start-Tab, sonst SG
+    setActiveTab(TABS.some(t => t.id === k.kanton) ? k.kanton : 'SG');
     setSteuerjahr(CY - 1);
     setNeuesJahr(false);
     setPreviewFelder({});

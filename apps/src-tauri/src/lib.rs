@@ -204,10 +204,6 @@ fn open_external_url(url: String) -> Result<(), String> {
 }
 
 /// WebView2 Tracking Prevention auf NONE setzen.
-/// Ohne das blockt WebView2 ~56 Storage-Zugriffe und Power BI crasht mit
-/// "Cannot read properties of undefined (reading 'plugins')".
-/// Wird explizit vom Frontend (Auswertungen-Seite) gerufen, weil der setup()-
-/// bzw. on_page_load-Ansatz stumm fehlschlug. Return = Statusstring.
 #[tauri::command]
 fn disable_tracking_prevention(webview_window: tauri::WebviewWindow) -> Result<String, String> {
     #[cfg(target_os = "windows")]
@@ -249,9 +245,7 @@ fn disable_tracking_prevention(webview_window: tauri::WebviewWindow) -> Result<S
     }
 }
 
-/// OAuth-Popup (Microsoft, Power BI, Azure AD) INNERHALB der Tauri-App öffnen.
-/// Damit Cookies mit dem Haupt-WebView geteilt werden.
-/// Frontend-JS (in main.jsx) fängt window.open() für login.microsoftonline.com ab.
+/// OAuth-Popup öffnen
 #[tauri::command]
 async fn open_oauth_window(app: AppHandle, url: String) -> Result<(), String> {
   use tauri::{WebviewUrl, WebviewWindowBuilder};
@@ -277,10 +271,7 @@ async fn open_oauth_window(app: AppHandle, url: String) -> Result<(), String> {
   Ok(())
 }
 
-/// Externe URL (z.B. Power BI Embed) in einem EIGENEN Tauri-Fenster als Top-Level-Frame
-/// öffnen. Dadurch ist `window.__TAURI_INTERNALS__` verfügbar und Tauri's Plugin-Init
-/// crasht nicht mehr (anders als beim cross-origin iframe im Haupt-WebView).
-/// Cookies werden mit dem Haupt-WebView geteilt (gleiches WebView2-Profil).
+/// Externe URL in einem EIGENEN Tauri-Fenster öffnen
 #[tauri::command]
 fn open_embedded_window(
     app: AppHandle,
@@ -317,7 +308,6 @@ fn get_customer_from_filename() -> String {
     if let Ok(current_exe) = env::current_exe() {
         if let Some(file_name) = current_exe.file_name() {
             let name_str = file_name.to_string_lossy();
-            // Wenn der Dateiname ein "_" enthält, schneiden wir den Kunden-Teil heraus
             if name_str.contains('_') {
                 let parts: Vec<&str> = name_str.split('_').collect();
                 return parts.get(0)
@@ -326,7 +316,7 @@ fn get_customer_from_filename() -> String {
             }
         }
     }
-    "artis".to_string() // Rückfalloption, falls kein "_" im Namen ist
+    "artis".to_string()
 }
 
 // ── Excel-Upload-Server (localhost:7788) ───────────────────────────────────────
@@ -351,10 +341,6 @@ async fn excel_upload_server(app: AppHandle) {
 
             let req = String::from_utf8_lossy(&buf[..n]).to_string();
 
-            // Sicherheit: Origin pruefen. Browser koennen den Origin-Header bei
-            // Cross-Origin-Requests nicht faelschen -> eine fremde Webseite (die
-            // ihren Origin mitschickt) wird abgelehnt. Sonst koennte jede besuchte
-            // Seite per fetch beliebige lokale Dateien einlesen lassen.
             let origin = req.lines()
                 .find(|l| l.to_ascii_lowercase().starts_with("origin:"))
                 .map(|l| l["origin:".len()..].trim().to_string())
@@ -373,8 +359,6 @@ async fn excel_upload_server(app: AppHandle) {
                 let body = req[pos + 4..].trim_end_matches('\0');
                 if let Ok(json) = serde_json::from_str::<serde_json::Value>(body) {
                     if let Some(filepath) = json["filepath"].as_str() {
-                        // Sicherheit: nur von der eigenen App + nur Excel/CSV lesen
-                        // (verhindert Auslesen beliebiger lokaler Dateien).
                         let ext_ok = std::path::Path::new(filepath).extension()
                             .and_then(|e| e.to_str())
                             .map(|e| matches!(e.to_ascii_lowercase().as_str(),
@@ -429,15 +413,8 @@ async fn excel_upload_server(app: AppHandle) {
 
 // ── App-Start ──────────────────────────────────────────────────────────────────
 
-// Polyfill für cross-origin iframes (z.B. Power BI).
-// Tauri injiziert Plugin-Init-Scripts wie
-// `Object.defineProperty(window.__TAURI_INTERNALS__.plugins, 'path', {...})`
-// in jeden Frame. Im cross-origin iframe ist __TAURI_INTERNALS__ nicht
-// gesetzt → Crash → Blank-Screen. Wir legen das Objekt defensiv vor,
-// damit defineProperty() findet was es braucht.
 const IFRAME_POLYFILL: &str = r#"
 ;(function(){
-  // __TAURI_INTERNALS__ Polyfill für cross-origin iframes (Power BI etc.)
   try {
     if (typeof window.__TAURI_INTERNALS__ === 'undefined') {
       Object.defineProperty(window, '__TAURI_INTERNALS__', {
@@ -468,82 +445,58 @@ pub fn run() {
             let version = app.package_info().version.to_string();
             let window_title = format!("Smartis by Artis Treuhand -> v{}", version);
 
-            // 1. Setup the Webview using the Builder pattern
-            WebviewWindowBuilder::new(app.handle(), "main", WebviewUrl::External(url))
-                .title(&window_title)
-                .inner_size(1400.0, 900.0)
-                .min_inner_size(1024.0, 700.0)
-                .resizable(true)
-                .center()
-                .focused(true)
-                .disable_drag_drop_handler()
-
-                // --- NAVIGATIONS INTERCEPTION ---
-                .on_navigation(move |url| {
-                    if url.scheme() == "smartis-open" {
-                        let _ = tauri_plugin_opener::open_url(url.as_str(), None::<&str>);
-                        return false;
-                    }
-
-                    true
-                })
-
-                // --- WINDOW.OPEN() INTERCEPTION ---
-                .on_new_window(|url, _features| {
-                    if url.scheme() != "smartis-open" {
-                        tauri::webview::NewWindowResponse::Allow
-                    } else {
-                        tauri::webview::NewWindowResponse::Deny
-                    }
-                })
-
-                // --- DOWNLOAD INTERCEPTION ---
-                .on_download(|_webview, event| {
-                    match event {
-                        tauri::webview::DownloadEvent::Requested { url, .. } => {
-                            log::info!("Download angefordert: {}", url);
+            WebviewWindowBuilder::security_origin(
+                WebviewWindowBuilder::new(app.handle(), "main", WebviewUrl::External(url))
+                    .title(&window_title)
+                    .inner_size(1400.0, 900.0)
+                    .min_inner_size(1024.0, 700.0)
+                    .resizable(true)
+                    .center()
+                    .focused(true)
+                    .disable_drag_drop_handler()
+                    .on_navigation(move |url| {
+                        if url.scheme() == "smartis-open" {
+                            let _ = tauri_plugin_opener::open_url(url.as_str(), None::<&str>);
+                            return false;
                         }
-
-                        tauri::webview::DownloadEvent::Finished {
-                            url,
-                            path,
-                            success,
-                        } => {
-                            log::info!(
-                                "Download fertig: {} -> {:?} (ok={})",
-                                url,
-                                path,
-                                success
-                            );
+                        true
+                    })
+                    .on_new_window(|url, _features| {
+                        if url.scheme() != "smartis-open" {
+                            tauri::webview::NewWindowResponse::Allow
+                        } else {
+                            tauri::webview::NewWindowResponse::Deny
                         }
+                    })
+                    .on_download(|_webview, event| {
+                        match event {
+                            tauri::webview::DownloadEvent::Requested { url, .. } => {
+                                log::info!("Download angefordert: {}", url);
+                            }
+                            tauri::webview::DownloadEvent::Finished { url, path, success } => {
+                                log::info!("Download fertig: {} -> {:?} (ok={})", url, path, success);
+                            }
+                            _ => {}
+                        }
+                        true
+                    })
+                    .user_agent(
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) \
+                         AppleWebKit/537.36 (KHTML, like Gecko) \
+                         Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0"
+                    )
+                    .additional_browser_args(
+                        "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,\
+                        TrackingProtection3pcd,TrackingProtectionSettingsPageLaunch,PrivacySandboxSettings4,\
+                        PartitionedCookies,ThirdPartyStoragePartitioning,BlockThirdPartyCookies,\
+                        SameSiteByDefaultCookies,CookiesWithoutSameSiteMustBeSecure,msEdgeTrackingProtection,\
+                        PrivacySandboxAdsAPIs,FedCm \
+                        --disable-popup-blocking \
+                        --enable-features=SharedArrayBuffer"
+                    )
+                    .initialization_script(IFRAME_POLYFILL)
+            ).build().map_err(|e| e.to_string())?;
 
-                        _ => {}
-                    }
-
-                    true
-                })
-
-                .user_agent(
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) \
-                     AppleWebKit/537.36 (KHTML, like Gecko) \
-                     Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0"
-                )
-
-                .additional_browser_args(
-                    "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,\
-                    TrackingProtection3pcd,TrackingProtectionSettingsPageLaunch,PrivacySandboxSettings4,\
-                    PartitionedCookies,ThirdPartyStoragePartitioning,BlockThirdPartyCookies,\
-                    SameSiteByDefaultCookies,CookiesWithoutSameSiteMustBeSecure,msEdgeTrackingProtection,\
-                    PrivacySandboxAdsAPIs,FedCm \
-                    --disable-popup-blocking \
-                    --enable-features=SharedArrayBuffer"
-                )
-
-                .initialization_script(IFRAME_POLYFILL)
-                .build()
-                .map_err(|e| e.to_string())?;
-
-            // 2. Excel Upload Server
             let handle = app.handle().clone();
             std::thread::spawn(move || {
                 match tokio::runtime::Runtime::new() {
@@ -551,8 +504,6 @@ pub fn run() {
                     Err(e) => log::error!("Tokio-Runtime konnte nicht erstellt werden: {}", e),
                 }
             });
-
-            // Note: The erroneous main_window.on_new_window block has been removed from here!
 
             Ok(())
         })
