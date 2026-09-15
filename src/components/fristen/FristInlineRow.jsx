@@ -63,6 +63,7 @@ const LS_KEY = "artis_fristen_col_widths";
 export const DEFAULT_COL_WIDTHS = {
   name:             165,
   kanton:            92,
+  gemeinde:         110,
   spJahr:            84,
   fristBis:         130,
   unterlagen:       132,
@@ -70,7 +71,7 @@ export const DEFAULT_COL_WIDTHS = {
   formularErhalten:  90,
   portalLogin:      110,
   portalUid:         90,
-  portalPw:          90,
+  portalPw:         130,
 };
 
 export const COLS = [
@@ -86,11 +87,25 @@ export const COLS = [
   { key: "portalPw",         label: "Passwort" },
 ];
 
-function toGridCols(w, showName = true) {
+// Gemeinde-Spalte gibt es nur bei natürlichen Personen (Wohnsitzgemeinde),
+// bei juristischen Personen ist der Sitz über Kanton/Hauptdomizil abgedeckt.
+function getCols(isPrivat) {
+  if (!isPrivat) return COLS;
+  const idx = COLS.findIndex(c => c.key === "kanton");
+  return [
+    ...COLS.slice(0, idx + 1),
+    { key: "gemeinde", label: "Gemeinde" },
+    ...COLS.slice(idx + 1),
+  ];
+}
+
+function toGridCols(w, showName = true, isPrivat = false) {
   const cols = [];
   if (showName) cols.push(`${w.name}px`);
+  cols.push(`${w.kanton}px`);
+  if (isPrivat) cols.push(`${w.gemeinde}px`);
   cols.push(
-    `${w.kanton}px`, `${w.spJahr}px`, `${w.fristBis}px`,
+    `${w.spJahr}px`, `${w.fristBis}px`,
     `${w.unterlagen}px`, `${w.hDom}px`, `${w.formularErhalten}px`,
     `${w.portalLogin}px`, `${w.portalUid}px`, `${w.portalPw}px`,
   );
@@ -290,6 +305,7 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
   const { copied, copy } = useCopyFeedback();
 
   const [kanton,          setKanton]          = useState(frist.kanton             || "");
+  const [gemeinde,        setGemeinde]        = useState(frist.gemeinde           || "");
   const [jahr,            setJahr]            = useState(frist.jahr               || currentYear);
   const [dueDate,         setDueDate]         = useState(frist.due_date           || "");
   const [unterlagenDatum, setUnterlagenDatum] = useState(frist.unterlagen_datum   || "");
@@ -306,6 +322,7 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
 
   useEffect(() => {
     setKanton(frist.kanton             || "");
+    setGemeinde(frist.gemeinde         || "");
     setJahr(frist.jahr                 || currentYear);
     setDueDate(frist.due_date          || "");
     setUnterlagenDatum(frist.unterlagen_datum || "");
@@ -367,7 +384,7 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: toGridCols(widths, showName),
+            gridTemplateColumns: toGridCols(widths, showName, isPrivat),
             alignItems: "center",
             gap: "10px",
           }}
@@ -391,6 +408,21 @@ export function FristInlineRow({ frist, onUpdate, onDelete, onToggle, customerNa
             inStyle={inStyle}
             s={s}
           />
+
+          {/* Gemeinde – nur natürliche Personen */}
+          {isPrivat && (
+            <input
+              type="text"
+              value={gemeinde}
+              onChange={e => setGemeinde(e.target.value)}
+              onBlur={e => save({ gemeinde: e.target.value || null })}
+              placeholder="—"
+              className={inputCls}
+              style={{ ...inStyle, width: "100%" }}
+              disabled={isDone}
+              title="Wohnsitzgemeinde"
+            />
+          )}
 
           {/* Steuerperiode (Jahr) */}
           <div className="flex items-center gap-1" title="Steuerperiode">
@@ -837,10 +869,12 @@ export function FristenColumnHeader({ personType = "unternehmen", sortCol, sortD
   const { widths = DEFAULT_COL_WIDTHS, updateWidth = () => {} } =
     useContext(ColWidthContext) ?? {};
 
-  // 5. Spalte: Label je nach Personentyp
+  // 5. Spalte (Unterlagen/Abschluss) + Gemeinde: Label/Spalten je nach Personentyp
   const isPrivat = personType === "privatperson";
-  const cols = COLS.map((col, i) =>
-    i === 4 ? { ...col, label: isPrivat ? "Unterlagen erhalten" : "Abschluss vorb." } : col
+  const baseCols = getCols(isPrivat);
+  const unterlagenIdx = baseCols.findIndex(c => c.key === "unterlagen");
+  const cols = baseCols.map((col, i) =>
+    i === unterlagenIdx ? { ...col, label: isPrivat ? "Unterlagen erhalten" : "Abschluss vorb." } : col
   );
 
   const startResize = (e, colKey) => {
@@ -877,7 +911,7 @@ export function FristenColumnHeader({ personType = "unternehmen", sortCol, sortD
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: toGridCols(widths),
+          gridTemplateColumns: toGridCols(widths, true, isPrivat),
           gap: "10px",
         }}
       >
